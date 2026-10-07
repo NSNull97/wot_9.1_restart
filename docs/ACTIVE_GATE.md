@@ -30,15 +30,15 @@ matchmaker routes before that capture.
 
 ## Overnight verification
 
-The UTF-8 full regression after the current docs-only merges is **2097 tests,
+The UTF-8 full regression after the P09A graph-audit merge is **2104 tests,
 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-overnight-final-03/full-python-utf8.txt` (SHA-256
-`c4b096bca87f0e14684991a653f1bd2b16c692506e4294e18723a0ae21a82f75`). Layout is
+`local/evidence/20261008-overnight-final-04-full-python-utf8.txt` (SHA-256
+`a33543a5212c512633d601b68de2e671a153275c474cf6a81aec21b1b0b1a4fb`). Layout is
 `PASS_SERVER_SOURCE_LAYOUT` with 58 source files and 22 relocations; receipt:
-`local/evidence/20261008-overnight-final-03/layout.json` (SHA-256
+`local/evidence/20261008-overnight-final-04-layout.json` (SHA-256
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
-current diff from baseline contains documentation/evidence and the bounded
-movement-matrix auditor/tests only.
+current diff from baseline contains documentation/evidence, bounded movement
+matrix auditor/tests, and the bounded static research-tree auditor/tests only.
 
 ## P07A/P08A static source boundaries
 
