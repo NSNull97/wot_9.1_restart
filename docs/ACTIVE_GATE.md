@@ -6,7 +6,7 @@ Branch policy: one card per `codex/<card-id>-<purpose>` branch; merge an accepte
 card into `main` with `--no-ff`, then verify the remote SHA. See
 [owner-approved workflow](07_CODEX_WORKFLOW.md).
 
-`ORG-0A_PROJECT_HYGIENE_20261007` is the active organizational card. Its
+`ORG-0A_PROJECT_HYGIENE_20261007` is complete. Its
 scope is the repository boundary, baseline commit/tag, canonical status and
 evidence index. It does not change gateway protocol, battle/fire/reload,
 physics, deployed service or client files. Baseline identifiers and the delivery record are in the
@@ -16,9 +16,11 @@ The battle phase is **P03 — IN_PROGRESS**. P03 is not a completed two-client
 authoritative-world acceptance.
 
 ORG-0A local organizational gate: **PASS**; remote publication:
-**NOT_RUN_NETWORK_BLOCKED** (HTTP 408 on the first push, TLS handshake failure
-on the retry). Local baseline/tag and accepted merges are retained; the remote
-had no heads after the first failure. Exact attempts and SHAs:
+**PASS_REMOTE_VERIFIED** after the owner ran the four delivery commands.
+Independent `ls-remote` verification matched main `0b7b8ac6f9ef4a955840df7e690a6e73640dd16f`,
+tag object `0b0fa2f54abd5f14ec39147b034a70757bd5227a` and baseline target
+`7d2a600b7e65ecd7568cb5a985af941313dffb60`. Earlier HTTP 408/TLS errors remain history.
+The follow-up documentation delivery is recorded separately in the machine receipt. Exact attempts and SHAs:
 [ORG-0A receipt](evidence-index/ORG-0A.md).
 
 ## Accepted P03 subcards
@@ -88,6 +90,6 @@ forbidden.
 
 ## Single next step
 
-Retry the ordinary push of existing main and `baseline-2026-10-07` when the
-GitHub connection works and verify remote SHAs. ORG-0B is separately recorded
-and remains unstarted; it does not begin automatically.
+The next recommended card is ORG-0B: classify the 10 unittest errors and
+4 skips and prepare the minimal repair plan. It remains unstarted and does
+not begin automatically in this ORG-0A follow-up.

@@ -10,10 +10,11 @@ ORG-0A: layout PASS (52 source files / 22 relocations); полный Python suit
 FAIL (2028 tests, 10 errors, 4 skips). Ошибки вынесены в отдельный
 [ORG-0B backlog](plans/ORG-0B_TEST_TRIAGE_BACKLOG.md), протокол/боёвка не менялись.
 Baseline/remote receipt: [ORG-0A](evidence-index/ORG-0A.md).
-Локальная организационная приёмка PASS; remote push NOT_RUN_NETWORK_BLOCKED:
-HTTP 408, затем TLS handshake failure. Baseline/tag и история merge сохранены.
-Следующий один шаг — повторить обычный push существующей истории и сверить
-remote SHA после восстановления соединения. ORG-0B пока не начата.
+Организационная приёмка PASS; remote delivery **PASS_REMOTE_VERIFIED** после
+ручного push владельца. Независимая сверка: main `0b7b8ac6f9ef`, tag object
+`0b0fa2f54abd`, baseline target `7d2a600b7e65`. Прежние HTTP 408/TLS ошибки
+сохранены в истории receipt. Следующий один шаг — отдельная ORG-0B; она пока
+не начата. Runtime-код не менялся; прежний full-suite FAIL остаётся открытым.
 
 ## История карточек (старые NOT_RUN и рекомендации сохранены)
 

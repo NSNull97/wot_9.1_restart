@@ -10,7 +10,8 @@ hash checks are in `local/evidence/20261007-org-0a-project-hygiene-01/pins.json`
 ## Git receipt
 
 - Local organizational acceptance: `PASS_ORG_0A_HEAD`; remote publication:
-  **`NOT_RUN_NETWORK_BLOCKED`**. The local history is retained; this is not a
+  **`PASS_REMOTE_VERIFIED`** after owner delivery and independent remote SHA
+  verification. The local history is retained; this is not a
   stable/green release.
 - Baseline commit: `7d2a600b7e65ecd7568cb5a985af941313dffb60`.
 - Annotated tag: `baseline-2026-10-07`; tag object: `0b0fa2f54abd5f14ec39147b034a70757bd5227a`.
@@ -24,8 +25,8 @@ hash checks are in `local/evidence/20261007-org-0a-project-hygiene-01/pins.json`
   claiming a future network action in its own commit. Machine receipt:
   `local/evidence/20261007-org-0a-project-hygiene-01/result.json`.
   It records exact base/branch/merge SHAs, remote URL, branch and push status;
-  failures retain the exact command output. No successful push is implied by
-  this source snapshot.
+  failures retain the exact command output. The verified owner delivery is
+  documented below; any later follow-up push has its own exact-head receipt.
 - Explicit included-file list: [ORG-0A_BASELINE_ALLOWLIST.txt](ORG-0A_BASELINE_ALLOWLIST.txt).
 - The baseline contains 474 files. Current source/docs candidate list including
   ORG-0A is [ORG-0A_SOURCE_ALLOWLIST.txt](ORG-0A_SOURCE_ALLOWLIST.txt).
@@ -33,7 +34,7 @@ hash checks are in `local/evidence/20261007-org-0a-project-hygiene-01/pins.json`
   Accepted organizational head will be merged with `--no-ff`; main will retain
   the recorded ORG-0B test debt. [Branch policy](../07_CODEX_WORKFLOW.md).
 
-### Actual delivery attempts
+### Historical failed delivery attempts
 
 Accepted initial organizational head: `8eba3b78945b7a1a136784f68d0749bcf53019cd`.
 First accepted `--no-ff` merge / attempted remote head:
@@ -56,7 +57,26 @@ of the same ORG-0A branch; final local SHA is in the machine receipt.
 Exact output: `local/evidence/20261007-org-0a-project-hygiene-01/push-main.txt`,
 `push-main-attempt02.txt`, `remote-heads-after-push01.txt` under that directory.
 TLS verification was not disabled; credentials and remote history were not
-altered. Remote push success is not claimed.
+altered. These failed attempts are not reclassified as successful.
+
+### Owner delivery independently verified (2026-10-07)
+
+The owner reported running the four commands from the handoff. Their terminal
+exit codes were not captured here; the resulting remote refs were independently
+read with `git ls-remote --heads origin` and
+`git ls-remote --tags origin 'baseline-2026-10-07*'` (both exit 0):
+
+| Remote ref | Verified SHA |
+|---|---|
+| `refs/heads/main` | `0b7b8ac6f9ef4a955840df7e690a6e73640dd16f` |
+| `refs/tags/baseline-2026-10-07` (annotated object) | `0b0fa2f54abd5f14ec39147b034a70757bd5227a` |
+| `refs/tags/baseline-2026-10-07^{}` (target commit) | `7d2a600b7e65ecd7568cb5a985af941313dffb60` |
+
+All three matched the local refs. Status: **PASS_REMOTE_VERIFIED**.
+Evidence: `local/evidence/20261007-org-0a-project-hygiene-01/owner-delivery-01/`.
+The previous blocked machine receipt and audit outputs are preserved there in
+`before/`. This follow-up only updates documentation in the existing ORG-0A
+branch; the subsequent docs merge/push and final remote SHA are in `result.json`.
 
 ## Boundary
 
@@ -112,6 +132,6 @@ and history. Do not use reset --hard, force-push or deletion of ignored local
 inputs/evidence. P03D and P03E owner receipts remain accepted; full P03 remains
 IN_PROGRESS.
 
-Single next step: retry delivery of the existing main and baseline tag when
-the GitHub connection works, then verify remote SHAs. ORG-0B remains a separate
-unstarted backlog card; it is not executed by ORG-0A.
+Single next step: ORG-0B, classify the 10 unittest errors and 4 skips and
+prepare the minimal repair plan. It remains a separate unstarted card and is
+not executed by this ORG-0A follow-up.
