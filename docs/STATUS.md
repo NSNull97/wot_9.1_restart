@@ -1,5 +1,23 @@
 # Overnight verification after P09A graph audit — 2026-10-08
 
+# P09B isolated SQLite transaction harness — 2026-10-08
+
+The narrow server-owned `reserve_vehicle` boundary is now implemented only in
+`tools/game_profile_tx.py`. It uses a stdlib SQLite game snapshot, vehicle
+state rows and command ledger under one `BEGIN IMMEDIATE` transaction. Exact
+duplicate replay returns the committed result; payload mismatch, stale
+revision, unknown vehicle and already reserved vehicle fail closed. An injected
+pre-commit failure is rolled back and the database is reopened to verify there
+is no partial snapshot or ledger row.
+
+Targeted `tests.test_game_profile_tx` is **11/11 PASS**. The ignored CLI receipt
+`local/evidence/20261008-p09b-transaction-harness-01/receipt.json` is
+`PASS_P09B_SQLITE_TRANSACTION_HARNESS`, SHA-256
+`cedec631a51a5bf802381f04ad6690582518f3b341e0ce1f78e4bd775a614150`.
+This is a bounded harness only: migration, deployed service wiring, battle
+lease lifecycle, economy, concurrency/load and native restart remain
+**NOT_RUN**. No client, gateway or deployed service was changed.
+
 После merge P09A static graph audit повторён authoritative UTF-8 regression:
 **2104 tests, 0 failures/errors, 4 known skips**. Полный лог:
 `local/evidence/20261008-overnight-final-04-full-python-utf8.txt`, SHA-256
@@ -12,8 +30,9 @@ Runtime, gateway, client и deployed service не менялись и не за�
 
 # P09B persistence/transaction boundary — 2026-10-08
 
-Подготовлена docs-only карточка `codex/p09b-persistence-boundary` с приёмкой
-`PASS_P09B_PERSISTENCE_TRANSACTION_BOUNDARY_PLAN`. Зафиксирована граница:
+Исходная docs-only карточка `codex/p09b-persistence-boundary` зафиксировала
+границу, после чего отдельная harness-карточка добавила
+`PASS_P09B_SQLITE_TRANSACTION_HARNESS`. Зафиксирована граница:
 `game.account.v1` проверяет принадлежность и SHA/ревизию server-owned профиля,
 profile4 chain хранит offline provenance, а battle-loadout adapter делает только
 revision/loadout binding. Ни один из этих слоёв не является transaction ID,
@@ -23,9 +42,9 @@ reservation, consumption или exactly-once result ledger.
 `ownership.mjs`, profile4 chain/semantic diff и
 `server/gateway/src/battle/profile4_adapter.rs`. Предложенная P09B
 transaction boundary (server-owned command key, expected revision, atomic game
-ledger + snapshot, duplicate replay and stale fail-closed) пока **INFERRED / NOT
-IMPLEMENTED**. Game persistence, migration, reservation, economy, crash/restart
-recovery и native acceptance остаются **NOT_RUN**.
+ledger + snapshot, duplicate replay and stale fail-closed) теперь доказана в
+изолированном harness; integration, migration, reservation lease, economy,
+crash/restart recovery и native acceptance остаются **NOT_RUN**.
 
 План: [P09B plan](plans/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md); исследование:
 [P09B research](research/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md); evidence:

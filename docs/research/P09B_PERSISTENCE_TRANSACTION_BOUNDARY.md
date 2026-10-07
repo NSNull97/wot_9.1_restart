@@ -1,7 +1,7 @@
 # P09B — persistence/transaction boundary research ledger
 
 Date: 2026-10-08
-Status: **PASS_P09B_PERSISTENCE_TRANSACTION_BOUNDARY_PLAN** (docs-only).
+Status: **PASS_P09B_SQLITE_TRANSACTION_HARNESS / runtime integration NOT_RUN**.
 
 ## New narrow finding
 
@@ -54,8 +54,36 @@ SHA256 `dd3428eacdfb3888f04fd59c3a1c2a17e07524405ec0dd704f040b00da062b01`.
   snapshot or the complete new snapshot; no half-applied ledger is accepted.
 
 No SQL schema, command key format, reservation lease or economic formula is
-claimed as measured. Those remain **UNKNOWN** and require a dedicated
-implementation receipt. Live game persistence, duplicate replay, crash/restart recovery and native acceptance are **NOT_RUN**.
+claimed as measured in the native client. Those remain **UNKNOWN** for runtime
+integration. The isolated implementation receipt below is a harness boundary,
+not native compatibility. Live game persistence integration and native
+acceptance remain **NOT_RUN**.
+
+## 2026-10-08 isolated transaction harness
+
+**VERIFIED:** the selected narrow command is a server-owned `reserve_vehicle`
+operation in `tools/game_profile_tx.py`. The stdlib SQLite schema separates a
+`game_snapshot` aggregate, `game_vehicle` rows and a
+`game_command_ledger`. A `BEGIN IMMEDIATE` transaction inserts the ledger row,
+updates the reserved vehicle and advances the snapshot revision as one unit.
+The ledger stores a canonical payload SHA-256 and result JSON, so a repeated
+`(account_id, command_id)` returns the original result without a second
+revision, while a payload mismatch rejects the replay.
+
+**VERIFIED:** targeted `tests.test_game_profile_tx` is 11/11 PASS. The
+receipt `local/evidence/20261008-p09b-transaction-harness-01/receipt.json`
+has SHA-256
+`cedec631a51a5bf802381f04ad6690582518f3b341e0ce1f78e4bd775a614150` and status
+`PASS_P09B_SQLITE_TRANSACTION_HARNESS`. It covers duplicate replay and
+mismatch, stale revision, unknown/reserved vehicle, malformed revision,
+non-finite persisted JSON, injected rollback, and reopen/replay persistence.
+
+**INFERRED / NOT_IMPLEMENTED:** this receipt proves only the harness boundary.
+The schema is not a migration for the deployed service; there is no battle
+lease expiry, release/consume policy, result/economy mutation, identity binding,
+concurrency/load claim, gateway route, client callback, or native restart
+acceptance. Failpoint rollback is deterministic unit evidence, not an OS crash
+or power-loss experiment.
 
 ## What was and was not run
 
