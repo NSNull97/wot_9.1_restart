@@ -1,5 +1,18 @@
 # Overnight verification after P09B harness — 2026-10-08
 
+## Latest P04/P03I current-main recheck
+
+На code head `7c6de2eefdb195858d65b63b10e5ac8a4488aba0`, который совпадал с
+`origin/main` на момент запуска, повторён UTF-8 full regression: **2133 теста,
+0 failures/errors, 4 known skips**. Лог
+`local/evidence/20261008-p04-p03i-main-regression-01/full-python-utf8.txt`,
+SHA-256 `632d575d57499a0623c84dd2215be3d685a9c0abaf117077a77584478689e91b`.
+P04 bundle/import/map targeted suite — **41/41 PASS**, P03I static audit —
+**5/5 PASS**. Layout — 58 source files / 22 relocations, docs-link recheck —
+440 внутренних ссылок, 0 missing targets. Combined summary:
+`local/evidence/20261008-p04-p03i-main-regression-01/summary.json`, SHA-256
+`4a2d7de32eb7cab45e3ecdeb4bc4ac143049ce9732a9ec78609a50e6d1aaa86`.
+
 # P03I static source-hash recheck — 2026-10-08
 
 The bounded read-only `tools/p03i_static_audit.py` audit reports
