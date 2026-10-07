@@ -33,11 +33,11 @@ matchmaker routes before that capture.
 ## Latest P04/P03I current-main recheck
 
 The latest UTF-8 full regression was run on code head
-`7c6de2eefdb195858d65b63b10e5ac8a4488aba0`, matching `origin/main` at test
-time: **2133 tests, 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-p04-p03i-main-regression-01/full-python-utf8.txt`
+`1269e451696e69c481ab0a0f2a61dc8626c0d8f4`, matching `origin/main` at test
+time: **2134 tests, 0 failures/errors, 4 known skips**. Log:
+`local/evidence/20261008-p04-p03i-main-regression-02/full-python-utf8.txt`
 (SHA-256
-`632d575d57499a0623c84dd2215be3d685a9c0abaf117077a77584478689e91b`).
+`762fbc4f6c54b748fb682322075de07122b8865cce82b322d3c0b729762c382d`).
 `server/check_layout.py` remains `PASS_SERVER_SOURCE_LAYOUT` with 58 source
 files and 22 relocations (receipt SHA
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
@@ -45,8 +45,8 @@ bounded docs-link recheck is `PASS_DOC_LINK_RECHECK` for 440 repository links,
 0 missing targets and 105 skipped external/absolute links (receipt SHA
 `59be396a99b10eea24127a5d6dda81ef9375a95825e9754d836c3a237737c95a`). The
 combined recheck summary is
-`local/evidence/20261008-p04-p03i-main-regression-01/summary.json` (SHA-256
-`4a2d7de32eb7cab45e3ecdeb4bc4ac143049ce9732a9ec78609a50e6d1aaa86`).
+`local/evidence/20261008-p04-p03i-main-regression-02/summary.json` (SHA-256
+`59b3055f4bb38f4568fc8df147f8ab5b543ad2473136200264c519fc57d301d`).
 
 ## Overnight verification
 
@@ -166,7 +166,7 @@ validator and bounded negative tests. The card is accepted as a resource-import
 contract in merge `6d4d32e`; it does not change the accepted P03 runtime. The
 historical isolated receipt has 33 tests with one known skip; the current
 checkout recheck has 38 tests with zero failures/errors/skips. A follow-up
-strict bundle-boundary recheck now has **41 tests, 0 failures/errors, 0 skips**
+strict bundle-boundary recheck now has **42 tests, 0 failures/errors, 0 skips**
 and rejects duplicate/non-finite JSON, boolean-as-integer fields and malformed
 digest shapes; its receipt is
 `local/evidence/20261008-p04-bundle-hardening-01/recheck.json`.
