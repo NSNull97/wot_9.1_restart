@@ -2,7 +2,7 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::aim;
+use super::{aim, projectile::Projectile};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
@@ -50,12 +50,14 @@ pub struct World {
     last: Instant,
     pub tick: u32,
     pub shots: Vec<Shot>,
+    pub projectiles: Vec<Projectile>,
 }
 
 impl World {
     pub fn new(id: u64, now: Instant) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
-        Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000, shots: Vec::new() })
+        Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000,
+            shots: Vec::new(), projectiles: Vec::new() })
     }
     pub fn latest_shot(&self) -> u32 { self.shots.last().map(|s| s.sequence).unwrap_or(0) }
     /// Authenticated identity only. The caller reserves a transport retirement
@@ -99,6 +101,7 @@ impl World {
         let mut next = self.actors[slot].clone();
         let mut outcomes = Vec::new();
         let mut shots = self.shots.clone();
+        let mut projectiles = self.projectiles.clone();
         for (at, command) in commands.iter().enumerate() {
             match command {
                 Command::Aim(intent) => next.aim.set(*intent)?,
@@ -110,8 +113,10 @@ impl World {
                     let result = next.fire.apply(&[*command], now)?;
                     for outcome in &result {
                         if matches!(outcome, fire::Outcome::AcceptedShot { .. }) {
-                            if shots.len() >= MAX_SHOTS { return Err(bad()); }
-                            shots.push(Shot { sequence: shots.len() as u32 + 1, slot, tick: self.tick });
+                            if shots.len() >= MAX_SHOTS || projectiles.len() >= MAX_SHOTS { return Err(bad()); }
+                            let sequence = shots.len() as u32 + 1;
+                            shots.push(Shot { sequence, slot, tick: self.tick });
+                            projectiles.push(Projectile::launch(sequence, slot, &next, now)?);
                         }
                     }
                     outcomes.extend(result);
@@ -122,7 +127,7 @@ impl World {
                 },
             }
         }
-        self.actors[slot] = next; self.shots = shots; Ok(outcomes)
+        self.actors[slot] = next; self.shots = shots; self.projectiles = projectiles; Ok(outcomes)
     }
     /// One shared monotonic clock; bounded integration, no burst catch-up. The
     /// small flat boxes exist only to make remote-state publication observable.
@@ -130,21 +135,31 @@ impl World {
         let Some(start) = self.started else { return Ok(false); };
         if now < self.last || now.duration_since(start) >= LIFETIME { return Err(bad()); }
         let tick = 1000 + (now.duration_since(start).as_millis() / 100) as u32;
-        if tick == self.tick { return Ok(false); }
-        let dt = now.duration_since(self.last).as_secs_f32().min(0.2);
-        for a in &mut self.actors {
-            if !a.ready || a.session.is_none() { continue; }
-            a.yaw = (a.yaw + a.input.steer as f32 * dt * 0.5 + std::f32::consts::PI)
-                .rem_euclid(2. * std::f32::consts::PI) - std::f32::consts::PI;
-            let before = a.position;
-            a.position[0] = (a.position[0] + a.yaw.sin() * a.input.throttle as f32 * dt)
-                .clamp(a.origin[0] - 2., a.origin[0] + 2.);
-            a.position[2] = (a.position[2] + a.yaw.cos() * a.input.throttle as f32 * dt)
-                .clamp(a.origin[2] - 2., a.origin[2] + 2.);
-            a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
-            a.aim.advance(a.position, a.yaw, dt)?;
+        let tick_changed = tick != self.tick;
+        if tick_changed {
+            let dt = now.duration_since(self.last).as_secs_f32().min(0.2);
+            for a in &mut self.actors {
+                if !a.ready || a.session.is_none() { continue; }
+                a.yaw = (a.yaw + a.input.steer as f32 * dt * 0.5 + std::f32::consts::PI)
+                    .rem_euclid(2. * std::f32::consts::PI) - std::f32::consts::PI;
+                let before = a.position;
+                a.position[0] = (a.position[0] + a.yaw.sin() * a.input.throttle as f32 * dt)
+                    .clamp(a.origin[0] - 2., a.origin[0] + 2.);
+                a.position[2] = (a.position[2] + a.yaw.cos() * a.input.throttle as f32 * dt)
+                    .clamp(a.origin[2] - 2., a.origin[2] + 2.);
+                a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
+                a.aim.advance(a.position, a.yaw, dt)?;
+            }
+            self.last = now; self.tick = tick;
         }
-        self.last = now; self.tick = tick; Ok(true)
+        let mut expired = false;
+        for projectile in &mut self.projectiles {
+            if !projectile.stopped && projectile.is_expired(now)? {
+                projectile.stopped = true;
+                expired = true;
+            }
+        }
+        Ok(tick_changed || expired)
     }
 }
 

@@ -1,7 +1,7 @@
 //! Parameterized #717 layouts, kept separate from the frozen primary-profile
 //! probes. Only two server-assigned allied MS-1s can enter these encoders.
 use std::io;
-use super::model::{self, Actor, World};
+use super::{model::{self, Actor, World}, projectile::Projectile};
 use super::aim;
 use crate::{arena091 as arena, arena_vehicle091 as vehicle, battle091::native_ammo as ammo};
 
@@ -139,6 +139,46 @@ pub fn shooting(slot: usize) -> io::Result<Vec<u8>> {
     let mut b = vec![0x12]; b.extend(vehicle_id(slot)?.to_le_bytes());
     b.extend([0x3b, 1, 0x13]); Ok(b)
 }
+
+/// Original Avatar.showTracer fixed method: selected Avatar, shooter vehicle
+/// id, bounded shot id, ordered shell-effects index and native projectile
+/// parameters. The index is a wire concern; the domain owns only the flight
+/// geometry and effective shell values.
+pub fn tracer_start(projectile: &Projectile) -> io::Result<Vec<u8>> {
+    if projectile.sequence == 0 || projectile.sequence as usize > model::MAX_SHOTS
+        || projectile.slot >= model::CAPACITY || projectile.stopped
+        || !projectile.origin.iter().all(|v| v.is_finite())
+        || !projectile.velocity.iter().all(|v| v.is_finite())
+        || !projectile.gravity.is_finite() || projectile.gravity <= 0.0
+        || !projectile.max_distance.is_finite() || projectile.max_distance <= 0.0
+    { return Err(model::bad()); }
+    let mut b = vec![0x13, 0x4c];
+    b.extend(vehicle_id(projectile.slot)?.to_le_bytes());
+    b.extend(projectile.sequence.to_le_bytes());
+    // `smallArmorPiercing` is ordered index 2 in the pinned #717
+    // common/shot_effects.xml enumeration.
+    b.push(2);
+    f3(&mut b, projectile.origin);
+    f3(&mut b, projectile.velocity);
+    b.extend(projectile.gravity.to_le_bytes());
+    b.extend(projectile.max_distance.to_le_bytes());
+    if b.len() != 43 { return Err(model::bad()); }
+    Ok(b)
+}
+
+/// Original Avatar.stopTracer fixed method. It is emitted once per tracer
+/// start, and only after the server-owned radial flight deadline.
+pub fn tracer_stop(projectile: &Projectile) -> io::Result<Vec<u8>> {
+    if projectile.sequence == 0 || projectile.sequence as usize > model::MAX_SHOTS
+        || projectile.slot >= model::CAPACITY || !projectile.stopped
+        || !projectile.terminal.iter().all(|v| v.is_finite())
+    { return Err(model::bad()); }
+    let mut b = vec![0x13, 0x48];
+    b.extend(projectile.sequence.to_le_bytes());
+    f3(&mut b, projectile.terminal);
+    if b.len() != 18 { return Err(model::bad()); }
+    Ok(b)
+}
 pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec<u8>> {
     let a = actor(w, own)?;
     let mut b = vec![2, 10, 3]; b.extend(w.tick.to_le_bytes());
@@ -266,5 +306,35 @@ mod tests {
         assert!(b.windows(13).any(|s| s == [vec![0x14],0x09100004u32.to_le_bytes().to_vec(),1u32.to_le_bytes().to_vec(),0x09100005u32.to_le_bytes().to_vec()].concat()));
         assert_eq!(publication(&w, [true, true]).unwrap().len(), 78);
         assert_eq!(publication(&w, [true, false]).unwrap().len(), 40);
+    }
+    #[test] fn tracer_callbacks_preserve_pinned_fixed_native_layout() {
+        let now = Instant::now();
+        let mut w = model::tests::world(now);
+        w.apply(0, 1, &[model::Command::Fire(crate::battle091::fire::Command::Shoot)], now).unwrap();
+        let start = tracer_start(&w.projectiles[0]).unwrap();
+        assert_eq!(start.len(), 43);
+        assert_eq!(&start[..2], &[0x13, 0x4c]);
+        assert_eq!(&start[2..6], &vehicle_id(0).unwrap().to_le_bytes());
+        assert_eq!(&start[6..10], &1u32.to_le_bytes());
+        assert_eq!(start[10], 2);
+        assert!(tracer_stop(&w.projectiles[0]).is_err());
+        let end = w.projectiles[0].end_at().unwrap();
+        w.advance(end + std::time::Duration::from_millis(100)).unwrap();
+        let stop = tracer_stop(&w.projectiles[0]).unwrap();
+        assert_eq!(stop.len(), 18);
+        assert_eq!(&stop[..2], &[0x13, 0x48]);
+        assert_eq!(&stop[2..6], &1u32.to_le_bytes());
+    }
+    #[test] fn tracer_callbacks_reject_wrong_lifecycle_and_nonfinite_fields() {
+        let now = Instant::now();
+        let mut w = model::tests::world(now);
+        w.apply(0, 1, &[model::Command::Fire(crate::battle091::fire::Command::Shoot)], now).unwrap();
+        let mut projectile = w.projectiles[0];
+        projectile.origin[0] = f32::NAN;
+        assert!(tracer_start(&projectile).is_err());
+        projectile = w.projectiles[0];
+        projectile.stopped = true;
+        assert!(tracer_start(&projectile).is_err());
+        assert!(tracer_stop(&projectile).is_ok());
     }
 }

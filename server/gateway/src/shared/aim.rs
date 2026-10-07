@@ -8,8 +8,35 @@ pub const YAW_RATE: f32 = 39. * PI / 180.;
 pub const PITCH_RATE: f32 = 52.5 * PI / 180.;
 pub const MIN_PITCH: f32 = -25. * PI / 180.;
 pub const MAX_PITCH: f32 = 8. * PI / 180.;
-const PIVOT: [f32; 3] = [0.001778, 1.316402, 0.033775];
-const GUN: [f32; 3] = [-0.238144, 0.234668, 0.410043];
+pub(super) const PIVOT: [f32; 3] = [0.001778, 1.316402, 0.033775];
+pub(super) const GUN: [f32; 3] = [-0.238144, 0.234668, 0.410043];
+
+/// Reproduce the pinned VehicleGunRotator launch transform on the server's
+/// flat hull. The native client may replace only the rendered muzzle point;
+/// the reference origin remains this gun-pivot position.
+pub(super) fn shot_geometry(
+    position: [f32; 3], hull_yaw: f32, turret_yaw: f32, pitch: f32, speed: f32,
+) -> ([f32; 3], [f32; 3]) {
+    let rotate_y = |v: [f32; 3], yaw: f32| {
+        let (s, c) = yaw.sin_cos();
+        [c * v[0] + s * v[2], v[1], -s * v[0] + c * v[2]]
+    };
+    let local_origin = {
+        let gun = rotate_y(GUN, turret_yaw);
+        [PIVOT[0] + gun[0], PIVOT[1] + gun[1], PIVOT[2] + gun[2]]
+    };
+    let origin_offset = rotate_y(local_origin, hull_yaw);
+    let origin = [
+        position[0] + origin_offset[0],
+        position[1] + origin_offset[1],
+        position[2] + origin_offset[2],
+    ];
+    let horizontal = hull_yaw + turret_yaw;
+    let (s, c) = horizontal.sin_cos();
+    let (sp, cp) = pitch.sin_cos();
+    let velocity = [speed * s * cp, -speed * sp, speed * c * cp];
+    (origin, velocity)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Intent { Point([f32; 3]), Hold { yaw: f32, pitch: f32 } }

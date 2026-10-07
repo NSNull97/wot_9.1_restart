@@ -56,6 +56,9 @@ _ammo_export_done = False
 _arena_export_done = False
 _vehicle_capture_ready = None
 _vehicle_capture_ids = set()
+_shared_tracer_probes = {}
+_SHARED_TRACER_MAX_SHOTS = 40
+_SHARED_TRACER_MAX_SAMPLES = 64
 
 
 def record(event, **fields):
@@ -172,6 +175,22 @@ def ammo_projection(value):
         return primitive(projection, budget=[256, 8192])
     except UnicodeError:
         return {'unrecognized': True, 'reason': 'ammo_invalid_utf8'}
+
+
+def _shared_vector(value):
+    """Copy one native Vector3 with a strict three-number bound."""
+    if value is None:
+        return None
+    try:
+        result = [float(value[0]), float(value[1]), float(value[2])]
+    except (IndexError, KeyError, TypeError, ValueError, AttributeError):
+        try:
+            result = [float(value.x), float(value.y), float(value.z)]
+        except (TypeError, ValueError, AttributeError):
+            return {'unrecognized': True, 'type': type(value).__name__}
+    if any(abs(number) > 1000000.0 for number in result):
+        return {'unrecognized': True, 'reason': 'vector_bound'}
+    return result
 
 
 def profile_calls(frame, phase, value):
@@ -380,6 +399,55 @@ def profile_calls(frame, phase, value):
         fields['is_player'] = getattr(instance, 'isPlayer', None)
         for name in ('burstCount', 'isPredictedShot'):
             fields[name] = primitive(frame.f_locals.get(name), budget=[2, 128])
+    elif (source == 'scripts/client/Avatar.py' and method in ('showTracer', 'stopTracer')
+          and _settings.get('enable_shared_lab') is True):
+        # Original Avatar native callbacks. Only fixed arguments are copied;
+        # the observer never invokes a callback or changes the mover.
+        kind = 'native_shared_tracer_call'
+        instance = frame.f_locals.get('self')
+        fields['entity_id'] = getattr(instance, 'id', None)
+        fields['player_vehicle_id'] = getattr(instance, 'playerVehicleID', None)
+        fields['tracer_method'] = method
+        if method == 'showTracer':
+            for name in ('shooterID', 'shotID', 'effectsIndex', 'gravity', 'maxShotDist'):
+                fields[name] = primitive(frame.f_locals.get(name), budget=[2, 256])
+            for name in ('refStartPoint', 'velocity'):
+                fields[name] = _shared_vector(frame.f_locals.get(name))
+            if phase == 'return':
+                scheduler = globals().get('_schedule_shared_tracer_probe')
+                if callable(scheduler):
+                    scheduler(getattr(instance, '_PlayerAvatar__projectileMover', None),
+                              frame.f_locals.get('shotID'))
+        else:
+            fields['shotID'] = primitive(frame.f_locals.get('shotID'), budget=[2, 128])
+            fields['endPoint'] = _shared_vector(frame.f_locals.get('endPoint'))
+    elif (source in ('scripts/client/ProjectileMover.py', 'scripts/client/projectilemover.py')
+          and method in ('add', 'hide') and _settings.get('enable_shared_lab') is True):
+        # The original mover is the source of visual lifecycle evidence. Keep
+        # the descriptor projection small and never retain arbitrary objects.
+        kind = 'native_shared_projectile_mover_call'
+        mover = frame.f_locals.get('self')
+        fields['mover_class'] = type(mover).__name__
+        fields['mover_method'] = method
+        fields['shotID'] = primitive(frame.f_locals.get('shotID'), budget=[2, 128])
+        if method == 'add':
+            for name in ('gravity', 'maxDistance', 'isOwnShoot'):
+                fields[name] = primitive(frame.f_locals.get(name), budget=[2, 256])
+            for name in ('refStartPoint', 'refVelocity', 'startPoint'):
+                fields[name] = _shared_vector(frame.f_locals.get(name))
+            descriptor = frame.f_locals.get('effectsDescr')
+            if isinstance(descriptor, dict):
+                projectile = descriptor.get('projectile')
+                if isinstance(projectile, (tuple, list)) and len(projectile) == 3:
+                    fields['projectile_models'] = [primitive(projectile[0], budget=[2, 512]),
+                                                   primitive(projectile[1], budget=[2, 512])]
+                    fields['projectile_effect_type'] = type(projectile[2]).__name__
+            if phase == 'return':
+                scheduler = globals().get('_schedule_shared_tracer_probe')
+                if callable(scheduler):
+                    scheduler(mover, frame.f_locals.get('shotID'))
+        else:
+            fields['endPoint'] = _shared_vector(frame.f_locals.get('endPoint'))
     elif (((source == 'scripts/client/Vehicle.py' and method == 'set_gunAnglesPacked') or
            (source == 'scripts/client/Avatar.py' and method == 'updateTargetingInfo'))
           and _settings.get('enable_shared_lab') is True):
@@ -715,6 +783,70 @@ def current_views():
     sub = manager.getContainer(ViewTypes.LOBBY_SUB)
     return (main.getView() if main is not None else None,
             sub.getView() if sub is not None else None)
+
+
+def _shared_projectile_projection(projectile):
+    """Bounded read-only copy of one original ProjectileMover record."""
+    if not isinstance(projectile, dict):
+        return {'present': True, 'unrecognized': True}
+    result = {'present': True}
+    for name in ('startTime', 'gravity', 'maxShotDist', 'deathTime', 'showExpolosion',
+                 'fireMissedTrigger', 'autoScaleProjectile'):
+        if name in projectile:
+            value = projectile.get(name)
+            result[name] = (_shared_vector(value) if name == 'gravity'
+                            else primitive(value, budget=[2, 256]))
+    for name in ('refStartPoint', 'refVelocity', 'startPoint'):
+        if name in projectile:
+            result[name] = _shared_vector(projectile.get(name))
+    model = projectile.get('model')
+    result['model_type'] = type(model).__name__ if model is not None else None
+    for attribute in ('resourceName', 'resource'):
+        resource = getattr(model, attribute, None) if model is not None else None
+        if isinstance(resource, basestring) and len(resource) <= 512:
+            result['model_resource'] = primitive(resource, budget=[2, 1024])
+            break
+    return result
+
+
+def _shared_tracer_probe(mover, shot_id, attempts, samples):
+    """Sample the native mover at a bounded cadence without touching it."""
+    if _fini or _settings.get('enable_shared_lab') is not True:
+        _shared_tracer_probes.pop(shot_id, None)
+        return
+    table = getattr(mover, '_ProjectileMover__projectiles', None)
+    projectile = table.get(shot_id) if isinstance(table, dict) else None
+    if projectile is None:
+        if attempts < 4:
+            BigWorld.callback(0.02, lambda: _shared_tracer_probe(mover, shot_id, attempts + 1, samples))
+            return
+        record('native_shared_projectile_lifecycle', shot_id=shot_id, state='removed_or_never_registered',
+               attempts=attempts, samples=samples, observer_mutated_gameplay=False)
+        _shared_tracer_probes.pop(shot_id, None)
+        return
+    record('native_shared_projectile_lifecycle', shot_id=shot_id, state='present', sample=samples + 1,
+           data=_shared_projectile_projection(projectile), observer_mutated_gameplay=False)
+    samples += 1
+    if samples >= _SHARED_TRACER_MAX_SAMPLES:
+        record('native_shared_projectile_lifecycle', shot_id=shot_id, state='sample_bound_reached',
+               sample=samples, observer_mutated_gameplay=False)
+        _shared_tracer_probes.pop(shot_id, None)
+        return
+    _shared_tracer_probes[shot_id] = (mover, attempts, samples)
+    BigWorld.callback(0.05, lambda: _shared_tracer_probe(mover, shot_id, attempts, samples))
+
+
+def _schedule_shared_tracer_probe(mover, shot_id):
+    if _fini or _settings.get('enable_shared_lab') is not True:
+        return
+    if type(shot_id) not in (int, long) or not 1 <= shot_id <= _SHARED_TRACER_MAX_SHOTS:
+        return
+    if shot_id in _shared_tracer_probes or len(_shared_tracer_probes) >= _SHARED_TRACER_MAX_SHOTS:
+        return
+    if mover is None:
+        return
+    _shared_tracer_probes[shot_id] = (mover, 0, 0)
+    BigWorld.callback(0.02, lambda: _shared_tracer_probe(mover, shot_id, 0, 0))
 
 
 _shared_native_samples = 0

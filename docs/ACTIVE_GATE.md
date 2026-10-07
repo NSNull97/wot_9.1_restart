@@ -1,5 +1,22 @@
 # ACTIVE_GATE — 2026-10-07
 
+## Latest accepted card
+
+`P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:
+**PASS_OWNER_P03H_SAME_PC_SERVER_PROJECTILE_NATIVE_TRACER / ACCEPTED**.
+Branch `codex/p03h-native-projectile-flight`. The server now owns each accepted
+MS-1 projectile's launch geometry and bounded 720m flight lifetime, and both
+real same-PC clients receive the original native tracer start/stop callbacks.
+The owner confirmed that both windows saw the tracer. Canonical/legacy Rust
+tests **373/371 PASS**; Python **2055 tests, 0 failures/errors, 2 known skips**; native lifecycle and
+transport audit are clean. Evidence: [P03H receipt](evidence-index/P03H.md),
+`local/evidence/20261007-p03h-native-projectile-flight-01/owner-acceptance.json`.
+
+This card remains a bounded MS-1 test_lab result. IS-7/loadout, crew,
+equipment, collision, hit, damage, historical dispersion/physics and the
+independent two-PC/LAN repeat are still open. Next: a versioned
+`VehicleProfile/Loadout` card for real vehicle and shell selection.
+
 ## Current phase
 
 Branch policy: one card per `codex/<card-id>-<purpose>` branch; merge an accepted
@@ -70,6 +87,7 @@ The follow-up documentation delivery is recorded separately in the machine recei
 | P03E native fire/reload/consumption | `PASS_OWNER_NATIVE_FIRE_RELOAD_CONSUMPTION` | `local/evidence/20261007-battle-fire-reload-01/owner-test/owner-acceptance-fire-reload-03.json`; 5 owner shots, AP `20 -> 15`, 5 completion callbacks | Projectile, hit, damage, visibility, physics, equipment and persistence remain outside this subcard |
 | P03F shared native same-PC laboratory | `PASS_OWNER_P03F_SAME_PC_WORLD_SHOT_SOUND_NEUTRAL_POSE` | `local/evidence/20261007-p03f-two-client-world-01/aim-01/owner-acceptance.json`; native movement/rejoin, remote shots/sound and neutral initial pose | Dynamic aiming, two-PC/LAN and the other explicitly listed lab limitations remain open |
 | P03G continuous turret/gun aim | `PASS_OWNER_P03G_SAME_PC_DYNAMIC_AIM_AND_SHOT_REGRESSION` | `local/evidence/20261007-p03g-shared-gun-aim-01/owner-acceptance.json`; 457 snapshots per native process, changing angles and six shared shots | Same-PC test_lab only; repeat own shots recorded on A, one own shot on B; two-PC/LAN, historical fidelity and projectile/hit/damage remain open |
+| P03H server-owned projectile flight/native tracer | `PASS_OWNER_P03H_SAME_PC_SERVER_PROJECTILE_NATIVE_TRACER` | `local/evidence/20261007-p03h-native-projectile-flight-01/owner-acceptance.json`; 28,410 audited packets, 38 starts/stops, native mover lifecycle on both clients, owner confirmed both windows see tracer | MS-1 test_lab only; IS-7/loadout, crew/equipment, collision, hit/damage, historical physics and two-PC/LAN remain open |
 
 The owner fire/reload gate is therefore **closed**. Earlier build07/build08
 `NOT_RUN` or route-ready text is retained as historical evidence; it does not
