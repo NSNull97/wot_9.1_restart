@@ -26,7 +26,7 @@ The next gate is one owner-captured private room followed by a second
 simultaneous room, with raw Account bodies, callbacks, room IDs, roster
 revisions and teardown correlation. Do not implement guessed room or
 matchmaker routes before that capture.
-# ACTIVE_GATE — 2026-10-07
+# ACTIVE_GATE — 2026-10-08
 
 ## Overnight verification
 
