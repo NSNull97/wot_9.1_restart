@@ -6,13 +6,19 @@
 проверяет cross-kind references, bounds/transforms/spawns, armor triangles и
 явный `missing` report. Повторная нормализация выдаёт canonical SHA256.
 
-Targeted Python: **29 tests, 0 failures/errors, 1 known skip**. Evidence:
-`local/evidence/20261007-p04-content-import-01/result.json`. Полный suite в
-этой рабочей копии намеренно не засчитывается: ignored `config/project.local`
+Targeted Python: **33 tests, 0 failures/errors, 1 known skip** (10 importer
+hardening tests плюс существующие bundle/map checks). Evidence:
+`local/evidence/20261007-p04-content-import-02/result.json` и
+`local/evidence/20261007-p04-content-import-02/unittest-targeted.txt`. Отчёт
+импортера явно разделяет `data_complete` и runtime eligibility:
+`runtime_ready=false`, `runtime_eligibility=NOT_RUN`; пустой `missing` больше не
+выдаётся за готовность серверной физики. Полный suite в этой рабочей копии
+намеренно не засчитывается: ignored `config/project.local`
 и native evidence остаются только в основном checkout, поэтому его результат
 `NOT_RUN_FOR_P04_WORKTREE` (28 missing-evidence errors и 1 frozen-source
 failure) не относится к importer. Реальный полный #717 content dataset,
-native geometry checkpoints и selection-to-battle handoff остаются `NOT_RUN`.
+native geometry checkpoints, native compatibility/physics и selection-to-battle
+handoff остаются `NOT_RUN`.
 Карточка не слита в `main` и не меняет оригинальный/research client.
 
 Отдельный аудит существующего web research-графа записан в

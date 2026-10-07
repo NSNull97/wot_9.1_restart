@@ -32,10 +32,18 @@ MAX_VERTICES = 100000
 MAX_TRIANGLES = 200000
 MAX_COORDINATE = 100000.0
 MAX_REASON_BYTES = 512
+MAX_JSON_DEPTH = 64
+MAX_TOTAL_VERTICES = 250000
+MAX_TOTAL_TRIANGLES = 500000
+MAX_SOURCE_BYTES = 64 * 1024 * 1024
+TARGET = {"client_build": "v.0.9.1 #717", "region": "RU"}
 
 CLASSIFICATIONS = {"VERIFIED", "OBSERVED", "INFERRED", "UNKNOWN"}
 MODULE_TYPES = {"chassis", "turret", "gun", "engine", "radio", "equipment"}
-SHELL_TYPES = {"AP", "APCR", "HE", "HEAT", "HESH", "ATGM"}
+# ATGM is deliberately absent: it is not part of the bounded #717 shell
+# contract and accepting it here would silently turn a future class into
+# supported historical content.
+SHELL_TYPES = {"AP", "APCR", "HE", "HEAT", "HESH"}
 TEAMS = {"allies", "enemies", "neutral"}
 RECORD_KINDS = {"vehicle", "module", "shell", "map", "armor", "material"}
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_./-]{0,127}$")
@@ -84,7 +92,48 @@ def _read_json(path: str | Path) -> dict[str, Any]:
         raise ContentImportError("manifest must be bounded UTF-8 JSON") from error
     if not isinstance(value, dict):
         raise ContentImportError("manifest root must be an object")
+    _check_depth(value)
     return value
+
+
+def _check_depth(value: Any, depth: int = 0) -> None:
+    if depth > MAX_JSON_DEPTH:
+        raise ContentImportError("JSON nesting exceeds bounds")
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ContentImportError("JSON object key must be text")
+            _check_depth(item, depth + 1)
+    elif isinstance(value, list):
+        for item in value:
+            _check_depth(item, depth + 1)
+
+
+class _SourceIndex:
+    """Read each declared bundle content ID once and enforce a total bound."""
+
+    def __init__(self, bundle: Bundle):
+        self.bundle = bundle
+        self.cache: dict[str, bytes] = {}
+        self.mesh_cache: dict[str, dict[str, Any]] = {}
+        self.total_bytes = 0
+
+    def read(self, content_id: str) -> bytes:
+        if content_id not in self.cache:
+            try:
+                data = self.bundle.read(content_id)
+            except BundleError as error:
+                raise ContentImportError(f"unknown source content {content_id}") from error
+            if self.total_bytes + len(data) > MAX_SOURCE_BYTES:
+                raise ContentImportError("declared source content exceeds total size bound")
+            self.cache[content_id] = data
+            self.total_bytes += len(data)
+        return self.cache[content_id]
+
+    def mesh(self, content_id: str, label: str) -> dict[str, Any]:
+        if content_id not in self.mesh_cache:
+            self.mesh_cache[content_id] = _mesh_source(self.read(content_id), label)
+        return self.mesh_cache[content_id]
 
 
 def _object(value: Any, label: str) -> dict[str, Any]:
@@ -148,7 +197,7 @@ def _rotation(value: Any, label: str) -> list[int | float]:
             for index, item in enumerate(_list(value, label, 3, 3))]
 
 
-def _sorted_unique_ids(value: Any, label: str, bundle: Bundle | None = None) -> list[str]:
+def _sorted_unique_ids(value: Any, label: str, bundle: _SourceIndex | None = None) -> list[str]:
     values = _list(value, label, 1, MAX_SOURCE_IDS)
     result = [_id(item, f"{label}[{index}]") for index, item in enumerate(values)]
     if len(set(result)) != len(result):
@@ -157,12 +206,12 @@ def _sorted_unique_ids(value: Any, label: str, bundle: Bundle | None = None) -> 
         for item in result:
             try:
                 bundle.read(item)
-            except BundleError as error:
+            except ContentImportError as error:
                 raise ContentImportError(f"{label}: unknown source content {item}") from error
     return sorted(result)
 
 
-def _source_ids(row: dict[str, Any], label: str, bundle: Bundle) -> list[str]:
+def _source_ids(row: dict[str, Any], label: str, bundle: _SourceIndex) -> list[str]:
     return _sorted_unique_ids(row.get("source_content_ids"), f"{label}.source_content_ids", bundle)
 
 
@@ -227,7 +276,44 @@ def _inside(point: list[int | float], bounds: dict[str, list[int | float]], labe
         raise ContentImportError(f"{label}: position outside map bounds")
 
 
-def _mesh_ref(value: Any, label: str, source_ids: set[str]) -> dict[str, str]:
+def _mesh_source(data: bytes, label: str) -> dict[str, Any]:
+    """Validate the bounded portable triangle payload instead of trusting its label."""
+    try:
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object,
+                           parse_constant=_reject_constant)
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+        raise ContentImportError(f"{label}: triangle mesh must be bounded UTF-8 JSON") from error
+    _check_depth(value)
+    row = _object(value, label)
+    _expect_keys(row, {"format", "version", "coordinates", "vertices", "triangles"}, set(), label)
+    if row["format"] != "triangle_mesh.v1" or type(row["version"]) is not int or row["version"] != 1:
+        raise ContentImportError(f"{label}: unsupported triangle mesh revision")
+    coordinates = _object(row["coordinates"], f"{label}.coordinates")
+    _expect_keys(coordinates, {"unit", "up_axis", "order"}, set(), f"{label}.coordinates")
+    if coordinates != {"unit": "metre", "up_axis": "Y", "order": "XYZ"}:
+        raise ContentImportError(f"{label}.coordinates: unsupported convention")
+    vertices = [_vector3(point, f"{label}.vertices[{index}]")
+                for index, point in enumerate(_list(row["vertices"], f"{label}.vertices", 3, MAX_VERTICES))]
+    triangles = _list(row["triangles"], f"{label}.triangles", 1, MAX_TRIANGLES)
+    normalized: list[list[int]] = []
+    for index, triangle in enumerate(triangles):
+        values = _list(triangle, f"{label}.triangles[{index}]", 3, 3)
+        values = [_integer(item, f"{label}.triangles[{index}][{offset}]", 0, len(vertices) - 1)
+                  for offset, item in enumerate(values)]
+        if len(set(values)) != 3:
+            raise ContentImportError(f"{label}.triangles[{index}]: repeated vertex")
+        a, b, c = (vertices[item] for item in values)
+        u = [b[axis] - a[axis] for axis in range(3)]
+        v = [c[axis] - a[axis] for axis in range(3)]
+        cross = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+        if sum(item * item for item in cross) <= 1e-12:
+            raise ContentImportError(f"{label}.triangles[{index}]: zero-area triangle")
+        normalized.append(values)
+    return {"format": "triangle_mesh.v1", "version": 1, "coordinates": coordinates,
+            "vertex_count": len(vertices), "triangle_count": len(normalized)}
+
+
+def _mesh_ref(value: Any, label: str, source_ids: set[str], source: _SourceIndex) -> dict[str, Any]:
     row = _object(value, label)
     _expect_keys(row, {"content_id", "format"}, set(), label)
     content_id = _id(row["content_id"], f"{label}.content_id")
@@ -235,10 +321,12 @@ def _mesh_ref(value: Any, label: str, source_ids: set[str]) -> dict[str, str]:
         raise ContentImportError(f"{label}: geometry content is not declared as source")
     if row["format"] != "triangle_mesh.v1":
         raise ContentImportError(f"{label}.format: unsupported geometry format")
-    return {"content_id": content_id, "format": row["format"]}
+    mesh = source.mesh(content_id, f"{label}.source[{content_id}]")
+    return {"content_id": content_id, "format": row["format"],
+            "vertex_count": mesh["vertex_count"], "triangle_count": mesh["triangle_count"]}
 
 
-def _vehicle(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
+def _vehicle(row: dict[str, Any], label: str, bundle: _SourceIndex) -> dict[str, Any]:
     _expect_keys(row, {"record_id", "kind", "classification", "source_content_ids",
                        "type_compact_descr", "max_health", "crew_slots", "components",
                        "shells", "pivot"}, set(), label)
@@ -256,7 +344,7 @@ def _vehicle(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
                       "rotation": _rotation(pivot["rotation"], f"{label}.pivot.rotation")}}
 
 
-def _module(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
+def _module(row: dict[str, Any], label: str, bundle: _SourceIndex) -> dict[str, Any]:
     _expect_keys(row, {"record_id", "kind", "classification", "source_content_ids",
                        "module_type", "compatible_vehicle_ids", "attributes"}, set(), label)
     module_type = row["module_type"]
@@ -269,7 +357,7 @@ def _module(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
             "attributes": _attributes(row["attributes"], f"{label}.attributes")}
 
 
-def _shell(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
+def _shell(row: dict[str, Any], label: str, bundle: _SourceIndex) -> dict[str, Any]:
     _expect_keys(row, {"record_id", "kind", "classification", "source_content_ids",
                        "shell_type", "caliber_mm", "penetration_mm", "damage", "speed_mps",
                        "compatible_vehicle_ids"}, set(), label)
@@ -286,7 +374,7 @@ def _shell(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
             "compatible_vehicle_ids": _ref_list(row["compatible_vehicle_ids"], f"{label}.compatible_vehicle_ids")}
 
 
-def _material(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
+def _material(row: dict[str, Any], label: str, bundle: _SourceIndex) -> dict[str, Any]:
     _expect_keys(row, {"record_id", "kind", "classification", "source_content_ids",
                        "material_type", "attributes"}, set(), label)
     return {"record_id": _id(row["record_id"], f"{label}.record_id"), "kind": "material",
@@ -295,15 +383,15 @@ def _material(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]
             "attributes": _attributes(row["attributes"], f"{label}.attributes")}
 
 
-def _map(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
+def _map(row: dict[str, Any], label: str, bundle: _SourceIndex) -> dict[str, Any]:
     _expect_keys(row, {"record_id", "kind", "classification", "source_content_ids", "bounds",
                        "geometry", "spawns", "bases", "instances"}, set(), label)
     source_ids = _source_ids(row, label, bundle)
     bounds = _bounds(row["bounds"], f"{label}.bounds")
     geometry = _object(row["geometry"], f"{label}.geometry")
     _expect_keys(geometry, {"terrain", "obstacles"}, set(), f"{label}.geometry")
-    terrain = _mesh_ref(geometry["terrain"], f"{label}.geometry.terrain", set(source_ids))
-    obstacles = [_mesh_ref(item, f"{label}.geometry.obstacles[{index}]", set(source_ids))
+    terrain = _mesh_ref(geometry["terrain"], f"{label}.geometry.terrain", set(source_ids), bundle)
+    obstacles = [_mesh_ref(item, f"{label}.geometry.obstacles[{index}]", set(source_ids), bundle)
                  for index, item in enumerate(_list(geometry["obstacles"], f"{label}.geometry.obstacles", 0, 256))]
     spawns = []
     for index, item in enumerate(_list(row["spawns"], f"{label}.spawns", 1, 128)):
@@ -354,7 +442,7 @@ def _map(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
             "instances": sorted(instances, key=lambda item: item["instance_id"])}
 
 
-def _armor(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
+def _armor(row: dict[str, Any], label: str, bundle: _SourceIndex) -> dict[str, Any]:
     _expect_keys(row, {"record_id", "kind", "classification", "source_content_ids",
                        "vehicle_record_id", "surfaces"}, set(), label)
     source_ids = _source_ids(row, label, bundle)
@@ -392,7 +480,7 @@ def _armor(row: dict[str, Any], label: str, bundle: Bundle) -> dict[str, Any]:
             "surfaces": sorted(surfaces, key=lambda item: item["surface_id"])}
 
 
-def _record(row: Any, index: int, bundle: Bundle) -> dict[str, Any]:
+def _record(row: Any, index: int, bundle: _SourceIndex) -> dict[str, Any]:
     value = _object(row, f"records[{index}]")
     kind = value.get("kind")
     if not isinstance(kind, str) or kind not in RECORD_KINDS:
@@ -418,11 +506,16 @@ def _check_cross_references(records: list[dict[str, Any]]) -> None:
                     target = by_id.get(reference)
                     if target is None or target["kind"] != expected:
                         raise ContentImportError(f"{label}.{field}: reference must target {expected}: {reference}")
+                    if label not in target["compatible_vehicle_ids"]:
+                        raise ContentImportError(f"{label}.{field}: compatibility is not reciprocal: {reference}")
         elif row["kind"] in {"module", "shell"}:
             for reference in row["compatible_vehicle_ids"]:
                 target = by_id.get(reference)
                 if target is None or target["kind"] != "vehicle":
                     raise ContentImportError(f"{label}.compatible_vehicle_ids: reference must target vehicle: {reference}")
+                vehicle_field = "components" if row["kind"] == "module" else "shells"
+                if label not in target[vehicle_field]:
+                    raise ContentImportError(f"{label}.compatible_vehicle_ids: compatibility is not reciprocal: {reference}")
         elif row["kind"] == "armor":
             vehicle = by_id.get(row["vehicle_record_id"])
             if vehicle is None or vehicle["kind"] != "vehicle":
@@ -456,32 +549,60 @@ def _canonical(value: dict[str, Any]) -> bytes:
 
 
 def validate_import(value: dict[str, Any], bundle: Bundle) -> dict[str, Any]:
+    value = _object(value, "manifest")
+    _check_depth(value)
     _expect_keys(value, {"format", "manifest_revision", "ruleset", "target", "source_bundle",
                          "provenance", "records", "missing"}, set(), "manifest")
-    if value["format"] != FORMAT or value["manifest_revision"] != MANIFEST_REVISION:
+    if value["format"] != FORMAT or type(value["manifest_revision"]) is not int or value["manifest_revision"] != MANIFEST_REVISION:
         raise ContentImportError("unsupported content-import format or revision")
     ruleset = _text(value["ruleset"], "manifest.ruleset", 128)
     target = _object(value["target"], "manifest.target")
     _expect_keys(target, {"client_build", "region"}, set(), "manifest.target")
     target_normalized = {"client_build": _text(target["client_build"], "manifest.target.client_build", 128),
                          "region": _text(target["region"], "manifest.target.region", 32)}
+    if target_normalized != TARGET or ruleset != "test_lab":
+        raise ContentImportError("manifest target/ruleset is outside #717 RU test_lab scope")
     source_bundle = _object(value["source_bundle"], "manifest.source_bundle")
     _expect_keys(source_bundle, {"format", "manifest_sha256"}, set(), "manifest.source_bundle")
     if source_bundle["format"] != "server-content.v1" or bundle.manifest.get("format") != "server-content.v1":
         raise ContentImportError("manifest.source_bundle: server-content.v1 required")
+    if type(bundle.manifest.get("manifest_revision")) is not int or bundle.manifest.get("manifest_revision") != 1:
+        raise ContentImportError("manifest.source_bundle: bundle revision must be integer 1")
+    bundle_target = bundle.manifest.get("target")
+    if (not isinstance(bundle_target, dict) or
+            bundle_target.get("client_build") != target_normalized["client_build"] or
+            bundle_target.get("region") != target_normalized["region"]):
+        raise ContentImportError("manifest.target: does not match source bundle target")
+    if bundle.manifest.get("ruleset") != ruleset:
+        raise ContentImportError("manifest.ruleset: does not match source bundle ruleset")
     manifest_sha256 = _digest(source_bundle["manifest_sha256"], "manifest.source_bundle.manifest_sha256")
     actual_sha256 = hashlib.sha256((bundle.root / "manifest.json").read_bytes()).hexdigest()
     if actual_sha256 != manifest_sha256:
         raise ContentImportError("manifest.source_bundle.manifest_sha256 does not match bundle")
     provenance = _object(value["provenance"], "manifest.provenance")
     _expect_keys(provenance, {"source_receipts", "license"}, set(), "manifest.provenance")
-    receipts = _sorted_unique_ids(provenance["source_receipts"], "manifest.provenance.source_receipts", bundle)
+    source = _SourceIndex(bundle)
+    receipts = _sorted_unique_ids(provenance["source_receipts"], "manifest.provenance.source_receipts", source)
     license_state = _text(provenance["license"], "manifest.provenance.license", 512)
     rows = _list(value["records"], "manifest.records", 1, MAX_RECORDS)
-    records = [_record(row, index, bundle) for index, row in enumerate(rows)]
+    records = [_record(row, index, source) for index, row in enumerate(rows)]
     if len({row["record_id"] for row in records}) != len(records):
         raise ContentImportError("manifest.records: duplicate record ID")
     _check_cross_references(records)
+    total_vertices = sum(len(surface["vertices"])
+                         for row in records if row["kind"] == "armor"
+                         for surface in row["surfaces"])
+    total_triangles = sum(len(surface["triangles"])
+                          for row in records if row["kind"] == "armor"
+                          for surface in row["surfaces"])
+    for row in records:
+        if row["kind"] == "map":
+            total_vertices += row["geometry"]["terrain"]["vertex_count"]
+            total_triangles += row["geometry"]["terrain"]["triangle_count"]
+            total_vertices += sum(item["vertex_count"] for item in row["geometry"]["obstacles"])
+            total_triangles += sum(item["triangle_count"] for item in row["geometry"]["obstacles"])
+    if total_vertices > MAX_TOTAL_VERTICES or total_triangles > MAX_TOTAL_TRIANGLES:
+        raise ContentImportError("aggregate geometry exceeds bounds")
     records = sorted(records, key=lambda item: item["record_id"])
     missing = _missing(value["missing"])
     normalized = {"format": FORMAT, "manifest_revision": MANIFEST_REVISION,
@@ -494,7 +615,9 @@ def validate_import(value: dict[str, Any], bundle: Bundle) -> dict[str, Any]:
     return {"status": "PASS_TYPED_IMPORT_VALIDATOR", "format": FORMAT,
             "manifest_revision": MANIFEST_REVISION, "ruleset": ruleset,
             "record_count": len(records), "record_counts": counts,
-            "missing_count": len(missing), "runtime_ready": not missing,
+            "missing_count": len(missing), "runtime_ready": False,
+            "runtime_eligibility": "NOT_RUN",
+            "data_complete": not missing,
             "canonical_sha256": hashlib.sha256(canonical).hexdigest(),
             "canonical_bytes": len(canonical)}
 

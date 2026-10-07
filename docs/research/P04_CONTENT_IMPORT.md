@@ -41,11 +41,13 @@ SHA256 `167a637d725a233d42e52bd7d5bac00b9af45c0ef225163ab578e202454f5138`,
 а `ussr-is-7` терминальный. Это объясняет «нет продолжения ИС-8» при выборе
 ИС-7: направление связи обратное.
 
-Гипотеза про отсутствие уровня I у СССР пока только `INFERRED`: нативный экран
-может скрывать уже купленные машины (МС-1), тогда как немецкий L.Tr. ещё не
-владельческий. Точный predicate Python/Flash UI не установлен. Следующий native
-gate: снять payload/callback дерева на аккаунтах с MS-1+IS-7 и со свежим
-аккаунтом, сравнить owned/filter flags и не менять клиент до этого сравнения.
+Статический native-аудит уже установил predicate: `NationTreeData.load`
+отбрасывает `item.isHidden`, а `Vehicle/FittingItem` получают это состояние из
+`shop.items.notInShopItems`. Receipt:
+`local/evidence/20261007-native-tree-filter-01/predicate-01.json`. Поэтому
+отсутствие купленного МС-1 в нативном дереве — `PASS_STATIC_NATIVE_FILTER`, а
+не повод удалять узел из полного каталога. Полный native payload/callback
+исследовательского окна остаётся `NOT_RUN`.
 
 ## Контракт
 
@@ -56,14 +58,18 @@ armor meshes и spawn/base positions проверяются до выдачи ca
 
 ## Evidence
 
-Synthetic self-contained receipt: `local/evidence/20261007-p04-content-import-01/result.json`.
-It records a verified two-file `server-content.v1` fixture, six typed records,
-the canonical import hash and the zero-missing runtime-ready result. The fixture
-is not a claim about the complete #717 catalogue.
+Synthetic self-contained receipt: `local/evidence/20261007-p04-content-import-02/result.json`.
+It records a verified `server-content.v1` fixture, six typed records, strict
+`v.0.9.1 #717`/RU `test_lab` scope, real `triangle_mesh.v1` parsing, bounded
+source/depth/aggregate geometry checks, reciprocal compatibility and the
+canonical import hash. The receipt reports `data_complete=true` while
+`runtime_ready=false` and `runtime_eligibility=NOT_RUN`; the fixture is not a
+claim about the complete #717 catalogue or native physics.
 
 ## Статусы доказательств
 
-- `VERIFIED`: структура и hashes existing portable bundle, локальные unit tests.
+- `VERIFIED`: структура и hashes existing portable bundle, 33 targeted unit
+  tests (one known skip), JSON mesh and boundary rejection checks.
 - `OBSERVED`: native IS-7 model/selection screenshot and trace from
   `local/evidence/20261007-p03i-vehicle-profile-loadout-01/native-selection-07`.
 - `INFERRED`: typed cross-record schema is a project boundary, not a reverse
@@ -73,6 +79,7 @@ is not a claim about the complete #717 catalogue.
 
 ## Не утверждается
 
-Canonical round-trip of this validator is not native-client compatibility,
-physics equivalence, ballistic correctness, or license clearance. Real dataset
-import and map/armor checkpoints remain `NOT_RUN`.
+Canonical output of this validator is not native-client compatibility, physics
+equivalence, ballistic correctness, historical provenance or license clearance.
+Real dataset import, map/armor checkpoints and native selection callbacks remain
+`NOT_RUN`; `runtime_ready` is intentionally never inferred by this card.
