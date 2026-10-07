@@ -13,7 +13,7 @@ channel frames, 38 start и 38 stop на двух peer-слотах, ноль о
 native-аудитор увидел по 19 start/stop/add/hide lifecycle на каждом клиенте.
 
 Финальные проверки: canonical **373 Rust PASS**, legacy **371 Rust PASS**;
-Python **2050 PASS, 4 известных skip**, targeted observer **4 PASS**.
+Python **2055 tests, 0 failures/errors, 2 известных skip**, targeted observer **4 PASS**.
 Evidence receipt: `local/evidence/20261007-p03h-native-projectile-flight-01/owner-acceptance.json`;
 подробности: [P03H receipt](evidence-index/P03H.md) и
 [P03H research](research/P03H_NATIVE_PROJECTILE_FLIGHT.md).

@@ -8,7 +8,7 @@ Branch `codex/p03h-native-projectile-flight`. The server now owns each accepted
 MS-1 projectile's launch geometry and bounded 720m flight lifetime, and both
 real same-PC clients receive the original native tracer start/stop callbacks.
 The owner confirmed that both windows saw the tracer. Canonical/legacy Rust
-tests **373/371 PASS**; Python **2050 PASS, 4 skips**; native lifecycle and
+tests **373/371 PASS**; Python **2055 tests, 0 failures/errors, 2 known skips**; native lifecycle and
 transport audit are clean. Evidence: [P03H receipt](evidence-index/P03H.md),
 `local/evidence/20261007-p03h-native-projectile-flight-01/owner-acceptance.json`.
 
