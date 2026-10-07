@@ -32,19 +32,21 @@ matchmaker routes before that capture.
 
 ## Overnight verification
 
-The current UTF-8 full regression after the P09A static fixture matrix is
-**2125 tests, 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-overnight-final-08/full-python-utf8.txt` (SHA-256
-`f34ce9589fca54e549b1cf7ae0a2016d800bf8a1186adb98b7a32e5279a97ff7`). Layout is
-`PASS_SERVER_SOURCE_LAYOUT` with 58 source files and 22 relocations; receipt:
-`local/evidence/20261008-overnight-final-08/layout.json` (SHA-256
+The latest UTF-8 full regression on current `main` (`4d9c5fb2e95c337d3972f02745f22641df8fd586`,
+also verified at `origin/main`) is **2125 tests, 0 failures/errors, 4 known
+skips**. Log:
+`local/evidence/20261008-overnight-final-09/full-python-utf8.txt` (SHA-256
+`c4f326c7a1f82b10cfd4770643d6bc47b5284d424387a80c20f2220844a1f87d`). Layout
+is `PASS_SERVER_SOURCE_LAYOUT` with 58 source files and 22 relocations;
+receipt `local/evidence/20261008-overnight-final-09/layout.json` (SHA-256
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
 current diff from baseline contains documentation/evidence, bounded movement
 matrix auditor/tests, static research-tree auditor/tests, and the isolated
-SQLite transaction harness/tests. The post-merge documentation link recheck
-is `PASS_DOC_LINK_RECHECK` for 100 links with no missing targets; receipt
-`local/evidence/20261008-overnight-final-08/doc-links.json` has SHA-256
-`68c4ee3187c2f269854e5beac71a4de29fbd9a4c441f11052cd2ccaa32d1e33f`.
+SQLite transaction harness/tests. The latest documentation link recheck is
+`PASS_DOC_LINK_RECHECK` for 434 repository links with no missing targets (105
+external/absolute links skipped); receipt
+`local/evidence/20261008-overnight-final-09/doc-links.json` has SHA-256
+`2572ee6be18bbaae31abc194e9acf594b49dcd8a0927dd9f98fcd390679e6bfba`.
 
 ## P07A/P08A static source boundaries
 
