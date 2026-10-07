@@ -57,6 +57,79 @@ class ContentBundleTests(unittest.TestCase):
             with self.assertRaises(BundleError):
                 verify_bundle(root)
 
+    def test_manifest_duplicate_and_nonfinite_json_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            duplicate_root = root / "duplicate"
+            write_bundle(duplicate_root)
+            (duplicate_root / "manifest.json").write_text(
+                '{"format":"server-content.v1","format":"server-content.v1"}',
+                encoding="utf-8")
+            with self.assertRaises(BundleError):
+                verify_bundle(duplicate_root)
+
+            nonfinite_root = root / "nonfinite"
+            write_bundle(nonfinite_root)
+            raw = (nonfinite_root / "manifest.json").read_text(encoding="utf-8")
+            (nonfinite_root / "manifest.json").write_text(raw[:-1] + ',"nonfinite":NaN}', encoding="utf-8")
+            with self.assertRaises(BundleError):
+                verify_bundle(nonfinite_root)
+
+    def test_manifest_rejects_boolean_integer_fields_and_bad_digest_shape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            revision_root = root / "revision"
+            write_bundle(revision_root)
+            manifest = json.loads((revision_root / "manifest.json").read_text(encoding="utf-8"))
+            manifest["manifest_revision"] = True
+            (revision_root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaises(BundleError):
+                verify_bundle(revision_root)
+
+            bytes_root = root / "bytes"
+            write_bundle(bytes_root)
+            manifest = json.loads((bytes_root / "manifest.json").read_text(encoding="utf-8"))
+            manifest["content"][0]["bytes"] = True
+            (bytes_root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaises(BundleError):
+                verify_bundle(bytes_root)
+
+            digest_root = root / "digest"
+            write_bundle(digest_root)
+            manifest = json.loads((digest_root / "manifest.json").read_text(encoding="utf-8"))
+            manifest["content"][0]["sha256"] = "A" * 64
+            (digest_root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaises(BundleError):
+                verify_bundle(digest_root)
+
+    def test_read_json_uses_the_same_strict_parser(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_bundle(root)
+            payload = b'{"value":1,"value":2}'
+            content = root / "content" / "example.blob"
+            content.write_bytes(payload)
+            manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+            manifest["content"][0]["bytes"] = len(payload)
+            manifest["content"][0]["sha256"] = hashlib.sha256(payload).hexdigest()
+            (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            bundle = Bundle(root)
+            with self.assertRaises(BundleError):
+                bundle.read_json("inputs/example")
+
+            nonfinite_root = Path(directory) / "nonfinite-content"
+            write_bundle(nonfinite_root)
+            payload = b'{"value":NaN}'
+            content = nonfinite_root / "content" / "example.blob"
+            content.write_bytes(payload)
+            manifest = json.loads((nonfinite_root / "manifest.json").read_text(encoding="utf-8"))
+            manifest["content"][0]["bytes"] = len(payload)
+            manifest["content"][0]["sha256"] = hashlib.sha256(payload).hexdigest()
+            (nonfinite_root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            bundle = Bundle(nonfinite_root)
+            with self.assertRaises(BundleError):
+                bundle.read_json("inputs/example")
+
 
 if __name__ == "__main__":
     unittest.main()
