@@ -17,14 +17,15 @@ native restart — **NOT_RUN**. Plan, research and evidence:
 
 ## Overnight verification
 
-The UTF-8 full regression after the current docs-only merges is **2083 tests,
+The UTF-8 full regression after the current docs-only merges is **2097 tests,
 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-overnight-final-01/full-python-utf8.txt` (SHA-256
-`df83b29f19394072e29dfeb9ea4f243710f0b711e97a9dea9f4bc3a1db235c0`). Layout is
+`local/evidence/20261008-overnight-final-02/full-python-utf8.txt` (SHA-256
+`fc218db3a802af20a8d9c2815f54d50323e37ec80667508463ab88d852ffd6aa`). Layout is
 `PASS_SERVER_SOURCE_LAYOUT` with 58 source files and 22 relocations; receipt:
-`local/evidence/20261008-overnight-final-01/layout.json` (SHA-256
+`local/evidence/20261008-overnight-final-02/layout.json` (SHA-256
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
-current diff from baseline contains documentation/evidence only.
+current diff from baseline contains documentation/evidence and the bounded
+movement-matrix auditor/tests only.
 
 ## P07A/P08A static source boundaries
 
@@ -56,6 +57,18 @@ obstacle causality, prediction/correction, rejoin reconciliation or owner
 acceptance. Worker engine/track/gear telemetry remains unknown. The next gate
 is one bounded native movement/reconciliation capture using this offline
 baseline; no controller tuning is justified by this receipt.
+
+## P05 bounded movement-matrix receipt audit
+
+`tools/movement_matrix_audit.py` accepts the existing aggregate/map receipts as
+`PASS_OFFLINE_MATRIX_SHAPE_ONLY`, while reporting
+`pose_validation=NOT_PRESENT_IN_AGGREGATE` and
+`native_status=NOT_VERIFIED_BY_AUDITOR`. Its targeted suite is 14/14 PASS;
+optional event traces receive strict finite-pose, sequence/tick and map-bound
+validation. It does not establish native movement, server reconciliation,
+collision causality or historical physics. See
+[P05 matrix audit](research/P05_MATRIX_RECEIPT_AUDIT.md) and
+[P05 audit evidence](evidence-index/P05_MATRIX_AUDIT.md).
 
 ## P09A preparation — native research-tree visibility
 
