@@ -221,8 +221,9 @@ class ActualNativeExportTests(unittest.TestCase):
         cls.base = ammo.validate_base(ROOT / 'local/server/fixtures/c5326cc1-8524-479c-8bba-72e973489c22/r3-catalog3')
         cls.profile = ammo.promote_profile(cls.base['profile'], ammo.digest(cls.base['profile_raw']),
                                           cls.source['sha256'], cls.base['profile']['crew_grant']['granted_at_ms'] + 1000)
-        cls.scratch = ROOT / 'local/evidence/20261005-p02-ms1-ammo/data/native-export-test-scratch'
-        cls.scratch.mkdir(parents=True, exist_ok=True)
+        scratch = tempfile.TemporaryDirectory(prefix='ms1-ammo-', dir=os.environ.get('SR_TEST_TEMP'))
+        cls.addClassCleanup(scratch.cleanup)
+        cls.scratch = Path(scratch.name)
 
     def temporary(self):
         temporary = tempfile.TemporaryDirectory(dir=self.scratch)

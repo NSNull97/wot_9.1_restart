@@ -14,12 +14,16 @@ visibility и полный боевой цикл не приняты; обору
 для текущей организационной работы. Linux/deploy остаются NOT_RUN.
 
 ORG-0A: первоначальный `Author identity unknown` разрешён владельцем,
-предоставившим имя/email для local Git config. Полный Python-набор: 2028 тестов, 10 ошибок,
-4 пропуска — [ORG-0B backlog](docs/plans/ORG-0B_TEST_TRIAGE_BACKLOG.md).
+предоставившим имя/email для local Git config. Прежние 10 ошибок полного
+Python-набора исправлены в [ORG-0B](docs/evidence-index/ORG-0B.md): 2047 tests,
+0 errors/failures, 2 skips. Python 2.7 bytecode check отдельно PASS;
+Windows symlink check остаётся NOT_RUN из-за прав текущей учётной записи.
 Публикация baseline/main теперь PASS_REMOTE_VERIFIED: владелец повторил
 команды, независимый ls-remote подтвердил main и обе SHA аннотированного тега.
-Ранние HTTP 408/TLS ошибки остаются историей. Единственный следующий шаг —
-отдельная ORG-0B; она пока не начата.
+Ранние HTTP 408/TLS ошибки остаются историей. Исторические verifier CLI
+по-прежнему не являются проверками текущей live-сборки; их checksum-контракт
+сохранён, тесты читают реальные архивные sources. Единственный следующий шаг —
+отдельная карточка P03 для двух native-клиентов в общем мире.
 
 ## История недостающих данных по карточкам
 

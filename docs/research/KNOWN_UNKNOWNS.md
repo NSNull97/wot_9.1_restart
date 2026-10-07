@@ -12,7 +12,11 @@
 
 Ранние неизвестности ниже — архив состояния на 2026-10-04. Они сохраняются
 для provenance и не объявляют P03 вновь NOT_STARTED. Единственный следующий
-шаг — отдельная [ORG-0B](../plans/ORG-0B_TEST_TRIAGE_BACKLOG.md), пока не начатая.
+шаг — отдельная P03-карточка двух native-клиентов в общем мире.
+В [ORG-0B](../evidence-index/ORG-0B.md) VERIFIED причины и исправления 10
+ошибок: 2047 tests без errors/failures, 2 skips; bytecode отдельно PASS на
+Python 2.7. Проверка symlink остаётся NOT_RUN по правам Windows. Исторические
+source fixtures не доказывают новую live-совместимость legacy verifier CLI.
 Блокер публикации ORG-0A снят: после ручных команд владельца main и
 аннотированный baseline-тег независимо подтверждены через ls-remote.
 

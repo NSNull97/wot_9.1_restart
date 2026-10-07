@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from frozen_relogin_sources import historical_source_reader
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -73,7 +74,21 @@ class InprocessWireParserControls(unittest.TestCase):
             return v.backend_ranges(self.scratch, outcome, self.expected)
 
     def test_frozen_protocol_sources(self):
-        self.assertEqual(v.frozen_dependencies()['status'], 'PASS')
+        with patch.object(v, 'read_limited', side_effect=historical_source_reader(v.read_limited)):
+            self.assertEqual(v.frozen_dependencies()['status'], 'PASS')
+
+    def test_changed_archived_protocol_sources_are_rejected(self):
+        reader = historical_source_reader(v.read_limited)
+        for name in ('gateway091.rs', 'capture091.rs'):
+            target = ROOT / 'tools/wg_probe/src' / name
+
+            def changed(path, maximum):
+                raw = reader(path, maximum)
+                return raw + b'// UNIT mutation' if path == target else raw
+
+            with self.subTest(source=name), patch.object(v, 'read_limited', side_effect=changed):
+                with self.assertRaisesRegex(ValueError, 'frozen native gateway/capture source changed'):
+                    v.frozen_dependencies()
 
     def test_saved_native_packets_partition_after_real_logout(self):
         rows, payloads, proof = self.captured()

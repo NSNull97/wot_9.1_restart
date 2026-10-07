@@ -14,10 +14,10 @@ from pathlib import Path
 import re
 from typing import Any
 
-try:  # Direct script execution from tools/ and package-based unit tests.
-    from content_bundle import Bundle, BundleError
-except ModuleNotFoundError:  # pragma: no cover - import mode depends on caller
+if __package__:
     from .content_bundle import Bundle, BundleError
+else:  # Direct script execution from tools/.
+    from content_bundle import Bundle, BundleError
 
 
 EXPECTED_CHAIN = ["profile4", "profile4-r3", "profile4-r2", "profile4-r1"]

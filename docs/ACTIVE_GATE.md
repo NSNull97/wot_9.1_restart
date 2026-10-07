@@ -6,11 +6,16 @@ Branch policy: one card per `codex/<card-id>-<purpose>` branch; merge an accepte
 card into `main` with `--no-ff`, then verify the remote SHA. See
 [owner-approved workflow](07_CODEX_WORKFLOW.md).
 
-`ORG-0A_PROJECT_HYGIENE_20261007` is complete. Its
-scope is the repository boundary, baseline commit/tag, canonical status and
-evidence index. It does not change gateway protocol, battle/fire/reload,
-physics, deployed service or client files. Baseline identifiers and the delivery record are in the
-[ORG-0A receipt](evidence-index/ORG-0A.md).
+`ORG-0B_TEST_REPAIR_20261007`: **PASS_TEST_REPAIR**. All ten reproduced unittest
+errors are repaired. Full Python 3 run: **2047 tests, 0 errors/failures, 2 skips**;
+the Python 2.7 bytecode check passed separately. Windows symlink refusal remains
+NOT_RUN because this account cannot create a symlink. Exact scope and evidence:
+[ORG-0B receipt](evidence-index/ORG-0B.md).
+
+ORG-0B changes test fixtures and offline profile4 import selection. Gateway
+protocol, battle/fire/reload, physics, frozen legacy verifiers, deployed service
+and client files remain unchanged. Historical source checks use real archived
+bytes with the original pins; they do not certify the current live gateway.
 
 The battle phase is **P03 — IN_PROGRESS**. P03 is not a completed two-client
 authoritative-world acceptance.
@@ -48,7 +53,7 @@ Projectile/hit/damage, visibility, equipment and the full battle lifecycle are
 separate later roadmap gates (P06/P07/P08); their NOT_RUN status is not
 silently turned into the P03 two-client acceptance criterion.
 
-No second client or projectile/hit/damage run is performed by ORG-0A.
+No second client or projectile/hit/damage run is performed by ORG-0B.
 
 ## Dependencies and pinned inputs
 
@@ -74,22 +79,23 @@ No second client or projectile/hit/damage run is performed by ORG-0A.
 
 | Check | Result | Evidence |
 |---|---|---|
-| `python -B -X utf8 server/check_layout.py` | `PASS_SERVER_SOURCE_LAYOUT` (52 source files, 22 relocations) | `local/evidence/20261007-org-0a-project-hygiene-01/layout-check.txt` |
-| `python -B -X utf8 -m unittest discover -s tests -q` | `FAIL` — 2028 run, 10 errors, 4 skips | `local/evidence/20261007-org-0a-project-hygiene-01/unittest-discover-q.txt`; triage is ORG-0B |
-| stale path/link inventory | `RECORDED` | `docs/research/ORG-0A_STALE_PATHS_20261007.md` |
-| explicit Git allowlist | `PASS_EXPLICIT_SOURCE_ALLOWLIST` | ORG-0A baseline receipt |
+| `python -B -X utf8 server/check_layout.py` | `PASS_SERVER_SOURCE_LAYOUT` (52 source files, 22 relocations) | `local/evidence/20261007-org-0b-test-repair-01/layout.txt` |
+| Python 3 full suite with existing export and fresh scratch directory | `PASS_WITH_DOCUMENTED_SKIPS` — 2047 run, 0 errors/failures, 2 skips | `local/evidence/20261007-org-0b-test-repair-01/unittest-after.txt` |
+| Python 2.7 pinned bytecode check | `PASS` — 1 test | `local/evidence/20261007-org-0b-test-repair-01/python273-bytecode-attempt02.txt` |
+| profile4 CLI and package modes | `PASS` — 4 commands, identical results | `local/evidence/20261007-org-0b-test-repair-01/profile4-cli-modes.json` |
+| Windows symlink refusal | `NOT_RUN` — insufficient account capability | Full suite skip reason; no system permission changes |
 
 ## Rollback
 
-The baseline is a new local history point; no reset or destructive tree
-operation is used. Undo later organizational commits with a reviewed revert
-commit if the owner asks; preserve history.
+Undo ORG-0B with a reviewed revert of its merge on a separate branch; retain
+the original baseline/tag and prior organizational history. Exact merge SHA
+is in the ORG-0B machine receipt. No reset or destructive tree operation is used.
 Do not remove the original/research clients, `local/` evidence, deployed EXE,
 supervisor, identity service or existing P03 receipts. Remote force-push is
 forbidden.
 
 ## Single next step
 
-The next recommended card is ORG-0B: classify the 10 unittest errors and
-4 skips and prepare the minimal repair plan. It remains unstarted and does
-not begin automatically in this ORG-0A follow-up.
+The next recommended card is P03 two-client shared-world preparation and
+acceptance: establish two independent native sessions in one battle and verify
+shared state plus exit/re-entry isolation. It is not started by ORG-0B.
