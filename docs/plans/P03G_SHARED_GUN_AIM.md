@@ -1,6 +1,7 @@
 # P03G — authoritative shared turret/gun aiming
 
-Status: NATIVE_PATH_PASS_OWNER_PENDING; continuous-aim owner acceptance NOT_RUN.
+Status: PASS_OWNER_P03G_SAME_PC_DYNAMIC_AIM_AND_SHOT_REGRESSION / ACCEPTED.
+Owner result and final observed limits: `../evidence-index/P03G.md`.
 Base: `8709b07151cdf4c8238ae918044e1b34855bfb6d` (accepted P03F).
 Branch: `codex/p03g-shared-gun-aim`.
 

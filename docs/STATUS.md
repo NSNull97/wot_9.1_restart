@@ -1,8 +1,12 @@
 # Актуальный указатель — P03G, 2026-10-07: серверное наведение
 
 Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **P03 IN_PROGRESS**.
-Текущая ветка `codex/p03g-shared-gun-aim`: **NATIVE_PATH_PASS_OWNER_PENDING**,
-**NOT_ACCEPTED**, без merge/push до ручной проверки непрерывного наведения.
+Карточка `codex/p03g-shared-gun-aim`:
+**PASS_OWNER_P03G_SAME_PC_DYNAMIC_AIM_AND_SHOT_REGRESSION / ACCEPTED**.
+Владелец после инструкции подтвердил: «вроде все по этим тестам корректно».
+Код проверенной сборки: `bbf4eac375676ffd8cf2dc60ebdf804653fd2b20`.
+Финальный commit/merge/push и remote SHA записываются после операций в
+`local/evidence/20261007-p03g-shared-gun-aim-01/accepted-handoff.json`.
 
 Сервер принимает родные цели наведения, сам ограничивает скорость башни/ствола,
 передаёт текущие углы обоим клиентам и сохраняет их при rejoin. Добавлен штатный
@@ -18,9 +22,16 @@ Python **2054 tests, 0 errors/failures, 2 skips**; layout **57/22 PASS**;
 прогон выявил 13 ошибок из-за порядка проверки нового диагностического guard;
 он исправлен, исходный отрицательный лог сохранён.
 
+Owner-прогон: **28 492 packets / 28 484 frames, 9137 pose+angle publications,
+12 shot cues, 0 ошибок**. По 457 native snapshots; 9126/9118 завершённых родных
+обработчиков углов точно совпали с префиксом wire-публикаций. A сделал пять
+выстрелов (AP20→15), B один (AP20→19); все шесть видны обоим native обработчикам.
+Повторная стрельба проверена на A; по два выстрела с каждого клиента не записаны.
+Owner receipt: `local/evidence/20261007-p03g-shared-gun-aim-01/owner-acceptance.json`.
+
 Файлы, команды, native evidence и откат: [P03G receipt](evidence-index/P03G.md).
 Оригинальная/research-копии и deployed gateway неизменны. Единственный следующий
-шаг — проверить в уже запущенном бою поворот/наклон в обоих окнах и два выстрела.
+шаг — отдельная карточка серверного полёта снаряда и native-трассера в обоих окнах.
 Two-PC/LAN и полная физика остаются NOT_RUN.
 
 ## Предыдущий указатель — принятая P03F

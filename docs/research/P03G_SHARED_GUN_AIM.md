@@ -90,10 +90,31 @@ exact reliable retransmissions, and no accumulating list of unsent old angles.
 Only acknowledged created entities receive these updates. This is sufficient
 for local laboratory delivery, not a latency/loss or production claim.
 
-## UNKNOWN / not accepted by automated evidence
+## OBSERVED: owner run on the final build
 
-Owner-visible continuous tracking throughout a full turret turn, manual vertical
-aim and repeated shots on the final build are pending. Two-PC/LAN, terrain
+Owner message: “вроде все по этим тестам корректно”. The original plan's
+same-PC continuous aiming/shot regression criterion is accepted. Audit of the
+complete saved run: 28492 packets, 28484 frames, 9137 pose+angle publications,
+12 shot cues, zero errors. Frozen native traces contain 457 snapshots each and
+9126/9118 completed angle callbacks matching the exact captured wire prefix.
+Six remaining sent properties per peer (three frames) have no completion after
+the clients disconnect; delivery is not claimed for those trailing frames.
+
+Observed yaw ranges include approximately -32.7..89.3 degrees for one vehicle
+and -61.9..99.5 degrees for the other; pitch changes are recorded on both, with
+one reaching the full -25..+8 degree range. A literal 360-degree sweep was not
+observed. Each native process completed the original shooting callback six
+times. A fired five own shots (AP20→15), B one (AP20→19); the requested two
+own shots on each client were not recorded. Repeated-fire regression is
+therefore observed on A, with both peers rendering all six shot events.
+
+These facts and the exact owner wording are preserved in `E/owner-acceptance.json`.
+The current closure changes documentation/evidence only; tested runtime hashes
+still match `bbf4eac375676ffd8cf2dc60ebdf804653fd2b20`.
+
+## UNKNOWN / outside this acceptance
+
+Two-PC/LAN, terrain
 physics, the previous colored-grid artifact, projectiles/hits/damage, visibility,
 equipment, persistence and warm leave-to-hangar remain separate boundaries.
 The original client, prior research client and deployed gateway are untouched.
