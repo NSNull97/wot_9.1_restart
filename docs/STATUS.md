@@ -22,6 +22,9 @@ handoff остаются `NOT_RUN`.
 Карточка принята и слита в `main` обычным `--no-ff` commit
 `6d4d32e`; remote `main` подтверждён тем же SHA. Она не меняет
 оригинальный/research client.
+После merge основной checkout прогнал полный Python suite: **2060 tests,
+0 failures/errors, 4 known skips**; это регрессия репозитория, а не доказательство
+native content compatibility или готовности physics.
 
 Отдельный аудит существующего web research-графа записан в
 [P04 research](research/P04_CONTENT_IMPORT.md): в нём уже есть уровни I–X СССР
