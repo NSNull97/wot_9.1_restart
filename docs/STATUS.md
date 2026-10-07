@@ -6,7 +6,7 @@
 проверяет cross-kind references, bounds/transforms/spawns, armor triangles и
 явный `missing` report. Повторная нормализация выдаёт canonical SHA256.
 
-Targeted Python: **28 tests, 0 failures/errors, 1 known skip**. Evidence:
+Targeted Python: **29 tests, 0 failures/errors, 1 known skip**. Evidence:
 `local/evidence/20261007-p04-content-import-01/result.json`. Полный suite в
 этой рабочей копии намеренно не засчитывается: ignored `config/project.local`
 и native evidence остаются только в основном checkout, поэтому его результат
