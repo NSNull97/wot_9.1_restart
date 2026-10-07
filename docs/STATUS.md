@@ -459,7 +459,8 @@ helpers прошли `py_compile`. Решение остаётся
 добавлялся.
 
 План: [P04 plan](plans/P04_CONTENT_IMPORT.md); исследование:
-[P04 research](research/P04_CONTENT_IMPORT.md).
+[P04 research](research/P04_CONTENT_IMPORT.md); evidence:
+[P04 index](evidence-index/P04.md).
 
 # Актуальный указатель — P03H, 2026-10-07: серверный полёт снаряда
 
