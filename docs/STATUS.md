@@ -25,6 +25,10 @@ handoff остаются `NOT_RUN`.
 После merge основной checkout прогнал полный Python suite: **2060 tests,
 0 failures/errors, 4 known skips**; это регрессия репозитория, а не доказательство
 native content compatibility или готовности physics.
+Изолированный gateway build после merge: **373 Rust tests PASS**, executable
+SHA `f9beb996733f9dcdd8be70f214bfe2abe1cad242000ab0b3a542c3fd59b729ad`,
+deployed SHA не изменился; source layout **58 files / 22 relocations PASS**,
+receipt `local/evidence/20261007-p04-postmerge-layout-01.json`.
 
 Отдельный аудит существующего web research-графа записан в
 [P04 research](research/P04_CONTENT_IMPORT.md): в нём уже есть уровни I–X СССР
