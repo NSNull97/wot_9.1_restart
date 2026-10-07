@@ -1,6 +1,7 @@
 //! Explicit local two-client test_lab route. The accepted single-client drive
 //! route and its frozen profile checks are not generalized through this module.
 mod model;
+mod aim;
 mod wire;
 mod server;
 pub use server::serve;
@@ -118,6 +119,12 @@ impl Session {
             if let Some(commands) = fire::parse(raw)? {
                 if !c.correction { return Err(bad()); }
                 c.commands.extend(commands.into_iter().map(Command::Fire));
+            } else if let Some(intent) = wire::aim_intent(raw, c.slot)? {
+                // The native initializer can emit its first target before
+                // ACK6 in the same envelope. It is only an intent: simulation
+                // cannot advance it before the binding/correction is accepted.
+                if !c.binding.is_some_and(|(_, ack)| ack) { return Err(bad()); }
+                c.commands.push(Command::Aim(intent));
             } else {
                 let mut normalized = raw.to_vec();
                 if id == 3 {

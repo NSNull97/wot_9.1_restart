@@ -2,15 +2,32 @@
 //! probes. Only two server-assigned allied MS-1s can enter these encoders.
 use std::io;
 use super::model::{self, Actor, World};
+use super::aim;
 use crate::{arena091 as arena, arena_vehicle091 as vehicle, battle091::native_ammo as ammo};
 
 pub const SPACE: u32 = 1;
-// Original #717 gun_rotation_shared: yaw is ten bits biased by pi; pitch is
-// six bits across the equipped _37mm_Gochkins absolute limits [-25, 8] degrees.
-// Neutral (0,0) rounds to (512 << 6) | 48, decoding to (0, 1/7 degree).
-// Zero instead means (-pi, -25 degrees): a reversed turret with a raised gun.
-// Only this fixed shared MS-1 profile uses this seed; frozen probes keep theirs.
-const MS1_NEUTRAL_GUN_ANGLES: u16 = 0x8030;
+/// Original #717 gun_rotation_shared: 10 biased yaw bits, 6 restricted pitch.
+/// Keep this serializer at the wire boundary, not in the aiming simulation.
+pub fn packed_angles(state: &aim::State) -> io::Result<u16> {
+    if !state.yaw.is_finite() || !state.pitch.is_finite() || state.yaw.abs() > std::f32::consts::PI
+        || !(aim::MIN_PITCH..=aim::MAX_PITCH).contains(&state.pitch) { return Err(model::bad()); }
+    let yaw = ((state.yaw as f64 + std::f64::consts::PI) * 1024. / (2. * std::f64::consts::PI)).round() as u16 & 1023;
+    let pitch = ((state.pitch as f64 - aim::MIN_PITCH as f64) * 63. / (aim::MAX_PITCH as f64 - aim::MIN_PITCH as f64)).round() as u16;
+    Ok((yaw << 6) | pitch)
+}
+pub fn aim_intent(raw: &[u8], own: usize) -> io::Result<Option<aim::Intent>> {
+    let id = *raw.first().ok_or_else(model::bad)?;
+    let expected = match id { 0x8e => 8, 0x8f => 12, 0x0f => 16, _ => return Ok(None) };
+    if raw.len() != 3 + expected || raw[1..3] != (expected as u16).to_le_bytes() { return Err(model::bad()); }
+    vehicle_id(own)?;
+    let args = if id == 0x0f {
+        if raw[3..7] != vehicle_id(own)?.to_le_bytes() { return Err(model::bad()); } &raw[7..]
+    } else { &raw[3..] };
+    let value = |n: usize| f32::from_le_bytes(args[n*4..n*4+4].try_into().expect("checked fixed aim layout"));
+    let intent = if id == 0x8e { aim::Intent::Hold { yaw: value(0), pitch: value(1) } }
+        else { aim::Intent::Point([value(0),value(1),value(2)]) };
+    intent.validate()?; Ok(Some(intent))
+}
 pub fn vehicle_id(slot: usize) -> io::Result<u32> {
     if slot >= model::CAPACITY { return Err(model::bad()); }
     Ok(vehicle::VEHICLE_ENTITY_ID + 2 * slot as u32)
@@ -77,7 +94,7 @@ pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     let a = actor(w, slot)?;
     let mut p = vec![0]; p.extend(vehicle_id(slot)?.to_le_bytes()); p.extend(2u16.to_le_bytes());
     f3(&mut p, a.position); f3(&mut p, [a.yaw, 0., 0.]);
-    p.extend([8, 0, 0, 1, 1, 2]); p.extend(MS1_NEUTRAL_GUN_ANGLES.to_le_bytes());
+    p.extend([8, 0, 0, 1, 1, 2]); p.extend(packed_angles(&a.aim)?.to_le_bytes());
     p.push(3); p.extend(90i16.to_le_bytes()); p.extend([4, 0, 0, 5]);
     string(&mut p, a.identity.name.as_bytes())?; string(&mut p, &vehicle::MS1_DESCRIPTOR)?;
     p.push(1); p.extend(0i32.to_le_bytes()); p.push(0);
@@ -132,6 +149,14 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
     for _ in 0..6 { b.extend(0f32.to_le_bytes()); }
     b.extend([0x13, 0x4a]); f3(&mut b, a.position); f3(&mut b, [a.yaw, 0., 0.]);
     b.extend(a.speed.to_le_bytes()); b.extend(0f32.to_le_bytes());
+    // Native Avatar.updateTargetingInfo starts the original gun rotator and
+    // its original target-input path. Nominal resource parameters, no crew
+    // modifier claim; conversions mirror the original resource readers.
+    b.extend([0x13, 0x4b]);
+    for value in [a.aim.yaw, a.aim.pitch, aim::YAW_RATE, aim::PITCH_RATE, 1.,
+        0.16 / 1f32.to_radians(), 0.42 * 3.6, 0.42 / 1f32.to_radians(), 2.5] {
+        b.extend(value.to_le_bytes());
+    }
     for (descriptor, original_count) in ammo::MS1_PANEL_ROWS {
         b.extend([0x13, 0x44]); b.extend(descriptor.to_le_bytes());
         b.extend((if descriptor == ammo::MS1_SHELL { a.fire.ammo() } else { original_count }).to_le_bytes());
@@ -149,6 +174,10 @@ pub fn publication(w: &World, visible: [bool; 2]) -> io::Result<Vec<u8>> {
         let a = actor(w, slot)?;
         b.push(0x15); b.extend(vehicle_id(slot)?.to_le_bytes()); f3(&mut b, a.position);
         f3(&mut b, [0., 0., a.yaw]);
+        // Pinned #717 dynamic entityProperty base 0x9e + indexed property 2.
+        // UINT16 is fixed2. Restore Avatar selection after each vehicle.
+        b.push(0x12); b.extend(vehicle_id(slot)?.to_le_bytes());
+        b.push(0xa0); b.extend(packed_angles(&a.aim)?.to_le_bytes()); b.push(0x13);
     }
     Ok(b)
 }
@@ -157,6 +186,37 @@ pub fn publication(w: &World, visible: [bool; 2]) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
     use std::time::Instant;
+    #[test] fn aiming_routes_validate_complete_fixed_args_and_owned_vehicle() {
+        for own in 0..2 {
+            for id in [0x8f,0x0f] {
+                let mut p=Vec::new();if id==0x0f {p.extend(vehicle_id(own).unwrap().to_le_bytes());}
+                f3(&mut p,[20.,30.,100.]);let b=var16(id,&p).unwrap();
+                assert_eq!(aim_intent(&b,own).unwrap(),Some(aim::Intent::Point([20.,30.,100.])));
+                for n in 1..b.len() {assert!(aim_intent(&b[..n],own).is_err());}
+                let mut extra=b.clone();extra.push(0);assert!(aim_intent(&extra,own).is_err());
+                if id==0x0f {assert!(aim_intent(&b,1-own).is_err());}
+                for v in [f32::NAN,f32::INFINITY,1_000_001.] {
+                    let mut bad=b.clone();let at=if id==0x0f{7}else{3};bad[at..at+4].copy_from_slice(&v.to_le_bytes());
+                    assert!(aim_intent(&bad,own).is_err());
+                }
+            }
+        }
+        assert_eq!(aim_intent(&[0x88,0,0],0).unwrap(),None);
+        let mut hold=vec![0x8e,8,0];hold.extend(1f32.to_le_bytes());hold.extend(0f32.to_le_bytes());
+        assert_eq!(aim_intent(&hold,0).unwrap(),Some(aim::Intent::Hold{yaw:1.,pitch:0.}));
+    }
+    #[test] fn current_angles_seed_rejoins_and_only_known_entities_receive_properties() {
+        let mut w=model::tests::world(Instant::now());
+        w.actors[1].aim.yaw=-std::f32::consts::PI/2.;w.actors[1].aim.pitch=aim::MIN_PITCH;
+        assert_eq!(&create_vehicle(&w,1).unwrap()[40..42],&0x4000u16.to_le_bytes());
+        let b=publication(&w,[false,true]).unwrap();
+        assert_eq!(&b[31..],&[18,5,0,16,9,160,0,64,19]);
+        assert_eq!(publication(&w,[false,false]).unwrap(),[13,232]);
+        let b=binding(&w,1,Instant::now()).unwrap();
+        assert_eq!(&b[b.len()-92..b.len()-90],&[19,75]);
+        assert_eq!(&b[b.len()-90..b.len()-86],&w.actors[1].aim.yaw.to_le_bytes());
+        assert_eq!(&b[b.len()-86..b.len()-82],&aim::MIN_PITCH.to_le_bytes());
+    }
     #[test] fn both_native_creations_encode_neutral_gun_angles_not_the_zero_sentinel() {
         let w = model::tests::world(Instant::now());
         for slot in 0..2 {
@@ -204,7 +264,7 @@ mod tests {
         assert!(announcement(&w, 0).unwrap().len() < 500);
         let b = binding(&w, 1, now).unwrap();
         assert!(b.windows(13).any(|s| s == [vec![0x14],0x09100004u32.to_le_bytes().to_vec(),1u32.to_le_bytes().to_vec(),0x09100005u32.to_le_bytes().to_vec()].concat()));
-        assert_eq!(publication(&w, [true, true]).unwrap().len(), 60);
-        assert_eq!(publication(&w, [true, false]).unwrap().len(), 31);
+        assert_eq!(publication(&w, [true, true]).unwrap().len(), 78);
+        assert_eq!(publication(&w, [true, false]).unwrap().len(), 40);
     }
 }

@@ -6,6 +6,22 @@ Branch policy: one card per `codex/<card-id>-<purpose>` branch; merge an accepte
 card into `main` with `--no-ff`, then verify the remote SHA. See
 [owner-approved workflow](07_CODEX_WORKFLOW.md).
 
+`P03G_SHARED_GUN_AIM_20261007`: **NATIVE_PATH_PASS_OWNER_PENDING**.
+Branch `codex/p03g-shared-gun-aim`, base `8709b07151cdf4c8238ae918044e1b34855bfb6d`.
+Native target input, server-owned rate/limit integration, per-entity property
+delivery and original client rotator initialization are implemented. Both real
+clients received native callbacks; independent native math samples constrain
+the approximate test_lab solver. Canonical/legacy tests **363/361 PASS**;
+Python **2054, 0 errors/failures, 2 skips**; layout **57/22 PASS**.
+Owner continuous rotation/elevation and repeat-shot regression are **NOT_RUN**,
+so this card is **NOT_ACCEPTED** and must remain unmerged. See
+[current P03G receipt](evidence-index/P03G.md) and
+[research/limits](research/P03G_SHARED_GUN_AIM.md).
+Full P03 and the separate two-PC requirement remain open. Next: one owner
+manual check in the already launched two-client battle.
+
+## Accepted previous card and historical P03F receipt
+
 `P03F_TWO_CLIENT_WORLD_20261007`:
 **PASS_OWNER_P03F_SAME_PC_WORLD_SHOT_SOUND_NEUTRAL_POSE**.
 Two real native processes share the world; abrupt closure/re-authentication
@@ -101,7 +117,7 @@ P03F runs two native clients; projectile/hit/damage remains outside this card.
   and its local `result.json`.
 - ORG-0A historical baseline commit (tag `baseline-2026-10-07`): `7d2a600b7e65ecd7568cb5a985af941313dffb60`.
 
-## Checks for this card
+## Checks for previous accepted P03F card
 
 | Check | Result | Evidence |
 |---|---|---|
@@ -115,7 +131,7 @@ P03F runs two native clients; projectile/hit/damage remains outside this card.
 | Windows symlink / Python-2.7-only unittest under Python 3 | SKIPPED with explicit reasons | Final Python log; not converted to PASS |
 | Two-PC repeat | NOT_RUN | Local-only mode |
 
-## Rollback
+## Rollback for previous accepted P03F card
 
 Stop only this card's current launch-receipt image paths. Restore A/B overlays
 using `tools/interactive_client.py rollback --out <install-a-05 or install-b-05>`
@@ -127,6 +143,6 @@ evidence, prior receipts and deployed services. No reset or force-push.
 
 ## Single next step
 
-A separate card for server-owned dynamic turret/gun aiming and native angle
-replication. Initial neutral pose is accepted; continuous aiming is not yet
-implemented. Do not silently close the full P03 two-PC requirement.
+Owner checks continuous turret/gun tracking in both windows and two shots on
+the current P03G stand. The initial P03F pose remains accepted; the new P03G
+continuous-aim card stays pending until its own evidence is confirmed.
