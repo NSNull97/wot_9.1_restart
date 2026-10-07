@@ -1,3 +1,26 @@
+# P05 read-only geometry/movement audit — 2026-10-08
+
+На основе принятого P04-контракта выполнен read-only аудит следующего узкого
+среза P05. `tests.test_map_geometry` дали **26/26 PASS**, существующие
+`test_map_drive_*` — **354/354 PASS**, `test_arena_movement_*` — **75/75 PASS**.
+Свежая квитанция и stdout сохранены в
+`local/evidence/20261008-p05-geometry-audit-01/` и
+`local/evidence/20261008-p05-movement-matrix-01/`.
+
+Проверены только bounded static reader, fault controls и test_lab worker:
+две hash-pinned карты, geometry smoke, четыре offline collision pairs и
+negative controls. Отдельный Jolt sphere spike дал один контакт за 300 шагов;
+изолированная canonical PhysicsWorker build PASS (DLL SHA
+`b81c00db040ae3db53880c7abd1ac35d6270757f77107c953e0edf63f8a267eb`).
+Это не закрывает native collision, историческую физику, tank–tank,
+prediction/correction или ручную приёмку.
+
+В `main` добавлен план [P05 movement/reconciliation](plans/P05_MOVEMENT_COLLISION_RECONCILIATION.md)
+(merge `dccfdabe`). Runtime, deployed gateway, база и оригинальная/research
+копии клиента не менялись. Следующая узкая карточка — `P05A-pivot-diagnostics`:
+свободный MS-1, 60 Hz neutral/left/right trace, диагностика гусениц и bounded
+replay; параметры контроллера не менять до измерения причины слабого pivot.
+
 # Параллельная карточка — P04, 2026-10-07: typed content import
 
 В отдельной рабочей копии `codex/p04-content-import` реализован bounded
