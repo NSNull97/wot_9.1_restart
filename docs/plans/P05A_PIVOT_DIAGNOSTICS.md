@@ -68,6 +68,11 @@ its config SHA is `eb7e9f3042ce00b8c5f1b84f43c4c3a77530b35e05bdf63c4b6225e1256ca
 Both returned `PASS_OFFLINE_PIVOT_DIAGNOSTICS`, four scenarios, finite bounded
 states, monotonic sequence/tick and settled contact frames. The shared worker
 binary SHA is `a88d03e279ddd73c1746bb0ba55bcf38fbfb98b52daf9025f84fbeae18024edf`.
+An independent Karelia recheck with the canonical worker
+`local/build/server/physics-canonical-02/bin/MapDriveWorker.exe` also returned
+`PASS_OFFLINE_PIVOT_DIAGNOSTICS` for all four scenarios; its receipt is
+`local/evidence/20261008-p05a-pivot-diagnostics-08-canonical02/result.json`
+with SHA-256 `eca1a67484121938f98b3ceac1ddcae35590610c9225a3cf986da99e2b9c74e8`.
 The receipt reports only observable pose/speed/yaw/contact metrics. Engine RPM,
 left/right track speed, gear/clutch and delivered torque remain `UNKNOWN`.
 
