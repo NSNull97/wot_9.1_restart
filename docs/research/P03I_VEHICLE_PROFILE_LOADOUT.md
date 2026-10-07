@@ -28,6 +28,27 @@ readiness only; it does not provide the missing live CMD700 bytes or callback.
 The receipts are ignored local evidence and are not copied into Git. Their
 presence does not turn a static extraction into a native acceptance result.
 
+## 2026-10-08 static source-hash recheck
+
+`tools/p03i_static_audit.py` rechecked both permitted #717 client copies, the
+hash-bound `Account.def` extraction, the four tree-predicate sources and all
+seven capture-audit source hashes. Receipt:
+`local/evidence/20261008-p03i-static-audit-01/receipt.json`, status
+`PASS_P03I_STATIC_SOURCE_RECHECK`, SHA-256
+`381c6451c964d6f6add2e28e12abf581ece0af8751825e4106e5958efa55302c`.
+
+The static contract remains request **202**, command **700**, envelope
+`INT16, INT16, INT64, INT32, INT32`, with
+`onEnqueueFailure(UINT8, UINT8, STRING)`. The recheck also found one stale
+transcription in the ignored queue research README: its
+`client/gui/shared/utils/functions.pyc` row says
+`dc7e27aacd46e0f2a...`, while both local #717 copies hash to the verified
+`dc7e27aacd46f0e2a3fa8b341554b95c2ef78fddfeaf427bc9663761d3a27d33`.
+The receipt records this as `queue_readme.status=STALE_DOCUMENTED_HASH`; the
+source files and the capture-audit receipt itself match. This is a provenance
+correction only and does not alter the ignored evidence or claim native queue
+compatibility.
+
 ## Provenance and exclusion
 
 The safe static material is synthesized from commits `af7c724` (research-tree

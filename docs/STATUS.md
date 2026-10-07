@@ -1,5 +1,19 @@
 # Overnight verification after P09B harness — 2026-10-08
 
+# P03I static source-hash recheck — 2026-10-08
+
+The bounded read-only `tools/p03i_static_audit.py` audit reports
+`PASS_P03I_STATIC_SOURCE_RECHECK`; targeted tests are **5/5 PASS**. Receipt:
+`local/evidence/20261008-p03i-static-audit-01/receipt.json`, SHA-256
+`381c6451c964d6f6add2e28e12abf581ece0af8751825e4106e5958efa55302c`.
+Both permitted #717 client copies match the tree-predicate and queue source
+hashes; `Account.def` confirms request 202, command 700, envelope
+`INT16, INT16, INT64, INT32, INT32` and
+`onEnqueueFailure(UINT8, UINT8, STRING)`. The audit records one stale hash in
+the ignored queue README for `functions.pyc` (`dc7e27aacd46e0f2a...` instead of
+the verified `dc7e27aacd46f0e2a...`). Native CMD700 framing, callback bytes and
+server handoff remain `NOT_RUN`; no runtime, client or fixture was touched.
+
 ## Current-main final-09 recheck
 
 На code head `4d9c5fb2e95c337d3972f02745f22641df8fd586`, который совпадал с

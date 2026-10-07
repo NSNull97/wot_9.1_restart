@@ -12,6 +12,13 @@ shape and its callback names, and the exact owner capture still required. It
 does not add a vehicle profile, alter fire/reload/projectile runtime, wire a
 queue command into the gateway, modify a fixture, or patch a client.
 
+The static source-hash recheck is recorded in
+`local/evidence/20261008-p03i-static-audit-01/receipt.json` by
+`tools/p03i_static_audit.py`. It confirms the Account.def shape and both
+permitted #717 copies while recording a one-character stale hash in the old
+ignored queue README. Native payload, callback and server admission remain
+outside this static card.
+
 ## Static boundary
 
 The complete catalogue remains a reference graph. Native tree visibility is a

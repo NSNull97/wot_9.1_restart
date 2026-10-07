@@ -319,6 +319,17 @@ callback is **NOT_RUN**, never a guessed decoder. See [P03I plan](plans/P03I_VEH
 [research](research/P03I_VEHICLE_PROFILE_LOADOUT.md) and
 [evidence index](evidence-index/P03I.md).
 
+### P03I static source-hash recheck
+
+The bounded read-only `tools/p03i_static_audit.py` receipt
+`local/evidence/20261008-p03i-static-audit-01/receipt.json` is
+`PASS_P03I_STATIC_SOURCE_RECHECK` (5/5 targeted tests). It confirms both
+permitted #717 copies, the tree predicate, Account.def request 202/command
+700 shape and the capture-audit source hashes. It records one stale hash row
+in the ignored queue README for `functions.pyc` (`…d46e0f2…` versus verified
+`…d46f0e2…`). Native CMD700 bytes, callback ordering and server handoff remain
+`NOT_RUN`; this recheck changes no runtime or evidence source.
+
 ## Latest accepted card
 
 `P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:
