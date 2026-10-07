@@ -2,9 +2,10 @@
 
 ## Current-main final-09 recheck
 
-На текущем `main` `4d9c5fb2e95c337d3972f02745f22641df8fd586` (тот же SHA на
-`origin/main`) повторён UTF-8 full regression: **2125 тестов, 0
-failures/errors, 4 known skips**. Лог
+На code head `4d9c5fb2e95c337d3972f02745f22641df8fd586`, который совпадал с
+`origin/main` на момент запуска, повторён UTF-8 full regression: **2125 тестов,
+0 failures/errors, 4 known skips**. Затем внесён только status-only docs merge;
+runtime/source не менялись. Лог
 `local/evidence/20261008-overnight-final-09/full-python-utf8.txt`, SHA-256
 `c4f326c7a1f82b10cfd4770643d6bc47b5284d424387a80c20f2220844a1f87d`.
 `server/check_layout.py` вернул `PASS_SERVER_SOURCE_LAYOUT` для 58 source files
