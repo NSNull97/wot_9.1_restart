@@ -141,12 +141,17 @@ The merged draft plan is
 controller before a fixed MS-1 neutral/left/right trace identifies the failing
 layer.
 
-P05A's bounded offline harness is now in merge `b8b1806`. Its targeted
-P05A/geometry run is **33 tests OK with one known skip**; the current main
-regression is **2072 tests OK with four known skips**. The harness does not
-fabricate engine or track telemetry. A fresh four-scenario worker run is still
-`NOT_RUN_MISSING_INPUTS` until a receipt-matched ignored config and worker are
-supplied; native movement and owner pivot acceptance remain open.
+P05A's bounded offline harness is in merge `b8b1806`. Its targeted P05A/geometry
+run is **33 tests OK with one known skip**. A fresh receipt-matched worker
+recheck now passes all four scenarios on both imported maps:
+`local/evidence/20261008-p05a-pivot-diagnostics-06/result.json` (Karelia,
+SHA-256 `9915b226305eee1ef6f1f87c2838b91c5a4751ac1a4e58850c7106da4ada8d93`)
+and `local/evidence/20261008-p05a-pivot-diagnostics-07-prohorovka/result.json`
+(Prokhorovka, SHA-256
+`c692507dacaf2cc5469f8e9c93fe2619ccce14f684fb2e39ce0582bf2d020e2c`). The
+harness still exposes no engine/track telemetry. This is an offline worker
+PASS only; native movement, reconciliation, historical physics and owner pivot
+acceptance remain `NOT_RUN`.
 
 ## P06A preparation — ballistics boundary only
 

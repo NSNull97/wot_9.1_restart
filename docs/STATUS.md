@@ -186,12 +186,13 @@ replay; параметры контроллера не менять до изм�
 `tools/pivot_diagnostics.py` запускает четыре свежих worker-сценария только по
 зафиксированному JSONL-контракту, а `tests/test_pivot_diagnostics.py` проверяют
 план, monotonic `seq/tick`, finite pose, bounds, contacts и отрицательные
-случаи. На текущем `main` полный Python suite дал **2072 tests, 0
-failures/errors, 4 known skips**, layout — **58 source files / 22 relocations
-PASS**; квитанция: `local/evidence/20261008-p05a-pivot-diagnostics-01/`.
-Реальный worker run не засчитан: в изолированной карточке отсутствовали
-ignored config/worker assets, поэтому статус — `NOT_RUN_MISSING_INPUTS`, а
-engine RPM, скорости гусениц, gear/clutch и delivered torque остаются `UNKNOWN`.
+случаи. Свежий recheck на hash-pinned ignored worker/config дал
+**PASS_OFFLINE_PIVOT_DIAGNOSTICS** для Karelia и Prokhorovka, по четыре
+сценария на карту: receipts `local/evidence/20261008-p05a-pivot-diagnostics-06/`
+и `local/evidence/20261008-p05a-pivot-diagnostics-07-prohorovka/`.
+Engine RPM, скорости гусениц, gear/clutch и delivered torque остаются
+`UNKNOWN`; native movement, reconciliation и owner pivot acceptance остаются
+`NOT_RUN`.
 
 # P06A docs-only ballistics boundary — 2026-10-08
 
