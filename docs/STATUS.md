@@ -1,4 +1,4 @@
-# Overnight verification after P09A graph audit — 2026-10-08
+# Overnight verification after P09B harness — 2026-10-08
 
 # P09B isolated SQLite transaction harness — 2026-10-08
 
@@ -1795,11 +1795,16 @@ revision refresh и display-only данные проверены; state дост
 | P00 | PASS (локальная среда; вторая чистая машина NOT_RUN) | Полные manifests, Git exclusions, проверенный rollback |
 | P01 | PASS — исследование, не приёмка игрового сервера | Runtime + native request/rejection PASS; stock toolkit native/vertices FAIL, отличия измерены |
 | P02 | Единая email-учётка/native ангар PASS; полный gate PARTIAL | Primary17/18/19, два профиля/restart, normal idle21 PASS; ручной auth20 PASS, full GUI20 FAIL; final installation/audit PASS; Email22 overallFAIL(ToolTip при fini), general transport/арена NOT_RUN |
-| P03 | NOT_STARTED | Нет |
+| P03 | IN_PROGRESS — same-PC native fire/reload, shared world/aim and projectile subcards accepted; full two-client/LAN battle gate open | `docs/ACTIVE_GATE.md`, accepted P03D–P03H receipts |
 | P04 | PASS_TYPED_IMPORT_VALIDATOR (resource contract; native/physics NOT_RUN) | `local/evidence/20261007-p04-content-import-02/` |
-| P05–P08 | NOT_STARTED | Нет |
-| P09A | PLAN_READY (native payload/visual handoff NOT_RUN) | `docs/plans/P09A_RESEARCH_TREE_VISIBILITY.md`, `docs/evidence-index/P09A.md` |
-| P09B–P12 | NOT_STARTED | Нет |
+| P05 | OFFLINE_BASELINE / native movement and reconciliation NOT_RUN | `docs/evidence-index/P05.md`, `docs/evidence-index/P05_MATRIX_AUDIT.md` |
+| P06 | STATIC_BOUNDARY_ONLY / native impact, penetration and damage NOT_RUN | `docs/evidence-index/P06A.md`, `docs/research/P06B_MS1_AP_SOURCE_SPIKE.md`, `docs/evidence-index/P06D.md` |
+| P07A | PASS_STATIC_VISIBILITY_SOURCE_BOUNDARY / native visibility NOT_RUN | `docs/evidence-index/P07A.md` |
+| P08A | PASS_STATIC_BATTLE_LIFECYCLE_SOURCE_BOUNDARY / native lifecycle NOT_RUN | `docs/evidence-index/P08A.md` |
+| P09A | PASS_STATIC_RESEARCH_TREE_GRAPH / native shop payload and visual handoff NOT_RUN | `docs/evidence-index/P09A_TREE_GRAPH_AUDIT.md`, `docs/evidence-index/P09A.md` |
+| P09B | PASS_P09B_SQLITE_TRANSACTION_HARNESS / deployed runtime and native restart NOT_RUN | `docs/evidence-index/P09B.md` |
+| P10A | PASS_DOCS_ONLY_STATIC_BOUNDARY / native room lifecycle NOT_RUN | `docs/evidence-index/P10A.md` |
+| P11–P12 | NOT_STARTED | Нет |
 
 Точный локальный билд: `v.0.9.1 #717`, RU; metadata client 435206,
 overrides 435633, localization 428638 RU. Издательская аутентичность UNKNOWN.
