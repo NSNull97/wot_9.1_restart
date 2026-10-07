@@ -1,3 +1,19 @@
+# P05 offline deterministic matrix — 2026-10-08
+
+На двух hash-pinned test-lab фрагментах (`01_karelia` и `05_prohorovka`)
+прогнан одинаковый deterministic matrix из 160 команд на карту. Worker вернул
+`PASS_OFFLINE_DETERMINISTIC_MATRIX`: по 161 событию, tick `180 → 1140`,
+sequence `0 → 160`, finite state и return code 0, без stderr ошибок. Receipts:
+`local/evidence/20261009-p05-deterministic-matrix-01/summary.json` и два
+map-result JSON с SHA в [P05 evidence index](evidence-index/P05.md).
+
+Это только test-lab контракт. Native movement, историческая физика,
+tank–tank/static obstacle causality, prediction/correction, rejoin и ручная
+приёмка владельцем остаются `NOT_RUN`; engine RPM, скорости левой/правой
+гусеницы, gear/clutch и delivered torque остаются `UNKNOWN_NOT_IN_WORKER_STATE`.
+План/исследование: [P05 plan](plans/P05_MOVEMENT_COLLISION_RECONCILIATION.md) и
+[P05 offline research](research/P05_OFFLINE_DETERMINISTIC_MATRIX.md).
+
 # P09A preparation — native research-tree visibility — 2026-10-08
 
 Подготовлена docs-only карточка `codex/p09a-research-tree-visibility`:
