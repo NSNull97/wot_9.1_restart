@@ -102,6 +102,16 @@ receipt: [P09A plan](plans/P09A_RESEARCH_TREE_VISIBILITY.md),
 [P09A research](research/P09A_RESEARCH_TREE_VISIBILITY.md),
 [P09A receipt](evidence-index/P09A.md).
 
+### P09A static graph guard
+
+`tools/research_tree_audit.py` now returns
+`PASS_STATIC_RESEARCH_TREE_GRAPH` for the pinned #717 reference data: 374
+trees, 3945 nodes, 2062 edges, USSR tiers I–X, one IS-8 → IS-7 edge and no
+outgoing vehicle edge from IS-7. This verifies the reference graph only; native
+shop/tree payload, callback and visual handoff remain `NOT_RUN`. See the
+[audit research](research/P09A_TREE_GRAPH_AUDIT.md) and
+[audit receipt](evidence-index/P09A_TREE_GRAPH_AUDIT.md).
+
 ## Accepted P04 resource contract
 
 Branch `codex/p04-content-import` delivered the typed `content-import.v1`

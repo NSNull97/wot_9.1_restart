@@ -359,6 +359,14 @@ skips**. Receipt `result.json` закреплён локальным SHA
 и переход ИС-8 → ИС-7. Это не означает, что нативное окно клиента умеет этот
 граф получать; native/UI handoff остаётся отдельной задачей.
 
+Дополнительно добавлен bounded static graph audit P09A:
+`tools/research_tree_audit.py` и `tests/test_research_tree_audit.py` дают
+**7/7 PASS**, receipt `local/evidence/20261008-p09a-tree-graph-audit-01/receipt.json`
+с SHA `39733821cf916a069152a0d67909fca54b816ebab13ad3a33dc0edb94abb0f44`.
+Он подтверждает только hash-bound reference graph (374 деревьев, 3945 узлов,
+2062 ребра, USSR I–X, ИС-8 → ИС-7, ИС-7 terminal); native account/shop/tree
+payload, callback и визуальная сверка остаются **NOT_RUN**.
+
 План: [P04 plan](plans/P04_CONTENT_IMPORT.md); исследование:
 [P04 research](research/P04_CONTENT_IMPORT.md).
 
