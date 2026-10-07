@@ -124,8 +124,25 @@ accepted. Checks are documentation readability, required-term inspection and
 **Rollback:** revert this one docs-only commit. No client, ignored evidence,
 service state, database or deployed artifact is changed.
 
-**Single next step:** implement a bounded receipt verifier for this exact
-schema, run it against a deliberately incomplete receipt to prove fail-closed
-behaviour, then wait for the owner-gated two-MS-1 native capture. Do not add
-penetration, damage or HP mutation code before the verifier can distinguish
-missing evidence from a real server-owned impact.
+## Verifier delivered by P06D
+
+The bounded receipt verifier for this schema is already implemented in
+`tools/impact_capture_audit.py` and covered by
+`tests/test_impact_capture_audit.py`. Its targeted suite is **11 tests, 0
+failures**. The deliberately incomplete local receipt fails closed with
+`NOT_RUN_INCOMPLETE_CAPTURE`; the complete fixture is explicitly only
+`PASS_CAPTURE_SHAPE_ONLY`. These results prove the authority and receipt-shape
+boundary, not a native impact, penetration result, damage formula, HP/module
+mutation or client callback. Evidence is indexed in
+[`P06D evidence`](../evidence-index/P06D.md); the ignored result hashes are
+`bc3f08a64aee84748f24a8bad11b73f1d44d652812cf4b885aa589bd8a55a131` for the
+incomplete input and
+`4af5fb999f7e004d5061baf7100212992338cc8fd1ad1f6af05664d96e2a16fa` for the
+auditor result.
+
+**Single next step:** wait for the owner-gated two-MS-1 native capture with a
+fixed target pose, feed its real server-owned receipt to the P06D auditor, and
+then correlate intersection/material/normal/thickness/terminal, target state,
+replay identity and native evidence. Keep penetration, damage and HP mutation
+unavailable until that correlation succeeds; do not replace missing receipt
+fields with a guessed solver or historical wiki formula.
