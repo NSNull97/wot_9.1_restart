@@ -43,6 +43,13 @@ The merged draft plan is
 controller before a fixed MS-1 neutral/left/right trace identifies the failing
 layer.
 
+P05A's bounded offline harness is now in merge `b8b1806`. Its targeted
+P05A/geometry run is **33 tests OK with one known skip**; the current main
+regression is **2072 tests OK with four known skips**. The harness does not
+fabricate engine or track telemetry. A fresh four-scenario worker run is still
+`NOT_RUN_MISSING_INPUTS` until a receipt-matched ignored config and worker are
+supplied; native movement and owner pivot acceptance remain open.
+
 ## Latest accepted card
 
 `P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:

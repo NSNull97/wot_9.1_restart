@@ -41,6 +41,17 @@ prediction/correction или ручную приёмку.
 свободный MS-1, 60 Hz neutral/left/right trace, диагностика гусениц и bounded
 replay; параметры контроллера не менять до измерения причины слабого pivot.
 
+Карточка P05A уже добавила bounded offline harness в merge `b8b1806`:
+`tools/pivot_diagnostics.py` запускает четыре свежих worker-сценария только по
+зафиксированному JSONL-контракту, а `tests/test_pivot_diagnostics.py` проверяют
+план, monotonic `seq/tick`, finite pose, bounds, contacts и отрицательные
+случаи. На текущем `main` полный Python suite дал **2072 tests, 0
+failures/errors, 4 known skips**, layout — **58 source files / 22 relocations
+PASS**; квитанция: `local/evidence/20261008-p05a-pivot-diagnostics-01/`.
+Реальный worker run не засчитан: в изолированной карточке отсутствовали
+ignored config/worker assets, поэтому статус — `NOT_RUN_MISSING_INPUTS`, а
+engine RPM, скорости гусениц, gear/clutch и delivered torque остаются `UNKNOWN`.
+
 # Параллельная карточка — P04, 2026-10-07: typed content import
 
 В отдельной рабочей копии `codex/p04-content-import` реализован bounded
