@@ -18,6 +18,27 @@ recovery и native acceptance остаются **NOT_RUN**.
 План: [P09B plan](plans/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md); исследование:
 [P09B research](research/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md); evidence:
 [P09B index](evidence-index/P09B.md).
+
+# P05 bounded movement-matrix receipt audit — 2026-10-08
+
+Добавлен bounded read-only `tools/movement_matrix_audit.py` и 14 targeted
+negative/positive tests. Он проверяет `p05-deterministic-matrix.v1` без запуска
+worker: bounded UTF-8 JSON, duplicate/non-finite rejection, pinned map/config
+SHA, counts, sequence/tick prefixes, phase order, optional finite event poses и
+запрет client-authority полей. Реальные aggregate receipts проходят как
+`PASS_OFFLINE_MATRIX_SHAPE_ONLY`; `pose_validation=NOT_PRESENT_IN_AGGREGATE`,
+`native_status=NOT_VERIFIED_BY_AUDITOR`.
+
+Targeted suite: **14/14 PASS**; полный UTF-8 regression после карточки:
+**2097 tests, 0 failures/errors, 4 known skips**. Full log:
+`local/evidence/20261008-overnight-final-02/full-python-utf8.txt`, SHA-256
+`fc218db3a802af20a8d9c2815f54d50323e37ec80667508463ab88d852ffd6aa`.
+Layout снова `PASS_SERVER_SOURCE_LAYOUT` (58/22), receipt
+`local/evidence/20261008-overnight-final-02/layout.json`, SHA-256
+`4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`.
+Native movement, reconciliation, collision causality и историческая физика
+остаются `NOT_RUN`. Подробности: [P05 matrix audit](research/P05_MATRIX_RECEIPT_AUDIT.md)
+и [evidence index](evidence-index/P05_MATRIX_AUDIT.md).
 # P05 offline deterministic matrix — 2026-10-08
 
 На двух hash-pinned test-lab фрагментах (`01_karelia` и `05_prohorovka`)
@@ -36,15 +57,17 @@ tank–tank/static obstacle causality, prediction/correction, rejoin и ручн
 
 # Overnight verification — 2026-10-08
 
-После docs-only merges P03I review, P05 offline matrix, P07A и P08A повторён
-authoritative UTF-8 regression: **2083 tests, 0 failures/errors, 4 known skips**.
-Полный лог: `local/evidence/20261008-overnight-final-01/full-python-utf8.txt`,
-SHA-256 `df83b29f19394072e29dfeb9ea4f243710f0b711e97a9dea9f4bc3a1db235c0`.
+После docs-only merges P03I review, P05 offline matrix/auditor, P07A, P08A и
+P09B повторён authoritative UTF-8 regression: **2097 tests, 0 failures/errors,
+4 known skips**. Полный лог:
+`local/evidence/20261008-overnight-final-02/full-python-utf8.txt`, SHA-256
+`fc218db3a802af20a8d9c2815f54d50323e37ec80667508463ab88d852ffd6aa`.
 `server/check_layout.py` вернул `PASS_SERVER_SOURCE_LAYOUT` (58 source files,
 22 single-source relocations); layout receipt
-`local/evidence/20261008-overnight-final-01/layout.json`, SHA-256
+`local/evidence/20261008-overnight-final-02/layout.json`, SHA-256
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`.
-Между baseline `6ed8424` и текущим head добавлены только docs/evidence files;
+Между baseline `6ed8424` и текущим head добавлены только docs/evidence и
+bounded auditor/test files;
 runtime, gateway, client и deployed service не менялись.
 
 # P07A/P08A static source boundaries — 2026-10-08
