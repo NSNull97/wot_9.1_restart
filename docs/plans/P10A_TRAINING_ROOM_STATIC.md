@@ -48,8 +48,11 @@ The P00/P01 corpus is sufficient for a docs-only boundary:
   `gui/prb_control/factories/prebattlefactory.pyc`,
   `gui/scaleform/daapi/view/lobby/trainings/trainingroom.pyc`,
   `prebattlewindow.pyc`, `prbsendinviteswindow.pyc`, and
-  `receivedinvitewindowmeta.pyc`. Their presence proves source availability,
-  not a captured lifecycle trace.
+  `gui/scaleform/daapi/view/meta/receivedinvitewindowmeta.pyc`. The last path
+  is under `view/meta`, not `view/lobby/prb_windows`; its pinned manifest
+  entry is 1648 bytes with SHA-256
+  `371115c2d59d2aaf9c4165599904abd6416e9df6138e6fe93863547391320558`.
+  Their presence proves source availability, not a captured lifecycle trace.
 
 ## Acceptance boundary
 

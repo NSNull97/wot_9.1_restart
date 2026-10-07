@@ -28,6 +28,7 @@ Relevant manifest hashes (the values are inputs, not protocol IDs):
 | `res/scripts/client/gui/scaleform/daapi/view/lobby/trainings/trainingroom.pyc` | 18298 | `a0647da875489f330281d614d24cddc9d8c08b79245e0064c47fd2b4a57f3970` |
 | `res/scripts/client/gui/scaleform/daapi/view/lobby/prb_windows/prebattlewindow.pyc` | 14517 | `9586fa2ff766436b9699f9700ab330b538ae2113a8937a7d5ce3df6625d1bfc1` |
 | `res/scripts/client/gui/scaleform/daapi/view/lobby/prb_windows/prbsendinviteswindow.pyc` | 6136 | `8d88a4f44444eac982ca59464dfa61ded1fb36007d7a5e078d0aa4e0fc3407dc` |
+| `res/scripts/client/gui/scaleform/daapi/view/meta/receivedinvitewindowmeta.pyc` | 1648 | `371115c2d59d2aaf9c4165599904abd6416e9df6138e6fe93863547391320558` |
 | `res/scripts/entity_defs/account.def` | 10588 | `883ec72e77675600f245e0f0aea8837e35c2c4bb9e7a5c5d70f3656d9d076674` |
 | `res/scripts/entity_defs/prebattle.def` | 1920 | `115d555f1d13aa720c8ed4ee2240ef704788695614f1bd51671ae11c4e8a9dd8` |
 | `res/scripts/entity_defs/unitmgr.def` | 1581 | `cb3b15a69f940981bf8676d914eb34a747ed46322659a0fcb91c219c3979ddc1` |
