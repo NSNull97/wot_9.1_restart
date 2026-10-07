@@ -41,7 +41,7 @@ The extracted contract inventory is deliberately small and typed:
 - `Arena.fogOfWar: UINT8` and `Arena.fogOfWarCell: UINT8`.
 
 The receipt records the source flags (`BASE`, `CELL_PRIVATE`, `CELL_PUBLIC`) and
-all eight method wire IDs as `UNKNOWN`. These declarations establish names,
+all declared CellMethod wire IDs as `UNKNOWN`. These declarations establish names,
 shapes and exposure labels only; they do not establish serializer order,
 recipient filtering, ranges, timing, or line-of-sight semantics.
 
