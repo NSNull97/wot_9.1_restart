@@ -1,9 +1,10 @@
 # P05 — воспроизводимое движение, статическая коллизия и reconciliation
 
-Статус: **DRAFT / NOT_STARTED**.
+Статус: **PASS_OFFLINE_BASELINE / native movement and reconciliation NOT_RUN**.
 
-Рабочая ветка черновика: `codex/p05-plan`. Основа — текущий `main` после
-принятого P04 content-import contract. Этот документ описывает узкий
+Плановая ветка: `codex/p05-plan`. Основа — текущий `main` после принятого P04
+content-import contract. Offline matrix и P05A worker receipts уже сохранены;
+этот документ описывает узкий
 проверяемый срез P05. Он не объявляет текущий Jolt worker исторической
 физикой World of Tanks и не открывает production/deployed gateway.
 
@@ -18,6 +19,16 @@
 Первый срез ограничен одним серверным телом и статическими terrain/obstacle
 мешами. Это позволяет проверить поверхность, стену, границу и протокол
 коррекции без подмены отсутствующей модели танк–танк или destructible objects.
+
+## Current offline evidence
+
+The deterministic matrix is accepted for the two pinned test-lab maps in
+`docs/evidence-index/P05.md`: 160 commands and 161 events per map, sequence
+`0 → 160`, tick `180 → 1140`, finite state and return code 0. P05A adds four
+bounded pivot scenarios per map in `docs/evidence-index/P05A.md`, including an
+independent canonical worker recheck. These receipts establish only the
+offline worker contract; they do not establish native movement, reconciliation,
+historical physics or owner acceptance.
 
 ## Предпосылки и источники
 
@@ -218,15 +229,14 @@ Native same-PC owner acceptance — отдельный gate поверх это�
 восстанавливает server state. Без ручной проверки статус остаётся
 `PASS_OFFLINE_ONLY`, а не `PASS_OWNER_NATIVE_MOVEMENT`.
 
-## Ожидаемые статусы до новой карточки
-
-Пока план не исполнен:
+## Current status after the offline baseline
 
 | Область | Статус |
 |---|---|
 | Imported terrain/obstacle source contract | `PASS_P04_CONTRACT` |
 | Existing worker smoke/mesh parser | `VERIFIED prior evidence` |
-| New deterministic P05 matrix | `NOT_RUN` |
+| Deterministic P05 matrix on both maps | `PASS_OFFLINE_DETERMINISTIC_MATRIX` |
+| P05A pivot scenarios on both maps | `PASS_OFFLINE_PIVOT_DIAGNOSTICS` |
 | Reconciliation fault matrix | `NOT_RUN` |
 | Native manual movement/obstacle/re-entry | `NOT_RUN` |
 | Tank–tank, destructibles, partial cruise | `NOT_RUN` |
@@ -240,6 +250,7 @@ implementation branch. Откат runtime не нужен: текущая кар
 worker/gateway/client, выполнять соответствующий `interactive_client.py
 rollback`, сохранять evidence и не делать `reset --hard` или force-push.
 
-Единственный следующий рекомендуемый шаг: запустить offline deterministic
-matrix из раздела 2 на обеих закреплённых картах и сохранить первый P05
-receipt; native запуск не начинать до разбора этого результата.
+Единственный следующий рекомендуемый шаг: провести одну bounded native
+movement/reconciliation capture на research-клиенте по уже принятому offline
+baseline, сохранив server tick/sequence, stale/duplicate/loss handling и
+rollback evidence до изменения параметров worker.
