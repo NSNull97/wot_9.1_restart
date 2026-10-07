@@ -19,7 +19,9 @@ hardening tests плюс существующие bundle/map checks). Evidence:
 failure) не относится к importer. Реальный полный #717 content dataset,
 native geometry checkpoints, native compatibility/physics и selection-to-battle
 handoff остаются `NOT_RUN`.
-Карточка не слита в `main` и не меняет оригинальный/research client.
+Карточка принята и слита в `main` обычным `--no-ff` commit
+`6d4d32e`; remote `main` подтверждён тем же SHA. Она не меняет
+оригинальный/research client.
 
 Отдельный аудит существующего web research-графа записан в
 [P04 research](research/P04_CONTENT_IMPORT.md): в нём уже есть уровни I–X СССР
@@ -1411,7 +1413,8 @@ revision refresh и display-only данные проверены; state дост
 | P01 | PASS — исследование, не приёмка игрового сервера | Runtime + native request/rejection PASS; stock toolkit native/vertices FAIL, отличия измерены |
 | P02 | Единая email-учётка/native ангар PASS; полный gate PARTIAL | Primary17/18/19, два профиля/restart, normal idle21 PASS; ручной auth20 PASS, full GUI20 FAIL; final installation/audit PASS; Email22 overallFAIL(ToolTip при fini), general transport/арена NOT_RUN |
 | P03 | NOT_STARTED | Нет |
-| P04–P08 | NOT_STARTED | Нет |
+| P04 | PASS_TYPED_IMPORT_VALIDATOR (resource contract; native/physics NOT_RUN) | `local/evidence/20261007-p04-content-import-02/` |
+| P05–P08 | NOT_STARTED | Нет |
 | P09–P12 | NOT_STARTED | Нет |
 
 Точный локальный билд: `v.0.9.1 #717`, RU; metadata client 435206,

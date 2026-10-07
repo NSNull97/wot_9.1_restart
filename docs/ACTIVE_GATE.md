@@ -1,14 +1,12 @@
 # ACTIVE_GATE — 2026-10-07
 
-## Parallel unmerged P04 work
+## Accepted P04 resource contract
 
-Branch `codex/p04-content-import` contains the typed `content-import.v1`
-validator and its bounded negative tests in a separate worktree. This is a
-resource-import contract, not a change to the accepted P03 runtime. Targeted
-validator tests are PASS; full native/evidence suite and real #717 dataset are
-NOT_RUN for this worktree because ignored original-client paths are not copied
-into it. Do not merge this card until its review criteria and the preceding
-P03I vehicle-profile gate are resolved.
+Branch `codex/p04-content-import` delivered the typed `content-import.v1`
+validator and bounded negative tests. The card is accepted as a resource-import
+contract in merge `6d4d32e`; it does not change the accepted P03 runtime. The
+targeted receipt has 33 tests with one known skip; full native/evidence suite,
+real #717 dataset, native compatibility and physics remain `NOT_RUN`.
 
 ## Latest accepted card
 
