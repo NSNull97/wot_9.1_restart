@@ -1,6 +1,6 @@
 # P09A — native research-tree visibility and ownership predicate
 
-Status: **PLAN_READY; implementation NOT_STARTED; native payload/handoff NOT_RUN**.
+Status: **PASS_STATIC_GRAPH_BOUNDARY; native payload/handoff NOT_RUN**.
 Branch: `codex/p09a-research-tree-visibility`.
 Base: main `d3110c3` (2026-10-08).
 
@@ -35,6 +35,12 @@ when looking after IS-7 is a direction mistake, not a missing IS-8 node.
 - The extraction reads hash-pinned #717 XML and does not execute client code.
   This is a complete reference catalogue for the inspected source set, not a
   proof that a native account has received the same payload.
+
+The bounded static graph guard is implemented in
+`tools/research_tree_audit.py` with seven positive/negative tests. Its receipt
+`local/evidence/20261008-p09a-tree-graph-audit-01/receipt.json` is
+`PASS_STATIC_RESEARCH_TREE_GRAPH` (374 trees, 3945 nodes, 2062 edges); this is
+the accepted static part of P09A and does not change the native handoff gate.
 
 ### VERIFIED static native visibility predicate
 
@@ -154,8 +160,8 @@ P03I/native queue card. P09A must not mark them PASS.
 
 ## Acceptance, status and rollback
 
-Acceptance label for this planning card:
-`PASS_P09A_PLAN_STATIC_PREDICATE_AND_HANDOFF_GATE`.
+Acceptance label for this planning/native-handoff card:
+`PASS_STATIC_RESEARCH_TREE_GRAPH / PASS_P09A_PLAN_STATIC_PREDICATE_AND_HANDOFF_GATE`.
 It is **not** native implementation acceptance. Until phase B runs,
 `native_payload=NOT_RUN`, `visual_handoff=NOT_RUN` and
 `battle_admission=NOT_RUN` remain explicit.
