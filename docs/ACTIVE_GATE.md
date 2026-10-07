@@ -30,6 +30,24 @@ revisions and teardown correlation. Do not implement guessed room or
 matchmaker routes before that capture.
 # ACTIVE_GATE — 2026-10-08
 
+## Latest P04/P03I current-main recheck
+
+The latest UTF-8 full regression was run on code head
+`7c6de2eefdb195858d65b63b10e5ac8a4488aba0`, matching `origin/main` at test
+time: **2133 tests, 0 failures/errors, 4 known skips**. Log:
+`local/evidence/20261008-p04-p03i-main-regression-01/full-python-utf8.txt`
+(SHA-256
+`632d575d57499a0623c84dd2215be3d685a9c0abaf117077a77584478689e91b`).
+`server/check_layout.py` remains `PASS_SERVER_SOURCE_LAYOUT` with 58 source
+files and 22 relocations (receipt SHA
+`4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
+bounded docs-link recheck is `PASS_DOC_LINK_RECHECK` for 440 repository links,
+0 missing targets and 105 skipped external/absolute links (receipt SHA
+`59be396a99b10eea24127a5d6dda81ef9375a95825e9754d836c3a237737c95a`). The
+combined recheck summary is
+`local/evidence/20261008-p04-p03i-main-regression-01/summary.json` (SHA-256
+`4a2d7de32eb7cab45e3ecdeb4bc4ac143049ce9732a9ec78609a50e6d1aaa86`).
+
 ## Overnight verification
 
 The latest UTF-8 full regression was run on code head
