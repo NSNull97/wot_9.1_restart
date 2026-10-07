@@ -1,3 +1,23 @@
+# Параллельная карточка — P04, 2026-10-07: typed content import
+
+В отдельной рабочей копии `codex/p04-content-import` реализован bounded
+валидатор `content-import.v1`. Он связывает typed records техники, модулей,
+снарядов, карт, материалов и брони с hash-verified `server-content.v1`,
+проверяет cross-kind references, bounds/transforms/spawns, armor triangles и
+явный `missing` report. Повторная нормализация выдаёт canonical SHA256.
+
+Targeted Python: **28 tests, 0 failures/errors, 1 known skip**. Evidence:
+`local/evidence/20261007-p04-content-import-01/result.json`. Полный suite в
+этой рабочей копии намеренно не засчитывается: ignored `config/project.local`
+и native evidence остаются только в основном checkout, поэтому его результат
+`NOT_RUN_FOR_P04_WORKTREE` (28 missing-evidence errors и 1 frozen-source
+failure) не относится к importer. Реальный полный #717 content dataset,
+native geometry checkpoints и selection-to-battle handoff остаются `NOT_RUN`.
+Карточка не слита в `main` и не меняет оригинальный/research client.
+
+План: [P04 plan](plans/P04_CONTENT_IMPORT.md); исследование:
+[P04 research](research/P04_CONTENT_IMPORT.md).
+
 # Актуальный указатель — P03H, 2026-10-07: серверный полёт снаряда
 
 Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **P03 IN_PROGRESS**.

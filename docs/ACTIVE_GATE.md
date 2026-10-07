@@ -1,5 +1,15 @@
 # ACTIVE_GATE — 2026-10-07
 
+## Parallel unmerged P04 work
+
+Branch `codex/p04-content-import` contains the typed `content-import.v1`
+validator and its bounded negative tests in a separate worktree. This is a
+resource-import contract, not a change to the accepted P03 runtime. Targeted
+validator tests are PASS; full native/evidence suite and real #717 dataset are
+NOT_RUN for this worktree because ignored original-client paths are not copied
+into it. Do not merge this card until its review criteria and the preceding
+P03I vehicle-profile gate are resolved.
+
 ## Latest accepted card
 
 `P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:
