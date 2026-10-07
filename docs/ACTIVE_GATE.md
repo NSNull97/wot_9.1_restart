@@ -32,10 +32,10 @@ matchmaker routes before that capture.
 
 The UTF-8 full regression after the current docs-only merges is **2097 tests,
 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-overnight-final-02/full-python-utf8.txt` (SHA-256
-`fc218db3a802af20a8d9c2815f54d50323e37ec80667508463ab88d852ffd6aa`). Layout is
+`local/evidence/20261008-overnight-final-03/full-python-utf8.txt` (SHA-256
+`c4b096bca87f0e14684991a653f1bd2b16c692506e4294e18723a0ae21a82f75`). Layout is
 `PASS_SERVER_SOURCE_LAYOUT` with 58 source files and 22 relocations; receipt:
-`local/evidence/20261008-overnight-final-02/layout.json` (SHA-256
+`local/evidence/20261008-overnight-final-03/layout.json` (SHA-256
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
 current diff from baseline contains documentation/evidence and the bounded
 movement-matrix auditor/tests only.

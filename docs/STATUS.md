@@ -46,13 +46,15 @@ SHA, counts, sequence/tick prefixes, phase order, optional finite event poses и
 
 Targeted suite: **14/14 PASS**; полный UTF-8 regression после карточки:
 **2097 tests, 0 failures/errors, 4 known skips**. Full log:
-`local/evidence/20261008-overnight-final-02/full-python-utf8.txt`, SHA-256
-`fc218db3a802af20a8d9c2815f54d50323e37ec80667508463ab88d852ffd6aa`.
+`local/evidence/20261008-overnight-final-03/full-python-utf8.txt`, SHA-256
+`c4b096bca87f0e14684991a653f1bd2b16c692506e4294e18723a0ae21a82f75`.
 Layout снова `PASS_SERVER_SOURCE_LAYOUT` (58/22), receipt
-`local/evidence/20261008-overnight-final-02/layout.json`, SHA-256
+`local/evidence/20261008-overnight-final-03/layout.json`, SHA-256
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`.
-Native movement, reconciliation, collision causality и историческая физика
-остаются `NOT_RUN`. Подробности: [P05 matrix audit](research/P05_MATRIX_RECEIPT_AUDIT.md)
+Тесты auditor не требуют ignored receipt: при его отсутствии shape/negative
+контур использует встроенную bounded fallback fixture, а при наличии проверяет
+реальный receipt. Native movement, reconciliation, collision causality и
+историческая физика остаются `NOT_RUN`. Подробности: [P05 matrix audit](research/P05_MATRIX_RECEIPT_AUDIT.md)
 и [evidence index](evidence-index/P05_MATRIX_AUDIT.md).
 # P05 offline deterministic matrix — 2026-10-08
 
@@ -72,14 +74,14 @@ tank–tank/static obstacle causality, prediction/correction, rejoin и ручн
 
 # Overnight verification — 2026-10-08
 
-После docs-only merges P03I review, P05 offline matrix/auditor, P07A, P08A и
-P09B повторён authoritative UTF-8 regression: **2097 tests, 0 failures/errors,
-4 known skips**. Полный лог:
-`local/evidence/20261008-overnight-final-02/full-python-utf8.txt`, SHA-256
-`fc218db3a802af20a8d9c2815f54d50323e37ec80667508463ab88d852ffd6aa`.
+После docs-only merges P03I review, P05 offline matrix/auditor, P07A, P08A,
+P09B, P10A и self-contained test fallback повторён authoritative UTF-8
+regression: **2097 tests, 0 failures/errors, 4 known skips**. Полный лог:
+`local/evidence/20261008-overnight-final-03/full-python-utf8.txt`, SHA-256
+`c4b096bca87f0e14684991a653f1bd2b16c692506e4294e18723a0ae21a82f75`.
 `server/check_layout.py` вернул `PASS_SERVER_SOURCE_LAYOUT` (58 source files,
 22 single-source relocations); layout receipt
-`local/evidence/20261008-overnight-final-02/layout.json`, SHA-256
+`local/evidence/20261008-overnight-final-03/layout.json`, SHA-256
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`.
 Между baseline `6ed8424` и текущим head добавлены только docs/evidence и
 bounded auditor/test files;
