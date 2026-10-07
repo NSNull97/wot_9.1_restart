@@ -156,6 +156,39 @@ intersection/material/normal/thickness/terminal, HP/module state, replay
 identity and native evidence. Keep P06 hit/damage unavailable until that
 correlation succeeds.
 
+## P03I docs-only native vehicle/loadout boundary
+
+Docs commit `81dfb93` is merged into `main` as `2f43054`; the status-only
+follow-up is on branch `codex/p03i-status-docs`. The card is
+**PASS_DOCS_ONLY_STATIC_BOUNDARY / NATIVE_HANDOFF_NOT_RUN**. It changes no
+runtime, `server/gateway`, `client_patch`, fixture, original/research client or
+deployed service.
+
+The static tree predicate is `NationTreeData.load` → skip `None` and
+`item.isHidden`, with hidden items derived from
+`shop.items.notInShopItems`; the reference graph remains complete and records
+**IS-8 → IS-7**. Native shop/account payload, research-window callbacks and
+owner visual correlation remain **NOT_RUN**.
+
+The static queue contract pins request `202`, command `700`, selected
+`g_currentVehicle.invID` as `INT64`, and two `INT32` values for
+`gameplaysMask` and `arenaTypeID`; `Account.def` gives
+`INT16, INT16, INT64, INT32, INT32`. Static callback semantics are
+`onEnqueued(queueType)` → `events.onEnqueuedRandom()` and
+`onEnqueueFailure(UINT8, UINT8, STRING)` →
+`events.onEnqueueRandomFailure(...)`. Live bytes, ordering and server handoff
+are **NOT_RUN**.
+
+The exact next owner gate is one ordinary MS-1 random-battle click preserving
+the process manifest, decrypted Account body, `202/700`, both `INT16`, selected
+`INT64` vehicle ID, both `INT32` mask/arena values, callback arguments/order,
+queue event and server identity correlation. IS-7 remains fail-closed until a
+hash-pinned assigned crew and server-owned shell stack exist; current
+`crew_assigned=false`, ammo `0` must not mutate fixtures. Missing framing or a
+callback is **NOT_RUN**, never a guessed decoder. See [P03I plan](plans/P03I_VEHICLE_PROFILE_LOADOUT.md),
+[research](research/P03I_VEHICLE_PROFILE_LOADOUT.md) and
+[evidence index](evidence-index/P03I.md).
+
 ## Latest accepted card
 
 `P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:
