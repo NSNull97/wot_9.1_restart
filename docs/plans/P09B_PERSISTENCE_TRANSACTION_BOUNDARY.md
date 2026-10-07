@@ -1,7 +1,7 @@
 # P09B — game profile persistence and transaction boundary
 
-Status: **PLAN_READY; implementation NOT_STARTED; live persistence/restart NOT_RUN**.
-Branch: `codex/p09b-persistence-boundary`.
+Status: **HARNESS_ACCEPTED; runtime integration and native acceptance NOT_RUN**.
+Implementation branch: `codex/p09b-transaction-harness`.
 
 ## Goal
 
@@ -74,6 +74,29 @@ The reservation lifecycle is a future domain policy, not an existing runtime:
 `available -> reserved(battle_id, source_revision) -> released | consumed`.
 A disconnect/restart must leave one unambiguous state; no automatic reward or
 release is implied by this planning card.
+
+## Isolated implementation receipt (2026-10-08)
+
+The selected command family is the bounded server-owned `reserve_vehicle`
+command. `tools/game_profile_tx.py` creates a stdlib SQLite schema with a game
+snapshot, vehicle rows, and a command ledger. It commits the reservation,
+adjacent snapshot revision, and ledger result under one `BEGIN IMMEDIATE`
+transaction. A duplicate command key with the same canonical payload replays
+the saved result; a changed payload, stale revision, unknown vehicle, or
+already reserved vehicle fails closed. The harness also reopens the database
+after an injected pre-commit failure and verifies that no vehicle, revision, or
+ledger row was partially written.
+
+Targeted `tests.test_game_profile_tx` has **13/13 PASS**. The deterministic
+ignored receipt is `local/evidence/20261008-p09b-transaction-harness-01/receipt.json`
+(SHA-256 `cedec631a51a5bf802381f04ad6690582518f3b341e0ce1f78e4bd775a614150`)
+with status `PASS_P09B_SQLITE_TRANSACTION_HARNESS`.
+
+This is a standalone test harness. It is not wired into the identity service,
+gateway, battle runtime, deployed database, client, economy, reservation lease,
+release/consume lifecycle, migration runner, or native restart. SQLite schema
+details and failpoint names are harness choices, not measured native protocol.
+Those integration and compatibility claims remain **NOT_RUN**.
 
 ## Evidence and limits
 
