@@ -66,6 +66,28 @@ canonical import hash. The receipt reports `data_complete=true` while
 `runtime_ready=false` and `runtime_eligibility=NOT_RUN`; the fixture is not a
 claim about the complete #717 catalogue or native physics.
 
+### Receipt recheck — 2026-10-08
+
+The self-contained receipt was re-read from the current checkout. The
+standalone importer command and the combined bundle/import/map suite both
+passed:
+
+```text
+python -B -X utf8 tools/content_import.py --manifest local/evidence/20261007-p04-content-import-02/manifest.json --bundle local/evidence/20261007-p04-content-import-02/fixture-bundle
+PASS_TYPED_IMPORT_VALIDATOR; canonical_sha256=a1b1191b29bbae5e2aed2f4417a139c7e9a2e6740ec40698347ad6baa8aac2b9
+python -B -X utf8 -m unittest tests.test_content_bundle tests.test_content_import tests.test_map_geometry
+Ran 38 tests — OK
+```
+
+The receipt `result.json` SHA-256 is
+`80a34c538ee66c6a60f03b27d5b823dc85ddb7338ab630b897e28af7c159042f`, and its
+`unittest-targeted.txt` SHA-256 is
+`92503e558f49ebbc037ae39b9d46ac244e60e351a5e11dcac5c4517e08f0dca2`.
+This is a local ignored evidence artifact by project policy, so a clean clone
+must recreate or restore it before running the CLI. The recheck changes no
+runtime eligibility: `runtime_ready=false`, `runtime_eligibility=NOT_RUN`, and
+native compatibility remain explicitly unverified.
+
 ## Статусы доказательств
 
 - `VERIFIED`: структура и hashes existing portable bundle, 33 targeted unit
