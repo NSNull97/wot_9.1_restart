@@ -1,5 +1,19 @@
 # ACTIVE_GATE — 2026-10-07
 
+## P05 offline deterministic matrix
+
+The pinned test-lab worker now has a two-map deterministic receipt:
+`PASS_OFFLINE_DETERMINISTIC_MATRIX`, 160 commands and 161 events per map,
+sequence `0 → 160`, tick `180 → 1140`, finite state and return code 0. See
+[P05 research](research/P05_OFFLINE_DETERMINISTIC_MATRIX.md) and
+[P05 evidence](evidence-index/P05.md).
+
+This does not close native movement, historical physics, tank–tank or static
+obstacle causality, prediction/correction, rejoin reconciliation or owner
+acceptance. Worker engine/track/gear telemetry remains unknown. The next gate
+is one bounded native movement/reconciliation capture using this offline
+baseline; no controller tuning is justified by this receipt.
+
 ## P09A preparation — native research-tree visibility
 
 Docs-only branch `codex/p09a-research-tree-visibility` records
