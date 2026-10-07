@@ -117,8 +117,10 @@ shop/tree payload, callback and visual handoff remain `NOT_RUN`. See the
 Branch `codex/p04-content-import` delivered the typed `content-import.v1`
 validator and bounded negative tests. The card is accepted as a resource-import
 contract in merge `6d4d32e`; it does not change the accepted P03 runtime. The
-targeted receipt has 33 tests with one known skip; full native/evidence suite,
-real #717 dataset, native compatibility and physics remain `NOT_RUN`.
+historical isolated receipt has 33 tests with one known skip; the current
+checkout recheck has 38 tests with zero failures/errors/skips. Full
+native/evidence suite, real #717 dataset, native compatibility and physics
+remain `NOT_RUN`.
 
 ## P05 preparation — offline only
 
