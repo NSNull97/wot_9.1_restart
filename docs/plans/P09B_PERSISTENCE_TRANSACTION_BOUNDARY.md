@@ -9,8 +9,9 @@ Close one narrow P09 seam before adding purchases, progression, or economy:
 separate identity durability, immutable profile4 provenance, and future game-state
 writes, then define the transaction/idempotency boundary that a later persistence
 implementation must satisfy. This card records the contract and acceptance gate;
-it does not add a database table, write path, migration, ledger, reservation,
-worker wiring, or native client behavior.
+it does not add a deployed game database table, runtime write path, migration,
+worker wiring, or native client behavior. The isolated `reserve_vehicle` harness
+below exercises a test-only SQLite schema and ledger without deploying them.
 
 The accepted `game.account.v1` assertion is an ownership/integrity assertion.
 `profile_version` and `snapshot_revision` identify the server-owned snapshot that
@@ -40,12 +41,13 @@ mutation was committed.
   reservation, consumption, expiry, result, or battle admission and emits no
   native bytes.
 
-These facts establish a new, narrow negative boundary: no accepted component
-currently owns a durable game-state mutation transaction or exactly-once result
-ledger. Existing hashes and revisions are useful preconditions, not substitutes
-for that ledger.
+These facts establish a new, narrow negative boundary: no accepted deployed
+runtime component currently owns a durable game-state mutation transaction or
+exactly-once result ledger. Existing hashes and revisions are useful
+preconditions, not substitutes for that ledger. The isolated harness below is
+test evidence for the proposed boundary, not a deployed owner of game state.
 
-## P09B contract proposal (INFERRED; not implemented)
+## P09B contract proposal (INFERRED; deployed integration not implemented)
 
 A future game-state write must be a server-owned command with this sequence:
 
@@ -61,14 +63,14 @@ A future game-state write must be a server-owned command with this sequence:
 5. Commit the complete unit. A repeated key returns the original committed result
    and performs no second balance, inventory, reservation, or reward change.
 
-The first implementation should choose one command family and one SQLite test
-schema. It must keep identity credentials/session rows out of the game
-transaction, bind every ledger row to `account_id`, aggregate ID, source
-revision, destination revision, ruleset and a canonical payload digest, and
-reject duplicate keys, stale revisions, negative balances, unknown inventory
-IDs, and writes to an active battle reservation. The precise SQL schema,
-command names, lease policy, and result economics remain **UNKNOWN** until that
-implementation card is selected.
+The isolated harness selects one command family and one SQLite test schema. A
+deployed implementation must still keep identity credentials/session rows out
+of the game transaction, bind every ledger row to `account_id`, aggregate ID,
+source revision, destination revision, ruleset and a canonical payload digest,
+and reject duplicate keys, stale revisions, negative balances, unknown
+inventory IDs, and writes to an active battle reservation. The deployed SQL
+schema, command names, lease policy, and result economics remain **UNKNOWN**
+until a separate integration card is selected.
 
 The reservation lifecycle is a future domain policy, not an existing runtime:
 `available -> reserved(battle_id, source_revision) -> released | consumed`.
@@ -116,16 +118,15 @@ Those integration and compatibility claims remain **NOT_RUN**.
 
 ## Acceptance and rollback
 
-Docs-only acceptance label:
-`PASS_P09B_PERSISTENCE_TRANSACTION_BOUNDARY_PLAN`.
-It means the ownership/provenance boundary and missing transaction semantics are
-explicit and reviewable. It does not claim persistence support or native
-compatibility. Revert this docs-only commit and remove its evidence-index row;
-no runtime or database restoration is required.
+The isolated harness acceptance label is
+`PASS_P09B_SQLITE_TRANSACTION_HARNESS`. It covers only the bounded
+`reserve_vehicle` transaction and its negative/reopen checks; it does not claim
+deployed persistence, service integration or native compatibility. Revert the
+docs-only boundary update and the harness card separately if needed; no
+deployed runtime or database restoration is required for either checkout.
 
 ## Single next step
 
-Implement one isolated game-profile SQLite transaction harness for a selected
-command family (prefer one vehicle reservation or one battle-result idempotency
-case), with migration, crash/restart replay, stale-revision and duplicate-key
-negative tests. Keep it off the deployed service until that receipt passes.
+Select a separate integration card for identity binding, migration, battle
+lease release/consume, concurrent writes and service restart/recovery; keep the
+accepted harness off the deployed service until that integration receipt passes.
