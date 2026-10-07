@@ -92,6 +92,36 @@ damage token. Until a server-owned intersection and damage event are captured,
 the solver remains unavailable and the result is **NOT_RUN**. Rollback is a
 revert of merge `4143803`; no client/resource/runtime rollback is required.
 
+## P06D bounded impact-receipt audit — shape only
+
+The bounded auditor card `P06D_IMPACT_RECEIPT_AUDIT` is commit `2d1465c` on
+branch `codex/p06d-impact-receipt-audit`, based on `83bba99`; its implementation
+is present in main merge `10ab3ae`. `tools/impact_capture_audit.py` validates a
+server-owned MS-1 AP receipt through admission, launch, segment, intersection,
+classification, terminal, optional damage and replay. It rejects client
+authority fields, non-finite values, duplicate keys, stage omissions, sequence
+rollback and side-effecting identity conflicts within bounded JSON limits.
+
+The targeted suite is **11 tests, 0 failures**. The explicit UTF-8 full main
+regression is **2083 tests, 0 failures/errors, 4 skips**; log SHA-256 is
+`86cdbbff98bc655b4478f1666125963ed8430f8942d549183664db178eb3a471`.
+A deliberate incomplete receipt returned
+**NOT_RUN_INCOMPLETE_CAPTURE** with `missing required stage: launch`.
+
+`PASS_CAPTURE_SHAPE_ONLY` means only that a synthetic complete fixture satisfies
+the receipt shape and authority boundary. It does not prove a native hit,
+penetration, damage formula, HP/module/crew mutation or client callback;
+`native_impact_status=NOT_VERIFIED_BY_AUDITOR` remains explicit. Native
+intersection and solver status stay **UNKNOWN / NOT_RUN**. See [P06D research](research/P06D_IMPACT_RECEIPT_AUDIT.md)
+and [P06D evidence](evidence-index/P06D.md).
+
+The exact next gate is owner-gated P06C: run the controlled two-MS-1 local
+capture and feed a real server-owned receipt to this auditor, then correlate
+intersection/material/normal/thickness/terminal, HP/module state, replay
+identity and native evidence. Keep P06 hit/damage unavailable until that
+correlation succeeds. Rollback for the implementation is a revert of `2d1465c`;
+the status-only update is independently reversible.
+
 ## Latest accepted card
 
 `P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:
