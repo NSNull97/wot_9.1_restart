@@ -60,6 +60,38 @@ hit/damage explicitly `UNKNOWN/NOT_RUN`. No solver, callback or runtime path
 was added. The next P06 research step is a read-only #717 source check for AP
 penetration/damage and vehicle armor surfaces.
 
+## P06B source-field research — static closure, native hit still open
+
+The read-only card `P06B_MS1_AP_SOURCE_SPIKE` was researched on branch
+`codex/p06b-ms1-ap-research` at commit `8bd8dab` and merged into `main` as
+`4143803`. The report pins exact SHA-256 values for the original #717 MS-1
+descriptor, gun/shell/common vehicle definitions, the Russian vehicle package,
+and the selected Hull/Turret_01/Gun_02 collision payloads. The static result is
+**PASS_STATIC_SOURCE_FIELDS**: AP shell `_37mm_UBRT1`/compact `2570`, armor and
+device damage fields `30`/`50`, literal `piercingPower="34 27"`, flight fields
+`442`/`9.81`/`720`, common factor `0.8`, active MS-1 armor descriptors and
+bounded mesh/material evidence are recorded in
+[`P06B research`](research/P06B_MS1_AP_SOURCE_SPIKE.md).
+
+The ignored receipt
+`local/evidence/20261008-p06b-ms1-ap-research-01/summary.json` is
+**PASS_STATIC_RECEIPT_RECHECK**. It verifies six source hashes, four Packed XML
+re-decodes and nine collision-payload hashes without launching the client or a
+physics/runtime process. The meaning/units of `34 27`, historical penetration
+and damage semantics, BSP2 traversal, runtime transforms, server-owned hit,
+HP/module/crew mutation, native callback and shot idempotency remain
+**UNKNOWN / NOT_RUN**. Static descriptors and tracer presentation do not close
+the hit gate.
+
+The exact next gate is one controlled local two-MS-1 capture at a fixed pose:
+fire shell `2570` at known `armor_1` and `armor_8` groups, then preserve the
+server segment/intersection record (shot identity, triangle/group, material,
+normal, thickness and terminal reason), before/after HP/module state, and a
+same-identity replay check proving one ammo decrement and at most one terminal
+damage token. Until a server-owned intersection and damage event are captured,
+the solver remains unavailable and the result is **NOT_RUN**. Rollback is a
+revert of merge `4143803`; no client/resource/runtime rollback is required.
+
 ## Latest accepted card
 
 `P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:

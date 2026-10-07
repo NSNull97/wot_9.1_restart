@@ -67,6 +67,33 @@ effective 353.6 м/с, gravity 6.2784 м/с², range 720 м). Пробитие, 
 `UNKNOWN/NOT_RUN`; P03H tracer не считается попаданием. План и evidence index:
 `docs/plans/P06A_BALLISTICS_CONTRACT.md` и `docs/evidence-index/P06A.md`.
 
+# P06B read-only MS-1 AP source research — 2026-10-08
+
+Карточка `P06B_MS1_AP_SOURCE_SPIKE` выполнена в ветке
+`codex/p06b-ms1-ap-research` (исследовательский commit `8bd8dab`) и слита в
+`main` обычным merge `4143803`. Это docs/evidence-only исследование локальных
+оригинальных ресурсов WoT `v.0.9.1 #717` RU; клиент, сервер, deployed gateway,
+runtime и resource files не запускались и не изменялись.
+
+Статические поля MS-1 AP закрыты как **PASS_STATIC_SOURCE_FIELDS**: shell
+`_37mm_UBRT1`/compact `2570`, `damage/armor=30`, `damage/devices=50`, literal
+`piercingPower="34 27"`, speed `442`, gravity `9.81`, range `720`, common
+projectile factor `0.8`, активные armor descriptors и Hull/Turret_01/Gun_02
+collision payload hashes/material groups. Машиночитаемая квитанция
+`local/evidence/20261008-p06b-ms1-ap-research-01/summary.json` повторно
+проверена как **PASS_STATIC_RECEIPT_RECHECK**; полный отчёт —
+`docs/research/P06B_MS1_AP_SOURCE_SPIKE.md`.
+
+Смысл пары `34 27`, единицы и формула пробития, BSP2/transform runtime,
+server-owned intersection, penetration, HP/module/crew damage, native callback
+и duplicate-shot idempotency остаются **UNKNOWN / NOT_RUN**. Трассер и наличие
+collision payload не считаются попаданием. Единственный следующий gate —
+контролируемый локальный capture двух MS-1 на фиксированной позе: один выстрел
+по известной `armor_1` и один по `armor_8`, с server segment/intersection,
+triangle/material/normal/thickness/terminal reason, HP/module state и проверкой
+повторной доставки shot identity. Если server-owned hit/HP event не получен,
+оставить solver недоступным и статус **NOT_RUN**.
+
 # Параллельная карточка — P04, 2026-10-07: typed content import
 
 В отдельной рабочей копии `codex/p04-content-import` реализован bounded
