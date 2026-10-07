@@ -1,5 +1,16 @@
 # ACTIVE_GATE — 2026-10-07
 
+## Overnight verification
+
+The UTF-8 full regression after the current docs-only merges is **2083 tests,
+0 failures/errors, 4 known skips**. Log:
+`local/evidence/20261008-overnight-final-01/full-python-utf8.txt` (SHA-256
+`df83b29f19394072e29dfeb9ea4f243710f0b711e97a9dea9f4bc3a1db235c0`). Layout is
+`PASS_SERVER_SOURCE_LAYOUT` with 58 source files and 22 relocations; receipt:
+`local/evidence/20261008-overnight-final-01/layout.json` (SHA-256
+`4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
+current diff from baseline contains documentation/evidence only.
+
 ## P07A/P08A static source boundaries
 
 P07A is accepted as `PASS_STATIC_VISIBILITY_SOURCE_BOUNDARY`: eight typed

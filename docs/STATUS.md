@@ -14,6 +14,19 @@ tank–tank/static obstacle causality, prediction/correction, rejoin и ручн
 План/исследование: [P05 plan](plans/P05_MOVEMENT_COLLISION_RECONCILIATION.md) и
 [P05 offline research](research/P05_OFFLINE_DETERMINISTIC_MATRIX.md).
 
+# Overnight verification — 2026-10-08
+
+После docs-only merges P03I review, P05 offline matrix, P07A и P08A повторён
+authoritative UTF-8 regression: **2083 tests, 0 failures/errors, 4 known skips**.
+Полный лог: `local/evidence/20261008-overnight-final-01/full-python-utf8.txt`,
+SHA-256 `df83b29f19394072e29dfeb9ea4f243710f0b711e97a9dea9f4bc3a1db235c0`.
+`server/check_layout.py` вернул `PASS_SERVER_SOURCE_LAYOUT` (58 source files,
+22 single-source relocations); layout receipt
+`local/evidence/20261008-overnight-final-01/layout.json`, SHA-256
+`4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`.
+Между baseline `6ed8424` и текущим head добавлены только docs/evidence files;
+runtime, gateway, client и deployed service не менялись.
+
 # P07A/P08A static source boundaries — 2026-10-08
 
 Два docs-only среза расширили исследование без выдуманного native runtime:
