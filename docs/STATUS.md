@@ -446,6 +446,17 @@ skips**. Receipt `result.json` закреплён локальным SHA
 `runtime_ready=false`, `runtime_eligibility=NOT_RUN` и native compatibility
 остаются **NOT_RUN**.
 
+После этого recheck усилен нижний `server-content.v1` boundary: bundle manifest
+и JSON content reader теперь fail-closed на duplicate keys, `NaN/Infinity`,
+overflow depth/items, boolean-as-integer и malformed SHA-256. Новые negative
+tests входят в `tests.test_content_bundle`; свежий bundle/import/map targeted
+suite дала **41 tests, 0 failures/errors, 0 skips**. Receipt
+`local/evidence/20261008-p04-bundle-hardening-01/recheck.json`, SHA-256
+`ee3f255245f06cac3ca870d6ed3656ad2603e9093fa070d3a95c28a285e8e135`; canonical
+import SHA остался `a1b1191b29bbae5e2aed2f4417a139c7e9a2e6740ec40698347ad6baa8aac2b9`.
+Это всё ещё typed resource contract: `runtime_ready=false`,
+`runtime_eligibility=NOT_RUN`, native compatibility и physics **NOT_RUN**.
+
 Отдельный аудит существующего web research-графа записан в
 [P04 research](research/P04_CONTENT_IMPORT.md): в нём уже есть уровни I–X СССР
 и переход ИС-8 → ИС-7. Это не означает, что нативное окно клиента умеет этот
