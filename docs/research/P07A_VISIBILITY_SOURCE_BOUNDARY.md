@@ -61,11 +61,11 @@ wire decoder.
 The static receipt was generated with a bounded Python reader over the existing
 P00/P01 JSON receipts (UTF-8, no client/runtime launch):
 
-```text
-python -X utf8 - <<'PY'  # read-only receipt extraction
-# loads contracts.json/sources.json, asserts exactly 8 declarations,
-# records source hashes and writes summary.json
-PY
+```powershell
+@'
+# read-only receipt extraction: load contracts.json/sources.json,
+# assert exactly 8 declarations, record source hashes, write summary.json
+'@ | python -X utf8 -
 ```
 
 For acceptance, rerun the reader, recompute the receipt SHA, and verify the
