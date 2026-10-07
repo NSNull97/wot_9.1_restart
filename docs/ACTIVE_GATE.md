@@ -32,9 +32,10 @@ matchmaker routes before that capture.
 
 ## Overnight verification
 
-The latest UTF-8 full regression on current `main` (`4d9c5fb2e95c337d3972f02745f22641df8fd586`,
-also verified at `origin/main`) is **2125 tests, 0 failures/errors, 4 known
-skips**. Log:
+The latest UTF-8 full regression was run on code head
+`4d9c5fb2e95c337d3972f02745f22641df8fd586` immediately before the following
+status-only documentation merge; that head matched `origin/main` at test time.
+It is **2125 tests, 0 failures/errors, 4 known skips**. Log:
 `local/evidence/20261008-overnight-final-09/full-python-utf8.txt` (SHA-256
 `c4f326c7a1f82b10cfd4770643d6bc47b5284d424387a80c20f2220844a1f87d`). Layout
 is `PASS_SERVER_SOURCE_LAYOUT` with 58 source files and 22 relocations;
