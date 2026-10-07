@@ -126,6 +126,19 @@ class ContentImportTests(unittest.TestCase):
             with self.assertRaises(ContentImportError):
                 validate_import_path(path, bundle)
 
+    def test_nonfinite_and_traversal_values_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle = write_bundle(root / "bundle")
+            value = fixture_manifest(bundle)
+            value["records"][0]["record_id"] = "../outside"
+            with self.assertRaises(ContentImportError):
+                validate_import_path(write_import(root, value), bundle)
+            value = fixture_manifest(bundle)
+            value["records"][0]["attributes"]["bad"] = float("nan")
+            with self.assertRaises(ContentImportError):
+                validate_import_path(write_import(root, value, "nonfinite.json"), bundle)
+
     def test_unknown_source_and_cross_kind_reference_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
