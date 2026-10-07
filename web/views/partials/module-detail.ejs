@@ -1,0 +1,28 @@
+<% const selected=research.selected; const moduleLink=node=>`?module=${node.id}#module-info`; %>
+<aside id="module-info" class="module-info" aria-labelledby="module-title" data-module="<%= selected.id %>">
+  <header class="module-info-heading"><%- include('module-icon',{kind:selected.kind}) %><div><p><%= moduleKinds[selected.kind] %> <span>· <%= roman[selected.level] || selected.level %> уровень</span></p><h3 id="module-title"><%= selected.name %></h3></div></header>
+  <dl class="module-meta"><% if(selected.price){ %><div><dt>Стоимость</dt><dd><%= format(selected.price.amount) %> <small><%= selected.price.currency==='gold'?'золота':'кредитов' %></small></dd></div><% } %><% if(selected.weightKg!==null && selected.weightKg!==undefined){ %><div><dt>Масса</dt><dd><%= format(selected.weightKg) %> <small>кг</small></dd></div><% } %></dl>
+  <% if(selected.kind==='chassis'){ %>
+    <dl class="module-parameters"><div><dt>Предельная нагрузка</dt><dd><%= format(selected.maxLoadKg/1000) %> т</dd></div><div><dt>Скорость поворота</dt><dd><%= format(selected.rotation) %> °/с</dd></div><% if(selected.terrainResistance?.length===3){ %><div><dt>Сопротивление грунтов</dt><dd><%= selected.terrainResistance.map(format).join(' / ') %></dd></div><% } %></dl><p class="module-hint">Грунты: твёрдый / средний / мягкий. Меньше сопротивление — легче движение.</p>
+  <% } else if(selected.kind==='engine'){ %>
+    <dl class="module-parameters"><div><dt>Мощность</dt><dd><%= format(selected.power) %> л. с.</dd></div><div><dt>Вероятность пожара при повреждении</dt><dd><%= selected.fireChance===null?'—':format(selected.fireChance*100)+' %' %></dd></div></dl>
+  <% } else if(selected.kind==='radio'){ %>
+    <dl class="module-parameters"><div><dt>Дальность связи</dt><dd><%= format(selected.range) %> м</dd></div></dl>
+  <% } else if(selected.kind==='turret'){ const turret=research.selectedTurret; %>
+    <dl class="module-parameters"><div><dt>Броня: лоб / борт / корма</dt><dd><%= armorText(turret.armor) %> мм</dd></div><div><dt>Прочность машины</dt><dd><%= format(turret.hitPoints) %> ед.</dd></div><div><dt>Обзор</dt><dd><%= format(turret.viewRange) %> м</dd></div><div><dt>Скорость поворота</dt><dd><%= format(turret.rotation) %> °/с</dd></div></dl>
+    <h4>ОРУДИЯ ДЛЯ ЭТОЙ БАШНИ</h4><ul class="compatible-modules"><% for(const gun of turret.guns){ const node=research.nodes.find(n=>n.kind==='gun'&&n.key===gun.key); %><li><a href="<%= moduleLink(node) %>"><%- include('module-icon',{kind:'gun'}) %><%= gun.name %><span aria-hidden="true">↗</span></a></li><% } %></ul>
+  <% } else if(selected.kind==='gun'){ %>
+    <h4>ХАРАКТЕРИСТИКИ С БАШНЕЙ</h4>
+    <% for(const [index,variant] of research.gunVariants.entries()){ const {turret,gun}=variant; const turretNode=research.nodes.find(n=>n.kind==='turret'&&n.key===turret.key); %>
+    <details class="module-variant" <%= index===0?'open':'' %>><summary><span><%= turret.name %></span><b aria-hidden="true">+</b></summary><div class="module-variant-body">
+      <dl class="module-parameters"><div><dt>Перезарядка<%= gun.magazine?' магазина':'' %></dt><dd><%= format(gun.reloadTime) %> с</dd></div><div><dt>Сведение</dt><dd><%= format(gun.aimingTime) %> с</dd></div><div><dt>Разброс на 100 м</dt><dd><%= format(gun.dispersion) %> м</dd></div><div><dt>Боекомплект</dt><dd><%= format(gun.ammoCapacity) %> снар.</dd></div><% if(gun.magazine){ %><div><dt>Снарядов в магазине</dt><dd><%= gun.magazine %></dd></div><% } %><% if(gun.burst){ %><div><dt>Снарядов в очереди</dt><dd><%= gun.burst %></dd></div><% } %></dl>
+      <div class="module-shells"><p><span>СНАРЯД</span><span>УРОН / ПРОБИТИЕ</span></p><% for(const shot of gun.shots){ %><div><span><b><%= shellKinds[shot.kind] || shot.kind %></b><% if(shot.premium){ %><i>Прем.</i><% } %><small><%= shot.name %></small></span><strong><%= format(shot.damage) %> <small>ед.</small><br><%= format(shot.penetration[0]) %> <small>мм</small></strong></div><% } %></div>
+      <a class="module-turret-link" href="<%= moduleLink(turretNode) %>">Параметры башни ↗</a>
+    </div></details><% } %><p class="module-hint">Без бонусов экипажа и оборудования. Урон и пробитие номинальные; пробитие указано на начальной дистанции.</p>
+  <% } else if(selected.kind==='vehicle'){ const nextTank=nextVehicle(selected.vehicleId); const art=vehicleImage(nextTank); %>
+    <div class="module-next-art"><%- include('vehicle-art',{art,vehicle:nextTank}) %></div><p class="module-hint"><%= nations[nextTank.nation] %> · <%= classes[nextTank.class] %></p><a class="button full" href="/vehicles/<%= selected.vehicleId %>">ДОСЬЕ МАШИНЫ →</a>
+  <% } %>
+  <% if(selected.incoming.length){ %><h4>ПЕРЕХОД К ЭТОМУ <%= selected.kind==='vehicle'?'ТАНКУ':'МОДУЛЮ' %></h4><ul class="module-relations"><% for(const edge of selected.incoming){ %><li><a href="<%= moduleLink(edge.node) %>"><span>Из: <%= edge.node.name %></span><b>★ <%= format(edge.xp) %></b></a></li><% } %></ul><% } %>
+  <% if(selected.outgoing.length){ %><h4>ОТКРЫВАЕТ ИССЛЕДОВАНИЕ</h4><ul class="module-relations"><% for(const edge of selected.outgoing){ %><li><a href="<%= moduleLink(edge.node) %>"><span><%= edge.node.name %> <small><%= moduleKinds[edge.node.kind] %></small></span><b>★ <%= format(edge.xp) %></b></a></li><% } %></ul><% } %>
+  <a class="module-back" href="#research">↑ К схеме модулей</a>
+</aside>

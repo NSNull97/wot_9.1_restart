@@ -1,0 +1,76 @@
+<%- include('partials/header') %>
+<main id="main" class="shell account-layout">
+  <div class="account-heading"><p class="eyebrow">СТАЛЬНОЙ РУБЕЖ / 0.9.1</p><h1>ЛИЧНЫЙ <em>КАБИНЕТ</em></h1><p>Твой профиль и место для будущей игровой истории.</p></div>
+  <% if (welcome) { %><div class="alert success" role="status">Аккаунт создан. Добро пожаловать в свой кабинет!</div><% } %>
+  <div class="account-grid">
+    <aside class="identity-card">
+      <div class="avatar" aria-hidden="true"><%= Array.from(user.display_name)[0].toUpperCase() %><span>↗</span></div>
+      <p class="eyebrow">ВЕБ-ПРОФИЛЬ</p>
+      <h2><%= user.display_name %></h2>
+      <p class="handle">@<%= user.display_nickname %></p>
+      <span class="profile-state"><span class="status-dot" aria-hidden="true"></span> Профиль активен</span>
+      <dl class="identity-details">
+        <div><dt>Дата регистрации</dt><dd><%= new Date(user.created_at).toLocaleDateString('ru-RU', { timeZone: 'Asia/Yekaterinburg', day: 'numeric', month: 'long', year: 'numeric' }) %></dd></div>
+        <div><dt>ID аккаунта</dt><dd class="profile-id"><%= user.id %></dd></div>
+      </dl>
+      <p class="quiet"><%= game.state === 'not_connected' ? 'Игровой сервис для этого сайта пока не настроен.' : 'На сайте и в игре используется один аккаунт и один пароль.' %></p>
+    </aside>
+    <div class="account-content">
+      <nav class="account-nav" aria-label="Разделы кабинета"><a href="#profile">Мой профиль <span>01</span></a><a href="#game">Игровые данные <span>02</span></a></nav>
+      <section id="profile" class="profile-panel" aria-labelledby="profile-title">
+        <div class="panel-heading"><h2 id="profile-title">Личные данные</h2><span aria-hidden="true">↗</span></div>
+        <p class="quiet">Меняй имя и описание, когда захочется.</p>
+        <% if (saved) { %><p class="alert success" role="status">Профиль сохранён.</p><% } %>
+        <% if (Object.keys(errors).length) { %><p class="alert error" role="alert">Проверь отмеченные поля. Изменения пока не сохранены.</p><% } %>
+        <form action="/account/profile" method="post">
+          <input type="hidden" name="csrf" value="<%= csrf %>">
+          <div class="field"><label for="display_name">Отображаемое имя</label><input id="display_name" name="display_name" value="<%= values.display_name || '' %>" required minlength="2" maxlength="48" autocomplete="nickname" aria-describedby="display-hint<%= errors.display_name ? ' display-error' : '' %>" <%= errors.display_name ? 'aria-invalid=true' : '' %>><p id="display-hint" class="field-hint">От 2 до 48 символов. Почта для входа и игровой ник не изменятся.</p><% if (errors.display_name) { %><p id="display-error" class="field-error"><%= errors.display_name %></p><% } %></div>
+          <div class="field"><label for="bio">О себе <span class="optional">необязательно</span></label><input id="bio" name="bio" value="<%= values.bio || '' %>" maxlength="240" aria-describedby="bio-hint<%= errors.bio ? ' bio-error' : '' %>" <%= errors.bio ? 'aria-invalid=true' : '' %>><p id="bio-hint" class="field-hint">Пара слов о себе, до 240 символов.</p><% if (errors.bio) { %><p id="bio-error" class="field-error"><%= errors.bio %></p><% } %></div>
+          <div class="save-row"><button class="button" type="submit">Сохранить изменения <span aria-hidden="true">→</span></button><span class="quiet">Только для твоего профиля</span></div>
+        </form>
+      </section>
+      <section id="email" class="profile-panel" aria-labelledby="email-title">
+        <div class="panel-heading"><h2 id="email-title">Почта для входа</h2><span aria-hidden="true">↗</span></div>
+        <% if (user.email) { %>
+        <p><strong><%= user.email %></strong></p><p class="quiet">Этот адрес используется для входа на сайт и в игру. Игровой ник: <%= user.display_nickname %>.</p>
+        <% } else { %>
+        <p class="quiet">Привяжи почту к существующему аккаунту. Ник, техника и данные игрока сохранятся.</p>
+        <form method="post" action="/account/email">
+          <input type="hidden" name="csrf" value="<%= csrf %>">
+          <div class="field"><label for="bind-email">Почта</label><input id="bind-email" name="email" type="email" required maxlength="254" autocomplete="email" autocapitalize="none" spellcheck="false"></div>
+          <div class="field"><label for="current-password">Текущий пароль</label><input id="current-password" name="current_password" type="password" required minlength="15" maxlength="128" autocomplete="current-password"></div>
+          <button type="submit" class="button">Привязать почту</button>
+        </form>
+        <% } %>
+      </section>
+      <section id="game" class="game-panel" aria-labelledby="game-title">
+        <% if (game.state === 'ready') { %>
+        <div class="panel-heading"><h2 id="game-title">Игровое содержимое</h2><span class="state-label">Тестовый профиль</span></div>
+        <p class="quiet">Игрок <strong><%= game.account.nickname %></strong>. Режим test_lab: стартовые ресурсы для проверки ангара. Покупки и бои пока недоступны.</p>
+        <div class="empty-categories"><span>Кредиты <b><%= game.resources.credits.toLocaleString('ru-RU') %></b></span><span>Золото <b><%= game.resources.gold %></b></span><span>Свободный опыт <b><%= game.resources.freeXP %></b></span></div>
+        <dl class="identity-details">
+          <% for (const vehicle of game.inventory) { %>
+          <div><dt>Техника</dt><dd data-inventory-item="<%= vehicle.inventoryItemId %>"><%= vehicle.displayName %> · <%= vehicle.health %> HP · <%= vehicle.ammunition > 0 ? (vehicle.crewAssigned === true ? 'экипаж назначен' : 'экипаж не назначен') + ' · боекомплект: ' + vehicle.ammunition + ' шт.' : (vehicle.crewAssigned === true ? 'экипаж назначен · боекомплект не загружен' : 'экипаж и боекомплект не назначены') %></dd></div>
+          <% } %>
+          <div><dt>Статистика</dt><dd>Бои: <%= game.statistics.battles %> · Победы: <%= game.statistics.wins %> · Поражения: <%= game.statistics.losses %> · Ничьи: <%= game.statistics.draws %></dd></div>
+          <div><dt>Версия данных</dt><dd><%= game.snapshotRevision %> · <%= new Date(game.asOf).toLocaleString('ru-RU', { timeZone: 'Asia/Yekaterinburg' }) %></dd></div>
+        </dl>
+        <p class="quiet game-footnote">Это данные своего игрового профиля. Кабинет показывает их только для чтения.</p>
+        <% } else if (game.state === 'unlinked') { %>
+        <div class="panel-heading"><h2 id="game-title">Игровое содержимое</h2><span class="state-label">Первый вход</span></div>
+        <div class="empty-state"><span class="empty-icon" aria-hidden="true">⊞</span><div><h3>Аккаунт готов к входу</h3><p>Войди в исследовательский клиент своей почтой и паролем с сайта. Игровой профиль создастся после успешной проверки этих же учётных данных.</p></div></div>
+        <p class="quiet game-footnote">До первого входа игровых данных ещё нет.</p>
+        <% } else if (game.state === 'unavailable') { %>
+        <div class="panel-heading"><h2 id="game-title">Игровое содержимое</h2><span class="state-label">Временно недоступно</span></div>
+        <div class="empty-state"><span class="empty-icon" aria-hidden="true">⊞</span><div><h3>Не удалось получить данные игры</h3><p>Игровой сервис не ответил или не подтвердил данные. Обнови страницу после восстановления сервиса.</p></div></div>
+        <% } else { %>
+        <div class="panel-heading"><h2 id="game-title">Игровое содержимое</h2><span class="state-label">Не подключено</span></div>
+        <div class="empty-state"><span class="empty-icon" aria-hidden="true">⊞</span><div><h3>Здесь будет твоя игровая история</h3><p>Игровой сервер пока не передаёт данные в кабинет. Техника, статистика и прогресс появятся после подключения.</p></div></div>
+        <div class="empty-categories"><span>Техника <b>Нет данных</b></span><span>Статистика <b>Нет данных</b></span><span>Прогресс <b>Нет данных</b></span></div>
+        <p class="quiet game-footnote">Вход в игру и изменение игровых данных через сайт пока недоступны.</p>
+        <% } %>
+      </section>
+    </div>
+  </div>
+</main>
+<%- include('partials/footer') %>

@@ -1,0 +1,22 @@
+{
+  "name": "local-account-portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Project account portal with shared email identity and an opt-in loopback game bridge.",
+  "engines": {
+    "node": ">=24.21.0 <25"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "start:demo": "node src/demo-server.mjs",
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "check": "node --check src/app.mjs && node --check src/server.mjs && node --check src/store.mjs && node --check src/security.mjs && node --check src/game-adapter.mjs && node --check src/catalog.mjs && node --check src/research.mjs && node --check src/network.mjs && node --check scripts/assign-email.mjs",
+    "evidence": "node scripts/verify.mjs"
+  },
+  "dependencies": {
+    "ejs": "3.1.10",
+    "express": "5.2.1",
+    "helmet": "8.3.0"
+  }
+}

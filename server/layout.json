@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "purpose": "Canonical backend source ownership; not a deploy manifest",
+  "components": {
+    "control": "server/control",
+    "gateway": "server/gateway",
+    "physics": "server/physics",
+    "identity_entrypoint": "server/identity/service.mjs",
+    "identity_account_service": "server/identity/account_service.mjs",
+    "contracts": "server/contracts"
+  },
+  "relocations": {
+    "tools/wg_probe/src/login091.rs": "server/gateway/src/protocol/login.rs",
+    "tools/wg_probe/src/redirect091.rs": "server/gateway/src/protocol/redirect.rs",
+    "tools/wg_probe/src/baseapp091.rs": "server/gateway/src/protocol/baseapp.rs",
+    "tools/wg_probe/src/channel091.rs": "server/gateway/src/protocol/channel.rs",
+    "tools/wg_probe/src/reliable091.rs": "server/gateway/src/protocol/reliable.rs",
+    "tools/wg_probe/src/transport091.rs": "server/gateway/src/protocol/transport.rs",
+    "tools/wg_probe/src/capture091.rs": "server/gateway/src/protocol/capture.rs",
+    "tools/wg_probe/src/account091.rs": "server/gateway/src/account/model.rs",
+    "tools/wg_probe/src/hangar091.rs": "server/gateway/src/account/hangar.rs",
+    "tools/wg_probe/src/identity091.rs": "server/gateway/src/account/identity.rs",
+    "tools/wg_probe/src/arena091.rs": "server/gateway/src/arena/codec.rs",
+    "tools/wg_probe/src/arena_control091.rs": "server/gateway/src/arena/control.rs",
+    "tools/wg_probe/src/arena_vehicle091.rs": "server/gateway/src/arena/vehicle.rs",
+    "tools/wg_probe/src/arena_ready091.rs": "server/gateway/src/arena/ready.rs",
+    "tools/wg_probe/src/arena_movement091.rs": "server/gateway/src/arena/movement.rs",
+    "tools/wg_probe/src/map_drive091.rs": "server/gateway/src/drive/model.rs",
+    "tools/wg_probe/src/map_drive_worker091.rs": "server/gateway/src/drive/worker.rs",
+    "tools/wg_probe/src/map_drive_world091.rs": "server/gateway/src/drive/world.rs",
+    "tools/wg_probe/src/map_drive_service091.rs": "server/gateway/src/drive/service.rs",
+    "tools/wg_probe/src/gateway091.rs": "server/gateway/src/session.rs",
+    "tools/map_drive_worker/Program.cs": "server/physics/Program.cs",
+    "tools/map_drive_worker/CheckedInput.cs": "server/physics/CheckedInput.cs"
+  },
+  "legacy_entrypoints": [
+    "tools/local_server.py",
+    "tools/service_lifecycle.py",
+    "tools/wg_probe/Cargo.toml",
+    "tools/wg_probe/src/main.rs",
+    "tools/map_drive_worker/MapDriveWorker.csproj"
+  ],
+  "frozen_shared_dependencies": [
+    "web/src/game-adapter.mjs",
+    "web/src/store.mjs",
+    "web/src/security.mjs",
+    "web/src/test-garage.mjs",
+    "web/src/ms1-crew.mjs",
+    "web/src/ms1-ammo.mjs",
+    "tools/hangar_state.py",
+    "tools/test_garage_state.py",
+    "tools/ms1_crew_state.py",
+    "tools/ms1_ammo_state.py",
+    "tools/client_audit.py",
+    "tools/packed_xml.py",
+    "tools/verify_hangar.py"
+  ],
+  "outside_server": {
+    "portal": "web",
+    "client_adapter": "client_patch",
+    "research_and_import": "tools",
+    "tests": "tests",
+    "documentation": "docs",
+    "runtime_secrets_content_builds_evidence": "local"
+  },
+  "naming": "Responsibility-based module/file names; compatibility version stays in schemas and documentation, not canonical file names.",
+  "future_portability_blockers": [
+    "Fresh game profile generation still reads verified client resources.",
+    "Existing profile provenance pins absolute paths and frozen encoders.",
+    "Current native transport is loopback-only.",
+    "Map-drive acceptance remains tied to the designated test account.",
+    "Worker loader currently requires .exe; Linux ABI/build/native tests NOT_RUN.",
+    "Runtime content paths still include historical evidence directories."
+  ]
+}

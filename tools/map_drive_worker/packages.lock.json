@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net9.0": {
+      "JoltPhysicsSharp": {
+        "type": "Direct",
+        "requested": "[2.22.0, 2.22.0]",
+        "resolved": "2.22.0",
+        "contentHash": "CZnLNr2HnYHteGZge5xiz5UcN760QQiw9l03ap5fiJOBg7POtw+EFrZGlS7W3Mu/wM6rSLADMPiKy17uNMdgzA==",
+        "dependencies": {
+          "JoltPhysics.Native": "1.1.0"
+        }
+      },
+      "JoltPhysics.Native": {
+        "type": "Transitive",
+        "resolved": "1.1.0",
+        "contentHash": "C3DO0ruZeUsOlcIWfGKK6x2yEWpH9dn4UMam1X+6YyAXqOE5p9bzihu1kedFeXXSK6J3fsNFPYfN3D78jgKtfQ=="
+      }
+    }
+  }
+}

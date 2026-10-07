@@ -1,0 +1,40 @@
+<%- include('partials/header') %>
+<main id="main" class="shell catalog-page arsenal-page">
+  <section class="catalog-hero arsenal-hero">
+    <div><a class="back-link" href="/">← На главную</a><h1>КАТАЛОГ ТЕХНИКИ</h1><p class="hero-lead">Сотни легендарных машин. Найди свою.</p><p class="hero-description">Изучай характеристики, вооружение и путь исследования.<br>Классические машины и модули версии 0.9.1.</p></div>
+    <div class="catalog-totals"><div><strong><%= counts.vehicles %></strong><span>машина<br>в каталоге</span></div><div><strong>7</strong><span>наций</span></div><div><strong>5</strong><span>классов</span></div><div><strong>X</strong><span>максимальный<br>уровень</span></div></div>
+  </section>
+  <% if(typeof nextVehicle==='function'){ %><%- include('partials/legendary-vehicles') %><% } %>
+  <div class="catalog-layout arsenal-layout">
+    <aside class="metal-panel catalog-filters arsenal-filters"><div class="filter-heading"><h2>ФИЛЬТРЫ</h2><a href="/vehicles#results-title">Сбросить все</a></div>
+    <form id="vehicle-filters" method="get" action="/vehicles#results-title">
+      <div class="field"><label for="vehicle-search">Название</label><input id="vehicle-search" name="q" type="search" value="<%= filters.q %>" maxlength="80" placeholder="Например, Т-34-85"></div>
+      <fieldset class="filter-options"><legend>Нация</legend><label class="filter-option"><input type="radio" name="nation" value="" <%= !filters.nation?'checked':'' %>><span><%- include('partials/tech-icon',{name:'all'}) %>Все нации</span></label><% for(const [id,name] of Object.entries(nations)){ %><label class="filter-option"><input type="radio" name="nation" value="<%= id %>" <%= filters.nation===id?'checked':'' %>><span><img class="nation-flag" src="<%= nationImage(id).url %>" width="27" height="17" alt=""><%= name %></span></label><% } %></fieldset>
+      <fieldset class="filter-options"><legend>Класс</legend><label class="filter-option"><input type="radio" name="class" value="" <%= !filters.class?'checked':'' %>><span><%- include('partials/tech-icon',{name:'heavyTank'}) %>Все классы</span></label><% for(const [id,name] of Object.entries(classes)){ %><label class="filter-option"><input type="radio" name="class" value="<%= id %>" <%= filters.class===id?'checked':'' %>><span><%- include('partials/tech-icon',{name:id}) %><%= name %></span></label><% } %></fieldset>
+      <fieldset class="filter-options tier-options"><legend>Уровень</legend><div><label class="filter-option any-tier"><input type="radio" name="tier" value="" <%= !filters.tier?'checked':'' %>><span>Все уровни</span></label><% for(let i=1;i<=10;i++){ %><label class="filter-option"><input type="radio" name="tier" value="<%= i %>" <%= filters.tier===String(i)?'checked':'' %>><span><%= roman[i] %></span></label><% } %></div></fieldset>
+      <div class="field collection-field"><label for="scope">Коллекция</label><select id="scope" name="scope"><option value="main" <%= filters.scope==='main'?'selected':'' %>>Основная · <%= counts.vehicles %></option><option value="archive" <%= filters.scope==='archive'?'selected':'' %>>Скрытые и событийные · <%= counts.archive %></option><option value="all" <%= filters.scope==='all'?'selected':'' %>>Все записи</option></select></div>
+      <button class="button full" type="submit">ПРИМЕНИТЬ ФИЛЬТРЫ</button>
+    </form></aside>
+    <section class="catalog-results" aria-labelledby="results-title"><div class="arsenal-results-toolbar"><h2 id="results-title">НАЙДЕНО: <strong><%= total %></strong> МАШИН</h2><div class="catalog-sort"><label for="sort">Сортировка:</label><select id="sort" name="sort" form="vehicle-filters"><option value="tier" <%= filters.sort==='tier'?'selected':'' %>>По уровню (сначала выше)</option><option value="name" <%= filters.sort==='name'?'selected':'' %>>По названию</option></select><button type="submit" form="vehicle-filters" aria-label="Применить сортировку">→</button></div></div>
+      <% if(filters.scope==='archive'){ %><p class="catalog-notice">Скрытые, служебные и событийные машины сборки. Они не заявлены доступными для обычных боёв.</p><% } %>
+      <% if(!items.length){ %><div class="catalog-empty"><%- include('partials/icon',{name:'tank'}) %><h3>Машин не найдено</h3><p>Попробуй другое название или убери часть фильтров.</p><a href="/vehicles" class="text-link">Показать весь каталог →</a></div><% } %>
+      <div class="vehicle-grid"><% for(const vehicle of items){ const summary=vehicleSummary(vehicle),art=vehicleImage(vehicle),status=vehicleStatus(vehicle),caliber=range(vehicle.turrets.flatMap(t=>t.guns.flatMap(g=>g.shots.map(s=>s.caliber)))); %>
+        <a class="vehicle-card" href="/vehicles/<%= vehicle.id %>" aria-label="<%= vehicle.name %>, <%= classes[vehicle.class] %>, <%= roman[vehicle.tier] %> уровень, <%= status.label %>">
+          <div class="vehicle-card-top"><span class="nation-label" title="<%= nations[vehicle.nation] %>"><img class="nation-flag" src="<%= nationImage(vehicle.nation).url %>" alt="<%= nations[vehicle.nation] %>" width="27" height="17"></span><span class="tier-number"><%= roman[vehicle.tier] %></span><span class="vehicle-class-badge" title="<%= classes[vehicle.class] %>"><%- include('partials/vehicle-class-icon',{vehicle}) %></span></div>
+          <div class="vehicle-card-render <%= art?.kind==='contour'?'contour-render':'' %>"><% if(art){ %><%- include('partials/vehicle-art',{art,vehicle}) %><% } %></div>
+          <div class="vehicle-card-caption"><h3><%= vehicle.name %></h3><p class="vehicle-class"><span><%= classes[vehicle.class] %></span><% if(status.kind!=='researchable'){ %><span class="vehicle-status-label status-<%= status.kind %>" title="<%= status.description %>"><%= status.short %></span><% } %><% if(vehicle.archived){ %><span>· Архив</span><% } %></p></div>
+          <dl class="vehicle-card-specs">
+            <div><dt><%- include('partials/tech-icon',{name:'health'}) %>Прочность</dt><dd><%= summary.hp %> <small>ед.</small></dd></div>
+            <div><dt><%- include('partials/tech-icon',{name:'speed'}) %>Макс. скорость</dt><dd><%= format(vehicle.speed.forward) %> <small>км/ч</small></dd></div>
+            <div><dt><%- include('partials/tech-icon',{name:'gun'}) %>Орудия</dt><dd><%= caliber %> <small>мм</small></dd></div>
+            <div><dt><%- include('partials/tech-icon',{name:'armor'}) %>Броня корпуса</dt><dd><%= armorText(vehicle.hullArmor) %></dd></div>
+            <div><dt><%- include('partials/tech-icon',{name:'view'}) %>Обзор</dt><dd><%= summary.view %> <small>м</small></dd></div>
+            <div><dt><%- include('partials/tech-icon',{name:'power'}) %>Мощность</dt><dd><%= summary.power %> <small>л. с.</small></dd></div>
+          </dl>
+        </a>
+      <% } %></div><%- include('partials/catalog-pagination') %>
+      <p class="catalog-footnote">Характеристики 0.9.1. Диапазоны зависят от модулей; броня корпуса — лоб / борт / корма в мм. Нажми на машину, чтобы открыть её досье и дерево исследования.</p>
+    </section>
+  </div>
+</main>
+<%- include('partials/footer') %>

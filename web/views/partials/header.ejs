@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="<%= typeof demoMode !== 'undefined' && demoMode ? 'Стальной рубеж — демонстрация каталога техники и карт версии 0.9.1. Машины, модули, характеристики и миникарты.' : 'Стальной рубеж — независимый танковый проект версии 0.9.1. Каталог техники, атлас карт, новости и личный кабинет.' %>">
+  <title><%= title %> · Стальной рубеж</title>
+  <link rel="stylesheet" href="/assets/site.css">
+  <% if (currentPath.startsWith('/vehicles') || currentPath.startsWith('/maps')) { %><link rel="stylesheet" href="/assets/catalog.css"><% } %>
+  <% if (currentPath.startsWith('/vehicles')) { %><link rel="stylesheet" href="/assets/arsenal.css"><% } %>
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+</head>
+<body class="<%= currentPath === '/' ? 'home-page' : 'inner-page' %>">
+  <a class="skip" href="#main">Перейти к содержимому</a>
+  <header class="header-wrap"><div class="site-header shell">
+    <a class="brand" href="/" aria-label="Стальной рубеж — главная"><img src="/assets/mark.svg" alt="" width="42" height="48"><span>СТАЛЬНОЙ<strong>РУБЕЖ</strong></span></a>
+    <nav class="primary-nav" aria-label="Основная навигация"><a href="/" class="<%= currentPath === '/' ? 'active' : '' %>" <%- currentPath === '/' ? 'aria-current="page"' : '' %>>ГЛАВНАЯ</a><a href="/#news">НОВОСТИ</a><a href="/vehicles" class="<%= currentPath.startsWith('/vehicles') ? 'active' : '' %>" <%- currentPath.startsWith('/vehicles') ? 'aria-current="page"' : '' %>>ТЕХНИКА</a><a href="/maps" class="<%= currentPath.startsWith('/maps') ? 'active' : '' %>" <%- currentPath.startsWith('/maps') ? 'aria-current="page"' : '' %>>КАРТЫ</a><a href="/#community">СООБЩЕСТВО</a><a href="/#files">ФАЙЛЫ</a><a href="/#project">О ПРОЕКТЕ</a></nav>
+    <div class="header-account"><% if (typeof demoMode !== 'undefined' && demoMode) { %><%- include('icon', {name:'tank'}) %><a href="/#project">ДЕМО</a><span class="header-locale">RU</span><% } else { %><%- include('icon', {name:'account'}) %><a href="<%= user ? '/account' : '/login' %>"><%= user ? 'КАБИНЕТ' : 'ВОЙТИ' %></a><% if (user) { %><form action="/logout" method="post" class="inline-form"><input type="hidden" name="csrf" value="<%= csrf %>"><button type="submit" class="nav-logout">Выйти</button></form><% } else { %><span class="header-locale">RU</span><% } %><% } %></div>
+  </div></header>

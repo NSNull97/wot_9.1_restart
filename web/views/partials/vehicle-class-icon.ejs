@@ -1,0 +1,13 @@
+<% const badgeStatus=vehicleStatus(vehicle); %>
+<span class="vehicle-type-symbol status-<%= badgeStatus.kind %><%= badgeStatus.wreath?' has-wreath':'' %>" role="img" aria-label="<%= classes[vehicle.class] %> · <%= badgeStatus.label %>" title="<%= classes[vehicle.class] %> · <%= badgeStatus.label %>">
+  <% if(badgeStatus.wreath){ %><svg class="vehicle-laurel" viewBox="0 0 32 28" width="32" height="28" aria-hidden="true" focusable="false">
+    <path d="M15 25C3 23 1 12 8 3M17 25C29 23 31 12 24 3" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    <% for(const side of ['', 'translate(32 0) scale(-1 1)']){ %><g transform="<%= side %>" fill="currentColor">
+      <path d="M8 2C4 3 3 6 4 9C7 8 9 5 8 2Z"/>
+      <path d="M3 8C0 10 1 14 3 16C5 13 5 11 3 8Z"/>
+      <path d="M3 15C1 18 4 22 7 23C8 19 6 17 3 15Z"/>
+      <path d="M8 21C7 24 11 26 15 25C13 22 11 21 8 21Z"/>
+    </g><% } %>
+  </svg><% } %>
+  <%- include('tech-icon',{name:vehicle.class}) %>
+</span>

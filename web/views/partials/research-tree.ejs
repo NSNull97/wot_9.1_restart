@@ -1,0 +1,30 @@
+<section class="research-section" id="research" aria-labelledby="research-title">
+  <header class="research-heading"><div><p class="eyebrow">КОНСТРУКТОРСКОЕ БЮРО / 0.9.1</p><h2 id="research-title">МОДУЛИ И ИССЛЕДОВАНИЕ</h2><p>Выбери модуль на схеме — изучи характеристики и путь к следующей машине.</p></div><div class="research-count"><strong><%= research.moduleCount %></strong><span>модулей</span></div></header>
+  <div class="research-workspace">
+    <div class="research-map-panel">
+      <div class="research-toolbar"><span><i class="tree-key" aria-hidden="true"></i> Выбранный модуль</span><span><%= research.fixed?'Модули машины':'→ Переход исследования' %></span><a href="#module-info">К характеристикам ↓</a></div>
+      <div class="research-scroll" tabindex="0" role="region" aria-label="Схема модулей <%= vehicle.name %>. Прокрутка по горизонтали и вертикали">
+        <svg class="research-graph" width="<%= research.width %>" height="<%= research.height %>" viewBox="0 0 <%= research.width %> <%= research.height %>" role="group" aria-labelledby="tree-title tree-description">
+          <title id="tree-title">Дерево исследования <%= vehicle.name %></title><desc id="tree-description">Ссылки открывают сведения о модулях. Стрелки показывают переходы исследования. Звёздочкой отмечена стоимость в опыте.</desc>
+          <defs><marker id="research-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L8 4L0 8z"/></marker></defs>
+          <% for(const edge of research.edges){ %><path class="research-edge <%= edge.selected?'is-related':'' %>" d="<%= edge.path %>" marker-end="url(#research-arrow)"/><% } %>
+          <% for(const node of research.nodes){ const selected=node.id===research.selected.id; %>
+          <a class="research-node <%= selected?'is-selected':'' %> <%= node.kind==='vehicle'?'is-vehicle':'' %>" href="?module=<%= node.id %>#module-info" aria-label="<%= moduleKinds[node.kind] %>: <%= node.name %>, <%= roman[node.level] || node.level %> уровень" <%- selected?'aria-current="true"':'' %>>
+            <title><%= moduleKinds[node.kind] %> · <%= node.name %></title>
+            <g transform="translate(<%= node.x %> <%= node.y %>)">
+              <rect class="node-body" width="188" height="92" rx="3"/>
+              <g transform="translate(11 10)"><%- include('module-icon',{kind:node.kind}) %></g>
+              <text class="node-kind" x="42" y="25"><%= node.kind==='vehicle'?'ТЕХНИКА':moduleKinds[node.kind].toUpperCase() %></text><text class="node-level" x="175" y="25" text-anchor="end"><%= roman[node.level] || node.level %></text>
+              <% for(const [index,line] of node.nameLines.entries()){ %><text class="node-name" x="12" y="<%= 47+index*15 %>"><%= line %></text><% } %>
+              <text class="node-cost" x="12" y="80"><%= node.incoming.length?'★ '+range(node.incoming.map(edge=>edge.xp))+' опыта':node.price?format(node.price.amount)+(node.price.currency==='gold'?' зол.':' кр.'):'Характеристики' %></text><text class="node-open" x="175" y="80" text-anchor="end"><%= selected?'●':'↗' %></text>
+            </g>
+          </a><% } %>
+        </svg>
+      </div>
+      <p class="research-caption"><span>↔ Схему можно прокручивать</span><span><%= research.fixed?'В данных этой машины нет переходов исследования.':'★ Опыт за переход · цены и модули версии 0.9.1' %></span></p>
+      <% if(research.nextVehicles.length){ %><nav class="research-successors" aria-label="Следующие машины"><span>ДАЛЬШЕ ПО ВЕТКЕ</span><% for(const next of research.nextVehicles){ const nextTank=nextVehicle(next.vehicleId); const nextArt=vehicleImage(nextTank); %><a href="/vehicles/<%= next.vehicleId %>"><% if(nextArt){ %><%- include('vehicle-art',{art:nextArt,vehicle:nextTank}) %><% } %><span><b><%= next.name %></b><small><%= roman[next.level] %> · <%= range(next.incoming.map(edge=>edge.xp)) %> опыта</small></span><i aria-hidden="true">→</i></a><% } %></nav><% } %>
+    </div>
+    <%- include('module-detail') %>
+  </div>
+  <p class="research-footnote">Справочная схема: выбор модуля показывает его параметры и не меняет комплектацию в игре. Совместимость орудий с башнями указана в описании; стрелки обозначают именно исследование.</p>
+</section>

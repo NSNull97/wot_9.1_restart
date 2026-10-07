@@ -1,0 +1,88 @@
+<% const publicDemo = typeof demoMode !== 'undefined' && demoMode; %>
+<%- include('partials/header') %>
+<main id="main" class="shell portal-layout">
+  <div class="portal-main">
+    <section class="battle-hero" aria-labelledby="hero-title">
+      <div class="hero-shade"></div>
+      <div class="battle-copy">
+        <p class="hero-kicker">НЕЗАВИСИМЫЙ ТАНКОВЫЙ ПРОЕКТ</p>
+        <h1 id="hero-title">СТАЛЬНОЙ<br>РУБЕЖ</h1>
+        <div class="hero-edition"><strong>0.9.1</strong><span>КЛАССИКА<br>БРОНЕТАНКОВЫХ БОЁВ</span></div>
+        <p class="hero-description">У каждой машины — своя история.<br>У каждого командира — свой рубеж.<br><%= publicDemo ? 'Найди свою легендарную машину.' : 'Начни с личного профиля.' %></p>
+        <div class="hero-actions">
+          <a class="button hero-button" href="<%= publicDemo ? '/vehicles' : user ? '/account' : '/register' %>"><%- include('partials/icon', { name: publicDemo ? 'tank' : 'account' }) %><%= publicDemo ? 'КАТАЛОГ ТЕХНИКИ' : user ? 'ЛИЧНЫЙ КАБИНЕТ' : 'СОЗДАТЬ АККАУНТ' %></a>
+          <a class="hero-about" href="#project"><span class="round-arrow" aria-hidden="true">›</span><span>УЗНАТЬ<br>О ПРОЕКТЕ</span></a>
+        </div>
+      </div>
+      <div class="hero-bottom"><span><i class="status-dot"></i> ИГРОВОЙ СЕРВИС В РАЗРАБОТКЕ</span><span>ИСТОРИЯ<br>ПРОДОЛЖАЕТСЯ <b aria-hidden="true">›</b></span></div>
+    </section>
+    <div class="portal-cards" aria-label="Разделы проекта">
+      <a class="portal-card" href="#news"><img src="/assets/images/battle-hero.png" alt="" class="card-battle"><div class="card-content"><%- include('partials/icon', { name: 'news' }) %><div><h2>НОВОСТИ</h2><p>Следи за развитием<br>Стального рубежа.</p><span class="card-action">К НОВОСТЯМ <b aria-hidden="true">→</b></span></div></div></a>
+      <a class="portal-card" href="/vehicles"><img src="/assets/images/battle-hero.png" alt="" class="card-vehicle"><div class="card-content"><%- include('partials/icon', { name: 'tank' }) %><div><h2>ТЕХНИКА</h2><p><%= catalogCounts.vehicles %> машина.<br>Семь наций. Пять классов.</p><span class="card-action">КАТАЛОГ ТЕХНИКИ <b aria-hidden="true">→</b></span></div></div></a>
+      <a class="portal-card" href="/maps"><img src="/assets/images/landscape.png" alt=""><div class="card-content"><%- include('partials/icon', { name: 'map' }) %><div><h2>КАРТЫ</h2><p>Знакомые места.<br>Новые названия.</p><span class="card-action">АТЛАС КАРТ <b aria-hidden="true">→</b></span></div></div></a>
+      <a class="portal-card" href="#community"><img src="/assets/images/column.png" alt=""><div class="card-content"><%- include('partials/icon', { name: 'team' }) %><div><h2>СООБЩЕСТВО</h2><p>Большая история<br>начинается с людей.</p><span class="card-action">СТАТЬ ЧАСТЬЮ <b aria-hidden="true">→</b></span></div></div></a>
+    </div>
+    <div class="dispatch-grid">
+      <section id="news" class="metal-panel news-panel" aria-labelledby="news-title">
+        <div class="panel-title"><h2 id="news-title">ПОСЛЕДНИЕ НОВОСТИ</h2><span>Журнал проекта</span></div>
+        <div class="news-grid">
+          <details class="news-item"><summary><img src="/assets/images/battle-hero.png" alt=""><time datetime="2026-10-04">04.10.2026</time><h3>У проекта своё имя:<br>«Стальной рубеж»</h3><span class="news-expand">Подробнее <b aria-hidden="true">+</b></span></summary><p>Новое название и оформление портала: тёмный металл, тяжёлая техника и огненный акцент. Это начало собственной истории проекта.</p></details>
+          <% if (publicDemo) { %><details class="news-item"><summary><img src="/assets/images/column.png" alt=""><time datetime="2026-10-05">05.10.2026</time><h3>Каталог техники<br>открыт для просмотра</h3><span class="news-expand">Подробнее <b aria-hidden="true">+</b></span></summary><p>Изучай машины семи наций, сравнивай характеристики и выбирай модули в дереве исследования. Всё доступно без регистрации.</p></details><% } else { %><details class="news-item"><summary><img src="/assets/images/column.png" alt=""><time datetime="2026-10-04">04.10.2026</time><h3>Личный кабинет<br>уже доступен</h3><span class="news-expand">Подробнее <b aria-hidden="true">+</b></span></summary><p>Создай отдельный аккаунт, выбери отображаемое имя и добавь пару слов о себе. Профиль сохраняется между посещениями.</p></details><% } %>
+          <details class="news-item"><summary><img src="/assets/images/landscape.png" alt=""><time datetime="2026-10-04">04.10.2026</time><h3>Игровой сервер:<br>работа продолжается</h3><span class="news-expand">Подробнее <b aria-hidden="true">+</b></span></summary><p>Проект развивается вокруг версии 0.9.1. Игровые сессии ещё недоступны. Открытие веб-профиля пока не даёт доступа к игре.</p></details>
+        </div>
+      </section>
+      <section id="media" class="metal-panel media-panel" aria-labelledby="media-title">
+        <div class="panel-title"><h2 id="media-title">АТМОСФЕРА ПРОЕКТА</h2><span>Концепт-арт</span></div>
+        <a class="media-feature" href="/assets/images/battle-hero.png" target="_blank" rel="noopener" aria-label="Открыть иллюстрацию: тяжёлая техника"><img src="/assets/images/battle-hero.png" alt="Тяжёлый танк на фоне разрушенного города — иллюстрация проекта"><span><b>СТАЛЬ ПОМНИТ<br>КАЖДЫЙ БОЙ</b><i aria-hidden="true">↗</i></span></a>
+        <div class="media-thumbs"><a href="/assets/images/battle-hero.png" target="_blank" rel="noopener" aria-label="Концепт-арт: техника"><img src="/assets/images/battle-hero.png" alt=""></a><a href="/assets/images/landscape.png" target="_blank" rel="noopener" aria-label="Концепт-арт: местность"><img src="/assets/images/landscape.png" alt=""></a><a href="/assets/images/column.png" target="_blank" rel="noopener" aria-label="Концепт-арт: колонна"><img src="/assets/images/column.png" alt=""></a></div>
+        <p class="media-caption">Художественные иллюстрации, не кадры игры.</p>
+      </section>
+    </div>
+    <section id="project" class="metal-panel project-brief" aria-labelledby="project-title">
+      <div class="panel-title"><h2 id="project-title">СВОЙ РУБЕЖ. СВОЯ ИСТОРИЯ.</h2><span>О проекте</span></div>
+      <p class="project-intro"><%= publicDemo ? '«Стальной рубеж» — независимый проект для любителей танковых боёв версии 0.9.1. Перед тобой демонстрация техники и карт: изучай машины, модули и знакомые локации. Игровой сервис находится в разработке.' : '«Стальной рубеж» — независимый проект для любителей танковых боёв версии 0.9.1. Сейчас работает локальный веб-профиль; игровой сервис находится в разработке.' %></p>
+      <div class="project-topics">
+        <article id="vehicles"><%- include('partials/icon', {name:'tank'}) %><h3>ТЕХНИКА</h3><p>Каталог версии 0.9.1: нации, классы, уровни, броня, башни, орудия и снаряды. Характеристики привязаны к конкретным модулям.</p><a class="text-link" href="/vehicles">Открыть каталог <span aria-hidden="true">→</span></a></article>
+        <article id="maps"><%- include('partials/icon', {name:'map'}) %><h3>КАРТЫ</h3><p>Атлас знакомых локаций под новыми названиями: размеры, режимы, схемы баз и подсказки по местности.</p><a class="text-link" href="/maps">Открыть атлас <span aria-hidden="true">→</span></a></article>
+        <article id="community"><%- include('partials/icon', {name:'team'}) %><h3>СООБЩЕСТВО</h3><p><%= publicDemo ? 'Покажи проект друзьям и найди свою любимую машину. Форум и игровые сессии в этой демонстрации недоступны.' : 'Начни со своего профиля. Форум и общие игровые сессии ещё не открыты; здесь пока можно настроить личный кабинет.' %></p><a class="text-link" href="<%= publicDemo ? '/vehicles' : user ? '/account' : '/register' %>"><%= publicDemo ? 'Выбрать машину' : user ? 'Открыть профиль' : 'Создать профиль' %> <span aria-hidden="true">→</span></a></article>
+      </div>
+    </section>
+  </div>
+  <aside class="portal-sidebar" aria-label="Аккаунт и информация">
+    <section class="metal-panel sidebar-auth" aria-labelledby="sidebar-account-title">
+      <% if (publicDemo) { %>
+        <h2 id="sidebar-account-title">ДЕМОНСТРАЦИЯ ПРОЕКТА</h2>
+        <p class="sidebar-note">Легендарная техника и знакомые карты версии 0.9.1. Всё открыто для просмотра.</p>
+        <a class="button full" href="/vehicles"><%- include('partials/icon', {name:'tank'}) %> ВЫБРАТЬ МАШИНУ</a>
+        <a class="button secondary full" href="/maps"><%- include('partials/icon', {name:'map'}) %> ОТКРЫТЬ КАРТЫ</a>
+        <p class="sidebar-note">Без регистрации. Игровой сервер к демонстрации не подключён.</p>
+      <% } else if (user) { %>
+        <h2 id="sidebar-account-title">ЛИЧНЫЙ КАБИНЕТ</h2>
+        <div class="sidebar-user"><span class="mini-avatar" aria-hidden="true"><%= Array.from(user.display_name)[0].toUpperCase() %></span><div><strong><%= user.display_name %></strong><span>@<%= user.display_nickname %></span></div></div>
+        <p class="profile-state"><i class="status-dot"></i> Профиль активен</p>
+        <a class="button full" href="/account">МОЙ ПРОФИЛЬ <span aria-hidden="true">→</span></a>
+        <p class="sidebar-note">Твоё место в Стальном рубеже.</p>
+      <% } else { %>
+        <h2 id="sidebar-account-title">ВХОД В АККАУНТ</h2>
+        <form method="post" action="/login">
+          <input type="hidden" name="csrf" value="<%= csrf %>">
+          <div class="compact-field"><label class="sr-only" for="home-email">Почта</label><%- include('partials/icon', {name:'account'}) %><input id="home-email" type="email" name="email" placeholder="Почта" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="254"></div>
+          <div class="compact-field"><label class="sr-only" for="home-password">Пароль</label><%- include('partials/icon', {name:'lock'}) %><input id="home-password" name="password" type="password" placeholder="Пароль" autocomplete="current-password" required minlength="15" maxlength="128"></div>
+          <p class="sidebar-note">Отдельный аккаунт проекта</p>
+          <button class="button full" type="submit">ВОЙТИ</button>
+        </form>
+        <a class="button secondary full" href="/register"><%- include('partials/icon', {name:'account'}) %> РЕГИСТРАЦИЯ</a>
+      <% } %>
+    </section>
+    <section class="metal-panel project-status" aria-labelledby="status-title">
+      <h2 id="status-title">СОСТОЯНИЕ ПРОЕКТА</h2>
+      <div class="status-summary"><span class="status-dot"></span><strong>Портал доступен</strong><span><%= publicDemo ? 'Демонстрация каталога' : 'Локальная версия' %></span></div>
+      <dl><div><dt>Версия игры</dt><dd>0.9.1</dd></div><% if (publicDemo) { %><div><dt>Техника и карты</dt><dd class="available">Открыты</dd></div><div><dt>Регистрация</dt><dd>Недоступна в демо</dd></div><% } else { %><div><dt>Веб-профиль</dt><dd class="available">Работает</dd></div><% } %><div><dt>Игровой сервер</dt><dd>В разработке</dd></div><div><dt>Данные игры</dt><dd>Не подключены</dd></div></dl>
+      <p class="sidebar-note">Игровая сессия недоступна</p>
+      <a class="button secondary full" href="#project"><%- include('partials/icon', {name:'info'}) %> О ПРОЕКТЕ</a>
+    </section>
+    <section id="files" class="metal-panel files-panel" aria-labelledby="files-title"><h2 id="files-title">ФАЙЛЫ ПРОЕКТА</h2><div class="files-message"><%- include('partials/icon', {name:'download'}) %><p>Публичная загрузка<br>клиента ещё не открыта.</p></div><span class="state-label">Появится позже</span></section>
+    <section class="metal-panel useful-links" aria-labelledby="links-title"><h2 id="links-title">ПОЛЕЗНЫЕ ССЫЛКИ</h2><a href="<%= publicDemo ? '/vehicles' : user ? '/account' : '/register' %>"><%- include('partials/icon', {name:publicDemo ? 'tank' : 'account'}) %><span><%= publicDemo ? 'Каталог техники' : user ? 'Мой профиль' : 'Создать профиль' %></span><b aria-hidden="true">›</b></a><a href="#news"><%- include('partials/icon', {name:'news'}) %><span>Новости проекта</span><b aria-hidden="true">›</b></a><a href="#media"><%- include('partials/icon', {name:'image'}) %><span>Иллюстрации</span><b aria-hidden="true">›</b></a><a href="#project"><%- include('partials/icon', {name:'info'}) %><span>О Стальном рубеже</span><b aria-hidden="true">›</b></a></section>
+  </aside>
+</main>
+<%- include('partials/footer') %>

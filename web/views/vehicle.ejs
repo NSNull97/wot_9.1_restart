@@ -1,0 +1,8 @@
+<%- include('partials/header') %>
+<main id="main" class="shell catalog-page dossier-page vehicle-dossier">
+  <%- include('partials/vehicle-overview') %>
+  <% if(vehicle.archived){ %><p class="catalog-notice">Архивная запись: скрытая, служебная или событийная техника сборки. Доступность в обычных боях не заявлена.</p><% } %>
+  <%- include('partials/research-tree') %>
+  <details class="full-armament" id="armament"><summary><span><%- include('partials/tech-icon',{name:'gun'}) %>ПОЛНЫЕ ХАРАКТЕРИСТИКИ ВООРУЖЕНИЯ <small>Все башни, орудия и снаряды</small></span><b aria-hidden="true">+</b></summary><div><%- include('partials/vehicle-armament') %></div></details>
+</main>
+<%- include('partials/footer') %>

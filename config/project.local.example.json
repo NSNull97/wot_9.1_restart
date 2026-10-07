@@ -1,0 +1,33 @@
+{
+  "_note": "Пример локальной конфигурации. Ни один путь или точный билд не установлен. Скопировать в project.local.json вне публичного доступа и заполнить фактическими значениями.",
+  "target": {
+    "game": "World of Tanks",
+    "version_family": "0.9.1",
+    "exact_build": null,
+    "region": null,
+    "client_manifest_sha256": null
+  },
+  "paths": {
+    "original_client_root": null,
+    "research_client_root": null,
+    "local_artifacts_root": null
+  },
+  "connection": {
+    "strategy": "NATIVE_PRIMARY",
+    "listen_host": "127.0.0.1",
+    "listen_port": null,
+    "allow_external_targets": false
+  },
+  "simulation_hypotheses": {
+    "logic_hz": 30,
+    "physics_hz": 60,
+    "state_publication_hz": 15,
+    "verified_for_client": false
+  },
+  "ruleset": {
+    "target": "historical_091",
+    "historical_dispersion_formula": "UNKNOWN",
+    "allow_approximate_rules_in_public_profile": false
+  },
+  "project_state": "PLANNING_ONLY"
+}

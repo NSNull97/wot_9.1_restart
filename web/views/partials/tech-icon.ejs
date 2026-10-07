@@ -1,0 +1,18 @@
+<% if(typeof vehicleClassImage==='function' && vehicleClassImage(name)){ const classArt=vehicleClassImage(name); %><img class="tech-icon native-class-icon" src="<%= classArt.url %>" width="<%= classArt.width %>" height="<%= classArt.height %>" alt="" aria-hidden="true"><% } else { %>
+<svg class="tech-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+<% if(name==='health'){ %><path d="M12 21S2 14 2 8a5 5 0 0 1 10-1A5 5 0 0 1 22 8c0 6-10 13-10 13Z"/>
+<% } else if(name==='speed'){ %><path d="M4 20a10 10 0 1 1 16 0M12 12l5-6M7 17H5m14 0h-2"/><circle cx="12" cy="12" r="2"/>
+<% } else if(name==='armor'){ %><path d="m12 2 8 4v7c0 5-8 9-8 9s-8-4-8-9V6ZM12 6v11"/>
+<% } else if(name==='view'){ %><path d="M1 12S5 5 12 5s11 7 11 7-4 7-11 7S1 12 1 12Z"/><circle cx="12" cy="12" r="3"/>
+<% } else if(name==='gun'){ %><path d="m3 15 6 6 4-5-5-5Zm7-2L19 3l3 3-10 9M6 19l-3 3"/>
+<% } else if(name==='power'){ %><path d="m14 2-9 12h6l-1 8 9-12h-6Z"/>
+<% } else if(name==='aim'){ %><circle cx="12" cy="12" r="7"/><path d="M12 1v6m0 10v6M1 12h6m10 0h6"/><circle cx="12" cy="12" r="1"/>
+<% } else if(name==='heavyTank'){ %><path d="m4 15 3-7h11l3 7-3 4H7ZM8 8V5h9m0 6h6"/>
+<% } else if(name==='mediumTank'){ %><path d="m5 14 4-6h7l4 6-4 5H9ZM14 8V5h5"/>
+<% } else if(name==='lightTank'){ %><path d="m6 13 6-8 6 8-6 7Z"/>
+<% } else if(name==='AT-SPG'){ %><path d="M2 5h20L12 21Z"/>
+<% } else if(name==='SPG'){ %><path d="M4 5h16v9l-8 7-8-7Z"/>
+<% } else if(name==='crew'){ %><circle cx="12" cy="7" r="3"/><path d="M6 22v-5a6 6 0 0 1 12 0v5M4 6a3 3 0 0 0 0 6m16-6a3 3 0 0 1 0 6M1 20v-3l3-2m19 5v-3l-3-2"/>
+<% } else { %><circle cx="12" cy="12" r="9"/><path d="M9 12h6M12 9v6"/>
+<% } %></svg>
+<% } %>

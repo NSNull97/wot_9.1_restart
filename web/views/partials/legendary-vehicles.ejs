@@ -1,0 +1,9 @@
+<section class="legendary-strip" aria-labelledby="legends-title">
+  <div class="legendary-intro"><h2 id="legends-title">ЛЕГЕНДАРНЫЕ <br>МАШИНЫ</h2><p>Три характера старой школы.<br>Знакомые машины —<br>с теми самыми модулями.</p><a href="#results-title">ВЕСЬ АРСЕНАЛ →</a></div>
+  <% const legends=[['ussr-kv-1s','Сила в надёжности'],['germany-waffentrager-e100','Шесть аргументов калибра 128 мм'],['uk-gb48-fv215b-183','183 миллиметра характера']]; for(const [id,motto] of legends){ const tank=nextVehicle(id);const art=vehicleImage(tank),status=vehicleStatus(tank); %>
+  <a class="legend-card legend-<%= tank.nation %>" href="/vehicles/<%= id %>">
+    <span class="legend-class"><%- include('vehicle-class-icon',{vehicle:tank}) %><span class="legend-kind-copy"><span><%= classes[tank.class] %></span><% if(status.kind!=='researchable'){ %><small class="status-<%= status.kind %>"><%= status.short %></small><% } %></span></span>
+    <div class="legend-art"><%- include('vehicle-art',{art,vehicle:tank}) %></div>
+    <div class="legend-copy"><h3><%= tank.name %></h3><p><img class="nation-flag" src="<%= nationImage(tank.nation).url %>" width="27" height="17" alt=""><span class="legend-country"><%= nations[tank.nation] %></span><span class="legend-level"><%= roman[tank.tier] %> уровень</span></p><small><%= motto %></small></div><span class="legend-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></span>
+  </a><% } %>
+</section>

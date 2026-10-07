@@ -1,0 +1,15 @@
+[package]
+name = "sr-gateway"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Checkout is independently verified at the pinned commit by the run script.
+wg-toolkit = { path = "../../local/vendor/wg-toolkit-rs/wg-toolkit", version = "=0.5.0" }
+rsa = "=0.8.2"
+sha1 = "=0.10.7"
+sha2 = "=0.10.9"
+blowfish = "=0.9.1"
+serde = "=1.0.229"
+serde_json = "=1.0.151"

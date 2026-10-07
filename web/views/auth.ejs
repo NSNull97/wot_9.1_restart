@@ -1,0 +1,58 @@
+<%- include('partials/header') %>
+<main id="main" class="shell auth-layout">
+  <aside class="auth-story">
+    <a class="back-link" href="/"><span aria-hidden="true">←</span> На главную</a>
+    <p class="eyebrow">СТАЛЬНОЙ РУБЕЖ · ЛИЧНЫЙ КАБИНЕТ</p>
+    <h1><%= kind === 'register' ? 'ТВОЯ\nИСТОРИЯ.' : 'СНОВА\nВ СТРОЮ.' %></h1>
+    <p><%= kind === 'register' ? 'Создай единый аккаунт проекта. Почта нужна для входа, ник — для игры.' : 'Войди в свой профиль, чтобы продолжить с того места, где остановился.' %></p>
+    <div class="auth-note"><span aria-hidden="true">↗</span><p>Один аккаунт для сайта и игры.<br>Для входа используются почта и тот же пароль.</p></div>
+    <span class="auth-watermark" aria-hidden="true">СТАЛЬНОЙ РУБЕЖ / 0.9.1</span>
+  </aside>
+  <section class="form-card" aria-labelledby="form-title">
+    <div class="form-topline"><span class="eyebrow"><%= kind === 'register' ? 'НОВЫЙ ПРОФИЛЬ' : 'С ВОЗВРАЩЕНИЕМ' %></span><span aria-hidden="true">↗</span></div>
+    <h2 id="form-title"><%= kind === 'register' ? 'Создать аккаунт' : 'Войти в аккаунт' %></h2>
+    <p class="form-intro"><%= kind === 'register' ? 'Всего несколько полей — и ты на месте.' : 'Введи почту и пароль своего аккаунта.' %></p>
+    <% if (notice) { %><p class="alert success" role="status"><%= notice %></p><% } %>
+    <% if (Object.keys(errors).length) { %><div class="alert error" role="alert"><%= errors.form || 'Проверь отмеченные поля и повтори.' %></div><% } %>
+    <form method="post" action="/<%= kind %>">
+      <input type="hidden" name="csrf" value="<%= csrf %>">
+      <div class="field">
+        <label for="email">Почта для входа</label>
+        <input id="email" type="email" name="email" value="<%= values.email || '' %>" required maxlength="254" autocomplete="username" autocapitalize="none" spellcheck="false" aria-describedby="email-hint<%= errors.email ? ' email-error' : '' %>" <%= errors.email ? 'aria-invalid=true' : '' %>>
+        <p id="email-hint" class="field-hint">Один адрес для входа на сайт и в игру.</p>
+        <% if (errors.email) { %><p id="email-error" class="field-error"><%= errors.email %></p><% } %>
+      </div>
+      <% if (kind === 'register') { %>
+      <div class="field">
+        <label for="nickname">Игровой ник</label>
+        <input id="nickname" name="nickname" value="<%= values.nickname || '' %>" required minlength="3" maxlength="48" autocomplete="nickname" spellcheck="false" aria-describedby="nickname-hint<%= errors.nickname ? ' nickname-error' : '' %>" <%= errors.nickname ? 'aria-invalid=true' : '' %>>
+        <p id="nickname-hint" class="field-hint">3–24 символа: латинские или русские буквы, цифры и _. Регистр сохраняется.</p>
+        <% if (errors.nickname) { %><p id="nickname-error" class="field-error"><%= errors.nickname %></p><% } %>
+      </div>
+      <div class="field">
+        <label for="display_name">Личное имя</label>
+        <input id="display_name" name="display_name" value="<%= values.display_name || '' %>" required minlength="2" maxlength="48" autocomplete="nickname" aria-describedby="name-hint<%= errors.display_name ? ' name-error' : '' %>" <%= errors.display_name ? 'aria-invalid=true' : '' %>>
+        <p id="name-hint" class="field-hint">Как к тебе обращаться. От 2 до 48 символов.</p>
+        <% if (errors.display_name) { %><p id="name-error" class="field-error"><%= errors.display_name %></p><% } %>
+      </div>
+      <% } %>
+      <div class="field">
+        <label for="password">Пароль</label>
+        <input id="password" type="password" name="password" required minlength="15" maxlength="128" autocomplete="<%= kind === 'register' ? 'new-password' : 'current-password' %>" aria-describedby="password-hint<%= errors.password ? ' password-error' : '' %>" <%= errors.password ? 'aria-invalid=true' : '' %>>
+        <p id="password-hint" class="field-hint"><%= kind === 'register' ? '15–128 символов. Длинная фраза подойдёт.' : 'Тот же пароль, что используется для входа в игру.' %></p>
+        <% if (errors.password) { %><p id="password-error" class="field-error"><%= errors.password %></p><% } %>
+      </div>
+      <% if (kind === 'register') { %>
+      <div class="field">
+        <label for="password_confirm">Повтори пароль</label>
+        <input id="password_confirm" type="password" name="password_confirm" required minlength="15" maxlength="128" autocomplete="new-password" <%= errors.password_confirm ? 'aria-invalid=true aria-describedby=confirm-error' : '' %>>
+        <% if (errors.password_confirm) { %><p id="confirm-error" class="field-error"><%= errors.password_confirm %></p><% } %>
+      </div>
+      <% } %>
+      <button class="button full" type="submit"><%= kind === 'register' ? 'Создать аккаунт' : 'Войти' %> <span aria-hidden="true">→</span></button>
+    </form>
+    <p class="form-switch"><%= kind === 'register' ? 'Уже есть профиль?' : 'Пока нет профиля?' %> <a href="<%= kind === 'register' ? '/login' : '/register' %>"><%= kind === 'register' ? 'Войти' : 'Создать аккаунт' %></a></p>
+    <p class="form-footnote">Локальная версия. Восстановление пароля пока недоступно.</p>
+  </section>
+</main>
+<%- include('partials/footer') %>

@@ -1,0 +1,7 @@
+<% if (pages > 1) { %>
+<nav class="catalog-pagination" aria-label="Страницы каталога">
+  <% if (page > 1) { %><a class="button secondary" href="<%= pageUrl(page-1) %>">← Назад</a><% } else { %><span class="page-disabled">← Назад</span><% } %>
+  <div class="page-numbers"><% const shown=Array.from(new Set([1,...Array.from({length:5},(_,i)=>page+i-2).filter(n=>n>0&&n<=pages),pages])).sort((a,b)=>a-b);for(const [index,n] of shown.entries()){ if(index&&n-shown[index-1]>1){ %><span>…</span><% } %><% if(n===page){ %><span class="current-page" aria-current="page"><%= n %></span><% } else { %><a href="<%= pageUrl(n) %>" aria-label="Страница <%= n %>"><%= n %></a><% } } %></div>
+  <% if (page < pages) { %><a class="button secondary" href="<%= pageUrl(page+1) %>">Далее →</a><% } else { %><span class="page-disabled">Далее →</span><% } %>
+</nav>
+<% } %>

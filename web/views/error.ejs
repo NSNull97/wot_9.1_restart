@@ -1,0 +1,8 @@
+<%- include('partials/header') %>
+<main id="main" class="shell error-page">
+  <p class="eyebrow">ЗАПРОС НЕ ВЫПОЛНЕН / <%= status %></p>
+  <h1><%= status === 404 ? 'Кажется,\nне туда.' : 'Небольшая\nостановка.' %></h1>
+  <p><%= message %></p>
+  <div class="hero-actions"><a class="button" href="/">На главную <span aria-hidden="true">→</span></a><a class="text-link" href="<%= typeof demoMode !== 'undefined' && demoMode ? '/vehicles' : user ? '/account' : '/login' %>"><%= typeof demoMode !== 'undefined' && demoMode ? 'К каталогу техники' : user ? 'В кабинет' : 'К форме входа' %></a></div>
+</main>
+<%- include('partials/footer') %>
