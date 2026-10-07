@@ -122,6 +122,40 @@ identity and native evidence. Keep P06 hit/damage unavailable until that
 correlation succeeds. Rollback for the implementation is a revert of `2d1465c`;
 the status-only update is independently reversible.
 
+## P06E client collision source boundary — static only
+
+The read-only `P06E_CLIENT_COLLISION_SOURCE_RESEARCH` card is commit `ed193d8`
+on branch `codex/p06e-client-collision-research`, merged into `main` as
+`37c2a0e`. Its static result is
+**PASS_STATIC_CLIENT_COLLISION_BOUNDARY**. The pinned #717 bytecode receipt SHA
+is `502581a94b4be46d4db885e5922038287b38ff155138cc37ebc24e2216ce7625`; the
+bounded extracted summary SHA is
+`61ddf923d1b276176fe8b346590228cd00ab51acefc5f1bce94eb968ec364839`.
+Summary path: `local/evidence/20261008-p06e-client-collision-research-01/summary.json`.
+
+The client `_readShell` loader reads `damage/armor` and `damage/devices` and
+observes defaults `damageRandomization=.25` and
+`piercingPowerRandomization=.25`. `_readShot` reads `piercingPower` as a
+`Vector2`, reads speed/gravity/max distance, and applies
+`projectileSpeedFactor`. Vehicle descriptors expose chassis/hull/turret/gun hit
+testers. Dynamic `collideSegment(start,end,skipGun)` and static
+`BigWorld.wg_collideSegment(...)` select the nearest client candidate. The
+projectile callback only calls
+`onProjectileHit(hitPosition, caliber, isOwnShot)`.
+
+These observations are client-side source boundaries. They do not establish
+server ownership, BSP2/runtime transforms, penetration or damage semantics,
+HP/module/crew mutation, native server callback or solver equivalence;
+authoritative server hit/damage remains **NOT_RUN / UNKNOWN**. The callback has
+no server target, armor layer, HP delta or shot-ledger token. See [P06E research](research/P06E_CLIENT_COLLISION_SOURCE_RESEARCH.md)
+and [P06E evidence](evidence-index/P06E.md).
+
+The exact next gate remains owner-gated P06C: run the controlled two-MS-1
+capture, feed the real server-owned rows to the P06D auditor, and correlate
+intersection/material/normal/thickness/terminal, HP/module state, replay
+identity and native evidence. Keep P06 hit/damage unavailable until that
+correlation succeeds.
+
 ## Latest accepted card
 
 `P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:

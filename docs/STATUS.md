@@ -127,6 +127,45 @@ intersection, armor/penetration, HP/module/crew damage и solver —
 normal/thickness/terminal, HP/module state и replay identity, затем отдельно
 сверить native evidence. До этого P06 hit/damage остаётся недоступен.
 
+# P06E #717 client collision source boundary — 2026-10-08
+
+Карточка `P06E_CLIENT_COLLISION_SOURCE_RESEARCH` выполнена в ветке
+`codex/p06e-client-collision-research`, commit `ed193d8`, и вошла в `main`
+merge `37c2a0e`. Это read-only аудит локального #717 bytecode: клиент,
+сервер, gateway и physics runtime не запускались, а authoritative hit/damage
+solver не реализовывался.
+
+Статическая граница закрыта как **PASS_STATIC_CLIENT_COLLISION_BOUNDARY**.
+Bytecode receipt имеет SHA-256
+`502581a94b4be46d4db885e5922038287b38ff155138cc37ebc24e2216ce7625`, а новый
+summary receipt —
+`61ddf923d1b276176fe8b346590228cd00ab51acefc5f1bce94eb968ec364839`.
+Summary path: `local/evidence/20261008-p06e-client-collision-research-01/summary.json`.
+`_readShell` читает `damage/armor` и `damage/devices` и наблюдает loader
+defaults `damageRandomization=.25` и `piercingPowerRandomization=.25`; эти
+defaults не являются доказательством server RNG.
+
+`_readShot` читает `piercingPower` через `Vector2`, speed/gravity/max distance
+через bounded readers и умножает speed на `projectileSpeedFactor`.
+`VehicleDescr.getHitTesters` собирает chassis/hull/turret/gun hit testers;
+dynamic `collideSegment(start,end,skipGun)` и static
+`BigWorld.wg_collideSegment(...)` сравнивают nearest candidate. Клиентская
+уведомлялка вызывает только
+`onProjectileHit(hitPosition, caliber, isOwnShot)` — без server-owned target,
+armor layer, penetration, HP/module delta или shot ledger token.
+
+Authoritative server hit, penetration/damage, BSP2/transform equivalence,
+module/crew effects и native server callback остаются **NOT_RUN / UNKNOWN**.
+Клиентский nearest collision и callback, как и tracer stop, не закрывают P06D
+receipt или игровой impact gate. Отчёт и evidence index:
+`docs/research/P06E_CLIENT_COLLISION_SOURCE_RESEARCH.md` и
+`docs/evidence-index/P06E.md`.
+
+Единственный следующий шаг — owner-gated P06C: провести controlled capture двух
+MS-1, получить server-owned intersection/material/normal/thickness/terminal,
+HP/module state и replay identity, затем сопоставить native evidence. До этой
+корреляции P06 hit/damage остаётся недоступен.
+
 # Параллельная карточка — P04, 2026-10-07: typed content import
 
 В отдельной рабочей копии `codex/p04-content-import` реализован bounded
