@@ -2,16 +2,16 @@
 
 ## Latest P04/P03I current-main recheck
 
-На code head `7c6de2eefdb195858d65b63b10e5ac8a4488aba0`, который совпадал с
-`origin/main` на момент запуска, повторён UTF-8 full regression: **2133 теста,
+На code head `1269e451696e69c481ab0a0f2a61dc8626c0d8f4`, который совпадал с
+`origin/main` на момент запуска, повторён UTF-8 full regression: **2134 теста,
 0 failures/errors, 4 known skips**. Лог
-`local/evidence/20261008-p04-p03i-main-regression-01/full-python-utf8.txt`,
-SHA-256 `632d575d57499a0623c84dd2215be3d685a9c0abaf117077a77584478689e91b`.
-P04 bundle/import/map targeted suite — **41/41 PASS**, P03I static audit —
+`local/evidence/20261008-p04-p03i-main-regression-02/full-python-utf8.txt`,
+SHA-256 `762fbc4f6c54b748fb682322075de07122b8865cce82b322d3c0b729762c382d`.
+P04 bundle/import/map targeted suite — **42/42 PASS**, P03I static audit —
 **5/5 PASS**. Layout — 58 source files / 22 relocations, docs-link recheck —
 440 внутренних ссылок, 0 missing targets. Combined summary:
-`local/evidence/20261008-p04-p03i-main-regression-01/summary.json`, SHA-256
-`4a2d7de32eb7cab45e3ecdeb4bc4ac143049ce9732a9ec78609a50e6d1aaa86`.
+`local/evidence/20261008-p04-p03i-main-regression-02/summary.json`, SHA-256
+`59b3055f4bb38f4568fc8df147f8ab5b543ad2473136200264c519fc57d301d`.
 
 # P03I static source-hash recheck — 2026-10-08
 
@@ -463,9 +463,9 @@ skips**. Receipt `result.json` закреплён локальным SHA
 и JSON content reader теперь fail-closed на duplicate keys, `NaN/Infinity`,
 overflow depth/items, boolean-as-integer и malformed SHA-256. Новые negative
 tests входят в `tests.test_content_bundle`; свежий bundle/import/map targeted
-suite дала **41 tests, 0 failures/errors, 0 skips**. Receipt
+suite дала **42 tests, 0 failures/errors, 0 skips**. Receipt
 `local/evidence/20261008-p04-bundle-hardening-01/recheck.json`, SHA-256
-`ee3f255245f06cac3ca870d6ed3656ad2603e9093fa070d3a95c28a285e8e135`; canonical
+`8d07c77de1a01c39c92e9153f4c3e7f4c08fabf6c4c632a1cbdc20db571e9685`; canonical
 import SHA остался `a1b1191b29bbae5e2aed2f4417a139c7e9a2e6740ec40698347ad6baa8aac2b9`.
 Это всё ещё typed resource contract: `runtime_ready=false`,
 `runtime_eligibility=NOT_RUN`, native compatibility и physics **NOT_RUN**.
