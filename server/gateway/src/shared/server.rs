@@ -215,8 +215,15 @@ fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
     if !matches!(c.phase, Phase::Driving | Phase::Leaving) { return Ok(()); }
     let slot = c.slot;
     let mut next = s.clone(); let mut next_world = world.clone();
-    next_world.set_ready(slot, s.id)?;
+    if c.correction { next_world.set_ready(slot, s.id)?; }
     let commands = std::mem::take(&mut next.shared.as_mut().ok_or_else(model::bad)?.commands);
+    if !c.correction && !commands.is_empty() {
+        // Keep a bounded startup intent until ACK6; no pre-correction motion.
+        if commands.iter().any(|cmd| !matches!(cmd, model::Command::Aim(_) | model::Command::Move(model::Input::STOP))) { return Err(model::bad()); }
+        next.shared.as_mut().ok_or_else(model::bad)?.commands = commands;
+        *s = next; return Ok(());
+    }
+    if !c.correction { return Ok(()); }
     let outcomes = next_world.apply(slot, s.id, &commands, now)?;
     for outcome in &outcomes {
         if let crate::battle091::fire::Outcome::AcceptedShot { ammo_remaining } = outcome {
@@ -247,13 +254,15 @@ fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
         if c.correction && c.binding.is_some_and(|(_, ack)| ack) && old_tick != next_world.tick && next.tx.len() < 4 {
             let body = wire::publication(&next_world, c.visible())?;
             next.tx.enqueue_body(&body)?;
-            println!("SHARED_SNAPSHOT battle={} session={} tick={} positions={:?} ready={:?}", next_world.id, s.id, next_world.tick,
-                next_world.actors.iter().map(|a| a.position).collect::<Vec<_>>(), c.visible());
+            println!("SHARED_SNAPSHOT battle={} session={} tick={} positions={:?} ready={:?} aim_yaw_pitch={:?}", next_world.id, s.id, next_world.tick,
+                next_world.actors.iter().map(|a| a.position).collect::<Vec<_>>(), c.visible(),
+                next_world.actors.iter().map(|a| (a.aim.yaw,a.aim.pitch)).collect::<Vec<_>>());
         }
     }
     if next.outbox.len() > 128 { return Err(model::bad()); } next.drain_outbox()?;
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
+    for command in &commands { if let model::Command::Aim(intent) = command { println!("SHARED_AIM battle={} session={} slot={slot} intent={intent:?} client_angles_authoritative=false", world.id, s.id); } }
     for (shot, delivered) in shot_publications {
         println!("SHARED_SHOT_CUE battle={} session={} shot={} shooter_slot={} tick={} queued={} reason={}",
             world.id, s.id, shot.sequence, shot.slot, shot.tick, delivered,
@@ -307,6 +316,42 @@ mod tests {
             bodies.push(transport091::parse_interactive(&raw).unwrap().body);
         }
         bodies.extend(s.outbox.iter().cloned()); bodies
+    }
+    fn point(slot:usize,p:[f32;3])->Vec<u8> {
+        let mut b=vec![0x0f,16,0];b.extend(wire::vehicle_id(slot).unwrap().to_le_bytes());
+        for x in p {b.extend(x.to_le_bytes());} b
+    }
+    #[test] fn native_aim_is_owned_atomic_and_published_from_one_server_state() {
+        let now=Instant::now();let (mut a,mut b,mut w)=visible_pair(now);
+        let input=point(1,[100.,100.,100.]);
+        assert!(a.receive(&frame(&a,&input),now).is_err());
+        let mut poison=vec![0x88,0,0];poison.extend(point(0,[f32::NAN,0.,0.]));
+        assert!(a.receive(&frame(&a,&poison),now).is_err());assert!(a.shared.as_ref().unwrap().commands.is_empty());
+        let packet=frame(&b,&input);b.receive(&packet,now).unwrap();poll(&mut b,&mut w,now).unwrap();
+        assert_eq!(w.actors[1].aim.yaw,0.);assert_eq!(w.actors[0].aim,super::super::aim::State::new());
+        b.receive(&packet,now).unwrap();assert!(b.shared.as_ref().unwrap().commands.is_empty());
+        w.advance(now+model::STEP).unwrap();poll(&mut a,&mut w,now+model::STEP).unwrap();poll(&mut b,&mut w,now+model::STEP).unwrap();
+        assert!(w.actors[1].aim.yaw>0.);assert!(w.actors[1].aim.yaw<=super::super::aim::YAW_RATE*0.101);
+        let expected=wire::publication(&w,[true,true]).unwrap();
+        for s in [&a,&b] {assert!(queued_bodies(s,now+model::STEP).contains(&expected));}
+    }
+    #[test] fn startup_target_waits_for_correction_and_rejoin_holds_actual_angles() {
+        let now=Instant::now();let (mut a,_,mut w)=visible_pair(now);
+        a.shared.as_mut().unwrap().correction=false;w.actors[0].ready=false;
+        a.receive(&frame(&a,&point(0,[100.,100.,100.])),now).unwrap();poll(&mut a,&mut w,now).unwrap();
+        w.advance(now+model::STEP).unwrap();assert_eq!(w.actors[0].aim.yaw,0.);
+        a.receive(&frame(&a,&[6]),now+model::STEP).unwrap();poll(&mut a,&mut w,now+model::STEP).unwrap();
+        w.advance(now+model::STEP*2).unwrap();let pose=(w.actors[0].aim.yaw,w.actors[0].aim.pitch);
+        assert!(pose.0>0.);w.detach(1).unwrap();w.advance(now+model::STEP*3).unwrap();
+        w.attach(w.actors[0].identity.clone(),3).unwrap();w.set_ready(0,3).unwrap();w.advance(now+model::STEP*4).unwrap();
+        assert_eq!((w.actors[0].aim.yaw,w.actors[0].aim.pitch),pose);
+        assert!(w.apply(0,1,&[model::Command::Aim(super::super::aim::Intent::Point([0.;3]))],now+model::STEP*4).is_err());
+    }
+    #[test] fn backpressure_does_not_enqueue_a_history_of_aim_poses() {
+        let now=Instant::now();let (mut a,_,mut w)=visible_pair(now);
+        for _ in 0..4 {a.tx.enqueue_body(&[19]).unwrap();}
+        for n in 1..30 {w.advance(now+model::STEP*n).unwrap();poll(&mut a,&mut w,now+model::STEP*n).unwrap();}
+        assert_eq!(a.tx.len(),4);assert!(a.outbox.is_empty());
     }
     #[test] fn accepted_native_shot_reaches_each_known_vehicle_once_with_private_ammo() {
         let now=Instant::now(); let (mut a,mut b,mut w)=visible_pair(now);

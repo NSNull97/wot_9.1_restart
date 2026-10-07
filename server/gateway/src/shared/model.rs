@@ -2,6 +2,7 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, time::{Duration, Instant}};
 use crate::battle091::fire;
+use super::aim;
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
@@ -29,11 +30,12 @@ pub struct Actor {
     pub speed: f32,
     pub input: Input,
     pub fire: fire::State,
+    pub aim: aim::State,
     origin: [f32; 3],
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Command { Move(Input), Fire(fire::Command), Leave }
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Command { Move(Input), Aim(aim::Intent), Fire(fire::Command), Leave }
 
 /// One accepted server action, independent of native entity/method IDs. The
 /// laboratory never replenishes ammo, so its complete event history is bounded.
@@ -64,7 +66,7 @@ impl World {
         if let Some(slot) = self.actors.iter().position(|a| a.identity.account == identity.account) {
             let a = &mut self.actors[slot];
             if a.session.is_some() || a.identity != identity { return Err(bad()); }
-            a.session = Some(session); a.ready = false; a.input = Input::STOP; a.speed = 0.;
+            a.session = Some(session); a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park();
             return Ok(slot);
         }
         if self.actors.len() == CAPACITY || self.actors.iter().any(|a| a.identity.database == identity.database) {
@@ -73,7 +75,7 @@ impl World {
         let slot = self.actors.len();
         let mut origin = SPAWN; origin[0] += if slot == 0 { -4. } else { 4. };
         self.actors.push(Actor { identity, session: Some(session), ready: false,
-            position: origin, origin, yaw: 0., speed: 0., input: Input::STOP, fire: fire::State::new() });
+            position: origin, origin, yaw: 0., speed: 0., input: Input::STOP, fire: fire::State::new(), aim: aim::State::new() });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
@@ -82,7 +84,7 @@ impl World {
     }
     pub fn detach(&mut self, session: u32) -> io::Result<()> {
         let a = self.actors.iter_mut().find(|a| a.session == Some(session)).ok_or_else(bad)?;
-        a.session = None; a.ready = false; a.input = Input::STOP; a.speed = 0.; Ok(())
+        a.session = None; a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park(); Ok(())
     }
     pub fn owned(&self, slot: usize, session: u32) -> io::Result<&Actor> {
         self.actors.get(slot).filter(|a| a.session == Some(session)).ok_or_else(bad)
@@ -99,6 +101,7 @@ impl World {
         let mut shots = self.shots.clone();
         for (at, command) in commands.iter().enumerate() {
             match command {
+                Command::Aim(intent) => next.aim.set(*intent)?,
                 Command::Move(input) => {
                     if !(-1..=1).contains(&input.throttle) || !(-1..=1).contains(&input.steer) { return Err(bad()); }
                     next.input = *input;
@@ -115,7 +118,7 @@ impl World {
                 },
                 Command::Leave => {
                     if at + 1 != commands.len() { return Err(bad()); }
-                    next.session = None; next.ready = false; next.input = Input::STOP; next.speed = 0.;
+                    next.session = None; next.ready = false; next.input = Input::STOP; next.speed = 0.; next.aim.park();
                 },
             }
         }
@@ -139,6 +142,7 @@ impl World {
             a.position[2] = (a.position[2] + a.yaw.cos() * a.input.throttle as f32 * dt)
                 .clamp(a.origin[2] - 2., a.origin[2] + 2.);
             a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
+            a.aim.advance(a.position, a.yaw, dt)?;
         }
         self.last = now; self.tick = tick; Ok(true)
     }

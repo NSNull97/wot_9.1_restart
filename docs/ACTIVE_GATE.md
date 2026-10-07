@@ -6,6 +6,29 @@ Branch policy: one card per `codex/<card-id>-<purpose>` branch; merge an accepte
 card into `main` with `--no-ff`, then verify the remote SHA. See
 [owner-approved workflow](07_CODEX_WORKFLOW.md).
 
+`P03G_SHARED_GUN_AIM_20261007`:
+**PASS_OWNER_P03G_SAME_PC_DYNAMIC_AIM_AND_SHOT_REGRESSION / ACCEPTED**.
+Branch `codex/p03g-shared-gun-aim`, base `8709b07151cdf4c8238ae918044e1b34855bfb6d`.
+Native target input, server-owned rate/limit integration, per-entity property
+delivery and original client rotator initialization are implemented. Both real
+clients received native callbacks; independent native math samples constrain
+the approximate test_lab solver. Canonical/legacy tests **363/361 PASS**;
+Python **2054, 0 errors/failures, 2 skips**; layout **57/22 PASS**.
+Owner reported “вроде все по этим тестам корректно” after the instructed check.
+Both native traces contain changing yaw/pitch; 9126/9118 original property
+completions match the wire prefix exactly. Six shots (five A, one B), six native
+shot handler completions on each peer; 28492 packets audited with zero errors.
+Repeat firing is recorded on A; two own shots from each peer were not recorded.
+The same-PC card is **ACCEPTED**. Owner receipt and final merge/remote SHAs:
+`local/evidence/20261007-p03g-shared-gun-aim-01/owner-acceptance.json` and
+`accepted-handoff.json`. See
+[current P03G receipt](evidence-index/P03G.md) and
+[research/limits](research/P03G_SHARED_GUN_AIM.md).
+Full P03 and the separate two-PC requirement remain open. Next: a separate
+server-owned projectile-flight/native-tracer card.
+
+## Accepted previous card and historical P03F receipt
+
 `P03F_TWO_CLIENT_WORLD_20261007`:
 **PASS_OWNER_P03F_SAME_PC_WORLD_SHOT_SOUND_NEUTRAL_POSE**.
 Two real native processes share the world; abrupt closure/re-authentication
@@ -46,6 +69,7 @@ The follow-up documentation delivery is recorded separately in the machine recei
 | P03D native ammunition HUD panel | `PASS_OWNER_NATIVE_AMMO_PANEL_HUD` | `local/evidence/20261007-battle-ammo-panel-01/owner-test/owner-panel-acceptance-01.json`; owner screenshot SHA256 `8a0777a437d78d73dd58dec3566f645759b1a68211205ba95448c64225f55c64` | Input profile contains no equipment/consumables; equipment message and zero-count selection are not accepted |
 | P03E native fire/reload/consumption | `PASS_OWNER_NATIVE_FIRE_RELOAD_CONSUMPTION` | `local/evidence/20261007-battle-fire-reload-01/owner-test/owner-acceptance-fire-reload-03.json`; 5 owner shots, AP `20 -> 15`, 5 completion callbacks | Projectile, hit, damage, visibility, physics, equipment and persistence remain outside this subcard |
 | P03F shared native same-PC laboratory | `PASS_OWNER_P03F_SAME_PC_WORLD_SHOT_SOUND_NEUTRAL_POSE` | `local/evidence/20261007-p03f-two-client-world-01/aim-01/owner-acceptance.json`; native movement/rejoin, remote shots/sound and neutral initial pose | Dynamic aiming, two-PC/LAN and the other explicitly listed lab limitations remain open |
+| P03G continuous turret/gun aim | `PASS_OWNER_P03G_SAME_PC_DYNAMIC_AIM_AND_SHOT_REGRESSION` | `local/evidence/20261007-p03g-shared-gun-aim-01/owner-acceptance.json`; 457 snapshots per native process, changing angles and six shared shots | Same-PC test_lab only; repeat own shots recorded on A, one own shot on B; two-PC/LAN, historical fidelity and projectile/hit/damage remain open |
 
 The owner fire/reload gate is therefore **closed**. Earlier build07/build08
 `NOT_RUN` or route-ready text is retained as historical evidence; it does not
@@ -64,7 +88,7 @@ override the later build09 owner receipt.
 Owner confirmed movement. Build07 adds 14 accepted shots / 28 native original
 handler completions and owner-visible remote shooting. Build08's neutral initial
 turret/gun pose and remote sound are now owner-confirmed. The separate two-PC
-repeat remains NOT_RUN; dynamic aiming is unsupported.
+repeat remains NOT_RUN. Dynamic aiming was subsequently accepted by P03G above.
 Same-PC observations do not claim LAN/public deployment compatibility.
 
 Projectile/hit/damage, visibility, equipment and the full battle lifecycle are
@@ -101,7 +125,7 @@ P03F runs two native clients; projectile/hit/damage remains outside this card.
   and its local `result.json`.
 - ORG-0A historical baseline commit (tag `baseline-2026-10-07`): `7d2a600b7e65ecd7568cb5a985af941313dffb60`.
 
-## Checks for this card
+## Checks for previous accepted P03F card
 
 | Check | Result | Evidence |
 |---|---|---|
@@ -115,7 +139,7 @@ P03F runs two native clients; projectile/hit/damage remains outside this card.
 | Windows symlink / Python-2.7-only unittest under Python 3 | SKIPPED with explicit reasons | Final Python log; not converted to PASS |
 | Two-PC repeat | NOT_RUN | Local-only mode |
 
-## Rollback
+## Rollback for previous accepted P03F card
 
 Stop only this card's current launch-receipt image paths. Restore A/B overlays
 using `tools/interactive_client.py rollback --out <install-a-05 or install-b-05>`
@@ -127,6 +151,5 @@ evidence, prior receipts and deployed services. No reset or force-push.
 
 ## Single next step
 
-A separate card for server-owned dynamic turret/gun aiming and native angle
-replication. Initial neutral pose is accepted; continuous aiming is not yet
-implemented. Do not silently close the full P03 two-PC requirement.
+A separate card for server-owned projectile flight and native tracer display
+on both clients. P03G aiming is accepted; the two-PC requirement remains open.

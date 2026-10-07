@@ -380,6 +380,18 @@ def profile_calls(frame, phase, value):
         fields['is_player'] = getattr(instance, 'isPlayer', None)
         for name in ('burstCount', 'isPredictedShot'):
             fields[name] = primitive(frame.f_locals.get(name), budget=[2, 128])
+    elif (((source == 'scripts/client/Vehicle.py' and method == 'set_gunAnglesPacked') or
+           (source == 'scripts/client/Avatar.py' and method == 'updateTargetingInfo'))
+          and _settings.get('enable_shared_lab') is True):
+        kind = 'native_shared_aim_call'
+        instance = frame.f_locals.get('self')
+        fields['entity_id'] = getattr(instance, 'id', None)
+        fields['gun_angles_packed'] = getattr(instance, 'gunAnglesPacked', None)
+        if method == 'updateTargetingInfo':
+            fields['targeting'] = [primitive(frame.f_locals.get(name), budget=[2, 128]) for name in
+                ('turretYaw', 'gunPitch', 'maxTurretRotationSpeed', 'maxGunRotationSpeed',
+                 'shotDispMultiplierFactor', 'gunShotDispersionFactorsTurretRotation',
+                 'chassisShotDispersionFactorsMovement', 'chassisShotDispersionFactorsRotation', 'aimingTime')]
     elif source == 'scripts/client/Vehicle.py' and method in (
             '__init__', 'prerequisites', 'onEnterWorld', 'onLeaveWorld', 'startVisual', 'stopVisual'):
         kind = 'native_vehicle_call'
@@ -754,9 +766,36 @@ def observe_shared_lab():
     if _shared_native_samples >= 3600:
         return
     _shared_native_samples += 1
+    rotator = player.gunRotator
+    prediction = dict(started=rotator._VehicleGunRotator__isStarted,
+                      yaw=rotator._VehicleGunRotator__turretYaw,
+                      pitch=rotator._VehicleGunRotator__gunPitch)
+    target = rotator._VehicleGunRotator__prevSentShotPoint
+    prediction['target'] = list(target) if target is not None else None
     record('shared_native_snapshot', sample=_shared_native_samples,
            avatar_entity_id=player.id, player_vehicle_id=player.playerVehicleID,
-           arena_unique_id=player.arenaUniqueID, vehicles=rows, observer_mutated_gameplay=False)
+           arena_unique_id=player.arenaUniqueID, vehicles=rows, prediction=prediction, observer_mutated_gameplay=False)
+    if _shared_native_samples == 3:
+        # Pure native maths on an identity matrix: an independent oracle, not
+        # game input or a client-authored pose fed to the server.
+        import Math
+        from projectile_trajectory import getShotAngles
+        from gun_rotation_shared import calcPitchLimitsFromDesc
+        descr = player.vehicleTypeDescriptor
+        matrix = Math.Matrix()
+        matrix.setIdentity()
+        samples = []
+        for point in ((0., 0., 100.), (100., 0., 0.), (0., 0., -100.),
+                      (0., 30., 100.), (0., -30., 100.), (0., 0., 5.),
+                      (0., 0., 720.), (0., 0., 10000.)):
+            samples.append(dict(point=list(point), angles=list(getShotAngles(descr, matrix, (0., 0.), Math.Vector3(*point)))))
+        limits = [dict(yaw_degrees=deg, limits=list(calcPitchLimitsFromDesc(math.radians(deg), descr.gun['pitchLimits'])))
+                  for deg in (0, 90, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180)]
+        record('shared_native_aim_oracle', version=1, samples=samples, pitch_limit_samples=limits,
+               turret=descr.turret['name'], gun=descr.gun['name'],
+               pitch_limits=primitive(descr.gun['pitchLimits']),
+               turret_rate=descr.turret['rotationSpeed'], gun_rate=descr.gun['rotationSpeed'],
+               observer_mutated_gameplay=False)
     if len(rows) == 2 and _shared_native_samples in (3, 10, 30, 60):
         directory = owned(_settings['screenshot_dir'], _settings['local_root'])
         configured = Settings.g_instance.engineConfig.readString('screenShot/path')

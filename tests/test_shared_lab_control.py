@@ -6,6 +6,37 @@ import unittest
 
 
 class SharedControlTests(unittest.TestCase):
+    def test_aim_receipt_pairs_original_callbacks_without_gameplay_writes_or_private_locals(self):
+        source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
+        tree = ast.parse(source.read_bytes())
+        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                     and node.name == 'profile_calls']
+        calls = []
+        namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
+                         _profile_call_id=0, _profile_frames={},
+                         primitive=lambda value, **kwargs: value,
+                         record=lambda event, **fields: calls.append((event, fields)))
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
+        for method, name in [('set_gunAnglesPacked', 'Vehicle'), ('updateTargetingInfo', 'Avatar')]:
+            instance = SimpleNamespace(id=152043525, gunAnglesPacked=32895)
+            frame = SimpleNamespace(f_code=SimpleNamespace(co_filename='scripts/client/'+name+'.py',
+                co_name=method, co_firstlineno=1), f_lasti=0,
+                f_locals={'self': instance, 'turretYaw': 0.25, 'gunPitch': -0.1,
+                          'private': object()})
+            before = vars(instance).copy()
+            namespace['profile_calls'](frame, 'call', None)
+            namespace['profile_calls'](frame, 'return', None)
+            self.assertEqual(vars(instance), before)
+        self.assertEqual([event for event, _ in calls], ['native_shared_aim_call'] * 4)
+        self.assertEqual(calls[2][1]['targeting'][:2], [0.25, -0.1])
+        self.assertEqual(calls[0][1]['gun_angles_packed'], 32895)
+        self.assertTrue(all('private' not in str(fields) for _, fields in calls))
+        self.assertFalse(namespace['_profile_frames'])
+        for value in [False, 1, None]:
+            namespace['_settings']['enable_shared_lab'] = value
+            namespace['profile_calls'](frame, 'call', None)
+        self.assertEqual(len(calls), 4)
+
     def test_passive_shot_receipt_reads_only_bounded_original_handler_fields(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
         tree = ast.parse(source.read_bytes())

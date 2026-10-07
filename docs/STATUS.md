@@ -1,4 +1,40 @@
-# Актуальный указатель — P03F, 2026-10-07: выстрелы и начальные углы
+# Актуальный указатель — P03G, 2026-10-07: серверное наведение
+
+Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **P03 IN_PROGRESS**.
+Карточка `codex/p03g-shared-gun-aim`:
+**PASS_OWNER_P03G_SAME_PC_DYNAMIC_AIM_AND_SHOT_REGRESSION / ACCEPTED**.
+Владелец после инструкции подтвердил: «вроде все по этим тестам корректно».
+Код проверенной сборки: `bbf4eac375676ffd8cf2dc60ebdf804653fd2b20`.
+Финальный commit/merge/push и remote SHA записываются после операций в
+`local/evidence/20261007-p03g-shared-gun-aim-01/accepted-handoff.json`.
+
+Сервер принимает родные цели наведения, сам ограничивает скорость башни/ствола,
+передаёт текущие углы обоим клиентам и сохраняет их при rejoin. Добавлен штатный
+`Avatar.updateTargetingInfo`, без которого клиентский gun rotator не стартовал.
+Оригинальные native обработчики на обеих копиях реально получили обновления.
+Номинальные ограничения stock МС-1 взяты из #717; восемь контрольных направлений
+и 15 rear-limit samples сверены с родной математикой клиента. Историческая
+точность всей модели остаётся approximate/test_lab, попадания не реализованы.
+
+Финальные сборки: canonical aim-02 **363 Rust PASS**, legacy aim-01 **361 PASS**.
+Python **2054 tests, 0 errors/failures, 2 skips**; layout **57/22 PASS**;
+клиентские overlays скомпилированы закреплённым Python 2.7.3. Первый Python
+прогон выявил 13 ошибок из-за порядка проверки нового диагностического guard;
+он исправлен, исходный отрицательный лог сохранён.
+
+Owner-прогон: **28 492 packets / 28 484 frames, 9137 pose+angle publications,
+12 shot cues, 0 ошибок**. По 457 native snapshots; 9126/9118 завершённых родных
+обработчиков углов точно совпали с префиксом wire-публикаций. A сделал пять
+выстрелов (AP20→15), B один (AP20→19); все шесть видны обоим native обработчикам.
+Повторная стрельба проверена на A; по два выстрела с каждого клиента не записаны.
+Owner receipt: `local/evidence/20261007-p03g-shared-gun-aim-01/owner-acceptance.json`.
+
+Файлы, команды, native evidence и откат: [P03G receipt](evidence-index/P03G.md).
+Оригинальная/research-копии и deployed gateway неизменны. Единственный следующий
+шаг — отдельная карточка серверного полёта снаряда и native-трассера в обоих окнах.
+Two-PC/LAN и полная физика остаются NOT_RUN.
+
+## Предыдущий указатель — принятая P03F
 
 Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **P03 IN_PROGRESS**;
 Карточка `codex/p03f-two-client-world` **PASS_OWNER_P03F_SAME_PC_WORLD_SHOT_SOUND_NEUTRAL_POSE**.
