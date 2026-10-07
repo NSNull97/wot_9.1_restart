@@ -15,6 +15,12 @@ physics, deployed service or client files. Baseline identifiers and the delivery
 The battle phase is **P03 — IN_PROGRESS**. P03 is not a completed two-client
 authoritative-world acceptance.
 
+ORG-0A local organizational gate: **PASS**; remote publication:
+**NOT_RUN_NETWORK_BLOCKED** (HTTP 408 on the first push, TLS handshake failure
+on the retry). Local baseline/tag and accepted merges are retained; the remote
+had no heads after the first failure. Exact attempts and SHAs:
+[ORG-0A receipt](evidence-index/ORG-0A.md).
+
 ## Accepted P03 subcards
 
 | Subcard | Status | Verified evidence | Remaining boundary |
@@ -82,5 +88,6 @@ forbidden.
 
 ## Single next step
 
-After ORG-0A, run `ORG-0B` to classify the 10 unittest errors and 4 skips and
-prepare the smallest repair plan without changing P03 battle code.
+Retry the ordinary push of existing main and `baseline-2026-10-07` when the
+GitHub connection works and verify remote SHAs. ORG-0B is separately recorded
+and remains unstarted; it does not begin automatically.
