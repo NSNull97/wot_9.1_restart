@@ -32,16 +32,19 @@ matchmaker routes before that capture.
 
 ## Overnight verification
 
-The UTF-8 full regression after the P09A MS-1 root guard is **2118 tests,
-0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-overnight-final-06-full-python-utf8.txt` (SHA-256
-`11da64256a7822a19d9df07455c608d1a20cf8ded49be2cf5aab8fb478a7ad2e`). Layout is
+The current UTF-8 full regression after the P09A static fixture matrix is
+**2125 tests, 0 failures/errors, 4 known skips**. Log:
+`local/evidence/20261008-overnight-final-08/full-python-utf8.txt` (SHA-256
+`f34ce9589fca54e549b1cf7ae0a2016d800bf8a1186adb98b7a32e5279a97ff7`). Layout is
 `PASS_SERVER_SOURCE_LAYOUT` with 58 source files and 22 relocations; receipt:
-`local/evidence/20261008-overnight-final-06-layout.json` (SHA-256
+`local/evidence/20261008-overnight-final-08/layout.json` (SHA-256
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
 current diff from baseline contains documentation/evidence, bounded movement
 matrix auditor/tests, static research-tree auditor/tests, and the isolated
-SQLite transaction harness/tests.
+SQLite transaction harness/tests. The post-merge documentation link recheck
+is `PASS_DOC_LINK_RECHECK` for 100 links with no missing targets; receipt
+`local/evidence/20261008-overnight-final-08/doc-links.json` has SHA-256
+`68c4ee3187c2f269854e5beac71a4de29fbd9a4c441f11052cd2ccaa32d1e33f`.
 
 ## P07A/P08A static source boundaries
 
@@ -119,8 +122,10 @@ This remains a static fixture boundary. `expected_native_visibility` is
 `UNKNOWN`, native payload/callback/screenshot are `NOT_RUN`, and runtime
 eligibility remains `NOT_RUN`. The targeted verifier suite is 7/7 PASS with
 negative controls for unknown IDs, duplicate hidden IDs, graph/catalog hash
-mismatch, malformed literals and path escapes. Do not infer native screen
-visibility or battle readiness from this matrix.
+mismatch, malformed literals and path escapes. The post-merge full regression
+is 2125 tests with the same four known skips; evidence is the overnight-08 log
+above. Do not infer native screen visibility or battle readiness from this
+matrix.
 
 ### P09A static graph guard
 

@@ -22,8 +22,13 @@ The verifier rejects unknown compact IDs, duplicate `notInShopItems`, graph or
 catalog hash mismatch, malformed literal bytes and paths outside the
 repository. It uses the bounded literal decoder from the existing verifiers;
 no pickle/unpickle, client import, service, gateway or original/research
-client was started. The full Python regression is **NOT_RUN** on this card;
-the targeted suite is the acceptance evidence.
+client was started. After the merge, the authoritative UTF-8 full regression
+ran **2125 tests in 37.699s, OK (skipped=4)**; log
+`local/evidence/20261008-overnight-final-08/full-python-utf8.txt` has SHA-256
+`f34ce9589fca54e549b1cf7ae0a2016d800bf8a1186adb98b7a32e5279a97ff7`.
+Layout remains `PASS_SERVER_SOURCE_LAYOUT` (58 source files / 22 relocations)
+in `local/evidence/20261008-overnight-final-08/layout.json` with SHA-256
+`4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`.
 
 # P09B isolated SQLite transaction harness — 2026-10-08
 
