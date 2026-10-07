@@ -15,6 +15,11 @@ failure) не относится к importer. Реальный полный #717
 native geometry checkpoints и selection-to-battle handoff остаются `NOT_RUN`.
 Карточка не слита в `main` и не меняет оригинальный/research client.
 
+Отдельный аудит существующего web research-графа записан в
+[P04 research](research/P04_CONTENT_IMPORT.md): в нём уже есть уровни I–X СССР
+и переход ИС-8 → ИС-7. Это не означает, что нативное окно клиента умеет этот
+граф получать; native/UI handoff остаётся отдельной задачей.
+
 План: [P04 plan](plans/P04_CONTENT_IMPORT.md); исследование:
 [P04 research](research/P04_CONTENT_IMPORT.md).
 
