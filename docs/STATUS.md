@@ -29,6 +29,9 @@ native content compatibility или готовности physics.
 SHA `f9beb996733f9dcdd8be70f214bfe2abe1cad242000ab0b3a542c3fd59b729ad`,
 deployed SHA не изменился; source layout **58 files / 22 relocations PASS**,
 receipt `local/evidence/20261007-p04-postmerge-layout-01.json`.
+Legacy gateway build также PASS: **371 Rust tests**, executable SHA
+`5325153dfedaededf35fcdbce4cfc55945ab8b267fb6c1e6dfbbf13a193dd50c`; оба
+билда изолированы и не заменяют deployed gateway.
 
 Отдельный аудит существующего web research-графа записан в
 [P04 research](research/P04_CONTENT_IMPORT.md): в нём уже есть уровни I–X СССР
