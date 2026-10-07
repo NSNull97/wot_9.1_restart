@@ -2,6 +2,8 @@
   "document_package": "wot091_server_plan",
   "revision": "1.0",
   "date": "2026-10-02",
+  "snapshot_status": "BASELINE_SNAPSHOT_2026_10_02_NOT_CURRENT_TREE",
+  "snapshot_note": "Original document package hashes and runtime_status below are historical. No verified regeneration tool is present; current acceptance is docs/ACTIVE_GATE.md. Original entries were preserved by ORG-0A.",
   "runtime_status": "NOT_IMPLEMENTED_NOT_TESTED",
   "files": [
     {

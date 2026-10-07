@@ -1,0 +1,172 @@
+file	line	path	canonical	classification
+.gitignore	11	client_original		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+.gitignore	12	client_work		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+docs/evidence-index/ORG-0A_BASELINE_ALLOWLIST.txt	370	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/evidence-index/ORG-0A_BASELINE_ALLOWLIST.txt	371	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/evidence-index/ORG-0A_SOURCE_ALLOWLIST.txt	381	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/evidence-index/ORG-0A_SOURCE_ALLOWLIST.txt	382	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/OVERNIGHT_20261005.md	126	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/OVERNIGHT_20261005.md	126	tools/wg_probe/src/gateway091.rs	server/gateway/src/session.rs	HISTORICAL_DOCUMENTATION
+docs/research/OVERNIGHT_20261005_FILES.md	9	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/OVERNIGHT_20261005_FILES.md	9	tools/wg_probe/src/gateway091.rs	server/gateway/src/session.rs	HISTORICAL_DOCUMENTATION
+docs/research/OVERNIGHT_20261005_FILES.md	25	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/OVERNIGHT_20261005_FILES.md	25	tools/wg_probe/src/gateway091.rs	server/gateway/src/session.rs	HISTORICAL_DOCUMENTATION
+docs/research/OVERNIGHT_20261005_FILES.md	26	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/OVERNIGHT_20261005_FILES.md	26	tools/wg_probe/src/hangar091.rs	server/gateway/src/account/hangar.rs	HISTORICAL_DOCUMENTATION
+docs/research/P01_BOOTSTRAP_AND_NATIVE_LOGIN.md	133	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P01_BOOTSTRAP_AND_NATIVE_LOGIN.md	133	tools/wg_probe/src/login091.rs	server/gateway/src/protocol/login.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_ACCOUNT_READY.md	24	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_ACCOUNT_READY.md	24	tools/wg_probe/src/account091.rs	server/gateway/src/account/model.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_ACCOUNT_READY.md	167	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_ACCOUNT_READY.md	168	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_ARENA_MOVEMENT.md	144	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_ARENA_MOVEMENT.md	144	tools/wg_probe/src/arena_movement091.rs	server/gateway/src/arena/movement.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_ARENA_MOVEMENT.md	149	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_ARENA_MOVEMENT.md	164	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_ARENA_READY.md	32	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_ARENA_READY.md	32	tools/wg_probe/src/arena_ready091.rs	server/gateway/src/arena/ready.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_ARENA_READY.md	82	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_ARENA_READY.md	82	tools/wg_probe/src/arena_ready091.rs	server/gateway/src/arena/ready.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_ARENA_READY.md	129	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_BASEAPP_REPLY.md	177	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_BASEAPP_REPLY.md	178	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_BASEAPP_REPLY.md	182	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/P02_BASEAPP_REPLY.md	185	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/P02_CHANNEL_ACK.md	166	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_CHANNEL_ACK.md	167	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_CHANNEL_ACK.md	171	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/P02_CHANNEL_ACK.md	173	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/P02_CHANNEL_ACK.md	175	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/P02_HANGAR.md	34	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_HANGAR.md	34	tools/wg_probe/src/hangar091.rs	server/gateway/src/account/hangar.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_HANGAR.md	36	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_HANGAR.md	36	tools/wg_probe/src/gateway091.rs	server/gateway/src/session.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_HANGAR.md	38	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_HANGAR.md	38	tools/wg_probe/src/transport091.rs	server/gateway/src/protocol/transport.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_HANGAR.md	493	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_HANGAR.md	494	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_LAB_GATEWAY.md	170	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_LAB_GATEWAY.md	171	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_LAB_GATEWAY.md	175	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/P02_LOGIN_REDIRECT.md	111	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_LOGIN_REDIRECT.md	111	tools/wg_probe/src/redirect091.rs	server/gateway/src/protocol/redirect.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_LOGIN_REDIRECT.md	159	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_LOGIN_REDIRECT.md	160	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_LOGIN_REDIRECT.md	164	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/P02_LOGIN_REDIRECT.md	167	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/P02_MAP_DRIVE.md	737	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_MAP_DRIVE.md	737	tools/wg_probe/src/map_drive091.rs	server/gateway/src/drive/model.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_MS1_AMMO.md	99	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_MS1_AMMO.md	99	tools/wg_probe/src/hangar091.rs	server/gateway/src/account/hangar.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_MS1_CREW.md	111	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_NATIVE_ACCOUNT.md	134	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_NATIVE_ACCOUNT.md	135	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_SERVER_RELIABLE.md	165	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_SERVER_RELIABLE.md	166	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_SERVER_RELIABLE.md	170	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/P02_SERVER_RELIABLE.md	173	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/P02_SNIPER_CAMERA_PROTOCOL.md	77	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_SNIPER_CAMERA_PROTOCOL.md	77	tools/wg_probe/src/map_drive_world091.rs	server/gateway/src/drive/world.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_UNIFIED_ACCOUNT.md	88	tools/wg_probe/src		HISTORICAL_DOCUMENTATION
+docs/research/P02_UNIFIED_ACCOUNT.md	88	tools/wg_probe/src/identity091.rs	server/gateway/src/account/identity.rs	HISTORICAL_DOCUMENTATION
+docs/research/P02_UNIFIED_ACCOUNT.md	463	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/P02_UNIFIED_ACCOUNT.md	464	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	57	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	58	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	59	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	60	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	112	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	137	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	138	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	196	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	197	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	201	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	233	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	259	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	274	local/vendor/wg-toolkit-rs/target/debug		HISTORICAL_DOCUMENTATION
+docs/research/REPRODUCE.md	328	tools/wg_probe/Cargo.toml		HISTORICAL_DOCUMENTATION
+server/build.py	58	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+server/build.py	80	tools/wg_probe/Cargo.toml		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+server/layout.json	13	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	13	tools/wg_probe/src/login091.rs	server/gateway/src/protocol/login.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	14	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	14	tools/wg_probe/src/redirect091.rs	server/gateway/src/protocol/redirect.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	15	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	15	tools/wg_probe/src/baseapp091.rs	server/gateway/src/protocol/baseapp.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	16	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	16	tools/wg_probe/src/channel091.rs	server/gateway/src/protocol/channel.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	17	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	17	tools/wg_probe/src/reliable091.rs	server/gateway/src/protocol/reliable.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	18	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	18	tools/wg_probe/src/transport091.rs	server/gateway/src/protocol/transport.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	19	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	19	tools/wg_probe/src/capture091.rs	server/gateway/src/protocol/capture.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	20	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	20	tools/wg_probe/src/account091.rs	server/gateway/src/account/model.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	21	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	21	tools/wg_probe/src/hangar091.rs	server/gateway/src/account/hangar.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	22	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	22	tools/wg_probe/src/identity091.rs	server/gateway/src/account/identity.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	23	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	23	tools/wg_probe/src/arena091.rs	server/gateway/src/arena/codec.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	24	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	24	tools/wg_probe/src/arena_control091.rs	server/gateway/src/arena/control.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	25	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	25	tools/wg_probe/src/arena_vehicle091.rs	server/gateway/src/arena/vehicle.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	26	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	26	tools/wg_probe/src/arena_ready091.rs	server/gateway/src/arena/ready.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	27	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	27	tools/wg_probe/src/arena_movement091.rs	server/gateway/src/arena/movement.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	28	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	28	tools/wg_probe/src/map_drive091.rs	server/gateway/src/drive/model.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	29	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	29	tools/wg_probe/src/map_drive_worker091.rs	server/gateway/src/drive/worker.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	30	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	30	tools/wg_probe/src/map_drive_world091.rs	server/gateway/src/drive/world.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	31	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	31	tools/wg_probe/src/map_drive_service091.rs	server/gateway/src/drive/service.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	32	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	32	tools/wg_probe/src/gateway091.rs	server/gateway/src/session.rs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	33	tools/map_drive_worker/Program.cs	server/physics/Program.cs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	34	tools/map_drive_worker/CheckedInput.cs	server/physics/CheckedInput.cs	RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	39	tools/wg_probe/Cargo.toml		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+server/layout.json	40	tools/wg_probe/src		RELOCATION_MAP_OR_LEGACY_ENTRYPOINT
+tools/check_baseapp_probe.py	143	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/check_channel_probe.py	130	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/check_gateway_probe.py	38	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/check_redirect_probe.py	171	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/check_server_reliable.py	113	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/gateway_suite.py	45	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/retired_base_probe.py	528	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/retired_base_probe.py	528	tools/wg_probe/src/gateway091.rs	server/gateway/src/session.rs	HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/retired_base_probe.py	619	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/retired_base_probe.py	619	tools/wg_probe/src/gateway091.rs	server/gateway/src/session.rs	HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_arena_movement_native.py	531	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_arena_movement_native.py	539	tools/wg_probe/Cargo.toml		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_arena_movement_native.py	557	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_arena_ready_native.py	265	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_arena_ready_native.py	273	tools/wg_probe/Cargo.toml		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_arena_ready_native.py	291	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_arena_space_native.py	173	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_arena_space_native.py	181	tools/wg_probe/Cargo.toml		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_arena_space_native.py	199	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_arena_vehicle_native.py	362	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_arena_vehicle_native.py	370	tools/wg_probe/Cargo.toml		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_arena_vehicle_native.py	388	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_avatar_base_native.py	287	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_avatar_base_native.py	295	tools/wg_probe/Cargo.toml		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_avatar_base_native.py	313	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_inprocess_relogin.py	48	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_inprocess_relogin.py	95	tools/wg_probe/Cargo.toml		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_inprocess_relogin.py	113	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_ms1_ammo_native.py	471	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_ms1_ammo_native.py	473	tools/wg_probe/Cargo.toml		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_ms1_ammo_native.py	487	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_ms1_ammo_native.py	487	tools/wg_probe/src/gateway091.rs	server/gateway/src/session.rs	HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_ms1_ammo_native.py	487	tools/wg_probe/src/hangar091.rs	server/gateway/src/account/hangar.rs	HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_ms1_ammo_native.py	524	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_ms1_ammo_native.py	524	tools/wg_probe/src/hangar091.rs	server/gateway/src/account/hangar.rs	HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_ms1_ammo_native.py	525	tools/wg_probe/src		HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_ms1_ammo_native.py	525	tools/wg_probe/src/gateway091.rs	server/gateway/src/session.rs	HISTORICAL_READER_OR_PIN_REVIEW_ORG_0B
+tools/verify_ms1_ammo_native.py	546	tools/wg_probe/Cargo.toml		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
+tools/verify_ms1_ammo_native.py	577	local/vendor/wg-toolkit-rs/target/debug		PRESERVED_DEPLOYED_OR_LEGACY_BOUNDARY
