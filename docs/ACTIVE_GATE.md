@@ -8,6 +8,22 @@ contract in merge `6d4d32e`; it does not change the accepted P03 runtime. The
 targeted receipt has 33 tests with one known skip; full native/evidence suite,
 real #717 dataset, native compatibility and physics remain `NOT_RUN`.
 
+## P05 preparation — offline only
+
+The read-only geometry/movement audit on 2026-10-08 is recorded in
+`local/evidence/20261008-p05-geometry-audit-01/`; the fresh bounded source/fault
+matrix is in `local/evidence/20261008-p05-movement-matrix-01/`. Geometry,
+map-drive and arena-movement source controls pass (26, 354 and 75 tests), and
+the isolated test_lab PhysicsWorker build passes. Native collision equivalence,
+historical physics, tank–tank, prediction/correction and owner movement
+acceptance remain `NOT_RUN`.
+
+The merged draft plan is
+[P05 movement/reconciliation](plans/P05_MOVEMENT_COLLISION_RECONCILIATION.md)
+(`dccfdabe`). The next narrow card is `P05A-pivot-diagnostics`; do not tune the
+controller before a fixed MS-1 neutral/left/right trace identifies the failing
+layer.
+
 ## Latest accepted card
 
 `P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:
