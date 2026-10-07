@@ -11,16 +11,62 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 
 FORMAT = "server-content.v1"
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 MAX_CONTENT_BYTES = 16 * 1024 * 1024
+MAX_JSON_DEPTH = 64
+MAX_JSON_ITEMS = 100_000
+HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class BundleError(ValueError):
     """The bundle is malformed, unsafe, or does not match its manifest."""
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise BundleError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_constant(value: str) -> Any:
+    raise BundleError(f"non-finite JSON constant: {value}")
+
+
+def _check_json_bounds(value: Any, depth: int = 0) -> None:
+    if depth > MAX_JSON_DEPTH:
+        raise BundleError("JSON nesting exceeds bounds")
+    if isinstance(value, dict):
+        if len(value) > MAX_JSON_ITEMS:
+            raise BundleError("JSON object exceeds item bound")
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise BundleError("JSON object key must be text")
+            _check_json_bounds(item, depth + 1)
+    elif isinstance(value, list):
+        if len(value) > MAX_JSON_ITEMS:
+            raise BundleError("JSON list exceeds item bound")
+        for item in value:
+            _check_json_bounds(item, depth + 1)
+
+
+def _parse_json(raw: bytes, label: str) -> Any:
+    try:
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object,
+                           parse_constant=_reject_constant)
+    except BundleError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+        raise BundleError(f"{label} is not bounded UTF-8 JSON") from error
+    _check_json_bounds(value)
+    return value
 
 
 def _relative(value: Any, label: str) -> str:
@@ -49,13 +95,10 @@ def _read(path: Path, maximum: int) -> bytes:
 def load_manifest(bundle_root: str | Path) -> dict[str, Any]:
     root = Path(bundle_root).resolve(strict=True)
     raw = _read(root / "manifest.json", MAX_MANIFEST_BYTES)
-    try:
-        manifest = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise BundleError("manifest.json is not UTF-8 JSON") from error
+    manifest = _parse_json(raw, "manifest.json")
     if not isinstance(manifest, dict) or manifest.get("format") != FORMAT:
         raise BundleError("unsupported server content bundle format")
-    if manifest.get("manifest_revision") != 1:
+    if type(manifest.get("manifest_revision")) is not int or manifest.get("manifest_revision") != 1:
         raise BundleError("unsupported manifest revision")
     content = manifest.get("content")
     if not isinstance(content, list) or not content:
@@ -71,9 +114,9 @@ def load_manifest(bundle_root: str | Path) -> dict[str, Any]:
             raise BundleError("duplicate content ID or bundle path")
         seen_ids.add(content_id)
         seen_paths.add(bundle_path)
-        if not isinstance(item.get("sha256"), str) or len(item["sha256"]) != 64:
+        if not isinstance(item.get("sha256"), str) or not HEX_RE.fullmatch(item["sha256"]):
             raise BundleError(f"content[{index}] has invalid digest")
-        if not isinstance(item.get("bytes"), int) or item["bytes"] < 0 or item["bytes"] > MAX_CONTENT_BYTES:
+        if type(item.get("bytes")) is not int or item["bytes"] < 0 or item["bytes"] > MAX_CONTENT_BYTES:
             raise BundleError(f"content[{index}] has invalid size")
         source = item.get("source")
         if not isinstance(source, dict):
@@ -87,7 +130,9 @@ def load_manifest(bundle_root: str | Path) -> dict[str, Any]:
         target = (root / bundle_path).resolve()
         if not target.is_relative_to(root):
             raise BundleError(f"content[{index}] escapes bundle root")
-    if not isinstance(manifest.get("encoder"), dict) or not manifest["encoder"].get("revision"):
+    if (not isinstance(manifest.get("encoder"), dict) or
+            not isinstance(manifest["encoder"].get("revision"), str) or
+            not manifest["encoder"]["revision"]):
         raise BundleError("encoder revision is missing")
     provenance = manifest.get("provenance")
     if not isinstance(provenance, dict):
@@ -148,10 +193,7 @@ class Bundle:
         return data
 
     def read_json(self, content_id: str) -> Any:
-        try:
-            return json.loads(self.read(content_id).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise BundleError(f"content is not UTF-8 JSON: {content_id}") from error
+        return _parse_json(self.read(content_id), f"content {content_id}")
 
 
 def main() -> None:
