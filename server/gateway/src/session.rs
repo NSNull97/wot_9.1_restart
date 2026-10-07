@@ -6,6 +6,9 @@ use sha2::{Digest,Sha256};
 use std::{sync::{Arc,mpsc},path::Path};
 use crate::{baseapp091 as base,login091 as login,redirect091,transport091::{self,Frame,Window}};
 use crate::capture091::{Channel,Recorder};
+#[path = "shared/mod.rs"]
+mod shared;
+pub use shared::serve as serve_shared_lab;
 
 // R01 measured same-process reconnect reuses the cipher key but changes the
 // encrypted nonce and UDP peer. Keep finite attempt and retired-peer isolation;
@@ -169,6 +172,7 @@ struct Session {
     drive:Option<crate::map_drive_world091::Arena>,
     drive_return_account:Option<WarmAccountReturn>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
+    shared:Option<shared::Client>,
 }
 impl Session {
     fn new(id:u32,key:[u8;16],peer:SocketAddr,now:Instant)->Self {
@@ -179,7 +183,7 @@ impl Session {
             arena_base:false,avatar_unsupported_envelopes:0,arena_space:ArenaSpaceStage::Disabled,
             arena_vehicle:ArenaVehicleStage::Disabled,arena_vehicle_seed:None,arena_vehicle_announcement:None,
             arena_ready:false,arena_vehicle_creation:None,arena_preparation:None,arena_battle_preparation:None,arena_fire:None,
-            arena_movement:false,arena_motion:None,map_drive:false,map_binding:None,drive:None,drive_return_account:None,drive_account_policy:None}
+            arena_movement:false,arena_motion:None,map_drive:false,map_binding:None,drive:None,drive_return_account:None,drive_account_policy:None,shared:None}
     }
     fn same_login_attempt(&self,candidate:&LoginAttempt)->bool {
         self.login_attempt.is_some_and(|attempt|attempt.same_attempt(candidate))
@@ -963,6 +967,7 @@ for incoming in requests {
             close|=self.receive_ready(p,now,events,depth+1,budget)?;
         }
         self.tx.acknowledge(f)?;
+        if let Some(shared)=&mut self.shared {shared.acknowledge(self.tx.cumulative,f);}
         if let Some((sequence,acked))=&mut self.arena_vehicle_announcement {
             *acked|=self.tx.cumulative>*sequence || f.selective.contains(sequence);
         }
@@ -1004,6 +1009,7 @@ for incoming in requests {
                     if !f.body.is_empty() {
                         if f.body.len()<(if self.hangar.is_some(){5}else{6}) || f.body[0]!=1 || f.body[1..5]!=self.token.to_le_bytes() {return Err(invalid());}
                         if f.body[5..]==[11,0] {close=true;}
+                        else if self.shared.is_some() {self.shared_payload(&f.body[5..],now,events)?;}
                         else if self.drive.is_some() {
                             if self.arena_base {self.drive_avatar(&f.body[5..],n,now,events)?;}
                             else {self.drive_account(&f.body[5..],n,now,events)?;}

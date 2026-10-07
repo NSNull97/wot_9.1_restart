@@ -532,6 +532,20 @@ def is_active():
     return _controller is not None and _controller.active and not _closing
 
 
+def prepare_shared_lab(record):
+    """Explicit two-client install: initialize original services before reset.
+
+    No entity, position, ammo, clock or command is created here. This is the
+    same original-service lifetime normally initialized by the Fight button.
+    """
+    if not is_active() or record is not _controller.record:
+        raise RuntimeError('shared lab requires the owned ordinary service controller')
+    _controller._require_owned()
+    _controller.services.initialize()
+    _emit(record, 'shared_lab_services_ready', gameplay_applied=False,
+          authority='server', source='original_arena_services')
+
+
 def observe(record):
     if not is_active():
         return {'player_kind': 'inactive', 'arena_services_initialized': False}

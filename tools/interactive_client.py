@@ -91,6 +91,13 @@ def prepare(args):
     if out.exists() and any(out.iterdir()):
         raise ValueError('prepare requires an empty output directory')
     root, original = paths['research_client_root'], paths['original_client_root']
+    copy_info = None
+    if getattr(args, 'research_copy', None):
+        from shared_client_copy import checked_copy
+        root, copy_info = checked_copy(args.research_copy, paths)
+    shared_lab = bool(getattr(args, 'enable_shared_lab', False))
+    if shared_lab and (copy_info is None or not args.enable_map_drive):
+        raise ValueError('Shared lab requires an explicit isolated copy and native arena services')
     endpoint = args.endpoint
     if not re.fullmatch(r'127\.0\.0\.1:([0-9]{1,5})', endpoint) or not 1024 <= int(endpoint.rsplit(':', 1)[1]) <= 65535:
         raise ValueError('endpoint must be numeric IPv4 loopback with unprivileged port')
@@ -204,6 +211,8 @@ def prepare(args):
                 'capture_hangar':bool(args.capture_hangar or args.capture_ui_passive),
                 'capture_ui_passive':bool(args.capture_ui_passive),
                 'enable_map_drive':bool(args.enable_map_drive)}
+    if shared_lab:
+        settings['enable_shared_lab'] = True
     payloads['sr_interactive_settings.json'] = (json.dumps(settings, ensure_ascii=True, indent=2)+'\n').encode()
     sources = []
     for module in MODULES:
@@ -244,6 +253,9 @@ def prepare(args):
             'preferences_contract':'exact native invalid prefix checked before GUI; owned bounded DataSection XML persistence',
             'normal_auto_login':False, 'normal_auto_quit':False,
             'native_acceptance':'NOT_RUN', 'command':sys.argv}
+    if copy_info is not None:
+        plan['additional_research_copy'] = True
+        plan['instance_mutex'] = copy_info['instance_mutex']
     save_json(out/'install-plan.json', plan)
     print(json.dumps({'status':'PREPARED','plan':str(out/'install-plan.json'),'client_write_performed':False},ensure_ascii=False))
 
@@ -253,6 +265,11 @@ def load_plan(args):
     out = local_path(args.out, paths)
     plan = json.loads(read_limited(out/'install-plan.json', 1024*1024))
     root = paths['research_client_root']
+    if plan.get('additional_research_copy') is True:
+        from shared_client_copy import checked_copy
+        root, copy_info = checked_copy(plan['research_root'], paths)
+        if plan.get('instance_mutex') != copy_info['instance_mutex']:
+            raise ValueError('Research copy mutex differs from manifest')
     if plan['schema_version'] != 1 or Path(plan['research_root']) != root or Path(plan['original_root']) != paths['original_client_root']:
         raise ValueError('install plan roots/schema changed')
     return out, root, plan
@@ -263,7 +280,7 @@ def install(args):
     out, root, plan = load_plan(args)
     if (out/'patch-ledger.json').exists():
         raise ValueError('installation already attempted; use its ledger and rollback')
-    with control() as mutex:
+    with control(plan['instance_mutex']) if plan.get('additional_research_copy') else control() as mutex:
         for entry in plan['files']:
             if file_hash(target(root,entry['path'])) != entry['before_sha256']:
                 raise ValueError('client changed since reviewed prepare: '+entry['path'])
@@ -306,7 +323,7 @@ def rollback(args):
     ledger = json.loads(read_limited(out/'patch-ledger.json',1024*1024))
     if ledger['plan_sha256'] != sha256(out/'install-plan.json'):
         raise ValueError('prepared plan changed since installation')
-    with control():
+    with control(plan['instance_mutex']) if plan.get('additional_research_copy') else control():
         if (out/'restore.json').exists():
             changed = [e['path'] for e in ledger['files'] if file_hash(target(root,e['path'])) != e['before_sha256']]
             if changed:
@@ -354,6 +371,8 @@ def main():
     sub = parser.add_subparsers(dest='command',required=True)
     prep = sub.add_parser('prepare')
     prep.add_argument('--out',required=True)
+    prep.add_argument('--research-copy', help='Explicit manifested additional copy below local/clients/')
+    prep.add_argument('--enable-shared-lab', action='store_true', help='Initialize original arena services before server-assigned laboratory entry')
     prep.add_argument('--public-key',required=True)
     prep.add_argument('--endpoint',default='127.0.0.1:20014')
     prep.add_argument('--registration-url',default='http://127.0.0.1:3092/register')
