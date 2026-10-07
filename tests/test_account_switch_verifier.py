@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from frozen_relogin_sources import historical_source_reader
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -337,7 +338,9 @@ class CapturedSwitchControls(unittest.TestCase):
         cls.plan = v.entry.json_data((cls.install / 'install-plan.json').read_bytes())
         cls.outcome = v.entry.json_data((cls.install / 'native-outcome.json').read_bytes())
         cls.rows, cls.trace = v.entry.runtime_rows(cls.install, cls.plan, cls.outcome, cls.local_root)
-        v.frozen_dependencies()
+        with patch.object(v.previous, 'read_limited',
+                          side_effect=historical_source_reader(v.previous.read_limited)):
+            v.frozen_dependencies()
         import account_switch_expectations
         pair = account_switch_expectations.load_pair(
             ROOT / 'local/server/fixtures/c5326cc1-8524-479c-8bba-72e973489c22/r3-catalog3',

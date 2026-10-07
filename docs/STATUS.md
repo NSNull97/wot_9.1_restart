@@ -1,20 +1,29 @@
-# Актуальный указатель — ORG-0A, 2026-10-07
+# Актуальный указатель — ORG-0B, 2026-10-07
 
 Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **Полный P03 IN_PROGRESS**.
 P03D `PASS_OWNER_NATIVE_AMMO_PANEL_HUD` и P03E
 `PASS_OWNER_NATIVE_FIRE_RELOAD_CONSUMPTION` подтверждены owner receipts.
-Повтор ручного P03E в ORG-0A не требуется. Два клиента в общей арене,
+Повтор ручного P03E в ORG-0B не требуется. Два клиента в общей арене,
 projectile/hit/damage и полная боевая приёмка остаются NOT_RUN.
 
-ORG-0A: layout PASS (52 source files / 22 relocations); полный Python suite
-FAIL (2028 tests, 10 errors, 4 skips). Ошибки вынесены в отдельный
-[ORG-0B backlog](plans/ORG-0B_TEST_TRIAGE_BACKLOG.md), протокол/боёвка не менялись.
-Baseline/remote receipt: [ORG-0A](evidence-index/ORG-0A.md).
-Организационная приёмка PASS; remote delivery **PASS_REMOTE_VERIFIED** после
-ручного push владельца. Независимая сверка: main `0b7b8ac6f9ef`, tag object
-`0b0fa2f54abd`, baseline target `7d2a600b7e65`. Прежние HTTP 408/TLS ошибки
-сохранены в истории receipt. Следующий один шаг — отдельная ORG-0B; она пока
-не начата. Runtime-код не менялся; прежний full-suite FAIL остаётся открытым.
+**ORG-0B: PASS_TEST_REPAIR.** Свежий baseline повторил 2028 tests, 10 errors,
+4 skips. После минимальных исправлений — **2047 tests, 0 errors/failures,
+2 skips**; отдельный Python 2.7 bytecode check — **1 PASS**. Единственная
+проверка из исходных четырёх, не выполненная ни в одном режиме, — Windows
+symlink refusal: текущая учётная запись не может создать symlink. Layout PASS
+(52 source files / 22 relocations), четыре запуска profile4 CLI/module PASS.
+Причины, границы и команды: [ORG-0B receipt](evidence-index/ORG-0B.md).
+
+Исправлены test fixtures и режим импорта offline profile4 verifiers. Протокол,
+боёвка, frozen verifiers, клиент и deployed gateway неизменны. Historical tests
+проверяют архивные source bytes с прежними строгими SHA; новая live/native
+совместимость этих legacy CLI не запускалась и не заявляется.
+
+ORG-0A опубликована: [baseline/remote receipt](evidence-index/ORG-0A.md).
+ORG-0B base — `1aa052db33643fab510f2b9185716a8e60d8804a`; точные принятый
+head, merge/push и remote SHA записываются после операций в local machine receipt,
+указанном в индексе. Следующий один шаг — отдельная P03-карточка двух native
+клиентов в общем авторитетном мире. Общая стабильность/release не заявляется.
 
 ## История карточек (старые NOT_RUN и рекомендации сохранены)
 

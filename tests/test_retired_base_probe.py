@@ -14,6 +14,7 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from frozen_relogin_sources import historical_source_reader
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -355,7 +356,7 @@ class ActualSourceRecheckUnitTests(unittest.TestCase):
         observer.gateway_file_stat = (stat.st_size, stat.st_mtime_ns)
         state = {'status': 'RUNNING', 'run_dir': str(observer.run), 'config': str(observer.service_path),
                  'processes': [{'role': 'gateway', 'pid': 123, 'executable_sha256': probe.GATEWAY_SHA}]}
-        original_read = probe.read_limited
+        original_read = historical_source_reader(probe.read_limited)
 
         def read(path, limit):
             if path == observer.service_path:
@@ -375,6 +376,14 @@ class ActualSourceRecheckUnitTests(unittest.TestCase):
                 observer.live_server()
             with patch.object(probe, 'read_limited', return_value=b'changed'), self.assertRaisesRegex(ValueError, 'configuration'):
                 observer.live_server()
+            def changed_source(path, limit):
+                if path == ROOT / 'tools/wg_probe/src/gateway091.rs':
+                    return b'UNIT changed gateway source'
+                return read(path, limit)
+
+            with patch.object(probe, 'read_limited', side_effect=changed_source):
+                with self.assertRaisesRegex(ValueError, 'server_configuration_changed'):
+                    observer.live_server()
 
 
 class AcceptedCorpusReadonlyTests(unittest.TestCase):

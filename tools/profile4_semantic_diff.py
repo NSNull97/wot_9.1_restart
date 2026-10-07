@@ -15,12 +15,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-try:
-    from content_bundle import Bundle, BundleError
-    from profile4_chain import verify_profile4_chain
-except ModuleNotFoundError:  # pragma: no cover - package import mode
+if __package__:
     from .content_bundle import Bundle, BundleError
     from .profile4_chain import verify_profile4_chain
+else:  # Direct script execution from tools/.
+    from content_bundle import Bundle, BundleError
+    from profile4_chain import verify_profile4_chain
 
 
 R3 = "profile4-r3"

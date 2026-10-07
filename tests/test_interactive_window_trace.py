@@ -21,7 +21,7 @@ class WindowTraceTests(unittest.TestCase):
                      and node.name == 'profile_calls']
         self.assertEqual(len(functions), 1)
         self.events = []
-        self.namespace = {'_profile_call_id': 0, '_profile_frames': {},
+        self.namespace = {'_profile_call_id': 0, '_profile_frames': {}, '_control': None,
                           'record': lambda event, **fields: self.events.append((event, fields))}
         # Only trusted repository function code, no imported personality or input data.
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(SOURCE), 'exec'), self.namespace)

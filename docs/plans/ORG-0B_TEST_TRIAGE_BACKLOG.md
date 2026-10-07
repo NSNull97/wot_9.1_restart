@@ -1,5 +1,11 @@
 # ORG-0B — unittest triage backlog (created by ORG-0A)
 
+**Update 2026-10-07:** assigned and repaired in
+[ORG-0B execution plan](ORG-0B_TEST_REPAIR_20261007.md).
+[Verified result](../evidence-index/ORG-0B.md): 2047 tests, no errors/failures,
+2 skips; Python 2.7 bytecode check passed separately. Symlink capability remains
+NOT_RUN. The baseline findings below are preserved as history.
+
 This is a separate follow-up card. ORG-0A does not change code to make these
 tests green and does not reinterpret them as a P03 failure.
 
@@ -42,5 +48,5 @@ Verbose repeat was run only to obtain the skip identities. It again ran
 Observed error groups: three old `gateway091.rs` path errors; two undefined
 `_control` errors; five uncaught `content_bundle.BundleError` errors in negative
 profile tests. Their root causes and repairs are not claimed by ORG-0A.
-ORG-0B is not started automatically; use a separate `codex/org-0b-test-repair`
-branch from the accepted main when that card is assigned.
+At backlog creation ORG-0B was not started. The owner subsequently assigned it;
+execution uses `codex/org-0b-test-repair` from the accepted main.
