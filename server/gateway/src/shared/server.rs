@@ -234,14 +234,44 @@ fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
     if next_world.actors[slot].fire.finish_reload_if_due(now) { next.outbox.push_back(wire::reload(slot, 0.)?); }
     let c = next.shared.as_mut().ok_or_else(model::bad)?;
     let mut shot_publications = Vec::new();
+    let mut tracer_starts = Vec::new();
+    let mut tracer_stops = Vec::new();
+    let prior_projectile_count = world.projectiles.len();
     if c.phase == Phase::Driving {
         for shot in next_world.shots.iter().filter(|shot| shot.sequence > c.shot_cursor).copied().collect::<Vec<_>>() {
             let observable = c.correction && c.binding.is_some_and(|(_, ack)| ack) && c.visible()[shot.slot];
-            if observable { next.outbox.push_back(wire::shooting(shot.slot)?); }
+            if observable {
+                let index = shot.sequence.checked_sub(1).ok_or_else(model::bad)? as usize;
+                let projectile = next_world.projectiles.iter().find(|p| p.sequence == shot.sequence)
+                    .ok_or_else(model::bad)?;
+                if !c.tracer_started[index] {
+                    // Keep the existing native muzzle/sound cue and then send
+                    // the original fixed showTracer callback in one reliable
+                    // order. The start flag is committed with this clone.
+                    next.outbox.push_back(wire::shooting(shot.slot)?);
+                    next.outbox.push_back(wire::tracer_start(projectile)?);
+                    c.tracer_started[index] = true;
+                    tracer_starts.push((shot.sequence, shot.slot));
+                }
+            }
             // Even a skipped event is consumed: becoming visible later must
             // not replay stale gunfire. The cursor commits with the queue.
             c.shot_cursor = shot.sequence;
             shot_publications.push((shot, observable));
+        }
+        // Expiry is server-owned. A peer receives a stop only if this exact
+        // connection received/queued the corresponding start, so reconnects
+        // cannot inherit old effects or produce orphan stops.
+        if c.correction && c.binding.is_some_and(|(_, ack)| ack) {
+            for projectile in next_world.projectiles.iter().filter(|p| p.stopped) {
+                let index = projectile.sequence.checked_sub(1).ok_or_else(model::bad)? as usize;
+                if index >= c.tracer_started.len() { return Err(model::bad()); }
+                if c.tracer_started[index] && !c.tracer_stopped[index] {
+                    next.outbox.push_back(wire::tracer_stop(projectile)?);
+                    c.tracer_stopped[index] = true;
+                    tracer_stops.push((projectile.sequence, projectile.slot));
+                }
+            }
         }
         for other in 0..2 {
             if next_world.actors[other].ready && !c.ready_sent[other] {
@@ -267,6 +297,19 @@ fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
         println!("SHARED_SHOT_CUE battle={} session={} shot={} shooter_slot={} tick={} queued={} reason={}",
             world.id, s.id, shot.sequence, shot.slot, shot.tick, delivered,
             if delivered { "visible_native_vehicle" } else { "not_observable_at_event" });
+    }
+    if next_world.projectiles.len() > prior_projectile_count {
+        for projectile in next_world.projectiles.iter().skip(prior_projectile_count) {
+            println!("SHARED_PROJECTILE_LAUNCHED battle={} shot={} shooter_slot={} origin={:?} velocity={:?} gravity={} max_distance={} flight_seconds={:.6}",
+                world.id, projectile.sequence, projectile.slot, projectile.origin, projectile.velocity,
+                projectile.gravity, projectile.max_distance, projectile.flight_time.as_secs_f32());
+        }
+    }
+    for (sequence, shooter_slot) in tracer_starts {
+        println!("SHARED_TRACER_START battle={} session={} shot={} shooter_slot={} native_method=Avatar.showTracer queued=true", world.id, s.id, sequence, shooter_slot);
+    }
+    for (sequence, shooter_slot) in tracer_stops {
+        println!("SHARED_TRACER_STOP battle={} session={} shot={} shooter_slot={} native_method=Avatar.stopTracer queued=true", world.id, s.id, sequence, shooter_slot);
     }
     *world = next_world; *s = next; Ok(())
 }
@@ -362,13 +405,56 @@ mod tests {
         // Duplicate reliable input and another publication pass emit no event.
         a.receive(&shot,now).unwrap(); poll(&mut a,&mut w,now).unwrap(); poll(&mut b,&mut w,now).unwrap();
         let cue=wire::shooting(0).unwrap();
+        let tracer=wire::tracer_start(&w.projectiles[0]).unwrap();
         assert_eq!(queued_bodies(&a,now).iter().filter(|body| **body==cue).count(),1);
-        assert_eq!(queued_bodies(&b,now),vec![cue]);
+        assert_eq!(queued_bodies(&b,now),vec![cue.clone(),tracer.clone()]);
         let rejected=frame(&a,&[0x88,0,0]);a.receive(&rejected,now).unwrap();poll(&mut a,&mut w,now).unwrap();
         assert_eq!(w.shots.len(),1);
         b.receive(&frame(&b,&[0x88,0,0]),now).unwrap();poll(&mut b,&mut w,now).unwrap();poll(&mut a,&mut w,now).unwrap();
         assert_eq!(w.shots.len(),2);
         for s in [&a,&b] {assert_eq!(queued_bodies(s,now).iter().filter(|body| **body==wire::shooting(1).unwrap()).count(),1);}
+    }
+    #[test] fn server_owned_flight_stops_each_delivered_tracer_once() {
+        let now=Instant::now(); let (mut a,mut b,mut w)=visible_pair(now);
+        a.receive(&frame(&a,&[0x88,0,0]),now).unwrap();
+        poll(&mut a,&mut w,now).unwrap(); poll(&mut b,&mut w,now).unwrap();
+        let end=w.projectiles[0].end_at().unwrap();
+        w.advance(end + Duration::from_millis(100)).unwrap();
+        assert!(w.projectiles[0].stopped);
+        poll(&mut a,&mut w,end + Duration::from_millis(100)).unwrap();
+        poll(&mut b,&mut w,end + Duration::from_millis(100)).unwrap();
+        let stop=wire::tracer_stop(&w.projectiles[0]).unwrap();
+        for s in [&a,&b] { assert_eq!(queued_bodies(s,end).iter().filter(|body| **body==stop).count(),1); }
+        poll(&mut a,&mut w,end + Duration::from_millis(200)).unwrap();
+        poll(&mut b,&mut w,end + Duration::from_millis(200)).unwrap();
+        for s in [&a,&b] { assert_eq!(queued_bodies(s,end + Duration::from_millis(200)).iter().filter(|body| **body==stop).count(),1); }
+    }
+    #[test] fn projectile_continues_after_shooter_disconnect_and_rejoin_does_not_replay() {
+        let now=Instant::now(); let (mut a,_,mut w)=visible_pair(now);
+        a.receive(&frame(&a,&[0x88,0,0]),now).unwrap(); poll(&mut a,&mut w,now).unwrap();
+        let start_body = wire::tracer_start(&w.projectiles[0]).unwrap();
+        let end=w.projectiles[0].end_at().unwrap();
+        w.detach(1).unwrap();
+        w.advance(end + Duration::from_millis(100)).unwrap();
+        assert!(w.projectiles[0].stopped);
+        w.attach(w.actors[0].identity.clone(),3).unwrap();
+        let (mut rejoin,_) = driving(now); rejoin.id=3;
+        let c=rejoin.shared.as_mut().unwrap(); c.phase=Phase::Entities; c.correction=false;
+        c.binding=None; c.creations=[Some((0,true));2]; c.view=Some(w.clone());
+        let ready=[0x0d,8,0,0,0,0,0,3,0,16,9,0x8d,5,0,2,1,0,0,0,0x86,0,0,0x0c,8,0,0,0,0,0,0,0,0,0];
+        rejoin.receive(&frame(&rejoin,&ready),end + Duration::from_millis(100)).unwrap();
+        poll(&mut rejoin,&mut w,end + Duration::from_millis(100)).unwrap();
+        assert_eq!(rejoin.shared.as_ref().unwrap().shot_cursor,1);
+        let bodies = queued_bodies(&rejoin,end + Duration::from_millis(100));
+        assert!(bodies.iter().all(|body| *body != start_body));
+    }
+    #[test] fn projectile_creation_failure_rolls_back_fire_ammo_and_history() {
+        let now=Instant::now(); let (_,_,mut w)=visible_pair(now);
+        let before=w.clone();
+        w.actors[0].aim.yaw=f32::NAN;
+        assert!(w.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],now).is_err());
+        assert_eq!(w.actors[0].fire,before.actors[0].fire);
+        assert!(w.shots.is_empty()); assert!(w.projectiles.is_empty());
     }
     #[test] fn uncreated_vehicle_cannot_receive_a_cue_or_replay_it_after_creation() {
         let now=Instant::now();let (mut a,mut b,mut w)=visible_pair(now);
@@ -379,7 +465,7 @@ mod tests {
         assert!(queued_bodies(&b,now).is_empty());
         let later=now+Duration::from_secs(3);
         a.receive(&frame(&a,&[0x88,0,0]),later).unwrap();poll(&mut a,&mut w,later).unwrap();poll(&mut b,&mut w,later).unwrap();
-        assert_eq!(queued_bodies(&b,later),vec![wire::shooting(0).unwrap()]);
+        assert_eq!(queued_bodies(&b,later),vec![wire::shooting(0).unwrap(), wire::tracer_start(&w.projectiles[1]).unwrap()]);
     }
     #[test] fn rejoin_readiness_starts_after_past_shots_without_replay_or_ammo_grant() {
         let now=Instant::now();let (mut a,_,mut w)=visible_pair(now);

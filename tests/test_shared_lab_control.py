@@ -68,6 +68,48 @@ class SharedControlTests(unittest.TestCase):
         namespace['profile_calls'](frame, 'call', None)
         self.assertEqual(len(calls), 2)
 
+    def test_passive_tracer_and_mover_receipts_keep_fixed_arguments_only(self):
+        source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
+        tree = ast.parse(source.read_bytes())
+        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                     and node.name == 'profile_calls']
+        calls = []
+        namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
+                         _profile_call_id=0, _profile_frames={}, _shared_vector=lambda value: list(value),
+                         primitive=lambda value, **kwargs: value,
+                         record=lambda event, **fields: calls.append((event, fields)))
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
+        avatar = SimpleNamespace(id=152043524, playerVehicleID=152043525)
+        show = SimpleNamespace(f_code=SimpleNamespace(co_filename='scripts/client/Avatar.py',
+            co_name='showTracer', co_firstlineno=1683), f_lasti=0,
+            f_locals={'self': avatar, 'shooterID': 152043523, 'shotID': 7, 'effectsIndex': 2,
+                      'refStartPoint': (1., 2., 3.), 'velocity': (0., 1., 353.6),
+                      'gravity': 6.2784, 'maxShotDist': 720., 'private': object()})
+        namespace['profile_calls'](show, 'call', None)
+        namespace['profile_calls'](show, 'return', None)
+        stop = SimpleNamespace(f_code=SimpleNamespace(co_filename='scripts/client/Avatar.py',
+            co_name='stopTracer', co_firstlineno=1716), f_lasti=0,
+            f_locals={'self': avatar, 'shotID': 7, 'endPoint': (4., 5., 6.), 'private': object()})
+        namespace['profile_calls'](stop, 'call', None)
+        namespace['profile_calls'](stop, 'return', None)
+        self.assertEqual([event for event, _ in calls], ['native_shared_tracer_call'] * 4)
+        self.assertEqual(calls[0][1]['effectsIndex'], 2)
+        self.assertEqual(calls[0][1]['refStartPoint'], [1., 2., 3.])
+        self.assertNotIn('private', str(calls))
+        mover = SimpleNamespace()
+        add = SimpleNamespace(f_code=SimpleNamespace(co_filename='scripts/client/ProjectileMover.py',
+            co_name='add', co_firstlineno=74), f_lasti=0,
+            f_locals={'self': mover, 'shotID': 7, 'effectsDescr':
+                      {'projectile': ('objects/a.model', 'objects/b.model', object())},
+                      'gravity': 6.2784, 'refStartPoint': (1., 2., 3.),
+                      'refVelocity': (0., 1., 353.6), 'startPoint': (1., 2., 3.),
+                      'maxDistance': 720., 'isOwnShoot': False,
+                      'tracerCameraPos': object()})
+        namespace['profile_calls'](add, 'call', None)
+        namespace['profile_calls'](add, 'return', None)
+        self.assertEqual([event for event, _ in calls[-2:]], ['native_shared_projectile_mover_call'] * 2)
+        self.assertEqual(calls[-1][1]['projectile_models'], ['objects/a.model', 'objects/b.model'])
+
     def test_only_explicit_shared_install_accepts_login_only_control(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
         tree = ast.parse(source.read_bytes())

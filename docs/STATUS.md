@@ -1,4 +1,30 @@
-# Актуальный указатель — P03G, 2026-10-07: серверное наведение
+# Актуальный указатель — P03H, 2026-10-07: серверный полёт снаряда
+
+Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **P03 IN_PROGRESS**.
+Карточка `codex/p03h-native-projectile-flight`:
+**PASS_OWNER_P03H_SAME_PC_SERVER_PROJECTILE_NATIVE_TRACER / ACCEPTED**.
+Владелец подтвердил: «визуально вроде все окей, оба клиента видят».
+
+Принятый scope — bounded same-PC MS-1 test_lab: сервер создаёт снаряд,
+вычисляет старт/скорость и завершение по 720 м, а оба настоящих клиента
+получают родные `Avatar.showTracer`/`Avatar.stopTracer` и запускают свой
+`ProjectileMover`. Независимый аудит зафиксировал 28 410 пакетов / 28 402
+channel frames, 38 start и 38 stop на двух peer-слотах, ноль ошибок. Пассивный
+native-аудитор увидел по 19 start/stop/add/hide lifecycle на каждом клиенте.
+
+Финальные проверки: canonical **373 Rust PASS**, legacy **371 Rust PASS**;
+Python **2050 PASS, 4 известных skip**, targeted observer **4 PASS**.
+Evidence receipt: `local/evidence/20261007-p03h-native-projectile-flight-01/owner-acceptance.json`;
+подробности: [P03H receipt](evidence-index/P03H.md) и
+[P03H research](research/P03H_NATIVE_PROJECTILE_FLIGHT.md).
+
+Ограничения этой карточки: активен только профиль МС-1; IS-7, экипаж,
+оборудование, гаражный loadout, экономика, броня, попадания, урон, terrain
+collision, dispersion RNG и two-PC/LAN остаются NOT_RUN. Единственный следующий
+шаг — отдельная карточка `VehicleProfile/Loadout`, чтобы выбирать IS-7 и его
+исторические характеристики поверх уже принятого общего транспорта/полёта.
+
+## Предыдущий указатель — P03G, 2026-10-07: серверное наведение
 
 Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **P03 IN_PROGRESS**.
 Карточка `codex/p03g-shared-gun-aim`:
