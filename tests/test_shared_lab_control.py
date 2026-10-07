@@ -1,10 +1,42 @@
 """One-shot local login permission shape; no mock native-game acceptance."""
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 
 
 class SharedControlTests(unittest.TestCase):
+    def test_passive_shot_receipt_reads_only_bounded_original_handler_fields(self):
+        source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
+        tree = ast.parse(source.read_bytes())
+        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                     and node.name == 'profile_calls']
+        calls = []
+        namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
+                         _profile_call_id=0, _profile_frames={},
+                         primitive=lambda value, **kwargs: value,
+                         record=lambda event, **fields: calls.append((event, fields)))
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
+        instance = SimpleNamespace(id=152043525, isStarted=True, isPlayer=False)
+        frame = SimpleNamespace(f_code=SimpleNamespace(co_filename='scripts/client/Vehicle.py',
+            co_name='showShooting', co_firstlineno=1), f_lasti=0,
+            f_locals={'self': instance, 'burstCount': 1, 'isPredictedShot': False,
+                      'unrelated_private_value': 'must not be copied'})
+        namespace['profile_calls'](frame, 'call', None)
+        frame.f_lasti = 183
+        namespace['profile_calls'](frame, 'return', None)
+        self.assertEqual([event for event, _ in calls], ['native_shared_shooting_call'] * 2)
+        for _, fields in calls:
+            self.assertEqual(fields['entity_id'], 152043525)
+            self.assertEqual(fields['burstCount'], 1)
+            self.assertIs(fields['isPredictedShot'], False)
+            self.assertIs(fields['is_player'], False)
+            self.assertNotIn('must not be copied', str(fields))
+        self.assertFalse(namespace['_profile_frames'])
+        namespace['_settings'] = {}
+        namespace['profile_calls'](frame, 'call', None)
+        self.assertEqual(len(calls), 2)
+
     def test_only_explicit_shared_install_accepts_login_only_control(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
         tree = ast.parse(source.read_bytes())

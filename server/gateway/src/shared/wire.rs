@@ -5,6 +5,12 @@ use super::model::{self, Actor, World};
 use crate::{arena091 as arena, arena_vehicle091 as vehicle, battle091::native_ammo as ammo};
 
 pub const SPACE: u32 = 1;
+// Original #717 gun_rotation_shared: yaw is ten bits biased by pi; pitch is
+// six bits across the equipped _37mm_Gochkins absolute limits [-25, 8] degrees.
+// Neutral (0,0) rounds to (512 << 6) | 48, decoding to (0, 1/7 degree).
+// Zero instead means (-pi, -25 degrees): a reversed turret with a raised gun.
+// Only this fixed shared MS-1 profile uses this seed; frozen probes keep theirs.
+const MS1_NEUTRAL_GUN_ANGLES: u16 = 0x8030;
 pub fn vehicle_id(slot: usize) -> io::Result<u32> {
     if slot >= model::CAPACITY { return Err(model::bad()); }
     Ok(vehicle::VEHICLE_ENTITY_ID + 2 * slot as u32)
@@ -71,7 +77,7 @@ pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     let a = actor(w, slot)?;
     let mut p = vec![0]; p.extend(vehicle_id(slot)?.to_le_bytes()); p.extend(2u16.to_le_bytes());
     f3(&mut p, a.position); f3(&mut p, [a.yaw, 0., 0.]);
-    p.extend([8, 0, 0, 1, 1, 2]); p.extend(0u16.to_le_bytes());
+    p.extend([8, 0, 0, 1, 1, 2]); p.extend(MS1_NEUTRAL_GUN_ANGLES.to_le_bytes());
     p.push(3); p.extend(90i16.to_le_bytes()); p.extend([4, 0, 0, 5]);
     string(&mut p, a.identity.name.as_bytes())?; string(&mut p, &vehicle::MS1_DESCRIPTOR)?;
     p.push(1); p.extend(0i32.to_le_bytes()); p.push(0);
@@ -109,6 +115,13 @@ pub fn ammo_count(count: u16) -> io::Result<Vec<u8>> {
     let mut b = vec![0x13, 0x44]; b.extend(ammo::MS1_SHELL.to_le_bytes()); b.extend(count.to_le_bytes());
     b.extend([0, 0, 0]); Ok(b)
 }
+/// Pinned #717: selectEntity FIXED4, Vehicle.showShooting(UINT8), then restore
+/// Avatar selection. One MS-1 shot has burstCount=1. Native prediction handles
+/// the shooter's already-played effect; neighbours use their original extras.
+pub fn shooting(slot: usize) -> io::Result<Vec<u8>> {
+    let mut b = vec![0x12]; b.extend(vehicle_id(slot)?.to_le_bytes());
+    b.extend([0x3b, 1, 0x13]); Ok(b)
+}
 pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec<u8>> {
     let a = actor(w, own)?;
     let mut b = vec![2, 10, 3]; b.extend(w.tick.to_le_bytes());
@@ -144,6 +157,27 @@ pub fn publication(w: &World, visible: [bool; 2]) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
     use std::time::Instant;
+    #[test] fn both_native_creations_encode_neutral_gun_angles_not_the_zero_sentinel() {
+        let w = model::tests::world(Instant::now());
+        for slot in 0..2 {
+            let b = create_vehicle(&w, slot).unwrap();
+            // Measured indexed Vehicle UINT16 property 2, following the two
+            // boolean properties. Independent #717 decoder, not an encoder round trip.
+            assert_eq!(&b[34..42], &[8, 0, 0, 1, 1, 2, 0x30, 0x80]);
+            let packed = u16::from_le_bytes([b[40], b[41]]);
+            let yaw = (packed >> 6) as f64 * 360. / 1024. - 180.;
+            let pitch = -25. + (packed & 63) as f64 * 33. / 63.;
+            assert_eq!(yaw, 0.);
+            assert!(pitch.abs() < 0.27); // Half of the actual 33/63 degree pitch bin.
+        }
+    }
+    #[test] fn shot_selects_the_shooter_then_restores_avatar_selection() {
+        // Independent pinned PE/def contract: FIXED4 selectEntity=18,
+        // Vehicle first ClientMethod=59, UINT8 single-shot burst, selectPlayer=19.
+        assert_eq!(shooting(0).unwrap(), [18,3,0,16,9,59,1,19]);
+        assert_eq!(shooting(1).unwrap(), [18,5,0,16,9,59,1,19]);
+        assert!(shooting(2).is_err());
+    }
     #[test] fn identities_are_distinct_and_requests_cannot_select_an_unannounced_id() {
         assert_eq!(vehicle_id(0).unwrap(), 0x09100003); assert_eq!(vehicle_id(1).unwrap(), 0x09100005);
         assert_eq!(avatar_id(1).unwrap(), 0x09100004); assert!(vehicle_id(2).is_err());

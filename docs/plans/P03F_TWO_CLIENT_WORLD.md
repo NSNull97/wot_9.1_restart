@@ -1,11 +1,38 @@
 # P03F — two native clients in one test_lab world
 
-Status: `PASS_NATIVE_SAME_PC_DATA_PLANE_OWNER_CONTROL_PENDING`.
-Same-PC native observations and abrupt reconnect recorded; mandatory owner
-control confirmation and two-PC repeat remain open. See
-[receipt](../evidence-index/P03F.md). Branch stays unmerged.
+Status: `PASS_OWNER_P03F_SAME_PC_WORLD_SHOT_SOUND_NEUTRAL_POSE`, ACCEPTED same-PC scope.
+Owner synchronized movement, remote visible shot/sound and build08 initial-angle
+correction are PASS. Build05 remote-shot and build07 initial-angle defects remain
+historical. Two-PC repeat and dynamic aiming remain open. Current evidence:
+[final receipt](../evidence-index/P03F_GUN_POSE.md); exact Git operations are
+recorded after execution in its local handoff receipt.
 Base: `3e59991f41d4459bbe571afcec04207ce2c20e12`.
 Branch: `codex/p03f-two-client-world`.
+
+## Owner follow-up — remote shooting cue, 2026-10-07
+
+Owner confirms synchronized movement in both windows. The remaining defect is
+specific: the shooter sees/hears its shot, while the neighbouring client does
+not. This is a failed shared-event observation, not a report that ammunition or
+reload is broken. Keep this card unmerged until the remote cue is observed.
+
+Scope of correction: publish one accepted shot event to already-created allied
+vehicles through original `Vehicle.showShooting(UINT8)` (verified #717 method
+index `0x3b`), selecting its entity with pinned FIXED4 `selectEntity=0x12` and
+restoring player selection afterwards. Native self prediction must not be
+replaced. No tracer trajectory, damage, physics or client-side simulation.
+
+1. Preserve owner movement PASS and remote sound/effect FAIL as separate facts.
+   Bind bytecode/defs/selection framing to local original hashes; investigate why
+   the shooter still has a local effect without a broadcast.
+2. Add a bounded server-owned shot event sequence (at most the existing 40 AP
+   shots); per-session publication cursors and creation/readiness gates. Only
+   accepted shots emit events, once per recipient. Reconnect must not replay
+   earlier shots, and malformed commands/queue failure cannot partly consume ammo.
+3. Test duplicate/rejected/malformed input, independent recipients, wrong or
+   uncreated entity, event bounds and no replay on rejoin. Build canonical and
+   legacy sources, inspect real native delivery, then leave a fresh two-client
+   stand for a short owner sound/effect check.
 
 ## Intended result and limits
 

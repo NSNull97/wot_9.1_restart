@@ -25,11 +25,12 @@ pub(super) struct Client {
     commands: Vec<Command>,
     entered: Option<Instant>,
     hangar_since: Option<Instant>,
+    shot_cursor: u32,
 }
 impl Client {
     fn new(slot: usize) -> Self {
         Self { slot, phase: Phase::Account, view: None, announcement: None, creations: [None; 2],
-            binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None, hangar_since: None }
+            binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None, hangar_since: None, shot_cursor: 0 }
     }
     pub(super) fn acknowledge(&mut self, cumulative: u32, frame: &Frame) {
         for pending in [&mut self.announcement, &mut self.creations[0], &mut self.binding] {
@@ -49,6 +50,7 @@ impl Session {
         next.tx.enqueue_body(&wire::reset(world, slot)?)?; next.arena_base = true;
         let c = next.shared.as_mut().ok_or_else(bad)?;
         c.phase = Phase::Enable; c.view = Some(world.clone()); c.entered = Some(now);
+        c.shot_cursor = world.latest_shot();
         *self = next;
         println!("SHARED_ENTRY battle={} session={} slot={slot} avatar={} vehicle={} assignment=temporary_ms1 inventory_changed=false",
             world.id, self.id, wire::avatar_id(slot)?, wire::vehicle_id(slot)?);
@@ -90,6 +92,8 @@ impl Session {
             if c.phase != Phase::Entities || !c.creations[c.slot].is_some_and(|(_, ack)| ack) { return Err(bad()); }
             let sequence = self.tx.enqueue_body_tracked(&wire::binding(world, c.slot, now)?)?;
             c.binding = Some((sequence, false)); c.phase = Phase::Driving;
+            // Loading/reconnecting a scene is not a replay of prior gun effects.
+            c.shot_cursor = world.latest_shot();
             for slot in 0..2 { c.ready_sent[slot] = slot == c.slot || world.actors[slot].ready; }
             events.push(format!("SHARED_READY battle={} session={} own={} reliable_sequence={sequence} tick={}", world.id, self.id, wire::vehicle_id(c.slot)?, world.tick));
             return Ok(());

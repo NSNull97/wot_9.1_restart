@@ -1,4 +1,32 @@
-# Актуальный указатель — P03F, 2026-10-07
+# Актуальный указатель — P03F, 2026-10-07: выстрелы и начальные углы
+
+Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **P03 IN_PROGRESS**;
+Карточка `codex/p03f-two-client-world` **PASS_OWNER_P03F_SAME_PC_WORLD_SHOT_SOUND_NEUTRAL_POSE**.
+Commit/merge/публикация фиксируются после операций в `aim-01/handoff.json`.
+Владелец подтвердил синхронное движение и видимый чужой выстрел на build07.
+Свежий бой `12600843064120895129`: 14 принятых выстрелов, 28 native callbacks,
+по 14 завершений родного `Vehicle.showShooting` на каждом клиенте; порядок
+entity ID совпал с независимым wire-аудитом. Позже на build08 владелец также
+подтвердил: «Башня и ствол нормально, звук есть».
+Префикс capture: 5743 packets / 5731 frames, 28 cues, ноль ошибок.
+
+Финальные проверки: canonical build08 **353 Rust PASS**, legacy04 **351 PASS**,
+Python **2053 tests, 0 errors/failures, 2 skips**, layout **56/22**.
+Файлы, команды, доказательства и откат: [P03F receipt](evidence-index/P03F_GUN_POSE.md),
+`local/evidence/20261007-p03f-two-client-world-01/aim-01/owner-acceptance.json`.
+
+Исправлена причина башни на 180° и поднятого ствола: `gunAnglesPacked=0`
+декодировался как `(-pi, minimum pitch)`. Нейтральный seed `0x8030` реально
+получен обоими native клиентами; родной decoder даёт `0° / +0,142857°`.
+Свежий префикс: 3669 packets / 3661 frames, 4 создания машин, 6 shot cues,
+ноль ошибок. Native proof и owner-скрины подтверждают исправление.
+Динамическая синхронизация наведения остаётся неподдержанной; это не приёмка
+попаданий, урона или физики. Исходная/research-копии и deployed gateway неизменны.
+
+Единственный следующий рекомендуемый шаг — отдельная карточка серверного
+наведения башни/орудия с передачей текущих углов. Two-PC/LAN остаётся NOT_RUN.
+
+## Предыдущий указатель — первоначальный handoff build05 (история)
 
 Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **Полный P03 IN_PROGRESS**.
 Текущая карточка: **PASS_NATIVE_SAME_PC_DATA_PLANE_OWNER_CONTROL_PENDING**;

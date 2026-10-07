@@ -369,6 +369,17 @@ def profile_calls(frame, phase, value):
         fields['owner_class'] = type(instance).__name__
         fields['entity_id'] = getattr(instance, 'id', None)
         fields['space_id'] = getattr(instance, 'spaceID', None)
+    elif (source == 'scripts/client/Vehicle.py' and method == 'showShooting'
+          and _settings.get('enable_shared_lab') is True):
+        # Observe the original network/prediction handler. Never invoke it or
+        # copy arbitrary frame locals; this only distinguishes actual delivery.
+        kind = 'native_shared_shooting_call'
+        instance = frame.f_locals.get('self')
+        fields['entity_id'] = getattr(instance, 'id', None)
+        fields['is_started'] = getattr(instance, 'isStarted', None)
+        fields['is_player'] = getattr(instance, 'isPlayer', None)
+        for name in ('burstCount', 'isPredictedShot'):
+            fields[name] = primitive(frame.f_locals.get(name), budget=[2, 128])
     elif source == 'scripts/client/Vehicle.py' and method in (
             '__init__', 'prerequisites', 'onEnterWorld', 'onLeaveWorld', 'startVisual', 'stopVisual'):
         kind = 'native_vehicle_call'
@@ -710,6 +721,7 @@ def observe_shared_lab():
     import Vehicle
     import Settings
     import math
+    from gun_rotation_shared import decodeGunAngles
     player = BigWorld.player()
     if type(player) is not Avatar.PlayerAvatar:
         return
@@ -725,8 +737,19 @@ def observe_shared_lab():
         position = [float(entity.position.x), float(entity.position.y), float(entity.position.z)]
         if any(math.isnan(x) or math.isinf(x) or abs(x) > 4096 for x in position):
             raise ValueError('native shared vehicle position is not bounded')
-        rows.append(dict(entity_id=entity.id, position=position, health=entity.health,
-                         own=entity.id == player.playerVehicleID))
+        row = dict(entity_id=entity.id, position=position, health=entity.health,
+                   own=entity.id == player.playerVehicleID, is_started=entity.isStarted)
+        if entity.isStarted:
+            packed = entity.gunAnglesPacked
+            limits = entity.typeDescriptor.gun['pitchLimits']['absolute']
+            angles = decodeGunAngles(packed, limits)
+            if not 0 <= packed <= 65535 or len(limits) != 2 or len(angles) != 2:
+                raise ValueError('native shared gun angle shape differs')
+            if any(math.isnan(x) or math.isinf(x) or abs(x) > math.pi for x in tuple(angles) + tuple(limits)):
+                raise ValueError('native shared gun angle is not bounded')
+            row.update(gun_angles_packed=packed, gun_yaw_pitch=list(angles),
+                       gun_pitch_limits=list(limits), angle_decoder='original gun_rotation_shared.decodeGunAngles')
+        rows.append(row)
     rows.sort(key=lambda row: row['entity_id'])
     if _shared_native_samples >= 3600:
         return

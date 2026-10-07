@@ -3,7 +3,8 @@
 Card: [plan](../plans/P03F_TWO_CLIENT_WORLD.md). Branch:
 `codex/p03f-two-client-world`; base `3e59991f41d4459bbe571afcec04207ce2c20e12`.
 Evidence root: `local/evidence/20261007-p03f-two-client-world-01/`.
-Native owner acceptance remains pending; this document distinguishes each run.
+Same-PC native/owner acceptance is now PASS, scoped by the
+[final receipt](../evidence-index/P03F_GUN_POSE.md). This document distinguishes each run.
 
 ## Verified inputs and implementation boundaries
 
@@ -82,7 +83,7 @@ using the actual bytes reproduced the failure on build04 (345 passed, 1 failed)
 and passed on build05. The failed build/run evidence remains intact. Both run01
 processes and its gateway were stopped by exact PID/path checks before replacement.
 
-## Current checks and unresolved native gate
+## Initial build05 checks and unresolved native gate (historical)
 
 - Canonical build05: **346 Rust tests PASS**, EXE SHA256
   `8c6c48e2186fd4ccb7bcbe12a410a423e25ad78e9ba76471b796569b3108111e`.
@@ -157,13 +158,81 @@ Leave branch retires the session); at most two retained account slots and one
 hour of process lifetime. Full physics, turret aiming, projectiles, hits, damage,
 enemy visibility, equipment and persistent inventory are not accepted here.
 
+## Owner follow-up: remote shot cue
+
+The owner confirmed synchronized movement in both windows and clarified that
+shooting sound/effect was present only on the firing client. Movement is therefore
+`PASS_OWNER_SYNCHRONIZED_MOVEMENT`; remote shooting on build05 is
+`FAIL_OWNER_REMOTE_SHOT_CUE`. These are separate observations, preserved verbatim
+in `fire-cue-01/owner-observation.json`.
+
+VERIFIED_STATIC original bytecode explains the asymmetry:
+`Avatar.__showTimedOutShooting` calls its own vehicle's `showShooting(..., True)`
+after the waiting timer. The normal network `Vehicle.showShooting(UINT8)` invokes
+the original shoot extra and suppresses already-predicted own shots. Build05 had
+no broadcast of this Vehicle callback. Its ammo/reload receipts alone never
+proved a visible shot on neighbours.
+
+The correction publishes a bounded, server-owned accepted-shot event to each
+ready recipient that already knows the shooting vehicle. Native selection is
+`0x12 + entity UINT32`, callback `0x3b + burstCount UINT8`, followed by `0x13`
+to restore the player's entity. Per-peer event cursors and existing reliable
+sequence handling prevent duplicate enqueue; reconnect/late creation do not
+replay historical effects. There are at most 40 events under the finite lab ammo
+budget. No synthetic tracer or damage outcome was added.
+
+Canonical build07 **352 PASS**; legacy build03 **350 PASS**; full Python run04
+**2053 tests, zero errors/failures, two skips**. Initial fixture/selector failures
+remain preserved. The final previous-run audit covers **47,787 packets**, **47,775
+frames** with zero errors, including the owner's two additional B shots
+`17 -> 16 -> 15`. Fresh build07 battle `12600843064120895129` produced 14 accepted
+shots, 28 native cue frames and 14 original `showShooting` final returns on each
+client. A received 8 remote shots, B 6. All were non-predicted; per-recipient IDs
+match the independent wire audit. Owner confirms remote shooting is visible.
+Audio is not explicitly confirmed. Proof: `fire-cue-01/result.json` and
+`owner-observation-02.json`; packet prefix 5743 / 5731 frames, zero errors.
+
+Owner then clarified the remaining visual defect: the neighbour's turret is
+rotated 180 degrees and its gun appears fully elevated. VERIFIED: shared
+creation still emits `gunAnglesPacked=0`; original `decodeGunAngles` maps this
+to yaw `-pi` and the minimum pitch bound. It does not mean neutral angles.
+The screenshot timers differ by 25 seconds; no simultaneous dynamic-aim claim
+is drawn from them. Correcting the initial neutral pose is the narrowed follow-up.
+The existing unsupported dynamic aiming remains an explicit separate limitation.
+
+## Neutral initial gun pose and final same-PC acceptance
+
+VERIFIED: the equipped `_37mm_Gochkins` has absolute pitch limits `[-25°,8°]`.
+The original packed format encodes neutral as `0x8030`, not zero; decoded pitch
+is +1/7 degree due to six-bit quantization. Shared creation now sends this value
+without changing archived probes. Current passive observations read the actual
+native property and call the original pure angle decoder; they never move a gun.
+
+OBSERVED on build08: both actual clients received both neutral properties and
+decoded `0° / +0.142857°`. Frozen runtime A/B have 145/144 complete snapshots,
+and inspected native PNGs show the corrected neighbour pose. An independent
+3669-packet prefix validates 4 native creations and 6 cues with zero errors.
+Authentication order assigned A vehicle525, B vehicle523; audit ownership is
+derived from native binding, not hard-coded from process labels.
+
+The owner's two new screenshots and exact answer “Башня и ствол нормально, звук
+есть” close the scoped pose/sound gate. P03F is
+`PASS_OWNER_P03F_SAME_PC_WORLD_SHOT_SOUND_NEUTRAL_POSE`; full P03 is IN_PROGRESS.
+Final canonical/legacy checks: 353 / 351 Rust PASS; Python 2053 tests, no failures
+or errors, two documented skips. Evidence: `aim-01/result.json`,
+`aim-01/owner-acceptance.json`; commands and limits in the final receipt.
+
+Full proof, commands, failures, limits and current rollback:
+[P03F shot cue receipt](../evidence-index/P03F_SHOT_CUE.md).
+
 ## Rollback
 
 Stop only PIDs whose image path equals this card's launch receipt. Roll back the
-latest A/B install with `tools/interactive_client.py rollback --out <install-dir>`
+latest A/B install (`install-a-05`, `install-b-05` after the neutral-angle follow-up)
+with `tools/interactive_client.py rollback --out <install-dir>`
 after the associated game is stopped; all before hashes/backups are preserved.
 For the optional EXE-name rollback, verify the current patched SHA and restore
 `WorldOfTanks.exe.p03f-backup` to `WorldOfTanks.exe` in that same stopped isolated
 copy. Do not delete copies/evidence or touch the original client. The accepted
-ordinary gateway was never replaced. Keep this source card unmerged while its
-mandatory native/owner checks remain open.
+ordinary gateway was never replaced. Scoped same-PC native/owner checks are now
+accepted; Git delivery status is recorded separately after the actual operations.

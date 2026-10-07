@@ -7,6 +7,7 @@ pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
 pub const STEP: Duration = Duration::from_millis(100);
 pub const MAX_COMMANDS: usize = 32;
+pub const MAX_SHOTS: usize = CAPACITY * fire::MS1_INITIAL_AMMO as usize;
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
 pub fn bad() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "shared laboratory contract") }
@@ -34,6 +35,11 @@ pub struct Actor {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command { Move(Input), Fire(fire::Command), Leave }
 
+/// One accepted server action, independent of native entity/method IDs. The
+/// laboratory never replenishes ammo, so its complete event history is bounded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shot { pub sequence: u32, pub slot: usize, pub tick: u32 }
+
 #[derive(Clone)]
 pub struct World {
     pub id: u64,
@@ -41,13 +47,15 @@ pub struct World {
     pub started: Option<Instant>,
     last: Instant,
     pub tick: u32,
+    pub shots: Vec<Shot>,
 }
 
 impl World {
     pub fn new(id: u64, now: Instant) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
-        Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000 })
+        Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000, shots: Vec::new() })
     }
+    pub fn latest_shot(&self) -> u32 { self.shots.last().map(|s| s.sequence).unwrap_or(0) }
     /// Authenticated identity only. The caller reserves a transport retirement
     /// slot before committing this world assignment. Rejoin never resets ammo.
     pub fn attach(&mut self, identity: Identity, session: u32) -> io::Result<usize> {
@@ -88,20 +96,30 @@ impl World {
             || !self.owned(slot, session)?.ready { return Err(bad()); }
         let mut next = self.actors[slot].clone();
         let mut outcomes = Vec::new();
+        let mut shots = self.shots.clone();
         for (at, command) in commands.iter().enumerate() {
             match command {
                 Command::Move(input) => {
                     if !(-1..=1).contains(&input.throttle) || !(-1..=1).contains(&input.steer) { return Err(bad()); }
                     next.input = *input;
                 },
-                Command::Fire(command) => outcomes.extend(next.fire.apply(&[*command], now)?),
+                Command::Fire(command) => {
+                    let result = next.fire.apply(&[*command], now)?;
+                    for outcome in &result {
+                        if matches!(outcome, fire::Outcome::AcceptedShot { .. }) {
+                            if shots.len() >= MAX_SHOTS { return Err(bad()); }
+                            shots.push(Shot { sequence: shots.len() as u32 + 1, slot, tick: self.tick });
+                        }
+                    }
+                    outcomes.extend(result);
+                },
                 Command::Leave => {
                     if at + 1 != commands.len() { return Err(bad()); }
                     next.session = None; next.ready = false; next.input = Input::STOP; next.speed = 0.;
                 },
             }
         }
-        self.actors[slot] = next; Ok(outcomes)
+        self.actors[slot] = next; self.shots = shots; Ok(outcomes)
     }
     /// One shared monotonic clock; bounded integration, no burst catch-up. The
     /// small flat boxes exist only to make remote-state publication observable.
@@ -158,9 +176,23 @@ pub(super) mod tests {
         assert!(w.apply(0, 1, &[Command::Fire(fire::Command::Shoot),
             Command::Move(Input { throttle: 2, steer: 0 })], now).is_err());
         assert_eq!(w.actors, before);
+        assert!(w.shots.is_empty());
         w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap();
         assert_eq!(w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap(), vec![fire::Outcome::RejectedReload]);
         assert_eq!(w.apply(1, 2, &[Command::Fire(fire::Command::Shoot)], now).unwrap(), vec![fire::Outcome::AcceptedShot { ammo_remaining: 19 }]);
+        assert_eq!(w.shots, vec![Shot { sequence:1,slot:0,tick:1000 }, Shot { sequence:2,slot:1,tick:1000 }]);
+    }
+    #[test] fn shot_history_is_bounded_by_real_ammo_and_rejections_emit_nothing() {
+        let now = Instant::now(); let mut w = world(now);
+        for n in 0..fire::MS1_INITIAL_AMMO {
+            for slot in 0..2 {
+                w.apply(slot, slot as u32 + 1, &[Command::Fire(fire::Command::Shoot)], now + Duration::from_secs(n as u64 * 3)).unwrap();
+            }
+        }
+        assert_eq!(w.shots.len(), MAX_SHOTS); assert_eq!(w.latest_shot(), 40);
+        let before = w.shots.clone();
+        assert_eq!(w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now+Duration::from_secs(61)).unwrap(),vec![fire::Outcome::RejectedNoAmmo]);
+        assert_eq!(w.shots, before);
     }
     #[test] fn capacity_duplicate_identity_and_old_controller_fail_closed() {
         let now = Instant::now(); let mut w = world(now);

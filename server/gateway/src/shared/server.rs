@@ -226,7 +226,16 @@ fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
     }
     if next_world.actors[slot].fire.finish_reload_if_due(now) { next.outbox.push_back(wire::reload(slot, 0.)?); }
     let c = next.shared.as_mut().ok_or_else(model::bad)?;
+    let mut shot_publications = Vec::new();
     if c.phase == Phase::Driving {
+        for shot in next_world.shots.iter().filter(|shot| shot.sequence > c.shot_cursor).copied().collect::<Vec<_>>() {
+            let observable = c.correction && c.binding.is_some_and(|(_, ack)| ack) && c.visible()[shot.slot];
+            if observable { next.outbox.push_back(wire::shooting(shot.slot)?); }
+            // Even a skipped event is consumed: becoming visible later must
+            // not replay stale gunfire. The cursor commits with the queue.
+            c.shot_cursor = shot.sequence;
+            shot_publications.push((shot, observable));
+        }
         for other in 0..2 {
             if next_world.actors[other].ready && !c.ready_sent[other] {
                 next.outbox.push_back(wire::ready_update(other)?); c.ready_sent[other] = true;
@@ -245,6 +254,11 @@ fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
     if next.outbox.len() > 128 { return Err(model::bad()); } next.drain_outbox()?;
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
+    for (shot, delivered) in shot_publications {
+        println!("SHARED_SHOT_CUE battle={} session={} shot={} shooter_slot={} tick={} queued={} reason={}",
+            world.id, s.id, shot.sequence, shot.slot, shot.tick, delivered,
+            if delivered { "visible_native_vehicle" } else { "not_observable_at_event" });
+    }
     *world = next_world; *s = next; Ok(())
 }
 
@@ -279,6 +293,68 @@ mod tests {
     fn frame(s: &Session, payload: &[u8]) -> Frame {
         Frame { flags:0x458, sequence:Some(s.rx), cumulative:Some(0), selective:vec![],
             body:[vec![1],s.token.to_le_bytes().to_vec(),payload.to_vec()].concat(), piggybacks:vec![] }
+    }
+    fn visible_pair(now: Instant) -> (Session, Session, World) {
+        let (mut a,w) = driving(now);
+        a.shared.as_mut().unwrap().creations = [Some((0,true));2];
+        a.shared.as_mut().unwrap().ready_sent = [true;2];
+        let mut b = a.clone(); b.id = 2; b.shared.as_mut().unwrap().slot = 1;
+        (a,b,w)
+    }
+    fn queued_bodies(s: &Session, now: Instant) -> Vec<Vec<u8>> {
+        let mut tx = s.tx.clone(); let mut bodies = Vec::new();
+        while let Some((_,_,raw)) = tx.due(now,s.rx).unwrap() {
+            bodies.push(transport091::parse_interactive(&raw).unwrap().body);
+        }
+        bodies.extend(s.outbox.iter().cloned()); bodies
+    }
+    #[test] fn accepted_native_shot_reaches_each_known_vehicle_once_with_private_ammo() {
+        let now=Instant::now(); let (mut a,mut b,mut w)=visible_pair(now);
+        let shot=frame(&a,&[0x88,0,0]); a.receive(&shot,now).unwrap();
+        poll(&mut a,&mut w,now).unwrap(); poll(&mut b,&mut w,now).unwrap();
+        assert_eq!(w.actors[0].fire.ammo(),19); assert_eq!(w.actors[1].fire.ammo(),20);
+        assert_eq!(w.shots.len(),1);
+        // Duplicate reliable input and another publication pass emit no event.
+        a.receive(&shot,now).unwrap(); poll(&mut a,&mut w,now).unwrap(); poll(&mut b,&mut w,now).unwrap();
+        let cue=wire::shooting(0).unwrap();
+        assert_eq!(queued_bodies(&a,now).iter().filter(|body| **body==cue).count(),1);
+        assert_eq!(queued_bodies(&b,now),vec![cue]);
+        let rejected=frame(&a,&[0x88,0,0]);a.receive(&rejected,now).unwrap();poll(&mut a,&mut w,now).unwrap();
+        assert_eq!(w.shots.len(),1);
+        b.receive(&frame(&b,&[0x88,0,0]),now).unwrap();poll(&mut b,&mut w,now).unwrap();poll(&mut a,&mut w,now).unwrap();
+        assert_eq!(w.shots.len(),2);
+        for s in [&a,&b] {assert_eq!(queued_bodies(s,now).iter().filter(|body| **body==wire::shooting(1).unwrap()).count(),1);}
+    }
+    #[test] fn uncreated_vehicle_cannot_receive_a_cue_or_replay_it_after_creation() {
+        let now=Instant::now();let (mut a,mut b,mut w)=visible_pair(now);
+        b.shared.as_mut().unwrap().creations[0]=Some((0,false));
+        a.receive(&frame(&a,&[0x88,0,0]),now).unwrap();poll(&mut a,&mut w,now).unwrap();poll(&mut b,&mut w,now).unwrap();
+        assert_eq!(b.shared.as_ref().unwrap().shot_cursor,1);assert!(queued_bodies(&b,now).is_empty());
+        b.shared.as_mut().unwrap().creations[0]=Some((0,true));poll(&mut b,&mut w,now).unwrap();
+        assert!(queued_bodies(&b,now).is_empty());
+        let later=now+Duration::from_secs(3);
+        a.receive(&frame(&a,&[0x88,0,0]),later).unwrap();poll(&mut a,&mut w,later).unwrap();poll(&mut b,&mut w,later).unwrap();
+        assert_eq!(queued_bodies(&b,later),vec![wire::shooting(0).unwrap()]);
+    }
+    #[test] fn rejoin_readiness_starts_after_past_shots_without_replay_or_ammo_grant() {
+        let now=Instant::now();let (mut a,_,mut w)=visible_pair(now);
+        a.receive(&frame(&a,&[0x88,0,0]),now).unwrap();poll(&mut a,&mut w,now).unwrap();
+        w.detach(1).unwrap();w.attach(w.actors[0].identity.clone(),3).unwrap();
+        let (mut rejoin,_) = driving(now);rejoin.id=3;
+        let c=rejoin.shared.as_mut().unwrap();c.phase=Phase::Entities;c.correction=false;
+        c.binding=None;c.creations=[Some((0,true));2];c.view=Some(w.clone());
+        let ready=[0x0d,8,0,0,0,0,0,3,0,16,9,0x8d,5,0,2,1,0,0,0,0x86,0,0,0x0c,8,0,0,0,0,0,0,0,0,0];
+        rejoin.receive(&frame(&rejoin,&ready),now).unwrap();poll(&mut rejoin,&mut w,now).unwrap();
+        assert_eq!(rejoin.shared.as_ref().unwrap().shot_cursor,1);assert_eq!(w.actors[0].fire.ammo(),19);
+        assert!(!queued_bodies(&rejoin,now).contains(&wire::shooting(0).unwrap()));
+    }
+    #[test] fn publication_failure_does_not_commit_shot_ammo_or_event_cursor() {
+        let now=Instant::now();let (mut a,_,mut w)=visible_pair(now);
+        a.receive(&frame(&a,&[0x88,0,0]),now).unwrap();
+        a.outbox.push_back(vec![0;513]);
+        assert!(poll(&mut a,&mut w,now).is_err());
+        assert_eq!(w.actors[0].fire.ammo(),20);assert!(w.shots.is_empty());
+        assert_eq!(a.shared.as_ref().unwrap().shot_cursor,0);assert_eq!(a.tx.len(),0);
     }
     #[test] fn real_channel_clone_rejects_late_poison_without_partial_input_or_ack() {
         let now = Instant::now(); let (mut s,_) = driving(now);
