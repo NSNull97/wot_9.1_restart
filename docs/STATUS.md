@@ -18,10 +18,10 @@ This is a bounded harness only: migration, deployed service wiring, battle
 lease lifecycle, economy, concurrency/load and native restart remain
 **NOT_RUN**. No client, gateway or deployed service was changed.
 
-После merge P09A static graph audit повторён authoritative UTF-8 regression:
-**2104 tests, 0 failures/errors, 4 known skips**. Полный лог:
-`local/evidence/20261008-overnight-final-04-full-python-utf8.txt`, SHA-256
-`a33543a5212c512633d601b68de2e671a153275c474cf6a81aec21b1b0b1a4fb`.
+После merge P09B isolated SQLite harness повторён authoritative UTF-8 regression:
+**2117 tests, 0 failures/errors, 4 known skips**. Полный лог:
+`local/evidence/20261008-overnight-final-05-full-python-utf8.txt`, SHA-256
+`027e9051fc0f5a2fbd4d45d75a37b0e77f9e19c15945d4f51a4e29776ba76c3c`.
 `server/check_layout.py` снова вернул `PASS_SERVER_SOURCE_LAYOUT` (58 source
 files, 22 single-source relocations); layout SHA остался
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`.
