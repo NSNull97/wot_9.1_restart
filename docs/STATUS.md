@@ -1,5 +1,30 @@
 # Overnight verification after P09B harness — 2026-10-08
 
+# P09A Phase A static fixture visibility matrix — 2026-10-08
+
+The bounded read-only `tools/research_tree_visibility_matrix.py` verifier and
+`tests/test_research_tree_visibility_matrix.py` freeze the server-owned
+`r3-catalog3` fixture against the hash-bound #717 static graph. Targeted
+verification is **7/7 PASS** and the receipt
+`local/evidence/20261008-p09a-visibility-matrix-01/receipt.json` is
+`PASS_STATIC_FIXTURE_VISIBILITY_MATRIX` (SHA-256
+`b291bccd2a32c682cb4b09aae6763c27d5f9c907d323b8d072748676c4687a46`).
+
+The matrix rows are MS-1 compact descriptor **3329** and IS-7 compact
+descriptor **7169**. Both are present in `state.bin` vehicle
+`inventory[1].compDescr`, present in `shop.items.itemPrices` and members of
+`shop.items.notInShopItems`. `expected_native_visibility=UNKNOWN` and
+`runtime_eligibility=NOT_RUN` remain explicit. The fixture has no separate
+unowned reference descriptor, recorded as
+`unowned_reference.status=NOT_AVAILABLE_IN_FIXTURE`.
+
+The verifier rejects unknown compact IDs, duplicate `notInShopItems`, graph or
+catalog hash mismatch, malformed literal bytes and paths outside the
+repository. It uses the bounded literal decoder from the existing verifiers;
+no pickle/unpickle, client import, service, gateway or original/research
+client was started. The full Python regression is **NOT_RUN** on this card;
+the targeted suite is the acceptance evidence.
+
 # P09B isolated SQLite transaction harness — 2026-10-08
 
 The narrow server-owned `reserve_vehicle` boundary is now implemented only in

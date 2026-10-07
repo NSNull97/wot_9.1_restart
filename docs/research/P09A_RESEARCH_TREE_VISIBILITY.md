@@ -1,9 +1,9 @@
 # P09A — research-tree visibility evidence ledger
 
 Date: 2026-10-08, Asia/Yekaterinburg
-Branch: `codex/p09a-research-tree-visibility`.
-Scope: read-only static graph verification plus preparation for native
-account-owned research-tree visibility.
+Branch: `codex/p09a-visibility-matrix`.
+Scope: read-only static graph verification, a bounded server-owned fixture
+matrix, and preparation for native account-owned research-tree visibility.
 No client, gateway, deployed service, fixture or database was started or modified.
 
 ## Evidence ledger
@@ -19,6 +19,34 @@ No client, gateway, deployed service, fixture or database was started or modifie
 | Native selection 1 → 2 loads IS-7 model | `OBSERVED` | `native-selection-07/selection-07.json` | Passive observer; no tree payload or battle handoff |
 | IS-7 is battle-ready | `FAIL_CLOSED` | selection receipt: `crew_assigned=false`, ammo `0` | Must not be promoted to queue admission |
 | Native research-tree account callback and payload | `NOT_RUN` | No live capture yet | Required next experiment |
+
+## Phase A static fixture matrix
+
+Receipt: `local/evidence/20261008-p09a-visibility-matrix-01/receipt.json`,
+status `PASS_STATIC_FIXTURE_VISIBILITY_MATRIX`.
+
+The bounded reader uses the literal decoder from `tools/verify_hangar.py` and
+only accepts fixture/catalog paths under the repository root. It checks the
+manifest file hashes, parses `state.bin` and `shop.bin`, validates the
+compatibility mapping and hash-bound MS-1/IS-7 descriptor JSON, then
+cross-checks the static graph with `tools/research_tree_audit.py`.
+
+| Vehicle | Compact descriptor | `state.inventory[1].compDescr` | `itemPrices` | `notInShopItems` | Expected native visibility | Runtime eligibility |
+|---|---:|---|---|---|---|---|
+| MS-1 | 3329 | present (slot 1) | present | member | `UNKNOWN` | `NOT_RUN` |
+| IS-7 | 7169 | present (slot 2) | present | member | `UNKNOWN` | `NOT_RUN` |
+
+The state mapping is the source for the inventory column; the profile JSON is
+not used to manufacture presence. The fixture has no separate unowned
+reference compact descriptor, so the receipt records
+`unowned_reference.status=NOT_AVAILABLE_IN_FIXTURE`. The static graph remains
+complete and is never pruned by this matrix. Native payload ordering, callback
+correlation, rendered visibility and battle readiness remain outside this
+receipt.
+
+Targeted tests are in `tests/test_research_tree_visibility_matrix.py` and
+cover the real r3/r2 fixture shapes plus negative unknown-ID, duplicate-hidden,
+graph-hash, malformed-literal and path-boundary controls.
 
 ## Static hashes
 
@@ -51,8 +79,9 @@ edge: the verified direction is IS-8 to IS-7.
 ## Acceptance gate
 
 `PASS_STATIC_RESEARCH_TREE_GRAPH / PASS_P09A_PLAN_STATIC_PREDICATE_AND_HANDOFF_GATE`
-applies to the static guard and docs-only preparation. Native payload, visual handoff and battle admission remain
-`NOT_RUN`. A later implementation can pass only with a receipt binding account
+applies to the static guard and docs-only preparation. The additional Phase A
+receipt is `PASS_STATIC_FIXTURE_VISIBILITY_MATRIX`; native payload, visual
+handoff and battle admission remain `NOT_RUN`. A later implementation can pass only with a receipt binding account
 identity, source/fixture hashes, shop payload, native callback and screenshot;
 all malformed/stale/partial payloads must fail closed.
 
@@ -64,4 +93,5 @@ command was launched. Rollback is a reviewed revert of this docs-only branch;
 ignored local evidence is untouched.
 
 Single next step: capture the native USSR research-tree payload/callback on the
-research client and correlate it with the static graph and `notInShopItems` state.
+research client and correlate it with the static graph and the hash-bound
+`notInShopItems` state recorded by Phase A.
