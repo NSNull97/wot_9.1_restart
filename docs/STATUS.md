@@ -52,6 +52,21 @@ PASS**; квитанция: `local/evidence/20261008-p05a-pivot-diagnostics-01/`
 ignored config/worker assets, поэтому статус — `NOT_RUN_MISSING_INPUTS`, а
 engine RPM, скорости гусениц, gear/clutch и delivered torque остаются `UNKNOWN`.
 
+# P06A docs-only ballistics boundary — 2026-10-08
+
+Карточка `P06A_BALLISTICS_CONTRACT` слита в `main` merge `4535480` и фиксирует
+только контракт для первого MS-1 AP shell `2570`. Порядок доменных стадий
+разделён явно: admission → server launch → trajectory → surface intersection
+→ material/normal → terminal result → damage. Shot identity должен быть
+server-owned и идемпотентным: повтор не списывает второй AP и не создаёт второй
+снаряд/урон.
+
+Статически закреплены только уже принятые значения #717/P03H (raw speed 442,
+effective 353.6 м/с, gravity 6.2784 м/с², range 720 м). Пробитие, броневые
+поверхности, урон, модули/экипаж, RNG и native hit/damage остаются
+`UNKNOWN/NOT_RUN`; P03H tracer не считается попаданием. План и evidence index:
+`docs/plans/P06A_BALLISTICS_CONTRACT.md` и `docs/evidence-index/P06A.md`.
+
 # Параллельная карточка — P04, 2026-10-07: typed content import
 
 В отдельной рабочей копии `codex/p04-content-import` реализован bounded
