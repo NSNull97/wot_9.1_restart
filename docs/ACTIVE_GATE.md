@@ -1,3 +1,18 @@
+## P09B persistence/transaction boundary — docs-only plan
+
+P09B фиксирует один узкий пробел перед progression/economy: identity DB
+transactional schema migration, `game.account.v1` ownership assertion, immutable
+profile4 provenance и profile4 battle-loadout binding не дают game-state write,
+reservation или replay ledger. Proposed server-owned command key + expected
+snapshot revision + atomic ledger/snapshot commit остаются **INFERRED / NOT
+IMPLEMENTED**. No database, deployed service or client was changed.
+
+Status: **PASS_P09B_PERSISTENCE_TRANSACTION_BOUNDARY_PLAN**. Game transaction,
+duplicate replay, stale revision, crash/restart recovery, reservation, economy и
+native restart — **NOT_RUN**. Plan, research and evidence:
+[P09B plan](plans/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md),
+[P09B research](research/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md),
+[P09B receipt](evidence-index/P09B.md).
 # ACTIVE_GATE — 2026-10-07
 
 ## Overnight verification

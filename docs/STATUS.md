@@ -1,3 +1,23 @@
+# P09B persistence/transaction boundary — 2026-10-08
+
+Подготовлена docs-only карточка `codex/p09b-persistence-boundary` с приёмкой
+`PASS_P09B_PERSISTENCE_TRANSACTION_BOUNDARY_PLAN`. Зафиксирована граница:
+`game.account.v1` проверяет принадлежность и SHA/ревизию server-owned профиля,
+profile4 chain хранит offline provenance, а battle-loadout adapter делает только
+revision/loadout binding. Ни один из этих слоёв не является transaction ID,
+reservation, consumption или exactly-once result ledger.
+
+Проверено read-only по `server/identity/schema.mjs`, `account_service.mjs`,
+`ownership.mjs`, profile4 chain/semantic diff и
+`server/gateway/src/battle/profile4_adapter.rs`. Предложенная P09B
+transaction boundary (server-owned command key, expected revision, atomic game
+ledger + snapshot, duplicate replay and stale fail-closed) пока **INFERRED / NOT
+IMPLEMENTED**. Game persistence, migration, reservation, economy, crash/restart
+recovery и native acceptance остаются **NOT_RUN**.
+
+План: [P09B plan](plans/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md); исследование:
+[P09B research](research/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md); evidence:
+[P09B index](evidence-index/P09B.md).
 # P05 offline deterministic matrix — 2026-10-08
 
 На двух hash-pinned test-lab фрагментах (`01_karelia` и `05_prohorovka`)
