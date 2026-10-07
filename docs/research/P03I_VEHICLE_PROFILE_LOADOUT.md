@@ -17,6 +17,14 @@ profile/loadout runtime, and does not alter the original or research client.
 | Native random-queue call chain and command fields | `local/evidence/20261007-p03i-queue-research-08/README.md` | `VERIFIED_STATIC / LIVE_QUEUE_NOT_RUN` |
 | Whether existing capture helpers are ready for a live sample | `local/evidence/20261007-p03i-queue-capture-audit-01/README.md` | `OBSERVED_TOOLING_ONLY / LIVE_CAPTURE_NOT_RUN` |
 
+The capture-tool audit receipt is pinned locally by
+`audit.json` SHA-256
+`9e945a9ca0750a83e6b26dfa83dfd6ee726f5c24063637b6166e3206e0d89b27`.
+The read-only recheck matched its seven source hashes and passed bounded
+`py_compile` for `verify_unified_entry.py`, `verify_hangar.py`,
+`verify_account_ready.py` and `verify_channel_capture.py`. This confirms tool
+readiness only; it does not provide the missing live CMD700 bytes or callback.
+
 The receipts are ignored local evidence and are not copied into Git. Their
 presence does not turn a static extraction into a native acceptance result.
 
