@@ -14,6 +14,27 @@ tank–tank/static obstacle causality, prediction/correction, rejoin и ручн
 План/исследование: [P05 plan](plans/P05_MOVEMENT_COLLISION_RECONCILIATION.md) и
 [P05 offline research](research/P05_OFFLINE_DETERMINISTIC_MATRIX.md).
 
+# P07A/P08A static source boundaries — 2026-10-08
+
+Два docs-only среза расширили исследование без выдуманного native runtime:
+
+- P07A получил **PASS_STATIC_VISIBILITY_SOURCE_BOUNDARY** по восьми
+  hash-bound декларациям `Avatar`/`Vehicle`/`Arena` из P00/P01. Wire IDs,
+  порядок, LOS, interest filtering, кусты, задержки засвета и native
+  replication остаются `UNKNOWN/NOT_RUN`. Receipt и границы: [P07A
+  evidence](evidence-index/P07A.md).
+- P08A получил **PASS_STATIC_BATTLE_LIFECYCLE_SOURCE_BOUNDARY** по typed
+  lifecycle declarations `PlayerAccount`/`PlayerAvatar`/`ClientArena`/`Vehicle`.
+  Wire envelope/order, native state machine, HUD, звук, timer и 10-бойная
+  ручная приёмка остаются `UNKNOWN/NOT_RUN`. Receipt и границы: [P08A
+  evidence](evidence-index/P08A.md).
+
+Оба среза не меняют runtime, gateway, базу, fixture или original/research
+client. Следующие gates владельца: P07A — двухклиентский fixed-occlusion
+capture payload/callback; P08A — bounded native lifecycle capture с UI/audio и
+результатами боя. Нельзя превращать имена статических методов в guessed
+serializer или battle solver.
+
 # P09A preparation — native research-tree visibility — 2026-10-08
 
 Подготовлена docs-only карточка `codex/p09a-research-tree-visibility`:

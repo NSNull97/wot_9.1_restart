@@ -1,5 +1,22 @@
 # ACTIVE_GATE — 2026-10-07
 
+## P07A/P08A static source boundaries
+
+P07A is accepted as `PASS_STATIC_VISIBILITY_SOURCE_BOUNDARY`: eight typed
+`Avatar`/`Vehicle`/`Arena` declarations are hash-bound to the inspected P00/P01
+contracts. Wire IDs, serialization order, LOS/interest filtering, concealment
+timers and native replication remain `UNKNOWN/NOT_RUN`.
+
+P08A is accepted as `PASS_STATIC_BATTLE_LIFECYCLE_SOURCE_BOUNDARY`: typed
+`PlayerAccount`/`PlayerAvatar`/`ClientArena`/`Vehicle` lifecycle declarations
+are recorded with their source flags. Wire envelope/order, native state machine,
+HUD/audio/timer and ten-battle owner acceptance remain `UNKNOWN/NOT_RUN`.
+
+These are source boundaries only. No runtime/client/service was changed. The
+next gates are owner-driven fixed-occlusion visibility capture and bounded
+native lifecycle capture; no guessed adapter or solver is permitted before
+those receipts.
+
 ## P05 offline deterministic matrix
 
 The pinned test-lab worker now has a two-map deterministic receipt:
