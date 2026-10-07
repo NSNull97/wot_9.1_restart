@@ -94,6 +94,39 @@ triangle/material/normal/thickness/terminal reason, HP/module state и пров�
 повторной доставки shot identity. Если server-owned hit/HP event не получен,
 оставить solver недоступным и статус **NOT_RUN**.
 
+# P06D bounded impact-receipt audit — 2026-10-08
+
+Карточка `P06D_IMPACT_RECEIPT_AUDIT` выполнена в ветке
+`codex/p06d-impact-receipt-audit`, commit `2d1465c`, от базы `83bba99`. В
+`main` её код уже вошёл merge `10ab3ae`; эта status/docs-карточка оставляет
+отдельную проверяемую запись. Добавлены только bounded
+`tools/impact_capture_audit.py` и его unit tests: валидатор проверяет
+server-owned admission → launch → segment → intersection → classification →
+terminal → optional damage → replay, ограничения JSON, finite vectors,
+monotonic sequence/ticks и fail-closed negative controls.
+
+Targeted `tests.test_impact_capture_audit`: **11 tests, 0 failures**. Полный
+main regression через UTF-8 launcher: **2083 tests, 0 failures/errors, 4
+skips**, лог SHA-256
+`86cdbbff98bc655b4478f1666125963ed8430f8942d549183664db178eb3a471`.
+Преднамеренно неполный CLI receipt честно вернул
+**NOT_RUN_INCOMPLETE_CAPTURE** (`missing required stage: launch`); это не
+ошибка и не доказательство native capture.
+
+Полный receipt, прошедший форму, получает только
+**PASS_CAPTURE_SHAPE_ONLY**: fixture синтетический, результат не доказывает
+native hit, penetration, историческую формулу урона или callback клиента.
+`native_impact_status` остаётся `NOT_VERIFIED_BY_AUDITOR`, а native
+intersection, armor/penetration, HP/module/crew damage и solver —
+**NOT_RUN / UNKNOWN**. Evidence: `docs/research/P06D_IMPACT_RECEIPT_AUDIT.md`,
+`docs/evidence-index/P06D.md` и ignored
+`local/evidence/20261008-p06d-impact-receipt-audit-01/`.
+
+Единственный следующий шаг — owner-gated P06C: прогнать два локальных MS-1,
+передать в аудитор реальный server-owned receipt с intersection/material/
+normal/thickness/terminal, HP/module state и replay identity, затем отдельно
+сверить native evidence. До этого P06 hit/damage остаётся недоступен.
+
 # Параллельная карточка — P04, 2026-10-07: typed content import
 
 В отдельной рабочей копии `codex/p04-content-import` реализован bounded
