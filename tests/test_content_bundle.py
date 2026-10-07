@@ -130,6 +130,19 @@ class ContentBundleTests(unittest.TestCase):
             with self.assertRaises(BundleError):
                 bundle.read_json("inputs/example")
 
+    def test_manifest_json_depth_is_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_bundle(root)
+            manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+            cursor = manifest
+            for _ in range(70):
+                cursor["nested"] = {}
+                cursor = cursor["nested"]
+            (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaises(BundleError):
+                verify_bundle(root)
+
 
 if __name__ == "__main__":
     unittest.main()
