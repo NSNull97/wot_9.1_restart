@@ -9,6 +9,9 @@ hash checks are in `local/evidence/20261007-org-0a-project-hygiene-01/pins.json`
 
 ## Git receipt
 
+- Local organizational acceptance: `PASS_ORG_0A_HEAD`; remote publication:
+  **`NOT_RUN_NETWORK_BLOCKED`**. The local history is retained; this is not a
+  stable/green release.
 - Baseline commit: `7d2a600b7e65ecd7568cb5a985af941313dffb60`.
 - Annotated tag: `baseline-2026-10-07`; tag object: `0b0fa2f54abd5f14ec39147b034a70757bd5227a`.
 - Branch: `main`.
@@ -29,6 +32,31 @@ hash checks are in `local/evidence/20261007-org-0a-project-hygiene-01/pins.json`
 - ORG-0A branch: `codex/org-0a-project-hygiene`; base is the historical baseline.
   Accepted organizational head will be merged with `--no-ff`; main will retain
   the recorded ORG-0B test debt. [Branch policy](../07_CODEX_WORKFLOW.md).
+
+### Actual delivery attempts
+
+Accepted initial organizational head: `8eba3b78945b7a1a136784f68d0749bcf53019cd`.
+First accepted `--no-ff` merge / attempted remote head:
+`ebd6f782016c275c3e548491c310a1dd2f3a7646`.
+The delivery-failure receipt is a subsequent documentation-only continuation
+of the same ORG-0A branch; final local SHA is in the machine receipt.
+
+1. `git -c credential.interactive=never push -u origin main` — exit 1:
+   `error: RPC failed; HTTP 408 curl 22 The requested URL returned error: 408`,
+   `send-pack: unexpected disconnect while reading sideband packet`,
+   `fatal: the remote end hung up unexpectedly`.
+   The trailing `Everything up-to-date` is not success: exit code is 1 and
+   `git ls-remote --heads origin` afterwards returned no heads (exit 0).
+2. One ordinary retry of the same history with `--progress` and command-local
+   low-speed timeout — exit 128:
+   `fatal: unable to access 'https://github.com/NSNull97/wot_9.1_restart.git/': schannel: failed to receive handshake, SSL/TLS connection failed`.
+3. `git push origin baseline-2026-10-07` — NOT_RUN because main delivery is
+   blocked by the network. The annotated tag remains local.
+
+Exact output: `local/evidence/20261007-org-0a-project-hygiene-01/push-main.txt`,
+`push-main-attempt02.txt`, `remote-heads-after-push01.txt` under that directory.
+TLS verification was not disabled; credentials and remote history were not
+altered. Remote push success is not claimed.
 
 ## Boundary
 
@@ -84,5 +112,6 @@ and history. Do not use reset --hard, force-push or deletion of ignored local
 inputs/evidence. P03D and P03E owner receipts remain accepted; full P03 remains
 IN_PROGRESS.
 
-Single next step: [ORG-0B](../plans/ORG-0B_TEST_TRIAGE_BACKLOG.md), classify
-the 10 unittest errors and 4 skips and prepare the minimal repair plan.
+Single next step: retry delivery of the existing main and baseline tag when
+the GitHub connection works, then verify remote SHAs. ORG-0B remains a separate
+unstarted backlog card; it is not executed by ORG-0A.

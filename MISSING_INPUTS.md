@@ -16,7 +16,10 @@ visibility и полный боевой цикл не приняты; обору
 ORG-0A: первоначальный `Author identity unknown` разрешён владельцем,
 предоставившим имя/email для local Git config. Полный Python-набор: 2028 тестов, 10 ошибок,
 4 пропуска — [ORG-0B backlog](docs/plans/ORG-0B_TEST_TRIAGE_BACKLOG.md).
-Единственный следующий шаг после ORG-0A — ORG-0B.
+Публикация baseline/main пока NOT_RUN: HTTP 408, затем TLS handshake failure;
+локальные commits/tag сохранены. Единственный следующий шаг — обычный повтор
+push этой истории с проверкой remote SHA после восстановления соединения.
+ORG-0B не начата.
 
 ## История недостающих данных по карточкам
 
