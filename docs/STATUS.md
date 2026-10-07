@@ -379,6 +379,14 @@ skips**. Receipt `result.json` закреплён локальным SHA
 2062 ребра, USSR I–X, ИС-8 → ИС-7, ИС-7 terminal); native account/shop/tree
 payload, callback и визуальная сверка остаются **NOT_RUN**.
 
+Для P03I повторно проверен ignored capture-tool audit: `audit.json` SHA
+`9e945a9ca0750a83e6b26dfa83dfd6ee726f5c24063637b6166e3206e0d89b27`, семь
+зафиксированных исходных SHA совпали, существующие capture/decrypt/channel
+helpers прошли `py_compile`. Решение остаётся
+`PASS_READ_ONLY_CAPTURE_FORMAT_AUDIT`; live CMD700/callback и IS-7 admission
+по-прежнему **NOT_RUN**, поэтому спекулятивный decoder/gateway adapter не
+добавлялся.
+
 План: [P04 plan](plans/P04_CONTENT_IMPORT.md); исследование:
 [P04 research](research/P04_CONTENT_IMPORT.md).
 
