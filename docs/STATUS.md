@@ -166,6 +166,39 @@ MS-1, получить server-owned intersection/material/normal/thickness/termi
 HP/module state и replay identity, затем сопоставить native evidence. До этой
 корреляции P06 hit/damage остаётся недоступен.
 
+# P03I docs-only native vehicle/loadout boundary — 2026-10-08
+
+Документы P03I из commit `81dfb93` слиты в `main` merge `2f43054`; статусная
+запись подготовлена отдельно в ветке `codex/p03i-status-docs`. Карточка имеет
+статус **PASS_DOCS_ONLY_STATIC_BOUNDARY / NATIVE_HANDOFF_NOT_RUN**. Она не
+добавляет runtime профиля, не меняет `server/gateway`, `client_patch`, fixture,
+оригинальный/research client или deployed service.
+
+Зафиксирован статический tree predicate: `NationTreeData.load` пропускает
+`None` и `item.isHidden`, а hidden set приходит из
+`shop.items.notInShopItems`; полный reference graph не урезается. Направление
+графа — **ИС-8 → ИС-7**. Native account/shop payload, callbacks окна
+исследования и owner screenshot correlation остаются **NOT_RUN**.
+
+Зафиксирован статический random-queue контракт: request `202`, command `700`,
+выбранный `g_currentVehicle.invID` как `INT64`, затем `gameplaysMask` и
+`arenaTypeID` как два `INT32`; envelope `INT16, INT16, INT64, INT32, INT32`.
+Callbacks: `onEnqueued(queueType)` → `events.onEnqueuedRandom()` и
+`onEnqueueFailure(UINT8, UINT8, STRING)` →
+`events.onEnqueueRandomFailure(...)`. Это source semantics, не live framing.
+
+Следующий owner gate — один обычный random-battle click на MS-1 с сохранением
+decrypted Account body, manifest, `202/700`, обоих `INT16`, `INT64` vehicle ID,
+обоих `INT32` mask/arena, callback arguments/order, queue event и server
+identity correlation. IS-7 можно проверять только после отдельного
+hash-pinned crew и server-owned shell grant; текущие `crew_assigned=false`,
+ammo `0` должны fail-closed без mutation. Missing framing/callback оставляет
+результат **NOT_RUN**; CMD700 нельзя угадывать по map-drive parser.
+
+План, research ledger и evidence index: `docs/plans/P03I_VEHICLE_PROFILE_LOADOUT.md`,
+`docs/research/P03I_VEHICLE_PROFILE_LOADOUT.md`,
+`docs/evidence-index/P03I.md`.
+
 # Параллельная карточка — P04, 2026-10-07: typed content import
 
 В отдельной рабочей копии `codex/p04-content-import` реализован bounded
