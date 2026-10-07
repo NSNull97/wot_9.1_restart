@@ -23,7 +23,7 @@ tank–tank/static obstacle causality, prediction/correction, rejoin и ручн
   порядок, LOS, interest filtering, кусты, задержки засвета и native
   replication остаются `UNKNOWN/NOT_RUN`. Receipt и границы: [P07A
   evidence](evidence-index/P07A.md).
-- P08A получил **PASS_STATIC_BATTLE_LIFECYCLE_SOURCE_BOUNDARY** по typed
+- P08A получил **PASS_STATIC_SOURCE_BOUNDARY_ONLY** по typed
   lifecycle declarations `PlayerAccount`/`PlayerAvatar`/`ClientArena`/`Vehicle`.
   Wire envelope/order, native state machine, HUD, звук, timer и 10-бойная
   ручная приёмка остаются `UNKNOWN/NOT_RUN`. Receipt и границы: [P08A

@@ -7,7 +7,7 @@ P07A is accepted as `PASS_STATIC_VISIBILITY_SOURCE_BOUNDARY`: eight typed
 contracts. Wire IDs, serialization order, LOS/interest filtering, concealment
 timers and native replication remain `UNKNOWN/NOT_RUN`.
 
-P08A is accepted as `PASS_STATIC_BATTLE_LIFECYCLE_SOURCE_BOUNDARY`: typed
+P08A is accepted as `PASS_STATIC_SOURCE_BOUNDARY_ONLY`: typed
 `PlayerAccount`/`PlayerAvatar`/`ClientArena`/`Vehicle` lifecycle declarations
 are recorded with their source flags. Wire envelope/order, native state machine,
 HUD/audio/timer and ten-battle owner acceptance remain `UNKNOWN/NOT_RUN`.
