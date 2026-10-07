@@ -31,6 +31,22 @@
 этот граф через игровой протокол. Garage ownership и research tree надо
 связать отдельной native/UI карточкой; подмена одного другим будет врать.
 
+Read-only static audit дополнительно закрепил исходники #717: `ussr/list.xml`
+SHA256 `167a637d725a233d42e52bd7d5bac00b9af45c0ef225163ab578e202454f5138`,
+`ussr/is8.xml` SHA256
+`73ea8ffa6b7f0522962d7ab5631eaaeeaa05d74f5b20b6c153c8f9feca3cb4be`,
+`ussr/is-7.xml` SHA256
+`8d55fa4657a88f1436cd164afe11bade875a906fa7b97256f1fb2f803b09c10d`. В
+`catalog-research.v1` у `ussr-is8` есть переход `gun-2 → vehicle-ussr-is-7`,
+а `ussr-is-7` терминальный. Это объясняет «нет продолжения ИС-8» при выборе
+ИС-7: направление связи обратное.
+
+Гипотеза про отсутствие уровня I у СССР пока только `INFERRED`: нативный экран
+может скрывать уже купленные машины (МС-1), тогда как немецкий L.Tr. ещё не
+владельческий. Точный predicate Python/Flash UI не установлен. Следующий native
+gate: снять payload/callback дерева на аккаунтах с MS-1+IS-7 и со свежим
+аккаунтом, сравнить owned/filter flags и не менять клиент до этого сравнения.
+
 ## Контракт
 
 `content-import.v1` состоит из target, hash конкретного source bundle,
