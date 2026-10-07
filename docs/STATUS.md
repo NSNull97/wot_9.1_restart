@@ -1,5 +1,20 @@
 # Overnight verification after P09B harness — 2026-10-08
 
+## Current-main final-09 recheck
+
+На текущем `main` `4d9c5fb2e95c337d3972f02745f22641df8fd586` (тот же SHA на
+`origin/main`) повторён UTF-8 full regression: **2125 тестов, 0
+failures/errors, 4 known skips**. Лог
+`local/evidence/20261008-overnight-final-09/full-python-utf8.txt`, SHA-256
+`c4f326c7a1f82b10cfd4770643d6bc47b5284d424387a80c20f2220844a1f87d`.
+`server/check_layout.py` вернул `PASS_SERVER_SOURCE_LAYOUT` для 58 source files
+и 22 relocations, receipt SHA
+`4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`.
+Свежий bounded docs-link recheck дал `PASS_DOC_LINK_RECHECK`: 434 внутренних
+ссылки, 0 missing targets; 105 внешних/абсолютных ссылок пропущены как
+исторические или внешние. Receipt SHA
+`2572ee6be18bbaae31abc194e9acf594b49dcd8a0927dd9f98fcd390679e6bfba`.
+
 # P09A Phase A static fixture visibility matrix — 2026-10-08
 
 The bounded read-only `tools/research_tree_visibility_matrix.py` verifier and
