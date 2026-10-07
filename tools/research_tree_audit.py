@@ -206,6 +206,17 @@ def audit(catalog_path: str | Path, research_path: str | Path) -> dict[str, Any]
     ussr_tiers = sorted({catalog_by_id[vehicle_id]["tier"] for vehicle_id in ussr_ids})
     if ussr_tiers != list(range(1, 11)):
         raise ResearchTreeAuditError(f"USSR tier coverage differs: {ussr_tiers}")
+    if catalog_by_id.get("ussr-ms-1", {}).get("tier") != 1:
+        raise ResearchTreeAuditError("MS-1 must remain a USSR level-I catalogue root")
+    ms1_edges = vehicle_edges["ussr-ms-1"]
+    if not ms1_edges:
+        raise ResearchTreeAuditError("MS-1 must retain an outgoing vehicle edge")
+    ms1_target_tiers = sorted({
+        catalog_by_id[edge["to"].removeprefix("vehicle-")]["tier"]
+        for edge in ms1_edges
+    })
+    if ms1_target_tiers != [2]:
+        raise ResearchTreeAuditError("MS-1 outgoing vehicle edges must target tier II")
     is8_edges = [edge for edge in vehicle_edges["ussr-is8"] if edge["to"] == "vehicle-ussr-is-7"]
     if len(is8_edges) != 1 or vehicle_edges["ussr-is-7"]:
         raise ResearchTreeAuditError("IS-8 -> IS-7 direction or terminal IS-7 invariant failed")
@@ -220,6 +231,9 @@ def audit(catalog_path: str | Path, research_path: str | Path) -> dict[str, Any]
         "edge_count": total_edges,
         "ussr_vehicle_count": len(ussr_ids),
         "ussr_tiers": ussr_tiers,
+        "ussr_ms1_tier": 1,
+        "ussr_ms1_vehicle_edges": len(ms1_edges),
+        "ussr_ms1_target_tiers": ms1_target_tiers,
         "is8_to_is7": True,
         "is7_vehicle_edges": 0,
         "native_visibility": "NOT_RUN",

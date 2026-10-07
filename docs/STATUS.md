@@ -18,10 +18,10 @@ This is a bounded harness only: migration, deployed service wiring, battle
 lease lifecycle, economy, concurrency/load and native restart remain
 **NOT_RUN**. No client, gateway or deployed service was changed.
 
-После merge P09B isolated SQLite harness повторён authoritative UTF-8 regression:
-**2117 tests, 0 failures/errors, 4 known skips**. Полный лог:
-`local/evidence/20261008-overnight-final-05-full-python-utf8.txt`, SHA-256
-`027e9051fc0f5a2fbd4d45d75a37b0e77f9e19c15945d4f51a4e29776ba76c3c`.
+После P09A MS-1 root guard повторён authoritative UTF-8 regression:
+**2118 tests, 0 failures/errors, 4 known skips**. Полный лог:
+`local/evidence/20261008-overnight-final-06-full-python-utf8.txt`, SHA-256
+`11da64256a7822a19d9df07455c608d1a20cf8ded49be2cf5aab8fb478a7ad2e`.
 `server/check_layout.py` снова вернул `PASS_SERVER_SOURCE_LAYOUT` (58 source
 files, 22 single-source relocations); layout SHA остался
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`.
@@ -393,10 +393,10 @@ skips**. Receipt `result.json` закреплён локальным SHA
 
 Дополнительно добавлен bounded static graph audit P09A:
 `tools/research_tree_audit.py` и `tests/test_research_tree_audit.py` дают
-**7/7 PASS**, receipt `local/evidence/20261008-p09a-tree-graph-audit-01/receipt.json`
-с SHA `39733821cf916a069152a0d67909fca54b816ebab13ad3a33dc0edb94abb0f44`.
+**8/8 PASS**, receipt `local/evidence/20261008-p09a-tree-graph-audit-02-receipt.json`
+с SHA `454c9b0c9e0666e92856239dd55c486014695317052eff766f50b772239ef8d8`.
 Он подтверждает только hash-bound reference graph (374 деревьев, 3945 узлов,
-2062 ребра, USSR I–X, ИС-8 → ИС-7, ИС-7 terminal); native account/shop/tree
+2062 ребра, USSR I–X, MS-1 level-I → tier-II, ИС-8 → ИС-7, ИС-7 terminal); native account/shop/tree
 payload, callback и визуальная сверка остаются **NOT_RUN**.
 
 Для P09A predicate receipt повторно проверены четыре hash-bound исходника

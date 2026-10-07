@@ -18,8 +18,9 @@ IS-8/IS-7 facts reproducible without treating the web graph as native UI data.
 ## Acceptance
 
 `PASS_STATIC_RESEARCH_TREE_GRAPH` requires 374 catalogued trees, 3945 nodes,
-2062 edges, USSR tier coverage I–X, exactly one `ussr-is8 → vehicle-ussr-is-7`
-vehicle edge and zero outgoing vehicle edges from IS-7. Native shop payload,
+2062 edges, USSR tier coverage I–X, an MS-1 tier-I root with tier-II outgoing
+vehicle edges, exactly one `ussr-is8 → vehicle-ussr-is-7` vehicle edge and zero
+outgoing vehicle edges from IS-7. Native shop payload,
 tree callback, hidden-item policy at runtime and screenshot correlation remain
 `NOT_RUN`.
 
