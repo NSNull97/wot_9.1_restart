@@ -1,15 +1,17 @@
-## P09B persistence/transaction boundary — docs-only plan
+## P09B persistence/transaction boundary — isolated harness
 
-P09B фиксирует один узкий пробел перед progression/economy: identity DB
-transactional schema migration, `game.account.v1` ownership assertion, immutable
-profile4 provenance и profile4 battle-loadout binding не дают game-state write,
-reservation или replay ledger. Proposed server-owned command key + expected
-snapshot revision + atomic ledger/snapshot commit остаются **INFERRED / NOT
-IMPLEMENTED**. No database, deployed service or client was changed.
+P09B теперь имеет bounded stdlib-SQLite harness в
+`tools/game_profile_tx.py`: server-owned `reserve_vehicle` делает snapshot,
+vehicle-state и command-ledger запись одной `BEGIN IMMEDIATE` транзакцией.
+Повтор того же command payload возвращает сохранённый результат; payload
+mismatch, stale revision, unknown/already-reserved vehicle, повреждённый
+snapshot и pre-commit failpoint закрываются без частичной записи. Это именно
+изолированный контракт, без подключения к gateway, deployed service или
+клиенту.
 
-Status: **PASS_P09B_PERSISTENCE_TRANSACTION_BOUNDARY_PLAN**. Game transaction,
-duplicate replay, stale revision, crash/restart recovery, reservation, economy и
-native restart — **NOT_RUN**. Plan, research and evidence:
+Status: **PASS_P09B_SQLITE_TRANSACTION_HARNESS / runtime integration NOT_RUN**.
+Migration, battle lease release/consume, economy, concurrency, crash/restart и
+native restart остаются **NOT_RUN**. Plan, research and evidence:
 [P09B plan](plans/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md),
 [P09B research](research/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md),
 [P09B receipt](evidence-index/P09B.md).
@@ -30,15 +32,16 @@ matchmaker routes before that capture.
 
 ## Overnight verification
 
-The UTF-8 full regression after the P09A graph-audit merge is **2104 tests,
+The UTF-8 full regression after the P09B harness merge is **2117 tests,
 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-overnight-final-04-full-python-utf8.txt` (SHA-256
-`a33543a5212c512633d601b68de2e671a153275c474cf6a81aec21b1b0b1a4fb`). Layout is
+`local/evidence/20261008-overnight-final-05-full-python-utf8.txt` (SHA-256
+`027e9051fc0f5a2fbd4d45d75a37b0e77f9e19c15945d4f51a4e29776ba76c3c`). Layout is
 `PASS_SERVER_SOURCE_LAYOUT` with 58 source files and 22 relocations; receipt:
-`local/evidence/20261008-overnight-final-04-layout.json` (SHA-256
+`local/evidence/20261008-overnight-final-05-layout.json` (SHA-256
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
 current diff from baseline contains documentation/evidence, bounded movement
-matrix auditor/tests, and the bounded static research-tree auditor/tests only.
+matrix auditor/tests, static research-tree auditor/tests, and the isolated
+SQLite transaction harness/tests.
 
 ## P07A/P08A static source boundaries
 
