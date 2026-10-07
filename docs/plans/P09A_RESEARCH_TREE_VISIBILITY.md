@@ -37,8 +37,8 @@ when looking after IS-7 is a direction mistake, not a missing IS-8 node.
   proof that a native account has received the same payload.
 
 The bounded static graph guard is implemented in
-`tools/research_tree_audit.py` with seven positive/negative tests. Its receipt
-`local/evidence/20261008-p09a-tree-graph-audit-01/receipt.json` is
+`tools/research_tree_audit.py` with eight positive/negative tests. Its receipt
+`local/evidence/20261008-p09a-tree-graph-audit-02-receipt.json` is
 `PASS_STATIC_RESEARCH_TREE_GRAPH` (374 trees, 3945 nodes, 2062 edges); this is
 the accepted static part of P09A and does not change the native handoff gate.
 

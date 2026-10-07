@@ -32,12 +32,12 @@ matchmaker routes before that capture.
 
 ## Overnight verification
 
-The UTF-8 full regression after the P09B harness merge is **2117 tests,
+The UTF-8 full regression after the P09A MS-1 root guard is **2118 tests,
 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-overnight-final-05-full-python-utf8.txt` (SHA-256
-`027e9051fc0f5a2fbd4d45d75a37b0e77f9e19c15945d4f51a4e29776ba76c3c`). Layout is
+`local/evidence/20261008-overnight-final-06-full-python-utf8.txt` (SHA-256
+`11da64256a7822a19d9df07455c608d1a20cf8ded49be2cf5aab8fb478a7ad2e`). Layout is
 `PASS_SERVER_SOURCE_LAYOUT` with 58 source files and 22 relocations; receipt:
-`local/evidence/20261008-overnight-final-05-layout.json` (SHA-256
+`local/evidence/20261008-overnight-final-06-layout.json` (SHA-256
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
 current diff from baseline contains documentation/evidence, bounded movement
 matrix auditor/tests, static research-tree auditor/tests, and the isolated
@@ -109,8 +109,9 @@ receipt: [P09A plan](plans/P09A_RESEARCH_TREE_VISIBILITY.md),
 
 `tools/research_tree_audit.py` now returns
 `PASS_STATIC_RESEARCH_TREE_GRAPH` for the pinned #717 reference data: 374
-trees, 3945 nodes, 2062 edges, USSR tiers I–X, one IS-8 → IS-7 edge and no
-outgoing vehicle edge from IS-7. This verifies the reference graph only; native
+trees, 3945 nodes, 2062 edges, USSR tiers I–X, an MS-1 tier-I root with five
+tier-II outgoing vehicle edges, one IS-8 → IS-7 edge and no outgoing vehicle
+edge from IS-7. This verifies the reference graph only; native
 shop/tree payload, callback and visual handoff remain `NOT_RUN`. See the
 [audit research](research/P09A_TREE_GRAPH_AUDIT.md) and
 [audit receipt](evidence-index/P09A_TREE_GRAPH_AUDIT.md).

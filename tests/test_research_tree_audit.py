@@ -19,6 +19,9 @@ class ResearchTreeAuditTests(unittest.TestCase):
         self.assertEqual(report["node_count"], 3945)
         self.assertEqual(report["edge_count"], 2062)
         self.assertEqual(report["ussr_tiers"], list(range(1, 11)))
+        self.assertEqual(report["ussr_ms1_tier"], 1)
+        self.assertEqual(report["ussr_ms1_target_tiers"], [2])
+        self.assertGreater(report["ussr_ms1_vehicle_edges"], 0)
         self.assertTrue(report["is8_to_is7"])
         self.assertEqual(report["is7_vehicle_edges"], 0)
         self.assertEqual(report["native_visibility"], "NOT_RUN")
@@ -46,6 +49,18 @@ class ResearchTreeAuditTests(unittest.TestCase):
             value = json.loads(research.read_text(encoding="utf-8"))
             value["vehicles"].pop("ussr-is-7")
             research.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaises(ResearchTreeAuditError):
+                audit(catalog, research)
+
+    def test_ms1_level_root_mutation_is_rejected(self):
+        temp, catalog, research = self._copies()
+        with temp:
+            value = json.loads(catalog.read_text(encoding="utf-8"))
+            for row in value["vehicles"]:
+                if row["id"] == "ussr-ms-1":
+                    row["tier"] = 2
+                    break
+            catalog.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaises(ResearchTreeAuditError):
                 audit(catalog, research)
 
