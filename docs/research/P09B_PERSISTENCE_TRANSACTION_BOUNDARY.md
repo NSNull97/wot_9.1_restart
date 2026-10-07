@@ -21,10 +21,11 @@ chain and semantic diff are bundle-rooted and read-only; the battle-loadout
 adapter rejects mismatched revisions/hashes and explicitly does not reserve or
 consume resources.
 
-**INFERRED:** these pieces intentionally stop before a game-state transaction.
-No current receipt ties an accepted command key to an atomic game ledger row plus
-new profile snapshot revision. Therefore P09B must first define that boundary
-rather than treating a profile hash or grant ID as an idempotency token.
+**INFERRED:** these deployed pieces intentionally stop before a game-state
+transaction. No current **deployed-runtime** receipt ties an accepted command
+key to an atomic game ledger row plus a new profile snapshot revision. The
+isolated harness below defines and checks that boundary without claiming a
+deployed owner; a profile hash or grant ID remains an invalid idempotency token.
 
 ## Source anchors
 
