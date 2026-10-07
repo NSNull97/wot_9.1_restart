@@ -10,7 +10,7 @@ revision, unknown vehicle and already reserved vehicle fail closed. An injected
 pre-commit failure is rolled back and the database is reopened to verify there
 is no partial snapshot or ledger row.
 
-Targeted `tests.test_game_profile_tx` is **11/11 PASS**. The ignored CLI receipt
+Targeted `tests.test_game_profile_tx` is **13/13 PASS**. The ignored CLI receipt
 `local/evidence/20261008-p09b-transaction-harness-01/receipt.json` is
 `PASS_P09B_SQLITE_TRANSACTION_HARNESS`, SHA-256
 `cedec631a51a5bf802381f04ad6690582518f3b341e0ce1f78e4bd775a614150`.

@@ -52,7 +52,7 @@ def _revision(value: Any) -> int:
 
 def _canonical(value: Any) -> bytes:
     try:
-        raw = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        raw = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError) as error:
         raise TransactionError("INVALID_INPUT", "payload is not canonical JSON") from error
     data = raw.encode("ascii")
@@ -201,6 +201,35 @@ class GameProfileStore:
         result["replayed"] = True
         return result
 
+    def _verified_snapshot(self, row: sqlite3.Row, account_id: str) -> dict[str, Any]:
+        """Verify aggregate digest and row projection before any mutation."""
+        try:
+            raw = row["snapshot_json"].encode("ascii")
+        except UnicodeEncodeError as error:
+            raise TransactionError("CORRUPT_STORE", "snapshot must be bounded ASCII JSON") from error
+        if len(raw) > MAX_SNAPSHOT_BYTES:
+            raise TransactionError("CORRUPT_STORE", "snapshot exceeds bounded size")
+        if _sha(raw) != row["snapshot_sha256"]:
+            raise TransactionError("CORRUPT_STORE", "snapshot digest mismatch")
+        value = _decode_object(row["snapshot_json"], "snapshot")
+        try:
+            revision = int(row["revision"])
+        except (TypeError, ValueError) as error:
+            raise TransactionError("CORRUPT_STORE", "snapshot revision is invalid") from error
+        if value.get("revision") != revision:
+            raise TransactionError("CORRUPT_STORE", "snapshot revision mismatch")
+        expected_vehicles = [
+            {"battle_id": vehicle["battle_id"], "state": vehicle["state"], "vehicle_id": vehicle["vehicle_id"]}
+            for vehicle in self.connection.execute(
+                "SELECT vehicle_id, state, battle_id FROM game_vehicle WHERE account_id = ? ORDER BY vehicle_id",
+                (account_id,),
+            ).fetchall()
+        ]
+        expected = {"account_id": account_id, "revision": revision, "vehicles": expected_vehicles}
+        if value != expected:
+            raise TransactionError("CORRUPT_STORE", "snapshot does not match vehicle rows")
+        return value
+
     def reserve_vehicle(
         self,
         *,
@@ -242,7 +271,8 @@ class GameProfileStore:
             ).fetchone()
             if snapshot_row is None:
                 raise TransactionError("UNKNOWN_ACCOUNT")
-            actual_revision = int(snapshot_row["revision"])
+            verified_snapshot = self._verified_snapshot(snapshot_row, account_id)
+            actual_revision = verified_snapshot["revision"]
             if expected_revision != actual_revision:
                 raise TransactionError("STALE_REVISION")
             vehicle = connection.execute(
@@ -303,23 +333,7 @@ class GameProfileStore:
         ).fetchone()
         if row is None:
             raise TransactionError("UNKNOWN_ACCOUNT")
-        raw = row["snapshot_json"].encode("ascii")
-        if _sha(raw) != row["snapshot_sha256"]:
-            raise TransactionError("CORRUPT_STORE", "snapshot digest mismatch")
-        value = _decode_object(row["snapshot_json"], "snapshot")
-        if value.get("revision") != row["revision"]:
-            raise TransactionError("CORRUPT_STORE", "snapshot revision mismatch")
-        expected_vehicles = [
-            {"battle_id": vehicle["battle_id"], "state": vehicle["state"], "vehicle_id": vehicle["vehicle_id"]}
-            for vehicle in self.connection.execute(
-                "SELECT vehicle_id, state, battle_id FROM game_vehicle WHERE account_id = ? ORDER BY vehicle_id",
-                (account_id,),
-            ).fetchall()
-        ]
-        expected = {"account_id": account_id, "revision": int(row["revision"]), "vehicles": expected_vehicles}
-        if value != expected:
-            raise TransactionError("CORRUPT_STORE", "snapshot does not match vehicle rows")
-        return value
+        return self._verified_snapshot(row, account_id)
 
     def ledger_count(self, account_id: str) -> int:
         return int(self.connection.execute(

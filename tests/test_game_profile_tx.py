@@ -123,6 +123,33 @@ class GameProfileTransactionTests(unittest.TestCase):
         with self.assertRaisesRegex(TransactionError, "CORRUPT_STORE"):
             self.store.read_profile("acct-a")
 
+    def test_corrupt_snapshot_digest_is_rejected_before_reservation(self):
+        self.store.connection.execute(
+            "UPDATE game_snapshot SET snapshot_sha256 = ? WHERE account_id = ?",
+            ("0" * 64, "acct-a"),
+        )
+        self.store.connection.commit()
+        with self.assertRaisesRegex(TransactionError, "CORRUPT_STORE"):
+            self.reserve()
+        self.assertEqual(self.store.ledger_count("acct-a"), 0)
+        self.assertEqual(self.store.connection.execute(
+            "SELECT state FROM game_vehicle WHERE account_id = ? AND vehicle_id = ?", ("acct-a", "is7")
+        ).fetchone()[0], "available")
+
+    def test_snapshot_row_projection_mismatch_is_rejected_before_reservation(self):
+        raw = '{"account_id":"acct-a","revision":0,"vehicles":[]}'
+        self.store.connection.execute(
+            "UPDATE game_snapshot SET snapshot_json = ?, snapshot_sha256 = ? WHERE account_id = ?",
+            (raw, hashlib.sha256(raw.encode("ascii")).hexdigest(), "acct-a"),
+        )
+        self.store.connection.commit()
+        with self.assertRaisesRegex(TransactionError, "CORRUPT_STORE"):
+            self.reserve()
+        self.assertEqual(self.store.ledger_count("acct-a"), 0)
+        self.assertEqual(self.store.connection.execute(
+            "SELECT state FROM game_vehicle WHERE account_id = ? AND vehicle_id = ?", ("acct-a", "is7")
+        ).fetchone()[0], "available")
+
     def test_self_check_receipt_is_pass(self):
         result = _run_self_check(None)
         self.assertEqual(result["status"], "PASS_P09B_SQLITE_TRANSACTION_HARNESS")

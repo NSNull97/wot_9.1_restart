@@ -87,7 +87,7 @@ already reserved vehicle fails closed. The harness also reopens the database
 after an injected pre-commit failure and verifies that no vehicle, revision, or
 ledger row was partially written.
 
-Targeted `tests.test_game_profile_tx` has **11/11 PASS**. The deterministic
+Targeted `tests.test_game_profile_tx` has **13/13 PASS**. The deterministic
 ignored receipt is `local/evidence/20261008-p09b-transaction-harness-01/receipt.json`
 (SHA-256 `cedec631a51a5bf802381f04ad6690582518f3b341e0ce1f78e4bd775a614150`)
 with status `PASS_P09B_SQLITE_TRANSACTION_HARNESS`.

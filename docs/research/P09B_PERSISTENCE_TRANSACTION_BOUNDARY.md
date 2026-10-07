@@ -70,7 +70,7 @@ The ledger stores a canonical payload SHA-256 and result JSON, so a repeated
 `(account_id, command_id)` returns the original result without a second
 revision, while a payload mismatch rejects the replay.
 
-**VERIFIED:** targeted `tests.test_game_profile_tx` is 11/11 PASS. The
+**VERIFIED:** targeted `tests.test_game_profile_tx` is 13/13 PASS. The
 receipt `local/evidence/20261008-p09b-transaction-harness-01/receipt.json`
 has SHA-256
 `cedec631a51a5bf802381f04ad6690582518f3b341e0ce1f78e4bd775a614150` and status
