@@ -379,6 +379,11 @@ skips**. Receipt `result.json` закреплён локальным SHA
 2062 ребра, USSR I–X, ИС-8 → ИС-7, ИС-7 terminal); native account/shop/tree
 payload, callback и визуальная сверка остаются **NOT_RUN**.
 
+Для P09A predicate receipt повторно проверены четыре hash-bound исходника
+research-копии: все SHA совпали; receipt SHA
+`65704882b8361534f68e0965b3e8e4188fb60f87f3f9b48f40a2d403e42956a0`.
+Это static provenance recheck, не native callback или account/shop capture.
+
 Для P03I повторно проверен ignored capture-tool audit: `audit.json` SHA
 `9e945a9ca0750a83e6b26dfa83dfd6ee726f5c24063637b6166e3206e0d89b27`, семь
 зафиксированных исходных SHA совпали, существующие capture/decrypt/channel

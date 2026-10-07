@@ -11,7 +11,7 @@ No client, gateway, deployed service, fixture or database was started or modifie
 |---|---|---|---|
 | Static #717 catalogue is complete for the inspected source set | `VERIFIED` | `web/RESEARCH_TREE_REPORT.md`; `catalog.v1.json` SHA `d66aad60...`; `catalog-research.v1.json` SHA `fddd2181...` | Reference data is not native account payload |
 | USSR graph has levels I–X, MS-1 roots and IS-8 → IS-7 | `VERIFIED` | `web/data/catalog-research.v1.json`; P04 research | Direction is `IS-8 → IS-7`; IS-7 terminal |
-| Native tree filters `item.isHidden` before adding a node | `VERIFIED_STATIC_NATIVE_FILTER` | `local/evidence/20261007-native-tree-filter-01/predicate-01.json` | Bytecode path only; full wire callback not captured |
+| Native tree filters `item.isHidden` before adding a node | `VERIFIED_STATIC_NATIVE_FILTER` | `local/evidence/20261007-native-tree-filter-01/predicate-01.json` (SHA `65704882b8361534f68e0965b3e8e4188fb60f87f3f9b48f40a2d403e42956a0`) | Bytecode path only; full wire callback not captured |
 | Hidden set derives from `shop.items.notInShopItems` | `VERIFIED_STATIC_NATIVE_FILTER` | Same predicate receipt; `ShopCommonStats.getHiddens/getItem` disassembly | Account serializer/order still unknown |
 | Owned/granted fixture descriptors are placed in `notInShopItems` | `OBSERVED` | r4 fixture manifest/generator and predicate receipt | Project fixture policy, not proof of server/client compatibility |
 | Native selection 1 → 2 loads IS-7 model | `OBSERVED` | `native-selection-07/selection-07.json` | Passive observer; no tree payload or battle handoff |
@@ -36,6 +36,11 @@ The current evidence supports an authoritative shop payload containing
 `itemPrices` and `notInShopItems`, but does not establish the exact native
 serializer or callback. The correct next action is a bounded research-copy
 capture of account/shop data plus the native tree callback and screenshot.
+
+The predicate receipt's four hash-bound research-client sources were rechecked
+on 2026-10-08: all four matched their recorded SHA-256 values. This is a
+source-provenance recheck only; no native process or account/shop payload was
+started or captured.
 
 Do not use the current map-drive CMD700 parser for this card. Do not use native
 selection alone to claim queue/battle readiness. Do not add an IS-8-after-IS-7
