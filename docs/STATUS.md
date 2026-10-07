@@ -1,3 +1,15 @@
+# Overnight verification after P09A graph audit — 2026-10-08
+
+После merge P09A static graph audit повторён authoritative UTF-8 regression:
+**2104 tests, 0 failures/errors, 4 known skips**. Полный лог:
+`local/evidence/20261008-overnight-final-04-full-python-utf8.txt`, SHA-256
+`a33543a5212c512633d601b68de2e671a153275c474cf6a81aec21b1b0b1a4fb`.
+`server/check_layout.py` снова вернул `PASS_SERVER_SOURCE_LAYOUT` (58 source
+files, 22 single-source relocations); layout SHA остался
+`4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`.
+Runtime, gateway, client и deployed service не менялись и не запускались этой
+карточкой.
+
 # P09B persistence/transaction boundary — 2026-10-08
 
 Подготовлена docs-only карточка `codex/p09b-persistence-boundary` с приёмкой
