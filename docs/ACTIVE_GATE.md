@@ -150,6 +150,7 @@ historical isolated receipt has 33 tests with one known skip; the current
 checkout recheck has 38 tests with zero failures/errors/skips. Full
 native/evidence suite, real #717 dataset, native compatibility and physics
 remain `NOT_RUN`.
+Evidence and receipt: [P04 index](evidence-index/P04.md).
 
 ## P05 preparation — offline only
 

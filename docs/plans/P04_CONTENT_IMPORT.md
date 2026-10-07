@@ -26,7 +26,8 @@
   `server-content.v1` bundle.
 - `tests/test_content_import.py` — синтетический portable bundle; оригинальный
   клиент и deployed service не открываются.
-- `docs/research/P04_CONTENT_IMPORT.md` — границы доказательств.
+- `docs/research/P04_CONTENT_IMPORT.md` и `docs/evidence-index/P04.md` — границы
+  доказательств и воспроизводимая квитанция.
 
 ## Приёмка карточки
 
