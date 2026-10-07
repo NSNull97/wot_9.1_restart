@@ -11,7 +11,7 @@ No client, gateway, deployed service, fixture or database was started or modifie
 | Claim | Status | Evidence | Limit |
 |---|---|---|---|
 | Static #717 catalogue is complete for the inspected source set | `VERIFIED` | `web/RESEARCH_TREE_REPORT.md`; `catalog.v1.json` SHA `d66aad60...`; `catalog-research.v1.json` SHA `fddd2181...` | Reference data is not native account payload |
-| Bounded graph shape, targets and USSR tier/direction predicates | `PASS_STATIC_RESEARCH_TREE_GRAPH` | `local/evidence/20261008-p09a-tree-graph-audit-01/receipt.json`, SHA `39733821cf916a069152a0d67909fca54b816ebab13ad3a33dc0edb94abb0f44` | Static graph only; shop/account visibility remains separate |
+| Bounded graph shape, targets and USSR tier/direction predicates | `PASS_STATIC_RESEARCH_TREE_GRAPH` | `local/evidence/20261008-p09a-tree-graph-audit-02-receipt.json`, SHA `454c9b0c9e0666e92856239dd55c486014695317052eff766f50b772239ef8d8` | Static graph only; shop/account visibility remains separate |
 | USSR graph has levels I–X, MS-1 roots and IS-8 → IS-7 | `VERIFIED` | `web/data/catalog-research.v1.json`; P04 research | Direction is `IS-8 → IS-7`; IS-7 terminal |
 | Native tree filters `item.isHidden` before adding a node | `VERIFIED_STATIC_NATIVE_FILTER` | `local/evidence/20261007-native-tree-filter-01/predicate-01.json` (SHA `65704882b8361534f68e0965b3e8e4188fb60f87f3f9b48f40a2d403e42956a0`) | Bytecode path only; full wire callback not captured |
 | Hidden set derives from `shop.items.notInShopItems` | `VERIFIED_STATIC_NATIVE_FILTER` | Same predicate receipt; `ShopCommonStats.getHiddens/getItem` disassembly | Account serializer/order still unknown |
