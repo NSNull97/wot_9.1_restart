@@ -19,6 +19,21 @@ recovery и native acceptance остаются **NOT_RUN**.
 [P09B research](research/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md); evidence:
 [P09B index](evidence-index/P09B.md).
 
+# P10A training-room static boundary — 2026-10-08
+
+P10A зафиксировала docs-only static boundary по P00/P01 `account.def`,
+`prebattle.def`, `unitmgr.def` и hash-bound client manifest. Доступны только
+имена/формы `createTraining`, `createDevPrebattle`, invites, roster/team/player
+ready, `onArenaCreated` и `onArenaFinished`; opaque `PYTHON` roster payload
+остаётся bounded/UNKNOWN. Кандидатная state machine — **INFERRED / PLAN_ONLY**,
+не native порядок.
+
+Wire IDs/order, invite accept/password, room owner/revisions, cancel-vs-start
+race, two-room isolation, battle admission, queue/matchmaker/platoons и native
+UI остаются **UNKNOWN/NOT_RUN**. Следующий шаг — owner-gated capture одной
+private training room и второй независимой комнаты. См. [P10A plan](plans/P10A_TRAINING_ROOM_STATIC.md),
+[research](research/P10A_TRAINING_ROOM_STATIC.md) и [evidence](evidence-index/P10A.md).
+
 # P05 bounded movement-matrix receipt audit — 2026-10-08
 
 Добавлен bounded read-only `tools/movement_matrix_audit.py` и 14 targeted

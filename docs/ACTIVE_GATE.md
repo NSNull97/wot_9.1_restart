@@ -13,6 +13,19 @@ native restart — **NOT_RUN**. Plan, research and evidence:
 [P09B plan](plans/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md),
 [P09B research](research/P09B_PERSISTENCE_TRANSACTION_BOUNDARY.md),
 [P09B receipt](evidence-index/P09B.md).
+
+## P10A training-room static boundary
+
+P10A is accepted as `PASS_DOCS_ONLY_STATIC_BOUNDARY /
+NATIVE_ROOM_LIFECYCLE_NOT_RUN`. P00/P01 definitions establish only the typed
+vocabulary for training/prebattle creation, invites, roster/team/player ready,
+arena-created and teardown. Wire IDs/order, opaque roster semantics, races,
+room isolation, native UI and battle admission remain `UNKNOWN/NOT_RUN`.
+
+The next gate is one owner-captured private room followed by a second
+simultaneous room, with raw Account bodies, callbacks, room IDs, roster
+revisions and teardown correlation. Do not implement guessed room or
+matchmaker routes before that capture.
 # ACTIVE_GATE — 2026-10-07
 
 ## Overnight verification
