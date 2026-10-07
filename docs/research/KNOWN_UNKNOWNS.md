@@ -1,4 +1,20 @@
-# KNOWN_UNKNOWNS — после единого email-входа в native ангар
+# KNOWN_UNKNOWNS — current gate and historical checkpoints
+
+**2026-10-07:** P03 **IN_PROGRESS**. Текущий источник статуса —
+[ACTIVE_GATE](../ACTIVE_GATE.md), доказательства — [индекс P03](../evidence-index/P03.md).
+
+| Категория | Актуальное состояние |
+|---|---|
+| VERIFIED | P03D: native ammo rows 2570:20 / 2826:0 / 3082:0 подтверждены wire receipt; P03E: 5 accepted shots, AP 20 → 15, 5 reload completion callbacks |
+| OBSERVED | Владелец увидел три слота БК и сообщил, что все пять выстрелов прошли нормально |
+| UNKNOWN / NOT_RUN | Общий мир двух клиентов, projectile/hit/damage, visibility, полный battle lifecycle; оборудование с непустым профилем |
+| Ограничения | Движение остаётся test_lab, историческая физическая точность не принята; deployed gateway не обновлён изолированным P03E EXE |
+
+Ранние неизвестности ниже — архив состояния на 2026-10-04. Они сохраняются
+для provenance и не объявляют P03 вновь NOT_STARTED. Единственный следующий
+шаг текущей организационной карточки — [ORG-0B](../plans/ORG-0B_TEST_TRIAGE_BACKLOG.md).
+
+## Исторический checkpoint: единый email-вход, 2026-10-04
 
 Runs: `20261002-p00-p01`, `20261002-p01-bootstrap`, `20261002-p02-login-redirect`, `20261004-p02-baseapp-reply`, `20261004-p02-channel-ack`, `20261004-p02-server-reliable`, `20261004-p02-session-gateway`, `20261004-p02-account`, `20261004-p02-account-ready`, `20261004-p02-hangar`, `20261004-p02-unified-account`.
 UNKNOWN не означает невозможность проекта.

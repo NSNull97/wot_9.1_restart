@@ -1,3 +1,22 @@
+# Актуальный указатель — ORG-0A, 2026-10-07
+
+Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **Полный P03 IN_PROGRESS**.
+P03D `PASS_OWNER_NATIVE_AMMO_PANEL_HUD` и P03E
+`PASS_OWNER_NATIVE_FIRE_RELOAD_CONSUMPTION` подтверждены owner receipts.
+Повтор ручного P03E в ORG-0A не требуется. Два клиента в общей арене,
+projectile/hit/damage и полная боевая приёмка остаются NOT_RUN.
+
+ORG-0A: layout PASS (52 source files / 22 relocations); полный Python suite
+FAIL (2028 tests, 10 errors, 4 skips). Ошибки вынесены в отдельный
+[ORG-0B backlog](plans/ORG-0B_TEST_TRIAGE_BACKLOG.md), протокол/боёвка не менялись.
+Baseline/remote receipt: [ORG-0A](evidence-index/ORG-0A.md).
+Следующий один шаг после этой карточки — ORG-0B.
+
+## История карточек (старые NOT_RUN и рекомендации сохранены)
+
+Все результаты ниже относятся к своему запуску и дате. Старое P03 NOT_STARTED
+в архивной таблице не заменяет актуальный IN_PROGRESS выше.
+
 **2026-10-07: P03E owner acceptance — PASS_OWNER_NATIVE_FIRE_RELOAD_CONSUMPTION.**
 
 На build09 владелец сделал пять выстрелов на одном MS-1 entry; все прошли
