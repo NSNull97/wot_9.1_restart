@@ -344,6 +344,16 @@ Legacy gateway build также PASS: **371 Rust tests**, executable SHA
 `5325153dfedaededf35fcdbce4cfc55945ab8b267fb6c1e6dfbbf13a193dd50c`; оба
 билда изолированы и не заменяют deployed gateway.
 
+08.10 выполнен отдельный recheck self-contained P04 receipt в текущем checkout:
+CLI `tools/content_import.py` вернул `PASS_TYPED_IMPORT_VALIDATOR` с тем же
+canonical SHA `a1b1191b29bbae5e2aed2f4417a139c7e9a2e6740ec40698347ad6baa8aac2b9`,
+а bundle/import/map targeted suite дала **38 tests, 0 failures/errors, 0
+skips**. Receipt `result.json` закреплён локальным SHA
+`80a34c538ee66c6a60f03b27d5b823dc85ddb7338ab630b897e28af7c159042f`.
+Это локальная ignored evidence, восстановленная для воспроизводимой проверки;
+`runtime_ready=false`, `runtime_eligibility=NOT_RUN` и native compatibility
+остаются **NOT_RUN**.
+
 Отдельный аудит существующего web research-графа записан в
 [P04 research](research/P04_CONTENT_IMPORT.md): в нём уже есть уровни I–X СССР
 и переход ИС-8 → ИС-7. Это не означает, что нативное окно клиента умеет этот
