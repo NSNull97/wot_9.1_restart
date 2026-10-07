@@ -1,4 +1,38 @@
-# Актуальный указатель — ORG-0B, 2026-10-07
+# Актуальный указатель — P03F, 2026-10-07
+
+Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **Полный P03 IN_PROGRESS**.
+Текущая карточка: **PASS_NATIVE_SAME_PC_DATA_PLANE_OWNER_CONTROL_PENDING**;
+ветка `codex/p03f-two-client-world`, **NOT_ACCEPTED**, без merge/push в `main`.
+Обязательная оценка управления владельцем ещё нужна.
+
+Две независимые копии #717 на этом ПК реально вошли в один серверный бой
+`2448793866150762938`. Native traces и PNG показывают обе машины, разные
+own/ally ID и четыре общие изменившиеся X/Z-позиции второго танка. У каждого
+свой БК: A `20→18`, B `20→17`, пять завершений перезарядки подтверждены wire.
+После принудительного закрытия только A второй клиент продолжил бой; A
+переподключился новым session ID к прежней машине с **18 AP**.
+
+Canonical build05: **346 Rust PASS**; legacy build02: **344 PASS**;
+финальный Python: **2052 tests, 0 errors/failures, 2 skips**; layout **56/22 PASS**.
+Независимый разбор сохранённого префикса native capture: **20 620 packets,
+20 608 frames, 3 logins, 6548 pose publications, 0 errors**. Ошибка первого
+прогона stop-before-ACK сохранена и исправлена regression-тестом. Исходный
+клиент, прежняя research-копия и deployed gateway сохранили закреплённые SHA.
+
+Границы: loopback, два временных союзных МС-1, плоская зона 4×4 м на машину;
+танки не следуют рельефу, на PNG также видна цветная сетка неизвестного
+происхождения. Физика/рендер не приняты. Warm Leave-to-hangar недоступен;
+проверено полное закрытие процесса и повторная авторизация. Two-PC, projectile,
+hit/damage, turret aim, visibility, equipment и persistence не приняты.
+
+Файлы, команды, доказательства, ограничения и откат:
+[P03F receipt](evidence-index/P03F.md), [research](research/P03F_TWO_CLIENT_WORLD.md),
+`local/evidence/20261007-p03f-two-client-world-01/result.json`.
+Единственный следующий шаг — короткая owner-проверка: перемещение/поворот A
+видны из окна B. Два клиента и изолированный gateway оставлены запущенными
+на момент handoff; актуальные PID/пути — в local `handoff.json`.
+
+## Предыдущий указатель — ORG-0B (история до P03F)
 
 Канонический gate: [ACTIVE_GATE](ACTIVE_GATE.md). **Полный P03 IN_PROGRESS**.
 P03D `PASS_OWNER_NATIVE_AMMO_PANEL_HUD` и P03E

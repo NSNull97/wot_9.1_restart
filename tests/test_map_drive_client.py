@@ -121,6 +121,19 @@ class OrdinaryPolicyTests(unittest.TestCase):
         self.assertEqual(self.button.ammo_check_calls, 1)
         self.assertFalse(self.button.dialog_accepted)
         self.assertEqual(self.services.calls, ['init'])
+
+    def test_explicit_shared_lab_prepares_services_without_fight_or_gameplay(self):
+        # Use the exact recorder object retained by the controller, not a newly
+        # materialized bound-method object. Native execution is a separate gate.
+        recorder = self.ctl.record
+        module.prepare_shared_lab(recorder)
+        module.prepare_shared_lab(recorder)
+        self.assertEqual(self.services.calls, ['init'])
+        self.assertEqual(self.button.calls, [])
+        self.assertEqual(self.native.checked, 0)
+        self.assertFalse(self.events[-1]['gameplay_applied'])
+        with self.assertRaises(RuntimeError):
+            module.prepare_shared_lab(lambda *a, **k: None)
     def test_native_disabled_and_tooltip_arguments_preserved(self):
         tooltip = object()
         self.assertEqual(self.button._FightButton__disableFightButton(True, tooltip), 'original disable result')

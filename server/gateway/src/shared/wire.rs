@@ -1,0 +1,176 @@
+//! Parameterized #717 layouts, kept separate from the frozen primary-profile
+//! probes. Only two server-assigned allied MS-1s can enter these encoders.
+use std::io;
+use super::model::{self, Actor, World};
+use crate::{arena091 as arena, arena_vehicle091 as vehicle, battle091::native_ammo as ammo};
+
+pub const SPACE: u32 = 1;
+pub fn vehicle_id(slot: usize) -> io::Result<u32> {
+    if slot >= model::CAPACITY { return Err(model::bad()); }
+    Ok(vehicle::VEHICLE_ENTITY_ID + 2 * slot as u32)
+}
+pub fn avatar_id(slot: usize) -> io::Result<u32> { Ok(vehicle_id(slot)? - 1) }
+pub fn slot_for_vehicle(id: u32) -> io::Result<usize> {
+    (0..model::CAPACITY).find(|slot| vehicle_id(*slot).ok() == Some(id)).ok_or_else(model::bad)
+}
+fn string(b: &mut Vec<u8>, value: &[u8]) -> io::Result<()> {
+    if value.len() >= 255 { return Err(model::bad()); } b.push(value.len() as u8); b.extend(value); Ok(())
+}
+fn var16(id: u8, p: &[u8]) -> io::Result<Vec<u8>> {
+    if p.is_empty() || p.len() > 500 { return Err(model::bad()); }
+    let mut b = vec![id]; b.extend((p.len() as u16).to_le_bytes()); b.extend(p); Ok(b)
+}
+fn f3(b: &mut Vec<u8>, p: [f32; 3]) { for x in p { b.extend(x.to_le_bytes()); } }
+fn actor(w: &World, slot: usize) -> io::Result<&Actor> {
+    vehicle_id(slot)?;
+    let a = w.actors.get(slot).ok_or_else(model::bad)?;
+    if w.id == 0 || a.identity.database <= 0 || a.identity.name.len() > 48
+        || a.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
+        || !a.yaw.is_finite() || a.yaw.abs() > std::f32::consts::PI { return Err(model::bad()); }
+    Ok(a)
+}
+pub fn reset(w: &World, slot: usize) -> io::Result<Vec<u8>> {
+    let a = actor(w, slot)?;
+    let mut b = vec![0x13, 0x3b]; // Account.onArenaCreated
+    b.extend(arena::reset_to_avatar_base(&arena::AvatarBaseSeed { entity_id: avatar_id(slot)?,
+        name: &a.identity.name, arena_unique_id: w.id })?); Ok(b)
+}
+pub fn roster(w: &World) -> io::Result<Vec<u8>> {
+    if w.actors.len() != model::CAPACITY { return Err(model::bad()); }
+    // Own bounded literal protocol2 data; never an input object decoder.
+    let mut d = vec![0x80, 2, b']'];
+    for slot in 0..model::CAPACITY {
+        let a = actor(w, slot)?;
+        d.extend([b'(', b'J']); d.extend(vehicle_id(slot)?.to_le_bytes());
+        d.push(b'U'); string(&mut d, &vehicle::MS1_DESCRIPTOR)?;
+        d.push(b'U'); string(&mut d, a.identity.name.as_bytes())?;
+        d.extend([b'K', 1, 0x88, if a.ready { 0x88 } else { 0x89 }, 0x89, b'J']);
+        d.extend(a.identity.database.to_le_bytes());
+        d.extend([b'U', 0, b'K', 0, b'K', 0, 0x89, b'}', b'K', 0, b't', b'a']);
+    }
+    d.push(b'.'); update(1, &d)
+}
+fn update(kind: u8, d: &[u8]) -> io::Result<Vec<u8>> {
+    if d.len() > 252 { return Err(model::bad()); }
+    let mut b = vec![0x13, 0x58, (d.len() + 2) as u8, kind, d.len() as u8]; b.extend(d); Ok(b)
+}
+pub fn announcement(w: &World, own: usize) -> io::Result<Vec<u8>> {
+    let a = actor(w, own)?;
+    let mut b = arena::create_cell_avatar(&arena::AvatarCellSeed { space_id: SPACE,
+        player_vehicle_id: vehicle_id(own)?, position: a.position })?;
+    // Native createCellPlayer's direction stream is roll/pitch/yaw.
+    b[35..39].copy_from_slice(&a.yaw.to_le_bytes());
+    b.extend(arena::karelia_space_data(SPACE, (SPACE as u64).to_le_bytes())?);
+    b.extend(roster(w)?);
+    for slot in 0..model::CAPACITY {
+        b.push(0x0a); b.extend(vehicle_id(slot)?.to_le_bytes()); b.push(slot as u8);
+    }
+    if b.len() > 500 { return Err(model::bad()); } Ok(b)
+}
+pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
+    let a = actor(w, slot)?;
+    let mut p = vec![0]; p.extend(vehicle_id(slot)?.to_le_bytes()); p.extend(2u16.to_le_bytes());
+    f3(&mut p, a.position); f3(&mut p, [a.yaw, 0., 0.]);
+    p.extend([8, 0, 0, 1, 1, 2]); p.extend(0u16.to_le_bytes());
+    p.push(3); p.extend(90i16.to_le_bytes()); p.extend([4, 0, 0, 5]);
+    string(&mut p, a.identity.name.as_bytes())?; string(&mut p, &vehicle::MS1_DESCRIPTOR)?;
+    p.push(1); p.extend(0i32.to_le_bytes()); p.push(0);
+    p.push(6); p.extend(0i32.to_le_bytes()); p.push(7); p.extend(0i32.to_le_bytes());
+    var16(9, &p)
+}
+pub fn entity_requests(b: &[u8]) -> io::Result<Option<Vec<usize>>> {
+    if b.first() != Some(&8) { return Ok(None); }
+    if b.is_empty() || b.len() > 14 || b.len() % 7 != 0 { return Err(model::bad()); }
+    let mut slots = Vec::new();
+    for row in b.chunks_exact(7) {
+        if row[..3] != [8, 4, 0] { return Err(model::bad()); }
+        let slot = slot_for_vehicle(u32::from_le_bytes(row[3..7].try_into().map_err(|_| model::bad())?))?;
+        if slots.contains(&slot) { return Err(model::bad()); } slots.push(slot);
+    }
+    Ok(Some(slots))
+}
+pub fn ready(payload: &[u8], own: usize) -> io::Result<()> {
+    // Preserve the previously native-observed exact four-method compound,
+    // validating only the identity field against this connection's own actor.
+    if payload.len() != 33 || payload[7..11] != vehicle_id(own)?.to_le_bytes() { return Err(model::bad()); }
+    let mut pinned = payload.to_vec(); pinned[7..11].copy_from_slice(&vehicle::VEHICLE_ENTITY_ID.to_le_bytes());
+    crate::arena_ready091::validate_compound(&pinned, vehicle::VEHICLE_ENTITY_ID)
+}
+pub fn ready_update(slot: usize) -> io::Result<Vec<u8>> {
+    let mut d = vec![0x80, 2, b'J']; d.extend(vehicle_id(slot)?.to_le_bytes()); d.push(b'.'); update(7, &d)
+}
+pub fn reload(slot: usize, time_left: f32) -> io::Result<Vec<u8>> {
+    if !time_left.is_finite() || !(0. ..=ammo::MS1_RELOAD_SECONDS).contains(&time_left) { return Err(model::bad()); }
+    let mut b = vec![0x13, 0x46]; b.extend(vehicle_id(slot)?.to_le_bytes());
+    b.extend(time_left.to_le_bytes()); b.extend(ammo::MS1_RELOAD_SECONDS.to_le_bytes()); Ok(b)
+}
+pub fn ammo_count(count: u16) -> io::Result<Vec<u8>> {
+    if count > ammo::MS1_SHELL_COUNT { return Err(model::bad()); }
+    let mut b = vec![0x13, 0x44]; b.extend(ammo::MS1_SHELL.to_le_bytes()); b.extend(count.to_le_bytes());
+    b.extend([0, 0, 0]); Ok(b)
+}
+pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec<u8>> {
+    let a = actor(w, own)?;
+    let mut b = vec![2, 10, 3]; b.extend(w.tick.to_le_bytes());
+    for slot in 0..model::CAPACITY { if slot == own || w.actors[slot].ready { b.extend(ready_update(slot)?); } }
+    let mut period = vec![0x80, 2, b'(', b'K', 3, b'G']; period.extend(3700f64.to_be_bytes());
+    period.push(b'G'); period.extend(3600f64.to_be_bytes()); period.extend(b"Nt."); b.extend(update(3, &period)?);
+    b.push(0x14); b.extend(avatar_id(own)?.to_le_bytes()); b.extend(SPACE.to_le_bytes()); b.extend(vehicle_id(own)?.to_le_bytes());
+    for _ in 0..6 { b.extend(0f32.to_le_bytes()); }
+    b.extend([0x13, 0x4a]); f3(&mut b, a.position); f3(&mut b, [a.yaw, 0., 0.]);
+    b.extend(a.speed.to_le_bytes()); b.extend(0f32.to_le_bytes());
+    for (descriptor, original_count) in ammo::MS1_PANEL_ROWS {
+        b.extend([0x13, 0x44]); b.extend(descriptor.to_le_bytes());
+        b.extend((if descriptor == ammo::MS1_SHELL { a.fire.ammo() } else { original_count }).to_le_bytes());
+        b.extend([0, 0, 0]);
+    }
+    b.extend([0x13, 0x40, 0]); b.extend(ammo::MS1_SHELL.to_le_bytes());
+    let left = a.fire.reload_until().map(|end| end.saturating_duration_since(now).as_secs_f32()).unwrap_or(0.);
+    b.extend(reload(own, left.min(ammo::MS1_RELOAD_SECONDS))?); Ok(b)
+}
+pub fn publication(w: &World, visible: [bool; 2]) -> io::Result<Vec<u8>> {
+    if !(1000..=37000).contains(&w.tick) { return Err(model::bad()); }
+    let mut b = vec![0x0d, w.tick as u8];
+    for (slot, known) in visible.into_iter().enumerate() {
+        if !known { continue; }
+        let a = actor(w, slot)?;
+        b.push(0x15); b.extend(vehicle_id(slot)?.to_le_bytes()); f3(&mut b, a.position);
+        f3(&mut b, [0., 0., a.yaw]);
+    }
+    Ok(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+    #[test] fn identities_are_distinct_and_requests_cannot_select_an_unannounced_id() {
+        assert_eq!(vehicle_id(0).unwrap(), 0x09100003); assert_eq!(vehicle_id(1).unwrap(), 0x09100005);
+        assert_eq!(avatar_id(1).unwrap(), 0x09100004); assert!(vehicle_id(2).is_err());
+        let two = [8, 4, 0, 3, 0, 16, 9, 8, 4, 0, 5, 0, 16, 9];
+        assert_eq!(entity_requests(&two).unwrap(), Some(vec![0, 1]));
+        for n in [1, 3, 6, 8, 13] { assert!(entity_requests(&two[..n]).is_err()); }
+        let mut bad = two; bad[10] = 7; assert!(entity_requests(&bad).is_err());
+        let mut duplicate = two; duplicate[10] = 3; assert!(entity_requests(&duplicate).is_err());
+    }
+    #[test] fn ready_is_bound_to_each_players_own_vehicle() {
+        let first = [0x0d,8,0,0,0,0,0,3,0,16,9,0x8d,5,0,2,1,0,0,0,0x86,0,0,0x0c,8,0,0,0,0,0,0,0,0,0];
+        ready(&first, 0).unwrap(); assert!(ready(&first, 1).is_err());
+        let mut second = first; second[7] = 5; ready(&second, 1).unwrap();
+        assert!(ready(&second, 0).is_err());
+    }
+    #[test] fn native_fields_preserve_layout_with_distinct_ids_and_utf8_names() {
+        let now = Instant::now(); let mut w = model::tests::world(now);
+        w.actors[1].identity.name = "Танкист_Ёж_e91322".into();
+        let first = create_vehicle(&w, 0).unwrap(); let second = create_vehicle(&w, 1).unwrap();
+        assert_eq!(&first[..10], &[9, 87, 0, 0, 3, 0, 16, 9, 2, 0]);
+        assert_eq!(&second[4..8], &0x09100005u32.to_le_bytes());
+        assert_eq!(&second[10..14], &w.actors[1].position[0].to_le_bytes());
+        assert!(roster(&w).unwrap().len() < 255);
+        assert!(announcement(&w, 0).unwrap().len() < 500);
+        let b = binding(&w, 1, now).unwrap();
+        assert!(b.windows(13).any(|s| s == [vec![0x14],0x09100004u32.to_le_bytes().to_vec(),1u32.to_le_bytes().to_vec(),0x09100005u32.to_le_bytes().to_vec()].concat()));
+        assert_eq!(publication(&w, [true, true]).unwrap().len(), 60);
+        assert_eq!(publication(&w, [true, false]).unwrap().len(), 31);
+    }
+}

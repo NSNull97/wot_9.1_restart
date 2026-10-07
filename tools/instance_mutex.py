@@ -23,27 +23,27 @@ def api():
     return dll
 
 
-def observe():
+def observe(name=NAME):
     dll = api()
     C.set_last_error(0)
-    handle = dll.OpenMutexW(0x100000, False, NAME)
+    handle = dll.OpenMutexW(0x100000, False, name)
     error = C.get_last_error()
     if handle:
         if not dll.CloseHandle(handle):
             raise C.WinError(C.get_last_error())
-        return {'name': NAME, 'exists': True, 'win_error': 0}
+        return {'name': name, 'exists': True, 'win_error': 0}
     if error != 2:
         raise C.WinError(error)
-    return {'name': NAME, 'exists': False, 'win_error': error}
+    return {'name': name, 'exists': False, 'win_error': error}
 
 
 @contextmanager
-def control():
-    if observe()['exists']:
+def control(name=NAME):
+    if observe(name)['exists']:
         raise RuntimeError('another instance mutex exists; control test refused')
     dll = api()
     C.set_last_error(0)
-    handle = dll.CreateMutexW(None, True, NAME)
+    handle = dll.CreateMutexW(None, True, name)
     error = C.get_last_error()
     if not handle:
         raise C.WinError(error)
@@ -51,7 +51,7 @@ def control():
         dll.CloseHandle(handle)
         raise RuntimeError('instance appeared during control setup; refused')
     try:
-        yield {'name': NAME, 'created_by_test': True, 'create_error': error}
+        yield {'name': name, 'created_by_test': True, 'create_error': error}
     finally:
         released = dll.ReleaseMutex(handle)
         closed = dll.CloseHandle(handle)

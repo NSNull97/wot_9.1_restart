@@ -20,6 +20,9 @@ with open('sr_interactive_settings.json', 'rb') as _input:
     _settings = json.load(_input)
 if type(_settings.get('enable_map_drive', False)) is not bool:
     raise ValueError('explicit boolean map-drive setting required')
+if (type(_settings.get('enable_shared_lab', False)) is not bool
+        or (_settings.get('enable_shared_lab') and not _settings.get('enable_map_drive'))):
+    raise ValueError('shared lab requires explicit original arena services')
 _runtime = owned(_settings['trace_dir'], _settings['local_root'])
 if not os.path.isdir(_runtime):
     raise ValueError('prepared local runtime directory missing')
@@ -651,6 +654,8 @@ def init(*args):
         if _settings.get('enable_map_drive') is True:
             import map_drive_client
             map_drive_client.init(record)
+            if _settings.get('enable_shared_lab') is True:
+                map_drive_client.prepare_shared_lab(record)
         from ConnectionManager import connectionManager
         connectionManager.connectionStatusCallbacks += connection_status
         _ready = True
@@ -687,6 +692,63 @@ def current_views():
     sub = manager.getContainer(ViewTypes.LOBBY_SUB)
     return (main.getView() if main is not None else None,
             sub.getView() if sub is not None else None)
+
+
+_shared_native_samples = 0
+
+
+def observe_shared_lab():
+    """Read-only native entity receipt and bounded engine-written screenshots.
+
+    This does not call a game command or assign any Entity/filter/UI state.
+    Values are what this real client currently sees, not server pose substitutes.
+    """
+    global _shared_native_samples
+    if _settings.get('enable_shared_lab') is not True:
+        return
+    import Avatar
+    import Vehicle
+    import Settings
+    import math
+    player = BigWorld.player()
+    if type(player) is not Avatar.PlayerAvatar:
+        return
+    entities = BigWorld.entities.values()
+    if len(entities) > 16:
+        raise ValueError('shared lab native entity count exceeds bound')
+    rows = []
+    for entity in entities:
+        if type(entity) is not Vehicle.Vehicle:
+            continue
+        if entity.id not in (152043523, 152043525):
+            raise ValueError('unexpected shared lab vehicle ID')
+        position = [float(entity.position.x), float(entity.position.y), float(entity.position.z)]
+        if any(math.isnan(x) or math.isinf(x) or abs(x) > 4096 for x in position):
+            raise ValueError('native shared vehicle position is not bounded')
+        rows.append(dict(entity_id=entity.id, position=position, health=entity.health,
+                         own=entity.id == player.playerVehicleID))
+    rows.sort(key=lambda row: row['entity_id'])
+    if _shared_native_samples >= 3600:
+        return
+    _shared_native_samples += 1
+    record('shared_native_snapshot', sample=_shared_native_samples,
+           avatar_entity_id=player.id, player_vehicle_id=player.playerVehicleID,
+           arena_unique_id=player.arenaUniqueID, vehicles=rows, observer_mutated_gameplay=False)
+    if len(rows) == 2 and _shared_native_samples in (3, 10, 30, 60):
+        directory = owned(_settings['screenshot_dir'], _settings['local_root'])
+        configured = Settings.g_instance.engineConfig.readString('screenShot/path')
+        if os.path.normcase(os.path.realpath(configured)) != directory:
+            raise ValueError('shared lab screenshot path differs from owned configuration')
+        name = 'shared-%d-%03d' % (os.getpid(), _shared_native_samples)
+        record('shared_native_screenshot', directory=directory, basename=name,
+               writer='BigWorld.screenShot', native_entities=2)
+        BigWorld.screenShot('png', name)
+
+
+def shared_login_control(data, settings):
+    return (settings.get('enable_shared_lab') is True
+            and set(data) == set(('username', 'password', 'submit_via'))
+            and data.get('submit_via') == 'python')
 
 
 def consume_control(view):
@@ -815,7 +877,8 @@ def consume_control(view):
             raise ValueError('ammo diagnostic needs a valid explicit project login')
     if probe_acceptance and _settings.get('enable_map_drive') is not True:
         raise ValueError('drive acceptance requires the explicit ordinary map-drive feature')
-    if _settings.get('enable_map_drive') and not probe_acceptance:
+    if (_settings.get('enable_map_drive') and not probe_acceptance
+            and not shared_login_control(data, _settings)):
         raise ValueError('ordinary drive diagnostics require their dedicated acceptance operation')
     if verify_ammo:
         if 'ms1_ammo_expected' not in data:
@@ -999,6 +1062,7 @@ def observe():
         if _settings.get('enable_map_drive') is True:
             import map_drive_client
             drive_context = map_drive_client.observe(record)
+            observe_shared_lab()
             if _arena_export_done and _control and _control.get('probe_map_drive_acceptance'):
                 import map_drive_acceptance
                 if map_drive_acceptance.advance(record):
