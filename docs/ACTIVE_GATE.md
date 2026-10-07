@@ -50,6 +50,16 @@ fabricate engine or track telemetry. A fresh four-scenario worker run is still
 `NOT_RUN_MISSING_INPUTS` until a receipt-matched ignored config and worker are
 supplied; native movement and owner pivot acceptance remain open.
 
+## P06A preparation — ballistics boundary only
+
+The docs-only MS-1 AP boundary is merged in `4535480` with plan and evidence
+index `docs/plans/P06A_BALLISTICS_CONTRACT.md` and `docs/evidence-index/P06A.md`.
+It pins shell `2570` and the already accepted P03H flight inputs, then keeps
+surface intersection, penetration, armor, damage, modules/crew, RNG and native
+hit/damage explicitly `UNKNOWN/NOT_RUN`. No solver, callback or runtime path
+was added. The next P06 research step is a read-only #717 source check for AP
+penetration/damage and vehicle armor surfaces.
+
 ## Latest accepted card
 
 `P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:
