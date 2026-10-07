@@ -1,8 +1,8 @@
 # P09A — native research-tree visibility and ownership predicate
 
-Status: **PASS_STATIC_GRAPH_BOUNDARY; native payload/handoff NOT_RUN**.
-Branch: `codex/p09a-research-tree-visibility`.
-Base: main `d3110c3` (2026-10-08).
+Status: **PASS_STATIC_FIXTURE_VISIBILITY_MATRIX; native payload/handoff NOT_RUN**.
+Branch: `codex/p09a-visibility-matrix`.
+Base: main `3fdf445` (2026-10-08).
 
 ## Goal
 
@@ -79,6 +79,31 @@ profile, inventory, dossier and compatibility files hash-bound. Existing
 fixture generators already treat `itemPrices` and `notInShopItems` as a typed
 catalogue/ownership boundary; their output is test-lab data, not native wire
 compatibility evidence.
+
+### Phase A receipt — static fixture matrix
+
+The bounded read-only `tools/research_tree_visibility_matrix.py` freezes the
+graph hashes and reads `r3-catalog3` (MS-1 owned with an explicit IS-7 grant)
+with the safe literal decoder shared by the existing verifiers. It never calls
+`pickle.loads`, imports client objects or starts a service. The receipt is
+`local/evidence/20261008-p09a-visibility-matrix-01/receipt.json`, status
+`PASS_STATIC_FIXTURE_VISIBILITY_MATRIX`.
+
+The matrix has two rows: MS-1 compact descriptor **3329** and IS-7 compact
+descriptor **7169**. Both are present in the vehicle `state.bin`
+`inventory[1].compDescr` mapping, present in `shop.items.itemPrices` and
+members of `shop.items.notInShopItems`. For both rows
+`expected_native_visibility=UNKNOWN` and `runtime_eligibility=NOT_RUN`; the
+static predicate does not establish what the native tree rendered. The fixture
+has no separate unowned reference descriptor, recorded as
+`unowned_reference.status=NOT_AVAILABLE_IN_FIXTURE` instead of inventing a
+control row.
+
+The receipt binds the static graph (374 trees, 3945 nodes, 2062 edges, USSR
+I–X, IS-8 → IS-7 and terminal IS-7) to the fixture manifest, state/shop,
+compatibility and descriptor SHA-256 values. Negative tests reject unknown
+compact IDs, duplicate `notInShopItems`, graph/catalog hash mismatch,
+malformed literals and paths outside the repository bound.
 
 ## Unknowns that block implementation
 
@@ -161,18 +186,22 @@ P03I/native queue card. P09A must not mark them PASS.
 ## Acceptance, status and rollback
 
 Acceptance label for this planning/native-handoff card:
-`PASS_STATIC_RESEARCH_TREE_GRAPH / PASS_P09A_PLAN_STATIC_PREDICATE_AND_HANDOFF_GATE`.
-It is **not** native implementation acceptance. Until phase B runs,
+`PASS_STATIC_RESEARCH_TREE_GRAPH / PASS_P09A_PLAN_STATIC_PREDICATE_AND_HANDOFF_GATE`
+remains the preparation gate. Phase A additionally accepts the bounded
+fixture receipt as `PASS_STATIC_FIXTURE_VISIBILITY_MATRIX`; it is **not** native
+implementation acceptance. Until phase B runs,
 `native_payload=NOT_RUN`, `visual_handoff=NOT_RUN` and
 `battle_admission=NOT_RUN` remain explicit.
 
-No tracked code, client, service, fixture or database is changed by this plan.
-A future implementation must use a dedicated `codex/p09a-*` branch and a fresh
-receipt. Rollback is deletion/revert of the docs-only card plus removal of its
-ignored evidence directory; no runtime restoration is needed.
+No client, service, fixture or database is changed by this card. A future
+implementation must use a dedicated `codex/p09a-*` branch and a fresh receipt.
+Rollback is deletion/revert of this verifier/tests/docs card plus removal of
+its ignored evidence directory; no runtime restoration is needed.
 
 ## Single next step
 
 Run one bounded read-only native research-tree capture on the research copy,
 correlating the shop/account payload, `requestNationTreeData` callback and USSR
-screen before writing any server adapter or visibility decoder.
+screen before writing any server adapter or visibility decoder. Keep the Phase
+A receipt as the static fixture baseline and do not promote UNKNOWN visibility
+or NOT_RUN runtime eligibility to PASS.

@@ -105,6 +105,23 @@ receipt: [P09A plan](plans/P09A_RESEARCH_TREE_VISIBILITY.md),
 [P09A research](research/P09A_RESEARCH_TREE_VISIBILITY.md),
 [P09A receipt](evidence-index/P09A.md).
 
+### P09A Phase A static fixture visibility matrix
+
+The bounded fixture receipt
+`local/evidence/20261008-p09a-visibility-matrix-01/receipt.json` is
+`PASS_STATIC_FIXTURE_VISIBILITY_MATRIX`. It binds the complete static #717
+graph to `r3-catalog3` and records MS-1 CD3329 plus IS-7 CD7169 from the
+server-owned `state.bin` vehicle `inventory[1].compDescr`; both are present in
+`itemPrices` and in `notInShopItems`. The fixture has no unowned reference
+descriptor, recorded as `NOT_AVAILABLE_IN_FIXTURE`.
+
+This remains a static fixture boundary. `expected_native_visibility` is
+`UNKNOWN`, native payload/callback/screenshot are `NOT_RUN`, and runtime
+eligibility remains `NOT_RUN`. The targeted verifier suite is 7/7 PASS with
+negative controls for unknown IDs, duplicate hidden IDs, graph/catalog hash
+mismatch, malformed literals and path escapes. Do not infer native screen
+visibility or battle readiness from this matrix.
+
 ### P09A static graph guard
 
 `tools/research_tree_audit.py` now returns
