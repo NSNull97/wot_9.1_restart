@@ -183,8 +183,9 @@ index `docs/plans/P06A_BALLISTICS_CONTRACT.md` and `docs/evidence-index/P06A.md`
 It pins shell `2570` and the already accepted P03H flight inputs, then keeps
 surface intersection, penetration, armor, damage, modules/crew, RNG and native
 hit/damage explicitly `UNKNOWN/NOT_RUN`. No solver, callback or runtime path
-was added. The next P06 research step is a read-only #717 source check for AP
-penetration/damage and vehicle armor surfaces.
+was added. The read-only #717 source check is now closed by P06B; the current
+P06 gate is the owner-gated P06C two-MS-1 capture, followed by the P06D receipt
+auditor.
 
 ## P06B source-field research — static closure, native hit still open
 

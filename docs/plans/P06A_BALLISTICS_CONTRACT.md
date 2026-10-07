@@ -216,7 +216,8 @@ damage, module, crew and native acceptance remain **NOT_RUN**.
 card commit after review. No client, deployed server, ignored local evidence or
 runtime state is touched.
 
-**Single next step:** pin the exact #717 MS-1 AP penetration/damage and armor
-surface inputs from a read-only source/trace, then implement one bounded offline
-AP trajectory/hit checker with the idempotency invariants above. Do not start a
-native damage test before that checker has an honest unavailable path.
+**Single next step:** run the owner-gated P06C two-MS-1 capture with the pinned
+AP inputs, then feed its real server-owned receipt to the P06D shape auditor.
+Keep the trajectory/hit solver and native damage unavailable until that receipt
+contains the measured intersection, material/normal/thickness, terminal and
+replay evidence; do not fill missing fields with a guessed formula.
