@@ -1,3 +1,23 @@
+# P09A preparation — native research-tree visibility — 2026-10-08
+
+Подготовлена docs-only карточка `codex/p09a-research-tree-visibility`:
+**PASS_P09A_PLAN_STATIC_PREDICATE_AND_HANDOFF_GATE**. Она фиксирует узкий
+контур P09: полный справочный граф #717 остаётся неизменным, а видимость узлов
+в нативном окне определяется authoritative shop payload и predicate
+`item.isHidden ← shop.items.notInShopItems`. В графе подтверждены уровни I–X
+СССР и направленная связь **ИС-8 → ИС-7**; ИС-7 терминальный.
+
+Статический predicate подтверждён receipt
+`local/evidence/20261007-native-tree-filter-01/predicate-01.json`. Нативный
+account/shop payload, callback `requestNationTreeData/getNationTreeData`,
+визуальная сверка окна и ownership matrix пока **NOT_RUN**. Выбор ИС-7 в
+ангаре не закрывает очередь/бой: текущие `crew_assigned=false` и ammo `0`
+оставляют admission `FAIL_CLOSED`.
+
+План: [P09A plan](plans/P09A_RESEARCH_TREE_VISIBILITY.md); исследование:
+[P09A research](research/P09A_RESEARCH_TREE_VISIBILITY.md); receipt:
+[P09A evidence](evidence-index/P09A.md).
+
 # P05 read-only geometry/movement audit — 2026-10-08
 
 На основе принятого P04-контракта выполнен read-only аудит следующего узкого
@@ -1448,7 +1468,8 @@ revision refresh и display-only данные проверены; state дост
 | P03 | NOT_STARTED | Нет |
 | P04 | PASS_TYPED_IMPORT_VALIDATOR (resource contract; native/physics NOT_RUN) | `local/evidence/20261007-p04-content-import-02/` |
 | P05–P08 | NOT_STARTED | Нет |
-| P09–P12 | NOT_STARTED | Нет |
+| P09A | PLAN_READY (native payload/visual handoff NOT_RUN) | `docs/plans/P09A_RESEARCH_TREE_VISIBILITY.md`, `docs/evidence-index/P09A.md` |
+| P09B–P12 | NOT_STARTED | Нет |
 
 Точный локальный билд: `v.0.9.1 #717`, RU; metadata client 435206,
 overrides 435633, localization 428638 RU. Издательская аутентичность UNKNOWN.

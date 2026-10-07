@@ -1,5 +1,24 @@
 # ACTIVE_GATE — 2026-10-07
 
+## P09A preparation — native research-tree visibility
+
+Docs-only branch `codex/p09a-research-tree-visibility` records
+**PASS_P09A_PLAN_STATIC_PREDICATE_AND_HANDOFF_GATE**. The static/reference
+catalogue remains complete (374 trees, 3945 nodes, 2062 edges; USSR I–X), and
+the verified direction is **IS-8 → IS-7**, with IS-7 terminal. Pinned #717
+bytecode establishes the native filter `NationTreeData.load` → `item.isHidden`
+→ `shop.items.notInShopItems`; this explains why an owned reference can vanish
+from the native tree without deleting it from the static graph.
+
+This is a preparation gate only. Native account/shop payload, the
+`requestNationTreeData`/`getNationTreeData` callback, screenshot correlation,
+and a measured unowned control remain **NOT_RUN**. Selection-to-CMD700 and IS-7
+battle admission stay outside P09A; the current IS-7 fixture is still
+fail-closed because crew/ammunition are incomplete. Plan, research ledger and
+receipt: [P09A plan](plans/P09A_RESEARCH_TREE_VISIBILITY.md),
+[P09A research](research/P09A_RESEARCH_TREE_VISIBILITY.md),
+[P09A receipt](evidence-index/P09A.md).
+
 ## Accepted P04 resource contract
 
 Branch `codex/p04-content-import` delivered the typed `content-import.v1`
