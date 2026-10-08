@@ -1,3 +1,26 @@
+# Tactical hangar UI audit — 2026-10-08
+
+На ветке `codex/p02-hangar-tactical-ui-audit` выполнен только статический
+аудит requested Tactical Steel UI. Приклеенный запрос обрывается на
+`EquipmentPresentationAdapter`, поэтому критерии приёмки после этой строки не
+выдумывались. Подтверждены реальные точки входа старого клиента: compiled
+Python 2.7.3 `Hangar.pyc`, `TankCarousel.pyc`, `params.pyc`, `crew.pyc`,
+`LobbyView.pyc`, их `HangarMeta`/`TankCarouselMeta` contracts и package-index
+entries `hangar.swf`, `TankCarousel.swf`, `carousels.swf`, `crew.swf`,
+`AmmunitionPanel.swf`, `vehicleInfo.swf`, `lobby.swf`, `LobbyMenu.swf` и
+`inventory.swf`. Отчёт: [P02 Tactical UI audit](research/P02_TACTICAL_HANGAR_UI_AUDIT.md),
+план: [P02 audit plan](plans/P02_TACTICAL_HANGAR_UI_AUDIT.md), receipt:
+`local/evidence/20261008-p02-tactical-ui-audit-01/summary.json`.
+
+Статус: **PASS_STATIC_PIPELINE_AUDIT / REPLACEMENT_NOT_RUN**. Новый Flash/SWF
+artifact, ActionScript/FLA source, совместимый compiler/repacker и native
+screenshot/click acceptance отсутствуют. Original и research client не
+менялись; сервер, протокол и игровые данные не трогались. В соответствии с
+`prompts/FIRST_PROMPT.md` реализация UI отложена до отдельной owner-gated P02
+карточки. Единственный следующий шаг — один replacement spike существующего
+`params` или carousel компонента с hash-pinned Flash artifact; без artifact
+результат остаётся `NOT_RUN`.
+
 # Fresh current-head evidence after status-only merge — 2026-10-08
 
 На проверенном head `39b36078a1030387fb95c3578d52cee28b4a6051`, совпавшем с
