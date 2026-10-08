@@ -1,6 +1,6 @@
 # P10A — training-room lifecycle static boundary
 
-Status: **PASS_DOCS_ONLY_STATIC_BOUNDARY / NATIVE_ROOM_LIFECYCLE_NOT_RUN**.
+Status: **PASS_STATIC_TRAINING_ROOM_CONTRACT / NATIVE_ROOM_LIFECYCLE_NOT_RUN**.
 
 Card: `P10A_TRAINING_ROOM_STATIC`
 Branch: `codex/p10a-training-room-static`
@@ -66,3 +66,14 @@ guess a serializer.
 
 No gateway route, fixture, database schema, client overlay, service restart or
 matchmaker is changed by this card.
+
+## Bounded static audit
+
+`tools/training_room_static_audit.py` now rechecks the P00/P01 account and
+prebattle definition exports with bounded UTF-8 JSON parsing. It rejects
+duplicate/non-finite JSON, path escapes, malformed arrays and changed method
+shapes. It also verifies the nine documented training-room source entries in
+the pinned content manifest by exact byte count and SHA-256. The receipt is
+`local/evidence/20261008-p10a-static-audit-01/receipt.json`; targeted tests are
+`6/6 PASS`. This remains a source contract audit: it assigns no wire IDs and
+does not decode opaque `PYTHON` roster data.

@@ -1,6 +1,6 @@
 # P10A — training-room lifecycle static research
 
-Status: **PASS_STATIC_CONTRACT_BOUNDARY / NATIVE_ROOM_LIFECYCLE_NOT_RUN**.
+Status: **PASS_STATIC_TRAINING_ROOM_CONTRACT / NATIVE_ROOM_LIFECYCLE_NOT_RUN**.
 
 Branch: `codex/p10a-training-room-static`
 Base: `f63f204e39f0cf02de366822e64af709862447eb` (`main`)
@@ -127,4 +127,23 @@ cancel-vs-start race.
 The safe next step is one owner-gated native capture of a private room, then a
 second room in parallel. Do not add a guessed server route before those
 receipts exist.
+
+## Bounded audit recheck — 2026-10-08
+
+`tools/training_room_static_audit.py` reads only the three P00/P01 JSON
+exports. It confirms 7 Account base methods, 5 Account client methods and 21
+Prebattle base methods, including the two opaque `PYTHON`/roster boundaries
+without attempting to decode them. The pinned manifest contains all nine
+documented source entries with their recorded byte counts and SHA-256 values.
+
+The ignored receipt is
+`local/evidence/20261008-p10a-static-audit-01/receipt.json`, SHA-256
+`38cba6df11e6e7caac872f69cf038197a7de56b6956ae5182172f41b28549d50`; its
+CLI output SHA-256 is
+`e0dba12c4a4fdf8294e195515a69550bc027f1b298f291872a799907688caa8`. The
+targeted suite `tests.test_training_room_static_audit` is **6/6 PASS**.
+Negative controls cover a changed method shape, changed manifest digest,
+duplicate/non-finite JSON and a path escape. This is `VERIFIED_STATIC` only;
+wire IDs, request bytes, callback order, room isolation and native behavior
+remain `UNKNOWN/NOT_RUN`.
 

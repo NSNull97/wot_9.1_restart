@@ -18,11 +18,16 @@ native restart остаются **NOT_RUN**. Plan, research and evidence:
 
 ## P10A training-room static boundary
 
-P10A is accepted as `PASS_DOCS_ONLY_STATIC_BOUNDARY /
-NATIVE_ROOM_LIFECYCLE_NOT_RUN`. P00/P01 definitions establish only the typed
-vocabulary for training/prebattle creation, invites, roster/team/player ready,
-arena-created and teardown. Wire IDs/order, opaque roster semantics, races,
-room isolation, native UI and battle admission remain `UNKNOWN/NOT_RUN`.
+P10A is accepted as `PASS_STATIC_TRAINING_ROOM_CONTRACT /
+NATIVE_ROOM_LIFECYCLE_NOT_RUN`. The bounded `tools/training_room_static_audit.py`
+rechecks 7 Account base methods, 5 Account client methods, 21 Prebattle base
+methods and all nine documented source manifest entries. Its targeted suite is
+6/6 PASS; receipt SHA-256 is
+`38cba6df11e6e7caac872f69cf038197a7de56b6956ae5182172f41b28549d50`.
+P00/P01 definitions establish only the typed vocabulary for
+training/prebattle creation, invites, roster/team/player ready, arena-created
+and teardown. Wire IDs/order, opaque roster semantics, races, room isolation,
+native UI and battle admission remain `UNKNOWN/NOT_RUN`.
 
 The next gate is one owner-captured private room followed by a second
 simultaneous room, with raw Account bodies, callbacks, room IDs, roster
