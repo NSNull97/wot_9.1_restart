@@ -41,22 +41,23 @@ and mutated declarations are rejected. Wire IDs, serializer order, native
 LOS/occlusion, recipient filtering and server handoff remain
 **UNKNOWN/NOT_RUN**; no runtime/client/service was started.
 
-## Latest P04/P03I/P07A/P08A/P09A/P10A current-main recheck
+## Latest P04/P03I/P06B/P06E/P07A/P08A/P09A/P10A current-main recheck
 
-На code head `cf23e598f1dbbaa74d03b91c99cc107588be005f`, который совпадал с
-`origin/main` на момент запуска, повторён UTF-8 full regression: **2169 тестов,
+На code head `d0674b6b38c4611ff962ecb3c17300bf17f7c20b`, который совпадал с
+`origin/main` на момент запуска, повторён UTF-8 full regression: **2187 тестов,
 0 failures/errors, 4 known skips**. Лог
-`local/evidence/20261008-p07a-p08a-main-regression-08/full-python-utf8.txt`,
-SHA-256 `9b7ba628dc077752c2e1c15f1481d23cdf95f5cf3b8f7e51ac67ef6fee533d5b`.
+`local/evidence/20261008-p06b-p06e-current-main-01/full-python-utf8.txt`,
+SHA-256 `80441128c571488ee874cbe63d6b2b8975d804a3d9e66d4ce061f51c21220b1f`.
 P04 bundle/import/map targeted suite — **42/42 PASS**, P03I static audit —
-**5/5 PASS**, P07A visibility — **9/9 PASS**, P08A lifecycle — **8/8 PASS**,
-P09A TechTree static audit — **5/5 PASS**, P09A NationObjDumper/static-nested
-audit — **7/7 PASS**, P10A training-room static audit — **6/6 PASS**. Combined
-targeted run — **82/82 PASS**. Layout — 58 source files / 22 relocations,
-docs-link recheck — 444 внутренних ссылок, 0 missing targets.
+**5/5 PASS**, P06B source — **12/12 PASS**, P06E collision boundary — **6/6
+PASS**, P07A visibility — **9/9 PASS**, P08A lifecycle — **8/8 PASS**, P09A
+TechTree static audit — **5/5 PASS**, P09A NationObjDumper/static-nested audit —
+**7/7 PASS**, P10A training-room static audit — **6/6 PASS**. Combined targeted
+run — **100/100 PASS**. Layout — 58 source files / 22 relocations, docs-link
+recheck — 449 внутренних ссылок, 0 missing targets.
 Combined summary:
-`local/evidence/20261008-p07a-p08a-main-regression-08/summary.json`, SHA-256
-`7d45072f4547ad9db5c4afb500d3ddc3fd9fe6a8c82601b9c5cff79f9eb9346f`.
+`local/evidence/20261008-p06b-p06e-current-main-01/summary.json`, SHA-256
+`d2a2e3ed047f7666409a74b6f6c049aa3456f06aea56afa204170810850869c4`.
 
 # P03I static source-hash recheck — 2026-10-08
 
