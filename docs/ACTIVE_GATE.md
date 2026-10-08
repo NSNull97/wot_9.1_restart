@@ -46,7 +46,7 @@ bounded docs-link recheck is `PASS_DOC_LINK_RECHECK` for 444 repository links,
 `f1d3ec48e145516340fd02183a6e97b936e3fdf8c3de09870d7502ffd29cbb46`). The
 combined recheck summary is
 `local/evidence/20261008-p04-p03i-main-regression-05/summary.json` (SHA-256
-`46b8bbb3589d38b61a18697b07534781933e66bb0133f41fc517d057b2e221a8`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS**, P09A TechTree static **5/5 PASS** and P09A NationObjDumper static **5/5 PASS**; the docs-link recheck is **444 links, 0 missing** (105 skipped external/absolute).
+`46b8bbb3589d38b61a18697b07534781933e66bb0133f41fc517d057b2e221a8`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS**, P09A TechTree static **5/5 PASS** and P09A NationObjDumper static **5/5 PASS**; this follow-up card adds **7/7** nested-shape checks. The docs-link recheck is **444 links, 0 missing** (105 skipped external/absolute).
 
 ## Overnight verification
 
@@ -538,4 +538,4 @@ available/selected nation fields, unknown-nation guard, index selection,
 server handoff остаются `NOT_RUN`; native client/service не запускались. См.
 [P09A static handoff evidence](evidence-index/P09A_TECHTREE_HANDOFF_STATIC.md).
 
-`tools/nation_dumper_static_audit.py` дополнительно фиксирует envelope `nodes`, `displaySettings`, `scrollIndex` и 13 полей node output; receipt `local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json` имеет статус `PASS_STATIC_NATION_DUMPER_OUTPUT`. Вложенные типы `displayInfo`/`unlockProps`, native callback и serializer остаются `NOT_RUN`.
+`tools/nation_dumper_static_audit.py` дополнительно фиксирует envelope `nodes`, `displaySettings`, `scrollIndex` и 13 полей node output; receipt `local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json` имеет статус `PASS_STATIC_NATION_DUMPER_OUTPUT`. Follow-up receipt `local/evidence/20261008-p09a-nested-shapes-01/receipt.json` фиксирует measured XML access/format shape для `displayInfo`/`unlockProps`; конкретные Python value types, native callback и serializer остаются `UNKNOWN/NOT_RUN`.

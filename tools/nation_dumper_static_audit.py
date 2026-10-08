@@ -29,8 +29,25 @@ DEFAULT_DISASSEMBLY = (
     "client__gui__scaleform__daapi__view__lobby__techtree__dumpers.json"
 )
 PREFIX = "<module>.NationObjDumper."
+XML_PREFIX = "<module>.NationXMLDumper."
 ARG_OPS = {"BUILD_MAP", "BUILD_LIST", "BUILD_TUPLE", "CALL_FUNCTION",
            "UNPACK_SEQUENCE", "COMPARE_OP", "MAKE_CLOSURE"}
+
+NATION_XML_CONSTANTS = (
+    '<?xml version="1.0" encoding="utf-8"?><tree><nodes>{0:>s}</nodes><scrollIndex>{1:d}</scrollIndex></tree>',
+    '<node><id>{id:d}</id><nameString>{nameString:>s}</nameString><class><name>{primaryClass[name]:>s}</name><userString>{primaryClass[userString]:>s}</userString></class><level>{level:d}</level><earnedXP>{earnedXP:d}</earnedXP><state>{state:d}</state><unlockProps><parentID>{unlockProps[0]:d}</parentID><unlockIdx>{unlockProps[1]:d}</unlockIdx><xpCost>{unlockProps[2]:n}</xpCost><topIDs>{unlockProps[3]:>s}</topIDs></unlockProps><iconPath>{iconPath:>s}</iconPath><smallIconPath><![CDATA[{smallIconPath:>s}]]></smallIconPath><longName>{longName:>s}</longName><shopPrice><credits>{shopPrice[0]:n}</credits><gold>{shopPrice[1]:n}</gold></shopPrice><display>{displayInfo:>s}</display></node>',
+    '<row>{row:d}</row><column>{column:d}</column><position><x>{position[0]:n}</x><y>{position[1]:n}</y></position><lines>{lines:>s}</lines>',
+    '<set><outLiteral>{0:>s}</outLiteral><outPin><x>{1[0]:n}</x><y>{1[1]:n}</y></outPin><inPins>{2:>s}</inPins></set>',
+    '<item><childID>{childID:d}</childID><inPin><x>{inPin[0]:n}</x><y>{inPin[1]:n}</y></inPin><viaPins>{dump:>s}</viaPins></item>',
+    '<pin><x>{0[0]:n}</x><y>{0[1]:n}</y></pin>',
+    '<id>{0:d}</id>',
+)
+NATION_XML_NAMES = (
+    "_NationXMLDumper__xmlBody", "_NationXMLDumper__nodeFormat",
+    "_NationXMLDumper__displayInfoFormat", "_NationXMLDumper__setFormat",
+    "_NationXMLDumper__inPinFormat", "_NationXMLDumper__viaPinFormat",
+    "_NationXMLDumper__topIDFormat",
+)
 
 
 class NationDumperAuditError(ValueError):
@@ -113,8 +130,8 @@ def _read(root: Path, path: str | Path, limit: int = MAX_BYTES) -> tuple[Path, b
 
 
 def _method(records: list[dict[str, Any]], suffix: str,
-            varnames: list[str]) -> list[tuple[str, Any]]:
-    matches = [row for row in records if row.get("qualified_name") == PREFIX + suffix]
+            varnames: list[str], *, prefix: str = PREFIX) -> list[tuple[str, Any]]:
+    matches = [row for row in records if row.get("qualified_name") == prefix + suffix]
     if len(matches) != 1:
         raise NationDumperAuditError(f"missing or duplicate method: {suffix}")
     row = matches[0]
@@ -266,7 +283,156 @@ def inspect_shape(records: list[dict[str, Any]]) -> dict[str, Any]:
             "displayInfo": "node['displayInfo']", "unlockProps": "node['unlockProps']._makeTuple()",
         },
         "field_value_types": "UNKNOWN_NOT_ESTABLISHED_BY_STATIC_DUMPER",
-        "nested_display_info_unlock_props": "UNKNOWN_NOT_AUDITED",
+        "nested_display_info_unlock_props": "STATIC_FORMAT_SHAPE_ONLY_VALUE_TYPES_UNKNOWN",
+    }
+
+
+def inspect_nested_shape(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Measure only the nested keys/indexes consumed by NationXMLDumper.
+
+    This is still an instruction/format audit.  It intentionally reports
+    format conversions and access paths rather than assigning Python or wire
+    types to the values supplied by the vehicle data provider.
+    """
+    class_rows = [row for row in records
+                  if row.get("qualified_name") == "<module>.NationXMLDumper"]
+    if len(class_rows) != 1:
+        raise NationDumperAuditError("missing or duplicate NationXMLDumper class")
+    class_row = class_rows[0]
+    constants = class_row.get("constants")
+    names = class_row.get("names")
+    if (not isinstance(constants, list) or len(constants) < len(NATION_XML_CONSTANTS)
+            or tuple(constants[:len(NATION_XML_CONSTANTS)]) != NATION_XML_CONSTANTS
+            or not isinstance(names, list)
+            or tuple(names[2:2 + len(NATION_XML_NAMES)]) != NATION_XML_NAMES):
+        raise NationDumperAuditError("NationXMLDumper format constants differ")
+
+    nodes = _method(records, "__buildNodesData",
+                    ["self", "data", "nodesDump", "itemGetter", "node"],
+                    prefix=XML_PREFIX)
+    expected_nodes = [
+        ("BUILD_LIST", 0), ("STORE_FAST", "nodesDump"),
+        ("LOAD_FAST", "data"), ("LOAD_ATTR", "getItem"),
+        ("STORE_FAST", "itemGetter"), ("SETUP_LOOP", None),
+        ("LOAD_FAST", "data"), ("LOAD_ATTR", "_nodes"), ("GET_ITER", None),
+        ("FOR_ITER", None), ("STORE_FAST", "node"), ("LOAD_FAST", "self"),
+        ("LOAD_ATTR", "_getVehicleData"), ("LOAD_FAST", "node"),
+        ("LOAD_FAST", "itemGetter"), ("LOAD_FAST", "node"),
+        ("LOAD_CONST", "id"), ("BINARY_SUBSCR", None),
+        ("CALL_FUNCTION", 1), ("CALL_FUNCTION", 2), ("STORE_FAST", "data"),
+        ("LOAD_FAST", "self"),
+        ("LOAD_ATTR", "_NationXMLDumper__buildUnlockProps"),
+        ("LOAD_FAST", "data"), ("LOAD_CONST", "unlockProps"),
+        ("BINARY_SUBSCR", None), ("CALL_FUNCTION", 1), ("LOAD_FAST", "data"),
+        ("LOAD_CONST", "unlockProps"), ("STORE_SUBSCR", None),
+        ("LOAD_FAST", "self"),
+        ("LOAD_ATTR", "_NationXMLDumper__buildDisplayInfo"),
+        ("LOAD_FAST", "data"), ("LOAD_CONST", "displayInfo"),
+        ("BINARY_SUBSCR", None), ("CALL_FUNCTION", 1), ("LOAD_FAST", "data"),
+        ("LOAD_CONST", "displayInfo"), ("STORE_SUBSCR", None),
+        ("LOAD_FAST", "nodesDump"), ("LOAD_ATTR", "append"), ("LOAD_FAST", "self"),
+        ("LOAD_ATTR", "_NationXMLDumper__nodeFormat"), ("LOAD_ATTR", "format"),
+        ("LOAD_FAST", "data"), ("CALL_FUNCTION_KW", None),
+        ("CALL_FUNCTION", 1), ("POP_TOP", None), ("JUMP_ABSOLUTE", None),
+        ("POP_BLOCK", None), ("LOAD_CONST", ""), ("LOAD_ATTR", "join"),
+        ("LOAD_FAST", "nodesDump"), ("CALL_FUNCTION", 1), ("RETURN_VALUE", None),
+    ]
+    if nodes != expected_nodes:
+        raise NationDumperAuditError("NationXMLDumper node builder differs")
+
+    unlock = _method(records, "__buildUnlockProps",
+                     ["self", "unlockProps", "dump"], prefix=XML_PREFIX)
+    if unlock != [
+        ("LOAD_GLOBAL", "map"), ("LOAD_CLOSURE", "self"), ("BUILD_TUPLE", 1),
+        ("LOAD_CONST", "<code <lambda>>"), ("MAKE_CLOSURE", 0),
+        ("LOAD_FAST", "unlockProps"), ("LOAD_CONST", -1), ("BINARY_SUBSCR", None),
+        ("CALL_FUNCTION", 2), ("STORE_FAST", "dump"),
+        ("LOAD_FAST", "unlockProps"), ("LOAD_CONST", -1), ("SLICE+2", None),
+        ("LOAD_CONST", ""), ("LOAD_ATTR", "join"), ("LOAD_FAST", "dump"),
+        ("CALL_FUNCTION", 1), ("BUILD_TUPLE", 1), ("BINARY_ADD", None),
+        ("RETURN_VALUE", None),
+    ]:
+        raise NationDumperAuditError("NationXMLDumper unlockProps builder differs")
+    unlock_lambda = _method(records, "__buildUnlockProps.<lambda>",
+                            ["item"], prefix=XML_PREFIX)
+    if unlock_lambda != [
+        ("LOAD_DEREF", "self"), ("LOAD_ATTR", "_NationXMLDumper__topIDFormat"),
+        ("LOAD_ATTR", "format"), ("LOAD_FAST", "item"), ("CALL_FUNCTION", 1),
+        ("RETURN_VALUE", None),
+    ]:
+        raise NationDumperAuditError("NationXMLDumper top-ID mapper differs")
+
+    display = _method(records, "__buildDisplayInfo",
+                      ["self", "displayInfo", "info", "lines", "dump", "data",
+                       "inPins", "inPin", "viaPins"], prefix=XML_PREFIX)
+    expected_display = [
+        ("LOAD_FAST", "displayInfo"), ("LOAD_ATTR", "copy"), ("CALL_FUNCTION", 0),
+        ("STORE_FAST", "info"), ("LOAD_FAST", "info"), ("LOAD_CONST", "lines"),
+        ("BINARY_SUBSCR", None), ("STORE_FAST", "lines"), ("BUILD_LIST", 0),
+        ("STORE_FAST", "dump"), ("SETUP_LOOP", None), ("LOAD_FAST", "lines"),
+        ("GET_ITER", None), ("FOR_ITER", None), ("STORE_FAST", "data"),
+        ("BUILD_LIST", 0), ("STORE_FAST", "inPins"), ("SETUP_LOOP", None),
+        ("LOAD_FAST", "data"), ("LOAD_CONST", "inPins"), ("BINARY_SUBSCR", None),
+        ("GET_ITER", None), ("FOR_ITER", None), ("STORE_FAST", "inPin"),
+        ("LOAD_GLOBAL", "map"), ("LOAD_CLOSURE", "self"), ("BUILD_TUPLE", 1),
+        ("LOAD_CONST", "<code <lambda>>"), ("MAKE_CLOSURE", 0),
+        ("LOAD_FAST", "inPin"), ("LOAD_CONST", "viaPins"), ("BINARY_SUBSCR", None),
+        ("CALL_FUNCTION", 2), ("STORE_FAST", "viaPins"), ("LOAD_FAST", "inPins"),
+        ("LOAD_ATTR", "append"), ("LOAD_DEREF", "self"),
+        ("LOAD_ATTR", "_NationXMLDumper__inPinFormat"), ("LOAD_ATTR", "format"),
+        ("LOAD_CONST", "dump"), ("LOAD_CONST", ""), ("LOAD_ATTR", "join"),
+        ("LOAD_FAST", "viaPins"), ("CALL_FUNCTION", 1), ("LOAD_FAST", "inPin"),
+        ("CALL_FUNCTION_KW", None), ("CALL_FUNCTION", 1), ("POP_TOP", None),
+        ("JUMP_ABSOLUTE", None), ("POP_BLOCK", None), ("LOAD_FAST", "dump"),
+        ("LOAD_ATTR", "append"), ("LOAD_DEREF", "self"),
+        ("LOAD_ATTR", "_NationXMLDumper__setFormat"), ("LOAD_ATTR", "format"),
+        ("LOAD_FAST", "data"), ("LOAD_CONST", "outLiteral"),
+        ("BINARY_SUBSCR", None), ("LOAD_FAST", "data"), ("LOAD_CONST", "outPin"),
+        ("BINARY_SUBSCR", None), ("LOAD_CONST", ""), ("LOAD_ATTR", "join"),
+        ("LOAD_FAST", "inPins"), ("CALL_FUNCTION", 1), ("CALL_FUNCTION", 3),
+        ("CALL_FUNCTION", 1), ("POP_TOP", None), ("JUMP_ABSOLUTE", None),
+        ("POP_BLOCK", None), ("LOAD_CONST", ""), ("LOAD_ATTR", "join"),
+        ("LOAD_FAST", "dump"), ("CALL_FUNCTION", 1), ("LOAD_FAST", "info"),
+        ("LOAD_CONST", "lines"), ("STORE_SUBSCR", None), ("LOAD_DEREF", "self"),
+        ("LOAD_ATTR", "_NationXMLDumper__displayInfoFormat"), ("LOAD_ATTR", "format"),
+        ("LOAD_FAST", "info"), ("CALL_FUNCTION_KW", None), ("RETURN_VALUE", None),
+    ]
+    if display != expected_display:
+        raise NationDumperAuditError("NationXMLDumper displayInfo builder differs")
+    display_lambda = _method(records, "__buildDisplayInfo.<lambda>",
+                             ["item"], prefix=XML_PREFIX)
+    if display_lambda != [
+        ("LOAD_DEREF", "self"), ("LOAD_ATTR", "_NationXMLDumper__viaPinFormat"),
+        ("LOAD_ATTR", "format"), ("LOAD_FAST", "item"), ("CALL_FUNCTION", 1),
+        ("RETURN_VALUE", None),
+    ]:
+        raise NationDumperAuditError("NationXMLDumper via-pin mapper differs")
+
+    return {
+        "format_constants": list(NATION_XML_CONSTANTS),
+        "unlockProps": {
+            "input": "node['unlockProps']._makeTuple()",
+            "iterated_index": -1,
+            "preserved_prefix": "unlockProps[:-1]",
+            "output_arity": 4,
+            "format_fields": [
+                {"index": 0, "name": "parentID", "conversion": "d"},
+                {"index": 1, "name": "unlockIdx", "conversion": "d"},
+                {"index": 2, "name": "xpCost", "conversion": "n"},
+                {"index": 3, "name": "topIDs", "conversion": ">s"},
+            ],
+            "value_types": "UNKNOWN_NOT_ESTABLISHED_BY_STATIC_DUMPER",
+        },
+        "displayInfo": {
+            "input": "node['displayInfo']",
+            "copy_method": "copy()",
+            "line_key": "lines",
+            "line_fields": ["row", "column", "position", "inPins", "outLiteral", "outPin"],
+            "in_pin_fields": ["inPin", "viaPins"],
+            "via_pin_format": "<pin><x>{0[0]:n}</x><y>{0[1]:n}</y></pin>",
+            "value_types": "UNKNOWN_NOT_ESTABLISHED_BY_STATIC_DUMPER",
+        },
+        "serializer_or_wire": "NOT_RUN",
     }
 
 
@@ -275,6 +441,7 @@ def audit(*, root: str | Path, disassembly: str | Path = DEFAULT_DISASSEMBLY) ->
     source, raw = _read(repository, disassembly)
     records = parse_json(raw)
     shape = inspect_shape(records)
+    nested_shape = inspect_nested_shape(records)
     disassembly_sha = hashlib.sha256(raw).hexdigest()
     if disassembly_sha != DISASSEMBLY_SHA256:
         raise NationDumperAuditError("disassembly SHA differs from measured evidence")
@@ -289,6 +456,7 @@ def audit(*, root: str | Path, disassembly: str | Path = DEFAULT_DISASSEMBLY) ->
         "build": "v.0.9.1 #717", "disassembly": source.relative_to(repository).as_posix(),
         "disassembly_sha256": disassembly_sha, "source_relative": SOURCE_RELATIVE,
         "source_sha256": SOURCE_SHA256, "source_copies": copies, "shape": shape,
+        "nested_shape": nested_shape,
         "native_account_shop_payload": "NOT_RUN", "native_callback_bytes": "NOT_RUN",
         "native_tree_screenshot": "NOT_RUN", "native_visibility": "UNKNOWN",
         "server_handoff": "NOT_RUN", "battle_admission": "NOT_RUN",
