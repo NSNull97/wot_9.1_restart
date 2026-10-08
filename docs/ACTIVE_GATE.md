@@ -35,6 +35,18 @@ revisions and teardown correlation. Do not implement guessed room or
 matchmaker routes before that capture.
 # ACTIVE_GATE — 2026-10-08
 
+## P07A bounded visibility static audit
+
+P07A is rechecked as `PASS_STATIC_VISIBILITY_SOURCE_AUDIT`. The bounded
+read-only verifier asserts exactly eight declaration shapes against the pinned
+P00/P01 `contracts.json`, validates the pinned `sources.json`, and matches all
+six selected files in both permitted #717 copies. Targeted tests are **9/9
+PASS**; receipt SHA-256 is
+`8dd8bfab40f7b9a53cb2e28da8b4e8b38a09c1f06a632fc157d7801ba4d25c76`.
+Duplicate/non-finite/depth/item/path and mutation cases are fail-closed. Wire
+framing, serializer order, native LOS/occlusion, interest filtering and server
+handoff stay **UNKNOWN/NOT_RUN**. No client, gateway or service was started.
+
 ## Latest P04/P03I/P09A/P10A current-main recheck
 
 The latest UTF-8 full regression was run on code head

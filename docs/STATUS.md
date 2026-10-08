@@ -1,5 +1,19 @@
 # Overnight verification after P09B harness — 2026-10-08
 
+## P07A bounded visibility static audit
+
+`tools/p07a_visibility_static_audit.py` now rechecks the hash-bound P00/P01
+contracts and source manifest for exactly eight typed `Avatar`/`Vehicle`/`Arena`
+visibility declarations, then re-hashes all six selected files in both
+permitted #717 copies. Its receipt is
+`local/evidence/20261008-p07a-static-audit-01/receipt.json`, SHA-256
+`8dd8bfab40f7b9a53cb2e28da8b4e8b38a09c1f06a632fc157d7801ba4d25c76`;
+`tests.test_p07a_visibility_static_audit` is **9/9 PASS**. Duplicate keys,
+non-finite JSON, excessive depth/items, path escapes, duplicate manifest rows
+and mutated declarations are rejected. Wire IDs, serializer order, native
+LOS/occlusion, recipient filtering and server handoff remain
+**UNKNOWN/NOT_RUN**; no runtime/client/service was started.
+
 ## Latest P04/P03I/P09A/P10A current-main recheck
 
 На code head `04e862b5d490a271346014df2603c55ffa1707fe`, который совпадал с
