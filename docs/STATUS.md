@@ -1,3 +1,23 @@
+# Fresh current-head evidence after status-only merge — 2026-10-08
+
+На проверенном head `39b36078a1030387fb95c3578d52cee28b4a6051`, совпавшем с
+`origin/main` на момент запуска, сохранены receipts текущего checkout. P04
+bundle/import/map suite — **42/42 PASS**; standalone bundle CLI —
+`PASS_CONTENT_BUNDLE`, typed importer — `PASS_TYPED_IMPORT_VALIDATOR`,
+canonical SHA-256
+`a1b1191b29bbae5e2aed2f4417a139c7e9a2e6740ec40698347ad6baa8aac2b9`.
+Receipt `local/evidence/20261008-p04-current-main-11/summary.json`, SHA-256
+`e7fd34cd33ee278595944012f601d5d67990344320e004b791877b2f3679cafb`.
+
+P03I/P09A static subset — **17/17 PASS**: request 202 / command 700,
+`INT16, INT16, INT64, INT32, INT32`; TechTree handoff and visibility matrix
+сохраняют static-only статус, 374 trees / 3945 nodes / 2062 edges,
+`IS-8 -> IS-7`. Receipt
+`local/evidence/20261008-p03i-p09a-current-main-12/summary.json`, SHA-256
+`8202aeb6ff5ec78483f9d06409f288295ee4a2d6f4f1f01d6ee677f6a21cd0ae`.
+Native payload/callback/screenshot, queue/server handoff и runtime eligibility
+остаются `NOT_RUN`.
+
 # Current-head goal recheck — 2026-10-08
 
 Проверенный code head `283bf5f55c05514a2541bd84bca1feabf7aaab20` на момент
