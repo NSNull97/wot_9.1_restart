@@ -6,7 +6,9 @@
 - Receipt: `local/evidence/20261008-p09a-techtree-static-01/receipt.json`.
 - Status: `PASS_STATIC_TECHTREE_HANDOFF_SOURCE`.
 - Source SHA-256: `d3fca045cb1fd478a6eb306adfda08ce019795e926574ed943b31946f0dcfb42`.
+- Receipt SHA-256: `8e8e5cc9a91885f827979bc3cd59b1940d0f1c10717dfb06565f5f0b81d1e1cf`.
 - Disassembly receipt SHA-256: `9a22b51f45c3a24d39407f3727f8f3e5e52f5d50aef28f55c8d8f7b755f209d9`.
+- Both permitted #717 copies match the pinned `TechTree.pyc` SHA.
 
 ## What is proven
 

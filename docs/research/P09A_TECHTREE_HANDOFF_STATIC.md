@@ -15,7 +15,7 @@ static web catalogue or server fixture is the payload returned by `dump()`.
 
 ## Source and receipt
 
-- Research client source: `WoT_0.9.1_RU_0717_research/res/scripts/client/gui/scaleform/daapi/view/lobby/techtree/TechTree.pyc`.
+- Permitted #717 client sources: `WoT_0.9.1_RU_0717_original/res/scripts/client/gui/scaleform/daapi/view/lobby/techtree/TechTree.pyc` and the matching research-copy path; both have the pinned SHA.
 - Source SHA-256: `d3fca045cb1fd478a6eb306adfda08ce019795e926574ed943b31946f0dcfb42`.
 - Disassembly evidence: `local/evidence/20261007-native-tree-filter-01/bytecode/client__gui__scaleform__daapi__view__lobby__techtree__techtree.json`.
 - Receipt status: `PASS_STATIC_TECHTREE_HANDOFF_SOURCE`.

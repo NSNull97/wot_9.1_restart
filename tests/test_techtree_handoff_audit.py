@@ -17,8 +17,10 @@ DISASSEMBLY = ROOT / (
 class TechTreeHandoffAuditTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        required = [DISASSEMBLY, ROOT / "WoT_0.9.1_RU_0717_research/res/scripts/client/"
-                    "gui/scaleform/daapi/view/lobby/techtree/TechTree.pyc"]
+        required = [DISASSEMBLY]
+        required.extend(ROOT / f"WoT_0.9.1_RU_0717_{name}/res/scripts/client/"
+                        "gui/scaleform/daapi/view/lobby/techtree/TechTree.pyc"
+                        for name in ("original", "research"))
         if not all(path.is_file() for path in required):
             raise unittest.SkipTest("ignored TechTree evidence/client copy unavailable")
 
@@ -27,6 +29,8 @@ class TechTreeHandoffAuditTests(unittest.TestCase):
         self.assertEqual(report["status"], "PASS_STATIC_TECHTREE_HANDOFF_SOURCE")
         self.assertEqual(report["source_sha256"],
                          "d3fca045cb1fd478a6eb306adfda08ce019795e926574ed943b31946f0dcfb42")
+        self.assertEqual(report["source_copies"]["original"], report["source_sha256"])
+        self.assertEqual(report["source_copies"]["research"], report["source_sha256"])
         self.assertTrue(report["methods"]["requestNationTreeData"]["sets_available_nations"])
         self.assertTrue(report["methods"]["getNationTreeData"]["loads_nation_data"])
         self.assertEqual(report["native_account_payload"], "NOT_RUN")

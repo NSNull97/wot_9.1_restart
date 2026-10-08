@@ -199,11 +199,15 @@ def audit(*, root: str | Path, disassembly: str | Path) -> dict[str, Any]:
     # The JSON is generated from the hash-pinned research copy.  Bind its
     # recorded source to the independently checked #717 SHA; no bytecode is
     # executed here.
-    source_path = _bounded(repository, "WoT_0.9.1_RU_0717_research/res/scripts/client/gui/scaleform/daapi/view/lobby/techtree/TechTree.pyc")
-    raw = source_path.read_bytes()
-    actual_source_hash = hashlib.sha256(raw).hexdigest()
-    if actual_source_hash != TECHTREE_SHA256:
-        raise TechTreeHandoffError("research TechTree.pyc SHA differs")
+    source_relative = "res/scripts/client/gui/scaleform/daapi/view/lobby/techtree/TechTree.pyc"
+    copy_hashes: dict[str, str] = {}
+    for copy_name in ("original", "research"):
+        source_path = _bounded(repository, f"WoT_0.9.1_RU_0717_{copy_name}/{source_relative}")
+        raw = source_path.read_bytes()
+        copy_hashes[copy_name] = hashlib.sha256(raw).hexdigest()
+        if copy_hashes[copy_name] != TECHTREE_SHA256:
+            raise TechTreeHandoffError(f"{copy_name} TechTree.pyc SHA differs")
+    actual_source_hash = copy_hashes["research"]
     shape = _method_shape(data)
     return {
         "status": "PASS_STATIC_TECHTREE_HANDOFF_SOURCE",
@@ -211,7 +215,8 @@ def audit(*, root: str | Path, disassembly: str | Path) -> dict[str, Any]:
         "build": "v.0.9.1 #717",
         "source": str(source),
         "disassembly_sha256": receipt_sha256,
-        "source_relative": "WoT_0.9.1_RU_0717_research/res/scripts/client/gui/scaleform/daapi/view/lobby/techtree/TechTree.pyc",
+        "source_relative": source_relative,
+        "source_copies": copy_hashes,
         "source_sha256": actual_source_hash,
         "methods": shape,
         "native_account_payload": "NOT_RUN",
