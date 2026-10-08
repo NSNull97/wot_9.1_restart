@@ -58,14 +58,14 @@ Duplicate/non-finite/depth/item/path and mutation cases are fail-closed. Wire
 framing, serializer order, native LOS/occlusion, interest filtering and server
 handoff stay **UNKNOWN/NOT_RUN**. No client, gateway or service was started.
 
-## Latest P04/P03I/P09A/P10A current-main recheck
+## Latest P04/P03I/P07A/P08A/P09A/P10A current-main recheck
 
 The latest UTF-8 full regression was run on code head
-`04e862b5d490a271346014df2603c55ffa1707fe`, matching `origin/main` at test
-time: **2152 tests, 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-p10a-main-regression-07/full-python-utf8.txt`
+`cf23e598f1dbbaa74d03b91c99cc107588be005f`, matching `origin/main` at test
+time: **2169 tests, 0 failures/errors, 4 known skips**. Log:
+`local/evidence/20261008-p07a-p08a-main-regression-08/full-python-utf8.txt`
 (SHA-256
-`a5925bf0a53cf0597a84ad6fa3ff5c01676d640861c62e6920e1f84287bce4a8`).
+`9b7ba628dc077752c2e1c15f1481d23cdf95f5cf3b8f7e51ac67ef6fee533d5b`).
 `server/check_layout.py` remains `PASS_SERVER_SOURCE_LAYOUT` with 58 source
 files and 22 relocations (receipt SHA
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
@@ -73,8 +73,8 @@ bounded docs-link recheck is `PASS_DOC_LINK_RECHECK` for 444 repository links,
 0 missing targets and 105 skipped external/absolute links (receipt SHA
 `601dd9d2bd948717904bf4ea0965df568469856ad762219a126232ce91a983a7`). The
 combined recheck summary is
-`local/evidence/20261008-p10a-main-regression-07/summary.json` (SHA-256
-`0cc7dab5ad17729d9e69a44fce891f45c7b6ce0665e04115b25180516f73fd96`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS**, P09A TechTree static **5/5 PASS**, P09A NationObjDumper/nested static **7/7 PASS**, P10A training-room static **6/6 PASS**, plus a combined targeted run **65/65 PASS**. The docs-link recheck is **444 links, 0 missing** (105 skipped external/absolute).
+`local/evidence/20261008-p07a-p08a-main-regression-08/summary.json` (SHA-256
+`7d45072f4547ad9db5c4afb500d3ddc3fd9fe6a8c82601b9c5cff79f9eb9346f`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS**, P07A visibility **9/9 PASS**, P08A lifecycle **8/8 PASS**, P09A TechTree static **5/5 PASS**, P09A NationObjDumper/nested static **7/7 PASS**, P10A training-room static **6/6 PASS**, plus a combined targeted run **82/82 PASS**. The docs-link recheck is **444 links, 0 missing** (105 skipped external/absolute).
 
 ## Overnight verification
 
