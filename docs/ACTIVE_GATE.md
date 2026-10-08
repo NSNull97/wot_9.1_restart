@@ -35,6 +35,17 @@ revisions and teardown correlation. Do not implement guessed room or
 matchmaker routes before that capture.
 # ACTIVE_GATE — 2026-10-08
 
+## P08A bounded lifecycle static audit
+
+P08A теперь имеет bounded read-only verifier
+`tools/p08a_lifecycle_static_audit.py`: exact hashes/sizes для четырёх P00/P01
+JSON, Account/Avatar/Arena/Vehicle typed method/property shapes, path
+containment и duplicate/non-finite/depth/item guards. Targeted
+`tests.test_p08a_lifecycle_static_audit` — **8/8 PASS**; receipt
+`local/evidence/20261008-p08a-static-audit-01/receipt.json` (ignored).
+Native lifecycle, wire framing, callback bytes, server handoff and deployed
+runtime remain `NOT_RUN`; no client/gateway/service was started.
+
 ## P07A bounded visibility static audit
 
 P07A is rechecked as `PASS_STATIC_VISIBILITY_SOURCE_AUDIT`. The bounded

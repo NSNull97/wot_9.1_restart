@@ -1,5 +1,19 @@
 # Overnight verification after P09B harness — 2026-10-08
 
+## P08A bounded lifecycle static recheck — 2026-10-08
+
+`tools/p08a_lifecycle_static_audit.py` повторно закрепил hash-bound P00/P01
+`lifecycle-static.json`, `contracts.json`, `resource-facts.json` и
+`sources.json`. Проверены группы Account/Avatar/Arena/Vehicle, измеренные
+typed method/property shapes, containment путей и bounded JSON guards
+(duplicate/non-finite/depth/item). Targeted suite
+`tests.test_p08a_lifecycle_static_audit` — **8/8 PASS**. Receipt и hashes
+записаны в ignored каталоге `local/evidence/20261008-p08a-static-audit-01/`.
+
+Это всё ещё `PASS_STATIC_SOURCE_BOUNDARY_ONLY`: native Account → Avatar → Arena
+→ Vehicle, wire IDs/order, callback bytes, server handoff, UI/audio/timer и
+client/gateway/service остаются `UNKNOWN/NOT_RUN`.
+
 ## P07A bounded visibility static audit
 
 `tools/p07a_visibility_static_audit.py` now rechecks the hash-bound P00/P01
