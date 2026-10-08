@@ -17,6 +17,12 @@ SHA-256 `8202aeb6ff5ec78483f9d06409f288295ee4a2d6f4f1f01d6ee677f6a21cd0ae`.
 Native payloads, callbacks, screenshots, queue/server handoff and runtime
 eligibility remain `NOT_RUN`.
 
+После этого status-only merge полный UTF-8 regression на проверенном head
+`a23e602e74967d520a2e2ef9ee296a6e9da740c2` дал **2187 тестов, 0
+failures/errors, 4 known skips**. Receipt:
+`local/evidence/20261008-current-main-14/summary.json`, full log SHA-256
+`8f9c7648f40a57edc348e02156c94245703c9bbba1c3eeb67a648ead265e454e`.
+
 # Current-head goal recheck — 2026-10-08
 
 На проверенном code head `283bf5f55c05514a2541bd84bca1feabf7aaab20`, который на

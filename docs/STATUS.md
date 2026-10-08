@@ -18,6 +18,12 @@ P03I/P09A static subset — **17/17 PASS**: request 202 / command 700,
 Native payload/callback/screenshot, queue/server handoff и runtime eligibility
 остаются `NOT_RUN`.
 
+После этого status-only merge полный UTF-8 regression на проверенном head
+`a23e602e74967d520a2e2ef9ee296a6e9da740c2` дал **2187 тестов, 0
+failures/errors, 4 known skips**. Receipt
+`local/evidence/20261008-current-main-14/summary.json`, full log SHA-256
+`8f9c7648f40a57edc348e02156c94245703c9bbba1c3eeb67a648ead265e454e`.
+
 # Current-head goal recheck — 2026-10-08
 
 Проверенный code head `283bf5f55c05514a2541bd84bca1feabf7aaab20` на момент
