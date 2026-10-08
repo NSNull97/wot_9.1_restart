@@ -33,11 +33,11 @@ matchmaker routes before that capture.
 ## Latest P04/P03I/P09A current-main recheck
 
 The latest UTF-8 full regression was run on code head
-`bb42cb52ce779f9019ff9ff4d283aa4b3b742115`, matching `origin/main` at test
-time: **2139 tests, 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-p09a-static-techtree-full-01/full-python-utf8.txt`
+`0c9b33c882ecc48cdaa36f1df77e4ec77cc0d6a2`, matching `origin/main` at test
+time: **2144 tests, 0 failures/errors, 4 known skips**. Log:
+`local/evidence/20261008-p04-p03i-main-regression-05/full-python-utf8.txt`
 (SHA-256
-`66e1643f737cd975233748363e7c67a666c5740f6daff5a08ad16c5dc5d1aed2`).
+`2c22204a0db0fe8e4a42c27ff1c936a8d5dad9f19a4101d03ba5c6aa5b61b363`).
 `server/check_layout.py` remains `PASS_SERVER_SOURCE_LAYOUT` with 58 source
 files and 22 relocations (receipt SHA
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
@@ -45,8 +45,8 @@ bounded docs-link recheck is `PASS_DOC_LINK_RECHECK` for 444 repository links,
 0 missing targets and 105 skipped external/absolute links (receipt SHA
 `f1d3ec48e145516340fd02183a6e97b936e3fdf8c3de09870d7502ffd29cbb46`). The
 combined recheck summary is
-`local/evidence/20261008-p04-p03i-main-regression-04/summary.json` (SHA-256
-`d894caa25824a749d5903791df41eb5d2847700268072d64c16700a267250333`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS** and P09A TechTree static **5/5 PASS**; the docs-link recheck is **444 links, 0 missing** (105 skipped external/absolute).
+`local/evidence/20261008-p04-p03i-main-regression-05/summary.json` (SHA-256
+`46b8bbb3589d38b61a18697b07534781933e66bb0133f41fc517d057b2e221a8`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS**, P09A TechTree static **5/5 PASS** and P09A NationObjDumper static **5/5 PASS**; the docs-link recheck is **444 links, 0 missing** (105 skipped external/absolute).
 
 ## Overnight verification
 
@@ -537,3 +537,5 @@ available/selected nation fields, unknown-nation guard, index selection,
 Это только source boundary: account/shop payload, callback bytes, screenshot и
 server handoff остаются `NOT_RUN`; native client/service не запускались. См.
 [P09A static handoff evidence](evidence-index/P09A_TECHTREE_HANDOFF_STATIC.md).
+
+`tools/nation_dumper_static_audit.py` дополнительно фиксирует envelope `nodes`, `displaySettings`, `scrollIndex` и 13 полей node output; receipt `local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json` имеет статус `PASS_STATIC_NATION_DUMPER_OUTPUT`. Вложенные типы `displayInfo`/`unlockProps`, native callback и serializer остаются `NOT_RUN`.
