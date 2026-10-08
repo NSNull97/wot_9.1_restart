@@ -49,6 +49,25 @@ source files and the capture-audit receipt itself match. This is a provenance
 correction only and does not alter the ignored evidence or claim native queue
 compatibility.
 
+## 2026-10-08 bounded native MS-1 queue smoke
+
+One owner-driven random-battle click was run through the isolated
+`legacy091-map-drive/test_lab` profile with the existing MS-1. The bounded
+receipt is `local/evidence/20261008-p03i-native-ms1-queue-01/native-gate-audit.json`.
+The gateway records request `202` / command `700` accepted for native vehicle
+inventory `1`, followed by worker-ready, avatar/vehicle creation, bind and
+first input. The runtime trace correlates selected inventory `1`,
+`BattleQueue`, `PlayerAvatar.onEnterWorld`, `onSpaceLoaded` and
+`userSeesWorld`; CAPTCHA had zero blocked calls and the overlay restored.
+
+Classification: **PASS_NATIVE_MAP_DRIVE_QUEUE_SMOKE / PASS_SERVER_SIDE_BATTLE_ENTRY**.
+This remains a compatibility smoke rather than full native handoff evidence:
+the map-drive route does not independently decode the live Account body and
+does not emit the native `onEnqueued(queueType)` arguments. Therefore the
+live two `INT16` fields, `INT64` vehicle field, both `INT32` gameplay/arena
+values and callback bytes remain **NOT_RUN**. IS-7 admission, assigned crew,
+ammunition, equipment and owner visual correlation remain **NOT_RUN**.
+
 ## Provenance and exclusion
 
 The safe static material is synthesized from commits `af7c724` (research-tree

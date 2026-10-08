@@ -453,6 +453,23 @@ in the ignored queue README for `functions.pyc` (`…d46e0f2…` versus verified
 `…d46f0e2…`). Native CMD700 bytes, callback ordering and server handoff remain
 `NOT_RUN`; this recheck changes no runtime or evidence source.
 
+### P03I bounded native MS-1 queue smoke
+
+The 2026-10-08 owner run is recorded as
+**PASS_NATIVE_MAP_DRIVE_QUEUE_SMOKE / PASS_SERVER_SIDE_BATTLE_ENTRY** in
+`local/evidence/20261008-p03i-native-ms1-queue-01/native-gate-audit.json`.
+The gateway accepted request `202` / command `700`, created the map-drive
+avatar and vehicle, bound the client and delivered input; the runtime trace
+correlates selected native inventory `1` with `BattleQueue` and avatar/world
+entry. The client exited cleanly and the isolated overlay restored.
+
+This is a bounded compatibility smoke, not the strict P03I native handoff:
+live Account framing, gameplay/arena values and native queue callback
+arguments remain **NOT_RUN** because the route logs a compatibility
+`map_request=0` rather than independently decoding the original body. The
+next gate is a raw-frame/callback capture; IS-7 admission still waits for
+server-owned crew and shell data.
+
 ## Latest accepted card
 
 `P03H_NATIVE_PROJECTILE_FLIGHT_20261007`:
