@@ -1,3 +1,21 @@
+# Current-head goal recheck — 2026-10-08
+
+Текущий `main` `283bf5f55c05514a2541bd84bca1feabf7aaab20` совпадает с
+`origin/main` и остаётся чистым. Goal-specific набор прошёл **59/59**, полный
+UTF-8 regression — **2187 тестов, 0 failures/errors, 4 known skips**. Receipt:
+`local/evidence/20261008-p04-p03i-goal-recheck-10/summary.json`; targeted log
+SHA-256 `8479145bf727b7615e1d4058323e3bc1dd929f2c0b9c29a25dbb142084982eb7`,
+full log SHA-256
+`d65e0e57f9fd357d44a948e26ba0d0f5abdfe17d6c43db083b564c43e3cfd81f`.
+
+P04 typed import — `PASS_TYPED_IMPORT_VALIDATOR`, canonical SHA-256
+`a1b1191b29bbae5e2aed2f4417a139c7e9a2e6740ec40698347ad6baa8aac2b9`; P03I
+static — `PASS_P03I_STATIC_SOURCE_RECHECK`, request 202 / command 700,
+`INT16, INT16, INT64, INT32, INT32`; P09A static graph — 374 trees, 3945
+nodes, 2062 edges, `IS-8 -> IS-7`. Native payload/callback, queue/server
+handoff, account/shop payload and UI screenshot остаются `NOT_RUN` до
+owner-gated capture.
+
 # P06E bounded client-collision static recheck — 2026-10-08
 
 Добавлен bounded read-only `tools/p06e_client_collision_static_audit.py`.
