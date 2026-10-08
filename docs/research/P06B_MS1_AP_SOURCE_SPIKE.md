@@ -1,6 +1,6 @@
 # P06B — MS-1 AP source-field research spike
 
-Status: **PASS_STATIC_SOURCE_FIELDS / NATIVE_HIT_NOT_RUN**
+Status: **PASS_STATIC_SOURCE_FIELDS / PASS_STATIC_P06B_SOURCE_RECHECK / NATIVE_HIT_NOT_RUN**
 Base: `4535480098c877540518ab8cf6907ae6bd722b61` (`main`)
 Branch: `codex/p06b-ms1-ap-research`
 Target: original WoT `v.0.9.1 #717` RU, MS-1 with `T-18_Standart` and
@@ -151,3 +151,17 @@ and one static target pose, without changing the original client:
 This report is a candidate source closure, not P06 acceptance and not a merge
 request. The single next recommended step is the controlled local intersection
 capture above.
+
+## Tracked recheck
+
+The former ignored `local/evidence/.../verify_static.py` check is now mirrored
+by the bounded tracked gate [`tools/p06b_source_audit.py`](../../tools/p06b_source_audit.py).
+It re-hashes all six exact source pins, re-decodes the four Packed XML files,
+checks the package SHA and all nine collision members, then verifies the report
+still contains the same hashes and boundary markers. The synthetic negative
+and parser suite is [`tests/test_p06b_source_audit.py`](../../tests/test_p06b_source_audit.py):
+12/12 PASS. The actual read-only recheck receipt is
+`local/evidence/20261008-p06b-ms1-ap-research-01/p06b-recheck-v2.json`, SHA-256
+`c245fa0e2e48bab904a530a9a6493879e8a7948720e093795b85d34bae3e0c96`.
+This closes reproducibility of the static source boundary only; native hit,
+penetration, damage and runtime compatibility remain `NOT_RUN`/`UNKNOWN`.
