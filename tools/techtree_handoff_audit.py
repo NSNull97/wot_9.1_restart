@@ -18,6 +18,7 @@ from typing import Any
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_DEPTH = 24
+MAX_ITEMS = 8192
 TECHTREE_SHA256 = "d3fca045cb1fd478a6eb306adfda08ce019795e926574ed943b31946f0dcfb42"
 EXPECTED_SOURCE = "scripts/client/gui/Scaleform/daapi/view/lobby/techtree/TechTree.py"
 
@@ -43,11 +44,15 @@ def _depth(value: Any, level: int = 0) -> None:
     if level > MAX_DEPTH:
         raise TechTreeHandoffError("JSON nesting exceeds bounds")
     if isinstance(value, dict):
+        if len(value) > MAX_ITEMS:
+            raise TechTreeHandoffError("JSON object exceeds bounds")
         for key, child in value.items():
             if not isinstance(key, str):
                 raise TechTreeHandoffError("JSON object key must be text")
             _depth(child, level + 1)
     elif isinstance(value, list):
+        if len(value) > MAX_ITEMS:
+            raise TechTreeHandoffError("JSON list exceeds bounds")
         for child in value:
             _depth(child, level + 1)
 
