@@ -1,9 +1,9 @@
 //! Explicit local two-client test_lab route. The accepted single-client drive
 //! route and its frozen profile checks are not generalized through this module.
-mod model;
-mod aim;
-mod projectile;
-mod wire;
+pub(crate) mod model;
+pub(crate) mod aim;
+pub(crate) mod projectile;
+pub(crate) mod wire;
 mod server;
 pub use server::serve;
 use super::{Session, Frame, Instant};

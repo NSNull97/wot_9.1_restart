@@ -68,6 +68,36 @@ pub fn parse(payload: &[u8]) -> io::Result<Option<Vec<Command>>> {
     Ok(Some(commands))
 }
 
+/// Parse the contiguous fire-method prefix of a compound Avatar envelope.
+///
+/// BigWorld may batch `vehicle_shoot` with an already measured aim/movement
+/// method in one reliable body.  The strict `parse` function intentionally
+/// remains whole-body-only for the legacy route; map-drive uses this bounded
+/// prefix reader and validates the remaining methods with its own parser.
+pub fn parse_prefix(payload: &[u8]) -> io::Result<Option<(Vec<Command>, usize)>> {
+    if payload.is_empty() || !matches!(payload[0], VEHICLE_SHOOT | VEHICLE_REPLENISH_AMMO) {
+        return Ok(None);
+    }
+    if payload.len() > MAX_PAYLOAD { return Err(invalid("native fire payload exceeds bound")); }
+    let mut at = 0usize;
+    let mut commands = Vec::new();
+    while at < payload.len() {
+        if commands.len() >= MAX_COMMANDS || payload.len() - at < 3 { break; }
+        let method = payload[at];
+        if !matches!(method, VEHICLE_SHOOT | VEHICLE_REPLENISH_AMMO) { break; }
+        let length = u16::from_le_bytes([payload[at + 1], payload[at + 2]]) as usize;
+        if length != 0 { return Err(invalid("native fire method shape")); }
+        at += 3;
+        commands.push(match method {
+            VEHICLE_SHOOT => Command::Shoot,
+            VEHICLE_REPLENISH_AMMO => Command::ReplenishAmmo,
+            _ => unreachable!(),
+        });
+    }
+    if commands.is_empty() { return Err(invalid("empty native fire command stream")); }
+    Ok(Some((commands, at)))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
     AcceptedShot { ammo_remaining: u16 },
@@ -225,6 +255,10 @@ mod tests {
             Some(vec![Command::ReplenishAmmo, Command::Shoot]));
         assert_eq!(parse(&[0x8a, 1, 0, 0]).unwrap(), None);
         assert_eq!(parse(&[]).unwrap(), None);
+        let mut compound = shot().to_vec(); compound.extend([0x8e, 8, 0]); compound.extend([0; 8]);
+        let (commands, consumed) = parse_prefix(&compound).unwrap().unwrap();
+        assert_eq!(commands, vec![Command::Shoot]);
+        assert_eq!(consumed, 3);
     }
 
     #[test]

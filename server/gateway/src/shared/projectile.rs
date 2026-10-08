@@ -16,11 +16,11 @@ pub const MS1_RAW_GRAVITY: f32 = 9.81;
 /// Original `common/vehicle.xml` projectileSpeedFactor.
 pub const PROJECTILE_SPEED_FACTOR: f32 = 0.8;
 /// Effective speed passed to the original ProjectileMover.
-pub const MS1_SPEED: f32 = MS1_RAW_SPEED * PROJECTILE_SPEED_FACTOR;
+pub(crate) const MS1_SPEED: f32 = MS1_RAW_SPEED * PROJECTILE_SPEED_FACTOR;
 /// Effective gravity passed to the original ProjectileMover.
-pub const MS1_GRAVITY: f32 = MS1_RAW_GRAVITY * PROJECTILE_SPEED_FACTOR * PROJECTILE_SPEED_FACTOR;
+pub(crate) const MS1_GRAVITY: f32 = MS1_RAW_GRAVITY * PROJECTILE_SPEED_FACTOR * PROJECTILE_SPEED_FACTOR;
 /// Original `_37mm_Gochkins` maxDistance.
-pub const MS1_MAX_DISTANCE: f32 = 720.0;
+pub(crate) const MS1_MAX_DISTANCE: f32 = 720.0;
 /// Compatibility floor for the original client's unguarded `velocity.x`
 /// divisions in its range/arena boundary branches.  The floor is deliberately
 /// tiny and preserves the launch speed; it is not a dispersion distribution.
@@ -88,7 +88,7 @@ impl Projectile {
 
 /// The original client divides by X velocity in two range/arena branches.
 /// Keep that branch defined in this lab while preserving the effective speed.
-pub fn regularize_horizontal_x(mut velocity: [f32; 3]) -> io::Result<[f32; 3]> {
+pub(crate) fn regularize_horizontal_x(mut velocity: [f32; 3]) -> io::Result<[f32; 3]> {
     if velocity.iter().any(|v| !v.is_finite()) || velocity.iter().map(|v| v * v).sum::<f32>() <= 0.0 {
         return Err(model::bad());
     }
@@ -105,7 +105,7 @@ pub fn regularize_horizontal_x(mut velocity: [f32; 3]) -> io::Result<[f32; 3]> {
     Ok(velocity)
 }
 
-pub fn position_at(origin: [f32; 3], velocity: [f32; 3], gravity: f32, seconds: f32) -> [f32; 3] {
+pub(crate) fn position_at(origin: [f32; 3], velocity: [f32; 3], gravity: f32, seconds: f32) -> [f32; 3] {
     [
         origin[0] + velocity[0] * seconds,
         origin[1] + velocity[1] * seconds - 0.5 * gravity * seconds * seconds,
@@ -121,7 +121,7 @@ fn distance_squared(velocity: [f32; 3], gravity: f32, seconds: f32) -> f32 {
 /// Find the first positive radial-distance crossing with bounded bracketing.
 /// Stock MS-1 flight crosses 720m in roughly two seconds; the larger bound is
 /// only a fail-closed guard for malformed future profiles.
-pub fn solve_range_time(velocity: [f32; 3], gravity: f32, max_distance: f32) -> io::Result<Duration> {
+pub(crate) fn solve_range_time(velocity: [f32; 3], gravity: f32, max_distance: f32) -> io::Result<Duration> {
     if velocity.iter().any(|v| !v.is_finite()) || velocity.iter().map(|v| v * v).sum::<f32>() <= 0.0
         || !gravity.is_finite() || gravity <= 0.0
         || !max_distance.is_finite() || max_distance <= 0.0 { return Err(model::bad()); }

@@ -14,7 +14,7 @@ mod reliable091;
 #[path = "protocol/transport.rs"]
 mod transport091;
 #[path = "session.rs"]
-mod gateway091;
+pub(crate) mod gateway091;
 #[path = "account/model.rs"]
 mod account091;
 #[path = "account/hangar.rs"]

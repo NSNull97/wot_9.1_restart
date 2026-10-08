@@ -7,7 +7,7 @@ use std::{sync::{Arc,mpsc},path::Path};
 use crate::{baseapp091 as base,login091 as login,redirect091,transport091::{self,Frame,Window}};
 use crate::capture091::{Channel,Recorder};
 #[path = "shared/mod.rs"]
-mod shared;
+pub(crate) mod shared;
 pub use shared::serve as serve_shared_lab;
 
 // R01 measured same-process reconnect reuses the cipher key but changes the
@@ -658,22 +658,35 @@ impl Session {
 
         let mut next=self.clone();
         let outcomes=next.arena_fire.as_mut().ok_or_else(invalid)?.apply(&commands,now)?;
-        let mut response=Vec::new();
+        // Native Avatar callbacks are individual reliable messages.  Keep the
+        // accepted shell/reload body separate from shooting and tracer
+        // notifications: the 0.9.1 client dispatches each body by its leading
+        // callback method and treats concatenated methods as a malformed
+        // payload.
+        let mut response_bodies=Vec::<Vec<u8>>::new();let mut tracer_queued=0usize;
         for outcome in &outcomes {
             if let crate::battle091::fire::Outcome::AcceptedShot {ammo_remaining}=*outcome {
-                response.extend(crate::battle091::fire::accepted_shot_body(
+                response_bodies.push(crate::battle091::fire::accepted_shot_body(
                     ammo_remaining,crate::arena_vehicle091::VEHICLE_ENTITY_ID)?);
+                if let Some(drive)=next.drive.as_mut() {
+                    let projectile=drive.launch_projectile(now)?;
+                    response_bodies.push(crate::map_drive_world091::shooting(crate::map_drive_world091::OWN)?);
+                    response_bodies.push(crate::map_drive_world091::tracer_start(crate::map_drive_world091::OWN,&projectile)?);
+                    tracer_queued+=1;
+                }
             }
         }
-        let response_sequence=if response.is_empty() {None}
-            else {Some(next.tx.enqueue_body_tracked(&response)?)};
+        let mut response_sequences=Vec::with_capacity(response_bodies.len());
+        for body in response_bodies {response_sequences.push(next.tx.enqueue_body_tracked(&body)?);}
+        let response_sequence=response_sequences.first().copied();
         *self=next;
         for outcome in outcomes {
             match outcome {
                 crate::battle091::fire::Outcome::AcceptedShot {ammo_remaining}=>events.push(format!(
-                    "BATTLE_SHOT_ACCEPTED session={} sequence={sequence} method=vehicle_shoot base_method=0x88 response_methods=0x44,0x46 ammo_compact_descr={} ammo_remaining={} reload_seconds={} response_sequence={} domain_applied=true projectile=NOT_RUN hit=NOT_RUN damage=NOT_RUN",
+                    "BATTLE_SHOT_ACCEPTED session={} sequence={sequence} method=vehicle_shoot base_method=0x88 response_methods=0x44,0x46 ammo_compact_descr={} ammo_remaining={} reload_seconds={} response_sequence={} domain_applied=true projectile={} tracer_callbacks={} hit=NOT_RUN damage=NOT_RUN",
                     self.id,crate::battle091::fire::MS1_AP,ammo_remaining,crate::battle091::fire::MS1_RELOAD_SECONDS,
-                    response_sequence.map_or_else(||"none".to_owned(),|value|value.to_string()))),
+                    response_sequence.map_or_else(||"none".to_owned(),|value|value.to_string()),
+                    if tracer_queued>0{"queued"}else{"NOT_RUN"},tracer_queued)),
                 crate::battle091::fire::Outcome::RejectedReload=>events.push(format!(
                     "BATTLE_SHOT_REJECTED session={} sequence={sequence} method=vehicle_shoot base_method=0x88 reason=gun_reload domain_applied=false ammo_mutation=false transport_acknowledged=true",
                     self.id)),
@@ -721,6 +734,24 @@ impl Session {
         Ok(())
     }
 
+    /// End server-owned map-drive tracers after their bounded flight deadline.
+    /// The stop callback is queued on a clone so a full reliable window cannot
+    /// retire the projectile without its matching native message.
+    fn poll_battle_projectiles(&mut self,now:Instant,events:&mut Vec<String>)->io::Result<()> {
+        let Some(drive)=self.drive.as_ref() else {return Ok(());};
+        if drive.phase!=crate::map_drive_world091::Phase::Driving || self.map_binding.is_none(){return Ok(());}
+        let mut next=self.clone();
+        let expired=next.drive.as_mut().ok_or_else(invalid)?.expired_projectiles(now)?;
+        if expired.is_empty(){return Ok(());}
+        let mut queued=Vec::new();
+        for projectile in &expired {queued.push(next.tx.enqueue_body_tracked(&crate::map_drive_world091::tracer_stop(projectile)?)?);}
+        *self=next;
+        for (projectile,sequence) in expired.into_iter().zip(queued) {
+            events.push(format!("BATTLE_TRACER_STOP session={} projectile_sequence={} reliable_sequence={} native_method=Avatar.stopTracer domain_applied=true",self.id,projectile.sequence,sequence));
+        }
+        Ok(())
+    }
+
     fn drive_avatar(&mut self,payload:&[u8],sequence:u32,now:Instant,events:&mut Vec<String>)->io::Result<()> {
         use crate::map_drive_world091::{self as world,Phase,Method};
         if !self.active || !self.account_ready || !self.arena_base || self.base_peer.is_none() || self.sync_mask!=7
@@ -745,6 +776,20 @@ impl Session {
             let seq=self.tx.enqueue_body_tracked(&body)?;self.arena_vehicle_creation=Some((seq,false));self.drive.as_mut().ok_or_else(invalid)?.phase=Phase::Ready;
             events.push(format!("MAP_DRIVE_VEHICLE_CREATED session={} generation={generation} request_sequence={sequence} reliable_sequence={seq} body_bytes=97 announcement_acked=true",self.id));return Ok(());
         }
+        // The native client batches a zero-argument vehicle_shoot with the
+        // next aim/movement method surprisingly often.  Split only the
+        // contiguous, bounded fire prefix; validate the remainder before
+        // mutating fire state, then feed it back through the normal map-drive
+        // method dispatcher.
+        if current.phase==Phase::Driving {
+            if let Some((_,consumed))=crate::battle091::fire::parse_prefix(payload)? {
+                let tail=&payload[consumed..];
+                if !tail.is_empty() {world::methods(tail)?;}
+                self.receive_battle_fire(&payload[..consumed],sequence,now,events)?.ok_or_else(invalid)?;
+                if !tail.is_empty() {self.drive_avatar(tail,sequence,now,events)?;}
+                return Ok(());
+            }
+        }
         if crate::arena_ready091::validate_compound(payload,world::OWN).is_ok(){
             if current.phase==Phase::Driving{events.push(format!("MAP_DRIVE_READY_DUPLICATE session={} generation={generation} enqueued=false clock_reset=false",self.id));return Ok(());}
             if current.phase!=Phase::Ready || !self.arena_vehicle_creation.is_some_and(|(_,ack)|ack){return Err(invalid());}
@@ -758,10 +803,10 @@ impl Session {
             body.extend(crate::battle091::native_ammo::initial_reload_body(
                 self.arena_battle_preparation.as_ref().ok_or_else(invalid)?.loadout(),
                 crate::arena_control091::AVATAR_ENTITY_ID)?);
-            if body.len()!=122+crate::battle091::native_ammo::BATTLE_SUFFIX_BYTES {return Err(invalid());}
+            if body.len()!=world::BINDING_BYTES+crate::battle091::native_ammo::BATTLE_SUFFIX_BYTES {return Err(invalid());}
             let bytes=body.len();let seq=self.tx.enqueue_body_tracked(&body)?;
             self.map_binding=Some(crate::map_drive091::Binding::new(seq));let d=self.drive.as_mut().ok_or_else(invalid)?;d.phase=Phase::Driving;d.created=Some(now);
-             events.push(format!("MAP_DRIVE_BOUND session={} generation={generation} request_sequence={sequence} reliable_sequence={seq} body_bytes={bytes} native_ammo_panel_appended=true native_selected_shell_appended=true native_initial_reload_appended=true native_tick=1000 period=3 create_acked=true bind_applied=true domain_ready=true generic_control=false",self.id));
+             events.push(format!("MAP_DRIVE_BOUND session={} generation={generation} request_sequence={sequence} reliable_sequence={seq} body_bytes={bytes} native_targeting_info_appended=true native_ammo_panel_appended=true native_selected_shell_appended=true native_initial_reload_appended=true native_tick=1000 period=3 create_acked=true bind_applied=true domain_ready=true generic_control=false",self.id));
              let panel=self.arena_battle_preparation.as_ref().ok_or_else(invalid)?.loadout();
              events.push(format!("BATTLE_NATIVE_AMMO_PANEL_CANDIDATE session={} generation={generation} route=drive_avatar reliable_sequence={seq} {}",self.id,crate::battle091::native_ammo::panel_event_fields(panel)?));
              events.push(format!("BATTLE_NATIVE_SHELL_SELECTED session={} generation={generation} route=drive_avatar native_method=0x40 setting=CURRENT_SHELLS compact_descr=2570 selected_shell_body_bytes=7 native_static=true native_delivery_candidate=true native_receipt=NOT_RUN",self.id));
@@ -778,6 +823,7 @@ impl Session {
         // receive clone/commit rolls back all input/ACK if any later check fails.
         // No worker side effect runs until that whole transaction commits.
         let correction_in_compound=methods.contains(&Method::CorrectionAck);
+        let mut aim_bodies=Vec::new();
         for method in methods{
             if method==Method::Leave{self.drive_return("native_leaveArena",events)?;continue;}
             let d=self.drive.as_mut().ok_or_else(invalid)?;
@@ -800,6 +846,14 @@ impl Session {
                     if d.commands>=100_000{return Err(invalid());}d.commands+=1;d.input=crate::map_drive_worker091::Input::STOP;
                     events.push(format!("MAP_DRIVE_UNSUPPORTED_MOVE session={} generation={generation} sequence={sequence} flags={flags} command_count={} domain_applied=false failsafe_stop=true policy=test_lab_neutral",self.id,d.commands));
                 },
+                Method::Aim(intent)=>{
+                    if d.aim>=500_000{return Err(invalid());}
+                    let pose=d.pose.as_ref().ok_or_else(invalid)?.clone();
+                    let mut gun=d.gun.clone();gun.set(intent)?;gun.advance(pose.position,pose.direction[0],0.1)?;
+                    let body=world::aim_update(world::OWN,&gun)?;
+                    d.gun=gun;d.aim+=1;aim_bodies.push(body);
+                    events.push(format!("MAP_DRIVE_AIM_APPLIED session={} generation={generation} sequence={sequence} method=aim intent=server_owned domain_applied=true client_pose_used=false",self.id));
+                },
                 Method::UnsupportedAim(id)=>{
                     if d.aim>=500_000{return Err(invalid());}d.aim+=1;
                     events.push(format!("MAP_DRIVE_UNSUPPORTED session={} generation={generation} sequence={sequence} method={id} count={} domain_applied=false",self.id,d.aim));
@@ -809,7 +863,9 @@ impl Session {
                     events.push(format!("MAP_DRIVE_CAMERA_PREFERENCE session={} generation={generation} sequence={sequence} autorotation={enabled} count={} transport_accepted=true domain_applied=false physics_setting_changed=false policy=test_lab_keyboard_only",self.id,d.aim));
                 },Method::Leave=>unreachable!(),
             }
-        }Ok(())
+        }
+        for body in aim_bodies { self.tx.enqueue_body_tracked(&body)?; }
+        Ok(())
     }
     fn receive_account(&mut self,payload:&[u8],events:&mut Vec<String>)->io::Result<()> {
 use crate::hangar091::Incoming;
@@ -1042,7 +1098,7 @@ for incoming in requests {
                                 let generation=self.drive.as_ref().map_or(1,|d|d.generation);
                                 let (create_sequence,sequence)=self.queue_map_binding(now)?;
                                 let panel=self.arena_battle_preparation.as_ref().ok_or_else(invalid)?.loadout();
-                                events.push(format!("MAP_DRIVE_BINDING_QUEUED session={} sequence={n} checkpoint=avatar_drive application_bytes=33 methods=4 create_sequence={create_sequence} create_acked=true reliable_sequence={sequence} body_bytes=176 native_ammo_panel_appended=true native_selected_shell_appended=true native_initial_reload_appended=true frequency=10 game_ticks=1000 period=3 avatar_entity_id=152043522 vehicle_entity_id=152043523 space_id=1 relative_origin=true bind_applied=true roster_ready=true token_verified=true domain_ready=true generic_control=false terrain=false",self.id));
+                                events.push(format!("MAP_DRIVE_BINDING_QUEUED session={} sequence={n} checkpoint=avatar_drive application_bytes=33 methods=4 create_sequence={create_sequence} create_acked=true reliable_sequence={sequence} body_bytes=176 native_targeting_info_appended=false native_ammo_panel_appended=true native_selected_shell_appended=true native_initial_reload_appended=true frequency=10 game_ticks=1000 period=3 avatar_entity_id=152043522 vehicle_id=152043523 space_id=1 relative_origin=true bind_applied=true roster_ready=true token_verified=true domain_ready=true generic_control=false terrain=false",self.id));
                                 events.push(format!("BATTLE_NATIVE_AMMO_PANEL_CANDIDATE session={} generation={generation} route=ordinary_map_drive reliable_sequence={sequence} {}",self.id,crate::battle091::native_ammo::panel_event_fields(panel)?));
                                 events.push(format!("BATTLE_NATIVE_SHELL_SELECTED session={} generation={generation} route=ordinary_map_drive native_method=0x40 setting=CURRENT_SHELLS compact_descr=2570 selected_shell_body_bytes=7 native_static=true native_delivery_candidate=true native_receipt=NOT_RUN",self.id));
                                 events.push(format!("BATTLE_NATIVE_INITIAL_RELOAD session={} generation={generation} route=ordinary_map_drive native_method=0x46 vehicle_id=152043523 time_left=0.0 base_time=2.5 body_bytes=14 native_static=true native_delivery_candidate=true native_receipt=NOT_RUN",self.id));
@@ -1549,6 +1605,12 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                         close_reason=Some("battle_reload_publication");
                     }
                     for event in reload_events {println!("{event}");}
+                    let mut tracer_events=Vec::new();
+                    if let Err(_)=s.poll_battle_projectiles(now,&mut tracer_events) {
+                        println!("BATTLE_TRACER_FAILED session={} reason=publication_or_state data_changed=false",s.id);
+                        close_reason=Some("battle_tracer_publication");
+                    }
+                    for event in tracer_events {println!("{event}");}
                 }
                 if s.ready_for_arena_base() {
                     if let Some(control)=arena_control.as_mut() {
@@ -3178,16 +3240,16 @@ mod tests {
         let ready=arena_frame(&s,3,&READY_COMPOUND,4);let mut events=Vec::new();
         s.receive_ready(&ready,t,&mut events,0,&mut 32).unwrap();
         let sent=s.tx.due(t,s.rx).unwrap().unwrap();let body=transport091::parse_interactive(&sent.2).unwrap().body;
-        assert_eq!(&body[..122],binding.as_slice());
-         assert_eq!(&body[122..],[
+        assert_eq!(&body[..crate::map_drive_world091::BINDING_BYTES],binding.as_slice());
+         assert_eq!(&body[crate::map_drive_world091::BINDING_BYTES..],[
              0x13,0x44,0x0a,0x0a,0,0,20,0,0,0,0,
              0x13,0x44,0x0a,0x0b,0,0,0,0,0,0,0,
              0x13,0x44,0x0a,0x0c,0,0,0,0,0,0,0,
              0x13,0x40,0,0x0a,0x0a,0,0,
              0x13,0x46,0x03,0x00,0x10,0x09,0,0,0,0,0,0,0x20,0x40,
-         ]);assert_eq!(body.len(),176);
+         ]);assert_eq!(body.len(),crate::map_drive_world091::BINDING_BYTES+crate::battle091::native_ammo::BATTLE_SUFFIX_BYTES);
          assert_eq!(s.map_binding.as_ref().unwrap().force_sequence,sent.0);
-         assert_eq!(events.iter().filter(|e|e.starts_with("MAP_DRIVE_BOUND ") && e.contains("body_bytes=176") && e.contains("native_ammo_panel_appended=true") && e.contains("native_selected_shell_appended=true") && e.contains("native_initial_reload_appended=true")).count(),1);
+         assert_eq!(events.iter().filter(|e|e.starts_with("MAP_DRIVE_BOUND ") && e.contains("body_bytes=214") && e.contains("native_targeting_info_appended=true") && e.contains("native_ammo_panel_appended=true") && e.contains("native_selected_shell_appended=true") && e.contains("native_initial_reload_appended=true")).count(),1);
          assert_eq!(events.iter().filter(|e|e.starts_with("BATTLE_NATIVE_AMMO_PANEL_CANDIDATE ") && e.contains("route=drive_avatar") && e.contains("panel_count=3") && e.contains("native_receipt=NOT_RUN")).count(),1);
     }
     #[test]fn map_drive_avatar_fire_consumes_server_owned_ap_and_emits_native_callbacks(){
@@ -3195,9 +3257,26 @@ mod tests {
         let fire=[crate::battle091::fire::VEHICLE_SHOOT,0,0];
         s.receive(&arena_frame(&s,4,&fire,5),t).unwrap();
         assert_eq!(s.arena_fire.as_ref().unwrap().ammo(),19);
+        let accepted=crate::battle091::fire::accepted_shot_body(19,crate::arena_vehicle091::VEHICLE_ENTITY_ID).unwrap();
         let sent=s.tx.due(t,s.rx).unwrap().unwrap();
-        assert_eq!(transport091::parse_interactive(&sent.2).unwrap().body,
-            crate::battle091::fire::accepted_shot_body(19,crate::arena_vehicle091::VEHICLE_ENTITY_ID).unwrap());
+        assert_eq!(transport091::parse_interactive(&sent.2).unwrap().body,accepted);
+        let sent=s.tx.due(t,s.rx).unwrap().unwrap();
+        let mut shooting=vec![0x12];shooting.extend(crate::arena_vehicle091::VEHICLE_ENTITY_ID.to_le_bytes());shooting.extend([0x3b,1,0x13]);
+        assert_eq!(transport091::parse_interactive(&sent.2).unwrap().body,shooting);
+        let sent=s.tx.due(t,s.rx).unwrap().unwrap();
+        let tracer=transport091::parse_interactive(&sent.2).unwrap().body;
+        assert!(tracer.starts_with(&[0x13,0x4c]));
+        assert_eq!(s.drive.as_ref().unwrap().projectiles.len(),1);
+    }
+    #[test]fn map_drive_avatar_compound_fire_prefix_is_split_from_aim_tail(){
+        let t=Instant::now();let mut s=drive_live(t);
+        let mut compound=vec![crate::battle091::fire::VEHICLE_SHOOT,0,0,0x8e,8,0];
+        compound.extend(0.25f32.to_le_bytes());compound.extend((-0.1f32).to_le_bytes());
+        s.receive(&arena_frame(&s,4,&compound,5),t).unwrap();
+        assert_eq!(s.arena_fire.as_ref().unwrap().ammo(),19);
+        assert!(s.drive.as_ref().unwrap().gun.yaw>0.0 && s.drive.as_ref().unwrap().gun.yaw<0.25);
+        assert!(s.drive.as_ref().unwrap().gun.pitch<0.0 && s.drive.as_ref().unwrap().gun.pitch>-0.1);
+        assert!(s.drive.as_ref().unwrap().projectiles.len()==1);
     }
     #[test]fn ordinary_ready_queues_ammo_after_binding_once_and_retries_identical_body(){
         let t=Instant::now();let mut s=binding_waiting(t);
