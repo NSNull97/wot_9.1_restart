@@ -68,15 +68,14 @@ claim about the complete #717 catalogue or native physics.
 
 ### Receipt recheck — 2026-10-08
 
-The self-contained receipt was re-read from the current checkout. The
-standalone importer command and the combined bundle/import/map suite both
-passed:
+The original self-contained receipt was re-read from the current checkout. Its
+historical importer command and bundle/import/map suite both passed:
 
 ```text
 python -B -X utf8 tools/content_import.py --manifest local/evidence/20261007-p04-content-import-02/manifest.json --bundle local/evidence/20261007-p04-content-import-02/fixture-bundle
 PASS_TYPED_IMPORT_VALIDATOR; canonical_sha256=a1b1191b29bbae5e2aed2f4417a139c7e9a2e6740ec40698347ad6baa8aac2b9
 python -B -X utf8 -m unittest tests.test_content_bundle tests.test_content_import tests.test_map_geometry
-Ran 38 tests — OK
+Ran 38 tests — OK (historical receipt recheck)
 ```
 
 The receipt `result.json` SHA-256 is
@@ -87,6 +86,21 @@ This is a local ignored evidence artifact by project policy, so a clean clone
 must recreate or restore it before running the CLI. The recheck changes no
 runtime eligibility: `runtime_ready=false`, `runtime_eligibility=NOT_RUN`, and
 native compatibility remain explicitly unverified.
+
+### Strict bundle-boundary recheck — current evidence
+
+The follow-up strict reader hardening is the authoritative current P04
+boundary. `tools/content_bundle.py` rejects duplicate keys, non-finite JSON,
+excessive nesting/item counts, boolean-as-integer values and non-lowercase
+SHA-256 values before the typed importer consumes the bundle. The current
+combined suite is **42 tests, 0 failures/errors, 0 skips**. Its receipt is
+`local/evidence/20261008-p04-bundle-hardening-01/recheck.json`, status
+`PASS_P04_BUNDLE_STRICT_RECHECK`, SHA-256
+`8d07c77de1a01c39c92e9153f4c3e7f4c08fabf6c4c632a1cbdc20db571e9685`.
+The canonical typed import hash remains
+`a1b1191b29bbae5e2aed2f4417a139c7e9a2e6740ec40698347ad6baa8aac2b9`.
+This closes the bounded parser/evidence seam only; complete #717 content,
+native selection and physics remain `NOT_RUN`.
 
 ## Статусы доказательств
 
