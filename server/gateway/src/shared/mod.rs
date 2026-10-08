@@ -3,6 +3,7 @@
 pub(crate) mod model;
 pub(crate) mod aim;
 pub(crate) mod projectile;
+pub(crate) mod impact;
 pub(crate) mod wire;
 mod server;
 pub use server::serve;

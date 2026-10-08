@@ -2,7 +2,7 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::{aim, projectile::Projectile};
+use super::{aim, impact, projectile::Projectile};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
@@ -51,13 +51,14 @@ pub struct World {
     pub tick: u32,
     pub shots: Vec<Shot>,
     pub projectiles: Vec<Projectile>,
+    pub impact: impact::Trace,
 }
 
 impl World {
     pub fn new(id: u64, now: Instant) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
         Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000,
-            shots: Vec::new(), projectiles: Vec::new() })
+            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new() })
     }
     pub fn latest_shot(&self) -> u32 { self.shots.last().map(|s| s.sequence).unwrap_or(0) }
     /// Authenticated identity only. The caller reserves a transport retirement
@@ -102,6 +103,7 @@ impl World {
         let mut outcomes = Vec::new();
         let mut shots = self.shots.clone();
         let mut projectiles = self.projectiles.clone();
+        let mut impact_trace = self.impact.clone();
         for (at, command) in commands.iter().enumerate() {
             match command {
                 Command::Aim(intent) => next.aim.set(*intent)?,
@@ -110,13 +112,20 @@ impl World {
                     next.input = *input;
                 },
                 Command::Fire(command) => {
+                    let ammo_before = next.fire.ammo();
                     let result = next.fire.apply(&[*command], now)?;
                     for outcome in &result {
-                        if matches!(outcome, fire::Outcome::AcceptedShot { .. }) {
+                        if let fire::Outcome::AcceptedShot { ammo_remaining } = *outcome {
                             if shots.len() >= MAX_SHOTS || projectiles.len() >= MAX_SHOTS { return Err(bad()); }
                             let sequence = shots.len() as u32 + 1;
-                            shots.push(Shot { sequence, slot, tick: self.tick });
-                            projectiles.push(Projectile::launch(sequence, slot, &next, now)?);
+                            let projectile = Projectile::launch(sequence, slot, &next, now)?;
+                            let elapsed_ticks = now.duration_since(self.started.ok_or_else(bad)?).as_millis() / 100;
+                            let launch_tick = 1000u32.checked_add(u32::try_from(elapsed_ticks).map_err(|_| bad())?)
+                                .ok_or_else(bad)?;
+                            impact_trace.admission(self.id, sequence, launch_tick, slot, ammo_before, ammo_remaining)?;
+                            impact_trace.launch(self.id, &projectile, launch_tick)?;
+                            shots.push(Shot { sequence, slot, tick: launch_tick });
+                            projectiles.push(projectile);
                         }
                     }
                     outcomes.extend(result);
@@ -127,7 +136,8 @@ impl World {
                 },
             }
         }
-        self.actors[slot] = next; self.shots = shots; self.projectiles = projectiles; Ok(outcomes)
+        self.actors[slot] = next; self.shots = shots; self.projectiles = projectiles;
+        self.impact = impact_trace; Ok(outcomes)
     }
     /// One shared monotonic clock; bounded integration, no burst catch-up. The
     /// small flat boxes exist only to make remote-state publication observable.
@@ -136,9 +146,14 @@ impl World {
         if now < self.last || now.duration_since(start) >= LIFETIME { return Err(bad()); }
         let tick = 1000 + (now.duration_since(start).as_millis() / 100) as u32;
         let tick_changed = tick != self.tick;
+        let prior_tick = self.tick;
+        let prior_time = self.last;
+        let mut next_actors = self.actors.clone();
+        let mut next_last = self.last;
+        let mut next_tick = self.tick;
         if tick_changed {
             let dt = now.duration_since(self.last).as_secs_f32().min(0.2);
-            for a in &mut self.actors {
+            for a in &mut next_actors {
                 if !a.ready || a.session.is_none() { continue; }
                 a.yaw = (a.yaw + a.input.steer as f32 * dt * 0.5 + std::f32::consts::PI)
                     .rem_euclid(2. * std::f32::consts::PI) - std::f32::consts::PI;
@@ -150,15 +165,38 @@ impl World {
                 a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
                 a.aim.advance(a.position, a.yaw, dt)?;
             }
-            self.last = now; self.tick = tick;
+            next_last = now; next_tick = tick;
+        }
+        let mut impact_trace = self.impact.clone();
+        let mut next_projectiles = self.projectiles.clone();
+        if tick_changed {
+            for projectile in &self.projectiles {
+                if !projectile.stopped {
+                    let segment_start = if projectile.launched > prior_time { projectile.launched } else { prior_time };
+                    if segment_start < now {
+                        let launch_tick = self.shots.iter()
+                            .find(|shot| shot.sequence == projectile.sequence).ok_or_else(bad)?.tick;
+                        let segment_tick_start = launch_tick.max(prior_tick);
+                        impact_trace.segment(self.id, projectile.sequence, tick, segment_tick_start,
+                            projectile.position_at(segment_start), projectile.position_at(now))?;
+                    }
+                }
+            }
         }
         let mut expired = false;
-        for projectile in &mut self.projectiles {
+        for projectile in &mut next_projectiles {
             if !projectile.stopped && projectile.is_expired(now)? {
                 projectile.stopped = true;
+                impact_trace.terminal(self.id, projectile.sequence, tick,
+                    impact::TerminalReason::RangeExpired)?;
                 expired = true;
             }
         }
+        self.actors = next_actors;
+        self.last = next_last;
+        self.tick = next_tick;
+        self.projectiles = next_projectiles;
+        self.impact = impact_trace;
         Ok(tick_changed || expired)
     }
 }

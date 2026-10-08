@@ -1,3 +1,36 @@
+# P06C server-owned impact trace foundation — 2026-10-08
+
+Карточка `codex/p06c-impact-pipeline` добавляет в shared laboratory World
+bounded typed trace для уже подтверждённых сервером стадий: admission,
+launch, flight segment и range terminal. Trace хранит battle/shot identity,
+серверный тик, профиль `ms1_ap_2570`, компактные IDs MS-1 `3329`, орудия
+`5892` и AP `2570`, переход БК и конечные серверные координаты полёта.
+Карточечный commit: `p06c: add bounded server impact trace foundation` на
+ветке `codex/p06c-impact-pipeline`.
+Значения finite/bounded, порядок и cross-battle identity проверяются
+fail-closed; World коммитит движение, снаряды и trace атомарно.
+
+Проверка карточки: **PASS_CAPTURE_FOUNDATION / native_impact_status=NOT_RUN**.
+Rust suite gateway — **381/381 PASS**, включая интеграционный тест запуска
+между тиками и ровно одного range terminal. Receipt:
+`local/evidence/20261008-p06c-impact-foundation-01/summary.json` (SHA-256
+`dbc6c61ddd0ca8adba3d6e7e8f31a4d5524271fcb332750b30f8e2b712d1c0db`).
+`server/check_layout.py` — **PASS_SERVER_SOURCE_LAYOUT** (59 source files,
+22 relocations); build/cache output удалён из canonical `server/` перед
+проверкой.
+
+Это не P06C native impact: intersection, material/normal/thickness,
+classification, penetration, HP/module/crew damage и replay ledger намеренно
+не реализованы и не получают синтетических строк. P06D остаётся
+shape-only/auditor-only. Действующий сервис не перезапускался и продолжает
+работать на принятом P03J gateway SHA `1fa92e383d80f1118b4ac95dc7b3d08b5ebbfcf69446f851bfb59832cdcb5b45`;
+клиентские копии не менялись.
+
+Изменения: `server/gateway/src/shared/impact.rs`, `mod.rs`, `model.rs`,
+`projectile.rs`, план [P06C foundation](plans/P06C_IMPACT_PIPELINE_FOUNDATION.md).
+Откат — revert карточечного merge; следующий единственный шаг — owner-gated
+двухклиентный capture после появления измеренной server collision boundary.
+
 # Tactical hangar UI audit — 2026-10-08
 
 ## P03J native map-drive aim/tracer — 2026-10-08

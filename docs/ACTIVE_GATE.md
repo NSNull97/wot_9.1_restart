@@ -1,3 +1,24 @@
+# P06C server-owned impact trace foundation — 2026-10-08
+
+Карточка `codex/p06c-impact-pipeline` принята как
+**PASS_CAPTURE_FOUNDATION / native_impact_status=NOT_RUN**. Shared laboratory
+теперь ведёт bounded typed trace только для серверных admission → launch →
+flight segment → range terminal. Записи finite, cross-battle-safe,
+монотонные; World commit делает атомарно. Pinned профиль — MS-1 AP `2570`,
+vehicle `3329`, gun `5892`.
+Карточечный commit: `p06c: add bounded server impact trace foundation` на
+ветке `codex/p06c-impact-pipeline`.
+
+Gateway Rust suite: **381/381 PASS**. Receipt:
+`local/evidence/20261008-p06c-impact-foundation-01/summary.json` (SHA-256
+`dbc6c61ddd0ca8adba3d6e7e8f31a4d5524271fcb332750b30f8e2b712d1c0db`).
+Source layout: **PASS_SERVER_SOURCE_LAYOUT**, 59 files / 22 relocations.
+
+Intersection, material/normal/thickness, penetration, damage, HP/module/crew
+и replay намеренно отсутствуют; синтетические hit/miss/damage rows не
+создаются. Действующий P03J service/client runtime не менялся и не
+перезапускался. Реальный P06C owner-gated capture остаётся следующим gate.
+
 # Fresh current-head evidence after status-only merge — 2026-10-08
 
 На проверенном head `39b36078a1030387fb95c3578d52cee28b4a6051`, совпавшем с
