@@ -30,23 +30,23 @@ revisions and teardown correlation. Do not implement guessed room or
 matchmaker routes before that capture.
 # ACTIVE_GATE — 2026-10-08
 
-## Latest P04/P03I current-main recheck
+## Latest P04/P03I/P09A current-main recheck
 
 The latest UTF-8 full regression was run on code head
-`1269e451696e69c481ab0a0f2a61dc8626c0d8f4`, matching `origin/main` at test
-time: **2134 tests, 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-p04-p03i-main-regression-02/full-python-utf8.txt`
+`bb42cb52ce779f9019ff9ff4d283aa4b3b742115`, matching `origin/main` at test
+time: **2139 tests, 0 failures/errors, 4 known skips**. Log:
+`local/evidence/20261008-p09a-static-techtree-full-01/full-python-utf8.txt`
 (SHA-256
-`762fbc4f6c54b748fb682322075de07122b8865cce82b322d3c0b729762c382d`).
+`66e1643f737cd975233748363e7c67a666c5740f6daff5a08ad16c5dc5d1aed2`).
 `server/check_layout.py` remains `PASS_SERVER_SOURCE_LAYOUT` with 58 source
 files and 22 relocations (receipt SHA
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
-bounded docs-link recheck is `PASS_DOC_LINK_RECHECK` for 440 repository links,
+bounded docs-link recheck is `PASS_DOC_LINK_RECHECK` for 444 repository links,
 0 missing targets and 105 skipped external/absolute links (receipt SHA
-`59be396a99b10eea24127a5d6dda81ef9375a95825e9754d836c3a237737c95a`). The
+`f1d3ec48e145516340fd02183a6e97b936e3fdf8c3de09870d7502ffd29cbb46`). The
 combined recheck summary is
-`local/evidence/20261008-p04-p03i-main-regression-02/summary.json` (SHA-256
-`59b3055f4bb38f4568fc8df147f8ab5b543ad2473136200264c519fc57d301d`).
+`local/evidence/20261008-p04-p03i-main-regression-04/summary.json` (SHA-256
+`d894caa25824a749d5903791df41eb5d2847700268072d64c16700a267250333`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS** and P09A TechTree static **5/5 PASS**; the docs-link recheck is **444 links, 0 missing** (105 skipped external/absolute).
 
 ## Overnight verification
 

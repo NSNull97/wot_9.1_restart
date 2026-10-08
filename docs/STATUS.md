@@ -1,17 +1,17 @@
 # Overnight verification after P09B harness — 2026-10-08
 
-## Latest P04/P03I current-main recheck
+## Latest P04/P03I/P09A current-main recheck
 
-На code head `1269e451696e69c481ab0a0f2a61dc8626c0d8f4`, который совпадал с
-`origin/main` на момент запуска, повторён UTF-8 full regression: **2134 теста,
+На code head `bb42cb52ce779f9019ff9ff4d283aa4b3b742115`, который совпадал с
+`origin/main` на момент запуска, повторён UTF-8 full regression: **2139 тестов,
 0 failures/errors, 4 known skips**. Лог
-`local/evidence/20261008-p04-p03i-main-regression-02/full-python-utf8.txt`,
-SHA-256 `762fbc4f6c54b748fb682322075de07122b8865cce82b322d3c0b729762c382d`.
+`local/evidence/20261008-p09a-static-techtree-full-01/full-python-utf8.txt`,
+SHA-256 `66e1643f737cd975233748363e7c67a666c5740f6daff5a08ad16c5dc5d1aed2`.
 P04 bundle/import/map targeted suite — **42/42 PASS**, P03I static audit —
-**5/5 PASS**. Layout — 58 source files / 22 relocations, docs-link recheck —
-440 внутренних ссылок, 0 missing targets. Combined summary:
-`local/evidence/20261008-p04-p03i-main-regression-02/summary.json`, SHA-256
-`59b3055f4bb38f4568fc8df147f8ab5b543ad2473136200264c519fc57d301d`.
+**5/5 PASS**, P09A TechTree static audit — **5/5 PASS**. Layout — 58 source
+files / 22 relocations, docs-link recheck — 444 внутренних ссылок, 0 missing targets. Combined summary:
+`local/evidence/20261008-p04-p03i-main-regression-04/summary.json`, SHA-256
+`d894caa25824a749d5903791df41eb5d2847700268072d64c16700a267250333`.
 
 # P03I static source-hash recheck — 2026-10-08
 
