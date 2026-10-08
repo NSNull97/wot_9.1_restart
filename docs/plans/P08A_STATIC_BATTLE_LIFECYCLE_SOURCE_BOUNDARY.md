@@ -13,6 +13,17 @@ native battle lifecycle, но не добавляет серверные callbac
 Карточка считается закрытой только для **source boundary**. Она не объявляет,
 что клиент вошёл в бой, создал arena или воспроизвёл десять боёв.
 
+## Bounded verifier (2026-10-08)
+
+Добавлен read-only `tools/p08a_lifecycle_static_audit.py`. Он принимает только
+четыре hash-bound JSON из P00/P01 и проверяет containment путей, UTF-8 JSON,
+запрет duplicate/non-finite значений, глубину/число элементов, exact hashes и
+размеры. В контракте проверены измеренные типы методов Account/Avatar/Arena/
+Vehicle и выбранные lifecycle properties; wire IDs по-прежнему требуют
+`UNKNOWN`. Targeted `tests.test_p08a_lifecycle_static_audit` — **8/8 PASS**.
+Receipt/CLI/test hashes записаны в
+`local/evidence/20261008-p08a-static-audit-01/metadata.json` (ignored).
+
 ## Источники и ограничения
 
 Единственный входной комплект — локальная квитанция
