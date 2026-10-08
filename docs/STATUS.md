@@ -9,7 +9,8 @@
 SHA-256 `2c22204a0db0fe8e4a42c27ff1c936a8d5dad9f19a4101d03ba5c6aa5b61b363`.
 P04 bundle/import/map targeted suite — **42/42 PASS**, P03I static audit —
 **5/5 PASS**, P09A TechTree static audit — **5/5 PASS**, P09A NationObjDumper
-static audit — **5/5 PASS**. Layout — 58 source files / 22 relocations,
+static audit — **7/7 PASS** including the measured nested XML format/access
+shape. Layout — 58 source files / 22 relocations,
 docs-link recheck — 444 внутренних ссылок, 0 missing targets. Combined summary:
 `local/evidence/20261008-p04-p03i-main-regression-05/summary.json`, SHA-256
 `46b8bbb3589d38b61a18697b07534781933e66bb0133f41fc517d057b2e221a8`.
@@ -2111,4 +2112,4 @@ server handoff остаются `NOT_RUN`; запуск клиента, gateway 
 [research](research/P09A_TECHTREE_HANDOFF_STATIC.md) и
 [evidence](evidence-index/P09A_TECHTREE_HANDOFF_STATIC.md).
 
-Добавлен bounded static audit `NationObjDumper`: envelope `nodes/displaySettings/scrollIndex` и 13 node fields подтверждены receipt `local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json`, `PASS_STATIC_NATION_DUMPER_OUTPUT`; вложенные payload-типы и native serializer остаются `NOT_RUN`.
+Добавлен bounded static audit `NationObjDumper`: envelope `nodes/displaySettings/scrollIndex` и 13 node fields подтверждены receipt `local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json`, `PASS_STATIC_NATION_DUMPER_OUTPUT`. Follow-up receipt `local/evidence/20261008-p09a-nested-shapes-01/receipt.json` и 7/7 targeted tests фиксируют только измеренные вложенные пути `unlockProps`/`displayInfo` и XML format conversions; payload-типы, native callback и serializer остаются `UNKNOWN/NOT_RUN`.

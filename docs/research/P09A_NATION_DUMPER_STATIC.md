@@ -12,6 +12,7 @@ client/service or assert that an account payload has this shape.
 | `NationObjDumper` envelope has `nodes`, `displaySettings`, `scrollIndex`; defaults are empty list, empty dict, `-1` | `VERIFIED_STATIC` | Hash-bound `dumpers.pyc` disassembly and `shape` in receipt | Does not prove wire or Scaleform transport |
 | `dump` maps each node through `_getVehicleData(node, data.getItem(node['id']))`, copies `_scrollIndex`, updates display settings for `SelectedNation.getIndex()` and returns the cache | `VERIFIED_STATIC` | Same receipt | No measured native callback bytes |
 | `_getVehicleData` emits the thirteen listed node keys and the statically visible value sources | `VERIFIED_STATIC` | Same receipt | Python value types and nested objects remain unknown |
+| `NationXMLDumper` consumes measured nested `unlockProps` indexes and `displayInfo` keys/paths | `VERIFIED_STATIC_FORMAT_ONLY` | Same hash-bound disassembly and nested receipt shape | Format conversions are not a Python or wire serializer; runtime values remain unknown |
 | Account/shop payload, native callback, rendered visibility and server handoff | `NOT_RUN` / `UNKNOWN` | No native capture in this card | Requires owner-gated research-copy run |
 
 ## Bounded shape
@@ -41,6 +42,28 @@ The nested `displayInfo` and `unlockProps` values, account ownership policy,
 outside this static audit. The result must not be used to manufacture a native
 account response.
 
+## Measured nested shape
+
+The same `dumpers.pyc` contains `NationXMLDumper`, which consumes the two
+fields after `_getVehicleData` has produced them. This extends the static guard
+without assigning a transport type:
+
+- `unlockProps` is read as a four-position result after `_makeTuple()`. The
+  builder iterates position `-1`, formats each member with the measured
+  `<id>{0:d}</id>` template, preserves `unlockProps[:-1]`, and appends the
+  joined text. The node template then consumes indexes `0..3` as
+  `parentID:d`, `unlockIdx:d`, `xpCost:n`, and `topIDs:>s`.
+- `displayInfo` is copied, then `info['lines']` is traversed. Each line reads
+  `inPins`, `outLiteral`, and `outPin`; each input pin reads `viaPins`. The
+  measured templates format via-pin positions as `{0[0]:n}`/`{0[1]:n}`, an
+  input-pin coordinate and joined child IDs, and the line's output literal,
+  output pin, row/column/position and rendered `lines` string.
+
+These are instruction paths and format conversions observed in the pinned
+disassembly. They do not prove whether a concrete value is an `int`, `float`,
+tuple, list, dict, or a native Scaleform value, and they do not prove callback
+bytes or account ownership semantics.
+
 ## Tool and receipt
 
 `tools/nation_dumper_static_audit.py` uses strict bounded UTF-8 JSON with
@@ -49,11 +72,12 @@ source-pool checks, path containment and independent #717 source hashes. It
 does not execute code. Targeted tests are in
 `tests/test_nation_dumper_static_audit.py`.
 
-Receipt: `local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json`,
-status `PASS_STATIC_NATION_DUMPER_OUTPUT`, SHA-256
-`6bb18e6f7662f822913d6c5f03def51be9b15d42f7660c2c75e28a53e4afe261`.
-CLI output SHA-256:
-`61787e7303f0b6cbbf9f43d66f7d44f113108de724c013ad3d978ebed7e5fd81`.
+Receipt: `local/evidence/20261008-p09a-nested-shapes-01/receipt.json`, status
+`PASS_STATIC_NATION_DUMPER_OUTPUT`, SHA-256
+`6a96bf9dc6d926906ae6758ce5db6d261cf387006f93d6ca3b336bcd62cc3e48`.
+The receipt includes the seven measured XML format constants and the bounded
+nested access shape. The prior envelope-only receipt remains at
+`local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json`.
 
 ## Limits and rollback
 

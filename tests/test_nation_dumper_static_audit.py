@@ -7,6 +7,7 @@ import unittest
 from tools.nation_dumper_static_audit import (
     NationDumperAuditError,
     audit,
+    inspect_nested_shape,
     inspect_shape,
     parse_json,
 )
@@ -41,6 +42,12 @@ class NationDumperStaticAuditTests(unittest.TestCase):
             "displayInfo", "unlockProps",
         ])
         self.assertEqual(report["native_account_shop_payload"], "NOT_RUN")
+        nested = report["nested_shape"]
+        self.assertEqual(nested["unlockProps"]["output_arity"], 4)
+        self.assertEqual([field["name"] for field in nested["unlockProps"]["format_fields"]],
+                         ["parentID", "unlockIdx", "xpCost", "topIDs"])
+        self.assertEqual(nested["displayInfo"]["line_key"], "lines")
+        self.assertEqual(nested["serializer_or_wire"], "NOT_RUN")
 
     def test_field_source_mutation_is_rejected(self):
         records = json.loads(json.dumps(self.records))
@@ -50,6 +57,25 @@ class NationDumperStaticAuditTests(unittest.TestCase):
         instruction["value"] = "wrong-id"
         with self.assertRaises(NationDumperAuditError):
             inspect_shape(records)
+
+    def test_nested_format_constant_mutation_is_rejected(self):
+        records = json.loads(json.dumps(self.records))
+        row = next(item for item in records
+                   if item.get("qualified_name") == "<module>.NationXMLDumper")
+        row["constants"][4] = "<displayInfo-mutated>"
+        with self.assertRaises(NationDumperAuditError):
+            inspect_nested_shape(records)
+
+    def test_nested_display_info_access_mutation_is_rejected(self):
+        records = json.loads(json.dumps(self.records))
+        row = next(item for item in records
+                   if item.get("qualified_name") ==
+                   "<module>.NationXMLDumper.__buildDisplayInfo")
+        instruction = next(item for item in row["instructions"]
+                           if item.get("value") == "lines")
+        instruction["value"] = "rows"
+        with self.assertRaises(NationDumperAuditError):
+            inspect_nested_shape(records)
 
     def test_duplicate_json_key_is_rejected(self):
         with self.assertRaises(NationDumperAuditError):
