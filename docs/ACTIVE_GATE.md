@@ -1,3 +1,17 @@
+# P06E bounded client-collision static recheck — 2026-10-08
+
+P06E теперь имеет `tools/p06e_client_collision_static_audit.py`: он hash-bind
+ит принятые #717 `bytecode.json` и P06E summary, проверяет bounded JSON
+duplicate/non-finite/depth/item/path guards и ровно **8/8** collision/flight
+методов. Восьмой замер — `collideDynamicAndStatic`, связующий dynamic/static
+segment path. Targeted `tests.test_p06e_client_collision_static_audit` —
+**6/6 PASS**; receipt —
+`local/evidence/20261008-p06e-static-audit-01/receipt.json` (ignored).
+Это только `PASS_STATIC_CLIENT_COLLISION_BOUNDARY_RECHECK`: BSP2/трансформации,
+penetration/damage, native server callback и client/server solver equivalence
+остаются `UNKNOWN/NOT_RUN`. Клиент, gateway, server и deployed service не
+запускались.
+
 ## P09B persistence/transaction boundary — isolated harness
 
 P09B теперь имеет bounded stdlib-SQLite harness в
