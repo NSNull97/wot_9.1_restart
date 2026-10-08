@@ -1,8 +1,8 @@
 # P07A — static visibility contract and leak boundary
 
-Status: **PLAN_READY; static source inventory PASS; native capture NOT_RUN**.
-Branch: `codex/p07a-visibility-boundary`.
-Base: `main` at `6ed8424` (2026-10-08).
+Status: **PASS_STATIC_VISIBILITY_SOURCE_AUDIT; native capture NOT_RUN**.
+Branch: `codex/p07a-static-audit`.
+Base: current `main` (2026-10-08).
 
 ## Goal
 
@@ -45,6 +45,17 @@ all declared CellMethod wire IDs as `UNKNOWN`. These declarations establish name
 shapes and exposure labels only; they do not establish serializer order,
 recipient filtering, ranges, timing, or line-of-sight semantics.
 
+The bounded recheck is now implemented by
+`tools/p07a_visibility_static_audit.py`. It re-reads the hash-bound P00/P01
+`contracts.json` and `sources.json`, asserts exactly eight declaration shapes,
+and re-hashes the six selected files in both permitted #717 copies. Receipt:
+`local/evidence/20261008-p07a-static-audit-01/receipt.json`, SHA-256
+`8dd8bfab40f7b9a53cb2e28da8b4e8b38a09c1f06a632fc157d7801ba4d25c76`.
+The targeted negative/positive suite is 9/9 PASS in
+`tests/test_p07a_visibility_static_audit.py`. JSON input is bounded with
+duplicate-key, non-finite, depth and item-count rejection; all paths are
+contained beneath the repository and client copies are read-only.
+
 ## Unknowns and safety boundary
 
 - Wire IDs, framing, serializer order, revision/sequence fields and callback
@@ -63,9 +74,10 @@ recipient filtering, ranges, timing, or line-of-sight semantics.
 
 ## Bounded execution plan
 
-### A. Static recheck (read-only)
+### A. Static recheck (read-only) — PASS
 
-1. Recompute the manifest and contracts receipt hashes.
+1. Recompute the manifest and contracts receipt hashes. **Done** by the
+   bounded verifier; the pinned hashes still match.
 2. Assert the eight selected declarations, exact primitive/container types,
    exposure flags, and `UNKNOWN` wire IDs.
 3. Reject duplicate names, unexpected visibility fields, non-finite or
