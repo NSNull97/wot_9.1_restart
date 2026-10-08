@@ -28,21 +28,22 @@ and mutated declarations are rejected. Wire IDs, serializer order, native
 LOS/occlusion, recipient filtering and server handoff remain
 **UNKNOWN/NOT_RUN**; no runtime/client/service was started.
 
-## Latest P04/P03I/P09A/P10A current-main recheck
+## Latest P04/P03I/P07A/P08A/P09A/P10A current-main recheck
 
-На code head `04e862b5d490a271346014df2603c55ffa1707fe`, который совпадал с
-`origin/main` на момент запуска, повторён UTF-8 full regression: **2152 теста,
+На code head `cf23e598f1dbbaa74d03b91c99cc107588be005f`, который совпадал с
+`origin/main` на момент запуска, повторён UTF-8 full regression: **2169 тестов,
 0 failures/errors, 4 known skips**. Лог
-`local/evidence/20261008-p10a-main-regression-07/full-python-utf8.txt`,
-SHA-256 `a5925bf0a53cf0597a84ad6fa3ff5c01676d640861c62e6920e1f84287bce4a8`.
+`local/evidence/20261008-p07a-p08a-main-regression-08/full-python-utf8.txt`,
+SHA-256 `9b7ba628dc077752c2e1c15f1481d23cdf95f5cf3b8f7e51ac67ef6fee533d5b`.
 P04 bundle/import/map targeted suite — **42/42 PASS**, P03I static audit —
-**5/5 PASS**, P09A TechTree static audit — **5/5 PASS**, P09A NationObjDumper
-static/nested audit — **7/7 PASS**, P10A training-room static audit — **6/6
-PASS**. Combined targeted run — **65/65 PASS**. Layout — 58 source files / 22
-relocations, docs-link recheck — 444 внутренних ссылок, 0 missing targets.
+**5/5 PASS**, P07A visibility — **9/9 PASS**, P08A lifecycle — **8/8 PASS**,
+P09A TechTree static audit — **5/5 PASS**, P09A NationObjDumper/static-nested
+audit — **7/7 PASS**, P10A training-room static audit — **6/6 PASS**. Combined
+targeted run — **82/82 PASS**. Layout — 58 source files / 22 relocations,
+docs-link recheck — 444 внутренних ссылок, 0 missing targets.
 Combined summary:
-`local/evidence/20261008-p10a-main-regression-07/summary.json`, SHA-256
-`0cc7dab5ad17729d9e69a44fce891f45c7b6ce0665e04115b25180516f73fd96`.
+`local/evidence/20261008-p07a-p08a-main-regression-08/summary.json`, SHA-256
+`7d45072f4547ad9db5c4afb500d3ddc3fd9fe6a8c82601b9c5cff79f9eb9346f`.
 
 # P03I static source-hash recheck — 2026-10-08
 
