@@ -2093,3 +2093,19 @@ cases PASS, собственная сводка профиля работает,
 требование добавлено в SCOPE/ARCHITECTURE и передано сайту. Его прежний
 NOT_RUN закрыт current primary17/18/19 и state/restart evidence; история
 уведомлений не является текущим статусом авторизации.
+
+## P09A static TechTree handoff — 2026-10-08
+
+Добавлен bounded read-only аудит `tools/techtree_handoff_audit.py`. По
+hash-bound #717 `TechTree.pyc` подтверждены формы
+`requestNationTreeData` (available/selected nation fields, `True`) и
+`getNationTreeData` (unknown-nation guard, index selection,
+`NationTreeData.load` → `dump`). Receipt:
+`local/evidence/20261008-p09a-techtree-static-01/receipt.json`,
+`PASS_STATIC_TECHTREE_HANDOFF_SOURCE`.
+
+Это статическая граница. Account/shop payload, callback bytes, screenshot и
+server handoff остаются `NOT_RUN`; запуск клиента, gateway и deployed service
+не выполнялся. См. [P09A static handoff plan](plans/P09A_TECHTREE_HANDOFF_STATIC.md),
+[research](research/P09A_TECHTREE_HANDOFF_STATIC.md) и
+[evidence](evidence-index/P09A_TECHTREE_HANDOFF_STATIC.md).

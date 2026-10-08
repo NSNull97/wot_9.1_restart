@@ -524,3 +524,16 @@ evidence, prior receipts and deployed services. No reset or force-push.
 
 A separate card for server-owned projectile flight and native tracer display
 on both clients. P03G aiming is accepted; the two-PC requirement remains open.
+
+## P09A static TechTree handoff
+
+`tools/techtree_handoff_audit.py` подтверждает hash-bound static method shape
+`requestNationTreeData` и `getNationTreeData` из #717 TechTree.pyc:
+available/selected nation fields, unknown-nation guard, index selection,
+`NationTreeData.load` и `dump`. Receipt:
+`local/evidence/20261008-p09a-techtree-static-01/receipt.json`,
+`PASS_STATIC_TECHTREE_HANDOFF_SOURCE`.
+
+Это только source boundary: account/shop payload, callback bytes, screenshot и
+server handoff остаются `NOT_RUN`; native client/service не запускались. См.
+[P09A static handoff evidence](evidence-index/P09A_TECHTREE_HANDOFF_STATIC.md).
