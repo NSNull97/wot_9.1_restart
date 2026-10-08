@@ -2,16 +2,17 @@
 
 ## Latest P04/P03I/P09A current-main recheck
 
-На code head `bb42cb52ce779f9019ff9ff4d283aa4b3b742115`, который совпадал с
-`origin/main` на момент запуска, повторён UTF-8 full regression: **2139 тестов,
+На code head `0c9b33c882ecc48cdaa36f1df77e4ec77cc0d6a2`, который совпадал с
+`origin/main` на момент запуска, повторён UTF-8 full regression: **2144 теста,
 0 failures/errors, 4 known skips**. Лог
-`local/evidence/20261008-p09a-static-techtree-full-01/full-python-utf8.txt`,
-SHA-256 `66e1643f737cd975233748363e7c67a666c5740f6daff5a08ad16c5dc5d1aed2`.
+`local/evidence/20261008-p04-p03i-main-regression-05/full-python-utf8.txt`,
+SHA-256 `2c22204a0db0fe8e4a42c27ff1c936a8d5dad9f19a4101d03ba5c6aa5b61b363`.
 P04 bundle/import/map targeted suite — **42/42 PASS**, P03I static audit —
-**5/5 PASS**, P09A TechTree static audit — **5/5 PASS**. Layout — 58 source
-files / 22 relocations, docs-link recheck — 444 внутренних ссылок, 0 missing targets. Combined summary:
-`local/evidence/20261008-p04-p03i-main-regression-04/summary.json`, SHA-256
-`d894caa25824a749d5903791df41eb5d2847700268072d64c16700a267250333`.
+**5/5 PASS**, P09A TechTree static audit — **5/5 PASS**, P09A NationObjDumper
+static audit — **5/5 PASS**. Layout — 58 source files / 22 relocations,
+docs-link recheck — 444 внутренних ссылок, 0 missing targets. Combined summary:
+`local/evidence/20261008-p04-p03i-main-regression-05/summary.json`, SHA-256
+`46b8bbb3589d38b61a18697b07534781933e66bb0133f41fc517d057b2e221a8`.
 
 # P03I static source-hash recheck — 2026-10-08
 
@@ -2109,3 +2110,5 @@ server handoff остаются `NOT_RUN`; запуск клиента, gateway 
 не выполнялся. См. [P09A static handoff plan](plans/P09A_TECHTREE_HANDOFF_STATIC.md),
 [research](research/P09A_TECHTREE_HANDOFF_STATIC.md) и
 [evidence](evidence-index/P09A_TECHTREE_HANDOFF_STATIC.md).
+
+Добавлен bounded static audit `NationObjDumper`: envelope `nodes/displaySettings/scrollIndex` и 13 node fields подтверждены receipt `local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json`, `PASS_STATIC_NATION_DUMPER_OUTPUT`; вложенные payload-типы и native serializer остаются `NOT_RUN`.
