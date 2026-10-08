@@ -127,12 +127,16 @@ crash/restart recovery и native acceptance остаются **NOT_RUN**.
 
 # P10A training-room static boundary — 2026-10-08
 
-P10A зафиксировала docs-only static boundary по P00/P01 `account.def`,
-`prebattle.def`, `unitmgr.def` и hash-bound client manifest. Доступны только
-имена/формы `createTraining`, `createDevPrebattle`, invites, roster/team/player
-ready, `onArenaCreated` и `onArenaFinished`; opaque `PYTHON` roster payload
-остаётся bounded/UNKNOWN. Кандидатная state machine — **INFERRED / PLAN_ONLY**,
-не native порядок.
+P10A закрыла bounded static contract audit по P00/P01 `account.def`,
+`prebattle.def`, `unitmgr.def` и hash-bound client manifest. Аудитор проверяет
+7 Account base methods, 5 Account client methods, 21 Prebattle base methods и
+9 source entries по exact byte count/SHA-256; targeted suite — **6/6 PASS**.
+Доступны только имена/формы `createTraining`, `createDevPrebattle`, invites,
+roster/team/player ready, `onArenaCreated` и `onArenaFinished`; opaque `PYTHON`
+roster payload остаётся bounded/UNKNOWN. Receipt:
+`local/evidence/20261008-p10a-static-audit-01/receipt.json`, SHA-256
+`38cba6df11e6e7caac872f69cf038197a7de56b6956ae5182172f41b28549d50`.
+Кандидатная state machine — **INFERRED / PLAN_ONLY**, не native порядок.
 
 Wire IDs/order, invite accept/password, room owner/revisions, cancel-vs-start
 race, two-room isolation, battle admission, queue/matchmaker/platoons и native
