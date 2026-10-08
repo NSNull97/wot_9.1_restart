@@ -509,6 +509,31 @@ ammo `0` должны fail-closed без mutation. Missing framing/callback ос
 `docs/research/P03I_VEHICLE_PROFILE_LOADOUT.md`,
 `docs/evidence-index/P03I.md`.
 
+## P03I bounded native MS-1 queue smoke — 2026-10-08
+
+После ручного запуска настоящего research-клиента выполнен один клик обычной
+кнопки «В бой!» на MS-1, затем клиент закрыт владельцем. Свежая overlay-копия
+восстановлена **PASS**, native EXE завершился с code `0`, CAPTCHA guard не
+заблокировал вызовы, capture сохранил 386 пакетов. Receipt:
+`local/evidence/20261008-p03i-native-ms1-queue-01/native-gate-audit.json`.
+
+Это **PASS_NATIVE_MAP_DRIVE_QUEUE_SMOKE / PASS_SERVER_SIDE_BATTLE_ENTRY**:
+gateway span фиксирует request `202`, command `700`, выбранный native
+inventory `1`, `accepted=true`; далее видны `01_karelia`, worker ready,
+avatar/vehicle creation, bind и первый input. Runtime trace видит
+`selected_inventory_id=1`, `BattleQueue`, `PlayerAvatar.onEnterWorld`,
+`onSpaceLoaded` и `userSeesWorld`.
+
+Строгая native-приёмка P03I остаётся **NOT_RUN**: этот прогон идёт через
+совместимый map-drive маршрут и не даёт независимого декодирования live
+Account body (оба `INT16`, `INT64` машины, оба `INT32` gameplay/arena) и
+аргументов native `onEnqueued(queueType)`. Нельзя выдавать hard-coded
+`map_request=0` из map-drive лога за доказательство всех полей исходного
+CMD700. IS-7, экипаж, снаряды, оборудование и owner screenshot остаются
+**NOT_RUN**.
+
+План этой follow-up карточки: [P03I native MS-1 queue](plans/P03I_NATIVE_MS1_QUEUE.md).
+
 # Параллельная карточка — P04, 2026-10-07: typed content import
 
 В отдельной рабочей копии `codex/p04-content-import` реализован bounded
