@@ -1,3 +1,16 @@
+# P06E bounded client-collision static recheck — 2026-10-08
+
+Добавлен bounded read-only `tools/p06e_client_collision_static_audit.py`.
+Он проверяет SHA-256 принятого #717 bytecode receipt и P06E summary, не
+исполняя client bytecode, и измеряет ровно восемь методов collision/flight,
+включая пропущенный ранее wrapper `collideDynamicAndStatic`. Targeted suite
+`tests.test_p06e_client_collision_static_audit` — **6/6 PASS**; receipt
+`local/evidence/20261008-p06e-static-audit-01/receipt.json` имеет статус
+`PASS_STATIC_CLIENT_COLLISION_BOUNDARY_RECHECK`. Duplicate/non-finite/depth/item,
+path и mutation controls закрыты. Native server hit, penetration/damage,
+callback bytes и solver equivalence остаются `UNKNOWN/NOT_RUN`; клиент,
+gateway и deployed service не запускались.
+
 # Overnight verification after P09B harness — 2026-10-08
 
 ## P08A bounded lifecycle static recheck — 2026-10-08

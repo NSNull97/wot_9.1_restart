@@ -31,6 +31,15 @@ The method entries were hashed after canonical JSON serialization:
 | `getCollidableEntities` | `scripts/client/ProjectileMover.py:645` | iterates started arena vehicles, applies `segmentMayHitVehicle`, excludes IDs, and adds detached turrets |
 | `ProjectileMover.__notifyProjectileHit` | `scripts/client/ProjectileMover.py:200` | calls `BigWorld.player().inputHandler.onProjectileHit(hitPosition, caliber, isOwnShot)` |
 
+The bounded recheck also measures the wrapper that completes this call chain:
+
+| `collideDynamicAndStatic` | `scripts/client/ProjectileMover.py:686` | supplies `getCollidableEntities` to `collideVehiclesAndStaticScene`, joining the dynamic and static segment paths |
+
+The accepted summary predates this recheck and therefore contains seven
+method pins. The new receipt derives and hash-checks the eighth wrapper against
+the same bytecode source, so the measured set is exactly eight entries while
+the original summary remains hash-bound and immutable.
+
 These are source observations, not a reconstructed penetration or damage
 algorithm. In particular, the client callback carries a hit position, caliber
 and own-shot flag; it does not carry a server-owned target entity, armor layer,
@@ -60,11 +69,17 @@ unavailable.
 
 ## Checks, rollback, next step
 
-The receipt was generated with a bounded JSON read of the existing evidence;
-no arbitrary code or client bytecode was executed. The exact method set and
-source SHA were checked, and `git diff --check`/`git show --check` are required
-for this docs-only card. Rollback is a single commit revert and removal of the
-ignored receipt directory; no runtime state changes.
+The bounded verifier is
+`tools/p06e_client_collision_static_audit.py`; its targeted suite is **6/6
+PASS**. Receipt:
+`local/evidence/20261008-p06e-static-audit-01/receipt.json` (ignored), with
+source SHA `502581a94b4be46d4db885e5922038287b38ff155138cc37ebc24e2216ce7625`
+and accepted summary SHA
+`61ddf923d1b276176fe8b346590228cd00ab51acefc5f1bce94eb968ec364839`.
+Duplicate/non-finite/depth/item/path controls and mutation negatives pass. No
+arbitrary code or client bytecode was executed. `git diff --check` and
+`git show --check` remain required for this card. Rollback is a single commit
+revert plus removal of the ignored receipt directory; no runtime state changes.
 
 Single next step: correlate one owner-gated native two-MS-1 impact with this
 client boundary and feed only the server-owned rows into the P06D auditor.
