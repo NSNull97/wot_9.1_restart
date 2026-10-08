@@ -35,23 +35,23 @@ revisions and teardown correlation. Do not implement guessed room or
 matchmaker routes before that capture.
 # ACTIVE_GATE — 2026-10-08
 
-## Latest P04/P03I/P09A current-main recheck
+## Latest P04/P03I/P09A/P10A current-main recheck
 
 The latest UTF-8 full regression was run on code head
-`77b41c0176237ecd871c4222a4d70682918cc13b`, matching `origin/main` at test
-time: **2146 tests, 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-p04-p03i-main-regression-06/full-python-utf8.txt`
+`04e862b5d490a271346014df2603c55ffa1707fe`, matching `origin/main` at test
+time: **2152 tests, 0 failures/errors, 4 known skips**. Log:
+`local/evidence/20261008-p10a-main-regression-07/full-python-utf8.txt`
 (SHA-256
-`a22adca571ada0cd5378dabae071f3962c10e947f245e945aa95f7a19bbc07bf`).
+`a5925bf0a53cf0597a84ad6fa3ff5c01676d640861c62e6920e1f84287bce4a8`).
 `server/check_layout.py` remains `PASS_SERVER_SOURCE_LAYOUT` with 58 source
 files and 22 relocations (receipt SHA
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
 bounded docs-link recheck is `PASS_DOC_LINK_RECHECK` for 444 repository links,
 0 missing targets and 105 skipped external/absolute links (receipt SHA
-`f1d3ec48e145516340fd02183a6e97b936e3fdf8c3de09870d7502ffd29cbb46`). The
+`601dd9d2bd948717904bf4ea0965df568469856ad762219a126232ce91a983a7`). The
 combined recheck summary is
-`local/evidence/20261008-p04-p03i-main-regression-06/summary.json` (SHA-256
-`207e4a31ef4ffe0dc42eabcbe5b81b0654b76b8b7cf86dd18fc1ffd27d22f2a9`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS**, P09A TechTree static **5/5 PASS**, P09A NationObjDumper static **5/5 PASS** and nested-shape checks **7/7 PASS**. The docs-link recheck is **444 links, 0 missing** (105 skipped external/absolute).
+`local/evidence/20261008-p10a-main-regression-07/summary.json` (SHA-256
+`0cc7dab5ad17729d9e69a44fce891f45c7b6ce0665e04115b25180516f73fd96`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS**, P09A TechTree static **5/5 PASS**, P09A NationObjDumper/nested static **7/7 PASS**, P10A training-room static **6/6 PASS**, plus a combined targeted run **65/65 PASS**. The docs-link recheck is **444 links, 0 missing** (105 skipped external/absolute).
 
 ## Overnight verification
 
