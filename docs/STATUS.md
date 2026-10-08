@@ -1,5 +1,25 @@
 # Tactical hangar UI audit — 2026-10-08
 
+## P03J native map-drive aim/tracer — 2026-10-08
+
+Карточка закрыла runtime-разрыв после наблюдения «выброс после выстрела, без
+трассера и КД». Причина была в двух местах: native fire приходил в составном
+Avatar envelope вместе с aim/movement body, а server callback-и выстрела,
+трассера и БК/КД нельзя было склеивать в один body. Теперь bounded parser
+выделяет только contiguous fire-prefix и валидирует хвост штатным map-drive
+parser; server queues accepted ammo/reload, `Avatar.showShooting` и
+`Avatar.showTracer` отдельными reliable body. `stopTracer` и reload completion
+публикуются только по server monotonic deadline.
+
+Изолированный pinned gateway build07: **372/372 Rust tests PASS**, EXE SHA-256
+`1fa92e383d80f1118b4ac95dc7b3d08b5ebbfcf69446f851bfb59832cdcb5b45`;
+deployed service сейчас работает на этом SHA. Runtime receipt
+`local/evidence/20261008-p03j-native-aim-tracer-06/`: visible client exit 0,
+8 accepted shots (`20 -> 12`), 8 reload completions (`0.0/2.5`), 8 tracer
+stops, zero `INTERACTIVE_REJECT`; owner сообщил, что последний видимый прогон
+теперь выглядит нормально. Hit/damage, полноценная видимость второго клиента
+и equipment остаются **NOT_RUN**.
+
 На ветке `codex/p02-hangar-tactical-ui-audit` выполнен только статический
 аудит requested Tactical Steel UI. Приклеенный запрос обрывается на
 `EquipmentPresentationAdapter`, поэтому критерии приёмки после этой строки не

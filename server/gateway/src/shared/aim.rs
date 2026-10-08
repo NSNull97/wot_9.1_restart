@@ -14,7 +14,7 @@ pub(super) const GUN: [f32; 3] = [-0.238144, 0.234668, 0.410043];
 /// Reproduce the pinned VehicleGunRotator launch transform on the server's
 /// flat hull. The native client may replace only the rendered muzzle point;
 /// the reference origin remains this gun-pivot position.
-pub(super) fn shot_geometry(
+pub(crate) fn shot_geometry(
     position: [f32; 3], hull_yaw: f32, turret_yaw: f32, pitch: f32, speed: f32,
 ) -> ([f32; 3], [f32; 3]) {
     let rotate_y = |v: [f32; 3], yaw: f32| {

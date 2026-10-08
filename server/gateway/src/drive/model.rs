@@ -12,6 +12,28 @@ fn owned(own:u32)->io::Result<()> {
     if own!=crate::arena_vehicle091::VEHICLE_ENTITY_ID {return Err(invalid());}Ok(())
 }
 
+/// Parse the measured native aim records without treating their target as an
+/// authoritative pose. The caller turns this into a typed server intent.
+pub fn aim_intent(body:&[u8],own:u32)->io::Result<Option<crate::gateway091::shared::aim::Intent>> {
+    owned(own)?;
+    let id=*body.first().ok_or_else(invalid)?;
+    let expected=match id {0x8e=>8,0x8f=>12,0x0f=>16,_=>return Ok(None)};
+    if body.len()!=3+expected || body[1..3]!=(expected as u16).to_le_bytes() {return Err(invalid());}
+    let args=if id==0x0f {
+        if body[3..7]!=own.to_le_bytes(){return Err(invalid());}&body[7..]
+    } else {&body[3..]};
+    let mut values=[0f32;3];
+    for n in 0..(args.len()/4) {
+        let start=n*4;
+        let raw=args.get(start..start+4).ok_or_else(invalid)?;
+        values[n]=f32::from_le_bytes(raw.try_into().map_err(|_|invalid())?);
+    }
+    let intent=if id==0x8e {
+        crate::gateway091::shared::aim::Intent::Hold{yaw:values[0],pitch:values[1]}
+    } else {crate::gateway091::shared::aim::Intent::Point([values[0],values[1],values[2]])};
+    intent.validate()?;Ok(Some(intent))
+}
+
 /// Avatar client exposed method15: ID0x4a FIXED32, VECTOR3+VECTOR3+f32+f32.
 /// The native method-size lookup uses its fixed argument size: no length byte.
 /// Selection13 routes the method to the actual native PlayerAvatar. Here the

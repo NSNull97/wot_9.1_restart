@@ -3,15 +3,25 @@
 //! Codecs consume ONLY server-owned identity, spawn and physics worker state.
 use std::{io,time::{Instant,Duration}};
 use crate::{arena_vehicle091 as vehicle,map_drive_worker091::{Input,Pose,MapSpec}};
+use crate::gateway091::shared::{aim,projectile};
 pub const OWN:u32=vehicle::VEHICLE_ENTITY_ID;
 pub const AVATAR:u32=crate::arena_control091::AVATAR_ENTITY_ID;
 pub const MAX_ARENAS:u32=32;
 pub const WORLD_SECONDS:u32=3600;
+pub const BINDING_BYTES:usize=160;
 fn bad()->io::Error{io::Error::new(io::ErrorKind::InvalidData,"ordinary map-drive contract")}
+fn owned(own:u32)->io::Result<()> {if own!=vehicle::VEHICLE_ENTITY_ID{Err(bad())}else{Ok(())}}
 fn var16(id:u8,args:&[u8])->io::Result<Vec<u8>>{if args.is_empty() || args.len()>512{return Err(bad());}
     let mut b=vec![id];b.extend((args.len() as u16).to_le_bytes());b.extend(args);Ok(b)}
 fn string(b:&mut Vec<u8>,x:&[u8])->io::Result<()>{if x.len()>=255{return Err(bad());}b.push(x.len() as u8);b.extend(x);Ok(())}
 fn f3(b:&mut Vec<u8>,v:[f32;3]){for x in v{b.extend(x.to_le_bytes());}}
+fn packed_angles(state:&aim::State)->io::Result<u16>{
+    if !state.yaw.is_finite() || !state.pitch.is_finite() || state.yaw.abs()>std::f32::consts::PI
+        || !(aim::MIN_PITCH..=aim::MAX_PITCH).contains(&state.pitch){return Err(bad());}
+    let yaw=((state.yaw as f64+std::f64::consts::PI)*1024./(2.*std::f64::consts::PI)).round() as u16 & 1023;
+    let pitch=((state.pitch as f64-aim::MIN_PITCH as f64)*63./(aim::MAX_PITCH as f64-aim::MIN_PITCH as f64)).round() as u16;
+    Ok((yaw<<6)|pitch)
+}
 // #717 PE d6da90/d6e490 reverse raw Direction3D into EntityManager YPR;
 // named Entity getters +28/+2c/+30 prove yaw/pitch/roll. See map-drive/wire/
 // direction-contract-01. Only native createCellPlayer/NoAliasDetailed use RPY;
@@ -70,7 +80,61 @@ pub fn binding(space:u32,p:&Pose)->io::Result<Vec<u8>>{
     let mut period=vec![0x80,2,b'(',b'K',3,b'G'];period.extend((100f64+WORLD_SECONDS as f64).to_be_bytes());
     period.push(b'G');period.extend((WORLD_SECONDS as f64).to_be_bytes());period.extend(b"Nt.");update(&mut b,3,&period);
     b.push(0x14);b.extend(AVATAR.to_le_bytes());b.extend(space.to_le_bytes());b.extend(OWN.to_le_bytes());for _ in 0..6{b.extend(0f32.to_le_bytes());}
-    b.extend(own_position(p)?);if b.len()!=122{return Err(bad());}Ok(b)
+    b.extend(own_position(p)?);
+    // Native Avatar.updateTargetingInfo starts the original gun rotator. The
+    // values are the pinned MS-1 resource profile; they are not client state.
+    b.extend([0x13,0x4b]);
+    for value in [0f32,0f32,aim::YAW_RATE,aim::PITCH_RATE,1f32,
+        0.16 / 1f32.to_radians(),0.42 * 3.6,0.42 / 1f32.to_radians(),2.5] {
+        b.extend(value.to_le_bytes());
+    }
+    if b.len()!=BINDING_BYTES{return Err(bad());}Ok(b)
+}
+
+pub fn aim_update(own:u32,state:&aim::State)->io::Result<Vec<u8>> {
+    owned(own)?;let packed=packed_angles(state)?;
+    let mut b=vec![0x12];b.extend(own.to_le_bytes());b.push(0xa0);b.extend(packed.to_le_bytes());b.push(0x13);
+    if b.len()!=9{return Err(bad());}Ok(b)
+}
+
+#[derive(Clone,Debug,PartialEq)]
+pub struct MapProjectile {
+    pub sequence:u32,pub origin:[f32;3],pub velocity:[f32;3],pub gravity:f32,
+    pub max_distance:f32,pub launched:Instant,pub flight_time:Duration,
+    pub terminal:[f32;3],pub stopped:bool,
+}
+impl MapProjectile {
+    pub fn launch(sequence:u32,pose:&Pose,state:&aim::State,now:Instant)->io::Result<Self>{
+        if sequence==0 || sequence as usize>crate::battle091::fire::MAX_COMMANDS*crate::battle091::fire::MS1_INITIAL_AMMO as usize
+            || pose.position.iter().any(|v|!v.is_finite()) || pose.direction.iter().any(|v|!v.is_finite()) {return Err(bad());}
+        let (origin,velocity)=aim::shot_geometry(pose.position,pose.direction[0],state.yaw,state.pitch,projectile::MS1_SPEED);
+        let velocity=projectile::regularize_horizontal_x(velocity)?;
+        let flight_time=projectile::solve_range_time(velocity,projectile::MS1_GRAVITY,projectile::MS1_MAX_DISTANCE)?;
+        let terminal=projectile::position_at(origin,velocity,projectile::MS1_GRAVITY,flight_time.as_secs_f32());
+        if terminal.iter().any(|v|!v.is_finite()){return Err(bad());}
+        Ok(Self{sequence,origin,velocity,gravity:projectile::MS1_GRAVITY,max_distance:projectile::MS1_MAX_DISTANCE,
+            launched:now,flight_time,terminal,stopped:false})
+    }
+    pub fn expired(&self,now:Instant)->io::Result<bool>{
+        if now<self.launched{return Err(bad());}Ok(now.duration_since(self.launched)>=self.flight_time)
+    }
+}
+pub fn shooting(own:u32)->io::Result<Vec<u8>>{
+    owned(own)?;let mut b=vec![0x12];b.extend(own.to_le_bytes());b.extend([0x3b,1,0x13]);Ok(b)
+}
+pub fn tracer_start(own:u32,p:&MapProjectile)->io::Result<Vec<u8>>{
+    owned(own)?;if p.stopped || p.sequence==0 || !p.origin.iter().all(|v|v.is_finite())
+        || !p.velocity.iter().all(|v|v.is_finite()) || !p.gravity.is_finite() || p.gravity<=0.
+        || !p.max_distance.is_finite() || p.max_distance<=0. {return Err(bad());}
+    let mut b=vec![0x13,0x4c];b.extend(own.to_le_bytes());b.extend(p.sequence.to_le_bytes());b.push(2);
+    for v in p.origin {b.extend(v.to_le_bytes());}for v in p.velocity {b.extend(v.to_le_bytes());}
+    b.extend(p.gravity.to_le_bytes());b.extend(p.max_distance.to_le_bytes());
+    if b.len()!=43{return Err(bad());}Ok(b)
+}
+pub fn tracer_stop(p:&MapProjectile)->io::Result<Vec<u8>>{
+    if p.sequence==0 || !p.stopped || !p.terminal.iter().all(|v|v.is_finite()){return Err(bad());}
+    let mut b=vec![0x13,0x48];b.extend(p.sequence.to_le_bytes());for v in p.terminal {b.extend(v.to_le_bytes());}
+    if b.len()!=18{return Err(bad());}Ok(b)
 }
 /// A/B policy: retain the original one-time binding callback, then feed the
 /// native Vehicle filter without resetting Avatar's live matrix provider.
@@ -123,7 +187,7 @@ pub fn late_queue_info(payload:&[u8])->io::Result<Option<bool>>{
     Ok(Some(payload.len()==24))
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]pub enum Method{Move(u8,Input),UnsupportedMove(u8),CorrectionAck,IgnoredTelemetry(u8),UnsupportedAim(u8),UnsupportedCameraAutorotation(bool),Leave}
+#[derive(Clone,Copy,Debug,PartialEq)]pub enum Method{Move(u8,Input),UnsupportedMove(u8),CorrectionAck,IgnoredTelemetry(u8),Aim(aim::Intent),UnsupportedAim(u8),UnsupportedCameraAutorotation(bool),Leave}
 pub fn driving_input(flags:u8)->io::Result<Input>{
     // Source #717 ordinary keyboard flags. Cruise16/32 are NOT brake bits;
     // Unsupported cruise is not interpreted as movement; the whole-envelope
@@ -158,6 +222,7 @@ pub fn methods(b:&[u8])->io::Result<Vec<Method>>{
                         match value{0=>Method::UnsupportedCameraAutorotation(false),1=>Method::UnsupportedCameraAutorotation(true),_=>return Err(bad())}
                     },
                     0x99=>{if args!=[0] && !(args.len()==68 && args[0]==1){return Err(bad());}Method::Leave},
+                    0x8e|0x8f|0x0f=>Method::Aim(crate::map_drive091::aim_intent(&b[start..at],OWN)?.ok_or_else(bad)?),
                     _=>{crate::map_drive091::methods(&b[start..at],OWN)?;Method::UnsupportedAim(id)},
                 }
             },_=>return Err(bad()),
@@ -169,10 +234,12 @@ pub fn methods(b:&[u8])->io::Result<Vec<Method>>{
 #[derive(Clone,Debug,PartialEq)]
 pub struct Arena {pub phase:Phase,pub generation:u32,pub requested_at:Instant,pub map:Option<MapSpec>,pub pose:Option<Pose>,
     pub input:Input,pub worker_seq:u32,pub native_tick:u32,pub created:Option<Instant>,pub last_request:Option<Instant>,
-    pub pending:bool,pub correction_acks:u16,pub telemetry:u32,pub commands:u32,pub aim:u32,pub return_mask:u8,pub queue_info_requests:u8}
+    pub pending:bool,pub correction_acks:u16,pub telemetry:u32,pub commands:u32,pub aim:u32,pub gun:aim::State,
+    pub shot_sequence:u32,pub projectiles:Vec<MapProjectile>,pub return_mask:u8,pub queue_info_requests:u8}
 impl Arena {
     pub fn new(now:Instant)->Self{Self{phase:Phase::Idle,generation:0,requested_at:now,map:None,pose:None,input:Input::STOP,
-        worker_seq:0,native_tick:1000,created:None,last_request:None,pending:false,correction_acks:0,telemetry:0,commands:0,aim:0,return_mask:0,queue_info_requests:0}}
+        worker_seq:0,native_tick:1000,created:None,last_request:None,pending:false,correction_acks:0,telemetry:0,commands:0,aim:0,gun:aim::State::new(),
+        shot_sequence:0,projectiles:Vec::new(),return_mask:0,queue_info_requests:0}}
     pub fn join(&mut self,now:Instant)->io::Result<()>{
         if self.phase!=Phase::Idle || self.generation>=MAX_ARENAS || now<self.requested_at{return Err(bad());}
         let generation=self.generation+1;*self=Self::new(now);self.generation=generation;self.phase=Phase::Queued;Ok(())
@@ -189,6 +256,20 @@ impl Arena {
             Ok(now.duration_since(last)>=crate::map_drive_worker091::STEP
                 && 1000+(now.duration_since(created).as_millis()/100) as u32>self.native_tick)
         }else{Ok(now.duration_since(created)>=crate::map_drive_worker091::STEP)}
+    }
+    pub fn launch_projectile(&mut self,now:Instant)->io::Result<MapProjectile>{
+        let pose=self.pose.as_ref().ok_or_else(bad)?;
+        self.shot_sequence=self.shot_sequence.checked_add(1).ok_or_else(bad)?;
+        if self.shot_sequence as usize>crate::battle091::fire::MAX_COMMANDS*crate::battle091::fire::MS1_INITIAL_AMMO as usize{return Err(bad());}
+        let projectile=MapProjectile::launch(self.shot_sequence,pose,&self.gun,now)?;
+        self.projectiles.push(projectile.clone());Ok(projectile)
+    }
+    pub fn expired_projectiles(&mut self,now:Instant)->io::Result<Vec<MapProjectile>>{
+        let mut expired=Vec::new();let mut active=Vec::with_capacity(self.projectiles.len());
+        for mut p in self.projectiles.drain(..){
+            if p.expired(now)? {p.stopped=true;expired.push(p);} else {active.push(p);}
+        }
+        self.projectiles=active;Ok(expired)
     }
 }
 
@@ -235,7 +316,7 @@ impl Arena {
         assert_eq!(&b[31..33],&[19,74]);assert_eq!(&b[7..19],&b[33..45]);
         assert_eq!(&b[19..23],&b[53..57]);assert_eq!(&b[23..27],&b[49..53]);assert_eq!(&b[27..31],&b[45..49]);
         assert_eq!(&b[57..61],&(-2f32).to_le_bytes());
-        assert_eq!(binding(2,&p).unwrap().len(),122);assert!(publication(1000,&p).is_err());
+        assert_eq!(binding(2,&p).unwrap().len(),BINDING_BYTES);assert!(publication(1000,&p).is_err());
         for axis in 0..3{let mut bad=pose();bad.position[axis]=f32::NAN;assert!(publication(1001,&bad).is_err());}
     }
     #[test]fn native_cell_rpy_basis_reaches_named_engine_yaw_pitch_roll(){
@@ -348,9 +429,11 @@ impl Arena {
         assert_eq!(next.len(),31);assert_eq!(next,&old[..31]);
         assert_eq!(PUBLICATION_POLICY,"initial_own_callback_then_entity_only_v1");
     }
-    #[test]fn initial_binding_remains_exact_delivered_ride11_122_bytes(){
-        let p=Pose{position:[f32::from_bits(0xc1700135),f32::from_bits(0x4145c8c0),f32::from_bits(0x41200594)],direction:[f32::from_bits(0x39c10b79),f32::from_bits(0x3ac6104a),f32::from_bits(0xbca57ff1)],speed:f32::from_bits(0x382be150),rspeed:f32::from_bits(0xb6533d09),contacts:6,linear_velocity:[0.;3],angular_velocity:[0.;3],wheel_contact_masks:[63;6]};let expected:[u8;122]=[0x02,0x0a,0x03,0xe8,0x03,0x00,0x00,0x13,0x58,0x0a,0x07,0x08,0x80,0x02,0x4a,0x03,0x00,0x10,0x09,0x2e,0x13,0x58,0x1c,0x03,0x1a,0x80,0x02,0x28,0x4b,0x03,0x47,0x40,0xac,0xe8,0x00,0x00,0x00,0x00,0x00,0x47,0x40,0xac,0x20,0x00,0x00,0x00,0x00,0x00,0x4e,0x74,0x2e,0x14,0x02,0x00,0x10,0x09,0x01,0x00,0x00,0x00,0x03,0x00,0x10,0x09,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x13,0x4a,0x35,0x01,0x70,0xc1,0xc0,0xc8,0x45,0x41,0x94,0x05,0x20,0x41,0x79,0x0b,0xc1,0x39,0x4a,0x10,0xc6,0x3a,0xf1,0x7f,0xa5,0xbc,0x50,0xe1,0x2b,0x38,0x09,0x3d,0x53,0xb6];
-        let actual=binding(1,&p).unwrap();assert_eq!(actual,expected);
+    #[test]fn initial_binding_includes_native_targeting_info_after_delivered_ride11_prefix(){
+        let p=Pose{position:[f32::from_bits(0xc1700135),f32::from_bits(0x4145c8c0),f32::from_bits(0x41200594)],direction:[f32::from_bits(0x39c10b79),f32::from_bits(0x3ac6104a),f32::from_bits(0xbca57ff1)],speed:f32::from_bits(0x382be150),rspeed:f32::from_bits(0xb6533d09),contacts:6,linear_velocity:[0.;3],angular_velocity:[0.;3],wheel_contact_masks:[63;6]};let expected_prefix:[u8;122]=[0x02,0x0a,0x03,0xe8,0x03,0x00,0x00,0x13,0x58,0x0a,0x07,0x08,0x80,0x02,0x4a,0x03,0x00,0x10,0x09,0x2e,0x13,0x58,0x1c,0x03,0x1a,0x80,0x02,0x28,0x4b,0x03,0x47,0x40,0xac,0xe8,0x00,0x00,0x00,0x00,0x00,0x47,0x40,0xac,0x20,0x00,0x00,0x00,0x00,0x00,0x4e,0x74,0x2e,0x14,0x02,0x00,0x10,0x09,0x01,0x00,0x00,0x00,0x03,0x00,0x10,0x09,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x13,0x4a,0x35,0x01,0x70,0xc1,0xc0,0xc8,0x45,0x41,0x94,0x05,0x20,0x41,0x79,0x0b,0xc1,0x39,0x4a,0x10,0xc6,0x3a,0xf1,0x7f,0xa5,0xbc,0x50,0xe1,0x2b,0x38,0x09,0x3d,0x53,0xb6];
+        let mut expected=expected_prefix.to_vec();expected.extend([0x13,0x4b]);
+        for value in [0f32,0f32,aim::YAW_RATE,aim::PITCH_RATE,1f32,0.16 / 1f32.to_radians(),0.42 * 3.6,0.42 / 1f32.to_radians(),2.5] {expected.extend(value.to_le_bytes());}
+        let actual=binding(1,&p).unwrap();assert_eq!(actual,expected);assert_eq!(actual.len(),BINDING_BYTES);
         assert_eq!(&actual[51..64],&[0x14,2,0,16,9,1,0,0,0,3,0,16,9]);
         assert_eq!(&actual[64..88],&[0;24]);assert_eq!(&actual[88..90],&[0x13,0x4a]);
     }
