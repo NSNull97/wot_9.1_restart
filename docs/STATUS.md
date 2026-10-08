@@ -2,18 +2,18 @@
 
 ## Latest P04/P03I/P09A current-main recheck
 
-На code head `0c9b33c882ecc48cdaa36f1df77e4ec77cc0d6a2`, который совпадал с
-`origin/main` на момент запуска, повторён UTF-8 full regression: **2144 теста,
+На code head `77b41c0176237ecd871c4222a4d70682918cc13b`, который совпадал с
+`origin/main` на момент запуска, повторён UTF-8 full regression: **2146 тестов,
 0 failures/errors, 4 known skips**. Лог
-`local/evidence/20261008-p04-p03i-main-regression-05/full-python-utf8.txt`,
-SHA-256 `2c22204a0db0fe8e4a42c27ff1c936a8d5dad9f19a4101d03ba5c6aa5b61b363`.
+`local/evidence/20261008-p04-p03i-main-regression-06/full-python-utf8.txt`,
+SHA-256 `a22adca571ada0cd5378dabae071f3962c10e947f245e945aa95f7a19bbc07bf`.
 P04 bundle/import/map targeted suite — **42/42 PASS**, P03I static audit —
 **5/5 PASS**, P09A TechTree static audit — **5/5 PASS**, P09A NationObjDumper
-static audit — **7/7 PASS** including the measured nested XML format/access
-shape. Layout — 58 source files / 22 relocations,
-docs-link recheck — 444 внутренних ссылок, 0 missing targets. Combined summary:
-`local/evidence/20261008-p04-p03i-main-regression-05/summary.json`, SHA-256
-`46b8bbb3589d38b61a18697b07534781933e66bb0133f41fc517d057b2e221a8`.
+static audit — **5/5 PASS**, nested-shape checks — **7/7 PASS**. Layout — 58
+source files / 22 relocations, docs-link recheck — 444 внутренних ссылок, 0
+missing targets. Combined summary:
+`local/evidence/20261008-p04-p03i-main-regression-06/summary.json`, SHA-256
+`207e4a31ef4ffe0dc42eabcbe5b81b0654b76b8b7cf86dd18fc1ffd27d22f2a9`.
 
 # P03I static source-hash recheck — 2026-10-08
 
