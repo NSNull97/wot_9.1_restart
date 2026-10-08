@@ -1,7 +1,8 @@
 # Current-head goal recheck — 2026-10-08
 
-Текущий `main` `283bf5f55c05514a2541bd84bca1feabf7aaab20` совпадает с
-`origin/main` и остаётся чистым. Goal-specific набор прошёл **59/59**, полный
+Проверенный code head `283bf5f55c05514a2541bd84bca1feabf7aaab20` на момент
+запуска совпадал с `origin/main`; после него был только status-only merge.
+Goal-specific набор прошёл **59/59**, полный
 UTF-8 regression — **2187 тестов, 0 failures/errors, 4 known skips**. Receipt:
 `local/evidence/20261008-p04-p03i-goal-recheck-10/summary.json`; targeted log
 SHA-256 `8479145bf727b7615e1d4058323e3bc1dd929f2c0b9c29a25dbb142084982eb7`,

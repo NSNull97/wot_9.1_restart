@@ -1,7 +1,8 @@
 # Current-head goal recheck — 2026-10-08
 
-На текущем `main` `283bf5f55c05514a2541bd84bca1feabf7aaab20`, совпадающем с
-`origin/main`, повторён goal-specific набор: **59 тестов, 0 failures/errors**.
+На проверенном code head `283bf5f55c05514a2541bd84bca1feabf7aaab20`, который на
+момент запуска совпадал с `origin/main`, повторён goal-specific набор:
+**59 тестов, 0 failures/errors**.
 Полный UTF-8 regression на том же head дал **2187 тестов, 0 failures/errors,
 4 known skips**. Portable receipt:
 `local/evidence/20261008-p04-p03i-goal-recheck-10/summary.json`.
