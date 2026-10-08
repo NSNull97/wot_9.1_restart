@@ -12,6 +12,17 @@ penetration/damage, native server callback и client/server solver equivalence
 остаются `UNKNOWN/NOT_RUN`. Клиент, gateway, server и deployed service не
 запускались.
 
+## P06B bounded MS-1 source recheck
+
+P06B теперь имеет tracked `tools/p06b_source_audit.py`: он повторно хеширует
+шесть #717 источников и пакет, декодирует четыре Packed XML набора, сверяет
+девять collision payloads и обязательные границы отчёта. Targeted suite —
+**12/12 PASS**; receipt
+`local/evidence/20261008-p06b-ms1-ap-research-01/p06b-recheck-v2.json` имеет
+SHA-256 `c245fa0e2e48bab904a530a9a6493879e8a7948720e093795b85d34bae3e0c96`.
+Это статическая проверка источников: native hit, penetration, damage, callback
+и P06C server handoff остаются `UNKNOWN/NOT_RUN`.
+
 ## P09B persistence/transaction boundary — isolated harness
 
 P09B теперь имеет bounded stdlib-SQLite harness в
@@ -72,23 +83,23 @@ Duplicate/non-finite/depth/item/path and mutation cases are fail-closed. Wire
 framing, serializer order, native LOS/occlusion, interest filtering and server
 handoff stay **UNKNOWN/NOT_RUN**. No client, gateway or service was started.
 
-## Latest P04/P03I/P07A/P08A/P09A/P10A current-main recheck
+## Latest P04/P03I/P06B/P06E/P07A/P08A/P09A/P10A current-main recheck
 
 The latest UTF-8 full regression was run on code head
-`cf23e598f1dbbaa74d03b91c99cc107588be005f`, matching `origin/main` at test
-time: **2169 tests, 0 failures/errors, 4 known skips**. Log:
-`local/evidence/20261008-p07a-p08a-main-regression-08/full-python-utf8.txt`
+`d0674b6b38c4611ff962ecb3c17300bf17f7c20b`, matching `origin/main` at test
+time: **2187 tests, 0 failures/errors, 4 known skips**. Log:
+`local/evidence/20261008-p06b-p06e-current-main-01/full-python-utf8.txt`
 (SHA-256
-`9b7ba628dc077752c2e1c15f1481d23cdf95f5cf3b8f7e51ac67ef6fee533d5b`).
+`80441128c571488ee874cbe63d6b2b8975d804a3d9e66d4ce061f51c21220b1f`).
 `server/check_layout.py` remains `PASS_SERVER_SOURCE_LAYOUT` with 58 source
 files and 22 relocations (receipt SHA
 `4973971a5503f3fef21c18ba56c086ede47f8c03f1fbeafb5bbc06c7486857c2`). The
-bounded docs-link recheck is `PASS_DOC_LINK_RECHECK` for 444 repository links,
+bounded docs-link recheck is `PASS_DOC_LINK_RECHECK` for 449 repository links,
 0 missing targets and 105 skipped external/absolute links (receipt SHA
-`601dd9d2bd948717904bf4ea0965df568469856ad762219a126232ce91a983a7`). The
+`cbbe9b1f1200039607f71c97ff223435f865a6c1cdc49d88e1c5d3ff791620d4`). The
 combined recheck summary is
-`local/evidence/20261008-p07a-p08a-main-regression-08/summary.json` (SHA-256
-`7d45072f4547ad9db5c4afb500d3ddc3fd9fe6a8c82601b9c5cff79f9eb9346f`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS**, P07A visibility **9/9 PASS**, P08A lifecycle **8/8 PASS**, P09A TechTree static **5/5 PASS**, P09A NationObjDumper/nested static **7/7 PASS**, P10A training-room static **6/6 PASS**, plus a combined targeted run **82/82 PASS**. The docs-link recheck is **444 links, 0 missing** (105 skipped external/absolute).
+`local/evidence/20261008-p06b-p06e-current-main-01/summary.json` (SHA-256
+`d2a2e3ed047f7666409a74b6f6c049aa3456f06aea56afa204170810850869c4`). The same summary records P04 **42/42 PASS**, P03I static **5/5 PASS**, P06B source **12/12 PASS**, P06E collision boundary **6/6 PASS**, P07A visibility **9/9 PASS**, P08A lifecycle **8/8 PASS**, P09A TechTree static **5/5 PASS**, P09A NationObjDumper/nested static **7/7 PASS**, P10A training-room static **6/6 PASS**, plus a combined targeted run **100/100 PASS**. The docs-link recheck is **449 links, 0 missing** (105 skipped external/absolute).
 
 ## Overnight verification
 
