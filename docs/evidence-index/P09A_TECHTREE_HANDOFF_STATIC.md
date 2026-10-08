@@ -26,6 +26,20 @@ The static method shape is hash-bound to the permitted #717 research copy:
   when the ignored client/evidence copies are available.
 - `git diff --check` — PASS.
 
+### Current-checkout recheck
+
+The handoff audit was rerun on the current checkout together with the bounded
+fixture visibility matrix. Fresh outputs are in
+`local/evidence/20261008-p03i-p09a-tree-main-02/techtree.json` and
+`local/evidence/20261008-p03i-p09a-tree-main-02/visibility-matrix.json`.
+The receipt hashes remain
+`8e8e5cc9a91885f827979bc3cd59b1940d0f1c10717dfb06565f5f0b81d1e1cf` and
+`b291bccd2a32c682cb4b09aae6763c27d5f9c907d323b8d072748676c4687a46`.
+The combined TechTree/matrix targeted run is **12/12 PASS** (targeted log
+SHA-256 `e2c036271c519c2d3652a8ecdb1a25fdc71110f67942aa722f68407c3862b5f2`).
+This remains a static source/fixture check; native account/shop payload,
+callback bytes, screenshot and server handoff are `NOT_RUN`.
+
 ## Limits
 
 No native client, gateway or deployed service was started. Account/shop wire
