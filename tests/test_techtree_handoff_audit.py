@@ -53,6 +53,17 @@ class TechTreeHandoffAuditTests(unittest.TestCase):
             with self.assertRaises(TechTreeHandoffError):
                 audit(root=ROOT, disassembly=path)
 
+    def test_nonfinite_and_oversized_json_are_rejected(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as temp:
+            nonfinite = Path(temp) / "nonfinite.json"
+            nonfinite.write_text('[{"value":NaN}]', encoding="utf-8")
+            with self.assertRaises(TechTreeHandoffError):
+                audit(root=ROOT, disassembly=nonfinite)
+            oversized = Path(temp) / "oversized.json"
+            oversized.write_text(json.dumps([{} for _ in range(8193)]), encoding="utf-8")
+            with self.assertRaises(TechTreeHandoffError):
+                audit(root=ROOT, disassembly=oversized)
+
     def test_path_escape_is_rejected(self):
         with self.assertRaises(TechTreeHandoffError):
             audit(root=ROOT, disassembly=Path(tempfile.gettempdir()) / DISASSEMBLY.name)
