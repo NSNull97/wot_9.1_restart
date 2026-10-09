@@ -1,3 +1,15 @@
+# P06G impact trace invariant hardening — 2026-10-09
+
+Текущий server-side gate: **PASS_TRACE_INVARIANT_HARDENING**. Launch связан с
+admission по slot/tick; same-tick и staggered запуск двух акторов, 40-shot
+flight budget, contiguous order и rollback rejected apply/advance проверены.
+Gateway: **385/385 PASS**; source layout: **PASS_SERVER_SOURCE_LAYOUT**.
+Это всё ещё flight-only trace: native hit, geometry intersection, BSP2,
+penetration, damage, HP/module/crew и replay ledger — **NOT_RUN/UNKNOWN**.
+
+Следующий gate — owner-gated native capture после separately measured collision
+boundary; до него solver остаётся недоступен.
+
 # P06F bounded MS-1 collision correlation — 2026-10-09
 
 Текущий статический gate: **PASS_STATIC_MS1_COLLISION_CORRELATION**. Bounded

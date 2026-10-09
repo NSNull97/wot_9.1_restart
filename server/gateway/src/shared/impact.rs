@@ -195,11 +195,15 @@ impl Trace {
 
     pub fn launch(&mut self, battle_id: u64, projectile: &Projectile, server_tick: u32) -> io::Result<()> {
         self.common(battle_id, projectile.sequence, server_tick)?;
+        let (admitted_slot, admitted_tick) = self.admission_facts(projectile.sequence)
+            .ok_or_else(|| invalid("impact launch without admission"))?;
         if !matches!(self.last_stage(projectile.sequence), Some(Stage::Admission))
             || !finite_vector(projectile.origin) || !finite_vector(projectile.velocity)
             || !finite_vector(projectile.terminal)
             || !projectile.gravity.is_finite() || projectile.gravity <= 0.0
             || projectile.slot >= 2
+            || projectile.slot != admitted_slot
+            || server_tick != admitted_tick
             || !projectile.max_distance.is_finite() || projectile.max_distance <= 0.0
             || projectile.max_distance > MAX_COORDINATE
             || !projectile.flight_time.as_secs_f32().is_finite()
@@ -286,6 +290,14 @@ impl Trace {
         })
     }
 
+    fn admission_facts(&self, shot_id: u32) -> Option<(usize, u32)> {
+        self.events.iter().find_map(|event| match event {
+            Event::Admission { shot_id: id, shooter_slot, server_tick, .. } if *id == shot_id =>
+                Some((*shooter_slot, *server_tick)),
+            _ => None,
+        })
+    }
+
     fn last_segment_end(&self, shot_id: u32) -> Option<u32> {
         self.events.iter().rev().find_map(|event| match event {
             Event::Segment { shot_id: id, segment_tick_end, .. } if *id == shot_id => Some(*segment_tick_end),
@@ -353,6 +365,28 @@ mod tests {
     }
 
     #[test]
+    fn launch_binds_admission_slot_and_tick_without_partial_rows() {
+        let now = Instant::now();
+        let world = world(now);
+        let projectile = super::super::projectile::Projectile::launch(1, 0, &world.actors[0], now).unwrap();
+        let mut trace = Trace::new();
+        trace.admission(123, 1, 1000, 0, 20, 19).unwrap();
+
+        let mut wrong_slot = projectile;
+        wrong_slot.slot = 1;
+        let before = trace.clone();
+        assert!(trace.launch(123, &wrong_slot, 1000).is_err());
+        assert_eq!(trace, before);
+
+        let before = trace.clone();
+        assert!(trace.launch(123, &projectile, 1001).is_err());
+        assert_eq!(trace, before);
+
+        trace.launch(123, &projectile, 1000).unwrap();
+        assert_eq!(trace.events().iter().filter(|event| event.stage() == Stage::Launch).count(), 1);
+    }
+
+    #[test]
     fn regression_nonfinite_and_post_terminal_segments_fail_closed() {
         let now = Instant::now();
         let world = world(now);
@@ -360,11 +394,17 @@ mod tests {
         let mut trace = Trace::new();
         trace.admission(123, 1, 1000, 0, 20, 19).unwrap();
         trace.launch(123, &projectile, 1000).unwrap();
+        let before = trace.clone();
         assert!(trace.segment(123, 1, 1000, 1000, [0.; 3], [1., f32::NAN, 0.]).is_err());
+        assert_eq!(trace, before);
         trace.segment(123, 1, 1001, 1000, [0.; 3], [1.; 3]).unwrap();
+        let before = trace.clone();
         assert!(trace.segment(123, 1, 1002, 1000, [0.; 3], [1.; 3]).is_err());
+        assert_eq!(trace, before);
         trace.terminal(123, 1, 1001, TerminalReason::RangeExpired).unwrap();
+        let before = trace.clone();
         assert!(trace.segment(123, 1, 1002, 1001, [0.; 3], [1.; 3]).is_err());
+        assert_eq!(trace, before);
     }
 
     #[test]

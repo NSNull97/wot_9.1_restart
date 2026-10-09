@@ -1,3 +1,17 @@
+# P06G impact trace invariant hardening — 2026-10-09
+
+Карточка усилила P06C перед runtime capture: `Trace::launch` теперь принимает
+только projectile того же shooter slot и server tick, что и его admission.
+Добавлены проверки same-tick/staggered двухклиентных запусков, полного 40-shot
+flight cadence, непрерывного event order и атомарности отклонённых `apply`,
+`advance` и launch. Gateway Rust suite — **385/385 PASS**; layout —
+**PASS_SERVER_SOURCE_LAYOUT**, 59 source files / 22 relocations. Native
+intersection/material/normal/thickness, penetration, HP/module/crew и damage
+по-прежнему **NOT_RUN/UNKNOWN**; клиент и deployed service не перезапускались.
+
+План: [P06G trace invariants](plans/P06G_TRACE_INVARIANT_HARDENING.md).
+Единственный следующий шаг — owner-gated native capture collision boundary.
+
 # P06F bounded MS-1 collision correlation — 2026-10-09
 
 Hash-pinned read-only audit сопоставил активный `ms-1.xml` с девятью
@@ -40,9 +54,11 @@ Rust suite gateway — **381/381 PASS**, включая интеграционн
 Это не P06C native impact: intersection, material/normal/thickness,
 classification, penetration, HP/module/crew damage и replay ledger намеренно
 не реализованы и не получают синтетических строк. P06D остаётся
-shape-only/auditor-only. Действующий сервис не перезапускался и продолжает
-работать на принятом P03J gateway SHA `1fa92e383d80f1118b4ac95dc7b3d08b5ebbfcf69446f851bfb59832cdcb5b45`;
-клиентские копии не менялись.
+shape-only/auditor-only. На момент принятия P06C сервис не перезапускался и
+продолжал работать на принятом P03J gateway SHA
+`1fa92e383d80f1118b4ac95dc7b3d08b5ebbfcf69446f851bfb59832cdcb5b45`;
+последующий утренний restart external website/backend зафиксирован в
+`local/evidence/20261009-website-restart/`; клиентские копии не менялись.
 
 Изменения: `server/gateway/src/shared/impact.rs`, `mod.rs`, `model.rs`,
 `projectile.rs`, план [P06C foundation](plans/P06C_IMPACT_PIPELINE_FOUNDATION.md).

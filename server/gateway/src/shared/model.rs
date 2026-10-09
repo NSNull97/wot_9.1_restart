@@ -239,6 +239,50 @@ pub(super) mod tests {
         assert_eq!(w.apply(1, 2, &[Command::Fire(fire::Command::Shoot)], now).unwrap(), vec![fire::Outcome::AcceptedShot { ammo_remaining: 19 }]);
         assert_eq!(w.shots, vec![Shot { sequence:1,slot:0,tick:1000 }, Shot { sequence:2,slot:1,tick:1000 }]);
     }
+    #[test] fn same_tick_and_staggered_two_actor_launches_keep_trace_order() {
+        let now = Instant::now(); let mut w = world(now);
+        w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap();
+        w.apply(1, 2, &[Command::Fire(fire::Command::Shoot)], now + Duration::from_millis(90)).unwrap();
+        assert_eq!(w.impact.events().iter().filter(|event| event.stage() == impact::Stage::Admission).count(), 2);
+        assert_eq!(w.impact.events().iter().filter(|event| event.stage() == impact::Stage::Launch).count(), 2);
+        assert_eq!(w.shots.iter().map(|shot| shot.tick).collect::<Vec<_>>(), vec![1000, 1000]);
+        w.advance(now + Duration::from_millis(100)).unwrap();
+        assert_eq!(w.impact.events().iter().filter(|event| event.stage() == impact::Stage::Segment).count(), 2);
+        assert_eq!(w.impact.events().iter().map(impact::Event::order).collect::<Vec<_>>(), (1..=6).collect::<Vec<_>>());
+        assert_eq!(w.projectiles.iter().map(|projectile| projectile.slot).collect::<Vec<_>>(), vec![0, 1]);
+    }
+    #[test] fn full_flight_cadence_stays_inside_trace_budget() {
+        let now = Instant::now(); let mut w = world(now);
+        for round in 0..20u64 {
+            let at = now + Duration::from_secs(round * 3);
+            if round != 0 { w.advance(at).unwrap(); }
+            w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], at).unwrap();
+            w.apply(1, 2, &[Command::Fire(fire::Command::Shoot)], at).unwrap();
+        }
+        w.advance(now + Duration::from_secs(60)).unwrap();
+        assert_eq!(w.shots.len(), MAX_SHOTS);
+        assert_eq!(w.impact.terminal_shots().len(), MAX_SHOTS);
+        assert!(w.impact.events().len() <= impact::MAX_EVENTS);
+        let orders = w.impact.events().iter().map(impact::Event::order).collect::<Vec<_>>();
+        assert_eq!(orders, (1..=orders.len() as u32).collect::<Vec<_>>());
+    }
+    #[test] fn rejected_apply_and_advance_publish_no_partial_state() {
+        let now = Instant::now(); let mut w = world(now);
+        let before = (w.actors.clone(), w.shots.clone(), w.projectiles.clone(),
+            w.impact.clone(), w.tick, w.last);
+        assert!(w.apply(0, 1, &[Command::Fire(fire::Command::Shoot),
+            Command::Move(Input { throttle: 2, steer: 0 })], now).is_err());
+        assert_eq!((w.actors.clone(), w.shots.clone(), w.projectiles.clone(),
+            w.impact.clone(), w.tick, w.last), before);
+
+        w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap();
+        w.projectiles[0].origin[0] = impact::MAX_COORDINATE + 1.0;
+        let before = (w.actors.clone(), w.shots.clone(), w.projectiles.clone(),
+            w.impact.clone(), w.tick, w.last);
+        assert!(w.advance(now + STEP).is_err());
+        assert_eq!((w.actors.clone(), w.shots.clone(), w.projectiles.clone(),
+            w.impact.clone(), w.tick, w.last), before);
+    }
     #[test] fn shot_history_is_bounded_by_real_ammo_and_rejections_emit_nothing() {
         let now = Instant::now(); let mut w = world(now);
         for n in 0..fire::MS1_INITIAL_AMMO {
