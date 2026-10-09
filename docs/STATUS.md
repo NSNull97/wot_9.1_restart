@@ -1,3 +1,21 @@
+# P06F bounded MS-1 collision correlation — 2026-10-09
+
+Hash-pinned read-only audit сопоставил активный `ms-1.xml` с девятью
+`Hull`/`Turret_01`/`Gun_02` collision members из #717
+`vehicles_russian.pkg`. Проверены Packed XML shape, finite `xyznuv`, индексы и
+группы, materialKind/descriptor armor и model/visual/primitive bounds. Hull:
+436 вершин/258 треугольников; Turret: 311/218; Gun: 146/90. Реальный turret
+Y-min mismatch сохранён как observation без выдуманной коррекции.
+
+Статус: **PASS_STATIC_MS1_COLLISION_CORRELATION**. Receipt:
+`local/evidence/20261009-p06f-ms1-collision-static-01/receipt.json`.
+Targeted P06F/P06B/P06E, compilation и layout указаны в карточечном evidence;
+native server hit/damage, runtime axes, BSP2 и solver остаются
+**UNKNOWN/NOT_RUN**. Клиент, gateway, service и gameplay runtime не менялись.
+Исследование: [P06F static correlation](research/P06F_MS1_COLLISION_STATIC_CORRELATION.md).
+Единственный следующий шаг — owner-gated native capture после отдельно
+измеренной collision boundary.
+
 # P06C server-owned impact trace foundation — 2026-10-08
 
 Карточка `codex/p06c-impact-pipeline` добавляет в shared laboratory World
