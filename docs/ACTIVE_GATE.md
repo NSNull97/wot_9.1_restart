@@ -1,3 +1,16 @@
+# P06F bounded MS-1 collision correlation — 2026-10-09
+
+Текущий статический gate: **PASS_STATIC_MS1_COLLISION_CORRELATION**. Bounded
+аудит закрепил #717 MS-1 descriptor, package и 9 collision members, измерил
+Hull 436/258, Turret 311/218 и Gun 146/90 (вершины/треугольники), связал
+primitive groups с visual materials и descriptor armor. Turret Y-min mismatch
+сохранён как наблюдение; axes/units/transform correction не угадывались.
+
+Evidence: `local/evidence/20261009-p06f-ms1-collision-static-01/receipt.json`;
+[исследование](research/P06F_MS1_COLLISION_STATIC_CORRELATION.md). Native server
+hit/damage, BSP2, runtime axes и solver — **UNKNOWN/NOT_RUN**. Следующий gate —
+owner-gated native capture после отдельно измеренной collision boundary.
+
 # P06C server-owned impact trace foundation — 2026-10-08
 
 Карточка `codex/p06c-impact-pipeline` принята как
