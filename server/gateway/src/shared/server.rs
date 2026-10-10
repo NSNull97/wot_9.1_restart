@@ -193,18 +193,20 @@ impl Table {
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None)
 }
 
 pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
-    pool_path: &str, capture_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pool_path: &str, capture_path: &str, geometry_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let config = crate::identity091::Config::load(config_path)?;
     let pool = crate::map_drive_worker091::Pool::load(&config.local_root, Path::new(pool_path))?;
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)))
+    let geometry = geometry_path.map(|path| super::geometry::Bundle::load(&config.local_root, Path::new(path)))
+        .transpose()?.map(Arc::new);
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry)
 }
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
-    integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>)
+    integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>)
     -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
     let private = login::load_key(key_path)?;
@@ -219,6 +221,12 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut table = Table::default();
     let started = Instant::now();
     let mut world = World::new(OsRng.next_u64().max(1), started)?;
+    if let Some(bundle) = geometry {
+        world.bind_geometry(bundle)?;
+        println!("SHARED_GEOMETRY_BOUND battle={} bundle_sha256={} revision={} components=Hull,Turret_01,Gun_02 scope=other_actor_only damage=false terrain_projectiles=false",
+            world.id, super::geometry::BUNDLE_SHA256, super::geometry::SOURCE_REVISION);
+    }
+    let mut contact_cursor = 0usize;
     let mut integrated = integrated_pool.map(IntegratedRuntime::new);
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
@@ -378,6 +386,19 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             }
         }
         for (id, reason) in closing { table.retire(id, &mut world, now, reason)?; }
+        for contact in world.contacts.iter().skip(contact_cursor) {
+            println!("SHARED_GEOMETRIC_CONTACT {}", serde_json::json!({
+                "battle":world.id.to_string(), "shot":contact.shot, "target_slot":contact.target_slot,
+                "tick":contact.tick, "segment_start":contact.segment_start, "segment_end":contact.segment_end,
+                "segment_seconds":contact.segment_seconds, "endpoint":contact.endpoint,
+                "target_position":contact.target_position, "target_direction":contact.target_direction,
+                "target_aim":contact.target_aim, "triangle_id":contact.triangle.triangle_id,
+                "mesh":contact.triangle.mesh, "group":contact.triangle.group, "material":contact.triangle.material,
+                "t":contact.triangle.t, "normal":contact.triangle.normal,
+                "geometry_revision":contact.geometry_revision, "transform_revision":contact.transform_revision,
+                "terminal":"unresolved_collision", "damage_applied":false}));
+        }
+        contact_cursor = world.contacts.len();
         // Both peers receive a snapshot of the same completed server tick.
         for s in &mut table.sessions { if let Some(c) = &mut s.shared { c.view = Some(world.clone()); } }
         thread::sleep(Duration::from_millis(5));
@@ -662,6 +683,24 @@ mod tests {
         assert_eq!(rejoin.shared.as_ref().unwrap().shot_cursor,1);
         let bodies = queued_bodies(&rejoin,end + Duration::from_millis(100));
         assert!(bodies.iter().all(|body| *body != start_body));
+    }
+    #[test] fn contact_before_peer_poll_still_delivers_start_then_stop_once() {
+        let now = Instant::now(); let (mut a, mut b, _) = visible_pair(now);
+        let mut w = model::tests::collision_world(now, false);
+        a.shared.as_mut().unwrap().view = Some(w.clone());
+        b.shared.as_mut().unwrap().view = Some(w.clone());
+        a.receive(&frame(&a, &[0x88,0,0]), now).unwrap(); poll(&mut a, &mut w, now).unwrap();
+        w.advance(now+model::STEP).unwrap(); assert_eq!(w.contacts.len(),1);
+        // Receiver has not polled since before launch; first observation is terminal.
+        poll(&mut b, &mut w, now+model::STEP).unwrap();
+        let start = wire::tracer_start(&w.projectiles[0]).unwrap();
+        let stop = wire::tracer_stop(&w.projectiles[0]).unwrap();
+        let bodies = queued_bodies(&b,now+model::STEP);
+        assert!(bodies.iter().position(|b| *b==start).unwrap() < bodies.iter().position(|b| *b==stop).unwrap());
+        poll(&mut b, &mut w, now+model::STEP).unwrap();
+        let bodies = queued_bodies(&b,now+model::STEP);
+        assert_eq!(bodies.iter().filter(|b| **b==start).count(),1);
+        assert_eq!(bodies.iter().filter(|b| **b==stop).count(),1);
     }
     #[test] fn projectile_creation_failure_rolls_back_fire_ammo_and_history() {
         let now=Instant::now(); let (_,_,mut w)=visible_pair(now);

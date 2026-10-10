@@ -1,3 +1,22 @@
+# P06I native geometric contact — 2026-10-10
+
+`codex/p06i-native-collision-binding`:
+**PASS_NATIVE_GEOMETRIC_CONTACT_AND_OWNER_RMB**. Full-pose aim/launch исправляет
+ПКМ на склоне; серверная hash-pinned stock MS-1 mesh останавливает трассер на
+другом танке. Native01: 9 contacts / 18 exact endpoints и owner acceptance.
+Final gateway03: 429/429 PASS, включая final fractional range-tail regression.
+Native03: startup двух worker/client PASS; повтор GUI shot NOT_RUN из-за
+capture timeout, отдельной новой native-contact приёмкой не считается.
+Native01 поздний StorageFull и failed native02 не скрыты; приняты SHA-пинованные
+завершённые префиксы. Диагностический runtime после аудита закрыт.
+
+Evidence: `local/evidence/20261010-p06i-native-collision-01/summary.json`;
+[план](plans/P06I_NATIVE_COLLISION_BINDING.md),
+[исследование](research/P06I_NATIVE_COLLISION_BINDING.md).
+HP, penetration, damage и P06D full capture остаются NOT_RUN вне scope.
+Единственный следующий gate — измеренная классификация материала/контакта
+перед уроном, поверх принятого cumulative integrated runtime.
+
 # P06H offline collision boundary — 2026-10-10
 
 Карточка `codex/p06h-collision-boundary`:

@@ -20,7 +20,7 @@ from client_probe import to_element
 from packed_xml import decode
 from hangar_config import overrides
 
-MODULES = ('sr_interactive', 'project_auth', 'project_preferences', 'hangar_bootstrap', 'hangar_ui_probe', 'hangar_capabilities', 'crew_capabilities', 'ms1_crew_probe', 'ms1_crew_scenario', 'hangar_limits_scenario', 'hangar_windows_scenario', 'hangar_relogin_scenario', 'account_switch_scenario', 'long_hangar_scenario', 'ms1_ammo_probe', 'ms1_ammo_scenario', 'arena_entry_probe', 'arena_bootstrap', 'arena_space_scenario', 'arena_vehicle_scenario', 'arena_ready_scenario', 'arena_movement_scenario', 'map_drive_scenario', 'map_drive_client', 'map_drive_acceptance')
+MODULES = ('sr_interactive', 'collision_oracle', 'project_auth', 'project_preferences', 'hangar_bootstrap', 'hangar_ui_probe', 'hangar_capabilities', 'crew_capabilities', 'ms1_crew_probe', 'ms1_crew_scenario', 'hangar_limits_scenario', 'hangar_windows_scenario', 'hangar_relogin_scenario', 'account_switch_scenario', 'long_hangar_scenario', 'ms1_ammo_probe', 'ms1_ammo_scenario', 'arena_entry_probe', 'arena_bootstrap', 'arena_space_scenario', 'arena_vehicle_scenario', 'arena_ready_scenario', 'arena_movement_scenario', 'map_drive_scenario', 'map_drive_client', 'map_drive_acceptance')
 LOGS = ('python.log', 'Influx_PS.log', 'Influx_PS.bak')
 
 

@@ -1,8 +1,8 @@
 //! Server-owned aiming for the temporary stock MS-1 laboratory profile.
-//! Rates/pivots are pinned #717 resources. The independent flat-hull ballistic
+//! Rates/pivots are pinned #717 resources. The independent ballistic
 //! solver is test_lab approximate, not a claim about the historical server.
 use std::{f32::consts::PI, io};
-use super::model::bad;
+use super::{model::bad, pose};
 
 pub const YAW_RATE: f32 = 39. * PI / 180.;
 pub const PITCH_RATE: f32 = 52.5 * PI / 180.;
@@ -11,30 +11,30 @@ pub const MAX_PITCH: f32 = 8. * PI / 180.;
 pub(super) const PIVOT: [f32; 3] = [0.001778, 1.316402, 0.033775];
 pub(super) const GUN: [f32; 3] = [-0.238144, 0.234668, 0.410043];
 
-/// Reproduce the pinned VehicleGunRotator launch transform on the server's
-/// flat hull. The native client may replace only the rendered muzzle point;
-/// the reference origin remains this gun-pivot position.
+/// Compatibility wrapper for callers with a flat hull.
 pub(crate) fn shot_geometry(
     position: [f32; 3], hull_yaw: f32, turret_yaw: f32, pitch: f32, speed: f32,
 ) -> ([f32; 3], [f32; 3]) {
-    let rotate_y = |v: [f32; 3], yaw: f32| {
-        let (s, c) = yaw.sin_cos();
-        [c * v[0] + s * v[2], v[1], -s * v[0] + c * v[2]]
-    };
+    shot_geometry_pose(position, [hull_yaw, 0., 0.], turret_yaw, pitch, speed)
+}
+
+/// Pinned VehicleGunRotator gun-pivot origin and +Z barrel direction with the
+/// full measured chassis rotation. Native rendering may use a muzzle node;
+/// this reference origin deliberately remains the gun joint.
+pub(crate) fn shot_geometry_pose(
+    position: [f32; 3], direction: [f32; 3], turret_yaw: f32, pitch: f32, speed: f32,
+) -> ([f32; 3], [f32; 3]) {
     let local_origin = {
-        let gun = rotate_y(GUN, turret_yaw);
+        let gun = pose::rotate(GUN, [turret_yaw, 0., 0.]);
         [PIVOT[0] + gun[0], PIVOT[1] + gun[1], PIVOT[2] + gun[2]]
     };
-    let origin_offset = rotate_y(local_origin, hull_yaw);
+    let origin_offset = pose::rotate(local_origin, direction);
     let origin = [
         position[0] + origin_offset[0],
         position[1] + origin_offset[1],
         position[2] + origin_offset[2],
     ];
-    let horizontal = hull_yaw + turret_yaw;
-    let (s, c) = horizontal.sin_cos();
-    let (sp, cp) = pitch.sin_cos();
-    let velocity = [speed * s * cp, -speed * sp, speed * c * cp];
+    let velocity = pose::rotate(pose::rotate([0., 0., speed], [turret_yaw, pitch, 0.]), direction);
     (origin, velocity)
 }
 
@@ -58,11 +58,14 @@ impl State {
     pub fn park(&mut self) { self.intent = Intent::Hold { yaw: self.yaw, pitch: self.pitch }; }
     pub fn set(&mut self, intent: Intent) -> io::Result<()> { intent.validate()?; self.intent = intent; Ok(()) }
     pub fn advance(&mut self, position: [f32; 3], hull_yaw: f32, dt: f32) -> io::Result<()> {
+        self.advance_pose(position, [hull_yaw, 0., 0.], dt)
+    }
+    pub fn advance_pose(&mut self, position: [f32; 3], direction: [f32; 3], dt: f32) -> io::Result<()> {
         if !dt.is_finite() || !(0. ..=0.2).contains(&dt)
-            || !hull_yaw.is_finite() || position.iter().any(|x| !x.is_finite()) { return Err(bad()); }
+            || direction.iter().any(|x| !x.is_finite()) || position.iter().any(|x| !x.is_finite()) { return Err(bad()); }
         self.intent.validate()?;
         let (yaw, pitch) = match self.intent {
-            Intent::Point(point) => target_angles(position, hull_yaw, point, self.yaw, self.pitch),
+            Intent::Point(point) => target_angles_pose(position, direction, point, self.yaw, self.pitch),
             Intent::Hold { yaw, pitch } => (yaw, pitch),
         };
         self.yaw = wrap(self.yaw + wrap(yaw - self.yaw).clamp(-YAW_RATE * dt, YAW_RATE * dt));
@@ -79,6 +82,50 @@ pub fn pitch_max(yaw: f32) -> f32 {
     let outside = (PI - wrap(yaw).abs() - 35f32.to_radians()).max(0.);
     let blend = (outside / 0.4).clamp(0., 1.);
     (1. + 7. * blend).to_radians()
+}
+
+/// A tilted hull also rotates gravity into local X/Z, so transforming only the
+/// target and reusing a local-Y parabola is wrong. Solve each low arc in world
+/// space, then convert its velocity to turret angles. The origin depends on
+/// turret yaw; iterate that small offset, with a fixed budget and convergence
+/// check. This is an independent lab solver, not native historical equivalence.
+/// Near-vertical, unreachable, or non-convergent tilted targets hold the prior
+/// angles. Limits/rates are applied by State after the unconstrained solve.
+fn target_angles_pose(position: [f32; 3], direction: [f32; 3], point: [f32; 3], old_yaw: f32, old_pitch: f32) -> (f32, f32) {
+    if direction[1] == 0. && direction[2] == 0. {
+        return target_angles(position, direction[0], point, old_yaw, old_pitch);
+    }
+    let relative = std::array::from_fn(|i| point[i] - position[i]);
+    let local = pose::inverse_rotate(relative, direction);
+    let x = (local[0] - PIVOT[0]) as f64;
+    let z = (local[2] - PIVOT[2]) as f64;
+    let radius = x.hypot(z);
+    if radius <= GUN[0].abs() as f64 + 0.001 { return (old_yaw, old_pitch); }
+    let mut yaw = (x.atan2(z) - (GUN[0] as f64 / radius).asin()) as f32;
+    for _ in 0..16 {
+        // Work relative to chassis position to avoid subtracting two rounded
+        // large world origins. Raw speed/gravity give the same parabola as the
+        // effective pair (speed * factor, gravity * factor squared).
+        let (offset, _) = shot_geometry_pose([0.; 3], direction, yaw, 0., 1.);
+        let d: [f64; 3] = std::array::from_fn(|i| relative[i] as f64 - offset[i] as f64);
+        let horizontal = d[0].hypot(d[2]);
+        if horizontal <= 0.001 { return (old_yaw, old_pitch); }
+        let v2 = 442f64.powi(2); let g = 9.81;
+        let disc = v2 * v2 - g * (g * horizontal * horizontal + 2. * d[1] * v2);
+        if !disc.is_finite() || disc < 0. { return (old_yaw, old_pitch); }
+        let elevation = ((g * horizontal * horizontal + 2. * d[1] * v2)
+            / (horizontal * (v2 + disc.sqrt()))).atan();
+        let (s, c) = elevation.sin_cos();
+        let local_velocity = pose::inverse_rotate([
+            (d[0] / horizontal * c) as f32, s as f32, (d[2] / horizontal * c) as f32,
+        ], direction);
+        let next_yaw = local_velocity[0].atan2(local_velocity[2]);
+        let pitch = -local_velocity[1].atan2(local_velocity[0].hypot(local_velocity[2]));
+        if !next_yaw.is_finite() || !pitch.is_finite() { return (old_yaw, old_pitch); }
+        if wrap(next_yaw - yaw).abs() < 1e-6 { return (wrap(next_yaw), pitch); }
+        yaw = next_yaw;
+    }
+    (old_yaw, old_pitch)
 }
 
 /// +Z forward, positive turret yaw right, negative pitch up. No client pose,
@@ -106,6 +153,89 @@ fn target_angles(position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, o
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn independent_native_tilted_aim_and_point_to_hold_stay_within_measured_bounds() {
+        // #717 getShotAngles on pure Math matrices; event SHA256
+        // 4bb48fac175a4f4b8c29e72972ecfee6bbc9d62fb33365763287c65e413c7a83.
+        // Close (5m) results differ slightly from our world-gravity solver.
+        // These explicit measured bounds are below one native angle wire bin,
+        // not a claim of identical native algorithms.
+        let relative = [[0.,0.,100.],[450.,-20.,310.],[-300.,60.,-400.],[1.,0.,5.]];
+        for (direction, expected) in [
+            ([0.7,-0.3,0.2], [[-0.7437506914,0.1072099954],[0.2138380110,0.3638943732],
+                [2.9911341667,-0.4075963795],[-0.5138641596,0.4738564491]]),
+            ([-2.1,0.25,-0.15], [[2.0853199959,0.0076566716],[3.0246388912,0.2605078220],
+                [-0.4691703320,-0.2937970459],[2.3232738972,0.3680807054]]),
+            ([0.2,0.6,-0.5], [[-0.4971206486,-0.3903233409],[0.6100886464,-0.7362749577],
+                [-2.9197170734,0.5880473852],[-0.2680743635,-0.2390402555]])] {
+            for (i, point) in relative.iter().enumerate() {
+                let position = [37.,21.,-105.];
+                let target = std::array::from_fn(|axis| position[axis]+point[axis]);
+                let actual = target_angles_pose(position,direction,target,0.,0.);
+                let bounds = if i==3 { [0.0013,0.0004] } else { [0.00001,0.00001] };
+                assert!(wrap(actual.0-expected[i][0]).abs()<bounds[0]);
+                assert!((actual.1-expected[i][1]).abs()<bounds[1]);
+                // Test actual runtime transition only for reachable barrel limits.
+                if expected[i][1]>=MIN_PITCH && expected[i][1]<=pitch_max(expected[i][0]) {
+                    let mut state = State::new(); state.set(Intent::Point(target)).unwrap();
+                    for _ in 0..100 { state.advance_pose(position,direction,0.1).unwrap(); }
+                    let before = shot_geometry_pose(position,direction,state.yaw,state.pitch,1.).1;
+                    state.set(Intent::Hold{yaw:expected[i][0],pitch:expected[i][1]}).unwrap();
+                    for _ in 0..100 { state.advance_pose(position,direction,0.1).unwrap(); }
+                    let after = shot_geometry_pose(position,direction,state.yaw,state.pitch,1.).1;
+                    assert!((0..3).map(|i|(before[i]-after[i]).powi(2)).sum::<f32>().sqrt()<0.0014);
+                }
+            }
+        }
+    }
+    #[test] fn tilted_world_gravity_solution_reaches_targets_in_world_space() {
+        // Verify the resulting flight in world coordinates. Merely rotating a
+        // flat solution would tilt gravity and miss these long oblique shots.
+        for direction in [[0.7, -0.3, 0.2], [-2.1, 0.25, -0.15], [0.2, 0.6, -0.5]] {
+            let position = [37., 21., -105.];
+            for relative in [[0., 0., 100.], [450., -20., 310.], [-300., 60., -400.], [1., 0., 5.]] {
+                let point = std::array::from_fn(|i| position[i] + relative[i]);
+                let (yaw, pitch) = target_angles_pose(position, direction, point, 0., 0.);
+                let (origin, velocity) = shot_geometry_pose(position, direction, yaw, pitch, 442.);
+                let horizontal2 = velocity[0] * velocity[0] + velocity[2] * velocity[2];
+                let time = ((point[0] - origin[0]) * velocity[0]
+                    + (point[2] - origin[2]) * velocity[2]) / horizontal2;
+                assert!(time.is_finite() && time > 0.);
+                let reached = [origin[0] + velocity[0] * time,
+                    origin[1] + velocity[1] * time - 0.5 * 9.81 * time * time,
+                    origin[2] + velocity[2] * time];
+                let error = (0..3).map(|i| (reached[i] - point[i]).powi(2)).sum::<f32>().sqrt();
+                assert!(error < 0.002, "pose={direction:?}, target={point:?}, error={error}");
+            }
+        }
+    }
+    #[test] fn full_pose_hold_preserves_local_angles_and_validation_is_atomic() {
+        let mut state = State::new(); state.yaw = 0.6; state.pitch = -0.1; state.park();
+        let before = state.clone();
+        state.advance_pose([10., 20., 30.], [1.2, 0.25, -0.2], 0.1).unwrap();
+        assert!(wrap(state.yaw - before.yaw).abs() < 1e-6);
+        assert_eq!(state.pitch, before.pitch); assert_eq!(state.intent, before.intent);
+        let before = state.clone();
+        for axis in 0..3 {
+            let mut direction = [0.; 3]; direction[axis] = f32::NAN;
+            assert!(state.advance_pose([0.; 3], direction, 0.1).is_err());
+            assert_eq!(state, before);
+        }
+        let held = target_angles_pose([0.; 3], [0.7, -0.3, 0.2], [1_000_000.; 3], 0.6, -0.1);
+        assert_eq!(held, (0.6, -0.1));
+    }
+    #[test] fn flat_wrapper_and_pose_path_keep_the_same_geometry_and_rates() {
+        for yaw in [-3., -1., 0., 2.] {
+            assert_eq!(shot_geometry([1., 2., 3.], yaw, 0.6, -0.1, 442.),
+                shot_geometry_pose([1., 2., 3.], [yaw, 0., 0.], 0.6, -0.1, 442.));
+            let mut a = State::new(); a.set(Intent::Point([30., 5., 70.])).unwrap();
+            let mut b = a.clone();
+            for _ in 0..100 {
+                a.advance([0.; 3], yaw, 0.1).unwrap();
+                b.advance_pose([0.; 3], [yaw, 0., 0.], 0.1).unwrap();
+            }
+            assert_eq!(a, b);
+        }
+    }
     #[test] fn independent_native_oracle_points_and_rear_stops_match_within_one_wire_bin() {
         // Measured BigWorld.wg_getShotAngles via original getShotAngles, #717,
         // stock descriptor, identity matrix and initial yaw/pitch=(0,0).

@@ -45,12 +45,12 @@ pub struct Projectile {
 impl Projectile {
     pub fn launch(sequence: u32, slot: usize, actor: &model::Actor, now: Instant) -> io::Result<Self> {
         if sequence == 0 || slot >= model::CAPACITY || !actor.position.iter().all(|v| v.is_finite())
-            || !actor.yaw.is_finite() || !actor.aim.yaw.is_finite() || !actor.aim.pitch.is_finite()
+            || actor.direction.iter().any(|v| !v.is_finite()) || !actor.aim.yaw.is_finite() || !actor.aim.pitch.is_finite()
         {
             return Err(model::bad());
         }
-        let (origin, velocity) = aim::shot_geometry(
-            actor.position, actor.yaw, actor.aim.yaw, actor.aim.pitch, MS1_SPEED,
+        let (origin, velocity) = aim::shot_geometry_pose(
+            actor.position, actor.direction, actor.aim.yaw, actor.aim.pitch, MS1_SPEED,
         );
         let velocity = regularize_horizontal_x(velocity)?;
         let flight_time = solve_range_time(velocity, MS1_GRAVITY, MS1_MAX_DISTANCE)?;
@@ -167,6 +167,32 @@ mod tests {
         let raised = Projectile::launch(2, 0, &w.actors[0], now).unwrap();
         assert!(raised.velocity[1] > 0.0);
         assert!(raised.terminal[1] > p.terminal[1]);
+    }
+
+    #[test]
+    fn tilted_launch_uses_native_mixed_basis_and_keeps_gravity_world_down() {
+        let now = Instant::now(); let mut w = world(now);
+        let actor = &mut w.actors[0];
+        actor.position = [100., 25., -200.];
+        actor.direction = [0.7, -0.3, 0.2];
+        actor.yaw = -1.5; // The full authoritative direction wins over stale yaw.
+        actor.aim.yaw = 0.; actor.aim.pitch = 0.;
+        let p = Projectile::launch(1, 0, actor, now).unwrap();
+        // Native #717 Math oracle columns, independently observed mixed pose.
+        let axes = [[0.7117737532, 0.1897960901, -0.6762807369],
+            [-0.3385351300, 0.9362933636, -0.0935345665],
+            [0.6154446602, 0.2955202162, 0.7306816578]];
+        let local = [-0.236366, 1.551070, 0.443818]; // Descriptor PIVOT + GUN.
+        for i in 0..3 {
+            let expected_origin = actor.position[i] + (0..3).map(|j| axes[j][i] * local[j]).sum::<f32>();
+            assert!((p.origin[i] - expected_origin).abs() < 2e-5);
+            assert!((p.velocity[i] - axes[2][i] * MS1_SPEED).abs() < 5e-5);
+        }
+        let at = p.position_at(now + Duration::from_millis(500));
+        for i in [0, 2] { assert!((at[i] - p.origin[i] - p.velocity[i] * 0.5).abs() < 2e-5); }
+        assert!((at[1] - p.origin[1] - p.velocity[1] * 0.5 + 0.5 * MS1_GRAVITY * 0.25).abs() < 2e-5);
+        actor.direction[2] = f32::INFINITY;
+        assert!(Projectile::launch(2, 0, actor, now).is_err());
     }
 
     #[test]

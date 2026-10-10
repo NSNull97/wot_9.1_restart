@@ -1,3 +1,40 @@
+# P06I native geometric contact + full-pose RMB aim — 2026-10-10
+
+Карточка `codex/p06i-native-collision-binding`:
+**PASS_NATIVE_GEOMETRIC_CONTACT_AND_OWNER_RMB**. На принятом P03L integrated
+runtime подключена hash-pinned stock MS-1 геометрия. Сегмент снаряда проверяется
+по серверному pose другого танка; ближайший контакт атомарно останавливает
+трассер в обоих клиентах. Башня, орудие и запуск учитывают полный наклон корпуса;
+исправлен уход выстрела при удержании ПКМ на склоне. Физика, БК и перезарядка
+сохраняются. HP остаётся 90: пробитие и урон ещё не реализованы этим этапом.
+
+Final `gateway-integrated-world-p06i-03` — **429/429 PASS**, source layout —
+**PASS** (62 files / 22 relocations). Python focused: 33 PASS / 1 существующий
+skip права создания symlink в layout-тесте. Native01: **9 выстрелов / 9 контактов /
+18 точных native endpoints**, оба стреляющих слота, расход БК, движение обоих
+танков. Владелец подтвердил RMB/прицел/стрельбу: «сейчас все нормально».
+Последний range-tail fix проверен отдельным regression финальной сборки.
+Native03 подтвердил только startup: два ready worker/client и по 532 snapshot,
+ошибок в зафиксированных префиксах нет. Повтор GUI-выстрела **NOT_RUN** из-за
+таймаута захвата окна; новой native-contact приёмкой он не объявляется.
+
+Поздний хвост native01 и запуск native02 упёрлись в StorageFull. Это сохранённые
+ошибки, не PASS; успешные девять выстрелов закреплены отдельными SHA-префиксами.
+После сжатия двух собственных промежуточных build targets выполнен native03.
+Диагностические процессы остановлены после аудита, чтобы не заполнять диск.
+
+Evidence: `local/evidence/20261010-p06i-native-collision-01/summary.json`,
+`native-contact-audit01.json`, `native03-smoke-audit01.json` в той же папке;
+`local/build/server/gateway-integrated-world-p06i-03/result.json`.
+План: [P06I](plans/P06I_NATIVE_COLLISION_BINDING.md); полный отчёт/команды/откат:
+[исследование](research/P06I_NATIVE_COLLISION_BINDING.md).
+Граница: stock MS-1/AP, дискретный target pose и сегментный полёт, без terrain/
+obstacle projectile collisions, native impact effects, HP/module/crew damage.
+P06D classification/replay остаётся **NOT_RUN** вне scope этой карточки.
+Откат: revert карточечного merge; закрытые test copies через install ledger,
+затем accepted gateway19 + physics-integrated-lane-01. Следующий единственный
+шаг — измеренная классификация материала/контакта перед реализацией урона.
+
 # P06H bounded collision query/trace foundation — 2026-10-10
 
 Статус карточки `codex/p06h-collision-boundary`:

@@ -1,8 +1,8 @@
 //! Two temporary allied laboratory actors. No native IDs, client poses, clocks
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
-use std::{io, time::{Duration, Instant}};
+use std::{io, sync::Arc, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::{aim, impact, projectile::Projectile};
+use super::{aim, geometry, impact, projectile::Projectile};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
@@ -44,6 +44,15 @@ pub enum Command { Move(Input), Aim(aim::Intent), Fire(fire::Command), Leave }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Shot { pub sequence: u32, pub slot: usize, pub tick: u32 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Contact {
+    pub shot: u32, pub target_slot: usize, pub tick: u32,
+    pub segment_start: [f32; 3], pub segment_end: [f32; 3], pub segment_seconds: f32,
+    pub endpoint: [f32; 3], pub target_position: [f32; 3], pub target_direction: [f32; 3],
+    pub target_aim: [f32; 2], pub triangle: super::collision::Candidate,
+    pub geometry_revision: String, pub transform_revision: String,
+}
+
 #[derive(Clone)]
 pub struct World {
     pub id: u64,
@@ -54,13 +63,20 @@ pub struct World {
     pub shots: Vec<Shot>,
     pub projectiles: Vec<Projectile>,
     pub impact: impact::Trace,
+    geometry: Option<Arc<geometry::Bundle>>,
+    pub contacts: Vec<Contact>,
 }
 
 impl World {
     pub fn new(id: u64, now: Instant) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
         Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000,
-            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new() })
+            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new(),
+            geometry: None, contacts: Vec::new() })
+    }
+    pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
+        if self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
+        self.geometry = Some(bundle); Ok(())
     }
     pub fn latest_shot(&self) -> u32 { self.shots.last().map(|s| s.sequence).unwrap_or(0) }
     /// Authenticated identity only. The caller reserves a transport retirement
@@ -249,29 +265,58 @@ impl World {
                         .clamp(a.origin[2] - 2., a.origin[2] + 2.);
                     a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
                 }
-                a.aim.advance(a.position, a.yaw, dt)?;
+                a.direction[0] = a.yaw;
+                a.aim.advance_pose(a.position, a.direction, dt)?;
             }
             next_last = now; next_tick = tick;
         }
         let mut impact_trace = self.impact.clone();
         let mut next_projectiles = self.projectiles.clone();
+        let mut contacts = self.contacts.clone();
         if tick_changed {
-            for projectile in &self.projectiles {
+            for projectile in &mut next_projectiles {
                 if !projectile.stopped {
                     let segment_start = if projectile.launched > prior_time { projectile.launched } else { prior_time };
                     if segment_start < now {
                         let launch_tick = self.shots.iter()
                             .find(|shot| shot.sequence == projectile.sequence).ok_or_else(bad)?.tick;
                         let segment_tick_start = launch_tick.max(prior_tick);
+                        let segment_end = now.min(projectile.end_at()?);
+                        let start_point = projectile.position_at(segment_start);
+                        let end_point = projectile.position_at(segment_end);
                         impact_trace.segment(self.id, projectile.sequence, tick, segment_tick_start,
-                            projectile.position_at(segment_start), projectile.position_at(now))?;
+                            start_point, end_point)?;
+                        if let Some(bundle) = &self.geometry {
+                            let target_slot = 1usize.checked_sub(projectile.slot).ok_or_else(bad)?;
+                            let target = next_actors.get(target_slot).ok_or_else(bad)?;
+                            let mesh = bundle.world_mesh(target, target_slot, tick)?;
+                            let hits = impact_trace.collision_query(self.id, projectile.sequence, tick, &mesh)?;
+                            if let Some(nearest) = hits.first() {
+                                let endpoint = std::array::from_fn(|i|
+                                    start_point[i] + nearest.t * (end_point[i] - start_point[i]));
+                                if contacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                contacts.push(Contact { shot: projectile.sequence, target_slot, tick,
+                                    segment_start: start_point, segment_end: end_point,
+                                    segment_seconds: segment_end.duration_since(segment_start).as_secs_f32(), endpoint,
+                                    target_position: target.position, target_direction: target.direction,
+                                    target_aim: [target.aim.yaw, target.aim.pitch], triangle: nearest.clone(),
+                                    geometry_revision: mesh.geometry_revision().into(),
+                                    transform_revision: mesh.transform_revision().into() });
+                                projectile.terminal = endpoint; projectile.stopped = true;
+                                impact_trace.terminal(self.id, projectile.sequence, tick,
+                                    impact::TerminalReason::UnresolvedCollision)?;
+                            }
+                        }
                     }
                 }
             }
         }
         let mut expired = false;
         for projectile in &mut next_projectiles {
-            if !projectile.stopped && projectile.is_expired(now)? {
+            // Geometry must inspect the clamped tail before range expiry. A
+            // 5ms poll between the last 100ms segment and end_at may otherwise
+            // drop up to ~35m without ever querying it.
+            if !projectile.stopped && projectile.is_expired(now)? && (self.geometry.is_none() || tick_changed) {
                 projectile.stopped = true;
                 impact_trace.terminal(self.id, projectile.sequence, tick,
                     impact::TerminalReason::RangeExpired)?;
@@ -283,6 +328,7 @@ impl World {
         self.tick = next_tick;
         self.projectiles = next_projectiles;
         self.impact = impact_trace;
+        self.contacts = contacts;
         Ok(tick_changed || expired)
     }
 }
@@ -295,6 +341,81 @@ pub(super) mod tests {
         for i in 0..2 { w.attach(Identity { account: format!("owned-{i}"), database: i + 1,
             name: format!("player_{i}") }, i as u32 + 1).unwrap(); }
         w.start(now).unwrap(); w.set_ready(0, 1).unwrap(); w.set_ready(1, 2).unwrap(); w
+    }
+    pub fn collision_world(now: Instant, miss: bool) -> World {
+        let mut w = world(now);
+        w.geometry = Some(Arc::new(super::super::geometry::tests::bundle()));
+        for i in 0..2 {
+            let p = if i == 0 { [0.; 3] } else if miss { [100., 0., 0.] } else { [0., 0., 10.] };
+            w.actors[i].position = p; w.actors[i].origin = p;
+            w.actors[i].yaw = if i == 1 && !miss { -std::f32::consts::PI } else { 0. };
+            w.actors[i].direction = [w.actors[i].yaw, 0., 0.];
+        }
+        w
+    }
+    #[test] fn nearest_other_actor_surface_stops_both_shooters_atomically() {
+        let now = Instant::now(); let mut w = collision_world(now, false);
+        for i in 0..2 { w.apply(i, i as u32+1, &[Command::Fire(fire::Command::Shoot)], now).unwrap(); }
+        w.advance(now+STEP).unwrap();
+        assert_eq!(w.contacts.len(), 2);
+        for (i, contact) in w.contacts.iter().enumerate() {
+            assert_eq!(contact.target_slot, 1-i); assert_eq!(contact.triangle.candidate_index, 0);
+            assert_eq!(contact.triangle.mesh, "Turret_01");
+            assert!(w.projectiles[i].stopped); assert_eq!(w.projectiles[i].terminal, contact.endpoint);
+            assert!((contact.endpoint[2] - if i==0 {9.5} else {0.5}).abs() < 0.5);
+            assert_eq!(w.actors[i].fire.ammo(), 19);
+            assert!(w.impact.events().iter().any(|e| matches!(e, impact::Event::Terminal{
+                shot_id, reason: impact::TerminalReason::UnresolvedCollision, ..} if *shot_id==i as u32+1)));
+        }
+        let before = w.contacts.clone(); w.advance(now+STEP*2).unwrap(); assert_eq!(w.contacts, before);
+    }
+    #[test] fn full_ammo_real_cadence_hits_and_self_excluding_misses_fit_trace() {
+        for miss in [false, true] {
+            let now = Instant::now(); let mut w = collision_world(now, miss);
+            for step in 0..=600 {
+                let at = now + STEP*step;
+                if step > 0 { w.advance(at).unwrap(); }
+                if step < 600 && step % 30 == 0 {
+                    for i in 0..2 { w.apply(i, i as u32+1, &[Command::Fire(fire::Command::Shoot)], at).unwrap(); }
+                }
+            }
+            assert_eq!(w.shots.len(), 40); assert_eq!(w.impact.terminal_shots().len(), 40);
+            assert_eq!(w.contacts.len(), if miss {0} else {40});
+            assert!(w.impact.events().len() < impact::MAX_EVENTS);
+            assert!(w.projectiles.iter().all(|p| p.stopped));
+            assert!(w.actors.iter().all(|a| a.fire.ammo()==0));
+        }
+    }
+    #[test] fn invalid_geometry_pose_rolls_back_world_trace_and_contact() {
+        let now = Instant::now(); let mut w = collision_world(now, false);
+        w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap();
+        let before = w.clone();
+        assert!(w.advance_with_external(now+STEP, Some(&[(0,[0.;3],[0.;3],0.),
+            (1,[3000.,0.,10.],[0.;3],0.)])).is_err());
+        assert_eq!(w.actors,before.actors); assert_eq!(w.projectiles,before.projectiles);
+        assert_eq!(w.impact,before.impact); assert_eq!(w.contacts,before.contacts);
+        assert_eq!(w.last,before.last); assert_eq!(w.tick,before.tick);
+        assert!(w.bind_geometry(Arc::new(super::super::geometry::tests::bundle())).is_err());
+    }
+    #[test] fn fractional_range_tail_is_queried_before_expiry_and_duration_is_clamped() {
+        let now = Instant::now(); let mut w = collision_world(now, true);
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+        let projectile = w.projectiles[0]; let end = projectile.end_at().unwrap();
+        // Native speed produces range expiry between ticks20 and21.
+        assert!(end > now+STEP*20 && end < now+STEP*21-Duration::from_millis(1));
+        let near_end = projectile.position_at(end-Duration::from_millis(3));
+        let target = [near_end[0]+0.236366, near_end[1]-1.55107, near_end[2]];
+        w.actors[1].position = target; w.actors[1].origin = target;
+        for n in 1..=20 { w.advance(now+STEP*n).unwrap(); }
+        assert!(!w.projectiles[0].stopped); assert!(w.contacts.is_empty());
+        w.advance(end+Duration::from_millis(1)).unwrap();
+        assert!(!w.projectiles[0].stopped); // tail deliberately awaits its query
+        w.advance(now+STEP*21).unwrap();
+        assert!(w.projectiles[0].stopped); assert_eq!(w.contacts.len(),1);
+        let contact = &w.contacts[0];
+        assert_eq!(contact.target_slot,1);
+        assert!((contact.segment_seconds-(end-(now+STEP*20)).as_secs_f32()).abs()<1e-7);
+        assert!((contact.segment_end[2]-projectile.terminal[2]).abs()<1e-5);
     }
     #[test] fn two_controllers_change_one_shared_world_without_cross_ownership() {
         let now = Instant::now(); let mut w = world(now); let other = w.actors[1].clone();

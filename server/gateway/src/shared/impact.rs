@@ -10,12 +10,16 @@ use std::io;
 use super::projectile::Projectile;
 use super::collision;
 
-pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-flight-v1";
+pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-full-pose-v2";
 pub const PROFILE: &str = "ms1_ap_2570";
 pub const MS1_VEHICLE_COMPACT_ID: u32 = 3329;
 pub const MS1_GUN_COMPACT_ID: u32 = 5892;
 pub const MS1_AP_SHELL_COMPACT_ID: u32 = 2570;
-pub const MAX_EVENTS: usize = 1024;
+pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
+// Admission + launch, segment/query pairs, one terminal collision batch, and
+// terminal. The model admits only both actors' original 20-shell loadouts.
+pub const MAX_EVENTS: usize = super::model::MAX_SHOTS
+    * (2 + MAX_SEGMENTS_PER_SHOT * 2 + collision::MAX_CANDIDATES + 1);
 pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
 pub const MAX_SEGMENT_LENGTH: f32 = 200_000.0;
@@ -216,6 +220,10 @@ impl Trace {
         if self.events.iter().any(|event| event.shot_id() == shot_id) {
             return Err(invalid("duplicate impact shot identity"));
         }
+        if self.events.iter().filter(|event| matches!(event, Event::Admission { .. })).count()
+            >= super::model::MAX_SHOTS {
+            return Err(invalid("impact shot bound"));
+        }
         let order = self.next_order_value()?;
         self.push(Event::Admission {
             order, battle_id, shot_id, server_tick, shooter_slot,
@@ -273,10 +281,14 @@ impl Trace {
         self.common(battle_id, shot_id, server_tick)?;
         let launch_tick = self.launch_tick(shot_id).ok_or_else(|| invalid("impact segment without launch"))?;
         let previous_segment_end = self.last_segment_end(shot_id);
+        let segment_count = self.events.iter().rev()
+            .take_while(|event| !matches!(event, Event::Launch { shot_id: id, .. } if *id == shot_id))
+            .filter(|event| matches!(event, Event::Segment { shot_id: id, .. } if *id == shot_id)).count();
         if segment_tick_end(segment_tick_start, server_tick).is_err()
             || !finite_vector(start) || !finite_vector(end)
             || !self.flight_continuable(shot_id)
             || self.has_terminal(shot_id)
+            || segment_count >= MAX_SEGMENTS_PER_SHOT
             || segment_tick_start < launch_tick
             || previous_segment_end.is_some_and(|previous| segment_tick_start < previous)
             || distance(start, end) > MAX_SEGMENT_LENGTH
@@ -325,8 +337,10 @@ impl Trace {
     /// geometry. Query and all intersections commit together or not at all.
     /// Revisions identify the supplied facts; they do not verify native axes.
     /// A zero-candidate query permits further flight, not a whole-shot miss.
+    /// Returned candidates are the same ordered batch committed to the trace,
+    /// so the caller can stop at the first contact without another query.
     pub fn collision_query(&mut self, battle_id: u64, shot_id: u32,
-        server_tick: u32, mesh: &collision::Mesh) -> io::Result<()> {
+        server_tick: u32, mesh: &collision::Mesh) -> io::Result<Vec<collision::Candidate>> {
         self.common(battle_id, shot_id, server_tick)?;
         let (segment_order, start, end) = match self.events.iter().rev()
             .find(|event| event.shot_id() == shot_id) {
@@ -343,24 +357,27 @@ impl Trace {
             || self.next_order.checked_add(added as u32 + 1).is_none() {
             return Err(invalid("collision query trace capacity"));
         }
-        let mut next = self.clone();
-        let query_order = next.next_order_value()?;
-        next.push(Event::CollisionQuery { order: query_order, battle_id, shot_id, server_tick,
+        let query_order = self.next_order_value()?;
+        let mut batch = Vec::with_capacity(added);
+        batch.push(Event::CollisionQuery { order: query_order, battle_id, shot_id, server_tick,
             segment_order, candidate_count: candidates.len(),
             geometry_revision: mesh.geometry_revision().into(),
-            transform_revision: mesh.transform_revision().into() })?;
-        for candidate in candidates {
-            let order = next.next_order_value()?;
-            next.push(Event::Intersection { order, battle_id, shot_id, server_tick,
+            transform_revision: mesh.transform_revision().into() });
+        for candidate in &candidates {
+            let order = query_order + batch.len() as u32;
+            batch.push(Event::Intersection { order, battle_id, shot_id, server_tick,
                 query_order, segment_order, candidate_index: candidate.candidate_index,
-                triangle_id: candidate.triangle_id, mesh: candidate.mesh, group: candidate.group,
-                material: candidate.material, normal: candidate.normal, t: candidate.t,
+                triangle_id: candidate.triangle_id, mesh: candidate.mesh.clone(), group: candidate.group.clone(),
+                material: candidate.material.clone(), normal: candidate.normal, t: candidate.t,
                 geometry_revision: mesh.geometry_revision().into(),
-                transform_revision: mesh.transform_revision().into() })?;
+                transform_revision: mesh.transform_revision().into() });
         }
-        next.last_tick = server_tick;
-        *self = next;
-        Ok(())
+        // All fallible validation precedes mutation; do not clone the complete
+        // flight history for every segment in the full-ammo trace.
+        self.events.extend(batch);
+        self.next_order += added as u32;
+        self.last_tick = server_tick;
+        Ok(candidates)
     }
 
     fn flight_continuable(&self, shot_id: u32) -> bool {
@@ -426,7 +443,8 @@ mod tests {
         assert_eq!(MS1_VEHICLE_COMPACT_ID, 3329);
         assert_eq!(MS1_GUN_COMPACT_ID, 5892);
         assert_eq!(MS1_AP_SHELL_COMPACT_ID, 2570);
-        assert!(MAX_EVENTS >= model::MAX_SHOTS * 25);
+        assert_eq!(MAX_SEGMENTS_PER_SHOT, 256);
+        assert_eq!(MAX_EVENTS, 25_720);
     }
 
     #[test]
@@ -556,7 +574,8 @@ mod tests {
     fn collision_batch_binds_actual_query_to_exact_segment_and_revisions() {
         let mut trace = launched_trace();
         trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
-        trace.collision_query(123, 1, 1001, &two_planes()).unwrap();
+        let candidates = trace.collision_query(123, 1, 1001, &two_planes()).unwrap();
+        assert_eq!(candidates.len(), 2);
         assert_eq!(trace.events().iter().map(Event::stage).collect::<Vec<_>>(),
             vec![Stage::Admission, Stage::Launch, Stage::Segment, Stage::CollisionQuery,
                 Stage::Intersection, Stage::Intersection]);
@@ -576,6 +595,10 @@ mod tests {
                     assert_eq!((*query_order, *segment_order, *candidate_index, *triangle_id), (4, 3, index, *id));
                     assert_eq!((*actual_t, *server_tick, *normal), (*t, 1001, [1.0, 0.0, 0.0]));
                     assert_eq!(actual_material, material);
+                    let candidate = &candidates[index];
+                    assert_eq!((candidate.candidate_index, candidate.triangle_id, candidate.t, candidate.normal),
+                        (*candidate_index, *triangle_id, *actual_t, *normal));
+                    assert_eq!(&candidate.material, actual_material);
                 }
                 _ => panic!("intersection missing"),
             }
@@ -597,7 +620,7 @@ mod tests {
     fn empty_query_allows_further_flight_and_does_not_claim_whole_shot_miss() {
         let mut trace = launched_trace();
         trace.segment(123, 1, 1001, 1000, [-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]).unwrap();
-        trace.collision_query(123, 1, 1001, &two_planes()).unwrap();
+        assert!(trace.collision_query(123, 1, 1001, &two_planes()).unwrap().is_empty());
         assert!(matches!(trace.events().last(), Some(Event::CollisionQuery { candidate_count: 0, .. })));
         assert!(trace.terminal_shots().is_empty());
         let before = trace.clone();
@@ -633,25 +656,96 @@ mod tests {
         assert!(trace.collision_query(123, 1, 1001, &mesh).is_err());
         assert_eq!(trace, before);
 
+    }
+
+    #[test]
+    fn segment_bound_rejects_overrun_atomically_and_still_allows_terminal() {
         let mut trace = launched_trace();
+        let mesh = two_planes();
         let mut tick = 1000;
-        while trace.events().len() < MAX_EVENTS - 2 {
-            trace.segment(123, 1, tick + 1, tick, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        for _ in 0..MAX_SEGMENTS_PER_SHOT {
+            trace.segment(123, 1, tick + 1, tick, [-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]).unwrap();
             tick += 1;
+            assert!(trace.collision_query(123, 1, tick, &mesh).unwrap().is_empty());
         }
         let before = trace.clone();
-        assert!(trace.collision_query(123, 1, tick, &mesh).is_err());
+        assert!(trace.segment(123, 1, tick + 1, tick, [-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]).is_err());
+        assert_eq!(trace, before);
+        trace.terminal(123, 1, tick, TerminalReason::RangeExpired).unwrap();
+        assert_eq!(trace.terminal_shots(), &[1]);
+    }
+
+    #[test]
+    fn query_capacity_and_order_guards_leave_no_partial_batch() {
+        let mut trace = launched_trace();
+        trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        let mesh = two_planes();
+        // Fault-inject an exhausted event store to exercise the atomic guard.
+        // Public admission/segment limits prevent a valid trace exceeding the
+        // full-ammo budget tested separately below.
+        let segment = trace.events.pop().unwrap();
+        trace.events.resize(MAX_EVENTS - 3, trace.events[0].clone());
+        trace.events.push(segment);
+        let before = trace.clone();
+        assert!(trace.collision_query(123, 1, 1001, &mesh).is_err());
         assert_eq!(trace, before);
 
         let mut trace = launched_trace();
+        trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        trace.next_order = u32::MAX - 3;
+        let before = trace.clone();
+        assert!(trace.collision_query(123, 1, 1001, &mesh).is_err());
+        assert_eq!(trace, before);
+    }
+
+    #[test]
+    fn full_ammo_maximum_segments_and_collision_batches_fit_exact_budget() {
+        let triangles = (0..collision::MAX_CANDIDATES).map(|id| collision::Triangle {
+            triangle_id: id as u32, a: 0, b: 1, c: 2,
+            mesh: "synthetic".into(), group: "overlap".into(), material: "test".into(),
+        }).collect();
+        let mesh = collision::Mesh::new(
+            vec![[0.0, -1.0, -1.0], [0.0, 1.0, -1.0], [0.0, 0.0, 1.0]],
+            triangles, "synthetic-overlap-v1", "synthetic-world-identity-v1").unwrap();
+        let now = Instant::now();
+        let world = world(now);
+        let mut trace = Trace::new();
         let mut tick = 1000;
-        while trace.events().len() < MAX_EVENTS - 4 {
-            trace.segment(123, 1, tick + 1, tick, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
-            tick += 1;
+        for index in 0..model::MAX_SHOTS {
+            let shot_id = index as u32 + 1;
+            let slot = index / 20;
+            let ammo_before = 20 - (index % 20) as u16;
+            let projectile = super::super::projectile::Projectile::launch(shot_id, slot, &world.actors[slot], now).unwrap();
+            trace.admission(123, shot_id, tick, slot, ammo_before, ammo_before - 1).unwrap();
+            trace.launch(123, &projectile, tick).unwrap();
+            for segment in 0..MAX_SEGMENTS_PER_SHOT {
+                let last = segment + 1 == MAX_SEGMENTS_PER_SHOT;
+                let (start, end) = if last { ([-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]) }
+                    else { ([-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]) };
+                trace.segment(123, shot_id, tick + 1, tick, start, end).unwrap();
+                tick += 1;
+                let candidates = trace.collision_query(123, shot_id, tick, &mesh).unwrap();
+                assert_eq!(candidates.len(), if last { collision::MAX_CANDIDATES } else { 0 });
+            }
+            trace.terminal(123, shot_id, tick, TerminalReason::UnresolvedCollision).unwrap();
         }
-        trace.collision_query(123, 1, tick, &mesh).unwrap();
-        trace.terminal(123, 1, tick, TerminalReason::UnresolvedCollision).unwrap();
         assert_eq!(trace.events().len(), MAX_EVENTS);
+        assert_eq!(trace.terminal_shots().len(), model::MAX_SHOTS);
+        assert!(trace.events().iter().enumerate().all(|(index, row)| row.order() as usize == index + 1));
+        let before = trace.clone();
+        assert!(trace.admission(123, model::MAX_SHOTS as u32 + 1, tick, 0, 20, 19).is_err());
+        assert_eq!(trace, before);
+    }
+
+    #[test]
+    fn shot_bound_applies_even_when_earlier_shots_use_no_segments() {
+        let mut trace = Trace::new();
+        for shot in 1..=model::MAX_SHOTS as u32 {
+            trace.admission(123, shot, 1000, 0, 20, 19).unwrap();
+        }
+        let before = trace.clone();
+        assert!(trace.admission(123, model::MAX_SHOTS as u32 + 1, 1000, 0, 20, 19).is_err());
+        assert_eq!(trace, before);
     }
 
     #[test]
