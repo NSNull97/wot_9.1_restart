@@ -1,15 +1,15 @@
 //! Bounded server-owned flight trace for the P06C impact gate.
 //!
 //! This module records the server-owned flight facts and the collision-only
-//! boundary and source material facts. It deliberately stops before
-//! penetration and gameplay damage.
+//! boundary and source material facts. An explicitly enabled approximate
+//! laboratory resolver can append its outcome and health transaction.
 //! Geometry labels come from the supplied mesh, never from client hit claims.
 //! They are not converted into armor thickness or HP mutation by this module.
 
 use std::io;
 
 use super::projectile::Projectile;
-use super::{collision, materials};
+use super::{ap, collision, materials};
 
 pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-full-pose-v2";
 pub const PROFILE: &str = "ms1_ap_2570";
@@ -18,10 +18,10 @@ pub const MS1_GUN_COMPACT_ID: u32 = 5892;
 pub const MS1_AP_SHELL_COMPACT_ID: u32 = 2570;
 pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
 // Admission + launch, segment/query pairs, one terminal collision batch, and
-// nearest material record and terminal. The model admits only both actors'
+// nearest material record, optional AP resolution and terminal. The model admits only both actors'
 // original 20-shell loadouts.
 pub const MAX_EVENTS: usize = super::model::MAX_SHOTS
-    * (2 + MAX_SEGMENTS_PER_SHOT * 2 + collision::MAX_CANDIDATES + 1 + 1);
+    * (2 + MAX_SEGMENTS_PER_SHOT * 2 + collision::MAX_CANDIDATES + 1 + 1 + 1);
 pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
 pub const MAX_SEGMENT_LENGTH: f32 = 200_000.0;
@@ -43,6 +43,7 @@ pub enum Stage {
     CollisionQuery,
     Intersection,
     MaterialContact,
+    ApResolution,
     Terminal,
 }
 
@@ -51,6 +52,7 @@ pub enum TerminalReason {
     RangeExpired,
     UnavailableImpactResolver,
     UnresolvedCollision,
+    TestLabImpact,
 }
 
 /// The trace is intentionally typed and does not contain client-authored
@@ -135,6 +137,21 @@ pub enum Event {
         candidate_index: usize,
         facts: materials::MaterialFacts,
     },
+    /// Outcome supplied by the enabled laboratory resolver and bound to the
+    /// retained nearest material. This records a World health transaction;
+    /// appending the event does not itself mutate an actor or publish a packet.
+    ApResolution {
+        order: u32,
+        battle_id: u64,
+        shot_id: u32,
+        server_tick: u32,
+        attacker: usize,
+        target: usize,
+        material_order: u32,
+        resolution: ap::Resolution,
+        health_before: i16,
+        health_after: i16,
+    },
     Terminal {
         order: u32,
         battle_id: u64,
@@ -153,6 +170,7 @@ impl Event {
             Self::CollisionQuery { .. } => Stage::CollisionQuery,
             Self::Intersection { .. } => Stage::Intersection,
             Self::MaterialContact { .. } => Stage::MaterialContact,
+            Self::ApResolution { .. } => Stage::ApResolution,
             Self::Terminal { .. } => Stage::Terminal,
         }
     }
@@ -165,6 +183,7 @@ impl Event {
             | Self::CollisionQuery { order, .. }
             | Self::Intersection { order, .. }
             | Self::MaterialContact { order, .. }
+            | Self::ApResolution { order, .. }
             | Self::Terminal { order, .. } => *order,
         }
     }
@@ -177,6 +196,7 @@ impl Event {
             | Self::CollisionQuery { shot_id, .. }
             | Self::Intersection { shot_id, .. }
             | Self::MaterialContact { shot_id, .. }
+            | Self::ApResolution { shot_id, .. }
             | Self::Terminal { shot_id, .. } => *shot_id,
         }
     }
@@ -336,6 +356,7 @@ impl Trace {
         let launch_tick = self.launch_tick(shot_id).ok_or_else(|| invalid("impact terminal without launch"))?;
         let previous_segment_end = self.last_segment_end(shot_id);
         let valid_stage = match reason {
+            TerminalReason::TestLabImpact => self.last_stage(shot_id) == Some(Stage::ApResolution),
             TerminalReason::UnresolvedCollision =>
                 matches!(self.last_stage(shot_id), Some(Stage::Intersection | Stage::MaterialContact)),
             TerminalReason::RangeExpired | TerminalReason::UnavailableImpactResolver =>
@@ -349,6 +370,67 @@ impl Trace {
         let order = self.next_order_value()?;
         self.push(Event::Terminal { order, battle_id, shot_id, server_tick, reason })?;
         self.terminal_shots.push(shot_id);
+        self.last_tick = server_tick;
+        Ok(())
+    }
+
+    /// Append one server outcome against this shot's immediately preceding
+    /// nearest material record. Other shots may interleave. The target is the
+    /// other actor pinned in the exact geometry pose tag for this tick.
+    pub fn ap_resolution(&mut self, battle_id: u64, shot_id: u32,
+        server_tick: u32, attacker: usize, target: usize, resolution: &ap::Resolution,
+        health_before: i16, health_after: i16) -> io::Result<()> {
+        self.common(battle_id, shot_id, server_tick)?;
+        if attacker >= super::model::CAPACITY || target >= super::model::CAPACITY
+            || attacker == target || self.has_terminal(shot_id)
+            || self.admission_facts(shot_id).map(|(slot, _)| slot) != Some(attacker)
+            || !(0..=90).contains(&health_before) || !(0..=90).contains(&health_after)
+            || resolution.profile_revision != ap::PROFILE_REVISION
+            || resolution.damage != (if resolution.outcome == ap::Outcome::Pierced { ap::DAMAGE } else { 0 })
+            || health_after != health_before.saturating_sub(resolution.damage as i16).max(0) {
+            return Err(invalid("AP resolution identity, damage or health transition"));
+        }
+        let (material_order, query, segment, intersection, facts) = match self.events.iter().rev()
+            .find(|event| event.shot_id() == shot_id) {
+            Some(Event::MaterialContact { order, battle_id: battle, server_tick: tick,
+                query_order, segment_order, intersection_order, candidate_index: 0, facts, .. })
+                if *battle == battle_id && *tick == server_tick =>
+                (*order, *query_order, *segment_order, *intersection_order, facts),
+            _ => return Err(invalid("AP resolution without latest nearest material")),
+        };
+        let pose_tag = format!("pose-v1:{target}:{server_tick}:");
+        let target_bound = matches!(self.events.iter().find(|event| event.order() == intersection),
+            Some(Event::Intersection { battle_id: battle, shot_id: shot, server_tick: tick,
+                query_order, segment_order, candidate_index: 0, mesh, material, geometry_revision,
+                transform_revision, .. })
+                if *battle == battle_id && *shot == shot_id && *tick == server_tick
+                && *query_order == query && *segment_order == segment
+                && mesh.as_str() == facts.component.name() && material == &facts.name
+                && geometry_revision == super::geometry::SOURCE_REVISION
+                && transform_revision.strip_prefix(&pose_tag).is_some_and(|digest|
+                    digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))));
+        if !target_bound || resolution.armor != facts.effective.as_ref().and_then(|e| e.armor).map(f64::from)
+            || [resolution.armor, resolution.incidence_degrees, resolution.effective_armor,
+                resolution.nominal_power, resolution.normalization_degrees].into_iter().flatten()
+                .any(|x| !x.is_finite() || x < 0.0)
+            || !resolution.incidence_degrees.is_some_and(|x| x <= 90.0)
+            || !resolution.nominal_power.is_some_and(|x| x <= 34.0) {
+            return Err(invalid("AP resolution material, target pose or numerical facts"));
+        }
+        let calculated_plate = matches!(resolution.outcome, ap::Outcome::Pierced | ap::Outcome::NotPierced);
+        if calculated_plate != (resolution.effective_armor.is_some() && resolution.normalization_degrees.is_some())
+            || (!calculated_plate && (resolution.effective_armor.is_some() || resolution.normalization_degrees.is_some()))
+            || (!matches!(resolution.outcome, ap::Outcome::Unsupported(_))
+                && !resolution.armor.is_some_and(|x| x > 0.0)) {
+            return Err(invalid("AP resolution incomplete outcome facts"));
+        }
+        // Reserve the matching terminal before mutating either order or rows.
+        if self.events.len() + 2 > MAX_EVENTS || self.next_order.checked_add(2).is_none() {
+            return Err(invalid("AP resolution trace capacity"));
+        }
+        let order = self.next_order_value()?;
+        self.push(Event::ApResolution { order, battle_id, shot_id, server_tick, attacker, target,
+            material_order, resolution: resolution.clone(), health_before, health_after })?;
         self.last_tick = server_tick;
         Ok(())
     }
@@ -391,11 +473,12 @@ impl Trace {
             _ => None,
         };
         let added = 1 + candidates.len() + usize::from(material.is_some());
-        // Leave room for a terminal if the caller closes this query now.
+        // Classified contacts reserve both an optional AP outcome and terminal.
         // A future runtime adapter must commit query/terminal with its World
         // transaction so unrelated shots cannot consume that remaining slot.
-        if self.events.len() + added + 1 > MAX_EVENTS
-            || self.next_order.checked_add(added as u32 + 1).is_none() {
+        let closing_rows = 1 + usize::from(material.is_some());
+        if self.events.len() + added + closing_rows > MAX_EVENTS
+            || self.next_order.checked_add((added + closing_rows) as u32).is_none() {
             return Err(invalid("collision query trace capacity"));
         }
         let query_order = self.next_order_value()?;
@@ -490,7 +573,7 @@ mod tests {
         assert_eq!(MS1_GUN_COMPACT_ID, 5892);
         assert_eq!(MS1_AP_SHELL_COMPACT_ID, 2570);
         assert_eq!(MAX_SEGMENTS_PER_SHOT, 256);
-        assert_eq!(MAX_EVENTS, 25_760);
+        assert_eq!(MAX_EVENTS, 25_800);
     }
 
     #[test]
@@ -634,6 +717,151 @@ mod tests {
             "synthetic-material-planes-v1", "synthetic-world-identity-v1").unwrap()
     }
 
+    fn tagged_plate(component: &str, label: &str, tag: &str) -> collision::Mesh {
+        collision::Mesh::new(vec![[0.0,-1.0,-1.0],[0.0,1.0,-1.0],[0.0,0.0,1.0]],
+            vec![collision::Triangle { triangle_id:7,a:0,b:1,c:2,mesh:component.into(),
+                group:"synthetic-tag-contract".into(),material:label.into() }],
+            super::super::geometry::SOURCE_REVISION,tag).unwrap()
+    }
+    fn ap_contact(component: &str, label: &str, tag: &str) -> (Trace,ap::Resolution) {
+        let bundle=super::super::geometry::tests::bundle();
+        let mesh=tagged_plate(component,label,tag);
+        let mut trace=launched_trace();
+        trace.segment(123,1,1001,1000,[-1.0,0.0,0.0],[3.0,0.0,0.0]).unwrap();
+        let (hits,facts)=trace.collision_query_classified(123,1,1001,&mesh,bundle.materials()).unwrap();
+        let resolution=ap::resolve(ap::Input { material:facts.as_ref().unwrap(),
+            segment_direction:[4.0,0.0,0.0],winding_normal:hits[0].normal,distance:10.0 }).unwrap();
+        (trace,resolution)
+    }
+    fn ap_tag(target: usize,tick:u32) -> String { format!("pose-v1:{target}:{tick}:{}","0".repeat(64)) }
+
+    #[test] fn ap_event_pins_nearest_material_and_health_before_terminal() {
+        let (mut trace,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
+        let material_order=trace.events().last().unwrap().order();
+        let before=trace.clone();
+        assert!(trace.terminal(123,1,1001,TerminalReason::TestLabImpact).is_err());
+        assert_eq!(trace,before);
+        trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).unwrap();
+        assert!(matches!(trace.events().last(),Some(Event::ApResolution {
+            attacker:0,target:1,material_order:pin,health_before:90,health_after:60,resolution:r,.. })
+            if *pin==material_order && *r==resolution));
+        let before=trace.clone();
+        assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,60,30).is_err());
+        assert!(trace.terminal(123,1,1001,TerminalReason::UnresolvedCollision).is_err());
+        assert!(trace.terminal(123,1,1001,TerminalReason::RangeExpired).is_err());
+        assert!(trace.segment(123,1,1002,1001,[3.0,0.0,0.0],[4.0,0.0,0.0]).is_err());
+        assert_eq!(trace,before);
+        trace.terminal(123,1,1001,TerminalReason::TestLabImpact).unwrap();
+        let before=trace.clone();
+        assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err());
+        assert!(trace.terminal(123,1,1001,TerminalReason::TestLabImpact).is_err());
+        assert_eq!(trace,before); assert_eq!(trace.terminal_shots(),&[1]);
+    }
+    #[test] fn ap_wrong_identity_health_and_forged_fields_fail_atomically() {
+        let (original,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
+        for (battle,shot,tick,attacker,target) in [(0,1,1001,0,1),(124,1,1001,0,1),
+            (123,0,1001,0,1),(123,2,1001,0,1),(123,1,1000,0,1),(123,1,1002,0,1),
+            (123,1,1001,1,0),(123,1,1001,0,0),(123,1,1001,0,2)] {
+            let mut trace=original.clone();
+            assert!(trace.ap_resolution(battle,shot,tick,attacker,target,&resolution,90,60).is_err());
+            assert_eq!(trace,original);
+        }
+        for (before,after) in [(-1,0),(90,-1),(91,61),(90,91),(90,59),(90,90)] {
+            let mut trace=original.clone();
+            assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,before,after).is_err());
+            assert_eq!(trace,original);
+        }
+        for which in 0..8 {
+            let mut bad=resolution.clone();
+            match which {0=>bad.profile_revision="unknown",1=>bad.armor=Some(19.0),
+                2=>bad.incidence_degrees=Some(f64::NAN),3=>bad.nominal_power=Some(f64::INFINITY),
+                4=>bad.damage=0,5=>bad.damage=31,6=>bad.effective_armor=None,
+                7=>bad.normalization_degrees=None,_=>unreachable!()}
+            let mut trace=original.clone();
+            assert!(trace.ap_resolution(123,1,1001,0,1,&bad,90,60).is_err()); assert_eq!(trace,original);
+        }
+        let mut lethal=original.clone();
+        lethal.ap_resolution(123,1,1001,0,1,&resolution,20,0).unwrap();
+    }
+    #[test] fn ap_unbound_target_pose_and_wrong_material_stage_are_rejected() {
+        for tag in [ap_tag(0,1001),ap_tag(1,1002),"synthetic-no-target".into(),
+            "pose-v1:1:1001:00".into(),format!("pose-v1:1:1001:{}","z".repeat(64))] {
+            let (mut trace,resolution)=ap_contact("Hull","armor_1",&tag);
+            let before=trace.clone();
+            assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err()); assert_eq!(trace,before);
+        }
+        let (_,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
+        let mut trace=launched_trace(); let before=trace.clone();
+        assert!(trace.ap_resolution(123,1,1000,0,1,&resolution,90,60).is_err()); assert_eq!(trace,before);
+        trace.segment(123,1,1001,1000,[-1.0,0.0,0.0],[3.0,0.0,0.0]).unwrap();
+        trace.collision_query(123,1,1001,&two_planes()).unwrap(); let before=trace.clone();
+        assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err()); assert_eq!(trace,before);
+    }
+    #[test] fn ap_unsupported_surface_records_zero_health_change_with_explicit_outcome() {
+        let (mut trace,resolution)=ap_contact("Gun_02","armor_1",&ap_tag(1,1001));
+        assert!(matches!(resolution.outcome,ap::Outcome::Unsupported(_)));
+        let before=trace.clone();
+        assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err()); assert_eq!(trace,before);
+        trace.ap_resolution(123,1,1001,0,1,&resolution,90,90).unwrap();
+        trace.terminal(123,1,1001,TerminalReason::TestLabImpact).unwrap();
+        let (mut trace,mut resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
+        resolution.outcome=ap::Outcome::NotPierced;resolution.damage=0;resolution.nominal_power=Some(0.0);
+        trace.ap_resolution(123,1,1001,0,1,&resolution,90,90).unwrap();
+        trace.terminal(123,1,1001,TerminalReason::TestLabImpact).unwrap();
+    }
+    #[test] fn ap_material_and_nearest_intersection_binding_cannot_be_substituted() {
+        let (original,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
+        for which in 0..5 {
+            let mut trace=original.clone();
+            if which < 2 {
+                match trace.events.last_mut().unwrap() {
+                    Event::MaterialContact { candidate_index,query_order,.. } => {
+                        if which==0 {*candidate_index=1;} else {*query_order+=1;}
+                    }, _=>unreachable!(),
+                }
+            } else {
+                let row=trace.events.iter_mut().find(|e| matches!(e,Event::Intersection{..})).unwrap();
+                match row {
+                    Event::Intersection { material,geometry_revision,transform_revision,.. }=>match which {
+                        2=>*material="armor_2".into(),3=>*geometry_revision="unknown".into(),
+                        4=>*transform_revision=ap_tag(0,1001),_=>unreachable!(),
+                    }, _=>unreachable!(),
+                }
+            }
+            let before=trace.clone();
+            assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err());assert_eq!(trace,before);
+        }
+    }
+    #[test] fn ap_append_reserves_terminal_and_order_before_mutation() {
+        let (original,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
+        let mut trace=original.clone(); let material=trace.events.pop().unwrap();
+        trace.events.resize(MAX_EVENTS-2,trace.events[0].clone());trace.events.push(material);
+        let before=trace.clone();
+        assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err());assert_eq!(trace,before);
+        let mut trace=original;trace.next_order=u32::MAX-1;let before=trace.clone();
+        assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err());assert_eq!(trace,before);
+    }
+    #[test] fn ap_resolution_follows_its_own_material_despite_interleaved_other_shot() {
+        let now=Instant::now();let w=world(now);let bundle=super::super::geometry::tests::bundle();
+        let mut trace=Trace::new();let mut resolutions=Vec::new();
+        for (shot,slot) in [(1,0),(2,1)] {
+            let projectile=super::super::projectile::Projectile::launch(shot,slot,&w.actors[slot],now).unwrap();
+            trace.admission(123,shot,1000,slot,20,19).unwrap();trace.launch(123,&projectile,1000).unwrap();
+        }
+        for (shot,target) in [(1,1),(2,0)] {
+            trace.segment(123,shot,1001,1000,[-1.0,0.0,0.0],[3.0,0.0,0.0]).unwrap();
+            let mesh=tagged_plate("Hull","armor_1",&ap_tag(target,1001));
+            let (hits,facts)=trace.collision_query_classified(123,shot,1001,&mesh,bundle.materials()).unwrap();
+            resolutions.push(ap::resolve(ap::Input{material:facts.as_ref().unwrap(),segment_direction:[4.0,0.0,0.0],
+                winding_normal:hits[0].normal,distance:10.0}).unwrap());
+        }
+        trace.ap_resolution(123,1,1001,0,1,&resolutions[0],90,60).unwrap();
+        trace.ap_resolution(123,2,1001,1,0,&resolutions[1],90,60).unwrap();
+        trace.terminal(123,1,1001,TerminalReason::TestLabImpact).unwrap();
+        trace.terminal(123,2,1001,TerminalReason::TestLabImpact).unwrap();
+        assert_eq!(trace.terminal_shots(),&[1,2]);
+    }
+
     #[test]
     fn classified_batch_uses_exact_nearest_intersection_without_changing_query() {
         let bundle = super::super::geometry::tests::bundle();
@@ -750,14 +978,14 @@ mod tests {
         original.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
         let mut trace = original.clone();
         let segment = trace.events.pop().unwrap();
-        trace.events.resize(MAX_EVENTS - 5, trace.events[0].clone());
-        trace.events.push(segment); // Four free rows: batch fits, terminal would not.
+        trace.events.resize(MAX_EVENTS - 6, trace.events[0].clone());
+        trace.events.push(segment); // Five free rows: batch+terminal fit, AP outcome would not.
         let before = trace.clone();
         assert!(trace.collision_query_classified(123, 1, 1001, &mesh, bundle.materials()).is_err());
         assert_eq!(trace, before);
 
         let mut trace = original;
-        trace.next_order = u32::MAX - 4;
+        trace.next_order = u32::MAX - 5;
         let before = trace.clone();
         assert!(trace.collision_query_classified(123, 1, 1001, &mesh, bundle.materials()).is_err());
         assert_eq!(trace, before);
@@ -894,13 +1122,10 @@ mod tests {
     #[test]
     fn full_ammo_maximum_segments_and_collision_batches_fit_exact_budget() {
         let bundle = super::super::geometry::tests::bundle();
-        let triangles = (0..collision::MAX_CANDIDATES).map(|id| collision::Triangle {
+        let triangles: Vec<_> = (0..collision::MAX_CANDIDATES).map(|id| collision::Triangle {
             triangle_id: id as u32, a: 0, b: 1, c: 2,
             mesh: "Hull".into(), group: "overlap".into(), material: "armor_8".into(),
         }).collect();
-        let mesh = collision::Mesh::new(
-            vec![[0.0, -1.0, -1.0], [0.0, 1.0, -1.0], [0.0, 0.0, 1.0]],
-            triangles, "synthetic-overlap-v1", "synthetic-world-identity-v1").unwrap();
         let now = Instant::now();
         let world = world(now);
         let mut trace = Trace::new();
@@ -908,6 +1133,14 @@ mod tests {
         for index in 0..model::MAX_SHOTS {
             let shot_id = index as u32 + 1;
             let slot = index / 20;
+            // Synthetic overlap geometry exercises the target-tag contract;
+            // it is not evidence that these triangles are native geometry.
+            let target = 1 - slot;
+            let last_tick = tick + MAX_SEGMENTS_PER_SHOT as u32;
+            let mesh = collision::Mesh::new(
+                vec![[0.0, -1.0, -1.0], [0.0, 1.0, -1.0], [0.0, 0.0, 1.0]],
+                triangles.clone(), super::super::geometry::SOURCE_REVISION,
+                format!("pose-v1:{target}:{last_tick}:{}", "0".repeat(64))).unwrap();
             let ammo_before = 20 - (index % 20) as u16;
             let projectile = super::super::projectile::Projectile::launch(shot_id, slot, &world.actors[slot], now).unwrap();
             trace.admission(123, shot_id, tick, slot, ammo_before, ammo_before - 1).unwrap();
@@ -922,12 +1155,18 @@ mod tests {
                     bundle.materials()).unwrap();
                 assert_eq!(candidates.len(), if last { collision::MAX_CANDIDATES } else { 0 });
                 assert_eq!(material.is_some(), last);
+                if last {
+                    let resolution = ap::resolve(ap::Input { material: material.as_ref().unwrap(),
+                        segment_direction: [4.0,0.0,0.0], winding_normal: candidates[0].normal, distance: 10.0 }).unwrap();
+                    trace.ap_resolution(123,shot_id,tick,slot,target,&resolution,90,60).unwrap();
+                }
             }
-            trace.terminal(123, shot_id, tick, TerminalReason::UnresolvedCollision).unwrap();
+            trace.terminal(123, shot_id, tick, TerminalReason::TestLabImpact).unwrap();
         }
         assert_eq!(trace.events().len(), MAX_EVENTS);
         assert_eq!(trace.terminal_shots().len(), model::MAX_SHOTS);
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::MaterialContact { .. })).count(), model::MAX_SHOTS);
+        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::ApResolution { .. })).count(), model::MAX_SHOTS);
         assert!(trace.events().iter().enumerate().all(|(index, row)| row.order() as usize == index + 1));
         let before = trace.clone();
         assert!(trace.admission(123, model::MAX_SHOTS as u32 + 1, tick, 0, 20, 19).is_err());
