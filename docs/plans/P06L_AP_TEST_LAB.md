@@ -59,6 +59,26 @@ No original client, canonical service, saved accounts/garage, outside games or
 other repositories are mutation targets. Agent changes use separate existing
 worktrees and disjoint files. Original assets and credentials remain local.
 
+## Owner follow-up: hits on an already destroyed vehicle
+
+Native02 owner accepted survivor movement/aim/shooting and visible impact
+effects, then clarified that effects are absent when firing at an already
+destroyed tank. Both clients were closed manually by the owner. Five actual
+post-death Hull contacts (shots6..10) stopped their tracers but remained
+UnresolvedCollision: the model's health>0 gate omitted presentation events.
+
+Complete this same card with a separate typed WreckBlocked contact event.
+Policy `test_lab-ms1-wreck-block-v1` stops AP at the retained stock mesh and
+maps the event to native resisted effect1. This is an explicit laboratory
+blocking policy, not a claimed historical armor calculation. It performs no
+penetration calculation, HP change, repeated death or roster update. Native
+source permits showDamageFromShot on an ordinary HP0 vehicle using the same
+descriptor hitTester; exploded/detached turrets remain outside this scope.
+Keep shot/material/pose binding, transaction rollback and delivery cursors.
+Add regressions for fourth-hit effects without HP/death, repeat/reconnect
+delivery, then launch both approved clients on the cumulative physics route.
+Owner must confirm the wreck impact visual before full card acceptance.
+
 Rollback: stop only receipt-identified test processes; restore isolated-copy
 install ledgers; use accepted P06J/P06K code with AP opt-in absent, accepted
 P06J contact bundle and physics-integrated-lane-01 pool. Revert card commits

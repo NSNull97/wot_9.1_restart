@@ -413,18 +413,30 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 "t":contact.triangle.t, "normal":contact.triangle.normal,
                 "geometry_revision":contact.geometry_revision, "transform_revision":contact.transform_revision,
                 "material_facts":contact.material_facts.json(),
-                "terminal":if world.impacts.iter().any(|event| event.shot==contact.shot) {"test_lab_impact"} else {"unresolved_collision"},
+                "terminal":match world.impacts.iter().find(|event| event.shot==contact.shot).map(|e| &e.outcome) {
+                    Some(model::ImpactOutcome::Ap(_)) => "test_lab_impact",
+                    Some(model::ImpactOutcome::WreckBlocked) => "test_lab_wreck_impact",
+                    None => "unresolved_collision"},
                 "damage_applied":world.impacts.iter().any(|event| event.shot==contact.shot && event.health_after<event.health_before)}));
         }
         contact_cursor = world.contacts.len();
         for event in world.impacts.iter().skip(impact_cursor) {
+            if let model::ImpactOutcome::WreckBlocked = event.outcome {
+                println!("SHARED_WRECK_IMPACT {}", serde_json::json!({
+                    "battle":world.id.to_string(),"shot":event.shot,"attacker":event.attacker,"target":event.target,"tick":event.tick,
+                    "policy_revision":model::WRECK_POLICY_REVISION,"historical_fidelity":"approximate",
+                    "outcome":"wreck_blocked","health_before":event.health_before,"health_after":event.health_after,
+                    "damage":0,"native_effect_available":event.segment.is_some()}));
+                continue;
+            }
+            let model::ImpactOutcome::Ap(resolution) = &event.outcome else { return Err(model::bad().into()); };
             println!("SHARED_AP_IMPACT {}", serde_json::json!({
                 "battle":world.id.to_string(),"shot":event.shot,"attacker":event.attacker,"target":event.target,"tick":event.tick,
-                "profile_revision":event.resolution.profile_revision,"historical_fidelity":ap::HISTORICAL_FIDELITY,
-                "outcome":event.resolution.outcome.label(),"reason":format!("{:?}",event.resolution.outcome),
-                "armor":event.resolution.armor,"incidence_degrees":event.resolution.incidence_degrees,
-                "normalization_degrees":event.resolution.normalization_degrees,
-                "effective_armor":event.resolution.effective_armor,"nominal_power":event.resolution.nominal_power,
+                "profile_revision":resolution.profile_revision,"historical_fidelity":ap::HISTORICAL_FIDELITY,
+                "outcome":resolution.outcome.label(),"reason":format!("{:?}",resolution.outcome),
+                "armor":resolution.armor,"incidence_degrees":resolution.incidence_degrees,
+                "normalization_degrees":resolution.normalization_degrees,
+                "effective_armor":resolution.effective_armor,"nominal_power":resolution.nominal_power,
                 "health_before":event.health_before,"health_after":event.health_after,
                 "damage":event.health_before-event.health_after,"native_effect_available":event.segment.is_some()}));
         }
@@ -510,11 +522,17 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 let mut body = Vec::new();
                 if visible && observed_shot {
                     if let Some(segment) = &event.segment {
-                        let outcome = match event.resolution.outcome {
-                            ap::Outcome::Ricochet => impact_wire::ShotOutcome::Ricochet,
-                            ap::Outcome::NotPierced => impact_wire::ShotOutcome::NotPierced,
-                            ap::Outcome::Pierced => impact_wire::ShotOutcome::Pierced,
-                            ap::Outcome::Unsupported(_) => return Err(model::bad()),
+                        let outcome = match &event.outcome {
+                            // Explicit laboratory policy: a wreck blocks the shell.
+                            // The native resisted FX also works on HP0 entities;
+                            // this is not an armor calculation or a new death.
+                            model::ImpactOutcome::WreckBlocked => impact_wire::ShotOutcome::NotPierced,
+                            model::ImpactOutcome::Ap(resolution) => match resolution.outcome {
+                                ap::Outcome::Ricochet => impact_wire::ShotOutcome::Ricochet,
+                                ap::Outcome::NotPierced => impact_wire::ShotOutcome::NotPierced,
+                                ap::Outcome::Pierced => impact_wire::ShotOutcome::Pierced,
+                                ap::Outcome::Unsupported(_) => return Err(model::bad()),
+                            },
                         };
                         let component = match segment.component {
                             super::materials::Component::Hull => 1,
@@ -727,6 +745,53 @@ mod tests {
         rejoin.shared.as_mut().unwrap().view=Some(w.clone());
         poll(&mut rejoin,&mut w,at).unwrap();
         assert_eq!(queued_bodies(&rejoin,at),vec![impact_wire::owner_health(0).unwrap()]);
+        assert_eq!(w.actors[1].health,0);
+    }
+    #[test] fn wreck_effect_reaches_both_peers_once_without_health_or_death_replay() {
+        let now=Instant::now(); let (mut a,mut b,_) = visible_pair(now);
+        let mut w=model::tests::ap_world(now);
+        // Kill through real server shots, then fire a fourth shot at the wreck.
+        for round in 0..4 {
+            let at=now+Duration::from_secs(round*3);
+            if round>0 { w.advance(at).unwrap(); }
+            w.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],at).unwrap();
+            for s in [&mut a,&mut b] { poll(s,&mut w,at).unwrap(); }
+            w.advance(at+model::STEP).unwrap();
+            if round<3 { for s in [&mut a,&mut b] { poll(s,&mut w,at+model::STEP).unwrap(); } }
+        }
+        let at=now+Duration::from_secs(9)+model::STEP;
+        assert_eq!(w.actors[1].health,0); assert_eq!(w.impacts.len(),4);
+        let event=w.impacts.last().unwrap();
+        assert_eq!(event.outcome,model::ImpactOutcome::WreckBlocked);
+        let segment=event.segment.as_ref().unwrap();
+        let component=match segment.component {
+            super::super::materials::Component::Hull=>1,
+            super::super::materials::Component::Turret01=>2,
+            super::super::materials::Component::Gun02=>3,
+        };
+        let fx=impact_wire::show_damage(0,1,component,segment.bounds,segment.start,segment.end,
+            impact_wire::ShotOutcome::NotPierced).unwrap();
+        let death=impact_wire::health_changed(1,0,0).unwrap();
+        for s in [&mut a,&mut b] {
+            let previous=queued_bodies(s,at);
+            let death_count=previous.iter().filter(|body| body.windows(death.len()).any(|v|v==death)).count();
+            let owner_health=s.shared.as_ref().unwrap().owner_health_sent;
+            assert_eq!(s.shared.as_ref().unwrap().impact_cursor,3);
+            poll(s,&mut w,at).unwrap();
+            let first=queued_bodies(s,at);
+            assert_eq!(first.iter().filter(|body|**body==fx).count(),1);
+            assert_eq!(first.iter().filter(|body|body.windows(death.len()).any(|v|v==death)).count(),death_count);
+            assert_eq!(s.shared.as_ref().unwrap().owner_health_sent,owner_health);
+            assert_eq!(s.shared.as_ref().unwrap().impact_cursor,4);
+            poll(s,&mut w,at).unwrap();
+            assert_eq!(queued_bodies(s,at),first);
+        }
+        let (_,mut rejoin,_)=visible_pair(at);
+        let c=rejoin.shared.as_mut().unwrap();
+        c.impact_cursor=w.impacts.len(); c.shot_cursor=w.latest_shot();
+        c.health_sent=[Some(90),Some(0)]; c.owner_health_sent=Some(0); c.view=Some(w.clone());
+        poll(&mut rejoin,&mut w,at).unwrap();
+        assert!(queued_bodies(&rejoin,at).is_empty());
         assert_eq!(w.actors[1].health,0);
     }
     fn point(slot:usize,p:[f32;3])->Vec<u8> {

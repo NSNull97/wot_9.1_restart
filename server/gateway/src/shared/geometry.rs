@@ -168,8 +168,11 @@ impl Bundle {
     }
     pub fn materials(&self) -> &Catalog { &self.materials }
     /// Recover a local segment from the authoritative contact's exact target
-    /// pose. Attached live hull/turret/gun only; detached/dead component model
-    /// transforms are not represented by Contact and must not call this route.
+    /// pose. Attached hull/turret/gun on a live or ordinary HP0 vehicle only:
+    /// #717 DamageFromShotDecoder reuses descriptor hitTester/bbox after death.
+    /// The wreck policy retains that pose; actual destroyed-model publication
+    /// remains a native acceptance gate. Exploded/detached component transforms
+    /// are not represented by Contact and must not call this route.
     pub fn impact_segment(&self, contact: &Contact) -> io::Result<ImpactSegment> {
         if contact.geometry_revision != SOURCE_REVISION || contact.target_slot >= 2 || contact.tick < 1000
             || contact.target_position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
