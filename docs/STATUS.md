@@ -1,4 +1,16 @@
-# P06M terrain-contact candidate — 2026-10-10
+# P06M static-world fix accepted visually; final wreck regression pending
+
+Native02 code112bd89/build05: owner answered «Всё нормально». Seven ground
+and six stone contacts delivered26 original FX pairs with exact wire fields;
+static-rock effect points differ about1–1.5cm, measured contact-to-FX21–98ms
+overall. Independent cumulative audit confirms17shots, movement, ammo, live
+HP90→60→30→0, ricochet and continued post-death snapshots/aim without faults.
+Snapshot02 has no shot after target death: follow-up wreck shot requested,
+still NOT_RUN. Keep card in branch; no merge before this final regression.
+[Report/evidence/commands/rollback](research/P06M_TERRAIN_IMPACT.md).
+**One next gate:** one hit in the dead hull and native effects in both clients.
+
+# Earlier P06M terrain-contact candidate — 2026-10-10
 
 **Native01 owner gate FAIL:** ground effects delivered, but owner found rocks
 passing shots or showing delayed effects.15 contacts/30 original native FX

@@ -1,4 +1,15 @@
-# P06M active — terrain contact on the cumulative runtime
+# P06M native02 accepted visually — final wreck shot pending
+
+Owner «Всё нормально»; code112bd89/build05,534 Rust tests PASS.
+Native02:13 world contacts/26 original material-aware FX pairs;17 shots,
+movement/ammo/live HP and post-death continuation independently verified.
+No wreck shot exists after shot17 kills the target. One follow-up requested;
+required wreck regression NOT_RUN, do not merge yet. Keep current clients open.
+Evidence:snapshot02/native-world-audit02.json + snapshot02-cumulative-audit01.
+[Report](research/P06M_TERRAIN_IMPACT.md).
+**One next gate:** one dead-hull hit, FX both clients, no repeated HP/death.
+
+# Earlier P06M active — terrain contact on the cumulative runtime
 
 Native01 owner test found missing/delayed rock impacts. Gate FAIL. Extend same
 card with original mask128 static obstacle export/query and material effects;

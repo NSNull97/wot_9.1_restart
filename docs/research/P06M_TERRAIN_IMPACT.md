@@ -35,7 +35,50 @@ unsupported. This card does not establish the full destructible simulation.
 Passive __calcTrajectory observation records original hit material/point,
 stop return offset and owning shot, without invoking or replacing native
 collision. A second native run must confirm near/far rock timing, actual
-effect positions/materials and retained ground/live/wreck behavior.
+effect positions/materials and retained ground/live/wreck behavior. Native02
+results are recorded below; its final wreck regression remains pending.
+
+## Native02 owner response and measured results
+
+Final runtime code `112bd890866db5afc797f2568767f2a7fdfbd7e6`, build05. Sequential
+startup: gateway19876, clients28044/30900, battle17747657236285124406, unchanged
+accepted physics pool and P06J contact bundle. Both workers settled with
+ground contacts; both native sessions entered the same battle.
+
+Owner answered **«Всё нормально»** to ground/near-far rock/optional occlusion,
+live/wreck and retained movement/shooting check. Immutable `snapshot02/` pins
+the completed capture prefixes and owner response. This is visual acceptance
+of the observed run; do not infer a shot absent from its trace.
+
+`snapshot02/native-world-audit02.json`: **13 world contacts /26 original FX
+call-return pairs**, seven ground and six stone. Every peer receives the
+exact server endpoint/direction/material packet; the original helper returns
+groundHit/stoneHit, with no duplicate stopTracer or AP outcome for those shots.
+The final client FX position can differ from the packet: max observed
+0.261183m overall (ground), roughly0.0086–0.0143m on stones. These are reported
+measurements, not exact-position equivalence or a retrospectively chosen
+tolerance. Relative to showTracer plus the native predicted flight, FX starts
+21.1–98.2ms after contact. This is process-local timing, not network RTT.
+The new bounded material-aware auditor passes six positive/negative checks
+in `world-auditor-selftest02.json`; those synthetic checks do not prove pixels.
+
+Independent `snapshot02-cumulative-audit01/receipt.json`, SHA256
+`ad09cf211a4e649aee13ad12f8ccb68b9ddea2c08d1415a7e2fba28a4c4a5542`, confirms:
+17 shots visible in both clients, ammo20→8 and20→15, four live AP contacts,
+HP90→60→30→0 and one ricochet30→30, eight once-only impact publications.
+Both native clients returned four original armor effects and three HP updates.
+Vehicles moved94.657m/56.173m from their starts, with Y spans5.789m/2.704m;
+both clients saw both tanks move. Server/native snapshots and aim continue
+after death, with no fatal error, rejection, native exception or disconnect
+in the pinned prefix. Ten UnsupportedCameraAutorotation commands were
+explicitly rejected from domain application, not silently treated as success.
+
+**Remaining required gate:** the last shot17 kills the target; there is no
+subsequent shot or WreckBlocked event in snapshot02. A single follow-up shot
+into the dead hull and its effects in both clients were requested. Wreck
+regression remains **NOT_RUN**, despite the general owner response. Optional
+manual occlusion was not separately demonstrated; automated world-before-
+armor tests cover that ordering. Do not merge before the remaining wreck gate.
 
 ## Goal and implementation
 
@@ -117,6 +160,11 @@ Evidence root: `local/evidence/20261010-p06m-terrain-impact-01/`.
 - `native-terrain-effect-contract01.json` and reproduction script: original
   method/source pins; SHA256
   `dadede07ac9ec0dfca9b67bcf479ff644a51d6bac814f95f60f8b1bc80ed1722`.
+- `native-projectile-static-source-contract01.json`, SHA256
+  `5240b971c77fb580ea684d38c487f05c989693112b40a518849dc595321ed40e`:
+  exact original mask128/predicate/return branches, eight method/code hashes,
+ 13 explicit kinds101..113 and64 unmapped resource entries. Original loader
+  has no verified forward material fallback; our unknown-kind policy is separate.
 - `audit_native_ground_run.py`: bounded per-shot two-peer audit of original
   callback returns, endpoint/direction, helper calls and absence of stop/AP.
   Its13 synthetic checks passed; synthetic success is not native evidence.
@@ -169,9 +217,10 @@ remaining material runtime blocker; original native01 failure remains FAIL.
 
 ## Acceptance, limitations and rollback
 
-Status: native01 owner acceptance **FAIL**; corrected static-world candidate
-passes automated checks, new native02/owner acceptance **NOT_RUN**. No merge
-until both applicable gates pass. Server query/tests do not prove rendered FX.
+Status: native01 owner acceptance **FAIL** retained; native02 original world
+FX delivery/materials **PASS**, owner observed behavior **PASS**, cumulative
+movement/live damage **PASS**, final native02 wreck regression **NOT_RUN**.
+Candidate remains in its branch until that required regression passes.
 
 Scope remains a two-client MS-1 AP test_lab on Karelia with accepted movement,
 aim, ammo, reload, live/wreck damage/effects. Static original map geometry is
@@ -187,5 +236,5 @@ launch `gateway-integrated-world-p06l-05` with the same
 `physics-integrated-lane-01/pool.json` and P06J contact bundle. Original client,
 canonical service, account inventory and physics worker remain unchanged.
 
-**One next gate:** two-client ground, near/far rock, occluded-tank and live/wreck
-regression, with actual native effect positions, materials and timing.
+**One next gate:** one actual shot into the destroyed hull, with native wreck
+effects in both clients and no repeated health/death update.
