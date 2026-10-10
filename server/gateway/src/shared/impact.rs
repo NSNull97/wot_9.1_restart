@@ -544,9 +544,10 @@ impl Trace {
         }
     }
 
-    /// Read the current complete batch, compare on the original segment and
-    /// use terrain on exact ties. Vehicle t is its retained f32 fact; terrain
-    /// t is f64. No unrecorded tolerance changes that existing boundary.
+    /// Read the current complete batch and compare on the original segment
+    /// using the vehicle's f32 parameter precision. Terrain wins the same f32
+    /// rounding bucket; this may prefer terrain within one bucket and is not
+    /// a claim of mathematically exact ordering. No epsilon is added.
     fn selected_terrain(&self, battle_id: u64, shot_id: u32, server_tick: u32)
         -> io::Result<Option<(u32, u32, terrain::Hit)>> {
         let (query, segment) = match self.events.iter().rev().find(|event| event.shot_id() == shot_id) {
@@ -573,7 +574,7 @@ impl Trace {
                     query_order, segment_order, candidate_index: 0, t, .. })
                     if *battle == battle_id && *shot == shot_id && *tick == server_tick
                         && *query_order == query && *segment_order == segment => {
-                    if hit.t > f64::from(*t) { return Ok(None); }
+                    if hit.t as f32 > *t { return Ok(None); }
                 },
                 _ => return Err(invalid("terrain selection nearest vehicle binding")),
             }
@@ -636,7 +637,7 @@ impl Trace {
 
     /// Query terrain and the other actor once on the same retained segment.
     /// All rows commit together. Returned facts are this exact recorded batch;
-    /// the caller selects the smaller t, with terrain winning exact ties.
+    /// the caller compares f32 t values, with terrain winning the same bucket.
     pub fn collision_query_world(&mut self, battle_id: u64, shot_id: u32,
         server_tick: u32, mesh: &collision::Mesh, catalog: &materials::Catalog,
         terrain: &terrain::Terrain)
@@ -1055,6 +1056,20 @@ mod tests {
             let mut trace=original; trace.wreck_impact(123,1,1001,0,1,0,0).unwrap();
             trace.terminal(123,1,1001,TerminalReason::TestLabWreckImpact).unwrap();
         }
+    }
+    #[test] fn nonrepresentable_shared_parameter_bucket_still_selects_terrain() {
+        let bundle=super::super::geometry::tests::bundle(); let mut trace=launched_trace();
+        trace.segment(123,1,1001,1000,[-7.0,0.0,0.0],[3.0,0.0,0.0]).unwrap();
+        let (hits,_,ground)=trace.collision_query_world(123,1,1001,
+            &tagged_plate("Hull","armor_1",&ap_tag(1,1001)),bundle.materials(),&test_terrain(Some(0.0))).unwrap();
+        let ground=ground.unwrap(); assert_eq!(hits.len(),1);
+        assert_eq!(ground.t,0.7); assert_eq!(hits[0].t,0.7f32);
+        assert!(ground.t>f64::from(hits[0].t)); assert_eq!(ground.t as f32,hits[0].t);
+        let (_,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001)); let before=trace.clone();
+        assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err());
+        assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err()); assert_eq!(trace,before);
+        assert_eq!(trace.terrain_contact(123,1,1001).unwrap(),ground);
+        trace.terminal(123,1,1001,TerminalReason::TerrainCollision).unwrap();
     }
     #[test] fn empty_vehicle_query_cannot_continue_through_cached_terrain_hit() {
         let (mut trace,hit)=terrain_batch(Some(0.0),2.0); assert!(hit.is_some());
