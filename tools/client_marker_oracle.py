@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 import re
 import stat
+import struct
 from typing import Any
 
 MAX_TRACE_BYTES = 16 * 1024 * 1024
@@ -179,7 +180,11 @@ def validate_event(row: dict[str, Any], client: str) -> list[dict[str, Any]]:
         observed = callback["args"][0]
         require(observed == expected_label(distance, armor), "native label/formula mismatch")
         # Preserve the OBSERVED label, never manufacture an expected label in a fixture.
-        result.append(dict(client=client, case_id=case_id, distance=distance, armor=armor, label=observed))
+        # Preserve the parsed native input bits independently of downstream JSON
+        # float parser choices. These are inputs, not expected predictor outputs.
+        result.append(dict(client=client, case_id=case_id, distance=distance, armor=armor, label=observed,
+                           distance_bits=struct.pack(">d", distance).hex(),
+                           armor_bits=struct.pack(">d", armor).hex()))
     return result
 
 

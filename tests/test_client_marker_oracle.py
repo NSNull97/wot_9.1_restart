@@ -49,7 +49,14 @@ class ClientMarkerOracleTests(unittest.TestCase):
     def test_synthetic_fixture_is_bounded_and_omits_raw_coordinates(self):
         result = tool.validate_event(synthetic_event(), "a")
         self.assertEqual(len(result), 60)
-        self.assertEqual(set(result[0]), {"client", "case_id", "distance", "armor", "label"})
+        self.assertEqual(set(result[0]), {"client", "case_id", "distance", "armor", "label",
+                                          "distance_bits", "armor_bits"})
+        self.assertEqual(result[0]["distance_bits"], "0000000000000000")
+        self.assertEqual(result[1]["armor_bits"], "4020000000000000")  # original input 8.0
+        self.assertEqual(result[4]["distance_bits"], "4059000000000000")  # original input 100.0
+        for sample in result:
+            self.assertRegex(sample["distance_bits"], r"^[0-9a-f]{16}$")
+            self.assertRegex(sample["armor_bits"], r"^[0-9a-f]{16}$")
 
     def test_drift_and_wrong_profile_are_rejected(self):
         self.assert_bad(lambda r: r["own_position_after"].__setitem__(0, 0.001), "drift")
