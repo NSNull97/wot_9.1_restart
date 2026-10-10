@@ -3,7 +3,9 @@
 //! World XYZ already includes each original instance transform. Per-triangle
 //! original flags select the native ProjectileMover mask-128 subset. The
 //! accepted vehicle-physics mask-18 mesh is intentionally not interchangeable.
-//! Undamaged static objects only: no destruction, water or moving obstacles.
+//! A caller may exclude exactly one verified instance without mutating these
+//! immutable source buffers. This module makes no destruction-state decisions;
+//! water and moving obstacles remain unsupported.
 //! Two-sided closed segment intersections and coplanar misses are explicit
 //! project policies, not reconstructed historical server behaviour.
 
@@ -83,6 +85,7 @@ struct Node {
 
 #[derive(Debug)]
 struct Mesh {
+    instance_count: u32,
     vertices: Box<[[f32; 3]]>,
     triangles: Box<[[u32; 3]]>,
     instances: Box<[u32]>,
@@ -237,11 +240,12 @@ impl Obstacles {
         }
         if cursor != triangles.len() { return Err(bad("obstacles incomplete instance partition")); }
         let flags = raw_flags.chunks_exact(2).map(|bytes| u16::from_le_bytes(bytes.try_into().expect("bounded two bytes"))).collect();
-        Self::build(vertices,triangles,instances,flags)
+        Self::build(vertices,triangles,instances,flags,rows.len())
     }
 
-    fn build(vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>, instances: Vec<u32>, flags: Vec<u16>) -> io::Result<Self> {
+    fn build(vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>, instances: Vec<u32>, flags: Vec<u16>, instance_count: usize) -> io::Result<Self> {
         if triangles.is_empty() || triangles.len() > TRIANGLE_COUNT || instances.len() != triangles.len()
+            || instance_count == 0 || instance_count > INSTANCE_COUNT || instances.iter().any(|&id| id as usize >= instance_count)
             || flags.len() != triangles.len() || flags.iter().any(|flag| flag & 128 != 0)
             || vertices.len() > VERTEX_COUNT || vertices.iter().flatten().any(|v| !v.is_finite() || v.abs() > MAX_QUERY_COORDINATE) {
             return Err(bad("obstacles mesh construction bounds"));
@@ -258,7 +262,7 @@ impl Obstacles {
         let mut order: Vec<u32> = (0..triangles.len() as u32).collect();
         let mut nodes = Vec::with_capacity(triangles.len()/2+1);
         build_node(&mut order,0,&boxes,&mut nodes,0)?;
-        Ok(Self { mesh: Arc::new(Mesh { vertices: vertices.into_boxed_slice(),triangles:triangles.into_boxed_slice(),
+        Ok(Self { mesh: Arc::new(Mesh { instance_count:instance_count as u32,vertices: vertices.into_boxed_slice(),triangles:triangles.into_boxed_slice(),
             instances:instances.into_boxed_slice(),material_kinds:flags.into_iter().map(|flag| (flag >> 8) as u8).collect(),
             order:order.into_boxed_slice(),nodes:nodes.into_boxed_slice() }) })
     }
@@ -267,10 +271,26 @@ impl Obstacles {
     /// Exact f64 ties use source triangle ID. A point inside a closed mesh
     /// hits its actual exit, never an invented t=0 surface. No material rule.
     pub fn nearest(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<Option<Hit>> {
-        self.query(start,end).map(|(hit,_)| hit)
+        self.nearest_excluding(start,end,None)
     }
 
+    /// Skip all triangles of one source-manifest instance before selecting a
+    /// nearest hit. No state is stored and no other instance is affected.
+    /// A valid empty instance is a no-op; an out-of-range ID is an error even
+    /// for a ray that misses the complete map. IDs are not native entity IDs.
+    pub fn nearest_excluding(&self, start: [f32; 3], end: [f32; 3], excluded_instance: Option<u32>) -> io::Result<Option<Hit>> {
+        self.query_excluding(start,end,excluded_instance).map(|(hit,_)| hit)
+    }
+
+    #[cfg(test)]
     fn query(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<(Option<Hit>,usize)> {
+        self.query_excluding(start,end,None)
+    }
+
+    fn query_excluding(&self, start: [f32; 3], end: [f32; 3], excluded_instance: Option<u32>) -> io::Result<(Option<Hit>,usize)> {
+        if excluded_instance.is_some_and(|id| id >= self.mesh.instance_count) {
+            return Err(bad("obstacles excluded instance outside source manifest"));
+        }
         if start.into_iter().chain(end).any(|v| !v.is_finite() || v.abs() > MAX_QUERY_COORDINATE) {
             return Err(bad("obstacles segment finite/coordinate bound"));
         }
@@ -286,6 +306,7 @@ impl Obstacles {
             let node = self.mesh.nodes[id as usize];
             if node.count > 0 {
                 for &triangle_id in &self.mesh.order[node.first as usize..(node.first+node.count) as usize] {
+                    if excluded_instance == Some(self.mesh.instances[triangle_id as usize]) { continue; }
                     tested += 1;
                     let triangle = points(&self.mesh.vertices,self.mesh.triangles[triangle_id as usize]);
                     if let Some(hit) = intersect(start,direction,triangle,triangle_id,self.mesh.instances[triangle_id as usize],
@@ -358,10 +379,10 @@ pub(crate) mod tests {
         let count = triangles.len();
         let vertices = triangles.into_iter().flatten().collect();
         let indices = (0..count as u32).map(|id| [id*3,id*3+1,id*3+2]).collect();
-        Obstacles::build(vertices,indices,(0..count as u32).collect(),vec![u16::from(material_kind)<<8;count]).unwrap()
+        Obstacles::build(vertices,indices,(0..count as u32).collect(),vec![u16::from(material_kind)<<8;count],count).unwrap()
     }
     fn wall(x: f32) -> [[f32; 3]; 3] { [[x,-2.,-2.],[x,2.,-2.],[x,0.,2.]] }
-    fn actual() -> &'static Obstacles {
+    pub(crate) fn actual() -> &'static Obstacles {
         static MESH: OnceLock<Obstacles> = OnceLock::new();
         MESH.get_or_init(|| {
             let root = std::env::var_os("WOT091_ROOT").map(std::path::PathBuf::from)
@@ -396,6 +417,51 @@ pub(crate) mod tests {
         assert_eq!(mesh.nearest([1.,0.,0.],[4.,0.,0.]).unwrap().unwrap().triangle_id,0);
         assert_eq!(mesh.nearest([-1.,0.,0.],[1.,0.,0.]).unwrap().unwrap().triangle_id,1);
         assert!(Arc::ptr_eq(&mesh.mesh,&mesh.clone().mesh));
+    }
+
+    #[test]
+    fn exclusion_skips_every_face_of_one_instance_before_nearest_selection() {
+        let vertices=vec![wall(0.),wall(1.),wall(2.),wall(0.)].into_iter().flatten().collect();
+        let triangles=(0..4).map(|id| [id*3,id*3+1,id*3+2]).collect();
+        let mesh=Obstacles::build(vertices,triangles,vec![0,0,1,2],vec![111<<8;4],3).unwrap();
+        let start=[-1.,0.,0.];let end=[3.,0.,0.];
+        assert_eq!(mesh.nearest(start,end).unwrap(),mesh.nearest_excluding(start,end,None).unwrap());
+        assert_eq!(mesh.nearest_excluding(start,end,Some(0)).unwrap().unwrap().instance_id,2);
+        // The overlapping distinct instance survives exclusion of instance0.
+        assert_eq!(mesh.nearest_excluding(start,end,Some(2)).unwrap().unwrap().triangle_id,0);
+        // Both faces of instance0 must disappear, so the next visible face is2.
+        let hit=mesh.nearest_excluding([0.5,0.,0.],end,Some(0)).unwrap().unwrap();
+        assert_eq!((hit.instance_id,hit.triangle_id),(1,2));
+        let hit=mesh.nearest_excluding(end,[0.5,0.,0.],Some(1)).unwrap().unwrap();
+        assert_eq!((hit.instance_id,hit.triangle_id),(0,1));
+        assert_eq!(mesh.nearest(start,end).unwrap().unwrap().triangle_id,0);
+    }
+
+    #[test]
+    fn exclusion_keeps_bvh_searching_farther_leaves_and_rejects_invalid_ids() {
+        let mesh=fixture((0..100).map(|x|wall(x as f32)).collect());
+        let hit=mesh.nearest_excluding([-1.,0.,0.],[100.,0.,0.],Some(0)).unwrap().unwrap();
+        assert_eq!((hit.instance_id,hit.triangle_id),(1,1));
+        for id in [100,u32::MAX] {
+            assert!(mesh.nearest_excluding([-1.,0.,0.],[100.,0.,0.],Some(id)).is_err());
+            assert!(mesh.nearest_excluding([8000.,8000.,8000.],[9000.,9000.,9000.],Some(id)).is_err());
+        }
+        let mesh=fixture(vec![wall(0.)]);
+        assert!(mesh.nearest_excluding([-1.,0.,0.],[1.,0.,0.],Some(0)).unwrap().is_none());
+        assert_eq!(mesh.nearest([-1.,0.,0.],[1.,0.,0.]).unwrap().unwrap().instance_id,0);
+    }
+
+    #[test]
+    fn exact_source_fixture_exclusion_removes_all_crate_faces_only() {
+        let mesh=actual(); let start=[-402.31094,56.9,-410.];let end=[-402.31094,56.9,-400.];
+        let hit=mesh.nearest(start,end).unwrap().unwrap();
+        assert_eq!(hit.instance_id,1513);assert!((88749..88791).contains(&hit.triangle_id));
+        assert!(mesh.nearest_excluding(start,end,Some(1513)).unwrap().is_none());
+        assert!(mesh.nearest_excluding(end,start,Some(1513)).unwrap().is_none());
+        assert_eq!(mesh.nearest_excluding(start,end,Some(1512)).unwrap(),Some(hit));
+        assert!(mesh.nearest_excluding(start,end,Some(INSTANCE_COUNT as u32)).is_err());
+        // Empty source instances retain their original IDs and are valid.
+        assert_eq!(mesh.nearest_excluding(start,end,Some(3)).unwrap(),Some(hit));
     }
 
     #[test]

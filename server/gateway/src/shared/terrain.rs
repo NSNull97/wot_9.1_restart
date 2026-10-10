@@ -213,8 +213,19 @@ impl Terrain {
     /// exported [-600,600] square is empty; no border wall is manufactured.
     /// A segment entirely below terrain does not become a fabricated t=0 hit.
     pub fn nearest(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<Option<Hit>> {
+        self.nearest_excluding(start,end,None)
+    }
+
+    /// Query the same immutable world with one explicitly excluded static
+    /// obstacle instance. Ground geometry is never excluded. Requesting an
+    /// exclusion without an obstacle bundle, or an invalid instance, fails.
+    pub fn nearest_excluding(&self, start: [f32; 3], end: [f32; 3], excluded_instance: Option<u32>) -> io::Result<Option<Hit>> {
+        let obstacle=match &self.obstacles {
+            Some(mesh)=>mesh.nearest_excluding(start,end,excluded_instance)?,
+            None if excluded_instance.is_some()=>return Err(bad("terrain exclusion requires obstacle bundle")),
+            None=>None,
+        };
         let ground=self.nearest_ground(start,end)?;
-        let obstacle=match &self.obstacles { Some(mesh)=>mesh.nearest(start,end)?,None=>None };
         // Same parameter domain as the retained vehicle query. Terrain wins
         // a shared rounding bucket; obstacle triangles have stable source IDs.
         if let Some(hit)=obstacle {
@@ -432,6 +443,44 @@ pub(crate) mod tests {
         let hit=terrain.nearest([1.,2.,1.],[1.,-2.,1.]).unwrap().unwrap();
         assert_eq!(hit.triangle_id,0);
         assert!(Arc::ptr_eq(&terrain.heights,&terrain.clone().heights));
+    }
+
+    #[test]
+    fn excluded_static_surface_reveals_ground_or_next_kept_obstacle() {
+        let base=synthetic(3,|_,_|0.);
+        let plane=|y| [[-1.,y,-1.],[3.,y,-1.],[1.,y,3.]];
+        let start=[1.,3.,1.];let end=[1.,-3.,1.];
+        for lower in [-1.,1.,0.] {
+            let obstacles=super::super::obstacles::tests::fixture(vec![plane(2.),plane(lower)]);
+            let terrain=base.clone().with_obstacles(Arc::new(obstacles)).unwrap();
+            assert!(matches!(terrain.nearest(start,end).unwrap().unwrap().surface,
+                Surface::StaticObstacle{instance_id:0,..}));
+            let hit=terrain.nearest_excluding(start,end,Some(0)).unwrap().unwrap();
+            if lower>0. {
+                assert!(matches!(hit.surface,Surface::StaticObstacle{instance_id:1,..}));
+                assert_eq!(hit.point[1],lower);
+            } else {
+                // Ground keeps priority over a farther static hit or a shared
+                // f32 parameter bucket, even after removing the first object.
+                assert_eq!(hit,base.nearest(start,end).unwrap().unwrap());
+            }
+            assert_eq!(terrain.nearest(start,end).unwrap(),terrain.nearest_excluding(start,end,None).unwrap());
+            assert!(terrain.nearest_excluding(start,end,Some(2)).is_err());
+        }
+    }
+
+    #[test]
+    fn exclusion_never_removes_ground_and_missing_bundle_is_an_error() {
+        let base=synthetic(3,|_,_|0.);let start=[1.,3.,1.];let end=[1.,-3.,1.];
+        assert!(base.nearest_excluding(start,end,Some(0)).is_err());
+        assert!(base.nearest_excluding([8000.,1.,8000.],[9000.,1.,9000.],Some(0)).is_err());
+        assert_eq!(base.nearest(start,end).unwrap(),base.nearest_excluding(start,end,None).unwrap());
+        let mesh=super::super::obstacles::tests::fixture(vec![[[-1.,-1.,-1.],[3.,-1.,-1.],[1.,-1.,3.]]]);
+        let terrain=base.clone().with_obstacles(Arc::new(mesh)).unwrap();
+        let expected=base.nearest(start,end).unwrap();
+        assert_eq!(terrain.nearest_excluding(start,end,Some(0)).unwrap(),expected);
+        assert_eq!(terrain.nearest(start,end).unwrap(),expected);
+        assert_eq!(terrain.source_revision(),WORLD_SOURCE_REVISION);
     }
 
     #[test]
