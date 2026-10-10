@@ -219,4 +219,64 @@ mod tests {
         assert_eq!(estimate(0.0, 51.0).class.source_label(), "not_pierced");
         assert_eq!(PROFILE_REVISION, "client-marker-717-stock-ms1-ap-v1");
     }
+
+    #[test]
+    fn original_native_method_labels_match_both_clients_exact_input_bits() {
+        use sha2::{Digest, Sha256};
+        use serde_json::{json, Value};
+
+        // Owned normalized measurements only: observed callback labels and
+        // inputs, with original trace hashes. No raw coordinates or game assets.
+        // Input bit strings avoid changing boundary cases through a JSON float
+        // parser's decimal round trip; the decimals are human-readable context.
+        const FIXTURE: &str = include_str!("../../../../tests/fixtures/client_marker_717.json");
+        // Git may check text files out with CRLF on Windows; normalize only
+        // newlines for the export hash, never numeric strings or sample data.
+        assert_eq!(format!("{:x}", Sha256::digest(FIXTURE.replace("\r\n", "\n").as_bytes())),
+            "e8062d060660a7cfbfd3095d755b13924889121b2cd5372304bca84037c93bf9");
+        let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
+        assert_eq!(fixture["schema"], "p06k-native-marker-fixture.v1");
+        assert_eq!(fixture["method_sha"],
+            "928595f683fa01b6f07fd27bf209187f3132ca51c0c427f3464e59d8830d14a3");
+        assert_eq!(fixture["profile"], json!({"shell_compact_descriptor":2570,
+            "shell_kind":"ARMOR_PIERCING", "piercing_power":[34.0,27.0], "max_distance":720.0,
+            "caliber":37.0, "damage_randomization":0.25, "piercing_randomization":0.25}));
+
+        let sources = fixture["source_traces"].as_array().unwrap();
+        assert_eq!(sources.len(), 2);
+        for (index, (client, pid, source_hash)) in [
+            ("a", 23896u64, "8b390d6413367d2f5885a110ddd9c2e9095cc426566a3116e3165fbb8249be93"),
+            ("b", 26820u64, "1e646c307cf0b7c90bff00f085ea9b816ce5d65502a9d767ca38e5b46a7f772c"),
+        ].into_iter().enumerate() {
+            assert_eq!(sources[index]["client"], client);
+            assert_eq!(sources[index]["pid"].as_u64(), Some(pid));
+            assert_eq!(sources[index]["pid_source"], "filename");
+            assert_eq!(sources[index]["sha256"], source_hash);
+        }
+        assert_ne!(sources[0]["pid"], sources[1]["pid"]);
+        assert_ne!(sources[0]["sha256"], sources[1]["sha256"]);
+
+        fn exact_input(value: &Value) -> f64 {
+            let bits = value.as_str().unwrap();
+            assert_eq!(bits.len(), 16);
+            assert!(bits.bytes().all(|byte| byte.is_ascii_hexdigit()));
+            f64::from_bits(u64::from_str_radix(bits, 16).unwrap())
+        }
+        let samples = fixture["samples"].as_array().unwrap();
+        assert_eq!(samples.len(), 120);
+        let mut per_client = [0usize; 2];
+        for (index, sample) in samples.iter().enumerate() {
+            let client_index = index / 60;
+            assert_eq!(sample["client"], ["a", "b"][client_index]);
+            assert_eq!(sample["case_id"].as_u64(), Some((index % 60) as u64));
+            let input = ClientMarkerInput::stock_ms1_ap(exact_input(&sample["distance_bits"]),
+                Some(exact_input(&sample["armor_bits"]))).unwrap();
+            let result = predict(input).unwrap();
+            assert_eq!(result.class.source_label(), sample["label"].as_str().unwrap(),
+                "native client={} case={} distance={:?} armor={:?}",
+                ["a", "b"][client_index], index % 60, input.distance(), input.armor());
+            per_client[client_index] += 1;
+        }
+        assert_eq!(per_client, [60, 60]);
+    }
 }

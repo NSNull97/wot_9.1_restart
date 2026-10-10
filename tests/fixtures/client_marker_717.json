@@ -1,0 +1,1118 @@
+{
+  "method_sha": "928595f683fa01b6f07fd27bf209187f3132ca51c0c427f3464e59d8830d14a3",
+  "profile": {
+    "caliber": 37.0,
+    "damage_randomization": 0.25,
+    "max_distance": 720.0,
+    "piercing_power": [
+      34.0,
+      27.0
+    ],
+    "piercing_randomization": 0.25,
+    "shell_compact_descriptor": 2570,
+    "shell_kind": "ARMOR_PIERCING"
+  },
+  "samples": [
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 0,
+      "client": "a",
+      "distance": 0.0,
+      "distance_bits": "0000000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 1,
+      "client": "a",
+      "distance": 0.0,
+      "distance_bits": "0000000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 2,
+      "client": "a",
+      "distance": 0.0,
+      "distance_bits": "0000000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 3,
+      "client": "a",
+      "distance": 0.0,
+      "distance_bits": "0000000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 4,
+      "client": "a",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 5,
+      "client": "a",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 6,
+      "client": "a",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 7,
+      "client": "a",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 8,
+      "client": "a",
+      "distance": 100.01000213623047,
+      "distance_bits": "405900a3e0000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 9,
+      "client": "a",
+      "distance": 100.01000213623047,
+      "distance_bits": "405900a3e0000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 10,
+      "client": "a",
+      "distance": 100.01000213623047,
+      "distance_bits": "405900a3e0000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 11,
+      "client": "a",
+      "distance": 100.01000213623047,
+      "distance_bits": "405900a3e0000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 12,
+      "client": "a",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 13,
+      "client": "a",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 14,
+      "client": "a",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 15,
+      "client": "a",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 16,
+      "client": "a",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 17,
+      "client": "a",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 18,
+      "client": "a",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 19,
+      "client": "a",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 20,
+      "client": "a",
+      "distance": 600.0,
+      "distance_bits": "4082c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 21,
+      "client": "a",
+      "distance": 600.0,
+      "distance_bits": "4082c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 22,
+      "client": "a",
+      "distance": 600.0,
+      "distance_bits": "4082c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 23,
+      "client": "a",
+      "distance": 600.0,
+      "distance_bits": "4082c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 24,
+      "client": "a",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 25,
+      "client": "a",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 26,
+      "client": "a",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 27,
+      "client": "a",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 28,
+      "client": "a",
+      "distance": 720.0,
+      "distance_bits": "4086800000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 29,
+      "client": "a",
+      "distance": 720.0,
+      "distance_bits": "4086800000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 30,
+      "client": "a",
+      "distance": 720.0,
+      "distance_bits": "4086800000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 31,
+      "client": "a",
+      "distance": 720.0,
+      "distance_bits": "4086800000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 32,
+      "client": "a",
+      "distance": 720.010009765625,
+      "distance_bits": "4086801480000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 33,
+      "client": "a",
+      "distance": 720.010009765625,
+      "distance_bits": "4086801480000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 34,
+      "client": "a",
+      "distance": 720.010009765625,
+      "distance_bits": "4086801480000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 35,
+      "client": "a",
+      "distance": 720.010009765625,
+      "distance_bits": "4086801480000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 30.599966,
+      "armor_bits": "403e99975f2cb641",
+      "case_id": 36,
+      "client": "a",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 30.6,
+      "armor_bits": "403e99999999999a",
+      "case_id": 37,
+      "client": "a",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 30.600034,
+      "armor_bits": "403e999bd4067cf2",
+      "case_id": 38,
+      "client": "a",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 50.99996599999999,
+      "armor_bits": "40497ffee2c98e53",
+      "case_id": 39,
+      "client": "a",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 51.0,
+      "armor_bits": "4049800000000000",
+      "case_id": 40,
+      "client": "a",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 51.00003400000001,
+      "armor_bits": "404980011d3671ad",
+      "case_id": 41,
+      "client": "a",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 27.449969499999998,
+      "armor_bits": "403b7331337eb28d",
+      "case_id": 42,
+      "client": "a",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 27.45,
+      "armor_bits": "403b733333333333",
+      "case_id": 43,
+      "client": "a",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 27.450030500000004,
+      "armor_bits": "403b733532e7b3da",
+      "case_id": 44,
+      "client": "a",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 45.7499695,
+      "armor_bits": "4046dfff0025bfad",
+      "case_id": 45,
+      "client": "a",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 45.75,
+      "armor_bits": "4046e00000000000",
+      "case_id": 46,
+      "client": "a",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 45.7500305,
+      "armor_bits": "4046e000ffda4053",
+      "case_id": 47,
+      "client": "a",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 24.299973,
+      "armor_bits": "40384ccb07d0aeda",
+      "case_id": 48,
+      "client": "a",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 24.3,
+      "armor_bits": "40384ccccccccccd",
+      "case_id": 49,
+      "client": "a",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 24.300027,
+      "armor_bits": "40384cce91c8eac0",
+      "case_id": 50,
+      "client": "a",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 40.499973,
+      "armor_bits": "40443fff1d81f106",
+      "case_id": 51,
+      "client": "a",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 40.5,
+      "armor_bits": "4044400000000000",
+      "case_id": 52,
+      "client": "a",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 40.500027,
+      "armor_bits": "40444000e27e0efa",
+      "case_id": 53,
+      "client": "a",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 20.835134503633423,
+      "armor_bits": "4034d5cb5ff4dde3",
+      "case_id": 54,
+      "client": "a",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 20.835157653808594,
+      "armor_bits": "4034d5cce45a1cac",
+      "case_id": 55,
+      "client": "a",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 20.83518080398376,
+      "armor_bits": "4034d5ce68bf5b74",
+      "case_id": 56,
+      "client": "a",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 34.72523960617248,
+      "armor_bits": "40415cd4a6c3232a",
+      "case_id": 57,
+      "client": "a",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 34.725262756347654,
+      "armor_bits": "40415cd568f5c28f",
+      "case_id": 58,
+      "client": "a",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 34.72528590652283,
+      "armor_bits": "40415cd62b2861f4",
+      "case_id": 59,
+      "client": "a",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 0,
+      "client": "b",
+      "distance": 0.0,
+      "distance_bits": "0000000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 1,
+      "client": "b",
+      "distance": 0.0,
+      "distance_bits": "0000000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 2,
+      "client": "b",
+      "distance": 0.0,
+      "distance_bits": "0000000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 3,
+      "client": "b",
+      "distance": 0.0,
+      "distance_bits": "0000000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 4,
+      "client": "b",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 5,
+      "client": "b",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 6,
+      "client": "b",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 7,
+      "client": "b",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 8,
+      "client": "b",
+      "distance": 100.01000213623047,
+      "distance_bits": "405900a3e0000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 9,
+      "client": "b",
+      "distance": 100.01000213623047,
+      "distance_bits": "405900a3e0000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 10,
+      "client": "b",
+      "distance": 100.01000213623047,
+      "distance_bits": "405900a3e0000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 11,
+      "client": "b",
+      "distance": 100.01000213623047,
+      "distance_bits": "405900a3e0000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 12,
+      "client": "b",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 13,
+      "client": "b",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 14,
+      "client": "b",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 15,
+      "client": "b",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 16,
+      "client": "b",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 17,
+      "client": "b",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 18,
+      "client": "b",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 19,
+      "client": "b",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 20,
+      "client": "b",
+      "distance": 600.0,
+      "distance_bits": "4082c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 21,
+      "client": "b",
+      "distance": 600.0,
+      "distance_bits": "4082c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 22,
+      "client": "b",
+      "distance": 600.0,
+      "distance_bits": "4082c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 23,
+      "client": "b",
+      "distance": 600.0,
+      "distance_bits": "4082c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 24,
+      "client": "b",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 25,
+      "client": "b",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 26,
+      "client": "b",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 27,
+      "client": "b",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 28,
+      "client": "b",
+      "distance": 720.0,
+      "distance_bits": "4086800000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 29,
+      "client": "b",
+      "distance": 720.0,
+      "distance_bits": "4086800000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 30,
+      "client": "b",
+      "distance": 720.0,
+      "distance_bits": "4086800000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 31,
+      "client": "b",
+      "distance": 720.0,
+      "distance_bits": "4086800000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 0.0,
+      "armor_bits": "0000000000000000",
+      "case_id": 32,
+      "client": "b",
+      "distance": 720.010009765625,
+      "distance_bits": "4086801480000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 8.0,
+      "armor_bits": "4020000000000000",
+      "case_id": 33,
+      "client": "b",
+      "distance": 720.010009765625,
+      "distance_bits": "4086801480000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 16.0,
+      "armor_bits": "4030000000000000",
+      "case_id": 34,
+      "client": "b",
+      "distance": 720.010009765625,
+      "distance_bits": "4086801480000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 18.0,
+      "armor_bits": "4032000000000000",
+      "case_id": 35,
+      "client": "b",
+      "distance": 720.010009765625,
+      "distance_bits": "4086801480000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 30.599966,
+      "armor_bits": "403e99975f2cb641",
+      "case_id": 36,
+      "client": "b",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 30.6,
+      "armor_bits": "403e99999999999a",
+      "case_id": 37,
+      "client": "b",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 30.600034,
+      "armor_bits": "403e999bd4067cf2",
+      "case_id": 38,
+      "client": "b",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 50.99996599999999,
+      "armor_bits": "40497ffee2c98e53",
+      "case_id": 39,
+      "client": "b",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 51.0,
+      "armor_bits": "4049800000000000",
+      "case_id": 40,
+      "client": "b",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 51.00003400000001,
+      "armor_bits": "404980011d3671ad",
+      "case_id": 41,
+      "client": "b",
+      "distance": 100.0,
+      "distance_bits": "4059000000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 27.449969499999998,
+      "armor_bits": "403b7331337eb28d",
+      "case_id": 42,
+      "client": "b",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 27.45,
+      "armor_bits": "403b733333333333",
+      "case_id": 43,
+      "client": "b",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 27.450030500000004,
+      "armor_bits": "403b733532e7b3da",
+      "case_id": 44,
+      "client": "b",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 45.7499695,
+      "armor_bits": "4046dfff0025bfad",
+      "case_id": 45,
+      "client": "b",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 45.75,
+      "armor_bits": "4046e00000000000",
+      "case_id": 46,
+      "client": "b",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 45.7500305,
+      "armor_bits": "4046e000ffda4053",
+      "case_id": 47,
+      "client": "b",
+      "distance": 300.0,
+      "distance_bits": "4072c00000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 24.299973,
+      "armor_bits": "40384ccb07d0aeda",
+      "case_id": 48,
+      "client": "b",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 24.3,
+      "armor_bits": "40384ccccccccccd",
+      "case_id": 49,
+      "client": "b",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 24.300027,
+      "armor_bits": "40384cce91c8eac0",
+      "case_id": 50,
+      "client": "b",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 40.499973,
+      "armor_bits": "40443fff1d81f106",
+      "case_id": 51,
+      "client": "b",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 40.5,
+      "armor_bits": "4044400000000000",
+      "case_id": 52,
+      "client": "b",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 40.500027,
+      "armor_bits": "40444000e27e0efa",
+      "case_id": 53,
+      "client": "b",
+      "distance": 500.0,
+      "distance_bits": "407f400000000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 20.835134503633423,
+      "armor_bits": "4034d5cb5ff4dde3",
+      "case_id": 54,
+      "client": "b",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 20.835157653808594,
+      "armor_bits": "4034d5cce45a1cac",
+      "case_id": 55,
+      "client": "b",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "great_pierced"
+    },
+    {
+      "armor": 20.83518080398376,
+      "armor_bits": "4034d5ce68bf5b74",
+      "case_id": 56,
+      "client": "b",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 34.72523960617248,
+      "armor_bits": "40415cd4a6c3232a",
+      "case_id": 57,
+      "client": "b",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "little_pierced"
+    },
+    {
+      "armor": 34.725262756347654,
+      "armor_bits": "40415cd568f5c28f",
+      "case_id": 58,
+      "client": "b",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "not_pierced"
+    },
+    {
+      "armor": 34.72528590652283,
+      "armor_bits": "40415cd62b2861f4",
+      "case_id": 59,
+      "client": "b",
+      "distance": 719.989990234375,
+      "distance_bits": "40867feb80000000",
+      "label": "not_pierced"
+    }
+  ],
+  "schema": "p06k-native-marker-fixture.v1",
+  "source_traces": [
+    {
+      "bytes": 2189617,
+      "client": "a",
+      "event_line": 304,
+      "path": "D:\\WoT_9.1_Server\\local\\evidence\\20261010-p06k-ap-impact-contract-01\\runtime-a-oracle01\\native-23896-1791622952753.jsonl",
+      "pid": 23896,
+      "pid_source": "filename",
+      "sha256": "8b390d6413367d2f5885a110ddd9c2e9095cc426566a3116e3165fbb8249be93"
+    },
+    {
+      "bytes": 2199364,
+      "client": "b",
+      "event_line": 301,
+      "path": "D:\\WoT_9.1_Server\\local\\evidence\\20261010-p06k-ap-impact-contract-01\\runtime-b-oracle01\\native-26820-1791622953849.jsonl",
+      "pid": 26820,
+      "pid_source": "filename",
+      "sha256": "1e646c307cf0b7c90bff00f085ea9b816ce5d65502a9d767ca38e5b46a7f772c"
+    }
+  ]
+}
