@@ -41,7 +41,8 @@ controller are an explicitly approximate **test_lab** model. Original descriptor
 mass/dimensions/speed limits should be sourced from the measured native export.
 The speed thresholds cut motor torque; gravity can exceed them on a slope.
 This is not a claim of historical 2014 physics. Initial static obstacles do not
-simulate destruction. Four explicit server walls enforce map bounds. Shooting,
+simulate destruction unless the explicit one-object profile below is selected.
+Four explicit server walls enforce map bounds. Shooting,
 damage, water, other vehicles and battle results are outside this worker's scope.
 
 Source ownership: this worker is maintained in `server/physics`. The old
@@ -57,6 +58,52 @@ server-owned lane override: X/Z must stay within 12 metres of the configured
 spawn and Y is always retained from the map configuration. The worker then
 settles and reports the complete terrain pose at that lane; the gateway does
 not translate the pose after physics.
+
+P06N adds an optional, separate test_lab scene mutation profile. Append
+`--remove-one <descriptor.json> --remove-one-sha256 <sha256> --generation <positive-u32>`
+after the ordinary arguments (and after `--spawn-xz`, when present). With no
+descriptor the original version-1 IPC and mesh construction are unchanged.
+
+The bounded, hash-pinned descriptor has exactly these fields:
+
+```json
+{"version":1,"profile":"test_lab","map":"01_karelia","object_id":1,"instance_id":1513,"physics_manifest_sha256":"ea6ef22aed0fdd4e4826500c280a616737f8990ce7ab7cd808b9382227ec5ffd","projectile_manifest_sha256":"ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447c5bd95dd97d80cea","first_triangle":171814,"triangle_count":42,"object_revision":"karelia-instance1513-v1"}
+```
+
+Only that identity is accepted. The loader also checks the pinned physics
+manifest's instance count and the selected chunk `[-5,-5]`, `/model[2]`, and
+`content/MilitaryEnvironment/mle009_BoxCamouflage/normal/lod0/mle009_BoxCamouflage.model`.
+The same 42 source triangles become a separate static body at startup. Every
+other source triangle and coordinate is preserved in the base mesh. The worker
+does not consume projectile geometry: its manifest hash binds the shared
+descriptor, while the server separately verifies/imports that source.
+
+This profile uses IPC version 2. Every `advance` additionally includes
+`scene_version` (initially 0), which must equal the current worker scene. The
+`ready`/`state` responses additionally bind `generation,descriptor_sha256,object_id,
+object_revision,scene_version`. Pose fields and fixed driving cadence are unchanged.
+The separate mutation request has exactly:
+
+```text
+version=2, op="remove_one", mutation_seq=1, expected_scene_version=0,
+scene_version=1, generation, object_id=1, object_revision,
+descriptor_sha256, config_sha256, advance_seq=<last completed driving sequence>
+```
+
+The `removed` ACK has exactly `version=2,event="removed",mutation_seq=1,
+advance_seq,tick,generation,config_sha256,descriptor_sha256,object_id,
+object_revision,scene_version=1`. It removes/destroys only that static body;
+it does not advance physics, the driving sequence, or the tick. Repeating the
+same mutation is idempotent, including after subsequent advances (with the
+current `advance_seq`). Any mismatched identity/version fails explicitly.
+
+The Rust bridge allows one pending operation, validates all ACK pins, exposes
+`take_removal_ack`, and blocks advances until that ACK is consumed. The battle
+coordinator must stop both lanes, obtain both acknowledgments, then commit the
+projectile/world revision and native event. Partial worker failure cannot be
+rolled back by this API: stop the battle and both workers explicitly. This
+worker does not decide damage, destruction eligibility, native IDs, client
+effects, or authoritative battle state. No generic map destruction is implied.
 
 Build via `python -B -X utf8 server/build.py physics --out local/build/server/physics-check-03`
 from the project root, using a fresh output directory. No bin/obj in sources.
