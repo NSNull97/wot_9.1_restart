@@ -1,3 +1,52 @@
+# P06M accepted — terrain/static obstacles with cumulative gameplay
+
+Owner accepted native02 ground/rock behavior and explicitly confirmed wreck
+effects in both clients. Final snapshot03 proves23 shots, six wreck hits18..23,
+HP0→0/damage0,12 once-only publications, one earlier death and unchanged physics.
+Build05:534 Rust PASS; Python26 PASS/1 existing privilege skip; layout69/22 PASS.
+Runtime source hashes match tested code112bd89; only documentation changed.
+New ground/stone path:13 contacts/26 measured original FX pairs in snapshot02.
+Late wreck FX are owner OBSERVED; original callback recording is NOT_RECORDED
+after the explicit16MiB passive trace cap. Do not claim measured callbacks for
+shots18..23. No server failure; later disconnect/worker cleanup is orderly.
+**Acceptance: PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB.** Historical accuracy,
+dynamic destructibles/water and all-map/vehicle coverage remain out of scope.
+[Report, commands, limits and rollback](research/P06M_TERRAIN_IMPACT.md).
+**One next recommended card:** source-pinned state/ID and server-authoritative
+destruction of one map obstacle, with both clients observing the same state.
+
+# Earlier P06M static-world fix; final wreck regression then pending
+
+Native02 code112bd89/build05: owner answered «Всё нормально». Seven ground
+and six stone contacts delivered26 original FX pairs with exact wire fields;
+static-rock effect points differ about1–1.5cm, measured contact-to-FX21–98ms
+overall. Independent cumulative audit confirms17shots, movement, ammo, live
+HP90→60→30→0, ricochet and continued post-death snapshots/aim without faults.
+Snapshot02 has no shot after target death: follow-up wreck shot requested,
+still NOT_RUN. Keep card in branch; no merge before this final regression.
+[Report/evidence/commands/rollback](research/P06M_TERRAIN_IMPACT.md).
+**One next gate:** one hit in the dead hull and native effects in both clients.
+
+# Earlier P06M terrain-contact candidate — 2026-10-10
+
+**Native01 owner gate FAIL:** ground effects delivered, but owner found rocks
+passing shots or showing delayed effects.15 contacts/30 original native FX
+returns prove delivery only; native early stops differ from server terrain
+endpoints by up to551m. Same card now includes static obstacles with original
+projectile mask128 and per-triangle material flags; drive mask18 is not reused
+as projectile policy. Physics pool remains unchanged. No acceptance/merge.
+
+Owner accepted P06L, merged main55af06f, and authorized the next card.
+`codex/p06m-terrain-impact` binds projectiles to the accepted physics terrain
+mesh, selects the nearest terrain/vehicle surface and queues original ground
+effects for both peers. Cumulative movement/aim/ammo/live/wreck paths retained.
+Corrected build05:534/534 Rust PASS, EXE SHAe84eaf3e…a76818; Python26 PASS/1
+existing skip, layout69/22 PASS. New static BVH and original material mapping;
+actual failing shot3 now finds the stone within9.97mm of recorded native point.
+Native02/owner acceptance pending; no merge of this candidate.
+[Plan](plans/P06M_TERRAIN_IMPACT.md), [files/commands/evidence/rollback](research/P06M_TERRAIN_IMPACT.md).
+One next gate: native two-client ground/near-far rock/occlusion/live/wreck check.
+
 # P06L approximate AP damage — 2026-10-10, owner accepted
 
 Owner accepted native02 survivor motion/aim/shooting and impact effects,

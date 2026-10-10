@@ -1,3 +1,42 @@
+# P06M accepted — owner and server cumulative regression complete
+
+Owner confirmed wreck FX in both windows. Snapshot03:6 wreck hits18..23,
+12 once-only publications, no repeated HP/death, accepted physics unchanged.
+Late native callback logging reached its16MiB cap; these effects are owner
+OBSERVED, not recorded callback PASS. Earlier13 world contacts/26 native FX
+pairs and534 Rust checks remain verified. Runtime matches code112bd89/build05.
+Card qualifies for ordinary --no-ff merge/push under the owner workflow.
+[Final report](research/P06M_TERRAIN_IMPACT.md), final evidence in
+snapshot03-cumulative-wreck-audit01/receipt.json; failed native01 retained.
+**One next recommended card:** authoritative destruction/state replication
+for one original map obstacle, preserving the accepted cumulative runtime.
+
+# Earlier P06M native02 accepted visually — final wreck shot then pending
+
+Owner «Всё нормально»; code112bd89/build05,534 Rust tests PASS.
+Native02:13 world contacts/26 original material-aware FX pairs;17 shots,
+movement/ammo/live HP and post-death continuation independently verified.
+No wreck shot exists after shot17 kills the target. One follow-up requested;
+required wreck regression NOT_RUN, do not merge yet. Keep current clients open.
+Evidence:snapshot02/native-world-audit02.json + snapshot02-cumulative-audit01.
+[Report](research/P06M_TERRAIN_IMPACT.md).
+**One next gate:** one dead-hull hit, FX both clients, no repeated HP/death.
+
+# Earlier P06M active — terrain contact on the cumulative runtime
+
+Native01 owner test found missing/delayed rock impacts. Gate FAIL. Extend same
+card with original mask128 static obstacle export/query and material effects;
+then repeat cumulative ground/rock/live/wreck check. Preserve native01.
+
+Branch:`codex/p06m-terrain-impact`, base accepted main55af06f. One card only:
+nearest terrain/static-obstacle/vehicle contact and original material effects.
+Exact accepted Karelia geometry; current physics worker and live/wreck path
+retained. Native/owner acceptance pending, no merge on missing visual gate.
+[Current report](research/P06M_TERRAIN_IMPACT.md).
+Build05 passes534/534 tests; native01 shot3 geometry regression passes.
+One next gate: sequential native02, ground/near-far rock/occlusion/live/wreck
+effects in both clients; correlate actual native position, material and timing.
+
 # P06L owner accepted / next terrain-contact card — 2026-10-10
 
 Active branch:`codex/p06l-ap-test-lab`; root code`f405c17`.

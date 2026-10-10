@@ -9,7 +9,7 @@
 use std::io;
 
 use super::projectile::Projectile;
-use super::{ap, collision, materials};
+use super::{ap, collision, materials, terrain};
 
 pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-full-pose-v2";
 pub const PROFILE: &str = "ms1_ap_2570";
@@ -17,11 +17,11 @@ pub const MS1_VEHICLE_COMPACT_ID: u32 = 3329;
 pub const MS1_GUN_COMPACT_ID: u32 = 5892;
 pub const MS1_AP_SHELL_COMPACT_ID: u32 = 2570;
 pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
-// Admission + launch, segment/query pairs, one terminal collision batch, and
+// Admission + launch, segment/terrain-query/vehicle-query triples, one terminal collision batch, and
 // nearest material record, optional AP or wreck outcome and terminal. The model admits only both actors'
 // original 20-shell loadouts.
 pub const MAX_EVENTS: usize = super::model::MAX_SHOTS
-    * (2 + MAX_SEGMENTS_PER_SHOT * 2 + collision::MAX_CANDIDATES + 1 + 1 + 1);
+    * (2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1);
 pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
 pub const MAX_SEGMENT_LENGTH: f32 = 200_000.0;
@@ -40,11 +40,13 @@ pub enum Stage {
     Admission,
     Launch,
     Segment,
+    TerrainQuery,
     CollisionQuery,
     Intersection,
     MaterialContact,
     ApResolution,
     WreckImpact,
+    TerrainContact,
     Terminal,
 }
 
@@ -55,6 +57,7 @@ pub enum TerminalReason {
     UnresolvedCollision,
     TestLabImpact,
     TestLabWreckImpact,
+    TerrainCollision,
 }
 
 /// The trace is intentionally typed and does not contain client-authored
@@ -97,6 +100,17 @@ pub enum Event {
         start: [f32; 3],
         end: [f32; 3],
         geometry_revision: &'static str,
+    },
+    /// Cached terrain query on the exact original segment, committed together
+    /// with its vehicle query. None is a measured miss in this terrain profile.
+    TerrainQuery {
+        order: u32,
+        battle_id: u64,
+        shot_id: u32,
+        server_tick: u32,
+        segment_order: u32,
+        terrain_revision: &'static str,
+        hit: Option<terrain::Hit>,
     },
     CollisionQuery {
         order: u32,
@@ -168,6 +182,17 @@ pub enum Event {
         health_before: i16,
         health_after: i16,
     },
+    /// The terrain won arbitration against the vehicle query for this segment.
+    /// Endpoint and normal are copied from the retained query, never supplied.
+    TerrainContact {
+        order: u32,
+        battle_id: u64,
+        shot_id: u32,
+        server_tick: u32,
+        segment_order: u32,
+        terrain_query_order: u32,
+        hit: terrain::Hit,
+    },
     Terminal {
         order: u32,
         battle_id: u64,
@@ -183,11 +208,13 @@ impl Event {
             Self::Admission { .. } => Stage::Admission,
             Self::Launch { .. } => Stage::Launch,
             Self::Segment { .. } => Stage::Segment,
+            Self::TerrainQuery { .. } => Stage::TerrainQuery,
             Self::CollisionQuery { .. } => Stage::CollisionQuery,
             Self::Intersection { .. } => Stage::Intersection,
             Self::MaterialContact { .. } => Stage::MaterialContact,
             Self::ApResolution { .. } => Stage::ApResolution,
             Self::WreckImpact { .. } => Stage::WreckImpact,
+            Self::TerrainContact { .. } => Stage::TerrainContact,
             Self::Terminal { .. } => Stage::Terminal,
         }
     }
@@ -197,11 +224,13 @@ impl Event {
             Self::Admission { order, .. }
             | Self::Launch { order, .. }
             | Self::Segment { order, .. }
+            | Self::TerrainQuery { order, .. }
             | Self::CollisionQuery { order, .. }
             | Self::Intersection { order, .. }
             | Self::MaterialContact { order, .. }
             | Self::ApResolution { order, .. }
             | Self::WreckImpact { order, .. }
+            | Self::TerrainContact { order, .. }
             | Self::Terminal { order, .. } => *order,
         }
     }
@@ -211,11 +240,13 @@ impl Event {
             Self::Admission { shot_id, .. }
             | Self::Launch { shot_id, .. }
             | Self::Segment { shot_id, .. }
+            | Self::TerrainQuery { shot_id, .. }
             | Self::CollisionQuery { shot_id, .. }
             | Self::Intersection { shot_id, .. }
             | Self::MaterialContact { shot_id, .. }
             | Self::ApResolution { shot_id, .. }
             | Self::WreckImpact { shot_id, .. }
+            | Self::TerrainContact { shot_id, .. }
             | Self::Terminal { shot_id, .. } => *shot_id,
         }
     }
@@ -328,6 +359,10 @@ impl Trace {
         Ok(())
     }
 
+    /// Tick fields identify the authoritative update, not a duration for its
+    /// geometric subsegments. Additional segments in one update must continue
+    /// the previous endpoint exactly and have nonzero length. The World keeps
+    /// the actual time bounds (and contact segment_seconds) independently.
     pub fn segment(
         &mut self,
         battle_id: u64,
@@ -339,17 +374,23 @@ impl Trace {
     ) -> io::Result<()> {
         self.common(battle_id, shot_id, server_tick)?;
         let launch_tick = self.launch_tick(shot_id).ok_or_else(|| invalid("impact segment without launch"))?;
-        let previous_segment_end = self.last_segment_end(shot_id);
+        let previous_segment = self.events.iter().rev().find_map(|event| match event {
+            Event::Segment { shot_id: id, segment_tick_end, end, .. } if *id == shot_id =>
+                Some((*segment_tick_end, *end)),
+            _ => None,
+        });
+        let same_update_continuation = segment_tick_start == server_tick && start != end
+            && previous_segment.is_some_and(|(tick, point)| tick == server_tick && point == start);
         let segment_count = self.events.iter().rev()
             .take_while(|event| !matches!(event, Event::Launch { shot_id: id, .. } if *id == shot_id))
             .filter(|event| matches!(event, Event::Segment { shot_id: id, .. } if *id == shot_id)).count();
-        if segment_tick_end(segment_tick_start, server_tick).is_err()
+        if (!same_update_continuation && segment_tick_end(segment_tick_start, server_tick).is_err())
             || !finite_vector(start) || !finite_vector(end)
             || !self.flight_continuable(shot_id)
             || self.has_terminal(shot_id)
             || segment_count >= MAX_SEGMENTS_PER_SHOT
             || segment_tick_start < launch_tick
-            || previous_segment_end.is_some_and(|previous| segment_tick_start < previous)
+            || previous_segment.is_some_and(|(previous, _)| segment_tick_start < previous)
             || distance(start, end) > MAX_SEGMENT_LENGTH
         {
             return Err(invalid("impact segment facts"));
@@ -377,8 +418,10 @@ impl Trace {
         let valid_stage = match reason {
             TerminalReason::TestLabImpact => self.last_stage(shot_id) == Some(Stage::ApResolution),
             TerminalReason::TestLabWreckImpact => self.last_stage(shot_id) == Some(Stage::WreckImpact),
+            TerminalReason::TerrainCollision => self.last_stage(shot_id) == Some(Stage::TerrainContact),
             TerminalReason::UnresolvedCollision =>
-                matches!(self.last_stage(shot_id), Some(Stage::Intersection | Stage::MaterialContact)),
+                matches!(self.last_stage(shot_id), Some(Stage::Intersection | Stage::MaterialContact))
+                    && self.selected_terrain(battle_id, shot_id, server_tick)?.is_none(),
             TerminalReason::RangeExpired | TerminalReason::UnavailableImpactResolver =>
                 self.flight_continuable(shot_id),
         };
@@ -461,6 +504,86 @@ impl Trace {
         Ok(())
     }
 
+    pub fn terrain_contact(&mut self, battle_id: u64, shot_id: u32,
+        server_tick: u32) -> io::Result<terrain::Hit> {
+        self.common(battle_id, shot_id, server_tick)?;
+        if self.has_terminal(shot_id) { return Err(invalid("terrain contact after terminal")); }
+        let (terrain_query_order, segment_order, hit) = self.selected_terrain(battle_id, shot_id, server_tick)?
+            .ok_or_else(|| invalid("terrain contact without nearest terrain hit"))?;
+        if self.events.len() + 2 > MAX_EVENTS || self.next_order.checked_add(2).is_none() {
+            return Err(invalid("terrain contact trace capacity"));
+        }
+        let order = self.next_order_value()?;
+        self.push(Event::TerrainContact { order, battle_id, shot_id, server_tick,
+            segment_order, terrain_query_order, hit })?;
+        self.last_tick = server_tick;
+        Ok(hit)
+    }
+
+    /// Fetch only the terrain query paired with this vehicle query. An absent
+    /// record is the existing no-terrain route, not a synthetic terrain miss.
+    fn terrain_for_query(&self, battle_id: u64, shot_id: u32, server_tick: u32,
+        segment_order: u32, query_order: u32) -> io::Result<Option<(u32, Option<terrain::Hit>)>> {
+        let previous = query_order.checked_sub(1).ok_or_else(|| invalid("terrain query order"))?;
+        match self.events.iter().find(|event| event.order() == previous) {
+            Some(Event::TerrainQuery { order, battle_id: battle, shot_id: shot, server_tick: tick,
+                segment_order: segment, terrain_revision, hit }) => {
+                if *battle != battle_id || *shot != shot_id || *tick != server_tick
+                    || *segment != segment_order || ![terrain::SOURCE_REVISION,terrain::WORLD_SOURCE_REVISION].contains(terrain_revision)
+                    || (*terrain_revision == terrain::SOURCE_REVISION && hit.is_some_and(|hit|
+                        matches!(hit.surface,terrain::Surface::StaticObstacle{..}))) {
+                    return Err(invalid("terrain query identity or segment binding"));
+                }
+                Ok(Some((*order, *hit)))
+            },
+            _ => {
+                if self.events.iter().any(|event| matches!(event, Event::TerrainQuery {
+                    shot_id: shot, segment_order: segment, .. } if *shot == shot_id && *segment == segment_order)) {
+                    return Err(invalid("terrain query batch order"));
+                }
+                Ok(None)
+            },
+        }
+    }
+
+    /// Read the current complete batch and compare on the original segment
+    /// using the vehicle's f32 parameter precision. Terrain wins the same f32
+    /// rounding bucket; this may prefer terrain within one bucket and is not
+    /// a claim of mathematically exact ordering. No epsilon is added.
+    fn selected_terrain(&self, battle_id: u64, shot_id: u32, server_tick: u32)
+        -> io::Result<Option<(u32, u32, terrain::Hit)>> {
+        let (query, segment) = match self.events.iter().rev().find(|event| event.shot_id() == shot_id) {
+            Some(Event::MaterialContact { battle_id: battle, server_tick: tick, query_order, segment_order,
+                intersection_order, candidate_index: 0, .. })
+                if *battle == battle_id && *tick == server_tick && query_order.checked_add(1) == Some(*intersection_order) =>
+                    (*query_order, *segment_order),
+            Some(Event::Intersection { battle_id: battle, server_tick: tick, query_order, segment_order, .. })
+                if *battle == battle_id && *tick == server_tick => (*query_order, *segment_order),
+            Some(Event::CollisionQuery { order, battle_id: battle, server_tick: tick, segment_order,
+                candidate_count: 0, .. }) if *battle == battle_id && *tick == server_tick => (*order, *segment_order),
+            _ => return Err(invalid("terrain selection without current collision batch")),
+        };
+        let candidate_count = match self.events.iter().find(|event| event.order() == query) {
+            Some(Event::CollisionQuery { battle_id: battle, shot_id: shot, server_tick: tick, segment_order, candidate_count, .. })
+                if *battle == battle_id && *shot == shot_id && *tick == server_tick && *segment_order == segment => *candidate_count,
+            _ => return Err(invalid("terrain selection vehicle query binding")),
+        };
+        let Some((terrain_order, Some(hit))) = self.terrain_for_query(battle_id, shot_id, server_tick, segment, query)?
+            else { return Ok(None); };
+        if candidate_count != 0 {
+            match self.events.iter().find(|event| event.order() == query + 1) {
+                Some(Event::Intersection { battle_id: battle, shot_id: shot, server_tick: tick,
+                    query_order, segment_order, candidate_index: 0, t, .. })
+                    if *battle == battle_id && *shot == shot_id && *tick == server_tick
+                        && *query_order == query && *segment_order == segment => {
+                    if hit.t as f32 > *t { return Ok(None); }
+                },
+                _ => return Err(invalid("terrain selection nearest vehicle binding")),
+            }
+        }
+        Ok(Some((terrain_order, segment, hit)))
+    }
+
     /// Validate nearest material -> exact intersection -> target pose for
     /// both outcome kinds without recomputing or accepting supplied facts.
     fn outcome_material(&self, battle_id: u64, shot_id: u32, server_tick: u32,
@@ -485,6 +608,9 @@ impl Trace {
                 && transform_revision.strip_prefix(&pose_tag).is_some_and(|digest|
                     digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))));
         if !target_bound { return Err(invalid("impact outcome material or target pose")); }
+        if self.selected_terrain(battle_id, shot_id, server_tick)?.is_some() {
+            return Err(invalid("vehicle outcome behind nearest terrain contact"));
+        }
         Ok((order, facts))
     }
 
@@ -496,8 +622,8 @@ impl Trace {
     /// so the caller can stop at the first contact without another query.
     pub fn collision_query(&mut self, battle_id: u64, shot_id: u32,
         server_tick: u32, mesh: &collision::Mesh) -> io::Result<Vec<collision::Candidate>> {
-        self.collision_batch(battle_id, shot_id, server_tick, mesh, None)
-            .map(|(candidates, _)| candidates)
+        self.collision_batch(battle_id, shot_id, server_tick, mesh, None, None)
+            .map(|(candidates, _, _)| candidates)
     }
 
     /// Bind immutable source material facts to the nearest computed hit. The
@@ -507,12 +633,24 @@ impl Trace {
     pub fn collision_query_classified(&mut self, battle_id: u64, shot_id: u32,
         server_tick: u32, mesh: &collision::Mesh, catalog: &materials::Catalog)
         -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>)> {
-        self.collision_batch(battle_id, shot_id, server_tick, mesh, Some(catalog))
+        self.collision_batch(battle_id, shot_id, server_tick, mesh, Some(catalog), None)
+            .map(|(candidates, material, _)| (candidates, material))
+    }
+
+    /// Query terrain and the other actor once on the same retained segment.
+    /// All rows commit together. Returned facts are this exact recorded batch;
+    /// the caller compares f32 t values, with terrain winning the same bucket.
+    pub fn collision_query_world(&mut self, battle_id: u64, shot_id: u32,
+        server_tick: u32, mesh: &collision::Mesh, catalog: &materials::Catalog,
+        terrain: &terrain::Terrain)
+        -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>, Option<terrain::Hit>)> {
+        self.collision_batch(battle_id, shot_id, server_tick, mesh, Some(catalog), Some(terrain))
     }
 
     fn collision_batch(&mut self, battle_id: u64, shot_id: u32,
-        server_tick: u32, mesh: &collision::Mesh, catalog: Option<&materials::Catalog>)
-        -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>)> {
+        server_tick: u32, mesh: &collision::Mesh, catalog: Option<&materials::Catalog>,
+        terrain: Option<&terrain::Terrain>)
+        -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>, Option<terrain::Hit>)> {
         self.common(battle_id, shot_id, server_tick)?;
         let (segment_order, start, end) = match self.events.iter().rev()
             .find(|event| event.shot_id() == shot_id) {
@@ -520,28 +658,34 @@ impl Trace {
                 if *segment_tick_end == server_tick => (*order, *start, *end),
             _ => return Err(invalid("collision query without current unqueried segment")),
         };
+        let terrain_hit = match terrain { Some(terrain) => terrain.nearest(start, end)?, None => None };
         let candidates = collision::query(mesh, start, end)?;
         let material = match (catalog, candidates.first()) {
             (Some(catalog), Some(nearest)) => Some(catalog.lookup(&nearest.mesh, &nearest.material)?),
             _ => None,
         };
-        let added = 1 + candidates.len() + usize::from(material.is_some());
-        // Classified contacts reserve both an optional AP/wreck outcome and terminal.
+        let added = 1 + candidates.len() + usize::from(material.is_some()) + usize::from(terrain.is_some());
+        // Reserve a selected terrain/AP/wreck outcome and its terminal.
         // A future runtime adapter must commit query/terminal with its World
         // transaction so unrelated shots cannot consume that remaining slot.
-        let closing_rows = 1 + usize::from(material.is_some());
+        let closing_rows = 1 + usize::from(material.is_some() || terrain_hit.is_some());
         if self.events.len() + added + closing_rows > MAX_EVENTS
             || self.next_order.checked_add((added + closing_rows) as u32).is_none() {
             return Err(invalid("collision query trace capacity"));
         }
-        let query_order = self.next_order_value()?;
+        let first_order = self.next_order_value()?;
         let mut batch = Vec::with_capacity(added);
+        if let Some(terrain) = terrain {
+            batch.push(Event::TerrainQuery { order: first_order, battle_id, shot_id, server_tick,
+                segment_order, terrain_revision: terrain.source_revision(), hit: terrain_hit });
+        }
+        let query_order = first_order + batch.len() as u32;
         batch.push(Event::CollisionQuery { order: query_order, battle_id, shot_id, server_tick,
             segment_order, candidate_count: candidates.len(),
             geometry_revision: mesh.geometry_revision().into(),
             transform_revision: mesh.transform_revision().into() });
         for candidate in &candidates {
-            let order = query_order + batch.len() as u32;
+            let order = first_order + batch.len() as u32;
             batch.push(Event::Intersection { order, battle_id, shot_id, server_tick,
                 query_order, segment_order, candidate_index: candidate.candidate_index,
                 triangle_id: candidate.triangle_id, mesh: candidate.mesh.clone(), group: candidate.group.clone(),
@@ -550,7 +694,7 @@ impl Trace {
                 transform_revision: mesh.transform_revision().into() });
         }
         if let Some(facts) = &material {
-            batch.push(Event::MaterialContact { order: query_order + batch.len() as u32,
+            batch.push(Event::MaterialContact { order: first_order + batch.len() as u32,
                 battle_id, shot_id, server_tick, query_order, segment_order,
                 intersection_order: query_order + 1, candidate_index: 0, facts: facts.clone() });
         }
@@ -559,13 +703,17 @@ impl Trace {
         self.events.extend(batch);
         self.next_order += added as u32;
         self.last_tick = server_tick;
-        Ok((candidates, material))
+        Ok((candidates, material, terrain_hit))
     }
 
     fn flight_continuable(&self, shot_id: u32) -> bool {
-        matches!(self.events.iter().rev().find(|event| event.shot_id() == shot_id),
-            Some(Event::Launch { .. } | Event::Segment { .. }
-                | Event::CollisionQuery { candidate_count: 0, .. }))
+        match self.events.iter().rev().find(|event| event.shot_id() == shot_id) {
+            Some(Event::Launch { .. } | Event::Segment { .. }) => true,
+            Some(Event::CollisionQuery { order, battle_id, server_tick, segment_order, candidate_count: 0, .. }) =>
+                matches!(self.terrain_for_query(*battle_id, shot_id, *server_tick, *segment_order, *order),
+                    Ok(None | Some((_, None)))),
+            _ => false,
+        }
     }
 
     fn last_stage(&self, shot_id: u32) -> Option<Stage> {
@@ -626,7 +774,7 @@ mod tests {
         assert_eq!(MS1_GUN_COMPACT_ID, 5892);
         assert_eq!(MS1_AP_SHELL_COMPACT_ID, 2570);
         assert_eq!(MAX_SEGMENTS_PER_SHOT, 256);
-        assert_eq!(MAX_EVENTS, 25_800);
+        assert_eq!(MAX_EVENTS, 36_040);
     }
 
     #[test]
@@ -695,6 +843,60 @@ mod tests {
         let before = trace.clone();
         assert!(trace.segment(123, 1, 1002, 1001, [0.; 3], [1.; 3]).is_err());
         assert_eq!(trace, before);
+    }
+
+    #[test]
+    fn same_update_subsegments_continue_exact_endpoints_and_query_independently() {
+        let mut trace=launched_trace(); let bundle=super::super::geometry::tests::bundle();
+        let ground=test_terrain(None); let mesh=tagged_plate("Hull","armor_1",&ap_tag(1,1020));
+        trace.segment(123,1,1020,1000,[-2.0,0.0,0.0],[-1.0,0.0,0.0]).unwrap();
+        assert!(trace.collision_query_world(123,1,1020,&mesh,bundle.materials(),&ground).unwrap().0.is_empty());
+        trace.segment(123,1,1020,1020,[-1.0,0.0,0.0],[1.0,0.0,0.0]).unwrap();
+        let (hits,facts,terrain_hit)=trace.collision_query_world(123,1,1020,&mesh,bundle.materials(),&ground).unwrap();
+        assert_eq!(hits.len(),1); assert_eq!(hits[0].t,0.5); assert!(facts.is_some()); assert!(terrain_hit.is_none());
+        let segments:Vec<_>=trace.events.iter().filter_map(|event|match event {
+            Event::Segment{segment_tick_start,segment_tick_end,start,end,..}=>Some((*segment_tick_start,*segment_tick_end,*start,*end)),
+            _=>None,
+        }).collect();
+        assert_eq!(segments.len(),2); assert_eq!((segments[0].0,segments[0].1),(1000,1020));
+        assert_eq!((segments[1].0,segments[1].1),(1020,1020)); assert_eq!(segments[0].3,segments[1].2);
+        let before=trace.clone();
+        assert!(trace.segment(123,1,1020,1020,[1.0,0.0,0.0],[2.0,0.0,0.0]).is_err()); assert_eq!(trace,before);
+        trace.terminal(123,1,1020,TerminalReason::UnresolvedCollision).unwrap();
+    }
+
+    #[test]
+    fn same_update_segments_reject_initial_zero_interval_discontinuity_and_reversal() {
+        let mut trace=launched_trace(); let before=trace.clone();
+        assert!(trace.segment(123,1,1000,1000,[-2.0,0.0,0.0],[-1.0,0.0,0.0]).is_err());
+        assert!(trace.segment(123,1,1001,1001,[-2.0,0.0,0.0],[-1.0,0.0,0.0]).is_err()); assert_eq!(trace,before);
+        trace.segment(123,1,1001,1000,[-2.0,0.0,0.0],[-1.0,0.0,0.0]).unwrap();
+        trace.collision_query(123,1,1001,&two_planes()).unwrap(); let before=trace.clone();
+        for (tick,start_tick,start,end) in [
+            (1001,1001,[-0.99999994,0.0,0.0],[1.0,0.0,0.0]),
+            (1001,1001,[-1.0,0.0,0.0],[-1.0,0.0,0.0]),
+            (1001,1002,[-1.0,0.0,0.0],[1.0,0.0,0.0]),
+            (1002,1002,[-1.0,0.0,0.0],[1.0,0.0,0.0]),
+            (1000,1000,[-1.0,0.0,0.0],[1.0,0.0,0.0]),
+            (1001,1001,[-1.0,0.0,0.0],[f32::NAN,0.0,0.0]),
+        ] {
+            assert!(trace.segment(123,1,tick,start_tick,start,end).is_err()); assert_eq!(trace,before);
+        }
+        trace.segment(123,1,1001,1001,[-1.0,0.0,0.0],[-0.5,0.0,0.0]).unwrap();
+        trace.terminal(123,1,1001,TerminalReason::RangeExpired).unwrap(); let before=trace.clone();
+        assert!(trace.segment(123,1,1001,1001,[-0.5,0.0,0.0],[1.0,0.0,0.0]).is_err()); assert_eq!(trace,before);
+    }
+
+    #[test]
+    fn same_update_subsegments_share_the_existing_per_shot_bound() {
+        let mut trace=launched_trace();
+        for index in 0..MAX_SEGMENTS_PER_SHOT {
+            trace.segment(123,1,1001,if index==0 {1000} else {1001},
+                [index as f32,0.0,0.0],[index as f32+1.0,0.0,0.0]).unwrap();
+        }
+        let before=trace.clone();
+        assert!(trace.segment(123,1,1001,1001,[256.0,0.0,0.0],[257.0,0.0,0.0]).is_err()); assert_eq!(trace,before);
+        trace.terminal(123,1,1001,TerminalReason::RangeExpired).unwrap();
     }
 
     #[test]
@@ -787,6 +989,145 @@ mod tests {
         (trace,resolution)
     }
     fn ap_tag(target: usize,tick:u32) -> String { format!("pose-v1:{target}:{tick}:{}","0".repeat(64)) }
+
+    fn test_terrain(hit_x: Option<f32>) -> terrain::Terrain {
+        let heights=(0..4).flat_map(|_| (0..4).map(|x|
+            hit_x.map(|at| -2.0+x as f32*2.0-at).unwrap_or(-10.0))).collect();
+        terrain::tests::fixture(-2.0,2.0,4,heights)
+    }
+    fn terrain_batch(hit_x: Option<f32>, z: f32) -> (Trace, Option<terrain::Hit>) {
+        let bundle=super::super::geometry::tests::bundle();
+        let mut trace=launched_trace();
+        trace.segment(123,1,1001,1000,[-1.0,0.0,z],[3.0,0.0,z]).unwrap();
+        let (_,_,hit)=trace.collision_query_world(123,1,1001,
+            &tagged_plate("Hull","armor_1",&ap_tag(1,1001)),bundle.materials(),&test_terrain(hit_x)).unwrap();
+        (trace,hit)
+    }
+    #[test] fn combined_query_preserves_vehicle_facts_and_records_exact_terrain_batch() {
+        let bundle=super::super::geometry::tests::bundle(); let ground=test_terrain(Some(1.0));
+        let mesh=tagged_plate("Hull","armor_1",&ap_tag(1,1001)); let mut trace=launched_trace();
+        trace.segment(123,1,1001,1000,[-1.0,0.0,0.0],[3.0,0.0,0.0]).unwrap();
+        let mut old=trace.clone();
+        let (old_hits,old_facts)=old.collision_query_classified(123,1,1001,&mesh,bundle.materials()).unwrap();
+        let (hits,facts,terrain_hit)=trace.collision_query_world(123,1,1001,&mesh,bundle.materials(),&ground).unwrap();
+        assert_eq!(hits,old_hits); assert_eq!(facts,old_facts);
+        assert_eq!(terrain_hit,ground.nearest([-1.0,0.0,0.0],[3.0,0.0,0.0]).unwrap());
+        assert!(matches!(trace.events.get(3),Some(Event::TerrainQuery {
+            order:4,segment_order:3,terrain_revision,hit,.. })
+            if *terrain_revision==terrain::SOURCE_REVISION && *hit==terrain_hit));
+        assert!(matches!(trace.events.get(4),Some(Event::CollisionQuery {order:5,segment_order:3,..})));
+        assert!(matches!(trace.events.get(5),Some(Event::Intersection {order:6,query_order:5,segment_order:3,..})));
+        assert!(matches!(trace.events.get(6),Some(Event::MaterialContact {
+            order:7,query_order:5,segment_order:3,intersection_order:6,..})));
+        let before=trace.clone();
+        assert!(trace.collision_query_world(123,1,1001,&mesh,bundle.materials(),&ground).is_err());
+        assert_eq!(trace,before);
+    }
+    #[test] fn terrain_nearer_or_tied_blocks_ap_and_wreck_until_terrain_terminal() {
+        let (_,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
+        for hit_x in [-0.5,0.0] {
+            let (mut trace,hit)=terrain_batch(Some(hit_x),0.0); let expected=hit.unwrap(); let before=trace.clone();
+            assert!(expected.t<=0.25);
+            assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err());
+            assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err());
+            for reason in [TerminalReason::TerrainCollision,TerminalReason::UnresolvedCollision,TerminalReason::RangeExpired] {
+                assert!(trace.terminal(123,1,1001,reason).is_err());
+            }
+            assert_eq!(trace,before);
+            assert_eq!(trace.terrain_contact(123,1,1001).unwrap(),expected);
+            assert!(matches!(trace.events.last(),Some(Event::TerrainContact {
+                segment_order:3,terrain_query_order:4,hit,.. }) if *hit==expected));
+            let before=trace.clone();
+            assert!(trace.terrain_contact(123,1,1001).is_err());
+            assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err());
+            assert!(trace.segment(123,1,1002,1001,[3.0,0.0,0.0],[4.0,0.0,0.0]).is_err());
+            assert!(trace.terminal(123,1,1001,TerminalReason::TestLabImpact).is_err()); assert_eq!(trace,before);
+            trace.terminal(123,1,1001,TerminalReason::TerrainCollision).unwrap(); let before=trace.clone();
+            assert!(trace.terrain_contact(123,1,1001).is_err());
+            assert!(trace.terminal(123,1,1001,TerminalReason::TerrainCollision).is_err()); assert_eq!(trace,before);
+        }
+    }
+    #[test] fn vehicle_nearer_or_terrain_missed_preserves_both_vehicle_outcomes() {
+        let (_,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
+        for hit_x in [Some(1.0),None] {
+            let (original,hit)=terrain_batch(hit_x,0.0);
+            assert_eq!(hit.is_some(),hit_x.is_some());
+            let mut trace=original.clone(); assert!(trace.terrain_contact(123,1,1001).is_err()); assert_eq!(trace,original);
+            trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).unwrap();
+            trace.terminal(123,1,1001,TerminalReason::TestLabImpact).unwrap();
+            let mut trace=original; trace.wreck_impact(123,1,1001,0,1,0,0).unwrap();
+            trace.terminal(123,1,1001,TerminalReason::TestLabWreckImpact).unwrap();
+        }
+    }
+    #[test] fn nonrepresentable_shared_parameter_bucket_still_selects_terrain() {
+        let bundle=super::super::geometry::tests::bundle(); let mut trace=launched_trace();
+        trace.segment(123,1,1001,1000,[-7.0,0.0,0.0],[3.0,0.0,0.0]).unwrap();
+        let (hits,_,ground)=trace.collision_query_world(123,1,1001,
+            &tagged_plate("Hull","armor_1",&ap_tag(1,1001)),bundle.materials(),&test_terrain(Some(0.0))).unwrap();
+        let ground=ground.unwrap(); assert_eq!(hits.len(),1);
+        assert!((ground.t-0.7).abs()<1e-12); assert_eq!(hits[0].t,0.7f32);
+        assert!(ground.t>f64::from(hits[0].t)); assert_eq!(ground.t as f32,hits[0].t);
+        let (_,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001)); let before=trace.clone();
+        assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err());
+        assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err()); assert_eq!(trace,before);
+        assert_eq!(trace.terrain_contact(123,1,1001).unwrap(),ground);
+        trace.terminal(123,1,1001,TerminalReason::TerrainCollision).unwrap();
+    }
+    #[test] fn empty_vehicle_query_cannot_continue_through_cached_terrain_hit() {
+        let (mut trace,hit)=terrain_batch(Some(0.0),2.0); assert!(hit.is_some());
+        assert!(matches!(trace.events.last(),Some(Event::CollisionQuery{candidate_count:0,..})));
+        let before=trace.clone();
+        assert!(trace.segment(123,1,1002,1001,[3.0,0.0,2.0],[4.0,0.0,2.0]).is_err());
+        assert!(trace.terminal(123,1,1001,TerminalReason::RangeExpired).is_err());
+        assert!(trace.terminal(123,1,1001,TerminalReason::UnavailableImpactResolver).is_err()); assert_eq!(trace,before);
+        trace.terrain_contact(123,1,1001).unwrap(); trace.terminal(123,1,1001,TerminalReason::TerrainCollision).unwrap();
+        let (mut trace,hit)=terrain_batch(None,2.0); assert!(hit.is_none());
+        let before=trace.clone(); assert!(trace.terrain_contact(123,1,1001).is_err()); assert_eq!(trace,before);
+        trace.segment(123,1,1002,1001,[3.0,0.0,2.0],[4.0,0.0,2.0]).unwrap();
+        trace.terminal(123,1,1002,TerminalReason::RangeExpired).unwrap();
+    }
+    #[test] fn terrain_contact_identity_stage_and_segment_substitution_fail_atomically() {
+        let (original,_)=terrain_batch(Some(0.0),0.0);
+        for (battle,shot,tick) in [(0,1,1001),(124,1,1001),(123,2,1001),(123,1,1000),(123,1,1002)] {
+            let mut trace=original.clone(); assert!(trace.terrain_contact(battle,shot,tick).is_err()); assert_eq!(trace,original);
+        }
+        let mut trace=launched_trace(); let before=trace.clone();
+        assert!(trace.terrain_contact(123,1,1000).is_err()); assert_eq!(trace,before);
+        for which in 0..9 {
+            let mut trace=original.clone();
+            match trace.events.get_mut(3).unwrap() {
+                Event::TerrainQuery {order,battle_id,shot_id,server_tick,segment_order,terrain_revision,hit} => match which {
+                    0=>*order+=1,1=>*battle_id+=1,2=>*shot_id+=1,3=>*server_tick+=1,
+                    4=>*segment_order+=1,5=>*terrain_revision="unknown",6=>*hit=None,
+                    7=>hit.as_mut().unwrap().t=0.9,
+                    8=>hit.as_mut().unwrap().surface=terrain::Surface::StaticObstacle{instance_id:0,material_kind:111},
+                    _=>unreachable!(),
+                }, _=>unreachable!(),
+            }
+            let before=trace.clone(); assert!(trace.terrain_contact(123,1,1001).is_err()); assert_eq!(trace,before);
+        }
+    }
+    #[test] fn world_query_and_terrain_contact_capacity_fail_without_partial_rows() {
+        let bundle=super::super::geometry::tests::bundle(); let ground=test_terrain(Some(0.0));
+        let mesh=tagged_plate("Hull","armor_1",&ap_tag(1,1001));
+        let mut base=launched_trace(); base.segment(123,1,1001,1000,[-1.0,0.0,0.0],[3.0,0.0,0.0]).unwrap();
+        for which in 0..3 {
+            let mut trace=base.clone();
+            let selected=if which==0 { tagged_plate("Hull","unknown",&ap_tag(1,1001)) } else { mesh.clone() };
+            if which==1 {let segment=trace.events.pop().unwrap(); trace.events.resize(MAX_EVENTS-6,trace.events[0].clone());trace.events.push(segment);}
+            if which==2 {trace.next_order=u32::MAX-5;}
+            let before=trace.clone();
+            assert!(trace.collision_query_world(123,1,1001,&selected,bundle.materials(),&ground).is_err()); assert_eq!(trace,before);
+        }
+        let (original,_)=terrain_batch(Some(0.0),0.0);
+        for overflow in [false,true] {
+            let mut trace=original.clone();
+            if overflow {trace.next_order=u32::MAX-1;} else {
+                let material=trace.events.pop().unwrap(); trace.events.resize(MAX_EVENTS-2,trace.events[0].clone());trace.events.push(material);
+            }
+            let before=trace.clone(); assert!(trace.terrain_contact(123,1,1001).is_err()); assert_eq!(trace,before);
+        }
+    }
 
     fn wreck_contact(component: &str, label: &str, tag: &str) -> Trace {
         let bundle=super::super::geometry::tests::bundle();
@@ -1268,16 +1609,22 @@ mod tests {
 
     #[test]
     fn full_ammo_maximum_segments_and_collision_batches_fit_exact_budget() {
-        full_ammo_budget(false);
+        full_ammo_budget(false, false);
     }
 
     #[test]
     fn full_ammo_wreck_outcomes_fit_the_same_exact_budget() {
-        full_ammo_budget(true);
+        full_ammo_budget(true, false);
     }
 
-    fn full_ammo_budget(wreck: bool) {
+    #[test]
+    fn full_ammo_world_queries_exhaust_the_new_terrain_budget() {
+        full_ammo_budget(false, true);
+    }
+
+    fn full_ammo_budget(wreck: bool, with_terrain: bool) {
         let bundle = super::super::geometry::tests::bundle();
+        let ground = test_terrain(None);
         let triangles: Vec<_> = (0..collision::MAX_CANDIDATES).map(|id| collision::Triangle {
             triangle_id: id as u32, a: 0, b: 1, c: 2,
             mesh: "Hull".into(), group: "overlap".into(), material: "armor_8".into(),
@@ -1307,8 +1654,13 @@ mod tests {
                     else { ([-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]) };
                 trace.segment(123, shot_id, tick + 1, tick, start, end).unwrap();
                 tick += 1;
-                let (candidates, material) = trace.collision_query_classified(123, shot_id, tick, &mesh,
-                    bundle.materials()).unwrap();
+                let (candidates, material) = if with_terrain {
+                    let (hits, facts, terrain_hit) = trace.collision_query_world(123, shot_id, tick, &mesh,
+                        bundle.materials(), &ground).unwrap();
+                    assert!(terrain_hit.is_none()); (hits, facts)
+                } else {
+                    trace.collision_query_classified(123, shot_id, tick, &mesh, bundle.materials()).unwrap()
+                };
                 assert_eq!(candidates.len(), if last { collision::MAX_CANDIDATES } else { 0 });
                 assert_eq!(material.is_some(), last);
                 if last && wreck {
@@ -1322,7 +1674,9 @@ mod tests {
             trace.terminal(123, shot_id, tick, if wreck { TerminalReason::TestLabWreckImpact }
                 else { TerminalReason::TestLabImpact }).unwrap();
         }
-        assert_eq!(trace.events().len(), MAX_EVENTS);
+        assert_eq!(trace.events().len(), if with_terrain { MAX_EVENTS } else { 25_800 });
+        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::TerrainQuery { .. })).count(),
+            if with_terrain { model::MAX_SHOTS * MAX_SEGMENTS_PER_SHOT } else { 0 });
         assert_eq!(trace.terminal_shots().len(), model::MAX_SHOTS);
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::MaterialContact { .. })).count(), model::MAX_SHOTS);
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::ApResolution { .. })).count(),

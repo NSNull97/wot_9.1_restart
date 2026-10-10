@@ -1,6 +1,6 @@
 //! Bounded two-session native dispatcher. Authentication and channel replay
 //! policy are shared with the accepted gateway; no unauthenticated lab login.
-use super::{model::{self, World}, ap, impact_wire, wire, Client, Phase};
+use super::{model::{self, World}, ap, impact_wire, terrain_wire, wire, Client, Phase};
 use super::super::*;
 
 #[derive(Default)]
@@ -201,23 +201,45 @@ impl Table {
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None)
+}
+
+fn terrain_for_pool(pool: &crate::map_drive_worker091::Pool) -> io::Result<Arc<super::terrain::Terrain>> {
+    use std::io::Read;
+    let map=pool.maps.iter().find(|map|map.asset=="01_karelia" && map.arena_type_id==1).ok_or_else(model::bad)?;
+    // Pool load already validated ownership/schema; recheck these exact bytes
+    // so a replaced config cannot substitute projectile geometry afterwards.
+    let mut raw=Vec::new(); fs::File::open(&map.config)?.take(65537).read_to_end(&mut raw)?;
+    if raw.is_empty() || raw.len()>65536 || format!("{:x}",Sha256::digest(&raw))!=map.config_sha256 { return Err(model::bad()); }
+    let config:serde_json::Value=serde_json::from_slice(&raw).map_err(|_|model::bad())?;
+    if config["terrain"]["sha256"].as_str()!=Some(super::terrain::MANIFEST_SHA256) { return Err(model::bad()); }
+    let path=config["terrain"]["path"].as_str().ok_or_else(model::bad)?;
+    let terrain=super::terrain::Terrain::load(&pool.local_root,Path::new(path))?;
+    // Same original map resources, independently filtered with the original
+    // projectile mask128. The vehicle-physics mask18 export is not substituted.
+    let obstacle_path=pool.local_root.join("evidence/20261010-p06m-terrain-impact-01/projectile-obstacles01/01_karelia/manifest.json");
+    let obstacles=super::obstacles::Obstacles::load(&pool.local_root,&obstacle_path)?;
+    Ok(Arc::new(terrain.with_obstacles(Arc::new(obstacles))?))
 }
 
 pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
-    pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool) -> Result<(), Box<dyn std::error::Error>> {
     if ap_test_lab && geometry_path.is_none() { return Err(model::bad().into()); }
+    if terrain_test_lab && !ap_test_lab { return Err(model::bad().into()); }
     let config = crate::identity091::Config::load(config_path)?;
     let pool = crate::map_drive_worker091::Pool::load(&config.local_root, Path::new(pool_path))?;
     let geometry = geometry_path.map(|path| super::geometry::Bundle::load(&config.local_root, Path::new(path)))
         .transpose()?.map(Arc::new);
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab)
+    let terrain = if terrain_test_lab { Some(terrain_for_pool(&pool)?) } else { None };
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain)
 }
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
-    integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool)
+    integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
+    terrain: Option<Arc<super::terrain::Terrain>>)
     -> Result<(), Box<dyn std::error::Error>> {
     if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
+    if terrain.is_some() && !ap_test_lab { return Err(model::bad().into()); }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
     let private = login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len() != 16 { return Err(model::bad().into()); }
@@ -233,15 +255,22 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut world = World::new(OsRng.next_u64().max(1), started)?;
     if let Some(bundle) = geometry {
         world.bind_geometry(bundle)?;
-        println!("SHARED_GEOMETRY_BOUND battle={} bundle_sha256={} revision={} material_revision={} components=Hull,Turret_01,Gun_02 scope=other_actor_only damage={} terrain_projectiles=false",
-            world.id, super::geometry::BUNDLE_SHA256, super::geometry::SOURCE_REVISION, super::materials::PROFILE_REVISION, ap_test_lab);
+        println!("SHARED_GEOMETRY_BOUND battle={} bundle_sha256={} revision={} material_revision={} components=Hull,Turret_01,Gun_02 scope=other_actor_only damage={} terrain_projectiles={}",
+            world.id, super::geometry::BUNDLE_SHA256, super::geometry::SOURCE_REVISION, super::materials::PROFILE_REVISION, ap_test_lab, terrain.is_some());
     }
     if ap_test_lab {
         world.enable_ap_test_lab()?;
         println!("SHARED_AP_PROFILE revision={} historical_fidelity={} damage={} rng=false friendly_fire=true persistence=false",
             ap::PROFILE_REVISION, ap::HISTORICAL_FIDELITY, ap::DAMAGE);
     }
+    if let Some(terrain) = terrain {
+        let revision=terrain.source_revision();
+        world.bind_terrain(terrain)?;
+        println!("SHARED_TERRAIN_BOUND battle={} revision={} manifest_sha256={} obstacle_manifest_sha256={} map=01_karelia geometry=original_world material=source_kind terrain_only=false obstacles=true projectile_mask=128 tie_policy=world_first_f32_bucket",
+            world.id,revision,super::terrain::MANIFEST_SHA256,super::obstacles::MANIFEST_SHA256);
+    }
     let mut contact_cursor = 0usize;
+    let mut terrain_cursor = 0usize;
     let mut impact_cursor = 0usize;
     let mut integrated = integrated_pool.map(IntegratedRuntime::new);
     let mut next_id = 1u32;
@@ -420,6 +449,23 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 "damage_applied":world.impacts.iter().any(|event| event.shot==contact.shot && event.health_after<event.health_before)}));
         }
         contact_cursor = world.contacts.len();
+        for contact in world.terrain_contacts.iter().skip(terrain_cursor) {
+            let (surface,instance_id,material_kind)=match contact.hit.surface {
+                super::terrain::Surface::Ground => ("terrain",None,None),
+                super::terrain::Surface::StaticObstacle{instance_id,material_kind} =>
+                    ("static_obstacle",Some(instance_id),Some(material_kind)),
+            };
+            println!("SHARED_TERRAIN_CONTACT {}",serde_json::json!({
+                "battle":world.id.to_string(),"shot":contact.shot,"shooter":contact.shooter,"tick":contact.tick,
+                "triangle_id":contact.hit.triangle_id,"t":contact.hit.t,"endpoint":contact.hit.point,
+                "normal":contact.hit.normal,"direction":contact.direction,
+                "segment_start":contact.segment_start,"segment_end":contact.segment_end,
+                "geometry_revision":if surface=="terrain" {super::terrain::SOURCE_REVISION} else {super::obstacles::SOURCE_REVISION},
+                "surface":surface,"instance_id":instance_id,"material_kind":material_kind,
+                "effect_material_index":contact.hit.effect_material_index(),"material_policy":contact.hit.material_policy(),
+                "damage_applied":false}));
+        }
+        terrain_cursor=world.terrain_contacts.len();
         for event in world.impacts.iter().skip(impact_cursor) {
             if let model::ImpactOutcome::WreckBlocked = event.outcome {
                 println!("SHARED_WRECK_IMPACT {}", serde_json::json!({
@@ -510,7 +556,14 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 let index = projectile.sequence.checked_sub(1).ok_or_else(model::bad)? as usize;
                 if index >= c.tracer_started.len() { return Err(model::bad()); }
                 if c.tracer_started[index] && !c.tracer_stopped[index] {
-                    next.outbox.push_back(wire::tracer_stop(projectile)?);
+                    if let Some(contact)=next_world.terrain_contacts.iter().find(|c|c.shot==projectile.sequence) {
+                        // Original explodeProjectile terminates its own mover.
+                        // A subsequent stopTracer would hide/cancel ground FX.
+                        next.outbox.push_back(super::terrain_wire::explode_material(projectile.sequence,
+                            contact.hit.point,contact.direction,contact.hit.effect_material_index())?);
+                    } else {
+                        next.outbox.push_back(wire::tracer_stop(projectile)?);
+                    }
                     c.tracer_stopped[index] = true;
                     tracer_stops.push((projectile.sequence, projectile.slot));
                 }
@@ -617,7 +670,11 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         println!("SHARED_TRACER_START battle={} session={} shot={} shooter_slot={} native_method=Avatar.showTracer queued=true", world.id, s.id, sequence, shooter_slot);
     }
     for (sequence, shooter_slot) in tracer_stops {
-        println!("SHARED_TRACER_STOP battle={} session={} shot={} shooter_slot={} native_method=Avatar.stopTracer queued=true", world.id, s.id, sequence, shooter_slot);
+        if next_world.terrain_contacts.iter().any(|c|c.shot==sequence) {
+            println!("SHARED_TERRAIN_PUBLICATION battle={} session={} shot={} shooter_slot={} native_method=Avatar.explodeProjectile queued=true",world.id,s.id,sequence,shooter_slot);
+        } else {
+            println!("SHARED_TRACER_STOP battle={} session={} shot={} shooter_slot={} native_method=Avatar.stopTracer queued=true", world.id, s.id, sequence, shooter_slot);
+        }
     }
     for (shot,target,hp,queued) in impact_publications {
         println!("SHARED_AP_PUBLICATION battle={} session={} shot={} target={} health={} queued={} historical_fidelity=approximate",
@@ -689,6 +746,62 @@ mod tests {
             bodies.push(transport091::parse_interactive(&raw).unwrap().body);
         }
         bodies.extend(s.outbox.iter().cloned()); bodies
+    }
+    #[test] fn terrain_fx_is_once_per_peer_excludes_stop_and_queue_retry_is_atomic() {
+        let now=Instant::now(); let (mut a,mut b,_)=visible_pair(now);
+        let mut w=model::tests::terrain_world(now,3.);
+        a.shared.as_mut().unwrap().commands.push(model::Command::Fire(crate::battle091::fire::Command::Shoot));
+        poll(&mut a,&mut w,now).unwrap(); poll(&mut b,&mut w,now).unwrap();
+        w.advance(now+model::STEP).unwrap(); assert_eq!(w.terrain_contacts.len(),1);
+        let c=&w.terrain_contacts[0]; let fx=terrain_wire::explode(c.shot,c.hit.point,c.direction).unwrap();
+        let stop=wire::tracer_stop(&w.projectiles[0]).unwrap();
+        let (mut retry,_,_)=visible_pair(now); *retry.shared.as_mut().unwrap()=a.shared.as_ref().unwrap().clone();
+        retry.outbox.push_back(vec![0;513]);
+        assert!(poll(&mut retry,&mut w,now+model::STEP).is_err());
+        assert!(!retry.shared.as_ref().unwrap().tracer_stopped[0]);
+        assert_eq!(w.actors[1].health,90); assert!(w.impacts.is_empty());
+        retry.outbox.clear();
+        for s in [&mut a,&mut b,&mut retry] {
+            poll(s,&mut w,now+model::STEP).unwrap();
+            let before=queued_bodies(s,now+model::STEP);
+            assert_eq!(before.iter().filter(|body|body.windows(fx.len()).any(|bytes|bytes==fx)).count(),1);
+            assert!(!before.iter().any(|body|body.windows(stop.len()).any(|bytes|bytes==stop)));
+            assert!(s.shared.as_ref().unwrap().tracer_stopped[0]);
+            poll(s,&mut w,now+model::STEP).unwrap();
+            let after=queued_bodies(s,now+model::STEP);
+            assert_eq!(after.iter().filter(|body|body.windows(fx.len()).any(|bytes|bytes==fx)).count(),1);
+            assert!(!after.iter().any(|body|body.windows(stop.len()).any(|bytes|bytes==stop)));
+        }
+    }
+    #[test] fn delayed_terrain_fx_follows_tracer_and_reconnect_skips_old_effects() {
+        let now=Instant::now(); let (mut a,mut b,_)=visible_pair(now);
+        let mut w=model::tests::terrain_world(now,3.);
+        w.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],now).unwrap();
+        w.advance(now+model::STEP).unwrap();
+        let c=&w.terrain_contacts[0]; let fx=terrain_wire::explode(c.shot,c.hit.point,c.direction).unwrap();
+        let start=wire::tracer_start(&w.projectiles[0]).unwrap();
+        for s in [&mut a,&mut b] {
+            poll(s,&mut w,now+model::STEP).unwrap(); let raw=queued_bodies(s,now+model::STEP).concat();
+            assert!(raw.windows(start.len()).position(|v|v==start).unwrap()<raw.windows(fx.len()).position(|v|v==fx).unwrap());
+        }
+        let (mut rejoin,_,_)=visible_pair(now+model::STEP);
+        rejoin.shared.as_mut().unwrap().shot_cursor=w.latest_shot();
+        poll(&mut rejoin,&mut w,now+model::STEP).unwrap();
+        assert!(!queued_bodies(&rejoin,now+model::STEP).concat().windows(fx.len()).any(|v|v==fx));
+    }
+    #[test] fn static_stone_effect_uses_original_material_on_both_peers() {
+        let now=Instant::now(); let (mut a,mut b,_)=visible_pair(now);
+        let mut w=model::tests::obstacle_world(now,20.,3.);
+        w.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],now).unwrap();
+        w.advance(now+model::STEP).unwrap(); let c=&w.terrain_contacts[0];
+        let fx=terrain_wire::explode_material(c.shot,c.hit.point,c.direction,1).unwrap();
+        let wrong=terrain_wire::explode(c.shot,c.hit.point,c.direction).unwrap();
+        for s in [&mut a,&mut b] {
+            poll(s,&mut w,now+model::STEP).unwrap(); let raw=queued_bodies(s,now+model::STEP).concat();
+            assert_eq!(raw.windows(fx.len()).filter(|v|*v==fx).count(),1);
+            assert!(!raw.windows(wrong.len()).any(|v|v==wrong));
+        }
+        assert!(w.impacts.is_empty()); assert_eq!(w.actors[1].health,90);
     }
     #[test] fn ap_publication_is_once_per_peer_and_failed_queue_does_not_repeat_damage() {
         let now=Instant::now(); let (mut a,mut b,_) = visible_pair(now);

@@ -2,7 +2,7 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, sync::Arc, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::{aim, ap, geometry, impact, materials::MaterialFacts, projectile::Projectile};
+use super::{aim, ap, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
@@ -70,6 +70,15 @@ pub struct AppliedImpact {
     pub segment: Option<geometry::ImpactSegment>,
 }
 
+/// A surface-only terminal result; never an armor/HP outcome.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TerrainContact {
+    pub shot: u32, pub shooter: usize, pub tick: u32,
+    pub hit: terrain::Hit,
+    pub segment_start: [f32; 3], pub segment_end: [f32; 3],
+    pub direction: [f32; 3],
+}
+
 #[derive(Clone)]
 pub struct World {
     pub id: u64,
@@ -84,6 +93,8 @@ pub struct World {
     pub contacts: Vec<Contact>,
     ap_test_lab: bool,
     pub impacts: Vec<AppliedImpact>,
+    terrain: Option<Arc<terrain::Terrain>>,
+    pub terrain_contacts: Vec<TerrainContact>,
 }
 
 impl World {
@@ -91,7 +102,8 @@ impl World {
         if id == 0 { return Err(bad()); }
         Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new(),
-            geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new() })
+            geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
+            terrain: None, terrain_contacts: Vec::new() })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
         if self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
@@ -100,6 +112,11 @@ impl World {
     pub fn enable_ap_test_lab(&mut self) -> io::Result<()> {
         if self.started.is_some() || self.geometry.is_none() || self.ap_test_lab { return Err(bad()); }
         self.ap_test_lab = true; Ok(())
+    }
+    pub fn bind_terrain(&mut self, terrain: Arc<terrain::Terrain>) -> io::Result<()> {
+        if self.started.is_some() || !self.shots.is_empty() || !self.ap_test_lab
+            || self.geometry.is_none() || self.terrain.is_some() { return Err(bad()); }
+        self.terrain = Some(terrain); Ok(())
     }
     pub fn latest_shot(&self) -> u32 { self.shots.last().map(|s| s.sequence).unwrap_or(0) }
     /// Authenticated identity only. The caller reserves a transport retirement
@@ -315,15 +332,21 @@ impl World {
         let mut next_projectiles = self.projectiles.clone();
         let mut contacts = self.contacts.clone();
         let mut impacts = self.impacts.clone();
+        let mut terrain_contacts = self.terrain_contacts.clone();
         if tick_changed {
-            for projectile in &mut next_projectiles {
+            'projectile_loop: for projectile in &mut next_projectiles {
                 if !projectile.stopped {
-                    let segment_start = if projectile.launched > prior_time { projectile.launched } else { prior_time };
-                    if segment_start < now {
-                        let launch_tick = self.shots.iter()
-                            .find(|shot| shot.sequence == projectile.sequence).ok_or_else(bad)?.tick;
-                        let segment_tick_start = launch_tick.max(prior_tick);
-                        let segment_end = now.min(projectile.end_at()?);
+                    let mut segment_start = if projectile.launched > prior_time { projectile.launched } else { prior_time };
+                    let segment_limit = now.min(projectile.end_at()?);
+                    let mut segment_tick_start = self.shots.iter()
+                        .find(|shot| shot.sequence == projectile.sequence).ok_or_else(bad)?.tick.max(prior_tick);
+                    while segment_start < segment_limit {
+                        // Terrain-enabled flight keeps the nominal chord error
+                        // bounded even after a delayed server poll. These are
+                        // subsegments of one update, not invented world ticks.
+                        let segment_end = if self.terrain.is_some() {
+                            segment_limit.min(segment_start.checked_add(STEP).ok_or_else(bad)?)
+                        } else { segment_limit };
                         let start_point = projectile.position_at(segment_start);
                         let end_point = projectile.position_at(segment_end);
                         impact_trace.segment(self.id, projectile.sequence, tick, segment_tick_start,
@@ -332,8 +355,30 @@ impl World {
                             let target_slot = 1usize.checked_sub(projectile.slot).ok_or_else(bad)?;
                             let target = next_actors.get(target_slot).ok_or_else(bad)?;
                             let mesh = bundle.world_mesh(target, target_slot, tick)?;
-                            let (hits, material_facts) = impact_trace.collision_query_classified(
-                                self.id, projectile.sequence, tick, &mesh, bundle.materials())?;
+                            let (hits, material_facts, ground) = if let Some(terrain) = &self.terrain {
+                                impact_trace.collision_query_world(self.id, projectile.sequence, tick,
+                                    &mesh, bundle.materials(), terrain)?
+                            } else {
+                                let (hits, material) = impact_trace.collision_query_classified(
+                                    self.id, projectile.sequence, tick, &mesh, bundle.materials())?;
+                                (hits, material, None)
+                            };
+                            // Both candidates refer to the same original flight chord.
+                            // Compare in the vehicle query's f32 parameter domain:
+                            // terrain wins a shared rounding bucket, no epsilon.
+                            if ground.as_ref().is_some_and(|g| hits.first().is_none_or(|v| (g.t as f32) <= v.t)) {
+                                if terrain_contacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                let hit = impact_trace.terrain_contact(self.id, projectile.sequence, tick)?;
+                                let chord: [f64; 3] = std::array::from_fn(|i| f64::from(end_point[i])-f64::from(start_point[i]));
+                                let length = chord.iter().map(|v| v*v).sum::<f64>().sqrt();
+                                if !length.is_finite() || length <= 0. { return Err(bad()); }
+                                terrain_contacts.push(TerrainContact { shot: projectile.sequence,
+                                    shooter: projectile.slot, tick, hit, segment_start: start_point,
+                                    segment_end: end_point, direction: chord.map(|v| (v/length) as f32) });
+                                projectile.terminal = hit.point; projectile.stopped = true;
+                                impact_trace.terminal(self.id, projectile.sequence, tick, impact::TerminalReason::TerrainCollision)?;
+                                continue 'projectile_loop;
+                            }
                             if let Some(nearest) = hits.first() {
                                 let endpoint = std::array::from_fn(|i|
                                     start_point[i] + nearest.t * (end_point[i] - start_point[i]));
@@ -393,8 +438,11 @@ impl World {
                                 projectile.terminal = endpoint; projectile.stopped = true;
                                 impact_trace.terminal(self.id, projectile.sequence, tick,
                                     terminal_reason)?;
+                                continue 'projectile_loop;
                             }
                         }
+                        segment_start = segment_end;
+                        segment_tick_start = tick;
                     }
                 }
             }
@@ -418,6 +466,7 @@ impl World {
         self.impact = impact_trace;
         self.contacts = contacts;
         self.impacts = impacts;
+        self.terrain_contacts = terrain_contacts;
         Ok(tick_changed || expired)
     }
 }
@@ -444,6 +493,103 @@ pub(super) mod tests {
     }
     pub fn ap_world(now: Instant) -> World {
         let mut w = collision_world(now, false); w.ap_test_lab = true; w
+    }
+    pub fn terrain_world(now: Instant, offset: f32) -> World {
+        let mut w = ap_world(now);
+        // Plane y=z-offset across the test arena. The genuine MS-1 mesh
+        // remains at z10; offset3 puts ground first, offset20 puts armor first.
+        w.terrain = Some(Arc::new(super::super::terrain::tests::fixture(-1000.,2000.,2,
+            vec![-1000.-offset,-1000.-offset,1000.-offset,1000.-offset])));
+        w
+    }
+    pub fn obstacle_world(now: Instant, offset: f32, wall_z: f32) -> World {
+        let mut w=terrain_world(now,offset);
+        let obstacles=super::super::obstacles::tests::fixture(vec![
+            [[-20.,-20.,wall_z],[20.,-20.,wall_z],[0.,20.,wall_z]]]);
+        let terrain=(*w.terrain.take().unwrap()).clone().with_obstacles(Arc::new(obstacles)).unwrap();
+        w.terrain=Some(Arc::new(terrain)); w
+    }
+    #[test] fn static_surface_participates_in_same_nearest_terrain_armor_decision() {
+        let now=Instant::now();
+        for (offset,wall_z,kind,hp) in [(20.,3.,"stone",90),(3.,15.,"ground",90),(20.,15.,"armor",60)] {
+            let mut w=obstacle_world(now,offset,wall_z);
+            w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+            w.advance(now+STEP).unwrap(); assert!(w.projectiles[0].stopped);
+            assert_eq!(w.actors[1].health,hp);
+            match kind {
+                "stone" => {
+                    let hit=&w.terrain_contacts[0].hit;
+                    assert!(matches!(hit.surface,terrain::Surface::StaticObstacle{material_kind:111,..}));
+                    assert_eq!(hit.effect_material_index(),1); assert!((hit.point[2]-3.).abs()<1e-5);
+                    assert!(w.impacts.is_empty()); assert!(w.contacts.is_empty());
+                },
+                "ground" => assert_eq!(w.terrain_contacts[0].hit.surface,terrain::Surface::Ground),
+                _ => {assert!(w.terrain_contacts.is_empty());assert_eq!(w.impacts.len(),1);},
+            }
+        }
+    }
+    #[test] fn terrain_requires_prestart_geometry_and_explicit_ap_profile() {
+        let now=Instant::now(); let source=terrain_world(now,3.).terrain.unwrap();
+        let mut w=World::new(44,now).unwrap();
+        assert!(w.bind_terrain(source.clone()).is_err());
+        w.bind_geometry(Arc::new(super::super::geometry::tests::bundle())).unwrap();
+        assert!(w.bind_terrain(source.clone()).is_err());
+        w.enable_ap_test_lab().unwrap(); w.bind_terrain(source.clone()).unwrap();
+        assert!(w.bind_terrain(source.clone()).is_err());
+        assert!(ap_world(now).bind_terrain(source).is_err());
+    }
+    #[test] fn nearest_surface_blocks_hill_damage_and_preserves_nearer_armor() {
+        let now=Instant::now();
+        for (offset,ground,hp) in [(3.,true,90),(20.,false,60)] {
+            let mut w=terrain_world(now,offset);
+            w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+            w.advance(now+STEP).unwrap();
+            assert_eq!(w.actors[1].health,hp); assert_eq!(w.actors[0].fire.ammo(),19);
+            assert_eq!(w.terrain_contacts.len(),usize::from(ground));
+            assert_eq!(w.impacts.len(),usize::from(!ground));
+            assert_eq!(w.contacts.len(),usize::from(!ground));
+            assert!(w.projectiles[0].stopped);
+            if ground {
+                let c=&w.terrain_contacts[0]; assert_eq!(w.projectiles[0].terminal,c.hit.point);
+                assert!(c.hit.point[2]<8.); assert!((c.direction.iter().map(|v|v*v).sum::<f32>()-1.).abs()<1e-6);
+                assert!(w.impact.events().iter().any(|e| matches!(e,impact::Event::Terminal {
+                    reason:impact::TerminalReason::TerrainCollision,.. })));
+            }
+            let retained=(w.terrain_contacts.clone(),w.contacts.clone(),w.impacts.clone(),w.impact.clone());
+            w.advance(now+Duration::from_secs(3)).unwrap();
+            assert_eq!((w.terrain_contacts,w.contacts,w.impacts,w.impact),retained);
+        }
+    }
+    #[test] fn stalled_terrain_flight_uses_same_chords_as_regular_steps() {
+        let now=Instant::now(); let mut slow=terrain_world(now,100.);
+        slow.actors[1].position=[100.,0.,10.]; slow.actors[1].origin=slow.actors[1].position;
+        slow.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+        let mut regular=slow.clone();
+        slow.advance(now+Duration::from_secs(2)).unwrap();
+        for step in 1..=20 { regular.advance(now+STEP*step).unwrap(); }
+        assert_eq!(slow.terrain_contacts.len(),1); assert_eq!(regular.terrain_contacts.len(),1);
+        assert_eq!(slow.projectiles[0].terminal,regular.projectiles[0].terminal);
+        assert_eq!(slow.terrain_contacts[0].segment_start,regular.terrain_contacts[0].segment_start);
+        assert_eq!(slow.terrain_contacts[0].segment_end,regular.terrain_contacts[0].segment_end);
+        assert_eq!(slow.actors[1].health,90);
+        assert!(slow.impact.events().iter().filter(|e|e.stage()==impact::Stage::Segment).count()>1);
+    }
+    #[test] fn terrain_checks_range_tail_and_history_failure_is_atomic() {
+        let now=Instant::now(); let mut w=terrain_world(now,100.);
+        w.actors[1].position=[100.,0.,10.]; w.actors[1].origin=w.actors[1].position;
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+        let p=w.projectiles[0]; let offset=p.terminal[2]-p.terminal[1]-0.5;
+        w.terrain=terrain_world(now,offset).terrain;
+        w.advance(now+Duration::from_secs(3)).unwrap();
+        assert_eq!(w.terrain_contacts.len(),1);
+        assert!((w.projectiles[0].terminal[2]-p.terminal[2]).abs()<1.);
+        assert_eq!(w.actors[1].health,90);
+        let mut fail=terrain_world(now,3.);
+        fail.terrain_contacts=vec![w.terrain_contacts[0].clone();MAX_SHOTS];
+        fail.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+        let before=(fail.actors.clone(),fail.projectiles.clone(),fail.impact.clone(),fail.tick,fail.last,fail.terrain_contacts.clone());
+        assert!(fail.advance(now+STEP).is_err());
+        assert_eq!((fail.actors,fail.projectiles,fail.impact,fail.tick,fail.last,fail.terrain_contacts),before);
     }
     #[test] fn ap_requires_explicit_prestart_geometry_binding() {
         let now = Instant::now(); let mut w = World::new(44,now).unwrap();
