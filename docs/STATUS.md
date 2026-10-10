@@ -1,4 +1,34 @@
-# P06L approximate AP damage — 2026-10-10, repaired candidate awaiting owner
+# P06L approximate AP damage — 2026-10-10, owner accepted
+
+Owner accepted native02 survivor motion/aim/shooting and impact effects,
+then clarified the remaining defect: no effects on an already destroyed
+tank. Both clients were closed manually by the owner. Fresh evidence proves
+8 post-death shots with changed origins/directions and five wreck contacts
+(shots6..10) without FX; the accepted gameplay prefix precedes channel-close
+errors. Raw late-tail failures remain retained, not relabelled PASS.
+
+Code`f405c17` adds typed `WreckBlocked` with HP0→0, separate from the AP
+resolver, and native resisted FX under explicit policy
+`test_lab-ms1-wreck-block-v1`. No second health/death/roster update. #717 uses
+descriptor hitTester on ordinary HP0; exploded/detached geometry is excluded.
+Pinned build`gateway-integrated-world-p06l-05`: **493/493 Rust PASS**,
+SHA`80595efc…6c54845`; layout66/22 PASS. Build04 compile type error is retained;
+build05 fixes the error conversion. Native03 uses cumulative accepted physics.
+Owner then confirmed «отлично! работает!» after the wreck-hit check. Native
+records show three damaging shots plus two HP0 wreck hits, original resisted
+effects in both clients, and no repeated HP/death. Acceptance covers this
+working approximate laboratory slice, not historical_091 or the whole P06.
+Startup limitation retained: simultaneous login rejected one attempt as
+server-not-ready; an orphan pre-battle session expired, then explicit client-A
+restart entered successfully. Completed gameplay must be audited separately
+from that failed startup; no all-session reliability claim is made.
+
+[Plan](plans/P06L_AP_TEST_LAB.md), [files/commands/evidence/rollback](research/P06L_AP_TEST_LAB.md).
+Evidence:`local/evidence/20261010-p06l-ap-resolver-01/`.
+**One next recommended card:** server projectile collision with terrain,
+preserving this accepted physics/aim/ammo/impact/HP/wreck path.
+
+## Earlier repaired candidate
 
 Owner authorized a working, explicitly approximate `test_lab` profile.
 `codex/p06l-ap-test-lab` adds atomic authoritative AP outcomes/HP and native

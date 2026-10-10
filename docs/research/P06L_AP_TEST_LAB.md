@@ -174,3 +174,125 @@ from the original decoder's returned facts instead. Native callback completion
 does not establish rendered/audio owner acceptance. No post-death shot was
 observed in this prefix. **Remaining gate: owner's rendered result and one
 survivor shot after death in a new direction.** Candidate stays unmerged.
+
+## Owner native02 acceptance and wreck-impact correction
+
+Owner: «щас вроде бы все корректно, эффекты тоже есть, хотя от уничтоженного
+танка нету», clarified as «Нет эффекта попадания, если стрелять в уже
+уничтоженный танк». This accepts the previous survivor/impact checks but
+reports a distinct wreck-hit gap, not a missing destruction explosion.
+Owner also confirmed personally closing both clients at the end of the run.
+
+`independent-native02-owner-followup01.json`,
+SHA`7fda90ff4086e1dd54ed716127d36baae8570d7ecd10956eff6489c82ca60b23`,
+pins the completed gameplay prefix5902474bytes. Shots4..11 changed origin and
+direction and completed in both clients before the first rejected message.
+Shots6..10 contact dead Hull armor1/2;10 native tracer endpoints match within
+1e-4, but no impact callbacks are sent. Raw audit02 still retains late
+retry_exhausted/channel_state/base_route errors after the completed gameplay;
+owner closure is OBSERVED context, not proof of the exact native exit cause.
+
+Cause: model.rs gated all impact events on target.health>0. Contact and tracer
+stop already worked on the retained mesh. Source receipts
+`wreck-effect-source-contract01.json`, `wreck-native-codec-contract02.json`
+and additive03 pin original #717 pyc/function hashes. VERIFIED: the native
+effect is added before isAlive's return397; original descriptor hitTester/bbox
+is reused on an HP0 vehicle, while current appearance supplies attachment
+matrices. Code1 maps to armorResisted without hasDamaged; code2 asserts actual
+penetration-no-damage and is not neutral. Neither source proves historical
+authoritative wreck penetration rules.
+
+Correction in domain commit`e64cf57` and root integration`f405c17`:
+
+- `shared/model.rs`: typed ImpactOutcome::Ap or WreckBlocked. Wreck contact
+  creates a valid native segment, stops the projectile and keeps HP0→0 and
+  the dead actor unchanged; live AP resolver is not called.
+- `shared/impact.rs`: separate WreckImpact/TestLabWreckImpact bound to shot,
+  target pose and nearest material; invalid health, duplicate, order or
+  capacity errors roll back. Same25800 event budget, not an extra AP event.
+- `shared/server.rs`: log SHARED_WRECK_IMPACT; native code1 publication uses
+  existing atomic cursors/queues. HP/death/roster require actual HP reduction,
+  so wreck effects cannot trigger them. Reconnect does not replay old hits.
+- `shared/geometry.rs`: document ordinary attached HP0 descriptor reuse.
+
+Policy `test_lab-ms1-wreck-block-v1` deliberately blocks AP on the retained
+attached Hull/Turret/Gun geometry. It is an approximate laboratory policy;
+exploded or detached parts are excluded. Static API support for all three
+components is not native acceptance of each component. The first manual gate
+targets Hull; Turret/Gun wreck-specific native measurement remains NOT_RUN.
+
+Build04 failed compilation on a root error-type conversion, before running
+tests. Build05 corrects it and passes **493/493 Rust tests**, including8 new
+checks for wreck identity/health/rollback/full-budget and two-client once-only
+publication/no repeated death/reconnect. Executable SHA256:
+`80595efc05f206cd0449524213040ac06c38e930d98e40078f512ffbf6c54845`.
+Layout66sources/22relocations PASS. Python production code is unchanged from
+the previous26 PASS/1 existing skip; the new ignored wreck auditor separately
+passed8 controls, including real frozen native02 and synthetic negative cases.
+These auditor controls do not replace a new real-client wreck shot.
+
+Commands:
+
+```
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-integrated-world-p06l-05
+python -B -X utf8 server/check_layout.py --out local/evidence/20261010-p06l-ap-resolver-01/source-layout-wreck.json
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/prepare_stand.py --slot a --run native03
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/prepare_stand.py --slot b --run native03
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/start_stand.py server --run native03 --profile integrated-lab --build gateway-integrated-world-p06l-05 --pool local/build/server/physics-integrated-lane-01/pool.json --geometry local/evidence/20261010-p06j-contact-materials-01/ms1-contact.json --ap-test-lab
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/start_stand.py a --run native03
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/start_stand.py b --run native03
+```
+
+Native02 server was stopped by exact PID/executable receipt after both client
+processes were absent; native02 install ledgers rolled back. Current native03
+ledgers are install-a-native03/install-b-native03; rollback uses those ledgers
+and the earlier accepted P06J runtime as documented above. Alternatively the
+P06L native02 candidate build03 retains owner-accepted live impacts but its
+known missing wreck FX. Current card remains unmerged, native wreck result
+and rendered owner acceptance pending. One next step: destroy a tank and hit
+its Hull twice more; collect code1/armorResisted/return397 and HP0 in both
+clients without repeating health/death callbacks.
+
+## Final scoped acceptance — 2026-10-10
+
+Owner confirmed native03: «отлично! работает!». Full card acceptance is
+**PASS_OWNER_NATIVE_AP_AND_WRECK_TEST_LAB**, scoped to the actual completed
+gameplay checks and the declared approximate rules. P06/historical fidelity,
+complete ballistics and all-session startup reliability are not claimed.
+
+`independent-native03-wreck-scoped-followup01.json`, SHA256
+`99fab4c52609a38d68f56f228aa40ab00758e4b404c94ffcca539f7777160ae9`,
+records three AP hits and two wreck hits. Both clients process the latter via
+original return397, code1/armorResisted, HP0; decoded points match exactly.
+All10 tracer endpoints match server contacts within1e-4. Each client has
+exactly3 health changes/1 zero-health callback, with no repeat death. Both
+remain present147.8s after death. Selected native traces and completed battle
+contain no errors. This run only moved~0.1m; full driving acceptance remains
+the prior native02 owner/trace gate, not a new broad driving claim.
+
+Startup evidence is explicitly not green: simultaneous login caused an
+initial server-not-ready rejection for clientA. The earlier A process13980
+later reported logged-on but produced no shared snapshots. It was stopped
+using exact PID/path verification and restarted sequentially as12532.
+The orphan session2 expired at tick1000 before the completed battle; the
+selected A became session3/slot1, B remained session1/slot0. The fixed snapshot
+boundary is the second SHARED_READY (session3), line1282/byte134745. Full
+`independent-native03-wreck-audit01.json` retains FAIL_NUMERIC_WRECK_AUDIT
+for that earlier session close. The scoped followup reads the same pinned
+prefix and preserves failed launch/stop receipts; it does not omit a failure
+during the accepted battle. Concurrent-login reliability is an open existing
+startup limitation, not an unimplemented impact-card criterion.
+
+Commands completing this acceptance:
+
+```
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/independent_native_wreck_auditor_checks.py
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/independent_native_wreck_auditor.py --run native03 --out independent-native03-wreck-audit01.json --a-launch-receipt launch-a-native03retry.json
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/independent_native_wreck_scoped_followup.py
+```
+
+No runtime source changed after the493-test build. Final summary pins these
+sources and evidence. Rollback remains exact-process stop + native03 install
+ledger restore + accepted P06J runtime; Git rollback after merge is a revert
+of the P06L merge. One next recommended card: server projectile collision
+with terrain, built on this accepted cumulative physics/aim/ammo/hit/HP path.

@@ -1,4 +1,27 @@
-# P06L native repair / owner acceptance — 2026-10-10
+# P06L owner accepted / next terrain-contact card — 2026-10-10
+
+Active branch:`codex/p06l-ap-test-lab`; root code`f405c17`.
+Native02 post-death movement, changing shot direction and live impact FX
+are accepted by owner. The remaining clarified defect was missing FX when
+shooting already dead targets. Owner closed both clients manually; the raw
+late network-close tail is retained separately from completed gameplay.
+
+Typed zero-damage WreckBlocked/contact publication is implemented under
+explicit approximate `test_lab-ms1-wreck-block-v1`, with no AP calculation,
+health update or repeated death. Native03 is launched with accepted physics,
+unchanged client observer/contact bundle and gatewayp06l-05 (493 Rust PASS).
+Owner confirmed «отлично! работает!» after the requested native03 test.
+Three AP hits and two wreck hits are recorded, with native code1/armorResisted
+and no repeated health/death on both clients. Ordinary attached HP0 only;
+exploded/detached components are outside scope. Simultaneous-login rejection
+and orphan pre-battle session expiry remain explicit startup limitations;
+successful gameplay is a separate pinned audit, not full-startup PASS.
+**One next recommended card:** add server projectile collision with terrain
+on the accepted cumulative runtime. Do not reopen already accepted movement,
+aim, ammo, reload, live/wreck hit effects or replace their launch profile.
+[P06L report](research/P06L_AP_TEST_LAB.md).
+
+## Previous repaired-candidate gate
 
 Active branch:`codex/p06l-ap-test-lab`; base P06K merge67da292.
 Owner selected working approximate test_lab rules. Atomic AP/HP and native
