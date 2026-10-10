@@ -194,6 +194,9 @@ pub struct Pose {pub position:[f32;3],pub direction:[f32;3],pub speed:f32,pub rs
 #[derive(Clone,Debug,PartialEq)]
 pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose}
 pub fn response(raw:&[u8],map:&MapSpec,seq:u32)->io::Result<State>{
+    response_at_spawn(raw,map,seq,None)
+}
+pub fn response_at_spawn(raw:&[u8],map:&MapSpec,seq:u32,expected_spawn:Option<[f32;3]>)->io::Result<State>{
     if !raw.is_ascii(){return Err(bad());}let v=json(raw,1024)?;
     fields(&v,&["version","event","seq","tick","settle_ticks","map","config_sha256","state"])?;
     if uint(&v["version"])?!=1 || text(&v,"event")?!=if seq==0{"ready"}else{"state"}
@@ -209,8 +212,11 @@ pub fn response(raw:&[u8],map:&MapSpec,seq:u32)->io::Result<State>{
         linear_velocity:vector(&s["linear_velocity"],-25.,25.)?,angular_velocity:vector(&s["angular_velocity"],-20.,20.)?,wheel_contact_masks};
     if pose.position[0]<map.bounds[0]-2. || pose.position[0]>map.bounds[2]+2. || pose.position[2]<map.bounds[1]-2.
         || pose.position[2]>map.bounds[3]+2. || !(-105. ..=505.).contains(&pose.position[1]) {return Err(bad());}
-    if seq==0 && (contacts<3 || pose.linear_velocity.iter().map(|v|v*v).sum::<f32>()>1.001
-        || (pose.position[0]-map.spawn[0]).abs()>5. || (pose.position[2]-map.spawn[2]).abs()>5.){return Err(bad());}
+    if seq==0 {
+        let spawn=expected_spawn.unwrap_or(map.spawn);
+        if contacts<3 || pose.linear_velocity.iter().map(|v|v*v).sum::<f32>()>1.001
+            || (pose.position[0]-spawn[0]).abs()>5. || (pose.position[2]-spawn[2]).abs()>5. { return Err(bad()); }
+    }
     Ok(State{seq,tick:180+seq*6,pose})
 }
 fn line(reader:&mut impl Read)->io::Result<Vec<u8>> {
@@ -237,10 +243,20 @@ fn reap_owned(mut child:Child,generation:u32,exit:Arc<Mutex<Option<ExitEvidence>
 /// Handles live outside Session's receive clone. No process side effects happen
 /// while authenticating a compound packet. Drop revokes and reaps this generation.
 pub struct Worker {pub generation:u32,pub map:MapSpec,receiver:mpsc::Receiver<Event>,sender:Option<mpsc::SyncSender<Vec<u8>>>,
-    child:Arc<Mutex<Option<Child>>>,exit:Arc<Mutex<Option<ExitEvidence>>>,cancel:Arc<AtomicBool>,started:Instant,pending:Option<(u32,Instant)>,ready:bool,last_seq:u32}
+    child:Arc<Mutex<Option<Child>>>,exit:Arc<Mutex<Option<ExitEvidence>>>,cancel:Arc<AtomicBool>,started:Instant,
+    expected_spawn:Option<[f32;3]>,pending:Option<(u32,Instant)>,ready:bool,last_seq:u32}
 impl Worker {
     pub fn launch(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant)->io::Result<Self>{
+        Self::launch_at_spawn(pool,map,generation,now,None)
+    }
+    pub fn launch_at_spawn(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>)->io::Result<Self>{
         if generation==0{return Err(bad());}
+        if let Some(target)=spawn {
+            if target.iter().any(|v| !v.is_finite()) || (target[1]-map.spawn[1]).abs()>f32::EPSILON
+                || target[0]<map.bounds[0]+5. || target[0]>map.bounds[2]-5.
+                || target[2]<map.bounds[1]+5. || target[2]>map.bounds[3]-5.
+                || (target[0]-map.spawn[0]).abs()>12. || (target[2]-map.spawn[2]).abs()>12. { return Err(bad()); }
+        }
         let (events,receiver)=mpsc::sync_channel(4);let (sender,commands)=mpsc::sync_channel::<Vec<u8>>(1);
         let child=Arc::new(Mutex::new(None::<Child>));let cancel=Arc::new(AtomicBool::new(false));
         let exit=Arc::new(Mutex::new(None));let exit_thread=exit.clone();
@@ -253,6 +269,9 @@ impl Worker {
                 cmd.args(["--local-root"]).arg(worker_path_argument(&pool.local_root)?).arg("--config").arg(worker_path_argument(&selected.config)?)
                     .arg("--config-sha256").arg(&selected.config_sha256).current_dir(&pool.runtime)
                     .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+                if let Some(target)=spawn {
+                    cmd.arg("--spawn-xz").arg(target[0].to_string()).arg(target[2].to_string());
+                }
                 #[cfg(windows)] {use std::os::windows::process::CommandExt;cmd.creation_flags(0x08000000);}
                 let mut c=cmd.spawn()?;let mut input=c.stdin.take().ok_or_else(bad)?;
                 let mut output=c.stdout.take().ok_or_else(bad)?;let mut errors=c.stderr.take().ok_or_else(bad)?;
@@ -277,9 +296,11 @@ impl Worker {
                 let _=events.try_send(Event::Failed);
             }}
         });
-        Ok(Self{generation,map,receiver,sender:Some(sender),child,exit,cancel,started:now,pending:None,ready:false,last_seq:0})
+        Ok(Self{generation,map,receiver,sender:Some(sender),child,exit,cancel,started:now,expected_spawn:spawn,
+            pending:None,ready:false,last_seq:0})
     }
     pub fn pending(&self)->bool{self.pending.is_some()}
+    pub fn ready(&self)->bool{self.ready}
     pub fn process_id(&self)->Option<u32>{self.child.lock().ok().and_then(|c|c.as_ref().map(Child::id))}
     pub fn advance(&mut self,input:Input,now:Instant)->io::Result<u32>{
         if !self.ready || self.pending.is_some() || now<self.started || self.last_seq>=MAX_SEQUENCE{return Err(bad());}
@@ -295,7 +316,7 @@ impl Worker {
             Err(mpsc::TryRecvError::Empty)=>Ok(None),
             Ok(Event::Line(received,raw))=>{
                 let seq=if !self.ready {0}else{let (seq,sent)=self.pending.ok_or_else(bad)?;if received<sent{return Err(bad());}seq};
-                let state=response(&raw,&self.map,seq)?;self.ready=true;self.last_seq=seq;self.pending=None;Ok(Some(state))
+                let state=response_at_spawn(&raw,&self.map,seq,self.expected_spawn)?;self.ready=true;self.last_seq=seq;self.pending=None;Ok(Some(state))
             },
         }
     }
@@ -331,6 +352,15 @@ pub(crate) mod tests {
         let mut v=good(0);v["state"]["contacts"]=2.into();assert!(response(&serde_json::to_vec(&v).unwrap(),&map(),0).is_err());
         for value in [1e99,503.0]{let mut v=good(1);v["state"]["position"][0]=value.into();assert!(response(&serde_json::to_vec(&v).unwrap(),&map(),1).is_err());}
         let mut v=good(0);v["state"]["linear_velocity"][0]=2.into();assert!(response(&serde_json::to_vec(&v).unwrap(),&map(),0).is_err());
+    }
+    #[test]fn response_accepts_only_the_server_owned_lane_override(){
+        let mut v=good(0);
+        v["state"]["position"][0]=6.into();
+        v["state"]["position"][2]=6.into();
+        let raw=serde_json::to_vec(&v).unwrap();
+        assert!(response(&raw,&map(),0).is_err());
+        assert!(response_at_spawn(&raw,&map(),0,Some([6.,10.,6.])).is_ok());
+        assert!(response_at_spawn(&raw,&map(),0,Some([16.,10.,6.])).is_err());
     }
     #[test]fn request_has_only_domain_input_and_fixed_steps(){
         assert!(request(0,Input::STOP).is_err());assert!(request(36001,Input::STOP).is_err());
@@ -405,7 +435,7 @@ pub(crate) mod tests {
     }
     fn fake_worker(now:Instant)->(Worker,mpsc::SyncSender<Event>,mpsc::Receiver<Vec<u8>>){
         let (send,receiver)=mpsc::sync_channel(4);let(sender,recv)=mpsc::sync_channel(1);
-        (Worker{generation:1,map:map(),receiver,sender:Some(sender),child:Arc::new(Mutex::new(None)),exit:Arc::new(Mutex::new(None)),cancel:Arc::new(AtomicBool::new(false)),
+        (Worker{generation:1,map:map(),receiver,sender:Some(sender),child:Arc::new(Mutex::new(None)),exit:Arc::new(Mutex::new(None)),cancel:Arc::new(AtomicBool::new(false)),expected_spawn:None,
             started:now,pending:None,ready:false,last_seq:0},send,recv)
     }
     #[test]fn ipc_unsolicited_stale_duplicate_reply_and_timeout_never_publish(){

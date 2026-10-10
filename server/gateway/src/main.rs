@@ -47,6 +47,7 @@ mod battle091;
 #[derive(Debug, PartialEq)]
 enum Command<'a> {
     SharedLab { key: &'a str, digest: &'a str, gateway: &'a str, capture: &'a str },
+    IntegratedLab { key: &'a str, digest: &'a str, gateway: &'a str, pool: &'a str, capture: &'a str },
     Interactive { key: &'a str, digest: &'a str, gateway: &'a str, capture: Option<&'a str> },
     MapDrive { key: &'a str, digest: &'a str, gateway: &'a str, pool: &'a str,
                capture: Option<&'a str>, profile: capture091::Profile },
@@ -54,10 +55,13 @@ enum Command<'a> {
 
 fn command(args: &[String]) -> io::Result<Command<'_>> {
     let invalid = || io::Error::new(io::ErrorKind::InvalidInput,
-        "usage: sr-gateway legacy091-interactive KEY DIGEST GATEWAY [CAPTURE] | legacy091-map-drive KEY DIGEST GATEWAY POOL [CAPTURE [map-drive-phase2-v1]] | legacy091-shared-lab KEY DIGEST GATEWAY CAPTURE");
+        "usage: sr-gateway legacy091-interactive KEY DIGEST GATEWAY [CAPTURE] | legacy091-map-drive KEY DIGEST GATEWAY POOL [CAPTURE [map-drive-phase2-v1]] | legacy091-shared-lab KEY DIGEST GATEWAY CAPTURE | legacy091-integrated-lab KEY DIGEST GATEWAY POOL CAPTURE");
     match args.get(1).map(String::as_str) {
         Some("legacy091-shared-lab") if args.len() == 6 && !args[5].is_empty() => Ok(Command::SharedLab {
             key: &args[2], digest: &args[3], gateway: &args[4], capture: &args[5],
+        }),
+        Some("legacy091-integrated-lab") if args.len() == 7 && !args[5].is_empty() && !args[6].is_empty() => Ok(Command::IntegratedLab {
+            key: &args[2], digest: &args[3], gateway: &args[4], pool: &args[5], capture: &args[6],
         }),
         Some("legacy091-interactive") if matches!(args.len(), 5 | 6) => Ok(Command::Interactive {
             key: &args[2], digest: &args[3], gateway: &args[4], capture: args.get(5).map(String::as_str),
@@ -75,6 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     match command(&args)? {
         Command::SharedLab { key, digest, gateway, capture } => gateway091::serve_shared_lab(key, digest, gateway, capture),
+        Command::IntegratedLab { key, digest, gateway, pool, capture } => gateway091::serve_integrated_lab(key, digest, gateway, pool, capture),
         Command::Interactive { key, digest, gateway, capture } => gateway091::serve_interactive(key, digest, gateway, capture),
         Command::MapDrive { key, digest, gateway, pool, capture, profile } => gateway091::serve_map_drive(key, digest, gateway, pool, capture, profile),
     }
@@ -91,6 +96,17 @@ mod cli_tests {
             Command::SharedLab { key:"key",digest:"digest",gateway:"config",capture:"capture" });
         assert!(command(&args(&["exe","legacy091-shared-lab","key","digest","config"])).is_err());
         assert!(command(&args(&["exe","legacy091-shared-lab","key","digest","config",""])).is_err());
+    }
+
+    #[test]
+    fn integrated_lab_requires_pool_and_capture() {
+        assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture"])).unwrap(),
+            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture" });
+        for values in [
+            vec!["exe","legacy091-integrated-lab","key","digest","config","pool"],
+            vec!["exe","legacy091-integrated-lab","key","digest","config","","capture"],
+            vec!["exe","legacy091-integrated-lab","key","digest","config","pool",""]
+        ] { assert!(command(&args(&values)).is_err()); }
     }
 
     #[test]

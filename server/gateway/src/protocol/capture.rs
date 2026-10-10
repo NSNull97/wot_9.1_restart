@@ -6,7 +6,7 @@ const MAX_WIRE_BYTES:usize=16*1024*1024;
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidInput,message)}
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Profile {Ordinary,MapDrivePhase2V1,SharedWorldV1}
+pub enum Profile {Ordinary,MapDrivePhase2V1,SharedWorldV1,IntegratedWorldV1}
 impl Profile {
     pub fn for_map_drive(capture_path:Option<&str>,name:Option<&str>)->io::Result<Self> {
         match name {
@@ -15,9 +15,9 @@ impl Profile {
             _=>Err(invalid("unknown capture profile or missing map-drive capture path")),
         }
     }
-    fn name(self)->Option<&'static str>{match self{Self::Ordinary=>None,Self::MapDrivePhase2V1=>Some("map-drive-phase2-v1"),Self::SharedWorldV1=>Some("shared-world-v1")}}
+    fn name(self)->Option<&'static str>{match self{Self::Ordinary=>None,Self::MapDrivePhase2V1=>Some("map-drive-phase2-v1"),Self::SharedWorldV1=>Some("shared-world-v1"),Self::IntegratedWorldV1=>Some("integrated-world-v1")}}
     fn limits(self)->(usize,usize){match self{
-        Self::Ordinary=>(MAX_PACKETS,MAX_WIRE_BYTES),Self::MapDrivePhase2V1|Self::SharedWorldV1=>(48_000,32*1024*1024),
+        Self::Ordinary=>(MAX_PACKETS,MAX_WIRE_BYTES),Self::MapDrivePhase2V1|Self::SharedWorldV1|Self::IntegratedWorldV1=>(48_000,32*1024*1024),
     }}
 }
 

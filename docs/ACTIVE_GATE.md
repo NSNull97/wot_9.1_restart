@@ -1,3 +1,56 @@
+# P03L integrated physics lane alignment — 2026-10-09
+
+Текущий карточечный gate на ветке `codex/p03k-integrated-world`:
+**PASS_NATIVE_OWNER_ACCEPTANCE**. Интегрированный профиль запускает
+два hash-bound worker-а на server-owned полосах `map.spawn ±4 м`; worker
+публикует полный settled pose, gateway не делает старый cross-terrain X/Z
+сдвиг (только миллиметровый settle anchor) и не объявляет бой до обоих
+`ready`.
+
+`gateway-integrated-world-19`: **391/391 PASS**. Изолированный worker
+`physics-integrated-lane-01` private-pipe smoke: обе полосы на грунте,
+contacts 6/5, wheel masks 63/59. Worker stress (газ → поворот → торможение)
+также **PASS_WORKER_PHYSICS_STRESS**: 90 кадров с движением, pitch/roll,
+contacts 2..6 и финальным контактом 6. Layout — **PASS_SERVER_SOURCE_LAYOUT**.
+Run26 выявил startup-gate дефект: при settling worker-ов per-session poll
+пропускался целиком, и native клиент закрывал login transport после долгого
+«Вход в игру…». В run27 poll/ACK/heartbeat/retry продолжаются, а arena reset
+запрещён до обоих worker `ready`; оба клиента дошли до общего мира и gateway
+публикует snapshots с worker pose. Владелец вручную подтвердил run27: физика
+на месте, прицел и стрельба работают — **PASS_NATIVE_OWNER_ACCEPTANCE** для
+интегрированного прогона. Отдельная запись длительного obstacle/stability
+прогона остаётся ограничением evidence, без выдуманного PASS.
+
+Evidence: `local/evidence/20261009-p03l-integrated-physics-01/worker-spawn-override-smoke.json`;
+`local/evidence/20261009-p03l-integrated-physics-01/worker-physics-stress.json`;
+`local/build/server/gateway-integrated-world-19/result.json`;
+`local/evidence/20261007-p03h-native-projectile-flight-01/gateway-27.stdout.log`;
+`local/evidence/20261010-p03l-owner-acceptance-01/owner-acceptance.json`.
+
+Следующий единственный шаг — оформить проверенный head merge-коммитом в `main`;
+collision intersection, penetration, HP/module/crew damage и отдельный
+длительный obstacle/stability прогон остаются следующими исследовательскими
+границами.
+
+# P03K integrated two-client worker world — 2026-10-09
+
+Текущий карточечный gate на ветке `codex/p03k-integrated-world`:
+**IMPLEMENTED / NATIVE_CAPTURE_NOT_RUN**. Opt-in `legacy091-integrated-lab`
+собирает два shared-battle клиента с отдельным hash-bound P05 worker на актёра.
+X/Z сохраняют раздельные полосы клиентов, а worker Y, полный yaw/pitch/roll и
+speed импортируются в общий authoritative snapshot; пока оба worker-а не
+готовы, смешанный кадр не публикуется.
+
+Изолированная сборка `gateway-integrated-world-09` — **388/388 PASS**; run 17
+поднял оба native клиента и worker-а, первый опубликованный snapshot уже
+содержал оба танка на `Y≈21.447`, а локальные скриншоты показали их на
+рельефе. Визуальная приемка владельца ещё **NOT_RUN**.
+Hit geometry, BSP2, penetration, damage, HP/module/crew и replay остаются
+**UNKNOWN/NOT_RUN**.
+
+Следующий единственный шаг — owner visual capture integrated profile, затем
+решение о merge этой карточки.
+
 # P06G impact trace invariant hardening — 2026-10-09
 
 Текущий server-side gate: **PASS_TRACE_INVARIANT_HARDENING**. Launch связан с
