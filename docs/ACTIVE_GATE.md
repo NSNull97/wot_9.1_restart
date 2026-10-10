@@ -1,3 +1,13 @@
+# P06M active — terrain contact on the cumulative runtime
+
+Branch:`codex/p06m-terrain-impact`, base accepted main55af06f. One card only:
+nearest terrain/vehicle projectile contact and original ground impact effects.
+Exact accepted Karelia geometry; current physics worker and live/wreck path
+retained. Native/owner acceptance pending, no merge on missing visual gate.
+[Current report](research/P06M_TERRAIN_IMPACT.md).
+One next gate: launch sequentially, shoot ground/hill and regress live/wreck
+effects in both clients; correlate native return traces with server contact.
+
 # P06L owner accepted / next terrain-contact card — 2026-10-10
 
 Active branch:`codex/p06l-ap-test-lab`; root code`f405c17`.

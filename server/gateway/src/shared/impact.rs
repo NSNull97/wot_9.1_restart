@@ -1063,7 +1063,7 @@ mod tests {
         let (hits,_,ground)=trace.collision_query_world(123,1,1001,
             &tagged_plate("Hull","armor_1",&ap_tag(1,1001)),bundle.materials(),&test_terrain(Some(0.0))).unwrap();
         let ground=ground.unwrap(); assert_eq!(hits.len(),1);
-        assert_eq!(ground.t,0.7); assert_eq!(hits[0].t,0.7f32);
+        assert!((ground.t-0.7).abs()<1e-12); assert_eq!(hits[0].t,0.7f32);
         assert!(ground.t>f64::from(hits[0].t)); assert_eq!(ground.t as f32,hits[0].t);
         let (_,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001)); let before=trace.clone();
         assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err());

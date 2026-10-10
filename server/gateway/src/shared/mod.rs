@@ -8,6 +8,8 @@ pub(crate) mod materials;
 pub(crate) mod client_marker;
 pub(crate) mod ap;
 mod impact_wire;
+pub(crate) mod terrain;
+mod terrain_wire;
 pub(crate) mod projectile;
 pub(crate) mod collision;
 pub(crate) mod impact;

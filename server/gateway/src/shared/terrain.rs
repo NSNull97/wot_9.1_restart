@@ -234,7 +234,7 @@ impl Terrain {
 
     fn add_cells_at(&self, start: [f64; 3], direction: [f64; 3], t: f64, cells: &mut BTreeSet<usize>) -> io::Result<()> {
         let count = self.width - 1;
-        let neighbors = |axis| {
+        let neighbors = |axis: usize| {
             let grid = (start[axis] + direction[axis] * t - self.origin) / self.spacing;
             let base = grid.floor() as isize;
             let rounded = grid.round();

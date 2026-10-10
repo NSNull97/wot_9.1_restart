@@ -426,7 +426,7 @@ def profile_calls(frame, phase, value):
             for name in ('firstHitDirLocal', 'firstHitDir'):
                 if name in frame.f_locals:
                     fields[name] = _shared_vector(frame.f_locals.get(name))
-    elif (source == 'scripts/client/Avatar.py' and method in ('showTracer', 'stopTracer')
+    elif (source == 'scripts/client/Avatar.py' and method in ('showTracer', 'stopTracer', 'explodeProjectile')
           and _settings.get('enable_shared_lab') is True):
         # Original Avatar native callbacks. Only fixed arguments are copied;
         # the observer never invokes a callback or changes the mover.
@@ -448,6 +448,34 @@ def profile_calls(frame, phase, value):
         else:
             fields['shotID'] = primitive(frame.f_locals.get('shotID'), budget=[2, 128])
             fields['endPoint'] = _shared_vector(frame.f_locals.get('endPoint'))
+            if method == 'explodeProjectile':
+                for name in ('effectsIndex', 'effectMaterialIndex'):
+                    fields[name] = primitive(frame.f_locals.get(name), budget=[2, 128])
+                fields['velocityDir'] = _shared_vector(frame.f_locals.get('velocityDir'))
+                # The native ARRAY wrapper is not an ordinary list; report
+                # only bounded length, never deserialize arbitrary objects.
+                damaged = frame.f_locals.get('damagedDestructibles')
+                fields['damaged_destructibles_count'] = len(damaged) if damaged is not None else None
+    elif (source in ('scripts/client/ProjectileMover.py', 'scripts/client/projectilemover.py')
+          and method == '__addExplosionEffect' and _settings.get('enable_shared_lab') is True):
+        # Passive observation of the original effect creation, including any
+        # native water/material substitution. No helper is invoked here.
+        kind = 'native_shared_terrain_effect_call'
+        caller = frame.f_back
+        caller_code = caller.f_code if caller is not None else None
+        caller_source = caller_code.co_filename.replace('\\', '/') if caller_code is not None else ''
+        if (caller_source in ('scripts/client/ProjectileMover.py', 'scripts/client/projectilemover.py')
+                and caller_code.co_name in ('explode', '__movementCallback')):
+            fields['shotID'] = primitive(caller.f_locals.get('shotID'), budget=[2, 128])
+            fields['caller_source'] = caller_source
+            fields['caller_method'] = caller_code.co_name
+            fields['caller_source_line'] = caller_code.co_firstlineno
+        for name in ('effectMaterial', 'effectTypeStr', 'showExplosion'):
+            if name in frame.f_locals:
+                fields[name] = primitive(frame.f_locals.get(name), budget=[4, 512])
+        for name in ('position', 'velocityDir'):
+            if name in frame.f_locals:
+                fields[name] = _shared_vector(frame.f_locals.get(name))
     elif (source in ('scripts/client/ProjectileMover.py', 'scripts/client/projectilemover.py')
           and method in ('add', 'hide') and _settings.get('enable_shared_lab') is True):
         # The original mover is the source of visual lifecycle evidence. Keep

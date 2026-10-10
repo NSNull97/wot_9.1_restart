@@ -1,3 +1,15 @@
+# P06M terrain-contact candidate — 2026-10-10
+
+Owner accepted P06L, merged main55af06f, and authorized the next card.
+`codex/p06m-terrain-impact` binds projectiles to the accepted physics terrain
+mesh, selects the nearest terrain/vehicle surface and queues original ground
+effects for both peers. Cumulative movement/aim/ammo/live/wreck paths retained.
+Build03:522/522 Rust PASS, EXE SHA8b398ca9…be32562; Python26 PASS/1 existing
+skip, source layout68/22 PASS. Native and owner terrain acceptance are pending;
+do not merge the candidate.
+[Plan](plans/P06M_TERRAIN_IMPACT.md), [files/commands/evidence/rollback](research/P06M_TERRAIN_IMPACT.md).
+One next gate: native two-client ground effects and owner rendered check.
+
 # P06L approximate AP damage — 2026-10-10, owner accepted
 
 Owner accepted native02 survivor motion/aim/shooting and impact effects,
