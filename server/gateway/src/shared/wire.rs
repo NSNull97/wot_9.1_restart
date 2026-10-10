@@ -44,12 +44,14 @@ fn var16(id: u8, p: &[u8]) -> io::Result<Vec<u8>> {
     let mut b = vec![id]; b.extend((p.len() as u16).to_le_bytes()); b.extend(p); Ok(b)
 }
 fn f3(b: &mut Vec<u8>, p: [f32; 3]) { for x in p { b.extend(x.to_le_bytes()); } }
+fn native_direction(b: &mut Vec<u8>, ypr: [f32; 3]) { f3(b, [ypr[2], ypr[1], ypr[0]]); }
 fn actor(w: &World, slot: usize) -> io::Result<&Actor> {
     vehicle_id(slot)?;
     let a = w.actors.get(slot).ok_or_else(model::bad)?;
     if w.id == 0 || a.identity.database <= 0 || a.identity.name.len() > 48
         || a.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
-        || !a.yaw.is_finite() || a.yaw.abs() > std::f32::consts::PI { return Err(model::bad()); }
+        || a.direction.iter().any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
+        || a.direction[0] != a.yaw { return Err(model::bad()); }
     Ok(a)
 }
 pub fn reset(w: &World, slot: usize) -> io::Result<Vec<u8>> {
@@ -81,8 +83,11 @@ pub fn announcement(w: &World, own: usize) -> io::Result<Vec<u8>> {
     let a = actor(w, own)?;
     let mut b = arena::create_cell_avatar(&arena::AvatarCellSeed { space_id: SPACE,
         player_vehicle_id: vehicle_id(own)?, position: a.position })?;
-    // Native createCellPlayer's direction stream is roll/pitch/yaw.
-    b[35..39].copy_from_slice(&a.yaw.to_le_bytes());
+    // Native createCellPlayer's direction stream is roll/pitch/yaw, while
+    // the domain/worker stores yaw/pitch/roll.
+    for (i, value) in [a.direction[2], a.direction[1], a.direction[0]].into_iter().enumerate() {
+        b[27 + i * 4..31 + i * 4].copy_from_slice(&value.to_le_bytes());
+    }
     b.extend(arena::karelia_space_data(SPACE, (SPACE as u64).to_le_bytes())?);
     b.extend(roster(w)?);
     for slot in 0..model::CAPACITY {
@@ -93,7 +98,7 @@ pub fn announcement(w: &World, own: usize) -> io::Result<Vec<u8>> {
 pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     let a = actor(w, slot)?;
     let mut p = vec![0]; p.extend(vehicle_id(slot)?.to_le_bytes()); p.extend(2u16.to_le_bytes());
-    f3(&mut p, a.position); f3(&mut p, [a.yaw, 0., 0.]);
+    f3(&mut p, a.position); f3(&mut p, a.direction);
     p.extend([8, 0, 0, 1, 1, 2]); p.extend(packed_angles(&a.aim)?.to_le_bytes());
     p.push(3); p.extend(90i16.to_le_bytes()); p.extend([4, 0, 0, 5]);
     string(&mut p, a.identity.name.as_bytes())?; string(&mut p, &vehicle::MS1_DESCRIPTOR)?;
@@ -187,7 +192,7 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
     period.push(b'G'); period.extend(3600f64.to_be_bytes()); period.extend(b"Nt."); b.extend(update(3, &period)?);
     b.push(0x14); b.extend(avatar_id(own)?.to_le_bytes()); b.extend(SPACE.to_le_bytes()); b.extend(vehicle_id(own)?.to_le_bytes());
     for _ in 0..6 { b.extend(0f32.to_le_bytes()); }
-    b.extend([0x13, 0x4a]); f3(&mut b, a.position); f3(&mut b, [a.yaw, 0., 0.]);
+    b.extend([0x13, 0x4a]); f3(&mut b, a.position); f3(&mut b, a.direction);
     b.extend(a.speed.to_le_bytes()); b.extend(0f32.to_le_bytes());
     // Native Avatar.updateTargetingInfo starts the original gun rotator and
     // its original target-input path. Nominal resource parameters, no crew
@@ -213,7 +218,7 @@ pub fn publication(w: &World, visible: [bool; 2]) -> io::Result<Vec<u8>> {
         if !known { continue; }
         let a = actor(w, slot)?;
         b.push(0x15); b.extend(vehicle_id(slot)?.to_le_bytes()); f3(&mut b, a.position);
-        f3(&mut b, [0., 0., a.yaw]);
+        native_direction(&mut b, a.direction);
         // Pinned #717 dynamic entityProperty base 0x9e + indexed property 2.
         // UINT16 is fixed2. Restore Avatar selection after each vehicle.
         b.push(0x12); b.extend(vehicle_id(slot)?.to_le_bytes());

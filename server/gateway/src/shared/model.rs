@@ -26,6 +26,8 @@ pub struct Actor {
     pub session: Option<u32>,
     pub ready: bool,
     pub position: [f32; 3],
+    /// Server-authoritative hull orientation in worker order: yaw, pitch, roll.
+    pub direction: [f32; 3],
     pub yaw: f32,
     pub speed: f32,
     pub input: Input,
@@ -78,12 +80,67 @@ impl World {
         let slot = self.actors.len();
         let mut origin = SPAWN; origin[0] += if slot == 0 { -4. } else { 4. };
         self.actors.push(Actor { identity, session: Some(session), ready: false,
-            position: origin, origin, yaw: 0., speed: 0., input: Input::STOP, fire: fire::State::new(), aim: aim::State::new() });
+            position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
+            fire: fire::State::new(), aim: aim::State::new() });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
         if self.started.is_some() || self.actors.len() != CAPACITY || now < self.last { return Err(bad()); }
         self.started = Some(now); self.last = now; Ok(())
+    }
+    /// Integrated map-drive owns the initial lane placement. Rebase happens
+    /// in the start tick before native arena announcements; after that first
+    /// turn all poses come from the workers atomically.
+    pub fn rebase_external_spawns(&mut self, positions: [[f32; 3]; CAPACITY]) -> io::Result<()> {
+        // The integrated runtime calls this in the same loop turn as
+        // `start`, before tick 1000 is published or either actor is ready.
+        if self.actors.len() != CAPACITY || self.tick != 1000 || self.actors.iter().any(|actor| actor.ready) { return Err(bad()); }
+        for position in positions {
+            if position.iter().any(|value| !value.is_finite() || value.abs() > 2000.) { return Err(bad()); }
+        }
+        for (actor, position) in self.actors.iter_mut().zip(positions) {
+            actor.position = position;
+            actor.origin = position;
+        }
+        Ok(())
+    }
+    /// A reconnect gets a fresh worker process. Until that worker is settled,
+    /// put the actor back on its server-owned lane so a stale parked pose
+    /// cannot become a large cross-terrain anchor offset.
+    pub fn reset_external_spawn(&mut self, slot: usize, position: [f32; 3]) -> io::Result<()> {
+        let actor = self.actors.get_mut(slot).ok_or_else(bad)?;
+        if actor.session.is_none() || actor.ready || position.iter().any(|value| !value.is_finite() || value.abs() > 2000.) {
+            return Err(bad());
+        }
+        actor.position = position;
+        actor.origin = position;
+        actor.direction = [0.; 3];
+        actor.yaw = 0.;
+        actor.speed = 0.;
+        Ok(())
+    }
+    /// Import the first settled worker frame before native arena creation.
+    /// This updates pose only; the simulation tick and gameplay state remain
+    /// untouched until both native actors have completed their ready contract.
+    pub fn import_external_poses(&mut self,
+        external: &[(usize, [f32; 3], [f32; 3], f32)]) -> io::Result<()> {
+        if external.len() != CAPACITY || external.iter().map(|row| row.0).collect::<std::collections::BTreeSet<_>>().len() != CAPACITY {
+            return Err(bad());
+        }
+        let mut next = self.actors.clone();
+        for (slot, position, direction, speed) in external {
+            let actor = next.get_mut(*slot).ok_or_else(bad)?;
+            if actor.session.is_none() || position.iter().any(|value| !value.is_finite())
+                || direction.iter().any(|value| !value.is_finite()) || !speed.is_finite()
+                || direction.iter().any(|value| !(-std::f32::consts::PI..=std::f32::consts::PI).contains(value))
+                || !(-25. ..=25.).contains(speed) { return Err(bad()); }
+            actor.position = *position;
+            actor.direction = *direction;
+            actor.yaw = direction[0];
+            actor.speed = *speed;
+        }
+        self.actors = next;
+        Ok(())
     }
     pub fn detach(&mut self, session: u32) -> io::Result<()> {
         let a = self.actors.iter_mut().find(|a| a.session == Some(session)).ok_or_else(bad)?;
@@ -142,8 +199,30 @@ impl World {
     /// One shared monotonic clock; bounded integration, no burst catch-up. The
     /// small flat boxes exist only to make remote-state publication observable.
     pub fn advance(&mut self, now: Instant) -> io::Result<bool> {
+        self.advance_with_external(now, None)
+    }
+
+    /// Advance the shared clock while importing poses from the accepted map
+    /// worker. `None` retains the historical bounded laboratory kinematics;
+    /// `Some` is used only by the integrated two-client profile. Worker rows
+    /// are already validated by the IPC parser and are copied atomically with
+    /// the projectile/trace state.
+    pub fn advance_with_external(&mut self, now: Instant,
+        external: Option<&[(usize, [f32; 3], [f32; 3], f32)]>) -> io::Result<bool> {
         let Some(start) = self.started else { return Ok(false); };
         if now < self.last || now.duration_since(start) >= LIFETIME { return Err(bad()); }
+        if let Some(rows) = external {
+            let slots = rows.iter().map(|row| row.0).collect::<std::collections::BTreeSet<_>>();
+            if rows.len() != CAPACITY || slots.len() != CAPACITY || slots.iter().any(|slot| *slot >= CAPACITY) {
+                return Err(bad());
+            }
+            for (slot, position, direction, speed) in rows {
+                if self.actors.get(*slot).and_then(|actor| actor.session).is_none() { return Err(bad()); }
+                if position.iter().any(|v| !v.is_finite()) || direction.iter().any(|v| !v.is_finite()) || !speed.is_finite()
+                    || direction.iter().any(|v| !(-std::f32::consts::PI..=std::f32::consts::PI).contains(v))
+                    || !(-25. ..=25.).contains(speed) { return Err(bad()); }
+            }
+        }
         let tick = 1000 + (now.duration_since(start).as_millis() / 100) as u32;
         let tick_changed = tick != self.tick;
         let prior_tick = self.tick;
@@ -153,16 +232,23 @@ impl World {
         let mut next_tick = self.tick;
         if tick_changed {
             let dt = now.duration_since(self.last).as_secs_f32().min(0.2);
-            for a in &mut next_actors {
+            for (slot, a) in next_actors.iter_mut().enumerate() {
                 if !a.ready || a.session.is_none() { continue; }
-                a.yaw = (a.yaw + a.input.steer as f32 * dt * 0.5 + std::f32::consts::PI)
-                    .rem_euclid(2. * std::f32::consts::PI) - std::f32::consts::PI;
-                let before = a.position;
-                a.position[0] = (a.position[0] + a.yaw.sin() * a.input.throttle as f32 * dt)
-                    .clamp(a.origin[0] - 2., a.origin[0] + 2.);
-                a.position[2] = (a.position[2] + a.yaw.cos() * a.input.throttle as f32 * dt)
-                    .clamp(a.origin[2] - 2., a.origin[2] + 2.);
-                a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
+                if let Some(rows) = external {
+                    if let Some((_, position, direction, speed)) = rows.iter().find(|(row, ..)| *row == slot) {
+                        a.position = *position; a.direction = *direction; a.yaw = direction[0]; a.speed = *speed;
+                    }
+                } else {
+                    a.yaw = (a.yaw + a.input.steer as f32 * dt * 0.5 + std::f32::consts::PI)
+                        .rem_euclid(2. * std::f32::consts::PI) - std::f32::consts::PI;
+                    a.direction = [a.yaw, 0., 0.];
+                    let before = a.position;
+                    a.position[0] = (a.position[0] + a.yaw.sin() * a.input.throttle as f32 * dt)
+                        .clamp(a.origin[0] - 2., a.origin[0] + 2.);
+                    a.position[2] = (a.position[2] + a.yaw.cos() * a.input.throttle as f32 * dt)
+                        .clamp(a.origin[2] - 2., a.origin[2] + 2.);
+                    a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
+                }
                 a.aim.advance(a.position, a.yaw, dt)?;
             }
             next_last = now; next_tick = tick;
@@ -216,6 +302,45 @@ pub(super) mod tests {
         w.apply(0, 1, &[Command::Move(Input { throttle: 1, steer: 0 })], now).unwrap();
         w.advance(now + STEP).unwrap(); assert!(w.actors[0].position[2] > SPAWN[2]);
         assert_eq!(w.actors[1], other);
+    }
+    #[test] fn integrated_external_pose_is_authoritative_and_atomic() {
+        let now = Instant::now(); let mut w = world(now);
+        let pose = [SPAWN[0] + 17., SPAWN[1] + 2., SPAWN[2] - 9.];
+        w.advance_with_external(now + STEP, Some(&[(0, pose, [0.75, 0.1, -0.2], 3.5),
+            (1, [SPAWN[0] + 4., SPAWN[1], SPAWN[2] + 1.], [-0.25, 0., 0.], 0.)])).unwrap();
+        assert_eq!(w.actors[0].position, pose); assert_eq!(w.actors[0].yaw, 0.75);
+        assert_eq!(w.actors[0].direction, [0.75, 0.1, -0.2]);
+        assert_eq!(w.actors[0].speed, 3.5); assert_eq!(w.actors[1].yaw, -0.25);
+        let before = w.clone();
+        assert!(w.advance_with_external(now + STEP * 2,
+            Some(&[(0, [SPAWN[0], SPAWN[1], SPAWN[2]], [0., 0., 0.], 0.)])).is_err());
+        assert_eq!(w.actors, before.actors); assert_eq!(w.tick, before.tick);
+        assert!(w.advance_with_external(now + STEP * 2,
+            Some(&[(0, [f32::NAN, 0., 0.], [0., 0., 0.], 0.)])).is_err());
+        assert_eq!(w.actors, before.actors); assert_eq!(w.tick, before.tick);
+    }
+    #[test] fn integrated_spawn_rebase_is_lane_bound_and_pre_ready_only() {
+        let now = Instant::now();
+        let mut w = World::new(124, now).unwrap();
+        for i in 0..2 { w.attach(Identity { account: format!("lane-{i}"), database: i + 11,
+            name: format!("lane_{i}") }, i as u32 + 11).unwrap(); }
+        w.rebase_external_spawns([
+            [-67.4999, 22.4167, -440.8130],
+            [-59.4999, 22.4167, -440.8130],
+        ]).unwrap();
+        assert_eq!(w.actors[0].position, [-67.4999, 22.4167, -440.8130]);
+        assert_eq!(w.actors[1].origin, [-59.4999, 22.4167, -440.8130]);
+        w.start(now).unwrap();
+        assert!(w.rebase_external_spawns([
+            [-67., 22., -440.], [-59., 22., -440.]
+        ]).is_ok());
+        w.actors[0].ready = true;
+        assert!(w.rebase_external_spawns([
+            [-67., 22., -440.], [-59., 22., -440.]
+        ]).is_err());
+        w.actors[0].ready = false;
+        w.reset_external_spawn(0, [-67., 22., -440.]).unwrap();
+        assert_eq!(w.actors[0].position, [-67., 22., -440.]);
     }
     #[test] fn disconnect_and_reconnect_keep_survivor_clock_pose_and_ammo() {
         let now = Instant::now(); let mut w = world(now);

@@ -5,6 +5,155 @@ use super::super::*;
 
 #[derive(Default)]
 struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
+
+/// Owns one accepted P05 worker per shared actor. The handles live outside
+/// `World` because `World` is cloned for atomic packet application; cloning a
+/// worker would duplicate process authority. Every imported row is copied into
+/// the next world snapshot only after the worker contract has validated it.
+struct IntegratedRuntime {
+    pool: Arc<crate::map_drive_worker091::Pool>,
+    workers: [Option<crate::map_drive_worker091::Worker>; model::CAPACITY],
+    poses: [Option<([f32; 3], [f32; 3], f32)>; model::CAPACITY],
+    offsets: [[f32; 3]; model::CAPACITY],
+    anchored: [bool; model::CAPACITY],
+    dispatched: [Option<Instant>; model::CAPACITY],
+    started: bool,
+}
+
+/// A worker frame may be compared with a client frame in focused tests, but an
+/// integrated session now starts each worker at its own map lane. Only the
+/// tiny settle drift from that requested lane is anchored. Applying the old
+/// cross-terrain X/Z translation would retain a different terrain height while
+/// keeping worker Y, which was the airborne-tank bug.
+fn worker_frame_offset(client_spawn: [f32; 3], worker_spawn: [f32; 3]) -> [f32; 3] {
+    [client_spawn[0] - worker_spawn[0], 0., client_spawn[2] - worker_spawn[2]]
+}
+
+fn worker_frame_position(worker_position: [f32; 3], offset: [f32; 3]) -> [f32; 3] {
+    [worker_position[0] + offset[0], worker_position[1], worker_position[2] + offset[2]]
+}
+
+impl IntegratedRuntime {
+    fn new(pool: Arc<crate::map_drive_worker091::Pool>) -> Self {
+        Self { pool, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
+            offsets: [[0.; 3]; model::CAPACITY],
+            anchored: [false; model::CAPACITY],
+            dispatched: [None; model::CAPACITY], started: false }
+    }
+
+    fn map(&self) -> io::Result<crate::map_drive_worker091::MapSpec> {
+        self.pool.maps.iter().find(|candidate| candidate.asset == "01_karelia"
+            && candidate.arena_type_id == 1).cloned().ok_or_else(model::bad)
+    }
+
+    fn lane_spawn(map: &crate::map_drive_worker091::MapSpec, slot: usize) -> [f32; 3] {
+        [map.spawn[0] + if slot == 0 { -4. } else { 4. }, map.spawn[1], map.spawn[2]]
+    }
+
+    fn spawn_slot(&mut self, world_id: u64, slot: usize, map: crate::map_drive_worker091::MapSpec,
+        now: Instant) -> io::Result<()> {
+        if self.workers[slot].is_some() { return Err(model::bad()); }
+        let lane = Self::lane_spawn(&map, slot);
+        self.offsets[slot] = [0.; 3];
+        self.anchored[slot] = false;
+        self.dispatched[slot] = None;
+        let worker = crate::map_drive_worker091::Worker::launch_at_spawn(self.pool.clone(), map.clone(),
+            u32::try_from(slot + 1).map_err(|_| model::bad())?, now, Some(lane))?;
+        println!("SHARED_INTEGRATED_WORKER_START battle={} slot={} map={} arena_type_id={} config_sha256={} pool_sha256={} physics=test_lab coordinate_bridge=worker_lane_full_pose_bridge=position_ypr spawn_override={:?} offset={:?}",
+            world_id, slot, map.asset, map.arena_type_id, map.config_sha256, self.pool.sha256, lane, self.offsets[slot]);
+        self.workers[slot] = Some(worker);
+        Ok(())
+    }
+
+    fn start(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
+        if self.started || world.actors.len() != model::CAPACITY || world.started.is_none() { return Err(model::bad()); }
+        // The native wire currently advertises Karelia (space_id=1). Do not
+        // let an arbitrary pool ordering silently pair that wire with another
+        // map; fail closed until the protocol carries an explicit map choice.
+        let map = self.map()?;
+        let lane_spawns = std::array::from_fn(|slot| {
+            Self::lane_spawn(&map, slot)
+        });
+        // Native announcements are emitted later in this same loop. Rebase
+        // before that happens so no old flat-lab spawn can reach the client.
+        world.rebase_external_spawns(lane_spawns)?;
+        for slot in 0..model::CAPACITY {
+            self.spawn_slot(world.id, slot, map.clone(), now)?;
+        }
+        self.started = true;
+        Ok(())
+    }
+
+    fn ready_for_native(&self) -> bool {
+        self.workers.iter().all(|worker| worker.as_ref().is_some_and(|value| value.ready()))
+    }
+
+    fn step(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
+        if world.started.is_none() { return Ok(()); }
+        let mut rows = Vec::new();
+        for slot in 0..model::CAPACITY {
+            if world.actors.get(slot).and_then(|a| a.session).is_none() {
+                self.workers[slot].take(); self.poses[slot] = None; self.anchored[slot] = false;
+                self.dispatched[slot] = None; continue;
+            }
+            if self.workers[slot].is_none() {
+                let map = self.map()?;
+                world.reset_external_spawn(slot, Self::lane_spawn(&map, slot))?;
+                self.spawn_slot(world.id, slot, map, now)?;
+            }
+            let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
+            if let Some(state) = worker.poll(now)? {
+                if state.seq == 0 {
+                    let actor = world.actors.get(slot).ok_or_else(model::bad)?;
+                    self.offsets[slot] = worker_frame_offset(actor.position, state.pose.position);
+                    self.anchored[slot] = true;
+                    println!("SHARED_INTEGRATED_WORKER_READY battle={} slot={} process_id={} map={} worker_tick={} settled_position={:?} direction={:?} contacts={} wheel_contact_masks={:?} anchor_offset={:?}",
+                        world.id, slot, worker.process_id().ok_or_else(model::bad)?, worker.map.asset,
+                        state.tick, state.pose.position, state.pose.direction, state.pose.contacts, state.pose.wheel_contact_masks,
+                        self.offsets[slot]);
+                }
+                if !self.anchored[slot] { return Err(model::bad()); }
+                let position = worker_frame_position(state.pose.position, self.offsets[slot]);
+                if position.iter().any(|v| !v.is_finite()) || state.pose.direction.iter().any(|v| !v.is_finite()) {
+                    return Err(model::bad());
+                }
+                self.poses[slot] = Some((position, state.pose.direction, state.pose.speed));
+                rows.push((slot, position, state.pose.direction, state.pose.speed));
+            } else if let Some((position, direction, speed)) = self.poses[slot] {
+                rows.push((slot, position, direction, speed));
+            }
+        }
+        for slot in 0..model::CAPACITY {
+            if world.actors.get(slot).and_then(|a| a.session).is_none() { continue; }
+            let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
+            if worker.ready() && !worker.pending()
+                && self.dispatched[slot].is_none_or(|sent| now.duration_since(sent) >= crate::map_drive_worker091::STEP) {
+                let actor = world.actors.get(slot).ok_or_else(model::bad)?;
+                let input = crate::map_drive_worker091::Input { throttle: actor.input.throttle,
+                    steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0 };
+                let seq = worker.advance(input, now)?;
+                self.dispatched[slot] = Some(now);
+                println!("SHARED_INTEGRATED_WORKER_INPUT battle={} slot={} seq={} throttle={} steer={} brake={}",
+                    world.id, slot, seq, input.throttle, input.steer, input.brake);
+            }
+        }
+        // Do not publish a mixed frame while the two workers are settling.
+        // The old client-space spawn is deliberately not a fallback pose:
+        // waiting one bounded loop keeps the second actor from appearing at
+        // the laboratory Y for a single tick before its worker is ready.
+        if rows.len() != model::CAPACITY || world.actors.iter().any(|actor| actor.session.is_none()) {
+            return Ok(());
+        }
+        if world.actors.iter().any(|actor| !actor.ready) {
+            // The native arena has not completed its ready handshake yet, but
+            // its first announcement must still use the settled worker pose.
+            world.import_external_poses(&rows)?;
+            return Ok(());
+        }
+        world.advance_with_external(now, Some(&rows))?;
+        Ok(())
+    }
+}
 impl Table {
     fn admissible(&mut self, attempt: &LoginAttempt, now: Instant) -> io::Result<()> {
         self.retirement.check_login(attempt, now).map_err(|_| model::bad())?;
@@ -44,6 +193,19 @@ impl Table {
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None)
+}
+
+pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
+    pool_path: &str, capture_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let config = crate::identity091::Config::load(config_path)?;
+    let pool = crate::map_drive_worker091::Pool::load(&config.local_root, Path::new(pool_path))?;
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)))
+}
+
+fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
+    integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>)
+    -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
     let private = login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len() != 16 { return Err(model::bad().into()); }
@@ -51,16 +213,22 @@ pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path:
     let login_socket = UdpSocket::bind(config.login_bind)?;
     let base_socket = UdpSocket::bind(config.base_bind)?;
     login_socket.set_nonblocking(true)?; base_socket.set_nonblocking(true)?;
-    let mut capture = Some(Recorder::open_profile(capture_path, &config.local_root, crate::capture091::Profile::SharedWorldV1)?);
+    let capture_profile = if integrated_pool.is_some() { crate::capture091::Profile::IntegratedWorldV1 }
+        else { crate::capture091::Profile::SharedWorldV1 };
+    let mut capture = Some(Recorder::open_profile(capture_path, &config.local_root, capture_profile)?);
     let mut table = Table::default();
     let started = Instant::now();
     let mut world = World::new(OsRng.next_u64().max(1), started)?;
+    let mut integrated = integrated_pool.map(IntegratedRuntime::new);
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
     let mut fragments = login::LoginFragments::default();
     let mut rate_started = started; let mut rate_count = 0u32;
-    println!("BOUND {} base_backend={} profile=legacy091-shared-lab battle={} capacity=2 scope=allied_temporary_ms1 motion=bounded_kinematic physics=false inventory_changed=false", config.login_bind, config.base_bind, world.id);
+    println!("BOUND {} base_backend={} profile={} battle={} capacity=2 scope=allied_temporary_ms1 motion={} physics={} inventory_changed=false",
+        config.login_bind, config.base_bind,
+        if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
+        world.id, if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some());
     loop {
         let now = Instant::now();
         if now.duration_since(started) >= model::LIFETIME { println!("SHARED_STOP reason=lab_lifetime"); break; }
@@ -176,12 +344,22 @@ pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path:
             world.start(now)?;
             println!("SHARED_WORLD_STARTED battle={} sessions=2 actors=2 space=1 tick=1000", world.id);
         }
-        if world.started.is_some() { world.advance(now)?; }
+        if world.started.is_some() {
+            if let Some(runtime) = integrated.as_mut() {
+                if !runtime.started { runtime.start(&mut world, now)?; }
+                runtime.step(&mut world, now)?;
+            } else { world.advance(now)?; }
+        }
+        let integrated_native_ready = integrated.as_ref().is_none_or(IntegratedRuntime::ready_for_native);
         for s in &mut table.sessions {
             let reason = if now.duration_since(s.created_at) >= config.session_duration { Some("session_deadline") }
                 else if now.duration_since(s.last_rx) >= Duration::from_secs(8) { Some("idle_timeout") } else { None };
             if let Some(reason) = reason { closing.push((s.id, reason)); continue; }
-            if let Err(error) = poll(s, &mut world, now) {
+            // Keep the transport alive while workers settle, but gate the
+            // native arena reset until both workers have supplied a settled
+            // pose. This avoids the old outer `continue`, which also skipped
+            // heartbeats and made a client look disconnected during startup.
+            if let Err(error) = poll_with_native_start(s, &mut world, now, integrated_native_ready) {
                 println!("SHARED_FAILED session={} reason={}", s.id, error); closing.push((s.id, "world_or_publication")); continue;
             }
             if s.shared.as_ref().is_some_and(|c| c.phase == Phase::Leaving) { closing.push((s.id, "native_leave")); continue; }
@@ -207,9 +385,10 @@ pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path:
     Ok(())
 }
 
-fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
+fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
+    allow_native_start: bool) -> io::Result<()> {
     if world.started.is_none() { return Ok(()); }
-    if entry_ready(s, now) { s.shared_start(world, now)?; }
+    if allow_native_start && entry_ready(s, now) { s.shared_start(world, now)?; }
     let c = s.shared.as_ref().ok_or_else(model::bad)?;
     if matches!(c.phase, Phase::Enable | Phase::Entities) && c.entered.is_some_and(|start| now.duration_since(start) > Duration::from_secs(90)) { return Err(model::bad()); }
     if !matches!(c.phase, Phase::Driving | Phase::Leaving) { return Ok(()); }
@@ -314,6 +493,10 @@ fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
     *world = next_world; *s = next; Ok(())
 }
 
+fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
+    poll_with_native_start(s, world, now, true)
+}
+
 fn entry_ready(s: &Session, now: Instant) -> bool {
     s.ready_for_arena_base() && s.shared.as_ref().is_some_and(|c| c.phase == Phase::Account
         && c.hangar_since.is_some_and(|start| now.saturating_duration_since(start) >= Duration::from_secs(3)))
@@ -323,6 +506,20 @@ fn entry_ready(s: &Session, now: Instant) -> bool {
 mod tests {
     use super::*;
     fn peer(port: u16) -> SocketAddr { SocketAddr::from(([127,0,0,1], port)) }
+    #[test]
+    fn integrated_worker_bridge_keeps_worker_terrain_height() {
+        let client = [-67.499908, 22.416676, -440.81305];
+        let worker = [-67.499344, 21.44713, -440.81094];
+        let offset = worker_frame_offset(client, worker);
+        assert_eq!(offset, [-0.0005645752, 0., -0.0021057129]);
+
+        let bridged = worker_frame_position(worker, offset);
+        assert!((bridged[0] - client[0]).abs() < 0.001);
+        assert!((bridged[2] - client[2]).abs() < 0.001);
+        assert_eq!(bridged[1], worker[1]);
+        assert_ne!(bridged[1], client[1]);
+    }
+
     fn session(id: u32, now: Instant) -> Session {
         let mut s = Session::new(id, [id as u8;16], peer(30000 + id as u16), now);
         s.login_attempt = Some(LoginAttempt::new(s.key, id, s.login_peer)); s
@@ -363,6 +560,24 @@ mod tests {
     fn point(slot:usize,p:[f32;3])->Vec<u8> {
         let mut b=vec![0x0f,16,0];b.extend(wire::vehicle_id(slot).unwrap().to_le_bytes());
         for x in p {b.extend(x.to_le_bytes());} b
+    }
+    #[test] fn integrated_native_gate_keeps_account_session_alive_until_worker_ready() {
+        let now = Instant::now();
+        let (mut s, mut world) = driving(now);
+        s.arena_base = false;
+        s.base_peer = Some(peer(34001));
+        s.sync_mask = 7;
+        let client = s.shared.as_mut().unwrap();
+        client.phase = Phase::Account;
+        client.hangar_since = Some(now - Duration::from_secs(3));
+
+        // A settling worker must not trigger the native arena reset yet.
+        poll_with_native_start(&mut s, &mut world, now, false).unwrap();
+        assert_eq!(s.shared.as_ref().unwrap().phase, Phase::Account);
+
+        // Once both workers are ready, the same session may enter the arena.
+        poll_with_native_start(&mut s, &mut world, now, true).unwrap();
+        assert_eq!(s.shared.as_ref().unwrap().phase, Phase::Enable);
     }
     #[test] fn native_aim_is_owned_atomic_and_published_from_one_server_state() {
         let now=Instant::now();let (mut a,mut b,mut w)=visible_pair(now);

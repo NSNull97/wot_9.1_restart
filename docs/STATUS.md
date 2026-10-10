@@ -1,3 +1,65 @@
+# P03L integrated physics lane alignment — 2026-10-09
+
+На ветке `codex/p03k-integrated-world` исправлен воздушный старт
+`legacy091-integrated-lab`. Интегрированный профиль больше не переносит
+settled worker X/Z на старые лабораторные координаты: каждый worker запускается
+на своей серверной полосе `map.spawn ±4 м`, а его полный pose (включая Y,
+pitch/roll, yaw, speed и contacts) публикуется без старого cross-terrain сдвига;
+разрешён только миллиметровый anchor settle-дрейфа.
+Первый кадр native world теперь ждёт оба `ready`, чтобы не смешивать старый и
+settled pose.
+
+Изолированная сборка `gateway-integrated-world-19` — **391/391 PASS**;
+physics worker `physics-integrated-lane-01` собран с SHA
+`a1ad2dd75b2a45789e87a82999b3b5ee16c88501f47cd192f0bee86a5ee23f8a`.
+Прямой private-pipe smoke обеих полос PASS: позиции
+`[-67.50258,21.542301,-440.81335]` и `[-59.499165,21.349958,-440.8065]`,
+contacts 6/5, wheel masks 63/59. Layout — **PASS_SERVER_SOURCE_LAYOUT**.
+Длинный worker stress (30 шагов газ, 30 газ+поворот, 30 торможение) —
+**PASS_WORKER_PHYSICS_STRESS**: перемещение `ΔX=-6.94, ΔY=+1.11,
+ΔZ=+20.07 м`, наклоны pitch/roll наблюдались на всех 90 кадрах,
+contacts 2..6, финал на 6 контактах.
+
+В run26 обнаружился отдельный startup-gate дефект: пока worker-ы settle-ились,
+gateway пропускал весь per-session poll, поэтому клиент зависал на «Вход в
+игру…» и закрывал сессию. В run27 это исправлено: транспорт продолжает ACK/
+heartbeat/retry, а native arena reset задерживается до обоих worker `ready`.
+Оба клиента дошли до `SHARED_WORLD_STARTED`, worker pose импортирован с
+contacts 6/5 и wheel masks 63/59, после чего идут общие snapshots без
+`SHARED_SESSION_CLOSED`. Владелец подтвердил run27 вручную: физика на месте,
+прицел и стрельба работают; этот scope имеет статус
+**PASS_NATIVE_OWNER_ACCEPTANCE**.
+
+Evidence: [P03L plan](plans/P03L_INTEGRATED_PHYSICS_LANE_ALIGNMENT.md),
+`local/evidence/20261009-p03l-integrated-physics-01/worker-spawn-override-smoke.json`,
+`local/evidence/20261009-p03l-integrated-physics-01/worker-physics-stress.json`,
+`local/build/server/gateway-integrated-world-19/result.json`,
+`local/evidence/20261007-p03h-native-projectile-flight-01/gateway-27.stdout.log`,
+`local/evidence/20261010-p03l-owner-acceptance-01/owner-acceptance.json`.
+Ручная приёмка этого scope завершена; merge в `main` выполняется после
+проверки текущего head. Canonical service не перезапускался.
+
+# P03K integrated two-client worker world — 2026-10-09
+
+На ветке `codex/p03k-integrated-world` добавлен opt-in профиль
+`legacy091-integrated-lab`: два authenticated shared-battle клиента используют
+по одному hash-bound P05 test-lab worker. Первый settled worker pose сохраняет
+раздельные X/Z полосы клиентов, а worker Y, полный yaw/pitch/roll и speed
+публикуются в общий snapshot; старый `legacy091-shared-lab` не меняется.
+Публикация ждёт оба worker-а, чтобы не показывать стартовый смешанный кадр.
+
+Изолированная сборка `gateway-integrated-world-09` — **388/388 PASS**;
+run 17 поднял оба worker-а, первый опубликованный snapshot уже содержит оба
+танка на `Y≈21.447` (без смешанного стартового кадра), а локальные скриншоты
+стенда стоят на рельефе. Новый native capture пока **NOT_RUN**: визуальная
+приемка владельца ещё требуется.
+Collision geometry, BSP2 intersection, penetration, HP/module/crew damage и
+историческая physics equivalence остаются **NOT_RUN/UNKNOWN**.
+
+Evidence: `local/evidence/20261007-p03h-native-projectile-flight-01/gateway-15.stdout.log`;
+план [P03K integrated world](plans/P03K_INTEGRATED_WORLD.md). До ручного
+подтверждения ветка не вливается в `main`; canonical service не перезапускался.
+
 # P06G impact trace invariant hardening — 2026-10-09
 
 Карточка усилила P06C перед runtime capture: `Trace::launch` теперь принимает

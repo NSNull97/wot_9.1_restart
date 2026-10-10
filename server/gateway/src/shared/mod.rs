@@ -7,6 +7,7 @@ pub(crate) mod impact;
 pub(crate) mod wire;
 mod server;
 pub use server::serve;
+pub use server::serve_integrated;
 use super::{Session, Frame, Instant};
 use std::io;
 use model::{bad, Command, Input, World};

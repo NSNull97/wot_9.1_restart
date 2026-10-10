@@ -46,6 +46,18 @@ damage, water, other vehicles and battle results are outside this worker's scope
 
 Source ownership: this worker is maintained in `server/physics`. The old
 `tools/map_drive_worker/MapDriveWorker.csproj` references these same files.
+The canonical six-argument launch keeps the configured `spawn_origin`:
+
+```text
+MapDriveWorker.exe --local-root <local> --config <map.json> --config-sha256 <sha256>
+```
+
+The integrated two-client harness may append `--spawn-xz <x> <z>`. This is a
+server-owned lane override: X/Z must stay within 12 metres of the configured
+spawn and Y is always retained from the map configuration. The worker then
+settles and reports the complete terrain pose at that lane; the gateway does
+not translate the pose after physics.
+
 Build via `python -B -X utf8 server/build.py physics --out local/build/server/physics-check-03`
 from the project root, using a fresh output directory. No bin/obj in sources.
 

@@ -9,6 +9,7 @@ use crate::capture091::{Channel,Recorder};
 #[path = "shared/mod.rs"]
 pub(crate) mod shared;
 pub use shared::serve as serve_shared_lab;
+pub use shared::serve_integrated as serve_integrated_lab;
 
 // R01 measured same-process reconnect reuses the cipher key but changes the
 // encrypted nonce and UDP peer. Keep finite attempt and retired-peer isolation;
