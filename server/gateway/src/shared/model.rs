@@ -2,13 +2,16 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, sync::Arc, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::{aim, geometry, impact, materials::MaterialFacts, projectile::Projectile};
+use super::{aim, ap, geometry, impact, materials::MaterialFacts, projectile::Projectile};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
 pub const STEP: Duration = Duration::from_millis(100);
 pub const MAX_COMMANDS: usize = 32;
 pub const MAX_SHOTS: usize = CAPACITY * fire::MS1_INITIAL_AMMO as usize;
+/// Explicit laboratory policy: retained stock geometry blocks AP at a wreck.
+/// No penetration, material thickness or additional damage is inferred.
+pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
 pub fn bad() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "shared laboratory contract") }
@@ -25,6 +28,7 @@ pub struct Actor {
     pub identity: Identity,
     pub session: Option<u32>,
     pub ready: bool,
+    pub health: i16,
     pub position: [f32; 3],
     /// Server-authoritative hull orientation in worker order: yaw, pitch, roll.
     pub direction: [f32; 3],
@@ -54,6 +58,18 @@ pub struct Contact {
     pub material_facts: MaterialFacts,
 }
 
+/// Committed authoritative outcome. No native IDs or client damage claims.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ImpactOutcome { Ap(ap::Resolution), WreckBlocked }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AppliedImpact {
+    pub shot: u32, pub attacker: usize, pub target: usize, pub tick: u32,
+    pub outcome: ImpactOutcome,
+    pub health_before: i16, pub health_after: i16,
+    pub segment: Option<geometry::ImpactSegment>,
+}
+
 #[derive(Clone)]
 pub struct World {
     pub id: u64,
@@ -66,6 +82,8 @@ pub struct World {
     pub impact: impact::Trace,
     geometry: Option<Arc<geometry::Bundle>>,
     pub contacts: Vec<Contact>,
+    ap_test_lab: bool,
+    pub impacts: Vec<AppliedImpact>,
 }
 
 impl World {
@@ -73,11 +91,15 @@ impl World {
         if id == 0 { return Err(bad()); }
         Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new(),
-            geometry: None, contacts: Vec::new() })
+            geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new() })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
         if self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
         self.geometry = Some(bundle); Ok(())
+    }
+    pub fn enable_ap_test_lab(&mut self) -> io::Result<()> {
+        if self.started.is_some() || self.geometry.is_none() || self.ap_test_lab { return Err(bad()); }
+        self.ap_test_lab = true; Ok(())
     }
     pub fn latest_shot(&self) -> u32 { self.shots.last().map(|s| s.sequence).unwrap_or(0) }
     /// Authenticated identity only. The caller reserves a transport retirement
@@ -96,7 +118,7 @@ impl World {
         }
         let slot = self.actors.len();
         let mut origin = SPAWN; origin[0] += if slot == 0 { -4. } else { 4. };
-        self.actors.push(Actor { identity, session: Some(session), ready: false,
+        self.actors.push(Actor { identity, session: Some(session), ready: false, health: 90,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
             fire: fire::State::new(), aim: aim::State::new() });
         Ok(slot)
@@ -179,6 +201,19 @@ impl World {
         let mut projectiles = self.projectiles.clone();
         let mut impact_trace = self.impact.clone();
         for (at, command) in commands.iter().enumerate() {
+            // Native dead players may still emit neutral input/aim packets.
+            // Validate them, then ignore gameplay; leave remains available.
+            if next.health == 0 {
+                match command {
+                    Command::Aim(intent) => { intent.validate()?; continue; },
+                    Command::Move(input) => {
+                        if !(-1..=1).contains(&input.throttle) || !(-1..=1).contains(&input.steer) { return Err(bad()); }
+                        continue;
+                    },
+                    Command::Fire(_) => continue,
+                    Command::Leave => {},
+                }
+            }
             match command {
                 Command::Aim(intent) => next.aim.set(*intent)?,
                 Command::Move(input) => {
@@ -234,7 +269,12 @@ impl World {
                 return Err(bad());
             }
             for (slot, position, direction, speed) in rows {
-                if self.actors.get(*slot).and_then(|actor| actor.session).is_none() { return Err(bad()); }
+                let actor = self.actors.get(*slot).ok_or_else(bad)?;
+                // A disconnected actor is parked in the authoritative world;
+                // its missing worker must not pause the surviving actor's clock.
+                if actor.session.is_none() && (*position != actor.position || *direction != actor.direction || *speed != 0.) {
+                    return Err(bad());
+                }
                 if position.iter().any(|v| !v.is_finite()) || direction.iter().any(|v| !v.is_finite()) || !speed.is_finite()
                     || direction.iter().any(|v| !(-std::f32::consts::PI..=std::f32::consts::PI).contains(v))
                     || !(-25. ..=25.).contains(speed) { return Err(bad()); }
@@ -267,13 +307,14 @@ impl World {
                     a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
                 }
                 a.direction[0] = a.yaw;
-                a.aim.advance_pose(a.position, a.direction, dt)?;
+                if a.health > 0 { a.aim.advance_pose(a.position, a.direction, dt)?; }
             }
             next_last = now; next_tick = tick;
         }
         let mut impact_trace = self.impact.clone();
         let mut next_projectiles = self.projectiles.clone();
         let mut contacts = self.contacts.clone();
+        let mut impacts = self.impacts.clone();
         if tick_changed {
             for projectile in &mut next_projectiles {
                 if !projectile.stopped {
@@ -297,17 +338,61 @@ impl World {
                                 let endpoint = std::array::from_fn(|i|
                                     start_point[i] + nearest.t * (end_point[i] - start_point[i]));
                                 if contacts.len() >= MAX_SHOTS { return Err(bad()); }
-                                contacts.push(Contact { shot: projectile.sequence, target_slot, tick,
+                                let contact = Contact { shot: projectile.sequence, target_slot, tick,
                                     segment_start: start_point, segment_end: end_point,
                                     segment_seconds: segment_end.duration_since(segment_start).as_secs_f32(), endpoint,
                                     target_position: target.position, target_direction: target.direction,
                                     target_aim: [target.aim.yaw, target.aim.pitch], triangle: nearest.clone(),
                                     geometry_revision: mesh.geometry_revision().into(),
                                     transform_revision: mesh.transform_revision().into(),
-                                    material_facts: material_facts.ok_or_else(bad)? });
+                                    material_facts: material_facts.ok_or_else(bad)? };
+                                let mut terminal_reason = impact::TerminalReason::UnresolvedCollision;
+                                if self.ap_test_lab && target.health > 0 {
+                                    if impacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                    let distance = (0..3).map(|i| {
+                                        let delta = f64::from(endpoint[i]) - f64::from(projectile.origin[i]);
+                                        delta * delta
+                                    }).sum::<f64>().sqrt();
+                                    let resolution = ap::resolve(ap::Input {
+                                        material: &contact.material_facts,
+                                        segment_direction: std::array::from_fn(|i| end_point[i] - start_point[i]),
+                                        winding_normal: nearest.normal, distance,
+                                    })?;
+                                    let before = target.health;
+                                    let after = (before - resolution.damage as i16).max(0);
+                                    // Unsupported surfaces have no fabricated native outcome.
+                                    let segment = if matches!(resolution.outcome, ap::Outcome::Unsupported(_)) { None }
+                                        else { Some(bundle.impact_segment(&contact)?) };
+                                    impact_trace.ap_resolution(self.id, projectile.sequence, tick,
+                                        projectile.slot, target_slot, &resolution, before, after)?;
+                                    impacts.push(AppliedImpact { shot: projectile.sequence,
+                                        attacker: projectile.slot, target: target_slot, tick,
+                                        outcome: ImpactOutcome::Ap(resolution),
+                                        health_before: before, health_after: after, segment });
+                                    let damaged = next_actors.get_mut(target_slot).ok_or_else(bad)?;
+                                    damaged.health = after;
+                                    if after == 0 {
+                                        damaged.input = Input::STOP; damaged.speed = 0.; damaged.aim.park();
+                                    }
+                                    terminal_reason = impact::TerminalReason::TestLabImpact;
+                                } else if self.ap_test_lab && target.health == 0 {
+                                    if impacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                    // Retained geometry blocks a shell on an already dead actor.
+                                    // Require the same validated native segment, but never run
+                                    // the live-armor resolver or mutate health/death/input state.
+                                    let segment = Some(bundle.impact_segment(&contact)?);
+                                    impact_trace.wreck_impact(self.id, projectile.sequence, tick,
+                                        projectile.slot, target_slot, 0, 0)?;
+                                    impacts.push(AppliedImpact { shot: projectile.sequence,
+                                        attacker: projectile.slot, target: target_slot, tick,
+                                        outcome: ImpactOutcome::WreckBlocked,
+                                        health_before: 0, health_after: 0, segment });
+                                    terminal_reason = impact::TerminalReason::TestLabWreckImpact;
+                                }
+                                contacts.push(contact);
                                 projectile.terminal = endpoint; projectile.stopped = true;
                                 impact_trace.terminal(self.id, projectile.sequence, tick,
-                                    impact::TerminalReason::UnresolvedCollision)?;
+                                    terminal_reason)?;
                             }
                         }
                     }
@@ -332,6 +417,7 @@ impl World {
         self.projectiles = next_projectiles;
         self.impact = impact_trace;
         self.contacts = contacts;
+        self.impacts = impacts;
         Ok(tick_changed || expired)
     }
 }
@@ -355,6 +441,101 @@ pub(super) mod tests {
             w.actors[i].direction = [w.actors[i].yaw, 0., 0.];
         }
         w
+    }
+    pub fn ap_world(now: Instant) -> World {
+        let mut w = collision_world(now, false); w.ap_test_lab = true; w
+    }
+    #[test] fn ap_requires_explicit_prestart_geometry_binding() {
+        let now = Instant::now(); let mut w = World::new(44,now).unwrap();
+        assert!(w.enable_ap_test_lab().is_err());
+        w.bind_geometry(Arc::new(super::super::geometry::tests::bundle())).unwrap();
+        w.enable_ap_test_lab().unwrap(); assert!(w.enable_ap_test_lab().is_err());
+        assert!(world(now).enable_ap_test_lab().is_err());
+    }
+    #[test] fn ap_contact_changes_health_once_and_three_hits_destroy() {
+        let now = Instant::now(); let mut w = ap_world(now);
+        for round in 0..3 {
+            let at = now+Duration::from_secs(round*3);
+            if round > 0 { w.advance(at).unwrap(); }
+            w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
+            w.advance(at+STEP).unwrap();
+            assert_eq!(w.impacts.len(),round as usize+1);
+            assert!(matches!(&w.impacts.last().unwrap().outcome,
+                ImpactOutcome::Ap(resolution) if resolution.outcome == ap::Outcome::Pierced));
+            assert_eq!(w.actors[1].health,60-round as i16*30);
+            let before = w.impacts.clone(); w.advance(at+STEP*2).unwrap();
+            assert_eq!(w.impacts,before);
+        }
+        assert_eq!(w.actors[1].input,Input::STOP);
+        let at = now+Duration::from_secs(9); w.advance(at).unwrap();
+        let ammo = w.actors[1].fire.ammo(); let aim = w.actors[1].aim.clone();
+        assert!(w.apply(1,2,&[Command::Aim(aim::Intent::Point([100.,20.,50.])),
+            Command::Move(Input{throttle:1,steer:1}),Command::Fire(fire::Command::Shoot)],at).unwrap().is_empty());
+        assert_eq!(w.actors[1].fire.ammo(),ammo); assert_eq!(w.actors[1].aim,aim);
+        assert_eq!(w.actors[1].input,Input::STOP);
+        // Already dead geometry emits one distinct block outcome, not another
+        // AP result, health transition, command or death.
+        let wreck_before = w.actors[1].clone();
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
+        w.advance(at+STEP).unwrap(); assert_eq!(w.impacts.len(),4);
+        let event = w.impacts.last().unwrap();
+        assert_eq!(event.outcome,ImpactOutcome::WreckBlocked);
+        assert_eq!((event.shot,event.attacker,event.target,event.health_before,event.health_after),(4,0,1,0,0));
+        assert!(event.segment.is_some()); assert_eq!(w.actors[1],wreck_before);
+        assert_eq!(w.actors[0].fire.ammo(),16);
+        assert_eq!(w.impact.events().iter().filter(|e| matches!(e,impact::Event::ApResolution{..})).count(),3);
+        assert_eq!(w.impact.events().iter().filter(|e| matches!(e,impact::Event::WreckImpact{..})).count(),1);
+        assert!(matches!(w.impact.events().last(),Some(impact::Event::Terminal {
+            shot_id:4,reason:impact::TerminalReason::TestLabWreckImpact,.. })));
+        assert_eq!(w.projectiles[3].terminal,w.contacts[3].endpoint); assert!(w.projectiles[3].stopped);
+        let impacts = w.impacts.clone(); let trace = w.impact.clone();
+        w.advance(at+STEP*2).unwrap(); assert_eq!(w.impacts,impacts); assert_eq!(w.impact,trace);
+        let identity = w.actors[1].identity.clone(); w.detach(2).unwrap();
+        w.attach(identity,3).unwrap(); assert_eq!(w.actors[1].health,0); assert_eq!(w.actors[1].fire.ammo(),ammo);
+    }
+    #[test] fn wreck_impact_requires_opt_in_and_does_not_infer_an_ap_result() {
+        let now = Instant::now(); let mut w = collision_world(now,false);
+        w.actors[1].health = 0; w.actors[1].aim.park();
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+        let dead = w.actors[1].clone(); w.advance(now+STEP).unwrap();
+        assert!(w.impacts.is_empty()); assert_eq!(w.actors[1],dead);
+        assert_eq!(w.contacts.len(),1); assert!(w.projectiles[0].stopped);
+        assert!(matches!(w.impact.events().last(),Some(impact::Event::Terminal {
+            reason:impact::TerminalReason::UnresolvedCollision,.. })));
+    }
+    #[test] fn wreck_impact_capacity_or_material_failure_rolls_back_complete_advance() {
+        let now = Instant::now(); let mut w = ap_world(now);
+        w.actors[1].health = 0; w.actors[1].aim.park();
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+        w.advance(now+STEP).unwrap(); assert_eq!(w.impacts[0].outcome,ImpactOutcome::WreckBlocked);
+        let at = now+Duration::from_secs(3); w.advance(at).unwrap();
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
+        for invalid_material in [false,true] {
+            let mut invalid = w.clone();
+            if invalid_material {
+                invalid.geometry = Some(Arc::new(super::super::geometry::tests::invalid_material_bundle()));
+            } else {
+                invalid.impacts.resize(MAX_SHOTS,invalid.impacts[0].clone());
+            }
+            let before = invalid.clone(); assert!(invalid.advance(at+STEP).is_err());
+            assert_eq!(invalid.actors,before.actors); assert_eq!(invalid.impacts,before.impacts);
+            assert_eq!(invalid.impact,before.impact); assert_eq!(invalid.contacts,before.contacts);
+            assert_eq!(invalid.projectiles,before.projectiles); assert_eq!(invalid.shots,before.shots);
+            assert_eq!(invalid.last,before.last); assert_eq!(invalid.tick,before.tick);
+        }
+    }
+    #[test] fn ap_failures_rollback_damage_and_simultaneous_flights_survive_shooter_death() {
+        let now = Instant::now(); let mut w = ap_world(now);
+        w.actors[0].health=30; w.actors[1].health=30;
+        for i in 0..2 { w.apply(i,i as u32+1,&[Command::Fire(fire::Command::Shoot)],now).unwrap(); }
+        let mut invalid = w.clone();
+        invalid.geometry = Some(Arc::new(super::super::geometry::tests::invalid_material_bundle()));
+        let before = invalid.clone(); assert!(invalid.advance(now+STEP).is_err());
+        assert_eq!(invalid.actors,before.actors); assert_eq!(invalid.impacts,before.impacts);
+        assert_eq!(invalid.impact,before.impact); assert_eq!(invalid.projectiles,before.projectiles);
+        w.advance(now+STEP).unwrap();
+        assert_eq!(w.actors.iter().map(|a| a.health).collect::<Vec<_>>(),vec![0,0]);
+        assert_eq!(w.impacts.iter().map(|e| e.shot).collect::<Vec<_>>(),vec![1,2]);
     }
     #[test] fn nearest_other_actor_surface_stops_both_shooters_atomically() {
         let now = Instant::now(); let mut w = collision_world(now, false);
@@ -457,6 +638,21 @@ pub(super) mod tests {
         assert!(w.advance_with_external(now + STEP * 2,
             Some(&[(0, [f32::NAN, 0., 0.], [0., 0., 0.], 0.)])).is_err());
         assert_eq!(w.actors, before.actors); assert_eq!(w.tick, before.tick);
+    }
+    #[test] fn integrated_survivor_keeps_motion_aim_and_flight_when_peer_disconnects() {
+        let now=Instant::now(); let mut w=ap_world(now); w.actors[1].health=0;
+        w.detach(2).unwrap(); let parked=w.actors[1].clone();
+        w.apply(0,1,&[Command::Aim(aim::Intent::Hold{yaw:1.,pitch:0.})],now).unwrap();
+        let rows=[(0,[0.,0.,1.],[0.1,0.,0.],1.),(1,parked.position,parked.direction,0.)];
+        w.advance_with_external(now+STEP,Some(&rows)).unwrap();
+        assert_eq!(w.tick,1001); assert_eq!(w.actors[0].position,[0.,0.,1.]);
+        assert!(w.actors[0].aim.yaw>0.); assert_eq!(w.actors[1],parked);
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now+STEP).unwrap();
+        w.advance_with_external(now+STEP*2,Some(&rows)).unwrap();
+        assert!(w.impact.events().iter().any(|e| matches!(e,impact::Event::Segment{..})));
+        let before=w.clone(); let mut bad_rows=rows; bad_rows[1].1[0]+=1.;
+        assert!(w.advance_with_external(now+STEP*3,Some(&bad_rows)).is_err());
+        assert_eq!(w.actors,before.actors); assert_eq!(w.tick,before.tick);
     }
     #[test] fn integrated_spawn_rebase_is_lane_bound_and_pre_ready_only() {
         let now = Instant::now();

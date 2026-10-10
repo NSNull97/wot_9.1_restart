@@ -1,3 +1,45 @@
+# P06L owner accepted / next terrain-contact card — 2026-10-10
+
+Active branch:`codex/p06l-ap-test-lab`; root code`f405c17`.
+Native02 post-death movement, changing shot direction and live impact FX
+are accepted by owner. The remaining clarified defect was missing FX when
+shooting already dead targets. Owner closed both clients manually; the raw
+late network-close tail is retained separately from completed gameplay.
+
+Typed zero-damage WreckBlocked/contact publication is implemented under
+explicit approximate `test_lab-ms1-wreck-block-v1`, with no AP calculation,
+health update or repeated death. Native03 is launched with accepted physics,
+unchanged client observer/contact bundle and gatewayp06l-05 (493 Rust PASS).
+Owner confirmed «отлично! работает!» after the requested native03 test.
+Three AP hits and two wreck hits are recorded, with native code1/armorResisted
+and no repeated health/death on both clients. Ordinary attached HP0 only;
+exploded/detached components are outside scope. Simultaneous-login rejection
+and orphan pre-battle session expiry remain explicit startup limitations;
+successful gameplay is a separate pinned audit, not full-startup PASS.
+**One next recommended card:** add server projectile collision with terrain
+on the accepted cumulative runtime. Do not reopen already accepted movement,
+aim, ammo, reload, live/wreck hit effects or replace their launch profile.
+[P06L report](research/P06L_AP_TEST_LAB.md).
+
+## Previous repaired-candidate gate
+
+Active branch:`codex/p06l-ap-test-lab`; base P06K merge67da292.
+Owner selected working approximate test_lab rules. Atomic AP/HP and native
+presentation are implemented on the cumulative accepted physics runtime.
+Build02 passed482 tests, but native01 is **FAIL**: owner observed HP/death,
+then disconnect and frozen survivor; trace confirms absent native impact
+callback, rejected postmortem bind and stopped world advancement.
+
+Repaired code6751c6f / gatewayp06l-03 passes485 Rust tests. Native02 is
+running with accepted physics and both real clients. Independent audit proves
+3 hits/6 native FX returns, HP/death and continued survivor motion/aim; both
+channels remain alive248s after death with no errors. One post-death survivor
+shot and owner rendered acceptance are still pending before merge.
+Keep exact failed receipts; do not treat successful HP callbacks or tests as
+proof of particle/sound delivery. Preserve existing physics, ammo, reload,
+aim and tracers. Explicit approximate profile only; historical rules remain
+unknown where documented. [P06L report](research/P06L_AP_TEST_LAB.md).
+
 # P06K client marker verified; AP resolver still open — 2026-10-10
 
 `codex/p06k-ap-impact-contract`: **PASS_NATIVE_CLIENT_MARKER_CONTRACT**.

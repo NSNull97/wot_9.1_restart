@@ -1,3 +1,57 @@
+# P06L approximate AP damage — 2026-10-10, owner accepted
+
+Owner accepted native02 survivor motion/aim/shooting and impact effects,
+then clarified the remaining defect: no effects on an already destroyed
+tank. Both clients were closed manually by the owner. Fresh evidence proves
+8 post-death shots with changed origins/directions and five wreck contacts
+(shots6..10) without FX; the accepted gameplay prefix precedes channel-close
+errors. Raw late-tail failures remain retained, not relabelled PASS.
+
+Code`f405c17` adds typed `WreckBlocked` with HP0→0, separate from the AP
+resolver, and native resisted FX under explicit policy
+`test_lab-ms1-wreck-block-v1`. No second health/death/roster update. #717 uses
+descriptor hitTester on ordinary HP0; exploded/detached geometry is excluded.
+Pinned build`gateway-integrated-world-p06l-05`: **493/493 Rust PASS**,
+SHA`80595efc…6c54845`; layout66/22 PASS. Build04 compile type error is retained;
+build05 fixes the error conversion. Native03 uses cumulative accepted physics.
+Owner then confirmed «отлично! работает!» after the wreck-hit check. Native
+records show three damaging shots plus two HP0 wreck hits, original resisted
+effects in both clients, and no repeated HP/death. Acceptance covers this
+working approximate laboratory slice, not historical_091 or the whole P06.
+Startup limitation retained: simultaneous login rejected one attempt as
+server-not-ready; an orphan pre-battle session expired, then explicit client-A
+restart entered successfully. Completed gameplay must be audited separately
+from that failed startup; no all-session reliability claim is made.
+
+[Plan](plans/P06L_AP_TEST_LAB.md), [files/commands/evidence/rollback](research/P06L_AP_TEST_LAB.md).
+Evidence:`local/evidence/20261010-p06l-ap-resolver-01/`.
+**One next recommended card:** server projectile collision with terrain,
+preserving this accepted physics/aim/ammo/impact/HP/wreck path.
+
+## Earlier repaired candidate
+
+Owner authorized a working, explicitly approximate `test_lab` profile.
+`codex/p06l-ap-test-lab` adds atomic authoritative AP outcomes/HP and native
+impact/health publication to the cumulative accepted physics/aim/ammo route.
+Source-derived stock MS-1/AP values are separated from provisional formulas.
+
+Build02:482/482 Rust PASS. Native01 owner shots and independent traces prove
+HP90→60→30→0 in both clients, but acceptance is **FAIL, not merged**: impact
+method framing was wrong; standalone postmortem camera bind was rejected,
+then peer disconnect stopped shared simulation. Repaired code6751c6f now
+passes **485/485 Rust tests**, gatewayp06l-03 SHA`9f5416ac…b2fcf45`.
+Native02 is running in both approved copies with accepted physics. Independent
+audit confirms3 hits/6 original decoded native FX returns, bothHP90→60→30→0,
+both channels alive248s after death, survivor movement6.37m and changed aim;
+zero channel/native errors. **Post-death survivor shot and owner rendered
+acceptance remain pending**. First-run evidence is retained. Historical_091,
+complete ballistics/damage and P06D are not declared complete.
+
+[Plan](plans/P06L_AP_TEST_LAB.md), [implementation/evidence/rollback](research/P06L_AP_TEST_LAB.md).
+Evidence:`local/evidence/20261010-p06l-ap-resolver-01/`.
+**One next gate:** owner confirms rendered effects and fires the surviving
+tank in a new direction after death; correlate this with the server trace.
+
 # P06K original AP marker contract — 2026-10-10
 
 Карточка `codex/p06k-ap-impact-contract`: **PASS_NATIVE_CLIENT_MARKER_CONTRACT**.

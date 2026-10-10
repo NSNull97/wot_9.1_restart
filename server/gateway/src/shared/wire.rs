@@ -48,7 +48,7 @@ fn native_direction(b: &mut Vec<u8>, ypr: [f32; 3]) { f3(b, [ypr[2], ypr[1], ypr
 fn actor(w: &World, slot: usize) -> io::Result<&Actor> {
     vehicle_id(slot)?;
     let a = w.actors.get(slot).ok_or_else(model::bad)?;
-    if w.id == 0 || a.identity.database <= 0 || a.identity.name.len() > 48
+    if w.id == 0 || a.identity.database <= 0 || a.identity.name.len() > 48 || !(0..=90).contains(&a.health)
         || a.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
         || a.direction.iter().any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
         || a.direction[0] != a.yaw { return Err(model::bad()); }
@@ -69,7 +69,7 @@ pub fn roster(w: &World) -> io::Result<Vec<u8>> {
         d.extend([b'(', b'J']); d.extend(vehicle_id(slot)?.to_le_bytes());
         d.push(b'U'); string(&mut d, &vehicle::MS1_DESCRIPTOR)?;
         d.push(b'U'); string(&mut d, a.identity.name.as_bytes())?;
-        d.extend([b'K', 1, 0x88, if a.ready { 0x88 } else { 0x89 }, 0x89, b'J']);
+        d.extend([b'K', 1, if a.health > 0 { 0x88 } else { 0x89 }, if a.ready { 0x88 } else { 0x89 }, 0x89, b'J']);
         d.extend(a.identity.database.to_le_bytes());
         d.extend([b'U', 0, b'K', 0, b'K', 0, 0x89, b'}', b'K', 0, b't', b'a']);
     }
@@ -100,7 +100,7 @@ pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     let mut p = vec![0]; p.extend(vehicle_id(slot)?.to_le_bytes()); p.extend(2u16.to_le_bytes());
     f3(&mut p, a.position); f3(&mut p, a.direction);
     p.extend([8, 0, 0, 1, 1, 2]); p.extend(packed_angles(&a.aim)?.to_le_bytes());
-    p.push(3); p.extend(90i16.to_le_bytes()); p.extend([4, 0, 0, 5]);
+    p.push(3); p.extend(a.health.to_le_bytes()); p.extend([4, 0, 0, 5]);
     string(&mut p, a.identity.name.as_bytes())?; string(&mut p, &vehicle::MS1_DESCRIPTOR)?;
     p.push(1); p.extend(0i32.to_le_bytes()); p.push(0);
     p.push(6); p.extend(0i32.to_le_bytes()); p.push(7); p.extend(0i32.to_le_bytes());
@@ -123,6 +123,14 @@ pub fn ready(payload: &[u8], own: usize) -> io::Result<()> {
     if payload.len() != 33 || payload[7..11] != vehicle_id(own)?.to_le_bytes() { return Err(model::bad()); }
     let mut pinned = payload.to_vec(); pinned[7..11].copy_from_slice(&vehicle::VEHICLE_ENTITY_ID.to_le_bytes());
     crate::arena_ready091::validate_compound(&pinned, vehicle::VEHICLE_ENTITY_ID)
+}
+/// Original AvatarPositionControl postmortem rebind measured in native01:
+/// Cell Avatar.bindToVehicle, mailbox0 + own OBJECT_ID. This acknowledges a
+/// redundant camera binding only; caller must require the owned actor dead.
+pub fn postmortem_rebind(payload: &[u8], own: usize) -> io::Result<()> {
+    if payload.len()!=11 || payload[..7]!=[0x0d,8,0,0,0,0,0]
+        || payload[7..]!=vehicle_id(own)?.to_le_bytes() { return Err(model::bad()); }
+    Ok(())
 }
 pub fn ready_update(slot: usize) -> io::Result<Vec<u8>> {
     let mut d = vec![0x80, 2, b'J']; d.extend(vehicle_id(slot)?.to_le_bytes()); d.push(b'.'); update(7, &d)

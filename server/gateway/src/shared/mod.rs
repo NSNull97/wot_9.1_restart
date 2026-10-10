@@ -6,6 +6,8 @@ pub(crate) mod pose;
 pub(crate) mod geometry;
 pub(crate) mod materials;
 pub(crate) mod client_marker;
+pub(crate) mod ap;
+mod impact_wire;
 pub(crate) mod projectile;
 pub(crate) mod collision;
 pub(crate) mod impact;
@@ -35,6 +37,9 @@ pub(super) struct Client {
     entered: Option<Instant>,
     hangar_since: Option<Instant>,
     shot_cursor: u32,
+    impact_cursor: usize,
+    health_sent: [Option<i16>; 2],
+    owner_health_sent: Option<i16>,
     tracer_started: [bool; model::MAX_SHOTS],
     tracer_stopped: [bool; model::MAX_SHOTS],
 }
@@ -42,7 +47,7 @@ impl Client {
     fn new(slot: usize) -> Self {
         Self { slot, phase: Phase::Account, view: None, announcement: None, creations: [None; 2],
             binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
-            hangar_since: None, shot_cursor: 0, tracer_started: [false; model::MAX_SHOTS],
+            hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; 2], owner_health_sent: None, tracer_started: [false; model::MAX_SHOTS],
             tracer_stopped: [false; model::MAX_SHOTS] }
     }
     pub(super) fn acknowledge(&mut self, cumulative: u32, frame: &Frame) {
@@ -64,6 +69,7 @@ impl Session {
         let c = next.shared.as_mut().ok_or_else(bad)?;
         c.phase = Phase::Enable; c.view = Some(world.clone()); c.entered = Some(now);
         c.shot_cursor = world.latest_shot();
+        c.impact_cursor = world.impacts.len();
         c.tracer_started = [false; model::MAX_SHOTS];
         c.tracer_stopped = [false; model::MAX_SHOTS];
         *self = next;
@@ -98,6 +104,7 @@ impl Session {
                 if c.creations[slot].is_some() { return Err(bad()); }
                 let sequence = self.tx.enqueue_body_tracked(&wire::create_vehicle(world, slot)?)?;
                 c.creations[slot] = Some((sequence, false));
+                c.health_sent[slot] = Some(world.actors[slot].health);
                 events.push(format!("SHARED_ENTITY_CREATED battle={} session={} entity={} own={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(slot)?, slot == c.slot));
             }
             return Ok(());
@@ -109,6 +116,7 @@ impl Session {
             c.binding = Some((sequence, false)); c.phase = Phase::Driving;
             // Loading/reconnecting a scene is not a replay of prior gun effects.
             c.shot_cursor = world.latest_shot();
+            c.impact_cursor = world.impacts.len();
             c.tracer_started = [false; model::MAX_SHOTS];
             c.tracer_stopped = [false; model::MAX_SHOTS];
             for slot in 0..2 { c.ready_sent[slot] = slot == c.slot || world.actors[slot].ready; }
@@ -125,14 +133,19 @@ impl Session {
             let id = payload[at];
             let size = match id {
                 6 => 1, 2 => 17, 3 => 22,
-                0x88 | 0x89 | 0x8a | 0x8d | 0x8e | 0x8f | 0x0f | 0x99 => {
+                0x88 | 0x89 | 0x8a | 0x8d | 0x8e | 0x8f | 0x0d | 0x0f | 0x99 => {
                     if payload.len() - at < 3 { return Err(bad()); }
                     3 + u16::from_le_bytes([payload[at+1], payload[at+2]]) as usize
                 },
                 _ => return Err(bad()),
             };
             let raw = payload.get(at..at+size).ok_or_else(bad)?; at += size;
-            if let Some(commands) = fire::parse(raw)? {
+            if id == 0x0d {
+                if world.actors.get(c.slot).is_none_or(|actor| actor.health != 0)
+                    || !c.correction || !c.binding.is_some_and(|(_,ack)| ack) { return Err(bad()); }
+                wire::postmortem_rebind(raw,c.slot)?;
+                events.push(format!("SHARED_POSTMORTEM_REBIND session={} slot={} target={} authority_changed=false",self.id,c.slot,wire::vehicle_id(c.slot)?));
+            } else if let Some(commands) = fire::parse(raw)? {
                 if !c.correction { return Err(bad()); }
                 c.commands.extend(commands.into_iter().map(Command::Fire));
             } else if let Some(intent) = wire::aim_intent(raw, c.slot)? {
