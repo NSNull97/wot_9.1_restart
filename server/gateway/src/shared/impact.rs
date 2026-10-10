@@ -1,13 +1,14 @@
 //! Bounded server-owned flight trace for the P06C impact gate.
 //!
-//! This module deliberately stops before geometry and gameplay resolution. It
-//! records facts that the shared laboratory already owns (shot admission,
-//! launch pose, flight segments and range expiry) and makes the unavailable
-//! impact stages explicit. Static armor labels are not converted into hits.
+//! This module records the server-owned flight facts and the collision-only
+//! boundary. It deliberately stops before penetration and gameplay damage.
+//! Geometry labels come from the supplied mesh, never from client hit claims.
+//! They are not converted into armor thickness or HP mutation by this module.
 
 use std::io;
 
 use super::projectile::Projectile;
+use super::collision;
 
 pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-flight-v1";
 pub const PROFILE: &str = "ms1_ap_2570";
@@ -33,6 +34,8 @@ pub enum Stage {
     Admission,
     Launch,
     Segment,
+    CollisionQuery,
+    Intersection,
     Terminal,
 }
 
@@ -40,6 +43,7 @@ pub enum Stage {
 pub enum TerminalReason {
     RangeExpired,
     UnavailableImpactResolver,
+    UnresolvedCollision,
 }
 
 /// The trace is intentionally typed and does not contain client-authored
@@ -83,6 +87,33 @@ pub enum Event {
         end: [f32; 3],
         geometry_revision: &'static str,
     },
+    CollisionQuery {
+        order: u32,
+        battle_id: u64,
+        shot_id: u32,
+        server_tick: u32,
+        segment_order: u32,
+        candidate_count: usize,
+        geometry_revision: String,
+        transform_revision: String,
+    },
+    Intersection {
+        order: u32,
+        battle_id: u64,
+        shot_id: u32,
+        server_tick: u32,
+        query_order: u32,
+        segment_order: u32,
+        candidate_index: usize,
+        triangle_id: u32,
+        mesh: String,
+        group: String,
+        material: String,
+        normal: [f32; 3],
+        t: f32,
+        geometry_revision: String,
+        transform_revision: String,
+    },
     Terminal {
         order: u32,
         battle_id: u64,
@@ -98,6 +129,8 @@ impl Event {
             Self::Admission { .. } => Stage::Admission,
             Self::Launch { .. } => Stage::Launch,
             Self::Segment { .. } => Stage::Segment,
+            Self::CollisionQuery { .. } => Stage::CollisionQuery,
+            Self::Intersection { .. } => Stage::Intersection,
             Self::Terminal { .. } => Stage::Terminal,
         }
     }
@@ -107,6 +140,8 @@ impl Event {
             Self::Admission { order, .. }
             | Self::Launch { order, .. }
             | Self::Segment { order, .. }
+            | Self::CollisionQuery { order, .. }
+            | Self::Intersection { order, .. }
             | Self::Terminal { order, .. } => *order,
         }
     }
@@ -116,6 +151,8 @@ impl Event {
             Self::Admission { shot_id, .. }
             | Self::Launch { shot_id, .. }
             | Self::Segment { shot_id, .. }
+            | Self::CollisionQuery { shot_id, .. }
+            | Self::Intersection { shot_id, .. }
             | Self::Terminal { shot_id, .. } => *shot_id,
         }
     }
@@ -238,7 +275,7 @@ impl Trace {
         let previous_segment_end = self.last_segment_end(shot_id);
         if segment_tick_end(segment_tick_start, server_tick).is_err()
             || !finite_vector(start) || !finite_vector(end)
-            || !matches!(self.last_stage(shot_id), Some(Stage::Launch | Stage::Segment))
+            || !self.flight_continuable(shot_id)
             || self.has_terminal(shot_id)
             || segment_tick_start < launch_tick
             || previous_segment_end.is_some_and(|previous| segment_tick_start < previous)
@@ -266,8 +303,13 @@ impl Trace {
         self.common(battle_id, shot_id, server_tick)?;
         let launch_tick = self.launch_tick(shot_id).ok_or_else(|| invalid("impact terminal without launch"))?;
         let previous_segment_end = self.last_segment_end(shot_id);
-        if self.has_terminal(shot_id)
-            || !matches!(self.last_stage(shot_id), Some(Stage::Launch | Stage::Segment))
+        let valid_stage = match reason {
+            TerminalReason::UnresolvedCollision =>
+                matches!(self.last_stage(shot_id), Some(Stage::Intersection)),
+            TerminalReason::RangeExpired | TerminalReason::UnavailableImpactResolver =>
+                self.flight_continuable(shot_id),
+        };
+        if self.has_terminal(shot_id) || !valid_stage
             || server_tick < launch_tick
             || previous_segment_end.is_some_and(|previous| server_tick < previous) {
             return Err(invalid("duplicate or unknown impact terminal"));
@@ -277,6 +319,54 @@ impl Trace {
         self.terminal_shots.push(shot_id);
         self.last_tick = server_tick;
         Ok(())
+    }
+
+    /// Query exactly the latest recorded segment with caller-owned world-space
+    /// geometry. Query and all intersections commit together or not at all.
+    /// Revisions identify the supplied facts; they do not verify native axes.
+    /// A zero-candidate query permits further flight, not a whole-shot miss.
+    pub fn collision_query(&mut self, battle_id: u64, shot_id: u32,
+        server_tick: u32, mesh: &collision::Mesh) -> io::Result<()> {
+        self.common(battle_id, shot_id, server_tick)?;
+        let (segment_order, start, end) = match self.events.iter().rev()
+            .find(|event| event.shot_id() == shot_id) {
+            Some(Event::Segment { order, segment_tick_end, start, end, .. })
+                if *segment_tick_end == server_tick => (*order, *start, *end),
+            _ => return Err(invalid("collision query without current unqueried segment")),
+        };
+        let candidates = collision::query(mesh, start, end)?;
+        let added = 1 + candidates.len();
+        // Leave room for a terminal if the caller closes this query now.
+        // A future runtime adapter must commit query/terminal with its World
+        // transaction so unrelated shots cannot consume that remaining slot.
+        if self.events.len() + added + 1 > MAX_EVENTS
+            || self.next_order.checked_add(added as u32 + 1).is_none() {
+            return Err(invalid("collision query trace capacity"));
+        }
+        let mut next = self.clone();
+        let query_order = next.next_order_value()?;
+        next.push(Event::CollisionQuery { order: query_order, battle_id, shot_id, server_tick,
+            segment_order, candidate_count: candidates.len(),
+            geometry_revision: mesh.geometry_revision().into(),
+            transform_revision: mesh.transform_revision().into() })?;
+        for candidate in candidates {
+            let order = next.next_order_value()?;
+            next.push(Event::Intersection { order, battle_id, shot_id, server_tick,
+                query_order, segment_order, candidate_index: candidate.candidate_index,
+                triangle_id: candidate.triangle_id, mesh: candidate.mesh, group: candidate.group,
+                material: candidate.material, normal: candidate.normal, t: candidate.t,
+                geometry_revision: mesh.geometry_revision().into(),
+                transform_revision: mesh.transform_revision().into() })?;
+        }
+        next.last_tick = server_tick;
+        *self = next;
+        Ok(())
+    }
+
+    fn flight_continuable(&self, shot_id: u32) -> bool {
+        matches!(self.events.iter().rev().find(|event| event.shot_id() == shot_id),
+            Some(Event::Launch { .. } | Event::Segment { .. }
+                | Event::CollisionQuery { candidate_count: 0, .. }))
     }
 
     fn last_stage(&self, shot_id: u32) -> Option<Stage> {
@@ -435,5 +525,192 @@ mod tests {
             } else { None }
         }).unwrap();
         assert_eq!(segment, (1002, 1003));
+    }
+
+    fn launched_trace() -> Trace {
+        let now = Instant::now();
+        let world = world(now);
+        let projectile = super::super::projectile::Projectile::launch(1, 0, &world.actors[0], now).unwrap();
+        let mut trace = Trace::new();
+        trace.admission(123, 1, 1000, 0, 20, 19).unwrap();
+        trace.launch(123, &projectile, 1000).unwrap();
+        trace
+    }
+
+    fn two_planes() -> collision::Mesh {
+        collision::Mesh::new(
+            vec![
+                [0.0, -1.0, -1.0], [0.0, 1.0, -1.0], [0.0, 0.0, 1.0],
+                [2.0, -1.0, -1.0], [2.0, 1.0, -1.0], [2.0, 0.0, 1.0],
+            ],
+            vec![
+                collision::Triangle { triangle_id: 42, a: 3, b: 4, c: 5,
+                    mesh: "synthetic".into(), group: "far".into(), material: "test-b".into() },
+                collision::Triangle { triangle_id: 7, a: 0, b: 1, c: 2,
+                    mesh: "synthetic".into(), group: "near".into(), material: "test-a".into() },
+            ],
+            "synthetic-geometry-v1", "synthetic-world-identity-v1").unwrap()
+    }
+
+    #[test]
+    fn collision_batch_binds_actual_query_to_exact_segment_and_revisions() {
+        let mut trace = launched_trace();
+        trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        trace.collision_query(123, 1, 1001, &two_planes()).unwrap();
+        assert_eq!(trace.events().iter().map(Event::stage).collect::<Vec<_>>(),
+            vec![Stage::Admission, Stage::Launch, Stage::Segment, Stage::CollisionQuery,
+                Stage::Intersection, Stage::Intersection]);
+        match &trace.events()[3] {
+            Event::CollisionQuery { order, segment_order, candidate_count,
+                geometry_revision, transform_revision, .. } => {
+                assert_eq!((*order, *segment_order, *candidate_count), (4, 3, 2));
+                assert_eq!(geometry_revision, "synthetic-geometry-v1");
+                assert_eq!(transform_revision, "synthetic-world-identity-v1");
+            }
+            _ => panic!("query row missing"),
+        }
+        for (index, (id, t, material)) in [(7, 0.25, "test-a"), (42, 0.75, "test-b")].iter().enumerate() {
+            match &trace.events()[4 + index] {
+                Event::Intersection { query_order, segment_order, candidate_index, triangle_id,
+                    t: actual_t, material: actual_material, normal, server_tick, .. } => {
+                    assert_eq!((*query_order, *segment_order, *candidate_index, *triangle_id), (4, 3, index, *id));
+                    assert_eq!((*actual_t, *server_tick, *normal), (*t, 1001, [1.0, 0.0, 0.0]));
+                    assert_eq!(actual_material, material);
+                }
+                _ => panic!("intersection missing"),
+            }
+        }
+        let before = trace.clone();
+        assert!(trace.terminal(123, 1, 1001, TerminalReason::RangeExpired).is_err());
+        assert!(trace.terminal(123, 1, 1001, TerminalReason::UnavailableImpactResolver).is_err());
+        assert!(trace.segment(123, 1, 1002, 1001, [3.0, 0.0, 0.0], [4.0, 0.0, 0.0]).is_err());
+        assert_eq!(trace, before);
+        trace.terminal(123, 1, 1001, TerminalReason::UnresolvedCollision).unwrap();
+        assert_eq!(trace.terminal_shots(), &[1]);
+        let before = trace.clone();
+        assert!(trace.terminal(123, 1, 1001, TerminalReason::UnresolvedCollision).is_err());
+        assert!(trace.collision_query(123, 1, 1001, &two_planes()).is_err());
+        assert_eq!(trace, before);
+    }
+
+    #[test]
+    fn empty_query_allows_further_flight_and_does_not_claim_whole_shot_miss() {
+        let mut trace = launched_trace();
+        trace.segment(123, 1, 1001, 1000, [-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]).unwrap();
+        trace.collision_query(123, 1, 1001, &two_planes()).unwrap();
+        assert!(matches!(trace.events().last(), Some(Event::CollisionQuery { candidate_count: 0, .. })));
+        assert!(trace.terminal_shots().is_empty());
+        let before = trace.clone();
+        assert!(trace.terminal(123, 1, 1001, TerminalReason::UnresolvedCollision).is_err());
+        assert!(trace.collision_query(123, 1, 1001, &two_planes()).is_err());
+        assert_eq!(trace, before);
+        for reason in [TerminalReason::RangeExpired, TerminalReason::UnavailableImpactResolver] {
+            let mut ending = trace.clone();
+            ending.terminal(123, 1, 1001, reason).unwrap();
+            assert_eq!(ending.terminal_shots(), &[1]);
+        }
+        trace.segment(123, 1, 1002, 1001, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        trace.collision_query(123, 1, 1002, &two_planes()).unwrap();
+        assert!(matches!(trace.events().last(), Some(Event::Intersection { candidate_index: 1, segment_order: 5, .. })));
+    }
+
+    #[test]
+    fn rejected_collision_queries_do_not_leave_partial_events() {
+        let mut trace = launched_trace();
+        let mesh = two_planes();
+        let before = trace.clone();
+        assert!(trace.collision_query(123, 1, 1000, &mesh).is_err());
+        assert!(trace.terminal(123, 1, 1000, TerminalReason::UnresolvedCollision).is_err());
+        assert_eq!(trace, before);
+        trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        let before = trace.clone();
+        for (battle, shot, tick) in [(124, 1, 1001), (123, 2, 1001), (123, 1, 1000), (123, 1, 1002)] {
+            assert!(trace.collision_query(battle, shot, tick, &mesh).is_err());
+            assert_eq!(trace, before);
+        }
+        trace.collision_query(123, 1, 1001, &mesh).unwrap();
+        let before = trace.clone();
+        assert!(trace.collision_query(123, 1, 1001, &mesh).is_err());
+        assert_eq!(trace, before);
+
+        let mut trace = launched_trace();
+        let mut tick = 1000;
+        while trace.events().len() < MAX_EVENTS - 2 {
+            trace.segment(123, 1, tick + 1, tick, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+            tick += 1;
+        }
+        let before = trace.clone();
+        assert!(trace.collision_query(123, 1, tick, &mesh).is_err());
+        assert_eq!(trace, before);
+
+        let mut trace = launched_trace();
+        let mut tick = 1000;
+        while trace.events().len() < MAX_EVENTS - 4 {
+            trace.segment(123, 1, tick + 1, tick, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+            tick += 1;
+        }
+        trace.collision_query(123, 1, tick, &mesh).unwrap();
+        trace.terminal(123, 1, tick, TerminalReason::UnresolvedCollision).unwrap();
+        assert_eq!(trace.events().len(), MAX_EVENTS);
+    }
+
+    #[test]
+    fn geometry_query_failures_propagate_without_trace_side_effects() {
+        let mut trace = launched_trace();
+        trace.segment(123, 1, 1001, 1000, [0.0; 3], [0.0; 3]).unwrap();
+        let before = trace.clone();
+        assert!(trace.collision_query(123, 1, 1001, &two_planes()).is_err());
+        assert_eq!(trace, before);
+
+        let triangles = (0..=collision::MAX_CANDIDATES).map(|id| collision::Triangle {
+            triangle_id: id as u32, a: 0, b: 1, c: 2,
+            mesh: "synthetic".into(), group: "overlap".into(), material: "test".into(),
+        }).collect();
+        let overlapping = collision::Mesh::new(
+            vec![[0.0, -1.0, -1.0], [0.0, 1.0, -1.0], [0.0, 0.0, 1.0]],
+            triangles, "synthetic-overlap-v1", "synthetic-world-identity-v1").unwrap();
+        let mut trace = launched_trace();
+        trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        let before = trace.clone();
+        assert!(trace.collision_query(123, 1, 1001, &overlapping).is_err());
+        assert_eq!(trace, before);
+    }
+
+    #[test]
+    fn collision_trace_does_not_mutate_world_actors_ammo_or_projectiles() {
+        let now = Instant::now();
+        let mut world = world(now);
+        world.apply(0, 1, &[model::Command::Fire(crate::battle091::fire::Command::Shoot)], now).unwrap();
+        let before = (world.actors.clone(), world.projectiles.clone(), world.shots.clone());
+        world.impact.segment(world.id, 1, world.tick + 1, world.tick,
+            [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        world.impact.collision_query(world.id, 1, world.tick + 1, &two_planes()).unwrap();
+        world.impact.terminal(world.id, 1, world.tick + 1, TerminalReason::UnresolvedCollision).unwrap();
+        assert_eq!((world.actors, world.projectiles, world.shots), before);
+    }
+
+    #[test]
+    fn interleaved_shots_query_their_own_segment() {
+        let now = Instant::now();
+        let world = world(now);
+        let mut trace = Trace::new();
+        for (shot, slot) in [(1, 0), (2, 1)] {
+            let projectile = super::super::projectile::Projectile::launch(shot, slot, &world.actors[slot], now).unwrap();
+            trace.admission(123, shot, 1000, slot, 20, 19).unwrap();
+            trace.launch(123, &projectile, 1000).unwrap();
+        }
+        trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        trace.segment(123, 2, 1001, 1000, [-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]).unwrap();
+        trace.collision_query(123, 2, 1001, &two_planes()).unwrap();
+        trace.collision_query(123, 1, 1001, &two_planes()).unwrap();
+        let queries: Vec<_> = trace.events().iter().filter_map(|row| match row {
+            Event::CollisionQuery { shot_id, segment_order, candidate_count, .. } =>
+                Some((*shot_id, *segment_order, *candidate_count)),
+            _ => None,
+        }).collect();
+        assert_eq!(queries, vec![(2, 6, 0), (1, 5, 2)]);
+        trace.terminal(123, 1, 1001, TerminalReason::UnresolvedCollision).unwrap();
+        trace.segment(123, 2, 1002, 1001, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        assert_eq!(trace.terminal_shots(), &[1]);
     }
 }

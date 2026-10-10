@@ -1,3 +1,25 @@
+# P06H offline collision boundary — 2026-10-10
+
+Карточка `codex/p06h-collision-boundary`:
+**PASS_OFFLINE_COLLISION_TRACE_BOUNDARY**. Final code head `c4f3b5b`:
+408/408 Rust tests, isolated build и source layout PASS. Bounded immutable
+mesh query вычисляет ordered triangle candidates; typed trace атомарно
+привязывает query/intersections к точному сохранённому сегменту и тику shot.
+Пустой query допускает дальнейший полёт, непустой закрывается только
+`UnresolvedCollision` до появления настоящего resolver.
+
+Evidence: `local/evidence/20261010-p06h-collision-boundary-01/summary.json`;
+`local/build/server/gateway-p06h-collision-05/result.json`.
+Это offline foundation; accepted P03L integrated runtime остаётся прежним.
+Native impact, geometry/runtime transforms, penetration, HP/module/crew и
+P06D complete capture — **UNKNOWN/NOT_RUN**, не критерии offline-приёмки.
+Подробнее: [план](plans/P06H_SERVER_COLLISION_BOUNDARY.md) и
+[исследование](research/P06H_SERVER_COLLISION_BOUNDARY.md).
+
+Единственный следующий gate — подключение hash-pinned MS-1 geometry с
+измеренными component transforms к принятому integrated world, затем
+fixed-pose native shot correlation. Ручной тест до этой привязки не требуется.
+
 # P03L integrated physics lane alignment — 2026-10-09
 
 Текущий карточечный gate на ветке `codex/p03k-integrated-world`:
