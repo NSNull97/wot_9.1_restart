@@ -29,7 +29,14 @@ fn bad() -> io::Error {
 /// been admitted by the server and observed by this connection; those lifecycle
 /// gates and once-only publication remain the caller's responsibility.
 pub fn explode(shot_id: u32, point: [f32; 3], direction: [f32; 3]) -> io::Result<Vec<u8>> {
+    explode_material(shot_id,point,direction,0)
+}
+
+/// Index is selected from the original kind table by authoritative surface
+/// facts. Water/destructible events are outside this static-surface codec.
+pub fn explode_material(shot_id: u32, point: [f32; 3], direction: [f32; 3], material: u8) -> io::Result<Vec<u8>> {
     if shot_id == 0 || u64::from(shot_id) > model::MAX_SHOTS as u64
+        || material > 5
         || point.iter().any(|v| !v.is_finite() || v.abs() > MAX_COORDINATE)
         || direction.iter().any(|v| !v.is_finite()) {
         return Err(bad());
@@ -42,7 +49,7 @@ pub fn explode(shot_id: u32, point: [f32; 3], direction: [f32; 3]) -> io::Result
     let mut body = Vec::with_capacity(37);
     body.extend([0x13, 0x57, 34]);
     body.extend(shot.to_le_bytes());
-    body.extend([2, 0]);
+    body.extend([2, material]);
     for coordinate in point.into_iter().chain(direction) { body.extend(coordinate.to_le_bytes()); }
     body.extend(0i32.to_le_bytes());
     Ok(body)
@@ -51,6 +58,16 @@ pub fn explode(shot_id: u32, point: [f32; 3], direction: [f32; 3]) -> io::Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test] fn verified_material_indices_preserve_native_packet_shape() {
+        let ground=explode(1,[1.,2.,3.],[1.,0.,0.]).unwrap();
+        for material in 0..=5 {
+            let packet=explode_material(1,[1.,2.,3.],[1.,0.,0.],material).unwrap();
+            let mut expected=ground.clone(); expected[8]=material;
+            assert_eq!(packet,expected);
+        }
+        for material in [6,7,255] { assert!(explode_material(1,[0.;3],[1.,0.,0.],material).is_err()); }
+    }
 
     #[test]
     fn native_var1_ground_layout_has_exact_offsets_and_empty_i32_array() {

@@ -1,14 +1,22 @@
 # P06M terrain-contact candidate — 2026-10-10
 
+**Native01 owner gate FAIL:** ground effects delivered, but owner found rocks
+passing shots or showing delayed effects.15 contacts/30 original native FX
+returns prove delivery only; native early stops differ from server terrain
+endpoints by up to551m. Same card now includes static obstacles with original
+projectile mask128 and per-triangle material flags; drive mask18 is not reused
+as projectile policy. Physics pool remains unchanged. No acceptance/merge.
+
 Owner accepted P06L, merged main55af06f, and authorized the next card.
 `codex/p06m-terrain-impact` binds projectiles to the accepted physics terrain
 mesh, selects the nearest terrain/vehicle surface and queues original ground
 effects for both peers. Cumulative movement/aim/ammo/live/wreck paths retained.
-Build03:522/522 Rust PASS, EXE SHA8b398ca9…be32562; Python26 PASS/1 existing
-skip, source layout68/22 PASS. Native and owner terrain acceptance are pending;
-do not merge the candidate.
+Corrected build05:534/534 Rust PASS, EXE SHAe84eaf3e…a76818; Python26 PASS/1
+existing skip, layout69/22 PASS. New static BVH and original material mapping;
+actual failing shot3 now finds the stone within9.97mm of recorded native point.
+Native02/owner acceptance pending; no merge of this candidate.
 [Plan](plans/P06M_TERRAIN_IMPACT.md), [files/commands/evidence/rollback](research/P06M_TERRAIN_IMPACT.md).
-One next gate: native two-client ground effects and owner rendered check.
+One next gate: native two-client ground/near-far rock/occlusion/live/wreck check.
 
 # P06L approximate AP damage — 2026-10-10, owner accepted
 

@@ -9,6 +9,7 @@ pub(crate) mod client_marker;
 pub(crate) mod ap;
 mod impact_wire;
 pub(crate) mod terrain;
+pub(crate) mod obstacles;
 mod terrain_wire;
 pub(crate) mod projectile;
 pub(crate) mod collision;

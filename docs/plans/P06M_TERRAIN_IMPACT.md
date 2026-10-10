@@ -3,6 +3,25 @@
 Base: main55af06f (owner-accepted P06L). Branch: codex/p06m-terrain-impact.
 Evidence: local/evidence/20261010-p06m-terrain-impact-01/.
 
+## Owner test correction, same card
+
+Native01 delivered15 terrain effects to both clients, but owner reported
+missing/pass-through rocks and variable delayed rock FX. The native original
+stops some tracers on static geometry before the terrain-only server does:
+measured effect/server endpoints differ by up to551m. Delivery PASS does not
+close spatial acceptance. **Native01 is FAIL for the intended world contact.**
+
+Owner report extends this card to initial static obstacle geometry before
+acceptance. Original ProjectileMover.__calcTrajectory uses collision mask128;
+the accepted drive mesh uses18. Re-export from the same pinned original model
+resources with128 and retain each triangle's original mapped material flags.
+Do not substitute drive-filtered mesh as projectile geometry. A bounded BVH
+must select nearest static/terrain/vehicle contact with native material FX.
+Keep original physics pool unchanged. Destruction of map objects/water still
+outside scope, static destructible handling explicitly provisional.
+Repeat real ground, near/far rock, occluded-tank and live/wreck checks together.
+Preserve failed native01 traces and source/geometry receipts.
+
 ## Objective and boundaries
 
 Add continuous segment-versus-terrain contact to the same shared Karelia
@@ -15,9 +34,10 @@ the existing vehicle collision path; no client-reported hit is trusted.
 The accepted physics pool/config and its hash-pinned exported terrain mesh
 are the first source of geometry. Verify coordinates, winding/triangulation,
 holes and bounds before wiring it. Record VERIFIED/OBSERVED/INFERRED/UNKNOWN.
-Do not invent materials from a height value. This card covers terrain only;
-static rocks/buildings, destructibles, water, terrain deformation, new shell
-types and historical server fidelity remain outside scope. Keep the original
+Do not invent materials from a height value. The owner correction above adds
+initial static rocks/buildings with original projectile flags. Dynamic
+destructibles, water, deformation, new shell types and historical server
+fidelity remain outside scope. Keep the original
 client and canonical service unchanged; only approved local test copies.
 
 ## Work

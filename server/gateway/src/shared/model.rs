@@ -502,6 +502,32 @@ pub(super) mod tests {
             vec![-1000.-offset,-1000.-offset,1000.-offset,1000.-offset])));
         w
     }
+    pub fn obstacle_world(now: Instant, offset: f32, wall_z: f32) -> World {
+        let mut w=terrain_world(now,offset);
+        let obstacles=super::super::obstacles::tests::fixture(vec![
+            [[-20.,-20.,wall_z],[20.,-20.,wall_z],[0.,20.,wall_z]]]);
+        let terrain=(*w.terrain.take().unwrap()).clone().with_obstacles(Arc::new(obstacles)).unwrap();
+        w.terrain=Some(Arc::new(terrain)); w
+    }
+    #[test] fn static_surface_participates_in_same_nearest_terrain_armor_decision() {
+        let now=Instant::now();
+        for (offset,wall_z,kind,hp) in [(20.,3.,"stone",90),(3.,15.,"ground",90),(20.,15.,"armor",60)] {
+            let mut w=obstacle_world(now,offset,wall_z);
+            w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+            w.advance(now+STEP).unwrap(); assert!(w.projectiles[0].stopped);
+            assert_eq!(w.actors[1].health,hp);
+            match kind {
+                "stone" => {
+                    let hit=&w.terrain_contacts[0].hit;
+                    assert!(matches!(hit.surface,terrain::Surface::StaticObstacle{material_kind:111,..}));
+                    assert_eq!(hit.effect_material_index(),1); assert!((hit.point[2]-3.).abs()<1e-5);
+                    assert!(w.impacts.is_empty()); assert!(w.contacts.is_empty());
+                },
+                "ground" => assert_eq!(w.terrain_contacts[0].hit.surface,terrain::Surface::Ground),
+                _ => {assert!(w.terrain_contacts.is_empty());assert_eq!(w.impacts.len(),1);},
+            }
+        }
+    }
     #[test] fn terrain_requires_prestart_geometry_and_explicit_ap_profile() {
         let now=Instant::now(); let source=terrain_world(now,3.).terrain.unwrap();
         let mut w=World::new(44,now).unwrap();

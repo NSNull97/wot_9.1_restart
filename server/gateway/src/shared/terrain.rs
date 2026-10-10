@@ -23,6 +23,7 @@ use sha2::{Digest, Sha256};
 
 pub const MANIFEST_SHA256: &str = "5e23f58d4e9d78398bd9cd861f6bc09a038cce7e8f7b311731e50c30bcc958f9";
 pub const SOURCE_REVISION: &str = "karelia-terrain-717:5e23f58d4e9d78398bd9cd861f6bc09a038cce7e8f7b311731e50c30bcc958f9";
+pub const WORLD_SOURCE_REVISION: &str = "karelia-projectile-world-717:5e23f58d4e9d78398bd9cd861f6bc09a038cce7e8f7b311731e50c30bcc958f9:ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447c5bd95dd97d80cea";
 const VERTICES_SHA256: &str = "dc0752ceaaa6b469b36062a5c0a1d397edfa7a39815bf0d19d1290d0c8a08a92";
 const TRIANGLES_SHA256: &str = "27ba25b1f81a37cb678584a898b0efed2b497ef1fc26ecb342ff852f72ec479c";
 const GRID_WIDTH: usize = 769;
@@ -42,13 +43,49 @@ const TOLERANCE: f64 = 1e-12;
 const GRID_BOUNDARY_TOLERANCE: f64 = 1e-9;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Surface {
+    Ground,
+    StaticObstacle { instance_id: u32, material_kind: u8 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Hit {
-    /// Stable row-major source ID: (z * 768 + x) * 2 + local triangle.
+    pub surface: Surface,
+    /// Source triangle ID in the selected surface's pinned export. Ground
+    /// uses row-major (z * 768 + x) * 2 + local triangle.
     pub triangle_id: u32,
     pub t: f64,
     pub point: [f32; 3],
-    /// Unit normal from the pinned positive-Y winding; never face-flipped.
+    /// Unit source winding normal; never face-flipped. Ground points upward;
+    /// static obstacle winding follows its original transformed mesh.
     pub normal: [f32; 3],
+}
+
+impl Hit {
+    pub fn effect_material_index(&self) -> u8 {
+        match self.surface {
+            Surface::Ground => 0,
+            Surface::StaticObstacle { material_kind, .. } => match material_kind {
+                103 | 109 | 113 => 5,
+                108 => 2,
+                110 => 4,
+                111 => 1,
+                112 => 3,
+                // Kind107 is explicitly ground, despite its original name rock.
+                101 | 102 | 104..=107 => 0,
+                // Explicit provisional presentation for unmapped static kinds.
+                // No original fallback or map-object destruction is claimed.
+                _ => 0,
+            },
+        }
+    }
+    pub fn material_policy(&self) -> &'static str {
+        match self.surface {
+            Surface::StaticObstacle { material_kind, .. } if !(101..=113).contains(&material_kind) =>
+                "test_lab-unmapped-static-ground-v1",
+            _ => "original-717-effect-material",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -60,6 +97,7 @@ pub struct Terrain {
     width: usize,
     origin: f64,
     spacing: f64,
+    obstacles: Option<Arc<super::obstacles::Obstacles>>,
 }
 
 fn bad(reason: &'static str) -> io::Error { io::Error::new(io::ErrorKind::InvalidData, reason) }
@@ -103,6 +141,13 @@ fn indices(width: usize, x: usize, z: usize) -> [[usize; 3]; 2] {
 }
 
 impl Terrain {
+    pub fn with_obstacles(mut self, obstacles: Arc<super::obstacles::Obstacles>) -> io::Result<Self> {
+        if self.obstacles.is_some() { return Err(bad("static obstacles already bound")); }
+        self.obstacles=Some(obstacles); Ok(self)
+    }
+    pub fn source_revision(&self) -> &'static str {
+        if self.obstacles.is_some() { WORLD_SOURCE_REVISION } else { SOURCE_REVISION }
+    }
     /// Load only the exact accepted Karelia map-drive mesh. Hashes are checked
     /// before JSON/binary decoding; source paths from JSON are never followed.
     pub fn load(local_root: &Path, manifest_path: &Path) -> io::Result<Self> {
@@ -150,7 +195,7 @@ impl Terrain {
                 }
             }
         }
-        Ok(Self { heights: heights.into(), width: GRID_WIDTH, origin: ORIGIN, spacing: SPACING })
+        Ok(Self { heights: heights.into(), width: GRID_WIDTH, origin: ORIGIN, spacing: SPACING, obstacles: None })
     }
 
     fn vertex(&self, index: usize) -> [f64; 3] {
@@ -168,6 +213,21 @@ impl Terrain {
     /// exported [-600,600] square is empty; no border wall is manufactured.
     /// A segment entirely below terrain does not become a fabricated t=0 hit.
     pub fn nearest(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<Option<Hit>> {
+        let ground=self.nearest_ground(start,end)?;
+        let obstacle=match &self.obstacles { Some(mesh)=>mesh.nearest(start,end)?,None=>None };
+        // Same parameter domain as the retained vehicle query. Terrain wins
+        // a shared rounding bucket; obstacle triangles have stable source IDs.
+        if let Some(hit)=obstacle {
+            if ground.as_ref().is_none_or(|g|(hit.t as f32)<(g.t as f32)) {
+                return Ok(Some(Hit { surface:Surface::StaticObstacle {
+                    instance_id:hit.instance_id,material_kind:hit.material_kind },
+                    triangle_id:hit.triangle_id,t:hit.t,point:hit.point,normal:hit.normal }));
+            }
+        }
+        Ok(ground)
+    }
+
+    fn nearest_ground(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<Option<Hit>> {
         if start.into_iter().chain(end).any(|v| !v.is_finite() || v.abs() > MAX_QUERY_COORDINATE) {
             return Err(bad("terrain segment finite/coordinate bound"));
         }
@@ -272,7 +332,7 @@ fn intersect(start: [f64; 3], direction: [f64; 3], triangle: [[f64; 3]; 3], tria
     let t = inverse * dot(edge2,q);
     if !t.is_finite() || t < -TOLERANCE || t > 1.+TOLERANCE { return None; }
     let t = if t <= 0. { 0. } else { t.min(1.) };
-    Some(Hit { triangle_id,t,point:std::array::from_fn(|i| (start[i]+direction[i]*t) as f32),
+    Some(Hit { surface:Surface::Ground,triangle_id,t,point:std::array::from_fn(|i| (start[i]+direction[i]*t) as f32),
                normal:normal.map(|value| (value/normal_length) as f32) })
 }
 
@@ -285,13 +345,13 @@ pub(crate) mod tests {
         assert!((2..=GRID_WIDTH).contains(&width) && heights.len()==width*width);
         assert!(origin.is_finite() && spacing.is_finite() && spacing>0.);
         assert!(heights.iter().all(|height| height.is_finite() && height.abs()<=MAX_QUERY_COORDINATE));
-        Terrain { heights:heights.into(),width,origin:f64::from(origin),spacing:f64::from(spacing) }
+        Terrain { heights:heights.into(),width,origin:f64::from(origin),spacing:f64::from(spacing),obstacles:None }
     }
 
     fn synthetic(width: usize, height: impl Fn(usize,usize)->f32) -> Terrain {
         let mut heights=Vec::new();
         for z in 0..width { for x in 0..width { heights.push(height(x,z)); }}
-        Terrain { heights:heights.into(),width,origin:0.,spacing:1. }
+        Terrain { heights:heights.into(),width,origin:0.,spacing:1.,obstacles:None }
     }
     fn actual() -> &'static Terrain {
         static TERRAIN: OnceLock<Terrain> = OnceLock::new();
@@ -317,6 +377,16 @@ pub(crate) mod tests {
         // A bilinear surface would give 0.25 here; the actual diagonal gives1.
         assert_eq!(terrain.nearest([0.25,10.,0.25],[0.25,-10.,0.25]).unwrap().unwrap().point[1],1.);
         assert_eq!(terrain.nearest([1.75,10.,0.25],[1.75,-10.,0.25]).unwrap().unwrap().point[1],1.);
+    }
+
+    #[test] fn source_effect_materials_distinguish_rock_stone_and_unknown_policy() {
+        for (kind,expected) in [(101,0),(102,0),(103,5),(104,0),(105,0),(106,0),(107,0),
+            (108,2),(109,5),(110,4),(111,1),(112,3),(113,5),(0,0),(73,0)] {
+            let hit=Hit{surface:Surface::StaticObstacle{instance_id:0,material_kind:kind},
+                triangle_id:0,t:0.5,point:[0.;3],normal:[0.,1.,0.]};
+            assert_eq!(hit.effect_material_index(),expected);
+            assert_eq!(hit.material_policy().starts_with("test_lab"),kind<101);
+        }
     }
 
     #[test]

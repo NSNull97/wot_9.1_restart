@@ -529,7 +529,9 @@ impl Trace {
             Some(Event::TerrainQuery { order, battle_id: battle, shot_id: shot, server_tick: tick,
                 segment_order: segment, terrain_revision, hit }) => {
                 if *battle != battle_id || *shot != shot_id || *tick != server_tick
-                    || *segment != segment_order || *terrain_revision != terrain::SOURCE_REVISION {
+                    || *segment != segment_order || ![terrain::SOURCE_REVISION,terrain::WORLD_SOURCE_REVISION].contains(terrain_revision)
+                    || (*terrain_revision == terrain::SOURCE_REVISION && hit.is_some_and(|hit|
+                        matches!(hit.surface,terrain::Surface::StaticObstacle{..}))) {
                     return Err(invalid("terrain query identity or segment binding"));
                 }
                 Ok(Some((*order, *hit)))
@@ -673,9 +675,9 @@ impl Trace {
         }
         let first_order = self.next_order_value()?;
         let mut batch = Vec::with_capacity(added);
-        if terrain.is_some() {
+        if let Some(terrain) = terrain {
             batch.push(Event::TerrainQuery { order: first_order, battle_id, shot_id, server_tick,
-                segment_order, terrain_revision: terrain::SOURCE_REVISION, hit: terrain_hit });
+                segment_order, terrain_revision: terrain.source_revision(), hit: terrain_hit });
         }
         let query_order = first_order + batch.len() as u32;
         batch.push(Event::CollisionQuery { order: query_order, battle_id, shot_id, server_tick,
@@ -1091,13 +1093,15 @@ mod tests {
         }
         let mut trace=launched_trace(); let before=trace.clone();
         assert!(trace.terrain_contact(123,1,1000).is_err()); assert_eq!(trace,before);
-        for which in 0..8 {
+        for which in 0..9 {
             let mut trace=original.clone();
             match trace.events.get_mut(3).unwrap() {
                 Event::TerrainQuery {order,battle_id,shot_id,server_tick,segment_order,terrain_revision,hit} => match which {
                     0=>*order+=1,1=>*battle_id+=1,2=>*shot_id+=1,3=>*server_tick+=1,
                     4=>*segment_order+=1,5=>*terrain_revision="unknown",6=>*hit=None,
-                    7=>hit.as_mut().unwrap().t=0.9,_=>unreachable!(),
+                    7=>hit.as_mut().unwrap().t=0.9,
+                    8=>hit.as_mut().unwrap().surface=terrain::Surface::StaticObstacle{instance_id:0,material_kind:111},
+                    _=>unreachable!(),
                 }, _=>unreachable!(),
             }
             let before=trace.clone(); assert!(trace.terrain_contact(123,1,1001).is_err()); assert_eq!(trace,before);

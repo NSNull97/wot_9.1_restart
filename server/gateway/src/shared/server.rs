@@ -214,7 +214,12 @@ fn terrain_for_pool(pool: &crate::map_drive_worker091::Pool) -> io::Result<Arc<s
     let config:serde_json::Value=serde_json::from_slice(&raw).map_err(|_|model::bad())?;
     if config["terrain"]["sha256"].as_str()!=Some(super::terrain::MANIFEST_SHA256) { return Err(model::bad()); }
     let path=config["terrain"]["path"].as_str().ok_or_else(model::bad)?;
-    Ok(Arc::new(super::terrain::Terrain::load(&pool.local_root,Path::new(path))?))
+    let terrain=super::terrain::Terrain::load(&pool.local_root,Path::new(path))?;
+    // Same original map resources, independently filtered with the original
+    // projectile mask128. The vehicle-physics mask18 export is not substituted.
+    let obstacle_path=pool.local_root.join("evidence/20261010-p06m-terrain-impact-01/projectile-obstacles01/01_karelia/manifest.json");
+    let obstacles=super::obstacles::Obstacles::load(&pool.local_root,&obstacle_path)?;
+    Ok(Arc::new(terrain.with_obstacles(Arc::new(obstacles))?))
 }
 
 pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
@@ -259,9 +264,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             ap::PROFILE_REVISION, ap::HISTORICAL_FIDELITY, ap::DAMAGE);
     }
     if let Some(terrain) = terrain {
+        let revision=terrain.source_revision();
         world.bind_terrain(terrain)?;
-        println!("SHARED_TERRAIN_BOUND battle={} revision={} manifest_sha256={} map=01_karelia geometry=accepted_physics_mesh material=ground terrain_only=true obstacles=false tie_policy=terrain_first",
-            world.id,super::terrain::SOURCE_REVISION,super::terrain::MANIFEST_SHA256);
+        println!("SHARED_TERRAIN_BOUND battle={} revision={} manifest_sha256={} obstacle_manifest_sha256={} map=01_karelia geometry=original_world material=source_kind terrain_only=false obstacles=true projectile_mask=128 tie_policy=world_first_f32_bucket",
+            world.id,revision,super::terrain::MANIFEST_SHA256,super::obstacles::MANIFEST_SHA256);
     }
     let mut contact_cursor = 0usize;
     let mut terrain_cursor = 0usize;
@@ -444,12 +450,20 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         }
         contact_cursor = world.contacts.len();
         for contact in world.terrain_contacts.iter().skip(terrain_cursor) {
+            let (surface,instance_id,material_kind)=match contact.hit.surface {
+                super::terrain::Surface::Ground => ("terrain",None,None),
+                super::terrain::Surface::StaticObstacle{instance_id,material_kind} =>
+                    ("static_obstacle",Some(instance_id),Some(material_kind)),
+            };
             println!("SHARED_TERRAIN_CONTACT {}",serde_json::json!({
                 "battle":world.id.to_string(),"shot":contact.shot,"shooter":contact.shooter,"tick":contact.tick,
                 "triangle_id":contact.hit.triangle_id,"t":contact.hit.t,"endpoint":contact.hit.point,
                 "normal":contact.hit.normal,"direction":contact.direction,
                 "segment_start":contact.segment_start,"segment_end":contact.segment_end,
-                "geometry_revision":super::terrain::SOURCE_REVISION,"damage_applied":false}));
+                "geometry_revision":if surface=="terrain" {super::terrain::SOURCE_REVISION} else {super::obstacles::SOURCE_REVISION},
+                "surface":surface,"instance_id":instance_id,"material_kind":material_kind,
+                "effect_material_index":contact.hit.effect_material_index(),"material_policy":contact.hit.material_policy(),
+                "damage_applied":false}));
         }
         terrain_cursor=world.terrain_contacts.len();
         for event in world.impacts.iter().skip(impact_cursor) {
@@ -545,7 +559,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     if let Some(contact)=next_world.terrain_contacts.iter().find(|c|c.shot==projectile.sequence) {
                         // Original explodeProjectile terminates its own mover.
                         // A subsequent stopTracer would hide/cancel ground FX.
-                        next.outbox.push_back(super::terrain_wire::explode(projectile.sequence,contact.hit.point,contact.direction)?);
+                        next.outbox.push_back(super::terrain_wire::explode_material(projectile.sequence,
+                            contact.hit.point,contact.direction,contact.hit.effect_material_index())?);
                     } else {
                         next.outbox.push_back(wire::tracer_stop(projectile)?);
                     }
@@ -773,6 +788,20 @@ mod tests {
         rejoin.shared.as_mut().unwrap().shot_cursor=w.latest_shot();
         poll(&mut rejoin,&mut w,now+model::STEP).unwrap();
         assert!(!queued_bodies(&rejoin,now+model::STEP).concat().windows(fx.len()).any(|v|v==fx));
+    }
+    #[test] fn static_stone_effect_uses_original_material_on_both_peers() {
+        let now=Instant::now(); let (mut a,mut b,_)=visible_pair(now);
+        let mut w=model::tests::obstacle_world(now,20.,3.);
+        w.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],now).unwrap();
+        w.advance(now+model::STEP).unwrap(); let c=&w.terrain_contacts[0];
+        let fx=terrain_wire::explode_material(c.shot,c.hit.point,c.direction,1).unwrap();
+        let wrong=terrain_wire::explode(c.shot,c.hit.point,c.direction).unwrap();
+        for s in [&mut a,&mut b] {
+            poll(s,&mut w,now+model::STEP).unwrap(); let raw=queued_bodies(s,now+model::STEP).concat();
+            assert_eq!(raw.windows(fx.len()).filter(|v|*v==fx).count(),1);
+            assert!(!raw.windows(wrong.len()).any(|v|v==wrong));
+        }
+        assert!(w.impacts.is_empty()); assert_eq!(w.actors[1].health,90);
     }
     #[test] fn ap_publication_is_once_per_peer_and_failed_queue_does_not_repeat_damage() {
         let now=Instant::now(); let (mut a,mut b,_) = visible_pair(now);

@@ -1,12 +1,17 @@
 # P06M active — terrain contact on the cumulative runtime
 
+Native01 owner test found missing/delayed rock impacts. Gate FAIL. Extend same
+card with original mask128 static obstacle export/query and material effects;
+then repeat cumulative ground/rock/live/wreck check. Preserve native01.
+
 Branch:`codex/p06m-terrain-impact`, base accepted main55af06f. One card only:
-nearest terrain/vehicle projectile contact and original ground impact effects.
+nearest terrain/static-obstacle/vehicle contact and original material effects.
 Exact accepted Karelia geometry; current physics worker and live/wreck path
 retained. Native/owner acceptance pending, no merge on missing visual gate.
 [Current report](research/P06M_TERRAIN_IMPACT.md).
-One next gate: launch sequentially, shoot ground/hill and regress live/wreck
-effects in both clients; correlate native return traces with server contact.
+Build05 passes534/534 tests; native01 shot3 geometry regression passes.
+One next gate: sequential native02, ground/near-far rock/occlusion/live/wreck
+effects in both clients; correlate actual native position, material and timing.
 
 # P06L owner accepted / next terrain-contact card — 2026-10-10
 
