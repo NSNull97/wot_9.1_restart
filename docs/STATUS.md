@@ -1,3 +1,43 @@
+# P06J component contact materials — 2026-10-10
+
+Карточка `codex/p06j-contact-materials`, code head `748bbda`:
+**PASS_MEASURED_CONTACT_MATERIALS**. Ближайший серверный контакт теперь связан
+с конкретным компонентом, native kind и effective MaterialInfo проверенного
+#717 клиента. 28 записей каталога: 26 присутствующих и два честных `null`
+для surveyingDevice28 у Hull/Turret. Нулевая броня и отсутствие записи
+различаются; никакие правила пробития или HP из этого не выдумываются.
+
+Новый immutable hash-pinned `ms1-contact.v1` содержит прежнюю геометрию P06I
+без изменений. Атомарный trace добавляет один `MaterialContact`, связанный
+с точным ближайшим intersection; ошибки lookup откатывают весь world update.
+Предел 40 выстрелов / 256 сегментов / 128 кандидатов — 25760 событий.
+Физика, full-pose aim/ПКМ, БК, КД и native tracer wire сохраняются.
+
+`gateway-integrated-world-p06j-01`: **440/440 Rust PASS**; Python focused:
+**27 PASS / 1 прежний NOT_RUN** (право создания symlink в layout-тесте).
+Source layout: **PASS**, 63 файла / 22 relocation. Независимый native oracle
+двух клиентов: 104 effective записи / 1352 поля / 8 проверок отсутствия
+material28 совпали точно после штатного float32 rounding. Девять принятых
+P06I сегментов повторно вычислены Rust с прежними битами `t`, normal и endpoint;
+отдельный metadata replay также PASS. Старый StorageFull-хвост не включён.
+
+Новая сборка отдельно запущена с принятым pool `physics-integrated-lane-01`
+и обоими настоящими клиентами: по 370 snapshots, без server/observer ошибок.
+Свежие девять запусков / три контакта / шесть точных native contact endpoints
+прошли независимую сверку, материалы совпали. Native БК этими hooks не
+наблюдался; серверные списания подтверждены отдельно. Это не новая ручная
+owner-приёмка и не HP gate.
+Подробные результаты, ограничения и SHA — в `summary.json` evidence root.
+Диагностические клиенты/server после сбора остановлены.
+
+План: [P06J](plans/P06J_CONTACT_MATERIALS.md).
+Исследование, файлы, команды, доказательства и откат:
+[P06J materials](research/P06J_CONTACT_MATERIALS.md).
+Evidence: `local/evidence/20261010-p06j-contact-materials-01/`;
+build receipt: `local/build/server/gateway-integrated-world-p06j-01/result.json`.
+Следующий единственный gate — подтверждённые исходниками правила
+пробития/рикошета для MS-1/AP перед подключением уменьшения HP.
+
 # Local storage cleanup — 2026-10-10
 
 По запросу владельца удалены 448 проверенных промежуточных Rust cache-каталогов
