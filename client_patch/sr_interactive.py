@@ -457,6 +457,58 @@ def profile_calls(frame, phase, value):
                 damaged = frame.f_locals.get('damagedDestructibles')
                 fields['damaged_destructibles_count'] = len(damaged) if damaged is not None else None
     elif (source in ('scripts/client/ProjectileMover.py', 'scripts/client/projectilemover.py')
+          and method == '__calcTrajectory' and code.co_firstlineno == 248
+          and _settings.get('enable_shared_lab') is True):
+        # Only observe the original trajectory call made by original add().
+        # No collision query, model access or movement command is invoked.
+        caller = frame.f_back
+        caller_code = caller.f_code if caller is not None else None
+        caller_source = caller_code.co_filename.replace('\\', '/') if caller_code is not None else ''
+        if (caller_source in ('scripts/client/ProjectileMover.py', 'scripts/client/projectilemover.py')
+                and caller_code.co_name == 'add' and caller_code.co_firstlineno == 74):
+            kind = 'native_shared_projectile_trajectory_call'
+            fields['shotID'] = primitive(caller.f_locals.get('shotID'), budget=[2, 128])
+            fields['caller_source'] = caller_source
+            fields['caller_method'] = caller_code.co_name
+            fields['caller_source_line'] = caller_code.co_firstlineno
+            for name in ('r0', 'v0', 'gravity'):
+                fields[name] = _shared_vector(frame.f_locals.get(name))
+            for name in ('maxDistance', 'isOwnShoot'):
+                fields[name] = primitive(frame.f_locals.get(name), budget=[2, 128])
+            if phase == 'return':
+                for name in ('matKind', 'distStatic', 'distWater', 'useTracerCameraPos'):
+                    if name in frame.f_locals:
+                        fields[name] = primitive(frame.f_locals.get(name), budget=[2, 128])
+                for name in ('hitPoint', 'prevCheckPoint', 'curCheckPoint'):
+                    if name in frame.f_locals:
+                        fields[name] = _shared_vector(frame.f_locals.get(name))
+                descriptor = frame.f_locals.get('destructibleDesc')
+                if descriptor is None or (type(descriptor) in (tuple, list)
+                        and len(descriptor) == 3 and all(type(item) in (int, long) for item in descriptor)):
+                    fields['destructibleDesc'] = primitive(descriptor, budget=[8, 512])
+                else:
+                    fields['destructibleDesc'] = {'unrecognized': True}
+                if type(value) not in (tuple, list):
+                    fields['trajectory_return'] = {'unrecognized': True, 'is_none': value is None}
+                else:
+                    fields['trajectory_count'] = len(value)
+                    fields['trajectory_truncated'] = len(value) > 8
+                    rows = []
+                    for item in value[:8]:
+                        if (type(item) not in (tuple, list) or len(item) != 3
+                                or type(item[1]) not in (int, long, float)):
+                            rows.append({'unrecognized': True})
+                            continue
+                        descriptor = item[2]
+                        if not (descriptor is None or (type(descriptor) in (tuple, list)
+                                and len(descriptor) == 3 and all(type(part) in (int, long) for part in descriptor))):
+                            rows.append({'unrecognized': True})
+                            continue
+                        rows.append({'point': _shared_vector(item[0]),
+                                     'time': primitive(item[1], budget=[2, 128]),
+                                     'destructibleDesc': primitive(descriptor, budget=[8, 512])})
+                    fields['trajectory_return'] = rows
+    elif (source in ('scripts/client/ProjectileMover.py', 'scripts/client/projectilemover.py')
           and method == '__addExplosionEffect' and _settings.get('enable_shared_lab') is True):
         # Passive observation of the original effect creation, including any
         # native water/material substitution. No helper is invoked here.
