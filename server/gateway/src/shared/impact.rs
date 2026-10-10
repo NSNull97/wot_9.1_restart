@@ -18,7 +18,7 @@ pub const MS1_GUN_COMPACT_ID: u32 = 5892;
 pub const MS1_AP_SHELL_COMPACT_ID: u32 = 2570;
 pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
 // Admission + launch, segment/query pairs, one terminal collision batch, and
-// nearest material record, optional AP resolution and terminal. The model admits only both actors'
+// nearest material record, optional AP or wreck outcome and terminal. The model admits only both actors'
 // original 20-shell loadouts.
 pub const MAX_EVENTS: usize = super::model::MAX_SHOTS
     * (2 + MAX_SEGMENTS_PER_SHOT * 2 + collision::MAX_CANDIDATES + 1 + 1 + 1);
@@ -44,6 +44,7 @@ pub enum Stage {
     Intersection,
     MaterialContact,
     ApResolution,
+    WreckImpact,
     Terminal,
 }
 
@@ -53,6 +54,7 @@ pub enum TerminalReason {
     UnavailableImpactResolver,
     UnresolvedCollision,
     TestLabImpact,
+    TestLabWreckImpact,
 }
 
 /// The trace is intentionally typed and does not contain client-authored
@@ -152,6 +154,20 @@ pub enum Event {
         health_before: i16,
         health_after: i16,
     },
+    /// Retained stock geometry blocks a shell on a dead actor under a named
+    /// laboratory policy. This is not an AP penetration/ricochet verdict.
+    WreckImpact {
+        order: u32,
+        battle_id: u64,
+        shot_id: u32,
+        server_tick: u32,
+        attacker: usize,
+        target: usize,
+        material_order: u32,
+        policy_revision: &'static str,
+        health_before: i16,
+        health_after: i16,
+    },
     Terminal {
         order: u32,
         battle_id: u64,
@@ -171,6 +187,7 @@ impl Event {
             Self::Intersection { .. } => Stage::Intersection,
             Self::MaterialContact { .. } => Stage::MaterialContact,
             Self::ApResolution { .. } => Stage::ApResolution,
+            Self::WreckImpact { .. } => Stage::WreckImpact,
             Self::Terminal { .. } => Stage::Terminal,
         }
     }
@@ -184,6 +201,7 @@ impl Event {
             | Self::Intersection { order, .. }
             | Self::MaterialContact { order, .. }
             | Self::ApResolution { order, .. }
+            | Self::WreckImpact { order, .. }
             | Self::Terminal { order, .. } => *order,
         }
     }
@@ -197,6 +215,7 @@ impl Event {
             | Self::Intersection { shot_id, .. }
             | Self::MaterialContact { shot_id, .. }
             | Self::ApResolution { shot_id, .. }
+            | Self::WreckImpact { shot_id, .. }
             | Self::Terminal { shot_id, .. } => *shot_id,
         }
     }
@@ -357,6 +376,7 @@ impl Trace {
         let previous_segment_end = self.last_segment_end(shot_id);
         let valid_stage = match reason {
             TerminalReason::TestLabImpact => self.last_stage(shot_id) == Some(Stage::ApResolution),
+            TerminalReason::TestLabWreckImpact => self.last_stage(shot_id) == Some(Stage::WreckImpact),
             TerminalReason::UnresolvedCollision =>
                 matches!(self.last_stage(shot_id), Some(Stage::Intersection | Stage::MaterialContact)),
             TerminalReason::RangeExpired | TerminalReason::UnavailableImpactResolver =>
@@ -390,26 +410,8 @@ impl Trace {
             || health_after != health_before.saturating_sub(resolution.damage as i16).max(0) {
             return Err(invalid("AP resolution identity, damage or health transition"));
         }
-        let (material_order, query, segment, intersection, facts) = match self.events.iter().rev()
-            .find(|event| event.shot_id() == shot_id) {
-            Some(Event::MaterialContact { order, battle_id: battle, server_tick: tick,
-                query_order, segment_order, intersection_order, candidate_index: 0, facts, .. })
-                if *battle == battle_id && *tick == server_tick =>
-                (*order, *query_order, *segment_order, *intersection_order, facts),
-            _ => return Err(invalid("AP resolution without latest nearest material")),
-        };
-        let pose_tag = format!("pose-v1:{target}:{server_tick}:");
-        let target_bound = matches!(self.events.iter().find(|event| event.order() == intersection),
-            Some(Event::Intersection { battle_id: battle, shot_id: shot, server_tick: tick,
-                query_order, segment_order, candidate_index: 0, mesh, material, geometry_revision,
-                transform_revision, .. })
-                if *battle == battle_id && *shot == shot_id && *tick == server_tick
-                && *query_order == query && *segment_order == segment
-                && mesh.as_str() == facts.component.name() && material == &facts.name
-                && geometry_revision == super::geometry::SOURCE_REVISION
-                && transform_revision.strip_prefix(&pose_tag).is_some_and(|digest|
-                    digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))));
-        if !target_bound || resolution.armor != facts.effective.as_ref().and_then(|e| e.armor).map(f64::from)
+        let (material_order, facts) = self.outcome_material(battle_id, shot_id, server_tick, target)?;
+        if resolution.armor != facts.effective.as_ref().and_then(|e| e.armor).map(f64::from)
             || [resolution.armor, resolution.incidence_degrees, resolution.effective_armor,
                 resolution.nominal_power, resolution.normalization_degrees].into_iter().flatten()
                 .any(|x| !x.is_finite() || x < 0.0)
@@ -433,6 +435,57 @@ impl Trace {
             material_order, resolution: resolution.clone(), health_before, health_after })?;
         self.last_tick = server_tick;
         Ok(())
+    }
+
+    /// Bind a zero-damage wreck block to the same exact nearest contact as an
+    /// AP outcome. A different terminal reason keeps it out of armor results.
+    pub fn wreck_impact(&mut self, battle_id: u64, shot_id: u32,
+        server_tick: u32, attacker: usize, target: usize,
+        health_before: i16, health_after: i16) -> io::Result<()> {
+        self.common(battle_id, shot_id, server_tick)?;
+        if attacker >= super::model::CAPACITY || target >= super::model::CAPACITY
+            || attacker == target || self.has_terminal(shot_id)
+            || self.admission_facts(shot_id).map(|(slot, _)| slot) != Some(attacker)
+            || health_before != 0 || health_after != 0 {
+            return Err(invalid("wreck impact identity or health transition"));
+        }
+        let (material_order, _) = self.outcome_material(battle_id, shot_id, server_tick, target)?;
+        if self.events.len() + 2 > MAX_EVENTS || self.next_order.checked_add(2).is_none() {
+            return Err(invalid("wreck impact trace capacity"));
+        }
+        let order = self.next_order_value()?;
+        self.push(Event::WreckImpact { order, battle_id, shot_id, server_tick, attacker, target,
+            material_order, policy_revision: super::model::WRECK_POLICY_REVISION,
+            health_before, health_after })?;
+        self.last_tick = server_tick;
+        Ok(())
+    }
+
+    /// Validate nearest material -> exact intersection -> target pose for
+    /// both outcome kinds without recomputing or accepting supplied facts.
+    fn outcome_material(&self, battle_id: u64, shot_id: u32, server_tick: u32,
+        target: usize) -> io::Result<(u32, &materials::MaterialFacts)> {
+        let (order, query, segment, intersection, facts) = match self.events.iter().rev()
+            .find(|event| event.shot_id() == shot_id) {
+            Some(Event::MaterialContact { order, battle_id: battle, server_tick: tick,
+                query_order, segment_order, intersection_order, candidate_index: 0, facts, .. })
+                if *battle == battle_id && *tick == server_tick =>
+                (*order, *query_order, *segment_order, *intersection_order, facts),
+            _ => return Err(invalid("impact outcome without latest nearest material")),
+        };
+        let pose_tag = format!("pose-v1:{target}:{server_tick}:");
+        let target_bound = matches!(self.events.iter().find(|event| event.order() == intersection),
+            Some(Event::Intersection { battle_id: battle, shot_id: shot, server_tick: tick,
+                query_order, segment_order, candidate_index: 0, mesh, material, geometry_revision,
+                transform_revision, .. })
+                if *battle == battle_id && *shot == shot_id && *tick == server_tick
+                && *query_order == query && *segment_order == segment
+                && mesh.as_str() == facts.component.name() && material == &facts.name
+                && geometry_revision == super::geometry::SOURCE_REVISION
+                && transform_revision.strip_prefix(&pose_tag).is_some_and(|digest|
+                    digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))));
+        if !target_bound { return Err(invalid("impact outcome material or target pose")); }
+        Ok((order, facts))
     }
 
     /// Query exactly the latest recorded segment with caller-owned world-space
@@ -473,7 +526,7 @@ impl Trace {
             _ => None,
         };
         let added = 1 + candidates.len() + usize::from(material.is_some());
-        // Classified contacts reserve both an optional AP outcome and terminal.
+        // Classified contacts reserve both an optional AP/wreck outcome and terminal.
         // A future runtime adapter must commit query/terminal with its World
         // transaction so unrelated shots cannot consume that remaining slot.
         let closing_rows = 1 + usize::from(material.is_some());
@@ -734,6 +787,100 @@ mod tests {
         (trace,resolution)
     }
     fn ap_tag(target: usize,tick:u32) -> String { format!("pose-v1:{target}:{tick}:{}","0".repeat(64)) }
+
+    fn wreck_contact(component: &str, label: &str, tag: &str) -> Trace {
+        let bundle=super::super::geometry::tests::bundle();
+        let mut trace=launched_trace();
+        trace.segment(123,1,1001,1000,[-1.0,0.0,0.0],[3.0,0.0,0.0]).unwrap();
+        trace.collision_query_classified(123,1,1001,&tagged_plate(component,label,tag),bundle.materials()).unwrap();
+        trace
+    }
+    #[test] fn wreck_event_pins_nearest_material_and_requires_its_own_terminal() {
+        // Gun materials are unsupported by the living armor resolver, but the
+        // wreck policy is geometric and makes no armor claim.
+        let mut trace=wreck_contact("Gun_02","armor_1",&ap_tag(1,1001));
+        let material_order=trace.events.last().unwrap().order(); let before=trace.clone();
+        assert!(trace.terminal(123,1,1001,TerminalReason::TestLabWreckImpact).is_err());
+        assert_eq!(trace,before);
+        trace.wreck_impact(123,1,1001,0,1,0,0).unwrap();
+        assert!(matches!(trace.events.last(),Some(Event::WreckImpact {
+            attacker:0,target:1,material_order:pin,policy_revision,health_before:0,health_after:0,.. })
+            if *pin==material_order && *policy_revision==model::WRECK_POLICY_REVISION));
+        let before=trace.clone();
+        assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err());
+        for reason in [TerminalReason::TestLabImpact,TerminalReason::UnresolvedCollision,
+            TerminalReason::RangeExpired,TerminalReason::UnavailableImpactResolver] {
+            assert!(trace.terminal(123,1,1001,reason).is_err());
+        }
+        assert!(trace.segment(123,1,1002,1001,[3.0,0.0,0.0],[4.0,0.0,0.0]).is_err());
+        assert_eq!(trace,before);
+        trace.terminal(123,1,1001,TerminalReason::TestLabWreckImpact).unwrap();
+        let before=trace.clone();
+        assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err());
+        assert!(trace.terminal(123,1,1001,TerminalReason::TestLabWreckImpact).is_err());
+        assert_eq!(trace,before); assert_eq!(trace.terminal_shots(),&[1]);
+        assert!(!trace.events.iter().any(|event| matches!(event,Event::ApResolution{..})));
+    }
+    #[test] fn wreck_identity_health_stage_and_pose_fail_without_mutation() {
+        let original=wreck_contact("Hull","armor_1",&ap_tag(1,1001));
+        for (battle,shot,tick,attacker,target) in [(0,1,1001,0,1),(124,1,1001,0,1),
+            (123,0,1001,0,1),(123,2,1001,0,1),(123,1,1000,0,1),(123,1,1002,0,1),
+            (123,1,1001,1,0),(123,1,1001,0,0),(123,1,1001,0,2)] {
+            let mut trace=original.clone();
+            assert!(trace.wreck_impact(battle,shot,tick,attacker,target,0,0).is_err());
+            assert_eq!(trace,original);
+        }
+        for (before,after) in [(-1,0),(0,-1),(90,90),(1,0),(0,1),(91,0)] {
+            let mut trace=original.clone();
+            assert!(trace.wreck_impact(123,1,1001,0,1,before,after).is_err()); assert_eq!(trace,original);
+        }
+        for tag in [ap_tag(0,1001),ap_tag(1,1002),"unbound".into(),"pose-v1:1:1001:00".into()] {
+            let mut trace=wreck_contact("Hull","armor_1",&tag); let before=trace.clone();
+            assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err()); assert_eq!(trace,before);
+        }
+        let mut trace=launched_trace(); let before=trace.clone();
+        assert!(trace.wreck_impact(123,1,1000,0,1,0,0).is_err()); assert_eq!(trace,before);
+        trace.segment(123,1,1001,1000,[-1.0,0.0,0.0],[3.0,0.0,0.0]).unwrap();
+        trace.collision_query(123,1,1001,&two_planes()).unwrap(); let before=trace.clone();
+        assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err()); assert_eq!(trace,before);
+    }
+    #[test] fn wreck_contact_binding_cannot_be_substituted_or_follow_ap() {
+        let original=wreck_contact("Hull","armor_1",&ap_tag(1,1001));
+        for which in 0..7 {
+            let mut trace=original.clone();
+            if which < 3 {
+                match trace.events.last_mut().unwrap() {
+                    Event::MaterialContact { candidate_index,query_order,intersection_order,.. } => match which {
+                        0=>*candidate_index=1,1=>*query_order+=1,2=>*intersection_order+=1,_=>unreachable!(),
+                    }, _=>unreachable!(),
+                }
+            } else {
+                match trace.events.iter_mut().find(|e| matches!(e,Event::Intersection{..})).unwrap() {
+                    Event::Intersection { material,geometry_revision,transform_revision,segment_order,.. } => match which {
+                        3=>*material="armor_2".into(),4=>*geometry_revision="unknown".into(),
+                        5=>*transform_revision=ap_tag(0,1001),6=>*segment_order+=1,_=>unreachable!(),
+                    }, _=>unreachable!(),
+                }
+            }
+            let before=trace.clone();
+            assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err()); assert_eq!(trace,before);
+        }
+        let (mut trace,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
+        trace.ap_resolution(123,1,1001,0,1,&resolution,30,0).unwrap(); let before=trace.clone();
+        assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err());
+        assert!(trace.terminal(123,1,1001,TerminalReason::TestLabWreckImpact).is_err()); assert_eq!(trace,before);
+        let mut trace=original; trace.wreck_impact(123,1,1001,0,1,0,0).unwrap(); let before=trace.clone();
+        assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,0,0).is_err()); assert_eq!(trace,before);
+    }
+    #[test] fn wreck_append_reserves_terminal_and_order_before_mutation() {
+        let original=wreck_contact("Hull","armor_1",&ap_tag(1,1001));
+        let mut trace=original.clone(); let material=trace.events.pop().unwrap();
+        trace.events.resize(MAX_EVENTS-2,trace.events[0].clone()); trace.events.push(material);
+        let before=trace.clone();
+        assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err()); assert_eq!(trace,before);
+        let mut trace=original; trace.next_order=u32::MAX-1; let before=trace.clone();
+        assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err()); assert_eq!(trace,before);
+    }
 
     #[test] fn ap_event_pins_nearest_material_and_health_before_terminal() {
         let (mut trace,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
@@ -1121,6 +1268,15 @@ mod tests {
 
     #[test]
     fn full_ammo_maximum_segments_and_collision_batches_fit_exact_budget() {
+        full_ammo_budget(false);
+    }
+
+    #[test]
+    fn full_ammo_wreck_outcomes_fit_the_same_exact_budget() {
+        full_ammo_budget(true);
+    }
+
+    fn full_ammo_budget(wreck: bool) {
         let bundle = super::super::geometry::tests::bundle();
         let triangles: Vec<_> = (0..collision::MAX_CANDIDATES).map(|id| collision::Triangle {
             triangle_id: id as u32, a: 0, b: 1, c: 2,
@@ -1155,18 +1311,24 @@ mod tests {
                     bundle.materials()).unwrap();
                 assert_eq!(candidates.len(), if last { collision::MAX_CANDIDATES } else { 0 });
                 assert_eq!(material.is_some(), last);
-                if last {
+                if last && wreck {
+                    trace.wreck_impact(123,shot_id,tick,slot,target,0,0).unwrap();
+                } else if last {
                     let resolution = ap::resolve(ap::Input { material: material.as_ref().unwrap(),
                         segment_direction: [4.0,0.0,0.0], winding_normal: candidates[0].normal, distance: 10.0 }).unwrap();
                     trace.ap_resolution(123,shot_id,tick,slot,target,&resolution,90,60).unwrap();
                 }
             }
-            trace.terminal(123, shot_id, tick, TerminalReason::TestLabImpact).unwrap();
+            trace.terminal(123, shot_id, tick, if wreck { TerminalReason::TestLabWreckImpact }
+                else { TerminalReason::TestLabImpact }).unwrap();
         }
         assert_eq!(trace.events().len(), MAX_EVENTS);
         assert_eq!(trace.terminal_shots().len(), model::MAX_SHOTS);
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::MaterialContact { .. })).count(), model::MAX_SHOTS);
-        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::ApResolution { .. })).count(), model::MAX_SHOTS);
+        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::ApResolution { .. })).count(),
+            if wreck { 0 } else { model::MAX_SHOTS });
+        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::WreckImpact { .. })).count(),
+            if wreck { model::MAX_SHOTS } else { 0 });
         assert!(trace.events().iter().enumerate().all(|(index, row)| row.order() as usize == index + 1));
         let before = trace.clone();
         assert!(trace.admission(123, model::MAX_SHOTS as u32 + 1, tick, 0, 20, 19).is_err());

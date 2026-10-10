@@ -9,6 +9,9 @@ pub const LIFETIME: Duration = Duration::from_secs(3600);
 pub const STEP: Duration = Duration::from_millis(100);
 pub const MAX_COMMANDS: usize = 32;
 pub const MAX_SHOTS: usize = CAPACITY * fire::MS1_INITIAL_AMMO as usize;
+/// Explicit laboratory policy: retained stock geometry blocks AP at a wreck.
+/// No penetration, material thickness or additional damage is inferred.
+pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
 pub fn bad() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "shared laboratory contract") }
@@ -57,9 +60,12 @@ pub struct Contact {
 
 /// Committed authoritative outcome. No native IDs or client damage claims.
 #[derive(Clone, Debug, PartialEq)]
+pub enum ImpactOutcome { Ap(ap::Resolution), WreckBlocked }
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct AppliedImpact {
     pub shot: u32, pub attacker: usize, pub target: usize, pub tick: u32,
-    pub resolution: ap::Resolution,
+    pub outcome: ImpactOutcome,
     pub health_before: i16, pub health_after: i16,
     pub segment: Option<geometry::ImpactSegment>,
 }
@@ -361,13 +367,27 @@ impl World {
                                         projectile.slot, target_slot, &resolution, before, after)?;
                                     impacts.push(AppliedImpact { shot: projectile.sequence,
                                         attacker: projectile.slot, target: target_slot, tick,
-                                        resolution, health_before: before, health_after: after, segment });
+                                        outcome: ImpactOutcome::Ap(resolution),
+                                        health_before: before, health_after: after, segment });
                                     let damaged = next_actors.get_mut(target_slot).ok_or_else(bad)?;
                                     damaged.health = after;
                                     if after == 0 {
                                         damaged.input = Input::STOP; damaged.speed = 0.; damaged.aim.park();
                                     }
                                     terminal_reason = impact::TerminalReason::TestLabImpact;
+                                } else if self.ap_test_lab && target.health == 0 {
+                                    if impacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                    // Retained geometry blocks a shell on an already dead actor.
+                                    // Require the same validated native segment, but never run
+                                    // the live-armor resolver or mutate health/death/input state.
+                                    let segment = Some(bundle.impact_segment(&contact)?);
+                                    impact_trace.wreck_impact(self.id, projectile.sequence, tick,
+                                        projectile.slot, target_slot, 0, 0)?;
+                                    impacts.push(AppliedImpact { shot: projectile.sequence,
+                                        attacker: projectile.slot, target: target_slot, tick,
+                                        outcome: ImpactOutcome::WreckBlocked,
+                                        health_before: 0, health_after: 0, segment });
+                                    terminal_reason = impact::TerminalReason::TestLabWreckImpact;
                                 }
                                 contacts.push(contact);
                                 projectile.terminal = endpoint; projectile.stopped = true;
@@ -440,7 +460,8 @@ pub(super) mod tests {
             w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
             w.advance(at+STEP).unwrap();
             assert_eq!(w.impacts.len(),round as usize+1);
-            assert_eq!(w.impacts.last().unwrap().resolution.outcome,ap::Outcome::Pierced);
+            assert!(matches!(&w.impacts.last().unwrap().outcome,
+                ImpactOutcome::Ap(resolution) if resolution.outcome == ap::Outcome::Pierced));
             assert_eq!(w.actors[1].health,60-round as i16*30);
             let before = w.impacts.clone(); w.advance(at+STEP*2).unwrap();
             assert_eq!(w.impacts,before);
@@ -452,11 +473,56 @@ pub(super) mod tests {
             Command::Move(Input{throttle:1,steer:1}),Command::Fire(fire::Command::Shoot)],at).unwrap().is_empty());
         assert_eq!(w.actors[1].fire.ammo(),ammo); assert_eq!(w.actors[1].aim,aim);
         assert_eq!(w.actors[1].input,Input::STOP);
-        // Already dead geometry still stops a shell, but has no second death.
+        // Already dead geometry emits one distinct block outcome, not another
+        // AP result, health transition, command or death.
+        let wreck_before = w.actors[1].clone();
         w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
-        w.advance(at+STEP).unwrap(); assert_eq!(w.impacts.len(),3); assert_eq!(w.actors[1].health,0);
+        w.advance(at+STEP).unwrap(); assert_eq!(w.impacts.len(),4);
+        let event = w.impacts.last().unwrap();
+        assert_eq!(event.outcome,ImpactOutcome::WreckBlocked);
+        assert_eq!((event.shot,event.attacker,event.target,event.health_before,event.health_after),(4,0,1,0,0));
+        assert!(event.segment.is_some()); assert_eq!(w.actors[1],wreck_before);
+        assert_eq!(w.actors[0].fire.ammo(),16);
+        assert_eq!(w.impact.events().iter().filter(|e| matches!(e,impact::Event::ApResolution{..})).count(),3);
+        assert_eq!(w.impact.events().iter().filter(|e| matches!(e,impact::Event::WreckImpact{..})).count(),1);
+        assert!(matches!(w.impact.events().last(),Some(impact::Event::Terminal {
+            shot_id:4,reason:impact::TerminalReason::TestLabWreckImpact,.. })));
+        assert_eq!(w.projectiles[3].terminal,w.contacts[3].endpoint); assert!(w.projectiles[3].stopped);
+        let impacts = w.impacts.clone(); let trace = w.impact.clone();
+        w.advance(at+STEP*2).unwrap(); assert_eq!(w.impacts,impacts); assert_eq!(w.impact,trace);
         let identity = w.actors[1].identity.clone(); w.detach(2).unwrap();
         w.attach(identity,3).unwrap(); assert_eq!(w.actors[1].health,0); assert_eq!(w.actors[1].fire.ammo(),ammo);
+    }
+    #[test] fn wreck_impact_requires_opt_in_and_does_not_infer_an_ap_result() {
+        let now = Instant::now(); let mut w = collision_world(now,false);
+        w.actors[1].health = 0; w.actors[1].aim.park();
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+        let dead = w.actors[1].clone(); w.advance(now+STEP).unwrap();
+        assert!(w.impacts.is_empty()); assert_eq!(w.actors[1],dead);
+        assert_eq!(w.contacts.len(),1); assert!(w.projectiles[0].stopped);
+        assert!(matches!(w.impact.events().last(),Some(impact::Event::Terminal {
+            reason:impact::TerminalReason::UnresolvedCollision,.. })));
+    }
+    #[test] fn wreck_impact_capacity_or_material_failure_rolls_back_complete_advance() {
+        let now = Instant::now(); let mut w = ap_world(now);
+        w.actors[1].health = 0; w.actors[1].aim.park();
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+        w.advance(now+STEP).unwrap(); assert_eq!(w.impacts[0].outcome,ImpactOutcome::WreckBlocked);
+        let at = now+Duration::from_secs(3); w.advance(at).unwrap();
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
+        for invalid_material in [false,true] {
+            let mut invalid = w.clone();
+            if invalid_material {
+                invalid.geometry = Some(Arc::new(super::super::geometry::tests::invalid_material_bundle()));
+            } else {
+                invalid.impacts.resize(MAX_SHOTS,invalid.impacts[0].clone());
+            }
+            let before = invalid.clone(); assert!(invalid.advance(at+STEP).is_err());
+            assert_eq!(invalid.actors,before.actors); assert_eq!(invalid.impacts,before.impacts);
+            assert_eq!(invalid.impact,before.impact); assert_eq!(invalid.contacts,before.contacts);
+            assert_eq!(invalid.projectiles,before.projectiles); assert_eq!(invalid.shots,before.shots);
+            assert_eq!(invalid.last,before.last); assert_eq!(invalid.tick,before.tick);
+        }
     }
     #[test] fn ap_failures_rollback_damage_and_simultaneous_flights_survive_shooter_death() {
         let now = Instant::now(); let mut w = ap_world(now);
