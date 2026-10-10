@@ -1,14 +1,15 @@
 //! Bounded server-owned flight trace for the P06C impact gate.
 //!
 //! This module records the server-owned flight facts and the collision-only
-//! boundary. It deliberately stops before penetration and gameplay damage.
+//! boundary and source material facts. It deliberately stops before
+//! penetration and gameplay damage.
 //! Geometry labels come from the supplied mesh, never from client hit claims.
 //! They are not converted into armor thickness or HP mutation by this module.
 
 use std::io;
 
 use super::projectile::Projectile;
-use super::collision;
+use super::{collision, materials};
 
 pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-full-pose-v2";
 pub const PROFILE: &str = "ms1_ap_2570";
@@ -17,9 +18,10 @@ pub const MS1_GUN_COMPACT_ID: u32 = 5892;
 pub const MS1_AP_SHELL_COMPACT_ID: u32 = 2570;
 pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
 // Admission + launch, segment/query pairs, one terminal collision batch, and
-// terminal. The model admits only both actors' original 20-shell loadouts.
+// nearest material record and terminal. The model admits only both actors'
+// original 20-shell loadouts.
 pub const MAX_EVENTS: usize = super::model::MAX_SHOTS
-    * (2 + MAX_SEGMENTS_PER_SHOT * 2 + collision::MAX_CANDIDATES + 1);
+    * (2 + MAX_SEGMENTS_PER_SHOT * 2 + collision::MAX_CANDIDATES + 1 + 1);
 pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
 pub const MAX_SEGMENT_LENGTH: f32 = 200_000.0;
@@ -40,6 +42,7 @@ pub enum Stage {
     Segment,
     CollisionQuery,
     Intersection,
+    MaterialContact,
     Terminal,
 }
 
@@ -118,6 +121,20 @@ pub enum Event {
         geometry_revision: String,
         transform_revision: String,
     },
+    /// Source facts for the nearest intersection in the computed query batch.
+    /// Its referenced Intersection retains the raw winding normal; outward
+    /// orientation and all penetration/damage outcomes remain unknown.
+    MaterialContact {
+        order: u32,
+        battle_id: u64,
+        shot_id: u32,
+        server_tick: u32,
+        query_order: u32,
+        segment_order: u32,
+        intersection_order: u32,
+        candidate_index: usize,
+        facts: materials::MaterialFacts,
+    },
     Terminal {
         order: u32,
         battle_id: u64,
@@ -135,6 +152,7 @@ impl Event {
             Self::Segment { .. } => Stage::Segment,
             Self::CollisionQuery { .. } => Stage::CollisionQuery,
             Self::Intersection { .. } => Stage::Intersection,
+            Self::MaterialContact { .. } => Stage::MaterialContact,
             Self::Terminal { .. } => Stage::Terminal,
         }
     }
@@ -146,6 +164,7 @@ impl Event {
             | Self::Segment { order, .. }
             | Self::CollisionQuery { order, .. }
             | Self::Intersection { order, .. }
+            | Self::MaterialContact { order, .. }
             | Self::Terminal { order, .. } => *order,
         }
     }
@@ -157,6 +176,7 @@ impl Event {
             | Self::Segment { shot_id, .. }
             | Self::CollisionQuery { shot_id, .. }
             | Self::Intersection { shot_id, .. }
+            | Self::MaterialContact { shot_id, .. }
             | Self::Terminal { shot_id, .. } => *shot_id,
         }
     }
@@ -317,7 +337,7 @@ impl Trace {
         let previous_segment_end = self.last_segment_end(shot_id);
         let valid_stage = match reason {
             TerminalReason::UnresolvedCollision =>
-                matches!(self.last_stage(shot_id), Some(Stage::Intersection)),
+                matches!(self.last_stage(shot_id), Some(Stage::Intersection | Stage::MaterialContact)),
             TerminalReason::RangeExpired | TerminalReason::UnavailableImpactResolver =>
                 self.flight_continuable(shot_id),
         };
@@ -341,6 +361,23 @@ impl Trace {
     /// so the caller can stop at the first contact without another query.
     pub fn collision_query(&mut self, battle_id: u64, shot_id: u32,
         server_tick: u32, mesh: &collision::Mesh) -> io::Result<Vec<collision::Candidate>> {
+        self.collision_batch(battle_id, shot_id, server_tick, mesh, None)
+            .map(|(candidates, _)| candidates)
+    }
+
+    /// Bind immutable source material facts to the nearest computed hit. The
+    /// query, every intersection and the nearest material event commit as one
+    /// batch. No caller-supplied candidate, normal or material fact is accepted.
+    /// A miss returns None and records no material event.
+    pub fn collision_query_classified(&mut self, battle_id: u64, shot_id: u32,
+        server_tick: u32, mesh: &collision::Mesh, catalog: &materials::Catalog)
+        -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>)> {
+        self.collision_batch(battle_id, shot_id, server_tick, mesh, Some(catalog))
+    }
+
+    fn collision_batch(&mut self, battle_id: u64, shot_id: u32,
+        server_tick: u32, mesh: &collision::Mesh, catalog: Option<&materials::Catalog>)
+        -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>)> {
         self.common(battle_id, shot_id, server_tick)?;
         let (segment_order, start, end) = match self.events.iter().rev()
             .find(|event| event.shot_id() == shot_id) {
@@ -349,7 +386,11 @@ impl Trace {
             _ => return Err(invalid("collision query without current unqueried segment")),
         };
         let candidates = collision::query(mesh, start, end)?;
-        let added = 1 + candidates.len();
+        let material = match (catalog, candidates.first()) {
+            (Some(catalog), Some(nearest)) => Some(catalog.lookup(&nearest.mesh, &nearest.material)?),
+            _ => None,
+        };
+        let added = 1 + candidates.len() + usize::from(material.is_some());
         // Leave room for a terminal if the caller closes this query now.
         // A future runtime adapter must commit query/terminal with its World
         // transaction so unrelated shots cannot consume that remaining slot.
@@ -372,12 +413,17 @@ impl Trace {
                 geometry_revision: mesh.geometry_revision().into(),
                 transform_revision: mesh.transform_revision().into() });
         }
+        if let Some(facts) = &material {
+            batch.push(Event::MaterialContact { order: query_order + batch.len() as u32,
+                battle_id, shot_id, server_tick, query_order, segment_order,
+                intersection_order: query_order + 1, candidate_index: 0, facts: facts.clone() });
+        }
         // All fallible validation precedes mutation; do not clone the complete
         // flight history for every segment in the full-ammo trace.
         self.events.extend(batch);
         self.next_order += added as u32;
         self.last_tick = server_tick;
-        Ok(candidates)
+        Ok((candidates, material))
     }
 
     fn flight_continuable(&self, shot_id: u32) -> bool {
@@ -444,7 +490,7 @@ mod tests {
         assert_eq!(MS1_GUN_COMPACT_ID, 5892);
         assert_eq!(MS1_AP_SHELL_COMPACT_ID, 2570);
         assert_eq!(MAX_SEGMENTS_PER_SHOT, 256);
-        assert_eq!(MAX_EVENTS, 25_720);
+        assert_eq!(MAX_EVENTS, 25_760);
     }
 
     #[test]
@@ -568,6 +614,153 @@ mod tests {
                     mesh: "synthetic".into(), group: "near".into(), material: "test-a".into() },
             ],
             "synthetic-geometry-v1", "synthetic-world-identity-v1").unwrap()
+    }
+
+    fn material_planes(component: &str, material: &str, reverse_near: bool) -> collision::Mesh {
+        collision::Mesh::new(
+            vec![
+                [0.0, -1.0, -1.0], [0.0, 1.0, -1.0], [0.0, 0.0, 1.0],
+                [2.0, -1.0, -1.0], [2.0, 1.0, -1.0], [2.0, 0.0, 1.0],
+            ],
+            vec![
+                // The farther triangle has the smaller ID and comes first in
+                // storage: classification must follow query distance order.
+                collision::Triangle { triangle_id: 2, a: 3, b: 4, c: 5,
+                    mesh: "Gun_02".into(), group: "far".into(), material: "armor_3".into() },
+                collision::Triangle { triangle_id: 7, a: 0,
+                    b: if reverse_near { 2 } else { 1 }, c: if reverse_near { 1 } else { 2 },
+                    mesh: component.into(), group: "near".into(), material: material.into() },
+            ],
+            "synthetic-material-planes-v1", "synthetic-world-identity-v1").unwrap()
+    }
+
+    #[test]
+    fn classified_batch_uses_exact_nearest_intersection_without_changing_query() {
+        let bundle = super::super::geometry::tests::bundle();
+        let catalog = bundle.materials();
+        let mesh = material_planes("Hull", "armor_8", false);
+        let mut trace = launched_trace();
+        trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        let mut unclassified = trace.clone();
+        let original = unclassified.collision_query(123, 1, 1001, &mesh).unwrap();
+        let (candidates, facts) = trace.collision_query_classified(123, 1, 1001, &mesh, catalog).unwrap();
+        assert_eq!(candidates, original);
+        for (classified, plain) in candidates.iter().zip(&original) {
+            assert_eq!(classified.t.to_bits(), plain.t.to_bits());
+            assert_eq!(classified.normal.map(f32::to_bits), plain.normal.map(f32::to_bits));
+        }
+        assert_eq!(candidates.iter().map(|hit| hit.triangle_id).collect::<Vec<_>>(), vec![7, 2]);
+        assert_eq!(facts, Some(catalog.lookup("Hull", "armor_8").unwrap()));
+        assert_eq!(&trace.events()[..unclassified.events().len()], unclassified.events());
+        match trace.events().last().unwrap() {
+            Event::MaterialContact { order, battle_id, shot_id, server_tick, query_order,
+                segment_order, intersection_order, candidate_index, facts: stored } => {
+                assert_eq!((*order, *battle_id, *shot_id, *server_tick), (7, 123, 1, 1001));
+                assert_eq!((*query_order, *segment_order, *intersection_order, *candidate_index), (4, 3, 5, 0));
+                assert_eq!(Some(stored), facts.as_ref());
+                assert!(matches!(trace.events().iter().find(|event| event.order() == *intersection_order),
+                    Some(Event::Intersection { triangle_id: 7, candidate_index: 0, .. })));
+            }
+            _ => panic!("nearest material event missing"),
+        }
+        let before = trace.clone();
+        assert!(trace.terminal(123, 1, 1001, TerminalReason::RangeExpired).is_err());
+        assert!(trace.terminal(123, 1, 1001, TerminalReason::UnavailableImpactResolver).is_err());
+        assert!(trace.segment(123, 1, 1002, 1001, [3.0, 0.0, 0.0], [4.0, 0.0, 0.0]).is_err());
+        assert!(trace.collision_query_classified(123, 1, 1001, &mesh, catalog).is_err());
+        assert_eq!(trace, before);
+        trace.terminal(123, 1, 1001, TerminalReason::UnresolvedCollision).unwrap();
+        assert_eq!(trace.events().last().unwrap().stage(), Stage::Terminal);
+        let before = trace.clone();
+        assert!(trace.collision_query_classified(123, 1, 1001, &mesh, catalog).is_err());
+        assert!(trace.terminal(123, 1, 1001, TerminalReason::UnresolvedCollision).is_err());
+        assert_eq!(trace, before);
+    }
+
+    #[test]
+    fn classification_preserves_winding_normal_without_entry_exit_claims() {
+        let bundle = super::super::geometry::tests::bundle();
+        let mut trace = launched_trace();
+        trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        let mut reversed = trace.clone();
+        let (forward, facts) = trace.collision_query_classified(123, 1, 1001,
+            &material_planes("Hull", "armor_8", false), bundle.materials()).unwrap();
+        let (backward, reverse_facts) = reversed.collision_query_classified(123, 1, 1001,
+            &material_planes("Hull", "armor_8", true), bundle.materials()).unwrap();
+        assert_eq!(facts, reverse_facts);
+        assert_eq!((forward[0].triangle_id, forward[0].t), (backward[0].triangle_id, backward[0].t));
+        assert_eq!((forward[0].normal[0], backward[0].normal[0]), (1.0, -1.0));
+        for (trace, candidate) in [(&trace, &forward[0]), (&reversed, &backward[0])] {
+            match &trace.events()[4] {
+                Event::Intersection { normal, .. } => assert_eq!(normal.map(f32::to_bits), candidate.normal.map(f32::to_bits)),
+                _ => panic!("raw intersection missing"),
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_nearest_material_or_identity_rejects_the_entire_classified_batch() {
+        let bundle = super::super::geometry::tests::bundle();
+        let catalog = bundle.materials();
+        let mut trace = launched_trace();
+        trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        let before = trace.clone();
+        for (component, label) in [("Hull", "unknown"), ("Unknown", "armor_8"), ("Gun_02", "armor_8")] {
+            assert!(trace.collision_query_classified(123, 1, 1001,
+                &material_planes(component, label, false), catalog).is_err());
+            assert_eq!(trace, before);
+        }
+        let mesh = material_planes("Hull", "armor_8", false);
+        for (battle, shot, tick) in [(124, 1, 1001), (123, 2, 1001), (123, 1, 1000), (123, 1, 1002)] {
+            assert!(trace.collision_query_classified(battle, shot, tick, &mesh, catalog).is_err());
+            assert_eq!(trace, before);
+        }
+    }
+
+    #[test]
+    fn classified_empty_query_has_no_material_event_and_can_continue() {
+        let bundle = super::super::geometry::tests::bundle();
+        let mesh = material_planes("Hull", "armor_8", false);
+        let mut trace = launched_trace();
+        let before = trace.clone();
+        assert!(trace.collision_query_classified(123, 1, 1000, &mesh, bundle.materials()).is_err());
+        assert_eq!(trace, before);
+        trace.segment(123, 1, 1001, 1000, [-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]).unwrap();
+        let (candidates, material) = trace.collision_query_classified(123, 1, 1001, &mesh, bundle.materials()).unwrap();
+        assert!(candidates.is_empty()); assert!(material.is_none());
+        assert!(matches!(trace.events().last(), Some(Event::CollisionQuery { candidate_count: 0, .. })));
+        let before = trace.clone();
+        assert!(trace.terminal(123, 1, 1001, TerminalReason::UnresolvedCollision).is_err());
+        assert!(trace.collision_query_classified(123, 1, 1001, &mesh, bundle.materials()).is_err());
+        assert_eq!(trace, before);
+        for reason in [TerminalReason::RangeExpired, TerminalReason::UnavailableImpactResolver] {
+            let mut ending = trace.clone();
+            ending.terminal(123, 1, 1001, reason).unwrap();
+        }
+        trace.segment(123, 1, 1002, 1001, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        trace.collision_query_classified(123, 1, 1002, &mesh, bundle.materials()).unwrap();
+        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::MaterialContact { .. })).count(), 1);
+    }
+
+    #[test]
+    fn classified_batch_reserves_material_and_terminal_capacity_before_append() {
+        let bundle = super::super::geometry::tests::bundle();
+        let mesh = material_planes("Hull", "armor_8", false);
+        let mut original = launched_trace();
+        original.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
+        let mut trace = original.clone();
+        let segment = trace.events.pop().unwrap();
+        trace.events.resize(MAX_EVENTS - 5, trace.events[0].clone());
+        trace.events.push(segment); // Four free rows: batch fits, terminal would not.
+        let before = trace.clone();
+        assert!(trace.collision_query_classified(123, 1, 1001, &mesh, bundle.materials()).is_err());
+        assert_eq!(trace, before);
+
+        let mut trace = original;
+        trace.next_order = u32::MAX - 4;
+        let before = trace.clone();
+        assert!(trace.collision_query_classified(123, 1, 1001, &mesh, bundle.materials()).is_err());
+        assert_eq!(trace, before);
     }
 
     #[test]
@@ -700,9 +893,10 @@ mod tests {
 
     #[test]
     fn full_ammo_maximum_segments_and_collision_batches_fit_exact_budget() {
+        let bundle = super::super::geometry::tests::bundle();
         let triangles = (0..collision::MAX_CANDIDATES).map(|id| collision::Triangle {
             triangle_id: id as u32, a: 0, b: 1, c: 2,
-            mesh: "synthetic".into(), group: "overlap".into(), material: "test".into(),
+            mesh: "Hull".into(), group: "overlap".into(), material: "armor_8".into(),
         }).collect();
         let mesh = collision::Mesh::new(
             vec![[0.0, -1.0, -1.0], [0.0, 1.0, -1.0], [0.0, 0.0, 1.0]],
@@ -724,13 +918,16 @@ mod tests {
                     else { ([-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]) };
                 trace.segment(123, shot_id, tick + 1, tick, start, end).unwrap();
                 tick += 1;
-                let candidates = trace.collision_query(123, shot_id, tick, &mesh).unwrap();
+                let (candidates, material) = trace.collision_query_classified(123, shot_id, tick, &mesh,
+                    bundle.materials()).unwrap();
                 assert_eq!(candidates.len(), if last { collision::MAX_CANDIDATES } else { 0 });
+                assert_eq!(material.is_some(), last);
             }
             trace.terminal(123, shot_id, tick, TerminalReason::UnresolvedCollision).unwrap();
         }
         assert_eq!(trace.events().len(), MAX_EVENTS);
         assert_eq!(trace.terminal_shots().len(), model::MAX_SHOTS);
+        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::MaterialContact { .. })).count(), model::MAX_SHOTS);
         assert!(trace.events().iter().enumerate().all(|(index, row)| row.order() as usize == index + 1));
         let before = trace.clone();
         assert!(trace.admission(123, model::MAX_SHOTS as u32 + 1, tick, 0, 20, 19).is_err());
@@ -784,7 +981,11 @@ mod tests {
     }
 
     #[test]
-    fn interleaved_shots_query_their_own_segment() {
+    fn interleaved_classified_shots_query_and_classify_their_own_segment() {
+        let bundle = super::super::geometry::tests::bundle();
+        let catalog = bundle.materials();
+        let hull = material_planes("Hull", "armor_8", false);
+        let turret = material_planes("Turret_01", "armor_8", false);
         let now = Instant::now();
         let world = world(now);
         let mut trace = Trace::new();
@@ -795,8 +996,9 @@ mod tests {
         }
         trace.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
         trace.segment(123, 2, 1001, 1000, [-2.0, 0.0, 0.0], [-1.0, 0.0, 0.0]).unwrap();
-        trace.collision_query(123, 2, 1001, &two_planes()).unwrap();
-        trace.collision_query(123, 1, 1001, &two_planes()).unwrap();
+        assert!(trace.collision_query_classified(123, 2, 1001, &turret, catalog).unwrap().1.is_none());
+        assert_eq!(trace.collision_query_classified(123, 1, 1001, &hull, catalog).unwrap().1,
+            Some(catalog.lookup("Hull", "armor_8").unwrap()));
         let queries: Vec<_> = trace.events().iter().filter_map(|row| match row {
             Event::CollisionQuery { shot_id, segment_order, candidate_count, .. } =>
                 Some((*shot_id, *segment_order, *candidate_count)),
@@ -806,5 +1008,28 @@ mod tests {
         trace.terminal(123, 1, 1001, TerminalReason::UnresolvedCollision).unwrap();
         trace.segment(123, 2, 1002, 1001, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
         assert_eq!(trace.terminal_shots(), &[1]);
+        assert_eq!(trace.collision_query_classified(123, 2, 1002, &turret, catalog).unwrap().1,
+            Some(catalog.lookup("Turret_01", "armor_8").unwrap()));
+        trace.terminal(123, 2, 1002, TerminalReason::UnresolvedCollision).unwrap();
+        let classifications: Vec<_> = trace.events().iter().filter_map(|event| match event {
+            Event::MaterialContact { shot_id, query_order, segment_order, intersection_order, facts, .. } =>
+                Some((*shot_id, *query_order, *segment_order, *intersection_order, facts)),
+            _ => None,
+        }).collect();
+        assert_eq!(classifications.len(), 2);
+        assert_eq!(classifications[0].0, 1); assert_eq!(classifications[1].0, 2);
+        assert_ne!(classifications[0].4, classifications[1].4);
+        for (shot, query, segment, intersection, facts) in classifications {
+            assert!(matches!(trace.events().iter().find(|event| event.order() == query),
+                Some(Event::CollisionQuery { shot_id, segment_order, .. }) if *shot_id == shot && *segment_order == segment));
+            match trace.events().iter().find(|event| event.order() == intersection) {
+                Some(Event::Intersection { shot_id, query_order, segment_order, candidate_index: 0, mesh, material, .. }) => {
+                    assert_eq!((*shot_id, *query_order, *segment_order), (shot, query, segment));
+                    assert_eq!(*facts, catalog.lookup(mesh, material).unwrap());
+                }
+                _ => panic!("classified intersection binding missing"),
+            }
+        }
+        assert_eq!(trace.terminal_shots(), &[1, 2]);
     }
 }
