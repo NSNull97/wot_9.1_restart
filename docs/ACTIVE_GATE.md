@@ -1,3 +1,24 @@
+# P06J measured contact materials — 2026-10-10
+
+`codex/p06j-contact-materials`, code head `748bbda`:
+**PASS_MEASURED_CONTACT_MATERIALS**. Неизменная P06I геометрия теперь дополнена
+component-specific MaterialInfo из verified #717 источников. Native oracle
+совпал в обоих клиентах: 104 записи / 1352 поля; отсутствующий material28
+не подменяется armor0. Trace атомарно связывает nearest intersection и один
+типизированный MaterialContact. Terminal остаётся `UnresolvedCollision`.
+
+440/440 Rust PASS; focused Python 27 PASS / 1 прежний privilege NOT_RUN;
+source layout PASS. Девять старых принятых native сегментов повторно дают
+битово прежние normal/t/endpoint. Финальный gateway запущен с принятым
+physics pool и обоими клиентами; отдельные runtime-аудиты и точные SHA
+сохранены в `local/evidence/20261010-p06j-contact-materials-01/summary.json`.
+Новая ручная приёмка владельца, HP и P06D damage capture — NOT_RUN, вне scope.
+
+[План](plans/P06J_CONTACT_MATERIALS.md),
+[исследование и откат](research/P06J_CONTACT_MATERIALS.md).
+Единственный следующий gate — подтверждённый исходниками контракт
+пробития/рикошета для измеренного MS-1/AP контакта перед изменением HP.
+
 # P06I native geometric contact — 2026-10-10
 
 `codex/p06i-native-collision-binding`:

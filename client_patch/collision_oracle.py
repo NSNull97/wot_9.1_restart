@@ -20,6 +20,39 @@ def matrix_facts(matrix, Math):
                 axes=[vector(matrix.applyToAxis(index)) for index in range(3)])
 
 
+def material_facts(description):
+    materials = description['materials']
+    if not isinstance(materials, dict) or not 0 < len(materials) <= 64:
+        raise ValueError('native material table bound')
+    rows = []
+    flags = ('useArmorHomogenization', 'useHitAngle', 'useAntifragmentationLining',
+             'mayRicochet', 'collideOnceOnly', 'continueTraceIfNoHit')
+    scalars = ('armor', 'vehicleDamageFactor', 'chanceToHitByProjectile', 'chanceToHitByExplosion')
+    for kind in sorted(materials):
+        material = materials[kind]
+        if type(kind) not in (int, long) or not 0 <= kind <= 65535 or material.kind != kind:
+            raise ValueError('native material kind differs')
+        row = dict(kind=kind, extra_is_none=material.extra is None)
+        for name in flags:
+            value = getattr(material, name)
+            if type(value) is not bool:
+                raise ValueError('native material boolean differs')
+            row[name] = value
+        for name in scalars:
+            value = getattr(material, name)
+            if value is None and name == 'armor':
+                row[name] = None
+                continue
+            if type(value) not in (int, long, float) or math.isnan(value) or math.isinf(value) or not 0 <= value <= 100000.:
+                raise ValueError('native material scalar bound')
+            row[name] = float(value)
+        if type(material.damageKind) not in (int, long) or not 0 <= material.damageKind <= 255:
+            raise ValueError('native material damage kind bound')
+        row['damageKind'] = material.damageKind
+        rows.append(row)
+    return rows
+
+
 def collect(player, entities, record):
     import Math
     import Vehicle
@@ -57,6 +90,10 @@ def collect(player, entities, record):
         for index, (description, inverse_local, attached) in enumerate(components):
             rows.append(dict(component=index, attached=bool(attached),
                              inverse_local=matrix_facts(inverse_local, Math)))
+            record('shared_collision_material_oracle', schema=1, entity_id=entity.id,
+                   component=('Chassis', 'Hull', 'Turret_01', 'Gun_02')[index],
+                   materials=material_facts(description), source='original component MaterialInfo',
+                   observer_mutated_gameplay=False)
         record('shared_collision_component_oracle', schema=1, entity_id=entity.id,
                model=matrix_facts(model, Math), position=vector(entity.position),
                turret_yaw=float(Math.Matrix(entity.appearance.turretMatrix).yaw),
