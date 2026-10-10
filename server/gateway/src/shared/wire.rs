@@ -148,10 +148,12 @@ pub fn shooting(slot: usize) -> io::Result<Vec<u8>> {
 /// Original Avatar.showTracer fixed method: selected Avatar, shooter vehicle
 /// id, bounded shot id, ordered shell-effects index and native projectile
 /// parameters. The index is a wire concern; the domain owns only the flight
-/// geometry and effective shell values.
+/// geometry and effective shell values. Launch facts remain serializable after
+/// collision/range stop so a delayed receiver can receive start then stop.
+/// Per-receiver delivery cursors own that order and exactly-once policy.
 pub fn tracer_start(projectile: &Projectile) -> io::Result<Vec<u8>> {
     if projectile.sequence == 0 || projectile.sequence as usize > model::MAX_SHOTS
-        || projectile.slot >= model::CAPACITY || projectile.stopped
+        || projectile.slot >= model::CAPACITY
         || !projectile.origin.iter().all(|v| v.is_finite())
         || !projectile.velocity.iter().all(|v| v.is_finite())
         || !projectile.gravity.is_finite() || projectile.gravity <= 0.0
@@ -172,7 +174,7 @@ pub fn tracer_start(projectile: &Projectile) -> io::Result<Vec<u8>> {
 }
 
 /// Original Avatar.stopTracer fixed method. It is emitted once per tracer
-/// start, and only after the server-owned radial flight deadline.
+/// start, and only after the server has stopped the projectile.
 pub fn tracer_stop(projectile: &Projectile) -> io::Result<Vec<u8>> {
     if projectile.sequence == 0 || projectile.sequence as usize > model::MAX_SHOTS
         || projectile.slot >= model::CAPACITY || !projectile.stopped
@@ -330,16 +332,54 @@ mod tests {
         assert_eq!(&stop[..2], &[0x13, 0x48]);
         assert_eq!(&stop[2..6], &1u32.to_le_bytes());
     }
-    #[test] fn tracer_callbacks_reject_wrong_lifecycle_and_nonfinite_fields() {
+    #[test] fn stopped_projectile_preserves_launch_bytes_for_delayed_receiver() {
         let now = Instant::now();
         let mut w = model::tests::world(now);
         w.apply(0, 1, &[model::Command::Fire(crate::battle091::fire::Command::Shoot)], now).unwrap();
         let mut projectile = w.projectiles[0];
-        projectile.origin[0] = f32::NAN;
-        assert!(tracer_start(&projectile).is_err());
-        projectile = w.projectiles[0];
+        let launch_bytes = tracer_start(&projectile).unwrap();
+        assert!(tracer_stop(&projectile).is_err());
+        // A collision can stop the flight before a peer's next publication.
+        projectile.terminal = [14.0, 25.0, 36.0];
         projectile.stopped = true;
-        assert!(tracer_start(&projectile).is_err());
-        assert!(tracer_stop(&projectile).is_ok());
+        let mut delayed = tracer_start(&projectile).unwrap();
+        assert_eq!(delayed, launch_bytes);
+        delayed.extend(tracer_stop(&projectile).unwrap());
+        assert_eq!(delayed.len(), 43 + 18);
+        assert_eq!(&delayed[43..49], &[0x13, 0x48, 1, 0, 0, 0]);
+        for (index, expected) in projectile.terminal.iter().enumerate() {
+            let offset = 49 + index * 4;
+            assert_eq!(f32::from_le_bytes(delayed[offset..offset + 4].try_into().unwrap()), *expected);
+        }
+    }
+    #[test] fn tracer_callbacks_keep_identity_finite_and_positive_value_guards_after_stop() {
+        let now = Instant::now();
+        let w = model::tests::world(now);
+        let base = Projectile::launch(1, 0, &w.actors[0], now).unwrap();
+        let corruptions: [fn(&mut Projectile); 11] = [
+            |p| p.sequence = 0,
+            |p| p.sequence = model::MAX_SHOTS as u32 + 1,
+            |p| p.slot = model::CAPACITY,
+            |p| p.origin[0] = f32::NAN,
+            |p| p.velocity[2] = f32::INFINITY,
+            |p| p.gravity = f32::NAN,
+            |p| p.gravity = 0.0,
+            |p| p.gravity = -1.0,
+            |p| p.max_distance = f32::INFINITY,
+            |p| p.max_distance = 0.0,
+            |p| p.max_distance = -1.0,
+        ];
+        for stopped in [false, true] {
+            for corrupt in corruptions {
+                let mut projectile = base;
+                projectile.stopped = stopped;
+                corrupt(&mut projectile);
+                assert!(tracer_start(&projectile).is_err());
+            }
+        }
+        let mut projectile = base;
+        projectile.stopped = true;
+        projectile.terminal[1] = f32::NAN;
+        assert!(tracer_stop(&projectile).is_err());
     }
 }
