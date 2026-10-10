@@ -2,6 +2,8 @@
 //! route and its frozen profile checks are not generalized through this module.
 pub(crate) mod model;
 pub(crate) mod aim;
+pub(crate) mod pose;
+pub(crate) mod geometry;
 pub(crate) mod projectile;
 pub(crate) mod collision;
 pub(crate) mod impact;

@@ -10,7 +10,7 @@ use std::io;
 use super::projectile::Projectile;
 use super::collision;
 
-pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-flight-v1";
+pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-full-pose-v2";
 pub const PROFILE: &str = "ms1_ap_2570";
 pub const MS1_VEHICLE_COMPACT_ID: u32 = 3329;
 pub const MS1_GUN_COMPACT_ID: u32 = 5892;

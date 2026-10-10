@@ -908,6 +908,12 @@ def observe_shared_lab():
            avatar_entity_id=player.id, player_vehicle_id=player.playerVehicleID,
            arena_unique_id=player.arenaUniqueID, vehicles=rows, prediction=prediction, observer_mutated_gameplay=False)
     if _shared_native_samples == 3:
+        import collision_oracle
+        try:
+            collision_oracle.collect(player, entities, record)
+        except Exception:
+            record('shared_collision_oracle_failed', error=traceback.format_exc(),
+                   observer_mutated_gameplay=False)
         # Pure native maths on an identity matrix: an independent oracle, not
         # game input or a client-authored pose fed to the server.
         import Math

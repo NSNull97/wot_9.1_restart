@@ -153,6 +153,40 @@ fn target_angles(position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, o
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn independent_native_tilted_aim_and_point_to_hold_stay_within_measured_bounds() {
+        // #717 getShotAngles on pure Math matrices; event SHA256
+        // 4bb48fac175a4f4b8c29e72972ecfee6bbc9d62fb33365763287c65e413c7a83.
+        // Close (5m) results differ slightly from our world-gravity solver.
+        // These explicit measured bounds are below one native angle wire bin,
+        // not a claim of identical native algorithms.
+        let relative = [[0.,0.,100.],[450.,-20.,310.],[-300.,60.,-400.],[1.,0.,5.]];
+        for (direction, expected) in [
+            ([0.7,-0.3,0.2], [[-0.7437506914,0.1072099954],[0.2138380110,0.3638943732],
+                [2.9911341667,-0.4075963795],[-0.5138641596,0.4738564491]]),
+            ([-2.1,0.25,-0.15], [[2.0853199959,0.0076566716],[3.0246388912,0.2605078220],
+                [-0.4691703320,-0.2937970459],[2.3232738972,0.3680807054]]),
+            ([0.2,0.6,-0.5], [[-0.4971206486,-0.3903233409],[0.6100886464,-0.7362749577],
+                [-2.9197170734,0.5880473852],[-0.2680743635,-0.2390402555]])] {
+            for (i, point) in relative.iter().enumerate() {
+                let position = [37.,21.,-105.];
+                let target = std::array::from_fn(|axis| position[axis]+point[axis]);
+                let actual = target_angles_pose(position,direction,target,0.,0.);
+                let bounds = if i==3 { [0.0013,0.0004] } else { [0.00001,0.00001] };
+                assert!(wrap(actual.0-expected[i][0]).abs()<bounds[0]);
+                assert!((actual.1-expected[i][1]).abs()<bounds[1]);
+                // Test actual runtime transition only for reachable barrel limits.
+                if expected[i][1]>=MIN_PITCH && expected[i][1]<=pitch_max(expected[i][0]) {
+                    let mut state = State::new(); state.set(Intent::Point(target)).unwrap();
+                    for _ in 0..100 { state.advance_pose(position,direction,0.1).unwrap(); }
+                    let before = shot_geometry_pose(position,direction,state.yaw,state.pitch,1.).1;
+                    state.set(Intent::Hold{yaw:expected[i][0],pitch:expected[i][1]}).unwrap();
+                    for _ in 0..100 { state.advance_pose(position,direction,0.1).unwrap(); }
+                    let after = shot_geometry_pose(position,direction,state.yaw,state.pitch,1.).1;
+                    assert!((0..3).map(|i|(before[i]-after[i]).powi(2)).sum::<f32>().sqrt()<0.0014);
+                }
+            }
+        }
+    }
     #[test] fn tilted_world_gravity_solution_reaches_targets_in_world_space() {
         // Verify the resulting flight in world coordinates. Merely rotating a
         // flat solution would tilt gravity and miss these long oblique shots.
