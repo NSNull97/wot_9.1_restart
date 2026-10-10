@@ -223,8 +223,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut world = World::new(OsRng.next_u64().max(1), started)?;
     if let Some(bundle) = geometry {
         world.bind_geometry(bundle)?;
-        println!("SHARED_GEOMETRY_BOUND battle={} bundle_sha256={} revision={} components=Hull,Turret_01,Gun_02 scope=other_actor_only damage=false terrain_projectiles=false",
-            world.id, super::geometry::BUNDLE_SHA256, super::geometry::SOURCE_REVISION);
+        println!("SHARED_GEOMETRY_BOUND battle={} bundle_sha256={} revision={} material_revision={} components=Hull,Turret_01,Gun_02 scope=other_actor_only damage=false terrain_projectiles=false",
+            world.id, super::geometry::BUNDLE_SHA256, super::geometry::SOURCE_REVISION, super::materials::PROFILE_REVISION);
     }
     let mut contact_cursor = 0usize;
     let mut integrated = integrated_pool.map(IntegratedRuntime::new);
@@ -396,6 +396,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 "mesh":contact.triangle.mesh, "group":contact.triangle.group, "material":contact.triangle.material,
                 "t":contact.triangle.t, "normal":contact.triangle.normal,
                 "geometry_revision":contact.geometry_revision, "transform_revision":contact.transform_revision,
+                "material_facts":contact.material_facts.json(),
                 "terminal":"unresolved_collision", "damage_applied":false}));
         }
         contact_cursor = world.contacts.len();

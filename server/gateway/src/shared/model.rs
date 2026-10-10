@@ -2,7 +2,7 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, sync::Arc, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::{aim, geometry, impact, projectile::Projectile};
+use super::{aim, geometry, impact, materials::MaterialFacts, projectile::Projectile};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
@@ -51,6 +51,7 @@ pub struct Contact {
     pub endpoint: [f32; 3], pub target_position: [f32; 3], pub target_direction: [f32; 3],
     pub target_aim: [f32; 2], pub triangle: super::collision::Candidate,
     pub geometry_revision: String, pub transform_revision: String,
+    pub material_facts: MaterialFacts,
 }
 
 #[derive(Clone)]
@@ -290,7 +291,8 @@ impl World {
                             let target_slot = 1usize.checked_sub(projectile.slot).ok_or_else(bad)?;
                             let target = next_actors.get(target_slot).ok_or_else(bad)?;
                             let mesh = bundle.world_mesh(target, target_slot, tick)?;
-                            let hits = impact_trace.collision_query(self.id, projectile.sequence, tick, &mesh)?;
+                            let (hits, material_facts) = impact_trace.collision_query_classified(
+                                self.id, projectile.sequence, tick, &mesh, bundle.materials())?;
                             if let Some(nearest) = hits.first() {
                                 let endpoint = std::array::from_fn(|i|
                                     start_point[i] + nearest.t * (end_point[i] - start_point[i]));
@@ -301,7 +303,8 @@ impl World {
                                     target_position: target.position, target_direction: target.direction,
                                     target_aim: [target.aim.yaw, target.aim.pitch], triangle: nearest.clone(),
                                     geometry_revision: mesh.geometry_revision().into(),
-                                    transform_revision: mesh.transform_revision().into() });
+                                    transform_revision: mesh.transform_revision().into(),
+                                    material_facts: material_facts.ok_or_else(bad)? });
                                 projectile.terminal = endpoint; projectile.stopped = true;
                                 impact_trace.terminal(self.id, projectile.sequence, tick,
                                     impact::TerminalReason::UnresolvedCollision)?;
@@ -364,10 +367,25 @@ pub(super) mod tests {
             assert!(w.projectiles[i].stopped); assert_eq!(w.projectiles[i].terminal, contact.endpoint);
             assert!((contact.endpoint[2] - if i==0 {9.5} else {0.5}).abs() < 0.5);
             assert_eq!(w.actors[i].fire.ammo(), 19);
+            let facts = &contact.material_facts;
+            assert_eq!(facts.component.name(),contact.triangle.mesh);
+            assert_eq!(facts.name,contact.triangle.material);
+            assert!(w.impact.events().iter().any(|e| matches!(e, impact::Event::MaterialContact {
+                shot_id, facts: recorded, .. } if *shot_id==contact.shot && recorded==facts)));
             assert!(w.impact.events().iter().any(|e| matches!(e, impact::Event::Terminal{
                 shot_id, reason: impact::TerminalReason::UnresolvedCollision, ..} if *shot_id==i as u32+1)));
         }
         let before = w.contacts.clone(); w.advance(now+STEP*2).unwrap(); assert_eq!(w.contacts, before);
+    }
+    #[test] fn failed_material_binding_cannot_publish_a_partial_world_or_stop() {
+        let now = Instant::now(); let mut w = collision_world(now,false);
+        w.geometry = Some(Arc::new(super::super::geometry::tests::invalid_material_bundle()));
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
+        let before = w.clone(); assert!(w.advance(now+STEP).is_err());
+        assert_eq!(w.tick,before.tick); assert_eq!(w.last,before.last);
+        assert_eq!(w.actors,before.actors); assert_eq!(w.projectiles,before.projectiles);
+        assert_eq!(w.contacts,before.contacts); assert_eq!(w.impact,before.impact);
+        assert_eq!(w.shots,before.shots); assert!(!w.projectiles[0].stopped);
     }
     #[test] fn full_ammo_real_cadence_hits_and_self_excluding_misses_fit_trace() {
         for miss in [false, true] {
