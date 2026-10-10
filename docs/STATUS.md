@@ -1,3 +1,40 @@
+# P06K original AP marker contract — 2026-10-10
+
+Карточка `codex/p06k-ap-impact-contract`: **PASS_NATIVE_CLIENT_MARKER_CONTRACT**.
+Закреплён и перенесён в чистый Rust-модуль реальный расчёт номинального
+пробития/цвета маркера #717 для stock MS-1/AP2570. Это диагностический
+предиктор, не authoritative penetration resolver: исходный метод вообще не
+использует hitAngleCos. Серверный контакт по-прежнему заканчивается
+`UnresolvedCollision`; ни HP, ни ложный penetration/ricochet effect не добавлен.
+
+Два настоящих клиента на принятом cumulative P06J runtime дали **120/120**
+совпадений original-method callbacks (60+60), без изменения position/shot.
+Оба клиента видели два танка с HP90, по154 snapshots, без ошибок; серверные
+physics workers были ready. Нормализованные собственные измерения входят в
+Rust regression с точными float64 input bits. Полная pinned сборка —
+**448/448 Rust PASS**, включая восемь новых тестов. Python: **18 PASS / 1
+прежний NOT_RUN** (Windows symlink privilege); новые тесты аудитора11/11.
+Layout:64 файла/22 relocation. Receipts и exact SHA — в `summary.json`.
+
+Числа AP normalizationAngle/ricochetAngle отсутствуют в release resource и
+читаются server-only веткой loader. RNG/order/layer rules остаются UNKNOWN.
+Родной `showDamageFromShot` требует настоящего outcome; нейтрального кода
+контакта у него нет. Контракт callback и исторические version boundaries
+сохранены, actual impact delivery — NOT_RUN. P06D и owner damage acceptance
+этой карточкой не закрываются. Новый Rust-модуль не подключён к world/wire.
+
+Native замеры выполнены именно с принятым `gateway-integrated-world-p06j-01`
+и новым пассивным observer; новая сборка `gateway-integrated-world-p06k-01`
+прошла Rust тесты/build, отдельный native gameplay прогон этой EXE — NOT_RUN.
+Новых ручных тестов владельца для этого source/diagnostic scope не требовалось.
+Диагностические процессы остановлены после сбора.
+
+[План](plans/P06K_AP_IMPACT_CONTRACT.md),
+[файлы, команды, ограничения и откат](research/P06K_AP_IMPACT_CONTRACT.md).
+Evidence: `local/evidence/20261010-p06k-ap-impact-contract-01/`.
+Единственный следующий gate — закрыть таблицу исторических правил AP resolver
+перед настоящим исходом, HP и выбором родного эффекта попадания.
+
 # P06J component contact materials — 2026-10-10
 
 Карточка `codex/p06j-contact-materials`, code head `748bbda`:

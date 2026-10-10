@@ -8,6 +8,120 @@ server as authority. All output belongs to the existing local trace.
 import math
 
 
+class _MarkerCallCapture(object):
+    """A local receiver for one original marker call; no Flash component."""
+    def __init__(self):
+        self._curColors = dict((name, name) for name in
+                               ('great_pierced', 'little_pierced', 'not_pierced'))
+        self.calls = []
+
+    def call(self, name, args):
+        if (self.calls or name != 'Crosshair.setMarkerType' or
+                type(args) is not list or len(args) != 1 or args[0] not in self._curColors):
+            raise ValueError('original marker callback shape differs')
+        self.calls.append(dict(name=name, args=list(args)))
+
+
+def _marker_shot_facts(player):
+    shot = player.vehicleTypeDescriptor.shot
+    shell = shot['shell']
+    values = [float(shot['piercingPower'][i]) for i in range(2)]
+    values.extend((float(shot['maxDistance']), float(shell['caliber']),
+                   float(shell['damageRandomization']), float(shell['piercingPowerRandomization'])))
+    if any(math.isnan(v) or math.isinf(v) or not 0. <= v <= 100000. for v in values):
+        raise ValueError('original marker shot scalar bound')
+    if (type(shell['compactDescr']) not in (int, long) or shell['compactDescr'] != 2570 or
+            shell['kind'] != 'ARMOR_PIERCING' or values != [34., 27., 720., 37., 0.25, 0.25]):
+        raise ValueError('marker oracle requires stock MS-1 AP2570 shot')
+    return dict(shell_compact_descriptor=shell['compactDescr'], shell_kind=shell['kind'],
+                piercing_power=values[:2], max_distance=values[2], caliber=values[3],
+                damage_randomization=values[4], piercing_randomization=values[5])
+
+
+def collect_ap_marker(player, record, Math):
+    """Observe the original #717 UI predictor; never a penetration verdict.
+
+    _changeColor reads only the real player descriptor/position plus the dummy
+    receiver's _curColors/call. It does not use a component or alter its receiver.
+    No constructor, update, global patch or descriptor mutation is involved.
+    All calls are synchronous; reject any observed player, shot or position drift.
+    """
+    import BigWorld
+    import hashlib
+    from AvatarInputHandler.control_modes import _FlashGunMarker
+    samples = []
+    before_position = None
+    before_shot = None
+    try:
+        original = _FlashGunMarker._changeColor.im_func
+        code = original.func_code
+        method_sha = hashlib.sha256(code.co_code).hexdigest()
+        if (code.co_firstlineno != 2772 or code.co_argcount != 3 or
+                code.co_filename != 'scripts/client/AvatarInputHandler/control_modes.py' or
+                method_sha != '928595f683fa01b6f07fd27bf209187f3132ca51c0c427f3464e59d8830d14a3'):
+            raise ValueError('original marker method pin differs')
+        if BigWorld.player() is not player:
+            raise ValueError('original marker active player differs')
+        descriptor = player.vehicleTypeDescriptor
+        shot_object = descriptor.shot
+        before_position = vector(player.getOwnVehiclePosition())
+        before_shot = _marker_shot_facts(player)
+        origin = Math.Vector3(*before_position)
+        # 36 fixed-armor cases plus 24 transition cases = a hard cap of 60.
+        cases = [(distance, armor, None) for distance in
+                 (0., 100., 100.01, 300., 500., 600., 719.99, 720., 720.01)
+                 for armor in (0., 8., 16., 18.)]
+        cases.extend((distance, None, ratio) for distance in (100., 300., 500., 719.99)
+                     for ratio in (89.9999, 90., 90.0001, 149.9999, 150., 150.0001))
+        if len(cases) != 60:
+            raise ValueError('marker oracle case count differs')
+        for distance, armor, threshold in cases:
+            point = origin + Math.Vector3(distance, 0., 0.)
+            measured_distance = float((point - player.getOwnVehiclePosition()).length)
+            if (math.isnan(measured_distance) or math.isinf(measured_distance) or
+                    not 0. <= measured_distance <= 721.):
+                raise ValueError('native marker measured distance bound')
+            if threshold is not None:
+                # This translation selects inputs around source branch points.
+                # It is not recorded as a native numeric power result; only the
+                # original method's callback below is the independent oracle.
+                p100, p500 = before_shot['piercing_power']
+                power_for_input = (p100 if measured_distance <= 100. else
+                    max(0., p100 + (p500 - p100) * (measured_distance - 100.) / 400.))
+                if not 0. < power_for_input <= 100000.:
+                    raise ValueError('marker transition input power bound')
+                armor = power_for_input * threshold / 100.
+            receiver = _MarkerCallCapture()
+            original(receiver, point, armor)
+            if len(receiver.calls) != 1:
+                raise ValueError('original marker did not produce one callback')
+            if (BigWorld.player() is not player or player.vehicleTypeDescriptor is not descriptor or
+                    descriptor.shot is not shot_object or _marker_shot_facts(player) != before_shot or
+                    vector(player.getOwnVehiclePosition()) != before_position):
+                raise ValueError('marker oracle player position or selected shot changed')
+            samples.append(dict(case_id=len(samples), requested_distance=distance,
+                                measured_distance=measured_distance, hit_point=vector(point),
+                                armor=armor, threshold_input_ratio=threshold,
+                                callback=receiver.calls[0]))
+        after_position = vector(player.getOwnVehiclePosition())
+        after_shot = _marker_shot_facts(player)
+        if after_position != before_position or after_shot != before_shot:
+            raise ValueError('marker oracle final position or selected shot changed')
+    except Exception as error:
+        record('shared_ap_marker_oracle', schema=1, status='FAIL',
+               error=str(error)[:256], completed_cases=len(samples),
+               own_position_before=before_position, selected_shot_before=before_shot,
+               samples=samples, observer_mutated_gameplay=False)
+        raise
+    record('shared_ap_marker_oracle', schema=1, status='PASS_NATIVE_CALLS',
+           source='original _FlashGunMarker._changeColor.im_func',
+           method_filename=code.co_filename, method_firstlineno=code.co_firstlineno,
+           method_code_sha256=method_sha, own_position_before=before_position,
+           own_position_after=after_position, selected_shot_before=before_shot,
+           selected_shot_after=after_shot, samples=samples,
+           server_penetration_verdict=False, observer_mutated_gameplay=False)
+
+
 def vector(value):
     row = [float(value[i]) for i in range(3)]
     if any(math.isnan(x) or math.isinf(x) or abs(x) > 100000. for x in row):
@@ -132,3 +246,4 @@ def collect(player, entities, record):
         record('shared_collision_local_oracle', schema=1, component=name, rays=rays,
                native_bounds=bounds, bsp_model=tester.bspModelName,
                source='original hitTester.localHitTest', observer_mutated_gameplay=False)
+    collect_ap_marker(player, record, Math)

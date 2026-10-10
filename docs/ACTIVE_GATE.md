@@ -1,3 +1,30 @@
+# P06K client marker verified; AP resolver still open — 2026-10-10
+
+`codex/p06k-ap-impact-contract`: **PASS_NATIVE_CLIENT_MARKER_CONTRACT**.
+Exact original `_changeColor` contract + bounded pure Rust stock diagnostic;
+two real-client oracles, **120/120 labels**, native-derived exact-input fixture;
+**448/448 Rust tests/build PASS**. Python/layout/provenance receipts and final
+SHA: `local/evidence/20261010-p06k-ap-impact-contract-01/summary.json`.
+
+This is the client UI predictor, which ignores contact angle. It is not wired
+into World/trace/wire, does not choose impact outcomes and does not change HP.
+Unknown armor differs from armor0. Original-method callbacks do not prove
+actual displayed UI colors or historical server RNG. Native observation used
+the accepted P06J cumulative executable/physics/contact data; P06K EXE native
+gameplay is NOT_RUN. Diagnostic processes were stopped.
+
+The current release resources omit AP normalization/ricochet angles and
+server homogenization; order/equalities for caliber rules, layer traversal,
+RNG and authoritative range accounting are unresolved. Exact native effect
+callback is documented, but no neutral `showDamageFromShot` outcome exists.
+Do not send a fake resisted/pierced event to obtain sparks. P06D remains open.
+
+[Plan](plans/P06K_AP_IMPACT_CONTRACT.md),
+[research/commands/rollback](research/P06K_AP_IMPACT_CONTRACT.md).
+**One next gate:** establish the AP resolver rule table and explicitly retain
+unknown/unsupported cases before a real result, damage and native impact FX.
+Additional marker-color work does not satisfy this gate.
+
 # P06J measured contact materials — 2026-10-10
 
 `codex/p06j-contact-materials`, code head `748bbda`:
