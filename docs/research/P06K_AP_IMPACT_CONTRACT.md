@@ -99,6 +99,23 @@ recorded in `summary.json` and `merge-proof.json` in the evidence directory.
 Diagnostic clients and server were stopped after collection. The passive
 patch is restored by each install ledger before another prepare operation.
 
+Final checks: **448/448 Rust PASS** in the single fresh pinned build
+`gateway-integrated-world-p06k-01`; executable SHA-256
+`1a27a6369bca9b158c3f95ca055797bd59b423ceb4972807549b4d58e915ce6e`.
+Focused Python: **18 PASS / 1 existing NOT_RUN** (Windows symlink privilege);
+the new auditor tests are 11/11 PASS. Layout:64 files,22 single-source
+relocations. Final audited fixture is byte-identical to the captured one:
+27,615 bytes, SHA-256
+`e8062d060660a7cfbfd3095d755b13924889121b2cd5372304bca84037c93bf9`.
+The Rust test uses those original input bits and checks all120 observed labels.
+Intermediate power/score bit tests are source-derived, not native observations.
+
+An independent review found no kernel/observer defects and verified 154 native
+snapshots per client,152 with both entities started, HP90, zero errors, and
+2896 server snapshots with both physics workers ready. The review's kernel
+hash precedes addition of the fixture test; production kernel and observer
+bytes were unchanged. Fresh shots and impact FX were NOT_RUN in this smoke.
+
 ## Native impact delivery contract (static, not sent)
 
 `native-impact-effect-contract.json` SHA-256:
@@ -158,6 +175,13 @@ python -B -X utf8 local/evidence/20261010-p06k-ap-impact-contract-01/start_stand
 Run IDs and output directories must be fresh; restore prior ledgers first
 while the owned clients are closed. Exact invocations for audit/build/tests
 are retained in the summary and command receipts.
+
+```powershell
+python -B -X utf8 tools/client_marker_oracle.py --trace-a local/evidence/20261010-p06k-ap-impact-contract-01/runtime-a-oracle01/native-23896-1791622952753.jsonl --trace-b local/evidence/20261010-p06k-ap-impact-contract-01/runtime-b-oracle01/native-26820-1791622953849.jsonl --out local/evidence/20261010-p06k-ap-impact-contract-01/marker-audit02
+python -B -X utf8 -m unittest tests.test_client_marker_oracle tests.test_server_layout -v
+python -B -X utf8 server/check_layout.py --out local/evidence/20261010-p06k-ap-impact-contract-01/layout.json
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-integrated-world-p06k-01
+```
 
 **UNKNOWN/NOT_RUN for the subsequent authoritative resolver:** AP numeric
 angles and 2×/3× boundaries/order, homogenization, server range semantics,
