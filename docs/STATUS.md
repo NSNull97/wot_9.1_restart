@@ -1,4 +1,21 @@
-# P06M static-world fix accepted visually; final wreck regression pending
+# P06M accepted — terrain/static obstacles with cumulative gameplay
+
+Owner accepted native02 ground/rock behavior and explicitly confirmed wreck
+effects in both clients. Final snapshot03 proves23 shots, six wreck hits18..23,
+HP0→0/damage0,12 once-only publications, one earlier death and unchanged physics.
+Build05:534 Rust PASS; Python26 PASS/1 existing privilege skip; layout69/22 PASS.
+Runtime source hashes match tested code112bd89; only documentation changed.
+New ground/stone path:13 contacts/26 measured original FX pairs in snapshot02.
+Late wreck FX are owner OBSERVED; original callback recording is NOT_RECORDED
+after the explicit16MiB passive trace cap. Do not claim measured callbacks for
+shots18..23. No server failure; later disconnect/worker cleanup is orderly.
+**Acceptance: PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB.** Historical accuracy,
+dynamic destructibles/water and all-map/vehicle coverage remain out of scope.
+[Report, commands, limits and rollback](research/P06M_TERRAIN_IMPACT.md).
+**One next recommended card:** source-pinned state/ID and server-authoritative
+destruction of one map obstacle, with both clients observing the same state.
+
+# Earlier P06M static-world fix; final wreck regression then pending
 
 Native02 code112bd89/build05: owner answered «Всё нормально». Seven ground
 and six stone contacts delivered26 original FX pairs with exact wire fields;

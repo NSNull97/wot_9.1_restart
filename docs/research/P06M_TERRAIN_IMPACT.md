@@ -3,7 +3,39 @@
 2026-10-10. Branch `codex/p06m-terrain-impact`, accepted base main `55af06f`.
 Owner authorized this next card after accepting live and wreck impact effects.
 
-## Native01 defect and correction in progress
+## Final acceptance — 2026-10-10
+
+**PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB.** Owner accepted the corrected
+world effects and then explicitly answered «Да, эффект есть в обоих» after
+the dead-hull follow-up. Runtime source remains tested code112bd89/build05;
+subsequent commits only document the observed result. Normal --no-ff merge
+and push are authorized by the existing workflow; the separate merge receipt
+records final local/remote identity without rewriting earlier evidence.
+
+`snapshot03-cumulative-wreck-audit01/receipt.json`, SHA256
+`76b6a4bd4a7d92c307793e95d2ec0f92a43f88df2a99af751b9b4f16787815bf`, verifies
+all four snapshot03 files extend the pinned snapshot02 bytes. There are23
+admitted shots:18 from slot0 (ammo20→2), five from slot1 (20→15). Shots18..23
+each hit the destroyed target: damage0, HP0→0, six WreckBlocked outcomes and12
+queued publications, once per shot/session. Earlier four AP outcomes and the
+single death remain unchanged. Physics bindings/pool/config were not restarted
+or replaced. No server failure/stderr; the later tail contains two normal
+client_disconnect events, worker exits0/forced=false and normal client cleanup.
+The cause of the user closing clients is not inferred from those events.
+
+**Diagnostic coverage limit:** the passive native observers explicitly stop
+at16MiB (A elapsed1221.2005482s; B1174.8308504s), leaving gameplay running.
+Consequently the six later wreck callback returns are **NOT_RECORDED**, not
+failed gameplay and not synthetic PASS. Their visible result in both real
+clients is owner **OBSERVED**. Server outcomes/publication/no repeated health
+are independently **VERIFIED**; original wreck callback behavior was accepted
+in P06L, and the new ground/stone callback path has26 measured returns here.
+The server wire capture also reached48000 packets with service_continues=true;
+its cap does not replace server event evidence or imply complete late wire capture.
+These are retained measurement limits; acceptance is explicitly owner+server,
+not an assertion of complete per-shot native instrumentation.
+
+## Preserved native01 defect and implemented correction
 
 Owner reported: some rocks pass shots or have no effect; rock effects appear
 after variable delays while ground appears immediate. Immutable snapshot01
@@ -38,7 +70,7 @@ collision. A second native run must confirm near/far rock timing, actual
 effect positions/materials and retained ground/live/wreck behavior. Native02
 results are recorded below; its final wreck regression remains pending.
 
-## Native02 owner response and measured results
+## Initial native02 owner response and measured results
 
 Final runtime code `112bd890866db5afc797f2568767f2a7fdfbd7e6`, build05. Sequential
 startup: gateway19876, clients28044/30900, battle17747657236285124406, unchanged
@@ -73,12 +105,13 @@ after death, with no fatal error, rejection, native exception or disconnect
 in the pinned prefix. Ten UnsupportedCameraAutorotation commands were
 explicitly rejected from domain application, not silently treated as success.
 
-**Remaining required gate:** the last shot17 kills the target; there is no
+**Gate at snapshot02, now closed above:** the last shot17 kills the target; there is no
 subsequent shot or WreckBlocked event in snapshot02. A single follow-up shot
 into the dead hull and its effects in both clients were requested. Wreck
-regression remains **NOT_RUN**, despite the general owner response. Optional
+regression was then **NOT_RUN**, despite the general owner response. Optional
 manual occlusion was not separately demonstrated; automated world-before-
-armor tests cover that ordering. Do not merge before the remaining wreck gate.
+armor tests cover that ordering. The later explicit response and snapshot03
+close the actual owner/server wreck regression with the stated logging limit.
 
 ## Goal and implementation
 
@@ -205,7 +238,12 @@ with static obstacles. Final build05 passed534/534, including the actual
 native01 shot3 regression and forged static/ground-only revision rejection;
 EXE SHA256 `e84eaf3ec132da945ba5b5bc4d4d9cf7c0c410afac237a0d4b041351b4a76818`.
 Python26 PASS/1 existing Windows symlink privilege skip (python-observer02.log).
-Layout69 files/22 single-source relocations PASS. New native acceptance pending.
+Layout69 files/22 single-source relocations PASS. Native02 owner acceptance
+and final wreck server evidence are recorded above. Source/hash preflight:
+`python -B -X utf8 local/evidence/20261010-p06m-terrain-impact-01/check_merge_sources.py`.
+Final wreck audit:
+`python -B -X utf8 local/evidence/20261010-p06m-terrain-impact-01/audit_wreck_prefix.py`
+(fresh-output evidence script; preserve its existing receipt).
 
 Independent replay `projectile-obstacles-replay02/receipt.json` (SHA256
 `51db4f906faa1bf69991af2e217bc3f59d253862d34310d5dc3957c5a75bd1a3`)
@@ -219,8 +257,9 @@ remaining material runtime blocker; original native01 failure remains FAIL.
 
 Status: native01 owner acceptance **FAIL** retained; native02 original world
 FX delivery/materials **PASS**, owner observed behavior **PASS**, cumulative
-movement/live damage **PASS**, final native02 wreck regression **NOT_RUN**.
-Candidate remains in its branch until that required regression passes.
+movement/live damage **PASS**, final wreck owner/server regression **PASS**.
+Late wreck callback recording is **NOT_RECORDED_AFTER_FINITE_TRACE_CAP**.
+This does not claim all-session instrumentation or historic/full P06 completion.
 
 Scope remains a two-client MS-1 AP test_lab on Karelia with accepted movement,
 aim, ammo, reload, live/wreck damage/effects. Static original map geometry is
@@ -236,5 +275,6 @@ launch `gateway-integrated-world-p06l-05` with the same
 `physics-integrated-lane-01/pool.json` and P06J contact bundle. Original client,
 canonical service, account inventory and physics worker remain unchanged.
 
-**One next gate:** one actual shot into the destroyed hull, with native wreck
-effects in both clients and no repeated health/death update.
+**One next recommended card:** establish the original identity/state of one
+destructible map obstacle and replicate authoritative destruction to both
+clients while preserving this accepted cumulative runtime.

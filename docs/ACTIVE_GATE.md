@@ -1,4 +1,17 @@
-# P06M native02 accepted visually — final wreck shot pending
+# P06M accepted — owner and server cumulative regression complete
+
+Owner confirmed wreck FX in both windows. Snapshot03:6 wreck hits18..23,
+12 once-only publications, no repeated HP/death, accepted physics unchanged.
+Late native callback logging reached its16MiB cap; these effects are owner
+OBSERVED, not recorded callback PASS. Earlier13 world contacts/26 native FX
+pairs and534 Rust checks remain verified. Runtime matches code112bd89/build05.
+Card qualifies for ordinary --no-ff merge/push under the owner workflow.
+[Final report](research/P06M_TERRAIN_IMPACT.md), final evidence in
+snapshot03-cumulative-wreck-audit01/receipt.json; failed native01 retained.
+**One next recommended card:** authoritative destruction/state replication
+for one original map obstacle, preserving the accepted cumulative runtime.
+
+# Earlier P06M native02 accepted visually — final wreck shot then pending
 
 Owner «Всё нормально»; code112bd89/build05,534 Rust tests PASS.
 Native02:13 world contacts/26 original material-aware FX pairs;17 shots,

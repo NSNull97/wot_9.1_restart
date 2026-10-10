@@ -3,6 +3,19 @@
 Base: main55af06f (owner-accepted P06L). Branch: codex/p06m-terrain-impact.
 Evidence: local/evidence/20261010-p06m-terrain-impact-01/.
 
+## Final acceptance
+
+Completed on2026-10-10: owner accepted corrected native02 world effects and
+explicitly confirmed the final wreck effects in both clients. Snapshot02
+records13 world contacts/26 original FX pairs; snapshot03 records six later
+wreck events and12 publications with no repeated damage/death. Original
+callback logging for those later wreck shots reached its finite16MiB cap;
+their rendered acceptance is the actual owner check, separate from server
+event proof. It is not a measured late-callback PASS. Accepted P06L wreck
+logic and cumulative physics remain unchanged.534 Rust tests and26 Python
+checks passed; one existing privilege skip retained. Detailed report states
+limits and preserves native01 failure. No mandatory owner test is pending.
+
 ## Owner test correction, same card
 
 Native01 delivered15 terrain effects to both clients, but owner reported
