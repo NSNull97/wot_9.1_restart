@@ -1,3 +1,33 @@
+# P06H bounded collision query/trace foundation — 2026-10-10
+
+Статус карточки `codex/p06h-collision-boundary`:
+**PASS_OFFLINE_COLLISION_TRACE_BOUNDARY**. Кодовый head `c4f3b5b` проверен
+изолированной сборкой `gateway-p06h-collision-05`: **408/408 PASS** (17 новых
+тестов query/trace); source layout — **PASS_SERVER_SOURCE_LAYOUT**, 60 файлов /
+22 relocations. Evidence:
+`local/evidence/20261010-p06h-collision-boundary-01/summary.json`;
+`local/build/server/gateway-p06h-collision-05/result.json`.
+
+Добавлены immutable bounded triangle mesh, двухсторонний segment query и
+атомарные trace batches `collision_query → intersection[]`. Query вычисляется
+по точным координатам/тику сохранённого сегмента; пустой результат разрешает
+продолжать полёт, непустой требует `UnresolvedCollision`. Нельзя передать
+готовый произвольный hit, повторить query или скрыть пересечение range terminal.
+Проверены порядок, ёмкость, геометрические границы, rollback и разделение shots.
+
+Это API и синтетические Rust fixtures; подключение к `World::advance` отсутствует.
+Принятый integrated runtime, физика, прицел, БК/стрельба, клиентские копии и
+canonical service этой карточкой не меняются. Native impact, #717 runtime
+transforms, penetration и HP/module/crew damage остаются **UNKNOWN/NOT_RUN**.
+P06D v1 требует classification/replay и не принимает эту семантику без
+выдуманных данных; его приёмка здесь **NOT_RUN**, auditor не менялся.
+
+План: [P06H](plans/P06H_SERVER_COLLISION_BOUNDARY.md); границы/предположения:
+[исследование](research/P06H_SERVER_COLLISION_BOUNDARY.md). Откат — revert
+карточечного merge. Единственный следующий шаг — связать hash-pinned MS-1 mesh
+и измеренные component transforms с принятым integrated world и подтвердить
+пересечение фиксированным native выстрелом.
+
 # P03L integrated physics lane alignment — 2026-10-09
 
 На ветке `codex/p03k-integrated-world` исправлен воздушный старт
