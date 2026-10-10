@@ -7,7 +7,11 @@ Build02 passed482 tests, but native01 is **FAIL**: owner observed HP/death,
 then disconnect and frozen survivor; trace confirms absent native impact
 callback, rejected postmortem bind and stopped world advancement.
 
-Fix these issues and repeat actual native/owner acceptance before merge.
+Repaired code6751c6f / gatewayp06l-03 passes485 Rust tests. Native02 is
+running with accepted physics and both real clients. Independent audit proves
+3 hits/6 native FX returns, HP/death and continued survivor motion/aim; both
+channels remain alive248s after death with no errors. One post-death survivor
+shot and owner rendered acceptance are still pending before merge.
 Keep exact failed receipts; do not treat successful HP callbacks or tests as
 proof of particle/sound delivery. Preserve existing physics, ammo, reload,
 aim and tracers. Explicit approximate profile only; historical rules remain

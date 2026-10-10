@@ -129,3 +129,48 @@ and continued survivor behavior require actual repeated owner acceptance.
 Current gate: **repair native01 defects, repeat native destruction and
 survivor motion/aim, then owner acceptance**. Keep the card on its branch
 until this gate passes; historical_091 and P06D are not declared complete.
+
+## Repaired candidate
+
+Code commit`6751c6f`, build`gateway-integrated-world-p06l-03`:
+**485/485 Rust PASS**, executableSHA256
+`9f5416ac2fff3f0877600c160165700759a8d7737ce9213bb85f194f5b2fcf45`.
+New regressions retain the actual bad VAR2 fragment, measured postmortem
+bind+following keepalive and survivor physics/aim/flight with a disconnected
+peer. Python26 PASS/1 existing symlink skip; final source layout66/22 PASS.
+`impact-wire-source-contract03.json` supersedes the incorrect VAR2 claim
+using16 pinned PE windows and6 actual encrypted packet fragments.
+
+Native02 launch commands (owned credentials are consumed internally):
+
+```
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-integrated-world-p06l-03
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/prepare_stand.py --slot a --run native02
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/prepare_stand.py --slot b --run native02
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/start_stand.py server --run native02 --profile integrated-lab --build gateway-integrated-world-p06l-03 --pool local/build/server/physics-integrated-lane-01/pool.json --geometry local/evidence/20261010-p06j-contact-materials-01/ms1-contact.json --ap-test-lab
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/start_stand.py a --run native02
+python -B -X utf8 local/evidence/20261010-p06l-ap-resolver-01/start_stand.py b --run native02
+```
+
+Both native clients and accepted workers reached the shared battle.
+Current install ledgers:`install-a-native02`, `install-b-native02`.
+
+Independent native02 audit:
+`independent-native02-impact-audit01.json`, SHA256
+`e6e77e4dbcc8e9ab8c4ae9a17914001bd1c798ff13d443364d37f0d4c8cba0dc`.
+Three penetrations produced six original `showDamageFromShot` normal
+returns520, each with one decoded point and effect`armorHit`. A/B decoded
+points match exactly; both clients show targetHP90→60→30→0. Each has370
+snapshots; both remain in the world for at least248s after death. Surviving
+actor moves6.37m and changes gun aim1.226rad in both native observations.
+Server records4955 post-death snapshots,820 aim commands and8 move commands.
+The measured own postmortem bind is explicitly accepted. Channel rejects,
+session closures, stderr and native diagnostic errors are all zero in this
+pinned prefix. Startup marker oracles now pass in both clients.
+
+Packed-point raw comparison is NOT_RECORDED: the native input is
+`PyArrayDataInstance`, not a Python list. Outcome and local points are checked
+from the original decoder's returned facts instead. Native callback completion
+does not establish rendered/audio owner acceptance. No post-death shot was
+observed in this prefix. **Remaining gate: owner's rendered result and one
+survivor shot after death in a new direction.** Candidate stays unmerged.
