@@ -399,6 +399,33 @@ def profile_calls(frame, phase, value):
         fields['is_player'] = getattr(instance, 'isPlayer', None)
         for name in ('burstCount', 'isPredictedShot'):
             fields[name] = primitive(frame.f_locals.get(name), budget=[2, 128])
+    elif (((source == 'scripts/client/Vehicle.py' and method in ('showDamageFromShot', 'onHealthChanged'))
+           or (source == 'scripts/client/Avatar.py' and method == 'updateVehicleHealth'))
+          and _settings.get('enable_shared_lab') is True):
+        # Observe original callbacks only; the server is the damage authority.
+        kind = 'native_shared_impact_call'
+        instance = frame.f_locals.get('self')
+        fields['entity_id'] = getattr(instance, 'id', None)
+        fields['impact_method'] = method
+        fields['entity_health'] = getattr(instance, 'health', None)
+        for name in ('attackerID', 'newHealth', 'health', 'attackReasonID',
+                     'isCrewActive', 'effectsIndex', 'points'):
+            if name in frame.f_locals:
+                fields[name] = primitive(frame.f_locals.get(name), budget=[16, 2048])
+        if phase == 'return':
+            for name in ('hasPiercedHit', 'maxHitEffectCode'):
+                if name in frame.f_locals:
+                    fields[name] = primitive(frame.f_locals.get(name), budget=[32, 4096])
+            points = frame.f_locals.get('decodedPoints')
+            if isinstance(points, (tuple, list)):
+                fields['decoded_count'] = len(points)
+                fields['decoded_points'] = [dict(
+                    component=primitive(point.componentName, budget=[2, 128]),
+                    effect=primitive(point.hitEffectGroup, budget=[2, 128]),
+                    local_position=_shared_vector(point.matrix.translation)) for point in points[:8]]
+            for name in ('firstHitDirLocal', 'firstHitDir'):
+                if name in frame.f_locals:
+                    fields[name] = _shared_vector(frame.f_locals.get(name))
     elif (source == 'scripts/client/Avatar.py' and method in ('showTracer', 'stopTracer')
           and _settings.get('enable_shared_lab') is True):
         # Original Avatar native callbacks. Only fixed arguments are copied;
@@ -850,6 +877,7 @@ def _schedule_shared_tracer_probe(mover, shot_id):
 
 
 _shared_native_samples = 0
+_shared_collision_oracle_attempted = False
 
 
 def observe_shared_lab():
@@ -858,7 +886,7 @@ def observe_shared_lab():
     This does not call a game command or assign any Entity/filter/UI state.
     Values are what this real client currently sees, not server pose substitutes.
     """
-    global _shared_native_samples
+    global _shared_native_samples, _shared_collision_oracle_attempted
     if _settings.get('enable_shared_lab') is not True:
         return
     import Avatar
@@ -907,13 +935,16 @@ def observe_shared_lab():
     record('shared_native_snapshot', sample=_shared_native_samples,
            avatar_entity_id=player.id, player_vehicle_id=player.playerVehicleID,
            arena_unique_id=player.arenaUniqueID, vehicles=rows, prediction=prediction, observer_mutated_gameplay=False)
-    if _shared_native_samples == 3:
+    if (not _shared_collision_oracle_attempted and 3 <= _shared_native_samples <= 60
+            and len(rows) == 2 and all(row['is_started'] for row in rows)):
+        _shared_collision_oracle_attempted = True
         import collision_oracle
         try:
             collision_oracle.collect(player, entities, record)
         except Exception:
             record('shared_collision_oracle_failed', error=traceback.format_exc(),
                    observer_mutated_gameplay=False)
+    if _shared_native_samples == 3:
         # Pure native maths on an identity matrix: an independent oracle, not
         # game input or a client-authored pose fed to the server.
         import Math

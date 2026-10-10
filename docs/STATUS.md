@@ -1,3 +1,22 @@
+# P06L approximate AP damage — 2026-10-10, native repair in progress
+
+Owner authorized a working, explicitly approximate `test_lab` profile.
+`codex/p06l-ap-test-lab` adds atomic authoritative AP outcomes/HP and native
+impact/health publication to the cumulative accepted physics/aim/ammo route.
+Source-derived stock MS-1/AP values are separated from provisional formulas.
+
+Build02:482/482 Rust PASS. Native01 owner shots and independent traces prove
+HP90→60→30→0 in both clients, but acceptance is **FAIL, not merged**: impact
+method framing was wrong; standalone postmortem camera bind was rejected,
+then peer disconnect stopped shared simulation. These defects are being
+repaired on the same card. First-run evidence is retained. Historical_091,
+complete ballistics/damage and P06D are not declared complete.
+
+[Plan](plans/P06L_AP_TEST_LAB.md), [implementation/evidence/rollback](research/P06L_AP_TEST_LAB.md).
+Evidence:`local/evidence/20261010-p06l-ap-resolver-01/`.
+**One next gate:** repeat native destruction, effects and continued survivor
+motion/aim with the repaired build, then obtain owner acceptance.
+
 # P06K original AP marker contract — 2026-10-10
 
 Карточка `codex/p06k-ap-impact-contract`: **PASS_NATIVE_CLIENT_MARKER_CONTRACT**.

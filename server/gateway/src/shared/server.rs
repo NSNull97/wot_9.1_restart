@@ -1,6 +1,6 @@
 //! Bounded two-session native dispatcher. Authentication and channel replay
 //! policy are shared with the accepted gateway; no unauthenticated lab login.
-use super::{model::{self, World}, wire, Client, Phase};
+use super::{model::{self, World}, ap, impact_wire, wire, Client, Phase};
 use super::super::*;
 
 #[derive(Default)]
@@ -94,7 +94,11 @@ impl IntegratedRuntime {
         for slot in 0..model::CAPACITY {
             if world.actors.get(slot).and_then(|a| a.session).is_none() {
                 self.workers[slot].take(); self.poses[slot] = None; self.anchored[slot] = false;
-                self.dispatched[slot] = None; continue;
+                self.dispatched[slot] = None;
+                if let Some(actor) = world.actors.get(slot) {
+                    rows.push((slot,actor.position,actor.direction,0.));
+                }
+                continue;
             }
             if self.workers[slot].is_none() {
                 let map = self.map()?;
@@ -141,13 +145,17 @@ impl IntegratedRuntime {
         // The old client-space spawn is deliberately not a fallback pose:
         // waiting one bounded loop keeps the second actor from appearing at
         // the laboratory Y for a single tick before its worker is ready.
-        if rows.len() != model::CAPACITY || world.actors.iter().any(|actor| actor.session.is_none()) {
+        if rows.len() != model::CAPACITY {
             return Ok(());
         }
-        if world.actors.iter().any(|actor| !actor.ready) {
+        if world.tick == 1000 && world.actors.iter().any(|actor| actor.session.is_some() && !actor.ready) {
             // The native arena has not completed its ready handshake yet, but
             // its first announcement must still use the settled worker pose.
-            world.import_external_poses(&rows)?;
+            // Before first battle both actors must settle; later a reconnect
+            // must not freeze the already playing survivor.
+            if world.actors.iter().all(|actor| actor.session.is_some()) {
+                world.import_external_poses(&rows)?;
+            }
             return Ok(());
         }
         world.advance_with_external(now, Some(&rows))?;
@@ -193,21 +201,23 @@ impl Table {
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false)
 }
 
 pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
-    pool_path: &str, capture_path: &str, geometry_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if ap_test_lab && geometry_path.is_none() { return Err(model::bad().into()); }
     let config = crate::identity091::Config::load(config_path)?;
     let pool = crate::map_drive_worker091::Pool::load(&config.local_root, Path::new(pool_path))?;
     let geometry = geometry_path.map(|path| super::geometry::Bundle::load(&config.local_root, Path::new(path)))
         .transpose()?.map(Arc::new);
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab)
 }
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
-    integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>)
+    integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool)
     -> Result<(), Box<dyn std::error::Error>> {
+    if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
     let private = login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len() != 16 { return Err(model::bad().into()); }
@@ -223,10 +233,16 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut world = World::new(OsRng.next_u64().max(1), started)?;
     if let Some(bundle) = geometry {
         world.bind_geometry(bundle)?;
-        println!("SHARED_GEOMETRY_BOUND battle={} bundle_sha256={} revision={} material_revision={} components=Hull,Turret_01,Gun_02 scope=other_actor_only damage=false terrain_projectiles=false",
-            world.id, super::geometry::BUNDLE_SHA256, super::geometry::SOURCE_REVISION, super::materials::PROFILE_REVISION);
+        println!("SHARED_GEOMETRY_BOUND battle={} bundle_sha256={} revision={} material_revision={} components=Hull,Turret_01,Gun_02 scope=other_actor_only damage={} terrain_projectiles=false",
+            world.id, super::geometry::BUNDLE_SHA256, super::geometry::SOURCE_REVISION, super::materials::PROFILE_REVISION, ap_test_lab);
+    }
+    if ap_test_lab {
+        world.enable_ap_test_lab()?;
+        println!("SHARED_AP_PROFILE revision={} historical_fidelity={} damage={} rng=false friendly_fire=true persistence=false",
+            ap::PROFILE_REVISION, ap::HISTORICAL_FIDELITY, ap::DAMAGE);
     }
     let mut contact_cursor = 0usize;
+    let mut impact_cursor = 0usize;
     let mut integrated = integrated_pool.map(IntegratedRuntime::new);
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
@@ -397,9 +413,22 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 "t":contact.triangle.t, "normal":contact.triangle.normal,
                 "geometry_revision":contact.geometry_revision, "transform_revision":contact.transform_revision,
                 "material_facts":contact.material_facts.json(),
-                "terminal":"unresolved_collision", "damage_applied":false}));
+                "terminal":if world.impacts.iter().any(|event| event.shot==contact.shot) {"test_lab_impact"} else {"unresolved_collision"},
+                "damage_applied":world.impacts.iter().any(|event| event.shot==contact.shot && event.health_after<event.health_before)}));
         }
         contact_cursor = world.contacts.len();
+        for event in world.impacts.iter().skip(impact_cursor) {
+            println!("SHARED_AP_IMPACT {}", serde_json::json!({
+                "battle":world.id.to_string(),"shot":event.shot,"attacker":event.attacker,"target":event.target,"tick":event.tick,
+                "profile_revision":event.resolution.profile_revision,"historical_fidelity":ap::HISTORICAL_FIDELITY,
+                "outcome":event.resolution.outcome.label(),"reason":format!("{:?}",event.resolution.outcome),
+                "armor":event.resolution.armor,"incidence_degrees":event.resolution.incidence_degrees,
+                "normalization_degrees":event.resolution.normalization_degrees,
+                "effective_armor":event.resolution.effective_armor,"nominal_power":event.resolution.nominal_power,
+                "health_before":event.health_before,"health_after":event.health_after,
+                "damage":event.health_before-event.health_after,"native_effect_available":event.segment.is_some()}));
+        }
+        impact_cursor = world.impacts.len();
         // Both peers receive a snapshot of the same completed server tick.
         for s in &mut table.sessions { if let Some(c) = &mut s.shared { c.view = Some(world.clone()); } }
         thread::sleep(Duration::from_millis(5));
@@ -437,6 +466,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let mut shot_publications = Vec::new();
     let mut tracer_starts = Vec::new();
     let mut tracer_stops = Vec::new();
+    let mut impact_publications = Vec::new();
     let prior_projectile_count = world.projectiles.len();
     if c.phase == Phase::Driving {
         for shot in next_world.shots.iter().filter(|shot| shot.sequence > c.shot_cursor).copied().collect::<Vec<_>>() {
@@ -473,6 +503,63 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     tracer_stops.push((projectile.sequence, projectile.slot));
                 }
             }
+            for event in next_world.impacts.iter().skip(c.impact_cursor) {
+                let shot_index = event.shot.checked_sub(1).ok_or_else(model::bad)? as usize;
+                let visible = c.visible()[event.target] && c.visible()[event.attacker];
+                let observed_shot = c.tracer_started.get(shot_index).copied().ok_or_else(model::bad)?;
+                let mut body = Vec::new();
+                if visible && observed_shot {
+                    if let Some(segment) = &event.segment {
+                        let outcome = match event.resolution.outcome {
+                            ap::Outcome::Ricochet => impact_wire::ShotOutcome::Ricochet,
+                            ap::Outcome::NotPierced => impact_wire::ShotOutcome::NotPierced,
+                            ap::Outcome::Pierced => impact_wire::ShotOutcome::Pierced,
+                            ap::Outcome::Unsupported(_) => return Err(model::bad()),
+                        };
+                        let component = match segment.component {
+                            super::materials::Component::Hull => 1,
+                            super::materials::Component::Turret01 => 2,
+                            super::materials::Component::Gun02 => 3,
+                        };
+                        body.extend(impact_wire::show_damage(event.attacker,event.target,component,
+                            segment.bounds,segment.start,segment.end,outcome)?);
+                    }
+                    if event.health_after < event.health_before
+                        && c.health_sent[event.target].is_none_or(|hp| hp > event.health_after) {
+                        body.extend(impact_wire::health_changed(event.target,event.health_after,event.attacker)?);
+                        c.health_sent[event.target] = Some(event.health_after);
+                        if event.target == c.slot {
+                            body.extend(impact_wire::owner_health(event.health_after)?);
+                            c.owner_health_sent = Some(event.health_after);
+                        }
+                        if event.health_after == 0 { body.extend(wire::roster(&next_world)?); }
+                    }
+                }
+                let queued = !body.is_empty();
+                if queued { next.outbox.push_back(body); }
+                impact_publications.push((event.shot,event.target,event.health_after,queued));
+                c.impact_cursor += 1;
+            }
+            // Late creation/reconnect gets current HP, never old effects or
+            // an intermediate health value that would resurrect the actor.
+            for target in 0..model::CAPACITY {
+                if !c.visible()[target] { continue; }
+                let hp = next_world.actors[target].health;
+                let mut body = Vec::new();
+                if c.health_sent[target] != Some(hp) {
+                    if hp != 90 {
+                        let attacker = next_world.impacts.iter().rev().find(|e| e.target == target)
+                            .map(|e| e.attacker).ok_or_else(model::bad)?;
+                        body.extend(impact_wire::health_changed(target,hp,attacker)?);
+                        if hp == 0 { body.extend(wire::roster(&next_world)?); }
+                    }
+                    c.health_sent[target] = Some(hp);
+                }
+                if target == c.slot && hp != 90 && c.owner_health_sent != Some(hp) {
+                    body.extend(impact_wire::owner_health(hp)?); c.owner_health_sent = Some(hp);
+                }
+                if !body.is_empty() { next.outbox.push_back(body); }
+            }
         }
         for other in 0..2 {
             if next_world.actors[other].ready && !c.ready_sent[other] {
@@ -490,7 +577,9 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 next_world.actors.iter().map(|a| (a.aim.yaw,a.aim.pitch)).collect::<Vec<_>>());
         }
     }
-    if next.outbox.len() > 128 { return Err(model::bad()); } next.drain_outbox()?;
+    // At most40 shots: start cue+tracer+stop+one compound impact, plus
+    // bounded reload/readiness/health catch-up. Slow peers cannot grow forever.
+    if next.outbox.len() > model::MAX_SHOTS * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
     for command in &commands { if let model::Command::Aim(intent) = command { println!("SHARED_AIM battle={} session={} slot={slot} intent={intent:?} client_angles_authoritative=false", world.id, s.id); } }
@@ -511,6 +600,10 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     }
     for (sequence, shooter_slot) in tracer_stops {
         println!("SHARED_TRACER_STOP battle={} session={} shot={} shooter_slot={} native_method=Avatar.stopTracer queued=true", world.id, s.id, sequence, shooter_slot);
+    }
+    for (shot,target,hp,queued) in impact_publications {
+        println!("SHARED_AP_PUBLICATION battle={} session={} shot={} target={} health={} queued={} historical_fidelity=approximate",
+            world.id,s.id,shot,target,hp,queued);
     }
     *world = next_world; *s = next; Ok(())
 }
@@ -579,9 +672,80 @@ mod tests {
         }
         bodies.extend(s.outbox.iter().cloned()); bodies
     }
+    #[test] fn ap_publication_is_once_per_peer_and_failed_queue_does_not_repeat_damage() {
+        let now=Instant::now(); let (mut a,mut b,_) = visible_pair(now);
+        let mut w=model::tests::ap_world(now);
+        a.shared.as_mut().unwrap().commands.push(model::Command::Fire(crate::battle091::fire::Command::Shoot));
+        poll(&mut a,&mut w,now).unwrap(); poll(&mut b,&mut w,now).unwrap();
+        w.advance(now+model::STEP).unwrap(); assert_eq!(w.actors[1].health,60);
+        // Make the next drain fail after the world has already committed HP.
+        let (mut retry,_,_)=visible_pair(now);
+        *retry.shared.as_mut().unwrap()=a.shared.as_ref().unwrap().clone();
+        retry.outbox.push_back(vec![0;513]);
+        assert!(poll(&mut retry,&mut w,now+model::STEP).is_err());
+        assert_eq!(retry.shared.as_ref().unwrap().impact_cursor,0);
+        assert_eq!(w.actors[1].health,60); assert_eq!(w.impacts.len(),1);
+        retry.outbox.clear(); poll(&mut retry,&mut w,now+model::STEP).unwrap();
+        for s in [&mut a,&mut b] { poll(s,&mut w,now+model::STEP).unwrap(); }
+        let hp=impact_wire::health_changed(1,60,0).unwrap();
+        for s in [&mut a,&mut b,&mut retry] {
+            let bodies=queued_bodies(s,now+model::STEP);
+            assert_eq!(bodies.iter().filter(|body| body.windows(hp.len()).any(|bytes| bytes==hp)).count(),1);
+            let before=bodies.into_iter().filter(|body| body.windows(hp.len()).any(|bytes| bytes==hp)).collect::<Vec<_>>();
+            poll(s,&mut w,now+model::STEP).unwrap();
+            let after=queued_bodies(s,now+model::STEP).into_iter()
+                .filter(|body| body.windows(hp.len()).any(|bytes| bytes==hp)).collect::<Vec<_>>();
+            assert_eq!(after,before);
+            assert_eq!(s.shared.as_ref().unwrap().impact_cursor,1);
+        }
+        assert_eq!(w.actors[1].health,60);
+    }
+    #[test] fn ap_late_publication_is_monotone_and_reconnect_only_catches_current_health() {
+        let now=Instant::now(); let (mut a,mut b,_) = visible_pair(now);
+        let mut w=model::tests::ap_world(now);
+        for round in 0..3 {
+            let at=now+Duration::from_secs(round*3); if round>0 {w.advance(at).unwrap();}
+            w.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],at).unwrap();
+            w.advance(at+model::STEP).unwrap();
+        }
+        let at=now+Duration::from_secs(7);
+        for s in [&mut a,&mut b] {
+            poll(s,&mut w,at).unwrap();
+            let all=queued_bodies(s,at).concat(); let mut prior=0;
+            for hp in [60,30,0] {
+                let bytes=impact_wire::health_changed(1,hp,0).unwrap();
+                let at=all.windows(bytes.len()).position(|row| row==bytes).unwrap();
+                assert!(at>prior); prior=at;
+            }
+        }
+        let (_,mut rejoin,_)=visible_pair(at);
+        rejoin.shared.as_mut().unwrap().impact_cursor=w.impacts.len();
+        rejoin.shared.as_mut().unwrap().shot_cursor=w.latest_shot();
+        rejoin.shared.as_mut().unwrap().health_sent=[Some(90),Some(0)];
+        let creation=wire::create_vehicle(&w,1).unwrap();
+        assert!(creation.windows(7).any(|r|r==[3,0,0,4,0,0,5]));
+        rejoin.shared.as_mut().unwrap().view=Some(w.clone());
+        poll(&mut rejoin,&mut w,at).unwrap();
+        assert_eq!(queued_bodies(&rejoin,at),vec![impact_wire::owner_health(0).unwrap()]);
+        assert_eq!(w.actors[1].health,0);
+    }
     fn point(slot:usize,p:[f32;3])->Vec<u8> {
         let mut b=vec![0x0f,16,0];b.extend(wire::vehicle_id(slot).unwrap().to_le_bytes());
         for x in p {b.extend(x.to_le_bytes());} b
+    }
+    #[test] fn native_postmortem_rebind_is_owned_dead_only_and_keeps_reliable_channel_live() {
+        let now=Instant::now(); let (_,mut b,mut w)=visible_pair(now);
+        let raw=[0x0d,8,0,0,0,0,0,5,0,0x10,9];
+        let before=b.rx; assert!(b.receive(&frame(&b,&raw),now).is_err()); assert_eq!(b.rx,before);
+        w.actors[1].health=0; b.shared.as_mut().unwrap().view=Some(w.clone());
+        b.receive(&frame(&b,&raw),now).unwrap(); assert_eq!(b.rx,before+1);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+        assert!(b.shared.as_ref().unwrap().commands.is_empty());
+        for offset in [1,3,7] {
+            let mut bad=raw; bad[offset]^=1;
+            let before=b.rx; assert!(b.receive(&frame(&b,&bad),now).is_err()); assert_eq!(b.rx,before);
+        }
+        assert_eq!(w.actors[1].health,0); assert_eq!(b.shared.as_ref().unwrap().slot,1);
     }
     #[test] fn integrated_native_gate_keeps_account_session_alive_until_worker_ready() {
         let now = Instant::now();

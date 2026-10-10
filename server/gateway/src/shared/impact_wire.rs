@@ -130,9 +130,12 @@ pub fn show_damage(attacker_slot: usize, target_slot: usize, component: u8,
     let attacker = wire::vehicle_id(attacker_slot)?;
     let target = wire::vehicle_id(target_slot)?;
     let packed = packed_segment(component, bbox, local_start, local_end, outcome)?;
-    let mut body = Vec::with_capacity(26);
+    let mut body = Vec::with_capacity(25);
     body.push(0x12); body.extend(target.to_le_bytes());
-    body.push(0x42); body.extend(17u16.to_le_bytes()); // Vehicle method 7, VAR2.
+    // Vehicle method 7: #717 dd0880 returns -1 for variable arguments;
+    // ee3480 negates that into lengthParam=1 and ee369d reads one byte.
+    // This outer VAR1 header is independent of the ARRAY's i32 count below.
+    body.push(0x42); body.push(17);
     body.extend(attacker.to_le_bytes());
     // #717 native Sequence reader dedc84..dedc97: signed32LE count, not the
     // packed count used by newer BigWorld references. Exactly one UINT64.
@@ -163,10 +166,39 @@ mod tests {
     fn impact_native_layout_golden_includes_i32_count_and_effect() {
         assert_eq!(show_damage(0, 1, 1, BOX, [0.0, 0.5, 1.0], [1.0, 0.25, 0.0], ShotOutcome::Pierced).unwrap(), [
             0x12, 0x05, 0x00, 0x10, 0x09,
-            0x42, 0x11, 0x00, 0x03, 0x00, 0x10, 0x09,
+            0x42, 0x11, 0x03, 0x00, 0x10, 0x09,
             0x01, 0x00, 0x00, 0x00,
             0x03, 0x01, 0x00, 0x80, 0xff, 0xff, 0x40, 0x00, 0x02, 0x13,
         ]);
+    }
+
+    #[test]
+    fn native_var1_reader_reproduces_failed_capture_and_keeps_corrected_boundary() {
+        // Actual native01 packet 027172: VAR2's extra zero shifts the ARRAY
+        // count to 265, so argument decoding fails before the Python callback.
+        // The two trailing bytes happen to form native message 2 / FIXED1:
+        // updateFrequencyNotification(19). Thus health following it can work.
+        let failed = [
+            0x12, 0x05, 0x00, 0x10, 0x09, 0x42, 0x11, 0x00,
+            0x03, 0x00, 0x10, 0x09, 0x01, 0x00, 0x00, 0x00,
+            0x03, 0x01, 0x00, 0x49, 0x8a, 0xff, 0x26, 0x87, 0x02, 0x13,
+        ];
+        let args = &failed[7..7 + usize::from(failed[6])];
+        assert_eq!(u32::from_le_bytes(args[0..4].try_into().unwrap()), 0x10000300);
+        assert_eq!(i32::from_le_bytes(args[4..8].try_into().unwrap()), 265);
+        assert_eq!(&failed[7 + args.len()..], &[0x02, 0x13]);
+
+        let mut corrected = show_damage(0, 1, 1, BOX, [0.0, 0.5, 1.0],
+            [1.0, 0.25, 0.0], ShotOutcome::Pierced).unwrap();
+        assert_eq!(corrected.len(), 25);
+        let health = health_changed(1, 60, 0).unwrap();
+        corrected.extend(&health);
+        let args = &corrected[7..7 + usize::from(corrected[6])];
+        assert_eq!(u32::from_le_bytes(args[0..4].try_into().unwrap()), 0x09100003);
+        assert_eq!(i32::from_le_bytes(args[4..8].try_into().unwrap()), 1);
+        assert_eq!(args[16], 2);
+        assert_eq!(corrected[7 + args.len()], 0x13);
+        assert_eq!(&corrected[8 + args.len()..], health.as_slice());
     }
 
     #[test]

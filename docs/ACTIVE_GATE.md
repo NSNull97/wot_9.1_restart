@@ -1,3 +1,18 @@
+# P06L native repair / owner acceptance — 2026-10-10
+
+Active branch:`codex/p06l-ap-test-lab`; base P06K merge67da292.
+Owner selected working approximate test_lab rules. Atomic AP/HP and native
+presentation are implemented on the cumulative accepted physics runtime.
+Build02 passed482 tests, but native01 is **FAIL**: owner observed HP/death,
+then disconnect and frozen survivor; trace confirms absent native impact
+callback, rejected postmortem bind and stopped world advancement.
+
+Fix these issues and repeat actual native/owner acceptance before merge.
+Keep exact failed receipts; do not treat successful HP callbacks or tests as
+proof of particle/sound delivery. Preserve existing physics, ammo, reload,
+aim and tracers. Explicit approximate profile only; historical rules remain
+unknown where documented. [P06L report](research/P06L_AP_TEST_LAB.md).
+
 # P06K client marker verified; AP resolver still open — 2026-10-10
 
 `codex/p06k-ap-impact-contract`: **PASS_NATIVE_CLIENT_MARKER_CONTRACT**.
