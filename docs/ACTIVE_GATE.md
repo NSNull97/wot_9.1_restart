@@ -27,10 +27,9 @@ Evidence: `local/evidence/20261009-p03l-integrated-physics-01/worker-spawn-overr
 `local/evidence/20261007-p03h-native-projectile-flight-01/gateway-27.stdout.log`;
 `local/evidence/20261010-p03l-owner-acceptance-01/owner-acceptance.json`.
 
-Следующий единственный шаг — оформить проверенный head merge-коммитом в `main`;
+Проверенный head слит в `main` merge-коммитом `69e5abf`. Следующая граница —
 collision intersection, penetration, HP/module/crew damage и отдельный
-длительный obstacle/stability прогон остаются следующими исследовательскими
-границами.
+длительный obstacle/stability прогон; они не приписываются этой приёмке.
 
 # P03K integrated two-client worker world — 2026-10-09
 

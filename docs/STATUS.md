@@ -36,8 +36,8 @@ Evidence: [P03L plan](plans/P03L_INTEGRATED_PHYSICS_LANE_ALIGNMENT.md),
 `local/build/server/gateway-integrated-world-19/result.json`,
 `local/evidence/20261007-p03h-native-projectile-flight-01/gateway-27.stdout.log`,
 `local/evidence/20261010-p03l-owner-acceptance-01/owner-acceptance.json`.
-Ручная приёмка этого scope завершена; merge в `main` выполняется после
-проверки текущего head. Canonical service не перезапускался.
+Ручная приёмка этого scope завершена; merge-коммит `69e5abf` уже в `main` и
+сверен с `origin/main`. Canonical service не перезапускался.
 
 # P03K integrated two-client worker world — 2026-10-09
 
