@@ -359,6 +359,10 @@ impl Trace {
         Ok(())
     }
 
+    /// Tick fields identify the authoritative update, not a duration for its
+    /// geometric subsegments. Additional segments in one update must continue
+    /// the previous endpoint exactly and have nonzero length. The World keeps
+    /// the actual time bounds (and contact segment_seconds) independently.
     pub fn segment(
         &mut self,
         battle_id: u64,
@@ -370,17 +374,23 @@ impl Trace {
     ) -> io::Result<()> {
         self.common(battle_id, shot_id, server_tick)?;
         let launch_tick = self.launch_tick(shot_id).ok_or_else(|| invalid("impact segment without launch"))?;
-        let previous_segment_end = self.last_segment_end(shot_id);
+        let previous_segment = self.events.iter().rev().find_map(|event| match event {
+            Event::Segment { shot_id: id, segment_tick_end, end, .. } if *id == shot_id =>
+                Some((*segment_tick_end, *end)),
+            _ => None,
+        });
+        let same_update_continuation = segment_tick_start == server_tick && start != end
+            && previous_segment.is_some_and(|(tick, point)| tick == server_tick && point == start);
         let segment_count = self.events.iter().rev()
             .take_while(|event| !matches!(event, Event::Launch { shot_id: id, .. } if *id == shot_id))
             .filter(|event| matches!(event, Event::Segment { shot_id: id, .. } if *id == shot_id)).count();
-        if segment_tick_end(segment_tick_start, server_tick).is_err()
+        if (!same_update_continuation && segment_tick_end(segment_tick_start, server_tick).is_err())
             || !finite_vector(start) || !finite_vector(end)
             || !self.flight_continuable(shot_id)
             || self.has_terminal(shot_id)
             || segment_count >= MAX_SEGMENTS_PER_SHOT
             || segment_tick_start < launch_tick
-            || previous_segment_end.is_some_and(|previous| segment_tick_start < previous)
+            || previous_segment.is_some_and(|(previous, _)| segment_tick_start < previous)
             || distance(start, end) > MAX_SEGMENT_LENGTH
         {
             return Err(invalid("impact segment facts"));
@@ -830,6 +840,60 @@ mod tests {
         let before = trace.clone();
         assert!(trace.segment(123, 1, 1002, 1001, [0.; 3], [1.; 3]).is_err());
         assert_eq!(trace, before);
+    }
+
+    #[test]
+    fn same_update_subsegments_continue_exact_endpoints_and_query_independently() {
+        let mut trace=launched_trace(); let bundle=super::super::geometry::tests::bundle();
+        let ground=test_terrain(None); let mesh=tagged_plate("Hull","armor_1",&ap_tag(1,1020));
+        trace.segment(123,1,1020,1000,[-2.0,0.0,0.0],[-1.0,0.0,0.0]).unwrap();
+        assert!(trace.collision_query_world(123,1,1020,&mesh,bundle.materials(),&ground).unwrap().0.is_empty());
+        trace.segment(123,1,1020,1020,[-1.0,0.0,0.0],[1.0,0.0,0.0]).unwrap();
+        let (hits,facts,terrain_hit)=trace.collision_query_world(123,1,1020,&mesh,bundle.materials(),&ground).unwrap();
+        assert_eq!(hits.len(),1); assert_eq!(hits[0].t,0.5); assert!(facts.is_some()); assert!(terrain_hit.is_none());
+        let segments:Vec<_>=trace.events.iter().filter_map(|event|match event {
+            Event::Segment{segment_tick_start,segment_tick_end,start,end,..}=>Some((*segment_tick_start,*segment_tick_end,*start,*end)),
+            _=>None,
+        }).collect();
+        assert_eq!(segments.len(),2); assert_eq!((segments[0].0,segments[0].1),(1000,1020));
+        assert_eq!((segments[1].0,segments[1].1),(1020,1020)); assert_eq!(segments[0].3,segments[1].2);
+        let before=trace.clone();
+        assert!(trace.segment(123,1,1020,1020,[1.0,0.0,0.0],[2.0,0.0,0.0]).is_err()); assert_eq!(trace,before);
+        trace.terminal(123,1,1020,TerminalReason::UnresolvedCollision).unwrap();
+    }
+
+    #[test]
+    fn same_update_segments_reject_initial_zero_interval_discontinuity_and_reversal() {
+        let mut trace=launched_trace(); let before=trace.clone();
+        assert!(trace.segment(123,1,1000,1000,[-2.0,0.0,0.0],[-1.0,0.0,0.0]).is_err());
+        assert!(trace.segment(123,1,1001,1001,[-2.0,0.0,0.0],[-1.0,0.0,0.0]).is_err()); assert_eq!(trace,before);
+        trace.segment(123,1,1001,1000,[-2.0,0.0,0.0],[-1.0,0.0,0.0]).unwrap();
+        trace.collision_query(123,1,1001,&two_planes()).unwrap(); let before=trace.clone();
+        for (tick,start_tick,start,end) in [
+            (1001,1001,[-0.99999994,0.0,0.0],[1.0,0.0,0.0]),
+            (1001,1001,[-1.0,0.0,0.0],[-1.0,0.0,0.0]),
+            (1001,1002,[-1.0,0.0,0.0],[1.0,0.0,0.0]),
+            (1002,1002,[-1.0,0.0,0.0],[1.0,0.0,0.0]),
+            (1000,1000,[-1.0,0.0,0.0],[1.0,0.0,0.0]),
+            (1001,1001,[-1.0,0.0,0.0],[f32::NAN,0.0,0.0]),
+        ] {
+            assert!(trace.segment(123,1,tick,start_tick,start,end).is_err()); assert_eq!(trace,before);
+        }
+        trace.segment(123,1,1001,1001,[-1.0,0.0,0.0],[-0.5,0.0,0.0]).unwrap();
+        trace.terminal(123,1,1001,TerminalReason::RangeExpired).unwrap(); let before=trace.clone();
+        assert!(trace.segment(123,1,1001,1001,[-0.5,0.0,0.0],[1.0,0.0,0.0]).is_err()); assert_eq!(trace,before);
+    }
+
+    #[test]
+    fn same_update_subsegments_share_the_existing_per_shot_bound() {
+        let mut trace=launched_trace();
+        for index in 0..MAX_SEGMENTS_PER_SHOT {
+            trace.segment(123,1,1001,if index==0 {1000} else {1001},
+                [index as f32,0.0,0.0],[index as f32+1.0,0.0,0.0]).unwrap();
+        }
+        let before=trace.clone();
+        assert!(trace.segment(123,1,1001,1001,[256.0,0.0,0.0],[257.0,0.0,0.0]).is_err()); assert_eq!(trace,before);
+        trace.terminal(123,1,1001,TerminalReason::RangeExpired).unwrap();
     }
 
     #[test]
