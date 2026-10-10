@@ -1,3 +1,24 @@
+# Local storage cleanup — 2026-10-10
+
+По запросу владельца удалены 448 проверенных промежуточных Rust cache-каталогов
+из `local/build` и случайно установленный локальный Rust 1.58.1.
+**PASS_BUILD_CACHE_CLEANUP / PASS_POST_CLEANUP_VERIFICATION**:
+освобождено около **53.28 GB / 49.62 GiB**, свободно **53.68 GB / 50.00 GiB**.
+Все **1347 сохранённых файлов** совпали по SHA-256; готовые EXE, worker runtimes,
+build receipts и принятые evidence сохранены. gateway19/final03 запускаются до
+ожидаемой CLI usage-ошибки; pinned Rust1.90.0 совпадает с build03 и отвечает на
+`-V`. Source layout и повторный P06I native-prefix audit PASS. Новый native бой
+и полная пересборка для удаления кэша не запускались (**NOT_RUN**).
+
+План, границы, команды и восстановление:
+[ORG local cleanup](plans/ORG_LOCAL_STORAGE_CLEANUP.md).
+Evidence: `local/evidence/20261010-local-storage-cleanup-01/cleanup-result.json`,
+`post-cleanup-verification.json`, exact manifest и per-path action ledger.
+Восстановление кэша — штатная сборка в fresh output; Git revert документации
+не возвращает удалённые промежуточные файлы. Активная игровая карточка ниже:
+P06I уже слита/push-нута в `main` (`b4ddd02`, remote SHA verified).
+Следующий шаг — измеренная классификация материала/контакта перед уроном.
+
 # P06I native geometric contact + full-pose RMB aim — 2026-10-10
 
 Карточка `codex/p06i-native-collision-binding`:
