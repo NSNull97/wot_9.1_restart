@@ -37,7 +37,8 @@ mod tests {
         // Original #717 native Math oracle, not our own inverse round trip:
         // 20261010-p06i-native-collision-01/runtime-a-oracle01/
         // native-27076-1791611380111.jsonl, shared_collision_math_oracle.
-        // File SHA256 cce59b3ac1c9e3f02ffeeaa74a4738eff3ff1daceb81fdf6a678c9c5e422bfe8.
+        // Math record SHA256 (UTF-8 line, excluding newline; file may append):
+        // 9adb45df77a7b225e9dd2b2d66b4354418db2d960a928546761eae759165b81b.
         // Each row below is the native image of one unit basis vector.
         for (ypr, expected) in [
             ([0.7, -0.3, 0.2], [
