@@ -148,6 +148,18 @@ class ClientMarkerOracleTests(unittest.TestCase):
             with self.assertRaisesRegex(tool.AuditError, "one oracle"):
                 tool.read_trace(b, "b")
 
+    def test_two_different_traces_without_resolved_pids_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            a, b = Path(directory) / "first.jsonl", Path(directory) / "second.jsonl"
+            event = json.dumps(synthetic_event()).encode("utf-8") + b"\n"
+            a.write_bytes(event)
+            b.write_bytes(event + b'{"event":"other"}\n')
+            with self.assertRaisesRegex(tool.AuditError, "both client pids must be resolved"):
+                tool.audit(a, b)
+            known = self._trace(directory, 11)
+            with self.assertRaisesRegex(tool.AuditError, "both client pids must be resolved"):
+                tool.audit(known, b)
+
 
 if __name__ == "__main__":
     unittest.main()

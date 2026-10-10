@@ -242,8 +242,9 @@ def audit(trace_a: str | Path, trace_b: str | Path) -> tuple[dict[str, Any], dic
     source_a, rows_a = read_trace(a, "a")
     source_b, rows_b = read_trace(b, "b")
     require(source_a["sha256"] != source_b["sha256"], "duplicate trace contents")
-    require(source_a["pid"] is None or source_b["pid"] is None or source_a["pid"] != source_b["pid"],
-            "two distinct client pids required")
+    require(source_a["pid"] is not None and source_b["pid"] is not None,
+            "both client pids must be resolved")
+    require(source_a["pid"] != source_b["pid"], "two distinct client pids required")
     fixture = {"schema": "p06k-native-marker-fixture.v1", "method_sha": METHOD_SHA,
                "profile": PROFILE, "source_traces": [source_a, source_b], "samples": rows_a + rows_b}
     report = {"schema": "p06k-native-marker-audit.v1", "status": "PASS_NATIVE_MARKER_ALIGNMENT",
