@@ -7,7 +7,7 @@ object work. This card migrates the accepted P06O cumulative native battle:
 movement, grounded suspension, aim/RMB, ammunition/reload, world/live/wreck
 contacts and effects, and catalog-based fragile removal. Trees follow as a
 separate card after this prerequisite. Base main:878ade656906918f2aa9c095621feb4f504be603.
-Branch:codex/p06p-prohorovka-cumulative. Acceptance:PENDING_NATIVE_OWNER. Oracle entry observed; gameplay acceptance pending.
+Branch:codex/p06p-prohorovka-cumulative. Acceptance:PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB. Owner accepted native01.
 
 ## Evidence and knowledge categories
 
@@ -41,7 +41,9 @@ This does not prove rendered native passage. The exact root DLL also passed25/25
 
 OBSERVED: oracle01 both approved clients loaded Prohorovka with grounded tanks,
 original reticle and20ammo. Original screenshot in runtime-b-oracle01/screenshots.
-UNKNOWN: owner-visible driving/FX and eligible-object passage remain untested. Historical penetration/damage and full object
+OBSERVED: owner subsequently accepted finalnative01 driving/aim/FX, independent
+crate removal and passage, ground/live/wreck and continued control. The measured
+log prefix below distinguishes those visual observations from server events. Historical penetration/damage and full object
 coverage are not claimed; existing test_lab approximations remain explicit.
 Tree flags from12 pinned BSP resources all have bit128, so the native
 projectile mask excludes those faces. Tree fall/collision needs a separate
@@ -130,7 +132,7 @@ verified own processes, restore installed diagnostic ledgers, and restart the
 accepted P06O Karelia configuration. Revert the P06P branch changes if needed.
 No merge/push while any required native gate is FAIL/NOT_RUN.
 
-## Native setup and pending owner gate
+## Native setup and completed owner gate
 
 Oracle01 completed in both clients:44chunks/2156entries/two stable passes,
 exports byte-identical SHA062c3fce8c2d7dd0ece94bfe6322a2a3b80f2a2d22be7de1906a8eb854f37e60.
@@ -158,5 +160,32 @@ at its wreck, verify both-client effects and continued survivor control.
 Ammo/reload and RMB aim lock must remain correct. Test_lab supports the9whole
 fragiles; trees, fences and compound buildings are not generalized yet.
 
-One next gate: owner acceptance of this fresh cumulative Prohorovka battle.
-No merge before that result; existing P06O remains the accepted fallback.
+Owner replied “Всё работает” to the full native01 test. Frozen evidence:
+`native-contract/native01-acceptance01/` and its audit. Server:20accepted shots,
+3independent fragile removals,3AP penetrations with HP90→60→30→0,1ricochet,
+5wreck contacts shots16–20 with0damage and unchanged0HP. Original clients each
+record exactly one death callback and5armorResisted callbacks on the wreck.
+Final native-audit.json SHA
+734b0c78d5327174c044f5b0f1a466386b294d4ebd4dec2e7b32c719208fd157:
+234snapshots/client, sampled B path~272m,11worldcontacts and11originalworldFX
+per client. Three distinct instances3315/3617/3619 each receive2workerACKs
+before commit and2native publications after; each client records3original
+removal/effect415 calls. Six area controllers create/request/ACK/init perclient.
+No native/server fault or observation cap in the frozen prefix; stderr empty.
+Both-worker ACKs gate the matching scene changes; owner confirms separate
+objects, both-client effects and free passage.
+
+Continued post-death shots, aiming and steer1→0 commands are recorded. Significant
+forward driving after death is NOT_OBSERVED in this prefix (~0.002m settling),
+so it is not claimed as measured post-death travel. Owner accepted controls;
+substantial ordinary driving before death is recorded. No repeated wreck test
+is required. This closes the native cumulative gate; no unsupported historical
+fidelity or additional object families are marked complete.
+
+Current runtime source equality to tested c03b3b5 is checked for111files in
+verification01/current-source-receipt.json. Documentation-only acceptance changes
+do not alter those sources. Standing authorization permits ordinary no-ff merge,
+push and remote SHA check. Merge receipt is saved separately in the evidence root.
+
+One next recommended card: original-resource tree falling/state and matching
+collision changes on this accepted Prohorovka cumulative baseline.

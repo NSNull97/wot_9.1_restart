@@ -1,22 +1,23 @@
-# P06P candidate ready — cumulative Prohorovka native battle
+# P06P accepted — Prohorovka cumulative native battle
 
-Branch `codex/p06p-prohorovka-cumulative`, accepted base main878ade6, tested
-runtime sourcec03b3b5. Gateway03:603 Rust PASS;47 Python PASS/1existing privilege
-SKIP; exact root physics25/25 PASS; canonical+legacy compile and layout PASS.
-Explicit map binding preserves physics/aim/ammo/reload/world/live/wreck paths.
-Both original clients exported identical44chunk/2156entry catalogs;9complete
-fragiles qualify in6chunks. Finalnative01 uses that join and the same cumulative
-build, native arena4/05_prohorovka. Bothworkers settled with6contacts. Initial
-oracle image grounded; owner confirmed closing its intermediate windows himself.
+Owner accepted finalnative01: driving/aim/RMB, independent crates and passage,
+world/live/wreck effects, ammo/reload and continued control all work. Frozen
+prefix confirms20shots,3independent removals, HP90→60→30→0 and5wreck hits;
+both clients record one death each and5native wreck effects. Post-death shots,
+aim and steering are recorded; significant post-death forward travel is not.
 
-**Acceptance:PENDING_NATIVE_OWNER.** Trees/compound objects remain unsupported.
-Additional near-lane IPC1/3 bitwise trajectory comparison failed after fence
-contact by1.65cm; exact coverage and grounded motion passed. Cause not fully
-proven; no claim of bit identity across different shape partitions. Evidence
-retains all failed attempts. Existing P06O remains the accepted fallback.
-[Files, commands, evidence, limits and rollback](research/P06P_PROHOROVKA_CUMULATIVE.md).
-**One next gate:** owner test of fresh Prohorovka drive, independent crates,
-world/live/wreck effects and preserved control. No merge until acceptance.
+Tested sourcec03b3b5:603 Rust PASS,47 Python PASS/1existing privilege SKIP,
+exact root physics25/25 PASS, canonical+legacy compilation/layout PASS. Current
+runtime files match. Both native catalogs match44chunks/2156entries;9whole
+fragiles are supported across6chunks. Originalmap05 uses nativearena4.
+**Acceptance:PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB.** Standing merge/push
+is authorized. Trees/compound objects and historical exact rules remain open.
+Near-lane IPC1/3 bitwise comparison differs1.65cm after fence contact; exact
+coverage/grounded behavior pass. Failed comparison and unknown cause retained;
+no bit identity claim across different Jolt shape partitions. P06O rollback kept.
+[Files, commands, evidence, limitations and rollback](research/P06P_PROHOROVKA_CUMULATIVE.md).
+**One next recommended card:** original-resource tree falling/state replication
+and matching collision changes on this accepted Prohorovka baseline.
 
 # P06O accepted — reusable fragile catalog and cumulative native gameplay
 
