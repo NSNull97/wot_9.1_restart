@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -49,6 +50,39 @@ PACKAGES = {
 FAMILIES = ('trees', 'fallingAtoms', 'fragiles', 'structures')
 
 
+@dataclass(frozen=True)
+class MapProfile:
+    name: str
+    instance_count: int
+    local_files: tuple
+    packages: tuple
+
+    def files(self):
+        return dict(self.local_files)
+
+    def package_pins(self):
+        return dict(self.packages)
+
+
+# An explicit choice of two original, pinned maps. These are not caller-provided
+# paths or generic manifests. The public legacy constants above retain Karelia
+# defaults for existing import consumers and receipts.
+PROFILES = (
+    MapProfile(MAP, 2918, tuple(LOCAL_FILES.items()), tuple(PACKAGES.items())),
+    MapProfile('05_prohorovka', 3904, (
+        ('physics', ('evidence/20261005-p02-map-drive/data/obstacle-mesh-04/05_prohorovka/manifest.json',
+                     '9d358a48da303abaf15572f478dddc16971864960d9341943cc6d207b32b3265')),
+        ('projectile', ('evidence/20261012-p06p-prohorovka-01/import/projectile-obstacles01/05_prohorovka/manifest.json',
+                        '3db1ad3859ae2f5fed678ac5f148005cff38a3c915bb33dde3303de22e22bef7')),
+        ('surface', ('evidence/20261005-p02-map-drive/data/surface-01/05_prohorovka-surface.json',
+                     '0e26e02fc45c506179e0ed49fbe4b0d1b2e947101c40ffc79d790e383c4d1d03')),
+    ), (
+        ('05_prohorovka.pkg', (87810684, '05081facbe1451688fd853612a85c725ed7140a4d83ddf134c2283512980cd6d')),
+        ('shared_content.pkg', PACKAGES['shared_content.pkg']),
+    )),
+)
+
+
 class CatalogError(ValueError):
     pass
 
@@ -56,6 +90,13 @@ class CatalogError(ValueError):
 def require(value, reason):
     if not value:
         raise CatalogError(reason)
+
+
+def map_profile(name=MAP):
+    require(type(name) is str, 'map name must be a string')
+    matches = [profile for profile in PROFILES if profile.name == name]
+    require(len(matches) == 1, 'unsupported pinned map profile')
+    return matches[0]
 
 
 def canonical(value):
@@ -227,16 +268,18 @@ def member(archive, name):
     return raw
 
 
-def load_sources():
+def load_sources(map_name=MAP):
+    profile = map_profile(map_name)
+    files, packages = profile.files(), profile.package_pins()
     paths = configured_paths()
     original, local = paths['original_client_root'], paths['local_artifacts_root']
-    payloads, pins = {}, []
+    payloads, pins = {'map': profile.name}, []
     for key, relative, expected in [('destructibles','res/scripts/destructibles.xml',DESTRUCTIBLES_SHA256),
                                      ('loader','res/scripts/common/destructiblescache.pyc',LOADER_SHA256)]:
         path = original/relative
         payloads[key] = read(path, 512*1024, expected)
         pins.append({'path':str(path), 'sha256':expected})
-    for key,(relative,expected) in LOCAL_FILES.items():
+    for key,(relative,expected) in files.items():
         path = local/relative
         payloads[key] = read(path, 16*1024*1024, expected)
         pins.append({'path':str(path),'sha256':expected})
@@ -244,7 +287,7 @@ def load_sources():
     meshes = {k:json_value(payloads[k]) for k in ('physics','projectile')}
     payloads['buffers'] = {}
     for label, meta in meshes.items():
-        directory = local / Path(LOCAL_FILES[label][0]).parent
+        directory = local / Path(files[label][0]).parent
         for kind in ('vertices','triangles','flags'):
             if kind not in meta:
                 continue
@@ -261,7 +304,7 @@ def load_sources():
     payloads['resources'], payloads['chunks'] = {}, {}
     archives = []
     try:
-        for filename,(size,expected) in PACKAGES.items():
+        for filename,(size,expected) in packages.items():
             path = no_links(original/'res/packages'/filename)
             require(path.is_file() and path.stat().st_size==size, 'package size pin')
             with path.open('rb') as stream:
@@ -276,9 +319,9 @@ def load_sources():
                 raw = member(archive,name)
                 require(name in entries and sha(raw)==entries[name]['sha256'], 'resource member SHA256')
                 payloads['resources'][name] = raw
-            if filename == '01_karelia.pkg':
+            if filename == profile.name + '.pkg':
                 for name in sorted(n for n in available if n.endswith('.chunk')):
-                    require(re.fullmatch(r'spaces/01_karelia/[0-9a-f]{8}o\.chunk',name), 'unexpected chunk naming')
+                    require(re.fullmatch(r'spaces/'+re.escape(profile.name)+r'/[0-9a-f]{8}o\.chunk',name), 'unexpected chunk naming')
                     payloads['chunks'][name] = member(archive,name)
         require(set(payloads['resources'])==names and len(payloads['chunks'])==144, 'complete original sources required')
     finally:
@@ -289,10 +332,12 @@ def load_sources():
 
 
 def verify_sources(sources):
+    profile = map_profile(sources['map'])
     for key, expected in {'destructibles':DESTRUCTIBLES_SHA256,'loader':LOADER_SHA256,
-                          **{k:v[1] for k,v in LOCAL_FILES.items()}}.items():
+                          **{k:v[1] for k,v in profile.files().items()}}.items():
         require(type(sources[key]) is bytes and sha(sources[key])==expected, 'source pins before parsing')
     meshes = {k:json_value(sources[k]) for k in ('physics','projectile')}
+    require(all(m['map'] == profile.name for m in meshes.values()), 'geometry map identity differs')
     for label, meta in meshes.items():
         for kind in ('vertices','triangles','flags'):
             if kind in meta:
@@ -301,6 +346,19 @@ def verify_sources(sources):
     entries = {r['entry']:r for r in meshes['projectile']['resources']}
     for name,raw in sources['resources'].items():
         require(name in entries and len(raw)==entries[name]['bytes'] and sha(raw)==entries[name]['sha256'], 'resource pins before parsing')
+    # The surface itself is pinned above. Its original chunk digests also bind
+    # destructibleState, which instance geometry alone cannot authenticate.
+    surface = json_value(sources['surface'])
+    require(surface['map'] == profile.name, 'surface map identity differs')
+    expected_chunks = {}
+    for row in surface['height_sources']:
+        x, z = row['chunk']
+        name = 'spaces/'+profile.name+'/'+format(x & 65535, '04x')+format(z & 65535, '04x')+'o.chunk'
+        require(name not in expected_chunks, 'duplicate original chunk pin')
+        expected_chunks[name] = digest(row['chunk_sha256'])
+    require(len(expected_chunks) == 144 and set(sources['chunks']) == set(expected_chunks), 'complete pinned chunk set')
+    for name, raw in sources['chunks'].items():
+        require(type(raw) is bytes and sha(raw) == expected_chunks[name], 'chunk pins before XML parsing')
     return meshes
 
 
@@ -376,6 +434,8 @@ def eligibility(row, definition, contract, physics):
 
 def build_inventory(sources):
     meshes=verify_sources(sources)
+    profile=map_profile(sources['map'])
+    files=profile.files()
     definitions, defs, duplicates=parse_definitions(sources['destructibles'])
     loader=dict(records(parse_pyc(sources['loader'])))
     require('<module>.DestructiblesCache.__readFragile' in loader and '<module>.scaledDestructibleHealth' in loader, 'pinned loader methods')
@@ -397,7 +457,7 @@ def build_inventory(sources):
         chunk_pins.append({'member':name,'bytes':len(raw),'sha256':sha(raw)})
     instances=meshes['projectile']['instances']
     physics=meshes['physics']['instances']
-    require(len(instances)==len(physics)==2918, 'accepted manifest instance count')
+    require(len(instances)==len(physics)==profile.instance_count, 'accepted manifest instance count')
     families=Counter(); rows=[];contracts={}; eligible=[];chunks=defaultdict(list)
     for index,(obj,phy) in enumerate(zip(instances,physics)):
         require(all(obj[k]==phy[k] for k in ('kind','resource','chunk','instance','transform')), 'geometry instance identity differs')
@@ -436,9 +496,9 @@ def build_inventory(sources):
             require(points==_points(sources,'physics',phy), 'whole-instance source geometry differs between masks')
             flags=sources['buffers']['projectile_flags'][obj['first_triangle']*2:(obj['first_triangle']+obj['triangles'])*2]
             require(set(struct.unpack('<'+str(obj['triangles'])+'H',flags))=={73<<8}, 'admitted source triangle material differs')
-            identity={'schema':'destructible-object-source.v1','map':MAP,
-                      'destructibles_sha256':DESTRUCTIBLES_SHA256,'physics_manifest_sha256':PHYSICS_SHA256,
-                      'projectile_manifest_sha256':PROJECTILE_SHA256,'instance':{k:v for k,v in row.items() if k not in ('eligible','exclusions','native_index')},
+            identity={'schema':'destructible-object-source.v1','map':profile.name,
+                      'destructibles_sha256':DESTRUCTIBLES_SHA256,'physics_manifest_sha256':files['physics'][1],
+                      'projectile_manifest_sha256':files['projectile'][1],'instance':{k:v for k,v in row.items() if k not in ('eligible','exclusions','native_index')},
                       'world_triangle_points_sha256':sha(points),'material_kind':73}
             row['object_revision']=sha(canonical(identity))
             row['world_triangle_points_sha256']=sha(points)
@@ -448,9 +508,9 @@ def build_inventory(sources):
     # Audit every fragile-containing chunk, including currently ineligible
     # geometry, so the trusted preprocessing catalog cannot hide coverage gaps.
     wanted=sorted({r['chunk_id'] for r in rows})
-    spec={'version':1,'kind':'p06o_destructible_catalog_spec','map':MAP,
+    spec={'version':1,'kind':'p06o_destructible_catalog_spec','map':profile.name,
           'source_pins':sources['pins'],'chunk_ids':wanted}
-    return {'version':1,'map':MAP,'source_pins':sources['pins'],'package_pins':PACKAGES,
+    return {'version':1,'map':profile.name,'source_pins':sources['pins'],'package_pins':profile.package_pins(),
             'summary':{'definition_rows':len(definitions),'unique_definition_resources':len(defs),
                        'definition_families':dict(Counter(d['family'] for d in definitions)),
                        'map_instances':len(instances),'map_family_counts':dict(families),
@@ -482,10 +542,11 @@ def probe_spec_bytes(inventory):
 
 
 def validate_native(raw, inventory):
+    profile=map_profile(inventory['map'])
     value=json_value(raw, MAX_NATIVE_BYTES, 400000, 12)
     require(type(value) is dict and set(value)=={'version','kind','map','space_id','source_pins','spec_sha256','observation_count','chunks'}, 'native export fields')
     require(type(value['version']) is int and value['version']==1 and value['kind']=='p06o_destructible_catalog'
-            and value['map']==MAP and type(value['observation_count']) is int and value['observation_count']==2, 'native stable export profile')
+            and value['map']==profile.name and type(value['observation_count']) is int and value['observation_count']==2, 'native stable export profile')
     integer(value['space_id'],1,2**32-1,'native space ID')
     require(value['source_pins']==inventory['source_pins'] and value['spec_sha256']==sha(probe_spec_bytes(inventory)), 'native export spec/source binding')
     rows=value['chunks'];expected=inventory['probe_spec']['chunk_ids']
@@ -517,6 +578,8 @@ def validate_native(raw, inventory):
 
 def join_exports(inventory, exports):
     """exports are explicit (raw bytes, externally supplied SHA256) pairs."""
+    profile=map_profile(inventory['map'])
+    files=profile.files()
     require(type(exports) is list and 1<=len(exports)<=2, 'one or two native exports required')
     mappings=[];digests=[]
     for raw,expected in exports:
@@ -542,11 +605,11 @@ def join_exports(inventory, exports):
                                'first_triangle':obj['physics_first_triangle'],'triangle_count':obj['physics_triangle_count'],
                                'object_revision':obj['object_revision']})
     require(0<len(objects)<=MAX_OBJECTS,'runtime object bound')
-    worker={'version':2,'profile':'test_lab','map':MAP,'physics_manifest_sha256':PHYSICS_SHA256,
-            'projectile_manifest_sha256':PROJECTILE_SHA256,'objects':worker_objects}
+    worker={'version':2,'profile':'test_lab','map':profile.name,'physics_manifest_sha256':files['physics'][1],
+            'projectile_manifest_sha256':files['projectile'][1],'objects':worker_objects}
     worker_raw=canonical(worker)+b'\n'
-    manifest={'version':1,'profile':'test_lab','map':MAP,'destructibles_sha256':DESTRUCTIBLES_SHA256,
-              'physics_manifest_sha256':PHYSICS_SHA256,'projectile_manifest_sha256':PROJECTILE_SHA256,
+    manifest={'version':1,'profile':'test_lab','map':profile.name,'destructibles_sha256':DESTRUCTIBLES_SHA256,
+              'physics_manifest_sha256':files['physics'][1],'projectile_manifest_sha256':files['projectile'][1],
               'native_exports_sha256':sorted(digests),'worker':{'file':'physics-removals.json','sha256':sha(worker_raw)},'objects':objects}
     manifest_raw=canonical(manifest)+b'\n'
     json_value(manifest_raw,128*1024,4096,12)
@@ -570,11 +633,13 @@ def save(path, raw):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out',required=True,help='Fresh directory strictly under configured local/')
+    parser.add_argument('--map', choices=[profile.name for profile in PROFILES], default=MAP,
+                        help='Pinned original map profile (default: accepted Karelia)')
     parser.add_argument('--native-export',action='append',default=[],help='Existing passive native catalog file')
     parser.add_argument('--native-sha256',action='append',default=[],help='Explicit SHA256 of corresponding native export')
     args=parser.parse_args()
     require(len(args.native_export)==len(args.native_sha256)<=2,'paired native paths and SHA256 values required')
-    paths=configured_paths();sources=load_sources();inventory=build_inventory(sources)
+    paths=configured_paths();sources=load_sources(args.map);inventory=build_inventory(sources)
     exports=[]
     for path,expected in zip(args.native_export,args.native_sha256):
         path=no_links(Path(path).absolute())

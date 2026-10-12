@@ -32,7 +32,7 @@ class DestructibleCatalogTests(unittest.TestCase):
             chunks.append({'chunk_id':chunk_id,'count':len(items),
                            'chunk_matrix':self.matrix([1.,0.,0.,0.,1.,0.,0.,0.,1.,float(x*100),0.,float(z*100)]),
                            'items':items})
-        return {'version':1,'kind':'p06o_destructible_catalog','map':c.MAP,'space_id':1,
+        return {'version':1,'kind':'p06o_destructible_catalog','map':self.inventory['map'],'space_id':1,
                 'source_pins':copy.deepcopy(self.inventory['source_pins']),
                 'spec_sha256':c.sha(c.probe_spec_bytes(self.inventory)),
                 'observation_count':2,'chunks':chunks}
@@ -82,6 +82,14 @@ class DestructibleCatalogTests(unittest.TestCase):
         value['buffers']['projectile_flags']=value['buffers']['projectile_flags'][:-1]+b'\xff'
         with mock.patch.object(c,'decode',side_effect=AssertionError('must not parse')):
             with self.assertRaises(c.CatalogError):c.build_inventory(value)
+        for mutation in ('corrupt','missing','extra'):
+            value=dict(self.sources);value['chunks']=dict(self.sources['chunks'])
+            name=next(iter(value['chunks']))
+            if mutation=='corrupt':value['chunks'][name]+=b'corrupt'
+            elif mutation=='missing':del value['chunks'][name]
+            else:value['chunks']['spaces/01_karelia/12341234o.chunk']=value['chunks'][name]
+            with self.subTest(chunk_mutation=mutation),mock.patch.object(c,'decode',side_effect=AssertionError('must not parse')),mock.patch.object(c,'parse_pyc',side_effect=AssertionError('must not parse')):
+                with self.assertRaises(c.CatalogError):c.build_inventory(value)
         value=dict(self.sources);value['resources']=dict(self.sources['resources'])
         name=next(iter(value['resources']));value['resources'][name]+=b'x'
         with mock.patch.object(c,'decode',side_effect=AssertionError('must not parse')):
@@ -218,6 +226,97 @@ class DestructibleCatalogTests(unittest.TestCase):
                     with self.assertRaises(c.CatalogError):c.no_links(link)
             else:
                 with self.assertRaises(c.CatalogError):c.fresh_output(link/'new',self.local)
+
+
+class ProhorovkaCatalogTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.sources=c.load_sources('05_prohorovka')
+        cls.inventory=c.build_inventory(cls.sources)
+
+    matrix=staticmethod(DestructibleCatalogTests.matrix)
+    native=DestructibleCatalogTests.native
+    export=DestructibleCatalogTests.export
+
+    def test_complete_source_coverage_nine_property_selected_objects(self):
+        s=self.inventory['summary']
+        self.assertEqual(s['map_instances'],3904)
+        self.assertEqual(s['map_family_counts'],{'fragiles':712,'structures':58,'undefined':120,'fallingAtoms':71,'trees':2943})
+        self.assertEqual((s['fragile_instances'],s['fragile_resources'],s['eligible_instances']),(712,58,9))
+        self.assertEqual((s['fragile_chunks'],s['eligible_chunks'],s['probe_chunks']),(44,6,44))
+        self.assertEqual(len(self.inventory['chunk_pins']),144)
+        excluded=[row for row in self.inventory['fragiles'] if not row['eligible']]
+        self.assertEqual(len(excluded),703)
+        self.assertTrue(all(row['exclusions'] for row in excluded))
+        self.assertEqual([row['instance_id'] for row in self.inventory['eligible']],
+                         [17,1021,1044,1553,1640,3315,3318,3617,3619])
+        self.assertEqual([row['reference_health'] for row in self.inventory['eligible']],
+                         [10,10,10,10,10,15,10,10,9])
+        self.assertTrue(all(row['native_index'] is None for row in self.inventory['fragiles']))
+        self.assertTrue(all(row['projectile_triangle_count']==row['physics_triangle_count']
+                            and row['world_triangle_points_sha256'] for row in self.inventory['eligible']))
+
+    def test_join_keeps_v1_and_v2_schema_with_prohorovka_pins(self):
+        raw,worker_raw=c.join_exports(self.inventory,[self.export(self.native())])
+        runtime,worker=json.loads(raw),json.loads(worker_raw)
+        profile=c.map_profile('05_prohorovka')
+        for value,version in ((runtime,1),(worker,2)):
+            self.assertEqual(value['version'],version)
+            self.assertEqual(value['map'],'05_prohorovka')
+            self.assertEqual(value['physics_manifest_sha256'],profile.files()['physics'][1])
+            self.assertEqual(value['projectile_manifest_sha256'],profile.files()['projectile'][1])
+            self.assertEqual(len(value['objects']),9)
+        self.assertEqual(runtime['worker'],{'file':'physics-removals.json','sha256':c.sha(worker_raw)})
+        self.assertLess(len(raw),128*1024)
+        # Every source candidate chunk remains mandatory, including the 38
+        # chunks with no currently admitted whole-fragile instance.
+        native=self.native()
+        eligible_chunks={r['chunk_id'] for r in self.inventory['eligible']}
+        victim=next(r for r in native['chunks'] if r['chunk_id'] not in eligible_chunks)
+        native['chunks'].remove(victim)
+        with self.assertRaises(c.CatalogError):c.join_exports(self.inventory,[self.export(native)])
+
+    def test_cross_map_or_unknown_profile_fails_before_source_parsing(self):
+        for name in ('01_karelia','other',None,True):
+            value=dict(self.sources);value['map']=name
+            with self.subTest(map=name),mock.patch.object(c,'decode',side_effect=AssertionError('must not parse')),mock.patch.object(c,'parse_pyc',side_effect=AssertionError('must not parse')):
+                with self.assertRaises(c.CatalogError):c.build_inventory(value)
+        for name in ('01_karelia','other'):
+            native=self.native();native['map']=name
+            with self.subTest(native_map=name),self.assertRaises(c.CatalogError):
+                c.join_exports(self.inventory,[self.export(native)])
+        with mock.patch.object(c,'configured_paths',side_effect=AssertionError('must not read')):
+            with self.assertRaises(c.CatalogError):c.load_sources('unconfigured_map')
+
+    def test_profile_tables_are_immutable_and_karelia_default_is_preserved(self):
+        self.assertEqual(c.map_profile().name,'01_karelia')
+        self.assertEqual(c.map_profile().files(),c.LOCAL_FILES)
+        self.assertEqual(c.map_profile().package_pins(),c.PACKAGES)
+        profile=c.map_profile('05_prohorovka')
+        with self.assertRaises(AttributeError):profile.name='01_karelia'
+        copy_files=profile.files();copy_files.clear()
+        self.assertEqual(len(profile.files()),3)
+
+    def test_original_chunk_mutation_is_rejected_before_any_xml(self):
+        sources=dict(self.sources);sources['chunks']=dict(self.sources['chunks'])
+        name=next(iter(sources['chunks']));sources['chunks'][name]+=b'x'
+        with mock.patch.object(c,'decode',side_effect=AssertionError('must not parse')),mock.patch.object(c,'parse_pyc',side_effect=AssertionError('must not parse')):
+            with self.assertRaises(c.CatalogError):c.build_inventory(sources)
+
+    def test_source_revisions_and_native_mapping_remain_separate(self):
+        again=c.build_inventory(self.sources)
+        self.assertEqual(c.canonical(again),c.canonical(self.inventory))
+        native=self.native();raw,_=c.join_exports(self.inventory,[self.export(native)])
+        expected={row['instance_id']:row['object_revision'] for row in self.inventory['eligible']}
+        self.assertEqual({row['instance_id']:row['object_revision'] for row in json.loads(raw)['objects']},expected)
+        # Parser fixture uses reversed source rows; the result is obtained by
+        # full filename+matrix matching, with no source-ordinal fallback.
+        for obj in json.loads(raw)['objects']:
+            chunk=next(row for row in native['chunks'] if row['chunk_id']==obj['chunk_id'])
+            item=next(row for row in chunk['items'] if row['index']==obj['native_index'])
+            source=next(row for row in self.inventory['eligible'] if row['instance_id']==obj['instance_id'])
+            self.assertEqual((item['filename'],c.native_matrix(item['local_matrix'])),
+                             (source['resource'],c.matrix_bits(source['transform'])))
 
 
 if __name__=='__main__':
