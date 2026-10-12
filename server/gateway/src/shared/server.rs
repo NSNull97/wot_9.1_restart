@@ -2,6 +2,7 @@
 //! policy are shared with the accepted gateway; no unauthenticated lab login.
 use super::{model::{self, World}, ap, impact_wire, terrain_wire, wire, Client, Phase};
 use super::super::*;
+use crate::map_profile091::MapId;
 
 #[cfg(test)]
 #[path="server_catalog_tests.rs"]
@@ -19,6 +20,7 @@ struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
 /// the next world snapshot only after the worker contract has validated it.
 struct IntegratedRuntime {
     pool: Arc<crate::map_drive_worker091::Pool>,
+    map_id: MapId,
     workers: [Option<crate::map_drive_worker091::Worker>; model::CAPACITY],
     poses: [Option<([f32; 3], [f32; 3], f32)>; model::CAPACITY],
     offsets: [[f32; 3]; model::CAPACITY],
@@ -47,15 +49,18 @@ fn worker_frame_position(worker_position: [f32; 3], offset: [f32; 3]) -> [f32; 3
 
 impl IntegratedRuntime {
     fn new(pool: Arc<crate::map_drive_worker091::Pool>) -> Self {
-        Self { pool, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
+        Self::new_for_map(pool, MapId::Karelia)
+    }
+
+    fn new_for_map(pool: Arc<crate::map_drive_worker091::Pool>, map_id: MapId) -> Self {
+        Self { pool, map_id, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
             offsets: [[0.; 3]; model::CAPACITY],
             anchored: [false; model::CAPACITY],
             dispatched: [None; model::CAPACITY], started: false, removal: None,catalog:None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY] }
     }
 
     fn map(&self) -> io::Result<crate::map_drive_worker091::MapSpec> {
-        self.pool.maps.iter().find(|candidate| candidate.asset == "01_karelia"
-            && candidate.arena_type_id == 1).cloned().ok_or_else(model::bad)
+        selected_pool_map(&self.pool, self.map_id).cloned()
     }
 
     fn lane_spawn(map: &crate::map_drive_worker091::MapSpec, slot: usize) -> [f32; 3] {
@@ -64,7 +69,9 @@ impl IntegratedRuntime {
 
     fn spawn_slot(&mut self, world: &World, slot: usize, map: crate::map_drive_worker091::MapSpec,
         now: Instant) -> io::Result<()> {
-        if self.workers[slot].is_some() { return Err(model::bad()); }
+        if world.map != self.map_id || map.asset != self.map_id.asset()
+            || map.arena_type_id != self.map_id.arena_type_id()
+            || self.workers[slot].is_some() { return Err(model::bad()); }
         let lane = Self::lane_spawn(&map, slot);
         self.offsets[slot] = [0.; 3];
         self.anchored[slot] = false;
@@ -88,10 +95,8 @@ impl IntegratedRuntime {
     }
 
     fn start(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
-        if self.started || world.actors.len() != model::CAPACITY || world.started.is_none() { return Err(model::bad()); }
-        // The native wire currently advertises Karelia (space_id=1). Do not
-        // let an arbitrary pool ordering silently pair that wire with another
-        // map; fail closed until the protocol carries an explicit map choice.
+        if world.map != self.map_id || self.started || world.actors.len() != model::CAPACITY
+            || world.started.is_none() { return Err(model::bad()); }
         let map = self.map()?;
         let lane_spawns = std::array::from_fn(|slot| {
             Self::lane_spawn(&map, slot)
@@ -114,7 +119,7 @@ impl IntegratedRuntime {
 
     fn finish_catalog(&mut self,world:&mut World,now:Instant)->io::Result<()>{
         let staged=self.staged.as_ref().ok_or_else(model::bad)?;
-        if staged.id!=world.id||staged.scene_version()<=world.scene_version()
+        if staged.map!=world.map||world.map!=self.map_id||staged.id!=world.id||staged.scene_version()<=world.scene_version()
             ||staged.actors.iter().map(|a|a.session).collect::<Vec<_>>()!=world.actors.iter().map(|a|a.session).collect::<Vec<_>>(){
             return Err(io::Error::new(io::ErrorKind::InvalidData,"catalog transaction membership or scene changed; fail closed"));}
         let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().ok_or_else(model::bad)?,
@@ -143,7 +148,7 @@ impl IntegratedRuntime {
     fn finish_removal(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
         if self.catalog.is_some(){return self.finish_catalog(world,now);}
         let staged = self.staged.as_ref().ok_or_else(model::bad)?;
-        if staged.id != world.id || staged.scene_version() != 1 || world.scene_version() != 0
+        if staged.map != world.map || world.map != self.map_id || staged.id != world.id || staged.scene_version() != 1 || world.scene_version() != 0
             || staged.actors.iter().map(|a| a.session).collect::<Vec<_>>()
                 != world.actors.iter().map(|a| a.session).collect::<Vec<_>>() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "destructible transaction membership changed; fail closed"));
@@ -182,6 +187,10 @@ impl IntegratedRuntime {
     }
 
     fn step(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
+        if world.map != self.map_id || self.workers.iter().flatten().any(|worker|
+            worker.map.asset != self.map_id.asset() || worker.map.arena_type_id != self.map_id.arena_type_id()) {
+            return Err(model::bad());
+        }
         if world.started.is_none() { return Ok(()); }
         if self.staged.is_some() { return self.finish_removal(world, now); }
         self.synchronizing = [false; model::CAPACITY];
@@ -343,38 +352,66 @@ impl Table {
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia)
+}
+
+fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
+    -> io::Result<&crate::map_drive_worker091::MapSpec> {
+    let mut candidates=pool.maps.iter().filter(|map| map.asset==selected.asset());
+    let map=candidates.next().ok_or_else(model::bad)?;
+    if candidates.next().is_some() || map.arena_type_id!=selected.arena_type_id() { return Err(model::bad()); }
+    Ok(map)
+}
+
+fn selected_pool_config(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<serde_json::Value> {
+    use std::io::Read;
+    let map=selected_pool_map(pool,selected)?;
+    // Pool load already validated ownership/schema; recheck these exact bytes
+    // so a replaced config cannot substitute projectile geometry afterwards.
+    let mut raw=Vec::new(); fs::File::open(&map.config)?.take(16385).read_to_end(&mut raw)?;
+    if raw.is_empty() || raw.len()>16384 || format!("{:x}",Sha256::digest(&raw))!=map.config_sha256 { return Err(model::bad()); }
+    let config=crate::map_drive_worker091::json(&raw,16384)?;
+    if config["map"].as_str()!=Some(selected.asset())
+        || config["terrain"]["sha256"].as_str()!=Some(selected.spec().terrain_manifest_sha256)
+        || config["obstacles"]["sha256"].as_str()!=Some(selected.spec().physics_manifest_sha256) { return Err(model::bad()); }
+    Ok(config)
 }
 
 fn terrain_for_pool(pool: &crate::map_drive_worker091::Pool) -> io::Result<Arc<super::terrain::Terrain>> {
-    use std::io::Read;
-    let map=pool.maps.iter().find(|map|map.asset=="01_karelia" && map.arena_type_id==1).ok_or_else(model::bad)?;
-    // Pool load already validated ownership/schema; recheck these exact bytes
-    // so a replaced config cannot substitute projectile geometry afterwards.
-    let mut raw=Vec::new(); fs::File::open(&map.config)?.take(65537).read_to_end(&mut raw)?;
-    if raw.is_empty() || raw.len()>65536 || format!("{:x}",Sha256::digest(&raw))!=map.config_sha256 { return Err(model::bad()); }
-    let config:serde_json::Value=serde_json::from_slice(&raw).map_err(|_|model::bad())?;
-    if config["terrain"]["sha256"].as_str()!=Some(super::terrain::MANIFEST_SHA256) { return Err(model::bad()); }
+    terrain_for_pool_for_map(pool,MapId::Karelia)
+}
+
+fn terrain_for_pool_for_map(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<Arc<super::terrain::Terrain>> {
+    let config=selected_pool_config(pool,selected)?;
     let path=config["terrain"]["path"].as_str().ok_or_else(model::bad)?;
-    let terrain=super::terrain::Terrain::load(&pool.local_root,Path::new(path))?;
+    let terrain=super::terrain::Terrain::load_for(selected,&pool.local_root,Path::new(path))?;
     // Same original map resources, independently filtered with the original
     // projectile mask128. The vehicle-physics mask18 export is not substituted.
-    let obstacle_path=pool.local_root.join("evidence/20261010-p06m-terrain-impact-01/projectile-obstacles01/01_karelia/manifest.json");
-    let obstacles=super::obstacles::Obstacles::load(&pool.local_root,&obstacle_path)?;
+    let obstacle_path=pool.local_root.join(selected.spec().projectile_manifest_relative);
+    let obstacles=super::obstacles::Obstacles::load_for(selected,&pool.local_root,&obstacle_path)?;
     Ok(Arc::new(terrain.with_obstacles(Arc::new(obstacles))?))
 }
 
 pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
     pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool, destructible_test_lab: bool,catalog_path:Option<(&str,&str)>) -> Result<(), Box<dyn std::error::Error>> {
+    serve_integrated_for_map(key_path,digest_path,config_path,pool_path,capture_path,geometry_path,
+        ap_test_lab,terrain_test_lab,destructible_test_lab,catalog_path,MapId::Karelia)
+}
+
+pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: &str,
+    pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool,
+    destructible_test_lab: bool,catalog_path:Option<(&str,&str)>,map:MapId) -> Result<(), Box<dyn std::error::Error>> {
+    if map==MapId::Prohorovka && (!ap_test_lab || !terrain_test_lab || destructible_test_lab) { return Err(model::bad().into()); }
     if ap_test_lab && geometry_path.is_none() { return Err(model::bad().into()); }
     if destructible_test_lab && !terrain_test_lab { return Err(model::bad().into()); }
     if catalog_path.is_some()&&(!terrain_test_lab||destructible_test_lab){return Err(model::bad().into());}
     if terrain_test_lab && !ap_test_lab { return Err(model::bad().into()); }
     let config = crate::identity091::Config::load(config_path)?;
     let pool = crate::map_drive_worker091::Pool::load(&config.local_root, Path::new(pool_path))?;
+    selected_pool_config(&pool,map)?;
     let geometry = geometry_path.map(|path| super::geometry::Bundle::load(&config.local_root, Path::new(path)))
         .transpose()?.map(Arc::new);
-    let terrain = if terrain_test_lab { Some(terrain_for_pool(&pool)?) } else { None };
+    let terrain = if terrain_test_lab { Some(terrain_for_pool_for_map(&pool,map)?) } else { None };
     let removal = if destructible_test_lab {
         let path = pool.local_root.join("evidence/20261010-p06n-destructible-01/boundary/worker-ipc01/descriptor.json");
         Some(crate::map_drive_worker091::RemovalSpec::load(&pool.local_root,&path,
@@ -383,19 +420,25 @@ pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
     let catalog=if let Some((path,sha))=catalog_path{
         let path=Path::new(path);let catalog=Arc::new(super::fragiles::Catalog::load(&pool.local_root,path,sha)?);
         let worker=crate::map_drive_worker091::CatalogSpec::load(&pool.local_root,&path.parent().ok_or_else(model::bad)?.join(&catalog.worker_file),&catalog.worker_sha256)?;
-        if worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
+        if catalog.map!=map||worker.map_id()!=map||worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
             a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision){return Err(model::bad().into());}
         Some((catalog,worker))
     }else{None};
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map)
 }
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
     integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
-    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>)
+    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId)
     -> Result<(), Box<dyn std::error::Error>> {
     if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
     if terrain.is_some() && !ap_test_lab { return Err(model::bad().into()); }
+    if let Some(pool)=&integrated_pool { selected_pool_config(pool,map)?; }
+    if terrain.as_ref().is_some_and(|t|t.map_id()!=map)
+        || catalog.as_ref().is_some_and(|(c,w)|c.map!=map||w.map_id()!=map)
+        || map==MapId::Prohorovka && (integrated_pool.is_none()||!ap_test_lab||terrain.is_none()||removal.is_some()) {
+        return Err(model::bad().into());
+    }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
     let private = login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len() != 16 { return Err(model::bad().into()); }
@@ -408,7 +451,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut capture = Some(Recorder::open_profile(capture_path, &config.local_root, capture_profile)?);
     let mut table = Table::default();
     let started = Instant::now();
-    let mut world = World::new(OsRng.next_u64().max(1), started)?;
+    let mut world = World::new_for_map(OsRng.next_u64().max(1), started,map)?;
     if let Some(bundle) = geometry {
         world.bind_geometry(bundle)?;
         println!("SHARED_GEOMETRY_BOUND battle={} bundle_sha256={} revision={} material_revision={} components=Hull,Turret_01,Gun_02 scope=other_actor_only damage={} terrain_projectiles={}",
@@ -422,8 +465,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     if let Some(terrain) = terrain {
         let revision=terrain.source_revision();
         world.bind_terrain(terrain)?;
-        println!("SHARED_TERRAIN_BOUND battle={} revision={} manifest_sha256={} obstacle_manifest_sha256={} map=01_karelia geometry=original_world material=source_kind terrain_only=false obstacles=true projectile_mask=128 tie_policy=world_first_f32_bucket",
-            world.id,revision,super::terrain::MANIFEST_SHA256,super::obstacles::MANIFEST_SHA256);
+        println!("SHARED_TERRAIN_BOUND battle={} revision={} manifest_sha256={} obstacle_manifest_sha256={} map={} geometry=original_world material=source_kind terrain_only=false obstacles=true projectile_mask=128 tie_policy=world_first_f32_bucket",
+            world.id,revision,map.spec().terrain_manifest_sha256,map.spec().projectile_manifest_sha256,map.asset());
     }
     if removal.is_some() { world.bind_destructible_test_lab()?; }
     if let Some((catalog,_))=&catalog{world.bind_fragiles(catalog.clone())?;
@@ -432,7 +475,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut terrain_cursor = 0usize;
     let mut impact_cursor = 0usize;
     let mut fragile_cursor=0usize;
-    let mut integrated = integrated_pool.map(IntegratedRuntime::new);
+    let mut integrated = integrated_pool.map(|pool|IntegratedRuntime::new_for_map(pool,map));
     if let Some(runtime) = &mut integrated { runtime.removal = removal; }
     if let Some(runtime)=&mut integrated {runtime.catalog=catalog.map(|(_,worker)|worker);}
     let mut next_id = 1u32;
@@ -440,10 +483,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut last_auth: Option<Instant> = None;
     let mut fragments = login::LoginFragments::default();
     let mut rate_started = started; let mut rate_count = 0u32;
-    println!("BOUND {} base_backend={} profile={} battle={} capacity=2 scope=allied_temporary_ms1 motion={} physics={} inventory_changed=false",
+    println!("BOUND {} base_backend={} profile={} battle={} capacity=2 scope=allied_temporary_ms1 motion={} physics={} map={} arena_type_id={} inventory_changed=false",
         config.login_bind, config.base_bind,
         if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
-        world.id, if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some());
+        world.id, if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
     loop {
         let now = Instant::now();
         if now.duration_since(started) >= model::LIFETIME { println!("SHARED_STOP reason=lab_lifetime"); break; }
@@ -623,7 +666,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 "triangle_id":contact.hit.triangle_id,"t":contact.hit.t,"endpoint":contact.hit.point,
                 "normal":contact.hit.normal,"direction":contact.direction,
                 "segment_start":contact.segment_start,"segment_end":contact.segment_end,
-                "geometry_revision":if surface=="terrain" {super::terrain::SOURCE_REVISION} else {super::obstacles::SOURCE_REVISION},
+                "map":world.map.asset(),"geometry_revision":world.map.spec().world_revision,
+                "geometry_revision_scope":"terrain_and_projectile_obstacles",
                 "surface":surface,"instance_id":instance_id,"material_kind":material_kind,
                 "effect_material_index":contact.hit.effect_material_index(),"material_policy":contact.hit.material_policy(),
                 "damage_applied":false}));
@@ -888,6 +932,55 @@ fn entry_ready(s: &Session, now: Instant) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn selected_map_admission_uses_source_pins_and_rejects_cross_map_workers_before_start() {
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
+        let pool=crate::map_drive_worker091::Pool::load(&root.join("local"),
+            &root.join("local/build/server/physics-integrated-p06n-01/pool-near.json")).unwrap();
+        for map_id in [MapId::Karelia,MapId::Prohorovka] {
+            let spec=selected_pool_map(&pool,map_id).unwrap();
+            assert_eq!(spec.asset,map_id.asset());
+            assert_eq!(spec.arena_type_id,map_id.arena_type_id());
+            let config=selected_pool_config(&pool,map_id).unwrap();
+            assert_eq!(config["map"],map_id.asset());
+            assert_eq!(config["terrain"]["sha256"],map_id.spec().terrain_manifest_sha256);
+            assert_eq!(config["obstacles"]["sha256"],map_id.spec().physics_manifest_sha256);
+        }
+        let mut reversed=pool.clone(); reversed.maps.reverse();
+        assert_eq!(selected_pool_map(&pool,MapId::Prohorovka).unwrap(),
+                   selected_pool_map(&reversed,MapId::Prohorovka).unwrap());
+        let mut wrong_id=pool.clone();
+        wrong_id.maps.iter_mut().find(|m|m.asset=="05_prohorovka").unwrap().arena_type_id=5;
+        assert!(selected_pool_map(&wrong_id,MapId::Prohorovka).is_err());
+        let mut duplicate=pool.clone();
+        duplicate.maps.push(selected_pool_map(&pool,MapId::Prohorovka).unwrap().clone());
+        assert!(selected_pool_map(&duplicate,MapId::Prohorovka).is_err());
+        let mut replaced=pool.clone();
+        replaced.maps.iter_mut().find(|m|m.asset=="05_prohorovka").unwrap().config_sha256="0".repeat(64);
+        assert!(selected_pool_config(&replaced,MapId::Prohorovka).is_err());
+        let karelia=selected_pool_map(&pool,MapId::Karelia).unwrap().clone();
+        let mut mixed=pool.clone();
+        let wrong=mixed.maps.iter_mut().find(|m|m.asset=="05_prohorovka").unwrap();
+        wrong.config=karelia.config.clone(); wrong.config_sha256=karelia.config_sha256.clone();
+        assert!(selected_pool_config(&mixed,MapId::Prohorovka).is_err());
+        let now=Instant::now(); let mut old_world=model::tests::world(now);
+        let mut runtime=IntegratedRuntime::new_for_map(Arc::new(pool),MapId::Prohorovka);
+        assert!(runtime.start(&mut old_world,now).is_err());
+        assert!(runtime.step(&mut old_world,now).is_err());
+        old_world.map=MapId::Prohorovka;
+        assert!(runtime.spawn_slot(&old_world,0,karelia,now).is_err());
+        assert!(runtime.workers.iter().all(Option::is_none));
+    }
+
+    #[test] fn incomplete_prohorovka_modes_fail_before_any_file_or_network_access() {
+        for (geometry,ap,terrain,legacy_removal) in [
+            (None,false,false,false),(Some("missing"),true,false,false),
+            (Some("missing"),false,true,false),(Some("missing"),true,true,true),
+        ] {
+            let error=serve_integrated_for_map("missing","missing","missing","missing","missing",
+                geometry,ap,terrain,legacy_removal,None,MapId::Prohorovka).unwrap_err();
+            assert_eq!(error.downcast_ref::<io::Error>().unwrap().kind(),io::ErrorKind::InvalidInput);
+        }
+    }
     fn peer(port: u16) -> SocketAddr { SocketAddr::from(([127,0,0,1], port)) }
     #[test]
     fn integrated_worker_bridge_keeps_worker_terrain_height() {

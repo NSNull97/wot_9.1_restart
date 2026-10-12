@@ -1,5 +1,6 @@
 //! Ordinary server entry point. Research commands remain in tools/wg_probe.
 use std::{env, io};
+use map_profile091::MapId;
 
 #[path = "protocol/login.rs"]
 mod login091;
@@ -49,7 +50,7 @@ mod battle091;
 #[derive(Debug, PartialEq)]
 enum Command<'a> {
     SharedLab { key: &'a str, digest: &'a str, gateway: &'a str, capture: &'a str },
-    IntegratedLab { key: &'a str, digest: &'a str, gateway: &'a str, pool: &'a str, capture: &'a str, geometry: Option<&'a str>, ap_test_lab: bool, terrain_test_lab: bool, destructible_test_lab: bool, catalog: Option<(&'a str,&'a str)> },
+    IntegratedLab { key: &'a str, digest: &'a str, gateway: &'a str, pool: &'a str, capture: &'a str, geometry: Option<&'a str>, ap_test_lab: bool, terrain_test_lab: bool, destructible_test_lab: bool, catalog: Option<(&'a str,&'a str)>, map: MapId },
     Interactive { key: &'a str, digest: &'a str, gateway: &'a str, capture: Option<&'a str> },
     MapDrive { key: &'a str, digest: &'a str, gateway: &'a str, pool: &'a str,
                capture: Option<&'a str>, profile: capture091::Profile },
@@ -57,12 +58,20 @@ enum Command<'a> {
 
 fn command(args: &[String]) -> io::Result<Command<'_>> {
     let invalid = || io::Error::new(io::ErrorKind::InvalidInput,
-        "usage: sr-gateway legacy091-interactive KEY DIGEST GATEWAY [CAPTURE] | legacy091-map-drive KEY DIGEST GATEWAY POOL [CAPTURE [map-drive-phase2-v1]] | legacy091-shared-lab KEY DIGEST GATEWAY CAPTURE | legacy091-integrated-lab KEY DIGEST GATEWAY POOL CAPTURE");
+        "usage: sr-gateway legacy091-interactive KEY DIGEST GATEWAY [CAPTURE] | legacy091-map-drive KEY DIGEST GATEWAY POOL [CAPTURE [map-drive-phase2-v1]] | legacy091-shared-lab KEY DIGEST GATEWAY CAPTURE | legacy091-integrated-lab KEY DIGEST GATEWAY POOL CAPTURE [MESH --ap-test-lab --terrain-test-lab [--destructible-catalog PATH SHA256] [--map MAP_ASSET]]");
+    // A single trailing selector preserves every accepted Karelia invocation.
+    // Prohorovka is available only on the cumulative AP + terrain path; the
+    // catalog is optional for the read-only original native identity oracle.
+    let (args, map) = if args.get(1).is_some_and(|v| v == "legacy091-integrated-lab")
+        && args.len() >= 4 && args[args.len() - 2] == "--map" {
+        (&args[..args.len() - 2], MapId::from_asset(&args[args.len() - 1])?)
+    } else { (args, MapId::Karelia) };
     match args.get(1).map(String::as_str) {
         Some("legacy091-shared-lab") if args.len() == 6 && !args[5].is_empty() => Ok(Command::SharedLab {
             key: &args[2], digest: &args[3], gateway: &args[4], capture: &args[5],
         }),
         Some("legacy091-integrated-lab") if matches!(args.len(), 7 | 8 | 9 | 10 | 11 | 13) && !args[5].is_empty() && !args[6].is_empty()
+            && (map == MapId::Karelia || matches!(args.len(), 10 | 13))
             && args.get(7).is_none_or(|s| !s.is_empty() && !s.starts_with("--"))
             && args.get(8).is_none_or(|s| s == "--ap-test-lab")
             && args.get(9).is_none_or(|s| s == "--terrain-test-lab")
@@ -71,7 +80,7 @@ fn command(args: &[String]) -> io::Result<Command<'_>> {
                     && args[12].len()==64 && args[12].bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))) => Ok(Command::IntegratedLab {
             key: &args[2], digest: &args[3], gateway: &args[4], pool: &args[5], capture: &args[6],
             geometry: args.get(7).map(String::as_str),
-            ap_test_lab: args.len() >= 9, terrain_test_lab: args.len() >= 10, destructible_test_lab: args.len() == 11, catalog: if args.len()==13{Some((&args[11],&args[12]))}else{None},
+            ap_test_lab: args.len() >= 9, terrain_test_lab: args.len() >= 10, destructible_test_lab: args.len() == 11, catalog: if args.len()==13{Some((&args[11],&args[12]))}else{None}, map,
         }),
         Some("legacy091-interactive") if matches!(args.len(), 5 | 6) => Ok(Command::Interactive {
             key: &args[2], digest: &args[3], gateway: &args[4], capture: args.get(5).map(String::as_str),
@@ -89,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     match command(&args)? {
         Command::SharedLab { key, digest, gateway, capture } => gateway091::serve_shared_lab(key, digest, gateway, capture),
-        Command::IntegratedLab { key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab, destructible_test_lab, catalog } => gateway091::serve_integrated_lab(key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab, destructible_test_lab,catalog),
+        Command::IntegratedLab { key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab, destructible_test_lab, catalog, map } => gateway091::serve_integrated_lab_for_map(key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab, destructible_test_lab,catalog,map),
         Command::Interactive { key, digest, gateway, capture } => gateway091::serve_interactive(key, digest, gateway, capture),
         Command::MapDrive { key, digest, gateway, pool, capture, profile } => gateway091::serve_map_drive(key, digest, gateway, pool, capture, profile),
     }
@@ -111,15 +120,15 @@ mod cli_tests {
     #[test]
     fn integrated_lab_requires_pool_and_capture() {
         assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture"])).unwrap(),
-            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:None,ap_test_lab:false,terrain_test_lab:false,destructible_test_lab:false,catalog:None });
+            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:None,ap_test_lab:false,terrain_test_lab:false,destructible_test_lab:false,catalog:None,map:MapId::Karelia });
         assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture","mesh"])).unwrap(),
-            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:false,terrain_test_lab:false,destructible_test_lab:false,catalog:None });
+            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:false,terrain_test_lab:false,destructible_test_lab:false,catalog:None,map:MapId::Karelia });
         assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture","mesh","--ap-test-lab"])).unwrap(),
-            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:false,destructible_test_lab:false,catalog:None });
+            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:false,destructible_test_lab:false,catalog:None,map:MapId::Karelia });
         assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture","mesh","--ap-test-lab","--terrain-test-lab"])).unwrap(),
-            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:true,destructible_test_lab:false,catalog:None });
+            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:true,destructible_test_lab:false,catalog:None,map:MapId::Karelia });
         assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture","mesh","--ap-test-lab","--terrain-test-lab","--destructible-test-lab"])).unwrap(),
-            Command::IntegratedLab {key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:true,destructible_test_lab:true,catalog:None});
+            Command::IntegratedLab {key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:true,destructible_test_lab:true,catalog:None,map:MapId::Karelia});
         for extra in [vec!["--ap-test-lab"], vec!["mesh","--unverified"], vec!["","--ap-test-lab"],
             vec!["mesh","--terrain-test-lab"],vec!["mesh","--ap-test-lab","--ap-test-lab"],
             vec!["mesh","--ap-test-lab","--terrain-test-lab","--terrain-test-lab"]] {
@@ -141,6 +150,32 @@ mod cli_tests {
             let mut values=base.to_vec();values.push(hash);assert!(command(&args(&values)).is_err());}
         for index in [8,9,10]{let mut values=valid.clone();values[index]="--wrong";assert!(command(&args(&values)).is_err());}
         assert!(command(&args(&base)).is_err());
+    }
+
+    #[test] fn explicit_prohorovka_requires_complete_cumulative_path_and_one_trailing_map() {
+        let base=["exe","legacy091-integrated-lab","key","digest","config","pool","capture",
+            "mesh","--ap-test-lab","--terrain-test-lab"];
+        let mut plain=base.to_vec(); plain.extend(["--map","05_prohorovka"]);
+        assert!(matches!(command(&args(&plain)).unwrap(),Command::IntegratedLab {
+            map:MapId::Prohorovka,ap_test_lab:true,terrain_test_lab:true,catalog:None,..}));
+        let sha="a".repeat(64);
+        let mut catalog=base.to_vec();
+        catalog.extend(["--destructible-catalog","catalog",&sha,"--map","05_prohorovka"]);
+        assert!(matches!(command(&args(&catalog)).unwrap(),Command::IntegratedLab {
+            map:MapId::Prohorovka,catalog:Some(("catalog",_)),destructible_test_lab:false,..}));
+        for length in 7..=9 {
+            let mut values=base[..length].to_vec(); values.extend(["--map","05_prohorovka"]);
+            assert!(command(&args(&values)).is_err());
+        }
+        for tail in [vec!["--map"],vec!["--map","04_prohorovka"],vec!["--map","5"],
+            vec!["--map",""],vec!["--map","../05_prohorovka"],
+            vec!["--destructible-test-lab","--map","05_prohorovka"],
+            vec!["--map","01_karelia","--map","05_prohorovka"],
+            vec!["--map","05_prohorovka","--destructible-catalog","catalog",&sha]] {
+            let mut values=base.to_vec(); values.extend(tail); assert!(command(&args(&values)).is_err());
+        }
+        let mut explicit_old=base.to_vec(); explicit_old.extend(["--map","01_karelia"]);
+        assert_eq!(command(&args(&base)).unwrap(),command(&args(&explicit_old)).unwrap());
     }
 
     #[test]
