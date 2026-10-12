@@ -1031,12 +1031,20 @@ def observe_shared_lab():
     if _shared_native_samples >= 3600:
         return
     _shared_native_samples += 1
-    rotator = player.gunRotator
-    prediction = dict(started=rotator._VehicleGunRotator__isStarted,
-                      yaw=rotator._VehicleGunRotator__turretYaw,
-                      pitch=rotator._VehicleGunRotator__gunPitch)
-    target = rotator._VehicleGunRotator__prevSentShotPoint
-    prediction['target'] = list(target) if target is not None else None
+    # The original Avatar can enter the battle before its optional gun
+    # rotator is attached. Keep this passive receipt alive in that window so
+    # the destructible catalog getter still runs; never synthesize a pose.
+    rotator = getattr(player, 'gunRotator', None)
+    if rotator is None:
+        prediction = dict(started=None, yaw=None, pitch=None, rotator_available=False,
+                          target=None)
+    else:
+        prediction = dict(started=rotator._VehicleGunRotator__isStarted,
+                          yaw=rotator._VehicleGunRotator__turretYaw,
+                          pitch=rotator._VehicleGunRotator__gunPitch,
+                          rotator_available=True)
+        target = rotator._VehicleGunRotator__prevSentShotPoint
+        prediction['target'] = list(target) if target is not None else None
     record('shared_native_snapshot', sample=_shared_native_samples,
            avatar_entity_id=player.id, player_vehicle_id=player.playerVehicleID,
            arena_unique_id=player.arenaUniqueID, vehicles=rows, prediction=prediction,
