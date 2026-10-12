@@ -115,26 +115,39 @@ class Probe(object):
         self.current = []
         self.waiting = []
         self.complete = False
+        self.space_diagnostic = {}
 
     def advance(self, player, manager, world, math_api):
         require(not self.complete, 'catalog probe already complete')
         self.observations += 1
-        require(self.observations <= MAX_OBSERVATIONS, 'catalog load/observation timeout')
         require(player.arena.arenaType.geometryName == self.spec['map'],
                 'native catalog map differs from spec')
         space = manager.getSpaceID()
-        if space is None:
-            return None
-        require(integer(space, 1, 0x7fffffff) and space == player.spaceID,
-                'native catalog manager/player space mismatch')
-        if self.space is None:
-            self.space = space
-        require(space == self.space, 'native catalog space changed during capture')
+        player_space = player.spaceID
+        self.space_diagnostic = dict(manager_space=repr(space)[:80],
+                                     player_space=repr(player_space)[:80],
+                                     manager_type=type(space).__name__[:80],
+                                     player_type=type(player_space).__name__[:80])
+        context = ' manager=%r (%s), player=%r (%s)' % (
+            space, type(space).__name__, player_space, type(player_space).__name__)
+        require(self.observations <= MAX_OBSERVATIONS,
+                'catalog load/observation timeout;' + context)
         loaded = manager._DestructiblesManager__loadedChunkIDs
         # Query only automatically selected target keys; no unrelated dictionary
         # or entity enumeration. Retain source index holes as fatal errors.
         counts = [(chunk, loaded.get(chunk)) for chunk in self.spec['chunk_ids']]
         self.waiting = [chunk for chunk, count in counts if count is None]
+        # #717 starts the destructibles manager separately from Avatar entry.
+        # Like the accepted one-chunk probe, wait for native chunk readiness
+        # before binding the initial space. Never query a stale lobby space.
+        if self.space is None and self.waiting:
+            return None
+        require(integer(space, 1, 0x7fffffff) and
+                integer(player_space, 1, 0x7fffffff) and space == player_space,
+                'native catalog manager/player space mismatch;' + context)
+        if self.space is None:
+            self.space = space
+        require(space == self.space, 'native catalog space changed during capture;' + context)
         if self.waiting:
             if self.current or self.previous is not None:
                 raise ValueError('native target chunk unloaded during catalog capture')
@@ -190,6 +203,10 @@ def observe(player, record, settings):
                    target_chunks=spec['chunk_ids'], observer_mutated_gameplay=False)
         result = _probe.advance(player, AreaDestructibles.g_destructiblesManager, BigWorld, Math)
         if result is None:
+            if _probe.waiting and (_probe.observations == 1 or _probe.observations % 60 == 0):
+                record('destructible_catalog_waiting', observation=_probe.observations,
+                       waiting_chunks=_probe.waiting, space_state=_probe.space_diagnostic,
+                       observer_mutated_gameplay=False, server_hit_authority=False)
             return
         payload = (json.dumps(result, sort_keys=True, ensure_ascii=True) + '\n').encode('ascii')
         require(len(payload) <= MAX_OUTPUT_BYTES, 'catalog output byte bound')
@@ -215,4 +232,5 @@ def observe(player, record, settings):
         _done = True
         record('destructible_catalog_failed', error=traceback.format_exc(),
                waiting_chunks=_probe.waiting if _probe is not None else [],
+               space_state=_probe.space_diagnostic if _probe is not None else {},
                observer_mutated_gameplay=False, server_hit_authority=False)

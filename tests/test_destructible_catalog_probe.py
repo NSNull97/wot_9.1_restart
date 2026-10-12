@@ -108,6 +108,44 @@ class CatalogProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'timeout'):
             state.advance(*env)
 
+    def test_preload_stale_manager_waits_for_chunks_then_binds_matching_space(self):
+        env = environment({})
+        env[1].getSpaceID = lambda: -1
+        state = probe.Probe(specification(), 'b'*64)
+        self.assertIsNone(state.advance(*env))
+        self.assertEqual(state.waiting, [31354, 31355])
+        self.assertEqual(state.space_diagnostic['manager_space'], '-1')
+        self.assertIsNone(state.space)
+        self.assertFalse(env[2].calls)
+        env[1].getSpaceID = lambda: 1
+        env[1]._DestructiblesManager__loadedChunkIDs.update({31354: 3, 31355: 2})
+        self.assertEqual(self.advance_complete(state, env)['space_id'], 1)
+
+    def test_loaded_space_mismatch_or_loss_after_capture_is_never_waited_away(self):
+        for space in (None, 0, -1, 2, True):
+            env = environment()
+            env[1].getSpaceID = lambda: space
+            with self.assertRaisesRegex(ValueError, 'space mismatch; manager='):
+                probe.Probe(specification(), 'b'*64).advance(*env)
+            self.assertFalse(env[2].calls)
+        env = environment()
+        state = probe.Probe(specification(), 'b'*64)
+        state.advance(*env)
+        env[1].getSpaceID = lambda: None
+        env[1]._DestructiblesManager__loadedChunkIDs.clear()
+        with self.assertRaisesRegex(ValueError, 'manager=None.*player=1'):
+            state.advance(*env)
+
+    def test_preload_space_mismatch_is_bounded_and_reports_actual_ids(self):
+        env = environment({})
+        env[1].getSpaceID = lambda: 0
+        state = probe.Probe(specification(), 'b'*64)
+        for _ in range(probe.MAX_OBSERVATIONS):
+            self.assertIsNone(state.advance(*env))
+        with self.assertRaisesRegex(ValueError, 'timeout; manager=0.*player=1'):
+            state.advance(*env)
+        self.assertFalse(env[2].calls)
+
     def test_unload_or_matrix_change_between_passes_fails(self):
         env = environment()
         state = probe.Probe(specification(), 'b'*64)
