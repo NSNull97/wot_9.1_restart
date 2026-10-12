@@ -104,11 +104,11 @@ passage, and acceptance remain open.
 
 ```text
 python -B -X utf8 -m unittest tests.test_destructible_catalog tests.test_destructible_catalog_probe tests.test_tree_contact_catalog -v
-python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06q-final-08
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06q-final-10
 python -B -X utf8 server/build.py physics --out local/build/server/physics-p06q-final-02
 python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/test_stand_helpers.py
 python -B -X utf8 -m py_compile local/evidence/20261012-p06p-prohorovka-01/start_stand.py
-python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/start_stand.py server --run contactprep03 --mode runtime --map 05_prohorovka --build gateway-p06q-final-08 --build-sha256 437d8127a75addef5e2609e50ca81e3c199ea245a073f689f9384ee5453c3459 --build-result-sha256 21d296b0648e07064db1358088bd789f85668d95464c0305535da22581b8dacb --expected-head 5dd6ef5d5a72a486e945c0b5d0a2f15ca9c7a850 --pool local/build/server/physics-p06q-final-02/pool-near.json --pool-sha256 59b88e5c2d2b1f9689c3b302275915cf2b9aed65290a8e1827c2d2eb596b5288 --destructible-catalog local/evidence/20261012-p06q-tree-contact-01/import/native-join01/manifest.json 59a51da7613e17ae4150471053b1ad9856a4acbd74d493aee1cc16f04ebcdb7f --dry-run
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/start_stand.py server --run contactprep04 --mode runtime --map 05_prohorovka --build gateway-p06q-final-09 --build-sha256 6ff51d463868022759b38262337b44802cafd04e7b7e3a375961970df0f547ea --build-result-sha256 9977d2a78d379f286a2ee79e82d22ee85876254fb4b87a3482f28c18eed25aad --expected-head 18016c2c2d6d6e0d2620f9ab2526e6735b3f22b4 --pool local/build/server/physics-p06q-final-02/pool-near.json --pool-sha256 59b88e5c2d2b1f9689c3b302275915cf2b9aed65290a8e1827c2d2eb596b5288 --destructible-catalog local/evidence/20261012-p06q-tree-contact-01/import/native-join01/manifest.json 59a51da7613e17ae4150471053b1ad9856a4acbd74d493aee1cc16f04ebcdb7f --dry-run
 git diff --check
 Get-Process -Name WorldOfTanks,sr-gateway,MapDriveWorker,PhysicsSpike
 python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/prepare_stand.py --slot a --run treecontact02 --mode oracle --map 05_prohorovka --catalog-spec local/evidence/20261012-p06q-tree-contact-01/import/inventory01/probe-spec.json --catalog-spec-sha256 5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd
@@ -125,22 +125,17 @@ Results:
 - Python: 39 tests, **PASS**. The final log is
   `local/evidence/20261012-p06q-tree-contact-01/tests/importer-tests-final.log`.
 - Gateway: 614 tests, **PASS_ISOLATED_BUILD** on the atomic contact and
-  mass/closing-speed ramming policy. Canonical receipt:
-  `local/build/server/gateway-p06q-final-08/result.json`; receipt SHA256
-  `21d296b0648e07064db1358088bd789f85668d95464c0305535da22581b8dacb`,
-  executable SHA256
-  `437d8127a75addef5e2609e50ca81e3c199ea245a073f689f9384ee5453c3459`.
+  mass/closing-speed ramming policy. Canonical final receipt and executable
+  hashes are recorded after the clean-head final-10 build.
   The intermediate atomic-only receipt remains
   `local/build/server/gateway-p06q-contact-atomic-01/result.json`.
 - Helper guards: 12 tests, **PASS**. The runtime command accepts the joined
   P06Q v2 manifest envelope (240 KiB) while retaining the 128 KiB ceiling for
   legacy v1 catalogs; an unbound v2 catalog is rejected.
-- Runtime preflight `contactprep03`: **PREFLIGHT_ONLY_NOT_STARTED**. The
-  fresh final-08 executable, joined v2 manifest, Prohorovka pool and source
-  HEAD all passed their pins; no gateway, worker, or client process started.
-  Receipt:
-  `local/evidence/20261012-p06q-tree-contact-01/tests/runtime-preflight-contactprep03.json`
-  (SHA256 `775298a920af259d01e0ef59d600d2b5702816566306073eb95ba0fdc0abb915`).
+- Runtime preflight `contactprep04`: **PREFLIGHT_ONLY_NOT_STARTED**. The
+  joined v2 manifest, Prohorovka pool, final-09 executable and source HEAD all
+  passed their pins; no gateway, worker, or client process started. A final-10
+  preflight will be recorded after this report commit.
 - Physics: **PASS_ISOLATED_BUILD**. Receipt:
   `local/build/server/physics-p06q-final-02/result.json`; DLL SHA256
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`.
@@ -158,8 +153,8 @@ Results:
 - Stop receipt: `local/evidence/20261012-p06p-prohorovka-01/stop-treecontact02stop.json`;
   rollback receipts: `install-a-treecontact02/restore.json` and
   `install-b-treecontact02/restore.json`.
-- Runtime preflight receipt:
-  `local/evidence/20261012-p06q-tree-contact-01/tests/runtime-preflight-contactprep03.json`.
+- Runtime preflight receipts are retained under
+  `local/evidence/20261012-p06q-tree-contact-01/tests/`.
 
 ## Evidence paths
 
