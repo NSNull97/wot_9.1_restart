@@ -978,7 +978,7 @@ mod tests {
         ] {
             let error=serve_integrated_for_map("missing","missing","missing","missing","missing",
                 geometry,ap,terrain,legacy_removal,None,MapId::Prohorovka).unwrap_err();
-            assert_eq!(error.downcast_ref::<io::Error>().unwrap().kind(),io::ErrorKind::InvalidInput);
+            assert_eq!(error.downcast_ref::<io::Error>().unwrap().kind(),io::ErrorKind::InvalidData);
         }
     }
     fn peer(port: u16) -> SocketAddr { SocketAddr::from(([127,0,0,1], port)) }
