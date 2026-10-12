@@ -207,6 +207,20 @@ def profile_calls(frame, phase, value):
         for name in ('credits', 'gold', 'freeXP', 'useFreeXP', 'fullName', 'name', 'clan'):
             if name in frame.f_locals:
                 fields[name] = primitive(frame.f_locals[name])
+    elif (source == 'scripts/client/AreaDestructibles.py'
+          and _settings.get('enable_shared_lab') is True
+          and method in ('onEnterWorld', 'set_destroyedFragiles', 'orderDestructibleDestroy',
+                         '__destroyFragile', '__launchEffect')):
+        kind = 'native_destructible_call'
+        fields['owner_class'] = type(frame.f_locals.get('self')).__name__
+        fields['arguments'] = primitive(dict((name, frame.f_locals[name]) for name in
+            ('chunkID', 'destrID', 'isShotDamage', 'isAnimation', 'syncWithProjectile',
+             'prev', 'oldValue', 'effectName', 'effectType') if name in frame.f_locals), budget=[64, 2048])
+        owner = frame.f_locals.get('self')
+        if fields['owner_class'] == 'AreaDestructibles':
+            fields['entity_id'] = owner.id
+            values = list(owner.destroyedFragiles)
+            fields['destroyed_fragiles'] = values if len(values) <= 1 else {'unrecognized': True}
     elif ((source == 'scripts/client/gui/Scaleform/daapi/view/meta/FightButtonMeta.py' and
            method in ('as_disableFightButtonS', 'as_setFightButtonS')) or
           (source == 'scripts/client/gui/Scaleform/daapi/view/lobby/header/FightButton.py' and
@@ -960,6 +974,19 @@ _shared_native_samples = 0
 _shared_collision_oracle_attempted = False
 
 
+def shared_native_vehicles(entity_map, vehicle_class):
+    """Read only the two fixture vehicles, independent of local effect entities."""
+    vehicles = []
+    for entity_id in (152043523, 152043525):
+        entity = entity_map.get(entity_id)
+        if entity is None:
+            continue
+        if type(entity) is not vehicle_class or entity.id != entity_id:
+            raise ValueError('shared lab vehicle identity differs')
+        vehicles.append(entity)
+    return vehicles
+
+
 def observe_shared_lab():
     """Read-only native entity receipt and bounded engine-written screenshots.
 
@@ -977,9 +1004,7 @@ def observe_shared_lab():
     player = BigWorld.player()
     if type(player) is not Avatar.PlayerAvatar:
         return
-    entities = BigWorld.entities.values()
-    if len(entities) > 16:
-        raise ValueError('shared lab native entity count exceeds bound')
+    entities = shared_native_vehicles(BigWorld.entities, Vehicle.Vehicle)
     rows = []
     for entity in entities:
         if type(entity) is not Vehicle.Vehicle:
@@ -1014,7 +1039,8 @@ def observe_shared_lab():
     prediction['target'] = list(target) if target is not None else None
     record('shared_native_snapshot', sample=_shared_native_samples,
            avatar_entity_id=player.id, player_vehicle_id=player.playerVehicleID,
-           arena_unique_id=player.arenaUniqueID, vehicles=rows, prediction=prediction, observer_mutated_gameplay=False)
+           arena_unique_id=player.arenaUniqueID, vehicles=rows, prediction=prediction,
+           native_entity_count=len(BigWorld.entities), observer_mutated_gameplay=False)
     if (not _shared_collision_oracle_attempted and 3 <= _shared_native_samples <= 60
             and len(rows) == 2 and all(row['is_started'] for row in rows)):
         _shared_collision_oracle_attempted = True
@@ -1024,6 +1050,9 @@ def observe_shared_lab():
         except Exception:
             record('shared_collision_oracle_failed', error=traceback.format_exc(),
                    observer_mutated_gameplay=False)
+    if _control and _control.get('probe_destructible_identity') is True:
+        import destructible_probe
+        destructible_probe.observe(player, record)
     if _shared_native_samples == 3:
         # Pure native maths on an identity matrix: an independent oracle, not
         # game input or a client-authored pose fed to the server.
@@ -1058,7 +1087,7 @@ def observe_shared_lab():
 
 def shared_login_control(data, settings):
     return (settings.get('enable_shared_lab') is True
-            and set(data) == set(('username', 'password', 'submit_via'))
+            and set(data) - set(('probe_destructible_identity',)) == set(('username', 'password', 'submit_via'))
             and data.get('submit_via') == 'python')
 
 
@@ -1075,8 +1104,11 @@ def consume_control(view):
     os.remove(path)
     data = json.loads(payload)
     del payload
-    if not isinstance(data, dict) or set(data) - set(('username', 'password', 'quit_after_seconds', 'screenshot_when', 'submit_via', 'ui_scenario', 'inspect_vehicle', 'export_ms1_crew', 'verify_ms1_crew', 'verify_hangar_limits', 'verify_hangar_windows', 'verify_inprocess_relogin', 'verify_account_switch', 'alternate_username', 'alternate_password', 'account_switch_expected', 'verify_long_hangar', 'long_hangar_expected', 'export_ms1_ammo', 'verify_ms1_ammo', 'ms1_ammo_expected', 'export_arena_entry', 'probe_avatar_base', 'probe_arena_space', 'probe_arena_vehicle', 'probe_arena_ready', 'probe_arena_movement', 'probe_map_drive', 'probe_map_drive_acceptance', 'map_drive_acceptance_mode', 'quit_when')):
+    if not isinstance(data, dict) or set(data) - set(('username', 'password', 'quit_after_seconds', 'screenshot_when', 'submit_via', 'ui_scenario', 'inspect_vehicle', 'export_ms1_crew', 'verify_ms1_crew', 'verify_hangar_limits', 'verify_hangar_windows', 'verify_inprocess_relogin', 'verify_account_switch', 'alternate_username', 'alternate_password', 'account_switch_expected', 'verify_long_hangar', 'long_hangar_expected', 'export_ms1_ammo', 'verify_ms1_ammo', 'ms1_ammo_expected', 'export_arena_entry', 'probe_avatar_base', 'probe_arena_space', 'probe_arena_vehicle', 'probe_arena_ready', 'probe_arena_movement', 'probe_map_drive', 'probe_map_drive_acceptance', 'map_drive_acceptance_mode', 'probe_destructible_identity', 'quit_when')):
         raise ValueError('unknown one-shot control schema')
+    if (type(data.get('probe_destructible_identity', False)) is not bool
+            or data.get('probe_destructible_identity') and _settings.get('enable_shared_lab') is not True):
+        raise ValueError('destructible identity probe requires explicit shared laboratory')
     has_credentials = 'username' in data or 'password' in data
     if has_credentials and not ('username' in data and 'password' in data):
         raise ValueError('one-shot control credentials must be paired')
@@ -1207,6 +1239,7 @@ def consume_control(view):
                 'verify_long_hangar': verify_long,
                 'export_ms1_ammo': export_ammo, 'verify_ms1_ammo': verify_ammo,
                 'export_arena_entry': export_arena, 'probe_avatar_base': probe_avatar, 'probe_arena_space': probe_space, 'probe_arena_vehicle': probe_vehicle, 'probe_arena_ready': probe_ready, 'probe_arena_movement': probe_movement, 'probe_map_drive': probe_drive, 'probe_map_drive_acceptance': probe_acceptance,
+                'probe_destructible_identity': data.get('probe_destructible_identity', False),
                 'quit_when': quit_when}
     if probe_acceptance:
         _control['map_drive_acceptance_mode'] = drive_mode

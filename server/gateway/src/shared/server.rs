@@ -18,6 +18,10 @@ struct IntegratedRuntime {
     anchored: [bool; model::CAPACITY],
     dispatched: [Option<Instant>; model::CAPACITY],
     started: bool,
+    removal: Option<crate::map_drive_worker091::RemovalSpec>,
+    staged: Option<World>,
+    synchronizing: [bool; model::CAPACITY],
+    generations: [u32; model::CAPACITY],
 }
 
 /// A worker frame may be compared with a client frame in focused tests, but an
@@ -38,7 +42,7 @@ impl IntegratedRuntime {
         Self { pool, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
             offsets: [[0.; 3]; model::CAPACITY],
             anchored: [false; model::CAPACITY],
-            dispatched: [None; model::CAPACITY], started: false }
+            dispatched: [None; model::CAPACITY], started: false, removal: None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY] }
     }
 
     fn map(&self) -> io::Result<crate::map_drive_worker091::MapSpec> {
@@ -57,8 +61,15 @@ impl IntegratedRuntime {
         self.offsets[slot] = [0.; 3];
         self.anchored[slot] = false;
         self.dispatched[slot] = None;
-        let worker = crate::map_drive_worker091::Worker::launch_at_spawn(self.pool.clone(), map.clone(),
-            u32::try_from(slot + 1).map_err(|_| model::bad())?, now, Some(lane))?;
+        self.generations[slot] = self.generations[slot].checked_add(1).ok_or_else(model::bad)?;
+        let generation = self.generations[slot].checked_mul(2).and_then(|n|n.checked_add(slot as u32)).ok_or_else(model::bad)?;
+        let worker = if let Some(spec) = &self.removal {
+            crate::map_drive_worker091::Worker::launch_with_removal(self.pool.clone(), map.clone(),
+                generation, now, Some(lane), spec.clone())?
+        } else {
+            crate::map_drive_worker091::Worker::launch_at_spawn(self.pool.clone(), map.clone(),
+                generation, now, Some(lane))?
+        };
         println!("SHARED_INTEGRATED_WORKER_START battle={} slot={} map={} arena_type_id={} config_sha256={} pool_sha256={} physics=test_lab coordinate_bridge=worker_lane_full_pose_bridge=position_ypr spawn_override={:?} offset={:?}",
             world_id, slot, map.asset, map.arena_type_id, map.config_sha256, self.pool.sha256, lane, self.offsets[slot]);
         self.workers[slot] = Some(worker);
@@ -85,11 +96,57 @@ impl IntegratedRuntime {
     }
 
     fn ready_for_native(&self) -> bool {
-        self.workers.iter().all(|worker| worker.as_ref().is_some_and(|value| value.ready()))
+        !self.blocked() && !self.synchronizing.iter().any(|v|*v) && self.workers.iter().all(|worker| worker.as_ref().is_some_and(|value| value.ready()))
+    }
+
+    fn blocked(&self) -> bool { self.staged.is_some() }
+
+    /// Both movement scenes acknowledge before the candidate World, impacts or
+    /// native destruction can be published. Transport remains serviced outside.
+    fn finish_removal(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
+        let staged = self.staged.as_ref().ok_or_else(model::bad)?;
+        if staged.id != world.id || staged.scene_version() != 1 || world.scene_version() != 0
+            || staged.actors.iter().map(|a| a.session).collect::<Vec<_>>()
+                != world.actors.iter().map(|a| a.session).collect::<Vec<_>>() {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "destructible transaction membership changed; fail closed"));
+        }
+        let mut complete = true;
+        let mut participants = 0;
+        for slot in 0..model::CAPACITY {
+            if world.actors[slot].session.is_none() { continue; }
+            let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
+            // A starting reconnect has supplied no authoritative pose and is
+            // gated from native entry. Restore it to scene1 in the regular path.
+            if !worker.ready() {
+                if world.actors[slot].ready || self.anchored[slot] || self.poses[slot].is_some() { return Err(model::bad()); }
+                continue;
+            }
+            participants += 1;
+            // All advance replies were incorporated before staging. A pose
+            // here would invalidate the contact snapshot; never silently discard it.
+            if worker.poll(now)?.is_some() { return Err(model::bad()); }
+            if let Some(ack) = worker.take_removal_ack() {
+                println!("SHARED_DESTRUCTIBLE_WORKER_ACK battle={} slot={} generation={} advance_seq={} tick={} scene_version={} descriptor_sha256={}",
+                    world.id, slot, ack.generation, ack.advance_seq, ack.tick, ack.scene_version, ack.descriptor_sha256);
+            }
+            if worker.scene_version() != 1 {
+                complete = false;
+                if worker.ready() && !worker.pending() { worker.remove_one(now)?; }
+            }
+        }
+        if participants == 0 { return Err(model::bad()); }
+        if complete {
+            *world = self.staged.take().ok_or_else(model::bad)?;
+            let event = world.destructible_transition().ok_or_else(model::bad)?;
+            println!("SHARED_DESTRUCTIBLE_COMMITTED battle={} shot={} tick={} instance_id={} scene_before=0 scene_after=1 participating_workers={} workers_acknowledged=true", world.id, event.shot, event.tick, event.instance_id,participants);
+        }
+        Ok(())
     }
 
     fn step(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
         if world.started.is_none() { return Ok(()); }
+        if self.staged.is_some() { return self.finish_removal(world, now); }
+        self.synchronizing = [false; model::CAPACITY];
         let mut rows = Vec::new();
         for slot in 0..model::CAPACITY {
             if world.actors.get(slot).and_then(|a| a.session).is_none() {
@@ -125,22 +182,35 @@ impl IntegratedRuntime {
                 rows.push((slot, position, state.pose.direction, state.pose.speed));
             } else if let Some((position, direction, speed)) = self.poses[slot] {
                 rows.push((slot, position, direction, speed));
+            } else if world.tick != 1000 {
+                let actor=&world.actors[slot];
+                rows.push((slot,actor.position,actor.direction,0.));
             }
         }
-        for slot in 0..model::CAPACITY {
-            if world.actors.get(slot).and_then(|a| a.session).is_none() { continue; }
-            let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
-            if worker.ready() && !worker.pending()
-                && self.dispatched[slot].is_none_or(|sent| now.duration_since(sent) >= crate::map_drive_worker091::STEP) {
-                let actor = world.actors.get(slot).ok_or_else(model::bad)?;
-                let input = crate::map_drive_worker091::Input { throttle: actor.input.throttle,
-                    steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0 };
-                let seq = worker.advance(input, now)?;
-                self.dispatched[slot] = Some(now);
-                println!("SHARED_INTEGRATED_WORKER_INPUT battle={} slot={} seq={} throttle={} steer={} brake={}",
-                    world.id, slot, seq, input.throttle, input.steer, input.brake);
+        if world.scene_version() == 1 {
+            for slot in 0..model::CAPACITY {
+                if world.actors[slot].session.is_none() { continue; }
+                let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
+                if let Some(ack) = worker.take_removal_ack() {
+                    println!("SHARED_DESTRUCTIBLE_REJOIN_ACK battle={} slot={} scene_version={}",world.id,slot,ack.scene_version);
+                }
+                if worker.scene_version() != 1 {
+                    self.synchronizing[slot] = true;
+                    if worker.ready() && !worker.pending() { worker.remove_one(now)?; }
+                }
+            }
+
+        }
+        for (slot,position,direction,speed) in &rows {
+            if !world.actors[*slot].ready && world.actors[*slot].session.is_some()
+                && !self.synchronizing[*slot] && self.anchored[*slot] {
+                world.import_unready_external_pose(*slot,*position,*direction,*speed)?;
             }
         }
+        // A contact candidate can only use a fully drained movement snapshot.
+        // Restoring a reconnect worker does not suspend the survivor's commands.
+        if self.removal.is_some() && world.scene_version()==0
+            && self.workers.iter().flatten().any(|w|w.pending()) { return Ok(()); }
         // Do not publish a mixed frame while the two workers are settling.
         // The old client-space spawn is deliberately not a fallback pose:
         // waiting one bounded loop keeps the second actor from appearing at
@@ -158,7 +228,30 @@ impl IntegratedRuntime {
             }
             return Ok(());
         }
-        world.advance_with_external(now, Some(&rows))?;
+        let mut candidate = world.clone();
+        candidate.advance_with_external(now, Some(&rows))?;
+        if candidate.scene_version() != world.scene_version() {
+            if self.removal.is_none() || world.scene_version() != 0 || candidate.scene_version() != 1 {
+                return Err(model::bad());
+            }
+            self.staged = Some(candidate);
+            return self.finish_removal(world, now);
+        }
+        *world = candidate;
+        for slot in 0..model::CAPACITY {
+            if world.actors.get(slot).and_then(|a| a.session).is_none() { continue; }
+            let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
+            if !self.synchronizing[slot] && worker.ready() && !worker.pending()
+                && self.dispatched[slot].is_none_or(|sent| now.duration_since(sent) >= crate::map_drive_worker091::STEP) {
+                let actor = world.actors.get(slot).ok_or_else(model::bad)?;
+                let input = crate::map_drive_worker091::Input { throttle: actor.input.throttle,
+                    steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0 };
+                let seq = worker.advance(input, now)?;
+                self.dispatched[slot] = Some(now);
+                println!("SHARED_INTEGRATED_WORKER_INPUT battle={} slot={} seq={} throttle={} steer={} brake={}",
+                    world.id, slot, seq, input.throttle, input.steer, input.brake);
+            }
+        }
         Ok(())
     }
 }
@@ -201,7 +294,7 @@ impl Table {
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None)
 }
 
 fn terrain_for_pool(pool: &crate::map_drive_worker091::Pool) -> io::Result<Arc<super::terrain::Terrain>> {
@@ -223,20 +316,26 @@ fn terrain_for_pool(pool: &crate::map_drive_worker091::Pool) -> io::Result<Arc<s
 }
 
 pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
-    pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool, destructible_test_lab: bool) -> Result<(), Box<dyn std::error::Error>> {
     if ap_test_lab && geometry_path.is_none() { return Err(model::bad().into()); }
+    if destructible_test_lab && !terrain_test_lab { return Err(model::bad().into()); }
     if terrain_test_lab && !ap_test_lab { return Err(model::bad().into()); }
     let config = crate::identity091::Config::load(config_path)?;
     let pool = crate::map_drive_worker091::Pool::load(&config.local_root, Path::new(pool_path))?;
     let geometry = geometry_path.map(|path| super::geometry::Bundle::load(&config.local_root, Path::new(path)))
         .transpose()?.map(Arc::new);
     let terrain = if terrain_test_lab { Some(terrain_for_pool(&pool)?) } else { None };
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain)
+    let removal = if destructible_test_lab {
+        let path = pool.local_root.join("evidence/20261010-p06n-destructible-01/boundary/worker-ipc01/descriptor.json");
+        Some(crate::map_drive_worker091::RemovalSpec::load(&pool.local_root,&path,
+            "ef00e2aed686c16c4f9a216d9db70dbcd1ca3fda84bc33cd9eaa8aed1dbde7fa")?)
+    } else { None };
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal)
 }
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
     integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
-    terrain: Option<Arc<super::terrain::Terrain>>)
+    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>)
     -> Result<(), Box<dyn std::error::Error>> {
     if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
     if terrain.is_some() && !ap_test_lab { return Err(model::bad().into()); }
@@ -269,10 +368,12 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         println!("SHARED_TERRAIN_BOUND battle={} revision={} manifest_sha256={} obstacle_manifest_sha256={} map=01_karelia geometry=original_world material=source_kind terrain_only=false obstacles=true projectile_mask=128 tie_policy=world_first_f32_bucket",
             world.id,revision,super::terrain::MANIFEST_SHA256,super::obstacles::MANIFEST_SHA256);
     }
+    if removal.is_some() { world.bind_destructible_test_lab()?; }
     let mut contact_cursor = 0usize;
     let mut terrain_cursor = 0usize;
     let mut impact_cursor = 0usize;
     let mut integrated = integrated_pool.map(IntegratedRuntime::new);
+    if let Some(runtime) = &mut integrated { runtime.removal = removal; }
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
@@ -412,7 +513,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             // native arena reset until both workers have supplied a settled
             // pose. This avoids the old outer `continue`, which also skipped
             // heartbeats and made a client look disconnected during startup.
-            if let Err(error) = poll_with_native_start(s, &mut world, now, integrated_native_ready) {
+            if let Err(error) = if integrated.as_ref().is_some_and(IntegratedRuntime::blocked) { Ok(()) }
+                else { poll_with_native_start(s, &mut world, now, integrated_native_ready) } {
                 println!("SHARED_FAILED session={} reason={}", s.id, error); closing.push((s.id, "world_or_publication")); continue;
             }
             if s.shared.as_ref().is_some_and(|c| c.phase == Phase::Leaving) { closing.push((s.id, "native_leave")); continue; }
@@ -499,10 +601,15 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     if world.started.is_none() { return Ok(()); }
     if allow_native_start && entry_ready(s, now) { s.shared_start(world, now)?; }
     let c = s.shared.as_ref().ok_or_else(model::bad)?;
-    if matches!(c.phase, Phase::Enable | Phase::Entities) && c.entered.is_some_and(|start| now.duration_since(start) > Duration::from_secs(90)) { return Err(model::bad()); }
+    let full_ready = c.phase == Phase::Driving && c.correction
+        && c.binding.is_some_and(|(_,ack)|ack)
+        && (!world.destructible_enabled() || c.area_creation.is_some_and(|(_,ack)|ack));
+    if !full_ready && c.entered.is_some_and(|start| now.duration_since(start) > Duration::from_secs(90)) { return Err(model::bad()); }
     if !matches!(c.phase, Phase::Driving | Phase::Leaving) { return Ok(()); }
     let slot = c.slot;
     let mut next = s.clone(); let mut next_world = world.clone();
+    let area_ready = !world.destructible_enabled() || c.area_creation.is_some_and(|(_,ack)| ack);
+    if !area_ready { return Ok(()); }
     if c.correction { next_world.set_ready(slot, s.id)?; }
     let commands = std::mem::take(&mut next.shared.as_mut().ok_or_else(model::bad)?.commands);
     if !c.correction && !commands.is_empty() {
@@ -527,6 +634,13 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let mut impact_publications = Vec::new();
     let prior_projectile_count = world.projectiles.len();
     if c.phase == Phase::Driving {
+        if next_world.destructible_enabled() && c.area_scene_sent != next_world.scene_version() {
+            if c.area_scene_sent != 0 || next_world.scene_version() != 1 || !area_ready { return Err(model::bad()); }
+            next.outbox.push_back(super::destructible_wire::update(super::destructible_wire::NATIVE_INDEX));
+            c.area_scene_sent = 1;
+            println!("SHARED_DESTRUCTIBLE_PUBLICATION battle={} session={} entity={} native_index={} scene_version=1 queued=true",
+                next_world.id,s.id,super::destructible_wire::ENTITY_ID,super::destructible_wire::NATIVE_INDEX);
+        }
         for shot in next_world.shots.iter().filter(|shot| shot.sequence > c.shot_cursor).copied().collect::<Vec<_>>() {
             let observable = c.correction && c.binding.is_some_and(|(_, ack)| ack) && c.visible()[shot.slot];
             if observable {
@@ -746,6 +860,108 @@ mod tests {
             bodies.push(transport091::parse_interactive(&raw).unwrap().body);
         }
         bodies.extend(s.outbox.iter().cloned()); bodies
+    }
+    fn destroyed_fixture(now:Instant)->World {
+        let mut w=model::tests::destructible_world(now);
+        w.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],now).unwrap();
+        w.advance(now+model::STEP).unwrap(); assert_eq!(w.scene_version(),1); w
+    }
+    #[test] fn incomplete_area_startup_times_out_but_restoring_peer_does_not_block_survivor_commands() {
+        let now=Instant::now();let(mut a,_,_)=visible_pair(now);let mut w=destroyed_fixture(now);
+        let c=a.shared.as_mut().unwrap();c.view=Some(w.clone());c.shot_cursor=w.latest_shot();
+        c.entered=Some(now-Duration::from_secs(91));c.area_creation=None;
+        assert!(poll_with_native_start(&mut a,&mut w,now+model::STEP,false).is_err());
+        let c=a.shared.as_mut().unwrap();c.area_creation=Some((0,true));c.area_scene_sent=1;
+        // Global arena-entry readiness is false while the other worker restores,
+        // but 64 successive survivor envelopes must be consumed without overflow.
+        for _ in 0..64 {
+            a.shared.as_mut().unwrap().commands.push(model::Command::Move(model::Input{throttle:1,steer:0}));
+            poll_with_native_start(&mut a,&mut w,now+model::STEP,false).unwrap();
+            assert!(a.shared.as_ref().unwrap().commands.is_empty());
+        }
+        assert_eq!(w.actors[0].input.throttle,1);
+    }
+    #[test] fn area_request_mixed_envelope_is_atomic_and_rejoin_uses_current_state() {
+        let now=Instant::now(); let (mut s,_)=driving(now); let w=destroyed_fixture(now);
+        let c=s.shared.as_mut().unwrap();c.phase=Phase::Entities;c.view=Some(w.clone());
+        c.announcement=Some((0,true));c.creations=[None;2];
+        let mut request=vec![8,4,0];request.extend(super::super::destructible_wire::ENTITY_ID.to_le_bytes());
+        request.extend([8,4,0]);request.extend(wire::vehicle_id(0).unwrap().to_le_bytes());
+        let mut poisoned=request.clone();poisoned.extend([8,4,0]);poisoned.extend(123u32.to_le_bytes());
+        let rx=s.rx;assert!(s.receive(&frame(&s,&poisoned),now).is_err());
+        assert_eq!(s.rx,rx);assert!(s.shared.as_ref().unwrap().area_creation.is_none());
+        s.receive(&frame(&s,&request),now).unwrap();
+        assert!(s.shared.as_ref().unwrap().area_creation.is_some());assert_eq!(s.shared.as_ref().unwrap().area_scene_sent,1);
+        let expected=super::super::destructible_wire::create(Some(1)).unwrap();
+        assert!(queued_bodies(&s,now).iter().any(|b|b.windows(expected.len()).any(|p|p==expected)));
+    }
+    #[test] fn area_ack_gates_commands_and_state_update_is_once_and_transactional() {
+        let now=Instant::now();let(mut a,mut b,_)=visible_pair(now);let mut w=destroyed_fixture(now);
+        for s in [&mut a,&mut b] {
+            let c=s.shared.as_mut().unwrap();c.view=Some(w.clone());c.shot_cursor=w.latest_shot();
+            c.area_creation=Some((0,false));c.commands.push(model::Command::Move(model::Input{throttle:1,steer:0}));
+            poll(s,&mut w,now+model::STEP).unwrap();assert_eq!(s.shared.as_ref().unwrap().commands.len(),1);
+            assert_eq!(s.shared.as_ref().unwrap().area_scene_sent,0);
+            s.shared.as_mut().unwrap().area_creation=Some((0,true));
+            s.outbox.push_back(vec![0;513]);assert!(poll(s,&mut w,now+model::STEP).is_err());
+            assert_eq!(s.shared.as_ref().unwrap().area_scene_sent,0);s.outbox.clear();
+            poll(s,&mut w,now+model::STEP).unwrap();assert!(s.shared.as_ref().unwrap().commands.is_empty());
+            let update=super::super::destructible_wire::update(1);let before=queued_bodies(s,now+model::STEP);
+            assert_eq!(before.iter().filter(|b|b.windows(update.len()).any(|p|p==update)).count(),1);
+            poll(s,&mut w,now+model::STEP).unwrap();assert_eq!(queued_bodies(s,now+model::STEP),before);
+        }
+    }
+    #[test] fn two_real_workers_acknowledge_before_world_commit_and_changed_membership_fails() {
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
+        let pool=Arc::new(crate::map_drive_worker091::Pool::load(&root.join("local"),
+            &root.join("local/build/server/physics-integrated-p06n-01/pool-near.json")).unwrap());
+        let spec=crate::map_drive_worker091::RemovalSpec::load(&root.join("local"),
+            &root.join("local/evidence/20261010-p06n-destructible-01/boundary/worker-ipc01/descriptor.json"),
+            "ef00e2aed686c16c4f9a216d9db70dbcd1ca3fda84bc33cd9eaa8aed1dbde7fa").unwrap();
+        let now=Instant::now();let mut world=model::tests::destructible_world(now);
+        world.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],now).unwrap();
+        let mut candidate=world.clone();candidate.advance(now+model::STEP).unwrap();
+        let expected=candidate.destructible_transition().unwrap().clone();
+        let mut runtime=IntegratedRuntime::new(pool);runtime.removal=Some(spec);let map=runtime.map().unwrap();
+        for slot in 0..2 {runtime.spawn_slot(world.id,slot,map.clone(),now).unwrap();}
+        let deadline=now+Duration::from_secs(60);
+        while !runtime.workers.iter().all(|w|w.as_ref().unwrap().ready()) {
+            let at=Instant::now();assert!(at<deadline);for w in &mut runtime.workers{w.as_mut().unwrap().poll(at).unwrap();}
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        runtime.staged=Some(candidate.clone());assert!(runtime.blocked());
+        runtime.finish_removal(&mut world,Instant::now()).unwrap();assert_eq!(world.scene_version(),0);
+        while runtime.blocked(){assert!(Instant::now()<deadline);runtime.finish_removal(&mut world,Instant::now()).unwrap();std::thread::sleep(Duration::from_millis(2));}
+        assert_eq!(world.scene_version(),1);assert_eq!(world.destructible_transition(),Some(&expected));
+        assert!(runtime.workers.iter().all(|w|w.as_ref().unwrap().scene_version()==1));
+        let mut changed=model::tests::destructible_world(now);changed.detach(1).unwrap();
+        runtime.staged=Some(candidate);assert!(runtime.finish_removal(&mut changed,Instant::now()).is_err());
+        assert_eq!(changed.scene_version(),0);assert!(runtime.blocked());
+        // A just-launched reconnect is not yet part of the simulation scene.
+        // It must not turn an otherwise valid hit into a seq0-pose barrier error.
+        runtime.staged=None;runtime.workers[0].take();runtime.workers[1].take();
+        let later=Instant::now();let mut fresh=model::tests::destructible_world(later);
+        fresh.actors[1].ready=false;
+        fresh.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],later).unwrap();
+        let mut candidate=fresh.clone();candidate.advance(later+model::STEP).unwrap();
+        runtime.spawn_slot(fresh.id,0,map.clone(),later).unwrap();
+        while !runtime.workers[0].as_ref().unwrap().ready(){
+            assert!(Instant::now()<deadline);
+            if let Some(state)=runtime.workers[0].as_mut().unwrap().poll(Instant::now()).unwrap() {
+                runtime.anchored[0]=true;runtime.poses[0]=Some((state.pose.position,state.pose.direction,state.pose.speed));
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        runtime.spawn_slot(fresh.id,1,map,later).unwrap();
+        runtime.staged=Some(candidate);
+        while runtime.staged.is_some(){assert!(Instant::now()<deadline);runtime.finish_removal(&mut fresh,Instant::now()).unwrap();std::thread::sleep(Duration::from_millis(2));}
+        assert_eq!(fresh.scene_version(),1);assert!(!runtime.workers[1].as_ref().unwrap().ready());
+        while runtime.workers[1].as_ref().unwrap().scene_version()!=1 {
+            assert!(Instant::now()<deadline);runtime.step(&mut fresh,Instant::now()).unwrap();
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(runtime.generations,[2,2]);assert!(!fresh.actors[1].ready);
+        assert_eq!(fresh.destructible_transition().unwrap().shot,1);
     }
     #[test] fn terrain_fx_is_once_per_peer_excludes_stop_and_queue_retry_is_atomic() {
         let now=Instant::now(); let (mut a,mut b,_)=visible_pair(now);

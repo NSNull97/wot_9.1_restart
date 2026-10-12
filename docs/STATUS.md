@@ -1,3 +1,21 @@
+# P06N candidate — one destructible obstacle, owner gate pending
+
+Branch `codex/p06n-destructible-state`, accepted base main7f2a0f2. One original
+Karelia camouflage crate (instance1513/native index1/chunk31354) now has typed
+server state, native AreaDestructibles replication and matching movement/shot
+geometry removal. World commits only after participating physics workers ACK.
+Policy `test_lab-karelia-fragile-ap-v1` is explicitly approximate; first shell
+terminates, later shots/vehicles can pass. Full-map destruction is out of scope.
+Gateway04:557 Rust PASS, SHA9e3adc34…fe8b8; focused Python27 PASS. Real private
+physics confirms intact crate blocks driving and removed crate allows passage.
+Native01 both original area callbacks/physics entry PASS; periodic observer
+FAIL on old total-entity16 limit. Fixed with two verified Vehicle ID lookups;
+native02 uses the same gateway04 with repaired passive observer.
+**Acceptance: PENDING_NATIVE_OWNER, destruction/proceed-through NOT_RUN.**
+[Files, commands, evidence, failures, limits and rollback](research/P06N_DESTRUCTIBLE_STATE.md).
+**One next gate:** two-client crate destruction and passage, with cumulative
+movement/aim/ammo/reload/ground/live/wreck behavior preserved.
+
 # P06M accepted — terrain/static obstacles with cumulative gameplay
 
 Owner accepted native02 ground/rock behavior and explicitly confirmed wreck

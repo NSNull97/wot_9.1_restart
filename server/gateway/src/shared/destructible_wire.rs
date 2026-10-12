@@ -13,6 +13,8 @@ use std::io;
 
 pub(super) const ENTITY_ID: u32 = 0x0910_0007;
 pub(super) const ALIAS: u8 = 2;
+// Measured in both identity02 native clients: filename, matrix and five rays.
+pub(super) const NATIVE_INDEX: u8 = 1;
 pub(super) const CHUNK_ID: u16 = 31354;
 pub(super) const POSITION: [f32; 3] = [-450., 0., -450.];
 const CLIENT_TYPE: u16 = 3;

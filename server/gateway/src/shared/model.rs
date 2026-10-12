@@ -207,6 +207,15 @@ impl World {
         self.actors = next;
         Ok(())
     }
+    /// A joining actor receives a settled pose only after its scene is restored.
+    /// The already playing actor and simulation clock remain untouched.
+    pub fn import_unready_external_pose(&mut self, slot:usize, position:[f32;3], direction:[f32;3], speed:f32) -> io::Result<()> {
+        let actor=self.actors.get_mut(slot).ok_or_else(bad)?;
+        if actor.ready || actor.session.is_none() || position.iter().any(|v|!v.is_finite() || v.abs()>2000.)
+            || direction.iter().any(|v|!v.is_finite() || !(-std::f32::consts::PI..=std::f32::consts::PI).contains(v))
+            || !speed.is_finite() || !(-25. ..=25.).contains(&speed) { return Err(bad()); }
+        actor.position=position;actor.direction=direction;actor.yaw=direction[0];actor.speed=speed;Ok(())
+    }
     pub fn detach(&mut self, session: u32) -> io::Result<()> {
         let a = self.actors.iter_mut().find(|a| a.session == Some(session)).ok_or_else(bad)?;
         a.session = None; a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park(); Ok(())
