@@ -17,6 +17,86 @@ internal static class CheckedInput
     public const string PhysicsManifestHash = "ea6ef22aed0fdd4e4826500c280a616737f8990ce7ab7cd808b9382227ec5ffd";
     public const string ProjectileManifestHash = "ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447c5bd95dd97d80cea";
     public const string ObjectRevision = "karelia-instance1513-v1";
+    public const int MaxCatalogObjects = 64, MaxRemovedObjects = 40;
+    public sealed record CatalogEntry(uint ObjectId, int InstanceId, int FirstTriangle, int TriangleCount, string Revision);
+    public sealed record CatalogSpec(string Hash, CatalogEntry[] Entries);
+    public sealed record Scene(uint[] Ids, string Hash) { public uint Version => (uint)Ids.Length; }
+
+    public static void Sha256(string? value)
+    {
+        if (value == null || value.Length != 64 || value.Any(c => !"0123456789abcdef".Contains(c)))
+            throw new InvalidDataException("lowercase SHA256 required");
+    }
+
+    public static CatalogSpec LoadCatalog(string root, string path, string hash, string map, JsonElement obstacles)
+    {
+        using var doc = Json(FileBytes(Owned(root, path), 131072, hash));
+        var d = doc.RootElement;
+        Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "objects");
+        if (d.GetProperty("version").GetInt32() != 2 || d.GetProperty("profile").GetString() != "test_lab" ||
+            map != "01_karelia" || d.GetProperty("map").GetString() != map ||
+            d.GetProperty("physics_manifest_sha256").GetString() != PhysicsManifestHash ||
+            d.GetProperty("projectile_manifest_sha256").GetString() != ProjectileManifestHash ||
+            obstacles.GetProperty("sha256").GetString() != PhysicsManifestHash)
+            throw new InvalidDataException("catalog profile mismatch");
+        var rows = d.GetProperty("objects");
+        if (rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() < 1 || rows.GetArrayLength() > MaxCatalogObjects)
+            throw new InvalidDataException("catalog count outside bound");
+        var entries = new List<CatalogEntry>();
+        var instances = new HashSet<int>();
+        uint previous = 0;
+        foreach (var row in rows.EnumerateArray())
+        {
+            Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision");
+            uint id = row.GetProperty("object_id").GetUInt32();
+            int instance = row.GetProperty("instance_id").GetInt32(), first = row.GetProperty("first_triangle").GetInt32();
+            int count = row.GetProperty("triangle_count").GetInt32();
+            var revision = row.GetProperty("object_revision").GetString()!; Sha256(revision);
+            if (id <= previous || instance < 0 || instance >= 2918 || !instances.Add(instance) ||
+                first < 0 || count < 1 || count > 4096 || (long)first + count > 1_500_000)
+                throw new InvalidDataException("catalog identity/span bound");
+            previous = id; entries.Add(new(id, instance, first, count, revision));
+        }
+        var spans = entries.OrderBy(e => e.FirstTriangle).ToArray();
+        for (int i = 1; i < spans.Length; i++)
+            if (spans[i].FirstTriangle < spans[i - 1].FirstTriangle + spans[i - 1].TriangleCount)
+                throw new InvalidDataException("overlapping catalog spans");
+        return new(hash, entries.ToArray());
+    }
+
+    public static Scene MakeScene(CatalogSpec catalog, uint[] ids)
+    {
+        if (ids.Length > MaxRemovedObjects) throw new InvalidDataException("scene count bound");
+        uint previous = 0;
+        foreach (uint id in ids)
+        {
+            if (id <= previous || !catalog.Entries.Any(e => e.ObjectId == id)) throw new InvalidDataException("unknown or unordered scene ID");
+            previous = id;
+        }
+        using var bytes = new MemoryStream();
+        bytes.Write(Encoding.ASCII.GetBytes("wot091-fragile-scene-v3\0"));
+        bytes.Write(Convert.FromHexString(catalog.Hash));
+        Span<byte> word = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(word, (uint)ids.Length); bytes.Write(word);
+        foreach (uint id in ids) { BinaryPrimitives.WriteUInt32LittleEndian(word, id); bytes.Write(word); }
+        return new(ids.ToArray(), Hash(bytes.ToArray()));
+    }
+
+    public static Scene SceneCommand(JsonElement request, string op, CatalogSpec catalog, uint generation, string configHash, long sequence)
+    {
+        Fields(request, "version", "op", "generation", "config_sha256", "catalog_sha256", "advance_seq",
+            "scene_version", "removed_object_ids", "scene_sha256");
+        var values = request.GetProperty("removed_object_ids");
+        if (values.ValueKind != JsonValueKind.Array || values.GetArrayLength() > MaxRemovedObjects)
+            throw new InvalidDataException("scene count bound");
+        var scene = MakeScene(catalog, values.EnumerateArray().Select(v => v.GetUInt32()).ToArray());
+        if (request.GetProperty("version").GetInt32() != 3 || request.GetProperty("op").GetString() != op ||
+            request.GetProperty("generation").GetUInt32() != generation || request.GetProperty("config_sha256").GetString() != configHash ||
+            request.GetProperty("catalog_sha256").GetString() != catalog.Hash || request.GetProperty("advance_seq").GetInt64() != sequence ||
+            request.GetProperty("scene_version").GetUInt32() != scene.Version || request.GetProperty("scene_sha256").GetString() != scene.Hash)
+            throw new InvalidDataException("catalog scene identity/version mismatch");
+        return scene;
+    }
 
     public static RemovalSpec LoadRemoval(string root, string path, string hash, string map, JsonElement obstacles)
     {
@@ -107,7 +187,17 @@ internal static class CheckedInput
 
     public static MeshShape LoadMesh(string root, JsonElement reference, string map, RemovalSpec? removal, out MeshShape? selected)
     {
-        selected = null;
+        var result = LoadMeshCore(root, reference, map, removal, null, out var shapes);
+        selected = shapes.Count == 0 ? null : shapes.Single().Value;
+        return result;
+    }
+
+    public static MeshShape LoadCatalogMesh(string root, JsonElement reference, string map, CatalogSpec catalog, out Dictionary<uint, MeshShape> selected)
+        => LoadMeshCore(root, reference, map, null, catalog, out selected);
+
+    private static MeshShape LoadMeshCore(string root, JsonElement reference, string map, RemovalSpec? removal, CatalogSpec? catalog, out Dictionary<uint, MeshShape> selected)
+    {
+        selected = new();
         Fields(reference, "path", "sha256");
         var path = Owned(root, reference.GetProperty("path").GetString()!);
         using var doc = Json(FileBytes(path, 8 * 1024 * 1024, reference.GetProperty("sha256").GetString()));
@@ -159,7 +249,7 @@ internal static class CheckedInput
                 throw new InvalidDataException("degenerate float32 mesh triangle");
             triangles[i] = new(a, b, c);
         }
-        if (removal == null)
+        if (removal == null && catalog == null)
         {
             using var settings = new MeshShapeSettings(vertices.AsSpan(), triangles.AsSpan());
             return new MeshShape(settings);
@@ -168,6 +258,8 @@ internal static class CheckedInput
             throw new InvalidDataException("one-object geometry source mismatch");
         var instances = value.GetProperty("instances");
         if (instances.GetArrayLength() != 2918) throw new InvalidDataException("one-object instance count");
+        if (removal != null)
+        {
         var item = instances[removal.InstanceId];
         if (item.GetProperty("kind").GetString() != "model" || item.GetProperty("instance").GetString() != "/model[2]" ||
             item.GetProperty("resource").GetString() != "content/MilitaryEnvironment/mle009_BoxCamouflage/normal/lod0/mle009_BoxCamouflage.model" ||
@@ -175,28 +267,47 @@ internal static class CheckedInput
             item.GetProperty("first_triangle").GetInt32() != removal.FirstTriangle || item.GetProperty("triangles").GetInt32() != removal.TriangleCount ||
             removal.FirstTriangle < 0 || removal.TriangleCount != 42 || removal.FirstTriangle + removal.TriangleCount > triangles.Length)
             throw new InvalidDataException("one-object source identity/span mismatch");
+        }
+        var entries = catalog?.Entries ?? [new CatalogEntry(removal!.ObjectId, removal.InstanceId, removal.FirstTriangle, removal.TriangleCount, removal.Revision)];
+        foreach (var entry in entries)
+        {
+            var item = instances[entry.InstanceId];
+            string? resource = item.GetProperty("resource").GetString();
+            if (item.GetProperty("kind").GetString() != "model" || string.IsNullOrEmpty(resource) || resource.Length > 1024 ||
+                item.GetProperty("first_triangle").GetInt32() != entry.FirstTriangle || item.GetProperty("triangles").GetInt32() != entry.TriangleCount ||
+                (long)entry.FirstTriangle + entry.TriangleCount > triangles.Length)
+                throw new InvalidDataException("catalog source identity/full-span mismatch");
+        }
         // Preserve every base triangle/index/coordinate exactly. The selected
         // shape gets its own compact vertices; no new hull or AABB substitute.
-        var baseTriangles = new IndexedTriangle[triangles.Length - removal.TriangleCount];
-        Array.Copy(triangles, 0, baseTriangles, 0, removal.FirstTriangle);
-        Array.Copy(triangles, removal.FirstTriangle + removal.TriangleCount, baseTriangles, removal.FirstTriangle,
-            triangles.Length - removal.FirstTriangle - removal.TriangleCount);
-        var selectedVertices = new Vector3[removal.TriangleCount * 3];
-        var selectedTriangles = new IndexedTriangle[removal.TriangleCount];
-        for (int i = 0; i < removal.TriangleCount; i++)
+        var baseTriangles = new IndexedTriangle[triangles.Length - entries.Sum(e => e.TriangleCount)];
+        int sourceIndex = 0, destIndex = 0;
+        foreach (var entry in entries.OrderBy(e => e.FirstTriangle))
         {
-            for (int axis = 0; axis < 3; axis++)
-                selectedVertices[i * 3 + axis] = vertices[BinaryPrimitives.ReadUInt32LittleEndian(rawTriangles.AsSpan((removal.FirstTriangle + i) * 12 + axis * 4, 4))];
-            selectedTriangles[i] = new((uint)i * 3, (uint)i * 3 + 1, (uint)i * 3 + 2);
+            int count = entry.FirstTriangle - sourceIndex;
+            Array.Copy(triangles, sourceIndex, baseTriangles, destIndex, count);
+            destIndex += count; sourceIndex = entry.FirstTriangle + entry.TriangleCount;
         }
+        Array.Copy(triangles, sourceIndex, baseTriangles, destIndex, triangles.Length - sourceIndex);
         using var baseSettings = new MeshShapeSettings(vertices.AsSpan(), baseTriangles.AsSpan());
         var baseShape = new MeshShape(baseSettings);
         try
         {
-            using var selectedSettings = new MeshShapeSettings(selectedVertices.AsSpan(), selectedTriangles.AsSpan());
-            selected = new MeshShape(selectedSettings);
+            foreach (var entry in entries)
+            {
+                var selectedVertices = new Vector3[entry.TriangleCount * 3];
+                var selectedTriangles = new IndexedTriangle[entry.TriangleCount];
+                for (int i = 0; i < entry.TriangleCount; i++)
+                {
+                    for (int axis = 0; axis < 3; axis++)
+                        selectedVertices[i * 3 + axis] = vertices[BinaryPrimitives.ReadUInt32LittleEndian(rawTriangles.AsSpan((entry.FirstTriangle + i) * 12 + axis * 4, 4))];
+                    selectedTriangles[i] = new((uint)i * 3, (uint)i * 3 + 1, (uint)i * 3 + 2);
+                }
+                using var selectedSettings = new MeshShapeSettings(selectedVertices.AsSpan(), selectedTriangles.AsSpan());
+                selected.Add(entry.ObjectId, new MeshShape(selectedSettings));
+            }
             return baseShape;
         }
-        catch { baseShape.Dispose(); throw; }
+        catch { foreach (var shape in selected.Values) shape.Dispose(); baseShape.Dispose(); throw; }
     }
 }

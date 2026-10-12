@@ -6,6 +6,8 @@ use std::{collections::BTreeSet,fmt,fs,io::{self,Read,Write},path::{Path,PathBuf
 use serde::{Deserialize,Deserializer,de::{self,Visitor,MapAccess,SeqAccess}};
 use serde_json::{Value,Map,Number};
 use sha2::{Digest,Sha256};
+mod catalog;
+pub use catalog::{CatalogSpec,CatalogEntry,Scene,CatalogAck,MAX_CATALOG_OBJECTS,MAX_REMOVED_OBJECTS};
 
 pub const STEP:Duration=Duration::from_millis(100);
 pub const MAX_SEQUENCE:u32=36000;
@@ -294,8 +296,8 @@ fn line(reader:&mut impl Read)->io::Result<Vec<u8>> {
 
 enum Event {Line(Instant,Vec<u8>),Failed}
 #[derive(Clone,Copy)]
-enum Pending {Advance(u32,Instant),Remove(u32,Instant)}
-impl Pending {fn sent(self)->Instant{match self{Self::Advance(_,sent)|Self::Remove(_,sent)=>sent}}}
+enum Pending {Advance(u32,Instant),Remove(u32,Instant),Catalog(u32,Instant)}
+impl Pending {fn sent(self)->Instant{match self{Self::Advance(_,sent)|Self::Remove(_,sent)|Self::Catalog(_,sent)=>sent}}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 struct ExitEvidence {forced:bool,code:Option<i32>,reaped:bool}
 fn reap_owned(mut child:Child,generation:u32,exit:Arc<Mutex<Option<ExitEvidence>>>) {
@@ -316,20 +318,26 @@ fn reap_owned(mut child:Child,generation:u32,exit:Arc<Mutex<Option<ExitEvidence>
 pub struct Worker {pub generation:u32,pub map:MapSpec,receiver:mpsc::Receiver<Event>,sender:Option<mpsc::SyncSender<Vec<u8>>>,
     child:Arc<Mutex<Option<Child>>>,exit:Arc<Mutex<Option<ExitEvidence>>>,cancel:Arc<AtomicBool>,started:Instant,
     expected_spawn:Option<[f32;3]>,pending:Option<Pending>,ready:bool,last_seq:u32,
-    removal:Option<RemovalSpec>,scene_version:u32,removal_ack:Option<RemovalAck>}
+    removal:Option<RemovalSpec>,scene_version:u32,removal_ack:Option<RemovalAck>,
+    catalog:Option<CatalogSpec>,catalog_scene:Option<Scene>,pending_scene:Option<Scene>,catalog_ack:Option<CatalogAck>}
 impl Worker {
     pub fn launch(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant)->io::Result<Self>{
         Self::launch_at_spawn(pool,map,generation,now,None)
     }
     pub fn launch_at_spawn(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>)->io::Result<Self>{
-        Self::launch_inner(pool,map,generation,now,spawn,None)
+        Self::launch_inner(pool,map,generation,now,spawn,None,None)
     }
     pub fn launch_with_removal(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,spec:RemovalSpec)->io::Result<Self>{
         spec.verify(&pool.local_root,&map)?;
-        Self::launch_inner(pool,map,generation,now,spawn,Some(spec))
+        Self::launch_inner(pool,map,generation,now,spawn,Some(spec),None)
     }
-    fn launch_inner(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,removal:Option<RemovalSpec>)->io::Result<Self>{
+    pub fn launch_with_catalog(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,spec:CatalogSpec,initial_scene:Scene)->io::Result<Self>{
+        spec.verify(&pool.local_root,&map)?;initial_scene.validate(&spec)?;
+        Self::launch_inner(pool,map,generation,now,spawn,None,Some((spec,initial_scene)))
+    }
+    fn launch_inner(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,removal:Option<RemovalSpec>,initial:Option<(CatalogSpec,Scene)>)->io::Result<Self>{
         if generation==0{return Err(bad());}
+        if removal.is_some() && initial.is_some(){return Err(bad());}
         if let Some(target)=spawn {
             if target.iter().any(|v| !v.is_finite()) || (target[1]-map.spawn[1]).abs()>f32::EPSILON
                 || target[0]<map.bounds[0]+5. || target[0]>map.bounds[2]-5.
@@ -337,9 +345,14 @@ impl Worker {
                 || (target[0]-map.spawn[0]).abs()>12. || (target[2]-map.spawn[2]).abs()>12. { return Err(bad()); }
         }
         let (events,receiver)=mpsc::sync_channel(4);let (sender,commands)=mpsc::sync_channel::<Vec<u8>>(1);
+        if let Some((spec,scene))=&initial {
+            // Queued before the process starts; IPC3 reads this BEFORE settle.
+            sender.try_send(catalog::scene_request(&map,spec,generation,0,scene,true)?).map_err(|_|bad())?;
+        }
         let child=Arc::new(Mutex::new(None::<Child>));let cancel=Arc::new(AtomicBool::new(false));
         let exit=Arc::new(Mutex::new(None));let exit_thread=exit.clone();
         let slot=child.clone();let revoked=cancel.clone();let selected=map.clone();let removal_thread=removal.clone();
+        let catalog_thread=initial.as_ref().map(|(spec,_)|spec.clone());
         thread::spawn(move||{
             let run=||->io::Result<()> {
                 pool.verify_assets()?;owned(&pool.local_root,&selected.config)?;let raw=read(&selected.config,16384)?;
@@ -354,6 +367,11 @@ impl Worker {
                 if let Some(spec)=removal_thread.as_ref(){
                     spec.verify(&pool.local_root,&selected)?;
                     cmd.arg("--remove-one").arg(worker_path_argument(&spec.path)?).arg("--remove-one-sha256").arg(&spec.sha256)
+                        .arg("--generation").arg(generation.to_string());
+                }
+                if let Some(spec)=catalog_thread.as_ref(){
+                    spec.verify(&pool.local_root,&selected)?;
+                    cmd.arg("--destructible-catalog").arg(worker_path_argument(&spec.path)?).arg("--catalog-sha256").arg(&spec.sha256)
                         .arg("--generation").arg(generation.to_string());
                 }
                 #[cfg(windows)] {use std::os::windows::process::CommandExt;cmd.creation_flags(0x08000000);}
@@ -380,26 +398,40 @@ impl Worker {
                 let _=events.try_send(Event::Failed);
             }}
         });
+        let (catalog,catalog_scene)=initial.map(|(spec,scene)|(Some(spec),Some(scene))).unwrap_or((None,None));
         Ok(Self{generation,map,receiver,sender:Some(sender),child,exit,cancel,started:now,expected_spawn:spawn,
-            pending:None,ready:false,last_seq:0,removal,scene_version:0,removal_ack:None})
+            pending:None,ready:false,last_seq:0,removal,scene_version:0,removal_ack:None,
+            catalog,catalog_scene,pending_scene:None,catalog_ack:None})
     }
     pub fn pending(&self)->bool{self.pending.is_some()}
     pub fn ready(&self)->bool{self.ready}
     pub fn process_id(&self)->Option<u32>{self.child.lock().ok().and_then(|c|c.as_ref().map(Child::id))}
     pub fn scene_version(&self)->u32{self.scene_version}
     pub fn take_removal_ack(&mut self)->Option<RemovalAck>{self.removal_ack.take()}
+    pub fn take_catalog_ack(&mut self)->Option<CatalogAck>{self.catalog_ack.take()}
+    /// None until ready confirms the bootstrap was applied before settle.
+    pub fn catalog_scene(&self)->Option<&Scene>{if self.ready{self.catalog_scene.as_ref()}else{None}}
+    pub fn sync_removed(&mut self,scene:Scene,now:Instant)->io::Result<()>{
+        if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || self.catalog_ack.is_some() || now<self.started{return Err(bad());}
+        let spec=self.catalog.as_ref().ok_or_else(bad)?;scene.validate(spec)?;
+        if !scene.extends(self.catalog_scene.as_ref().ok_or_else(bad)?){return Err(bad());}
+        let raw=catalog::scene_request(&self.map,spec,self.generation,self.last_seq,&scene,false)?;
+        self.sender.as_ref().ok_or_else(bad)?.try_send(raw).map_err(|_|bad())?;
+        self.pending_scene=Some(scene);self.pending=Some(Pending::Catalog(self.last_seq,now));Ok(())
+    }
     /// One outstanding operation only. The caller must stop both arena lanes
     /// and commit the domain change only after checking BOTH workers' ACKs.
     pub fn remove_one(&mut self,now:Instant)->io::Result<()>{
-        if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || now<self.started{return Err(bad());}
+        if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || self.catalog_ack.is_some() || now<self.started{return Err(bad());}
         let spec=self.removal.as_ref().ok_or_else(bad)?;
         let raw=removal_request(&self.map,spec,self.generation,self.last_seq)?;
         self.sender.as_ref().ok_or_else(bad)?.try_send(raw).map_err(|_|bad())?;
         self.pending=Some(Pending::Remove(self.last_seq,now));Ok(())
     }
     pub fn advance(&mut self,input:Input,now:Instant)->io::Result<u32>{
-        if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || now<self.started || self.last_seq>=MAX_SEQUENCE{return Err(bad());}
-        let seq=self.last_seq+1;let raw=if self.removal.is_some(){request_scene(seq,input,self.scene_version)?}else{request(seq,input)?};
+        if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || self.catalog_ack.is_some() || now<self.started || self.last_seq>=MAX_SEQUENCE{return Err(bad());}
+        let seq=self.last_seq+1;let raw=if let Some(scene)=&self.catalog_scene{catalog::request_catalog(seq,input,scene)?}
+            else if self.removal.is_some(){request_scene(seq,input,self.scene_version)?}else{request(seq,input)?};
         self.sender.as_ref().ok_or_else(bad)?.try_send(raw).map_err(|_|bad())?;
         self.pending=Some(Pending::Advance(seq,now));Ok(seq)
     }
@@ -418,11 +450,18 @@ impl Worker {
                             let ack=removal_ack(&raw,&self.map,self.removal.as_ref().ok_or_else(bad)?,self.generation,seq)?;
                             self.scene_version=1;self.removal_ack=Some(ack);self.pending=None;return Ok(None);
                         }
+                        Pending::Catalog(seq,_)=>{
+                            let scene=self.pending_scene.as_ref().ok_or_else(bad)?;
+                            let ack=catalog::ack(&raw,&self.map,self.catalog.as_ref().ok_or_else(bad)?,self.generation,seq,scene)?;
+                            self.scene_version=scene.version();self.catalog_scene=self.pending_scene.take();
+                            self.catalog_ack=Some(ack);self.pending=None;return Ok(None);
+                        }
                     }
                 };
                 let context=self.removal.as_ref().map(|spec|(spec,self.generation,self.scene_version));
-                let state=response_context(&raw,&self.map,seq,self.expected_spawn,context)?;
-                self.ready=true;self.last_seq=seq;self.pending=None;Ok(Some(state))
+                let state=if let Some(spec)=&self.catalog{catalog::response(&raw,&self.map,spec,self.generation,seq,self.expected_spawn,self.catalog_scene.as_ref().ok_or_else(bad)?)?}
+                    else{response_context(&raw,&self.map,seq,self.expected_spawn,context)?};
+                self.scene_version=state.scene_version;self.ready=true;self.last_seq=seq;self.pending=None;Ok(Some(state))
             },
         }
     }
@@ -616,7 +655,76 @@ pub(crate) mod tests {
     fn fake_worker(now:Instant)->(Worker,mpsc::SyncSender<Event>,mpsc::Receiver<Vec<u8>>){
         let (send,receiver)=mpsc::sync_channel(4);let(sender,recv)=mpsc::sync_channel(1);
         (Worker{generation:1,map:map(),receiver,sender:Some(sender),child:Arc::new(Mutex::new(None)),exit:Arc::new(Mutex::new(None)),cancel:Arc::new(AtomicBool::new(false)),expected_spawn:None,
-            started:now,pending:None,ready:false,last_seq:0,removal:None,scene_version:0,removal_ack:None},send,recv)
+            started:now,pending:None,ready:false,last_seq:0,removal:None,scene_version:0,removal_ack:None,
+            catalog:None,catalog_scene:None,pending_scene:None,catalog_ack:None},send,recv)
+    }
+    fn good_catalog_state(seq:u32,spec:&CatalogSpec,scene:&Scene)->Value{
+        let mut v=good(seq);v["version"]=3.into();v["generation"]=1.into();v["catalog_sha256"]=spec.sha256().into();
+        v["scene_version"]=scene.version().into();v["scene_sha256"]=scene.hash().into();v
+    }
+    fn good_catalog_ack(seq:u32,spec:&CatalogSpec,scene:&Scene)->Value{serde_json::json!({
+        "version":3,"event":"scene_synced","generation":1,"config_sha256":"a".repeat(64),"catalog_sha256":spec.sha256(),
+        "advance_seq":seq,"tick":180+seq*6,"scene_version":scene.version(),"removed_object_ids":scene.ids(),"scene_sha256":scene.hash()})}
+    #[test]fn catalog_bootstrap_binds_restored_scene_before_ready(){
+        let spec=catalog::tests::spec(3);let restored=Scene::new(&spec,&[1,3]).unwrap();let now=Instant::now();
+        let (mut worker,send,_)=fake_worker(now);worker.catalog=Some(spec.clone());worker.catalog_scene=Some(restored.clone());
+        assert!(worker.catalog_scene().is_none());assert_eq!(worker.scene_version(),0);
+        let raw=catalog::scene_request(&map(),&spec,1,0,&restored,true).unwrap();
+        let v=json(&raw,1024).unwrap();assert_eq!(v["op"],"restore_scene");assert_eq!(v["advance_seq"],0);
+        assert!(catalog::scene_request(&map(),&spec,1,1,&restored,true).is_err());
+        let good=good_catalog_state(0,&spec,&restored);
+        for (key,value) in [("catalog_sha256","c".repeat(64).into()),("generation",2.into()),("scene_version",1.into()),
+            ("scene_sha256",Scene::new(&spec,&[1,2]).unwrap().hash().into()),("version",2.into())]{
+            let mut changed=good.clone();changed[key]=value;
+            assert!(catalog::response(&serde_json::to_vec(&changed).unwrap(),&map(),&spec,1,0,None,&restored).is_err(),"{key}");
+        }
+        send.send(Event::Line(now,serde_json::to_vec(&good).unwrap())).unwrap();
+        assert_eq!(worker.poll(now).unwrap().unwrap().scene_version,2);assert_eq!(worker.catalog_scene(),Some(&restored));
+    }
+    #[test]fn catalog_cumulative_ack_blocks_advances_and_preserves_driving_sequence(){
+        let now=Instant::now();let spec=catalog::tests::spec(4);let empty=Scene::new(&spec,&[]).unwrap();
+        let (mut worker,send,recv)=fake_worker(now);worker.catalog=Some(spec.clone());worker.catalog_scene=Some(empty.clone());
+        send.send(Event::Line(now,serde_json::to_vec(&good_catalog_state(0,&spec,&empty)).unwrap())).unwrap();worker.poll(now).unwrap();
+        let first=Scene::new(&spec,&[2]).unwrap();let second=Scene::new(&spec,&[1,2,4]).unwrap();
+        for (seq,scene) in [first.clone(),second.clone(),second.clone()].into_iter().enumerate(){
+            worker.sync_removed(scene.clone(),now).unwrap();let request=json(&recv.recv().unwrap(),1024).unwrap();
+            assert_eq!(request["advance_seq"],seq);assert_eq!(request["removed_object_ids"],serde_json::json!(scene.ids()));
+            assert!(worker.advance(Input::STOP,now).is_err());assert!(worker.sync_removed(scene.clone(),now).is_err());
+            send.send(Event::Line(now,serde_json::to_vec(&good_catalog_ack(seq as u32,&spec,&scene)).unwrap())).unwrap();
+            assert!(worker.poll(now).unwrap().is_none());assert_eq!(worker.last_seq,seq as u32);
+            assert_eq!(worker.catalog_scene(),Some(&scene));assert!(worker.advance(Input::STOP,now).is_err());
+            let ack=worker.take_catalog_ack().unwrap();assert_eq!(ack.tick,180+seq as u32*6);assert_eq!(ack.removed_object_ids,scene.ids());
+            assert!(worker.take_catalog_ack().is_none());
+            assert!(worker.sync_removed(empty.clone(),now).is_err());
+            let replacement=Scene::new(&spec,if scene.version()==1{&[1]}else{&[1,3,4]}).unwrap();
+            assert!(worker.sync_removed(replacement,now).is_err());
+            let next=worker.advance(Input::STOP,now).unwrap();let request=json(&recv.recv().unwrap(),1024).unwrap();
+            assert_eq!(request["version"],3);assert_eq!(request["scene_sha256"],scene.hash());
+            send.send(Event::Line(now,serde_json::to_vec(&good_catalog_state(next,&spec,&scene)).unwrap())).unwrap();worker.poll(now).unwrap();
+        }
+        send.send(Event::Line(now,serde_json::to_vec(&good_catalog_ack(3,&spec,&second)).unwrap())).unwrap();assert!(worker.poll(now).is_err());
+    }
+    #[test]fn catalog_failed_ack_cannot_commit_any_scene_metadata(){
+        let spec=catalog::tests::spec(3);let empty=Scene::new(&spec,&[]).unwrap();let target=Scene::new(&spec,&[1,3]).unwrap();
+        let good=good_catalog_ack(0,&spec,&target);
+        let changes=[("generation",2.into()),("catalog_sha256","c".repeat(64).into()),("config_sha256","c".repeat(64).into()),
+            ("advance_seq",1.into()),("tick",186.into()),("scene_version",1.into()),("scene_sha256","c".repeat(64).into()),
+            ("removed_object_ids",serde_json::json!([1,2])),("removed_object_ids",serde_json::json!([3,1])),
+            ("removed_object_ids",serde_json::json!([1,1])),("removed_object_ids",serde_json::json!([1.0,3])),("event","state".into())];
+        for (key,value) in changes {
+            let now=Instant::now();let (mut worker,send,recv)=fake_worker(now);worker.ready=true;
+            worker.catalog=Some(spec.clone());worker.catalog_scene=Some(empty.clone());worker.sync_removed(target.clone(),now).unwrap();recv.recv().unwrap();
+            let mut v=good.clone();v[key]=value;send.send(Event::Line(now,serde_json::to_vec(&v).unwrap())).unwrap();
+            assert!(worker.poll(now).is_err(),"{key}");assert_eq!(worker.scene_version(),0);assert_eq!(worker.catalog_scene(),Some(&empty));
+            assert!(worker.take_catalog_ack().is_none());assert_eq!(worker.last_seq,0);
+        }
+        for failure in 0..3 {
+            let now=Instant::now();let (mut worker,send,recv)=fake_worker(now);worker.ready=true;
+            worker.catalog=Some(spec.clone());worker.catalog_scene=Some(empty.clone());worker.sync_removed(target.clone(),now).unwrap();recv.recv().unwrap();
+            match failure {0=>send.send(Event::Failed).unwrap(),1=>send.send(Event::Line(now-Duration::from_nanos(1),serde_json::to_vec(&good).unwrap())).unwrap(),_=>{}}
+            assert!(worker.poll(if failure==2{now+REPLY_TIMEOUT+Duration::from_nanos(1)}else{now}).is_err());
+            assert_eq!(worker.catalog_scene(),Some(&empty));assert!(worker.take_catalog_ack().is_none());
+        }
     }
     #[test]fn ipc_unsolicited_stale_duplicate_reply_and_timeout_never_publish(){
         let t=Instant::now();let (mut w,send,_)=fake_worker(t);send.send(Event::Line(t,serde_json::to_vec(&good(0)).unwrap())).unwrap();w.poll(t).unwrap();
