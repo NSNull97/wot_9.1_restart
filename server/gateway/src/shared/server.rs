@@ -216,7 +216,8 @@ impl IntegratedRuntime {
                     if vehicle_contacts.len() >= 32 { return Err(model::bad()); }
                     vehicle_contacts.push(model::VehicleContactInput { object_id: contact.object_id,
                         substep: contact.substep, point: contact.point, normal: contact.normal,
-                        velocity: contact.velocity, kind: contact.kind.clone(), shooter: slot });
+                        velocity: contact.velocity, mass_kg: worker.map.mass_kg,
+                        kind: contact.kind.clone(), shooter: slot });
                 }
                 if state.seq == 0 {
                     let actor = world.actors.get(slot).ok_or_else(model::bad)?;

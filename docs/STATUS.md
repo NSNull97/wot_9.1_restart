@@ -9,18 +9,20 @@ physics spans stay non-empty, and the original tree material is pinned as71.
 
 The private physics worker reports bounded hull/wheel candidates over IPC v4.
 The gateway accepts only validated hull candidates under the explicit
-`test_lab` policy, stores a cumulative packed `fallenTrees` value for trees,
-and waits for every participating worker's scene ACK before committing a
-removal or publishing native state. Legacy v1/v2 catalog and IPC paths remain
-bounded and covered by regression tests. No historical kinetic damage rule is
-claimed.
+`test_lab` policy, carries the hash-bound worker mass into the contact event,
+and uses `0.5 × mass × closing_speed²` with an 8 kJ floor before removal.
+Light taps therefore remain candidates without deleting every object. It
+stores a cumulative packed `fallenTrees` value for trees, and waits for every
+participating worker's scene ACK before committing a removal or publishing
+native state. Legacy v1/v2 catalog and IPC paths remain bounded and covered by
+regression tests. No historical kinetic damage rule is claimed.
 
 Checks completed:
 
 - Python importer/probe: **39 tests PASS**;
-- gateway isolated build: **613 Rust tests PASS** on the contact-batch
-  atomicity fix; intermediate executable SHA
-  `eb287e15b32fcd7a4603274729d052daa120ebf06f4a0fc3319756b299aad5e2`;
+- gateway isolated build: **614 Rust tests PASS** on the atomic contact and
+  mass/closing-speed ramming policy; the canonical final-06 executable SHA is
+  recorded below after the clean-head rebuild;
 - physics worker isolated build: **PASS**, DLL SHA
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`;
 - `git diff --check`: **PASS**; no diagnostic processes remain running.
@@ -37,8 +39,8 @@ Evidence inventory:
 `local/evidence/20261012-p06q-tree-contact-01/import/inventory01/inventory.json`
 SHA `d3aae3255e51a583c94e2cdc910f9d70bb36f0f06d66e61928b9d5a513e8884d`;
 probe spec SHA `5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd`;
-build receipts `local/build/server/gateway-p06q-contact-atomic-01/result.json`
-and
+build receipts `local/build/server/gateway-ramming-policy-check/result.json`
+and the fresh canonical final-06 receipt (after commit), plus
 `local/build/server/physics-p06q-final-02/result.json`.
 Native run and join receipt:
 `local/evidence/20261012-p06q-tree-contact-01/import/native-join01/receipt.json`.
@@ -54,7 +56,9 @@ callback is emitted, so no contact or destruction claim is made from it.
 **Acceptance: PASS_NATIVE_CATALOG_PROBE_PENDING_OWNER_CONTACT.** Native
 catalog export, native mapping, and two-client catalog agreement are verified.
 The owner-controlled mass/speed ramming event, rendered passage through a
-removed object, and owner acceptance are **NOT_RUN**. Compound objects,
+removed object, and owner acceptance are **NOT_RUN**. The server policy is
+implemented and covered by 614 isolated tests; native rendering and passage
+remain manual gates. Compound objects,
 historical impact rules, and all-map eligibility remain open. This card stays
 on its branch; the accepted P06P mainline is the rollback point.
 

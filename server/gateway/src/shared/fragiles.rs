@@ -9,6 +9,13 @@ use super::{model::{bad,MAX_SHOTS,CAPACITY},terrain,obstacles};
 pub const MAX_OBJECTS:usize=64;
 pub const MAX_CONTACT_OBJECTS:usize=1024;
 pub const POLICY:&str="test_lab-fragile-reference-hp-ap30-v1";
+/// Minimal authoritative ramming policy. The worker supplies a hash-bound
+/// vehicle mass from the map descriptor; client claims are never used. A
+/// contact below this kinetic-energy floor remains a contact candidate but
+/// does not remove the object, so a light tap cannot fell every tree.
+pub const RAMMING_MIN_MASS_KG:f32=1000.;
+pub const RAMMING_MAX_MASS_KG:f32=100000.;
+pub const RAMMING_MIN_ENERGY_J:f32=8_000.;
 pub const DEFINITIONS_SHA:&str="bd39e3047b435fc8917ca2e7c3dc82de4a5a03cc164054af83395af8b479fdd5";
 pub const PHYSICS_SHA:&str="ea6ef22aed0fdd4e4826500c280a616737f8990ce7ab7cd808b9382227ec5ffd";
 
@@ -119,7 +126,7 @@ pub struct Damage {pub object_id:u32,pub instance_id:u32,pub object_revision:Str
     pub health_before:u32,pub health_after:u32,pub scene_before:u32,pub scene_after:u32,pub hit:terrain::Hit}
 #[derive(Clone,Debug,PartialEq)]
 pub struct VehicleContact {pub object_id:u32,pub instance_id:u32,pub object_revision:String,pub shooter:usize,pub tick:u32,pub substep:u8,
-    pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3],pub kind:String,pub scene_before:u32,pub scene_after:u32,pub fallen_tree:Option<u32>}
+    pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3],pub mass_kg:f32,pub kind:String,pub scene_before:u32,pub scene_after:u32,pub fallen_tree:Option<u32>}
 #[derive(Clone,Debug,PartialEq)]
 pub struct State {pub catalog:Arc<Catalog>,health:Vec<u32>,fallen:Vec<Option<u32>>,pub events:Vec<Damage>,pub vehicle_events:Vec<VehicleContact>}
 impl State {
@@ -142,11 +149,12 @@ impl State {
     }
     pub fn native_fallen_trees(&self,chunk:u16)->Vec<u32>{let mut values=self.catalog.objects.iter().zip(&self.fallen)
         .filter_map(|(o,f)|if o.chunk_id==chunk{*f}else{None}).collect::<Vec<_>>();values.sort_unstable();values}
-    pub fn ram_contact(&mut self,object_id:u32,shooter:usize,tick:u32,substep:u8,point:[f32;3],normal:[f32;3],velocity:[f32;3],kind:String)->io::Result<Option<VehicleContact>>{
+    pub fn ram_contact(&mut self,object_id:u32,shooter:usize,tick:u32,substep:u8,point:[f32;3],normal:[f32;3],velocity:[f32;3],mass_kg:f32,kind:String)->io::Result<Option<VehicleContact>>{
         if shooter>=CAPACITY||tick==0||!(1..=6).contains(&substep)||!matches!(kind.as_str(),"hull"|"wheel")
             ||point.iter().chain(normal.iter()).chain(velocity.iter()).any(|v|!v.is_finite())
             ||point.iter().any(|v|v.abs()>terrain::MAX_QUERY_COORDINATE)
             ||velocity.iter().map(|v|v*v).sum::<f32>()>625.
+            ||!mass_kg.is_finite()||!(RAMMING_MIN_MASS_KG..=RAMMING_MAX_MASS_KG).contains(&mass_kg)
             ||(normal.iter().map(|v|v*v).sum::<f32>()-1.).abs()>1e-4
             ||self.latest_tick().is_some_and(|last|last>tick){return Err(bad());}
         let index=self.catalog.objects.iter().position(|o|o.object_id==object_id).ok_or_else(bad)?;let object=&self.catalog.objects[index];
@@ -156,12 +164,14 @@ impl State {
         // `normal` is oriented from the tank into the object. Positive
         // signed dot therefore means the hull is closing on the object.
         let closing=velocity[0]*normal[0]+velocity[1]*normal[1]+velocity[2]*normal[2];if closing<0.1{return Ok(None);}
+        let energy_j=0.5*mass_kg*closing*closing;
+        if energy_j<RAMMING_MIN_ENERGY_J{return Ok(None);}
         let scene=self.scene_version();let fallen_tree=if matches!(object.kind,ObjectKind::Tree){
             let yaw=velocity[0].atan2(velocity[2]);let speed=if closing>=8.{3.}else if closing>=4.{2.}else if closing>=1.{1.}else{0.};
             Some(super::destructible_wire::encode_fallen_tree(object.native_index,yaw,0.,speed)?)
         }else{None};
         self.health[index]=0;self.fallen[index]=fallen_tree;
-        let event=VehicleContact{object_id,instance_id:object.instance_id,object_revision:object.object_revision.clone(),shooter,tick,substep,point,normal,velocity,kind,scene_before:scene,scene_after:scene+1,fallen_tree};self.vehicle_events.push(event.clone());Ok(Some(event))
+        let event=VehicleContact{object_id,instance_id:object.instance_id,object_revision:object.object_revision.clone(),shooter,tick,substep,point,normal,velocity,mass_kg,kind,scene_before:scene,scene_after:scene+1,fallen_tree};self.vehicle_events.push(event.clone());Ok(Some(event))
     }
     pub fn contact(&mut self,shot:u32,shooter:usize,tick:u32,hit:terrain::Hit)->io::Result<Option<Damage>>{
         let terrain::Surface::StaticObstacle{instance_id,material_kind}=hit.surface else{return Ok(None)};

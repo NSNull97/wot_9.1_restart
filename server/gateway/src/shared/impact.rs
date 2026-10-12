@@ -631,7 +631,7 @@ impl Trace {
         let mut state=self.fragiles.clone().ok_or_else(||invalid("fragile catalog absent"))?;
         if !state.catalog.contacts { return Err(invalid("vehicle contact profile absent")); }
         let replayed=state.ram_contact(contact.object_id,contact.shooter,contact.tick,
-            contact.substep,contact.point,contact.normal,contact.velocity,contact.kind.clone())?
+            contact.substep,contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone())?
             .ok_or_else(||invalid("vehicle contact was already removed or below threshold"))?;
         if replayed!=*contact || state.scene_version()!=contact.scene_after {
             return Err(invalid("vehicle contact replay mismatch"));
@@ -943,7 +943,7 @@ mod tests {
     fn vehicle_contact_replays_catalog_state_and_keeps_scene_exclusion_aligned() {
         let catalog=super::super::fragiles::tests::contact_catalog();
         let mut source=fragiles::State::new(catalog.clone());
-        let contact=source.ram_contact(1529,1,1001,2,[1.,2.,3.],[1.,0.,0.],[2.,0.,0.],"hull".into()).unwrap().unwrap();
+        let contact=source.ram_contact(1529,1,1001,2,[1.,2.,3.],[1.,0.,0.],[2.,0.,0.],4691.,"hull".into()).unwrap().unwrap();
         let mut trace=Trace::new_for_map(crate::map_profile091::MapId::Karelia);
         trace.bind_fragiles(catalog).unwrap();
         trace.vehicle_contact(123,1001,&contact).unwrap();

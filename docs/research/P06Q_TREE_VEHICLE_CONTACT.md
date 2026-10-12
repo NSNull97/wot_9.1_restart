@@ -12,10 +12,13 @@ original tree collision spans together with the nine previously supported
 fragile objects. A contact-capable catalog is versioned separately from the
 legacy catalog. The private physics worker reports bounded hull and wheel
 contact candidates; the gateway accepts only validated hull candidates for a
-test_lab mutation policy. A fragile ram removes the object with `isShotDamage`
-false. A tree stores the original `fallenTrees` packed `UINT32` value and
-removes its collision body only after every participating worker acknowledges
-the cumulative scene. The prepared passive native probe now completes on both
+test_lab mutation policy. A contact carries the worker's hash-bound mass, and
+the authoritative ram gate uses `E = 0.5 × mass × closing_speed²`: a light tap
+is recorded as a candidate but does not remove the object. A fragile ram removes
+the object with `isShotDamage` false once the explicit energy floor is crossed.
+A tree stores the original `fallenTrees` packed `UINT32` value and removes its
+collision body only after every participating worker acknowledges the
+cumulative scene. The prepared passive native probe now completes on both
 owned Prohorovka clients: two stable passes over all 117 chunks per slot,
 with identical v2 exports. This proves the native catalog mapping; it does
 not perform destruction. Owner-controlled ramming, tree fall, rendered
@@ -29,10 +32,11 @@ passage, and acceptance remain open.
   admitted tree has projectile span zero, a non-empty physics span, source
   material 71, and a checked `.spt` resource. The saved inventory reproduces
   byte-for-byte on a second import.
-- **VERIFIED:** the Rust gateway suite passes 613 tests, including catalog
+- **VERIFIED:** the Rust gateway suite passes 614 tests, including catalog
   parser limits, tree/fragile type rules, contact validation, immutable fall
   packing, trace replay, scene exclusion, worker ACK transactions, restore,
-  legacy regression coverage, and an atomic vehicle-contact batch regression.
+  legacy regression coverage, an atomic vehicle-contact batch regression, and
+  a mass/closing-speed ramming regression.
 - **VERIFIED:** the isolated .NET physics worker builds with the contact IPC
   implementation. It bounds raw contacts, distinct object IDs, line size,
   normal/point/velocity values, and rejects unknown body identity or overflow.
@@ -51,8 +55,8 @@ passage, and acceptance remain open.
   and item checks. This transient loading state is not treated as a mapping
   failure.
 - **INFERRED:** the selected `test_lab` thresholds (minimum speed 1 m/s,
-  closing speed 0.1 m/s, and tree speed code bands) are an explicit project
-  policy, not historical 0.9.1 damage rules.
+  closing speed 0.1 m/s, mass range 1000–100000 kg, and 8 kJ energy floor)
+  are explicit project policy, not historical 0.9.1 damage rules.
 - **UNKNOWN:** the historical 0.9.1 kinetic damage formula, collision callback
   ordering in the original client, and whether every source tree uses the same
   fall animation constraints.
@@ -67,19 +71,23 @@ passage, and acceptance remain open.
   the bounded v2 tree-contact probe specification.
 - `server/gateway/src/drive/worker.rs` and
   `server/gateway/src/drive/worker/catalog.rs` — bounded JSON/catalog v3,
-  IPC v4, object-contact decoding, scene limits, and legacy preservation.
+  IPC v4, object-contact decoding, hash-bound mass, scene limits, and legacy
+  preservation.
 - `server/gateway/src/shared/fragiles.rs` and `fragiles_tests.rs` — typed
   tree/fragile catalog, u32 contact health, hull/wheel policy, fall packing,
   and replayable state transitions.
 - `server/gateway/src/shared/impact.rs` — separate `VehicleContact` trace
   event/stage, replay, ordering, scene and exclusion accounting, and contact
   event budget.
+- `server/gateway/src/shared/fragiles.rs` — candidate-world contact policy,
+  mass/closing-speed energy floor, and contact event mass binding.
 - `server/gateway/src/shared/model.rs` — candidate-world contact application
   and atomic server state integration. Contact batches stage both fragile state
   and impact trace state, so a malformed later row cannot leave an earlier row
   committed; the regression test covers that rollback boundary.
 - `server/gateway/src/shared/server.rs` — worker contact collection, catalog
-  kind/profile binding, ACK-gated scene commit, and cumulative publication.
+  kind/profile binding, server-pinned mass propagation,
+  ACK-gated scene commit, and cumulative publication.
 - `server/gateway/src/shared/mod.rs` and
   `server/gateway/src/shared/destructible_wire.rs` — per-area fallen-tree
   state and the original `ARRAY<UINT32>` property wire.
@@ -96,7 +104,7 @@ passage, and acceptance remain open.
 
 ```text
 python -B -X utf8 -m unittest tests.test_destructible_catalog tests.test_destructible_catalog_probe tests.test_tree_contact_catalog -v
-python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06q-final-05
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06q-final-06
 python -B -X utf8 server/build.py physics --out local/build/server/physics-p06q-final-02
 python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/test_stand_helpers.py
 python -B -X utf8 -m py_compile local/evidence/20261012-p06p-prohorovka-01/start_stand.py
@@ -115,12 +123,12 @@ Results:
 
 - Python: 39 tests, **PASS**. The final log is
   `local/evidence/20261012-p06q-tree-contact-01/tests/importer-tests-final.log`.
-- Gateway: 613 tests, **PASS_ISOLATED_BUILD** on the contact-batch atomicity
-  fix. The reviewed intermediate receipt is
-  `local/build/server/gateway-p06q-contact-atomic-01/result.json`; executable
-  SHA256 `eb287e15b32fcd7a4603274729d052daa120ebf06f4a0fc3319756b299aad5e2`.
-  A fresh canonical `gateway-p06q-final-06` build is required after the source
-  commit before any runtime launch.
+- Gateway: 614 tests, **PASS_ISOLATED_BUILD** on the atomic contact and
+  mass/closing-speed ramming policy. Canonical receipt:
+  `local/build/server/gateway-p06q-final-06/result.json`; executable SHA256 is
+  recorded in that receipt after the clean-head build. The intermediate
+  atomic-only receipt remains
+  `local/build/server/gateway-p06q-contact-atomic-01/result.json`.
 - Helper guards: 12 tests, **PASS**. The runtime command accepts the joined
   P06Q v2 manifest envelope (240 KiB) while retaining the 128 KiB ceiling for
   legacy v1 catalogs; an unbound v2 catalog is rejected.
@@ -195,9 +203,9 @@ unchanged; no tracked deployment artifact was replaced.
 **PASS_NATIVE_CATALOG_PROBE_PENDING_OWNER_CONTACT.** Source import, bounded
 contact runtime, worker IPC, isolated tests, atomic batch rollback, native
 object-index mapping, and two-client passive catalog agreement pass.
-Mass/speed-sensitive ramming policy and owner-rendered tree-fall, scene
-replication after a real contact, and passage through a removed object remain
-open until the owner-controlled gate.
+Mass/speed-sensitive ramming policy is implemented and covered by isolated
+tests. Owner-rendered tree-fall, scene replication after a real contact, and
+passage through a removed object remain open until the owner-controlled gate.
 
 **One next recommended step:** perform the owner-controlled tank-to-tree
 ramming/tree-fall and passage gate using the joined 635-object catalog. The

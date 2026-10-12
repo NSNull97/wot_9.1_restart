@@ -122,7 +122,7 @@ fn file_hash(path:&Path,size:u64)->io::Result<String>{
 
 #[derive(Clone,Debug,PartialEq)]
 pub struct MapSpec {pub asset:String,pub arena_type_id:i32,pub config:PathBuf,pub config_sha256:String,
-    pub bounds:[f32;4],pub spawn:[f32;3],pub spawn_yaw:f32}
+    pub bounds:[f32;4],pub spawn:[f32;3],pub spawn_yaw:f32,pub mass_kg:f32}
 impl MapSpec {
     fn load(root:&Path,v:&Value)->io::Result<Self>{
         fields(v,&["asset","arena_type_id","config","config_sha256"])?;
@@ -139,9 +139,10 @@ impl MapSpec {
         let a=c["bounds_xz"].as_array().ok_or_else(bad)?;if a.len()!=4{return Err(bad());}
         let bounds=[number(&a[0],-1000.,0.)?,number(&a[1],-1000.,0.)?,number(&a[2],0.,1000.)?,number(&a[3],0.,1000.)?];
         let spawn=vector(&c["spawn_origin"],-1000.,1000.)?;let yaw=number(&c["spawn_yaw"],-std::f32::consts::PI,std::f32::consts::PI)?;
+        let mass_kg=number(&c["mass_kg"],1000.,100000.)?;
         if bounds[2]-bounds[0]<100. || bounds[3]-bounds[1]<100. || spawn[0]<bounds[0]+5. || spawn[0]>bounds[2]-5.
             || spawn[2]<bounds[1]+5. || spawn[2]>bounds[3]-5. {return Err(bad());}
-        Ok(Self {asset:asset.into(),arena_type_id:id as i32,config,config_sha256:hash.into(),bounds,spawn,spawn_yaw:yaw})
+        Ok(Self {asset:asset.into(),arena_type_id:id as i32,config,config_sha256:hash.into(),bounds,spawn,spawn_yaw:yaw,mass_kg})
     }
 }
 /// The one approved test_lab object. Private fields prevent callers from
@@ -492,7 +493,7 @@ impl Drop for Worker {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    pub(crate) fn map()->MapSpec{MapSpec{asset:"01_karelia".into(),arena_type_id:1,config:"unit".into(),config_sha256:"a".repeat(64),bounds:[-500.,-500.,500.,500.],spawn:[0.,10.,0.],spawn_yaw:0.}}
+    pub(crate) fn map()->MapSpec{MapSpec{asset:"01_karelia".into(),arena_type_id:1,config:"unit".into(),config_sha256:"a".repeat(64),bounds:[-500.,-500.,500.,500.],spawn:[0.,10.,0.],spawn_yaw:0.,mass_kg:4691.}}
     fn good(seq:u32)->Value{serde_json::json!({"version":1,"event":if seq==0{"ready"}else{"state"},"seq":seq,"tick":180+seq*6,"settle_ticks":180,"map":"01_karelia","config_sha256":"a".repeat(64),
         "state":{"position":[0,10,0],"direction":[0,0,0],"speed":0,"rspeed":0,"contacts":6,"linear_velocity":[0,0,0],"angular_velocity":[0,0,0],"wheel_contact_masks":[63,63,63,63,63,63]}})}
     fn spec()->RemovalSpec{RemovalSpec{path:"unit".into(),sha256:"b".repeat(64)}}

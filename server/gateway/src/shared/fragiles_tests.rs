@@ -277,32 +277,49 @@ fn partial_hp32_keeps_geometry_until_second_impact_and_neighbors_untouched() {
 fn vehicle_contact_validates_hull_speed_normal_and_repeat_atomically() {
     let mut state=State::new(contact_catalog());
     let before=state.clone();
-    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[0.,0.,0.],"wheel".into()).unwrap().is_none());
+    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[0.,0.,0.],4691.,"wheel".into()).unwrap().is_none());
     assert_eq!(state,before);
-    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[0.,0.,2.],[0.,0.,2.],"hull".into()).is_err());
-    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[0.5,0.,0.],"hull".into()).unwrap().is_none());
-    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[-2.,0.,0.],"hull".into()).unwrap().is_none());
-    let event=state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],"hull".into()).unwrap().unwrap();
+    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[0.,0.,2.],[0.,0.,2.],4691.,"hull".into()).is_err());
+    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[0.5,0.,0.],4691.,"hull".into()).unwrap().is_none());
+    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[-2.,0.,0.],4691.,"hull".into()).unwrap().is_none());
+    let event=state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],4691.,"hull".into()).unwrap().unwrap();
     assert_eq!((event.scene_before,event.scene_after,event.fallen_tree), (0,1,None));
     assert_eq!(state.native_fragile_values(31354),vec![0]);
     assert_eq!(state.excluded(),vec![1512]);
     let after=state.clone();
-    assert!(state.ram_contact(1513,0,1002,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],"hull".into()).unwrap().is_none());
+    assert!(state.ram_contact(1513,0,1002,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],4691.,"hull".into()).unwrap().is_none());
     assert_eq!(state,after);
-    assert!(state.ram_contact(1514,0,1000,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],"hull".into()).is_err());
+    assert!(state.ram_contact(1514,0,1000,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],4691.,"hull".into()).is_err());
     assert_eq!(state,after);
+}
+
+#[test]
+fn vehicle_contact_uses_server_mass_and_closing_speed_energy_floor() {
+    // A light tap from the same measured speed is retained as a candidate,
+    // but cannot remove a catalog object. Increasing only the server-pinned
+    // mass crosses the policy floor and produces the authoritative removal.
+    let mut light = State::new(contact_catalog());
+    assert!(light.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],1000.,"hull".into()).unwrap().is_none());
+    assert_eq!(light.scene_version(),0);
+    let mut heavy = State::new(contact_catalog());
+    let event=heavy.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],4691.,"hull".into()).unwrap().unwrap();
+    assert_eq!(event.mass_kg,4691.);
+    assert_eq!((event.scene_before,event.scene_after),(0,1));
+    let mut malformed = State::new(contact_catalog());
+    assert!(malformed.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],999.,"hull".into()).is_err());
+    assert_eq!(malformed.scene_version(),0);
 }
 
 #[test]
 fn tree_contact_packs_immutable_fallen_value_and_excludes_tree() {
     let mut state=State::new(contact_catalog());
-    let event=state.ram_contact(1529,1,1001,2,[1.,2.,3.],[1.,0.,0.],[2.,0.,0.],"hull".into()).unwrap().unwrap();
+    let event=state.ram_contact(1529,1,1001,2,[1.,2.,3.],[1.,0.,0.],[2.,0.,0.],4691.,"hull".into()).unwrap().unwrap();
     let packed=event.fallen_tree.expect("tree contact must pack native fall");
     assert_eq!(state.native_fallen_trees(31355),vec![packed]);
     assert_eq!(state.removed_ids(),vec![1529]);
     assert_eq!(state.excluded(),vec![1528]);
     assert_eq!(state.scene_version(),1);
-    let again=state.ram_contact(1529,1,1002,2,[1.,2.,3.],[1.,0.,0.],[4.,0.,0.],"hull".into()).unwrap();
+    let again=state.ram_contact(1529,1,1002,2,[1.,2.,3.],[1.,0.,0.],[4.,0.,0.],4691.,"hull".into()).unwrap();
     assert!(again.is_none());
     assert_eq!(state.native_fallen_trees(31355),vec![packed]);
 }
