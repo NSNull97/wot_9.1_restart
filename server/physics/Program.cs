@@ -10,10 +10,13 @@ try
 {
     if ((args.Length != 6 && args.Length != 9 && args.Length != 12 && args.Length != 15) || args[0] != "--local-root" || args[2] != "--config" || args[4] != "--config-sha256")
         throw new InvalidDataException("expected config, optional spawn, optional pinned one-object removal descriptor");
-    bool spawnOverride = args.Length is 9 or 15, removalEnabled = args.Length is 12 or 15;
+    bool spawnOverride = args.Length is 9 or 15, descriptorEnabled = args.Length is 12 or 15;
     int removalOffset = spawnOverride ? 9 : 6;
-    if ((spawnOverride && args[6] != "--spawn-xz") || (removalEnabled && (args[removalOffset] != "--remove-one" ||
-        args[removalOffset + 2] != "--remove-one-sha256" || args[removalOffset + 4] != "--generation")))
+    bool catalogEnabled = descriptorEnabled && args[removalOffset] == "--destructible-catalog";
+    bool removalEnabled = descriptorEnabled && !catalogEnabled;
+    if ((spawnOverride && args[6] != "--spawn-xz") || (descriptorEnabled &&
+        (args[removalOffset] != (catalogEnabled ? "--destructible-catalog" : "--remove-one") ||
+        args[removalOffset + 2] != (catalogEnabled ? "--catalog-sha256" : "--remove-one-sha256") || args[removalOffset + 4] != "--generation")))
         throw new InvalidDataException("unexpected worker arguments");
     string root = Path.GetFullPath(args[1]), hash = args[5];
     if (hash.Length != 64 || hash.Any(c => !"0123456789abcdef".Contains(c))) throw new InvalidDataException("config hash required");
@@ -27,12 +30,15 @@ try
     string map = c.GetProperty("map").GetString()!;
     if (map is not ("01_karelia" or "05_prohorovka")) throw new InvalidDataException("map outside checked pool");
     CheckedInput.RemovalSpec? removal = null;
+    CheckedInput.CatalogSpec? catalog = null;
+    CheckedInput.Scene? scene = null;
     uint generation = 0, sceneVersion = 0;
-    if (removalEnabled)
+    if (descriptorEnabled)
     {
         if (!uint.TryParse(args[removalOffset + 5], NumberStyles.None, CultureInfo.InvariantCulture, out generation) || generation == 0)
             throw new InvalidDataException("positive worker generation required");
-        removal = CheckedInput.LoadRemoval(root, args[removalOffset + 1], args[removalOffset + 3], map, c.GetProperty("obstacles"));
+        if (removalEnabled) removal = CheckedInput.LoadRemoval(root, args[removalOffset + 1], args[removalOffset + 3], map, c.GetProperty("obstacles"));
+        else catalog = CheckedInput.LoadCatalog(root, args[removalOffset + 1], args[removalOffset + 3], map, c.GetProperty("obstacles"));
     }
     var configuredSpawn = CheckedInput.Vector(c.GetProperty("spawn_origin"), -1000, 1000);
     var spawn = configuredSpawn;
@@ -70,6 +76,15 @@ try
     if (maxX - minX < 100 || maxZ - minZ < 100 || spawn.X < minX + 5 || spawn.X > maxX - 5 ||
         spawn.Z < minZ + 5 || spawn.Z > maxZ - 5) throw new InvalidDataException("spawn outside usable map");
 
+    // Restore an authoritative cumulative snapshot BEFORE the tank is created
+    // or settled. Reconnect must never settle on already destroyed colliders.
+    using var input = Console.OpenStandardInput();
+    if (catalog != null)
+    {
+        using var bootstrap = CheckedInput.Json(CheckedInput.ReadLine(input) ?? throw new InvalidDataException("missing scene bootstrap"));
+        scene = CheckedInput.SceneCommand(bootstrap.RootElement, "restore_scene", catalog, generation, hash, 0);
+        sceneVersion = scene.Version;
+    }
     if (!Foundation.Init(false)) throw new InvalidOperationException("Jolt initialization failed");
     try
     {
@@ -80,14 +95,19 @@ try
         using var filter = new ObjectVsBroadPhaseLayerFilterTable(broad, 2, pairs, 2);
         using var jobs = new JobSystemThreadPool();
         using var world = new PhysicsSystem(new PhysicsSystemSettings {
-            MaxBodies = 32, MaxBodyPairs = 1024, MaxContactConstraints = 1024,
+            MaxBodies = Math.Max(32, (catalog?.Entries.Length ?? 0) + 8), MaxBodyPairs = 1024, MaxContactConstraints = 1024,
             ObjectLayerPairFilter = pairs, BroadPhaseLayerInterface = broad, ObjectVsBroadPhaseLayerFilter = filter });
         var bodies = world.BodyInterface;
         var staticBodies = new List<BodyID>();
         using var terrain = CheckedInput.LoadMesh(root, c.GetProperty("terrain"), map);
-        using var obstacles = CheckedInput.LoadMesh(root, c.GetProperty("obstacles"), map, removal, out var selectedShape);
+        MeshShape? selectedShape = null;
+        var catalogShapes = new Dictionary<uint, MeshShape>();
+        using var obstacles = catalog == null
+            ? CheckedInput.LoadMesh(root, c.GetProperty("obstacles"), map, removal, out selectedShape)
+            : CheckedInput.LoadCatalogMesh(root, c.GetProperty("obstacles"), map, catalog, out catalogShapes);
         using var selectedObstacle = selectedShape;
         BodyID? selectedBody = null;
+        var catalogBodies = new Dictionary<uint, BodyID>();
         BodyID AddStatic(Shape shape, Vector3 position)
         {
             using var creation = new BodyCreationSettings(shape, position, Quaternion.Identity, MotionType.Static, 0) { Friction = 1 };
@@ -97,6 +117,11 @@ try
         }
         AddStatic(terrain, Vector3.Zero); AddStatic(obstacles, Vector3.Zero);
         if (selectedObstacle != null) selectedBody = AddStatic(selectedObstacle, Vector3.Zero);
+        foreach (var entry in catalogShapes)
+        {
+            if (!scene!.Ids.Contains(entry.Key)) catalogBodies.Add(entry.Key, AddStatic(entry.Value, Vector3.Zero));
+            entry.Value.Dispose(); // Body retains its shape; skipped shapes have no body.
+        }
         // Domain boundaries are explicit server walls, independent of mesh collar.
         using var xWall = new BoxShape(new Vector3(.5f, 500, (maxZ - minZ) / 2 + 1));
         using var zWall = new BoxShape(new Vector3((maxX - minX) / 2 + 1, 500, .5f));
@@ -173,7 +198,11 @@ try
             }
             void Write(string eventName)
             {
-                if (removal == null)
+                if (catalog != null)
+                    Console.WriteLine(JsonSerializer.Serialize(new { version = 3, @event = eventName, seq = sequence,
+                        tick, settle_ticks = 180, map, config_sha256 = hash, generation, catalog_sha256 = catalog.Hash,
+                        scene_version = sceneVersion, scene_sha256 = scene!.Hash, state = State() }));
+                else if (removal == null)
                     Console.WriteLine(JsonSerializer.Serialize(new { version = 1, @event = eventName, seq = sequence,
                         tick, settle_ticks = 180, map, config_sha256 = hash, state = State() }));
                 else
@@ -185,11 +214,29 @@ try
             if (Enumerable.Range(0, 6).Count(i => constraint.GetWheel(i).HasContact) < 3 || bodies.GetLinearVelocity(body.ID).Length() > 1)
                 throw new InvalidOperationException("spawn failed to settle on imported geometry");
             Write("ready");
-            using var input = Console.OpenStandardInput();
             for (byte[]? line; (line = CheckedInput.ReadLine(input)) != null;)
             {
                 using var command = CheckedInput.Json(line);
                 var request = command.RootElement;
+                if (catalog != null && request.GetProperty("op").GetString() == "sync_removed")
+                {
+                    var next = CheckedInput.SceneCommand(request, "sync_removed", catalog, generation, hash, sequence);
+                    if (scene!.Ids.Any(id => !next.Ids.Contains(id))) throw new InvalidDataException("scene removal cannot be reversed");
+                    var delta = next.Ids.Where(id => !scene.Ids.Contains(id)).ToArray();
+                    // Validate the complete delta before any native mutation.
+                    if (delta.Any(id => !catalogBodies.TryGetValue(id, out var bodyId) || !staticBodies.Contains(bodyId)))
+                        throw new InvalidOperationException("catalog body unavailable");
+                    foreach (uint id in delta)
+                    {
+                        var bodyId = catalogBodies[id]; bodies.RemoveAndDestroyBody(bodyId);
+                        staticBodies.Remove(bodyId); catalogBodies.Remove(id);
+                    }
+                    scene = next; sceneVersion = next.Version;
+                    Console.WriteLine(JsonSerializer.Serialize(new { version = 3, @event = "scene_synced", advance_seq = sequence,
+                        tick, generation, config_sha256 = hash, catalog_sha256 = catalog.Hash,
+                        scene_version = sceneVersion, removed_object_ids = scene.Ids, scene_sha256 = scene.Hash }));
+                    continue;
+                }
                 if (removal != null && request.GetProperty("op").GetString() == "remove_one")
                 {
                     CheckedInput.Fields(request, "version", "op", "mutation_seq", "expected_scene_version", "scene_version", "generation",
@@ -212,10 +259,12 @@ try
                         object_id = removal.ObjectId, object_revision = removal.Revision, scene_version = sceneVersion }));
                     continue;
                 }
-                if (removal == null) CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input");
+                if (catalog != null) CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input", "scene_version", "scene_sha256");
+                else if (removal == null) CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input");
                 else CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input", "scene_version");
-                if (request.GetProperty("version").GetInt32() != (removal == null ? 1 : 2) || request.GetProperty("op").GetString() != "advance" ||
-                    (removal != null && request.GetProperty("scene_version").GetUInt32() != sceneVersion) ||
+                if (request.GetProperty("version").GetInt32() != (catalog != null ? 3 : removal == null ? 1 : 2) || request.GetProperty("op").GetString() != "advance" ||
+                    (descriptorEnabled && request.GetProperty("scene_version").GetUInt32() != sceneVersion) ||
+                    (catalog != null && request.GetProperty("scene_sha256").GetString() != scene!.Hash) ||
                     request.GetProperty("seq").GetInt64() != sequence + 1 || sequence >= 36000 || request.GetProperty("ticks").GetInt32() != 6)
                     throw new InvalidDataException("IPC sequence or cadence mismatch");
                 var controls = request.GetProperty("input"); CheckedInput.Fields(controls, "throttle", "steer", "brake");

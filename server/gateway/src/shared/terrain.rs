@@ -220,9 +220,15 @@ impl Terrain {
     /// obstacle instance. Ground geometry is never excluded. Requesting an
     /// exclusion without an obstacle bundle, or an invalid instance, fails.
     pub fn nearest_excluding(&self, start: [f32; 3], end: [f32; 3], excluded_instance: Option<u32>) -> io::Result<Option<Hit>> {
+        self.nearest_excluding_many(start,end,&excluded_instance.into_iter().collect::<Vec<_>>())
+    }
+    pub fn validate_instance(&self,id:u32,first:u32,count:u32,kind:u8)->io::Result<()>{
+        self.obstacles.as_ref().ok_or_else(||bad("catalog requires obstacle mesh"))?.validate_instance(id,first,count,kind)
+    }
+    pub fn nearest_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<Option<Hit>> {
         let obstacle=match &self.obstacles {
-            Some(mesh)=>mesh.nearest_excluding(start,end,excluded_instance)?,
-            None if excluded_instance.is_some()=>return Err(bad("terrain exclusion requires obstacle bundle")),
+            Some(mesh)=>mesh.nearest_excluding_many(start,end,excluded)?,
+            None if !excluded.is_empty()=>return Err(bad("terrain exclusion requires obstacle bundle")),
             None=>None,
         };
         let ground=self.nearest_ground(start,end)?;

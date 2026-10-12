@@ -44,6 +44,37 @@ fn fragile(index: u8) -> u16 {
     (u16::from(index) << 8) | 1
 }
 
+/// Catalog-order area controllers. Native chunk coordinates use floor(x/100).
+/// The catalog supplies only original, independently verified item identities.
+pub(super) fn area_id(area:usize)->io::Result<u32>{
+    if area>=super::fragiles::MAX_OBJECTS{return Err(super::model::bad());}Ok(ENTITY_ID+area as u32)
+}
+pub(super) fn area_announcement(area:usize)->io::Result<Vec<u8>>{
+    let mut out=vec![10];out.extend(area_id(area)?.to_le_bytes());out.push(ALIAS+area as u8);Ok(out)
+}
+pub(super) fn area_request(payload:&[u8],count:usize)->Option<usize>{
+    if count>super::fragiles::MAX_OBJECTS||payload.len()!=7||payload[..3]!=[8,4,0]{return None;}
+    let id=u32::from_le_bytes(payload[3..].try_into().ok()?);
+    let area=id.checked_sub(ENTITY_ID)? as usize;(area<count).then_some(area)
+}
+fn checked_indices(indices:&[u8])->io::Result<()>{
+    // Only verified short VAR1 bodies: do not guess the extended length codec.
+    if indices.len()>super::fragiles::MAX_OBJECTS||indices.windows(2).any(|w|w[0]>=w[1]){return Err(super::model::bad());}Ok(())
+}
+pub(super) fn area_create(area:usize,chunk:u16,indices:&[u8])->io::Result<Vec<u8>>{
+    checked_indices(indices)?;let mut body=vec![0];body.extend(area_id(area)?.to_le_bytes());body.extend(CLIENT_TYPE.to_le_bytes());
+    for v in [((chunk>>8) as i32-127) as f32*100.+50.,0.,((chunk&255) as i32-127) as f32*100.+50.]{body.extend(v.to_le_bytes());}
+    body.extend([0u8;12]);body.push(4);
+    for prop in 0..4u8{body.push(prop);if prop==1{body.extend((indices.len() as i32).to_le_bytes());for &id in indices{body.extend(fragile(id).to_le_bytes());}}
+        else{body.extend(0i32.to_le_bytes());}}
+    let mut out=vec![9];out.extend((body.len() as u16).to_le_bytes());out.extend(body);Ok(out)
+}
+pub(super) fn area_update(area:usize,indices:&[u8])->io::Result<Vec<u8>>{
+    checked_indices(indices)?;let mut out=vec![0x12];out.extend(area_id(area)?.to_le_bytes());
+    out.extend([DESTROYED_FRAGILES,(4+2*indices.len()) as u8]);out.extend((indices.len() as i32).to_le_bytes());
+    for &id in indices{out.extend(fragile(id).to_le_bytes());}out.push(0x13);Ok(out)
+}
+
 /// Full native initial state for a fresh controller/rejoin. Option limits the
 /// state to one configured object; duplicate/multiple entries are not expressible.
 /// Original onEnterWorld applies these arrays without a transient break effect.
@@ -94,6 +125,28 @@ pub(super) fn update(index: u8) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]fn catalog_arrays_use_complete_cumulative_state_and_original_fragile_packing(){
+        assert_eq!(area_create(0,CHUNK_ID,&[]).unwrap(),create(None).unwrap());
+        assert_eq!(area_create(0,CHUNK_ID,&[1]).unwrap(),create(Some(1)).unwrap());
+        assert_eq!(area_update(0,&[1]).unwrap(),update(1));
+        let indices=[0,1,255];let packet=area_update(2,&indices).unwrap();
+        assert_eq!(&packet[..7],&[18,9,0,16,9,159,10]);
+        assert_eq!(&packet[7..],&[3,0,0,0,1,0,1,1,1,255,19]);
+        let creation=area_create(2,33667,&indices).unwrap();assert_eq!(&creation[3..10],&[0,9,0,16,9,3,0]);
+        assert_eq!(f32::from_le_bytes(creation[10..14].try_into().unwrap()),450.);
+        assert_eq!(f32::from_le_bytes(creation[18..22].try_into().unwrap()),450.);
+        assert_eq!(&creation[45..51],&[1,0,1,1,1,255]);
+        assert_eq!(area_update(2,&indices).unwrap(),packet);
+    }
+    #[test]fn catalog_wire_refuses_overflow_alias_duplicate_or_unsorted_arrays(){
+        let full=(0..64u8).collect::<Vec<_>>();assert_eq!(area_update(63,&full).unwrap()[6],132);
+        for ids in [vec![1,1],vec![2,0],(0..65u8).collect()]{assert!(area_update(0,&ids).is_err());assert!(area_create(0,CHUNK_ID,&ids).is_err());}
+        assert!(area_create(64,CHUNK_ID,&[]).is_err());assert!(area_announcement(64).is_err());
+        let mut request=vec![8,4,0];request.extend(area_id(63).unwrap().to_le_bytes());
+        assert_eq!(area_request(&request,64),Some(63));assert_eq!(area_request(&request,63),None);
+        request.push(0);assert_eq!(area_request(&request,64),None);
+    }
 
     #[test]
     fn native_initial_creation_has_all_four_empty_properties() {

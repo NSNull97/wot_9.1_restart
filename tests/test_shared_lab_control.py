@@ -56,6 +56,14 @@ class SharedControlTests(unittest.TestCase):
         self.assertTrue(f(probe, {'enable_shared_lab': True}))
         self.assertFalse(f(probe, {'enable_shared_lab': False}))
         self.assertFalse(f(dict(probe, probe_map_drive=True), {'enable_shared_lab': True}))
+        catalog = dict(base, probe_destructible_catalog=True)
+        self.assertFalse(f(catalog, {'enable_shared_lab': True}))
+        configured = {'enable_shared_lab': True, 'destructible_catalog_spec':
+                      {'path': 'owned/spec.json', 'sha256': 'a'*64}}
+        self.assertTrue(f(catalog, configured))
+        for value in (1, 'true', None):
+            self.assertFalse(f(dict(base, probe_destructible_catalog=value), configured))
+        self.assertFalse(f(dict(catalog, probe_map_drive=True), configured))
 
     def test_aim_receipt_pairs_original_callbacks_without_gameplay_writes_or_private_locals(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'

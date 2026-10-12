@@ -1053,6 +1053,9 @@ def observe_shared_lab():
     if _control and _control.get('probe_destructible_identity') is True:
         import destructible_probe
         destructible_probe.observe(player, record)
+    if _control and _control.get('probe_destructible_catalog') is True:
+        import destructible_catalog_probe
+        destructible_catalog_probe.observe(player, record, _settings)
     if _shared_native_samples == 3:
         # Pure native maths on an identity matrix: an independent oracle, not
         # game input or a client-authored pose fed to the server.
@@ -1087,7 +1090,11 @@ def observe_shared_lab():
 
 def shared_login_control(data, settings):
     return (settings.get('enable_shared_lab') is True
-            and set(data) - set(('probe_destructible_identity',)) == set(('username', 'password', 'submit_via'))
+            and set(data) - set(('probe_destructible_identity', 'probe_destructible_catalog')) == set(('username', 'password', 'submit_via'))
+            and all(type(data.get(flag, False)) is bool for flag in
+                    ('probe_destructible_identity', 'probe_destructible_catalog'))
+            and (not data.get('probe_destructible_catalog') or
+                 bool(settings.get('destructible_catalog_spec')))
             and data.get('submit_via') == 'python')
 
 
@@ -1104,11 +1111,16 @@ def consume_control(view):
     os.remove(path)
     data = json.loads(payload)
     del payload
-    if not isinstance(data, dict) or set(data) - set(('username', 'password', 'quit_after_seconds', 'screenshot_when', 'submit_via', 'ui_scenario', 'inspect_vehicle', 'export_ms1_crew', 'verify_ms1_crew', 'verify_hangar_limits', 'verify_hangar_windows', 'verify_inprocess_relogin', 'verify_account_switch', 'alternate_username', 'alternate_password', 'account_switch_expected', 'verify_long_hangar', 'long_hangar_expected', 'export_ms1_ammo', 'verify_ms1_ammo', 'ms1_ammo_expected', 'export_arena_entry', 'probe_avatar_base', 'probe_arena_space', 'probe_arena_vehicle', 'probe_arena_ready', 'probe_arena_movement', 'probe_map_drive', 'probe_map_drive_acceptance', 'map_drive_acceptance_mode', 'probe_destructible_identity', 'quit_when')):
+    if not isinstance(data, dict) or set(data) - set(('username', 'password', 'quit_after_seconds', 'screenshot_when', 'submit_via', 'ui_scenario', 'inspect_vehicle', 'export_ms1_crew', 'verify_ms1_crew', 'verify_hangar_limits', 'verify_hangar_windows', 'verify_inprocess_relogin', 'verify_account_switch', 'alternate_username', 'alternate_password', 'account_switch_expected', 'verify_long_hangar', 'long_hangar_expected', 'export_ms1_ammo', 'verify_ms1_ammo', 'ms1_ammo_expected', 'export_arena_entry', 'probe_avatar_base', 'probe_arena_space', 'probe_arena_vehicle', 'probe_arena_ready', 'probe_arena_movement', 'probe_map_drive', 'probe_map_drive_acceptance', 'map_drive_acceptance_mode', 'probe_destructible_identity', 'probe_destructible_catalog', 'quit_when')):
         raise ValueError('unknown one-shot control schema')
     if (type(data.get('probe_destructible_identity', False)) is not bool
             or data.get('probe_destructible_identity') and _settings.get('enable_shared_lab') is not True):
         raise ValueError('destructible identity probe requires explicit shared laboratory')
+    if (type(data.get('probe_destructible_catalog', False)) is not bool
+            or data.get('probe_destructible_catalog') and (
+                _settings.get('enable_shared_lab') is not True
+                or not _settings.get('destructible_catalog_spec'))):
+        raise ValueError('catalog probe requires prepared spec and explicit shared laboratory')
     has_credentials = 'username' in data or 'password' in data
     if has_credentials and not ('username' in data and 'password' in data):
         raise ValueError('one-shot control credentials must be paired')
@@ -1240,6 +1252,7 @@ def consume_control(view):
                 'export_ms1_ammo': export_ammo, 'verify_ms1_ammo': verify_ammo,
                 'export_arena_entry': export_arena, 'probe_avatar_base': probe_avatar, 'probe_arena_space': probe_space, 'probe_arena_vehicle': probe_vehicle, 'probe_arena_ready': probe_ready, 'probe_arena_movement': probe_movement, 'probe_map_drive': probe_drive, 'probe_map_drive_acceptance': probe_acceptance,
                 'probe_destructible_identity': data.get('probe_destructible_identity', False),
+                'probe_destructible_catalog': data.get('probe_destructible_catalog', False),
                 'quit_when': quit_when}
     if probe_acceptance:
         _control['map_drive_acceptance_mode'] = drive_mode

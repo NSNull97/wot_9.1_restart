@@ -1,0 +1,218 @@
+//! Session/codec regression checks only. Source-bound model fixtures are used,
+//! but synthetic direct State contacts below do not prove native rendering or
+//! World/Trace collision acceptance. Those have separate integration gates.
+use super::*;
+use super::tests::{driving, frame, queued_bodies, visible_pair};
+use super::super::{destructible_wire as area_wire, terrain};
+
+fn request(id: u32) -> Vec<u8> {
+    let mut bytes = vec![8, 4, 0]; bytes.extend(id.to_le_bytes()); bytes
+}
+
+fn present(bodies: &[Vec<u8>], expected: &[u8]) -> usize {
+    bodies.iter().map(|body| body.windows(expected.len()).filter(|bytes| *bytes == expected).count()).sum()
+}
+
+fn prepare_client(s: &mut Session, world: &World) {
+    let c = s.shared.as_mut().unwrap();
+    c.view = Some(world.clone());
+    c.shot_cursor = world.latest_shot();
+    c.areas = world.fragiles.as_ref().unwrap().catalog.chunks().iter().enumerate()
+        .map(|(i, _)| (Some((10 + i as u32, true)), Vec::new())).collect();
+}
+
+fn pair(now: Instant) -> (Session, Session, World) {
+    let (mut a, mut b, _) = visible_pair(now);
+    let world = model::tests::fragile_world(now, None);
+    prepare_client(&mut a, &world); prepare_client(&mut b, &world);
+    (a, b, world)
+}
+
+fn entities(now: Instant, world: &World) -> Session {
+    let (mut s, _) = driving(now);
+    let c = s.shared.as_mut().unwrap();
+    c.phase = Phase::Entities; c.announcement = Some((0, true));
+    c.creations = [None; 2]; c.view = Some(world.clone());
+    c.areas = vec![(None, Vec::new()); world.fragiles.as_ref().unwrap().catalog.chunks().len()];
+    s
+}
+
+fn direct_contact(world: &mut World, instance: u32, shot: u32) {
+    let state = world.fragiles.as_mut().unwrap();
+    let object = state.catalog.instance(instance).unwrap().clone();
+    let contact = terrain::Hit {
+        triangle_id: object.projectile_first_triangle, t: 0.5,
+        point: [-402.0, 57.0, -404.0], normal: [0.0, 1.0, 0.0],
+        surface: terrain::Surface::StaticObstacle { instance_id: instance, material_kind: object.material_kind },
+    };
+    state.contact(shot, 0, 1001, contact).unwrap().unwrap();
+}
+
+#[test]
+fn native_catalog_announces_and_creates_both_chunks_with_vehicle_requests() {
+    let now = Instant::now();
+    let world = model::tests::fragile_world(now, None);
+    let (mut s, _) = driving(now);
+    {
+        let c = s.shared.as_mut().unwrap(); c.phase = Phase::Enable;
+        c.view = Some(world.clone()); c.creations = [None; 2]; c.announcement = None;
+    }
+    s.receive(&frame(&s, &[9]), now).unwrap();
+    let c = s.shared.as_ref().unwrap();
+    assert_eq!(c.phase, Phase::Entities);
+    assert_eq!(c.areas, vec![(None, vec![]), (None, vec![])]);
+    let announced = queued_bodies(&s, now);
+    for i in 0..2 { assert_eq!(present(&announced, &area_wire::area_announcement(i).unwrap()), 1); }
+    let (sequence, _) = c.announcement.unwrap();
+    let ack = frame(&s, &[]);
+    s.shared.as_mut().unwrap().acknowledge(sequence + 1, &ack);
+
+    let mut payload = Vec::new();
+    for id in [area_wire::area_id(1).unwrap(), wire::vehicle_id(0).unwrap(),
+        area_wire::area_id(0).unwrap(), wire::vehicle_id(1).unwrap()] { payload.extend(request(id)); }
+    s.receive(&frame(&s, &payload), now).unwrap();
+    let c = s.shared.as_ref().unwrap();
+    assert!(c.creations.iter().all(Option::is_some));
+    assert!(c.areas.iter().all(|(pending, ids)| pending.is_some_and(|(_, ack)| !ack) && ids.is_empty()));
+    let created = queued_bodies(&s, now);
+    for (i, chunk) in [31354, 31355].into_iter().enumerate() {
+        let expected = area_wire::area_create(i, chunk, &[]).unwrap();
+        assert_eq!(present(&created, &expected), 1);
+    }
+}
+
+#[test]
+fn all_chunk_creation_acks_gate_commands_selective_ack_is_supported() {
+    let now = Instant::now(); let (mut a, _, mut world) = pair(now);
+    {
+        let c = a.shared.as_mut().unwrap(); c.areas[0].0 = Some((10, false)); c.areas[1].0 = Some((11, false));
+        c.commands.push(model::Command::Move(model::Input { throttle: 1, steer: 0 }));
+    }
+    let actors_before = world.actors.clone();
+    poll(&mut a, &mut world, now).unwrap();
+    assert_eq!(world.actors, actors_before);
+    assert_eq!(a.shared.as_ref().unwrap().commands.len(), 1);
+    let ack = frame(&a, &[]);
+    a.shared.as_mut().unwrap().acknowledge(11, &ack);
+    assert!(a.shared.as_ref().unwrap().areas[0].0.unwrap().1);
+    assert!(!a.shared.as_ref().unwrap().areas[1].0.unwrap().1);
+    poll(&mut a, &mut world, now).unwrap();
+    assert_eq!(world.actors, actors_before);
+    assert_eq!(a.shared.as_ref().unwrap().commands.len(), 1);
+    let mut selective = frame(&a, &[]); selective.selective = vec![11];
+    a.shared.as_mut().unwrap().acknowledge(11, &selective);
+    poll(&mut a, &mut world, now).unwrap();
+    assert!(a.shared.as_ref().unwrap().commands.is_empty());
+    assert_eq!(world.actors[0].input.throttle, 1);
+}
+
+#[test]
+fn cumulative_same_chunk_updates_are_once_per_peer_and_do_not_touch_neighbor_chunk() {
+    let now = Instant::now(); let (mut a, mut b, mut world) = pair(now);
+    direct_contact(&mut world, 1513, 1);
+    let first = area_wire::area_update(0, &[1]).unwrap();
+    let full = area_wire::area_update(0, &[0, 1]).unwrap();
+    let other = area_wire::area_update(1, &[0]).unwrap();
+    for s in [&mut a, &mut b] {
+        poll(s, &mut world, now).unwrap();
+        assert_eq!(s.shared.as_ref().unwrap().areas[0].1, vec![1]);
+        assert!(s.shared.as_ref().unwrap().areas[1].1.is_empty());
+        assert_eq!(present(&queued_bodies(s, now), &first), 1);
+    }
+    direct_contact(&mut world, 1512, 2);
+    for s in [&mut a, &mut b] {
+        poll(s, &mut world, now).unwrap();
+        assert_eq!(s.shared.as_ref().unwrap().areas[0].1, vec![0, 1]);
+        let before = queued_bodies(s, now);
+        assert_eq!(present(&before, &first), 1);
+        assert_eq!(present(&before, &full), 1);
+        assert_eq!(present(&before, &other), 0);
+        poll(s, &mut world, now).unwrap();
+        assert_eq!(queued_bodies(s, now), before);
+    }
+    assert_eq!(world.fragiles.as_ref().unwrap().excluded(), vec![1512, 1513]);
+    assert_eq!(world.actors[0].health, 90); assert_eq!(world.actors[1].health, 90);
+}
+
+#[test]
+fn partial_hp_does_not_publish_destruction_before_final_hit() {
+    let now = Instant::now(); let (mut a, _, _) = visible_pair(now);
+    let mut world = model::tests::fragile_world(now, Some(32)); prepare_client(&mut a, &world);
+    let update = area_wire::area_update(0, &[1]).unwrap();
+    direct_contact(&mut world, 1513, 1);
+    assert_eq!(world.fragiles.as_ref().unwrap().events[0].health_after, 2);
+    poll(&mut a, &mut world, now).unwrap();
+    assert!(a.shared.as_ref().unwrap().areas[0].1.is_empty());
+    assert_eq!(present(&queued_bodies(&a, now), &update), 0);
+    direct_contact(&mut world, 1513, 2);
+    poll(&mut a, &mut world, now).unwrap();
+    assert_eq!(present(&queued_bodies(&a, now), &update), 1);
+    assert_eq!(a.shared.as_ref().unwrap().areas[0].1, vec![1]);
+}
+
+#[test]
+fn fresh_connection_creation_contains_current_state_without_break_replay() {
+    let now = Instant::now(); let mut world = model::tests::fragile_world(now, None);
+    direct_contact(&mut world, 1513, 1); direct_contact(&mut world, 1512, 2);
+    let mut s = entities(now, &world);
+    let mut payload = request(area_wire::area_id(0).unwrap()); payload.extend(request(area_wire::area_id(1).unwrap()));
+    s.receive(&frame(&s, &payload), now).unwrap();
+    assert_eq!(s.shared.as_ref().unwrap().areas[0].1, vec![0, 1]);
+    assert!(s.shared.as_ref().unwrap().areas[1].1.is_empty());
+    let bodies = queued_bodies(&s, now);
+    assert_eq!(present(&bodies, &area_wire::area_create(0, 31354, &[0, 1]).unwrap()), 1);
+    assert_eq!(present(&bodies, &area_wire::area_create(1, 31355, &[]).unwrap()), 1);
+    assert_eq!(present(&bodies, &area_wire::area_update(0, &[0, 1]).unwrap()), 0);
+    {
+        let c = s.shared.as_mut().unwrap(); c.phase = Phase::Driving;
+        c.creations = [Some((0, true)); 2]; c.ready_sent = [true; 2];
+        for (pending, _) in &mut c.areas { pending.as_mut().unwrap().1 = true; }
+    }
+    poll(&mut s, &mut world, now).unwrap();
+    let after = queued_bodies(&s, now);
+    assert_eq!(present(&after, &area_wire::area_create(0, 31354, &[0, 1]).unwrap()), 1);
+    assert_eq!(present(&after, &area_wire::area_update(0, &[0, 1]).unwrap()), 0);
+}
+
+#[test]
+fn mixed_unknown_or_duplicate_request_rolls_back_entire_envelope() {
+    let now = Instant::now(); let world = model::tests::fragile_world(now, None);
+    for bad_id in [123, area_wire::area_id(0).unwrap()] {
+        let mut s = entities(now, &world);
+        let mut payload = request(area_wire::area_id(0).unwrap());
+        payload.extend(request(wire::vehicle_id(0).unwrap())); payload.extend(request(bad_id));
+        let rx = s.rx; let bodies = queued_bodies(&s, now);
+        assert!(s.receive(&frame(&s, &payload), now).is_err());
+        assert_eq!(s.rx, rx);
+        assert!(s.shared.as_ref().unwrap().areas.iter().all(|(pending, ids)| pending.is_none() && ids.is_empty()));
+        assert_eq!(s.shared.as_ref().unwrap().creations, [None; 2]);
+        assert_eq!(queued_bodies(&s, now), bodies);
+        let mut valid = request(area_wire::area_id(0).unwrap()); valid.extend(request(area_wire::area_id(1).unwrap()));
+        s.receive(&frame(&s, &valid), now).unwrap();
+        assert!(s.shared.as_ref().unwrap().areas.iter().all(|(pending, _)| pending.is_some()));
+    }
+}
+
+#[test]
+fn late_outbox_failure_does_not_commit_sent_arrays_commands_or_world() {
+    let now = Instant::now(); let (mut a, _, mut world) = pair(now);
+    direct_contact(&mut world, 1513, 1); direct_contact(&mut world, 1512, 2);
+    a.shared.as_mut().unwrap().commands.push(model::Command::Move(model::Input { throttle: 1, steer: 0 }));
+    a.outbox.push_back(vec![0; 513]);
+    let rx = a.rx; let tx_len = a.tx.len(); let outbox = a.outbox.clone();
+    let areas = a.shared.as_ref().unwrap().areas.clone();
+    let actors = world.actors.clone(); let state = world.fragiles.clone(); let trace = world.impact.clone();
+    assert!(poll(&mut a, &mut world, now).is_err());
+    assert_eq!(a.rx, rx); assert_eq!(a.tx.len(), tx_len); assert_eq!(a.outbox, outbox);
+    assert_eq!(a.shared.as_ref().unwrap().areas, areas);
+    assert_eq!(a.shared.as_ref().unwrap().commands.len(), 1);
+    assert_eq!(world.actors, actors); assert_eq!(world.fragiles, state); assert_eq!(world.impact, trace);
+    a.outbox.clear(); poll(&mut a, &mut world, now).unwrap();
+    assert!(a.shared.as_ref().unwrap().commands.is_empty());
+    assert_eq!(a.shared.as_ref().unwrap().areas[0].1, vec![0, 1]);
+    assert!(a.shared.as_ref().unwrap().areas[1].1.is_empty());
+    let update = area_wire::area_update(0, &[0, 1]).unwrap();
+    assert_eq!(present(&queued_bodies(&a, now), &update), 1);
+    let before = queued_bodies(&a, now); poll(&mut a, &mut world, now).unwrap();
+    assert_eq!(queued_bodies(&a, now), before);
+}

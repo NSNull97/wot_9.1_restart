@@ -114,3 +114,56 @@ and its partial manual acceptance remain in `docs/research/P02_MAP_DRIVE.md`
 and `docs/research/P02_DRIVE_LIMITATIONS.md`. The later P06N single-object
 removal/ACK contract above is covered in `docs/research/P06N_DESTRUCTIBLE_STATE.md`.
 Linux ABI and cross-platform repeatability are NOT_RUN.
+
+P06O adds a separate catalog mode without changing the IPC1/IPC2 entrypoints:
+`--destructible-catalog <catalog.json> --catalog-sha256 <sha256> --generation <positive-u32>`.
+The version-2 catalog (at most128KiB) has exact keys `version,profile,map,
+physics_manifest_sha256,projectile_manifest_sha256,objects`; profile is `test_lab`,
+map is `01_karelia`, and both original source hashes remain those pinned above.
+`objects` contains1..64 rows, ordered by strictly increasing positive `object_id`.
+Each row has exactly `object_id,instance_id,first_triangle,triangle_count,
+object_revision`. The revision is lowercase SHA256, each source instance is
+unique, and its positive full triangle span (at most4096 triangles) must match
+the pinned original physics manifest's model instance and nonempty resource.
+Spans must not overlap. The loader preserves all original triangles/coordinates,
+splitting admitted spans into independent static bodies. Body capacity is
+max(32,catalog size+8); the other accepted physics parameters are unchanged.
+The worker checks geometry identity; the importer/domain still decides which
+objects are eligible, their HP/policy, and whether their destroyed state has no
+collision. A catalog is not proof of native visual IDs or historical rules.
+
+IPC3 uses the same1024-byte ASCII line bound. The first input must be
+`restore_scene`, BEFORE any tank creation or180-tick settling. Its exact keys:
+`version=3,op="restore_scene",generation,config_sha256,catalog_sha256,
+advance_seq=0,scene_version,removed_object_ids,scene_sha256`.
+The full list contains0..40 known object IDs in strictly increasing order;
+`scene_version` equals its length. These bodies are omitted before settling.
+`ready` confirms the restored revision/hash, so reconnect cannot briefly settle
+on a collider that the authoritative battle already removed.
+
+The canonical digest is SHA256 of ASCII `wot091-fragile-scene-v3` followed by
+one NUL byte, the raw32 catalog hash bytes, then the ID count as uint32LE and
+each sorted ID as uint32LE. For catalog hash `b` repeated64 times and an empty
+list it is `3b4d76b3e9b6266fea62459b5d9d2567819a9851fc9abdc2c59640f8e089f81f`.
+The bound40 describes the current ammunition-limited card, not the map's total
+destructible count. No timer, tick, native ID, or JSON spelling enters this hash.
+
+`sync_removed` has the same keys as `restore_scene`, with `advance_seq` equal to
+the last completed driving sequence. The snapshot must contain every previously
+removed ID. The complete delta is validated before removing any body; exact
+retries do nothing. Shrinking/replacing the set fails explicitly. The ACK has
+exact keys `version=3,event="scene_synced",generation,config_sha256,
+catalog_sha256,advance_seq,tick,scene_version,removed_object_ids,scene_sha256`.
+It consumes no simulation ticks or driving sequence. IPC3 `advance` additionally
+requires `scene_version,scene_sha256`; `ready`/`state` additionally return
+`generation,catalog_sha256,scene_version,scene_sha256`. All accepted pose and
+six-substep driving semantics remain the same.
+
+Rust exposes `CatalogSpec::load`, immutable entries, `Scene::new`,
+`Worker::launch_with_catalog(...,initial_scene)`, `sync_removed`,
+`take_catalog_ack`, and `catalog_scene` (available only after verified ready).
+It checks all ACK fields against the exact pending snapshot before publishing
+the scene and blocks advances until the caller consumes that ACK. The battle
+coordinator must still freeze all lanes and publish domain/native changes only
+after every worker acknowledges. Partial native removal failure is fail-closed:
+terminate the battle/workers, not a claim of reversible physics rollback.

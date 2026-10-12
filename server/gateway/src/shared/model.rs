@@ -2,7 +2,7 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, sync::Arc, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::{aim, ap, destructible, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile};
+use super::{aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
@@ -96,6 +96,7 @@ pub struct World {
     terrain: Option<Arc<terrain::Terrain>>,
     pub terrain_contacts: Vec<TerrainContact>,
     destructible: Option<destructible::State>,
+    pub fragiles: Option<fragiles::State>,
 }
 
 impl World {
@@ -104,7 +105,7 @@ impl World {
         Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new(),
             geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
-            terrain: None, terrain_contacts: Vec::new(), destructible: None })
+            terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
         if self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
@@ -121,11 +122,16 @@ impl World {
     }
     pub fn latest_shot(&self) -> u32 { self.shots.last().map(|s| s.sequence).unwrap_or(0) }
     pub fn bind_destructible_test_lab(&mut self) -> io::Result<()> {
-        if self.started.is_some() || !self.shots.is_empty() || !self.ap_test_lab || self.destructible.is_some()
+        if self.started.is_some() || !self.shots.is_empty() || !self.ap_test_lab || self.destructible.is_some()||self.fragiles.is_some()
             || self.terrain.as_ref().is_none_or(|terrain|terrain.source_revision()!=terrain::WORLD_SOURCE_REVISION) {return Err(bad());}
         self.destructible=Some(destructible::State::default());Ok(())
     }
-    pub fn scene_version(&self)->u32{self.destructible.as_ref().map_or(0,destructible::State::scene_version)}
+    pub fn bind_fragiles(&mut self,catalog:Arc<fragiles::Catalog>)->io::Result<()>{
+        if self.started.is_some()||!self.shots.is_empty()||!self.ap_test_lab||self.destructible.is_some()||self.fragiles.is_some(){return Err(bad());}
+        catalog.bind_geometry(self.terrain.as_ref().ok_or_else(bad)?)?;
+        self.impact.bind_fragiles(catalog.clone())?;self.fragiles=Some(fragiles::State::new(catalog));Ok(())
+    }
+    pub fn scene_version(&self)->u32{self.fragiles.as_ref().map_or_else(||self.destructible.as_ref().map_or(0,destructible::State::scene_version),fragiles::State::scene_version)}
     pub fn destructible_enabled(&self)->bool{self.destructible.is_some()}
     pub fn destructible_transition(&self)->Option<&destructible::Transition>{self.destructible.as_ref().and_then(destructible::State::transition)}
     /// Authenticated identity only. The caller reserves a transport retirement
@@ -352,6 +358,7 @@ impl World {
         let mut impacts = self.impacts.clone();
         let mut terrain_contacts = self.terrain_contacts.clone();
         let mut next_destructible = self.destructible.clone();
+        let mut next_fragiles=self.fragiles.clone();
         if tick_changed {
             'projectile_loop: for projectile in &mut next_projectiles {
                 if !projectile.stopped {
@@ -402,6 +409,11 @@ impl World {
                                 if let Some(state)=&mut next_destructible {
                                     if let Some(transition)=state.contact(projectile.sequence,projectile.slot,tick,hit)? {
                                         impact_trace.destructible_transition(self.id,projectile.sequence,tick,&transition)?;
+                                    }
+                                }
+                                if let Some(state)=&mut next_fragiles {
+                                    if let Some(damage)=state.contact(projectile.sequence,projectile.slot,tick,hit)?{
+                                        impact_trace.fragile_damage(self.id,projectile.sequence,tick,&damage)?;
                                     }
                                 }
                                 projectile.terminal = hit.point; projectile.stopped = true;
@@ -497,6 +509,7 @@ impl World {
         self.impacts = impacts;
         self.terrain_contacts = terrain_contacts;
         self.destructible = next_destructible;
+        self.fragiles=next_fragiles;
         Ok(tick_changed || expired)
     }
 }
@@ -558,6 +571,40 @@ pub(super) mod tests {
             let pos=if slot==0 {[-402.07458,55.34893,-412.]}else{[-380.,55.34893,-410.]};
             w.actors[slot].position=pos;w.actors[slot].origin=pos;w.actors[slot].direction=[0.;3];w.actors[slot].yaw=0.;
         }w
+    }
+    pub fn fragile_world(now:Instant,health:Option<i16>)->World{
+        let mut w=destructible_world(now);w.destructible=None;
+        let mut catalog=(*super::super::fragiles::tests::catalog()).clone();
+        if let Some(h)=health{catalog.objects.iter_mut().find(|o|o.instance_id==1513).unwrap().health=h;}
+        let catalog=Arc::new(catalog);catalog.bind_geometry(w.terrain.as_ref().unwrap()).unwrap();
+        w.impact.bind_fragiles(catalog.clone()).unwrap();w.fragiles=Some(fragiles::State::new(catalog));w
+    }
+    #[test]fn imported_object_partial_health_preserves_geometry_until_death_and_next_shell_passes(){
+        let now=Instant::now();let mut w=fragile_world(now,Some(32));
+        for shot in 0..3{
+            let at=now+Duration::from_secs(shot*3);if shot>0{w.advance(at).unwrap();}
+            w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();w.advance(at+STEP).unwrap();
+            let state=w.fragiles.as_ref().unwrap();
+            assert_eq!(state.scene_version(),u32::from(shot>0));
+            if shot<2{let damage=state.events.last().unwrap();assert_eq!(damage.instance_id,1513);
+                assert_eq!(damage.health_after,if shot==0{2}else{0});assert!(w.projectiles[shot as usize].stopped);
+                assert_eq!(damage.hit.point,w.projectiles[shot as usize].terminal);}
+            else{assert_eq!(state.events.len(),2);assert!(!w.terrain_contacts.iter().any(|c|c.shot==3&&matches!(c.hit.surface,terrain::Surface::StaticObstacle{instance_id:1513,..})));}
+            assert_eq!(state.removed_ids(),if shot==0{vec![]}else{vec![1514]});
+        }
+        assert_eq!(w.actors[0].fire.ammo(),17);assert_eq!(w.actors[1].health,90);
+        assert_eq!(w.fragiles.as_ref().unwrap().native_destroyed(31354),vec![1]);
+        let identity=w.actors[0].identity.clone();w.detach(1).unwrap();w.attach(identity,3).unwrap();assert_eq!(w.scene_version(),1);
+    }
+    #[test]fn imported_same_tick_and_failed_second_flight_are_transactional(){
+        let now=Instant::now();let mut w=fragile_world(now,None);
+        w.actors[1].position=w.actors[0].position;w.actors[1].origin=w.actors[0].origin;
+        for slot in 0..2{w.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();}
+        for actor in &mut w.actors{actor.position[0]+=30.;actor.origin=actor.position;}
+        let mut failed=w.clone();failed.projectiles[1].velocity[0]=f32::NAN;let before=failed.clone();
+        assert!(failed.advance(now+STEP).is_err());assert_eq!(failed.fragiles,before.fragiles);assert_eq!(failed.impact,before.impact);assert_eq!(failed.actors,before.actors);
+        w.advance(now+STEP).unwrap();assert_eq!(w.scene_version(),1);assert_eq!(w.fragiles.as_ref().unwrap().events.len(),1);
+        assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::TerrainQuery{shot_id:2,scene_version:1,excluded_instances,..} if excluded_instances==&vec![1513])));
     }
     #[test]fn destructible_requires_explicit_prestart_terrain_ap_and_cannot_be_rebound(){
         let now=Instant::now();let mut w=World::new(77,now).unwrap();assert!(w.bind_destructible_test_lab().is_err());

@@ -288,7 +288,20 @@ impl Obstacles {
     }
 
     fn query_excluding(&self, start: [f32; 3], end: [f32; 3], excluded_instance: Option<u32>) -> io::Result<(Option<Hit>,usize)> {
-        if excluded_instance.is_some_and(|id| id >= self.mesh.instance_count) {
+        self.query_excluding_many(start,end,&excluded_instance.into_iter().collect::<Vec<_>>())
+    }
+
+    pub fn validate_instance(&self,id:u32,first:u32,count:u32,kind:u8)->io::Result<()> {
+        let end=first.checked_add(count).ok_or_else(||bad("instance range"))?;
+        if count==0||end as usize>self.mesh.instances.len()||id>=self.mesh.instance_count
+            ||self.mesh.instances.iter().enumerate().any(|(i,&v)| (v==id)!=((first as usize..end as usize).contains(&i)))
+            ||self.mesh.material_kinds[first as usize..end as usize].iter().any(|&v|v!=kind){return Err(bad("instance geometry identity"));}Ok(())
+    }
+    pub fn nearest_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<Option<Hit>>{
+        self.query_excluding_many(start,end,excluded).map(|(hit,_)|hit)
+    }
+    fn query_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<(Option<Hit>,usize)>{
+        if excluded.len()>super::model::MAX_SHOTS||excluded.windows(2).any(|w|w[0]>=w[1])||excluded.iter().any(|&id|id>=self.mesh.instance_count) {
             return Err(bad("obstacles excluded instance outside source manifest"));
         }
         if start.into_iter().chain(end).any(|v| !v.is_finite() || v.abs() > MAX_QUERY_COORDINATE) {
@@ -306,7 +319,7 @@ impl Obstacles {
             let node = self.mesh.nodes[id as usize];
             if node.count > 0 {
                 for &triangle_id in &self.mesh.order[node.first as usize..(node.first+node.count) as usize] {
-                    if excluded_instance == Some(self.mesh.instances[triangle_id as usize]) { continue; }
+                    if excluded.binary_search(&self.mesh.instances[triangle_id as usize]).is_ok() { continue; }
                     tested += 1;
                     let triangle = points(&self.mesh.vertices,self.mesh.triangles[triangle_id as usize]);
                     if let Some(hit) = intersect(start,direction,triangle,triangle_id,self.mesh.instances[triangle_id as usize],
