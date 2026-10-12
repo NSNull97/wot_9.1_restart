@@ -64,4 +64,11 @@ physics-integrated-p06n-01/pool-near.json with the recorded P06N descriptor and
 accepted contact/AP/terrain/destructible options. Restore diagnostic ledgers
 after stopping only receipt-verified own processes. Keep old evidence and pools.
 
-One next gate: original map inventory and automatic native identity mapping.
+Completed: source import/identity, bounded state/wire/worker checks, independent
+multiple-object native destruction, passage and cumulative gameplay. The first
+live kill exhausted ammunition; fresh native02 then recorded a real fourth
+shot into the wreck and original effects in both windows. Owner explicitly
+accepted the new windows. Evidence: native-acceptance01/02/03. Card acceptance
+PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB; ordinary merge/push is authorized.
+One next recommended card: source-driven tree fall/state/collision semantics
+on this same accepted cumulative runtime, with its own native acceptance.

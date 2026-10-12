@@ -1,22 +1,26 @@
-# P06O candidate — imported objects running, owner gate pending
+# P06O accepted — reusable fragile catalog and cumulative native gameplay
 
-Branch `codex/p06o-destructible-import`, accepted base main5f38525. Source-driven
-import inventories all2918 Karelia instances and selects6 complete fragile
-colliders by material/geometry rules. No per-instance runtime allowlist.
-Both original clients produced identical11-chunk/329-entry native ID catalogs.
-Final manifestSHA d5063d06...73a3, native joins all six full source transforms.
+Branch `codex/p06o-destructible-import`, accepted base main 5f38525. Original
+resource import inventories 2918 Karelia instances and selects six complete
+fragile colliders in three chunks, without a per-instance runtime allowlist.
+Both original clients exported identical 11-chunk/329-entry native ID catalogs.
+Gateway05: 590 Rust PASS; Python suite03: 56 PASS; private physics: 20 PASS.
+Current source equality and private/root physics provenance are verified.
 
-Gateway05/source294fe42:590 Rust PASS, including real two-worker ACK/rejoin;
-Python suite03:56 PASS, private physics20 PASS. Native01 battle832598004322204188
-is running with three area controllers per client, grounded workers, matching
-replicated vehicles and no startup observer errors. Evidence native-entry01.
-Physics parameters/geometry unchanged; test spawn only moved4m west.
+Owner accepted multiple objects/passage and explicitly confirmed the fresh
+wreck test in the new windows. Frozen native-acceptance01/02 prove three
+independent removals after both-worker ACKs, ground effects, live HP/death and
+continued survivor control. Native-acceptance03 closes the last wreck gate:
+three AP hits, one zero-damage wreck hit, original effects in both clients,
+exactly one death each and no faults. All use the same gateway/pool/catalog.
 
-**Acceptance: PENDING_OWNER.** No merge. Trees, compound objects, historical
-resistance/continuation/scaled-HP rules are not claimed implemented.
-[Files, commands, evidence, unknowns and rollback](research/P06O_DESTRUCTIBLE_IMPORT.md).
-**One next gate:** destroy the camouflaged box and separate nearby stack, check
-both native windows/free passages, then cumulative ground/live/wreck/control.
+**Acceptance: PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB.** The card qualifies
+for ordinary no-ff merge/push under the owner's standing workflow. Six whole
+fragiles are supported; trees/compound objects and historically exact damage
+rules remain outside scope. Earlier capture/observer limits stay documented.
+[Files, commands, evidence, limitations and rollback](research/P06O_DESTRUCTIBLE_IMPORT.md).
+**One next recommended card:** original-resource tree fall/state replication
+and matching collision changes on this accepted cumulative runtime.
 
 # P06N accepted — native destruction and cumulative owner gate complete
 

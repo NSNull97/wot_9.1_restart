@@ -126,8 +126,101 @@ Native01 entry VERIFIED in retained `native-entry01/receipt.json` and source
 prefixes: both clients in battle832598004322204188, all three AreaDestructibles
 created in each, two workers at tick180 with6 contacts each, both vehicles and
 prediction started, same replicated positions, no error/failed observer events.
-This proves startup only. Multiple destruction, free passage and cumulative
-owner gameplay acceptance are **PENDING_OWNER**, not inferred from tests.
+This proves startup only; the subsequent object acceptance is recorded below.
+
+## Owner object acceptance and remaining cumulative gate
+
+OBSERVED: owner answered «Всё работает» to the requested two-object,
+untouched-neighbor, free-passage, repeat-shot and cumulative gameplay check.
+Frozen complete-line prefixes are retained in `native-acceptance01/`, with
+SHA256/byte/line counts in `snapshot.json`. Independent `native-audit.json`
+and `server-audit.json` distinguish recorded events from owner observations.
+
+VERIFIED: three independent fragile instances 1512, 1528 and 1513 were
+destroyed on shots 1, 2 and 4, in two chunks. Removed object IDs progress
+`[1513]` -> `[1513,1529]` -> `[1513,1514,1529]`. Both workers ACK each exact
+scene before commit; six native publications follow three commits. Other
+catalog objects remain intact. Each client records three successful original
+setter, destroy and effect callback pairs. Seven shots consume ammo 20 -> 13;
+three contact fragiles and four contact ground. Each client records seven
+original shot/ground-effect pairs and 369 snapshots. Server sample path is
+69.28 m for the moving tank; 3461 contiguous movement advances per worker.
+No worker/channel/native errors or diagnostic trace caps occur in the prefix.
+Six unsupported camera requests are explicitly reported without domain change.
+
+Diagnostic limitation: the existing passive array recorder accepts length <=1.
+The third cumulative native array is therefore `unrecognized`, not a recorded
+`[1,257]`. Server publication and original destroy/effect returns are verified;
+the complete two-element native array itself is **NOT_RECORDED**. Visual
+effects and passage remain owner OBSERVED. The two private install ledgers
+match all 37 immutable files and 28 source files per client; runtime logs are
+excluded from immutable checks (`installed-audit.json`).
+Rendered client reconnect after destruction is NOT_RUN; scene restoration is
+covered by real owned-worker and wire/session tests, not a rendered rejoin claim.
+
+Required remaining gate: the frozen prefix contains no AP/health/death/wreck
+event; both tanks have 90 HP throughout. Thus live kill, wreck hit and survivor
+control after death are **NOT_RUN_IN_THIS_CAPTURE**, despite the general owner
+answer. One narrow follow-up has been requested in the same running battle.
+This is missing acceptance evidence, not a reported gameplay failure; do not
+repeat the accepted crate/ground test or infer missing health callbacks.
+
+Follow-up `native-acceptance02/` extends those prefixes without changing their
+bytes. Owner explicitly answered «Уже проверил — всё работает» for live kill,
+wreck and survivor control. VERIFIED in both clients: HP 90 -> 60 -> 30 -> 0,
+one death, three armorHit and five armorRicochet callback pairs. Of nine AP
+outcomes, one is explicitly `Unsupported(VehicleDamageFactor)` with no damage
+or native effect; this existing test_lab limitation is not counted as success.
+Five active survivor controls after death, about 0.225 m displacement and
+changing yaw prove continued control. Native callback traces have no errors
+or caps; raw packet capture reached its 48000-packet cap before shots 17–20,
+while stdout/native JSONL continued. Late raw wire coverage is NOT_RECORDED.
+
+The killing shot is shot 20 and exhausts ammunition. There are no post-death
+shots or wreck contacts in this second prefix. **Only the wreck-hit gate is
+still NOT_RUN in that prefix.** The general owner response does not substitute a missing shot.
+Native01 was stopped using PID/executable/creation-time receipts after evidence
+was frozen. Fresh native02 uses the identical gateway05, physics pool and
+catalog with full ammunition; the accepted crate test need not be repeated.
+Preparation initially rejected the still-installed previous configuration
+before mutation, then succeeded after ledger rollback of both approved copies.
+An invalid stop receipt label was also rejected at argument parsing, before
+any process action; the corrected `stop-ammo01.json` records the actual stop.
+Fresh native02 entry (`native02-ready01.json`) confirms battle
+17544553518420522740, both tanks at 90 HP, native prediction started and zero
+accepted shots. The later owner answer «я снаряды потратил)) думаю работает»
+is uncertain and does not close the wreck gate. The exhausted ammunition
+belongs to native01; native02 initially opened with a full loadout.
+
+Physics provenance (`boundary/physics-provenance01.json`) verifies matching
+Program.cs/CheckedInput.cs SHA256 in both private/root Portable PDBs, identical
+locked dependencies and SDK 9.0.315. Different DLL hashes reflect different
+generated informational commit versions and build paths; binary identity is
+not claimed. Private physics 20 PASS and root real two-worker gateway tests
+remain separately identified evidence. Current source hashes match all 88
+recorded files; repeated layout check PASS: 76 files, 22 relocations.
+`native-acceptance01/source-audit-resolved.json` records 22 successful checks;
+the earlier overly broad FAIL from comparing different build hashes is retained
+and corrected by this source/provenance audit, not erased.
+
+## Final native02 owner gate
+
+Owner then explicitly confirmed «да, проверил - работает» and «в новых окнах».
+Frozen `native-acceptance03/` is the separate fresh native02 battle
+17544553518420522740; it does not overwrite or relabel the earlier prefixes.
+Server events now verify four shots: three AP hits reduce HP 90 -> 60 -> 30
+-> 0, and shot 4 hits the wreck with damage 0 and HP 0 -> 0. Ammunition goes
+20 -> 16. This closes the missing actual wreck-shot event, while the earlier
+native01 evidence retains accepted multiple-object destruction, passage,
+ground, aim/reload and survivor control on the identical runtime and catalog.
+VERIFIED in each client: three original armorHit callback pairs and one
+armorResisted pair for shot 4 (effect code 1, hasPiercedHit false, target HP 0,
+original return offset 397). Exactly one death per client, no duplicate health
+or death from the wreck hit, one survivor post-death shooting return and 39
+post-death snapshots each. No native/server faults or capture caps in this
+fresh prefix; stderr is empty. The owner confirms the rendered effect in both
+new windows. `native-audit.json` and `server-audit.json` preserve exact fields,
+lines and hashes. The required combined native gate has no remaining blocker.
 
 ## Reproduction and rollback
 
@@ -140,6 +233,11 @@ python -B -X utf8 local/evidence/20261012-p06o-destructible-import-01/start_stan
 # Wait for SESSION_ACTIVE before launching b with the same run/mode.
 ```
 
+The current fresh follow-up uses those same start commands with `--run native02`.
+Both slots were prepared with `prepare_stand.py --slot a|b --run native02
+--mode runtime`, after rollback of the native01 install ledgers. Exact launch
+arguments and process identities are in `launch-{server,a,b}-native02.json`.
+
 Build/output directories must be fresh; existing paths above identify performed
 runs and must not be overwritten. Native preparation/start/stop commands and
 process identity guards are in evidence `oracle01-commands.txt` and own helpers.
@@ -149,9 +247,13 @@ Rollback: stop only receipt-verified own processes; restore installed diagnostic
 ledgers with `tools/interactive_client.py rollback --out <install-directory>`.
 Launch accepted P06N gateway04 with physicsP06N01/pool-near, geometry/AP/terrain
 and `--destructible-test-lab`. Original client/resources and accepted binaries
-were not modified. Code stays in its branch until required acceptance passes.
+were not modified. Revert the P06O merge with `git revert -m 1 <P06O-merge>`
+if a source rollback is needed; keep accepted binaries and evidence intact.
 
-Acceptance: **PENDING_OWNER**, no merge. Native identity and startup PASS.
-One next step: owner destroys the camouflaged crate and the separate nearby
-stack, checks both windows and both passages, then ground/live/wreck/reload and
-survivor control. Windows remain open for correlated server/native evidence.
+Acceptance: **PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB**. Native identity,
+multiple-object destruction/passage, ground, live HP/death, survivor control
+and the fresh wreck-hit gate pass within the stated limits. Owner-authorized
+ordinary no-ff merge/push applies. Exact final branch/merge/remote SHAs are
+recorded in the private evidence `merge-receipt.json` after publication.
+One next recommended card: original-resource-driven tree fall/state replication
+with matching movement/projectile collision on this accepted cumulative runtime.
