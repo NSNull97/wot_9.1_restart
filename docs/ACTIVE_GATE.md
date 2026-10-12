@@ -1,16 +1,22 @@
-# P06P in progress — Prohorovka with accepted cumulative gameplay
+# P06P candidate ready — cumulative Prohorovka native battle
 
-Owner requested migrating the test map to Prohorovka before continuing trees.
-Branch `codex/p06p-prohorovka-cumulative`, base main878ade6. Explicit original
-MapId binds native arena4, World, checked physics pool, terrain/projectile
-geometry and fragile catalog. Fresh mask128 import has3904instances/285350
-triangles; nine whole fragiles qualify,703 exclusions documented. No manual
-instance allowlist; trees remain the next card. Existing physics tuning kept.
-Private worker25/25 and importer/probe checks PASS; root canonical integration
-and native owner gates are still pending. **Acceptance: IN_PROGRESS, NOT_RUN
-for native Prohorovka.** P06O remains the accepted fallback; no merge yet.
-[Report, evidence, limits and rollback](research/P06P_PROHOROVKA_CUMULATIVE.md).
-**One next gate:** canonical integration, then full native Prohorovka launch.
+Branch `codex/p06p-prohorovka-cumulative`, accepted base main878ade6, tested
+runtime sourcec03b3b5. Gateway03:603 Rust PASS;47 Python PASS/1existing privilege
+SKIP; exact root physics25/25 PASS; canonical+legacy compile and layout PASS.
+Explicit map binding preserves physics/aim/ammo/reload/world/live/wreck paths.
+Both original clients exported identical44chunk/2156entry catalogs;9complete
+fragiles qualify in6chunks. Finalnative01 uses that join and the same cumulative
+build, native arena4/05_prohorovka. Bothworkers settled with6contacts. Initial
+oracle image grounded; owner confirmed closing its intermediate windows himself.
+
+**Acceptance:PENDING_NATIVE_OWNER.** Trees/compound objects remain unsupported.
+Additional near-lane IPC1/3 bitwise trajectory comparison failed after fence
+contact by1.65cm; exact coverage and grounded motion passed. Cause not fully
+proven; no claim of bit identity across different shape partitions. Evidence
+retains all failed attempts. Existing P06O remains the accepted fallback.
+[Files, commands, evidence, limits and rollback](research/P06P_PROHOROVKA_CUMULATIVE.md).
+**One next gate:** owner test of fresh Prohorovka drive, independent crates,
+world/live/wreck effects and preserved control. No merge until acceptance.
 
 # P06O accepted — reusable fragile catalog and cumulative native gameplay
 
