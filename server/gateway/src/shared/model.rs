@@ -2,7 +2,7 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, sync::Arc, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::{aim, ap, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile};
+use super::{aim, ap, destructible, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
@@ -95,6 +95,7 @@ pub struct World {
     pub impacts: Vec<AppliedImpact>,
     terrain: Option<Arc<terrain::Terrain>>,
     pub terrain_contacts: Vec<TerrainContact>,
+    destructible: Option<destructible::State>,
 }
 
 impl World {
@@ -103,7 +104,7 @@ impl World {
         Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new(),
             geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
-            terrain: None, terrain_contacts: Vec::new() })
+            terrain: None, terrain_contacts: Vec::new(), destructible: None })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
         if self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
@@ -119,6 +120,14 @@ impl World {
         self.terrain = Some(terrain); Ok(())
     }
     pub fn latest_shot(&self) -> u32 { self.shots.last().map(|s| s.sequence).unwrap_or(0) }
+    pub fn bind_destructible_test_lab(&mut self) -> io::Result<()> {
+        if self.started.is_some() || !self.shots.is_empty() || !self.ap_test_lab || self.destructible.is_some()
+            || self.terrain.as_ref().is_none_or(|terrain|terrain.source_revision()!=terrain::WORLD_SOURCE_REVISION) {return Err(bad());}
+        self.destructible=Some(destructible::State::default());Ok(())
+    }
+    pub fn scene_version(&self)->u32{self.destructible.as_ref().map_or(0,destructible::State::scene_version)}
+    pub fn destructible_enabled(&self)->bool{self.destructible.is_some()}
+    pub fn destructible_transition(&self)->Option<&destructible::Transition>{self.destructible.as_ref().and_then(destructible::State::transition)}
     /// Authenticated identity only. The caller reserves a transport retirement
     /// slot before committing this world assignment. Rejoin never resets ammo.
     pub fn attach(&mut self, identity: Identity, session: u32) -> io::Result<usize> {
@@ -333,6 +342,7 @@ impl World {
         let mut contacts = self.contacts.clone();
         let mut impacts = self.impacts.clone();
         let mut terrain_contacts = self.terrain_contacts.clone();
+        let mut next_destructible = self.destructible.clone();
         if tick_changed {
             'projectile_loop: for projectile in &mut next_projectiles {
                 if !projectile.stopped {
@@ -356,8 +366,13 @@ impl World {
                             let target = next_actors.get(target_slot).ok_or_else(bad)?;
                             let mesh = bundle.world_mesh(target, target_slot, tick)?;
                             let (hits, material_facts, ground) = if let Some(terrain) = &self.terrain {
-                                impact_trace.collision_query_world(self.id, projectile.sequence, tick,
-                                    &mesh, bundle.materials(), terrain)?
+                                if let Some(state)=&next_destructible {
+                                    impact_trace.collision_query_world_filtered(self.id,projectile.sequence,tick,&mesh,bundle.materials(),terrain,
+                                        state.scene_version(),state.excluded_instance())?
+                                } else {
+                                    impact_trace.collision_query_world(self.id, projectile.sequence, tick,
+                                        &mesh, bundle.materials(), terrain)?
+                                }
                             } else {
                                 let (hits, material) = impact_trace.collision_query_classified(
                                     self.id, projectile.sequence, tick, &mesh, bundle.materials())?;
@@ -375,6 +390,11 @@ impl World {
                                 terrain_contacts.push(TerrainContact { shot: projectile.sequence,
                                     shooter: projectile.slot, tick, hit, segment_start: start_point,
                                     segment_end: end_point, direction: chord.map(|v| (v/length) as f32) });
+                                if let Some(state)=&mut next_destructible {
+                                    if let Some(transition)=state.contact(projectile.sequence,projectile.slot,tick,hit)? {
+                                        impact_trace.destructible_transition(self.id,projectile.sequence,tick,&transition)?;
+                                    }
+                                }
                                 projectile.terminal = hit.point; projectile.stopped = true;
                                 impact_trace.terminal(self.id, projectile.sequence, tick, impact::TerminalReason::TerrainCollision)?;
                                 continue 'projectile_loop;
@@ -467,6 +487,7 @@ impl World {
         self.contacts = contacts;
         self.impacts = impacts;
         self.terrain_contacts = terrain_contacts;
+        self.destructible = next_destructible;
         Ok(tick_changed || expired)
     }
 }
@@ -508,6 +529,69 @@ pub(super) mod tests {
             [[-20.,-20.,wall_z],[20.,-20.,wall_z],[0.,20.,wall_z]]]);
         let terrain=(*w.terrain.take().unwrap()).clone().with_obstacles(Arc::new(obstacles)).unwrap();
         w.terrain=Some(Arc::new(terrain)); w
+    }
+    pub fn destructible_terrain()->Arc<terrain::Terrain>{
+        static SOURCE:std::sync::OnceLock<Arc<terrain::Terrain>>=std::sync::OnceLock::new();
+        SOURCE.get_or_init(||{
+            let root=std::env::var_os("WOT091_ROOT").map(std::path::PathBuf::from)
+                .unwrap_or_else(||std::path::PathBuf::from(r"D:\WoT_9.1_Server"));
+            let obstacles=super::super::obstacles::Obstacles::load(&root.join("local"),&root.join(
+                "local/evidence/20261010-p06m-terrain-impact-01/projectile-obstacles01/01_karelia/manifest.json")).unwrap();
+            // Real source obstacle triangles over a deliberately low synthetic
+            // ground. This isolates object state; native terrain acceptance is separate.
+            Arc::new(super::super::terrain::tests::fixture(-1000.,2000.,2,vec![-100.;4])
+                .with_obstacles(Arc::new(obstacles)).unwrap())
+        }).clone()
+    }
+    pub fn destructible_world(now:Instant)->World{
+        let mut w=ap_world(now);w.terrain=Some(destructible_terrain());w.destructible=Some(destructible::State::default());
+        for slot in 0..2 {
+            let pos=if slot==0 {[-402.07458,55.34893,-412.]}else{[-380.,55.34893,-410.]};
+            w.actors[slot].position=pos;w.actors[slot].origin=pos;w.actors[slot].direction=[0.;3];w.actors[slot].yaw=0.;
+        }w
+    }
+    #[test]fn destructible_requires_explicit_prestart_terrain_ap_and_cannot_be_rebound(){
+        let now=Instant::now();let mut w=World::new(77,now).unwrap();assert!(w.bind_destructible_test_lab().is_err());
+        w.bind_geometry(Arc::new(super::super::geometry::tests::bundle())).unwrap();assert!(w.bind_destructible_test_lab().is_err());
+        w.enable_ap_test_lab().unwrap();assert!(w.bind_destructible_test_lab().is_err());
+        w.bind_terrain(destructible_terrain()).unwrap();w.bind_destructible_test_lab().unwrap();
+        assert!(w.destructible_enabled());assert_eq!(w.scene_version(),0);assert!(w.destructible_transition().is_none());
+        assert!(w.bind_destructible_test_lab().is_err());assert!(obstacle_world(now,20.,3.).bind_destructible_test_lab().is_err());
+        let mut ground=World::new(78,now).unwrap();ground.bind_geometry(Arc::new(super::super::geometry::tests::bundle())).unwrap();
+        ground.enable_ap_test_lab().unwrap();ground.bind_terrain(Arc::new(super::super::terrain::tests::fixture(-1000.,2000.,2,vec![-100.;4]))).unwrap();
+        assert!(ground.bind_destructible_test_lab().is_err());
+    }
+    #[test]fn destructible_contact_changes_once_stops_first_shell_and_next_shell_passes_old_box(){
+        let now=Instant::now();let mut w=destructible_world(now);
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();w.advance(now+STEP).unwrap();
+        let transition=w.destructible_transition().unwrap().clone();assert_eq!((transition.shot,transition.shooter,transition.scene_after),(1,0,1));
+        assert_eq!(w.scene_version(),1);assert!(w.projectiles[0].stopped);assert_eq!(w.projectiles[0].terminal,transition.hit.point);
+        assert!(destructible::selected(&transition.hit));assert!(w.contacts.is_empty());assert!(w.impacts.is_empty());
+        assert_eq!(w.actors.iter().map(|a|a.health).collect::<Vec<_>>(),vec![90,90]);assert_eq!(w.actors[0].fire.ammo(),19);
+        let at=now+Duration::from_secs(3);w.advance(at).unwrap();w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();w.advance(at+STEP).unwrap();
+        assert_eq!(w.destructible_transition(),Some(&transition));assert_eq!(w.actors[0].fire.ammo(),18);
+        assert_eq!(w.impact.events().iter().filter(|e|matches!(e,impact::Event::DestructibleTransition{..})).count(),1);
+        assert!(!w.terrain_contacts.iter().any(|c|c.shot==2 && matches!(c.hit.surface,terrain::Surface::StaticObstacle{instance_id:destructible::INSTANCE_ID,..})));
+        assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::TerrainQuery{shot_id:2,scene_version:1,excluded_instance:Some(destructible::INSTANCE_ID),..})));
+        let identity=w.actors[0].identity.clone();w.detach(1).unwrap();w.attach(identity,3).unwrap();assert_eq!(w.scene_version(),1);assert_eq!(w.destructible_transition(),Some(&transition));
+    }
+    #[test]fn simultaneous_shots_use_one_transition_and_rollback_discards_scene_with_world(){
+        let now=Instant::now();let mut w=destructible_world(now);
+        // Two admitted flights, independent of which actor is still alive when
+        // the update runs. Place the second actor behind the first for this query.
+        w.actors[1].position=w.actors[0].position;w.actors[1].origin=w.actors[0].origin;
+        for slot in 0..2{w.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();}
+        // Move actor hulls aside after launch; launch facts remain immutable.
+        for actor in &mut w.actors {actor.position[0]+=30.;actor.origin=actor.position;}
+        let mut failed=w.clone();failed.projectiles[1].velocity[0]=f32::NAN;
+        let before=failed.clone();assert!(failed.advance(now+STEP).is_err());
+        assert_eq!(failed.scene_version(),0);assert_eq!(failed.destructible,before.destructible);assert_eq!(failed.impact,before.impact);
+        assert_eq!(failed.actors,before.actors);assert_eq!(failed.tick,before.tick);assert_eq!(failed.last,before.last);
+        assert_eq!(failed.terrain_contacts,before.terrain_contacts);assert_eq!(failed.projectiles[0],before.projectiles[0]);
+        w.advance(now+STEP).unwrap();assert_eq!(w.scene_version(),1);
+        assert_eq!(w.impact.events().iter().filter(|e|matches!(e,impact::Event::DestructibleTransition{..})).count(),1);
+        assert_eq!(w.destructible_transition().unwrap().shot,1);
+        assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::TerrainQuery{shot_id:2,scene_version:1,..})));
     }
     #[test] fn static_surface_participates_in_same_nearest_terrain_armor_decision() {
         let now=Instant::now();
