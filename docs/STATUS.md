@@ -1,4 +1,19 @@
-# P06N candidate — one destructible obstacle, owner gate pending
+# P06N accepted — one destructible obstacle, cumulative runtime preserved
+
+Owner confirmed native02 destruction in both clients and free driving passage,
+then accepted ground/live/wreck effects, HP/reload and survivor control.
+Independent log audits: one transition after both physics ACKs; packed257 and
+original destroy/effect returns in both clients.15 shots, HP90→60→30→0,
+two zero-damage wreck hits and survivor movement27.15m. No errors/caps in the
+pinned prefixes. Tested source3bb6770; gateway04 557 Rust PASS, Python27 PASS.
+**Acceptance: PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB.** Ordinary merge/push
+authorized by standing workflow. One original crate only; approximate damage/
+continuation policy. Rendered reconnect after destruction remains NOT_RUN.
+[Files, commands, exact evidence, limits and rollback](research/P06N_DESTRUCTIBLE_STATE.md).
+**One next card:** multiple source-pinned fragile crates with per-object state
+and matching movement/projectile geometry on this same cumulative runtime.
+
+# Earlier P06N candidate — owner gate then pending
 
 Branch `codex/p06n-destructible-state`, accepted base main7f2a0f2. One original
 Karelia camouflage crate (instance1513/native index1/chunk31354) now has typed

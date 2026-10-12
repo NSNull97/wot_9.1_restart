@@ -108,8 +108,9 @@ effects, or authoritative battle state. No generic map destruction is implied.
 Build via `python -B -X utf8 server/build.py physics --out local/build/server/physics-check-03`
 from the project root, using a fresh output directory. No bin/obj in sources.
 
-The current source-layout card has two isolated builds and two successful
+The earlier source-layout card had two isolated builds and two successful
 private-pipe worker smoke runs on this Windows host. Native drive evidence
 and its partial manual acceptance remain in `docs/research/P02_MAP_DRIVE.md`
-and `docs/research/P02_DRIVE_LIMITATIONS.md`; the layout card does not fix
-pivot/destruction. Linux ABI and cross-platform repeatability are NOT_RUN.
+and `docs/research/P02_DRIVE_LIMITATIONS.md`. The later P06N single-object
+removal/ACK contract above is covered in `docs/research/P06N_DESTRUCTIBLE_STATE.md`.
+Linux ABI and cross-platform repeatability are NOT_RUN.

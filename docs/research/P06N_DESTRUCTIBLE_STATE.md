@@ -3,7 +3,10 @@
 Owner accepted P06M and authorized this next card. Base main7f2a0f2; branch
 codex/p06n-destructible-state. Goal: one original Karelia obstacle destroyed by
 an authoritative projectile contact, with native state shared by both clients
-and consistent subsequent movement/projectile geometry. Acceptance pending.
+and consistent subsequent movement/projectile geometry. Owner accepted native02
+on 2026-10-12: destroyed in both windows, passage free; cumulative check works.
+**Acceptance: PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB.** Tested source
+3bb677076d2d9915449754bd32e415bea4303421; current hashes in candidate-native02.json.
 
 ## Source and identity
 
@@ -79,7 +82,10 @@ Evidence root: local/evidence/20261010-p06n-destructible-01/.
 | Python focused source/control | 27 PASS after fixed-ID observer regression; earlier layout group30 PASS/1 existing Windows privilege skip |
 | Native01 initial area/physics | Both original onEnterWorld return, chunk31354/empty state; both workers settled with6 contacts |
 | Native01 periodic observer | FAIL: total engine entities exceeded old16 cap; preserved, explicitly stopped for observer repair |
-| Native destruction/proceed-through/cumulative owner test | NOT_RUN; required before merge |
+| Native02 entry/destruction | 21/21 log checks PASS; audit-native02-entry.json SHA f4acdcdecb95859e0579b78c49c4cd61ed5e79853c25e8f1cf11b0f9310b1da3 |
+| Native02 cumulative regression | PASS; cumulative-native02-audit01/receipt.json SHA c989364f41ad76c5bd85ae98f9122a0bca8dced7c314970a94139c47143364d1 |
+| Native destruction and driving passage | OBSERVED owner: destroyed in both windows, passage free; owner-destroyed-native02.png SHA c0a86028460b6b653addfdfa433961e0787a1053f5b1c6bf047a0688c24e164c |
+| Native reconnect after destruction | NOT_RUN; worker restoration/state encoding tested, rendered re-entry is outside accepted manual slice |
 
 Root physics build: local/build/server/physics-integrated-p06n-01,
 DLL SHAe97d6e0bc82757fb240c1b7a4eab1c80b38a97a536250286cfe1f36d01029c2b.
@@ -113,6 +119,30 @@ compared a local DateTime against UTC and refused to stop; rollback/prepare
 also refused while clients remained active. Normalizing both UTC values fixed
 the guard; only then were the ledgers restored and native02 installed.
 
+## Accepted native02 result
+
+VERIFIED within pinned complete-line prefixes: both workers acknowledge
+removal before the single scene0→1 commit (shot3), then both native clients
+receive destroyedFragiles=[257]. Original __destroyFragile and effect callbacks
+return normally in both clients. The repaired observer continues with17 total
+native entities and exactly two observed Vehicles; no observation errors.
+
+Independent cumulative prefix (06:24:30 UTC) contains15 admitted shots,
+ammo20→19 on A and20→6 on B; shots5/9/11 reduce A HP90→60→30→0.
+Shots12/13 hit the wreck with zero damage and armorResisted in both clients.
+Each client has15 tracer returns,5 vehicle impact returns,3 HP changes and9
+world effect returns (actual terrain shots7/10/15). Survivor B moves27.15m
+after death with24 active inputs;520 server aim pairs and27 native packed
+angles confirm continuing aim. Repeated-shot intervals are at least2.628s.
+All relevant callbacks pair once; neither trace cap nor errors/stderr occurred
+inside these saved prefixes. Later live tails are not implicitly adjudicated.
+
+OBSERVED owner separately confirmed the crate change/passage in both windows,
+provided a destroyed-object screenshot, then answered that ground/live/wreck
+effects, HP/reload and survivor control all work. Physics, ammo and aiming use
+the same cumulative integrated runtime; the near-object pool changes spawn
+only. This closes this single-object card, not historical/full-map destruction.
+
 ## Reproduction and rollback
 
 All builds use the pinned driver, fresh ignored output:
@@ -141,8 +171,11 @@ Rollback: close only receipted owned clients/gateway; use interactive_client.py
 rollback with their install ledgers. Return to main7f2a0f2 and accepted
 gateway-integrated-world-p06m-05 with physics-integrated-lane-01/pool.json and
 the same P06J contact bundle/AP/terrain flags. Previous files/pools are retained.
-Source remains in the P06N branch until native/owner acceptance is complete.
+After acceptance, merge the P06N branch into main with --no-ff and push under
+the owner's standing workflow. Check unchanged candidate runtime hashes and
+publication allowlist before merging; save actual main/remote SHA receipt.
 
-One next gate: native two-client shot into this crate, matching original
-destruction, subsequent shot/proceed-through, and retained ground/live/wreck
-effects with physics/aim/ammo/reload.
+One next recommended card: generalize this source-bound fragile-object table
+to multiple same-kind Karelia crates, preserving per-object identities,
+acknowledged geometry changes and cumulative gameplay. Native reconnect is
+still an explicit unverified coverage item; do not claim rendered restoration.

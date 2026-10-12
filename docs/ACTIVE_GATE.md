@@ -1,4 +1,18 @@
-# P06N active — native crate destruction and passage gate
+# P06N accepted — native destruction and cumulative owner gate complete
+
+Owner confirmed crate destruction/pass-through in both windows and accepted
+the cumulative ground/live/wreck/HP/reload/survivor check. Native02 independent
+audits prove one two-worker-ACK transition, original effects both peers,
+15shots, one death, two wreck hits and27.15m survivor motion. Tested code3bb6770,
+gateway04 557 Rust PASS and Python27 PASS; source/installed hashes pinned.
+No errors/caps inside saved evidence prefixes. Required acceptance PASS;
+card qualifies for ordinary --no-ff merge/push under the owner's workflow.
+Historical policy/full-map coverage and rendered reconnect remain unverified.
+[Report, commands, evidence and rollback](research/P06N_DESTRUCTIBLE_STATE.md).
+**One next recommended card:** multiple source-pinned fragile Karelia crates,
+preserving per-object state and this accepted cumulative gameplay.
+
+# Earlier P06N active — native crate destruction and passage gate
 
 Candidate on `codex/p06n-destructible-state`, accepted base main7f2a0f2.
 Gateway04:557 Rust PASS; focused Python27 PASS. Typed scene0→1 and two-worker
