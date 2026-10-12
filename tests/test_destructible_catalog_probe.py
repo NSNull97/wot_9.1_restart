@@ -16,8 +16,8 @@ probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
 
 
-def specification(chunks=(31354, 31355)):
-    return dict(version=1, kind='p06o_destructible_catalog_spec', map='01_karelia',
+def specification(chunks=(31354, 31355), map_asset='01_karelia'):
+    return dict(version=1, kind='p06o_destructible_catalog_spec', map=map_asset,
                 source_pins=[dict(path='source.xml', sha256='a'*64)], chunk_ids=list(chunks))
 
 
@@ -54,9 +54,9 @@ class Native:
         return matrix
 
 
-def environment(counts=None):
+def environment(counts=None, map_asset='01_karelia'):
     counts = {31354: 3, 31355: 2} if counts is None else counts
-    player = SimpleNamespace(spaceID=1, arena=SimpleNamespace(arenaType=SimpleNamespace(geometryName='01_karelia')))
+    player = SimpleNamespace(spaceID=1, arena=SimpleNamespace(arenaType=SimpleNamespace(geometryName=map_asset)))
     manager = SimpleNamespace(getSpaceID=lambda: 1, _DestructiblesManager__loadedChunkIDs=counts)
     return player, manager, Native(), SimpleNamespace(Matrix=lambda value: value)
 
@@ -81,6 +81,50 @@ class CatalogProbeTests(unittest.TestCase):
         self.assertEqual(len([c for c in env[2].calls if c[0] == 'filename']), 10)
         with self.assertRaisesRegex(ValueError, 'already complete'):
             state.advance(*env)
+
+    def test_all_44_prohorovka_target_chunks_survive_loading_and_two_complete_passes(self):
+        # Synthetic IDs exercise cardinality/identity, not native map acceptance.
+        chunks = list(range(30000, 30044))
+        spec = specification(chunks, '05_prohorovka')
+        spec = probe.validate_spec_payload(json.dumps(spec).encode())
+        env = environment({}, '05_prohorovka')
+        state = probe.Probe(spec, 'b'*64)
+        loaded = env[1]._DestructiblesManager__loadedChunkIDs
+        loaded.update({chunk: 3 for chunk in chunks[:-1]})
+        # No partial first-pass output while the final target is still loading.
+        for _ in range(200):
+            self.assertIsNone(state.advance(*env))
+        self.assertEqual(state.waiting, [chunks[-1]])
+        self.assertFalse(env[2].calls)
+        loaded[chunks[-1]] = 3
+        for _ in range(87):
+            self.assertIsNone(state.advance(*env))
+        result = state.advance(*env)
+        self.assertEqual(state.observations, 288)
+        self.assertEqual(result['map'], '05_prohorovka')
+        self.assertEqual(result['observation_count'], 2)
+        self.assertEqual([row['chunk_id'] for row in result['chunks']], chunks)
+        self.assertEqual([row['count'] for row in result['chunks']], [3]*44)
+        self.assertTrue(all([item['index'] for item in row['items']] == [0, 1, 2]
+                            for row in result['chunks']))
+        self.assertEqual([call[2] for call in env[2].calls if call[0] == 'chunk'], chunks*2)
+        self.assertEqual(len([call for call in env[2].calls if call[0] == 'filename']), 264)
+
+    def test_prohorovka_spec_never_exports_karelia_or_an_incomplete_last_chunk(self):
+        chunks = list(range(30000, 30044))
+        spec = specification(chunks, '05_prohorovka')
+        env = environment({chunk: 3 for chunk in chunks}, '01_karelia')
+        with self.assertRaisesRegex(ValueError, 'map differs.*01_karelia.*05_prohorovka'):
+            probe.Probe(spec, 'b'*64).advance(*env)
+        self.assertFalse(env[2].calls)
+        env[0].arena.arenaType.geometryName = '05_prohorovka'
+        state = probe.Probe(spec, 'b'*64)
+        for _ in range(87):
+            self.assertIsNone(state.advance(*env))
+        del env[1]._DestructiblesManager__loadedChunkIDs[chunks[-1]]
+        with self.assertRaisesRegex(ValueError, 'unloaded'):
+            state.advance(*env)
+        self.assertFalse(state.complete)
 
     def test_missing_native_index_is_fatal_and_never_compresses_the_list(self):
         env = environment()

@@ -12,6 +12,7 @@
 //! channel. The caller owns authentication, one-shot authorization, and ordering.
 
 use std::io::{Error, ErrorKind, Result};
+use crate::map_profile091::MapId;
 
 pub const AVATAR_CLIENT_TYPE: u16 = 1;
 pub const KARELIA_ARENA_TYPE: i32 = 1;
@@ -83,6 +84,13 @@ pub fn reset_entities() -> [u8; 2] {
 /// Avatar client type1 follows original client-script presence indexing; it is
 /// not an arbitrary position chosen from a modern entity table.
 pub fn create_base_avatar(seed: &AvatarBaseSeed<'_>) -> Result<Vec<u8>> {
+    create_base_avatar_for_map(seed, MapId::Karelia)
+}
+
+/// The original arena_defs/_list_.xml assigns Karelia 1 and Prohorovka 4.
+/// The map is a server-owned profile; the native field is INT32, not a string
+/// or the numeric prefix of the geometry asset (05_prohorovka).
+pub fn create_base_avatar_for_map(seed: &AvatarBaseSeed<'_>, map: MapId) -> Result<Vec<u8>> {
     positive_id(seed.entity_id)?;
     nickname(seed.name)?;
     if seed.arena_unique_id == 0 {
@@ -94,11 +102,11 @@ pub fn create_base_avatar(seed: &AvatarBaseSeed<'_>) -> Result<Vec<u8>> {
     payload.push(seed.name.len() as u8);
     payload.extend_from_slice(seed.name.as_bytes()); // name STRING
     payload.extend_from_slice(&seed.arena_unique_id.to_le_bytes()); // UINT64
-    payload.extend_from_slice(&KARELIA_ARENA_TYPE.to_le_bytes()); // arenaTypeID INT32
+    payload.extend_from_slice(&map.arena_type_id().to_le_bytes()); // arenaTypeID INT32
     payload.extend_from_slice(&[2, 2]); // TRAINING bonus/gui, original constants
     // Own empty arenaExtraData PYTHON: protocol2 EMPTY_DICT STOP, no object code.
     payload.extend_from_slice(&[4, 0x80, 2, b'}', b'.']);
-    payload.push(0); // weatherPresetID: sole default preset in original map1
+    payload.push(0); // default weather preset in both pinned original maps
     payload.extend_from_slice(&0i16.to_le_bytes()); // no denunciations granted
     payload.push(0); // clientCtx empty STRING; original default context branch
     variable16(0x05, &payload)
@@ -108,7 +116,11 @@ pub fn create_base_avatar(seed: &AvatarBaseSeed<'_>) -> Result<Vec<u8>> {
 /// determines retransmission and packet sequencing. No cell data is appended to
 /// the base-property stream. Any native callback exception is a failed probe.
 pub fn reset_to_avatar_base(seed: &AvatarBaseSeed<'_>) -> Result<Vec<u8>> {
-    let base = create_base_avatar(seed)?;
+    reset_to_avatar_base_for_map(seed, MapId::Karelia)
+}
+
+pub fn reset_to_avatar_base_for_map(seed: &AvatarBaseSeed<'_>, map: MapId) -> Result<Vec<u8>> {
+    let base = create_base_avatar_for_map(seed, map)?;
     let mut out = Vec::with_capacity(base.len() + 2);
     out.extend_from_slice(&reset_entities());
     out.extend_from_slice(&base);
@@ -142,14 +154,21 @@ pub fn create_cell_avatar(seed: &AvatarCellSeed) -> Result<Vec<u8>> {
 
 /// #717 spaceData VAR2: spaceID:u32, entryID:8 raw bytes, key:u16, raw data.
 /// Key1 add-geometry path at0x5c9696/0xd13ba0 reads a 64-byte matrix followed
-/// by the remaining path bytes (no second length or terminator). Only the one
-/// exported original local map is allowed. Caller must use a fresh entry ID.
+/// by the remaining path bytes (no second length or terminator).
+/// Frozen Karelia checkpoint wrapper; caller must use a fresh entry ID.
 pub fn karelia_space_data(space_id: u32, entry_id: [u8; 8]) -> Result<Vec<u8>> {
+    space_data_for_map(space_id, entry_id, MapId::Karelia)
+}
+
+/// MapId restricts the path to the pinned original map profiles; no client
+/// supplied resource path is interpolated into the native space stream.
+pub fn space_data_for_map(space_id: u32, entry_id: [u8; 8], map: MapId) -> Result<Vec<u8>> {
     positive_id(space_id)?;
     if entry_id == [0; 8] {
         return Err(invalid("geometry entry ID must be nonzero"));
     }
-    let mut payload = Vec::with_capacity(14 + 64 + KARELIA_GEOMETRY.len());
+    let geometry = format!("spaces/{}", map.asset());
+    let mut payload = Vec::with_capacity(14 + 64 + geometry.len());
     payload.extend_from_slice(&space_id.to_le_bytes());
     payload.extend_from_slice(&entry_id);
     payload.extend_from_slice(&1u16.to_le_bytes());
@@ -159,7 +178,7 @@ pub fn karelia_space_data(space_id: u32, entry_id: [u8; 8]) -> Result<Vec<u8>> {
             payload.extend_from_slice(&value.to_le_bytes());
         }
     }
-    payload.extend_from_slice(KARELIA_GEOMETRY.as_bytes());
+    payload.extend_from_slice(geometry.as_bytes());
     variable16(0x07, &payload)
 }
 
@@ -189,6 +208,31 @@ mod tests {
         assert_eq!(&body[..2], &[4,0]);
         assert_eq!(&body[2..], create_base_avatar(&seed).unwrap());
         assert_eq!(body.len(), 46);
+    }
+    #[test]
+    fn prohorovka_uses_original_arena_type_four_and_geometry_five() {
+        let seed = base();
+        let karelia = create_base_avatar(&seed).unwrap();
+        let prohorovka = create_base_avatar_for_map(&seed, MapId::Prohorovka).unwrap();
+        // Fixed prefix, STRING bytes, then UINT64 arena unique ID precede INT32.
+        let arena_at = 10 + seed.name.len() + 8;
+        assert_eq!(&prohorovka[..arena_at], &karelia[..arena_at]);
+        assert_eq!(&prohorovka[arena_at..arena_at + 4], &[4, 0, 0, 0]);
+        assert_ne!(&prohorovka[arena_at..arena_at + 4], &[5, 0, 0, 0]);
+        assert_eq!(&prohorovka[arena_at + 4..], &karelia[arena_at + 4..]);
+        let reset = reset_to_avatar_base_for_map(&seed, MapId::Prohorovka).unwrap();
+        assert_eq!(&reset[..2], &[4, 0]);
+        assert_eq!(&reset[2..], prohorovka);
+        let geometry = space_data_for_map(1, [1; 8], MapId::Prohorovka).unwrap();
+        assert_eq!(&geometry[..3], &[7, 98, 0]);
+        assert_eq!(&geometry[81..], b"spaces/05_prohorovka");
+        assert_ne!(&geometry[81..], b"spaces/01_karelia");
+        let old_geometry = karelia_space_data(1, [1; 8]).unwrap();
+        assert_eq!(&geometry[3..81], &old_geometry[3..81]);
+        assert_eq!(create_base_avatar_for_map(&seed, MapId::Karelia).unwrap(), karelia);
+        assert_eq!(reset_to_avatar_base_for_map(&seed, MapId::Karelia).unwrap(),
+                   reset_to_avatar_base(&seed).unwrap());
+        assert_eq!(space_data_for_map(1, [1; 8], MapId::Karelia).unwrap(), old_geometry);
     }
     #[test]
     fn maximum_cyrillic_name_uses_utf8_byte_length() {
