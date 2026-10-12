@@ -1,4 +1,4 @@
-# P06Q pending — original trees and authoritative vehicle contact
+# P06Q native catalog passed — original trees and authoritative vehicle contact
 
 Branch `codex/p06q-tree-vehicle-contact`, based on accepted P06P
 `52978a25c63d51a56be90054c449b281cc4d3e3d`. The source-pinned Prohorovka
@@ -18,30 +18,51 @@ claimed.
 Checks completed:
 
 - Python importer/probe: **39 tests PASS**;
-- gateway isolated build: **612 Rust tests PASS**, executable SHA
-  `fd060bed9f0901ed1b25ee314a15ee08a4b442c3cc67d5da89eb758d8a6dbbee`;
+- gateway isolated build: **613 Rust tests PASS** on the contact-batch
+  atomicity fix; intermediate executable SHA
+  `eb287e15b32fcd7a4603274729d052daa120ebf06f4a0fc3319756b299aad5e2`;
 - physics worker isolated build: **PASS**, DLL SHA
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`;
 - `git diff --check`: **PASS**; no diagnostic processes remain running.
+- prepared passive native probe `treecontact02`: both owned clients (`a` and
+  `b`) completed two stable passes over all 117 target chunks. Each export is
+  v2 `p06q_tree_contact_catalog`, map `05_prohorovka`, 3627 native items, and
+  SHA `dfff68fbecfb754c4a87a7095198dc6dbabd99308061c34b8d723534bc9f9c48`.
+  The two independent outputs are byte-identical and were both validated
+  before the canonical join. The joined catalog contains 635 objects.
+- the owned server/client processes were stopped and verified absent; both
+  temporary client installations were restored from their ledgers.
 
 Evidence inventory:
 `local/evidence/20261012-p06q-tree-contact-01/import/inventory01/inventory.json`
 SHA `d3aae3255e51a583c94e2cdc910f9d70bb36f0f06d66e61928b9d5a513e8884d`;
 probe spec SHA `5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd`;
-build receipts `local/build/server/gateway-p06q-final-04/result.json` and
+build receipts `local/build/server/gateway-p06q-contact-atomic-01/result.json`
+and
 `local/build/server/physics-p06q-final-02/result.json`.
+Native run and join receipt:
+`local/evidence/20261012-p06q-tree-contact-01/import/native-join01/receipt.json`.
+The raw client files and launch/stop/rollback receipts are retained under
+`local/evidence/20261012-p06p-prohorovka-01/`.
 
-**Acceptance: PENDING_NATIVE_OWNER.** Full native export, native mapping,
-two-client fallen-tree replication, rendered passage through a removed object,
-and owner acceptance are **NOT_RUN**. Compound objects, historical impact
-rules, and all-map eligibility remain open. This card stays on its branch; the
-accepted P06P mainline is the rollback point.
+The runtime helper now accepts the 240 KiB joined P06Q v2 manifest with a
+512 KiB envelope while retaining the 128 KiB legacy v1 ceiling. Its 12 pure
+guard tests pass. A private worker contact smoke remains diagnostic only: the
+test-lab vehicle settles against the imported static mesh before a catalog body
+callback is emitted, so no contact or destruction claim is made from it.
+
+**Acceptance: PASS_NATIVE_CATALOG_PROBE_PENDING_OWNER_CONTACT.** Native
+catalog export, native mapping, and two-client catalog agreement are verified.
+The owner-controlled mass/speed ramming event, rendered passage through a
+removed object, and owner acceptance are **NOT_RUN**. Compound objects,
+historical impact rules, and all-map eligibility remain open. This card stays
+on its branch; the accepted P06P mainline is the rollback point.
 
 [Plan](plans/P06Q_TREE_VEHICLE_CONTACT.md), [research, commands, evidence,
 limitations and rollback](research/P06Q_TREE_VEHICLE_CONTACT.md).
-**One next recommended card:** run the prepared passive native probe for both
-owned Prohorovka clients, capture two stable117-chunk passes per client, then
-perform the owner-controlled ramming/tree-fall gate.
+**One next recommended card:** perform the owner-controlled tank-to-tree
+ramming/tree-fall and passage gate using the joined catalog; the passive probe
+is complete and intentionally does not destroy anything.
 
 # P06P accepted — Prohorovka cumulative native battle
 

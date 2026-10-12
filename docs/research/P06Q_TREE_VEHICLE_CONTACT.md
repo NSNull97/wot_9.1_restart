@@ -15,8 +15,11 @@ contact candidates; the gateway accepts only validated hull candidates for a
 test_lab mutation policy. A fragile ram removes the object with `isShotDamage`
 false. A tree stores the original `fallenTrees` packed `UINT32` value and
 removes its collision body only after every participating worker acknowledges
-the cumulative scene. Native client rendering and owner acceptance were not
-run in this card.
+the cumulative scene. The prepared passive native probe now completes on both
+owned Prohorovka clients: two stable passes over all 117 chunks per slot,
+with identical v2 exports. This proves the native catalog mapping; it does
+not perform destruction. Owner-controlled ramming, tree fall, rendered
+passage, and acceptance remain open.
 
 ## Evidence classification
 
@@ -26,15 +29,27 @@ run in this card.
   admitted tree has projectile span zero, a non-empty physics span, source
   material 71, and a checked `.spt` resource. The saved inventory reproduces
   byte-for-byte on a second import.
-- **VERIFIED:** the Rust gateway suite passes 612 tests, including catalog
+- **VERIFIED:** the Rust gateway suite passes 613 tests, including catalog
   parser limits, tree/fragile type rules, contact validation, immutable fall
   packing, trace replay, scene exclusion, worker ACK transactions, restore,
-  and legacy regression coverage.
+  legacy regression coverage, and an atomic vehicle-contact batch regression.
 - **VERIFIED:** the isolated .NET physics worker builds with the contact IPC
   implementation. It bounds raw contacts, distinct object IDs, line size,
   normal/point/velocity values, and rejects unknown body identity or overflow.
+- **VERIFIED:** in fresh run `treecontact02`, clients `a` and `b` each emitted
+  two stable native observations for all 117 Prohorovka chunks. Both files are
+  1,241,592 bytes with SHA256
+  `dfff68fbecfb754c4a87a7095198dc6dbabd99308061c34b8d723534bc9f9c48`, and
+  each contains 3627 native items. Independent validation against the pinned
+  inventory and spec succeeded; the joined catalog contains 635 source
+  objects. Stop and rollback receipts are clean.
 - **OBSERVED:** the implementation is internally consistent on the pinned
   synthetic worker fixtures and existing private worker IPC tests.
+- **OBSERVED:** while the original clients were loading, their native manager
+  and player space IDs were temporarily different. The observer waited for a
+  stable loaded state; both final exports passed all source, transform, chunk,
+  and item checks. This transient loading state is not treated as a mapping
+  failure.
 - **INFERRED:** the selected `test_lab` thresholds (minimum speed 1 m/s,
   closing speed 0.1 m/s, and tree speed code bands) are an explicit project
   policy, not historical 0.9.1 damage rules.
@@ -60,7 +75,9 @@ run in this card.
   event/stage, replay, ordering, scene and exclusion accounting, and contact
   event budget.
 - `server/gateway/src/shared/model.rs` — candidate-world contact application
-  and atomic server state integration.
+  and atomic server state integration. Contact batches stage both fragile state
+  and impact trace state, so a malformed later row cannot leave an earlier row
+  committed; the regression test covers that rollback boundary.
 - `server/gateway/src/shared/server.rs` — worker contact collection, catalog
   kind/profile binding, ACK-gated scene commit, and cumulative publication.
 - `server/gateway/src/shared/mod.rs` and
@@ -71,31 +88,59 @@ run in this card.
 - `server/physics/CheckedInput.cs`, `Program.cs`, and `README.md` — checked
   contact catalog loading, Jolt hull/wheel capture, IPC v4, and documented
   bounds.
+- `client_patch/sr_interactive.py` — passive observer keeps the native catalog
+  alive when this 0.9.1 client lacks `gunRotator`; no synthetic pose is used.
 - `docs/plans/P06Q_TREE_VEHICLE_CONTACT.md` — card plan.
 
 ## Commands and real checks
 
 ```text
 python -B -X utf8 -m unittest tests.test_destructible_catalog tests.test_destructible_catalog_probe tests.test_tree_contact_catalog -v
-python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06q-final-04
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06q-final-05
 python -B -X utf8 server/build.py physics --out local/build/server/physics-p06q-final-02
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/test_stand_helpers.py
+python -B -X utf8 -m py_compile local/evidence/20261012-p06p-prohorovka-01/start_stand.py
 git diff --check
 Get-Process -Name WorldOfTanks,sr-gateway,MapDriveWorker,PhysicsSpike
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/prepare_stand.py --slot a --run treecontact02 --mode oracle --map 05_prohorovka --catalog-spec local/evidence/20261012-p06q-tree-contact-01/import/inventory01/probe-spec.json --catalog-spec-sha256 5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/prepare_stand.py --slot b --run treecontact02 --mode oracle --map 05_prohorovka --catalog-spec local/evidence/20261012-p06q-tree-contact-01/import/inventory01/probe-spec.json --catalog-spec-sha256 5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/start_stand.py server --run treecontact02 --mode oracle --map 05_prohorovka --build gateway-p06q-final-05 --build-sha256 1615648a13bb4ab745b992ec0ba576ea2e507657f485c0c14420e46f4313aeba --build-result-sha256 2b00050d3f35d9ceb6c26e8b14a28cb3512cf64c79174578ec9f3cade2c766e0 --expected-head 4ee631ff02d640c45191604a80bd7fedc5df7cf5 --pool local/build/server/physics-p06q-final-02/pool-near.json --pool-sha256 59b88e5c2d2b1f9689c3b302275915cf2b9aed65290a8e1827c2d2eb596b5288
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/stop_stand.py --receipt-dir local/evidence/20261012-p06p-prohorovka-01 --run treecontact02 --out-name treecontact02stop --reason "P06Q passive native probe complete: both clients stable 117-chunk two-pass exports"
+python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261012-p06p-prohorovka-01/install-a-treecontact02
+python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261012-p06p-prohorovka-01/install-b-treecontact02
+python -B -X utf8 -c "validate both raw exports with tools.tree_contact_catalog.validate_native and join one canonical byte-identical export with tools.tree_contact_catalog.join_exports"
 ```
 
 Results:
 
 - Python: 39 tests, **PASS**. The final log is
   `local/evidence/20261012-p06q-tree-contact-01/tests/importer-tests-final.log`.
-- Gateway: 612 tests, **PASS_ISOLATED_BUILD**. Receipt:
-  `local/build/server/gateway-p06q-final-04/result.json`; executable SHA256
-  `fd060bed9f0901ed1b25ee314a15ee08a4b442c3cc67d5da89eb758d8a6dbbee`.
+- Gateway: 613 tests, **PASS_ISOLATED_BUILD** on the contact-batch atomicity
+  fix. The reviewed intermediate receipt is
+  `local/build/server/gateway-p06q-contact-atomic-01/result.json`; executable
+  SHA256 `eb287e15b32fcd7a4603274729d052daa120ebf06f4a0fc3319756b299aad5e2`.
+  A fresh canonical `gateway-p06q-final-06` build is required after the source
+  commit before any runtime launch.
+- Helper guards: 12 tests, **PASS**. The runtime command accepts the joined
+  P06Q v2 manifest envelope (240 KiB) while retaining the 128 KiB ceiling for
+  legacy v1 catalogs; an unbound v2 catalog is rejected.
 - Physics: **PASS_ISOLATED_BUILD**. Receipt:
   `local/build/server/physics-p06q-final-02/result.json`; DLL SHA256
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`.
 - `git diff --check`: **PASS**.
 - The process snapshot was empty after the checks. No original client or
   server process was left running.
+- The private worker contact smoke was attempted against the pinned near-spawn
+  tree but is **NOT_RUN/PENDING** as an acceptance result: the test-lab vehicle
+  settles against the imported static mesh before a catalog body callback is
+  emitted. This does not establish native contact or tree destruction and is
+  retained as a diagnostic only.
+- Native run: both slots passed two observations × 117 chunks × 3627 items;
+  raw files are under the P06P helper evidence root, and the validated join is
+  `local/evidence/20261012-p06q-tree-contact-01/import/native-join01/`.
+- Stop receipt: `local/evidence/20261012-p06p-prohorovka-01/stop-treecontact02stop.json`;
+  rollback receipts: `install-a-treecontact02/restore.json` and
+  `install-b-treecontact02/restore.json`.
 
 ## Evidence paths
 
@@ -107,21 +152,35 @@ Results:
   SHA256 `5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd`.
 - Source/import receipt:
   `local/evidence/20261012-p06q-tree-contact-01/import/inventory01/receipt.json`.
-- Native launch procedure (not a native result):
+- Native launch procedure and pinned run inputs:
   `local/evidence/20261012-p06q-tree-contact-01/native-probe-plan01.md`.
+- Native raw exports (two observations per slot):
+  `local/evidence/20261012-p06p-prohorovka-01/runtime-a-treecontact02/destructible-catalog-47288.json`
+  and
+  `local/evidence/20261012-p06p-prohorovka-01/runtime-b-treecontact02/destructible-catalog-16568.json`.
+  Both SHA256 `dfff68fbecfb754c4a87a7095198dc6dbabd99308061c34b8d723534bc9f9c48`.
+- Validated native join:
+  `local/evidence/20261012-p06q-tree-contact-01/import/native-join01/receipt.json`,
+  manifest SHA256 `59a51da7613e17ae4150471053b1ad9856a4acbd74d493aee1cc16f04ebcdb7f`,
+  worker SHA256 `bb0cd813993f98c2d0d3d1832784651366aedcd6b200e43e4fcc933187c8185d`.
+- Stop and rollback receipts:
+  `local/evidence/20261012-p06p-prohorovka-01/stop-treecontact02stop.json`,
+  `install-a-treecontact02/restore.json`, and
+  `install-b-treecontact02/restore.json`.
 - Earlier focused importer receipt/logs remain under
   `local/evidence/20261012-p06q-tree-contact-01/tests/`.
 
 ## Unconfirmed points and limitations
 
-The full native export for both owned clients (`a` and `b`) was **NOT_RUN**.
-Therefore native object-index mapping, native contact callback semantics,
-rendered fallen-tree state, and owner-confirmed driving through a removed
-object are **NOT_RUN**. The synthetic exporter and private physics worker do
-not establish compatibility with the original client. Compound buildings,
-fences, water, historical damage, and arbitrary all-map object eligibility
-remain outside this card. Linux/cross-architecture determinism is also
-**NOT_RUN**.
+The native object-index mapping is now verified for the pinned passive catalog,
+but native contact callback semantics, rendered fallen-tree state, and
+owner-confirmed driving through a removed object are **NOT_RUN**. The passive
+observer intentionally reads getters and does not destroy objects, so this run
+cannot prove that a tree falls or that a tank can pass through it. The private
+physics worker still does not establish historical client damage rules.
+Compound buildings, fences, water, historical damage, and arbitrary all-map
+object eligibility remain outside this card. Linux/cross-architecture
+determinism is also **NOT_RUN**.
 
 ## Rollback
 
@@ -133,10 +192,13 @@ unchanged; no tracked deployment artifact was replaced.
 
 ## Acceptance
 
-**PENDING_NATIVE_OWNER.** Source import, bounded contact runtime, worker IPC,
-and isolated tests pass. Native mapping, two-client scene replication, and
-owner-rendered ramming/tree-fall acceptance remain open.
+**PASS_NATIVE_CATALOG_PROBE_PENDING_OWNER_CONTACT.** Source import, bounded
+contact runtime, worker IPC, isolated tests, atomic batch rollback, native
+object-index mapping, and two-client passive catalog agreement pass.
+Mass/speed-sensitive ramming policy and owner-rendered tree-fall, scene
+replication after a real contact, and passage through a removed object remain
+open until the owner-controlled gate.
 
-**One next recommended step:** run the prepared passive native probe for both
-owned Prohorovka clients, capturing two stable 117-chunk passes per client,
-then perform the owner-controlled ramming/tree-fall and passage gate.
+**One next recommended step:** perform the owner-controlled tank-to-tree
+ramming/tree-fall and passage gate using the joined 635-object catalog. The
+passive native probe is complete and deliberately does not destroy anything.

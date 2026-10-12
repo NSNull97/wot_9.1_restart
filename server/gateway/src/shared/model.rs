@@ -89,6 +89,9 @@ pub struct VehicleContactInput {
     pub point: [f32; 3],
     pub normal: [f32; 3],
     pub velocity: [f32; 3],
+    /// Server-pinned worker descriptor mass. It is never accepted from a
+    /// client frame; the integrated runtime copies the validated map config.
+    pub mass_kg: f32,
     pub kind: String,
     pub shooter: usize,
 }
@@ -158,17 +161,25 @@ impl World {
     pub fn apply_vehicle_contacts(&mut self, contacts:&[VehicleContactInput])->io::Result<Vec<fragiles::VehicleContact>> {
         if contacts.len()>32 { return Err(bad()); }
         if contacts.is_empty() { return Ok(Vec::new()); }
-        let state=self.fragiles.as_mut().ok_or_else(bad)?;
+        // Stage both domain state and trace state. A later malformed contact
+        // or a trace admission failure must not leave an earlier contact from
+        // the same worker frame committed in this World. The integrated
+        // runtime already calls this on a candidate clone, but keeping this
+        // method atomic protects every caller and makes the boundary explicit.
+        let mut state=self.fragiles.as_ref().ok_or_else(bad)?.clone();
         if !state.catalog.contacts { return Err(bad()); }
+        let mut trace=self.impact.clone();
         let mut outcomes=Vec::new();
         for contact in contacts {
             if contact.shooter>=CAPACITY { return Err(bad()); }
             if let Some(event)=state.ram_contact(contact.object_id,contact.shooter,self.tick,contact.substep,
-                contact.point,contact.normal,contact.velocity,contact.kind.clone())? {
-                self.impact.vehicle_contact(self.id,event.tick,&event)?;
+                contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone())? {
+                trace.vehicle_contact(self.id,event.tick,&event)?;
                 outcomes.push(event);
             }
         }
+        self.fragiles=Some(state);
+        self.impact=trace;
         Ok(outcomes)
     }
     /// Authenticated identity only. The caller reserves a transport retirement
@@ -616,6 +627,12 @@ pub(super) mod tests {
         let catalog=Arc::new(catalog);catalog.bind_geometry(w.terrain.as_ref().unwrap()).unwrap();
         w.impact.bind_fragiles(catalog.clone()).unwrap();w.fragiles=Some(fragiles::State::new(catalog));w
     }
+    pub fn contact_world(now:Instant)->World{
+        let mut w=destructible_world(now);w.destructible=None;
+        let catalog=super::super::fragiles::tests::contact_catalog();
+        catalog.bind_geometry(w.terrain.as_ref().unwrap()).unwrap();
+        w.impact.bind_fragiles(catalog.clone()).unwrap();w.fragiles=Some(fragiles::State::new(catalog));w
+    }
     #[test]
     fn world_rejects_terrain_and_fragile_catalog_from_another_map() {
         let now=Instant::now();
@@ -628,6 +645,21 @@ pub(super) mod tests {
         world.bind_terrain(right).unwrap();
         assert!(world.bind_destructible_test_lab().is_err());
         assert!(world.bind_fragiles(super::super::fragiles::tests::catalog()).is_err());
+    }
+    #[test]
+    fn vehicle_contact_batch_is_atomic_when_a_later_row_is_invalid() {
+        let now=Instant::now();let mut w=contact_world(now);
+        let before_fragiles=w.fragiles.clone();let before_impact=w.impact.clone();
+        let valid=VehicleContactInput{object_id:1513,substep:1,point:[0.,0.,0.],
+            normal:[1.,0.,0.],velocity:[2.,0.,0.],mass_kg:4691.,kind:"hull".into(),shooter:0};
+        let invalid=VehicleContactInput{object_id:9999,..valid.clone()};
+        assert!(w.apply_vehicle_contacts(&[valid.clone(),invalid]).is_err());
+        assert_eq!(w.fragiles,before_fragiles);
+        assert_eq!(w.impact,before_impact);
+        let events=w.apply_vehicle_contacts(&[valid]).unwrap();
+        assert_eq!(events.len(),1);
+        assert_eq!(w.fragiles.as_ref().unwrap().removed_ids(),vec![1513]);
+        assert_eq!(w.impact.events().iter().filter(|e|matches!(e,impact::Event::VehicleContact{..})).count(),1);
     }
     #[test]fn imported_object_partial_health_preserves_geometry_until_death_and_next_shell_passes(){
         let now=Instant::now();let mut w=fragile_world(now,Some(32));
