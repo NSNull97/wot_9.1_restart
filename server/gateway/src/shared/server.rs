@@ -298,9 +298,13 @@ impl IntegratedRuntime {
         candidate.advance_with_external(now, Some(&rows))?;
         let vehicle_events = candidate.apply_vehicle_contacts(&vehicle_contacts)?;
         for event in &vehicle_events {
+            let closing_speed=event.velocity.iter().zip(event.normal).map(|(v,n)|v*n).sum::<f32>();
+            let energy_j=0.5*event.mass_kg*closing_speed*closing_speed;
             println!("SHARED_VEHICLE_CONTACT battle={} slot={} object_id={} instance_id={} kind={} substep={} closing_speed={} scene_before={} scene_after={} fallen_tree={:?}",
                 candidate.id,event.shooter,event.object_id,event.instance_id,event.kind,event.substep,
-                event.velocity.iter().zip(event.normal).map(|(v,n)|v*n).sum::<f32>(),event.scene_before,event.scene_after,event.fallen_tree);
+                closing_speed,event.scene_before,event.scene_after,event.fallen_tree);
+            println!("SHARED_VEHICLE_CONTACT_ENERGY battle={} object_id={} mass_kg={} closing_speed={} energy_j={} policy_min_energy_j={}",
+                candidate.id,event.object_id,event.mass_kg,closing_speed,energy_j,super::fragiles::RAMMING_MIN_ENERGY_J);
         }
         if candidate.scene_version() != world.scene_version() {
             if self.catalog.is_none()&&(self.removal.is_none() || world.scene_version() != 0 || candidate.scene_version() != 1) {
