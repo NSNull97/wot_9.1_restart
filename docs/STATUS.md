@@ -52,10 +52,10 @@ The runtime helper now accepts the 240 KiB joined P06Q v2 manifest with a
 guard tests pass. A private worker contact smoke remains diagnostic only: the
 test-lab vehicle settles against the imported static mesh before a catalog body
 callback is emitted, so no contact or destruction claim is made from it.
-Fresh runtime preflight `contactprep07` passed all pins and returned
+Fresh runtime preflight `contactprep08` passed all pins and returned
 `PREFLIGHT_ONLY_NOT_STARTED`; no gateway, worker, or client was launched.
 Receipt SHA256 is
-`84211bd12a0260363b60db2688d850acd9d81191ee1c0cb2f025529057266b83`.
+`f43b09491d1a65b71267dfb1061dad583dd75920d885e7f167c77cdcb0a43cb4`.
 
 **Acceptance: PASS_NATIVE_CATALOG_PROBE_PENDING_OWNER_CONTACT.** Native
 catalog export, native mapping, and two-client catalog agreement are verified.

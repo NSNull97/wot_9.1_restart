@@ -135,11 +135,11 @@ Results:
 - Helper guards: 12 tests, **PASS**. The runtime command accepts the joined
   P06Q v2 manifest envelope (240 KiB) while retaining the 128 KiB ceiling for
   legacy v1 catalogs; an unbound v2 catalog is rejected.
-- Runtime preflight `contactprep07`: **PREFLIGHT_ONLY_NOT_STARTED**. The
+- Runtime preflight `contactprep08`: **PREFLIGHT_ONLY_NOT_STARTED**. The
   joined v2 manifest, Prohorovka pool, final-12 executable and source HEAD all
   passed their pins; no gateway, worker, or client process started. Receipt:
-  `local/evidence/20261012-p06q-tree-contact-01/tests/runtime-preflight-contactprep07.json`
-  (SHA256 `84211bd12a0260363b60db2688d850acd9d81191ee1c0cb2f025529057266b83`).
+  `local/evidence/20261012-p06q-tree-contact-01/tests/runtime-preflight-contactprep08.json`
+  (SHA256 `f43b09491d1a65b71267dfb1061dad583dd75920d885e7f167c77cdcb0a43cb4`).
 - Physics: **PASS_ISOLATED_BUILD**. Receipt:
   `local/build/server/physics-p06q-final-02/result.json`; DLL SHA256
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`.
