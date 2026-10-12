@@ -79,6 +79,20 @@ pub struct TerrainContact {
     pub direction: [f32; 3],
 }
 
+/// A bounded contact candidate imported from one private physics worker. The
+/// worker's body IDs never cross this boundary; only the hash-bound catalog
+/// object ID and validated contact geometry enter the domain state.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VehicleContactInput {
+    pub object_id: u32,
+    pub substep: u8,
+    pub point: [f32; 3],
+    pub normal: [f32; 3],
+    pub velocity: [f32; 3],
+    pub kind: String,
+    pub shooter: usize,
+}
+
 #[derive(Clone)]
 pub struct World {
     pub id: u64,
@@ -138,6 +152,25 @@ impl World {
     pub fn scene_version(&self)->u32{self.fragiles.as_ref().map_or_else(||self.destructible.as_ref().map_or(0,destructible::State::scene_version),fragiles::State::scene_version)}
     pub fn destructible_enabled(&self)->bool{self.destructible.is_some()}
     pub fn destructible_transition(&self)->Option<&destructible::Transition>{self.destructible.as_ref().and_then(destructible::State::transition)}
+    /// Apply contacts from a fully drained worker frame to a cloned candidate
+    /// world. The caller stages the candidate and waits for both worker scene
+    /// ACKs before committing it or publishing native state.
+    pub fn apply_vehicle_contacts(&mut self, contacts:&[VehicleContactInput])->io::Result<Vec<fragiles::VehicleContact>> {
+        if contacts.len()>32 { return Err(bad()); }
+        if contacts.is_empty() { return Ok(Vec::new()); }
+        let state=self.fragiles.as_mut().ok_or_else(bad)?;
+        if !state.catalog.contacts { return Err(bad()); }
+        let mut outcomes=Vec::new();
+        for contact in contacts {
+            if contact.shooter>=CAPACITY { return Err(bad()); }
+            if let Some(event)=state.ram_contact(contact.object_id,contact.shooter,self.tick,contact.substep,
+                contact.point,contact.normal,contact.velocity,contact.kind.clone())? {
+                self.impact.vehicle_contact(self.id,event.tick,&event)?;
+                outcomes.push(event);
+            }
+        }
+        Ok(outcomes)
+    }
     /// Authenticated identity only. The caller reserves a transport retirement
     /// slot before committing this world assignment. Rejoin never resets ammo.
     pub fn attach(&mut self, identity: Identity, session: u32) -> io::Result<usize> {
@@ -576,7 +609,7 @@ pub(super) mod tests {
             w.actors[slot].position=pos;w.actors[slot].origin=pos;w.actors[slot].direction=[0.;3];w.actors[slot].yaw=0.;
         }w
     }
-    pub fn fragile_world(now:Instant,health:Option<i16>)->World{
+    pub fn fragile_world(now:Instant,health:Option<u32>)->World{
         let mut w=destructible_world(now);w.destructible=None;
         let mut catalog=(*super::super::fragiles::tests::catalog()).clone();
         if let Some(h)=health{catalog.objects.iter_mut().find(|o|o.instance_id==1513).unwrap().health=h;}

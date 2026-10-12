@@ -1,3 +1,48 @@
+# P06Q pending — original trees and authoritative vehicle contact
+
+Branch `codex/p06q-tree-vehicle-contact`, based on accepted P06P
+`52978a25c63d51a56be90054c449b281cc4d3e3d`. The source-pinned Prohorovka
+import now contains 626 eligible SpeedTrees in116 chunks plus9 legacy fragile
+objects in one additional chunk:635 objects across117 target chunks. Trees are
+kept in a separate contact-capable catalog profile; projectile spans stay zero,
+physics spans stay non-empty, and the original tree material is pinned as71.
+
+The private physics worker reports bounded hull/wheel candidates over IPC v4.
+The gateway accepts only validated hull candidates under the explicit
+`test_lab` policy, stores a cumulative packed `fallenTrees` value for trees,
+and waits for every participating worker's scene ACK before committing a
+removal or publishing native state. Legacy v1/v2 catalog and IPC paths remain
+bounded and covered by regression tests. No historical kinetic damage rule is
+claimed.
+
+Checks completed:
+
+- Python importer/probe: **39 tests PASS**;
+- gateway isolated build: **612 Rust tests PASS**, executable SHA
+  `fd060bed9f0901ed1b25ee314a15ee08a4b442c3cc67d5da89eb758d8a6dbbee`;
+- physics worker isolated build: **PASS**, DLL SHA
+  `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`;
+- `git diff --check`: **PASS**; no diagnostic processes remain running.
+
+Evidence inventory:
+`local/evidence/20261012-p06q-tree-contact-01/import/inventory01/inventory.json`
+SHA `d3aae3255e51a583c94e2cdc910f9d70bb36f0f06d66e61928b9d5a513e8884d`;
+probe spec SHA `5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd`;
+build receipts `local/build/server/gateway-p06q-final-04/result.json` and
+`local/build/server/physics-p06q-final-02/result.json`.
+
+**Acceptance: PENDING_NATIVE_OWNER.** Full native export, native mapping,
+two-client fallen-tree replication, rendered passage through a removed object,
+and owner acceptance are **NOT_RUN**. Compound objects, historical impact
+rules, and all-map eligibility remain open. This card stays on its branch; the
+accepted P06P mainline is the rollback point.
+
+[Plan](plans/P06Q_TREE_VEHICLE_CONTACT.md), [research, commands, evidence,
+limitations and rollback](research/P06Q_TREE_VEHICLE_CONTACT.md).
+**One next recommended card:** run the prepared passive native probe for both
+owned Prohorovka clients, capture two stable117-chunk passes per client, then
+perform the owner-controlled ramming/tree-fall gate.
+
 # P06P accepted — Prohorovka cumulative native battle
 
 Owner accepted finalnative01: driving/aim/RMB, independent crates and passage,

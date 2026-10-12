@@ -43,6 +43,28 @@ pub(crate) fn catalog() -> Arc<Catalog> {
     Arc::new(parse(&manifest()).unwrap())
 }
 
+fn contact_manifest() -> Value {
+    let mut value=manifest();
+    value["version"]=json!(2);
+    value["contacts"]=json!(true);
+    for row in value["objects"].as_array_mut().unwrap() { row["kind"]=json!("fragile"); }
+    // A tree has no projectile span, a pinned tree material, and its own
+    // physics span. The resource path is a domain label, not native code.
+    value["objects"][2]["kind"]=json!("tree");
+    value["objects"][2]["resource"]=json!("speedtree/karelia/tree_03.spt");
+    value["objects"][2]["health"]=json!(70_000u32);
+    value["objects"][2]["material_kind"]=json!(71);
+    value["objects"][2]["projectile_first_triangle"]=json!(0);
+    value["objects"][2]["projectile_triangle_count"]=json!(0);
+    value["objects"][2]["physics_first_triangle"]=json!(180_000);
+    value["objects"][2]["physics_triangle_count"]=json!(17);
+    value
+}
+
+pub(crate) fn contact_catalog() -> Arc<Catalog> {
+    Arc::new(parse(&contact_manifest()).unwrap())
+}
+
 fn hit(index: usize) -> terrain::Hit {
     let object = &catalog().objects[index];
     // Synthetic domain input. Geometry source binding is exercised separately.
@@ -65,6 +87,7 @@ fn parses_original_source_rows_and_exact_importer_schema() {
     assert_eq!(catalog.instance(1513).unwrap().physics_first_triangle, 171814);
     assert!(catalog.instance(1514).is_none());
     assert_eq!(catalog.worker_file, "physics-removals.json");
+    assert!(!catalog.contacts);
     // Adjacent spans are legal; native indices may repeat in different chunks.
     assert_eq!(catalog.objects[0].projectile_first_triangle + catalog.objects[0].projectile_triangle_count,
         catalog.objects[1].projectile_first_triangle);
@@ -73,6 +96,49 @@ fn parses_original_source_rows_and_exact_importer_schema() {
     one["native_exports_sha256"] = json!(["1".repeat(64)]);
     one["objects"][2]["native_index"] = json!(255);
     assert_eq!(parse(&one).unwrap().objects[2].native_index, 255);
+}
+
+#[test]
+fn parses_contact_v2_tree_and_u32_health_contract() {
+    let catalog=parse(&contact_manifest()).unwrap();
+    assert!(catalog.contacts);
+    assert_eq!(catalog.objects[2].kind,ObjectKind::Tree);
+    assert_eq!(catalog.objects[2].health,70_000);
+    assert_eq!(catalog.objects[2].material_kind,71);
+    assert_eq!(catalog.objects[2].projectile_triangle_count,0);
+    assert!(catalog.objects[2].physics_triangle_count>0);
+    let mut legacy=manifest();
+    legacy["objects"][0]["health"]=json!(i16::MAX as u32 + 1);
+    assert!(parse(&legacy).is_err());
+}
+
+#[test]
+fn contact_parser_accepts_pinned_row_bound_and_rejects_the_next_row() {
+    let mut value=contact_manifest();
+    let base=value["objects"][0].clone();
+    let rows=(0..635u32).map(|i| {
+        let mut row=base.clone();
+        row["object_id"]=json!(i+1);
+        row["instance_id"]=json!(i);
+        let chunk=((121+(i%12))<<8)|(121+((i/12)%12));
+        row["chunk_id"]=json!(chunk);
+        row["native_index"]=json!(i/144);
+        row["resource"]=json!(format!("content/test/object_{i}.model"));
+        row["health"]=json!(70_000u32+i);
+        row["projectile_first_triangle"]=json!(i);
+        row["projectile_triangle_count"]=json!(1);
+        row["physics_first_triangle"]=json!(1_000+i);
+        row["physics_triangle_count"]=json!(1);
+        row["object_revision"]=json!(format!("{:064x}",i+1));
+        row["kind"]=json!("fragile");
+        row
+    }).collect::<Vec<_>>();
+    value["objects"]=json!(rows);
+    let parsed=parse(&value).unwrap();
+    assert_eq!(parsed.objects.len(),635);
+    assert_eq!(parsed.objects[634].health,70_634);
+    value["objects"].as_array_mut().unwrap().resize(MAX_CONTACT_OBJECTS+1,base);
+    assert!(parse(&value).is_err());
 }
 
 #[test]
@@ -208,6 +274,40 @@ fn partial_hp32_keeps_geometry_until_second_impact_and_neighbors_untouched() {
 }
 
 #[test]
+fn vehicle_contact_validates_hull_speed_normal_and_repeat_atomically() {
+    let mut state=State::new(contact_catalog());
+    let before=state.clone();
+    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[0.,0.,0.],"wheel".into()).unwrap().is_none());
+    assert_eq!(state,before);
+    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[0.,0.,2.],[0.,0.,2.],"hull".into()).is_err());
+    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[0.5,0.,0.],"hull".into()).unwrap().is_none());
+    assert!(state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[-2.,0.,0.],"hull".into()).unwrap().is_none());
+    let event=state.ram_contact(1513,0,1001,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],"hull".into()).unwrap().unwrap();
+    assert_eq!((event.scene_before,event.scene_after,event.fallen_tree), (0,1,None));
+    assert_eq!(state.native_fragile_values(31354),vec![0]);
+    assert_eq!(state.excluded(),vec![1512]);
+    let after=state.clone();
+    assert!(state.ram_contact(1513,0,1002,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],"hull".into()).unwrap().is_none());
+    assert_eq!(state,after);
+    assert!(state.ram_contact(1514,0,1000,1,[0.,0.,0.],[1.,0.,0.],[2.,0.,0.],"hull".into()).is_err());
+    assert_eq!(state,after);
+}
+
+#[test]
+fn tree_contact_packs_immutable_fallen_value_and_excludes_tree() {
+    let mut state=State::new(contact_catalog());
+    let event=state.ram_contact(1529,1,1001,2,[1.,2.,3.],[1.,0.,0.],[2.,0.,0.],"hull".into()).unwrap().unwrap();
+    let packed=event.fallen_tree.expect("tree contact must pack native fall");
+    assert_eq!(state.native_fallen_trees(31355),vec![packed]);
+    assert_eq!(state.removed_ids(),vec![1529]);
+    assert_eq!(state.excluded(),vec![1528]);
+    assert_eq!(state.scene_version(),1);
+    let again=state.ram_contact(1529,1,1002,2,[1.,2.,3.],[1.,0.,0.],[4.,0.,0.],"hull".into()).unwrap();
+    assert!(again.is_none());
+    assert_eq!(state.native_fallen_trees(31355),vec![packed]);
+}
+
+#[test]
 fn independent_objects_same_tick_remove_sorted_ids_not_kill_order() {
     let mut state = State::new(catalog());
     let first = state.contact(1, 1, 1001, hit(1)).unwrap().unwrap();
@@ -288,7 +388,7 @@ fn full_shot_bound_records_partial_damage_without_implicit_destruction() {
         state.contact(shot, shot as usize % CAPACITY, 1000 + shot, hit(0)).unwrap().unwrap();
     }
     assert_eq!(state.events.len(), MAX_SHOTS);
-    assert_eq!(state.health[0], 32767 - 30 * MAX_SHOTS as i16);
+    assert_eq!(state.health[0], 32767u32 - 30 * MAX_SHOTS as u32);
     assert_eq!(state.scene_version(), 0); assert!(state.excluded().is_empty());
     must_reject_unchanged(&mut state, MAX_SHOTS as u32 + 1, 0, 1100, hit(0));
 }

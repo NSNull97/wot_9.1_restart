@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 using System.Globalization;
 using System.Text.Json;
@@ -152,15 +153,46 @@ try
         var controller = constraint.GetController<TrackedVehicleController>();
         long tick = 0, sequence = 0;
         var contactMasks = new Queue<int>(6);
+        var rawContacts = new ConcurrentQueue<RawContact>();
+        int rawContactCount = 0, currentSubstep = 0;
+        int contactOverflow = 0;
+        bool captureContactsEnabled = false;
+        Vector3 preStepVelocity = Vector3.Zero;
+        var publishedContacts = new List<ContactRecord>();
+        var tankBodyId = body.ID;
+        void QueueContact(in Body body1, in Body body2, in ContactManifold manifold)
+        {
+            if (!captureContactsEnabled || manifold.IsNull || manifold.PointCount == 0) return;
+            // Jolt calls this while all bodies are locked. Copy only callback
+            // body/manifold values; never call locking BodyInterface methods.
+            // catalogBodies is immutable for the duration of world.Update.
+            bool tankFirst = body1.ID == tankBodyId;
+            if ((!tankFirst && body2.ID != tankBodyId) ||
+                !catalogBodies.ContainsValue(tankFirst ? body2.ID : body1.ID)) return;
+            if (Interlocked.Increment(ref rawContactCount) > 4096) { Interlocked.Exchange(ref contactOverflow, 1); return; }
+            var point = tankFirst ? manifold.GetWorldSpaceContactPointOn1(0) : manifold.GetWorldSpaceContactPointOn2(0);
+            // Jolt manifold normal points from body1 to body2. It must not be
+            // flipped using velocity: a separating contact stays separating.
+            var normal = tankFirst ? manifold.WorldSpaceNormal : -manifold.WorldSpaceNormal;
+            rawContacts.Enqueue(new RawContact(tankBodyId.ID, (tankFirst ? body2.ID : body1.ID).ID,
+                point, normal, preStepVelocity, currentSubstep, "hull"));
+        }
+        if (catalog?.Contacts == true)
+        {
+            world.OnContactAdded += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings _) => QueueContact(a, b, m);
+            world.OnContactPersisted += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings _) => QueueContact(a, b, m);
+        }
         try
         {
             world.OptimizeBroadPhase();
-            void Advance(int throttle, int steer, bool brake, int count)
+            void Advance(int throttle, int steer, bool brake, int count, bool captureContacts = false)
             {
                 for (int i = 0; i < count; i++)
                 {
+                    currentSubstep = i + 1;
                     var q = bodies.GetRotation(body.ID);
-                    float speed = Vector3.Dot(bodies.GetLinearVelocity(body.ID), Vector3.Transform(Vector3.UnitZ, q));
+                    preStepVelocity = bodies.GetLinearVelocity(body.ID);
+                    float speed = Vector3.Dot(preStepVelocity, Vector3.Transform(Vector3.UnitZ, q));
                     float motor = throttle;
                     if ((throttle > 0 && speed >= forwardLimit) || (throttle < 0 && speed <= -reverseLimit)) motor = 0;
                     float left = 1, right = 1;
@@ -173,6 +205,27 @@ try
                     controller.SetDriverInput(motor, left, right, brake ? 1 : 0);
                     var error = world.Update(1f / 60, 1, jobs);
                     if (error != PhysicsUpdateError.None) throw new InvalidOperationException("physics capacity exceeded");
+                    if (captureContacts)
+                    {
+                        // Wheel ray contacts are not body-pair callbacks. They
+                        // are copied after Update, when the vehicle constraint
+                        // has published its six support contacts.
+                        for (int wheel = 0; wheel < 6; wheel++)
+                        {
+                            var hit = constraint.GetWheel(wheel);
+                            if (hit.HasContact)
+                            {
+                                uint target = hit.ContactBodyID.ID;
+                                if (catalogBodies.ContainsValue(target))
+                                {
+                                    if (Interlocked.Increment(ref rawContactCount) > 4096) { Interlocked.Exchange(ref contactOverflow, 1); }
+                                    else rawContacts.Enqueue(new RawContact(tankBodyId.ID, target, hit.ContactPosition,
+                                        -hit.ContactNormal, preStepVelocity, currentSubstep, "wheel"));
+                                }
+                            }
+                        }
+                        if (contactOverflow != 0) throw new InvalidOperationException("contact event bound exceeded");
+                    }
                     tick++;
                     int mask = 0;
                     for (int wheel = 0; wheel < 6; wheel++)
@@ -185,6 +238,52 @@ try
                         throw new InvalidOperationException("authoritative body outside bounds");
                 }
             }
+            void CollectContacts()
+            {
+                publishedContacts.Clear();
+                if (catalog?.Contacts != true) return;
+                var best = new Dictionary<uint, ContactRecord>();
+                while (rawContacts.TryDequeue(out var raw))
+                {
+                    uint objectId;
+                    if (raw.Body1 != tankBodyId.ID || !catalogBodies.ContainsValue(raw.Body2))
+                        throw new InvalidOperationException("contact body identity changed inside advance");
+                    objectId = catalogBodies.First(x => x.Value.ID == raw.Body2).Key;
+                    var n = raw.Normal;
+                    if (!float.IsFinite(n.X) || !float.IsFinite(n.Y) || !float.IsFinite(n.Z)) throw new InvalidOperationException("non-finite contact normal");
+                    var length = n.Length();
+                    if (!(length > 0.999f && length < 1.001f)) throw new InvalidOperationException("contact normal outside unit bound");
+                    n /= length;
+                    var point = raw.Point;
+                    var velocity = raw.Velocity;
+                    static bool Bounded(Vector3 v, float maximum) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z)
+                        && MathF.Abs(v.X) <= maximum && MathF.Abs(v.Y) <= maximum && MathF.Abs(v.Z) <= maximum;
+                    if (!Bounded(point, 2000) || !Bounded(velocity, 256) || raw.Substep < 1 || raw.Substep > 6)
+                        throw new InvalidOperationException("contact point/velocity/substep outside bound");
+                    var candidate = new ContactRecord(objectId, raw.Kind,
+                        raw.Substep, point, n, velocity);
+                    if (!best.TryGetValue(objectId, out var old) || Better(candidate, old)) best[objectId] = candidate;
+                    if (best.Count > 32) throw new InvalidOperationException("distinct object contact bound exceeded");
+                }
+                foreach (var item in best.OrderBy(x => x.Key)) publishedContacts.Add(item.Value);
+            }
+            static bool Better(ContactRecord candidate, ContactRecord old)
+            {
+                // Retain a hull contact whenever present: support-ray speed
+                // must not hide an actual hull impact under the server policy.
+                if (candidate.Kind != old.Kind) return candidate.Kind == "hull";
+                float a = Vector3.Dot(candidate.Velocity, candidate.Normal);
+                float b = Vector3.Dot(old.Velocity, old.Normal);
+                if (a != b) return a > b;
+                if (candidate.Substep != old.Substep) return candidate.Substep < old.Substep;
+                foreach (var pair in new[] { (candidate.Point, old.Point), (candidate.Normal, old.Normal), (candidate.Velocity, old.Velocity) })
+                    for (int axis = 0; axis < 3; axis++)
+                    {
+                        int order = BitConverter.SingleToUInt32Bits(pair.Item1[axis]).CompareTo(BitConverter.SingleToUInt32Bits(pair.Item2[axis]));
+                        if (order != 0) return order < 0;
+                    }
+                return false;
+            }
             object State()
             {
                 var q = bodies.GetRotation(body.ID);
@@ -192,16 +291,23 @@ try
                 var velocity = bodies.GetLinearVelocity(body.ID); var angular = bodies.GetAngularVelocity(body.ID);
                 var forward = Vector3.Transform(Vector3.UnitZ, q); var right = Vector3.Transform(Vector3.UnitX, q); var up = Vector3.Transform(Vector3.UnitY, q);
                 float[] V(Vector3 v) => [v.X, v.Y, v.Z];
-                return new { position = V(origin), direction = new[] { MathF.Atan2(forward.X, forward.Z), MathF.Asin(Math.Clamp(-forward.Y, -1, 1)), MathF.Atan2(right.Y, up.Y) },
+                var baseState = new { position = V(origin), direction = new[] { MathF.Atan2(forward.X, forward.Z), MathF.Asin(Math.Clamp(-forward.Y, -1, 1)), MathF.Atan2(right.Y, up.Y) },
                     speed = Vector3.Dot(velocity, forward), rspeed = angular.Y, contacts = Enumerable.Range(0, 6).Count(i => constraint.GetWheel(i).HasContact),
                     linear_velocity = V(velocity), angular_velocity = V(angular), wheel_contact_masks = contactMasks.ToArray() };
+                if (catalog?.Contacts == true)
+                    return new { baseState.position, baseState.direction, baseState.speed, baseState.rspeed, baseState.contacts,
+                        baseState.linear_velocity, baseState.angular_velocity, baseState.wheel_contact_masks,
+                        object_contacts = publishedContacts.Select(c => new { object_id = c.ObjectId, kind = c.Kind,
+                            substep = c.Substep, point = V(c.Point), normal = V(c.Normal), velocity = V(c.Velocity) }).ToArray() };
+                return baseState;
             }
             void Write(string eventName)
             {
                 if (catalog != null)
-                    Console.WriteLine(JsonSerializer.Serialize(new { version = 3, @event = eventName, seq = sequence,
+                    Console.WriteLine(JsonSerializer.Serialize(new { version = catalog.Contacts ? 4 : 3, @event = eventName, seq = sequence,
                         tick, settle_ticks = 180, map, config_sha256 = hash, generation, catalog_sha256 = catalog.Hash,
-                        scene_version = sceneVersion, scene_sha256 = scene!.Hash, state = State() }));
+                        scene_version = sceneVersion, scene_sha256 = scene!.Hash, contacts = catalog.Contacts ? true : (bool?)null, state = State() },
+                        new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
                 else if (removal == null)
                     Console.WriteLine(JsonSerializer.Serialize(new { version = 1, @event = eventName, seq = sequence,
                         tick, settle_ticks = 180, map, config_sha256 = hash, state = State() }));
@@ -232,9 +338,11 @@ try
                         staticBodies.Remove(bodyId); catalogBodies.Remove(id);
                     }
                     scene = next; sceneVersion = next.Version;
-                    Console.WriteLine(JsonSerializer.Serialize(new { version = 3, @event = "scene_synced", advance_seq = sequence,
+                    Console.WriteLine(JsonSerializer.Serialize(new { version = catalog.Contacts ? 4 : 3, @event = "scene_synced", advance_seq = sequence,
                         tick, generation, config_sha256 = hash, catalog_sha256 = catalog.Hash,
-                        scene_version = sceneVersion, removed_object_ids = scene.Ids, scene_sha256 = scene.Hash }));
+                        scene_version = sceneVersion, removed_object_ids = scene.Ids, scene_sha256 = scene.Hash,
+                        contacts = catalog.Contacts ? true : (bool?)null },
+                        new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
                     continue;
                 }
                 if (removal != null && request.GetProperty("op").GetString() == "remove_one")
@@ -259,10 +367,12 @@ try
                         object_id = removal.ObjectId, object_revision = removal.Revision, scene_version = sceneVersion }));
                     continue;
                 }
-                if (catalog != null) CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input", "scene_version", "scene_sha256");
+                if (catalog?.Contacts == true) CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input", "scene_version", "scene_sha256", "contacts");
+                else if (catalog != null) CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input", "scene_version", "scene_sha256");
                 else if (removal == null) CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input");
                 else CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input", "scene_version");
-                if (request.GetProperty("version").GetInt32() != (catalog != null ? 3 : removal == null ? 1 : 2) || request.GetProperty("op").GetString() != "advance" ||
+                if (request.GetProperty("version").GetInt32() != (catalog?.Contacts == true ? 4 : catalog != null ? 3 : removal == null ? 1 : 2) || request.GetProperty("op").GetString() != "advance" ||
+                    (catalog?.Contacts == true && request.GetProperty("contacts").ValueKind != JsonValueKind.True) ||
                     (descriptorEnabled && request.GetProperty("scene_version").GetUInt32() != sceneVersion) ||
                     (catalog != null && request.GetProperty("scene_sha256").GetString() != scene!.Hash) ||
                     request.GetProperty("seq").GetInt64() != sequence + 1 || sequence >= 36000 || request.GetProperty("ticks").GetInt32() != 6)
@@ -272,7 +382,12 @@ try
                 bool brake = controls.GetProperty("brake").GetBoolean();
                 if (Math.Abs((long)throttle) > 1 || Math.Abs((long)steer) > 1 || (brake && (throttle != 0 || steer != 0)))
                     throw new InvalidDataException("invalid domain driving input");
-                Advance(throttle, steer, brake, 6); sequence++; Write("state");
+                rawContactCount = 0; contactOverflow = 0; currentSubstep = 0;
+                while (rawContacts.TryDequeue(out _)) { }
+                captureContactsEnabled = catalog?.Contacts == true;
+                Advance(throttle, steer, brake, 6, catalog?.Contacts == true);
+                captureContactsEnabled = false;
+                CollectContacts(); sequence++; Write("state");
             }
         }
         finally
@@ -292,3 +407,6 @@ catch (Exception error)
     Console.Error.WriteLine(JsonSerializer.Serialize(new { @event = "worker_error", type = error.GetType().Name, message = error.Message }));
     return 1;
 }
+
+readonly record struct RawContact(uint Body1, uint Body2, Vector3 Point, Vector3 Normal, Vector3 Velocity, int Substep, string Kind);
+readonly record struct ContactRecord(uint ObjectId, string Kind, int Substep, Vector3 Point, Vector3 Normal, Vector3 Velocity);

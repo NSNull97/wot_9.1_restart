@@ -19,9 +19,11 @@ pub const MS1_AP_SHELL_COMPACT_ID: u32 = 2570;
 pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
 // Admission + launch, segment/terrain-query/vehicle-query triples, one terminal collision batch, and
 // nearest material record, optional AP or wreck outcome and terminal. The model admits only both actors'
-// original 20-shell loadouts, plus at most one fragile damage event per shell.
+// original 20-shell loadouts, plus at most one fragile damage event per shell
+// and one vehicle contact for each catalog object.
 pub const MAX_EVENTS: usize = super::model::MAX_SHOTS
-    * (2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1) + super::model::MAX_SHOTS;
+    * (2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1) + super::model::MAX_SHOTS
+    + fragiles::MAX_CONTACT_OBJECTS;
 pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
 pub const MAX_SEGMENT_LENGTH: f32 = 200_000.0;
@@ -49,6 +51,7 @@ pub enum Stage {
     TerrainContact,
     DestructibleTransition,
     FragileDamage,
+    VehicleContact,
     Terminal,
 }
 
@@ -204,6 +207,10 @@ pub enum Event {
         terrain_contact_order:u32,transition:destructible::Transition,
     },
     FragileDamage {order:u32,battle_id:u64,shot_id:u32,server_tick:u32,terrain_contact_order:u32,damage:fragiles::Damage},
+    /// Server-owned hull contact against a catalogued fragile or tree. This
+    /// is independent of projectile shot identity, so it carries no shot id
+    /// and cannot masquerade as a projectile event.
+    VehicleContact {order:u32,battle_id:u64,server_tick:u32,contact:fragiles::VehicleContact},
     Terminal {
         order: u32,
         battle_id: u64,
@@ -228,6 +235,7 @@ impl Event {
             Self::TerrainContact { .. } => Stage::TerrainContact,
             Self::DestructibleTransition { .. } => Stage::DestructibleTransition,
             Self::FragileDamage { .. } => Stage::FragileDamage,
+            Self::VehicleContact { .. } => Stage::VehicleContact,
             Self::Terminal { .. } => Stage::Terminal,
         }
     }
@@ -246,6 +254,7 @@ impl Event {
             | Self::TerrainContact { order, .. }
             | Self::DestructibleTransition { order, .. }
             | Self::FragileDamage { order, .. }
+            | Self::VehicleContact { order, .. }
             | Self::Terminal { order, .. } => *order,
         }
     }
@@ -265,6 +274,7 @@ impl Event {
             | Self::DestructibleTransition { shot_id, .. }
             | Self::FragileDamage { shot_id, .. }
             | Self::Terminal { shot_id, .. } => *shot_id,
+            Self::VehicleContact { .. } => 0,
         }
     }
 }
@@ -573,10 +583,15 @@ impl Trace {
     fn scene_version_before(&self,order:u32)->u32{
         u32::from(self.events.iter().any(|event| matches!(event,Event::DestructibleTransition{order:at,..} if *at<order)))
             +self.events.iter().filter(|event|matches!(event,Event::FragileDamage{order:at,damage,..} if *at<order&&damage.health_after==0)).count() as u32
+            +self.events.iter().filter(|event|matches!(event,Event::VehicleContact{order:at,..} if *at<order)).count() as u32
     }
     fn excluded_before(&self,order:u32)->Vec<u32>{
         let mut ids=self.events.iter().filter_map(|event|match event{
             Event::FragileDamage{order:at,damage,..} if *at<order&&damage.health_after==0=>Some(damage.instance_id),_=>None}).collect::<Vec<_>>();
+        ids.extend(self.events.iter().filter_map(|event|match event {
+            Event::VehicleContact {order:at,contact,..} if *at<order=>Some(contact.instance_id),
+            _=>None,
+        }));
         ids.sort_unstable();ids
     }
     pub fn fragile_damage(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,damage:&fragiles::Damage)->io::Result<()>{
@@ -593,6 +608,40 @@ impl Trace {
             ||self.events.len()+2>MAX_EVENTS||self.next_order.checked_add(2).is_none(){return Err(invalid("fragile damage transaction"));}
         self.push(Event::FragileDamage{order:self.next_order_value()?,battle_id,shot_id,server_tick,terrain_contact_order:order,damage:damage.clone()})?;
         self.fragiles=Some(state);self.last_tick=server_tick;Ok(())
+    }
+
+    /// Replay one server-owned vehicle contact against the trace's private
+    /// fragile state. Vehicle contacts are not projectile rows and therefore
+    /// use their own event kind/order while sharing the battle tick stream.
+    /// The supplied contact is treated as an authenticated domain fact: the
+    /// state transition is recomputed and must match byte-for-byte before the
+    /// event or state is committed.
+    pub fn vehicle_contact(&mut self, battle_id:u64, server_tick:u32,
+        contact:&fragiles::VehicleContact)->io::Result<()> {
+        if battle_id==0 || self.battle_id.is_some_and(|known|known!=battle_id)
+            || server_tick==0 || server_tick<self.last_tick
+            || contact.tick!=server_tick || contact.kind!="hull"
+            || contact.scene_after!=contact.scene_before.saturating_add(1) {
+            return Err(invalid("vehicle contact identity or tick"));
+        }
+        let expected_scene=self.scene_version_before(u32::MAX);
+        if contact.scene_before!=expected_scene {
+            return Err(invalid("vehicle contact scene revision"));
+        }
+        let mut state=self.fragiles.clone().ok_or_else(||invalid("fragile catalog absent"))?;
+        if !state.catalog.contacts { return Err(invalid("vehicle contact profile absent")); }
+        let replayed=state.ram_contact(contact.object_id,contact.shooter,contact.tick,
+            contact.substep,contact.point,contact.normal,contact.velocity,contact.kind.clone())?
+            .ok_or_else(||invalid("vehicle contact was already removed or below threshold"))?;
+        if replayed!=*contact || state.scene_version()!=contact.scene_after {
+            return Err(invalid("vehicle contact replay mismatch"));
+        }
+        let order=self.next_order_value()?;
+        self.push(Event::VehicleContact {order,battle_id,server_tick,contact:contact.clone()})?;
+        self.fragiles=Some(state);
+        if self.battle_id.is_none() { self.battle_id=Some(battle_id); }
+        self.last_tick=server_tick;
+        Ok(())
     }
 
     /// Fetch only the terrain query paired with this vehicle query. An absent
@@ -875,7 +924,7 @@ mod tests {
         assert_eq!(MS1_GUN_COMPACT_ID, 5892);
         assert_eq!(MS1_AP_SHELL_COMPACT_ID, 2570);
         assert_eq!(MAX_SEGMENTS_PER_SHOT, 256);
-        assert_eq!(MAX_EVENTS, 36_080);
+        assert_eq!(MAX_EVENTS, 37_104);
     }
 
     #[test]
@@ -888,6 +937,27 @@ mod tests {
         }), 1000).is_err());
         trace.admission(123, 1, 1000, 0, 20, 19).unwrap();
         assert!(trace.segment(124, 1, 1001, 1000, [0.; 3], [1.; 3]).is_err());
+    }
+
+    #[test]
+    fn vehicle_contact_replays_catalog_state_and_keeps_scene_exclusion_aligned() {
+        let catalog=super::super::fragiles::tests::contact_catalog();
+        let mut source=fragiles::State::new(catalog.clone());
+        let contact=source.ram_contact(1529,1,1001,2,[1.,2.,3.],[1.,0.,0.],[2.,0.,0.],"hull".into()).unwrap().unwrap();
+        let mut trace=Trace::new_for_map(crate::map_profile091::MapId::Karelia);
+        trace.bind_fragiles(catalog).unwrap();
+        trace.vehicle_contact(123,1001,&contact).unwrap();
+        assert_eq!(trace.events().len(),1);
+        assert_eq!(trace.events()[0].stage(),Stage::VehicleContact);
+        assert_eq!(trace.events()[0].shot_id(),0);
+        assert_eq!(trace.fragiles.as_ref().unwrap().scene_version(),1);
+        assert_eq!(trace.fragiles.as_ref().unwrap().excluded(),vec![1528]);
+        let before=trace.clone();
+        assert!(trace.vehicle_contact(123,1002,&contact).is_err());
+        assert_eq!(trace,before);
+        let mut changed=contact.clone();changed.scene_before=1;
+        assert!(trace.vehicle_contact(123,1002,&changed).is_err());
+        assert_eq!(trace,before);
     }
 
     #[test]
@@ -1866,7 +1936,9 @@ mod tests {
             trace.terminal(123, shot_id, tick, if wreck { TerminalReason::TestLabWreckImpact }
                 else { TerminalReason::TestLabImpact }).unwrap();
         }
-        assert_eq!(trace.events().len(), if with_terrain { MAX_EVENTS-model::MAX_SHOTS } else { 25_800 });
+        assert_eq!(trace.events().len(), if with_terrain {
+            MAX_EVENTS-fragiles::MAX_CONTACT_OBJECTS-model::MAX_SHOTS
+        } else { 25_800 });
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::TerrainQuery { .. })).count(),
             if with_terrain { model::MAX_SHOTS * MAX_SEGMENTS_PER_SHOT } else { 0 });
         assert_eq!(trace.terminal_shots().len(), model::MAX_SHOTS);

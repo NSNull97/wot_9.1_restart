@@ -40,6 +40,7 @@ pub(super) struct Client {
     area_creation: Option<(u32, bool)>,
     area_scene_sent: u32,
     areas:Vec<(Option<(u32,bool)>,Vec<u8>)>,
+    tree_areas:Vec<Vec<u32>>,
     correction: bool,
     ready_sent: [bool; 2],
     commands: Vec<Command>,
@@ -55,7 +56,7 @@ pub(super) struct Client {
 impl Client {
     fn new(slot: usize) -> Self {
         Self { slot, phase: Phase::Account, view: None, announcement: None, creations: [None; 2],
-            area_creation: None, area_scene_sent: 0,areas:Vec::new(), binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
+            area_creation: None, area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; 2], owner_health_sent: None, tracer_started: [false; model::MAX_SHOTS],
             tracer_stopped: [false; model::MAX_SHOTS] }
     }
@@ -68,7 +69,7 @@ impl Client {
     }
     fn areas_ready(&self,world:&World)->bool{
         (!world.destructible_enabled()||self.area_creation.is_some_and(|(_,ack)|ack))
-            &&world.fragiles.as_ref().is_none_or(|state|self.areas.len()==state.catalog.chunks().len()&&self.areas.iter().all(|(p,_)|p.is_some_and(|(_,a)|a)))
+            &&world.fragiles.as_ref().is_none_or(|state|self.areas.len()==state.catalog.chunks().len()&&(self.tree_areas.is_empty()||self.tree_areas.len()==self.areas.len())&&self.areas.iter().all(|(p,_)|p.is_some_and(|(_,a)|a)))
     }
     fn visible(&self) -> [bool; 2] { self.creations.map(|row| row.is_some_and(|(_, ack)| ack)) }
 }
@@ -110,7 +111,7 @@ impl Session {
             let mut body = wire::announcement(world, c.slot)?;
             if world.destructible_enabled() { body.extend(destructible_wire::announcement()); }
             if let Some(state)=&world.fragiles{
-                let chunks=state.catalog.chunks();c.areas=vec![(None,Vec::new());chunks.len()];
+                let chunks=state.catalog.chunks();c.areas=vec![(None,Vec::new());chunks.len()];c.tree_areas=vec![Vec::new();chunks.len()];
                 for i in 0..chunks.len(){body.extend(destructible_wire::area_announcement(i)?);}
             }
             let sequence = self.tx.enqueue_body_tracked(&body)?;
@@ -124,13 +125,16 @@ impl Session {
                 || payload.len() > 7*(2+if world.destructible_enabled(){1}else{c.areas.len()}) || payload.len() % 7 != 0 { return Err(bad()); }
             // Original requests can piggyback vehicles and the area controller.
             // Session's outer receive clone makes the whole envelope atomic.
+            if c.tree_areas.len()!=c.areas.len(){c.tree_areas=vec![Vec::new();c.areas.len()];}
             for raw in payload.chunks_exact(7) {
                 if let Some(area)=destructible_wire::area_request(raw,c.areas.len()) {
                     let state=world.fragiles.as_ref().ok_or_else(bad)?;let chunk=state.catalog.chunks()[area];
                     if c.areas[area].0.is_some(){return Err(bad());}
                     let indices=state.native_destroyed(chunk);
-                    let sequence=self.tx.enqueue_body_tracked(&destructible_wire::area_create(area,chunk,&indices)?)?;
-                    c.areas[area]=(Some((sequence,false)),indices);
+                    let values=state.native_fragile_values(chunk);
+                    let trees=state.native_fallen_trees(chunk);
+                    let sequence=self.tx.enqueue_body_tracked(&destructible_wire::area_create_state(area,chunk,&values,&trees)?)?;
+                    c.areas[area]=(Some((sequence,false)),indices);c.tree_areas[area]=trees;
                     events.push(format!("SHARED_CATALOG_AREA_CREATED battle={} session={} entity={} chunk={} scene={} reliable_sequence={sequence}",world.id,self.id,destructible_wire::area_id(area)?,chunk,world.scene_version()));
                 }else if destructible_wire::is_request(raw) {
                     if !world.destructible_enabled() || c.area_creation.is_some() { return Err(bad()); }
