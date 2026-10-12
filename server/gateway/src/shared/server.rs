@@ -3,6 +3,13 @@
 use super::{model::{self, World}, ap, impact_wire, terrain_wire, wire, Client, Phase};
 use super::super::*;
 
+#[cfg(test)]
+#[path="server_catalog_tests.rs"]
+mod catalog_tests;
+#[cfg(test)]
+#[path="server_catalog_wire_tests.rs"]
+mod catalog_wire_tests;
+
 #[derive(Default)]
 struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
 
@@ -19,6 +26,7 @@ struct IntegratedRuntime {
     dispatched: [Option<Instant>; model::CAPACITY],
     started: bool,
     removal: Option<crate::map_drive_worker091::RemovalSpec>,
+    catalog: Option<crate::map_drive_worker091::CatalogSpec>,
     staged: Option<World>,
     synchronizing: [bool; model::CAPACITY],
     generations: [u32; model::CAPACITY],
@@ -42,7 +50,7 @@ impl IntegratedRuntime {
         Self { pool, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
             offsets: [[0.; 3]; model::CAPACITY],
             anchored: [false; model::CAPACITY],
-            dispatched: [None; model::CAPACITY], started: false, removal: None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY] }
+            dispatched: [None; model::CAPACITY], started: false, removal: None,catalog:None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY] }
     }
 
     fn map(&self) -> io::Result<crate::map_drive_worker091::MapSpec> {
@@ -54,7 +62,7 @@ impl IntegratedRuntime {
         [map.spawn[0] + if slot == 0 { -4. } else { 4. }, map.spawn[1], map.spawn[2]]
     }
 
-    fn spawn_slot(&mut self, world_id: u64, slot: usize, map: crate::map_drive_worker091::MapSpec,
+    fn spawn_slot(&mut self, world: &World, slot: usize, map: crate::map_drive_worker091::MapSpec,
         now: Instant) -> io::Result<()> {
         if self.workers[slot].is_some() { return Err(model::bad()); }
         let lane = Self::lane_spawn(&map, slot);
@@ -63,7 +71,10 @@ impl IntegratedRuntime {
         self.dispatched[slot] = None;
         self.generations[slot] = self.generations[slot].checked_add(1).ok_or_else(model::bad)?;
         let generation = self.generations[slot].checked_mul(2).and_then(|n|n.checked_add(slot as u32)).ok_or_else(model::bad)?;
-        let worker = if let Some(spec) = &self.removal {
+        let worker = if let Some(spec)=&self.catalog {
+            let scene=crate::map_drive_worker091::Scene::new(spec,&world.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids())?;
+            crate::map_drive_worker091::Worker::launch_with_catalog(self.pool.clone(),map.clone(),generation,now,Some(lane),spec.clone(),scene)?
+        }else if let Some(spec) = &self.removal {
             crate::map_drive_worker091::Worker::launch_with_removal(self.pool.clone(), map.clone(),
                 generation, now, Some(lane), spec.clone())?
         } else {
@@ -71,7 +82,7 @@ impl IntegratedRuntime {
                 generation, now, Some(lane))?
         };
         println!("SHARED_INTEGRATED_WORKER_START battle={} slot={} map={} arena_type_id={} config_sha256={} pool_sha256={} physics=test_lab coordinate_bridge=worker_lane_full_pose_bridge=position_ypr spawn_override={:?} offset={:?}",
-            world_id, slot, map.asset, map.arena_type_id, map.config_sha256, self.pool.sha256, lane, self.offsets[slot]);
+            world.id, slot, map.asset, map.arena_type_id, map.config_sha256, self.pool.sha256, lane, self.offsets[slot]);
         self.workers[slot] = Some(worker);
         Ok(())
     }
@@ -89,7 +100,7 @@ impl IntegratedRuntime {
         // before that happens so no old flat-lab spawn can reach the client.
         world.rebase_external_spawns(lane_spawns)?;
         for slot in 0..model::CAPACITY {
-            self.spawn_slot(world.id, slot, map.clone(), now)?;
+            self.spawn_slot(world, slot, map.clone(), now)?;
         }
         self.started = true;
         Ok(())
@@ -101,9 +112,36 @@ impl IntegratedRuntime {
 
     fn blocked(&self) -> bool { self.staged.is_some() }
 
+    fn finish_catalog(&mut self,world:&mut World,now:Instant)->io::Result<()>{
+        let staged=self.staged.as_ref().ok_or_else(model::bad)?;
+        if staged.id!=world.id||staged.scene_version()<=world.scene_version()
+            ||staged.actors.iter().map(|a|a.session).collect::<Vec<_>>()!=world.actors.iter().map(|a|a.session).collect::<Vec<_>>(){
+            return Err(io::Error::new(io::ErrorKind::InvalidData,"catalog transaction membership or scene changed; fail closed"));}
+        let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().ok_or_else(model::bad)?,
+            &staged.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids())?;
+        let mut complete=true;let mut participants=0;
+        for slot in 0..model::CAPACITY{
+            if world.actors[slot].session.is_none(){continue;}
+            let worker=self.workers[slot].as_mut().ok_or_else(model::bad)?;
+            if !worker.ready(){
+                if world.actors[slot].ready||self.anchored[slot]||self.poses[slot].is_some(){return Err(model::bad());}continue;
+            }
+            participants+=1;
+            if worker.poll(now)?.is_some(){return Err(model::bad());}
+            if let Some(ack)=worker.take_catalog_ack(){println!("SHARED_CATALOG_WORKER_ACK battle={} slot={} generation={} advance_seq={} tick={} scene_version={} scene_sha256={} removed={:?}",
+                world.id,slot,ack.generation,ack.advance_seq,ack.tick,ack.scene_version,ack.scene_sha256,ack.removed_object_ids);}
+            if worker.catalog_scene()!=Some(&scene){complete=false;if !worker.pending(){worker.sync_removed(scene.clone(),now)?;}}
+        }
+        if participants==0{return Err(model::bad());}
+        if complete{let before=world.scene_version();*world=self.staged.take().ok_or_else(model::bad)?;
+            println!("SHARED_CATALOG_COMMITTED battle={} scene_before={} scene_after={} scene_sha256={} removed={:?} participating_workers={} workers_acknowledged=true",world.id,before,scene.version(),scene.hash(),scene.ids(),participants);}
+        Ok(())
+    }
+
     /// Both movement scenes acknowledge before the candidate World, impacts or
     /// native destruction can be published. Transport remains serviced outside.
     fn finish_removal(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
+        if self.catalog.is_some(){return self.finish_catalog(world,now);}
         let staged = self.staged.as_ref().ok_or_else(model::bad)?;
         if staged.id != world.id || staged.scene_version() != 1 || world.scene_version() != 0
             || staged.actors.iter().map(|a| a.session).collect::<Vec<_>>()
@@ -160,7 +198,7 @@ impl IntegratedRuntime {
             if self.workers[slot].is_none() {
                 let map = self.map()?;
                 world.reset_external_spawn(slot, Self::lane_spawn(&map, slot))?;
-                self.spawn_slot(world.id, slot, map, now)?;
+                self.spawn_slot(world, slot, map, now)?;
             }
             let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
             if let Some(state) = worker.poll(now)? {
@@ -187,7 +225,18 @@ impl IntegratedRuntime {
                 rows.push((slot,actor.position,actor.direction,0.));
             }
         }
-        if world.scene_version() == 1 {
+        if self.catalog.is_some(){
+            let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().unwrap(),&world.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids())?;
+            for slot in 0..model::CAPACITY{
+                if world.actors[slot].session.is_none(){continue;}
+                let worker=self.workers[slot].as_mut().ok_or_else(model::bad)?;
+                if let Some(ack)=worker.take_catalog_ack(){println!("SHARED_CATALOG_REJOIN_ACK battle={} slot={} scene_version={} scene_sha256={}",world.id,slot,ack.scene_version,ack.scene_sha256);}
+                if worker.catalog_scene()!=Some(&scene){
+                    self.synchronizing[slot]=true;
+                    if worker.ready()&&!worker.pending(){worker.sync_removed(scene.clone(),now)?;}
+                }
+            }
+        }else if world.scene_version() == 1 {
             for slot in 0..model::CAPACITY {
                 if world.actors[slot].session.is_none() { continue; }
                 let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
@@ -209,7 +258,7 @@ impl IntegratedRuntime {
         }
         // A contact candidate can only use a fully drained movement snapshot.
         // Restoring a reconnect worker does not suspend the survivor's commands.
-        if self.removal.is_some() && world.scene_version()==0
+        if (self.catalog.is_some()||self.removal.is_some() && world.scene_version()==0)
             && self.workers.iter().flatten().any(|w|w.pending()) { return Ok(()); }
         // Do not publish a mixed frame while the two workers are settling.
         // The old client-space spawn is deliberately not a fallback pose:
@@ -231,7 +280,7 @@ impl IntegratedRuntime {
         let mut candidate = world.clone();
         candidate.advance_with_external(now, Some(&rows))?;
         if candidate.scene_version() != world.scene_version() {
-            if self.removal.is_none() || world.scene_version() != 0 || candidate.scene_version() != 1 {
+            if self.catalog.is_none()&&(self.removal.is_none() || world.scene_version() != 0 || candidate.scene_version() != 1) {
                 return Err(model::bad());
             }
             self.staged = Some(candidate);
@@ -294,7 +343,7 @@ impl Table {
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None)
 }
 
 fn terrain_for_pool(pool: &crate::map_drive_worker091::Pool) -> io::Result<Arc<super::terrain::Terrain>> {
@@ -316,9 +365,10 @@ fn terrain_for_pool(pool: &crate::map_drive_worker091::Pool) -> io::Result<Arc<s
 }
 
 pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
-    pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool, destructible_test_lab: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool, destructible_test_lab: bool,catalog_path:Option<(&str,&str)>) -> Result<(), Box<dyn std::error::Error>> {
     if ap_test_lab && geometry_path.is_none() { return Err(model::bad().into()); }
     if destructible_test_lab && !terrain_test_lab { return Err(model::bad().into()); }
+    if catalog_path.is_some()&&(!terrain_test_lab||destructible_test_lab){return Err(model::bad().into());}
     if terrain_test_lab && !ap_test_lab { return Err(model::bad().into()); }
     let config = crate::identity091::Config::load(config_path)?;
     let pool = crate::map_drive_worker091::Pool::load(&config.local_root, Path::new(pool_path))?;
@@ -330,12 +380,19 @@ pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
         Some(crate::map_drive_worker091::RemovalSpec::load(&pool.local_root,&path,
             "ef00e2aed686c16c4f9a216d9db70dbcd1ca3fda84bc33cd9eaa8aed1dbde7fa")?)
     } else { None };
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal)
+    let catalog=if let Some((path,sha))=catalog_path{
+        let path=Path::new(path);let catalog=Arc::new(super::fragiles::Catalog::load(&pool.local_root,path,sha)?);
+        let worker=crate::map_drive_worker091::CatalogSpec::load(&pool.local_root,&path.parent().ok_or_else(model::bad)?.join(&catalog.worker_file),&catalog.worker_sha256)?;
+        if worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
+            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision){return Err(model::bad().into());}
+        Some((catalog,worker))
+    }else{None};
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog)
 }
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
     integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
-    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>)
+    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>)
     -> Result<(), Box<dyn std::error::Error>> {
     if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
     if terrain.is_some() && !ap_test_lab { return Err(model::bad().into()); }
@@ -369,11 +426,15 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             world.id,revision,super::terrain::MANIFEST_SHA256,super::obstacles::MANIFEST_SHA256);
     }
     if removal.is_some() { world.bind_destructible_test_lab()?; }
+    if let Some((catalog,_))=&catalog{world.bind_fragiles(catalog.clone())?;
+        println!("SHARED_CATALOG_BOUND battle={} sha256={} objects={} chunks={:?} policy={} historical_fidelity=approximate_reference_health",world.id,catalog.sha256,catalog.objects.len(),catalog.chunks(),super::fragiles::POLICY);}
     let mut contact_cursor = 0usize;
     let mut terrain_cursor = 0usize;
     let mut impact_cursor = 0usize;
+    let mut fragile_cursor=0usize;
     let mut integrated = integrated_pool.map(IntegratedRuntime::new);
     if let Some(runtime) = &mut integrated { runtime.removal = removal; }
+    if let Some(runtime)=&mut integrated {runtime.catalog=catalog.map(|(_,worker)|worker);}
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
@@ -589,6 +650,14 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 "damage":event.health_before-event.health_after,"native_effect_available":event.segment.is_some()}));
         }
         impact_cursor = world.impacts.len();
+        if let Some(state)=&world.fragiles{
+            for damage in state.events.iter().skip(fragile_cursor){println!("SHARED_FRAGILE_DAMAGE {}",serde_json::json!({
+                "battle":world.id.to_string(),"catalog_sha256":state.catalog.sha256,"policy":super::fragiles::POLICY,
+                "object_id":damage.object_id,"instance_id":damage.instance_id,"object_revision":damage.object_revision,
+                "shot":damage.shot,"shooter":damage.shooter,"tick":damage.tick,"health_before":damage.health_before,"health_after":damage.health_after,
+                "scene_before":damage.scene_before,"scene_after":damage.scene_after}));}
+            fragile_cursor=state.events.len();
+        }
         // Both peers receive a snapshot of the same completed server tick.
         for s in &mut table.sessions { if let Some(c) = &mut s.shared { c.view = Some(world.clone()); } }
         thread::sleep(Duration::from_millis(5));
@@ -603,12 +672,12 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let c = s.shared.as_ref().ok_or_else(model::bad)?;
     let full_ready = c.phase == Phase::Driving && c.correction
         && c.binding.is_some_and(|(_,ack)|ack)
-        && (!world.destructible_enabled() || c.area_creation.is_some_and(|(_,ack)|ack));
+        && c.areas_ready(world);
     if !full_ready && c.entered.is_some_and(|start| now.duration_since(start) > Duration::from_secs(90)) { return Err(model::bad()); }
     if !matches!(c.phase, Phase::Driving | Phase::Leaving) { return Ok(()); }
     let slot = c.slot;
     let mut next = s.clone(); let mut next_world = world.clone();
-    let area_ready = !world.destructible_enabled() || c.area_creation.is_some_and(|(_,ack)| ack);
+    let area_ready = c.areas_ready(world);
     if !area_ready { return Ok(()); }
     if c.correction { next_world.set_ready(slot, s.id)?; }
     let commands = std::mem::take(&mut next.shared.as_mut().ok_or_else(model::bad)?.commands);
@@ -634,6 +703,16 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let mut impact_publications = Vec::new();
     let prior_projectile_count = world.projectiles.len();
     if c.phase == Phase::Driving {
+        if let Some(state)=&next_world.fragiles{
+            for (i,chunk) in state.catalog.chunks().into_iter().enumerate(){
+                let indices=state.native_destroyed(chunk);
+                if c.areas[i].1!=indices{
+                    if !area_ready||!c.areas[i].1.iter().all(|id|indices.contains(id)){return Err(model::bad());}
+                    next.outbox.push_back(super::destructible_wire::area_update(i,&indices)?);c.areas[i].1=indices.clone();
+                    println!("SHARED_CATALOG_PUBLICATION battle={} session={} chunk={} entity={} indices={:?} scene_version={}",next_world.id,s.id,chunk,super::destructible_wire::area_id(i)?,indices,next_world.scene_version());
+                }
+            }
+        }
         if next_world.destructible_enabled() && c.area_scene_sent != next_world.scene_version() {
             if c.area_scene_sent != 0 || next_world.scene_version() != 1 || !area_ready { return Err(model::bad()); }
             next.outbox.push_back(super::destructible_wire::update(super::destructible_wire::NATIVE_INDEX));
@@ -828,7 +907,7 @@ mod tests {
         let mut s = Session::new(id, [id as u8;16], peer(30000 + id as u16), now);
         s.login_attempt = Some(LoginAttempt::new(s.key, id, s.login_peer)); s
     }
-    fn driving(now: Instant) -> (Session, World) {
+    pub(super) fn driving(now: Instant) -> (Session, World) {
         let world = model::tests::world(now);
         let mut s = session(1, now);
         let identity = crate::identity091::Profile {
@@ -843,18 +922,18 @@ mod tests {
         let mut c = Client::new(0); c.phase = Phase::Driving; c.correction = true;
         c.binding = Some((0,true)); c.view = Some(world.clone()); s.shared = Some(c); (s,world)
     }
-    fn frame(s: &Session, payload: &[u8]) -> Frame {
+    pub(super) fn frame(s: &Session, payload: &[u8]) -> Frame {
         Frame { flags:0x458, sequence:Some(s.rx), cumulative:Some(0), selective:vec![],
             body:[vec![1],s.token.to_le_bytes().to_vec(),payload.to_vec()].concat(), piggybacks:vec![] }
     }
-    fn visible_pair(now: Instant) -> (Session, Session, World) {
+    pub(super) fn visible_pair(now: Instant) -> (Session, Session, World) {
         let (mut a,w) = driving(now);
         a.shared.as_mut().unwrap().creations = [Some((0,true));2];
         a.shared.as_mut().unwrap().ready_sent = [true;2];
         let mut b = a.clone(); b.id = 2; b.shared.as_mut().unwrap().slot = 1;
         (a,b,w)
     }
-    fn queued_bodies(s: &Session, now: Instant) -> Vec<Vec<u8>> {
+    pub(super) fn queued_bodies(s: &Session, now: Instant) -> Vec<Vec<u8>> {
         let mut tx = s.tx.clone(); let mut bodies = Vec::new();
         while let Some((_,_,raw)) = tx.due(now,s.rx).unwrap() {
             bodies.push(transport091::parse_interactive(&raw).unwrap().body);
@@ -923,7 +1002,7 @@ mod tests {
         let mut candidate=world.clone();candidate.advance(now+model::STEP).unwrap();
         let expected=candidate.destructible_transition().unwrap().clone();
         let mut runtime=IntegratedRuntime::new(pool);runtime.removal=Some(spec);let map=runtime.map().unwrap();
-        for slot in 0..2 {runtime.spawn_slot(world.id,slot,map.clone(),now).unwrap();}
+        for slot in 0..2 {runtime.spawn_slot(&world,slot,map.clone(),now).unwrap();}
         let deadline=now+Duration::from_secs(60);
         while !runtime.workers.iter().all(|w|w.as_ref().unwrap().ready()) {
             let at=Instant::now();assert!(at<deadline);for w in &mut runtime.workers{w.as_mut().unwrap().poll(at).unwrap();}
@@ -944,7 +1023,7 @@ mod tests {
         fresh.actors[1].ready=false;
         fresh.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],later).unwrap();
         let mut candidate=fresh.clone();candidate.advance(later+model::STEP).unwrap();
-        runtime.spawn_slot(fresh.id,0,map.clone(),later).unwrap();
+        runtime.spawn_slot(&fresh,0,map.clone(),later).unwrap();
         while !runtime.workers[0].as_ref().unwrap().ready(){
             assert!(Instant::now()<deadline);
             if let Some(state)=runtime.workers[0].as_mut().unwrap().poll(Instant::now()).unwrap() {
@@ -952,7 +1031,7 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(2));
         }
-        runtime.spawn_slot(fresh.id,1,map,later).unwrap();
+        runtime.spawn_slot(&fresh,1,map,later).unwrap();
         runtime.staged=Some(candidate);
         while runtime.staged.is_some(){assert!(Instant::now()<deadline);runtime.finish_removal(&mut fresh,Instant::now()).unwrap();std::thread::sleep(Duration::from_millis(2));}
         assert_eq!(fresh.scene_version(),1);assert!(!runtime.workers[1].as_ref().unwrap().ready());

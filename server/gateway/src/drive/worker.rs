@@ -6,6 +6,7 @@ use std::{collections::BTreeSet,fmt,fs,io::{self,Read,Write},path::{Path,PathBuf
 use serde::{Deserialize,Deserializer,de::{self,Visitor,MapAccess,SeqAccess}};
 use serde_json::{Value,Map,Number};
 use sha2::{Digest,Sha256};
+#[path="worker/catalog.rs"]
 mod catalog;
 pub use catalog::{CatalogSpec,CatalogEntry,Scene,CatalogAck,MAX_CATALOG_OBJECTS,MAX_REMOVED_OBJECTS};
 
@@ -696,7 +697,7 @@ pub(crate) mod tests {
             let ack=worker.take_catalog_ack().unwrap();assert_eq!(ack.tick,180+seq as u32*6);assert_eq!(ack.removed_object_ids,scene.ids());
             assert!(worker.take_catalog_ack().is_none());
             assert!(worker.sync_removed(empty.clone(),now).is_err());
-            let replacement=Scene::new(&spec,if scene.version()==1{&[1]}else{&[1,3,4]}).unwrap();
+            let replacement=Scene::new(&spec,if scene.version()==1{&[1][..]}else{&[1,3,4][..]}).unwrap();
             assert!(worker.sync_removed(replacement,now).is_err());
             let next=worker.advance(Input::STOP,now).unwrap();let request=json(&recv.recv().unwrap(),1024).unwrap();
             assert_eq!(request["version"],3);assert_eq!(request["scene_sha256"],scene.hash());

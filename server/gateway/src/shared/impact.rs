@@ -9,7 +9,7 @@
 use std::io;
 
 use super::projectile::Projectile;
-use super::{ap, collision, destructible, materials, terrain};
+use super::{ap, collision, destructible, fragiles, materials, terrain};
 
 pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-full-pose-v2";
 pub const PROFILE: &str = "ms1_ap_2570";
@@ -19,9 +19,9 @@ pub const MS1_AP_SHELL_COMPACT_ID: u32 = 2570;
 pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
 // Admission + launch, segment/terrain-query/vehicle-query triples, one terminal collision batch, and
 // nearest material record, optional AP or wreck outcome and terminal. The model admits only both actors'
-// original 20-shell loadouts, plus the one global destructible transition.
+// original 20-shell loadouts, plus at most one fragile damage event per shell.
 pub const MAX_EVENTS: usize = super::model::MAX_SHOTS
-    * (2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1) + 1;
+    * (2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1) + super::model::MAX_SHOTS;
 pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
 pub const MAX_SEGMENT_LENGTH: f32 = 200_000.0;
@@ -48,6 +48,7 @@ pub enum Stage {
     WreckImpact,
     TerrainContact,
     DestructibleTransition,
+    FragileDamage,
     Terminal,
 }
 
@@ -113,6 +114,8 @@ pub enum Event {
         terrain_revision: &'static str,
         scene_version: u32,
         excluded_instance: Option<u32>,
+        excluded_instances: Vec<u32>,
+        catalog_sha256: Option<String>,
         hit: Option<terrain::Hit>,
     },
     CollisionQuery {
@@ -200,6 +203,7 @@ pub enum Event {
         order:u32,battle_id:u64,shot_id:u32,server_tick:u32,
         terrain_contact_order:u32,transition:destructible::Transition,
     },
+    FragileDamage {order:u32,battle_id:u64,shot_id:u32,server_tick:u32,terrain_contact_order:u32,damage:fragiles::Damage},
     Terminal {
         order: u32,
         battle_id: u64,
@@ -223,6 +227,7 @@ impl Event {
             Self::WreckImpact { .. } => Stage::WreckImpact,
             Self::TerrainContact { .. } => Stage::TerrainContact,
             Self::DestructibleTransition { .. } => Stage::DestructibleTransition,
+            Self::FragileDamage { .. } => Stage::FragileDamage,
             Self::Terminal { .. } => Stage::Terminal,
         }
     }
@@ -240,6 +245,7 @@ impl Event {
             | Self::WreckImpact { order, .. }
             | Self::TerrainContact { order, .. }
             | Self::DestructibleTransition { order, .. }
+            | Self::FragileDamage { order, .. }
             | Self::Terminal { order, .. } => *order,
         }
     }
@@ -257,6 +263,7 @@ impl Event {
             | Self::WreckImpact { shot_id, .. }
             | Self::TerrainContact { shot_id, .. }
             | Self::DestructibleTransition { shot_id, .. }
+            | Self::FragileDamage { shot_id, .. }
             | Self::Terminal { shot_id, .. } => *shot_id,
         }
     }
@@ -269,10 +276,15 @@ pub struct Trace {
     next_order: u32,
     last_tick: u32,
     battle_id: Option<u64>,
+    fragiles: Option<fragiles::State>,
 }
 
 impl Trace {
     pub fn new() -> Self { Self::default() }
+    pub fn bind_fragiles(&mut self,catalog:std::sync::Arc<fragiles::Catalog>)->io::Result<()>{
+        if !self.events.is_empty()||self.fragiles.is_some(){return Err(invalid("late or duplicate fragile catalog"));}
+        self.fragiles=Some(fragiles::State::new(catalog));Ok(())
+    }
     pub fn events(&self) -> &[Event] { &self.events }
     pub fn terminal_shots(&self) -> &[u32] { &self.terminal_shots }
     pub fn has_terminal(&self, shot_id: u32) -> bool { self.terminal_shots.contains(&shot_id) }
@@ -428,7 +440,7 @@ impl Trace {
         let valid_stage = match reason {
             TerminalReason::TestLabImpact => self.last_stage(shot_id) == Some(Stage::ApResolution),
             TerminalReason::TestLabWreckImpact => self.last_stage(shot_id) == Some(Stage::WreckImpact),
-            TerminalReason::TerrainCollision => matches!(self.last_stage(shot_id),Some(Stage::TerrainContact|Stage::DestructibleTransition)),
+            TerminalReason::TerrainCollision => matches!(self.last_stage(shot_id),Some(Stage::TerrainContact|Stage::DestructibleTransition|Stage::FragileDamage)),
             TerminalReason::UnresolvedCollision =>
                 matches!(self.last_stage(shot_id), Some(Stage::Intersection | Stage::MaterialContact))
                     && self.selected_terrain(battle_id, shot_id, server_tick)?.is_none(),
@@ -558,6 +570,27 @@ impl Trace {
     }
     fn scene_version_before(&self,order:u32)->u32{
         u32::from(self.events.iter().any(|event| matches!(event,Event::DestructibleTransition{order:at,..} if *at<order)))
+            +self.events.iter().filter(|event|matches!(event,Event::FragileDamage{order:at,damage,..} if *at<order&&damage.health_after==0)).count() as u32
+    }
+    fn excluded_before(&self,order:u32)->Vec<u32>{
+        let mut ids=self.events.iter().filter_map(|event|match event{
+            Event::FragileDamage{order:at,damage,..} if *at<order&&damage.health_after==0=>Some(damage.instance_id),_=>None}).collect::<Vec<_>>();
+        ids.sort_unstable();ids
+    }
+    pub fn fragile_damage(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,damage:&fragiles::Damage)->io::Result<()>{
+        self.common(battle_id,shot_id,server_tick)?;
+        if self.has_terminal(shot_id)||damage.shot!=shot_id||damage.tick!=server_tick
+            ||self.admission_facts(shot_id).map(|(slot,_)|slot)!=Some(damage.shooter){return Err(invalid("fragile damage identity"));}
+        let (order,query,segment,hit)=match self.events.iter().rev().find(|e|e.shot_id()==shot_id){
+            Some(Event::TerrainContact{order,battle_id:b,server_tick:t,terrain_query_order,segment_order,hit,..}) if *b==battle_id&&*t==server_tick=>(*order,*terrain_query_order,*segment_order,*hit),
+            _=>return Err(invalid("fragile damage without contact")),
+        };
+        if hit!=damage.hit||self.terrain_for_query(battle_id,shot_id,server_tick,segment,query+1)?!=Some((query,Some(hit))){return Err(invalid("fragile damage query binding"));}
+        let mut state=self.fragiles.clone().ok_or_else(||invalid("fragile catalog absent"))?;
+        if state.contact(shot_id,damage.shooter,server_tick,hit)?.as_ref()!=Some(damage)
+            ||self.events.len()+2>MAX_EVENTS||self.next_order.checked_add(2).is_none(){return Err(invalid("fragile damage transaction"));}
+        self.push(Event::FragileDamage{order:self.next_order_value()?,battle_id,shot_id,server_tick,terrain_contact_order:order,damage:damage.clone()})?;
+        self.fragiles=Some(state);self.last_tick=server_tick;Ok(())
     }
 
     /// Fetch only the terrain query paired with this vehicle query. An absent
@@ -567,14 +600,17 @@ impl Trace {
         let previous = query_order.checked_sub(1).ok_or_else(|| invalid("terrain query order"))?;
         match self.events.iter().find(|event| event.order() == previous) {
             Some(Event::TerrainQuery { order, battle_id: battle, shot_id: shot, server_tick: tick,
-                segment_order: segment, terrain_revision, scene_version, excluded_instance, hit }) => {
+                segment_order: segment, terrain_revision, scene_version, excluded_instance, excluded_instances,catalog_sha256,hit }) => {
+                let catalog=self.fragiles.as_ref().map(|s|s.catalog.sha256.clone());
+                let generic=catalog.is_some();
+                let expected_single=if generic||*scene_version==0{None}else{Some(destructible::INSTANCE_ID)};
                 if *battle != battle_id || *shot != shot_id || *tick != server_tick
                     || *segment != segment_order || ![terrain::SOURCE_REVISION,terrain::WORLD_SOURCE_REVISION].contains(terrain_revision)
                     || *scene_version!=self.scene_version_before(*order)
-                    || *excluded_instance!=if *scene_version==0 {None}else{Some(destructible::INSTANCE_ID)}
+                    || *excluded_instance!=expected_single||*catalog_sha256!=catalog||*excluded_instances!=self.excluded_before(*order)
                     || (*scene_version!=0 && *terrain_revision!=terrain::WORLD_SOURCE_REVISION)
                     || hit.is_some_and(|hit| matches!(hit.surface,terrain::Surface::StaticObstacle{instance_id,..}
-                        if Some(instance_id)==*excluded_instance))
+                        if Some(instance_id)==*excluded_instance||excluded_instances.contains(&instance_id)))
                     || (*terrain_revision == terrain::SOURCE_REVISION && hit.is_some_and(|hit|
                         matches!(hit.surface,terrain::Surface::StaticObstacle{..}))) {
                     return Err(invalid("terrain query identity or segment binding"));
@@ -703,8 +739,14 @@ impl Trace {
         terrain: Option<&terrain::Terrain>,scene_version:u32,excluded_instance:Option<u32>)
         -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>, Option<terrain::Hit>)> {
         self.common(battle_id, shot_id, server_tick)?;
-        if scene_version>1 || scene_version!=self.scene_version_before(u32::MAX)
-            || excluded_instance!=if scene_version==0 {None}else{Some(destructible::INSTANCE_ID)}
+        let generic=self.fragiles.is_some();
+        let excluded_instances=self.fragiles.as_ref().map_or_else(Vec::new,fragiles::State::excluded);
+        let catalog_sha256=self.fragiles.as_ref().map(|s|s.catalog.sha256.clone());
+        let scene_version=if generic {self.fragiles.as_ref().unwrap().scene_version()}else{scene_version};
+        if (generic && (excluded_instance.is_some()||terrain.is_none_or(|t|t.source_revision()!=terrain::WORLD_SOURCE_REVISION)))
+            ||(!generic && (scene_version>1
+                ||excluded_instance!=if scene_version==0{None}else{Some(destructible::INSTANCE_ID)}))
+            || scene_version!=self.scene_version_before(u32::MAX)
             || (scene_version==1 && terrain.is_none()) {return Err(invalid("collision query scene revision or exclusion"));}
         let (segment_order, start, end) = match self.events.iter().rev()
             .find(|event| event.shot_id() == shot_id) {
@@ -712,7 +754,8 @@ impl Trace {
                 if *segment_tick_end == server_tick => (*order, *start, *end),
             _ => return Err(invalid("collision query without current unqueried segment")),
         };
-        let terrain_hit = match terrain { Some(terrain) => terrain.nearest_excluding(start, end,excluded_instance)?, None => None };
+        let terrain_hit = match terrain { Some(terrain) if generic=>terrain.nearest_excluding_many(start,end,&excluded_instances)?,
+            Some(terrain)=>terrain.nearest_excluding(start,end,excluded_instance)?,None=>None };
         let candidates = collision::query(mesh, start, end)?;
         let material = match (catalog, candidates.first()) {
             (Some(catalog), Some(nearest)) => Some(catalog.lookup(&nearest.mesh, &nearest.material)?),
@@ -723,7 +766,7 @@ impl Trace {
         // A future runtime adapter must commit query/terminal with its World
         // transaction so unrelated shots cannot consume that remaining slot.
         let closing_rows = 1 + usize::from(material.is_some() || terrain_hit.is_some())
-            + usize::from(scene_version==0 && terrain_hit.as_ref().is_some_and(destructible::selected));
+            + usize::from(generic||scene_version==0 && terrain_hit.as_ref().is_some_and(destructible::selected));
         if self.events.len() + added + closing_rows > MAX_EVENTS
             || self.next_order.checked_add((added + closing_rows) as u32).is_none() {
             return Err(invalid("collision query trace capacity"));
@@ -732,7 +775,7 @@ impl Trace {
         let mut batch = Vec::with_capacity(added);
         if let Some(terrain) = terrain {
             batch.push(Event::TerrainQuery { order: first_order, battle_id, shot_id, server_tick,
-                segment_order, terrain_revision: terrain.source_revision(), scene_version, excluded_instance, hit: terrain_hit });
+                segment_order, terrain_revision: terrain.source_revision(), scene_version, excluded_instance,excluded_instances,catalog_sha256, hit: terrain_hit });
         }
         let query_order = first_order + batch.len() as u32;
         batch.push(Event::CollisionQuery { order: query_order, battle_id, shot_id, server_tick,
@@ -829,7 +872,7 @@ mod tests {
         assert_eq!(MS1_GUN_COMPACT_ID, 5892);
         assert_eq!(MS1_AP_SHELL_COMPACT_ID, 2570);
         assert_eq!(MAX_SEGMENTS_PER_SHOT, 256);
-        assert_eq!(MAX_EVENTS, 36_041);
+        assert_eq!(MAX_EVENTS, 36_080);
     }
 
     #[test]
@@ -1066,6 +1109,32 @@ mod tests {
             bundle.materials(),&ground,0,None).unwrap();let hit=hit.unwrap();assert!(destructible::selected(&hit));
         assert_eq!(trace.terrain_contact(123,1,1001).unwrap(),hit);
         let transition=destructible::State::default().contact(1,0,1001,hit).unwrap().unwrap();(trace,transition)
+    }
+    fn fragile_batch()->(Trace,fragiles::Damage){
+        let bundle=super::super::geometry::tests::bundle();let ground=super::super::model::tests::destructible_terrain();
+        let catalog=fragiles::tests::catalog();catalog.bind_geometry(&ground).unwrap();
+        let mut trace=launched_trace();trace.fragiles=Some(fragiles::State::new(catalog.clone()));
+        trace.segment(123,1,1001,1000,[-402.31094,56.9,-410.],[-402.31094,56.9,-400.]).unwrap();
+        let (_,_,hit)=trace.collision_query_world(123,1,1001,&tagged_plate("Hull","armor_1",&ap_tag(1,1001)),bundle.materials(),&ground).unwrap();
+        let hit=hit.unwrap();assert_eq!(trace.terrain_contact(123,1,1001).unwrap(),hit);
+        let damage=fragiles::State::new(catalog).contact(1,0,1001,hit).unwrap().unwrap();(trace,damage)
+    }
+    #[test]fn imported_trace_refuses_forged_damage_catalog_exclusions_and_query_atomically(){
+        for mode in 0..10{
+            let(mut trace,mut damage)=fragile_batch();
+            match mode{
+                0=>damage.health_after=1,1=>damage.object_id+=1,2=>damage.scene_after=2,3=>damage.shooter=1,
+                4=>damage.hit.point[0]+=1.,5=>damage.object_revision="a".repeat(64),
+                _=>{if let Some(Event::TerrainQuery{catalog_sha256,excluded_instances,excluded_instance,scene_version,..})=trace.events.iter_mut().find(|e|matches!(e,Event::TerrainQuery{..})){
+                    match mode{6=>*catalog_sha256=Some("a".repeat(64)),7=>excluded_instances.push(1512),8=>*excluded_instance=Some(1513),9=>*scene_version=1,_=>unreachable!()}
+                }}
+            }
+            let before=trace.clone();assert!(trace.fragile_damage(123,1,1001,&damage).is_err(),"mode{mode}");assert_eq!(trace,before);
+        }
+        let(mut trace,damage)=fragile_batch();trace.fragile_damage(123,1,1001,&damage).unwrap();
+        let before=trace.clone();assert!(trace.fragile_damage(123,1,1001,&damage).is_err());assert_eq!(trace,before);
+        trace.terminal(123,1,1001,TerminalReason::TerrainCollision).unwrap();
+        assert_eq!(trace.fragiles.as_ref().unwrap().excluded(),vec![1513]);
     }
     #[test]fn destructible_trace_binds_current_hit_scene_and_exact_once_order(){
         let(mut trace,transition)=destructible_batch();let contact_order=trace.events.last().unwrap().order();
@@ -1723,7 +1792,7 @@ mod tests {
     }
 
     #[test]
-    fn full_ammo_world_queries_leave_one_global_transition_slot() {
+    fn full_ammo_world_queries_leave_one_fragile_damage_per_shot() {
         full_ammo_budget(false, true);
     }
 
@@ -1779,7 +1848,7 @@ mod tests {
             trace.terminal(123, shot_id, tick, if wreck { TerminalReason::TestLabWreckImpact }
                 else { TerminalReason::TestLabImpact }).unwrap();
         }
-        assert_eq!(trace.events().len(), if with_terrain { MAX_EVENTS-1 } else { 25_800 });
+        assert_eq!(trace.events().len(), if with_terrain { MAX_EVENTS-model::MAX_SHOTS } else { 25_800 });
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::TerrainQuery { .. })).count(),
             if with_terrain { model::MAX_SHOTS * MAX_SEGMENTS_PER_SHOT } else { 0 });
         assert_eq!(trace.terminal_shots().len(), model::MAX_SHOTS);
