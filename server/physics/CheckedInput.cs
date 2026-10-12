@@ -19,8 +19,18 @@ internal static class CheckedInput
     public const string ObjectRevision = "karelia-instance1513-v1";
     public const int MaxCatalogObjects = 64, MaxRemovedObjects = 40;
     public sealed record CatalogEntry(uint ObjectId, int InstanceId, int FirstTriangle, int TriangleCount, string Revision);
-    public sealed record CatalogSpec(string Hash, CatalogEntry[] Entries);
+    public sealed record CatalogSpec(string Hash, string Map, CatalogEntry[] Entries);
     public sealed record Scene(uint[] Ids, string Hash) { public uint Version => (uint)Ids.Length; }
+    private sealed record CatalogSource(string PhysicsHash, string ProjectileHash, int InstanceCount, int TriangleCount);
+    // Only source-audited initial geometry is admitted. These are map identities,
+    // not per-object allowlists; the catalog still supplies exact full spans.
+    private static CatalogSource CatalogProfile(string map) => map switch
+    {
+        "01_karelia" => new(PhysicsManifestHash, ProjectileManifestHash, 2918, 335551),
+        "05_prohorovka" => new("9d358a48da303abaf15572f478dddc16971864960d9341943cc6d207b32b3265",
+            "3db1ad3859ae2f5fed678ac5f148005cff38a3c915bb33dde3303de22e22bef7", 3904, 428597),
+        _ => throw new InvalidDataException("catalog map outside checked profiles")
+    };
 
     public static void Sha256(string? value)
     {
@@ -32,12 +42,13 @@ internal static class CheckedInput
     {
         using var doc = Json(FileBytes(Owned(root, path), 131072, hash));
         var d = doc.RootElement;
+        var source = CatalogProfile(map);
         Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "objects");
         if (d.GetProperty("version").GetInt32() != 2 || d.GetProperty("profile").GetString() != "test_lab" ||
-            map != "01_karelia" || d.GetProperty("map").GetString() != map ||
-            d.GetProperty("physics_manifest_sha256").GetString() != PhysicsManifestHash ||
-            d.GetProperty("projectile_manifest_sha256").GetString() != ProjectileManifestHash ||
-            obstacles.GetProperty("sha256").GetString() != PhysicsManifestHash)
+            d.GetProperty("map").GetString() != map ||
+            d.GetProperty("physics_manifest_sha256").GetString() != source.PhysicsHash ||
+            d.GetProperty("projectile_manifest_sha256").GetString() != source.ProjectileHash ||
+            obstacles.GetProperty("sha256").GetString() != source.PhysicsHash)
             throw new InvalidDataException("catalog profile mismatch");
         var rows = d.GetProperty("objects");
         if (rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() < 1 || rows.GetArrayLength() > MaxCatalogObjects)
@@ -52,8 +63,8 @@ internal static class CheckedInput
             int instance = row.GetProperty("instance_id").GetInt32(), first = row.GetProperty("first_triangle").GetInt32();
             int count = row.GetProperty("triangle_count").GetInt32();
             var revision = row.GetProperty("object_revision").GetString()!; Sha256(revision);
-            if (id <= previous || instance < 0 || instance >= 2918 || !instances.Add(instance) ||
-                first < 0 || count < 1 || count > 4096 || (long)first + count > 1_500_000)
+            if (id <= previous || instance < 0 || instance >= source.InstanceCount || !instances.Add(instance) ||
+                first < 0 || count < 1 || count > 4096 || (long)first + count > source.TriangleCount)
                 throw new InvalidDataException("catalog identity/span bound");
             previous = id; entries.Add(new(id, instance, first, count, revision));
         }
@@ -61,7 +72,7 @@ internal static class CheckedInput
         for (int i = 1; i < spans.Length; i++)
             if (spans[i].FirstTriangle < spans[i - 1].FirstTriangle + spans[i - 1].TriangleCount)
                 throw new InvalidDataException("overlapping catalog spans");
-        return new(hash, entries.ToArray());
+        return new(hash, map, entries.ToArray());
     }
 
     public static Scene MakeScene(CatalogSpec catalog, uint[] ids)
@@ -254,12 +265,15 @@ internal static class CheckedInput
             using var settings = new MeshShapeSettings(vertices.AsSpan(), triangles.AsSpan());
             return new MeshShape(settings);
         }
-        if (map != "01_karelia" || reference.GetProperty("sha256").GetString() != PhysicsManifestHash)
-            throw new InvalidDataException("one-object geometry source mismatch");
+        var source = CatalogProfile(map);
+        if ((catalog != null && catalog.Map != map) || reference.GetProperty("sha256").GetString() != source.PhysicsHash ||
+            triangles.Length != source.TriangleCount)
+            throw new InvalidDataException("removal geometry source mismatch");
         var instances = value.GetProperty("instances");
-        if (instances.GetArrayLength() != 2918) throw new InvalidDataException("one-object instance count");
+        if (instances.GetArrayLength() != source.InstanceCount) throw new InvalidDataException("removal source instance count");
         if (removal != null)
         {
+        if (map != "01_karelia") throw new InvalidDataException("legacy removal requires Karelia");
         var item = instances[removal.InstanceId];
         if (item.GetProperty("kind").GetString() != "model" || item.GetProperty("instance").GetString() != "/model[2]" ||
             item.GetProperty("resource").GetString() != "content/MilitaryEnvironment/mle009_BoxCamouflage/normal/lod0/mle009_BoxCamouflage.model" ||

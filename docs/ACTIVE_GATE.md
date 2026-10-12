@@ -1,3 +1,24 @@
+# P06P accepted — Prohorovka cumulative native battle
+
+Owner accepted finalnative01: driving/aim/RMB, independent crates and passage,
+world/live/wreck effects, ammo/reload and continued control all work. Frozen
+prefix confirms20shots,3independent removals, HP90→60→30→0 and5wreck hits;
+both clients record one death each and5native wreck effects. Post-death shots,
+aim and steering are recorded; significant post-death forward travel is not.
+
+Tested sourcec03b3b5:603 Rust PASS,47 Python PASS/1existing privilege SKIP,
+exact root physics25/25 PASS, canonical+legacy compilation/layout PASS. Current
+runtime files match. Both native catalogs match44chunks/2156entries;9whole
+fragiles are supported across6chunks. Originalmap05 uses nativearena4.
+**Acceptance:PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB.** Standing merge/push
+is authorized. Trees/compound objects and historical exact rules remain open.
+Near-lane IPC1/3 bitwise comparison differs1.65cm after fence contact; exact
+coverage/grounded behavior pass. Failed comparison and unknown cause retained;
+no bit identity claim across different Jolt shape partitions. P06O rollback kept.
+[Files, commands, evidence, limitations and rollback](research/P06P_PROHOROVKA_CUMULATIVE.md).
+**One next recommended card:** original-resource tree falling/state replication
+and matching collision changes on this accepted Prohorovka baseline.
+
 # P06O accepted — reusable fragile catalog and cumulative native gameplay
 
 Branch `codex/p06o-destructible-import`, accepted base main 5f38525. Original

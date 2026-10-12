@@ -271,6 +271,7 @@ impl Event {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Trace {
+    map: crate::map_profile091::MapId,
     events: Vec<Event>,
     terminal_shots: Vec<u32>,
     next_order: u32,
@@ -281,8 +282,9 @@ pub struct Trace {
 
 impl Trace {
     pub fn new() -> Self { Self::default() }
+    pub fn new_for_map(map: crate::map_profile091::MapId) -> Self { Self {map,..Self::default()} }
     pub fn bind_fragiles(&mut self,catalog:std::sync::Arc<fragiles::Catalog>)->io::Result<()>{
-        if !self.events.is_empty()||self.fragiles.is_some(){return Err(invalid("late or duplicate fragile catalog"));}
+        if catalog.map!=self.map||!self.events.is_empty()||self.fragiles.is_some(){return Err(invalid("late or duplicate fragile catalog"));}
         self.fragiles=Some(fragiles::State::new(catalog));Ok(())
     }
     pub fn events(&self) -> &[Event] { &self.events }
@@ -548,7 +550,7 @@ impl Trace {
     pub fn destructible_transition(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,
         transition:&destructible::Transition)->io::Result<()> {
         self.common(battle_id,shot_id,server_tick)?;transition.validate()?;
-        if self.has_terminal(shot_id) || transition.shot!=shot_id || transition.tick!=server_tick
+        if self.map!=crate::map_profile091::MapId::Karelia || self.has_terminal(shot_id) || transition.shot!=shot_id || transition.tick!=server_tick
             || self.admission_facts(shot_id).map(|(slot,_)|slot)!=Some(transition.shooter)
             || self.scene_version_before(u32::MAX)!=0 {return Err(invalid("destructible identity or repeated transition"));}
         let (contact_order,query,segment,hit)=match self.events.iter().rev().find(|event|event.shot_id()==shot_id){
@@ -605,13 +607,13 @@ impl Trace {
                 let generic=catalog.is_some();
                 let expected_single=if generic||*scene_version==0{None}else{Some(destructible::INSTANCE_ID)};
                 if *battle != battle_id || *shot != shot_id || *tick != server_tick
-                    || *segment != segment_order || ![terrain::SOURCE_REVISION,terrain::WORLD_SOURCE_REVISION].contains(terrain_revision)
+                    || *segment != segment_order || ![self.map.spec().terrain_revision,self.map.spec().world_revision].contains(terrain_revision)
                     || *scene_version!=self.scene_version_before(*order)
                     || *excluded_instance!=expected_single||*catalog_sha256!=catalog||*excluded_instances!=self.excluded_before(*order)
-                    || (*scene_version!=0 && *terrain_revision!=terrain::WORLD_SOURCE_REVISION)
+                    || (*scene_version!=0 && *terrain_revision!=self.map.spec().world_revision)
                     || hit.is_some_and(|hit| matches!(hit.surface,terrain::Surface::StaticObstacle{instance_id,..}
                         if Some(instance_id)==*excluded_instance||excluded_instances.contains(&instance_id)))
-                    || (*terrain_revision == terrain::SOURCE_REVISION && hit.is_some_and(|hit|
+                    || (*terrain_revision == self.map.spec().terrain_revision && hit.is_some_and(|hit|
                         matches!(hit.surface,terrain::Surface::StaticObstacle{..}))) {
                     return Err(invalid("terrain query identity or segment binding"));
                 }
@@ -730,7 +732,7 @@ impl Trace {
     pub fn collision_query_world_filtered(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,
         mesh:&collision::Mesh,catalog:&materials::Catalog,terrain:&terrain::Terrain,scene_version:u32,excluded_instance:Option<u32>)
         ->io::Result<(Vec<collision::Candidate>,Option<materials::MaterialFacts>,Option<terrain::Hit>)>{
-        if terrain.source_revision()!=terrain::WORLD_SOURCE_REVISION{return Err(invalid("destructible query requires pinned obstacle scene"));}
+        if terrain.source_revision()!=self.map.spec().world_revision{return Err(invalid("destructible query requires pinned obstacle scene"));}
         self.collision_batch(battle_id,shot_id,server_tick,mesh,Some(catalog),Some(terrain),scene_version,excluded_instance)
     }
 
@@ -739,11 +741,12 @@ impl Trace {
         terrain: Option<&terrain::Terrain>,scene_version:u32,excluded_instance:Option<u32>)
         -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>, Option<terrain::Hit>)> {
         self.common(battle_id, shot_id, server_tick)?;
+        if terrain.is_some_and(|t|t.map_id()!=self.map) {return Err(invalid("collision query map mismatch"));}
         let generic=self.fragiles.is_some();
         let excluded_instances=self.fragiles.as_ref().map_or_else(Vec::new,fragiles::State::excluded);
         let catalog_sha256=self.fragiles.as_ref().map(|s|s.catalog.sha256.clone());
         let scene_version=if generic {self.fragiles.as_ref().unwrap().scene_version()}else{scene_version};
-        if (generic && (excluded_instance.is_some()||terrain.is_none_or(|t|t.source_revision()!=terrain::WORLD_SOURCE_REVISION)))
+        if (generic && (excluded_instance.is_some()||terrain.is_none_or(|t|t.source_revision()!=self.map.spec().world_revision)))
             ||(!generic && (scene_version>1
                 ||excluded_instance!=if scene_version==0{None}else{Some(destructible::INSTANCE_ID)}))
             || scene_version!=self.scene_version_before(u32::MAX)
@@ -1176,6 +1179,21 @@ mod tests {
         let mut trace=launched_trace();let before=trace.clone();assert!(trace.destructible_transition(123,1,1000,&transition).is_err());assert_eq!(trace,before);
         let (mut trace,_)=terrain_batch(Some(0.),0.);trace.terrain_contact(123,1,1001).unwrap();let before=trace.clone();
         assert!(trace.destructible_transition(123,1,1001,&transition).is_err());assert_eq!(trace,before);
+    }
+    #[test]
+    fn wrong_map_collision_query_fails_without_trace_mutation_in_both_directions() {
+        use crate::map_profile091::MapId;
+        let bundle=super::super::geometry::tests::bundle();
+        let mesh=tagged_plate("Hull","armor_1",&ap_tag(1,1001));
+        let karelia=test_terrain(None);
+        let prohorovka=terrain::tests::actual_prohorovka();
+        for (map,wrong) in [(MapId::Karelia,prohorovka),(MapId::Prohorovka,&karelia)] {
+            let mut trace=launched_trace();trace.map=map;
+            trace.segment(123,1,1001,1000,[-1.,0.,0.],[3.,0.,0.]).unwrap();
+            let before=trace.clone();
+            assert!(trace.collision_query_world(123,1,1001,&mesh,bundle.materials(),wrong).is_err());
+            assert_eq!(trace,before);
+        }
     }
     #[test] fn combined_query_preserves_vehicle_facts_and_records_exact_terrain_batch() {
         let bundle=super::super::geometry::tests::bundle(); let ground=test_terrain(Some(1.0));

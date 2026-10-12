@@ -292,3 +292,19 @@ fn full_shot_bound_records_partial_damage_without_implicit_destruction() {
     assert_eq!(state.scene_version(), 0); assert!(state.excluded().is_empty());
     must_reject_unchanged(&mut state, MAX_SHOTS as u32 + 1, 0, 1100, hit(0));
 }
+
+#[test]
+fn catalog_map_pins_are_atomic_and_geometry_cannot_cross_maps() {
+    let map=MapId::Prohorovka;
+    let mut value=manifest();value["map"]=json!(map.asset());
+    assert!(parse(&value).is_err());
+    value["physics_manifest_sha256"]=json!(map.spec().physics_manifest_sha256);
+    assert!(parse(&value).is_err());
+    value["projectile_manifest_sha256"]=json!(map.spec().projectile_manifest_sha256);
+    let catalog=parse(&value).unwrap();
+    assert_eq!(catalog.map,map);
+    let wrong=terrain::tests::fixture(0.,1.,2,vec![0.;4]);
+    assert!(catalog.bind_geometry(&wrong).is_err());
+    assert!(super::super::impact::Trace::new().bind_fragiles(Arc::new(catalog.clone())).is_err());
+    assert!(super::super::impact::Trace::new_for_map(map).bind_fragiles(Arc::new(catalog)).is_ok());
+}

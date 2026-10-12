@@ -35,6 +35,8 @@ mod arena_ready091;
 mod arena_movement091;
 #[path = "../../../server/gateway/src/drive/model.rs"]
 mod map_drive091;
+#[path = "../../../server/gateway/src/drive/map_profile.rs"]
+mod map_profile091;
 #[path = "../../../server/gateway/src/drive/worker.rs"]
 mod map_drive_worker091;
 #[path = "../../../server/gateway/src/drive/world.rs"]

@@ -57,8 +57,8 @@ fn actor(w: &World, slot: usize) -> io::Result<&Actor> {
 pub fn reset(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     let a = actor(w, slot)?;
     let mut b = vec![0x13, 0x3b]; // Account.onArenaCreated
-    b.extend(arena::reset_to_avatar_base(&arena::AvatarBaseSeed { entity_id: avatar_id(slot)?,
-        name: &a.identity.name, arena_unique_id: w.id })?); Ok(b)
+    b.extend(arena::reset_to_avatar_base_for_map(&arena::AvatarBaseSeed { entity_id: avatar_id(slot)?,
+        name: &a.identity.name, arena_unique_id: w.id }, w.map)?); Ok(b)
 }
 pub fn roster(w: &World) -> io::Result<Vec<u8>> {
     if w.actors.len() != model::CAPACITY { return Err(model::bad()); }
@@ -88,7 +88,7 @@ pub fn announcement(w: &World, own: usize) -> io::Result<Vec<u8>> {
     for (i, value) in [a.direction[2], a.direction[1], a.direction[0]].into_iter().enumerate() {
         b[27 + i * 4..31 + i * 4].copy_from_slice(&value.to_le_bytes());
     }
-    b.extend(arena::karelia_space_data(SPACE, (SPACE as u64).to_le_bytes())?);
+    b.extend(arena::space_data_for_map(SPACE, (SPACE as u64).to_le_bytes(), w.map)?);
     b.extend(roster(w)?);
     for slot in 0..model::CAPACITY {
         b.push(0x0a); b.extend(vehicle_id(slot)?.to_le_bytes()); b.push(slot as u8);
@@ -241,6 +241,42 @@ pub fn publication(w: &World, visible: [bool; 2]) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
     use std::time::Instant;
+    #[test] fn world_map_controls_native_base_and_geometry_without_changing_battle_binding() {
+        use crate::map_profile091::MapId;
+        let now = Instant::now();
+        let mut w = model::tests::world(now);
+        assert_eq!(w.map, MapId::Karelia);
+        for own in 0..model::CAPACITY {
+            w.map = MapId::Karelia;
+            let old_binding = binding(&w, own, now).unwrap();
+            let old_vehicle = create_vehicle(&w, own).unwrap();
+            let old_announcement = announcement(&w, own).unwrap();
+            for (map, arena_bytes, geometry) in [
+                (MapId::Karelia, [1, 0, 0, 0], b"spaces/01_karelia".as_slice()),
+                (MapId::Prohorovka, [4, 0, 0, 0], b"spaces/05_prohorovka".as_slice()),
+            ] {
+                w.map = map;
+                let base = reset(&w, own).unwrap();
+                assert_eq!(&base[..5], &[0x13, 0x3b, 4, 0, 5]);
+                let name_len = base[13] as usize;
+                assert_eq!(name_len, w.actors[own].identity.name.len());
+                let arena_at = 14 + name_len + 8;
+                assert_eq!(&base[arena_at..arena_at + 4], &arena_bytes);
+                let entry = announcement(&w, own).unwrap();
+                // createCellPlayer is a complete VAR2 message. Its direction,
+                // position, space and vehicle binding must survive map selection.
+                let space_at = 3 + u16::from_le_bytes([entry[1], entry[2]]) as usize;
+                assert_eq!(space_at, 46);
+                assert_eq!(&entry[..space_at], &old_announcement[..space_at]);
+                assert_eq!(entry[space_at], 7);
+                let space_end = space_at + 3 +
+                    u16::from_le_bytes([entry[space_at + 1], entry[space_at + 2]]) as usize;
+                assert_eq!(&entry[space_at + 81..space_end], geometry);
+                assert_eq!(binding(&w, own, now).unwrap(), old_binding);
+                assert_eq!(create_vehicle(&w, own).unwrap(), old_vehicle);
+            }
+        }
+    }
     #[test] fn aiming_routes_validate_complete_fixed_args_and_owned_vehicle() {
         for own in 0..2 {
             for id in [0x8f,0x0f] {

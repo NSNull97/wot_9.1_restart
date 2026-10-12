@@ -666,6 +666,23 @@ pub(crate) mod tests {
     fn good_catalog_ack(seq:u32,spec:&CatalogSpec,scene:&Scene)->Value{serde_json::json!({
         "version":3,"event":"scene_synced","generation":1,"config_sha256":"a".repeat(64),"catalog_sha256":spec.sha256(),
         "advance_seq":seq,"tick":180+seq*6,"scene_version":scene.version(),"removed_object_ids":scene.ids(),"scene_sha256":scene.hash()})}
+    #[test]fn catalog_ready_is_bound_to_its_selected_map_not_only_config_hash(){
+        use crate::map_profile091::MapId;
+        for map_id in [MapId::Karelia,MapId::Prohorovka]{
+            let spec=catalog::tests::spec_for(map_id,3);let scene=Scene::new(&spec,&[1,3]).unwrap();
+            let mut selected=map();selected.asset=map_id.asset().into();selected.arena_type_id=map_id.arena_type_id();
+            let mut ready=good_catalog_state(0,&spec,&scene);ready["map"]=map_id.asset().into();
+            let raw=serde_json::to_vec(&ready).unwrap();
+            assert_eq!(catalog::response(&raw,&selected,&spec,1,0,None,&scene).unwrap().scene_version,2);
+            let other=if map_id==MapId::Karelia{MapId::Prohorovka}else{MapId::Karelia};
+            let mut mismatched=selected.clone();mismatched.asset=other.asset().into();mismatched.arena_type_id=other.arena_type_id();
+            // A self-consistent response with a reused config hash cannot
+            // substitute another map underneath this retained catalog.
+            ready["map"]=other.asset().into();let raw=serde_json::to_vec(&ready).unwrap();
+            assert!(catalog::response(&raw,&mismatched,&spec,1,0,None,&scene).is_err());
+            assert!(catalog::response(&raw,&selected,&spec,1,0,None,&scene).is_err());
+        }
+    }
     #[test]fn catalog_bootstrap_binds_restored_scene_before_ready(){
         let spec=catalog::tests::spec(3);let restored=Scene::new(&spec,&[1,3]).unwrap();let now=Instant::now();
         let (mut worker,send,_)=fake_worker(now);worker.catalog=Some(spec.clone());worker.catalog_scene=Some(restored.clone());

@@ -20,6 +20,9 @@ except NameError:
 
 MAX_SPEC_BYTES = 32768
 MAX_OUTPUT_BYTES = 16 * 1024 * 1024
+# Whole-map target selection remains bounded and is never truncated. The
+# original Prohorovka import selects 44 fragile-containing chunks; two passes
+# take 88 observations, within the existing finite load/capture budget.
 MAX_CHUNKS = 64
 MAX_ITEMS = 256
 MAX_OBSERVATIONS = 300
@@ -120,8 +123,10 @@ class Probe(object):
     def advance(self, player, manager, world, math_api):
         require(not self.complete, 'catalog probe already complete')
         self.observations += 1
-        require(player.arena.arenaType.geometryName == self.spec['map'],
-                'native catalog map differs from spec')
+        native_map = player.arena.arenaType.geometryName
+        require(native_map == self.spec['map'],
+                'native catalog map differs from spec: actual=%s expected=%r' %
+                (repr(native_map)[:80], self.spec['map']))
         space = manager.getSpaceID()
         player_space = player.spaceID
         self.space_diagnostic = dict(manager_space=repr(space)[:80],
