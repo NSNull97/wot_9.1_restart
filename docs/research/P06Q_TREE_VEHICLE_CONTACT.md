@@ -125,17 +125,21 @@ Results:
 - Python: 39 tests, **PASS**. The final log is
   `local/evidence/20261012-p06q-tree-contact-01/tests/importer-tests-final.log`.
 - Gateway: 614 tests, **PASS_ISOLATED_BUILD** on the atomic contact and
-  mass/closing-speed ramming policy. Canonical final receipt and executable
-  hashes are recorded after the clean-head final-10 build.
+  mass/closing-speed ramming policy. Canonical final-10 receipt:
+  `local/build/server/gateway-p06q-final-10/result.json`; receipt SHA256
+  `02aa3fe808ecb72e17445b1cbc706c457cfd9678885d44ad908cc92d6eab11e6`,
+  executable SHA256
+  `9c884b8d187e576cfaedf384d72558e1a30bf705434b0c33da17e9f792adcfbe`.
   The intermediate atomic-only receipt remains
   `local/build/server/gateway-p06q-contact-atomic-01/result.json`.
 - Helper guards: 12 tests, **PASS**. The runtime command accepts the joined
   P06Q v2 manifest envelope (240 KiB) while retaining the 128 KiB ceiling for
   legacy v1 catalogs; an unbound v2 catalog is rejected.
-- Runtime preflight `contactprep04`: **PREFLIGHT_ONLY_NOT_STARTED**. The
-  joined v2 manifest, Prohorovka pool, final-09 executable and source HEAD all
-  passed their pins; no gateway, worker, or client process started. A final-10
-  preflight will be recorded after this report commit.
+- Runtime preflight `contactprep05`: **PREFLIGHT_ONLY_NOT_STARTED**. The
+  joined v2 manifest, Prohorovka pool, final-10 executable and source HEAD all
+  passed their pins; no gateway, worker, or client process started. Receipt:
+  `local/evidence/20261012-p06q-tree-contact-01/tests/runtime-preflight-contactprep05.json`
+  (SHA256 `2bfbfa8f0f902379ad1c67dc8dc6ab3ecb2ba50282570868f2de7b57a4fb61dc`).
 - Physics: **PASS_ISOLATED_BUILD**. Receipt:
   `local/build/server/physics-p06q-final-02/result.json`; DLL SHA256
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`.

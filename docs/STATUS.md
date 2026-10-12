@@ -21,8 +21,8 @@ Checks completed:
 
 - Python importer/probe: **39 tests PASS**;
 - gateway isolated build: **614 Rust tests PASS** on the atomic contact and
-  mass/closing-speed ramming policy; final canonical rebuild is recorded as
-  `final-10` below after this report commit;
+  mass/closing-speed ramming policy; final-10 executable SHA
+  `9c884b8d187e576cfaedf384d72558e1a30bf705434b0c33da17e9f792adcfbe`;
 - physics worker isolated build: **PASS**, DLL SHA
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`;
 - `git diff --check`: **PASS**; no diagnostic processes remain running.
@@ -40,7 +40,7 @@ Evidence inventory:
 SHA `d3aae3255e51a583c94e2cdc910f9d70bb36f0f06d66e61928b9d5a513e8884d`;
 probe spec SHA `5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd`;
 build receipt `local/build/server/gateway-p06q-final-10/result.json` (SHA256
-recorded after the final clean-head rebuild), plus
+`02aa3fe808ecb72e17445b1cbc706c457cfd9678885d44ad908cc92d6eab11e6`), plus
 `local/build/server/physics-p06q-final-02/result.json`.
 Native run and join receipt:
 `local/evidence/20261012-p06q-tree-contact-01/import/native-join01/receipt.json`.
@@ -52,10 +52,10 @@ The runtime helper now accepts the 240 KiB joined P06Q v2 manifest with a
 guard tests pass. A private worker contact smoke remains diagnostic only: the
 test-lab vehicle settles against the imported static mesh before a catalog body
 callback is emitted, so no contact or destruction claim is made from it.
-Fresh runtime preflight `contactprep04` passed all pins and returned
+Fresh runtime preflight `contactprep05` passed all pins and returned
 `PREFLIGHT_ONLY_NOT_STARTED`; no gateway, worker, or client was launched.
 Receipt SHA256 is
-recorded after the final clean-head preflight.
+`2bfbfa8f0f902379ad1c67dc8dc6ab3ecb2ba50282570868f2de7b57a4fb61dc`.
 
 **Acceptance: PASS_NATIVE_CATALOG_PROBE_PENDING_OWNER_CONTACT.** Native
 catalog export, native mapping, and two-client catalog agreement are verified.
