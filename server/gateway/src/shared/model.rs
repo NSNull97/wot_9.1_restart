@@ -82,6 +82,7 @@ pub struct TerrainContact {
 #[derive(Clone)]
 pub struct World {
     pub id: u64,
+    pub map: crate::map_profile091::MapId,
     pub actors: Vec<Actor>,
     pub started: Option<Instant>,
     last: Instant,
@@ -101,8 +102,11 @@ pub struct World {
 
 impl World {
     pub fn new(id: u64, now: Instant) -> io::Result<Self> {
+        Self::new_for_map(id, now, crate::map_profile091::MapId::Karelia)
+    }
+    pub fn new_for_map(id: u64, now: Instant, map: crate::map_profile091::MapId) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
-        Ok(Self { id, actors: Vec::new(), started: None, last: now, tick: 1000,
+        Ok(Self { id, map, actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new(),
             geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None })
