@@ -21,8 +21,8 @@ Checks completed:
 
 - Python importer/probe: **39 tests PASS**;
 - gateway isolated build: **614 Rust tests PASS** on the atomic contact and
-  mass/closing-speed ramming policy; final-11 executable SHA
-  `7d215fff8442bcb2ad655d72f7eb7eaae1382f526544a7e17395c897f5c57d6d`;
+  mass/closing-speed ramming policy; final-12 executable SHA
+  `418818d1012e0a25c4d8594d5bdb86f05beb8ed351b6300c492c8a70017fac22`;
 - physics worker isolated build: **PASS**, DLL SHA
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`;
 - `git diff --check`: **PASS**; no diagnostic processes remain running.
@@ -39,8 +39,8 @@ Evidence inventory:
 `local/evidence/20261012-p06q-tree-contact-01/import/inventory01/inventory.json`
 SHA `d3aae3255e51a583c94e2cdc910f9d70bb36f0f06d66e61928b9d5a513e8884d`;
 probe spec SHA `5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd`;
-build receipt `local/build/server/gateway-p06q-final-11/result.json` (SHA256
-`1e0770db77bf4449f305de4c88c8ba766ab2024f80903e6adf51d410ab7bda3e`), plus
+build receipt `local/build/server/gateway-p06q-final-12/result.json` (SHA256
+`b886ddb62cc39a72229f33f8ba2f6b980d231dc6b7fbe523727fb3a739eb7189`), plus
 `local/build/server/physics-p06q-final-02/result.json`.
 Native run and join receipt:
 `local/evidence/20261012-p06q-tree-contact-01/import/native-join01/receipt.json`.
@@ -52,10 +52,10 @@ The runtime helper now accepts the 240 KiB joined P06Q v2 manifest with a
 guard tests pass. A private worker contact smoke remains diagnostic only: the
 test-lab vehicle settles against the imported static mesh before a catalog body
 callback is emitted, so no contact or destruction claim is made from it.
-Fresh runtime preflight `contactprep06` passed all pins and returned
+Fresh runtime preflight `contactprep07` passed all pins and returned
 `PREFLIGHT_ONLY_NOT_STARTED`; no gateway, worker, or client was launched.
 Receipt SHA256 is
-`f532f21b8242c42292a4fec058bdf6f43a32558b3c4c5ca34039949745ed013b`.
+`84211bd12a0260363b60db2688d850acd9d81191ee1c0cb2f025529057266b83`.
 
 **Acceptance: PASS_NATIVE_CATALOG_PROBE_PENDING_OWNER_CONTACT.** Native
 catalog export, native mapping, and two-client catalog agreement are verified.

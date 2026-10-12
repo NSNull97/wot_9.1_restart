@@ -125,21 +125,21 @@ Results:
 - Python: 39 tests, **PASS**. The final log is
   `local/evidence/20261012-p06q-tree-contact-01/tests/importer-tests-final.log`.
 - Gateway: 614 tests, **PASS_ISOLATED_BUILD** on the atomic contact and
-  mass/closing-speed ramming policy. Canonical final-11 receipt:
-  `local/build/server/gateway-p06q-final-11/result.json`; receipt SHA256
-  `1e0770db77bf4449f305de4c88c8ba766ab2024f80903e6adf51d410ab7bda3e`,
+  mass/closing-speed ramming policy. Canonical final-12 receipt:
+  `local/build/server/gateway-p06q-final-12/result.json`; receipt SHA256
+  `b886ddb62cc39a72229f33f8ba2f6b980d231dc6b7fbe523727fb3a739eb7189`,
   executable SHA256
-  `7d215fff8442bcb2ad655d72f7eb7eaae1382f526544a7e17395c897f5c57d6d`.
+  `418818d1012e0a25c4d8594d5bdb86f05beb8ed351b6300c492c8a70017fac22`.
   The intermediate atomic-only receipt remains
   `local/build/server/gateway-p06q-contact-atomic-01/result.json`.
 - Helper guards: 12 tests, **PASS**. The runtime command accepts the joined
   P06Q v2 manifest envelope (240 KiB) while retaining the 128 KiB ceiling for
   legacy v1 catalogs; an unbound v2 catalog is rejected.
-- Runtime preflight `contactprep06`: **PREFLIGHT_ONLY_NOT_STARTED**. The
-  joined v2 manifest, Prohorovka pool, final-11 executable and source HEAD all
+- Runtime preflight `contactprep07`: **PREFLIGHT_ONLY_NOT_STARTED**. The
+  joined v2 manifest, Prohorovka pool, final-12 executable and source HEAD all
   passed their pins; no gateway, worker, or client process started. Receipt:
-  `local/evidence/20261012-p06q-tree-contact-01/tests/runtime-preflight-contactprep06.json`
-  (SHA256 `f532f21b8242c42292a4fec058bdf6f43a32558b3c4c5ca34039949745ed013b`).
+  `local/evidence/20261012-p06q-tree-contact-01/tests/runtime-preflight-contactprep07.json`
+  (SHA256 `84211bd12a0260363b60db2688d850acd9d81191ee1c0cb2f025529057266b83`).
 - Physics: **PASS_ISOLATED_BUILD**. Receipt:
   `local/build/server/physics-p06q-final-02/result.json`; DLL SHA256
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`.
