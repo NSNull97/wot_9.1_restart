@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -20,7 +21,7 @@ from client_probe import to_element
 from packed_xml import decode
 from hangar_config import overrides
 
-MODULES = ('sr_interactive', 'collision_oracle', 'destructible_probe', 'project_auth', 'project_preferences', 'hangar_bootstrap', 'hangar_ui_probe', 'hangar_capabilities', 'crew_capabilities', 'ms1_crew_probe', 'ms1_crew_scenario', 'hangar_limits_scenario', 'hangar_windows_scenario', 'hangar_relogin_scenario', 'account_switch_scenario', 'long_hangar_scenario', 'ms1_ammo_probe', 'ms1_ammo_scenario', 'arena_entry_probe', 'arena_bootstrap', 'arena_space_scenario', 'arena_vehicle_scenario', 'arena_ready_scenario', 'arena_movement_scenario', 'map_drive_scenario', 'map_drive_client', 'map_drive_acceptance')
+MODULES = ('sr_interactive', 'collision_oracle', 'destructible_probe', 'destructible_catalog_probe', 'project_auth', 'project_preferences', 'hangar_bootstrap', 'hangar_ui_probe', 'hangar_capabilities', 'crew_capabilities', 'ms1_crew_probe', 'ms1_crew_scenario', 'hangar_limits_scenario', 'hangar_windows_scenario', 'hangar_relogin_scenario', 'account_switch_scenario', 'long_hangar_scenario', 'ms1_ammo_probe', 'ms1_ammo_scenario', 'arena_entry_probe', 'arena_bootstrap', 'arena_space_scenario', 'arena_vehicle_scenario', 'arena_ready_scenario', 'arena_movement_scenario', 'map_drive_scenario', 'map_drive_client', 'map_drive_acceptance')
 LOGS = ('python.log', 'Influx_PS.log', 'Influx_PS.bak')
 
 
@@ -52,6 +53,21 @@ def target(root, relative):
         if part.is_symlink() or (hasattr(part, 'is_junction') and part.is_junction()):
             raise ValueError('linked client target refused')
     return path
+
+
+def catalog_probe_settings(value, paths, shared_lab, control):
+    if value is None:
+        return None
+    if not shared_lab or control is None:
+        raise ValueError('catalog preprocessing requires shared lab and explicit control')
+    path = local_path(value, paths)
+    module_spec = importlib.util.spec_from_file_location(
+        '_catalog_spec_validator', ROOT/'client_patch/destructible_catalog_probe.py')
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+    payload = read_limited(path, module.MAX_SPEC_BYTES)
+    module.validate_spec_payload(payload)
+    return {'path': str(path), 'sha256': digest(payload)}
 
 
 def file_hash(path):
@@ -116,6 +132,8 @@ def prepare(args):
         raise ValueError('control must be a dedicated ignored local file')
     if args.diagnostic_no_license_dialog and not control:
         raise ValueError('diagnostic license dialog override requires explicit one-shot control')
+    catalog_spec = catalog_probe_settings(getattr(args, 'destructible_catalog_spec', None),
+                                          paths, shared_lab, control)
     disable_dialog = args.disable_legacy_license_dialog or args.diagnostic_no_license_dialog
     checked_originals = ['res/engine_config.xml', 'paths.xml', 'res/text/LC_MESSAGES/menu.mo',
                          'res/text/LC_MESSAGES/system_messages.mo']
@@ -213,6 +231,8 @@ def prepare(args):
                 'enable_map_drive':bool(args.enable_map_drive)}
     if shared_lab:
         settings['enable_shared_lab'] = True
+    if catalog_spec is not None:
+        settings['destructible_catalog_spec'] = catalog_spec
     payloads['sr_interactive_settings.json'] = (json.dumps(settings, ensure_ascii=True, indent=2)+'\n').encode()
     sources = []
     for module in MODULES:
@@ -379,6 +399,8 @@ def main():
     prep.add_argument('--profile-dir',required=True)
     prep.add_argument('--trace-dir',required=True)
     prep.add_argument('--test-control')
+    prep.add_argument('--destructible-catalog-spec',
+                      help='Pinned local identity preprocessing specification; requires opt-in control/shared lab')
     prep.add_argument('--enable-map-drive', action='store_true',
                       help='Explicit test_lab native battle-button travel; no automatic input or quit')
     prep.add_argument('--capture-hangar', action='store_true',
