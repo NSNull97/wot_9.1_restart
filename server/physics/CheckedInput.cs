@@ -10,6 +10,31 @@ namespace MapDrive;
 // Own local IPC and imported assets only. No native protocol IDs or client poses.
 internal static class CheckedInput
 {
+    // One source-pinned object only. These are domain/export identities, not
+    // native area/item IDs and not a claim about historical damage rules.
+    public sealed record RemovalSpec(string DescriptorHash, uint ObjectId, int InstanceId, int FirstTriangle,
+        int TriangleCount, string Revision);
+    public const string PhysicsManifestHash = "ea6ef22aed0fdd4e4826500c280a616737f8990ce7ab7cd808b9382227ec5ffd";
+    public const string ProjectileManifestHash = "ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447c5bd95dd97d80cea";
+    public const string ObjectRevision = "karelia-instance1513-v1";
+
+    public static RemovalSpec LoadRemoval(string root, string path, string hash, string map, JsonElement obstacles)
+    {
+        using var doc = Json(FileBytes(Owned(root, path), 4096, hash));
+        var d = doc.RootElement;
+        Fields(d, "version", "profile", "map", "object_id", "instance_id", "physics_manifest_sha256",
+            "projectile_manifest_sha256", "first_triangle", "triangle_count", "object_revision");
+        if (d.GetProperty("version").GetInt32() != 1 || d.GetProperty("profile").GetString() != "test_lab" ||
+            map != "01_karelia" || d.GetProperty("map").GetString() != map ||
+            d.GetProperty("object_id").GetUInt32() != 1 || d.GetProperty("instance_id").GetInt32() != 1513 ||
+            d.GetProperty("physics_manifest_sha256").GetString() != PhysicsManifestHash ||
+            d.GetProperty("projectile_manifest_sha256").GetString() != ProjectileManifestHash ||
+            d.GetProperty("first_triangle").GetInt32() != 171814 || d.GetProperty("triangle_count").GetInt32() != 42 ||
+            d.GetProperty("object_revision").GetString() != ObjectRevision ||
+            obstacles.GetProperty("sha256").GetString() != PhysicsManifestHash)
+            throw new InvalidDataException("one-object descriptor profile mismatch");
+        return new(hash, 1, 1513, 171814, 42, ObjectRevision);
+    }
     public static void Fields(JsonElement value, params string[] names)
     {
         if (value.ValueKind != JsonValueKind.Object) throw new InvalidDataException("object required");
@@ -78,8 +103,11 @@ internal static class CheckedInput
         }
     }
 
-    public static MeshShape LoadMesh(string root, JsonElement reference, string map)
+    public static MeshShape LoadMesh(string root, JsonElement reference, string map) => LoadMesh(root, reference, map, null, out _);
+
+    public static MeshShape LoadMesh(string root, JsonElement reference, string map, RemovalSpec? removal, out MeshShape? selected)
     {
+        selected = null;
         Fields(reference, "path", "sha256");
         var path = Owned(root, reference.GetProperty("path").GetString()!);
         using var doc = Json(FileBytes(path, 8 * 1024 * 1024, reference.GetProperty("sha256").GetString()));
@@ -131,7 +159,44 @@ internal static class CheckedInput
                 throw new InvalidDataException("degenerate float32 mesh triangle");
             triangles[i] = new(a, b, c);
         }
-        using var settings = new MeshShapeSettings(vertices.AsSpan(), triangles.AsSpan());
-        return new MeshShape(settings);
+        if (removal == null)
+        {
+            using var settings = new MeshShapeSettings(vertices.AsSpan(), triangles.AsSpan());
+            return new MeshShape(settings);
+        }
+        if (map != "01_karelia" || reference.GetProperty("sha256").GetString() != PhysicsManifestHash)
+            throw new InvalidDataException("one-object geometry source mismatch");
+        var instances = value.GetProperty("instances");
+        if (instances.GetArrayLength() != 2918) throw new InvalidDataException("one-object instance count");
+        var item = instances[removal.InstanceId];
+        if (item.GetProperty("kind").GetString() != "model" || item.GetProperty("instance").GetString() != "/model[2]" ||
+            item.GetProperty("resource").GetString() != "content/MilitaryEnvironment/mle009_BoxCamouflage/normal/lod0/mle009_BoxCamouflage.model" ||
+            item.GetProperty("chunk").GetArrayLength() != 2 || item.GetProperty("chunk")[0].GetInt32() != -5 || item.GetProperty("chunk")[1].GetInt32() != -5 ||
+            item.GetProperty("first_triangle").GetInt32() != removal.FirstTriangle || item.GetProperty("triangles").GetInt32() != removal.TriangleCount ||
+            removal.FirstTriangle < 0 || removal.TriangleCount != 42 || removal.FirstTriangle + removal.TriangleCount > triangles.Length)
+            throw new InvalidDataException("one-object source identity/span mismatch");
+        // Preserve every base triangle/index/coordinate exactly. The selected
+        // shape gets its own compact vertices; no new hull or AABB substitute.
+        var baseTriangles = new IndexedTriangle[triangles.Length - removal.TriangleCount];
+        Array.Copy(triangles, 0, baseTriangles, 0, removal.FirstTriangle);
+        Array.Copy(triangles, removal.FirstTriangle + removal.TriangleCount, baseTriangles, removal.FirstTriangle,
+            triangles.Length - removal.FirstTriangle - removal.TriangleCount);
+        var selectedVertices = new Vector3[removal.TriangleCount * 3];
+        var selectedTriangles = new IndexedTriangle[removal.TriangleCount];
+        for (int i = 0; i < removal.TriangleCount; i++)
+        {
+            for (int axis = 0; axis < 3; axis++)
+                selectedVertices[i * 3 + axis] = vertices[BinaryPrimitives.ReadUInt32LittleEndian(rawTriangles.AsSpan((removal.FirstTriangle + i) * 12 + axis * 4, 4))];
+            selectedTriangles[i] = new((uint)i * 3, (uint)i * 3 + 1, (uint)i * 3 + 2);
+        }
+        using var baseSettings = new MeshShapeSettings(vertices.AsSpan(), baseTriangles.AsSpan());
+        var baseShape = new MeshShape(baseSettings);
+        try
+        {
+            using var selectedSettings = new MeshShapeSettings(selectedVertices.AsSpan(), selectedTriangles.AsSpan());
+            selected = new MeshShape(selectedSettings);
+            return baseShape;
+        }
+        catch { baseShape.Dispose(); throw; }
     }
 }

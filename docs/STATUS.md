@@ -1,3 +1,36 @@
+# P06N accepted — one destructible obstacle, cumulative runtime preserved
+
+Owner confirmed native02 destruction in both clients and free driving passage,
+then accepted ground/live/wreck effects, HP/reload and survivor control.
+Independent log audits: one transition after both physics ACKs; packed257 and
+original destroy/effect returns in both clients.15 shots, HP90→60→30→0,
+two zero-damage wreck hits and survivor movement27.15m. No errors/caps in the
+pinned prefixes. Tested source3bb6770; gateway04 557 Rust PASS, Python27 PASS.
+**Acceptance: PASS_OWNER_AND_SERVER_CUMULATIVE_TEST_LAB.** Ordinary merge/push
+authorized by standing workflow. One original crate only; approximate damage/
+continuation policy. Rendered reconnect after destruction remains NOT_RUN.
+[Files, commands, exact evidence, limits and rollback](research/P06N_DESTRUCTIBLE_STATE.md).
+**One next card:** multiple source-pinned fragile crates with per-object state
+and matching movement/projectile geometry on this same cumulative runtime.
+
+# Earlier P06N candidate — owner gate then pending
+
+Branch `codex/p06n-destructible-state`, accepted base main7f2a0f2. One original
+Karelia camouflage crate (instance1513/native index1/chunk31354) now has typed
+server state, native AreaDestructibles replication and matching movement/shot
+geometry removal. World commits only after participating physics workers ACK.
+Policy `test_lab-karelia-fragile-ap-v1` is explicitly approximate; first shell
+terminates, later shots/vehicles can pass. Full-map destruction is out of scope.
+Gateway04:557 Rust PASS, SHA9e3adc34…fe8b8; focused Python27 PASS. Real private
+physics confirms intact crate blocks driving and removed crate allows passage.
+Native01 both original area callbacks/physics entry PASS; periodic observer
+FAIL on old total-entity16 limit. Fixed with two verified Vehicle ID lookups;
+native02 uses the same gateway04 with repaired passive observer.
+**Acceptance: PENDING_NATIVE_OWNER, destruction/proceed-through NOT_RUN.**
+[Files, commands, evidence, failures, limits and rollback](research/P06N_DESTRUCTIBLE_STATE.md).
+**One next gate:** two-client crate destruction and passage, with cumulative
+movement/aim/ammo/reload/ground/live/wreck behavior preserved.
+
 # P06M accepted — terrain/static obstacles with cumulative gameplay
 
 Owner accepted native02 ground/rock behavior and explicitly confirmed wreck

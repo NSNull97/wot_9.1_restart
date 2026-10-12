@@ -6,6 +6,57 @@ import unittest
 
 
 class SharedControlTests(unittest.TestCase):
+    def test_vehicle_observation_ignores_local_effect_population_without_enumeration(self):
+        source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
+        tree = ast.parse(source.read_bytes())
+        functions = [n for n in tree.body if isinstance(n, ast.FunctionDef)
+                     and n.name == 'shared_native_vehicles']
+        ns = {}
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), ns)
+
+        class Vehicle:
+            def __init__(self, entity_id):
+                self.id = entity_id
+
+        class EntityMap(dict):
+            def values(self):
+                raise AssertionError('must not enumerate local effect entities')
+
+            def __iter__(self):
+                raise AssertionError('must use fixed identity lookups')
+
+            def get(self, key):
+                self.lookups.append(key)
+                return super().get(key)
+
+        entities = EntityMap({index: object() for index in range(1000)})
+        entities.lookups = []
+        a, b = Vehicle(152043523), Vehicle(152043525)
+        entities[a.id] = a
+        entities[b.id] = b
+        collect = ns['shared_native_vehicles']
+        self.assertEqual(collect(entities, Vehicle), [a, b])
+        self.assertEqual(entities.lookups, [a.id, b.id])
+        del entities[b.id]
+        self.assertEqual(collect(entities, Vehicle), [a])
+        entities[b.id] = object()
+        with self.assertRaisesRegex(ValueError, 'identity differs'):
+            collect(entities, Vehicle)
+
+    def test_identity_probe_control_is_optional_and_does_not_allow_other_diagnostics(self):
+        source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
+        tree = ast.parse(source.read_bytes())
+        functions = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'shared_login_control']
+        ns = {}
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), ns)
+        f = ns['shared_login_control']
+        base = dict(username='owned@example.test', password='test', submit_via='python')
+        self.assertTrue(f(base, {'enable_shared_lab': True}))
+        probe = dict(base, probe_destructible_identity=True)
+        self.assertTrue(f(probe, {'enable_shared_lab': True}))
+        self.assertFalse(f(probe, {'enable_shared_lab': False}))
+        self.assertFalse(f(dict(probe, probe_map_drive=True), {'enable_shared_lab': True}))
+
     def test_aim_receipt_pairs_original_callbacks_without_gameplay_writes_or_private_locals(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
         tree = ast.parse(source.read_bytes())

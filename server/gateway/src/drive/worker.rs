@@ -12,6 +12,9 @@ pub const MAX_SEQUENCE:u32=36000;
 pub const START_TIMEOUT:Duration=Duration::from_secs(120);
 pub const REPLY_TIMEOUT:Duration=Duration::from_millis(500);
 pub const MAX_LAG:Duration=Duration::from_millis(500);
+pub const REMOVAL_REVISION:&str="karelia-instance1513-v1";
+const PHYSICS_MANIFEST:&str="ea6ef22aed0fdd4e4826500c280a616737f8990ce7ab7cd808b9382227ec5ffd";
+const PROJECTILE_MANIFEST:&str="ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447c5bd95dd97d80cea";
 fn bad()->io::Error {io::Error::new(io::ErrorKind::InvalidData,"map-drive worker contract")}
 
 // serde_json::Value normally accepts duplicate keys. Reject them at EVERY depth.
@@ -129,6 +132,36 @@ impl MapSpec {
         Ok(Self {asset:asset.into(),arena_type_id:id as i32,config,config_sha256:hash.into(),bounds,spawn,spawn_yaw:yaw})
     }
 }
+/// The one approved test_lab object. Private fields prevent callers from
+/// constructing a different identity after the source descriptor is checked.
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub struct RemovalSpec {path:PathBuf,sha256:String}
+impl RemovalSpec {
+    pub fn load(local_root:&Path,path:&Path,sha256:&str)->io::Result<Self>{
+        non_reparse(local_root)?;let root=local_root.canonicalize()?;hash_text(sha256)?;
+        let path=owned(&root,path)?;let raw=read(&path,4096)?;
+        if format!("{:x}",Sha256::digest(&raw))!=sha256{return Err(bad());}
+        Self::validate(&json(&raw,4096)?)?;Ok(Self{path,sha256:sha256.into()})
+    }
+    fn validate(v:&Value)->io::Result<()>{
+        fields(v,&["version","profile","map","object_id","instance_id","physics_manifest_sha256","projectile_manifest_sha256",
+            "first_triangle","triangle_count","object_revision"])?;
+        if uint(&v["version"])?!=1 || text(v,"profile")?!="test_lab" || text(v,"map")?!="01_karelia" || uint(&v["object_id"])?!=1
+            || uint(&v["instance_id"])?!=1513 || text(v,"physics_manifest_sha256")?!=PHYSICS_MANIFEST
+            || text(v,"projectile_manifest_sha256")?!=PROJECTILE_MANIFEST || uint(&v["first_triangle"])?!=171814
+            || uint(&v["triangle_count"])?!=42 || text(v,"object_revision")?!=REMOVAL_REVISION {return Err(bad());}Ok(())
+    }
+    fn verify(&self,root:&Path,map:&MapSpec)->io::Result<()>{
+        if map.asset!="01_karelia" || map.arena_type_id!=1 || Self::load(root,&self.path,&self.sha256)?!=*self{return Err(bad());}
+        let raw=read(&owned(root,&map.config)?,16384)?;
+        if format!("{:x}",Sha256::digest(&raw))!=map.config_sha256{return Err(bad());}
+        let v=json(&raw,16384)?;
+        if text(&v["obstacles"],"sha256")?!=PHYSICS_MANIFEST{return Err(bad());}Ok(())
+    }
+    pub fn sha256(&self)->&str{&self.sha256}
+    pub fn object_id(&self)->u32{1}
+    pub fn object_revision(&self)->&str{REMOVAL_REVISION}
+}
 #[derive(Clone,Debug)]
 struct Asset {path:PathBuf,bytes:u64,sha256:String}
 #[derive(Clone,Debug)]
@@ -188,18 +221,53 @@ pub fn request(seq:u32,input:Input)->io::Result<Vec<u8>> {
         "input":{"throttle":input.throttle,"steer":input.steer,"brake":input.brake}})).map_err(|_|bad())?;
     if b.len()>1024{return Err(bad());}b.push(b'\n');Ok(b)
 }
+fn request_scene(seq:u32,input:Input,scene:u32)->io::Result<Vec<u8>>{
+    if scene>1{return Err(bad());}let mut v=json(&request(seq,input)?,1024)?;
+    v["version"]=2.into();v["scene_version"]=scene.into();ipc_bytes(&v)
+}
+fn ipc_bytes(v:&Value)->io::Result<Vec<u8>>{
+    let mut raw=serde_json::to_vec(v).map_err(|_|bad())?;if raw.len()>1024{return Err(bad());}raw.push(b'\n');Ok(raw)
+}
+fn removal_request(map:&MapSpec,spec:&RemovalSpec,generation:u32,seq:u32)->io::Result<Vec<u8>>{
+    if generation==0 || seq>MAX_SEQUENCE{return Err(bad());}
+    ipc_bytes(&serde_json::json!({"version":2,"op":"remove_one","mutation_seq":1,"expected_scene_version":0,"scene_version":1,
+        "generation":generation,"object_id":1,"object_revision":REMOVAL_REVISION,"descriptor_sha256":spec.sha256,
+        "config_sha256":map.config_sha256,"advance_seq":seq}))
+}
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub struct RemovalAck {pub generation:u32,pub config_sha256:String,pub descriptor_sha256:String,pub object_id:u32,
+    pub object_revision:String,pub mutation_seq:u32,pub advance_seq:u32,pub tick:u32,pub scene_version:u32}
+fn removal_ack(raw:&[u8],map:&MapSpec,spec:&RemovalSpec,generation:u32,seq:u32)->io::Result<RemovalAck>{
+    if !raw.is_ascii() || generation==0 || seq>MAX_SEQUENCE{return Err(bad());}let v=json(raw,1024)?;
+    fields(&v,&["version","event","mutation_seq","advance_seq","tick","generation","config_sha256","descriptor_sha256",
+        "object_id","object_revision","scene_version"])?;
+    if uint(&v["version"])?!=2 || text(&v,"event")?!="removed" || uint(&v["mutation_seq"])?!=1
+        || uint(&v["advance_seq"])?!=seq as u64 || uint(&v["tick"])?!=180+seq as u64*6
+        || uint(&v["generation"])?!=generation as u64 || text(&v,"config_sha256")?!=map.config_sha256
+        || text(&v,"descriptor_sha256")?!=spec.sha256 || uint(&v["object_id"])?!=1 || text(&v,"object_revision")?!=REMOVAL_REVISION
+        || uint(&v["scene_version"])?!=1{return Err(bad());}
+    Ok(RemovalAck{generation,config_sha256:map.config_sha256.clone(),descriptor_sha256:spec.sha256.clone(),object_id:1,
+        object_revision:REMOVAL_REVISION.into(),mutation_seq:1,advance_seq:seq,tick:180+seq*6,scene_version:1})
+}
 #[derive(Clone,Debug,PartialEq)]
 pub struct Pose {pub position:[f32;3],pub direction:[f32;3],pub speed:f32,pub rspeed:f32,pub contacts:u8,
     pub linear_velocity:[f32;3],pub angular_velocity:[f32;3],pub wheel_contact_masks:[u8;6]}
 #[derive(Clone,Debug,PartialEq)]
-pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose}
+pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose,pub scene_version:u32}
 pub fn response(raw:&[u8],map:&MapSpec,seq:u32)->io::Result<State>{
     response_at_spawn(raw,map,seq,None)
 }
 pub fn response_at_spawn(raw:&[u8],map:&MapSpec,seq:u32,expected_spawn:Option<[f32;3]>)->io::Result<State>{
+    response_context(raw,map,seq,expected_spawn,None)
+}
+fn response_context(raw:&[u8],map:&MapSpec,seq:u32,expected_spawn:Option<[f32;3]>,removal:Option<(&RemovalSpec,u32,u32)>)->io::Result<State>{
     if !raw.is_ascii(){return Err(bad());}let v=json(raw,1024)?;
-    fields(&v,&["version","event","seq","tick","settle_ticks","map","config_sha256","state"])?;
-    if uint(&v["version"])?!=1 || text(&v,"event")?!=if seq==0{"ready"}else{"state"}
+    let scene_version=if let Some((spec,generation,scene))=removal{
+        fields(&v,&["version","event","seq","tick","settle_ticks","map","config_sha256","state","generation","descriptor_sha256","object_id","object_revision","scene_version"])?;
+        if generation==0 || scene>1 || (seq==0 && scene!=0) || uint(&v["generation"])?!=generation as u64 || text(&v,"descriptor_sha256")?!=spec.sha256
+            || uint(&v["object_id"])?!=1 || text(&v,"object_revision")?!=REMOVAL_REVISION || uint(&v["scene_version"])?!=scene as u64{return Err(bad());}scene
+    }else{fields(&v,&["version","event","seq","tick","settle_ticks","map","config_sha256","state"])?;0};
+    if uint(&v["version"])?!=if removal.is_some(){2}else{1} || text(&v,"event")?!=if seq==0{"ready"}else{"state"}
         || uint(&v["seq"])?!=seq as u64 || seq>MAX_SEQUENCE || uint(&v["tick"])?!=180+seq as u64*6
         || uint(&v["settle_ticks"])?!=180 || text(&v,"map")?!=map.asset || text(&v,"config_sha256")?!=map.config_sha256{return Err(bad());}
     let s=&v["state"];fields(s,&["position","direction","speed","rspeed","contacts","linear_velocity","angular_velocity","wheel_contact_masks"])?;
@@ -217,7 +285,7 @@ pub fn response_at_spawn(raw:&[u8],map:&MapSpec,seq:u32,expected_spawn:Option<[f
         if contacts<3 || pose.linear_velocity.iter().map(|v|v*v).sum::<f32>()>1.001
             || (pose.position[0]-spawn[0]).abs()>5. || (pose.position[2]-spawn[2]).abs()>5. { return Err(bad()); }
     }
-    Ok(State{seq,tick:180+seq*6,pose})
+    Ok(State{seq,tick:180+seq*6,pose,scene_version})
 }
 fn line(reader:&mut impl Read)->io::Result<Vec<u8>> {
     let mut raw=Vec::new();loop{let mut b=[0];if reader.read(&mut b)?!=1{return Err(bad());}
@@ -225,6 +293,9 @@ fn line(reader:&mut impl Read)->io::Result<Vec<u8>> {
 }
 
 enum Event {Line(Instant,Vec<u8>),Failed}
+#[derive(Clone,Copy)]
+enum Pending {Advance(u32,Instant),Remove(u32,Instant)}
+impl Pending {fn sent(self)->Instant{match self{Self::Advance(_,sent)|Self::Remove(_,sent)=>sent}}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 struct ExitEvidence {forced:bool,code:Option<i32>,reaped:bool}
 fn reap_owned(mut child:Child,generation:u32,exit:Arc<Mutex<Option<ExitEvidence>>>) {
@@ -244,12 +315,20 @@ fn reap_owned(mut child:Child,generation:u32,exit:Arc<Mutex<Option<ExitEvidence>
 /// while authenticating a compound packet. Drop revokes and reaps this generation.
 pub struct Worker {pub generation:u32,pub map:MapSpec,receiver:mpsc::Receiver<Event>,sender:Option<mpsc::SyncSender<Vec<u8>>>,
     child:Arc<Mutex<Option<Child>>>,exit:Arc<Mutex<Option<ExitEvidence>>>,cancel:Arc<AtomicBool>,started:Instant,
-    expected_spawn:Option<[f32;3]>,pending:Option<(u32,Instant)>,ready:bool,last_seq:u32}
+    expected_spawn:Option<[f32;3]>,pending:Option<Pending>,ready:bool,last_seq:u32,
+    removal:Option<RemovalSpec>,scene_version:u32,removal_ack:Option<RemovalAck>}
 impl Worker {
     pub fn launch(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant)->io::Result<Self>{
         Self::launch_at_spawn(pool,map,generation,now,None)
     }
     pub fn launch_at_spawn(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>)->io::Result<Self>{
+        Self::launch_inner(pool,map,generation,now,spawn,None)
+    }
+    pub fn launch_with_removal(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,spec:RemovalSpec)->io::Result<Self>{
+        spec.verify(&pool.local_root,&map)?;
+        Self::launch_inner(pool,map,generation,now,spawn,Some(spec))
+    }
+    fn launch_inner(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,removal:Option<RemovalSpec>)->io::Result<Self>{
         if generation==0{return Err(bad());}
         if let Some(target)=spawn {
             if target.iter().any(|v| !v.is_finite()) || (target[1]-map.spawn[1]).abs()>f32::EPSILON
@@ -260,7 +339,7 @@ impl Worker {
         let (events,receiver)=mpsc::sync_channel(4);let (sender,commands)=mpsc::sync_channel::<Vec<u8>>(1);
         let child=Arc::new(Mutex::new(None::<Child>));let cancel=Arc::new(AtomicBool::new(false));
         let exit=Arc::new(Mutex::new(None));let exit_thread=exit.clone();
-        let slot=child.clone();let revoked=cancel.clone();let selected=map.clone();
+        let slot=child.clone();let revoked=cancel.clone();let selected=map.clone();let removal_thread=removal.clone();
         thread::spawn(move||{
             let run=||->io::Result<()> {
                 pool.verify_assets()?;owned(&pool.local_root,&selected.config)?;let raw=read(&selected.config,16384)?;
@@ -271,6 +350,11 @@ impl Worker {
                     .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
                 if let Some(target)=spawn {
                     cmd.arg("--spawn-xz").arg(target[0].to_string()).arg(target[2].to_string());
+                }
+                if let Some(spec)=removal_thread.as_ref(){
+                    spec.verify(&pool.local_root,&selected)?;
+                    cmd.arg("--remove-one").arg(worker_path_argument(&spec.path)?).arg("--remove-one-sha256").arg(&spec.sha256)
+                        .arg("--generation").arg(generation.to_string());
                 }
                 #[cfg(windows)] {use std::os::windows::process::CommandExt;cmd.creation_flags(0x08000000);}
                 let mut c=cmd.spawn()?;let mut input=c.stdin.take().ok_or_else(bad)?;
@@ -297,26 +381,48 @@ impl Worker {
             }}
         });
         Ok(Self{generation,map,receiver,sender:Some(sender),child,exit,cancel,started:now,expected_spawn:spawn,
-            pending:None,ready:false,last_seq:0})
+            pending:None,ready:false,last_seq:0,removal,scene_version:0,removal_ack:None})
     }
     pub fn pending(&self)->bool{self.pending.is_some()}
     pub fn ready(&self)->bool{self.ready}
     pub fn process_id(&self)->Option<u32>{self.child.lock().ok().and_then(|c|c.as_ref().map(Child::id))}
-    pub fn advance(&mut self,input:Input,now:Instant)->io::Result<u32>{
-        if !self.ready || self.pending.is_some() || now<self.started || self.last_seq>=MAX_SEQUENCE{return Err(bad());}
-        let seq=self.last_seq+1;let raw=request(seq,input)?;
+    pub fn scene_version(&self)->u32{self.scene_version}
+    pub fn take_removal_ack(&mut self)->Option<RemovalAck>{self.removal_ack.take()}
+    /// One outstanding operation only. The caller must stop both arena lanes
+    /// and commit the domain change only after checking BOTH workers' ACKs.
+    pub fn remove_one(&mut self,now:Instant)->io::Result<()>{
+        if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || now<self.started{return Err(bad());}
+        let spec=self.removal.as_ref().ok_or_else(bad)?;
+        let raw=removal_request(&self.map,spec,self.generation,self.last_seq)?;
         self.sender.as_ref().ok_or_else(bad)?.try_send(raw).map_err(|_|bad())?;
-        self.pending=Some((seq,now));Ok(seq)
+        self.pending=Some(Pending::Remove(self.last_seq,now));Ok(())
+    }
+    pub fn advance(&mut self,input:Input,now:Instant)->io::Result<u32>{
+        if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || now<self.started || self.last_seq>=MAX_SEQUENCE{return Err(bad());}
+        let seq=self.last_seq+1;let raw=if self.removal.is_some(){request_scene(seq,input,self.scene_version)?}else{request(seq,input)?};
+        self.sender.as_ref().ok_or_else(bad)?.try_send(raw).map_err(|_|bad())?;
+        self.pending=Some(Pending::Advance(seq,now));Ok(seq)
     }
     pub fn poll(&mut self,now:Instant)->io::Result<Option<State>>{
         if now<self.started || (!self.ready && now.duration_since(self.started)>START_TIMEOUT)
-            || self.pending.is_some_and(|(_,sent)|now.duration_since(sent)>REPLY_TIMEOUT){return Err(bad());}
+            || self.pending.is_some_and(|pending|now<pending.sent() || now.duration_since(pending.sent())>REPLY_TIMEOUT){return Err(bad());}
         match self.receiver.try_recv(){
             Ok(Event::Failed)|Err(mpsc::TryRecvError::Disconnected)=>Err(bad()),
             Err(mpsc::TryRecvError::Empty)=>Ok(None),
             Ok(Event::Line(received,raw))=>{
-                let seq=if !self.ready {0}else{let (seq,sent)=self.pending.ok_or_else(bad)?;if received<sent{return Err(bad());}seq};
-                let state=response_at_spawn(&raw,&self.map,seq,self.expected_spawn)?;self.ready=true;self.last_seq=seq;self.pending=None;Ok(Some(state))
+                let seq=if !self.ready {0}else{
+                    let pending=self.pending.ok_or_else(bad)?;if received<pending.sent(){return Err(bad());}
+                    match pending {
+                        Pending::Advance(seq,_)=>seq,
+                        Pending::Remove(seq,_)=>{
+                            let ack=removal_ack(&raw,&self.map,self.removal.as_ref().ok_or_else(bad)?,self.generation,seq)?;
+                            self.scene_version=1;self.removal_ack=Some(ack);self.pending=None;return Ok(None);
+                        }
+                    }
+                };
+                let context=self.removal.as_ref().map(|spec|(spec,self.generation,self.scene_version));
+                let state=response_context(&raw,&self.map,seq,self.expected_spawn,context)?;
+                self.ready=true;self.last_seq=seq;self.pending=None;Ok(Some(state))
             },
         }
     }
@@ -338,6 +444,80 @@ pub(crate) mod tests {
     pub(crate) fn map()->MapSpec{MapSpec{asset:"01_karelia".into(),arena_type_id:1,config:"unit".into(),config_sha256:"a".repeat(64),bounds:[-500.,-500.,500.,500.],spawn:[0.,10.,0.],spawn_yaw:0.}}
     fn good(seq:u32)->Value{serde_json::json!({"version":1,"event":if seq==0{"ready"}else{"state"},"seq":seq,"tick":180+seq*6,"settle_ticks":180,"map":"01_karelia","config_sha256":"a".repeat(64),
         "state":{"position":[0,10,0],"direction":[0,0,0],"speed":0,"rspeed":0,"contacts":6,"linear_velocity":[0,0,0],"angular_velocity":[0,0,0],"wheel_contact_masks":[63,63,63,63,63,63]}})}
+    fn spec()->RemovalSpec{RemovalSpec{path:"unit".into(),sha256:"b".repeat(64)}}
+    fn descriptor()->Value{serde_json::json!({"version":1,"profile":"test_lab","map":"01_karelia","object_id":1,"instance_id":1513,
+        "physics_manifest_sha256":PHYSICS_MANIFEST,"projectile_manifest_sha256":PROJECTILE_MANIFEST,"first_triangle":171814,
+        "triangle_count":42,"object_revision":REMOVAL_REVISION})}
+    fn good_scene(seq:u32,scene:u32)->Value{
+        let mut v=good(seq);v["version"]=2.into();v["generation"]=1.into();v["descriptor_sha256"]=spec().sha256.into();
+        v["object_id"]=1.into();v["object_revision"]=REMOVAL_REVISION.into();v["scene_version"]=scene.into();v
+    }
+    fn good_ack(seq:u32)->Value{serde_json::json!({"version":2,"event":"removed","mutation_seq":1,"advance_seq":seq,"tick":180+seq*6,
+        "generation":1,"config_sha256":"a".repeat(64),"descriptor_sha256":"b".repeat(64),"object_id":1,
+        "object_revision":REMOVAL_REVISION,"scene_version":1})}
+    #[test]fn removal_descriptor_pins_exact_object_source_span_and_file_hash(){
+        RemovalSpec::validate(&descriptor()).unwrap();
+        for (key,value) in [("object_id",2.into()),("instance_id",1512.into()),("first_triangle",171813.into()),("triangle_count",41.into()),
+            ("physics_manifest_sha256","0".repeat(64).into()),("projectile_manifest_sha256","0".repeat(64).into()),
+            ("map","05_prohorovka".into()),("profile","production".into()),("object_revision","other".into()),("version",1.0.into())]{
+            let mut v=descriptor();v[key]=value;assert!(RemovalSpec::validate(&v).is_err(),"{key}");
+        }
+        let root=scratch();let path=root.join("remove.json");let raw=serde_json::to_vec(&descriptor()).unwrap();fs::write(&path,&raw).unwrap();
+        let hash=format!("{:x}",Sha256::digest(&raw));let s=RemovalSpec::load(&root,&path,&hash).unwrap();assert_eq!(s.sha256(),hash);
+        assert!(RemovalSpec::load(&root,&path,&"0".repeat(64)).is_err());
+        assert!(RemovalSpec::load(&root,Path::new("remove.json"),&hash).is_err());
+        let mut changed=descriptor();changed["instance_id"]=1512.into();fs::write(&path,serde_json::to_vec(&changed).unwrap()).unwrap();
+        assert!(RemovalSpec::load(&root,&path,&hash).is_err());
+    }
+    #[test]fn removal_ack_and_scene_state_require_every_pin_and_unchanged_tick(){
+        let s=spec();let m=map();let v=good_ack(7);let raw=serde_json::to_vec(&v).unwrap();
+        let ack=removal_ack(&raw,&m,&s,1,7).unwrap();assert_eq!((ack.advance_seq,ack.tick,ack.scene_version),(7,222,1));
+        for (key,value) in [("version",1.into()),("event","state".into()),("generation",2.into()),("advance_seq",8.into()),("tick",228.into()),
+            ("mutation_seq",2.into()),("scene_version",0.into()),("object_id",2.into()),("object_revision","other".into()),
+            ("descriptor_sha256","c".repeat(64).into()),("config_sha256","c".repeat(64).into())]{
+            let mut changed=v.clone();changed[key]=value;assert!(removal_ack(&serde_json::to_vec(&changed).unwrap(),&m,&s,1,7).is_err(),"{key}");
+        }
+        assert!(removal_ack(&raw,&m,&s,2,7).is_err());assert!(removal_ack(&raw,&m,&s,1,8).is_err());
+        let raw=serde_json::to_vec(&good_scene(1,1)).unwrap();
+        assert_eq!(response_context(&raw,&m,1,None,Some((&s,1,1))).unwrap().scene_version,1);
+        assert!(response_context(&raw,&m,1,None,Some((&s,1,0))).is_err());assert!(response(&raw,&m,1).is_err());
+        assert!(response_context(&serde_json::to_vec(&good(1)).unwrap(),&m,1,None,Some((&s,1,0))).is_err());
+        assert!(response_context(&serde_json::to_vec(&good_scene(0,1)).unwrap(),&m,0,None,Some((&s,1,1))).is_err());
+    }
+    #[test]fn removal_transaction_blocks_advances_consumes_no_tick_and_retries_idempotently(){
+        let now=Instant::now();let(mut w,send,recv)=fake_worker(now);w.removal=Some(spec());
+        assert!(w.remove_one(now).is_err());
+        send.send(Event::Line(now,serde_json::to_vec(&good_scene(0,0)).unwrap())).unwrap();w.poll(now).unwrap();
+        for expected_seq in [0,1]{
+            w.remove_one(now).unwrap();let request=json(&recv.recv().unwrap(),1024).unwrap();
+            assert_eq!(request["advance_seq"],expected_seq);assert_eq!(request["mutation_seq"],1);
+            assert!(w.remove_one(now).is_err());assert!(w.advance(Input::STOP,now).is_err());
+            send.send(Event::Line(now,serde_json::to_vec(&good_ack(expected_seq)).unwrap())).unwrap();
+            assert_eq!(w.poll(now).unwrap(),None);assert_eq!(w.scene_version(),1);assert_eq!(w.last_seq,expected_seq);
+            assert!(w.advance(Input::STOP,now).is_err());let ack=w.take_removal_ack().unwrap();
+            assert_eq!(ack.advance_seq,expected_seq);assert!(w.take_removal_ack().is_none());
+            let next=w.advance(Input::STOP,now).unwrap();let request=json(&recv.recv().unwrap(),1024).unwrap();
+            assert_eq!(request["version"],2);assert_eq!(request["scene_version"],1);assert_eq!(next,expected_seq+1);
+            send.send(Event::Line(now,serde_json::to_vec(&good_scene(next,1)).unwrap())).unwrap();assert_eq!(w.poll(now).unwrap().unwrap().seq,next);
+        }
+        send.send(Event::Line(now,serde_json::to_vec(&good_ack(2)).unwrap())).unwrap();assert!(w.poll(now).is_err());
+    }
+    #[test]fn failed_removal_reply_cannot_publish_scene_or_ack_and_timeout_is_fatal(){
+        for mode in 0..5{
+            let now=Instant::now();let(mut w,send,recv)=fake_worker(now);w.removal=Some(spec());w.ready=true;
+            w.remove_one(now).unwrap();recv.recv().unwrap();
+            match mode{
+                0=>{let mut v=good_ack(0);v["generation"]=2.into();send.send(Event::Line(now,serde_json::to_vec(&v).unwrap())).unwrap();},
+                1=>{send.send(Event::Line(now,serde_json::to_vec(&good_scene(1,1)).unwrap())).unwrap();},
+                2=>{send.send(Event::Failed).unwrap();},
+                3=>{send.send(Event::Line(now-Duration::from_nanos(1),serde_json::to_vec(&good_ack(0)).unwrap())).unwrap();},
+                _=>{},
+            }
+            let poll_at=if mode==4{now+REPLY_TIMEOUT+Duration::from_nanos(1)}else{now};
+            assert!(w.poll(poll_at).is_err());assert_eq!(w.scene_version(),0);assert!(w.take_removal_ack().is_none());assert_eq!(w.last_seq,0);
+        }
+        let now=Instant::now();let(mut w,_,_)=fake_worker(now);w.ready=true;assert!(w.remove_one(now).is_err());
+    }
     #[test]fn recursive_duplicate_unknown_numeric_bool_and_deep_json_fail(){
         assert!(json(br#"{"a":{"x":1,"x":2}}"#,1024).is_err());
         assert!(json(format!("{}0{}","[".repeat(13),"]".repeat(13)).as_bytes(),1024).is_err());
@@ -436,7 +616,7 @@ pub(crate) mod tests {
     fn fake_worker(now:Instant)->(Worker,mpsc::SyncSender<Event>,mpsc::Receiver<Vec<u8>>){
         let (send,receiver)=mpsc::sync_channel(4);let(sender,recv)=mpsc::sync_channel(1);
         (Worker{generation:1,map:map(),receiver,sender:Some(sender),child:Arc::new(Mutex::new(None)),exit:Arc::new(Mutex::new(None)),cancel:Arc::new(AtomicBool::new(false)),expected_spawn:None,
-            started:now,pending:None,ready:false,last_seq:0},send,recv)
+            started:now,pending:None,ready:false,last_seq:0,removal:None,scene_version:0,removal_ack:None},send,recv)
     }
     #[test]fn ipc_unsolicited_stale_duplicate_reply_and_timeout_never_publish(){
         let t=Instant::now();let (mut w,send,_)=fake_worker(t);send.send(Event::Line(t,serde_json::to_vec(&good(0)).unwrap())).unwrap();w.poll(t).unwrap();

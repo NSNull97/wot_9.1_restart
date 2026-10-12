@@ -9,7 +9,7 @@
 use std::io;
 
 use super::projectile::Projectile;
-use super::{ap, collision, materials, terrain};
+use super::{ap, collision, destructible, materials, terrain};
 
 pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-full-pose-v2";
 pub const PROFILE: &str = "ms1_ap_2570";
@@ -19,9 +19,9 @@ pub const MS1_AP_SHELL_COMPACT_ID: u32 = 2570;
 pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
 // Admission + launch, segment/terrain-query/vehicle-query triples, one terminal collision batch, and
 // nearest material record, optional AP or wreck outcome and terminal. The model admits only both actors'
-// original 20-shell loadouts.
+// original 20-shell loadouts, plus the one global destructible transition.
 pub const MAX_EVENTS: usize = super::model::MAX_SHOTS
-    * (2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1);
+    * (2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1) + 1;
 pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
 pub const MAX_SEGMENT_LENGTH: f32 = 200_000.0;
@@ -47,6 +47,7 @@ pub enum Stage {
     ApResolution,
     WreckImpact,
     TerrainContact,
+    DestructibleTransition,
     Terminal,
 }
 
@@ -110,6 +111,8 @@ pub enum Event {
         server_tick: u32,
         segment_order: u32,
         terrain_revision: &'static str,
+        scene_version: u32,
+        excluded_instance: Option<u32>,
         hit: Option<terrain::Hit>,
     },
     CollisionQuery {
@@ -193,6 +196,10 @@ pub enum Event {
         terrain_query_order: u32,
         hit: terrain::Hit,
     },
+    DestructibleTransition {
+        order:u32,battle_id:u64,shot_id:u32,server_tick:u32,
+        terrain_contact_order:u32,transition:destructible::Transition,
+    },
     Terminal {
         order: u32,
         battle_id: u64,
@@ -215,6 +222,7 @@ impl Event {
             Self::ApResolution { .. } => Stage::ApResolution,
             Self::WreckImpact { .. } => Stage::WreckImpact,
             Self::TerrainContact { .. } => Stage::TerrainContact,
+            Self::DestructibleTransition { .. } => Stage::DestructibleTransition,
             Self::Terminal { .. } => Stage::Terminal,
         }
     }
@@ -231,6 +239,7 @@ impl Event {
             | Self::ApResolution { order, .. }
             | Self::WreckImpact { order, .. }
             | Self::TerrainContact { order, .. }
+            | Self::DestructibleTransition { order, .. }
             | Self::Terminal { order, .. } => *order,
         }
     }
@@ -247,6 +256,7 @@ impl Event {
             | Self::ApResolution { shot_id, .. }
             | Self::WreckImpact { shot_id, .. }
             | Self::TerrainContact { shot_id, .. }
+            | Self::DestructibleTransition { shot_id, .. }
             | Self::Terminal { shot_id, .. } => *shot_id,
         }
     }
@@ -418,7 +428,7 @@ impl Trace {
         let valid_stage = match reason {
             TerminalReason::TestLabImpact => self.last_stage(shot_id) == Some(Stage::ApResolution),
             TerminalReason::TestLabWreckImpact => self.last_stage(shot_id) == Some(Stage::WreckImpact),
-            TerminalReason::TerrainCollision => self.last_stage(shot_id) == Some(Stage::TerrainContact),
+            TerminalReason::TerrainCollision => matches!(self.last_stage(shot_id),Some(Stage::TerrainContact|Stage::DestructibleTransition)),
             TerminalReason::UnresolvedCollision =>
                 matches!(self.last_stage(shot_id), Some(Stage::Intersection | Stage::MaterialContact))
                     && self.selected_terrain(battle_id, shot_id, server_tick)?.is_none(),
@@ -520,6 +530,36 @@ impl Trace {
         Ok(hit)
     }
 
+    /// A single source contact changes the explicit laboratory scene once.
+    /// World owns HP/state; this event pins that transaction to the query's
+    /// exact hit and scene. Native IDs/visual events never enter this trace.
+    pub fn destructible_transition(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,
+        transition:&destructible::Transition)->io::Result<()> {
+        self.common(battle_id,shot_id,server_tick)?;transition.validate()?;
+        if self.has_terminal(shot_id) || transition.shot!=shot_id || transition.tick!=server_tick
+            || self.admission_facts(shot_id).map(|(slot,_)|slot)!=Some(transition.shooter)
+            || self.scene_version_before(u32::MAX)!=0 {return Err(invalid("destructible identity or repeated transition"));}
+        let (contact_order,query,segment,hit)=match self.events.iter().rev().find(|event|event.shot_id()==shot_id){
+            Some(Event::TerrainContact{order,battle_id:b,server_tick:t,terrain_query_order,segment_order,hit,..})
+                if *b==battle_id && *t==server_tick =>(*order,*terrain_query_order,*segment_order,*hit),
+            _=>return Err(invalid("destructible transition without latest terrain contact")),
+        };
+        if hit!=transition.hit || !matches!(self.events.iter().find(|event|event.order()==query),
+            Some(Event::TerrainQuery{battle_id:b,shot_id:s,server_tick:t,segment_order:seg,terrain_revision,
+                scene_version:0,excluded_instance:None,hit:Some(retained),..})
+                if *b==battle_id && *s==shot_id && *t==server_tick && *seg==segment
+                && *terrain_revision==terrain::WORLD_SOURCE_REVISION && *retained==hit) {
+            return Err(invalid("destructible contact/query/scene binding"));
+        }
+        if self.events.len()+2>MAX_EVENTS || self.next_order.checked_add(2).is_none(){return Err(invalid("destructible trace capacity"));}
+        let order=self.next_order_value()?;
+        self.push(Event::DestructibleTransition{order,battle_id,shot_id,server_tick,terrain_contact_order:contact_order,transition:transition.clone()})?;
+        self.last_tick=server_tick;Ok(())
+    }
+    fn scene_version_before(&self,order:u32)->u32{
+        u32::from(self.events.iter().any(|event| matches!(event,Event::DestructibleTransition{order:at,..} if *at<order)))
+    }
+
     /// Fetch only the terrain query paired with this vehicle query. An absent
     /// record is the existing no-terrain route, not a synthetic terrain miss.
     fn terrain_for_query(&self, battle_id: u64, shot_id: u32, server_tick: u32,
@@ -527,9 +567,14 @@ impl Trace {
         let previous = query_order.checked_sub(1).ok_or_else(|| invalid("terrain query order"))?;
         match self.events.iter().find(|event| event.order() == previous) {
             Some(Event::TerrainQuery { order, battle_id: battle, shot_id: shot, server_tick: tick,
-                segment_order: segment, terrain_revision, hit }) => {
+                segment_order: segment, terrain_revision, scene_version, excluded_instance, hit }) => {
                 if *battle != battle_id || *shot != shot_id || *tick != server_tick
                     || *segment != segment_order || ![terrain::SOURCE_REVISION,terrain::WORLD_SOURCE_REVISION].contains(terrain_revision)
+                    || *scene_version!=self.scene_version_before(*order)
+                    || *excluded_instance!=if *scene_version==0 {None}else{Some(destructible::INSTANCE_ID)}
+                    || (*scene_version!=0 && *terrain_revision!=terrain::WORLD_SOURCE_REVISION)
+                    || hit.is_some_and(|hit| matches!(hit.surface,terrain::Surface::StaticObstacle{instance_id,..}
+                        if Some(instance_id)==*excluded_instance))
                     || (*terrain_revision == terrain::SOURCE_REVISION && hit.is_some_and(|hit|
                         matches!(hit.surface,terrain::Surface::StaticObstacle{..}))) {
                     return Err(invalid("terrain query identity or segment binding"));
@@ -622,7 +667,7 @@ impl Trace {
     /// so the caller can stop at the first contact without another query.
     pub fn collision_query(&mut self, battle_id: u64, shot_id: u32,
         server_tick: u32, mesh: &collision::Mesh) -> io::Result<Vec<collision::Candidate>> {
-        self.collision_batch(battle_id, shot_id, server_tick, mesh, None, None)
+        self.collision_batch(battle_id, shot_id, server_tick, mesh, None, None,0,None)
             .map(|(candidates, _, _)| candidates)
     }
 
@@ -633,7 +678,7 @@ impl Trace {
     pub fn collision_query_classified(&mut self, battle_id: u64, shot_id: u32,
         server_tick: u32, mesh: &collision::Mesh, catalog: &materials::Catalog)
         -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>)> {
-        self.collision_batch(battle_id, shot_id, server_tick, mesh, Some(catalog), None)
+        self.collision_batch(battle_id, shot_id, server_tick, mesh, Some(catalog), None,0,None)
             .map(|(candidates, material, _)| (candidates, material))
     }
 
@@ -644,21 +689,30 @@ impl Trace {
         server_tick: u32, mesh: &collision::Mesh, catalog: &materials::Catalog,
         terrain: &terrain::Terrain)
         -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>, Option<terrain::Hit>)> {
-        self.collision_batch(battle_id, shot_id, server_tick, mesh, Some(catalog), Some(terrain))
+        self.collision_batch(battle_id, shot_id, server_tick, mesh, Some(catalog), Some(terrain),0,None)
+    }
+    pub fn collision_query_world_filtered(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,
+        mesh:&collision::Mesh,catalog:&materials::Catalog,terrain:&terrain::Terrain,scene_version:u32,excluded_instance:Option<u32>)
+        ->io::Result<(Vec<collision::Candidate>,Option<materials::MaterialFacts>,Option<terrain::Hit>)>{
+        if terrain.source_revision()!=terrain::WORLD_SOURCE_REVISION{return Err(invalid("destructible query requires pinned obstacle scene"));}
+        self.collision_batch(battle_id,shot_id,server_tick,mesh,Some(catalog),Some(terrain),scene_version,excluded_instance)
     }
 
     fn collision_batch(&mut self, battle_id: u64, shot_id: u32,
         server_tick: u32, mesh: &collision::Mesh, catalog: Option<&materials::Catalog>,
-        terrain: Option<&terrain::Terrain>)
+        terrain: Option<&terrain::Terrain>,scene_version:u32,excluded_instance:Option<u32>)
         -> io::Result<(Vec<collision::Candidate>, Option<materials::MaterialFacts>, Option<terrain::Hit>)> {
         self.common(battle_id, shot_id, server_tick)?;
+        if scene_version>1 || scene_version!=self.scene_version_before(u32::MAX)
+            || excluded_instance!=if scene_version==0 {None}else{Some(destructible::INSTANCE_ID)}
+            || (scene_version==1 && terrain.is_none()) {return Err(invalid("collision query scene revision or exclusion"));}
         let (segment_order, start, end) = match self.events.iter().rev()
             .find(|event| event.shot_id() == shot_id) {
             Some(Event::Segment { order, segment_tick_end, start, end, .. })
                 if *segment_tick_end == server_tick => (*order, *start, *end),
             _ => return Err(invalid("collision query without current unqueried segment")),
         };
-        let terrain_hit = match terrain { Some(terrain) => terrain.nearest(start, end)?, None => None };
+        let terrain_hit = match terrain { Some(terrain) => terrain.nearest_excluding(start, end,excluded_instance)?, None => None };
         let candidates = collision::query(mesh, start, end)?;
         let material = match (catalog, candidates.first()) {
             (Some(catalog), Some(nearest)) => Some(catalog.lookup(&nearest.mesh, &nearest.material)?),
@@ -668,7 +722,8 @@ impl Trace {
         // Reserve a selected terrain/AP/wreck outcome and its terminal.
         // A future runtime adapter must commit query/terminal with its World
         // transaction so unrelated shots cannot consume that remaining slot.
-        let closing_rows = 1 + usize::from(material.is_some() || terrain_hit.is_some());
+        let closing_rows = 1 + usize::from(material.is_some() || terrain_hit.is_some())
+            + usize::from(scene_version==0 && terrain_hit.as_ref().is_some_and(destructible::selected));
         if self.events.len() + added + closing_rows > MAX_EVENTS
             || self.next_order.checked_add((added + closing_rows) as u32).is_none() {
             return Err(invalid("collision query trace capacity"));
@@ -677,7 +732,7 @@ impl Trace {
         let mut batch = Vec::with_capacity(added);
         if let Some(terrain) = terrain {
             batch.push(Event::TerrainQuery { order: first_order, battle_id, shot_id, server_tick,
-                segment_order, terrain_revision: terrain.source_revision(), hit: terrain_hit });
+                segment_order, terrain_revision: terrain.source_revision(), scene_version, excluded_instance, hit: terrain_hit });
         }
         let query_order = first_order + batch.len() as u32;
         batch.push(Event::CollisionQuery { order: query_order, battle_id, shot_id, server_tick,
@@ -774,7 +829,7 @@ mod tests {
         assert_eq!(MS1_GUN_COMPACT_ID, 5892);
         assert_eq!(MS1_AP_SHELL_COMPACT_ID, 2570);
         assert_eq!(MAX_SEGMENTS_PER_SHOT, 256);
-        assert_eq!(MAX_EVENTS, 36_040);
+        assert_eq!(MAX_EVENTS, 36_041);
     }
 
     #[test]
@@ -1003,6 +1058,56 @@ mod tests {
             &tagged_plate("Hull","armor_1",&ap_tag(1,1001)),bundle.materials(),&test_terrain(hit_x)).unwrap();
         (trace,hit)
     }
+
+    fn destructible_batch()->(Trace,destructible::Transition){
+        let bundle=super::super::geometry::tests::bundle();let ground=super::super::model::tests::destructible_terrain();
+        let mut trace=launched_trace();trace.segment(123,1,1001,1000,[-402.31094,56.9,-410.],[-402.31094,56.9,-400.]).unwrap();
+        let (_,_,hit)=trace.collision_query_world_filtered(123,1,1001,&tagged_plate("Hull","armor_1",&ap_tag(1,1001)),
+            bundle.materials(),&ground,0,None).unwrap();let hit=hit.unwrap();assert!(destructible::selected(&hit));
+        assert_eq!(trace.terrain_contact(123,1,1001).unwrap(),hit);
+        let transition=destructible::State::default().contact(1,0,1001,hit).unwrap().unwrap();(trace,transition)
+    }
+    #[test]fn destructible_trace_binds_current_hit_scene_and_exact_once_order(){
+        let(mut trace,transition)=destructible_batch();let contact_order=trace.events.last().unwrap().order();
+        trace.destructible_transition(123,1,1001,&transition).unwrap();
+        assert!(matches!(trace.events.last(),Some(Event::DestructibleTransition{terrain_contact_order,transition:t,..})
+            if *terrain_contact_order==contact_order && t==&transition));
+        let before=trace.clone();assert!(trace.destructible_transition(123,1,1001,&transition).is_err());
+        assert!(trace.terminal(123,1,1001,TerminalReason::TestLabImpact).is_err());assert_eq!(trace,before);
+        trace.terminal(123,1,1001,TerminalReason::TerrainCollision).unwrap();
+        let w=world(Instant::now());let projectile=Projectile::launch(2,0,&w.actors[0],Instant::now()).unwrap();
+        trace.admission(123,2,1001,0,19,18).unwrap();trace.launch(123,&projectile,1001).unwrap();
+        trace.segment(123,2,1002,1001,[-402.31094,56.9,-410.],[-402.31094,56.9,-400.]).unwrap();
+        let bundle=super::super::geometry::tests::bundle();let ground=super::super::model::tests::destructible_terrain();
+        let mesh=tagged_plate("Hull","armor_1",&ap_tag(1,1002));let before=trace.clone();
+        for(scene,exclude)in[(0,None),(1,None),(0,Some(destructible::INSTANCE_ID)),(1,Some(0)),(2,Some(destructible::INSTANCE_ID))]{
+            assert!(trace.collision_query_world_filtered(123,2,1002,&mesh,bundle.materials(),&ground,scene,exclude).is_err());assert_eq!(trace,before);
+        }
+        assert!(trace.collision_query_world(123,2,1002,&mesh,bundle.materials(),&ground).is_err());assert_eq!(trace,before);
+        let(hits,_,hit)=trace.collision_query_world_filtered(123,2,1002,&mesh,bundle.materials(),&ground,1,Some(destructible::INSTANCE_ID)).unwrap();
+        assert!(hits.is_empty());assert!(hit.is_none());trace.terminal(123,2,1002,TerminalReason::UnavailableImpactResolver).unwrap();
+    }
+    #[test]fn destructible_trace_rejects_forged_identity_scene_hit_and_capacity_without_partial_append(){
+        let(original,transition)=destructible_batch();
+        for mode in 0..12{
+            let mut trace=original.clone();let mut changed=transition.clone();match mode{
+                0=>changed.shot=2,1=>changed.shooter=1,2=>changed.tick=1002,3=>changed.health_before=14,
+                4=>changed.hit.point[0]+=0.1,5=>changed.hit.triangle_id+=1,6=>changed.scene_before=1,
+                7=>changed.damage=15,
+                8=>{if let Event::TerrainContact{terrain_query_order,..}=trace.events.last_mut().unwrap(){*terrain_query_order+=1;}},
+                9=>{if let Some(Event::TerrainQuery{scene_version,..})=trace.events.iter_mut().find(|e|matches!(e,Event::TerrainQuery{..})){*scene_version=1;}},
+                10=>{let contact=trace.events.pop().unwrap();trace.events.resize(MAX_EVENTS-2,trace.events[0].clone());trace.events.push(contact);},
+                11=>trace.next_order=u32::MAX-1,_=>unreachable!(),
+            }
+            let before=trace.clone();assert!(trace.destructible_transition(123,1,1001,&changed).is_err(),"mode{mode}");assert_eq!(trace,before);
+        }
+        for(battle,shot,tick)in[(124,1,1001),(123,2,1001),(123,1,1002)]{
+            let mut trace=original.clone();assert!(trace.destructible_transition(battle,shot,tick,&transition).is_err());assert_eq!(trace,original);
+        }
+        let mut trace=launched_trace();let before=trace.clone();assert!(trace.destructible_transition(123,1,1000,&transition).is_err());assert_eq!(trace,before);
+        let (mut trace,_)=terrain_batch(Some(0.),0.);trace.terrain_contact(123,1,1001).unwrap();let before=trace.clone();
+        assert!(trace.destructible_transition(123,1,1001,&transition).is_err());assert_eq!(trace,before);
+    }
     #[test] fn combined_query_preserves_vehicle_facts_and_records_exact_terrain_batch() {
         let bundle=super::super::geometry::tests::bundle(); let ground=test_terrain(Some(1.0));
         let mesh=tagged_plate("Hull","armor_1",&ap_tag(1,1001)); let mut trace=launched_trace();
@@ -1096,7 +1201,7 @@ mod tests {
         for which in 0..9 {
             let mut trace=original.clone();
             match trace.events.get_mut(3).unwrap() {
-                Event::TerrainQuery {order,battle_id,shot_id,server_tick,segment_order,terrain_revision,hit} => match which {
+                Event::TerrainQuery {order,battle_id,shot_id,server_tick,segment_order,terrain_revision,hit,..} => match which {
                     0=>*order+=1,1=>*battle_id+=1,2=>*shot_id+=1,3=>*server_tick+=1,
                     4=>*segment_order+=1,5=>*terrain_revision="unknown",6=>*hit=None,
                     7=>hit.as_mut().unwrap().t=0.9,
@@ -1618,7 +1723,7 @@ mod tests {
     }
 
     #[test]
-    fn full_ammo_world_queries_exhaust_the_new_terrain_budget() {
+    fn full_ammo_world_queries_leave_one_global_transition_slot() {
         full_ammo_budget(false, true);
     }
 
@@ -1674,7 +1779,7 @@ mod tests {
             trace.terminal(123, shot_id, tick, if wreck { TerminalReason::TestLabWreckImpact }
                 else { TerminalReason::TestLabImpact }).unwrap();
         }
-        assert_eq!(trace.events().len(), if with_terrain { MAX_EVENTS } else { 25_800 });
+        assert_eq!(trace.events().len(), if with_terrain { MAX_EVENTS-1 } else { 25_800 });
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::TerrainQuery { .. })).count(),
             if with_terrain { model::MAX_SHOTS * MAX_SEGMENTS_PER_SHOT } else { 0 });
         assert_eq!(trace.terminal_shots().len(), model::MAX_SHOTS);

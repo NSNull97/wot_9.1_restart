@@ -47,7 +47,7 @@ mod battle091;
 #[derive(Debug, PartialEq)]
 enum Command<'a> {
     SharedLab { key: &'a str, digest: &'a str, gateway: &'a str, capture: &'a str },
-    IntegratedLab { key: &'a str, digest: &'a str, gateway: &'a str, pool: &'a str, capture: &'a str, geometry: Option<&'a str>, ap_test_lab: bool, terrain_test_lab: bool },
+    IntegratedLab { key: &'a str, digest: &'a str, gateway: &'a str, pool: &'a str, capture: &'a str, geometry: Option<&'a str>, ap_test_lab: bool, terrain_test_lab: bool, destructible_test_lab: bool },
     Interactive { key: &'a str, digest: &'a str, gateway: &'a str, capture: Option<&'a str> },
     MapDrive { key: &'a str, digest: &'a str, gateway: &'a str, pool: &'a str,
                capture: Option<&'a str>, profile: capture091::Profile },
@@ -60,13 +60,14 @@ fn command(args: &[String]) -> io::Result<Command<'_>> {
         Some("legacy091-shared-lab") if args.len() == 6 && !args[5].is_empty() => Ok(Command::SharedLab {
             key: &args[2], digest: &args[3], gateway: &args[4], capture: &args[5],
         }),
-        Some("legacy091-integrated-lab") if matches!(args.len(), 7 | 8 | 9 | 10) && !args[5].is_empty() && !args[6].is_empty()
+        Some("legacy091-integrated-lab") if matches!(args.len(), 7 | 8 | 9 | 10 | 11) && !args[5].is_empty() && !args[6].is_empty()
             && args.get(7).is_none_or(|s| !s.is_empty() && !s.starts_with("--"))
             && args.get(8).is_none_or(|s| s == "--ap-test-lab")
-            && args.get(9).is_none_or(|s| s == "--terrain-test-lab") => Ok(Command::IntegratedLab {
+            && args.get(9).is_none_or(|s| s == "--terrain-test-lab")
+            && args.get(10).is_none_or(|s| s == "--destructible-test-lab") => Ok(Command::IntegratedLab {
             key: &args[2], digest: &args[3], gateway: &args[4], pool: &args[5], capture: &args[6],
             geometry: args.get(7).map(String::as_str),
-            ap_test_lab: args.len() >= 9, terrain_test_lab: args.len() == 10,
+            ap_test_lab: args.len() >= 9, terrain_test_lab: args.len() >= 10, destructible_test_lab: args.len() == 11,
         }),
         Some("legacy091-interactive") if matches!(args.len(), 5 | 6) => Ok(Command::Interactive {
             key: &args[2], digest: &args[3], gateway: &args[4], capture: args.get(5).map(String::as_str),
@@ -84,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     match command(&args)? {
         Command::SharedLab { key, digest, gateway, capture } => gateway091::serve_shared_lab(key, digest, gateway, capture),
-        Command::IntegratedLab { key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab } => gateway091::serve_integrated_lab(key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab),
+        Command::IntegratedLab { key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab, destructible_test_lab } => gateway091::serve_integrated_lab(key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab, destructible_test_lab),
         Command::Interactive { key, digest, gateway, capture } => gateway091::serve_interactive(key, digest, gateway, capture),
         Command::MapDrive { key, digest, gateway, pool, capture, profile } => gateway091::serve_map_drive(key, digest, gateway, pool, capture, profile),
     }
@@ -106,13 +107,15 @@ mod cli_tests {
     #[test]
     fn integrated_lab_requires_pool_and_capture() {
         assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture"])).unwrap(),
-            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:None,ap_test_lab:false,terrain_test_lab:false });
+            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:None,ap_test_lab:false,terrain_test_lab:false,destructible_test_lab:false });
         assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture","mesh"])).unwrap(),
-            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:false,terrain_test_lab:false });
+            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:false,terrain_test_lab:false,destructible_test_lab:false });
         assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture","mesh","--ap-test-lab"])).unwrap(),
-            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:false });
+            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:false,destructible_test_lab:false });
         assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture","mesh","--ap-test-lab","--terrain-test-lab"])).unwrap(),
-            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:true });
+            Command::IntegratedLab { key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:true,destructible_test_lab:false });
+        assert_eq!(command(&args(&["exe","legacy091-integrated-lab","key","digest","config","pool","capture","mesh","--ap-test-lab","--terrain-test-lab","--destructible-test-lab"])).unwrap(),
+            Command::IntegratedLab {key:"key",digest:"digest",gateway:"config",pool:"pool",capture:"capture",geometry:Some("mesh"),ap_test_lab:true,terrain_test_lab:true,destructible_test_lab:true});
         for extra in [vec!["--ap-test-lab"], vec!["mesh","--unverified"], vec!["","--ap-test-lab"],
             vec!["mesh","--terrain-test-lab"],vec!["mesh","--ap-test-lab","--ap-test-lab"],
             vec!["mesh","--ap-test-lab","--terrain-test-lab","--terrain-test-lab"]] {

@@ -11,6 +11,8 @@ mod impact_wire;
 pub(crate) mod terrain;
 pub(crate) mod obstacles;
 mod terrain_wire;
+mod destructible_wire;
+pub(crate) mod destructible;
 pub(crate) mod projectile;
 pub(crate) mod collision;
 pub(crate) mod impact;
@@ -34,6 +36,8 @@ pub(super) struct Client {
     announcement: Option<(u32, bool)>,
     creations: [Option<(u32, bool)>; 2],
     binding: Option<(u32, bool)>,
+    area_creation: Option<(u32, bool)>,
+    area_scene_sent: u32,
     correction: bool,
     ready_sent: [bool; 2],
     commands: Vec<Command>,
@@ -49,12 +53,12 @@ pub(super) struct Client {
 impl Client {
     fn new(slot: usize) -> Self {
         Self { slot, phase: Phase::Account, view: None, announcement: None, creations: [None; 2],
-            binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
+            area_creation: None, area_scene_sent: 0, binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; 2], owner_health_sent: None, tracer_started: [false; model::MAX_SHOTS],
             tracer_stopped: [false; model::MAX_SHOTS] }
     }
     pub(super) fn acknowledge(&mut self, cumulative: u32, frame: &Frame) {
-        for pending in [&mut self.announcement, &mut self.creations[0], &mut self.binding] {
+        for pending in [&mut self.announcement, &mut self.creations[0], &mut self.binding, &mut self.area_creation] {
             if let Some((seq, acked)) = pending { *acked |= cumulative > *seq || frame.selective.contains(seq); }
         }
         if let Some((seq, acked)) = &mut self.creations[1] { *acked |= cumulative > *seq || frame.selective.contains(seq); }
@@ -96,19 +100,37 @@ impl Session {
             let late = drive::late_queue_info(payload)?;
             if late == Some(false) { return Ok(()); }
             if payload != [9] && late != Some(true) { return Err(bad()); }
-            let sequence = self.tx.enqueue_body_tracked(&wire::announcement(world, c.slot)?)?;
+            let mut body = wire::announcement(world, c.slot)?;
+            if world.destructible_enabled() { body.extend(destructible_wire::announcement()); }
+            let sequence = self.tx.enqueue_body_tracked(&body)?;
             c.announcement = Some((sequence, false)); c.phase = Phase::Entities;
             events.push(format!("SHARED_ANNOUNCED battle={} session={} rows=2 own={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(c.slot)?));
             return Ok(());
         }
-        if let Some(slots) = wire::entity_requests(payload)? {
-            if !matches!(c.phase, Phase::Entities | Phase::Driving) || !c.announcement.is_some_and(|(_, ack)| ack) { return Err(bad()); }
-            for slot in slots {
-                if c.creations[slot].is_some() { return Err(bad()); }
-                let sequence = self.tx.enqueue_body_tracked(&wire::create_vehicle(world, slot)?)?;
-                c.creations[slot] = Some((sequence, false));
-                c.health_sent[slot] = Some(world.actors[slot].health);
-                events.push(format!("SHARED_ENTITY_CREATED battle={} session={} entity={} own={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(slot)?, slot == c.slot));
+        if payload.first() == Some(&8) {
+            if !matches!(c.phase, Phase::Entities | Phase::Driving)
+                || !c.announcement.is_some_and(|(_, ack)| ack)
+                || payload.len() > 21 || payload.len() % 7 != 0 { return Err(bad()); }
+            // Original requests can piggyback vehicles and the area controller.
+            // Session's outer receive clone makes the whole envelope atomic.
+            for raw in payload.chunks_exact(7) {
+                if destructible_wire::is_request(raw) {
+                    if !world.destructible_enabled() || c.area_creation.is_some() { return Err(bad()); }
+                    let state = (world.scene_version() == 1).then_some(destructible_wire::NATIVE_INDEX);
+                    let sequence = self.tx.enqueue_body_tracked(&destructible_wire::create(state)?)?;
+                    c.area_creation = Some((sequence, false));
+                    c.area_scene_sent = world.scene_version();
+                    events.push(format!("SHARED_AREA_CREATED battle={} session={} entity={} scene_version={} reliable_sequence={sequence}", world.id,self.id,destructible_wire::ENTITY_ID,world.scene_version()));
+                } else {
+                    let slots = wire::entity_requests(raw)?.ok_or_else(bad)?;
+                    for slot in slots {
+                        if c.creations[slot].is_some() { return Err(bad()); }
+                        let sequence = self.tx.enqueue_body_tracked(&wire::create_vehicle(world, slot)?)?;
+                        c.creations[slot] = Some((sequence, false));
+                        c.health_sent[slot] = Some(world.actors[slot].health);
+                        events.push(format!("SHARED_ENTITY_CREATED battle={} session={} entity={} own={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(slot)?, slot == c.slot));
+                    }
+                }
             }
             return Ok(());
         }
