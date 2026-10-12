@@ -233,3 +233,5 @@ impl Session {
         Ok(())
     }
 }
+
+pub use server::serve_integrated_for_map;

@@ -107,7 +107,7 @@ impl World {
     pub fn new_for_map(id: u64, now: Instant, map: crate::map_profile091::MapId) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
         Ok(Self { id, map, actors: Vec::new(), started: None, last: now, tick: 1000,
-            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new(),
+            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_map(map),
             geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None })
     }
@@ -121,17 +121,17 @@ impl World {
     }
     pub fn bind_terrain(&mut self, terrain: Arc<terrain::Terrain>) -> io::Result<()> {
         if self.started.is_some() || !self.shots.is_empty() || !self.ap_test_lab
-            || self.geometry.is_none() || self.terrain.is_some() { return Err(bad()); }
+            || self.geometry.is_none() || self.terrain.is_some() || terrain.map_id()!=self.map { return Err(bad()); }
         self.terrain = Some(terrain); Ok(())
     }
     pub fn latest_shot(&self) -> u32 { self.shots.last().map(|s| s.sequence).unwrap_or(0) }
     pub fn bind_destructible_test_lab(&mut self) -> io::Result<()> {
-        if self.started.is_some() || !self.shots.is_empty() || !self.ap_test_lab || self.destructible.is_some()||self.fragiles.is_some()
+        if self.map!=crate::map_profile091::MapId::Karelia || self.started.is_some() || !self.shots.is_empty() || !self.ap_test_lab || self.destructible.is_some()||self.fragiles.is_some()
             || self.terrain.as_ref().is_none_or(|terrain|terrain.source_revision()!=terrain::WORLD_SOURCE_REVISION) {return Err(bad());}
         self.destructible=Some(destructible::State::default());Ok(())
     }
     pub fn bind_fragiles(&mut self,catalog:Arc<fragiles::Catalog>)->io::Result<()>{
-        if self.started.is_some()||!self.shots.is_empty()||!self.ap_test_lab||self.destructible.is_some()||self.fragiles.is_some(){return Err(bad());}
+        if catalog.map!=self.map||self.started.is_some()||!self.shots.is_empty()||!self.ap_test_lab||self.destructible.is_some()||self.fragiles.is_some(){return Err(bad());}
         catalog.bind_geometry(self.terrain.as_ref().ok_or_else(bad)?)?;
         self.impact.bind_fragiles(catalog.clone())?;self.fragiles=Some(fragiles::State::new(catalog));Ok(())
     }
@@ -582,6 +582,19 @@ pub(super) mod tests {
         if let Some(h)=health{catalog.objects.iter_mut().find(|o|o.instance_id==1513).unwrap().health=h;}
         let catalog=Arc::new(catalog);catalog.bind_geometry(w.terrain.as_ref().unwrap()).unwrap();
         w.impact.bind_fragiles(catalog.clone()).unwrap();w.fragiles=Some(fragiles::State::new(catalog));w
+    }
+    #[test]
+    fn world_rejects_terrain_and_fragile_catalog_from_another_map() {
+        let now=Instant::now();
+        let mut world=World::new_for_map(73,now,crate::map_profile091::MapId::Prohorovka).unwrap();
+        world.bind_geometry(Arc::new(super::super::geometry::tests::bundle())).unwrap();
+        world.enable_ap_test_lab().unwrap();
+        let wrong=Arc::new(super::super::terrain::tests::fixture(0.,1.,2,vec![0.;4]));
+        assert!(world.bind_terrain(wrong).is_err());
+        let right=Arc::new(super::super::terrain::tests::actual_prohorovka().clone());
+        world.bind_terrain(right).unwrap();
+        assert!(world.bind_destructible_test_lab().is_err());
+        assert!(world.bind_fragiles(super::super::fragiles::tests::catalog()).is_err());
     }
     #[test]fn imported_object_partial_health_preserves_geometry_until_death_and_next_shell_passes(){
         let now=Instant::now();let mut w=fragile_world(now,Some(32));

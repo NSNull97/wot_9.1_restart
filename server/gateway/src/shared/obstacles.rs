@@ -1,4 +1,4 @@
-//! Pinned Karelia projectile static-obstacle export; geometry and source kind.
+//! Pinned original #717 projectile static-obstacle export; geometry and source kind.
 //!
 //! World XYZ already includes each original instance transform. Per-triangle
 //! original flags select the native ProjectileMover mask-128 subset. The
@@ -11,6 +11,7 @@
 
 use std::{fs, io::{self, Read}, path::{Component, Path}, sync::Arc};
 use serde_json::Value;
+use crate::map_profile091::MapId;
 use sha2::{Digest, Sha256};
 
 pub const MANIFEST_SHA256: &str = "ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447c5bd95dd97d80cea";
@@ -95,7 +96,7 @@ struct Mesh {
 }
 
 #[derive(Clone, Debug)]
-pub struct Obstacles { mesh: Arc<Mesh> }
+pub struct Obstacles { map: MapId, mesh: Arc<Mesh> }
 
 fn bad(reason: &'static str) -> io::Error { io::Error::new(io::ErrorKind::InvalidData, reason) }
 
@@ -158,39 +159,49 @@ fn points(vertices: &[[f32; 3]], triangle: [u32; 3]) -> [[f32; 3]; 3] {
 }
 
 impl Obstacles {
+    pub fn map_id(&self) -> MapId { self.map }
     /// Exact local files only. Every source hash is verified before decoding;
     /// embedded resource paths are provenance data and are never followed.
     pub fn load(local_root: &Path, manifest_path: &Path) -> io::Result<Self> {
+        Self::load_for(MapId::Karelia, local_root, manifest_path)
+    }
+    pub fn load_for(map: MapId, local_root: &Path, manifest_path: &Path) -> io::Result<Self> {
+        let profile = map.spec();
         non_reparse(local_root)?;
         let root = local_root.canonicalize()?;
-        let raw = read_pinned(&root, manifest_path, MANIFEST_BYTES, MANIFEST_SHA256)?;
+        let raw = read_pinned(&root, manifest_path, profile.projectile_manifest_bytes, profile.projectile_manifest_sha256)?;
         let directory = manifest_path.parent().ok_or_else(|| bad("obstacles manifest parent"))?;
-        let vertices = read_pinned(&root, &directory.join("obstacles.vertices.f32"), VERTEX_COUNT * 12, VERTICES_SHA256)?;
-        let triangles = read_pinned(&root, &directory.join("obstacles.triangles.u32"), TRIANGLE_COUNT * 12, TRIANGLES_SHA256)?;
-        let flags = read_pinned(&root, &directory.join("obstacles.flags.u16"), TRIANGLE_COUNT * 2, FLAGS_SHA256)?;
+        let vertices = read_pinned(&root, &directory.join("obstacles.vertices.f32"), profile.projectile_vertex_count * 12, profile.projectile_vertices_sha256)?;
+        let triangles = read_pinned(&root, &directory.join("obstacles.triangles.u32"), profile.projectile_triangle_count * 12, profile.projectile_triangles_sha256)?;
+        let flags = read_pinned(&root, &directory.join("obstacles.flags.u16"), profile.projectile_triangle_count * 2, profile.projectile_flags_sha256)?;
         let value: Value = serde_json::from_slice(&raw).map_err(|_| bad("obstacles manifest JSON"))?;
         if value["version"] != 1 || value["kind"] != "original_091_projectile_static_triangle_mesh"
-            || value["map"] != "01_karelia" || value["coordinates"] != serde_json::json!({
+            || value["map"] != map.asset() || value["coordinates"] != serde_json::json!({
                 "unit":"metre","up_axis":"Y","order":"XYZ","endianness":"little","space":"original world"})
             || value["collision_policy"]["excluded_mask"] != 128
-            || value["vertices"]["file"] != "obstacles.vertices.f32" || value["vertices"]["count"] != VERTEX_COUNT
+            || value["vertices"]["file"] != "obstacles.vertices.f32" || value["vertices"]["count"] != profile.projectile_vertex_count
             || value["vertices"]["format"] != "float32_xyz" || value["vertices"]["stride"] != 12
-            || value["vertices"]["bytes"] != VERTEX_COUNT * 12 || value["vertices"]["sha256"] != VERTICES_SHA256
-            || value["triangles"]["file"] != "obstacles.triangles.u32" || value["triangles"]["count"] != TRIANGLE_COUNT
+            || value["vertices"]["bytes"] != profile.projectile_vertex_count * 12 || value["vertices"]["sha256"] != profile.projectile_vertices_sha256
+            || value["triangles"]["file"] != "obstacles.triangles.u32" || value["triangles"]["count"] != profile.projectile_triangle_count
             || value["triangles"]["format"] != "uint32_abc" || value["triangles"]["stride"] != 12
-            || value["triangles"]["bytes"] != TRIANGLE_COUNT * 12 || value["triangles"]["sha256"] != TRIANGLES_SHA256
-            || value["flags"]["file"] != "obstacles.flags.u16" || value["flags"]["count"] != TRIANGLE_COUNT
+            || value["triangles"]["bytes"] != profile.projectile_triangle_count * 12 || value["triangles"]["sha256"] != profile.projectile_triangles_sha256
+            || value["flags"]["file"] != "obstacles.flags.u16" || value["flags"]["count"] != profile.projectile_triangle_count
             || value["flags"]["format"] != "uint16_flags" || value["flags"]["stride"] != 2
-            || value["flags"]["bytes"] != TRIANGLE_COUNT * 2 || value["flags"]["sha256"] != FLAGS_SHA256
-            || value["instances"].as_array().is_none_or(|rows| rows.len() != INSTANCE_COUNT) {
+            || value["flags"]["bytes"] != profile.projectile_triangle_count * 2 || value["flags"]["sha256"] != profile.projectile_flags_sha256
+            || value["instances"].as_array().is_none_or(|rows| rows.len() != profile.instance_count) {
             return Err(bad("obstacles manifest schema/profile"));
         }
-        Self::decode_buffers(&vertices, &triangles, &flags, &value["instances"])
+        Self::decode_buffers_for(map, &vertices, &triangles, &flags, &value["instances"])
     }
 
+    #[cfg(test)]
     fn decode_buffers(raw_vertices: &[u8], raw_triangles: &[u8], raw_flags: &[u8], rows: &Value) -> io::Result<Self> {
-        if raw_vertices.is_empty() || raw_vertices.len() > VERTEX_COUNT * 12 || raw_vertices.len() % 12 != 0
-            || raw_triangles.is_empty() || raw_triangles.len() > TRIANGLE_COUNT * 12 || raw_triangles.len() % 12 != 0
+        Self::decode_buffers_for(MapId::Karelia, raw_vertices, raw_triangles, raw_flags, rows)
+    }
+    fn decode_buffers_for(map: MapId, raw_vertices: &[u8], raw_triangles: &[u8], raw_flags: &[u8], rows: &Value) -> io::Result<Self> {
+        let profile = map.spec();
+        if raw_vertices.is_empty() || raw_vertices.len() > profile.projectile_vertex_count * 12 || raw_vertices.len() % 12 != 0
+            || raw_triangles.is_empty() || raw_triangles.len() > profile.projectile_triangle_count * 12 || raw_triangles.len() % 12 != 0
             || raw_vertices.len() != raw_triangles.len() * 3 || raw_flags.len() != raw_triangles.len()/6 {
             return Err(bad("obstacles buffer lengths"));
         }
@@ -214,7 +225,7 @@ impl Obstacles {
             }
             triangles.push(triangle);
         }
-        let rows = rows.as_array().filter(|rows| !rows.is_empty() && rows.len() <= INSTANCE_COUNT)
+        let rows = rows.as_array().filter(|rows| !rows.is_empty() && rows.len() <= profile.instance_count)
             .ok_or_else(|| bad("obstacles instance array"))?;
         let mut instances = Vec::with_capacity(triangles.len());
         let mut cursor = 0;
@@ -240,14 +251,19 @@ impl Obstacles {
         }
         if cursor != triangles.len() { return Err(bad("obstacles incomplete instance partition")); }
         let flags = raw_flags.chunks_exact(2).map(|bytes| u16::from_le_bytes(bytes.try_into().expect("bounded two bytes"))).collect();
-        Self::build(vertices,triangles,instances,flags,rows.len())
+        Self::build_for(map,vertices,triangles,instances,flags,rows.len())
     }
 
+    #[cfg(test)]
     fn build(vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>, instances: Vec<u32>, flags: Vec<u16>, instance_count: usize) -> io::Result<Self> {
-        if triangles.is_empty() || triangles.len() > TRIANGLE_COUNT || instances.len() != triangles.len()
-            || instance_count == 0 || instance_count > INSTANCE_COUNT || instances.iter().any(|&id| id as usize >= instance_count)
+        Self::build_for(MapId::Karelia,vertices,triangles,instances,flags,instance_count)
+    }
+    fn build_for(map: MapId, vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>, instances: Vec<u32>, flags: Vec<u16>, instance_count: usize) -> io::Result<Self> {
+        let profile = map.spec();
+        if triangles.is_empty() || triangles.len() > profile.projectile_triangle_count || instances.len() != triangles.len()
+            || instance_count == 0 || instance_count > profile.instance_count || instances.iter().any(|&id| id as usize >= instance_count)
             || flags.len() != triangles.len() || flags.iter().any(|flag| flag & 128 != 0)
-            || vertices.len() > VERTEX_COUNT || vertices.iter().flatten().any(|v| !v.is_finite() || v.abs() > MAX_QUERY_COORDINATE) {
+            || vertices.len() > profile.projectile_vertex_count || vertices.iter().flatten().any(|v| !v.is_finite() || v.abs() > MAX_QUERY_COORDINATE) {
             return Err(bad("obstacles mesh construction bounds"));
         }
         let mut boxes = Vec::with_capacity(triangles.len());
@@ -262,7 +278,7 @@ impl Obstacles {
         let mut order: Vec<u32> = (0..triangles.len() as u32).collect();
         let mut nodes = Vec::with_capacity(triangles.len()/2+1);
         build_node(&mut order,0,&boxes,&mut nodes,0)?;
-        Ok(Self { mesh: Arc::new(Mesh { instance_count:instance_count as u32,vertices: vertices.into_boxed_slice(),triangles:triangles.into_boxed_slice(),
+        Ok(Self { map, mesh: Arc::new(Mesh { instance_count:instance_count as u32,vertices: vertices.into_boxed_slice(),triangles:triangles.into_boxed_slice(),
             instances:instances.into_boxed_slice(),material_kinds:flags.into_iter().map(|flag| (flag >> 8) as u8).collect(),
             order:order.into_boxed_slice(),nodes:nodes.into_boxed_slice() }) })
     }
@@ -402,6 +418,29 @@ pub(crate) mod tests {
                 .unwrap_or_else(|| std::path::PathBuf::from(r"D:\WoT_9.1_Server"));
             Obstacles::load(&root.join("local"),&root.join("local/evidence/20261010-p06m-terrain-impact-01/projectile-obstacles01/01_karelia/manifest.json")).unwrap()
         })
+    }
+    pub(crate) fn actual_prohorovka() -> &'static Obstacles {
+        static MESH: OnceLock<Obstacles> = OnceLock::new();
+        MESH.get_or_init(|| {
+            let root=std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
+            let local=Path::new(&root).join("local");
+            Obstacles::load_for(MapId::Prohorovka,&local,&local.join(MapId::Prohorovka.spec().projectile_manifest_relative)).unwrap()
+        })
+    }
+    #[test]
+    fn original_prohorovka_mesh_is_complete_and_wrong_map_pins_fail() {
+        let mesh=actual_prohorovka();
+        assert_eq!(mesh.map_id(),MapId::Prohorovka);
+        assert_eq!(mesh.mesh.instance_count,3904);
+        assert_eq!(mesh.mesh.triangles.len(),285350);
+        let root=std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
+        let local=Path::new(&root).join("local");
+        for (selected,source) in [(MapId::Karelia,MapId::Prohorovka),(MapId::Prohorovka,MapId::Karelia)] {
+            assert!(Obstacles::load_for(selected,&local,&local.join(source.spec().projectile_manifest_relative)).is_err());
+        }
+        for (start,end) in [([-205.,6.,465.],[-195.,6.,480.]),([0.,100.,0.],[0.,-100.,0.]),([-500.,10.,20.],[500.,10.,20.])] {
+            assert_eq!(mesh.nearest(start,end).unwrap(),brute(mesh,start,end));
+        }
     }
     fn brute(mesh: &Obstacles, start: [f32; 3], end: [f32; 3]) -> Option<Hit> {
         let direction = subtract(end.map(f64::from),start.map(f64::from));

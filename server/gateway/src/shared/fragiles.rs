@@ -3,6 +3,7 @@
 use std::{fs, io::{self, Read}, path::Path, sync::Arc};
 use sha2::{Digest,Sha256};
 use serde_json::Value;
+use crate::map_profile091::MapId;
 use super::{model::{bad,MAX_SHOTS,CAPACITY},terrain,obstacles};
 
 pub const MAX_OBJECTS:usize=64;
@@ -18,7 +19,7 @@ pub struct Object {
     pub physics_first_triangle:u32,pub physics_triangle_count:u32,pub object_revision:String,
 }
 #[derive(Clone,Debug,PartialEq)]
-pub struct Catalog {pub sha256:String,pub worker_file:String,pub worker_sha256:String,pub objects:Vec<Object>}
+pub struct Catalog {pub map:MapId,pub sha256:String,pub worker_file:String,pub worker_sha256:String,pub objects:Vec<Object>}
 fn fields(v:&Value,k:&[&str])->io::Result<()> {crate::map_drive_worker091::fields(v,k).map(|_|())}
 fn uint(v:&Value)->io::Result<u32>{u32::try_from(v.as_u64().ok_or_else(bad)?).map_err(|_|bad())}
 fn text(v:&Value,max:usize)->io::Result<String>{v.as_str().filter(|s|!s.is_empty()&&s.len()<=max&&!s.chars().any(char::is_control)).map(str::to_owned).ok_or_else(bad)}
@@ -39,8 +40,10 @@ impl Catalog {
         if format!("{:x}",Sha256::digest(bytes))!=sha{return Err(bad());}
         let v=crate::map_drive_worker091::json(bytes,131072)?;
         fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects"])?;
-        if v["version"]!=1||v["profile"]!="test_lab"||v["map"]!="01_karelia"||v["destructibles_sha256"]!=DEFINITIONS_SHA
-            ||v["physics_manifest_sha256"]!=PHYSICS_SHA||v["projectile_manifest_sha256"]!=obstacles::MANIFEST_SHA256{return Err(bad());}
+        let map=MapId::from_asset(v["map"].as_str().ok_or_else(bad)?)?;
+        let profile=map.spec();
+        if v["version"]!=1||v["profile"]!="test_lab"||v["destructibles_sha256"]!=DEFINITIONS_SHA
+            ||v["physics_manifest_sha256"]!=profile.physics_manifest_sha256||v["projectile_manifest_sha256"]!=profile.projectile_manifest_sha256{return Err(bad());}
         let exports=v["native_exports_sha256"].as_array().filter(|a|(1..=2).contains(&a.len())).ok_or_else(bad)?;
         let pins=exports.iter().map(hash).collect::<io::Result<Vec<_>>>()?;
         if pins.windows(2).any(|w|w[0]>=w[1]){return Err(bad());}
@@ -60,16 +63,17 @@ impl Catalog {
                 physics_first_triangle:uint(&row["physics_first_triangle"])?,physics_triangle_count:uint(&row["physics_triangle_count"])?,object_revision:hash(&row["object_revision"])?};
             objects.push(object);
         }
-        let catalog=Self{sha256:sha.into(),worker_file,worker_sha256,objects};catalog.validate()?;Ok(catalog)
+        let catalog=Self{map,sha256:sha.into(),worker_file,worker_sha256,objects};catalog.validate()?;Ok(catalog)
     }
     fn validate(&self)->io::Result<()>{
+        let profile=self.map.spec();
         if self.objects.is_empty()||self.objects.len()>MAX_OBJECTS||self.objects.windows(2).any(|w|w[0].object_id>=w[1].object_id){return Err(bad());}
         for (i,o) in self.objects.iter().enumerate(){
-            if o.instance_id>=2918||o.object_id!=o.instance_id+1||o.health<=0||o.material_kind!=73
+            if o.instance_id as usize>=profile.instance_count||o.object_id!=o.instance_id+1||o.health<=0||o.material_kind!=73
                 ||o.resource.contains("..")||o.resource.contains('\\')||!o.resource.starts_with("content/")||!o.resource.ends_with(".model")
                 ||o.projectile_triangle_count==0||o.physics_triangle_count==0
-                ||o.projectile_first_triangle.checked_add(o.projectile_triangle_count).is_none_or(|end|end>179365)
-                ||o.physics_first_triangle.checked_add(o.physics_triangle_count).is_none_or(|end|end>335551)
+                ||o.projectile_first_triangle.checked_add(o.projectile_triangle_count).is_none_or(|end|end as usize>profile.projectile_triangle_count)
+                ||o.physics_first_triangle.checked_add(o.physics_triangle_count).is_none_or(|end|end as usize>profile.physics_triangle_count)
                 || !((121..=132).contains(&(o.chunk_id>>8))&&(121..=132).contains(&(o.chunk_id&255))) {return Err(bad());}
             for old in &self.objects[..i]{
                 if (old.chunk_id,old.native_index)==(o.chunk_id,o.native_index)
@@ -81,6 +85,7 @@ impl Catalog {
     pub fn instance(&self,id:u32)->Option<&Object>{self.objects.iter().find(|o|o.instance_id==id)}
     pub fn chunks(&self)->Vec<u16>{let mut v=self.objects.iter().map(|o|o.chunk_id).collect::<Vec<_>>();v.sort_unstable();v.dedup();v}
     pub fn bind_geometry(&self,terrain:&terrain::Terrain)->io::Result<()>{
+        if terrain.map_id()!=self.map{return Err(bad());}
         for o in &self.objects{terrain.validate_instance(o.instance_id,o.projectile_first_triangle,o.projectile_triangle_count,o.material_kind)?;}Ok(())
     }
 }

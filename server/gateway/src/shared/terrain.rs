@@ -1,7 +1,7 @@
-//! Pinned Karelia terrain triangles and a bounded nearest-segment query.
+//! Pinned original #717 terrain triangles and a bounded nearest-segment query.
 //!
 //! Geometry is the exact accepted map-drive export, not a bilinear surface.
-//! Its 144 source chunks contain no hole members. Loading any other map,
+//! Each supported map has 144 source chunks without hole members. Other maps,
 //! hole-bearing export, LOD or changed bytes is unsupported, not filled in.
 //! The checkerboard topology matches the static #717 heightAt parity evidence
 //! (0x101dd20, XOR at 0x101de09). Native projectile collision equivalence is a
@@ -19,6 +19,7 @@
 
 use std::{collections::BTreeSet, fs, io::{self, Read}, path::{Component, Path}, sync::Arc};
 use serde_json::Value;
+use crate::map_profile091::MapId;
 use sha2::{Digest, Sha256};
 
 pub const MANIFEST_SHA256: &str = "5e23f58d4e9d78398bd9cd861f6bc09a038cce7e8f7b311731e50c30bcc958f9";
@@ -90,6 +91,7 @@ impl Hit {
 
 #[derive(Clone, Debug)]
 pub struct Terrain {
+    map: MapId,
     // Immutable compact heights make World clone transactions cheap. X/Z and
     // triangle indices are reconstructed only after validating every original
     // vertex coordinate and every original index, including both parities.
@@ -141,35 +143,44 @@ fn indices(width: usize, x: usize, z: usize) -> [[usize; 3]; 2] {
 }
 
 impl Terrain {
+    pub fn map_id(&self) -> MapId { self.map }
     pub fn with_obstacles(mut self, obstacles: Arc<super::obstacles::Obstacles>) -> io::Result<Self> {
-        if self.obstacles.is_some() { return Err(bad("static obstacles already bound")); }
+        if self.obstacles.is_some() || obstacles.map_id() != self.map { return Err(bad("static obstacles already bound")); }
         self.obstacles=Some(obstacles); Ok(self)
     }
     pub fn source_revision(&self) -> &'static str {
-        if self.obstacles.is_some() { WORLD_SOURCE_REVISION } else { SOURCE_REVISION }
+        if self.obstacles.is_some() { self.map.spec().world_revision } else { self.map.spec().terrain_revision }
     }
-    /// Load only the exact accepted Karelia map-drive mesh. Hashes are checked
+    /// Load only the exact pinned map-drive mesh. Hashes are checked
     /// before JSON/binary decoding; source paths from JSON are never followed.
     pub fn load(local_root: &Path, manifest_path: &Path) -> io::Result<Self> {
+        Self::load_for(MapId::Karelia, local_root, manifest_path)
+    }
+    pub fn load_for(map: MapId, local_root: &Path, manifest_path: &Path) -> io::Result<Self> {
+        let profile = map.spec();
         non_reparse(local_root)?;
         let root = local_root.canonicalize()?;
-        let manifest = read_pinned(&root, manifest_path, MANIFEST_MAX_BYTES, None, MANIFEST_SHA256)?;
+        let manifest = read_pinned(&root, manifest_path, MANIFEST_MAX_BYTES, None, profile.terrain_manifest_sha256)?;
         let value: Value = serde_json::from_slice(&manifest).map_err(|_| bad("terrain manifest JSON"))?;
         if value["version"] != 1 || value["kind"] != "original_091_static_triangle_mesh"
-            || value["map"] != "01_karelia" || value["vertices"]["file"] != "terrain.vertices.f32"
+            || value["map"] != map.asset() || value["vertices"]["file"] != "terrain.vertices.f32"
             || value["triangles"]["file"] != "terrain.triangles.u32"
             || value["vertices"]["count"] != GRID_WIDTH * GRID_WIDTH
             || value["triangles"]["count"] != GRID_CELLS * GRID_CELLS * 2
-            || value["vertices"]["sha256"] != VERTICES_SHA256 || value["triangles"]["sha256"] != TRIANGLES_SHA256 {
+            || value["vertices"]["sha256"] != profile.terrain_vertices_sha256 || value["triangles"]["sha256"] != profile.terrain_triangles_sha256 {
             return Err(bad("terrain manifest schema/profile"));
         }
         let directory = manifest_path.parent().ok_or_else(|| bad("terrain manifest parent"))?;
-        let vertices = read_pinned(&root, &directory.join("terrain.vertices.f32"), VERTEX_BYTES, Some(VERTEX_BYTES), VERTICES_SHA256)?;
-        let triangles = read_pinned(&root, &directory.join("terrain.triangles.u32"), TRIANGLE_BYTES, Some(TRIANGLE_BYTES), TRIANGLES_SHA256)?;
-        Self::decode_buffers(&vertices, &triangles)
+        let vertices = read_pinned(&root, &directory.join("terrain.vertices.f32"), VERTEX_BYTES, Some(VERTEX_BYTES), profile.terrain_vertices_sha256)?;
+        let triangles = read_pinned(&root, &directory.join("terrain.triangles.u32"), TRIANGLE_BYTES, Some(TRIANGLE_BYTES), profile.terrain_triangles_sha256)?;
+        Self::decode_buffers_for(map, &vertices, &triangles)
     }
 
+    #[cfg(test)]
     fn decode_buffers(vertices: &[u8], triangles: &[u8]) -> io::Result<Self> {
+        Self::decode_buffers_for(MapId::Karelia, vertices, triangles)
+    }
+    fn decode_buffers_for(map: MapId, vertices: &[u8], triangles: &[u8]) -> io::Result<Self> {
         if vertices.len() != VERTEX_BYTES || triangles.len() != TRIANGLE_BYTES {
             return Err(bad("terrain exact buffer lengths"));
         }
@@ -195,7 +206,7 @@ impl Terrain {
                 }
             }
         }
-        Ok(Self { heights: heights.into(), width: GRID_WIDTH, origin: ORIGIN, spacing: SPACING, obstacles: None })
+        Ok(Self { map, heights: heights.into(), width: GRID_WIDTH, origin: ORIGIN, spacing: SPACING, obstacles: None })
     }
 
     fn vertex(&self, index: usize) -> [f64; 3] {
@@ -362,13 +373,13 @@ pub(crate) mod tests {
         assert!((2..=GRID_WIDTH).contains(&width) && heights.len()==width*width);
         assert!(origin.is_finite() && spacing.is_finite() && spacing>0.);
         assert!(heights.iter().all(|height| height.is_finite() && height.abs()<=MAX_QUERY_COORDINATE));
-        Terrain { heights:heights.into(),width,origin:f64::from(origin),spacing:f64::from(spacing),obstacles:None }
+        Terrain { map: MapId::Karelia, heights:heights.into(),width,origin:f64::from(origin),spacing:f64::from(spacing),obstacles:None }
     }
 
     fn synthetic(width: usize, height: impl Fn(usize,usize)->f32) -> Terrain {
         let mut heights=Vec::new();
         for z in 0..width { for x in 0..width { heights.push(height(x,z)); }}
-        Terrain { heights:heights.into(),width,origin:0.,spacing:1.,obstacles:None }
+        Terrain { map: MapId::Karelia, heights:heights.into(),width,origin:0.,spacing:1.,obstacles:None }
     }
     fn actual() -> &'static Terrain {
         static TERRAIN: OnceLock<Terrain> = OnceLock::new();
@@ -377,6 +388,29 @@ pub(crate) mod tests {
             let local=Path::new(&root).join("local");
             Terrain::load(&local,&local.join("evidence/20261005-p02-map-drive/data/terrain-mesh-01/01_karelia/manifest.json")).unwrap()
         })
+    }
+    pub(crate) fn actual_prohorovka() -> &'static Terrain {
+        static TERRAIN: OnceLock<Terrain> = OnceLock::new();
+        TERRAIN.get_or_init(|| {
+            let root=std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
+            let local=Path::new(&root).join("local");
+            Terrain::load_for(MapId::Prohorovka,&local,&local.join("evidence/20261005-p02-map-drive/data/terrain-mesh-01/05_prohorovka/manifest.json")).unwrap()
+        })
+    }
+    #[test]
+    fn original_prohorovka_geometry_and_map_mixing_are_checked() {
+        let ground=actual_prohorovka();
+        assert_eq!(ground.map_id(),MapId::Prohorovka);
+        assert_eq!(ground.source_revision(),MapId::Prohorovka.spec().terrain_revision);
+        for [x,z] in [[-199.,473.],[0.,0.],[425.,-425.]] {
+            let hit=ground.nearest([x,1000.,z],[x,-1000.,z]).unwrap().unwrap();
+            assert_eq!(hit.surface,Surface::Ground);assert!(hit.normal[1]>0.);
+        }
+        let karelia=Arc::new(super::super::obstacles::tests::actual().clone());
+        assert!(ground.clone().with_obstacles(karelia).is_err());
+        let proho=Arc::new(super::super::obstacles::tests::actual_prohorovka().clone());
+        assert!(actual().clone().with_obstacles(proho.clone()).is_err());
+        assert_eq!(ground.clone().with_obstacles(proho).unwrap().source_revision(),MapId::Prohorovka.spec().world_revision);
     }
     fn brute(terrain: &Terrain, start: [f32;3], end: [f32;3]) -> Option<Hit> {
         let start=start.map(f64::from);let direction=subtract(end.map(f64::from),start);
