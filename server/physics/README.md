@@ -119,7 +119,19 @@ P06O adds a separate catalog mode without changing the IPC1/IPC2 entrypoints:
 `--destructible-catalog <catalog.json> --catalog-sha256 <sha256> --generation <positive-u32>`.
 The version-2 catalog (at most128KiB) has exact keys `version,profile,map,
 physics_manifest_sha256,projectile_manifest_sha256,objects`; profile is `test_lab`,
-map is `01_karelia`, and both original source hashes remain those pinned above.
+map is one of the source-pinned rows below. P06P adds Prohorovka through the
+existing version-2 descriptor and IPC3; legacy IPC2 remains Karelia-only.
+
+| Map | Instances | Physics triangles | Physics manifest SHA256 | Projectile manifest SHA256 |
+| --- | ---: | ---: | --- | --- |
+| `01_karelia` | 2918 | 335551 | `ea6ef22aed0fdd4e4826500c280a616737f8990ce7ab7cd808b9382227ec5ffd` | `ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447c5bd95dd97d80cea` |
+| `05_prohorovka` | 3904 | 428597 | `9d358a48da303abaf15572f478dddc16971864960d9341943cc6d207b32b3265` | `3db1ad3859ae2f5fed678ac5f148005cff38a3c915bb33dde3303de22e22bef7` |
+
+The descriptor, selected map, config and actual source manifest must agree.
+The Rust `CatalogSpec::map_id()` retains that binding and rejects a different
+map/arena identity in launch, scene requests, ACKs and ready/state decoding.
+Whole-map tree geometry remains static: this mode does not implement falling
+trees, collision transforms/replacement, or admit speedtree as a fragile model.
 `objects` contains1..64 rows, ordered by strictly increasing positive `object_id`.
 Each row has exactly `object_id,instance_id,first_triangle,triangle_count,
 object_revision`. The revision is lowercase SHA256, each source instance is

@@ -1,6 +1,7 @@
 //! IPC3 cumulative collider-removal snapshots. Source identities are exporter
 //! instance IDs only; native client IDs and damage policy do not belong here.
 use super::*;
+use crate::map_profile091::MapId;
 
 pub const MAX_CATALOG_OBJECTS:usize=64;
 pub const MAX_REMOVED_OBJECTS:usize=40;
@@ -15,19 +16,23 @@ impl CatalogEntry {
     pub fn object_revision(&self)->&str{&self.object_revision}
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
-pub struct CatalogSpec {pub(super) path:PathBuf,pub(super) sha256:String,entries:Vec<CatalogEntry>}
+pub struct CatalogSpec {pub(super) path:PathBuf,pub(super) sha256:String,map_id:MapId,entries:Vec<CatalogEntry>}
 impl CatalogSpec {
     pub fn load(local_root:&Path,path:&Path,sha256:&str)->io::Result<Self>{
         non_reparse(local_root)?;let root=local_root.canonicalize()?;hash_text(sha256)?;
         let path=owned(&root,path)?;let raw=read(&path,131072)?;
         if format!("{:x}",Sha256::digest(&raw))!=sha256{return Err(bad());}
-        let entries=Self::validate(&json(&raw,131072)?)?;
-        Ok(Self{path,sha256:sha256.into(),entries})
+        let value=json(&raw,131072)?;
+        let entries=Self::validate(&value)?;
+        let map_id=MapId::from_asset(text(&value,"map")?)?;
+        Ok(Self{path,sha256:sha256.into(),map_id,entries})
     }
     fn validate(v:&Value)->io::Result<Vec<CatalogEntry>>{
         fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","objects"])?;
-        if uint(&v["version"])?!=2 || text(v,"profile")?!="test_lab" || text(v,"map")?!="01_karelia"
-            || text(v,"physics_manifest_sha256")?!=PHYSICS_MANIFEST || text(v,"projectile_manifest_sha256")?!=PROJECTILE_MANIFEST{return Err(bad());}
+        let map_id=MapId::from_asset(text(v,"map")?)?;let profile=map_id.spec();
+        if uint(&v["version"])?!=2 || text(v,"profile")?!="test_lab"
+            || text(v,"physics_manifest_sha256")?!=profile.physics_manifest_sha256
+            || text(v,"projectile_manifest_sha256")?!=profile.projectile_manifest_sha256{return Err(bad());}
         let rows=v["objects"].as_array().ok_or_else(bad)?;
         if rows.is_empty() || rows.len()>MAX_CATALOG_OBJECTS{return Err(bad());}
         let mut entries=Vec::new();let mut instances=BTreeSet::new();let mut previous=0;
@@ -36,8 +41,9 @@ impl CatalogSpec {
             let id=uint(&row["object_id"])?;let instance=uint(&row["instance_id"])?;
             let first=uint(&row["first_triangle"])?;let count=uint(&row["triangle_count"])?;
             let revision=text(row,"object_revision")?;hash_text(revision)?;
-            if id<=previous || id>u32::MAX as u64 || instance>=2918 || !instances.insert(instance)
-                || count==0 || count>4096 || first>1_500_000 || first+count>1_500_000{return Err(bad());}
+            if id<=previous || id>u32::MAX as u64 || instance>=profile.instance_count as u64 || !instances.insert(instance)
+                || count==0 || count>4096 || first>profile.physics_triangle_count as u64
+                || first+count>profile.physics_triangle_count as u64{return Err(bad());}
             previous=id;entries.push(CatalogEntry{object_id:id as u32,instance_id:instance as u32,first_triangle:first as u32,
                 triangle_count:count as u32,object_revision:revision.into()});
         }
@@ -46,26 +52,31 @@ impl CatalogSpec {
         Ok(entries)
     }
     pub(super) fn verify(&self,root:&Path,map:&MapSpec)->io::Result<()>{
-        if map.asset!="01_karelia" || map.arena_type_id!=1 || Self::load(root,&self.path,&self.sha256)?!=*self{return Err(bad());}
+        self.verify_map(map)?;
+        if Self::load(root,&self.path,&self.sha256)?!=*self{return Err(bad());}
         let raw=read(&owned(root,&map.config)?,16384)?;
         if format!("{:x}",Sha256::digest(&raw))!=map.config_sha256{return Err(bad());}
-        let config=json(&raw,16384)?;let reference=&config["obstacles"];
+        let config=json(&raw,16384)?;
+        if text(&config,"map")?!=self.map_id.asset(){return Err(bad());}
+        let reference=&config["obstacles"];
         fields(reference,&["path","sha256"])?;
-        if text(reference,"sha256")?!=PHYSICS_MANIFEST{return Err(bad());}
+        let expected=self.map_id.spec().physics_manifest_sha256;
+        if text(reference,"sha256")?!=expected{return Err(bad());}
         let source=read(&owned(root,Path::new(text(reference,"path")?))?,8*1024*1024)?;
-        if format!("{:x}",Sha256::digest(&source))!=PHYSICS_MANIFEST{return Err(bad());}
-        // This exact hash-pinned original manifest has 2918 rows, above the
+        if format!("{:x}",Sha256::digest(&source))!=expected{return Err(bad());}
+        // Exact hash-pinned original manifests contain more rows than the
         // small untrusted IPC parser's array limit. Its byte bound remains fixed.
         let source:Value=serde_json::from_slice(&source).map_err(|_|bad())?;
         self.verify_source(&source)
     }
     fn verify_source(&self,source:&Value)->io::Result<()>{
-        if uint(&source["version"])?!=1 || text(source,"map")?!="01_karelia"
+        let profile=self.map_id.spec();
+        if uint(&source["version"])?!=1 || text(source,"map")?!=self.map_id.asset()
             || text(source,"kind")?!="original_091_static_triangle_mesh"{return Err(bad());}
         let total=uint(&source["triangles"]["count"])?;
-        if total==0 || total>1_500_000{return Err(bad());}
+        if total!=profile.physics_triangle_count as u64{return Err(bad());}
         let rows=source["instances"].as_array().ok_or_else(bad)?;
-        if rows.len()!=2918{return Err(bad());}
+        if rows.len()!=profile.instance_count{return Err(bad());}
         for entry in &self.entries {
             let row=&rows[entry.instance_id as usize];let resource=text(row,"resource")?;
             if text(row,"kind")?!="model" || resource.is_empty() || resource.len()>1024
@@ -75,6 +86,10 @@ impl CatalogSpec {
     }
     pub fn sha256(&self)->&str{&self.sha256}
     pub fn entries(&self)->&[CatalogEntry]{&self.entries}
+    pub fn map_id(&self)->MapId{self.map_id}
+    fn verify_map(&self,map:&MapSpec)->io::Result<()>{
+        if map.asset!=self.map_id.asset() || map.arena_type_id!=self.map_id.arena_type_id(){return Err(bad());}Ok(())
+    }
 }
 
 /// Immutable full cumulative snapshot. Canonical IDs are strictly increasing;
@@ -103,6 +118,7 @@ impl Scene {
 }
 
 pub(super) fn scene_request(map:&MapSpec,spec:&CatalogSpec,generation:u32,seq:u32,scene:&Scene,restore:bool)->io::Result<Vec<u8>>{
+    spec.verify_map(map)?;
     scene.validate(spec)?;
     if generation==0 || seq>MAX_SEQUENCE || (restore && seq!=0){return Err(bad());}
     ipc_bytes(&serde_json::json!({"version":3,"op":if restore{"restore_scene"}else{"sync_removed"},
@@ -117,6 +133,7 @@ pub(super) fn request_catalog(seq:u32,input:Input,scene:&Scene)->io::Result<Vec<
 pub struct CatalogAck {pub generation:u32,pub config_sha256:String,pub catalog_sha256:String,pub advance_seq:u32,
     pub tick:u32,pub scene_version:u32,pub removed_object_ids:Vec<u32>,pub scene_sha256:String}
 pub(super) fn ack(raw:&[u8],map:&MapSpec,spec:&CatalogSpec,generation:u32,seq:u32,scene:&Scene)->io::Result<CatalogAck>{
+    spec.verify_map(map)?;
     scene.validate(spec)?;
     if !raw.is_ascii() || generation==0 || seq>MAX_SEQUENCE{return Err(bad());}
     let v=json(raw,1024)?;
@@ -133,6 +150,7 @@ pub(super) fn ack(raw:&[u8],map:&MapSpec,spec:&CatalogSpec,generation:u32,seq:u3
         tick:180+seq*6,scene_version:scene.version(),removed_object_ids:scene.ids.clone(),scene_sha256:scene.hash.clone()})
 }
 pub(super) fn response(raw:&[u8],map:&MapSpec,spec:&CatalogSpec,generation:u32,seq:u32,spawn:Option<[f32;3]>,scene:&Scene)->io::Result<State>{
+    spec.verify_map(map)?;
     scene.validate(spec)?;
     if !raw.is_ascii() || generation==0{return Err(bad());}let mut v=json(raw,1024)?;
     fields(&v,&["version","event","seq","tick","settle_ticks","map","config_sha256","state","generation","catalog_sha256","scene_version","scene_sha256"])?;
@@ -153,7 +171,56 @@ pub(super) mod tests {
         "objects":(0..n).map(|i|serde_json::json!({"object_id":i+1,"instance_id":i,"first_triangle":i*42,
             "triangle_count":42,"object_revision":"e".repeat(64)})).collect::<Vec<_>>()})}
     pub(in super::super) fn spec(n:usize)->CatalogSpec{
-        CatalogSpec{path:"unit".into(),sha256:"b".repeat(64),entries:CatalogSpec::validate(&descriptor(n)).unwrap()}
+        CatalogSpec{path:"unit".into(),sha256:"b".repeat(64),map_id:MapId::Karelia,entries:CatalogSpec::validate(&descriptor(n)).unwrap()}
+    }
+    pub(in super::super) fn spec_for(map_id:MapId,n:usize)->CatalogSpec{
+        let v=descriptor_for(map_id,n);let raw=serde_json::to_vec(&v).unwrap();
+        CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id,entries:CatalogSpec::validate(&v).unwrap()}
+    }
+    fn descriptor_for(map_id:MapId,n:usize)->Value{
+        let mut v=descriptor(n);v["map"]=map_id.asset().into();
+        v["physics_manifest_sha256"]=map_id.spec().physics_manifest_sha256.into();
+        v["projectile_manifest_sha256"]=map_id.spec().projectile_manifest_sha256.into();v
+    }
+    fn source_for(spec:&CatalogSpec)->Value{
+        let mut source=serde_json::json!({"version":1,"map":spec.map_id.asset(),"kind":"original_091_static_triangle_mesh",
+            "triangles":{"count":spec.map_id.spec().physics_triangle_count},"instances":vec![Value::Null;spec.map_id.spec().instance_count]});
+        for e in &spec.entries{source["instances"][e.instance_id as usize]=serde_json::json!({"kind":"model","resource":"source.model",
+            "first_triangle":e.first_triangle,"triangles":e.triangle_count});}source
+    }
+    #[test]fn both_maps_pin_catalog_counts_sources_and_cumulative_scene(){
+        for map_id in [MapId::Karelia,MapId::Prohorovka]{
+            let profile=map_id.spec();let spec=spec_for(map_id,2);assert_eq!(spec.map_id(),map_id);
+            spec.verify_source(&source_for(&spec)).unwrap();
+            let mut map=super::super::tests::map();map.asset=map_id.asset().into();map.arena_type_id=map_id.arena_type_id();
+            let scene=Scene::new(&spec,&[1,2]).unwrap();let request=scene_request(&map,&spec,2,0,&scene,true).unwrap();
+            let mut reply=json(&request,1025).unwrap();reply.as_object_mut().unwrap().remove("op");
+            reply["event"]="scene_synced".into();reply["tick"]=180.into();
+            let raw=ipc_bytes(&reply).unwrap();ack(&raw,&map,&spec,2,0,&scene).unwrap();
+            let other=if map_id==MapId::Karelia{MapId::Prohorovka}else{MapId::Karelia};
+            let mut wrong_map=map.clone();wrong_map.asset=other.asset().into();wrong_map.arena_type_id=other.arena_type_id();
+            assert!(scene_request(&wrong_map,&spec,2,0,&scene,true).is_err());
+            assert!(ack(&raw,&wrong_map,&spec,2,0,&scene).is_err());
+            wrong_map=map.clone();wrong_map.arena_type_id=other.arena_type_id();assert!(spec.verify_map(&wrong_map).is_err());
+            for key in ["physics_manifest_sha256","projectile_manifest_sha256"]{
+                let mut v=descriptor_for(map_id,1);v[key]=if key=="physics_manifest_sha256"{other.spec().physics_manifest_sha256}else{other.spec().projectile_manifest_sha256}.into();
+                assert!(CatalogSpec::validate(&v).is_err());
+            }
+            let mut last=descriptor_for(map_id,1);last["objects"][0]["instance_id"]=(profile.instance_count-1).into();
+            last["objects"][0]["first_triangle"]=(profile.physics_triangle_count-42).into();CatalogSpec::validate(&last).unwrap();
+            last["objects"][0]["instance_id"]=profile.instance_count.into();assert!(CatalogSpec::validate(&last).is_err());
+            last["objects"][0]["instance_id"]=0.into();last["objects"][0]["first_triangle"]=(profile.physics_triangle_count-41).into();assert!(CatalogSpec::validate(&last).is_err());
+            for field in ["map","triangles","instances"]{
+                let mut source=source_for(&spec);
+                match field{"map"=>source["map"]=other.asset().into(),"triangles"=>source["triangles"]["count"]=(profile.physics_triangle_count-1).into(),
+                    _=>{source["instances"].as_array_mut().unwrap().pop();}}
+                assert!(spec.verify_source(&source).is_err(),"{field}");
+            }
+        }
+        let a=spec_for(MapId::Karelia,2);let b=spec_for(MapId::Prohorovka,2);
+        let sa=Scene::new(&a,&[1]).unwrap();let sb=Scene::new(&b,&[1]).unwrap();
+        assert_ne!(sa.hash(),sb.hash());assert!(!sa.extends(&sb));assert!(sa.validate(&b).is_err());
+        let mut unknown=descriptor(1);unknown["map"]="unknown_map".into();assert!(CatalogSpec::validate(&unknown).is_err());
     }
     #[test]fn catalog_bounds_identity_and_full_spans(){
         for n in [1,6,64]{assert_eq!(CatalogSpec::validate(&descriptor(n)).unwrap().len(),n);}
@@ -166,7 +233,7 @@ pub(super) mod tests {
             let mut v=descriptor(2);v["objects"][1][key]=v["objects"][0][key].clone();assert!(CatalogSpec::validate(&v).is_err(),"{key}");
         }
         let spec=spec(2);let mut source=serde_json::json!({"version":1,"map":"01_karelia","kind":"original_091_static_triangle_mesh",
-            "triangles":{"count":10000},"instances":vec![Value::Null;2918]});
+            "triangles":{"count":MapId::Karelia.spec().physics_triangle_count},"instances":vec![Value::Null;2918]});
         for (i,e) in spec.entries.iter().enumerate(){source["instances"][i]=serde_json::json!({"kind":"model","resource":"source.model",
             "first_triangle":e.first_triangle,"triangles":e.triangle_count});}
         spec.verify_source(&source).unwrap();

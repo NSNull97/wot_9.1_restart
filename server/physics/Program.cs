@@ -9,7 +9,7 @@ using MapDrive;
 try
 {
     if ((args.Length != 6 && args.Length != 9 && args.Length != 12 && args.Length != 15) || args[0] != "--local-root" || args[2] != "--config" || args[4] != "--config-sha256")
-        throw new InvalidDataException("expected config, optional spawn, optional pinned one-object removal descriptor");
+        throw new InvalidDataException("expected config, optional spawn, optional pinned removal descriptor or catalog");
     bool spawnOverride = args.Length is 9 or 15, descriptorEnabled = args.Length is 12 or 15;
     int removalOffset = spawnOverride ? 9 : 6;
     bool catalogEnabled = descriptorEnabled && args[removalOffset] == "--destructible-catalog";
