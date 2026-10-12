@@ -1,3 +1,17 @@
+# P06P in progress — Prohorovka with accepted cumulative gameplay
+
+Owner requested migrating the test map to Prohorovka before continuing trees.
+Branch `codex/p06p-prohorovka-cumulative`, base main878ade6. Explicit original
+MapId binds native arena4, World, checked physics pool, terrain/projectile
+geometry and fragile catalog. Fresh mask128 import has3904instances/285350
+triangles; nine whole fragiles qualify,703 exclusions documented. No manual
+instance allowlist; trees remain the next card. Existing physics tuning kept.
+Private worker25/25 and importer/probe checks PASS; root canonical integration
+and native owner gates are still pending. **Acceptance: IN_PROGRESS, NOT_RUN
+for native Prohorovka.** P06O remains the accepted fallback; no merge yet.
+[Report, evidence, limits and rollback](research/P06P_PROHOROVKA_CUMULATIVE.md).
+**One next gate:** canonical integration, then full native Prohorovka launch.
+
 # P06O accepted — reusable fragile catalog and cumulative native gameplay
 
 Branch `codex/p06o-destructible-import`, accepted base main 5f38525. Original

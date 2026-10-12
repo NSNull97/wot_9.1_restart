@@ -35,7 +35,7 @@ fn fixture(now:Instant)->(World,Arc<Pool>,CatalogSpec){
             projectile_triangle_count:row["projectile_triangle_count"].as_u64().unwrap() as u32,
             physics_first_triangle:worker.first_triangle(),physics_triangle_count:worker.triangle_count(),object_revision:worker.object_revision().into()}
     }).collect();
-    let catalog=Arc::new(fragiles::Catalog{sha256:INVENTORY_SHA.into(),worker_file:"physics-removals.json".into(),worker_sha256:WORKER_CATALOG_SHA.into(),objects});
+    let catalog=Arc::new(fragiles::Catalog{map:crate::map_profile091::MapId::Karelia,sha256:INVENTORY_SHA.into(),worker_file:"physics-removals.json".into(),worker_sha256:WORKER_CATALOG_SHA.into(),objects});
     let mut world=World::new(913,now).unwrap();world.bind_geometry(Arc::new(geometry::tests::bundle())).unwrap();
     world.enable_ap_test_lab().unwrap();world.bind_terrain(model::tests::destructible_terrain()).unwrap();world.bind_fragiles(catalog).unwrap();
     for slot in 0..2{world.attach(model::Identity{account:format!("catalog-worker-{slot}"),database:slot+1,name:format!("worker_{slot}")},slot as u32+1).unwrap();}

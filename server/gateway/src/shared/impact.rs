@@ -1180,6 +1180,21 @@ mod tests {
         let (mut trace,_)=terrain_batch(Some(0.),0.);trace.terrain_contact(123,1,1001).unwrap();let before=trace.clone();
         assert!(trace.destructible_transition(123,1,1001,&transition).is_err());assert_eq!(trace,before);
     }
+    #[test]
+    fn wrong_map_collision_query_fails_without_trace_mutation_in_both_directions() {
+        use crate::map_profile091::MapId;
+        let bundle=super::super::geometry::tests::bundle();
+        let mesh=tagged_plate("Hull","armor_1",&ap_tag(1,1001));
+        let karelia=test_terrain(None);
+        let prohorovka=terrain::tests::actual_prohorovka();
+        for (map,wrong) in [(MapId::Karelia,prohorovka),(MapId::Prohorovka,&karelia)] {
+            let mut trace=launched_trace();trace.map=map;
+            trace.segment(123,1,1001,1000,[-1.,0.,0.],[3.,0.,0.]).unwrap();
+            let before=trace.clone();
+            assert!(trace.collision_query_world(123,1,1001,&mesh,bundle.materials(),wrong).is_err());
+            assert_eq!(trace,before);
+        }
+    }
     #[test] fn combined_query_preserves_vehicle_facts_and_records_exact_terrain_batch() {
         let bundle=super::super::geometry::tests::bundle(); let ground=test_terrain(Some(1.0));
         let mesh=tagged_plate("Hull","armor_1",&ap_tag(1,1001)); let mut trace=launched_trace();
