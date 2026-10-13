@@ -4,6 +4,17 @@ Date: 2026-10-13. Branch: `codex/p05b-tracked-handling`.
 Base: accepted main `0393857e2a67646e87dd03763baf3b98da98b0b9`.
 Status: PASS_AUTOMATIC_PRIVATE; native/owner NOT_RUN.
 
+## Candidate13 automatic checkpoint — 2026-10-13
+
+Coasting steering and near-rest transition gates are complete:94 worker runs,
+530 scoped checks,8930 controller checks; root36 flat+2 calibration,20 paired
+ram cases and fresh gateway736/736 PASS. Original09 grip metrics match exactly.
+Exact binding is `night13-checkpoint.json` under the evidence root. Retain
+failed11/12 self-acceleration diagnostics. Final13 removes sustained growth,
+but sampled full partial-energy balance has an initial6.1–17.6% excess and
+unmeasured suspension energy; this is not historical or conservation proof.
+Next bounded phase is moving-fence contact; owner/native acceptance stays open.
+
 ## Overnight owner feedback — 2026-10-13, candidate08
 
 Current status: OWNER_PARTIAL_REVERSAL_IMPROVEMENT / HANDLING_OPEN.
@@ -68,6 +79,19 @@ Thresholds and exact tests are frozen before tuning in
 night-slip01/coast-proposal01.json; causal baseline and every failed attempt
 must be retained. Real replay must prove passive yaw and retained momentum;
 API names alone are insufficient. No automatic native input.
+
+The first coasting candidates expose a further real-worker failure: MS-1
+reverse turning coast gains speed with motor input and offered engine torque0,
+while matched straight coast decelerates. Candidate11 is not accepted despite
+passing the short32-case matrix and component checks. Permit one bounded
+diagnostic using the actual Transmission.Set(0,0) API during coast/transition
+to isolate engine/track inertia coupling; preserve automatic transmission mode
+and all profile constants. This is not yet an approved final handling policy.
+Measure full world speed, track/engine motion and near-rest crossing; prove
+normal powered/pivot gear recovery before considering it. If ineffective,
+retain its evidence and restore only that experimental change. Never mask
+energy growth with a body velocity clamp. Last accepted automatic checkpoint
+for this card remains night09/1a3788f, not the experimental coast candidates.
 
 ## Owner correction after steering checkpoint491bde5
 

@@ -1,3 +1,17 @@
+# P05B — night13 checkpoint, moving-fence phase next
+
+Candidate13 coasting/transition automatic gate PASS; native owner NOT_RUN.
+94 worker runs/530 checks and8930 component checks; root36 flat+2 calibration,
+20 paired ram cases and fresh gateway736/736. Source/build/evidence binding:
+P05B/night13-checkpoint.json. Earlier09 grip results are retained exactly.
+The11/12 reverse-coast failure and13 transient-energy limits are documented;
+do not call the physics historically ideal or exactly energy conserving.
+
+Continue the existing overnight P05B with the bounded moving-fence contract.
+No native input/launch or merge. Static fence pressure remains OPEN.
+Frozen13 is the new automatic rollback checkpoint;08/gateway03 remains the
+last owner-run bundle. Preserve unrelated P09B research.
+
 # P05B — night09 checkpoint, continued automatic work
 
 Cadence + moving grip PASS_AUTOMATIC_PRIVATE, native owner gate OPEN.

@@ -6,6 +6,67 @@ Status: **PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN**.
 Evidence root (E below): `local/evidence/20261013-p05b-tracked-handling-01/`.
 This report does not close general P05 reconciliation or historical fidelity.
 
+## Final night13 coasting checkpoint
+
+VERIFIED on the pinned Windows worker: candidate13 requests no engine torque
+while steering on a moving coast, retains positive track ratios, and bounds
+requested coast yaw by speed/(2*trackWidth). Near rest it slews toward a pivot
+without the reverse-sign rebound; explicit neutral releases both ratios to1.
+This is a test_lab controller policy. Feedback permits1.5 times the yaw bound,
+so a guaranteed physical minimum radius of2*trackWidth is NOT established.
+No body pose/velocity, source drivetrain, brake or transmission override.
+
+Final worker DLL SHA256:
+`b509905b34176e9ec527a06f04cb35a93c2f046511924745caafacd08f76fe20`.
+TrackedHandling.cs SHA256:
+`6821d9a7f580de6a959715cecdebefe6a9f021c2297ade89b8ec8228e5e61178`.
+Source/artifact manifests: `candidate13-source-build.json`,
+`night-coast01/candidate13-freeze.json` and `night13-checkpoint.json`.
+
+Actually run and PASS on13:
+
+- 32 flat coast runs,24 transition runs,32 original-map catalog6 coast runs,
+  6 retained-grip runs:94 actual workers,47 repeat pairs,530 scoped checks.
+  Separate real-controller component test8930 checks does not step the world.
+- Root flat matrix36 runs+2 calibrations, both MS-1/IS-7 quality/replay gates.
+- Root20 paired ram cases:12 normal/low,4 oblique,4 independent-wall cases.
+- Fresh canonical gateway736/736; four whole-object real cases explicitly
+  pin13 fixture pools. Other historical suites retain their declared workers.
+
+Evidence: `night-coast01/REPORT.md` and `grip13-addendum.json`;
+`controller-audit/final-matrix13-{ms1,is7}/result.json`;
+`ram-regression/candidate13-{canonical01,oblique01,wall01}/receipt.json`;
+`ram-gateway-fixtures13/receipt.json`; `night13-checkpoint.json`.
+The six grip runs preserve09 metrics exactly (owner lateral RMS0.428198/
+0.229739m/s, yaw+206.080/-164.042deg), with all1038 objects alive and no
+contacts/removals over the full700-command owner prefix.
+
+Failures preserved:09 powered-coast baseline,190 component10 failures,
+11/12 sustained low-speed reverse energy growth. Diagnostic12 neutralization
+did not change either306-frame state stream and was reverted before13.
+Final13 reaches near rest in13.7–20.0s and removes sustained growth. Independent
+`night-coast-review01/energy-addendum-receipt02.json` recalculates736 passive
+frames including body rotation/full inertia and gravity: initial partial-energy
+excess6.1–17.6% at0.2–0.4s remains, below entry by2s. Suspension energy and
+all60Hz samples are unmeasured. Exact conservation is UNKNOWN. Upstream Jolt
+5.3 implementation is related research, NOT_PROVEN_NATIVE_DLL_REVISION.
+
+Commands actually executed (full harness arguments also in local receipts):
+
+```powershell
+python -B -X utf8 server/build.py physics --out local/build/server/physics-p05b-candidate13
+python -B -X utf8 tools/tracked_handling_matrix.py --worker D:/WoT_9.1_Server/local/build/server/physics-p05b-candidate13/bin/MapDriveWorker.exe --local-root D:/WoT_9.1_Server/local --config D:/WoT_9.1_Server/local/evidence/20261013-p05b-tracked-handling-01/candidate-config01/ms1.json --out D:/WoT_9.1_Server/local/evidence/20261013-p05b-tracked-handling-01/controller-audit/final-matrix13-ms1 --diagnostics
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p05b-night-final13
+python -B -X utf8 local/evidence/20261013-p05b-tracked-handling-01/freeze-night13.py
+```
+
+Same flat command ran for is7. Gateway executable SHA256:
+`5350fb872fbac7dba78f0bb86360835592ffd746e81c6cb70ba8a9bdcffb7540`.
+Rollback: frozen09 and checkpoint1a3788f for this coasting correction; retain
+owner-run08/gateway03 for a prior manual baseline. Native stand remains closed
+and restored. Acceptance: automatic scoped PASS, native owner NOT_RUN.
+Next: bounded moving-fence contact within P05B, static pressure still OPEN.
+
 ## Owner feedback and candidate08 direction reversal
 
 OBSERVED: owner reports better MS-1 handling on ms1ram02, but strange delays
@@ -641,3 +702,66 @@ unrelated P09B edit and all failed evidence. Acceptance:
 PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN / HISTORICAL_EQUIVALENCE_UNKNOWN.
 Next: bounded coast-to-pivot correction under the existing overnight plan,
 with09 as the comparison checkpoint; owner tests after14 October09:00.
+
+Checkpoint commit:1a3788f2b3e6e80bfead70c8c357804fbd08c7e9. Independent
+read-only cadence review reports no blockers; reviewer tests NOT_RUN in
+night-jitter01/review-source-audit.json. Root source-layout check passed98
+source files/22 single-source relocations via `python -B -X utf8 server/check_layout.py`.
+regression09-summary/receipt02.json and invocation-pins02.json additionally
+verify54 unchanged flat command/stdout/diagnostic streams and76 unchanged ram
+streams, plus4 wall ACK equivalents after validating exact configuration and
+buffer identities.20 moving-turn full runs are explicitly NOT_COMPARABLE
+because09 changes that branch. Failed comparator assumptions are retained in
+receipt01.json and invocation-failure01.json; they are not runtime failures. The initial
+night09 collector also rejected the intentionally changed four fixture pins;
+freeze-night09-validation-attempt01.json preserves that error, and the corrected
+collector compares unchanged cadence sources separately from new fixture pins.
+
+The overnight schedule is aligned to quarter-hours through an explicit final
+2026-10-14 09:00 Asia/Yekaterinburg wakeup, so final handoff does not depend on
+an interval falling a few minutes before the deadline. Prompt/scope unchanged.
+
+Further bounded static audit closes the tree-scale question: night-item-scale01/
+REPORT.md and receipt.json pin20 native windows. VERIFIED tree loader copies
+the source transform into ChunkTree+0x40; native itemScale is the float32 norm
+of row0, not maximum/mean basis. Tree3680 gives scale.8140900135 and scaled
+health33;3344 gives.873295784 and38. ChunkModel consumer uses the same norm at
++0x9c; an intermediate loader register-alias span remains INFERRED. This
+qualifies earlier itemScale UNKNOWN text for these paths only. The predictor
+is still client-side: server resistance/debit and static pressure remain
+UNKNOWN. No runtime changes, tests or native acceptance come from this audit.
+
+### Coast experiments10–12: retained failures, NOT accepted
+
+Coast10 passes its short32-run flat matrix but independent review found two
+missed transitions: released steer reused residual-yaw pivot ratios; reverse
+coast could finish the ratio slew before yawTarget changed sign. Actual pinned
+controller readbacks reproduce190 failures/8918 checks in component10b.
+Candidate11 corrects both. Initial component11 had two invalid expectations
+at MS-1 reverse overspeed; retained failure was corrected with below-limit
+inputs plus explicit governor checks. component11b passes8930 checks. This
+component does not call PhysicsSystem.Update, so it cannot prove traction.
+
+Root candidate11 standard regression passes36 flat runs+2 calibrations and20
+paired ram cases (40 workers exit0), evidence in final-matrix11-{ms1,is7} and
+ram-regression/candidate11-{canonical01,oblique01,wall01}. This is insufficient:
+extended transitions11 finds MS-1 reverse coast increasing full world speed
+from.8574 to1.7437m/s in30s with motor input and offered engine torque0.
+Translation energy1724→7132J; matched straight coast slows. Therefore11 is
+NOT accepted. Saved source/build binding: candidate11-source-build.json.
+
+Diagnostic12 explicitly sets neutral transmission through the verified API;
+sampled body/track trajectories match11 despite gear0/clutch disconnection.
+night-coast01/neutral-diagnostic12.json preserves the disproof and24 real runs.
+Only12 neutral-setting lines were reverted to exact11 helper. No transmission
+override is accepted. Hypothesis now concerns passive track-ratio constraints
+and yaw demand as speed falls; exact native implementation remains UNKNOWN.
+One bounded13 diagnostic is allowed: coast yaw also bounded by speed/(2*width),
+with existing source-yaw/lateral-acceleration caps. This is an engineering
+curvature policy, not history. Require no sustained world-speed growth and
+the existing genuine near-rest crossing, not just reduced acceleration. If it
+fails, preserve it, perform at most a fixed-ratio causal comparison, and return
+runtime to09 while recording the remaining solver/control question.
+
+No10/11/12 native/gateway run or acceptance. Current safe automatic checkpoint
+remains09 at1a3788f; all experimental binaries/evidence remain separate.

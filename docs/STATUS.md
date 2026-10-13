@@ -1,3 +1,23 @@
+## 2026-10-13 — P05B night13 coasting checkpoint; owner gate OPEN
+
+Moving steering without throttle now keeps zero requested motor torque and
+positive track ratios, then transitions to a stationary pivot near rest.
+Reverse handoff and steering release regressions are fixed. Candidate13 has
+94 paired-replay worker runs/530 scoped checks plus8930 controller component
+checks,36 flat runs+2 calibrations,20 paired ram cases and a fresh736/736
+gateway gate PASS. The prior09 real-map grip metrics are exactly retained.
+Bindings and commands: P05B/night13-checkpoint.json and research report.
+
+Experimental11/12 low-speed reverse self-acceleration is retained as FAIL;
+13 removes sustained growth with an explicit project coast-curvature bound.
+Full sampled partial-energy balance still has an initial6.1–17.6% transient;
+suspension energy is UNKNOWN. No exact energy-conservation or historical
+solver claim. Native owner acceptance remains NOT_RUN; no merge.
+
+Next: bounded moving-fence contact phase within P05B, with a separate short
+plan and versioned test_lab policy. Static pressure and universal object
+coverage remain OPEN. Native stand is stopped/restored; preserve P09B.
+
 ## 2026-10-13 — P05B night09 automatic checkpoint; owner gate OPEN
 
 Cadence regression reproduced on old code, fixed with logical100ms scheduling

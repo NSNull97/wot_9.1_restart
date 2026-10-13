@@ -11,10 +11,14 @@ internal sealed class TrackedHandling
     private const float OuterPivotFrictionFraction = .001f;
     private const float OuterMovingFrictionFraction = .04f;
     private const float MovingGripStartSpeed = 1.5f, MovingGripFullSpeed = 4f;
+    private const float CoastEnterSpeed = .5f, CoastPivotSpeed = .25f;
     private readonly float width, maximumYaw;
     private readonly WheelSettingsTV[] wheels;
     private readonly float[] lateral;
     private float yawTarget, motorInput;
+    // 0: ordinary drive/pivot; 1: rolling turn; 2: near-rest ratio transition.
+    private int coastPhase, coastDirection;
+    private float coastTransitionTime;
 
     // Each track's rotating mass is an explicit 2% equivalent ring policy.
     // Native's fixed 10kgm² example inertia is retained as a lower bound;
@@ -57,10 +61,25 @@ internal sealed class TrackedHandling
             throw new InvalidDataException("tracked handling command bounds");
 
         float speed = MathF.Abs(signedSpeed);
+        if (brake || throttle != 0 || steer == 0) coastPhase = 0;
+        else if (speed >= CoastEnterSpeed)
+        {
+            coastPhase = 1;
+            coastDirection = Math.Sign(signedSpeed);
+        }
+        else if (coastPhase == 1 && speed <= CoastPivotSpeed)
+        {
+            coastPhase = 2;
+            coastTransitionTime = 0;
+        }
         float yawLimit = MathF.Min(maximumYaw, LateralAccelerationBudget / MathF.Max(speed, .1f));
+        // Diagnostic coast curvature: passive rolling must not demand the
+        // powered yaw rate as momentum decays. Minimum radius is project policy.
+        if (coastPhase == 1) yawLimit = MathF.Min(yawLimit, speed / (2 * width));
         // Reverse steering follows the former domain convention: holding the
         // same steering key while reversing changes the body's yaw sign.
-        float desiredYaw = brake ? 0 : steer * (throttle < 0 ? -1 : 1) * yawLimit;
+        int travelDirection = coastPhase == 1 ? coastDirection : throttle < 0 ? -1 : 1;
+        float desiredYaw = brake ? 0 : steer * travelDirection * yawLimit;
         yawTarget = Approach(yawTarget, desiredYaw, maximumYaw * 3 * deltaTime);
         if (brake) yawTarget = 0;
 
@@ -85,9 +104,24 @@ internal sealed class TrackedHandling
         }
 
         float left = 1, right = 1, motor = throttle;
-        if (steer != 0 || MathF.Abs(yawTarget) > .001f)
+        if (coastPhase == 2)
         {
-            if (throttle == 0)
+            // Only cross a track ratio through zero after measured near rest.
+            // A full +1 -> -1 change takes at least .2s with no engine request;
+            // the next ordinary pivot still enters through the motor ramp.
+            left = NonzeroRatio(Approach(controller.LeftRatio, steer, 10 * deltaTime), steer);
+            right = NonzeroRatio(Approach(controller.RightRatio, -steer, 10 * deltaTime), -steer);
+            motor = 0;
+            coastTransitionTime += deltaTime;
+            // Reverse coast initially has the opposite yaw target. Do not
+            // hand off until its slew agrees with these pivot ratios, or the
+            // ordinary branch would flip them back for a few substeps.
+            if (coastTransitionTime >= .2f && left == steer && right == -steer &&
+                yawTarget * steer > .001f) coastPhase = 0;
+        }
+        else if (steer != 0 || (throttle != 0 && MathF.Abs(yawTarget) > .001f))
+        {
+            if (throttle == 0 && coastPhase == 0)
             {
                 // Equal and opposite track motion has zero requested forward
                 // component. Measured yaw limits motor torque near the target.
@@ -104,13 +138,17 @@ internal sealed class TrackedHandling
                 // Differential track speeds v +/- yaw*width/2. Use a modest
                 // launch speed only while near rest, avoiding an instantaneous
                 // ratio flip as a moving forward/reverse command is engaged.
-                float basisSpeed = throttle * MathF.Max(speed, maximumYaw * width);
+                // A rolling steering-only request uses the same differential
+                // geometry, but offers no engine torque. Track/contact forces
+                // steer the existing momentum; they do not request a stop.
+                int ratioDirection = coastPhase == 1 ? coastDirection : throttle;
+                float basisSpeed = ratioDirection * MathF.Max(speed, maximumYaw * width);
                 float correction = Math.Clamp((yawTarget - actualYawRate) * .5f, -yawLimit * .5f, yawLimit * .5f);
                 float turn = Math.Clamp(yawTarget + correction, -yawLimit * 1.5f, yawLimit * 1.5f) * width / 2;
                 float leftSpeed = basisSpeed + turn, rightSpeed = basisSpeed - turn;
                 float divisor = MathF.Max(MathF.Abs(leftSpeed), MathF.Abs(rightSpeed));
-                left = MathF.Max(.05f, throttle * leftSpeed / divisor);
-                right = MathF.Max(.05f, throttle * rightSpeed / divisor);
+                left = MathF.Max(.05f, ratioDirection * leftSpeed / divisor);
+                right = MathF.Max(.05f, ratioDirection * rightSpeed / divisor);
             }
         }
         if (steer == 0 && throttle == 0) motor = 0;
@@ -127,4 +165,7 @@ internal sealed class TrackedHandling
 
     private static float Approach(float value, float target, float amount) =>
         value < target ? MathF.Min(value + amount, target) : MathF.Max(value - amount, target);
+
+    private static float NonzeroRatio(float value, int targetSign) =>
+        MathF.Abs(value) >= .05f ? value : .05f * (value == 0 ? targetSign : MathF.Sign(value));
 }
