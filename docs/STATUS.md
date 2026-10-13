@@ -1,3 +1,23 @@
+## 2026-10-13 — P05B manual-stand identity readiness recovered
+
+First final launch ms1ram01 stopped before either native client: A auth503.
+Gateway stopped by exact receipt; both installs and namespaces restored.
+Audit reproduced historical `Crew generator source changed`; current source
+validates the unchanged A profile. Root-owned old identity PID32780 matched
+its P06N receipt, command, executable hash, creation time and idle loopback
+listener. Restart with unchanged config/current source produced PID43384:
+both A/B login200 and overview200/ready; DB quick_check OK, profiles unchanged.
+Normal service rate-limit writes occurred; no profile/fixture repair needed.
+Evidence: `local/evidence/20261013-p05b-tracked-handling-01/auth-audit/`,
+especially `restart-before.json`, `bridge-current-launch.json`,
+`restart-result.json`; failed launch/restoration receipts remain in
+`native-handling-ram07/`. Its README incorrectly used CLI `restore`; argparse
+rejected it without edits, then actual `rollback` succeeded for both installs.
+
+Fresh manual lifecycle: `native-handling-ram08/`, copied frozen07 helpers,
+corrected README command, new binding/ledgers. Automatic physics gate remains
+valid (runtime source unchanged). Native owner acceptance remains NOT_RUN.
+
 ## 2026-10-13 — P05B handling and whole-object response automatic gate
 
 **PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN.** Final physics candidate07

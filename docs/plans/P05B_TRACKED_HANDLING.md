@@ -118,3 +118,20 @@ Final flat trajectories match the earlier accepted automatic steering gate;
 resolved a disk-full build without deleting evidence or changing file bytes.
 No historical solver, universal object coverage or native handling acceptance
 is inferred. Next gate: manual MS-1 then IS-7, using native-handling-ram07.
+
+## Native readiness repair
+
+The first final stand attempt ms1ram01 failed before either client launch:
+shared root identity bridge returned503 for A. Gateway was stopped by receipt,
+both installs/namespaces restored. Read-only audit reproduces the historical
+crew validator failure while current source validates the same immutable
+profile. The root bridge PID32780 is owned by the earlier P06N launch receipt
+`local/evidence/20261010-p06n-destructible-01/identity-launch-native01.json`.
+Allow this narrow stand dependency repair: verify exact PID, executable hash,
+creation time, command/config and loopback listener, require no active requests,
+restart only that bridge with unchanged config and current committed sources,
+and check A/B authentication. No sibling process, profile, fixture, password,
+schema or source changes. Save source/process receipts and DB integrity checks;
+normal service rate-limit writes are expected. If readiness fails, preserve the
+failure and stop only the new owned process. Use a fresh private stand directory
+because the first namespace/install ledgers must remain immutable.

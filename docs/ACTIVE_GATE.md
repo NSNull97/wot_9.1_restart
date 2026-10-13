@@ -1,5 +1,12 @@
 # P05B — final handling and ram automatic gates passed; owner pending
 
+Manual readiness: the initial ms1ram01 attempt failed at A auth503 before any
+native launch; its server/install/namespace lifecycle is fully rolled back.
+Receipt-owned old root identity bridge was refreshed with current source and
+unchanged config. Both A/B login and overview now200, DB integrity/profile
+checks PASS (`auth-audit/restart-result.json`). Fresh final stand uses
+`native-handling-ram08/`; owner handling/visual acceptance remains NOT_RUN.
+
 Final candidate07/gateway03:728 gateway tests,20 paired ram cases,36 flat
 runs+2 calibrations,10 legacy cases,9 historical byte comparisons,83 component
 checks,10 metric tests and28 malformed worker/catalog checks PASS. Python96
@@ -15,7 +22,7 @@ all files and fresh gateway03 passed. Required native owner acceptance keeps
 the card in its branch.
 
 Next: root A/B MS-1 on Prohorovka using candidate07 pools and gateway03 via
-`local/evidence/20261013-p05b-tracked-handling-01/native-handling-ram07/`,
+`local/evidence/20261013-p05b-tracked-handling-01/native-handling-ram08/`,
 then a fresh homogeneous IS-7 run. Owner checks stationary/moving/reverse
 steering, braking, slope, tree/crate/fence impact and native passage. All
 installs/namespaces/processes must use exact binding and restoration ledgers.

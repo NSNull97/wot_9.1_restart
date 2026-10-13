@@ -360,3 +360,48 @@ commits if source rollback is needed. Original client and sibling service stand
 remain untouched. No main merge or production deployment is part of this gate.
 
 Single next step: owner's native handling comparison of MS-1, then IS-7.
+# Native stand readiness recovery, 2026-10-13
+
+After final automatic gate, `native-handling-ram07/ms1ram01` passed8 real
+binding preflights and installed both owned copies, but A credential preflight
+returned503 before either native client/control file existed. Exact gateway
+PID18860 was stopped and both install/namespace ledgers restored. The README's
+`interactive_client.py restore` was an incorrect command; argparse rejected
+without mutation, then the actual `rollback` subcommand passed for both slots.
+Failed logs are preserved alongside `partial-stop-ms1ram01.json` and restore
+receipts. No native readiness or owner acceptance is claimed from this attempt.
+
+Read-only `auth-audit/` proves current validator accepts existing A r4 while
+historical validator rejects its retained r3 producer: `Crew generator source
+changed`. B's simpler fixture remained available. Old root identity PID32780
+predated the accepted P09D historical-evidence fix. In-memory code identity is
+INFERRED from age/history and exact reproduction, not memory instrumentation.
+Both SQLite quick_checks passed; no password/profile rewrite was attempted.
+
+The P06N `identity-launch-native01.json` matched exact PID32780, executable
+SHA, command/config and process creation (receipt written62ms after creation).
+Its sole listener was127.0.0.1:20020 with no established requests. Root ran:
+
+```powershell
+python -B -X utf8 local/evidence/20261013-p05b-tracked-handling-01/auth-audit/restart_owned.py
+```
+
+Only that receipt-owned process was replaced with the current committed source
+and unchanged config. New identity PID43384 has exact creation/hash receipt
+`auth-audit/bridge-current-launch.json`; source inventory including web modules
+is in `restart-before.json`. Both A/B auth200, identity match and overview200
+ready; both DB quick_check OK and all stored game profiles unchanged. Normal
+service rate-limit writes occur on auth requests. `restart-result.json` records
+PASS_CURRENT_BRIDGE_BOTH_LOGINS. Runtime source was not changed by the repair.
+If this process must be stopped, verify its exact new receipt; do not use old
+PID32780 or global Node/process-name stop. Prior config remains the rollback
+reference; no DB/fixture/credential migration needs undoing.
+
+Fresh lifecycle `native-handling-ram08/` copies only the frozen six07 helpers
+plus passive tests, supplies a current-head binding, corrects README rollback
+commands and creates fresh ledgers. Prior files remain evidence. Final automatic
+physics results remain applicable by exact260-file source/hash comparison.
+Manual steering/ram feel and native acceptance are still NOT_RUN until owner
+feedback. Universal object coverage remains open P06R, including300 excluded
+fragiles; the wording "accepted ram" has been withdrawn beyond fence passage.
+
