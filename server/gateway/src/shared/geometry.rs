@@ -1,14 +1,27 @@
-//! Explicit, hash-pinned stock MS-1 surface binding. No armor/damage semantics.
+//! Explicit, hash-pinned #717 vehicle surface binding. No armor/damage semantics.
 use std::{fs, io::{self, Read}, path::Path};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use super::{collision::{Mesh, Triangle}, model::{bad, Actor, Contact}, pose, materials::{self, Catalog}};
+use super::{collision::{Mesh, Triangle}, model::{bad, Actor, Contact}, pose, materials::{self, Catalog}, vehicle_profile::VehicleKind};
 
 pub const SOURCE_REVISION: &str = "ms1-717:b21e25230f1e5d35d9ae95a713622dfa9606a1b916a22bd0350a73c5f3fcce86";
 pub const BUNDLE_SHA256: &str = "26a6714ea562bbc81b64835a8a9495ab9105ae648894b724ea94467d9d7771c2";
+pub const IS7_SOURCE_REVISION: &str = "is7-717:61dcc6fe0a305b336d89edfddb67839364077e436ed1e7e3ef567efc369c7225";
+pub const IS7_BUNDLE_SHA256: &str = "a65013d10b8a8b05bd076a783e6da24749bcf8b823bfc2e0b9919d745694acbe";
+pub fn source_revision(kind: VehicleKind) -> &'static str { match kind {
+    VehicleKind::Ms1 => SOURCE_REVISION, VehicleKind::Is7 => IS7_SOURCE_REVISION,
+} }
+fn bundle_sha256(kind: VehicleKind) -> &'static str { match kind {
+    VehicleKind::Ms1 => BUNDLE_SHA256, VehicleKind::Is7 => IS7_BUNDLE_SHA256,
+} }
 const MAX_BYTES: u64 = 512 * 1024;
 const NAMES: [&str; 3] = ["Hull", "Turret_01", "Gun_02"];
 const COUNTS: [(usize, usize); 3] = [(436, 258), (311, 218), (146, 90)];
+const IS7_NAMES: [&str; 3] = ["Hull", "Turret_01", "Gun_01"];
+const IS7_COUNTS: [(usize, usize); 3] = [(312, 190), (576, 376), (217, 157)];
+const IS7_EXCLUDED_IDS: [u32; 2] = [107, 157];
+const MS1_PIVOTS: [[f32; 3]; 3] = [[-0.012, 0.894681, -0.055245], [0.013778, 0.421721, 0.08902], [-0.238144, 0.234668, 0.410043]];
+const IS7_PIVOTS: [[f32; 3]; 3] = [[0., 0.9, 0.], [0.0004959999932907522, 0.7019429802894592, 0.5281969904899597], [-0.046945, 0.250257, 1.01802]];
 // Original #717 hitTester.bbox, also rechecked against hash-pinned collision
 // .visual boundingBox fields. These are NOT primitive vertex extrema: the
 // turret's native minimum Y is -.364419, while its mesh minimum is near zero.
@@ -23,6 +36,13 @@ const NATIVE_BOUNDS: [[[f32; 3]; 2]; 3] = [
      [0.5145779848098755, 0.7172920107841492, 0.5534660220146179]],
     [[-0.15181100368499756, -0.11368700116872787, -0.27410298585891724],
      [0.15446600317955017, 0.10141299664974213, 0.7375900149345398]],
+];
+// Exact pinned IS-7 .visual boundingBox. Unlike the MS-1 bounds above,
+// native hitTester bbox equivalence is NOT_RUN; do not label it native evidence.
+const IS7_VISUAL_BOUNDS: [[[f32; 3]; 2]; 3] = [
+    [[-1.6452, -0.405365, -3.56061], [1.6452, 0.745642, 3.65744]],
+    [[-1.41518, -0.376276, -2.10397], [1.41419, 0.865144, 1.68136]],
+    [[-0.3174070119857788, -0.2239149957895279, -0.9830819964408875], [0.4095210134983063, 0.47898298501968384, 5.99207878112793]],
 ];
 // Allows f32 pose/mesh rounding at the native AABB boundary, not hitbox growth.
 const CONTACT_TOLERANCE: f64 = 0.0002;
@@ -85,6 +105,7 @@ fn clipped_line(point: [f32; 3], direction: [f32; 3], bounds: [[f32; 3]; 2], min
 struct Component { vertices: Vec<[f32; 3]>, triangles: Vec<Triangle> }
 #[derive(Clone, Debug)]
 pub struct Bundle {
+    vehicle: VehicleKind,
     components: Vec<Component>,
     hull: [f32; 3], turret: [f32; 3], gun: [f32; 3],
     materials: Catalog,
@@ -126,30 +147,49 @@ impl Bundle {
     fn from_bytes(raw: &[u8]) -> io::Result<Self> {
         // Exact approved export only: untrusted/duplicate-key JSON cannot reach
         // deserialization by supplying its own expected digest at startup.
-        if raw.is_empty() || raw.len() as u64 > MAX_BYTES
-            || format!("{:x}", Sha256::digest(raw)) != BUNDLE_SHA256 { return Err(bad()); }
+        if raw.is_empty() || raw.len() as u64 > MAX_BYTES { return Err(bad()); }
+        let vehicle = match format!("{:x}", Sha256::digest(raw)).as_str() {
+            BUNDLE_SHA256 => VehicleKind::Ms1, IS7_BUNDLE_SHA256 => VehicleKind::Is7, _ => return Err(bad()),
+        };
         let value: Value = serde_json::from_slice(raw).map_err(|_| bad())?;
         fields(&value, &["schema", "source_revision", "source_pins", "geometry", "materials"])?;
-        if value["schema"] != "ms1-contact.v1" || !value["source_pins"].is_object() { return Err(bad()); }
-        let materials = Catalog::from_value(&value["source_revision"], &value["materials"])?;
-        Self::from_value(&value["geometry"], materials)
+        let schema = match vehicle { VehicleKind::Ms1 => "ms1-contact.v1", VehicleKind::Is7 => "is7-contact.v1" };
+        if value["schema"] != schema || !value["source_pins"].is_object() { return Err(bad()); }
+        let materials = Catalog::from_value_for(vehicle, &value["source_revision"], &value["materials"])?;
+        Self::from_value_for(vehicle, &value["geometry"], materials)
     }
+    #[cfg(test)]
     fn from_value(v: &Value, materials: Catalog) -> io::Result<Self> {
-        fields(v, &["schema", "vehicle_compact_id", "gun_compact_id", "source_revision", "components",
-            "hull_position", "turret_position", "gun_position"])?;
-        if v["schema"] != "ms1-collision.v1" || v["vehicle_compact_id"] != 3329
-            || v["gun_compact_id"] != 5892 || v["source_revision"] != SOURCE_REVISION { return Err(bad()); }
+        Self::from_value_for(VehicleKind::Ms1, v, materials)
+    }
+    fn from_value_for(vehicle: VehicleKind, v: &Value, materials: Catalog) -> io::Result<Self> {
+        let mut keys = vec!["schema", "vehicle_compact_id", "gun_compact_id", "source_revision", "components",
+            "hull_position", "turret_position", "gun_position"];
+        let (names, counts, pivots, schema, vehicle_id, gun_id) = match vehicle {
+            VehicleKind::Ms1 => (NAMES, COUNTS, MS1_PIVOTS, "ms1-collision.v1", 3329, 5892),
+            VehicleKind::Is7 => { keys.extend(["component_bounds", "excluded_degenerate_triangle_ids"]); (IS7_NAMES, IS7_COUNTS, IS7_PIVOTS, "is7-collision.v1", 7169, 14852) },
+        };
+        fields(v, &keys)?;
+        if v["schema"] != schema || v["vehicle_compact_id"] != vehicle_id
+            || v["gun_compact_id"] != gun_id || v["source_revision"] != source_revision(vehicle) { return Err(bad()); }
+        if vehicle == VehicleKind::Is7 {
+            if v["excluded_degenerate_triangle_ids"] != serde_json::json!([[107, 157], [], []]) { return Err(bad()); }
+            let bounds = v["component_bounds"].as_array().filter(|a| a.len() == 3).ok_or_else(bad)?;
+            for (i, pair) in bounds.iter().enumerate() {
+                let pair = pair.as_array().filter(|a| a.len() == 2).ok_or_else(bad)?;
+                if [vector(&pair[0])?, vector(&pair[1])?] != IS7_VISUAL_BOUNDS[i] { return Err(bad()); }
+            }
+        }
         let hull = vector(&v["hull_position"])?; let turret = vector(&v["turret_position"])?;
         let gun = vector(&v["gun_position"])?;
-        if hull != [-0.012, 0.894681, -0.055245] || turret != [0.013778, 0.421721, 0.08902]
-            || gun != [-0.238144, 0.234668, 0.410043] { return Err(bad()); }
+        if [hull, turret, gun] != pivots { return Err(bad()); }
         let rows = v["components"].as_array().filter(|a| a.len() == 3).ok_or_else(bad)?;
         let mut components = Vec::new();
         for (i, row) in rows.iter().enumerate() {
             fields(row, &["name", "vertices", "triangles"])?;
-            if row["name"] != NAMES[i] { return Err(bad()); }
-            let vr = row["vertices"].as_array().filter(|a| a.len() == COUNTS[i].0).ok_or_else(bad)?;
-            let tr = row["triangles"].as_array().filter(|a| a.len() == COUNTS[i].1).ok_or_else(bad)?;
+            if row["name"] != names[i] { return Err(bad()); }
+            let vr = row["vertices"].as_array().filter(|a| a.len() == counts[i].0).ok_or_else(bad)?;
+            let tr = row["triangles"].as_array().filter(|a| a.len() == counts[i].1).ok_or_else(bad)?;
             let vertices = vr.iter().map(vector).collect::<io::Result<Vec<_>>>()?;
             let mut triangles = Vec::new();
             for (index, t) in tr.iter().enumerate() {
@@ -157,15 +197,27 @@ impl Bundle {
                 let triangle = Triangle { triangle_id: uint(&t["triangle_id"])?, a: uint(&t["a"])?,
                     b: uint(&t["b"])?, c: uint(&t["c"])?, mesh: text(&t["mesh"])?,
                     group: text(&t["group"])?, material: text(&t["material"])? };
-                if triangle.triangle_id != (i * 100000 + index) as u32 || triangle.mesh != NAMES[i] { return Err(bad()); }
+                // Keep original triangle IDs after explicit zero-area filtering.
+                // Only Hull source IDs 107/157 are absent; nothing is renumbered.
+                let mut source_index = index as u32;
+                if vehicle == VehicleKind::Is7 && i == 0 {
+                    for excluded in IS7_EXCLUDED_IDS { if source_index >= excluded { source_index += 1; } }
+                }
+                if triangle.triangle_id != i as u32 * 100000 + source_index || triangle.mesh != names[i] { return Err(bad()); }
                 materials.lookup(&triangle.mesh, &triangle.material)?;
                 triangles.push(triangle);
             }
-            Mesh::new(vertices.clone(), triangles.clone(), SOURCE_REVISION, "component-local-v1")?;
+            Mesh::new(vertices.clone(), triangles.clone(), source_revision(vehicle), "component-local-v1")?;
             components.push(Component { vertices, triangles });
         }
-        Ok(Self { components, hull, turret, gun, materials })
+        Ok(Self { vehicle, components, hull, turret, gun, materials })
     }
+    pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle }
+    pub fn geometry_revision(&self) -> &'static str { source_revision(self.vehicle) }
+    pub fn bundle_sha256(&self) -> &'static str { bundle_sha256(self.vehicle) }
+    fn component_bounds(&self) -> [[[f32; 3]; 2]; 3] { match self.vehicle {
+        VehicleKind::Ms1 => NATIVE_BOUNDS, VehicleKind::Is7 => IS7_VISUAL_BOUNDS,
+    } }
     pub fn materials(&self) -> &Catalog { &self.materials }
     /// Recover a local segment from the authoritative contact's exact target
     /// pose. Attached hull/turret/gun on a live or ordinary HP0 vehicle only:
@@ -174,7 +226,7 @@ impl Bundle {
     /// remains a native acceptance gate. Exploded/detached component transforms
     /// are not represented by Contact and must not call this route.
     pub fn impact_segment(&self, contact: &Contact) -> io::Result<ImpactSegment> {
-        if contact.geometry_revision != SOURCE_REVISION || contact.target_slot >= 2 || contact.tick < 1000
+        if contact.geometry_revision != self.geometry_revision() || contact.target_slot >= 2 || contact.tick < 1000
             || contact.target_position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
             || contact.target_direction.iter().chain(contact.target_aim.iter())
                 .any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
@@ -189,9 +241,8 @@ impl Bundle {
         if facts != contact.material_facts { return Err(bad()); }
         let component = facts.component;
         let index = match component { materials::Component::Hull => 0,
-            materials::Component::Turret01 => 1, materials::Component::Gun02 => 2 };
-        let triangle_index = contact.triangle.triangle_id.checked_sub(index as u32 * 100000).ok_or_else(bad)?;
-        let source = self.components[index].triangles.get(triangle_index as usize).ok_or_else(bad)?;
+            materials::Component::Turret01 => 1, materials::Component::Gun02 | materials::Component::Gun01 => 2 };
+        let source = self.components[index].triangles.iter().find(|triangle| triangle.triangle_id == contact.triangle.triangle_id).ok_or_else(bad)?;
         if source.mesh != contact.triangle.mesh || source.group != contact.triangle.group
             || source.material != contact.triangle.material { return Err(bad()); }
         let delta = subtract(contact.segment_end, contact.segment_start);
@@ -201,7 +252,7 @@ impl Bundle {
         let chassis_direction = pose::inverse_rotate(delta, contact.target_direction);
         let point = self.inverse_component_point(index, chassis_point, contact.target_aim);
         let direction = self.inverse_component_direction(index, chassis_direction, contact.target_aim);
-        let bounds = NATIVE_BOUNDS[index];
+        let bounds = self.component_bounds()[index];
         let length = direction.iter().map(|&x| f64::from(x).powi(2)).sum::<f64>().sqrt();
         let minimum = -f64::from(contact.triangle.t) * length;
         let (start, end) = clipped_line(point, direction, bounds, Some(minimum))?;
@@ -211,7 +262,7 @@ impl Bundle {
         let extended_start = std::array::from_fn(|i| start[i] - 0.01 * (end[i] - start[i]));
         let extended_end = std::array::from_fn(|i| end[i] + 0.01 * (end[i] - start[i]));
         let part = &self.components[index];
-        let mesh = Mesh::new(part.vertices.clone(), part.triangles.clone(), SOURCE_REVISION, "impact-component-local-v1")?;
+        let mesh = Mesh::new(part.vertices.clone(), part.triangles.clone(), self.geometry_revision(), "impact-component-local-v1")?;
         let hits = super::collision::query(&mesh, extended_start, extended_end)?;
         let first = hits.first().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "impact segment has no local surface"))?;
         if (0..3).any(|i| (f64::from(extended_start[i] + first.t * (extended_end[i] - extended_start[i]))
@@ -234,7 +285,7 @@ impl Bundle {
         pose::inverse_rotate(vector, [0., aim[1], 0.])
     }
     pub fn world_mesh(&self, actor: &Actor, slot: usize, tick: u32) -> io::Result<Mesh> {
-        if slot >= 2 || tick < 1000 || actor.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
+        if actor.vehicle_kind() != self.vehicle || slot >= 2 || tick < 1000 || actor.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
             || actor.direction.iter().any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
             || !actor.aim.yaw.is_finite() || !actor.aim.pitch.is_finite() { return Err(bad()); }
         let mut vertices = Vec::new(); let mut triangles = Vec::new();
@@ -251,7 +302,7 @@ impl Bundle {
         }
         // Hash the precise authoritative transform facts, including aim, so
         // the identity stays unambiguous even within one server tick.
-        Mesh::new(vertices, triangles, SOURCE_REVISION,
+        Mesh::new(vertices, triangles, self.geometry_revision(),
             transform_revision(actor.position, actor.direction, [actor.aim.yaw, actor.aim.pitch], slot, tick))
     }
     fn component_point(&self, index: usize, vertex: [f32; 3], yaw: f32, pitch: f32) -> [f32; 3] {
@@ -271,7 +322,8 @@ pub(super) mod tests {
     use super::*;
     fn contact_for(b: &Bundle, index: usize, start: [f32; 3], end: [f32; 3],
         direction: [f32; 3], aim: [f32; 2]) -> Contact {
-        let mut actor = super::super::model::tests::world(std::time::Instant::now()).actors[0].clone();
+        let mut actor = super::super::model::World::new_for_vehicle(991, std::time::Instant::now(),
+            crate::map_profile091::MapId::Prohorovka, b.vehicle_kind()).unwrap().actors[0].clone();
         actor.position = [37., 21., -105.]; actor.direction = direction;
         actor.aim.yaw = aim[0]; actor.aim.pitch = aim[1];
         let world = |p| {
@@ -281,12 +333,12 @@ pub(super) mod tests {
         let segment_start = world(start); let segment_end = world(end);
         let mesh = b.world_mesh(&actor, 1, 1000).unwrap();
         let triangle = super::super::collision::query(&mesh, segment_start, segment_end).unwrap()
-            .into_iter().find(|hit| hit.mesh == NAMES[index]).unwrap();
+            .into_iter().find(|hit| hit.mesh == match b.vehicle_kind() { VehicleKind::Ms1 => NAMES[index], VehicleKind::Is7 => IS7_NAMES[index] }).unwrap();
         let endpoint = std::array::from_fn(|i| segment_start[i] + triangle.t * (segment_end[i] - segment_start[i]));
         let material_facts = b.materials.lookup(&triangle.mesh, &triangle.material).unwrap();
         Contact { shot: 1, target_slot: 1, tick: 1000, segment_start, segment_end, segment_seconds: 0.1,
             endpoint, target_position: actor.position, target_direction: direction, target_aim: aim,
-            triangle, geometry_revision: SOURCE_REVISION.into(), transform_revision: mesh.transform_revision().into(), material_facts }
+            triangle, geometry_revision: b.geometry_revision().into(), transform_revision: mesh.transform_revision().into(), material_facts }
     }
     #[test] fn impact_bounds_equal_original_native_records_not_vertex_extrema() {
         let root = std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
@@ -391,6 +443,79 @@ pub(super) mod tests {
         let root = std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
         Bundle::load(&Path::new(&root).join("local"), &Path::new(&root)
             .join("local/evidence/20261010-p06j-contact-materials-01/ms1-contact.json")).unwrap()
+    }
+    pub fn is7_bundle() -> Bundle {
+        let root = std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
+        Bundle::load(&Path::new(&root).join("local"), &Path::new(&root)
+            .join("local/evidence/20261013-p03m-is7-01/geometry-surface01/is7-contact.json")).unwrap()
+    }
+    #[test] fn is7_pinned_bundle_preserves_component_coverage_and_vehicle_identity() {
+        let b = is7_bundle(); assert_eq!(b.vehicle_kind(), VehicleKind::Is7);
+        assert_eq!(b.geometry_revision(), IS7_SOURCE_REVISION); assert_eq!(b.bundle_sha256(), IS7_BUNDLE_SHA256);
+        assert_eq!([b.hull, b.turret, b.gun], IS7_PIVOTS);
+        let ids: Vec<_> = b.components[0].triangles.iter().map(|t| t.triangle_id).collect();
+        assert_eq!(ids, (0..192).filter(|id| !IS7_EXCLUDED_IDS.contains(id)).collect::<Vec<_>>());
+        for (index, component) in b.components.iter().enumerate() {
+            assert_eq!((component.vertices.len(), component.triangles.len()), IS7_COUNTS[index]);
+            for t in &component.triangles {
+                assert_eq!(t.mesh, IS7_NAMES[index]);
+                assert_eq!(b.materials.lookup(&t.mesh, &t.material).unwrap().profile_revision, materials::IS7_PROFILE_REVISION);
+            }
+        }
+        let ms1 = super::super::model::tests::world(std::time::Instant::now()).actors[0].clone();
+        assert!(b.world_mesh(&ms1, 0, 1000).is_err());
+        let is7 = super::super::model::World::new_for_vehicle(992, std::time::Instant::now(),
+            crate::map_profile091::MapId::Prohorovka, VehicleKind::Is7).unwrap().actors[0].clone();
+        assert!(bundle().world_mesh(&is7, 0, 1000).is_err());
+        assert_eq!(b.world_mesh(&is7, 0, 1000).unwrap().geometry_revision(), IS7_SOURCE_REVISION);
+        assert!(b.materials.lookup("Gun_02", "armor_1").is_err());
+    }
+    #[test] fn is7_source_visual_bounds_and_articulated_surface_segments() {
+        let b = is7_bundle();
+        assert!(b.components[0].vertices.iter().all(|v| v[1] < 0.683));
+        assert_eq!(b.component_bounds()[0][1][1], 0.745642);
+        // These are source geometry checks. Native hitTester bbox/visual effect
+        // acceptance must still be measured for IS-7 in the owner run.
+        for (index, start, end) in [(0, [-4., 0., 0.], [4., 0., 0.]),
+            (1, [0.1, 0.25, -4.], [0.1, 0.25, 4.]), (2, [0., 0.1, -2.], [0., 0.1, 7.])] {
+            for (direction, aim) in [([0.; 3], [0.; 2]), ([0.7, -0.3, 0.2], [1.1, -0.09]),
+                ([-2.1, 0.25, -0.15], [-0.9, 0.24])] {
+                for reverse in [false, true] {
+                    let (start, end) = if reverse { (end, start) } else { (start, end) };
+                    let c = contact_for(&b, index, start, end, direction, aim);
+                    let segment = b.impact_segment(&c).unwrap();
+                    assert_eq!(segment.component.name(), IS7_NAMES[index]);
+                    assert_eq!(segment.bounds, IS7_VISUAL_BOUNDS[index]);
+                    let roundtrip = b.inverse_component_point(index,
+                        b.component_point(index, segment.start, aim[0], aim[1]), aim);
+                    for axis in 0..3 { assert!((roundtrip[axis] - segment.start[axis]).abs() < 1e-6); }
+                    let mut foreign = c.clone(); foreign.geometry_revision = SOURCE_REVISION.into();
+                    assert!(b.impact_segment(&foreign).is_err());
+                    foreign = c; foreign.material_facts.profile_revision = materials::PROFILE_REVISION.into();
+                    assert!(b.impact_segment(&foreign).is_err());
+                }
+            }
+        }
+    }
+    #[test] fn is7_malformed_source_binding_and_bytes_fail_without_ms1_fallback() {
+        let root = std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
+        let raw = fs::read(Path::new(&root).join("local/evidence/20261013-p03m-is7-01/geometry-surface01/is7-contact.json")).unwrap();
+        let value: Value = serde_json::from_slice(&raw).unwrap();
+        let catalog = || Catalog::from_value_for(VehicleKind::Is7, &value["source_revision"], &value["materials"]).unwrap();
+        let mut changed = raw.clone(); changed.push(b' '); assert!(Bundle::from_bytes(&changed).is_err());
+        for (key, v) in [("schema", serde_json::json!("ms1-collision.v1")),
+            ("gun_compact_id", serde_json::json!(52484)), ("source_revision", serde_json::json!(SOURCE_REVISION)),
+            ("hull_position", serde_json::json!([0., 0., 0.])), ("component_bounds", serde_json::json!([])),
+            ("excluded_degenerate_triangle_ids", serde_json::json!([[107], [], []]))] {
+            let mut bad_geometry = value["geometry"].clone(); bad_geometry[key] = v;
+            assert!(Bundle::from_value_for(VehicleKind::Is7, &bad_geometry, catalog()).is_err());
+        }
+        let mut bad_geometry = value["geometry"].clone(); bad_geometry["components"][2]["name"] = "Gun_02".into();
+        assert!(Bundle::from_value_for(VehicleKind::Is7, &bad_geometry, catalog()).is_err());
+        let mut bad_geometry = value["geometry"].clone(); bad_geometry["components"][0]["triangles"][0]["a"] = 99999.into();
+        assert!(Bundle::from_value_for(VehicleKind::Is7, &bad_geometry, catalog()).is_err());
+        assert!(Bundle::from_value_for(VehicleKind::Ms1, &value["geometry"], catalog()).is_err());
+        assert!(Catalog::from_value_for(VehicleKind::Ms1, &value["source_revision"], &value["materials"]).is_err());
     }
     #[test] fn measured_component_origins_match_native_inverse_matrices() {
         let b = bundle();
