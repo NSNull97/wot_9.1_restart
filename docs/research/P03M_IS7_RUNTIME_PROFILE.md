@@ -34,8 +34,8 @@ acceptance audit. One transport CAPTURE_LIMIT means raw-packet coverage is
 partial; the text/native traces remain retained. No screenshots were taken.
 
 Fresh230-file recheck matches the previously tested final runtime binding.
-No runtime source or control coefficients changed in this closure turn. Tests
-were not rerun for documentation/acceptance changes; the retained676 gateway,
+No control coefficients changed in this closure turn. Before integrating newer
+main, tests were not rerun just for documentation/acceptance changes; retained676 gateway,
 69 Python and24 paired physics cases keep their original limited meaning.
 The one unavailable symlink fixture is still NOT_RUN; owner's scoped acceptance
 does not relabel that test. Root P09B dirty research remains untouched.
@@ -46,6 +46,38 @@ is7run03ownerfail` followed by `interactive_client.py rollback` for both
 Historical launch/prepared rollback commands below are retained for provenance;
 the stand is no longer live. Code rollback after merge uses a scoped P03M merge
 revert, never reset or original-client changes.
+
+## Integration with already accepted crew/ammunition main
+
+Remote/main advanced to06582030050c7b6720f4616dffa50b2be61e4abc while P03M was
+being verified. It includes accepted P09D ammunition and P04E crew work.
+Merge into P03M is `f78431a4d81e33fbb722f1a63e6d302590cc698b`. Only
+`.gitattributes` and STATUS conflicted; both accepted histories and every
+hash-sensitive LF rule were kept. No service work was replaced or reimplemented.
+
+New current-source gateway06 full suite:718/718 PASS. Frozen253 runtime source
+files did not change during the test/build; receipt
+`integration/canonical-main06/receipt.json`. Result EXE SHA256
+`40d5fa664caeeb42176d5b4ec8b46c3bc04aaf4ec6d2e669adec45a8f641ea4b`.
+No deployed artifact replacement. The accepted run03 used gateway05; it is not
+relabelled as a native run of this new binary. New combined native launch is
+NOT_RUN. Added service hooks require explicit hangar-only flags and shared
+runtime rejects service-enabled configuration; temporary IS-7 runtime remains
+separate from account inventory/service admission.
+
+Additional affected Python tests:62/62 PASS (`integration/python-main06.log`),
+and exact CPython2.7.3 compilation of collision_oracle, sr_interactive,
+hangar_bootstrap and crew_capabilities PASS (`integration/cp27-main06.log`).
+Actual commands:
+
+```powershell
+python -B -X utf8 local/evidence/20261013-p03m-is7-01/integration/run_gateway_gate.py --build gateway-p03m-is7-06 --out local/evidence/20261013-p03m-is7-01/integration/canonical-main06
+$env:WOT091_ROOT='D:\WoT_9.1_Server'
+python -B -X utf8 -m unittest tests.test_collision_oracle tests.test_client_marker_oracle tests.test_vehicle_physics_profile tests.test_is7_contact_bundle tests.test_shared_lab_control tests.test_interactive_window_trace tests.test_interactive_relogin_control -v
+```
+
+The owner acceptance is specifically the IS-7 profile; general handling and
+any future combined production deployment still need their own relevant gates.
 
 ## Purpose and selected contract
 

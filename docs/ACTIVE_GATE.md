@@ -15,6 +15,10 @@ logs, retained capture-limit caveat and rollback checks are in
 `local/evidence/20261013-p03m-is7-01/native-is7/is7run03-owner-final/receipt.json`.
 P03M source hashes and previous tests remain applicable. No merge of the full
 P05 physics claim is implied by closing P03M.
+Combined current-main integrationf78431a additionally passes718 gateway tests,
+62 affected Python tests and CPython2.7.3 compilation of four merged client
+files.253 runtime hashes are frozen in `integration/canonical-main06/receipt.json`.
+No new combined native run or deployment is claimed.
 
 Next: existing [P05 movement/handling plan](plans/P05_MOVEMENT_COLLISION_RECONCILIATION.md),
 with direct metrics for pivot/acceleration/braking/slip and a new owner gate.

@@ -24,6 +24,16 @@ runtime code or physics tuning was performed in this feedback/closure turn.
 Prior676 gateway/69 Python/24 paired physics checks remain scoped evidence,
 not proof of good driving. One Python symlink test remains NOT_RUN.
 
+Before final P03M merge, current accepted main0658203 (P09D ammo/P04E crew)
+was integrated in branch commitf78431a. Only STATUS/.gitattributes conflicted;
+both histories and all provenance LF rules were retained. Fresh canonical
+gateway06:718/718 PASS,253 runtime source hashes unchanged through the gate.
+Affected Python62/62 PASS and four merged client files compile in CPython2.7.3.
+Evidence: `integration/canonical-main06/receipt.json`, `python-main06.log`,
+`cp27-main06.log` under the P03M evidence directory. No deployed artifacts
+were replaced. Combined new native launch NOT_RUN; owner's IS-7 acceptance
+is the retained run03, while service paths keep their prior separate acceptance.
+
 Next: resume the existing P05 handling work with measurable pivot, acceleration,
 braking and lateral-slip criteria before selecting controller changes.
 
