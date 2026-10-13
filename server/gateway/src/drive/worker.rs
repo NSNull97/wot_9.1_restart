@@ -669,13 +669,19 @@ pub(crate) mod tests {
     }
     #[test]fn actual_packaged_pool_and_saved_worker_output_readonly_contract(){
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
-        let pool=Pool::load(&root,&root.join("server/map-drive/pool.json")).unwrap();
-        assert_eq!(pool.sha256,"8994553cd223678e093c44de9cb5bfa78ccfedb5c2b3ff0fe49e1ed84e8cbc12");
+        // Immutable original pool pin is verified before checkout-only relocation.
+        let pool=crate::worker_fixtures091::packaged();
         assert_eq!(pool.assets.len(),16);
         let raw=read(&root.join("evidence/20261005-p02-map-drive/physics/packaged-worker-01/stdout.jsonl"),4096).unwrap();
+        assert_eq!(format!("{:x}",Sha256::digest(&raw)),"49065e18200e9aa93d3c0b6ab7d2c18566aa4cbf8e0a186a9c96b911c01813f5");
         let lines=raw.split(|b|*b==10).filter(|b|!b.is_empty()).collect::<Vec<_>>();assert_eq!(lines.len(),2);
-        let map=pool.maps.iter().find(|m|m.asset=="01_karelia").unwrap();
-        for (i,line) in lines.iter().enumerate(){let s=response(line,map,i as u32).unwrap();assert_eq!(s.pose.contacts,5);assert_eq!(s.pose.wheel_contact_masks,[59;6]);}
+        // Archived IPC is bound to its original config, not the relocated
+        // config used by the separate real-child test. Preserve both hashes.
+        let mut archived_map=pool.maps.iter().find(|m|m.asset=="01_karelia").unwrap().clone();
+        archived_map.config=root.join("server/map-drive/01_karelia-v1.json");
+        archived_map.config_sha256=format!("{:x}",Sha256::digest(read(&archived_map.config,16384).unwrap()));
+        assert_eq!(archived_map.config_sha256,"cf93c617d328865faaf93b7081eb838eb13262b12fe27b4a603e1f2a7023f4c2");
+        for (i,line) in lines.iter().enumerate(){let s=response(line,&archived_map,i as u32).unwrap();assert_eq!(s.pose.contacts,5);assert_eq!(s.pose.wheel_contact_masks,[59;6]);}
     }
     #[test]fn ipc_line_refuses_eof_partial_nul_nonascii_and_overflow(){
         assert_eq!(line(&mut &b"{}\n"[..]).unwrap(),b"{}");
@@ -882,8 +888,7 @@ pub(crate) mod tests {
 
     #[test]fn packaged_worker_real_child_ipc_both_maps_fixed_steps_then_owned_eof(){
         // Authorized by root for this card. No client/gateway/socket/DB action.
-        let local=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
-        let pool=Arc::new(Pool::load(&local,&local.join("server/map-drive/pool.json")).unwrap());let out=scratch();let mut proof=Vec::new();
+        let pool=Arc::new(crate::worker_fixtures091::packaged());let out=scratch();let mut proof=Vec::new();
         for (i,map) in pool.maps.iter().enumerate(){
             let begin=Instant::now();let mut w=Worker::launch(pool.clone(),map.clone(),(i+1) as u32,begin).unwrap();
             fn wait(w:&mut Worker,deadline:Instant)->State{loop{assert!(Instant::now()<deadline,"bounded own IPC deadline");

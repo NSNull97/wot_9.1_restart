@@ -12,6 +12,7 @@ SOURCE = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
 
 
 def trusted_functions(names, namespace):
+    namespace.setdefault('_settings', {})
     tree = ast.parse(SOURCE.read_bytes())
     found = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
     assert len(found) == len(names)

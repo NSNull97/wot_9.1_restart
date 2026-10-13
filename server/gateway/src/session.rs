@@ -6,6 +6,8 @@ use sha2::{Digest,Sha256};
 use std::{sync::{Arc,mpsc},path::Path};
 use crate::{baseapp091 as base,login091 as login,redirect091,transport091::{self,Frame,Window}};
 use crate::capture091::{Channel,Recorder};
+#[path = "account/ammo_session.rs"]
+mod ammo_session;
 #[path = "shared/mod.rs"]
 pub(crate) mod shared;
 pub use shared::serve as serve_shared_lab;
@@ -176,6 +178,7 @@ struct Session {
     drive_return_account:Option<WarmAccountReturn>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
     shared:Option<shared::Client>,
+    ammo_service:Option<ammo_session::State>,
 }
 impl Session {
     fn new(id:u32,key:[u8;16],peer:SocketAddr,now:Instant)->Self {
@@ -186,7 +189,7 @@ impl Session {
             arena_base:false,avatar_unsupported_envelopes:0,arena_space:ArenaSpaceStage::Disabled,
             arena_vehicle:ArenaVehicleStage::Disabled,arena_vehicle_seed:None,arena_vehicle_announcement:None,
             arena_ready:false,arena_vehicle_creation:None,arena_preparation:None,arena_battle_preparation:None,arena_fire:None,
-            arena_movement:false,arena_motion:None,map_drive:false,map_binding:None,drive:None,drive_return_account:None,drive_account_policy:None,shared:None}
+            arena_movement:false,arena_motion:None,map_drive:false,map_binding:None,drive:None,drive_return_account:None,drive_account_policy:None,shared:None,ammo_service:None}
     }
     fn same_login_attempt(&self,candidate:&LoginAttempt)->bool {
         self.login_attempt.is_some_and(|attempt|attempt.same_attempt(candidate))
@@ -215,7 +218,7 @@ impl Session {
     fn ready_for_arena_base(&self)->bool {
         self.active && self.account_ready && self.identity.is_some() && self.hangar.is_some()
             && self.base_peer.is_some() && self.sync_mask==7 && self.outbox.is_empty()
-            && self.tx.len()==0 && !self.arena_base
+            && self.tx.len()==0 && !self.arena_base && self.ammo_service.is_none()
     }
     fn queue_arena_base(&mut self)->io::Result<()> {
         if !self.ready_for_arena_base() {return Err(invalid());}
@@ -873,12 +876,37 @@ impl Session {
     fn receive_account(&mut self,payload:&[u8],events:&mut Vec<String>)->io::Result<()> {
 use crate::hangar091::Incoming;
 let requests=if self.hangar.is_some() {
-    if self.identity.is_some() {crate::hangar091::requests_interactive(payload)?}
+    if self.ammo_service.as_ref().is_some_and(ammo_session::State::crew_enabled) {crate::hangar091::requests_crew_service(payload)?}
+    else if self.ammo_service.is_some() {crate::hangar091::requests_ammo_service(payload)?}
+    else if self.identity.is_some() {crate::hangar091::requests_interactive(payload)?}
     else {crate::hangar091::requests(payload)?}}
     else {crate::account091::requests(payload)?.into_iter().map(Incoming::Sync).collect()};
 for incoming in requests {
+    // The shared mutation namespace also guards later nonmutating commands.
+    // ClientChat uses its separate i64 namespace; transport duplicates never
+    // reach this newly received application bundle.
+    let account_id=match &incoming {
+        Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync{request:r,..}
+        |Incoming::CachedSync{request:r,..}|Incoming::CachedRefresh{request:r,..}|Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
+        Incoming::AmmoService(r)=>Some(r.id),Incoming::CrewService(r)=>Some(r.id),
+        Incoming::Language{id}|Incoming::UnsupportedIntArray{id,..}=>Some(*id),
+        Incoming::ServerStats=>Some(202),Incoming::Chat(_)=>None,
+    };
+    if account_id.is_some_and(|id|self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))) {return Err(invalid());}
     let r=match incoming {
         Incoming::Sync(r)=>r,
+        Incoming::AmmoService(request)=>{
+            ammo_session::enqueue(self,request,events)?;
+            continue;
+        },
+        Incoming::CrewService(request)=>{
+            ammo_session::enqueue_crew(self,request,events)?;
+            continue;
+        },
+        Incoming::AmmoRefresh{request,revision,persistent_hash}=>{
+            ammo_session::refresh(self,request,revision,persistent_hash,events)?;
+            continue;
+        },
         Incoming::DossierSync {request,version,last_change_time}=>{
             if self.identity.is_none() {return Err(invalid());}
             self.hangar.as_ref().ok_or_else(invalid)?
@@ -1262,13 +1290,14 @@ pub fn serve_map_drive_probe(key_path:&str,digest_path:&str,config_path:&str,cap
     serve_inner(key_path,digest_path,true,true,None,Some(Arc::new(config)),Some(capture),Some(control))
 }
 struct Authenticated {identity:Arc<crate::identity091::Profile>,fixtures:Arc<crate::hangar091::Fixtures>,
-    drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>}
+    drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
+    ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool}
 impl Authenticated {
     fn new(identity:crate::identity091::Profile,fixtures:crate::hangar091::Fixtures,ordinary:bool)->io::Result<Self> {
         // Remains inside the existing bounded auth worker. A bad primary policy
         // reaches AUTH_REJECT before Session creation or any native state bytes.
         let policy=crate::map_drive_service091::AccountPolicy::for_mode(ordinary,&identity,&fixtures)?;
-        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new)})
+        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None,crew_service:false})
     }
 }
 struct AuthJob {
@@ -1293,7 +1322,17 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
     thread::Builder::new().name("local-identity".to_owned()).spawn(move || {
         let outcome=config.authenticate(&email,&password).and_then(|identity|identity.map(|identity| {
             let fixtures=crate::hangar091::Fixtures::load_interactive(&identity.fixture_dir)?;
-            Authenticated::new(identity,fixtures,ordinary)
+            let binding=if config.ammo_service {
+                Some(crate::ammo_service091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id)?)
+            } else {None};
+            if config.crew_service {
+                let shared=binding.ok_or_else(invalid)?;
+                crate::crew_service091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
+            }
+            let mut accepted=Authenticated::new(identity,fixtures,ordinary)?;
+            accepted.ammo_service=binding;
+            accepted.crew_service=config.crew_service;
+            Ok(accepted)
         }).transpose());
         let _=sender.send(outcome); // A stopped gateway has no recipient.
     })?;
@@ -1393,6 +1432,9 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                interactive:Option<Arc<crate::identity091::Config>>,mut capture:Option<Recorder>,
                mut arena_control:Option<crate::arena_control091::ArenaControl>,
                drive_pool:Option<Arc<crate::map_drive_worker091::Pool>>)->Result<(),Box<dyn std::error::Error>> {
+    if interactive.as_ref().is_some_and(|config|config.ammo_service) && (drive_pool.is_some() || arena_control.is_some()) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput,"ammunition service is hangar-only; battle integration unavailable").into());
+    }
     let private=login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len()!=16 {return Err(invalid().into());}
     let digest:[u8;16]=fs::read(digest_path)?.try_into().map_err(|_|invalid())?;
@@ -1403,6 +1445,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
     let mut closed:VecDeque<([u8;16],Instant)>=VecDeque::new();let mut count=0u64;
     let mut retirement=RetirementWindow::default();
     let mut auth:Option<AuthJob>=None;let mut last_auth:Option<Instant>=None;
+    let mut ammo_job:Option<ammo_session::Job>=None;
     let mut drive_worker:Option<(u32,crate::map_drive_worker091::Worker)>=None;
     let mut login_fragments=login::LoginFragments::default();
     let mut rate_started=started;let mut rate_count=0u32;
@@ -1419,11 +1462,18 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
     } else {println!("BOUND 127.0.0.1:20015 base_backend=127.0.0.1:20017 profile=legacy091-gateway scope=single_lab_account");}
     if account_probe {println!("ACCOUNT_PROBE enabled=true scope={}",if account_ready {"minimal_initial_sync"} else {"creation_only"});}
     if account_ready {println!("ACCOUNT_BOOTSTRAP_EXPERIMENT enabled=true file_endpoints=0 voice_service=false");}
+    if interactive.as_ref().is_some_and(|config|config.ammo_service) {
+        println!("AMMO_SERVICE enabled=true profile=5 funding=owned_depot purchases=false battle=false max_pending=4");
+    }
     while interactive.is_some() || (started.elapsed()<Duration::from_secs(900) && count<8192) {
         let now=Instant::now();
         if now.duration_since(rate_started)>=Duration::from_secs(1) {rate_started=now;rate_count=0;}
         while closed.front().is_some_and(|(_,t)|now.duration_since(*t)>Duration::from_secs(120)) {closed.pop_front();}
         let mut close_reason=None;
+        if let Err(error)=ammo_session::complete(session.as_mut(),&mut ammo_job) {
+            println!("AMMO_SERVICE_AMBIGUOUS reason=worker_or_publication kind={:?} reconnect_required=true",error.kind());
+            close_reason=Some("ammo_service_ambiguous");
+        }
         let auth_result=auth.as_ref().and_then(|job|match job.receiver.try_recv() {
             Ok(value)=>Some(value),Err(mpsc::TryRecvError::Empty)=>None,
             Err(mpsc::TryRecvError::Disconnected)=>Some(Err(io::Error::new(io::ErrorKind::Other,"identity worker stopped"))),
@@ -1436,7 +1486,8 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                     // ran. Recheck retirement and reserve capacity before any
                     // allocation; a successful password never bypasses either.
                     let denied=retirement.check_login(&job.attempt,now).err();
-                    let busy=session.as_ref().is_some_and(|s|!s.verified_duplicate(&job.attempt,&accepted.identity.account_id));
+                    let busy=session.as_ref().is_some_and(|s|!s.verified_duplicate(&job.attempt,&accepted.identity.account_id))
+                        || (session.is_none() && ammo_job.is_some()) || close_reason.is_some();
                     if denied.is_some() || busy {
                         send_wire(&login_socket,job.attempt.login_peer,&login::rejection(job.request,73),Channel::Login,&mut capture)?;
                         if let Some(reason)=denied {println!("AUTH_REJECT code=73 allocated=0 reason=retirement_post_auth policy={reason:?}");}
@@ -1450,6 +1501,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                                 accepted.identity.account_id,accepted.identity.database_id,accepted.identity.name,accepted.fixtures.sizes());
                             created.identity=Some(accepted.identity);created.hangar=Some(accepted.fixtures);
                             created.drive_account_policy=accepted.drive_account_policy;
+                            created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service));
                             if drive_pool.is_some(){created.drive=Some(crate::map_drive_world091::Arena::new(now));}
                             if let Some(policy)=&created.drive_account_policy {println!("{}",policy.binding_event(next_id));}
                             session=Some(created);next_id=next_id.checked_add(1).ok_or_else(invalid)?;
@@ -1503,6 +1555,10 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                     }
                 };
                 if let Some(config)=&interactive {
+                    if close_reason.is_some() || (session.is_none() && ammo_job.is_some()) {
+                        send_wire(socket,peer,&login::rejection(request,73),Channel::Login,&mut capture)?;
+                        println!("AUTH_REJECT code=73 allocated=0 reason=ammo_service_pending");continue;
+                    }
                     if fields.digest!=digest {send_wire(socket,peer,&login::rejection(request,69),Channel::Login,&mut capture)?;println!("AUTH_REJECT code=69 allocated=0");continue;}
                     let candidate=LoginAttempt::new(fields.session_key,fields.nonce,peer);
                     let ciphertext_tag=encrypted_attempt_tag(packet)?;
@@ -1598,6 +1654,12 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                 }
             }
             if s.active && close_reason.is_none() {
+                if let Some(config)=interactive.as_ref().filter(|config|config.ammo_service) {
+                    if let Err(error)=ammo_session::start(s,&mut ammo_job,config.clone()) {
+                        println!("AMMO_SERVICE_AMBIGUOUS reason=start kind={:?} reconnect_required=true",error.kind());
+                        close_reason=Some("ammo_service_start");
+                    }
+                }
                 if let Some(pool)=drive_pool.as_ref(){
                     if let Err(error)=poll_drive(s,&mut drive_worker,pool.clone(),now){
                         println!("MAP_DRIVE_FAILED session={} error={error} data_changed=false",s.id);

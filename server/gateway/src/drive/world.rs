@@ -306,7 +306,7 @@ impl Arena {
             fixture_dir:local.join("server/fixtures").join(vehicle::PRIMARY_ACCOUNT).join("r4-catalog3")};
         let fixture=crate::hangar091::Fixtures::load_interactive(&identity.fixture_dir).unwrap();
         let seed=vehicle::load(&identity,fixture.state_sha256()).unwrap();
-        let pool=crate::map_drive_worker091::Pool::load(&local,&local.join("server/map-drive/pool.json")).unwrap();
+        let pool=crate::worker_fixtures091::packaged();
         (seed,pool.maps)
     }
     fn float_at(b:&[u8],at:usize)->f32{f32::from_le_bytes(b[at..at+4].try_into().unwrap())}

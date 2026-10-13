@@ -65,7 +65,9 @@ _guard = None
 class _CrewChangeGuard(object):
     """Own exact class descriptors; injectable dependencies permit unit checks."""
 
-    def __init__(self, classes, messages, record):
+    def __init__(self, classes, messages, record, allow_actions=()):
+        if type(allow_actions) is not tuple or allow_actions not in ((), ('open_recruit', 'recruit')):
+            raise ValueError('only the explicit free recruitment capability may be enabled')
         required = set(row[0] for row in TARGETS)
         if set(classes) != required or not callable(record):
             raise ValueError('exact audited crew classes and recorder required')
@@ -73,9 +75,12 @@ class _CrewChangeGuard(object):
             raise ValueError('crew policy binding bounds violated')
         self.messages = messages
         self.record = record
+        self.allowed_actions = allow_actions
         self.active = False
         self.bindings = []
         for class_name, name, action, is_static in TARGETS:
+            if action in allow_actions:
+                continue
             cls = classes[class_name]
             original = cls.__dict__[name]
             if isinstance(original, staticmethod) != is_static:
@@ -124,6 +129,11 @@ class _CrewChangeGuard(object):
                     bindings=[row[4] for row in self.bindings],
                     audited_sources=[{'source': path, 'sha256': digest}
                                      for path, digest in AUDITED_SOURCES])
+        if self.allowed_actions:
+            self.record('crew_recruitment_capability', policy_version=1,
+                        allowed_actions=list(self.allowed_actions),
+                        policy='test_lab.free100.ms1-driver.v1',
+                        other_crew_changes_available=False)
         for cls, name, original, replacement, callback in self.bindings:
             setattr(cls, name, replacement)
         self.active = True
@@ -143,7 +153,7 @@ class _CrewChangeGuard(object):
                     original_binding_restored=True, restored_bindings=[row[4] for row in self.bindings])
 
 
-def init(record):
+def init(record, allow_actions=()):
     """Call after items init but before original GUI BusinessHandler construction."""
     global _guard
     if _guard is not None:
@@ -159,7 +169,7 @@ def init(record):
     classes = dict((cls.__name__, cls) for cls in (BusinessHandler, BusinessLobbyHandler,
                    Crew, Barracks, PersonalCase, CrewOperationsPopOver, RecruitWindow,
                    RetrainCrewWindow))
-    candidate = _CrewChangeGuard(classes, SystemMessages, record)
+    candidate = _CrewChangeGuard(classes, SystemMessages, record, allow_actions)
     candidate.install()
     _guard = candidate
 

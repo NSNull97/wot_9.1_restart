@@ -17,9 +17,11 @@ import struct
 
 import test_garage_state as garage
 import hangar_state as legacy
+import native_evidence_relocation as relocation
 from client_audit import ROOT, config, read_limited, save_json, sha256
 from verify_hangar import literal, EXE_SHA
 
+HISTORICAL_GENERATOR_SHA = '40730f4c4c1a1d44c620577c58f40b757e9f1c891fb11ac9442ef1427bd1e810'
 BASE_GENERATOR_SHA = 'dec1f884dd8b22ef0d4a6c21389cb37c075f008feb6a12bc7d43888c5b4c5825'
 GRANT_ID = 'test-ms1-crew-v1'
 ROLES = ('commander', 'driver')
@@ -43,7 +45,19 @@ def dependencies():
     path = Path(garage.__file__).resolve()
     require(sha256(path) == BASE_GENERATOR_SHA, 'frozen profile2 generator changed')
     return {'file': str(Path(__file__).resolve()), 'sha256': sha256(Path(__file__)),
-            'dependency': dep, 'base_generator': {'file': str(path), 'sha256': BASE_GENERATOR_SHA}}
+            'dependency': dep, 'base_generator': {'file': str(path), 'sha256': BASE_GENERATOR_SHA},
+            'evidence_relocation': {'version': 1, 'file': str(Path(relocation.__file__).resolve()),
+                                    'sha256': sha256(Path(relocation.__file__))}}
+
+
+def validate_generator_provenance(record):
+    current = dependencies()
+    historical = {key: value for key, value in current.items() if key != 'evidence_relocation'}
+    historical['sha256'] = HISTORICAL_GENERATOR_SHA
+    # This is an immutable historical producer record, never the identity of
+    # the current source. New generation always records dependencies() above.
+    require(_same(record, current) or _same(record, historical), 'profile3 generator provenance changed')
+    return record
 
 
 def validate_base(directory):
@@ -305,13 +319,15 @@ def validate_export(path):
     _schema(value, ('version', 'kind', 'data', 'source'), 'native export envelope')
     require(type(value['version']) is int and value['version'] == 1 and value['kind'] == 'native-ms1-crew',
             'native export envelope version/kind')
+    relocated = relocation.for_export(path, raw)
     proof = value['source']
     _schema(proof, ('trace_file', 'trace_sha256', 'record_index', 'install_plan_file',
                    'install_plan_sha256', 'outcome_file', 'outcome_sha256'), 'native export proof')
     artifacts, files = {}, {}
     for name, limit in (('trace', 4 * 1024 * 1024), ('install_plan', 1024 * 1024), ('outcome', 65536)):
         require(type(proof[name + '_file']) is str and 0 < len(proof[name + '_file']) <= 1024, 'proof path bound')
-        files[name] = garage.local_file(proof[name + '_file'])
+        files[name] = (relocated.proof_path(name, proof[name + '_file']) if relocated
+                       else garage.local_file(proof[name + '_file']))
         artifacts[name] = read_limited(files[name], limit)
         require(digest(artifacts[name]) == _sha(proof[name + '_sha256'], name), 'native proof changed: ' + name)
     plan = _strict_evidence_json(artifacts['install_plan'], 1024 * 1024)
@@ -330,9 +346,13 @@ def validate_export(path):
     require(type(plan) is dict and type(plan.get('schema_version')) is int and plan['schema_version'] == 1
             and plan.get('mode') == 'interactive' and type(plan.get('settings')) is dict,
             'native prepared plan schema')
-    require(Path(plan['research_root']).resolve() == paths['research_client_root']
-            and Path(plan['original_root']).resolve() == paths['original_client_root'], 'native plan client roots differ')
-    trace_root = garage.local_file(plan['settings']['trace_dir'])
+    if relocated:
+        relocated.client_roots(plan, paths, EXE_SHA)
+    else:
+        require(Path(plan['research_root']).resolve() == paths['research_client_root']
+                and Path(plan['original_root']).resolve() == paths['original_client_root'], 'native plan client roots differ')
+    trace_root = (relocated.trace_root(plan['settings']['trace_dir']) if relocated
+                  else garage.local_file(plan['settings']['trace_dir']))
     pid = garage.bounded_int(outcome.get('client_pid'), 'actual native PID', 1)
     require(files['trace'].parent == trace_root and re.fullmatch(r'native-' + str(pid) + r'-[0-9]{10,16}\.jsonl',
             files['trace'].name), 'trace does not belong to the prepared native process')

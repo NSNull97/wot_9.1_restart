@@ -59,6 +59,263 @@ Exact files, commands, failed runs, provenance, limits and rollback:
 [P03M report](research/P03M_IS7_RUNTIME_PROFILE.md),
 [plan](plans/P03M_IS7_RUNTIME_PROFILE.md).
 
+## 2026-10-13 — P04E crew integration accepted on current main
+
+**PASS_APPLICABLE_REGRESSION_AND_NATIVE_CREW_RELOGIN.** The nine historical
+fixture failures that held P04D are resolved by the already-accepted P09D
+repair8d61c16 in main a998ca3. Integration branch
+`codex/p04e-crew-main-integration` preserves both that accepted P06R/P09D
+baseline and P04B/P04C/P04D1449e4c history. It introduces no alternative
+physics loader, weakened pin or rewritten historical evidence.
+
+Current combined sources: full canonical Rust691/691 PASS and build PASS;
+Python624 PASS (270 domain/source +67 historical +287 client/control), all
+without skips; full Node97/97 PASS; seven actual Python2.7.3 compilations PASS;
+source layout87 files/22 relocations PASS. The nine old failing test names all
+executed successfully, including real child IPC and worker barriers.
+
+Fresh original #717 client38900 recruited driver3 through CMD309 on the new
+gateway. After receipt-owned bridge/gateway restart, fresh client34800 read
+the same IDs, descriptors, assignments and balances. Independent raw-wire
+verification confirms exact158-byte update before success and a single ledger
+mutation; all16 non-rate-limit DB tables remain equal across relogin. The
+separate authentication rate-limit changes match the new login. Three actual
+native PNGs were inspected. Both installs are RESTORED, both clients exited0
+normally, own services stopped and no scenario remains armed.
+
+Normal no-ff main integration/push is authorized by the satisfied card gates;
+the actual merge SHA and verified remote are recorded in the final receipt.
+The primary P03M and sibling P09D stands are not deployed or modified here.
+P04C runtime battle admission, skills, other recruitment choices and historical
+paid tariffs remain unsupported; this is the explicit free100% MS-1 policy.
+Physical mouse/manual owner acceptance and general rendering quality are not
+claimed. The P04D HOLD entry below is retained as historical evidence.
+
+[P04E evidence, commands, changed files and rollback](evidence-index/P04E_CREW_MAIN_INTEGRATION.md).
+Final commit/source/native/remote bindings:
+`local/evidence/20261013-p04e-crew-main-integration-01/acceptance-final/`.
+**One next crew step:** native crew reassignment/removal through the original
+interface with server ownership and persistence, as a separate card.
+
+## 2026-10-13 — P04D actual native recruitment and fresh-login persistence
+
+Isolated branch `codex/p04d-native-crew-recruitment`, extending P04B/P09C/P04C
+with frozen P09D `db72382652ec18a475b3cf85a024dc78a7e13fe7` (local `b13ca5c`).
+**PASS_NATIVE_CREW_WIRE_RELOGIN** for one explicit free-test MS-1 driver.
+
+The actual RU0.9.1#717 RecruitWindow/original callback sent CMD309. Independent
+decryption confirms method0x90, VAR2 payload24, request226, exact158-byte
+inventory delta and update-before-success. Server-owned ID3 replaces driver2;
+ID2 remains in barracks, quota becomes0, balances remain100000credits/0gold.
+After fresh gateway/bridge/client processes, the same identities, descriptors
+and assignments return. Eleven state/ledger tables compare equal across restart.
+Actual native PNGs were inspected. Physical mouse/owner manual acceptance is
+NOT_RUN; no general graphics-quality or battle-admission claim is made.
+
+Final applicable Python groups:285 executed PASS and1 explicit Windows symlink
+NOT_RUN. Node regression22/22 PASS. Targeted Rust65/65 PASS and native build
+PASS. Full Rust after restoring exact ignored evidence inputs:654 PASS /
+9 FAIL /0 skipped (663 total). The remaining9 legacy/P06N/P06O worker-contract
+failures bind frozen pool hashes to absolute paths in another checkout.
+**MAIN INTEGRATION HOLD**: those failures are retained, not waived. No merge
+or push, and no modifications to the parallel primary/P09D stands.
+
+Both successful native runs exited normally, both installation ledgers are
+RESTORED, and this card's bridge/gateway processes are stopped. The own DB,
+consistent backups, source/build/install receipts and raw traces remain local.
+Paid recruitment, historical training tariffs, skills, retraining, dismissal
+and other roles/vehicles remain unsupported;100% and the fixed passport are
+explicit project test policy.
+
+Evidence/commands/files/rollback: [P04D index](evidence-index/P04D_NATIVE_CREW_RECRUITMENT.md).
+Facts and limits: [P04D research](research/P04D_NATIVE_CREW_RECRUITMENT.md).
+Current source/receipt hashes and final commit are bound under
+`local/evidence/20261013-p04d-native-crew-recruitment-01/acceptance-final/`.
+**One next step:** repair the historical pool fixture portability gate, rerun
+required integration checks and merge the accepted crew/ammo stack.
+
+## 2026-10-13 — P04C source-bound configuration reservation
+
+Isolated branch `codex/p04c-configuration-reservation`, stacking frozen P04B
+`20b5d52` and the unchanged P09C dependency `7fb0e47` (local cherry-pick
+`85c4710`). No main merge/push or live/native installation during parallel work.
+
+**PASS_SOURCE_BOUND_CONFIGURATION_RESERVATION** for the isolated source and
+SQLite slice. Real #717 mounted components establish MS-1 mass 4691 kg /
+maxLoad 4890 kg, and IS-7 mass 68190 kg / maxLoad 70950 kg. MS-1 ventilation
+plus aim drives exceeds its available 199 kg by 1 kg and is rejected.
+
+The existing P09B/P09C store now has a separate source-bound configuration
+extension: server-owned crew/device config, actual mass and loaded ammo freeze
+with reservation/revision/shared ledger in one SQLite transaction. Repeat
+commands survive reopen and unrelated vehicle changes without double debit.
+The old reservation bypass rejects; a checked consumer method returns the
+exact immutable snapshot bytes for the authenticated account and battle.
+
+Current-head scope is 195 discovered tests (34 reservation, 19 mass, 44 P04B,
+74 P09B/P09C, 16 content, 8 layout); actual results and the explicit Windows
+symlink skip are recorded in the final receipt. Persistent scenario: 33 checks
+with source audits, aggregate revisions 0 through 5, reopen and exact snapshot
+readback. Independent review: 17 additional checks, no blocking findings.
+
+Evidence: [P04C index](evidence-index/P04C.md),
+[contract and classifications](research/P04C_CONFIGURATION_RESERVATION.md).
+Final commit, platform, source/test hashes and retained SQLite database are
+under this worktree's
+`local/evidence/20261013-p04c-configuration-reservation-01/acceptance-final/`.
+
+Native/runtime wiring, fresh native mass readback, live inventory grants,
+deployed migration and final crew combat formulas remain UNKNOWN/NOT_RUN.
+Fixture crew/equipment ownership is synthetic; release and post-battle ammo
+consumption are not implemented. Next: coordinate runtime admission integration
+with P09D/P03M and perform the separate real-client acceptance.
+
+## 2026-10-13 — P04B isolated crew / installed-device snapshot
+
+Separate branch `codex/p04b-crew-equipment-snapshot`, based on accepted
+`90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`; no merge during parallel work.
+**PASS_ISOLATED_CREW_EQUIPMENT_SNAPSHOT**: server-owned revision/digest binding,
+complete healthy 100% no-skill MS-1/IS-7 rosters, three optional-device slots,
+ventilation class1/class3, aim drives and optics, source-pinned deterministic
+static modifier snapshots. Unsupported devices/skills/training/injuries reject.
+Installed equipment requires a separately trusted component-bound mass budget;
+the test budgets are synthetic and are not historical tank mass evidence.
+
+Combined Python scope: **67 executed PASS, 1 explicit symlink NOT_RUN** out of
+68 discovered (34 domain, 10 source, 16 content, 8 layout). Actual source audit
+rehashes 12 original #717 resources and the pinned Python2.7 opcode table;
+layout passes with 79 server files / 22 relocations. The snapshot uses exact
+source decimal rationals and does not claim native float bit equivalence.
+Crew-to-combat formulas/final characteristics, live IS-7 grant, runtime wiring
+and native acceptance remain **UNKNOWN/NOT_RUN**. P02 grants, shared loadout,
+ammo/service, gateway, transport, physics and the main checkout are untouched.
+
+Evidence: [P04B index](evidence-index/P04B.md),
+[source/consumer contract](research/P04B_CREW_EQUIPMENT_SNAPSHOT.md).
+The managed worktree's `local/evidence/20261013-p04b-crew-equipment-01/acceptance-final/receipt.json`
+records the final commit/source/test hashes. Source receipt SHA256
+`fc982df8be7bc3fe1b233b7c35a4ce229e2a2eb8ea364b188200c02b90697a6f`.
+Next: integrate at the shared configuration-reservation gate using real
+component-mass evidence, then perform the separate native acceptance card.
+
+## 2026-10-13 — P09D acceptance repair green; native service integration
+
+**PASS_APPLICABLE_AUTOMATIC_AND_NATIVE.** The historical regression hold below
+is closed. Accepted P06R main `eb054618` was merged into the P09D branch before
+validation; normal no-ff integration/push and exact remote SHA are recorded in
+`local/evidence/20261013-p09d-acceptance-repair-01/final-card.json`.
+
+Historical crew/ammo proof bytes and original producer identities are preserved.
+Explicit bounded sidecars relocate the six-file proof closures. Missing worker,
+profile and media fixtures were restored exactly; test-only derived worker
+configs have their own hashes. Archived r1 output replaces the unavailable old
+encoder execution, with a separate real current catalog1 generation test.
+Nine provenance-sensitive source files now retain LF on Windows checkout.
+Full web also exposed and fixed TCP-only test-port selection and Express's
+rejection of the `.codex` ancestor for allowlisted PNG delivery.
+
+Final checks: **674/674 canonical gateway**, **96/96 full web**,
+**114/114 domain/store/content**, **240/240 client/control**,
+**53/53 historical crew/ammo/relocation**, and **4 real Python2.7.3 compiles**.
+No failures or skips in these final gates. Independent source review and layout
+PASS. Earlier failed attempts remain in evidence with their causes.
+
+Fresh native client46432 completed six real servicing operations on the tested
+merged gateway. Independent decryption/callback/DB audit verifies all six
+CMD108→Account.update→success sequences, persistent revision7→13, conserved
+resources/shell totals and exact restoration of both mounts/depot. Twelve
+actual PNGs were visually inspected. The diagnostic install was restored.
+Normal own stand is running the tested gateway with its original persistent
+revision13 DB; seven durable tables stayed identical through full restart.
+A fresh normal hangar shows IS-7 21/9/0. No service scenario is armed.
+
+Scope remains source-bound MS-1/IS-7 and owned depot stock. OS pointer/manual
+owner acceptance, purchases, automatic refill, equipment/repair and battle
+consumption are NOT_RUN/unsupported. The original client and primary P03M
+checkout/client/services were not modified. Initial local token-format failure
+and all historical test failures are preserved rather than relabelled PASS.
+
+[Repair design, exact changed files, commands, evidence and rollback](evidence-index/P09D_ACCEPTANCE_REPAIR.md).
+One next step: complete the already-active P03M source-bound IS-7 battle/runtime
+gate, taking its loadout from the accepted authoritative state.
+
+## 2026-10-13 — P09D native MS-1 / IS-7 ammunition service
+
+**PASS_NATIVE_AMMO_SERVICE_OWNED_STOCK_TEST_LAB** on the isolated #717 stand.
+**HOLD_IN_BRANCH_REQUIRED_REGRESSION_FAIL** for integration into main.
+Branch `codex/p09d-native-ammo-service` is stacked on P09C
+`7fb0e479dce684af0940fe37e5798d54d1c1e7fd`; primary P06R checkout/service were
+not modified. Exact delivered commit and source/test binding are recorded in
+`local/evidence/20261013-p09d-native-ammo-service/final-card-01.json`.
+
+Native CMD108 now reaches the authenticated authoritative DB transaction.
+The real original Account.update/Inventory/Flash callback chain applies the
+committed shells/layout/depot delta before native success. The original
+maintenance window is enabled only for source-bound MS-1 (96) and IS-7 (30).
+The explicit isolated test grant supplies owned stock; no purchase, repair,
+automatic servicing, equipment or battle-consumption claim is made.
+
+Native client PID20020 completed six operations in87.3s: MS-1 unload/refill,
+IS-7 unload/refill, then both restores. Real encrypted UDP independently
+confirms requests226–231, six142-byte deltas, update-before-success and
+persistent revision7→13. All six shell totals and funds are conserved. Final
+mount/depot rows exactly match the pre-scenario backup: MS-1 42/36/18,
+IS-7 21/9/0. Twelve original client PNGs were visually inspected. Both vehicles'
+initial relogin state was checked; a further complete client/gateway/bridge
+restart shows restored IS-7 21/9/0 in a fresh native hangar. Earlier full restart
+showed MS-1 42/36/18, and live authenticated replay changed no state.
+
+The diagnostic invokes original Flash-bound callbacks; OS pointer automation
+and human/manual acceptance are **NOT_RUN**, not inferred from the native PASS.
+Install04 diagnostic was ledger-restored. Install05 enables ordinary manual
+service with no armed scenario; its owned client and loopback services are
+left running. The original client and primary research copy remain untouched.
+
+Final applicable automated checks: **101 Python persistence/domain PASS**,
+**152 client/control regression PASS**, **21 current Node PASS** (including
+actual HTTP integration), targeted Rust codec10/hangar20/scheduler11/identity7
+PASS; real Python2.7 compilation, original source pins and layout PASS.
+Historic MS-1 bridge suite remains **3 PASS / 5 FAIL / 0 SKIP** because its
+immutable native proofs contain primary-checkout paths outside this worktree.
+Broader Rust ammo filter retains six missing historical-fixture failures.
+No exception to the merge rule is invented for these failures. Intermediate
+native import failure, audit-tool assumption failures and one transient bridge
+503 are preserved; the503 cause remains UNKNOWN.
+
+[Plan](plans/P09D_NATIVE_AMMO_SERVICE.md),
+[source contract](research/P09D_NATIVE_AMMO_SOURCE.md),
+[full evidence, commands, changed files and rollback](evidence-index/P09D_NATIVE_AMMO_SERVICE.md).
+One next step: repair historical proof portability with provenance intact,
+repeat the failed regression gates, then integrate the accepted card into main.
+
+## 2026-10-13 — P09C isolated ammunition service parallel handoff
+
+**PASS_P09C_ISOLATED_AMMO_SERVICE**; runtime/native integration **NOT_RUN**.
+Branch `codex/p09c-ammo-service` from accepted main
+`90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`; no merge/main changes during parallel work.
+
+Nine original #717 resource pins verify mounted MS-1 capacity96 and shells
+2570/2826/3082; IS-7 capacity30 and shells14602/14858/15114 (static compact
+encoding verified). The new standalone service extends the existing P09B
+SQLite snapshot/revision/reservation/ledger. It changes absolute loaded ammo
+using already-owned isolated depot stock, with atomic rollback and idempotent
+replay. No prices, live grants, battle runtime or shared loadout were changed.
+
+Applicable automated scope: **74/74 PASS** (11 catalogue, 50 service, 13 P09B),
+including real separate-connection races and four rollback points. Source audit,
+layout and diff check PASS; persistent isolated harness **16/16 PASS**, including
+reopen, original replay after later changes and inherited reservation.
+Evidence: `local/evidence/20261013-p09c-ammo-service-01/validation-02/receipt.json`
+and `harness-02/receipt.json` in the managed worktree. A local validation-runner
+path error is preserved separately as FAIL/NOT_RUN, then corrected.
+
+Prices/purchases, repair/consumables and native service mapping remain
+UNKNOWN/UNSUPPORTED. Fresh native IS-7 ammo receipt and deployed wiring NOT_RUN.
+[Plan](plans/P09C_AMMO_SERVICE.md), [contract](research/P09C_AMMO_SERVICE_CONTRACT.md),
+[commands/evidence/rollback](evidence-index/P09C_AMMO_SERVICE.md).
+One next step: a separate authoritative account/loadout integration gate
+coordinated with crew/equipment, then native acceptance.
+
 ## 2026-10-13 — P06R fence-chain accepted (historical checkpoint)
 
 **PASS_OWNER_FENCE_CHAIN_TEST_LAB.** Owner confirms consecutive fences now pass

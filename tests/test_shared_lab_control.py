@@ -10,7 +10,7 @@ class SharedControlTests(unittest.TestCase):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
         tree = ast.parse(source.read_bytes())
         functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
-                     and node.name in ('_bounded_uint32_array', 'profile_calls')]
+                     and node.name in ('_bounded_uint32_array', '_bounded_uint16_array', 'profile_calls')]
         calls = []
         namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
                          _profile_call_id=0, _profile_frames={}, long=int,
