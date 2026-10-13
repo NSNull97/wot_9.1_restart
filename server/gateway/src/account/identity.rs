@@ -49,7 +49,7 @@ fn bounded_file(path:&Path,max:u64)->io::Result<Vec<u8>> {
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
-    pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,
+    pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -78,6 +78,8 @@ impl Config {
         if crew_progression && !crew_roster_recruitment {return Err(invalid("crew progression requires roster recruitment"));}
         let crew_dismissal=match value.remove("crew_dismissal") {None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("crew dismissal must be explicit boolean"))};
         if crew_dismissal && !crew_progression {return Err(invalid("crew dismissal requires crew progression"));}
+        let crew_barracks_recruitment=match value.remove("crew_barracks_recruitment") {None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("crew barracks must be explicit boolean"))};
+        if crew_barracks_recruitment && !crew_dismissal {return Err(invalid("crew barracks requires dismissal"));}
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let login_bind=local_address(text(&value,"login_bind")?)?;
@@ -94,7 +96,7 @@ impl Config {
         if token.len()!=43 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b==b'_' || b==b'-') {return Err(invalid("service token must be exactly 43 base64url characters"));}
         let seconds=value["session_duration_seconds"].as_u64().ok_or_else(||invalid("session duration integer"))?;
         if !(600..=7200).contains(&seconds) {return Err(invalid("session duration must be 600..7200 seconds"));}
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment})
     }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
@@ -109,7 +111,7 @@ impl Config {
         if self.ammo_service {
             let binding=crate::ammo_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id)?;
             if self.crew_transfer {
-                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_dismissal(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression,self.crew_dismissal),&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
+                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_barracks(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression,self.crew_dismissal,self.crew_barracks_recruitment),&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
             } else if self.crew_service {
                 crate::crew_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
             }
@@ -164,6 +166,14 @@ impl Config {
         service_reply(&bytes,profile,command_key,expected_revision,wire_revision,"recruited")
     }
 
+    pub fn recruit_barracks(&self,profile:&Profile,key:&str,revision:u64,wire:i64,request:crate::crew_barracks091::Request)->io::Result<AmmoReply> {
+        if !self.crew_barracks_recruitment {return Err(invalid("crew barracks is not enabled"));}
+        let body=crate::crew_barracks091::service_request(&profile.account_id,profile.database_id,key,revision,wire,request)?;
+        let (status,bytes)=self.post("/internal/native/crew-recruit-barracks",&body,Duration::from_secs(20))?;
+        if status!=200 {return Err(invalid("barracks service HTTP failure; recover by fresh login"));}
+        barracks_reply(&bytes,profile,key,revision,wire,request)
+    }
+
     pub fn dismiss_crew(&self,profile:&Profile,key:&str,revision:u64,wire:i64,request:crate::crew_dismissal091::Request)->io::Result<AmmoReply> {
         if !self.crew_dismissal {return Err(invalid("crew dismissal is not enabled"));}
         let body=crate::crew_dismissal091::service_request(&profile.account_id,profile.database_id,key,revision,wire,request)?;
@@ -183,7 +193,7 @@ impl Config {
     pub fn transfer_crew(&self,profile:&Profile,command_key:&str,expected_revision:u64,
                          wire_revision:i64,request:crate::crew_transfer091::Request)->io::Result<AmmoReply> {
         if !self.crew_transfer || !self.crew_service || !self.ammo_service {return Err(invalid("crew transfer is not enabled"));}
-        let body=crate::crew_transfer091::service_request_for(crate::crew_transfer091::Profile::selected_dismissal(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression,self.crew_dismissal),&profile.account_id,profile.database_id,command_key,
+        let body=crate::crew_transfer091::service_request_for(crate::crew_transfer091::Profile::selected_barracks(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression,self.crew_dismissal,self.crew_barracks_recruitment),&profile.account_id,profile.database_id,command_key,
             expected_revision,wire_revision,request)?;
         let (status,bytes)=self.post("/internal/native/crew-transfer",&body,Duration::from_secs(20))?;
         if status!=200 {return Err(invalid("crew transfer HTTP failure; recover outcome by fresh login"));}
@@ -192,7 +202,7 @@ impl Config {
 }
 
 pub struct AmmoReply {pub serviced:bool,pub revision:u64,pub wire_revision:i64,
-    pub update:Vec<u8>,pub replayed:bool,pub result_code:i32}
+    pub update:Vec<u8>,pub recruitment:Option<crate::crew_barracks091::Recruitment>,pub replayed:bool,pub result_code:i32}
 
 fn valid_command_key(key:&str)->bool {
     (1..=96).contains(&key.len()) && key.bytes().all(|b|b.is_ascii_alphanumeric() || b"-_:".contains(&b))
@@ -203,10 +213,31 @@ fn ammo_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64)->io::
 }
 
 fn service_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,success_status:&str)->io::Result<AmmoReply> {
-    if !(5..i32::MAX as u64).contains(&expected) || !(1..i32::MAX as i64).contains(&wire)
-        || !matches!(success_status,"serviced"|"recruited"|"transferred"|"learned"|"dismissed") {return Err(invalid("service reply cursor/status boundary"));}
     let value=object(bytes,&["status","account_id","native_database_id","command_key","revision",
         "wire_revision","update_hex","replayed","result_code"])?;
+    service_reply_value(value,profile,key,expected,wire,success_status)
+}
+
+fn barracks_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,request:crate::crew_barracks091::Request)->io::Result<AmmoReply> {
+    let mut value=object(bytes,&["status","account_id","native_database_id","command_key","revision",
+        "wire_revision","update_hex","replayed","result_code","tankman_inventory_id","tankman_descriptor_hex"])?;
+    let id=value.remove("tankman_inventory_id").and_then(|v|v.as_u64()).ok_or_else(||invalid("barracks response ID type"))?;
+    let descriptor=value.remove("tankman_descriptor_hex").and_then(|v|v.as_str().map(str::to_owned)).ok_or_else(||invalid("barracks response descriptor type"))?;
+    let mut reply=service_reply_value(value,profile,key,expected,wire,"recruited")?;
+    if reply.serviced {
+        if !(4..=16).contains(&id) || descriptor.len()!=50 || !descriptor.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {return Err(invalid("barracks response descriptor bounds"));}
+        let mut raw=[0;25];
+        for (index,byte) in raw.iter_mut().enumerate() {*byte=u8::from_str_radix(&descriptor[index*2..index*2+2],16).map_err(|_|invalid("barracks descriptor hex"))?;}
+        let member=crate::crew_barracks091::Recruitment{tankman_id:id as u8,descriptor:raw};
+        member.validate_delta(request,wire,&reply.update)?;
+        reply.recruitment=Some(member);
+    } else if id!=0 || !descriptor.is_empty() {return Err(invalid("rejected barracks response has recruitment"));}
+    Ok(reply)
+}
+
+fn service_reply_value(value:BTreeMap<String,Value>,profile:&Profile,key:&str,expected:u64,wire:i64,success_status:&str)->io::Result<AmmoReply> {
+    if !(5..i32::MAX as u64).contains(&expected) || !(1..i32::MAX as i64).contains(&wire)
+        || !matches!(success_status,"serviced"|"recruited"|"transferred"|"learned"|"dismissed") {return Err(invalid("service reply cursor/status boundary"));}
     if text(&value,"account_id")?!=profile.account_id || value["native_database_id"].as_i64()!=Some(profile.database_id as i64)
         || text(&value,"command_key")?!=key {return Err(invalid("ammo reply authentication binding"));}
     let status=text(&value,"status")?;
@@ -232,7 +263,7 @@ fn service_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,suc
     }
     if serviced {crate::ammo_service091::response(1,&update)?;}
     else if !update.is_empty() || replayed {return Err(invalid("rejected ammo reply changed state"));}
-    Ok(AmmoReply{serviced,revision,wire_revision,update,replayed,result_code:result_code as i32})
+    Ok(AmmoReply{serviced,revision,wire_revision,update,recruitment:None,replayed,result_code:result_code as i32})
 }
 
 /// Native ConnectionManager.connect115, checked RU basic branch only. Other
@@ -422,6 +453,13 @@ mod tests {
         let mut progression=roster.clone();progression["crew_progression"]=true.into();assert!(load(&progression).unwrap().crew_progression);
         assert!(!load(&progression).unwrap().crew_dismissal);
         let mut dismissal=progression.clone();dismissal["crew_dismissal"]=true.into();assert!(load(&dismissal).unwrap().crew_dismissal);
+        assert!(!load(&dismissal).unwrap().crew_barracks_recruitment);
+        let mut barracks=dismissal.clone();barracks["crew_barracks_recruitment"]=true.into();
+        assert!(load(&barracks).unwrap().crew_barracks_recruitment);
+        for bad in [Value::Null,0.into(),"true".into(),serde_json::json!({})] {
+            let mut row=barracks.clone();row["crew_barracks_recruitment"]=bad;assert!(load(&row).is_err());
+        }
+        barracks["crew_dismissal"]=false.into();assert!(load(&barracks).is_err());
         for bad in [Value::Null,0.into(),"true".into(),serde_json::json!({})] {
             let mut row=dismissal.clone();row["crew_dismissal"]=bad;assert!(load(&row).is_err());
         }
@@ -488,4 +526,30 @@ mod tests {
         fs::write(root.join("compatibility.json"),serde_json::to_vec(&wrong).unwrap()).unwrap();
         assert!(verify_fixture_identity(&profile).is_err());
     }
+    #[test] fn barracks_reply_binds_both_extension_fields_to_request_delta_and_identity() {
+        let profile=Profile{account_id:"00000000-0000-0000-0000-000000000001".into(),database_id:900001,name:"Test".into(),fixture_dir:PathBuf::from("unused")};
+        let request=crate::crew_barracks091::Request{id:226,shop_revision:3,vehicle_type:7169,role:4,cost:0};
+        let value=serde_json::json!({"status":"recruited","account_id":profile.account_id,"native_database_id":900001,"command_key":"p04k:key:226",
+            "revision":57,"wire_revision":2,"replayed":false,"result_code":0,"tankman_inventory_id":12,
+            "tankman_descriptor_hex":"081c04320000000c000c000c00400600000000420000000000",
+            "update_hex":"80027d285507707265765265764b0155037265764b025509696e76656e746f72797d284b087d285509636f6d7044657363727d284b0c5519081c04320000000c000c000c0040060000000042000000000075550776656869636c657d284b0c4affffffff757575550573746174737d28550c66726565544d656e4c6566744b0475752e"});
+        let check=|v:&Value|barracks_reply(&serde_json::to_vec(v).unwrap(),&profile,"p04k:key:226",56,1,request);
+        assert_eq!(check(&value).unwrap().recruitment.unwrap().tankman_id,12);
+        assert!(service_reply(&serde_json::to_vec(&value).unwrap(),&profile,"p04k:key:226",56,1,"recruited").is_err());
+        for key in value.as_object().unwrap().keys() {let mut bad=value.clone();bad.as_object_mut().unwrap().remove(key);assert!(check(&bad).is_err());}
+        for (key,replacement) in [("tankman_inventory_id",13.into()),("tankman_inventory_id",true.into()),
+            ("tankman_descriptor_hex","00".repeat(25).into()),("tankman_descriptor_hex",Value::Null),
+            ("account_id","foreign".into()),("native_database_id",900002.into()),("command_key","other".into()),
+            ("revision",58.into()),("wire_revision",3.into()),("result_code",(-10).into()),("status","dismissed".into())] {
+            let mut bad=value.clone();bad[key]=replacement;assert!(check(&bad).is_err(),"{key}");
+        }
+        let mut rejected=value.clone();rejected["status"]="rejected".into();rejected["revision"]=56.into();rejected["wire_revision"]=1.into();
+        rejected["result_code"]=(-10).into();rejected["update_hex"]="".into();assert!(check(&rejected).is_err());
+        rejected["tankman_inventory_id"]=0.into();rejected["tankman_descriptor_hex"]="".into();assert!(check(&rejected).unwrap().recruitment.is_none());
+        let raw=serde_json::to_vec(&value).unwrap();let mut duplicate=raw[..raw.len()-1].to_vec();duplicate.extend(b",\"tankman_inventory_id\":12}");
+        assert!(barracks_reply(&duplicate,&profile,"p04k:key:226",56,1,request).is_err());
+        let mut extra=value.clone();extra["extension"]=serde_json::json!({});assert!(check(&extra).is_err());
+        let mut replay=value;replay["replayed"]=true.into();assert!(check(&replay).unwrap().replayed);
+    }
+
 }

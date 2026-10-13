@@ -38,8 +38,8 @@ Ignored evidence base:
 | Web suite |106 PASS, no failures/skips; executable closure independently bound|`web/full-web05.json`, `web/full-web05-binding02.json`, `store/web-source-closure-review01.json`|
 | Client Python / actual CPython2.7.3 |439+42 PASS;13 compile checks and Unicode execution PASS|`client/run-09/receipt.json`|
 | Independent source/native verifier |82 PASS;18 adverse independent checks PASS|`independent-native/unit07/receipt.json`, `store/full-verifier-review07.json`|
-| Applicable Python union |1176 distinct previously executed passing cases; collection is not a new rerun|`python-test-union-final01.json`|
-| Layout and whitespace |96 source files /22 relocations;8 checks and diff PASS|`layout-final02.json`, `layout-tests-final02.log`, `diff-final02.log`|
+| Applicable Python union |1176 collected:1175 PASS and one existing Windows symlink NOT_RUN; collection is not a new rerun|`python-test-union-final01.json`, `acceptance-final/layout-count-correction01.json`|
+| Layout and whitespace |96 source files /22 relocations;7 checks PASS, one symlink permission skip; diff PASS|`layout-final02.json`, `layout-tests-final02.log`, `diff-final02.log`|
 | Original confirmation and cancellations |PASS, current18 source,27 tables unchanged|`independent-native/preflight18-final03/receipt.json`|
 | Six mutations and fresh native login |PASS exact wire, original callbacks, persistence, descriptors and inspected pixels|`independent-native/final01/receipt.json`|
 | Owned installation/process cleanup |20 restores PASS;60 original process instances ended; ports/control clear|`native-cleanup-final01.json`|
@@ -151,6 +151,14 @@ All fifteen owned installs are restored;27 tables are unchanged per run.
 
 ## Final native resolution and preserved limits
 
+Post-integration count correction during K: the final layout log already says
+`OK (skipped=1)`. The union collector counted that discovered case as executed
+PASS. Correct aggregate is1175 PASS/1 platform NOT_RUN, not1176 PASS. The
+immutable old receipt is retained and explicitly superseded on this count by
+`acceptance-final/layout-count-correction01.json`. The skipped pre-existing
+symlink-permission case is separate from the passing layout checker and from
+every mandatory J native/writer/protocol gate; no runtime gate is waived.
+
 Native16 observes original accepted callback/Meta true and white enabled pixels
 while reflected public Boolean getters stay false. Raw observations are kept
 under `raw_boolean_observations`, with explicit unavailable effective-state
@@ -186,7 +194,7 @@ Executed commands include (exact native verifier arguments are in research):
 python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p04j03
 python -B -X utf8 local/p04j/run-web.py --run 05 --full
 python -B -X utf8 local/evidence/20261013-p04j-native-dismissal-01/client/run_checks.py run-09
-python -B -X utf8 local/p04j/prepare-native.py --run 19 --mode dismiss --activate
+python -B -X utf8 local/p04j/prepare-native.py --run 19 --mode dismiss
 pwsh -NoProfile -File local/p04j/services.ps1 -Action start -Run 19
 python -B -X utf8 local/p04d/run-native.py --install local/evidence/20261013-p04j-native-dismissal-01/native-install19 --out local/evidence/20261013-p04j-native-dismissal-01/native-run19
 python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261013-p04j-native-dismissal-01/native-install19

@@ -71,7 +71,7 @@ TRANSFER_TARGETS = (('Crew', 'equipTankman'), ('Crew', 'unloadTankman'),
 class _CrewChangeGuard(object):
     """Own exact class descriptors; injectable dependencies permit unit checks."""
 
-    def __init__(self, classes, messages, record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False, allow_roster=False, allow_progression=False, allow_dismissal=False):
+    def __init__(self, classes, messages, record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False, allow_roster=False, allow_progression=False, allow_dismissal=False, allow_barracks=False):
         if type(allow_actions) is not tuple or allow_actions not in ((), ('open_recruit', 'recruit')):
             raise ValueError('only the explicit free recruitment capability may be enabled')
         if type(allow_transfer) is not bool or allow_transfer and allow_actions != ('open_recruit', 'recruit'):
@@ -84,6 +84,8 @@ class _CrewChangeGuard(object):
             raise ValueError('crew progression requires all earlier crew capabilities')
         if type(allow_dismissal) is not bool or allow_dismissal and not allow_progression:
             raise ValueError('crew dismissal requires all earlier crew capabilities')
+        if type(allow_barracks) is not bool or allow_barracks and not allow_dismissal:
+            raise ValueError('Barracks recruitment requires all earlier crew capabilities')
         required = set(row[0] for row in TARGETS)
         if set(classes) != required or not callable(record):
             raise ValueError('exact audited crew classes and recorder required')
@@ -97,6 +99,7 @@ class _CrewChangeGuard(object):
         self.allow_roster = allow_roster
         self.allow_progression = allow_progression
         self.allow_dismissal = allow_dismissal
+        self.allow_barracks = allow_barracks
         self.active = False
         self.bindings = []
         for class_name, name, action, is_static in TARGETS:
@@ -180,7 +183,7 @@ class _CrewChangeGuard(object):
                     original_binding_restored=True, restored_bindings=[row[4] for row in self.bindings])
 
 
-def init(record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False, allow_roster=False, allow_progression=False, allow_dismissal=False):
+def init(record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False, allow_roster=False, allow_progression=False, allow_dismissal=False, allow_barracks=False):
     """Call after items init but before original GUI BusinessHandler construction."""
     global _guard
     if _guard is not None:
@@ -196,7 +199,7 @@ def init(record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=Fal
     classes = dict((cls.__name__, cls) for cls in (BusinessHandler, BusinessLobbyHandler,
                    Crew, Barracks, PersonalCase, CrewOperationsPopOver, RecruitWindow,
                    RetrainCrewWindow))
-    candidate = _CrewChangeGuard(classes, SystemMessages, record, allow_actions, allow_transfer, allow_cross_vehicle, allow_roster, allow_progression, allow_dismissal)
+    candidate = _CrewChangeGuard(classes, SystemMessages, record, allow_actions, allow_transfer, allow_cross_vehicle, allow_roster, allow_progression, allow_dismissal, allow_barracks)
     candidate.install()
     _guard = candidate
 
