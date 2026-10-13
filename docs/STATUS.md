@@ -1,4 +1,39 @@
+## 2026-10-13 — P05B owner feedback: handling improved, reversal still open
+
+Candidate08 correction now passes native control component1638 checks,
+real-worker moving reversal replay for both profiles,36 flat runs+2 calibrations
+and20 paired ram cases. Old-sign ramp cancels immediately; normal clutch and
+physical braking remain. MS-1 short reverse crossing2.1→1.4s. No-reversal
+114 flat streams and76 ram streams byte-identical;4 wall ACK equivalents
+verified after exact fixture-path/hash validation. Prior gateway728 retained,
+not rerun this worker-only change. See P05B research and `regression08-summary`.
+Owner finished ms1ram02 and authorized restart: root A/B/gateway stopped and
+both install/namespace ledgers restored. Fresh08 manual stand is ram09;
+native candidate08 acceptance NOT_RUN. Objects outside current catalogue remain
+open; six Toilets are already included,28 barrels/17 log piles are excluded.
+
+OBSERVED owner feedback on live ms1ram02: handling improved; strange delay
+between acceleration/reverse; houses, logs, barrels and outhouses still intact.
+This is partial improvement, not P05B acceptance or universal ram acceptance.
+`native-handling-ram08/ownerfeedback01/` preserves both native/server prefixes:
+no errors,10 destruction commits all preceded by both-worker ACKs.
+`owner-feedback-receipt01.json` finds3 direct opposite worker commands among23
+throttle changes. Motor/gear/clutch values are absent from the native log.
+The signed controller ramp retains old-direction drive for0.5s on direct
+reversals; a bounded correction and missing moving-reversal tests are planned.
+Live candidate07 clients remain untouched while isolated diagnostics run.
+
 ## 2026-10-13 — P05B manual-stand identity readiness recovered
+
+Fresh ms1ram02 is LIVE for owner: gateway44204, A24368, B28348. Final
+`native-handling-ram08/ms1ready02/result.json` is
+PASS_READY_PREFIX_NOT_OWNER_ACCEPTANCE:2 distinct ready workers/sessions,
+238 catalog areas, zero server faults/stderr/client diagnostic errors in the
+retained prefixes. Earlier ms1ready01 was captured during worker startup and
+is retained as NOT_READY, not overwritten. Native handling acceptance remains
+NOT_RUN. Runtime binding uses commita7ceca1; this readiness note is documentation
+only. Keep this lifecycle running for the owner, then receipt-stop and rollback
+both install/namespace ledgers before a fresh IS-7 comparison.
 
 First final launch ms1ram01 stopped before either native client: A auth503.
 Gateway stopped by exact receipt; both installs and namespaces restored.

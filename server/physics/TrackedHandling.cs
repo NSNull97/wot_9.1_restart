@@ -105,8 +105,12 @@ internal sealed class TrackedHandling
         }
         if (steer == 0 && throttle == 0) motor = 0;
         if ((throttle > 0 && signedSpeed >= forwardLimit) || (throttle < 0 && signedSpeed <= -reverseLimit)) motor = 0;
+        // A direction change cancels the old request immediately. Ramping
+        // through zero would keep driving the wrong way for half a second.
+        // The new request still ramps from rest; Jolt owns braking/gear changes.
+        if (motorInput * motor < 0) motorInput = 0;
         // Braking and a released throttle never leave a queued driving torque.
-        // Positive requests otherwise enter over a bounded half-second ramp.
+        // Nonzero requests otherwise enter over a bounded half-second ramp.
         motorInput = brake || motor == 0 ? 0 : Approach(motorInput, motor, 2 * deltaTime);
         controller.SetDriverInput(motorInput, left, right, brake ? 1 : 0);
     }

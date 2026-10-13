@@ -135,3 +135,28 @@ schema or source changes. Save source/process receipts and DB integrity checks;
 normal service rate-limit writes are expected. If readiness fails, preserve the
 failure and stop only the new owned process. Use a fresh private stand directory
 because the first namespace/install ledgers must remain immutable.
+
+## Owner feedback: moving direction reversals
+
+Owner reports improved MS-1 handling but delays changing acceleration/reverse.
+The retained live prefix contains3 direct opposite worker commands and23
+throttle changes; it has no motor/gear/clutch telemetry, so the complete felt
+delay is not attributed to one cause. Code inspection proves the signed motor
+ramp retains old-direction torque for about0.5s on direct+1/-1 changes. Existing
+matrix tests reverse from rest but not moving reversals: add those gates.
+
+Bounded correction: clear stale motor ramp state on requested sign change,
+then retain the existing ramp from zero toward the new request. Do not change
+body velocity/pose, gear/clutch constants, source power, brakes or traction.
+Real pinned worker replay must compare both tanks, forward/reverse directions,
+direct switches, explicit neutral/brake, steering and rapid toggles. Require no
+old-sign driver input after a reversal, preserve natural stopping time, and
+check deterministic replay plus unchanged no-reversal and ram trajectories.
+Retain baseline failures and distinguish native owner acceptance from private
+automatic gates. Keep live07 stand intact until owner finishes; new candidate
+uses a separate output and will require a fresh bound manual lifecycle.
+
+Owner specifies missing houses/logs/barrels/outhouses. These remain explicit
+P06R coverage debt; independently audit source family/state/collision contracts.
+Do not erase entire structures or expand the1038 catalog without the required
+surviving-geometry and native-state evidence.

@@ -6,6 +6,98 @@ Status: **PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN**.
 Evidence root (E below): `local/evidence/20261013-p05b-tracked-handling-01/`.
 This report does not close general P05 reconciliation or historical fidelity.
 
+## Owner feedback and candidate08 direction reversal
+
+OBSERVED: owner reports better MS-1 handling on ms1ram02, but strange delays
+switching acceleration/reverse and missing houses/logs/barrels/outhouses.
+This is partial improvement, not acceptance. Frozen `native-handling-ram08/
+ownerfeedback01/` contains10 scene commits, each with both preceding worker
+ACKs, and no recorded faults. `owner-feedback-receipt01.json` finds3 direct
+opposite worker input changes among23 throttle changes. Native prefixes do
+not contain motor/gear/clutch telemetry; attribution of every perceived delay
+to the ramp is UNKNOWN.
+
+VERIFIED defect: v3 TrackedHandling slews signed motor input at2/s. Direct
+nonzero sign reversal retains old-sign input for about0.5s. A neutral step
+already cleared it, explaining why key sequences can feel different. Existing
+flat tests exercised reverse from rest, not moving reversal. Candidate08
+clears only the old ramp state when the requested motor sign changes, then
+retains its0.5s rise from zero. No body pose/velocity, gearbox timing, source
+power/brakes or friction changes. Config1/2 do not use this helper.
+
+Canonical isolated build: `local/build/server/physics-p05b-candidate08`, DLL
+SHA256 `7c3446217abed21ca1777be1e7f94dcb55341bbc0ce4a246e6ec97f0ef77b7be`.
+`reversal-audit01/component01/` links the actual current helper against the
+pinned native6-wheel controller:1638 assertions/526 Apply calls PASS, including
+correct motor sign from the FIRST1/60s call, preserved30-step ramp, release,
+brake,40 toggles, pivot-to-reverse and speed caps. The same test against the
+committed old helper fails at the first reverse call, retained under
+`component-baseline01/`. Actual native gearbox tests select opposite gear on
+step1, positive clutch on32/full on49; the physical ground test is separate.
+
+`reversal-metrics01/direct01` and `direct08` each contain8 real-worker runs:
+both tanks, short/long moving reversals, each repeated twice with exact state
+and diagnostic replay. At10Hz, first requested motor sample improves0.6→0.1s,
+requested gear0.5→0.1s, clutch re-engagement1.1→0.6s. Sampled speed crossings:
+
+| Initial condition | Candidate07 | Candidate08 |
+|---|---:|---:|
+| MS-1 forward2.934m/s → reverse |2.1s|1.4s|
+| MS-1 forward7.647m/s → reverse |2.9s|2.5s|
+| IS-7 forward3.178m/s → reverse |2.1s|1.4s|
+| IS-7 forward11.856m/s → reverse |3.6s|3.1s|
+
+Separate `controls07`/`controls08` add8 real runs total for neutral/brake,
+steering/pivot transitions and rapid toggles. Old-direction driver input is
+removed, not physical momentum. Delivered ground torque and exact historical
+gearbox timing remain UNKNOWN; sampled zero crossings are not continuous
+substep traces. New08 native owner acceptance remains NOT_RUN.
+
+Fresh no-reversal regression:36 flat runs+2 calibrations,114 command/state/
+diagnostic byte comparisons against07 PASS. All20 paired ram cases PASS;
+76 state/contact/fracture/scene streams match byte-for-byte. Four wall ACK
+streams differ only in config hashes caused by fresh wall-fixture paths:
+complete configs except that path, manifests and buffer hashes were verified
+equal before comparing ACK semantics. Initial unnormalized comparator failed
+on this metadata difference; script/failure receipt retained. Corrected
+`regression08_summary02.py` produces `regression08-summary.json`. No new
+gateway/Rust/parser changes:728 gateway tests are PRIOR evidence, not rerun
+with this08 worker. Legacy1/2 matrix was not rerun for this v3-only correction.
+
+Commands executed (from repository root):
+
+```powershell
+python -B -X utf8 server/build.py physics --out local/build/server/physics-p05b-candidate08
+python -B -X utf8 local/evidence/20261013-p05b-tracked-handling-01/reversal-metrics01/reversal.py --label direct08 --build 08 --kind ms1 is7 --plan direct short --repeats 2
+python -B -X utf8 tools/tracked_handling_matrix.py --worker D:/WoT_9.1_Server/local/build/server/physics-p05b-candidate08/bin/MapDriveWorker.exe --local-root D:/WoT_9.1_Server/local --config D:/WoT_9.1_Server/local/evidence/20261013-p05b-tracked-handling-01/candidate-config01/ms1.json --out D:/WoT_9.1_Server/local/evidence/20261013-p05b-tracked-handling-01/controller-audit/final-matrix08-ms1 --diagnostics
+python -B -X utf8 local/evidence/20261013-p05b-tracked-handling-01/regression08_summary02.py
+```
+
+Same flat command ran with is7 in both paths. Ram exact argv is retained in
+`ram-regression/candidate08-{canonical01,oblique01,wall01}/receipt.json`;
+component build/run and controls commands are in their receipts/reports.
+
+Coverage recheck (`coverage-owner02`):28 Tun barrels and17 Logs piles are
+excluded;58 structure instances require per-module handling. Six Toilet
+instances are already accepted: the initial claim they were excluded confused
+movement-only admission reasons with the separate accepted legacy9 union.
+That preliminary error is retained/corrected, not a new coverage fix. Frozen
+owner prefix shows8 fences+2 GerBoxes+1 tree removed and no toilet contact;
+it cannot identify the exact small building the owner meant. Nearby excluded
+sheds exist. A source predicate identifies38 candidate additional-visual
+fragiles (28 barrels,8 farming-machine instances,2 piers) for a later P06R
+slice; it is a proposal, not implemented or native accepted. Full structure/
+mixed-material log collision must preserve surviving parts.
+
+Owner then explicitly finished ms1ram02 and authorized restart. Root preserved
+`native-handling-ram08/ownerfinal02/`, receipt-stopped A/B/gateway, and restored
+both install/namespace ledgers. New08 manual lifecycle uses fresh
+`native-handling-ram09/` helpers/pools/binding after automatic gates. Original
+client and unrelated P09B file remain untouched. Rollback: select frozen07
+worker/pools or revert only this helper correction after receipt-owned cleanup;
+do not reset shared work. Acceptance: automatic correction verified, native
+handling/coverage still OPEN. Next: bound08 MS-1 owner comparison.
+
 ## Owner correction and whole-object contact response
 
 After checkpoint491bde5, owner explicitly corrected the phrase "accepted ram":

@@ -1,4 +1,23 @@
-# P05B — final handling and ram automatic gates passed; owner pending
+# P05B — candidate08 reversal correction; fresh owner comparison pending
+
+Owner reports improved handling but reversal delay and incomplete object
+coverage. Candidate08 cancels stale old-direction motor input; native component,
+real moving replay,36 flat+2 calibration and20 paired ram checks pass. Normal
+braking/clutch time remains. Frozen07 ms1ram02 is stopped by owner request,
+both installs/namespaces restored; its earlier LIVE entries below are history.
+New manual lifecycle is `native-handling-ram09/`, exact08 pools/artifacts with
+unchanged gateway03. Required owner comparison remains NOT_RUN; do not merge.
+Coverage-family source audit is `coverage-owner02/`:28 barrels/17 log piles
+excluded, six simple Toilets already included, houses require module contracts.
+
+# P05B — candidate07 handling and ram gate (historical stand)
+
+LIVE manual stand ms1ram02: root A24368/B28348, gateway44204, bridge43384.
+`native-handling-ram08/ms1ready02/result.json` confirms paired native readiness,
+238 areas and no errors in saved prefixes. Owner driving/visual acceptance is
+NOT_RUN. Next: owner checks MS-1 handling and tree/crate/fence impacts, then
+receipt-owned stop/rollback and separate IS-7 comparison. Do not restart or
+replace this live stand merely to repeat an already-passing automatic gate.
 
 Manual readiness: the initial ms1ram01 attempt failed at A auth503 before any
 native launch; its server/install/namespace lifecycle is fully rolled back.
