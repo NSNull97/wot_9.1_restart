@@ -41,6 +41,7 @@ def main():
     parser.add_argument('component', choices=('gateway', 'physics'))
     parser.add_argument('--legacy', action='store_true', help='Check old build entrypoint on the same sources')
     parser.add_argument('--test', action='store_true', help='Run gateway Rust tests before build')
+    parser.add_argument('--test-filter', help='Run only the named gateway test filter; records targeted scope explicitly')
     parser.add_argument('--out', required=True, help='Fresh directory below project local/build/')
     args = parser.parse_args()
     out = (ROOT / args.out).resolve()
@@ -53,6 +54,8 @@ def main():
             raise ValueError('Linked build output refused')
     if args.component == 'physics' and args.test:
         raise ValueError('--test belongs to the gateway; physics build is not a physics test')
+    if args.test_filter and not args.test:
+        raise ValueError('--test-filter requires --test')
     out.mkdir(parents=True)
     env = dict(os.environ)
     deployed = ROOT / 'local/vendor/wg-toolkit-rs/target/debug/p01-wg-probe.exe'
@@ -81,12 +84,16 @@ def main():
             save(out, 'toolchain.json', {'cargo': str(cargo), 'cargo_sha256': sha(cargo),
                                          'rustc_sha256': sha(rust / 'bin/rustc.exe')})
             if args.test:
-                command(out, 'test', [str(cargo), 'test', '--offline', '--locked', '--manifest-path', manifest], env)
+                test_argv = [str(cargo), 'test', '--offline', '--locked', '--manifest-path', manifest]
+                if args.test_filter:
+                    test_argv.append(args.test_filter)
+                command(out, 'test', test_argv, env)
                 text = (out / 'test.stdout.log').read_text(encoding='utf-8')
                 counts = re.findall(r'test result: ok\. (\d+) passed; 0 failed', text)
                 if not counts:
                     raise ValueError('Passing Rust suite result absent')
                 result['tests_passed'] = sum(map(int, counts))
+                result['tests_scope'] = args.test_filter or 'full gateway suite'
             command(out, 'build', [str(cargo), 'build', '--offline', '--locked', '--manifest-path', manifest], env)
             executable = out / 'target/debug' / ('p01-wg-probe.exe' if args.legacy else 'sr-gateway.exe')
             result['built_executable_sha256'] = sha(executable)
@@ -111,7 +118,7 @@ def main():
             result['physics_simulation'] = 'NOT_RUN; build only'
         if deployed_hash is not None and sha(deployed) != deployed_hash:
             raise ValueError('Deployed gateway unexpectedly changed')
-        result['status'] = 'PASS_ISOLATED_BUILD'
+        result['status'] = 'PASS_ISOLATED_BUILD_TARGETED' if args.test_filter else 'PASS_ISOLATED_BUILD'
         save(out, 'result.json', result)
         print(json.dumps(result))
     except Exception as error:

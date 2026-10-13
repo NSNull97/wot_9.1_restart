@@ -23,11 +23,12 @@ pub use server::serve;
 pub use server::serve_integrated;
 use super::{Session, Frame, Instant};
 use std::io;
+use std::collections::VecDeque;
 use model::{bad, Command, Input, World};
 use crate::{battle091::fire, map_drive_world091 as drive};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Phase { Account, Enable, Entities, Driving, Leaving }
+pub(super) enum Phase { Account, Enable, Entities, Driving, Leaving }
 
 #[derive(Clone)]
 pub(super) struct Client {
@@ -35,9 +36,14 @@ pub(super) struct Client {
     phase: Phase,
     view: Option<World>,
     announcement: Option<(u32, bool)>,
+    announcement_parts: Vec<(u32, bool)>,
+    announced_areas: usize,
     creations: [Option<(u32, bool)>; 2],
     binding: Option<(u32, bool)>,
     area_creation: Option<(u32, bool)>,
+    pending_area_scene: bool,
+    pending_entity_requests: VecDeque<usize>,
+    pending_area_requests: VecDeque<usize>,
     area_scene_sent: u32,
     areas:Vec<(Option<(u32,bool)>,Vec<u8>)>,
     tree_areas:Vec<Vec<u32>>,
@@ -55,8 +61,8 @@ pub(super) struct Client {
 }
 impl Client {
     fn new(slot: usize) -> Self {
-        Self { slot, phase: Phase::Account, view: None, announcement: None, creations: [None; 2],
-            area_creation: None, area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
+        Self { slot, phase: Phase::Account, view: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; 2],
+            area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; 2], owner_health_sent: None, tracer_started: [false; model::MAX_SHOTS],
             tracer_stopped: [false; model::MAX_SHOTS] }
     }
@@ -64,14 +70,23 @@ impl Client {
         for pending in [&mut self.announcement, &mut self.creations[0], &mut self.binding, &mut self.area_creation] {
             if let Some((seq, acked)) = pending { *acked |= cumulative > *seq || frame.selective.contains(seq); }
         }
+        for (seq, acked) in &mut self.announcement_parts {
+            *acked |= cumulative > *seq || frame.selective.contains(seq);
+        }
+        if !self.announcement_parts.is_empty() {
+            if let Some((_, acked)) = &mut self.announcement {
+                *acked = self.announcement_parts.iter().all(|(_, acked)| *acked);
+            }
+        }
         if let Some((seq, acked)) = &mut self.creations[1] { *acked |= cumulative > *seq || frame.selective.contains(seq); }
         for (pending,_) in &mut self.areas{if let Some((seq,acked))=pending{*acked|=cumulative>*seq||frame.selective.contains(seq);}}
     }
     fn areas_ready(&self,world:&World)->bool{
         (!world.destructible_enabled()||self.area_creation.is_some_and(|(_,ack)|ack))
-            &&world.fragiles.as_ref().is_none_or(|state|self.areas.len()==state.catalog.chunks().len()&&(self.tree_areas.is_empty()||self.tree_areas.len()==self.areas.len())&&self.areas.iter().all(|(p,_)|p.is_some_and(|(_,a)|a)))
+            &&world.fragiles.as_ref().is_none_or(|state|self.announced_areas==state.catalog.chunks().len()&&self.areas.len()==state.catalog.chunks().len()&&(self.tree_areas.is_empty()||self.tree_areas.len()==self.areas.len())&&self.areas.iter().all(|(p,_)|p.is_some_and(|(_,a)|a)))
     }
     fn visible(&self) -> [bool; 2] { self.creations.map(|row| row.is_some_and(|(_, ack)| ack)) }
+    pub(super) fn needs_flush(&self) -> bool { matches!(self.phase, Phase::Entities | Phase::Driving) }
 }
 
 impl Session {
@@ -110,50 +125,60 @@ impl Session {
             if payload != [9] && late != Some(true) { return Err(bad()); }
             let mut body = wire::announcement(world, c.slot)?;
             if world.destructible_enabled() { body.extend(destructible_wire::announcement()); }
-            if let Some(state)=&world.fragiles{
-                let chunks=state.catalog.chunks();c.areas=vec![(None,Vec::new());chunks.len()];c.tree_areas=vec![Vec::new();chunks.len()];
-                for i in 0..chunks.len(){body.extend(destructible_wire::area_announcement(i)?);}
+            c.announcement_parts.clear();
+            c.announced_areas = 0;
+            if let Some(state)=&world.fragiles {
+                let chunks=state.catalog.chunks();
+                c.areas=vec![(None,Vec::new());chunks.len()];
+                c.tree_areas=vec![Vec::new();chunks.len()];
+                for i in 0..chunks.len() {
+                    let record = destructible_wire::area_announcement(i)?;
+                    if body.len() + record.len() > 512 {
+                        let sequence = self.tx.enqueue_body_tracked(&body)?;
+                        c.announcement_parts.push((sequence, false));
+                        body = Vec::new();
+                    }
+                    body.extend(record);
+                    c.announced_areas += 1;
+                }
             }
-            let sequence = self.tx.enqueue_body_tracked(&body)?;
-            c.announcement = Some((sequence, false)); c.phase = Phase::Entities;
-            events.push(format!("SHARED_ANNOUNCED battle={} session={} rows=2 own={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(c.slot)?));
+            if !body.is_empty() {
+                let sequence = self.tx.enqueue_body_tracked(&body)?;
+                c.announcement_parts.push((sequence, false));
+            }
+            let sequence = c.announcement_parts.last().map(|(sequence, _)| *sequence).ok_or_else(bad)?;
+            c.announcement = Some((sequence, false));
+            c.phase = Phase::Entities;
+            events.push(format!("SHARED_ANNOUNCED battle={} session={} rows=2 own={} areas={} parts={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(c.slot)?, c.announced_areas, c.announcement_parts.len()));
             return Ok(());
         }
         if payload.first() == Some(&8) {
             if !matches!(c.phase, Phase::Entities | Phase::Driving)
-                || !c.announcement.is_some_and(|(_, ack)| ack)
-                || payload.len() > 7*(2+if world.destructible_enabled(){1}else{c.areas.len()}) || payload.len() % 7 != 0 { return Err(bad()); }
-            // Original requests can piggyback vehicles and the area controller.
-            // Session's outer receive clone makes the whole envelope atomic.
+                || c.announcement.is_none()
+                || payload.len() > 7*(2+if world.destructible_enabled(){1}else{c.announced_areas}) || payload.len() % 7 != 0 { return Err(bad()); }
+            // Original requests can piggyback vehicles and area controllers.
+            // Queue the complete envelope first, then release only as much as
+            // the reliable eight-body window can carry. Session's outer receive
+            // clone makes the whole envelope atomic on malformed input.
             if c.tree_areas.len()!=c.areas.len(){c.tree_areas=vec![Vec::new();c.areas.len()];}
             for raw in payload.chunks_exact(7) {
                 if let Some(area)=destructible_wire::area_request(raw,c.areas.len()) {
-                    let state=world.fragiles.as_ref().ok_or_else(bad)?;let chunk=state.catalog.chunks()[area];
-                    if c.areas[area].0.is_some(){return Err(bad());}
-                    let indices=state.native_destroyed(chunk);
-                    let values=state.native_fragile_values(chunk);
-                    let trees=state.native_fallen_trees(chunk);
-                    let sequence=self.tx.enqueue_body_tracked(&destructible_wire::area_create_state(area,chunk,&values,&trees)?)?;
-                    c.areas[area]=(Some((sequence,false)),indices);c.tree_areas[area]=trees;
-                    events.push(format!("SHARED_CATALOG_AREA_CREATED battle={} session={} entity={} chunk={} scene={} reliable_sequence={sequence}",world.id,self.id,destructible_wire::area_id(area)?,chunk,world.scene_version()));
+                    if area >= c.announced_areas || c.areas[area].0.is_some() || c.pending_area_requests.contains(&area) { return Err(bad()); }
+                    if world.fragiles.is_none() { return Err(bad()); }
+                    c.pending_area_requests.push_back(area);
                 }else if destructible_wire::is_request(raw) {
-                    if !world.destructible_enabled() || c.area_creation.is_some() { return Err(bad()); }
-                    let state = (world.scene_version() == 1).then_some(destructible_wire::NATIVE_INDEX);
-                    let sequence = self.tx.enqueue_body_tracked(&destructible_wire::create(state)?)?;
-                    c.area_creation = Some((sequence, false));
-                    c.area_scene_sent = world.scene_version();
-                    events.push(format!("SHARED_AREA_CREATED battle={} session={} entity={} scene_version={} reliable_sequence={sequence}", world.id,self.id,destructible_wire::ENTITY_ID,world.scene_version()));
+                    if !world.destructible_enabled() || c.area_creation.is_some() || c.pending_area_scene { return Err(bad()); }
+                    c.pending_area_scene = true;
                 } else {
                     let slots = wire::entity_requests(raw)?.ok_or_else(bad)?;
                     for slot in slots {
-                        if c.creations[slot].is_some() { return Err(bad()); }
-                        let sequence = self.tx.enqueue_body_tracked(&wire::create_vehicle(world, slot)?)?;
-                        c.creations[slot] = Some((sequence, false));
-                        c.health_sent[slot] = Some(world.actors[slot].health);
-                        events.push(format!("SHARED_ENTITY_CREATED battle={} session={} entity={} own={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(slot)?, slot == c.slot));
+                        if c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
+                        c.pending_entity_requests.push_back(slot);
                     }
                 }
             }
+            drop(c);
+            self.flush_shared_requests(events)?;
             return Ok(());
         }
         if wire::ready(payload, c.slot).is_ok() {
@@ -234,6 +259,59 @@ impl Session {
             }
             if c.commands.len() > model::MAX_COMMANDS { return Err(bad()); }
         }
+        Ok(())
+    }
+
+    pub(super) fn flush_shared_requests(&mut self, events: &mut Vec<String>) -> io::Result<()> {
+        let world = self.shared.as_ref().and_then(|c| c.view.clone()).ok_or_else(bad)?;
+        let mut next = self.clone();
+        loop {
+            if next.tx.len() >= 8 { break; }
+            enum Request { Scene, Vehicle(usize), Area(usize) }
+            let request = {
+                let c = next.shared.as_mut().ok_or_else(bad)?;
+                if c.pending_area_scene {
+                    c.pending_area_scene = false;
+                    Some(Request::Scene)
+                } else if let Some(slot) = c.pending_entity_requests.pop_front() {
+                    Some(Request::Vehicle(slot))
+                } else {
+                    c.pending_area_requests.pop_front().map(Request::Area)
+                }
+            };
+            let Some(request) = request else { break; };
+            match request {
+                Request::Scene => {
+                    let state = (world.scene_version() == 1).then_some(destructible_wire::NATIVE_INDEX);
+                    let sequence = next.tx.enqueue_body_tracked(&destructible_wire::create(state)?)?;
+                    let c = next.shared.as_mut().ok_or_else(bad)?;
+                    c.area_creation = Some((sequence, false));
+                    c.area_scene_sent = world.scene_version();
+                    events.push(format!("SHARED_AREA_CREATED battle={} session={} entity={} scene_version={} reliable_sequence={sequence}", world.id,next.id,destructible_wire::ENTITY_ID,world.scene_version()));
+                }
+                Request::Vehicle(slot) => {
+                    let sequence = next.tx.enqueue_body_tracked(&wire::create_vehicle(&world, slot)?)?;
+                    let c = next.shared.as_mut().ok_or_else(bad)?;
+                    c.creations[slot] = Some((sequence, false));
+                    c.health_sent[slot] = Some(world.actors[slot].health);
+                    events.push(format!("SHARED_ENTITY_CREATED battle={} session={} entity={} own={} reliable_sequence={sequence}", world.id, next.id, wire::vehicle_id(slot)?, slot == c.slot));
+                }
+                Request::Area(area) => {
+                    let state = world.fragiles.as_ref().ok_or_else(bad)?;
+                    let chunk = state.catalog.chunks().get(area).copied().ok_or_else(bad)?;
+                    let indices = state.native_destroyed(chunk);
+                    let values = state.native_fragile_values(chunk);
+                    let trees = state.native_fallen_trees(chunk);
+                    let sequence = next.tx.enqueue_body_tracked(&destructible_wire::area_create_state(area,chunk,&values,&trees)?)?;
+                    let c = next.shared.as_mut().ok_or_else(bad)?;
+                    if c.areas.get(area).is_none_or(|(pending, _)| pending.is_some()) { return Err(bad()); }
+                    c.areas[area] = (Some((sequence,false)), indices);
+                    c.tree_areas[area] = trees;
+                    events.push(format!("SHARED_CATALOG_AREA_CREATED battle={} session={} entity={} chunk={} scene={} reliable_sequence={sequence}",world.id,next.id,destructible_wire::area_id(area)?,chunk,world.scene_version()));
+                }
+            }
+        }
+        *self = next;
         Ok(())
     }
 }

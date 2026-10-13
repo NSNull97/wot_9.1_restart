@@ -20,8 +20,8 @@ regression tests. No historical kinetic damage rule is claimed.
 Checks completed:
 
 - Python importer/probe: **39 tests PASS**;
-- gateway isolated build: **614 Rust tests PASS** on the atomic contact and
-  mass/closing-speed ramming policy; final-12 executable SHA
+- historical gateway isolated build final-12: **614 Rust tests PASS**,
+  including atomic contact and mass/closing-speed ramming checks; executable SHA
   `418818d1012e0a25c4d8594d5bdb86f05beb8ed351b6300c492c8a70017fac22`;
 - physics worker isolated build: **PASS**, DLL SHA
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`;
@@ -52,19 +52,109 @@ The runtime helper now accepts the 240 KiB joined P06Q v2 manifest with a
 guard tests pass. A private worker contact smoke remains diagnostic only: the
 test-lab vehicle settles against the imported static mesh before a catalog body
 callback is emitted, so no contact or destruction claim is made from it.
-Fresh runtime preflight `contactprep08` passed all pins and returned
+Fresh runtime preflight `contactprep09` passed all pins and returned
 `PREFLIGHT_ONLY_NOT_STARTED`; no gateway, worker, or client was launched.
 Receipt SHA256 is
-`f43b09491d1a65b71267dfb1061dad583dd75920d885e7f167c77cdcb0a43cb4`.
+`4f90edd84d92d136d452cc085f52f31c3e8d587abd5d178f144697f2e7af9028`.
+The bounded six-start private sweep is retained at
+`local/evidence/20261012-p06q-tree-contact-01/tests/contact-spawn-sweep01.json`
+(SHA256 `5040394aeb7912c03ed9eaccabae167c0033c7dae2ec99b7fd6eafc7e9da14e3`).
+Starts at Z=`459..461` settle near the imported mesh without a catalog contact;
+starts at Z=`462..463.5` terminate before readiness inside the collision
+envelope. This is diagnostic only and does not alter the native gate.
+Fresh gateway recheck `gateway-recheck02` executed with the pinned local
+toolchain: **610/614 tests PASS, 4 FAIL** because the historical P06O/P06N
+real-worker pool files are absent at
+`local/build/server/physics-integrated-p06o-01/pool-near.json` and
+`local/build/server/physics-integrated-p06n-01/pool-near.json`. The failing
+tests are retained as an environment fixture gap, not relabelled as a P06Q
+source regression. Receipt:
+`local/evidence/20261012-p06q-tree-contact-01/tests/gateway-recheck02-strict.json`
+(SHA256 `c5e7dcd1e407758e8381b7fd0d338ad10238db73bc76ad862dfbe7a16a8ea923`).
+An independent read-only P07A static recheck was attempted, but its pinned
+P00/P01 `contracts.json` and `sources.json` are absent in this checkout;
+the test module therefore reports `0 tests, 1 skipped` and the audit is
+`NOT_RUN`, not a visibility PASS. Receipt:
+`local/evidence/20261012-p07a-static-recheck-01/result-strict.json`
+(SHA256 `8062b0c95277b479ac356cf871042fdf2df7b8e7e79ee8fc942785f13e49fc9f`).
+The existing P09B transaction harness was also rerun in isolation: 13/13
+targeted tests and every self-check invariant passed (`PASS_P09B_SQLITE_TRANSACTION_HARNESS`).
+Fresh deterministic receipt:
+`local/evidence/20261013-p09b-transaction-recheck-01/receipt-strict.json`
+(SHA256 `cedec631a51a5bf802381f04ad6690582518f3b341e0ce1f78e4bd775a614150`).
+This remains a SQLite harness only; deployed persistence, battle lease,
+identity binding and native restart stay **NOT_RUN**.
+A fresh rollback-artifact availability check found the accepted P06P gateway
+output and executable hash-matched, but
+`local/build/server/physics-integrated-p06p-01/` contains zero files. A physical
+P06P rollback relaunch is therefore **NOT_RUN**; current P06Q physics bytes
+were not substituted. Evidence:
+`local/evidence/20261012-p06q-tree-contact-01/tests/rollback-artifact-availability01.json`
+(SHA256 `2574507a601ccef3a2c8bac1f2642881256329521b6f26f4cc4abe70e15fc561`).
+P09A static rechecks also passed without opening a client: NationObjDumper
+returned `PASS_STATIC_NATION_DUMPER_OUTPUT`, the research graph returned
+`PASS_STATIC_RESEARCH_TREE_GRAPH`, and the combined targeted suite ran 22/22
+tests with zero failures. Fresh receipts preserve the historical hashes:
+`local/evidence/20261013-p09a-static-recheck-01/nation-dumper-strict.json`
+(SHA256 `6a96bf9dc6d926906ae6758ce5db6d261cf387006f93d6ca3b336bcd62cc3e48`)
+and `local/evidence/20261013-p09a-static-recheck-01/research-tree-strict.json`
+(SHA256 `454c9b0c9e0666e92856239dd55c486014695317052eff766f50b772239ef8d8`).
+Native account/shop payload, callback bytes, visibility and screenshot
+correlation remain **NOT_RUN**.
+P10A training-room static recheck was attempted as the next bounded card, but
+the hash-bound P00/P01 decoded Account/Prebattle definitions and content
+manifest are absent in this checkout. Its targeted module reports `0 tests,
+1 skipped`; the audit is **NOT_RUN**, with no runtime or client launch.
+Receipt:
+`local/evidence/20261013-p10a-static-recheck-01/result-strict.json`
+(SHA256 `0c6a12c43b3dbaaba3862ada225a11254eea22ae8ef068acd0ef3775e72394ed`).
+The strict copies above were validated with `json.loads`; the original raw receipts remain beside them as forensic artifacts.
+
+P08A lifecycle static recheck was then attempted as the next existing card. Its
+`tests.test_p08a_lifecycle_static_audit` run reported `0 tests, 1 skipped`, and
+the read-only audit is **NOT_RUN** because the hash-bound P00/P01 lifecycle,
+contracts, resource-facts and sources files are absent. Receipt:
+`local/evidence/20261013-p08a-static-recheck-01/result.json`
+(SHA256 `4da4a7de2d96c5b09396320272afb4224bf9c8cb8415b704955c0f31cae90572`).
+No runtime, gateway, worker or client was launched; the historical P08A static
+boundary remains a prior PASS only.
+
+A fresh ORG-0B full unittest recheck then ran `2222` tests: `1` historical
+negative-control error and `17` skips. The only error is a missing old Email22
+trace fixture at
+`local/evidence/20261004-p02-unified-account/gui-agent/email22-final-observer-runtime/native-15072-1791119658941.jsonl`;
+this is an environment evidence gap, not a P06Q source regression. Full log:
+`local/evidence/20261013-org-0b-full-recheck-01/unittest-discover-q.txt`
+(SHA256 `6b86dc4d6d2ad86e3f11e1906b322fe1d43c91e2182e23fdcc25d260eb61957b`),
+summary `local/evidence/20261013-org-0b-full-recheck-01/summary.json` SHA256
+`3b90fcd5e34f4acda38d7b54c9de4a2c6d1b7968bf83817369f86255552d2256`.
+The previous summary hash preceded the correction of elapsed time to the
+retained log's `47.892s`; test counts and outcomes are unchanged.
+
+Handoff metadata correction: `ACTIVE_GATE.md` now points to P06Q, and the plan
+agrees with the missing-artifact rollback limitation. Current receipt/hash
+checks and pre-change document snapshots are retained in
+`local/evidence/20261012-p06q-tree-contact-01/handoff-integrity01/`.
+The research report distinguishes retained auditor receipts from P09A/P09B
+console-only unit counts and the P08A missing-input error paraphrase. Native
+acceptance and all prior test outcomes are unchanged.
+
+The plan scan after this recheck found no additional permitted automatic card
+that is both present and unfinished: the old P07 integrated-world runtime is
+already accepted through P03L, and no P07B plan exists. The remaining P06Q gate
+is owner-controlled native tank contact/tree fall, worker ACK, `fallenTrees`
+and passage; it remains **NOT_RUN** until the morning owner check.
 
 **Acceptance: PASS_NATIVE_CATALOG_PROBE_PENDING_OWNER_CONTACT.** Native
 catalog export, native mapping, and two-client catalog agreement are verified.
 The owner-controlled mass/speed ramming event, rendered passage through a
-removed object, and owner acceptance are **NOT_RUN**. The server policy is
-implemented and covered by 614 isolated tests; native rendering and passage
-remain manual gates. Compound objects,
+removed object, and owner acceptance are **NOT_RUN**. The server policy was
+included in the historical 614-test isolated build. The latest gateway recheck
+is 610 PASS / 4 FAIL from missing historical worker fixtures; native rendering
+and passage remain manual gates. Compound objects,
 historical impact rules, and all-map eligibility remain open. This card stays
-on its branch; the accepted P06P mainline is the rollback point.
+on its branch; accepted P06P is the source rollback point. Its runtime relaunch
+requires restoration of the missing pinned physics artifacts described above.
 
 [Plan](plans/P06Q_TREE_VEHICLE_CONTACT.md), [research, commands, evidence,
 limitations and rollback](research/P06Q_TREE_VEHICLE_CONTACT.md).
@@ -2823,3 +2913,24 @@ server handoff остаются `NOT_RUN`; запуск клиента, gateway 
 [evidence](evidence-index/P09A_TECHTREE_HANDOFF_STATIC.md).
 
 Добавлен bounded static audit `NationObjDumper`: envelope `nodes/displaySettings/scrollIndex` и 13 node fields подтверждены receipt `local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json`, `PASS_STATIC_NATION_DUMPER_OUTPUT`. Follow-up receipt `local/evidence/20261008-p09a-nested-shapes-01/receipt.json` и 7/7 targeted tests фиксируют только измеренные вложенные пути `unlockProps`/`displayInfo` и XML format conversions; payload-типы, native callback и serializer остаются `UNKNOWN/NOT_RUN`.
+## P06Q transport chunking fix — 2026-10-13
+
+The owner-controlled two-client run `manualtree01` exposed a transport
+boundary before any catalog announcement: the 117-area announcement exceeded
+the reliable 512-byte body limit and both sessions later retired with
+`SHARED_REJECT` channel-state/framing noise. Evidence is retained at
+`local/evidence/20261012-p06p-prohorovka-01/gateway-manualtree01.stdout.log`.
+
+The fix is on branch `codex/p06q-tree-vehicle-contact`: announcements are
+split into bounded bodies, vehicle/area creation requests are staged behind the
+eight-body reliable window, and readiness requires all announced areas to be
+created and ACKed. The new regression covers a synthetic 117-chunk contact
+catalog and passes 8/8 targeted gateway catalog-wire tests. Receipt:
+`local/build/server/gateway-p06q-final-16/result.json` (status
+`PASS_ISOLATED_BUILD_TARGETED`, scope `catalog_wire_tests`).
+
+The historical full-suite recheck remains 610/614 because four unrelated
+real-worker tests require absent P06O/P06N `pool-near.json` fixtures; this is
+recorded as an environment fixture gap, not converted to PASS. Native owner
+tree-fall/passage acceptance is still **NOT_RUN**. A new bounded two-client
+smoke is the only next step before asking the owner to rerun the native gate.

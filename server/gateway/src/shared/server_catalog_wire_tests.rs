@@ -16,6 +16,7 @@ fn present(bodies: &[Vec<u8>], expected: &[u8]) -> usize {
 fn prepare_client(s: &mut Session, world: &World) {
     let c = s.shared.as_mut().unwrap();
     c.view = Some(world.clone());
+    c.announced_areas = world.fragiles.as_ref().unwrap().catalog.chunks().len();
     c.shot_cursor = world.latest_shot();
     c.areas = world.fragiles.as_ref().unwrap().catalog.chunks().iter().enumerate()
         .map(|(i, _)| (Some((10 + i as u32, true)), Vec::new())).collect();
@@ -34,6 +35,7 @@ fn entities(now: Instant, world: &World) -> Session {
     c.phase = Phase::Entities; c.announcement = Some((0, true));
     c.creations = [None; 2]; c.view = Some(world.clone());
     c.areas = vec![(None, Vec::new()); world.fragiles.as_ref().unwrap().catalog.chunks().len()];
+    c.announced_areas = c.areas.len();
     s
 }
 
@@ -79,6 +81,75 @@ fn native_catalog_announces_and_creates_both_chunks_with_vehicle_requests() {
         let expected = area_wire::area_create(i, chunk, &[]).unwrap();
         assert_eq!(present(&created, &expected), 1);
     }
+}
+
+fn many_chunk_world(now: Instant) -> World {
+    let mut world = model::tests::contact_world(now);
+    let state = world.fragiles.as_ref().unwrap();
+    let template = state.catalog.objects[0].clone();
+    let objects = (0..117usize).map(|index| {
+        let mut object = template.clone();
+        object.object_id = 10_000 + index as u32;
+        object.instance_id = 20_000 + index as u32;
+        object.chunk_id = 31_000 + index as u16;
+        object.native_index = 0;
+        object.object_revision = format!("{:064x}", index + 1);
+        object
+    }).collect();
+    let mut catalog = (*state.catalog).clone();
+    catalog.objects = objects;
+    world.fragiles = Some(super::super::fragiles::State::new(std::sync::Arc::new(catalog)));
+    world
+}
+
+fn ack_current_and_flush(s: &mut Session, now: Instant) {
+    while s.tx.due(now, s.rx).unwrap().is_some() {}
+    let max_sequence = {
+        let c = s.shared.as_ref().unwrap();
+        c.announcement_parts.iter().map(|(sequence, _)| *sequence)
+            .chain(c.creations.iter().flatten().map(|(sequence, _)| *sequence))
+            .chain(c.areas.iter().filter_map(|(pending, _)| pending.map(|(sequence, _)| sequence)))
+            .chain(c.area_creation.iter().map(|(sequence, _)| *sequence))
+            .max()
+    };
+    let Some(max_sequence) = max_sequence else { return; };
+    let cumulative = max_sequence + 1;
+    let ack = Frame { flags: 0x408, sequence: None, cumulative: Some(cumulative), selective: Vec::new(), body: Vec::new(), piggybacks: Vec::new() };
+    s.tx.acknowledge(&ack).unwrap();
+    s.shared.as_mut().unwrap().acknowledge(cumulative, &ack);
+    s.flush_shared_requests(&mut Vec::new()).unwrap();
+}
+
+#[test]
+fn full_contact_catalog_stays_bounded_and_stages_all_117_area_creates() {
+    let now = Instant::now();
+    let world = many_chunk_world(now);
+    let (mut s, _) = driving(now);
+    s.shared.as_mut().unwrap().phase = Phase::Enable;
+    s.shared.as_mut().unwrap().view = Some(world.clone());
+    s.receive(&frame(&s, &[9]), now).unwrap();
+    let c = s.shared.as_ref().unwrap();
+    assert_eq!(c.announced_areas, 117);
+    assert!(c.announcement_parts.len() > 1);
+    assert!(queued_bodies(&s, now).iter().all(|body| body.len() <= 512));
+
+    let mut payload = Vec::new();
+    payload.extend(request(wire::vehicle_id(0).unwrap()));
+    payload.extend(request(wire::vehicle_id(1).unwrap()));
+    for area in 0..117 { payload.extend(request(area_wire::area_id(area).unwrap())); }
+    s.receive(&frame(&s, &payload), now).unwrap();
+    assert!(s.tx.len() <= 8);
+    assert!(s.shared.as_ref().unwrap().pending_area_requests.len() > 0);
+
+    for _ in 0..40 {
+        if s.shared.as_ref().unwrap().pending_area_requests.is_empty() { break; }
+        ack_current_and_flush(&mut s, now);
+    }
+    let c = s.shared.as_ref().unwrap();
+    assert!(c.pending_area_requests.is_empty());
+    assert!(c.areas.iter().all(|(pending, _)| pending.is_some()));
+    assert_eq!(c.areas.len(), 117);
+    assert!(s.tx.len() <= 8);
 }
 
 #[test]

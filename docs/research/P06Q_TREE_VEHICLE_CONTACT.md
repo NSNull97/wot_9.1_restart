@@ -32,11 +32,12 @@ passage, and acceptance remain open.
   admitted tree has projectile span zero, a non-empty physics span, source
   material 71, and a checked `.spt` resource. The saved inventory reproduces
   byte-for-byte on a second import.
-- **VERIFIED:** the Rust gateway suite passes 614 tests, including catalog
+- **VERIFIED:** historical isolated build final-12 passed 614 Rust tests, including catalog
   parser limits, tree/fragile type rules, contact validation, immutable fall
   packing, trace replay, scene exclusion, worker ACK transactions, restore,
   legacy regression coverage, an atomic vehicle-contact batch regression, and
-  a mass/closing-speed ramming regression.
+  a mass/closing-speed ramming regression. The later gateway-recheck02 has
+  610 PASS / 4 FAIL from absent historical worker fixtures (see below).
 - **VERIFIED:** the isolated .NET physics worker builds with the contact IPC
   implementation. It bounds raw contacts, distinct object IDs, line size,
   normal/point/velocity values, and rejects unknown body identity or overflow.
@@ -104,11 +105,11 @@ passage, and acceptance remain open.
 
 ```text
 python -B -X utf8 -m unittest tests.test_destructible_catalog tests.test_destructible_catalog_probe tests.test_tree_contact_catalog -v
-python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06q-final-10
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06q-final-12
 python -B -X utf8 server/build.py physics --out local/build/server/physics-p06q-final-02
 python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/test_stand_helpers.py
 python -B -X utf8 -m py_compile local/evidence/20261012-p06p-prohorovka-01/start_stand.py
-python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/start_stand.py server --run contactprep04 --mode runtime --map 05_prohorovka --build gateway-p06q-final-09 --build-sha256 6ff51d463868022759b38262337b44802cafd04e7b7e3a375961970df0f547ea --build-result-sha256 9977d2a78d379f286a2ee79e82d22ee85876254fb4b87a3482f28c18eed25aad --expected-head 18016c2c2d6d6e0d2620f9ab2526e6735b3f22b4 --pool local/build/server/physics-p06q-final-02/pool-near.json --pool-sha256 59b88e5c2d2b1f9689c3b302275915cf2b9aed65290a8e1827c2d2eb596b5288 --destructible-catalog local/evidence/20261012-p06q-tree-contact-01/import/native-join01/manifest.json 59a51da7613e17ae4150471053b1ad9856a4acbd74d493aee1cc16f04ebcdb7f --dry-run
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/start_stand.py server --run contactprep09 --mode runtime --map 05_prohorovka --build gateway-p06q-final-12 --build-sha256 418818d1012e0a25c4d8594d5bdb86f05beb8ed351b6300c492c8a70017fac22 --build-result-sha256 b886ddb62cc39a72229f33f8ba2f6b980d231dc6b7fbe523727fb3a739eb7189 --expected-head 1772d767ebd61af2c1da3e20e1ff5dc89c0aa650 --pool local/build/server/physics-p06q-final-02/pool-near.json --pool-sha256 59b88e5c2d2b1f9689c3b302275915cf2b9aed65290a8e1827c2d2eb596b5288 --destructible-catalog local/evidence/20261012-p06q-tree-contact-01/import/native-join01/manifest.json 59a51da7613e17ae4150471053b1ad9856a4acbd74d493aee1cc16f04ebcdb7f --dry-run
 git diff --check
 Get-Process -Name WorldOfTanks,sr-gateway,MapDriveWorker,PhysicsSpike
 python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/prepare_stand.py --slot a --run treecontact02 --mode oracle --map 05_prohorovka --catalog-spec local/evidence/20261012-p06q-tree-contact-01/import/inventory01/probe-spec.json --catalog-spec-sha256 5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd
@@ -135,11 +136,11 @@ Results:
 - Helper guards: 12 tests, **PASS**. The runtime command accepts the joined
   P06Q v2 manifest envelope (240 KiB) while retaining the 128 KiB ceiling for
   legacy v1 catalogs; an unbound v2 catalog is rejected.
-- Runtime preflight `contactprep08`: **PREFLIGHT_ONLY_NOT_STARTED**. The
+- Runtime preflight `contactprep09`: **PREFLIGHT_ONLY_NOT_STARTED**. The
   joined v2 manifest, Prohorovka pool, final-12 executable and source HEAD all
   passed their pins; no gateway, worker, or client process started. Receipt:
-  `local/evidence/20261012-p06q-tree-contact-01/tests/runtime-preflight-contactprep08.json`
-  (SHA256 `f43b09491d1a65b71267dfb1061dad583dd75920d885e7f167c77cdcb0a43cb4`).
+  `local/evidence/20261012-p06q-tree-contact-01/tests/runtime-preflight-contactprep09.json`
+  (SHA256 `4f90edd84d92d136d452cc085f52f31c3e8d587abd5d178f144697f2e7af9028`).
 - Physics: **PASS_ISOLATED_BUILD**. Receipt:
   `local/build/server/physics-p06q-final-02/result.json`; DLL SHA256
   `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`.
@@ -151,6 +152,23 @@ Results:
   settles against the imported static mesh before a catalog body callback is
   emitted. This does not establish native contact or tree destruction and is
   retained as a diagnostic only.
+- A bounded spawn sweep repeated that diagnostic at six X/Z starts around the
+  measured `BirchFall_1` target. Starts at Z=`459..461` all settled near
+  Z=`461.1` with no catalog contact; starts at Z=`462..463.5` ended before a
+  ready row because they entered the collision envelope. Receipt:
+  `local/evidence/20261012-p06q-tree-contact-01/tests/contact-spawn-sweep01.json`
+  (SHA256 `5040394aeb7912c03ed9eaccabae167c0033c7dae2ec99b7fd6eafc7e9da14e3`;
+  diagnostic only). This narrows the private smoke failure to the imported
+  static-mesh/starting-envelope interaction; it does not change the native
+  owner gate or claim a destruction result.
+- Fresh gateway recheck `gateway-recheck02` used the pinned local Rust
+  toolchain and produced 610/614 passing tests. Four historical real-worker
+  tests fail before startup because the P06O/P06N pool fixtures are absent
+  (`local/build/server/physics-integrated-p06o-01/pool-near.json` and
+  `local/build/server/physics-integrated-p06n-01/pool-near.json`). Receipt:
+  `local/evidence/20261012-p06q-tree-contact-01/tests/gateway-recheck02-strict.json`
+  (SHA256 `c5e7dcd1e407758e8381b7fd0d338ad10238db73bc76ad862dfbe7a16a8ea923`).
+  This is an environment fixture gap, not a P06Q source-regression claim.
 - Native run: both slots passed two observations × 117 chunks × 3627 items;
   raw files are under the P06P helper evidence root, and the validated join is
   `local/evidence/20261012-p06q-tree-contact-01/import/native-join01/`.
@@ -203,10 +221,50 @@ determinism is also **NOT_RUN**.
 ## Rollback
 
 Keep the card on this branch until the native gate. To roll back, stop only
-verified owned P06Q processes, restore the installation ledgers, and relaunch
-the retained accepted P06P gateway/physics/pool/catalog artifacts. Removing
-the P06Q source files and this evidence directory leaves the P06P mainline
-unchanged; no tracked deployment artifact was replaced.
+verified owned P06Q processes and restore the installation ledgers. The
+accepted P06P gateway output is still present and hash-matched, but the
+historical `local/build/server/physics-integrated-p06p-01/` directory is
+empty in this checkout, so a physical P06P rollback relaunch is **NOT_RUN**
+and cannot be claimed. Do not substitute the current P06Q physics worker.
+The availability check is recorded in
+`local/evidence/20261012-p06q-tree-contact-01/tests/rollback-artifact-availability01.json`
+(SHA256 `2574507a601ccef3a2c8bac1f2642881256329521b6f26f4cc4abe70e15fc561`).
+Preserve the P06Q branch and all evidence. A source rollback means returning to
+the accepted P06P commit in a separate checkout, or a reviewed revert of P06Q
+changes; do not delete shared source files or evidence. No tracked deployment
+artifact was replaced. Source rollback alone does not restore missing runtime
+binaries or pool manifests.
+
+## Overnight handoff integrity correction — 2026-10-13
+
+**VERIFIED:** the ORG-0B summary now has SHA256
+`3b90fcd5e34f4acda38d7b54c9de4a2c6d1b7968bf83817369f86255552d2256`.
+The earlier STATUS hash preceded correction of elapsed time from `50.310s`
+to the retained log's `47.892s`. The log still records 2222 tests, one missing
+historical Email22-fixture error and 17 skips. No tests were rerun for this
+metadata correction. The full log's hash is unchanged.
+
+`docs/ACTIVE_GATE.md` now points to P06Q instead of the historical P06P gate;
+this plan and the research rollback instructions now agree on the missing
+P06P physics artifacts and require evidence preservation. The historical
+614-test build is distinguished from the later 610 PASS / 4 FAIL recheck.
+
+**OBSERVED:** the prior P09A/P09B targeted counts (22/13) came from console
+output; their fresh directories retain auditor/self-check receipts, not unit
+test logs. This integrity check confirms the receipt hashes and statuses, not
+an independent replay of those unit-test counts.
+
+The P08A receipt's `audit_error` is a paraphrase of the missing-input cause.
+The recorded CLI actually reported `path escapes bound` for the missing
+`lifecycle-static.json`: `_bounded` labels both path-resolution errors and
+containment errors that way. The original receipt is preserved; no path escape
+is inferred from that wording, and source audit acceptance remains **NOT_RUN**.
+
+Metadata-only checks and pre-change document snapshots are retained under
+`local/evidence/20261012-p06q-tree-contact-01/handoff-integrity01/`.
+Use the four `before/docs/` snapshots to undo only this handoff correction while
+preserving earlier overnight documentation and evidence. No source, runtime,
+client or deployed artifact changed; native owner acceptance remains **NOT_RUN**.
 
 ## Acceptance
 
@@ -220,3 +278,26 @@ passage through a removed object remain open until the owner-controlled gate.
 **One next recommended step:** perform the owner-controlled tank-to-tree
 ramming/tree-fall and passage gate using the joined 635-object catalog. The
 passive native probe is complete and deliberately does not destroy anything.
+
+## Transport boundary fix — 2026-10-13
+
+The first 117-chunk owner-run (`manualtree01`) failed before
+`SHARED_ANNOUNCED`: `shared_payload` built one body larger than the transport
+body cap, then reconnect noise appeared as `channel_state`/`channel_framing`.
+The retained log is
+`local/evidence/20261012-p06p-prohorovka-01/gateway-manualtree01.stdout.log`.
+
+The P06Q transport card now bounds each announcement body to 512 bytes and
+stages vehicle and area creation records behind the reliable window of eight
+pending bodies. A 117-chunk synthetic contact catalog exercises announcement
+splitting, request staging, cumulative ACK release, duplicate rejection, and
+the all-area readiness gate. The targeted gateway catalog-wire suite is 8/8
+PASS in
+`local/build/server/gateway-p06q-final-16/result.json`; the receipt explicitly
+marks this as `PASS_ISOLATED_BUILD_TARGETED` with scope `catalog_wire_tests`.
+
+The full historical suite remains 610/614 because four real-worker tests need
+missing P06O/P06N pool fixtures. This is an environment gap and remains
+separate from the P06Q transport result. The owner-controlled native contact,
+tree fall, `fallenTrees`, both-worker ACK, and passage checks remain
+**NOT_RUN** until a clean bounded smoke and the morning manual gate.

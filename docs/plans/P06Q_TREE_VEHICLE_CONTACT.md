@@ -49,6 +49,12 @@ native cumulative state without replay. Real physics must block before contact
 and permit passage after the committed transition. Native/owner gates remain
 NOT_RUN until observed, regardless of unit results.
 
-Rollback: stop only verified owned P06Q processes, restore installation ledgers,
-relaunch retained accepted P06P gateway03 / physics01 / pool-near / catalog.
-Until acceptance P06Q remains in its branch; main P06P stays available.
+Rollback: stop only verified owned P06Q processes and restore installation
+ledgers. The accepted P06P commit remains the source rollback point; retain the
+P06Q branch and all evidence. A physical P06P relaunch is **NOT_RUN**: the
+gateway03 executable is present and hash-matched, but physics01/pool-near are
+absent from the empty `local/build/server/physics-integrated-p06p-01/` directory.
+Restore and verify the historical pinned artifacts before relaunch; do not
+substitute current P06Q physics bytes. See the [rollback availability check
+and pins](../research/P06Q_TREE_VEHICLE_CONTACT.md#rollback).
+Until owner acceptance P06Q remains in its branch; no merge is implied.

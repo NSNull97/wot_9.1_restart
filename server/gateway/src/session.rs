@@ -1171,6 +1171,9 @@ for incoming in requests {
                 if self.identity.is_some() && self.received.len()>64 {self.received.pop_front();}
             }
         } else if !self.active || !f.body.is_empty() || !f.piggybacks.is_empty() {return Err(invalid());}
+        if self.shared.as_ref().is_some_and(|c| c.needs_flush()) {
+            self.flush_shared_requests(events)?;
+        }
         self.drain_outbox()?;
         self.last_rx=now;Ok(close)
     }
