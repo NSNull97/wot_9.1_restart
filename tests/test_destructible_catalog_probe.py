@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -275,16 +277,63 @@ class CatalogProbeTests(unittest.TestCase):
             modules = dict(BigWorld=env[2], Math=env[3],
                            AreaDestructibles=SimpleNamespace(g_destructiblesManager=env[1]),
                            project_preferences=SimpleNamespace(owned=owned))
-            with patch.dict(sys.modules, modules), patch.object(probe, '_probe', None), patch.object(probe, '_done', False):
-                for _ in range(6):
+            with patch.dict(sys.modules, modules), patch.object(probe, '_probe', None), patch.object(probe, '_done', False), patch.object(probe, '_writer', None):
+                for _ in range(4):
                     probe.observe(env[0], lambda event, **fields: calls.append((event, fields)), settings)
-            self.assertEqual([c[0] for c in calls], ['destructible_catalog_started', 'destructible_catalog'])
+                deadline = time.monotonic() + 3
+                while not probe._done and time.monotonic() < deadline:
+                    probe.observe(env[0], lambda event, **fields: calls.append((event, fields)), settings)
+                    time.sleep(.001)
+                self.assertTrue(probe._done)
+            self.assertEqual([c[0] for c in calls], ['destructible_catalog_started',
+                'destructible_catalog_writer_started', 'destructible_catalog'])
             receipt = calls[-1][1]
             stored = Path(receipt['path']).read_bytes()
             self.assertEqual(hashlib.sha256(stored).hexdigest(), receipt['sha256'])
             self.assertEqual(json.loads(stored)['observation_count'], 2)
             self.assertFalse(receipt['server_hit_authority'])
             self.assertFalse(receipt['observer_mutated_gameplay'])
+
+    def test_inflight_observation_never_reenters_native_capture_or_records_from_writer(self):
+        entered, release = threading.Event(), threading.Event()
+        main_thread = threading.get_ident()
+        original = json.JSONEncoder.iterencode
+        def slow(encoder, value, *args, **kwargs):
+            self.assertNotEqual(threading.get_ident(), main_thread)
+            entered.set()
+            if not release.wait(2):
+                raise RuntimeError('test release missing')
+            return original(encoder, value, *args, **kwargs)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); runtime = root/'runtime'; runtime.mkdir()
+            payload = json.dumps(specification()).encode(); path = root/'spec.json'; path.write_bytes(payload)
+            settings = dict(enable_shared_lab=True, trace_dir=str(runtime), local_root=str(root),
+                destructible_catalog_spec=dict(path=str(path), sha256=hashlib.sha256(payload).hexdigest()))
+            env = environment(); records = []
+            def owned(path, root):
+                self.assertEqual(threading.get_ident(), main_thread)
+                return str(path)
+            def record(event, **fields):
+                self.assertEqual(threading.get_ident(), main_thread)
+                records.append((event, fields))
+            modules = dict(BigWorld=env[2], Math=env[3],
+                AreaDestructibles=SimpleNamespace(g_destructiblesManager=env[1]),
+                project_preferences=SimpleNamespace(owned=owned))
+            with patch.dict(sys.modules, modules), patch.object(probe, '_probe', None), patch.object(probe, '_done', False), patch.object(probe, '_writer', None), patch.object(json.JSONEncoder, 'iterencode', slow):
+                try:
+                    for _ in range(4):probe.observe(env[0], record, settings)
+                    self.assertTrue(entered.wait(1));self.assertTrue(probe._probe.complete)
+                    self.assertFalse(probe._done)
+                    native_calls = list(env[2].calls)
+                    for _ in range(100):probe.observe(env[0], record, settings)
+                    self.assertEqual(env[2].calls, native_calls)
+                    self.assertNotIn('destructible_catalog_failed', [event for event, _ in records])
+                finally:release.set()
+                deadline = time.monotonic()+3
+                while not probe._done and time.monotonic()<deadline:
+                    probe.observe(env[0], record, settings);time.sleep(.001)
+                self.assertTrue(probe._done)
+                self.assertEqual(records[-1][0], 'destructible_catalog')
 
 
 if __name__ == '__main__':

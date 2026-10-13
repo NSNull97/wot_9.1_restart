@@ -15,5 +15,7 @@
   <ItemGroup>
     <Compile Include="../../server/physics/Program.cs" />
     <Compile Include="../../server/physics/CheckedInput.cs" />
+    <Compile Include="../../server/physics/FractureResponse.cs" />
+    <Compile Include="../../server/physics/InlineJobSystem.cs" />
   </ItemGroup>
 </Project>

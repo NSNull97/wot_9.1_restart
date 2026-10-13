@@ -63,6 +63,7 @@ try
     var center = CheckedInput.Vector(c.GetProperty("body_center_offset"), -5, 5);
     float N(string key, float low, float high) => CheckedInput.Number(c.GetProperty(key), low, high);
     float yaw = N("spawn_yaw", -MathF.PI, MathF.PI), mass = N("mass_kg", 1000, 100000);
+    var fracture = catalog?.Fractures == true ? new FractureResponse(mass, catalog) : null;
     float forwardLimit = N("max_forward_mps", 1, 20), reverseLimit = N("max_reverse_mps", .5f, 10);
     float radius = N("wheel_radius", .05f, 1), suspensionMin = N("suspension_min", 0, 1);
     float suspensionMax = N("suspension_max", .05f, 1);
@@ -94,7 +95,7 @@ try
         using var broad = new BroadPhaseLayerInterfaceTable(2, 2);
         broad.MapObjectToBroadPhaseLayer(0, 0); broad.MapObjectToBroadPhaseLayer(1, 1);
         using var filter = new ObjectVsBroadPhaseLayerFilterTable(broad, 2, pairs, 2);
-        using var jobs = new JobSystemThreadPool();
+        using JobSystem jobs = fracture != null ? new InlineJobSystem() : new JobSystemThreadPool();
         using var world = new PhysicsSystem(new PhysicsSystemSettings {
             MaxBodies = Math.Max(32, (catalog?.Entries.Length ?? 0) + 8), MaxBodyPairs = 1024, MaxContactConstraints = 1024,
             ObjectLayerPairFilter = pairs, BroadPhaseLayerInterface = broad, ObjectVsBroadPhaseLayerFilter = filter });
@@ -109,6 +110,7 @@ try
         using var selectedObstacle = selectedShape;
         BodyID? selectedBody = null;
         var catalogBodies = new Dictionary<uint, BodyID>();
+        var pendingLocal = new HashSet<uint>();
         BodyID AddStatic(Shape shape, Vector3 position)
         {
             using var creation = new BodyCreationSettings(shape, position, Quaternion.Identity, MotionType.Static, 0) { Friction = 1 };
@@ -160,9 +162,10 @@ try
         Vector3 preStepVelocity = Vector3.Zero;
         var publishedContacts = new List<ContactRecord>();
         var tankBodyId = body.ID;
-        void QueueContact(in Body body1, in Body body2, in ContactManifold manifold)
+        void QueueContact(in Body body1, in Body body2, in ContactManifold manifold, ref ContactSettings settings)
         {
             if (!captureContactsEnabled || manifold.IsNull || manifold.PointCount == 0) return;
+            fracture?.CallbackThreadCheck();
             // Jolt calls this while all bodies are locked. Copy only callback
             // body/manifold values; never call locking BodyInterface methods.
             // catalogBodies is immutable for the duration of world.Update.
@@ -176,11 +179,17 @@ try
             var normal = tankFirst ? manifold.WorldSpaceNormal : -manifold.WorldSpaceNormal;
             rawContacts.Enqueue(new RawContact(tankBodyId.ID, (tankFirst ? body2.ID : body1.ID).ID,
                 point, normal, preStepVelocity, currentSubstep, "hull"));
+            if (fracture != null)
+            {
+                uint target = (tankFirst ? body2.ID : body1.ID).ID;
+                uint objectId = catalogBodies.First(x => x.Value.ID == target).Key;
+                if (fracture.TryAdmit(objectId, point, normal)) settings.IsSensor = true;
+            }
         }
         if (catalog?.Contacts == true)
         {
-            world.OnContactAdded += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings _) => QueueContact(a, b, m);
-            world.OnContactPersisted += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings _) => QueueContact(a, b, m);
+            world.OnContactAdded += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => QueueContact(a, b, m, ref s);
+            world.OnContactPersisted += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => QueueContact(a, b, m, ref s);
         }
         try
         {
@@ -192,6 +201,7 @@ try
                     currentSubstep = i + 1;
                     var q = bodies.GetRotation(body.ID);
                     preStepVelocity = bodies.GetLinearVelocity(body.ID);
+                    if (captureContacts) fracture?.BeginSubstep(currentSubstep, preStepVelocity);
                     float speed = Vector3.Dot(preStepVelocity, Vector3.Transform(Vector3.UnitZ, q));
                     float motor = throttle;
                     if ((throttle > 0 && speed >= forwardLimit) || (throttle < 0 && speed <= -reverseLimit)) motor = 0;
@@ -204,9 +214,20 @@ try
                     }
                     controller.SetDriverInput(motor, left, right, brake ? 1 : 0);
                     var error = world.Update(1f / 60, 1, jobs);
+                    (jobs as InlineJobSystem)?.CheckThread();
+                    fracture?.Check();
                     if (error != PhysicsUpdateError.None) throw new InvalidOperationException("physics capacity exceeded");
                     if (captureContacts)
                     {
+                        if (fracture != null)
+                        {
+                            var reduced = fracture.CompleteSubstep(bodies.GetLinearVelocity(body.ID), id => {
+                                if (!pendingLocal.Add(id) || !catalogBodies.TryGetValue(id, out var removedBody))
+                                    throw new InvalidOperationException("prepared fracture body unavailable or repeated");
+                                bodies.RemoveBody(removedBody);
+                            });
+                            bodies.SetLinearVelocity(body.ID, reduced);
+                        }
                         // Wheel ray contacts are not body-pair callbacks. They
                         // are copied after Update, when the vehicle constraint
                         // has published its six support contacts.
@@ -265,6 +286,13 @@ try
                     if (!best.TryGetValue(objectId, out var old) || Better(candidate, old)) best[objectId] = candidate;
                     if (best.Count > 32) throw new InvalidOperationException("distinct object contact bound exceeded");
                 }
+                // A prepared receipt refers to the exact admitted hull contact,
+                // even if a later manifold would win the ordinary best policy.
+                if (fracture != null)
+                    foreach (var receipt in fracture.Receipts)
+                        best[receipt.ObjectId] = new ContactRecord(receipt.ObjectId, "hull", receipt.Substep,
+                            receipt.Point, receipt.Normal, receipt.Velocity);
+                if (best.Count > 32) throw new InvalidOperationException("distinct object contact bound exceeded");
                 foreach (var item in best.OrderBy(x => x.Key)) publishedContacts.Add(item.Value);
             }
             static bool Better(ContactRecord candidate, ContactRecord old)
@@ -294,6 +322,14 @@ try
                 var baseState = new { position = V(origin), direction = new[] { MathF.Atan2(forward.X, forward.Z), MathF.Asin(Math.Clamp(-forward.Y, -1, 1)), MathF.Atan2(right.Y, up.Y) },
                     speed = Vector3.Dot(velocity, forward), rspeed = angular.Y, contacts = Enumerable.Range(0, 6).Count(i => constraint.GetWheel(i).HasContact),
                     linear_velocity = V(velocity), angular_velocity = V(angular), wheel_contact_masks = contactMasks.ToArray() };
+                if (fracture != null)
+                    return new { baseState.position, baseState.direction, baseState.speed, baseState.rspeed, baseState.contacts,
+                        baseState.linear_velocity, baseState.angular_velocity, baseState.wheel_contact_masks,
+                        object_contacts = publishedContacts.Select(c => new { object_id = c.ObjectId, kind = c.Kind,
+                            substep = c.Substep, point = V(c.Point), normal = V(c.Normal), velocity = V(c.Velocity) }).ToArray(),
+                        fractures = fracture.Receipts.Select(r => new { object_id = r.ObjectId, substep = r.Substep, order = r.Order,
+                            point = V(r.Point), normal = V(r.Normal), velocity = V(r.Velocity), budget_before = V(r.BudgetBefore),
+                            budget_after = V(r.BudgetAfter), solver_before = V(r.SolverBefore), solver_after = V(r.SolverAfter), energy_j = r.EnergyJ }).ToArray() };
                 if (catalog?.Contacts == true)
                     return new { baseState.position, baseState.direction, baseState.speed, baseState.rspeed, baseState.contacts,
                         baseState.linear_velocity, baseState.angular_velocity, baseState.wheel_contact_masks,
@@ -304,7 +340,7 @@ try
             void Write(string eventName)
             {
                 if (catalog != null)
-                    Console.WriteLine(JsonSerializer.Serialize(new { version = catalog.Contacts ? 4 : 3, @event = eventName, seq = sequence,
+                    Console.WriteLine(JsonSerializer.Serialize(new { version = catalog.IpcVersion, @event = eventName, seq = sequence,
                         tick, settle_ticks = 180, map, config_sha256 = hash, generation, catalog_sha256 = catalog.Hash,
                         scene_version = sceneVersion, scene_sha256 = scene!.Hash, contacts = catalog.Contacts ? true : (bool?)null, state = State() },
                         new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
@@ -328,17 +364,21 @@ try
                 {
                     var next = CheckedInput.SceneCommand(request, "sync_removed", catalog, generation, hash, sequence);
                     if (scene!.Ids.Any(id => !next.Ids.Contains(id))) throw new InvalidDataException("scene removal cannot be reversed");
+                    if (pendingLocal.Any(id => !next.Ids.Contains(id))) throw new InvalidDataException("scene commit omits prepared fracture");
                     var delta = next.Ids.Where(id => !scene.Ids.Contains(id)).ToArray();
                     // Validate the complete delta before any native mutation.
                     if (delta.Any(id => !catalogBodies.TryGetValue(id, out var bodyId) || !staticBodies.Contains(bodyId)))
                         throw new InvalidOperationException("catalog body unavailable");
                     foreach (uint id in delta)
                     {
-                        var bodyId = catalogBodies[id]; bodies.RemoveAndDestroyBody(bodyId);
+                        var bodyId = catalogBodies[id];
+                        if (pendingLocal.Contains(id)) bodies.DestroyBody(bodyId);
+                        else bodies.RemoveAndDestroyBody(bodyId);
+                        pendingLocal.Remove(id);
                         staticBodies.Remove(bodyId); catalogBodies.Remove(id);
                     }
                     scene = next; sceneVersion = next.Version;
-                    Console.WriteLine(JsonSerializer.Serialize(new { version = catalog.Contacts ? 4 : 3, @event = "scene_synced", advance_seq = sequence,
+                    Console.WriteLine(JsonSerializer.Serialize(new { version = catalog.IpcVersion, @event = "scene_synced", advance_seq = sequence,
                         tick, generation, config_sha256 = hash, catalog_sha256 = catalog.Hash,
                         scene_version = sceneVersion, removed_object_ids = scene.Ids, scene_sha256 = scene.Hash,
                         contacts = catalog.Contacts ? true : (bool?)null },
@@ -371,7 +411,8 @@ try
                 else if (catalog != null) CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input", "scene_version", "scene_sha256");
                 else if (removal == null) CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input");
                 else CheckedInput.Fields(request, "version", "op", "seq", "ticks", "input", "scene_version");
-                if (request.GetProperty("version").GetInt32() != (catalog?.Contacts == true ? 4 : catalog != null ? 3 : removal == null ? 1 : 2) || request.GetProperty("op").GetString() != "advance" ||
+                if (pendingLocal.Count != 0) throw new InvalidDataException("advance requires prepared fracture commit");
+                if (request.GetProperty("version").GetInt32() != (catalog?.IpcVersion ?? (removal == null ? 1 : 2)) || request.GetProperty("op").GetString() != "advance" ||
                     (catalog?.Contacts == true && request.GetProperty("contacts").ValueKind != JsonValueKind.True) ||
                     (descriptorEnabled && request.GetProperty("scene_version").GetUInt32() != sceneVersion) ||
                     (catalog != null && request.GetProperty("scene_sha256").GetString() != scene!.Hash) ||
@@ -384,17 +425,20 @@ try
                     throw new InvalidDataException("invalid domain driving input");
                 rawContactCount = 0; contactOverflow = 0; currentSubstep = 0;
                 while (rawContacts.TryDequeue(out _)) { }
+                fracture?.BeginAdvance();
                 captureContactsEnabled = catalog?.Contacts == true;
                 Advance(throttle, steer, brake, 6, catalog?.Contacts == true);
                 captureContactsEnabled = false;
-                CollectContacts(); sequence++; Write("state");
+                CollectContacts(); sequence++; Write(fracture?.Receipts.Count > 0 ? "prepared" : "state");
             }
         }
         finally
         {
             world.RemoveStepListener(constraint); world.RemoveConstraint(constraint);
             bodies.RemoveAndDestroyBody(body.ID);
-            foreach (var id in staticBodies) bodies.RemoveAndDestroyBody(id);
+            foreach (var id in staticBodies)
+                if (catalogBodies.Any(entry => entry.Value == id && pendingLocal.Contains(entry.Key))) bodies.DestroyBody(id);
+                else bodies.RemoveAndDestroyBody(id);
             foreach (var wheel in wheels) wheel.Dispose();
         }
     }

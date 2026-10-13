@@ -10,6 +10,12 @@ import json
 import math
 import os
 import re
+import threading
+import time
+try:
+    import Queue as queue
+except ImportError:
+    import queue
 
 try:
     integer_types = (int, long)
@@ -32,11 +38,164 @@ MAX_ITEMS = 256
 MAX_OBSERVATIONS = 300
 _probe = None
 _done = False
+_writer = None
+_writer_slot = threading.BoundedSemaphore(1)
+WRITER_DEADLINE_SECONDS = 30.0
+_now = getattr(time, 'monotonic', None) or time.clock
 
 
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def freeze_json(value, budget=None, depth=0):
+    """Copy plain JSON into immutable tuples; called on one bounded chunk."""
+    if budget is None:
+        budget = [16384]
+    budget[0] -= 1
+    require(budget[0] >= 0 and depth <= 12, 'catalog snapshot node/depth bound')
+    if type(value) is dict:
+        require(all(isinstance(key, string_types) for key in value), 'snapshot keys')
+        return ('dict', tuple((key, freeze_json(item, budget, depth + 1))
+                              for key, item in value.items()))
+    if type(value) is list:
+        return ('list', tuple(freeze_json(item, budget, depth + 1) for item in value))
+    require(value is None or type(value) in integer_types + (bool, float)
+            or isinstance(value, string_types), 'snapshot contains non-JSON object')
+    if isinstance(value, string_types):
+        require(len(value) <= 1024, 'snapshot string bound')
+    if type(value) is float:
+        require(not math.isnan(value) and not math.isinf(value), 'snapshot finite number')
+    return value
+
+
+def thaw_json(value):
+    """Writer-only conversion; no native objects or callbacks are retained."""
+    if type(value) is tuple:
+        kind, items = value
+        if kind == 'dict':
+            return dict((key, thaw_json(item)) for key, item in items)
+        require(kind == 'list', 'snapshot tag')
+        return [thaw_json(item) for item in items]
+    return value
+
+
+class CatalogWriter(object):
+    """One daemon writer, bounded bytes/time, nonblocking main-thread polling.
+
+    A stalled OS write cannot be forcibly interrupted safely. The main thread
+    reports its deadline without joining; the daemon retains the pending file
+    and refuses publication at its next checkpoint. No second writer starts.
+    """
+    def __init__(self, snapshot, path, deadline_seconds=WRITER_DEADLINE_SECONDS):
+        require(0 < deadline_seconds <= WRITER_DEADLINE_SECONDS, 'writer deadline bound')
+        require(_writer_slot.acquire(False), 'catalog writer already running')
+        self.path = path
+        self.pending = path + '.pending'
+        self.failure_path = path + '.failed.json'
+        self.started = _now()
+        self.deadline = self.started + deadline_seconds
+        self.cancelled = threading.Event()
+        self.results = queue.Queue(1)
+        self.phase = 'queued'
+        self.timings = {}
+        self.published = False
+        self.thread = threading.Thread(target=self._run, args=(snapshot,), name='destructible-catalog-writer')
+        self.thread.daemon = True
+        try:
+            self.thread.start()
+        except Exception:
+            _writer_slot.release()
+            raise
+
+    def _check(self):
+        require(not self.cancelled.is_set() and _now() <= self.deadline, 'catalog writer deadline exceeded')
+
+    def _phase(self, name):
+        self._check()
+        self.phase = name
+        self.timings[name] = _now() - self.started
+
+    def _run(self, snapshot):
+        result = None
+        try:
+            self._phase('snapshot_decode')
+            value = thaw_json(snapshot)
+            self._phase('serialize_write')
+            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_BINARY', 0)
+            require(not os.path.lexists(self.path), 'catalog destination already exists')
+            descriptor = os.open(self.pending, flags, 0o600)
+            digest = hashlib.sha256()
+            size = 0
+            with os.fdopen(descriptor, 'wb') as stream:
+                encoder = json.JSONEncoder(sort_keys=True, ensure_ascii=True)
+                for text in encoder.iterencode(value):
+                    self._check()
+                    part = text.encode('ascii')
+                    size += len(part)
+                    require(size + 1 <= MAX_OUTPUT_BYTES, 'catalog output byte bound')
+                    stream.write(part)
+                    digest.update(part)
+                self._check()
+                stream.write(b'\n')
+                digest.update(b'\n')
+                size += 1
+                stream.flush()
+            self._phase('verify')
+            actual = hashlib.sha256()
+            total = 0
+            with open(self.pending, 'rb') as stream:
+                while True:
+                    self._check()
+                    part = stream.read(65536)
+                    if not part:
+                        break
+                    total += len(part)
+                    require(total <= MAX_OUTPUT_BYTES, 'catalog verification byte bound')
+                    actual.update(part)
+            require(total == size and actual.digest() == digest.digest(), 'catalog output verification failed')
+            self._phase('publish')
+            # On the supported Windows client os.rename is atomic and refuses
+            # an existing target. POSIX link supplies the same no-replace rule
+            # for standalone tests; neither path exposes a partial .json.
+            if os.name == 'nt':
+                os.rename(self.pending, self.path)
+            else:
+                os.link(self.pending, self.path)
+                os.unlink(self.pending)
+            self.published = True
+            self._phase('complete')
+            result = dict(status='complete', path=self.path, sha256=digest.hexdigest(),
+                          bytes=size, phase_seconds=dict(self.timings), writer_seconds=_now()-self.started)
+        except Exception as error:
+            result = dict(status='failed', error=str(error)[:1024], phase=self.phase,
+                          path=self.path, pending_path=self.pending, published=self.published,
+                          phase_seconds=dict(self.timings), writer_seconds=_now()-self.started)
+            try:
+                raw = (json.dumps(result, sort_keys=True, ensure_ascii=True) + '\n').encode('ascii')
+                require(len(raw) <= 8192, 'writer failure receipt bound')
+                descriptor = os.open(self.failure_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_BINARY', 0), 0o600)
+                with os.fdopen(descriptor, 'wb') as stream:
+                    stream.write(raw)
+                    stream.flush()
+                result['failure_receipt'] = self.failure_path
+            except Exception as receipt_error:
+                result['failure_receipt_error'] = str(receipt_error)[:1024]
+        finally:
+            _writer_slot.release()
+        self.results.put_nowait(result)
+
+    def poll(self):
+        try:
+            return self.results.get_nowait()
+        except queue.Empty:
+            if _now() <= self.deadline:
+                return None
+            self.cancelled.set()
+            return dict(status='failed', error='catalog writer deadline exceeded', phase=self.phase,
+                        path=self.path, pending_path=self.pending, published=self.published,
+                        writer_seconds=_now()-self.started, worker_may_still_be_finishing=True)
 
 
 def integer(value, minimum, maximum):
@@ -127,6 +286,8 @@ class Probe(object):
         self.waiting = []
         self.complete = False
         self.space_diagnostic = {}
+        self.frozen_chunks = []
+        self.max_advance_seconds = 0.0
 
     def advance(self, player, manager, world, math_api):
         require(not self.complete, 'catalog probe already complete')
@@ -176,8 +337,13 @@ class Probe(object):
             items.append(dict(index=index, filename=filename, local_matrix=local))
         require(manager.getSpaceID() == space and loaded.get(chunk) == count,
                 'native catalog chunk/space changed during query')
-        self.current.append(dict(chunk_id=chunk, count=count,
-                                 chunk_matrix=chunk_matrix, items=items))
+        entry = dict(chunk_id=chunk, count=count, chunk_matrix=chunk_matrix, items=items)
+        self.current.append(entry)
+        # Freeze only one bounded chunk per callback, during the second pass.
+        # Freezing the complete map at handoff would recreate the main-thread
+        # stall that this passive observer must avoid.
+        if self.previous is not None:
+            self.frozen_chunks.append(freeze_json(entry))
         if len(self.current) != len(counts):
             return None
         if self.previous is None:
@@ -192,12 +358,33 @@ class Probe(object):
                     space_id=space, source_pins=self.spec['source_pins'],
                     spec_sha256=self.spec_sha256, observation_count=2, chunks=self.current)
 
+    def immutable_snapshot(self, result):
+        require(self.complete and result['chunks'] is self.current
+                and len(self.frozen_chunks) == len(self.spec['chunk_ids']), 'complete snapshot required')
+        metadata = dict((key, value) for key, value in result.items() if key != 'chunks')
+        tag, values = freeze_json(metadata)
+        return (tag, values + (('chunks', ('list', tuple(self.frozen_chunks))),))
+
 
 def observe(player, record, settings):
-    global _probe, _done
+    global _probe, _done, _writer
     if _done:
         return
     try:
+        if _writer is not None:
+            outcome = _writer.poll()
+            if outcome is None:
+                return
+            _done = True
+            if outcome['status'] != 'complete':
+                record('destructible_catalog_failed', observer_mutated_gameplay=False,
+                       server_hit_authority=False, **outcome)
+                return
+            record('destructible_catalog', spec_sha256=_probe.spec_sha256,
+                   observation_count=2, chunk_count=len(_probe.current),
+                   item_count=sum(chunk['count'] for chunk in _probe.current),
+                   observer_mutated_gameplay=False, server_hit_authority=False, **outcome)
+            return
         import BigWorld
         import Math
         import AreaDestructibles
@@ -216,31 +403,26 @@ def observe(player, record, settings):
             _probe = Probe(spec, config['sha256'])
             record('destructible_catalog_started', spec_sha256=config['sha256'],
                    target_chunks=spec['chunk_ids'], observer_mutated_gameplay=False)
+        started = _now()
         result = _probe.advance(player, AreaDestructibles.g_destructiblesManager, BigWorld, Math)
+        advance_seconds = _now() - started
+        _probe.max_advance_seconds = max(_probe.max_advance_seconds, advance_seconds)
         if result is None:
             if _probe.waiting and (_probe.observations == 1 or _probe.observations % 60 == 0):
                 record('destructible_catalog_waiting', observation=_probe.observations,
                        waiting_chunks=_probe.waiting, space_state=_probe.space_diagnostic,
                        observer_mutated_gameplay=False, server_hit_authority=False)
             return
-        payload = (json.dumps(result, sort_keys=True, ensure_ascii=True) + '\n').encode('ascii')
-        require(len(payload) <= MAX_OUTPUT_BYTES, 'catalog output byte bound')
+        started = _now()
+        snapshot = _probe.immutable_snapshot(result)
         directory = owned(settings['trace_dir'], settings['local_root'])
         path = owned(os.path.join(directory, 'destructible-catalog-%d.json' % os.getpid()),
                      settings['local_root'])
-        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_BINARY', 0)
-        descriptor = os.open(path, flags, 0o600)
-        with os.fdopen(descriptor, 'wb') as stream:
-            stream.write(payload)
-            stream.flush()
-        digest = hashlib.sha256(payload).hexdigest()
-        with open(path, 'rb') as stream:
-            require(hashlib.sha256(stream.read(MAX_OUTPUT_BYTES + 1)).hexdigest() == digest,
-                    'catalog output verification failed')
-        _done = True
-        record('destructible_catalog', status='complete', path=path, sha256=digest,
-               spec_sha256=_probe.spec_sha256, observation_count=2,
-               chunk_count=len(result['chunks']), item_count=sum(c['count'] for c in result['chunks']),
+        _writer = CatalogWriter(snapshot, path)
+        record('destructible_catalog_writer_started', path=path, pending_path=_writer.pending,
+               spec_sha256=_probe.spec_sha256, final_advance_seconds=advance_seconds,
+               max_advance_seconds=_probe.max_advance_seconds, handoff_seconds=_now()-started,
+               writer_deadline_seconds=WRITER_DEADLINE_SECONDS,
                observer_mutated_gameplay=False, server_hit_authority=False)
     except Exception:
         import traceback
