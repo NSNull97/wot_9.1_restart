@@ -112,6 +112,13 @@ The old catalog/IPC modes and accepted tree path remain separately testable.
 Only after automatic checks pass is the native owner stand prepared. IS-7
 runtime work follows that fence check in the owner's requested order.
 
+Native preparation exposed a second owned chat using the same v1 A mutex.
+Keep that chat running. Add a backwards-compatible, four-character namespace
+to the existing two-string instance patch, prove exact EXE-byte scope and
+strict marker validation, and migrate only stopped root A/B copies with
+before/after hashes and restore receipts. Do not release another process's
+mutex or bypass launch guards. Retry on fresh run fencechain02.
+
 ## Limits and rollback
 
 Original descriptors alone do not prove historical damage/ram formulas.

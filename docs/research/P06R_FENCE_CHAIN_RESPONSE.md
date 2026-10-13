@@ -153,20 +153,40 @@ reviewed reverts restore the old behavior without resetting the unrelated
 P09B edit. Runtime launch helpers in the fresh `native-chain/` evidence folder
 preserve original/process/source guards and require the new policy explicitly.
 
-The fresh manual stand uses run `fencechain01`, `gateway-p06r-fences-09`,
+The fresh manual stand uses run `fencechain02`, `gateway-p06r-fences-09`,
 `physics-p06r-fences-03/pool-near.json`, and `import/fence-response01/manifest.json`.
 Exact executed launch arguments, full source HEAD, file hashes and owned process
-identities are in `native-chain/launch-{server,a,b}-fencechain01.json` after
+identities are in `native-chain/launch-{server,a,b}-fencechain02.json` after
 launch. Preparation uses `native-chain/prepare_stand.py --slot a|b --run
-fencechain01 --mode runtime --map 05_prohorovka`; runtime launches do not enable
+fencechain02 --mode runtime --map 05_prohorovka`; runtime launches do not enable
 the passive catalog export. Native acceptance remains PENDING_OWNER.
+
+The first A preparation (`fencechain01`) stopped before client writes: another
+user-owned service chat's isolated client retained the same v1 instance mutex
+`sr_p03f_a_mutex_`. Its process was left alone. The launch prerequisite now
+supports an optional four-character namespace in v2 copy markers, changing only
+the same two already-researched UTF16 EXE strings. Old v1 copies stay compatible;
+the checker reconstructs expected names/patches/EXE hash from the pinned original
+backup. Root stopped copies use namespace `p06r`, with exact-path process checks,
+new-mutex lock, full EXE/marker backups and before/after ledger. Evidence and
+failure: `native-chain/prepare-fencechain01-failure.json`, `namespace-a/` and
+`namespace-b/`. This identity change does not change physics or gameplay code.
+The copy tool and its tests are the only additional tracked runtime-tool files.
+Fresh root copy/interactive suite:35/35 PASS (`namespace-tests01/root-suite.log`),
+including nine pinned-EXE/schema checks. Command:
+
+```text
+python -B -X utf8 -m unittest -v tests.test_shared_client_copy tests.test_interactive_primitive tests.test_interactive_relogin_control tests.test_interactive_license_policy tests.test_interactive_window_trace
+```
 
 After the owner finishes, stop and restore only this stand:
 
 ```text
-python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/stop_stand.py --receipt-dir local/evidence/20261013-p06r-compound-01/native-chain --run fencechain01 --out-name fencechain01stop --reason "Owner manual run complete"
-python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261013-p06r-compound-01/native-chain/install-a-fencechain01
-python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261013-p06r-compound-01/native-chain/install-b-fencechain01
+python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/stop_stand.py --receipt-dir local/evidence/20261013-p06r-compound-01/native-chain --run fencechain02 --out-name fencechain02stop --reason "Owner manual run complete"
+python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261013-p06r-compound-01/native-chain/install-a-fencechain02
+python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261013-p06r-compound-01/native-chain/install-b-fencechain02
+python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/namespace_copies.py a --restore
+python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/namespace_copies.py b --restore
 ```
 
 Next: the owner's native fence-chain drive, then collect its evidence before

@@ -10,7 +10,7 @@ gateway09:649/649 PASS including actual paired IPC5 runtime/ACK gate. Physics03:
 seven behavior cases, four IPC5 negative/retry checks, three matched-mass cases,
 nine old-mode/tree checks PASS; component64 and importer16 PASS. Native rendered
 chain passage is NOT_RUN. Fresh stand receipts belong under
-`local/evidence/20261013-p06r-compound-01/native-chain/`, run `fencechain01`.
+`local/evidence/20261013-p06r-compound-01/native-chain/`, run `fencechain02`.
 Only receipt-identified root A/B clients and their server may be stopped;
 parallel service-chat processes have independent ownership.
 
