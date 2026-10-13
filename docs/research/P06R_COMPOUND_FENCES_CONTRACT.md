@@ -159,11 +159,130 @@ Earlier blocked/settle-invalid approaches remain in the evidence as failures;
 they were not relabelled as passage. Summary SHA256:
 `327fb3dd071f6eeb91664f6e3a8c535e0306f3adf234c7b37cd2571abd962a9a`.
 
+## Fresh native join and diagnostic transport failure
+
+`fenceids01` ran both owned clients with the exact fresh spec and no diagnostic
+gameplay input. Each exported 119 chunks / two stable passes; both complete
+outputs are byte-identical (1,254,549 bytes), SHA256
+`ca420c2ca560457f87acc10b1449f262d0f8a1ec3c4eb163e9bde2ed1f6cc5ab`.
+Both were independently validated; only the identical digest is deduplicated
+in the manifest. The exact join covers all 1038 objects:
+
+- `import/native-join01/manifest.json` SHA256
+  `ed2024e6d477e88e37d4a66f35e1531399a5e988105e0f738affab88fad62efd`;
+- `import/native-join01/physics-removals.json` SHA256
+  `4f5f2208660ce49033e07fc8fe51eae0d17263a5e41f294d5810aa6867da7ac9`.
+
+The joined worker JSON is semantically identical to the independently tested
+source-only private projection; byte hashes differ due to serialization.
+The native export itself is preprocessing evidence, not visual acceptance.
+
+The run also exposed **FAIL: both sessions retry_exhausted** before the
+controlled stop. Capture audit finds 5.84/5.74-second gaps in inbound ACKs;
+native traces show 5.70/5.67-second gaps immediately before export completion.
+After the gap the clients send cumulative ACKs, but the server has already
+retired the sessions. The old P06Q `treecontact02` passive export shows the
+same pattern with roughly 6.6-second pauses and both session closures. Accepted
+owner `treeobserve10` did not run the catalog exporter and had no closures.
+This distinguishes an existing diagnostic-path problem from a proven P06R
+gameplay regression. Exact callback CPU/I/O contribution remains INFERRED
+until measured; transport limits must not be weakened to conceal it.
+
+Audit: `diagnostic-drop01/transport-timeline.json`, SHA256
+`f49d6ca004cf8c73d214a1901e36eb2fce70d8efdef070c4bf182fbb7e5a4a85`.
+Both clients and server were stopped through verified process receipts at
+10:43:37 UTC; both installation ledgers were restored. A fresh bounded
+`fenceidle01` runtime comparison uses the real joined catalog with the passive
+exporter disabled. Its result will be recorded separately.
+
+Further bounded PE research finds the actual `WoT HKWorld` message consumer.
+0x40c selects an exact material-kind entry; 0x40d visits its entire native body
+map. That map has resource-dependent HKT/grouped/common fallback branches.
+Secondary-object collision and actual per-model map membership remain UNKNOWN.
+For Logs, `n_wood_0` and `s_wall` both use numerical kind73; `s_ramp` uses108
+and is excluded by both original collision masks. Name prefixes cannot define
+the part-removal boundary. No d_* collision activation has been demonstrated.
+Addendum: `native-contract/pe-bindings03/CONTRACT03.md`, SHA256
+`7154a8e0764dbb99b8a0889965a055fe63270eee9f0a0c58624971e960a3ecca`;
+receipt SHA256 `8f6aa4307e6b8d244549da03c47627a67518dfcad3040b87c0a8b5a9d0922262`.
+
+## Owner chain observation and priority change
+
+The owner drove `fenceidle01`: fences break, other object classes remain intact,
+and driving through consecutive sections can stop the tank. This is
+**OBSERVED / PARTIAL_FAIL_OWNER_CHAIN_STALL**. It does not accept universal
+destruction or both-client passage. The completed runtime log has five accepted
+contacts (object IDs3307,3308,3615,3614,3618), ten worker ACKs, five commits,
+and five native setter call/return pairs on each client. No server reject,
+failure, stderr or session closure occurred before controlled cleanup.
+
+The 300-second readiness watcher is retained unchanged. Its area counter used
+the wrong event string (`SHARED_AREA_CREATED`); a separate raw audit corrects
+that diagnostic field to **238 creates /119 unique chunks per session** using
+`SHARED_CATALOG_AREA_CREATED`. Native cumulative arrays beyond one value were
+also marked unrecognized by the old passive observer; callback delivery alone
+does not reconstruct those missing values. The observer now records bounded
+UINT16 arrays of up to125 entries, with explicit invalid/overflow markers.
+
+Evidence: `runtime-smoke01/raw-audit-owner01.json`, SHA256
+`d79479a7614bd64a0873afca8589fbf8452300b37b6321ea5f4e2dd6e1724b5c`.
+Both approved clients and the gateway were receipt-stopped at10:52:36 UTC;
+both patch ledgers were restored. No diagnostic injected gameplay input.
+
+Source review verifies a separate sequencing bug: `Worker::poll` consumes a
+reply, but IntegratedRuntime originally kept its contacts in a local vector.
+If the peer was still pending, the early return discarded the first impact.
+Later persisted contacts can already have much lower velocity. This is a
+verified code defect, but its contribution to this particular owner stall is
+not established by the old logs, which record accepted contacts only.
+
+Private real-worker chain02 independently reproduces the physical cause at
+mass4691kg: first fence closing3.980965m/s,37171.685J; after removal the next
+section is reached0.2 simulated seconds later at1.276819m/s,3823.791J, below
+the approximate8kJ threshold. One hundred later contacts leave it intact and
+the tank nearly stationary despite throttle. A control with the first section
+already absent clears the second. The accepted worker completes all six
+substeps against a rigid collider before removal, losing momentum; fixing the
+gateway batch loss alone cannot claim to repair that physical behavior.
+
+Owner priorities are recorded in the plan: first make one tank's behavior
+measurable and correct, then contrast MS-1 with source-bound IS-7. A new queued
+P03M runtime card reuses existing hangar/P03I work. Two user-requested chats
+have begun isolated crew/equipment and ammo/service components; neither owns
+gateway/physics/shared loadout, live databases or native installations.
+
+## Passive exporter repair checkpoint
+
+JSON serialization, bounded write/hash verification and atomic publication
+now run on one daemon writer after immutable per-chunk snapshots. Native
+getters remain on the client main thread; its polls never join the writer.
+The deadline is cooperative: an OS-blocked write cannot safely be killed;
+timeout is an explicit failure with pending evidence, never fake completion.
+
+Root automatic scope: **34/34 Python tests PASS**, including observer bounds.
+Root CPython2.7.3 x86 compilation of both changed client files and standalone
+writer execution reproduce the observed119-chunk3662-item export byte-for-byte:
+1,254,549bytes, SHA256`ca420c2ca560457f87acc10b1449f262d0f8a1ec3c4eb163e9bde2ed1f6cc5ab`.
+Observed writer time0.342s; max main poll0.000074s. This toolchain build is
+MSC1500, not the embedded MSC1700 client; native post-fix rerun is **NOT_RUN**.
+Evidence: `writer-fix01/root-tests01.log`, `writer-fix01/root-py27/py27-receipt.json`.
+
+Commands:
+```powershell
+python -B -X utf8 -m unittest -v tests.test_destructible_catalog_probe tests.test_destructible_catalog_writer tests.test_interactive_primitive
+local/toolchains/cpython-2.7.3-x86/python.exe -B local/evidence/20261013-p06r-compound-01/writer-fix01/root-py27/verify.py
+python -B -X utf8 local/evidence/20261013-p06r-compound-01/audit_fenceidle01.py
+```
+The audit uses exclusive output creation; retain the existing receipt rather
+than overwrite it when rerunning an analysis.
+
 ## Acceptance and rollback
 
-P06R remains IN_PROGRESS. Fresh full native join, private worker checks and
-owner visual/contact/pass-through acceptance are not implied by the above
-tests. No merge to main is authorized by these partial results alone.
+P06R remains IN_PROGRESS. The full native identity join and private physics
+checks pass; the owner observed breaking fences and a chain-motion failure.
+Full visual/contact/pass-through acceptance is pending. Compound collision
+remains UNKNOWN; the diagnostic export repair still needs native verification.
+No merge to main is authorized by these partial results alone.
 Retained P06Q build35 and `physics-p06q-final-02/pool-near.json` are pinned in
 `baseline.json`. Stop only receipt-owned processes and restore their client
 install ledgers. Source rollback is a reviewed revert on this card branch;

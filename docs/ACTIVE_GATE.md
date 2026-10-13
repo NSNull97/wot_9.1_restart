@@ -6,15 +6,21 @@ Branch `codex/p06r-compound-destructibles`, accepted main
 Current work: 403 source-complete fences implemented (1038 combined objects),
 632 canonical Rust tests PASS, 61 Python tests PASS/one symlink NOT_RUN, real
 private worker ACK/restore/passage checks PASS. Original client is read-only
-on C. Approved A/B copies are prepared for a fresh passive 119-chunk capture;
-no owner gameplay acceptance is implied by preprocessing.
+on C. Both A/B copies completed 119 chunks/two stable passes and the exact
+1038-object join. The synchronous diagnostic export exposed session timeouts;
+a separate 300-second native runtime observation had no session errors.
+Owner observed breaking fences but a chain stopping the tank. Both clients
+and server are now stopped; both installation ledgers restored.
 
-**Acceptance: IN_PROGRESS; native P06R gate NOT_RUN.** Preserve accepted whole
+**Acceptance: IN_PROGRESS / PARTIAL_FAIL_OWNER_CHAIN_STALL.** Preserve accepted whole
 fragiles, tree falls, cumulative scene ACKs and network readiness. Do not claim
 universal destruction or remove whole compound geometry for one part.
 [Plan and boundaries](plans/P06R_COMPOUND_DESTRUCTIBLES.md).
-**Next step:** finish the fresh two-slot native join, then continue the exact
-compound material/collision contract before requesting owner acceptance.
+**Next step:** repair retained asynchronous contact batches and then correct
+the measured loss of motion through consecutive light obstacles. Owner now
+prioritizes a reliable single-tank scenario and an IS-7 comparison profile
+([queued P03M](plans/P03M_IS7_RUNTIME_PROFILE.md)); mixed compound collision
+remains UNKNOWN. Parallel service chats own isolated domain components only.
 Current per-actor physics processes are not a 100-battle production design;
 the source audit and bounded memory snapshot are recorded in the P06R report.
 

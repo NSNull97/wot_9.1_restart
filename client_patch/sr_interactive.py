@@ -209,6 +209,21 @@ def _bounded_uint32_array(value, limit=62):
     return result
 
 
+def _bounded_uint16_array(value, limit=125):
+    """Copy a bounded cumulative native fragile state for passive evidence."""
+    result = []
+    try:
+        for item in value:
+            if len(result) >= limit:
+                return {'unrecognized': True, 'reason': 'uint16_array_bound'}
+            if type(item) not in (int, long) or not 0 <= item <= 0xffff:
+                return {'unrecognized': True, 'reason': 'uint16_array_value'}
+            result.append(int(item))
+    except (TypeError, ValueError, AttributeError):
+        return {'unrecognized': True, 'reason': 'uint16_array_type'}
+    return result
+
+
 def profile_calls(frame, phase, value):
     global _profile_call_id
     if phase not in ('call', 'return'):
@@ -238,8 +253,7 @@ def profile_calls(frame, phase, value):
         owner = frame.f_locals.get('self')
         if fields['owner_class'] == 'AreaDestructibles':
             fields['entity_id'] = owner.id
-            values = list(owner.destroyedFragiles)
-            fields['destroyed_fragiles'] = values if len(values) <= 1 else {'unrecognized': True}
+            fields['destroyed_fragiles'] = _bounded_uint16_array(owner.destroyedFragiles)
             if method == 'set_fallenTrees':
                 fields['chunk_id'] = getattr(owner, '_AreaDestructibles__chunkID', None)
                 fields['fallen_trees'] = _bounded_uint32_array(getattr(owner, 'fallenTrees', None))

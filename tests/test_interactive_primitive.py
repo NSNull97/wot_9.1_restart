@@ -14,17 +14,17 @@ import unittest
 SOURCE = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
 
 
-def load_primitive():
+def load_primitive(name='primitive'):
     module = ast.parse(SOURCE.read_bytes(), filename=str(SOURCE))
     functions = [node for node in module.body if isinstance(node, ast.FunctionDef)
-                 and node.name == 'primitive']
+                 and node.name == name]
     if len(functions) != 1:
         raise AssertionError('expected one original project diagnostic function')
     namespace = {'json': json, 'long': int, 'str': bytes, 'unicode': str,
                  'basestring': (str, bytes)}
     code = compile(ast.Module(body=functions, type_ignores=[]), str(SOURCE), 'exec')
     exec(code, namespace)  # Trusted repository source, never client/network data.
-    return namespace['primitive']
+    return namespace[name]
 
 
 class PrimitiveTests(unittest.TestCase):
@@ -89,6 +89,25 @@ class PrimitiveTests(unittest.TestCase):
 
     def test_existing_container_width_limit_remains_explicit(self):
         self.assertEqual({'unsupported_type': 'list'}, self.convert(list(range(257))))
+
+
+class FragileArrayTests(unittest.TestCase):
+    def test_cumulative_native_values_are_preserved_without_mutating_input(self):
+        convert = load_primitive('_bounded_uint16_array')
+        values = tuple(index << 8 for index in range(125))
+        self.assertEqual(list(values), convert(values))
+        self.assertEqual([0, 65535], convert((0, 65535)))
+
+    def test_invalid_values_and_unbounded_iterators_are_rejected(self):
+        convert = load_primitive('_bounded_uint16_array')
+        for value in (-1, 65536, True, 1.0, '1'):
+            self.assertEqual('uint16_array_value', convert([value])['reason'])
+        self.assertEqual('uint16_array_type', convert(None)['reason'])
+        def source():
+            for index in range(126):
+                yield index
+            self.fail('observer read beyond the native array bound')
+        self.assertEqual('uint16_array_bound', convert(source())['reason'])
 
 
 if __name__ == '__main__':

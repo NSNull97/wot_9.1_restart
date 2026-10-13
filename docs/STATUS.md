@@ -10,8 +10,19 @@ First implementation admits 403 source-complete movement-only fences alongside
 projectile-span binding. Final checkpoint gateway build06 passes 632/632 tests;
 combined Python scope passes 61 executed tests with one symlink fixture NOT_RUN.
 Real private workers pass cumulative1038 ACK/restore and source fence passage/
-neighbor survival. A fresh 119-chunk passive capture is prepared for both slots;
-native visual acceptance and mixed/compound collision remain NOT_RUN/UNKNOWN.
+neighbor survival. Both clients completed the fresh 119-chunk/two-pass capture;
+the joined catalog covers all1038 objects. That synchronous diagnostic export
+also caused both sessions to retire after a 5.7-second pause; evidence is kept.
+The separate fenceidle01 runtime completed a 300-second ready observation
+without session errors. Owner drove it: fences break, but a chain stops the
+tank; other classes remain intact. Five destroyed fences each have both-worker
+ACK/commit and setters in both client traces. Acceptance is PARTIAL_FAIL for
+chain motion, not a complete native PASS. Stand stopped and ledgers restored.
+Current priority is one tank's contact/velocity behavior before more object
+coverage. Private paired workers reproduce a short-gap chain stall, and source
+review found a separate loss of early contact batches while awaiting a peer.
+The IS-7 runtime follow-up is queued in P03M; two isolated crew/equipment and
+ammo/service chats have started. Their outputs require explicit integration.
 The 100-battle question is explicitly not accepted: current test_lab physics
 duplicates a map per actor. Original client uses the verified configured C path.
 Existing unrelated P09B working edit is preserved outside this card. Details:

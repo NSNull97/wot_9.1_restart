@@ -60,6 +60,24 @@ ownership model inside P06R. Static fences have no independent simulation
 loop; per-battle damage state must remain isolated. A future one-world-per-battle
 and immutable map-resource reuse change requires its own measured card.
 
+## Owner priority update — 2026-10-13
+
+Owner observed fences breaking but the tank stopping when driving along a
+chain of sections; other object classes remained intact. This is a partial
+native failure, not full P06R acceptance. Prioritize one tank's measurable
+movement/contact behavior before widening destruction coverage: retain impacts
+across asynchronous worker replies; test chain contacts, speed loss and
+remaining collision; preserve mass/speed dependence and both-worker ACKs.
+Use the second native client to check replication, not to multiply the primary
+physics scenarios. Do not claim "ideal" handling without defined tolerances.
+
+Owner also requested IS-7 as the contrasting vehicle and two parallel service
+sessions. The queued [IS-7 runtime card](P03M_IS7_RUNTIME_PROFILE.md) builds on
+the accepted hangar inventory and P03I static boundary, without reimplementing
+either. Separate crew/equipment and ammo/service chats own isolated worktrees
+and domain components; P06R owns movement, gateway and physics integration.
+Their tests do not by themselves authorize native acceptance or runtime wiring.
+
 ## Limits and rollback
 
 Original descriptors alone do not prove historical damage/ram formulas.
