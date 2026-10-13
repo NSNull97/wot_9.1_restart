@@ -404,4 +404,3 @@ physics results remain applicable by exact260-file source/hash comparison.
 Manual steering/ram feel and native acceptance are still NOT_RUN until owner
 feedback. Universal object coverage remains open P06R, including300 excluded
 fragiles; the wording "accepted ram" has been withdrawn beyond fence passage.
-
