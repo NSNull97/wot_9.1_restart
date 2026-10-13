@@ -71,7 +71,7 @@ TRANSFER_TARGETS = (('Crew', 'equipTankman'), ('Crew', 'unloadTankman'),
 class _CrewChangeGuard(object):
     """Own exact class descriptors; injectable dependencies permit unit checks."""
 
-    def __init__(self, classes, messages, record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False, allow_roster=False):
+    def __init__(self, classes, messages, record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False, allow_roster=False, allow_progression=False):
         if type(allow_actions) is not tuple or allow_actions not in ((), ('open_recruit', 'recruit')):
             raise ValueError('only the explicit free recruitment capability may be enabled')
         if type(allow_transfer) is not bool or allow_transfer and allow_actions != ('open_recruit', 'recruit'):
@@ -80,6 +80,8 @@ class _CrewChangeGuard(object):
             raise ValueError('cross-vehicle crew requires the explicit transfer capability')
         if type(allow_roster) is not bool or allow_roster and not allow_cross_vehicle:
             raise ValueError('roster recruitment requires all earlier crew capabilities')
+        if type(allow_progression) is not bool or allow_progression and not allow_roster:
+            raise ValueError('crew progression requires all earlier crew capabilities')
         required = set(row[0] for row in TARGETS)
         if set(classes) != required or not callable(record):
             raise ValueError('exact audited crew classes and recorder required')
@@ -91,10 +93,12 @@ class _CrewChangeGuard(object):
         self.allow_transfer = allow_transfer
         self.allow_cross_vehicle = allow_cross_vehicle
         self.allow_roster = allow_roster
+        self.allow_progression = allow_progression
         self.active = False
         self.bindings = []
         for class_name, name, action, is_static in TARGETS:
-            if action in allow_actions or allow_transfer and (class_name, name) in TRANSFER_TARGETS:
+            if (action in allow_actions or allow_transfer and (class_name, name) in TRANSFER_TARGETS
+                    or allow_progression and (class_name, name) in (('BusinessLobbyHandler', 'showCrewTankmanInfo'), ('PersonalCase', 'addTankmanSkill'))):
                 continue
             cls = classes[class_name]
             original = cls.__dict__[name]
@@ -139,7 +143,7 @@ class _CrewChangeGuard(object):
                 raise RuntimeError('crew binding changed before installation: ' + callback)
         self.record('crew_capability_policy', phase='install', policy_version=POLICY_VERSION,
                     crew_changes_available=False, original_readers_preserved=True,
-                    personal_case_available=False,
+                    personal_case_available=self.allow_progression,
                     lifecycle_requirement='before_original_BusinessHandler_construction',
                     bindings=[row[4] for row in self.bindings],
                     audited_sources=[{'source': path, 'sha256': digest}
@@ -172,7 +176,7 @@ class _CrewChangeGuard(object):
                     original_binding_restored=True, restored_bindings=[row[4] for row in self.bindings])
 
 
-def init(record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False, allow_roster=False):
+def init(record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False, allow_roster=False, allow_progression=False):
     """Call after items init but before original GUI BusinessHandler construction."""
     global _guard
     if _guard is not None:
@@ -188,7 +192,7 @@ def init(record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=Fal
     classes = dict((cls.__name__, cls) for cls in (BusinessHandler, BusinessLobbyHandler,
                    Crew, Barracks, PersonalCase, CrewOperationsPopOver, RecruitWindow,
                    RetrainCrewWindow))
-    candidate = _CrewChangeGuard(classes, SystemMessages, record, allow_actions, allow_transfer, allow_cross_vehicle, allow_roster)
+    candidate = _CrewChangeGuard(classes, SystemMessages, record, allow_actions, allow_transfer, allow_cross_vehicle, allow_roster, allow_progression)
     candidate.install()
     _guard = candidate
 

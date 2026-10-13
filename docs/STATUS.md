@@ -1,3 +1,34 @@
+## 2026-10-13 — P04I original PersonalCase and skill selection accepted
+
+**PASS_NATIVE_PERSONALCASE_FIRST_SKILL_CURRENT_SOURCE.** Original #717
+PersonalCase now selects skills through native CMD151. The server validates
+primary100, current combined roles, source skill IDs, uniqueness and reservation
+state. The owner reiterated ordinary skills require100% qualification;
+Sixth Sense remains the always-active base exception, with its combat signal
+still unimplemented. The50% recruit cannot learn in both UI and writer.
+
+Native05/06 clients46904/27332 exit0. Three learned skills at0% survive transfer
+and fresh login; no XP was granted. Revision42→48/configuration33→39, quota6,
+money, ammunition and all ten identities unchanged. Independent exact wire /
+ledger / original descriptors and dossiers PASS. Nine PNGs inspected; six
+owned installs restored,18 owned PIDs absent, no armed control or bound ports.
+Failed01(list provider) and02(popup criteria) are retained with their fixes.
+
+Current-source checks:738 Rust/build PASS;1049 distinct applicable Python PASS;
+104 Node PASS;12 CPython2.7.3 compile checks and Unicode execution PASS; both
+native install plans bind all35 modules; layout95/22 PASS. Physical mouse/owner
+checks remain NOT_RUN, scheduled by the owner for after09:00 on2026-10-14.
+I stores a first0% skill only; full XP progression and combat effects are not
+accepted. Historical daily quota and paid tariff table remain UNKNOWN.
+
+[Evidence, commands, changed files, limits and rollback](evidence-index/P04I_NATIVE_CREW_PROGRESSION.md).
+Branch `codex/p04i-native-crew-progression`, baseline main1e45eae;
+commit/no-ff merge/remote SHA in
+`local/evidence/20261013-p04i-native-progression-01/acceptance-final/`.
+[Complete-crew request remains active](plans/P04_CREW_FUNCTIONALITY_091.md).
+**One next crew card:** native dismissal through original confirmation,
+with sparse identities, no ID reuse and no quota refund. Primary P05 unchanged.
+
 ## 2026-10-13 — P04H native recruitment for both full crews accepted
 
 **PASS_NATIVE_ROSTER_RECRUITMENT_CURRENT_MAIN.** Original #717 RecruitWindow

@@ -25,6 +25,9 @@ Owner exceptions to historical behavior:
   a50% crew. Preserve this explicit exception when implementing skill/perk
   progression and the future combat effect. Its actual detection signal,
   timing and display still require source/protocol verification.
+- Ordinary skill selection requires100% primary qualification of the tankman;
+  the owner explicitly reiterated this on2026-10-13. Keep this validation in
+  both the original UI adapter and the authoritative writer.
 
 ## Ordered work and gates
 
@@ -45,6 +48,9 @@ Owner exceptions to historical behavior:
    Native automated callback acceptance and manual acceptance remain separate.
    Combat-dependent perk effects cannot be accepted from a hangar icon alone.
 
-Status: IN_PROGRESS. P04H native recruitment is accepted; the next card is
-PersonalCase and individual training/progression. Update this plan from
-evidence as subsequent card boundaries are established.
+Status: IN_PROGRESS. P04H native recruitment and P04I PersonalCase/first-skill
+selection are accepted. I proves original CMD151 and persistence at0% skill,
+not battle XP or combat effects. Next card: native dismissal with sparse roster,
+monotonic identities and retained historical replay. Qualification/retraining,
+reset, paid recruitment, personalization, barracks/bulk operations and combat
+effects remain separate outstanding work; no whole-crew PASS is claimed.
