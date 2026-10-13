@@ -101,6 +101,37 @@ class CollisionOracleTests(unittest.TestCase):
         self.assertEqual(oracle._marker_shot_facts(player('ms1')), audit.PROFILE)
         self.assertEqual(oracle._marker_shot_facts(player()), audit.IS7_PROFILE)
 
+    def test_native_vector_pair_uses_only_two_fixed_numeric_indices(self):
+        class NativeVectorPair:
+            def __init__(self, values):
+                self.values, self.reads = values, []
+
+            def __len__(self):
+                raise AssertionError('native vector length API is not required')
+
+            def __iter__(self):
+                raise AssertionError('native vector must not be iterated')
+
+            def __getitem__(self, index):
+                self.reads.append(index)
+                if type(index) is not int or index not in (0, 1):
+                    raise AssertionError('only source indices0/1 are permitted')
+                return self.values[index]
+
+        for kind in ('ms1', 'is7'):
+            p = player(kind)
+            value = NativeVectorPair(audit.shot_profile(kind)['piercing_power'])
+            p.vehicleTypeDescriptor.shot['piercingPower'] = value
+            self.assertEqual(oracle._marker_shot_facts(p), audit.shot_profile(kind))
+            self.assertEqual(value.reads, [0, 1])
+        for bad in (True, '250', float('nan'), float('inf'), -1., 10**500, 249.):
+            p = player()
+            value = NativeVectorPair([bad, 240.])
+            p.vehicleTypeDescriptor.shot['piercingPower'] = value
+            with self.subTest(value=bad), self.assertRaises(ValueError):
+                oracle._marker_shot_facts(p)
+            self.assertTrue(all(index in (0, 1) for index in value.reads))
+
     def test_unknown_vehicle_gun_swaps_and_cross_profile_shell_rejected(self):
         for attr, value in (('name', 'ussr:Other'), ('compactDescr', 3329), ('compactDescr', True)):
             p = player()

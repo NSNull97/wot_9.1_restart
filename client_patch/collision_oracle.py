@@ -52,9 +52,13 @@ def _marker_shot_facts(player):
     profile = _vehicle_profile(player.vehicleTypeDescriptor)
     shot = player.vehicleTypeDescriptor.shot
     shell = shot['shell']
-    if type(shot['piercingPower']) not in (list, tuple) or len(shot['piercingPower']) != 2:
+    power = shot['piercingPower']
+    # #717 _readShot stores section.readVector2's native result unchanged.
+    # Its proven access contract is numeric indexing, not list/tuple iteration
+    # or len(). Read exactly the two source components, as the original probe did.
+    if type(power) in (list, tuple) and len(power) != 2:
         raise ValueError('original marker piercing pair shape')
-    values = [_shot_number(value) for value in shot['piercingPower']]
+    values = [_shot_number(power[index]) for index in (0, 1)]
     values.extend(_shot_number(value) for value in
                   (shot['maxDistance'], shell['caliber'],
                    shell['damageRandomization'], shell['piercingPowerRandomization']))
