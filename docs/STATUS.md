@@ -1,3 +1,25 @@
+## 2026-10-13 — P05B real-worker cadence PASS; morning binding next
+
+Actual candidate14 producers and source MS-1/IS-7 profiles each pass120 fresh
+paired publications on the100ms logical grid with exact independent replay.
+Final focused04:1 test PASS/0 ignored, eight owned workers exit; actor/aim stays
+unchanged between publications. Ordinary suites explicitly skip this no-load
+timing gate; canonical --run-ignored executes it alone. Eight passive driver
+checks PASS. Failed01 PID race and02 obstacle-intersecting route are retained;
+the revised corridor preserves all geometry/catalog and changes only spawn.
+No game/runtime change after candidate14, no fictitious full756 test result.
+
+Report: [cadence and morning handoff](research/P05B_REAL_WORKER_CADENCE.md).
+Prepared candidate14 stand has12 passive helper checks PASS. Final committed
+binding and six actual dry-runs are recorded separately in
+P05B/native-handling-night14/actual-preflight-receipt.json and
+P05B/night-cadence-checkpoint.json; preparation never implies native acceptance.
+Owner manual after2026-10-14 09:00 Asia/Yekaterinburg remains NOT_RUN.
+Static side pressure FAIL/OPEN; compound coverage and historical fidelity OPEN.
+Space is the verified STOP_UNTIL_FIRE latch, not a new boost/drift command.
+No native launch/input, merge or push. Preserve unrelated P09B and original client.
+Next: final source binding/passive preflight, then the documented owner handoff.
+
 ## 2026-10-13 — P05B night14 moving-fence checkpoint; acceptance OPEN
 
 Candidate14 adds versioned domain6/worker7 total-linear8000J response to the

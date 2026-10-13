@@ -2,7 +2,19 @@
 
 Date: 2026-10-13. Branch: `codex/p05b-tracked-handling`.
 Base: accepted main `0393857e2a67646e87dd03763baf3b98da98b0b9`.
-Status: PASS_AUTOMATIC_PRIVATE; native/owner NOT_RUN.
+Status: SCOPED_AUTOMATIC_PASS; native/owner NOT_RUN, remaining pressure/coverage OPEN.
+
+## Actual-worker cadence checkpoint — 2026-10-13
+
+The [bounded cadence phase](P05B_REAL_WORKER_CADENCE.md) now passes both
+source-profile real-worker cases:120 fresh publications each with exact
+reference replay and unchanged actor/aim state between publications. This is
+one explicitly isolated ignored test, not a new full756 suite. The unchanged
+candidate14 runtime retains its earlier full755 result. Failed PID/route
+attempts and eight passive driver checks are preserved in
+[the report](../research/P05B_REAL_WORKER_CADENCE.md).
+Next: commit and bind the prepared morning bundle, six actual passive preflights,
+then the owner's native run. Static pressure/compound/historical gates remain.
 
 ## Candidate14 moving-fence checkpoint — 2026-10-13
 

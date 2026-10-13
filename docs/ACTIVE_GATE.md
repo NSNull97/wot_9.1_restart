@@ -1,3 +1,20 @@
+# P05B — real-worker cadence PASS, morning handoff
+
+Final focused04 passes the explicit isolated real-time gate for both source
+profiles:120 fresh paired publications each; exact sequence/pose replay,
+consecutive logical world buckets, no actor/aim update between publications.
+Eight owned workers exit. Default parallel suite intentionally ignores this
+test; use canonical --run-ignored. Eight passive driver checks PASS. Original
+candidate14 full755 proof remains separate. See
+[report](research/P05B_REAL_WORKER_CADENCE.md) and night-cadence-checkpoint.json.
+
+Next: commit/bind candidate14 morning stand and its six actual passive
+preflights, then owner manual after2026-10-14 09:00 Asia/Yekaterinburg. Exact
+commands: P05B/native-handling-night14/README.md. No native/input/merge now.
+Static pressure FAIL/OPEN; compound coverage and historical solver UNKNOWN.
+Do not invent force/dwell or boost constants to close these gates. Keep prior
+candidate13/owner08 rollback evidence and unrelated P09B changes.
+
 # P05B — night14 checkpoint, real cadence evidence next
 
 Moving-fence scoped checks PASS; fresh full gateway755/755. Existing403 fences
