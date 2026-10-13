@@ -9,6 +9,88 @@ Evidence root: `local/evidence/20261012-p06q-tree-contact-01/`
 
 ## Follow-up: visual/state synchronisation and server-loss smoke
 
+### First-READY native recheck and zero-pitch defect — 2026-10-13
+
+**VERIFIED:** `treeobserve09`, source `0b9e70b`, build `gateway-p06q-final-33`,
+reached two READY sessions and 117 unique area controllers per client.
+Server/native counts agree: 234 creations and 117 `onEnterWorld` call/return
+pairs per slot. No rejected frame, session failure or session closure was
+recorded before the receipt stop. Both were still ready at tick 2808, versus
+READY at tick 1000 (180.8 simulated seconds). Launch-to-stop durations were
+215.195 s for A and 203.249 s for B. This is bounded transport evidence, not
+network endurance/reconnect acceptance. Both installations were restored.
+
+The run records four contacts (one tree, three fragiles), eight worker ACKs
+and four commits. Tree object 3365 was hit by B at closing speed 5.41033 m/s
+with worker-bound mass 4691 kg: 68,656.7 J exceeds the explicit test_lab 8 kJ
+floor. Both workers acknowledged scene 1 and both native clients received
+`0x194e8000`. Both reached `__dropDestructible` for chunk 31875/index 25,
+speed 2, `pitchConstr=0`, animation enabled, collision flags 0; return offset
+386 is the normal animator tail. Evidence under
+`local/evidence/20261012-p06p-prohorovka-01/`:
+
+- `tests/treeobserve09-corrected-audit.json`, SHA256
+  `7f7f17e8378002af206070422ef8bba02b0ae66f82cbc587d12164bc6e2ef7cf`;
+- `runtime-a-treeobserve09/native-25224-1791882646334.jsonl`, lines 12444-12453;
+- `runtime-b-treeobserve09/native-46516-1791882658101.jsonl`, lines 12449-12458;
+- `stop-treeobserve09stop.json` and both `install-*-treeobserve09/restore.json`.
+
+**OBSERVED:** after that audit the owner reports stable sessions, upright
+trees, initial resistance followed by free passage. Record visual **FAIL**
+and reported passage separately; the immutable earlier audit's NOT_RUN field
+does not override the owner's observation. Exact passage geometry and any
+delay being the animation duration remain unverified.
+
+**VERIFIED original contract:**
+`native-contract/tree-animator01/client__areadestructibles.json` SHA256
+`fb8cdb2f3de964bceb04c8d9cf7b0ca464e0e6aa1d86c6b6bca5de3f6257b009`
+comes from original `AreaDestructibles.pyc` SHA256
+`3bc2f5c344e56d7cabeacf586fe3dd12ae78139a70e0d5fb6322aadf931134df`.
+`showFall` initializes pitch to zero (offsets 140-143) and stores the supplied
+constraint (372-378). `__moveBody` clamps pitch to that constraint and zeroes
+angular speed (61-96); `__positionBodyModel` rotates by the resulting pitch
+(12-25). The tree destroy path uses the server-decoded angle; the native
+constraint query contributes only collision flags. Thus zero is a confirmed
+server defect, not a missing descriptor hypothesis.
+
+The original `__detectPitchConstraint` returns pi/2 on a missing root ray
+(136-146). Valid samples derive pi/2 plus ground slope and a weighted minimum/
+average (286-307, 358-377); pi/2 is **not** a universal maximum. The narrow
+correction names `TREE_FALL_FLAT_GROUND_PITCH = FRAC_PI_2` as an explicit
+test_lab fallback. Native pitch bits change from 0x8000 to 0xc000. Mass,
+direction, angular-speed category, scene ACK and immutable state remain the
+same. **UNKNOWN/limitation:** per-tree root/height, terrain and obstacle-derived
+final constraints are not implemented. Rendered fall after this correction
+remains owner-gated NOT_RUN; the prior visual FAIL is retained.
+
+Automatic validation also exposed a pre-existing codec fixture error:
+`prohorovka_tree_update_preserves_known_native_packed_values` passed descending
+tree values to an encoder that requires the cumulative sorted order. The
+final34 run retained its actual 7 PASS / 1 FAIL. Correct the fixture order and
+expected byte order, explicitly retaining rejection of the descending input;
+no runtime ordering rule is relaxed. See `tests/pitch-fallback-final34/` for
+the original failed receipt and subsequent build receipts for the recheck.
+
+Final correction validation: `gateway-p06q-final-35` canonical build and
+codec tests pass 8/8; executable SHA256
+`74c7940967b3ceded70539c641df49d853abe9b50ce6ef671312c064d07725a3`.
+Build result SHA256
+`ae506e66d37d360694c758158004fc7ec8bd35d3e386d89126a1433b1637d0b4`.
+The same compiled test executable passed filters `fragiles::tests` (19),
+`catalog_wire_tests` (13), `destructible_wire::tests` (8), `vehicle_contact`
+(4). Two overlap: 42 distinct tests. Receipt:
+`tests/pitch-fallback-final35/result.json`, SHA256
+`c65d496d73b539fbf627845fe0694c6d5486af9be243ea98d28ee57b08e00699`.
+Commands: `python -B -X utf8 server/build.py gateway --test --test-filter
+destructible_wire::tests --out local/build/server/gateway-p06q-final-35`, then
+`python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/tests/run_pitch_regressions.py 35`.
+The latter receipt stores each exact executable/filter command. Owner result
+is separately preserved in `tests/treeobserve09-owner-observation.json`.
+Rollback is receipt-owned stop plus both installation ledgers; for this narrow
+source change the preceding verified transport checkpoint is `0b9e70b` and
+build33. It retains the known visual failure. No merge to main is permitted
+while the native owner gate remains FAIL/NOT_RUN.
+
 ### Owner result and downstream diagnostic boundary — 2026-10-13
 
 The owner rechecked the native run and reports that trees still do not fall
@@ -51,13 +133,13 @@ under the same evidence root (SHA256
 `cb801b04428f57958b4c61836b98ac44a73e4a7f734f12719bb1c991657a92b2`).
 The fix retains fixed request boundaries and permits only an exact owned
 READY suffix, reserving binding capacity before flushing queued area creates.
-Focused checks pass 13/13 on `gateway-p06q-final-33`; post-fix native transport
-is pending. Both diagnostic runs were stopped and their installations restored.
+Focused checks pass 13/13 on `gateway-p06q-final-33`; the post-fix native
+transport result is recorded above. Both diagnostic runs were stopped and
+their installations restored.
 
-The remaining cause is **UNKNOWN**. It may be an original descriptor/index
-lookup or animator/resource boundary; no client binary, resource, matrix, or
-collision state was modified to guess a fix. Native visual acceptance remains
-owner-controlled.
+At this earlier boundary the remaining cause was UNKNOWN. The later original
+animator analysis above identifies the zero-pitch defect. Native visual
+acceptance remains owner-controlled.
 
 Commit `f9d50ce417bad6c0f832bdf372b61ce20c5d8101` adds a bounded, read-only
 observer for `AreaDestructibles.set_fallenTrees` and pins the exact packed

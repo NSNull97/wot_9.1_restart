@@ -16,6 +16,10 @@ pub const POLICY:&str="test_lab-fragile-reference-hp-ap30-v1";
 pub const RAMMING_MIN_MASS_KG:f32=1000.;
 pub const RAMMING_MAX_MASS_KG:f32=100000.;
 pub const RAMMING_MIN_ENERGY_J:f32=8_000.;
+/// Original animator's no-ground fallback, used as an explicit test_lab
+/// flat-ground policy. Zero locks the tree upright. Terrain/obstacle-specific
+/// limits require tree root/height sampling and are not implemented here.
+pub const TREE_FALL_FLAT_GROUND_PITCH:f64=std::f64::consts::FRAC_PI_2;
 pub const DEFINITIONS_SHA:&str="bd39e3047b435fc8917ca2e7c3dc82de4a5a03cc164054af83395af8b479fdd5";
 pub const PHYSICS_SHA:&str="ea6ef22aed0fdd4e4826500c280a616737f8990ce7ab7cd808b9382227ec5ffd";
 
@@ -168,7 +172,7 @@ impl State {
         if energy_j<RAMMING_MIN_ENERGY_J{return Ok(None);}
         let scene=self.scene_version();let fallen_tree=if matches!(object.kind,ObjectKind::Tree){
             let yaw=velocity[0].atan2(velocity[2]);let speed=if closing>=8.{3.}else if closing>=4.{2.}else if closing>=1.{1.}else{0.};
-            Some(super::destructible_wire::encode_fallen_tree(object.native_index,yaw,0.,speed)?)
+            Some(super::destructible_wire::encode_fallen_tree(object.native_index,yaw,TREE_FALL_FLAT_GROUND_PITCH,speed)?)
         }else{None};
         self.health[index]=0;self.fallen[index]=fallen_tree;
         let event=VehicleContact{object_id,instance_id:object.instance_id,object_revision:object.object_revision.clone(),shooter,tick,substep,point,normal,velocity,mass_kg,kind,scene_before:scene,scene_after:scene+1,fallen_tree};self.vehicle_events.push(event.clone());Ok(Some(event))

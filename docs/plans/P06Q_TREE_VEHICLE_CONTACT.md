@@ -58,3 +58,20 @@ Restore and verify the historical pinned artifacts before relaunch; do not
 substitute current P06Q physics bytes. See the [rollback availability check
 and pins](../research/P06Q_TREE_VEHICLE_CONTACT.md#rollback).
 Until owner acceptance P06Q remains in its branch; no merge is implied.
+
+## Measured zero-pitch correction — 2026-10-13
+
+`treeobserve07` reaches the original animator with `pitchConstr=0`, so its
+maximum rotation remains upright. The pinned original animator uses pi/2 as
+the no-ground fallback; terrain-derived constraints can differ from pi/2.
+Use a named pi/2 **test_lab flat-ground fallback** in authoritative ram events
+until server-side tree root/height and terrain sampling are available. This
+does not claim original slope or obstacle fidelity. Preserve mass/closing
+speed, direction/speed packing, immutable publication and worker ACK ordering.
+
+Add a domain regression that decodes the emitted native pitch independently
+and checks native index, direction, speed and repeated contacts. Run the
+fragile/contact and catalog/transaction tests, save build receipts and the
+original animator provenance in research. Tree pixels and passage remain an
+owner gate. The owner's latest run09 observation is visual FAIL despite
+apparently stable sessions; do not mark this new correction native-accepted.

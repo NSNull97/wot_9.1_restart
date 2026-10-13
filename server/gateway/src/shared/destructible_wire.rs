@@ -244,15 +244,15 @@ mod tests {
 
     #[test]
     fn prohorovka_tree_update_preserves_known_native_packed_values() {
-        // Values observed in manualtree02 for native indexes 25 and 4.  Keep
-        // this exact envelope pinned so a later wire change cannot silently
-        // turn a valid tree update into a generic integer-array payload.
-        let update = area_update_trees(0, &[0x195a_8000, 0x040e_8000]).unwrap();
+        // Values observed in manualtree02 for native indexes 25 and 4.
+        // Cumulative State output is sorted, regardless of contact order.
+        assert!(area_update_trees(0, &[0x195a_8000, 0x040e_8000]).is_err());
+        let update = area_update_trees(0, &[0x040e_8000, 0x195a_8000]).unwrap();
         assert_eq!(&update[..7], &[0x12, 0x07, 0x00, 0x10, 0x09, FALLEN_TREES, 12]);
         assert_eq!(&update[7..], &[
             2, 0, 0, 0,
-            0x00, 0x80, 0x5a, 0x19,
             0x00, 0x80, 0x0e, 0x04,
+            0x00, 0x80, 0x5a, 0x19,
             0x13,
         ]);
     }

@@ -315,6 +315,11 @@ fn tree_contact_packs_immutable_fallen_value_and_excludes_tree() {
     let mut state=State::new(contact_catalog());
     let event=state.ram_contact(1529,1,1001,2,[1.,2.,3.],[1.,0.,0.],[2.,0.,0.],4691.,"hull".into()).unwrap().unwrap();
     let packed=event.fallen_tree.expect("tree contact must pack native fall");
+    // Original decodeFallenTree contract, independent of the Rust encoder:
+    // zero (0x8000) constrains the animator upright; 0xc000 permits pi/2.
+    let pitch=(packed & 0xffff) as f64 * (2. * std::f64::consts::PI) / 65536. - std::f64::consts::PI;
+    assert_eq!(packed & 0xffff,0xc000);
+    assert!((pitch-std::f64::consts::FRAC_PI_2).abs()<1e-12);
     assert_eq!(state.native_fallen_trees(31355),vec![packed]);
     assert_eq!(state.removed_ids(),vec![1529]);
     assert_eq!(state.excluded(),vec![1528]);
@@ -322,6 +327,31 @@ fn tree_contact_packs_immutable_fallen_value_and_excludes_tree() {
     let again=state.ram_contact(1529,1,1002,2,[1.,2.,3.],[1.,0.,0.],[4.,0.,0.],4691.,"hull".into()).unwrap();
     assert!(again.is_none());
     assert_eq!(state.native_fallen_trees(31355),vec![packed]);
+}
+
+#[test]
+fn tree_fall_pitch_preserves_native_identity_direction_speed_and_energy_gate() {
+    // Synthetic domain cases using two indices seen in the native trace.
+    // Expected bits follow the original codec, not an encoder round-trip.
+    for (native_index,speed,speed_bits) in [(4,2.,1u32),(25,4.,2),(255,8.,3)] {
+        for (normal,yaw_bits) in [([0.,0.,1.],32u32),([1.,0.,0.],48)] {
+            let mut value=contact_manifest();
+            value["objects"][2]["native_index"]=json!(native_index);
+            let catalog=Arc::new(parse(&value).unwrap());
+            let mut state=State::new(catalog);
+            let before=state.clone();
+            // 2 kJ cannot remove the tree under the pinned test_lab floor.
+            assert!(state.ram_contact(1529,0,1001,1,[0.;3],normal,
+                normal.map(|x|x*2.),1000.,"hull".into()).unwrap().is_none());
+            assert_eq!(state,before);
+            let event=state.ram_contact(1529,0,1002,1,[0.;3],normal,
+                normal.map(|x|x*speed),4691.,"hull".into()).unwrap().unwrap();
+            let expected=(native_index as u32)<<24|yaw_bits<<18|speed_bits<<16|0xc000;
+            assert_eq!(event.fallen_tree,Some(expected));
+            assert_eq!(state.native_fallen_trees(31355),vec![expected]);
+            assert_eq!(state.native_fragile_values(31355),Vec::<u16>::new());
+        }
+    }
 }
 
 #[test]

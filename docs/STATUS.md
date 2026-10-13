@@ -44,19 +44,45 @@ rollback. Both-slot, retry, malformed, missing-ACK and backpressure checks:
 `09b4365787e6d549d4cf64206813b4f163ff6167f68fd6a25bee8a63081ddaa4`.
 The temporary raw frame logger has been removed; token bytes remain local
 only and are omitted from the audit. Both runs were stopped and restored.
-Post-fix native transport recheck is pending; native tree pixels remain FAIL.
+Post-fix `treeobserve09` on source `0b9e70b` reached both READY sessions and
+117 unique native area controllers each. No reject/failure/closure before
+stop; both still ready at tick 2808 (180.8 simulated seconds after READY).
+Both clients and server were stopped by receipt; both installations restored.
+Audit: `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve09-corrected-audit.json`
+(SHA256 `7f7f17e8378002af206070422ef8bba02b0ae66f82cbc587d12164bc6e2ef7cf`).
+Owner reports stable sessions but upright trees followed by passage: native
+visual **FAIL** remains, even though both native traces reach the animator.
+The run has four contacts, eight worker ACKs and four scene commits.
 
-Current source head is `e2af80f823641cfce2456912ca343568c634edf1`. The focused
-observer suite is **17/17 PASS** and `py_compile` passes. The current gateway
-receipts remain **10/10 PASS** (`gateway-p06q-final-30`, executable SHA256
+Original animator analysis confirms that the server's `pitchConstr=0`
+prevents sustained rotation. The correction uses a named test_lab pi/2
+flat-ground fallback (native pitch bits 0xc000); original slope/obstacle
+constraints remain unimplemented. Source/bytecode offsets, evidence and the
+owner observation are recorded in `docs/research/P06Q_TREE_VEHICLE_CONTACT.md`.
+Native visual acceptance after this correction is **NOT_RUN**.
+
+Current pitch-correction build: `gateway-p06q-final-35`, executable SHA256
+`74c7940967b3ceded70539c641df49d853abe9b50ce6ef671312c064d07725a3`;
+canonical build/codec suite **8/8 PASS**. On that same compiled test artifact:
+fragile/contact **19/19**, catalog wire **13/13**, codec **8/8**, vehicle contact
+**4/4 PASS** (two contact tests overlap the fragile group: 42 distinct tests).
+Receipt: `local/evidence/20261012-p06p-prohorovka-01/tests/pitch-fallback-final35/result.json`,
+SHA256 `c65d496d73b539fbf627845fe0694c6d5486af9be243ea98d28ee57b08e00699`.
+The earlier final34 codec fixture failure is retained and explained in research.
+Build35 result SHA256 `ae506e66d37d360694c758158004fc7ec8bd35d3e386d89126a1433b1637d0b4`.
+P06Q remains in its branch pending rendered tree fall and owner acceptance.
+
+Historical observer source was `e2af80f823641cfce2456912ca343568c634edf1`. The focused
+observer suite is **17/17 PASS** and `py_compile` passes. Its gateway
+receipts were **10/10 PASS** (`gateway-p06q-final-30`, executable SHA256
 `803e65e709cada1f54e057ae4ef1e564efb46fded34cee7d98a7f569ad4d8323`) and
 **2/2 PASS** for the mixed-area driving regression. Native rendered fall,
 both-client ACK, and rendered passage remain owner-controlled gates.
 
 ### Latest transport diagnosis — 2026-10-13
 
-Transport parser fix was carried through `8fc14c913dfe639450042650a8c4c24eb925f475`; the current
-branch head is `713fcdecd513f8bd6c62440f877429c5b7b45d8b`. The native
+Transport parser fix was carried through `8fc14c913dfe639450042650a8c4c24eb925f475`; the historical
+branch head was `713fcdecd513f8bd6c62440f877429c5b7b45d8b`. The native
 `treeobserve03` capture finally exposed the symmetric channel failure: both
 clients sent six 7-byte area requests followed by a native `0x8f` aim record in
 one reliable frame (`57` application bytes, `62` frame-body bytes). The older
@@ -92,7 +118,7 @@ FAIL. Both-client rendered confirmation and passage remain owner-controlled. The
 remains a server-loss observation only; no reconnect or directional packet-loss
 acceptance is claimed.
 
-Current branch: `codex/p06q-tree-visual-sync`; current source commit: `713fcdecd513f8bd6c62440f877429c5b7b45d8b` (transport parser fix: `8fc14c913dfe639450042650a8c4c24eb925f475`; diagnostic observer base: `f9d50ce417bad6c0f832bdf372b61ce20c5d8101`).
+Branch: `codex/p06q-tree-visual-sync`; historical observer commit: `713fcdecd513f8bd6c62440f877429c5b7b45d8b` (transport parser fix: `8fc14c913dfe639450042650a8c4c24eb925f475`; diagnostic observer base: `f9d50ce417bad6c0f832bdf372b61ce20c5d8101`).
 
 Implemented a diagnostic-only observer for the original `AreaDestructibles.set_fallenTrees` callback. The observer copies bounded native `ARRAY<UINT32>` values, records the chunk/entity identity, and never mutates the owner, collision body, tree matrix, or server state. The gateway wire test pins the two packed Prohorovka values observed in `manualtree02` (`0x195a8000`, `0x040e8000`) and their exact `0x12 ... 0x13` envelope.
 
