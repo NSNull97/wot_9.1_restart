@@ -129,21 +129,39 @@ fn full_contact_catalog_stays_bounded_and_stages_all_117_area_creates() {
     s.shared.as_mut().unwrap().view = Some(world.clone());
     s.receive(&frame(&s, &[9]), now).unwrap();
     let c = s.shared.as_ref().unwrap();
-    assert_eq!(c.announced_areas, 117);
-    assert!(c.announcement_parts.len() > 1);
+    // The first native request must fit the measured eight-body reliable
+    // window: two vehicles plus six area controllers. Later area batches are
+    // published only after the current batch and its creates are ACKed.
+    assert_eq!(c.announced_areas, 6);
+    assert_eq!(c.announcement_parts.len(), 1);
     assert!(queued_bodies(&s, now).iter().all(|body| body.len() <= 512));
 
     let mut payload = Vec::new();
     payload.extend(request(wire::vehicle_id(0).unwrap()));
     payload.extend(request(wire::vehicle_id(1).unwrap()));
-    for area in 0..117 { payload.extend(request(area_wire::area_id(area).unwrap())); }
+    for area in 0..6 { payload.extend(request(area_wire::area_id(area).unwrap())); }
     s.receive(&frame(&s, &payload), now).unwrap();
     assert!(s.tx.len() <= 8);
-    assert!(s.shared.as_ref().unwrap().pending_area_requests.len() > 0);
+    // Five area creates fit beside the two vehicle creates and the first
+    // announcement; the sixth request remains queued until an ACK frees one
+    // reliable slot.
+    assert!(s.shared.as_ref().unwrap().pending_area_requests.len() <= 1);
 
-    for _ in 0..40 {
-        if s.shared.as_ref().unwrap().pending_area_requests.is_empty() { break; }
+    let mut requested = 6usize;
+    for _ in 0..80 {
         ack_current_and_flush(&mut s, now);
+        let announced = s.shared.as_ref().unwrap().announced_areas;
+        if requested < announced {
+            let mut batch = Vec::new();
+            for area in requested..announced { batch.extend(request(area_wire::area_id(area).unwrap())); }
+            s.receive(&frame(&s, &batch), now).unwrap();
+            requested = announced;
+        }
+        if requested == 117
+            && s.shared.as_ref().unwrap().pending_area_requests.is_empty()
+            && s.shared.as_ref().unwrap().areas.iter().all(|(pending, _)| pending.is_some()) {
+            break;
+        }
     }
     let c = s.shared.as_ref().unwrap();
     assert!(c.pending_area_requests.is_empty());

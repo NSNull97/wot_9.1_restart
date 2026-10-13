@@ -27,6 +27,11 @@ use std::collections::VecDeque;
 use model::{bad, Command, Input, World};
 use crate::{battle091::fire, map_drive_world091 as drive};
 
+/// Keep the first native request envelope within the measured eight-body
+/// reliable window (two vehicles plus six area controllers).  Later batches
+/// contain areas only; using the same bound keeps the state machine uniform.
+const AREA_ANNOUNCEMENT_BATCH: usize = 6;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Phase { Account, Enable, Entities, Driving, Leaving }
 
@@ -131,7 +136,7 @@ impl Session {
                 let chunks=state.catalog.chunks();
                 c.areas=vec![(None,Vec::new());chunks.len()];
                 c.tree_areas=vec![Vec::new();chunks.len()];
-                for i in 0..chunks.len() {
+                for i in 0..chunks.len().min(AREA_ANNOUNCEMENT_BATCH) {
                     let record = destructible_wire::area_announcement(i)?;
                     if body.len() + record.len() > 512 {
                         let sequence = self.tx.enqueue_body_tracked(&body)?;
@@ -312,6 +317,42 @@ impl Session {
             }
         }
         *self = next;
+        self.flush_shared_announcements(events)?;
+        Ok(())
+    }
+
+    /// Publish the next bounded set of native area controllers after the
+    /// preceding announcement and all of its area-create replies have been
+    /// acknowledged.  The client only learns IDs from these messages, so a
+    /// request for a later area is rejected until its announcement is sent.
+    pub(super) fn flush_shared_announcements(&mut self, events: &mut Vec<String>) -> io::Result<()> {
+        let Some(shared) = self.shared.as_ref() else { return Ok(()); };
+        if shared.phase != Phase::Entities || shared.announced_areas == 0
+            || self.tx.len() != 0 || !shared.announcement_parts.iter().all(|(_, ack)| *ack)
+            || !shared.pending_entity_requests.is_empty() || !shared.pending_area_requests.is_empty()
+            || shared.pending_area_scene || shared.area_creation.is_some_and(|(_, ack)| !ack)
+            || shared.areas.iter().take(shared.announced_areas).any(|(pending, _)|
+                pending.is_none_or(|(_, ack)| !ack)) {
+            return Ok(());
+        }
+        let world = shared.view.clone().ok_or_else(bad)?;
+        let Some(total) = world.fragiles.as_ref().map(|state| state.catalog.chunks().len()) else { return Ok(()); };
+        if shared.announced_areas >= total { return Ok(()); }
+        let start = shared.announced_areas;
+        let end = (start + AREA_ANNOUNCEMENT_BATCH).min(total);
+        let mut body = Vec::new();
+        for area in start..end {
+            body.extend(destructible_wire::area_announcement(area)?);
+        }
+        if body.is_empty() || body.len() > 512 { return Err(bad()); }
+        let mut next = self.clone();
+        let sequence = next.tx.enqueue_body_tracked(&body)?;
+        let c = next.shared.as_mut().ok_or_else(bad)?;
+        c.announced_areas = end;
+        c.announcement_parts.push((sequence, false));
+        c.announcement = Some((sequence, false));
+        *self = next;
+        events.push(format!("SHARED_ANNOUNCEMENT_BATCH session={} start={} end={} reliable_sequence={} body_bytes={}", self.id, start, end, sequence, body.len()));
         Ok(())
     }
 }
