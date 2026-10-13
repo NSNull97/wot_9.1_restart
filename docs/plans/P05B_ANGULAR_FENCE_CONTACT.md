@@ -36,6 +36,14 @@ claim to have measured p before the step. No callback refill or independent
 budget per mode/object. A native body binding must establish inverse mass and
 principal inertia for each supported source profile before runtime wiring.
 
+Keep all9 raw native tensor components as f32 bits. Form the symmetric kernel
+matrix A=(raw+transpose(raw))/2 in f64. Stage-A proposal bounds raw asymmetry
+by1e-12+8*2^-23*max_abs_matrix_entry and principal/body reconstruction error
+by1e-12+16*2^-23*max_abs_matrix_entry per entry, plus finite/SPD checks.
+Use exact reconstructed f32 inputs for scalar witnesses; shortest JSON decimal
+tokens parsed as f64 are not the exact original f32 values. Preserve earlier
+diagnostic analyses and add refinements separately, never rewrite their numbers.
+
 Keep the reported f32 normal and all old linear arithmetic. Inside only the
 angular kernel normalize it in f64 once, using
 sqrt((nx*nx+ny*ny)+nz*nz) and component division, with no f32 Vector3 intermediate.
