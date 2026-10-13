@@ -1,30 +1,30 @@
 //! P09D account service scheduling. External writes only run after the parent
 //! Session::receive commits its complete cloned frame/piggyback tree.
 use super::*;
-use crate::{account091,ammo_service091 as codec,crew_service091 as crew_codec,crew_transfer091 as transfer_codec,crew_progression091 as skill_codec,identity091};
+use crate::{account091,ammo_service091 as codec,crew_service091 as crew_codec,crew_transfer091 as transfer_codec,crew_progression091 as skill_codec,crew_dismissal091 as dismiss_codec,identity091};
 
 const MAX_COMMANDS:usize=512;
 const MAX_PENDING:usize=4;
 
 #[derive(Clone,Debug,PartialEq,Eq)]
-enum Command {Ammo(codec::Request),Crew(crew_codec::Request),Transfer(transfer_codec::Request),Skill(skill_codec::Request)}
+enum Command {Ammo(codec::Request),Crew(crew_codec::Request),Transfer(transfer_codec::Request),Skill(skill_codec::Request),Dismiss(dismiss_codec::Request)}
 impl Command {
-    fn id(&self)->i16 {match self {Self::Ammo(r)=>r.id,Self::Crew(r)=>r.id,Self::Transfer(r)=>r.id,Self::Skill(r)=>r.id}}
-    fn vehicle(&self)->i64 {match self {Self::Ammo(r)=>r.vehicle_inventory_id() as i64,Self::Crew(r)=>r.vehicle_inventory_id as i64,Self::Transfer(r)=>r.vehicle_inventory_id,Self::Skill(_)=>-1}}
-    fn kind(&self)->&'static str {match self {Self::Ammo(_)=>"AMMO",Self::Crew(_)=>"CREW",Self::Transfer(_)=>"CREW_TRANSFER",Self::Skill(_)=>"CREW_LEARN"}}
-    fn validate_supported(&self,profile:transfer_codec::Profile)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_for(profile.roster()),Self::Transfer(r)=>r.validate_for(profile),Self::Skill(r)=>if profile==transfer_codec::Profile::Progression {r.validate_supported()}else {Err(invalid())}}}
+    fn id(&self)->i16 {match self {Self::Ammo(r)=>r.id,Self::Crew(r)=>r.id,Self::Transfer(r)=>r.id,Self::Skill(r)=>r.id,Self::Dismiss(r)=>r.id}}
+    fn vehicle(&self)->i64 {match self {Self::Ammo(r)=>r.vehicle_inventory_id() as i64,Self::Crew(r)=>r.vehicle_inventory_id as i64,Self::Transfer(r)=>r.vehicle_inventory_id,Self::Skill(_)|Self::Dismiss(_)=>-1}}
+    fn kind(&self)->&'static str {match self {Self::Ammo(_)=>"AMMO",Self::Crew(_)=>"CREW",Self::Transfer(_)=>"CREW_TRANSFER",Self::Skill(_)=>"CREW_LEARN",Self::Dismiss(_)=>"CREW_DISMISS"}}
+    fn validate_supported(&self,profile:transfer_codec::Profile)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_for(profile.roster()),Self::Transfer(r)=>r.validate_for(profile),Self::Skill(r)=>if matches!(profile,transfer_codec::Profile::Progression|transfer_codec::Profile::Dismissal) {r.validate_supported()}else {Err(invalid())},Self::Dismiss(r)=>if profile==transfer_codec::Profile::Dismissal {r.validate_supported()}else {Err(invalid())}}}
 }
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub(super) struct State {
-    revision:u64,wire_revision:i64,prefix:String,crew_enabled:bool,transfer_enabled:bool,cross_vehicle_enabled:bool,roster_recruitment:bool,crew_progression:bool,
+    revision:u64,wire_revision:i64,prefix:String,crew_enabled:bool,transfer_enabled:bool,cross_vehicle_enabled:bool,roster_recruitment:bool,crew_progression:bool,crew_dismissal:bool,
     seen:Vec<i16>,pending:VecDeque<Command>,inflight:Option<Command>,
 }
 impl State {
     pub(super) fn new(binding:codec::Metadata,crew_enabled:bool)->Self {
         let mut random=[0;16];OsRng.fill_bytes(&mut random);
         let prefix=random.iter().map(|byte|format!("{byte:02x}")).collect();
-        Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,transfer_enabled:false,cross_vehicle_enabled:false,roster_recruitment:false,crew_progression:false,
+        Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,transfer_enabled:false,cross_vehicle_enabled:false,roster_recruitment:false,crew_progression:false,crew_dismissal:false,
              seen:Vec::new(),pending:VecDeque::new(),inflight:None}
     }
     pub(super) fn crew_enabled(&self)->bool {self.crew_enabled}
@@ -32,11 +32,13 @@ impl State {
     pub(super) fn with_cross_vehicle(mut self,enabled:bool)->Self {self.cross_vehicle_enabled=enabled && self.transfer_enabled;self}
     pub(super) fn with_roster_recruitment(mut self,enabled:bool)->Self {self.roster_recruitment=enabled && self.cross_vehicle_enabled;self}
     pub(super) fn with_progression(mut self,enabled:bool)->Self {self.crew_progression=enabled && self.roster_recruitment;self}
+    pub(super) fn with_dismissal(mut self,enabled:bool)->Self {self.crew_dismissal=enabled && self.crew_progression;self}
+    pub(super) fn dismissal_enabled(&self)->bool {self.crew_dismissal}
     pub(super) fn progression_enabled(&self)->bool {self.crew_progression}
     pub(super) fn transfer_enabled(&self)->bool {self.transfer_enabled}
     pub(super) fn used_id(&self,id:i16)->bool {self.seen.contains(&id)}
     fn command_key(&self,request:&Command)->String {
-        let card=match request {Command::Ammo(_)=>"p09d",Command::Skill(_)=>"p04i",Command::Crew(_)=>if self.crew_progression {"p04i"}else if self.roster_recruitment {"p04h"}else {"p04d"},Command::Transfer(_)=>if self.crew_progression {"p04i"}else if self.roster_recruitment {"p04h"}else if self.cross_vehicle_enabled {"p04g"}else {"p04f"}};
+        let card=match request {Command::Ammo(_)=>"p09d",Command::Dismiss(_)=>"p04j",Command::Skill(_)=>if self.crew_dismissal {"p04j"}else {"p04i"},Command::Crew(_)=>if self.crew_dismissal {"p04j"}else if self.crew_progression {"p04i"}else if self.roster_recruitment {"p04h"}else {"p04d"},Command::Transfer(_)=>if self.crew_dismissal {"p04j"}else if self.crew_progression {"p04i"}else if self.roster_recruitment {"p04h"}else if self.cross_vehicle_enabled {"p04g"}else {"p04f"}};
         format!("{card}:{}:{}",self.prefix,request.id())
     }
 }
@@ -65,6 +67,10 @@ pub(super) fn enqueue_skill(session:&mut Session,request:skill_codec::Request,ev
     if !session.ammo_service.as_ref().is_some_and(State::progression_enabled) {return Err(invalid());}
     enqueue_command(session,Command::Skill(request),events)
 }
+pub(super) fn enqueue_dismissal(session:&mut Session,request:dismiss_codec::Request,events:&mut Vec<String>)->io::Result<()> {
+    if !session.ammo_service.as_ref().is_some_and(State::dismissal_enabled) {return Err(invalid());}
+    enqueue_command(session,Command::Dismiss(request),events)
+}
 fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)->io::Result<()> {
     available(session)?;
     let state=session.ammo_service.as_mut().ok_or_else(invalid)?;
@@ -75,7 +81,7 @@ fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)
         return Err(invalid());
     }
     state.seen.push(id);
-    if request.validate_supported(transfer_codec::Profile::selected_progression(state.cross_vehicle_enabled,state.roster_recruitment,state.crew_progression)).is_err() {
+    if request.validate_supported(transfer_codec::Profile::selected_dismissal(state.cross_vehicle_enabled,state.roster_recruitment,state.crew_progression,state.crew_dismissal)).is_err() {
         session.outbox.push_back(crate::hangar091::unavailable_response(id)?);
         events.push(format!("{kind}_SERVICE_REJECTED session={} request={id} result=-10 reason=unsupported_layout domain_applied=false",session.id));
     } else {
@@ -132,6 +138,7 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
         let outcome=match dispatched {
             Command::Ammo(request)=>config.service_ammunition(&profile,&key,revision,wire_revision,request.arguments),
             Command::Crew(request)=>config.recruit_crew(&profile,&key,revision,wire_revision,request),
+            Command::Dismiss(request)=>config.dismiss_crew(&profile,&key,revision,wire_revision,request),
             Command::Skill(request)=>config.learn_crew(&profile,&key,revision,wire_revision,request),
             Command::Transfer(request)=>config.transfer_crew(&profile,&key,revision,wire_revision,request),
         };
@@ -563,6 +570,54 @@ mod tests {
     fn ready_progression(now:Instant)->Session {
         let mut s=ready_crew(now);s.ammo_service=Some(State::new(codec::Metadata{revision:42,wire_revision:1},true)
             .with_transfer(true).with_cross_vehicle(true).with_roster_recruitment(true).with_progression(true));s
+    }
+    fn dismiss_packet(id:i16,tankman:i64)->Vec<u8> {
+        let mut b=vec![0x8e,20,0];b.extend(id.to_le_bytes());b.extend(306i16.to_le_bytes());
+        b.extend(tankman.to_le_bytes());b.extend([0;8]);b
+    }
+    fn ready_dismissal(now:Instant)->Session {
+        let mut s=ready_progression(now);s.ammo_service=Some(s.ammo_service.unwrap().with_dismissal(true));
+        s.ammo_service.as_mut().unwrap().revision=49;s
+    }
+    #[test] fn dismissal_opt_in_whole_frame_validation_and_cross_family_collisions() {
+        let now=Instant::now();let original=ready_dismissal(now);let dismiss=dismiss_packet(226,3);
+        for parse in [crate::hangar091::requests,crate::hangar091::requests_interactive,crate::hangar091::requests_ammo_service,
+            crate::hangar091::requests_crew_service,crate::hangar091::requests_crew_transfer,crate::hangar091::requests_crew_progression] {
+            assert!(parse(&dismiss).is_err());
+        }
+        let mut tail=dismiss.clone();tail.push(0xff);
+        let mut payloads=vec![tail];
+        for other in [skill_packet(226,16),transfer_packet(transfer_request(226)),crew_packet(crew_request(226)),
+            packet(request(226)),refresh_packet(226,1),dismiss.clone()] {
+            payloads.push([dismiss.clone(),other.clone()].concat());payloads.push([other,dismiss.clone()].concat());
+        }
+        for payload in payloads {
+            let mut s=original.clone();assert!(s.receive(&frame(&s,1,&payload),now).is_err());
+            assert_eq!(s.ammo_service,original.ammo_service);assert_eq!(s.rx,1);assert_eq!(s.tx.len(),0);
+        }
+        let mut parent=frame(&original,2,&[0xff]);parent.piggybacks.push(frame(&original,1,&dismiss));
+        let mut s=original.clone();assert!(s.receive(&parent,now).is_err());assert_eq!(s.ammo_service,original.ammo_service);
+        assert!(!State::new(codec::Metadata{revision:49,wire_revision:1},true).with_dismissal(true).dismissal_enabled());
+    }
+    #[test] fn dismissal_learn_transfer_hire_share_fifo_and_update_precedes_success() {
+        let now=Instant::now();let mut s=ready_dismissal(now);
+        let bytes=[dismiss_packet(226,3),skill_packet(227,16),transfer_packet(transfer_request(228)),crew_packet(crew_request(229))].concat();
+        let incoming=frame(&s,1,&bytes);s.receive(&incoming,now).unwrap();let once=s.ammo_service.clone();
+        s.receive(&incoming,now).unwrap();assert_eq!(s.ammo_service,once);assert_eq!(once.unwrap().pending.len(),4);
+        for (n,id) in [(0,226),(1,227),(2,228),(3,229)] {
+            let state=s.ammo_service.as_mut().unwrap();assert!(state.command_key(state.pending.front().unwrap()).starts_with("p04j:"));
+            state.inflight=state.pending.pop_front();apply(&mut s,id,crew_reply(50+n,2+n as i64)).unwrap();
+            let update=s.tx.due(now,s.rx).unwrap().unwrap().2;
+            assert_eq!(transport091::parse_interactive(&update).unwrap().body[1],0x57);
+            let success=s.tx.due(now,s.rx).unwrap().unwrap().2;
+            assert_eq!(transport091::parse_interactive(&success).unwrap().body,codec::success_response(id).unwrap());
+        }
+        assert_eq!(s.ammo_service.as_ref().unwrap().revision,53);
+        assert!(s.receive(&frame(&s,2,&refresh_packet(226,1)),now).is_err());
+        let mut s=ready_dismissal(now);s.receive(&frame(&s,1,&dismiss_packet(226,17)),now).unwrap();
+        assert!(s.ammo_service.as_ref().unwrap().pending.is_empty());assert_eq!(s.ammo_service.as_ref().unwrap().revision,49);
+        let response=s.tx.due(now,s.rx).unwrap().unwrap().2;
+        assert_eq!(transport091::parse_interactive(&response).unwrap().body,crate::hangar091::unavailable_response(226).unwrap());
     }
     #[test] fn progression_opt_in_and_whole_frame_atomicity_include_skill_commands() {
         let now=Instant::now();let original=ready_progression(now);let skill=skill_packet(226,16);

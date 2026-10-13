@@ -49,7 +49,7 @@ fn bounded_file(path:&Path,max:u64)->io::Result<Vec<u8>> {
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
-    pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,
+    pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -76,6 +76,8 @@ impl Config {
         if crew_roster_recruitment && !crew_cross_vehicle {return Err(invalid("roster recruitment requires cross-vehicle crew"));}
         let crew_progression=match value.remove("crew_progression") {None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("crew progression must be explicit boolean"))};
         if crew_progression && !crew_roster_recruitment {return Err(invalid("crew progression requires roster recruitment"));}
+        let crew_dismissal=match value.remove("crew_dismissal") {None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("crew dismissal must be explicit boolean"))};
+        if crew_dismissal && !crew_progression {return Err(invalid("crew dismissal requires crew progression"));}
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let login_bind=local_address(text(&value,"login_bind")?)?;
@@ -92,7 +94,7 @@ impl Config {
         if token.len()!=43 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b==b'_' || b==b'-') {return Err(invalid("service token must be exactly 43 base64url characters"));}
         let seconds=value["session_duration_seconds"].as_u64().ok_or_else(||invalid("session duration integer"))?;
         if !(600..=7200).contains(&seconds) {return Err(invalid("session duration must be 600..7200 seconds"));}
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal})
     }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
@@ -107,7 +109,7 @@ impl Config {
         if self.ammo_service {
             let binding=crate::ammo_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id)?;
             if self.crew_transfer {
-                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_progression(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression),&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
+                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_dismissal(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression,self.crew_dismissal),&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
             } else if self.crew_service {
                 crate::crew_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
             }
@@ -162,6 +164,14 @@ impl Config {
         service_reply(&bytes,profile,command_key,expected_revision,wire_revision,"recruited")
     }
 
+    pub fn dismiss_crew(&self,profile:&Profile,key:&str,revision:u64,wire:i64,request:crate::crew_dismissal091::Request)->io::Result<AmmoReply> {
+        if !self.crew_dismissal {return Err(invalid("crew dismissal is not enabled"));}
+        let body=crate::crew_dismissal091::service_request(&profile.account_id,profile.database_id,key,revision,wire,request)?;
+        let (status,bytes)=self.post("/internal/native/crew-dismiss",&body,Duration::from_secs(20))?;
+        if status!=200 {return Err(invalid("dismissal service HTTP failure; recover by fresh login"));}
+        service_reply(&bytes,profile,key,revision,wire,"dismissed")
+    }
+
     pub fn learn_crew(&self,profile:&Profile,key:&str,revision:u64,wire:i64,request:crate::crew_progression091::Request)->io::Result<AmmoReply> {
         if !self.crew_progression {return Err(invalid("crew progression is not enabled"));}
         let body=crate::crew_progression091::service_request(&profile.account_id,profile.database_id,key,revision,wire,request)?;
@@ -173,7 +183,7 @@ impl Config {
     pub fn transfer_crew(&self,profile:&Profile,command_key:&str,expected_revision:u64,
                          wire_revision:i64,request:crate::crew_transfer091::Request)->io::Result<AmmoReply> {
         if !self.crew_transfer || !self.crew_service || !self.ammo_service {return Err(invalid("crew transfer is not enabled"));}
-        let body=crate::crew_transfer091::service_request_for(crate::crew_transfer091::Profile::selected_progression(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression),&profile.account_id,profile.database_id,command_key,
+        let body=crate::crew_transfer091::service_request_for(crate::crew_transfer091::Profile::selected_dismissal(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression,self.crew_dismissal),&profile.account_id,profile.database_id,command_key,
             expected_revision,wire_revision,request)?;
         let (status,bytes)=self.post("/internal/native/crew-transfer",&body,Duration::from_secs(20))?;
         if status!=200 {return Err(invalid("crew transfer HTTP failure; recover outcome by fresh login"));}
@@ -194,7 +204,7 @@ fn ammo_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64)->io::
 
 fn service_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,success_status:&str)->io::Result<AmmoReply> {
     if !(5..i32::MAX as u64).contains(&expected) || !(1..i32::MAX as i64).contains(&wire)
-        || !matches!(success_status,"serviced"|"recruited"|"transferred"|"learned") {return Err(invalid("service reply cursor/status boundary"));}
+        || !matches!(success_status,"serviced"|"recruited"|"transferred"|"learned"|"dismissed") {return Err(invalid("service reply cursor/status boundary"));}
     let value=object(bytes,&["status","account_id","native_database_id","command_key","revision",
         "wire_revision","update_hex","replayed","result_code"])?;
     if text(&value,"account_id")?!=profile.account_id || value["native_database_id"].as_i64()!=Some(profile.database_id as i64)
@@ -410,6 +420,12 @@ mod tests {
         }
         assert!(!load(&roster).unwrap().crew_progression);
         let mut progression=roster.clone();progression["crew_progression"]=true.into();assert!(load(&progression).unwrap().crew_progression);
+        assert!(!load(&progression).unwrap().crew_dismissal);
+        let mut dismissal=progression.clone();dismissal["crew_dismissal"]=true.into();assert!(load(&dismissal).unwrap().crew_dismissal);
+        for bad in [Value::Null,0.into(),"true".into(),serde_json::json!({})] {
+            let mut row=dismissal.clone();row["crew_dismissal"]=bad;assert!(load(&row).is_err());
+        }
+        dismissal["crew_progression"]=false.into();assert!(load(&dismissal).is_err());
         for bad in [Value::Null,0.into(),"true".into(),serde_json::json!({})] {
             let mut row=progression.clone();row["crew_progression"]=bad;assert!(load(&row).is_err());
         }

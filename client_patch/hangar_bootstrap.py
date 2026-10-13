@@ -60,7 +60,7 @@ def _descriptors():
 
 
 def init(args, record, start_gui=False, restrict_module_changes=False, restrict_crew_changes=False,
-         enable_crew_recruitment=False, enable_crew_transfer=False, enable_cross_vehicle_crew=False, enable_roster_recruitment=False, enable_crew_progression=False):
+         enable_crew_recruitment=False, enable_crew_transfer=False, enable_cross_vehicle_crew=False, enable_roster_recruitment=False, enable_crew_progression=False, enable_crew_dismissal=False):
     """Call after the original Settings instance/profile have been installed.
 
     start_gui=False extracts authentic resource descriptors only. True also
@@ -123,6 +123,8 @@ def init(args, record, start_gui=False, restrict_module_changes=False, restrict_
         raise ValueError('transfer requires the explicit recruitment capability restrictions')
     if enable_cross_vehicle_crew and not enable_crew_transfer:
         raise ValueError('cross-vehicle crew requires the explicit transfer restrictions')
+    if enable_crew_dismissal and not enable_crew_progression:
+        raise ValueError('crew dismissal requires progression')
     if enable_crew_progression and not enable_roster_recruitment:
         raise ValueError('crew progression requires roster recruitment')
     if enable_roster_recruitment and not enable_cross_vehicle_crew:
@@ -132,11 +134,14 @@ def init(args, record, start_gui=False, restrict_module_changes=False, restrict_
         # after personality.init would leave the old recruitment listener live.
         import crew_capabilities
         allowed = ('open_recruit', 'recruit') if enable_crew_recruitment else ()
-        _step('crew_capabilities', crew_capabilities.init, record, allowed, enable_crew_transfer, enable_cross_vehicle_crew, enable_roster_recruitment, enable_crew_progression)
+        _step('crew_capabilities', crew_capabilities.init, record, allowed, enable_crew_transfer, enable_cross_vehicle_crew, enable_roster_recruitment, enable_crew_progression, enable_crew_dismissal)
     if enable_crew_recruitment and not enable_roster_recruitment:
         import p04d_crew_ui
         _step('crew_recruitment', p04d_crew_ui.init, record)
-    if enable_crew_progression:
+    if enable_crew_dismissal:
+        import p04j_crew_ui
+        _step('crew_dismissal', p04j_crew_ui.init, record)
+    elif enable_crew_progression:
         import p04i_crew_ui
         _step('crew_progression', p04i_crew_ui.init, record)
     elif enable_roster_recruitment:
@@ -461,6 +466,9 @@ def fini():
         from gui.shared import personality
         close('gui_personality', personality.fini)
     if 'crew_capabilities' in _stages:
+        if 'crew_dismissal' in _stages:
+            import p04j_crew_ui
+            close('crew_dismissal', p04j_crew_ui.fini)
         if 'crew_progression' in _stages:
             import p04i_crew_ui
             close('crew_progression', p04i_crew_ui.fini)

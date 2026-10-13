@@ -876,7 +876,8 @@ impl Session {
     fn receive_account(&mut self,payload:&[u8],events:&mut Vec<String>)->io::Result<()> {
 use crate::hangar091::Incoming;
 let requests=if self.hangar.is_some() {
-    if self.ammo_service.as_ref().is_some_and(ammo_session::State::progression_enabled) {crate::hangar091::requests_crew_progression(payload)?}
+    if self.ammo_service.as_ref().is_some_and(ammo_session::State::dismissal_enabled) {crate::hangar091::requests_crew_dismissal(payload)?}
+    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::progression_enabled) {crate::hangar091::requests_crew_progression(payload)?}
     else if self.ammo_service.as_ref().is_some_and(ammo_session::State::transfer_enabled) {crate::hangar091::requests_crew_transfer(payload)?}
     else if self.ammo_service.as_ref().is_some_and(ammo_session::State::crew_enabled) {crate::hangar091::requests_crew_service(payload)?}
     else if self.ammo_service.is_some() {crate::hangar091::requests_ammo_service(payload)?}
@@ -890,7 +891,7 @@ for incoming in requests {
     let account_id=match &incoming {
         Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync{request:r,..}
         |Incoming::CachedSync{request:r,..}|Incoming::CachedRefresh{request:r,..}|Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
-        Incoming::AmmoService(r)=>Some(r.id),Incoming::CrewService(r)=>Some(r.id),Incoming::CrewTransfer(r)=>Some(r.id),Incoming::CrewLearn(r)=>Some(r.id),
+        Incoming::AmmoService(r)=>Some(r.id),Incoming::CrewService(r)=>Some(r.id),Incoming::CrewTransfer(r)=>Some(r.id),Incoming::CrewLearn(r)=>Some(r.id),Incoming::CrewDismiss(r)=>Some(r.id),
         Incoming::Language{id}|Incoming::UnsupportedIntArray{id,..}=>Some(*id),
         Incoming::ServerStats=>Some(202),Incoming::Chat(_)=>None,
     };
@@ -903,6 +904,10 @@ for incoming in requests {
         },
         Incoming::CrewService(request)=>{
             ammo_session::enqueue_crew(self,request,events)?;
+            continue;
+        },
+        Incoming::CrewDismiss(request)=>{
+            ammo_session::enqueue_dismissal(self,request,events)?;
             continue;
         },
         Incoming::CrewLearn(request)=>{
@@ -1301,33 +1306,42 @@ pub fn serve_map_drive_probe(key_path:&str,digest_path:&str,config_path:&str,cap
 }
 struct Authenticated {identity:Arc<crate::identity091::Profile>,fixtures:Arc<crate::hangar091::Fixtures>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
-    ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool,crew_transfer:bool,crew_cross_vehicle:bool,crew_roster_recruitment:bool,crew_progression:bool}
+    ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool,crew_transfer:bool,crew_cross_vehicle:bool,crew_roster_recruitment:bool,crew_progression:bool,crew_dismissal:bool}
 impl Authenticated {
     fn new(identity:crate::identity091::Profile,fixtures:crate::hangar091::Fixtures,ordinary:bool)->io::Result<Self> {
         // Remains inside the existing bounded auth worker. A bad primary policy
         // reaches AUTH_REJECT before Session creation or any native state bytes.
         let policy=crate::map_drive_service091::AccountPolicy::for_mode(ordinary,&identity,&fixtures)?;
-        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false,crew_roster_recruitment:false,crew_progression:false})
+        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false,crew_roster_recruitment:false,crew_progression:false,crew_dismissal:false})
     }
 }
 struct AuthJob {
-    request:u32,attempt:LoginAttempt,ciphertext_tag:[u8;32],
+    request:u32,attempt:LoginAttempt,credential_salt:[u8;32],credential_tag:[u8;32],
     receiver:mpsc::Receiver<io::Result<Option<Authenticated>>>,
 }
 impl AuthJob {
-    fn pending_duplicate(&self,candidate:&LoginAttempt,ciphertext_tag:&[u8;32])->bool {
-        self.attempt.same_attempt(candidate) && self.ciphertext_tag==*ciphertext_tag
+    fn pending_duplicate(&self,candidate:&LoginAttempt,fields:&login::Fields)->bool {
+        let tag=pending_credential_tag(&self.credential_salt,fields);
+        self.attempt.same_attempt(candidate)
+            && self.credential_tag.iter().zip(tag).fold(0u8,|difference,(left,right)|difference|(*left^right))==0
     }
 }
-fn encrypted_attempt_tag(packet:&[u8])->io::Result<[u8;32]> {
-    // Hash only the bounded RSA ciphertext, never the password/plaintext. This
-    // is an ephemeral equality tag, not authentication and never a log field.
-    // Outer request ID is intentionally excluded from duplicate identity.
-    Ok(Sha256::digest(login::envelope_interactive(packet)?.ciphertext).into())
+fn pending_credential_tag(salt:&[u8;32],fields:&login::Fields)->[u8;32] {
+    // OBSERVED native J04 retries identical plaintext with randomized RSA OAEP
+    // and a new request ID. Compare the exact already-bounded decoded fields,
+    // with a fresh per-job salt. Neither salt/tag nor credentials enter logs.
+    // This equality gate is NOT authentication: only the worker can succeed.
+    let mut hash=Sha256::new();hash.update(b"wot091.pending-login.v1\0");hash.update(salt);
+    for value in [&fields.username,&fields.password] {
+        hash.update((value.len() as u32).to_le_bytes());hash.update(value);
+    }
+    hash.update(fields.digest);hash.finalize().into()
 }
 fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr,fields:&login::Fields,
-              ciphertext_tag:[u8;32],ordinary:bool)->io::Result<AuthJob> {
+              ordinary:bool)->io::Result<AuthJob> {
     let (email,password)=crate::identity091::credentials(&fields.username,&fields.password)?;
+    let mut credential_salt=[0;32];OsRng.fill_bytes(&mut credential_salt);
+    let credential_tag=pending_credential_tag(&credential_salt,fields);
     let (sender,receiver)=mpsc::sync_channel(1);
     thread::Builder::new().name("local-identity".to_owned()).spawn(move || {
         let outcome=config.authenticate(&email,&password).and_then(|identity|identity.map(|identity| {
@@ -1337,7 +1351,7 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
             } else {None};
             if config.crew_transfer {
                 let shared=binding.ok_or_else(invalid)?;
-                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_progression(config.crew_cross_vehicle,config.crew_roster_recruitment,config.crew_progression),&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
+                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_dismissal(config.crew_cross_vehicle,config.crew_roster_recruitment,config.crew_progression,config.crew_dismissal),&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
             } else if config.crew_service {
                 let shared=binding.ok_or_else(invalid)?;
                 crate::crew_service091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
@@ -1349,11 +1363,12 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
             accepted.crew_cross_vehicle=config.crew_cross_vehicle;
             accepted.crew_roster_recruitment=config.crew_roster_recruitment;
             accepted.crew_progression=config.crew_progression;
+            accepted.crew_dismissal=config.crew_dismissal;
             Ok(accepted)
         }).transpose());
         let _=sender.send(outcome); // A stopped gateway has no recipient.
     })?;
-    Ok(AuthJob {request,attempt:LoginAttempt::new(fields.session_key,fields.nonce,peer),ciphertext_tag,receiver})
+    Ok(AuthJob {request,attempt:LoginAttempt::new(fields.session_key,fields.nonce,peer),credential_salt,credential_tag,receiver})
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum DrivePollInvariant { ArenaState, WorkerGeneration, WorkerReplyState, MissingClock,
@@ -1518,7 +1533,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                                 accepted.identity.account_id,accepted.identity.database_id,accepted.identity.name,accepted.fixtures.sizes());
                             created.identity=Some(accepted.identity);created.hangar=Some(accepted.fixtures);
                             created.drive_account_policy=accepted.drive_account_policy;
-                            created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression));
+                            created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal));
                             if drive_pool.is_some(){created.drive=Some(crate::map_drive_world091::Arena::new(now));}
                             if let Some(policy)=&created.drive_account_policy {println!("{}",policy.binding_event(next_id));}
                             session=Some(created);next_id=next_id.checked_add(1).ok_or_else(invalid)?;
@@ -1578,9 +1593,8 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                     }
                     if fields.digest!=digest {send_wire(socket,peer,&login::rejection(request,69),Channel::Login,&mut capture)?;println!("AUTH_REJECT code=69 allocated=0");continue;}
                     let candidate=LoginAttempt::new(fields.session_key,fields.nonce,peer);
-                    let ciphertext_tag=encrypted_attempt_tag(packet)?;
                     if let Some(pending)=&auth {
-                        if pending.pending_duplicate(&candidate,&ciphertext_tag) {println!("AUTH_PENDING_DUPLICATE request_id={request}");}
+                        if pending.pending_duplicate(&candidate,&fields) {println!("AUTH_PENDING_DUPLICATE request_id={request}");}
                         else {send_wire(socket,peer,&login::rejection(request,73),Channel::Login,&mut capture)?;println!("AUTH_REJECT code=73 allocated=0 reason=identity_busy");}
                         continue;
                     }
@@ -1598,7 +1612,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                     // Every new admissible attempt, including key reuse, needs
                     // fresh website credentials. No retired row supplies auth.
                     // One bounded worker, no channel-loop wait during its KDF.
-                    match start_auth(config.clone(),request,peer,&fields,ciphertext_tag,drive_pool.is_some()) {
+                    match start_auth(config.clone(),request,peer,&fields,drive_pool.is_some()) {
                         Ok(job)=>{auth=Some(job);last_auth=Some(now);println!("AUTH_PENDING request_id={request} allocated=0");},
                         Err(_)=>{send_wire(socket,peer,&login::rejection(request,73),Channel::Login,&mut capture)?;println!("AUTH_REJECT code=73 allocated=0 reason=unsupported_native_credentials");},
                     }
@@ -1851,39 +1865,69 @@ mod retirement_policy_tests {
         // Verified UUID equality is an additional caller gate after auth.
     }
 
-    fn login_packet(request:u32,ciphertext_byte:u8)->Vec<u8> {
-        // Synthetic framing-only input; it is never RSA-decrypted or passed off
-        // as a native capture or valid credentials.
-        let mut packet=vec![0;273];packet[..5].copy_from_slice(&[1,0,0,4,1]);
-        packet[5..9].copy_from_slice(&request.to_le_bytes());
-        packet[11..15].copy_from_slice(&login::PROTOCOL.to_le_bytes());
-        packet[15..271].fill(ciphertext_byte);packet[271]=2;packet
+    fn pending_fields()->login::Fields {
+        login::Fields {username_len:3,password_len:4,key_len:16,nonce:41,
+            session_key:[7;16],digest:[9;16],lab_credentials_valid:false,
+            username:b"own".to_vec(),password:b"test".to_vec()}
     }
 
     #[test]
-    fn pending_duplicate_requires_identical_encrypted_attempt_not_only_key_or_nonce() {
+    fn pending_duplicate_requires_exact_credentials_digest_key_nonce_and_peer() {
         let original=attempt(7,41,40000);
-        let tag=encrypted_attempt_tag(&login_packet(1,11)).unwrap();
-        let (_,receiver)=mpsc::sync_channel(1);
-        let pending=AuthJob {request:1,attempt:original,ciphertext_tag:tag,receiver};
-        let changed_header=encrypted_attempt_tag(&login_packet(u32::MAX,11)).unwrap();
-        assert!(pending.pending_duplicate(&original,&changed_header));
-        // Same key/nonce/peer but changed encrypted credentials or padding must
-        // not reuse the outstanding password result. No plaintext tag is kept.
-        let changed_ciphertext=encrypted_attempt_tag(&login_packet(1,12)).unwrap();
-        assert!(!pending.pending_duplicate(&original,&changed_ciphertext));
+        let fields=pending_fields();let credential_salt=[3;32];
+        let credential_tag=pending_credential_tag(&credential_salt,&fields);
+        let (sender,receiver)=mpsc::sync_channel(1);
+        let pending=AuthJob {request:1,attempt:original,credential_salt,credential_tag,receiver};
+        assert!(pending.pending_duplicate(&original,&fields));
+        let mut changed=pending_fields();changed.password[0]^=1;
+        assert!(!pending.pending_duplicate(&original,&changed));
+        changed=pending_fields();changed.username[0]^=1;
+        assert!(!pending.pending_duplicate(&original,&changed));
+        changed=pending_fields();changed.digest[0]^=1;
+        assert!(!pending.pending_duplicate(&original,&changed));
         for changed in [attempt(8,41,40000),attempt(7,42,40000),attempt(7,41,40001)] {
-            assert!(!pending.pending_duplicate(&changed,&tag));
+            assert!(!pending.pending_duplicate(&changed,&fields));
         }
+        // A duplicate leaves the real authentication outstanding; it neither
+        // creates a result nor changes the original reply request/peer.
+        assert_eq!(pending.request,1);
+        assert!(matches!(pending.receiver.try_recv(),Err(mpsc::TryRecvError::Empty)));
+        assert!(sender.send(Ok(None)).is_ok());
+        assert!(pending.receiver.try_recv().unwrap().unwrap().is_none());
     }
 
     #[test]
-    fn encrypted_attempt_tag_keeps_the_bounded_login_envelope_contract() {
-        let packet=login_packet(1,11);
-        for size in [0,14,16,272] {assert!(encrypted_attempt_tag(&packet[..size]).is_err());}
-        let mut changed=packet.clone();changed[11]^=1;assert!(encrypted_attempt_tag(&changed).is_err());
-        changed=packet.clone();changed.push(0);assert!(encrypted_attempt_tag(&changed).is_err());
-        assert!(encrypted_attempt_tag(&[0;2048]).is_err());
+    fn pending_credential_tags_bind_field_boundaries_and_each_jobs_salt() {
+        let mut fields=pending_fields();fields.username=b"a".to_vec();fields.password=b"bc".to_vec();
+        let tag=pending_credential_tag(&[3;32],&fields);
+        fields.username=b"ab".to_vec();fields.password=b"c".to_vec();
+        assert_ne!(tag,pending_credential_tag(&[3;32],&fields));
+        assert_ne!(pending_credential_tag(&[3;32],&fields),pending_credential_tag(&[4;32],&fields));
+    }
+
+    #[test]
+    fn independently_randomized_rsa_login_retries_share_only_exact_pending_identity() {
+        use rsa::PublicKey;
+        let private=rsa::RsaPrivateKey::new(&mut OsRng,1024).unwrap();
+        let public=rsa::RsaPublicKey::from(&private);let fields=pending_fields();
+        let mut plain=vec![1,3];plain.extend(&fields.username);plain.push(4);plain.extend(&fields.password);
+        plain.push(16);plain.extend(fields.session_key);plain.extend(fields.digest);plain.extend(fields.nonce.to_le_bytes());
+        let encode=|request:u32| {
+            let cipher=public.encrypt(&mut OsRng,rsa::Oaep::new::<sha1::Sha1>(),&plain).unwrap();
+            let mut packet=vec![1,0,0];packet.extend(((cipher.len()+4) as u16).to_le_bytes());
+            packet.extend(request.to_le_bytes());packet.extend([0,0]);packet.extend(login::PROTOCOL.to_le_bytes());
+            packet.extend(cipher);packet.extend([2,0]);packet
+        };
+        let first=encode(1);let second=encode(2);assert_ne!(&first[15..],&second[15..]);
+        let (first_id,first_fields)=login::decode_interactive(&first,&private).unwrap();
+        let (second_id,second_fields)=login::decode_interactive(&second,&private).unwrap();assert_ne!(first_id,second_id);
+        let original=attempt(7,41,40000);let salt=[5;32];let (_,receiver)=mpsc::sync_channel(1);
+        let pending=AuthJob {request:first_id,attempt:original,credential_salt:salt,
+            credential_tag:pending_credential_tag(&salt,&first_fields),receiver};
+        let candidate=LoginAttempt::new(second_fields.session_key,second_fields.nonce,original.login_peer);
+        assert!(pending.pending_duplicate(&candidate,&second_fields));
+        for size in [0,14,16,second.len()-1] {assert!(login::decode_interactive(&second[..size],&private).is_err());}
+        let mut trailing=second;trailing.push(0);assert!(login::decode_interactive(&trailing,&private).is_err());
     }
 
     #[test]

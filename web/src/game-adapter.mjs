@@ -20,6 +20,8 @@ import { nativeRosterCrewOverview, isNativeRosterCrewOverview } from './p04h-cre
 
 import { nativeProgressionCrewOverview, isNativeProgressionCrewOverview } from './p04i-crew.mjs';
 
+import { nativeDismissalCrewOverview, isNativeDismissalCrewOverview } from './p04j-crew.mjs';
+
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const LOCAL = resolve(ROOT, 'local');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -85,7 +87,7 @@ export function createGameReader({ origin, tokenFile } = {}) {
       const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (value.schemaVersion !== 'web-game-read.v1' || !['ready', 'unlinked'].includes(value.state)) return empty('unavailable');
       if (value.state === 'unlinked') return empty('unlinked');
-      if (value.crewService !== undefined) return (value.crewService?.version === 5 ? isNativeProgressionCrewOverview(value, id) : value.crewService?.version === 4 ? isNativeRosterCrewOverview(value, id) : value.crewService?.version === 3 ? isNativeCrossVehicleCrewOverview(value, id) : value.crewService?.version === 2
+      if (value.crewService !== undefined) return (value.crewService?.version === 6 ? isNativeDismissalCrewOverview(value, id) : value.crewService?.version === 5 ? isNativeProgressionCrewOverview(value, id) : value.crewService?.version === 4 ? isNativeRosterCrewOverview(value, id) : value.crewService?.version === 3 ? isNativeCrossVehicleCrewOverview(value, id) : value.crewService?.version === 2
         ? isNativeCrewTransferOverview(value, id) : isNativeCrewOverview(value, id)) ? value : empty('unavailable');
       if (value.snapshotRevision >= 5) return isNativeAmmoOverview(value, id) ? value : empty('unavailable');
       if (value.snapshotRevision === 4) return isAmmoOverview(value, id) ? value : empty('unavailable');
@@ -163,6 +165,7 @@ function openGameStore(path, sourceHash, now) {
 }
 
 function overview(profile) {
+  if (profile.profile_version === 11) return nativeDismissalCrewOverview(profile);
   if (profile.profile_version === 10) return nativeProgressionCrewOverview(profile);
   if (profile.profile_version === 9) return nativeRosterCrewOverview(profile);
   if (profile.profile_version === 8) return nativeCrossVehicleCrewOverview(profile);
@@ -208,6 +211,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.crew_transfer !== undefined) allowed.push('crew_transfer');
   if (options?.crew_cross_vehicle !== undefined) allowed.push('crew_cross_vehicle');
   if (options?.crew_roster_recruitment !== undefined) allowed.push('crew_roster_recruitment');
+  if (options?.crew_dismissal !== undefined) allowed.push('crew_dismissal');
   if (options?.crew_progression !== undefined) allowed.push('crew_progression');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
@@ -217,6 +221,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options.crew_cross_vehicle !== undefined && (options.crew_transfer === undefined || options.crew_cross_vehicle === null || typeof options.crew_cross_vehicle !== 'object')) throw new Error('Cross-vehicle crew requires explicit transfer policy');
   if (options.crew_progression !== undefined && (options.crew_roster_recruitment === undefined || options.crew_progression === null || typeof options.crew_progression !== 'object')) throw new Error('Crew progression requires explicit roster recruitment');
   if (options.crew_roster_recruitment !== undefined && (options.crew_cross_vehicle === undefined || options.crew_roster_recruitment === null || typeof options.crew_roster_recruitment !== 'object')) throw new Error('Roster recruitment requires explicit cross-vehicle policy');
+  if (options.crew_dismissal !== undefined && (options.crew_progression === undefined || options.crew_dismissal === null || typeof options.crew_dismissal !== 'object')) throw new Error('Crew dismissal requires explicit progression');
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -255,12 +260,16 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       ammunition = options.crew_service === undefined
         ? await createNativeAmmoService(options.ammunition_service, context)
         : await createNativeCrewService(options.ammunition_service, options.crew_service,
-          { ...context, transfer: options.crew_transfer ?? null, crossVehicle: options.crew_cross_vehicle ?? null, rosterRecruitment: options.crew_roster_recruitment ?? null, progression: options.crew_progression ?? null });
+          { ...context, transfer: options.crew_transfer ?? null, crossVehicle: options.crew_cross_vehicle ?? null, rosterRecruitment: options.crew_roster_recruitment ?? null, progression: options.crew_progression ?? null, dismissal: options.crew_dismissal ?? null });
     }
   } catch (error) { identity.close(); game.close(); throw error; }
   const creating = new Map();
   async function fixture(profile) {
     const id = accountId(profile.account_id);
+    if (profile.profile_version === 11) {
+      if (options.crew_dismissal === undefined || !ammunition?.dismiss) throw new Error('Crew dismissal is not enabled');
+      return ammunition.fixture(profile);
+    }
     if (profile.profile_version === 10) {
       if (options.crew_progression === undefined || !ammunition?.learn) throw new Error('Crew progression is not enabled');
       return ammunition.fixture(profile);
@@ -435,6 +444,12 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
         return json(res, 200, await ammunition.recruit(value));
       }
+      if (req.method === 'POST' && req.url === '/internal/native/crew-dismiss') {
+        if (!ammunition?.dismiss) return json(res, 404, { error: 'not_found' });
+        const value = await body(req);
+        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
+        return json(res, 200, await ammunition.dismiss(value));
+      }
       if (req.method === 'POST' && req.url === '/internal/native/crew-learn') {
         if (!ammunition?.learn) return json(res, 404, { error: 'not_found' });
         const value = await body(req);
@@ -451,7 +466,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       if (req.method === 'GET' && matched && UUID.test(matched[1])) {
         if (!identity.profile(matched[1])) return json(res, 404, { error: 'account_not_found' });
         const profile = game.read(matched[1]);
-        if ([2, 3, 4, 5, 6, 7, 8, 9, 10].includes(profile?.profile_version)) await fixture(profile);
+        if ([2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(profile?.profile_version)) await fixture(profile);
         return json(res, 200, profile ? overview(profile) : empty('unlinked'));
       }
       return json(res, 404, { error: 'not_found' });
