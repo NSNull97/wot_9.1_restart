@@ -1,3 +1,18 @@
+# P05B — candidate15 first-eight and full decoder PASS; paired runtime next
+
+Actual private8 workers PASS scoped contact/chain gates and exact repeats;
+all8 exit0. IS-7 angular POST applied, MS-1 contact negative, both chain passage
+and14 parity retained. Separate canonical full typed decoder passes8 ready,
+960 advances,10 receipts/6 ACKs with zero new workers. See
+[runtime gate](research/P05B_ANGULAR_RUNTIME_GATE.md).
+
+Continue existing P05B: reviewed old-policy regressions, source-bound actual
+paired workers/both ACK/rejoin, separate all-alive coverage, full gateway gate.
+Synthetic initial removals are explicit; no native or historical acceptance.
+Manual after2026-10-14 09:00 remains NOT_RUN; no merge/push. Preserve14,
+all evidence, stopped stand and unrelated P09B. Private runtime follow-ups
+need their frozen bounded fixture scope and review before launch.
+
 # P05B — angular scalar PASS; bounded runtime implementation GO
 
 Both scalar kernels, exact256-case cross-language comparison,2882 saved native

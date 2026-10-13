@@ -4,6 +4,7 @@ use super::{model::{self, World}, ap, impact_wire, terrain_wire, wire, Client, P
 use super::super::*;
 use crate::map_profile091::MapId;
 use super::vehicle_profile::VehicleKind;
+use super::ram_proof;
 
 #[cfg(test)]
 #[path="server_catalog_tests.rs"]
@@ -16,6 +17,9 @@ use crate::worker_fixtures091 as worker_fixtures;
 #[cfg(test)]
 #[path="server_contact_barrier_tests.rs"]
 mod contact_barrier_tests;
+#[cfg(test)]
+#[path="server_angular_tests.rs"]
+mod angular_tests;
 #[cfg(test)]
 #[path="server_cadence_tests.rs"]
 mod cadence_tests;
@@ -43,6 +47,7 @@ struct ContactBatch {
     seq: u32,
     scene_version: u32,
     contacts: Vec<model::VehicleContactInput>,
+    observed_contacts:usize,
 }
 
 /// Owns one accepted P05 worker per shared actor. The handles live outside
@@ -318,20 +323,32 @@ impl IntegratedRuntime {
                 // seq0 is the stationary startup/settle snapshot, not a game
                 // advance. Only subsequent replies may supply gameplay hits.
                 if state.seq != 0 {
-                    let held: usize = self.contact_batches.iter().flatten().map(|b| b.contacts.len()).sum();
+                    let held: usize = self.contact_batches.iter().flatten().map(|b| b.observed_contacts).sum();
                     if self.pose_pending[slot] || self.contact_batches[slot].is_some()
                         || state.seq != self.contact_sequences[slot].checked_add(1).ok_or_else(model::bad)?
                         || state.scene_version != world.scene_version()
                         || held + state.object_contacts.len() > 32 { return Err(model::bad()); }
-                    let contacts = state.object_contacts.iter().map(|contact| model::VehicleContactInput {
-                        object_id: contact.object_id, substep: contact.substep, point: contact.point,
-                        normal: contact.normal, velocity: contact.velocity, mass_kg: worker.map.mass_kg,
-                        kind: contact.kind.clone(), shooter: slot,
-                    }).collect();
+                    let frame=if let Some(proof)=&state.angular_proof {
+                        let domain=world.fragiles.as_ref().ok_or_else(model::bad)?;
+                        let scene=worker.catalog_scene().ok_or_else(model::bad)?;
+                        Some(Arc::new(ram_proof::ContextFrame{proof:proof.clone(),context:ram_proof::Context{
+                            battle:world.id,slot,session:session.ok_or_else(model::bad)?,generation:worker.generation,
+                            seq:state.seq,tick:state.tick,config_sha256:worker.map.config_sha256.clone(),
+                            catalog_sha256:domain.catalog.worker_sha256.clone(),domain_sha256:domain.catalog.sha256.clone(),
+                            scene_version:scene.version(),scene_sha256:scene.hash().into()}}))
+                    }else{None};
+                    let mut contacts = state.object_contacts.iter().filter(|contact|frame.as_ref().is_none_or(|frame|frame.proof.receipts.iter().any(|r|r.object_id==contact.object_id))).map(|contact| {
+                        let proof=if let Some(frame)=&frame {Some(ram_proof::ContactProof{frame:frame.clone(),
+                            index:frame.proof.receipts.iter().position(|r|r.object_id==contact.object_id).ok_or_else(model::bad)?})}else{None};
+                        Ok(model::VehicleContactInput {object_id: contact.object_id, substep: contact.substep, point: contact.point,
+                            normal: contact.normal, velocity: contact.velocity, mass_kg: worker.map.mass_kg,
+                            kind: contact.kind.clone(), shooter: slot,proof})
+                    }).collect::<io::Result<Vec<_>>>()?;
+                    if frame.is_some(){contacts.sort_by_key(|contact|contact.proof.as_ref().map(|p|p.index));}
                     self.contact_sequences[slot] = state.seq;
                     self.pose_pending[slot] = true;
                     self.contact_batches[slot] = Some(ContactBatch { session: session.ok_or_else(model::bad)?,
-                        generation: worker.generation, seq: state.seq, scene_version: state.scene_version, contacts });
+                        generation: worker.generation, seq: state.seq, scene_version: state.scene_version, contacts,observed_contacts:state.object_contacts.len() });
                     for receipt in &state.fractures {
                         println!("SHARED_FENCE_RESPONSE {}",serde_json::json!({"battle":world.id,
                             "slot":slot,"generation":worker.generation,"seq":state.seq,
@@ -440,6 +457,16 @@ impl IntegratedRuntime {
         // Vacuously true only when every actor is parked/unready: preserve the
         // existing projectile/world clock without moving any cached actor.
         let mut candidate = world.clone();
+        if self.catalog.as_ref().is_some_and(|catalog|catalog.version()==8) {
+            for slot in 0..model::CAPACITY {
+                if let Some(session)=world.actors.get(slot).and_then(|a|a.session) {
+                    let worker=self.workers[slot].as_ref().ok_or_else(model::bad)?;
+                    candidate.bind_contact_source(slot,ram_proof::Source{session,generation:worker.generation,
+                        config_sha256:worker.map.config_sha256.clone(),profile:match self.pool.vehicle_kind(){
+                            VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}})?;
+                }else{candidate.revoke_contact_source(slot)?;}
+            }
+        }
         let published = fresh_pair && candidate.advance_with_external(now, Some(&rows))?;
         let mut vehicle_contacts = Vec::new();
         for (slot, batch) in self.contact_batches.iter().enumerate() {
@@ -450,6 +477,11 @@ impl IntegratedRuntime {
                     || worker.generation != batch.generation || batch.seq != self.contact_sequences[slot]
                     || batch.scene_version != world.scene_version() || worker.scene_version() != batch.scene_version {
                     return Err(model::bad());
+                }
+                if let Some(proof)=batch.contacts.first().and_then(|contact|contact.proof.as_ref()) {
+                    let source=world.fragiles.as_ref().ok_or_else(model::bad)?;
+                    if proof.frame.context.scene_version!=world.scene_version()
+                        ||proof.frame.context.scene_sha256!=source.historical_scene_hash(world.scene_version())?{return Err(model::bad());}
                 }
                 vehicle_contacts.extend_from_slice(&batch.contacts);
             }
@@ -468,7 +500,13 @@ impl IntegratedRuntime {
             let normal_energy_j=0.5*f64::from(event.mass_kg)*closing_f64*closing_f64;
             let ram_response=candidate.fragiles.as_ref().and_then(|s|s.catalog.objects.iter().find(|o|o.object_id==event.object_id)
                 .and_then(|o|s.catalog.ram_response(o))).unwrap_or("normal_linear");
-            let admission_energy_j=if ram_response=="total_linear" {0.5*f64::from(event.mass_kg)*event.velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}else{normal_energy_j};
+            let admission_energy_j=if let Some(p)=&event.proof {
+                let r=p.receipt()?;
+                if r.mode==ram_proof::Mode::Angular {let w=p.frame.proof.witness(r.substep)?;
+                    super::ram_response::inspect(w.pre.scalar(p.frame.proof.binding,w.pre.motion),r.geometry.scalar()).map_err(|_|model::bad())?.normal_energy
+                }else if r.mode==ram_proof::Mode::Total{0.5*f64::from(event.mass_kg)*event.velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}
+                else{normal_energy_j}
+            }else if ram_response=="total_linear" {0.5*f64::from(event.mass_kg)*event.velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}else{normal_energy_j};
             println!("SHARED_VEHICLE_CONTACT battle={} slot={} object_id={} instance_id={} kind={} substep={} closing_speed={} scene_before={} scene_after={} fallen_tree={:?}",
                 candidate.id,event.shooter,event.object_id,event.instance_id,event.kind,event.substep,
                 closing_speed,event.scene_before,event.scene_after,event.fallen_tree);

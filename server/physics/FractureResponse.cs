@@ -12,6 +12,7 @@ internal sealed class FractureResponse
     public const string Policy = "test_lab-fence-energy-v1";
     public const string WholeObjectPolicy = "test_lab-whole-object-energy-v1";
     public const string FenceTotalPolicy = "test_lab-fence-total-energy-v1";
+    public const string FenceAngularPolicy = "test_lab-fence-linear-angular-energy-v1";
     public const int EnergyJ = 8000, MaxFractures = 32;
     public sealed record Receipt(uint ObjectId, int Substep, int Order, Vector3 Point, Vector3 Normal,
         Vector3 Velocity, Vector3 BudgetBefore, Vector3 BudgetAfter, Vector3 SolverBefore, Vector3 SolverAfter, int EnergyJ);
@@ -34,7 +35,7 @@ internal sealed class FractureResponse
 
     public FractureResponse(float massKg, CheckedInput.CatalogSpec catalog)
     {
-        if (!float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || !catalog.Fractures)
+        if (!float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || !catalog.Fractures || catalog.Version == 8)
             throw new InvalidDataException("fracture profile/mass mismatch");
         mass = massKg;
         wholeObjectEnergy = catalog.Version is 6 or 7;
@@ -153,6 +154,7 @@ internal sealed class WholeObjectContactPrepass : ICollection<CollideShapeResult
     private readonly PairFilter filter = new();
     private CollideShapeSettings settings;
     private Vector3 velocity;
+    private Action<Vector3, Vector3>? candidateVisitor;
     public Vector3 Point { get; private set; }
     public Vector3 Normal { get; private set; }
     public bool SelectedQueryContact { get; private set; }
@@ -167,22 +169,24 @@ internal sealed class WholeObjectContactPrepass : ICollection<CollideShapeResult
         settings = new CollideShapeSettings { MaxSeparationDistance = physics.SpeculativeContactDistance,
             ActiveEdgeMode = physics.CheckActiveEdges ? ActiveEdgeMode.CollideOnlyWithActive : ActiveEdgeMode.CollideWithAll };
     }
-    public void Query(PhysicsSystem world, Body tank, Body target, Vector3 incoming, Vector3 callbackPoint, Vector3 callbackNormal)
+    public void Query(PhysicsSystem world, Body tank, Body target, Vector3 incoming, Vector3 callbackPoint, Vector3 callbackNormal,
+        Action<Vector3, Vector3>? visitor = null)
     {
-        Reset(target.ID, incoming, callbackPoint, callbackNormal);
+        Reset(target.ID, incoming, callbackPoint, callbackNormal, visitor);
         settings.ActiveEdgeMovementDirection = incoming;
         // Contact callbacks hold the bodies locked. Calling a locking query or
         // BodyInterface here can deadlock; body access and NoLock are read-only.
         world.NarrowPhaseQueryNoLock.CollideShape(tank.Shape, Vector3.One, tank.GetCenterOfMassTransform(),
             settings, Vector3.Zero, CollisionCollectorType.AllHit, this, bodyFilter: filter);
     }
-    internal void Reset(BodyID target, Vector3 incoming, Vector3 point, Vector3 normal)
+    internal void Reset(BodyID target, Vector3 incoming, Vector3 point, Vector3 normal, Action<Vector3, Vector3>? visitor = null)
     {
+        candidateVisitor = visitor;
         filter.Target = target; velocity = incoming; Point = point; Normal = normal;
         Count = 0; Fault = false; SelectedQueryContact = false;
         if (!Bounded(incoming, 256) || !Bounded(point, 2000) || !Bounded(normal, 2)
             || normal.Length() < .999f || normal.Length() > 1.001f) Fault = true;
-        else Normal = Vector3.Normalize(normal);
+        else { Normal = Vector3.Normalize(normal); Visit(Point, Normal); }
     }
     public void Add(CollideShapeResult hit)
     {
@@ -212,6 +216,14 @@ internal sealed class WholeObjectContactPrepass : ICollection<CollideShapeResult
             }
         }
         if (better) { Point = point; Normal = normal; SelectedQueryContact = true; }
+        Visit(point, normal);
+    }
+    private void Visit(Vector3 point, Vector3 normal)
+    {
+        // An optional version8 candidate evaluation never unwinds through the
+        // native collection callback. The owner reports this fault after Update.
+        try { candidateVisitor?.Invoke(point, normal); }
+        catch (Exception) { Fault = true; }
     }
     private static bool Bounded(Vector3 v, float maximum) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z)
         && MathF.Abs(v.X) <= maximum && MathF.Abs(v.Y) <= maximum && MathF.Abs(v.Z) <= maximum;

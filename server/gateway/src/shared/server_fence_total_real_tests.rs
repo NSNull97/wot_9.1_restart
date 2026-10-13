@@ -128,7 +128,7 @@ fn fence_total_rejoin_restores_scene_but_does_not_grant_native_ready() {
     for corrupt_ack in [false,true] {
         let now=Instant::now();let mut f=Barrier::new(now);
         f.world.apply_vehicle_contacts(&[model::VehicleContactInput {object_id:1514,shooter:0,substep:1,
-            point:[0.;3],normal:[1.,0.,0.],velocity:[0.1,0.,3.],mass_kg:f.map.mass_kg,kind:"hull".into()}]).unwrap();
+            point:[0.;3],normal:[1.,0.,0.],velocity:[0.1,0.,3.],mass_kg:f.map.mass_kg,kind:"hull".into(),proof:None}]).unwrap();
         f.world.advance(now+drive::STEP).unwrap();let committed=f.world.fragiles.clone();
         let scene=Scene::new(&f.spec,&[1514]).unwrap();
         let(worker,peer)=controlled_ipc::ready(f.map.clone(),2,f.spec.clone(),scene,now+drive::STEP);
@@ -203,7 +203,7 @@ fn fence_total_actual_source_profiles_commit_only_after_both_ack_and_restore_on_
         // the bounded atomic API. These1037 synthetic prior removals are
         // explicitly excluded from real collision/native acceptance evidence.
         for ids in initial.chunks(32){let contacts=ids.iter().map(|id|model::VehicleContactInput{object_id:*id,shooter:0,substep:1,
-            point:[0.;3],normal:[0.,0.,1.],velocity:[0.,0.,25.],mass_kg:68190.,kind:"hull".into()}).collect::<Vec<_>>();
+            point:[0.;3],normal:[0.,0.,1.],velocity:[0.,0.,25.],mass_kg:68190.,kind:"hull".into(),proof:None}).collect::<Vec<_>>();
             assert_eq!(world.apply_vehicle_contacts(&contacts).unwrap().len(),ids.len());}
         assert_eq!(world.fragiles.as_ref().unwrap().removed_ids(),initial);world.fragiles.as_mut().unwrap().vehicle_events.clear();
         let mut runtime=IntegratedRuntime::new_for_map(pool.clone(),MapId::Prohorovka);runtime.catalog=Some(spec.clone());runtime.started=true;

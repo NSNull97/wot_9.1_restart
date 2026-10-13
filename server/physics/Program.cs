@@ -87,7 +87,10 @@ try
     float lateralFriction = configVersion >= 2 ? N("lateral_friction", .1f, 2) : 1.2f;
     float stationarySteeringRatio = configVersion >= 2 ? N("stationary_steering_ratio", .05f, 1) : 0;
     float yaw = N("spawn_yaw", -MathF.PI, MathF.PI), mass = N("mass_kg", 1000, 100000);
-    var fracture = catalog?.Fractures == true ? new FractureResponse(mass, catalog) : null;
+    var angularBinding = catalog?.Version == 8 ? AngularBodyBinding.Select(c) : null;
+    var angularFracture = angularBinding == null ? null : new AngularFractureResponse(mass, catalog!, angularBinding);
+    var fracture = catalog?.Fractures == true && angularBinding == null ? new FractureResponse(mass, catalog) : null;
+    int ipcLimit = angularBinding == null ? CheckedInput.MaxIpcLineBytes : CheckedInput.MaxAngularIpcLineBytes;
     float forwardLimit = N("max_forward_mps", 1, 20), reverseLimit = N("max_reverse_mps", .5f, 10);
     float radius = N("wheel_radius", .05f, 1), suspensionMin = N("suspension_min", 0, 1);
     float suspensionMax = N("suspension_max", .05f, 1);
@@ -105,9 +108,10 @@ try
     // Restore an authoritative cumulative snapshot BEFORE the tank is created
     // or settled. Reconnect must never settle on already destroyed colliders.
     using var input = Console.OpenStandardInput();
+    using var angularOutput = angularBinding == null ? null : Console.OpenStandardOutput();
     if (catalog != null)
     {
-        using var bootstrap = CheckedInput.Json(CheckedInput.ReadLine(input) ?? throw new InvalidDataException("missing scene bootstrap"));
+        using var bootstrap = CheckedInput.IpcJson(CheckedInput.ReadLine(input, ipcLimit) ?? throw new InvalidDataException("missing scene bootstrap"), angularBinding != null);
         scene = CheckedInput.SceneCommand(bootstrap.RootElement, "restore_scene", catalog, generation, hash, 0);
         sceneVersion = scene.Version;
     }
@@ -119,12 +123,12 @@ try
         using var broad = new BroadPhaseLayerInterfaceTable(2, 2);
         broad.MapObjectToBroadPhaseLayer(0, 0); broad.MapObjectToBroadPhaseLayer(1, 1);
         using var filter = new ObjectVsBroadPhaseLayerFilterTable(broad, 2, pairs, 2);
-        using JobSystem jobs = fracture != null ? new InlineJobSystem() : new JobSystemThreadPool();
+        using JobSystem jobs = fracture != null || angularFracture != null ? new InlineJobSystem() : new JobSystemThreadPool();
         using var world = new PhysicsSystem(new PhysicsSystemSettings {
             MaxBodies = Math.Max(32, (catalog?.Entries.Length ?? 0) + 8), MaxBodyPairs = 1024, MaxContactConstraints = 1024,
             ObjectLayerPairFilter = pairs, BroadPhaseLayerInterface = broad, ObjectVsBroadPhaseLayerFilter = filter });
         var bodies = world.BodyInterface;
-        using var pairPrepass = catalog?.Version is 6 or 7 ? new WholeObjectContactPrepass(world.Settings) : null;
+        using var pairPrepass = catalog?.Version is 6 or 7 or 8 ? new WholeObjectContactPrepass(world.Settings) : null;
         var staticBodies = new List<BodyID>();
         using var terrain = CheckedInput.LoadMesh(root, c.GetProperty("terrain"), map);
         MeshShape? selectedShape = null;
@@ -163,6 +167,7 @@ try
             OverrideMassProperties = OverrideMassProperties.CalculateInertia, MassPropertiesOverride = new MassProperties { Mass = mass },
             AllowSleeping = false, MaxLinearVelocity = 25, Friction = 1 };
         var body = bodies.CreateBody(bodySettings); bodies.AddBody(body.ID, Activation.Activate);
+        angularBinding?.Verify(body);
         var wheels = wheelPoints.Select(p => new WheelSettingsTV {
             Position = p - center, SuspensionDirection = -Vector3.UnitY, WheelUp = Vector3.UnitY, WheelForward = Vector3.UnitZ,
             SuspensionMinLength = suspensionMin, SuspensionMaxLength = suspensionMax, Radius = radius, Width = .25f,
@@ -194,6 +199,16 @@ try
         var tankBodyId = body.ID;
         void QueueContact(in Body body1, in Body body2, in ContactManifold manifold, ref ContactSettings settings)
         {
+            if (angularFracture == null) { QueueContactCore(body1, body2, manifold, ref settings); return; }
+            try
+            {
+                angularFracture.CallbackThreadCheck(); angularFracture.Check();
+                QueueContactCore(body1, body2, manifold, ref settings);
+            }
+            catch (Exception) { angularFracture.CallbackFault(5); }
+        }
+        void QueueContactCore(in Body body1, in Body body2, in ContactManifold manifold, ref ContactSettings settings)
+        {
             if (!captureContactsEnabled || manifold.IsNull || manifold.PointCount == 0) return;
             fracture?.CallbackThreadCheck();
             // Jolt calls this while all bodies are locked. Copy only callback
@@ -209,6 +224,21 @@ try
             var normal = tankFirst ? manifold.WorldSpaceNormal : -manifold.WorldSpaceNormal;
             rawContacts.Enqueue(new RawContact(tankBodyId.ID, (tankFirst ? body2.ID : body1.ID).ID,
                 point, normal, preStepVelocity, currentSubstep, "hull"));
+            if (angularFracture != null)
+            {
+                uint target = (tankFirst ? body2.ID : body1.ID).ID;
+                uint objectId = catalogBodies.First(x => x.Value.ID == target).Key;
+                if (angularFracture.NeedsPrepass(objectId))
+                {
+                    angularFracture.BeginPair(objectId);
+                    pairPrepass!.Query(world, tankFirst ? body1 : body2, tankFirst ? body2 : body1,
+                        preStepVelocity, point, normal, angularFracture.ConsiderCandidate);
+                    if (pairPrepass.Fault) { angularFracture.CallbackFault(5); return; }
+                    point = pairPrepass.Point; normal = pairPrepass.Normal;
+                }
+                if (angularFracture.TryAdmit(objectId, point, normal)) settings.IsSensor = true;
+                return;
+            }
             if (fracture != null)
             {
                 uint target = (tankFirst ? body2.ID : body1.ID).ID;
@@ -242,6 +272,8 @@ try
                     var q = bodies.GetRotation(body.ID);
                     preStepVelocity = bodies.GetLinearVelocity(body.ID);
                     if (captureContacts) fracture?.BeginSubstep(currentSubstep, preStepVelocity);
+                    if (captureContacts && angularFracture != null)
+                        angularFracture.BeginSubstep(currentSubstep, AngularMotionFrame.Capture(body, angularBinding!));
                     float speed = Vector3.Dot(preStepVelocity, Vector3.Transform(Vector3.UnitZ, q));
                     if (handling != null)
                     {
@@ -279,9 +311,22 @@ try
                     var error = world.Update(1f / 60, 1, jobs);
                     (jobs as InlineJobSystem)?.CheckThread();
                     fracture?.Check();
+                    angularFracture?.Check();
                     if (error != PhysicsUpdateError.None) throw new InvalidOperationException("physics capacity exceeded");
                     if (captureContacts)
                     {
+                        if (angularFracture != null)
+                        {
+                            var post = AngularMotionFrame.Capture(body, angularBinding!);
+                            var reduced = angularFracture.CompleteSubstep(post, id => {
+                                if (!pendingLocal.Add(id) || !catalogBodies.TryGetValue(id, out var removedBody))
+                                    throw new InvalidOperationException("prepared angular body unavailable or repeated");
+                                bodies.RemoveBody(removedBody);
+                            });
+                            bodies.SetLinearVelocity(body.ID, reduced.Linear);
+                            if (!AngularMotionFrame.SameBits(post.Motion.Angular, reduced.Angular))
+                                bodies.SetAngularVelocity(body.ID, reduced.Angular);
+                        }
                         if (fracture != null)
                         {
                             var reduced = fracture.CompleteSubstep(bodies.GetLinearVelocity(body.ID), id => {
@@ -355,6 +400,10 @@ try
                     foreach (var receipt in fracture.Receipts)
                         best[receipt.ObjectId] = new ContactRecord(receipt.ObjectId, "hull", receipt.Substep,
                             receipt.Point, receipt.Normal, receipt.Velocity);
+                if (angularFracture != null)
+                    foreach (var receipt in angularFracture.Receipts)
+                        best[receipt.ObjectId] = new ContactRecord(receipt.ObjectId, "hull", receipt.Substep,
+                            receipt.Point, receipt.Normal, receipt.Velocity);
                 if (best.Count > 32) throw new InvalidOperationException("distinct object contact bound exceeded");
                 foreach (var item in best.OrderBy(x => x.Key)) publishedContacts.Add(item.Value);
             }
@@ -385,6 +434,16 @@ try
                 var baseState = new { position = V(origin), direction = new[] { MathF.Atan2(forward.X, forward.Z), MathF.Asin(Math.Clamp(-forward.Y, -1, 1)), MathF.Atan2(right.Y, up.Y) },
                     speed = Vector3.Dot(velocity, forward), rspeed = angular.Y, contacts = Enumerable.Range(0, 6).Count(i => constraint.GetWheel(i).HasContact),
                     linear_velocity = V(velocity), angular_velocity = V(angular), wheel_contact_masks = contactMasks.ToArray() };
+                if (angularFracture != null)
+                {
+                    angularBinding!.Verify(body);
+                    return new { baseState.position, baseState.direction, baseState.speed, baseState.rspeed, baseState.contacts,
+                        baseState.linear_velocity, baseState.angular_velocity, baseState.wheel_contact_masks,
+                        object_contacts = publishedContacts.Select(c => new { object_id = c.ObjectId, kind = c.Kind,
+                            substep = c.Substep, point = V(c.Point), normal = V(c.Normal), velocity = V(c.Velocity) }).ToArray(),
+                        fractures = angularFracture.Receipts.Select(r => r.ToWire()).ToArray(),
+                        body_binding = angularBinding.ToWire(), motion_witnesses = angularFracture.Witnesses.Select(w => w.ToWire()).ToArray() };
+                }
                 if (fracture != null)
                     return new { baseState.position, baseState.direction, baseState.speed, baseState.rspeed, baseState.contacts,
                         baseState.linear_velocity, baseState.angular_velocity, baseState.wheel_contact_masks,
@@ -404,6 +463,13 @@ try
             {
                 diagnostics?.Write(sequence, tick, bodies.GetRotation(body.ID), bodies.GetLinearVelocity(body.ID),
                     bodies.GetAngularVelocity(body.ID), controller, constraint);
+                if (angularFracture != null)
+                {
+                    var line = CheckedInput.AngularLine(new { version = catalog!.IpcVersion, @event = eventName, seq = sequence,
+                        tick, settle_ticks = 180, map, config_sha256 = hash, generation, catalog_sha256 = catalog.Hash,
+                        scene_version = sceneVersion, scene_sha256 = scene!.Hash, contacts = true, state = State() });
+                    angularOutput!.Write(line); return;
+                }
                 if (catalog != null)
                     Console.WriteLine(JsonSerializer.Serialize(new { version = catalog.IpcVersion, @event = eventName, seq = sequence,
                         tick, settle_ticks = 180, map, config_sha256 = hash, generation, catalog_sha256 = catalog.Hash,
@@ -421,9 +487,9 @@ try
             if (Enumerable.Range(0, 6).Count(i => constraint.GetWheel(i).HasContact) < 3 || bodies.GetLinearVelocity(body.ID).Length() > 1)
                 throw new InvalidOperationException("spawn failed to settle on imported geometry");
             Write("ready");
-            for (byte[]? line; (line = CheckedInput.ReadLine(input)) != null;)
+            for (byte[]? line; (line = CheckedInput.ReadLine(input, ipcLimit)) != null;)
             {
-                using var command = CheckedInput.Json(line);
+                using var command = CheckedInput.IpcJson(line, angularBinding != null);
                 var request = command.RootElement;
                 if (catalog != null && request.GetProperty("op").GetString() == "sync_removed")
                 {
@@ -443,10 +509,12 @@ try
                         staticBodies.Remove(bodyId); catalogBodies.Remove(id);
                     }
                     scene = next; sceneVersion = next.Version;
-                    Console.WriteLine(JsonSerializer.Serialize(new { version = catalog.IpcVersion, @event = "scene_synced", advance_seq = sequence,
+                    var acknowledgement = new { version = catalog.IpcVersion, @event = "scene_synced", advance_seq = sequence,
                         tick, generation, config_sha256 = hash, catalog_sha256 = catalog.Hash,
                         scene_version = sceneVersion, removed_object_ids = scene.Ids, scene_sha256 = scene.Hash,
-                        contacts = catalog.Contacts ? true : (bool?)null },
+                        contacts = catalog.Contacts ? true : (bool?)null };
+                    if (angularOutput != null) angularOutput.Write(CheckedInput.AngularLine(acknowledgement));
+                    else Console.WriteLine(JsonSerializer.Serialize(acknowledgement,
                         new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
                     continue;
                 }
@@ -491,10 +559,11 @@ try
                 rawContactCount = 0; contactOverflow = 0; currentSubstep = 0;
                 while (rawContacts.TryDequeue(out _)) { }
                 fracture?.BeginAdvance();
+                angularFracture?.BeginAdvance();
                 captureContactsEnabled = catalog?.Contacts == true;
                 Advance(throttle, steer, brake, 6, catalog?.Contacts == true);
                 captureContactsEnabled = false;
-                CollectContacts(); sequence++; Write(fracture?.Receipts.Count > 0 ? "prepared" : "state");
+                CollectContacts(); sequence++; Write(fracture?.Receipts.Count > 0 || angularFracture?.Receipts.Count > 0 ? "prepared" : "state");
             }
         }
         finally

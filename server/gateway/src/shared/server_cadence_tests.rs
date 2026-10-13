@@ -194,7 +194,7 @@ fn clearing_a_slot_revokes_held_source_and_parked_world_keeps_its_clock() {
 fn rejoin_ack_wait_rebases_survivor_without_waiting_for_native_readiness() {
     let start=Instant::now();let mut f=fixture(start);
     f.world.apply_vehicle_contacts(&[model::VehicleContactInput {object_id:1513,substep:1,point:[0.;3],
-        normal:[0.,0.,1.],velocity:[0.,0.,2.],mass_kg:f.map.mass_kg,kind:"hull".into(),shooter:0}]).unwrap();
+        normal:[0.,0.,1.],velocity:[0.,0.,2.],mass_kg:f.map.mass_kg,kind:"hull".into(),shooter:0,proof:None}]).unwrap();
     f.world.advance(start+drive::STEP).unwrap();
     let (worker,peer)=controlled_ipc::ready(f.map.clone(),2,f.spec.clone(),Scene::new(&f.spec,&[1513]).unwrap(),start);
     f.runtime.workers[0]=Some(worker);f.peers[0]=peer;

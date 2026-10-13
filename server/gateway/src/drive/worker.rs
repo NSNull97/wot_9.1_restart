@@ -10,6 +10,12 @@ use sha2::{Digest,Sha256};
 mod catalog;
 #[path="worker/fracture.rs"]
 mod fracture;
+#[path="worker/angular.rs"]
+mod angular;
+#[cfg(test)]
+#[path="worker/angular_capture_tests.rs"]
+mod angular_capture_tests;
+use crate::gateway091::shared::ram_proof;
 #[path="worker/profile.rs"]
 mod profile;
 use crate::gateway091::shared::vehicle_profile::VehicleKind;
@@ -19,6 +25,7 @@ pub use catalog::{CatalogSpec,CatalogEntry,Scene,CatalogAck,MAX_CATALOG_OBJECTS,
 pub const STEP:Duration=Duration::from_millis(100);
 pub const MAX_SEQUENCE:u32=36000;
 pub const MAX_IPC_LINE:usize=32*1024;
+pub const MAX_ANGULAR_IPC_LINE:usize=64*1024;
 pub const START_TIMEOUT:Duration=Duration::from_secs(120);
 pub const REPLY_TIMEOUT:Duration=Duration::from_millis(500);
 pub const MAX_LAG:Duration=Duration::from_millis(500);
@@ -234,6 +241,18 @@ impl Pool {
         let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets,vehicle_profile};
         out.verify_assets()?;Ok(out)
     }
+    fn angular_profile(&self,map:&MapSpec)->io::Result<ram_proof::Profile>{
+        let profile=self.vehicle_profile.as_ref().ok_or_else(bad)?;
+        profile.verify_map(&self.local_root,map)?;
+        let selected=profile.angular_profile()?;
+        for (relative,sha,bytes) in [
+            ("JoltPhysicsSharp.dll","b4a700ac859c9304a7217e2ea499dec6e2b280dcad2ee02e910c4cc909f0ba67",None),
+            ("runtimes/win-x64/native/joltc.dll","79125ab6882a1aeeecd5509bfe9edf383e8e48a34d9a8b642a6b9a197d44df74",Some(2013696))] {
+            let expected=self.runtime.join(relative);
+            if !self.assets.iter().any(|a|a.path==expected&&a.sha256==sha&&bytes.is_none_or(|n|a.bytes==n)){return Err(bad());}
+        }
+        Ok(selected)
+    }
     pub fn vehicle_kind(&self)->VehicleKind{self.vehicle_profile.as_ref().map_or(VehicleKind::Ms1,|p|p.kind())}
     fn verify_assets(&self)->io::Result<()> {
         let mut found=BTreeSet::new();let mut stack=vec![self.runtime.clone()];let mut directories=0;
@@ -292,7 +311,7 @@ pub struct ObjectContact {pub object_id:u32,pub kind:String,pub substep:u8,pub p
 pub struct Pose {pub position:[f32;3],pub direction:[f32;3],pub speed:f32,pub rspeed:f32,pub contacts:u8,
     pub linear_velocity:[f32;3],pub angular_velocity:[f32;3],pub wheel_contact_masks:[u8;6]}
 #[derive(Clone,Debug,PartialEq)]
-pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose,pub scene_version:u32,pub object_contacts:Vec<ObjectContact>,pub fractures:Vec<FractureReceipt>}
+pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose,pub scene_version:u32,pub object_contacts:Vec<ObjectContact>,pub fractures:Vec<FractureReceipt>,pub angular_proof:Option<Arc<ram_proof::FrameProof>>}
 pub fn response(raw:&[u8],map:&MapSpec,seq:u32)->io::Result<State>{
     response_at_spawn(raw,map,seq,None)
 }
@@ -324,11 +343,12 @@ fn response_context(raw:&[u8],map:&MapSpec,seq:u32,expected_spawn:Option<[f32;3]
         if contacts<3 || pose.linear_velocity.iter().map(|v|v*v).sum::<f32>()>1.001
             || (pose.position[0]-spawn[0]).abs()>5. || (pose.position[2]-spawn[2]).abs()>5. { return Err(bad()); }
     }
-    Ok(State{seq,tick:180+seq*6,pose,scene_version,object_contacts:Vec::new(),fractures:Vec::new()})
+    Ok(State{seq,tick:180+seq*6,pose,scene_version,object_contacts:Vec::new(),fractures:Vec::new(),angular_proof:None})
 }
-fn line(reader:&mut impl Read)->io::Result<Vec<u8>> {
+fn line(reader:&mut impl Read)->io::Result<Vec<u8>> {line_with_limit(reader,MAX_IPC_LINE)}
+fn line_with_limit(reader:&mut impl Read,limit:usize)->io::Result<Vec<u8>> {
     let mut raw=Vec::new();loop{let mut b=[0];if reader.read(&mut b)?!=1{return Err(bad());}
-        if b[0]==10{return Ok(raw);}if raw.len()>=MAX_IPC_LINE || b[0]==0 || b[0]>127{return Err(bad());}raw.push(b[0]);}
+        if b[0]==10{return Ok(raw);}if raw.len()>=limit || b[0]==0 || b[0]>127{return Err(bad());}raw.push(b[0]);}
 }
 
 enum Event {Line(Instant,Vec<u8>),Failed}
@@ -356,7 +376,7 @@ pub struct Worker {pub generation:u32,pub map:MapSpec,receiver:mpsc::Receiver<Ev
     child:Arc<Mutex<Option<Child>>>,exit:Arc<Mutex<Option<ExitEvidence>>>,cancel:Arc<AtomicBool>,started:Instant,
     expected_spawn:Option<[f32;3]>,pending:Option<Pending>,ready:bool,last_seq:u32,
     removal:Option<RemovalSpec>,scene_version:u32,removal_ack:Option<RemovalAck>,
-    catalog:Option<CatalogSpec>,catalog_scene:Option<Scene>,pending_scene:Option<Scene>,catalog_ack:Option<CatalogAck>,prepared_ids:Vec<u32>}
+    catalog:Option<CatalogSpec>,catalog_scene:Option<Scene>,pending_scene:Option<Scene>,catalog_ack:Option<CatalogAck>,prepared_ids:Vec<u32>,angular_profile:Option<ram_proof::Profile>}
 impl Worker {
     pub fn launch(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant)->io::Result<Self>{
         Self::launch_at_spawn(pool,map,generation,now,None)
@@ -374,6 +394,7 @@ impl Worker {
     }
     fn launch_inner(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,removal:Option<RemovalSpec>,initial:Option<(CatalogSpec,Scene)>)->io::Result<Self>{
         if let Some(profile)=&pool.vehicle_profile{profile.verify_map(&pool.local_root,&map)?;}
+        let angular_profile=if initial.as_ref().is_some_and(|(s,_)|s.version()==8){Some(pool.angular_profile(&map)?)}else{None};
         if generation==0{return Err(bad());}
         if removal.is_some() && initial.is_some(){return Err(bad());}
         if let Some(target)=spawn {
@@ -426,7 +447,8 @@ impl Worker {
                         size+=keep;let _=e.try_send(Event::Failed);if size>=4096{break;}
                     },Err(_)=>{let _=e.try_send(Event::Failed);break;}}}
                 });
-                loop {let raw=line(&mut output)?;if revoked.load(Ordering::SeqCst){break;}
+                let line_limit=catalog_thread.as_ref().map_or(MAX_IPC_LINE,CatalogSpec::line_limit);
+                loop {let raw=line_with_limit(&mut output,line_limit)?;if revoked.load(Ordering::SeqCst){break;}
                     events.try_send(Event::Line(Instant::now(),raw)).map_err(|_|bad())?;}
                 Ok(())
             };
@@ -439,7 +461,7 @@ impl Worker {
         let (catalog,catalog_scene)=initial.map(|(spec,scene)|(Some(spec),Some(scene))).unwrap_or((None,None));
         Ok(Self{generation,map,receiver,sender:Some(sender),child,exit,cancel,started:now,expected_spawn:spawn,
             pending:None,ready:false,last_seq:0,removal,scene_version:0,removal_ack:None,
-            catalog,catalog_scene,pending_scene:None,catalog_ack:None,prepared_ids:Vec::new()})
+            catalog,catalog_scene,pending_scene:None,catalog_ack:None,prepared_ids:Vec::new(),angular_profile})
     }
     pub fn pending(&self)->bool{self.pending.is_some()}
     pub fn prepared_ids(&self)->&[u32]{&self.prepared_ids}
@@ -500,7 +522,7 @@ impl Worker {
                     }
                 };
                 let context=self.removal.as_ref().map(|spec|(spec,self.generation,self.scene_version));
-                let state=if let Some(spec)=&self.catalog{catalog::response(&raw,&self.map,spec,self.generation,seq,self.expected_spawn,self.catalog_scene.as_ref().ok_or_else(bad)?)?}
+                let state=if let Some(spec)=&self.catalog{catalog::response_with_profile(&raw,&self.map,spec,self.generation,seq,self.expected_spawn,self.catalog_scene.as_ref().ok_or_else(bad)?,self.angular_profile)?}
                     else{response_context(&raw,&self.map,seq,self.expected_spawn,context)?};
                 if !self.prepared_ids.is_empty(){return Err(bad());}
                 self.prepared_ids=state.fractures.iter().map(|receipt|receipt.object_id).collect();
@@ -546,6 +568,14 @@ pub(crate) mod controlled_ipc {
         Arc::new(Pool { local_root: PathBuf::new(), maps: vec![map], sha256: "0".repeat(64),
             executable: PathBuf::new(), runtime: PathBuf::new(), assets: Vec::new(), vehicle_profile: None })
     }
+    pub(crate) fn angular_fixture(name:&str)->(Value,CatalogSpec,Arc<crate::gateway091::shared::fragiles::Catalog>,ram_proof::Profile){angular::tests::bound(name)}
+    pub(crate) fn angular_pool(map:MapSpec,profile:ram_proof::Profile)->Arc<Pool>{
+        let mut p=Arc::try_unwrap(pool(map)).ok().unwrap();p.vehicle_profile=Some(profile::component_profile(profile));Arc::new(p)
+    }
+    pub(crate) fn angular_ready(map:MapSpec,generation:u32,spec:CatalogSpec,scene:Scene,now:Instant,profile:ram_proof::Profile)->(Worker,Peer){
+        assert_eq!(spec.version(),8);assert_eq!(map.mass_kg.to_bits(),profile.mass().to_bits());
+        let(mut worker,peer)=ready(map,generation,spec,scene,now);worker.angular_profile=Some(profile);(worker,peer)
+    }
     pub(crate) fn ready(map: MapSpec, generation: u32, spec: CatalogSpec, scene: Scene,
         now: Instant) -> (Worker, Peer) {
         let (replies, receiver) = mpsc::sync_channel(2);
@@ -555,7 +585,7 @@ pub(crate) mod controlled_ipc {
             cancel: Arc::new(AtomicBool::new(false)), started: now, expected_spawn: None,
             pending: None, ready: true, last_seq: 0, removal: None, scene_version: scene.version(),
             removal_ack: None, catalog: Some(spec), catalog_scene: Some(scene),
-            pending_scene: None, catalog_ack: None, prepared_ids: Vec::new() };
+            pending_scene: None, catalog_ack: None, prepared_ids: Vec::new(), angular_profile:None };
         (worker, Peer { replies, requests })
     }
 }
@@ -745,7 +775,7 @@ pub(crate) mod tests {
         let (send,receiver)=mpsc::sync_channel(4);let(sender,recv)=mpsc::sync_channel(1);
         (Worker{generation:1,map:map(),receiver,sender:Some(sender),child:Arc::new(Mutex::new(None)),exit:Arc::new(Mutex::new(None)),cancel:Arc::new(AtomicBool::new(false)),expected_spawn:None,
             started:now,pending:None,ready:false,last_seq:0,removal:None,scene_version:0,removal_ack:None,
-            catalog:None,catalog_scene:None,pending_scene:None,catalog_ack:None,prepared_ids:Vec::new()},send,recv)
+            catalog:None,catalog_scene:None,pending_scene:None,catalog_ack:None,prepared_ids:Vec::new(),angular_profile:None},send,recv)
     }
     fn good_catalog_state(seq:u32,spec:&CatalogSpec,scene:&Scene)->Value{
         let mut v=good(seq);v["version"]=3.into();v["generation"]=1.into();v["catalog_sha256"]=spec.sha256().into();

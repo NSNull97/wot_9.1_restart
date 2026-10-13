@@ -31,8 +31,8 @@ internal static class CheckedInput
     {
         public int MaxObjects => Version >= 4 ? MaxExtendedCatalogObjects : Contacts ? MaxContactCatalogObjects : MaxCatalogObjects;
         public int MaxRemoved => Version >= 4 ? MaxExtendedRemovedObjects : Contacts ? MaxContactRemovedObjects : MaxRemovedObjects;
-        public bool Fractures => Version is 5 or 6 or 7;
-        public int IpcVersion => Fractures ? 5 : Contacts ? 4 : 3;
+        public bool Fractures => Version is 5 or 6 or 7 or 8;
+        public int IpcVersion => Version == 8 ? 6 : Fractures ? 5 : Contacts ? 4 : 3;
     }
     public sealed record Scene(uint[] Ids, string Hash) { public uint Version => (uint)Ids.Length; }
     private sealed record CatalogSource(string PhysicsHash, string ProjectileHash, int InstanceCount, int TriangleCount);
@@ -62,19 +62,20 @@ internal static class CheckedInput
         var d = doc.RootElement;
         var source = CatalogProfile(map);
         int version = d.GetProperty("version").GetInt32();
-        bool contacts = version is 3 or 4 or 5 or 6 or 7;
+        bool contacts = version is 3 or 4 or 5 or 6 or 7 or 8;
         if (version == 2 && catalogBytes.Length > MaxLegacyCatalogBytes)
             throw new InvalidDataException("legacy catalog exceeds 128 KiB");
-        if (version is 5 or 6 or 7)
+        if (version is 5 or 6 or 7 or 8)
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "contacts", "objects", "ram_policy");
         else if (contacts)
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "contacts", "objects");
         else
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "objects");
-        if ((version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7) || (contacts && d.GetProperty("contacts").ValueKind != JsonValueKind.True) ||
+        if ((version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8) || (contacts && d.GetProperty("contacts").ValueKind != JsonValueKind.True) ||
             (version == 5 && d.GetProperty("ram_policy").GetString() != FractureResponse.Policy) ||
             (version == 6 && d.GetProperty("ram_policy").GetString() != FractureResponse.WholeObjectPolicy) ||
             (version == 7 && d.GetProperty("ram_policy").GetString() != FractureResponse.FenceTotalPolicy) ||
+            (version == 8 && d.GetProperty("ram_policy").GetString() != FractureResponse.FenceAngularPolicy) ||
             d.GetProperty("profile").GetString() != "test_lab" ||
             d.GetProperty("map").GetString() != map ||
             d.GetProperty("physics_manifest_sha256").GetString() != source.PhysicsHash ||
@@ -90,7 +91,7 @@ internal static class CheckedInput
         uint previous = 0;
         foreach (var row in rows.EnumerateArray())
         {
-            if (version == 7) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j", "ram_response");
+            if (version is 7 or 8) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j", "ram_response");
             else if (version is 5 or 6) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j");
             else if (contacts) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind");
             else Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision");
@@ -100,15 +101,18 @@ internal static class CheckedInput
             var revision = row.GetProperty("object_revision").GetString()!; Sha256(revision);
             string kind = contacts ? row.GetProperty("kind").GetString()! : "fragile";
             if (kind is not ("tree" or "fragile")) throw new InvalidDataException("catalog object kind");
-            int energy = version is 5 or 6 or 7 ? row.GetProperty("ram_energy_j").GetInt32() : 0;
-            string? response = version == 7 ? row.GetProperty("ram_response").GetString() : null;
+            int energy = version is 5 or 6 or 7 or 8 ? row.GetProperty("ram_energy_j").GetInt32() : 0;
+            string? response = version is 7 or 8 ? row.GetProperty("ram_response").GetString() : null;
             if (version == 7 && (response is not ("normal_linear" or "total_linear") ||
                 (response == "total_linear" && kind != "fragile")))
                 throw new InvalidDataException("catalog fracture response/kind mismatch");
+            if (version == 8 && (response is not ("normal_linear" or "total_linear_angular_fallback") ||
+                (response == "total_linear_angular_fallback" && kind != "fragile")))
+                throw new InvalidDataException("catalog angular response/kind mismatch");
             // Catalog6 extends the same bounded normal-energy response to all
             // source-joined whole objects. Catalog5 keeps its fence-only
             // projection, including zero-energy trees and ordinary fragiles.
-            if (version is 6 or 7 ? energy != FractureResponse.EnergyJ :
+            if (version is 6 or 7 or 8 ? energy != FractureResponse.EnergyJ :
                 energy is not (0 or FractureResponse.EnergyJ) || (energy > 0 && kind != "fragile"))
                 throw new InvalidDataException("catalog fracture energy/kind mismatch");
             if (id <= previous || instance < 0 || instance >= source.InstanceCount || !instances.Add(instance) ||
@@ -230,9 +234,39 @@ internal static class CheckedInput
     public static JsonDocument Json(byte[] data) => JsonDocument.Parse(data,
         new JsonDocumentOptions { MaxDepth = 12, AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
 
-    public const int MaxIpcLineBytes = 32 * 1024;
-    public static byte[]? ReadLine(Stream stream)
+    public static JsonDocument IpcJson(byte[] data, bool angular)
     {
+        var document = Json(data);
+        if (!angular) return document;
+        try
+        {
+            int count = 0;
+            void Visit(JsonElement value)
+            {
+                if (++count > 4096) throw new InvalidDataException("angular IPC node bound");
+                if (value.ValueKind == JsonValueKind.Array)
+                    foreach (var child in value.EnumerateArray()) Visit(child);
+                else if (value.ValueKind == JsonValueKind.Object)
+                    foreach (var child in value.EnumerateObject()) Visit(child.Value);
+            }
+            Visit(document.RootElement); return document;
+        }
+        catch { document.Dispose(); throw; }
+    }
+
+    public const int MaxIpcLineBytes = 32 * 1024;
+    public const int MaxAngularIpcLineBytes = 64 * 1024;
+    public static byte[] AngularLine(object frame)
+    {
+        byte[] payload = JsonSerializer.SerializeToUtf8Bytes(frame);
+        if (payload.Length > MaxAngularIpcLineBytes) throw new InvalidDataException("angular IPC output bound");
+        byte[] line = new byte[payload.Length + 1];
+        payload.CopyTo(line, 0); line[^1] = 10;
+        return line; // IPC6 is explicitly JSON + LF, never platform CRLF.
+    }
+    public static byte[]? ReadLine(Stream stream, int maximum = MaxIpcLineBytes)
+    {
+        if (maximum is not (MaxIpcLineBytes or MaxAngularIpcLineBytes)) throw new ArgumentOutOfRangeException(nameof(maximum));
         using var line = new MemoryStream();
         while (true)
         {
@@ -243,7 +277,7 @@ internal static class CheckedInput
                 return null;
             }
             if (value == 10) return line.ToArray();
-            if (line.Length >= MaxIpcLineBytes || value == 0 || value > 127) throw new InvalidDataException("IPC line outside bound");
+            if (line.Length >= maximum || value == 0 || value > 127) throw new InvalidDataException("IPC line outside bound");
             line.WriteByte((byte)value);
         }
     }

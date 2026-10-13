@@ -42,6 +42,10 @@ impl VehicleProfile {
         }else{None};
         Ok(Self{path,sha256:hash.into(),kind,config_version:pool_version,physics:v["physics"].clone(),handling})
     }
+    pub(super) fn angular_profile(&self)->io::Result<ram_proof::Profile>{
+        let expected=match self.kind{VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7};
+        if self.config_version!=3||self.handling.is_none()||self.sha256!=expected.sha(){return Err(bad());}Ok(expected)
+    }
     pub(super) fn kind(&self)->VehicleKind{self.kind}
     pub(super) fn config_version(&self)->u64{self.config_version}
     pub(super) fn verify_map(&self,root:&Path,map:&MapSpec)->io::Result<()>{
@@ -61,6 +65,14 @@ impl VehicleProfile {
         if map.mass_kg!=number(&self.physics["mass_kg"],1000.,100000.)? {return Err(bad());}
         Ok(())
     }
+}
+
+#[cfg(test)]
+pub(super) fn component_profile(profile:ram_proof::Profile)->VehicleProfile {
+    let (bytes,kind)=match profile{ram_proof::Profile::Ms1=>(include_bytes!("ms1-handling-profile.json").as_slice(),VehicleKind::Ms1),
+        ram_proof::Profile::Is7=>(include_bytes!("is7-handling-profile.json").as_slice(),VehicleKind::Is7)};
+    assert_eq!(format!("{:x}",Sha256::digest(bytes)),profile.sha());let v=json(bytes,16384).unwrap();
+    VehicleProfile{path:PathBuf::new(),sha256:profile.sha().into(),kind,config_version:3,physics:v["physics"].clone(),handling:Some(v["handling"].clone())}
 }
 
 fn same_numeric(actual:&Value,expected:&Value)->bool{

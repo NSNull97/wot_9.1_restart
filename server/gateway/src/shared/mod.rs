@@ -14,6 +14,8 @@ mod terrain_wire;
 mod destructible_wire;
 pub(crate) mod destructible;
 pub(crate) mod fragiles;
+pub(crate) mod ram_response;
+pub(crate) mod ram_proof;
 pub(crate) mod projectile;
 pub(crate) mod collision;
 pub(crate) mod impact;

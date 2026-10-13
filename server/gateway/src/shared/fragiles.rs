@@ -4,7 +4,7 @@ use std::{fs, io::{self, Read}, path::Path, sync::Arc};
 use sha2::{Digest,Sha256};
 use serde_json::Value;
 use crate::map_profile091::MapId;
-use super::{model::{bad,CAPACITY},terrain,obstacles,vehicle_profile::VehicleKind};
+use super::{ram_proof,model::{bad,CAPACITY},terrain,obstacles,vehicle_profile::VehicleKind};
 
 pub const MAX_OBJECTS:usize=64;
 pub const MAX_CONTACT_OBJECTS:usize=1024;
@@ -76,16 +76,16 @@ impl Catalog {
         if format!("{:x}",Sha256::digest(bytes))!=sha{return Err(bad());}
         let v=crate::map_drive_worker091::json_catalog_extended(bytes,1024*1024)?;
         let base_fields=["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects"];
-        if matches!(v["version"].as_u64(),Some(4|5|6)){
+        if matches!(v["version"].as_u64(),Some(4|5|6|7)){
             fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts","area_chunks","ram_policy"])?;
-            let policy=match v["version"].as_u64(){Some(6)=>FENCE_TOTAL_RAM_POLICY,Some(5)=>WHOLE_RAM_POLICY,_=>FENCE_RAM_POLICY};
+            let policy=match v["version"].as_u64(){Some(7)=>ram_proof::POLICY,Some(6)=>FENCE_TOTAL_RAM_POLICY,Some(5)=>WHOLE_RAM_POLICY,_=>FENCE_RAM_POLICY};
             if v["ram_policy"]!=policy{return Err(bad());}
         } else if v["version"].as_u64()==Some(3){fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts","area_chunks"])?;}
         else if v.get("contacts").is_some(){fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts"])?;}else{fields(&v,&base_fields)?;}
         let map=MapId::from_asset(v["map"].as_str().ok_or_else(bad)?)?;
         let profile=map.spec();
         let version=v["version"].as_u64().ok_or_else(bad)?;
-        if !(1..=6).contains(&version)||v["profile"]!="test_lab"||v["destructibles_sha256"]!=DEFINITIONS_SHA
+        if !(1..=7).contains(&version)||v["profile"]!="test_lab"||v["destructibles_sha256"]!=DEFINITIONS_SHA
             ||v["physics_manifest_sha256"]!=profile.physics_manifest_sha256||v["projectile_manifest_sha256"]!=profile.projectile_manifest_sha256{return Err(bad());}
         if version==1 && bytes.len()>131072{return Err(bad());}
         if version<3 { crate::map_drive_worker091::json_catalog(bytes,1024*1024)?; }
@@ -107,7 +107,7 @@ impl Catalog {
         let mut objects=Vec::with_capacity(rows.len());
         for row in rows {
             let object_fields=["object_id","instance_id","chunk_id","native_index","resource","health","material_kind","projectile_first_triangle","projectile_triangle_count","physics_first_triangle","physics_triangle_count","object_revision"];
-            if version==6 {fields(row,&["object_id","instance_id","chunk_id","native_index","resource","health","material_kind","projectile_first_triangle","projectile_triangle_count","physics_first_triangle","physics_triangle_count","object_revision","kind","ram_response"])?;}
+            if matches!(version,6|7) {fields(row,&["object_id","instance_id","chunk_id","native_index","resource","health","material_kind","projectile_first_triangle","projectile_triangle_count","physics_first_triangle","physics_triangle_count","object_revision","kind","ram_response"])?;}
             else if contacts{fields(row,&["object_id","instance_id","chunk_id","native_index","resource","health","material_kind","projectile_first_triangle","projectile_triangle_count","physics_first_triangle","physics_triangle_count","object_revision","kind"])?;}else{fields(row,&object_fields)?;}
             let kind=match row.get("kind") {
                 None if version==1=>ObjectKind::Fragile,
@@ -117,7 +117,7 @@ impl Catalog {
                 _=>return Err(bad()),
             };
             if contacts && row.get("kind").is_none(){return Err(bad());}
-            if version==6 && row["ram_response"]!=if kind==ObjectKind::MovementFragile{"total_linear"}else{"normal_linear"}{return Err(bad());}
+            if matches!(version,6|7) && row["ram_response"]!=if kind==ObjectKind::MovementFragile{if version==7{ram_proof::FALLBACK}else{"total_linear"}}else{"normal_linear"}{return Err(bad());}
             let object=Object{object_id:uint(&row["object_id"])?,instance_id:uint(&row["instance_id"])?,
                 chunk_id:u16::try_from(uint(&row["chunk_id"])?).map_err(|_|bad())?,native_index:u8::try_from(uint(&row["native_index"])?).map_err(|_|bad())?,
                 resource:text(&row["resource"],240)?,health:{let health=uint(&row["health"])?;
@@ -138,7 +138,7 @@ impl Catalog {
             ||self.area_chunks.windows(2).any(|w|w[0]>=w[1])
             ||self.area_chunks.iter().any(|c|!((121..=132).contains(&(c>>8))&&(121..=132).contains(&(c&255))))) {return Err(bad());}
         for (i,o) in self.objects.iter().enumerate(){
-            if self.version==6 && o.kind==ObjectKind::MovementFragile && !FENCE_TOTAL_RESOURCES.contains(&o.resource.as_str()) {return Err(bad());}
+            if matches!(self.version,6|7) && o.kind==ObjectKind::MovementFragile && !FENCE_TOTAL_RESOURCES.contains(&o.resource.as_str()) {return Err(bad());}
             let (resource_ok,material_ok,projectile_ok)=match o.kind {
                 ObjectKind::Fragile=>(o.resource.starts_with("content/")&&o.resource.ends_with(".model"),o.material_kind==73,o.projectile_triangle_count>0),
                 ObjectKind::Tree=>(o.resource.starts_with("speedtree/")&&o.resource.ends_with(".spt"),o.material_kind==71,o.projectile_triangle_count==0),
@@ -167,7 +167,7 @@ impl Catalog {
     /// New catalogs validate this exact discriminator at parse time. Deriving
     /// it from the retained kind keeps older in-memory fixtures unchanged.
     pub fn ram_response(&self,object:&Object)->Option<&'static str>{
-        (self.version==6).then_some(if object.kind==ObjectKind::MovementFragile{"total_linear"}else{"normal_linear"})
+        (self.version>=6).then_some(if object.kind==ObjectKind::MovementFragile{if self.version==7{ram_proof::FALLBACK}else{"total_linear"}}else{"normal_linear"})
     }
     pub fn contacts(&self)->bool { self.contacts }
     pub fn chunks(&self)->Vec<u16>{if self.version>=3{return self.area_chunks.clone();}let mut v=self.objects.iter().map(|o|o.chunk_id).collect::<Vec<_>>();v.sort_unstable();v.dedup();v}
@@ -189,7 +189,7 @@ pub struct Damage {pub object_id:u32,pub instance_id:u32,pub object_revision:Str
     pub health_before:u32,pub health_after:u32,pub scene_before:u32,pub scene_after:u32,pub hit:terrain::Hit}
 #[derive(Clone,Debug,PartialEq)]
 pub struct VehicleContact {pub object_id:u32,pub instance_id:u32,pub object_revision:String,pub shooter:usize,pub tick:u32,pub substep:u8,
-    pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3],pub mass_kg:f32,pub kind:String,pub scene_before:u32,pub scene_after:u32,pub fallen_tree:Option<u32>}
+    pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3],pub mass_kg:f32,pub kind:String,pub scene_before:u32,pub scene_after:u32,pub fallen_tree:Option<u32>,pub proof:Option<ram_proof::ContactProof>}
 #[derive(Clone,Debug,PartialEq)]
 pub struct State {pub catalog:Arc<Catalog>,health:Vec<u32>,fallen:Vec<Option<u32>>,pub events:Vec<Damage>,pub vehicle_events:Vec<VehicleContact>}
 impl State {
@@ -214,8 +214,56 @@ impl State {
     }
     pub fn native_fallen_trees(&self,chunk:u16)->Vec<u32>{let mut values=self.catalog.objects.iter().zip(&self.fallen)
         .filter_map(|(o,f)|if o.chunk_id==chunk{*f}else{None}).collect::<Vec<_>>();values.sort_unstable();values}
+    /// Reconstruct the exact worker scene at a historical committed boundary.
+    /// Same-tick projectile removals may legitimately follow this source scene.
+    pub fn historical_scene_hash(&self,version:u32)->io::Result<String>{
+        let mut rows=self.events.iter().filter(|e|e.health_after==0&&e.scene_after<=version)
+            .map(|e|(e.scene_after,e.object_id)).chain(self.vehicle_events.iter()
+                .filter(|e|e.scene_after<=version).map(|e|(e.scene_after,e.object_id))).collect::<Vec<_>>();
+        rows.sort_unstable();
+        if rows.len()!=version as usize||rows.iter().enumerate().any(|(i,(v,_))|*v!=i as u32+1){return Err(bad());}
+        let mut ids=rows.into_iter().map(|(_,id)|id).collect::<Vec<_>>();ids.sort_unstable();
+        if ids.windows(2).any(|w|w[0]==w[1]){return Err(bad());}
+        let mut h=Sha256::new();h.update(b"wot091-fragile-scene-v3\0");
+        for pair in self.catalog.worker_sha256.as_bytes().chunks_exact(2){
+            let value=std::str::from_utf8(pair).ok().and_then(|s|u8::from_str_radix(s,16).ok()).ok_or_else(bad)?;h.update([value]);}
+        h.update((ids.len() as u32).to_le_bytes());for id in ids{h.update(id.to_le_bytes());}
+        Ok(format!("{:x}",h.finalize()))
+    }
+    pub fn validate_proof(&self,proof:&ram_proof::ContactProof)->io::Result<()> {
+        let frame=&proof.frame;let c=&frame.context;c.validate()?;
+        if self.catalog.version!=7||c.catalog_sha256!=self.catalog.worker_sha256||c.domain_sha256!=self.catalog.sha256
+            ||c.scene_sha256!=self.historical_scene_hash(c.scene_version)? {return Err(bad());}
+        frame.proof.validate(|id|self.catalog.objects.iter().find(|o|o.object_id==id).map(|o|
+            if o.kind==ObjectKind::MovementFragile{ram_proof::Allowed::Fallback}else{ram_proof::Allowed::Normal}))?;
+        let r=proof.receipt()?;
+        // Every receipt was live in the captured source scene, including rows
+        // which another source subsequently destroys during the same world tick.
+        for r in &frame.proof.receipts {
+            if self.events.iter().any(|e|e.object_id==r.object_id&&e.health_after==0&&e.scene_after<=c.scene_version)
+                ||self.vehicle_events.iter().any(|e|e.object_id==r.object_id&&e.scene_after<=c.scene_version){return Err(bad());}
+        }
+        for old in self.vehicle_events.iter().filter_map(|e|e.proof.as_ref()).filter(|p|p.frame.context.slot==c.slot) {
+            let before=&old.frame.context;
+            if before.generation>c.generation||before.generation==c.generation&&(before.session!=c.session||before.seq>c.seq){return Err(bad());}
+            if before.generation==c.generation&&before.seq==c.seq
+                &&(old.frame.as_ref()!=frame.as_ref()||old.index>=proof.index){return Err(bad());}
+        }
+        if r.object_id==0{return Err(bad());}Ok(())
+    }
     pub fn ram_contact(&mut self,object_id:u32,shooter:usize,tick:u32,substep:u8,point:[f32;3],normal:[f32;3],velocity:[f32;3],mass_kg:f32,kind:String)->io::Result<Option<VehicleContact>>{
-        let bounded_speed_squared=if self.catalog.version==6 {velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}
+        self.ram_contact_with_proof(object_id,shooter,tick,substep,point,normal,velocity,mass_kg,kind,None)
+    }
+    pub fn ram_contact_with_proof(&mut self,object_id:u32,shooter:usize,tick:u32,substep:u8,point:[f32;3],normal:[f32;3],velocity:[f32;3],mass_kg:f32,kind:String,proof:Option<ram_proof::ContactProof>)->io::Result<Option<VehicleContact>>{
+        if self.catalog.version!=7&&proof.is_some(){return Err(bad());}
+        if let Some(p)=&proof {
+            self.validate_proof(p)?;let r=p.receipt()?;let pre=p.frame.proof.witness(r.substep)?.pre;
+            if p.frame.context.slot!=shooter||r.object_id!=object_id||r.substep!=substep||kind!="hull"
+                ||!ram_proof::bits(point,r.geometry.point)||!ram_proof::bits(normal,r.geometry.normal)
+                ||!ram_proof::bits(velocity,pre.motion.v)||mass_kg.to_bits()!=p.frame.proof.profile.mass().to_bits(){return Err(bad());}
+        }
+
+        let bounded_speed_squared=if self.catalog.version>=6 {velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}
             else {f64::from(velocity.iter().map(|v|v*v).sum::<f32>())};
         if shooter>=CAPACITY||tick==0||!(1..=6).contains(&substep)||!matches!(kind.as_str(),"hull"|"wheel")
             ||point.iter().chain(normal.iter()).chain(velocity.iter()).any(|v|!v.is_finite())
@@ -226,8 +274,10 @@ impl State {
             ||self.latest_tick().is_some_and(|last|last>tick){return Err(bad());}
         let index=self.catalog.objects.iter().position(|o|o.object_id==object_id).ok_or_else(bad)?;let object=&self.catalog.objects[index];
         if kind=="wheel" { return Ok(None); }
+        if self.catalog.version==7&&proof.is_none(){return Err(bad());}
         let whole_response=self.catalog.version>=5;
-        let total_response=self.catalog.ram_response(object)==Some("total_linear");
+        let total_response=matches!(self.catalog.ram_response(object),Some("total_linear")|Some(ram_proof::FALLBACK));
+        let angular=proof.as_ref().is_some_and(|p|p.receipt().is_ok_and(|r|r.mode==ram_proof::Mode::Angular));
         let energy_response=whole_response||self.catalog.version==4&&matches!(object.kind,ObjectKind::MovementFragile);
         let speed_squared=if energy_response {velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}
             else {f64::from(velocity.iter().map(|v|v*v).sum::<f32>())};
@@ -239,17 +289,17 @@ impl State {
         // in C# and Rust. Retain historical test_lab arithmetic in old profiles.
         let closing=if energy_response {velocity.iter().zip(normal).map(|(v,n)|f64::from(*v)*f64::from(n)).sum::<f64>()}
             else {f64::from(velocity[0]*normal[0]+velocity[1]*normal[1]+velocity[2]*normal[2])};
-        if closing<0.1{return Ok(None);}
+        if !angular&&closing<0.1{return Ok(None);}
         let energy_j=if total_response {0.5*f64::from(mass_kg)*speed_squared}
             else if energy_response {0.5*f64::from(mass_kg)*closing*closing}
             else {f64::from(0.5*mass_kg*(closing as f32)*(closing as f32))};
-        if energy_j<f64::from(RAMMING_MIN_ENERGY_J){return Ok(None);}
+        if !angular&&energy_j<f64::from(RAMMING_MIN_ENERGY_J){return Ok(None);}
         let scene=self.scene_version();let fallen_tree=if matches!(object.kind,ObjectKind::Tree){
             let yaw=velocity[0].atan2(velocity[2]);let speed=if closing>=8.{3.}else if closing>=4.{2.}else if closing>=1.{1.}else{0.};
             Some(super::destructible_wire::encode_fallen_tree(object.native_index,yaw,TREE_FALL_FLAT_GROUND_PITCH,speed)?)
         }else{None};
         self.health[index]=0;self.fallen[index]=fallen_tree;
-        let event=VehicleContact{object_id,instance_id:object.instance_id,object_revision:object.object_revision.clone(),shooter,tick,substep,point,normal,velocity,mass_kg,kind,scene_before:scene,scene_after:scene+1,fallen_tree};self.vehicle_events.push(event.clone());Ok(Some(event))
+        let event=VehicleContact{object_id,instance_id:object.instance_id,object_revision:object.object_revision.clone(),shooter,tick,substep,point,normal,velocity,mass_kg,kind,scene_before:scene,scene_after:scene+1,fallen_tree,proof};self.vehicle_events.push(event.clone());Ok(Some(event))
     }
     pub fn contact(&mut self,shot:u32,shooter:usize,tick:u32,hit:terrain::Hit)->io::Result<Option<Damage>>{
         self.contact_for(VehicleKind::Ms1,shot,shooter,tick,hit)

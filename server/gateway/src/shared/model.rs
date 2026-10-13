@@ -2,7 +2,7 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, sync::Arc, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::{aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile, vehicle_profile::VehicleKind};
+use super::{ram_proof,aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile, vehicle_profile::VehicleKind};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
@@ -101,6 +101,7 @@ pub struct VehicleContactInput {
     pub mass_kg: f32,
     pub kind: String,
     pub shooter: usize,
+    pub proof: Option<ram_proof::ContactProof>,
 }
 
 #[derive(Clone)]
@@ -123,6 +124,8 @@ pub struct World {
     pub terrain_contacts: Vec<TerrainContact>,
     destructible: Option<destructible::State>,
     pub fragiles: Option<fragiles::State>,
+    contact_sources:[Option<ram_proof::Source>;CAPACITY],
+    contact_sequences:[u32;CAPACITY],
 }
 
 impl World {
@@ -138,7 +141,8 @@ impl World {
         Ok(Self { id, map, vehicle_kind:kind, actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind),
             geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
-            terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None })
+            terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None,
+            contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;CAPACITY] })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
         if bundle.vehicle_kind()!=self.vehicle_kind || self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
@@ -167,6 +171,19 @@ impl World {
     pub fn scene_version(&self)->u32{self.fragiles.as_ref().map_or_else(||self.destructible.as_ref().map_or(0,destructible::State::scene_version),fragiles::State::scene_version)}
     pub fn destructible_enabled(&self)->bool{self.destructible.is_some()}
     pub fn destructible_transition(&self)->Option<&destructible::Transition>{self.destructible.as_ref().and_then(destructible::State::transition)}
+    pub fn bind_contact_source(&mut self,slot:usize,source:ram_proof::Source)->io::Result<()> {
+        if slot>=CAPACITY||self.actors.get(slot).and_then(|a|a.session)!=Some(source.session)
+            ||source.profile!=match self.vehicle_kind{VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}
+            ||!source.follows(self.contact_sources[slot].as_ref()){return Err(bad());}
+        self.impact.bind_contact_source(slot,source.clone())?;
+        if self.contact_sources[slot].as_ref()!=Some(&source){self.contact_sequences[slot]=0;}
+        self.contact_sources[slot]=Some(source);Ok(())
+    }
+    pub fn revoke_contact_source(&mut self,slot:usize)->io::Result<()> {
+        if slot>=CAPACITY||self.actors.get(slot).and_then(|a|a.session).is_some(){return Err(bad());}
+        // Retain the generation floor; actor session absence revokes admission.
+        self.impact.revoke_contact_source(slot)?;Ok(())
+    }
     /// Apply contacts from a fully drained worker frame to a cloned candidate
     /// world. The caller stages the candidate and waits for both worker scene
     /// ACKs before committing it or publishing native state.
@@ -181,17 +198,37 @@ impl World {
         let mut state=self.fragiles.as_ref().ok_or_else(bad)?.clone();
         if !state.catalog.contacts { return Err(bad()); }
         let mut trace=self.impact.clone();
+        let mut sequences=self.contact_sequences;
+        if state.catalog.version==7 {
+            let mut frames:[Option<Arc<ram_proof::ContextFrame>>;CAPACITY]=std::array::from_fn(|_|None);
+            let mut indices:[Vec<usize>;CAPACITY]=std::array::from_fn(|_|Vec::new());
+            for contact in contacts {
+                let p=contact.proof.as_ref().ok_or_else(bad)?;let c=&p.frame.context;let slot=contact.shooter;
+                if slot>=CAPACITY||c.battle!=self.id||c.slot!=slot||self.actors.get(slot).and_then(|a|a.session)!=Some(c.session)
+                    ||!self.contact_sources[slot].as_ref().is_some_and(|s|s.matches(c,p.frame.proof.profile))
+                    ||c.seq<=self.contact_sequences[slot]||p.index!=indices[slot].len(){return Err(bad());}
+                indices[slot].push(p.index);
+                state.validate_proof(p)?;
+                if let Some(old)=&frames[slot]{if old.as_ref()!=p.frame.as_ref(){return Err(bad());}}
+                else{frames[slot]=Some(p.frame.clone());}
+                sequences[slot]=c.seq;
+            }
+            for (frame,ids) in frames.iter().zip(&indices){if let Some(frame)=frame {
+                if ids.iter().copied().collect::<Vec<_>>()!=(0..frame.proof.receipts.len()).collect::<Vec<_>>(){return Err(bad());}
+            }}
+        }
         let mut outcomes=Vec::new();
         for contact in contacts {
             if contact.shooter>=CAPACITY { return Err(bad()); }
-            if let Some(event)=state.ram_contact(contact.object_id,contact.shooter,self.tick,contact.substep,
-                contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone())? {
+            if let Some(event)=state.ram_contact_with_proof(contact.object_id,contact.shooter,self.tick,contact.substep,
+                contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone(),contact.proof.clone())? {
                 trace.vehicle_contact(self.id,event.tick,&event)?;
                 outcomes.push(event);
             }
         }
         self.fragiles=Some(state);
         self.impact=trace;
+        self.contact_sequences=sequences;
         Ok(outcomes)
     }
     /// Authenticated identity only. The caller reserves a transport retirement
@@ -663,7 +700,7 @@ pub(super) mod tests {
         let now=Instant::now();let mut w=contact_world(now);
         let before_fragiles=w.fragiles.clone();let before_impact=w.impact.clone();
         let valid=VehicleContactInput{object_id:1513,substep:1,point:[0.,0.,0.],
-            normal:[1.,0.,0.],velocity:[2.,0.,0.],mass_kg:4691.,kind:"hull".into(),shooter:0};
+            normal:[1.,0.,0.],velocity:[2.,0.,0.],mass_kg:4691.,kind:"hull".into(),shooter:0,proof:None};
         let invalid=VehicleContactInput{object_id:9999,..valid.clone()};
         assert!(w.apply_vehicle_contacts(&[valid.clone(),invalid]).is_err());
         assert_eq!(w.fragiles,before_fragiles);

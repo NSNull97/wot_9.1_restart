@@ -279,3 +279,21 @@ Before a future native launch make a fresh source binding/passive preflight;
 the old2d66203 morning bundle is preserved, not rewritten or treated current.
 Next automatic action: review and integrate Stage-B worker/gateway patches,
 then bind the fresh candidate15 build and first-eight actual-worker runner.
+
+### Integrated first-eight checkpoint — 2026-10-13 20:29UTC
+
+The reviewed6 C#/17 Rust files are now integrated. Canonical candidate15 build,
+17 targeted Rust tests and the actual8 worker capture pass. Separate isolated
+production decoder passes960 advances/10 receipts/6 ACKs with0 new workers.
+All8 owned children exited0; both profiles repeat exactly. IS-7 applies the
+angular debit; MS-1's actual weak contact stays intact; both chain cases retain
+old behavior and pass the complete source-box passage gate. Details/pins and
+precise limits: [runtime report](../research/P05B_ANGULAR_RUNTIME_GATE.md).
+
+Remaining automatic work in this plan: reviewed old-catalog regressions,
+actual paired-source workers/both ACK/fresh rejoin, separate all-alive map
+coverage and full gateway suite. A paired isolated fixture may seed1037 prior
+removals only using explicitly synthetic valid linear proof batches through
+ordinary World admission; preserve the complete history. Synthetic seed is
+never actual contact evidence. Any observer is cfg(test)-only, bounded and
+reviewed before launch. No unchecked State/Trace bypass, native input or merge.

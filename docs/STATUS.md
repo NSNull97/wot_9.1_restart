@@ -1,3 +1,22 @@
+## 2026-10-14 — P05B candidate15 first-eight and full frame decode PASS
+
+Reviewed C#/Rust integration is now in the card branch. Canonical worker15
+builds;219 linked C# checks and17 targeted Rust checks PASS (saved decoder
+initially ignored). Eight actual private source-profile workers then completed:
+IS-7 rotating corner removes3167 with angular POST applied; MS-1 actual weak
+contact stays intact; both chain cases remove3166/3167, preserve14 behavior
+and pass full-source-box passage. Exact repeated states/proofs, all owned exit0.
+Separate production Rust decode:8 ready/960 advances/10 receipts/6 ACKs,
+1 isolated test PASS0 ignored. Capture receipts remain unchanged.
+See [runtime gate](research/P05B_ANGULAR_RUNTIME_GATE.md).
+
+These fixtures have synthetic initial removals. All-alive map, actual paired
+ACK/rejoin, old-policy regressions and full gateway gate remain pending.
+Native owner after09:00 NOT_RUN; historical fidelity/static pressure/compound
+coverage OPEN. Candidate14 preserved; no native launch/input, merge or push.
+Next: reviewed old-policy regressions and bounded actual paired-worker gate.
+Unrelated dirty P09B remains untouched.
+
 ## 2026-10-14 — P05B angular scalar PASS; runtime integration next
 
 Frozen C#/Rust angular kernels match256 scalar cases and2882 saved native
