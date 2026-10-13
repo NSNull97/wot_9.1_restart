@@ -1,3 +1,39 @@
+## 2026-10-13 — P04C source-bound configuration reservation
+
+Isolated branch `codex/p04c-configuration-reservation`, stacking frozen P04B
+`20b5d52` and the unchanged P09C dependency `7fb0e47` (local cherry-pick
+`85c4710`). No main merge/push or live/native installation during parallel work.
+
+**PASS_SOURCE_BOUND_CONFIGURATION_RESERVATION** for the isolated source and
+SQLite slice. Real #717 mounted components establish MS-1 mass 4691 kg /
+maxLoad 4890 kg, and IS-7 mass 68190 kg / maxLoad 70950 kg. MS-1 ventilation
+plus aim drives exceeds its available 199 kg by 1 kg and is rejected.
+
+The existing P09B/P09C store now has a separate source-bound configuration
+extension: server-owned crew/device config, actual mass and loaded ammo freeze
+with reservation/revision/shared ledger in one SQLite transaction. Repeat
+commands survive reopen and unrelated vehicle changes without double debit.
+The old reservation bypass rejects; a checked consumer method returns the
+exact immutable snapshot bytes for the authenticated account and battle.
+
+Current-head scope is 195 discovered tests (34 reservation, 19 mass, 44 P04B,
+74 P09B/P09C, 16 content, 8 layout); actual results and the explicit Windows
+symlink skip are recorded in the final receipt. Persistent scenario: 33 checks
+with source audits, aggregate revisions 0 through 5, reopen and exact snapshot
+readback. Independent review: 17 additional checks, no blocking findings.
+
+Evidence: [P04C index](evidence-index/P04C.md),
+[contract and classifications](research/P04C_CONFIGURATION_RESERVATION.md).
+Final commit, platform, source/test hashes and retained SQLite database are
+under this worktree's
+`local/evidence/20261013-p04c-configuration-reservation-01/acceptance-final/`.
+
+Native/runtime wiring, fresh native mass readback, live inventory grants,
+deployed migration and final crew combat formulas remain UNKNOWN/NOT_RUN.
+Fixture crew/equipment ownership is synthetic; release and post-battle ammo
+consumption are not implemented. Next: coordinate runtime admission integration
+with P09D/P03M and perform the separate real-client acceptance.
+
 ## 2026-10-13 — P04B isolated crew / installed-device snapshot
 
 Separate branch `codex/p04b-crew-equipment-snapshot`, based on accepted
