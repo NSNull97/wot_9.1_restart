@@ -135,17 +135,19 @@ fn file_hash(path:&Path,size:u64)->io::Result<String>{
 pub struct MapSpec {pub asset:String,pub arena_type_id:i32,pub config:PathBuf,pub config_sha256:String,
     pub bounds:[f32;4],pub spawn:[f32;3],pub spawn_yaw:f32,pub mass_kg:f32}
 impl MapSpec {
-    fn load(root:&Path,v:&Value)->io::Result<Self>{
+    fn load(root:&Path,v:&Value,profile_bound:bool)->io::Result<Self>{
         fields(v,&["asset","arena_type_id","config","config_sha256"])?;
         let asset=text(v,"asset")?;let id=uint(&v["arena_type_id"])?;
         if !matches!((asset,id),("01_karelia",1)|("05_prohorovka",4)){return Err(bad());}
         let config=owned(root,Path::new(text(v,"config")?))?;let hash=text(v,"config_sha256")?;hash_text(hash)?;
         let raw=read(&config,16384)?;if format!("{:x}",Sha256::digest(&raw))!=hash{return Err(bad());}
         let c=json(&raw,16384)?;
-        fields(&c,&["version","profile","map","terrain","obstacles","spawn_origin","spawn_yaw","body_half_extents",
+        let mut names=vec!["version","profile","map","terrain","obstacles","spawn_origin","spawn_yaw","body_half_extents",
             "body_center_offset","wheel_points","mass_kg","max_forward_mps","max_reverse_mps","engine_max_torque_nm",
-            "wheel_radius","suspension_min","suspension_max","track_max_brake_torque","bounds_xz"])?;
-        if uint(&c["version"])?!=1 || text(&c,"profile")?!="test_lab" || text(&c,"map")?!=asset{return Err(bad());}
+            "wheel_radius","suspension_min","suspension_max","track_max_brake_torque","bounds_xz"];
+        if profile_bound {names.extend(["longitudinal_friction","lateral_friction","stationary_steering_ratio"]);}
+        fields(&c,&names)?;
+        if uint(&c["version"])?!=if profile_bound{2}else{1} || text(&c,"profile")?!="test_lab" || text(&c,"map")?!=asset{return Err(bad());}
         for k in ["terrain","obstacles"]{fields(&c[k],&["path","sha256"])?;hash_text(text(&c[k],"sha256")?)?;owned(root,Path::new(text(&c[k],"path")?))?;}
         let a=c["bounds_xz"].as_array().ok_or_else(bad)?;if a.len()!=4{return Err(bad());}
         let bounds=[number(&a[0],-1000.,0.)?,number(&a[1],-1000.,0.)?,number(&a[2],0.,1000.)?,number(&a[3],0.,1000.)?];
@@ -223,7 +225,7 @@ impl Pool {
         }
         if !seen.contains(&executable){return Err(bad());}
         let specs=v["maps"].as_array().ok_or_else(bad)?;if specs.len()!=2{return Err(bad());}
-        let maps=specs.iter().map(|m|MapSpec::load(&root,m)).collect::<io::Result<Vec<_>>>()?;
+        let maps=specs.iter().map(|m|MapSpec::load(&root,m,vehicle_profile.is_some())).collect::<io::Result<Vec<_>>>()?;
         if maps[0].arena_type_id==maps[1].arena_type_id || maps[0].config==maps[1].config{return Err(bad());}
         if let Some(profile)=&vehicle_profile {for map in &maps{profile.verify_map(&root,map)?;}}
         let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets,vehicle_profile};

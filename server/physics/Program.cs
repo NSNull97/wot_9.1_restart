@@ -23,11 +23,14 @@ try
     if (hash.Length != 64 || hash.Any(c => !"0123456789abcdef".Contains(c))) throw new InvalidDataException("config hash required");
     using var config = CheckedInput.Json(CheckedInput.FileBytes(CheckedInput.Owned(root, args[3]), 16384, hash));
     var c = config.RootElement;
-    CheckedInput.Fields(c, "version", "profile", "map", "terrain", "obstacles", "spawn_origin", "spawn_yaw",
+    int configVersion = c.GetProperty("version").GetInt32();
+    string[] configFields = ["version", "profile", "map", "terrain", "obstacles", "spawn_origin", "spawn_yaw",
         "body_half_extents", "body_center_offset", "wheel_points", "mass_kg", "max_forward_mps", "max_reverse_mps",
-        "engine_max_torque_nm", "wheel_radius", "suspension_min", "suspension_max", "track_max_brake_torque", "bounds_xz");
-    if (c.GetProperty("version").GetInt32() != 1 || c.GetProperty("profile").GetString() != "test_lab")
-        throw new InvalidDataException("only explicit test_lab v1 supported");
+        "engine_max_torque_nm", "wheel_radius", "suspension_min", "suspension_max", "track_max_brake_torque", "bounds_xz"];
+    if (configVersion == 2) configFields = [..configFields, "longitudinal_friction", "lateral_friction", "stationary_steering_ratio"];
+    if (configVersion is not (1 or 2) || c.GetProperty("profile").GetString() != "test_lab")
+        throw new InvalidDataException("only explicit test_lab config v1/v2 supported");
+    CheckedInput.Fields(c, configFields);
     string map = c.GetProperty("map").GetString()!;
     if (map is not ("01_karelia" or "05_prohorovka")) throw new InvalidDataException("map outside checked pool");
     CheckedInput.RemovalSpec? removal = null;
@@ -62,6 +65,9 @@ try
     var half = CheckedInput.Vector(c.GetProperty("body_half_extents"), .1f, 5);
     var center = CheckedInput.Vector(c.GetProperty("body_center_offset"), -5, 5);
     float N(string key, float low, float high) => CheckedInput.Number(c.GetProperty(key), low, high);
+    float longitudinalFriction = configVersion == 2 ? N("longitudinal_friction", .1f, 2) : 1.2f;
+    float lateralFriction = configVersion == 2 ? N("lateral_friction", .1f, 2) : 1.2f;
+    float stationarySteeringRatio = configVersion == 2 ? N("stationary_steering_ratio", .05f, 1) : 0;
     float yaw = N("spawn_yaw", -MathF.PI, MathF.PI), mass = N("mass_kg", 1000, 100000);
     var fracture = catalog?.Fractures == true ? new FractureResponse(mass, catalog) : null;
     float forwardLimit = N("max_forward_mps", 1, 20), reverseLimit = N("max_reverse_mps", .5f, 10);
@@ -141,7 +147,7 @@ try
         var wheels = wheelPoints.Select(p => new WheelSettingsTV {
             Position = p - center, SuspensionDirection = -Vector3.UnitY, WheelUp = Vector3.UnitY, WheelForward = Vector3.UnitZ,
             SuspensionMinLength = suspensionMin, SuspensionMaxLength = suspensionMax, Radius = radius, Width = .25f,
-            LongitudinalFriction = 1.2f, LateralFriction = 1.2f,
+            LongitudinalFriction = longitudinalFriction, LateralFriction = lateralFriction,
             SuspensionSpring = new SpringSettings(SpringMode.FrequencyAndDamping, 2, .7f) }).ToArray();
         using var controllerSettings = new TrackedVehicleControllerSettings();
         var engine = controllerSettings.Engine; engine.MaxTorque = N("engine_max_torque_nm", 10, 10000); controllerSettings.Engine = engine;
@@ -208,7 +214,15 @@ try
                     float left = 1, right = 1;
                     if (steer != 0)
                     {
-                        if (throttle == 0) { motor = 1; left = steer; right = -steer; }
+                        if (throttle == 0)
+                        {
+                            motor = 1;
+                            // Version 2 is a powered finite-radius test_lab turn;
+                            // the source IS7 does not rotate around its center.
+                            // Keep version 1 counter-rotation behavior unchanged.
+                            if (configVersion == 2) { if (steer > 0) right = stationarySteeringRatio; else left = stationarySteeringRatio; }
+                            else { left = steer; right = -steer; }
+                        }
                         else if (steer > 0) right = .2f;
                         else left = .2f;
                     }

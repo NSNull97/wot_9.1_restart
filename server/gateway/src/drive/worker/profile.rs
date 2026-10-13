@@ -2,10 +2,10 @@
 use super::*;
 use crate::gateway091::shared::vehicle_profile::VehicleKind;
 
-pub(super) const IS7_PROFILE_SHA256:&str="faafa06b92f6d06c1a5f08a07a7f04681e8e24643e940a6263ebc0f0425bc4b6";
-const PHYSICS_FIELDS:[&str;11]=["body_half_extents","body_center_offset","wheel_points","mass_kg",
+pub(super) const IS7_PROFILE_SHA256:&str="2fefea06de45fd172894ea7330f59d8efa9f9914a4f88192bb7b5f6ce8d47a90";
+const PHYSICS_FIELDS:[&str;14]=["body_half_extents","body_center_offset","wheel_points","mass_kg",
     "max_forward_mps","max_reverse_mps","engine_max_torque_nm","wheel_radius","suspension_min",
-    "suspension_max","track_max_brake_torque"];
+    "suspension_max","track_max_brake_torque","longitudinal_friction","lateral_friction","stationary_steering_ratio"];
 
 #[derive(Clone,Debug)]
 pub(super) struct VehicleProfile {path:PathBuf,physics:Value}
@@ -19,7 +19,7 @@ impl VehicleProfile {
         let v=json(&raw,16384)?;
         fields(&v,&["version","profile","vehicle","revision","sources","physics"])?;
         if uint(&v["version"])?!=1 || text(&v,"profile")?!="test_lab" || text(&v,"vehicle")?!="is7"
-            || text(&v,"revision")?!="is7-717-s70-no-optional-six-support-v1" {return Err(bad());}
+            || text(&v,"revision")?!="is7-717-s70-no-optional-six-support-traction-v2" {return Err(bad());}
         fields(&v["physics"],&PHYSICS_FIELDS)?;
         // Exact admitted SHA binds source hashes and all derived numbers/policy.
         // Config projection must still match: a valid profile cannot bless a
@@ -33,6 +33,7 @@ impl VehicleProfile {
         let raw=read(&owned(root,&map.config)?,16384)?;
         if format!("{:x}",Sha256::digest(&raw))!=map.config_sha256{return Err(bad());}
         let config=json(&raw,16384)?;
+        if uint(&config["version"])?!=2{return Err(bad());}
         for field in PHYSICS_FIELDS {if !same_numeric(&config[field],&self.physics[field]){return Err(bad());}}
         if map.mass_kg!=number(&self.physics["mass_kg"],1000.,100000.)? {return Err(bad());}
         Ok(())
@@ -59,6 +60,7 @@ mod tests {
         for row in pool["maps"].as_array_mut().unwrap(){
             let config_path=Path::new(row["config"].as_str().unwrap());
             let mut c=json(&fs::read(config_path).unwrap(),16384).unwrap();
+            c["version"]=2.into();
             for field in PHYSICS_FIELDS{c[field]=profile["physics"][field].clone();}
             let raw=serde_json::to_vec(&c).unwrap();fs::write(config_path,&raw).unwrap();
             row["config_sha256"]=format!("{:x}",Sha256::digest(raw)).into();
@@ -104,6 +106,25 @@ mod tests {
             }
             fs::write(&path,serde_json::to_vec(&pool).unwrap()).unwrap();
             assert!(Pool::load(&root,&path).is_err(),"change{change}");
+        }
+    }
+    #[test]fn versioned_traction_cannot_enter_legacy_pool_or_omit_policy_fields(){
+        for change in 0..5 {
+            let(root,path,mut pool)=fixture();
+            let config_path=PathBuf::from(pool["maps"][0]["config"].as_str().unwrap());
+            let mut c=json(&fs::read(&config_path).unwrap(),16384).unwrap();
+            match change {
+                0=>{pool["version"]=1.into();pool.as_object_mut().unwrap().remove("vehicle_profile");},
+                1=>{c["version"]=1.into();for field in ["longitudinal_friction","lateral_friction","stationary_steering_ratio"]{c.as_object_mut().unwrap().remove(field);}},
+                2=>{c.as_object_mut().unwrap().remove("stationary_steering_ratio");},
+                3=>c["lateral_friction"]=0.into(),
+                4=>c["stationary_steering_ratio"]=true.into(),
+                _=>unreachable!(),
+            }
+            let raw=serde_json::to_vec(&c).unwrap();fs::write(config_path,&raw).unwrap();
+            pool["maps"][0]["config_sha256"]=format!("{:x}",Sha256::digest(raw)).into();
+            fs::write(&path,serde_json::to_vec(&pool).unwrap()).unwrap();
+            assert!(Pool::load(&root,&path).is_err(),"traction change{change}");
         }
     }
     #[test]fn loaded_profile_is_rechecked_and_wrong_cached_mass_is_rejected(){

@@ -18,8 +18,8 @@ from client_audit import read_limited
 from geometry_spike import collision_mesh
 from packed_xml import decode, walk
 
-PROFILE_REVISION = 'is7-717-s70-no-optional-six-support-v1'
-PROFILE_SHA256 = 'faafa06b92f6d06c1a5f08a07a7f04681e8e24643e940a6263ebc0f0425bc4b6'
+PROFILE_REVISION = 'is7-717-s70-no-optional-six-support-traction-v2'
+PROFILE_SHA256 = '2fefea06de45fd172894ea7330f59d8efa9f9914a4f88192bb7b5f6ce8d47a90'
 SOURCE_PINS = {
     'res/scripts/item_defs/vehicles/ussr/is-7.xml': '8d55fa4657a88f1436cd164afe11bade875a906fa7b97256f1fb2f803b09c10d',
     'res/scripts/item_defs/vehicles/ussr/components/engines.xml': '196e52561bd04d2d4e5838442f62704456f4b901627248e04b2c9bd37d32f60d',
@@ -37,8 +37,9 @@ PHYSICS_FIELDS = (
     'body_half_extents', 'body_center_offset', 'wheel_points', 'mass_kg',
     'max_forward_mps', 'max_reverse_mps', 'engine_max_torque_nm', 'wheel_radius',
     'suspension_min', 'suspension_max', 'track_max_brake_torque',
+    'longitudinal_friction', 'lateral_friction', 'stationary_steering_ratio',
 )
-CONFIG_FIELDS = set(PHYSICS_FIELDS) | {
+CONFIG_FIELDS = (set(PHYSICS_FIELDS) - {'longitudinal_friction', 'lateral_friction', 'stationary_steering_ratio'}) | {
     'version', 'profile', 'map', 'terrain', 'obstacles', 'spawn_origin', 'spawn_yaw', 'bounds_xz',
 }
 
@@ -125,6 +126,7 @@ def build_profile(original):
         value = value.split() if isinstance(value, str) else value
         require(isinstance(value, list) and len(value) == count, 'source vector width')
         return [number(v) for v in value]
+    require(descriptor[chassis + '/rotationIsAroundCenter[1]'] is False, 'IS7 rotation mode changed')
     hull_position = vec(descriptor[chassis + '/hullPosition[1]'], 3)
     carrying = vec(descriptor[chassis + '/topRightCarryingPoint[1]'], 2)
     radius = vec(descriptor[chassis + '/wheels[1]/group[1]/radius[1]'], 1)[0]
@@ -155,6 +157,8 @@ def build_profile(original):
         'engine_max_torque_nm': power / (2 * math.pi * 2500 / 60),
         'wheel_radius': radius, 'suspension_min': .1, 'suspension_max': .35,
         'track_max_brake_torque': number(descriptor[chassis + '/brakeForce[1]']) * 9.81 * radius / 2,
+        # Bounded real-worker controllability policy; these are not source values.
+        'longitudinal_friction': 1.2, 'lateral_friction': .4, 'stationary_steering_ratio': .2,
     }
     source_pins = dict(SOURCE_PINS)
     source_pins[PACKAGE] = PACKAGE_SHA256
@@ -174,6 +178,7 @@ def project_config(config, profile):
     require(config['map'] in ('01_karelia', '05_prohorovka'), 'unsupported map')
     result = copy.deepcopy(config)
     result.update(copy.deepcopy(profile['physics']))
+    result['version'] = 2
     return result
 
 
@@ -222,7 +227,7 @@ def export(project_root, base_pool, out):
     receipt = {'status': 'PASS_SOURCE_IMPORT_NOT_RUNTIME', 'profile_sha256': PROFILE_SHA256,
                'pool_sha256': sha(canonical(result)), 'source_inputs': inputs,
                'original_root': str(original), 'sources': profile['sources'],
-               'policy': 'source hull primitive box; six supports; power at2500RPM; equal brake force split',
+               'policy': 'source hull primitive box; six supports; power at2500RPM; equal brake force split; config2 approximate traction1.2/.4 and powered stationary ratio.2',
                'native_bbox': 'NOT_RUN', 'historical_movement_law': 'UNKNOWN',
                'worker_runs': 'NOT_RUN', 'original_modified': False}
     (out / 'receipt.json').write_bytes(canonical(receipt))

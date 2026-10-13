@@ -49,8 +49,13 @@ class VehiclePhysicsProfileTests(unittest.TestCase):
         saved = copy.deepcopy(self.base)
         projected = v.project_config(self.base, self.profile)
         self.assertEqual(self.base, saved)
-        for key in set(self.base) - set(v.PHYSICS_FIELDS):
+        for key in set(self.base) - set(v.PHYSICS_FIELDS) - {"version"}:
             self.assertEqual(projected[key], self.base[key])
+        self.assertEqual(self.base['version'], 1)
+        self.assertEqual(projected['version'], 2)
+        self.assertEqual(projected['longitudinal_friction'], 1.2)
+        self.assertEqual(projected['lateral_friction'], .4)
+        self.assertEqual(projected['stationary_steering_ratio'], .2)
         self.assertEqual(self.base['mass_kg'], 4691)
         self.assertNotEqual(projected['body_half_extents'], self.base['body_half_extents'])
 
