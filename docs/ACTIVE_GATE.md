@@ -1,3 +1,19 @@
+# P05B — paired02/normal12/full781 PASS; morning binding and gap qualification
+
+Verified checkpoint70d1f6d9... binds273 runtime sources, full gateway781/5ignored,
+actual paired9 clean children and normal12 clean children/typed2160/12/12.
+Both independent audits PASS; failed paired01 retained. Production candidate15
+unchanged in this follow-up; two reviewed cfg(test) file updates only.
+See [runtime report](research/P05B_ANGULAR_RUNTIME_GATE.md).
+
+Morning15 helpers/pools PASS12 passive + review, final clean source binding and
+six dry-runs still pending. Continue only credible existing-plan gap work:
+saved-data wheel qualification and frozen geometry/observability feasibility
+for mixed/angular-wall contact. No blind tuning or claim that old normal-wall
+fixtures exercise angular response. If unqualified, retain exact NOT_RUN and
+finish morning handoff. Native/input/merge remain prohibited before owner
+gate; preserve candidate14, failed evidence, stopped installs and dirty P09B.
+
 # P05B — all-alive PASS; paired rejoin test correction next
 
 Actual full-scene4 and separate typed480/2/2 gate PASS, all4 exit0, independent

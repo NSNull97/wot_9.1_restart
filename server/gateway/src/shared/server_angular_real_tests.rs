@@ -88,20 +88,53 @@ fn make_world(kind:VehicleKind,catalog:Arc<fragiles::Catalog>,spawn:[f32;3])->Wo
     }
 }
 
-fn captured_pid(w:&drive::Worker,deadline:Instant)->u32{loop{if let Some(id)=w.process_id(){return id;}assert!(Instant::now()<deadline,"PID startup deadline");std::thread::sleep(Duration::from_millis(2));}}
+// These waits belong to the harness, not the drive clock. While a survivor is
+// active they must service the real runtime; wall time must not disappear into
+// a PID/exit busy wait and then masquerade as a production cadence failure.
+fn cooperative_wait<S,T>(state:&mut S,deadline:Instant,mut check:impl FnMut(&S)->Option<T>,mut pump:impl FnMut(&mut S))->T{
+    loop {assert!(Instant::now()<deadline,"cooperative wait deadline");if let Some(value)=check(state){return value;}pump(state);}
+}
+struct TimedLog {file:fs::File,origin:Instant,records:u32,last_poll:Option<Instant>}
+impl TimedLog {
+    fn new(path:&Path)->Self{Self{file:file(path,"runtime.jsonl"),origin:Instant::now(),records:0,last_poll:None}}
+    fn ns(&self,at:Instant)->u64{u64::try_from(at.duration_since(self.origin).as_nanos()).unwrap()}
+    fn write(&mut self,mut row:Value){assert!(self.records<100_000,"bounded timing log");
+        row["monotonic_ns"]=json!(self.ns(Instant::now()));row["record"]=json!(self.records);self.records+=1;write_json(&mut self.file,&row);}
+}
+#[test]fn angular_paired_cooperative_wait_services_pending_work_and_enforces_deadline(){
+    // No worker: completion becomes available only after servicing the pending
+    // side three times. An already complete or expired wait must not pump.
+    let mut calls=0;let value=cooperative_wait(&mut calls,Instant::now()+Duration::from_secs(1),
+        |n|(*n==3).then_some(17),|n|*n+=1);assert_eq!((value,calls),(17,3));
+    assert_eq!(cooperative_wait(&mut calls,Instant::now()+Duration::from_secs(1),|_|Some(23),|_|panic!("unexpected pump")),23);
+    let failure=std::panic::catch_unwind(||cooperative_wait(&mut (),Instant::now(),|_|None::<()>,|_|panic!("expired wait pumped")));
+    let error=failure.unwrap_err();assert_eq!(error.downcast_ref::<&str>(),Some(&"cooperative wait deadline"));
+}
 fn exited(probe:&Probe,deadline:Instant)->Value{loop{if let Some(e)=probe.exit().unwrap(){if probe.io_complete().unwrap(){return e;}}assert!(Instant::now()<deadline,"owned exit and both I/O completion deadline");std::thread::sleep(Duration::from_millis(2));}}
-fn launch(runtime:&mut IntegratedRuntime,world:&World,slot:usize,generation:u32,scene:Scene,probes:&mut Vec<Probe>,log:&mut fs::File,deadline:Instant){
+fn launch(runtime:&mut IntegratedRuntime,world:&World,slot:usize,generation:u32,scene:Scene,probes:&mut Vec<Probe>,log:&mut TimedLog,deadline:Instant){
     assert!(Instant::now()<deadline,"deadline expired before owned launch");
     let map=runtime.map().unwrap();probes.push(capture::register(&map.config_sha256,generation).unwrap());let i=probes.len()-1;
-    runtime.workers[slot]=Some(drive::Worker::launch_with_catalog(runtime.pool.clone(),map.clone(),generation,Instant::now(),None,runtime.catalog.clone().unwrap(),scene).unwrap());
-    let worker=runtime.workers[slot].as_ref().unwrap();probes[i].attach(worker).unwrap();let pid=captured_pid(worker,deadline.min(Instant::now()+Duration::from_secs(30)));
-    runtime.worker_sessions[slot]=world.actors[slot].session;write_json(log,&json!({"event":"launch","slot":slot,"generation":generation,"pid":pid,"config_sha256":map.config_sha256,"spawn_override":null}));
+    log.write(json!({"event":"launch_sync_begin","slot":slot,"generation":generation}));let start=Instant::now();
+    let launched=drive::Worker::launch_with_catalog(runtime.pool.clone(),map.clone(),generation,Instant::now(),None,runtime.catalog.clone().unwrap(),scene);
+    log.write(json!({"event":"launch_sync_end","slot":slot,"generation":generation,"duration_ns":start.elapsed().as_nanos(),"error":launched.as_ref().err().map(ToString::to_string)}));
+    runtime.workers[slot]=Some(launched.unwrap());let worker=runtime.workers[slot].as_ref().unwrap();probes[i].attach(worker).unwrap();
+    runtime.worker_sessions[slot]=world.actors[slot].session;log.write(json!({"event":"launch_async","slot":slot,"generation":generation,"config_sha256":map.config_sha256,"spawn_override":null}));
 }
-fn loop_step(runtime:&mut IntegratedRuntime,world:&mut World,deadline:Instant,log:&mut fs::File){
-    assert!(Instant::now()<deadline,"bounded paired runtime deadline");let result=runtime.step(world,Instant::now());
-    write_json(log,&json!({"event":"poll","tick":world.tick,"scene":world.scene_version(),"seq":runtime.contact_sequences,
+fn loop_step(runtime:&mut IntegratedRuntime,world:&mut World,deadline:Instant,log:&mut TimedLog){
+    assert!(Instant::now()<deadline,"bounded paired runtime deadline");let now=Instant::now();
+    log.write(json!({"event":"poll_begin","since_previous_poll_ns":log.last_poll.map(|last|now.duration_since(last).as_nanos()),"seq":runtime.contact_sequences}));
+    log.last_poll=Some(now);let result=runtime.step(world,now);
+    log.write(json!({"event":"poll","started_ns":log.ns(now),"duration_ns":now.elapsed().as_nanos(),"tick":world.tick,"scene":world.scene_version(),"seq":runtime.contact_sequences,
+        "worker_ready":runtime.workers.iter().map(|w|w.as_ref().is_some_and(drive::Worker::ready)).collect::<Vec<_>>(),"anchored":runtime.anchored,
         "staged":runtime.staged.is_some(),"pose_pending":runtime.pose_pending,"ready":runtime.ready_for_native(),"error":result.as_ref().err().map(ToString::to_string)}));
-    result.unwrap();std::thread::sleep(Duration::from_millis(2));
+    result.unwrap();assert!(runtime.contact_sequences[0]<=250,"survivor advance budget");std::thread::sleep(Duration::from_millis(2));
+}
+fn wait_pid(runtime:&mut IntegratedRuntime,world:&mut World,slot:usize,deadline:Instant,log:&mut TimedLog){
+    let deadline=deadline.min(Instant::now()+Duration::from_secs(30));log.write(json!({"event":"pid_wait_begin","slot":slot}));
+    let pid=cooperative_wait(&mut(runtime,world,&mut *log),deadline,
+        |(runtime,_,_)|runtime.workers[slot].as_ref().unwrap().process_id(),
+        |(runtime,world,log)|loop_step(runtime,world,deadline,log));
+    log.write(json!({"event":"pid_observed","slot":slot,"pid":pid}));
 }
 fn run_case(local:&Path,binding:&Value,case:(&str,VehicleKind,&str,u32),out:&Path,probes:&mut Vec<Probe>,global:Instant)->Value{
     let(name,kind,config,expected)=case;let pivot=name.ends_with("pivot");let deadline=global.min(Instant::now()+Duration::from_secs(90));
@@ -112,7 +145,8 @@ fn run_case(local:&Path,binding:&Value,case:(&str,VehicleKind,&str,u32),out:&Pat
     let catalog_path=pin(local,&binding["catalog"],1024*1024);let spec=CatalogSpec::load(local,&catalog_path,CATALOG).unwrap();validate_catalog_projection(&catalog,&spec,MapId::Prohorovka).unwrap();
     let mut world=make_world(kind,catalog,map.spawn);let mut seeded=file(out,"synthetic-history.jsonl");let initial=bootstrap(&mut world,&map,&spec,&mut seeded);drop(seeded);
     let scene=Scene::new(&spec,&initial).unwrap();let mut runtime=IntegratedRuntime::new_for_map(pool,MapId::Prohorovka);runtime.catalog=Some(spec.clone());runtime.started=true;runtime.generations=[1,1];
-    let mut log=file(out,"runtime.jsonl");for slot in 0..2{launch(&mut runtime,&world,slot,slot as u32+2,scene.clone(),probes,&mut log,deadline);}
+    let mut log=TimedLog::new(out);for slot in 0..2{launch(&mut runtime,&world,slot,slot as u32+2,scene.clone(),probes,&mut log,deadline);}
+    for slot in 0..2{wait_pid(&mut runtime,&mut world,slot,deadline,&mut log);}
     while !runtime.ready_for_native()||!runtime.anchored.iter().all(|v|*v){loop_step(&mut runtime,&mut world,deadline,&mut log);assert_eq!(runtime.contact_sequences,[0,0]);}
     let input=model::Input{throttle:if pivot{0}else{1},steer:if pivot{1}else{0}};
     for slot in 0..2{world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=input;}
@@ -129,25 +163,34 @@ fn run_case(local:&Path,binding:&Value,case:(&str,VehicleKind,&str,u32),out:&Pat
             assert_eq!(event.proof.as_ref().unwrap().frame.proof.as_ref(),first.as_ref());assert_eq!(candidate.impact.events().len(),before_events+1);
             let mut context=event.proof.as_ref().unwrap().frame.context.clone();context.slot=1;context.session=2;context.generation=3;
             old_slot1=Some(ram_proof::ContactProof{frame:Arc::new(ram_proof::ContextFrame{context,proof:frames[1].angular_proof.clone().unwrap()}),index:0});
-            write_json(&mut log,&json!({"event":"validated_pair_proofs","slot0":format!("{:?}",event.proof.as_ref().unwrap()),"slot1":format!("{:?}",old_slot1.as_ref().unwrap())}));
+            log.write(json!({"event":"validated_pair_proofs","slot0":format!("{:?}",event.proof.as_ref().unwrap()),"slot1":format!("{:?}",old_slot1.as_ref().unwrap())}));
             assert_eq!(candidate.fragiles.as_ref().unwrap().vehicle_events.len(),1038);let committed=Scene::new(&spec,&candidate.fragiles.as_ref().unwrap().removed_ids()).unwrap();
             for w in runtime.workers.iter_mut().flatten(){assert_eq!(w.prepared_ids(),&[3167]);assert!(w.advance(drive::Input::STOP,Instant::now()).is_err());}
             while runtime.workers[0].as_ref().unwrap().catalog_scene()!=Some(&committed){assert!(Instant::now()<deadline);
                 assert!(runtime.workers[0].as_mut().unwrap().poll(Instant::now()).unwrap().is_none());std::thread::sleep(Duration::from_millis(2));}
             assert_ne!(runtime.workers[1].as_ref().unwrap().catalog_scene(),Some(&committed));assert_eq!(world.fragiles,before.fragiles);assert_eq!(world.actors,before.actors);assert!(!runtime.ready_for_native());
-            write_json(&mut log,&json!({"event":"only_slot0_ack_consumed","scene":world.scene_version(),"seq":prepared_seq,"world_unchanged":true}));
+            log.write(json!({"event":"only_slot0_ack_consumed","scene":world.scene_version(),"seq":prepared_seq,"world_unchanged":true}));
             while runtime.staged.is_some(){assert!(Instant::now()<deadline);runtime.finish_catalog(&mut world,Instant::now()).unwrap();std::thread::sleep(Duration::from_millis(2));}
             assert_eq!(world.fragiles,candidate.fragiles);assert_eq!(world.actors,candidate.actors);assert_eq!(world.scene_version(),1038);
             assert!(runtime.workers.iter().flatten().all(|w|w.catalog_scene()==Some(&committed)&&w.prepared_ids().is_empty()));staged_once=true;
+            log.write(json!({"event":"both_ack_committed","scene":world.scene_version(),"seq":prepared_seq}));
         }
     }
     let history=world.fragiles.clone();let trace_count=world.impact.events().len();
-    world.actors[0].input=model::Input::STOP;let identity=world.actors[1].identity.clone();world.detach(2).unwrap();world.revoke_contact_source(1).unwrap();runtime.clear_slot(1);
-    let exit=exited(&probes[1],Instant::now()+Duration::from_secs(8));assert_eq!(exit,json!({"forced":false,"code":0,"reaped":true}));
+    world.actors[0].input=model::Input::STOP;let identity=world.actors[1].identity.clone();world.detach(2).unwrap();world.revoke_contact_source(1).unwrap();
+    log.write(json!({"event":"clear_drop_begin","slot":1}));runtime.clear_slot(1);log.write(json!({"event":"clear_drop_end","slot":1}));
+    let exit_deadline=deadline.min(Instant::now()+Duration::from_secs(8));log.write(json!({"event":"exit_wait_begin","slot":1}));
+    let exit=cooperative_wait(&mut(&mut runtime,&mut world,&mut log),exit_deadline,
+        |_|probes[1].exit().unwrap().filter(|_|probes[1].io_complete().unwrap()),
+        |(runtime,world,log)|{loop_step(runtime,world,exit_deadline,log);assert!(world.actors[1].session.is_none());
+            assert_eq!(world.fragiles,history);assert_eq!(world.impact.events().len(),trace_count);assert!(runtime.contact_sequences[0]<=250);});
+    log.write(json!({"event":"exit_wait_end","slot":1,"exit":exit}));assert_eq!(exit,json!({"forced":false,"code":0,"reaped":true}));
     assert_eq!(world.attach(identity,3).unwrap(),1);world.reset_external_spawn(1,map.spawn).unwrap();
     let committed=Scene::new(&spec,&world.fragiles.as_ref().unwrap().removed_ids()).unwrap();launch(&mut runtime,&world,1,5,committed.clone(),probes,&mut log,deadline);
+    wait_pid(&mut runtime,&mut world,1,deadline,&mut log);
     while !runtime.ready_for_native()||!runtime.anchored[1]{loop_step(&mut runtime,&mut world,deadline,&mut log);assert!(!world.actors[1].ready);assert_eq!(world.fragiles,history);}
     assert!(!world.actors[1].ready);assert_eq!(runtime.contact_sequences[1],0);assert_eq!(runtime.workers[1].as_ref().unwrap().catalog_scene(),Some(&committed));
+    log.write(json!({"event":"replacement_ready_anchored","slot":1,"seq":runtime.contact_sequences,"scene":world.scene_version()}));
     let warmup_stop=u32::from(runtime.workers[1].as_ref().unwrap().pending());
     world.set_ready(1,3).unwrap();world.actors[1].input=input;let target_seq=expected+warmup_stop;
     while runtime.contact_sequences[1]<target_seq{loop_step(&mut runtime,&mut world,deadline,&mut log);assert_eq!(world.fragiles,history);assert_eq!(world.impact.events().len(),trace_count);
@@ -156,10 +199,12 @@ fn run_case(local:&Path,binding:&Value,case:(&str,VehicleKind,&str,u32),out:&Pat
     let proof=old_slot1.unwrap();let old=proof.receipt().unwrap();let rejected=model::VehicleContactInput{object_id:old.object_id,shooter:1,substep:old.substep,point:old.geometry.point,normal:old.geometry.normal,
         velocity:proof.frame.proof.witness(old.substep).unwrap().pre.motion.v,mass_kg:map.mass_kg,kind:"hull".into(),proof:Some(proof)};
     assert!(world.apply_vehicle_contacts(&[rejected]).is_err());assert_eq!(world.fragiles,history);assert_eq!(world.impact.events().len(),trace_count);
-    let source_history=world.impact.contact_source_history().len();assert_eq!(source_history,2);drop(runtime);
+    let source_history=world.impact.contact_source_history().len();assert_eq!(source_history,2);
+    log.write(json!({"event":"final_drop_begin"}));drop(runtime);log.write(json!({"event":"final_drop_end"}));
     json!({"status":"PASS_REAL_ISOLATED_TYPED_PAIRED_ACK_REJOIN","case":name,"pool":binding["pools"][name],"config_sha256":config,
         "prepared_seq":prepared_seq,"rejoin_commanded_advances":expected,"rejoin_warmup_stop_advances":warmup_stop,"rejoin_last_consumed_seq":target_seq,"synthetic_prior_events":1037,"synthetic_label":"SYNTHETIC_NOT_CONTACT_EVIDENCE",
-        "actual_events":1,"both_source_proofs_equal":true,"source_history_entries":source_history,"native":"NOT_RUN","all_alive":"NOT_RUN","full_passage":"NOT_ASSERTED"})
+        "actual_events":1,"both_source_proofs_equal":true,"source_history_entries":source_history,"timing_clock":"monotonic nanoseconds relative to runtime log creation",
+        "native":"NOT_RUN","all_alive":"NOT_RUN","full_passage":"NOT_ASSERTED"})
 }
 
 fn command_audit(probe:&Probe,case:&str,index:usize,result:&Value)->Value{

@@ -1,3 +1,29 @@
+## 2026-10-14 — P05B paired02/normal12/full781 verified checkpoint
+
+Reviewed test-only cooperative waits fix the paired harness starvation while
+retaining500ms protection. All three actual paired rows pass contact/both ACK/
+fresh rejoin:9 natural exit0,991 validated advances/6 ACKs; independent review
+PASS. Original paired01 FAIL remains unchanged. Separate source-profile
+normal12 passes exact14/15 physical parity, full-box passage, no stop and
+2160 full typed advances/12 normal receipts/12 ACKs; all12 exit0. Independent
+audit verifies176 pins/52160 exact float comparisons and energy/passage gates.
+Fresh full gateway16:781 PASS,0 FAIL,5 explicit ignored; physics remains15.
+
+Source/build/evidence checkpoint:
+`night-angular-integration01/verified16-checkpoint.json`, SHA256
+`70d1f6d9d676e7a1857f45f22c363af28867f109e0424d5a1a6064d1d154da43`.
+See [runtime report](research/P05B_ANGULAR_RUNTIME_GATE.md).
+Morning15 genuine full-source pools and six lifecycle helpers pass12 passive
+checks and independent review. Final clean-HEAD binding/six dry-runs pending.
+
+Continue existing-plan coverage qualification read-only: mixed-mode actual
+chain, simultaneous angular/solid-wall constraint and energetically eligible
+wheel-only contact remain NOT_RUN, not inferred from component/legacy passes.
+Then bind the morning stand at the final checked source point. Native owner
+after09:00, static pressure, excluded compound families and historical solver
+fidelity remain OPEN. No native input/launch/merge; preserve14, all failures,
+stopped installs and unrelated dirty P09B.
+
 ## 2026-10-14 — P05B all-alive PASS; paired rejoin probe FAIL retained
 
 Four actual workers with all1038 eligible objects initially alive complete
