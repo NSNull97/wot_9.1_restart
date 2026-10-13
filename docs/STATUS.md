@@ -20,10 +20,22 @@ login loop before the arena and is **NOT_RUN**, with cleanup verified in
 `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve06-diagnostic-not-run.json`
 (SHA256 `e59040cd4827992fb8da946c20df2f18cfe0bfcea4aa33f50a1c662efb0f2d6e`).
 
-Current source head is `713fcdecd513f8bd6c62440f877429c5b7b45d8b`. The focused
+The follow-up bounded run `treeobserve07` removed the launch race by starting
+slot A and then slot B 45 seconds apart. Both gateway sessions became active,
+but slot B was later rejected on `channel_state` and closed after
+`retry_exhausted`; slot A reached the arena and continued receiving snapshots.
+Neither trace reached `set_fallenTrees`, `orderDestructibleDestroy`, or the
+new downstream observer methods. This is a **NOT_RUN** tree-contact result,
+with a confirmed second-client channel drop, not native acceptance. Evidence:
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve07-diagnostic-slot-b-drop.json`
+(SHA256 `4b7e393a41bad9eab8dca59432ab5114a0c08840b554b66402e551503b460719`).
+The receipt-verified stop and both installation rollbacks passed; no owned
+processes remain.
+
+Current source head is `e2af80f823641cfce2456912ca343568c634edf1`. The focused
 observer suite is **17/17 PASS** and `py_compile` passes. The current gateway
-receipts remain **10/10 PASS** (`gateway-p06q-final-29`, executable SHA256
-`e9d5b64fbee65cf10f9fd815be6f4ec830982db678500684c5886817b43f6cc0`) and
+receipts remain **10/10 PASS** (`gateway-p06q-final-30`, executable SHA256
+`803e65e709cada1f54e057ae4ef1e564efb46fded34cee7d98a7f569ad4d8323`) and
 **2/2 PASS** for the mixed-area driving regression. Native rendered fall,
 both-client ACK, and rendered passage remain owner-controlled gates.
 

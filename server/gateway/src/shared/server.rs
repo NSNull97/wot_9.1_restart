@@ -603,7 +603,13 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                             if frame.flags & 0x10 != 0 { send(socket, peer, &transport091::ack(s.rx), &s.key, &mut capture)?; s.last_keepalive = now; }
                             if close { closing.push((s.id, "client_disconnect")); }
                         },
-                        Err(_) => println!("SHARED_REJECT session={} reason=channel_state sequence={:?} bytes={}", s.id, frame.sequence, frame.body.len()),
+                        Err(_) => {
+                            println!("SHARED_REJECT session={} reason=channel_state sequence={:?} bytes={}", s.id, frame.sequence, frame.body.len());
+                            if std::env::var_os("SR_DIAGNOSTIC_CHANNEL_HEX").is_some() {
+                                let hex=frame.body.iter().take(1024).map(|byte| format!("{byte:02x}")).collect::<String>();
+                                println!("SHARED_REJECT_BODY_HEX session={} sequence={:?} bytes={} hex={hex}", s.id, frame.sequence, frame.body.len());
+                            }
+                        },
                     }
                 }
             }

@@ -30,6 +30,19 @@ so it is **NOT_RUN**; receipt:
 `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve06-diagnostic-not-run.json`
 (SHA256 `e59040cd4827992fb8da946c20df2f18cfe0bfcea4aa33f50a1c662efb0f2d6e`).
 
+The next bounded run, `treeobserve07`, started slot A and slot B 45 seconds
+apart so the earlier simultaneous-launch race was removed. Both gateway
+sessions became active; slot B then hit `channel_state` rejects and
+`retry_exhausted`, while slot A reached the arena and continued receiving
+snapshots. Neither client trace reached `set_fallenTrees`,
+`orderDestructibleDestroy`, `__destroyDestructible`, `__dropDestructible`, or
+`__launchFallEffect`. The result is **NOT_RUN** for tree contact with a
+confirmed second-client channel drop; it is not native acceptance. Evidence:
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve07-diagnostic-slot-b-drop.json`
+(SHA256 `4b7e393a41bad9eab8dca59432ab5114a0c08840b554b66402e551503b460719`).
+The stop receipt and both installation restores passed, and no owned processes
+remain.
+
 The remaining cause is **UNKNOWN**. It may be an original descriptor/index
 lookup or animator/resource boundary; no client binary, resource, matrix, or
 collision state was modified to guess a fix. Native visual acceptance remains
