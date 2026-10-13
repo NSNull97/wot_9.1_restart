@@ -2,6 +2,32 @@
 //! complete physical proof validator. This test never starts a worker process.
 use super::*;
 
+#[derive(Clone,Copy,PartialEq,Eq)]
+enum CaptureScope {First8,AllAlive4}
+fn angular_changed(before:[f32;3],after:[f32;3])->bool {
+    // Physical nonzero debit excludes a signed-zero representation change.
+    before.iter().zip(after).any(|(before,after)|*before!=after)
+}
+impl CaptureScope {
+    fn all_alive(self)->bool {self==Self::AllAlive4}
+    fn cases(self)->&'static [(&'static str,&'static str,u32)] {match self {
+        Self::First8=>&[("is7","pivot",1),("is7","pivot",2),("ms1","pivot",1),("ms1","pivot",2),
+            ("ms1","chain",1),("ms1","chain",2),("is7","chain",1),("is7","chain",2)],
+        Self::AllAlive4=>&[("is7","pivot",1),("is7","pivot",2),("ms1","pivot",1),("ms1","pivot",2)]}}
+    fn binding(self,binding:&Value)->io::Result<()> {
+        if self.all_alive(){
+            fields(binding,&["version","scope","local_root","capture_receipt","pools"])?;
+            if uint(&binding["version"])?!=2||text(binding,"scope")?!="P05B_ANGULAR_ALLALIVE4"{return Err(bad());}
+            fields(&binding["pools"],&["ms1_pivot","is7_pivot"])?;
+        }else{
+            fields(binding,&["version","local_root","capture_receipt","pools"])?;
+            if uint(&binding["version"])?!=1{return Err(bad());}
+            fields(&binding["pools"],&["ms1_pivot","ms1_chain","is7_pivot","is7_chain"])?;
+        }Ok(())
+    }
+    fn generation(self,i:usize)->u32 {if self.all_alive(){19100+i as u32}else{19000+i as u32}}
+}
+
 fn pinned(root:&Path,v:&Value,limit:usize)->io::Result<(PathBuf,Vec<u8>)>{
     fields(v,&["path","bytes","sha256"])?;let path=owned(root,Path::new(text(v,"path")?))?;
     let hash=text(v,"sha256")?;hash_text(hash)?;let size=uint(&v["bytes"])?;
@@ -17,29 +43,33 @@ fn value_same(actual:&[u8],expected:&[u8])->io::Result<()> {
     if json_with_node_limit::<2048>(actual,MAX_ANGULAR_IPC_LINE,4096)?
         !=json_with_node_limit::<2048>(expected,MAX_ANGULAR_IPC_LINE,4096)?{return Err(bad());}Ok(())
 }
-fn replay()->io::Result<Value>{
+fn replay(scope:CaptureScope)->io::Result<Value>{
     let binding_path=PathBuf::from(std::env::var_os("WOT_ANGULAR_DECODE_BINDING").ok_or_else(bad)?);
     non_reparse(&binding_path)?;let raw=read(&binding_path,65536)?;
     let binding_sha=std::env::var("WOT_ANGULAR_DECODE_BINDING_SHA256").map_err(|_|bad())?;hash_text(&binding_sha)?;
     if format!("{:x}",Sha256::digest(&raw))!=binding_sha{return Err(bad());}
-    let binding=json(&raw,65536)?;fields(&binding,&["version","local_root","capture_receipt","pools"])?;
-    if uint(&binding["version"])?!=1{return Err(bad());}
+    let binding=json(&raw,65536)?;scope.binding(&binding)?;
     let root=PathBuf::from(text(&binding,"local_root")?);non_reparse(&root)?;let root=root.canonicalize()?;
     owned(&root,&binding_path)?;
-    fields(&binding["pools"],&["ms1_pivot","ms1_chain","is7_pivot","is7_chain"])?;
     let (_,receipt_raw)=pinned(&root,&binding["capture_receipt"],1024*1024)?;
     let receipt=json_with_node_limit::<2048>(&receipt_raw,1024*1024,4096)?;
     let (_,capture_binding_raw)=pinned(&root,&receipt["binding"],1024*1024)?;
     let capture_binding=json_with_node_limit::<2048>(&capture_binding_raw,1024*1024,4096)?;
+    if scope.all_alive()&&(capture_binding["scope"]!="P05B_ANGULAR_ALLALIVE4"
+        ||capture_binding["root_authorized_execution"]!=true
+        ||uint(&capture_binding["max_workers"])?!=4||uint(&capture_binding["max_advances"])?!=120
+        ||!receipt["post_pin_error"].is_null()||!receipt["outer_error"].is_null()){return Err(bad());}
     let (catalog_path,_)=pinned(&root,&capture_binding["catalog"],1024*1024)?;
     let catalog=CatalogSpec::load(&root,&catalog_path,text(&capture_binding["catalog"],"sha256")?)?;
     if catalog.version()!=8{return Err(bad());}
-    let cases=[("is7","pivot",1),("is7","pivot",2),("ms1","pivot",1),("ms1","pivot",2),
-        ("ms1","chain",1),("ms1","chain",2),("is7","chain",1),("is7","chain",2)];
+    let cases=scope.cases();
     let results=receipt["results"].as_array().filter(|a|a.len()==cases.len()).ok_or_else(bad)?;
-    let mut report=Vec::new();let mut total_frames=0;let mut total_receipts=0;let mut total_acks=0;
-    for (i,(row,(kind,mode,repeat))) in results.iter().zip(cases).enumerate(){
+    let mut report=Vec::new();let mut total_frames=0;let mut total_receipts=0;let mut total_acks=0;let mut targets_complete=true;
+    for (i,(row,&(kind,mode,repeat))) in results.iter().zip(cases).enumerate(){
         if row["case"]!=serde_json::json!([kind,mode,repeat]){return Err(bad());}
+        if scope.all_alive()&&(uint(&row["frames"])?!=120||row["cleanup"]["exit_code"]!=0
+            ||row["cleanup"]["faults"]!=serde_json::json!([])||row["cleanup"]["cleanup_errors"]!=serde_json::json!([])
+            ||!row["error"].is_null()){return Err(bad());}
         let pool_key=format!("{kind}_{mode}");let (pool_path,_)=pinned(&root,&binding["pools"][&pool_key],65536)?;
         let pool=Pool::load(&root,&pool_path)?;pool.verify_assets()?;
         let (_,requests)=pinned(&root,&row["raw"]["requests.jsonl"],32*1024*1024)?;
@@ -51,20 +81,35 @@ fn replay()->io::Result<Value>{
         let profile=pool.angular_profile(map)?;if pool.vehicle_kind().label()!=kind{return Err(bad());}
         catalog.verify(&root,map)?;
         let keep=if mode=="pivot"{vec![3167]}else{vec![3166,3167]};
-        let initial=catalog.entries().iter().map(CatalogEntry::object_id).filter(|id|!keep.contains(id)).collect::<Vec<_>>();
-        let mut scene=Scene::new(&catalog,&initial)?;let generation=19000+i as u32;
+        let initial=if scope.all_alive(){Vec::new()}else{catalog.entries().iter().map(CatalogEntry::object_id).filter(|id|!keep.contains(id)).collect::<Vec<_>>()};
+        let mut scene=Scene::new(&catalog,&initial)?;let generation=scope.generation(i);
         value_same(requests[0],&catalog::scene_request(map,&catalog,generation,0,&scene,true)?)?;
         let ready=catalog::response_with_profile(replies[0],map,&catalog,generation,0,None,&scene,Some(profile))?;
         if ready.angular_proof.as_ref().is_none_or(|f|!f.receipts.is_empty()){return Err(bad());}
         let input=if mode=="pivot"{Input{throttle:0,steer:1,brake:false}}else{Input{throttle:1,steer:0,brake:false}};
-        let mut cursor=1;let mut fractures=0;let mut acks=0;
+        let mut cursor=1;let mut fractures=0;let mut acks=0;let mut target_hull_frames=0;let mut target_outcomes=Vec::new();
+        let mut target_angular_applied=0;
         for seq in 1..=120 {
             let request=requests.get(cursor).ok_or_else(bad)?;let reply=replies.get(cursor).ok_or_else(bad)?;
             value_same(request,&catalog::request_catalog(seq,input,&scene,&catalog)?)?;
             let state=catalog::response_with_profile(reply,map,&catalog,generation,seq,None,&scene,Some(profile))?;
+            if scope.all_alive()&&state.object_contacts.iter().any(|c|c.object_id==3167&&c.kind=="hull"){target_hull_frames+=1;}
             let proof=state.angular_proof.ok_or_else(bad)?;total_frames+=1;cursor+=1;
             if !proof.receipts.is_empty(){
-                let mut ids=scene.ids().to_vec();for r in &proof.receipts{if !keep.contains(&r.object_id){return Err(bad());}ids.push(r.object_id);}
+                let mut ids=scene.ids().to_vec();for (ri,r) in proof.receipts.iter().enumerate(){
+                    if !scope.all_alive()&&!keep.contains(&r.object_id){return Err(bad());}
+                    if scope.all_alive()&&r.object_id==3167{
+                        let witness=proof.witnesses.iter().find(|w|w.substep==r.substep).ok_or_else(bad)?;
+                        let prior=proof.receipts[..ri].iter().rev().find(|x|x.substep==r.substep)
+                            .map_or(witness.post.motion.w,|x|x.solver_after.w);
+                        let applied=r.mode==ram_proof::Mode::Angular&&r.solver_branch==Some(ram_proof::SolverBranch::Applied)
+                            &&angular_changed(prior,r.solver_after.w);
+                        if applied{target_angular_applied+=1;}
+                        let mode=match r.mode{ram_proof::Mode::Normal=>"normal_linear",ram_proof::Mode::Total=>"total_linear",ram_proof::Mode::Angular=>"angular_corner"};
+                        target_outcomes.push(serde_json::json!({"seq":seq,"substep":r.substep,"mode":mode,"applied_nonzero_angular":applied}));
+                    }
+                    ids.push(r.object_id);
+                }
                 ids.sort_unstable();let next=Scene::new(&catalog,&ids)?;
                 value_same(requests.get(cursor).ok_or_else(bad)?,&catalog::scene_request(map,&catalog,generation,seq,&next,false)?)?;
                 catalog::ack(replies.get(cursor).ok_or_else(bad)?,map,&catalog,generation,seq,&next)?;
@@ -72,19 +117,39 @@ fn replay()->io::Result<Value>{
             }
         }
         if cursor!=requests.len(){return Err(bad());}total_receipts+=fractures;total_acks+=acks;
-        report.push(serde_json::json!({"case":[kind,mode,repeat],"pool":binding["pools"][&pool_key],"raw":row["raw"],
+        let mut row_report=serde_json::json!({"case":[kind,mode,repeat],"pool":binding["pools"][&pool_key],"raw":row["raw"],
             "config_sha256":map.config_sha256,"profile_sha256":profile.sha(),"generation":generation,
-            "ready":1,"advances":120,"validated_receipts":fractures,"validated_acks":acks,"final_scene_sha256":scene.hash()}));
+            "ready":1,"advances":120,"validated_receipts":fractures,"validated_acks":acks,"final_scene_sha256":scene.hash()});
+        if scope.all_alive(){
+            let target_pass=target_hull_frames>0&&(kind=="ms1"||(target_angular_applied==1&&target_outcomes.len()==1));
+            targets_complete&=target_pass;
+            row_report["target_observations"]=serde_json::json!({"actual_target_hull_frames":target_hull_frames,"target_outcomes":target_outcomes,
+                "status":if target_pass{"PASS_TARGET_OBSERVED"}else{"TARGET_NOT_EXERCISED"}});
+        }report.push(row_report);
     }
-    Ok(serde_json::json!({"status":"PASS_FULL_TYPED_FRAME_DECODE","binding_sha256":binding_sha,
+    let mut result=serde_json::json!({"status":"PASS_FULL_TYPED_FRAME_DECODE","binding_sha256":binding_sha,
         "capture_receipt":binding["capture_receipt"],"cases":report,"advances":total_frames,"receipts":total_receipts,"acks":total_acks,
-        "workers_launched":0,"domain_both_worker_barrier":"NOT_RUN_BY_OFFLINE_DECODER","native_acceptance":"NOT_RUN"}))
+        "workers_launched":0,"domain_both_worker_barrier":"NOT_RUN_BY_OFFLINE_DECODER","native_acceptance":"NOT_RUN"});
+    if scope.all_alive(){result["scope"]="P05B_ANGULAR_ALLALIVE4".into();result["target_observation_gate"]=if targets_complete{"PASS"}else{"TARGET_NOT_EXERCISED"}.into();}
+    Ok(result)
 }
 
 #[test]
 #[ignore = "requires a root-pinned immutable actual capture and four exact source pools; offline only"]
 fn angular_saved_capture_full_decoder(){
-    let result=replay().expect("pinned actual capture must pass the full production decoder");
+    let result=replay(CaptureScope::First8).expect("pinned actual capture must pass the full production decoder");
+    save_result(&result);
+}
+
+#[test]
+#[ignore = "requires root-pinned all-alive four-case capture and two source pools; offline only"]
+fn angular_allalive_saved_capture_full_decoder(){
+    let result=replay(CaptureScope::AllAlive4).expect("all-alive saved frames must pass full production proof");
+    save_result(&result);
+    assert_eq!(result["target_observation_gate"],"PASS","typed frames passed but required target was not exercised; receipt retained");
+}
+
+fn save_result(result:&Value){
     let output=PathBuf::from(std::env::var_os("WOT_ANGULAR_DECODE_OUT").expect("fresh output path"));
     let binding:Value=serde_json::from_slice(&fs::read(std::env::var_os("WOT_ANGULAR_DECODE_BINDING").unwrap()).unwrap()).unwrap();
     let root=Path::new(binding["local_root"].as_str().unwrap()).canonicalize().unwrap();
@@ -93,4 +158,18 @@ fn angular_saved_capture_full_decoder(){
     let mut file=fs::OpenOptions::new().write(true).create_new(true).open(&output).unwrap();
     file.write_all(&serde_json::to_vec_pretty(&result).unwrap()).unwrap();file.write_all(b"\n").unwrap();
     println!("ANGULAR_SAVED_CAPTURE_PROOF {}",serde_json::to_string(&result).unwrap());
+}
+
+#[test]
+fn angular_saved_capture_scopes_are_closed(){
+    let first=serde_json::json!({"version":1,"local_root":"unused","capture_receipt":{},"pools":{"ms1_pivot":{},"is7_pivot":{},"ms1_chain":{},"is7_chain":{}}});
+    let all=serde_json::json!({"version":2,"scope":"P05B_ANGULAR_ALLALIVE4","local_root":"unused","capture_receipt":{},"pools":{"ms1_pivot":{},"is7_pivot":{}}});
+    assert!(CaptureScope::First8.binding(&first).is_ok());assert!(CaptureScope::AllAlive4.binding(&all).is_ok());
+    assert!(CaptureScope::First8.binding(&all).is_err());assert!(CaptureScope::AllAlive4.binding(&first).is_err());
+    let mut bad_scope=all.clone();bad_scope["scope"]="P05B_ANGULAR_FIRST8".into();assert!(CaptureScope::AllAlive4.binding(&bad_scope).is_err());
+    let mut extra=all;extra["pools"]["is7_chain"]=serde_json::json!({});assert!(CaptureScope::AllAlive4.binding(&extra).is_err());
+    assert_eq!(CaptureScope::First8.cases().len(),8);assert_eq!(CaptureScope::AllAlive4.cases().len(),4);
+    assert_eq!(CaptureScope::First8.generation(0),19000);assert_eq!(CaptureScope::AllAlive4.generation(3),19103);
+    assert!(!angular_changed([0.,0.,0.],[-0.,0.,0.]));
+    assert!(angular_changed([0.,0.,0.],[f32::MIN_POSITIVE,0.,0.]));
 }

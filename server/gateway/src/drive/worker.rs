@@ -15,6 +15,9 @@ mod angular;
 #[cfg(test)]
 #[path="worker/angular_capture_tests.rs"]
 mod angular_capture_tests;
+#[cfg(test)]
+#[path="worker/real_test_capture.rs"]
+pub(crate) mod real_test_capture;
 use crate::gateway091::shared::ram_proof;
 #[path="worker/profile.rs"]
 mod profile;
@@ -412,7 +415,11 @@ impl Worker {
         let exit=Arc::new(Mutex::new(None));let exit_thread=exit.clone();
         let slot=child.clone();let revoked=cancel.clone();let selected=map.clone();let removal_thread=removal.clone();
         let catalog_thread=initial.as_ref().map(|(spec,_)|spec.clone());
+        #[cfg(test)] let capture=real_test_capture::lookup(&selected.config_sha256,generation)?;
         thread::spawn(move||{
+            #[cfg(test)] let _reader_complete=match real_test_capture::completion(&capture,0){
+                Ok(guard)=>guard,Err(_)=>{let _=events.try_send(Event::Failed);return;}
+            };
             let run=||->io::Result<()> {
                 pool.verify_assets()?;owned(&pool.local_root,&selected.config)?;let raw=read(&selected.config,16384)?;
                 if format!("{:x}",Sha256::digest(&raw))!=selected.config_sha256 || revoked.load(Ordering::SeqCst){return Err(bad());}
@@ -438,21 +445,44 @@ impl Worker {
                 let mut output=c.stdout.take().ok_or_else(bad)?;let mut errors=c.stderr.take().ok_or_else(bad)?;
                 {let mut guard=slot.lock().map_err(|_|bad())?;if revoked.load(Ordering::SeqCst){drop(input);reap_owned(c,generation,exit_thread.clone());return Err(bad());}*guard=Some(c);}
                 let e=events.clone();let stopped=revoked.clone();
-                thread::spawn(move||{while let Ok(bytes)=commands.recv(){if stopped.load(Ordering::SeqCst){break;}
-                    if input.write_all(&bytes).and_then(|_|input.flush()).is_err(){let _=e.try_send(Event::Failed);break;}}});
-                let e=events.clone();thread::spawn(move||{let mut b=[0;1024];let mut size=0usize;
+                #[cfg(test)] let writes=capture.clone();
+                #[cfg(test)] let writer_complete=real_test_capture::completion(&writes,1)?;
+                thread::spawn(move||{
+                    #[cfg(test)] let _writer_complete=writer_complete;
+                    while let Ok(bytes)=commands.recv(){if stopped.load(Ordering::SeqCst){break;}
+                    if input.write_all(&bytes).and_then(|_|input.flush()).is_err(){
+                        #[cfg(test)] real_test_capture::error(&writes,"actual stdin write/flush failed");
+                        let _=e.try_send(Event::Failed);break;}
+                    #[cfg(test)] if real_test_capture::record(&writes,true,&bytes).is_err(){let _=e.try_send(Event::Failed);break;}
+                }});
+                #[cfg(test)] let err_capture=capture.clone();
+                #[cfg(test)] let stderr_complete=real_test_capture::completion(&err_capture,2)?;
+                let e=events.clone();thread::spawn(move||{
+                    #[cfg(test)] let _stderr_complete=stderr_complete;
+                    let mut b=[0;1024];let mut size=0usize;
                     loop {match errors.read(&mut b){Ok(0)=>break,Ok(n)=>{
+                        #[cfg(test)] if real_test_capture::stderr(&err_capture,&b[..n]).is_err(){let _=e.try_send(Event::Failed);break;}
                         let keep=n.min(4096-size);let value=String::from_utf8_lossy(&b[..keep]);
                         println!("MAP_DRIVE_WORKER_STDERR generation={generation} bytes={keep} truncated={} text={}",keep<n,serde_json::to_string(&value).unwrap_or_else(|_|"\"diagnostic_encoding_error\"".into()));
                         size+=keep;let _=e.try_send(Event::Failed);if size>=4096{break;}
-                    },Err(_)=>{let _=e.try_send(Event::Failed);break;}}}
+                    },Err(_)=>{
+                        #[cfg(test)] real_test_capture::error(&err_capture,"actual stderr read failed");
+                        let _=e.try_send(Event::Failed);break;}}}
                 });
                 let line_limit=catalog_thread.as_ref().map_or(MAX_IPC_LINE,CatalogSpec::line_limit);
-                loop {let raw=line_with_limit(&mut output,line_limit)?;if revoked.load(Ordering::SeqCst){break;}
+                loop {let raw=line_with_limit(&mut output,line_limit)?;
+                    #[cfg(test)] real_test_capture::record(&capture,false,&raw)?;
+                    if revoked.load(Ordering::SeqCst){
+                        // Selected test captures drain complete final payloads to EOF.
+                        // Release binaries retain the original immediate cancellation.
+                        #[cfg(test)] if capture.is_some(){continue;}
+                        break;
+                    }
                     events.try_send(Event::Line(Instant::now(),raw)).map_err(|_|bad())?;}
                 Ok(())
             };
             if let Err(error)=run(){if !revoked.load(Ordering::SeqCst){
+                #[cfg(test)] real_test_capture::error(&capture,&format!("actual IPC thread: {error}"));
                 let message=error.to_string().chars().take(1024).collect::<String>();
                 println!("MAP_DRIVE_WORKER_IO_ERROR generation={generation} kind={:?} message={}",error.kind(),serde_json::to_string(&message).unwrap_or_else(|_|"\"diagnostic_encoding_error\"".into()));
                 let _=events.try_send(Event::Failed);
@@ -525,6 +555,7 @@ impl Worker {
                 let state=if let Some(spec)=&self.catalog{catalog::response_with_profile(&raw,&self.map,spec,self.generation,seq,self.expected_spawn,self.catalog_scene.as_ref().ok_or_else(bad)?,self.angular_profile)?}
                     else{response_context(&raw,&self.map,seq,self.expected_spawn,context)?};
                 if !self.prepared_ids.is_empty(){return Err(bad());}
+                #[cfg(test)] real_test_capture::parsed(&self.map.config_sha256,self.generation,&state)?;
                 self.prepared_ids=state.fractures.iter().map(|receipt|receipt.object_id).collect();
                 self.prepared_ids.sort_unstable();
                 self.scene_version=state.scene_version;self.ready=true;self.last_seq=seq;self.pending=None;Ok(Some(state))

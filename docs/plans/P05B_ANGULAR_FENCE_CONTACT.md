@@ -297,3 +297,29 @@ removals only using explicitly synthetic valid linear proof batches through
 ordinary World admission; preserve the complete history. Synthetic seed is
 never actual contact evidence. Any observer is cfg(test)-only, bounded and
 reviewed before launch. No unchecked State/Trace bypass, native input or merge.
+
+### Remaining normal-linear coverage — fixed differential preparation
+
+The42 retained-policy regressions passed using catalog7. They do not execute
+the catalog8 normal-linear implementation. Read-only assessment in
+`night-normal-v8-assessment01/` confirms the four old crate3618/tree3680
+fixtures differ from their full MS-1/IS-7 profiles only by a3m/s forward cap.
+All use180 fixed forward commands after180 settle ticks. Prepare the bounded
+existing-plan gate in `night-normal-v8-prep01/PLAN.md` before launch.
+
+Four fixed cases, each with one fresh candidate14/catalog7 baseline and two
+candidate15/catalog8 repeats:12 sequential owned children, one active. Restore
+only the forward-cap numeric token to its pinned source value; keep all other
+config bytes, original spawn/geometry/commands and1037 initial private removals.
+Compare all common physical states/contact/receipt fields bit-exact including
+signed zero, then full new proofs between15 repeats. Require actual normal
+receipt/ACK, no repeated debit, retained anti-stop and complete source-box
+passage. Fresh14 captures avoid substituting old capped baselines.
+
+Use a separate closed version3 offline decoder scope for180 advances and both
+IPC5/IPC6; preserve the frozen First8/AllAlive4 scopes. No runtime physics,
+threshold, source-profile tuning or geometry change. Runner/fixtures/decoder
+need independent review and canonical checks before root execution GO. Missing
+target or parity failure stops the batch and is retained, never tuned away.
+Native animation, static pressure, compound families, wheel-only and actual
+mixed-angular wall coverage remain separate OPEN/NOT_RUN boundaries.

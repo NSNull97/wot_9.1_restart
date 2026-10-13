@@ -1,4 +1,4 @@
-# P05B angular runtime integration — first-eight capture and decoder PASS
+# P05B angular runtime — first-eight/full-scene PASS, paired rejoin FAIL retained
 
 Scope: the existing403 movement fences may use the frozen angular fallback
 when their old linear-first predicate is insufficient. The635 other catalog
@@ -189,14 +189,96 @@ invocation. Exact commands, source pins and logs:
 checks. This includes the old119-test scope plus3 exporter and5 build-driver
 checks; earlier results remain separate evidence.
 
+## All-alive scene and current test preparation
+
+Reviewed five-file test-only integration adds a separate closed AllAlive4
+decoder and a bounded paired-runtime observer. Production physics and runtime
+semantics remain unchanged. Canonical `gateway-p05b-angular-paired-components15`
+passes19 angular component tests with3 explicitly ignored actual/saved-data
+tests. A separate saved first-eight replay passes1/0 again after the decoder
+scope extension: `gateway-p05b-angular-decode-recheck15`. These are additional
+invocations, not a unique sum with the earlier17 tests.
+
+Actual AllAlive4 starts with zero removed IDs and all1038 eligible objects
+alive on the unchanged source map geometry. Four fixed pivot workers complete
+120 advances each; all four exit0 with empty stderr and exact physical repeats.
+Both IS-7 runs contact3167 at seq7/substep5 and apply one angular debit. Both
+MS-1 runs have114 actual hull-contact frames and no paid outcome. There are no
+other removals. The full-scene result was not inferred from isolated fixtures.
+
+Capture: `night-angular-allalive-prep01/actual-run01/receipt.json`, SHA256
+`f3a70d2fce58454927ca46e292e5ff8c4cdb577df9fdcc06292167c6ab1156c4`.
+Its capture-only status is preserved. Root authorization and exact runner
+command are in `night-angular-integration01/allalive4-go.json`; binding SHA
+`270bbf00e4884433ef23a1e90bff3c5aa2020a8ec8cfb0f995181f75a05d56f7`.
+Separate full production decoder command:
+
+```
+python -B -X utf8 server/build.py gateway --test --test-filter map_drive_worker091::angular_capture_tests::angular_allalive_saved_capture_full_decoder --run-ignored --out local/build/server/gateway-p05b-angular-allalive-decode15
+```
+
+One test PASS/0 ignored,480 advances,2 receipts and2 ACKs. Typed result:
+`night-angular-allalive-prep01/decoder-result01.json`, SHA256
+`d72e6b0fae4b6c83d0d137d48782abd642e785c01bae42a6b4aa2712286887f7`.
+Environment uses `decoder-binding01.json` SHA256
+`023311e8e3f229e6f07684e2be015291599705b9dd4878b1a88b23b9538db0ec`.
+Independent Fraction audit checks74 pins and8356 exact repeated f32 scalars,
+plus full angular energy accounting and all four launch/exit records. Byte-exact
+archive: `night-angular-allalive-independent01/`; primary receipt SHA256
+`b908d79a851ff6a4f5ca9d6b91f508eb4470befb267a31276bbbbea017365bf6`.
+The archive retains the auditor's first serialization packaging error.
+
+## Actual paired01: successful contact transaction, failed rejoin probe
+
+The separately authorized ignored runtime test really ran; it did not pass:
+
+```
+python -B -X utf8 server/build.py gateway --test --test-filter gateway091::shared::server::angular_real_tests::angular_actual_pair_both_ack_and_fresh_rejoin --run-ignored --out local/build/server/gateway-p05b-angular-paired-actual15
+```
+
+Binding/environment/three-row bounds are in
+`night-angular-integration01/paired-actual-go.json`. First MS-1 row reaches the
+expected seq91 with equal full source proofs. After only slot0 ACK, the world
+remains unchanged; both actual ACKs then commit exactly one new target event.
+The1037 earlier events are explicitly synthetic, admitted through the ordinary
+full proof/domain path, and excluded from actual contact evidence.
+
+On replacement startup, the first subsequent runtime step rejects logical
+drive lag exceeding500ms. Full result is FAIL; IS-7 rows are NOT_RUN. Initial
+children9180/53148 exit0 naturally; replacement13724 is forcibly terminated
+with code1 and reaped during failure cleanup. All three observer streams finish;
+replacement has one restore request and no reply. Do not treat this as clean
+three-child success or accepted rejoin.
+
+Evidence: `night-angular-paired-actual01/`, canonical build `failure.json` and
+its original logs. Independent review:
+`night-angular-stageb-review01/paired-actual01-failure-review.json`, SHA256
+`ccea9a7eb96619073b5f0d78057d819175307651457e6f40e1263ae6881d89e7`.
+The test blocks runtime polling while waiting for old-process exit and new PID;
+no survivor STOP request is sent during that interval. Production reaping is
+asynchronous and spawn does not wait for those conditions. This identifies a
+test starvation mechanism; it does not establish native production rejoin
+latency. Synchronous catalog/profile validation cost and the elapsed split of
+exit/PID waits remain UNKNOWN because this run lacks monotonic span records.
+
+Only a test correction is authorized: pump the unchanged runtime during these
+waits, preserve maximum two live children, add monotonic spans and retain the
+500ms overload bound/grid. Review/component checks precede a fresh explicit
+execution. No clock reset, timeout widening, source-fixture tuning or automatic
+retry. Checkpoint `night-angular-integration01/allalive-paired-checkpoint02.json`
+binds current sources and evidence. Root packaging failure01 from equivalent
+Windows path separators is retained separately; all nine raw hashes/sizes were
+rechecked unchanged. Candidate14/15 artifacts and native installs are intact.
+
 ## Acceptance and continuation
 
 The candidate15 artifact preflight passed with zero processes:
 `night-angular-stageb-review01/first8-preflight01/validation.json`.
 That initial preparation was not physical acceptance. The later first-eight
 capture and full Rust decoder above have now passed, as have the42 old-policy
-regressions and127 Python checks. Actual both-worker ACK/rejoin, new-policy
-all-alive coverage and full gateway suite remain separate pending gates. New
+regressions,127 Python checks and the new-policy all-alive gate. Actual complete
+paired ACK/rejoin is FAIL at rejoin as documented above; full gateway suite
+remains pending. New
 catalog8 actual normal-linear coverage also requires a separately source-bound
 fixture; retained catalog7 normal-object passes do not establish that branch.
 The actual mixed-angular and energetic
@@ -208,5 +290,6 @@ pressure and excluded compound families remain OPEN. No merge or push.
 
 Rollback: retain candidate14 and all receipts; revert only this unaccepted
 Stage-B source slice to its saved base if integration fails. No installation
-or shared service was changed. Next step: the separately frozen actual
-paired-worker/ACK/rejoin and all-alive gates.
+or shared service was changed. Next step: review the test-only rejoin wait
+correction, then a fresh bounded paired gate; prepare normal-linear coverage
+independently within the existing plan.

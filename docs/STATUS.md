@@ -1,3 +1,24 @@
+## 2026-10-14 — P05B all-alive PASS; paired rejoin probe FAIL retained
+
+Four actual workers with all1038 eligible objects initially alive complete
+120 advances each and exact repeats. IS-7 angular3167 applied; MS-1 actual
+contact without removal. All4 exit0; separate full decoder passes480 advances,
+2 receipts/2 ACKs. Independent Fraction/raw/exit audit PASS. Canonical targeted
+Rust19 PASS/3 ignored and saved-first8 recheck1 PASS/0 ignored.
+
+The first actual paired MS-1 row validates both source proofs and both ACKs,
+then fails500ms logical-lag protection at rejoin. All3 children reaped; the
+replacement is forced exit1. Later IS-7 rows NOT_RUN. Test-only blocking exit/
+PID waits starve the survivor; actual production launch latency remains UNKNOWN.
+See [runtime report](research/P05B_ANGULAR_RUNTIME_GATE.md) and checkpoint
+`night-angular-integration01/allalive-paired-checkpoint02.json`.
+
+Next: reviewed test-only pumped-wait correction preserving500ms/grid and
+bounded fresh paired execution; normal-linear/source-profile preparation runs
+independently. Runtime binaries unchanged, stand stopped, no native/input/merge.
+Owner after09:00 NOT_RUN; static pressure/compound/historical fidelity OPEN.
+Preserve all failures, candidate14 rollback and unrelated dirty P09B.
+
 ## 2026-10-14 — P05B candidate15 legacy42 and Python127 PASS
 
 All42 actual old-catalog regression workers exited0:21 exact repeated cases,

@@ -21,6 +21,9 @@ mod contact_barrier_tests;
 #[path="server_angular_tests.rs"]
 mod angular_tests;
 #[cfg(test)]
+#[path="server_angular_real_tests.rs"]
+mod angular_real_tests;
+#[cfg(test)]
 #[path="server_cadence_tests.rs"]
 mod cadence_tests;
 #[cfg(test)]

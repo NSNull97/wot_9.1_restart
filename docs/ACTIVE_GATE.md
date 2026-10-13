@@ -1,3 +1,18 @@
+# P05B — all-alive PASS; paired rejoin test correction next
+
+Actual full-scene4 and separate typed480/2/2 gate PASS, all4 exit0, independent
+audit PASS. Actual paired01 firstMS contact/bothACK commit observed, but rejoin
+FAIL on500ms logical-lag guard; all3 children reaped, replacement forced1.
+Later rows NOT_RUN. Test blocks runtime during exit/PID waits; production
+validation/launch wall cost remains UNKNOWN. Details:
+[runtime report](research/P05B_ANGULAR_RUNTIME_GATE.md).
+
+Review test-only pumping/timing correction before a separately frozen retry;
+never reset clocks/widen500ms to pass. Normal-linear12 differential preparation
+may continue independently. Full suite/morning rebind follow applicable gates.
+No native input/launch or merge; owner after09:00 NOT_RUN. Preserve14/15,
+original failure receipts, stopped installs and unrelated dirty P09B.
+
 # P05B — candidate15 legacy42/Python127 PASS; paired and all-alive next
 
 Actual42 old-mode workers/21 exact pairs pass; all owned exit0, zero historical
