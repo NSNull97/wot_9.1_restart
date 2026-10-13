@@ -1,3 +1,15 @@
+# P05B — night09 checkpoint, continued automatic work
+
+Cadence + moving grip PASS_AUTOMATIC_PRIVATE, native owner gate OPEN.
+Fresh gateway-p05b-night-final09:736/736, whole-object fixtures now candidate09.
+Both profiles:36 flat+2 calibration,12 real-map grip runs,20 paired ram cases.
+Evidence/source/build binding: P05B/night09-checkpoint.json and research.
+Side-fence pressure remains a reproduced FAIL. Coast-to-pivot steering is the
+next bounded correction; do not label the remaining handling debt accepted.
+Continue existing overnight P05B until2026-10-14 09:00 Asia/Yekaterinburg.
+No native input/launch, no merge. Frozen08/gateway03 retained as rollback;
+night09 is a private automatically checked checkpoint only. Preserve P09B.
+
 # P05B — overnight correction after candidate08 owner feedback
 
 Current owner gate remains OPEN. Reversal appears improved; periodic speed/aim

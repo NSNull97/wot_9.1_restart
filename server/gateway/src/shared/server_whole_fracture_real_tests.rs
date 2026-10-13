@@ -22,20 +22,20 @@ struct Case {
 #[test]
 fn real_whole_objects_preserve_receipts_fallen_trees_and_both_ack_barrier() {
     let cases=[
-        Case{name:"ms1-tree",pool_path:"ram-gateway-fixtures07/ms1-tree-pool.json",
-            pool_sha:"a3ac7c029f21bf4508200c09e9cd3e58611d6d03a8f6500789434f95f3841203",
+        Case{name:"ms1-tree",pool_path:"ram-gateway-fixtures09/ms1-tree-pool.json",
+            pool_sha:"0bba62b13699366222b983320f6ce33b1a1ad8bc2a3bd28531297a885a33b312",
             config_sha:"2032d6a2c1675f76e83472fa88c8fc9d171ecb4d8da24a929e3d9f12a388206c",
             vehicle:VehicleKind::Ms1,target:3680,kind:fragiles::ObjectKind::Tree},
-        Case{name:"ms1-crate",pool_path:"ram-gateway-fixtures07/ms1-crate-pool.json",
-            pool_sha:"9a4a2fa888fd69433ab1106013c2a4c52f346e59b4d780ff90e02d0f63ba45fc",
+        Case{name:"ms1-crate",pool_path:"ram-gateway-fixtures09/ms1-crate-pool.json",
+            pool_sha:"aa21c6ed414383e5baf3572544e52bb1b9707ce1bf4bc06ecd449bf4ac5fdba6",
             config_sha:"a30d3d3d832ca4218a398c099a705a5c8f2be148af0c97702129806efed88c9d",
             vehicle:VehicleKind::Ms1,target:3618,kind:fragiles::ObjectKind::Fragile},
-        Case{name:"is7-tree",pool_path:"ram-gateway-fixtures07/is7-tree-pool.json",
-            pool_sha:"69a1e1f6a8d55e7be321348a956fd64300bb4575a9c1e9df0d6d202f78886c72",
+        Case{name:"is7-tree",pool_path:"ram-gateway-fixtures09/is7-tree-pool.json",
+            pool_sha:"c03d4b3dd3b3c62fa339aefe51b5cda9e1738c06feddcf945f435bdc953f3781",
             config_sha:"cbff9473c254757b16a55ecad974d753b0b6496fb7674f53db91c3257f174cb8",
             vehicle:VehicleKind::Is7,target:3680,kind:fragiles::ObjectKind::Tree},
-        Case{name:"is7-crate",pool_path:"ram-gateway-fixtures07/is7-crate-pool.json",
-            pool_sha:"82d1eac32257a352c715ed3fba32d5edbabfb19a16d4db4e23830e04e8c0cc1e",
+        Case{name:"is7-crate",pool_path:"ram-gateway-fixtures09/is7-crate-pool.json",
+            pool_sha:"4c16101572019be5d7334ba8d01351c47222162a2df1f9f51348dc83f70f0431",
             config_sha:"719bca031fbb6abdb679759569620fa01d906a3b09f240517c66c6b10af6077d",
             vehicle:VehicleKind::Is7,target:3618,kind:fragiles::ObjectKind::Fragile},
     ];

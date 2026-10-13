@@ -9,6 +9,8 @@ internal sealed class TrackedHandling
 {
     private const float LateralAccelerationBudget = 3f; // Project policy, m/s^2.
     private const float OuterPivotFrictionFraction = .001f;
+    private const float OuterMovingFrictionFraction = .04f;
+    private const float MovingGripStartSpeed = 1.5f, MovingGripFullSpeed = 4f;
     private readonly float width, maximumYaw;
     private readonly WheelSettingsTV[] wheels;
     private readonly float[] lateral;
@@ -67,10 +69,18 @@ internal sealed class TrackedHandling
         // Fore/aft scrub resists every tracked turn, including moving turns.
         // A speed-only return to full scrub created a heavy-vehicle deadlock:
         // slight forward creep restored resistance before yaw could develop.
+        // On real terrain the middle supports alone can saturate even while
+        // both stay grounded. Restore a limited outer-support grip at speed;
+        // keep the proven low-speed scrub policy so heavy pivots can start.
+        // These thresholds/coefficient are engineering policy, not 0.9.1 data.
+        float movingGrip = Math.Clamp((speed - MovingGripStartSpeed) /
+            (MovingGripFullSpeed - MovingGripStartSpeed), 0, 1);
+        float outerFraction = OuterPivotFrictionFraction +
+            movingGrip * (OuterMovingFrictionFraction - OuterPivotFrictionFraction);
         float pivotBlend = steer == 0 || brake ? 0 : 1;
         for (int i = 0; i < wheels.Length; i++)
         {
-            float target = lateral[i] * (i % 3 == 1 ? 1 : 1 - pivotBlend * (1 - OuterPivotFrictionFraction));
+            float target = lateral[i] * (i % 3 == 1 ? 1 : 1 - pivotBlend * (1 - outerFraction));
             wheels[i].LateralFriction = Approach(wheels[i].LateralFriction, target, lateral[i] * 5 * deltaTime);
         }
 

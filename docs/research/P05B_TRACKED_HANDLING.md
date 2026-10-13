@@ -568,3 +568,76 @@ Next: finish/review bounded cadence correction and its automatic regression,
 then continue unresolved side-contact and turning work under the overnight
 plan until2026-10-14 09:00 Asia/Yekaterinburg. Frozen6ad93ae/candidate08/gateway03
 remain rollback references. No merge, auto-driving or historical-ideal claim.
+
+## Night09 automatic checkpoint: cadence and real-terrain grip
+
+VERIFIED coordinator fix: logical100ms deadlines replace actual-send+100ms;
+each validated worker advance remains pending until imported with its peer.
+No repeated moving pose is published merely because a wall-clock bucket opens.
+Ordinary logical debt over500ms fails before World mutation; scene/rejoin ACK
+pauses explicitly rebase dispatch. Physics remains6x1/60s, with at most one
+advance per lane per step. Eight controlled IPC tests cover early pairs,
+delayed peers, overload,11ms polls, scene ACK, readiness, rejoin and detach.
+These coordinator tests do not measure native client interpolation.
+
+VERIFIED grip correction in TrackedHandling: four outer supports retain their
+.001 lateral fraction up to1.5m/s and linearly reach.04 at4m/s; middle supports
+remain unchanged. Existing5/s coefficient slew, mass, power, gearbox, brakes
+and reversal stay intact. These are project coefficients. Telemetry shows
+grounded middle supports saturating, not merely losing terrain contact.
+Two measured owner-command turning windows improve lateral RMS1.486→.428m/s
+and1.074→.230m/s, preserving95%/82% yaw travel and the specified speed floor.
+High lateral speed with low forward speed is not independently corrected.
+
+Executed commands (E denotes local/evidence/20261013-p05b-tracked-handling-01;
+all paths resolve within this repository; exact argv and hashes in receipts):
+
+```powershell
+python -B -X utf8 server/build.py physics --out local/build/server/physics-p05b-candidate09
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p05b-night-cadence-after01
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p05b-night-final09
+python -B -X utf8 tools/tracked_handling_matrix.py --worker D:/WoT_9.1_Server/local/build/server/physics-p05b-candidate09/bin/MapDriveWorker.exe --local-root D:/WoT_9.1_Server/local --config D:/WoT_9.1_Server/local/evidence/20261013-p05b-tracked-handling-01/candidate-config01/ms1.json --out D:/WoT_9.1_Server/local/evidence/20261013-p05b-tracked-handling-01/controller-audit/final-matrix09-ms1 --diagnostics
+python -B -X utf8 tools/tracked_handling_matrix.py --worker D:/WoT_9.1_Server/local/build/server/physics-p05b-candidate09/bin/MapDriveWorker.exe --local-root D:/WoT_9.1_Server/local --config D:/WoT_9.1_Server/local/evidence/20261013-p05b-tracked-handling-01/candidate-config01/is7.json --out D:/WoT_9.1_Server/local/evidence/20261013-p05b-tracked-handling-01/controller-audit/final-matrix09-is7 --diagnostics
+python -B -X utf8 local/evidence/20261013-p05b-tracked-handling-01/freeze-night09.py
+```
+
+Both fresh full gateway gates PASS736/736; final09 additionally switches four
+whole tree/crate fixtures to exact09 artifact manifests, leaving their07
+configurations unchanged. Other historical fixture versions remain explicit.
+Final EXE SHA47ac39767c26726157cc96895e60a9e07588c57c0138dba561782a4e8a3d85f7;
+physics DLL SHA df49a41504da7c34beb912af8da659aee53fe4a5b897ae2deb2925e9c48a2fe7.
+36 flat runs+2 calibrations PASS quality/replay;12 supported real-map grip runs
+PASS exact pairs and route gates, all1038 objects alive.20 paired ram cases
+(12 normal/low,4 oblique,4 wall) PASS,40 workers exit0. Their exact commands,
+IPC and stderr hashes are in ram-regression/candidate09-{canonical01,oblique01,
+wall01}/receipt.json. No new Python-wide gate is claimed for these Rust/C# edits.
+
+Evidence: night-jitter01/REPORT02.md and final-receipt01.json; night-slip01/
+REPORT.md, final-receipt.json and catalog-grip01/receipt.json; root consolidated
+night09-checkpoint.json. Its complete source inventory is explicitly post-gate;
+physics and cadence code match their earlier frozen source pins. Whole-object
+fixture path/hash updates are the only subsequent test-source adjustment.
+
+Source clarification: #717 Space toggles stopUntilFire on keydown. A new
+movement OR steering keydown clears that latch; Space keyup alone does not.
+Space→A and A→Space therefore differ. There is no separate brake+steer flag in
+this verified path. The user's intended small inertial slide is preserved as
+a physical behavior requirement, not reinterpreted as boost.
+
+Side contact remains OPEN. night-side-contact01/REPORT.md and completion-receipt
+pin40 exited workers, static snag reproductions and four moving contacts plus
+four no-contact controls. Original native callback0x6ae4d0 passes vector speed
+magnitude; Python predictor compares ceil(scale²*health) strictly with
+.5*mass*speed²*.00015 and the family correction. This is client prediction,
+not the original authoritative server law. Exact itemScale propagation and
+sustained pressure work remain UNKNOWN; no solved hull normal impulse is
+available in the current binding. Do not turn track-slip energy or a timeout
+into fabricated fence damage. A new side-contact policy needs fresh finite
+budget, chain and solid-wall tests before replacing the8kJ normal policy.
+
+Rollback: keep stopped/restored08/gateway03 lifecycle and frozen binaries;
+source rollback is a reviewed revert of this checkpoint only, preserving the
+unrelated P09B edit and all failed evidence. Acceptance:
+PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN / HISTORICAL_EQUIVALENCE_UNKNOWN.
+Next: bounded coast-to-pivot correction under the existing overnight plan,
+with09 as the comparison checkpoint; owner tests after14 October09:00.

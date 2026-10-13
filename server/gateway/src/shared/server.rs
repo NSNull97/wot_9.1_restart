@@ -17,6 +17,9 @@ use crate::worker_fixtures091 as worker_fixtures;
 #[path="server_contact_barrier_tests.rs"]
 mod contact_barrier_tests;
 #[cfg(test)]
+#[path="server_cadence_tests.rs"]
+mod cadence_tests;
+#[cfg(test)]
 #[path="server_fracture_real_tests.rs"]
 mod fracture_real_tests;
 #[cfg(test)]
@@ -48,8 +51,12 @@ struct IntegratedRuntime {
     map_id: MapId,
     workers: [Option<crate::map_drive_worker091::Worker>; model::CAPACITY],
     poses: [Option<([f32; 3], [f32; 3], f32)>; model::CAPACITY],
+    // One validated advance per lane may wait for its peer/native tick. Never
+    // overwrite it with a catch-up reply or publish the same source twice.
+    pose_pending: [bool; model::CAPACITY],
     offsets: [[f32; 3]; model::CAPACITY],
     anchored: [bool; model::CAPACITY],
+    // Logical100ms deadlines, not the wall time at which the loop sent IPC.
     dispatched: [Option<Instant>; model::CAPACITY],
     started: bool,
     removal: Option<crate::map_drive_worker091::RemovalSpec>,
@@ -75,6 +82,28 @@ fn worker_frame_position(worker_position: [f32; 3], offset: [f32; 3]) -> [f32; 3
     [worker_position[0] + offset[0], worker_position[1], worker_position[2] + offset[2]]
 }
 
+fn drive_grid(start: Instant, now: Instant) -> io::Result<Instant> {
+    let elapsed = now.checked_duration_since(start).ok_or_else(model::bad)?;
+    let step = crate::map_drive_worker091::STEP;
+    let ticks = elapsed.as_nanos() / step.as_nanos();
+    let ticks: u32 = ticks.try_into().map_err(|_| model::bad())?;
+    start.checked_add(step.checked_mul(ticks).ok_or_else(model::bad)?).ok_or_else(model::bad)
+}
+
+fn drive_deadline(start: Instant, previous: Option<Instant>, now: Instant) -> io::Result<Option<Instant>> {
+    let deadline = match previous {
+        Some(previous) => previous.checked_add(crate::map_drive_worker091::STEP).ok_or_else(model::bad)?,
+        None => drive_grid(start, now)?,
+    };
+    if now < deadline { return Ok(None); }
+    // Engineering overload bound, shared with the existing worker contract.
+    // Ordinary latency cannot silently reset simulation time or burst forever.
+    if now.duration_since(deadline) > crate::map_drive_worker091::MAX_LAG {
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "integrated drive logical deadline lag exceeds500ms; fail closed"));
+    }
+    Ok(Some(deadline))
+}
+
 impl IntegratedRuntime {
     fn new(pool: Arc<crate::map_drive_worker091::Pool>) -> Self {
         Self::new_for_map(pool, MapId::Karelia)
@@ -82,6 +111,7 @@ impl IntegratedRuntime {
 
     fn new_for_map(pool: Arc<crate::map_drive_worker091::Pool>, map_id: MapId) -> Self {
         Self { pool, map_id, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
+            pose_pending: [false; model::CAPACITY],
             offsets: [[0.; 3]; model::CAPACITY],
             anchored: [false; model::CAPACITY],
             dispatched: [None; model::CAPACITY], started: false, removal: None,catalog:None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY],
@@ -100,6 +130,7 @@ impl IntegratedRuntime {
     fn clear_slot(&mut self, slot: usize) {
         self.workers[slot].take();
         self.poses[slot] = None;
+        self.pose_pending[slot] = false;
         self.anchored[slot] = false;
         self.dispatched[slot] = None;
         self.worker_sessions[slot] = None;
@@ -118,6 +149,7 @@ impl IntegratedRuntime {
         self.anchored[slot] = false;
         self.dispatched[slot] = None;
         self.worker_sessions[slot] = world.actors.get(slot).and_then(|a| a.session);
+        self.pose_pending[slot] = false;
         if self.worker_sessions[slot].is_none() { return Err(model::bad()); }
         self.contact_sequences[slot] = 0;
         self.contact_batches[slot] = None;
@@ -163,6 +195,16 @@ impl IntegratedRuntime {
 
     fn blocked(&self) -> bool { self.staged.is_some() || self.workers.iter().flatten().any(|worker|!worker.prepared_ids().is_empty()) }
 
+    fn resume_after_scene_ack(&mut self, world: &World, now: Instant) -> io::Result<()> {
+        let grid = drive_grid(world.started.ok_or_else(model::bad)?, now)?;
+        // This is an intentional transaction pause, not worker overload. Keep
+        // any early unpublished pose; only the schedule rebases after all ACKs.
+        for slot in 0..model::CAPACITY {
+            if self.dispatched[slot].is_some() { self.dispatched[slot] = Some(grid); }
+        }
+        Ok(())
+    }
+
     fn finish_catalog(&mut self,world:&mut World,now:Instant)->io::Result<()>{
         let staged=self.staged.as_ref().ok_or_else(model::bad)?;
         if staged.map!=world.map||world.map!=self.map_id||staged.vehicle_kind()!=world.vehicle_kind()
@@ -188,7 +230,7 @@ impl IntegratedRuntime {
             if worker.catalog_scene()!=Some(&scene){complete=false;if !worker.pending(){worker.sync_removed(scene.clone(),now)?;}}
         }
         if participants==0{return Err(model::bad());}
-        if complete{let before=world.scene_version();*world=self.staged.take().ok_or_else(model::bad)?;
+        if complete{let before=world.scene_version();self.resume_after_scene_ack(world,now)?;*world=self.staged.take().ok_or_else(model::bad)?;
             println!("SHARED_CATALOG_COMMITTED battle={} scene_before={} scene_after={} scene_sha256={} removed={:?} participating_workers={} workers_acknowledged=true",world.id,before,scene.version(),scene.hash(),scene.ids(),participants);}
         Ok(())
     }
@@ -229,6 +271,7 @@ impl IntegratedRuntime {
         }
         if participants == 0 { return Err(model::bad()); }
         if complete {
+            self.resume_after_scene_ack(world, now)?;
             *world = self.staged.take().ok_or_else(model::bad)?;
             let event = world.destructible_transition().ok_or_else(model::bad)?;
             println!("SHARED_DESTRUCTIBLE_COMMITTED battle={} shot={} tick={} instance_id={} scene_before=0 scene_after=1 participating_workers={} workers_acknowledged=true", world.id, event.shot, event.tick, event.instance_id,participants);
@@ -273,7 +316,7 @@ impl IntegratedRuntime {
                 // advance. Only subsequent replies may supply gameplay hits.
                 if state.seq != 0 {
                     let held: usize = self.contact_batches.iter().flatten().map(|b| b.contacts.len()).sum();
-                    if self.contact_batches[slot].is_some()
+                    if self.pose_pending[slot] || self.contact_batches[slot].is_some()
                         || state.seq != self.contact_sequences[slot].checked_add(1).ok_or_else(model::bad)?
                         || state.scene_version != world.scene_version()
                         || held + state.object_contacts.len() > 32 { return Err(model::bad()); }
@@ -283,6 +326,7 @@ impl IntegratedRuntime {
                         kind: contact.kind.clone(), shooter: slot,
                     }).collect();
                     self.contact_sequences[slot] = state.seq;
+                    self.pose_pending[slot] = true;
                     self.contact_batches[slot] = Some(ContactBatch { session: session.ok_or_else(model::bad)?,
                         generation: worker.generation, seq: state.seq, scene_version: state.scene_version, contacts });
                     for receipt in &state.fractures {
@@ -319,12 +363,13 @@ impl IntegratedRuntime {
                 rows.push((slot,actor.position,actor.direction,0.));
             }
         }
+        let mut rejoin_ack = false;
         if self.catalog.is_some(){
             let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().unwrap(),&world.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids())?;
             for slot in 0..model::CAPACITY{
                 if world.actors[slot].session.is_none(){continue;}
                 let worker=self.workers[slot].as_mut().ok_or_else(model::bad)?;
-                if let Some(ack)=worker.take_catalog_ack(){println!("SHARED_CATALOG_REJOIN_ACK battle={} slot={} scene_version={} scene_sha256={}",world.id,slot,ack.scene_version,ack.scene_sha256);}
+                if let Some(ack)=worker.take_catalog_ack(){rejoin_ack=true;println!("SHARED_CATALOG_REJOIN_ACK battle={} slot={} scene_version={} scene_sha256={}",world.id,slot,ack.scene_version,ack.scene_sha256);}
                 if worker.catalog_scene()!=Some(&scene){
                     self.synchronizing[slot]=true;
                     if worker.ready()&&!worker.pending(){worker.sync_removed(scene.clone(),now)?;}
@@ -335,6 +380,7 @@ impl IntegratedRuntime {
                 if world.actors[slot].session.is_none() { continue; }
                 let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
                 if let Some(ack) = worker.take_removal_ack() {
+                    rejoin_ack = true;
                     println!("SHARED_DESTRUCTIBLE_REJOIN_ACK battle={} slot={} scene_version={}",world.id,slot,ack.scene_version);
                 }
                 if worker.scene_version() != 1 {
@@ -344,10 +390,14 @@ impl IntegratedRuntime {
             }
 
         }
+        // Restoring a reconnect also intentionally drains the paired movement
+        // snapshot. Its bounded ACK wait must not become ordinary drive debt.
+        if rejoin_ack { self.resume_after_scene_ack(world, now)?; }
         for (slot,position,direction,speed) in &rows {
             if !world.actors[*slot].ready && world.actors[*slot].session.is_some()
                 && !self.synchronizing[*slot] && self.anchored[*slot] && !self.blocked() {
                 world.import_unready_external_pose(*slot,*position,*direction,*speed)?;
+                self.pose_pending[*slot] = false;
             }
         }
         // A contact candidate can only use a fully drained movement snapshot.
@@ -373,8 +423,21 @@ impl IntegratedRuntime {
             }
             return Ok(());
         }
+        // Validate scheduling before mutating the published World. A fresh
+        // source must not turn into a final successful snapshot on overload.
+        let mut deadlines = [None; model::CAPACITY];
+        for slot in 0..model::CAPACITY {
+            if world.actors[slot].session.is_some() && !self.synchronizing[slot]
+                && self.workers[slot].as_ref().is_some_and(|w| w.ready() && !w.pending()) {
+                deadlines[slot] = drive_deadline(world.started.ok_or_else(model::bad)?, self.dispatched[slot], now)?;
+            }
+        }
+        let fresh_pair = world.actors.iter().enumerate().all(|(slot, actor)|
+            actor.session.is_none() || !actor.ready || self.pose_pending[slot]);
+        // Vacuously true only when every actor is parked/unready: preserve the
+        // existing projectile/world clock without moving any cached actor.
         let mut candidate = world.clone();
-        candidate.advance_with_external(now, Some(&rows))?;
+        let published = fresh_pair && candidate.advance_with_external(now, Some(&rows))?;
         let mut vehicle_contacts = Vec::new();
         for (slot, batch) in self.contact_batches.iter().enumerate() {
             if let Some(batch) = batch {
@@ -411,21 +474,23 @@ impl IntegratedRuntime {
             // The staged candidate owns these outcomes now. ACK-only polls
             // must never apply the same advance's contacts a second time.
             self.contact_batches = std::array::from_fn(|_| None);
+            if published { self.pose_pending = [false; model::CAPACITY]; }
             self.staged = Some(candidate);
             return self.finish_removal(world, now);
         }
         *world = candidate;
+        if published { self.pose_pending = [false; model::CAPACITY]; }
         self.contact_batches = std::array::from_fn(|_| None);
         for slot in 0..model::CAPACITY {
             if world.actors.get(slot).and_then(|a| a.session).is_none() { continue; }
             let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
-            if !self.synchronizing[slot] && worker.ready() && !worker.pending()
-                && self.dispatched[slot].is_none_or(|sent| now.duration_since(sent) >= crate::map_drive_worker091::STEP) {
+            if !self.synchronizing[slot] && !self.pose_pending[slot] && worker.ready() && !worker.pending()
+                && deadlines[slot].is_some() {
                 let actor = world.actors.get(slot).ok_or_else(model::bad)?;
                 let input = crate::map_drive_worker091::Input { throttle: actor.input.throttle,
                     steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0 };
                 let seq = worker.advance(input, now)?;
-                self.dispatched[slot] = Some(now);
+                self.dispatched[slot] = deadlines[slot];
                 println!("SHARED_INTEGRATED_WORKER_INPUT battle={} slot={} seq={} throttle={} steer={} brake={}",
                     world.id, slot, seq, input.throttle, input.steer, input.brake);
             }

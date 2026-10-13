@@ -49,6 +49,26 @@ only receipt-owned processes and restoring all temporary installs/namespaces.
 Historical solver equivalence remains UNKNOWN without source/evidence; no
 claim of an overnight historical ideal based on synthetic tests alone.
 
+### Night09 checkpoint and next bounded coast transition
+
+Logical cadence and moving support-grip corrections pass fresh736 gateway
+tests,36 flat+2 calibration runs,12 real-map grip runs and20 paired ram cases.
+Whole-object gateway fixtures explicitly use09. Source/build/evidence binding
+is night09-checkpoint.json. Static side pressure remains OPEN; moving-side
+full-speed source predicate is verified only as client prediction. No silent
+change of the admitted energy policy or historical claim.
+
+The current throttle0+steer branch immediately requests opposite track motion
+even while travelling. Next helper-only candidate must keep motor0 on moving
+coast, derive same-sign differential ratios from measured travel, preserve
+reverse steering convention, and transition to pivot only near rest with a
+bounded slew. Do not fake forward drive or rewrite body velocity. Existing
+rest pivot, brake, reversal, source torque and grip09 remain regression gates.
+Thresholds and exact tests are frozen before tuning in
+night-slip01/coast-proposal01.json; causal baseline and every failed attempt
+must be retained. Real replay must prove passive yaw and retained momentum;
+API names alone are insufficient. No automatic native input.
+
 ## Owner correction after steering checkpoint491bde5
 
 Owner clarified that prior acceptance covers continuous fence-chain passage

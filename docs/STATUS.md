@@ -1,3 +1,23 @@
+## 2026-10-13 — P05B night09 automatic checkpoint; owner gate OPEN
+
+Cadence regression reproduced on old code, fixed with logical100ms scheduling
+and one fresh paired pose per publication; overload/ACK/rejoin are bounded.
+Fresh canonical gateway-p05b-night-final09 passes736/736, including four
+whole-object cases explicitly bound to candidate09. Earlier retained fixtures
+in other suites remain their declared versions. Moving support grip reduces
+MS-1 sustained-turn lateral RMS71–79% in exact owner-command replay without
+stopping the turn. Both profiles pass36 flat runs+2 calibrations,12 supported
+real-map grip runs and20 paired ram cases. Engineering policy, not historical
+solver equivalence. Evidence: P05B/night09-checkpoint.json and research.
+
+Side-fence snag remains OPEN: candidate08 actual geometry reproduces94 contact
+frames with no fracture for both tanks. Original client predictor uses full
+speed magnitude, while current policy uses COM normal energy; that source is
+not proof of authoritative server pressure damage. No unreviewed resistance
+change. Next automatic work is moving coast-to-pivot steering, then the bounded
+side-contact contract. Native clients/stand remain stopped/restored; manual
+tests after2026-10-14 09:00 Asia/Yekaterinburg, no merge before owner acceptance.
+
 ## 2026-10-13 — P05B overnight: cadence, side contact and turning slip
 
 Owner finished candidate08 MS-1 run ms1ram03 and reports reversal delay appears
