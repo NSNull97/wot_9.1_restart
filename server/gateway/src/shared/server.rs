@@ -16,6 +16,9 @@ mod worker_fixtures;
 #[cfg(test)]
 #[path="server_contact_barrier_tests.rs"]
 mod contact_barrier_tests;
+#[cfg(test)]
+#[path="server_fracture_real_tests.rs"]
+mod fracture_real_tests;
 
 #[derive(Default)]
 struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
@@ -150,7 +153,7 @@ impl IntegratedRuntime {
         !self.blocked() && !self.synchronizing.iter().any(|v|*v) && self.workers.iter().all(|worker| worker.as_ref().is_some_and(|value| value.ready()))
     }
 
-    fn blocked(&self) -> bool { self.staged.is_some() }
+    fn blocked(&self) -> bool { self.staged.is_some() || self.workers.iter().flatten().any(|worker|!worker.prepared_ids().is_empty()) }
 
     fn finish_catalog(&mut self,world:&mut World,now:Instant)->io::Result<()>{
         let staged=self.staged.as_ref().ok_or_else(model::bad)?;
@@ -159,6 +162,9 @@ impl IntegratedRuntime {
             return Err(io::Error::new(io::ErrorKind::InvalidData,"catalog transaction membership or scene changed; fail closed"));}
         let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().ok_or_else(model::bad)?,
             &staged.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids())?;
+        if self.workers.iter().flatten().any(|worker|worker.prepared_ids().iter().any(|id|scene.ids().binary_search(id).is_err())) {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,"candidate omits prepared worker fracture; fail closed"));
+        }
         let mut complete=true;let mut participants=0;
         for slot in 0..model::CAPACITY{
             if world.actors[slot].session.is_none(){continue;}
@@ -269,6 +275,16 @@ impl IntegratedRuntime {
                     self.contact_sequences[slot] = state.seq;
                     self.contact_batches[slot] = Some(ContactBatch { session: session.ok_or_else(model::bad)?,
                         generation: worker.generation, seq: state.seq, scene_version: state.scene_version, contacts });
+                    for receipt in &state.fractures {
+                        println!("SHARED_FENCE_RESPONSE {}",serde_json::json!({"battle":world.id,
+                            "slot":slot,"generation":worker.generation,"seq":state.seq,
+                            "scene_version":state.scene_version,"mass_kg":worker.map.mass_kg,
+                            "config_sha256":worker.map.config_sha256,"object_id":receipt.object_id,
+                            "order":receipt.order,"substep":receipt.substep,"energy_j":receipt.energy_j,
+                            "prevelocity":receipt.velocity,"shadow_before":receipt.budget_before,
+                            "shadow_after":receipt.budget_after,"solver_before":receipt.solver_before,
+                            "solver_after":receipt.solver_after,"status":"validated_preparation"}));
+                    }
                 }
                 if state.seq == 0 {
                     let actor = world.actors.get(slot).ok_or_else(model::bad)?;
@@ -320,7 +336,7 @@ impl IntegratedRuntime {
         }
         for (slot,position,direction,speed) in &rows {
             if !world.actors[*slot].ready && world.actors[*slot].session.is_some()
-                && !self.synchronizing[*slot] && self.anchored[*slot] {
+                && !self.synchronizing[*slot] && self.anchored[*slot] && !self.blocked() {
                 world.import_unready_external_pose(*slot,*position,*direction,*speed)?;
             }
         }
@@ -336,6 +352,8 @@ impl IntegratedRuntime {
             return Ok(());
         }
         if world.tick == 1000 && world.actors.iter().any(|actor| actor.session.is_some() && !actor.ready) {
+            if self.blocked(){return Err(io::Error::new(io::ErrorKind::InvalidData,
+                "prepared fracture before initial native readiness; fail closed"));}
             // The native arena has not completed its ready handshake yet, but
             // its first announcement must still use the settled worker pose.
             // Before first battle both actors must settle; later a reconnect
@@ -361,6 +379,12 @@ impl IntegratedRuntime {
             }
         }
         let vehicle_events = candidate.apply_vehicle_contacts(&vehicle_contacts)?;
+        if self.workers.iter().flatten().any(|worker|!worker.prepared_ids().is_empty()) {
+            let removed=candidate.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids();
+            if self.workers.iter().flatten().any(|worker|worker.prepared_ids().iter().any(|id|removed.binary_search(id).is_err())) {
+                return Err(io::Error::new(io::ErrorKind::InvalidData,"domain rejected a prepared physical fracture; fail closed"));
+            }
+        }
         for event in &vehicle_events {
             let closing_speed=event.velocity.iter().zip(event.normal).map(|(v,n)|v*n).sum::<f32>();
             let energy_j=0.5*event.mass_kg*closing_speed*closing_speed;
@@ -507,7 +531,8 @@ pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: 
         let path=Path::new(path);let catalog=Arc::new(super::fragiles::Catalog::load(&pool.local_root,path,sha)?);
         let worker=crate::map_drive_worker091::CatalogSpec::load(&pool.local_root,&path.parent().ok_or_else(model::bad)?.join(&catalog.worker_file),&catalog.worker_sha256)?;
         if catalog.map!=map||worker.map_id()!=map||catalog.contacts!=worker.contacts()||worker.version()!=catalog.version+1||worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
-            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=b.kind.worker_kind()){return Err(model::bad().into());}
+            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=b.kind.worker_kind()
+            ||a.ram_energy_j()!=if catalog.version==4&&matches!(b.kind,super::fragiles::ObjectKind::MovementFragile){super::fragiles::RAMMING_MIN_ENERGY_J as u32}else{0}){return Err(model::bad().into());}
         Some((catalog,worker))
     }else{None};
     serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map)

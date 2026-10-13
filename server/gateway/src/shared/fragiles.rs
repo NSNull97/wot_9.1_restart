@@ -17,6 +17,7 @@ pub const POLICY:&str="test_lab-fragile-reference-hp-ap30-v1";
 pub const RAMMING_MIN_MASS_KG:f32=1000.;
 pub const RAMMING_MAX_MASS_KG:f32=100000.;
 pub const RAMMING_MIN_ENERGY_J:f32=8_000.;
+pub const FENCE_RAM_POLICY:&str="test_lab-fence-energy-v1";
 /// Original animator's no-ground fallback, used as an explicit test_lab
 /// flat-ground policy. Zero locks the tree upright. Terrain/obstacle-specific
 /// limits require tree root/height sampling and are not implemented here.
@@ -59,12 +60,15 @@ impl Catalog {
         if format!("{:x}",Sha256::digest(bytes))!=sha{return Err(bad());}
         let v=crate::map_drive_worker091::json_catalog_extended(bytes,1024*1024)?;
         let base_fields=["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects"];
-        if v["version"].as_u64()==Some(3){fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts","area_chunks"])?;}
+        if v["version"].as_u64()==Some(4){
+            fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts","area_chunks","ram_policy"])?;
+            if v["ram_policy"]!=FENCE_RAM_POLICY{return Err(bad());}
+        } else if v["version"].as_u64()==Some(3){fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts","area_chunks"])?;}
         else if v.get("contacts").is_some(){fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts"])?;}else{fields(&v,&base_fields)?;}
         let map=MapId::from_asset(v["map"].as_str().ok_or_else(bad)?)?;
         let profile=map.spec();
         let version=v["version"].as_u64().ok_or_else(bad)?;
-        if !(1..=3).contains(&version)||v["profile"]!="test_lab"||v["destructibles_sha256"]!=DEFINITIONS_SHA
+        if !(1..=4).contains(&version)||v["profile"]!="test_lab"||v["destructibles_sha256"]!=DEFINITIONS_SHA
             ||v["physics_manifest_sha256"]!=profile.physics_manifest_sha256||v["projectile_manifest_sha256"]!=profile.projectile_manifest_sha256{return Err(bad());}
         if version==1 && bytes.len()>131072{return Err(bad());}
         if version<3 { crate::map_drive_worker091::json_catalog(bytes,1024*1024)?; }
@@ -77,9 +81,9 @@ impl Catalog {
         let worker_file=text(&v["worker"]["file"],64)?;
         if worker_file!="physics-removals.json"{return Err(bad());}
         let worker_sha256=hash(&v["worker"]["sha256"])?;
-        let limit=if version==3{MAX_MOVEMENT_OBJECTS}else if contacts{MAX_CONTACT_OBJECTS}else{MAX_OBJECTS};
+        let limit=if version>=3{MAX_MOVEMENT_OBJECTS}else if contacts{MAX_CONTACT_OBJECTS}else{MAX_OBJECTS};
         let rows=v["objects"].as_array().filter(|a|!a.is_empty()&&a.len()<=limit).ok_or_else(bad)?;
-        let area_chunks=if version==3 {
+        let area_chunks=if version>=3 {
             v["area_chunks"].as_array().filter(|a|!a.is_empty()&&a.len()<=128).ok_or_else(bad)?
                 .iter().map(|c|u16::try_from(uint(c)?).map_err(|_|bad())).collect::<io::Result<Vec<_>>>()?
         }else{Vec::new()};
@@ -91,7 +95,7 @@ impl Catalog {
                 None if version==1=>ObjectKind::Fragile,
                 Some(Value::String(value)) if value=="tree"=>ObjectKind::Tree,
                 Some(Value::String(value)) if value=="fragile"=>ObjectKind::Fragile,
-                Some(Value::String(value)) if value=="movement_fragile"&&version==3=>ObjectKind::MovementFragile,
+                Some(Value::String(value)) if value=="movement_fragile"&&version>=3=>ObjectKind::MovementFragile,
                 _=>return Err(bad()),
             };
             if contacts && row.get("kind").is_none(){return Err(bad());}
@@ -109,9 +113,9 @@ impl Catalog {
     }
     fn validate(&self)->io::Result<()>{
         let profile=self.map.spec();
-        if self.objects.is_empty()||self.objects.len()>if self.version==3{MAX_MOVEMENT_OBJECTS}else if self.contacts{MAX_CONTACT_OBJECTS}else{MAX_OBJECTS}
+        if self.objects.is_empty()||self.objects.len()>if self.version>=3{MAX_MOVEMENT_OBJECTS}else if self.contacts{MAX_CONTACT_OBJECTS}else{MAX_OBJECTS}
             ||self.objects.windows(2).any(|w|w[0].object_id>=w[1].object_id){return Err(bad());}
-        if self.version==3 && (self.area_chunks.is_empty()||self.area_chunks.len()>128
+        if self.version>=3 && (self.area_chunks.is_empty()||self.area_chunks.len()>128
             ||self.area_chunks.windows(2).any(|w|w[0]>=w[1])
             ||self.area_chunks.iter().any(|c|!((121..=132).contains(&(c>>8))&&(121..=132).contains(&(c&255))))) {return Err(bad());}
         for (i,o) in self.objects.iter().enumerate(){
@@ -126,14 +130,14 @@ impl Catalog {
                 ||o.projectile_first_triangle.checked_add(o.projectile_triangle_count).is_none_or(|end|end as usize>profile.projectile_triangle_count)
                 ||o.physics_first_triangle.checked_add(o.physics_triangle_count).is_none_or(|end|end as usize>profile.physics_triangle_count)
                 || !((121..=132).contains(&(o.chunk_id>>8))&&(121..=132).contains(&(o.chunk_id&255))) {return Err(bad());}
-            if self.version==3 && self.area_chunks.binary_search(&o.chunk_id).is_err(){return Err(bad());}
+            if self.version>=3 && self.area_chunks.binary_search(&o.chunk_id).is_err(){return Err(bad());}
             for old in &self.objects[..i]{
                 if (old.chunk_id,old.native_index)==(o.chunk_id,o.native_index)
                     ||ranges_overlap(old.projectile_first_triangle,old.projectile_triangle_count,o.projectile_first_triangle,o.projectile_triangle_count)
                     ||ranges_overlap(old.physics_first_triangle,old.physics_triangle_count,o.physics_first_triangle,o.physics_triangle_count){return Err(bad());}
             }
         }
-        if self.version==3 { for chunk in &self.area_chunks {
+        if self.version>=3 { for chunk in &self.area_chunks {
             if self.objects.iter().filter(|o|o.chunk_id==*chunk&&o.kind.fragile()).count()>125
                 ||self.objects.iter().filter(|o|o.chunk_id==*chunk&&o.kind==ObjectKind::Tree).count()>62 {return Err(bad());}
         }}
@@ -141,7 +145,7 @@ impl Catalog {
     }
     pub fn instance(&self,id:u32)->Option<&Object>{self.objects.iter().find(|o|o.instance_id==id)}
     pub fn contacts(&self)->bool { self.contacts }
-    pub fn chunks(&self)->Vec<u16>{if self.version==3{return self.area_chunks.clone();}let mut v=self.objects.iter().map(|o|o.chunk_id).collect::<Vec<_>>();v.sort_unstable();v.dedup();v}
+    pub fn chunks(&self)->Vec<u16>{if self.version>=3{return self.area_chunks.clone();}let mut v=self.objects.iter().map(|o|o.chunk_id).collect::<Vec<_>>();v.sort_unstable();v.dedup();v}
     pub fn bind_geometry(&self,terrain:&terrain::Terrain)->io::Result<()>{
         if terrain.map_id()!=self.map{return Err(bad());}
         for o in &self.objects{
@@ -195,13 +199,21 @@ impl State {
             ||self.latest_tick().is_some_and(|last|last>tick){return Err(bad());}
         let index=self.catalog.objects.iter().position(|o|o.object_id==object_id).ok_or_else(bad)?;let object=&self.catalog.objects[index];
         if kind=="wheel" { return Ok(None); }
-        if velocity.iter().map(|v|v*v).sum::<f32>()<1. { return Ok(None); }
+        let fence_response=self.catalog.version==4&&matches!(object.kind,ObjectKind::MovementFragile);
+        let speed_squared=if fence_response {velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}
+            else {f64::from(velocity.iter().map(|v|v*v).sum::<f32>())};
+        if speed_squared<1. { return Ok(None); }
         if self.health[index]==0||self.fallen[index].is_some(){return Ok(None);}
         // `normal` is oriented from the tank into the object. Positive
         // signed dot therefore means the hull is closing on the object.
-        let closing=velocity[0]*normal[0]+velocity[1]*normal[1]+velocity[2]*normal[2];if closing<0.1{return Ok(None);}
-        let energy_j=0.5*mass_kg*closing*closing;
-        if energy_j<RAMMING_MIN_ENERGY_J{return Ok(None);}
+        // IPC5 admission uses doubles over the exact serialized f32 components
+        // in C# and Rust. Retain historical test_lab arithmetic in old profiles.
+        let closing=if fence_response {velocity.iter().zip(normal).map(|(v,n)|f64::from(*v)*f64::from(n)).sum::<f64>()}
+            else {f64::from(velocity[0]*normal[0]+velocity[1]*normal[1]+velocity[2]*normal[2])};
+        if closing<0.1{return Ok(None);}
+        let energy_j=if fence_response {0.5*f64::from(mass_kg)*closing*closing}
+            else {f64::from(0.5*mass_kg*(closing as f32)*(closing as f32))};
+        if energy_j<f64::from(RAMMING_MIN_ENERGY_J){return Ok(None);}
         let scene=self.scene_version();let fallen_tree=if matches!(object.kind,ObjectKind::Tree){
             let yaw=velocity[0].atan2(velocity[2]);let speed=if closing>=8.{3.}else if closing>=4.{2.}else if closing>=1.{1.}else{0.};
             Some(super::destructible_wire::encode_fallen_tree(object.native_index,yaw,TREE_FALL_FLAT_GROUND_PITCH,speed)?)

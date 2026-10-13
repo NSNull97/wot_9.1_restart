@@ -475,6 +475,42 @@ fn movement_manifest(count:u32)->Value {
 pub(crate) fn movement_catalog(count:u32)->Arc<Catalog>{Arc::new(parse(&movement_manifest(count)).unwrap())}
 
 #[test]
+fn fence_response_domain_requires_explicit_policy_and_preserves_native_rows() {
+    let old=movement_manifest(1038);
+    let mut next=old.clone();next["version"]=json!(4);next["ram_policy"]=json!(FENCE_RAM_POLICY);
+    let before=parse(&old).unwrap();let after=parse(&next).unwrap();
+    assert_eq!(after.version,4);assert_eq!(after.objects,before.objects);
+    assert_eq!(after.chunks(),before.chunks());
+    for invalid in [Value::Null,json!(false),json!("historical"),json!("test_lab-fence-energy-v2")] {
+        let mut bad=next.clone();bad["ram_policy"]=invalid;assert!(parse(&bad).is_err());
+    }
+    let mut missing=next.clone();missing.as_object_mut().unwrap().remove("ram_policy");assert!(parse(&missing).is_err());
+    let mut legacy=old;legacy["ram_policy"]=json!(FENCE_RAM_POLICY);assert!(parse(&legacy).is_err());
+    let mut oversized=movement_manifest(2049);oversized["version"]=json!(4);oversized["ram_policy"]=json!(FENCE_RAM_POLICY);
+    assert!(parse(&oversized).is_err());
+}
+
+#[test]
+fn fence_response_threshold_uses_exact_components_at_adjacent_float_speeds() {
+    let mut value=movement_manifest(1);value["version"]=json!(4);value["ram_policy"]=json!(FENCE_RAM_POLICY);
+    let catalog=Arc::new(parse(&value).unwrap());
+    // Exactly 4 m/s at 1000 kg is 8000 J. Adjacent representable inputs
+    // must not cross the hard boundary because C# and Rust rounded differently.
+    for (speed,breaks) in [(f32::from_bits(4f32.to_bits()-1),false),(4.,true),
+        (f32::from_bits(4f32.to_bits()+1),true)] {
+        let mut state=State::new(catalog.clone());
+        let event=state.ram_contact(1,0,1,1,[0.;3],[0.,0.,1.],[0.,0.,speed],1000.,"hull".into()).unwrap();
+        assert_eq!(event.is_some(),breaks);assert_eq!(state.scene_version(),u32::from(breaks));
+    }
+    // Oblique f32 components lie just above the exact double threshold;
+    // one representable velocity step down must still remain below it.
+    for (speed,breaks) in [(f32::from_bits(5f32.to_bits()-1),false),(5.,true)] {
+        let mut state=State::new(catalog.clone());
+        assert_eq!(state.ram_contact(1,0,1,1,[0.;3],[0.6,0.,0.8],[0.,0.,speed],1000.,"hull".into()).unwrap().is_some(),breaks);
+    }
+}
+
+#[test]
 fn movement_catalog_is_versioned_complete_and_native_area_bounded() {
     for kind in [Value::Null,json!(1),json!(true)] {
         let mut legacy_contact=contact_manifest();legacy_contact["objects"][0]["kind"]=kind;

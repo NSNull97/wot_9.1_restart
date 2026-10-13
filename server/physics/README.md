@@ -209,3 +209,42 @@ identity, non-finite values, non-unit normals, or more than 32 distinct object
 IDs fail the worker instead of silently dropping data. The server may use hull
 rows for impact policy; wheel rows are observational and do not authorize
 destruction by themselves.
+
+P06R catalog v4 extends contact capacity to 2048 source-bound objects and
+removed IDs, keeping IPC4 and its previous semantics. Catalog v5 selects the
+separate `ram_policy="test_lab-fence-energy-v1"` response and IPC5. Every v5
+object additionally has `ram_energy_j`: 8000 for admitted movement-only
+fences, zero for legacy whole fragiles and trees. The domain v4 manifest
+cross-checks this projection; the policy is approximate, not a reconstruction
+of the original server's impact formula.
+
+IPC5 uses the same scene/sequence/config/generation pins and bounded private
+pipe. Its state additionally contains `fractures`, at most 32 receipts, ordered
+by `order=1..N`. A receipt has exactly `object_id,substep,order,point,normal,
+velocity,budget_before,budget_after,solver_before,solver_after,energy_j`.
+The vector `velocity` is actual pre-substep velocity; the shadow budget is
+reset to it each substep. Both actual and remaining budget must qualify for
+the existing normal kinetic-energy threshold. Reserving a hit reduces the
+positive normal component by `w - sqrt(max(0,w*w - 2*8000/mass))`.
+Repeated manifolds of that object cannot reserve another hit. The first
+decision for an object within a substep is retained for all its manifolds.
+
+Only a reserved contact is a sensor. Once the ordinary solver finishes, the
+same reducer is applied to its current velocity and recorded in the receipt.
+It can only remove positive normal speed, never refund the velocity lost to
+a surviving wall or terrain. The object body is provisionally detached after
+that substep. The pinned native callback job system runs inline at concurrency
+one; callback order is recorded, and only this Windows build is qualified by
+repeat tests. This does not promise cross-platform determinism.
+
+A nonempty receipt list returns event `prepared`, not `state`. The worker
+refuses another advance until `sync_removed` includes every local prepared
+ID. Commit destroys detached bodies once and removes any peer's additional
+bodies. Retries neither advance ticks nor apply another velocity reduction.
+The gateway validates receipts before staging domain state and poses; native
+publication still waits for both workers' exact cumulative scene ACKs.
+Malformed receipts, omitted commits or worker loss fail closed by stopping the
+battle. There is no claimed rollback of a partly advanced physics world.
+Two actors contacting the same object in the same discrete frame can each
+spend their own impact energy; the domain transition and native publication
+are deduplicated. This is a documented test_lab approximation.

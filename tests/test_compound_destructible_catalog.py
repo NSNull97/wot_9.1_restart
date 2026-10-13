@@ -96,6 +96,24 @@ class MovementAdmissionTests(unittest.TestCase):
 
 
 class CompoundNativeContractTests(unittest.TestCase):
+    def test_fence_response_is_versioned_and_preserves_legacy_source_and_native_identity(self):
+        inv = inventory([object_row(0,'fragile'),object_row(1,'tree'),object_row(2)])
+        exports = [export_bytes(native_export(inv))]
+        old, old_worker = map(json.loads, catalog.join_exports(inv, exports))
+        raw, worker_raw = catalog.join_exports(inv, exports, fence_response=True)
+        new, worker = json.loads(raw), json.loads(worker_raw)
+        self.assertEqual((new['version'], worker['version']), (4, 5))
+        self.assertEqual(new['ram_policy'], 'test_lab-fence-energy-v1')
+        self.assertEqual(worker['ram_policy'], new['ram_policy'])
+        self.assertEqual(new['objects'], old['objects'])
+        self.assertEqual(new['area_chunks'], old['area_chunks'])
+        self.assertEqual(new['native_exports_sha256'], old['native_exports_sha256'])
+        self.assertEqual([r['ram_energy_j'] for r in worker['objects']], [0, 0, 8000])
+        for projected, previous in zip(worker['objects'], old_worker['objects']):
+            self.assertEqual({k:v for k,v in projected.items() if k != 'ram_energy_j'}, previous)
+        self.assertEqual(new['worker']['sha256'], catalog.sha(worker_raw))
+        self.assertNotEqual(new['worker']['sha256'], old['worker']['sha256'])
+
     def test_domain3_worker4_preserve_native_holes_and_project_full_spans(self):
         inv = inventory([object_row(0,'fragile'),object_row(1,'tree'),object_row(2)])
         manifest,worker = map(json.loads,catalog.join_exports(inv,[export_bytes(native_export(inv))]))

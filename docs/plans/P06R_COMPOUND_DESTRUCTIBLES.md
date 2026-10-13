@@ -78,6 +78,40 @@ either. Separate crew/equipment and ammo/service chats own isolated worktrees
 and domain components; P06R owns movement, gateway and physics integration.
 Their tests do not by themselves authorize native acceptance or runtime wiring.
 
+## Fence-chain response implementation — 2026-10-13
+
+The close-joint private reproduction binds objects 3307/3308: the first hit
+has 37.17 kJ, but the static solver removes almost all speed before the
+gateway can remove the fence. The next hit has only 3.82 kJ. Fix this at
+contact resolution, with an explicitly approximate, versioned test_lab
+policy; do not refund pre-impact velocity after the solver has hit a wall.
+
+Worker catalog v5 / IPC5 will reserve 8000 J per admitted movement-only
+fence in the actual hull-contact order. Each substep owns a shadow velocity
+budget; repeated manifolds cannot debit the same object twice. Only reserved
+contacts become sensors. After the solver, the reducer can only decrease the
+positive velocity component along each admitted contact normal. Rigid walls,
+terrain and unadmitted contacts retain their ordinary collision response.
+An inline single-concurrency callback job system must be proved against the
+pinned native library before it is used; numThreads=0 is not assumed serial.
+
+The worker returns an explicit prepared result with bounded fracture receipts
+and the original scene identity. It cannot advance again until a cumulative
+scene commit includes every prepared removal. The gateway validates receipts,
+stages poses and domain changes, then publishes only after both workers ACK.
+Any inconsistent receipt, omitted removal, worker loss or stale identity stops
+the battle; no incomplete physical rollback is claimed. Concurrent actors
+may each spend their own contact energy in this discrete test_lab model;
+the shared object transition/native publication still occurs only once.
+
+Checks precede the owner drive: real Jolt close-joint and straight chains,
+mass/speed threshold and loss, repeated-contact energy accounting, rigid wall
+immediately behind a fence, repeatability on this pinned Windows build,
+receipt corruption, stale/omitted commits and both-worker publication barriers.
+The old catalog/IPC modes and accepted tree path remain separately testable.
+Only after automatic checks pass is the native owner stand prepared. IS-7
+runtime work follows that fence check in the owner's requested order.
+
 ## Limits and rollback
 
 Original descriptors alone do not prove historical damage/ram formulas.

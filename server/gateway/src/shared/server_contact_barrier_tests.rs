@@ -15,17 +15,25 @@ struct Fixture {
 }
 
 fn fixture(now: Instant) -> Fixture {
+    fixture_profile(now,false)
+}
+fn fixture_profile(now: Instant, fracture:bool) -> Fixture {
     let catalog = fragiles::tests::contact_catalog();
     let mut world = model::tests::world(now);
     world.impact.bind_fragiles(catalog.clone()).unwrap();
     world.fragiles = Some(fragiles::State::new(catalog.clone()));
-    let raw = serde_json::to_vec(&json!({"version":3,"profile":"test_lab","map":"01_karelia",
+    let mut manifest = json!({"version":3,"profile":"test_lab","map":"01_karelia",
         "contacts":true,"physics_manifest_sha256":MapId::Karelia.spec().physics_manifest_sha256,
         "projectile_manifest_sha256":MapId::Karelia.spec().projectile_manifest_sha256,
         "objects":catalog.objects.iter().map(|o| json!({"object_id":o.object_id,"instance_id":o.instance_id,
             "first_triangle":o.physics_first_triangle,"triangle_count":o.physics_triangle_count,
             "object_revision":o.object_revision,"kind":if matches!(o.kind,fragiles::ObjectKind::Tree){"tree"}else{"fragile"}
-        })).collect::<Vec<_>>() })).unwrap();
+        })).collect::<Vec<_>>() });
+    if fracture {
+        manifest["version"]=5.into();manifest["ram_policy"]="test_lab-fence-energy-v1".into();
+        for entry in manifest["objects"].as_array_mut().unwrap(){entry["ram_energy_j"]=if entry["kind"]=="fragile"{8000}else{0}.into();}
+    }
+    let raw=serde_json::to_vec(&manifest).unwrap();
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let directory = std::env::temp_dir().join(format!("wot091-contact-barrier-{}-{}",
         std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
@@ -67,17 +75,22 @@ impl Fixture {
         }
     }
     fn reply(&self, slot: usize, seq: u32, now: Instant, contacts: Vec<Value>) {
+        self.peers[slot].reply(now,&self.frame(slot,seq,contacts));
+    }
+    fn frame(&self,slot:usize,seq:u32,contacts:Vec<Value>)->Value {
         let worker = self.runtime.workers[slot].as_ref().unwrap();
         let scene = worker.catalog_scene().unwrap();
         // Deliberately zero post-step velocity: an impact must retain its
         // nonzero pre-collision velocity while the other reply is delayed.
-        self.peers[slot].reply(now, &json!({"version":4,"event":"state","seq":seq,
+        let mut value=json!({"version":4,"event":"state","seq":seq,
             "tick":180+seq*6,"settle_ticks":180,"map":self.map.asset,"config_sha256":self.map.config_sha256,
             "generation":worker.generation,"catalog_sha256":self.spec.sha256(),"contacts":true,
             "scene_version":scene.version(),"scene_sha256":scene.hash(),
             "state":{"position":self.world.actors[slot].position,"direction":self.world.actors[slot].direction,
                 "speed":0.,"rspeed":0.,"contacts":6,"linear_velocity":[0.,0.,0.],
-                "angular_velocity":[0.,0.,0.],"wheel_contact_masks":[63,63,63,63,63,63],"object_contacts":contacts}}));
+                "angular_velocity":[0.,0.,0.],"wheel_contact_masks":[63,63,63,63,63,63],"object_contacts":contacts}});
+        if self.spec.version()==5{value["version"]=5.into();value["state"]["fractures"]=json!([]);}
+        value
     }
     fn ack(&self, slot: usize, request: &Value, now: Instant) {
         assert_eq!(request["op"], "sync_removed");
@@ -243,4 +256,56 @@ fn changed_worker_generation_cannot_apply_a_retained_contact() {
     assert_eq!(f.world.fragiles, before);
     assert_eq!(f.events(), 0);
     assert!(!f.runtime.blocked());
+}
+
+fn prepared_frame(f:&Fixture,slot:usize)->Value{
+    let mut frame=f.frame(slot,1,vec![contact(1513,4.)]);
+    frame["event"]="prepared".into();
+    frame["state"]["fractures"]=json!([{"object_id":1513,"substep":1,"order":1,"point":[0.,0.,0.],
+        "normal":[0.,0.,1.],"velocity":[0.,0.,4.],"budget_before":[0.,0.,4.],
+        "budget_after":[0.,0.,(16.-16000./f.map.mass_kg).sqrt()],"solver_before":[0.,0.,0.],
+        "solver_after":[0.,0.,0.],"energy_j":8000}]);
+    frame
+}
+
+#[test]
+fn fracture_prepared_pose_waits_for_peer_and_both_acks_before_world_publication(){
+    for first in 0..2 {
+        let now=Instant::now();let mut f=fixture_profile(now,true);f.dispatch(now);
+        let before=f.world.actors.clone();let mut frame=prepared_frame(&f,first);
+        frame["state"]["position"][0]=(before[first].position[0]+1.).into();
+        f.peers[first].reply(now+Duration::from_millis(1),&frame);
+        f.step(now+Duration::from_millis(2));
+        assert!(f.runtime.blocked());assert!(f.runtime.staged.is_none());assert!(!f.runtime.ready_for_native());
+        assert_eq!(f.world.actors,before);assert_eq!(f.events(),0);
+        assert!(f.runtime.workers[first].as_mut().unwrap().advance(drive::Input::STOP,now+Duration::from_millis(2)).is_err());
+        f.reply(1-first,1,now+Duration::from_millis(3),vec![]);f.step(now+Duration::from_millis(4));
+        assert!(f.runtime.staged.is_some());assert_eq!(f.world.actors,before);assert_eq!(f.events(),0);
+        let requests=[f.peers[0].request(),f.peers[1].request()];
+        f.ack(first,&requests[first],now+Duration::from_millis(5));f.step(now+Duration::from_millis(6));
+        assert_eq!(f.events(),0);assert_eq!(f.world.actors,before);
+        f.ack(1-first,&requests[1-first],now+Duration::from_millis(7));f.step(now+Duration::from_millis(8));
+        assert_eq!(f.events(),1);assert_eq!(f.world.scene_version(),1);assert!(!f.runtime.blocked());
+        // Same-tick poses may remain parked by the domain clock, but no
+        // provisional pose or destruction could escape before both ACKs.
+        f.step(now+Duration::from_millis(9));assert_eq!(f.events(),1);
+    }
+}
+
+#[test]
+fn fracture_preparation_cannot_import_an_unready_pose_or_omit_the_domain_delta(){
+    let now=Instant::now();let mut f=fixture_profile(now,true);
+    f.world.advance(now+drive::STEP).unwrap();f.dispatch(now+drive::STEP);
+    f.world.actors[0].ready=false;let before=f.world.actors[0].position;
+    let mut frame=prepared_frame(&f,0);frame["state"]["position"][0]=(before[0]+1.).into();
+    f.peers[0].reply(now+drive::STEP,&frame);f.step(now+drive::STEP);
+    assert_eq!(f.world.actors[0].position,before);assert!(f.runtime.blocked());
+    // Simulate a rejected candidate: the existing scene does not contain the
+    // physical proposal. No commit request may reach either worker.
+    let mut omitted=f.world.clone();
+    omitted.apply_vehicle_contacts(&[model::VehicleContactInput {object_id:1514,substep:1,point:[0.;3],
+        normal:[0.,0.,1.],velocity:[0.,0.,4.],mass_kg:f.map.mass_kg,kind:"hull".into(),shooter:1}]).unwrap();
+    f.runtime.staged=Some(omitted);
+    assert!(f.runtime.finish_catalog(&mut f.world,now+drive::STEP).is_err());
+    assert_eq!(f.events(),0);assert!(f.peers.iter().all(controlled_ipc::Peer::no_request));
 }

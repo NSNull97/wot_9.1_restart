@@ -1,4 +1,26 @@
-# P06R active — compound objects and fences
+# P06R active — fence-chain owner gate
+
+Branch `codex/p06r-compound-destructibles`; accepted main remains
+`90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`. The chain stop is corrected using
+versioned approximate8000J fence response, mass-dependent speed loss, unchanged
+rigid-wall collision and both-worker ACK before publication.
+
+**Acceptance: PASS_AUTOMATIC_PRIVATE / PENDING_OWNER_FENCE_CHAIN.** Canonical
+gateway09:649/649 PASS including actual paired IPC5 runtime/ACK gate. Physics03:
+seven behavior cases, four IPC5 negative/retry checks, three matched-mass cases,
+nine old-mode/tree checks PASS; component64 and importer16 PASS. Native rendered
+chain passage is NOT_RUN. Fresh stand receipts belong under
+`local/evidence/20261013-p06r-compound-01/native-chain/`, run `fencechain01`.
+Only receipt-identified root A/B clients and their server may be stopped;
+parallel service-chat processes have independent ownership.
+
+**Next:** owner drives several consecutive fence sections in the two-client
+Prohorovka stand and checks continuous passage/speed loss and both views.
+After collecting that result, continue the queued P03M IS-7 card in the requested
+order. Do not accept all compound destruction or production scaling by inference.
+[Commands, evidence and rollback](research/P06R_FENCE_CHAIN_RESPONSE.md).
+
+# Earlier P06R checkpoint — compound objects and fences
 
 Owner authorized continued destruction implementation on 2026-10-13.
 Branch `codex/p06r-compound-destructibles`, accepted main

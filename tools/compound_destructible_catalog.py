@@ -27,6 +27,8 @@ MAX_TREES_PER_CHUNK = 62
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_WORKER_BYTES = 512 * 1024
 KINDS = ('fragile', 'tree', 'movement_fragile')
+RAM_POLICY = 'test_lab-fence-energy-v1'
+FENCE_ENERGY_J = 8000
 require = dc.require
 sha = dc.sha
 
@@ -166,7 +168,7 @@ def probe_spec_bytes(inventory):
     return dc.canonical(inventory['probe_spec']) + b'\n'
 
 
-def join_exports(inventory, exports):
+def join_exports(inventory, exports, *, fence_response=False):
     """Require complete stable native mappings; no partial admission fallback."""
     _validate_inventory(inventory)
     require(type(exports) is list and 1 <= len(exports) <= 2, 'one or two native exports required')
@@ -204,6 +206,10 @@ def join_exports(inventory, exports):
     worker = {'version': 4, 'profile': 'test_lab', 'map': MAP,
               'physics_manifest_sha256': files['physics'][1],
               'projectile_manifest_sha256': files['projectile'][1], 'contacts': True, 'objects': worker_objects}
+    if fence_response:
+        worker.update(version=5, ram_policy=RAM_POLICY)
+        for projection, source in zip(worker_objects, objects):
+            projection['ram_energy_j'] = FENCE_ENERGY_J if source['kind'] == 'movement_fragile' else 0
     worker_raw = dc.canonical(worker) + b'\n'
     dc.json_value(worker_raw, MAX_WORKER_BYTES, 64000, 12)
     manifest = {'version': 3, 'profile': 'test_lab', 'map': MAP,
@@ -213,6 +219,8 @@ def join_exports(inventory, exports):
                 'native_exports_sha256': sorted(digests), 'area_chunks': inventory['area_chunks'],
                 'worker': {'file': 'physics-removals.json', 'sha256': sha(worker_raw)},
                 'contacts': True, 'objects': objects}
+    if fence_response:
+        manifest.update(version=4, ram_policy=RAM_POLICY)
     manifest_raw = dc.canonical(manifest) + b'\n'
     dc.json_value(manifest_raw, MAX_MANIFEST_BYTES, 64000, 12)
     return manifest_raw, worker_raw
@@ -223,9 +231,12 @@ def main(argv=None):
     parser.add_argument('--out', required=True, help='fresh output directory under configured local/')
     parser.add_argument('--native-export', action='append', default=[])
     parser.add_argument('--native-sha256', action='append', default=[])
+    parser.add_argument('--fence-response', action='store_true',
+                        help='Explicit test_lab energy response: domain v4 / worker v5; requires a native join')
     args = parser.parse_args(argv)
     require(len(args.native_export) == len(args.native_sha256) <= 2,
             'zero, one or two paired native exports/hashes required')
+    require(not args.fence_response or args.native_export, 'fence response requires pinned native exports')
     inventory = build_inventory()
     manifest_raw = worker_raw = None
     if args.native_export:
@@ -235,7 +246,7 @@ def main(argv=None):
             path = dc.no_links(Path(path).absolute())
             require(path.is_relative_to(local), 'native evidence must be under local')
             exports.append((dc.read(path, tc.MAX_NATIVE_BYTES, digest), digest))
-        manifest_raw, worker_raw = join_exports(inventory, exports)
+        manifest_raw, worker_raw = join_exports(inventory, exports, fence_response=args.fence_response)
     output = dc.fresh_output(args.out, dc.configured_paths()['local_artifacts_root'])
     inventory_raw = dc.canonical(inventory) + b'\n'
     require(len(inventory_raw) <= 16 * 1024 * 1024, 'inventory output byte bound')

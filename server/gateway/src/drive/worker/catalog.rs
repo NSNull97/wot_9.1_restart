@@ -12,7 +12,7 @@ pub const MAX_EXTENDED_CATALOG_OBJECTS:usize=2048;
 pub const MAX_EXTENDED_REMOVED_OBJECTS:usize=2048;
 
 #[derive(Clone,Debug,PartialEq,Eq)]
-pub struct CatalogEntry {object_id:u32,instance_id:u32,first_triangle:u32,triangle_count:u32,object_revision:String,kind:String}
+pub struct CatalogEntry {object_id:u32,instance_id:u32,first_triangle:u32,triangle_count:u32,object_revision:String,kind:String,ram_energy_j:u32}
 impl CatalogEntry {
     pub fn object_id(&self)->u32{self.object_id}
     pub fn instance_id(&self)->u32{self.instance_id}
@@ -20,6 +20,7 @@ impl CatalogEntry {
     pub fn triangle_count(&self)->u32{self.triangle_count}
     pub fn object_revision(&self)->&str{&self.object_revision}
     pub fn kind(&self)->&str{&self.kind}
+    pub fn ram_energy_j(&self)->u32{self.ram_energy_j}
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct CatalogSpec {pub(super) path:PathBuf,pub(super) sha256:String,map_id:MapId,entries:Vec<CatalogEntry>,contacts:bool,version:u8}
@@ -28,7 +29,7 @@ impl CatalogSpec {
         let value=json_catalog_extended(raw,1024*1024)?;
         // Reapply the historical parser budgets as well as row bounds. Only
         // explicit v4 catalogs may use the larger array/node envelope.
-        if value["version"].as_u64()!=Some(4){return json_catalog(raw,1024*1024);}
+        if !matches!(value["version"].as_u64(),Some(4|5)){return json_catalog(raw,1024*1024);}
         Ok(value)
     }
     pub fn load(local_root:&Path,path:&Path,sha256:&str)->io::Result<Self>{
@@ -51,27 +52,32 @@ impl CatalogSpec {
         let version=uint(&v["version"])?;
         if version==2 { fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","objects"])?; }
         else if version==3||version==4 { fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects"])?; if v["contacts"]!=Value::Bool(true){return Err(bad());} }
+        else if version==5 {fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects","ram_policy"])?;
+            if v["contacts"]!=Value::Bool(true)||text(v,"ram_policy")?!=fracture::POLICY{return Err(bad());}}
         else{return Err(bad());}
         let map_id=MapId::from_asset(text(v,"map")?)?;let profile=map_id.spec();
         if text(v,"profile")?!="test_lab"
             || text(v,"physics_manifest_sha256")?!=profile.physics_manifest_sha256
             || text(v,"projectile_manifest_sha256")?!=profile.projectile_manifest_sha256{return Err(bad());}
         let rows=v["objects"].as_array().ok_or_else(bad)?;
-        let limit=match version{4=>MAX_EXTENDED_CATALOG_OBJECTS,3=>MAX_CONTACT_CATALOG_OBJECTS,_=>MAX_CATALOG_OBJECTS};
+        let limit=match version{4|5=>MAX_EXTENDED_CATALOG_OBJECTS,3=>MAX_CONTACT_CATALOG_OBJECTS,_=>MAX_CATALOG_OBJECTS};
         if rows.is_empty() || rows.len()>limit{return Err(bad());}
         let mut entries=Vec::new();let mut instances=BTreeSet::new();let mut previous=0;
         for row in rows {
-            if version>=3 {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision"])?;} else {fields(row,&["object_id","instance_id","first_triangle","triangle_count","object_revision"])?;}
+            if version==5 {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision","ram_energy_j"])?;}
+            else if version>=3 {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision"])?;} else {fields(row,&["object_id","instance_id","first_triangle","triangle_count","object_revision"])?;}
             let id=uint(&row["object_id"])?;let instance=uint(&row["instance_id"])?;
             let first=uint(&row["first_triangle"])?;let count=uint(&row["triangle_count"])?;
             let revision=text(row,"object_revision")?;hash_text(revision)?;
             let kind=if version>=3{text(row,"kind")?}else{"fragile"};
             if !matches!(kind,"tree"|"fragile"){return Err(bad());}
+            let energy=if version==5{uint(&row["ram_energy_j"])?}else{0};
+            if !matches!(energy,0|8_000)||(energy!=0&&kind!="fragile"){return Err(bad());}
             if id<=previous || id>u32::MAX as u64 || instance>=profile.instance_count as u64 || !instances.insert(instance)
                 || count==0 || count>4096 || first>profile.physics_triangle_count as u64
                 || first.checked_add(count).is_none_or(|end|end>profile.physics_triangle_count as u64){return Err(bad());}
             previous=id;entries.push(CatalogEntry{object_id:id as u32,instance_id:instance as u32,first_triangle:first as u32,
-                triangle_count:count as u32,object_revision:revision.into(),kind:kind.into()});
+                triangle_count:count as u32,object_revision:revision.into(),kind:kind.into(),ram_energy_j:energy as u32});
         }
         let mut spans=entries.iter().collect::<Vec<_>>();spans.sort_by_key(|e|e.first_triangle);
         if spans.windows(2).any(|p|p[1].first_triangle<p[0].first_triangle+p[0].triangle_count){return Err(bad());}
@@ -115,7 +121,8 @@ impl CatalogSpec {
     pub fn entries(&self)->&[CatalogEntry]{&self.entries}
     pub fn contacts(&self)->bool{self.contacts}
     pub fn version(&self)->u8{self.version}
-    fn max_removed(&self)->usize{match self.version{4=>MAX_EXTENDED_REMOVED_OBJECTS,3=>MAX_CONTACT_REMOVED_OBJECTS,_=>MAX_REMOVED_OBJECTS}}
+    fn ipc_version(&self)->u8{if self.version==5{5}else if self.contacts{4}else{3}}
+    fn max_removed(&self)->usize{match self.version{4|5=>MAX_EXTENDED_REMOVED_OBJECTS,3=>MAX_CONTACT_REMOVED_OBJECTS,_=>MAX_REMOVED_OBJECTS}}
     pub fn map_id(&self)->MapId{self.map_id}
     fn verify_map(&self,map:&MapSpec)->io::Result<()>{
         if map.asset!=self.map_id.asset() || map.arena_type_id!=self.map_id.arena_type_id(){return Err(bad());}Ok(())
@@ -152,7 +159,7 @@ pub(super) fn scene_request(map:&MapSpec,spec:&CatalogSpec,generation:u32,seq:u3
     spec.verify_map(map)?;
     scene.validate(spec)?;
     if generation==0 || seq>MAX_SEQUENCE || (restore && seq!=0){return Err(bad());}
-    let mut v=serde_json::json!({"version":if spec.contacts{4}else{3},"op":if restore{"restore_scene"}else{"sync_removed"},
+    let mut v=serde_json::json!({"version":spec.ipc_version(),"op":if restore{"restore_scene"}else{"sync_removed"},
         "generation":generation,"config_sha256":map.config_sha256,"catalog_sha256":spec.sha256,
         "advance_seq":seq,"scene_version":scene.version(),"removed_object_ids":scene.ids,"scene_sha256":scene.hash});
     if spec.contacts {v["contacts"]=true.into();}
@@ -161,7 +168,8 @@ pub(super) fn scene_request(map:&MapSpec,spec:&CatalogSpec,generation:u32,seq:u3
 pub(super) fn request_catalog(seq:u32,input:Input,scene:&Scene,spec:&CatalogSpec)->io::Result<Vec<u8>>{
     let mut v=json(&request(seq,input)?,1024)?;v["version"]=3.into();v["scene_version"]=scene.version().into();
     v["scene_sha256"]=scene.hash.clone().into();
-    if spec.contacts {v["version"]=4.into();v["contacts"]=true.into();}
+    v["version"]=spec.ipc_version().into();
+    if spec.contacts {v["contacts"]=true.into();}
     ipc_bytes(&v)
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
@@ -171,11 +179,11 @@ pub(super) fn ack(raw:&[u8],map:&MapSpec,spec:&CatalogSpec,generation:u32,seq:u3
     spec.verify_map(map)?;
     scene.validate(spec)?;
     if !raw.is_ascii() || generation==0 || seq>MAX_SEQUENCE{return Err(bad());}
-    let v=if spec.version==4{json_catalog_extended(raw,MAX_IPC_LINE)?}else{json(raw,MAX_IPC_LINE)?};
+    let v=if spec.version>=4{json_catalog_extended(raw,MAX_IPC_LINE)?}else{json(raw,MAX_IPC_LINE)?};
     if spec.contacts {fields(&v,&["version","event","generation","config_sha256","catalog_sha256","advance_seq","tick",
         "scene_version","removed_object_ids","scene_sha256","contacts"])?;} else {fields(&v,&["version","event","generation","config_sha256","catalog_sha256","advance_seq","tick",
         "scene_version","removed_object_ids","scene_sha256"])?;}
-    if uint(&v["version"])?!=if spec.contacts{4}else{3} || (spec.contacts && v["contacts"]!=Value::Bool(true)) || text(&v,"event")?!="scene_synced" || uint(&v["generation"])?!=generation as u64
+    if uint(&v["version"])?!=u64::from(spec.ipc_version()) || (spec.contacts && v["contacts"]!=Value::Bool(true)) || text(&v,"event")?!="scene_synced" || uint(&v["generation"])?!=generation as u64
         || text(&v,"config_sha256")?!=map.config_sha256 || text(&v,"catalog_sha256")?!=spec.sha256
         || uint(&v["advance_seq"])?!=seq as u64 || uint(&v["tick"])?!=180+seq as u64*6
         || uint(&v["scene_version"])?!=scene.version() as u64 || text(&v,"scene_sha256")?!=scene.hash{return Err(bad());}
@@ -211,16 +219,26 @@ pub(super) fn response(raw:&[u8],map:&MapSpec,spec:&CatalogSpec,generation:u32,s
     scene.validate(spec)?;
     if !raw.is_ascii() || generation==0{return Err(bad());}let mut v=json(raw,MAX_IPC_LINE)?;
     if spec.contacts {fields(&v,&["version","event","seq","tick","settle_ticks","map","config_sha256","state","generation","catalog_sha256","scene_version","scene_sha256","contacts"])?;} else {fields(&v,&["version","event","seq","tick","settle_ticks","map","config_sha256","state","generation","catalog_sha256","scene_version","scene_sha256"])?;}
-    if uint(&v["version"])?!=if spec.contacts{4}else{3} || (spec.contacts && v["contacts"]!=Value::Bool(true)) || uint(&v["generation"])?!=generation as u64 || text(&v,"catalog_sha256")?!=spec.sha256
+    if uint(&v["version"])?!=u64::from(spec.ipc_version()) || (spec.contacts && v["contacts"]!=Value::Bool(true)) || uint(&v["generation"])?!=generation as u64 || text(&v,"catalog_sha256")?!=spec.sha256
         || uint(&v["scene_version"])?!=scene.version() as u64 || text(&v,"scene_sha256")?!=scene.hash{return Err(bad());}
-    let contacts=if spec.contacts {parse_contacts(&v["state"],spec,scene)?} else {Vec::new()};
+    let mut contacts=if spec.contacts {parse_contacts(&v["state"],spec,scene)?} else {Vec::new()};
+    let fractures=if spec.version==5 {
+        let receipts=fracture::parse(&v["state"]["fractures"],&contacts,spec,map,seq)?;
+        if text(&v,"event")?!=if seq==0{"ready"}else if receipts.is_empty(){"state"}else{"prepared"}{return Err(bad());}
+        // An energy-responsive collider must never be destroyed by an ordinary
+        // denied/support contact after the worker retained its physical body.
+        contacts.retain(|contact| spec.entries.iter().find(|entry|entry.object_id==contact.object_id)
+            .is_some_and(|entry|entry.ram_energy_j==0||receipts.iter().any(|receipt|receipt.object_id==contact.object_id)));
+        v["event"]=if seq==0{"ready"}else{"state"}.into();
+        receipts
+    } else {Vec::new()};
     let object=v.as_object_mut().ok_or_else(bad)?;
     for key in ["generation","catalog_sha256","scene_version","scene_sha256"]{object.remove(key);}
     object.remove("contacts");
-    if let Some(state)=object.get_mut("state").and_then(Value::as_object_mut){state.remove("object_contacts");}
+    if let Some(state)=object.get_mut("state").and_then(Value::as_object_mut){state.remove("object_contacts");if spec.version==5{state.remove("fractures");}}
     v["version"]=1.into();
     let mut state=response_at_spawn(&serde_json::to_vec(&v).map_err(|_|bad())?,map,seq,spawn)?;
-    state.scene_version=scene.version();state.object_contacts=contacts;Ok(state)
+    state.scene_version=scene.version();state.object_contacts=contacts;state.fractures=fractures;Ok(state)
 }
 
 #[cfg(test)]
@@ -232,6 +250,25 @@ pub(super) mod tests {
             "triangle_count":42,"object_revision":"e".repeat(64)})).collect::<Vec<_>>()})}
     pub(in super::super) fn spec(n:usize)->CatalogSpec{
         CatalogSpec{path:"unit".into(),sha256:"b".repeat(64),map_id:MapId::Karelia,entries:CatalogSpec::validate(&descriptor(n)).unwrap(),contacts:false,version:2}
+    }
+    pub(in super::super) fn fracture_spec(n:usize)->CatalogSpec{
+        let mut v=descriptor(n);v["version"]=5.into();v["contacts"]=true.into();v["ram_policy"]=fracture::POLICY.into();
+        for row in v["objects"].as_array_mut().unwrap(){row["kind"]="fragile".into();row["ram_energy_j"]=8_000.into();}
+        let raw=serde_json::to_vec(&v).unwrap();
+        CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id:MapId::Karelia,
+            entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:5}
+    }
+    #[test]fn fracture_catalog_pins_policy_and_each_energy_without_relaxing_legacy(){
+        let spec=fracture_spec(2048);assert_eq!(spec.version(),5);assert_eq!(spec.entries()[0].ram_energy_j(),8_000);
+        let mut v=descriptor(1);v["version"]=5.into();v["contacts"]=true.into();v["ram_policy"]=fracture::POLICY.into();
+        v["objects"][0]["kind"]="fragile".into();v["objects"][0]["ram_energy_j"]=8_000.into();
+        CatalogSpec::validate(&v).unwrap();
+        for energy in [serde_json::json!(8000.0),serde_json::json!(-1),serde_json::json!(1),serde_json::json!(8001)]{
+            let mut changed=v.clone();changed["objects"][0]["ram_energy_j"]=energy;assert!(CatalogSpec::validate(&changed).is_err());}
+        for key in ["ram_policy","contacts"]{let mut changed=v.clone();changed[key]=false.into();assert!(CatalogSpec::validate(&changed).is_err());}
+        let mut changed=v.clone();changed["objects"][0]["kind"]="tree".into();assert!(CatalogSpec::validate(&changed).is_err());
+        changed["objects"][0]["ram_energy_j"]=0.into();CatalogSpec::validate(&changed).unwrap();
+        changed=v;changed["version"]=4.into();assert!(CatalogSpec::validate(&changed).is_err());
     }
     pub(in super::super) fn spec_for(map_id:MapId,n:usize)->CatalogSpec{
         let v=descriptor_for(map_id,n);let raw=serde_json::to_vec(&v).unwrap();

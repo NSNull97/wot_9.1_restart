@@ -8,6 +8,9 @@ use serde_json::{Value,Map,Number};
 use sha2::{Digest,Sha256};
 #[path="worker/catalog.rs"]
 mod catalog;
+#[path="worker/fracture.rs"]
+mod fracture;
+pub use fracture::Receipt as FractureReceipt;
 pub use catalog::{CatalogSpec,CatalogEntry,Scene,CatalogAck,MAX_CATALOG_OBJECTS,MAX_REMOVED_OBJECTS};
 
 pub const STEP:Duration=Duration::from_millis(100);
@@ -273,7 +276,7 @@ pub struct ObjectContact {pub object_id:u32,pub kind:String,pub substep:u8,pub p
 pub struct Pose {pub position:[f32;3],pub direction:[f32;3],pub speed:f32,pub rspeed:f32,pub contacts:u8,
     pub linear_velocity:[f32;3],pub angular_velocity:[f32;3],pub wheel_contact_masks:[u8;6]}
 #[derive(Clone,Debug,PartialEq)]
-pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose,pub scene_version:u32,pub object_contacts:Vec<ObjectContact>}
+pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose,pub scene_version:u32,pub object_contacts:Vec<ObjectContact>,pub fractures:Vec<FractureReceipt>}
 pub fn response(raw:&[u8],map:&MapSpec,seq:u32)->io::Result<State>{
     response_at_spawn(raw,map,seq,None)
 }
@@ -305,7 +308,7 @@ fn response_context(raw:&[u8],map:&MapSpec,seq:u32,expected_spawn:Option<[f32;3]
         if contacts<3 || pose.linear_velocity.iter().map(|v|v*v).sum::<f32>()>1.001
             || (pose.position[0]-spawn[0]).abs()>5. || (pose.position[2]-spawn[2]).abs()>5. { return Err(bad()); }
     }
-    Ok(State{seq,tick:180+seq*6,pose,scene_version,object_contacts:Vec::new()})
+    Ok(State{seq,tick:180+seq*6,pose,scene_version,object_contacts:Vec::new(),fractures:Vec::new()})
 }
 fn line(reader:&mut impl Read)->io::Result<Vec<u8>> {
     let mut raw=Vec::new();loop{let mut b=[0];if reader.read(&mut b)?!=1{return Err(bad());}
@@ -337,7 +340,7 @@ pub struct Worker {pub generation:u32,pub map:MapSpec,receiver:mpsc::Receiver<Ev
     child:Arc<Mutex<Option<Child>>>,exit:Arc<Mutex<Option<ExitEvidence>>>,cancel:Arc<AtomicBool>,started:Instant,
     expected_spawn:Option<[f32;3]>,pending:Option<Pending>,ready:bool,last_seq:u32,
     removal:Option<RemovalSpec>,scene_version:u32,removal_ack:Option<RemovalAck>,
-    catalog:Option<CatalogSpec>,catalog_scene:Option<Scene>,pending_scene:Option<Scene>,catalog_ack:Option<CatalogAck>}
+    catalog:Option<CatalogSpec>,catalog_scene:Option<Scene>,pending_scene:Option<Scene>,catalog_ack:Option<CatalogAck>,prepared_ids:Vec<u32>}
 impl Worker {
     pub fn launch(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant)->io::Result<Self>{
         Self::launch_at_spawn(pool,map,generation,now,None)
@@ -419,9 +422,10 @@ impl Worker {
         let (catalog,catalog_scene)=initial.map(|(spec,scene)|(Some(spec),Some(scene))).unwrap_or((None,None));
         Ok(Self{generation,map,receiver,sender:Some(sender),child,exit,cancel,started:now,expected_spawn:spawn,
             pending:None,ready:false,last_seq:0,removal,scene_version:0,removal_ack:None,
-            catalog,catalog_scene,pending_scene:None,catalog_ack:None})
+            catalog,catalog_scene,pending_scene:None,catalog_ack:None,prepared_ids:Vec::new()})
     }
     pub fn pending(&self)->bool{self.pending.is_some()}
+    pub fn prepared_ids(&self)->&[u32]{&self.prepared_ids}
     pub fn ready(&self)->bool{self.ready}
     pub fn process_id(&self)->Option<u32>{self.child.lock().ok().and_then(|c|c.as_ref().map(Child::id))}
     pub fn scene_version(&self)->u32{self.scene_version}
@@ -433,6 +437,7 @@ impl Worker {
         if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || self.catalog_ack.is_some() || now<self.started{return Err(bad());}
         let spec=self.catalog.as_ref().ok_or_else(bad)?;scene.validate(spec)?;
         if !scene.extends(self.catalog_scene.as_ref().ok_or_else(bad)?){return Err(bad());}
+        if self.prepared_ids.iter().any(|id|scene.ids().binary_search(id).is_err()){return Err(bad());}
         let raw=catalog::scene_request(&self.map,spec,self.generation,self.last_seq,&scene,false)?;
         self.sender.as_ref().ok_or_else(bad)?.try_send(raw).map_err(|_|bad())?;
         self.pending_scene=Some(scene);self.pending=Some(Pending::Catalog(self.last_seq,now));Ok(())
@@ -447,7 +452,7 @@ impl Worker {
         self.pending=Some(Pending::Remove(self.last_seq,now));Ok(())
     }
     pub fn advance(&mut self,input:Input,now:Instant)->io::Result<u32>{
-        if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || self.catalog_ack.is_some() || now<self.started || self.last_seq>=MAX_SEQUENCE{return Err(bad());}
+        if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || self.catalog_ack.is_some() || !self.prepared_ids.is_empty() || now<self.started || self.last_seq>=MAX_SEQUENCE{return Err(bad());}
         let seq=self.last_seq+1;let raw=if let Some(scene)=&self.catalog_scene{catalog::request_catalog(seq,input,scene,self.catalog.as_ref().ok_or_else(bad)?)?}
             else if self.removal.is_some(){request_scene(seq,input,self.scene_version)?}else{request(seq,input)?};
         self.sender.as_ref().ok_or_else(bad)?.try_send(raw).map_err(|_|bad())?;
@@ -472,6 +477,7 @@ impl Worker {
                             let scene=self.pending_scene.as_ref().ok_or_else(bad)?;
                             let ack=catalog::ack(&raw,&self.map,self.catalog.as_ref().ok_or_else(bad)?,self.generation,seq,scene)?;
                             self.scene_version=scene.version();self.catalog_scene=self.pending_scene.take();
+                            self.prepared_ids.clear();
                             self.catalog_ack=Some(ack);self.pending=None;return Ok(None);
                         }
                     }
@@ -479,6 +485,9 @@ impl Worker {
                 let context=self.removal.as_ref().map(|spec|(spec,self.generation,self.scene_version));
                 let state=if let Some(spec)=&self.catalog{catalog::response(&raw,&self.map,spec,self.generation,seq,self.expected_spawn,self.catalog_scene.as_ref().ok_or_else(bad)?)?}
                     else{response_context(&raw,&self.map,seq,self.expected_spawn,context)?};
+                if !self.prepared_ids.is_empty(){return Err(bad());}
+                self.prepared_ids=state.fractures.iter().map(|receipt|receipt.object_id).collect();
+                self.prepared_ids.sort_unstable();
                 self.scene_version=state.scene_version;self.ready=true;self.last_seq=seq;self.pending=None;Ok(Some(state))
             },
         }
@@ -529,7 +538,7 @@ pub(crate) mod controlled_ipc {
             cancel: Arc::new(AtomicBool::new(false)), started: now, expected_spawn: None,
             pending: None, ready: true, last_seq: 0, removal: None, scene_version: scene.version(),
             removal_ack: None, catalog: Some(spec), catalog_scene: Some(scene),
-            pending_scene: None, catalog_ack: None };
+            pending_scene: None, catalog_ack: None, prepared_ids: Vec::new() };
         (worker, Peer { replies, requests })
     }
 }
@@ -713,7 +722,7 @@ pub(crate) mod tests {
         let (send,receiver)=mpsc::sync_channel(4);let(sender,recv)=mpsc::sync_channel(1);
         (Worker{generation:1,map:map(),receiver,sender:Some(sender),child:Arc::new(Mutex::new(None)),exit:Arc::new(Mutex::new(None)),cancel:Arc::new(AtomicBool::new(false)),expected_spawn:None,
             started:now,pending:None,ready:false,last_seq:0,removal:None,scene_version:0,removal_ack:None,
-            catalog:None,catalog_scene:None,pending_scene:None,catalog_ack:None},send,recv)
+            catalog:None,catalog_scene:None,pending_scene:None,catalog_ack:None,prepared_ids:Vec::new()},send,recv)
     }
     fn good_catalog_state(seq:u32,spec:&CatalogSpec,scene:&Scene)->Value{
         let mut v=good(seq);v["version"]=3.into();v["generation"]=1.into();v["catalog_sha256"]=spec.sha256().into();
@@ -722,6 +731,49 @@ pub(crate) mod tests {
     fn good_catalog_ack(seq:u32,spec:&CatalogSpec,scene:&Scene)->Value{serde_json::json!({
         "version":3,"event":"scene_synced","generation":1,"config_sha256":"a".repeat(64),"catalog_sha256":spec.sha256(),
         "advance_seq":seq,"tick":180+seq*6,"scene_version":scene.version(),"removed_object_ids":scene.ids(),"scene_sha256":scene.hash()})}
+    fn good_fracture_state(seq:u32,spec:&CatalogSpec,scene:&Scene,prepared:bool)->Value{
+        let mut v=good_catalog_state(seq,spec,scene);v["version"]=5.into();v["contacts"]=true.into();
+        v["state"]["object_contacts"]=serde_json::json!([]);v["state"]["fractures"]=serde_json::json!([]);
+        if prepared{
+            v["event"]="prepared".into();v["state"]["fractures"]=serde_json::json!([fracture::tests::value(1)]);
+            v["state"]["object_contacts"]=serde_json::json!([{"object_id":1,"kind":"hull","substep":1,
+                "point":[0.,0.,0.],"normal":[0.,0.,1.],"velocity":[0.,0.,4.]}]);
+        }v
+    }
+    #[test]fn fracture_prepared_reply_requires_commit_inclusion_before_next_advance(){
+        let now=Instant::now();let spec=catalog::tests::fracture_spec(2);let empty=Scene::new(&spec,&[]).unwrap();
+        let(mut worker,send,recv)=fake_worker(now);worker.catalog=Some(spec.clone());worker.catalog_scene=Some(empty.clone());
+        send.send(Event::Line(now,serde_json::to_vec(&good_fracture_state(0,&spec,&empty,false)).unwrap())).unwrap();
+        worker.poll(now).unwrap();worker.advance(Input::STOP,now).unwrap();
+        assert_eq!(json(&recv.try_recv().unwrap(),1024).unwrap()["version"],5);
+        send.send(Event::Line(now,serde_json::to_vec(&good_fracture_state(1,&spec,&empty,true)).unwrap())).unwrap();
+        let state=worker.poll(now).unwrap().unwrap();assert_eq!(state.fractures.len(),1);
+        assert_eq!(worker.prepared_ids(),&[1]);assert!(!worker.pending());
+        assert!(worker.advance(Input::STOP,now).is_err());
+        assert!(worker.sync_removed(empty.clone(),now).is_err());
+        assert!(worker.sync_removed(Scene::new(&spec,&[2]).unwrap(),now).is_err());
+        assert!(matches!(recv.try_recv(),Err(mpsc::TryRecvError::Empty)));
+        let committed=Scene::new(&spec,&[1]).unwrap();worker.sync_removed(committed.clone(),now).unwrap();
+        let request=json(&recv.try_recv().unwrap(),1024).unwrap();assert_eq!(request["version"],5);
+        assert!(worker.advance(Input::STOP,now).is_err());assert_eq!(worker.prepared_ids(),&[1]);
+        let mut ack=good_catalog_ack(1,&spec,&committed);ack["version"]=5.into();ack["contacts"]=true.into();
+        send.send(Event::Line(now,serde_json::to_vec(&ack).unwrap())).unwrap();assert!(worker.poll(now).unwrap().is_none());
+        assert!(worker.prepared_ids().is_empty());assert_eq!(worker.catalog_scene(),Some(&committed));
+        worker.take_catalog_ack().unwrap();assert_eq!(worker.advance(Input::STOP,now).unwrap(),2);
+    }
+    #[test]fn fracture_state_filters_unreceipted_energy_contacts_and_rejects_wrong_event(){
+        let spec=catalog::tests::fracture_spec(2);let scene=Scene::new(&spec,&[]).unwrap();
+        let mut v=good_fracture_state(1,&spec,&scene,true);
+        let mut denied=v["state"]["object_contacts"][0].clone();denied["object_id"]=2.into();
+        v["state"]["object_contacts"].as_array_mut().unwrap().push(denied);
+        let parse=|v:&Value|catalog::response(&serde_json::to_vec(v).unwrap(),&map(),&spec,1,1,None,&scene);
+        let state=parse(&v).unwrap();assert_eq!(state.object_contacts.len(),1);assert_eq!(state.object_contacts[0].object_id,1);
+        let mut changed=v.clone();changed["event"]="state".into();assert!(parse(&changed).is_err());
+        changed=v.clone();changed["state"]["fractures"]=serde_json::json!([]);assert!(parse(&changed).is_err());
+        changed["event"]="state".into();let state=parse(&changed).unwrap();assert!(state.object_contacts.is_empty());
+        changed["state"].as_object_mut().unwrap().remove("fractures");assert!(parse(&changed).is_err());
+        changed=v;changed["state"]["fractures"][0]["energy_j"]=1.into();assert!(parse(&changed).is_err());
+    }
     #[test]fn catalog_ready_is_bound_to_its_selected_map_not_only_config_hash(){
         use crate::map_profile091::MapId;
         for map_id in [MapId::Karelia,MapId::Prohorovka]{

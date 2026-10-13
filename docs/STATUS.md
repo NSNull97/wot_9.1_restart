@@ -1,4 +1,32 @@
-## 2026-10-13 — P06R compound objects and fences started
+## 2026-10-13 — P06R fence-chain response: automatic gates passed
+
+The measured static-solver stop on close fence sections3307/3308 is corrected
+under explicit `test_lab-fence-energy-v1`. Source-bound domain4/worker5 catalogs
+retain1038 identities;403 movement-only fences reserve8000J at hull contact.
+Actual post-solver velocity only loses energy; rigid-wall collision remains.
+Prepared removals block further worker advances and native publication until
+both workers acknowledge the exact cumulative scene. Original ram resistance
+and handling formulas remain UNKNOWN; this is not a historical physics claim.
+
+Final physics03 passes seven paired real-worker scenarios, four IPC5 rejection/
+retry/restore checks, three matched-speed mass cases and nine legacy/tree
+compatibility checks. Component math passes64 checks including10000 seeded
+vectors. Matched incoming speeds2.947/2.965/3.012m/s produce normal losses
+1.582/0.645/0.298m/s at2345.5/4691/9382kg; these are MS1-shape experiments,
+not an IS-7 runtime. Fresh canonical gateway09 passes649/649 tests, including
+two real IPC5 workers through the actual runtime/domain/both-ACK transaction.
+Importer16/16 and source layout PASS. Failed exploratory fixtures are preserved
+with their causes; final evidence is linked in the response report.
+
+Acceptance: **PASS_AUTOMATIC_PRIVATE / PENDING_OWNER_FENCE_CHAIN**. New native
+visuals/passage are NOT_RUN until the owner drives the reviewed stand. Keep
+the P06R branch, do not merge on private evidence alone. Owner requested the
+manual fence check before queued P03M IS-7 integration. Mixed compound objects,
+universal destruction and100-battle production capacity remain outside this
+result. The unrelated P09B edit is preserved. Exact commands, files, evidence,
+pins and rollback: [fence-chain response](research/P06R_FENCE_CHAIN_RESPONSE.md).
+
+## 2026-10-13 — P06R compound objects and fences started (historical checkpoint)
 
 Owner authorized the next destruction card. Base is accepted/merged P06Q
 main `90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`; remote SHA was verified.
