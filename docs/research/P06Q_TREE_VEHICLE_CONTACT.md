@@ -9,6 +9,34 @@ Evidence root: `local/evidence/20261012-p06q-tree-contact-01/`
 
 ## Follow-up: visual/state synchronisation and server-loss smoke
 
+### Positive owner visual result — treeobserve10, 2026-10-13
+
+The owner reports **"о, теперь падают"** on the corrected-pitch runtime:
+**OBSERVED visible tree fall**, superseding the earlier zero-pitch visual
+failure for the observed view. Viewed slot(s), both-client rendered agreement
+and post-fix passage were not specified; full card acceptance remains pending.
+
+The saved read-only prefix contains two tree contacts: object 3365/index 25,
+packed 429506560, and object 3344/index 4, packed 69910528. Each has two matching
+worker ACKs, an ACK-gated scene commit and cumulative publication to both
+sessions. Both clients receive `pitchConstr=1.5707963267948966`, animation
+enabled, collision flags zero and normal `__dropDestructible` return 386.
+First server contact/ACK/commit/publications are lines 11982-11988; second
+14283-14291. Native drop call/return lines: A 15919/15922 and 17353/17356;
+B 15868/15871 and 17265/17268. There are no rejects, failures or session
+closures in the saved prefix. This supports the zero-angle root cause and
+delivery of the corrected angle; the owner's statement supplies the separate
+visual observation. It does not establish terrain-specific final angle fidelity.
+
+Evidence under `local/evidence/20261012-p06p-prohorovka-01/`:
+`tests/treeobserve10-fall-observed.json`, SHA256
+`dfb5ed8b41c3516b342933b19f83b072372c97316a296855510898777c58eb74`.
+The receipt pins complete-line prefixes of live logs, not final file hashes,
+and preserves the owner statement and its acceptance scope. Runtime source
+is d316828/build35. No source changes or new unit runs accompany this owner
+result; the active stand remains running and the receipt-based cleanup
+commands are in STATUS. Next is second-view agreement and physical passage.
+
 ### First-READY native recheck and zero-pitch defect — 2026-10-13
 
 **VERIFIED:** `treeobserve09`, source `0b9e70b`, build `gateway-p06q-final-33`,

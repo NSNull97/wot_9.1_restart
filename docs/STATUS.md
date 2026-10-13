@@ -1,5 +1,32 @@
 ## 2026-10-13 — P06Q tree visual/state sync follow-up
 
+### Owner confirms visible fall — treeobserve10, 2026-10-13
+
+Owner result: **"о, теперь падают"**. The corrected-pitch build now has
+**OBSERVED visible tree fall**. The owner did not identify the viewed slot or
+separately confirm post-fix passage/both-client visual agreement; those remain
+pending rather than inferred from this statement. P06Q is not fully accepted
+or merged yet. The earlier visual failures below are historical evidence.
+
+Fresh read-only audit of the active run records two trees (objects 3365 and
+3344), four worker ACKs, two ACK-gated commits and four publications. Both
+native clients reach the animator twice with `pitchConstr=pi/2`, animation
+enabled and normal return offset 386. Two READY sessions/117 native areas
+per slot remain present; no reject/failure/closure in the saved prefix.
+Evidence: `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve10-fall-observed.json`,
+SHA256 `dfb5ed8b41c3516b342933b19f83b072372c97316a296855510898777c58eb74`.
+It preserves the owner statement, exact source lines and completed-byte-prefix
+hashes for the growing server/client logs. Source/build remain d316828/build35.
+
+This update changes STATUS and P06Q research only. Executed checks: read-only
+server/native trace extraction and cross-check of contact, packed state,
+worker ACK/commit and native callback parameters. No new build or unit suite
+was needed; the recorded 42-test result remains the last source validation.
+Both clients and server remain running for the owner. Launch and rollback
+commands are in the active stand handoff below. Slope/obstacle-specific final
+angles remain a test_lab limitation. Next: confirm the same fall in the second
+client and tank passage through the cleared position before closing the gate.
+
 ### Active owner stand — treeobserve10, 2026-10-13 09:24 UTC
 
 Pitch correction source `d316828049569f58d82756efec5f51de2f38a865`, build35.
@@ -29,7 +56,7 @@ python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/tests/audit_treeobs
 Next: owner rams one tree, checks visible fall and passage on both clients;
 then collect contact, nonzero pitch, both-worker ACK and owner result.
 
-### Owner manual result — native tree visual FAIL remains (2026-10-13)
+### Historical owner result before pitch correction — visual FAIL (2026-10-13)
 
 The owner verified that trees still do not visibly fall: the tank pushes
 through the trees. This is an **OBSERVED native visual FAIL**, not a wire or
