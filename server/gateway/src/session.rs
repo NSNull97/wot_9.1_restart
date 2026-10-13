@@ -1296,13 +1296,13 @@ pub fn serve_map_drive_probe(key_path:&str,digest_path:&str,config_path:&str,cap
 }
 struct Authenticated {identity:Arc<crate::identity091::Profile>,fixtures:Arc<crate::hangar091::Fixtures>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
-    ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool,crew_transfer:bool}
+    ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool,crew_transfer:bool,crew_cross_vehicle:bool}
 impl Authenticated {
     fn new(identity:crate::identity091::Profile,fixtures:crate::hangar091::Fixtures,ordinary:bool)->io::Result<Self> {
         // Remains inside the existing bounded auth worker. A bad primary policy
         // reaches AUTH_REJECT before Session creation or any native state bytes.
         let policy=crate::map_drive_service091::AccountPolicy::for_mode(ordinary,&identity,&fixtures)?;
-        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None,crew_service:false,crew_transfer:false})
+        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false})
     }
 }
 struct AuthJob {
@@ -1332,7 +1332,7 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
             } else {None};
             if config.crew_transfer {
                 let shared=binding.ok_or_else(invalid)?;
-                crate::crew_transfer091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
+                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected(config.crew_cross_vehicle),&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
             } else if config.crew_service {
                 let shared=binding.ok_or_else(invalid)?;
                 crate::crew_service091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
@@ -1341,6 +1341,7 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
             accepted.ammo_service=binding;
             accepted.crew_service=config.crew_service;
             accepted.crew_transfer=config.crew_transfer;
+            accepted.crew_cross_vehicle=config.crew_cross_vehicle;
             Ok(accepted)
         }).transpose());
         let _=sender.send(outcome); // A stopped gateway has no recipient.
@@ -1510,7 +1511,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                                 accepted.identity.account_id,accepted.identity.database_id,accepted.identity.name,accepted.fixtures.sizes());
                             created.identity=Some(accepted.identity);created.hangar=Some(accepted.fixtures);
                             created.drive_account_policy=accepted.drive_account_policy;
-                            created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer));
+                            created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle));
                             if drive_pool.is_some(){created.drive=Some(crate::map_drive_world091::Arena::new(now));}
                             if let Some(policy)=&created.drive_account_policy {println!("{}",policy.binding_event(next_id));}
                             session=Some(created);next_id=next_id.checked_add(1).ok_or_else(invalid)?;

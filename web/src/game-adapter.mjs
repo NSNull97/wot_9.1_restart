@@ -14,6 +14,7 @@ import { ammoOverview, isAmmoOverview, validateAmmoFixture } from './ms1-ammo.mj
 import { createNativeAmmoService, nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
 import { createNativeCrewService, nativeCrewOverview, isNativeCrewOverview } from './p04d-crew.mjs';
 import { nativeCrewTransferOverview, isNativeCrewTransferOverview } from './p04f-crew.mjs';
+import { nativeCrossVehicleCrewOverview, isNativeCrossVehicleCrewOverview } from './p04g-crew.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const LOCAL = resolve(ROOT, 'local');
@@ -80,7 +81,7 @@ export function createGameReader({ origin, tokenFile } = {}) {
       const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (value.schemaVersion !== 'web-game-read.v1' || !['ready', 'unlinked'].includes(value.state)) return empty('unavailable');
       if (value.state === 'unlinked') return empty('unlinked');
-      if (value.crewService !== undefined) return (value.crewService?.version === 2
+      if (value.crewService !== undefined) return (value.crewService?.version === 3 ? isNativeCrossVehicleCrewOverview(value, id) : value.crewService?.version === 2
         ? isNativeCrewTransferOverview(value, id) : isNativeCrewOverview(value, id)) ? value : empty('unavailable');
       if (value.snapshotRevision >= 5) return isNativeAmmoOverview(value, id) ? value : empty('unavailable');
       if (value.snapshotRevision === 4) return isAmmoOverview(value, id) ? value : empty('unavailable');
@@ -158,6 +159,7 @@ function openGameStore(path, sourceHash, now) {
 }
 
 function overview(profile) {
+  if (profile.profile_version === 8) return nativeCrossVehicleCrewOverview(profile);
   if (profile.profile_version === 7) return nativeCrewTransferOverview(profile);
   if (profile.profile_version === 6) return nativeCrewOverview(profile);
   if (profile.profile_version === 5) return nativeAmmoOverview(profile);
@@ -198,11 +200,13 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.ammunition_service !== undefined) allowed.push('ammunition_service');
   if (options?.crew_service !== undefined) allowed.push('crew_service');
   if (options?.crew_transfer !== undefined) allowed.push('crew_transfer');
+  if (options?.crew_cross_vehicle !== undefined) allowed.push('crew_cross_vehicle');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
   if (options.crew_service !== undefined && options.ammunition_service === undefined) throw new Error('Crew requires the shared ammunition writer');
   if (options.crew_transfer !== undefined && options.crew_service === undefined) throw new Error('Crew transfer requires the shared crew writer');
   if (options.crew_transfer !== undefined && (options.crew_transfer === null || typeof options.crew_transfer !== 'object')) throw new Error('Explicit crew transfer policy required');
+  if (options.crew_cross_vehicle !== undefined && (options.crew_transfer === undefined || options.crew_cross_vehicle === null || typeof options.crew_cross_vehicle !== 'object')) throw new Error('Cross-vehicle crew requires explicit transfer policy');
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -241,12 +245,16 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       ammunition = options.crew_service === undefined
         ? await createNativeAmmoService(options.ammunition_service, context)
         : await createNativeCrewService(options.ammunition_service, options.crew_service,
-          { ...context, transfer: options.crew_transfer ?? null });
+          { ...context, transfer: options.crew_transfer ?? null, crossVehicle: options.crew_cross_vehicle ?? null });
     }
   } catch (error) { identity.close(); game.close(); throw error; }
   const creating = new Map();
   async function fixture(profile) {
     const id = accountId(profile.account_id);
+    if (profile.profile_version === 8) {
+      if (options.crew_cross_vehicle === undefined || !ammunition?.transfer) throw new Error('Cross-vehicle crew is not enabled');
+      return ammunition.fixture(profile);
+    }
     if (profile.profile_version === 7) {
       if (!ammunition?.transfer) throw new Error('Crew transfer is not enabled');
       return ammunition.fixture(profile);
@@ -419,7 +427,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       if (req.method === 'GET' && matched && UUID.test(matched[1])) {
         if (!identity.profile(matched[1])) return json(res, 404, { error: 'account_not_found' });
         const profile = game.read(matched[1]);
-        if ([2, 3, 4, 5, 6, 7].includes(profile?.profile_version)) await fixture(profile);
+        if ([2, 3, 4, 5, 6, 7, 8].includes(profile?.profile_version)) await fixture(profile);
         return json(res, 200, profile ? overview(profile) : empty('unlinked'));
       }
       return json(res, 404, { error: 'not_found' });

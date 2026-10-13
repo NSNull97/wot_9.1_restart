@@ -23,17 +23,19 @@ def require(ok, message):
         raise ValueError(message)
 
 
-def native_crew(value):
+def project_native_crew(value, *, policy_sha256, seat_roles, required_members=None):
     require(type(value) is dict and set(value) == {"policy_sha256", "free_recruitment_left",
         "next_native_id", "configuration_revision", "members"}, "crew projection fields")
-    require(value["policy_sha256"] == POLICY_SHA256, "crew policy digest")
+    require(value["policy_sha256"] == policy_sha256, "crew policy digest")
     free, revision, next_id = (value[k] for k in ("free_recruitment_left", "configuration_revision", "next_native_id"))
     require(type(free) is int and free in (0, 1), "free recruitment quota")
     require(type(revision) is int and 2 - free <= revision < 2**31, "configuration revision")
     members = value["members"]
     require(type(members) is list and len(members) == 3 - free, "retained inventory/quota binding")
+    require(required_members is None or len(members) == required_members, "retained crew count")
     require(type(next_id) is int and next_id == len(members) + 1, "server ID allocator binding")
-    descriptors, vehicles, seats, seen = {}, {}, [None, None], set()
+    descriptors, vehicles, seen = {}, {}, set()
+    seats = {vehicle: [None] * len(roles) for vehicle, roles in seat_roles.items()}
     fields = {"native_id", "crew_id", "role", "descriptor_hex", "vehicle_native_id", "seat"}
     for number, row in enumerate(members, 1):
         require(type(row) is dict and set(row) == fields, "crew member fields")
@@ -47,24 +49,34 @@ def native_crew(value):
         raw = bytes.fromhex(row["descriptor_hex"])
         require(raw.hex() == row["descriptor_hex"] and sha(raw) == DESCRIPTOR_PINS[role], "source descriptor digest")
         vehicle, seat = row["vehicle_native_id"], row["seat"]
-        require(type(vehicle) is int and vehicle in (-1, 1), "crew vehicle assignment")
+        require(type(vehicle) is int and (vehicle == -1 or vehicle in seats), "crew vehicle assignment")
         if vehicle == -1:
             require(seat is None, "barracks seat")
         else:
-            expected = 0 if role == "commander" else 1
-            require(type(seat) is int and seat == expected and seats[seat] is None, "unique compatible seat")
-            seats[seat] = number
+            require(type(seat) is int and 0 <= seat < len(seats[vehicle])
+                and seat_roles[vehicle][seat] == role and seats[vehicle][seat] is None, "unique compatible seat")
+            seats[vehicle][seat] = number
         descriptors[number], vehicles[number] = raw, vehicle
     require(sum(v == -1 for v in vehicles.values()) <= POLICY["barracks_bound"], "barracks capacity")
     return {"compDescr": descriptors, "vehicle": vehicles}, seats
 
 
-def update_delta(crew, wire_revision, *, recruit=False):
+def vehicle_crews(value):
+    return project_native_crew(value, policy_sha256=POLICY_SHA256,
+        seat_roles={1: ("commander", "driver")})
+
+
+def native_crew(value):
+    inventory, seats = vehicle_crews(value)
+    return inventory, seats[1]
+
+
+def assignment_delta(crew, wire_revision, *, projector, recruit=False):
     require(type(wire_revision) is int and 1 <= wire_revision < 2**31 - 1, "wire revision bound")
-    inventory, seats = native_crew(crew)
+    inventory, seats = projector(crew)
     changed = {"vehicle": inventory["vehicle"]}
     value = {"prevRev": wire_revision, "rev": wire_revision + 1,
-             "inventory": {8: changed, 1: {"crew": {1: seats}}}}
+             "inventory": {8: changed, 1: {"crew": seats}}}
     if recruit:
         require(crew["free_recruitment_left"] == 0, "recruit requires consumed quota")
         changed["compDescr"] = {3: inventory["compDescr"][3]}
@@ -72,12 +84,21 @@ def update_delta(crew, wire_revision, *, recruit=False):
     return encode(value, MAX_UPDATE)
 
 
+def update_delta(crew, wire_revision, *, recruit=False):
+    return assignment_delta(crew, wire_revision, projector=vehicle_crews, recruit=recruit)
+
+
 class CrewTransferProjectionSource(CrewProjectionSource):
+    PROFILE_VERSION = 7
+    POLICY_SHA256 = POLICY_SHA256
+    METADATA_FILE = "crew-transfer.json"
+    project_crew = staticmethod(vehicle_crews)
+
     def state(self, aggregate, layouts):
         value = ProjectionSource.state(self, aggregate, layouts)
-        inventory, seats = native_crew(aggregate["crew_inventory"])
+        inventory, seats = self.project_crew(aggregate["crew_inventory"])
         value["inventory"][8] = inventory
-        value["inventory"][1]["crew"][1] = seats
+        value["inventory"][1]["crew"].update(seats)
         value["stats"]["freeTMenLeft"] = aggregate["crew_inventory"]["free_recruitment_left"]
         return value
 
@@ -87,20 +108,23 @@ class CrewTransferProjectionSource(CrewProjectionSource):
         files["shop.bin"] = encode(shop_policy(self.trees["shop.bin"]))
         crew = aggregate["crew_inventory"]
         manifest = json.loads(files["manifest.json"])
-        manifest.update(fixture_version=7, profile_version=7, crew_policy_sha256=POLICY_SHA256)
+        manifest.update(fixture_version=self.PROFILE_VERSION, profile_version=self.PROFILE_VERSION, crew_policy_sha256=self.POLICY_SHA256)
         manifest["files"] = [{"file": name, "bytes": len(files[name]), "sha256": sha(files[name])}
                              for name in ("state.bin", "shop.bin", "dossier.bin")]
         manifest["shop_policy"] = {"source_shop_sha256": sha(self.raw["shop.bin"]),
-            "projected_shop_sha256": sha(files["shop.bin"]), "policy_sha256": POLICY_SHA256}
+            "projected_shop_sha256": sha(files["shop.bin"]), "policy_sha256": self.POLICY_SHA256}
         files["manifest.json"] = canonical(manifest)
         compatibility = json.loads(files["compatibility.json"])
         compatibility["crew_mapping"] = [{"crew_id": row["crew_id"], "native_inventory_id": row["native_id"],
             "native_vehicle_inventory_id": row["vehicle_native_id"], "slot_index": row["seat"]}
             for row in crew["members"]]
         files["compatibility.json"] = canonical(compatibility)
-        metadata = dict(version=1, account_id=profile["account_id"], native_database_id=profile["native_database_id"],
-            revision=aggregate["revision"], wire_revision=1, policy_sha256=POLICY_SHA256, state_sha256=sha(state),
+        files[self.METADATA_FILE] = canonical(self.metadata(profile, aggregate, state))
+        return files
+
+    def metadata(self, profile, aggregate, state):
+        crew = aggregate["crew_inventory"]
+        return dict(version=1, account_id=profile["account_id"], native_database_id=profile["native_database_id"],
+            revision=aggregate["revision"], wire_revision=1, policy_sha256=self.POLICY_SHA256, state_sha256=sha(state),
             command=105, vehicle_inventory_id=1, free_recruitment_left=crew["free_recruitment_left"],
             configuration_revision=crew["configuration_revision"], battle=False)
-        files["crew-transfer.json"] = canonical(metadata)
-        return files
