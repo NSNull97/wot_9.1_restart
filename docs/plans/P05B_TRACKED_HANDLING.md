@@ -4,6 +4,20 @@ Date: 2026-10-13. Branch: `codex/p05b-tracked-handling`.
 Base: accepted main `0393857e2a67646e87dd03763baf3b98da98b0b9`.
 Status: SCOPED_AUTOMATIC_PASS; native/owner NOT_RUN, remaining pressure/coverage OPEN.
 
+## Contact measurement checkpoint — 2026-10-14 local
+
+[Bounded diagnostics](P05B_CONTACT_DIAGNOSTICS.md) are complete. Four private
+angular replays preserve484 exact14 replies and both exact diagnostic repeats.
+Actual IS-7 first selected normal-mode energy17324.64J contrasts with current
+COM ledger19.52J; MS-1 maximum492.15J is below the retained project threshold.
+Full-map wheel negative control is still FAIL/NOT_RUN, not accepted from its
+partial23-frame MS-1 observation. Original filter-speed static chain is now
+verified, native execution remains unobserved. [Report](../research/P05B_CONTACT_DIAGNOSTICS.md).
+Next existing side-contact substep: separately freeze an angular-fence fallback
+plan before implementation, preserve moving-linear response and both ACKs.
+Fully stalled pressure and native owner gates remain open. The prior morning
+binding is historical after a new HEAD and needs a fresh final preflight.
+
 ## Actual-worker cadence checkpoint — 2026-10-13
 
 The [bounded cadence phase](P05B_REAL_WORKER_CADENCE.md) now passes both

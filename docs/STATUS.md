@@ -1,3 +1,26 @@
+## 2026-10-14 — P05B contact diagnostics complete; angular correction next
+
+Actual same-time getter-only measurement identifies an IS-7 rotating-corner
+gap: first selected normal-mode energy17324.64J while the current COM ledger
+has19.52J and rejects it. MS-1 recorded maximum492.15J remains insufficient.
+Four private workers/484 IPC replies exactly match14; both sidecar repeats
+match, actual tensor/point readback PASS, all four owned children exited0.
+Independent raw review PASS. No production physics change in this phase.
+
+The separate full-map wheel control remains failed/unexercised: MS-1 wheel
+contacts1–23 then hull24–30; IS-7 target not hit. Four clean exits and exact
+repeats do not turn this into PASS. Energetic wheel-only gate NOT_RUN.
+Original #717 filter-speed writer is statically verified; its network/native
+execution and the owner's speed/aim rendering remain unobserved overnight.
+See [contact diagnostics](research/P05B_CONTACT_DIAGNOSTICS.md).
+
+Next: separately specify and test a bounded angular fallback for existing
+fences, preserving14's moving-linear rule and both-worker ACK boundary.
+Static pressure, compound coverage, historical fidelity and owner acceptance
+remain OPEN. Candidate14/cadence/morning dry-run evidence is preserved; its
+2d66203 binding needs a fresh rebind after subsequent HEAD changes before
+manual launch. No native input/launch, merge or push; preserve dirty P09B.
+
 ## 2026-10-13 — P05B real-worker cadence PASS; morning binding next
 
 Actual candidate14 producers and source MS-1/IS-7 profiles each pass120 fresh

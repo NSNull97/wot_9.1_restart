@@ -1,3 +1,20 @@
+# P05B — measured angular contact gap; correction design next
+
+Four getter-only angular replays PASS (484 exact14 IPC replies, exact repeats,
+actual tensor/point readback, owned exit0). IS-7 first selected normal-mode
+energy17324.64J exceeds the project threshold while COM-only ledger19.52J
+rejects it. MS-1 remains below threshold. Source/runtime stay candidate14.
+Separate wheel control: MS-1 full window FAIL; IS-7 NOT_RUN; energy guard
+isolation NOT_RUN. Preserve all errors/controls and original-filter audit.
+See [report](research/P05B_CONTACT_DIAGNOSTICS.md).
+
+Continue with a separately frozen angular-fence fallback design; preserve
+the moving-linear behavior and both-ACK commit. No invented stationary
+force/dwell law, pressure acceptance, historical equivalence or native input.
+Owner gate remains after2026-10-14 09:00; no merge. Morning bundle2d66203 is
+retained as historical preparation and must be freshly rebound after HEAD
+changes before launch. Keep candidate14 rollback and unrelated P09B intact.
+
 # P05B — real-worker cadence PASS, morning handoff
 
 Final focused04 passes the explicit isolated real-time gate for both source
