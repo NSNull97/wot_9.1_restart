@@ -588,9 +588,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     if let Some(bundle) = geometry {
         let geometry_revision=super::geometry::source_revision(vehicle);
         let material_revision=super::materials::profile_revision(vehicle);
+        let bundle_sha256=bundle.bundle_sha256().to_owned();
         world.bind_geometry(bundle)?;
-        println!("SHARED_GEOMETRY_BOUND battle={} vehicle={} revision={} material_revision={} scope=other_actor_only damage={} terrain_projectiles={}",
-            world.id, vehicle.label(), geometry_revision, material_revision, ap_test_lab, terrain.is_some());
+        println!("SHARED_GEOMETRY_BOUND battle={} vehicle={} revision={} material_revision={} bundle_sha256={} scope=other_actor_only damage={} terrain_projectiles={}",
+            world.id, vehicle.label(), geometry_revision, material_revision, bundle_sha256, ap_test_lab, terrain.is_some());
     }
     if ap_test_lab {
         world.enable_ap_test_lab()?;
@@ -812,7 +813,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             if let model::ImpactOutcome::WreckBlocked = event.outcome {
                 println!("SHARED_WRECK_IMPACT {}", serde_json::json!({
                     "battle":world.id.to_string(),"shot":event.shot,"attacker":event.attacker,"target":event.target,"tick":event.tick,
-                    "policy_revision":model::WRECK_POLICY_REVISION,"historical_fidelity":"approximate",
+                    "policy_revision":model::wreck_policy_revision_for(world.vehicle_kind()),"historical_fidelity":"approximate",
                     "outcome":"wreck_blocked","health_before":event.health_before,"health_after":event.health_after,
                     "damage":0,"native_effect_available":event.segment.is_some()}));
                 continue;
@@ -1449,7 +1450,7 @@ mod tests {
         let component=match segment.component {
             super::super::materials::Component::Hull=>1,
             super::super::materials::Component::Turret01=>2,
-            super::super::materials::Component::Gun02=>3,
+            super::super::materials::Component::Gun02|super::super::materials::Component::Gun01=>3,
         };
         let fx=impact_wire::show_damage(0,1,component,segment.bounds,segment.start,segment.end,
             impact_wire::ShotOutcome::NotPierced).unwrap();

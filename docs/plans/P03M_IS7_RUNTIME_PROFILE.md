@@ -67,6 +67,15 @@ importer and bundle checks. Root owns server/CLI/impact/session integration,
 acceptance docs and review. Source audits are under
 `local/evidence/20261013-p03m-is7-01/`; original remains read-only.
 
+Actual-worker testing exposed near-absent IS-7 turning on a clear source lane
+with the inherited fixed lateral friction1.2 (about0.014rad in7seconds). This
+is a failed controllability gate, not a successful profile import. Compare
+bounded lateral-friction candidates privately before any native launch. If the
+mechanism is confirmed, version the worker config/profile explicitly, keep v1
+defaults unchanged and recheck pivot/forward turn, straight and slope stability,
+braking, solid wall and destructible response. Any selected friction remains a
+named approximate test_lab parameter; never relabel it as original source data.
+
 Crew/equipment chat: 01a134ec-781f-70a1-8970-4a978d2fff51.
 Ammo/service chat: 01a134ec-7eca-7791-8d29-56bea40989c2.
 Both start with existing-card audits and isolated domain components/worktrees.

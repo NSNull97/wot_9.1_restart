@@ -1,8 +1,10 @@
-//! Opt-in, deterministic test_lab AP resolver for one measured MS-1 plate.
+//! Opt-in, deterministic test_lab AP resolver for one measured source plate.
 //!
 //! VERIFIED inputs: #717 stock gun5892/AP2570 nominal penetration 34/27,
 //! caliber 37 and armor damage 30; P06J component material facts. Source pins
 //! and the server-only gaps are recorded in docs/research/P06K_AP_IMPACT_CONTRACT.md.
+//! P03M selects the mounted #717 IS-7 S-70/AP14602 values through VehicleKind;
+//! its source pins and boundaries are in P03M_IS7_RUNTIME_PROFILE.md.
 //! The actual historical server algorithm is UNKNOWN. Every rule below is
 //! an explicit approximate laboratory policy, not a reconstructed 0.9.1 solver:
 //! - muzzle-to-contact straight-line distance, nominal power continued beyond
@@ -10,7 +12,7 @@
 //! - abs(dot) incidence for an unoriented plane, 5 deg normalization, a 1.4x
 //!   caliber/armor boost at >=2x, no ricochet at >=3x, ricochet at >=70deg;
 //! - homogenization 1, one positive ordinary hull/turret plate, strict power
-//!   > effective armor, fixed 30 damage on penetration, no modules or layers.
+//!   > effective armor, fixed selected-shell damage, no modules or layers.
 //! Normals are not claimed outward: abs(dot) cannot identify entry/exit or
 //! validate layer ordering. This pure module neither changes HP nor encodes
 //! native effect IDs. The caller owns damage permission and the transaction.

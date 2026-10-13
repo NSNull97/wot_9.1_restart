@@ -500,6 +500,9 @@ impl Trace {
             return Err(invalid("AP resolution identity, damage or health transition"));
         }
         let (material_order, facts) = self.outcome_material(battle_id, shot_id, server_tick, target)?;
+        if facts.profile_revision!=materials::profile_revision(self.vehicle) {
+            return Err(invalid("AP resolution vehicle material profile"));
+        }
         if resolution.armor != facts.effective.as_ref().and_then(|e| e.armor).map(f64::from)
             || [resolution.armor, resolution.incidence_degrees, resolution.effective_armor,
                 resolution.nominal_power, resolution.normalization_degrees].into_iter().flatten()
@@ -544,7 +547,7 @@ impl Trace {
         }
         let order = self.next_order_value()?;
         self.push(Event::WreckImpact { order, battle_id, shot_id, server_tick, attacker, target,
-            material_order, policy_revision: super::model::WRECK_POLICY_REVISION,
+            material_order, policy_revision: super::model::wreck_policy_revision_for(self.vehicle),
             health_before, health_after })?;
         self.last_tick = server_tick;
         Ok(())

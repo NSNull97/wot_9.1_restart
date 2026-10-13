@@ -13,6 +13,9 @@ pub const MAX_SHOTS: usize = CAPACITY * 30;
 /// Explicit laboratory policy: retained stock geometry blocks AP at a wreck.
 /// No penetration, material thickness or additional damage is inferred.
 pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
+pub fn wreck_policy_revision_for(kind:VehicleKind)->&'static str { match kind {
+    VehicleKind::Ms1=>WRECK_POLICY_REVISION,VehicleKind::Is7=>"test_lab-is7-wreck-block-v1",
+} }
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
 pub fn bad() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "shared laboratory contract") }

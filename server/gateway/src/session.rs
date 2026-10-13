@@ -1383,6 +1383,9 @@ pub fn serve_map_drive(key_path:&str,digest_path:&str,config_path:&str,pool_path
     if capture_path.is_none() && capture_profile!=crate::capture091::Profile::Ordinary{return Err(invalid().into());}
     let config=crate::identity091::Config::load(config_path)?;
     let pool=crate::map_drive_worker091::Pool::load(&config.local_root,Path::new(pool_path))?;
+    // The older own-primary route still has the fixed MS-1 battle contract.
+    // Only the integrated route binds a second kind to every subsystem.
+    if pool.vehicle_kind()!=shared::vehicle_profile::VehicleKind::Ms1{return Err(invalid().into());}
     let capture=capture_path.map(|path|Recorder::open_profile(path,&config.local_root,capture_profile)).transpose()?;
     serve_inner_drive(key_path,digest_path,true,true,None,Some(Arc::new(config)),capture,None,Some(Arc::new(pool)))
 }
