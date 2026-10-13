@@ -1,8 +1,36 @@
 ## 2026-10-13 — P06Q tree visual/state sync follow-up
 
+### Owner manual result — native tree visual FAIL remains (2026-10-13)
+
+The owner verified that trees still do not visibly fall: the tank pushes
+through the trees. This is an **OBSERVED native visual FAIL**, not a wire or
+server acceptance. The retained `manualtree02` server evidence shows five
+authoritative contacts, four tree publications to both sessions, eight worker
+ACKs, and four ACK-gated scene commits; its owner observation records the same
+tree failure (`PARTIAL_FAIL`).
+
+The later private `treeobserve05` trace reaches native
+`AreaDestructibles.set_fallenTrees` and `orderDestructibleDestroy` on client A
+for the packed values `0x199e8000` (native index 25) and `0x04128000` (native
+index 4). That verifies callback delivery after the transport fixes, but it
+does not prove the native descriptor lookup, animator, effect, or rendered
+pixels. A new read-only observer now records that downstream path for a future
+bounded run. The first run with that observer (`treeobserve06`) stayed in a
+login loop before the arena and is **NOT_RUN**, with cleanup verified in
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve06-diagnostic-not-run.json`
+(SHA256 `e59040cd4827992fb8da946c20df2f18cfe0bfcea4aa33f50a1c662efb0f2d6e`).
+
+Current source head is `713fcdecd513f8bd6c62440f877429c5b7b45d8b`. The focused
+observer suite is **17/17 PASS** and `py_compile` passes. The current gateway
+receipts remain **10/10 PASS** (`gateway-p06q-final-29`, executable SHA256
+`e9d5b64fbee65cf10f9fd815be6f4ec830982db678500684c5886817b43f6cc0`) and
+**2/2 PASS** for the mixed-area driving regression. Native rendered fall,
+both-client ACK, and rendered passage remain owner-controlled gates.
+
 ### Latest transport diagnosis — 2026-10-13
 
-Current source head is `f4191cd60452ba96a1c0938bb6d50a53c0434658`. The native
+Transport parser fix was carried through `8fc14c913dfe639450042650a8c4c24eb925f475`; the current
+branch head is `713fcdecd513f8bd6c62440f877429c5b7b45d8b`. The native
 `treeobserve03` capture finally exposed the symmetric channel failure: both
 clients sent six 7-byte area requests followed by a native `0x8f` aim record in
 one reliable frame (`57` application bytes, `62` frame-body bytes). The older
@@ -31,12 +59,14 @@ no `SHARED_READY` or post-fix reject. It is **NOT_RUN**, not a transport PASS;
 evidence is `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve04-bounded-not-run.json`
 (SHA256 `d035afbcf4a13ea024fe5347a174e025bfea626c5ef8dc1c0133d62b0416634c`).
 The server and both clients were stopped by receipt and both installations
-restored. Native `set_fallenTrees`, rendered tree fall, both-worker ACK, and
-tank passage remain **NOT_RUN** under the owner gate. The older netdrop smoke
+restored. At that historical point native `set_fallenTrees` and rendered tree
+fall were **NOT_RUN** under the owner gate; the later `treeobserve05` trace
+verified callback delivery on client A, while the owner still reports visual
+FAIL. Both-client rendered confirmation and passage remain owner-controlled. The older netdrop smoke
 remains a server-loss observation only; no reconnect or directional packet-loss
 acceptance is claimed.
 
-Current branch: `codex/p06q-tree-visual-sync`; current source commit: `f4191cd60452ba96a1c0938bb6d50a53c0434658` (diagnostic observer base: `f9d50ce417bad6c0f832bdf372b61ce20c5d8101`).
+Current branch: `codex/p06q-tree-visual-sync`; current source commit: `713fcdecd513f8bd6c62440f877429c5b7b45d8b` (transport parser fix: `8fc14c913dfe639450042650a8c4c24eb925f475`; diagnostic observer base: `f9d50ce417bad6c0f832bdf372b61ce20c5d8101`).
 
 Implemented a diagnostic-only observer for the original `AreaDestructibles.set_fallenTrees` callback. The observer copies bounded native `ARRAY<UINT32>` values, records the chunk/entity identity, and never mutates the owner, collision body, tree matrix, or server state. The gateway wire test pins the two packed Prohorovka values observed in `manualtree02` (`0x195a8000`, `0x040e8000`) and their exact `0x12 ... 0x13` envelope.
 
@@ -44,7 +74,7 @@ Checks: `python -B -X utf8 -m unittest tests.test_shared_lab_control tests.test_
 
 A bounded `netdrop01` live runtime smoke reached two `SHARED_READY` sessions on `05_prohorovka`; only the receipt-verified server PID was stopped, clients were observed for 15 seconds, and then all processes were stopped and both client ledgers restored. Evidence: `local/evidence/20261012-p06p-prohorovka-01/tests/tree-sync-netdrop01.json` (SHA256 `fe19665639e23195d436186c18c50a8f7e014c61811e14c18af7bbb59a08c273`), `server-only-stop-netdrop01.json`, `stop-netdrop01stop.json`, and `install-a/b-netdrop01/restore.json`. The server log contains `SHARED_SESSION_PENDING`, `SHARED_ANNOUNCED`, and both `SHARED_READY`; no `SHARED_SESSION_CLOSED/FAILED/REJECT` appeared because the server was terminated externally. This is a server-loss smoke, not directional packet-loss or reconnect acceptance.
 
-The previous `manualtree02` native trace had zero `set_fallenTrees` callbacks, so client visual fall remains `UNKNOWN`/owner-gate `PARTIAL_FAIL`; the observer is ready for a future owner-controlled contact run. Native visual fall, fallenTrees consumer application, ACK owner confirmation, and rendered passage remain **NOT_RUN** after this diagnostic card. No original client binary/resource was modified. Rollback: revert commit `f9d50ce` and restore the two owned installation ledgers; the netdrop ledgers are already PASS.
+The previous `manualtree02` native trace had zero `set_fallenTrees` callbacks, while the later `treeobserve05` diagnostic trace recorded the callback and manager entry point on client A. The owner still reports a rendered visual fail, so the native gate is **PARTIAL_FAIL**, not a wire PASS. Native visual fall, both-client rendered confirmation, ACK owner confirmation, and rendered passage remain outside automated acceptance after this diagnostic card. No original client binary/resource was modified. Rollback: revert commit `f9d50ce` and restore the two owned installation ledgers; the netdrop ledgers are already PASS.
 
 # P06Q native catalog passed — original trees and authoritative vehicle contact
 

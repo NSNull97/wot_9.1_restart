@@ -9,6 +9,32 @@ Evidence root: `local/evidence/20261012-p06q-tree-contact-01/`
 
 ## Follow-up: visual/state synchronisation and server-loss smoke
 
+### Owner result and downstream diagnostic boundary — 2026-10-13
+
+The owner rechecked the native run and reports that trees still do not fall
+visually; the tank pushes through them. This is **OBSERVED native visual
+FAIL**. The retained `manualtree02` server receipt independently records five
+vehicle contacts, four `fallenTrees` publications to both sessions, eight
+worker ACKs, and four ACK-gated commits, so the observation is not evidence of
+a missing server contact or an unacknowledged scene mutation.
+
+The `treeobserve05` diagnostic trace later records native
+`set_fallenTrees` followed by `orderDestructibleDestroy` on client A for
+`0x199e8000` (index 25) and `0x04128000` (index 4). This verifies the native
+property callback and the manager entry point after the transport parser fix;
+it does **not** verify `__destroyDestructible`, descriptor lookup,
+`__dropDestructible`, animator state, effect resources, or pixels. Commit
+`713fcde` adds a bounded read-only observer for those downstream methods. Its
+first private run (`treeobserve06`) remained in a login loop before the arena,
+so it is **NOT_RUN**; receipt:
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve06-diagnostic-not-run.json`
+(SHA256 `e59040cd4827992fb8da946c20df2f18cfe0bfcea4aa33f50a1c662efb0f2d6e`).
+
+The remaining cause is **UNKNOWN**. It may be an original descriptor/index
+lookup or animator/resource boundary; no client binary, resource, matrix, or
+collision state was modified to guess a fix. Native visual acceptance remains
+owner-controlled.
+
 Commit `f9d50ce417bad6c0f832bdf372b61ce20c5d8101` adds a bounded, read-only
 observer for `AreaDestructibles.set_fallenTrees` and pins the exact packed
 Prohorovka tree update envelope. Static checks passed (16 Python tests and the
