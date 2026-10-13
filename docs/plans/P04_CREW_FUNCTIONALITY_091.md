@@ -1,0 +1,50 @@
+# P04 crew — complete original 0.9.1 behavior
+
+Owner expanded the task on2026-10-13 while P04H was in progress: continue
+overnight toward the complete historical crew feature set, including perks
+and other crew operations. This authorizes successive independently reviewed
+cards, not one unbounded branch. Preserve one card/branch/tested no-ff merge.
+Manual owner tests are deferred until after2026-10-14 09:00 Asia/Yekaterinburg.
+Do not convert an outstanding manual gate into PASS or wake the owner for
+routine implementation choices. Continue independent source research and tests.
+
+## Rules and scope
+
+Use only pinned original v.0.9.1 #717 resources/bytecode and historical sources
+whose version is established. Keep VERIFIED/OBSERVED/INFERRED/UNKNOWN distinct.
+The authoritative server owns roster, qualification, experience, prices,
+eligibility and mutations. Retain native dialogs, callbacks and protocol.
+No original client writes, P05 changes or unrelated stand deployment.
+
+Owner exceptions to historical behavior:
+
+- New free recruits start at50%; existing100% tankmen keep their qualification.
+  Paid choices were deferred at the start of H; their verified historical
+  behavior belongs to a later card in this expanded scope.
+- Sixth Sense is an always-active base perk requiring no learning, including
+  a50% crew. Preserve this explicit exception when implementing skill/perk
+  progression and the future combat effect. Its actual detection signal,
+  timing and display still require source/protocol verification.
+
+## Ordered work and gates
+
+1. Finish current P04H: all primary-role hires on MS-1/IS-7, two distinct
+   loaders, retained transfers, durable quota and complete native rosters.
+2. Audit the original complete crew operation surface: personal file,
+   qualification/retraining, skill learning/reset, dismissal, barracks,
+   bulk operations and personalization. Map each original command and dialog
+   to source facts, bounded server inputs and explicit unsupported behavior.
+3. Choose the next smallest coherent card from that audit; write its contract
+   and acceptance before implementation. Repeat this process until all
+   requested operations are covered. Do not silently invent missing tariffs,
+   experience thresholds, skill effects or recovery rules.
+4. For each card run applicable current-source regression and actual native
+   callback/wire/persistence verification. Keep immutable failed attempts,
+   clean up owned processes/installations and record rollback.
+5. Prepare one owner test checklist for the finished interactions after09:00.
+   Native automated callback acceptance and manual acceptance remain separate.
+   Combat-dependent perk effects cannot be accepted from a hangar icon alone.
+
+Status: IN_PROGRESS. P04H native recruitment is accepted; the next card is
+PersonalCase and individual training/progression. Update this plan from
+evidence as subsequent card boundaries are established.

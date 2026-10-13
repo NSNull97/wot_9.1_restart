@@ -60,7 +60,7 @@ def _descriptors():
 
 
 def init(args, record, start_gui=False, restrict_module_changes=False, restrict_crew_changes=False,
-         enable_crew_recruitment=False, enable_crew_transfer=False, enable_cross_vehicle_crew=False):
+         enable_crew_recruitment=False, enable_crew_transfer=False, enable_cross_vehicle_crew=False, enable_roster_recruitment=False):
     """Call after the original Settings instance/profile have been installed.
 
     start_gui=False extracts authentic resource descriptors only. True also
@@ -123,16 +123,21 @@ def init(args, record, start_gui=False, restrict_module_changes=False, restrict_
         raise ValueError('transfer requires the explicit recruitment capability restrictions')
     if enable_cross_vehicle_crew and not enable_crew_transfer:
         raise ValueError('cross-vehicle crew requires the explicit transfer restrictions')
+    if enable_roster_recruitment and not enable_cross_vehicle_crew:
+        raise ValueError('roster recruitment requires all previous crew restrictions')
     if restrict_crew_changes:
         # BusinessHandler stores bound methods in its constructor; installing
         # after personality.init would leave the old recruitment listener live.
         import crew_capabilities
         allowed = ('open_recruit', 'recruit') if enable_crew_recruitment else ()
-        _step('crew_capabilities', crew_capabilities.init, record, allowed, enable_crew_transfer, enable_cross_vehicle_crew)
-    if enable_crew_recruitment:
+        _step('crew_capabilities', crew_capabilities.init, record, allowed, enable_crew_transfer, enable_cross_vehicle_crew, enable_roster_recruitment)
+    if enable_crew_recruitment and not enable_roster_recruitment:
         import p04d_crew_ui
         _step('crew_recruitment', p04d_crew_ui.init, record)
-    if enable_cross_vehicle_crew:
+    if enable_roster_recruitment:
+        import p04h_crew_ui
+        _step('roster_recruitment', p04h_crew_ui.init, record)
+    elif enable_cross_vehicle_crew:
         import p04g_crew_ui
         _step('cross_vehicle_crew', p04g_crew_ui.init, record)
     elif enable_crew_transfer:
@@ -451,6 +456,9 @@ def fini():
         from gui.shared import personality
         close('gui_personality', personality.fini)
     if 'crew_capabilities' in _stages:
+        if 'roster_recruitment' in _stages:
+            import p04h_crew_ui
+            close('roster_recruitment', p04h_crew_ui.fini)
         if 'cross_vehicle_crew' in _stages:
             import p04g_crew_ui
             close('cross_vehicle_crew', p04g_crew_ui.fini)

@@ -122,8 +122,11 @@ impl Request {
 
     /// Narrow project test_lab selection, not ownership or persisted quota.
     /// Invalid semantics receive RES_NOT_AVAILABLE without a worker dispatch.
-    pub fn validate_supported(&self)->io::Result<()> {
-        if self.id<=0 || self.shop_revision!=SHOP_REVISION || self.vehicle_inventory_id!=1 || self.slot!=1 || self.tariff_index!=0 {
+    pub fn validate_supported(&self)->io::Result<()> {self.validate_for(false)}
+    pub fn validate_for(&self,roster:bool)->io::Result<()> {
+        let seat=if roster {match self.vehicle_inventory_id {1=>(0..=1).contains(&self.slot),2=>(0..=4).contains(&self.slot),_=>false}}
+            else {self.vehicle_inventory_id==1 && self.slot==1};
+        if self.id<=0 || self.shop_revision!=SHOP_REVISION || !seat || self.tariff_index!=0 {
             return Err(invalid("unsupported crew service selection"));
         }
         Ok(())
@@ -137,8 +140,12 @@ impl Request {
 /// send anything. Account/command key/revisions come from the server session.
 pub fn service_request(account_id:&str,database_id:i32,command_key:&str,expected_revision:u64,
                        wire_revision:i64,request:Request)->io::Result<Vec<u8>> {
-    identity(account_id,database_id)?;request.validate_supported()?;
-    if !(6..i32::MAX as u64).contains(&expected_revision) || !(1..i32::MAX as i64).contains(&wire_revision)
+    service_request_for(false,account_id,database_id,command_key,expected_revision,wire_revision,request)
+}
+pub fn service_request_for(roster:bool,account_id:&str,database_id:i32,command_key:&str,expected_revision:u64,
+                       wire_revision:i64,request:Request)->io::Result<Vec<u8>> {
+    identity(account_id,database_id)?;request.validate_for(roster)?;
+    if !((if roster {9}else {6})..i32::MAX as u64).contains(&expected_revision) || !(1..i32::MAX as i64).contains(&wire_revision)
         || !(1..=96).contains(&command_key.len())
         || !command_key.bytes().all(|b|b.is_ascii_alphanumeric() || b"-_:".contains(&b)) {
         return Err(invalid("crew request identity/revision/key boundary"));
@@ -270,4 +277,20 @@ mod tests {
         std::fs::write(directory.join("crew-service.json"),raw).unwrap();
         std::fs::write(directory.join("state.bin"),vec![0;16385]).unwrap();assert!(metadata(&directory,ACCOUNT,900001,6,1).is_err());
     }
+
+    #[test] fn roster_hires_derive_all_seats_and_reject_paid_or_unbound_requests() {
+        for (vehicle,slots) in [(1,2),(2,5)] {for slot in 0..slots {
+            let r=Request{vehicle_inventory_id:vehicle,slot,..request()};
+            assert_eq!(Request::decode(&payload(r)).unwrap(),r);assert!(r.validate_for(true).is_ok());
+            let raw=service_request_for(true,ACCOUNT,900001,"p04h:key:226",9,1,r).unwrap();
+            let v:Value=serde_json::from_slice(&raw).unwrap();assert_eq!(v["layout"],serde_json::json!([3,vehicle,slot,0]));
+            assert!(service_request_for(true,ACCOUNT,900001,"key",8,1,r).is_err());
+        }}
+        for r in [Request{vehicle_inventory_id:3,..request()},Request{slot:-1,..request()},
+            Request{slot:2,..request()},Request{vehicle_inventory_id:2,slot:5,..request()},
+            Request{tariff_index:1,..request()},Request{tariff_index:2,..request()},Request{shop_revision:4,..request()}] {
+            assert!(r.validate_for(true).is_err());
+        }
+    }
+
 }

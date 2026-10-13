@@ -8,21 +8,24 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CREW_POLICY_SHA256 = '7d0e3d7ef28d85bfe32e4fcdea0547696a9b4fd04922a725a2d895e1395f0d55';
 export const TRANSFER_POLICY_SHA256 = '35a58c8e13d9b815f8552371bbd6556ba10c091753861e697e522d6a5c877cb2';
 export const CROSS_CREW_POLICY_SHA256 = '20f7d65c6d360a17f164cb6e4eaa73056a58a793727d4bfbecc1358e1f21969f';
+export const ROSTER_CREW_POLICY_SHA256 = '3e86a495c028570d96a479f409dc578875652e01f60f6ac8c42c5c1bae51737c';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
   && Object.keys(v).sort().join(',') === [...keys].sort().join(',');
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
     && transfer.policy_sha256 === TRANSFER_POLICY_SHA256), 'Explicit crew transfer policy required');
   requireValue(crossVehicle === null || (transfer !== null && exact(crossVehicle, ['version', 'policy_sha256'])
     && crossVehicle.version === 1 && crossVehicle.policy_sha256 === CROSS_CREW_POLICY_SHA256), 'Explicit cross-vehicle crew policy required');
-  const profileVersion = crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
-  const worker = crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
+  requireValue(rosterRecruitment === null || (crossVehicle !== null && exact(rosterRecruitment, ['version', 'policy_sha256'])
+    && rosterRecruitment.version === 1 && rosterRecruitment.policy_sha256 === ROSTER_CREW_POLICY_SHA256), 'Explicit roster recruitment policy required');
+  const profileVersion = rosterRecruitment !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
+  const worker = rosterRecruitment !== null ? 'tools/p04h_crew_store.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
   requireValue(exact(ammo, ['version', 'bundle_root', 'original_root', 'account_id', 'grant'])
     && ammo.version === 1 && UUID.test(ammo.account_id) && isAbsolute(ammo.original_root)
     && exact(ammo.grant, ['grant_id', 'quantity_each']) && ammo.grant.grant_id === 'p09d-test-depot-v1'
@@ -55,7 +58,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
   }
   async function mutate(operation, request) {
     requireValue(['recruit', 'service', ...(transfer === null ? [] : ['transfer'])].includes(operation), 'Unsupported crew operation');
-    // The G migration retains immutable D/F command receipts. Only that opt-in
+    // The G/H migrations retain immutable predecessor command receipts. Only that opt-in
     // bridge admits their older cursors; the store binds the complete request
     // to its ledger and older cursors may return successful replays only.
     const minimumRequestRevision = crossVehicle === null ? profileVersion : 6;

@@ -12,28 +12,29 @@ impl Command {
     fn id(&self)->i16 {match self {Self::Ammo(r)=>r.id,Self::Crew(r)=>r.id,Self::Transfer(r)=>r.id}}
     fn vehicle(&self)->i64 {match self {Self::Ammo(r)=>r.vehicle_inventory_id() as i64,Self::Crew(r)=>r.vehicle_inventory_id as i64,Self::Transfer(r)=>r.vehicle_inventory_id}}
     fn kind(&self)->&'static str {match self {Self::Ammo(_)=>"AMMO",Self::Crew(_)=>"CREW",Self::Transfer(_)=>"CREW_TRANSFER"}}
-    fn validate_supported(&self,profile:transfer_codec::Profile)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_supported(),Self::Transfer(r)=>r.validate_for(profile)}}
+    fn validate_supported(&self,profile:transfer_codec::Profile)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_for(profile==transfer_codec::Profile::Roster),Self::Transfer(r)=>r.validate_for(profile)}}
 }
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub(super) struct State {
-    revision:u64,wire_revision:i64,prefix:String,crew_enabled:bool,transfer_enabled:bool,cross_vehicle_enabled:bool,
+    revision:u64,wire_revision:i64,prefix:String,crew_enabled:bool,transfer_enabled:bool,cross_vehicle_enabled:bool,roster_recruitment:bool,
     seen:Vec<i16>,pending:VecDeque<Command>,inflight:Option<Command>,
 }
 impl State {
     pub(super) fn new(binding:codec::Metadata,crew_enabled:bool)->Self {
         let mut random=[0;16];OsRng.fill_bytes(&mut random);
         let prefix=random.iter().map(|byte|format!("{byte:02x}")).collect();
-        Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,transfer_enabled:false,cross_vehicle_enabled:false,
+        Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,transfer_enabled:false,cross_vehicle_enabled:false,roster_recruitment:false,
              seen:Vec::new(),pending:VecDeque::new(),inflight:None}
     }
     pub(super) fn crew_enabled(&self)->bool {self.crew_enabled}
     pub(super) fn with_transfer(mut self,enabled:bool)->Self {self.transfer_enabled=enabled && self.crew_enabled;self}
     pub(super) fn with_cross_vehicle(mut self,enabled:bool)->Self {self.cross_vehicle_enabled=enabled && self.transfer_enabled;self}
+    pub(super) fn with_roster_recruitment(mut self,enabled:bool)->Self {self.roster_recruitment=enabled && self.cross_vehicle_enabled;self}
     pub(super) fn transfer_enabled(&self)->bool {self.transfer_enabled}
     pub(super) fn used_id(&self,id:i16)->bool {self.seen.contains(&id)}
     fn command_key(&self,request:&Command)->String {
-        let card=match request {Command::Ammo(_)=>"p09d",Command::Crew(_)=>"p04d",Command::Transfer(_)=>if self.cross_vehicle_enabled {"p04g"}else {"p04f"}};
+        let card=match request {Command::Ammo(_)=>"p09d",Command::Crew(_)=>if self.roster_recruitment {"p04h"}else {"p04d"},Command::Transfer(_)=>if self.roster_recruitment {"p04h"}else if self.cross_vehicle_enabled {"p04g"}else {"p04f"}};
         format!("{card}:{}:{}",self.prefix,request.id())
     }
 }
@@ -68,7 +69,7 @@ fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)
         return Err(invalid());
     }
     state.seen.push(id);
-    if request.validate_supported(transfer_codec::Profile::selected(state.cross_vehicle_enabled)).is_err() {
+    if request.validate_supported(transfer_codec::Profile::selected_roster(state.cross_vehicle_enabled,state.roster_recruitment)).is_err() {
         session.outbox.push_back(crate::hangar091::unavailable_response(id)?);
         events.push(format!("{kind}_SERVICE_REJECTED session={} request={id} result=-10 reason=unsupported_layout domain_applied=false",session.id));
     } else {
@@ -547,4 +548,32 @@ mod tests {
         let clear=session.tx.due(now,session.rx).unwrap().unwrap().2;
         assert_eq!(transport091::parse_interactive(&clear).unwrap().body,crate::hangar091::unavailable_response(226).unwrap());
     }
+
+    #[test] fn roster_original_commands_share_fifo_and_complete_frame_commit() {
+        let now=Instant::now();let mut original=ready_crew(now);
+        original.ammo_service=Some(State::new(codec::Metadata{revision:31,wire_revision:1},true)
+            .with_transfer(true).with_cross_vehicle(true).with_roster_recruitment(true));
+        let hire=crew_codec::Request{vehicle_inventory_id:2,slot:4,..crew_request(226)};
+        let transfer=transfer_codec::Request{vehicle_inventory_id:2,slot:3,tankman_inventory_id:10,..transfer_request(227)};
+        let bytes=[crew_packet(hire),transfer_packet(transfer)].concat();
+        let mut bad=bytes.clone();bad.push(0xff);let mut session=original.clone();
+        assert!(session.receive(&frame(&session,1,&bad),now).is_err());assert_eq!(session.ammo_service,original.ammo_service);
+        session.receive(&frame(&session,1,&bytes),now).unwrap();
+        let state=session.ammo_service.as_mut().unwrap();assert_eq!(state.pending.len(),2);
+        for command in &state.pending {assert!(state.command_key(command).starts_with("p04h:"));}
+        state.inflight=state.pending.pop_front();apply(&mut session,226,crew_reply(32,2)).unwrap();
+        let state=session.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
+        apply(&mut session,227,crew_reply(33,3)).unwrap();
+        for (n,id) in [(0,226),(1,227)] {
+            let clear=session.tx.due(now,session.rx).unwrap().unwrap().2;
+            assert_eq!(transport091::parse_interactive(&clear).unwrap().body[1],0x57,"update {n}");
+            let clear=session.tx.due(now,session.rx).unwrap().unwrap().2;
+            assert_eq!(transport091::parse_interactive(&clear).unwrap().body,codec::success_response(id).unwrap());
+        }
+        let mut previous=original.clone();previous.ammo_service.as_mut().unwrap().roster_recruitment=false;
+        previous.receive(&frame(&previous,1,&crew_packet(hire)),now).unwrap();
+        assert!(previous.ammo_service.as_ref().unwrap().pending.is_empty());
+        assert!(!State::new(codec::Metadata{revision:31,wire_revision:1},true).with_roster_recruitment(true).roster_recruitment);
+    }
+
 }

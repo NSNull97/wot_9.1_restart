@@ -229,6 +229,25 @@ class CrewCapabilitiesTests(unittest.TestCase):
             with self.subTest(allowed=allowed), self.assertRaises(ValueError):
                 policy._CrewChangeGuard(self.classes, self.messages, self.record, allowed)
 
+    def test_roster_requires_entire_boolean_chain_and_keeps_other_mutations_blocked(self):
+        for value,cross in ((1,True),(None,True),(True,False)):
+            with self.assertRaises(ValueError):
+                policy._CrewChangeGuard(self.classes,self.messages,self.record,('open_recruit','recruit'),
+                    allow_transfer=True,allow_cross_vehicle=cross,allow_roster=value)
+        guard=policy._CrewChangeGuard(self.classes,self.messages,self.record,('open_recruit','recruit'),
+            allow_transfer=True,allow_cross_vehicle=True,allow_roster=True)
+        guard.install()
+        try:
+            self.assertTrue(guard.allow_roster)
+            for class_name,name,action,is_static in policy.TARGETS:
+                original=self.originals[(class_name,name)]
+                actual=self.classes[class_name].__dict__[name]
+                if action in ('open_recruit','recruit') or (class_name,name) in policy.TRANSFER_TARGETS:
+                    self.assertIs(actual,original)
+                else:
+                    self.assertIsNot(actual,original)
+        finally:guard.restore()
+
     def test_transfer_opt_in_is_exact_callbacks_without_personal_case_unload_or_new_actions(self):
         guard = policy._CrewChangeGuard(self.classes, self.messages, self.record,
                                        ('open_recruit', 'recruit'), allow_transfer=True)
