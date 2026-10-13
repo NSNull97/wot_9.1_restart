@@ -206,6 +206,14 @@ impl Session {
         let mut at = 0; let mut count = 0;
         while at < payload.len() {
             count += 1; if count > 16 { return Err(bad()); }
+            // The native initializer can append its complete 33-byte READY
+            // compound after area requests.  In Driving this is a harmless
+            // duplicate handshake; recognize the whole measured suffix before
+            // treating its leading 0x0d as the separate postmortem method.
+            if payload.len() - at == 33 && wire::ready(&payload[at..], c.slot).is_ok() {
+                at += 33;
+                continue;
+            }
             let id = payload[at];
             let size = match id {
                 // Native clients may piggyback area requests with their first

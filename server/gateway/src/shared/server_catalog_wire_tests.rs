@@ -16,6 +16,14 @@ fn point(slot: usize, p: [f32; 3]) -> Vec<u8> {
     bytes
 }
 
+fn ready(slot: usize) -> Vec<u8> {
+    let mut bytes = vec![0x0d, 8, 0, 0, 0, 0, 0];
+    bytes.extend(wire::vehicle_id(slot).unwrap().to_le_bytes());
+    bytes.extend([0x8d, 5, 0, 2, 1, 0, 0, 0, 0x86, 0, 0]);
+    bytes.extend([0x0c, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    bytes
+}
+
 fn present(bodies: &[Vec<u8>], expected: &[u8]) -> usize {
     bodies.iter().map(|body| body.windows(expected.len()).filter(|bytes| *bytes == expected).count()).sum()
 }
@@ -342,6 +350,30 @@ fn driving_mixed_area_requests_and_aim_are_accepted_atomically() {
     assert!(c.pending_area_requests.is_empty());
     assert!(c.areas.iter().all(|(pending, _)| pending.is_none()));
     assert!(c.commands.is_empty());
+}
+
+#[test]
+fn driving_mixed_area_requests_and_ready_compound_are_accepted() {
+    let now = Instant::now();
+    let world = many_chunk_world(now);
+    let (mut s, _) = driving(now);
+    {
+        let c = s.shared.as_mut().unwrap();
+        c.view = Some(world);
+        c.announced_areas = 117;
+        c.areas = vec![(None, Vec::new()); 117];
+        c.tree_areas = vec![Vec::new(); 117];
+        c.creations = [Some((0, true)); 2];
+        c.binding = Some((0, true));
+        c.correction = true;
+    }
+    let mut payload = Vec::new();
+    for area in 0..6 { payload.extend(request(area_wire::area_id(area).unwrap())); }
+    payload.extend(ready(0));
+    s.receive(&frame(&s, &payload), now).unwrap();
+    let c = s.shared.as_ref().unwrap();
+    assert!(c.commands.is_empty());
+    assert!(c.areas.iter().take(6).any(|(pending, _)| pending.is_some()));
 }
 
 #[test]
