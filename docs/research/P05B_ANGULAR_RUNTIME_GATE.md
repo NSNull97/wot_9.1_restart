@@ -55,8 +55,9 @@ The original candidate14 remains intact as rollback.
   source body box, including center offset, pitch and roll. The latter uses
   reconstructed rounded Euler telemetry, not exact native quaternion recovery.
 - Independent server review found reversed complete receipt batches could
-  change destruction order. The new admission must enforce physical receipt
-  order atomically; final Rust integration and root verification are pending.
+  change destruction order. The integrated admission now enforces physical
+  receipt order atomically, including complete State/Trace index order; the
+  canonical targeted gate above tests rejection before world mutation.
 
 Historical candidate14 contact captures saved decoded JSON without the native
 raw stdout. Their reader could lose the sign of an integer-token zero, but the
@@ -131,14 +132,74 @@ Actual result:1 passed,0 failed,0 ignored. Decoder receipt SHA256:
 This proves full typed-frame validation separately from physical observations;
 it does not prove a simultaneous two-worker publication barrier or rejoin.
 
+## Independent contact audit and retained-policy regression
+
+Independent first-eight audit uses Decimal90 and a separate matrix inverse,
+rather than calling either production scalar kernel. It passes12482 checks
+and194 pins, including exact pairs, owned exits and740 historical base frames.
+Receipt: `first8-independent-review01/receipt03.json`, SHA256
+`5a7b8423af86e7c8b839695334d23343e3422175f6cde84856a9025c7be69918`.
+Earlier audit01/02 failures are retained: one used a wrong receipt count field,
+the other initially treated a subsequently updated plan as an immutable input.
+The corrected audit separately verifies its historical Git blob.
+
+The actual IS-7 selected PRE contact has17713.888842J normal-mode energy;
+rounded total-body energy falls by7999.998947J. Actual POST applied debit is
+7999.998637J, with point closing1.365524067 to1.044338762m/s. Linear energy may
+rise while angular energy falls by more; full-body energy still decreases.
+The old COM-only candidate has19.5227966J and fails. No rejected angular
+energy witness was recorded for this actual MS-1 capture, so earlier diagnostic
+numbers must not be presented as measurements from this negative case.
+
+The separate catalog7 compatibility matrix now passed42 actual candidate15
+workers,21 repeated cases,7524 advances and7586 total replies. All owned
+children exited0. Both masses cover moving-side/parallel/away, chain, crate,
+tree, retained private solid-wall fixture, powered handling and coast reversal.
+New pairs match every physical f32 bit. All historical zero-sign masks are0;
+the generic old-reader limitation was not exercised. Fourteen full-alive
+handling runs also match candidate14 raw stdout and diagnostics byte-for-byte.
+Other contact cases retain1036/1037 explicitly synthetic initial removals.
+
+Actual command:
+
+```
+python -B -X utf8 local/evidence/20261013-p05b-tracked-handling-01/night-angular-legacy-plan01/replay.py --run --out D:/WoT_9.1_Server/local/evidence/20261013-p05b-tracked-handling-01/night-angular-legacy-plan01/run01
+```
+
+Receipt: `night-angular-legacy-plan01/run01/receipt.json`, SHA256
+`d2f8cfdd8e83a117ab143d6890aab95c8d26f97d5627d65a446f5a9a1a6c3a6e`.
+Independent review verifies215 pins,21 pairs,14 raw-byte handling comparisons
+and118918 scalar comparisons, with zero reviewer worker launches:
+`night-angular-stageb-review01/legacy42-actual-review01.json`, SHA256
+`e421b5af07c0b131c45417114de8decff737b2cd3a20c3e4ae76854086a7c2a2`.
+Current dotnet host bytes are pinned before/after; historical installed CLR
+identity remains UNKNOWN. This replay uses old catalog7/IPC5. It proves retained
+mode compatibility, not the new catalog8 normal-linear implementation or a
+simultaneous gateway barrier. Old3/6m/s capped fixtures remain old-mode only.
+
+## Python regression scope
+
+Two disjoint actual unittest invocations pass127 tests, zero failures/skips.
+The first99-test invocation covers compound catalog/tree contacts/probe,
+tracked profile/matrix and canonical build accounting. The second28 covers
+the omitted base catalog and writer modules. They are not a single127-test
+invocation. Exact commands, source pins and logs:
+`night-angular-python15/receipt.json` and
+`night-angular-python15-extra/receipt.json`. No physics workers ran in these
+checks. This includes the old119-test scope plus3 exporter and5 build-driver
+checks; earlier results remain separate evidence.
+
 ## Acceptance and continuation
 
 The candidate15 artifact preflight passed with zero processes:
 `night-angular-stageb-review01/first8-preflight01/validation.json`.
 That initial preparation was not physical acceptance. The later first-eight
-capture and full Rust decoder above have now passed. Actual both-worker
-ACK/rejoin, old-policy regressions, all-alive coverage and full gateway suite
-remain separate pending gates. The actual mixed-angular and energetic
+capture and full Rust decoder above have now passed, as have the42 old-policy
+regressions and127 Python checks. Actual both-worker ACK/rejoin, new-policy
+all-alive coverage and full gateway suite remain separate pending gates. New
+catalog8 actual normal-linear coverage also requires a separately source-bound
+fixture; retained catalog7 normal-object passes do not establish that branch.
+The actual mixed-angular and energetic
 wheel-only fixtures are still unqualified/NOT_RUN.
 
 Native clients/input: NOT_RUN. Native owner acceptance: NOT_RUN until the owner
@@ -147,5 +208,5 @@ pressure and excluded compound families remain OPEN. No merge or push.
 
 Rollback: retain candidate14 and all receipts; revert only this unaccepted
 Stage-B source slice to its saved base if integration fails. No installation
-or shared service was changed. Next step: reviewed old-policy regression and
-the separately frozen actual paired-worker/ACK/rejoin gate.
+or shared service was changed. Next step: the separately frozen actual
+paired-worker/ACK/rejoin and all-alive gates.

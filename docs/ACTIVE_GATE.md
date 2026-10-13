@@ -1,3 +1,16 @@
+# P05B — candidate15 legacy42/Python127 PASS; paired and all-alive next
+
+Actual42 old-mode workers/21 exact pairs pass; all owned exit0, zero historical
+sign masks. Independent raw review and first-eight Decimal90 audit pass.
+Python99+28 disjoint tests pass, zero skips. Details and limitations:
+[runtime report](research/P05B_ANGULAR_RUNTIME_GATE.md).
+
+Continue reviewed bounded new-policy paired ACK/rejoin and all-alive gates.
+Old catalog7 normal-object parity does not prove catalog8 normal-linear branch;
+source-bound actual coverage remains separate. No fixture tuning or native
+input. Final full gateway and fresh morning binding follow applicable gates.
+Owner after2026-10-14 09:00 NOT_RUN; no merge/push. Preserve14 and dirty P09B.
+
 # P05B — candidate15 first-eight and full decoder PASS; paired runtime next
 
 Actual private8 workers PASS scoped contact/chain gates and exact repeats;

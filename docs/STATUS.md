@@ -1,3 +1,19 @@
+## 2026-10-14 — P05B candidate15 legacy42 and Python127 PASS
+
+All42 actual old-catalog regression workers exited0:21 exact repeated cases,
+7524 advances, full physical parity with14;14 handling runs also raw-byte
+identical. Independent review verifies215 pins/118918 scalars, zero historical
+unknown zero signs. Separate Python invocations pass99+28 disjoint tests,
+zero skips. First-eight independent Decimal90 audit confirms actual angular
+energy debit and the full-body passage checks. See
+[runtime gate](research/P05B_ANGULAR_RUNTIME_GATE.md).
+
+Old catalog7 compatibility is distinct from new catalog8 normal-linear proof.
+Next: reviewed bounded actual paired ACK/rejoin and all-alive gates, then the
+remaining applicable automatic coverage and fresh full gateway suite.
+Native owner after09:00 remains NOT_RUN; no merge/push or client/input.
+Candidate14 rollback, all failed evidence and unrelated dirty P09B preserved.
+
 ## 2026-10-14 — P05B candidate15 first-eight and full frame decode PASS
 
 Reviewed C#/Rust integration is now in the card branch. Canonical worker15
