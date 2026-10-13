@@ -157,9 +157,8 @@ impl Session {
             events.push(format!("SHARED_ANNOUNCED battle={} session={} rows=2 own={} areas={} parts={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(c.slot)?, c.announced_areas, c.announcement_parts.len()));
             return Ok(());
         }
-        if payload.first() == Some(&8) {
-            if !matches!(c.phase, Phase::Entities | Phase::Driving)
-                || c.announcement.is_none()
+        if payload.first() == Some(&8) && c.phase == Phase::Entities {
+            if c.announcement.is_none()
                 || payload.len() > 7*(2+if world.destructible_enabled(){1}else{c.announced_areas}) || payload.len() % 7 != 0 { return Err(bad()); }
             // Original requests can piggyback vehicles and area controllers.
             // Queue the complete envelope first, then release only as much as
@@ -209,6 +208,10 @@ impl Session {
             count += 1; if count > 16 { return Err(bad()); }
             let id = payload[at];
             let size = match id {
+                // Native clients may piggyback area requests with their first
+                // aim/movement envelope after READY.  A request is the one
+                // fixed seven-byte VAR2 record; it has no length field.
+                8 => 7,
                 6 => 1, 2 => 17, 3 => 22,
                 0x88 | 0x89 | 0x8a | 0x8d | 0x8e | 0x8f | 0x0d | 0x0f | 0x99 => {
                     if payload.len() - at < 3 { return Err(bad()); }
@@ -217,7 +220,23 @@ impl Session {
                 _ => return Err(bad()),
             };
             let raw = payload.get(at..at+size).ok_or_else(bad)?; at += size;
-            if id == 0x0d {
+            if id == 8 {
+                if c.tree_areas.len()!=c.areas.len(){c.tree_areas=vec![Vec::new();c.areas.len()];}
+                if let Some(area)=destructible_wire::area_request(raw,c.areas.len()) {
+                    if area >= c.announced_areas || c.areas[area].0.is_some() || c.pending_area_requests.contains(&area) { return Err(bad()); }
+                    if world.fragiles.is_none() { return Err(bad()); }
+                    c.pending_area_requests.push_back(area);
+                } else if destructible_wire::is_request(raw) {
+                    if !world.destructible_enabled() || c.area_creation.is_some() || c.pending_area_scene { return Err(bad()); }
+                    c.pending_area_scene = true;
+                } else {
+                    let slots = wire::entity_requests(raw)?.ok_or_else(bad)?;
+                    for slot in slots {
+                        if c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
+                        c.pending_entity_requests.push_back(slot);
+                    }
+                }
+            } else if id == 0x0d {
                 if world.actors.get(c.slot).is_none_or(|actor| actor.health != 0)
                     || !c.correction || !c.binding.is_some_and(|(_,ack)| ack) { return Err(bad()); }
                 wire::postmortem_rebind(raw,c.slot)?;
