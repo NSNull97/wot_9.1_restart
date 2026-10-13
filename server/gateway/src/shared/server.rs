@@ -22,6 +22,9 @@ mod fracture_real_tests;
 #[cfg(test)]
 #[path="server_is7_real_tests.rs"]
 mod is7_real_tests;
+#[cfg(test)]
+#[path="server_whole_fracture_real_tests.rs"]
+mod whole_fracture_real_tests;
 
 #[derive(Default)]
 struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
@@ -549,7 +552,7 @@ pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_pa
         let worker=crate::map_drive_worker091::CatalogSpec::load(&pool.local_root,&path.parent().ok_or_else(model::bad)?.join(&catalog.worker_file),&catalog.worker_sha256)?;
         if catalog.map!=map||worker.map_id()!=map||catalog.contacts!=worker.contacts()||worker.version()!=catalog.version+1||worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
             a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=b.kind.worker_kind()
-            ||a.ram_energy_j()!=if catalog.version==4&&matches!(b.kind,super::fragiles::ObjectKind::MovementFragile){super::fragiles::RAMMING_MIN_ENERGY_J as u32}else{0}){return Err(model::bad().into());}
+            ||a.ram_energy_j()!=if catalog.version==5||catalog.version==4&&matches!(b.kind,super::fragiles::ObjectKind::MovementFragile){super::fragiles::RAMMING_MIN_ENERGY_J as u32}else{0}){return Err(model::bad().into());}
         Some((catalog,worker))
     }else{None};
     serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle)

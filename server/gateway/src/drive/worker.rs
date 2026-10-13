@@ -764,7 +764,8 @@ pub(crate) mod tests {
         }v
     }
     #[test]fn fracture_prepared_reply_requires_commit_inclusion_before_next_advance(){
-        let now=Instant::now();let spec=catalog::tests::fracture_spec(2);let empty=Scene::new(&spec,&[]).unwrap();
+        for spec in [catalog::tests::fracture_spec(2),catalog::tests::whole_spec(2)] {
+        let now=Instant::now();let empty=Scene::new(&spec,&[]).unwrap();
         let(mut worker,send,recv)=fake_worker(now);worker.catalog=Some(spec.clone());worker.catalog_scene=Some(empty.clone());
         send.send(Event::Line(now,serde_json::to_vec(&good_fracture_state(0,&spec,&empty,false)).unwrap())).unwrap();
         worker.poll(now).unwrap();worker.advance(Input::STOP,now).unwrap();
@@ -783,9 +784,11 @@ pub(crate) mod tests {
         send.send(Event::Line(now,serde_json::to_vec(&ack).unwrap())).unwrap();assert!(worker.poll(now).unwrap().is_none());
         assert!(worker.prepared_ids().is_empty());assert_eq!(worker.catalog_scene(),Some(&committed));
         worker.take_catalog_ack().unwrap();assert_eq!(worker.advance(Input::STOP,now).unwrap(),2);
+        }
     }
     #[test]fn fracture_state_filters_unreceipted_energy_contacts_and_rejects_wrong_event(){
-        let spec=catalog::tests::fracture_spec(2);let scene=Scene::new(&spec,&[]).unwrap();
+        for spec in [catalog::tests::fracture_spec(2),catalog::tests::whole_spec(2)] {
+        let scene=Scene::new(&spec,&[]).unwrap();
         let mut v=good_fracture_state(1,&spec,&scene,true);
         let mut denied=v["state"]["object_contacts"][0].clone();denied["object_id"]=2.into();
         v["state"]["object_contacts"].as_array_mut().unwrap().push(denied);
@@ -796,6 +799,7 @@ pub(crate) mod tests {
         changed["event"]="state".into();let state=parse(&changed).unwrap();assert!(state.object_contacts.is_empty());
         changed["state"].as_object_mut().unwrap().remove("fractures");assert!(parse(&changed).is_err());
         changed=v;changed["state"]["fractures"][0]["energy_j"]=1.into();assert!(parse(&changed).is_err());
+        }
     }
     #[test]fn catalog_ready_is_bound_to_its_selected_map_not_only_config_hash(){
         use crate::map_profile091::MapId;

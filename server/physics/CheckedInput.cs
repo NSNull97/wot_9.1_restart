@@ -31,7 +31,7 @@ internal static class CheckedInput
     {
         public int MaxObjects => Version >= 4 ? MaxExtendedCatalogObjects : Contacts ? MaxContactCatalogObjects : MaxCatalogObjects;
         public int MaxRemoved => Version >= 4 ? MaxExtendedRemovedObjects : Contacts ? MaxContactRemovedObjects : MaxRemovedObjects;
-        public bool Fractures => Version == 5;
+        public bool Fractures => Version is 5 or 6;
         public int IpcVersion => Fractures ? 5 : Contacts ? 4 : 3;
     }
     public sealed record Scene(uint[] Ids, string Hash) { public uint Version => (uint)Ids.Length; }
@@ -62,17 +62,18 @@ internal static class CheckedInput
         var d = doc.RootElement;
         var source = CatalogProfile(map);
         int version = d.GetProperty("version").GetInt32();
-        bool contacts = version is 3 or 4 or 5;
+        bool contacts = version is 3 or 4 or 5 or 6;
         if (version == 2 && catalogBytes.Length > MaxLegacyCatalogBytes)
             throw new InvalidDataException("legacy catalog exceeds 128 KiB");
-        if (version == 5)
+        if (version is 5 or 6)
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "contacts", "objects", "ram_policy");
         else if (contacts)
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "contacts", "objects");
         else
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "objects");
-        if ((version != 2 && version != 3 && version != 4 && version != 5) || (contacts && d.GetProperty("contacts").ValueKind != JsonValueKind.True) ||
+        if ((version != 2 && version != 3 && version != 4 && version != 5 && version != 6) || (contacts && d.GetProperty("contacts").ValueKind != JsonValueKind.True) ||
             (version == 5 && d.GetProperty("ram_policy").GetString() != FractureResponse.Policy) ||
+            (version == 6 && d.GetProperty("ram_policy").GetString() != FractureResponse.WholeObjectPolicy) ||
             d.GetProperty("profile").GetString() != "test_lab" ||
             d.GetProperty("map").GetString() != map ||
             d.GetProperty("physics_manifest_sha256").GetString() != source.PhysicsHash ||
@@ -88,7 +89,7 @@ internal static class CheckedInput
         uint previous = 0;
         foreach (var row in rows.EnumerateArray())
         {
-            if (version == 5) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j");
+            if (version is 5 or 6) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j");
             else if (contacts) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind");
             else Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision");
             uint id = row.GetProperty("object_id").GetUInt32();
@@ -97,8 +98,12 @@ internal static class CheckedInput
             var revision = row.GetProperty("object_revision").GetString()!; Sha256(revision);
             string kind = contacts ? row.GetProperty("kind").GetString()! : "fragile";
             if (kind is not ("tree" or "fragile")) throw new InvalidDataException("catalog object kind");
-            int energy = version == 5 ? row.GetProperty("ram_energy_j").GetInt32() : 0;
-            if (energy is not (0 or FractureResponse.EnergyJ) || (energy > 0 && kind != "fragile"))
+            int energy = version is 5 or 6 ? row.GetProperty("ram_energy_j").GetInt32() : 0;
+            // Catalog6 extends the same bounded normal-energy response to all
+            // source-joined whole objects. Catalog5 keeps its fence-only
+            // projection, including zero-energy trees and ordinary fragiles.
+            if (version == 6 ? energy != FractureResponse.EnergyJ :
+                energy is not (0 or FractureResponse.EnergyJ) || (energy > 0 && kind != "fragile"))
                 throw new InvalidDataException("catalog fracture energy/kind mismatch");
             if (id <= previous || instance < 0 || instance >= source.InstanceCount || !instances.Add(instance) ||
                 first < 0 || count < 1 || count > 4096 || (long)first + count > source.TriangleCount)

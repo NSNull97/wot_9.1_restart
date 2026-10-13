@@ -1,4 +1,37 @@
-# P05B — native handling owner gate
+# P05B — final handling and ram automatic gates passed; owner pending
+
+Final candidate07/gateway03:728 gateway tests,20 paired ram cases,36 flat
+runs+2 calibrations,10 legacy cases,9 historical byte comparisons,83 component
+checks,10 metric tests and28 malformed worker/catalog checks PASS. Python96
+PASS/one Windows symlink NOT_RUN. Exact whole-object response now includes
+626 trees,9 crates/whole fragiles and403 fences; bounded pair prepass fixes
+oblique first-manifold rejection. Mass/speed/angle and surviving walls tested.
+
+All automatic proof, retained failures and commands are in
+[P05B research](research/P05B_TRACKED_HANDLING.md). This does not close300
+excluded fragiles/other compound families, historical physics or production
+capacity. Disk-full gateway02 did not run tests; NTFS compression preserved
+all files and fresh gateway03 passed. Required native owner acceptance keeps
+the card in its branch.
+
+Next: root A/B MS-1 on Prohorovka using candidate07 pools and gateway03 via
+`local/evidence/20261013-p05b-tracked-handling-01/native-handling-ram07/`,
+then a fresh homogeneous IS-7 run. Owner checks stationary/moving/reverse
+steering, braking, slope, tree/crate/fence impact and native passage. All
+installs/namespaces/processes must use exact binding and restoration ledgers.
+
+# P05B — tree/crate response correction before native handling gate (history)
+
+Owner corrected the scope: only fence-chain passage was accepted. Current
+trees/crates still undergo rigid response before deletion and can stop IS-7.
+Native launch remains paused; no P05B client installations/processes started.
+Preserve steering checkpoint491bde5 and extend the existing verified1038-object
+contact response with explicit domain5/worker6 normal-energy policy. Require
+measured impact slowdown, mass/speed/angle, walls and both-worker barriers.
+Unimplemented compound coverage is a separate existing P06R debt. Next: finish
+these automatic checks, then prepare the requested two-tank manual comparison.
+
+# P05B — steering checkpoint, native handling owner gate pending
 
 **PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN.** Current branch
 `codex/p05b-tracked-handling` implements versioned tracked steering for MS-1

@@ -333,6 +333,30 @@ fn vehicle_contact_uses_server_mass_and_closing_speed_energy_floor() {
 }
 
 #[test]
+fn whole_contact_policy_admits_slow_heavy_impacts_but_not_light_or_tangent_taps() {
+    let mut value=contact_manifest();value["version"]=json!(5);value["ram_policy"]=json!(WHOLE_RAM_POLICY);
+    value["area_chunks"]=json!([31354,31355]);
+    let catalog=Arc::new(parse(&value).unwrap());
+    for id in [1513,1529] {
+        let mut heavy=State::new(catalog.clone());
+        let event=heavy.ram_contact(id,0,1001,1,[0.;3],[0.,0.,1.],[0.,0.,0.8],68190.,"hull".into()).unwrap().unwrap();
+        assert_eq!(event.fallen_tree.is_some(),id==1529);assert_eq!(heavy.scene_version(),1);
+        assert!(heavy.ram_contact(id,0,1002,1,[0.;3],[0.,0.,1.],[0.,0.,0.8],68190.,"hull".into()).unwrap().is_none());
+        for (mass,velocity) in [(4691.,[0.,0.,0.8]),(68190.,[5.,0.,0.]),(68190.,[5.,0.,-2.]),(68190.,[5.,0.,0.1])] {
+            let mut state=State::new(catalog.clone());
+            assert!(state.ram_contact(id,0,1001,1,[0.;3],[0.,0.,1.],velocity,mass,"hull".into()).unwrap().is_none());
+            assert_eq!(state.scene_version(),0);
+        }
+        let mut legacy=State::new(contact_catalog());
+        assert!(legacy.ram_contact(id,0,1001,1,[0.;3],[0.,0.,1.],[0.,0.,0.8],68190.,"hull".into()).unwrap().is_none());
+    }
+    for policy in [json!(FENCE_RAM_POLICY),json!("historical"),Value::Null] {
+        let mut wrong=value.clone();wrong["ram_policy"]=policy;assert!(parse(&wrong).is_err());
+    }
+    let mut wrong=value;wrong["version"]=json!(4);assert!(parse(&wrong).is_err());
+}
+
+#[test]
 fn tree_contact_packs_immutable_fallen_value_and_excludes_tree() {
     let mut state=State::new(contact_catalog());
     let event=state.ram_contact(1529,1,1001,2,[1.,2.,3.],[1.,0.,0.],[2.,0.,0.],4691.,"hull".into()).unwrap().unwrap();

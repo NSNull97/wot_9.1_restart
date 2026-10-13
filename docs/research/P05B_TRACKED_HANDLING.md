@@ -6,6 +6,193 @@ Status: **PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN**.
 Evidence root (E below): `local/evidence/20261013-p05b-tracked-handling-01/`.
 This report does not close general P05 reconciliation or historical fidelity.
 
+## Owner correction and whole-object contact response
+
+After checkpoint491bde5, owner explicitly corrected the phrase "accepted ram":
+only continuous fence-chain passage was accepted. Not all expected objects
+break, and trees/crates can stop even IS-7. Native preparation was held before
+any installation/start. The previous tree regression checked contact/removal
+and eventual passage, so it could pass despite an immediate near-zero speed.
+
+VERIFIED code/catalog defect:403 fences had pre-solver8000J response while
+626 trees and9 whole fragiles had zero projected response and therefore rigid
+collision before post-step removal. Candidate04 traces OBSERVE this: at about
+3m/s the new focused fixture has MS-1 crate/tree troughs.146/.095m/s and IS-7
+.040/.009m/s. This validates the owner concern for the tested source objects.
+
+Worker catalog6/domain5 now explicitly selects
+`test_lab-whole-object-energy-v1`, preserving IPC5 prepared receipts and the
+both-worker publication barrier. All existing1038 source/native identities
+receive the same retained approximate8000J resistance. New mode drops the
+independent total-speed1m/s floor; it requires sufficient positive normal
+kinetic energy. Normal-energy reduction preserves tangential velocity and
+cannot refund a surviving wall's impulse. Old catalogs preserve old behavior.
+8000J is not a historical reconstruction or proof of equal real resistance.
+
+VERIFIED source coverage (`E/ram-audit/REPORT.md`, `coverage.json`):3904 imported
+instances comprise2943 trees,712 fragiles,71 fallingAtoms,58 structures and120
+undefined. Existing1038 supported rows are unchanged.300 excluded fragiles
+need replacement/additional visuals;255 also have mixed/unmatched materials
+and182 incomplete whole-span movement coverage (reasons overlap). These
+include some carts, logs and crate groups. Whole-body deletion would erase
+surviving collision, so these remain the open P06R partial-object contract.
+All2317 excluded tree rows have zero movement triangles; they are not missing
+solid tree colliders. FallingAtoms and structures need separate native/state
+and collision lifecycles; undefined rows cannot be presumed destructible.
+
+The original client predicts contact damage using its mass/speed calculation
+and scaled reference HP, but its historical authoritative momentum-loss law
+is UNKNOWN. No HP-to-resistance formula was invented. Original shot HP/native
+indices/spans remain byte-equivalent. `tree-speed0-source.json` verifies that
+the newly reachable slow tree-fall bucket0 still starts animation at.45rad/s
+(`(discreteInitSpeed+1)*.45`), with the corrected pi/2 pitch constraint intact.
+
+Importer20/20 PASS, including exact old export bytes. New manifest SHA
+`944ca90d9b8855fbba2206abc0d32138b9807106afb4c5d60c270d2257bd87c8`;
+worker catalog SHA
+`6d9a57de3b86f1e3b9a66390ff0968677b9a29e9238ca8559158d99dfb3dce16`.
+Candidate05 DLL SHA
+`7b61da99e7dc5969de8fbb5b7197d0bde9537cef4e11d7ad82bd8bcab4eee7be`.
+36 final flat runs plus two calibrations match candidate04c state/input/
+diagnostic bytes exactly (`E/ram-audit/flat05-comparison.json`). Legacy10 paired
+cases pass;9 available historical trajectories remain exact. Affected Python
+96 PASS/one symlink NOT_RUN of97; worker config/output16 and new catalog12
+negative checks PASS. `E/python-final05.log`, `legacy-regression05/`,
+`legacy-state-comparison05.json`, `worker-boundaries05/` and
+`whole-catalog-negatives05/` retain evidence. Focused contact/runtime gates are
+recorded separately below when complete; no native acceptance is implied.
+
+Additional changed files: `server/physics/{CheckedInput,FractureResponse}.cs`,
+physics README; gateway worker/catalog/fracture, shared fragiles/server and
+their tests; new `server_whole_fracture_real_tests.rs`; compound importer/tests;
+P06R scope clarification. Private source-backed fixture failures are retained,
+including blocked approaches/spawn settle and initial too-short low-speed
+passage duration. They do not justify changing runtime thresholds to pass.
+
+## Final contact candidate07 and retained failures
+
+Candidate05 exposed a second real defect: MS-1 hits fence3167 obliquely with
+12.667kJ normal energy but receives no fracture and stops. The first weak
+manifold cached rejection for the complete object/substep. Retrying admission
+on a later manifold could leave an earlier rigid constraint, so catalog6 now
+uses a bounded exact-body-pair prepass before the first callback returns.
+The actual Added/Persisted hull callback is mandatory; a query alone never
+destroys anything. The read-only NoLock native shape query uses the world's
+speculative separation and active-edge setting. It copies one strongest
+closing contact with stable tie breaking, then shares the decision across
+all manifolds. The receipt may carry that actual query contact rather than
+the triggering callback manifold. This is explicit approximate policy.
+
+Limits:4096 hits per source body query,32 distinct decisions per substep,
+32 debits per advance. Candidate07 adds an early owner-thread/fault/count
+guard before the mutable query; successful trajectories match06 exactly.
+83 component checks (including10,000 seeded reducer vectors) verify actual
+pinned native query axis/world-space coordinates, collection callback API,
+selection order, repetition, separation, thread and capacity failures.
+Evidence: `E/controller-audit/whole-prepass-component01/receipt.json`.
+
+Final worker DLL SHA256:
+`956cf0a898c84fa9c4e9180dd52f3f9bede21945ee12e01ae498a697796004bb`.
+Build: `local/build/server/physics-p05b-candidate07`.
+Full worker artifact manifest SHA256:
+`8bf6be66b8a7021a8362a71021ce8f5a53bef9a7bd61edfc77da3e51d21856d5`.
+Native pools are `E/pools-ms1-07/pool-ms1-handling.json` and
+`E/pools-is7-07/pool-is7-handling.json`; exact source geometry/profile pins
+remain unchanged. Final private helpers: `E/native-handling-ram07/`.
+Earlier helper directories are preserved superseded drafts, not launch pins.
+
+At approximately3m/s incoming speed, the sampled minimum longitudinal
+speed in the first0.5s after target contact is:
+
+| Source target | MS-1 before / candidate07, m/s | IS-7 before / candidate07, m/s |
+|---|---:|---:|
+| Crate3618 | .146 / 2.385 | .040 / 2.949 |
+| Tree3680 | .095 / 2.361 | .009 / 2.976 |
+
+All20 final paired real-Jolt cases pass:12 normal/low-speed,4 oblique and4
+object-plus-solid-wall controls,40 owned workers exited0. Each energetic
+clear case requires exactly one debit, both ACKs before the next advance,
+no post-commit target contact and full projected body passage. Comparable
+normal input speeds differ by only.005-.015m/s; MS-1 loses about.635-.640m/s
+normal speed to the resistance versus IS-7's.0393-.0395m/s. Three low-speed
+MS-1 impacts stay solid, while three IS-7 impacts below1m/s break and pass.
+For the oblique tree pair, normal speeds1.562/1.587m/s yield5.719/85.882kJ:
+MS-1 does not break it; IS-7 breaks it and preserves tangential velocity.
+All four surviving-wall controls still stop the tank; no solver-speed refund.
+The identical formerly failing fence3167 config now keeps2.283m/s and passes.
+
+`E/ram-regression/final07-summary02/receipt.json` pins all commands, files,
+20 exact06-to07 state/contact/receipt comparisons and10 metric/mutation tests.
+Its SHA256 is `d5dc375bfe925e3eba6419f49dd19f8235ff111b104e5a59fe8f2affc18b4ee2`.
+These controlled cases retain the source geometry but isolate the target by
+initially removing the other catalog objects. They directly replay scene
+policy over real worker IPC; the separate Rust runtime gate uses all1038
+intact objects and actually checks domain publication and both-worker ACKs.
+Observation is10Hz plus exact fracture-substep before/after vectors. Absence
+of any zero-speed instant between samples is UNKNOWN. No native visual claim.
+
+Metric clarification: the first classifier incorrectly expected every angled
+hit to destroy the object; final expectation uses the fixed8000J normal-energy
+threshold. The projected-plane no-passage assertion was also restricted to
+low-speed frontal controls: a glancing deflection can legitimately go around
+an intact object. Subthreshold angled controls require actual hull contact,
+paired replay, no removal/debit and nontrivial tangent. This change did not
+rescue a penetration failure: the retained MS-1/tree3680 cases in05/06/07 all
+have `full_body_passage=false`, so the earlier assertion also passes on them.
+Original and final runner snapshots preserve both rules.
+
+Final07 checks also pass:36 flat runs plus2 calibrations with114 exact
+comparisons against04c/05b/06b;10 paired legacy cases;9 available historical
+state files byte-identical (IS-7 chain historical file absent, NOT_RUN);
+16 real worker config/output and12 malformed catalog rejections. Python97
+discovered:96 PASS and one Windows symlink fixture NOT_RUN. Layout97 source
+files/22 relocations PASS. Evidence: `E/ram-audit/flat07-comparison.json`,
+`legacy-regression07/`, `legacy-state-comparison07.json`, `worker-boundaries07/`,
+`whole-catalog-negatives07/`, `python-final06.log`, `layout-final07.json`.
+
+Full canonical gateway03 suite:728/728 PASS, including four final07 real
+whole-object source-map cases through receipt parser, actual domain/fallenTrees
+state and both-worker publication barrier. Its executable SHA256 is
+`dd93bff0107a31b445bb28e238bb56ea4d65af66b6f9d903dc6b2a3f44a3ebf2`.
+Build receipt: `local/build/server/gateway-p05b03/result.json`; raw commands
+and logs remain beside it. Fresh real-case proofs are in `E/ram-gateway-real/`.
+Gateway02 never
+ran tests: Rust compilation failed with Windows os112 (disk D full), and
+even its result.json could not be written. The tiny attempted
+`controller-audit/whole-prepass-receipt.json` is0 bytes and INVALID; use the
+completed component receipt above. Automatic approval rejected deleting
+intermediate caches, so no deletion occurred. NTFS compression of this card's
+five gateway target directories and evidence preserved content and freed
+about1.67GB; retained executable and final RAM receipt hashes matched.
+`E/ntfs-compression01.json` and per-directory logs record that operation.
+Fresh gateway03 uses `CARGO_INCREMENTAL=0`;260 runtime source hashes were
+frozen in `E/final-source-before-gateway03.json`. Source/build history remains.
+
+Other retained failures: gateway targeted01 had a crate spawn intersecting a
+surviving fence; only the approach fixture was corrected. Candidate05 oblique
+failure is retained before the actual repair. Tree3344 approach and IS-7 fence
+3307 full passage remain failed because of surrounding static geometry; they
+are not counted as accepted routes. First final RAM report consolidation
+failed on a str/Path helper after tests; the error remains in
+`ram-regression/final07-summary/failure.json`, and fresh summary02 succeeded.
+
+Reproduction commands (fresh output names required; do not overwrite evidence):
+
+```powershell
+python -B -X utf8 server/build.py physics --out local/build/server/physics-p05b-candidate07
+$env:CARGO_INCREMENTAL = '0'
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p05b03
+python -B -X utf8 local/evidence/20261013-p05b-tracked-handling-01/run_map_regression.py --build D:/WoT_9.1_Server/local/build/server/physics-p05b-candidate07 --out legacy-regression07 --legacy
+python -B -X utf8 local/evidence/20261013-p05b-tracked-handling-01/ram-regression/ram_matrix.py --out local/evidence/20261013-p05b-tracked-handling-01/ram-regression/candidate07-canonical01 --build local/build/server/physics-p05b-candidate07 --dll 956cf0a898c84fa9c4e9180dd52f3f9bede21945ee12e01ae498a697796004bb --mode normal --mode low
+```
+
+All additional oblique/wall/flat/component commands are pinned in their
+receipts. Manual setup/stop/restore commands are in the private final helpers'
+README. Unsupported compound coverage, historical resistance calibration,
+100-battle production capacity and native owner acceptance remain unclosed.
+Rollback remains receipt-owned stop, installation/namespace restore, then
+the accepted P03M worker/pools/catalog; do not reset unrelated changes.
+
 ## Problem, evidence and interpretation
 
 Owner accepted the IS-7 identity/profile while reporting a shared driving

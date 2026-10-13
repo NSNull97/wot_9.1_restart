@@ -124,6 +124,7 @@ try
             MaxBodies = Math.Max(32, (catalog?.Entries.Length ?? 0) + 8), MaxBodyPairs = 1024, MaxContactConstraints = 1024,
             ObjectLayerPairFilter = pairs, BroadPhaseLayerInterface = broad, ObjectVsBroadPhaseLayerFilter = filter });
         var bodies = world.BodyInterface;
+        using var pairPrepass = catalog?.Version == 6 ? new WholeObjectContactPrepass(world.Settings) : null;
         var staticBodies = new List<BodyID>();
         using var terrain = CheckedInput.LoadMesh(root, c.GetProperty("terrain"), map);
         MeshShape? selectedShape = null;
@@ -212,6 +213,16 @@ try
             {
                 uint target = (tankFirst ? body2.ID : body1.ID).ID;
                 uint objectId = catalogBodies.First(x => x.Value.ID == target).Key;
+                if (pairPrepass != null && fracture.NeedsWholeObjectPrepass(objectId))
+                {
+                    pairPrepass.Query(world, tankFirst ? body1 : body2, tankFirst ? body2 : body1,
+                        preStepVelocity, point, normal);
+                    if (pairPrepass.Fault) { fracture.CallbackValueFault(); return; }
+                    // The receipt may use a stronger actual shape-query contact
+                    // than the triggering manifold. Every manifold in this pair
+                    // sees the same first decision, before any solid constraint.
+                    point = pairPrepass.Point; normal = pairPrepass.Normal;
+                }
                 if (fracture.TryAdmit(objectId, point, normal)) settings.IsSensor = true;
             }
         }

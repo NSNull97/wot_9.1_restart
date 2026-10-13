@@ -6,6 +6,16 @@ Branch: `codex/p06r-compound-destructibles`.
 
 ## Accepted scope — 2026-10-13
 
+Later owner clarification during P05B: the accepted fence-chain run does not
+accept all object coverage or impact momentum. Trees/crates still stop even
+IS-7 because only403 fences got the pre-solver response. The bounded repair
+for the existing1038 whole-object identities is tracked in
+[P05B](P05B_TRACKED_HANDLING.md); P06R's remaining partial/replacement coverage
+is still open. Source inventory proves300 excluded fragiles,71 fallingAtoms,
+58 structures and120 undefined instances.2317 additional source tree rows have
+no movement triangles, rather than missing solid colliders. Evidence:
+`local/evidence/20261013-p05b-tracked-handling-01/ram-audit/coverage.json`.
+
 **PASS_OWNER_FENCE_CHAIN_TEST_LAB.** The owner's priority update below narrowed
 this deliverable to the 403 source-complete movement-only fences and continuous
 chain passage, preserving accepted trees/whole fragiles. Owner confirmed:

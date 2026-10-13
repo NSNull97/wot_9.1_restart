@@ -21,6 +21,7 @@ pub const RAMMING_MIN_MASS_KG:f32=1000.;
 pub const RAMMING_MAX_MASS_KG:f32=100000.;
 pub const RAMMING_MIN_ENERGY_J:f32=8_000.;
 pub const FENCE_RAM_POLICY:&str="test_lab-fence-energy-v1";
+pub const WHOLE_RAM_POLICY:&str="test_lab-whole-object-energy-v1";
 /// Original animator's no-ground fallback, used as an explicit test_lab
 /// flat-ground policy. Zero locks the tree upright. Terrain/obstacle-specific
 /// limits require tree root/height sampling and are not implemented here.
@@ -63,15 +64,15 @@ impl Catalog {
         if format!("{:x}",Sha256::digest(bytes))!=sha{return Err(bad());}
         let v=crate::map_drive_worker091::json_catalog_extended(bytes,1024*1024)?;
         let base_fields=["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects"];
-        if v["version"].as_u64()==Some(4){
+        if matches!(v["version"].as_u64(),Some(4|5)){
             fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts","area_chunks","ram_policy"])?;
-            if v["ram_policy"]!=FENCE_RAM_POLICY{return Err(bad());}
+            if v["ram_policy"]!=if v["version"].as_u64()==Some(5){WHOLE_RAM_POLICY}else{FENCE_RAM_POLICY}{return Err(bad());}
         } else if v["version"].as_u64()==Some(3){fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts","area_chunks"])?;}
         else if v.get("contacts").is_some(){fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts"])?;}else{fields(&v,&base_fields)?;}
         let map=MapId::from_asset(v["map"].as_str().ok_or_else(bad)?)?;
         let profile=map.spec();
         let version=v["version"].as_u64().ok_or_else(bad)?;
-        if !(1..=4).contains(&version)||v["profile"]!="test_lab"||v["destructibles_sha256"]!=DEFINITIONS_SHA
+        if !(1..=5).contains(&version)||v["profile"]!="test_lab"||v["destructibles_sha256"]!=DEFINITIONS_SHA
             ||v["physics_manifest_sha256"]!=profile.physics_manifest_sha256||v["projectile_manifest_sha256"]!=profile.projectile_manifest_sha256{return Err(bad());}
         if version==1 && bytes.len()>131072{return Err(bad());}
         if version<3 { crate::map_drive_worker091::json_catalog(bytes,1024*1024)?; }
@@ -202,19 +203,20 @@ impl State {
             ||self.latest_tick().is_some_and(|last|last>tick){return Err(bad());}
         let index=self.catalog.objects.iter().position(|o|o.object_id==object_id).ok_or_else(bad)?;let object=&self.catalog.objects[index];
         if kind=="wheel" { return Ok(None); }
-        let fence_response=self.catalog.version==4&&matches!(object.kind,ObjectKind::MovementFragile);
-        let speed_squared=if fence_response {velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}
+        let whole_response=self.catalog.version==5;
+        let energy_response=whole_response||self.catalog.version==4&&matches!(object.kind,ObjectKind::MovementFragile);
+        let speed_squared=if energy_response {velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}
             else {f64::from(velocity.iter().map(|v|v*v).sum::<f32>())};
-        if speed_squared<1. { return Ok(None); }
+        if !whole_response&&speed_squared<1. { return Ok(None); }
         if self.health[index]==0||self.fallen[index].is_some(){return Ok(None);}
         // `normal` is oriented from the tank into the object. Positive
         // signed dot therefore means the hull is closing on the object.
         // IPC5 admission uses doubles over the exact serialized f32 components
         // in C# and Rust. Retain historical test_lab arithmetic in old profiles.
-        let closing=if fence_response {velocity.iter().zip(normal).map(|(v,n)|f64::from(*v)*f64::from(n)).sum::<f64>()}
+        let closing=if energy_response {velocity.iter().zip(normal).map(|(v,n)|f64::from(*v)*f64::from(n)).sum::<f64>()}
             else {f64::from(velocity[0]*normal[0]+velocity[1]*normal[1]+velocity[2]*normal[2])};
         if closing<0.1{return Ok(None);}
-        let energy_j=if fence_response {0.5*f64::from(mass_kg)*closing*closing}
+        let energy_j=if energy_response {0.5*f64::from(mass_kg)*closing*closing}
             else {f64::from(0.5*mass_kg*(closing as f32)*(closing as f32))};
         if energy_j<f64::from(RAMMING_MIN_ENERGY_J){return Ok(None);}
         let scene=self.scene_version();let fallen_tree=if matches!(object.kind,ObjectKind::Tree){

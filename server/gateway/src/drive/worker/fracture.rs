@@ -1,8 +1,9 @@
-//! Verified receipts for the explicitly approximate IPC5 fence policy. This
+//! Verified receipts for the explicitly approximate IPC5 contact policies. This
 //! validates bounded server-worker output; it does not trust client impacts.
 use super::*;
 
 pub(super) const POLICY: &str = "test_lab-fence-energy-v1";
+pub(super) const WHOLE_POLICY: &str = "test_lab-whole-object-energy-v1";
 const ENERGY: u32 = 8_000;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -28,9 +29,9 @@ fn close(a: [f32; 3], b: [f32; 3]) -> bool {
     // differently. Tolerance is for arithmetic only, not receipt identities.
     a.iter().zip(b).all(|(a,b)| (*a-b).abs() <= 0.0001*(1.+a.abs().max(b.abs())))
 }
-fn eligible(v: [f32; 3], n: [f32; 3], mass: f32) -> bool {
+fn eligible(v: [f32; 3], n: [f32; 3], mass: f32, whole_response: bool) -> bool {
     let closing = dot(v,n);
-    (1. ..=625.).contains(&dot(v,v)) && closing >= 0.1
+    (if whole_response{0.}else{1.} ..=625.).contains(&dot(v,v)) && closing >= 0.1
         && 0.5*f64::from(mass)*closing*closing >= f64::from(ENERGY)
 }
 fn reduced(v: [f32; 3], n: [f32; 3], mass: f32) -> [f32; 3] {
@@ -54,7 +55,8 @@ pub(super) fn parse(value: &Value, contacts: &[ObjectContact], spec: &CatalogSpe
         let order = uint(&row["order"])?;
         if !ids.insert(id) || !(1..=6).contains(&substep) || order!=index as u64+1
             || uint(&row["energy_j"])?!=u64::from(ENERGY)
-            || !spec.entries().iter().any(|entry|entry.object_id()==id && entry.kind()=="fragile" && entry.ram_energy_j()==ENERGY) {
+            || !spec.entries().iter().any(|entry|entry.object_id()==id
+                && (entry.kind()=="fragile" || spec.version()==6 && entry.kind()=="tree") && entry.ram_energy_j()==ENERGY) {
             return Err(bad());
         }
         let receipt = Receipt { object_id:id, substep, order:order as u8,
@@ -66,8 +68,8 @@ pub(super) fn parse(value: &Value, contacts: &[ObjectContact], spec: &CatalogSpe
             || !contacts.iter().any(|contact|contact.object_id==id && contact.kind=="hull"
                 && contact.substep==substep && contact.point==receipt.point && contact.normal==receipt.normal
                 && contact.velocity==receipt.velocity)
-            || !eligible(receipt.velocity,receipt.normal,map.mass_kg)
-            || !eligible(receipt.budget_before,receipt.normal,map.mass_kg)
+            || !eligible(receipt.velocity,receipt.normal,map.mass_kg,spec.version()==6)
+            || !eligible(receipt.budget_before,receipt.normal,map.mass_kg,spec.version()==6)
             || !close(receipt.budget_after,reduced(receipt.budget_before,receipt.normal,map.mass_kg))
             || !close(receipt.solver_after,reduced(receipt.solver_before,receipt.normal,map.mass_kg))
             || dot(receipt.budget_after,receipt.budget_after)>dot(receipt.budget_before,receipt.budget_before)+0.001
@@ -91,10 +93,40 @@ pub(super) mod tests {
     use super::*;
     #[test]fn fracture_eligibility_uses_exact_double_boundary_and_total_speed_bound(){
         let n=[0.,0.,1.];
-        assert!(eligible([0.,0.,4.],n,1000.));
-        assert!(!eligible([0.,0.,f32::from_bits(4f32.to_bits()-1)],n,1000.));
-        assert!(eligible([0.,0.,25.],n,1000.));
-        assert!(!eligible([1.,0.,25.],n,1000.));
+        assert!(eligible([0.,0.,4.],n,1000.,false));
+        assert!(!eligible([0.,0.,f32::from_bits(4f32.to_bits()-1)],n,1000.,false));
+        assert!(eligible([0.,0.,25.],n,1000.,false));
+        assert!(!eligible([1.,0.,25.],n,1000.,false));
+    }
+    #[test]fn whole_response_uses_normal_energy_without_legacy_speed_floor_or_tangent_debit(){
+        let n=[0.,0.,1.];
+        assert!(eligible([0.,0.,0.8],n,68190.,true));
+        assert!(!eligible([0.,0.,0.8],n,68190.,false));
+        assert!(!eligible([0.,0.,0.8],n,4691.,true));
+        for v in [[5.,0.,0.],[5.,0.,-2.],[5.,0.,0.1]] {assert!(!eligible(v,n,68190.,true));}
+        let fast=[3.,0.,5.];
+        let light=reduced(fast,n,4691.);let heavy=reduced(fast,n,68190.);
+        assert_eq!(light[0],3.);assert_eq!(heavy[0],3.);assert_eq!(heavy[1],0.);
+        assert!(heavy[2]>light[2]&&light[2]>0.&&heavy[2]<5.);
+        for (mass,v) in [(4691.,light),(68190.,heavy)] {
+            let dissipated=0.5*f64::from(mass)*(dot(fast,fast)-dot(v,v));
+            assert!((dissipated-8000.).abs()<0.1);
+        }
+        // An admitted obstacle cannot refund an independent solid-wall stop.
+        assert_eq!(reduced([3.,0.,0.],n,68190.),[3.,0.,0.]);
+    }
+    #[test]fn whole_tree_receipt_requires_matching_catalog_energy_and_exact_contact(){
+        let spec=catalog::tests::whole_spec(1);let mut map=super::super::tests::map();map.mass_kg=68190.;
+        let mut row=value(1);let velocity=[0.,0.,0.8];
+        let after=reduced(velocity,[0.,0.,1.],map.mass_kg);
+        for key in ["velocity","budget_before","solver_before"]{row[key]=serde_json::json!(velocity);}
+        for key in ["budget_after","solver_after"]{row[key]=serde_json::json!(after);}
+        let mut c=contact(1);c.velocity=velocity;
+        assert_eq!(parse(&serde_json::json!([row.clone()]),&[c.clone()],&spec,&map,1).unwrap().len(),1);
+        let old=catalog::tests::fracture_spec(1);
+        assert!(parse(&serde_json::json!([row.clone()]),&[c.clone()],&old,&map,1).is_err());
+        row["solver_after"]=serde_json::json!(velocity);
+        assert!(parse(&serde_json::json!([row]),&[c],&spec,&map,1).is_err());
     }
     pub(in super::super) fn contact(id:u32)->ObjectContact {
         ObjectContact{object_id:id,kind:"hull".into(),substep:1,point:[0.;3],normal:[0.,0.,1.],velocity:[0.,0.,4.]}

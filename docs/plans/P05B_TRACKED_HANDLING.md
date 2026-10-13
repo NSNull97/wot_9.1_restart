@@ -2,7 +2,50 @@
 
 Date: 2026-10-13. Branch: `codex/p05b-tracked-handling`.
 Base: accepted main `0393857e2a67646e87dd03763baf3b98da98b0b9`.
-Status: PASS_AUTOMATIC_PRIVATE; native/owner acceptance NOT_RUN.
+Status: PASS_AUTOMATIC_PRIVATE; native/owner NOT_RUN.
+
+## Owner correction after steering checkpoint491bde5
+
+Owner clarified that prior acceptance covers continuous fence-chain passage
+only. Many expected destructibles remain unsupported; trees/crates stop even
+IS-7 to zero. Native launch is paused before any installation/start. Extend
+this handling card to the immediate contact-response defect for the already
+source/native-joined1038 whole objects; universal compound coverage remains
+the existing P06R follow-up and is not silently accepted here.
+
+Verified defect: only403 fences receive pre-solver energy response.626 trees
+and9 ordinary whole fragiles still collide as rigid static bodies before
+gateway removal, losing velocity before either ACK. A total-speed1m/s floor
+also rejects heavy-tank impacts with sufficient normal energy.
+
+Versioned correction: domain catalog5/worker catalog6 selects explicit
+`test_lab-whole-object-energy-v1`; IPC5 prepared/receipt/both-ACK semantics
+remain. Existing1038 identities receive the retained approximate8000J normal
+resistance. New mode admits by positive normal energy without the independent
+1m/s floor; removes only admitted constraints before the solver; dissipates
+normal energy afterwards without refunding wall impulses or tangential speed.
+Legacy catalogs/modes remain unchanged.8000J is a project approximation, not
+source historical resistance or a claim that all object families are equal.
+
+Additional allowed files: physics CheckedInput/FractureResponse, gateway
+worker catalog/fracture and shared fragiles/server admission/tests, compound
+catalog importer/tests. Add real contact-speed trough and passage evidence for
+trees/whole fragiles/fences, low/high speed and both masses/directions; retain
+wall, repeat debit, malformed receipt and both-ACK negative gates. Rebuild and
+rerun affected suites before manual stand. Record excluded-object inventory.
+
+Candidate05 oblique regression exposed first-manifold rejection caching: an
+early weak normal fixes the entire object/substep as solid even when another
+actual hull manifold has sufficient closing energy. A retry alone may leave
+previously emitted rigid constraints. Extend v6 only with a bounded pair
+contact prepass, triggered by an actual Added/Persisted callback before its
+settings return. Query the exact hull/static-body pair through the pinned
+native API without locking already locked bodies; copy finite contact scalars,
+select the strongest closing normal deterministically, and make one shared
+admission decision for all manifolds. No query-only destruction or velocity
+refund. Fail outside native callbacks on capacity/thread/value violations.
+Retain candidate05 failure and require the same real oblique replay plus
+low-energy/tangent, wall, legacy and deterministic checks before native use.
 
 ## Goal and scope
 
@@ -64,9 +107,14 @@ commands/results will be recorded in the research report.
 Rollback: stop receipt-owned stand, restore install/namespace ledgers, select
 accepted P03M binaries/pools; revert only this card's changes. No global reset.
 
-Implementation and automatic gates complete; see
-[P05B research](../research/P05B_TRACKED_HANDLING.md) for the source audit,
-retained failures, declared quality bounds, 36 final flat runs,34 paired map
-cases,10 legacy cases and9 exact historical trajectory comparisons. Gateway
-723/723 PASS; affected Python76 PASS/one symlink NOT_RUN. No historical solver
-or native handling acceptance is inferred. Next gate: manual MS-1 then IS-7.
+Final candidate07 and gateway03 automatic gates complete; see
+[P05B research](../research/P05B_TRACKED_HANDLING.md) for source audit, retained
+failures and explicit coverage/metric limits. Gateway728/728 PASS,20 final
+paired ram cases,36 flat runs plus2 calibrations,10 legacy cases and9 exact
+historical trajectory comparisons,83 contact component checks,10 metric tests,
+28 real worker/catalog rejections. Affected Python96 PASS/one symlink NOT_RUN.
+Final flat trajectories match the earlier accepted automatic steering gate;
+34 earlier real-map cases remain scoped supporting evidence. NTFS compression
+resolved a disk-full build without deleting evidence or changing file bytes.
+No historical solver, universal object coverage or native handling acceptance
+is inferred. Next gate: manual MS-1 then IS-7, using native-handling-ram07.

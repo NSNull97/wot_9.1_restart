@@ -1,4 +1,47 @@
-## 2026-10-13 — P05B tracked handling: automatic gates PASS, owner pending
+## 2026-10-13 — P05B handling and whole-object response automatic gate
+
+**PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN.** Final physics candidate07
+and canonical gateway03 pass728 tests.20 paired ram scenarios verify mass,
+speed, direction, contact slowdown, one energy debit, both-worker ACKs,
+full-body passage and surviving solid walls. The real runtime gate checks
+trees/crates on the complete1038-object map, including fallenTrees publication.
+At approximately3m/s, IS-7 crate/tree troughs improve from.040/.009m/s to
+2.949/2.976m/s; MS-1 from.146/.095 to2.385/2.361. The oblique fence false-first
+manifold rejection is repaired by a bounded exact-pair prepass.
+
+Final36 flat runs+2 calibrations,10 legacy cases,9 historical byte comparisons,
+83 component checks,10 metric tests and28 worker/catalog negative cases pass.
+Python96 PASS/one symlink NOT_RUN. Pinned final sources/builds, commands,
+failure history, limitations and rollback are in
+[P05B research](research/P05B_TRACKED_HANDLING.md) and
+`local/evidence/20261013-p05b-tracked-handling-01/`.
+Gateway02 compile failed disk-full before tests; safer NTFS compression retained
+all evidence/binary bytes and allowed fresh gateway03 to pass.
+
+This repairs response for the existing1038 verified whole objects.300 excluded
+fragiles and other compound families remain open P06R coverage;8000J remains
+project policy. Native steering/feel, exact historical physics and100-battle
+capacity remain unaccepted. Branch stays `codex/p05b-tracked-handling`.
+Next: reversible two-client MS-1 Prohorovka manual run, then separate IS-7,
+using final private `native-handling-ram07` bindings/ledgers.
+
+## 2026-10-13 — P05B owner correction: tree/crate ram response reopened
+
+Owner clarified that fence-chain passage acceptance does not accept all ram
+response or object coverage. Trees/crates can stop even IS-7 to zero. Source
+inspection confirms the old energy response applies only to403 movement
+fragiles;626 trees and9 whole fragiles remain rigid until post-step removal.
+The previous green `clear_tree` test required eventual passage, not bounded
+impact slowdown. Native launch is paused before any installation or process.
+
+Steering checkpoint491bde5 is preserved. Current bounded work extends contact
+response to the existing1038 verified identities via domain5/worker6, explicit
+`test_lab-whole-object-energy-v1`, normal8000J resistance and no independent
+1m/s floor. Mass/speed/direction gates and no-refund solid-wall behavior must
+pass before manual handoff.8000J is retained test policy, not historic source
+resistance. Excluded compound/part coverage remains open P06R scope.
+
+## 2026-10-13 — P05B steering automatic checkpoint, before ram correction
 
 Branch `codex/p05b-tracked-handling`, base accepted main0393857. Versioned
 pool/config3 now controls differential track steering, bounded yaw response,
