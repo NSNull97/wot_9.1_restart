@@ -11,6 +11,7 @@ pub(crate) mod shared;
 pub use shared::serve as serve_shared_lab;
 pub use shared::serve_integrated as serve_integrated_lab;
 pub use shared::serve_integrated_for_map as serve_integrated_lab_for_map;
+pub use shared::serve_integrated_for_vehicle as serve_integrated_lab_for_vehicle;
 
 // R01 measured same-process reconnect reuses the cipher key but changes the
 // encrypted nonce and UDP peer. Keep finite attempt and retired-peer isolation;

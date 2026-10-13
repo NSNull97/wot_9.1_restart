@@ -3,6 +3,28 @@
 //! indices and export/worker hashes below are deliberately synthetic test data.
 use super::*;
 use serde_json::json;
+// Existing wrappers remain bounded to the accepted 20 rounds per MS-1 actor.
+const MAX_SHOTS:usize=40;
+
+#[test]
+fn selected_ap_damage_and_shot_limit_preserve_partial_compounds_and_neighbors() {
+    let mut v=manifest();v["objects"][0]["health"]=json!(600);
+    let catalog=Arc::new(parse(&v).unwrap());
+    let mut ms1=State::new(catalog.clone());let mut is7=State::new(catalog);
+    let light=ms1.contact(1,0,1001,hit(0)).unwrap().unwrap();
+    let heavy=is7.contact_for(VehicleKind::Is7,1,0,1001,hit(0)).unwrap().unwrap();
+    assert_eq!((light.health_after,heavy.health_after),(570,110));
+    assert_eq!(is7.scene_version(),0);assert!(is7.removed_ids().is_empty());
+    let heavy2=is7.contact_for(VehicleKind::Is7,2,0,1002,hit(0)).unwrap().unwrap();
+    assert_eq!(heavy2.health_after,0);assert_eq!(is7.health,vec![0,15,9]);
+    assert_eq!(is7.removed_ids(),vec![1513]);
+
+    let mut v=manifest();v["objects"][0]["health"]=json!(32767);
+    let mut is7=State::new(Arc::new(parse(&v).unwrap()));
+    for shot in 1..=60 { is7.contact_for(VehicleKind::Is7,shot,0,1000+shot,hit(0)).unwrap().unwrap(); }
+    assert_eq!(is7.health[0],32767-60*490);
+    let before=is7.clone();assert!(is7.contact_for(VehicleKind::Is7,61,0,1061,hit(0)).is_err());assert_eq!(is7,before);
+}
 
 fn manifest() -> Value {
     json!({

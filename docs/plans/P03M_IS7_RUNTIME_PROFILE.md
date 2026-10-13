@@ -1,6 +1,8 @@
 # P03M — second source-bound vehicle for movement and battle checks
 
-Status: QUEUED_OWNER_PRIORITY; implementation/native admission NOT_RUN.
+Status: IN_PROGRESS_SOURCE_BOUND_RUNTIME; native admission NOT_RUN.
+Accepted base: P06R merge `eb054618bd0eae1ae23bba42a0f875969ac2d24e`, pushed
+and remote SHA verified. Branch `codex/p03m-is7-runtime-profile`.
 Owner requested playable IS-7 on 2026-10-13 to compare mass, speed and collision
 behavior while prioritizing a reliable single-tank scenario on Prohorovka.
 This is a new runtime card, not a repeat of accepted P02_test_is7 (hangar)
@@ -40,6 +42,30 @@ isolated checkout without treating the pending runtime as accepted main.
    Native acceptance remains NOT_RUN until the actual owner's result.
 
 ## Parallel work boundaries
+
+### Bounded implementation contract — 2026-10-13
+
+First playable slice is an explicitly selected homogeneous `test_lab` vehicle
+kind for both actors: default MS-1 or IS-7. The exact original descriptor,
+2150HP, assembled68190kg mass, source geometry and mounted S70/AP configuration
+travel together in immutable typed profiles. IS-7 uses a temporary server-owned
+30-round AP14602 loadout and mounted reload13.7s; APCR/HE remain unavailable.
+This does not grant items, modify live accounts or claim ordinary selected-hangar
+queue admission. Mixed-vehicle pools are rejected. Separate MS-1/IS-7 runs are
+sufficient for the first comparison; mixed actors need their own bounded work.
+
+Pool v2 binds a pinned physics profile and the full numerical config projection;
+old pool v1 stays MS-1 only. Existing config hashes still bind worker startup.
+Geometry/material bundle identity must match the selected kind. Native method
+indices remain in adapters, never in physics. Preserve default MS-1 wrappers
+and behavior. Existing Jolt control and AP single-plate approximation stay
+explicit test_lab rules; no historical drivetrain/dispersion formula is claimed.
+
+Disjoint worktrees at the accepted merge: gameplay/profile/model/aim/shot/wire;
+physics importer/pool binding and private real-worker cases; collision/material
+importer and bundle checks. Root owns server/CLI/impact/session integration,
+acceptance docs and review. Source audits are under
+`local/evidence/20261013-p03m-is7-01/`; original remains read-only.
 
 Crew/equipment chat: 01a134ec-781f-70a1-8970-4a978d2fff51.
 Ammo/service chat: 01a134ec-7eca-7791-8d29-56bea40989c2.

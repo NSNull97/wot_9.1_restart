@@ -108,8 +108,8 @@ impl Session {
         c.tracer_started = [false; model::MAX_SHOTS];
         c.tracer_stopped = [false; model::MAX_SHOTS];
         *self = next;
-        println!("SHARED_ENTRY battle={} session={} slot={slot} avatar={} vehicle={} assignment=temporary_ms1 inventory_changed=false",
-            world.id, self.id, wire::avatar_id(slot)?, wire::vehicle_id(slot)?);
+        println!("SHARED_ENTRY battle={} session={} slot={slot} avatar={} vehicle={} assignment=temporary_{} inventory_changed=false",
+            world.id, self.id, wire::avatar_id(slot)?, wire::vehicle_id(slot)?, world.vehicle_kind().label());
         Ok(())
     }
     pub(super) fn shared_payload(&mut self, payload: &[u8], now: Instant, events: &mut Vec<String>) -> io::Result<()> {
@@ -406,3 +406,4 @@ impl Session {
 }
 
 pub use server::serve_integrated_for_map;
+pub use server::serve_integrated_for_vehicle;

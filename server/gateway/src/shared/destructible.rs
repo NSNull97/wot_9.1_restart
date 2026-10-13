@@ -24,7 +24,7 @@ pub struct Transition {
 impl Transition {
     pub(crate) fn validate(&self)->io::Result<()>{
         if self.object_id!=OBJECT_ID || self.instance_id!=INSTANCE_ID || self.scene_before!=0 || self.scene_after!=1
-            || self.shot==0 || self.shot>super::model::MAX_SHOTS as u32 || self.shooter>=super::model::CAPACITY || self.tick==0
+            || self.shot==0 || self.shot>40 || self.shooter>=super::model::CAPACITY || self.tick==0
             || self.health_before!=HEALTH || self.health_after!=0 || self.damage!=DAMAGE || self.policy_revision!=POLICY_REVISION
             || !selected(&self.hit) || !self.hit.t.is_finite() || !(0. ..=1.).contains(&self.hit.t)
             || self.hit.point.iter().chain(self.hit.normal.iter()).any(|v| !v.is_finite())

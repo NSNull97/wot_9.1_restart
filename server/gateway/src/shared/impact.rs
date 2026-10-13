@@ -10,6 +10,7 @@ use std::io;
 
 use super::projectile::Projectile;
 use super::{ap, collision, destructible, fragiles, materials, terrain};
+use super::vehicle_profile::VehicleKind;
 
 pub const RULESET_REVISION: &str = "wot-0.9.1-#717-ms1-ap-full-pose-v2";
 pub const PROFILE: &str = "ms1_ap_2570";
@@ -21,8 +22,9 @@ pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
 // nearest material record, optional AP or wreck outcome and terminal. The model admits only both actors'
 // original 20-shell loadouts, plus at most one fragile damage event per shell
 // and one vehicle contact for each catalog object.
-pub const MAX_EVENTS: usize = super::model::MAX_SHOTS
-    * (2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1) + super::model::MAX_SHOTS
+const EVENTS_PER_SHOT:usize = 2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1 + 1;
+// Frozen MS-1 budget; each trace uses its selected profile's equivalent bound.
+pub const MAX_EVENTS: usize = 40 * EVENTS_PER_SHOT
     + fragiles::MAX_MOVEMENT_OBJECTS;
 pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
@@ -282,6 +284,7 @@ impl Event {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Trace {
     map: crate::map_profile091::MapId,
+    vehicle: VehicleKind,
     events: Vec<Event>,
     terminal_shots: Vec<u32>,
     next_order: u32,
@@ -293,6 +296,14 @@ pub struct Trace {
 impl Trace {
     pub fn new() -> Self { Self::default() }
     pub fn new_for_map(map: crate::map_profile091::MapId) -> Self { Self {map,..Self::default()} }
+    pub fn new_for_vehicle(map:crate::map_profile091::MapId,vehicle:VehicleKind)->Self {
+        Self {map,vehicle,..Self::default()}
+    }
+    fn event_limit(&self)->usize { self.vehicle.battle_shot_limit()*EVENTS_PER_SHOT+fragiles::MAX_MOVEMENT_OBJECTS }
+    fn profile(&self)->&'static str { match self.vehicle { VehicleKind::Ms1=>PROFILE,VehicleKind::Is7=>"is7_ap_14602" } }
+    fn ruleset_revision(&self)->&'static str { match self.vehicle {
+        VehicleKind::Ms1=>RULESET_REVISION,VehicleKind::Is7=>"wot-0.9.1-#717-is7-ap-full-pose-v1",
+    } }
     pub fn bind_fragiles(&mut self,catalog:std::sync::Arc<fragiles::Catalog>)->io::Result<()>{
         if catalog.map!=self.map||!self.events.is_empty()||self.fragiles.is_some(){return Err(invalid("late or duplicate fragile catalog"));}
         self.fragiles=Some(fragiles::State::new(catalog));Ok(())
@@ -302,7 +313,7 @@ impl Trace {
     pub fn has_terminal(&self, shot_id: u32) -> bool { self.terminal_shots.contains(&shot_id) }
 
     fn next_order_value(&self) -> io::Result<u32> {
-        if self.events.len() >= MAX_EVENTS || self.next_order == u32::MAX {
+        if self.events.len() >= self.event_limit() || self.next_order == u32::MAX {
             return Err(invalid("impact trace event bound"));
         }
         self.next_order.checked_add(1).ok_or_else(|| invalid("impact trace order overflow"))
@@ -336,8 +347,8 @@ impl Trace {
         ammo_after: u16,
     ) -> io::Result<()> {
         self.common(battle_id, shot_id, server_tick)?;
-        if shooter_slot >= 2 || ammo_before > crate::battle091::fire::MS1_INITIAL_AMMO
-            || ammo_after > crate::battle091::fire::MS1_INITIAL_AMMO
+        if shooter_slot >= 2 || ammo_before > self.vehicle.initial_ammo()
+            || ammo_after > self.vehicle.initial_ammo()
             || ammo_after.checked_add(1) != Some(ammo_before) {
             return Err(invalid("impact admission transition"));
         }
@@ -345,16 +356,16 @@ impl Trace {
             return Err(invalid("duplicate impact shot identity"));
         }
         if self.events.iter().filter(|event| matches!(event, Event::Admission { .. })).count()
-            >= super::model::MAX_SHOTS {
+            >= self.vehicle.battle_shot_limit() {
             return Err(invalid("impact shot bound"));
         }
         let order = self.next_order_value()?;
         self.push(Event::Admission {
             order, battle_id, shot_id, server_tick, shooter_slot,
-            vehicle_compact_id: MS1_VEHICLE_COMPACT_ID,
-            gun_compact_id: MS1_GUN_COMPACT_ID,
-            shell_compact_id: MS1_AP_SHELL_COMPACT_ID,
-            profile: PROFILE,
+            vehicle_compact_id: self.vehicle.vehicle_compact_id(),
+            gun_compact_id: self.vehicle.gun_compact_id(),
+            shell_compact_id: self.vehicle.shell_compact_id(),
+            profile: self.profile(),
             ammo_before, ammo_after, reload_ready: true,
         })?;
         if self.battle_id.is_none() { self.battle_id = Some(battle_id); }
@@ -370,6 +381,7 @@ impl Trace {
             || !finite_vector(projectile.origin) || !finite_vector(projectile.velocity)
             || !finite_vector(projectile.terminal)
             || !projectile.gravity.is_finite() || projectile.gravity <= 0.0
+            || projectile.vehicle_kind != self.vehicle
             || projectile.slot >= 2
             || projectile.slot != admitted_slot
             || server_tick != admitted_tick
@@ -387,7 +399,7 @@ impl Trace {
             origin: projectile.origin, velocity: projectile.velocity,
             gravity: projectile.gravity, max_distance: projectile.max_distance,
             max_lifetime_seconds: projectile.flight_time.as_secs_f32(),
-            pose_revision: RULESET_REVISION,
+            pose_revision: self.ruleset_revision(),
         })?;
         self.last_tick = server_tick;
         Ok(())
@@ -481,9 +493,9 @@ impl Trace {
         if attacker >= super::model::CAPACITY || target >= super::model::CAPACITY
             || attacker == target || self.has_terminal(shot_id)
             || self.admission_facts(shot_id).map(|(slot, _)| slot) != Some(attacker)
-            || !(0..=90).contains(&health_before) || !(0..=90).contains(&health_after)
-            || resolution.profile_revision != ap::PROFILE_REVISION
-            || resolution.damage != (if resolution.outcome == ap::Outcome::Pierced { ap::DAMAGE } else { 0 })
+            || !(0..=self.vehicle.max_health()).contains(&health_before) || !(0..=self.vehicle.max_health()).contains(&health_after)
+            || resolution.profile_revision != ap::profile_revision_for(self.vehicle)
+            || resolution.damage != (if resolution.outcome == ap::Outcome::Pierced { self.vehicle.damage() } else { 0 })
             || health_after != health_before.saturating_sub(resolution.damage as i16).max(0) {
             return Err(invalid("AP resolution identity, damage or health transition"));
         }
@@ -493,7 +505,7 @@ impl Trace {
                 resolution.nominal_power, resolution.normalization_degrees].into_iter().flatten()
                 .any(|x| !x.is_finite() || x < 0.0)
             || !resolution.incidence_degrees.is_some_and(|x| x <= 90.0)
-            || !resolution.nominal_power.is_some_and(|x| x <= 34.0) {
+            || !resolution.nominal_power.is_some_and(|x| x <= self.vehicle.shell().power_100) {
             return Err(invalid("AP resolution material, target pose or numerical facts"));
         }
         let calculated_plate = matches!(resolution.outcome, ap::Outcome::Pierced | ap::Outcome::NotPierced);
@@ -504,7 +516,7 @@ impl Trace {
             return Err(invalid("AP resolution incomplete outcome facts"));
         }
         // Reserve the matching terminal before mutating either order or rows.
-        if self.events.len() + 2 > MAX_EVENTS || self.next_order.checked_add(2).is_none() {
+        if self.events.len() + 2 > self.event_limit() || self.next_order.checked_add(2).is_none() {
             return Err(invalid("AP resolution trace capacity"));
         }
         let order = self.next_order_value()?;
@@ -527,7 +539,7 @@ impl Trace {
             return Err(invalid("wreck impact identity or health transition"));
         }
         let (material_order, _) = self.outcome_material(battle_id, shot_id, server_tick, target)?;
-        if self.events.len() + 2 > MAX_EVENTS || self.next_order.checked_add(2).is_none() {
+        if self.events.len() + 2 > self.event_limit() || self.next_order.checked_add(2).is_none() {
             return Err(invalid("wreck impact trace capacity"));
         }
         let order = self.next_order_value()?;
@@ -544,7 +556,7 @@ impl Trace {
         if self.has_terminal(shot_id) { return Err(invalid("terrain contact after terminal")); }
         let (terrain_query_order, segment_order, hit) = self.selected_terrain(battle_id, shot_id, server_tick)?
             .ok_or_else(|| invalid("terrain contact without nearest terrain hit"))?;
-        if self.events.len() + 2 > MAX_EVENTS || self.next_order.checked_add(2).is_none() {
+        if self.events.len() + 2 > self.event_limit() || self.next_order.checked_add(2).is_none() {
             return Err(invalid("terrain contact trace capacity"));
         }
         let order = self.next_order_value()?;
@@ -575,7 +587,7 @@ impl Trace {
                 && *terrain_revision==terrain::WORLD_SOURCE_REVISION && *retained==hit) {
             return Err(invalid("destructible contact/query/scene binding"));
         }
-        if self.events.len()+2>MAX_EVENTS || self.next_order.checked_add(2).is_none(){return Err(invalid("destructible trace capacity"));}
+        if self.events.len()+2>self.event_limit() || self.next_order.checked_add(2).is_none(){return Err(invalid("destructible trace capacity"));}
         let order=self.next_order_value()?;
         self.push(Event::DestructibleTransition{order,battle_id,shot_id,server_tick,terrain_contact_order:contact_order,transition:transition.clone()})?;
         self.last_tick=server_tick;Ok(())
@@ -605,8 +617,8 @@ impl Trace {
         };
         if hit!=damage.hit||self.terrain_for_query(battle_id,shot_id,server_tick,segment,query+1)?!=Some((query,Some(hit))){return Err(invalid("fragile damage query binding"));}
         let mut state=self.fragiles.clone().ok_or_else(||invalid("fragile catalog absent"))?;
-        if state.contact(shot_id,damage.shooter,server_tick,hit)?.as_ref()!=Some(damage)
-            ||self.events.len()+2>MAX_EVENTS||self.next_order.checked_add(2).is_none(){return Err(invalid("fragile damage transaction"));}
+        if state.contact_for(self.vehicle,shot_id,damage.shooter,server_tick,hit)?.as_ref()!=Some(damage)
+            ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("fragile damage transaction"));}
         self.push(Event::FragileDamage{order:self.next_order_value()?,battle_id,shot_id,server_tick,terrain_contact_order:order,damage:damage.clone()})?;
         self.fragiles=Some(state);self.last_tick=server_tick;Ok(())
     }
@@ -737,7 +749,7 @@ impl Trace {
                 if *battle == battle_id && *shot == shot_id && *tick == server_tick
                 && *query_order == query && *segment_order == segment
                 && mesh.as_str() == facts.component.name() && material == &facts.name
-                && geometry_revision == super::geometry::SOURCE_REVISION
+                && geometry_revision == super::geometry::source_revision(self.vehicle)
                 && transform_revision.strip_prefix(&pose_tag).is_some_and(|digest|
                     digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))));
         if !target_bound { return Err(invalid("impact outcome material or target pose")); }
@@ -820,7 +832,7 @@ impl Trace {
         // transaction so unrelated shots cannot consume that remaining slot.
         let closing_rows = 1 + usize::from(material.is_some() || terrain_hit.is_some())
             + usize::from(generic||scene_version==0 && terrain_hit.as_ref().is_some_and(destructible::selected));
-        if self.events.len() + added + closing_rows > MAX_EVENTS
+        if self.events.len() + added + closing_rows > self.event_limit()
             || self.next_order.checked_add((added + closing_rows) as u32).is_none() {
             return Err(invalid("collision query trace capacity"));
         }
@@ -926,6 +938,24 @@ mod tests {
         assert_eq!(MS1_AP_SHELL_COMPACT_ID, 2570);
         assert_eq!(MAX_SEGMENTS_PER_SHOT, 256);
         assert_eq!(MAX_EVENTS, 38_128);
+        assert_eq!(Trace::new().event_limit(),MAX_EVENTS);
+        let is7=Trace::new_for_vehicle(crate::map_profile091::MapId::Prohorovka,VehicleKind::Is7);
+        assert_eq!(is7.event_limit(),56_168);
+    }
+
+    #[test]
+    fn is7_trace_admission_binds_source_ids_limits_and_rejects_ms1_projectile() {
+        let map=crate::map_profile091::MapId::Prohorovka;
+        let mut trace=Trace::new_for_vehicle(map,VehicleKind::Is7);
+        assert!(trace.admission(123,1,1000,0,31,30).is_err());
+        trace.admission(123,1,1000,0,30,29).unwrap();
+        assert!(matches!(&trace.events[0],Event::Admission { vehicle_compact_id:7169,
+            gun_compact_id:14852,shell_compact_id:14602,profile:"is7_ap_14602",.. }));
+        let now=Instant::now();let light=world(now);
+        let projectile=Projectile::launch(1,0,&light.actors[0],now).unwrap();
+        let before=trace.clone();assert!(trace.launch(123,&projectile,1000).is_err());assert_eq!(trace,before);
+        for shot in 2..=60 { trace.admission(123,shot,1000,0,30,29).unwrap(); }
+        let before=trace.clone();assert!(trace.admission(123,61,1000,0,30,29).is_err());assert_eq!(trace,before);
     }
 
     #[test]
@@ -1920,7 +1950,7 @@ mod tests {
             trace.bind_fragiles(catalog.clone()).unwrap();Some(fragiles::State::new(catalog))
         } else {None};
         let mut tick = 1000;
-        for index in 0..model::MAX_SHOTS {
+        for index in 0..VehicleKind::Ms1.battle_shot_limit() {
             let shot_id = index as u32 + 1;
             let slot = index / 20;
             // Synthetic overlap geometry exercises the target-tag contract;
@@ -1962,16 +1992,16 @@ mod tests {
                 else { TerminalReason::TestLabImpact }).unwrap();
         }
         assert_eq!(trace.events().len(), if with_terrain {
-            MAX_EVENTS-fragiles::MAX_MOVEMENT_OBJECTS-model::MAX_SHOTS
+            MAX_EVENTS-fragiles::MAX_MOVEMENT_OBJECTS-VehicleKind::Ms1.battle_shot_limit()
         } else { 25_800 });
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::TerrainQuery { .. })).count(),
-            if with_terrain { model::MAX_SHOTS * MAX_SEGMENTS_PER_SHOT } else { 0 });
-        assert_eq!(trace.terminal_shots().len(), model::MAX_SHOTS);
-        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::MaterialContact { .. })).count(), model::MAX_SHOTS);
+            if with_terrain { VehicleKind::Ms1.battle_shot_limit() * MAX_SEGMENTS_PER_SHOT } else { 0 });
+        assert_eq!(trace.terminal_shots().len(), VehicleKind::Ms1.battle_shot_limit());
+        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::MaterialContact { .. })).count(), VehicleKind::Ms1.battle_shot_limit());
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::ApResolution { .. })).count(),
-            if wreck { 0 } else { model::MAX_SHOTS });
+            if wreck { 0 } else { VehicleKind::Ms1.battle_shot_limit() });
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::WreckImpact { .. })).count(),
-            if wreck { model::MAX_SHOTS } else { 0 });
+            if wreck { VehicleKind::Ms1.battle_shot_limit() } else { 0 });
         if let Some(source)=ram_source.as_mut() {
             // A full legitimate firing trace must still admit the entire
             // extended destruction catalog, independently of shot count.
@@ -1980,24 +2010,24 @@ mod tests {
                 let contact=source.ram_contact(id,0,tick,1,[0.;3],[1.,0.,0.],[4.,0.,0.],1000.,"hull".into()).unwrap().unwrap();
                 trace.vehicle_contact(123,tick,&contact).unwrap();
             }
-            assert_eq!(trace.events().len(),MAX_EVENTS-model::MAX_SHOTS);
+            assert_eq!(trace.events().len(),MAX_EVENTS-VehicleKind::Ms1.battle_shot_limit());
             assert_eq!(trace.scene_version_before(u32::MAX),fragiles::MAX_MOVEMENT_OBJECTS as u32);
             assert!(trace.excluded_before(u32::MAX).is_empty());
         }
         assert!(trace.events().iter().enumerate().all(|(index, row)| row.order() as usize == index + 1));
         let before = trace.clone();
-        assert!(trace.admission(123, model::MAX_SHOTS as u32 + 1, tick, 0, 20, 19).is_err());
+        assert!(trace.admission(123, VehicleKind::Ms1.battle_shot_limit() as u32 + 1, tick, 0, 20, 19).is_err());
         assert_eq!(trace, before);
     }
 
     #[test]
     fn shot_bound_applies_even_when_earlier_shots_use_no_segments() {
         let mut trace = Trace::new();
-        for shot in 1..=model::MAX_SHOTS as u32 {
+        for shot in 1..=VehicleKind::Ms1.battle_shot_limit() as u32 {
             trace.admission(123, shot, 1000, 0, 20, 19).unwrap();
         }
         let before = trace.clone();
-        assert!(trace.admission(123, model::MAX_SHOTS as u32 + 1, 1000, 0, 20, 19).is_err());
+        assert!(trace.admission(123, VehicleKind::Ms1.battle_shot_limit() as u32 + 1, 1000, 0, 20, 19).is_err());
         assert_eq!(trace, before);
     }
 
