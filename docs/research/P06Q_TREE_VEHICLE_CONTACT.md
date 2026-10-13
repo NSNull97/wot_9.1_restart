@@ -309,6 +309,35 @@ passage through a removed object remain open until the owner-controlled gate.
 ramming/tree-fall and passage gate using the joined 635-object catalog. The
 passive native probe is complete and deliberately does not destroy anything.
 
+## Follow-up: native mixed request frame — 2026-10-13
+
+**VERIFIED:** the remaining two-client transport failure was a parser boundary,
+not a missing area announcement. The retained `treeobserve03` capture contains
+six native area requests followed immediately by one `0x8f` aim record in the
+same reliable frame. The pre-fix request branch required `payload.len() % 7 ==
+0`, so both clients were rejected at sequence 22/23 and later exhausted their
+retry budget. The decoded record order, frame sizes, source capture hash, and
+zero native tree callbacks are preserved in
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve03-channel-state-followup.json`
+(SHA256 `3438dc2f201a8afcbe80a64edf95c8f24b67f22e294e4d8fe0fd6367e883aee0`).
+
+Commit `f4191cd` adds a bounded fixed-size `0x08` record to the `Driving`
+parser. It retains strict area/entity ownership, announced-area and duplicate
+checks, the 16-record/512-byte envelope limits, and the outer session clone's
+atomic rollback. The exact mixed frame and malformed suffix are covered by the
+new gateway regression. Targeted results are 1/1 mixed-frame PASS, 9/9
+catalog-wire PASS, and 2/2 native-aim PASS; build receipts and executable
+hashes are recorded in `docs/STATUS.md` above.
+
+The post-fix native rerun `treeobserve04` stopped before both clients reached
+the arena and is explicitly **NOT_RUN**
+(`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve04-bounded-not-run.json`,
+SHA256 `d035afbcf4a13ea024fe5347a174e025bfea626c5ef8dc1c0133d62b0416634c`).
+No native visual fall, `fallenTrees` consumer application, owner ACK, or
+passage acceptance is inferred from this diagnostic work. The next step is a
+fresh bounded two-client smoke on the new binary; only after a clean arena run
+does the owner-controlled contact gate make sense.
+
 ## Transport boundary fix — 2026-10-13
 
 The first 117-chunk owner-run (`manualtree01`) failed before

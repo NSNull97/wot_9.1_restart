@@ -1,6 +1,42 @@
 ## 2026-10-13 — P06Q tree visual/state sync follow-up
 
-Current branch: `codex/p06q-tree-visual-sync`; source commit: `f9d50ce417bad6c0f832bdf372b61ce20c5d8101`.
+### Latest transport diagnosis — 2026-10-13
+
+Current source head is `f4191cd60452ba96a1c0938bb6d50a53c0434658`. The native
+`treeobserve03` capture finally exposed the symmetric channel failure: both
+clients sent six 7-byte area requests followed by a native `0x8f` aim record in
+one reliable frame (`57` application bytes, `62` frame-body bytes). The older
+parser treated every frame beginning with `0x08` as a request-only envelope and
+rejected the non-7-byte remainder, so the same sequence stayed unacknowledged
+and both sessions reached `retry_exhausted`. Evidence:
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve03-channel-state-followup.json`
+(SHA256 `3438dc2f201a8afcbe80a64edf95c8f24b67f22e294e4d8fe0fd6367e883aee0`).
+
+The fix keeps the request-only `Entities` path unchanged and adds a bounded
+7-byte `0x08` record to the `Driving` walker. Requests may now be interleaved
+with measured native aim/movement records; duplicate, future, foreign, and
+truncated records still fail the complete envelope, and `Session`'s existing
+clone keeps the update atomic. The regression also covers the exact six-area
+request plus `0x8f` aim shape and verifies malformed suffix rollback.
+
+Checks on the new source:
+
+- `python -B -X utf8 server/build.py gateway --test --test-filter driving_mixed_area_requests_and_aim --out local/build/server/gateway-p06q-regression-02` — **1/1 PASS**, executable SHA256 `e7c83d941e45af109570613e3ce15ed274d82c740d30fbf233ff2599881b7d27`;
+- `python -B -X utf8 server/build.py gateway --test --test-filter catalog_wire_tests --out local/build/server/gateway-p06q-final-27` — **9/9 PASS**, result SHA256 `121504077e1be55fe694b14193f568b7ba2a6a113b6fa4be13fdfffa0db14890`, executable SHA256 `d0e4ab5ee6328de5cf9328429ee54f6b36744618e8eb73604fee41cde6fe678f`;
+- `python -B -X utf8 server/build.py gateway --test --test-filter native_aim --out local/build/server/gateway-p06q-regression-03` — **2/2 PASS**, executable SHA256 `9fa362dd79017dd4a1292fe178cc15344f39a570c1ce2cc74c217dc16503d222`.
+
+The first live rerun on the new binary (`treeobserve04`) was bounded and ended
+before both clients reached the arena: only one account session appeared, with
+no `SHARED_READY` or post-fix reject. It is **NOT_RUN**, not a transport PASS;
+evidence is `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve04-bounded-not-run.json`
+(SHA256 `d035afbcf4a13ea024fe5347a174e025bfea626c5ef8dc1c0133d62b0416634c`).
+The server and both clients were stopped by receipt and both installations
+restored. Native `set_fallenTrees`, rendered tree fall, both-worker ACK, and
+tank passage remain **NOT_RUN** under the owner gate. The older netdrop smoke
+remains a server-loss observation only; no reconnect or directional packet-loss
+acceptance is claimed.
+
+Current branch: `codex/p06q-tree-visual-sync`; current source commit: `f4191cd60452ba96a1c0938bb6d50a53c0434658` (diagnostic observer base: `f9d50ce417bad6c0f832bdf372b61ce20c5d8101`).
 
 Implemented a diagnostic-only observer for the original `AreaDestructibles.set_fallenTrees` callback. The observer copies bounded native `ARRAY<UINT32>` values, records the chunk/entity identity, and never mutates the owner, collision body, tree matrix, or server state. The gateway wire test pins the two packed Prohorovka values observed in `manualtree02` (`0x195a8000`, `0x040e8000`) and their exact `0x12 ... 0x13` envelope.
 
