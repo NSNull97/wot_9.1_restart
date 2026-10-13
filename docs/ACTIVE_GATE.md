@@ -1,3 +1,18 @@
+# P05B — angular scalar PASS; bounded runtime implementation GO
+
+Both scalar kernels, exact256-case cross-language comparison,2882 saved native
+basis rows and source-mass mixed chains passed independent review. Failed
+attempts remain saved; production candidate14 is unchanged. See
+[scalar report](research/P05B_ANGULAR_SCALAR_GATE.md) and
+[Stage-B ownership/gates](plans/P05B_ANGULAR_FENCE_CONTACT.md).
+
+Continue the existing night correction in isolated worktrees: controller owns
+physics, metrics owns Rust proof/domain path, root owns exporter/integration.
+No numeric relaxation, grip/control/cadence or new coverage. Actual new-policy
+worker/ACK/passage gates are NOT_RUN and must run after reviewed integration.
+Native owner after2026-10-14 09:00 remains NOT_RUN; no merge. Keep candidate14,
+all failed evidence, unrelated P09B and stopped native stand intact.
+
 # P05B — measured angular contact gap; correction design next
 
 Four getter-only angular replays PASS (484 exact14 IPC replies, exact repeats,

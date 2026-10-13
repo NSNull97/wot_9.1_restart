@@ -1,3 +1,20 @@
+## 2026-10-14 — P05B angular scalar PASS; runtime integration next
+
+Frozen C#/Rust angular kernels match256 scalar cases and2882 saved native
+tensor frames. C#3548+266 checks, Rust5 units, independent Fraction/Decimal90
+and18 mixed sequences/126 steps PASS. Early compile/coverage/harness failures
+are preserved. Root checked all evidence pins and262 unchanged runtime files;
+P09B remains untouched. No physics worker or native client was launched here.
+See [scalar report](research/P05B_ANGULAR_SCALAR_GATE.md).
+
+Stage B is now authorized in the isolated angular-worker/angular-gateway
+checkouts under the frozen two-profile body, numeric and IPC6 contracts.
+Candidate14 remains the working rollback until new integration gates pass.
+Actual angular contact, both ACKs, rejoin and passage are still NOT_RUN.
+Static pressure/compound coverage/historical fidelity stay OPEN; native owner
+after09:00 remains NOT_RUN and the card must not merge. Next: implement and
+automatically verify the existing angular-fence correction, then fresh handoff.
+
 ## 2026-10-14 — P05B contact diagnostics complete; angular correction next
 
 Actual same-time getter-only measurement identifies an IS-7 rotating-corner

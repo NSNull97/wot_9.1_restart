@@ -3,8 +3,9 @@
 Date:2026-10-14 local. Card branch:`codex/p05b-tracked-handling`.
 Baseline:`d747eec405e7e6c949fa42f5afcbe9e066266606`, runtime candidate14.
 E:`local/evidence/20261013-p05b-tracked-handling-01/`.
-Status: STAGE_A_NUMERIC_CONTRACT; runtime implementation not yet authorized
-until the explicit stage-B review recorded below. This is an existing P05B
+Status: STAGE_A_PASS / STAGE_B_IMPLEMENTATION_GO, root decision2026-10-13
+19:51UTC. The completed scalar review and bounded runtime ownership are
+recorded below. This is an existing P05B
 side-contact correction, not another roadmap card or historical-server claim.
 
 ## Evidence and intended difference
@@ -173,6 +174,11 @@ silently rewritten. The new IPC6 payload cap is65536 bytes excluding LF;
 older versions retain32768 excluding LF, including their exact boundary.
 Keep4096-node/depth12 limits. No unbounded reader, truncation or extra receipt
 capacity. Include accepted/rejected boundary serialization tests.
+For IPC6 scene ACKs retain the2048-element removal-array capacity but use the
+new frame's4096-node limit explicitly: the older ACK reader reuses the40000-node
+extended-catalog parser. Do not inherit that larger node budget into IPC6 or
+shrink a valid2048-ID ACK to the ordinary1024-element array limit. Earlier ACK
+parsing and catalog-manifest limits remain unchanged.
 
 Post-step impulse nonincrease does not prove every simultaneous solid-wall
 constraint stays satisfied. Define no-refund as no restoration of PRE motion
@@ -181,6 +187,35 @@ must additionally check physical outcomes. Do not claim a multibody solver
 equivalence from the single-contact formula.
 
 ## Integration gates, reporting and rollback
+
+Stage-B decision: GO for implementation within the existing authorized night
+task, after [Stage A](../research/P05B_ANGULAR_SCALAR_GATE.md) passed both
+independent kernels, oracle review, source-mass mixed chains and the exact
+body/schema freeze. This is not native/physical acceptance. Root integrity
+receipt `night-angular-stage-a-root01/receipt.json` confirms unchanged262
+runtime sources; independent final review is
+`night-angular-review01/stage-a-final-review.json`. No numeric gate changes.
+
+Exclusive implementation ownership:
+
+- Controller: isolated angular-worker checkout, physics Program/CheckedInput/
+  FractureResponse, new scalar/support code and applicable linked components.
+  Preserve TrackedHandling, body constructor and all old modes. Callback
+  validation faults must escape only after native Update returns.
+- Metrics: isolated angular-gateway checkout, worker/catalog/fracture/profile,
+  pure shared response and bounded full-frame proof, shared model/fragiles/
+  impact/server validation and relevant tests. No client/cadence/P09 changes.
+- Root: Python exporter/tests, exact source/export/build integration, docs and
+  bounded regression harnesses. Export option `angular_fence_response` /
+  `--angular-fence-response` is exclusive with the three previous options.
+- Source audit: independent source/schema/test review; no production mutation
+  or shared service/process control. New actual worker matrices need a frozen
+  bounded fixture/run contract before launch and retain every failed attempt.
+
+Root integrates reviewed patches sequentially. Worktree builds/components may
+proceed independently with fresh output/source pins and disk checks. Actual
+physics runs and gateway acceptance follow the new catalog/build binding;
+they are not implied by the successful scalar phase.
 
 Only after stage-B GO: implement separate reviewed patches in the isolated
 worktrees and root importer/tests, integrate sequentially, build candidate15
