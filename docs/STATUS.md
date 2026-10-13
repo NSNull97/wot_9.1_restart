@@ -1,3 +1,35 @@
+## 2026-10-13 — P04G native MS-1 / IS-7 crew transfers accepted
+
+**PASS_NATIVE_CROSS_VEHICLE_CREW_CURRENT_MAIN.** The shared assignment planner
+now serves two source-verified native profiles. Original #717 Crew/TankCarousel
+callbacks execute14 operations: moves in both directions through barracks,
+occupant replacement and whole-IS-7 unloading. Final MS-1 `[None,2]`, IS-7
+`[1,None,None,None,None]`, third tankman in barracks. Three identities and their
+MS-1-trained base100% descriptors, money, quota and ammunition remain unchanged.
+Original UI displays50% efficiency on IS-7; this is not retraining or acceptance
+of the complete combat penalty formula.
+
+Native clients50404/35096 exit0 normally; fresh bridge/gateway/client login
+preserves both incomplete crews and all20 non-rate-limit tables. Independent
+CMD105 wire/ledger/trace audit passes requests226–239 and update-before-success.
+Four native PNGs inspected; all own installs restored, services stopped and
+one-shot control consumed. Physical mouse/manual input is separately NOT_RUN.
+Rendering and P05 handling debt remain open; battle admission is false.
+
+Final source-bound checks:729 Rust PASS/build PASS;863 distinct applicable
+Python PASS;100 Node PASS;10 actual CPython2.7.3 compilation checks PASS;
+layout94 files/22 relocations PASS. Historical replay and verifier-binding
+review findings were fixed and their failed reproducers retained. No final
+required skips. Branch `codex/p04g-native-cross-vehicle-crew`, accepted
+baseline83fecd5; final commit/ordinary no-ff merge/remote SHA bindings live in
+`local/evidence/20261013-p04g-cross-vehicle-crew-01/acceptance-final/`.
+
+[Evidence, files, commands, limits and rollback](evidence-index/P04G_NATIVE_CROSS_VEHICLE_CREW.md).
+Owner decision recorded for later perks: Sixth Sense is always active without
+learning, even with50% crew. No perk implementation in this card.
+**One next crew step:** native recruitment for every required primary role of
+MS-1 and IS-7, enabling a complete IS-7 crew. Primary P05 work is unchanged.
+
 ## 2026-10-13 — P04F native crew unloading and reassignment accepted
 
 **PASS_NATIVE_CREW_TRANSFER_CURRENT_MAIN.** General server assignment logic

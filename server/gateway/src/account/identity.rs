@@ -49,7 +49,7 @@ fn bounded_file(path:&Path,max:u64)->io::Result<Vec<u8>> {
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
-    pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,
+    pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -66,6 +66,10 @@ impl Config {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("crew transfer must be explicit boolean")),
         };
         if crew_transfer && !crew_service {return Err(invalid("crew transfer requires shared crew service"));}
+        let crew_cross_vehicle=match value.remove("crew_cross_vehicle") {
+            None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("cross-vehicle crew must be explicit boolean")),
+        };
+        if crew_cross_vehicle && !crew_transfer {return Err(invalid("cross-vehicle crew requires crew transfer"));}
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let login_bind=local_address(text(&value,"login_bind")?)?;
@@ -82,7 +86,7 @@ impl Config {
         if token.len()!=43 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b==b'_' || b==b'-') {return Err(invalid("service token must be exactly 43 base64url characters"));}
         let seconds=value["session_duration_seconds"].as_u64().ok_or_else(||invalid("session duration integer"))?;
         if !(600..=7200).contains(&seconds) {return Err(invalid("session duration must be 600..7200 seconds"));}
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle})
     }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
@@ -97,7 +101,7 @@ impl Config {
         if self.ammo_service {
             let binding=crate::ammo_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id)?;
             if self.crew_transfer {
-                crate::crew_transfer091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
+                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected(self.crew_cross_vehicle),&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
             } else if self.crew_service {
                 crate::crew_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
             }
@@ -155,7 +159,7 @@ impl Config {
     pub fn transfer_crew(&self,profile:&Profile,command_key:&str,expected_revision:u64,
                          wire_revision:i64,request:crate::crew_transfer091::Request)->io::Result<AmmoReply> {
         if !self.crew_transfer || !self.crew_service || !self.ammo_service {return Err(invalid("crew transfer is not enabled"));}
-        let body=crate::crew_transfer091::service_request(&profile.account_id,profile.database_id,command_key,
+        let body=crate::crew_transfer091::service_request_for(crate::crew_transfer091::Profile::selected(self.crew_cross_vehicle),&profile.account_id,profile.database_id,command_key,
             expected_revision,wire_revision,request)?;
         let (status,bytes)=self.post("/internal/native/crew-transfer",&body,Duration::from_secs(20))?;
         if status!=200 {return Err(invalid("crew transfer HTTP failure; recover outcome by fresh login"));}
@@ -380,6 +384,12 @@ mod tests {
         for bad in [Value::Null,0.into(),"true".into(),serde_json::json!({})] {
             let mut row=transfer.clone();row["crew_transfer"]=bad;assert!(load(&row).is_err());
         }
+        assert!(!load(&transfer).unwrap().crew_cross_vehicle);
+        let mut cross=transfer.clone();cross["crew_cross_vehicle"]=true.into();assert!(load(&cross).unwrap().crew_cross_vehicle);
+        for bad in [Value::Null,0.into(),"true".into(),serde_json::json!({})] {
+            let mut row=cross.clone();row["crew_cross_vehicle"]=bad;assert!(load(&row).is_err());
+        }
+        cross["crew_transfer"]=false.into();assert!(load(&cross).is_err());
         transfer["crew_service"]=false.into();assert!(load(&transfer).is_err());
         enabled["ammunition_service"]=false.into();assert!(load(&enabled).is_err());
         enabled.as_object_mut().unwrap().remove("ammunition_service");assert!(load(&enabled).is_err());

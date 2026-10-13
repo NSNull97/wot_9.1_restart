@@ -250,6 +250,19 @@ class CrewCapabilitiesTests(unittest.TestCase):
             with self.subTest(allowed=allowed, transfer=transfer), self.assertRaises(ValueError):
                 policy._CrewChangeGuard(self.classes, self.messages, self.record, allowed, transfer)
 
+    def test_cross_vehicle_requires_boolean_and_existing_transfer_without_broadening_callbacks(self):
+        allowed = ('open_recruit', 'recruit')
+        for transfer, cross in ((False, True), (True, 1), (True, 'yes')):
+            with self.subTest(transfer=transfer, cross=cross), self.assertRaises(ValueError):
+                policy._CrewChangeGuard(self.classes, self.messages, self.record, allowed, transfer, cross)
+        guard = policy._CrewChangeGuard(self.classes, self.messages, self.record, allowed, True, True)
+        self.assertTrue(guard.allow_cross_vehicle)
+        guard.install()
+        self.assertIs(self.classes['Crew'].__dict__['equipTankman'], self.originals[('Crew', 'equipTankman')])
+        self.classes['PersonalCase']().unloadTankman(1)
+        self.assertEqual(self.native_calls, [])
+        guard.restore()
+
 
 if __name__ == '__main__':
     unittest.main()

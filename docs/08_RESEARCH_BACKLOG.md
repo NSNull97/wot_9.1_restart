@@ -32,3 +32,13 @@
 Сначала R01–R07 и первичный срез R11–R13. Затем R08–R10 и R20. Параллельно изучать R16–R17: неизвестность исторического алгоритма должна обнаружиться до обещаний готовой боёвки. R15 проверить до накопления большого числа событий.
 
 Разбор «Ориона» не является обязательной зависимостью ни одного пункта. Любые его общедоступные описания можно использовать как продуктовые примеры с источником; технические выводы о его реализации без доступа к проверенным материалам не делать.
+
+
+## Owner rule, 2026-10-13 — base Sixth Sense
+
+When implementing crew perks, Sixth Sense (lamp) is always active as a base
+perk, requires no learning and works even for50% trained crews. This is an
+explicit project rule authorized by the owner, not historical0.9.1 behavior.
+Do not gate activation on perk XP or crew training percentage. Other timing,
+reset and presentation details are not specified by this decision. P04G crew
+transfer does not implement this later perk requirement.

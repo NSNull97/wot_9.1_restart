@@ -7,19 +7,22 @@ import { nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CREW_POLICY_SHA256 = '7d0e3d7ef28d85bfe32e4fcdea0547696a9b4fd04922a725a2d895e1395f0d55';
 export const TRANSFER_POLICY_SHA256 = '35a58c8e13d9b815f8552371bbd6556ba10c091753861e697e522d6a5c877cb2';
+export const CROSS_CREW_POLICY_SHA256 = '20f7d65c6d360a17f164cb6e4eaa73056a58a793727d4bfbecc1358e1f21969f';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
   && Object.keys(v).sort().join(',') === [...keys].sort().join(',');
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
     && transfer.policy_sha256 === TRANSFER_POLICY_SHA256), 'Explicit crew transfer policy required');
-  const profileVersion = transfer === null ? 6 : 7;
-  const worker = transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
+  requireValue(crossVehicle === null || (transfer !== null && exact(crossVehicle, ['version', 'policy_sha256'])
+    && crossVehicle.version === 1 && crossVehicle.policy_sha256 === CROSS_CREW_POLICY_SHA256), 'Explicit cross-vehicle crew policy required');
+  const profileVersion = crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
+  const worker = crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
   requireValue(exact(ammo, ['version', 'bundle_root', 'original_root', 'account_id', 'grant'])
     && ammo.version === 1 && UUID.test(ammo.account_id) && isAbsolute(ammo.original_root)
     && exact(ammo.grant, ['grant_id', 'quantity_each']) && ammo.grant.grant_id === 'p09d-test-depot-v1'
@@ -52,18 +55,24 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
   }
   async function mutate(operation, request) {
     requireValue(['recruit', 'service', ...(transfer === null ? [] : ['transfer'])].includes(operation), 'Unsupported crew operation');
+    // The G migration retains immutable D/F command receipts. Only that opt-in
+    // bridge admits their older cursors; the store binds the complete request
+    // to its ledger and older cursors may return successful replays only.
+    const minimumRequestRevision = crossVehicle === null ? profileVersion : 6;
     requireValue(exact(request, ['account_id', 'native_database_id', 'command_key', 'expected_revision', 'wire_revision', 'layout'])
       && request.account_id === ammo.account_id && integer(request.native_database_id, 1)
       && typeof request.command_key === 'string' && /^[\x21-\x7e]{1,96}$/.test(request.command_key)
-      && integer(request.expected_revision, profileVersion) && integer(request.wire_revision, 1, 2147483646)
+      && integer(request.expected_revision, minimumRequestRevision) && integer(request.wire_revision, 1, 2147483646)
       && Array.isArray(request.layout) && request.layout.length === (operation === 'recruit' ? 4 : operation === 'transfer' ? 3 : 16)
       && request.layout.every(v => integer(v, -2147483648)), 'Native crew request schema');
     const value = await run(operation, request), success = operation === 'recruit' ? 'recruited' : operation === 'transfer' ? 'transferred' : 'serviced';
+    const historicalOnly = request.expected_revision < profileVersion;
     requireValue(exact(value, ['status', 'account_id', 'native_database_id', 'command_key', 'revision', 'wire_revision', 'update_hex', 'replayed', 'result_code'])
       && [success, 'rejected'].includes(value.status) && value.account_id === request.account_id
       && value.native_database_id === request.native_database_id && value.command_key === request.command_key
-      && integer(value.revision, profileVersion) && integer(value.wire_revision, 1)
+      && integer(value.revision, historicalOnly ? minimumRequestRevision + 1 : profileVersion) && integer(value.wire_revision, 1)
       && typeof value.replayed === 'boolean' && typeof value.update_hex === 'string'
+      && (!historicalOnly || (value.status === success && value.replayed === true))
       && /^(?:[0-9a-f]{2}){0,240}$/.test(value.update_hex)
       && (value.status === success ? value.result_code === 0 && value.update_hex.length > 0
         && value.wire_revision === request.wire_revision + 1 && value.revision === request.expected_revision + 1
