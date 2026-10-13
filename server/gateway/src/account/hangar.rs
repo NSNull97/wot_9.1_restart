@@ -42,6 +42,7 @@ pub enum Incoming { Sync(Request), Refresh(Request), Chat(ChatRequest), Language
                     CachedRefresh { request:Request, persistent_hash:i32 },
                     AmmoRefresh { request:Request, revision:i64, persistent_hash:i32 },
                     AmmoService(crate::ammo_service091::Request),
+                    CrewService(crate::crew_service091::Request),
                     UnsupportedIntArray { id:i16, command:i16, argument_count:usize } }
 
 /// Measured gui-01 bundle: three ordinary sync calls plus friend status, roster
@@ -49,18 +50,21 @@ pub enum Incoming { Sync(Request), Refresh(Request), Chat(ChatRequest), Language
 /// Empty means the measured token-only application body; token validation stays
 /// in the gateway. Unknown methods or any truncated tail reject the whole bundle.
 pub fn requests(body: &[u8]) -> io::Result<Vec<Incoming>> {
-    requests_profile(body,false,false)
+    requests_profile(body,false,false,false)
 }
 pub fn requests_interactive(body:&[u8])->io::Result<Vec<Incoming>> {
-    requests_profile(body,true,false)
+    requests_profile(body,true,false,false)
 }
 /// Explicit service gate. Decode the complete bundle before dispatching any
 /// operation. A structurally valid unsupported layout remains a typed request
 /// so the caller can send RES_NOT_AVAILABLE without mutating account state.
 pub fn requests_ammo_service(body:&[u8])->io::Result<Vec<Incoming>> {
-    requests_profile(body,true,true)
+    requests_profile(body,true,true,false)
 }
-fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool)->io::Result<Vec<Incoming>> {
+pub fn requests_crew_service(body:&[u8])->io::Result<Vec<Incoming>> {
+    requests_profile(body,true,true,true)
+}
+fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:bool)->io::Result<Vec<Incoming>> {
     if body.len() > 512 { return Err(invalid("hangar request bundle size")); }
     let mut cursor = 0;
     let mut rows = Vec::new();
@@ -124,7 +128,8 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool)->io::Result<V
                     | Incoming::AmmoRefresh {request:previous,..}
                     if previous.id == r.id || previous.command == r.command)
                     || matches!(r0, Incoming::Language { id } | Incoming::UnsupportedIntArray {id,..} if *id == r.id)
-                    || matches!(r0, Incoming::AmmoService(previous) if previous.id==r.id)) {
+                    || matches!(r0, Incoming::AmmoService(previous) if previous.id==r.id)
+                    || matches!(r0, Incoming::CrewService(previous) if previous.id==r.id)) {
                     return Err(invalid("duplicate sync in hangar bundle"));
                 }
                 if ammo_refresh { Incoming::AmmoRefresh {request:r,revision:version,persistent_hash:last_change_time} }
@@ -158,6 +163,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool)->io::Result<V
                         Incoming::CachedRefresh {request:r,..} => r.id == id,
                         Incoming::AmmoRefresh {request:r,..} => r.id == id,
                         Incoming::AmmoService(r) => r.id == id,
+                        Incoming::CrewService(r) => r.id == id,
                         Incoming::Chat(_) => false,
                         Incoming::ServerStats => id == 202,
                         Incoming::UnsupportedIntArray {id:previous,..} => *previous==id,
@@ -165,6 +171,11 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool)->io::Result<V
                     return Err(invalid("unmeasured language request"));
                 }
                 Incoming::Language { id }
+            },
+            crate::crew_service091::CANDIDATE_METHOD if crew_service && length==crate::crew_service091::PAYLOAD_BYTES => {
+                // INFERRED wire0x90 from pinned inherited #717 method table.
+                // Explicit opt-in test_lab only; native capture is the gate.
+                Incoming::CrewService(crate::crew_service091::Request::decode(&packet[3..])?)
             },
             0x97 if ammo_service && length==72 => {
                 Incoming::AmmoService(crate::ammo_service091::Request::decode(&packet[3..])?)
@@ -184,6 +195,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool)->io::Result<V
                         Incoming::CachedRefresh {request:r,..}=>r.id==id,
                         Incoming::AmmoRefresh {request:r,..}=>r.id==id,
                         Incoming::AmmoService(r)=>r.id==id,
+                        Incoming::CrewService(r)=>r.id==id,
                         Incoming::Language{id:previous}|Incoming::UnsupportedIntArray{id:previous,..}=>*previous==id,
                         Incoming::ServerStats=>id==202,Incoming::Chat(_)=>false,
                     }) {return Err(invalid("unmeasured unavailable integer-array command"));}
@@ -201,6 +213,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool)->io::Result<V
                     |Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
                     Incoming::Language{id}|Incoming::UnsupportedIntArray{id,..}=>Some(*id),
                     Incoming::AmmoService(r)=>Some(r.id),
+                    Incoming::CrewService(r)=>Some(r.id),
                     Incoming::ServerStats=>Some(202),
                     Incoming::Chat(_)=>None, // ClientChat has its own i64 request namespace.
                 }
@@ -338,7 +351,7 @@ struct DossierManifest {
     fixture_version:Option<u32>,profile_version:Option<u32>,snapshot_revision:Option<u32>,
     wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
     account_id:String,native_database_id:i32,
-    grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,
+    grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,crew_policy_sha256:Option<String>,
 }
 struct DossierCompatibility {
     snapshot_revision:Option<u32>,wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
@@ -383,7 +396,7 @@ metadata_fields!(TestGrantMetadata,true,{grant_id:String,granted_at_ms:u64,base_
 metadata_fields!(DossierManifest,false,{fixture_version:Option<u32>,profile_version:Option<u32>,snapshot_revision:Option<u32>,
     wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
     account_id:String,native_database_id:i32,
-    grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>});
+    grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,crew_policy_sha256:Option<String>});
 metadata_fields!(DossierCompatibility,false,{snapshot_revision:Option<u32>,wire_sync_revision:Option<u32>,
     compatibility_catalog_revision:Option<u32>,dossier_cache:Option<DossierCursor>});
 
@@ -418,7 +431,7 @@ fn grant_dossier_cursor(directory:&Path,raw:&[u8])->io::Result<Option<DossierCur
     let compatibility_cursor=compatibility.as_ref().and_then(|c|c.dossier_cache);
     if manifest_cursor.is_none() && compatibility_cursor.is_none() {
         if raw==b"\x80\x02(K\x00]t." && !manifest.as_ref().is_some_and(|m|
-            m.fixture_version==Some(5) || m.profile_version==Some(5)) {return Ok(None);}
+            matches!(m.fixture_version,Some(5)|Some(6)) || matches!(m.profile_version,Some(5)|Some(6))) {return Ok(None);}
         return Err(invalid("nonempty interactive dossier requires verified grant metadata"));
     }
     let manifest=manifest.as_ref().ok_or_else(||invalid("grant manifest missing"))?;
@@ -430,8 +443,14 @@ fn grant_dossier_cursor(directory:&Path,raw:&[u8])->io::Result<Option<DossierCur
     // exact profile2 IS-7 dossier grant. The bridge validates the domain
     // snapshot. Profile5 additionally binds an explicit service fixture with
     // an independently evolving persistent revision and unchanged dossier.
-    let service_profile=if manifest.fixture_version==Some(5) && manifest.profile_version==Some(5) {
+    let service_profile=if matches!((manifest.fixture_version,manifest.profile_version),(Some(5),Some(5))|(Some(6),Some(6))) {
         let binding=crate::ammo_service091::metadata(directory,&manifest.account_id,manifest.native_database_id)?;
+        if manifest.fixture_version==Some(6) {
+            crate::crew_service091::metadata(directory,&manifest.account_id,manifest.native_database_id,binding.revision,binding.wire_revision)?;
+            if manifest.crew_policy_sha256.as_deref()!=Some(crate::crew_service091::POLICY_SHA256) {
+                return Err(invalid("crew manifest policy binding"));
+            }
+        } else if manifest.crew_policy_sha256.is_some() {return Err(invalid("crew policy requires profile6"));}
         manifest.snapshot_revision.map(u64::from)==Some(binding.revision)
             && compatibility.snapshot_revision.map(u64::from)==Some(binding.revision)
     } else {false};
@@ -1027,6 +1046,26 @@ mod tests {
                 5=>c["dossier_cache"]["last_change_time"]=serde_json::json!(time+1),
                 _=>a["state_sha256"]=serde_json::json!("0".repeat(64))}
             assert!(load(&m,&c,Some(&a)).is_err(),"mutation {mutation}");
+        }
+        // Profile6 extends the same service revision and preserved dossier.
+        // These bytes are codec fixtures only; descriptors/native UI are not
+        // claimed by this binding test.
+        let mut m6=manifest.clone();let mut c6=compatibility.clone();let mut a6=metadata.clone();
+        m6["fixture_version"]=6.into();m6["profile_version"]=6.into();m6["snapshot_revision"]=6.into();
+        m6["crew_policy_sha256"]=crate::crew_service091::POLICY_SHA256.into();c6["snapshot_revision"]=6.into();a6["revision"]=6.into();
+        assert!(load(&m6,&c6,Some(&a6)).is_err());
+        let crew=serde_json::json!({"version":1,"account_id":account,"native_database_id":900001,
+            "revision":6,"wire_revision":1,"policy_sha256":crate::crew_service091::POLICY_SHA256,
+            "state_sha256":format!("{:x}",Sha256::digest(EMPTY_DICT)),"command":309,"vehicle_inventory_id":1,
+            "slot":1,"tariff_index":0,"free_recruitment_left":1,"configuration_revision":1,"battle":false});
+        std::fs::write(directory.join("crew-service.json"),serde_json::to_vec(&crew).unwrap()).unwrap();
+        assert_eq!(load(&m6,&c6,Some(&a6)).unwrap().dossier,raw);
+        for mutation in 0..4 {
+            let mut bad_manifest=m6.clone();let mut bad_crew=crew.clone();
+            match mutation {0=>bad_manifest["crew_policy_sha256"]="0".repeat(64).into(),1=>bad_crew["revision"]=7.into(),
+                2=>bad_crew["configuration_revision"]=2.into(),_=>bad_crew["state_sha256"]="0".repeat(64).into()};
+            std::fs::write(directory.join("crew-service.json"),serde_json::to_vec(&bad_crew).unwrap()).unwrap();
+            assert!(load(&bad_manifest,&c6,Some(&a6)).is_err());
         }
         std::fs::write(directory.join("dossier.bin"),b"\x80\x02(K\x00]t.").unwrap();
         let mut m=manifest.clone();let mut c=compatibility.clone();

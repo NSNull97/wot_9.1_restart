@@ -1,24 +1,38 @@
 //! P09D account service scheduling. External writes only run after the parent
 //! Session::receive commits its complete cloned frame/piggyback tree.
 use super::*;
-use crate::{account091,ammo_service091 as codec,identity091};
+use crate::{account091,ammo_service091 as codec,crew_service091 as crew_codec,identity091};
 
 const MAX_COMMANDS:usize=512;
 const MAX_PENDING:usize=4;
 
 #[derive(Clone,Debug,PartialEq,Eq)]
+enum Command {Ammo(codec::Request),Crew(crew_codec::Request)}
+impl Command {
+    fn id(&self)->i16 {match self {Self::Ammo(r)=>r.id,Self::Crew(r)=>r.id}}
+    fn vehicle(&self)->i32 {match self {Self::Ammo(r)=>r.vehicle_inventory_id(),Self::Crew(r)=>r.vehicle_inventory_id}}
+    fn kind(&self)->&'static str {match self {Self::Ammo(_)=>"AMMO",Self::Crew(_)=>"CREW"}}
+    fn validate_supported(&self)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_supported()}}
+}
+
+#[derive(Clone,Debug,PartialEq,Eq)]
 pub(super) struct State {
-    revision:u64,wire_revision:i64,prefix:String,
-    seen:Vec<i16>,pending:VecDeque<codec::Request>,inflight:Option<codec::Request>,
+    revision:u64,wire_revision:i64,prefix:String,crew_enabled:bool,
+    seen:Vec<i16>,pending:VecDeque<Command>,inflight:Option<Command>,
 }
 impl State {
-    pub(super) fn new(binding:codec::Metadata)->Self {
+    pub(super) fn new(binding:codec::Metadata,crew_enabled:bool)->Self {
         let mut random=[0;16];OsRng.fill_bytes(&mut random);
         let prefix=random.iter().map(|byte|format!("{byte:02x}")).collect();
-        Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,
+        Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,
              seen:Vec::new(),pending:VecDeque::new(),inflight:None}
     }
-    fn command_key(&self,id:i16)->String {format!("p09d:{}:{id}",self.prefix)}
+    pub(super) fn crew_enabled(&self)->bool {self.crew_enabled}
+    pub(super) fn used_id(&self,id:i16)->bool {self.seen.contains(&id)}
+    fn command_key(&self,request:&Command)->String {
+        let card=match request {Command::Ammo(_)=>"p09d",Command::Crew(_)=>"p04d"};
+        format!("{card}:{}:{}",self.prefix,request.id())
+    }
 }
 
 fn available(session:&Session)->io::Result<()> {
@@ -31,19 +45,27 @@ fn available(session:&Session)->io::Result<()> {
 }
 
 pub(super) fn enqueue(session:&mut Session,request:codec::Request,events:&mut Vec<String>)->io::Result<()> {
+    enqueue_command(session,Command::Ammo(request),events)
+}
+pub(super) fn enqueue_crew(session:&mut Session,request:crew_codec::Request,events:&mut Vec<String>)->io::Result<()> {
+    if !session.ammo_service.as_ref().is_some_and(State::crew_enabled) {return Err(invalid());}
+    enqueue_command(session,Command::Crew(request),events)
+}
+fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)->io::Result<()> {
     available(session)?;
     let state=session.ammo_service.as_mut().ok_or_else(invalid)?;
-    if state.seen.contains(&request.id) || state.seen.len()>=MAX_COMMANDS
-        || session.request_ids.contains(&request.id) || session.unsupported_request_ids.contains(&request.id)
+    let id=request.id();let kind=request.kind();
+    if id==202 || state.seen.contains(&id) || state.seen.len()>=MAX_COMMANDS
+        || session.request_ids.contains(&id) || session.unsupported_request_ids.contains(&id)
         || state.pending.len()+usize::from(state.inflight.is_some())>=MAX_PENDING || session.outbox.len()>120 {
         return Err(invalid());
     }
-    state.seen.push(request.id);
+    state.seen.push(id);
     if request.validate_supported().is_err() {
-        session.outbox.push_back(crate::hangar091::unavailable_response(request.id)?);
-        events.push(format!("AMMO_SERVICE_REJECTED session={} request={} result=-10 reason=unsupported_layout domain_applied=false",session.id,request.id));
+        session.outbox.push_back(crate::hangar091::unavailable_response(id)?);
+        events.push(format!("{kind}_SERVICE_REJECTED session={} request={id} result=-10 reason=unsupported_layout domain_applied=false",session.id));
     } else {
-        events.push(format!("AMMO_SERVICE_PENDING session={} request={} vehicle={} mutation_started=false",session.id,request.id,request.vehicle_inventory_id()));
+        events.push(format!("{kind}_SERVICE_PENDING session={} request={id} vehicle={} mutation_started=false",session.id,request.vehicle()));
         state.pending.push_back(request);
     }
     Ok(())
@@ -88,18 +110,21 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
     available(session)?;
     if state.inflight.is_some() || session.outbox.len()>126 {return Err(invalid());}
     let profile=session.identity.clone().ok_or_else(invalid)?;
-    let (revision,wire_revision,key)=(state.revision,state.wire_revision,state.command_key(request.id));
-    let account_id=profile.account_id.clone();let request_id=request.id;
+    let (revision,wire_revision,key)=(state.revision,state.wire_revision,state.command_key(&request));
+    let account_id=profile.account_id.clone();let request_id=request.id();let kind=request.kind();
     let (sender,receiver)=mpsc::sync_channel(1);
-    let arguments=request.arguments;
-    thread::Builder::new().name("local-ammunition".to_owned()).spawn(move || {
-        let outcome=config.service_ammunition(&profile,&key,revision,wire_revision,arguments);
+    let dispatched=request.clone();
+    thread::Builder::new().name("local-account-service".to_owned()).spawn(move || {
+        let outcome=match dispatched {
+            Command::Ammo(request)=>config.service_ammunition(&profile,&key,revision,wire_revision,request.arguments),
+            Command::Crew(request)=>config.recruit_crew(&profile,&key,revision,wire_revision,request),
+        };
         let _=sender.send(outcome); // A stopped gateway has no native recipient.
     })?;
     let state=session.ammo_service.as_mut().ok_or_else(invalid)?;
     state.pending.pop_front();state.inflight=Some(request);
     *slot=Some(Job{session_id:session.id,account_id,request_id,receiver});
-    println!("AMMO_SERVICE_DISPATCH session={} request={request_id} source_revision={revision} wire_revision={wire_revision} funding=owned_depot",session.id);
+    println!("{kind}_SERVICE_DISPATCH session={} request={request_id} source_revision={revision} wire_revision={wire_revision} shared_writer=true",session.id);
     Ok(())
 }
 
@@ -107,7 +132,8 @@ fn apply(session:&mut Session,request_id:i16,reply:identity091::AmmoReply)->io::
     available(session)?;
     let mut next=session.clone();
     let state=next.ammo_service.as_mut().ok_or_else(invalid)?;
-    if state.inflight.as_ref().map(|request|request.id)!=Some(request_id) {return Err(invalid());}
+    if state.inflight.as_ref().map(Command::id)!=Some(request_id) {return Err(invalid());}
+    let kind=state.inflight.as_ref().ok_or_else(invalid)?.kind();
     let bodies=if reply.serviced {
         if reply.revision!=state.revision.checked_add(1).ok_or_else(invalid)?
             || reply.wire_revision!=state.wire_revision.checked_add(1).ok_or_else(invalid)? {return Err(invalid());}
@@ -122,7 +148,7 @@ fn apply(session:&mut Session,request_id:i16,reply:identity091::AmmoReply)->io::
     state.revision=reply.revision;state.wire_revision=reply.wire_revision;state.inflight=None;
     next.outbox.extend(bodies);next.drain_outbox()?;
     *session=next;
-    println!("AMMO_SERVICE_RESULT session={} request={request_id} serviced={} revision={} wire_revision={} replayed={} result={} update_bytes={} response_queued=true",
+    println!("{kind}_SERVICE_RESULT session={} request={request_id} serviced={} revision={} wire_revision={} replayed={} result={} update_bytes={} response_queued=true",
         session.id,reply.serviced,reply.revision,reply.wire_revision,reply.replayed,reply.result_code,reply.update.len());
     Ok(())
 }
@@ -160,12 +186,28 @@ mod tests {
         session.hangar=Some(Arc::new(crate::hangar091::Fixtures::load_interactive(&directory).unwrap()));
         session.active=true;session.account_ready=true;session.sync_mask=7;session.rx=1;
         session.tx=Window::interactive();session.base_peer=Some("127.0.0.1:40001".parse().unwrap());
-        session.ammo_service=Some(State::new(codec::Metadata{revision:5,wire_revision:1}));session
+        session.ammo_service=Some(State::new(codec::Metadata{revision:5,wire_revision:1},false));session
     }
     fn request(id:i16)->codec::Request {codec::Request{id,arguments:[1,1,6,2570,20,2826,0,3082,0,6,0,0,0,0,0,0]}}
     fn packet(request:codec::Request)->Vec<u8> {
         let mut body=vec![0x97,72,0];body.extend(request.id.to_le_bytes());body.extend(108i16.to_le_bytes());
         body.extend(16u32.to_le_bytes());for arg in request.arguments {body.extend(arg.to_le_bytes());}body
+    }
+    fn ready_crew(now:Instant)->Session {
+        let mut session=ready(now);session.ammo_service=Some(State::new(codec::Metadata{revision:6,wire_revision:1},true));session
+    }
+    fn crew_request(id:i16)->crew_codec::Request {
+        crew_codec::Request{id,shop_revision:3,vehicle_inventory_id:1,slot:1,tariff_index:0}
+    }
+    fn crew_packet(request:crew_codec::Request)->Vec<u8> {
+        let mut body=vec![crew_codec::CANDIDATE_METHOD,24,0];body.extend(request.id.to_le_bytes());body.extend(309i16.to_le_bytes());
+        body.extend(request.shop_revision.to_le_bytes());body.extend(request.vehicle_inventory_id.to_le_bytes());
+        body.extend(request.slot.to_le_bytes());body.extend(request.tariff_index.to_le_bytes());body
+    }
+    fn crew_reply(revision:u64,wire:i64)->identity091::AmmoReply {
+        let mut delta=b"\x80\x02}(U\x07prevRevJ".to_vec();delta.extend((wire as i32-1).to_le_bytes());
+        delta.extend(b"U\x03revJ");delta.extend((wire as i32).to_le_bytes());delta.extend(b"u.");
+        identity091::AmmoReply{serviced:true,revision,wire_revision:wire,update:delta,replayed:false,result_code:0}
     }
     fn refresh_packet(id:i16,revision:i64)->Vec<u8> {
         let mut body=vec![0x8e,20,0];body.extend(id.to_le_bytes());body.extend(100i16.to_le_bytes());
@@ -318,5 +360,107 @@ mod tests {
         sender.send(Err(io::Error::new(io::ErrorKind::TimedOut,"test timeout"))).unwrap();
         assert!(complete(Some(&mut session),&mut slot).is_err());assert!(slot.is_none());
         assert_eq!(session.ammo_service,before);assert_eq!(session.tx.len(),0);
+    }
+
+    #[test]
+    fn crew_candidate_requires_explicit_gate_and_preserves_full_frame_atomicity() {
+        let now=Instant::now();let wire=crew_packet(crew_request(226));
+        assert!(crate::hangar091::requests(&wire).is_err());assert!(crate::hangar091::requests_interactive(&wire).is_err());
+        assert!(crate::hangar091::requests_ammo_service(&wire).is_err());
+        let mut session=ready(now);let before=session.ammo_service.clone();
+        assert!(session.receive(&frame(&session,1,&wire),now).is_err());assert_eq!(session.ammo_service,before);
+        let original=ready_crew(now);
+        let mut bad=wire.clone();bad.push(0xff);
+        let mut invalid_parent=frame(&original,2,&[0xff]);invalid_parent.piggybacks.push(frame(&original,1,&wire));
+        for incoming in [frame(&original,1,&bad),invalid_parent] {
+            let mut session=original.clone();assert!(session.receive(&incoming,now).is_err());
+            assert_eq!(session.ammo_service,original.ammo_service);assert_eq!(session.rx,1);assert_eq!(session.tx.len(),0);
+        }
+        let mut session=original.clone();let accepted=frame(&session,1,&wire);session.receive(&accepted,now).unwrap();
+        let state=session.ammo_service.as_ref().unwrap();assert_eq!(state.pending.len(),1);assert!(state.inflight.is_none());
+        assert_eq!(state.revision,6);let committed=session.ammo_service.clone();
+        session.receive(&accepted,now).unwrap();assert_eq!(session.ammo_service,committed);
+    }
+
+    #[test]
+    fn mixed_commands_have_one_fifo_revision_and_update_before_each_callback() {
+        let now=Instant::now();
+        for crew_first in [false,true] {
+            let mut session=ready_crew(now);
+            let wires=if crew_first {[crew_packet(crew_request(226)),packet(request(227))]}
+                else {[packet(request(226)),crew_packet(crew_request(227))]};
+            session.receive(&frame(&session,1,&wires.concat()),now).unwrap();
+            let state=session.ammo_service.as_mut().unwrap();assert_eq!(state.pending.len(),2);
+            let first=state.pending.front().unwrap();assert_eq!(first.kind(),if crew_first {"CREW"}else{"AMMO"});
+            assert!(state.command_key(first).starts_with(if crew_first {"p04d:"}else{"p09d:"}));
+            state.inflight=state.pending.pop_front();
+            apply(&mut session,226,crew_reply(7,2)).unwrap();
+            let state=session.ammo_service.as_mut().unwrap();assert_eq!(state.revision,7);assert_eq!(state.wire_revision,2);
+            assert!(state.inflight.is_none());assert_eq!(state.pending.front().unwrap().id(),227);
+            state.inflight=state.pending.pop_front();apply(&mut session,227,crew_reply(8,3)).unwrap();
+            let state=session.ammo_service.as_ref().unwrap();assert_eq!(state.revision,8);assert_eq!(state.wire_revision,3);
+            assert!(state.pending.is_empty());assert!(state.inflight.is_none());
+            let bodies:Vec<Vec<u8>>=(0..4).map(|_| {
+                let clear=session.tx.due(now,session.rx).unwrap().unwrap().2;
+                transport091::parse_interactive(&clear).unwrap().body
+            }).collect();
+            assert_eq!(bodies[0][1],0x57);assert_eq!(bodies[1],codec::success_response(226).unwrap());
+            assert_eq!(bodies[2][1],0x57);assert_eq!(bodies[3],codec::success_response(227).unwrap());
+        }
+    }
+
+    #[test]
+    fn crew_paid_invalid_slot_and_wrong_shop_reply_unavailable_without_worker() {
+        let now=Instant::now();
+        for change in 0..4 {
+            let mut req=crew_request(226);match change {0=>req.tariff_index=1,1=>req.slot=0,2=>req.shop_revision=1,_=>req.vehicle_inventory_id=2};
+            let mut session=ready_crew(now);session.receive(&frame(&session,1,&crew_packet(req)),now).unwrap();
+            let state=session.ammo_service.as_ref().unwrap();assert!(state.pending.is_empty());assert!(state.inflight.is_none());assert_eq!(state.revision,6);
+            let clear=session.tx.due(now,session.rx).unwrap().unwrap().2;
+            assert_eq!(transport091::parse_interactive(&clear).unwrap().body,crate::hangar091::unavailable_response(226).unwrap());
+        }
+    }
+
+    #[test]
+    fn mixed_duplicates_malformed_tail_and_shared_queue_limit_roll_back_every_command() {
+        let now=Instant::now();let original=ready_crew(now);
+        let mut tail=[crew_packet(crew_request(226)),packet(request(227))].concat();tail.push(0xff);
+        let overflow=[crew_packet(crew_request(226)),packet(request(227)),crew_packet(crew_request(228)),packet(request(229)),crew_packet(crew_request(230))].concat();
+        for wire in [[crew_packet(crew_request(226)),packet(request(226))].concat(),
+                     [packet(request(226)),crew_packet(crew_request(226))].concat(),tail,overflow] {
+            let mut session=original.clone();assert!(session.receive(&frame(&session,1,&wire),now).is_err());
+            assert_eq!(session.ammo_service,original.ammo_service);assert_eq!(session.rx,1);assert_eq!(session.tx.len(),0);
+        }
+    }
+
+    #[test]
+    fn crew_request_id_cannot_collide_with_later_language_or_account_refresh() {
+        let now=Instant::now();let mut session=ready_crew(now);
+        session.receive(&frame(&session,1,&crew_packet(crew_request(226))),now).unwrap();let before=session.ammo_service.clone();
+        let mut language=vec![0x95,7,0];language.extend(226i16.to_le_bytes());language.extend([0xe8,3,2,b'r',b'u']);
+        for wire in [language,refresh_packet(226,1)] {
+            assert!(session.receive(&frame(&session,2,&wire),now).is_err());assert_eq!(session.ammo_service,before);assert_eq!(session.rx,2);
+        }
+        assert!(enqueue_crew(&mut session,crew_request(202),&mut vec![]).is_err());
+    }
+
+    #[test]
+    fn crew_rejection_and_ambiguous_or_retired_worker_never_report_success() {
+        let now=Instant::now();let mut session=ready_crew(now);
+        enqueue_crew(&mut session,crew_request(226),&mut vec![]).unwrap();
+        let state=session.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
+        let before=session.ammo_service.clone();let mut invalid_reply=crew_reply(8,2);
+        assert!(apply(&mut session,226,invalid_reply).is_err());assert_eq!(session.ammo_service,before);assert_eq!(session.tx.len(),0);
+        invalid_reply=crew_reply(7,3);assert!(apply(&mut session,226,invalid_reply).is_err());assert_eq!(session.ammo_service,before);
+        let (sender,receiver)=mpsc::sync_channel(1);let mut slot=Some(Job{session_id:session.id,
+            account_id:session.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver});
+        complete(Some(&mut session),&mut slot).unwrap();assert!(slot.is_some());
+        let mut next=ready_crew(now);next.id=2;let clean=next.ammo_service.clone();
+        sender.send(Ok(crew_reply(7,2))).unwrap();complete(Some(&mut next),&mut slot).unwrap();
+        assert_eq!(next.ammo_service,clean);assert_eq!(next.tx.len(),0);
+        apply(&mut session,226,identity091::AmmoReply{serviced:false,revision:6,wire_revision:1,update:vec![],replayed:false,result_code:-10}).unwrap();
+        assert_eq!(session.ammo_service.as_ref().unwrap().revision,6);
+        let clear=session.tx.due(now,session.rx).unwrap().unwrap().2;
+        assert_eq!(transport091::parse_interactive(&clear).unwrap().body,crate::hangar091::unavailable_response(226).unwrap());
     }
 }
