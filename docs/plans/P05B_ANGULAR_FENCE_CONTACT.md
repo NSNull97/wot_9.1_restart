@@ -234,7 +234,7 @@ Passage is separate from a receipt. Run applicable Python/C#/Rust checks and
 fresh full gateway gate before preparing any morning stand. Native owner tests
 stay NOT_RUN until after09:00; no merge while those remain open.
 
-### Source catalog gate — 2026-10-13 20:01UTC
+### Source catalog gate — 2026-10-13 19:57UTC
 
 Root added the mutually exclusive `--angular-fence-response` export option.
 The actual pinned native join passes25 Python tests and the CLI export:
@@ -250,6 +250,16 @@ New worker8 `catalog/physics-removals.json`:
 `41c0d9ccfd5b608a07e80a4eb68a3b6ed70bacffdd1444bb58c3f2ebb179bea9`.
 Exact commands, source hashes and logs are in that directory. No physics worker
 or client ran in this gate. Runtime implementations remain in isolated review.
+
+The canonical build driver currently accepts Cargo's successful zero-test
+selection as a passing targeted gate (its isolated ignored gate already rejects
+it). Before using the new saved-frame filter, reject a total passing count of
+zero for every requested test run. This changes acceptance reporting only,
+not Rust execution or game code. Check positive/empty/failing transcripts and
+the retained actual full/targeted logs; retain that validation separately.
+Implemented and checked:5 Python accounting tests PASS in
+`night-angular-build-accounting01/receipt.json`. Existing755/1 Rust result logs
+were read and retain their counts; Rust and workers were NOT_RUN in this check.
 
 The first-eight actual-worker design is frozen in
 `night-angular-stageb-review01/ACTUAL_WORKER_MATRIX.md`, SHA256

@@ -23,6 +23,15 @@ def save(out, name, value):
         stream.write('\n')
 
 
+def test_counts(text):
+    """A successful empty Cargo filter is not evidence of a passing gate."""
+    counts = re.findall(r'test result: ok\. (\d+) passed; 0 failed', text)
+    if not counts or sum(map(int, counts)) == 0 or 'test result: FAILED.' in text:
+        raise ValueError('Nonempty passing Rust suite result absent')
+    ignored = re.findall(r'test result: ok\. \d+ passed; 0 failed; (\d+) ignored', text)
+    return sum(map(int, counts)), sum(map(int, ignored))
+
+
 def command(out, label, argv, env):
     started = datetime.now(timezone.utc).isoformat()
     with (out / (label + '.stdout.log')).open('xb') as stdout, \
@@ -95,12 +104,7 @@ def main():
                     test_argv.extend(['--', '--ignored', '--exact', '--test-threads=1'])
                 command(out, 'test', test_argv, env)
                 text = (out / 'test.stdout.log').read_text(encoding='utf-8')
-                counts = re.findall(r'test result: ok\. (\d+) passed; 0 failed', text)
-                if not counts:
-                    raise ValueError('Passing Rust suite result absent')
-                result['tests_passed'] = sum(map(int, counts))
-                result['tests_ignored'] = sum(map(int, re.findall(
-                    r'test result: ok\. \d+ passed; 0 failed; (\d+) ignored', text)))
+                result['tests_passed'], result['tests_ignored'] = test_counts(text)
                 if args.run_ignored and (result['tests_passed'] != 1 or result['tests_ignored'] != 0):
                     raise ValueError('Isolated ignored gate requires exactly one passing test and no ignored tests')
                 result['tests_scope'] = args.test_filter or 'full gateway suite'
