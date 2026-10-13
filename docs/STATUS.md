@@ -1,4 +1,36 @@
-## 2026-10-13 — P06R fence-chain accepted; P03M IS-7 next
+## 2026-10-13 — P03M IS-7 runtime integration
+
+P06R was accepted, merged with `--no-ff` and pushed at
+`eb054618bd0eae1ae23bba42a0f875969ac2d24e`; remote SHA was verified.
+Current branch: `codex/p03m-is7-runtime-profile`. IS-7 now has a closed typed
+profile for the exact mounted #717 descriptor,68190kg,2150HP,30 AP14602 rounds,
+13.7s reload, source collision/material geometry and its own aiming/shot effects.
+Temporary homogeneous Prohorovka selection is explicit; default MS-1 remains.
+Legacy primary-only map-drive rejects IS-7 pools before sockets/capture.
+
+Canonical gateway05 passes676/676 tests, including actual IS-7 workers,
+mass/energy response and both-ACK-before-commit. Final physics02 passes16 IS-7
+and8 MS-1 paired scenarios; five old/new MS-1 trajectories match exactly.
+Geometry/layout/profile Python:45 executed PASS/one symlink test NOT_RUN.
+Final versioned control supports rest/moving/reverse turning; source-slope
+asymmetry and historical handling remain UNKNOWN.
+
+Fresh native `is7run03` is live: both clients READY, two workers,238 areas,
+no server faults/stderr or client diagnostic errors at the frozen prefix.
+Corrected observer passes120 original marker callbacks across both clients;
+all six native hitTester boxes match source float32 bounds. Root observer
+tests24/24 and Python2.7.3 compilation also PASS. Failed runs01/02 are preserved,
+stopped and installations restored; run03 has fresh installation ledgers.
+Launch source `c4f3b8a`; gateway05 is reused after230-file comparison proves
+server/physics unchanged and only the tested observer/tool files differ.
+Owner movement/fire/rendered destruction acceptance is still NOT_RUN; P03M
+stays in its branch. Next: owner's IS-7 drive/fire/destruction check.
+
+Exact files, commands, failed runs, provenance, limits and rollback:
+[P03M report](research/P03M_IS7_RUNTIME_PROFILE.md),
+[plan](plans/P03M_IS7_RUNTIME_PROFILE.md).
+
+## 2026-10-13 — P06R fence-chain accepted (historical checkpoint)
 
 **PASS_OWNER_FENCE_CHAIN_TEST_LAB.** Owner confirms consecutive fences now pass
 without stopping after the first section. Final run03 audit matches ten fence

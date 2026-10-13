@@ -1,6 +1,6 @@
 # P03M — second source-bound vehicle for movement and battle checks
 
-Status: IN_PROGRESS_SOURCE_BOUND_RUNTIME; native admission NOT_RUN.
+Status: PASS_AUTOMATIC_PRIVATE; PENDING_OWNER_NATIVE_IS7.
 Accepted base: P06R merge `eb054618bd0eae1ae23bba42a0f875969ac2d24e`, pushed
 and remote SHA verified. Branch `codex/p03m-is7-runtime-profile`.
 Owner requested playable IS-7 on 2026-10-13 to compare mass, speed and collision
@@ -68,13 +68,24 @@ acceptance docs and review. Source audits are under
 `local/evidence/20261013-p03m-is7-01/`; original remains read-only.
 
 Actual-worker testing exposed near-absent IS-7 turning on a clear source lane
-with the inherited fixed lateral friction1.2 (about0.014rad in7seconds). This
-is a failed controllability gate, not a successful profile import. Compare
-bounded lateral-friction candidates privately before any native launch. If the
-mechanism is confirmed, version the worker config/profile explicitly, keep v1
-defaults unchanged and recheck pivot/forward turn, straight and slope stability,
-braking, solid wall and destructible response. Any selected friction remains a
-named approximate test_lab parameter; never relabel it as original source data.
+with inherited lateral friction1.2. Preserved bounded comparisons led to
+config2 with longitudinal/lateral friction1.2/.4 and powered finite-radius
+steering ratio.2, motivated by verified source rotationIsAroundCenter=false.
+V1 defaults remain unchanged; five old/new MS-1 trajectories match exactly.
+All16 final IS-7 paired scenarios and8 MS-1 scenarios pass, plus actual config
+rejections/traction cutoff/spawn checks. Steering asymmetry on the source slope
+and fidelity to nominal28deg/s remain UNKNOWN. This is explicit approximate
+test_lab control, never relabelled as original server physics.
+
+Final canonical gateway05:676/676 PASS, including actual IS-7 runtime/domain/
+both-worker ACK gating and source-geometry AP damage. Source/current-build
+hashes, commands, failures, native run `is7run03` and rollback are retained in
+[the P03M report](../research/P03M_IS7_RUNTIME_PROFILE.md). Native rendered
+movement, gun/UI, destruction and owner handling acceptance remain NOT_RUN.
+Fresh run03 passes two-client READY,120 original marker calls and six native
+bbox comparisons. Two failed passive-observer setups were stopped/restored;
+source-grounded indexed-vector correction passes24 tests and Python2.7.3.
+These observations prepare the native owner gate; they do not close it.
 
 Crew/equipment chat: 01a134ec-781f-70a1-8970-4a978d2fff51.
 Ammo/service chat: 01a134ec-7eca-7791-8d29-56bea40989c2.
