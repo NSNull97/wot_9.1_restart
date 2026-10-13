@@ -44,6 +44,22 @@ projects, accounts, or external game servers. Preserve unrelated dirty P09B.
 Parallel initial tasks are read-only analysis with separate private evidence;
 agree schemas before disjoint implementation work.
 
+## First source-backed slice and capacity boundary
+
+Inventory established 403 complete movement-only fence instances. Implement
+these first, preserving the accepted 635 P06Q rows (1038 total). Source-based
+admission excludes replacement visuals and mixed BSP materials. A fresh native
+probe needs 119 chunks and two stable passes on both copies; old 117-chunk
+exports cannot close this join. Compound modules remain in this card's research
+scope until native collision semantics support a safe part transition.
+
+Owner raised 100-battle scaling during implementation. Record the current
+per-actor physics-process duplication and a bounded two-worker measurement.
+Do not claim production capacity or silently replace the physical-world
+ownership model inside P06R. Static fences have no independent simulation
+loop; per-battle damage state must remain isolated. A future one-world-per-battle
+and immutable map-resource reuse change requires its own measured card.
+
 ## Limits and rollback
 
 Original descriptors alone do not prove historical damage/ram formulas.

@@ -441,8 +441,8 @@ pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: 
     let catalog=if let Some((path,sha))=catalog_path{
         let path=Path::new(path);let catalog=Arc::new(super::fragiles::Catalog::load(&pool.local_root,path,sha)?);
         let worker=crate::map_drive_worker091::CatalogSpec::load(&pool.local_root,&path.parent().ok_or_else(model::bad)?.join(&catalog.worker_file),&catalog.worker_sha256)?;
-        if catalog.map!=map||worker.map_id()!=map||catalog.contacts!=worker.contacts()||worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
-            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=(match b.kind { super::fragiles::ObjectKind::Tree=>"tree", super::fragiles::ObjectKind::Fragile=>"fragile" })){return Err(model::bad().into());}
+        if catalog.map!=map||worker.map_id()!=map||catalog.contacts!=worker.contacts()||worker.version()!=catalog.version+1||worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
+            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=b.kind.worker_kind()){return Err(model::bad().into());}
         Some((catalog,worker))
     }else{None};
     serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map)

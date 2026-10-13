@@ -69,7 +69,8 @@ fn checked_fragiles(fragiles:&[u16])->io::Result<()>{
     // DestructiblesCache.encodeFragile is (destrID << 8) | int(isShotDamage).
     // Keep both projectile (low bit 1) and vehicle (low bit 0) records, but
     // reject guessed bits and duplicate/out-of-order set members.
-    if fragiles.len()>super::fragiles::MAX_OBJECTS
+    // ARRAY<UINT16>: 4 + 2*125 = 254 bytes fits native short VAR1.
+    if fragiles.len()>125
         || fragiles.windows(2).any(|w|w[0]>=w[1])
         || fragiles.iter().any(|value| value & 0xfe != 0) {
         return Err(super::model::bad());
@@ -214,7 +215,7 @@ mod tests {
     }
     #[test]fn catalog_wire_refuses_overflow_alias_duplicate_or_unsorted_arrays(){
         let full=(0..64u8).collect::<Vec<_>>();assert_eq!(area_update(63,&full).unwrap()[6],132);
-        for ids in [vec![1,1],vec![2,0],(0..65u8).collect()]{assert!(area_update(0,&ids).is_err());assert!(area_create(0,CHUNK_ID,&ids).is_err());}
+        for ids in [vec![1,1],vec![2,0],(0..126u8).collect()]{assert!(area_update(0,&ids).is_err());assert!(area_create(0,CHUNK_ID,&ids).is_err());}
         assert!(area_create(144,CHUNK_ID,&[]).is_err());assert!(area_announcement(144).is_err());
         let mut request=vec![8,4,0];request.extend(area_id(143).unwrap().to_le_bytes());
         assert_eq!(area_request(&request,144),Some(143));assert_eq!(area_request(&request,143),None);
@@ -255,6 +256,21 @@ mod tests {
             0x00, 0x80, 0x5a, 0x19,
             0x13,
         ]);
+    }
+
+    #[test]
+    fn cumulative_fences_fit_the_exact_native_short_property_bound() {
+        let values=(0..125u16).map(|i|i<<8).collect::<Vec<_>>();
+        let bytes=area_update_fragiles(118,&values).unwrap();
+        assert_eq!(bytes[6],254);
+        assert_eq!(&bytes[7..11],&125i32.to_le_bytes());
+        for (i,word) in bytes[11..261].chunks_exact(2).enumerate() {
+            assert_eq!(u16::from_le_bytes(word.try_into().unwrap()),(i as u16)<<8);
+        }
+        assert_eq!(bytes.last(),Some(&0x13));
+        let mut overflow=values;overflow.push(125<<8);
+        assert!(area_update_fragiles(118,&overflow).is_err());
+        assert!(area_create_state(118,CHUNK_ID,&overflow,&[]).is_err());
     }
 
     #[test]

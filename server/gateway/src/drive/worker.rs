@@ -22,48 +22,53 @@ const PROJECTILE_MANIFEST:&str="ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447
 fn bad()->io::Error {io::Error::new(io::ErrorKind::InvalidData,"map-drive worker contract")}
 
 // serde_json::Value normally accepts duplicate keys. Reject them at EVERY depth.
-struct Unique(Value);
-impl<'de> Deserialize<'de> for Unique {
+struct Unique<const ARRAY_LIMIT:usize>(Value);
+impl<'de,const ARRAY_LIMIT:usize> Deserialize<'de> for Unique<ARRAY_LIMIT> {
     fn deserialize<D:Deserializer<'de>>(d:D)->Result<Self,D::Error> {
-        struct V;
-        impl<'de> Visitor<'de> for V {
-            type Value=Unique;
+        struct V<const ARRAY_LIMIT:usize>;
+        impl<'de,const ARRAY_LIMIT:usize> Visitor<'de> for V<ARRAY_LIMIT> {
+            type Value=Unique<ARRAY_LIMIT>;
             fn expecting(&self,f:&mut fmt::Formatter)->fmt::Result {f.write_str("bounded unique JSON")}
-            fn visit_bool<E:de::Error>(self,v:bool)->Result<Unique,E>{Ok(Unique(v.into()))}
-            fn visit_i64<E:de::Error>(self,v:i64)->Result<Unique,E>{Ok(Unique(v.into()))}
-            fn visit_u64<E:de::Error>(self,v:u64)->Result<Unique,E>{Ok(Unique(v.into()))}
-            fn visit_f64<E:de::Error>(self,v:f64)->Result<Unique,E>{Ok(Unique(Value::Number(Number::from_f64(v).ok_or_else(||E::custom("finite"))?)))}
-            fn visit_str<E:de::Error>(self,v:&str)->Result<Unique,E>{Ok(Unique(v.into()))}
-            fn visit_string<E:de::Error>(self,v:String)->Result<Unique,E>{Ok(Unique(v.into()))}
-            fn visit_unit<E:de::Error>(self)->Result<Unique,E>{Ok(Unique(Value::Null))}
-            fn visit_seq<A:SeqAccess<'de>>(self,mut a:A)->Result<Unique,A::Error>{
-                let mut v=Vec::new();while let Some(Unique(x))=a.next_element()? {
-                    if v.len()>=1024{return Err(de::Error::custom("array bound"));}v.push(x);
+            fn visit_bool<E:de::Error>(self,v:bool)->Result<Unique<ARRAY_LIMIT>,E>{Ok(Unique(v.into()))}
+            fn visit_i64<E:de::Error>(self,v:i64)->Result<Unique<ARRAY_LIMIT>,E>{Ok(Unique(v.into()))}
+            fn visit_u64<E:de::Error>(self,v:u64)->Result<Unique<ARRAY_LIMIT>,E>{Ok(Unique(v.into()))}
+            fn visit_f64<E:de::Error>(self,v:f64)->Result<Unique<ARRAY_LIMIT>,E>{Ok(Unique(Value::Number(Number::from_f64(v).ok_or_else(||E::custom("finite"))?)))}
+            fn visit_str<E:de::Error>(self,v:&str)->Result<Unique<ARRAY_LIMIT>,E>{Ok(Unique(v.into()))}
+            fn visit_string<E:de::Error>(self,v:String)->Result<Unique<ARRAY_LIMIT>,E>{Ok(Unique(v.into()))}
+            fn visit_unit<E:de::Error>(self)->Result<Unique<ARRAY_LIMIT>,E>{Ok(Unique(Value::Null))}
+            fn visit_seq<A:SeqAccess<'de>>(self,mut a:A)->Result<Unique<ARRAY_LIMIT>,A::Error>{
+                let mut v=Vec::new();while let Some(Unique(x))=a.next_element::<Unique<ARRAY_LIMIT>>()? {
+                    if v.len()>=ARRAY_LIMIT{return Err(de::Error::custom("array bound"));}v.push(x);
                 }Ok(Unique(Value::Array(v)))
             }
-            fn visit_map<A:MapAccess<'de>>(self,mut a:A)->Result<Unique,A::Error>{
-                let mut v=Map::new();while let Some((k,Unique(x)))=a.next_entry::<String,Unique>()? {
+            fn visit_map<A:MapAccess<'de>>(self,mut a:A)->Result<Unique<ARRAY_LIMIT>,A::Error>{
+                let mut v=Map::new();while let Some((k,Unique(x)))=a.next_entry::<String,Unique<ARRAY_LIMIT>>()? {
                     if v.len()>=256 || v.insert(k,x).is_some(){return Err(de::Error::custom("duplicate/bound"));}
                 }Ok(Unique(Value::Object(v)))
             }
-        }d.deserialize_any(V)
+        }d.deserialize_any(V::<ARRAY_LIMIT>)
     }
 }
-fn json_with_node_limit(raw:&[u8],maximum:usize,node_limit:usize)->io::Result<Value> {
+fn json_with_node_limit<const ARRAY_LIMIT:usize>(raw:&[u8],maximum:usize,node_limit:usize)->io::Result<Value> {
     if raw.is_empty() || raw.len()>maximum{return Err(bad());}
-    let Unique(v)=serde_json::from_slice(raw).map_err(|_|bad())?;
+    let Unique(v)=serde_json::from_slice::<Unique<ARRAY_LIMIT>>(raw).map_err(|_|bad())?;
     fn depth(v:&Value,d:usize,n:&mut usize,node_limit:usize)->io::Result<()> {
         if d>12 || *n>=node_limit{return Err(bad());}*n+=1;
         match v {Value::Object(o)=>for x in o.values(){depth(x,d+1,n,node_limit)?;},Value::Array(a)=>for x in a{depth(x,d+1,n,node_limit)?;},_=>{}}Ok(())
     }depth(&v,0,&mut 0,node_limit)?;Ok(v)
 }
 pub(crate) fn json(raw:&[u8],maximum:usize)->io::Result<Value> {
-    json_with_node_limit(raw,maximum,4096)
+    json_with_node_limit::<1024>(raw,maximum,4096)
 }
 /// Catalog manifests have a larger row bound than ordinary IPC packets. Keep
 /// the same depth/array/object limits while admitting 1024 six-field rows.
 pub(crate) fn json_catalog(raw:&[u8],maximum:usize)->io::Result<Value> {
-    json_with_node_limit(raw,maximum,20000)
+    json_with_node_limit::<1024>(raw,maximum,20000)
+}
+/// The explicit extended catalog profile admits at most 2048 whole objects.
+/// Ordinary IPC and historical catalogs retain their smaller parser budgets.
+pub(crate) fn json_catalog_extended(raw:&[u8],maximum:usize)->io::Result<Value> {
+    json_with_node_limit::<2048>(raw,maximum,40000)
 }
 pub(crate) fn fields<'a>(v:&'a Value,keys:&[&str])->io::Result<&'a Map<String,Value>> {
     let m=v.as_object().ok_or_else(bad)?;

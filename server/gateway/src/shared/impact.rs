@@ -23,7 +23,7 @@ pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
 // and one vehicle contact for each catalog object.
 pub const MAX_EVENTS: usize = super::model::MAX_SHOTS
     * (2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1) + super::model::MAX_SHOTS
-    + fragiles::MAX_CONTACT_OBJECTS;
+    + fragiles::MAX_MOVEMENT_OBJECTS;
 pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
 pub const MAX_SEGMENT_LENGTH: f32 = 200_000.0;
@@ -592,6 +592,7 @@ impl Trace {
             Event::VehicleContact {order:at,contact,..} if *at<order=>Some(contact.instance_id),
             _=>None,
         }));
+        ids.retain(|id|self.fragiles.as_ref().and_then(|state|state.catalog.instance(*id)).is_some_and(|o|o.projectile_triangle_count>0));
         ids.sort_unstable();ids
     }
     pub fn fragile_damage(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,damage:&fragiles::Damage)->io::Result<()>{
@@ -792,7 +793,7 @@ impl Trace {
         self.common(battle_id, shot_id, server_tick)?;
         if terrain.is_some_and(|t|t.map_id()!=self.map) {return Err(invalid("collision query map mismatch"));}
         let generic=self.fragiles.is_some();
-        let excluded_instances=self.fragiles.as_ref().map_or_else(Vec::new,fragiles::State::excluded);
+        let excluded_instances=self.fragiles.as_ref().map_or_else(Vec::new,fragiles::State::projectile_excluded);
         let catalog_sha256=self.fragiles.as_ref().map(|s|s.catalog.sha256.clone());
         let scene_version=if generic {self.fragiles.as_ref().unwrap().scene_version()}else{scene_version};
         if (generic && (excluded_instance.is_some()||terrain.is_none_or(|t|t.source_revision()!=self.map.spec().world_revision)))
@@ -924,7 +925,7 @@ mod tests {
         assert_eq!(MS1_GUN_COMPACT_ID, 5892);
         assert_eq!(MS1_AP_SHELL_COMPACT_ID, 2570);
         assert_eq!(MAX_SEGMENTS_PER_SHOT, 256);
-        assert_eq!(MAX_EVENTS, 37_104);
+        assert_eq!(MAX_EVENTS, 38_128);
     }
 
     #[test]
@@ -958,6 +959,22 @@ mod tests {
         let mut changed=contact.clone();changed.scene_before=1;
         assert!(trace.vehicle_contact(123,1002,&changed).is_err());
         assert_eq!(trace,before);
+    }
+
+    #[test]
+    fn fifty_movement_only_rams_replay_without_consuming_projectile_exclusions() {
+        let catalog=super::super::fragiles::tests::movement_catalog(60);
+        let mut source=fragiles::State::new(catalog.clone());
+        let mut trace=Trace::new();trace.bind_fragiles(catalog).unwrap();
+        for id in 1..=50 {
+            let tick=1000+id;
+            let contact=source.ram_contact(id,0,tick,1,[0.;3],[1.,0.,0.],[4.,0.,0.],1000.,"hull".into()).unwrap().unwrap();
+            trace.vehicle_contact(123,tick,&contact).unwrap();
+        }
+        assert_eq!(trace.scene_version_before(u32::MAX),50);
+        assert!(trace.excluded_before(u32::MAX).is_empty());
+        assert!(trace.fragiles.as_ref().unwrap().projectile_excluded().is_empty());
+        assert_eq!(trace.fragiles.as_ref().unwrap(),&source);
     }
 
     #[test]
@@ -1886,7 +1903,11 @@ mod tests {
 
     fn full_ammo_budget(wreck: bool, with_terrain: bool) {
         let bundle = super::super::geometry::tests::bundle();
-        let ground = test_terrain(None);
+        // Explicit synthetic world-revision fixture: its obstacle is far
+        // below every shot. This is trace-capacity evidence, not native data.
+        let ground = test_terrain(None).with_obstacles(std::sync::Arc::new(super::super::obstacles::tests::fixture(vec![
+            [[0.,-20.,0.],[1.,-20.,0.],[0.,-20.,1.]]
+        ]))).unwrap();
         let triangles: Vec<_> = (0..collision::MAX_CANDIDATES).map(|id| collision::Triangle {
             triangle_id: id as u32, a: 0, b: 1, c: 2,
             mesh: "Hull".into(), group: "overlap".into(), material: "armor_8".into(),
@@ -1894,6 +1915,10 @@ mod tests {
         let now = Instant::now();
         let world = world(now);
         let mut trace = Trace::new();
+        let mut ram_source=if with_terrain {
+            let catalog=super::super::fragiles::tests::movement_catalog(fragiles::MAX_MOVEMENT_OBJECTS as u32);
+            trace.bind_fragiles(catalog.clone()).unwrap();Some(fragiles::State::new(catalog))
+        } else {None};
         let mut tick = 1000;
         for index in 0..model::MAX_SHOTS {
             let shot_id = index as u32 + 1;
@@ -1937,7 +1962,7 @@ mod tests {
                 else { TerminalReason::TestLabImpact }).unwrap();
         }
         assert_eq!(trace.events().len(), if with_terrain {
-            MAX_EVENTS-fragiles::MAX_CONTACT_OBJECTS-model::MAX_SHOTS
+            MAX_EVENTS-fragiles::MAX_MOVEMENT_OBJECTS-model::MAX_SHOTS
         } else { 25_800 });
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::TerrainQuery { .. })).count(),
             if with_terrain { model::MAX_SHOTS * MAX_SEGMENTS_PER_SHOT } else { 0 });
@@ -1947,6 +1972,18 @@ mod tests {
             if wreck { 0 } else { model::MAX_SHOTS });
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::WreckImpact { .. })).count(),
             if wreck { model::MAX_SHOTS } else { 0 });
+        if let Some(source)=ram_source.as_mut() {
+            // A full legitimate firing trace must still admit the entire
+            // extended destruction catalog, independently of shot count.
+            for id in 1..=fragiles::MAX_MOVEMENT_OBJECTS as u32 {
+                tick+=1;
+                let contact=source.ram_contact(id,0,tick,1,[0.;3],[1.,0.,0.],[4.,0.,0.],1000.,"hull".into()).unwrap().unwrap();
+                trace.vehicle_contact(123,tick,&contact).unwrap();
+            }
+            assert_eq!(trace.events().len(),MAX_EVENTS-model::MAX_SHOTS);
+            assert_eq!(trace.scene_version_before(u32::MAX),fragiles::MAX_MOVEMENT_OBJECTS as u32);
+            assert!(trace.excluded_before(u32::MAX).is_empty());
+        }
         assert!(trace.events().iter().enumerate().all(|(index, row)| row.order() as usize == index + 1));
         let before = trace.clone();
         assert!(trace.admission(123, model::MAX_SHOTS as u32 + 1, tick, 0, 20, 19).is_err());

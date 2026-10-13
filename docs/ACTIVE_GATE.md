@@ -3,16 +3,20 @@
 Owner authorized continued destruction implementation on 2026-10-13.
 Branch `codex/p06r-compound-destructibles`, accepted main
 `90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8` (P06Q merge, remote verified).
-Current work: source/native part-state research and bounded coverage inventory
-before versioned implementation. Original client is read-only on C; approved
-A/B copies are restored and no native test stand is running.
+Current work: 403 source-complete fences implemented (1038 combined objects),
+632 canonical Rust tests PASS, 61 Python tests PASS/one symlink NOT_RUN, real
+private worker ACK/restore/passage checks PASS. Original client is read-only
+on C. Approved A/B copies are prepared for a fresh passive 119-chunk capture;
+no owner gameplay acceptance is implied by preprocessing.
 
 **Acceptance: IN_PROGRESS; native P06R gate NOT_RUN.** Preserve accepted whole
 fragiles, tree falls, cumulative scene ACKs and network readiness. Do not claim
 universal destruction or remove whole compound geometry for one part.
 [Plan and boundaries](plans/P06R_COMPOUND_DESTRUCTIBLES.md).
-**Next step:** implement only source-bound whole/part transitions established
-by the new coverage/native contract, then run automatic and private checks.
+**Next step:** finish the fresh two-slot native join, then continue the exact
+compound material/collision contract before requesting owner acceptance.
+Current per-actor physics processes are not a 100-battle production design;
+the source audit and bounded memory snapshot are recorded in the P06R report.
 
 # P06Q accepted — native tree fall, both-client agreement and passage
 

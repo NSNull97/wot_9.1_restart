@@ -455,3 +455,77 @@ fn catalog_map_pins_are_atomic_and_geometry_cannot_cross_maps() {
     assert!(super::super::impact::Trace::new().bind_fragiles(Arc::new(catalog.clone())).is_err());
     assert!(super::super::impact::Trace::new_for_map(map).bind_fragiles(Arc::new(catalog)).is_ok());
 }
+
+fn movement_manifest(count:u32)->Value {
+    let mut value=contact_manifest();value["version"]=json!(3);
+    let base=value["objects"][0].clone();
+    let rows=(0..count).map(|i|{
+        let mut row=base.clone();
+        row["object_id"]=json!(i+1);row["instance_id"]=json!(i);
+        row["chunk_id"]=json!(((121+(i%128)%12)<<8)|(121+(i%128)/12));
+        row["native_index"]=json!(i/128);row["kind"]=json!("movement_fragile");
+        row["resource"]=json!("content/fence.model");row["health"]=json!(3);
+        row["projectile_first_triangle"]=json!(0);row["projectile_triangle_count"]=json!(0);
+        row["physics_first_triangle"]=json!(i*2);row["physics_triangle_count"]=json!(2);row
+    }).collect::<Vec<_>>();
+    value["objects"]=json!(rows);
+    let mut chunks=(0..count.min(128)).map(|i|((121+i%12)<<8)|(121+i/12)).collect::<Vec<_>>();
+    chunks.sort_unstable();value["area_chunks"]=json!(chunks);value
+}
+pub(crate) fn movement_catalog(count:u32)->Arc<Catalog>{Arc::new(parse(&movement_manifest(count)).unwrap())}
+
+#[test]
+fn movement_catalog_is_versioned_complete_and_native_area_bounded() {
+    for kind in [Value::Null,json!(1),json!(true)] {
+        let mut legacy_contact=contact_manifest();legacy_contact["objects"][0]["kind"]=kind;
+        assert!(parse(&legacy_contact).is_err());
+    }
+    for count in [1038,2048] {
+        let value=movement_manifest(count);let catalog=parse(&value).unwrap();
+        assert_eq!(catalog.version,3);assert_eq!(catalog.objects.len(),count as usize);
+        assert_eq!(catalog.chunks().len(),128);
+        let mut old=value.clone();old["version"]=json!(2);old.as_object_mut().unwrap().remove("area_chunks");
+        assert!(parse(&old).is_err());
+    }
+    assert!(parse(&movement_manifest(2049)).is_err());
+    for mode in 0..7 {
+        let mut value=movement_manifest(1);
+        match mode {
+            0=>value["objects"][0]["projectile_triangle_count"]=json!(1),
+            1=>value["objects"][0]["material_kind"]=json!(71),
+            2=>value["area_chunks"]=json!([]),
+            3=>value["area_chunks"]=json!([31097,31097]),
+            4=>value["area_chunks"]=json!([0]),
+            5=>value["area_chunks"]=json!([31098]),
+            _=>value["objects"][0]["physics_triangle_count"]=json!(0),
+        }
+        assert!(parse(&value).is_err(),"invalid movement profile {mode}");
+    }
+    // Explicit empty controller areas support passive catalog acquisition;
+    // they never fabricate an object/native index.
+    let mut probe=movement_manifest(1);probe["area_chunks"]=json!([31097,31098]);
+    assert_eq!(parse(&probe).unwrap().chunks(),vec![31097,31098]);
+}
+
+#[test]
+fn movement_fragiles_ram_independently_and_never_become_projectile_surfaces() {
+    let catalog=Arc::new(parse(&movement_manifest(60)).unwrap());
+    let mut state=State::new(catalog);
+    // Half the energy gate: the near tap preserves physical presence.
+    assert!(state.ram_contact(1,0,1,1,[0.;3],[1.,0.,0.],[2.,0.,0.],1000.,"hull".into()).unwrap().is_none());
+    for id in 1..=50 {
+        let contact=state.ram_contact(id,0,id+1,1,[0.;3],[1.,0.,0.],[4.,0.,0.],1000.,"hull".into()).unwrap().unwrap();
+        assert_eq!(contact.scene_after,id);assert!(contact.fallen_tree.is_none());
+    }
+    assert_eq!(state.removed_ids(),(1..=50).collect::<Vec<_>>());
+    assert_eq!(state.excluded(),(0..50).collect::<Vec<_>>());
+    assert!(state.projectile_excluded().is_empty());
+    assert_eq!(state.native_fragile_values(31097),vec![0]);
+    assert!(state.native_fallen_trees(31097).is_empty());
+    let before=state.clone();
+    assert!(state.ram_contact(1,0,52,1,[0.;3],[1.,0.,0.],[4.,0.,0.],1000.,"hull".into()).unwrap().is_none());
+    assert_eq!(state,before);
+    let mut forged=hit(0);forged.surface=terrain::Surface::StaticObstacle{instance_id:50,material_kind:73};
+    assert!(state.contact(1,0,53,forged).unwrap().is_none());
+    assert_eq!(state,before);
+}

@@ -307,6 +307,14 @@ impl Obstacles {
         self.query_excluding_many(start,end,&excluded_instance.into_iter().collect::<Vec<_>>())
     }
 
+    /// Prove that this original instance contributes no projectile triangles.
+    /// The partition cursor remains source-bound even for an empty row.
+    pub fn validate_empty_instance(&self,id:u32,first:u32)->io::Result<()> {
+        if id>=self.mesh.instance_count || self.mesh.instances.contains(&id)
+            ||self.mesh.instances.iter().filter(|&&v|v<id).count()!=first as usize {
+            return Err(bad("empty projectile instance identity"));
+        }Ok(())
+    }
     pub fn validate_instance(&self,id:u32,first:u32,count:u32,kind:u8)->io::Result<()> {
         let end=first.checked_add(count).ok_or_else(||bad("instance range"))?;
         if count==0||end as usize>self.mesh.instances.len()||id>=self.mesh.instance_count
@@ -441,6 +449,21 @@ pub(crate) mod tests {
         for (start,end) in [([-205.,6.,465.],[-195.,6.,480.]),([0.,100.,0.],[0.,-100.,0.]),([-500.,10.,20.],[500.,10.,20.])] {
             assert_eq!(mesh.nearest(start,end).unwrap(),brute(mesh,start,end));
         }
+    }
+
+    #[test]
+    fn source_pinned_fence_is_empty_for_projectiles_but_neighbor_is_not() {
+        let mesh=actual_prohorovka();
+        // P06R original-source reconstruction: three adjacent gaf012 tiles,
+        // native indexes40/41/42. No collision-mask alteration is permitted.
+        for id in [3306,3307,3308] {
+            assert!(mesh.validate_empty_instance(id,263962).is_ok());
+            assert!(mesh.validate_empty_instance(id,263961).is_err());
+            assert!(mesh.validate_instance(id,263962,1,73).is_err());
+        }
+        let id=mesh.mesh.instances[263962];
+        assert!(mesh.validate_empty_instance(id,263962).is_err());
+        assert!(mesh.validate_empty_instance(3904,285350).is_err());
     }
     fn brute(mesh: &Obstacles, start: [f32; 3], end: [f32; 3]) -> Option<Hit> {
         let direction = subtract(end.map(f64::from),start.map(f64::from));

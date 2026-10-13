@@ -5,9 +5,17 @@ main `90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`; remote SHA was verified.
 Branch `codex/p06r-compound-destructibles`. The [P06R plan](plans/P06R_COMPOUND_DESTRUCTIBLES.md)
 requires source-pinned coverage, part-safe physics/projectile state, bounded
 native packing, automatic/private checks and eventual owner acceptance.
-Initial work is read-only native/geometry/runtime contract research; no P06R
-runtime or native PASS yet. Original client uses the verified configured C
-path. Existing unrelated P09B working edit is preserved outside this card.
+First implementation admits 403 source-complete movement-only fences alongside
+635 accepted P06Q objects (1038 total), with versioned catalogs and exact empty
+projectile-span binding. Final checkpoint gateway build06 passes 632/632 tests;
+combined Python scope passes 61 executed tests with one symlink fixture NOT_RUN.
+Real private workers pass cumulative1038 ACK/restore and source fence passage/
+neighbor survival. A fresh 119-chunk passive capture is prepared for both slots;
+native visual acceptance and mixed/compound collision remain NOT_RUN/UNKNOWN.
+The 100-battle question is explicitly not accepted: current test_lab physics
+duplicates a map per actor. Original client uses the verified configured C path.
+Existing unrelated P09B working edit is preserved outside this card. Details:
+[P06R contract and evidence](research/P06R_COMPOUND_FENCES_CONTRACT.md).
 
 ## 2026-10-13 — P06Q tree visual/state sync follow-up
 
