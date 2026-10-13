@@ -232,7 +232,8 @@ impl IntegratedRuntime {
     }
 
     fn step(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
-        if world.map != self.map_id || self.workers.iter().flatten().any(|worker|
+        if world.map != self.map_id || world.vehicle_kind()!=self.pool.vehicle_kind()
+            || self.workers.iter().flatten().any(|worker|
             worker.map.asset != self.map_id.asset() || worker.map.arena_type_id != self.map_id.arena_type_id()) {
             return Err(model::bad());
         }
@@ -970,7 +971,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                         let component = match segment.component {
                             super::materials::Component::Hull => 1,
                             super::materials::Component::Turret01 => 2,
-                            super::materials::Component::Gun02 => 3,
+                            super::materials::Component::Gun02 | super::materials::Component::Gun01 => 3,
                         };
                         body.extend(impact_wire::show_damage_for(next_world.vehicle_kind(),event.attacker,event.target,component,
                             segment.bounds,segment.start,segment.end,outcome)?);
