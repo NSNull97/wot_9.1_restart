@@ -12,3 +12,5 @@ server/gateway/src/drive/worker/is7-physics-profile.json text eol=lf
 /web/src/ms1-crew.mjs text eol=lf
 /web/src/ms1-ammo.mjs text eol=lf
 /web/src/native-evidence.mjs text eol=lf
+server/gateway/src/drive/worker/ms1-handling-profile.json text eol=lf
+server/gateway/src/drive/worker/is7-handling-profile.json text eol=lf

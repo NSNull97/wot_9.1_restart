@@ -1,3 +1,21 @@
+# P05B — native handling owner gate
+
+**PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN.** Current branch
+`codex/p05b-tracked-handling` implements versioned tracked steering for MS-1
+and IS-7. Gateway723, final flat36, real-map paired34, legacy10, worker-negative16
+and affected Python76 pass; one symlink fixture is NOT_RUN. Nine retained
+legacy trajectories match byte-for-byte. Candidate04 retains source torque,
+mass and geometry; approximate scrub/inertia/control policy is documented.
+Owner still needs to assess native steering/traction and MS-1 suspension recoil.
+
+Next: two homogeneous MS-1 clients on Prohorovka, followed by a fresh IS-7
+stand. Check A/D from rest, moving and reverse turns, release, braking, slopes,
+fence chain and tree passage. No automated driving and no merge until owner
+results exist. [P05B report/commands/rollback](research/P05B_TRACKED_HANDLING.md).
+Evidence: `local/evidence/20261013-p05b-tracked-handling-01/`; fresh manual
+stand ledger/bindings belong in `native-handling/`. Sibling service worktrees,
+processes and the unrelated dirty P09B research file remain outside this card.
+
 # P05 shared handling debt — after accepted IS-7 profile
 
 **P03M accepted by owner; general driving remains unaccepted.** Owner explicitly

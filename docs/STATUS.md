@@ -1,3 +1,30 @@
+## 2026-10-13 — P05B tracked handling: automatic gates PASS, owner pending
+
+Branch `codex/p05b-tracked-handling`, base accepted main0393857. Versioned
+pool/config3 now controls differential track steering, bounded yaw response,
+support scrub and mass-scaled track inertia for both source-bound tanks.
+No pose/velocity teleporting; v1/v2 remain unchanged. The approximate policy
+and source/UNKNOWN distinctions are in [P05B research](research/P05B_TRACKED_HANDLING.md).
+
+**PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN.** Canonical gateway723/723;
+candidate04 physics;36 final flat runs with exact state/diagnostic replay;
+34 real-map paired cases;10 legacy cases;9 old/new byte-identical trajectories;
+16 worker rejections;76 Python PASS/one symlink NOT_RUN. Evidence:
+`local/evidence/20261013-p05b-tracked-handling-01/`, latest flat gate
+`controller-audit/candidate04c-final-receipt.json`. Map regressions include
+slopes, walls, trees, fence chains and both-worker ACK in private policy replay.
+Legacy IS-7 chain historical comparison is NOT_RUN because no old file exists.
+
+Flat pivot now about118deg/4s MS-1 and95deg/4s IS-7; moving slip below1.48deg
+and.18deg respectively. Straight flat acceleration/braking already passed
+baseline, so source torque/gears/brakes were not arbitrarily increased. MS-1
+brief support loss on hard launch/braking recoil remains an observed caveat.
+Native feel, visual/contact regression, reconciliation and historical accuracy
+remain unaccepted. Required owner gate keeps this card out of main.
+
+Next: two-client manual Prohorovka MS-1 run, then a fresh IS-7 run, with exact
+private stand bindings/restoration receipts under `native-handling/`.
+
 ## 2026-10-13 — P03M accepted; shared handling remains open P05 debt
 
 **PASS_OWNER_IS7_PROFILE_SHARED_HANDLING_DEBT_OPEN.** Owner explicitly clarified
