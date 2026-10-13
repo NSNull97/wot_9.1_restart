@@ -153,12 +153,12 @@ reviewed reverts restore the old behavior without resetting the unrelated
 P09B edit. Runtime launch helpers in the fresh `native-chain/` evidence folder
 preserve original/process/source guards and require the new policy explicitly.
 
-The fresh manual stand uses run `fencechain02`, `gateway-p06r-fences-09`,
+The fresh manual stand uses run `fencechain03`, `gateway-p06r-fences-09`,
 `physics-p06r-fences-03/pool-near.json`, and `import/fence-response01/manifest.json`.
 Exact executed launch arguments, full source HEAD, file hashes and owned process
-identities are in `native-chain/launch-{server,a,b}-fencechain02.json` after
+identities are in `native-chain/launch-{server,a,b}-fencechain03.json` after
 launch. Preparation uses `native-chain/prepare_stand.py --slot a|b --run
-fencechain02 --mode runtime --map 05_prohorovka`; runtime launches do not enable
+fencechain03 --mode runtime --map 05_prohorovka`; runtime launches do not enable
 the passive catalog export. Native acceptance remains PENDING_OWNER.
 
 The first A preparation (`fencechain01`) stopped before client writes: another
@@ -179,12 +179,36 @@ including nine pinned-EXE/schema checks. Command:
 python -B -X utf8 -m unittest -v tests.test_shared_client_copy tests.test_interactive_primitive tests.test_interactive_relogin_control tests.test_interactive_license_policy tests.test_interactive_window_trace
 ```
 
+The subsequent `fencechain02` launched both processes within0.82s. A logged
+on; B's native callback recorded `LOGIN_REJECTED_SERVER_NOT_READY`. No battle
+started. OBSERVED result is kept in `native-chain/fencechain02rejected/`.
+INFERRED cause is the existing single pending auth/250ms admission guard
+(`shared/server.rs` login branch); this path does not emit a reason log, so
+exact overlap is not proven. This is not a fence-physics failure. Both owned
+clients/server were stopped by verified receipts and both ledgers restored;
+`stop-fencechain02retry.json` records cleanup. Fresh `fencechain03` launches B
+only after A's `SESSION_ACTIVE`. Concurrent-login admission remains a known
+limitation; sequential startup is a launcher workaround, not a protocol fix.
+Launch helpers log in to the hangar only. The owner presses the native Battle
+button on each client to enter the configured Prohorovka arena; no agent
+steering, firing or automated owner acceptance is performed.
+
+Fresh run03 subsequently reached actual battle readiness: two SHARED_READY,
+two real worker READY,238 area creates (119 per client), zero fault/closure
+lines and zero stderr in the complete-line frozen prefix. Evidence:
+`native-chain/fencechain03ready01/result.json`; raw saved server/client prefixes
+are beside it. Server PID44816, A50076, B15740; verify creation time and hashes
+from receipts before cleanup. Launch code is `e155c4e`, fence physics change
+`0d94ee6`; later documentation checkpoints do not alter the running code.
+Both clients/server remain running for the owner. Native fence-chain visuals,
+speed feel and passage acceptance are PENDING_OWNER, not inferred from READY.
+
 After the owner finishes, stop and restore only this stand:
 
 ```text
-python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/stop_stand.py --receipt-dir local/evidence/20261013-p06r-compound-01/native-chain --run fencechain02 --out-name fencechain02stop --reason "Owner manual run complete"
-python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261013-p06r-compound-01/native-chain/install-a-fencechain02
-python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261013-p06r-compound-01/native-chain/install-b-fencechain02
+python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/stop_stand.py --receipt-dir local/evidence/20261013-p06r-compound-01/native-chain --run fencechain03 --out-name fencechain03stop --reason "Owner manual run complete"
+python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261013-p06r-compound-01/native-chain/install-a-fencechain03
+python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261013-p06r-compound-01/native-chain/install-b-fencechain03
 python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/namespace_copies.py a --restore
 python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/namespace_copies.py b --restore
 ```

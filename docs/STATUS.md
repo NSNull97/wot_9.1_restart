@@ -19,7 +19,15 @@ Importer16/16 and source layout PASS. Failed exploratory fixtures are preserved
 with their causes; final evidence is linked in the response report.
 
 Acceptance: **PASS_AUTOMATIC_PRIVATE / PENDING_OWNER_FENCE_CHAIN**. New native
-visuals/passage are NOT_RUN until the owner drives the reviewed stand. Keep
+visuals/passage are NOT_RUN until the owner confirms the reviewed stand. Fresh
+`fencechain03` is running: two native READY sessions, two workers and238 area
+creates, no faults/closures or stderr in the frozen startup prefix
+`local/evidence/20261013-p06r-compound-01/native-chain/fencechain03ready01/result.json`.
+Launch source is `e155c4e`; physics fix is `0d94ee6`. A v2 instance namespace
+isolates root clients from the concurrent service chat;35 copy/interactive
+tests PASS. Prior run02 B login was rejected SERVER_NOT_READY; its failure,
+owned stop and ledger restoration are saved. Run03 staggers authentication;
+concurrent-login admission is still a limitation, not silently called fixed. Keep
 the P06R branch, do not merge on private evidence alone. Owner requested the
 manual fence check before queued P03M IS-7 integration. Mixed compound objects,
 universal destruction and100-battle production capacity remain outside this

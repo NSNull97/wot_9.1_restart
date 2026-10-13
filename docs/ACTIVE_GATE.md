@@ -9,8 +9,11 @@ rigid-wall collision and both-worker ACK before publication.
 gateway09:649/649 PASS including actual paired IPC5 runtime/ACK gate. Physics03:
 seven behavior cases, four IPC5 negative/retry checks, three matched-mass cases,
 nine old-mode/tree checks PASS; component64 and importer16 PASS. Native rendered
-chain passage is NOT_RUN. Fresh stand receipts belong under
-`local/evidence/20261013-p06r-compound-01/native-chain/`, run `fencechain02`.
+chain passage is NOT_RUN. Fresh stand is live with two READY sessions/two
+workers/238 areas and no startup faults; proof `fencechain03ready01/result.json`.
+Launch source `e155c4e`, physics fix `0d94ee6`, additional namespace/interactive
+tests35/35 PASS. Fresh stand receipts belong under
+`local/evidence/20261013-p06r-compound-01/native-chain/`, run `fencechain03`.
 Only receipt-identified root A/B clients and their server may be stopped;
 parallel service-chat processes have independent ownership.
 

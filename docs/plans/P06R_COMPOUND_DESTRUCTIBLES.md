@@ -117,7 +117,7 @@ Keep that chat running. Add a backwards-compatible, four-character namespace
 to the existing two-string instance patch, prove exact EXE-byte scope and
 strict marker validation, and migrate only stopped root A/B copies with
 before/after hashes and restore receipts. Do not release another process's
-mutex or bypass launch guards. Retry on fresh run fencechain02.
+mutex or bypass launch guards. Retry on fresh run fencechain03.
 
 ## Limits and rollback
 
