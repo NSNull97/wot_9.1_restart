@@ -99,6 +99,55 @@ Candidate versions: domain7 / worker8 / IPC6,
 `test_lab-fence-linear-angular-energy-v1`, fence response
 `total_linear_angular_fallback`. Retain all older versions and artifact outputs.
 
+### Body provenance and geometry envelope frozen before stage-B tests
+
+Accept the bounded design in
+`night-angular-review01/BODY_BINDING_PROPOSAL.md` (SHA256
+`14a73604599fb39967f3d877784cb4c17820048887f0dea2eb4282b77ed2f105`),
+supported by the11200-row offline getter audit
+`body-binding-analysis01.json` (SHA256
+`3f5a530bf54a0cdfe06e35fee2d859d86967765c02d8e7e658e09a1fadd46081`).
+This freezes the following design choices; runtime wiring is still NOT_GO
+until numerical tests, exact JSON schema and the stage-B decision below.
+
+- Only the two existing config3/profile2 source profiles are eligible. Require
+  their complete pinned profile SHA, all14 physical fields and handling object;
+  never select inertia by mass alone. Map paths/spawn/yaw may vary only through
+  the existing verified config projection and scene context. Other loadouts
+  require separate binding evidence and remain unsupported by this policy.
+- `body_binding` occurs once in every IPC6 ready/state/prepared motion frame:
+  `inverse_mass`, `principal_inverse_diagonal[3]`,
+  `inertia_rotation_xyzw[4]`. Reject extras and compare all f32 bits, including
+  zero signs, against the immutable native-getter lookup. ACK envelopes keep
+  their existing generation/config/catalog/scene binding. Full domain/trace
+  proof retains the body binding and its approved profile identity.
+- MS1 inverse-mass bits395f8781 and principal390ec909/3919bf9b/3a25f4bb;
+  IS7 inverse-mass3776094c and principal363bac7f/365da392/3775d3e2.
+  Both native inertia quaternions XYZW are3f3504f3/3f3504f3/00000000/00000000.
+  These are observed pinned-platform getter values, not historical formulas.
+- Raw tensor order is M11,M12,M13,M21,M22,M23,M31,M32,M33. Reconstruct
+  `(R_body*R_inertia*diag(principal))*transpose(R_body*R_inertia)` with the
+  scalar association in the proposal; use the frozen asymmetry/frame gates.
+  Native constructor and artifact hashes are part of the final build receipt.
+- For angular fallback only, bound both selected and legacy candidate PRE
+  arms by `dot(p-COM,p-COM)<=4*((hx*hx+hy*hy)+hz*hz)`, promoting the approved
+  f32 source half-extents to f64. Check the chosen angular point again against
+  actual POST COM. An invalid POST frame/arm faults the entire unpublished
+  advance; it cannot become a successful no-op removal. This2*hull-radius
+  envelope is a project rejection bound, not surface membership or a claimed
+  limit on solver corrections. Actual geometry/query selection remains the
+  trusted pinned-worker boundary. Old successful linear paths keep their rule.
+- Existing exact artifact-set/hash verification remains mandatory before
+  launch. The binding additionally requires the pinned managed/native members
+  specified in the proposal. Loaded-module-path attestation is UNKNOWN; this
+  phase retains the local loader trust boundary and adds no new loader logic.
+
+Selection must include successful shadow rounding reservation before ranking
+angular candidates, so an unpayable highest-energy point cannot hide a payable
+candidate. Selection does not mutate/refill the shared budget; only the final
+admission spends it. Generic scalar-only result names cannot silently expand
+the three frozen IPC solver branches.
+
 The prepass keeps its old COM-ranked candidate and independently selects an
 eligible angular candidate in the same bounded actual-pair query. Rank angular
 candidates by min(raw,shadow normal energy), then exact existing bitwise tie
