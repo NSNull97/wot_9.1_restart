@@ -178,5 +178,8 @@ fn real_is7_receipts_match_domain_and_world_waits_for_both_scene_acks() {
         "commits":commits,"final_positions":world.actors.iter().map(|a|a.position).collect::<Vec<_>>()});
     drop(runtime);for pid in pids {wait_owned_exit(pid,deadline);}
     let evidence=base.join("gateway-real01");fs::create_dir_all(&evidence).unwrap();
-    fs::write(evidence.join(format!("result-{}.json",std::process::id())),serde_json::to_vec_pretty(&proof).unwrap()).unwrap();
+    let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let mut file=fs::OpenOptions::new().write(true).create_new(true)
+        .open(evidence.join(format!("result-{}-{stamp}.json",std::process::id()))).unwrap();
+    std::io::Write::write_all(&mut file,&serde_json::to_vec_pretty(&proof).unwrap()).unwrap();
 }

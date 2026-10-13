@@ -20,6 +20,9 @@ mod contact_barrier_tests;
 #[cfg(test)]
 #[path="server_fracture_real_tests.rs"]
 mod fracture_real_tests;
+#[cfg(test)]
+#[path="server_is7_real_tests.rs"]
+mod is7_real_tests;
 
 #[derive(Default)]
 struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
