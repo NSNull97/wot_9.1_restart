@@ -23,7 +23,7 @@ pub struct Metadata {
     pub configuration_revision:u64,pub free_recruitment_left:u64,
 }
 
-struct MetadataObject(BTreeMap<String,Value>);
+pub(crate) struct MetadataObject(pub(crate) BTreeMap<String,Value>);
 impl<'de> Deserialize<'de> for MetadataObject {
     fn deserialize<D:Deserializer<'de>>(deserializer:D)->Result<Self,D::Error> {
         struct Fields;
@@ -45,14 +45,14 @@ impl<'de> Deserialize<'de> for MetadataObject {
     }
 }
 
-fn identity(account_id:&str,database_id:i32)->io::Result<()> {
+pub(crate) fn identity(account_id:&str,database_id:i32)->io::Result<()> {
     if database_id<=0 || account_id.len()!=36 || !account_id.bytes().enumerate().all(|(index,byte)| {
         if [8,13,18,23].contains(&index) {byte==b'-'} else {byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)}
     }) {return Err(invalid("crew authenticated identity shape"));}
     Ok(())
 }
 
-fn fixture_file(directory:&Path,name:&str,maximum:usize)->io::Result<Vec<u8>> {
+pub(crate) fn fixture_file(directory:&Path,name:&str,maximum:usize)->io::Result<Vec<u8>> {
     let root=directory.canonicalize()?;
     let candidate=directory.join(name);
     if std::fs::symlink_metadata(&candidate)?.file_type().is_symlink() {

@@ -2,13 +2,9 @@
 //! transaction. This proves neither native visuals nor complete fence passage.
 use super::*;
 use super::super::fragiles;
-use crate::map_drive_worker091::{CatalogSpec, FractureReceipt, Input as WorkerInput, Pool, Scene, Worker};
+use crate::map_drive_worker091::{CatalogSpec, FractureReceipt, Input as WorkerInput, Scene, Worker};
 
 const BASE: &str = "evidence/20261013-p03m-is7-01";
-// Final source-profile/friction fixture pins are supplied by the physics audit.
-const POOL_PATH: &str = "physics-source01/canonical-pools02/pool-contacts-is7.json";
-const POOL_SHA: &str = "33d51d7d0954ba1cce07618b63aed07500b09a83172f4402273b3fe7840e9577";
-const CONFIG_SHA: &str = "82e81ebab19fca57e354cbe25afe34db23745cb844f0e89758d8747a1428c4ca";
 const CATALOG_BASE: &str = "evidence/20261013-p06r-compound-01/import/fence-response01";
 const DOMAIN_SHA: &str = "39bb68815dd2d7ca54789a1cc71be619cc4f2f5cf351bf52f22de92f2afca11d";
 const CATALOG_SHA: &str = "0a7c8fd70f00c8c49c3282ac1fe574281f384d042b1adb7da549d1680c192ef9";
@@ -64,13 +60,12 @@ fn wait_owned_exit(pid:u32,deadline:Instant) {
 #[test]
 fn real_is7_receipts_match_domain_and_world_waits_for_both_scene_acks() {
     let local=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
-    let base=local.join(BASE);let path=base.join(POOL_PATH);
-    let metadata=fs::metadata(&path).expect("required pinned final IS-7 contact pool");
-    assert!(metadata.is_file() && metadata.len()<=16_384);
-    assert_eq!(format!("{:x}",Sha256::digest(fs::read(&path).unwrap())),POOL_SHA);
-    let pool=Arc::new(Pool::load(&local,&path).unwrap());assert_eq!(pool.vehicle_kind(),VehicleKind::Is7);
+    let base=local.join(BASE);
+    // Exact archived pool/config/profile pins precede test-only path relocation.
+    // The production loader still validates the derived local pool and assets.
+    let pool=Arc::new(worker_fixtures::p03m());assert_eq!(pool.vehicle_kind(),VehicleKind::Is7);
     let map=selected_pool_map(&pool,MapId::Prohorovka).unwrap().clone();
-    assert_eq!(map.config_sha256,CONFIG_SHA);assert_eq!(map.mass_kg,MASS);
+    assert_eq!(map.mass_kg,MASS);
     assert_eq!(VehicleKind::Is7.mass_kg(),f64::from(MASS));
     let spec=CatalogSpec::load(&local,&local.join(CATALOG_BASE).join("physics-removals.json"),CATALOG_SHA).unwrap();
     let catalog=Arc::new(fragiles::Catalog::load(&local,&local.join(CATALOG_BASE).join("manifest.json"),DOMAIN_SHA).unwrap());
@@ -172,7 +167,9 @@ fn real_is7_receipts_match_domain_and_world_waits_for_both_scene_acks() {
     assert_eq!(world.scene_version(),2);assert_eq!(world.fragiles.as_ref().unwrap().vehicle_events.len(),2);
     let pids=runtime.workers.iter().map(|w|w.as_ref().unwrap().process_id().unwrap()).collect::<Vec<_>>();
     let proof=serde_json::json!({"status":"PASS_REAL_IS7_RECEIPT_RUNTIME_DOMAIN_BOTH_ACK","native_clients":"NOT_RUN",
-        "full_fence_passage":"NOT_ASSERTED","pool_sha256":POOL_SHA,"config_sha256":CONFIG_SHA,"domain_sha256":DOMAIN_SHA,
+        "full_fence_passage":"NOT_ASSERTED","source_pool_sha256":worker_fixtures::P03M_SOURCE_SHA,
+        "source_config_sha256":worker_fixtures::P03M_CONFIG_SHA,"derived_pool_sha256":runtime.pool.sha256,
+        "derived_config_sha256":map.config_sha256,"domain_sha256":DOMAIN_SHA,
         "catalog_sha256":CATALOG_SHA,"reference_pid":reference_pid,"pids":pids,"mass_kg":MASS,"vehicle_kind":"is7",
         "owned_exit_wait":"PASS",
         "commits":commits,"final_positions":world.actors.iter().map(|a|a.position).collect::<Vec<_>>()});

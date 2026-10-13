@@ -6,15 +6,20 @@ import { nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CREW_POLICY_SHA256 = '7d0e3d7ef28d85bfe32e4fcdea0547696a9b4fd04922a725a2d895e1395f0d55';
+export const TRANSFER_POLICY_SHA256 = '35a58c8e13d9b815f8552371bbd6556ba10c091753861e697e522d6a5c877cb2';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
   && Object.keys(v).sort().join(',') === [...keys].sort().join(',');
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
+  requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
+    && transfer.policy_sha256 === TRANSFER_POLICY_SHA256), 'Explicit crew transfer policy required');
+  const profileVersion = transfer === null ? 6 : 7;
+  const worker = transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
   requireValue(exact(ammo, ['version', 'bundle_root', 'original_root', 'account_id', 'grant'])
     && ammo.version === 1 && UUID.test(ammo.account_id) && isAbsolute(ammo.original_root)
     && exact(ammo.grant, ['grant_id', 'quantity_each']) && ammo.grant.grant_id === 'p09d-test-depot-v1'
@@ -25,7 +30,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     requireValue(active < 2, 'Crew worker busy'); active++;
     try {
       return await new Promise((done, fail) => {
-        const child = spawn(python, ['-B', '-X', 'utf8', resolve(ROOT, 'tools/p04d_crew_store.py'),
+        const child = spawn(python, ['-B', '-X', 'utf8', resolve(ROOT, worker),
           '--database', db, '--bundle', bundle, '--original-root', ammo.original_root,
           '--account-id', ammo.account_id, '--fixture-root', fixtures, operation],
         { cwd: ROOT, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -46,22 +51,24 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     } finally { active--; }
   }
   async function mutate(operation, request) {
+    requireValue(['recruit', 'service', ...(transfer === null ? [] : ['transfer'])].includes(operation), 'Unsupported crew operation');
     requireValue(exact(request, ['account_id', 'native_database_id', 'command_key', 'expected_revision', 'wire_revision', 'layout'])
       && request.account_id === ammo.account_id && integer(request.native_database_id, 1)
       && typeof request.command_key === 'string' && /^[\x21-\x7e]{1,96}$/.test(request.command_key)
-      && integer(request.expected_revision, 6) && integer(request.wire_revision, 1, 2147483646)
-      && Array.isArray(request.layout) && request.layout.length === (operation === 'recruit' ? 4 : 16)
+      && integer(request.expected_revision, profileVersion) && integer(request.wire_revision, 1, 2147483646)
+      && Array.isArray(request.layout) && request.layout.length === (operation === 'recruit' ? 4 : operation === 'transfer' ? 3 : 16)
       && request.layout.every(v => integer(v, -2147483648)), 'Native crew request schema');
-    const value = await run(operation, request), success = operation === 'recruit' ? 'recruited' : 'serviced';
+    const value = await run(operation, request), success = operation === 'recruit' ? 'recruited' : operation === 'transfer' ? 'transferred' : 'serviced';
     requireValue(exact(value, ['status', 'account_id', 'native_database_id', 'command_key', 'revision', 'wire_revision', 'update_hex', 'replayed', 'result_code'])
       && [success, 'rejected'].includes(value.status) && value.account_id === request.account_id
       && value.native_database_id === request.native_database_id && value.command_key === request.command_key
-      && integer(value.revision, 6) && integer(value.wire_revision, 1)
+      && integer(value.revision, profileVersion) && integer(value.wire_revision, 1)
       && typeof value.replayed === 'boolean' && typeof value.update_hex === 'string'
       && /^(?:[0-9a-f]{2}){0,240}$/.test(value.update_hex)
       && (value.status === success ? value.result_code === 0 && value.update_hex.length > 0
         && value.wire_revision === request.wire_revision + 1 && value.revision === request.expected_revision + 1
-        : value.result_code === -10 && value.update_hex === '' && value.wire_revision === request.wire_revision),
+        : value.result_code === -10 && value.update_hex === '' && value.wire_revision === request.wire_revision
+          && value.revision === request.expected_revision && value.replayed === false),
     'Native crew response schema');
     return value;
   }
@@ -69,14 +76,15 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
   return {
     accountId: ammo.account_id,
     async fixture(profile) {
-      requireValue(profile.account_id === ammo.account_id && profile.profile_version === 6, 'Crew profile owner mismatch');
+      requireValue(profile.account_id === ammo.account_id && profile.profile_version === profileVersion, 'Crew profile owner mismatch');
       const value = await run('fixture');
       requireValue(value.profile?.account_id === profile.account_id && value.profile.native_database_id === profile.native_database_id
-        && integer(value.revision, 6) && value.profile.profile_version === 6, 'Crew fixture identity mismatch');
+        && integer(value.revision, profileVersion) && value.profile.profile_version === profileVersion, 'Crew fixture identity mismatch');
       return localPath(value.fixture_dir);
     },
     service: request => mutate('service', request),
     recruit: request => mutate('recruit', request),
+    ...(transfer === null ? {} : { transfer: request => mutate('transfer', request) }),
   };
 }
 

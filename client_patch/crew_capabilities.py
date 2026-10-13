@@ -61,13 +61,21 @@ TARGETS = (
 
 _guard = None
 
+# P04F preserves only these source-audited original entry points. In particular,
+# allowing the generic 'unload' action would also expose PersonalCase.
+TRANSFER_TARGETS = (('Crew', 'equipTankman'), ('Crew', 'unloadTankman'),
+                    ('Crew', 'unloadAllTankman'), ('Crew', 'unloadCrew'),
+                    ('Barracks', 'unloadTankman'))
+
 
 class _CrewChangeGuard(object):
     """Own exact class descriptors; injectable dependencies permit unit checks."""
 
-    def __init__(self, classes, messages, record, allow_actions=()):
+    def __init__(self, classes, messages, record, allow_actions=(), allow_transfer=False):
         if type(allow_actions) is not tuple or allow_actions not in ((), ('open_recruit', 'recruit')):
             raise ValueError('only the explicit free recruitment capability may be enabled')
+        if type(allow_transfer) is not bool or allow_transfer and allow_actions != ('open_recruit', 'recruit'):
+            raise ValueError('crew transfer requires the explicit recruitment capability pair')
         required = set(row[0] for row in TARGETS)
         if set(classes) != required or not callable(record):
             raise ValueError('exact audited crew classes and recorder required')
@@ -76,10 +84,11 @@ class _CrewChangeGuard(object):
         self.messages = messages
         self.record = record
         self.allowed_actions = allow_actions
+        self.allow_transfer = allow_transfer
         self.active = False
         self.bindings = []
         for class_name, name, action, is_static in TARGETS:
-            if action in allow_actions:
+            if action in allow_actions or allow_transfer and (class_name, name) in TRANSFER_TARGETS:
                 continue
             cls = classes[class_name]
             original = cls.__dict__[name]
@@ -134,6 +143,10 @@ class _CrewChangeGuard(object):
                         allowed_actions=list(self.allowed_actions),
                         policy='test_lab.free100.ms1-driver.v1',
                         other_crew_changes_available=False)
+        if self.allow_transfer:
+            self.record('crew_transfer_capability', policy_version=1,
+                        callbacks=[a + '.' + b for a, b in TRANSFER_TARGETS],
+                        scope='existing_MS1_owned_commander_driver', other_crew_changes_available=False)
         for cls, name, original, replacement, callback in self.bindings:
             setattr(cls, name, replacement)
         self.active = True
@@ -153,7 +166,7 @@ class _CrewChangeGuard(object):
                     original_binding_restored=True, restored_bindings=[row[4] for row in self.bindings])
 
 
-def init(record, allow_actions=()):
+def init(record, allow_actions=(), allow_transfer=False):
     """Call after items init but before original GUI BusinessHandler construction."""
     global _guard
     if _guard is not None:
@@ -169,7 +182,7 @@ def init(record, allow_actions=()):
     classes = dict((cls.__name__, cls) for cls in (BusinessHandler, BusinessLobbyHandler,
                    Crew, Barracks, PersonalCase, CrewOperationsPopOver, RecruitWindow,
                    RetrainCrewWindow))
-    candidate = _CrewChangeGuard(classes, SystemMessages, record, allow_actions)
+    candidate = _CrewChangeGuard(classes, SystemMessages, record, allow_actions, allow_transfer)
     candidate.install()
     _guard = candidate
 
