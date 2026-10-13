@@ -243,6 +243,21 @@ mod tests {
     }
 
     #[test]
+    fn prohorovka_tree_update_preserves_known_native_packed_values() {
+        // Values observed in manualtree02 for native indexes 25 and 4.  Keep
+        // this exact envelope pinned so a later wire change cannot silently
+        // turn a valid tree update into a generic integer-array payload.
+        let update = area_update_trees(0, &[0x195a_8000, 0x040e_8000]).unwrap();
+        assert_eq!(&update[..7], &[0x12, 0x07, 0x00, 0x10, 0x09, FALLEN_TREES, 12]);
+        assert_eq!(&update[7..], &[
+            2, 0, 0, 0,
+            0x00, 0x80, 0x5a, 0x19,
+            0x00, 0x80, 0x0e, 0x04,
+            0x13,
+        ]);
+    }
+
+    #[test]
     fn encode_fallen_tree_matches_pinned_python_quantization_and_rejects_nonfinite() {
         assert_eq!(encode_fallen_tree(7, 0.0f64, 0.0f64, 2).unwrap(), 0x0782_8000);
         assert_eq!(encode_fallen_tree(255, std::f64::consts::PI / 2., -std::f64::consts::PI / 2., 99).unwrap(), 0xffc3_4000);

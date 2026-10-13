@@ -193,6 +193,22 @@ def _shared_vector(value):
     return result
 
 
+def _bounded_uint32_array(value, limit=62):
+    """Copy one native ARRAY<UINT32> without retaining the client object."""
+    try:
+        values = list(value)
+    except (TypeError, ValueError, AttributeError):
+        return {'unrecognized': True, 'reason': 'uint32_array_type'}
+    if len(values) > limit:
+        return {'unrecognized': True, 'reason': 'uint32_array_bound', 'count': len(values)}
+    result = []
+    for item in values:
+        if type(item) not in (int, long) or not 0 <= item <= 0xffffffff:
+            return {'unrecognized': True, 'reason': 'uint32_array_value'}
+        result.append(int(item))
+    return result
+
+
 def profile_calls(frame, phase, value):
     global _profile_call_id
     if phase not in ('call', 'return'):
@@ -210,7 +226,7 @@ def profile_calls(frame, phase, value):
     elif (source == 'scripts/client/AreaDestructibles.py'
           and _settings.get('enable_shared_lab') is True
           and method in ('onEnterWorld', 'set_destroyedFragiles', 'orderDestructibleDestroy',
-                         '__destroyFragile', '__launchEffect')):
+                         'set_fallenTrees', '__destroyFragile', '__launchEffect')):
         kind = 'native_destructible_call'
         fields['owner_class'] = type(frame.f_locals.get('self')).__name__
         fields['arguments'] = primitive(dict((name, frame.f_locals[name]) for name in
@@ -221,6 +237,11 @@ def profile_calls(frame, phase, value):
             fields['entity_id'] = owner.id
             values = list(owner.destroyedFragiles)
             fields['destroyed_fragiles'] = values if len(values) <= 1 else {'unrecognized': True}
+            if method == 'set_fallenTrees':
+                fields['chunk_id'] = getattr(owner, '_AreaDestructibles__chunkID', None)
+                fields['fallen_trees'] = _bounded_uint32_array(getattr(owner, 'fallenTrees', None))
+                fields['previous_fallen_trees'] = _bounded_uint32_array(
+                    getattr(owner, '_AreaDestructibles__prevFallenTrees', None))
     elif ((source == 'scripts/client/gui/Scaleform/daapi/view/meta/FightButtonMeta.py' and
            method in ('as_disableFightButtonS', 'as_setFightButtonS')) or
           (source == 'scripts/client/gui/Scaleform/daapi/view/lobby/header/FightButton.py' and
