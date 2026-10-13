@@ -1,3 +1,31 @@
+## 2026-10-13 — P04B isolated crew / installed-device snapshot
+
+Separate branch `codex/p04b-crew-equipment-snapshot`, based on accepted
+`90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`; no merge during parallel work.
+**PASS_ISOLATED_CREW_EQUIPMENT_SNAPSHOT**: server-owned revision/digest binding,
+complete healthy 100% no-skill MS-1/IS-7 rosters, three optional-device slots,
+ventilation class1/class3, aim drives and optics, source-pinned deterministic
+static modifier snapshots. Unsupported devices/skills/training/injuries reject.
+Installed equipment requires a separately trusted component-bound mass budget;
+the test budgets are synthetic and are not historical tank mass evidence.
+
+Combined Python scope: **67 executed PASS, 1 explicit symlink NOT_RUN** out of
+68 discovered (34 domain, 10 source, 16 content, 8 layout). Actual source audit
+rehashes 12 original #717 resources and the pinned Python2.7 opcode table;
+layout passes with 79 server files / 22 relocations. The snapshot uses exact
+source decimal rationals and does not claim native float bit equivalence.
+Crew-to-combat formulas/final characteristics, live IS-7 grant, runtime wiring
+and native acceptance remain **UNKNOWN/NOT_RUN**. P02 grants, shared loadout,
+ammo/service, gateway, transport, physics and the main checkout are untouched.
+
+Evidence: [P04B index](evidence-index/P04B.md),
+[source/consumer contract](research/P04B_CREW_EQUIPMENT_SNAPSHOT.md).
+The managed worktree's `local/evidence/20261013-p04b-crew-equipment-01/acceptance-final/receipt.json`
+records the final commit/source/test hashes. Source receipt SHA256
+`fc982df8be7bc3fe1b233b7c35a4ce229e2a2eb8ea364b188200c02b90697a6f`.
+Next: integrate at the shared configuration-reservation gate using real
+component-mass evidence, then perform the separate native acceptance card.
+
 ## 2026-10-13 — P06Q tree visual/state sync follow-up
 
 ### Owner gate accepted; stand closed; original client relocated
