@@ -320,10 +320,17 @@ impl Bundle {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    fn actor_for(kind: VehicleKind) -> Actor {
+        let mut world = super::super::model::World::new_for_vehicle(991, std::time::Instant::now(),
+            crate::map_profile091::MapId::Prohorovka, kind).unwrap();
+        let slot = world.attach(super::super::model::Identity {
+            account: "geometry-owned-actor".into(), database: 991, name: "geometry_actor".into(),
+        }, 991).unwrap();
+        world.actors[slot].clone()
+    }
     fn contact_for(b: &Bundle, index: usize, start: [f32; 3], end: [f32; 3],
         direction: [f32; 3], aim: [f32; 2]) -> Contact {
-        let mut actor = super::super::model::World::new_for_vehicle(991, std::time::Instant::now(),
-            crate::map_profile091::MapId::Prohorovka, b.vehicle_kind()).unwrap().actors[0].clone();
+        let mut actor = actor_for(b.vehicle_kind());
         actor.position = [37., 21., -105.]; actor.direction = direction;
         actor.aim.yaw = aim[0]; actor.aim.pitch = aim[1];
         let world = |p| {
@@ -464,8 +471,7 @@ pub(super) mod tests {
         }
         let ms1 = super::super::model::tests::world(std::time::Instant::now()).actors[0].clone();
         assert!(b.world_mesh(&ms1, 0, 1000).is_err());
-        let is7 = super::super::model::World::new_for_vehicle(992, std::time::Instant::now(),
-            crate::map_profile091::MapId::Prohorovka, VehicleKind::Is7).unwrap().actors[0].clone();
+        let is7 = actor_for(VehicleKind::Is7);
         assert!(bundle().world_mesh(&is7, 0, 1000).is_err());
         assert_eq!(b.world_mesh(&is7, 0, 1000).unwrap().geometry_revision(), IS7_SOURCE_REVISION);
         assert!(b.materials.lookup("Gun_02", "armor_1").is_err());
