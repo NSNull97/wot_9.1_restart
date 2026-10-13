@@ -495,6 +495,45 @@ impl Drop for Worker {
     }
 }
 
+/// Controlled, bounded IPC endpoints for coordinator ordering tests. There is
+/// no child process: requests, poll consumption and response validation still
+/// use the production Worker methods. This is not native/physics acceptance.
+#[cfg(test)]
+pub(crate) mod controlled_ipc {
+    use super::*;
+    pub(crate) struct Peer {
+        replies: mpsc::SyncSender<Event>,
+        requests: mpsc::Receiver<Vec<u8>>,
+    }
+    impl Peer {
+        pub(crate) fn reply(&self, now: Instant, value: &Value) {
+            self.replies.try_send(Event::Line(now, serde_json::to_vec(value).unwrap())).unwrap();
+        }
+        pub(crate) fn request(&self) -> Value {
+            serde_json::from_slice(&self.requests.try_recv().unwrap()).unwrap()
+        }
+        pub(crate) fn no_request(&self) -> bool {
+            matches!(self.requests.try_recv(), Err(mpsc::TryRecvError::Empty))
+        }
+    }
+    pub(crate) fn pool(map: MapSpec) -> Arc<Pool> {
+        Arc::new(Pool { local_root: PathBuf::new(), maps: vec![map], sha256: "0".repeat(64),
+            executable: PathBuf::new(), runtime: PathBuf::new(), assets: Vec::new() })
+    }
+    pub(crate) fn ready(map: MapSpec, generation: u32, spec: CatalogSpec, scene: Scene,
+        now: Instant) -> (Worker, Peer) {
+        let (replies, receiver) = mpsc::sync_channel(2);
+        let (sender, requests) = mpsc::sync_channel(2);
+        let worker = Worker { generation, map, receiver, sender: Some(sender),
+            child: Arc::new(Mutex::new(None)), exit: Arc::new(Mutex::new(None)),
+            cancel: Arc::new(AtomicBool::new(false)), started: now, expected_spawn: None,
+            pending: None, ready: true, last_seq: 0, removal: None, scene_version: scene.version(),
+            removal_ack: None, catalog: Some(spec), catalog_scene: Some(scene),
+            pending_scene: None, catalog_ack: None };
+        (worker, Peer { replies, requests })
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

@@ -245,11 +245,31 @@ already absent clears the second. The accepted worker completes all six
 substeps against a rigid collider before removal, losing momentum; fixing the
 gateway batch loss alone cannot claim to repair that physical behavior.
 
+Three paired private scenarios (six real workers,120 advances/12 simulated
+seconds each) are pinned in `worker-smoke/chain01/chain-summary.json`, SHA256
+`ae807b7c6326a3037f184951dee5ed229c21c9986441b0c70437419be05be331`.
+The straight row breaks five sections; the short-gap case stalls on the
+separate intact3308 collider; its control passes. All processes exit0 with
+empty stderr. The first and second impacts are14physics ticks/0.233seconds
+apart (0.2seconds from first scene ACK). This private harness uses real physics
+and ACKs but evaluates the existing destruction predicate itself; it is not a
+gateway/native acceptance run. Commands are `worker-smoke/chain.py`,
+`worker-smoke/chain02.py`, `worker-smoke/chain03.py` via `python -B -X utf8`.
+
 Owner priorities are recorded in the plan: first make one tank's behavior
 measurable and correct, then contrast MS-1 with source-bound IS-7. A new queued
 P03M runtime card reuses existing hangar/P03I work. Two user-requested chats
 have begun isolated crew/equipment and ammo/service components; neither owns
 gateway/physics/shared loadout, live databases or native installations.
+
+Fresh source-bound IS-7 audit: `is7-followup01/REPORT.md`, SHA256
+`f421c6ebf9902d38058a5d5e69b017a5c70c968d5e6bf81b752a1cf58d4ed07c`;
+receipt SHA256`e14fc8c125def6b1c3c45549c86c979f09daadfca331b2d1d9846dc025cb0d2f`.
+Six original/export pins and15runtime files establish the actual follow-up
+boundary. The vehicle native descriptor is retained exactly, but movement,
+HP/aim/fire, replication and per-target damage geometry currently use MS-1
+constants. The derived IS-7 component mass68190kg is not a validated dynamic
+controller. A mass-only substitution cannot close P03M.
 
 ## Passive exporter repair checkpoint
 
@@ -276,7 +296,38 @@ python -B -X utf8 local/evidence/20261013-p06r-compound-01/audit_fenceidle01.py
 The audit uses exclusive output creation; retain the existing receipt rather
 than overwrite it when rerunning an analysis.
 
-## Acceptance and rollback
+## Asynchronous contact repair — final automatic checkpoint
+
+IntegratedRuntime now retains one bounded batch per actor until the common
+movement barrier drains. Each batch binds its session, worker generation,
+advance sequence and scene revision; the aggregate remains at most32contacts.
+Detach/reattach revokes old ownership before polling. Successful candidate
+application consumes the batches before scene-ACK staging, including contacts
+that do not destroy anything. ACK-only and repeated empty polls cannot replay
+the impact. No ramming threshold, mass or velocity policy changed in this fix.
+
+Six controlled IPC regressions execute the actual Worker request/poll/parser
+and runtime coordinator: both reply orders, delayed second reply, split ACKs,
+exactly-once commit, below-threshold batch release/next advance, detach,
+startup-native readiness delay, rejoin scene-ACK delay and stale generation.
+They are synthetic sequencing checks, not physics/native evidence.
+
+`python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06r-fences-07`
+passes **638/638**, zero failed/ignored, then builds executable SHA256
+`346f3865d986cb3802f901b6f93df056533705f379a490088101ccc84c6410f2`.
+The suite includes its existing real-child worker tests. No deployed binary
+was replaced. Source layout also passes79files/22single-source relocations:
+`python -B -X utf8 server/check_layout.py --out local/evidence/20261013-p06r-compound-01/layout02.json`.
+
+Source patch SHA256`acf610bcd08c359589e309b90ab0244a5f236bf10a6887d1b3401ec2fb1a12df`;
+independent review `contact-sequencing-review01/SOURCE_REVIEW.md`, SHA256
+`1cf731808e072823e15728eb9453ba79e46d5626f8fc68197cce7b23dd38107c`.
+Changed runtime/test files are `server/gateway/src/shared/server.rs`,
+`server_contact_barrier_tests.rs`, and a cfg(test)-only controlled channel
+helper in `server/gateway/src/drive/worker.rs`. Final source/artifact pins are
+retained in `final-checkpoint01.json` under this evidence root.
+
+## Acceptance and rollback (current)
 
 P06R remains IN_PROGRESS. The full native identity join and private physics
 checks pass; the owner observed breaking fences and a chain-motion failure.

@@ -13,9 +13,22 @@ mod catalog_wire_tests;
 #[cfg(test)]
 #[path="server_worker_fixtures.rs"]
 mod worker_fixtures;
+#[cfg(test)]
+#[path="server_contact_barrier_tests.rs"]
+mod contact_barrier_tests;
 
 #[derive(Default)]
 struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
+
+/// A consumed worker reply must survive other lanes' pending replies. There
+/// is at most one unconsumed advance per lane, and 32 contacts across all lanes.
+struct ContactBatch {
+    session: u32,
+    generation: u32,
+    seq: u32,
+    scene_version: u32,
+    contacts: Vec<model::VehicleContactInput>,
+}
 
 /// Owns one accepted P05 worker per shared actor. The handles live outside
 /// `World` because `World` is cloned for atomic packet application; cloning a
@@ -35,6 +48,9 @@ struct IntegratedRuntime {
     staged: Option<World>,
     synchronizing: [bool; model::CAPACITY],
     generations: [u32; model::CAPACITY],
+    worker_sessions: [Option<u32>; model::CAPACITY],
+    contact_sequences: [u32; model::CAPACITY],
+    contact_batches: [Option<ContactBatch>; model::CAPACITY],
 }
 
 /// A worker frame may be compared with a client frame in focused tests, but an
@@ -59,7 +75,9 @@ impl IntegratedRuntime {
         Self { pool, map_id, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
             offsets: [[0.; 3]; model::CAPACITY],
             anchored: [false; model::CAPACITY],
-            dispatched: [None; model::CAPACITY], started: false, removal: None,catalog:None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY] }
+            dispatched: [None; model::CAPACITY], started: false, removal: None,catalog:None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY],
+            worker_sessions: [None; model::CAPACITY], contact_sequences: [0; model::CAPACITY],
+            contact_batches: std::array::from_fn(|_| None) }
     }
 
     fn map(&self) -> io::Result<crate::map_drive_worker091::MapSpec> {
@@ -68,6 +86,16 @@ impl IntegratedRuntime {
 
     fn lane_spawn(map: &crate::map_drive_worker091::MapSpec, slot: usize) -> [f32; 3] {
         [map.spawn[0] + if slot == 0 { -4. } else { 4. }, map.spawn[1], map.spawn[2]]
+    }
+
+    fn clear_slot(&mut self, slot: usize) {
+        self.workers[slot].take();
+        self.poses[slot] = None;
+        self.anchored[slot] = false;
+        self.dispatched[slot] = None;
+        self.worker_sessions[slot] = None;
+        self.contact_sequences[slot] = 0;
+        self.contact_batches[slot] = None;
     }
 
     fn spawn_slot(&mut self, world: &World, slot: usize, map: crate::map_drive_worker091::MapSpec,
@@ -79,6 +107,10 @@ impl IntegratedRuntime {
         self.offsets[slot] = [0.; 3];
         self.anchored[slot] = false;
         self.dispatched[slot] = None;
+        self.worker_sessions[slot] = world.actors.get(slot).and_then(|a| a.session);
+        if self.worker_sessions[slot].is_none() { return Err(model::bad()); }
+        self.contact_sequences[slot] = 0;
+        self.contact_batches[slot] = None;
         self.generations[slot] = self.generations[slot].checked_add(1).ok_or_else(model::bad)?;
         let generation = self.generations[slot].checked_mul(2).and_then(|n|n.checked_add(slot as u32)).ok_or_else(model::bad)?;
         let worker = if let Some(spec)=&self.catalog {
@@ -198,11 +230,17 @@ impl IntegratedRuntime {
         if self.staged.is_some() { return self.finish_removal(world, now); }
         self.synchronizing = [false; model::CAPACITY];
         let mut rows = Vec::new();
-        let mut vehicle_contacts = Vec::<model::VehicleContactInput>::new();
+        // Revoke every departed slot before admitting another reply against
+        // the aggregate bound; iteration order must not retain a stale batch.
         for slot in 0..model::CAPACITY {
-            if world.actors.get(slot).and_then(|a| a.session).is_none() {
-                self.workers[slot].take(); self.poses[slot] = None; self.anchored[slot] = false;
-                self.dispatched[slot] = None;
+            let session = world.actors.get(slot).and_then(|a| a.session);
+            // Detach and reattach may occur between two runtime steps. Bind
+            // worker ownership to the transport session, not just its slot.
+            if self.worker_sessions[slot] != session || session.is_none() { self.clear_slot(slot); }
+        }
+        for slot in 0..model::CAPACITY {
+            let session = world.actors.get(slot).and_then(|a| a.session);
+            if session.is_none() {
                 if let Some(actor) = world.actors.get(slot) {
                     rows.push((slot,actor.position,actor.direction,0.));
                 }
@@ -215,12 +253,22 @@ impl IntegratedRuntime {
             }
             let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
             if let Some(state) = worker.poll(now)? {
-                for contact in &state.object_contacts {
-                    if vehicle_contacts.len() >= 32 { return Err(model::bad()); }
-                    vehicle_contacts.push(model::VehicleContactInput { object_id: contact.object_id,
-                        substep: contact.substep, point: contact.point, normal: contact.normal,
-                        velocity: contact.velocity, mass_kg: worker.map.mass_kg,
-                        kind: contact.kind.clone(), shooter: slot });
+                // seq0 is the stationary startup/settle snapshot, not a game
+                // advance. Only subsequent replies may supply gameplay hits.
+                if state.seq != 0 {
+                    let held: usize = self.contact_batches.iter().flatten().map(|b| b.contacts.len()).sum();
+                    if self.contact_batches[slot].is_some()
+                        || state.seq != self.contact_sequences[slot].checked_add(1).ok_or_else(model::bad)?
+                        || state.scene_version != world.scene_version()
+                        || held + state.object_contacts.len() > 32 { return Err(model::bad()); }
+                    let contacts = state.object_contacts.iter().map(|contact| model::VehicleContactInput {
+                        object_id: contact.object_id, substep: contact.substep, point: contact.point,
+                        normal: contact.normal, velocity: contact.velocity, mass_kg: worker.map.mass_kg,
+                        kind: contact.kind.clone(), shooter: slot,
+                    }).collect();
+                    self.contact_sequences[slot] = state.seq;
+                    self.contact_batches[slot] = Some(ContactBatch { session: session.ok_or_else(model::bad)?,
+                        generation: worker.generation, seq: state.seq, scene_version: state.scene_version, contacts });
                 }
                 if state.seq == 0 {
                     let actor = world.actors.get(slot).ok_or_else(model::bad)?;
@@ -299,6 +347,19 @@ impl IntegratedRuntime {
         }
         let mut candidate = world.clone();
         candidate.advance_with_external(now, Some(&rows))?;
+        let mut vehicle_contacts = Vec::new();
+        for (slot, batch) in self.contact_batches.iter().enumerate() {
+            if let Some(batch) = batch {
+                let worker = self.workers[slot].as_ref().ok_or_else(model::bad)?;
+                if world.actors[slot].session != Some(batch.session)
+                    || self.worker_sessions[slot] != Some(batch.session)
+                    || worker.generation != batch.generation || batch.seq != self.contact_sequences[slot]
+                    || batch.scene_version != world.scene_version() || worker.scene_version() != batch.scene_version {
+                    return Err(model::bad());
+                }
+                vehicle_contacts.extend_from_slice(&batch.contacts);
+            }
+        }
         let vehicle_events = candidate.apply_vehicle_contacts(&vehicle_contacts)?;
         for event in &vehicle_events {
             let closing_speed=event.velocity.iter().zip(event.normal).map(|(v,n)|v*n).sum::<f32>();
@@ -313,10 +374,14 @@ impl IntegratedRuntime {
             if self.catalog.is_none()&&(self.removal.is_none() || world.scene_version() != 0 || candidate.scene_version() != 1) {
                 return Err(model::bad());
             }
+            // The staged candidate owns these outcomes now. ACK-only polls
+            // must never apply the same advance's contacts a second time.
+            self.contact_batches = std::array::from_fn(|_| None);
             self.staged = Some(candidate);
             return self.finish_removal(world, now);
         }
         *world = candidate;
+        self.contact_batches = std::array::from_fn(|_| None);
         for slot in 0..model::CAPACITY {
             if world.actors.get(slot).and_then(|a| a.session).is_none() { continue; }
             let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;

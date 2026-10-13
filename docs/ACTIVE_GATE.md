@@ -4,7 +4,8 @@ Owner authorized continued destruction implementation on 2026-10-13.
 Branch `codex/p06r-compound-destructibles`, accepted main
 `90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8` (P06Q merge, remote verified).
 Current work: 403 source-complete fences implemented (1038 combined objects),
-632 canonical Rust tests PASS, 61 Python tests PASS/one symlink NOT_RUN, real
+638 canonical Rust tests PASS, 34 new exporter/observer Python tests PASS;
+earlier importer/layout scope61 PASS/one symlink NOT_RUN. Real
 private worker ACK/restore/passage checks PASS. Original client is read-only
 on C. Both A/B copies completed 119 chunks/two stable passes and the exact
 1038-object join. The synchronous diagnostic export exposed session timeouts;
@@ -16,8 +17,10 @@ and server are now stopped; both installation ledgers restored.
 fragiles, tree falls, cumulative scene ACKs and network readiness. Do not claim
 universal destruction or remove whole compound geometry for one part.
 [Plan and boundaries](plans/P06R_COMPOUND_DESTRUCTIBLES.md).
-**Next step:** repair retained asynchronous contact batches and then correct
-the measured loss of motion through consecutive light obstacles. Owner now
+Asynchronous contact retention is repaired and covered by six controlled IPC
+regressions. The separate physical momentum loss is still reproducible.
+**Next step:** correct the measured loss of motion through consecutive light
+obstacles while retaining solid-wall collision and authoritative ACK gating. Owner now
 prioritizes a reliable single-tank scenario and an IS-7 comparison profile
 ([queued P03M](plans/P03M_IS7_RUNTIME_PROFILE.md)); mixed compound collision
 remains UNKNOWN. Parallel service chats own isolated domain components only.

@@ -7,8 +7,11 @@ requires source-pinned coverage, part-safe physics/projectile state, bounded
 native packing, automatic/private checks and eventual owner acceptance.
 First implementation admits 403 source-complete movement-only fences alongside
 635 accepted P06Q objects (1038 total), with versioned catalogs and exact empty
-projectile-span binding. Final checkpoint gateway build06 passes 632/632 tests;
-combined Python scope passes 61 executed tests with one symlink fixture NOT_RUN.
+projectile-span binding. Latest gateway build07 passes 638/638 tests, including
+six controlled IPC tests for retained asynchronous impact batches. The earlier
+combined importer/layout Python scope passed61 executed tests with one symlink
+fixture NOT_RUN; the new exporter/observer scope passes34/34. Standalone
+CPython2.7.3 compile/exact export also passes; post-fix native rerun NOT_RUN.
 Real private workers pass cumulative1038 ACK/restore and source fence passage/
 neighbor survival. Both clients completed the fresh 119-chunk/two-pass capture;
 the joined catalog covers all1038 objects. That synchronous diagnostic export
@@ -21,6 +24,8 @@ chain motion, not a complete native PASS. Stand stopped and ledgers restored.
 Current priority is one tank's contact/velocity behavior before more object
 coverage. Private paired workers reproduce a short-gap chain stall, and source
 review found a separate loss of early contact batches while awaiting a peer.
+That sequencing defect is now repaired and tested; physical chain momentum
+loss is still open and must not be described as fixed by the sequencing change.
 The IS-7 runtime follow-up is queued in P03M; two isolated crew/equipment and
 ammo/service chats have started. Their outputs require explicit integration.
 The 100-battle question is explicitly not accepted: current test_lab physics
