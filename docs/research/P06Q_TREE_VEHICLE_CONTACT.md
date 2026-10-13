@@ -30,18 +30,29 @@ so it is **NOT_RUN**; receipt:
 `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve06-diagnostic-not-run.json`
 (SHA256 `e59040cd4827992fb8da946c20df2f18cfe0bfcea4aa33f50a1c662efb0f2d6e`).
 
-The next bounded run, `treeobserve07`, started slot A and slot B 45 seconds
-apart so the earlier simultaneous-launch race was removed. Both gateway
-sessions became active; slot B then hit `channel_state` rejects and
-`retry_exhausted`, while slot A reached the arena and continued receiving
-snapshots. Neither client trace reached `set_fallenTrees`,
-`orderDestructibleDestroy`, `__destroyDestructible`, `__dropDestructible`, or
-`__launchFallEffect`. The result is **NOT_RUN** for tree contact with a
-confirmed second-client channel drop; it is not native acceptance. Evidence:
-`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve07-diagnostic-slot-b-drop.json`
-(SHA256 `4b7e393a41bad9eab8dca59432ab5114a0c08840b554b66402e551503b460719`).
-The stop receipt and both installation restores passed, and no owned processes
-remain.
+Corrected extraction of `treeobserve07` finds two downstream tree call pairs
+on A, through `__destroyDestructible`, `__dropDestructible` and
+`__launchFallEffect`. The first extractor compared method names to `event`,
+but the trace uses `event=native_destructible_call` plus a `method` field.
+The obsolete zero-callback receipt is superseded by
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve07-corrected-audit.json`
+(SHA256 `01e5ce6a3ccadd43520bfe6afb1ac2a36eee4c6ec5d972cf4829d07fa5034bc7`).
+B closed with `channel_state` / `retry_exhausted` after 66 area controllers;
+A reached 117. Launches were 73.42 seconds apart, not 45; the launch-race
+explanation was only INFERRED. The earlier run06 had B connected in the
+hangar, A at login, and no arena; its two-login-loop description was inaccurate.
+
+The `treeobserve08` diagnostic caught both first READY compounds appended
+to six area requests in Entities: 42+33 application bytes, 80 with token.
+The old Entities branch rejects that modulo-seven boundary before the existing
+READY handler. Both sessions closed. The captured application bytes, omitting
+the private token, and source hashes are in `tests/treeobserve08-corrected-audit.json`
+under the same evidence root (SHA256
+`cb801b04428f57958b4c61836b98ac44a73e4a7f734f12719bb1c991657a92b2`).
+The fix retains fixed request boundaries and permits only an exact owned
+READY suffix, reserving binding capacity before flushing queued area creates.
+Focused checks pass 13/13 on `gateway-p06q-final-33`; post-fix native transport
+is pending. Both diagnostic runs were stopped and their installations restored.
 
 The remaining cause is **UNKNOWN**. It may be an original descriptor/index
 lookup or animator/resource boundary; no client binary, resource, matrix, or

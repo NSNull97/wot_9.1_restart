@@ -113,6 +113,7 @@ impl Session {
         Ok(())
     }
     pub(super) fn shared_payload(&mut self, payload: &[u8], now: Instant, events: &mut Vec<String>) -> io::Result<()> {
+        let mut payload = payload;
         let phase = self.shared.as_ref().ok_or_else(bad)?.phase;
         if phase == Phase::Account {
             if drive::account_command(payload)?.is_some() {
@@ -158,14 +159,21 @@ impl Session {
             return Ok(());
         }
         if payload.first() == Some(&8) && c.phase == Phase::Entities {
+            // treeobserve08: six area requests + the first READY compound
+            // arrive together before Driving. Only a complete owned READY may
+            // follow the fixed request prefix; arbitrary methods remain closed.
+            let prefix_len = payload.chunks_exact(7).take_while(|raw| raw[0] == 8).count() * 7;
+            let (requests, tail) = payload.split_at(prefix_len);
+            if !tail.is_empty() && (payload.len() > 512 || wire::ready(tail, c.slot).is_err()) { return Err(bad()); }
             if c.announcement.is_none()
-                || payload.len() > 7*(2+if world.destructible_enabled(){1}else{c.announced_areas}) || payload.len() % 7 != 0 { return Err(bad()); }
+                || requests.is_empty()
+                || requests.len() > 7*(2+if world.destructible_enabled(){1}else{c.announced_areas}) { return Err(bad()); }
             // Original requests can piggyback vehicles and area controllers.
             // Queue the complete envelope first, then release only as much as
             // the reliable eight-body window can carry. Session's outer receive
             // clone makes the whole envelope atomic on malformed input.
             if c.tree_areas.len()!=c.areas.len(){c.tree_areas=vec![Vec::new();c.areas.len()];}
-            for raw in payload.chunks_exact(7) {
+            for raw in requests.chunks_exact(7) {
                 if let Some(area)=destructible_wire::area_request(raw,c.areas.len()) {
                     if area >= c.announced_areas || c.areas[area].0.is_some() || c.pending_area_requests.contains(&area) { return Err(bad()); }
                     if world.fragiles.is_none() { return Err(bad()); }
@@ -181,9 +189,15 @@ impl Session {
                     }
                 }
             }
-            drop(c);
-            self.flush_shared_requests(events)?;
-            return Ok(());
+            if tail.is_empty() {
+                drop(c);
+                self.flush_shared_requests(events)?;
+                return Ok(());
+            }
+            // Queue binding before draining creates so requests cannot consume
+            // its window slot. Session::receive commits the whole envelope,
+            // including ACKs and the final request flush, atomically.
+            payload = tail;
         }
         if wire::ready(payload, c.slot).is_ok() {
             if c.phase == Phase::Driving { return Ok(()); }

@@ -399,3 +399,125 @@ fn late_outbox_failure_does_not_commit_sent_arrays_commands_or_world() {
     let before = queued_bodies(&a, now); poll(&mut a, &mut world, now).unwrap();
     assert_eq!(queued_bodies(&a, now), before);
 }
+
+fn before_first_ready(now: Instant, slot: usize) -> Session {
+    let world = many_chunk_world(now);
+    let mut s = entities(now, &world);
+    s.id = slot as u32 + 1;
+    let c = s.shared.as_mut().unwrap();
+    c.slot = slot; c.creations = [Some((0, true)); 2];
+    c.binding = None; c.correction = false; c.ready_sent = [false; 2];
+    s
+}
+
+fn captured_requests_ready(slot: usize) -> Vec<u8> {
+    // treeobserve08 application bytes, excluding the private token envelope.
+    // Both peers batched six area requests with their first READY33.
+    let first = if slot == 0 { 0x09100031 } else { 0x0910002b };
+    let mut bytes = Vec::new();
+    for id in first..first + 6 { bytes.extend(request(id)); }
+    bytes.extend(ready(slot));
+    assert_eq!(bytes.len(), 75);
+    bytes
+}
+
+fn assert_input_rolled_back(s: &Session, before: &Session, now: Instant) {
+    assert_eq!(s.rx, before.rx); assert_eq!(s.received, before.received);
+    assert_eq!(s.tx.cumulative, before.tx.cumulative);
+    assert_eq!(queued_bodies(s, now), queued_bodies(before, now));
+    assert_eq!(s.outbox, before.outbox);
+    let c = s.shared.as_ref().unwrap(); let old = before.shared.as_ref().unwrap();
+    assert_eq!(c.phase, old.phase); assert_eq!(c.binding, old.binding);
+    assert_eq!(c.correction, old.correction); assert_eq!(c.creations, old.creations);
+    assert_eq!(c.ready_sent, old.ready_sent); assert_eq!(c.areas, old.areas);
+    assert_eq!(c.tree_areas, old.tree_areas);
+    assert_eq!(c.pending_area_requests, old.pending_area_requests);
+    assert_eq!(c.pending_entity_requests, old.pending_entity_requests);
+    assert_eq!(c.commands, old.commands);
+}
+
+#[test]
+fn entities_first_ready_mixed_native_requests_both_slots_and_retry() {
+    let now = Instant::now();
+    for slot in 0..2 {
+        let mut s = before_first_ready(now, slot);
+        let payload = captured_requests_ready(slot);
+        let input = frame(&s, &payload); let rx = s.rx;
+        s.receive(&input, now).unwrap();
+        let c = s.shared.as_ref().unwrap();
+        assert_eq!(c.phase, Phase::Driving); assert!(!c.correction);
+        assert!(c.binding.is_some_and(|(_, ack)| !ack));
+        assert!(c.commands.is_empty());
+        assert_eq!(c.areas.iter().filter(|(p, _)| p.is_some()).count(), 6);
+        assert_eq!(s.tx.len(), 7); assert_eq!(s.rx, rx + 1);
+        // Native retry must not create another binding or increment rx twice.
+        let after = s.clone(); s.receive(&input, now).unwrap();
+        assert_input_rolled_back(&s, &after, now);
+    }
+}
+
+#[test]
+fn entities_first_ready_malformed_suffix_and_requests_rollback() {
+    let now = Instant::now();
+    for slot in 0..2 {
+        let valid = captured_requests_ready(slot);
+        let prefix = &valid[..42];
+        let mut bad_payloads = vec![];
+        for len in 1..33 { bad_payloads.push([prefix, &ready(slot)[..len]].concat()); }
+        bad_payloads.push([valid.as_slice(), &[0]].concat());
+        bad_payloads.push([prefix, ready(1-slot).as_slice()].concat());
+        bad_payloads.push([prefix, point(0, [0.; 3]).as_slice()].concat());
+        bad_payloads.push([prefix, &[0x8a, 1, 0, 0]].concat());
+        bad_payloads.push([valid.as_slice(), &valid[..7]].concat());
+        for id in [123, area_wire::area_id(117).unwrap(), u32::from_le_bytes(valid[3..7].try_into().unwrap())] {
+            bad_payloads.push([prefix, request(id).as_slice(), ready(slot).as_slice()].concat());
+        }
+        for payload in bad_payloads {
+            let mut s = before_first_ready(now, slot); let before = s.clone();
+            assert!(s.receive(&frame(&s, &payload), now).is_err());
+            assert_input_rolled_back(&s, &before, now);
+        }
+        for own in [None, Some((0, false))] {
+            let mut s = before_first_ready(now, slot);
+            s.shared.as_mut().unwrap().creations[slot] = own;
+            let before = s.clone();
+            assert!(s.receive(&frame(&s, &valid), now).is_err());
+            assert_input_rolled_back(&s, &before, now);
+        }
+        let mut future = before_first_ready(now, slot);
+        future.shared.as_mut().unwrap().announced_areas = 6;
+        let before = future.clone();
+        assert!(future.receive(&frame(&future, &valid), now).is_err());
+        assert_input_rolled_back(&future, &before, now);
+    }
+}
+
+#[test]
+fn entities_first_ready_reserves_binding_and_uses_same_frame_ack() {
+    let now = Instant::now();
+    for slot in 0..2 {
+        let mut s = before_first_ready(now, slot);
+        for _ in 0..7 { s.tx.enqueue().unwrap(); }
+        s.receive(&frame(&s, &captured_requests_ready(slot)), now).unwrap();
+        let c = s.shared.as_ref().unwrap();
+        assert_eq!(c.phase, Phase::Driving); assert_eq!(s.tx.len(), 8);
+        assert_eq!(c.pending_area_requests.len(), 6);
+        assert!(c.areas.iter().all(|(p, _)| p.is_none()));
+
+        let mut full = before_first_ready(now, slot);
+        let sequence = full.tx.enqueue_body_tracked(&wire::create_vehicle(full.shared.as_ref().unwrap().view.as_ref().unwrap(), slot).unwrap()).unwrap();
+        full.shared.as_mut().unwrap().creations[slot] = Some((sequence, false));
+        for _ in 0..7 { full.tx.enqueue().unwrap(); }
+        while full.tx.due(now, full.rx).unwrap().is_some() {}
+        let before = full.clone();
+        let mut input = frame(&full, &captured_requests_ready(slot));
+        assert!(full.receive(&input, now).is_err());
+        assert_input_rolled_back(&full, &before, now);
+        input.cumulative = Some(sequence + 1);
+        full.receive(&input, now).unwrap();
+        let c = full.shared.as_ref().unwrap();
+        assert_eq!(c.phase, Phase::Driving); assert_eq!(full.tx.len(), 8);
+        assert!(c.creations[slot].unwrap().1);
+        assert_eq!(c.pending_area_requests.len(), 6);
+    }
+}

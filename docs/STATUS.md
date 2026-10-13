@@ -20,17 +20,31 @@ login loop before the arena and is **NOT_RUN**, with cleanup verified in
 `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve06-diagnostic-not-run.json`
 (SHA256 `e59040cd4827992fb8da946c20df2f18cfe0bfcea4aa33f50a1c662efb0f2d6e`).
 
-The follow-up bounded run `treeobserve07` removed the launch race by starting
-slot A and then slot B 45 seconds apart. Both gateway sessions became active,
-but slot B was later rejected on `channel_state` and closed after
-`retry_exhausted`; slot A reached the arena and continued receiving snapshots.
-Neither trace reached `set_fallenTrees`, `orderDestructibleDestroy`, or the
-new downstream observer methods. This is a **NOT_RUN** tree-contact result,
-with a confirmed second-client channel drop, not native acceptance. Evidence:
-`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve07-diagnostic-slot-b-drop.json`
-(SHA256 `4b7e393a41bad9eab8dca59432ab5114a0c08840b554b66402e551503b460719`).
-The receipt-verified stop and both installation rollbacks passed; no owned
-processes remain.
+Correction to `treeobserve07`: the initial extractor compared method names
+with `event`; the real event is `native_destructible_call`, with a separate
+`method` field. A reached all 117 area controllers and recorded two tree
+setter/drop/effect call pairs. B reached 66 controllers, then closed after
+`channel_state` / `retry_exhausted`. The previous zero-callback receipt is
+superseded by `tests/treeobserve07-corrected-audit.json` under the same evidence
+root (SHA256 `01e5ce6a3ccadd43520bfe6afb1ac2a36eee4c6ec5d972cf4829d07fa5034bc7`).
+Launches were 73.42 seconds apart; launch timing as a login-loop cause remains
+INFERRED, not established. `treeobserve06` actually left B connected in the
+hangar while A stayed at login; it was not two proven login loops.
+
+`treeobserve08` captured both clients sending six area requests followed by
+their first READY33 in a 75-byte application envelope. In Entities the old
+request-only branch rejected the non-multiple-of-seven length before READY;
+both sessions later closed with `retry_exhausted`. Evidence:
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve08-corrected-audit.json`
+(SHA256 `cb801b04428f57958b4c61836b98ac44a73e4a7f734f12719bb1c991657a92b2`).
+The fix validates the exact owned READY suffix, queues its binding before
+area creates exhaust the eight-body window, and preserves whole-frame
+rollback. Both-slot, retry, malformed, missing-ACK and backpressure checks:
+**13/13 PASS**, `gateway-p06q-final-33`, executable SHA256
+`09b4365787e6d549d4cf64206813b4f163ff6167f68fd6a25bee8a63081ddaa4`.
+The temporary raw frame logger has been removed; token bytes remain local
+only and are omitted from the audit. Both runs were stopped and restored.
+Post-fix native transport recheck is pending; native tree pixels remain FAIL.
 
 Current source head is `e2af80f823641cfce2456912ca343568c634edf1`. The focused
 observer suite is **17/17 PASS** and `py_compile` passes. The current gateway
