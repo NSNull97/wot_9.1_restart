@@ -15,6 +15,11 @@ import re
 from pathlib import Path
 from typing import Any
 
+if __package__:
+    from .destructible_catalog import CatalogError, configured_paths, no_links
+else:
+    from destructible_catalog import CatalogError, configured_paths, no_links
+
 
 MAX_BYTES = 4 * 1024 * 1024
 MAX_DEPTH = 32
@@ -110,11 +115,10 @@ def _bounded(root: Path, path: str | Path, *, directory: bool = False,
     candidate = Path(path)
     if not candidate.is_absolute():
         candidate = root / candidate
-    probe = candidate
-    while probe != probe.parent:
-        if probe.exists() and (probe.is_symlink() or getattr(probe, "is_junction", lambda: False)()):
-            raise P07AVisibilityAuditError(f"path link is forbidden: {probe}")
-        probe = probe.parent
+    try:
+        no_links(candidate)
+    except CatalogError as error:
+        raise P07AVisibilityAuditError(str(error)) from error
     try:
         candidate = candidate.resolve(strict=must_exist)
         candidate.relative_to(root)
@@ -243,15 +247,16 @@ def _manifest(value: Any) -> dict[str, dict[str, Any]]:
 
 def _hash_copy(root: Path, copy_root: Path, relative: str,
                expected: tuple[int, str]) -> dict[str, Any]:
-    raw, candidate, digest = _read(root, _bounded(root, copy_root, directory=True) / relative)
+    raw, candidate, digest = _read(copy_root, copy_root / relative)
     if len(raw) != expected[0] or digest != expected[1]:
         raise P07AVisibilityAuditError(f"source hash mismatch: {candidate}")
     return {"path": relative, "bytes": len(raw), "sha256": digest}
 
 
 def audit(*, root: str | Path, contracts: str | Path, sources: str | Path,
-          original: str | Path, research: str | Path) -> dict[str, Any]:
-    repository = Path(root).resolve()
+          original: str | Path | None = None,
+          research: str | Path | None = None) -> dict[str, Any]:
+    repository = Path(root).absolute()
     _bounded(repository, repository, directory=True)
     contracts_value, contracts_path, contracts_digest = _json(repository, contracts)
     sources_value, sources_path, sources_digest = _json(repository, sources)
@@ -267,8 +272,12 @@ def audit(*, root: str | Path, contracts: str | Path, sources: str | Path,
         if row is None or row["bytes"] != expected[0] or row["sha256"] != expected[1]:
             raise P07AVisibilityAuditError(f"manifest entry differs: {relative}")
         selected[relative] = row
-    original_root = _bounded(repository, original, directory=True)
-    research_root = _bounded(repository, research, directory=True)
+    try:
+        paths = configured_paths(repository, original=original, research=research)
+    except (CatalogError, OSError, KeyError, TypeError) as error:
+        raise P07AVisibilityAuditError(f"configured client roots: {error}") from error
+    original_root = paths['original_client_root']
+    research_root = paths['research_client_root']
     copies = {"original": {}, "research": {}}
     for relative, expected in SELECTED_SOURCES.items():
         copies["original"][relative] = _hash_copy(repository, original_root, relative, expected)
@@ -299,8 +308,8 @@ def main() -> None:
     parser.add_argument("--root", default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument("--contracts", default="local/evidence/20261002-p00-p01/summary/contracts.json")
     parser.add_argument("--sources", default="local/evidence/20261002-p00-p01/summary/sources.json")
-    parser.add_argument("--original", default="WoT_0.9.1_RU_0717_original")
-    parser.add_argument("--research", default="WoT_0.9.1_RU_0717_research")
+    parser.add_argument("--original", help="must match root/config/project.local.json; defaults to that configuration")
+    parser.add_argument("--research", help="must match root/config/project.local.json; defaults to that configuration")
     parser.add_argument("--out")
     args = parser.parse_args()
     try:

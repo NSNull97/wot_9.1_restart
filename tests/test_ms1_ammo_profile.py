@@ -12,6 +12,8 @@ import os
 import sys
 import unittest
 
+from tools.destructible_catalog import configured_paths, no_links
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE = os.path.join(ROOT, 'client_patch', 'sr_interactive.py')
 PANEL = 'scripts/client/gui/Scaleform/daapi/view/lobby/hangar/AmmunitionPanel.py'
@@ -240,15 +242,15 @@ class AmmoProfileTests(unittest.TestCase):
         self.assertEqual(2, len(self.events))
 
     def test_direct_original_file_hashes_are_pinned_read_only(self):
-        original = os.path.join(ROOT, 'WoT_0.9.1_RU_0717_original', 'res')
+        if not os.path.isfile(os.path.join(ROOT, 'config', 'project.local.json')):
+            self.skipTest('original #717 configuration unavailable; native NOT_RUN')
+        original = configured_paths(ROOT)['original_client_root'] / 'res'
         for relative, expected in (
             ('scripts/client/gui/Scaleform/daapi/view/lobby/hangar/AmmunitionPanel.pyc',
              '54d139dd4280314111ce509c15360da8d932cfbc356b30d40c1d9ca96c3addc8'),
             ('scripts/client/gui/Scaleform/daapi/view/meta/AmmunitionPanelMeta.pyc',
              'b8ff5d7e1f986ef9b8165703d42ec6f51f042a485d1004f7a1713eddb73a856a')):
-            path = os.path.join(original, *relative.split('/'))
-            if not os.path.isfile(path):
-                self.skipTest('original #717 unavailable; native NOT_RUN')
+            path = no_links(original / relative)
             with open(path, 'rb') as stream:
                 raw = stream.read(1024 * 1024 + 1)
             self.assertLessEqual(len(raw), 1024 * 1024)

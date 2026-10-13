@@ -6,14 +6,14 @@ use crate::map_drive_worker091::{CatalogSpec,Pool,Scene};
 
 const WORKER_CATALOG_SHA:&str="58606f16e1fc08769f11b72eb29c90a595ef2c8b1ca611cdd81ae8bfbd1a2b63";
 const INVENTORY_SHA:&str="5658e7620389e9726b1ff06f1eb80125224a45fe17d8558c2e072b4a7cc6bbf3";
-const POOL_SHA:&str="c2dd3da12e275b94172107e3e358dfb8452dc3dc7895fd3e295a0ac38c0db22b";
+const POOL_SHA:&str=worker_fixtures::P06O_POOL_SHA;
 
 fn local()->std::path::PathBuf{
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap()
 }
 fn fixture(now:Instant)->(World,Arc<Pool>,CatalogSpec){
     let local=local();let evidence=local.join("evidence/20261012-p06o-destructible-import-01");
-    let pool=Arc::new(Pool::load(&local,&local.join("build/server/physics-integrated-p06o-01/pool-near.json")).unwrap());
+    let pool=Arc::new(worker_fixtures::p06o());
     assert_eq!(pool.sha256,POOL_SHA);
     let spec=CatalogSpec::load(&local,&evidence.join("boundary/worker-ipc01/catalog.json"),WORKER_CATALOG_SHA).unwrap();
     let raw=fs::read(evidence.join("resource-contract/inventory02/inventory.json")).unwrap();
@@ -30,12 +30,12 @@ fn fixture(now:Instant)->(World,Arc<Pool>,CatalogSpec){
         assert_eq!(worker.first_triangle(),row["physics_first_triangle"].as_u64().unwrap() as u32);
         assert_eq!(worker.triangle_count(),row["physics_triangle_count"].as_u64().unwrap() as u32);
         fragiles::Object{object_id:id+1,instance_id:id,chunk_id:chunk,native_index,
-            resource:row["resource"].as_str().unwrap().into(),health:row["reference_health"].as_i64().unwrap() as i16,material_kind:73,
+            resource:row["resource"].as_str().unwrap().into(),health:row["reference_health"].as_u64().unwrap() as u32,material_kind:73,
             projectile_first_triangle:row["projectile_first_triangle"].as_u64().unwrap() as u32,
             projectile_triangle_count:row["projectile_triangle_count"].as_u64().unwrap() as u32,
-            physics_first_triangle:worker.first_triangle(),physics_triangle_count:worker.triangle_count(),object_revision:worker.object_revision().into()}
+            physics_first_triangle:worker.first_triangle(),physics_triangle_count:worker.triangle_count(),object_revision:worker.object_revision().into(),kind:fragiles::ObjectKind::Fragile}
     }).collect();
-    let catalog=Arc::new(fragiles::Catalog{map:crate::map_profile091::MapId::Karelia,sha256:INVENTORY_SHA.into(),worker_file:"physics-removals.json".into(),worker_sha256:WORKER_CATALOG_SHA.into(),objects});
+    let catalog=Arc::new(fragiles::Catalog{map:crate::map_profile091::MapId::Karelia,sha256:INVENTORY_SHA.into(),worker_file:"physics-removals.json".into(),worker_sha256:WORKER_CATALOG_SHA.into(),contacts:false,objects});
     let mut world=World::new(913,now).unwrap();world.bind_geometry(Arc::new(geometry::tests::bundle())).unwrap();
     world.enable_ap_test_lab().unwrap();world.bind_terrain(model::tests::destructible_terrain()).unwrap();world.bind_fragiles(catalog).unwrap();
     for slot in 0..2{world.attach(model::Identity{account:format!("catalog-worker-{slot}"),database:slot+1,name:format!("worker_{slot}")},slot as u32+1).unwrap();}

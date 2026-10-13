@@ -19,6 +19,13 @@ pub(super) const CHUNK_ID: u16 = 31354;
 pub(super) const POSITION: [f32; 3] = [-450., 0., -450.];
 const CLIENT_TYPE: u16 = 3;
 const DESTROYED_FRAGILES: u8 = 0x9f;
+const FALLEN_TREES: u8 = 0xa1;
+/// Prohorovka has 144 destructible chunks.  This is an area-controller
+/// bound, separate from the 64-object fragile catalog bound.
+const MAX_AREAS: usize = 144;
+/// A short VAR1 property length is one byte.  ARRAY<UINT32> carries a signed
+/// i32 count, so 4 + 4*62 = 252 is the largest safe body before 255.
+const MAX_TREES_PER_AREA: usize = 62;
 
 /// Native enterAoI. The caller must complete request/create/reliable-ACK state
 /// before sending property updates to this connection.
@@ -47,32 +54,98 @@ fn fragile(index: u8) -> u16 {
 /// Catalog-order area controllers. Native chunk coordinates use floor(x/100).
 /// The catalog supplies only original, independently verified item identities.
 pub(super) fn area_id(area:usize)->io::Result<u32>{
-    if area>=super::fragiles::MAX_OBJECTS{return Err(super::model::bad());}Ok(ENTITY_ID+area as u32)
+    if area>=MAX_AREAS{return Err(super::model::bad());}Ok(ENTITY_ID+area as u32)
 }
 pub(super) fn area_announcement(area:usize)->io::Result<Vec<u8>>{
     let mut out=vec![10];out.extend(area_id(area)?.to_le_bytes());out.push(ALIAS+area as u8);Ok(out)
 }
 pub(super) fn area_request(payload:&[u8],count:usize)->Option<usize>{
-    if count>super::fragiles::MAX_OBJECTS||payload.len()!=7||payload[..3]!=[8,4,0]{return None;}
+    if count>MAX_AREAS||payload.len()!=7||payload[..3]!=[8,4,0]{return None;}
     let id=u32::from_le_bytes(payload[3..].try_into().ok()?);
     let area=id.checked_sub(ENTITY_ID)? as usize;(area<count).then_some(area)
 }
-fn checked_indices(indices:&[u8])->io::Result<()>{
-    // Only verified short VAR1 bodies: do not guess the extended length codec.
-    if indices.len()>super::fragiles::MAX_OBJECTS||indices.windows(2).any(|w|w[0]>=w[1]){return Err(super::model::bad());}Ok(())
+
+fn checked_fragiles(fragiles:&[u16])->io::Result<()>{
+    // DestructiblesCache.encodeFragile is (destrID << 8) | int(isShotDamage).
+    // Keep both projectile (low bit 1) and vehicle (low bit 0) records, but
+    // reject guessed bits and duplicate/out-of-order set members.
+    if fragiles.len()>super::fragiles::MAX_OBJECTS
+        || fragiles.windows(2).any(|w|w[0]>=w[1])
+        || fragiles.iter().any(|value| value & 0xfe != 0) {
+        return Err(super::model::bad());
+    }
+    Ok(())
 }
-pub(super) fn area_create(area:usize,chunk:u16,indices:&[u8])->io::Result<Vec<u8>>{
-    checked_indices(indices)?;let mut body=vec![0];body.extend(area_id(area)?.to_le_bytes());body.extend(CLIENT_TYPE.to_le_bytes());
+fn checked_trees(trees:&[u32])->io::Result<()>{
+    if trees.len()>MAX_TREES_PER_AREA||trees.windows(2).any(|w|w[0]>=w[1]){return Err(super::model::bad());}
+    Ok(())
+}
+fn area_body(area:usize,chunk:u16,fragiles:&[u16],fallen_trees:&[u32])->io::Result<Vec<u8>>{
+    checked_fragiles(fragiles)?;checked_trees(fallen_trees)?;
+    let mut body=vec![0];body.extend(area_id(area)?.to_le_bytes());body.extend(CLIENT_TYPE.to_le_bytes());
     for v in [((chunk>>8) as i32-127) as f32*100.+50.,0.,((chunk&255) as i32-127) as f32*100.+50.]{body.extend(v.to_le_bytes());}
     body.extend([0u8;12]);body.push(4);
-    for prop in 0..4u8{body.push(prop);if prop==1{body.extend((indices.len() as i32).to_le_bytes());for &id in indices{body.extend(fragile(id).to_le_bytes());}}
-        else{body.extend(0i32.to_le_bytes());}}
+    for prop in 0..4u8{body.push(prop);match prop {
+        1=>{body.extend((fragiles.len() as i32).to_le_bytes());for &value in fragiles{body.extend(value.to_le_bytes());}},
+        3=>{body.extend((fallen_trees.len() as i32).to_le_bytes());for &value in fallen_trees{body.extend(value.to_le_bytes());}},
+        _=>body.extend(0i32.to_le_bytes()),
+    }}
+    if body.len()>u16::MAX as usize{return Err(super::model::bad());}
+    Ok(body)
+}
+
+/// Full initial state for one native AreaDestructibles controller.  Fragile
+/// entries are already DestructiblesCache.encodeFragile values; tree entries
+/// are the original UINT32 encodeFallenTree values.
+pub(super) fn area_create_state(area:usize,chunk:u16,fragiles:&[u16],fallen_trees:&[u32])->io::Result<Vec<u8>>{
+    let body=area_body(area,chunk,fragiles,fallen_trees)?;
     let mut out=vec![9];out.extend((body.len() as u16).to_le_bytes());out.extend(body);Ok(out)
 }
+
+fn area_update_property(area:usize,property:u8,element_size:usize,count:usize)->io::Result<Vec<u8>>{
+    let body_len=4usize.checked_add(element_size.checked_mul(count).ok_or_else(super::model::bad)?).ok_or_else(super::model::bad)?;
+    if body_len>u8::MAX as usize{return Err(super::model::bad());}
+    let mut out=vec![0x12];out.extend(area_id(area)?.to_le_bytes());out.extend([property,body_len as u8]);
+    out.extend((count as i32).to_le_bytes());Ok(out)
+}
+
+pub(super) fn area_update_fragiles(area:usize,fragiles:&[u16])->io::Result<Vec<u8>>{
+    checked_fragiles(fragiles)?;let mut out=area_update_property(area,DESTROYED_FRAGILES,2,fragiles.len())?;
+    for &value in fragiles{out.extend(value.to_le_bytes());}out.push(0x13);Ok(out)
+}
+
+pub(super) fn area_update_trees(area:usize,fallen_trees:&[u32])->io::Result<Vec<u8>>{
+    checked_trees(fallen_trees)?;let mut out=area_update_property(area,FALLEN_TREES,4,fallen_trees.len())?;
+    for &value in fallen_trees{out.extend(value.to_le_bytes());}out.push(0x13);Ok(out)
+}
+
+pub(super) fn area_create(area:usize,chunk:u16,indices:&[u8])->io::Result<Vec<u8>>{
+    let fragiles=indices.iter().map(|&index|fragile(index)).collect::<Vec<_>>();
+    area_create_state(area,chunk,&fragiles,&[])
+}
 pub(super) fn area_update(area:usize,indices:&[u8])->io::Result<Vec<u8>>{
-    checked_indices(indices)?;let mut out=vec![0x12];out.extend(area_id(area)?.to_le_bytes());
-    out.extend([DESTROYED_FRAGILES,(4+2*indices.len()) as u8]);out.extend((indices.len() as i32).to_le_bytes());
-    for &id in indices{out.extend(fragile(id).to_le_bytes());}out.push(0x13);Ok(out)
+    let fragiles=indices.iter().map(|&index|fragile(index)).collect::<Vec<_>>();
+    area_update_fragiles(area,&fragiles)
+}
+
+/// Match DestructiblesCache.encodeFallenTree from the pinned Python 2.7
+/// bytecode.  Python's `int` truncates toward zero; yaw/pitch are deliberately
+/// quantized with the original wrap masks, while non-finite input is rejected
+/// instead of relying on Rust's float-to-int saturation behavior.
+pub(super) fn encode_fallen_tree<Y:Into<f64>,P:Into<f64>,S:Into<f64>>(
+    native_index:u8,yaw:Y,pitch:P,speed:S)->io::Result<u32>{
+    let yaw=yaw.into();let pitch=pitch.into();let speed=speed.into();
+    if !yaw.is_finite()||!pitch.is_finite()||!speed.is_finite(){return Err(super::model::bad());}
+    let speed=if speed<=0. {0} else if speed>=3. {3} else {speed as u32};
+    // `int` truncates toward zero before Python's integer bit mask.  Reducing
+    // the finite float remainder before converting avoids Rust's saturating
+    // float-to-int behavior for very large (but still finite) diagnostics.
+    let yaw_scaled=64. * (yaw+std::f64::consts::PI)/(2.*std::f64::consts::PI);
+    let pitch_scaled=65536. * (pitch+std::f64::consts::PI)/(2.*std::f64::consts::PI);
+    if !yaw_scaled.is_finite()||!pitch_scaled.is_finite(){return Err(super::model::bad());}
+    let discrete_yaw=yaw_scaled.trunc().rem_euclid(64.) as u32;
+    let discrete_pitch=pitch_scaled.trunc().rem_euclid(65536.) as u32;
+    Ok((u32::from(native_index)<<24)|(discrete_yaw<<18)|(speed<<16)|discrete_pitch)
 }
 
 /// Full native initial state for a fresh controller/rejoin. Option limits the
@@ -142,10 +215,57 @@ mod tests {
     #[test]fn catalog_wire_refuses_overflow_alias_duplicate_or_unsorted_arrays(){
         let full=(0..64u8).collect::<Vec<_>>();assert_eq!(area_update(63,&full).unwrap()[6],132);
         for ids in [vec![1,1],vec![2,0],(0..65u8).collect()]{assert!(area_update(0,&ids).is_err());assert!(area_create(0,CHUNK_ID,&ids).is_err());}
-        assert!(area_create(64,CHUNK_ID,&[]).is_err());assert!(area_announcement(64).is_err());
-        let mut request=vec![8,4,0];request.extend(area_id(63).unwrap().to_le_bytes());
-        assert_eq!(area_request(&request,64),Some(63));assert_eq!(area_request(&request,63),None);
+        assert!(area_create(144,CHUNK_ID,&[]).is_err());assert!(area_announcement(144).is_err());
+        let mut request=vec![8,4,0];request.extend(area_id(143).unwrap().to_le_bytes());
+        assert_eq!(area_request(&request,144),Some(143));assert_eq!(area_request(&request,143),None);
         request.push(0);assert_eq!(area_request(&request,64),None);
+    }
+
+    #[test]
+    fn tree_state_uses_distinct_uint32_property_and_preserves_ramming_fragiles() {
+        let fragiles = [0x0100u16, 0x0101]; // vehicle then projectile destruction
+        let trees = [0x0102_0000u32, 0x0203_0001];
+        let creation = area_create_state(143, CHUNK_ID, &fragiles, &trees).unwrap();
+        // Property 1 is ARRAY<UINT16>; property 3 is ARRAY<UINT32>.  Both
+        // arrays are cumulative and use signed little-endian element counts.
+        assert!(creation.windows(6).any(|window| window == [1, 2, 0, 0, 0, 0]));
+        assert!(creation.windows(13).any(|window| window == [3, 2, 0, 0, 0, 0, 0, 2, 1, 1, 0, 3, 2]));
+        let update = area_update_trees(143, &trees).unwrap();
+        assert_eq!(&update[..7], &[18, 0x96, 0, 16, 9, FALLEN_TREES, 12]);
+        assert_eq!(&update[7..], &[2, 0, 0, 0, 0, 0, 2, 1, 1, 0, 3, 2, 19]);
+        assert_eq!(area_update_fragiles(143, &fragiles).unwrap(), {
+            let mut expected = vec![18, 0x96, 0, 16, 9, DESTROYED_FRAGILES, 8, 2, 0, 0, 0];
+            expected.extend([0, 1, 1, 1, 19]); expected
+        });
+        assert!(area_update_trees(143, &(0..63u32).collect::<Vec<_>>()).is_err());
+        assert!(area_create_state(143, CHUNK_ID, &[], &(0..63u32).collect::<Vec<_>>()).is_err());
+        assert!(area_update_fragiles(143, &[0x0102]).is_err());
+    }
+
+    #[test]
+    fn prohorovka_tree_update_preserves_known_native_packed_values() {
+        // Values observed in manualtree02 for native indexes 25 and 4.
+        // Cumulative State output is sorted, regardless of contact order.
+        assert!(area_update_trees(0, &[0x195a_8000, 0x040e_8000]).is_err());
+        let update = area_update_trees(0, &[0x040e_8000, 0x195a_8000]).unwrap();
+        assert_eq!(&update[..7], &[0x12, 0x07, 0x00, 0x10, 0x09, FALLEN_TREES, 12]);
+        assert_eq!(&update[7..], &[
+            2, 0, 0, 0,
+            0x00, 0x80, 0x0e, 0x04,
+            0x00, 0x80, 0x5a, 0x19,
+            0x13,
+        ]);
+    }
+
+    #[test]
+    fn encode_fallen_tree_matches_pinned_python_quantization_and_rejects_nonfinite() {
+        assert_eq!(encode_fallen_tree(7, 0.0f64, 0.0f64, 2).unwrap(), 0x0782_8000);
+        assert_eq!(encode_fallen_tree(255, std::f64::consts::PI / 2., -std::f64::consts::PI / 2., 99).unwrap(), 0xffc3_4000);
+        assert_eq!(encode_fallen_tree(1, -std::f64::consts::PI, std::f64::consts::PI, 0).unwrap(), 0x0100_0000);
+        assert_eq!(encode_fallen_tree(2, 3.2, -3.2, -4).unwrap(), 0x0200_fd9f);
+        assert!(encode_fallen_tree(1, f64::NAN, 0., 0).is_err());
+        assert!(encode_fallen_tree(1, 0., f64::INFINITY, 0).is_err());
+        assert!(encode_fallen_tree(1, 0., 0., f64::NEG_INFINITY).is_err());
     }
 
     #[test]

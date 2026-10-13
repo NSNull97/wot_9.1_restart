@@ -10,6 +10,9 @@ mod catalog_tests;
 #[cfg(test)]
 #[path="server_catalog_wire_tests.rs"]
 mod catalog_wire_tests;
+#[cfg(test)]
+#[path="server_worker_fixtures.rs"]
+mod worker_fixtures;
 
 #[derive(Default)]
 struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
@@ -195,6 +198,7 @@ impl IntegratedRuntime {
         if self.staged.is_some() { return self.finish_removal(world, now); }
         self.synchronizing = [false; model::CAPACITY];
         let mut rows = Vec::new();
+        let mut vehicle_contacts = Vec::<model::VehicleContactInput>::new();
         for slot in 0..model::CAPACITY {
             if world.actors.get(slot).and_then(|a| a.session).is_none() {
                 self.workers[slot].take(); self.poses[slot] = None; self.anchored[slot] = false;
@@ -211,6 +215,13 @@ impl IntegratedRuntime {
             }
             let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
             if let Some(state) = worker.poll(now)? {
+                for contact in &state.object_contacts {
+                    if vehicle_contacts.len() >= 32 { return Err(model::bad()); }
+                    vehicle_contacts.push(model::VehicleContactInput { object_id: contact.object_id,
+                        substep: contact.substep, point: contact.point, normal: contact.normal,
+                        velocity: contact.velocity, mass_kg: worker.map.mass_kg,
+                        kind: contact.kind.clone(), shooter: slot });
+                }
                 if state.seq == 0 {
                     let actor = world.actors.get(slot).ok_or_else(model::bad)?;
                     self.offsets[slot] = worker_frame_offset(actor.position, state.pose.position);
@@ -288,6 +299,16 @@ impl IntegratedRuntime {
         }
         let mut candidate = world.clone();
         candidate.advance_with_external(now, Some(&rows))?;
+        let vehicle_events = candidate.apply_vehicle_contacts(&vehicle_contacts)?;
+        for event in &vehicle_events {
+            let closing_speed=event.velocity.iter().zip(event.normal).map(|(v,n)|v*n).sum::<f32>();
+            let energy_j=0.5*event.mass_kg*closing_speed*closing_speed;
+            println!("SHARED_VEHICLE_CONTACT battle={} slot={} object_id={} instance_id={} kind={} substep={} closing_speed={} scene_before={} scene_after={} fallen_tree={:?}",
+                candidate.id,event.shooter,event.object_id,event.instance_id,event.kind,event.substep,
+                closing_speed,event.scene_before,event.scene_after,event.fallen_tree);
+            println!("SHARED_VEHICLE_CONTACT_ENERGY battle={} object_id={} mass_kg={} closing_speed={} energy_j={} policy_min_energy_j={}",
+                candidate.id,event.object_id,event.mass_kg,closing_speed,energy_j,super::fragiles::RAMMING_MIN_ENERGY_J);
+        }
         if candidate.scene_version() != world.scene_version() {
             if self.catalog.is_none()&&(self.removal.is_none() || world.scene_version() != 0 || candidate.scene_version() != 1) {
                 return Err(model::bad());
@@ -420,8 +441,8 @@ pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: 
     let catalog=if let Some((path,sha))=catalog_path{
         let path=Path::new(path);let catalog=Arc::new(super::fragiles::Catalog::load(&pool.local_root,path,sha)?);
         let worker=crate::map_drive_worker091::CatalogSpec::load(&pool.local_root,&path.parent().ok_or_else(model::bad)?.join(&catalog.worker_file),&catalog.worker_sha256)?;
-        if catalog.map!=map||worker.map_id()!=map||worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
-            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision){return Err(model::bad().into());}
+        if catalog.map!=map||worker.map_id()!=map||catalog.contacts!=worker.contacts()||worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
+            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=(match b.kind { super::fragiles::ObjectKind::Tree=>"tree", super::fragiles::ObjectKind::Fragile=>"fragile" })){return Err(model::bad().into());}
         Some((catalog,worker))
     }else{None};
     serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map)
@@ -748,12 +769,21 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let prior_projectile_count = world.projectiles.len();
     if c.phase == Phase::Driving {
         if let Some(state)=&next_world.fragiles{
-            for (i,chunk) in state.catalog.chunks().into_iter().enumerate(){
+            let chunks=state.catalog.chunks();
+            if c.tree_areas.len()!=chunks.len(){c.tree_areas=vec![Vec::new();chunks.len()];}
+            for (i,chunk) in chunks.into_iter().enumerate(){
                 let indices=state.native_destroyed(chunk);
+                let values=state.native_fragile_values(chunk);
+                let trees=state.native_fallen_trees(chunk);
                 if c.areas[i].1!=indices{
                     if !area_ready||!c.areas[i].1.iter().all(|id|indices.contains(id)){return Err(model::bad());}
-                    next.outbox.push_back(super::destructible_wire::area_update(i,&indices)?);c.areas[i].1=indices.clone();
+                    next.outbox.push_back(super::destructible_wire::area_update_fragiles(i,&values)?);c.areas[i].1=indices.clone();
                     println!("SHARED_CATALOG_PUBLICATION battle={} session={} chunk={} entity={} indices={:?} scene_version={}",next_world.id,s.id,chunk,super::destructible_wire::area_id(i)?,indices,next_world.scene_version());
+                }
+                if c.tree_areas[i]!=trees {
+                    if !area_ready||!c.tree_areas[i].iter().all(|id|trees.contains(id)){return Err(model::bad());}
+                    next.outbox.push_back(super::destructible_wire::area_update_trees(i,&trees)?);c.tree_areas[i]=trees.clone();
+                    println!("SHARED_TREE_PUBLICATION battle={} session={} chunk={} entity={} fallen_trees={:?} scene_version={}",next_world.id,s.id,chunk,super::destructible_wire::area_id(i)?,trees,next_world.scene_version());
                 }
             }
         }
@@ -933,9 +963,7 @@ fn entry_ready(s: &Session, now: Instant) -> bool {
 mod tests {
     use super::*;
     #[test] fn selected_map_admission_uses_source_pins_and_rejects_cross_map_workers_before_start() {
-        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
-        let pool=crate::map_drive_worker091::Pool::load(&root.join("local"),
-            &root.join("local/build/server/physics-integrated-p06n-01/pool-near.json")).unwrap();
+        let pool=worker_fixtures::p06n();
         for map_id in [MapId::Karelia,MapId::Prohorovka] {
             let spec=selected_pool_map(&pool,map_id).unwrap();
             assert_eq!(spec.asset,map_id.asset());
@@ -1085,8 +1113,7 @@ mod tests {
     }
     #[test] fn two_real_workers_acknowledge_before_world_commit_and_changed_membership_fails() {
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
-        let pool=Arc::new(crate::map_drive_worker091::Pool::load(&root.join("local"),
-            &root.join("local/build/server/physics-integrated-p06n-01/pool-near.json")).unwrap());
+        let pool=Arc::new(worker_fixtures::p06n());
         let spec=crate::map_drive_worker091::RemovalSpec::load(&root.join("local"),
             &root.join("local/evidence/20261010-p06n-destructible-01/boundary/worker-ipc01/descriptor.json"),
             "ef00e2aed686c16c4f9a216d9db70dbcd1ca3fda84bc33cd9eaa8aed1dbde7fa").unwrap();
@@ -1356,6 +1383,14 @@ mod tests {
         w.attach(w.actors[0].identity.clone(),3).unwrap();w.set_ready(0,3).unwrap();w.advance(now+model::STEP*4).unwrap();
         assert_eq!((w.actors[0].aim.yaw,w.actors[0].aim.pitch),pose);
         assert!(w.apply(0,1,&[model::Command::Aim(super::super::aim::Intent::Point([0.;3]))],now+model::STEP*4).is_err());
+    }
+    #[test] fn native_aim_before_binding_ack_is_queued_until_correction() {
+        let now=Instant::now();let (mut s,_,_)=visible_pair(now);
+        let c=s.shared.as_mut().unwrap();c.correction=false;c.binding=None;
+        s.receive(&frame(&s,&point(0,[100.,100.,100.])),now).unwrap();
+        assert!(!s.shared.as_ref().unwrap().correction);
+        assert!(s.shared.as_ref().unwrap().binding.is_none());
+        assert_eq!(s.shared.as_ref().unwrap().commands.len(),1);
     }
     #[test] fn backpressure_does_not_enqueue_a_history_of_aim_poses() {
         let now=Instant::now();let (mut a,_,mut w)=visible_pair(now);

@@ -17,9 +17,20 @@ internal static class CheckedInput
     public const string PhysicsManifestHash = "ea6ef22aed0fdd4e4826500c280a616737f8990ce7ab7cd808b9382227ec5ffd";
     public const string ProjectileManifestHash = "ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447c5bd95dd97d80cea";
     public const string ObjectRevision = "karelia-instance1513-v1";
+    // IPC3/catalog-v2 remains the accepted legacy profile.  Contact-capable
+    // worker catalogs are deliberately a separate version and carry larger,
+    // still bounded limits so a malformed map cannot turn this process into an
+    // unbounded object/body allocator.
     public const int MaxCatalogObjects = 64, MaxRemovedObjects = 40;
-    public sealed record CatalogEntry(uint ObjectId, int InstanceId, int FirstTriangle, int TriangleCount, string Revision);
-    public sealed record CatalogSpec(string Hash, string Map, CatalogEntry[] Entries);
+    public const int MaxContactCatalogObjects = 1024, MaxContactRemovedObjects = 1024;
+    public const int MaxLegacyCatalogBytes = 128 * 1024;
+    public sealed record CatalogEntry(uint ObjectId, int InstanceId, int FirstTriangle, int TriangleCount,
+        string Revision, string Kind);
+    public sealed record CatalogSpec(string Hash, string Map, CatalogEntry[] Entries, bool Contacts)
+    {
+        public int MaxObjects => Contacts ? MaxContactCatalogObjects : MaxCatalogObjects;
+        public int MaxRemoved => Contacts ? MaxContactRemovedObjects : MaxRemovedObjects;
+    }
     public sealed record Scene(uint[] Ids, string Hash) { public uint Version => (uint)Ids.Length; }
     private sealed record CatalogSource(string PhysicsHash, string ProjectileHash, int InstanceCount, int TriangleCount);
     // Only source-audited initial geometry is admitted. These are map identities,
@@ -40,44 +51,59 @@ internal static class CheckedInput
 
     public static CatalogSpec LoadCatalog(string root, string path, string hash, string map, JsonElement obstacles)
     {
-        using var doc = Json(FileBytes(Owned(root, path), 131072, hash));
+        // A contact catalog is an explicit worker-side projection of the
+        // bounded domain manifest.  It is larger than the historical IPC3
+        // catalog, but remains capped at one MiB before JSON parsing.
+        var catalogBytes = FileBytes(Owned(root, path), 1024 * 1024, hash);
+        using var doc = Json(catalogBytes);
         var d = doc.RootElement;
         var source = CatalogProfile(map);
-        Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "objects");
-        if (d.GetProperty("version").GetInt32() != 2 || d.GetProperty("profile").GetString() != "test_lab" ||
+        int version = d.GetProperty("version").GetInt32();
+        bool contacts = version == 3;
+        if (version == 2 && catalogBytes.Length > MaxLegacyCatalogBytes)
+            throw new InvalidDataException("legacy catalog exceeds 128 KiB");
+        if (contacts)
+            Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "contacts", "objects");
+        else
+            Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "objects");
+        if ((version != 2 && version != 3) || (contacts && d.GetProperty("contacts").ValueKind != JsonValueKind.True) ||
+            d.GetProperty("profile").GetString() != "test_lab" ||
             d.GetProperty("map").GetString() != map ||
             d.GetProperty("physics_manifest_sha256").GetString() != source.PhysicsHash ||
             d.GetProperty("projectile_manifest_sha256").GetString() != source.ProjectileHash ||
             obstacles.GetProperty("sha256").GetString() != source.PhysicsHash)
             throw new InvalidDataException("catalog profile mismatch");
         var rows = d.GetProperty("objects");
-        if (rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() < 1 || rows.GetArrayLength() > MaxCatalogObjects)
+        if (rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() < 1 || rows.GetArrayLength() > (contacts ? MaxContactCatalogObjects : MaxCatalogObjects))
             throw new InvalidDataException("catalog count outside bound");
         var entries = new List<CatalogEntry>();
         var instances = new HashSet<int>();
         uint previous = 0;
         foreach (var row in rows.EnumerateArray())
         {
-            Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision");
+            if (contacts) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind");
+            else Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision");
             uint id = row.GetProperty("object_id").GetUInt32();
             int instance = row.GetProperty("instance_id").GetInt32(), first = row.GetProperty("first_triangle").GetInt32();
             int count = row.GetProperty("triangle_count").GetInt32();
             var revision = row.GetProperty("object_revision").GetString()!; Sha256(revision);
+            string kind = contacts ? row.GetProperty("kind").GetString()! : "fragile";
+            if (kind is not ("tree" or "fragile")) throw new InvalidDataException("catalog object kind");
             if (id <= previous || instance < 0 || instance >= source.InstanceCount || !instances.Add(instance) ||
                 first < 0 || count < 1 || count > 4096 || (long)first + count > source.TriangleCount)
                 throw new InvalidDataException("catalog identity/span bound");
-            previous = id; entries.Add(new(id, instance, first, count, revision));
+            previous = id; entries.Add(new(id, instance, first, count, revision, kind));
         }
         var spans = entries.OrderBy(e => e.FirstTriangle).ToArray();
         for (int i = 1; i < spans.Length; i++)
             if (spans[i].FirstTriangle < spans[i - 1].FirstTriangle + spans[i - 1].TriangleCount)
                 throw new InvalidDataException("overlapping catalog spans");
-        return new(hash, map, entries.ToArray());
+        return new(hash, map, entries.ToArray(), contacts);
     }
 
     public static Scene MakeScene(CatalogSpec catalog, uint[] ids)
     {
-        if (ids.Length > MaxRemovedObjects) throw new InvalidDataException("scene count bound");
+        if (ids.Length > catalog.MaxRemoved) throw new InvalidDataException("scene count bound");
         uint previous = 0;
         foreach (uint id in ids)
         {
@@ -95,13 +121,18 @@ internal static class CheckedInput
 
     public static Scene SceneCommand(JsonElement request, string op, CatalogSpec catalog, uint generation, string configHash, long sequence)
     {
-        Fields(request, "version", "op", "generation", "config_sha256", "catalog_sha256", "advance_seq",
-            "scene_version", "removed_object_ids", "scene_sha256");
+        if (catalog.Contacts)
+            Fields(request, "version", "op", "generation", "config_sha256", "catalog_sha256", "advance_seq",
+                "scene_version", "removed_object_ids", "scene_sha256", "contacts");
+        else
+            Fields(request, "version", "op", "generation", "config_sha256", "catalog_sha256", "advance_seq",
+                "scene_version", "removed_object_ids", "scene_sha256");
         var values = request.GetProperty("removed_object_ids");
-        if (values.ValueKind != JsonValueKind.Array || values.GetArrayLength() > MaxRemovedObjects)
+        if (values.ValueKind != JsonValueKind.Array || values.GetArrayLength() > catalog.MaxRemoved ||
+            (catalog.Contacts && request.GetProperty("contacts").ValueKind != JsonValueKind.True))
             throw new InvalidDataException("scene count bound");
         var scene = MakeScene(catalog, values.EnumerateArray().Select(v => v.GetUInt32()).ToArray());
-        if (request.GetProperty("version").GetInt32() != 3 || request.GetProperty("op").GetString() != op ||
+        if (request.GetProperty("version").GetInt32() != (catalog.Contacts ? 4 : 3) || request.GetProperty("op").GetString() != op ||
             request.GetProperty("generation").GetUInt32() != generation || request.GetProperty("config_sha256").GetString() != configHash ||
             request.GetProperty("catalog_sha256").GetString() != catalog.Hash || request.GetProperty("advance_seq").GetInt64() != sequence ||
             request.GetProperty("scene_version").GetUInt32() != scene.Version || request.GetProperty("scene_sha256").GetString() != scene.Hash)
@@ -177,6 +208,7 @@ internal static class CheckedInput
     public static JsonDocument Json(byte[] data) => JsonDocument.Parse(data,
         new JsonDocumentOptions { MaxDepth = 12, AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
 
+    public const int MaxIpcLineBytes = 32 * 1024;
     public static byte[]? ReadLine(Stream stream)
     {
         using var line = new MemoryStream();
@@ -189,7 +221,7 @@ internal static class CheckedInput
                 return null;
             }
             if (value == 10) return line.ToArray();
-            if (line.Length >= 1024 || value == 0 || value > 127) throw new InvalidDataException("IPC line outside bound");
+            if (line.Length >= MaxIpcLineBytes || value == 0 || value > 127) throw new InvalidDataException("IPC line outside bound");
             line.WriteByte((byte)value);
         }
     }
@@ -282,12 +314,13 @@ internal static class CheckedInput
             removal.FirstTriangle < 0 || removal.TriangleCount != 42 || removal.FirstTriangle + removal.TriangleCount > triangles.Length)
             throw new InvalidDataException("one-object source identity/span mismatch");
         }
-        var entries = catalog?.Entries ?? [new CatalogEntry(removal!.ObjectId, removal.InstanceId, removal.FirstTriangle, removal.TriangleCount, removal.Revision)];
+        var entries = catalog?.Entries ?? [new CatalogEntry(removal!.ObjectId, removal.InstanceId, removal.FirstTriangle, removal.TriangleCount, removal.Revision, "fragile")];
         foreach (var entry in entries)
         {
             var item = instances[entry.InstanceId];
             string? resource = item.GetProperty("resource").GetString();
-            if (item.GetProperty("kind").GetString() != "model" || string.IsNullOrEmpty(resource) || resource.Length > 1024 ||
+            string expectedSourceKind = entry.Kind == "tree" ? "speedtree" : "model";
+            if (item.GetProperty("kind").GetString() != expectedSourceKind || string.IsNullOrEmpty(resource) || resource.Length > 1024 ||
                 item.GetProperty("first_triangle").GetInt32() != entry.FirstTriangle || item.GetProperty("triangles").GetInt32() != entry.TriangleCount ||
                 (long)entry.FirstTriangle + entry.TriangleCount > triangles.Length)
                 throw new InvalidDataException("catalog source identity/full-span mismatch");

@@ -1,3 +1,401 @@
+## 2026-10-13 — P06Q tree visual/state sync follow-up
+
+### Owner gate accepted; stand closed; original client relocated
+
+Owner replied **"все корректно"** to the requested second-client fall and
+passage check. Acceptance is **PASS_OWNER_TREE_FALL_BOTH_CLIENTS_AND_PASSAGE_TEST_LAB**.
+Final `treeobserve10` evidence has three vehicle contacts, eight worker ACKs,
+four scene commits and six cumulative tree publications; both clients record
+two native tree drops with pi/2 constraints. There are no server rejects,
+failures or session closures before the controlled stop. Both clients and
+server were stopped by receipt at 09:40:44 UTC / 14:40:44 Asia/Yekaterinburg;
+both client installation ledgers were restored.
+
+Owner receipt:
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve10-owner-accepted.json`,
+SHA256 `d3071855e73915933dcbe1ed009fe706bc7e34cf0ed4ac51633fbff3b24ec6a2`.
+Final raw audit SHA256 `8c702abfe042371407f2212e86f6d850ff4fb5bf0133c0d1f60f8a26ef305c8f`;
+its generic visual NOT_RUN field is superseded only by the explicit owner
+receipt, not inferred from callbacks. Prior pending/FAIL sections below are
+historical checkpoints, not the current native-gate status.
+
+The owner moved the read-only original client to
+`C:\WoT_0.9.1_RU_0717_original`. All 3469 files / 14,680,626,869 bytes match
+the original canonical content SHA256
+`74c37c18e9ac7e30196c134076dacf6f2a8bf3897f7def73905d09feb3647797`.
+Local configuration and both owned-copy marker references were updated with
+backups; original bytes were not modified. Evidence:
+`local/evidence/20261013-original-relocation-01/verification.json` and
+`path-update.json`. The move freed approximately 13.67 GiB on D.
+
+The first fresh canonical build failed from ENOSPC. The preserved build35
+test binary then reported **619 PASS / 4 missing historical pool failures**.
+Explicitly migrated historical private P06N/P06O fixtures now have distinct
+pool pins, complete provenance, and unchanged real-worker assertions.
+Fresh `gateway-p06q-acceptance-02` full canonical build: **623/623 PASS**;
+executable SHA256 `da6fe2882adc34e0c23602092540cd5dde6bce66db0cb7c6db8d73af377f88f7`.
+Python importer/probe/observer/owned-copy scope passed **59/59** after the
+configuration move. The final combined run after source-path changes passes
+**120 executed tests**, with one historical P07A class explicitly NOT_RUN
+(missing P00/P01 contracts/sources receipts). P03I CLI and all 12 pinned P07A
+client resource hashes pass; no full fresh P07A audit is claimed. Source layout
+passes. Client A's passive trace reaches its 16 MiB bound; the later third
+server contact has no complete both-client callback evidence. The two earlier
+matched drops and the owner's explicit acceptance close the native gate.
+Applicable P06Q gates now qualify for standing no-ff merge/push. Detailed
+commands, earlier failures and relocation validation are retained in
+[the final report](research/P06Q_ACCEPTANCE_ENVIRONMENT_REPAIR.md). P06Q remains
+explicitly test_lab: slope/obstacle-derived fall constraints and universal
+object destruction are not accepted by this result.
+
+### Owner confirms visible fall — treeobserve10, 2026-10-13
+
+Owner result: **"о, теперь падают"**. The corrected-pitch build now has
+**OBSERVED visible tree fall**. The owner did not identify the viewed slot or
+separately confirm post-fix passage/both-client visual agreement; those remain
+pending rather than inferred from this statement. P06Q is not fully accepted
+or merged yet. The earlier visual failures below are historical evidence.
+
+Fresh read-only audit of the active run records two trees (objects 3365 and
+3344), four worker ACKs, two ACK-gated commits and four publications. Both
+native clients reach the animator twice with `pitchConstr=pi/2`, animation
+enabled and normal return offset 386. Two READY sessions/117 native areas
+per slot remain present; no reject/failure/closure in the saved prefix.
+Evidence: `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve10-fall-observed.json`,
+SHA256 `dfb5ed8b41c3516b342933b19f83b072372c97316a296855510898777c58eb74`.
+It preserves the owner statement, exact source lines and completed-byte-prefix
+hashes for the growing server/client logs. Source/build remain d316828/build35.
+
+This update changes STATUS and P06Q research only. Executed checks: read-only
+server/native trace extraction and cross-check of contact, packed state,
+worker ACK/commit and native callback parameters. No new build or unit suite
+was needed; the recorded 42-test result remains the last source validation.
+Both clients and server remain running for the owner. Launch and rollback
+commands are in the active stand handoff below. Slope/obstacle-specific final
+angles remain a test_lab limitation. Next: confirm the same fall in the second
+client and tank passage through the cleared position before closing the gate.
+
+### Active owner stand — treeobserve10, 2026-10-13 09:24 UTC
+
+Pitch correction source `d316828049569f58d82756efec5f51de2f38a865`, build35.
+Both approved clients are running on Prohorovka for the owner's continued
+manual check: server PID 43504, A 49648, B 15208 (always verify receipt identity
+before stopping; do not rely on PID alone). Snapshot has two READY sessions,
+234 server area creates, 117 native `onEnterWorld` call/return pairs per client,
+and zero rejects/failures/closures. Native tree fall after the correction is
+**NOT_RUN** at this handoff; no contact was driven by the agent.
+
+Evidence root `local/evidence/20261012-p06p-prohorovka-01/`:
+`tests/treeobserve10-ready-snapshot.json`, SHA256
+`1cea723277b0256f2d29f640b9614d5ea3f3e7dde145b5056e29a77e73e22388`.
+It pins completed log prefixes because the original logs continue growing.
+Exact launch command/build/source pins are in `launch-server-treeobserve10.json`;
+client receipts are `launch-a-treeobserve10.json`, `launch-b-treeobserve10.json`.
+
+After the owner finishes, from the repository root:
+
+```powershell
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/stop_stand.py --receipt-dir local/evidence/20261012-p06p-prohorovka-01 --run treeobserve10 --out-name treeobserve10stop --reason 'Owner manual run complete'
+python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261012-p06p-prohorovka-01/install-a-treeobserve10
+python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261012-p06p-prohorovka-01/install-b-treeobserve10
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/tests/audit_treeobserve.py treeobserve10
+```
+
+Next: owner rams one tree, checks visible fall and passage on both clients;
+then collect contact, nonzero pitch, both-worker ACK and owner result.
+
+### Historical owner result before pitch correction — visual FAIL (2026-10-13)
+
+The owner verified that trees still do not visibly fall: the tank pushes
+through the trees. This is an **OBSERVED native visual FAIL**, not a wire or
+server acceptance. The retained `manualtree02` server evidence shows five
+authoritative contacts, four tree publications to both sessions, eight worker
+ACKs, and four ACK-gated scene commits; its owner observation records the same
+tree failure (`PARTIAL_FAIL`).
+
+The later private `treeobserve05` trace reaches native
+`AreaDestructibles.set_fallenTrees` and `orderDestructibleDestroy` on client A
+for the packed values `0x199e8000` (native index 25) and `0x04128000` (native
+index 4). That verifies callback delivery after the transport fixes, but it
+does not prove the native descriptor lookup, animator, effect, or rendered
+pixels. A new read-only observer now records that downstream path for a future
+bounded run. The first run with that observer (`treeobserve06`) stayed in a
+login loop before the arena and is **NOT_RUN**, with cleanup verified in
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve06-diagnostic-not-run.json`
+(SHA256 `e59040cd4827992fb8da946c20df2f18cfe0bfcea4aa33f50a1c662efb0f2d6e`).
+
+Correction to `treeobserve07`: the initial extractor compared method names
+with `event`; the real event is `native_destructible_call`, with a separate
+`method` field. A reached all 117 area controllers and recorded two tree
+setter/drop/effect call pairs. B reached 66 controllers, then closed after
+`channel_state` / `retry_exhausted`. The previous zero-callback receipt is
+superseded by `tests/treeobserve07-corrected-audit.json` under the same evidence
+root (SHA256 `01e5ce6a3ccadd43520bfe6afb1ac2a36eee4c6ec5d972cf4829d07fa5034bc7`).
+Launches were 73.42 seconds apart; launch timing as a login-loop cause remains
+INFERRED, not established. `treeobserve06` actually left B connected in the
+hangar while A stayed at login; it was not two proven login loops.
+
+`treeobserve08` captured both clients sending six area requests followed by
+their first READY33 in a 75-byte application envelope. In Entities the old
+request-only branch rejected the non-multiple-of-seven length before READY;
+both sessions later closed with `retry_exhausted`. Evidence:
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve08-corrected-audit.json`
+(SHA256 `cb801b04428f57958b4c61836b98ac44a73e4a7f734f12719bb1c991657a92b2`).
+The fix validates the exact owned READY suffix, queues its binding before
+area creates exhaust the eight-body window, and preserves whole-frame
+rollback. Both-slot, retry, malformed, missing-ACK and backpressure checks:
+**13/13 PASS**, `gateway-p06q-final-33`, executable SHA256
+`09b4365787e6d549d4cf64206813b4f163ff6167f68fd6a25bee8a63081ddaa4`.
+The temporary raw frame logger has been removed; token bytes remain local
+only and are omitted from the audit. Both runs were stopped and restored.
+Post-fix `treeobserve09` on source `0b9e70b` reached both READY sessions and
+117 unique native area controllers each. No reject/failure/closure before
+stop; both still ready at tick 2808 (180.8 simulated seconds after READY).
+Both clients and server were stopped by receipt; both installations restored.
+Audit: `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve09-corrected-audit.json`
+(SHA256 `7f7f17e8378002af206070422ef8bba02b0ae66f82cbc587d12164bc6e2ef7cf`).
+Owner reports stable sessions but upright trees followed by passage: native
+visual **FAIL** remains, even though both native traces reach the animator.
+The run has four contacts, eight worker ACKs and four scene commits.
+
+Original animator analysis confirms that the server's `pitchConstr=0`
+prevents sustained rotation. The correction uses a named test_lab pi/2
+flat-ground fallback (native pitch bits 0xc000); original slope/obstacle
+constraints remain unimplemented. Source/bytecode offsets, evidence and the
+owner observation are recorded in `docs/research/P06Q_TREE_VEHICLE_CONTACT.md`.
+Native visual acceptance after this correction is **NOT_RUN**.
+
+Current pitch-correction build: `gateway-p06q-final-35`, executable SHA256
+`74c7940967b3ceded70539c641df49d853abe9b50ce6ef671312c064d07725a3`;
+canonical build/codec suite **8/8 PASS**. On that same compiled test artifact:
+fragile/contact **19/19**, catalog wire **13/13**, codec **8/8**, vehicle contact
+**4/4 PASS** (two contact tests overlap the fragile group: 42 distinct tests).
+Receipt: `local/evidence/20261012-p06p-prohorovka-01/tests/pitch-fallback-final35/result.json`,
+SHA256 `c65d496d73b539fbf627845fe0694c6d5486af9be243ea98d28ee57b08e00699`.
+The earlier final34 codec fixture failure is retained and explained in research.
+Build35 result SHA256 `ae506e66d37d360694c758158004fc7ec8bd35d3e386d89126a1433b1637d0b4`.
+P06Q remains in its branch pending rendered tree fall and owner acceptance.
+
+Historical observer source was `e2af80f823641cfce2456912ca343568c634edf1`. The focused
+observer suite is **17/17 PASS** and `py_compile` passes. Its gateway
+receipts were **10/10 PASS** (`gateway-p06q-final-30`, executable SHA256
+`803e65e709cada1f54e057ae4ef1e564efb46fded34cee7d98a7f569ad4d8323`) and
+**2/2 PASS** for the mixed-area driving regression. Native rendered fall,
+both-client ACK, and rendered passage remain owner-controlled gates.
+
+### Latest transport diagnosis — 2026-10-13
+
+Transport parser fix was carried through `8fc14c913dfe639450042650a8c4c24eb925f475`; the historical
+branch head was `713fcdecd513f8bd6c62440f877429c5b7b45d8b`. The native
+`treeobserve03` capture finally exposed the symmetric channel failure: both
+clients sent six 7-byte area requests followed by a native `0x8f` aim record in
+one reliable frame (`57` application bytes, `62` frame-body bytes). The older
+parser treated every frame beginning with `0x08` as a request-only envelope and
+rejected the non-7-byte remainder, so the same sequence stayed unacknowledged
+and both sessions reached `retry_exhausted`. Evidence:
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve03-channel-state-followup.json`
+(SHA256 `3438dc2f201a8afcbe80a64edf95c8f24b67f22e294e4d8fe0fd6367e883aee0`).
+
+The fix keeps the request-only `Entities` path unchanged and adds a bounded
+7-byte `0x08` record to the `Driving` walker. Requests may now be interleaved
+with measured native aim/movement records; duplicate, future, foreign, and
+truncated records still fail the complete envelope, and `Session`'s existing
+clone keeps the update atomic. The regression also covers the exact six-area
+request plus `0x8f` aim shape and verifies malformed suffix rollback.
+
+Checks on the new source:
+
+- `python -B -X utf8 server/build.py gateway --test --test-filter driving_mixed_area_requests_and_aim --out local/build/server/gateway-p06q-regression-02` — **1/1 PASS**, executable SHA256 `e7c83d941e45af109570613e3ce15ed274d82c740d30fbf233ff2599881b7d27`;
+- `python -B -X utf8 server/build.py gateway --test --test-filter catalog_wire_tests --out local/build/server/gateway-p06q-final-27` — **9/9 PASS**, result SHA256 `121504077e1be55fe694b14193f568b7ba2a6a113b6fa4be13fdfffa0db14890`, executable SHA256 `d0e4ab5ee6328de5cf9328429ee54f6b36744618e8eb73604fee41cde6fe678f`;
+- `python -B -X utf8 server/build.py gateway --test --test-filter native_aim --out local/build/server/gateway-p06q-regression-03` — **2/2 PASS**, executable SHA256 `9fa362dd79017dd4a1292fe178cc15344f39a570c1ce2cc74c217dc16503d222`.
+
+The first live rerun on the new binary (`treeobserve04`) was bounded and ended
+before both clients reached the arena: only one account session appeared, with
+no `SHARED_READY` or post-fix reject. It is **NOT_RUN**, not a transport PASS;
+evidence is `local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve04-bounded-not-run.json`
+(SHA256 `d035afbcf4a13ea024fe5347a174e025bfea626c5ef8dc1c0133d62b0416634c`).
+The server and both clients were stopped by receipt and both installations
+restored. At that historical point native `set_fallenTrees` and rendered tree
+fall were **NOT_RUN** under the owner gate; the later `treeobserve05` trace
+verified callback delivery on client A, while the owner still reports visual
+FAIL. Both-client rendered confirmation and passage remain owner-controlled. The older netdrop smoke
+remains a server-loss observation only; no reconnect or directional packet-loss
+acceptance is claimed.
+
+Branch: `codex/p06q-tree-visual-sync`; historical observer commit: `713fcdecd513f8bd6c62440f877429c5b7b45d8b` (transport parser fix: `8fc14c913dfe639450042650a8c4c24eb925f475`; diagnostic observer base: `f9d50ce417bad6c0f832bdf372b61ce20c5d8101`).
+
+Implemented a diagnostic-only observer for the original `AreaDestructibles.set_fallenTrees` callback. The observer copies bounded native `ARRAY<UINT32>` values, records the chunk/entity identity, and never mutates the owner, collision body, tree matrix, or server state. The gateway wire test pins the two packed Prohorovka values observed in `manualtree02` (`0x195a8000`, `0x040e8000`) and their exact `0x12 ... 0x13` envelope.
+
+Checks: `python -B -X utf8 -m unittest tests.test_shared_lab_control tests.test_interactive_primitive -v` — 16/16 PASS; `python -B -X utf8 -m py_compile client_patch/sr_interactive.py` — PASS; `python -B -X utf8 server/build.py gateway --test --test-filter catalog_wire_tests --out local/build/server/gateway-p06q-final-20` — 8/8 PASS, executable SHA256 `790489d916f6d91bc9136b47d0e0dd4abfa3151f11eaed770725f4718194488a`.
+
+A bounded `netdrop01` live runtime smoke reached two `SHARED_READY` sessions on `05_prohorovka`; only the receipt-verified server PID was stopped, clients were observed for 15 seconds, and then all processes were stopped and both client ledgers restored. Evidence: `local/evidence/20261012-p06p-prohorovka-01/tests/tree-sync-netdrop01.json` (SHA256 `fe19665639e23195d436186c18c50a8f7e014c61811e14c18af7bbb59a08c273`), `server-only-stop-netdrop01.json`, `stop-netdrop01stop.json`, and `install-a/b-netdrop01/restore.json`. The server log contains `SHARED_SESSION_PENDING`, `SHARED_ANNOUNCED`, and both `SHARED_READY`; no `SHARED_SESSION_CLOSED/FAILED/REJECT` appeared because the server was terminated externally. This is a server-loss smoke, not directional packet-loss or reconnect acceptance.
+
+The previous `manualtree02` native trace had zero `set_fallenTrees` callbacks, while the later `treeobserve05` diagnostic trace recorded the callback and manager entry point on client A. The owner still reports a rendered visual fail, so the native gate is **PARTIAL_FAIL**, not a wire PASS. Native visual fall, both-client rendered confirmation, ACK owner confirmation, and rendered passage remain outside automated acceptance after this diagnostic card. No original client binary/resource was modified. Rollback: revert commit `f9d50ce` and restore the two owned installation ledgers; the netdrop ledgers are already PASS.
+
+# P06Q native catalog passed — original trees and authoritative vehicle contact
+
+Branch `codex/p06q-tree-vehicle-contact`, based on accepted P06P
+`52978a25c63d51a56be90054c449b281cc4d3e3d`. The source-pinned Prohorovka
+import now contains 626 eligible SpeedTrees in116 chunks plus9 legacy fragile
+objects in one additional chunk:635 objects across117 target chunks. Trees are
+kept in a separate contact-capable catalog profile; projectile spans stay zero,
+physics spans stay non-empty, and the original tree material is pinned as71.
+
+The private physics worker reports bounded hull/wheel candidates over IPC v4.
+The gateway accepts only validated hull candidates under the explicit
+`test_lab` policy, carries the hash-bound worker mass into the contact event,
+and uses `0.5 × mass × closing_speed²` with an 8 kJ floor before removal.
+Light taps therefore remain candidates without deleting every object. It
+stores a cumulative packed `fallenTrees` value for trees, and waits for every
+participating worker's scene ACK before committing a removal or publishing
+native state. Legacy v1/v2 catalog and IPC paths remain bounded and covered by
+regression tests. No historical kinetic damage rule is claimed.
+
+Checks completed:
+
+- Python importer/probe: **39 tests PASS**;
+- historical gateway isolated build final-12: **614 Rust tests PASS**,
+  including atomic contact and mass/closing-speed ramming checks; executable SHA
+  `418818d1012e0a25c4d8594d5bdb86f05beb8ed351b6300c492c8a70017fac22`;
+- physics worker isolated build: **PASS**, DLL SHA
+  `74513499fcb0b88b78abc53be88d1111e9fa4a83d120f2f0249e1d9fdad692de`;
+- `git diff --check`: **PASS**; no diagnostic processes remain running.
+- prepared passive native probe `treecontact02`: both owned clients (`a` and
+  `b`) completed two stable passes over all 117 target chunks. Each export is
+  v2 `p06q_tree_contact_catalog`, map `05_prohorovka`, 3627 native items, and
+  SHA `dfff68fbecfb754c4a87a7095198dc6dbabd99308061c34b8d723534bc9f9c48`.
+  The two independent outputs are byte-identical and were both validated
+  before the canonical join. The joined catalog contains 635 objects.
+- the owned server/client processes were stopped and verified absent; both
+  temporary client installations were restored from their ledgers.
+
+Evidence inventory:
+`local/evidence/20261012-p06q-tree-contact-01/import/inventory01/inventory.json`
+SHA `d3aae3255e51a583c94e2cdc910f9d70bb36f0f06d66e61928b9d5a513e8884d`;
+probe spec SHA `5a1940b7e975445422e7b10898757ba88877f7a2c92e120760fceccb6f78eacd`;
+build receipt `local/build/server/gateway-p06q-final-12/result.json` (SHA256
+`b886ddb62cc39a72229f33f8ba2f6b980d231dc6b7fbe523727fb3a739eb7189`), plus
+`local/build/server/physics-p06q-final-02/result.json`.
+Native run and join receipt:
+`local/evidence/20261012-p06q-tree-contact-01/import/native-join01/receipt.json`.
+The raw client files and launch/stop/rollback receipts are retained under
+`local/evidence/20261012-p06p-prohorovka-01/`.
+
+The runtime helper now accepts the 240 KiB joined P06Q v2 manifest with a
+512 KiB envelope while retaining the 128 KiB legacy v1 ceiling. Its 12 pure
+guard tests pass. A private worker contact smoke remains diagnostic only: the
+test-lab vehicle settles against the imported static mesh before a catalog body
+callback is emitted, so no contact or destruction claim is made from it.
+Fresh runtime preflight `contactprep09` passed all pins and returned
+`PREFLIGHT_ONLY_NOT_STARTED`; no gateway, worker, or client was launched.
+Receipt SHA256 is
+`4f90edd84d92d136d452cc085f52f31c3e8d587abd5d178f144697f2e7af9028`.
+The bounded six-start private sweep is retained at
+`local/evidence/20261012-p06q-tree-contact-01/tests/contact-spawn-sweep01.json`
+(SHA256 `5040394aeb7912c03ed9eaccabae167c0033c7dae2ec99b7fd6eafc7e9da14e3`).
+Starts at Z=`459..461` settle near the imported mesh without a catalog contact;
+starts at Z=`462..463.5` terminate before readiness inside the collision
+envelope. This is diagnostic only and does not alter the native gate.
+Fresh gateway recheck `gateway-recheck02` executed with the pinned local
+toolchain: **610/614 tests PASS, 4 FAIL** because the historical P06O/P06N
+real-worker pool files are absent at
+`local/build/server/physics-integrated-p06o-01/pool-near.json` and
+`local/build/server/physics-integrated-p06n-01/pool-near.json`. The failing
+tests are retained as an environment fixture gap, not relabelled as a P06Q
+source regression. Receipt:
+`local/evidence/20261012-p06q-tree-contact-01/tests/gateway-recheck02-strict.json`
+(SHA256 `c5e7dcd1e407758e8381b7fd0d338ad10238db73bc76ad862dfbe7a16a8ea923`).
+An independent read-only P07A static recheck was attempted, but its pinned
+P00/P01 `contracts.json` and `sources.json` are absent in this checkout;
+the test module therefore reports `0 tests, 1 skipped` and the audit is
+`NOT_RUN`, not a visibility PASS. Receipt:
+`local/evidence/20261012-p07a-static-recheck-01/result-strict.json`
+(SHA256 `8062b0c95277b479ac356cf871042fdf2df7b8e7e79ee8fc942785f13e49fc9f`).
+The existing P09B transaction harness was also rerun in isolation: 13/13
+targeted tests and every self-check invariant passed (`PASS_P09B_SQLITE_TRANSACTION_HARNESS`).
+Fresh deterministic receipt:
+`local/evidence/20261013-p09b-transaction-recheck-01/receipt-strict.json`
+(SHA256 `cedec631a51a5bf802381f04ad6690582518f3b341e0ce1f78e4bd775a614150`).
+This remains a SQLite harness only; deployed persistence, battle lease,
+identity binding and native restart stay **NOT_RUN**.
+A fresh rollback-artifact availability check found the accepted P06P gateway
+output and executable hash-matched, but
+`local/build/server/physics-integrated-p06p-01/` contains zero files. A physical
+P06P rollback relaunch is therefore **NOT_RUN**; current P06Q physics bytes
+were not substituted. Evidence:
+`local/evidence/20261012-p06q-tree-contact-01/tests/rollback-artifact-availability01.json`
+(SHA256 `2574507a601ccef3a2c8bac1f2642881256329521b6f26f4cc4abe70e15fc561`).
+P09A static rechecks also passed without opening a client: NationObjDumper
+returned `PASS_STATIC_NATION_DUMPER_OUTPUT`, the research graph returned
+`PASS_STATIC_RESEARCH_TREE_GRAPH`, and the combined targeted suite ran 22/22
+tests with zero failures. Fresh receipts preserve the historical hashes:
+`local/evidence/20261013-p09a-static-recheck-01/nation-dumper-strict.json`
+(SHA256 `6a96bf9dc6d926906ae6758ce5db6d261cf387006f93d6ca3b336bcd62cc3e48`)
+and `local/evidence/20261013-p09a-static-recheck-01/research-tree-strict.json`
+(SHA256 `454c9b0c9e0666e92856239dd55c486014695317052eff766f50b772239ef8d8`).
+Native account/shop payload, callback bytes, visibility and screenshot
+correlation remain **NOT_RUN**.
+P10A training-room static recheck was attempted as the next bounded card, but
+the hash-bound P00/P01 decoded Account/Prebattle definitions and content
+manifest are absent in this checkout. Its targeted module reports `0 tests,
+1 skipped`; the audit is **NOT_RUN**, with no runtime or client launch.
+Receipt:
+`local/evidence/20261013-p10a-static-recheck-01/result-strict.json`
+(SHA256 `0c6a12c43b3dbaaba3862ada225a11254eea22ae8ef068acd0ef3775e72394ed`).
+The strict copies above were validated with `json.loads`; the original raw receipts remain beside them as forensic artifacts.
+
+P08A lifecycle static recheck was then attempted as the next existing card. Its
+`tests.test_p08a_lifecycle_static_audit` run reported `0 tests, 1 skipped`, and
+the read-only audit is **NOT_RUN** because the hash-bound P00/P01 lifecycle,
+contracts, resource-facts and sources files are absent. Receipt:
+`local/evidence/20261013-p08a-static-recheck-01/result.json`
+(SHA256 `4da4a7de2d96c5b09396320272afb4224bf9c8cb8415b704955c0f31cae90572`).
+No runtime, gateway, worker or client was launched; the historical P08A static
+boundary remains a prior PASS only.
+
+A fresh ORG-0B full unittest recheck then ran `2222` tests: `1` historical
+negative-control error and `17` skips. The only error is a missing old Email22
+trace fixture at
+`local/evidence/20261004-p02-unified-account/gui-agent/email22-final-observer-runtime/native-15072-1791119658941.jsonl`;
+this is an environment evidence gap, not a P06Q source regression. Full log:
+`local/evidence/20261013-org-0b-full-recheck-01/unittest-discover-q.txt`
+(SHA256 `6b86dc4d6d2ad86e3f11e1906b322fe1d43c91e2182e23fdcc25d260eb61957b`),
+summary `local/evidence/20261013-org-0b-full-recheck-01/summary.json` SHA256
+`3b90fcd5e34f4acda38d7b54c9de4a2c6d1b7968bf83817369f86255552d2256`.
+The previous summary hash preceded the correction of elapsed time to the
+retained log's `47.892s`; test counts and outcomes are unchanged.
+
+Handoff metadata correction: `ACTIVE_GATE.md` now points to P06Q, and the plan
+agrees with the missing-artifact rollback limitation. Current receipt/hash
+checks and pre-change document snapshots are retained in
+`local/evidence/20261012-p06q-tree-contact-01/handoff-integrity01/`.
+The research report distinguishes retained auditor receipts from P09A/P09B
+console-only unit counts and the P08A missing-input error paraphrase. Native
+acceptance and all prior test outcomes are unchanged.
+
+The plan scan after this recheck found no additional permitted automatic card
+that is both present and unfinished: the old P07 integrated-world runtime is
+already accepted through P03L, and no P07B plan exists. The remaining P06Q gate
+is owner-controlled native tank contact/tree fall, worker ACK, `fallenTrees`
+and passage; it remains **NOT_RUN** until the morning owner check.
+
+**Acceptance: PASS_NATIVE_CATALOG_PROBE_PENDING_OWNER_CONTACT.** Native
+catalog export, native mapping, and two-client catalog agreement are verified.
+The owner-controlled mass/speed ramming event, rendered passage through a
+removed object, and owner acceptance are **NOT_RUN**. The server policy was
+included in the historical 614-test isolated build. The latest gateway recheck
+is 610 PASS / 4 FAIL from missing historical worker fixtures; native rendering
+and passage remain manual gates. Compound objects,
+historical impact rules, and all-map eligibility remain open. This card stays
+on its branch; accepted P06P is the source rollback point. Its runtime relaunch
+requires restoration of the missing pinned physics artifacts described above.
+
+[Plan](plans/P06Q_TREE_VEHICLE_CONTACT.md), [research, commands, evidence,
+limitations and rollback](research/P06Q_TREE_VEHICLE_CONTACT.md).
+**One next recommended card:** perform the owner-controlled tank-to-tree
+ramming/tree-fall and passage gate using the joined catalog; the passive probe
+is complete and intentionally does not destroy anything.
+
 # P06P accepted — Prohorovka cumulative native battle
 
 Owner accepted finalnative01: driving/aim/RMB, independent crates and passage,
@@ -2749,3 +3147,38 @@ server handoff остаются `NOT_RUN`; запуск клиента, gateway 
 [evidence](evidence-index/P09A_TECHTREE_HANDOFF_STATIC.md).
 
 Добавлен bounded static audit `NationObjDumper`: envelope `nodes/displaySettings/scrollIndex` и 13 node fields подтверждены receipt `local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json`, `PASS_STATIC_NATION_DUMPER_OUTPUT`. Follow-up receipt `local/evidence/20261008-p09a-nested-shapes-01/receipt.json` и 7/7 targeted tests фиксируют только измеренные вложенные пути `unlockProps`/`displayInfo` и XML format conversions; payload-типы, native callback и serializer остаются `UNKNOWN/NOT_RUN`.
+## P06Q transport chunking fix — 2026-10-13
+
+The owner-controlled two-client run `manualtree01` exposed a transport
+boundary before any catalog announcement: the 117-area announcement exceeded
+the reliable 512-byte body limit and both sessions later retired with
+`SHARED_REJECT` channel-state/framing noise. Evidence is retained at
+`local/evidence/20261012-p06p-prohorovka-01/gateway-manualtree01.stdout.log`.
+
+The fix is on branch `codex/p06q-tree-vehicle-contact`: announcements are
+split into bounded bodies, vehicle/area creation requests are staged behind the
+eight-body reliable window, and readiness requires all announced areas to be
+created and ACKed. The new regression covers a synthetic 117-chunk contact
+catalog and passes 8/8 targeted gateway catalog-wire tests. Receipt:
+`local/build/server/gateway-p06q-final-17/result.json` (status
+`PASS_ISOLATED_BUILD_TARGETED`, scope `catalog_wire_tests`).
+
+Bounded private two-client smoke `p06qsmoke01` then reached two
+`SHARED_ENTRY`, two `SHARED_READY`, 117 unique catalog-area creations per
+session, 632 ready snapshots, and zero `SHARED_FAILED` or channel-state/
+channel-framing rejects. Receipt:
+`local/evidence/20261012-p06q-tree-contact-01/tests/gateway-p06q-transport-smoke01.json`.
+The server and both clients were stopped by receipt and both installations
+were restored. This is transport/runtime evidence only; native owner contact,
+tree fall, `fallenTrees`, and passage remain **NOT_RUN**.
+
+The historical full-suite recheck remains 610/614 because four unrelated
+real-worker tests require absent P06O/P06N `pool-near.json` fixtures; this is
+recorded as an environment fixture gap, not converted to PASS. Native owner
+tree-fall/passage acceptance is still **NOT_RUN**. A new bounded two-client
+smoke is the only next step before asking the owner to rerun the native gate.
+
+Fresh post-fix full-suite receipt `local/build/server/gateway-p06q-final-18/`
+reports 611 PASS / 4 FAIL (615 total). The four failures are the same missing
+P06O/P06N worker-pool fixtures; the new P06Q regression is included in the 611
+passing tests. The directory retains the exact test log and `failure.json`.

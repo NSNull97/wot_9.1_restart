@@ -79,6 +79,23 @@ pub struct TerrainContact {
     pub direction: [f32; 3],
 }
 
+/// A bounded contact candidate imported from one private physics worker. The
+/// worker's body IDs never cross this boundary; only the hash-bound catalog
+/// object ID and validated contact geometry enter the domain state.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VehicleContactInput {
+    pub object_id: u32,
+    pub substep: u8,
+    pub point: [f32; 3],
+    pub normal: [f32; 3],
+    pub velocity: [f32; 3],
+    /// Server-pinned worker descriptor mass. It is never accepted from a
+    /// client frame; the integrated runtime copies the validated map config.
+    pub mass_kg: f32,
+    pub kind: String,
+    pub shooter: usize,
+}
+
 #[derive(Clone)]
 pub struct World {
     pub id: u64,
@@ -138,6 +155,33 @@ impl World {
     pub fn scene_version(&self)->u32{self.fragiles.as_ref().map_or_else(||self.destructible.as_ref().map_or(0,destructible::State::scene_version),fragiles::State::scene_version)}
     pub fn destructible_enabled(&self)->bool{self.destructible.is_some()}
     pub fn destructible_transition(&self)->Option<&destructible::Transition>{self.destructible.as_ref().and_then(destructible::State::transition)}
+    /// Apply contacts from a fully drained worker frame to a cloned candidate
+    /// world. The caller stages the candidate and waits for both worker scene
+    /// ACKs before committing it or publishing native state.
+    pub fn apply_vehicle_contacts(&mut self, contacts:&[VehicleContactInput])->io::Result<Vec<fragiles::VehicleContact>> {
+        if contacts.len()>32 { return Err(bad()); }
+        if contacts.is_empty() { return Ok(Vec::new()); }
+        // Stage both domain state and trace state. A later malformed contact
+        // or a trace admission failure must not leave an earlier contact from
+        // the same worker frame committed in this World. The integrated
+        // runtime already calls this on a candidate clone, but keeping this
+        // method atomic protects every caller and makes the boundary explicit.
+        let mut state=self.fragiles.as_ref().ok_or_else(bad)?.clone();
+        if !state.catalog.contacts { return Err(bad()); }
+        let mut trace=self.impact.clone();
+        let mut outcomes=Vec::new();
+        for contact in contacts {
+            if contact.shooter>=CAPACITY { return Err(bad()); }
+            if let Some(event)=state.ram_contact(contact.object_id,contact.shooter,self.tick,contact.substep,
+                contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone())? {
+                trace.vehicle_contact(self.id,event.tick,&event)?;
+                outcomes.push(event);
+            }
+        }
+        self.fragiles=Some(state);
+        self.impact=trace;
+        Ok(outcomes)
+    }
     /// Authenticated identity only. The caller reserves a transport retirement
     /// slot before committing this world assignment. Rejoin never resets ammo.
     pub fn attach(&mut self, identity: Identity, session: u32) -> io::Result<usize> {
@@ -576,11 +620,17 @@ pub(super) mod tests {
             w.actors[slot].position=pos;w.actors[slot].origin=pos;w.actors[slot].direction=[0.;3];w.actors[slot].yaw=0.;
         }w
     }
-    pub fn fragile_world(now:Instant,health:Option<i16>)->World{
+    pub fn fragile_world(now:Instant,health:Option<u32>)->World{
         let mut w=destructible_world(now);w.destructible=None;
         let mut catalog=(*super::super::fragiles::tests::catalog()).clone();
         if let Some(h)=health{catalog.objects.iter_mut().find(|o|o.instance_id==1513).unwrap().health=h;}
         let catalog=Arc::new(catalog);catalog.bind_geometry(w.terrain.as_ref().unwrap()).unwrap();
+        w.impact.bind_fragiles(catalog.clone()).unwrap();w.fragiles=Some(fragiles::State::new(catalog));w
+    }
+    pub fn contact_world(now:Instant)->World{
+        let mut w=destructible_world(now);w.destructible=None;
+        let catalog=super::super::fragiles::tests::contact_catalog();
+        catalog.bind_geometry(w.terrain.as_ref().unwrap()).unwrap();
         w.impact.bind_fragiles(catalog.clone()).unwrap();w.fragiles=Some(fragiles::State::new(catalog));w
     }
     #[test]
@@ -595,6 +645,21 @@ pub(super) mod tests {
         world.bind_terrain(right).unwrap();
         assert!(world.bind_destructible_test_lab().is_err());
         assert!(world.bind_fragiles(super::super::fragiles::tests::catalog()).is_err());
+    }
+    #[test]
+    fn vehicle_contact_batch_is_atomic_when_a_later_row_is_invalid() {
+        let now=Instant::now();let mut w=contact_world(now);
+        let before_fragiles=w.fragiles.clone();let before_impact=w.impact.clone();
+        let valid=VehicleContactInput{object_id:1513,substep:1,point:[0.,0.,0.],
+            normal:[1.,0.,0.],velocity:[2.,0.,0.],mass_kg:4691.,kind:"hull".into(),shooter:0};
+        let invalid=VehicleContactInput{object_id:9999,..valid.clone()};
+        assert!(w.apply_vehicle_contacts(&[valid.clone(),invalid]).is_err());
+        assert_eq!(w.fragiles,before_fragiles);
+        assert_eq!(w.impact,before_impact);
+        let events=w.apply_vehicle_contacts(&[valid]).unwrap();
+        assert_eq!(events.len(),1);
+        assert_eq!(w.fragiles.as_ref().unwrap().removed_ids(),vec![1513]);
+        assert_eq!(w.impact.events().iter().filter(|e|matches!(e,impact::Event::VehicleContact{..})).count(),1);
     }
     #[test]fn imported_object_partial_health_preserves_geometry_until_death_and_next_shell_passes(){
         let now=Instant::now();let mut w=fragile_world(now,Some(32));

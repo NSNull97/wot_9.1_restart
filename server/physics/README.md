@@ -179,3 +179,33 @@ the scene and blocks advances until the caller consumes that ACK. The battle
 coordinator must still freeze all lanes and publish domain/native changes only
 after every worker acknowledges. Partial native removal failure is fail-closed:
 terminate the battle/workers, not a claim of reversible physics rollback.
+
+P06Q contact mode is a separate bounded profile. A worker catalog at
+`version=3` has the same map and manifest pins as IPC3, plus `contacts=true`.
+Each row has exactly `object_id,instance_id,kind,first_triangle,triangle_count,
+object_revision`; `kind` is `tree` or `fragile`. A tree row must bind to a
+`speedtree` source instance (the source resource remains the checked `.spt`
+asset); a fragile row binds to a `model` instance. The catalog file is capped
+at one MiB, rows at 1024, and a restored scene at 1024 removed IDs. IPC3 and
+catalog version 2 retain their 64-object/40-removed limits and exact fields.
+
+Contact mode uses IPC `version=4` for `restore_scene`, `sync_removed`,
+`advance`, ACKs, and `ready/state`; every packet carries `contacts=true`.
+Response lines are ASCII and capped at 32 KiB. The state adds
+`object_contacts`, at most 32 rows with strictly increasing known object IDs:
+
+```text
+{object_id:u32, kind:"hull"|"wheel", substep:1..6,
+ point:[x,y,z], normal:[x,y,z], velocity:[x,y,z]}
+```
+
+The C# worker captures hull contacts from Jolt body-pair callbacks and wheel
+support contacts after each 1/60 s substep. The normal is kept in Jolt's body
+order and oriented from the tank body to the catalog body; it is never flipped
+to agree with velocity, so a separating contact cannot become a fake impact.
+Velocity is the tank velocity captured before the solver step. Contacts are
+bounded to 4096 raw events per six-substep advance; overflow, unknown body
+identity, non-finite values, non-unit normals, or more than 32 distinct object
+IDs fail the worker instead of silently dropping data. The server may use hull
+rows for impact policy; wheel rows are observational and do not authorize
+destruction by themselves.

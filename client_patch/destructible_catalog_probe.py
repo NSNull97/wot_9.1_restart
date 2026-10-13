@@ -23,7 +23,11 @@ MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 # Whole-map target selection remains bounded and is never truncated. The
 # original Prohorovka import selects 44 fragile-containing chunks; two passes
 # take 88 observations, within the existing finite load/capture budget.
-MAX_CHUNKS = 64
+MAX_CHUNKS_V1 = 64
+MAX_CHUNKS_V2 = 128
+# Kept as a public compatibility alias for callers that imported the legacy
+# bound.  Validation selects the bound from the explicit spec version.
+MAX_CHUNKS = MAX_CHUNKS_V1
 MAX_ITEMS = 256
 MAX_OBSERVATIONS = 300
 _probe = None
@@ -56,12 +60,16 @@ def validate_spec_payload(payload):
     spec = json.loads(payload.decode('utf-8'), object_pairs_hook=unique_object)
     require(type(spec) is dict and set(spec) == set((
         'version', 'kind', 'map', 'source_pins', 'chunk_ids')), 'catalog spec fields')
-    require(type(spec['version']) is int and spec['version'] == 1 and
-            spec['kind'] == 'p06o_destructible_catalog_spec' and
+    version = spec['version']
+    require(type(version) is int and version in (1, 2), 'catalog spec version')
+    expected_kind = ('p06o_destructible_catalog_spec' if version == 1
+                     else 'p06q_tree_contact_catalog_spec')
+    max_chunks = MAX_CHUNKS_V1 if version == 1 else MAX_CHUNKS_V2
+    require(spec['kind'] == expected_kind and
             isinstance(spec['map'], string_types) and
             re.match(r'\A[0-9]{2}_[a-z0-9_]{1,48}\Z', spec['map']), 'catalog spec identity')
     chunks = spec['chunk_ids']
-    require(type(chunks) is list and 1 <= len(chunks) <= MAX_CHUNKS and
+    require(type(chunks) is list and 1 <= len(chunks) <= max_chunks and
             all(integer(value, 0, 65535) for value in chunks) and
             chunks == sorted(set(chunks)), 'catalog target chunk bound/order')
     pins = spec['source_pins']
@@ -178,7 +186,9 @@ class Probe(object):
             return None
         require(self.current == self.previous, 'native catalog identity changed between passes')
         self.complete = True
-        return dict(version=1, kind='p06o_destructible_catalog', map=self.spec['map'],
+        return dict(version=self.spec['version'],
+                    kind=('p06o_destructible_catalog' if self.spec['version'] == 1
+                          else 'p06q_tree_contact_catalog'), map=self.spec['map'],
                     space_id=space, source_pins=self.spec['source_pins'],
                     spec_sha256=self.spec_sha256, observation_count=2, chunks=self.current)
 

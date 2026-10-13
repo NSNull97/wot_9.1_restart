@@ -18,16 +18,13 @@ class P03IStaticAuditTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         required = [PREDICATE, QUEUE, README, CAPTURE,
-                    ROOT / "WoT_0.9.1_RU_0717_original",
-                    ROOT / "WoT_0.9.1_RU_0717_research"]
+                    ROOT / "config/project.local.json"]
         if not all(path.exists() for path in required):
             raise unittest.SkipTest("P03I ignored evidence/client copies are unavailable")
 
     def test_real_static_contract_and_stale_readme_row(self):
         report = audit(
             root=ROOT,
-            original=ROOT / "WoT_0.9.1_RU_0717_original",
-            research=ROOT / "WoT_0.9.1_RU_0717_research",
             predicate=PREDICATE,
             queue_receipt=QUEUE,
             queue_readme=README,
@@ -76,8 +73,7 @@ class P03IStaticAuditTests(unittest.TestCase):
             value["sources"].append(value["sources"][0])
             path.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaises(P03IStaticAuditError):
-                audit(root=ROOT, original=ROOT / "WoT_0.9.1_RU_0717_original",
-                      research=ROOT / "WoT_0.9.1_RU_0717_research",
+                audit(root=ROOT,
                       predicate=path, queue_receipt=QUEUE, queue_readme=README,
                       capture_audit=CAPTURE)
 

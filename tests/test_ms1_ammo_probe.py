@@ -10,6 +10,8 @@ import tempfile
 import types
 import unittest
 
+from tools.destructible_catalog import configured_paths
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'client_patch'))
 import ms1_ammo_probe as probe
@@ -261,9 +263,9 @@ class ProbeTests(unittest.TestCase):
             probe.SOURCE_HASHES = old
 
     def test_audited_original_sources_read_only(self):
-        root = os.path.join(ROOT, 'WoT_0.9.1_RU_0717_original')
-        if not os.path.isdir(root):
-            self.skipTest('original #717 files unavailable; native NOT_RUN')
+        if not os.path.isfile(os.path.join(ROOT, 'config', 'project.local.json')):
+            self.skipTest('original #717 configuration unavailable; native NOT_RUN')
+        root = str(configured_paths(ROOT)['original_client_root'])
         self.assertEqual(len(probe.SOURCE_HASHES), len(probe._source_hashes(root)))
 
 

@@ -6,6 +6,75 @@ import unittest
 
 
 class SharedControlTests(unittest.TestCase):
+    def test_fallen_tree_callback_is_bounded_and_read_only(self):
+        source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
+        tree = ast.parse(source.read_bytes())
+        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                     and node.name in ('_bounded_uint32_array', 'profile_calls')]
+        calls = []
+        namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
+                         _profile_call_id=0, _profile_frames={}, long=int,
+                         primitive=lambda value, **kwargs: value,
+                         record=lambda event, **fields: calls.append((event, fields)))
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
+        bounded = namespace['_bounded_uint32_array']
+        self.assertEqual(bounded([0, 0xffffffff]), [0, 0xffffffff])
+        self.assertEqual(bounded(range(63))['reason'], 'uint32_array_bound')
+        self.assertEqual(bounded([1, -1])['reason'], 'uint32_array_value')
+
+        class AreaDestructibles:
+            pass
+        owner = AreaDestructibles()
+        owner.id = 152043567
+        owner.destroyedFragiles = []
+        owner.fallenTrees = [0x04008000]
+        owner._AreaDestructibles__chunkID = 31875
+        owner._AreaDestructibles__prevFallenTrees = frozenset()
+        frame = SimpleNamespace(
+            f_code=SimpleNamespace(co_filename='scripts/client/AreaDestructibles.py',
+                                   co_name='set_fallenTrees', co_firstlineno=882),
+            f_lasti=0, f_locals={'self': owner})
+        before = vars(owner).copy()
+        namespace['profile_calls'](frame, 'call', None)
+        namespace['profile_calls'](frame, 'return', None)
+        self.assertEqual([event for event, _ in calls], ['native_destructible_call'] * 2)
+        self.assertEqual(calls[0][1]['fallen_trees'], [0x04008000])
+        self.assertEqual(calls[0][1]['chunk_id'], 31875)
+        self.assertEqual(calls[0][1]['previous_fallen_trees'], [])
+        self.assertEqual(vars(owner), before)
+
+    def test_fallen_tree_consumer_path_copies_only_bounded_scalars(self):
+        source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
+        tree = ast.parse(source.read_bytes())
+        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                     and node.name == 'profile_calls']
+        calls = []
+        namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
+                         _profile_call_id=0, _profile_frames={}, long=int,
+                         primitive=lambda value, **kwargs: value,
+                         record=lambda event, **fields: calls.append((event, fields)))
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
+        instance = SimpleNamespace()
+        frame = SimpleNamespace(
+            f_code=SimpleNamespace(co_filename='scripts/client/AreaDestructibles.py',
+                                   co_name='__dropDestructible', co_firstlineno=658),
+            f_lasti=0,
+            f_locals={'self': instance, 'chunkID': 31875, 'destrIndex': 25,
+                      'fallDirYaw': 1.25, 'pitchConstr': 0.0, 'fallSpeed': 2,
+                      'isAnimate': True, 'obstacleCollisionFlags': 0,
+                      'initialMatrix': object(), 'private': object()})
+        namespace['profile_calls'](frame, 'call', None)
+        frame.f_lasti = 382
+        namespace['profile_calls'](frame, 'return', None)
+        self.assertEqual([event for event, _ in calls],
+                         ['native_destructible_call', 'native_destructible_call'])
+        fields = calls[0][1]
+        self.assertEqual(fields['arguments']['chunkID'], 31875)
+        self.assertEqual(fields['arguments']['destrIndex'], 25)
+        self.assertEqual(fields['arguments']['fallSpeed'], 2)
+        self.assertIs(fields['arguments']['isAnimate'], True)
+        self.assertNotIn('private', str(fields))
+
     def test_vehicle_observation_ignores_local_effect_population_without_enumeration(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
         tree = ast.parse(source.read_bytes())

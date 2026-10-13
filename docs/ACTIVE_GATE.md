@@ -1,3 +1,76 @@
+# P06Q accepted — native tree fall, both-client agreement and passage
+
+Branch `codex/p06q-tree-visual-sync`, accepted P06P source base
+`52978a25c63d51a56be90054c449b281cc4d3e3d`.
+**Acceptance: PASS_OWNER_TREE_FALL_BOTH_CLIENTS_AND_PASSAGE_TEST_LAB.**
+
+Owner accepted `treeobserve10` with "все корректно" after the explicit
+second-view/passage request. Two tree falls are correlated in both native
+traces with server contacts, cumulative `fallenTrees`, both-worker ACKs and
+scene commits. The complete server log contains three contacts/eight ACKs;
+the later third contact is outside the two-client native trace coverage.
+Client A reaches its passive 16 MiB observation bound near the end of the run.
+Both clients and server are stopped; both installation ledgers are restored.
+
+Fresh canonical gateway build: 623/623 Rust tests PASS. Final Python scope:
+120 executed tests PASS, one historical P07A class NOT_RUN because its P00/P01
+contracts/sources receipts are absent. The changed path boundary and all
+12 actual P07A resource hashes pass; full P07A reacceptance is not claimed.
+Source layout passes. The original client was moved by the owner to
+`C:\WoT_0.9.1_RU_0717_original`; all 3469 files match the original manifest.
+Configuration and approved-copy identities now use that explicit source root.
+
+Applicable P06Q gates are satisfied for the standing no-ff merge/push workflow.
+Exact historical ram rules, slope/obstacle final angles, universal destruction
+and network endurance remain outside this test_lab acceptance. P06P physical
+rollback still requires its missing pinned physics artifacts.
+
+[Current status](STATUS.md), [final evidence, commands and rollback](research/P06Q_ACCEPTANCE_ENVIRONMENT_REPAIR.md).
+**One next recommended step:** scope the next card for remaining compound
+destructibles/fences on the accepted cumulative baseline. Old P07 runtime is
+already accepted through P03L; do not reimplement it as a new feature.
+
+The sections below are historical checkpoints, not current launch or merge
+instructions.
+
+# Earlier P06Q active — native catalog passed; owner contact gate pending
+
+Branch `codex/p06q-tree-vehicle-contact`, accepted P06P source base
+`52978a25c63d51a56be90054c449b281cc4d3e3d`.
+**Acceptance: PASS_NATIVE_CATALOG_PROBE_PENDING_OWNER_CONTACT.**
+
+The passive native probe is complete: both clients `a` and `b` each read
+117 Prohorovka chunks twice with identical 3627-item exports. The joined
+catalog has 635 eligible objects. This verifies mapping only.
+
+**Current required gate: NOT_RUN.** The owner must drive a tank into a tree
+and check the fall and passage in both clients. Correlate that same event with
+server contact, cumulative `fallenTrees`, and both-worker scene ACKs; an
+automatic/private diagnostic does not replace this native acceptance.
+Until the morning owner check, no computer input or native owner-gate run.
+
+Historical final-12 passed 614 Rust tests. The fresh post-fix gateway recheck reports
+611 PASS / 4 FAIL (615 total, including the new 117-chunk regression) due to
+missing historical P06N/P06O pools. The full Python
+recheck reports 2222 tests, 1 missing Email22-fixture error and 17 skips.
+The saved private contact sweep did not establish a tree callback or passage.
+These limitations remain open; no merge or fresh native PASS is claimed.
+
+P06P remains the accepted source rollback point. Its gateway03 is hash-matched,
+but `local/build/server/physics-integrated-p06p-01/` is empty; a P06P runtime
+relaunch requires restoring and verifying the historical physics/pool pins.
+Keep the P06Q branch, source and evidence. Do not substitute P06Q binaries for
+missing P06P artifacts.
+
+[Current status and overnight evidence](STATUS.md), [P06Q plan](plans/P06Q_TREE_VEHICLE_CONTACT.md),
+[commands, pins, limitations and rollback](research/P06Q_TREE_VEHICLE_CONTACT.md).
+**One next recommended step:** the morning owner-controlled P06Q tree-contact
+gate on the pinned joined Prohorovka catalog.
+
+The sections below are historical checkpoints, not current launch or merge
+instructions. Old P07 integrated-world runtime was accepted through P03L;
+there is no new P07B card to execute.
+
 # P06P accepted — Prohorovka cumulative native battle
 
 Owner accepted finalnative01: driving/aim/RMB, independent crates and passage,
@@ -997,3 +1070,12 @@ server handoff остаются `NOT_RUN`; native client/service не запус
 [P09A static handoff evidence](evidence-index/P09A_TECHTREE_HANDOFF_STATIC.md).
 
 `tools/nation_dumper_static_audit.py` дополнительно фиксирует envelope `nodes`, `displaySettings`, `scrollIndex` и 13 полей node output; receipt `local/evidence/20261008-p09a-nation-dumper-static-01/receipt.json` имеет статус `PASS_STATIC_NATION_DUMPER_OUTPUT`. Follow-up receipt `local/evidence/20261008-p09a-nested-shapes-01/receipt.json` фиксирует measured XML access/format shape для `displayInfo`/`unlockProps`; конкретные Python value types, native callback и serializer остаются `UNKNOWN/NOT_RUN`.
+## P06Q transport correction — 2026-10-13
+
+The previous `manualtree01` run is a recorded transport failure, not a native
+owner-gate result. The 117-area announcement now uses bounded reliable bodies
+and staged creation requests; targeted catalog-wire tests are 8/8 PASS.
+Run a bounded private two-client smoke with the new build before requesting
+the owner-controlled tree-fall/passage check. Native acceptance remains
+**NOT_RUN** until the owner confirms both clients, fallen-tree replication,
+ACKs, and passage.

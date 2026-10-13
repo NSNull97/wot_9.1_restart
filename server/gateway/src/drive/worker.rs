@@ -12,6 +12,7 @@ pub use catalog::{CatalogSpec,CatalogEntry,Scene,CatalogAck,MAX_CATALOG_OBJECTS,
 
 pub const STEP:Duration=Duration::from_millis(100);
 pub const MAX_SEQUENCE:u32=36000;
+pub const MAX_IPC_LINE:usize=32*1024;
 pub const START_TIMEOUT:Duration=Duration::from_secs(120);
 pub const REPLY_TIMEOUT:Duration=Duration::from_millis(500);
 pub const MAX_LAG:Duration=Duration::from_millis(500);
@@ -37,7 +38,7 @@ impl<'de> Deserialize<'de> for Unique {
             fn visit_unit<E:de::Error>(self)->Result<Unique,E>{Ok(Unique(Value::Null))}
             fn visit_seq<A:SeqAccess<'de>>(self,mut a:A)->Result<Unique,A::Error>{
                 let mut v=Vec::new();while let Some(Unique(x))=a.next_element()? {
-                    if v.len()>=512{return Err(de::Error::custom("array bound"));}v.push(x);
+                    if v.len()>=1024{return Err(de::Error::custom("array bound"));}v.push(x);
                 }Ok(Unique(Value::Array(v)))
             }
             fn visit_map<A:MapAccess<'de>>(self,mut a:A)->Result<Unique,A::Error>{
@@ -48,13 +49,21 @@ impl<'de> Deserialize<'de> for Unique {
         }d.deserialize_any(V)
     }
 }
-pub(crate) fn json(raw:&[u8],maximum:usize)->io::Result<Value> {
+fn json_with_node_limit(raw:&[u8],maximum:usize,node_limit:usize)->io::Result<Value> {
     if raw.is_empty() || raw.len()>maximum{return Err(bad());}
     let Unique(v)=serde_json::from_slice(raw).map_err(|_|bad())?;
-    fn depth(v:&Value,d:usize,n:&mut usize)->io::Result<()> {
-        if d>12 || *n>=4096{return Err(bad());}*n+=1;
-        match v {Value::Object(o)=>for x in o.values(){depth(x,d+1,n)?;},Value::Array(a)=>for x in a{depth(x,d+1,n)?;},_=>{}}Ok(())
-    }depth(&v,0,&mut 0)?;Ok(v)
+    fn depth(v:&Value,d:usize,n:&mut usize,node_limit:usize)->io::Result<()> {
+        if d>12 || *n>=node_limit{return Err(bad());}*n+=1;
+        match v {Value::Object(o)=>for x in o.values(){depth(x,d+1,n,node_limit)?;},Value::Array(a)=>for x in a{depth(x,d+1,n,node_limit)?;},_=>{}}Ok(())
+    }depth(&v,0,&mut 0,node_limit)?;Ok(v)
+}
+pub(crate) fn json(raw:&[u8],maximum:usize)->io::Result<Value> {
+    json_with_node_limit(raw,maximum,4096)
+}
+/// Catalog manifests have a larger row bound than ordinary IPC packets. Keep
+/// the same depth/array/object limits while admitting 1024 six-field rows.
+pub(crate) fn json_catalog(raw:&[u8],maximum:usize)->io::Result<Value> {
+    json_with_node_limit(raw,maximum,20000)
 }
 pub(crate) fn fields<'a>(v:&'a Value,keys:&[&str])->io::Result<&'a Map<String,Value>> {
     let m=v.as_object().ok_or_else(bad)?;
@@ -113,7 +122,7 @@ fn file_hash(path:&Path,size:u64)->io::Result<String>{
 
 #[derive(Clone,Debug,PartialEq)]
 pub struct MapSpec {pub asset:String,pub arena_type_id:i32,pub config:PathBuf,pub config_sha256:String,
-    pub bounds:[f32;4],pub spawn:[f32;3],pub spawn_yaw:f32}
+    pub bounds:[f32;4],pub spawn:[f32;3],pub spawn_yaw:f32,pub mass_kg:f32}
 impl MapSpec {
     fn load(root:&Path,v:&Value)->io::Result<Self>{
         fields(v,&["asset","arena_type_id","config","config_sha256"])?;
@@ -130,9 +139,10 @@ impl MapSpec {
         let a=c["bounds_xz"].as_array().ok_or_else(bad)?;if a.len()!=4{return Err(bad());}
         let bounds=[number(&a[0],-1000.,0.)?,number(&a[1],-1000.,0.)?,number(&a[2],0.,1000.)?,number(&a[3],0.,1000.)?];
         let spawn=vector(&c["spawn_origin"],-1000.,1000.)?;let yaw=number(&c["spawn_yaw"],-std::f32::consts::PI,std::f32::consts::PI)?;
+        let mass_kg=number(&c["mass_kg"],1000.,100000.)?;
         if bounds[2]-bounds[0]<100. || bounds[3]-bounds[1]<100. || spawn[0]<bounds[0]+5. || spawn[0]>bounds[2]-5.
             || spawn[2]<bounds[1]+5. || spawn[2]>bounds[3]-5. {return Err(bad());}
-        Ok(Self {asset:asset.into(),arena_type_id:id as i32,config,config_sha256:hash.into(),bounds,spawn,spawn_yaw:yaw})
+        Ok(Self {asset:asset.into(),arena_type_id:id as i32,config,config_sha256:hash.into(),bounds,spawn,spawn_yaw:yaw,mass_kg})
     }
 }
 /// The one approved test_lab object. Private fields prevent callers from
@@ -229,7 +239,7 @@ fn request_scene(seq:u32,input:Input,scene:u32)->io::Result<Vec<u8>>{
     v["version"]=2.into();v["scene_version"]=scene.into();ipc_bytes(&v)
 }
 fn ipc_bytes(v:&Value)->io::Result<Vec<u8>>{
-    let mut raw=serde_json::to_vec(v).map_err(|_|bad())?;if raw.len()>1024{return Err(bad());}raw.push(b'\n');Ok(raw)
+    let mut raw=serde_json::to_vec(v).map_err(|_|bad())?;if raw.len()>MAX_IPC_LINE{return Err(bad());}raw.push(b'\n');Ok(raw)
 }
 fn removal_request(map:&MapSpec,spec:&RemovalSpec,generation:u32,seq:u32)->io::Result<Vec<u8>>{
     if generation==0 || seq>MAX_SEQUENCE{return Err(bad());}
@@ -253,10 +263,12 @@ fn removal_ack(raw:&[u8],map:&MapSpec,spec:&RemovalSpec,generation:u32,seq:u32)-
         object_revision:REMOVAL_REVISION.into(),mutation_seq:1,advance_seq:seq,tick:180+seq*6,scene_version:1})
 }
 #[derive(Clone,Debug,PartialEq)]
+pub struct ObjectContact {pub object_id:u32,pub kind:String,pub substep:u8,pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3]}
+#[derive(Clone,Debug,PartialEq)]
 pub struct Pose {pub position:[f32;3],pub direction:[f32;3],pub speed:f32,pub rspeed:f32,pub contacts:u8,
     pub linear_velocity:[f32;3],pub angular_velocity:[f32;3],pub wheel_contact_masks:[u8;6]}
 #[derive(Clone,Debug,PartialEq)]
-pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose,pub scene_version:u32}
+pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose,pub scene_version:u32,pub object_contacts:Vec<ObjectContact>}
 pub fn response(raw:&[u8],map:&MapSpec,seq:u32)->io::Result<State>{
     response_at_spawn(raw,map,seq,None)
 }
@@ -288,11 +300,11 @@ fn response_context(raw:&[u8],map:&MapSpec,seq:u32,expected_spawn:Option<[f32;3]
         if contacts<3 || pose.linear_velocity.iter().map(|v|v*v).sum::<f32>()>1.001
             || (pose.position[0]-spawn[0]).abs()>5. || (pose.position[2]-spawn[2]).abs()>5. { return Err(bad()); }
     }
-    Ok(State{seq,tick:180+seq*6,pose,scene_version})
+    Ok(State{seq,tick:180+seq*6,pose,scene_version,object_contacts:Vec::new()})
 }
 fn line(reader:&mut impl Read)->io::Result<Vec<u8>> {
     let mut raw=Vec::new();loop{let mut b=[0];if reader.read(&mut b)?!=1{return Err(bad());}
-        if b[0]==10{return Ok(raw);}if raw.len()>=1024 || b[0]==0 || b[0]>127{return Err(bad());}raw.push(b[0]);}
+        if b[0]==10{return Ok(raw);}if raw.len()>=MAX_IPC_LINE || b[0]==0 || b[0]>127{return Err(bad());}raw.push(b[0]);}
 }
 
 enum Event {Line(Instant,Vec<u8>),Failed}
@@ -431,7 +443,7 @@ impl Worker {
     }
     pub fn advance(&mut self,input:Input,now:Instant)->io::Result<u32>{
         if !self.ready || self.pending.is_some() || self.removal_ack.is_some() || self.catalog_ack.is_some() || now<self.started || self.last_seq>=MAX_SEQUENCE{return Err(bad());}
-        let seq=self.last_seq+1;let raw=if let Some(scene)=&self.catalog_scene{catalog::request_catalog(seq,input,scene)?}
+        let seq=self.last_seq+1;let raw=if let Some(scene)=&self.catalog_scene{catalog::request_catalog(seq,input,scene,self.catalog.as_ref().ok_or_else(bad)?)?}
             else if self.removal.is_some(){request_scene(seq,input,self.scene_version)?}else{request(seq,input)?};
         self.sender.as_ref().ok_or_else(bad)?.try_send(raw).map_err(|_|bad())?;
         self.pending=Some(Pending::Advance(seq,now));Ok(seq)
@@ -481,7 +493,7 @@ impl Drop for Worker {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    pub(crate) fn map()->MapSpec{MapSpec{asset:"01_karelia".into(),arena_type_id:1,config:"unit".into(),config_sha256:"a".repeat(64),bounds:[-500.,-500.,500.,500.],spawn:[0.,10.,0.],spawn_yaw:0.}}
+    pub(crate) fn map()->MapSpec{MapSpec{asset:"01_karelia".into(),arena_type_id:1,config:"unit".into(),config_sha256:"a".repeat(64),bounds:[-500.,-500.,500.,500.],spawn:[0.,10.,0.],spawn_yaw:0.,mass_kg:4691.}}
     fn good(seq:u32)->Value{serde_json::json!({"version":1,"event":if seq==0{"ready"}else{"state"},"seq":seq,"tick":180+seq*6,"settle_ticks":180,"map":"01_karelia","config_sha256":"a".repeat(64),
         "state":{"position":[0,10,0],"direction":[0,0,0],"speed":0,"rspeed":0,"contacts":6,"linear_velocity":[0,0,0],"angular_velocity":[0,0,0],"wheel_contact_masks":[63,63,63,63,63,63]}})}
     fn spec()->RemovalSpec{RemovalSpec{path:"unit".into(),sha256:"b".repeat(64)}}

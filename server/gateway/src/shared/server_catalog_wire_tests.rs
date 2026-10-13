@@ -9,6 +9,21 @@ fn request(id: u32) -> Vec<u8> {
     let mut bytes = vec![8, 4, 0]; bytes.extend(id.to_le_bytes()); bytes
 }
 
+fn point(slot: usize, p: [f32; 3]) -> Vec<u8> {
+    let mut bytes = vec![0x8f, 12, 0];
+    for value in p { bytes.extend(value.to_le_bytes()); }
+    assert_eq!(slot, 0); // this fixture deliberately uses the first owned vehicle
+    bytes
+}
+
+fn ready(slot: usize) -> Vec<u8> {
+    let mut bytes = vec![0x0d, 8, 0, 0, 0, 0, 0];
+    bytes.extend(wire::vehicle_id(slot).unwrap().to_le_bytes());
+    bytes.extend([0x8d, 5, 0, 2, 1, 0, 0, 0, 0x86, 0, 0]);
+    bytes.extend([0x0c, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    bytes
+}
+
 fn present(bodies: &[Vec<u8>], expected: &[u8]) -> usize {
     bodies.iter().map(|body| body.windows(expected.len()).filter(|bytes| *bytes == expected).count()).sum()
 }
@@ -16,6 +31,7 @@ fn present(bodies: &[Vec<u8>], expected: &[u8]) -> usize {
 fn prepare_client(s: &mut Session, world: &World) {
     let c = s.shared.as_mut().unwrap();
     c.view = Some(world.clone());
+    c.announced_areas = world.fragiles.as_ref().unwrap().catalog.chunks().len();
     c.shot_cursor = world.latest_shot();
     c.areas = world.fragiles.as_ref().unwrap().catalog.chunks().iter().enumerate()
         .map(|(i, _)| (Some((10 + i as u32, true)), Vec::new())).collect();
@@ -34,6 +50,7 @@ fn entities(now: Instant, world: &World) -> Session {
     c.phase = Phase::Entities; c.announcement = Some((0, true));
     c.creations = [None; 2]; c.view = Some(world.clone());
     c.areas = vec![(None, Vec::new()); world.fragiles.as_ref().unwrap().catalog.chunks().len()];
+    c.announced_areas = c.areas.len();
     s
 }
 
@@ -79,6 +96,102 @@ fn native_catalog_announces_and_creates_both_chunks_with_vehicle_requests() {
         let expected = area_wire::area_create(i, chunk, &[]).unwrap();
         assert_eq!(present(&created, &expected), 1);
     }
+}
+
+fn many_chunk_world(now: Instant) -> World {
+    let mut world = model::tests::contact_world(now);
+    let state = world.fragiles.as_ref().unwrap();
+    let template = state.catalog.objects[0].clone();
+    let objects = (0..117usize).map(|index| {
+        let mut object = template.clone();
+        object.object_id = 10_000 + index as u32;
+        object.instance_id = 20_000 + index as u32;
+        object.chunk_id = 31_000 + index as u16;
+        object.native_index = 0;
+        object.object_revision = format!("{:064x}", index + 1);
+        object
+    }).collect();
+    let mut catalog = (*state.catalog).clone();
+    catalog.objects = objects;
+    world.fragiles = Some(super::super::fragiles::State::new(std::sync::Arc::new(catalog)));
+    world
+}
+
+fn ack_current_and_flush(s: &mut Session, now: Instant) {
+    while s.tx.due(now, s.rx).unwrap().is_some() {}
+    let max_sequence = {
+        let c = s.shared.as_ref().unwrap();
+        c.announcement_parts.iter().map(|(sequence, _)| *sequence)
+            .chain(c.creations.iter().flatten().map(|(sequence, _)| *sequence))
+            .chain(c.areas.iter().filter_map(|(pending, _)| pending.map(|(sequence, _)| sequence)))
+            .chain(c.area_creation.iter().map(|(sequence, _)| *sequence))
+            .max()
+    };
+    let Some(max_sequence) = max_sequence else { return; };
+    let cumulative = max_sequence + 1;
+    let ack = Frame { flags: 0x408, sequence: None, cumulative: Some(cumulative), selective: Vec::new(), body: Vec::new(), piggybacks: Vec::new() };
+    s.tx.acknowledge(&ack).unwrap();
+    s.shared.as_mut().unwrap().acknowledge(cumulative, &ack);
+    s.flush_shared_requests(&mut Vec::new()).unwrap();
+}
+
+#[test]
+fn full_contact_catalog_stays_bounded_through_ready_phase_and_stages_all_117_area_creates() {
+    let now = Instant::now();
+    let world = many_chunk_world(now);
+    let (mut s, _) = driving(now);
+    s.shared.as_mut().unwrap().phase = Phase::Enable;
+    s.shared.as_mut().unwrap().view = Some(world.clone());
+    s.receive(&frame(&s, &[9]), now).unwrap();
+    let c = s.shared.as_ref().unwrap();
+    // The first native request must fit the measured eight-body reliable
+    // window: two vehicles plus six area controllers. Later area batches are
+    // published only after the current batch and its creates are ACKed.
+    assert_eq!(c.announced_areas, 6);
+    assert_eq!(c.announcement_parts.len(), 1);
+    assert!(queued_bodies(&s, now).iter().all(|body| body.len() <= 512));
+
+    let mut payload = Vec::new();
+    payload.extend(request(wire::vehicle_id(0).unwrap()));
+    payload.extend(request(wire::vehicle_id(1).unwrap()));
+    for area in 0..6 { payload.extend(request(area_wire::area_id(area).unwrap())); }
+    s.receive(&frame(&s, &payload), now).unwrap();
+    assert!(s.tx.len() <= 8);
+    // Five area creates fit beside the two vehicle creates and the first
+    // announcement; the sixth request remains queued until an ACK frees one
+    // reliable slot.
+    assert!(s.shared.as_ref().unwrap().pending_area_requests.len() <= 1);
+
+    let mut requested = 6usize;
+    let mut ready_phase = false;
+    for _ in 0..80 {
+        ack_current_and_flush(&mut s, now);
+        // A native client enters Driving after its own vehicle binding is
+        // acknowledged, while the later area batches may still be pending.
+        // Keep this transition in the synthetic wire regression so the
+        // catalog cannot silently depend on Phase::Entities forever.
+        if !ready_phase {
+            s.shared.as_mut().unwrap().phase = Phase::Driving;
+            ready_phase = true;
+        }
+        let announced = s.shared.as_ref().unwrap().announced_areas;
+        if requested < announced {
+            let mut batch = Vec::new();
+            for area in requested..announced { batch.extend(request(area_wire::area_id(area).unwrap())); }
+            s.receive(&frame(&s, &batch), now).unwrap();
+            requested = announced;
+        }
+        if requested == 117
+            && s.shared.as_ref().unwrap().pending_area_requests.is_empty()
+            && s.shared.as_ref().unwrap().areas.iter().all(|(pending, _)| pending.is_some()) {
+            break;
+        }
+    }
+    let c = s.shared.as_ref().unwrap();
+    assert!(c.pending_area_requests.is_empty());
+    assert!(c.areas.iter().all(|(pending, _)| pending.is_some()));
+    assert_eq!(c.areas.len(), 117);
+    assert!(s.tx.len() <= 8);
 }
 
 #[test]
@@ -194,6 +307,76 @@ fn mixed_unknown_or_duplicate_request_rolls_back_entire_envelope() {
 }
 
 #[test]
+fn driving_mixed_area_requests_and_aim_are_accepted_atomically() {
+    let now = Instant::now();
+    let world = many_chunk_world(now);
+    let (mut s, _) = driving(now);
+    {
+        let c = s.shared.as_mut().unwrap();
+        c.view = Some(world.clone());
+        c.announced_areas = 117;
+        c.areas = vec![(None, Vec::new()); 117];
+        c.tree_areas = vec![Vec::new(); 117];
+        c.creations = [Some((0, true)); 2];
+        c.binding = Some((0, true));
+        c.correction = true;
+    }
+    let mut payload = Vec::new();
+    for area in 0..6 { payload.extend(request(area_wire::area_id(area).unwrap())); }
+    payload.extend(point(0, [100., 100., 100.]));
+    s.receive(&frame(&s, &payload), now).unwrap();
+    let c = s.shared.as_ref().unwrap();
+    assert_eq!(c.commands.len(), 1);
+    assert!(c.pending_area_requests.len() <= 1);
+    assert!(c.areas.iter().take(6).any(|(pending, _)| pending.is_some()));
+
+    let (mut malformed, _) = driving(now);
+    {
+        let c = malformed.shared.as_mut().unwrap();
+        c.view = Some(world);
+        c.announced_areas = 117;
+        c.areas = vec![(None, Vec::new()); 117];
+        c.tree_areas = vec![Vec::new(); 117];
+        c.creations = [Some((0, true)); 2];
+        c.binding = Some((0, true));
+        c.correction = true;
+    }
+    let before_rx = malformed.rx;
+    let mut invalid_payload = request(area_wire::area_id(0).unwrap());
+    invalid_payload.extend([0x8f, 12, 0, 1, 2]);
+    assert!(malformed.receive(&frame(&malformed, &invalid_payload), now).is_err());
+    assert_eq!(malformed.rx, before_rx);
+    let c = malformed.shared.as_ref().unwrap();
+    assert!(c.pending_area_requests.is_empty());
+    assert!(c.areas.iter().all(|(pending, _)| pending.is_none()));
+    assert!(c.commands.is_empty());
+}
+
+#[test]
+fn driving_mixed_area_requests_and_ready_compound_are_accepted() {
+    let now = Instant::now();
+    let world = many_chunk_world(now);
+    let (mut s, _) = driving(now);
+    {
+        let c = s.shared.as_mut().unwrap();
+        c.view = Some(world);
+        c.announced_areas = 117;
+        c.areas = vec![(None, Vec::new()); 117];
+        c.tree_areas = vec![Vec::new(); 117];
+        c.creations = [Some((0, true)); 2];
+        c.binding = Some((0, true));
+        c.correction = true;
+    }
+    let mut payload = Vec::new();
+    for area in 0..6 { payload.extend(request(area_wire::area_id(area).unwrap())); }
+    payload.extend(ready(0));
+    s.receive(&frame(&s, &payload), now).unwrap();
+    let c = s.shared.as_ref().unwrap();
+    assert!(c.commands.is_empty());
+    assert!(c.areas.iter().take(6).any(|(pending, _)| pending.is_some()));
+}
+
+#[test]
 fn late_outbox_failure_does_not_commit_sent_arrays_commands_or_world() {
     let now = Instant::now(); let (mut a, _, mut world) = pair(now);
     direct_contact(&mut world, 1513, 1); direct_contact(&mut world, 1512, 2);
@@ -215,4 +398,126 @@ fn late_outbox_failure_does_not_commit_sent_arrays_commands_or_world() {
     assert_eq!(present(&queued_bodies(&a, now), &update), 1);
     let before = queued_bodies(&a, now); poll(&mut a, &mut world, now).unwrap();
     assert_eq!(queued_bodies(&a, now), before);
+}
+
+fn before_first_ready(now: Instant, slot: usize) -> Session {
+    let world = many_chunk_world(now);
+    let mut s = entities(now, &world);
+    s.id = slot as u32 + 1;
+    let c = s.shared.as_mut().unwrap();
+    c.slot = slot; c.creations = [Some((0, true)); 2];
+    c.binding = None; c.correction = false; c.ready_sent = [false; 2];
+    s
+}
+
+fn captured_requests_ready(slot: usize) -> Vec<u8> {
+    // treeobserve08 application bytes, excluding the private token envelope.
+    // Both peers batched six area requests with their first READY33.
+    let first = if slot == 0 { 0x09100031 } else { 0x0910002b };
+    let mut bytes = Vec::new();
+    for id in first..first + 6 { bytes.extend(request(id)); }
+    bytes.extend(ready(slot));
+    assert_eq!(bytes.len(), 75);
+    bytes
+}
+
+fn assert_input_rolled_back(s: &Session, before: &Session, now: Instant) {
+    assert_eq!(s.rx, before.rx); assert_eq!(s.received, before.received);
+    assert_eq!(s.tx.cumulative, before.tx.cumulative);
+    assert_eq!(queued_bodies(s, now), queued_bodies(before, now));
+    assert_eq!(s.outbox, before.outbox);
+    let c = s.shared.as_ref().unwrap(); let old = before.shared.as_ref().unwrap();
+    assert_eq!(c.phase, old.phase); assert_eq!(c.binding, old.binding);
+    assert_eq!(c.correction, old.correction); assert_eq!(c.creations, old.creations);
+    assert_eq!(c.ready_sent, old.ready_sent); assert_eq!(c.areas, old.areas);
+    assert_eq!(c.tree_areas, old.tree_areas);
+    assert_eq!(c.pending_area_requests, old.pending_area_requests);
+    assert_eq!(c.pending_entity_requests, old.pending_entity_requests);
+    assert_eq!(c.commands, old.commands);
+}
+
+#[test]
+fn entities_first_ready_mixed_native_requests_both_slots_and_retry() {
+    let now = Instant::now();
+    for slot in 0..2 {
+        let mut s = before_first_ready(now, slot);
+        let payload = captured_requests_ready(slot);
+        let input = frame(&s, &payload); let rx = s.rx;
+        s.receive(&input, now).unwrap();
+        let c = s.shared.as_ref().unwrap();
+        assert_eq!(c.phase, Phase::Driving); assert!(!c.correction);
+        assert!(c.binding.is_some_and(|(_, ack)| !ack));
+        assert!(c.commands.is_empty());
+        assert_eq!(c.areas.iter().filter(|(p, _)| p.is_some()).count(), 6);
+        assert_eq!(s.tx.len(), 7); assert_eq!(s.rx, rx + 1);
+        // Native retry must not create another binding or increment rx twice.
+        let after = s.clone(); s.receive(&input, now).unwrap();
+        assert_input_rolled_back(&s, &after, now);
+    }
+}
+
+#[test]
+fn entities_first_ready_malformed_suffix_and_requests_rollback() {
+    let now = Instant::now();
+    for slot in 0..2 {
+        let valid = captured_requests_ready(slot);
+        let prefix = &valid[..42];
+        let mut bad_payloads = vec![];
+        for len in 1..33 { bad_payloads.push([prefix, &ready(slot)[..len]].concat()); }
+        bad_payloads.push([valid.as_slice(), &[0]].concat());
+        bad_payloads.push([prefix, ready(1-slot).as_slice()].concat());
+        bad_payloads.push([prefix, point(0, [0.; 3]).as_slice()].concat());
+        bad_payloads.push([prefix, &[0x8a, 1, 0, 0]].concat());
+        bad_payloads.push([valid.as_slice(), &valid[..7]].concat());
+        for id in [123, area_wire::area_id(117).unwrap(), u32::from_le_bytes(valid[3..7].try_into().unwrap())] {
+            bad_payloads.push([prefix, request(id).as_slice(), ready(slot).as_slice()].concat());
+        }
+        for payload in bad_payloads {
+            let mut s = before_first_ready(now, slot); let before = s.clone();
+            assert!(s.receive(&frame(&s, &payload), now).is_err());
+            assert_input_rolled_back(&s, &before, now);
+        }
+        for own in [None, Some((0, false))] {
+            let mut s = before_first_ready(now, slot);
+            s.shared.as_mut().unwrap().creations[slot] = own;
+            let before = s.clone();
+            assert!(s.receive(&frame(&s, &valid), now).is_err());
+            assert_input_rolled_back(&s, &before, now);
+        }
+        let mut future = before_first_ready(now, slot);
+        future.shared.as_mut().unwrap().announced_areas = 6;
+        let before = future.clone();
+        assert!(future.receive(&frame(&future, &valid), now).is_err());
+        assert_input_rolled_back(&future, &before, now);
+    }
+}
+
+#[test]
+fn entities_first_ready_reserves_binding_and_uses_same_frame_ack() {
+    let now = Instant::now();
+    for slot in 0..2 {
+        let mut s = before_first_ready(now, slot);
+        for _ in 0..7 { s.tx.enqueue().unwrap(); }
+        s.receive(&frame(&s, &captured_requests_ready(slot)), now).unwrap();
+        let c = s.shared.as_ref().unwrap();
+        assert_eq!(c.phase, Phase::Driving); assert_eq!(s.tx.len(), 8);
+        assert_eq!(c.pending_area_requests.len(), 6);
+        assert!(c.areas.iter().all(|(p, _)| p.is_none()));
+
+        let mut full = before_first_ready(now, slot);
+        let sequence = full.tx.enqueue_body_tracked(&wire::create_vehicle(full.shared.as_ref().unwrap().view.as_ref().unwrap(), slot).unwrap()).unwrap();
+        full.shared.as_mut().unwrap().creations[slot] = Some((sequence, false));
+        for _ in 0..7 { full.tx.enqueue().unwrap(); }
+        while full.tx.due(now, full.rx).unwrap().is_some() {}
+        let before = full.clone();
+        let mut input = frame(&full, &captured_requests_ready(slot));
+        assert!(full.receive(&input, now).is_err());
+        assert_input_rolled_back(&full, &before, now);
+        input.cumulative = Some(sequence + 1);
+        full.receive(&input, now).unwrap();
+        let c = full.shared.as_ref().unwrap();
+        assert_eq!(c.phase, Phase::Driving); assert_eq!(full.tx.len(), 8);
+        assert!(c.creations[slot].unwrap().1);
+        assert_eq!(c.pending_area_requests.len(), 6);
+    }
 }

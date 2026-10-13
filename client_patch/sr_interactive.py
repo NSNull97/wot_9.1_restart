@@ -193,6 +193,22 @@ def _shared_vector(value):
     return result
 
 
+def _bounded_uint32_array(value, limit=62):
+    """Copy one native ARRAY<UINT32> without retaining the client object."""
+    try:
+        values = list(value)
+    except (TypeError, ValueError, AttributeError):
+        return {'unrecognized': True, 'reason': 'uint32_array_type'}
+    if len(values) > limit:
+        return {'unrecognized': True, 'reason': 'uint32_array_bound', 'count': len(values)}
+    result = []
+    for item in values:
+        if type(item) not in (int, long) or not 0 <= item <= 0xffffffff:
+            return {'unrecognized': True, 'reason': 'uint32_array_value'}
+        result.append(int(item))
+    return result
+
+
 def profile_calls(frame, phase, value):
     global _profile_call_id
     if phase not in ('call', 'return'):
@@ -210,17 +226,25 @@ def profile_calls(frame, phase, value):
     elif (source == 'scripts/client/AreaDestructibles.py'
           and _settings.get('enable_shared_lab') is True
           and method in ('onEnterWorld', 'set_destroyedFragiles', 'orderDestructibleDestroy',
-                         '__destroyFragile', '__launchEffect')):
+                         'set_fallenTrees', '__destroyFragile', '__destroyDestructible',
+                         '__dropDestructible', '__launchFallEffect', '__launchEffect')):
         kind = 'native_destructible_call'
         fields['owner_class'] = type(frame.f_locals.get('self')).__name__
         fields['arguments'] = primitive(dict((name, frame.f_locals[name]) for name in
-            ('chunkID', 'destrID', 'isShotDamage', 'isAnimation', 'syncWithProjectile',
+            ('chunkID', 'destrID', 'dmgType', 'destData', 'destrIndex', 'isShotDamage',
+             'isAnimation', 'isNeedAnimation', 'isAnimate', 'syncWithProjectile',
+             'fallDirYaw', 'pitchConstr', 'fallSpeed', 'obstacleCollisionFlags',
              'prev', 'oldValue', 'effectName', 'effectType') if name in frame.f_locals), budget=[64, 2048])
         owner = frame.f_locals.get('self')
         if fields['owner_class'] == 'AreaDestructibles':
             fields['entity_id'] = owner.id
             values = list(owner.destroyedFragiles)
             fields['destroyed_fragiles'] = values if len(values) <= 1 else {'unrecognized': True}
+            if method == 'set_fallenTrees':
+                fields['chunk_id'] = getattr(owner, '_AreaDestructibles__chunkID', None)
+                fields['fallen_trees'] = _bounded_uint32_array(getattr(owner, 'fallenTrees', None))
+                fields['previous_fallen_trees'] = _bounded_uint32_array(
+                    getattr(owner, '_AreaDestructibles__prevFallenTrees', None))
     elif ((source == 'scripts/client/gui/Scaleform/daapi/view/meta/FightButtonMeta.py' and
            method in ('as_disableFightButtonS', 'as_setFightButtonS')) or
           (source == 'scripts/client/gui/Scaleform/daapi/view/lobby/header/FightButton.py' and
@@ -1031,12 +1055,20 @@ def observe_shared_lab():
     if _shared_native_samples >= 3600:
         return
     _shared_native_samples += 1
-    rotator = player.gunRotator
-    prediction = dict(started=rotator._VehicleGunRotator__isStarted,
-                      yaw=rotator._VehicleGunRotator__turretYaw,
-                      pitch=rotator._VehicleGunRotator__gunPitch)
-    target = rotator._VehicleGunRotator__prevSentShotPoint
-    prediction['target'] = list(target) if target is not None else None
+    # The original Avatar can enter the battle before its optional gun
+    # rotator is attached. Keep this passive receipt alive in that window so
+    # the destructible catalog getter still runs; never synthesize a pose.
+    rotator = getattr(player, 'gunRotator', None)
+    if rotator is None:
+        prediction = dict(started=None, yaw=None, pitch=None, rotator_available=False,
+                          target=None)
+    else:
+        prediction = dict(started=rotator._VehicleGunRotator__isStarted,
+                          yaw=rotator._VehicleGunRotator__turretYaw,
+                          pitch=rotator._VehicleGunRotator__gunPitch,
+                          rotator_available=True)
+        target = rotator._VehicleGunRotator__prevSentShotPoint
+        prediction['target'] = list(target) if target is not None else None
     record('shared_native_snapshot', sample=_shared_native_samples,
            avatar_entity_id=player.id, player_vehicle_id=player.playerVehicleID,
            arena_unique_id=player.arenaUniqueID, vehicles=rows, prediction=prediction,
