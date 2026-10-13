@@ -26,6 +26,34 @@ records the final commit/source/test hashes. Source receipt SHA256
 Next: integrate at the shared configuration-reservation gate using real
 component-mass evidence, then perform the separate native acceptance card.
 
+## 2026-10-13 — P09C isolated ammunition service parallel handoff
+
+**PASS_P09C_ISOLATED_AMMO_SERVICE**; runtime/native integration **NOT_RUN**.
+Branch `codex/p09c-ammo-service` from accepted main
+`90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`; no merge/main changes during parallel work.
+
+Nine original #717 resource pins verify mounted MS-1 capacity96 and shells
+2570/2826/3082; IS-7 capacity30 and shells14602/14858/15114 (static compact
+encoding verified). The new standalone service extends the existing P09B
+SQLite snapshot/revision/reservation/ledger. It changes absolute loaded ammo
+using already-owned isolated depot stock, with atomic rollback and idempotent
+replay. No prices, live grants, battle runtime or shared loadout were changed.
+
+Applicable automated scope: **74/74 PASS** (11 catalogue, 50 service, 13 P09B),
+including real separate-connection races and four rollback points. Source audit,
+layout and diff check PASS; persistent isolated harness **16/16 PASS**, including
+reopen, original replay after later changes and inherited reservation.
+Evidence: `local/evidence/20261013-p09c-ammo-service-01/validation-02/receipt.json`
+and `harness-02/receipt.json` in the managed worktree. A local validation-runner
+path error is preserved separately as FAIL/NOT_RUN, then corrected.
+
+Prices/purchases, repair/consumables and native service mapping remain
+UNKNOWN/UNSUPPORTED. Fresh native IS-7 ammo receipt and deployed wiring NOT_RUN.
+[Plan](plans/P09C_AMMO_SERVICE.md), [contract](research/P09C_AMMO_SERVICE_CONTRACT.md),
+[commands/evidence/rollback](evidence-index/P09C_AMMO_SERVICE.md).
+One next step: a separate authoritative account/loadout integration gate
+coordinated with crew/equipment, then native acceptance.
+
 ## 2026-10-13 — P06Q tree visual/state sync follow-up
 
 ### Owner gate accepted; stand closed; original client relocated
