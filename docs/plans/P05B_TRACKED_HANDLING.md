@@ -4,6 +4,16 @@ Date: 2026-10-13. Branch: `codex/p05b-tracked-handling`.
 Base: accepted main `0393857e2a67646e87dd03763baf3b98da98b0b9`.
 Status: PASS_AUTOMATIC_PRIVATE; native/owner NOT_RUN.
 
+## Candidate14 moving-fence checkpoint — 2026-10-13
+
+[Bounded implementation plan](P05B_MOVING_FENCE_CONTACT.md) and
+[report](../research/P05B_MOVING_FENCE_CONTACT.md) record the existing403-fence
+policy correction. Gateway755/755, Python119, C#162 and paired side/chain/ram
+checks pass. Wheel-only actual geometry remains NOT_RUN and near-zero pressure
+FAIL/OPEN; native owner acceptance stays open. Evidence:night14-checkpoint.json.
+Next existing cadence gate adds bounded actual Jolt-worker publication evidence;
+controlled IPC tests already pass and production cadence code stays unchanged.
+
 ## Candidate13 automatic checkpoint — 2026-10-13
 
 Coasting steering and near-rest transition gates are complete:94 worker runs,

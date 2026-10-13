@@ -1,3 +1,23 @@
+## 2026-10-13 — P05B night14 moving-fence checkpoint; acceptance OPEN
+
+Candidate14 adds versioned domain6/worker7 total-linear8000J response to the
+existing403 fences only;626 trees/9 whole fragiles retain normal response.
+Four moving-side cases for both masses now fracture and pass with both ACKs;
+parallel/away controls stay intact. Clear chain3166/3167 passes for both.
+New22 paired ram cases and old20 paired cases pass; old trajectories match13.
+Handling/coast38 runs also match13. Python119, linked C#162 and fresh full
+gateway755/755 PASS. Real source-profile gateway cases confirm both-ACK commit
+and fresh-worker topology restoration. Bindings: P05B/night14-checkpoint.json.
+
+This is scoped evidence, not full acceptance: actual wheel-only source-geometry
+fixture NOT_RUN after12 bounded launches (4 settle failures preserved); near-zero
+side pressure still FAIL/OPEN, including actual hull contacts without removal.
+Native owner, historical solver fidelity and excluded compound coverage remain
+OPEN. No native launch/input or merge. Candidate13 remains rollback.
+Full results/commands/analysis corrections: [moving-fence report](research/P05B_MOVING_FENCE_CONTACT.md).
+Next automatic step: real-worker cadence smoke within existing P05B to complement
+controlled IPC proof of the periodic speed/aim jerk correction.
+
 ## 2026-10-13 — P05B night13 coasting checkpoint; owner gate OPEN
 
 Moving steering without throttle now keeps zero requested motor torque and

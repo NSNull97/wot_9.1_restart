@@ -124,7 +124,7 @@ try
             MaxBodies = Math.Max(32, (catalog?.Entries.Length ?? 0) + 8), MaxBodyPairs = 1024, MaxContactConstraints = 1024,
             ObjectLayerPairFilter = pairs, BroadPhaseLayerInterface = broad, ObjectVsBroadPhaseLayerFilter = filter });
         var bodies = world.BodyInterface;
-        using var pairPrepass = catalog?.Version == 6 ? new WholeObjectContactPrepass(world.Settings) : null;
+        using var pairPrepass = catalog?.Version is 6 or 7 ? new WholeObjectContactPrepass(world.Settings) : null;
         var staticBodies = new List<BodyID>();
         using var terrain = CheckedInput.LoadMesh(root, c.GetProperty("terrain"), map);
         MeshShape? selectedShape = null;

@@ -98,6 +98,31 @@ class MovementAdmissionTests(unittest.TestCase):
 
 
 class CompoundNativeContractTests(unittest.TestCase):
+    def test_moving_fence_response_binds_modes_without_changing_native_identity_or_projectiles(self):
+        inv = inventory([object_row(0,'fragile'),object_row(1,'tree'),object_row(2)])
+        original_inventory = copy.deepcopy(inv)
+        exports = [export_bytes(native_export(inv))]
+        old_raw, old_worker_raw = catalog.join_exports(inv,exports,whole_contact_response=True)
+        old, old_worker = json.loads(old_raw), json.loads(old_worker_raw)
+        raw, worker_raw = catalog.join_exports(inv,exports,moving_fence_response=True)
+        manifest, worker = json.loads(raw), json.loads(worker_raw)
+        self.assertEqual((manifest['version'],worker['version']),(6,7))
+        self.assertEqual(manifest['ram_policy'],'test_lab-fence-total-energy-v1')
+        self.assertEqual(worker['ram_policy'],manifest['ram_policy'])
+        modes = ['normal_linear','normal_linear','total_linear']
+        self.assertEqual([row['ram_response'] for row in manifest['objects']],modes)
+        self.assertEqual([row['ram_response'] for row in worker['objects']],modes)
+        self.assertEqual([row['ram_energy_j'] for row in worker['objects']],[8000]*3)
+        for new, previous in zip(manifest['objects'],old['objects']):
+            self.assertEqual({key:value for key,value in new.items() if key!='ram_response'},previous)
+        for new, previous in zip(worker['objects'],old_worker['objects']):
+            self.assertEqual({key:value for key,value in new.items() if key!='ram_response'},previous)
+        for field in ('area_chunks','native_exports_sha256','physics_manifest_sha256','projectile_manifest_sha256'):
+            self.assertEqual(manifest[field],old[field])
+        self.assertEqual(manifest['worker']['sha256'],catalog.sha(worker_raw))
+        self.assertEqual(inv,original_inventory)
+        self.assertEqual((old_raw,old_worker_raw),catalog.join_exports(inv,exports,whole_contact_response=True))
+
     def test_whole_contact_response_preserves_identity_hp_and_geometry_for_all_three_kinds(self):
         inv = inventory([object_row(0,'fragile'),object_row(1,'tree'),object_row(2)])
         exports = [export_bytes(native_export(inv))]
@@ -121,7 +146,11 @@ class CompoundNativeContractTests(unittest.TestCase):
     def test_response_flags_are_exact_booleans_and_mutually_exclusive(self):
         inv=inventory();exports=[export_bytes(native_export(inv))]
         for values in (dict(fence_response=True,whole_contact_response=True),
+                       dict(fence_response=True,moving_fence_response=True),
+                       dict(whole_contact_response=True,moving_fence_response=True),
                        dict(fence_response=1),dict(whole_contact_response=1),
+                       dict(moving_fence_response=1),dict(moving_fence_response='true'),
+                       dict(moving_fence_response=None),
                        dict(whole_contact_response='true'),dict(whole_contact_response=None)):
             with self.subTest(values=values),self.assertRaises(ValueError):
                 catalog.join_exports(inv,exports,**values)
@@ -129,6 +158,23 @@ class CompoundNativeContractTests(unittest.TestCase):
             catalog.main(['--out','unused','--fence-response','--whole-contact-response'])
         with self.assertRaisesRegex(ValueError,'requires pinned native'):
             catalog.main(['--out','unused','--whole-contact-response'])
+        with contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):
+            catalog.main(['--out','unused','--moving-fence-response','--whole-contact-response'])
+        with self.assertRaisesRegex(ValueError,'requires pinned native'):
+            catalog.main(['--out','unused','--moving-fence-response'])
+
+    def test_moving_fence_response_requires_complete_stable_join_and_bounded_kind(self):
+        inv=inventory(); valid=native_export(inv)
+        variants=[]
+        value=copy.deepcopy(valid);value['observation_count']=1;variants.append(value)
+        value=copy.deepcopy(valid);value['chunks'][0]['items'].pop();variants.append(value)
+        value=copy.deepcopy(valid);value['chunks'][0]['items'][1]['filename']='source/foreign.model';variants.append(value)
+        for value in variants:
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                catalog.join_exports(inv,[export_bytes(value)],moving_fence_response=True)
+        inv['eligible'][0]['kind']='module'
+        with self.assertRaises(ValueError):
+            catalog.join_exports(inv,[export_bytes(valid)],moving_fence_response=True)
 
     def test_whole_contact_response_cannot_bypass_partial_join_or_unknown_object_kind(self):
         inv=inventory();value=native_export(inv);value['observation_count']=1
@@ -266,6 +312,19 @@ class CompoundOriginalSourceTests(unittest.TestCase):
         self.assertEqual(len(worker['objects']),1038)
         self.assertEqual({row['ram_energy_j'] for row in worker['objects']},{8000})
         self.assertEqual(new['worker']['sha256'],catalog.sha(worker_raw))
+
+        # Real source/native join is the boundary: exactly403 existing fences,
+        # no new identities, native bytes, HP or geometry/projectile coverage.
+        moving_raw,moving_worker_raw=catalog.join_exports(self.inventory,exports,moving_fence_response=True)
+        moving,moving_worker=json.loads(moving_raw),json.loads(moving_worker_raw)
+        self.assertEqual((moving['version'],moving_worker['version']),(6,7))
+        self.assertEqual(Counter(row['ram_response'] for row in moving['objects']),
+                         {'total_linear':403,'normal_linear':635})
+        self.assertEqual([{k:v for k,v in row.items() if k!='ram_response'} for row in moving['objects']],new['objects'])
+        self.assertEqual([{k:v for k,v in row.items() if k!='ram_response'} for row in moving_worker['objects']],worker['objects'])
+        self.assertEqual(moving['area_chunks'],new['area_chunks'])
+        self.assertEqual(moving['native_exports_sha256'],new['native_exports_sha256'])
+        self.assertEqual(moving['worker']['sha256'],catalog.sha(moving_worker_raw))
 
     def test_original_movement_objects_preserve_both_masks_and_reference_health(self):
         rows=[r for r in self.inventory['eligible'] if r['kind']=='movement_fragile']

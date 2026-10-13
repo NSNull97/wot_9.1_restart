@@ -518,6 +518,104 @@ fn movement_manifest(count:u32)->Value {
     let mut chunks=(0..count.min(128)).map(|i|((121+i%12)<<8)|(121+i/12)).collect::<Vec<_>>();
     chunks.sort_unstable();value["area_chunks"]=json!(chunks);value
 }
+
+pub(crate) fn fence_total_manifest()->Value {
+    let mut value=contact_manifest();value["version"]=json!(6);
+    value["ram_policy"]=json!(FENCE_TOTAL_RAM_POLICY);value["area_chunks"]=json!([31354,31355]);
+    value["objects"][1]["kind"]=json!("movement_fragile");
+    value["objects"][1]["resource"]=json!(FENCE_TOTAL_RESOURCES[0]);
+    value["objects"][1]["projectile_triangle_count"]=json!(0);
+    for row in value["objects"].as_array_mut().unwrap(){
+        row["ram_response"]=json!(if row["kind"]=="movement_fragile"{"total_linear"}else{"normal_linear"});
+    }
+    value
+}
+pub(crate) fn fence_total_catalog()->Arc<Catalog>{Arc::new(parse(&fence_total_manifest()).unwrap())}
+
+#[test]
+fn fence_total_domain_schema_requires_exact_version_kind_and_source_discriminator() {
+    let valid=fence_total_manifest();let c=parse(&valid).unwrap();
+    assert_eq!(c.version,6);
+    assert_eq!(c.objects.iter().map(|o|c.ram_response(o)).collect::<Vec<_>>(),
+        vec![Some("normal_linear"),Some("total_linear"),Some("normal_linear")]);
+    for policy in [json!(WHOLE_RAM_POLICY),json!(FENCE_RAM_POLICY),Value::Null,json!(false),json!("unknown")]{
+        let mut v=valid.clone();v["ram_policy"]=policy;assert!(parse(&v).is_err());
+    }
+    for version in [0,5,7]{let mut v=valid.clone();v["version"]=json!(version);assert!(parse(&v).is_err());}
+    for i in 0..3 {
+        let mut v=valid.clone();v["objects"][i].as_object_mut().unwrap().remove("ram_response");assert!(parse(&v).is_err());
+        for mode in [Value::Null,json!(true),json!(1),json!("unknown"),json!(if i==1{"normal_linear"}else{"total_linear"})]{
+            let mut v=valid.clone();v["objects"][i]["ram_response"]=mode;assert!(parse(&v).is_err());
+        }
+        let mut v=valid.clone();v["objects"][i]["ram_energy_j"]=json!(8000);assert!(parse(&v).is_err());
+    }
+    for resource in ["content/fence.model","content/GatesAndFences/gaf010_Fence/normal/lod0/gaf010_FenceTile9.model",
+        "content/MilitaryEnvironment/mle009_BoxCamouflage/normal/lod0/mle009_BoxCamouflage.model"]{
+        let mut v=valid.clone();v["objects"][1]["resource"]=json!(resource);assert!(parse(&v).is_err());
+    }
+    for resource in FENCE_TOTAL_RESOURCES {let mut v=valid.clone();v["objects"][1]["resource"]=json!(resource);parse(&v).unwrap();}
+    for version in 1..=5 {
+        let mut v=if version==1{manifest()}else{contact_manifest()};v["version"]=json!(version);
+        if version>=3{v["area_chunks"]=json!([31354,31355]);}
+        if version>=4{v["ram_policy"]=json!(if version==5{WHOLE_RAM_POLICY}else{FENCE_RAM_POLICY});}
+        let old=parse(&v).unwrap();assert!(old.objects.iter().all(|o|old.ram_response(o).is_none()));
+        v["objects"][0]["ram_response"]=json!("normal_linear");assert!(parse(&v).is_err());
+    }
+}
+
+#[test]
+fn fence_total_admission_uses_full_velocity_but_requires_real_incoming_hull_contact() {
+    let catalog=Arc::new(parse(&fence_total_manifest()).unwrap());
+    for (mass,velocity,expected) in [(4691.,[0.1,0.,3.],true),(68190.,[0.1,0.,0.8],true),
+        (4691.,[0.1,0.,0.8],false),(68190.,[0.,0.,6.],false),(68190.,[-0.1,0.,6.],false),
+        (68190.,[0.,0.,0.],false)]{
+        let mut state=State::new(catalog.clone());
+        let event=state.ram_contact(1514,0,1001,1,[0.;3],[1.,0.,0.],velocity,mass,"hull".into()).unwrap();
+        assert_eq!(event.is_some(),expected);assert_eq!(state.scene_version(),u32::from(expected));
+        if expected {assert_eq!(state.native_fragile_values(31354),vec![1<<8]);assert_eq!(state.removed_ids(),vec![1514]);
+            let before=state.clone();assert!(state.ram_contact(1514,1,1001,2,[0.;3],[1.,0.,0.],velocity,mass,"hull".into()).unwrap().is_none());assert_eq!(state,before);}
+        for id in [1513,1529] {let mut normal=State::new(catalog.clone());
+            assert!(normal.ram_contact(id,0,1001,1,[0.;3],[1.,0.,0.],velocity,mass,"hull".into()).unwrap().is_none());}
+    }
+    let mut wheel=State::new(catalog.clone());let before=wheel.clone();
+    assert!(wheel.ram_contact(1514,0,1001,1,[0.;3],[1.,0.,0.],[6.,0.,6.],68190.,"wheel".into()).unwrap().is_none());assert_eq!(wheel,before);
+    for velocity in [[f32::NAN,0.,3.],[f32::INFINITY,0.,3.],[0.,0.,f32::from_bits(25f32.to_bits()+1)]]{
+        let mut state=State::new(catalog.clone());let before=state.clone();
+        assert!(state.ram_contact(1514,0,1001,1,[0.;3],[0.,0.,1.],velocity,4691.,"hull".into()).is_err());assert_eq!(state,before);
+    }
+}
+
+#[test]
+fn fence_total_exact_energy_incoming_and_speed_boundaries_use_f64_components() {
+    let catalog=Arc::new(parse(&fence_total_manifest()).unwrap());
+    for (speed,expected) in [(f32::from_bits(4f32.to_bits()-1),false),(4.,true),(f32::from_bits(4f32.to_bits()+1),true)]{
+        let mut state=State::new(catalog.clone());
+        assert_eq!(state.ram_contact(1514,0,1001,1,[0.;3],[0.6,0.,0.8],[speed,0.,0.],1000.,"hull".into()).unwrap().is_some(),expected);
+    }
+    for (closing,expected) in [(f32::from_bits(0.1f32.to_bits()-1),false),(0.1,true),(f32::from_bits(0.1f32.to_bits()+1),true)]{
+        let mut state=State::new(catalog.clone());
+        assert_eq!(state.ram_contact(1514,0,1001,1,[0.;3],[1.,0.,0.],[closing,0.,3.],4691.,"hull".into()).unwrap().is_some(),expected);
+    }
+    for velocity in [[0.,0.,25.],[15.,0.,20.]]{let mut state=State::new(catalog.clone());
+        assert!(state.ram_contact(1514,0,1001,1,[0.;3],[0.,0.,1.],velocity,4691.,"hull".into()).unwrap().is_some());}
+}
+
+#[test]
+fn fence_total_retains_normal_tree_fragile_and_projectile_semantics() {
+    let newer=fence_total_manifest();let mut older=newer.clone();older["version"]=json!(5);older["ram_policy"]=json!(WHOLE_RAM_POLICY);
+    for row in older["objects"].as_array_mut().unwrap(){row.as_object_mut().unwrap().remove("ram_response");}
+    let old=Arc::new(parse(&older).unwrap());let new=Arc::new(parse(&newer).unwrap());assert_eq!(old.objects,new.objects);
+    for id in [1513,1529]{for (mass,v,n) in [(68190.,[0.,0.,0.8],[0.,0.,1.]),(4691.,[0.,0.,0.8],[0.,0.,1.]),
+        (4691.,[3.,0.,5.],[0.6,0.,0.8]),(1000.,[0.,0.,4.],[0.,0.,1.])]{
+        let mut a=State::new(old.clone());let mut b=State::new(new.clone());
+        assert_eq!(a.ram_contact(id,0,1001,1,[0.;3],n,v,mass,"hull".into()).unwrap(),b.ram_contact(id,0,1001,1,[0.;3],n,v,mass,"hull".into()).unwrap());
+        assert_eq!(a.removed_ids(),b.removed_ids());assert_eq!(a.native_fallen_trees(31355),b.native_fallen_trees(31355));
+    }}
+    let mut partial=newer;partial["objects"][0]["health"]=json!(32);let mut state=State::new(Arc::new(parse(&partial).unwrap()));
+    assert_eq!(state.contact(1,0,1001,hit(0)).unwrap().unwrap().health_after,2);assert_eq!(state.scene_version(),0);
+    assert!(state.contact(2,0,1002,hit(1)).unwrap().is_none());assert_eq!(state.scene_version(),0);
+    assert_eq!(state.contact(3,0,1003,hit(0)).unwrap().unwrap().health_after,0);assert_eq!(state.removed_ids(),vec![1513]);
+}
 pub(crate) fn movement_catalog(count:u32)->Arc<Catalog>{Arc::new(parse(&movement_manifest(count)).unwrap())}
 
 #[test]

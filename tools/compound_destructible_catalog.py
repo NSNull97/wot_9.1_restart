@@ -33,6 +33,7 @@ WHOLE_CONTACT_RAM_POLICY = 'test_lab-whole-object-energy-v1'
 # Explicit project policy only; original reference HP does not establish this
 # energy cost or the closed historical server's resistance/ram damage law.
 WHOLE_CONTACT_ENERGY_J = 8000
+MOVING_FENCE_RAM_POLICY = 'test_lab-fence-total-energy-v1'
 require = dc.require
 sha = dc.sha
 
@@ -172,11 +173,13 @@ def probe_spec_bytes(inventory):
     return dc.canonical(inventory['probe_spec']) + b'\n'
 
 
-def join_exports(inventory, exports, *, fence_response=False, whole_contact_response=False):
+def join_exports(inventory, exports, *, fence_response=False, whole_contact_response=False,
+                 moving_fence_response=False):
     """Require complete stable native mappings; no partial admission fallback."""
-    require(type(fence_response) is bool and type(whole_contact_response) is bool,
+    responses = (fence_response, whole_contact_response, moving_fence_response)
+    require(all(type(value) is bool for value in responses),
             'response flags must be booleans')
-    require(not (fence_response and whole_contact_response), 'response policies are mutually exclusive')
+    require(sum(responses) <= 1, 'response policies are mutually exclusive')
     _validate_inventory(inventory)
     require(type(exports) is list and 1 <= len(exports) <= 2, 'one or two native exports required')
     mappings, digests = [], []
@@ -221,6 +224,12 @@ def join_exports(inventory, exports, *, fence_response=False, whole_contact_resp
         worker.update(version=6, ram_policy=WHOLE_CONTACT_RAM_POLICY)
         for projection in worker_objects:
             projection['ram_energy_j'] = WHOLE_CONTACT_ENERGY_J
+    elif moving_fence_response:
+        worker.update(version=7, ram_policy=MOVING_FENCE_RAM_POLICY)
+        for projection, source in zip(worker_objects, objects):
+            response = 'total_linear' if source['kind'] == 'movement_fragile' else 'normal_linear'
+            source['ram_response'] = response
+            projection.update(ram_energy_j=WHOLE_CONTACT_ENERGY_J, ram_response=response)
     worker_raw = dc.canonical(worker) + b'\n'
     dc.json_value(worker_raw, MAX_WORKER_BYTES, 64000, 12)
     manifest = {'version': 3, 'profile': 'test_lab', 'map': MAP,
@@ -234,6 +243,8 @@ def join_exports(inventory, exports, *, fence_response=False, whole_contact_resp
         manifest.update(version=4, ram_policy=RAM_POLICY)
     elif whole_contact_response:
         manifest.update(version=5, ram_policy=WHOLE_CONTACT_RAM_POLICY)
+    elif moving_fence_response:
+        manifest.update(version=6, ram_policy=MOVING_FENCE_RAM_POLICY)
     manifest_raw = dc.canonical(manifest) + b'\n'
     dc.json_value(manifest_raw, MAX_MANIFEST_BYTES, 64000, 12)
     return manifest_raw, worker_raw
@@ -249,11 +260,14 @@ def main(argv=None):
                         help='Explicit test_lab energy response: domain v4 / worker v5; requires a native join')
     response.add_argument('--whole-contact-response', action='store_true',
                          help='Explicit 8000J project policy for existing whole fragiles/trees: domain v5 / worker v6; requires a native join')
+    response.add_argument('--moving-fence-response', action='store_true',
+                         help='Explicit 8000J total-linear fence / normal-linear other response: domain v6 / worker v7; requires a native join')
     args = parser.parse_args(argv)
     require(len(args.native_export) == len(args.native_sha256) <= 2,
             'zero, one or two paired native exports/hashes required')
     require(not args.fence_response or args.native_export, 'fence response requires pinned native exports')
     require(not args.whole_contact_response or args.native_export, 'whole contact response requires pinned native exports')
+    require(not args.moving_fence_response or args.native_export, 'moving fence response requires pinned native exports')
     inventory = build_inventory()
     manifest_raw = worker_raw = None
     if args.native_export:
@@ -264,7 +278,8 @@ def main(argv=None):
             require(path.is_relative_to(local), 'native evidence must be under local')
             exports.append((dc.read(path, tc.MAX_NATIVE_BYTES, digest), digest))
         manifest_raw, worker_raw = join_exports(inventory, exports, fence_response=args.fence_response,
-                                              whole_contact_response=args.whole_contact_response)
+                                              whole_contact_response=args.whole_contact_response,
+                                              moving_fence_response=args.moving_fence_response)
     output = dc.fresh_output(args.out, dc.configured_paths()['local_artifacts_root'])
     inventory_raw = dc.canonical(inventory) + b'\n'
     require(len(inventory_raw) <= 16 * 1024 * 1024, 'inventory output byte bound')

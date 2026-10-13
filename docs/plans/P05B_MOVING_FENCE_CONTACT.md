@@ -39,6 +39,14 @@ No two agents write the same file. If an additional tracked file proves necessar
 
 ## Rollback and limits
 
+Execution checkpoint14: fresh full gateway755/755, Python119, C#162, paired
+moving-side8, new ram22, old ram20 and handling38 runs pass. Source-profile
+actual gateway checks include both-ACK commit and rejoin restoration. Clear
+chain passes both masses. Actual wheel-only source fixture remains NOT_RUN
+after12 bounded attempts, including4 settle failures; static pressure still
+FAIL/OPEN. Therefore this is a scoped checkpoint with open acceptance, not
+completion of every gate. Full report:../research/P05B_MOVING_FENCE_CONTACT.md.
+
 Restore the preserved accepted checkpoint/build and old domain5/worker6 catalogs if the new phase fails; preserve failure evidence and do not alter unrelated P09B work or newer independent owner work. No live processes are started by this plan. Static pressure, historical material strength/server solver equivalence and missing compound-object coverage are not repaired. Client predictor A remains research evidence and is not smuggled into B's thresholds.
 
 Plan review: version occupancy rechecked at checkpoint9f384fa; no intervening catalog edits. New-phase runtime tests/builds remain NOT_RUN until implemented. Prior13 gates are retained evidence, not proof of this contract. Next action: parallel implementation in the exclusive file scopes above and fresh exporter fixtures.

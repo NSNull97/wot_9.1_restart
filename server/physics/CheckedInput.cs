@@ -26,12 +26,12 @@ internal static class CheckedInput
     public const int MaxExtendedCatalogObjects = 2048, MaxExtendedRemovedObjects = 2048;
     public const int MaxLegacyCatalogBytes = 128 * 1024;
     public sealed record CatalogEntry(uint ObjectId, int InstanceId, int FirstTriangle, int TriangleCount,
-        string Revision, string Kind, int RamEnergyJ);
+        string Revision, string Kind, int RamEnergyJ, string? RamResponse = null);
     public sealed record CatalogSpec(string Hash, string Map, CatalogEntry[] Entries, bool Contacts, int Version)
     {
         public int MaxObjects => Version >= 4 ? MaxExtendedCatalogObjects : Contacts ? MaxContactCatalogObjects : MaxCatalogObjects;
         public int MaxRemoved => Version >= 4 ? MaxExtendedRemovedObjects : Contacts ? MaxContactRemovedObjects : MaxRemovedObjects;
-        public bool Fractures => Version is 5 or 6;
+        public bool Fractures => Version is 5 or 6 or 7;
         public int IpcVersion => Fractures ? 5 : Contacts ? 4 : 3;
     }
     public sealed record Scene(uint[] Ids, string Hash) { public uint Version => (uint)Ids.Length; }
@@ -62,18 +62,19 @@ internal static class CheckedInput
         var d = doc.RootElement;
         var source = CatalogProfile(map);
         int version = d.GetProperty("version").GetInt32();
-        bool contacts = version is 3 or 4 or 5 or 6;
+        bool contacts = version is 3 or 4 or 5 or 6 or 7;
         if (version == 2 && catalogBytes.Length > MaxLegacyCatalogBytes)
             throw new InvalidDataException("legacy catalog exceeds 128 KiB");
-        if (version is 5 or 6)
+        if (version is 5 or 6 or 7)
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "contacts", "objects", "ram_policy");
         else if (contacts)
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "contacts", "objects");
         else
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "objects");
-        if ((version != 2 && version != 3 && version != 4 && version != 5 && version != 6) || (contacts && d.GetProperty("contacts").ValueKind != JsonValueKind.True) ||
+        if ((version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7) || (contacts && d.GetProperty("contacts").ValueKind != JsonValueKind.True) ||
             (version == 5 && d.GetProperty("ram_policy").GetString() != FractureResponse.Policy) ||
             (version == 6 && d.GetProperty("ram_policy").GetString() != FractureResponse.WholeObjectPolicy) ||
+            (version == 7 && d.GetProperty("ram_policy").GetString() != FractureResponse.FenceTotalPolicy) ||
             d.GetProperty("profile").GetString() != "test_lab" ||
             d.GetProperty("map").GetString() != map ||
             d.GetProperty("physics_manifest_sha256").GetString() != source.PhysicsHash ||
@@ -89,7 +90,8 @@ internal static class CheckedInput
         uint previous = 0;
         foreach (var row in rows.EnumerateArray())
         {
-            if (version is 5 or 6) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j");
+            if (version == 7) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j", "ram_response");
+            else if (version is 5 or 6) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j");
             else if (contacts) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind");
             else Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision");
             uint id = row.GetProperty("object_id").GetUInt32();
@@ -98,17 +100,21 @@ internal static class CheckedInput
             var revision = row.GetProperty("object_revision").GetString()!; Sha256(revision);
             string kind = contacts ? row.GetProperty("kind").GetString()! : "fragile";
             if (kind is not ("tree" or "fragile")) throw new InvalidDataException("catalog object kind");
-            int energy = version is 5 or 6 ? row.GetProperty("ram_energy_j").GetInt32() : 0;
+            int energy = version is 5 or 6 or 7 ? row.GetProperty("ram_energy_j").GetInt32() : 0;
+            string? response = version == 7 ? row.GetProperty("ram_response").GetString() : null;
+            if (version == 7 && (response is not ("normal_linear" or "total_linear") ||
+                (response == "total_linear" && kind != "fragile")))
+                throw new InvalidDataException("catalog fracture response/kind mismatch");
             // Catalog6 extends the same bounded normal-energy response to all
             // source-joined whole objects. Catalog5 keeps its fence-only
             // projection, including zero-energy trees and ordinary fragiles.
-            if (version == 6 ? energy != FractureResponse.EnergyJ :
+            if (version is 6 or 7 ? energy != FractureResponse.EnergyJ :
                 energy is not (0 or FractureResponse.EnergyJ) || (energy > 0 && kind != "fragile"))
                 throw new InvalidDataException("catalog fracture energy/kind mismatch");
             if (id <= previous || instance < 0 || instance >= source.InstanceCount || !instances.Add(instance) ||
                 first < 0 || count < 1 || count > 4096 || (long)first + count > source.TriangleCount)
                 throw new InvalidDataException("catalog identity/span bound");
-            previous = id; entries.Add(new(id, instance, first, count, revision, kind, energy));
+            previous = id; entries.Add(new(id, instance, first, count, revision, kind, energy, response));
         }
         var spans = entries.OrderBy(e => e.FirstTriangle).ToArray();
         for (int i = 1; i < spans.Length; i++)

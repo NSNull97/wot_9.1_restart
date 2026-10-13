@@ -1,3 +1,14 @@
+# P05B — night14 checkpoint, real cadence evidence next
+
+Moving-fence scoped checks PASS; fresh full gateway755/755. Existing403 fences
+use domain6/worker7 total-linear policy, with exact source/identity projection.
+Source-profile real gateway ACK/rejoin, paired side/chain/ram and unchanged13
+handling regressions passed. See [report](research/P05B_MOVING_FENCE_CONTACT.md)
+and P05B/night14-checkpoint.json. Actual wheel-only fixture remains NOT_RUN;
+static pressure still FAIL/OPEN. Do not claim full automatic/native acceptance.
+Continue existing overnight P05B with bounded real-worker cadence evidence.
+No native launch/input/merge, preserve P09B. Rollback: candidate13/checkpoint9f384fa.
+
 # P05B — night13 checkpoint, moving-fence phase next
 
 Candidate13 coasting/transition automatic gate PASS; native owner NOT_RUN.

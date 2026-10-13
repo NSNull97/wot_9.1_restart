@@ -11,6 +11,7 @@ internal sealed class FractureResponse
 {
     public const string Policy = "test_lab-fence-energy-v1";
     public const string WholeObjectPolicy = "test_lab-whole-object-energy-v1";
+    public const string FenceTotalPolicy = "test_lab-fence-total-energy-v1";
     public const int EnergyJ = 8000, MaxFractures = 32;
     public sealed record Receipt(uint ObjectId, int Substep, int Order, Vector3 Point, Vector3 Normal,
         Vector3 Velocity, Vector3 BudgetBefore, Vector3 BudgetAfter, Vector3 SolverBefore, Vector3 SolverAfter, int EnergyJ);
@@ -18,6 +19,7 @@ internal sealed class FractureResponse
     private readonly bool wholeObjectEnergy;
     private readonly int ownerThread = Environment.CurrentManagedThreadId;
     private readonly HashSet<uint> eligible;
+    private readonly HashSet<uint> totalLinear;
     private readonly Dictionary<uint, bool> decisions = new();
     private readonly HashSet<uint> admitted = new();
     private readonly List<Receipt> receipts = new();
@@ -35,8 +37,10 @@ internal sealed class FractureResponse
         if (!float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || !catalog.Fractures)
             throw new InvalidDataException("fracture profile/mass mismatch");
         mass = massKg;
-        wholeObjectEnergy = catalog.Version == 6;
+        wholeObjectEnergy = catalog.Version is 6 or 7;
         eligible = catalog.Entries.Where(e => e.RamEnergyJ == EnergyJ).Select(e => e.ObjectId).ToHashSet();
+        totalLinear = catalog.Version == 7 ? catalog.Entries.Where(e => e.RamResponse == "total_linear")
+            .Select(e => e.ObjectId).ToHashSet() : new();
     }
     public void BeginAdvance()
     {
@@ -71,15 +75,16 @@ internal sealed class FractureResponse
         if (decisions.Count >= MaxFractures) { Interlocked.Exchange(ref fault, 1); return false; }
         decisions.Add(objectId, false);
         normal /= length;
-        if (!Eligible(velocity, normal) || !Eligible(budget, normal)) return false;
+        bool total = totalLinear.Contains(objectId);
+        if (!Eligible(velocity, normal, total) || !Eligible(budget, normal, total)) return false;
         if (receipts.Count >= MaxFractures) { Interlocked.Exchange(ref fault, 1); return false; }
-        Vector3 before = budget; budget = Reduce(budget, normal, mass);
+        Vector3 before = budget; budget = total ? ReduceTotal(budget, mass) : Reduce(budget, normal, mass);
         admitted.Add(objectId); decisions[objectId] = true;
         receipts.Add(new Receipt(objectId, substep, receipts.Count + 1, point, normal, velocity,
             before, budget, Vector3.Zero, Vector3.Zero, EnergyJ));
         return true;
     }
-    private bool Eligible(Vector3 v, Vector3 normal)
+    private bool Eligible(Vector3 v, Vector3 normal, bool total)
     {
         // Admission is recomputed by the gateway from these exact f32 values.
         // Use double products in both implementations at the hard threshold.
@@ -90,7 +95,7 @@ internal sealed class FractureResponse
         // whose slower closing motion already supplies the required energy.
         // Keep that historical project floor for catalog5 rollback/replay.
         return double.IsFinite(speed2) && (wholeObjectEnergy || speed2 >= 1) && speed2 <= 625 && closing >= .1
-            && .5 * mass * closing * closing >= EnergyJ;
+            && (total ? .5 * mass * speed2 : .5 * mass * closing * closing) >= EnergyJ;
     }
     public Vector3 CompleteSubstep(Vector3 actualSolverVelocity, Action<uint> removeBody)
     {
@@ -100,7 +105,8 @@ internal sealed class FractureResponse
         for (int i = 0; i < receipts.Count; i++)
         {
             var receipt = receipts[i]; if (receipt.Substep != substep) continue;
-            Vector3 before = result; result = Reduce(result, receipt.Normal, mass);
+            Vector3 before = result;
+            result = totalLinear.Contains(receipt.ObjectId) ? ReduceTotal(result, mass) : Reduce(result, receipt.Normal, mass);
             receipts[i] = receipt with { SolverBefore = before, SolverAfter = result };
             removeBody(receipt.ObjectId);
         }
@@ -113,11 +119,22 @@ internal sealed class FractureResponse
         float remaining = MathF.Sqrt(MathF.Max(0, closing * closing - 2 * EnergyJ / massKg));
         return v - normal * (closing - remaining);
     }
+    // Catalog7 fence policy: dissipate total linear energy radially. Shared
+    // budget and post-solver chains use the same operator; no wall refund.
+    // Keep intermediates double and cast each output once for Rust parity.
+    public static Vector3 ReduceTotal(Vector3 v, float massKg)
+    {
+        double speed2 = (double)v.X * v.X + (double)v.Y * v.Y + (double)v.Z * v.Z;
+        double energy = .5 * massKg * speed2;
+        if (energy <= EnergyJ) return Vector3.Zero;
+        double factor = Math.Sqrt(1 - EnergyJ / energy);
+        return new((float)(v.X * factor), (float)(v.Y * factor), (float)(v.Z * factor));
+    }
     private static bool Bounded(Vector3 v, float maximum) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z)
         && MathF.Abs(v.X) <= maximum && MathF.Abs(v.Y) <= maximum && MathF.Abs(v.Z) <= maximum;
 }
 
-// Catalog6 only: decide from the whole real body pair before the first contact
+// Catalog6/7: decide from the whole real body pair before the first contact
 // callback returns any constraint settings. Looking at a later manifold would
 // be too late to undo an earlier solid constraint. This query never initiates
 // destruction by itself: Program invokes it only after an actual hull callback.

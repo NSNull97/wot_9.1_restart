@@ -12,7 +12,7 @@ pub const MAX_EXTENDED_CATALOG_OBJECTS:usize=2048;
 pub const MAX_EXTENDED_REMOVED_OBJECTS:usize=2048;
 
 #[derive(Clone,Debug,PartialEq,Eq)]
-pub struct CatalogEntry {object_id:u32,instance_id:u32,first_triangle:u32,triangle_count:u32,object_revision:String,kind:String,ram_energy_j:u32}
+pub struct CatalogEntry {object_id:u32,instance_id:u32,first_triangle:u32,triangle_count:u32,object_revision:String,kind:String,ram_energy_j:u32,ram_response:Option<String>}
 impl CatalogEntry {
     pub fn object_id(&self)->u32{self.object_id}
     pub fn instance_id(&self)->u32{self.instance_id}
@@ -21,6 +21,7 @@ impl CatalogEntry {
     pub fn object_revision(&self)->&str{&self.object_revision}
     pub fn kind(&self)->&str{&self.kind}
     pub fn ram_energy_j(&self)->u32{self.ram_energy_j}
+    pub fn ram_response(&self)->Option<&str>{self.ram_response.as_deref()}
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct CatalogSpec {pub(super) path:PathBuf,pub(super) sha256:String,map_id:MapId,entries:Vec<CatalogEntry>,contacts:bool,version:u8}
@@ -29,7 +30,7 @@ impl CatalogSpec {
         let value=json_catalog_extended(raw,1024*1024)?;
         // Reapply the historical parser budgets as well as row bounds. Only
         // explicit v4 catalogs may use the larger array/node envelope.
-        if !matches!(value["version"].as_u64(),Some(4|5|6)){return json_catalog(raw,1024*1024);}
+        if !matches!(value["version"].as_u64(),Some(4|5|6|7)){return json_catalog(raw,1024*1024);}
         Ok(value)
     }
     pub fn load(local_root:&Path,path:&Path,sha256:&str)->io::Result<Self>{
@@ -52,19 +53,21 @@ impl CatalogSpec {
         let version=uint(&v["version"])?;
         if version==2 { fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","objects"])?; }
         else if version==3||version==4 { fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects"])?; if v["contacts"]!=Value::Bool(true){return Err(bad());} }
-        else if version==5||version==6 {fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects","ram_policy"])?;
-            if v["contacts"]!=Value::Bool(true)||text(v,"ram_policy")?!=if version==6{fracture::WHOLE_POLICY}else{fracture::POLICY}{return Err(bad());}}
+        else if matches!(version,5|6|7) {fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects","ram_policy"])?;
+            let policy=match version{7=>fracture::TOTAL_POLICY,6=>fracture::WHOLE_POLICY,_=>fracture::POLICY};
+            if v["contacts"]!=Value::Bool(true)||text(v,"ram_policy")?!=policy{return Err(bad());}}
         else{return Err(bad());}
         let map_id=MapId::from_asset(text(v,"map")?)?;let profile=map_id.spec();
         if text(v,"profile")?!="test_lab"
             || text(v,"physics_manifest_sha256")?!=profile.physics_manifest_sha256
             || text(v,"projectile_manifest_sha256")?!=profile.projectile_manifest_sha256{return Err(bad());}
         let rows=v["objects"].as_array().ok_or_else(bad)?;
-        let limit=match version{4|5|6=>MAX_EXTENDED_CATALOG_OBJECTS,3=>MAX_CONTACT_CATALOG_OBJECTS,_=>MAX_CATALOG_OBJECTS};
+        let limit=match version{4|5|6|7=>MAX_EXTENDED_CATALOG_OBJECTS,3=>MAX_CONTACT_CATALOG_OBJECTS,_=>MAX_CATALOG_OBJECTS};
         if rows.is_empty() || rows.len()>limit{return Err(bad());}
         let mut entries=Vec::new();let mut instances=BTreeSet::new();let mut previous=0;
         for row in rows {
-            if version>=5 {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision","ram_energy_j"])?;}
+            if version==7 {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision","ram_energy_j","ram_response"])?;}
+            else if version>=5 {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision","ram_energy_j"])?;}
             else if version>=3 {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision"])?;} else {fields(row,&["object_id","instance_id","first_triangle","triangle_count","object_revision"])?;}
             let id=uint(&row["object_id"])?;let instance=uint(&row["instance_id"])?;
             let first=uint(&row["first_triangle"])?;let count=uint(&row["triangle_count"])?;
@@ -72,12 +75,17 @@ impl CatalogSpec {
             let kind=if version>=3{text(row,"kind")?}else{"fragile"};
             if !matches!(kind,"tree"|"fragile"){return Err(bad());}
             let energy=if version>=5{uint(&row["ram_energy_j"])?}else{0};
-            if if version==6{energy!=8_000}else{!matches!(energy,0|8_000)||(energy!=0&&kind!="fragile")}{return Err(bad());}
+            if if matches!(version,6|7){energy!=8_000}else{!matches!(energy,0|8_000)||(energy!=0&&kind!="fragile")}{return Err(bad());}
+            let response=if version==7 {
+                let response=text(row,"ram_response")?;
+                if !matches!(response,"total_linear"|"normal_linear") || response=="total_linear"&&kind!="fragile" {return Err(bad());}
+                Some(response.to_owned())
+            }else{None};
             if id<=previous || id>u32::MAX as u64 || instance>=profile.instance_count as u64 || !instances.insert(instance)
                 || count==0 || count>4096 || first>profile.physics_triangle_count as u64
                 || first.checked_add(count).is_none_or(|end|end>profile.physics_triangle_count as u64){return Err(bad());}
             previous=id;entries.push(CatalogEntry{object_id:id as u32,instance_id:instance as u32,first_triangle:first as u32,
-                triangle_count:count as u32,object_revision:revision.into(),kind:kind.into(),ram_energy_j:energy as u32});
+                triangle_count:count as u32,object_revision:revision.into(),kind:kind.into(),ram_energy_j:energy as u32,ram_response:response});
         }
         let mut spans=entries.iter().collect::<Vec<_>>();spans.sort_by_key(|e|e.first_triangle);
         if spans.windows(2).any(|p|p[1].first_triangle<p[0].first_triangle+p[0].triangle_count){return Err(bad());}
@@ -122,7 +130,7 @@ impl CatalogSpec {
     pub fn contacts(&self)->bool{self.contacts}
     pub fn version(&self)->u8{self.version}
     fn ipc_version(&self)->u8{if self.version>=5{5}else if self.contacts{4}else{3}}
-    fn max_removed(&self)->usize{match self.version{4|5|6=>MAX_EXTENDED_REMOVED_OBJECTS,3=>MAX_CONTACT_REMOVED_OBJECTS,_=>MAX_REMOVED_OBJECTS}}
+    fn max_removed(&self)->usize{match self.version{4|5|6|7=>MAX_EXTENDED_REMOVED_OBJECTS,3=>MAX_CONTACT_REMOVED_OBJECTS,_=>MAX_REMOVED_OBJECTS}}
     pub fn map_id(&self)->MapId{self.map_id}
     fn verify_map(&self,map:&MapSpec)->io::Result<()>{
         if map.asset!=self.map_id.asset() || map.arena_type_id!=self.map_id.arena_type_id(){return Err(bad());}Ok(())
@@ -266,6 +274,68 @@ pub(super) mod tests {
         let raw=serde_json::to_vec(&v).unwrap();
         CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id:MapId::Karelia,
             entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:6}
+    }
+    fn response_descriptor(entries:&[(&str,&str)])->Value {
+        let mut v=descriptor(entries.len());v["version"]=7.into();v["contacts"]=true.into();v["ram_policy"]=fracture::TOTAL_POLICY.into();
+        for (row,(kind,response)) in v["objects"].as_array_mut().unwrap().iter_mut().zip(entries){
+            row["kind"]=(*kind).into();row["ram_energy_j"]=8_000.into();row["ram_response"]=(*response).into();
+        }v
+    }
+    pub(in super::super) fn response_spec(entries:&[(&str,&str)])->CatalogSpec {
+        let v=response_descriptor(entries);let raw=serde_json::to_vec(&v).unwrap();
+        CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id:MapId::Karelia,
+            entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:7}
+    }
+    #[test]fn total_catalog_requires_exact_new_semantics_and_retains_old_field_sets(){
+        let rows=[("fragile","total_linear"),("tree","normal_linear"),("fragile","normal_linear")];
+        let spec=response_spec(&rows);assert_eq!(spec.ipc_version(),5);assert_eq!(spec.max_removed(),2048);
+        assert_eq!(spec.entries()[0].ram_response(),Some("total_linear"));
+        assert_eq!(spec.entries()[1].ram_response(),Some("normal_linear"));
+        for (field,value) in [("ram_response",Value::Null),("ram_response","total".into()),
+            ("ram_response",true.into()),("ram_energy_j",0.into()),("ram_energy_j",serde_json::json!(8000.0)),
+            ("kind","tree".into())] {
+            let mut invalid=response_descriptor(&rows);invalid["objects"][0][field]=value;
+            assert!(CatalogSpec::validate(&invalid).is_err(),"{field}");
+        }
+        let mut missing=response_descriptor(&rows);missing["objects"][0].as_object_mut().unwrap().remove("ram_response");
+        assert!(CatalogSpec::validate(&missing).is_err());
+        for policy in [fracture::POLICY,fracture::WHOLE_POLICY,"unknown"] {
+            let mut invalid=response_descriptor(&rows);invalid["ram_policy"]=policy.into();assert!(CatalogSpec::validate(&invalid).is_err());
+        }
+        for version in 2..=6 {
+            let mut old=descriptor(1);old["version"]=version.into();
+            if version>=3 {old["contacts"]=true.into();old["objects"][0]["kind"]="fragile".into();}
+            if version>=5 {old["ram_policy"]=if version==6{fracture::WHOLE_POLICY}else{fracture::POLICY}.into();old["objects"][0]["ram_energy_j"]=8000.into();}
+            assert_eq!(CatalogSpec::validate(&old).unwrap()[0].ram_response(),None);
+            old["objects"][0]["ram_response"]="normal_linear".into();assert!(CatalogSpec::validate(&old).is_err());
+        }
+    }
+    #[test]fn total_catalog_preserves_capacity_source_spans_and_rejects_future_versions(){
+        let rows=vec![("fragile","total_linear");2048];let v=response_descriptor(&rows);
+        let raw=serde_json::to_vec(&v).unwrap();assert!(CatalogSpec::parse_manifest(&raw).is_ok());
+        let spec=response_spec(&rows);spec.verify_source(&source_for(&spec)).unwrap();
+        Scene::new(&spec,&(1..=2048).collect::<Vec<_>>()).unwrap();
+        let too_many=response_descriptor(&vec![("fragile","total_linear");2049]);
+        assert!(CatalogSpec::validate(&too_many).is_err());
+        assert!(CatalogSpec::parse_manifest(&serde_json::to_vec(&too_many).unwrap()).is_err());
+        let mut wrong_source=source_for(&spec);wrong_source["instances"][0]["triangles"]=41.into();
+        assert!(spec.verify_source(&wrong_source).is_err());
+        let mut wrong_version=v;wrong_version["version"]=8.into();assert!(CatalogSpec::validate(&wrong_version).is_err());
+    }
+    #[test]fn total_catalog_exact_prohorovka_export_changes_only_declared_response(){
+        let local=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
+        let base=local.join("evidence/20261013-p05b-tracked-handling-01");
+        let new=CatalogSpec::load(&local,&base.join("night-fence-export01/catalog/physics-removals.json"),
+            "9c40f5bdeb8b77364805f31f18a9c6943a811630f7676fd10c6ec55d8ec5fd5e").unwrap();
+        let old=CatalogSpec::load(&local,&base.join("ram-import01/physics-removals.json"),
+            "6d9a57de3b86f1e3b9a66390ff0968677b9a29e9238ca8559158d99dfb3dce16").unwrap();
+        assert_eq!(new.version(),7);assert_eq!(new.ipc_version(),5);assert_eq!(new.entries().len(),1038);
+        assert_eq!(new.entries().iter().filter(|e|e.ram_response()==Some("total_linear")).count(),403);
+        assert_eq!(new.entries().iter().filter(|e|e.ram_response()==Some("normal_linear")).count(),635);
+        assert_eq!(new.entries().iter().filter(|e|e.kind()=="tree").count(),626);
+        for (new,old) in new.entries().iter().zip(old.entries()) {
+            let mut projected=new.clone();projected.ram_response=None;assert_eq!(&projected,old);
+        }
     }
     #[test]fn whole_catalog_is_explicit_bounded_and_does_not_relax_old_tree_policy(){
         let spec=whole_spec(2048);assert_eq!(spec.ipc_version(),5);assert_eq!(spec.max_removed(),2048);

@@ -23,6 +23,9 @@ mod cadence_tests;
 #[path="server_fracture_real_tests.rs"]
 mod fracture_real_tests;
 #[cfg(test)]
+#[path="server_fence_total_real_tests.rs"]
+mod fence_total_real_tests;
+#[cfg(test)]
 #[path="server_is7_real_tests.rs"]
 mod is7_real_tests;
 #[cfg(test)]
@@ -461,11 +464,16 @@ impl IntegratedRuntime {
         for event in &vehicle_events {
             let closing_speed=event.velocity.iter().zip(event.normal).map(|(v,n)|v*n).sum::<f32>();
             let energy_j=0.5*event.mass_kg*closing_speed*closing_speed;
+            let closing_f64=event.velocity.iter().zip(event.normal).map(|(v,n)|f64::from(*v)*f64::from(n)).sum::<f64>();
+            let normal_energy_j=0.5*f64::from(event.mass_kg)*closing_f64*closing_f64;
+            let ram_response=candidate.fragiles.as_ref().and_then(|s|s.catalog.objects.iter().find(|o|o.object_id==event.object_id)
+                .and_then(|o|s.catalog.ram_response(o))).unwrap_or("normal_linear");
+            let admission_energy_j=if ram_response=="total_linear" {0.5*f64::from(event.mass_kg)*event.velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}else{normal_energy_j};
             println!("SHARED_VEHICLE_CONTACT battle={} slot={} object_id={} instance_id={} kind={} substep={} closing_speed={} scene_before={} scene_after={} fallen_tree={:?}",
                 candidate.id,event.shooter,event.object_id,event.instance_id,event.kind,event.substep,
                 closing_speed,event.scene_before,event.scene_after,event.fallen_tree);
-            println!("SHARED_VEHICLE_CONTACT_ENERGY battle={} object_id={} mass_kg={} closing_speed={} energy_j={} policy_min_energy_j={}",
-                candidate.id,event.object_id,event.mass_kg,closing_speed,energy_j,super::fragiles::RAMMING_MIN_ENERGY_J);
+            println!("SHARED_VEHICLE_CONTACT_ENERGY battle={} object_id={} mass_kg={} closing_speed={} energy_j={} normal_energy_j={} admission_energy_j={} ram_response={} policy_min_energy_j={}",
+                candidate.id,event.object_id,event.mass_kg,closing_speed,energy_j,normal_energy_j,admission_energy_j,ram_response,super::fragiles::RAMMING_MIN_ENERGY_J);
         }
         if candidate.scene_version() != world.scene_version() {
             if self.catalog.is_none()&&(self.removal.is_none() || world.scene_version() != 0 || candidate.scene_version() != 1) {
@@ -615,12 +623,21 @@ pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_pa
     let catalog=if let Some((path,sha))=catalog_path{
         let path=Path::new(path);let catalog=Arc::new(super::fragiles::Catalog::load(&pool.local_root,path,sha)?);
         let worker=crate::map_drive_worker091::CatalogSpec::load(&pool.local_root,&path.parent().ok_or_else(model::bad)?.join(&catalog.worker_file),&catalog.worker_sha256)?;
-        if catalog.map!=map||worker.map_id()!=map||catalog.contacts!=worker.contacts()||worker.version()!=catalog.version+1||worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
-            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=b.kind.worker_kind()
-            ||a.ram_energy_j()!=if catalog.version==5||catalog.version==4&&matches!(b.kind,super::fragiles::ObjectKind::MovementFragile){super::fragiles::RAMMING_MIN_ENERGY_J as u32}else{0}){return Err(model::bad().into());}
+        validate_catalog_projection(&catalog,&worker,map)?;
         Some((catalog,worker))
     }else{None};
     serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle)
+}
+
+fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::map_drive_worker091::CatalogSpec,map:MapId)->io::Result<()> {
+    if catalog.map!=map||worker.map_id()!=map||catalog.worker_sha256!=worker.sha256()||catalog.contacts!=worker.contacts()
+        ||worker.version()!=catalog.version+1||worker.entries().len()!=catalog.objects.len()
+        ||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
+            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle
+            ||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=b.kind.worker_kind()
+            ||a.ram_response()!=catalog.ram_response(b)
+            ||a.ram_energy_j()!=if catalog.version>=5||catalog.version==4&&matches!(b.kind,super::fragiles::ObjectKind::MovementFragile){super::fragiles::RAMMING_MIN_ENERGY_J as u32}else{0}){return Err(model::bad());}
+    Ok(())
 }
 
 fn validate_vehicle_binding(vehicle:VehicleKind, pool:&crate::map_drive_worker091::Pool,
