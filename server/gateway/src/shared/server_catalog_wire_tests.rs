@@ -121,7 +121,7 @@ fn ack_current_and_flush(s: &mut Session, now: Instant) {
 }
 
 #[test]
-fn full_contact_catalog_stays_bounded_and_stages_all_117_area_creates() {
+fn full_contact_catalog_stays_bounded_through_ready_phase_and_stages_all_117_area_creates() {
     let now = Instant::now();
     let world = many_chunk_world(now);
     let (mut s, _) = driving(now);
@@ -148,8 +148,17 @@ fn full_contact_catalog_stays_bounded_and_stages_all_117_area_creates() {
     assert!(s.shared.as_ref().unwrap().pending_area_requests.len() <= 1);
 
     let mut requested = 6usize;
+    let mut ready_phase = false;
     for _ in 0..80 {
         ack_current_and_flush(&mut s, now);
+        // A native client enters Driving after its own vehicle binding is
+        // acknowledged, while the later area batches may still be pending.
+        // Keep this transition in the synthetic wire regression so the
+        // catalog cannot silently depend on Phase::Entities forever.
+        if !ready_phase {
+            s.shared.as_mut().unwrap().phase = Phase::Driving;
+            ready_phase = true;
+        }
         let announced = s.shared.as_ref().unwrap().announced_areas;
         if requested < announced {
             let mut batch = Vec::new();

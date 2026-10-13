@@ -327,7 +327,12 @@ impl Session {
     /// request for a later area is rejected until its announcement is sent.
     pub(super) fn flush_shared_announcements(&mut self, events: &mut Vec<String>) -> io::Result<()> {
         let Some(shared) = self.shared.as_ref() else { return Ok(()); };
-        if shared.phase != Phase::Entities || shared.announced_areas == 0
+        // Native READY moves the session to Driving as soon as the own
+        // vehicle binding is acknowledged.  Area announcements still have
+        // to drain in that phase; otherwise a large catalog stalls at the
+        // last batch known before READY and the peer eventually overflows
+        // its application window with retries.
+        if !matches!(shared.phase, Phase::Entities | Phase::Driving) || shared.announced_areas == 0
             || self.tx.len() != 0 || !shared.announcement_parts.iter().all(|(_, ack)| *ack)
             || !shared.pending_entity_requests.is_empty() || !shared.pending_area_requests.is_empty()
             || shared.pending_area_scene || shared.area_creation.is_some_and(|(_, ack)| !ack)
