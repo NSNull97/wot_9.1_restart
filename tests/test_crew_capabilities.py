@@ -229,6 +229,27 @@ class CrewCapabilitiesTests(unittest.TestCase):
             with self.subTest(allowed=allowed), self.assertRaises(ValueError):
                 policy._CrewChangeGuard(self.classes, self.messages, self.record, allowed)
 
+    def test_transfer_opt_in_is_exact_callbacks_without_personal_case_unload_or_new_actions(self):
+        guard = policy._CrewChangeGuard(self.classes, self.messages, self.record,
+                                       ('open_recruit', 'recruit'), allow_transfer=True)
+        guard.install()
+        for class_name, name, action, is_static in policy.TARGETS:
+            actual = self.classes[class_name].__dict__[name]
+            original = self.originals[(class_name, name)]
+            if action in ('open_recruit', 'recruit') or (class_name, name) in policy.TRANSFER_TARGETS:
+                self.assertIs(actual, original)
+            else:
+                self.assertIsNot(actual, original)
+        self.classes['PersonalCase']().unloadTankman(1)
+        self.assertEqual(self.native_calls, [])
+        guard.restore()
+
+    def test_transfer_requires_boolean_and_preceding_explicit_recruitment_policy(self):
+        for allowed, transfer in (((), True), (('open_recruit', 'recruit'), 1),
+                                   (('open_recruit', 'recruit'), 'yes')):
+            with self.subTest(allowed=allowed, transfer=transfer), self.assertRaises(ValueError):
+                policy._CrewChangeGuard(self.classes, self.messages, self.record, allowed, transfer)
+
 
 if __name__ == '__main__':
     unittest.main()

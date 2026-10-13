@@ -25,6 +25,7 @@ MODULES = ('sr_interactive', 'collision_oracle', 'destructible_probe', 'destruct
 LOGS = ('python.log', 'Influx_PS.log', 'Influx_PS.bak')
 MODULES += ('p09d_ammo_ui', 'p09d_ammo_scenario')
 MODULES += ('p04d_crew_ui',)
+MODULES += ('p04f_crew_ui',)
 
 
 def digest(payload):
@@ -116,10 +117,13 @@ def prepare(args):
     shared_lab = bool(getattr(args, 'enable_shared_lab', False))
     ammo_service = bool(getattr(args, 'enable_p09d_ammo_service', False))
     recruitment = bool(getattr(args, 'enable_crew_recruitment', False))
+    transfer = bool(getattr(args, 'enable_crew_transfer', False))
     if ammo_service and (shared_lab or args.enable_map_drive):
         raise ValueError('P09D ammunition service is restricted to the native hangar')
     if recruitment and (copy_info is None or not ammo_service or shared_lab or args.enable_map_drive):
         raise ValueError('P04D recruitment requires an explicit isolated copy and P09D native hangar service')
+    if transfer and (copy_info is None or not recruitment or not ammo_service or shared_lab or args.enable_map_drive):
+        raise ValueError('P04F transfer requires isolated native hangar with recruitment and ammunition service')
     if shared_lab and (copy_info is None or not args.enable_map_drive):
         raise ValueError('Shared lab requires an explicit isolated copy and native arena services')
     endpoint = args.endpoint
@@ -241,6 +245,8 @@ def prepare(args):
         settings['enable_p09d_ammo_service'] = True
     if recruitment:
         settings['enable_crew_recruitment'] = True
+    if transfer:
+        settings['enable_crew_transfer'] = True
     if shared_lab:
         settings['enable_shared_lab'] = True
     if catalog_spec is not None:
@@ -419,6 +425,8 @@ def main():
                       help='Native maintenance for the two source-bound MS-1 and IS-7 mounts')
     prep.add_argument('--enable-crew-recruitment', action='store_true',
                       help='One test_lab free100 MS-1 driver; requires isolated copy and P09D native hangar service')
+    prep.add_argument('--enable-crew-transfer', action='store_true',
+                      help='Original MS-1 crew transfer callbacks; requires explicit recruitment and ammunition service')
     prep.add_argument('--capture-hangar', action='store_true',
                       help='One passive native Hangar PNG; no login, input or UI transitions')
     prep.add_argument('--capture-ui-passive', action='store_true',

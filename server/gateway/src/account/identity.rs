@@ -49,7 +49,7 @@ fn bounded_file(path:&Path,max:u64)->io::Result<Vec<u8>> {
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
-    pub ammo_service:bool,pub crew_service:bool,
+    pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -62,6 +62,10 @@ impl Config {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("crew service must be explicit boolean")),
         };
         if crew_service && !ammo_service {return Err(invalid("crew service requires shared ammunition service"));}
+        let crew_transfer=match value.remove("crew_transfer") {
+            None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("crew transfer must be explicit boolean")),
+        };
+        if crew_transfer && !crew_service {return Err(invalid("crew transfer requires shared crew service"));}
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let login_bind=local_address(text(&value,"login_bind")?)?;
@@ -78,7 +82,7 @@ impl Config {
         if token.len()!=43 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b==b'_' || b==b'-') {return Err(invalid("service token must be exactly 43 base64url characters"));}
         let seconds=value["session_duration_seconds"].as_u64().ok_or_else(||invalid("session duration integer"))?;
         if !(600..=7200).contains(&seconds) {return Err(invalid("session duration must be 600..7200 seconds"));}
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer})
     }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
@@ -92,7 +96,9 @@ impl Config {
         verify_fixture_identity(&profile)?;
         if self.ammo_service {
             let binding=crate::ammo_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id)?;
-            if self.crew_service {
+            if self.crew_transfer {
+                crate::crew_transfer091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
+            } else if self.crew_service {
                 crate::crew_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
             }
         }
@@ -145,6 +151,16 @@ impl Config {
         if status!=200 {return Err(invalid("crew service HTTP failure; outcome must be recovered by fresh login"));}
         service_reply(&bytes,profile,command_key,expected_revision,wire_revision,"recruited")
     }
+
+    pub fn transfer_crew(&self,profile:&Profile,command_key:&str,expected_revision:u64,
+                         wire_revision:i64,request:crate::crew_transfer091::Request)->io::Result<AmmoReply> {
+        if !self.crew_transfer || !self.crew_service || !self.ammo_service {return Err(invalid("crew transfer is not enabled"));}
+        let body=crate::crew_transfer091::service_request(&profile.account_id,profile.database_id,command_key,
+            expected_revision,wire_revision,request)?;
+        let (status,bytes)=self.post("/internal/native/crew-transfer",&body,Duration::from_secs(20))?;
+        if status!=200 {return Err(invalid("crew transfer HTTP failure; recover outcome by fresh login"));}
+        service_reply(&bytes,profile,command_key,expected_revision,wire_revision,"transferred")
+    }
 }
 
 pub struct AmmoReply {pub serviced:bool,pub revision:u64,pub wire_revision:i64,
@@ -160,7 +176,7 @@ fn ammo_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64)->io::
 
 fn service_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,success_status:&str)->io::Result<AmmoReply> {
     if !(5..i32::MAX as u64).contains(&expected) || !(1..i32::MAX as i64).contains(&wire)
-        || !matches!(success_status,"serviced"|"recruited") {return Err(invalid("service reply cursor/status boundary"));}
+        || !matches!(success_status,"serviced"|"recruited"|"transferred") {return Err(invalid("service reply cursor/status boundary"));}
     let value=object(bytes,&["status","account_id","native_database_id","command_key","revision",
         "wire_revision","update_hex","replayed","result_code"])?;
     if text(&value,"account_id")?!=profile.account_id || value["native_database_id"].as_i64()!=Some(profile.database_id as i64)
@@ -359,6 +375,12 @@ mod tests {
         for bad in [Value::from("true"),Value::from(1),Value::Null] {
             let mut row=enabled.clone();row["crew_service"]=bad;assert!(load(&row).is_err());
         }
+        assert!(!load(&enabled).unwrap().crew_transfer);
+        let mut transfer=enabled.clone();transfer["crew_transfer"]=true.into();assert!(load(&transfer).unwrap().crew_transfer);
+        for bad in [Value::Null,0.into(),"true".into(),serde_json::json!({})] {
+            let mut row=transfer.clone();row["crew_transfer"]=bad;assert!(load(&row).is_err());
+        }
+        transfer["crew_service"]=false.into();assert!(load(&transfer).is_err());
         enabled["ammunition_service"]=false.into();assert!(load(&enabled).is_err());
         enabled.as_object_mut().unwrap().remove("ammunition_service");assert!(load(&enabled).is_err());
     }

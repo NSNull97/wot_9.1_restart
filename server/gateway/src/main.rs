@@ -24,6 +24,8 @@ mod hangar091;
 mod ammo_service091;
 #[path = "account/crew_service.rs"]
 mod crew_service091;
+#[path = "account/crew_transfer.rs"]
+mod crew_transfer091;
 #[path = "account/identity.rs"]
 mod identity091;
 #[path = "protocol/capture.rs"]
