@@ -1,4 +1,33 @@
-## 2026-10-13 — P03M IS-7 runtime integration
+## 2026-10-13 — P03M accepted; shared handling remains open P05 debt
+
+**PASS_OWNER_IS7_PROFILE_SHARED_HANDLING_DEBT_OPEN.** Owner explicitly clarified
+that IS-7 acceptance is OK and broken driving is an earlier shared physics
+failure. P03M's source-bound playable vehicle/profile is accepted; this does
+not accept general driving quality or historical physics. The earlier weak
+pivot/car-like turn was already observed on2026-10-06 in
+[P02 drive limitations](research/P02_DRIVE_LIMITATIONS.md). P05A on2026-10-08
+added offline diagnostics only. Current owner observations add sluggish
+acceleration/braking, no stationary pivot, IS-7 drift and MS-1 lateral lurch.
+Existing [P05 movement plan](plans/P05_MOVEMENT_COLLISION_RECONCILIATION.md)
+keeps that debt open. The new IS-7 v2 forward-arc policy and low lateral
+friction are not presumed innocent merely because the underlying debt is old.
+
+Run `is7run03` is stopped: root A18056/B51972, gateway43724 and both workers
+are absent; both installation and p03m namespace restorations PASS. Full
+server/native logs contain no recorded server faults/client diagnostic errors
+or stderr. Six scene commits/twelve worker ACK records and eleven shots are
+observed; these counts alone do not prove every visual/contact outcome.
+Transport capture reached its limit once; full raw-packet coverage is not claimed.
+Final owner evidence: `local/evidence/20261013-p03m-is7-01/native-is7/is7run03-owner-final/receipt.json`.
+All230 runtime hashes still match the tested observer-final binding; no new
+runtime code or physics tuning was performed in this feedback/closure turn.
+Prior676 gateway/69 Python/24 paired physics checks remain scoped evidence,
+not proof of good driving. One Python symlink test remains NOT_RUN.
+
+Next: resume the existing P05 handling work with measurable pivot, acceleration,
+braking and lateral-slip criteria before selecting controller changes.
+
+## 2026-10-13 — P03M IS-7 runtime integration (historical setup)
 
 P06R was accepted, merged with `--no-ff` and pushed at
 `eb054618bd0eae1ae23bba42a0f875969ac2d24e`; remote SHA was verified.

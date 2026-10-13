@@ -1,9 +1,51 @@
 # P03M — source-bound IS-7 runtime
 
-Status: PASS_AUTOMATIC_PRIVATE; native owner gate NOT_RUN.
+Status: PASS_OWNER_IS7_PROFILE_SHARED_HANDLING_DEBT_OPEN.
 Branch: `codex/p03m-is7-runtime-profile`. Accepted baseline is P06R merge
 `eb054618bd0eae1ae23bba42a0f875969ac2d24e`, pushed and remote-verified.
 Owner accepted the fence-chain passage before requesting this next vehicle.
+
+## Owner acceptance and stopped stand — 2026-10-13
+
+Owner first reported car-like driving, sluggish acceleration/braking, absent
+stationary pivot, IS-7 drifting and MS-1 moving abruptly sideways. The subsequent
+explicit clarification accepts IS-7 and assigns the broken driving to the
+earlier shared physics debt. That clarification closes P03M's playable profile
+scope; it does not turn failed handling into PASS. Destruction was described
+as behaving like MS-1, without a claim that every object is destructible.
+
+The earlier issue is independently documented in `P02_DRIVE_LIMITATIONS.md`
+(2026-10-06); `P05A_PIVOT_DIAGNOSTICS.md` (2026-10-08) only added diagnostics.
+Current config2 steering-only deliberately applies forward motor with positive
+track ratios1/.2. This is an approximate policy, not a source-proven consequence
+of `rotationIsAroundCenter=false`. Exact original steering law, Jolt drivetrain
+mapping and acceptable lateral slip remain open in the existing P05 plan.
+Prior turn tests measured finite/yaw motion, not acceptable tank handling.
+
+Run03 is now stopped. A18056/B51972/gateway43724 identities were verified before
+stop; both installation rollback and namespace rollback passed; workers absent.
+`stop-is7run03ownerfail.json` was created before the owner's clarification and
+retains that initial broad classification unchanged. The final classification
+and hashes are in `native-is7/is7run03-owner-final/receipt.json`.
+Complete server/native logs record zero server faults/client diagnostic errors
+and zero stderr, six scene commits/twelve worker ACK records, eleven shots,
+and two tree publication records. These are event counts, not a new per-object
+acceptance audit. One transport CAPTURE_LIMIT means raw-packet coverage is
+partial; the text/native traces remain retained. No screenshots were taken.
+
+Fresh230-file recheck matches the previously tested final runtime binding.
+No runtime source or control coefficients changed in this closure turn. Tests
+were not rerun for documentation/acceptance changes; the retained676 gateway,
+69 Python and24 paired physics cases keep their original limited meaning.
+The one unavailable symlink fixture is still NOT_RUN; owner's scoped acceptance
+does not relabel that test. Root P09B dirty research remains untouched.
+
+Actual cleanup commands used `stop_stand.py --run is7run03 --out-name
+is7run03ownerfail` followed by `interactive_client.py rollback` for both
+`install-{a,b}-is7run03` ledgers and `namespace_copies.py {a,b} --restore`.
+Historical launch/prepared rollback commands below are retained for provenance;
+the stand is no longer live. Code rollback after merge uses a scoped P03M merge
+revert, never reset or original-client changes.
 
 ## Purpose and selected contract
 
@@ -173,7 +215,7 @@ Physics build:
 Actual physics matrix:
 `python -B local/evidence/20261013-p03m-is7-01/physics-source01/run_final02.py`.
 
-## Native setup, rollback and next gate
+## Historical native setup and prepared rollback (superseded by closure above)
 
 Private launch/stop helpers are in `native-is7/`, with exact source, build,
 pool and geometry checks, separate ports20124/20126 and temporary namespace
@@ -257,6 +299,6 @@ sensitivity are unverified. IS-7 Karelia runtime is NOT_RUN. Single-plate AP
 screens/device outcomes remain explicit unsupported zero damage. Production
 100-battle scaling and universal destruction are not claimed.
 
-Next: owner checks IS-7 movement in both directions, braking, consecutive
-fences, tree fall/passage, turret/gun and one AP shot in both clients; collect
-the native evidence before deciding P03M acceptance/merge.
+Next: continue the existing P05 handling debt with direct pivot, acceleration,
+braking and lateral-slip measurements. P03M's accepted profile is the second
+vehicle fixture; broad movement quality still requires repair and a new owner gate.

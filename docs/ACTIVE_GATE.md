@@ -1,4 +1,26 @@
-# P03M — IS-7 automatic runtime/control gate
+# P05 shared handling debt — after accepted IS-7 profile
+
+**P03M accepted by owner; general driving remains unaccepted.** Owner explicitly
+separates playable IS-7/profile acceptance from the shared, previously deferred
+physics defect. Weak stationary pivot/car-like handling was documented on
+2026-10-06; P05A on2026-10-08 supplied offline diagnostics, not a repair.
+Current observations: sluggish acceleration/braking, no stationary pivot,
+IS-7 drift with forward+steer, MS-1 lateral lurch. No new tuning performed.
+P03M v2's powered forward arc/low lateral friction require review in this debt;
+the fact that the foundation was already faulty does not validate those choices.
+
+The root IS-7 stand is stopped, both installations and namespaces restored;
+owned workers are absent. Owner clarification, frozen complete server/native
+logs, retained capture-limit caveat and rollback checks are in
+`local/evidence/20261013-p03m-is7-01/native-is7/is7run03-owner-final/receipt.json`.
+P03M source hashes and previous tests remain applicable. No merge of the full
+P05 physics claim is implied by closing P03M.
+
+Next: existing [P05 movement/handling plan](plans/P05_MOVEMENT_COLLISION_RECONCILIATION.md),
+with direct metrics for pivot/acceleration/braking/slip and a new owner gate.
+[Accepted IS-7 report](research/P03M_IS7_RUNTIME_PROFILE.md).
+
+# P03M — historical automatic/runtime setup, now stopped
 
 Branch `codex/p03m-is7-runtime-profile`; accepted main/remote P06R merge
 `eb054618bd0eae1ae23bba42a0f875969ac2d24e`. Source-bound IS-7 profile, gameplay,

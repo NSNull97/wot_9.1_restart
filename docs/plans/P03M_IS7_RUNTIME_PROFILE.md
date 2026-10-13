@@ -1,12 +1,25 @@
 # P03M — second source-bound vehicle for movement and battle checks
 
-Status: PASS_AUTOMATIC_PRIVATE; PENDING_OWNER_NATIVE_IS7.
+Status: PASS_OWNER_IS7_PROFILE_SHARED_HANDLING_DEBT_OPEN.
 Accepted base: P06R merge `eb054618bd0eae1ae23bba42a0f875969ac2d24e`, pushed
 and remote SHA verified. Branch `codex/p03m-is7-runtime-profile`.
 Owner requested playable IS-7 on 2026-10-13 to compare mass, speed and collision
 behavior while prioritizing a reliable single-tank scenario on Prohorovka.
 This is a new runtime card, not a repeat of accepted P02_test_is7 (hangar)
 or P03I_VEHICLE_PROFILE_LOADOUT (static native queue boundary).
+
+## Owner scope clarification — 2026-10-13
+
+Owner explicitly accepts IS-7 and classifies the poor driving as the previously
+deferred shared physics failure. Close this card for the source-bound playable
+IS-7 profile, preserving the test_lab limits. General driving quality is not an
+acceptance claim of this closure. The original sequence below is retained as
+history; its broad handling gate is assigned to the existing
+[P05 plan](P05_MOVEMENT_COLLISION_RECONCILIATION.md) by this clarification.
+Weak pivot/car-like steering predates P03M; v2 forward-arc steering and reduced
+lateral friction still need scrutiny and are not certified as correct.
+Both clients/server/workers are stopped and client/namespace rollback passed.
+Evidence: `local/evidence/20261013-p03m-is7-01/native-is7/is7run03-owner-final/receipt.json`.
 
 ## Goal and dependencies
 
