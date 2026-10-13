@@ -32,6 +32,14 @@ PROFILE = {
     "damage_randomization": 0.25,
     "piercing_randomization": 0.25,
 }
+IS7_PROFILE = dict(PROFILE, shell_compact_descriptor=14602,
+                   piercing_power=[250.0, 240.0], caliber=130.0)
+VEHICLE_PROFILES = {
+    "ms1": {"vehicle_name": "ussr:MS-1", "vehicle_compact_descriptor": 3329,
+            "gun_compact_descriptor": 5892},
+    "is7": {"vehicle_name": "ussr:IS-7", "vehicle_compact_descriptor": 7169,
+            "gun_compact_descriptor": 14852},
+}
 DISTANCES = (0.0, 100.0, 100.01, 300.0, 500.0, 600.0, 719.99, 720.0, 720.01)
 THRESHOLDS = (89.9999, 90.0, 90.0001, 149.9999, 150.0, 150.0001)
 LABELS = ("great_pierced", "little_pierced", "not_pierced")
@@ -98,18 +106,25 @@ def _vector(value: Any) -> list[float]:
     return [_number(item, "position/vector", -100000.0) for item in value]
 
 
-def nominal_power(distance: float) -> float:
-    """Literal #717 _changeColor order, restricted to pinned stock AP2570."""
+def shot_profile(vehicle_kind: str = "ms1") -> dict[str, Any]:
+    require(vehicle_kind in VEHICLE_PROFILES, "unsupported mounted vehicle profile")
+    return IS7_PROFILE if vehicle_kind == "is7" else PROFILE
+
+
+def nominal_power(distance: float, vehicle_kind: str = "ms1") -> float:
+    """Literal #717 _changeColor order for an explicitly selected pinned AP."""
+    profile = shot_profile(vehicle_kind)
+    p100, p500 = profile["piercing_power"]
     if distance <= 100.0:
-        return 34.0
-    if 720.0 > distance:
-        result = 34.0 + (27.0 - 34.0) * (distance - 100.0) / 400.0
+        return p100
+    if profile["max_distance"] > distance:
+        result = p100 + (p500 - p100) * (distance - 100.0) / 400.0
         return 0.0 if result < 0.0 else result
     return 0.0
 
 
-def expected_label(distance: float, armor: float) -> str:
-    power = nominal_power(distance)
+def expected_label(distance: float, armor: float, vehicle_kind: str = "ms1") -> str:
+    power = nominal_power(distance, vehicle_kind)
     ratio = 1000.0
     if power > 0.0:
         ratio = 100.0 + (armor - power) / power * 100.0
@@ -120,7 +135,7 @@ def expected_label(distance: float, armor: float) -> str:
     return "great_pierced"
 
 
-def _profile(value: Any) -> None:
+def _profile(value: Any, vehicle_kind: str = "ms1") -> None:
     require(isinstance(value, dict) and set(value) == set(PROFILE), "stock profile shape")
     require(type(value["shell_compact_descriptor"]) is int, "shell descriptor integer required")
     require(isinstance(value["piercing_power"], list) and len(value["piercing_power"]) == 2,
@@ -129,11 +144,21 @@ def _profile(value: Any) -> None:
         _number(number, "piercing pair")
     for key in ("max_distance", "caliber", "damage_randomization", "piercing_randomization"):
         _number(value[key], key)
-    require(value == PROFILE, "wrong stock AP2570 profile")
+    require(value == shot_profile(vehicle_kind), "wrong mounted AP profile")
 
 
-def validate_event(row: dict[str, Any], client: str) -> list[dict[str, Any]]:
-    require(row.get("event") == EVENT and type(row.get("schema")) is int and row["schema"] == 1,
+def _vehicle_identity(value: Any, vehicle_kind: str) -> None:
+    expected = VEHICLE_PROFILES[vehicle_kind]
+    require(isinstance(value, dict) and set(value) == set(expected), "vehicle profile shape")
+    require(type(value["vehicle_compact_descriptor"]) is int
+            and type(value["gun_compact_descriptor"]) is int and value == expected,
+            "vehicle profile identity/drift")
+
+
+def validate_event(row: dict[str, Any], client: str, vehicle_kind: str = "ms1") -> list[dict[str, Any]]:
+    shot_profile(vehicle_kind)
+    schema = 2 if vehicle_kind == "is7" else 1
+    require(row.get("event") == EVENT and type(row.get("schema")) is int and row["schema"] == schema,
             "oracle event/schema mismatch")
     require(row.get("status") == "PASS_NATIVE_CALLS" and "error" not in row, "oracle did not pass")
     require(row.get("method_code_sha256") == METHOD_SHA and row.get("method_filename") == METHOD_FILE
@@ -141,8 +166,14 @@ def validate_event(row: dict[str, Any], client: str) -> list[dict[str, Any]]:
             and row.get("source") == METHOD_SOURCE, "original method provenance mismatch")
     require(row.get("observer_mutated_gameplay") is False and row.get("server_penetration_verdict") is False,
             "observer authority/mutation boundary differs")
-    _profile(row.get("selected_shot_before"))
-    _profile(row.get("selected_shot_after"))
+    # Historical MS-1 schema1 did not contain vehicle identity. New records do;
+    # IS-7 schema2 always requires both identities, never shell-only inference.
+    if (vehicle_kind == "is7" or "vehicle_profile_before" in row
+            or "vehicle_profile_after" in row):
+        _vehicle_identity(row.get("vehicle_profile_before"), vehicle_kind)
+        _vehicle_identity(row.get("vehicle_profile_after"), vehicle_kind)
+    _profile(row.get("selected_shot_before"), vehicle_kind)
+    _profile(row.get("selected_shot_after"), vehicle_kind)
     origin = _vector(row.get("own_position_before"))
     require(origin == _vector(row.get("own_position_after")), "position drift")
     cases = [(d, armor, None) for d in DISTANCES for armor in (0.0, 8.0, 16.0, 18.0)]
@@ -170,7 +201,7 @@ def validate_event(row: dict[str, Any], client: str) -> list[dict[str, Any]]:
             require(threshold is None and armor == case[1], "fixed armor case differs")
         else:
             threshold = _number(threshold, "threshold ratio")
-            require(threshold == case[2] and armor == nominal_power(distance) * threshold / 100.0,
+            require(threshold == case[2] and armor == nominal_power(distance, vehicle_kind) * threshold / 100.0,
                     "threshold input case differs")
         callback = sample["callback"]
         require(isinstance(callback, dict) and set(callback) == {"name", "args"}
@@ -178,7 +209,7 @@ def validate_event(row: dict[str, Any], client: str) -> list[dict[str, Any]]:
                 and isinstance(callback["args"], list) and len(callback["args"]) == 1
                 and callback["args"][0] in LABELS, "original callback shape differs")
         observed = callback["args"][0]
-        require(observed == expected_label(distance, armor), "native label/formula mismatch")
+        require(observed == expected_label(distance, armor, vehicle_kind), "native label/formula mismatch")
         # Preserve the OBSERVED label, never manufacture an expected label in a fixture.
         # Preserve the parsed native input bits independently of downstream JSON
         # float parser choices. These are inputs, not expected predictor outputs.
@@ -196,7 +227,7 @@ def _no_links(path: Path) -> None:
                     & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400), "reparse/symlink path rejected")
 
 
-def read_trace(path: str | Path, client: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def read_trace(path: str | Path, client: str, vehicle_kind: str = "ms1") -> tuple[dict[str, Any], list[dict[str, Any]]]:
     path = Path(path).absolute()
     _no_links(path)
     require(path.is_file(), "regular trace file required")
@@ -227,31 +258,37 @@ def read_trace(path: str | Path, client: str) -> tuple[dict[str, Any], list[dict
     pid = next(iter(pids), filename_pid)
     require(not pids or filename_pid is None or pid == filename_pid, "trace/filename pid mismatch")
     number, event = events[0]
-    samples = validate_event(event, client)
+    samples = validate_event(event, client, vehicle_kind)
     return ({"client": client, "path": str(path.resolve()), "bytes": len(raw),
              "sha256": hashlib.sha256(raw).hexdigest(), "event_line": number, "pid": pid,
              "pid_source": "row" if pids else "filename" if filename_pid is not None else "unavailable"}, samples)
 
 
-def audit(trace_a: str | Path, trace_b: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def audit(trace_a: str | Path, trace_b: str | Path, vehicle_kind: str = "ms1") -> tuple[dict[str, Any], dict[str, Any]]:
+    profile = shot_profile(vehicle_kind)
     a, b = Path(trace_a).absolute(), Path(trace_b).absolute()
     _no_links(a)
     _no_links(b)
     require(a.resolve() != b.resolve(), "two distinct trace paths required")
     require(not a.samefile(b), "two distinct trace files required")
-    source_a, rows_a = read_trace(a, "a")
-    source_b, rows_b = read_trace(b, "b")
+    source_a, rows_a = read_trace(a, "a", vehicle_kind)
+    source_b, rows_b = read_trace(b, "b", vehicle_kind)
     require(source_a["sha256"] != source_b["sha256"], "duplicate trace contents")
     require(source_a["pid"] is not None and source_b["pid"] is not None,
             "both client pids must be resolved")
     require(source_a["pid"] != source_b["pid"], "two distinct client pids required")
     fixture = {"schema": "p06k-native-marker-fixture.v1", "method_sha": METHOD_SHA,
-               "profile": PROFILE, "source_traces": [source_a, source_b], "samples": rows_a + rows_b}
+               "profile": profile, "source_traces": [source_a, source_b], "samples": rows_a + rows_b}
     report = {"schema": "p06k-native-marker-audit.v1", "status": "PASS_NATIVE_MARKER_ALIGNMENT",
               "source_traces": [source_a, source_b], "method_sha": METHOD_SHA, "cases_per_client": 60,
               "total_cases": 120, "native_label_formula_mismatches": 0, "owner_acceptance": "NOT_RUN",
               "scope": "Original method callback labels; not actual Flash color, server penetration, RNG or damage",
               "fixture_contains_coordinates": False, "source_logs_copied": False}
+    if vehicle_kind == "is7":
+        fixture.update(schema="p03m-is7-native-marker-fixture.v1",
+                       vehicle_profile=dict(VEHICLE_PROFILES[vehicle_kind]))
+        report.update(schema="p03m-is7-native-marker-audit.v1",
+                      vehicle_profile=dict(VEHICLE_PROFILES[vehicle_kind]))
     return report, fixture
 
 
@@ -275,9 +312,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trace-a", type=Path, required=True)
     parser.add_argument("--trace-b", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--vehicle-kind", choices=("ms1", "is7"), default="ms1")
     args = parser.parse_args(argv)
     try:
-        report, fixture = audit(args.trace_a, args.trace_b)
+        report, fixture = audit(args.trace_a, args.trace_b, args.vehicle_kind)
         write_outputs(args.out, report, fixture)
     except (OSError, AuditError) as error:
         print(json.dumps({"status": "FAIL_INVALID_MARKER_EVIDENCE", "reason": str(error)}))

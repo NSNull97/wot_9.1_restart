@@ -8,6 +8,32 @@ server as authority. All output belongs to the existing local trace.
 import math
 
 
+def _vehicle_profile(descriptor):
+    """Closed #717 mounted profiles; never infer a vehicle from its shell alone."""
+    name = descriptor.type.name
+    vehicle = descriptor.type.compactDescr
+    gun = descriptor.gun['compactDescr']
+    if (type(vehicle) not in (int, long) or type(gun) not in (int, long) or
+            (name, vehicle, gun) not in (('ussr:MS-1', 3329, 5892),
+                                        ('ussr:IS-7', 7169, 14852))):
+        raise ValueError('collision oracle requires a pinned #717 mounted vehicle profile')
+    return dict(vehicle_name=name, vehicle_compact_descriptor=vehicle,
+                gun_compact_descriptor=gun)
+
+
+def _layout(profile):
+    if profile['vehicle_name'] == 'ussr:IS-7':
+        return ('Chassis', 'Hull', 'Turret_01', 'Gun_01'), 8., 'vehicles/russian/R45_IS-7/collision/'
+    return ('Chassis', 'Hull', 'Turret_01', 'Gun_02'), 4., 'vehicles/russian/R11_MS-1/collision/'
+
+
+def _shot_number(value):
+    if (type(value) not in (int, long, float) or
+            not 0. <= value <= 100000. or math.isnan(value) or math.isinf(value)):
+        raise ValueError('original marker shot scalar bound')
+    return float(value)
+
+
 class _MarkerCallCapture(object):
     """A local receiver for one original marker call; no Flash component."""
     def __init__(self):
@@ -23,16 +49,21 @@ class _MarkerCallCapture(object):
 
 
 def _marker_shot_facts(player):
+    profile = _vehicle_profile(player.vehicleTypeDescriptor)
     shot = player.vehicleTypeDescriptor.shot
     shell = shot['shell']
-    values = [float(shot['piercingPower'][i]) for i in range(2)]
-    values.extend((float(shot['maxDistance']), float(shell['caliber']),
-                   float(shell['damageRandomization']), float(shell['piercingPowerRandomization'])))
-    if any(math.isnan(v) or math.isinf(v) or not 0. <= v <= 100000. for v in values):
-        raise ValueError('original marker shot scalar bound')
-    if (type(shell['compactDescr']) not in (int, long) or shell['compactDescr'] != 2570 or
-            shell['kind'] != 'ARMOR_PIERCING' or values != [34., 27., 720., 37., 0.25, 0.25]):
-        raise ValueError('marker oracle requires stock MS-1 AP2570 shot')
+    if type(shot['piercingPower']) not in (list, tuple) or len(shot['piercingPower']) != 2:
+        raise ValueError('original marker piercing pair shape')
+    values = [_shot_number(value) for value in shot['piercingPower']]
+    values.extend(_shot_number(value) for value in
+                  (shot['maxDistance'], shell['caliber'],
+                   shell['damageRandomization'], shell['piercingPowerRandomization']))
+    expected_shell, expected_values = (2570, [34., 27., 720., 37., 0.25, 0.25])
+    if profile['vehicle_name'] == 'ussr:IS-7':
+        expected_shell, expected_values = (14602, [250., 240., 720., 130., 0.25, 0.25])
+    if (type(shell['compactDescr']) not in (int, long) or shell['compactDescr'] != expected_shell or
+            shell['kind'] != 'ARMOR_PIERCING' or values != expected_values):
+        raise ValueError('marker oracle requires the pinned mounted vehicle AP shot')
     return dict(shell_compact_descriptor=shell['compactDescr'], shell_kind=shell['kind'],
                 piercing_power=values[:2], max_distance=values[2], caliber=values[3],
                 damage_randomization=values[4], piercing_randomization=values[5])
@@ -52,6 +83,8 @@ def collect_ap_marker(player, record, Math):
     samples = []
     before_position = None
     before_shot = None
+    before_profile = None
+    schema = 1
     try:
         original = _FlashGunMarker._changeColor.im_func
         code = original.func_code
@@ -63,6 +96,8 @@ def collect_ap_marker(player, record, Math):
         if BigWorld.player() is not player:
             raise ValueError('original marker active player differs')
         descriptor = player.vehicleTypeDescriptor
+        before_profile = _vehicle_profile(descriptor)
+        schema = 2 if before_profile['vehicle_name'] == 'ussr:IS-7' else 1
         shot_object = descriptor.shot
         before_position = vector(player.getOwnVehiclePosition())
         before_shot = _marker_shot_facts(player)
@@ -96,6 +131,7 @@ def collect_ap_marker(player, record, Math):
             if len(receiver.calls) != 1:
                 raise ValueError('original marker did not produce one callback')
             if (BigWorld.player() is not player or player.vehicleTypeDescriptor is not descriptor or
+                    _vehicle_profile(descriptor) != before_profile or
                     descriptor.shot is not shot_object or _marker_shot_facts(player) != before_shot or
                     vector(player.getOwnVehiclePosition()) != before_position):
                 raise ValueError('marker oracle player position or selected shot changed')
@@ -105,20 +141,24 @@ def collect_ap_marker(player, record, Math):
                                 callback=receiver.calls[0]))
         after_position = vector(player.getOwnVehiclePosition())
         after_shot = _marker_shot_facts(player)
-        if after_position != before_position or after_shot != before_shot:
+        after_profile = _vehicle_profile(descriptor)
+        if (after_position != before_position or after_shot != before_shot or
+                after_profile != before_profile):
             raise ValueError('marker oracle final position or selected shot changed')
     except Exception as error:
-        record('shared_ap_marker_oracle', schema=1, status='FAIL',
+        record('shared_ap_marker_oracle', schema=schema, status='FAIL',
                error=str(error)[:256], completed_cases=len(samples),
                own_position_before=before_position, selected_shot_before=before_shot,
+               vehicle_profile_before=before_profile,
                samples=samples, observer_mutated_gameplay=False)
         raise
-    record('shared_ap_marker_oracle', schema=1, status='PASS_NATIVE_CALLS',
+    record('shared_ap_marker_oracle', schema=schema, status='PASS_NATIVE_CALLS',
            source='original _FlashGunMarker._changeColor.im_func',
            method_filename=code.co_filename, method_firstlineno=code.co_firstlineno,
            method_code_sha256=method_sha, own_position_before=before_position,
            own_position_after=after_position, selected_shot_before=before_shot,
            selected_shot_after=after_shot, samples=samples,
+           vehicle_profile_before=before_profile, vehicle_profile_after=after_profile,
            server_penetration_verdict=False, observer_mutated_gameplay=False)
 
 
@@ -170,6 +210,13 @@ def material_facts(description):
 def collect(player, entities, record):
     import Math
     import Vehicle
+    profile = _vehicle_profile(player.vehicleTypeDescriptor)
+    names, extent, model_prefix = _layout(profile)
+    vehicles = [value for value in entities if type(value) is Vehicle.Vehicle and value.isStarted]
+    if len(vehicles) != 2:
+        raise ValueError('two started vehicles required for collision oracle')
+    if any(_vehicle_profile(entity.typeDescriptor) != profile for entity in vehicles):
+        raise ValueError('collision oracle requires two matching mounted vehicle profiles')
     # Independent native Euler oracle, including nonzero yaw/pitch/roll.
     samples = []
     for angles in ((0., 0., 0.), (0.5, 0., 0.), (0., 0.3, 0.),
@@ -192,9 +239,6 @@ def collect(player, entities, record):
                                     point=point, angles=[float(result[0]), float(result[1])]))
     record('shared_collision_tilted_aim_oracle', schema=1, samples=aim_samples,
            observer_mutated_gameplay=False)
-    vehicles = [value for value in entities if type(value) is Vehicle.Vehicle and value.isStarted]
-    if len(vehicles) != 2:
-        raise ValueError('two started vehicles required for collision oracle')
     for entity in vehicles:
         components = entity.getComponents()
         if len(components) != 4:
@@ -205,30 +249,32 @@ def collect(player, entities, record):
             rows.append(dict(component=index, attached=bool(attached),
                              inverse_local=matrix_facts(inverse_local, Math)))
             record('shared_collision_material_oracle', schema=1, entity_id=entity.id,
-                   component=('Chassis', 'Hull', 'Turret_01', 'Gun_02')[index],
+                   component=names[index], vehicle_profile=profile,
                    materials=material_facts(description), source='original component MaterialInfo',
                    observer_mutated_gameplay=False)
         record('shared_collision_component_oracle', schema=1, entity_id=entity.id,
                model=matrix_facts(model, Math), position=vector(entity.position),
                turret_yaw=float(Math.Matrix(entity.appearance.turretMatrix).yaw),
                gun_pitch=float(Math.Matrix(entity.appearance.gunMatrix).pitch),
-               components=rows, observer_mutated_gameplay=False)
-    # Local hit geometry is shared by both stock MS-1s; sample it once. Test
+               components=rows, vehicle_profile=profile, observer_mutated_gameplay=False)
+    # Local hit geometry is shared by the verified matching profiles; sample once. Test
     # six directions and several plate heights, without firing or aiming.
     components = vehicles[0].getComponents()
-    for index, name in ((1, 'Hull'), (2, 'Turret_01'), (3, 'Gun_02')):
+    for index, name in enumerate(names[1:], 1):
         tester = components[index][0]['hitTester']
         if not tester.isBspModelLoaded():
             raise ValueError('native collision model has not loaded')
         bounds = [vector(tester.bbox[i]) for i in range(2)]
         if not isinstance(tester.bspModelName, basestring) or len(tester.bspModelName) > 256:
             raise ValueError('native collision model name bound')
+        if tester.bspModelName != model_prefix + name + '.model':
+            raise ValueError('native collision model differs from mounted profile')
         rays = []
         for axis in range(3):
             for offset in (-0.25, 0.05, 0.25, 0.5):
                 start = [0.1, offset, 0.15]
                 end = list(start)
-                start[axis], end[axis] = -4., 4.
+                start[axis], end[axis] = -extent, extent
                 for reverse in (False, True):
                     a, b = (end, start) if reverse else (start, end)
                     hits = tester.localHitTest(Math.Vector3(*a), Math.Vector3(*b))
@@ -238,12 +284,13 @@ def collect(player, entities, record):
                             if len(hit) != 4 or len(values) >= 128:
                                 raise ValueError('native localHitTest result bound')
                             distance, unused, angle_cos, material = hit
-                            if (not 0. <= distance <= 8.001 or not -1.001 <= angle_cos <= 1.001
+                            if (not 0. <= distance <= 2. * extent + 0.001 or not -1.001 <= angle_cos <= 1.001
                                     or type(material) not in (int, long) or not 0 <= material <= 65535):
                                 raise ValueError('native localHitTest facts invalid')
                             values.append(dict(distance=float(distance), angle_cos=float(angle_cos), material=material))
                     rays.append(dict(start=a, end=b, hits=values))
         record('shared_collision_local_oracle', schema=1, component=name, rays=rays,
                native_bounds=bounds, bsp_model=tester.bspModelName,
+               vehicle_profile=profile,
                source='original hitTester.localHitTest', observer_mutated_gameplay=False)
     collect_ap_marker(player, record, Math)
