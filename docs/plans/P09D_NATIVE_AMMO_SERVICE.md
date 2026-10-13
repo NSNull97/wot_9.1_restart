@@ -59,3 +59,31 @@ Use consistent DB backups and immutable fixture versions; rollback the exact
 owned stand/install receipts and revert this card's commits. No automatic
 rollback over a shared database. Financial rates and battle-consumption wiring
 remain outside this service card unless independently established and required.
+
+## 2026-10-13 — owner-authorized acceptance repair and merge
+
+The owner explicitly requests repairing historical evidence paths and missing
+fixtures, rerunning the failed checks, then merging into main after green.
+This closes the same P09D card; no new gameplay scope is added.
+
+1. Integrate accepted main eb054618 (P06R) into the P09D branch first. Preserve
+   both capabilities, source ownership, the primary dirty P09B report and all
+   historical receipts. Resolve overlaps here, not in a shared dirty checkout.
+2. Recover exact historical native crew/ammo proof chains and gateway fixtures
+   from permitted local sources. Retain immutable originals and their hashes.
+   Any path relocation must be explicit, bounded, versioned and independently
+   checkable; do not fabricate native evidence or disable assertions.
+3. Repeat previously failed Node ammunition and Rust checks, full canonical
+   gateway suite, affected Python validators/importers and current P09D/client/
+   bridge regressions. Re-run actual native service on a receipt-owned stand
+   if integration changes relevant runtime/client paths.
+4. Bind passing results to the final source, update STATUS/evidence and commit.
+   Verify current main and the untouched P09B edit before a normal --no-ff
+   merge. Push without force and verify the remote main SHA. Any applicable
+   failure still blocks merging; resolve it rather than silently omit it.
+
+New evidence goes under local/evidence/20261013-p09d-acceptance-repair-01/.
+Historical native acceptance remains scoped; fixture repairs are not new
+physics/native acceptance. Current original client at C remains read-only.
+Rollback: revert this card's merge/source changes and restore exact client
+ledgers; keep original/private proof archives and live DB data intact.
