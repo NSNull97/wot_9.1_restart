@@ -229,6 +229,10 @@ class NativeCrewDismissalStore(NativeCrewProgressionStore):
         require(len(encoded) <= 16384, 'PROFILE_TOO_LARGE')
         return encoded.decode('ascii'), sha(encoded)
 
+    def _retirement_contract(self, command):
+        require(command == DISMISS_COMMAND, 'CORRUPT_STORE')
+        return NativeCrewDismissalStore
+
     def read_profile(self, account_id):
         profile = super().read_profile(account_id)
         if not self._dismissal_schema(): return profile
@@ -240,7 +244,8 @@ class NativeCrewDismissalStore(NativeCrewProgressionStore):
             require(sha(canonical(member)) == retired['member_sha256']
                 and type(retired['dismissed_revision']) is int and 1 <= retired['dismissed_revision'] <= profile['revision'], 'CORRUPT_STORE')
             ledger = self.connection.execute('SELECT * FROM game_command_ledger WHERE account_id=? AND command_id=?', (account_id, retired['command_key'])).fetchone()
-            require(ledger is not None and ledger['command_type'] == DISMISS_COMMAND, 'CORRUPT_STORE')
+            require(ledger is not None, 'CORRUPT_STORE')
+            contract = self._retirement_contract(ledger['command_type'])
             result = _object(ledger['result_json'])
             require(result['destination_revision'] == retired['dismissed_revision']
                 and result['after_crew']['configuration_revision'] == retired['configuration_revision']
@@ -249,9 +254,10 @@ class NativeCrewDismissalStore(NativeCrewProgressionStore):
             request = dict(account_id=account_id, native_database_id=response['native_database_id'],
                 command_key=retired['command_key'], expected_revision=ledger['source_revision'],
                 wire_revision=response['wire_revision'] - 1, layout=[member['native_id'], 0, 0])
-            expected = sha(canonical({'schema': SCHEMA, 'policy_sha256': POLICY_SHA256, 'command': DISMISS_COMMAND, 'request': request}))
+            expected = sha(canonical({'schema': contract.SCHEMA, 'policy_sha256': contract.POLICY_SHA256,
+                'command': contract.DISMISS_COMMAND, 'request': request}))
             require(ledger['payload_sha256'] == expected, 'CORRUPT_STORE')
-            self._replay_mutation(ledger, request, profile, operation='dismiss')
+            self._replay_mutation(ledger, request, profile, operation='dismiss', contract=contract)
         return profile
 
     def migrate_dismissal(self, source, *, account_id, original_root):

@@ -49,11 +49,12 @@ Owner exceptions to historical behavior:
    Combat-dependent perk effects cannot be accepted from a hangar icon alone.
 
 Status: IN_PROGRESS. P04H native recruitment and P04I PersonalCase/first-skill
-selection and P04J original dismissal are accepted. I proves original CMD151
+selection, P04J original dismissal and P04K native Barracks recruitment are accepted. I proves original CMD151
 and persistence at0% skill, not battle XP or combat effects. J proves native
 confirmation, sparse retirement, subsequent hire/transfer and fresh login.
-Next card: original Barracks recruitment through CMD303, native counts/filters,
-free50 policy and monotonic allocation. Qualification/retraining,
+K proves original303 free50 hires, native counts/filter results and fresh login.
+Next card: original free first-skill reset/reselection for the currently
+represented primary100/skill0/freeXP0 state. Qualification/retraining,
 reset, paid recruitment, personalization, barracks/bulk operations and combat
 effects remain separate outstanding work; no whole-crew PASS is claimed.
 

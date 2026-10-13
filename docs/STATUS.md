@@ -1,3 +1,38 @@
+## 2026-10-14 — P04K original Barracks recruitment accepted
+
+**PASS_NATIVE_BARRACKS_RECRUITMENT_CURRENT_SOURCE.** Original Barracks hires
+IS7 gunner12 and MS1 commander13 directly into barracks at free50 through
+original CMD303. Native counts, all/barracks/gunner filtering and fresh login
+preserve11 active members,4 in barracks, MS1[4,11]/IS7[6,7,8,10,9], retired3/5.
+Revision56→58/config45→47, quota5→3,next12→14; existing passports, skills,
+dossiers, balances and ammunition remain unchanged. Independent encrypted
+wire proves two original303 requests, inventory update before typed callback,
+and original initial/fresh full-state synchronization. Fresh login preserves
+all29 non-rate-limit tables and makes no mutations.
+
+Native05/06 clients22700/47892 exit0 with no new runtime errors. Fourteen
+required PNGs inspected; both installs bind37 actual CPython2.7.3 modules.
+Six installs restored,18 owned process instances ended, ports free/control
+unarmed. Failed01–04 and explicit baseline restores remain preserved.
+Actual original getData/current row indices resolve observed stale property
+readback; raw provider observations remain diagnostic, engine cause UNKNOWN.
+
+Current-source checks:750 Rust/build;1233 distinct Python PASS and one existing
+Windows symlink permission NOT_RUN;108 Node;14 actual CPython2.7.3 compile
+checks and Unicode execution. Layout97/22 PASS,7 of8 layout tests PASS.
+Physical owner input remains NOT_RUN, deferred until after09:00 on2026-10-14
+Asia/Yekaterinburg. Ordinary skills require100% primary qualification; base
+Sixth Sense remains the owner's exception, with combat effect outstanding.
+
+[Evidence, files, commands, limits and rollback](evidence-index/P04K_NATIVE_BARRACKS_RECRUITMENT.md).
+Branch `codex/p04k-native-barracks-recruitment`, baseline main32aa2fc;
+source/no-ff merge/remote SHA recorded in
+`local/evidence/20261014-p04k-native-barracks-01/acceptance-final/`.
+The [complete-crew objective](plans/P04_CREW_FUNCTIONALITY_091.md) remains active.
+**One next crew card:** original free first-skill reset and reselection,
+initially for the currently represented primary100/skill0/freeXP0 state.
+Primary P05 unchanged; paid choices, earned XP and combat effects unaccepted.
+
 ## 2026-10-14 — P04J original dismissal and sparse crew accepted
 
 **PASS_NATIVE_DISMISSAL_SPARSE_CREW_CURRENT_SOURCE.** Original protected
@@ -14,9 +49,10 @@ All20 owned installs are restored and60 recorded owned process instances ended;
 one old PID was reused by an unrelated later node_repl process, left untouched.
 Ports are free and control is unarmed. Earlier failed attempts are preserved.
 
-Current-source checks:744 Rust/build;1176 distinct applicable Python;106 Node;
+Current-source checks:744 Rust/build;1175 distinct Python PASS and one existing
+Windows symlink-case NOT_RUN;106 Node;
 13 actual CPython2.7.3 compile checks and Unicode execution; layout96/22 and
-8 layout checks PASS. The measured randomized-RSA pending-login retry defect
+7 of8 layout checks PASS (one symlink permission skip). The measured randomized-RSA pending-login retry defect
 also passes an actual delayed native login. Physical owner input remains
 NOT_RUN, deferred until after09:00 on2026-10-14 Asia/Yekaterinburg.
 

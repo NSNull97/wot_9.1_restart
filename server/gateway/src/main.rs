@@ -29,6 +29,8 @@ mod crew_service091;
 mod crew_transfer091;
 #[path = "account/crew_progression.rs"]
 mod crew_progression091;
+#[path = "account/crew_barracks.rs"]
+mod crew_barracks091;
 #[path = "account/crew_dismissal.rs"]
 mod crew_dismissal091;
 #[path = "account/identity.rs"]

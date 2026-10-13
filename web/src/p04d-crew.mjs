@@ -4,6 +4,8 @@ import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
 
+import { BARRACKS_CREW_POLICY_SHA256, validateBarracksRecruitmentResponse } from './p04k-crew.mjs';
+
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CREW_POLICY_SHA256 = '7d0e3d7ef28d85bfe32e4fcdea0547696a9b4fd04922a725a2d895e1395f0d55';
 export const TRANSFER_POLICY_SHA256 = '35a58c8e13d9b815f8552371bbd6556ba10c091753861e697e522d6a5c877cb2';
@@ -17,7 +19,7 @@ const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
@@ -30,8 +32,10 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     && progression.version === 1 && progression.policy_sha256 === PROGRESSION_CREW_POLICY_SHA256), 'Explicit crew progression policy required');
   requireValue(dismissal === null || (progression !== null && exact(dismissal, ['version', 'policy_sha256'])
     && dismissal.version === 1 && dismissal.policy_sha256 === DISMISSAL_CREW_POLICY_SHA256), 'Explicit crew dismissal policy required');
-  const profileVersion = dismissal !== null ? 11 : progression !== null ? 10 : rosterRecruitment !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
-  const worker = dismissal !== null ? 'tools/p04j_crew_store.py' : progression !== null ? 'tools/p04i_crew_store.py' : rosterRecruitment !== null ? 'tools/p04h_crew_store.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
+  requireValue(barracksRecruitment === null || (dismissal !== null && exact(barracksRecruitment, ['version', 'policy_sha256'])
+    && barracksRecruitment.version === 1 && barracksRecruitment.policy_sha256 === BARRACKS_CREW_POLICY_SHA256), 'Explicit barracks recruitment policy required');
+  const profileVersion = barracksRecruitment !== null ? 12 : dismissal !== null ? 11 : progression !== null ? 10 : rosterRecruitment !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
+  const worker = barracksRecruitment !== null ? 'tools/p04k_crew_store.py' : dismissal !== null ? 'tools/p04j_crew_store.py' : progression !== null ? 'tools/p04i_crew_store.py' : rosterRecruitment !== null ? 'tools/p04h_crew_store.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
   requireValue(exact(ammo, ['version', 'bundle_root', 'original_root', 'account_id', 'grant'])
     && ammo.version === 1 && UUID.test(ammo.account_id) && isAbsolute(ammo.original_root)
     && exact(ammo.grant, ['grant_id', 'quantity_each']) && ammo.grant.grant_id === 'p09d-test-depot-v1'
@@ -63,7 +67,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     } finally { active--; }
   }
   async function mutate(operation, request) {
-    requireValue(['recruit', 'service', ...(transfer === null ? [] : ['transfer']), ...(progression === null ? [] : ['learn']), ...(dismissal === null ? [] : ['dismiss'])].includes(operation), 'Unsupported crew operation');
+    requireValue(['recruit', 'service', ...(transfer === null ? [] : ['transfer']), ...(progression === null ? [] : ['learn']), ...(dismissal === null ? [] : ['dismiss']), ...(barracksRecruitment === null ? [] : ['recruit-barracks'])].includes(operation), 'Unsupported crew operation');
     // The G/H migrations retain immutable predecessor command receipts. Only that opt-in
     // bridge admits their older cursors; the store binds the complete request
     // to its ledger and older cursors may return successful replays only.
@@ -72,11 +76,11 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
       && request.account_id === ammo.account_id && integer(request.native_database_id, 1)
       && typeof request.command_key === 'string' && /^[\x21-\x7e]{1,96}$/.test(request.command_key)
       && integer(request.expected_revision, minimumRequestRevision) && integer(request.wire_revision, 1, 2147483646)
-      && Array.isArray(request.layout) && request.layout.length === (operation === 'recruit' ? 4 : ['transfer', 'learn', 'dismiss'].includes(operation) ? 3 : 16)
+      && Array.isArray(request.layout) && request.layout.length === (['recruit', 'recruit-barracks'].includes(operation) ? 4 : ['transfer', 'learn', 'dismiss'].includes(operation) ? 3 : 16)
       && request.layout.every(v => integer(v, -2147483648)), 'Native crew request schema');
-    const value = await run(operation, request), success = operation === 'dismiss' ? 'dismissed' : operation === 'learn' ? 'learned' : operation === 'recruit' ? 'recruited' : operation === 'transfer' ? 'transferred' : 'serviced';
+    const value = await run(operation, request), success = operation === 'dismiss' ? 'dismissed' : operation === 'learn' ? 'learned' : ['recruit', 'recruit-barracks'].includes(operation) ? 'recruited' : operation === 'transfer' ? 'transferred' : 'serviced';
     const historicalOnly = request.expected_revision < profileVersion;
-    requireValue(exact(value, ['status', 'account_id', 'native_database_id', 'command_key', 'revision', 'wire_revision', 'update_hex', 'replayed', 'result_code'])
+    requireValue(exact(value, ['status', 'account_id', 'native_database_id', 'command_key', 'revision', 'wire_revision', 'update_hex', 'replayed', 'result_code', ...(operation === 'recruit-barracks' ? ['tankman_inventory_id', 'tankman_descriptor_hex'] : [])])
       && [success, 'rejected'].includes(value.status) && value.account_id === request.account_id
       && value.native_database_id === request.native_database_id && value.command_key === request.command_key
       && integer(value.revision, historicalOnly ? minimumRequestRevision + 1 : profileVersion) && integer(value.wire_revision, 1)
@@ -88,6 +92,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
         : value.result_code === -10 && value.update_hex === '' && value.wire_revision === request.wire_revision
           && value.revision === request.expected_revision && value.replayed === false),
     'Native crew response schema');
+    if (operation === 'recruit-barracks') validateBarracksRecruitmentResponse(value, request);
     return value;
   }
   await run('activate');
@@ -100,6 +105,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
         && integer(value.revision, profileVersion) && value.profile.profile_version === profileVersion, 'Crew fixture identity mismatch');
       return localPath(value.fixture_dir);
     },
+    ...(barracksRecruitment === null ? {} : { recruitBarracks: request => mutate('recruit-barracks', request) }),
     ...(dismissal === null ? {} : { dismiss: request => mutate('dismiss', request) }),
     ...(progression === null ? {} : { learn: request => mutate('learn', request) }),
     service: request => mutate('service', request),

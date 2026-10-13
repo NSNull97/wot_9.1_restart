@@ -12,16 +12,18 @@ pub const CROSS_POLICY_SHA256:&str="20f7d65c6d360a17f164cb6e4eaa73056a58a793727d
 pub const ROSTER_POLICY_SHA256:&str="3e86a495c028570d96a479f409dc578875652e01f60f6ac8c42c5c1bae51737c";
 pub const PROGRESSION_POLICY_SHA256:&str="fd79729bbaf926fe2567382be086c5e730c7c6474debe338b3052bb12ba62184";
 pub const DISMISSAL_POLICY_SHA256:&str="c7f6d05be033d7ea75b8be50b3a4578d6a4167a9d3d5dc4ea8975878633c74b2";
+pub const BARRACKS_POLICY_SHA256:&str="e9a12e9000cc255679d5dad6d744943f325ae1982c5a21060a5996f62c433fd7";
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Profile {Ms1,Ms1Is7,Roster,Progression,Dismissal}
+pub enum Profile {Ms1,Ms1Is7,Roster,Progression,Dismissal,Barracks}
 impl Profile {
     pub fn selected(cross_vehicle:bool)->Self {if cross_vehicle {Self::Ms1Is7}else {Self::Ms1}}
     pub fn selected_roster(cross_vehicle:bool,roster:bool)->Self {if roster {Self::Roster}else {Self::selected(cross_vehicle)}}
     pub fn selected_progression(cross:bool,roster:bool,progression:bool)->Self {if progression {Self::Progression}else {Self::selected_roster(cross,roster)}}
     pub fn selected_dismissal(cross:bool,roster:bool,progression:bool,dismissal:bool)->Self {if dismissal {Self::Dismissal}else {Self::selected_progression(cross,roster,progression)}}
-    pub fn roster(self)->bool {matches!(self,Self::Roster|Self::Progression|Self::Dismissal)}
-    fn minimum_revision(self)->u64 {match self {Self::Dismissal=>11,Self::Progression=>10,Self::Roster=>9,Self::Ms1Is7=>8,Self::Ms1=>7}}
-    fn policy(self)->&'static str {match self {Self::Dismissal=>DISMISSAL_POLICY_SHA256,Self::Progression=>PROGRESSION_POLICY_SHA256,Self::Roster=>ROSTER_POLICY_SHA256,Self::Ms1Is7=>CROSS_POLICY_SHA256,Self::Ms1=>POLICY_SHA256}}
+    pub fn selected_barracks(cross:bool,roster:bool,progression:bool,dismissal:bool,barracks:bool)->Self {if barracks {Self::Barracks}else {Self::selected_dismissal(cross,roster,progression,dismissal)}}
+    pub fn roster(self)->bool {matches!(self,Self::Roster|Self::Progression|Self::Dismissal|Self::Barracks)}
+    fn minimum_revision(self)->u64 {match self {Self::Barracks=>12,Self::Dismissal=>11,Self::Progression=>10,Self::Roster=>9,Self::Ms1Is7=>8,Self::Ms1=>7}}
+    fn policy(self)->&'static str {match self {Self::Barracks=>BARRACKS_POLICY_SHA256,Self::Dismissal=>DISMISSAL_POLICY_SHA256,Self::Progression=>PROGRESSION_POLICY_SHA256,Self::Roster=>ROSTER_POLICY_SHA256,Self::Ms1Is7=>CROSS_POLICY_SHA256,Self::Ms1=>POLICY_SHA256}}
     fn vehicle_key(self)->&'static str {if self!=Self::Ms1 {"vehicle_count"}else {"vehicle_inventory_id"}}
 }
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
@@ -58,9 +60,10 @@ pub fn metadata(directory:&Path,account_id:&str,database_id:i32,revision:u64,wir
     metadata_for(Profile::Ms1,directory,account_id,database_id,revision,wire)
 }
 pub fn metadata_for(profile:Profile,directory:&Path,account_id:&str,database_id:i32,revision:u64,wire:i64)->io::Result<()> {
-    let filename=match profile {Profile::Dismissal=>"crew-dismissal.json",Profile::Progression=>"crew-progression.json",Profile::Roster=>"crew-roster.json",Profile::Ms1Is7=>"crew-cross-transfer.json",Profile::Ms1=>"crew-transfer.json"};
+    let filename=match profile {Profile::Barracks=>"crew-barracks.json",Profile::Dismissal=>"crew-dismissal.json",Profile::Progression=>"crew-progression.json",Profile::Roster=>"crew-roster.json",Profile::Ms1Is7=>"crew-cross-transfer.json",Profile::Ms1=>"crew-transfer.json"};
     let raw=super::crew_service091::fixture_file(directory,filename,4096)?;
     let state=super::crew_service091::fixture_file(directory,"state.bin",16384)?;
+    if profile==Profile::Barracks {crate::crew_barracks091::shop(directory)?;}
     metadata_bytes_for(profile,&raw,&state,account_id,database_id,revision,wire)
 }
 #[cfg(test)]
@@ -75,8 +78,8 @@ fn metadata_bytes_for(profile:Profile,raw:&[u8],state:&[u8],account_id:&str,data
         || !(profile.minimum_revision()..=i32::MAX as u64).contains(&b.revision) || b.revision!=revision
         || b.wire_revision!=1 || wire!=1 || b.policy_sha256!=profile.policy()
         || b.state_sha256!=format!("{:x}",Sha256::digest(state))
-        || b.command!=(if profile==Profile::Dismissal {306}else if profile==Profile::Progression {151}else if profile.roster() {309}else {COMMAND}) || b.vehicle_inventory_id!=(if profile!=Profile::Ms1 {2}else {1})
-        || b.free_recruitment_left>match profile {Profile::Dismissal|Profile::Progression|Profile::Roster=>13,Profile::Ms1Is7=>0,Profile::Ms1=>1}
+        || b.command!=(if profile==Profile::Barracks {303}else if profile==Profile::Dismissal {306}else if profile==Profile::Progression {151}else if profile.roster() {309}else {COMMAND}) || b.vehicle_inventory_id!=(if profile!=Profile::Ms1 {2}else {1})
+        || b.free_recruitment_left>match profile {Profile::Barracks|Profile::Dismissal|Profile::Progression|Profile::Roster=>13,Profile::Ms1Is7=>0,Profile::Ms1=>1}
         || !((if profile.roster() {2}else {1})..=i32::MAX as u64).contains(&b.configuration_revision)
         || (!profile.roster() && b.configuration_revision<2-b.free_recruitment_left) || b.battle {
         return Err(invalid("transfer metadata identity/policy/state/revision binding"));
@@ -101,7 +104,7 @@ impl Request {
     pub fn validate_for(&self,profile:Profile)->io::Result<()> {
         // Available imported profile only; ownership/role/seat/reservation are
         // independently checked against authoritative data by the shared writer.
-        let maximum_slot=match (profile,self.vehicle_inventory_id) {(Profile::Ms1Is7|Profile::Roster|Profile::Progression|Profile::Dismissal,2)=>4,(_,1)=>1,_=>return Err(invalid("unsupported transfer vehicle"))};
+        let maximum_slot=match (profile,self.vehicle_inventory_id) {(Profile::Ms1Is7|Profile::Roster|Profile::Progression|Profile::Dismissal|Profile::Barracks,2)=>4,(_,1)=>1,_=>return Err(invalid("unsupported transfer vehicle"))};
         if self.id<=0 || !(-1..=maximum_slot).contains(&self.slot)
             || !(self.tankman_inventory_id==-1 || (1..=if profile.roster() {16}else {3}).contains(&self.tankman_inventory_id))
             || (self.slot==-1 && self.tankman_inventory_id!=-1) {
@@ -267,6 +270,23 @@ mod tests {
         assert!(metadata_bytes_for(Profile::Roster,&raw,b"wrong",ACCOUNT,900001,31,1).is_err());
         let mut dup=raw[..raw.len()-1].to_vec();dup.extend(b",\"role_level\":50}");
         assert!(metadata_bytes_for(Profile::Roster,&dup,state,ACCOUNT,900001,31,1).is_err());
+    }
+
+    #[test] fn barracks_metadata_pins_command_shop_policy_and_rejects_old_profile() {
+        let state=b"\x80\x02}.";
+        let value=serde_json::json!({"version":1,"account_id":ACCOUNT,"native_database_id":900001,"revision":56,"wire_revision":1,
+            "policy_sha256":BARRACKS_POLICY_SHA256,"state_sha256":format!("{:x}",Sha256::digest(state)),"command":303,
+            "transfer_command":105,"role_level":50,"vehicle_count":2,"free_recruitment_left":5,"configuration_revision":45,"battle":false});
+        let check=|v:&serde_json::Value|metadata_bytes_for(Profile::Barracks,&serde_json::to_vec(v).unwrap(),state,ACCOUNT,900001,56,1);
+        assert!(check(&value).is_ok());
+        for (key,replacement) in [("command",306.into()),("policy_sha256",DISMISSAL_POLICY_SHA256.into()),
+            ("wire_revision",2.into()),("role_level",100.into()),("free_recruitment_left",14.into()),("battle",true.into())] {
+            let mut bad=value.clone();bad[key]=replacement;assert!(check(&bad).is_err());
+        }
+        for key in value.as_object().unwrap().keys() {let mut bad=value.clone();bad.as_object_mut().unwrap().remove(key);assert!(check(&bad).is_err());}
+        let raw=serde_json::to_vec(&value).unwrap();assert!(metadata_bytes_for(Profile::Dismissal,&raw,state,ACCOUNT,900001,56,1).is_err());
+        let mut duplicate=raw[..raw.len()-1].to_vec();duplicate.extend(b",\"command\":303}");
+        assert!(metadata_bytes_for(Profile::Barracks,&duplicate,state,ACCOUNT,900001,56,1).is_err());
     }
 
 }

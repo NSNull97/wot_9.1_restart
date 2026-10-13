@@ -1,30 +1,30 @@
 //! P09D account service scheduling. External writes only run after the parent
 //! Session::receive commits its complete cloned frame/piggyback tree.
 use super::*;
-use crate::{account091,ammo_service091 as codec,crew_service091 as crew_codec,crew_transfer091 as transfer_codec,crew_progression091 as skill_codec,crew_dismissal091 as dismiss_codec,identity091};
+use crate::{account091,ammo_service091 as codec,crew_service091 as crew_codec,crew_transfer091 as transfer_codec,crew_progression091 as skill_codec,crew_dismissal091 as dismiss_codec,crew_barracks091 as barracks_codec,identity091};
 
 const MAX_COMMANDS:usize=512;
 const MAX_PENDING:usize=4;
 
 #[derive(Clone,Debug,PartialEq,Eq)]
-enum Command {Ammo(codec::Request),Crew(crew_codec::Request),Transfer(transfer_codec::Request),Skill(skill_codec::Request),Dismiss(dismiss_codec::Request)}
+enum Command {Ammo(codec::Request),Crew(crew_codec::Request),Transfer(transfer_codec::Request),Skill(skill_codec::Request),Dismiss(dismiss_codec::Request),Barracks(barracks_codec::Request)}
 impl Command {
-    fn id(&self)->i16 {match self {Self::Ammo(r)=>r.id,Self::Crew(r)=>r.id,Self::Transfer(r)=>r.id,Self::Skill(r)=>r.id,Self::Dismiss(r)=>r.id}}
-    fn vehicle(&self)->i64 {match self {Self::Ammo(r)=>r.vehicle_inventory_id() as i64,Self::Crew(r)=>r.vehicle_inventory_id as i64,Self::Transfer(r)=>r.vehicle_inventory_id,Self::Skill(_)|Self::Dismiss(_)=>-1}}
-    fn kind(&self)->&'static str {match self {Self::Ammo(_)=>"AMMO",Self::Crew(_)=>"CREW",Self::Transfer(_)=>"CREW_TRANSFER",Self::Skill(_)=>"CREW_LEARN",Self::Dismiss(_)=>"CREW_DISMISS"}}
-    fn validate_supported(&self,profile:transfer_codec::Profile)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_for(profile.roster()),Self::Transfer(r)=>r.validate_for(profile),Self::Skill(r)=>if matches!(profile,transfer_codec::Profile::Progression|transfer_codec::Profile::Dismissal) {r.validate_supported()}else {Err(invalid())},Self::Dismiss(r)=>if profile==transfer_codec::Profile::Dismissal {r.validate_supported()}else {Err(invalid())}}}
+    fn id(&self)->i16 {match self {Self::Ammo(r)=>r.id,Self::Crew(r)=>r.id,Self::Transfer(r)=>r.id,Self::Skill(r)=>r.id,Self::Dismiss(r)=>r.id,Self::Barracks(r)=>r.id}}
+    fn vehicle(&self)->i64 {match self {Self::Ammo(r)=>r.vehicle_inventory_id() as i64,Self::Crew(r)=>r.vehicle_inventory_id as i64,Self::Transfer(r)=>r.vehicle_inventory_id,Self::Skill(_)|Self::Dismiss(_)|Self::Barracks(_)=>-1}}
+    fn kind(&self)->&'static str {match self {Self::Ammo(_)=>"AMMO",Self::Crew(_)=>"CREW",Self::Transfer(_)=>"CREW_TRANSFER",Self::Skill(_)=>"CREW_LEARN",Self::Dismiss(_)=>"CREW_DISMISS",Self::Barracks(_)=>"CREW_BARRACKS"}}
+    fn validate_supported(&self,profile:transfer_codec::Profile)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_for(profile.roster()),Self::Transfer(r)=>r.validate_for(profile),Self::Skill(r)=>if matches!(profile,transfer_codec::Profile::Progression|transfer_codec::Profile::Dismissal|transfer_codec::Profile::Barracks) {r.validate_supported()}else {Err(invalid())},Self::Dismiss(r)=>if matches!(profile,transfer_codec::Profile::Dismissal|transfer_codec::Profile::Barracks) {r.validate_supported()}else {Err(invalid())},Self::Barracks(r)=>if profile==transfer_codec::Profile::Barracks {r.validate_supported()}else {Err(invalid())}}}
 }
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub(super) struct State {
-    revision:u64,wire_revision:i64,prefix:String,crew_enabled:bool,transfer_enabled:bool,cross_vehicle_enabled:bool,roster_recruitment:bool,crew_progression:bool,crew_dismissal:bool,
+    revision:u64,wire_revision:i64,prefix:String,crew_enabled:bool,transfer_enabled:bool,cross_vehicle_enabled:bool,roster_recruitment:bool,crew_progression:bool,crew_dismissal:bool,crew_barracks:bool,
     seen:Vec<i16>,pending:VecDeque<Command>,inflight:Option<Command>,
 }
 impl State {
     pub(super) fn new(binding:codec::Metadata,crew_enabled:bool)->Self {
         let mut random=[0;16];OsRng.fill_bytes(&mut random);
         let prefix=random.iter().map(|byte|format!("{byte:02x}")).collect();
-        Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,transfer_enabled:false,cross_vehicle_enabled:false,roster_recruitment:false,crew_progression:false,crew_dismissal:false,
+        Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,transfer_enabled:false,cross_vehicle_enabled:false,roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks:false,
              seen:Vec::new(),pending:VecDeque::new(),inflight:None}
     }
     pub(super) fn crew_enabled(&self)->bool {self.crew_enabled}
@@ -33,12 +33,15 @@ impl State {
     pub(super) fn with_roster_recruitment(mut self,enabled:bool)->Self {self.roster_recruitment=enabled && self.cross_vehicle_enabled;self}
     pub(super) fn with_progression(mut self,enabled:bool)->Self {self.crew_progression=enabled && self.roster_recruitment;self}
     pub(super) fn with_dismissal(mut self,enabled:bool)->Self {self.crew_dismissal=enabled && self.crew_progression;self}
+    pub(super) fn with_barracks(mut self,enabled:bool)->Self {self.crew_barracks=enabled && self.crew_dismissal;self}
+    pub(super) fn barracks_enabled(&self)->bool {self.crew_barracks}
     pub(super) fn dismissal_enabled(&self)->bool {self.crew_dismissal}
     pub(super) fn progression_enabled(&self)->bool {self.crew_progression}
     pub(super) fn transfer_enabled(&self)->bool {self.transfer_enabled}
     pub(super) fn used_id(&self,id:i16)->bool {self.seen.contains(&id)}
     fn command_key(&self,request:&Command)->String {
-        let card=match request {Command::Ammo(_)=>"p09d",Command::Dismiss(_)=>"p04j",Command::Skill(_)=>if self.crew_dismissal {"p04j"}else {"p04i"},Command::Crew(_)=>if self.crew_dismissal {"p04j"}else if self.crew_progression {"p04i"}else if self.roster_recruitment {"p04h"}else {"p04d"},Command::Transfer(_)=>if self.crew_dismissal {"p04j"}else if self.crew_progression {"p04i"}else if self.roster_recruitment {"p04h"}else if self.cross_vehicle_enabled {"p04g"}else {"p04f"}};
+        let card=match request {Command::Ammo(_)=>"p09d",Command::Barracks(_)=>"p04k",Command::Dismiss(_)=>"p04j",Command::Skill(_)=>if self.crew_dismissal {"p04j"}else {"p04i"},Command::Crew(_)=>if self.crew_dismissal {"p04j"}else if self.crew_progression {"p04i"}else if self.roster_recruitment {"p04h"}else {"p04d"},Command::Transfer(_)=>if self.crew_dismissal {"p04j"}else if self.crew_progression {"p04i"}else if self.roster_recruitment {"p04h"}else if self.cross_vehicle_enabled {"p04g"}else {"p04f"}};
+        let card=if self.crew_barracks && !matches!(request,Command::Ammo(_)) {"p04k"}else {card};
         format!("{card}:{}:{}",self.prefix,request.id())
     }
 }
@@ -71,6 +74,10 @@ pub(super) fn enqueue_dismissal(session:&mut Session,request:dismiss_codec::Requ
     if !session.ammo_service.as_ref().is_some_and(State::dismissal_enabled) {return Err(invalid());}
     enqueue_command(session,Command::Dismiss(request),events)
 }
+pub(super) fn enqueue_barracks(session:&mut Session,request:barracks_codec::Request,events:&mut Vec<String>)->io::Result<()> {
+    if !session.ammo_service.as_ref().is_some_and(State::barracks_enabled) {return Err(invalid());}
+    enqueue_command(session,Command::Barracks(request),events)
+}
 fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)->io::Result<()> {
     available(session)?;
     let state=session.ammo_service.as_mut().ok_or_else(invalid)?;
@@ -81,7 +88,7 @@ fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)
         return Err(invalid());
     }
     state.seen.push(id);
-    if request.validate_supported(transfer_codec::Profile::selected_dismissal(state.cross_vehicle_enabled,state.roster_recruitment,state.crew_progression,state.crew_dismissal)).is_err() {
+    if request.validate_supported(transfer_codec::Profile::selected_barracks(state.cross_vehicle_enabled,state.roster_recruitment,state.crew_progression,state.crew_dismissal,state.crew_barracks)).is_err() {
         session.outbox.push_back(crate::hangar091::unavailable_response(id)?);
         events.push(format!("{kind}_SERVICE_REJECTED session={} request={id} result=-10 reason=unsupported_layout domain_applied=false",session.id));
     } else {
@@ -138,6 +145,7 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
         let outcome=match dispatched {
             Command::Ammo(request)=>config.service_ammunition(&profile,&key,revision,wire_revision,request.arguments),
             Command::Crew(request)=>config.recruit_crew(&profile,&key,revision,wire_revision,request),
+            Command::Barracks(request)=>config.recruit_barracks(&profile,&key,revision,wire_revision,request),
             Command::Dismiss(request)=>config.dismiss_crew(&profile,&key,revision,wire_revision,request),
             Command::Skill(request)=>config.learn_crew(&profile,&key,revision,wire_revision,request),
             Command::Transfer(request)=>config.transfer_crew(&profile,&key,revision,wire_revision,request),
@@ -160,9 +168,18 @@ fn apply(session:&mut Session,request_id:i16,reply:identity091::AmmoReply)->io::
     let bodies=if reply.serviced {
         if reply.revision!=state.revision.checked_add(1).ok_or_else(invalid)?
             || reply.wire_revision!=state.wire_revision.checked_add(1).ok_or_else(invalid)? {return Err(invalid());}
-        codec::response(request_id,&reply.update)?
+        let mut bodies=codec::response(request_id,&reply.update)?;
+        match (state.inflight.as_ref(),reply.recruitment.as_ref()) {
+            (Some(Command::Barracks(request)),Some(member))=>{
+                member.validate_delta(*request,state.wire_revision,&reply.update)?;
+                bodies[1]=member.success_response(request_id)?;
+            },
+            (Some(Command::Barracks(_)),None)|(_,Some(_))=>return Err(invalid()),
+            _=>{},
+        }
+        bodies
     } else {
-        if reply.revision!=state.revision || reply.wire_revision!=state.wire_revision || !reply.update.is_empty() {
+        if reply.revision!=state.revision || reply.wire_revision!=state.wire_revision || !reply.update.is_empty() || reply.recruitment.is_some() {
             return Err(invalid());
         }
         vec![crate::hangar091::unavailable_response(request_id)?]
@@ -230,7 +247,7 @@ mod tests {
     fn crew_reply(revision:u64,wire:i64)->identity091::AmmoReply {
         let mut delta=b"\x80\x02}(U\x07prevRevJ".to_vec();delta.extend((wire as i32-1).to_le_bytes());
         delta.extend(b"U\x03revJ");delta.extend((wire as i32).to_le_bytes());delta.extend(b"u.");
-        identity091::AmmoReply{serviced:true,revision,wire_revision:wire,update:delta,replayed:false,result_code:0}
+        identity091::AmmoReply{serviced:true,revision,wire_revision:wire,update:delta,recruitment:None,replayed:false,result_code:0}
     }
     fn ready_transfer(now:Instant)->Session {
         let mut s=ready_crew(now);s.ammo_service=Some(State::new(codec::Metadata{revision:8,wire_revision:1},true).with_transfer(true));s
@@ -252,6 +269,7 @@ mod tests {
     }
     fn reply(serviced:bool)->identity091::AmmoReply {
         identity091::AmmoReply{serviced,revision:if serviced{6}else{5},wire_revision:if serviced{2}else{1},
+            recruitment:None,
             update:if serviced {b"\x80\x02}(U\x07prevRevK\x01U\x03revK\x02u.".to_vec()}else{vec![]},
             replayed:false,result_code:if serviced{0}else{-10}}
     }
@@ -334,7 +352,7 @@ mod tests {
         }
         let mut s=ready_transfer(now);enqueue_transfer(&mut s,transfer_request(226),&mut vec![]).unwrap();
         let state=s.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
-        apply(&mut s,226,identity091::AmmoReply{serviced:false,revision:8,wire_revision:1,update:vec![],replayed:false,result_code:-10}).unwrap();
+        apply(&mut s,226,identity091::AmmoReply{serviced:false,revision:8,wire_revision:1,update:vec![],recruitment:None,replayed:false,result_code:-10}).unwrap();
         assert_eq!(s.ammo_service.as_ref().unwrap().revision,8);
     }
 
@@ -557,7 +575,7 @@ mod tests {
         let mut next=ready_crew(now);next.id=2;let clean=next.ammo_service.clone();
         sender.send(Ok(crew_reply(7,2))).unwrap();complete(Some(&mut next),&mut slot).unwrap();
         assert_eq!(next.ammo_service,clean);assert_eq!(next.tx.len(),0);
-        apply(&mut session,226,identity091::AmmoReply{serviced:false,revision:6,wire_revision:1,update:vec![],replayed:false,result_code:-10}).unwrap();
+        apply(&mut session,226,identity091::AmmoReply{serviced:false,revision:6,wire_revision:1,update:vec![],recruitment:None,replayed:false,result_code:-10}).unwrap();
         assert_eq!(session.ammo_service.as_ref().unwrap().revision,6);
         let clear=session.tx.due(now,session.rx).unwrap().unwrap().2;
         assert_eq!(transport091::parse_interactive(&clear).unwrap().body,crate::hangar091::unavailable_response(226).unwrap());
@@ -678,6 +696,40 @@ mod tests {
         previous.receive(&frame(&previous,1,&crew_packet(hire)),now).unwrap();
         assert!(previous.ammo_service.as_ref().unwrap().pending.is_empty());
         assert!(!State::new(codec::Metadata{revision:31,wire_revision:1},true).with_roster_recruitment(true).roster_recruitment);
+    }
+
+    #[test] fn barracks303_queue_rolls_back_malformed_frame_and_orders_exact_extension() {
+        let now=Instant::now();let mut original=ready(now);
+        original.ammo_service=Some(State::new(codec::Metadata{revision:56,wire_revision:1},true)
+            .with_transfer(true).with_cross_vehicle(true).with_roster_recruitment(true).with_progression(true).with_dismissal(true).with_barracks(true));
+        let request=barracks_codec::Request{id:226,shop_revision:3,vehicle_type:7169,role:4,cost:0};
+        let mut packet=vec![0x90,24,0];packet.extend(226i16.to_le_bytes());packet.extend(303i16.to_le_bytes());
+        packet.extend(3i64.to_le_bytes());packet.extend(7169i32.to_le_bytes());packet.extend(4i32.to_le_bytes());packet.extend(0i32.to_le_bytes());
+        let mut bad=packet.clone();bad.push(0xff);let mut rejected=original.clone();
+        assert!(rejected.receive(&frame(&rejected,1,&bad),now).is_err());assert_eq!(rejected.ammo_service,original.ammo_service);
+        let mut session=original.clone();let incoming=frame(&session,1,&packet);session.receive(&incoming,now).unwrap();
+        let saved=session.ammo_service.clone();session.receive(&incoming,now).unwrap();assert_eq!(session.ammo_service,saved);
+        let state=session.ammo_service.as_mut().unwrap();assert!(state.command_key(state.pending.front().unwrap()).starts_with("p04k:"));
+        state.inflight=state.pending.pop_front();
+        let member=barracks_codec::Recruitment{tankman_id:12,descriptor:[8,28,4,50,0,0,0,12,0,12,0,12,0,64,6,0,0,0,0,66,0,0,0,0,0]};
+        let hex="80027d285507707265765265764b0155037265764b025509696e76656e746f72797d284b087d285509636f6d7044657363727d284b0c5519081c04320000000c000c000c0040060000000042000000000075550776656869636c657d284b0c4affffffff757575550573746174737d28550c66726565544d656e4c6566744b0475752e";
+        let delta:Vec<u8>=(0..hex.len()).step_by(2).map(|i|u8::from_str_radix(&hex[i..i+2],16).unwrap()).collect();
+        member.validate_delta(request,1,&delta).unwrap();
+        let before=session.ammo_service.clone();
+        for wrong in [None,Some(barracks_codec::Recruitment{tankman_id:13,..member.clone()})] {
+            let reply=identity091::AmmoReply{serviced:true,revision:57,wire_revision:2,update:delta.clone(),recruitment:wrong,replayed:false,result_code:0};
+            assert!(apply(&mut session,226,reply).is_err());assert_eq!(session.ammo_service,before);assert_eq!(session.tx.len(),0);
+        }
+        let reply=identity091::AmmoReply{serviced:true,revision:57,wire_revision:2,update:delta,recruitment:Some(member.clone()),replayed:false,result_code:0};
+        apply(&mut session,226,reply).unwrap();
+        let first=session.tx.due(now,session.rx).unwrap().unwrap().2;let second=session.tx.due(now,session.rx).unwrap().unwrap().2;
+        assert_eq!(transport091::parse_interactive(&first).unwrap().body[1],0x57);
+        assert_eq!(transport091::parse_interactive(&second).unwrap().body,member.success_response(226).unwrap());
+        assert_eq!(session.ammo_service.as_ref().unwrap().revision,57);
+        let mut old=ready_transfer(now);assert!(enqueue_barracks(&mut old,request,&mut vec![]).is_err());
+        for req in [barracks_codec::Request{shop_revision:0,..request},barracks_codec::Request{cost:1,..request}] {
+            let mut session=original.clone();enqueue_barracks(&mut session,req,&mut vec![]).unwrap();assert!(session.ammo_service.as_ref().unwrap().pending.is_empty());
+        }
     }
 
 }

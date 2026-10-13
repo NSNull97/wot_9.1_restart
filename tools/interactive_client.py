@@ -27,7 +27,7 @@ MODULES += ('p09d_ammo_ui', 'p09d_ammo_scenario')
 MODULES += ('p04d_crew_ui',)
 MODULES += ('p04f_crew_ui',)
 MODULES += ('p04g_crew_ui',)
-MODULES += ('p04h_crew_ui', 'p04i_crew_ui', 'p04j_crew_ui')
+MODULES += ('p04h_crew_ui', 'p04i_crew_ui', 'p04j_crew_ui', 'p04k_crew_ui')
 
 
 def digest(payload):
@@ -124,6 +124,9 @@ def prepare(args):
     roster = bool(getattr(args, 'enable_roster_recruitment', False))
     progression = bool(getattr(args, 'enable_crew_progression', False))
     dismissal = bool(getattr(args, 'enable_crew_dismissal', False))
+    barracks = bool(getattr(args, 'enable_barracks_recruitment', False))
+    if barracks and not dismissal:
+        raise ValueError('P04K Barracks recruitment requires all earlier explicit hangar services')
     if dismissal and not progression:
         raise ValueError('P04J dismissal requires all earlier explicit hangar services')
     if ammo_service and (shared_lab or args.enable_map_drive):
@@ -273,6 +276,8 @@ def prepare(args):
         settings['enable_crew_progression'] = True
     if dismissal:
         settings['enable_crew_dismissal'] = True
+    if barracks:
+        settings['enable_barracks_recruitment'] = True
     if shared_lab:
         settings['enable_shared_lab'] = True
     if catalog_spec is not None:
@@ -456,6 +461,7 @@ def main():
     prep.add_argument('--enable-roster-recruitment', action='store_true', help='Enable the explicit profile9 free50 roster policy; requires all earlier crew services')
     prep.add_argument('--enable-crew-progression', action='store_true', help='Enable profile10 native PersonalCase and first-skill selection; requires all previous crew services')
     prep.add_argument('--enable-crew-dismissal', action='store_true', help='Enable profile11 sparse crew and original dismissal confirmation; requires progression')
+    prep.add_argument('--enable-barracks-recruitment', action='store_true', help='Enable profile12 original Barracks free50 recruitment; requires dismissal')
     prep.add_argument('--enable-cross-vehicle-crew', action='store_true',
                       help='Original MS-1/IS-7 crew callbacks; requires transfer, recruitment and ammunition service')
     prep.add_argument('--capture-hangar', action='store_true',
