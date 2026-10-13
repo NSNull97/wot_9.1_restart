@@ -139,7 +139,7 @@ fn resolve(m:&materials::MaterialFacts,distance:f64)->ap::Resolution {
         name:format!("side-{slot}")},slot as u32+1).unwrap();}
     w.start(now).unwrap();
     // Source Hull triangle108, armor_6=100mm: horizontal side ray at y=.9,z=0.
-    // Hull has a factor0 screen higher up at y=1.1; do not silently skip it.
+    // Hull has a factor0 screen higher up; do not silently skip it.
     // Subtract the actual S-70 gun joint offset to place the shot origin at x=-10.
     let yaw=std::f32::consts::PI/2.;
     let (offset,_)=aim::shot_geometry_pose_for(kind,[0.;3],[0.;3],yaw,0.,720.);
@@ -186,12 +186,15 @@ fn resolve(m:&materials::MaterialFacts,distance:f64)->ap::Resolution {
         name:format!("screen-{slot}")},slot as u32+1).unwrap();}
     w.start(now).unwrap();let yaw=std::f32::consts::PI/2.;
     let (offset,_)=aim::shot_geometry_pose_for(kind,[0.;3],[0.;3],yaw,0.,720.);
-    let origin=[-10.,1.1,0.];
+    // Stay inside source screen triangle8 after the actual 100ms ballistic
+    // chord drops: y=1.1 lies at its lower edge and hits armor_6 instead.
+    let origin=[-10.,1.2,0.];
     w.rebase_external_spawns([std::array::from_fn(|i|origin[i]-offset[i]),[0.;3]]).unwrap();
     w.actors[0].aim.yaw=yaw;w.actors[0].aim.park();w.set_ready(0,1).unwrap();w.set_ready(1,2).unwrap();
     w.apply(0,1,&[model::Command::Fire(fire::Command::Shoot)],now).unwrap();
     w.advance(now+Duration::from_millis(100)).unwrap();
     assert_eq!(w.contacts.len(),1);assert_eq!(w.contacts[0].triangle.material,"armor_14");
+    assert_eq!(w.contacts[0].triangle.triangle_id,8);
     let event=&w.impacts[0];let model::ImpactOutcome::Ap(resolution)=&event.outcome else {panic!("screen")};
     assert_eq!(resolution.outcome,ap::Outcome::Unsupported(ap::Reason::VehicleDamageFactor));
     assert_eq!(resolution.damage,0);assert!(event.segment.is_none());assert_eq!(w.actors[1].health,2150);
