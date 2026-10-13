@@ -1,3 +1,14 @@
+## 2026-10-13 — P06R compound objects and fences started
+
+Owner authorized the next destruction card. Base is accepted/merged P06Q
+main `90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`; remote SHA was verified.
+Branch `codex/p06r-compound-destructibles`. The [P06R plan](plans/P06R_COMPOUND_DESTRUCTIBLES.md)
+requires source-pinned coverage, part-safe physics/projectile state, bounded
+native packing, automatic/private checks and eventual owner acceptance.
+Initial work is read-only native/geometry/runtime contract research; no P06R
+runtime or native PASS yet. Original client uses the verified configured C
+path. Existing unrelated P09B working edit is preserved outside this card.
+
 ## 2026-10-13 — P06Q tree visual/state sync follow-up
 
 ### Owner gate accepted; stand closed; original client relocated

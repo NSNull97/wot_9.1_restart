@@ -1,3 +1,19 @@
+# P06R active — compound objects and fences
+
+Owner authorized continued destruction implementation on 2026-10-13.
+Branch `codex/p06r-compound-destructibles`, accepted main
+`90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8` (P06Q merge, remote verified).
+Current work: source/native part-state research and bounded coverage inventory
+before versioned implementation. Original client is read-only on C; approved
+A/B copies are restored and no native test stand is running.
+
+**Acceptance: IN_PROGRESS; native P06R gate NOT_RUN.** Preserve accepted whole
+fragiles, tree falls, cumulative scene ACKs and network readiness. Do not claim
+universal destruction or remove whole compound geometry for one part.
+[Plan and boundaries](plans/P06R_COMPOUND_DESTRUCTIBLES.md).
+**Next step:** implement only source-bound whole/part transitions established
+by the new coverage/native contract, then run automatic and private checks.
+
 # P06Q accepted — native tree fall, both-client agreement and passage
 
 Branch `codex/p06q-tree-visual-sync`, accepted P06P source base
