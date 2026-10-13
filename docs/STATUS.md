@@ -1,3 +1,39 @@
+## 2026-10-13 — P04F native crew unloading and reassignment accepted
+
+**PASS_NATIVE_CREW_TRANSFER_CURRENT_MAIN.** General server assignment logic
+now backs original #717 crew callbacks for the first verified mutable MS-1
+profile. Native CMD105/method0x8e VAR2 payload20 is observed in actual captures.
+Seven operations cover unloading, seating from barracks, occupant replacement,
+commander handling and whole-crew unloading. All three tankmen survive with
+unchanged IDs/descriptors, money, quota and ammunition. Final `[1, None]`
+persists through fresh bridge/gateway/client login; both drivers stay in barracks.
+
+Branch `codex/p04f-native-crew-transfer` integrates accepted concurrent P03M
+main0393857. Final build04:726 Rust PASS/build PASS;770 applicable Python PASS;
+98 Node PASS;9 actual CPython2.7.3 compilations PASS; no final test skips.
+Test-only P03M relocation preserves exact pinned scalar bytes and ownership
+checks; the initial precision-audit failure and other attempts remain recorded.
+
+Final native05/06 uses gateway SHA45f6ba2b1b7d712d0a74d954cb69065e5c8fe9ccafe35234821be58e8e218018.
+Independent wire/ledger/native verification passes seven exact updates before
+success and18 equal non-rate-limit tables after relogin. Four final native PNGs
+were inspected. Both clients exited0 normally, all own installs are restored,
+services stopped and no scenario remains armed. Full source layout94/22 PASS.
+
+The native adapter is still source-bound MS-1; generic two-vehicle planner
+checks do not establish native cross-tank compatibility or historical penalties.
+Skills, retraining, dismissal, paid tariffs and battle admission remain unsupported.
+Physical mouse/manual owner acceptance is NOT_RUN; actual original callbacks,
+wire, durable state and scoped pixels close this card. Rendering/handling debt
+is unchanged. Primary P03M/P05 and sibling stands are not deployed by this card.
+
+[Evidence, exact commands, files, limits and rollback](evidence-index/P04F_NATIVE_CREW_TRANSFER.md).
+Final source/commit/merge/remote bindings:
+`local/evidence/20261013-p04f-native-crew-transfer-01/acceptance-final/`.
+Standing ordinary no-ff main integration/push is authorized by these gates.
+**One next crew step:** a second verified vehicle crew profile and a native
+cross-vehicle transfer through the same generic operation.
+
 ## 2026-10-13 — P03M accepted; shared handling remains open P05 debt
 
 **PASS_OWNER_IS7_PROFILE_SHARED_HANDLING_DEBT_OPEN.** Owner explicitly clarified

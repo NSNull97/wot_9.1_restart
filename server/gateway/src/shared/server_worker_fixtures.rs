@@ -2,7 +2,8 @@
 //! Immutable historical pools retain their original pins. Derived pool/config
 //! hashes describe only this checkout's paths, never the old native evidence.
 //! P06N/P06O provenance remains the P06Q fixture-migration receipt; IPC5 uses
-//! the accepted P06R chain pool. No production loader or worker is replaced.
+//! the accepted P06R chain pool. P03M retains its exact v2 IS-7 profile.
+//! No production loader or worker is replaced.
 use crate::map_drive_worker091::Pool;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -14,6 +15,9 @@ const P06N_SOURCE_SHA: &str = "80f14d87bb01c9c28f5376265dce80989eeb715fdfe3f1501
 const P06O_SOURCE_SHA: &str = "a96e7b8c1b410446e3e7c0f6e7e7453b633c3fbb19ce94a62686fbb319031d21";
 const P06R_SOURCE_SHA: &str = "62549fb3b3652edadbf6756445141a192f3157e741ab94d2e890c5a54de9783e";
 const P06R_CONFIG_SHA: &str = "a1d8f4406661e53636c5430588def8af96de93a1d56b4781a4bedf6a01e8c49e";
+pub(crate) const P03M_SOURCE_SHA: &str = "33d51d7d0954ba1cce07618b63aed07500b09a83172f4402273b3fe7840e9577";
+pub(crate) const P03M_CONFIG_SHA: &str = "82e81ebab19fca57e354cbe25afe34db23745cb844f0e89758d8747a1428c4ca";
+const P03M_PROFILE_SHA: &str = "2fefea06de45fd172894ea7330f59d8efa9f9914a4f88192bb7b5f6ce8d47a90";
 
 fn invalid() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "historical fixture relocation") }
 fn hash(raw: &[u8]) -> String { format!("{:x}", Sha256::digest(raw)) }
@@ -79,12 +83,25 @@ fn spelling(path: &Path) -> io::Result<String> {
     Ok(value.strip_prefix(r"\\?\").unwrap_or(value).to_owned())
 }
 fn text<'a>(value: &'a Value, key: &str) -> io::Result<&'a str> { value[key].as_str().ok_or_else(invalid) }
-fn save(root: &Path, path: &Path, value: &Value) -> io::Result<String> {
+fn save_bytes(root: &Path, path: &Path, raw: &[u8]) -> io::Result<String> {
     owned(root, path.parent().ok_or_else(invalid)?)?;
-    let raw = serde_json::to_vec_pretty(value).map_err(|_| invalid())?;
     if raw.is_empty() || raw.len() > 16384 { return Err(invalid()); }
-    fs::OpenOptions::new().write(true).create_new(true).open(path)?.write_all(&raw)?;
-    Ok(hash(&raw))
+    fs::OpenOptions::new().write(true).create_new(true).open(path)?.write_all(raw)?;
+    Ok(hash(raw))
+}
+fn save(root: &Path, path: &Path, value: &Value) -> io::Result<String> {
+    save_bytes(root, path, &serde_json::to_vec_pretty(value).map_err(|_| invalid())?)
+}
+fn replace_config_path(raw: &str, original: &str, relocated: &str) -> io::Result<String> {
+    if raw.is_empty() || raw.len() > 16384 { return Err(invalid()); }
+    let from = serde_json::to_string(original).map_err(|_| invalid())?;
+    let to = serde_json::to_string(relocated).map_err(|_| invalid())?;
+    // Pinned JSON must contain exactly this complete quoted path token.
+    // Do not reserialize f64 values: that changes historical decimal spelling.
+    if raw.matches(&from).count() != 1 { return Err(invalid()); }
+    let derived = raw.replacen(&from, &to, 1);
+    if derived.len() > 16384 { return Err(invalid()); }
+    Ok(derived)
 }
 fn relocate(source: &str, source_sha: &str, tag: &str) -> io::Result<Pool> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize()?;
@@ -100,6 +117,21 @@ fn relocate(source: &str, source_sha: &str, tag: &str) -> io::Result<Pool> {
     // Artifact manifest and every executable/runtime member remain unchanged.
     pinned(&root, Path::new(text(&value["worker"], "artifact_manifest")?),
         text(&value["worker"], "artifact_manifest_sha256")?, 65536)?;
+    let mut changed_fields = vec!["worker.executable", "worker.artifact_manifest", "maps[].config",
+        "maps[].config_sha256", "config.terrain.path", "config.obstacles.path"];
+    let mut vehicle_profile_provenance = Value::Null;
+    if tag == "p03m" {
+        if value["version"].as_u64() != Some(2)
+            || text(&value["vehicle_profile"], "sha256")? != P03M_PROFILE_SHA { return Err(invalid()); }
+        let original_path = text(&value["vehicle_profile"], "path")?.to_owned();
+        let path = mapped(&root, &original_path)?;
+        pinned(&root, &path, P03M_PROFILE_SHA, 16384)?;
+        vehicle_profile_provenance = serde_json::json!({"source_path": original_path,
+            "source_sha256": P03M_PROFILE_SHA, "derived_path": spelling(&path)?,
+            "derived_sha256": P03M_PROFILE_SHA, "bytes_unchanged": true});
+        value["vehicle_profile"]["path"] = spelling(&path)?.into();
+        changed_fields.push("vehicle_profile.path");
+    }
     let maps = value["maps"].as_array_mut().ok_or_else(invalid)?;
     if maps.len() != 2 { return Err(invalid()); }
     let mut provenance = Vec::new();
@@ -109,17 +141,28 @@ fn relocate(source: &str, source_sha: &str, tag: &str) -> io::Result<Pool> {
         if tag == "p06r" && text(map, "asset")? == "05_prohorovka" && source_hash != P06R_CONFIG_SHA {
             return Err(invalid());
         }
+        if tag == "p03m" && text(map, "asset")? == "05_prohorovka" && source_hash != P03M_CONFIG_SHA {
+            return Err(invalid());
+        }
         let raw = pinned(&root, &source_path, &source_hash, 16384)?;
         let mut config: Value = serde_json::from_slice(&raw).map_err(|_| invalid())?;
+        let mut exact_config = std::str::from_utf8(&raw).map_err(|_| invalid())?.to_owned();
         for key in ["terrain", "obstacles"] {
-            let path = mapped(&root, text(&config[key], "path")?)?;
+            let original_path = text(&config[key], "path")?;
+            let path = mapped(&root, original_path)?;
             pinned(&root, &path, text(&config[key], "sha256")?, 8 * 1024 * 1024)?;
-            config[key]["path"] = spelling(&path)?.into();
+            let relocated_path = spelling(&path)?;
+            if tag == "p03m" {
+                exact_config = replace_config_path(&exact_config, original_path, &relocated_path)?;
+            }
+            config[key]["path"] = relocated_path.into();
         }
         let target = output.join(format!("map-{index}.json"));
-        let derived_hash = save(&root, &target, &config)?;
+        let derived_hash = if tag == "p03m" { save_bytes(&root, &target, exact_config.as_bytes())? }
+            else { save(&root, &target, &config)? };
         provenance.push(serde_json::json!({"source_path": spelling(&source_path)?, "source_sha256": source_hash,
-            "derived_path": spelling(&target)?, "derived_sha256": derived_hash}));
+            "derived_path": spelling(&target)?, "derived_sha256": derived_hash,
+            "raw_nonpath_bytes_preserved": tag == "p03m"}));
         map["config"] = spelling(&target)?.into();
         map["config_sha256"] = derived_hash.into();
     }
@@ -131,8 +174,7 @@ fn relocate(source: &str, source_sha: &str, tag: &str) -> io::Result<Pool> {
         "status": "VERIFIED_PATH_RELOCATION_RUNTIME_NOT_RUN", "native_clients": "NOT_RUN",
         "source_pool": source, "source_pool_sha256": source_sha, "derived_pool_sha256": derived_hash,
         "artifact_manifest_sha256": value["worker"]["artifact_manifest_sha256"], "configs": provenance,
-        "changed_fields": ["worker.executable", "worker.artifact_manifest", "maps[].config",
-            "maps[].config_sha256", "config.terrain.path", "config.obstacles.path"]}))?;
+        "vehicle_profile": vehicle_profile_provenance, "changed_fields": changed_fields}))?;
     Ok(pool)
 }
 
@@ -158,6 +200,23 @@ pub(crate) fn p06r() -> Pool {
     static POOL: OnceLock<Pool> = OnceLock::new();
     POOL.get_or_init(|| relocate("evidence/20261013-p06r-compound-01/fracture-gateway-real01/pool-chain.json",
         P06R_SOURCE_SHA, "p06r").expect("required pinned P06R IPC5 fixture")).clone()
+}
+
+pub(crate) fn p03m() -> Pool {
+    static POOL: OnceLock<Pool> = OnceLock::new();
+    POOL.get_or_init(|| relocate("evidence/20261013-p03m-is7-01/physics-source01/canonical-pools02/pool-contacts-is7.json",
+        P03M_SOURCE_SHA, "p03m").expect("required pinned P03M v2 IS-7 fixture")).clone()
+}
+
+#[test]
+fn p03m_path_replacement_preserves_scalar_bytes_and_requires_one_exact_token() {
+    let raw = r#"{ "path": "D:\\old\\x", "numbers": [1.0385702341794967, 1e-007, -0.0, 1E+02] }"#;
+    let want = r#"{ "path": "C:\\own\\x", "numbers": [1.0385702341794967, 1e-007, -0.0, 1E+02] }"#;
+    assert_eq!(replace_config_path(raw, r"D:\old\x", r"C:\own\x").unwrap(), want);
+    assert!(replace_config_path(raw, r"D:\absent", r"C:\own\x").is_err());
+    assert!(replace_config_path(&(raw.to_owned() + raw), r"D:\old\x", r"C:\own\x").is_err());
+    assert!(replace_config_path(r#"{"path":"D:\u005cold\u005cx"}"#, r"D:\old\x", r"C:\own\x").is_err());
+    assert!(replace_config_path(raw, r"D:\old\x", &"x".repeat(16384)).is_err());
 }
 
 #[test]

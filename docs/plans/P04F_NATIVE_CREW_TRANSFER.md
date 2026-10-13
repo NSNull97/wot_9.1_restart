@@ -60,8 +60,8 @@ or historically accurate cross-specialization effects.
 
 ## Acceptance and rollback
 
-Initial status: IN_PROGRESS; source/wire/native behavior is UNKNOWN until
-measured. Required native acceptance uses the original callbacks in a real
+Final status: PASS_NATIVE_CREW_TRANSFER_CURRENT_MAIN. Source/wire/native
+behavior is evidenced in the P04F research and evidence index. Native acceptance uses the original callbacks in a real
 client plus independent wire/state/visual correlation. Physical mouse/manual
 owner acceptance is separately reported if not run. Graphics artifacts and
 other vehicle behavior are not accepted by inference.
@@ -75,3 +75,12 @@ Rollback: ledger-restore only owned installs; stop only receipt-identified
 processes. Preserve new DB/evidence and the unchanged accepted predecessor DB.
 Revert this card's main merge with `git revert -m 1`, never rewrite history or
 reset another checkout. Missing mandatory native/test evidence is NOT_RUN/HOLD.
+
+Completed: original callbacks/packets/durable updates and fresh relogin twice;
+final pair05/06 uses the combined accepted P03M main baseline and final build04.
+726 Rust,770 applicable Python,98 Node tests and9 CPython2.7 compile checks pass.
+P03M test-only fixture relocation preserves exact scalar bytes after a retained
+initial precision-audit failure; production pool ownership checks are unchanged.
+All own native installs restored, processes stopped, scenario consumed.
+Physical owner input and native cross-vehicle assignment remain NOT_RUN.
+Final commit/ordinary merge/push/remote SHA are bound in the local final receipt.
