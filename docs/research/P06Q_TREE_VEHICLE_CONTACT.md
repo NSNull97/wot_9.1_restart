@@ -6,6 +6,32 @@ Evidence root: `local/evidence/20261012-p06q-tree-contact-01/`
 
 ## Goal and result
 
+
+## Follow-up: visual/state synchronisation and server-loss smoke
+
+Commit `f9d50ce417bad6c0f832bdf372b61ce20c5d8101` adds a bounded, read-only
+observer for `AreaDestructibles.set_fallenTrees` and pins the exact packed
+Prohorovka tree update envelope. Static checks passed (16 Python tests and the
+8-test `catalog_wire_tests` target). The observer is intentionally diagnostic;
+it does not fabricate a fall or write native state.
+
+A fresh `netdrop01` runtime reached two `SHARED_READY` sessions on Prohorovka.
+The server process was then stopped through a receipt-verified identity check,
+the clients remained alive for 15 seconds, and the normal stop/rollback path
+restored both owned client copies. This proves only the bounded server-loss
+sequence. It does not prove directional packet loss, reconnect, or rejoin:
+there is no `SHARED_REJOIN` signal in this runtime, and the server log therefore
+contains no such acceptance evidence. The exact result is recorded in
+`local/evidence/20261012-p06p-prohorovka-01/tests/tree-sync-netdrop01.json`.
+
+The prior `manualtree02` native traces contained zero `set_fallenTrees` events,
+so the client consumer path and visual tree fall remain **UNKNOWN**. The owner
+reported a rendered visual fail while server publication and passage were
+observed; this remains a native owner-gate `PARTIAL_FAIL`, not a wire mismatch
+claim. A future owner-controlled contact run must capture the setter and native
+`orderDestructibleDestroy` payload before visual acceptance can move.
+
+
 The card extends the accepted Prohorovka cumulative runtime with a bounded,
 server-authoritative contact path. The source-pinned importer now admits the
 original tree collision spans together with the nine previously supported
@@ -99,6 +125,10 @@ passage, and acceptance remain open.
   bounds.
 - `client_patch/sr_interactive.py` — passive observer keeps the native catalog
   alive when this 0.9.1 client lacks `gunRotator`; no synthetic pose is used.
+  Follow-up commit adds bounded `set_fallenTrees` callback evidence only.
+- `tests/test_shared_lab_control.py` — bounded callback/read-only regression.
+- `server/gateway/src/shared/destructible_wire.rs` — pinned Prohorovka packed tree envelope.
+- `docs/plans/P06Q_TREE_VISUAL_SYNC.md` — follow-up scope and rollback.
 - `docs/plans/P06Q_TREE_VEHICLE_CONTACT.md` — card plan.
 
 ## Commands and real checks

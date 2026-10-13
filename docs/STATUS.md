@@ -1,3 +1,15 @@
+## 2026-10-13 — P06Q tree visual/state sync follow-up
+
+Current branch: `codex/p06q-tree-visual-sync`; source commit: `f9d50ce417bad6c0f832bdf372b61ce20c5d8101`.
+
+Implemented a diagnostic-only observer for the original `AreaDestructibles.set_fallenTrees` callback. The observer copies bounded native `ARRAY<UINT32>` values, records the chunk/entity identity, and never mutates the owner, collision body, tree matrix, or server state. The gateway wire test pins the two packed Prohorovka values observed in `manualtree02` (`0x195a8000`, `0x040e8000`) and their exact `0x12 ... 0x13` envelope.
+
+Checks: `python -B -X utf8 -m unittest tests.test_shared_lab_control tests.test_interactive_primitive -v` — 16/16 PASS; `python -B -X utf8 -m py_compile client_patch/sr_interactive.py` — PASS; `python -B -X utf8 server/build.py gateway --test --test-filter catalog_wire_tests --out local/build/server/gateway-p06q-final-20` — 8/8 PASS, executable SHA256 `790489d916f6d91bc9136b47d0e0dd4abfa3151f11eaed770725f4718194488a`.
+
+A bounded `netdrop01` live runtime smoke reached two `SHARED_READY` sessions on `05_prohorovka`; only the receipt-verified server PID was stopped, clients were observed for 15 seconds, and then all processes were stopped and both client ledgers restored. Evidence: `local/evidence/20261012-p06p-prohorovka-01/tests/tree-sync-netdrop01.json` (SHA256 `fe19665639e23195d436186c18c50a8f7e014c61811e14c18af7bbb59a08c273`), `server-only-stop-netdrop01.json`, `stop-netdrop01stop.json`, and `install-a/b-netdrop01/restore.json`. The server log contains `SHARED_SESSION_PENDING`, `SHARED_ANNOUNCED`, and both `SHARED_READY`; no `SHARED_SESSION_CLOSED/FAILED/REJECT` appeared because the server was terminated externally. This is a server-loss smoke, not directional packet-loss or reconnect acceptance.
+
+The previous `manualtree02` native trace had zero `set_fallenTrees` callbacks, so client visual fall remains `UNKNOWN`/owner-gate `PARTIAL_FAIL`; the observer is ready for a future owner-controlled contact run. Native visual fall, fallenTrees consumer application, ACK owner confirmation, and rendered passage remain **NOT_RUN** after this diagnostic card. No original client binary/resource was modified. Rollback: revert commit `f9d50ce` and restore the two owned installation ledgers; the netdrop ledgers are already PASS.
+
 # P06Q native catalog passed — original trees and authoritative vehicle contact
 
 Branch `codex/p06q-tree-vehicle-contact`, based on accepted P06P
