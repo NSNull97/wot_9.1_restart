@@ -130,3 +130,70 @@ fn resolve(m:&materials::MaterialFacts,distance:f64)->ap::Resolution {
     state.pitch=aim::MIN_PITCH;assert!(wire::packed_angles_for(kind,&state).is_err());
     assert!(wire::ammo_count_for(kind,31).is_err());assert!(wire::reload_for(kind,0,13.71).is_err());
 }
+
+#[test] fn is7_source_side_plate_shots_commit_five_hits_then_wreck_without_extra_damage() {
+    let now=Instant::now();let kind=VehicleKind::Is7;
+    let mut w=model::World::new_for_vehicle(73,now,MapId::Prohorovka,kind).unwrap();
+    w.bind_geometry(Arc::new(geometry::tests::is7_bundle())).unwrap();w.enable_ap_test_lab().unwrap();
+    for slot in 0..2 {w.attach(model::Identity {account:format!("is7-side-{slot}"),database:slot+1,
+        name:format!("side-{slot}")},slot as u32+1).unwrap();}
+    w.start(now).unwrap();
+    // Source Hull triangle108, armor_6=100mm: horizontal side ray at y=.9,z=0.
+    // Hull has a factor0 screen higher up at y=1.1; do not silently skip it.
+    // Subtract the actual S-70 gun joint offset to place the shot origin at x=-10.
+    let yaw=std::f32::consts::PI/2.;
+    let (offset,_)=aim::shot_geometry_pose_for(kind,[0.;3],[0.;3],yaw,0.,720.);
+    let origin=[-10.,0.9,0.];
+    w.rebase_external_spawns([std::array::from_fn(|i|origin[i]-offset[i]),[0.;3]]).unwrap();
+    w.actors[0].aim.yaw=yaw;w.actors[0].aim.park();
+    w.set_ready(0,1).unwrap();w.set_ready(1,2).unwrap();
+    for (round,hp) in [1660,1170,680,190,0].into_iter().enumerate() {
+        let at=now+Duration::from_secs(round as u64*14);
+        assert_eq!(w.apply(0,1,&[model::Command::Fire(fire::Command::Shoot)],at).unwrap(),
+            vec![fire::Outcome::AcceptedShot{ammo_remaining:29-round as u16}]);
+        w.advance(at+Duration::from_millis(100)).unwrap();
+        assert_eq!(w.contacts.len(),round+1);assert_eq!(w.impacts.len(),round+1);
+        let contact=&w.contacts[round];let event=&w.impacts[round];
+        assert_eq!((contact.triangle.mesh.as_str(),contact.triangle.material.as_str()),("Hull","armor_6"));
+        assert_eq!(contact.triangle.triangle_id,108);
+        assert_eq!(contact.material_facts.effective.as_ref().unwrap().armor,Some(100.));
+        let model::ImpactOutcome::Ap(resolution)=&event.outcome else {panic!("live source plate did not resolve AP")};
+        assert_eq!(resolution.outcome,ap::Outcome::Pierced);assert_eq!(resolution.damage,490);
+        assert_eq!(resolution.profile_revision,ap::profile_revision_for(kind));
+        assert_eq!(event.health_after,hp);assert_eq!(w.actors[1].health,hp);
+        assert!(w.projectiles[round].stopped);assert!(w.impact.has_terminal(round as u32+1));
+        let segment=event.segment.as_ref().unwrap();
+        let packet=impact_wire::show_damage_for(kind,0,1,1,segment.bounds,segment.start,segment.end,
+            impact_wire::ShotOutcome::Pierced).unwrap();
+        assert_eq!(&packet[23..],&[14,0x13]);
+        assert!(impact_wire::health_changed_for(kind,1,hp,0).is_ok());
+    }
+    let at=now+Duration::from_secs(70);
+    w.apply(0,1,&[model::Command::Fire(fire::Command::Shoot)],at).unwrap();
+    w.advance(at+Duration::from_millis(100)).unwrap();
+    assert_eq!(w.impacts.len(),6);assert_eq!(w.actors[1].health,0);
+    assert_eq!(w.impacts[5].outcome,model::ImpactOutcome::WreckBlocked);
+    assert_eq!((w.impacts[5].health_before,w.impacts[5].health_after),(0,0));
+    assert!(w.apply(1,2,&[model::Command::Fire(fire::Command::Shoot)],at+Duration::from_secs(1)).unwrap().is_empty());
+    assert_eq!(w.actors[1].fire.ammo(),30);
+}
+
+#[test] fn is7_source_screen_remains_an_explicit_unsupported_hit_without_hp_damage() {
+    let now=Instant::now();let kind=VehicleKind::Is7;
+    let mut w=model::World::new_for_vehicle(74,now,MapId::Prohorovka,kind).unwrap();
+    w.bind_geometry(Arc::new(geometry::tests::is7_bundle())).unwrap();w.enable_ap_test_lab().unwrap();
+    for slot in 0..2 {w.attach(model::Identity {account:format!("is7-screen-{slot}"),database:slot+1,
+        name:format!("screen-{slot}")},slot as u32+1).unwrap();}
+    w.start(now).unwrap();let yaw=std::f32::consts::PI/2.;
+    let (offset,_)=aim::shot_geometry_pose_for(kind,[0.;3],[0.;3],yaw,0.,720.);
+    let origin=[-10.,1.1,0.];
+    w.rebase_external_spawns([std::array::from_fn(|i|origin[i]-offset[i]),[0.;3]]).unwrap();
+    w.actors[0].aim.yaw=yaw;w.actors[0].aim.park();w.set_ready(0,1).unwrap();w.set_ready(1,2).unwrap();
+    w.apply(0,1,&[model::Command::Fire(fire::Command::Shoot)],now).unwrap();
+    w.advance(now+Duration::from_millis(100)).unwrap();
+    assert_eq!(w.contacts.len(),1);assert_eq!(w.contacts[0].triangle.material,"armor_14");
+    let event=&w.impacts[0];let model::ImpactOutcome::Ap(resolution)=&event.outcome else {panic!("screen")};
+    assert_eq!(resolution.outcome,ap::Outcome::Unsupported(ap::Reason::VehicleDamageFactor));
+    assert_eq!(resolution.damage,0);assert!(event.segment.is_none());assert_eq!(w.actors[1].health,2150);
+    assert!(w.projectiles[0].stopped);assert!(w.impact.has_terminal(1));
+}
