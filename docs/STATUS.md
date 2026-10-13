@@ -1,5 +1,53 @@
 ## 2026-10-13 — P06Q tree visual/state sync follow-up
 
+### Owner gate accepted; stand closed; original client relocated
+
+Owner replied **"все корректно"** to the requested second-client fall and
+passage check. Acceptance is **PASS_OWNER_TREE_FALL_BOTH_CLIENTS_AND_PASSAGE_TEST_LAB**.
+Final `treeobserve10` evidence has three vehicle contacts, eight worker ACKs,
+four scene commits and six cumulative tree publications; both clients record
+two native tree drops with pi/2 constraints. There are no server rejects,
+failures or session closures before the controlled stop. Both clients and
+server were stopped by receipt at 09:40:44 UTC / 14:40:44 Asia/Yekaterinburg;
+both client installation ledgers were restored.
+
+Owner receipt:
+`local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve10-owner-accepted.json`,
+SHA256 `d3071855e73915933dcbe1ed009fe706bc7e34cf0ed4ac51633fbff3b24ec6a2`.
+Final raw audit SHA256 `8c702abfe042371407f2212e86f6d850ff4fb5bf0133c0d1f60f8a26ef305c8f`;
+its generic visual NOT_RUN field is superseded only by the explicit owner
+receipt, not inferred from callbacks. Prior pending/FAIL sections below are
+historical checkpoints, not the current native-gate status.
+
+The owner moved the read-only original client to
+`C:\WoT_0.9.1_RU_0717_original`. All 3469 files / 14,680,626,869 bytes match
+the original canonical content SHA256
+`74c37c18e9ac7e30196c134076dacf6f2a8bf3897f7def73905d09feb3647797`.
+Local configuration and both owned-copy marker references were updated with
+backups; original bytes were not modified. Evidence:
+`local/evidence/20261013-original-relocation-01/verification.json` and
+`path-update.json`. The move freed approximately 13.67 GiB on D.
+
+The first fresh canonical build failed from ENOSPC. The preserved build35
+test binary then reported **619 PASS / 4 missing historical pool failures**.
+Explicitly migrated historical private P06N/P06O fixtures now have distinct
+pool pins, complete provenance, and unchanged real-worker assertions.
+Fresh `gateway-p06q-acceptance-02` full canonical build: **623/623 PASS**;
+executable SHA256 `da6fe2882adc34e0c23602092540cd5dde6bce66db0cb7c6db8d73af377f88f7`.
+Python importer/probe/observer/owned-copy scope passed **59/59** after the
+configuration move. The final combined run after source-path changes passes
+**120 executed tests**, with one historical P07A class explicitly NOT_RUN
+(missing P00/P01 contracts/sources receipts). P03I CLI and all 12 pinned P07A
+client resource hashes pass; no full fresh P07A audit is claimed. Source layout
+passes. Client A's passive trace reaches its 16 MiB bound; the later third
+server contact has no complete both-client callback evidence. The two earlier
+matched drops and the owner's explicit acceptance close the native gate.
+Applicable P06Q gates now qualify for standing no-ff merge/push. Detailed
+commands, earlier failures and relocation validation are retained in
+[the final report](research/P06Q_ACCEPTANCE_ENVIRONMENT_REPAIR.md). P06Q remains
+explicitly test_lab: slope/obstacle-derived fall constraints and universal
+object destruction are not accepted by this result.
+
 ### Owner confirms visible fall — treeobserve10, 2026-10-13
 
 Owner result: **"о, теперь падают"**. The corrected-pitch build now has

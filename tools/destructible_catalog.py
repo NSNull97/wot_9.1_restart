@@ -171,18 +171,29 @@ def json_value(raw, limit=16*1024*1024, nodes=200000, depth=32):
     return value
 
 
-def configured_paths():
-    cfg = json_value(read(ROOT/'config/project.local.json', 65536).removeprefix(b'\xef\xbb\xbf'))
+def configured_paths(root=None, *, original=None, research=None):
+    """Resolve configured copies; optional overrides must select those same roots."""
+    repository = no_links(Path(root) if root is not None else ROOT).resolve(strict=True)
+    require(repository.is_dir(), 'repository root must be a directory')
+    cfg = json_value(read(repository/'config/project.local.json', 65536).removeprefix(b'\xef\xbb\xbf'))
     result = {}
     for key in ('original_client_root', 'research_client_root', 'local_artifacts_root'):
         value = cfg['paths'][key]
         require(type(value) is str and Path(value).is_absolute(), 'configured absolute root required')
         result[key] = no_links(Path(value)).resolve(strict=True)
+        require(result[key].is_dir(), 'configured root must be a directory')
     local = result['local_artifacts_root']
-    require(local == (ROOT/'local').resolve(strict=True), 'configured local root differs')
+    require(local == (repository/'local').resolve(strict=True), 'configured local root differs')
     require(result['original_client_root'] != result['research_client_root'], 'original/research must differ')
     require(all(not result[k].is_relative_to(local) for k in ('original_client_root','research_client_root')),
             'client root cannot be an output directory')
+    for key, override in (('original_client_root', original), ('research_client_root', research)):
+        if override is not None:
+            candidate = Path(override)
+            if not candidate.is_absolute():
+                candidate = repository / candidate
+            candidate = no_links(candidate).resolve(strict=True)
+            require(candidate == result[key], 'client override differs from configured root')
     return result
 
 

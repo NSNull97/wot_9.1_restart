@@ -1,5 +1,12 @@
 # P06Q — vehicle contact and falling trees
 
+Current completion (2026-10-13): owner accepted corrected native tree fall in
+both clients and passage in `treeobserve10`. Applicable automated checks and
+environment repair pass; clients/server stopped and ledgers restored. Final
+branch is `codex/p06q-tree-visual-sync`. See [closeout evidence and remaining
+limits](../research/P06Q_ACCEPTANCE_ENVIRONMENT_REPAIR.md). Pending/FAIL wording
+below describes earlier checkpoints rather than the current gate.
+
 Base: accepted main52978a25c63d51a56be90054c449b281cc4d3e3d (P06P).
 Branch: codex/p06q-tree-vehicle-contact. Owner authorized the next tree card
 and reported that driving into obstacles never destroys them.

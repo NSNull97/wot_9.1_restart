@@ -6,6 +6,12 @@ Evidence root: `local/evidence/20261012-p06q-tree-contact-01/`
 
 ## Goal and result
 
+The owner now accepts corrected tree fall in both clients and passage
+("все корректно", following the explicit second-view/passage request).
+Final `treeobserve10` cleanup and all current acceptance/environment evidence
+are consolidated in [the closeout report](P06Q_ACCEPTANCE_ENVIRONMENT_REPAIR.md).
+The earlier failures and pending observations below remain historical evidence.
+
 
 ## Follow-up: visual/state synchronisation and server-loss smoke
 

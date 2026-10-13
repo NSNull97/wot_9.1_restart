@@ -14,6 +14,11 @@ from pathlib import Path
 import re
 from typing import Any
 
+if __package__:
+    from .destructible_catalog import CatalogError, configured_paths, no_links
+else:
+    from destructible_catalog import CatalogError, configured_paths, no_links
+
 
 MAX_BYTES = 1024 * 1024
 MAX_DEPTH = 24
@@ -107,11 +112,10 @@ def _bounded(root: Path, path: str | Path, *, directory: bool = False,
     candidate = Path(path)
     if not candidate.is_absolute():
         candidate = root / candidate
-    probe = candidate
-    while probe != probe.parent:
-        if probe.exists() and (probe.is_symlink() or getattr(probe, "is_junction", lambda: False)()):
-            raise P03IStaticAuditError(f"path link is forbidden: {probe}")
-        probe = probe.parent
+    try:
+        no_links(candidate)
+    except CatalogError as error:
+        raise P03IStaticAuditError(str(error)) from error
     try:
         candidate = candidate.resolve(strict=must_exist)
         candidate.relative_to(root)
@@ -222,13 +226,18 @@ def _readme(root: Path, path: str | Path) -> dict[str, Any]:
             "stale_hash_rows": mismatches, "status": "STALE_DOCUMENTED_HASH" if mismatches else "MATCH"}
 
 
-def audit(*, root: str | Path, original: str | Path, research: str | Path,
+def audit(*, root: str | Path, original: str | Path | None = None,
+          research: str | Path | None = None,
           predicate: str | Path, queue_receipt: str | Path, queue_readme: str | Path,
           capture_audit: str | Path) -> dict[str, Any]:
-    repository = Path(root).resolve()
+    repository = Path(root).absolute()
     _bounded(repository, repository, directory=True)
-    original_root = _bounded(repository, original, directory=True)
-    research_root = _bounded(repository, research, directory=True)
+    try:
+        paths = configured_paths(repository, original=original, research=research)
+    except (CatalogError, OSError, KeyError, TypeError) as error:
+        raise P03IStaticAuditError(f"configured client roots: {error}") from error
+    original_root = paths['original_client_root']
+    research_root = paths['research_client_root']
     queue = _queue_rows(repository, queue_receipt)
     predicate_value, _, predicate_sha = _json(repository, predicate)
     if predicate_value.get("status") != "PASS_STATIC_PREDICATE" or predicate_value.get("build") != "v.0.9.1 #717":
@@ -280,8 +289,8 @@ def audit(*, root: str | Path, original: str | Path, research: str | Path,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=str(Path(__file__).resolve().parents[1]))
-    parser.add_argument("--original", default="WoT_0.9.1_RU_0717_original")
-    parser.add_argument("--research", default="WoT_0.9.1_RU_0717_research")
+    parser.add_argument("--original", help="must match root/config/project.local.json; defaults to that configuration")
+    parser.add_argument("--research", help="must match root/config/project.local.json; defaults to that configuration")
     parser.add_argument("--predicate", default="local/evidence/20261007-native-tree-filter-01/predicate-01.json")
     parser.add_argument("--queue-receipt", default="local/evidence/20261005-p02-ms1-crew/data/next-hangar-gates/static-05/account-def-queue.json")
     parser.add_argument("--queue-readme", default="local/evidence/20261007-p03i-queue-research-08/README.md")

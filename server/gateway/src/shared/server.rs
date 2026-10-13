@@ -10,6 +10,9 @@ mod catalog_tests;
 #[cfg(test)]
 #[path="server_catalog_wire_tests.rs"]
 mod catalog_wire_tests;
+#[cfg(test)]
+#[path="server_worker_fixtures.rs"]
+mod worker_fixtures;
 
 #[derive(Default)]
 struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
@@ -960,9 +963,7 @@ fn entry_ready(s: &Session, now: Instant) -> bool {
 mod tests {
     use super::*;
     #[test] fn selected_map_admission_uses_source_pins_and_rejects_cross_map_workers_before_start() {
-        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
-        let pool=crate::map_drive_worker091::Pool::load(&root.join("local"),
-            &root.join("local/build/server/physics-integrated-p06n-01/pool-near.json")).unwrap();
+        let pool=worker_fixtures::p06n();
         for map_id in [MapId::Karelia,MapId::Prohorovka] {
             let spec=selected_pool_map(&pool,map_id).unwrap();
             assert_eq!(spec.asset,map_id.asset());
@@ -1112,8 +1113,7 @@ mod tests {
     }
     #[test] fn two_real_workers_acknowledge_before_world_commit_and_changed_membership_fails() {
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
-        let pool=Arc::new(crate::map_drive_worker091::Pool::load(&root.join("local"),
-            &root.join("local/build/server/physics-integrated-p06n-01/pool-near.json")).unwrap());
+        let pool=Arc::new(worker_fixtures::p06n());
         let spec=crate::map_drive_worker091::RemovalSpec::load(&root.join("local"),
             &root.join("local/evidence/20261010-p06n-destructible-01/boundary/worker-ipc01/descriptor.json"),
             "ef00e2aed686c16c4f9a216d9db70dbcd1ca3fda84bc33cd9eaa8aed1dbde7fa").unwrap();

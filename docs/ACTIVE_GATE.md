@@ -1,4 +1,39 @@
-# P06Q active — native catalog passed; owner contact gate pending
+# P06Q accepted — native tree fall, both-client agreement and passage
+
+Branch `codex/p06q-tree-visual-sync`, accepted P06P source base
+`52978a25c63d51a56be90054c449b281cc4d3e3d`.
+**Acceptance: PASS_OWNER_TREE_FALL_BOTH_CLIENTS_AND_PASSAGE_TEST_LAB.**
+
+Owner accepted `treeobserve10` with "все корректно" after the explicit
+second-view/passage request. Two tree falls are correlated in both native
+traces with server contacts, cumulative `fallenTrees`, both-worker ACKs and
+scene commits. The complete server log contains three contacts/eight ACKs;
+the later third contact is outside the two-client native trace coverage.
+Client A reaches its passive 16 MiB observation bound near the end of the run.
+Both clients and server are stopped; both installation ledgers are restored.
+
+Fresh canonical gateway build: 623/623 Rust tests PASS. Final Python scope:
+120 executed tests PASS, one historical P07A class NOT_RUN because its P00/P01
+contracts/sources receipts are absent. The changed path boundary and all
+12 actual P07A resource hashes pass; full P07A reacceptance is not claimed.
+Source layout passes. The original client was moved by the owner to
+`C:\WoT_0.9.1_RU_0717_original`; all 3469 files match the original manifest.
+Configuration and approved-copy identities now use that explicit source root.
+
+Applicable P06Q gates are satisfied for the standing no-ff merge/push workflow.
+Exact historical ram rules, slope/obstacle final angles, universal destruction
+and network endurance remain outside this test_lab acceptance. P06P physical
+rollback still requires its missing pinned physics artifacts.
+
+[Current status](STATUS.md), [final evidence, commands and rollback](research/P06Q_ACCEPTANCE_ENVIRONMENT_REPAIR.md).
+**One next recommended step:** scope the next card for remaining compound
+destructibles/fences on the accepted cumulative baseline. Old P07 runtime is
+already accepted through P03L; do not reimplement it as a new feature.
+
+The sections below are historical checkpoints, not current launch or merge
+instructions.
+
+# Earlier P06Q active — native catalog passed; owner contact gate pending
 
 Branch `codex/p06q-tree-vehicle-contact`, accepted P06P source base
 `52978a25c63d51a56be90054c449b281cc4d3e3d`.

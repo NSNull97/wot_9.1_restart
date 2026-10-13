@@ -6,14 +6,14 @@ use crate::map_drive_worker091::{CatalogSpec,Pool,Scene};
 
 const WORKER_CATALOG_SHA:&str="58606f16e1fc08769f11b72eb29c90a595ef2c8b1ca611cdd81ae8bfbd1a2b63";
 const INVENTORY_SHA:&str="5658e7620389e9726b1ff06f1eb80125224a45fe17d8558c2e072b4a7cc6bbf3";
-const POOL_SHA:&str="c2dd3da12e275b94172107e3e358dfb8452dc3dc7895fd3e295a0ac38c0db22b";
+const POOL_SHA:&str=worker_fixtures::P06O_POOL_SHA;
 
 fn local()->std::path::PathBuf{
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap()
 }
 fn fixture(now:Instant)->(World,Arc<Pool>,CatalogSpec){
     let local=local();let evidence=local.join("evidence/20261012-p06o-destructible-import-01");
-    let pool=Arc::new(Pool::load(&local,&local.join("build/server/physics-integrated-p06o-01/pool-near.json")).unwrap());
+    let pool=Arc::new(worker_fixtures::p06o());
     assert_eq!(pool.sha256,POOL_SHA);
     let spec=CatalogSpec::load(&local,&evidence.join("boundary/worker-ipc01/catalog.json"),WORKER_CATALOG_SHA).unwrap();
     let raw=fs::read(evidence.join("resource-contract/inventory02/inventory.json")).unwrap();

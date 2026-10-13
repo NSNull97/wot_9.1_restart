@@ -14,19 +14,16 @@ from tools.p07a_visibility_static_audit import (
 ROOT = Path(os.environ.get("WOT091_ROOT", Path(__file__).resolve().parents[1])).resolve()
 CONTRACTS = ROOT / "local/evidence/20261002-p00-p01/summary/contracts.json"
 SOURCES = ROOT / "local/evidence/20261002-p00-p01/summary/sources.json"
-ORIGINAL = ROOT / "WoT_0.9.1_RU_0717_original"
-RESEARCH = ROOT / "WoT_0.9.1_RU_0717_research"
 
 
 class P07AVisibilityStaticAuditTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if not all(path.exists() for path in (CONTRACTS, SOURCES, ORIGINAL, RESEARCH)):
+        if not all(path.exists() for path in (CONTRACTS, SOURCES, ROOT / "config/project.local.json")):
             raise unittest.SkipTest("ignored P00/P01 evidence or #717 copies unavailable")
 
     def _audit(self, **kwargs):
-        args = dict(root=ROOT, contracts=CONTRACTS, sources=SOURCES,
-                    original=ORIGINAL, research=RESEARCH)
+        args = dict(root=ROOT, contracts=CONTRACTS, sources=SOURCES)
         args.update(kwargs)
         return audit(**args)
 
