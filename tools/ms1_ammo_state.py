@@ -19,13 +19,14 @@ import struct
 import ms1_crew_state as crew
 import test_garage_state as garage
 import hangar_state as legacy
+import native_evidence_relocation as relocation
 from client_audit import config, read_limited, save_json, sha256
 from verify_hangar import EXE_SHA
 
 require = crew.require
 digest = crew.digest
 read_json = crew.read_json
-CREW_GENERATOR_SHA = '40730f4c4c1a1d44c620577c58f40b757e9f1c891fb11ac9442ef1427bd1e810'
+CREW_GENERATOR_SHA = 'a9c3dfeb9ee2fb6bea74bd015a90962909bfe761a4b18ffa70eed82ff8bf4dda'
 GRANT_ID = 'test-ms1-ammo-v1'
 SHELL_ID = 'shell:ms1-stock-ap'
 AMMO_COUNT = 20
@@ -66,7 +67,7 @@ def validate_base(directory):
     model, compatibility, trees, preservation = crew.build(previous, profile, data)
     expected = deepcopy(previous['manifest'])
     expected.update(fixture_version=3, profile_version=3, snapshot_revision=3,
-                    generator=crew.dependencies(), preservation=preservation)
+                    generator=crew.validate_generator_provenance(manifest['generator']), preservation=preservation)
     expected['native_descriptors']['crew'] = source
     for key, filename, raw in (('profile_source', 'profile-input.json', profile_raw),
                               ('base_profile_source', 'base-profile-input.json', origin_raw)):
@@ -301,13 +302,15 @@ def validate_export(path):
     _schema(value, ('version', 'kind', 'data', 'source'), 'native export envelope')
     require(type(value['version']) is int and value['version'] == 1 and value['kind'] == 'native-ms1-ammo',
             'native export envelope version/kind')
+    relocated = relocation.for_export(path, raw)
     proof = value['source']
     _schema(proof, ('trace_file', 'trace_sha256', 'record_index', 'install_plan_file',
                    'install_plan_sha256', 'outcome_file', 'outcome_sha256'), 'native export proof')
     artifacts, files = {}, {}
     for name, limit in (('trace', 4 * 1024 * 1024), ('install_plan', 1024 * 1024), ('outcome', 65536)):
         require(type(proof[name + '_file']) is str and 0 < len(proof[name + '_file']) <= 1024, 'proof path bound')
-        files[name] = garage.local_file(proof[name + '_file'])
+        files[name] = (relocated.proof_path(name, proof[name + '_file']) if relocated
+                       else garage.local_file(proof[name + '_file']))
         artifacts[name] = read_limited(files[name], limit)
         require(digest(artifacts[name]) == _sha(proof[name + '_sha256'], name), 'native proof changed: ' + name)
     plan = _strict_evidence_json(artifacts['install_plan'], 1024 * 1024)
@@ -326,9 +329,13 @@ def validate_export(path):
     require(type(plan) is dict and type(plan.get('schema_version')) is int and plan['schema_version'] == 1
             and plan.get('mode') == 'interactive' and type(plan.get('settings')) is dict,
             'native prepared plan schema')
-    require(Path(plan['research_root']).resolve() == paths['research_client_root']
-            and Path(plan['original_root']).resolve() == paths['original_client_root'], 'native plan client roots differ')
-    trace_root = garage.local_file(plan['settings']['trace_dir'])
+    if relocated:
+        relocated.client_roots(plan, paths, EXE_SHA)
+    else:
+        require(Path(plan['research_root']).resolve() == paths['research_client_root']
+                and Path(plan['original_root']).resolve() == paths['original_client_root'], 'native plan client roots differ')
+    trace_root = (relocated.trace_root(plan['settings']['trace_dir']) if relocated
+                  else garage.local_file(plan['settings']['trace_dir']))
     pid = garage.bounded_int(outcome.get('client_pid'), 'actual native PID', 1)
     require(files['trace'].parent == trace_root and re.fullmatch(r'native-' + str(pid) + r'-[0-9]{10,16}\.jsonl',
             files['trace'].name), 'trace does not belong to the prepared native process')

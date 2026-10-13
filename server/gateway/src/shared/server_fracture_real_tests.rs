@@ -2,11 +2,9 @@
 //! actual runtime/parser/domain/both-ACK transaction. No native game clients.
 use super::*;
 use super::super::fragiles;
-use crate::map_drive_worker091::{CatalogSpec, Pool, Scene, Worker};
+use crate::map_drive_worker091::{CatalogSpec, Scene, Worker};
 
 const BASE: &str = "evidence/20261013-p06r-compound-01";
-const POOL_SHA: &str = "62549fb3b3652edadbf6756445141a192f3157e741ab94d2e890c5a54de9783e";
-const CONFIG_SHA: &str = "a1d8f4406661e53636c5430588def8af96de93a1d56b4781a4bedf6a01e8c49e";
 const DOMAIN_SHA: &str = "39bb68815dd2d7ca54789a1cc71be619cc4f2f5cf351bf52f22de92f2afca11d";
 const CATALOG_SHA: &str = "0a7c8fd70f00c8c49c3282ac1fe574281f384d042b1adb7da549d1680c192ef9";
 
@@ -14,13 +12,10 @@ const CATALOG_SHA: &str = "0a7c8fd70f00c8c49c3282ac1fe574281f384d042b1adb7da549d
 fn real_ipc5_chain_receipts_cross_runtime_and_publish_only_after_both_workers_ack() {
     let local=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
     let base=local.join(BASE);
-    let path=base.join("fracture-gateway-real01/pool-chain.json");
-    let metadata=fs::metadata(&path).expect("required pinned IPC5 chain pool");
-    assert!(metadata.is_file() && metadata.len()<=16_384);
-    assert_eq!(format!("{:x}",Sha256::digest(fs::read(&path).unwrap())),POOL_SHA);
-    let pool=Arc::new(Pool::load(&local,&path).unwrap());
+    // Exact original pool/config pins are checked before path-only relocation.
+    let pool=Arc::new(worker_fixtures::p06r());
     let map=selected_pool_map(&pool,MapId::Prohorovka).unwrap().clone();
-    assert_eq!(map.config_sha256,CONFIG_SHA);assert_eq!(map.mass_kg,4691.);
+    assert_eq!(map.mass_kg,4691.);
     let spec=CatalogSpec::load(&local,&base.join("import/fence-response01/physics-removals.json"),CATALOG_SHA).unwrap();
     let catalog=Arc::new(fragiles::Catalog::load(&local,&base.join("import/fence-response01/manifest.json"),DOMAIN_SHA).unwrap());
     assert_eq!(catalog.version,4);assert_eq!(spec.version(),5);assert_eq!(catalog.worker_sha256,spec.sha256());
@@ -99,7 +94,7 @@ fn real_ipc5_chain_receipts_cross_runtime_and_publish_only_after_both_workers_ac
     assert!(world.actors.iter().all(|actor|actor.position[2]>464.));
     let pids=runtime.workers.iter().map(|w|w.as_ref().unwrap().process_id().unwrap()).collect::<Vec<_>>();
     let proof=serde_json::json!({"status":"PASS_REAL_IPC5_RUNTIME_DOMAIN_BOTH_ACK","native_clients":"NOT_RUN",
-        "pool_sha256":POOL_SHA,"config_sha256":CONFIG_SHA,"domain_sha256":DOMAIN_SHA,"catalog_sha256":CATALOG_SHA,
+        "pool_sha256":runtime.pool.sha256,"config_sha256":map.config_sha256,"domain_sha256":DOMAIN_SHA,"catalog_sha256":CATALOG_SHA,
         "pids":pids,"mass_kg":map.mass_kg,"commits":commits,"final_sequences":runtime.contact_sequences,
         "final_positions":world.actors.iter().map(|a|a.position).collect::<Vec<_>>()});
     fs::write(base.join(format!("fracture-gateway-real01/result-{}.json",std::process::id())),

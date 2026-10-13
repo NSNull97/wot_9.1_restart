@@ -1,4 +1,5 @@
 import { createServer } from 'node:net';
+import { createSocket } from 'node:dgram';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,12 +15,32 @@ export function removeTestDirectory(path) {
   rmSync(path, { recursive: true, force: true });
 }
 export async function freePort() {
-  const socket = createServer();
-  await new Promise((resolve, reject) => { socket.once('error', reject); socket.listen(0, '127.0.0.1', resolve); });
-  const port = socket.address().port;
-  await new Promise(resolve => socket.close(resolve));
-  if (port >= 20014 && port <= 20017) return freePort();
-  return port;
+  // Offline service tests use the selected number for either transport. Keep
+  // TCP reserved while probing UDP so a live UDP listener is never mistaken
+  // for a free gateway port. Actual service leases still own the final check.
+  for (let attempt = 0; attempt < 32; attempt++) {
+    const tcp = createServer(), udp = createSocket({ type: 'udp4', reuseAddr: false });
+    try {
+      await new Promise((done, fail) => {
+        tcp.once('error', fail); tcp.listen({ port: 0, host: '127.0.0.1', exclusive: true }, done);
+      });
+      const port = tcp.address().port;
+      if (port >= 20014 && port <= 20017) continue;
+      await new Promise((done, fail) => {
+        udp.once('error', fail); udp.bind({ port, address: '127.0.0.1', exclusive: true }, done);
+      });
+      return port;
+    } catch (error) {
+      if (!['EADDRINUSE', 'EACCES'].includes(error.code)) throw error;
+    } finally {
+      await new Promise((done, fail) => {
+        try { udp.close(done); }
+        catch (error) { if (error.code === 'ERR_SOCKET_DGRAM_NOT_RUNNING') done(); else fail(error); }
+      });
+      if (tcp.listening) await new Promise((done, fail) => tcp.close(error => error ? fail(error) : done()));
+    }
+  }
+  throw new Error('No free loopback TCP/UDP test port after 32 attempts');
 }
 export function browser(origin) {
   return {

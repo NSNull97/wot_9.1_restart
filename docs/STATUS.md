@@ -1,3 +1,44 @@
+## 2026-10-13 — P09D acceptance repair green; native service integration
+
+**PASS_APPLICABLE_AUTOMATIC_AND_NATIVE.** The historical regression hold below
+is closed. Accepted P06R main `eb054618` was merged into the P09D branch before
+validation; normal no-ff integration/push and exact remote SHA are recorded in
+`local/evidence/20261013-p09d-acceptance-repair-01/final-card.json`.
+
+Historical crew/ammo proof bytes and original producer identities are preserved.
+Explicit bounded sidecars relocate the six-file proof closures. Missing worker,
+profile and media fixtures were restored exactly; test-only derived worker
+configs have their own hashes. Archived r1 output replaces the unavailable old
+encoder execution, with a separate real current catalog1 generation test.
+Nine provenance-sensitive source files now retain LF on Windows checkout.
+Full web also exposed and fixed TCP-only test-port selection and Express's
+rejection of the `.codex` ancestor for allowlisted PNG delivery.
+
+Final checks: **674/674 canonical gateway**, **96/96 full web**,
+**114/114 domain/store/content**, **240/240 client/control**,
+**53/53 historical crew/ammo/relocation**, and **4 real Python2.7.3 compiles**.
+No failures or skips in these final gates. Independent source review and layout
+PASS. Earlier failed attempts remain in evidence with their causes.
+
+Fresh native client46432 completed six real servicing operations on the tested
+merged gateway. Independent decryption/callback/DB audit verifies all six
+CMD108→Account.update→success sequences, persistent revision7→13, conserved
+resources/shell totals and exact restoration of both mounts/depot. Twelve
+actual PNGs were visually inspected. The diagnostic install was restored.
+Normal own stand is running the tested gateway with its original persistent
+revision13 DB; seven durable tables stayed identical through full restart.
+A fresh normal hangar shows IS-7 21/9/0. No service scenario is armed.
+
+Scope remains source-bound MS-1/IS-7 and owned depot stock. OS pointer/manual
+owner acceptance, purchases, automatic refill, equipment/repair and battle
+consumption are NOT_RUN/unsupported. The original client and primary P03M
+checkout/client/services were not modified. Initial local token-format failure
+and all historical test failures are preserved rather than relabelled PASS.
+
+[Repair design, exact changed files, commands, evidence and rollback](evidence-index/P09D_ACCEPTANCE_REPAIR.md).
+One next step: complete the already-active P03M source-bound IS-7 battle/runtime
+gate, taking its loadout from the accepted authoritative state.
+
 ## 2026-10-13 — P09D native MS-1 / IS-7 ammunition service
 
 **PASS_NATIVE_AMMO_SERVICE_OWNED_STOCK_TEST_LAB** on the isolated #717 stand.

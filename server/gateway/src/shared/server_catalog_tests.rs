@@ -6,7 +6,6 @@ use crate::map_drive_worker091::{CatalogSpec,Pool,Scene};
 
 const WORKER_CATALOG_SHA:&str="58606f16e1fc08769f11b72eb29c90a595ef2c8b1ca611cdd81ae8bfbd1a2b63";
 const INVENTORY_SHA:&str="5658e7620389e9726b1ff06f1eb80125224a45fe17d8558c2e072b4a7cc6bbf3";
-const POOL_SHA:&str=worker_fixtures::P06O_POOL_SHA;
 
 fn local()->std::path::PathBuf{
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap()
@@ -14,7 +13,8 @@ fn local()->std::path::PathBuf{
 fn fixture(now:Instant)->(World,Arc<Pool>,CatalogSpec){
     let local=local();let evidence=local.join("evidence/20261012-p06o-destructible-import-01");
     let pool=Arc::new(worker_fixtures::p06o());
-    assert_eq!(pool.sha256,POOL_SHA);
+    // The fixture helper verifies the immutable source pool pin before deriving
+    // checkout-owned paths; pool.sha256 is the honest derived-byte hash.
     let spec=CatalogSpec::load(&local,&evidence.join("boundary/worker-ipc01/catalog.json"),WORKER_CATALOG_SHA).unwrap();
     let raw=fs::read(evidence.join("resource-contract/inventory02/inventory.json")).unwrap();
     assert!(raw.len()<4*1024*1024);assert_eq!(format!("{:x}",Sha256::digest(&raw)),INVENTORY_SHA);
@@ -111,7 +111,7 @@ fn two_real_catalog_workers_gate_world_until_both_ack_then_restore_new_generatio
     let replacement_pid=replacement.process_id().unwrap();assert_ne!(replacement_pid,pids[1]);
     assert_eq!(world.fragiles.as_ref().unwrap().events,expected);
     proof("catalog-two-real-workers",serde_json::json!({"status":"PASS_CHILD_IPC_ONLY","native_clients":"NOT_RUN",
-        "native_indices":"unpublished synthetic unit labels; no native compatibility claim","pool_sha256":POOL_SHA,
+        "native_indices":"unpublished synthetic unit labels; no native compatibility claim","pool_sha256":runtime.pool.sha256,
         "worker_catalog_sha256":WORKER_CATALOG_SHA,"pids":pids,"replacement_pid":replacement_pid,
         "scene_version":scene.version(),"scene_sha256":scene.hash(),"removed_ids":scene.ids(),
         "world_commit_after_both_ack":true,"restore_before_first_ready":true,"health":health,"ammo":ammo}));

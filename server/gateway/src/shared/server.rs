@@ -11,8 +11,7 @@ mod catalog_tests;
 #[path="server_catalog_wire_tests.rs"]
 mod catalog_wire_tests;
 #[cfg(test)]
-#[path="server_worker_fixtures.rs"]
-mod worker_fixtures;
+use crate::worker_fixtures091 as worker_fixtures;
 #[cfg(test)]
 #[path="server_contact_barrier_tests.rs"]
 mod contact_barrier_tests;

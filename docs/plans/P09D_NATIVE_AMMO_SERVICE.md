@@ -87,3 +87,15 @@ Historical native acceptance remains scoped; fixture repairs are not new
 physics/native acceptance. Current original client at C remains read-only.
 Rollback: revert this card's merge/source changes and restore exact client
 ledgers; keep original/private proof archives and live DB data intact.
+
+
+### Repair completion
+
+All four repair steps are complete; final applicable gates and fresh real
+native service acceptance are green. Full web additionally exposed a genuine
+`.codex` ancestor issue in allowlisted media delivery and a test-only TCP/UDP
+port-selection race; both are repaired without weakening production leases or
+media allowlists. See [acceptance repair report](../evidence-index/P09D_ACCEPTANCE_REPAIR.md).
+Final Git/remote receipt is written after ordinary no-ff merge/push. An isolated
+integration worktree performs that merge so the live tested source checkout and
+primary P03M checkout are never switched beneath running services.

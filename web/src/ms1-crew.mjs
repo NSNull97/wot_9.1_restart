@@ -10,6 +10,7 @@ import { dirname, resolve, relative, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { openIdentityReader } from './store.mjs';
+import { checkNativeEvidenceProof, evidenceGenerator, evidenceImplementation } from './native-evidence.mjs';
 import { loadGarageService, validateGrantedProfile, validateGrantedFixture,
   grantedOverview, isGrantedOverview, LEGACY_ENCODER_SHA256 } from './test-garage.mjs';
 
@@ -89,13 +90,13 @@ function implementation() {
   requireValue(digest(read(LEGACY, 131072)) === LEGACY_ENCODER_SHA256
     && digest(read(GARAGE_GENERATOR, 131072)) === GARAGE_GENERATOR_SHA256
     && digest(read(GARAGE_MODULE, 131072)) === GARAGE_MODULE_SHA256, 'Frozen pre-crew implementation changed');
-  return Object.fromEntries([['module', SELF], ['generator', GENERATOR], ['garage_module', GARAGE_MODULE],
+  return { ...Object.fromEntries([['module', SELF], ['generator', GENERATOR], ['garage_module', GARAGE_MODULE],
     ['garage_generator', GARAGE_GENERATOR], ['legacy_encoder', LEGACY],
     ['client_audit', resolve(ROOT, 'tools/client_audit.py')], ['packed_xml', resolve(ROOT, 'tools/packed_xml.py')],
     ['literal_verifier', resolve(ROOT, 'tools/verify_hangar.py')],
     ['bridge', resolve(ROOT, 'web/src/game-adapter.mjs')], ['identity_reader', resolve(ROOT, 'web/src/store.mjs')],
     ['identity_validation', resolve(ROOT, 'web/src/security.mjs')]]
-    .map(([key, path]) => [key, source(path, 131072)]));
+    .map(([key, path]) => [key, source(path, 131072)])), ...evidenceImplementation() };
 }
 function domainCrew(id) {
   return ['commander', 'driver'].map(role => ({ crew_id: `${id}:ms1-${role}-v1`,
@@ -144,17 +145,7 @@ export function isCrewOverview(value, id) {
 }
 
 function checkCrewProof(path) {
-  const value = json(path, 32768), proof = value?.source;
-  requireValue(keys(value, ['version', 'kind', 'data', 'source']) && value.version === 1
-    && value.kind === 'native-ms1-crew' && keys(proof, ['trace_file', 'trace_sha256', 'record_index',
-      'install_plan_file', 'install_plan_sha256', 'outcome_file', 'outcome_sha256']), 'Crew proof envelope changed');
-  // The generator already validated the original event, compiled probe and
-  // clean native outcome. Keep those exact evidence bytes available across
-  // plan/apply/relogin; do not silently accept a now-unverifiable reference.
-  for (const [name, maximum] of [['trace', 4 * 1024 * 1024], ['install_plan', 1024 * 1024], ['outcome', 65536]]) {
-    requireValue(SHA.test(proof[name + '_sha256'])
-      && digest(read(localPath(proof[name + '_file']), maximum)) === proof[name + '_sha256'], 'Crew native proof changed');
-  }
+  checkNativeEvidenceProof(path, 'native-ms1-crew');
 }
 
 /** This validates local immutable provenance; independent Python acceptance
@@ -177,9 +168,16 @@ export function validateCrewFixture(directory, profile, { nativeMs1, nativeIs7, 
     && manifest.account_id === profile.account_id && manifest.native_database_id === profile.native_database_id
     && isDeepStrictEqual(manifest.grant, profile.test_grant), 'Crew fixture identity/version/grant mismatch');
   const impl = implementation();
-  requireValue(isDeepStrictEqual(manifest.generator, { file: GENERATOR, sha256: impl.generator.sha256,
+  const historicalGenerator = { file: GENERATOR,
+    sha256: '40730f4c4c1a1d44c620577c58f40b757e9f1c891fb11ac9442ef1427bd1e810',
     dependency: { file: LEGACY, sha256: LEGACY_ENCODER_SHA256 },
-    base_generator: { file: GARAGE_GENERATOR, sha256: GARAGE_GENERATOR_SHA256 } }), 'Crew generator source changed');
+    base_generator: { file: GARAGE_GENERATOR, sha256: GARAGE_GENERATOR_SHA256 } };
+  const currentGenerator = { ...historicalGenerator, sha256: impl.generator.sha256,
+    evidence_relocation: evidenceGenerator() };
+  // Historical manifests keep their true producer identity. New fixtures use
+  // the actual current source fingerprint and explicit relocation dependency.
+  requireValue([historicalGenerator, currentGenerator].some(value => isDeepStrictEqual(manifest.generator, value)),
+    'Crew generator source changed');
   for (const [field, file, bytes] of [['profile_source', 'profile-input.json', raw], ['base_profile_source', 'base-profile-input.json', storedBase]]) {
     requireValue(isDeepStrictEqual(manifest[field], { file, relative_to: 'fixture_directory', sha256: digest(bytes) }), 'Crew fixture input hash mismatch');
   }

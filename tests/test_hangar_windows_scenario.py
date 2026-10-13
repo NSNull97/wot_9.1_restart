@@ -490,10 +490,19 @@ class HistoricalSnapshotInputs(unittest.TestCase):
         install = ROOT / 'local/evidence/20261005-p02-ms1-crew/crew02-prepare/install-plan.json'
         if not install.is_file():
             self.skipTest('Historical native corpus absent; no substitute generated')
-        plan = json.loads(install.read_bytes())
-        paths = list(Path(plan['settings']['trace_dir']).glob('native-*.jsonl'))
-        self.assertEqual(len(paths), 1)
-        raw = paths[0].read_bytes()
+        plan_raw = install.read_bytes()
+        self.assertLess(len(plan_raw), 1024 * 1024)
+        self.assertEqual(hashlib.sha256(plan_raw).hexdigest(),
+                         '0e1856b1c4b50b1096567fc951c882f3177485aa07df1d3cc1f5cac28d9f8e71')
+        plan = json.loads(plan_raw)
+        self.assertEqual(plan['settings']['trace_dir'],
+                         r'D:\WoT_9.1_Server\local\evidence\20261005-p02-ms1-crew\crew02-runtime')
+        # Preserve the hash-pinned original plan, but read its exact archived
+        # trace from this checkout. Never follow a historical absolute path.
+        path = ROOT / 'local/evidence/20261005-p02-ms1-crew/crew02-runtime/native-5716-1791148432002.jsonl'
+        self.assertTrue(path.resolve().is_relative_to((ROOT / 'local/evidence').resolve()))
+        self.assertFalse(path.is_symlink())
+        raw = path.read_bytes()
         self.assertLess(len(raw), 8 * 1024 * 1024)
         self.assertEqual(hashlib.sha256(raw).hexdigest(),
                          'df55ed6b67f1a16cf96f3f13b07af7751f6860d8f7348e3db2319f931cd2f440')

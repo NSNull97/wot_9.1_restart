@@ -10,6 +10,7 @@ from copy import deepcopy
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -20,6 +21,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 import ms1_crew_state as crew
+from tests.native_fixture_migration import fixture as migrated_fixture, proof_paths as migrated_proof_paths
 
 
 def raw_json(value):
@@ -35,7 +37,7 @@ def mutate_json(path, mutation):
 class CrewSnapshotUnitTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.base_path = ROOT / 'local/server/fixtures/c5326cc1-8524-479c-8bba-72e973489c22/r2-catalog3'
+        cls.base_path = migrated_fixture(2)
         if not (cls.base_path / 'manifest.json').is_file():
             raise unittest.SkipTest('NOT_RUN: original immutable r2 snapshot required')
         cls.base = crew.validate_base(cls.base_path)
@@ -368,11 +370,12 @@ class CrewSnapshotUnitTests(unittest.TestCase):
             crew.validate_export(path)
 
     def test_actual_prepared_producer_and_runtime_provenance_mismatch_rejected(self):
-        _, envelope = self.actual_export()
+        export_path, envelope = self.actual_export()
         proof = envelope['source']
-        directory = Path(proof['install_plan_file']).parent
-        original_plan = json.loads(Path(proof['install_plan_file']).read_bytes())
-        original_outcome = json.loads(Path(proof['outcome_file']).read_bytes())
+        files = migrated_proof_paths(export_path)
+        directory = files['install_plan'].parent
+        original_plan = json.loads(files['install_plan'].read_bytes())
+        original_outcome = json.loads(files['outcome'].read_bytes())
         for mode in ('source', 'duplicate', 'relative_escape', 'outcome'):
             plan, outcome = deepcopy(original_plan), deepcopy(original_outcome)
             source = next(row for row in plan['sources'] if row['path'] == 'client_patch/ms1_crew_probe.py')
@@ -381,7 +384,7 @@ class CrewSnapshotUnitTests(unittest.TestCase):
             elif mode == 'duplicate':
                 plan['sources'].append(deepcopy(source))
             elif mode == 'relative_escape':
-                source['compiled'] = '../native-ms1-crew-export01.json'
+                source['compiled'] = os.path.relpath(export_path, directory)
             else:
                 next(row for row in outcome['source_provenance']['modules']
                      if row['module'] == 'ms1_crew_probe')['pyc_sha256'] = '0' * 64
@@ -389,8 +392,8 @@ class CrewSnapshotUnitTests(unittest.TestCase):
                 crew._validate_compiled_probe(plan, directory, outcome)
 
     def test_prepared_bytecode_metadata_bundle_tampering_are_rejected(self):
-        _, envelope = self.actual_export()
-        original = Path(envelope['source']['install_plan_file']).parent
+        export_path, envelope = self.actual_export()
+        original = migrated_proof_paths(export_path)['install_plan'].parent
         plan = json.loads((original / 'install-plan.json').read_bytes())
         outcome = json.loads((original / 'native-outcome.json').read_bytes())
         paths = ('compiled/ms1_crew_probe.pyc', 'compiled/ms1_crew_probe.json',

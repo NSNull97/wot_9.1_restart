@@ -14,8 +14,19 @@ import { browser, freePort, testDirectory, removeTestDirectory } from './helpers
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const NATIVE = join(ROOT, 'local/evidence/20261004-p02-hangar/native-descriptors.json');
-const OLD_ENCODER = join(ROOT, 'local/evidence/20261004-p02-unified-account/data-agent/username-v1-tools/hangar_state.py');
+const ARCHIVED_R1 = join(ROOT, 'local/evidence/20261004-p02-unified-account/service-test/fixtures/3260d317-74fb-4988-8a18-5de166b81c58/r1');
 const OLD_SHA = 'bf026f98e6ccfb84bc2bde4720d9837863beae662a2f4600ad80e78356b040f4';
+const ARCHIVED_SHA = {
+  'compatibility.json': '7894eed02f652c3d07ae48a7a0d4046423ab99007161307365684e35b4835a06',
+  'dossier.bin': '70b70fe0dd6f28761228250a57e0a0a71e9d16ee0db54ff6e9252f06267034f1',
+  'encoder-tests.json': 'a0af95bb72eda56822fd3802230ffc7e191b678318e716c4b48603d36e52b0a8',
+  'fixture.json': 'fc334070cf5ce5addcc28d112b543d73e55f50b30bd2091d5e4bb9d2bfacba20',
+  'manifest.json': '7e3da9d81e4f6de275023d2c49f7c8262511289507599da2c11ce915b7a7f99a',
+  'payloads.json': '9d7fa18f42ca6a0d3a55f3d59c2c35b2cdfa07d8a4019d47f023f45e0bcea97f',
+  'profile-input.json': 'd4f1afa17bfa44e348982bff6d1e7309cfc6ed14a9d542e7f9d2d9e407b9f6c3',
+  'shop.bin': '210617723b8094186b7e8f5991e505941052c25c5d04dcc10c556d17d5d880b1',
+  'state.bin': '8c2802293a7d3e1ba4a2a70088aeafd520850b84033836eb5b305d7776988822',
+};
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 
 test('finite Russian/Latin nickname policy preserves NFC display case and case-insensitive keys', () => {
@@ -154,38 +165,70 @@ test('real schema1 migration, existing-session binding, email-only HTTP and owne
   });
 });
 
-test('measured legacy r1 survives a separate catalogue migration without changing the account', {
-  skip: !existsSync(NATIVE) || !existsSync(OLD_ENCODER) ? 'NOT_RUN: measured local descriptors/old encoder required' : false,
-}, async t => {
-  assert.equal(sha(readFileSync(OLD_ENCODER)), OLD_SHA);
+test('hash-pinned historical r1 output survives catalogue migration without changing its account', async t => {
+  // The missing historical producer is not reconstructed or claimed to run.
+  // Use its unchanged archived output and exercise mutation only in a test copy.
+  const archive = Object.fromEntries(Object.entries(ARCHIVED_SHA).map(([name, expected]) => {
+    const bytes = readFileSync(join(ARCHIVED_R1, name));
+    assert.equal(sha(bytes), expected, `exact historical ${name}`);
+    return [name, bytes];
+  }));
+  const manifest = JSON.parse(archive['manifest.json']);
+  assert.equal(manifest.generator.sha256, OLD_SHA);
+  assert.equal(manifest.native_descriptors.sha256, sha(readFileSync(NATIVE)));
+  await verifyCatalogMigration(t, archive);
+  for (const [name, expected] of Object.entries(ARCHIVED_SHA)) {
+    assert.equal(sha(readFileSync(join(ARCHIVED_R1, name))), expected, 'source archive remains immutable');
+  }
+});
+
+test('current real catalog1 encoder preserves random identity and nonzero gold/free XP during catalogue migration', async t => {
+  await verifyCatalogMigration(t, null);
+});
+
+async function verifyCatalogMigration(t, archive) {
   const directory = testDirectory(), database = join(directory, 'portal.sqlite');
   let runtime, bridge;
   t.after(async () => { if (bridge) await bridge.close(); runtime?.close(); removeTestDirectory(directory); });
-  const password = token(), id = randomUUID(), created = Date.now() - 172_800_000;
+  const password = token();
+  const profile = archive ? JSON.parse(archive['profile-input.json']) : {
+    profile_version: 1, account_id: randomUUID(), username: 'old_snapshot', native_database_id: 77,
+    created_at_ms: Date.now() - 172_800_000, snapshot_revision: 1, resources: { credits: 43210, gold: 7, free_xp: 9 },
+    statistics: { battles: 0, wins: 0, losses: 0, draws: 0 } };
+  const id = profile.account_id, created = profile.created_at_ms;
+  assert.deepEqual(profile.resources, archive ? { credits: 100000, gold: 0, free_xp: 0 } : { credits: 43210, gold: 7, free_xp: 9 });
   let db = new DatabaseSync(database);
   db.exec(readFileSync(new URL('../migrations/001_web_profile.sql', import.meta.url), 'utf8'));
-  db.prepare('INSERT INTO users VALUES (?,?,?,?,?,?,?,?)').run(id, 'old_snapshot', 'Original name', '', await hashPassword(password), created, created, created);
+  db.prepare('INSERT INTO users VALUES (?,?,?,?,?,?,?,?)').run(id, profile.username, 'Original name', '', await hashPassword(password), created, created, created);
   db.close();
   const origin = `http://127.0.0.1:${await freePort()}`;
   runtime = await createApp({ databasePath: database, origin });
   runtime.store.bindEmail(id, 'snapshot@example.test');
-  const profile = { profile_version: 1, account_id: id, username: 'old_snapshot', native_database_id: 77,
-    created_at_ms: created, snapshot_revision: 1, resources: { credits: 43210, gold: 7, free_xp: 9 },
-    statistics: { battles: 0, wins: 0, losses: 0, draws: 0 } };
   const gamePath = join(directory, 'game.sqlite');
   db = new DatabaseSync(gamePath);
   db.exec(`CREATE TABLE game_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
     CREATE TABLE game_profiles(native_id INTEGER PRIMARY KEY AUTOINCREMENT,account_id TEXT UNIQUE,profile_json TEXT);
     CREATE TABLE game_limits(key_hash TEXT PRIMARY KEY,hits INTEGER,resets_at INTEGER); PRAGMA user_version=1;`);
   db.prepare('INSERT INTO game_meta VALUES (?,?)').run('native_descriptors_sha256', sha(readFileSync(NATIVE)));
-  db.prepare('INSERT INTO game_profiles VALUES (?,?,?)').run(77, id, JSON.stringify(profile)); db.close();
+  db.prepare('INSERT INTO game_profiles VALUES (?,?,?)').run(profile.native_database_id, id, JSON.stringify(profile)); db.close();
   const fixtureRoot = join(directory, 'fixtures'), destination = join(fixtureRoot, id, 'r1');
   mkdirSync(destination, { recursive: true });
-  const profileFile = join(destination, 'profile-input.json'); writeFileSync(profileFile, JSON.stringify(profile));
+  const profileFile = join(destination, 'profile-input.json');
   const python = spawnSync('python', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8', windowsHide: true }).stdout.trim();
-  const generated = spawnSync(python, ['-X', 'utf8', OLD_ENCODER, '--out', destination, '--profile', profileFile, '--native-descriptors', NATIVE],
+  if (archive) {
+    for (const [name, bytes] of Object.entries(archive)) writeFileSync(join(destination, name), bytes, { flag: 'wx' });
+  } else {
+    writeFileSync(profileFile, JSON.stringify(profile));
+    const encoder = join(ROOT, 'tools/hangar_state.py');
+    const generated = spawnSync(python, ['-X', 'utf8', encoder, '--out', destination, '--profile', profileFile,
+      '--native-descriptors', NATIVE, '--catalog-version', '1'],
     { env: { ...process.env, PYTHONPATH: join(ROOT, 'tools') }, encoding: 'utf8', windowsHide: true, timeout: 5000 });
-  assert.equal(generated.status, 0, 'real measured old data-only generator');
+    assert.equal(generated.status, 0, 'current real data-only generator with explicit catalog1');
+    const manifest = JSON.parse(readFileSync(join(destination, 'manifest.json')));
+    assert.equal(manifest.compatibility_catalog_revision, 1);
+    assert.equal(manifest.generator.sha256, sha(readFileSync(encoder)), 'truthful current producer identity');
+    assert.notEqual(manifest.generator.sha256, OLD_SHA, 'current output is not attributed to historical source');
+  }
   const names = ['manifest.json', 'profile-input.json', 'compatibility.json', 'state.bin', 'shop.bin', 'dossier.bin'];
   const before = Object.fromEntries(names.map(name => [name, sha(readFileSync(join(destination, name)))]));
   const secret = token(), tokenFile = join(directory, 'identity.token'); writeFileSync(tokenFile, secret);
@@ -198,9 +241,17 @@ test('measured legacy r1 survives a separate catalogue migration without changin
   const statePath = join(destination, 'state.bin'), manifestPath = join(destination, 'manifest.json');
   const originalState = readFileSync(statePath), originalManifest = readFileSync(manifestPath);
   const alteredState = Buffer.from(originalState);
-  const creditOffset = alteredState.indexOf(Buffer.from([0x55, 7, ...Buffer.from('credits'), 0x4d]));
+  const creditPrefix = Buffer.from([0x55, 7, ...Buffer.from('credits'), archive ? 0x4a : 0x4d]);
+  const creditOffset = alteredState.indexOf(creditPrefix);
   assert.ok(creditOffset >= 0, 'measured protocol2 credit field');
-  alteredState.writeUInt16LE(43211, creditOffset + 10);
+  assert.equal(alteredState.indexOf(creditPrefix, creditOffset + 1), -1, 'one credit field');
+  if (archive) {
+    assert.equal(alteredState.readInt32LE(creditOffset + 10), profile.resources.credits);
+    alteredState.writeInt32LE(profile.resources.credits + 1, creditOffset + 10);
+  } else {
+    assert.equal(alteredState.readUInt16LE(creditOffset + 10), profile.resources.credits);
+    alteredState.writeUInt16LE(profile.resources.credits + 1, creditOffset + 10);
+  }
   const alteredManifest = JSON.parse(originalManifest);
   alteredManifest.files.find(row => row.file === 'state.bin').sha256 = sha(alteredState);
   writeFileSync(statePath, alteredState); writeFileSync(manifestPath, JSON.stringify(alteredManifest));
@@ -209,7 +260,7 @@ test('measured legacy r1 survives a separate catalogue migration without changin
   assert.equal(sha(readFileSync(statePath)), sha(alteredState), 'legacy is never overwritten');
   writeFileSync(statePath, originalState); writeFileSync(manifestPath, originalManifest);
   const result = await login(); assert.equal(result.status, 200);
-  const identity = await result.json(); assert.equal(identity.native_database_id, 77); assert.equal(identity.name, 'old_snapshot');
+  const identity = await result.json(); assert.equal(identity.native_database_id, profile.native_database_id); assert.equal(identity.name, profile.username);
   assert.equal(identity.fixture_dir, join(fixtureRoot, id, 'r1-catalog2'));
   const migrated = JSON.parse(readFileSync(join(identity.fixture_dir, 'manifest.json')));
   assert.equal(migrated.compatibility_catalog_revision, 2);
@@ -230,4 +281,4 @@ test('measured legacy r1 survives a separate catalogue migration without changin
   const input = readFileSync(profileFile); writeFileSync(profileFile, Buffer.concat([input, Buffer.from(' ')]));
   assert.equal((await login()).status, 503, 'changed provenance must refuse, not regenerate/reset');
   assert.equal(sha(readFileSync(join(destination, 'state.bin'))), before['state.bin']);
-});
+}

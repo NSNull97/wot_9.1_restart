@@ -10,6 +10,7 @@ import { dirname, resolve, relative, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { openIdentityReader } from './store.mjs';
+import { checkNativeEvidenceProof, evidenceGenerator, evidenceImplementation } from './native-evidence.mjs';
 import { loadGarageService, LEGACY_ENCODER_SHA256 } from './test-garage.mjs';
 import { validateCrewProfile, validateCrewFixture, crewOverview, isCrewOverview } from './ms1-crew.mjs';
 
@@ -22,8 +23,8 @@ const GARAGE_GENERATOR = resolve(ROOT, 'tools/test_garage_state.py');
 const GARAGE_MODULE = resolve(ROOT, 'web/src/test-garage.mjs');
 const CREW_GENERATOR = resolve(ROOT, 'tools/ms1_crew_state.py');
 const CREW_MODULE = resolve(ROOT, 'web/src/ms1-crew.mjs');
-const CREW_GENERATOR_SHA256 = '40730f4c4c1a1d44c620577c58f40b757e9f1c891fb11ac9442ef1427bd1e810';
-const CREW_MODULE_SHA256 = '7800c5f845c731e22c28cd45ab044484b4f5c4b27156c213400570e88f0d3772';
+const CREW_GENERATOR_SHA256 = 'a9c3dfeb9ee2fb6bea74bd015a90962909bfe761a4b18ffa70eed82ff8bf4dda';
+const CREW_MODULE_SHA256 = '63f5e7c2053f5f2d0aa0417a66a3a2f4a63270629445e41d3b3ec4fea6f30dc3';
 const GARAGE_GENERATOR_SHA256 = 'dec1f884dd8b22ef0d4a6c21389cb37c075f008feb6a12bc7d43888c5b4c5825';
 const GARAGE_MODULE_SHA256 = '86f946a10ee4d2a4088cf73df18c0dd4286807a500b8aeacfedf0a527a0c40e3';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -96,14 +97,14 @@ function implementation() {
     && digest(read(GARAGE_MODULE, 131072)) === GARAGE_MODULE_SHA256
     && digest(read(CREW_GENERATOR, 131072)) === CREW_GENERATOR_SHA256
     && digest(read(CREW_MODULE, 131072)) === CREW_MODULE_SHA256, 'Frozen pre-ammo implementation changed');
-  return Object.fromEntries([['module', SELF], ['generator', GENERATOR],
+  return { ...Object.fromEntries([['module', SELF], ['generator', GENERATOR],
     ['crew_module', CREW_MODULE], ['crew_generator', CREW_GENERATOR], ['garage_module', GARAGE_MODULE],
     ['garage_generator', GARAGE_GENERATOR], ['legacy_encoder', LEGACY],
     ['client_audit', resolve(ROOT, 'tools/client_audit.py')], ['packed_xml', resolve(ROOT, 'tools/packed_xml.py')],
     ['literal_verifier', resolve(ROOT, 'tools/verify_hangar.py')],
     ['bridge', resolve(ROOT, 'web/src/game-adapter.mjs')], ['identity_reader', resolve(ROOT, 'web/src/store.mjs')],
     ['identity_validation', resolve(ROOT, 'web/src/security.mjs')]]
-    .map(([key, path]) => [key, source(path, 131072)]));
+    .map(([key, path]) => [key, source(path, 131072)])), ...evidenceImplementation() };
 }
 function domainAmmo(id) {
   return [{ vehicle_inventory_id: `${id}:starter-vehicle-v1`, shell_definition_id: 'shell:ms1-stock-ap', count: 20 }];
@@ -179,17 +180,7 @@ function expectedAmmoState(base) {
 }
 
 function checkAmmoProof(path) {
-  const value = json(path, 32768), proof = value?.source;
-  requireValue(keys(value, ['version', 'kind', 'data', 'source']) && value.version === 1
-    && value.kind === 'native-ms1-ammo' && keys(proof, ['trace_file', 'trace_sha256', 'record_index',
-      'install_plan_file', 'install_plan_sha256', 'outcome_file', 'outcome_sha256']), 'Ammo proof envelope changed');
-  // The generator already validated the original event, compiled probe and
-  // clean native outcome. Keep those exact evidence bytes available across
-  // plan/apply/relogin; do not silently accept a now-unverifiable reference.
-  for (const [name, maximum] of [['trace', 4 * 1024 * 1024], ['install_plan', 1024 * 1024], ['outcome', 65536]]) {
-    requireValue(SHA.test(proof[name + '_sha256'])
-      && digest(read(localPath(proof[name + '_file']), maximum)) === proof[name + '_sha256'], 'Ammo native proof changed');
-  }
+  checkNativeEvidenceProof(path, 'native-ms1-ammo');
 }
 
 /** This validates local immutable provenance; independent Python acceptance
@@ -212,10 +203,16 @@ export function validateAmmoFixture(directory, profile, { nativeMs1, nativeIs7, 
     && manifest.account_id === profile.account_id && manifest.native_database_id === profile.native_database_id
     && isDeepStrictEqual(manifest.grant, profile.test_grant), 'Ammo fixture identity/version/grant mismatch');
   const impl = implementation();
-  requireValue(isDeepStrictEqual(manifest.generator, { file: GENERATOR, sha256: impl.generator.sha256,
-    base_generator: { file: CREW_GENERATOR, sha256: CREW_GENERATOR_SHA256,
-      dependency: { file: LEGACY, sha256: LEGACY_ENCODER_SHA256 },
-      base_generator: { file: GARAGE_GENERATOR, sha256: GARAGE_GENERATOR_SHA256 } } }), 'Ammo generator source changed');
+  const historicalCrew = { file: CREW_GENERATOR,
+    sha256: '40730f4c4c1a1d44c620577c58f40b757e9f1c891fb11ac9442ef1427bd1e810',
+    dependency: { file: LEGACY, sha256: LEGACY_ENCODER_SHA256 },
+    base_generator: { file: GARAGE_GENERATOR, sha256: GARAGE_GENERATOR_SHA256 } };
+  const historicalGenerator = { file: GENERATOR,
+    sha256: 'a837cf94c037a5726d34b6450be8ec7c17170df4f7fd9c7076bf33fc09f708a2', base_generator: historicalCrew };
+  const currentGenerator = { file: GENERATOR, sha256: impl.generator.sha256,
+    base_generator: { ...historicalCrew, sha256: CREW_GENERATOR_SHA256, evidence_relocation: evidenceGenerator() } };
+  requireValue([historicalGenerator, currentGenerator].some(value => isDeepStrictEqual(manifest.generator, value)),
+    'Ammo generator source changed');
   for (const [field, file, bytes] of [['profile_source', 'profile-input.json', raw], ['base_profile_source', 'base-profile-input.json', storedBase]]) {
     requireValue(isDeepStrictEqual(manifest[field], { file, relative_to: 'fixture_directory', sha256: digest(bytes) }), 'Ammo fixture input hash mismatch');
   }
