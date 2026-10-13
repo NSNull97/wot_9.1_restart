@@ -13,7 +13,7 @@
 //! water effect. These presentation adjustments are never server hit evidence.
 
 use std::io;
-use super::model;
+use super::vehicle_profile::VehicleKind;
 
 const MAX_COORDINATE: f32 = 100_000.0;
 // The caller normalizes the authoritative collision chord in f32. Compare
@@ -35,7 +35,10 @@ pub fn explode(shot_id: u32, point: [f32; 3], direction: [f32; 3]) -> io::Result
 /// Index is selected from the original kind table by authoritative surface
 /// facts. Water/destructible events are outside this static-surface codec.
 pub fn explode_material(shot_id: u32, point: [f32; 3], direction: [f32; 3], material: u8) -> io::Result<Vec<u8>> {
-    if shot_id == 0 || u64::from(shot_id) > model::MAX_SHOTS as u64
+    explode_material_for(VehicleKind::Ms1,shot_id,point,direction,material)
+}
+pub fn explode_material_for(kind: VehicleKind,shot_id: u32, point: [f32; 3], direction: [f32; 3], material: u8) -> io::Result<Vec<u8>> {
+    if shot_id == 0 || u64::from(shot_id) > kind.battle_shot_limit() as u64
         || material > 5
         || point.iter().any(|v| !v.is_finite() || v.abs() > MAX_COORDINATE)
         || direction.iter().any(|v| !v.is_finite()) {
@@ -49,7 +52,7 @@ pub fn explode_material(shot_id: u32, point: [f32; 3], direction: [f32; 3], mate
     let mut body = Vec::with_capacity(37);
     body.extend([0x13, 0x57, 34]);
     body.extend(shot.to_le_bytes());
-    body.extend([2, material]);
+    body.extend([kind.shell().effects, material]);
     for coordinate in point.into_iter().chain(direction) { body.extend(coordinate.to_le_bytes()); }
     body.extend(0i32.to_le_bytes());
     Ok(body)
@@ -94,7 +97,7 @@ mod tests {
 
     #[test]
     fn rejects_bad_shots_points_and_nonunit_directions() {
-        for shot in [0, model::MAX_SHOTS as u32 + 1, u32::MAX] {
+        for shot in [0, VehicleKind::Ms1.battle_shot_limit() as u32 + 1, u32::MAX] {
             assert!(explode(shot, [0.0; 3], [1.0, 0.0, 0.0]).is_err());
         }
         for axis in 0..3 {
@@ -117,7 +120,7 @@ mod tests {
     fn accepts_bounded_unit_direction_without_rewriting_f32_bits() {
         let direction = [1.0 / 3.0f32.sqrt(); 3];
         let point = [MAX_COORDINATE, -MAX_COORDINATE, -0.0];
-        let body = explode(model::MAX_SHOTS as u32, point, direction).unwrap();
+        let body = explode(VehicleKind::Ms1.battle_shot_limit() as u32, point, direction).unwrap();
         for (index, value) in point.into_iter().chain(direction).enumerate() {
             assert_eq!(&body[9 + index * 4..13 + index * 4], &value.to_le_bytes());
         }

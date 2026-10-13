@@ -1,16 +1,20 @@
 //! Source facts of a contacted #717 surface, not a penetration/HP decision.
 use std::io;
 use serde_json::{json, Value};
-use super::model::bad;
+use super::{model::bad, vehicle_profile::VehicleKind};
 
 pub const PROFILE_REVISION: &str = "ms1-contact-717:7666849add0757fd91c224dbc6c0a6550d8ae1bca434f175eaa5c66b06e2d9ab";
+pub const IS7_PROFILE_REVISION: &str = "is7-contact-717:ebb3b8ae6dd383f1f8c31bde7c97257f8569fd626ff79ca8ad030848c1c3ab26";
+pub fn profile_revision(kind: VehicleKind) -> &'static str { match kind {
+    VehicleKind::Ms1 => PROFILE_REVISION, VehicleKind::Is7 => IS7_PROFILE_REVISION,
+} }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Component { Hull, Turret01, Gun02 }
+pub enum Component { Hull, Turret01, Gun02, Gun01 }
 impl Component {
-    pub fn name(self) -> &'static str { match self { Self::Hull => "Hull", Self::Turret01 => "Turret_01", Self::Gun02 => "Gun_02" } }
+    pub fn name(self) -> &'static str { match self { Self::Hull => "Hull", Self::Turret01 => "Turret_01", Self::Gun02 => "Gun_02", Self::Gun01 => "Gun_01" } }
     fn parse(s: &str) -> io::Result<Self> { match s {
-        "Hull" => Ok(Self::Hull), "Turret_01" => Ok(Self::Turret01), "Gun_02" => Ok(Self::Gun02), _ => Err(bad()) } }
+        "Hull" => Ok(Self::Hull), "Turret_01" => Ok(Self::Turret01), "Gun_02" => Ok(Self::Gun02), "Gun_01" => Ok(Self::Gun01), _ => Err(bad()) } }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceClass { ArmorDescriptor, GunVisualMaterial, SurveyingDeviceVisualMaterial }
@@ -78,16 +82,23 @@ impl Catalog {
     pub(super) fn empty_for_test() -> Self { Self { entries: Vec::new() } }
     /// Called only after the enclosing bundle's exact approved digest check.
     pub(super) fn from_value(revision: &Value, rows: &Value) -> io::Result<Self> {
-        if revision.as_str() != Some(PROFILE_REVISION) { return Err(bad()); }
+        Self::from_value_for(VehicleKind::Ms1, revision, rows)
+    }
+    pub(super) fn from_value_for(vehicle: VehicleKind, revision: &Value, rows: &Value) -> io::Result<Self> {
+        let revision_expected = profile_revision(vehicle);
+        if revision.as_str() != Some(revision_expected) { return Err(bad()); }
+        let (hull_max, turret_max, gun) = match vehicle {
+            VehicleKind::Ms1 => (12, 10, Component::Gun02), VehicleKind::Is7 => (16, 12, Component::Gun01),
+        };
         let rows = rows.as_array().filter(|a| a.len() == 3).ok_or_else(bad)?;
         let mut entries = Vec::new();
         for (index, row) in rows.iter().enumerate() {
             fields(row, &["component", "entries"])?;
             let component = Component::parse(row["component"].as_str().ok_or_else(bad)?)?;
-            if component != [Component::Hull, Component::Turret01, Component::Gun02][index] { return Err(bad()); }
+            if component != [Component::Hull, Component::Turret01, gun][index] { return Err(bad()); }
             let expected: Vec<u16> = match component {
-                Component::Hull => (1..=12).chain([28]).collect(),
-                Component::Turret01 => (1..=10).chain([28]).collect(), Component::Gun02 => vec![1,2,3,25] };
+                Component::Hull => (1..=hull_max).chain([28]).collect(),
+                Component::Turret01 => (1..=turret_max).chain([28]).collect(), Component::Gun02 | Component::Gun01 => vec![1,2,3,25] };
             let values = row["entries"].as_array().filter(|a| a.len() == expected.len()).ok_or_else(bad)?;
             for (entry, kind) in values.iter().zip(expected) {
                 fields(entry, &["name", "kind", "source_class", "effective"])?;
@@ -102,7 +113,7 @@ impl Catalog {
                 let effective = if kind == 28 {
                     if !entry["effective"].is_null() { return Err(bad()); } None
                 } else { Some(EffectiveMaterial::from_value(&entry["effective"], kind)?) };
-                entries.push(MaterialFacts { component, name, kind, source_class, effective, profile_revision: PROFILE_REVISION.into() });
+                entries.push(MaterialFacts { component, name, kind, source_class, effective, profile_revision: revision_expected.into() });
             }
         }
         Ok(Self { entries })
@@ -120,6 +131,34 @@ mod tests {
         let root = std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
         let path = std::path::Path::new(&root).join("local/evidence/20261010-p06j-contact-materials-01/ms1-contact.json");
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+    #[test] fn is7_material_table_keeps_all_ordinary_screen_zero_and_device_facts() {
+        let bundle = super::super::geometry::tests::is7_bundle(); let c = bundle.materials();
+        for (part, label, armor, factor) in [("Hull", "armor_16", 100., 1.), ("Turret_01", "armor_12", 30., 1.),
+            ("Hull", "armor_13", 0., 1.), ("Turret_01", "armor_10", 0., 1.),
+            ("Hull", "armor_14", 20., 0.), ("Hull", "armor_15", 30., 0.), ("Turret_01", "armor_11", 20., 0.),
+            ("Gun_01", "armor_1", 350., 0.), ("Gun_01", "gun", 60., 0.)] {
+            let facts = c.lookup(part, label).unwrap(); assert_eq!(facts.profile_revision, IS7_PROFILE_REVISION);
+            let effective = facts.effective.unwrap(); assert_eq!(effective.armor, Some(armor));
+            assert_eq!(effective.vehicle_damage_factor, factor);
+        }
+        for part in ["Hull", "Turret_01"] { assert!(c.lookup(part, "surveyingDevice").unwrap().effective.is_none()); }
+        assert_eq!(c.lookup("Gun_01", "gun").unwrap().component, Component::Gun01);
+        assert!(c.lookup("Gun_02", "gun").is_err()); assert!(c.lookup("Hull", "armor_17").is_err());
+        let gun = c.lookup("Gun_01", "gun").unwrap().effective.unwrap();
+        assert_eq!(gun.damage_kind, 1); assert_eq!(gun.chance_to_hit_by_projectile, 0.33);
+    }
+    #[test] fn is7_materials_reject_wrong_revision_missing_plate_and_cross_vehicle_gun() {
+        let root = std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
+        let raw = std::fs::read(std::path::Path::new(&root).join("local/evidence/20261013-p03m-is7-01/geometry-surface01/is7-contact.json")).unwrap();
+        let value: Value = serde_json::from_slice(&raw).unwrap(); let revision = &value["source_revision"];
+        let mut rows = value["materials"].clone(); rows[0]["entries"].as_array_mut().unwrap().remove(15);
+        assert!(Catalog::from_value_for(VehicleKind::Is7, revision, &rows).is_err());
+        let mut rows = value["materials"].clone(); rows[2]["component"] = json!("Gun_02");
+        assert!(Catalog::from_value_for(VehicleKind::Is7, revision, &rows).is_err());
+        let mut rows = value["materials"].clone(); rows[1]["entries"][0]["effective"]["armor"] = json!(-1);
+        assert!(Catalog::from_value_for(VehicleKind::Is7, revision, &rows).is_err());
+        assert!(Catalog::from_value_for(VehicleKind::Is7, &json!(PROFILE_REVISION), &value["materials"]).is_err());
     }
     #[test] fn component_specific_armor_and_absence_are_distinct() {
         let b = super::super::geometry::tests::bundle(); let c = b.materials();

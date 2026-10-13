@@ -1,15 +1,18 @@
 //! Imported original fragile geometry. Damage is explicitly approximate test_lab:
-//! unscaled reference HP, fixed AP30, and termination on the first surface.
+//! unscaled reference HP, selected profile AP damage, and termination on the first surface.
 use std::{fs, io::{self, Read}, path::Path, sync::Arc};
 use sha2::{Digest,Sha256};
 use serde_json::Value;
 use crate::map_profile091::MapId;
-use super::{model::{bad,MAX_SHOTS,CAPACITY},terrain,obstacles};
+use super::{model::{bad,CAPACITY},terrain,obstacles,vehicle_profile::VehicleKind};
 
 pub const MAX_OBJECTS:usize=64;
 pub const MAX_CONTACT_OBJECTS:usize=1024;
 pub const MAX_MOVEMENT_OBJECTS:usize=2048;
 pub const POLICY:&str="test_lab-fragile-reference-hp-ap30-v1";
+pub fn policy_for(kind:VehicleKind)->&'static str { match kind {
+    VehicleKind::Ms1=>POLICY, VehicleKind::Is7=>"test_lab-fragile-reference-hp-ap490-v1",
+} }
 /// Minimal authoritative ramming policy. The worker supplies a hash-bound
 /// vehicle mass from the map descriptor; client claims are never used. A
 /// contact below this kinetic-energy floor remains a contact candidate but
@@ -222,16 +225,19 @@ impl State {
         let event=VehicleContact{object_id,instance_id:object.instance_id,object_revision:object.object_revision.clone(),shooter,tick,substep,point,normal,velocity,mass_kg,kind,scene_before:scene,scene_after:scene+1,fallen_tree};self.vehicle_events.push(event.clone());Ok(Some(event))
     }
     pub fn contact(&mut self,shot:u32,shooter:usize,tick:u32,hit:terrain::Hit)->io::Result<Option<Damage>>{
+        self.contact_for(VehicleKind::Ms1,shot,shooter,tick,hit)
+    }
+    pub fn contact_for(&mut self,vehicle:VehicleKind,shot:u32,shooter:usize,tick:u32,hit:terrain::Hit)->io::Result<Option<Damage>>{
         let terrain::Surface::StaticObstacle{instance_id,material_kind}=hit.surface else{return Ok(None)};
         let Some(index)=self.catalog.objects.iter().position(|o|o.instance_id==instance_id) else{return Ok(None)};
         let object=&self.catalog.objects[index];let before=self.health[index];
         if !matches!(object.kind,ObjectKind::Fragile){return Ok(None);}
-        if before<=0||shot==0||shot>MAX_SHOTS as u32||shooter>=CAPACITY||tick==0||self.events.len()>=MAX_SHOTS
+        if before<=0||shot==0||shot>vehicle.battle_shot_limit() as u32||shooter>=CAPACITY||tick==0||self.events.len()>=vehicle.battle_shot_limit()
             ||self.events.iter().any(|e|e.shot==shot)||self.latest_tick().is_some_and(|last|last>tick)
             ||material_kind!=object.material_kind||!(object.projectile_first_triangle..object.projectile_first_triangle+object.projectile_triangle_count).contains(&hit.triangle_id)
             ||!hit.t.is_finite()||!(0. ..=1.).contains(&hit.t)||hit.point.iter().chain(hit.normal.iter()).any(|v|!v.is_finite())
             ||hit.point.iter().any(|v|v.abs()>terrain::MAX_QUERY_COORDINATE)||(hit.normal.iter().map(|v|v*v).sum::<f32>()-1.).abs()>1e-4{return Err(bad());}
-        let after=before.saturating_sub(30);let scene=self.scene_version();
+        let after=before.saturating_sub(u32::from(vehicle.damage()));let scene=self.scene_version();
         let damage=Damage{object_id:object.object_id,instance_id,object_revision:object.object_revision.clone(),shot,shooter,tick,
             health_before:before,health_after:after,scene_before:scene,scene_after:scene+u32::from(after==0),hit};
         self.health[index]=after;self.events.push(damage.clone());Ok(Some(damage))

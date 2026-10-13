@@ -1,18 +1,20 @@
 //! Parameterized #717 layouts, kept separate from the frozen primary-profile
-//! probes. Only two server-assigned allied MS-1s can enter these encoders.
+//! probes. Two allied actors share one immutable server-selected vehicle kind.
 use std::io;
 use super::{model::{self, Actor, World}, projectile::Projectile};
-use super::aim;
-use crate::{arena091 as arena, arena_vehicle091 as vehicle, battle091::native_ammo as ammo};
+use super::{aim, vehicle_profile::VehicleKind};
+use crate::{arena091 as arena, arena_vehicle091 as vehicle};
 
 pub const SPACE: u32 = 1;
 /// Original #717 gun_rotation_shared: 10 biased yaw bits, 6 restricted pitch.
 /// Keep this serializer at the wire boundary, not in the aiming simulation.
-pub fn packed_angles(state: &aim::State) -> io::Result<u16> {
+pub fn packed_angles(state: &aim::State) -> io::Result<u16> { packed_angles_for(VehicleKind::Ms1,state) }
+pub fn packed_angles_for(kind: VehicleKind,state: &aim::State) -> io::Result<u16> {
+    let spec=kind.aim();
     if !state.yaw.is_finite() || !state.pitch.is_finite() || state.yaw.abs() > std::f32::consts::PI
-        || !(aim::MIN_PITCH..=aim::MAX_PITCH).contains(&state.pitch) { return Err(model::bad()); }
+        || !(spec.min_pitch..=spec.max_pitch).contains(&state.pitch) { return Err(model::bad()); }
     let yaw = ((state.yaw as f64 + std::f64::consts::PI) * 1024. / (2. * std::f64::consts::PI)).round() as u16 & 1023;
-    let pitch = ((state.pitch as f64 - aim::MIN_PITCH as f64) * 63. / (aim::MAX_PITCH as f64 - aim::MIN_PITCH as f64)).round() as u16;
+    let pitch = ((state.pitch as f64 - spec.min_pitch as f64) * 63. / (spec.max_pitch as f64 - spec.min_pitch as f64)).round() as u16;
     Ok((yaw << 6) | pitch)
 }
 pub fn aim_intent(raw: &[u8], own: usize) -> io::Result<Option<aim::Intent>> {
@@ -48,7 +50,7 @@ fn native_direction(b: &mut Vec<u8>, ypr: [f32; 3]) { f3(b, [ypr[2], ypr[1], ypr
 fn actor(w: &World, slot: usize) -> io::Result<&Actor> {
     vehicle_id(slot)?;
     let a = w.actors.get(slot).ok_or_else(model::bad)?;
-    if w.id == 0 || a.identity.database <= 0 || a.identity.name.len() > 48 || !(0..=90).contains(&a.health)
+    if w.id == 0 || a.identity.database <= 0 || a.identity.name.len() > 48 || a.vehicle_kind()!=w.vehicle_kind() || !(0..=a.vehicle_kind().max_health()).contains(&a.health)
         || a.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
         || a.direction.iter().any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
         || a.direction[0] != a.yaw { return Err(model::bad()); }
@@ -67,7 +69,7 @@ pub fn roster(w: &World) -> io::Result<Vec<u8>> {
     for slot in 0..model::CAPACITY {
         let a = actor(w, slot)?;
         d.extend([b'(', b'J']); d.extend(vehicle_id(slot)?.to_le_bytes());
-        d.push(b'U'); string(&mut d, &vehicle::MS1_DESCRIPTOR)?;
+        d.push(b'U'); string(&mut d, a.vehicle_kind().descriptor())?;
         d.push(b'U'); string(&mut d, a.identity.name.as_bytes())?;
         d.extend([b'K', 1, if a.health > 0 { 0x88 } else { 0x89 }, if a.ready { 0x88 } else { 0x89 }, 0x89, b'J']);
         d.extend(a.identity.database.to_le_bytes());
@@ -99,9 +101,9 @@ pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     let a = actor(w, slot)?;
     let mut p = vec![0]; p.extend(vehicle_id(slot)?.to_le_bytes()); p.extend(2u16.to_le_bytes());
     f3(&mut p, a.position); f3(&mut p, a.direction);
-    p.extend([8, 0, 0, 1, 1, 2]); p.extend(packed_angles(&a.aim)?.to_le_bytes());
+    p.extend([8, 0, 0, 1, 1, 2]); p.extend(packed_angles_for(a.vehicle_kind(),&a.aim)?.to_le_bytes());
     p.push(3); p.extend(a.health.to_le_bytes()); p.extend([4, 0, 0, 5]);
-    string(&mut p, a.identity.name.as_bytes())?; string(&mut p, &vehicle::MS1_DESCRIPTOR)?;
+    string(&mut p, a.identity.name.as_bytes())?; string(&mut p, a.vehicle_kind().descriptor())?;
     p.push(1); p.extend(0i32.to_le_bytes()); p.push(0);
     p.push(6); p.extend(0i32.to_le_bytes()); p.push(7); p.extend(0i32.to_le_bytes());
     var16(9, &p)
@@ -135,14 +137,16 @@ pub fn postmortem_rebind(payload: &[u8], own: usize) -> io::Result<()> {
 pub fn ready_update(slot: usize) -> io::Result<Vec<u8>> {
     let mut d = vec![0x80, 2, b'J']; d.extend(vehicle_id(slot)?.to_le_bytes()); d.push(b'.'); update(7, &d)
 }
-pub fn reload(slot: usize, time_left: f32) -> io::Result<Vec<u8>> {
-    if !time_left.is_finite() || !(0. ..=ammo::MS1_RELOAD_SECONDS).contains(&time_left) { return Err(model::bad()); }
+pub fn reload(slot: usize, time_left: f32) -> io::Result<Vec<u8>> { reload_for(VehicleKind::Ms1,slot,time_left) }
+pub fn reload_for(kind: VehicleKind,slot: usize, time_left: f32) -> io::Result<Vec<u8>> {
+    if !time_left.is_finite() || !(0. ..=kind.reload_seconds()).contains(&time_left) { return Err(model::bad()); }
     let mut b = vec![0x13, 0x46]; b.extend(vehicle_id(slot)?.to_le_bytes());
-    b.extend(time_left.to_le_bytes()); b.extend(ammo::MS1_RELOAD_SECONDS.to_le_bytes()); Ok(b)
+    b.extend(time_left.to_le_bytes()); b.extend(kind.reload_seconds().to_le_bytes()); Ok(b)
 }
-pub fn ammo_count(count: u16) -> io::Result<Vec<u8>> {
-    if count > ammo::MS1_SHELL_COUNT { return Err(model::bad()); }
-    let mut b = vec![0x13, 0x44]; b.extend(ammo::MS1_SHELL.to_le_bytes()); b.extend(count.to_le_bytes());
+pub fn ammo_count(count: u16) -> io::Result<Vec<u8>> { ammo_count_for(VehicleKind::Ms1,count) }
+pub fn ammo_count_for(kind: VehicleKind,count: u16) -> io::Result<Vec<u8>> {
+    if count > kind.initial_ammo() { return Err(model::bad()); }
+    let mut b = vec![0x13, 0x44]; b.extend(kind.shell_compact_id().to_le_bytes()); b.extend(count.to_le_bytes());
     b.extend([0, 0, 0]); Ok(b)
 }
 /// Pinned #717: selectEntity FIXED4, Vehicle.showShooting(UINT8), then restore
@@ -160,7 +164,7 @@ pub fn shooting(slot: usize) -> io::Result<Vec<u8>> {
 /// collision/range stop so a delayed receiver can receive start then stop.
 /// Per-receiver delivery cursors own that order and exactly-once policy.
 pub fn tracer_start(projectile: &Projectile) -> io::Result<Vec<u8>> {
-    if projectile.sequence == 0 || projectile.sequence as usize > model::MAX_SHOTS
+    if projectile.sequence == 0 || projectile.sequence as usize > projectile.vehicle_kind.battle_shot_limit()
         || projectile.slot >= model::CAPACITY
         || !projectile.origin.iter().all(|v| v.is_finite())
         || !projectile.velocity.iter().all(|v| v.is_finite())
@@ -170,9 +174,8 @@ pub fn tracer_start(projectile: &Projectile) -> io::Result<Vec<u8>> {
     let mut b = vec![0x13, 0x4c];
     b.extend(vehicle_id(projectile.slot)?.to_le_bytes());
     b.extend(projectile.sequence.to_le_bytes());
-    // `smallArmorPiercing` is ordered index 2 in the pinned #717
-    // common/shot_effects.xml enumeration.
-    b.push(2);
+    // Pinned #717 ordered effects: smallArmorPiercing2 / largeArmorPiercing14.
+    b.push(projectile.vehicle_kind.shell().effects);
     f3(&mut b, projectile.origin);
     f3(&mut b, projectile.velocity);
     b.extend(projectile.gravity.to_le_bytes());
@@ -184,7 +187,7 @@ pub fn tracer_start(projectile: &Projectile) -> io::Result<Vec<u8>> {
 /// Original Avatar.stopTracer fixed method. It is emitted once per tracer
 /// start, and only after the server has stopped the projectile.
 pub fn tracer_stop(projectile: &Projectile) -> io::Result<Vec<u8>> {
-    if projectile.sequence == 0 || projectile.sequence as usize > model::MAX_SHOTS
+    if projectile.sequence == 0 || projectile.sequence as usize > projectile.vehicle_kind.battle_shot_limit()
         || projectile.slot >= model::CAPACITY || !projectile.stopped
         || !projectile.terminal.iter().all(|v| v.is_finite())
     { return Err(model::bad()); }
@@ -208,18 +211,19 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
     // its original target-input path. Nominal resource parameters, no crew
     // modifier claim; conversions mirror the original resource readers.
     b.extend([0x13, 0x4b]);
-    for value in [a.aim.yaw, a.aim.pitch, aim::YAW_RATE, aim::PITCH_RATE, 1.,
-        0.16 / 1f32.to_radians(), 0.42 * 3.6, 0.42 / 1f32.to_radians(), 2.5] {
+    let kind=a.vehicle_kind(); let aiming=kind.aim();
+    for value in [a.aim.yaw, a.aim.pitch, aiming.yaw_rate, aiming.pitch_rate, 1.,
+        aiming.turret_dispersion, aiming.movement_dispersion, aiming.hull_dispersion, aiming.aiming_time] {
         b.extend(value.to_le_bytes());
     }
-    for (descriptor, original_count) in ammo::MS1_PANEL_ROWS {
+    for (descriptor, original_count) in kind.panel_rows() {
         b.extend([0x13, 0x44]); b.extend(descriptor.to_le_bytes());
-        b.extend((if descriptor == ammo::MS1_SHELL { a.fire.ammo() } else { original_count }).to_le_bytes());
+        b.extend((if descriptor == kind.shell_compact_id() { a.fire.ammo() } else { original_count }).to_le_bytes());
         b.extend([0, 0, 0]);
     }
-    b.extend([0x13, 0x40, 0]); b.extend(ammo::MS1_SHELL.to_le_bytes());
+    b.extend([0x13, 0x40, 0]); b.extend(kind.shell_compact_id().to_le_bytes());
     let left = a.fire.reload_until().map(|end| end.saturating_duration_since(now).as_secs_f32()).unwrap_or(0.);
-    b.extend(reload(own, left.min(ammo::MS1_RELOAD_SECONDS))?); Ok(b)
+    b.extend(reload_for(kind,own, left.min(kind.reload_seconds()))?); Ok(b)
 }
 pub fn publication(w: &World, visible: [bool; 2]) -> io::Result<Vec<u8>> {
     if !(1000..=37000).contains(&w.tick) { return Err(model::bad()); }
@@ -232,7 +236,7 @@ pub fn publication(w: &World, visible: [bool; 2]) -> io::Result<Vec<u8>> {
         // Pinned #717 dynamic entityProperty base 0x9e + indexed property 2.
         // UINT16 is fixed2. Restore Avatar selection after each vehicle.
         b.push(0x12); b.extend(vehicle_id(slot)?.to_le_bytes());
-        b.push(0xa0); b.extend(packed_angles(&a.aim)?.to_le_bytes()); b.push(0x13);
+        b.push(0xa0); b.extend(packed_angles_for(a.vehicle_kind(),&a.aim)?.to_le_bytes()); b.push(0x13);
     }
     Ok(b)
 }

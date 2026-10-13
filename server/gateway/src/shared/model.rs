@@ -2,16 +2,20 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, sync::Arc, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::{aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile};
+use super::{aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile, vehicle_profile::VehicleKind};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
 pub const STEP: Duration = Duration::from_millis(100);
 pub const MAX_COMMANDS: usize = 32;
-pub const MAX_SHOTS: usize = CAPACITY * fire::MS1_INITIAL_AMMO as usize;
+/// Storage ceiling; each immutable profile enforces its own admission limit.
+pub const MAX_SHOTS: usize = CAPACITY * 30;
 /// Explicit laboratory policy: retained stock geometry blocks AP at a wreck.
 /// No penetration, material thickness or additional damage is inferred.
 pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
+pub fn wreck_policy_revision_for(kind:VehicleKind)->&'static str { match kind {
+    VehicleKind::Ms1=>WRECK_POLICY_REVISION,VehicleKind::Is7=>"test_lab-is7-wreck-block-v1",
+} }
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
 pub fn bad() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "shared laboratory contract") }
@@ -38,7 +42,10 @@ pub struct Actor {
     pub fire: fire::State,
     pub aim: aim::State,
     origin: [f32; 3],
+    vehicle_kind: VehicleKind,
 }
+
+impl Actor { pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind } }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Command { Move(Input), Aim(aim::Intent), Fire(fire::Command), Leave }
@@ -99,6 +106,7 @@ pub struct VehicleContactInput {
 #[derive(Clone)]
 pub struct World {
     pub id: u64,
+    vehicle_kind: VehicleKind,
     pub map: crate::map_profile091::MapId,
     pub actors: Vec<Actor>,
     pub started: Option<Instant>,
@@ -122,14 +130,18 @@ impl World {
         Self::new_for_map(id, now, crate::map_profile091::MapId::Karelia)
     }
     pub fn new_for_map(id: u64, now: Instant, map: crate::map_profile091::MapId) -> io::Result<Self> {
+        Self::new_for_vehicle(id,now,map,VehicleKind::Ms1)
+    }
+    pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
+    pub fn new_for_vehicle(id: u64, now: Instant, map: crate::map_profile091::MapId, kind: VehicleKind) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
-        Ok(Self { id, map, actors: Vec::new(), started: None, last: now, tick: 1000,
-            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_map(map),
+        Ok(Self { id, map, vehicle_kind:kind, actors: Vec::new(), started: None, last: now, tick: 1000,
+            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind),
             geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
-        if self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
+        if bundle.vehicle_kind()!=self.vehicle_kind || self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
         self.geometry = Some(bundle); Ok(())
     }
     pub fn enable_ap_test_lab(&mut self) -> io::Result<()> {
@@ -143,7 +155,7 @@ impl World {
     }
     pub fn latest_shot(&self) -> u32 { self.shots.last().map(|s| s.sequence).unwrap_or(0) }
     pub fn bind_destructible_test_lab(&mut self) -> io::Result<()> {
-        if self.map!=crate::map_profile091::MapId::Karelia || self.started.is_some() || !self.shots.is_empty() || !self.ap_test_lab || self.destructible.is_some()||self.fragiles.is_some()
+        if self.vehicle_kind!=VehicleKind::Ms1 || self.map!=crate::map_profile091::MapId::Karelia || self.started.is_some() || !self.shots.is_empty() || !self.ap_test_lab || self.destructible.is_some()||self.fragiles.is_some()
             || self.terrain.as_ref().is_none_or(|terrain|terrain.source_revision()!=terrain::WORLD_SOURCE_REVISION) {return Err(bad());}
         self.destructible=Some(destructible::State::default());Ok(())
     }
@@ -198,9 +210,9 @@ impl World {
         }
         let slot = self.actors.len();
         let mut origin = SPAWN; origin[0] += if slot == 0 { -4. } else { 4. };
-        self.actors.push(Actor { identity, session: Some(session), ready: false, health: 90,
+        self.actors.push(Actor { identity, session: Some(session), ready: false, health: self.vehicle_kind.max_health(), vehicle_kind:self.vehicle_kind,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire: fire::State::new(), aim: aim::State::new() });
+            fire: fire::State::with_loadout(self.vehicle_kind.initial_ammo(),self.vehicle_kind.reload_seconds())?, aim: aim::State::new() });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
@@ -314,7 +326,7 @@ impl World {
                     let result = next.fire.apply(&[*command], now)?;
                     for outcome in &result {
                         if let fire::Outcome::AcceptedShot { ammo_remaining } = *outcome {
-                            if shots.len() >= MAX_SHOTS || projectiles.len() >= MAX_SHOTS { return Err(bad()); }
+                            if shots.len() >= self.vehicle_kind.battle_shot_limit() || projectiles.len() >= self.vehicle_kind.battle_shot_limit() { return Err(bad()); }
                             let sequence = shots.len() as u32 + 1;
                             let projectile = Projectile::launch(sequence, slot, &next, now)?;
                             let elapsed_ticks = now.duration_since(self.started.ok_or_else(bad)?).as_millis() / 100;
@@ -396,7 +408,7 @@ impl World {
                     a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
                 }
                 a.direction[0] = a.yaw;
-                if a.health > 0 { a.aim.advance_pose(a.position, a.direction, dt)?; }
+                if a.health > 0 { a.aim.advance_pose_for(a.vehicle_kind,a.position, a.direction, dt)?; }
             }
             next_last = now; next_tick = tick;
         }
@@ -460,7 +472,7 @@ impl World {
                                     }
                                 }
                                 if let Some(state)=&mut next_fragiles {
-                                    if let Some(damage)=state.contact(projectile.sequence,projectile.slot,tick,hit)?{
+                                    if let Some(damage)=state.contact_for(projectile.vehicle_kind,projectile.sequence,projectile.slot,tick,hit)?{
                                         impact_trace.fragile_damage(self.id,projectile.sequence,tick,&damage)?;
                                     }
                                 }
@@ -487,7 +499,7 @@ impl World {
                                         let delta = f64::from(endpoint[i]) - f64::from(projectile.origin[i]);
                                         delta * delta
                                     }).sum::<f64>().sqrt();
-                                    let resolution = ap::resolve(ap::Input {
+                                    let resolution = ap::resolve_for(projectile.vehicle_kind,ap::Input {
                                         material: &contact.material_facts,
                                         segment_direction: std::array::from_fn(|i| end_point[i] - start_point[i]),
                                         winding_normal: nearest.normal, distance,
@@ -1088,8 +1100,8 @@ pub(super) mod tests {
             w.apply(1, 2, &[Command::Fire(fire::Command::Shoot)], at).unwrap();
         }
         w.advance(now + Duration::from_secs(60)).unwrap();
-        assert_eq!(w.shots.len(), MAX_SHOTS);
-        assert_eq!(w.impact.terminal_shots().len(), MAX_SHOTS);
+        assert_eq!(w.shots.len(), 40);
+        assert_eq!(w.impact.terminal_shots().len(), 40);
         assert!(w.impact.events().len() <= impact::MAX_EVENTS);
         let orders = w.impact.events().iter().map(impact::Event::order).collect::<Vec<_>>();
         assert_eq!(orders, (1..=orders.len() as u32).collect::<Vec<_>>());
@@ -1118,7 +1130,7 @@ pub(super) mod tests {
                 w.apply(slot, slot as u32 + 1, &[Command::Fire(fire::Command::Shoot)], now + Duration::from_secs(n as u64 * 3)).unwrap();
             }
         }
-        assert_eq!(w.shots.len(), MAX_SHOTS); assert_eq!(w.latest_shot(), 40);
+        assert_eq!(w.shots.len(), 40); assert_eq!(w.latest_shot(), 40);
         let before = w.shots.clone();
         assert_eq!(w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now+Duration::from_secs(61)).unwrap(),vec![fire::Outcome::RejectedNoAmmo]);
         assert_eq!(w.shots, before);
