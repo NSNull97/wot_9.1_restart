@@ -234,10 +234,38 @@ Passage is separate from a receipt. Run applicable Python/C#/Rust checks and
 fresh full gateway gate before preparing any morning stand. Native owner tests
 stay NOT_RUN until after09:00; no merge while those remain open.
 
+### Source catalog gate — 2026-10-13 20:01UTC
+
+Root added the mutually exclusive `--angular-fence-response` export option.
+The actual pinned native join passes25 Python tests and the CLI export:
+1038 objects/119 chunks, exactly403 existing movement fences on the new mode
+and635 unchanged normal-linear objects, all at the retained8000J project cost.
+IDs, masks, geometry, health, source inventory and old catalog bytes stay exact.
+The existing moving export still hashes to9f54f371.../9c40f5bd....
+Evidence:`night-angular-export01/receipt.json`, SHA256
+`ec7160af566ca581058bb0f9caa8116607a07db1fe775e0db9d9a7445dd26c39`.
+New domain7 `catalog/manifest.json`:
+`1dca4febb0bc4921263682f82b927e26c33248c5b837a885f075245adf948f99`.
+New worker8 `catalog/physics-removals.json`:
+`41c0d9ccfd5b608a07e80a4eb68a3b6ed70bacffdd1444bb58c3f2ebb179bea9`.
+Exact commands, source hashes and logs are in that directory. No physics worker
+or client ran in this gate. Runtime implementations remain in isolated review.
+
+The first-eight actual-worker design is frozen in
+`night-angular-stageb-review01/ACTUAL_WORKER_MATRIX.md`, SHA256
+`980b0845112f21477a8a7bd3826de9bd75e8723ea351a96af74b3dc73a3ea955`:
+two exact repeats of source IS7 pivot, MS1 low-energy pivot, MS1 clear chain
+and IS7 clear chain, each180 settle ticks and120 fixed advances. All source
+physical fields/handling stay exact. Four older capped fixtures are excluded
+from worker8 binding and remain old-catalog regression inputs only. The runner,
+reviewed candidate15 and saved-frame full Rust proof decoder must be pinned
+before this design becomes an actual run. A raw transport capture by itself
+cannot pass the new proof/domain gate. All eight new runs remain NOT_RUN.
+
 On failed prototype keep candidate14 unchanged. On failed integrated experiment
 revert only its own unaccepted patch to the pinned baseline; retain all evidence,
 owned-child exit receipts and isolated worktrees. Stop/reap exact children only.
 Before a future native launch make a fresh source binding/passive preflight;
 the old2d66203 morning bundle is preserved, not rewritten or treated current.
-Next automatic action: execute stage-A scalar contract in isolation and review
-the final typed proof/size/body-binding design before stage-B GO.
+Next automatic action: review and integrate Stage-B worker/gateway patches,
+then bind the fresh candidate15 build and first-eight actual-worker runner.

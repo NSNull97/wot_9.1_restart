@@ -98,6 +98,62 @@ class MovementAdmissionTests(unittest.TestCase):
 
 
 class CompoundNativeContractTests(unittest.TestCase):
+    def test_angular_policy_preserves_identity_energy_and_all_older_exports(self):
+        inv = inventory([object_row(0,'fragile'),object_row(1,'tree'),object_row(2)])
+        original_inventory = copy.deepcopy(inv)
+        exports = [export_bytes(native_export(inv))]
+        policies = ({}, {'fence_response':True}, {'whole_contact_response':True},
+                    {'moving_fence_response':True})
+        previous = [catalog.join_exports(inv,exports,**policy) for policy in policies]
+        manifest_raw,worker_raw = catalog.join_exports(inv,exports,angular_fence_response=True)
+        manifest,worker = json.loads(manifest_raw),json.loads(worker_raw)
+        legacy,legacy_worker = map(json.loads,previous[-1])
+        self.assertEqual((manifest['version'],worker['version']),(7,8))
+        self.assertEqual(manifest['ram_policy'],'test_lab-fence-linear-angular-energy-v1')
+        self.assertEqual(worker['ram_policy'],manifest['ram_policy'])
+        modes = ['normal_linear','normal_linear','total_linear_angular_fallback']
+        self.assertEqual([row['ram_response'] for row in manifest['objects']],modes)
+        self.assertEqual([row['ram_response'] for row in worker['objects']],modes)
+        self.assertEqual([row['ram_energy_j'] for row in worker['objects']],[8000]*3)
+        for current,old in ((manifest,legacy),(worker,legacy_worker)):
+            for new_row,old_row in zip(current['objects'],old['objects']):
+                self.assertEqual({k:v for k,v in new_row.items() if k!='ram_response'},
+                                 {k:v for k,v in old_row.items() if k!='ram_response'})
+            ignored = {'version','ram_policy','objects','worker'}
+            self.assertEqual({k:v for k,v in current.items() if k not in ignored},
+                             {k:v for k,v in old.items() if k not in ignored})
+        self.assertEqual(manifest['worker'],{'file':'physics-removals.json','sha256':catalog.sha(worker_raw)})
+        self.assertEqual(inv,original_inventory)
+        self.assertEqual(previous,[catalog.join_exports(inv,exports,**policy) for policy in policies])
+
+    def test_angular_flag_is_boolean_exclusive_and_requires_pinned_join(self):
+        inv = inventory();exports = [export_bytes(native_export(inv))]
+        for invalid in (1,0,None,'true',[],{}):
+            with self.subTest(invalid=invalid),self.assertRaises(ValueError):
+                catalog.join_exports(inv,exports,angular_fence_response=invalid)
+        for old in ('fence_response','whole_contact_response','moving_fence_response'):
+            with self.subTest(old=old),self.assertRaises(ValueError):
+                catalog.join_exports(inv,exports,angular_fence_response=True,**{old:True})
+            with contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):
+                catalog.main(['--out','unused','--angular-fence-response','--'+old.replace('_','-')])
+        with self.assertRaisesRegex(ValueError,'requires pinned native'):
+            catalog.main(['--out','unused','--angular-fence-response'])
+        with self.assertRaises(ValueError):
+            catalog.join_exports(inv,[],angular_fence_response=True)
+
+    def test_angular_policy_cannot_bypass_native_stability_coverage_or_identity(self):
+        inv = inventory();valid = native_export(inv)
+        variants = []
+        bad = copy.deepcopy(valid);bad['observation_count']=1;variants.append(bad)
+        bad = copy.deepcopy(valid);bad['chunks'][0]['items'].pop();variants.append(bad)
+        bad = copy.deepcopy(valid);bad['chunks'][0]['items'][1]['filename']='source/foreign.model';variants.append(bad)
+        for bad in variants:
+            with self.subTest(bad=bad),self.assertRaises(ValueError):
+                catalog.join_exports(inv,[export_bytes(bad)],angular_fence_response=True)
+        inv['eligible'][0]['kind']='module'
+        with self.assertRaises(ValueError):
+            catalog.join_exports(inv,[export_bytes(valid)],angular_fence_response=True)
+
     def test_moving_fence_response_binds_modes_without_changing_native_identity_or_projectiles(self):
         inv = inventory([object_row(0,'fragile'),object_row(1,'tree'),object_row(2)])
         original_inventory = copy.deepcopy(inv)
@@ -325,6 +381,24 @@ class CompoundOriginalSourceTests(unittest.TestCase):
         self.assertEqual(moving['area_chunks'],new['area_chunks'])
         self.assertEqual(moving['native_exports_sha256'],new['native_exports_sha256'])
         self.assertEqual(moving['worker']['sha256'],catalog.sha(moving_worker_raw))
+        self.assertEqual(catalog.sha(moving_raw),'9f54f371441a825c4d3f0dbd975e82a8c9644470d63188421a130e6639918165')
+        self.assertEqual(catalog.sha(moving_worker_raw),'9c40f5bdeb8b77364805f31f18a9c6943a811630f7676fd10c6ec55d8ec5fd5e')
+
+        angular_raw,angular_worker_raw = catalog.join_exports(self.inventory,exports,angular_fence_response=True)
+        angular,angular_worker = json.loads(angular_raw),json.loads(angular_worker_raw)
+        self.assertEqual((angular['version'],angular_worker['version']),(7,8))
+        self.assertEqual(Counter(row['ram_response'] for row in angular['objects']),
+                         {'total_linear_angular_fallback':403,'normal_linear':635})
+        self.assertEqual([row['ram_response'] for row in angular_worker['objects']],
+                         [row['ram_response'] for row in angular['objects']])
+        self.assertEqual(angular['ram_policy'],'test_lab-fence-linear-angular-energy-v1')
+        self.assertEqual(angular_worker['ram_policy'],angular['ram_policy'])
+        for current,previous in ((angular,moving),(angular_worker,moving_worker)):
+            self.assertEqual([{k:v for k,v in row.items() if k!='ram_response'} for row in current['objects']],
+                             [{k:v for k,v in row.items() if k!='ram_response'} for row in previous['objects']])
+        self.assertEqual(angular['area_chunks'],moving['area_chunks'])
+        self.assertEqual(angular['native_exports_sha256'],moving['native_exports_sha256'])
+        self.assertEqual(angular['worker']['sha256'],catalog.sha(angular_worker_raw))
 
     def test_original_movement_objects_preserve_both_masks_and_reference_health(self):
         rows=[r for r in self.inventory['eligible'] if r['kind']=='movement_fragile']
