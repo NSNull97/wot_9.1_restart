@@ -20,6 +20,9 @@ with open('sr_interactive_settings.json', 'rb') as _input:
     _settings = json.load(_input)
 if type(_settings.get('enable_map_drive', False)) is not bool:
     raise ValueError('explicit boolean map-drive setting required')
+if (type(_settings.get('enable_p09d_ammo_service', False)) is not bool
+        or (_settings.get('enable_p09d_ammo_service') and _settings.get('enable_map_drive'))):
+    raise ValueError('explicit hangar-only ammunition service setting required')
 if (type(_settings.get('enable_shared_lab', False)) is not bool
         or (_settings.get('enable_shared_lab') and not _settings.get('enable_map_drive'))):
     raise ValueError('shared lab requires explicit original arena services')
@@ -69,6 +72,10 @@ def record(event, **fields):
         raise ValueError('diagnostic event exceeds bound')
     _stream.write(payload)
     _stream.flush()
+    if event == 'p09d_native_ammo_call':
+        observer = getattr(sys.modules.get('p09d_ammo_scenario'), 'native_event', None)
+        if observer is not None:
+            observer(fields)
 
 
 def close_trace():
@@ -213,6 +220,12 @@ def profile_calls(frame, phase, value):
     global _profile_call_id
     if phase not in ('call', 'return'):
         return
+    if _settings.get('enable_p09d_ammo_service') is True:
+        # Python publishes the module before executing its body. Profiling is
+        # already active during import, before the observer has been defined.
+        observer = getattr(sys.modules.get('p09d_ammo_ui'), 'observe_profile', None)
+        if observer is not None:
+            observer(frame, phase)
     code = frame.f_code
     source, method = code.co_filename, code.co_name
     kind = None
@@ -645,7 +658,7 @@ def profile_calls(frame, phase, value):
                 'hangar_bootstrap', 'hangar_ui_probe', 'hangar_capabilities', 'crew_capabilities',
                 'ms1_crew_probe', 'ms1_crew_scenario', 'hangar_limits_scenario',
                 'hangar_windows_scenario', 'hangar_relogin_scenario', 'account_switch_scenario',
-                'long_hangar_scenario', 'ms1_ammo_probe', 'ms1_ammo_scenario', 'arena_entry_probe',
+                'long_hangar_scenario', 'ms1_ammo_probe', 'ms1_ammo_scenario', 'p09d_ammo_scenario', 'arena_entry_probe',
                 'arena_bootstrap', 'arena_space_scenario', 'arena_vehicle_scenario',
                 'arena_ready_scenario', 'arena_movement_scenario', 'map_drive_scenario',
                 'map_drive_client', 'map_drive_acceptance')
@@ -887,6 +900,9 @@ def init(*args):
         import hangar_bootstrap
         hangar_bootstrap.init(args, record, start_gui=True, restrict_module_changes=True,
                              restrict_crew_changes=True)
+        if _settings.get('enable_p09d_ammo_service') is True:
+            import p09d_ammo_ui
+            p09d_ammo_ui.init(record, enabled=True)
         if _settings.get('enable_map_drive') is True:
             import map_drive_client
             map_drive_client.init(record)
@@ -1143,7 +1159,7 @@ def consume_control(view):
     os.remove(path)
     data = json.loads(payload)
     del payload
-    if not isinstance(data, dict) or set(data) - set(('username', 'password', 'quit_after_seconds', 'screenshot_when', 'submit_via', 'ui_scenario', 'inspect_vehicle', 'export_ms1_crew', 'verify_ms1_crew', 'verify_hangar_limits', 'verify_hangar_windows', 'verify_inprocess_relogin', 'verify_account_switch', 'alternate_username', 'alternate_password', 'account_switch_expected', 'verify_long_hangar', 'long_hangar_expected', 'export_ms1_ammo', 'verify_ms1_ammo', 'ms1_ammo_expected', 'export_arena_entry', 'probe_avatar_base', 'probe_arena_space', 'probe_arena_vehicle', 'probe_arena_ready', 'probe_arena_movement', 'probe_map_drive', 'probe_map_drive_acceptance', 'map_drive_acceptance_mode', 'probe_destructible_identity', 'probe_destructible_catalog', 'quit_when')):
+    if not isinstance(data, dict) or set(data) - set(('username', 'password', 'quit_after_seconds', 'screenshot_when', 'submit_via', 'ui_scenario', 'inspect_vehicle', 'export_ms1_crew', 'verify_ms1_crew', 'verify_hangar_limits', 'verify_hangar_windows', 'verify_inprocess_relogin', 'verify_account_switch', 'alternate_username', 'alternate_password', 'account_switch_expected', 'verify_long_hangar', 'long_hangar_expected', 'export_ms1_ammo', 'verify_ms1_ammo', 'ms1_ammo_expected', 'verify_p09d_ammo', 'p09d_ammo_expected', 'export_arena_entry', 'probe_avatar_base', 'probe_arena_space', 'probe_arena_vehicle', 'probe_arena_ready', 'probe_arena_movement', 'probe_map_drive', 'probe_map_drive_acceptance', 'map_drive_acceptance_mode', 'probe_destructible_identity', 'probe_destructible_catalog', 'quit_when')):
         raise ValueError('unknown one-shot control schema')
     if (type(data.get('probe_destructible_identity', False)) is not bool
             or data.get('probe_destructible_identity') and _settings.get('enable_shared_lab') is not True):
@@ -1180,6 +1196,7 @@ def consume_control(view):
     verify_long = data.get('verify_long_hangar', False)
     export_ammo = data.get('export_ms1_ammo', False)
     verify_ammo = data.get('verify_ms1_ammo', False)
+    verify_p09d = data.get('verify_p09d_ammo', False)
     export_arena = data.get('export_arena_entry', False)
     probe_avatar = data.get('probe_avatar_base', False)
     probe_space = data.get('probe_arena_space', False)
@@ -1193,9 +1210,9 @@ def consume_control(view):
             or drive_mode not in ('phase2_drive', 'boundary_only')):
         raise ValueError('drive mode requires explicit acceptance and a supported bounded scenario')
     quit_when = data.get('quit_when')
-    if (any(type(flag) is not bool for flag in (export_crew, verify_crew, verify_limits, verify_windows, verify_relogin, verify_switch, verify_long, export_ammo, verify_ammo, export_arena, probe_avatar, probe_space, probe_vehicle, probe_ready, probe_movement, probe_drive, probe_acceptance))
-            or sum((export_crew, verify_crew, verify_limits, verify_windows, verify_relogin, verify_switch, verify_long, export_ammo, verify_ammo, export_arena, probe_avatar, probe_space, probe_vehicle, probe_ready, probe_movement, probe_drive, probe_acceptance)) > 1
-            or quit_when not in (None, 'ms1_crew_exported', 'ms1_crew_observed', 'hangar_limits_observed', 'hangar_windows_observed', 'inprocess_relogin_observed', 'account_switch_observed', 'long_hangar_observed', 'ms1_ammo_exported', 'ms1_ammo_observed', 'arena_entry_exported', 'avatar_base_observed', 'arena_space_observed', 'arena_vehicle_observed', 'arena_ready_observed', 'arena_movement_observed', 'map_drive_observed', 'map_drive_acceptance_observed')):
+    if (any(type(flag) is not bool for flag in (export_crew, verify_crew, verify_limits, verify_windows, verify_relogin, verify_switch, verify_long, export_ammo, verify_ammo, verify_p09d, export_arena, probe_avatar, probe_space, probe_vehicle, probe_ready, probe_movement, probe_drive, probe_acceptance))
+            or sum((export_crew, verify_crew, verify_limits, verify_windows, verify_relogin, verify_switch, verify_long, export_ammo, verify_ammo, verify_p09d, export_arena, probe_avatar, probe_space, probe_vehicle, probe_ready, probe_movement, probe_drive, probe_acceptance)) > 1
+            or quit_when not in (None, 'ms1_crew_exported', 'ms1_crew_observed', 'hangar_limits_observed', 'hangar_windows_observed', 'inprocess_relogin_observed', 'account_switch_observed', 'long_hangar_observed', 'ms1_ammo_exported', 'ms1_ammo_observed', 'p09d_ammo_observed', 'arena_entry_exported', 'avatar_base_observed', 'arena_space_observed', 'arena_vehicle_observed', 'arena_ready_observed', 'arena_movement_observed', 'map_drive_observed', 'map_drive_acceptance_observed')):
         raise ValueError('unknown bounded crew diagnostic condition')
     if quit_when is not None and (seconds is not None or scenario is not None or inspect_vehicle is not None
             or (quit_when == 'ms1_crew_exported' and not export_crew)
@@ -1207,6 +1224,7 @@ def consume_control(view):
             or (quit_when == 'long_hangar_observed' and not verify_long)
             or (quit_when == 'ms1_ammo_exported' and not export_ammo)
             or (quit_when == 'ms1_ammo_observed' and not verify_ammo)
+            or (quit_when == 'p09d_ammo_observed' and not verify_p09d)
             or (quit_when == 'arena_entry_exported' and not export_arena)
             or (quit_when == 'avatar_base_observed' and not probe_avatar)
             or (quit_when == 'arena_space_observed' and not probe_space)
@@ -1274,6 +1292,18 @@ def consume_control(view):
         ms1_ammo_scenario.checked_expected(data['ms1_ammo_expected'])
     elif 'ms1_ammo_expected' in data:
         raise ValueError('ammo expectation requires its explicit verification operation')
+    if verify_p09d:
+        if (_settings.get('enable_p09d_ammo_service') is not True or not has_credentials
+                or submit_via != 'python' or capture is not None or quit_when != 'p09d_ammo_observed'
+                or 'p09d_ammo_expected' not in data):
+            raise ValueError('P09D diagnostic requires explicit feature, own login, expected source and completion')
+        import project_auth
+        if not project_auth.valid_email(data['username']) or not project_auth.valid_password(data['password']):
+            raise ValueError('P09D diagnostic requires valid explicit project login')
+        import p09d_ammo_scenario
+        p09d_ammo_scenario.checked_expected(data['p09d_ammo_expected'])
+    elif 'p09d_ammo_expected' in data:
+        raise ValueError('P09D expectation requires its explicit verification operation')
     _control_done = True
     _control = {'screenshot_when': capture, 'ui_scenario': scenario, 'inspect_vehicle': inspect_vehicle,
                 'export_ms1_crew': export_crew, 'verify_ms1_crew': verify_crew,
@@ -1281,7 +1311,7 @@ def consume_control(view):
                 'verify_inprocess_relogin': verify_relogin,
                 'verify_account_switch': verify_switch,
                 'verify_long_hangar': verify_long,
-                'export_ms1_ammo': export_ammo, 'verify_ms1_ammo': verify_ammo,
+                'export_ms1_ammo': export_ammo, 'verify_ms1_ammo': verify_ammo, 'verify_p09d_ammo': verify_p09d,
                 'export_arena_entry': export_arena, 'probe_avatar_base': probe_avatar, 'probe_arena_space': probe_space, 'probe_arena_vehicle': probe_vehicle, 'probe_arena_ready': probe_ready, 'probe_arena_movement': probe_movement, 'probe_map_drive': probe_drive, 'probe_map_drive_acceptance': probe_acceptance,
                 'probe_destructible_identity': data.get('probe_destructible_identity', False),
                 'probe_destructible_catalog': data.get('probe_destructible_catalog', False),
@@ -1295,7 +1325,7 @@ def consume_control(view):
            verify_hangar_limits=verify_limits, verify_hangar_windows=verify_windows,
            verify_inprocess_relogin=verify_relogin, verify_account_switch=verify_switch,
            alternate_credentials_present=verify_switch, verify_long_hangar=verify_long,
-           export_ms1_ammo=export_ammo, verify_ms1_ammo=verify_ammo,
+           export_ms1_ammo=export_ammo, verify_ms1_ammo=verify_ammo, verify_p09d_ammo=verify_p09d,
            export_arena_entry=export_arena, probe_avatar_base=probe_avatar,
            probe_arena_space=probe_space, probe_arena_vehicle=probe_vehicle, probe_arena_ready=probe_ready, probe_arena_movement=probe_movement, probe_map_drive=probe_drive, probe_map_drive_acceptance=probe_acceptance, quit_when=quit_when)
     if seconds is not None:
@@ -1315,6 +1345,8 @@ def consume_control(view):
             long_hangar_scenario.arm(data.pop('long_hangar_expected'))
         if verify_ammo:
             ms1_ammo_scenario.arm(data.pop('ms1_ammo_expected'))
+        if verify_p09d:
+            p09d_ammo_scenario.arm(data.pop('p09d_ammo_expected'))
         source = 'original_LoginView.onLogin' if submit_via == 'python' else 'original_LoginPageMeta.as_doAutoLoginS'
         record('diagnostic_login_submit', phase='begin', source=source, submit_via=submit_via)
         if submit_via == 'flash':
@@ -1409,7 +1441,7 @@ def observe():
     byte_limit = observation_byte_limit()
     if _stream.tell() > byte_limit:
         sys.setprofile(None)
-        if _control and (_control.get('verify_long_hangar') or _control.get('export_ms1_ammo') or _control.get('verify_ms1_ammo') or _control.get('export_arena_entry') or _control.get('probe_avatar_base') or _control.get('probe_arena_space') or _control.get('probe_arena_vehicle') or _control.get('probe_arena_ready') or _control.get('probe_arena_movement') or _control.get('probe_map_drive') or _control.get('probe_map_drive_acceptance')):
+        if _control and (_control.get('verify_long_hangar') or _control.get('export_ms1_ammo') or _control.get('verify_ms1_ammo') or _control.get('verify_p09d_ammo') or _control.get('export_arena_entry') or _control.get('probe_avatar_base') or _control.get('probe_arena_space') or _control.get('probe_arena_vehicle') or _control.get('probe_arena_ready') or _control.get('probe_arena_movement') or _control.get('probe_map_drive') or _control.get('probe_map_drive_acceptance')):
             record('observation_limit', reason='finite diagnostic trace bound', max_bytes=byte_limit)
             record('diagnostic_condition_failed', condition=_control.get('quit_when', 'long_hangar_observed'))
             quit_client()
@@ -1589,6 +1621,13 @@ def observe():
                    timed_exit=False, compatibility_acceptance=False)
             quit_client()
             return
+        if _control and _control.get('verify_p09d_ammo'):
+            import p09d_ammo_scenario
+            if p09d_ammo_scenario.advance(record, _settings, observed, ready_hangar):
+                record('diagnostic_condition_complete', condition='p09d_ammo_observed',
+                       timed_exit=False, compatibility_acceptance=False)
+                quit_client()
+                return
         if _control and _control.get('verify_ms1_ammo'):
             import ms1_ammo_scenario
             if ms1_ammo_scenario.advance(record, _settings, observed, ready_hangar):
@@ -1783,7 +1822,11 @@ def fini():
             elif 'arena_space_scenario' in sys.modules:
                 sys.modules['arena_space_scenario'].fini(record, sys.modules['hangar_bootstrap'].fini)
             else:
-                sys.modules['hangar_bootstrap'].fini()
+                try:
+                    if 'p09d_ammo_ui' in sys.modules:
+                        sys.modules['p09d_ammo_ui'].fini()
+                finally:
+                    sys.modules['hangar_bootstrap'].fini()
         if 'Account' in sys.modules:
             sys.modules['Account']._delAccountRepository()
             record('account_repository_closed')

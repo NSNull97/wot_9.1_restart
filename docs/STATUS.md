@@ -62,6 +62,55 @@ records the final commit/source/test hashes. Source receipt SHA256
 Next: integrate at the shared configuration-reservation gate using real
 component-mass evidence, then perform the separate native acceptance card.
 
+## 2026-10-13 — P09D native MS-1 / IS-7 ammunition service
+
+**PASS_NATIVE_AMMO_SERVICE_OWNED_STOCK_TEST_LAB** on the isolated #717 stand.
+**HOLD_IN_BRANCH_REQUIRED_REGRESSION_FAIL** for integration into main.
+Branch `codex/p09d-native-ammo-service` is stacked on P09C
+`7fb0e479dce684af0940fe37e5798d54d1c1e7fd`; primary P06R checkout/service were
+not modified. Exact delivered commit and source/test binding are recorded in
+`local/evidence/20261013-p09d-native-ammo-service/final-card-01.json`.
+
+Native CMD108 now reaches the authenticated authoritative DB transaction.
+The real original Account.update/Inventory/Flash callback chain applies the
+committed shells/layout/depot delta before native success. The original
+maintenance window is enabled only for source-bound MS-1 (96) and IS-7 (30).
+The explicit isolated test grant supplies owned stock; no purchase, repair,
+automatic servicing, equipment or battle-consumption claim is made.
+
+Native client PID20020 completed six operations in87.3s: MS-1 unload/refill,
+IS-7 unload/refill, then both restores. Real encrypted UDP independently
+confirms requests226–231, six142-byte deltas, update-before-success and
+persistent revision7→13. All six shell totals and funds are conserved. Final
+mount/depot rows exactly match the pre-scenario backup: MS-1 42/36/18,
+IS-7 21/9/0. Twelve original client PNGs were visually inspected. Both vehicles'
+initial relogin state was checked; a further complete client/gateway/bridge
+restart shows restored IS-7 21/9/0 in a fresh native hangar. Earlier full restart
+showed MS-1 42/36/18, and live authenticated replay changed no state.
+
+The diagnostic invokes original Flash-bound callbacks; OS pointer automation
+and human/manual acceptance are **NOT_RUN**, not inferred from the native PASS.
+Install04 diagnostic was ledger-restored. Install05 enables ordinary manual
+service with no armed scenario; its owned client and loopback services are
+left running. The original client and primary research copy remain untouched.
+
+Final applicable automated checks: **101 Python persistence/domain PASS**,
+**152 client/control regression PASS**, **21 current Node PASS** (including
+actual HTTP integration), targeted Rust codec10/hangar20/scheduler11/identity7
+PASS; real Python2.7 compilation, original source pins and layout PASS.
+Historic MS-1 bridge suite remains **3 PASS / 5 FAIL / 0 SKIP** because its
+immutable native proofs contain primary-checkout paths outside this worktree.
+Broader Rust ammo filter retains six missing historical-fixture failures.
+No exception to the merge rule is invented for these failures. Intermediate
+native import failure, audit-tool assumption failures and one transient bridge
+503 are preserved; the503 cause remains UNKNOWN.
+
+[Plan](plans/P09D_NATIVE_AMMO_SERVICE.md),
+[source contract](research/P09D_NATIVE_AMMO_SOURCE.md),
+[full evidence, commands, changed files and rollback](evidence-index/P09D_NATIVE_AMMO_SERVICE.md).
+One next step: repair historical proof portability with provenance intact,
+repeat the failed regression gates, then integrate the accepted card into main.
+
 ## 2026-10-13 — P09C isolated ammunition service parallel handoff
 
 **PASS_P09C_ISOLATED_AMMO_SERVICE**; runtime/native integration **NOT_RUN**.
