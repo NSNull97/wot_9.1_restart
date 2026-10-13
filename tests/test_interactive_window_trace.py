@@ -22,6 +22,7 @@ class WindowTraceTests(unittest.TestCase):
         self.assertEqual(len(functions), 1)
         self.events = []
         self.namespace = {'_profile_call_id': 0, '_profile_frames': {}, '_control': None,
+                          '_settings': {},
                           'record': lambda event, **fields: self.events.append((event, fields))}
         # Only trusted repository function code, no imported personality or input data.
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(SOURCE), 'exec'), self.namespace)
@@ -64,6 +65,34 @@ class WindowTraceTests(unittest.TestCase):
         for phase in ('c_call', 'c_return', 'c_exception', 'exception'):
             self.observe(self.frame(*TARGETS[0]), phase, None)
         self.assertEqual(self.events, [])
+
+    def test_ammunition_hook_requires_explicit_flag_and_keeps_original_trace(self):
+        calls = []
+        helper = SimpleNamespace(observe_profile=lambda frame, phase: calls.append((frame, phase)))
+        self.namespace['sys'] = SimpleNamespace(modules={'p09d_ammo_ui': helper})
+        frame = self.frame(*TARGETS[0])
+        self.observe(frame, 'call', None)
+        self.assertEqual(calls, [])
+        self.namespace['_settings'] = {'enable_p09d_ammo_service': True}
+        self.observe(frame, 'call', None)
+        self.observe(frame, 'return', None)
+        self.assertEqual(calls, [(frame, 'call'), (frame, 'return')])
+        self.assertEqual([row[0] for row in self.events], ['native_unsupported_window_call'] * 3)
+
+    def test_ammunition_partial_import_keeps_original_trace_until_observer_exists(self):
+        self.namespace['_settings'] = {'enable_p09d_ammo_service': True}
+        modules = {}
+        self.namespace['sys'] = SimpleNamespace(modules=modules)
+        frame = self.frame(*TARGETS[0])
+        self.observe(frame, 'call', None)
+        helper = SimpleNamespace()
+        modules['p09d_ammo_ui'] = helper
+        self.observe(frame, 'return', None)
+        calls = []
+        helper.observe_profile = lambda f, phase: calls.append((f, phase))
+        self.observe(frame, 'call', None)
+        self.assertEqual(calls, [(frame, 'call')])
+        self.assertEqual([row[0] for row in self.events], ['native_unsupported_window_call'] * 3)
 
 
 if __name__ == '__main__':

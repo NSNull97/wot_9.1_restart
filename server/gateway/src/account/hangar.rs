@@ -40,6 +40,8 @@ pub enum Incoming { Sync(Request), Refresh(Request), Chat(ChatRequest), Language
                     DossierSync { request:Request, version:i64, last_change_time:i32 },
                     CachedSync { request:Request, descriptor_a:i32, descriptor_b:i32 },
                     CachedRefresh { request:Request, persistent_hash:i32 },
+                    AmmoRefresh { request:Request, revision:i64, persistent_hash:i32 },
+                    AmmoService(crate::ammo_service091::Request),
                     UnsupportedIntArray { id:i16, command:i16, argument_count:usize } }
 
 /// Measured gui-01 bundle: three ordinary sync calls plus friend status, roster
@@ -47,12 +49,18 @@ pub enum Incoming { Sync(Request), Refresh(Request), Chat(ChatRequest), Language
 /// Empty means the measured token-only application body; token validation stays
 /// in the gateway. Unknown methods or any truncated tail reject the whole bundle.
 pub fn requests(body: &[u8]) -> io::Result<Vec<Incoming>> {
-    requests_profile(body,false)
+    requests_profile(body,false,false)
 }
 pub fn requests_interactive(body:&[u8])->io::Result<Vec<Incoming>> {
-    requests_profile(body,true)
+    requests_profile(body,true,false)
 }
-fn requests_profile(body:&[u8],interactive:bool)->io::Result<Vec<Incoming>> {
+/// Explicit service gate. Decode the complete bundle before dispatching any
+/// operation. A structurally valid unsupported layout remains a typed request
+/// so the caller can send RES_NOT_AVAILABLE without mutating account state.
+pub fn requests_ammo_service(body:&[u8])->io::Result<Vec<Incoming>> {
+    requests_profile(body,true,true)
+}
+fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool)->io::Result<Vec<Incoming>> {
     if body.len() > 512 { return Err(invalid("hangar request bundle size")); }
     let mut cursor = 0;
     let mut rows = Vec::new();
@@ -97,10 +105,12 @@ fn requests_profile(body:&[u8],interactive:bool)->io::Result<Vec<Incoming>> {
                 // __sendSyncRequest still supplies persistentCache.getDescr().
                 let cache_refresh = interactive && packet[5..7]==100i16.to_le_bytes()
                     && version==1 && last_change_time!=0 && third==0;
+                let ammo_refresh = ammo_service && packet[5..7]==100i16.to_le_bytes()
+                    && (1..=i32::MAX as i64).contains(&version) && third==0;
                 if cached && (version != 1 || last_change_time <= 0 || packet[19..] != [0;4]) {
                     return Err(invalid("unsupported dossier cache cursor"));
                 }
-                let r = if refresh || cached || cache_hint || cache_refresh {
+                let r = if refresh || cached || cache_hint || cache_refresh || ammo_refresh {
                     let id = i16::from_le_bytes([packet[3], packet[4]]);
                     if id <= 0 { return Err(invalid("refresh request ID")); }
                     Request { id, command: i16::from_le_bytes([packet[5],packet[6]]) }
@@ -111,11 +121,14 @@ fn requests_profile(body:&[u8],interactive:bool)->io::Result<Vec<Incoming>> {
                     | Incoming::DossierSync {request:previous,..}
                     | Incoming::CachedSync {request:previous,..}
                     | Incoming::CachedRefresh {request:previous,..}
+                    | Incoming::AmmoRefresh {request:previous,..}
                     if previous.id == r.id || previous.command == r.command)
-                    || matches!(r0, Incoming::Language { id } | Incoming::UnsupportedIntArray {id,..} if *id == r.id)) {
+                    || matches!(r0, Incoming::Language { id } | Incoming::UnsupportedIntArray {id,..} if *id == r.id)
+                    || matches!(r0, Incoming::AmmoService(previous) if previous.id==r.id)) {
                     return Err(invalid("duplicate sync in hangar bundle"));
                 }
-                if cached { Incoming::DossierSync {request:r,version,last_change_time} }
+                if ammo_refresh { Incoming::AmmoRefresh {request:r,revision:version,persistent_hash:last_change_time} }
+                else if cached { Incoming::DossierSync {request:r,version,last_change_time} }
                 else if cache_hint { Incoming::CachedSync {request:r,descriptor_a:last_change_time,descriptor_b:third} }
                 else if cache_refresh { Incoming::CachedRefresh {request:r,persistent_hash:last_change_time} }
                 else if refresh { Incoming::Refresh(r) } else { Incoming::Sync(r) }
@@ -143,6 +156,8 @@ fn requests_profile(body:&[u8],interactive:bool)->io::Result<Vec<Incoming>> {
                         Incoming::Sync(r) | Incoming::Refresh(r) | Incoming::DossierSync {request:r,..}
                         | Incoming::CachedSync {request:r,..} => r.id == id,
                         Incoming::CachedRefresh {request:r,..} => r.id == id,
+                        Incoming::AmmoRefresh {request:r,..} => r.id == id,
+                        Incoming::AmmoService(r) => r.id == id,
                         Incoming::Chat(_) => false,
                         Incoming::ServerStats => id == 202,
                         Incoming::UnsupportedIntArray {id:previous,..} => *previous==id,
@@ -150,6 +165,9 @@ fn requests_profile(body:&[u8],interactive:bool)->io::Result<Vec<Incoming>> {
                     return Err(invalid("unmeasured language request"));
                 }
                 Incoming::Language { id }
+            },
+            0x97 if ammo_service && length==72 => {
+                Incoming::AmmoService(crate::ammo_service091::Request::decode(&packet[3..])?)
             },
             0x97 if interactive && length==72 => {
                 // Actual auth09 packet222: doCmdIntArr, CMD_SET_AND_FILL_LAYOUTS.
@@ -164,6 +182,8 @@ fn requests_profile(body:&[u8],interactive:bool)->io::Result<Vec<Incoming>> {
                         Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync {request:r,..}
                         |Incoming::CachedSync {request:r,..}=>r.id==id,
                         Incoming::CachedRefresh {request:r,..}=>r.id==id,
+                        Incoming::AmmoRefresh {request:r,..}=>r.id==id,
+                        Incoming::AmmoService(r)=>r.id==id,
                         Incoming::Language{id:previous}|Incoming::UnsupportedIntArray{id:previous,..}=>*previous==id,
                         Incoming::ServerStats=>id==202,Incoming::Chat(_)=>false,
                     }) {return Err(invalid("unmeasured unavailable integer-array command"));}
@@ -171,6 +191,26 @@ fn requests_profile(body:&[u8],interactive:bool)->io::Result<Vec<Incoming>> {
             },
             _ => return Err(invalid("unmeasured hangar method")),
         };
+        // The explicit service gate also checks request-ID collisions involving
+        // statistics and layout calls in either order, before any dispatch.
+        if ammo_service {
+            fn account_id(row:&Incoming)->Option<i16> {
+                match row {
+                    Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync{request:r,..}
+                    |Incoming::CachedSync{request:r,..}|Incoming::CachedRefresh{request:r,..}
+                    |Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
+                    Incoming::Language{id}|Incoming::UnsupportedIntArray{id,..}=>Some(*id),
+                    Incoming::AmmoService(r)=>Some(r.id),
+                    Incoming::ServerStats=>Some(202),
+                    Incoming::Chat(_)=>None, // ClientChat has its own i64 request namespace.
+                }
+            }
+            if let Some(id)=account_id(&row) {
+                if rows.iter().any(|previous|account_id(previous)==Some(id)) {
+                    return Err(invalid("duplicate service account request ID"));
+                }
+            }
+        }
         rows.push(row);
         cursor = end;
     }
@@ -297,6 +337,7 @@ struct TestGrantMetadata { grant_id:String,granted_at_ms:u64,base_profile_sha256
 struct DossierManifest {
     fixture_version:Option<u32>,profile_version:Option<u32>,snapshot_revision:Option<u32>,
     wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
+    account_id:String,native_database_id:i32,
     grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,
 }
 struct DossierCompatibility {
@@ -341,6 +382,7 @@ metadata_fields!(DossierPreservation,false,{dossier_cache:Option<DossierPayloadM
 metadata_fields!(TestGrantMetadata,true,{grant_id:String,granted_at_ms:u64,base_profile_sha256:String});
 metadata_fields!(DossierManifest,false,{fixture_version:Option<u32>,profile_version:Option<u32>,snapshot_revision:Option<u32>,
     wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
+    account_id:String,native_database_id:i32,
     grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>});
 metadata_fields!(DossierCompatibility,false,{snapshot_revision:Option<u32>,wire_sync_revision:Option<u32>,
     compatibility_catalog_revision:Option<u32>,dossier_cache:Option<DossierCursor>});
@@ -375,7 +417,8 @@ fn grant_dossier_cursor(directory:&Path,raw:&[u8])->io::Result<Option<DossierCur
     let manifest_cursor=manifest.as_ref().and_then(|m|m.preservation.as_ref()).and_then(|p|p.dossier_cache.as_ref());
     let compatibility_cursor=compatibility.as_ref().and_then(|c|c.dossier_cache);
     if manifest_cursor.is_none() && compatibility_cursor.is_none() {
-        if raw==b"\x80\x02(K\x00]t." {return Ok(None);}
+        if raw==b"\x80\x02(K\x00]t." && !manifest.as_ref().is_some_and(|m|
+            m.fixture_version==Some(5) || m.profile_version==Some(5)) {return Ok(None);}
         return Err(invalid("nonempty interactive dossier requires verified grant metadata"));
     }
     let manifest=manifest.as_ref().ok_or_else(||invalid("grant manifest missing"))?;
@@ -385,8 +428,14 @@ fn grant_dossier_cursor(directory:&Path,raw:&[u8])->io::Result<Option<DossierCur
     let grant=manifest.grant.as_ref().ok_or_else(||invalid("dossier test grant missing"))?;
     // Profiles3/4 add MS-1 crew/ammunition in state.bin while retaining the
     // exact profile2 IS-7 dossier grant. The bridge validates the domain
-    // snapshot; this projection binds only its unchanged cache cursor/bytes.
-    let supported_profile=matches!((manifest.fixture_version,manifest.profile_version,
+    // snapshot. Profile5 additionally binds an explicit service fixture with
+    // an independently evolving persistent revision and unchanged dossier.
+    let service_profile=if manifest.fixture_version==Some(5) && manifest.profile_version==Some(5) {
+        let binding=crate::ammo_service091::metadata(directory,&manifest.account_id,manifest.native_database_id)?;
+        manifest.snapshot_revision.map(u64::from)==Some(binding.revision)
+            && compatibility.snapshot_revision.map(u64::from)==Some(binding.revision)
+    } else {false};
+    let supported_profile=service_profile || matches!((manifest.fixture_version,manifest.profile_version,
         manifest.snapshot_revision,compatibility.snapshot_revision),
         (Some(2),Some(2),Some(2),Some(2)) | (Some(3),Some(3),Some(3),Some(3))
         | (Some(4),Some(4),Some(4),Some(4)));
@@ -520,6 +569,12 @@ fn validate_pickle(bytes: &[u8], root: Kind) -> io::Result<()> {
     Err(invalid("fixture missing stop"))
 }
 
+/// Reuse the bounded inert primitive scanner for an authenticated outgoing
+/// account delta; this does not load Python objects or inspect network inputs.
+pub(crate) fn validate_account_delta(bytes:&[u8])->io::Result<()> {
+    validate_pickle(bytes,Kind::Dict)
+}
+
 /// Candidate 0x3b + client method slot24 from the measured native range and
 /// Account.def's stable size ordering. Verify original Account.showGUI line573
 /// normal return offset297 in the native trace before reporting this as PASS.
@@ -584,7 +639,7 @@ pub fn response_refresh(request: &Request) -> io::Result<Vec<u8>> {
     method(0x4d, &payload)
 }
 
-fn method(id: u8, payload: &[u8]) -> io::Result<Vec<u8>> {
+pub(crate) fn method(id: u8, payload: &[u8]) -> io::Result<Vec<u8>> {
     // No extended VAR1 method length needed: all RPC payloads remain <255 B.
     if payload.len() >= 255 { return Err(invalid("unmeasured extended method length")); }
     let mut result = vec![0x13, id, payload.len() as u8]; // selectPlayerEntity
@@ -926,6 +981,57 @@ mod tests {
         assert!(load(&wrong,&compatibility).is_err());
         std::fs::write(directory.join("dossier.bin"),&raw).unwrap();
         assert_eq!(load(&manifest,&compatibility).unwrap().dossier,raw);
+    }
+
+    #[test]
+    fn profile5_requires_service_metadata_revision_binding_and_preserved_dossier() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let directory=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs/p09d")
+            .join(format!("dossier5-{}-{stamp}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        for name in ["state.bin","shop.bin"] {std::fs::write(directory.join(name),EMPTY_DICT).unwrap();}
+        let account="00000000-0000-0000-0000-000000000001";
+        let time=1791125440;let raw=granted_dossier_bytes(time);
+        std::fs::write(directory.join("dossier.bin"),&raw).unwrap();
+        let cursor=serde_json::json!({"version":1,"last_change_time":time,"vehicle_type_compact_descr":7169});
+        let mut record=cursor.clone();record["payload_sha256"]=serde_json::json!(format!("{:x}",Sha256::digest(&raw)));
+        let manifest=serde_json::json!({"fixture_version":5,"profile_version":5,"snapshot_revision":5,
+            "wire_sync_revision":1,"compatibility_catalog_revision":3,"preservation":{"dossier_cache":record},
+            "account_id":account,"native_database_id":900001,
+            "grant":{"grant_id":"test-is7-v1","granted_at_ms":1791125440000u64,"base_profile_sha256":"a".repeat(64)}});
+        let compatibility=serde_json::json!({"snapshot_revision":5,"wire_sync_revision":1,
+            "compatibility_catalog_revision":3,"dossier_cache":cursor});
+        let metadata=serde_json::json!({"version":1,"account_id":account,"native_database_id":900001,
+            "revision":5,"wire_revision":1,"catalog_sha256":"9c50c64b85c6301e64145f9fbb90450417dc9063bcd8c136ac6de0c9cbabca62",
+            "state_sha256":format!("{:x}",Sha256::digest(EMPTY_DICT)),"purchases":false,"battle":false});
+        let load=|m:&serde_json::Value,c:&serde_json::Value,a:Option<&serde_json::Value>| {
+            for (name,value) in [("manifest.json",m),("compatibility.json",c)] {
+                std::fs::write(directory.join(name),serde_json::to_vec(value).unwrap()).unwrap();
+            }
+            if let Some(a)=a {std::fs::write(directory.join("ammo-service.json"),serde_json::to_vec(a).unwrap()).unwrap();}
+            Fixtures::load_interactive(&directory)
+        };
+        assert!(load(&manifest,&compatibility,None).is_err());
+        for revision in [5,6,i32::MAX] {
+            let mut m=manifest.clone();let mut c=compatibility.clone();let mut a=metadata.clone();
+            m["snapshot_revision"]=serde_json::json!(revision);c["snapshot_revision"]=serde_json::json!(revision);
+            a["revision"]=serde_json::json!(revision);
+            let valid=load(&m,&c,Some(&a)).unwrap();assert_eq!(valid.dossier,raw);
+            valid.validate_dossier_cursor(1,time).unwrap();
+        }
+        for mutation in 0..7 {
+            let mut m=manifest.clone();let mut c=compatibility.clone();let mut a=metadata.clone();
+            match mutation {0=>m["snapshot_revision"]=serde_json::json!(6),1=>c["snapshot_revision"]=serde_json::json!(6),
+                2=>a["revision"]=serde_json::json!(6),3=>m["profile_version"]=serde_json::json!(4),
+                4=>m["account_id"]=serde_json::json!("00000000-0000-0000-0000-000000000002"),
+                5=>c["dossier_cache"]["last_change_time"]=serde_json::json!(time+1),
+                _=>a["state_sha256"]=serde_json::json!("0".repeat(64))}
+            assert!(load(&m,&c,Some(&a)).is_err(),"mutation {mutation}");
+        }
+        std::fs::write(directory.join("dossier.bin"),b"\x80\x02(K\x00]t.").unwrap();
+        let mut m=manifest.clone();let mut c=compatibility.clone();
+        m.as_object_mut().unwrap().remove("preservation");c.as_object_mut().unwrap().remove("dossier_cache");
+        assert!(load(&m,&c,Some(&metadata)).is_err());
     }
 
     #[test]

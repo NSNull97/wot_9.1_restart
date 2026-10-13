@@ -20,6 +20,8 @@ pub(crate) mod gateway091;
 mod account091;
 #[path = "account/hangar.rs"]
 mod hangar091;
+#[path = "account/ammo_service.rs"]
+mod ammo_service091;
 #[path = "account/identity.rs"]
 mod identity091;
 #[path = "protocol/capture.rs"]

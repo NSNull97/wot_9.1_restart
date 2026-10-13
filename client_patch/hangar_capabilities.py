@@ -367,6 +367,7 @@ class _WindowGuard(object):
                               for row in WINDOW_METHODS)
         self.active = False
         self.installed = []
+        self.maintenance_gate = None
         guard = self
 
         # These exact no-argument UI callbacks do not carry a result callback
@@ -375,6 +376,10 @@ class _WindowGuard(object):
             guard._deny('appearance', 'showCustomization')
 
         def maintenance(self):
+            if not guard.active:
+                raise RuntimeError('hangar-window callback used after cleanup')
+            if guard.maintenance_gate is not None and guard.maintenance_gate() is True:
+                return guard.originals['showTechnicalMaintenance'](self)
             guard._deny('maintenance', 'showTechnicalMaintenance')
 
         self.replacements = (('showCustomization', appearance),
@@ -415,6 +420,8 @@ class _WindowGuard(object):
     def restore(self):
         if not self.installed:
             return
+        if self.maintenance_gate is not None:
+            raise RuntimeError('remove owned maintenance gate before restoring window policy')
         for name, replacement in self.installed:
             if self.panel_class.__dict__.get(name, _ABSENT) is not replacement:
                 raise RuntimeError('refusing to overwrite an unexpected hangar-window binding: ' + name)
@@ -425,6 +432,20 @@ class _WindowGuard(object):
         self.active = False
         self.record('window_capability_policy', policy_version=1, phase='restore',
                     original_binding_restored=True, restored_bindings=restored)
+
+
+def set_maintenance_gate(predicate):
+    """Opt-in admission only; the server still authorizes every service command."""
+    if (_window_guard is None or not _window_guard.active
+            or _window_guard.maintenance_gate is not None or not callable(predicate)):
+        raise RuntimeError('active unowned maintenance gate required')
+    _window_guard.maintenance_gate = predicate
+
+
+def clear_maintenance_gate(predicate):
+    if _window_guard is None or _window_guard.maintenance_gate is not predicate:
+        raise RuntimeError('maintenance gate ownership changed')
+    _window_guard.maintenance_gate = None
 
 
 class _CapabilityLifecycleError(RuntimeError):

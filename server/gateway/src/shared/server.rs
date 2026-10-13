@@ -428,6 +428,7 @@ pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: 
     if catalog_path.is_some()&&(!terrain_test_lab||destructible_test_lab){return Err(model::bad().into());}
     if terrain_test_lab && !ap_test_lab { return Err(model::bad().into()); }
     let config = crate::identity091::Config::load(config_path)?;
+    if config.ammo_service { return Err(model::bad().into()); }
     let pool = crate::map_drive_worker091::Pool::load(&config.local_root, Path::new(pool_path))?;
     selected_pool_config(&pool,map)?;
     let geometry = geometry_path.map(|path| super::geometry::Bundle::load(&config.local_root, Path::new(path)))
@@ -461,6 +462,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         return Err(model::bad().into());
     }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
+    if config.ammo_service { return Err(model::bad().into()); }
     let private = login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len() != 16 { return Err(model::bad().into()); }
     let digest: [u8; 16] = fs::read(digest_path)?.try_into().map_err(|_| model::bad())?;
