@@ -20,6 +20,8 @@ pub(crate) mod gateway091;
 mod account091;
 #[path = "account/hangar.rs"]
 mod hangar091;
+#[path = "account/ammo_service.rs"]
+mod ammo_service091;
 #[path = "account/identity.rs"]
 mod identity091;
 #[path = "protocol/capture.rs"]
@@ -40,6 +42,9 @@ mod map_drive091;
 mod map_profile091;
 #[path = "drive/worker.rs"]
 mod map_drive_worker091;
+#[cfg(test)]
+#[path = "shared/server_worker_fixtures.rs"]
+mod worker_fixtures091;
 #[path = "drive/world.rs"]
 mod map_drive_world091;
 #[path = "drive/service.rs"]

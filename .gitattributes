@@ -1,0 +1,11 @@
+# Raw bytes of these source files participate in versioned provenance hashes.
+# Keep their verified LF representation across Windows checkouts.
+/tools/hangar_state.py text eol=lf
+/tools/test_garage_state.py text eol=lf
+/tools/ms1_crew_state.py text eol=lf
+/tools/ms1_ammo_state.py text eol=lf
+/tools/native_evidence_relocation.py text eol=lf
+/web/src/test-garage.mjs text eol=lf
+/web/src/ms1-crew.mjs text eol=lf
+/web/src/ms1-ammo.mjs text eol=lf
+/web/src/native-evidence.mjs text eol=lf

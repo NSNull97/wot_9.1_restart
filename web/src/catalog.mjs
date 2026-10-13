@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { researchCatalog, researchView, validModuleQuery, moduleKinds } from './research.mjs';
 
@@ -137,7 +138,7 @@ export function registerCatalogRoutes(app, problem) {
   app.get('/catalog-media/:version/:kind/:file',(req,res)=>{
     const file=mediaFiles.get(`${req.params.version}/${req.params.kind}/${req.params.file}`);
     if(!file) return problem(res,404,'Изображение не найдено.');
-    res.sendFile(file,{dotfiles:'deny',maxAge:0});
+    res.sendFile(basename(file),{root:dirname(file),dotfiles:'deny',maxAge:0});
   });
   app.get('/vehicles',(req,res)=>{
     const filters=readFilters(req.query,'vehicles');

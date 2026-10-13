@@ -107,13 +107,14 @@ test('ammo overview exposes actual20 count with all gameplay capabilities still 
  * of the production historical journal, and no production source is written. */
 async function isolatedCrewBridge(directory) {
   const source = resolve(ROOT, 'web/src/ms1-crew.mjs'), original = readFileSync(source);
-  assert.equal(SHA(original), '7800c5f845c731e22c28cd45ab044484b4f5c4b27156c213400570e88f0d3772');
+  assert.equal(SHA(original), '63f5e7c2053f5f2d0aa0417a66a3a2f4a63270629445e41d3b3ec4fea6f30dc3');
   const bridge = join(directory, 'isolated-bridge-copy.mjs');
   const oldBridge = readFileSync(OLD_BRIDGE);
   assert.equal(SHA(oldBridge), 'b3cef4e5f26c11400a4bc6de8804c53228a39021bef482a38bfeb44fc97a4271');
   writeFileSync(bridge, oldBridge);
   let text = original.toString('utf8');
   const rewrites = [["const ROOT = fileURLToPath(new URL('../../', import.meta.url));", `const ROOT = ${JSON.stringify(ROOT)};`],
+    ["'./native-evidence.mjs'", JSON.stringify(pathToFileURL(resolve(ROOT, 'web/src/native-evidence.mjs')).href)],
     ["'./store.mjs'", JSON.stringify(pathToFileURL(resolve(ROOT, 'web/src/store.mjs')).href)],
     ["'./test-garage.mjs'", JSON.stringify(pathToFileURL(resolve(ROOT, 'web/src/test-garage.mjs')).href)],
     ["['bridge', resolve(ROOT, 'web/src/game-adapter.mjs')]", `['bridge', ${JSON.stringify(bridge)}]`]];

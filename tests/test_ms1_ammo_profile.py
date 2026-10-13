@@ -39,6 +39,7 @@ def load_functions(events):
         raise AssertionError('expected exactly the three trusted project observer functions')
     extracted = ast.Module(body=body, type_ignores=[]) if sys.version_info[0] >= 3 else ast.Module(body=body)
     namespace = {'json': json, '_profile_call_id': 0, '_profile_frames': {},
+                 '_settings': {},
                  'record': lambda event, **fields: events.append((event, fields)),
                  '_fini': False, '_control': None}
     if sys.version_info[0] >= 3:

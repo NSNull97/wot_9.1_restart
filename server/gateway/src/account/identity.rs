@@ -49,11 +49,17 @@ fn bounded_file(path:&Path,max:u64)->io::Result<Vec<u8>> {
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
+    pub ammo_service:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
-        let value=object(&bounded_file(Path::new(path),4096)?,&["login_bind","base_bind","identity_endpoint",
-            "identity_token_file","local_root","session_duration_seconds"])?;
+        let bytes=bounded_file(Path::new(path),4096)?;
+        let Object(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        let ammo_service=match value.remove("ammunition_service") {
+            None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
+        };
+        let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
+        if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let login_bind=local_address(text(&value,"login_bind")?)?;
         let base_bind=local_address(text(&value,"base_bind")?)?;
         let identity_endpoint=local_address(text(&value,"identity_endpoint")?)?;
@@ -68,17 +74,30 @@ impl Config {
         if token.len()!=43 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b==b'_' || b==b'-') {return Err(invalid("service token must be exactly 43 base64url characters"));}
         let seconds=value["session_duration_seconds"].as_u64().ok_or_else(||invalid("session duration integer"))?;
         if !(600..=7200).contains(&seconds) {return Err(invalid("session duration must be 600..7200 seconds"));}
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds)})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service})
     }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
         let body=serde_json::to_vec(&serde_json::json!({"email":email,"password":password}))
             .map_err(|_|invalid("identity request serialization"))?;
         if body.len()>2048 {return Err(invalid("identity request size"));}
-        let deadline=Instant::now()+Duration::from_secs(5);
+        let (status,body)=self.post("/internal/native/login",&body,Duration::from_secs(5))?;
+        if status==401 {return Ok(None);}
+        if status!=200 {return Err(invalid("identity service unavailable or rejected service authentication"));}
+        let profile=profile(&body,&self.local_root)?;
+        verify_fixture_identity(&profile)?;
+        if self.ammo_service {
+            crate::ammo_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id)?;
+        }
+        Ok(Some(profile))
+    }
+
+    /// Bounded loopback transport; only fixed internal paths supplied by this module.
+    fn post(&self,path:&str,body:&[u8],timeout:Duration)->io::Result<(u16,Vec<u8>)> {
+        let deadline=Instant::now()+timeout;
         let mut stream=TcpStream::connect_timeout(&self.identity_endpoint.into(),Duration::from_millis(500))?;
         stream.set_write_timeout(Some(Duration::from_secs(2)))?;
-        let header=format!("POST /internal/native/login HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",self.identity_endpoint,self.token,body.len());
+        let header=format!("POST {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",self.identity_endpoint,self.token,body.len());
         stream.write_all(header.as_bytes())?;stream.write_all(&body)?;
         let mut response=Vec::new();
         loop {
@@ -93,14 +112,59 @@ impl Config {
             }
         }
         let (status,body)=http_response(&response)?;
-        if status==401 {return Ok(None);}
-        if status!=200 {return Err(invalid("identity service unavailable or rejected service authentication"));}
-        let profile=profile(body,&self.local_root)?;
-        // The trusted loopback credential service authenticates the email and
-        // returns its UUID/profile. Public nickname is deliberately not email.
-        verify_fixture_identity(&profile)?;
-        Ok(Some(profile))
+        Ok((status,body.to_vec()))
     }
+
+    pub fn service_ammunition(&self,profile:&Profile,command_key:&str,expected_revision:u64,
+                              wire_revision:i64,layout:[i32;16])->io::Result<AmmoReply> {
+        if !self.ammo_service || !valid_command_key(command_key) || !(5..i32::MAX as u64).contains(&expected_revision)
+            || !(1..i32::MAX as i64).contains(&wire_revision) {return Err(invalid("ammunition service request boundary"));}
+        let body=serde_json::to_vec(&serde_json::json!({"account_id":profile.account_id,
+            "native_database_id":profile.database_id,"command_key":command_key,
+            "expected_revision":expected_revision,"wire_revision":wire_revision,"layout":layout}))
+            .map_err(|_|invalid("ammo request serialization"))?;
+        if body.len()>2048 {return Err(invalid("ammo request size"));}
+        let (status,bytes)=self.post("/internal/native/ammo",&body,Duration::from_secs(20))?;
+        if status!=200 {return Err(invalid("ammo service HTTP failure; outcome must be recovered by fresh login"));}
+        ammo_reply(&bytes,profile,command_key,expected_revision,wire_revision)
+    }
+}
+
+pub struct AmmoReply {pub serviced:bool,pub revision:u64,pub wire_revision:i64,
+    pub update:Vec<u8>,pub replayed:bool,pub result_code:i32}
+
+fn valid_command_key(key:&str)->bool {
+    (1..=96).contains(&key.len()) && key.bytes().all(|b|b.is_ascii_alphanumeric() || b"-_:".contains(&b))
+}
+
+fn ammo_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64)->io::Result<AmmoReply> {
+    let value=object(bytes,&["status","account_id","native_database_id","command_key","revision",
+        "wire_revision","update_hex","replayed","result_code"])?;
+    if text(&value,"account_id")?!=profile.account_id || value["native_database_id"].as_i64()!=Some(profile.database_id as i64)
+        || text(&value,"command_key")?!=key {return Err(invalid("ammo reply authentication binding"));}
+    let serviced=match text(&value,"status")? {"serviced"=>true,"rejected"=>false,_=>return Err(invalid("ammo reply status"))};
+    let revision=value["revision"].as_u64().ok_or_else(||invalid("ammo reply revision"))?;
+    let wire_revision=value["wire_revision"].as_i64().ok_or_else(||invalid("ammo reply wire revision"))?;
+    if revision!=expected+u64::from(serviced) || wire_revision!=wire+i64::from(serviced) {
+        return Err(invalid("ammo reply revision transition"));
+    }
+    let replayed=value["replayed"].as_bool().ok_or_else(||invalid("ammo reply replay type"))?;
+    let result_code=value["result_code"].as_i64().ok_or_else(||invalid("ammo reply result code type"))?;
+    if result_code!=if serviced {0} else {-10} {
+        return Err(invalid("ammo reply result code"));
+    }
+    let hex=text(&value,"update_hex")?;
+    if hex.len()>crate::ammo_service091::MAX_DELTA_BYTES*2 || hex.len()%2!=0
+        || !hex.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return Err(invalid("ammo reply delta encoding"));
+    }
+    let mut update=Vec::with_capacity(hex.len()/2);
+    for offset in (0..hex.len()).step_by(2) {
+        update.push(u8::from_str_radix(&hex[offset..offset+2],16).map_err(|_|invalid("ammo reply delta hex"))?);
+    }
+    if serviced {crate::ammo_service091::response(1,&update)?;}
+    else if !update.is_empty() || replayed {return Err(invalid("rejected ammo reply changed state"));}
+    Ok(AmmoReply{serviced,revision,wire_revision,update,replayed,result_code:result_code as i32})
 }
 
 /// Native ConnectionManager.connect115, checked RU basic branch only. Other
@@ -200,6 +264,31 @@ fn verify_fixture_identity(profile:&Profile)->io::Result<()> {
 mod tests {
     use super::*;
     fn username()->Vec<u8> {br#"{"login":"registered@example.test","auth_method":"basic","session":"0123456789abcdef0123456789abcdef","auth_realm":"RU","game":"wot","temporary":"1"}"#.to_vec()}
+    #[test] fn ammunition_reply_is_bound_to_identity_command_and_both_revisions() {
+        let profile=Profile{account_id:"12345678-1234-4234-8234-123456789abc".into(),database_id:17,name:"own_user".into(),fixture_dir:PathBuf::new()};
+        let delta=b"\x80\x02}(U\x07prevRevK\x01U\x03revK\x02u.";
+        let hex=delta.iter().map(|b|format!("{b:02x}")).collect::<String>();
+        let good=serde_json::json!({"status":"serviced","account_id":profile.account_id,"native_database_id":17,
+            "command_key":"p09d_test_7","revision":6,"wire_revision":2,"update_hex":hex,"replayed":false,"result_code":0});
+        let encode=|value:&Value|serde_json::to_vec(value).unwrap();
+        let reply=ammo_reply(&encode(&good),&profile,"p09d_test_7",5,1).unwrap();
+        assert!(reply.serviced);assert_eq!(reply.update,delta);
+        for (field,bad) in [("account_id",serde_json::json!("other")),("native_database_id",serde_json::json!(18)),
+            ("command_key",serde_json::json!("another")),("revision",serde_json::json!(5)),
+            ("wire_revision",serde_json::json!(3)),("replayed",serde_json::json!(1)),
+            ("result_code",serde_json::json!("bad reason\n")),("status",serde_json::json!("success")),
+            ("update_hex",serde_json::json!("8002636f732e"))] {
+            let mut wrong=good.clone();wrong[field]=bad;
+            assert!(ammo_reply(&encode(&wrong),&profile,"p09d_test_7",5,1).is_err(),"{field}");
+        }
+        let mut rejected=good;rejected["status"]=serde_json::json!("rejected");rejected["revision"]=serde_json::json!(5);
+        rejected["wire_revision"]=serde_json::json!(1);rejected["update_hex"]=serde_json::json!("");
+        rejected["result_code"]=serde_json::json!(-10);
+        assert!(!ammo_reply(&encode(&rejected),&profile,"p09d_test_7",5,1).unwrap().serviced);
+        rejected["replayed"]=serde_json::json!(true);
+        assert!(ammo_reply(&encode(&rejected),&profile,"p09d_test_7",5,1).is_err());
+        for key in ["", "x\r\n", "x/y", "é", &"x".repeat(129)] {assert!(!valid_command_key(key));}
+    }
     #[test] fn native_branch_and_ambiguous_json_rejected() {
         assert_eq!(credentials(&username(),b"own-test-password").unwrap().0,"registered@example.test");
         let duplicate=String::from_utf8(username()).unwrap().replace("{","{\"login\":\"other_user\",");

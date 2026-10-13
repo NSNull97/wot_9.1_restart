@@ -23,6 +23,7 @@ from hangar_config import overrides
 
 MODULES = ('sr_interactive', 'collision_oracle', 'destructible_probe', 'destructible_catalog_probe', 'project_auth', 'project_preferences', 'hangar_bootstrap', 'hangar_ui_probe', 'hangar_capabilities', 'crew_capabilities', 'ms1_crew_probe', 'ms1_crew_scenario', 'hangar_limits_scenario', 'hangar_windows_scenario', 'hangar_relogin_scenario', 'account_switch_scenario', 'long_hangar_scenario', 'ms1_ammo_probe', 'ms1_ammo_scenario', 'arena_entry_probe', 'arena_bootstrap', 'arena_space_scenario', 'arena_vehicle_scenario', 'arena_ready_scenario', 'arena_movement_scenario', 'map_drive_scenario', 'map_drive_client', 'map_drive_acceptance')
 LOGS = ('python.log', 'Influx_PS.log', 'Influx_PS.bak')
+MODULES += ('p09d_ammo_ui', 'p09d_ammo_scenario')
 
 
 def digest(payload):
@@ -112,6 +113,9 @@ def prepare(args):
         from shared_client_copy import checked_copy
         root, copy_info = checked_copy(args.research_copy, paths)
     shared_lab = bool(getattr(args, 'enable_shared_lab', False))
+    ammo_service = bool(getattr(args, 'enable_p09d_ammo_service', False))
+    if ammo_service and (shared_lab or args.enable_map_drive):
+        raise ValueError('P09D ammunition service is restricted to the native hangar')
     if shared_lab and (copy_info is None or not args.enable_map_drive):
         raise ValueError('Shared lab requires an explicit isolated copy and native arena services')
     endpoint = args.endpoint
@@ -229,6 +233,8 @@ def prepare(args):
                 'capture_hangar':bool(args.capture_hangar or args.capture_ui_passive),
                 'capture_ui_passive':bool(args.capture_ui_passive),
                 'enable_map_drive':bool(args.enable_map_drive)}
+    if ammo_service:
+        settings['enable_p09d_ammo_service'] = True
     if shared_lab:
         settings['enable_shared_lab'] = True
     if catalog_spec is not None:
@@ -403,6 +409,8 @@ def main():
                       help='Pinned local identity preprocessing specification; requires opt-in control/shared lab')
     prep.add_argument('--enable-map-drive', action='store_true',
                       help='Explicit test_lab native battle-button travel; no automatic input or quit')
+    prep.add_argument('--enable-p09d-ammo-service', action='store_true',
+                      help='Native maintenance for the two source-bound MS-1 and IS-7 mounts')
     prep.add_argument('--capture-hangar', action='store_true',
                       help='One passive native Hangar PNG; no login, input or UI transitions')
     prep.add_argument('--capture-ui-passive', action='store_true',

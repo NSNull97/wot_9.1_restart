@@ -17,6 +17,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 import ms1_ammo_state as ammo
+from tests.native_fixture_migration import fixture as migrated_fixture, proof_paths as migrated_proof_paths
 
 
 class EncoderBoundsTests(unittest.TestCase):
@@ -70,7 +71,7 @@ class EncoderBoundsTests(unittest.TestCase):
 class ProfileAndDeltaTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.directory = ROOT / 'local/server/fixtures/c5326cc1-8524-479c-8bba-72e973489c22/r3-catalog3'
+        cls.directory = migrated_fixture(3)
         if not (cls.directory / 'manifest.json').is_file():
             raise unittest.SkipTest('NOT_RUN: actual immutable accepted profile3 is absent')
         cls.base = ammo.validate_base(cls.directory)
@@ -218,10 +219,13 @@ class ActualNativeExportTests(unittest.TestCase):
         cls.path = (ROOT / path).resolve()
         cls.data, cls.source = ammo.validate_export(cls.path)
         cls.envelope = json.loads(cls.path.read_bytes())
-        cls.base = ammo.validate_base(ROOT / 'local/server/fixtures/c5326cc1-8524-479c-8bba-72e973489c22/r3-catalog3')
+        cls.base = ammo.validate_base(migrated_fixture(3))
         cls.profile = ammo.promote_profile(cls.base['profile'], ammo.digest(cls.base['profile_raw']),
                                           cls.source['sha256'], cls.base['profile']['crew_grant']['granted_at_ms'] + 1000)
-        scratch = tempfile.TemporaryDirectory(prefix='ms1-ammo-', dir=os.environ.get('SR_TEST_TEMP'))
+        scratch_root = Path(os.environ.get('SR_TEST_TEMP', ROOT / 'local/tests/ms1-ammo-native'))
+        scratch_root.mkdir(parents=True, exist_ok=True)
+        ammo.garage.local_file(scratch_root)
+        scratch = tempfile.TemporaryDirectory(prefix='ms1-ammo-', dir=scratch_root)
         cls.addClassCleanup(scratch.cleanup)
         cls.scratch = Path(scratch.name)
 
@@ -285,8 +289,9 @@ class ActualNativeExportTests(unittest.TestCase):
 
     def test_compiled_producer_is_pinned_not_whichever_file_now_exists(self):
         proof = self.envelope['source']
-        plan_path = Path(proof['install_plan_file'])
-        plan = json.loads(plan_path.read_bytes()); outcome = json.loads(Path(proof['outcome_file']).read_bytes())
+        files = migrated_proof_paths(self.path)
+        plan_path = files['install_plan']
+        plan = json.loads(plan_path.read_bytes()); outcome = json.loads(files['outcome'].read_bytes())
         ammo._validate_compiled_probe(plan, plan_path.parent, outcome)
         for change in [lambda r: r.update(sha256='0' * 64),
                        lambda r: r.update(compiled='../outside.pyc')]:

@@ -1,3 +1,121 @@
+## 2026-10-13 — P09D acceptance repair green; native service integration
+
+**PASS_APPLICABLE_AUTOMATIC_AND_NATIVE.** The historical regression hold below
+is closed. Accepted P06R main `eb054618` was merged into the P09D branch before
+validation; normal no-ff integration/push and exact remote SHA are recorded in
+`local/evidence/20261013-p09d-acceptance-repair-01/final-card.json`.
+
+Historical crew/ammo proof bytes and original producer identities are preserved.
+Explicit bounded sidecars relocate the six-file proof closures. Missing worker,
+profile and media fixtures were restored exactly; test-only derived worker
+configs have their own hashes. Archived r1 output replaces the unavailable old
+encoder execution, with a separate real current catalog1 generation test.
+Nine provenance-sensitive source files now retain LF on Windows checkout.
+Full web also exposed and fixed TCP-only test-port selection and Express's
+rejection of the `.codex` ancestor for allowlisted PNG delivery.
+
+Final checks: **674/674 canonical gateway**, **96/96 full web**,
+**114/114 domain/store/content**, **240/240 client/control**,
+**53/53 historical crew/ammo/relocation**, and **4 real Python2.7.3 compiles**.
+No failures or skips in these final gates. Independent source review and layout
+PASS. Earlier failed attempts remain in evidence with their causes.
+
+Fresh native client46432 completed six real servicing operations on the tested
+merged gateway. Independent decryption/callback/DB audit verifies all six
+CMD108→Account.update→success sequences, persistent revision7→13, conserved
+resources/shell totals and exact restoration of both mounts/depot. Twelve
+actual PNGs were visually inspected. The diagnostic install was restored.
+Normal own stand is running the tested gateway with its original persistent
+revision13 DB; seven durable tables stayed identical through full restart.
+A fresh normal hangar shows IS-7 21/9/0. No service scenario is armed.
+
+Scope remains source-bound MS-1/IS-7 and owned depot stock. OS pointer/manual
+owner acceptance, purchases, automatic refill, equipment/repair and battle
+consumption are NOT_RUN/unsupported. The original client and primary P03M
+checkout/client/services were not modified. Initial local token-format failure
+and all historical test failures are preserved rather than relabelled PASS.
+
+[Repair design, exact changed files, commands, evidence and rollback](evidence-index/P09D_ACCEPTANCE_REPAIR.md).
+One next step: complete the already-active P03M source-bound IS-7 battle/runtime
+gate, taking its loadout from the accepted authoritative state.
+
+## 2026-10-13 — P09D native MS-1 / IS-7 ammunition service
+
+**PASS_NATIVE_AMMO_SERVICE_OWNED_STOCK_TEST_LAB** on the isolated #717 stand.
+**HOLD_IN_BRANCH_REQUIRED_REGRESSION_FAIL** for integration into main.
+Branch `codex/p09d-native-ammo-service` is stacked on P09C
+`7fb0e479dce684af0940fe37e5798d54d1c1e7fd`; primary P06R checkout/service were
+not modified. Exact delivered commit and source/test binding are recorded in
+`local/evidence/20261013-p09d-native-ammo-service/final-card-01.json`.
+
+Native CMD108 now reaches the authenticated authoritative DB transaction.
+The real original Account.update/Inventory/Flash callback chain applies the
+committed shells/layout/depot delta before native success. The original
+maintenance window is enabled only for source-bound MS-1 (96) and IS-7 (30).
+The explicit isolated test grant supplies owned stock; no purchase, repair,
+automatic servicing, equipment or battle-consumption claim is made.
+
+Native client PID20020 completed six operations in87.3s: MS-1 unload/refill,
+IS-7 unload/refill, then both restores. Real encrypted UDP independently
+confirms requests226–231, six142-byte deltas, update-before-success and
+persistent revision7→13. All six shell totals and funds are conserved. Final
+mount/depot rows exactly match the pre-scenario backup: MS-1 42/36/18,
+IS-7 21/9/0. Twelve original client PNGs were visually inspected. Both vehicles'
+initial relogin state was checked; a further complete client/gateway/bridge
+restart shows restored IS-7 21/9/0 in a fresh native hangar. Earlier full restart
+showed MS-1 42/36/18, and live authenticated replay changed no state.
+
+The diagnostic invokes original Flash-bound callbacks; OS pointer automation
+and human/manual acceptance are **NOT_RUN**, not inferred from the native PASS.
+Install04 diagnostic was ledger-restored. Install05 enables ordinary manual
+service with no armed scenario; its owned client and loopback services are
+left running. The original client and primary research copy remain untouched.
+
+Final applicable automated checks: **101 Python persistence/domain PASS**,
+**152 client/control regression PASS**, **21 current Node PASS** (including
+actual HTTP integration), targeted Rust codec10/hangar20/scheduler11/identity7
+PASS; real Python2.7 compilation, original source pins and layout PASS.
+Historic MS-1 bridge suite remains **3 PASS / 5 FAIL / 0 SKIP** because its
+immutable native proofs contain primary-checkout paths outside this worktree.
+Broader Rust ammo filter retains six missing historical-fixture failures.
+No exception to the merge rule is invented for these failures. Intermediate
+native import failure, audit-tool assumption failures and one transient bridge
+503 are preserved; the503 cause remains UNKNOWN.
+
+[Plan](plans/P09D_NATIVE_AMMO_SERVICE.md),
+[source contract](research/P09D_NATIVE_AMMO_SOURCE.md),
+[full evidence, commands, changed files and rollback](evidence-index/P09D_NATIVE_AMMO_SERVICE.md).
+One next step: repair historical proof portability with provenance intact,
+repeat the failed regression gates, then integrate the accepted card into main.
+
+## 2026-10-13 — P09C isolated ammunition service parallel handoff
+
+**PASS_P09C_ISOLATED_AMMO_SERVICE**; runtime/native integration **NOT_RUN**.
+Branch `codex/p09c-ammo-service` from accepted main
+`90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`; no merge/main changes during parallel work.
+
+Nine original #717 resource pins verify mounted MS-1 capacity96 and shells
+2570/2826/3082; IS-7 capacity30 and shells14602/14858/15114 (static compact
+encoding verified). The new standalone service extends the existing P09B
+SQLite snapshot/revision/reservation/ledger. It changes absolute loaded ammo
+using already-owned isolated depot stock, with atomic rollback and idempotent
+replay. No prices, live grants, battle runtime or shared loadout were changed.
+
+Applicable automated scope: **74/74 PASS** (11 catalogue, 50 service, 13 P09B),
+including real separate-connection races and four rollback points. Source audit,
+layout and diff check PASS; persistent isolated harness **16/16 PASS**, including
+reopen, original replay after later changes and inherited reservation.
+Evidence: `local/evidence/20261013-p09c-ammo-service-01/validation-02/receipt.json`
+and `harness-02/receipt.json` in the managed worktree. A local validation-runner
+path error is preserved separately as FAIL/NOT_RUN, then corrected.
+
+Prices/purchases, repair/consumables and native service mapping remain
+UNKNOWN/UNSUPPORTED. Fresh native IS-7 ammo receipt and deployed wiring NOT_RUN.
+[Plan](plans/P09C_AMMO_SERVICE.md), [contract](research/P09C_AMMO_SERVICE_CONTRACT.md),
+[commands/evidence/rollback](evidence-index/P09C_AMMO_SERVICE.md).
+One next step: a separate authoritative account/loadout integration gate
+coordinated with crew/equipment, then native acceptance.
+
 ## 2026-10-13 — P06R fence-chain accepted; P03M IS-7 next
 
 **PASS_OWNER_FENCE_CHAIN_TEST_LAB.** Owner confirms consecutive fences now pass
