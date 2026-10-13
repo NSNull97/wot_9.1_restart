@@ -14,8 +14,9 @@ server contact, cumulative `fallenTrees`, and both-worker scene ACKs; an
 automatic/private diagnostic does not replace this native acceptance.
 Until the morning owner check, no computer input or native owner-gate run.
 
-Historical final-12 passed 614 Rust tests. The fresh gateway recheck reports
-610 PASS / 4 FAIL due to missing historical P06N/P06O pools. The full Python
+Historical final-12 passed 614 Rust tests. The fresh post-fix gateway recheck reports
+611 PASS / 4 FAIL (615 total, including the new 117-chunk regression) due to
+missing historical P06N/P06O pools. The full Python
 recheck reports 2222 tests, 1 missing Email22-fixture error and 17 skips.
 The saved private contact sweep did not establish a tree callback or passage.
 These limitations remain open; no merge or fresh native PASS is claimed.

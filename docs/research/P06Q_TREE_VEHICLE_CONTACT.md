@@ -303,8 +303,9 @@ or channel-state/channel-framing reject. Stop and rollback receipts are
 captured by
 `local/evidence/20261012-p06q-tree-contact-01/tests/gateway-p06q-transport-smoke01.json`.
 
-The full historical suite remains 610/614 because four real-worker tests need
-missing P06O/P06N pool fixtures. This is an environment gap and remains
-separate from the P06Q transport result. The owner-controlled native contact,
+The fresh post-fix full-suite run is 611 PASS / 4 FAIL (615 total); the one
+additional pass is the new 117-chunk regression. The same four real-worker
+tests need missing P06O/P06N pool fixtures. This is an environment gap and
+remains separate from the P06Q transport result. The owner-controlled native contact,
 tree fall, `fallenTrees`, both-worker ACK, and passage checks remain
 **NOT_RUN** until a clean bounded smoke and the morning manual gate.

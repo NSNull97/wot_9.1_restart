@@ -2943,3 +2943,8 @@ real-worker tests require absent P06O/P06N `pool-near.json` fixtures; this is
 recorded as an environment fixture gap, not converted to PASS. Native owner
 tree-fall/passage acceptance is still **NOT_RUN**. A new bounded two-client
 smoke is the only next step before asking the owner to rerun the native gate.
+
+Fresh post-fix full-suite receipt `local/build/server/gateway-p06q-final-18/`
+reports 611 PASS / 4 FAIL (615 total). The four failures are the same missing
+P06O/P06N worker-pool fixtures; the new P06Q regression is included in the 611
+passing tests. The directory retains the exact test log and `failure.json`.
