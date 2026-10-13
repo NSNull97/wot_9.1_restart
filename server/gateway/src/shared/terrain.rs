@@ -236,6 +236,9 @@ impl Terrain {
     pub fn validate_instance(&self,id:u32,first:u32,count:u32,kind:u8)->io::Result<()>{
         self.obstacles.as_ref().ok_or_else(||bad("catalog requires obstacle mesh"))?.validate_instance(id,first,count,kind)
     }
+    pub fn validate_empty_instance(&self,id:u32,first:u32)->io::Result<()>{
+        self.obstacles.as_ref().ok_or_else(||bad("catalog requires obstacle mesh"))?.validate_empty_instance(id,first)
+    }
     pub fn nearest_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<Option<Hit>> {
         let obstacle=match &self.obstacles {
             Some(mesh)=>mesh.nearest_excluding_many(start,end,excluded)?,

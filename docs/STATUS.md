@@ -75,6 +75,100 @@ UNKNOWN/UNSUPPORTED. Fresh native IS-7 ammo receipt and deployed wiring NOT_RUN.
 One next step: a separate authoritative account/loadout integration gate
 coordinated with crew/equipment, then native acceptance.
 
+## 2026-10-13 — P06R fence-chain accepted; P03M IS-7 next
+
+**PASS_OWNER_FENCE_CHAIN_TEST_LAB.** Owner confirms consecutive fences now pass
+without stopping after the first section. Final run03 audit matches ten fence
+energy receipts to both workers' ACKs before commit and native callbacks in
+both clients. Eleven ram transitions (ten fences and one tree) plus one
+projectile destruction give final scene12. Each fence response debits approximately
+8000J; no gateway/session failure, trace cap or stderr in the complete run.
+Nine of ten projected-center clearance checks pass within50 ticks; the tenth
+is not an exact swept-hull passage proof. Owner observation closes the chain
+gate, without claiming separately inspected pixels in both windows.
+
+Root clients50076/15740, server44816 and workers44840/35368 are absent; both
+installation and namespace restorations are hash-verified. Parallel service
+processes and unrelated P09B changes are untouched. Evidence:
+`local/evidence/20261013-p06r-compound-01/native-chain/fencechain03-owner.json`
+and `native-chain/fencechain03-final/{REPORT.md,audit.json,receipt.json}`.
+The tested source/build correspondence remains unchanged: gateway649/649,
+physics/IPC/mass/legacy, importer16 and namespace35 PASS as recorded below.
+Mixed compounds, historical resistance and production scaling remain UNKNOWN.
+Next: merge the accepted bounded P06R fence slice, then implement the source-bound
+[P03M IS-7 runtime](plans/P03M_IS7_RUNTIME_PROFILE.md).
+
+## 2026-10-13 — P06R automatic checkpoint (superseded by owner acceptance)
+
+The measured static-solver stop on close fence sections3307/3308 is corrected
+under explicit `test_lab-fence-energy-v1`. Source-bound domain4/worker5 catalogs
+retain1038 identities;403 movement-only fences reserve8000J at hull contact.
+Actual post-solver velocity only loses energy; rigid-wall collision remains.
+Prepared removals block further worker advances and native publication until
+both workers acknowledge the exact cumulative scene. Original ram resistance
+and handling formulas remain UNKNOWN; this is not a historical physics claim.
+
+Final physics03 passes seven paired real-worker scenarios, four IPC5 rejection/
+retry/restore checks, three matched-speed mass cases and nine legacy/tree
+compatibility checks. Component math passes64 checks including10000 seeded
+vectors. Matched incoming speeds2.947/2.965/3.012m/s produce normal losses
+1.582/0.645/0.298m/s at2345.5/4691/9382kg; these are MS1-shape experiments,
+not an IS-7 runtime. Fresh canonical gateway09 passes649/649 tests, including
+two real IPC5 workers through the actual runtime/domain/both-ACK transaction.
+Importer16/16 and source layout PASS. Failed exploratory fixtures are preserved
+with their causes; final evidence is linked in the response report.
+
+Acceptance: **PASS_AUTOMATIC_PRIVATE / PENDING_OWNER_FENCE_CHAIN**. New native
+visuals/passage are NOT_RUN until the owner confirms the reviewed stand. Fresh
+`fencechain03` is running: two native READY sessions, two workers and238 area
+creates, no faults/closures or stderr in the frozen startup prefix
+`local/evidence/20261013-p06r-compound-01/native-chain/fencechain03ready01/result.json`.
+Launch source is `e155c4e`; physics fix is `0d94ee6`. A v2 instance namespace
+isolates root clients from the concurrent service chat;35 copy/interactive
+tests PASS. Prior run02 B login was rejected SERVER_NOT_READY; its failure,
+owned stop and ledger restoration are saved. Run03 staggers authentication;
+concurrent-login admission is still a limitation, not silently called fixed. Keep
+the P06R branch, do not merge on private evidence alone. Owner requested the
+manual fence check before queued P03M IS-7 integration. Mixed compound objects,
+universal destruction and100-battle production capacity remain outside this
+result. The unrelated P09B edit is preserved. Exact commands, files, evidence,
+pins and rollback: [fence-chain response](research/P06R_FENCE_CHAIN_RESPONSE.md).
+
+## 2026-10-13 — P06R compound objects and fences started (historical checkpoint)
+
+Owner authorized the next destruction card. Base is accepted/merged P06Q
+main `90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`; remote SHA was verified.
+Branch `codex/p06r-compound-destructibles`. The [P06R plan](plans/P06R_COMPOUND_DESTRUCTIBLES.md)
+requires source-pinned coverage, part-safe physics/projectile state, bounded
+native packing, automatic/private checks and eventual owner acceptance.
+First implementation admits 403 source-complete movement-only fences alongside
+635 accepted P06Q objects (1038 total), with versioned catalogs and exact empty
+projectile-span binding. Latest gateway build07 passes 638/638 tests, including
+six controlled IPC tests for retained asynchronous impact batches. The earlier
+combined importer/layout Python scope passed61 executed tests with one symlink
+fixture NOT_RUN; the new exporter/observer scope passes34/34. Standalone
+CPython2.7.3 compile/exact export also passes; post-fix native rerun NOT_RUN.
+Real private workers pass cumulative1038 ACK/restore and source fence passage/
+neighbor survival. Both clients completed the fresh 119-chunk/two-pass capture;
+the joined catalog covers all1038 objects. That synchronous diagnostic export
+also caused both sessions to retire after a 5.7-second pause; evidence is kept.
+The separate fenceidle01 runtime completed a 300-second ready observation
+without session errors. Owner drove it: fences break, but a chain stops the
+tank; other classes remain intact. Five destroyed fences each have both-worker
+ACK/commit and setters in both client traces. Acceptance is PARTIAL_FAIL for
+chain motion, not a complete native PASS. Stand stopped and ledgers restored.
+Current priority is one tank's contact/velocity behavior before more object
+coverage. Private paired workers reproduce a short-gap chain stall, and source
+review found a separate loss of early contact batches while awaiting a peer.
+That sequencing defect is now repaired and tested; physical chain momentum
+loss is still open and must not be described as fixed by the sequencing change.
+The IS-7 runtime follow-up is queued in P03M; two isolated crew/equipment and
+ammo/service chats have started. Their outputs require explicit integration.
+The 100-battle question is explicitly not accepted: current test_lab physics
+duplicates a map per actor. Original client uses the verified configured C path.
+Existing unrelated P09B working edit is preserved outside this card. Details:
+[P06R contract and evidence](research/P06R_COMPOUND_FENCES_CONTRACT.md).
+
 ## 2026-10-13 — P06Q tree visual/state sync follow-up
 
 ### Owner gate accepted; stand closed; original client relocated

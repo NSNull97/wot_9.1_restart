@@ -1,3 +1,71 @@
+# P03M next — IS-7 runtime after accepted P06R fences
+
+**P06R: PASS_OWNER_FENCE_CHAIN_TEST_LAB.** Owner confirmed continuous passage
+through consecutive sections without the first-section stop. Full frozen run03
+correlates ten responses, both-worker ACKs and A/B native destruction callbacks;
+no session faults. The owned stand and workers are stopped, client installations
+and temporary namespaces restored with current hashes. Final evidence:
+`local/evidence/20261013-p06r-compound-01/native-chain/fencechain03-final/`.
+Mixed compound destruction and historical ram formulas are still UNKNOWN.
+
+**Next:** ordinary no-ff merge/push of accepted P06R, then source-bound IS-7
+movement/combat profile in `codex/p03m-is7-runtime-profile`. Its automatic/native
+gates are not yet run. [P03M plan](plans/P03M_IS7_RUNTIME_PROFILE.md).
+
+# P06R historical checkpoint — fence-chain owner gate
+
+Branch `codex/p06r-compound-destructibles`; accepted main remains
+`90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`. The chain stop is corrected using
+versioned approximate8000J fence response, mass-dependent speed loss, unchanged
+rigid-wall collision and both-worker ACK before publication.
+
+**Acceptance: PASS_AUTOMATIC_PRIVATE / PENDING_OWNER_FENCE_CHAIN.** Canonical
+gateway09:649/649 PASS including actual paired IPC5 runtime/ACK gate. Physics03:
+seven behavior cases, four IPC5 negative/retry checks, three matched-mass cases,
+nine old-mode/tree checks PASS; component64 and importer16 PASS. Native rendered
+chain passage is NOT_RUN. Fresh stand is live with two READY sessions/two
+workers/238 areas and no startup faults; proof `fencechain03ready01/result.json`.
+Launch source `e155c4e`, physics fix `0d94ee6`, additional namespace/interactive
+tests35/35 PASS. Fresh stand receipts belong under
+`local/evidence/20261013-p06r-compound-01/native-chain/`, run `fencechain03`.
+Only receipt-identified root A/B clients and their server may be stopped;
+parallel service-chat processes have independent ownership.
+
+**Next:** owner drives several consecutive fence sections in the two-client
+Prohorovka stand and checks continuous passage/speed loss and both views.
+After collecting that result, continue the queued P03M IS-7 card in the requested
+order. Do not accept all compound destruction or production scaling by inference.
+[Commands, evidence and rollback](research/P06R_FENCE_CHAIN_RESPONSE.md).
+
+# Earlier P06R checkpoint — compound objects and fences
+
+Owner authorized continued destruction implementation on 2026-10-13.
+Branch `codex/p06r-compound-destructibles`, accepted main
+`90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8` (P06Q merge, remote verified).
+Current work: 403 source-complete fences implemented (1038 combined objects),
+638 canonical Rust tests PASS, 34 new exporter/observer Python tests PASS;
+earlier importer/layout scope61 PASS/one symlink NOT_RUN. Real
+private worker ACK/restore/passage checks PASS. Original client is read-only
+on C. Both A/B copies completed 119 chunks/two stable passes and the exact
+1038-object join. The synchronous diagnostic export exposed session timeouts;
+a separate 300-second native runtime observation had no session errors.
+Owner observed breaking fences but a chain stopping the tank. Both clients
+and server are now stopped; both installation ledgers restored.
+
+**Acceptance: IN_PROGRESS / PARTIAL_FAIL_OWNER_CHAIN_STALL.** Preserve accepted whole
+fragiles, tree falls, cumulative scene ACKs and network readiness. Do not claim
+universal destruction or remove whole compound geometry for one part.
+[Plan and boundaries](plans/P06R_COMPOUND_DESTRUCTIBLES.md).
+Asynchronous contact retention is repaired and covered by six controlled IPC
+regressions. The separate physical momentum loss is still reproducible.
+**Next step:** correct the measured loss of motion through consecutive light
+obstacles while retaining solid-wall collision and authoritative ACK gating. Owner now
+prioritizes a reliable single-tank scenario and an IS-7 comparison profile
+([queued P03M](plans/P03M_IS7_RUNTIME_PROFILE.md)); mixed compound collision
+remains UNKNOWN. Parallel service chats own isolated domain components only.
+Current per-actor physics processes are not a 100-battle production design;
+the source audit and bounded memory snapshot are recorded in the P06R report.
+
 # P06Q accepted — native tree fall, both-client agreement and passage
 
 Branch `codex/p06q-tree-visual-sync`, accepted P06P source base
