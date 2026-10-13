@@ -293,8 +293,15 @@ pending bodies. A 117-chunk synthetic contact catalog exercises announcement
 splitting, request staging, cumulative ACK release, duplicate rejection, and
 the all-area readiness gate. The targeted gateway catalog-wire suite is 8/8
 PASS in
-`local/build/server/gateway-p06q-final-16/result.json`; the receipt explicitly
+`local/build/server/gateway-p06q-final-17/result.json`; the receipt explicitly
 marks this as `PASS_ISOLATED_BUILD_TARGETED` with scope `catalog_wire_tests`.
+
+Bounded private smoke `p06qsmoke01` used that pinned build with both approved
+client copies. It recorded two entries, two ready transitions, 117 unique
+catalog-area creations per session, 632 ready snapshots, and no failed session
+or channel-state/channel-framing reject. Stop and rollback receipts are
+captured by
+`local/evidence/20261012-p06q-tree-contact-01/tests/gateway-p06q-transport-smoke01.json`.
 
 The full historical suite remains 610/614 because four real-worker tests need
 missing P06O/P06N pool fixtures. This is an environment gap and remains

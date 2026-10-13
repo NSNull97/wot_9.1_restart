@@ -2926,8 +2926,17 @@ split into bounded bodies, vehicle/area creation requests are staged behind the
 eight-body reliable window, and readiness requires all announced areas to be
 created and ACKed. The new regression covers a synthetic 117-chunk contact
 catalog and passes 8/8 targeted gateway catalog-wire tests. Receipt:
-`local/build/server/gateway-p06q-final-16/result.json` (status
+`local/build/server/gateway-p06q-final-17/result.json` (status
 `PASS_ISOLATED_BUILD_TARGETED`, scope `catalog_wire_tests`).
+
+Bounded private two-client smoke `p06qsmoke01` then reached two
+`SHARED_ENTRY`, two `SHARED_READY`, 117 unique catalog-area creations per
+session, 632 ready snapshots, and zero `SHARED_FAILED` or channel-state/
+channel-framing rejects. Receipt:
+`local/evidence/20261012-p06q-tree-contact-01/tests/gateway-p06q-transport-smoke01.json`.
+The server and both clients were stopped by receipt and both installations
+were restored. This is transport/runtime evidence only; native owner contact,
+tree fall, `fallenTrees`, and passage remain **NOT_RUN**.
 
 The historical full-suite recheck remains 610/614 because four unrelated
 real-worker tests require absent P06O/P06N `pool-near.json` fixtures; this is
