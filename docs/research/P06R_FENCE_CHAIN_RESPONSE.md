@@ -213,5 +213,46 @@ python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/namespac
 python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/namespace_copies.py b --restore
 ```
 
-Next: the owner's native fence-chain drive, then collect its evidence before
-beginning P03M runtime integration.
+The above launch checkpoint is historical; final acceptance follows.
+
+## Final owner acceptance and cleanup — 2026-10-13
+
+**PASS_OWNER_FENCE_CHAIN_TEST_LAB.** Owner: «Проверил, теперь цепочку заборов
+проходит нормально, без стопа после первой секции. Останавливай оба клиента и
+сервер, собирай evidence и переходи к ИС-7.» Scope is the source-complete fence
+slice and chain response. Mixed compounds/all-object coverage are deferred,
+not silently accepted. The exact quote is pinned in
+`native-chain/fencechain03-owner.json`.
+
+Read-only audit of full logs: ten fence receipts, eleven ram contacts/commits,
+22 worker ACKs, both-client publications/setter and original destruction
+call/returns for all ten fences. Each fence spends7999.986–8000.010J.
+Tree3365 additionally publishes `fallenTrees=421445632`; projectile object3620
+makes final scene12. Gateway stderr0, no session failure/reject/closure, complete
+native JSONL/no cap, capture27978 packets/1234012 bytes below configured limits.
+Nine of ten projected-center clearances pass within50 ticks; object3625 does not
+meet that separate metric. This inference is not an exact swept-hull check;
+the owner's actual chain observation closes passage. Native callbacks do not
+prove separately inspected rendering on each screen.
+
+Full per-object/source-position correlation and raw-file hashes:
+`native-chain/fencechain03-final/REPORT.md` SHA256
+`10ff240ad922349bae36f4498c7894a9de867ea83fb93b30914e2e0654b8ec8b`,
+`audit.json` SHA256
+`2eae41a6ba160c04274c19573da6890fd5d83122930ec230d877ae5b5f576b67`.
+Command actually run:
+`python -B -X utf8 local/evidence/20261013-p06r-compound-01/native-chain/fencechain03-final/audit.py`.
+
+Cleanup commands above executed with stop output `fencechain03ownerstop` and
+reason `Owner confirmed chain passage without first-section stop; proceed to IS-7`.
+Stop receipt PASS; root clients50076/15740, server44816, workers44840/35368 are
+absent. Both install `restore.json` and namespace restore receipts PASS; current
+restored hashes/absences/EXE/marker match preinstall pins. No unrelated process
+was stopped. Original remains read-only. No rollback is pending.
+
+No new game test is claimed by this post-run audit; previously passed canonical
+checks apply to unchanged source pins. Remaining limitations: historical ram
+formula, mixed compounds/replacement collision, production100-battle capacity,
+simultaneous login admission and IS-7 runtime. Source rollback remains a reviewed
+revert, preserving evidence and unrelated P09B edits. Next: accepted P06R no-ff
+merge/push, then P03M source-bound IS-7 runtime implementation.

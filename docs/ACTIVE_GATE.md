@@ -1,4 +1,18 @@
-# P06R active — fence-chain owner gate
+# P03M next — IS-7 runtime after accepted P06R fences
+
+**P06R: PASS_OWNER_FENCE_CHAIN_TEST_LAB.** Owner confirmed continuous passage
+through consecutive sections without the first-section stop. Full frozen run03
+correlates ten responses, both-worker ACKs and A/B native destruction callbacks;
+no session faults. The owned stand and workers are stopped, client installations
+and temporary namespaces restored with current hashes. Final evidence:
+`local/evidence/20261013-p06r-compound-01/native-chain/fencechain03-final/`.
+Mixed compound destruction and historical ram formulas are still UNKNOWN.
+
+**Next:** ordinary no-ff merge/push of accepted P06R, then source-bound IS-7
+movement/combat profile in `codex/p03m-is7-runtime-profile`. Its automatic/native
+gates are not yet run. [P03M plan](plans/P03M_IS7_RUNTIME_PROFILE.md).
+
+# P06R historical checkpoint — fence-chain owner gate
 
 Branch `codex/p06r-compound-destructibles`; accepted main remains
 `90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`. The chain stop is corrected using

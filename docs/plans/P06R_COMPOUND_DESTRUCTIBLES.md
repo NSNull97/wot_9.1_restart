@@ -4,6 +4,22 @@ Owner authorized this card on 2026-10-13 after accepting P06Q tree fall and
 passage. Base: main `90c7a1d92a67be2acf2d02ab9a5720a377c9f2c8`.
 Branch: `codex/p06r-compound-destructibles`.
 
+## Accepted scope — 2026-10-13
+
+**PASS_OWNER_FENCE_CHAIN_TEST_LAB.** The owner's priority update below narrowed
+this deliverable to the 403 source-complete movement-only fences and continuous
+chain passage, preserving accepted trees/whole fragiles. Owner confirmed:
+«Проверил, теперь цепочку заборов проходит нормально, без стопа после первой
+секции». Final full-trace audit corroborates ten fence responses, both workers'
+ACKs before commit and native destruction callbacks in A/B. The owned stand is
+stopped and both install/namespace ledgers are restored. Automatic evidence and
+limits: [response report](../research/P06R_FENCE_CHAIN_RESPONSE.md).
+
+Mixed compound parts, replacement collision and universal destruction remain
+unimplemented/UNKNOWN, explicitly deferred by the owner's single-tank priority;
+this acceptance does not close those original roadmap goals. Next runtime
+card is P03M IS-7, after ordinary no-ff merge/push of this accepted fence slice.
+
 ## Goal
 
 Extend the accepted cumulative Prohorovka destruction path to original

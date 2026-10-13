@@ -1,4 +1,27 @@
-## 2026-10-13 — P06R fence-chain response: automatic gates passed
+## 2026-10-13 — P06R fence-chain accepted; P03M IS-7 next
+
+**PASS_OWNER_FENCE_CHAIN_TEST_LAB.** Owner confirms consecutive fences now pass
+without stopping after the first section. Final run03 audit matches ten fence
+energy receipts to both workers' ACKs before commit and native callbacks in
+both clients. Eleven ram transitions (ten fences and one tree) plus one
+projectile destruction give final scene12. Each fence response debits approximately
+8000J; no gateway/session failure, trace cap or stderr in the complete run.
+Nine of ten projected-center clearance checks pass within50 ticks; the tenth
+is not an exact swept-hull passage proof. Owner observation closes the chain
+gate, without claiming separately inspected pixels in both windows.
+
+Root clients50076/15740, server44816 and workers44840/35368 are absent; both
+installation and namespace restorations are hash-verified. Parallel service
+processes and unrelated P09B changes are untouched. Evidence:
+`local/evidence/20261013-p06r-compound-01/native-chain/fencechain03-owner.json`
+and `native-chain/fencechain03-final/{REPORT.md,audit.json,receipt.json}`.
+The tested source/build correspondence remains unchanged: gateway649/649,
+physics/IPC/mass/legacy, importer16 and namespace35 PASS as recorded below.
+Mixed compounds, historical resistance and production scaling remain UNKNOWN.
+Next: merge the accepted bounded P06R fence slice, then implement the source-bound
+[P03M IS-7 runtime](plans/P03M_IS7_RUNTIME_PROFILE.md).
+
+## 2026-10-13 — P06R automatic checkpoint (superseded by owner acceptance)
 
 The measured static-solver stop on close fence sections3307/3308 is corrected
 under explicit `test_lab-fence-energy-v1`. Source-bound domain4/worker5 catalogs
