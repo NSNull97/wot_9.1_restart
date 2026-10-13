@@ -220,7 +220,13 @@ try
                             // Version 2 is a powered finite-radius test_lab turn;
                             // the source IS7 does not rotate around its center.
                             // Keep version 1 counter-rotation behavior unchanged.
-                            if (configVersion == 2) { if (steer > 0) right = stationarySteeringRatio; else left = stationarySteeringRatio; }
+                            if (configVersion == 2)
+                            {
+                                if (steer > 0) right = stationarySteeringRatio; else left = stationarySteeringRatio;
+                                // Steer-only now powers a forward arc, so it must
+                                // obey the same traction cutoff as forward input.
+                                if (speed >= forwardLimit) motor = 0;
+                            }
                             else { left = steer; right = -steer; }
                         }
                         else if (steer > 0) right = .2f;
