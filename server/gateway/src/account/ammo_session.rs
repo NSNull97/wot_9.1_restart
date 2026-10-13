@@ -1,39 +1,41 @@
 //! P09D account service scheduling. External writes only run after the parent
 //! Session::receive commits its complete cloned frame/piggyback tree.
 use super::*;
-use crate::{account091,ammo_service091 as codec,crew_service091 as crew_codec,crew_transfer091 as transfer_codec,identity091};
+use crate::{account091,ammo_service091 as codec,crew_service091 as crew_codec,crew_transfer091 as transfer_codec,research_service091 as research_codec,identity091};
 
 const MAX_COMMANDS:usize=512;
 const MAX_PENDING:usize=4;
 
 #[derive(Clone,Debug,PartialEq,Eq)]
-enum Command {Ammo(codec::Request),Crew(crew_codec::Request),Transfer(transfer_codec::Request)}
+enum Command {Ammo(codec::Request),Crew(crew_codec::Request),Transfer(transfer_codec::Request),Research(research_codec::Request)}
 impl Command {
-    fn id(&self)->i16 {match self {Self::Ammo(r)=>r.id,Self::Crew(r)=>r.id,Self::Transfer(r)=>r.id}}
-    fn vehicle(&self)->i64 {match self {Self::Ammo(r)=>r.vehicle_inventory_id() as i64,Self::Crew(r)=>r.vehicle_inventory_id as i64,Self::Transfer(r)=>r.vehicle_inventory_id}}
-    fn kind(&self)->&'static str {match self {Self::Ammo(_)=>"AMMO",Self::Crew(_)=>"CREW",Self::Transfer(_)=>"CREW_TRANSFER"}}
-    fn validate_supported(&self,profile:transfer_codec::Profile)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_supported(),Self::Transfer(r)=>r.validate_for(profile)}}
+    fn id(&self)->i16 {match self {Self::Ammo(r)=>r.id,Self::Crew(r)=>r.id,Self::Transfer(r)=>r.id,Self::Research(r)=>r.id}}
+    fn vehicle(&self)->i64 {match self {Self::Ammo(r)=>r.vehicle_inventory_id() as i64,Self::Crew(r)=>r.vehicle_inventory_id as i64,Self::Transfer(r)=>r.vehicle_inventory_id,Self::Research(r)=>r.vehicle_hint()}}
+    fn kind(&self)->&'static str {match self {Self::Ammo(_)=>"AMMO",Self::Crew(_)=>"CREW",Self::Transfer(_)=>"CREW_TRANSFER",Self::Research(_)=>"RESEARCH"}}
+    fn validate_supported(&self,profile:transfer_codec::Profile)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_supported(),Self::Transfer(r)=>r.validate_for(profile),Self::Research(r)=>r.validate_supported()}}
 }
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub(super) struct State {
-    revision:u64,wire_revision:i64,prefix:String,crew_enabled:bool,transfer_enabled:bool,cross_vehicle_enabled:bool,
+    revision:u64,wire_revision:i64,prefix:String,crew_enabled:bool,transfer_enabled:bool,cross_vehicle_enabled:bool,research_enabled:bool,
     seen:Vec<i16>,pending:VecDeque<Command>,inflight:Option<Command>,
 }
 impl State {
     pub(super) fn new(binding:codec::Metadata,crew_enabled:bool)->Self {
         let mut random=[0;16];OsRng.fill_bytes(&mut random);
         let prefix=random.iter().map(|byte|format!("{byte:02x}")).collect();
-        Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,transfer_enabled:false,cross_vehicle_enabled:false,
+        Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,transfer_enabled:false,cross_vehicle_enabled:false,research_enabled:false,
              seen:Vec::new(),pending:VecDeque::new(),inflight:None}
     }
     pub(super) fn crew_enabled(&self)->bool {self.crew_enabled}
     pub(super) fn with_transfer(mut self,enabled:bool)->Self {self.transfer_enabled=enabled && self.crew_enabled;self}
     pub(super) fn with_cross_vehicle(mut self,enabled:bool)->Self {self.cross_vehicle_enabled=enabled && self.transfer_enabled;self}
+    pub(super) fn with_research(mut self,enabled:bool)->Self {self.research_enabled=enabled && self.cross_vehicle_enabled;self}
+    pub(super) fn research_enabled(&self)->bool {self.research_enabled}
     pub(super) fn transfer_enabled(&self)->bool {self.transfer_enabled}
     pub(super) fn used_id(&self,id:i16)->bool {self.seen.contains(&id)}
     fn command_key(&self,request:&Command)->String {
-        let card=match request {Command::Ammo(_)=>"p09d",Command::Crew(_)=>"p04d",Command::Transfer(_)=>if self.cross_vehicle_enabled {"p04g"}else {"p04f"}};
+        let card=match request {Command::Ammo(_)=>"p09d",Command::Crew(_)=>"p04d",Command::Transfer(_)=>if self.cross_vehicle_enabled {"p04g"}else {"p04f"},Command::Research(_)=>"p09e"};
         format!("{card}:{}:{}",self.prefix,request.id())
     }
 }
@@ -57,6 +59,10 @@ pub(super) fn enqueue_crew(session:&mut Session,request:crew_codec::Request,even
 pub(super) fn enqueue_transfer(session:&mut Session,request:transfer_codec::Request,events:&mut Vec<String>)->io::Result<()> {
     if !session.ammo_service.as_ref().is_some_and(State::transfer_enabled) {return Err(invalid());}
     enqueue_command(session,Command::Transfer(request),events)
+}
+pub(super) fn enqueue_research(session:&mut Session,request:research_codec::Request,events:&mut Vec<String>)->io::Result<()> {
+    if !session.ammo_service.as_ref().is_some_and(State::research_enabled) {return Err(invalid());}
+    enqueue_command(session,Command::Research(request),events)
 }
 fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)->io::Result<()> {
     available(session)?;
@@ -126,6 +132,7 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
             Command::Ammo(request)=>config.service_ammunition(&profile,&key,revision,wire_revision,request.arguments),
             Command::Crew(request)=>config.recruit_crew(&profile,&key,revision,wire_revision,request),
             Command::Transfer(request)=>config.transfer_crew(&profile,&key,revision,wire_revision,request),
+            Command::Research(request)=>config.research(&profile,&key,revision,wire_revision,&request),
         };
         let _=sender.send(outcome); // A stopped gateway has no native recipient.
     })?;
@@ -220,6 +227,17 @@ mod tests {
     fn ready_transfer(now:Instant)->Session {
         let mut s=ready_crew(now);s.ammo_service=Some(State::new(codec::Metadata{revision:8,wire_revision:1},true).with_transfer(true));s
     }
+    fn ready_research(now:Instant)->Session {
+        let mut s=ready_crew(now);s.ammo_service=Some(State::new(codec::Metadata{revision:9,wire_revision:1},true)
+            .with_transfer(true).with_cross_vehicle(true).with_research(true));s
+    }
+    fn research_request(id:i16)->research_codec::Request {
+        research_codec::Request{id,command:201,arguments:vec![3329,1,0]}
+    }
+    fn research_packet(id:i16)->Vec<u8> {
+        let mut b=vec![0x8e,20,0];b.extend(id.to_le_bytes());b.extend(201i16.to_le_bytes());
+        b.extend(3329i64.to_le_bytes());b.extend(1i32.to_le_bytes());b.extend(0i32.to_le_bytes());b
+    }
     fn transfer_request(id:i16)->transfer_codec::Request {
         transfer_codec::Request{id,vehicle_inventory_id:1,slot:1,tankman_inventory_id:-1}
     }
@@ -243,6 +261,43 @@ mod tests {
     fn inflight(session:&mut Session,id:i16) {
         enqueue(session,request(id),&mut vec![]).unwrap();
         let state=session.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
+    }
+
+    #[test] fn research_requires_explicit_profile_and_whole_frame_commit() {
+        let now=Instant::now();let raw=research_packet(226);
+        assert!(crate::hangar091::requests_crew_transfer(&raw).is_err());
+        let mut disabled=ready_transfer(now);assert!(enqueue_research(&mut disabled,research_request(226),&mut vec![]).is_err());
+        let original=ready_research(now);let before=original.ammo_service.clone();
+        let mut s=original.clone();let mut bad=raw.clone();bad.push(0xff);
+        assert!(s.receive(&frame(&s,1,&bad),now).is_err());assert_eq!(s.ammo_service,before);
+        let mut parent=frame(&original,2,&[0xff]);parent.piggybacks.push(frame(&original,1,&raw));
+        assert!(s.receive(&parent,now).is_err());assert_eq!(s.ammo_service,before);
+        let packet=frame(&s,1,&raw);s.receive(&packet,now).unwrap();
+        let committed=s.ammo_service.clone();assert_eq!(committed.as_ref().unwrap().pending.len(),1);
+        assert!(committed.as_ref().unwrap().inflight.is_none());assert_eq!(committed.as_ref().unwrap().revision,9);
+        s.receive(&packet,now).unwrap();assert_eq!(s.ammo_service,committed);
+    }
+
+    #[test] fn research_uses_shared_command_namespace_and_writer_queue() {
+        let now=Instant::now();let mut s=ready_research(now);
+        enqueue_research(&mut s,research_request(226),&mut vec![]).unwrap();
+        assert!(enqueue_transfer(&mut s,transfer_request(226),&mut vec![]).is_err());
+        assert!(enqueue(&mut s,request(226),&mut vec![]).is_err());
+        enqueue_transfer(&mut s,transfer_request(227),&mut vec![]).unwrap();
+        let state=s.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
+        assert!(state.command_key(state.inflight.as_ref().unwrap()).starts_with("p09e:"));
+        apply(&mut s,226,crew_reply(10,2)).unwrap();
+        let state=s.ammo_service.as_ref().unwrap();assert_eq!(state.revision,10);assert_eq!(state.wire_revision,2);
+        assert!(state.inflight.is_none());assert_eq!(state.pending.len(),1);
+        assert_eq!(s.tx.len(),2); // Account update then success, existing reliable ordering.
+    }
+
+    #[test] fn research_invalid_options_return_unavailable_without_writer() {
+        let mut s=ready_research(Instant::now());let mut r=research_request(226);r.arguments[2]=1;
+        let mut events=vec![];enqueue_research(&mut s,r,&mut events).unwrap();
+        let state=s.ammo_service.as_ref().unwrap();assert!(state.pending.is_empty());assert!(state.inflight.is_none());
+        assert_eq!(state.revision,9);assert_eq!(state.wire_revision,1);assert_eq!(s.outbox.len(),1);
+        assert!(events[0].contains("result=-10"));
     }
 
     #[test]

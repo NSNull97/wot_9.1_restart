@@ -46,18 +46,27 @@ pub fn metadata(directory:&Path,account_id:&str,database_id:i32,revision:u64,wir
     metadata_for(Profile::Ms1,directory,account_id,database_id,revision,wire)
 }
 pub fn metadata_for(profile:Profile,directory:&Path,account_id:&str,database_id:i32,revision:u64,wire:i64)->io::Result<()> {
+    metadata_with_limit(profile,directory,account_id,database_id,revision,wire,16384)
+}
+pub fn metadata_for_research(directory:&Path,account_id:&str,database_id:i32,revision:u64,wire:i64)->io::Result<()> {
+    metadata_with_limit(Profile::Ms1Is7,directory,account_id,database_id,revision,wire,crate::research_service091::MAX_STATE_BYTES)
+}
+fn metadata_with_limit(profile:Profile,directory:&Path,account_id:&str,database_id:i32,revision:u64,wire:i64,maximum:usize)->io::Result<()> {
     let filename=if profile==Profile::Ms1Is7 {"crew-cross-transfer.json"}else {"crew-transfer.json"};
     let raw=super::crew_service091::fixture_file(directory,filename,4096)?;
-    let state=super::crew_service091::fixture_file(directory,"state.bin",16384)?;
-    metadata_bytes_for(profile,&raw,&state,account_id,database_id,revision,wire)
+    let state=super::crew_service091::fixture_file(directory,"state.bin",maximum)?;
+    metadata_bytes_with_limit(profile,&raw,&state,account_id,database_id,revision,wire,maximum)
 }
 #[cfg(test)]
 fn metadata_bytes(raw:&[u8],state:&[u8],account_id:&str,database_id:i32,revision:u64,wire:i64)->io::Result<()> {
     metadata_bytes_for(Profile::Ms1,raw,state,account_id,database_id,revision,wire)
 }
 fn metadata_bytes_for(profile:Profile,raw:&[u8],state:&[u8],account_id:&str,database_id:i32,revision:u64,wire:i64)->io::Result<()> {
+    metadata_bytes_with_limit(profile,raw,state,account_id,database_id,revision,wire,16384)
+}
+fn metadata_bytes_with_limit(profile:Profile,raw:&[u8],state:&[u8],account_id:&str,database_id:i32,revision:u64,wire:i64,maximum:usize)->io::Result<()> {
     super::crew_service091::identity(account_id,database_id)?;
-    if raw.len()>4096 || state.is_empty() || state.len()>16384 {return Err(invalid("transfer metadata size"));}
+    if raw.len()>4096 || state.is_empty() || state.len()>maximum {return Err(invalid("transfer metadata size"));}
     let b=Binding::parse(raw,profile)?;
     if b.version!=1 || b.account_id!=account_id || b.native_database_id!=database_id
         || !(profile.minimum_revision()..=i32::MAX as u64).contains(&b.revision) || b.revision!=revision

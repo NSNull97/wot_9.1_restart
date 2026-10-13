@@ -1,6 +1,7 @@
 /** Narrow project-policy recruitment; ammo and crew share one SQLite worker. */
 import { spawn } from 'node:child_process';
 import { resolve, isAbsolute } from 'node:path';
+import { realpathSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
 
@@ -14,20 +15,30 @@ const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, research = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
     && transfer.policy_sha256 === TRANSFER_POLICY_SHA256), 'Explicit crew transfer policy required');
   requireValue(crossVehicle === null || (transfer !== null && exact(crossVehicle, ['version', 'policy_sha256'])
     && crossVehicle.version === 1 && crossVehicle.policy_sha256 === CROSS_CREW_POLICY_SHA256), 'Explicit cross-vehicle crew policy required');
-  const profileVersion = crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
-  const worker = crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
+  requireValue(research === null || (crossVehicle !== null && exact(research, ['version', 'policy_sha256']) && research.version === 1
+    && research.policy_sha256 === '46875923affb6bd307ad4d35397880fae1dd16fb1992ae2bfbfed607d132361c'), 'Explicit research policy required');
+  const profileVersion = research !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
+  const worker = research !== null ? 'tools/p09e_research_service.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
   requireValue(exact(ammo, ['version', 'bundle_root', 'original_root', 'account_id', 'grant'])
     && ammo.version === 1 && UUID.test(ammo.account_id) && isAbsolute(ammo.original_root)
     && exact(ammo.grant, ['grant_id', 'quantity_each']) && ammo.grant.grant_id === 'p09d-test-depot-v1'
     && ammo.grant.quantity_each === 100, 'Explicit versioned ammunition configuration required');
-  const bundle = localPath(ammo.bundle_root), db = localPath(database), fixtures = localPath(fixtureRoot);
+  // The research worker reads an existing hash-bound bundle without copying
+  // client resources into this worktree. Only the trusted configuration sets
+  // this path; every writer/output remains under localPath.
+  const bundle = research === null ? localPath(ammo.bundle_root) : (() => {
+    requireValue(isAbsolute(ammo.bundle_root) && statSync(ammo.bundle_root).isDirectory()
+      && realpathSync(ammo.bundle_root).toLowerCase() === resolve(ammo.bundle_root).toLowerCase(), 'Read-only research bundle path');
+    return resolve(ammo.bundle_root);
+  })();
+  const db = localPath(database), fixtures = localPath(fixtureRoot);
   let active = 0;
   async function run(operation, request) {
     requireValue(active < 2, 'Crew worker busy'); active++;
@@ -39,7 +50,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
         { cwd: ROOT, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
         let size = 0, errorSize = 0, exceeded = false; const parts = [];
         const timer = setTimeout(() => { exceeded = true; child.kill(); }, operation === 'activate' ? 15000 : 3500);
-        child.stdout.on('data', part => { size += part.length; if (size > 32768) { exceeded = true; child.kill(); } else parts.push(part); });
+        child.stdout.on('data', part => { size += part.length; if (size > (research === null ? 32768 : 262144)) { exceeded = true; child.kill(); } else parts.push(part); });
         child.stderr.on('data', part => { errorSize += part.length; if (errorSize > 4096) { exceeded = true; child.kill(); } });
         child.once('error', () => { clearTimeout(timer); fail(new Error('Crew worker failed')); });
         child.once('close', code => {
@@ -82,6 +93,25 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     return value;
   }
   await run('activate');
+  async function researchCommand(request) {
+    requireValue(research !== null && exact(request, ['account_id', 'native_database_id', 'command_key', 'expected_revision', 'wire_revision', 'command', 'arguments'])
+      && request.account_id === ammo.account_id && integer(request.native_database_id, 1)
+      && typeof request.command_key === 'string' && /^[\x21-\x7e]{1,96}$/.test(request.command_key)
+      && integer(request.expected_revision, 9, 2147483646) && integer(request.wire_revision, 1, 2147483646)
+      && [101, 201, 301, 302, 308].includes(request.command) && Array.isArray(request.arguments)
+      && request.arguments.length === ({ 101: 3, 201: 3, 301: 4, 302: 4, 308: 6 })[request.command]
+      && request.arguments.every(v => integer(v, -2147483648)), 'Native research request schema');
+    const value = await run('research', request);
+    requireValue(exact(value, ['status', 'account_id', 'native_database_id', 'command_key', 'revision', 'wire_revision', 'update_hex', 'replayed', 'result_code'])
+      && ['researched', 'rejected'].includes(value.status) && value.account_id === request.account_id
+      && value.native_database_id === request.native_database_id && value.command_key === request.command_key
+      && typeof value.replayed === 'boolean' && typeof value.update_hex === 'string' && /^(?:[0-9a-f]{2}){0,240}$/.test(value.update_hex)
+      && (value.status === 'researched' ? value.result_code === 0 && value.update_hex.length > 0
+        && value.revision === request.expected_revision + 1 && value.wire_revision === request.wire_revision + 1
+        : value.result_code === -10 && value.update_hex === '' && value.replayed === false
+          && value.revision === request.expected_revision && value.wire_revision === request.wire_revision), 'Native research response schema');
+    return value;
+  }
   return {
     accountId: ammo.account_id,
     async fixture(profile) {
@@ -94,6 +124,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     service: request => mutate('service', request),
     recruit: request => mutate('recruit', request),
     ...(transfer === null ? {} : { transfer: request => mutate('transfer', request) }),
+    ...(research === null ? {} : { research: researchCommand }),
   };
 }
 

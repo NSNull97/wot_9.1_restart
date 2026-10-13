@@ -34,6 +34,12 @@ if (type(_settings.get('enable_crew_transfer', False)) is not bool
 if (type(_settings.get('enable_cross_vehicle_crew', False)) is not bool
         or (_settings.get('enable_cross_vehicle_crew') and _settings.get('enable_crew_transfer') is not True)):
     raise ValueError('P04G cross-vehicle crew requires all previous explicit hangar services')
+if (type(_settings.get('enable_research_service', False)) is not bool
+        or (_settings.get('enable_research_service') and (
+            _settings.get('enable_cross_vehicle_crew') is not True
+            or _settings.get('enable_p09d_ammo_service') is not True
+            or _settings.get('enable_shared_lab') or _settings.get('enable_map_drive')))):
+    raise ValueError('P09E research requires the explicit isolated native cross-vehicle hangar')
 if (type(_settings.get('enable_shared_lab', False)) is not bool
         or (_settings.get('enable_shared_lab') and not _settings.get('enable_map_drive'))):
     raise ValueError('shared lab requires explicit original arena services')
@@ -946,7 +952,8 @@ def init(*args):
                              restrict_crew_changes=True,
                              enable_crew_recruitment=_settings.get('enable_crew_recruitment') is True,
                              enable_crew_transfer=_settings.get('enable_crew_transfer') is True,
-                             enable_cross_vehicle_crew=_settings.get('enable_cross_vehicle_crew') is True)
+                             enable_cross_vehicle_crew=_settings.get('enable_cross_vehicle_crew') is True,
+                             enable_research_service=_settings.get('enable_research_service') is True)
         if _settings.get('enable_p09d_ammo_service') is True:
             import p09d_ammo_ui
             p09d_ammo_ui.init(record, enabled=True)

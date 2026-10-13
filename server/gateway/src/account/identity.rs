@@ -49,7 +49,7 @@ fn bounded_file(path:&Path,max:u64)->io::Result<Vec<u8>> {
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
-    pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,
+    pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub research_service:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -70,6 +70,10 @@ impl Config {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("cross-vehicle crew must be explicit boolean")),
         };
         if crew_cross_vehicle && !crew_transfer {return Err(invalid("cross-vehicle crew requires crew transfer"));}
+        let research_service=match value.remove("research_service") {
+            None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("research service must be explicit boolean")),
+        };
+        if research_service && !crew_cross_vehicle {return Err(invalid("research service requires accepted cross-vehicle profile"));}
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let login_bind=local_address(text(&value,"login_bind")?)?;
@@ -86,7 +90,7 @@ impl Config {
         if token.len()!=43 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b==b'_' || b==b'-') {return Err(invalid("service token must be exactly 43 base64url characters"));}
         let seconds=value["session_duration_seconds"].as_u64().ok_or_else(||invalid("session duration integer"))?;
         if !(600..=7200).contains(&seconds) {return Err(invalid("session duration must be 600..7200 seconds"));}
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,research_service})
     }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
@@ -99,9 +103,12 @@ impl Config {
         let profile=profile(&body,&self.local_root)?;
         verify_fixture_identity(&profile)?;
         if self.ammo_service {
-            let binding=crate::ammo_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id)?;
+            let binding=if self.research_service {crate::ammo_service091::metadata_research(&profile.fixture_dir,&profile.account_id,profile.database_id)?}
+                else {crate::ammo_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id)?};
+            if self.research_service {crate::research_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;}
             if self.crew_transfer {
-                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected(self.crew_cross_vehicle),&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
+                if self.research_service {crate::crew_transfer091::metadata_for_research(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;}
+                else {crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected(self.crew_cross_vehicle),&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;}
             } else if self.crew_service {
                 crate::crew_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
             }
@@ -156,6 +163,15 @@ impl Config {
         service_reply(&bytes,profile,command_key,expected_revision,wire_revision,"recruited")
     }
 
+    pub fn research(&self,profile:&Profile,command_key:&str,expected_revision:u64,
+                    wire_revision:i64,request:&crate::research_service091::Request)->io::Result<AmmoReply> {
+        if !self.research_service || !self.ammo_service {return Err(invalid("research service is not enabled"));}
+        let body=crate::research_service091::service_request(&profile.account_id,profile.database_id,command_key,expected_revision,wire_revision,request)?;
+        let (status,bytes)=self.post("/internal/native/research",&body,Duration::from_secs(20))?;
+        if status!=200 {return Err(invalid("research service HTTP failure; recover outcome by fresh login"));}
+        service_reply(&bytes,profile,command_key,expected_revision,wire_revision,"researched")
+    }
+
     pub fn transfer_crew(&self,profile:&Profile,command_key:&str,expected_revision:u64,
                          wire_revision:i64,request:crate::crew_transfer091::Request)->io::Result<AmmoReply> {
         if !self.crew_transfer || !self.crew_service || !self.ammo_service {return Err(invalid("crew transfer is not enabled"));}
@@ -180,7 +196,7 @@ fn ammo_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64)->io::
 
 fn service_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,success_status:&str)->io::Result<AmmoReply> {
     if !(5..i32::MAX as u64).contains(&expected) || !(1..i32::MAX as i64).contains(&wire)
-        || !matches!(success_status,"serviced"|"recruited"|"transferred") {return Err(invalid("service reply cursor/status boundary"));}
+        || !matches!(success_status,"serviced"|"recruited"|"transferred"|"researched") {return Err(invalid("service reply cursor/status boundary"));}
     let value=object(bytes,&["status","account_id","native_database_id","command_key","revision",
         "wire_revision","update_hex","replayed","result_code"])?;
     if text(&value,"account_id")?!=profile.account_id || value["native_database_id"].as_i64()!=Some(profile.database_id as i64)

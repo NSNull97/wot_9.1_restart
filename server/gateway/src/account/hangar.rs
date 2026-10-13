@@ -23,6 +23,7 @@ pub struct Fixtures {
     shop: Vec<u8>,
     dossier: Vec<u8>,
     dossier_cursor: Option<DossierCursor>,
+    research: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,6 +45,7 @@ pub enum Incoming { Sync(Request), Refresh(Request), Chat(ChatRequest), Language
                     AmmoService(crate::ammo_service091::Request),
                     CrewService(crate::crew_service091::Request),
                     CrewTransfer(crate::crew_transfer091::Request),
+                    ResearchService(crate::research_service091::Request),
                     UnsupportedIntArray { id:i16, command:i16, argument_count:usize } }
 
 /// Measured gui-01 bundle: three ordinary sync calls plus friend status, roster
@@ -51,24 +53,27 @@ pub enum Incoming { Sync(Request), Refresh(Request), Chat(ChatRequest), Language
 /// Empty means the measured token-only application body; token validation stays
 /// in the gateway. Unknown methods or any truncated tail reject the whole bundle.
 pub fn requests(body: &[u8]) -> io::Result<Vec<Incoming>> {
-    requests_profile(body,false,false,false,false)
+    requests_profile(body,false,false,false,false,false)
 }
 pub fn requests_interactive(body:&[u8])->io::Result<Vec<Incoming>> {
-    requests_profile(body,true,false,false,false)
+    requests_profile(body,true,false,false,false,false)
 }
 /// Explicit service gate. Decode the complete bundle before dispatching any
 /// operation. A structurally valid unsupported layout remains a typed request
 /// so the caller can send RES_NOT_AVAILABLE without mutating account state.
 pub fn requests_ammo_service(body:&[u8])->io::Result<Vec<Incoming>> {
-    requests_profile(body,true,true,false,false)
+    requests_profile(body,true,true,false,false,false)
 }
 pub fn requests_crew_service(body:&[u8])->io::Result<Vec<Incoming>> {
-    requests_profile(body,true,true,true,false)
+    requests_profile(body,true,true,true,false,false)
 }
 pub fn requests_crew_transfer(body:&[u8])->io::Result<Vec<Incoming>> {
-    requests_profile(body,true,true,true,true)
+    requests_profile(body,true,true,true,true,false)
 }
-fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:bool,crew_transfer:bool)->io::Result<Vec<Incoming>> {
+pub fn requests_research_service(body:&[u8])->io::Result<Vec<Incoming>> {
+    requests_profile(body,true,true,true,true,true)
+}
+fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:bool,crew_transfer:bool,research_service:bool)->io::Result<Vec<Incoming>> {
     if body.len() > 512 { return Err(invalid("hangar request bundle size")); }
     let mut cursor = 0;
     let mut rows = Vec::new();
@@ -79,6 +84,9 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
         let end = cursor.checked_add(3 + length).ok_or_else(|| invalid("hangar request length overflow"))?;
         let packet = body.get(cursor..end).ok_or_else(|| invalid("truncated hangar request"))?;
         let row = match header[0] {
+            method if research_service && length>=4 && crate::research_service091::COMMANDS.contains(&i16::from_le_bytes([packet[5],packet[6]])) => {
+                Incoming::ResearchService(crate::research_service091::Request::decode(method,&packet[3..])?)
+            },
             0x8e if length == 20 && packet[3..7] == [202, 0, 245, 1] => {
                 if packet[7..] != [0;16] || rows.contains(&Incoming::ServerStats) {
                     return Err(invalid("unmeasured server statistics request"));
@@ -110,7 +118,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                 // Existing laboratory requests and revision1 refresh stay strict.
                 let cache_hint = interactive && version==0 && match i16::from_le_bytes([packet[5],packet[6]]) {
                     100 => last_change_time!=0 && third==0,
-                    300 => (1..=(MAX_FIXTURE+64) as i32).contains(&last_change_time),
+                    300 => (1..=((if research_service {crate::research_service091::MAX_SHOP_BYTES}else {MAX_FIXTURE})+64) as i32).contains(&last_change_time),
                     _ => false,
                 };
                 // UI10: __onSyncComplete advances revision, then the same
@@ -138,7 +146,8 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                     || matches!(r0, Incoming::Language { id } | Incoming::UnsupportedIntArray {id,..} if *id == r.id)
                     || matches!(r0, Incoming::AmmoService(previous) if previous.id==r.id)
                     || matches!(r0, Incoming::CrewService(previous) if previous.id==r.id)
-                    || matches!(r0, Incoming::CrewTransfer(previous) if previous.id==r.id)) {
+                    || matches!(r0, Incoming::CrewTransfer(previous) if previous.id==r.id)
+                    || matches!(r0, Incoming::ResearchService(previous) if previous.id==r.id)) {
                     return Err(invalid("duplicate sync in hangar bundle"));
                 }
                 if ammo_refresh { Incoming::AmmoRefresh {request:r,revision:version,persistent_hash:last_change_time} }
@@ -174,6 +183,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                         Incoming::AmmoService(r) => r.id == id,
                         Incoming::CrewService(r) => r.id == id,
                         Incoming::CrewTransfer(r) => r.id == id,
+                        Incoming::ResearchService(r) => r.id == id,
                         Incoming::Chat(_) => false,
                         Incoming::ServerStats => id == 202,
                         Incoming::UnsupportedIntArray {id:previous,..} => *previous==id,
@@ -207,6 +217,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                         Incoming::AmmoService(r)=>r.id==id,
                         Incoming::CrewService(r)=>r.id==id,
                         Incoming::CrewTransfer(r)=>r.id==id,
+                        Incoming::ResearchService(r)=>r.id==id,
                         Incoming::Language{id:previous}|Incoming::UnsupportedIntArray{id:previous,..}=>*previous==id,
                         Incoming::ServerStats=>id==202,Incoming::Chat(_)=>false,
                     }) {return Err(invalid("unmeasured unavailable integer-array command"));}
@@ -226,6 +237,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                     Incoming::AmmoService(r)=>Some(r.id),
                     Incoming::CrewService(r)=>Some(r.id),
                     Incoming::CrewTransfer(r)=>Some(r.id),
+                    Incoming::ResearchService(r)=>Some(r.id),
                     Incoming::ServerStats=>Some(202),
                     Incoming::Chat(_)=>None, // ClientChat has its own i64 request namespace.
                 }
@@ -289,30 +301,35 @@ pub fn chat_response(request: &ChatRequest) -> io::Result<Option<Vec<u8>>> {
 
 impl Fixtures {
     pub fn load(directory: &Path) -> io::Result<Self> {
-        Self::load_with_budget(directory,crate::transport091::MAX_SEQUENCE)
+        Self::load_with_budget(directory,crate::transport091::MAX_SEQUENCE,false)
     }
     pub fn load_interactive(directory: &Path) -> io::Result<Self> {
-        let mut fixtures=Self::load_with_budget(directory,crate::transport091::INTERACTIVE_MAX_SEQUENCE)?;
-        fixtures.dossier_cursor=grant_dossier_cursor(directory,&fixtures.dossier)?;
+        let mut fixtures=Self::load_with_budget(directory,crate::transport091::INTERACTIVE_MAX_SEQUENCE,false)?;
+        fixtures.dossier_cursor=grant_dossier_cursor(directory,&fixtures.dossier,false)?;
         Ok(fixtures)
     }
-    fn load_with_budget(directory:&Path,sequence_budget:u32)->io::Result<Self> {
-        fn read(directory: &Path, name: &str, root: Kind) -> io::Result<Vec<u8>> {
+    pub fn load_research(directory:&Path)->io::Result<Self> {
+        let mut fixtures=Self::load_with_budget(directory,crate::transport091::INTERACTIVE_MAX_SEQUENCE,true)?;
+        fixtures.dossier_cursor=grant_dossier_cursor(directory,&fixtures.dossier,true)?;
+        Ok(fixtures)
+    }
+    fn load_with_budget(directory:&Path,sequence_budget:u32,research:bool)->io::Result<Self> {
+        fn read(directory: &Path, name: &str, root: Kind, maximum:usize, nodes:usize) -> io::Result<Vec<u8>> {
             let file = File::open(directory.join(name))?;
             let metadata = file.metadata()?;
-            if !metadata.is_file() || !(4..=MAX_FIXTURE as u64).contains(&metadata.len()) {
+            if !metadata.is_file() || !(4..=maximum as u64).contains(&metadata.len()) {
                 return Err(invalid("fixture file size/type"));
             }
             let mut bytes = Vec::new();
-            file.take((MAX_FIXTURE + 1) as u64).read_to_end(&mut bytes)?;
-            validate_pickle(&bytes, root)?;
+            file.take((maximum + 1) as u64).read_to_end(&mut bytes)?;
+            validate_pickle_with_budget(&bytes,root,maximum,nodes)?;
             Ok(bytes)
         }
         let fixtures = Self {
-            state: read(directory, "state.bin", Kind::Dict)?,
-            shop: read(directory, "shop.bin", Kind::Dict)?,
-            dossier: read(directory, "dossier.bin", Kind::Tuple)?,
-            dossier_cursor: None,
+            state: read(directory, "state.bin", Kind::Dict,if research {crate::research_service091::MAX_STATE_BYTES}else {MAX_FIXTURE},if research {crate::research_service091::MAX_STATE_NODES}else {MAX_NODES})?,
+            shop: read(directory, "shop.bin", Kind::Dict,if research {crate::research_service091::MAX_SHOP_BYTES}else {MAX_FIXTURE},if research {crate::research_service091::MAX_STATE_NODES}else {MAX_NODES})?,
+            dossier: read(directory, "dossier.bin", Kind::Tuple,MAX_FIXTURE,MAX_NODES)?,
+            dossier_cursor: None, research,
         };
         // Necessary startup bound, not a promise of a 30-second session. Each
         // stream adds 11 zlib bytes; its response/header share the first chunk.
@@ -364,6 +381,7 @@ struct DossierManifest {
     wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
     account_id:String,native_database_id:i32,
     grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,crew_policy_sha256:Option<String>,
+    research_policy_sha256:Option<String>,research_catalog_sha256:Option<String>,
 }
 struct DossierCompatibility {
     snapshot_revision:Option<u32>,wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
@@ -386,7 +404,7 @@ macro_rules! metadata_fields {
                         $(let mut $field:Option<$kind>=None;)*
                         let mut keys=std::collections::BTreeSet::new();
                         while let Some(key)=map.next_key::<String>()? {
-                            if keys.len()>=16 || !keys.insert(key.clone()) {return Err(serde::de::Error::custom("duplicate/too many metadata fields"));}
+                            if keys.len()>=24 || !keys.insert(key.clone()) {return Err(serde::de::Error::custom("duplicate/too many metadata fields"));}
                             match key.as_str() {
                                 $(stringify!($field)=>{$field=Some(map.next_value::<$kind>()?);},)*
                                 _=>{if $strict {return Err(serde::de::Error::custom("unknown metadata field"));}
@@ -408,7 +426,8 @@ metadata_fields!(TestGrantMetadata,true,{grant_id:String,granted_at_ms:u64,base_
 metadata_fields!(DossierManifest,false,{fixture_version:Option<u32>,profile_version:Option<u32>,snapshot_revision:Option<u32>,
     wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
     account_id:String,native_database_id:i32,
-    grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,crew_policy_sha256:Option<String>});
+    grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,crew_policy_sha256:Option<String>,
+    research_policy_sha256:Option<String>,research_catalog_sha256:Option<String>});
 metadata_fields!(DossierCompatibility,false,{snapshot_revision:Option<u32>,wire_sync_revision:Option<u32>,
     compatibility_catalog_revision:Option<u32>,dossier_cache:Option<DossierCursor>});
 
@@ -436,9 +455,12 @@ fn granted_dossier_bytes(time:i32)->Vec<u8> {
     result.extend(time.to_le_bytes());result.extend([b'U',70]);result.extend(descriptor);result.extend(b"tet.");result
 }
 
-fn grant_dossier_cursor(directory:&Path,raw:&[u8])->io::Result<Option<DossierCursor>> {
+fn grant_dossier_cursor(directory:&Path,raw:&[u8],research:bool)->io::Result<Option<DossierCursor>> {
     let manifest=metadata::<DossierManifest>(directory,"manifest.json")?;
     let compatibility=metadata::<DossierCompatibility>(directory,"compatibility.json")?;
+    if research && !manifest.as_ref().is_some_and(|m| (m.fixture_version,m.profile_version)==(Some(9),Some(9))) {
+        return Err(invalid("research loader requires explicit profile9"));
+    }
     let manifest_cursor=manifest.as_ref().and_then(|m|m.preservation.as_ref()).and_then(|p|p.dossier_cache.as_ref());
     let compatibility_cursor=compatibility.as_ref().and_then(|c|c.dossier_cache);
     if manifest_cursor.is_none() && compatibility_cursor.is_none() {
@@ -455,10 +477,20 @@ fn grant_dossier_cursor(directory:&Path,raw:&[u8])->io::Result<Option<DossierCur
     // exact profile2 IS-7 dossier grant. The bridge validates the domain
     // snapshot. Profile5 additionally binds an explicit service fixture with
     // an independently evolving persistent revision and unchanged dossier.
-    let service_profile=if matches!((manifest.fixture_version,manifest.profile_version),(Some(5),Some(5))|(Some(6),Some(6))|(Some(7),Some(7))|(Some(8),Some(8))) {
-        let binding=crate::ammo_service091::metadata(directory,&manifest.account_id,manifest.native_database_id)?;
-        if manifest.fixture_version==Some(8) {
-            crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::Ms1Is7,directory,&manifest.account_id,manifest.native_database_id,binding.revision,binding.wire_revision)?;
+    let research_profile=research && (manifest.fixture_version,manifest.profile_version)==(Some(9),Some(9));
+    let service_profile=if research_profile || matches!((manifest.fixture_version,manifest.profile_version),(Some(5),Some(5))|(Some(6),Some(6))|(Some(7),Some(7))|(Some(8),Some(8))) {
+        let binding=if research_profile {crate::ammo_service091::metadata_research(directory,&manifest.account_id,manifest.native_database_id)?}
+            else {crate::ammo_service091::metadata(directory,&manifest.account_id,manifest.native_database_id)?};
+        if research_profile {
+            let catalog=crate::research_service091::metadata(directory,&manifest.account_id,manifest.native_database_id,binding.revision,binding.wire_revision)?;
+            if manifest.research_policy_sha256.as_deref()!=Some(crate::research_service091::POLICY_SHA256)
+                || manifest.research_catalog_sha256.as_deref()!=Some(catalog.as_str()) {return Err(invalid("research manifest policy/catalog binding"));}
+        } else if manifest.research_policy_sha256.is_some() || manifest.research_catalog_sha256.is_some() {
+            return Err(invalid("research metadata requires explicit profile9"));
+        }
+        if manifest.fixture_version==Some(8) || research_profile {
+            if research_profile {crate::crew_transfer091::metadata_for_research(directory,&manifest.account_id,manifest.native_database_id,binding.revision,binding.wire_revision)?;}
+            else {crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::Ms1Is7,directory,&manifest.account_id,manifest.native_database_id,binding.revision,binding.wire_revision)?;}
             if manifest.crew_policy_sha256.as_deref()!=Some(crate::crew_transfer091::CROSS_POLICY_SHA256) {
                 return Err(invalid("cross-vehicle crew manifest policy binding"));
             }
@@ -530,7 +562,10 @@ struct Value { kind: Kind, depth: usize }
 /// This is a structural scanner, not pickle deserialization: no imports, object
 /// constructors, memo references, persistent IDs, or executable opcodes exist.
 fn validate_pickle(bytes: &[u8], root: Kind) -> io::Result<()> {
-    if !(4..=MAX_FIXTURE).contains(&bytes.len()) || bytes[..2] != [0x80, 2] {
+    validate_pickle_with_budget(bytes,root,MAX_FIXTURE,MAX_NODES)
+}
+fn validate_pickle_with_budget(bytes:&[u8],root:Kind,maximum:usize,node_budget:usize)->io::Result<()> {
+    if !(4..=maximum).contains(&bytes.len()) || bytes[..2] != [0x80, 2] {
         return Err(invalid("fixture protocol/size"));
     }
     fn take<'a>(bytes: &'a [u8], cursor: &mut usize, length: usize) -> io::Result<&'a [u8]> {
@@ -544,7 +579,7 @@ fn validate_pickle(bytes: &[u8], root: Kind) -> io::Result<()> {
     let mut stack: Vec<Value> = Vec::new();
     while cursor < bytes.len() {
         nodes += 1;
-        if nodes > MAX_NODES { return Err(invalid("fixture node budget")); }
+        if nodes > node_budget { return Err(invalid("fixture node budget")); }
         let opcode = take(bytes, &mut cursor, 1)?[0];
         let value = match opcode {
             b'N' | 0x88 | 0x89 => Some(Value { kind: Kind::Scalar, depth: 0 }),
@@ -564,7 +599,7 @@ fn validate_pickle(bytes: &[u8], root: Kind) -> io::Result<()> {
                     let raw: [u8; 4] = take(bytes, &mut cursor, 4)?.try_into().map_err(|_| invalid("string length"))?;
                     u32::from_le_bytes(raw) as usize
                 };
-                if length > MAX_FIXTURE { return Err(invalid("fixture string budget")); }
+                if length > maximum { return Err(invalid("fixture string budget")); }
                 take(bytes, &mut cursor, length)?;
                 Some(Value { kind: Kind::Scalar, depth: 0 })
             },
@@ -603,7 +638,7 @@ fn validate_pickle(bytes: &[u8], root: Kind) -> io::Result<()> {
             _ => return Err(invalid("fixture forbidden opcode")),
         };
         if let Some(value) = value { stack.push(value); }
-        if stack.len() > MAX_NODES || stack.iter().filter(|v| v.kind == Kind::Mark).count() > MAX_DEPTH {
+        if stack.len() > node_budget || stack.iter().filter(|v| v.kind == Kind::Mark).count() > MAX_DEPTH {
             return Err(invalid("fixture stack/depth budget"));
         }
     }
@@ -612,6 +647,12 @@ fn validate_pickle(bytes: &[u8], root: Kind) -> io::Result<()> {
 
 /// Reuse the bounded inert primitive scanner for an authenticated outgoing
 /// account delta; this does not load Python objects or inspect network inputs.
+pub(crate) fn validate_research_state(bytes:&[u8])->io::Result<()> {
+    validate_pickle_with_budget(bytes,Kind::Dict,crate::research_service091::MAX_STATE_BYTES,crate::research_service091::MAX_STATE_NODES)
+}
+pub(crate) fn validate_research_shop(bytes:&[u8])->io::Result<()> {
+    validate_pickle_with_budget(bytes,Kind::Dict,crate::research_service091::MAX_SHOP_BYTES,crate::research_service091::MAX_STATE_NODES)
+}
 pub(crate) fn validate_account_delta(bytes:&[u8])->io::Result<()> {
     validate_pickle(bytes,Kind::Dict)
 }
@@ -643,7 +684,7 @@ pub fn response(request: &Request, fixtures: &Fixtures) -> io::Result<Vec<Vec<u8
         600 => &fixtures.dossier,
         _ => return Err(invalid("unimplemented hangar command")),
     };
-    response_raw(request, raw)
+    response_raw_with_budget(request,raw,if fixtures.research {crate::research_service091::MAX_SHOP_BYTES}else {MAX_FIXTURE})
 }
 
 /// Explicit Account-only outgoing service projection. Its caller binds the
@@ -656,13 +697,16 @@ pub(crate) fn response_state(request: &Request, state: &[u8]) -> io::Result<Vec<
 }
 
 fn response_raw(request: &Request, raw: &[u8]) -> io::Result<Vec<Vec<u8>>> {
+    response_raw_with_budget(request,raw,MAX_FIXTURE)
+}
+fn response_raw_with_budget(request:&Request,raw:&[u8],maximum:usize)->io::Result<Vec<Vec<u8>>> {
     let mut payload = request.id.to_le_bytes().to_vec();
     payload.extend(1i16.to_le_bytes()); // RES_STREAM
     payload.push(0); // error STRING
     payload.push(EMPTY_DICT.len() as u8);
     payload.extend(EMPTY_DICT);
     let prefix = method(0x4d, &payload)?;
-    stream(request.id, raw, prefix)
+    stream_with_budget(request.id, raw, prefix,maximum)
 }
 
 /// Complete the measured second stage of revision1 synchronization. An empty
@@ -696,8 +740,11 @@ fn variable16(id: u8, payload: &[u8]) -> io::Result<Vec<u8>> {
     Ok(result)
 }
 
-fn stream(id: i16, raw: &[u8], mut first: Vec<u8>) -> io::Result<Vec<Vec<u8>>> {
-    if raw.is_empty() || raw.len() > MAX_FIXTURE { return Err(invalid("stream payload size")); }
+fn stream(id: i16, raw: &[u8], first: Vec<u8>) -> io::Result<Vec<Vec<u8>>> {
+    stream_with_budget(id,raw,first,MAX_FIXTURE)
+}
+fn stream_with_budget(id:i16,raw:&[u8],mut first:Vec<u8>,maximum:usize)->io::Result<Vec<Vec<u8>>> {
+    if raw.is_empty() || raw.len() > maximum || maximum>32768 { return Err(invalid("stream payload size")); }
     // One bounded stored DEFLATE block. Compression is optional; checksums are not.
     let mut data = vec![0x78, 0x01, 0x01];
     data.extend((raw.len() as u16).to_le_bytes());
@@ -814,7 +861,7 @@ mod tests {
         }
         assert!(requests_interactive(&[packet.clone(),packet].concat()).is_err());
         let old=Fixtures {state:EMPTY_DICT.to_vec(),shop:EMPTY_DICT.to_vec(),
-            dossier:b"\x80\x02(K\x00]t.".to_vec(),dossier_cursor:None};
+            dossier:b"\x80\x02(K\x00]t.".to_vec(),dossier_cursor:None,research:false};
         old.validate_dossier_cursor(0,0).unwrap();assert!(old.validate_dossier_cursor(1,time).is_err());
         let granted=Fixtures {dossier:granted_dossier_bytes(time),dossier_cursor:Some(DossierCursor {
             version:1,last_change_time:time,vehicle_type_compact_descr:7169}),..old};
@@ -1095,6 +1142,83 @@ mod tests {
         assert!(load(&m,&c,Some(&metadata)).is_err());
     }
 
+    fn research_dictionary(bytes:usize)->Vec<u8> {
+        assert!(bytes>=14);let mut raw=b"\x80\x02}(U\x01xT".to_vec();
+        raw.extend(((bytes-14) as u32).to_le_bytes());raw.resize(bytes-2,b'x');raw.extend(b"u.");raw
+    }
+    #[test]
+    fn research_fixture_budgets_are_explicit_bounded_and_streamable() {
+        let maximum=crate::research_service091::MAX_STATE_BYTES;
+        let raw=research_dictionary(maximum);
+        assert!(validate_pickle(&raw,Kind::Dict).is_err());
+        validate_research_state(&raw).unwrap();validate_research_shop(&raw).unwrap();
+        let packets=stream_with_budget(227,&raw,vec![],maximum).unwrap();
+        assert_eq!(packets.len(),82);assert!(packets.iter().all(|p|p.len()<=512));
+        assert!(stream(227,&raw,vec![]).is_err());
+        assert!(validate_research_state(&research_dictionary(maximum+1)).is_err());
+        assert!(validate_research_shop(&research_dictionary(maximum+1)).is_err());
+        let mut dense=b"\x80\x02}(U\x01x](".to_vec();
+        for _ in 0..5000 {dense.extend(b"K\x01");}dense.extend(b"eu.");
+        assert!(validate_pickle(&dense,Kind::Dict).is_err());
+        validate_research_state(&dense).unwrap();
+        let mut unsafe_raw=raw.clone();unsafe_raw[2]=b'c';assert!(validate_research_state(&unsafe_raw).is_err());
+    }
+    #[test]
+    fn research_fixture_loader_binds_profile_catalog_and_all_metadata() {
+        use crate::research_service091 as research;
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let directory=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs/p09e")
+            .join(format!("profile9-{}-{stamp}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let account="00000000-0000-0000-0000-000000000001";let time=1791125440;
+        let state=research_dictionary(27000);let shop=research_dictionary(24000);let raw=granted_dossier_bytes(time);
+        for (name,data) in [("state.bin",&state),("shop.bin",&shop),("dossier.bin",&raw)] {std::fs::write(directory.join(name),data).unwrap();}
+        let state_sha=format!("{:x}",Sha256::digest(&state));
+        let cursor=serde_json::json!({"version":1,"last_change_time":time,"vehicle_type_compact_descr":7169});
+        let mut record=cursor.clone();record["payload_sha256"]=serde_json::json!(format!("{:x}",Sha256::digest(&raw)));
+        let manifest=serde_json::json!({"fixture_version":9,"profile_version":9,"snapshot_revision":9,
+            "wire_sync_revision":1,"compatibility_catalog_revision":3,"preservation":{"dossier_cache":record},
+            "account_id":account,"native_database_id":900001,"research_policy_sha256":research::POLICY_SHA256,
+            "research_catalog_sha256":research::CATALOG_SHA256,"crew_policy_sha256":crate::crew_transfer091::CROSS_POLICY_SHA256,
+            "grant":{"grant_id":"test-is7-v1","granted_at_ms":1791125440000u64,"base_profile_sha256":"a".repeat(64)}});
+        let compatibility=serde_json::json!({"snapshot_revision":9,"wire_sync_revision":1,"compatibility_catalog_revision":3,"dossier_cache":cursor});
+        let ammo=serde_json::json!({"version":1,"account_id":account,"native_database_id":900001,"revision":9,
+            "wire_revision":1,"catalog_sha256":"9c50c64b85c6301e64145f9fbb90450417dc9063bcd8c136ac6de0c9cbabca62","state_sha256":state_sha,"purchases":false,"battle":false});
+        let crew=serde_json::json!({"version":1,"account_id":account,"native_database_id":900001,"revision":9,"wire_revision":1,
+            "policy_sha256":crate::crew_transfer091::CROSS_POLICY_SHA256,"state_sha256":state_sha,"command":105,"vehicle_count":2,
+            "free_recruitment_left":0,"configuration_revision":2,"battle":false});
+        let metadata=serde_json::json!({"version":1,"account_id":account,"native_database_id":900001,"revision":9,"wire_revision":1,
+            "policy_sha256":research::POLICY_SHA256,"catalog_sha256":research::CATALOG_SHA256,"state_sha256":state_sha,
+            "shop_sha256":format!("{:x}",Sha256::digest(&shop)),"commands":research::COMMANDS,"battle":false});
+        for (name,value) in [("manifest.json",&manifest),("compatibility.json",&compatibility),("ammo-service.json",&ammo),
+            ("crew-cross-transfer.json",&crew),("research-service.json",&metadata)] {
+            std::fs::write(directory.join(name),serde_json::to_vec(value).unwrap()).unwrap();
+        }
+        let loaded=Fixtures::load_research(&directory).unwrap();assert_eq!(loaded.sizes(),[27000,24000,raw.len()]);
+        assert!(Fixtures::load_interactive(&directory).is_err());
+        assert!(crate::ammo_service091::metadata(&directory,account,900001).is_err());
+        assert!(crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::Ms1Is7,&directory,account,900001,9,1).is_err());
+        for field in ["profile_version","research_catalog_sha256","research_policy_sha256"] {
+            let mut bad=manifest.clone();bad[field]=serde_json::json!(0);
+            std::fs::write(directory.join("manifest.json"),serde_json::to_vec(&bad).unwrap()).unwrap();
+            assert!(Fixtures::load_research(&directory).is_err(),"{field}");
+        }
+        std::fs::write(directory.join("manifest.json"),serde_json::to_vec(&manifest).unwrap()).unwrap();
+        for field in ["commands","state_sha256","shop_sha256","catalog_sha256"] {
+            let mut bad=metadata.clone();bad[field]=serde_json::json!(0);
+            std::fs::write(directory.join("research-service.json"),serde_json::to_vec(&bad).unwrap()).unwrap();
+            assert!(Fixtures::load_research(&directory).is_err(),"{field}");
+        }
+        // Optional read-only integration against a real separately produced fixture.
+        // The synthetic complete profile above is always tested on every host.
+        if let Some(actual)=std::env::var_os("WOT_P09E_READONLY_FIXTURE") {
+            let actual=std::path::PathBuf::from(actual);let loaded=Fixtures::load_research(&actual).unwrap();
+            assert!(loaded.research);assert!(loaded.dossier_cursor.is_some());
+            assert!(Fixtures::load_interactive(&actual).is_err());
+            println!("P09E actual read-only fixture {:?} sizes {:?}",actual,loaded.sizes());
+        }
+    }
+
     #[test]
     fn fixture_rejects_executable_opcodes_truncations_and_trailing_bytes() {
         let valid = b"\x80\x02}(U\x01x](K\x01K\x02eu.";
@@ -1192,7 +1316,7 @@ mod tests {
 
     #[test]
     fn response_does_not_accept_other_commands_and_gui_has_one_context() {
-        let fixtures = Fixtures { state: EMPTY_DICT.to_vec(), shop: EMPTY_DICT.to_vec(), dossier: b"\x80\x02).".to_vec(), dossier_cursor:None };
+        let fixtures = Fixtures { state: EMPTY_DICT.to_vec(), shop: EMPTY_DICT.to_vec(), dossier: b"\x80\x02).".to_vec(), dossier_cursor:None,research:false };
         assert!(response(&Request { id: 221, command: 999 }, &fixtures).is_err());
         assert!(response(&Request { id: 0, command: 100 }, &fixtures).is_err());
         let gui = show_gui(1).unwrap();

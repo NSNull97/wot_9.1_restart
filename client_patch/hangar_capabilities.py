@@ -2,7 +2,9 @@
 """Explicit unavailable actions for the current local test service.
 
 Original module data, parameter highlighting and information windows are kept.
-The measured mutation entry point is denied; six genuinely empty optional-item
+The measured mutation entry point is denied by default; the explicit research
+lab admits the audited original callback for five supported module kinds only.
+Six genuinely empty optional-item
 selectors show an explicit unavailable tooltip instead of an empty dropdown.
 This policy is not server-side authorization or a purchase implementation.
 The battle button keeps its original update and tooltip lifecycle, but cannot
@@ -12,6 +14,17 @@ Appearance and maintenance entry points warn before opening unsupported views.
 
 import hashlib
 import types
+
+try:
+    _INTEGER_TYPES = (int, long)
+    _STRING_TYPES = (str, unicode)
+except NameError:
+    _INTEGER_TYPES = (int,)
+    _STRING_TYPES = (str,)
+
+MODULE_CALLBACK_SHA256 = '02f79342b691d6c512bd441feb8d9239cf820f9044269f9f040f151ad9a09377'
+PROCESS_WRAPPER_SHA256 = '3814ec7ed28deee153a088aa3def670d9cbce6ecc2bdd286e85165a2f3c9f701'
+RESEARCH_MODULE_TYPES = (2, 3, 4, 5, 7)
 
 AUDITED_SOURCE = 'scripts/client/gui/Scaleform/daapi/view/lobby/hangar/AmmunitionPanel.py'
 AUDITED_PYC_SHA256 = '54d139dd4280314111ce509c15360da8d932cfbc356b30d40c1d9ca96c3addc8'
@@ -26,6 +39,53 @@ EMPTY_SLOT_NAMES = {
 }
 _SLOT_STATE = '_sr_empty_catalog_policy_state'
 _ABSENT = object()
+
+
+def _module_cd(value):
+    """Original Flash uses decimal strings; do not invoke arbitrary __int__."""
+    if type(value) in _INTEGER_TYPES:
+        result = value
+    elif type(value) in _STRING_TYPES and 1 <= len(value) <= 8 and all('0' <= c <= '9' for c in value):
+        result = int(value)
+    else:
+        return None
+    return result if 0 < result <= 0xffffff else None
+
+
+def _research_selection(new_id, slot, old_id, remove):
+    compact = _module_cd(new_id)
+    previous = _module_cd(old_id) if old_id is not None else None
+    return (compact is not None and compact & 15 in RESEARCH_MODULE_TYPES
+            and type(slot) in _INTEGER_TYPES and slot == 0 and type(remove) is bool and not remove
+            and (old_id is None or previous is not None and previous & 15 == compact & 15))
+
+
+def _audit_module_class(panel_class):
+    """Retain audited original @adisp.process wrapper and its generator closure."""
+    wrapper = panel_class.__dict__['setVehicleModule']
+    code = getattr(wrapper, 'func_code', getattr(wrapper, '__code__', None))
+    closure = getattr(wrapper, 'func_closure', getattr(wrapper, '__closure__', None))
+    if (not isinstance(wrapper, types.FunctionType) or code is None
+            or code.co_filename != 'scripts/common/adisp.py' or code.co_firstlineno != 138
+            or code.co_argcount != 0 or code.co_flags != 31
+            or code.co_freevars != ('func', 'stepCallback') or code.co_names != ('CallbackDispatcher',)
+            or code.co_consts != (None,) or hashlib.sha256(code.co_code).hexdigest() != PROCESS_WRAPPER_SHA256
+            or closure is None or len(closure) != 2 or closure[1].cell_contents is not None):
+        raise RuntimeError('native #717 module process wrapper mismatch')
+    original = closure[0].cell_contents
+    code = getattr(original, 'func_code', getattr(original, '__code__', None))
+    names = ('None', 'g_currentVehicle', 'item', 'g_itemsCache', 'items', 'getItemByCD', 'int',
+             'itemTypeID', 'GUI_ITEM_TYPE', 'OPTIONALDEVICE', 'getInstallerProcessor', 'False', 'True',
+             'request', 'auxData', 'SystemMessages', 'g_instance', 'pushI18nMessage', 'userMsg',
+             'sysMsgType', 'len', 'success', 'getConflictedEquipments', 'isInInventory', 'Waiting',
+             'show', 'ModuleBuyer', 'hide', 'TURRET', 'GUN', 'intCD', 'tryToLoadDefaultShellsLayout')
+    if (not isinstance(original, types.FunctionType) or code is None or code.co_filename != AUDITED_SOURCE
+            or code.co_firstlineno != 240 or code.co_argcount != 5
+            or code.co_varnames[:5] != ('self', 'newId', 'slotIdx', 'oldId', 'isRemove')
+            or code.co_names != names or code.co_consts != (None, 'type', 'buyItem', 'count', 1,
+                'buyForCredits', 'conflictedEqs', 'install', 'applyModule')
+            or hashlib.sha256(code.co_code).hexdigest() != MODULE_CALLBACK_SHA256):
+        raise RuntimeError('native #717 module callback mismatch')
 
 _guard = None
 _battle_guard = None
@@ -67,10 +127,13 @@ BATTLE_METHODS = (
 class _ModuleChangeGuard(object):
     """Own reversible class binding; dependencies permit isolated policy tests."""
 
-    def __init__(self, panel_class, messages, record):
+    def __init__(self, panel_class, messages, record, allow_research=False):
+        if type(allow_research) is not bool:
+            raise ValueError('explicit research module capability required')
         self.panel_class = panel_class
         self.messages = messages
         self.record = record
+        self.allow_research = allow_research
         self.original = panel_class.__dict__['setVehicleModule']
         self.original_update = panel_class.__dict__['_update']
         self.original_data = self._descriptor('as_setDataS')
@@ -85,10 +148,14 @@ class _ModuleChangeGuard(object):
 
         # The exact five-argument signature is the measured #717 DAAPI callback.
         # It is a void UI action: returning None does not acknowledge a server
-        # operation. No original processor, purchase or entity method is called.
+        # operation. Only the explicit audited research branch calls the original.
         def denied(panel, newId, slotIdx, oldId, isRemove):
             if not guard.active:
                 raise RuntimeError('module capability callback used after cleanup')
+            if guard.allow_research and _research_selection(newId, slotIdx, oldId, isRemove):
+                guard.record('research_module_callback', original_mutation_called=True,
+                             module_compact_id=_module_cd(newId), authority='server', native_acceptance='NOT_RUN')
+                return guard.original(panel, newId, slotIdx, oldId, isRemove)
             action = 'remove' if isRemove else 'install_or_purchase'
             guard.record('capability_denied', capability='module_changes',
                          action=action, origin='project_test_service_policy',
@@ -203,7 +270,7 @@ class _ModuleChangeGuard(object):
             if self.panel_class.__dict__.get(name, _ABSENT) is not original:
                 raise RuntimeError('module capability binding changed before policy installation: ' + name)
         self.record('capability_policy', phase='install',
-                    module_changes_available=False, module_details_available=True,
+                    module_changes_available=self.allow_research, module_details_available=True,
                     policy_version=2, empty_optional_selectors='explicit_unavailable',
                     audited_source=AUDITED_SOURCE,
                     audited_pyc_sha256=AUDITED_PYC_SHA256)
@@ -480,7 +547,7 @@ def _install_guards(module_guard, battle_guard, window_guard=None):
         raise
 
 
-def init(record):
+def init(record, enable_research_service=False):
     """Install once, after original GUI initialization and before opening views."""
     if _guard is not None or _battle_guard is not None or _window_guard is not None:
         raise RuntimeError('hangar capability policies initialized twice')
@@ -489,7 +556,9 @@ def init(record):
     from gui import SystemMessages
     _audit_battle_class(FightButton)
     _audit_window_class(AmmunitionPanel)
-    _install_guards(_ModuleChangeGuard(AmmunitionPanel, SystemMessages, record),
+    if enable_research_service:
+        _audit_module_class(AmmunitionPanel)
+    _install_guards(_ModuleChangeGuard(AmmunitionPanel, SystemMessages, record, enable_research_service),
                     _BattleGuard(FightButton, SystemMessages, record),
                     _WindowGuard(AmmunitionPanel, SystemMessages, record))
 

@@ -1,3 +1,37 @@
+## 2026-10-13 — P09E research/purchase/install implemented; native gate open
+
+**SCOPED_AUTOMATIC_PASS / FULL_REGRESSION_INCOMPLETE / OWNER_NATIVE_NOT_RUN.**
+Branch `codex/p09e-tank-module-research`, accepted base626867c. The existing
+account writer now supports source #717 research prerequisites, separate tank
+and module ownership, purchase and compatible installation under explicit
+zero-XP/zero-credit `test_lab` policy. Historical prices remain in the pinned
+catalogue:374 tanks,2120 module types,2062 indexed edges. No unlock-all grant.
+Three source garage slots are retained. Source-derived configurations remain
+garage-only; all mutable profile9 vehicles have battle admission disabled.
+
+Actual isolated SQLite/HTTP checks cover research→purchase→install→tank purchase,
+unchanged resources, restart/idempotent replay, authentication, rollback and
+concurrent writers. Review repaired bounded large-account journal/state growth:
+one replay snapshot stays under256KiB; research-only native state/shop use32KiB.
+Maximum reviewed source-reachable state22385bytes; journal155427bytes. No native
+client, installation or shared/root process was changed.
+
+257 distinct new/affected Python tests PASS; four actual CPython2.7.3 compilations
+PASS. Node scoped25PASS,16 historical native-fixture prerequisites NOT_RUN.
+Gateway scoped boundaries95PASS and targeted11PASS/buildPASS. Full Rust attempt
+is **568PASS/172FAIL**, all failures traced to unavailable local fixture/worker
+prerequisites; five subsequently pass through an existing read-only fixture path,
+167 remain unavailable. This is not a full-suite PASS. Exact Python/Node counts,
+missing prerequisite details and source/commit receipts are in the evidence index.
+
+**Required owner native gate: after2026-10-14 09:00 Asia/Yekaterinburg.** Native
+UI/wire/pixels/relogin remain NOT_RUN; no merge to main. Existing primary P05
+handling debt and its ACTIVE_GATE remain unchanged.
+
+[Files, tests, commands, evidence, limits and rollback](evidence-index/P09E_TANK_MODULE_RESEARCH.md).
+**One next P09E step:** the isolated owner native checklist in
+[P09E_NATIVE_HANDOFF](research/P09E_NATIVE_HANDOFF.md) after the specified time.
+
 ## 2026-10-13 — P04G native MS-1 / IS-7 crew transfers accepted
 
 **PASS_NATIVE_CROSS_VEHICLE_CREW_CURRENT_MAIN.** The shared assignment planner
