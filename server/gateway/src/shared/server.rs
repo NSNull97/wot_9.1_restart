@@ -696,15 +696,14 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 };
                 if fields.digest != digest { send_wire(socket, peer, &login::rejection(request, 69), Channel::Login, &mut capture)?; continue; }
                 let attempt = LoginAttempt::new(fields.session_key, fields.nonce, peer);
-                let tag = encrypted_attempt_tag(&assembled)?;
                 if let Some(job) = &auth {
-                    if !job.pending_duplicate(&attempt, &tag) { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
+                    if !job.pending_duplicate(&attempt, &fields) { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
                     continue;
                 }
                 if table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
                     send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; continue;
                 }
-                match start_auth(config.clone(), request, peer, &fields, tag, false) {
+                match start_auth(config.clone(), request, peer, &fields, false) {
                     Ok(job) => { auth = Some(job); last_auth = Some(now); },
                     Err(_) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; },
                 }

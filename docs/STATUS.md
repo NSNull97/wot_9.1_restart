@@ -1,3 +1,39 @@
+## 2026-10-14 — P04J original dismissal and sparse crew accepted
+
+**PASS_NATIVE_DISMISSAL_SPARSE_CREW_CURRENT_SOURCE.** Original protected
+confirmation rejects wrong input and accepts the original correct input;
+simple50% dismissal also works. Six real commands dismiss IDs3/5, hire driver11
+and transfer retained learned driver2 through MS-1. Fresh native login preserves
+revision55/config45/quota5/next12, MS1[4,11], IS7[6,7,8,10,9], nine active
+members and immutable retired provenance. No ID reuse or quota refund.
+
+Native18 preflight and19/20 scenario/relogin pass independent exact wire,
+SQLite, original descriptors, native callbacks and inspected pixels. Each final
+install binds36 current modules through actual CPython2.7.3 compilation.
+All20 owned installs are restored and60 recorded owned process instances ended;
+one old PID was reused by an unrelated later node_repl process, left untouched.
+Ports are free and control is unarmed. Earlier failed attempts are preserved.
+
+Current-source checks:744 Rust/build;1176 distinct applicable Python;106 Node;
+13 actual CPython2.7.3 compile checks and Unicode execution; layout96/22 and
+8 layout checks PASS. The measured randomized-RSA pending-login retry defect
+also passes an actual delayed native login. Physical owner input remains
+NOT_RUN, deferred until after09:00 on2026-10-14 Asia/Yekaterinburg.
+
+Ordinary learning requires100% primary qualification; base Sixth Sense is the
+owner exception. Its combat signal, earned XP progression, paid tariffs and
+remaining operations are not accepted by J. Reflected Flash object/Boolean
+getters remain unreliable; original callbacks, actual Enter behavior and pixels
+provide the scoped evidence, without manufactured enabled/validation values.
+
+[Evidence, files, commands, limits and rollback](evidence-index/P04J_NATIVE_CREW_DISMISSAL.md).
+Branch `codex/p04j-native-crew-dismissal`, baseline maina5ca87e;
+commit/no-ff merge/remote SHA are recorded in
+`local/evidence/20261013-p04j-native-dismissal-01/acceptance-final/`.
+The [complete-crew objective](plans/P04_CREW_FUNCTIONALITY_091.md) remains active.
+**One next crew card:** original Barracks recruitment through CMD303 with
+free50% hires, native counts/filters and durable sparse identities. Primary P05 unchanged.
+
 ## 2026-10-13 — P04I original PersonalCase and skill selection accepted
 
 **PASS_NATIVE_PERSONALCASE_FIRST_SKILL_CURRENT_SOURCE.** Original #717

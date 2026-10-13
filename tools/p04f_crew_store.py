@@ -125,6 +125,41 @@ class NativeCrewTransferStore(NativeCrewStore):
     def _historical_member_matches(self, historical, current):
         return all(historical[key] == current[key] for key in ("native_id", "crew_id", "role", "descriptor_hex"))
 
+    def _historical_members(self, crew):
+        return crew["members"]
+
+    def _extend_crew_projection(self, account_id, value):
+        return value
+
+    def _check_crew_identities(self, account_id, value, original):
+        require([r["crew_id"] for r in value["members"][:2]] == [r["crew_id"] for r in original], "CORRUPT_STORE")
+        for row in value["members"][2:]:
+            require(row["crew_id"] == self._contract().recruit_identity(account_id, row["native_id"]), "CORRUPT_STORE")
+
+    def _retire_crew_member(self, account, member, request, revision, configuration_revision):
+        raise TransactionError("UNSUPPORTED_CREW_RETIREMENT")
+
+    def _persist_crew_members(self, account, before, after, request, revision):
+        """One transaction's member writes; versioned retirement stays inside this writer."""
+        c = self.connection
+        old = {row["native_id"]: row for row in before["members"]}
+        current = {row["native_id"]: row for row in after["members"]}
+        # Vacate first, then assign: the unique-seat index is never bypassed.
+        for identity, row in old.items():
+            changed = current.get(identity)
+            if changed is None or any(row[k] != changed[k] for k in ("vehicle_native_id", "seat")):
+                c.execute("UPDATE p04d_crew_member SET vehicle_native_id=-1,seat=NULL WHERE account_id=? AND native_id=?", (account, identity))
+        self._failpoint("after_transfer_unassign")
+        for identity in sorted(set(old) - set(current)):
+            self._retire_crew_member(account, old[identity], request, revision, after["configuration_revision"])
+        for identity, row in current.items():
+            if identity not in old:
+                c.execute("INSERT INTO p04d_crew_member VALUES (?,?,?,?,?,?,?)", (account, identity, row["crew_id"], row["role"], row["descriptor_hex"], row["vehicle_native_id"], row["seat"]))
+            else:
+                c.execute("UPDATE p04d_crew_member SET vehicle_native_id=?,seat=?,descriptor_hex=? WHERE account_id=? AND native_id=?",
+                    (row["vehicle_native_id"], row["seat"], row["descriptor_hex"], account, identity))
+        self._failpoint("after_transfer_assign")
+
     def __init__(self, path, *, failpoint=None):
         super().__init__(path, failpoint=failpoint)
         self._allow_pretransfer = False
@@ -164,6 +199,7 @@ class NativeCrewTransferStore(NativeCrewStore):
         value = {"policy_sha256": contract.POLICY_SHA256, "free_recruitment_left": meta["free_left"],
             "next_native_id": meta["next_native_id"], "configuration_revision": meta["configuration_revision"],
             "members": [dict(row) for row in rows]}
+        value = self._extend_crew_projection(account_id, value)
         try:
             contract.native_crew(value)
         except (ValueError, TypeError, KeyError) as error:
@@ -171,9 +207,7 @@ class NativeCrewTransferStore(NativeCrewStore):
         imported = self._import(account_id)
         require(meta["source_bundle_sha256"] == imported["bundle_sha256"], "CORRUPT_STORE")
         original = _object(imported["base_json"])["crew"]
-        require([r["crew_id"] for r in value["members"][:2]] == [r["crew_id"] for r in original], "CORRUPT_STORE")
-        for row in value["members"][2:]:
-            require(row["crew_id"] == contract.recruit_identity(account_id, row["native_id"]), "CORRUPT_STORE")
+        self._check_crew_identities(account_id, value, original)
         return value
 
     def _snapshot(self, account_id, revision, vehicles):
@@ -340,19 +374,7 @@ class NativeCrewTransferStore(NativeCrewStore):
                 vehicle = next((r for r in profile["vehicles"] if r["vehicle_id"] == vehicle_id), None)
                 require(vehicle is not None and vehicle["state"] == "available", "VEHICLE_RESERVED")
             after = contract.plan_operation(before, request["layout"], operation=operation, account_id=account)
-            # Vacate first, then assign: the unique-seat index is never bypassed.
-            for row in before["members"]:
-                changed = after["members"][row["native_id"] - 1]
-                if (row["vehicle_native_id"], row["seat"]) != (changed["vehicle_native_id"], changed["seat"]):
-                    c.execute("UPDATE p04d_crew_member SET vehicle_native_id=-1,seat=NULL WHERE account_id=? AND native_id=?", (account, row["native_id"]))
-            self._failpoint("after_transfer_unassign")
-            for row in after["members"]:
-                if row["native_id"] > len(before["members"]):
-                    c.execute("INSERT INTO p04d_crew_member VALUES (?,?,?,?,?,?,?)", (account, row["native_id"], row["crew_id"], row["role"], row["descriptor_hex"], row["vehicle_native_id"], row["seat"]))
-                else:
-                    c.execute("UPDATE p04d_crew_member SET vehicle_native_id=?,seat=?,descriptor_hex=? WHERE account_id=? AND native_id=?",
-                        (row["vehicle_native_id"], row["seat"], row["descriptor_hex"], account, row["native_id"]))
-            self._failpoint("after_transfer_assign")
+            self._persist_crew_members(account, before, after, request, revision + 1)
             require(c.execute("UPDATE p04d_crew_meta SET next_native_id=?,free_left=?,configuration_revision=? WHERE account_id=? AND configuration_revision=?",
                 (after["next_native_id"], after["free_recruitment_left"], after["configuration_revision"], account, before["configuration_revision"])).rowcount == 1, "STALE_CREW")
             self._failpoint("after_transfer_meta_update")
@@ -398,8 +420,9 @@ class NativeCrewTransferStore(NativeCrewStore):
             after = contract.plan_operation(result["before_crew"], request["layout"], operation=operation, account_id=request["account_id"])
             require(after == result["after_crew"], "CORRUPT_STORE")
             current = profile["crew_inventory"]
-            for member in after["members"]:
-                actual = current["members"][member["native_id"] - 1]
+            current_by_id = {m["native_id"]: m for m in self._historical_members(current)}
+            for member in self._historical_members(after):
+                actual = current_by_id[member["native_id"]]
                 require(self._historical_member_matches(member, actual), "CORRUPT_STORE")
             require(after["configuration_revision"] <= current["configuration_revision"], "CORRUPT_STORE")
         except (ValueError, KeyError, TypeError, IndexError) as error:

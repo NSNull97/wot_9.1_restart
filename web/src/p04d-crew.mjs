@@ -10,13 +10,14 @@ export const TRANSFER_POLICY_SHA256 = '35a58c8e13d9b815f8552371bbd6556ba10c09175
 export const CROSS_CREW_POLICY_SHA256 = '20f7d65c6d360a17f164cb6e4eaa73056a58a793727d4bfbecc1358e1f21969f';
 export const ROSTER_CREW_POLICY_SHA256 = '3e86a495c028570d96a479f409dc578875652e01f60f6ac8c42c5c1bae51737c';
 export const PROGRESSION_CREW_POLICY_SHA256 = 'fd79729bbaf926fe2567382be086c5e730c7c6474debe338b3052bb12ba62184';
+export const DISMISSAL_CREW_POLICY_SHA256 = 'c7f6d05be033d7ea75b8be50b3a4578d6a4167a9d3d5dc4ea8975878633c74b2';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
   && Object.keys(v).sort().join(',') === [...keys].sort().join(',');
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
@@ -27,8 +28,10 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     && rosterRecruitment.version === 1 && rosterRecruitment.policy_sha256 === ROSTER_CREW_POLICY_SHA256), 'Explicit roster recruitment policy required');
   requireValue(progression === null || (rosterRecruitment !== null && exact(progression, ['version', 'policy_sha256'])
     && progression.version === 1 && progression.policy_sha256 === PROGRESSION_CREW_POLICY_SHA256), 'Explicit crew progression policy required');
-  const profileVersion = progression !== null ? 10 : rosterRecruitment !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
-  const worker = progression !== null ? 'tools/p04i_crew_store.py' : rosterRecruitment !== null ? 'tools/p04h_crew_store.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
+  requireValue(dismissal === null || (progression !== null && exact(dismissal, ['version', 'policy_sha256'])
+    && dismissal.version === 1 && dismissal.policy_sha256 === DISMISSAL_CREW_POLICY_SHA256), 'Explicit crew dismissal policy required');
+  const profileVersion = dismissal !== null ? 11 : progression !== null ? 10 : rosterRecruitment !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
+  const worker = dismissal !== null ? 'tools/p04j_crew_store.py' : progression !== null ? 'tools/p04i_crew_store.py' : rosterRecruitment !== null ? 'tools/p04h_crew_store.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
   requireValue(exact(ammo, ['version', 'bundle_root', 'original_root', 'account_id', 'grant'])
     && ammo.version === 1 && UUID.test(ammo.account_id) && isAbsolute(ammo.original_root)
     && exact(ammo.grant, ['grant_id', 'quantity_each']) && ammo.grant.grant_id === 'p09d-test-depot-v1'
@@ -60,7 +63,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     } finally { active--; }
   }
   async function mutate(operation, request) {
-    requireValue(['recruit', 'service', ...(transfer === null ? [] : ['transfer']), ...(progression === null ? [] : ['learn'])].includes(operation), 'Unsupported crew operation');
+    requireValue(['recruit', 'service', ...(transfer === null ? [] : ['transfer']), ...(progression === null ? [] : ['learn']), ...(dismissal === null ? [] : ['dismiss'])].includes(operation), 'Unsupported crew operation');
     // The G/H migrations retain immutable predecessor command receipts. Only that opt-in
     // bridge admits their older cursors; the store binds the complete request
     // to its ledger and older cursors may return successful replays only.
@@ -69,9 +72,9 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
       && request.account_id === ammo.account_id && integer(request.native_database_id, 1)
       && typeof request.command_key === 'string' && /^[\x21-\x7e]{1,96}$/.test(request.command_key)
       && integer(request.expected_revision, minimumRequestRevision) && integer(request.wire_revision, 1, 2147483646)
-      && Array.isArray(request.layout) && request.layout.length === (operation === 'recruit' ? 4 : ['transfer', 'learn'].includes(operation) ? 3 : 16)
+      && Array.isArray(request.layout) && request.layout.length === (operation === 'recruit' ? 4 : ['transfer', 'learn', 'dismiss'].includes(operation) ? 3 : 16)
       && request.layout.every(v => integer(v, -2147483648)), 'Native crew request schema');
-    const value = await run(operation, request), success = operation === 'learn' ? 'learned' : operation === 'recruit' ? 'recruited' : operation === 'transfer' ? 'transferred' : 'serviced';
+    const value = await run(operation, request), success = operation === 'dismiss' ? 'dismissed' : operation === 'learn' ? 'learned' : operation === 'recruit' ? 'recruited' : operation === 'transfer' ? 'transferred' : 'serviced';
     const historicalOnly = request.expected_revision < profileVersion;
     requireValue(exact(value, ['status', 'account_id', 'native_database_id', 'command_key', 'revision', 'wire_revision', 'update_hex', 'replayed', 'result_code'])
       && [success, 'rejected'].includes(value.status) && value.account_id === request.account_id
@@ -97,6 +100,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
         && integer(value.revision, profileVersion) && value.profile.profile_version === profileVersion, 'Crew fixture identity mismatch');
       return localPath(value.fixture_dir);
     },
+    ...(dismissal === null ? {} : { dismiss: request => mutate('dismiss', request) }),
     ...(progression === null ? {} : { learn: request => mutate('learn', request) }),
     service: request => mutate('service', request),
     recruit: request => mutate('recruit', request),

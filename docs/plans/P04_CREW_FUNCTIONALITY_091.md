@@ -49,8 +49,38 @@ Owner exceptions to historical behavior:
    Combat-dependent perk effects cannot be accepted from a hangar icon alone.
 
 Status: IN_PROGRESS. P04H native recruitment and P04I PersonalCase/first-skill
-selection are accepted. I proves original CMD151 and persistence at0% skill,
-not battle XP or combat effects. Next card: native dismissal with sparse roster,
-monotonic identities and retained historical replay. Qualification/retraining,
+selection and P04J original dismissal are accepted. I proves original CMD151
+and persistence at0% skill, not battle XP or combat effects. J proves native
+confirmation, sparse retirement, subsequent hire/transfer and fresh login.
+Next card: original Barracks recruitment through CMD303, native counts/filters,
+free50 policy and monotonic allocation. Qualification/retraining,
 reset, paid recruitment, personalization, barracks/bulk operations and combat
 effects remain separate outstanding work; no whole-crew PASS is claimed.
+
+## Read-only research prepared for later cards
+
+The owned evidence root `local/evidence/20261013-crew-complete-research-01/`
+now contains the following source-bound findings. These are implementation
+inputs, not runtime acceptance or permission to invent unresolved parameters.
+
+- `qualification-next/`: original reset/retraining request layouts, retained
+  skill/qualification transitions and actual CPython2.7.3 arithmetic checks.
+  `tariffs01/` separates historical official indexed leads from unavailable
+  source documents; exact served #717 numeric tariff rows remain UNKNOWN.
+- `perk-effects-next/`: all24 learnables (15 continuous skills,9 perks),
+  source constants, original localized aggregation descriptions and unresolved
+  combat semantics. Seven original sources and20 authored arithmetic cases
+  on CPython2.7.3 are pinned. Base Sixth Sense18 and inactive woodHunter41
+  are excluded from this learned-skill set.
+- `sixth-next/`: original own-vehicle misc-status handling invokes the battle
+  indicator without checking learned skills or qualification. Source delay3s
+  is established; actual wire method, authoritative observation scheduling,
+  repeat/death behavior and complete display timing remain unaccepted.
+- `next-small-card01/`: proposed next operation after accepted J is original
+  Barracks recruitment through CMD303, reusing the owner's free50 policy and
+  sparse lifetime allocator. Exact shop revision/callback binding and native
+  Barracks proof are prerequisites. ReturnCrew157 is deferred because original
+  client reads do not establish authoritative lastCrew update timing.
+
+Current implementation still stores only a first selected skill at0% and no
+earned/free crew XP. The requested complete crew system is not complete.

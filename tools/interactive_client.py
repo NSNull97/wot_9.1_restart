@@ -27,7 +27,7 @@ MODULES += ('p09d_ammo_ui', 'p09d_ammo_scenario')
 MODULES += ('p04d_crew_ui',)
 MODULES += ('p04f_crew_ui',)
 MODULES += ('p04g_crew_ui',)
-MODULES += ('p04h_crew_ui', 'p04i_crew_ui')
+MODULES += ('p04h_crew_ui', 'p04i_crew_ui', 'p04j_crew_ui')
 
 
 def digest(payload):
@@ -123,6 +123,9 @@ def prepare(args):
     cross_vehicle = bool(getattr(args, 'enable_cross_vehicle_crew', False))
     roster = bool(getattr(args, 'enable_roster_recruitment', False))
     progression = bool(getattr(args, 'enable_crew_progression', False))
+    dismissal = bool(getattr(args, 'enable_crew_dismissal', False))
+    if dismissal and not progression:
+        raise ValueError('P04J dismissal requires all earlier explicit hangar services')
     if ammo_service and (shared_lab or args.enable_map_drive):
         raise ValueError('P09D ammunition service is restricted to the native hangar')
     if recruitment and (copy_info is None or not ammo_service or shared_lab or args.enable_map_drive):
@@ -174,6 +177,10 @@ def prepare(args):
     payloads, resource_evidence = interactive_resource_overrides(
         root, args.disable_legacy_license_dialog, args.diagnostic_no_license_dialog,
         has_control=control is not None)
+    if dismissal:
+        from p04j_dismissal_flash import application_display_payload, APPLICATION_TARGET
+        payloads[APPLICATION_TARGET], resource_evidence['crew_dismissal_flash'] = application_display_payload(original)
+        resource_evidence['crew_dismissal_flash']['tool_sha256'] = sha256(ROOT/'tools/p04j_dismissal_flash.py')
     scripts_path = 'res_mods/0.9.1/scripts_config.xml'
     scripts = ET.fromstring(payloads[scripts_path])
     host = scripts.find('login/host')
@@ -264,6 +271,8 @@ def prepare(args):
         settings['enable_roster_recruitment'] = True
     if progression:
         settings['enable_crew_progression'] = True
+    if dismissal:
+        settings['enable_crew_dismissal'] = True
     if shared_lab:
         settings['enable_shared_lab'] = True
     if catalog_spec is not None:
@@ -446,6 +455,7 @@ def main():
                       help='Original MS-1 crew transfer callbacks; requires explicit recruitment and ammunition service')
     prep.add_argument('--enable-roster-recruitment', action='store_true', help='Enable the explicit profile9 free50 roster policy; requires all earlier crew services')
     prep.add_argument('--enable-crew-progression', action='store_true', help='Enable profile10 native PersonalCase and first-skill selection; requires all previous crew services')
+    prep.add_argument('--enable-crew-dismissal', action='store_true', help='Enable profile11 sparse crew and original dismissal confirmation; requires progression')
     prep.add_argument('--enable-cross-vehicle-crew', action='store_true',
                       help='Original MS-1/IS-7 crew callbacks; requires transfer, recruitment and ammunition service')
     prep.add_argument('--capture-hangar', action='store_true',
