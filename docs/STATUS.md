@@ -1,5 +1,34 @@
 ## 2026-10-13 — P06Q tree visual/state sync follow-up
 
+### Active owner stand — treeobserve10, 2026-10-13 09:24 UTC
+
+Pitch correction source `d316828049569f58d82756efec5f51de2f38a865`, build35.
+Both approved clients are running on Prohorovka for the owner's continued
+manual check: server PID 43504, A 49648, B 15208 (always verify receipt identity
+before stopping; do not rely on PID alone). Snapshot has two READY sessions,
+234 server area creates, 117 native `onEnterWorld` call/return pairs per client,
+and zero rejects/failures/closures. Native tree fall after the correction is
+**NOT_RUN** at this handoff; no contact was driven by the agent.
+
+Evidence root `local/evidence/20261012-p06p-prohorovka-01/`:
+`tests/treeobserve10-ready-snapshot.json`, SHA256
+`1cea723277b0256f2d29f640b9614d5ea3f3e7dde145b5056e29a77e73e22388`.
+It pins completed log prefixes because the original logs continue growing.
+Exact launch command/build/source pins are in `launch-server-treeobserve10.json`;
+client receipts are `launch-a-treeobserve10.json`, `launch-b-treeobserve10.json`.
+
+After the owner finishes, from the repository root:
+
+```powershell
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/stop_stand.py --receipt-dir local/evidence/20261012-p06p-prohorovka-01 --run treeobserve10 --out-name treeobserve10stop --reason 'Owner manual run complete'
+python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261012-p06p-prohorovka-01/install-a-treeobserve10
+python -B -X utf8 tools/interactive_client.py rollback --out local/evidence/20261012-p06p-prohorovka-01/install-b-treeobserve10
+python -B -X utf8 local/evidence/20261012-p06p-prohorovka-01/tests/audit_treeobserve.py treeobserve10
+```
+
+Next: owner rams one tree, checks visible fall and passage on both clients;
+then collect contact, nonzero pitch, both-worker ACK and owner result.
+
 ### Owner manual result — native tree visual FAIL remains (2026-10-13)
 
 The owner verified that trees still do not visibly fall: the tank pushes
