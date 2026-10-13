@@ -8,10 +8,9 @@
 //! decide penetration, hit location, damage, death or arena results.
 
 use std::io;
-use super::wire;
+use super::{wire, vehicle_profile::VehicleKind};
 
 const MAX_LOCAL_COORDINATE: f32 = 100_000.0;
-const MAX_HEALTH: i16 = 90;
 
 fn bad(reason: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, reason)
@@ -36,10 +35,10 @@ impl TryFrom<u8> for ShotOutcome {
     }
 }
 
-fn valid_health(hp: i16) -> io::Result<()> {
+fn valid_health_for(kind: VehicleKind,hp: i16) -> io::Result<()> {
     // Negative native HP can mean an exploded model. P06L supports ordinary
     // destruction at zero only; it must never invent an ammo-rack explosion.
-    if !(0..=MAX_HEALTH).contains(&hp) { return Err(bad("laboratory HP bound")); }
+    if !(0..=kind.max_health()).contains(&hp) { return Err(bad("laboratory HP bound")); }
     Ok(())
 }
 
@@ -48,7 +47,10 @@ fn valid_health(hp: i16) -> io::Result<()> {
 /// This triggers the native appearance / remote marker / death callback.
 /// Own HUD additionally needs owner_health, sent only to the target's session.
 pub fn health_changed(target_slot: usize, hp: i16, attacker_slot: usize) -> io::Result<Vec<u8>> {
-    valid_health(hp)?;
+    health_changed_for(VehicleKind::Ms1,target_slot,hp,attacker_slot)
+}
+pub fn health_changed_for(kind: VehicleKind,target_slot: usize, hp: i16, attacker_slot: usize) -> io::Result<Vec<u8>> {
+    valid_health_for(kind,hp)?;
     let target = wire::vehicle_id(target_slot)?;
     let attacker = wire::vehicle_id(attacker_slot)?;
     let mut body = Vec::with_capacity(17);
@@ -67,7 +69,10 @@ pub fn health_changed(target_slot: usize, hp: i16, attacker_slot: usize) -> io::
 /// updates own damage panel, aim and postmortem input. Crew stays active in this
 /// laboratory; crew damage / knockout is outside this encoder's contract.
 pub fn owner_health(hp: i16) -> io::Result<Vec<u8>> {
-    valid_health(hp)?;
+    owner_health_for(VehicleKind::Ms1,hp)
+}
+pub fn owner_health_for(kind: VehicleKind,hp: i16) -> io::Result<Vec<u8>> {
+    valid_health_for(kind,hp)?;
     let mut body = vec![0x13, 0x3f]; // Avatar exposed index 4, fixed INT16 + BOOL.
     body.extend(hp.to_le_bytes()); body.push(1);
     Ok(body)
@@ -127,6 +132,11 @@ fn packed_segment(component: u8, bbox: [[f32; 3]; 2], start: [f32; 3], end: [f32
 pub fn show_damage(attacker_slot: usize, target_slot: usize, component: u8,
     bbox: [[f32; 3]; 2], local_start: [f32; 3], local_end: [f32; 3],
     outcome: ShotOutcome) -> io::Result<Vec<u8>> {
+    show_damage_for(VehicleKind::Ms1,attacker_slot,target_slot,component,bbox,local_start,local_end,outcome)
+}
+pub fn show_damage_for(kind: VehicleKind,attacker_slot: usize, target_slot: usize, component: u8,
+    bbox: [[f32; 3]; 2], local_start: [f32; 3], local_end: [f32; 3],
+    outcome: ShotOutcome) -> io::Result<Vec<u8>> {
     let attacker = wire::vehicle_id(attacker_slot)?;
     let target = wire::vehicle_id(target_slot)?;
     let packed = packed_segment(component, bbox, local_start, local_end, outcome)?;
@@ -140,7 +150,7 @@ pub fn show_damage(attacker_slot: usize, target_slot: usize, component: u8,
     // #717 native Sequence reader dedc84..dedc97: signed32LE count, not the
     // packed count used by newer BigWorld references. Exactly one UINT64.
     body.extend(1i32.to_le_bytes()); body.extend(packed);
-    body.push(2); // Pinned stock AP2570 smallArmorPiercing effectsIndex.
+    body.push(kind.shell().effects); // Pinned ordered #717 shell effectsIndex.
     body.push(0x13);
     Ok(body)
 }

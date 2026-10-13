@@ -1,3 +1,6 @@
+# Hash-bound source-derived profile; preserve exact canonical bytes on Windows.
+server/gateway/src/drive/worker/is7-physics-profile.json text eol=lf
+
 # Raw bytes of these source files participate in versioned provenance hashes.
 # Keep their verified LF representation across Windows checkouts.
 /tools/hangar_state.py text eol=lf

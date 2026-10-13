@@ -1,10 +1,25 @@
 # P03M — second source-bound vehicle for movement and battle checks
 
-Status: QUEUED_OWNER_PRIORITY; implementation/native admission NOT_RUN.
+Status: PASS_OWNER_IS7_PROFILE_SHARED_HANDLING_DEBT_OPEN.
+Accepted base: P06R merge `eb054618bd0eae1ae23bba42a0f875969ac2d24e`, pushed
+and remote SHA verified. Branch `codex/p03m-is7-runtime-profile`.
 Owner requested playable IS-7 on 2026-10-13 to compare mass, speed and collision
 behavior while prioritizing a reliable single-tank scenario on Prohorovka.
 This is a new runtime card, not a repeat of accepted P02_test_is7 (hangar)
 or P03I_VEHICLE_PROFILE_LOADOUT (static native queue boundary).
+
+## Owner scope clarification — 2026-10-13
+
+Owner explicitly accepts IS-7 and classifies the poor driving as the previously
+deferred shared physics failure. Close this card for the source-bound playable
+IS-7 profile, preserving the test_lab limits. General driving quality is not an
+acceptance claim of this closure. The original sequence below is retained as
+history; its broad handling gate is assigned to the existing
+[P05 plan](P05_MOVEMENT_COLLISION_RECONCILIATION.md) by this clarification.
+Weak pivot/car-like steering predates P03M; v2 forward-arc steering and reduced
+lateral friction still need scrutiny and are not certified as correct.
+Both clients/server/workers are stopped and client/namespace rollback passed.
+Evidence: `local/evidence/20261013-p03m-is7-01/native-is7/is7run03-owner-final/receipt.json`.
 
 ## Goal and dependencies
 
@@ -40,6 +55,50 @@ isolated checkout without treating the pending runtime as accepted main.
    Native acceptance remains NOT_RUN until the actual owner's result.
 
 ## Parallel work boundaries
+
+### Bounded implementation contract — 2026-10-13
+
+First playable slice is an explicitly selected homogeneous `test_lab` vehicle
+kind for both actors: default MS-1 or IS-7. The exact original descriptor,
+2150HP, assembled68190kg mass, source geometry and mounted S70/AP configuration
+travel together in immutable typed profiles. IS-7 uses a temporary server-owned
+30-round AP14602 loadout and mounted reload13.7s; APCR/HE remain unavailable.
+This does not grant items, modify live accounts or claim ordinary selected-hangar
+queue admission. Mixed-vehicle pools are rejected. Separate MS-1/IS-7 runs are
+sufficient for the first comparison; mixed actors need their own bounded work.
+
+Pool v2 binds a pinned physics profile and the full numerical config projection;
+old pool v1 stays MS-1 only. Existing config hashes still bind worker startup.
+Geometry/material bundle identity must match the selected kind. Native method
+indices remain in adapters, never in physics. Preserve default MS-1 wrappers
+and behavior. Existing Jolt control and AP single-plate approximation stay
+explicit test_lab rules; no historical drivetrain/dispersion formula is claimed.
+
+Disjoint worktrees at the accepted merge: gameplay/profile/model/aim/shot/wire;
+physics importer/pool binding and private real-worker cases; collision/material
+importer and bundle checks. Root owns server/CLI/impact/session integration,
+acceptance docs and review. Source audits are under
+`local/evidence/20261013-p03m-is7-01/`; original remains read-only.
+
+Actual-worker testing exposed near-absent IS-7 turning on a clear source lane
+with inherited lateral friction1.2. Preserved bounded comparisons led to
+config2 with longitudinal/lateral friction1.2/.4 and powered finite-radius
+steering ratio.2, motivated by verified source rotationIsAroundCenter=false.
+V1 defaults remain unchanged; five old/new MS-1 trajectories match exactly.
+All16 final IS-7 paired scenarios and8 MS-1 scenarios pass, plus actual config
+rejections/traction cutoff/spawn checks. Steering asymmetry on the source slope
+and fidelity to nominal28deg/s remain UNKNOWN. This is explicit approximate
+test_lab control, never relabelled as original server physics.
+
+Final canonical gateway05:676/676 PASS, including actual IS-7 runtime/domain/
+both-worker ACK gating and source-geometry AP damage. Source/current-build
+hashes, commands, failures, native run `is7run03` and rollback are retained in
+[the P03M report](../research/P03M_IS7_RUNTIME_PROFILE.md). Native rendered
+movement, gun/UI, destruction and owner handling acceptance remain NOT_RUN.
+Fresh run03 passes two-client READY,120 original marker calls and six native
+bbox comparisons. Two failed passive-observer setups were stopped/restored;
+source-grounded indexed-vector correction passes24 tests and Python2.7.3.
+These observations prepare the native owner gate; they do not close it.
 
 Crew/equipment chat: 01a134ec-781f-70a1-8970-4a978d2fff51.
 Ammo/service chat: 01a134ec-7eca-7791-8d29-56bea40989c2.

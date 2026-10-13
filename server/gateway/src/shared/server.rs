@@ -3,6 +3,7 @@
 use super::{model::{self, World}, ap, impact_wire, terrain_wire, wire, Client, Phase};
 use super::super::*;
 use crate::map_profile091::MapId;
+use super::vehicle_profile::VehicleKind;
 
 #[cfg(test)]
 #[path="server_catalog_tests.rs"]
@@ -18,6 +19,9 @@ mod contact_barrier_tests;
 #[cfg(test)]
 #[path="server_fracture_real_tests.rs"]
 mod fracture_real_tests;
+#[cfg(test)]
+#[path="server_is7_real_tests.rs"]
+mod is7_real_tests;
 
 #[derive(Default)]
 struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
@@ -103,6 +107,7 @@ impl IntegratedRuntime {
     fn spawn_slot(&mut self, world: &World, slot: usize, map: crate::map_drive_worker091::MapSpec,
         now: Instant) -> io::Result<()> {
         if world.map != self.map_id || map.asset != self.map_id.asset()
+            || world.vehicle_kind()!=self.pool.vehicle_kind()
             || map.arena_type_id != self.map_id.arena_type_id()
             || self.workers[slot].is_some() { return Err(model::bad()); }
         let lane = Self::lane_spawn(&map, slot);
@@ -132,7 +137,8 @@ impl IntegratedRuntime {
     }
 
     fn start(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
-        if world.map != self.map_id || self.started || world.actors.len() != model::CAPACITY
+        if world.map != self.map_id || world.vehicle_kind()!=self.pool.vehicle_kind()
+            || self.started || world.actors.len() != model::CAPACITY
             || world.started.is_none() { return Err(model::bad()); }
         let map = self.map()?;
         let lane_spawns = std::array::from_fn(|slot| {
@@ -156,7 +162,8 @@ impl IntegratedRuntime {
 
     fn finish_catalog(&mut self,world:&mut World,now:Instant)->io::Result<()>{
         let staged=self.staged.as_ref().ok_or_else(model::bad)?;
-        if staged.map!=world.map||world.map!=self.map_id||staged.id!=world.id||staged.scene_version()<=world.scene_version()
+        if staged.map!=world.map||world.map!=self.map_id||staged.vehicle_kind()!=world.vehicle_kind()
+            ||world.vehicle_kind()!=self.pool.vehicle_kind()||staged.id!=world.id||staged.scene_version()<=world.scene_version()
             ||staged.actors.iter().map(|a|a.session).collect::<Vec<_>>()!=world.actors.iter().map(|a|a.session).collect::<Vec<_>>(){
             return Err(io::Error::new(io::ErrorKind::InvalidData,"catalog transaction membership or scene changed; fail closed"));}
         let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().ok_or_else(model::bad)?,
@@ -227,7 +234,8 @@ impl IntegratedRuntime {
     }
 
     fn step(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
-        if world.map != self.map_id || self.workers.iter().flatten().any(|worker|
+        if world.map != self.map_id || world.vehicle_kind()!=self.pool.vehicle_kind()
+            || self.workers.iter().flatten().any(|worker|
             worker.map.asset != self.map_id.asset() || worker.map.arena_type_id != self.map_id.arena_type_id()) {
             return Err(model::bad());
         }
@@ -461,7 +469,7 @@ impl Table {
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia,VehicleKind::Ms1)
 }
 
 fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
@@ -510,6 +518,14 @@ pub fn serve_integrated(key_path: &str, digest_path: &str, config_path: &str,
 pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: &str,
     pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool,
     destructible_test_lab: bool,catalog_path:Option<(&str,&str)>,map:MapId) -> Result<(), Box<dyn std::error::Error>> {
+    serve_integrated_for_vehicle(key_path,digest_path,config_path,pool_path,capture_path,geometry_path,
+        ap_test_lab,terrain_test_lab,destructible_test_lab,catalog_path,map,VehicleKind::Ms1)
+}
+
+pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_path: &str,
+    pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool,
+    destructible_test_lab: bool,catalog_path:Option<(&str,&str)>,map:MapId,vehicle:VehicleKind) -> Result<(), Box<dyn std::error::Error>> {
+    if vehicle==VehicleKind::Is7 && (map!=MapId::Prohorovka || !ap_test_lab || !terrain_test_lab) { return Err(model::bad().into()); }
     if map==MapId::Prohorovka && (!ap_test_lab || !terrain_test_lab || destructible_test_lab) { return Err(model::bad().into()); }
     if ap_test_lab && geometry_path.is_none() { return Err(model::bad().into()); }
     if destructible_test_lab && !terrain_test_lab { return Err(model::bad().into()); }
@@ -521,6 +537,7 @@ pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: 
     selected_pool_config(&pool,map)?;
     let geometry = geometry_path.map(|path| super::geometry::Bundle::load(&config.local_root, Path::new(path)))
         .transpose()?.map(Arc::new);
+    validate_vehicle_binding(vehicle, &pool, geometry.as_deref())?;
     let terrain = if terrain_test_lab { Some(terrain_for_pool_for_map(&pool,map)?) } else { None };
     let removal = if destructible_test_lab {
         let path = pool.local_root.join("evidence/20261010-p06n-destructible-01/boundary/worker-ipc01/descriptor.json");
@@ -535,16 +552,24 @@ pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: 
             ||a.ram_energy_j()!=if catalog.version==4&&matches!(b.kind,super::fragiles::ObjectKind::MovementFragile){super::fragiles::RAMMING_MIN_ENERGY_J as u32}else{0}){return Err(model::bad().into());}
         Some((catalog,worker))
     }else{None};
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle)
+}
+
+fn validate_vehicle_binding(vehicle:VehicleKind, pool:&crate::map_drive_worker091::Pool,
+    geometry:Option<&super::geometry::Bundle>) -> io::Result<()> {
+    if pool.vehicle_kind()!=vehicle || geometry.is_some_and(|bundle|bundle.vehicle_kind()!=vehicle)
+        || vehicle==VehicleKind::Is7 && geometry.is_none() { return Err(model::bad()); }
+    Ok(())
 }
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
     integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
-    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId)
+    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind)
     -> Result<(), Box<dyn std::error::Error>> {
     if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
     if terrain.is_some() && !ap_test_lab { return Err(model::bad().into()); }
-    if let Some(pool)=&integrated_pool { selected_pool_config(pool,map)?; }
+    if let Some(pool)=&integrated_pool { selected_pool_config(pool,map)?; validate_vehicle_binding(vehicle,pool,geometry.as_deref())?; }
+    else if vehicle!=VehicleKind::Ms1 { return Err(model::bad().into()); }
     if terrain.as_ref().is_some_and(|t|t.map_id()!=map)
         || catalog.as_ref().is_some_and(|(c,w)|c.map!=map||w.map_id()!=map)
         || map==MapId::Prohorovka && (integrated_pool.is_none()||!ap_test_lab||terrain.is_none()||removal.is_some()) {
@@ -563,16 +588,19 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut capture = Some(Recorder::open_profile(capture_path, &config.local_root, capture_profile)?);
     let mut table = Table::default();
     let started = Instant::now();
-    let mut world = World::new_for_map(OsRng.next_u64().max(1), started,map)?;
+    let mut world = World::new_for_vehicle(OsRng.next_u64().max(1), started,map,vehicle)?;
     if let Some(bundle) = geometry {
+        let geometry_revision=super::geometry::source_revision(vehicle);
+        let material_revision=super::materials::profile_revision(vehicle);
+        let bundle_sha256=bundle.bundle_sha256().to_owned();
         world.bind_geometry(bundle)?;
-        println!("SHARED_GEOMETRY_BOUND battle={} bundle_sha256={} revision={} material_revision={} components=Hull,Turret_01,Gun_02 scope=other_actor_only damage={} terrain_projectiles={}",
-            world.id, super::geometry::BUNDLE_SHA256, super::geometry::SOURCE_REVISION, super::materials::PROFILE_REVISION, ap_test_lab, terrain.is_some());
+        println!("SHARED_GEOMETRY_BOUND battle={} vehicle={} revision={} material_revision={} bundle_sha256={} scope=other_actor_only damage={} terrain_projectiles={}",
+            world.id, vehicle.label(), geometry_revision, material_revision, bundle_sha256, ap_test_lab, terrain.is_some());
     }
     if ap_test_lab {
         world.enable_ap_test_lab()?;
         println!("SHARED_AP_PROFILE revision={} historical_fidelity={} damage={} rng=false friendly_fire=true persistence=false",
-            ap::PROFILE_REVISION, ap::HISTORICAL_FIDELITY, ap::DAMAGE);
+            ap::profile_revision_for(vehicle), ap::HISTORICAL_FIDELITY, vehicle.damage());
     }
     if let Some(terrain) = terrain {
         let revision=terrain.source_revision();
@@ -582,7 +610,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     }
     if removal.is_some() { world.bind_destructible_test_lab()?; }
     if let Some((catalog,_))=&catalog{world.bind_fragiles(catalog.clone())?;
-        println!("SHARED_CATALOG_BOUND battle={} sha256={} objects={} chunks={:?} policy={} historical_fidelity=approximate_reference_health",world.id,catalog.sha256,catalog.objects.len(),catalog.chunks(),super::fragiles::POLICY);}
+        println!("SHARED_CATALOG_BOUND battle={} sha256={} objects={} chunks={:?} policy={} historical_fidelity=approximate_reference_health",world.id,catalog.sha256,catalog.objects.len(),catalog.chunks(),super::fragiles::policy_for(world.vehicle_kind()));}
     let mut contact_cursor = 0usize;
     let mut terrain_cursor = 0usize;
     let mut impact_cursor = 0usize;
@@ -595,10 +623,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut last_auth: Option<Instant> = None;
     let mut fragments = login::LoginFragments::default();
     let mut rate_started = started; let mut rate_count = 0u32;
-    println!("BOUND {} base_backend={} profile={} battle={} capacity=2 scope=allied_temporary_ms1 motion={} physics={} map={} arena_type_id={} inventory_changed=false",
+    println!("BOUND {} base_backend={} profile={} battle={} capacity=2 scope=allied_temporary_{} motion={} physics={} map={} arena_type_id={} inventory_changed=false",
         config.login_bind, config.base_bind,
         if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
-        world.id, if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
+        world.id, vehicle.label(), if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
     loop {
         let now = Instant::now();
         if now.duration_since(started) >= model::LIFETIME { println!("SHARED_STOP reason=lab_lifetime"); break; }
@@ -789,7 +817,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             if let model::ImpactOutcome::WreckBlocked = event.outcome {
                 println!("SHARED_WRECK_IMPACT {}", serde_json::json!({
                     "battle":world.id.to_string(),"shot":event.shot,"attacker":event.attacker,"target":event.target,"tick":event.tick,
-                    "policy_revision":model::WRECK_POLICY_REVISION,"historical_fidelity":"approximate",
+                    "policy_revision":model::wreck_policy_revision_for(world.vehicle_kind()),"historical_fidelity":"approximate",
                     "outcome":"wreck_blocked","health_before":event.health_before,"health_after":event.health_after,
                     "damage":0,"native_effect_available":event.segment.is_some()}));
                 continue;
@@ -808,7 +836,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         impact_cursor = world.impacts.len();
         if let Some(state)=&world.fragiles{
             for damage in state.events.iter().skip(fragile_cursor){println!("SHARED_FRAGILE_DAMAGE {}",serde_json::json!({
-                "battle":world.id.to_string(),"catalog_sha256":state.catalog.sha256,"policy":super::fragiles::POLICY,
+                "battle":world.id.to_string(),"catalog_sha256":state.catalog.sha256,"policy":super::fragiles::policy_for(world.vehicle_kind()),
                 "object_id":damage.object_id,"instance_id":damage.instance_id,"object_revision":damage.object_revision,
                 "shot":damage.shot,"shooter":damage.shooter,"tick":damage.tick,"health_before":damage.health_before,"health_after":damage.health_after,
                 "scene_before":damage.scene_before,"scene_after":damage.scene_after}));}
@@ -847,11 +875,11 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let outcomes = next_world.apply(slot, s.id, &commands, now)?;
     for outcome in &outcomes {
         if let crate::battle091::fire::Outcome::AcceptedShot { ammo_remaining } = outcome {
-            let mut b = wire::ammo_count(*ammo_remaining)?; b.extend(wire::reload(slot, crate::battle091::fire::MS1_RELOAD_SECONDS)?);
+            let mut b = wire::ammo_count_for(next_world.vehicle_kind(),*ammo_remaining)?; b.extend(wire::reload_for(next_world.vehicle_kind(),slot,next_world.vehicle_kind().reload_seconds())?);
             next.outbox.push_back(b);
         }
     }
-    if next_world.actors[slot].fire.finish_reload_if_due(now) { next.outbox.push_back(wire::reload(slot, 0.)?); }
+    if next_world.actors[slot].fire.finish_reload_if_due(now) { next.outbox.push_back(wire::reload_for(next_world.vehicle_kind(),slot,0.)?); }
     let c = next.shared.as_mut().ok_or_else(model::bad)?;
     let mut shot_publications = Vec::new();
     let mut tracer_starts = Vec::new();
@@ -917,7 +945,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     if let Some(contact)=next_world.terrain_contacts.iter().find(|c|c.shot==projectile.sequence) {
                         // Original explodeProjectile terminates its own mover.
                         // A subsequent stopTracer would hide/cancel ground FX.
-                        next.outbox.push_back(super::terrain_wire::explode_material(projectile.sequence,
+                        next.outbox.push_back(super::terrain_wire::explode_material_for(projectile.vehicle_kind,projectile.sequence,
                             contact.hit.point,contact.direction,contact.hit.effect_material_index())?);
                     } else {
                         next.outbox.push_back(wire::tracer_stop(projectile)?);
@@ -948,17 +976,17 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                         let component = match segment.component {
                             super::materials::Component::Hull => 1,
                             super::materials::Component::Turret01 => 2,
-                            super::materials::Component::Gun02 => 3,
+                            super::materials::Component::Gun02 | super::materials::Component::Gun01 => 3,
                         };
-                        body.extend(impact_wire::show_damage(event.attacker,event.target,component,
+                        body.extend(impact_wire::show_damage_for(next_world.vehicle_kind(),event.attacker,event.target,component,
                             segment.bounds,segment.start,segment.end,outcome)?);
                     }
                     if event.health_after < event.health_before
                         && c.health_sent[event.target].is_none_or(|hp| hp > event.health_after) {
-                        body.extend(impact_wire::health_changed(event.target,event.health_after,event.attacker)?);
+                        body.extend(impact_wire::health_changed_for(next_world.vehicle_kind(),event.target,event.health_after,event.attacker)?);
                         c.health_sent[event.target] = Some(event.health_after);
                         if event.target == c.slot {
-                            body.extend(impact_wire::owner_health(event.health_after)?);
+                            body.extend(impact_wire::owner_health_for(next_world.vehicle_kind(),event.health_after)?);
                             c.owner_health_sent = Some(event.health_after);
                         }
                         if event.health_after == 0 { body.extend(wire::roster(&next_world)?); }
@@ -976,16 +1004,16 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 let hp = next_world.actors[target].health;
                 let mut body = Vec::new();
                 if c.health_sent[target] != Some(hp) {
-                    if hp != 90 {
+                    if hp != next_world.vehicle_kind().max_health() {
                         let attacker = next_world.impacts.iter().rev().find(|e| e.target == target)
                             .map(|e| e.attacker).ok_or_else(model::bad)?;
-                        body.extend(impact_wire::health_changed(target,hp,attacker)?);
+                        body.extend(impact_wire::health_changed_for(next_world.vehicle_kind(),target,hp,attacker)?);
                         if hp == 0 { body.extend(wire::roster(&next_world)?); }
                     }
                     c.health_sent[target] = Some(hp);
                 }
-                if target == c.slot && hp != 90 && c.owner_health_sent != Some(hp) {
-                    body.extend(impact_wire::owner_health(hp)?); c.owner_health_sent = Some(hp);
+                if target == c.slot && hp != next_world.vehicle_kind().max_health() && c.owner_health_sent != Some(hp) {
+                    body.extend(impact_wire::owner_health_for(next_world.vehicle_kind(),hp)?); c.owner_health_sent = Some(hp);
                 }
                 if !body.is_empty() { next.outbox.push_back(body); }
             }
@@ -1006,9 +1034,9 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 next_world.actors.iter().map(|a| (a.aim.yaw,a.aim.pitch)).collect::<Vec<_>>());
         }
     }
-    // At most40 shots: start cue+tracer+stop+one compound impact, plus
+    // At most40 MS-1 or60 IS-7 shots: start cue+tracer+stop+one compound impact, plus
     // bounded reload/readiness/health catch-up. Slow peers cannot grow forever.
-    if next.outbox.len() > model::MAX_SHOTS * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;
+    if next.outbox.len() > next_world.vehicle_kind().battle_shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
     for command in &commands { if let model::Command::Aim(intent) = command { println!("SHARED_AIM battle={} session={} slot={slot} intent={intent:?} client_angles_authoritative=false", world.id, s.id); } }
@@ -1053,6 +1081,46 @@ fn entry_ready(s: &Session, now: Instant) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn is7_world(now:Instant)->World {
+        let mut world=World::new_for_vehicle(123,now,MapId::Prohorovka,VehicleKind::Is7).unwrap();
+        for slot in 0..2 { world.attach(model::Identity { account:format!("owned-{slot}"),
+            database:slot+1,name:format!("player_{slot}") },slot as u32+1).unwrap(); }
+        world.start(now).unwrap();world.set_ready(0,1).unwrap();world.set_ready(1,2).unwrap();world
+    }
+
+    #[test]
+    fn is7_cannot_start_with_a_heavy_ms1_or_an_unbound_worker_pool() {
+        let pool=worker_fixtures::p06n();let bundle=super::super::geometry::tests::bundle();
+        assert!(validate_vehicle_binding(VehicleKind::Ms1,&pool,Some(&bundle)).is_ok());
+        assert!(validate_vehicle_binding(VehicleKind::Is7,&pool,Some(&bundle)).is_err());
+        assert!(validate_vehicle_binding(VehicleKind::Is7,&pool,None).is_err());
+        let now=Instant::now();let mut world=is7_world(now);
+        let mut runtime=IntegratedRuntime::new_for_map(Arc::new(pool),MapId::Prohorovka);
+        assert!(runtime.start(&mut world,now).is_err());
+        assert!(runtime.workers.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn is7_shot_publishes_own_shell_reload_and_effects_to_both_sessions() {
+        let now=Instant::now();let(mut a,mut b,_)=visible_pair(now);let mut world=is7_world(now);
+        for s in [&mut a,&mut b] { s.shared.as_mut().unwrap().view=Some(world.clone()); }
+        a.shared.as_mut().unwrap().commands.push(model::Command::Fire(crate::battle091::fire::Command::Shoot));
+        poll(&mut a,&mut world,now).unwrap();poll(&mut b,&mut world,now).unwrap();
+        assert_eq!(world.actors[0].fire.ammo(),29);assert_eq!(world.actors[1].fire.ammo(),30);
+        assert_eq!(world.actors[0].health,2150);assert_eq!(world.actors[1].health,2150);
+        let mut expected=wire::ammo_count_for(VehicleKind::Is7,29).unwrap();
+        expected.extend(wire::reload_for(VehicleKind::Is7,0,13.7).unwrap());
+        let start=wire::tracer_start(&world.projectiles[0]).unwrap();
+        assert!(queued_bodies(&a,now).contains(&expected));
+        for s in [&a,&b] { assert_eq!(queued_bodies(s,now).iter().filter(|v|**v==start).count(),1); }
+        a.shared.as_mut().unwrap().commands.push(model::Command::Fire(crate::battle091::fire::Command::Shoot));
+        poll(&mut a,&mut world,now+Duration::from_secs(3)).unwrap();
+        assert_eq!(world.shots.len(),1);assert_eq!(world.actors[0].fire.ammo(),29);
+        // Same actor reconnect preserves profile, ammo and cooldown.
+        world.detach(1).unwrap();world.attach(world.actors[0].identity.clone(),3).unwrap();
+        assert_eq!(world.actors[0].vehicle_kind(),VehicleKind::Is7);
+        assert_eq!(world.actors[0].fire.ammo(),29);assert_eq!(world.actors[0].health,2150);
+    }
     #[test] fn selected_map_admission_uses_source_pins_and_rejects_cross_map_workers_before_start() {
         let pool=worker_fixtures::p06n();
         for map_id in [MapId::Karelia,MapId::Prohorovka] {
@@ -1386,7 +1454,7 @@ mod tests {
         let component=match segment.component {
             super::super::materials::Component::Hull=>1,
             super::super::materials::Component::Turret01=>2,
-            super::super::materials::Component::Gun02=>3,
+            super::super::materials::Component::Gun02|super::super::materials::Component::Gun01=>3,
         };
         let fx=impact_wire::show_damage(0,1,component,segment.bounds,segment.start,segment.end,
             impact_wire::ShotOutcome::NotPierced).unwrap();

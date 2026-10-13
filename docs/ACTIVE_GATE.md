@@ -1,4 +1,54 @@
-# P03M next — IS-7 runtime after accepted P06R fences
+# P05 shared handling debt — after accepted IS-7 profile
+
+**P03M accepted by owner; general driving remains unaccepted.** Owner explicitly
+separates playable IS-7/profile acceptance from the shared, previously deferred
+physics defect. Weak stationary pivot/car-like handling was documented on
+2026-10-06; P05A on2026-10-08 supplied offline diagnostics, not a repair.
+Current observations: sluggish acceleration/braking, no stationary pivot,
+IS-7 drift with forward+steer, MS-1 lateral lurch. No new tuning performed.
+P03M v2's powered forward arc/low lateral friction require review in this debt;
+the fact that the foundation was already faulty does not validate those choices.
+
+The root IS-7 stand is stopped, both installations and namespaces restored;
+owned workers are absent. Owner clarification, frozen complete server/native
+logs, retained capture-limit caveat and rollback checks are in
+`local/evidence/20261013-p03m-is7-01/native-is7/is7run03-owner-final/receipt.json`.
+P03M source hashes and previous tests remain applicable. No merge of the full
+P05 physics claim is implied by closing P03M.
+Combined current-main integrationf78431a additionally passes718 gateway tests,
+62 affected Python tests and CPython2.7.3 compilation of four merged client
+files.253 runtime hashes are frozen in `integration/canonical-main06/receipt.json`.
+No new combined native run or deployment is claimed.
+
+Next: existing [P05 movement/handling plan](plans/P05_MOVEMENT_COLLISION_RECONCILIATION.md),
+with direct metrics for pivot/acceleration/braking/slip and a new owner gate.
+[Accepted IS-7 report](research/P03M_IS7_RUNTIME_PROFILE.md).
+
+# P03M — historical automatic/runtime setup, now stopped
+
+Branch `codex/p03m-is7-runtime-profile`; accepted main/remote P06R merge
+`eb054618bd0eae1ae23bba42a0f875969ac2d24e`. Source-bound IS-7 profile, gameplay,
+collision/material import, native wire and replay contracts are implemented.
+Canonical gateway05:676/676 PASS including actual two-worker IS-7 runtime/ACK.
+Physics02:16 IS-7+8 MS-1 paired cases PASS; five legacy trajectories exact.
+Geometry/layout/profile Python45 executed PASS/one symlink fixture NOT_RUN.
+Approximate config2 steering is versioned; source-slope asymmetry and original
+handling fidelity are UNKNOWN. Native IS-7 model/UI/fire/passage remain NOT_RUN.
+
+Fresh `is7run03` is live on root A/B: two READY sessions/workers,238 areas,
+zero startup faults/stderr/client diagnostic errors. Corrected passive observer
+passes120 original marker calls and six source/native bbox comparisons.
+Root observer24/24 tests and exact Python2.7.3 compile PASS; gateway05 reused
+only after unchanged server/physics hashes were verified. Source `c4f3b8a`.
+Evidence `native-is7/is7run03ready01/`, `is7run03-marker02/` and
+`is7run03-bbox-observation.json` under `local/evidence/20261013-p03m-is7-01/`.
+Failed runs01/02 are retained, stopped and restored. Only run03 remains live.
+No P03M merge while required owner acceptance is NOT_RUN.
+
+Next: owner checks IS-7 movement, gun/fire, consecutive fences and tree passage
+in both clients. [P03M report](research/P03M_IS7_RUNTIME_PROFILE.md).
+
+# P06R accepted — previous checkpoint
 
 **P06R: PASS_OWNER_FENCE_CHAIN_TEST_LAB.** Owner confirmed continuous passage
 through consecutive sections without the first-section stop. Full frozen run03
