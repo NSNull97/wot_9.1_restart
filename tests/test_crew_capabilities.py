@@ -282,6 +282,22 @@ class CrewCapabilitiesTests(unittest.TestCase):
         self.assertEqual(self.native_calls, [])
         guard.restore()
 
+    def test_progression_opens_only_personal_case_and_add_skill_with_all_prior_flags(self):
+        allowed = ('open_recruit', 'recruit')
+        for roster, progression in ((False, True), (True, 1), (True, 'yes')):
+            with self.subTest(roster=roster, progression=progression), self.assertRaises(ValueError):
+                policy._CrewChangeGuard(self.classes, self.messages, self.record, allowed, True, True, roster, progression)
+        guard = policy._CrewChangeGuard(self.classes, self.messages, self.record, allowed, True, True, True, True)
+        guard.install()
+        try:
+            for cls, name in (('BusinessLobbyHandler', 'showCrewTankmanInfo'), ('PersonalCase', 'addTankmanSkill')):
+                self.assertIs(self.classes[cls].__dict__[name], self.originals[(cls, name)])
+            denied = {(cls.__name__,name) for cls,name,original,replacement,callback in guard.bindings}
+            for name in ('dismissTankman','retrainingTankman','unloadTankman','changeTankmanPassport'):
+                self.assertIn(('PersonalCase',name),denied)
+        finally:
+            guard.restore()
+
 
 if __name__ == '__main__':
     unittest.main()

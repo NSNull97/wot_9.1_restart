@@ -10,13 +10,16 @@ pub const COMMAND:i16=105;
 pub const POLICY_SHA256:&str="35a58c8e13d9b815f8552371bbd6556ba10c091753861e697e522d6a5c877cb2";
 pub const CROSS_POLICY_SHA256:&str="20f7d65c6d360a17f164cb6e4eaa73056a58a793727d4bfbecc1358e1f21969f";
 pub const ROSTER_POLICY_SHA256:&str="3e86a495c028570d96a479f409dc578875652e01f60f6ac8c42c5c1bae51737c";
+pub const PROGRESSION_POLICY_SHA256:&str="fd79729bbaf926fe2567382be086c5e730c7c6474debe338b3052bb12ba62184";
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Profile {Ms1,Ms1Is7,Roster}
+pub enum Profile {Ms1,Ms1Is7,Roster,Progression}
 impl Profile {
     pub fn selected(cross_vehicle:bool)->Self {if cross_vehicle {Self::Ms1Is7}else {Self::Ms1}}
     pub fn selected_roster(cross_vehicle:bool,roster:bool)->Self {if roster {Self::Roster}else {Self::selected(cross_vehicle)}}
-    fn minimum_revision(self)->u64 {match self {Self::Roster=>9,Self::Ms1Is7=>8,Self::Ms1=>7}}
-    fn policy(self)->&'static str {match self {Self::Roster=>ROSTER_POLICY_SHA256,Self::Ms1Is7=>CROSS_POLICY_SHA256,Self::Ms1=>POLICY_SHA256}}
+    pub fn selected_progression(cross:bool,roster:bool,progression:bool)->Self {if progression {Self::Progression}else {Self::selected_roster(cross,roster)}}
+    pub fn roster(self)->bool {matches!(self,Self::Roster|Self::Progression)}
+    fn minimum_revision(self)->u64 {match self {Self::Progression=>10,Self::Roster=>9,Self::Ms1Is7=>8,Self::Ms1=>7}}
+    fn policy(self)->&'static str {match self {Self::Progression=>PROGRESSION_POLICY_SHA256,Self::Roster=>ROSTER_POLICY_SHA256,Self::Ms1Is7=>CROSS_POLICY_SHA256,Self::Ms1=>POLICY_SHA256}}
     fn vehicle_key(self)->&'static str {if self!=Self::Ms1 {"vehicle_count"}else {"vehicle_inventory_id"}}
 }
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
@@ -31,7 +34,7 @@ impl Binding {
         let super::crew_service091::MetadataObject(v)=serde_json::from_slice(raw).map_err(|_|invalid("transfer metadata shape"))?;
         let mut keys=vec!["version","account_id","native_database_id","revision","wire_revision","policy_sha256","state_sha256",
             "command",profile.vehicle_key(),"free_recruitment_left","configuration_revision","battle"];
-        if profile==Profile::Roster {
+        if profile.roster() {
             keys.extend(["transfer_command","role_level"]);
             if v.get("transfer_command").and_then(|v|v.as_i64())!=Some(105)
                 || v.get("role_level").and_then(|v|v.as_i64())!=Some(50) {return Err(invalid("roster metadata transfer/training policy"));}
@@ -53,7 +56,7 @@ pub fn metadata(directory:&Path,account_id:&str,database_id:i32,revision:u64,wir
     metadata_for(Profile::Ms1,directory,account_id,database_id,revision,wire)
 }
 pub fn metadata_for(profile:Profile,directory:&Path,account_id:&str,database_id:i32,revision:u64,wire:i64)->io::Result<()> {
-    let filename=match profile {Profile::Roster=>"crew-roster.json",Profile::Ms1Is7=>"crew-cross-transfer.json",Profile::Ms1=>"crew-transfer.json"};
+    let filename=match profile {Profile::Progression=>"crew-progression.json",Profile::Roster=>"crew-roster.json",Profile::Ms1Is7=>"crew-cross-transfer.json",Profile::Ms1=>"crew-transfer.json"};
     let raw=super::crew_service091::fixture_file(directory,filename,4096)?;
     let state=super::crew_service091::fixture_file(directory,"state.bin",16384)?;
     metadata_bytes_for(profile,&raw,&state,account_id,database_id,revision,wire)
@@ -70,10 +73,10 @@ fn metadata_bytes_for(profile:Profile,raw:&[u8],state:&[u8],account_id:&str,data
         || !(profile.minimum_revision()..=i32::MAX as u64).contains(&b.revision) || b.revision!=revision
         || b.wire_revision!=1 || wire!=1 || b.policy_sha256!=profile.policy()
         || b.state_sha256!=format!("{:x}",Sha256::digest(state))
-        || b.command!=(if profile==Profile::Roster {309}else {COMMAND}) || b.vehicle_inventory_id!=(if profile!=Profile::Ms1 {2}else {1})
-        || b.free_recruitment_left>match profile {Profile::Roster=>13,Profile::Ms1Is7=>0,Profile::Ms1=>1}
-        || !((if profile==Profile::Roster {2}else {1})..=i32::MAX as u64).contains(&b.configuration_revision)
-        || (profile!=Profile::Roster && b.configuration_revision<2-b.free_recruitment_left) || b.battle {
+        || b.command!=(if profile==Profile::Progression {151}else if profile.roster() {309}else {COMMAND}) || b.vehicle_inventory_id!=(if profile!=Profile::Ms1 {2}else {1})
+        || b.free_recruitment_left>match profile {Profile::Progression|Profile::Roster=>13,Profile::Ms1Is7=>0,Profile::Ms1=>1}
+        || !((if profile.roster() {2}else {1})..=i32::MAX as u64).contains(&b.configuration_revision)
+        || (!profile.roster() && b.configuration_revision<2-b.free_recruitment_left) || b.battle {
         return Err(invalid("transfer metadata identity/policy/state/revision binding"));
     }
     Ok(())
@@ -96,9 +99,9 @@ impl Request {
     pub fn validate_for(&self,profile:Profile)->io::Result<()> {
         // Available imported profile only; ownership/role/seat/reservation are
         // independently checked against authoritative data by the shared writer.
-        let maximum_slot=match (profile,self.vehicle_inventory_id) {(Profile::Ms1Is7|Profile::Roster,2)=>4,(_,1)=>1,_=>return Err(invalid("unsupported transfer vehicle"))};
+        let maximum_slot=match (profile,self.vehicle_inventory_id) {(Profile::Ms1Is7|Profile::Roster|Profile::Progression,2)=>4,(_,1)=>1,_=>return Err(invalid("unsupported transfer vehicle"))};
         if self.id<=0 || !(-1..=maximum_slot).contains(&self.slot)
-            || !(self.tankman_inventory_id==-1 || (1..=if profile==Profile::Roster {16}else {3}).contains(&self.tankman_inventory_id))
+            || !(self.tankman_inventory_id==-1 || (1..=if profile.roster() {16}else {3}).contains(&self.tankman_inventory_id))
             || (self.slot==-1 && self.tankman_inventory_id!=-1) {
             return Err(invalid("unsupported transfer profile/selection"));
         }
@@ -192,6 +195,27 @@ mod tests {
     }
 
 
+    #[test] fn progression_metadata_binds_policy_command_and_cursors_without_accepting_roster_substitution() {
+        let state=b"\x80\x02}.";
+        let v=serde_json::json!({"version":1,"account_id":ACCOUNT,"native_database_id":900001,"revision":42,"wire_revision":1,
+            "policy_sha256":PROGRESSION_POLICY_SHA256,"state_sha256":format!("{:x}",Sha256::digest(state)),"command":151,
+            "transfer_command":105,"role_level":50,"vehicle_count":2,"free_recruitment_left":6,"configuration_revision":33,"battle":false});
+        let check=|v:&serde_json::Value|metadata_bytes_for(Profile::Progression,&serde_json::to_vec(v).unwrap(),state,ACCOUNT,900001,42,1);
+        assert!(check(&v).is_ok());
+        for (key,value) in [("command",309.into()),("transfer_command",151.into()),("role_level",100.into()),
+            ("policy_sha256",ROSTER_POLICY_SHA256.into()),("revision",9.into()),("wire_revision",2.into()),
+            ("vehicle_count",1.into()),("configuration_revision",1.into()),("battle",true.into()),("free_recruitment_left",14.into())] {
+            let mut row=v.clone();row[key]=value;assert!(check(&row).is_err(),"{key}");
+        }
+        for key in v.as_object().unwrap().keys() {let mut row=v.clone();row.as_object_mut().unwrap().remove(key);assert!(check(&row).is_err());}
+        let raw=serde_json::to_vec(&v).unwrap();
+        assert!(metadata_bytes_for(Profile::Roster,&raw,state,ACCOUNT,900001,42,1).is_err());
+        assert!(metadata_bytes_for(Profile::Progression,&raw,b"changed",ACCOUNT,900001,42,1).is_err());
+        let mut duplicate=raw[..raw.len()-1].to_vec();duplicate.extend(b",\"command\":151}");
+        assert!(metadata_bytes_for(Profile::Progression,&duplicate,state,ACCOUNT,900001,42,1).is_err());
+        assert!(service_request_for(Profile::Progression,ACCOUNT,900001,"key",9,1,request()).is_err());
+        assert!(Request{vehicle_inventory_id:2,slot:4,tankman_inventory_id:16,..request()}.validate_for(Profile::Progression).is_ok());
+    }
     #[test] fn roster_transfer_accepts_bounded_new_identities_only_under_explicit_profile() {
         for id in 1..=16 {for slot in 0..5 {
             let r=Request{vehicle_inventory_id:2,slot,tankman_inventory_id:id,..request()};

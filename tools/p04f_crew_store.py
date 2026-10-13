@@ -89,6 +89,42 @@ class NativeCrewTransferStore(NativeCrewStore):
     def member_role_level(row):
         return 100
 
+    @staticmethod
+    def member_skills(row):
+        return []
+
+    @classmethod
+    def operation_command(cls, operation):
+        require(operation in ("recruit", "transfer"), "UNSUPPORTED_CREW_OPERATION")
+        return cls.RECRUIT_COMMAND if operation == "recruit" else cls.COMMAND
+
+    @classmethod
+    def validate_operation_layout(cls, layout, operation):
+        cls.operation_command(operation)
+        require(type(layout) is list and len(layout) == (4 if operation == "recruit" else 3)
+            and all(type(v) is int and -2**31 <= v < 2**31 for v in layout))
+        if operation == "recruit":
+            require(layout[0] == SHOP_REVISION, "SHOP_REVISION_MISMATCH")
+            cls.validate_recruit_layout(layout)
+
+    @classmethod
+    def plan_operation(cls, before, layout, *, operation, account_id):
+        return cls.plan_assignment(before, layout, recruit=operation == "recruit", account_id=account_id)
+
+    @classmethod
+    def operation_vehicles(cls, before, layout, *, operation):
+        return cls.affected_vehicles(before, layout, recruit=operation == "recruit")
+
+    @classmethod
+    def operation_response(cls, request, revision, crew, *, operation, before_crew):
+        return cls._response(request, revision, crew, recruit=operation == "recruit", before_crew=before_crew)
+
+    def _operation_replay(self, ledger, request, profile, *, operation, command, payload_sha):
+        return self._replay_existing(ledger, request, profile, recruit=operation == "recruit", command=command, payload_sha=payload_sha)
+
+    def _historical_member_matches(self, historical, current):
+        return all(historical[key] == current[key] for key in ("native_id", "crew_id", "role", "descriptor_hex"))
+
     def __init__(self, path, *, failpoint=None):
         super().__init__(path, failpoint=failpoint)
         self._allow_pretransfer = False
@@ -168,7 +204,7 @@ class NativeCrewTransferStore(NativeCrewStore):
         vehicle_ids = {native: value["inventory"][native - 1]["inventory_id"] for native in contract.CREW_VEHICLES}
         value.update(profile_version=contract.PROFILE_VERSION,
             crew=[{"crew_id": row["crew_id"], "vehicle_inventory_id": vehicle_ids.get(row["vehicle_native_id"]),
-                "role": row["role"], "role_level": contract.member_role_level(row), "skills": []} for row in current["members"]],
+                "role": row["role"], "role_level": contract.member_role_level(row), "skills": contract.member_skills(row)} for row in current["members"]],
             crew_service={"schema": contract.SCHEMA, "policy_sha256": contract.POLICY_SHA256,
                 "free_recruitment_left": current["free_recruitment_left"],
                 "configuration_revision": current["configuration_revision"], "battle": False})
@@ -263,9 +299,10 @@ class NativeCrewTransferStore(NativeCrewStore):
         require(ledger["command_type"] == command and ledger["payload_sha256"] == payload_sha, "DUPLICATE_PAYLOAD_MISMATCH")
         return self._transfer_replay(ledger, request, profile, recruit=recruit)
 
-    def _mutate(self, request, authenticated_account_id, *, recruit):
+    def _mutate(self, request, authenticated_account_id, *, recruit=False, operation=None):
         self.initialize()
         contract = self._contract()
+        operation = ("recruit" if recruit else "transfer") if operation is None else operation
         require(type(request) is dict and set(request) == REQUEST_FIELDS)
         _bounded_id(authenticated_account_id, "authenticated_account_id")
         _bounded_id(request["account_id"], "account_id")
@@ -275,16 +312,12 @@ class NativeCrewTransferStore(NativeCrewStore):
         require(type(request["native_database_id"]) is int and 1 <= request["native_database_id"] < 2**31)
         require(type(request["wire_revision"]) is int and 1 <= request["wire_revision"] < 2**31 - 1)
         layout = request["layout"]
-        require(type(layout) is list and len(layout) == (4 if recruit else 3)
-            and all(type(v) is int and -2**31 <= v < 2**31 for v in layout))
-        if recruit:
-            require(layout[0] == SHOP_REVISION, "SHOP_REVISION_MISMATCH")
-            contract.validate_recruit_layout(layout)
+        contract.validate_operation_layout(layout, operation)
         request_bytes = canonical(request)
         require(len(request_bytes) <= MAX_REQUEST)
         request = _object(request_bytes.decode("ascii"))
         account, key = request["account_id"], request["command_key"]
-        command = contract.RECRUIT_COMMAND if recruit else contract.COMMAND
+        command = contract.operation_command(operation)
         payload_sha = sha(canonical({"schema": contract.SCHEMA, "policy_sha256": contract.POLICY_SHA256, "command": command, "request": request}))
         c = self.connection
         c.execute("BEGIN IMMEDIATE")
@@ -295,18 +328,18 @@ class NativeCrewTransferStore(NativeCrewStore):
             require(stored["native_database_id"] == request["native_database_id"], "FOREIGN_ACCOUNT")
             ledger = c.execute("SELECT * FROM game_command_ledger WHERE account_id=? AND command_id=?", (account, key)).fetchone()
             if ledger is not None:
-                result = self._replay_existing(ledger, request, profile, recruit=recruit, command=command, payload_sha=payload_sha)
+                result = self._operation_replay(ledger, request, profile, operation=operation, command=command, payload_sha=payload_sha)
                 c.commit()
                 return result
             revision = profile["revision"]
             require(revision == request["expected_revision"], "STALE_REVISION")
             require(revision < 2**31 - 1, "REVISION_EXHAUSTED")
             before = profile["crew_inventory"]
-            for native in contract.affected_vehicles(before, request["layout"], recruit=recruit):
+            for native in contract.operation_vehicles(before, request["layout"], operation=operation):
                 vehicle_id = stored["inventory"][native - 1]["inventory_id"]
                 vehicle = next((r for r in profile["vehicles"] if r["vehicle_id"] == vehicle_id), None)
                 require(vehicle is not None and vehicle["state"] == "available", "VEHICLE_RESERVED")
-            after = contract.plan_assignment(before, request["layout"], recruit=recruit, account_id=account)
+            after = contract.plan_operation(before, request["layout"], operation=operation, account_id=account)
             # Vacate first, then assign: the unique-seat index is never bypassed.
             for row in before["members"]:
                 changed = after["members"][row["native_id"] - 1]
@@ -317,14 +350,14 @@ class NativeCrewTransferStore(NativeCrewStore):
                 if row["native_id"] > len(before["members"]):
                     c.execute("INSERT INTO p04d_crew_member VALUES (?,?,?,?,?,?,?)", (account, row["native_id"], row["crew_id"], row["role"], row["descriptor_hex"], row["vehicle_native_id"], row["seat"]))
                 else:
-                    c.execute("UPDATE p04d_crew_member SET vehicle_native_id=?,seat=? WHERE account_id=? AND native_id=?",
-                        (row["vehicle_native_id"], row["seat"], account, row["native_id"]))
+                    c.execute("UPDATE p04d_crew_member SET vehicle_native_id=?,seat=?,descriptor_hex=? WHERE account_id=? AND native_id=?",
+                        (row["vehicle_native_id"], row["seat"], row["descriptor_hex"], account, row["native_id"]))
             self._failpoint("after_transfer_assign")
             require(c.execute("UPDATE p04d_crew_meta SET next_native_id=?,free_left=?,configuration_revision=? WHERE account_id=? AND configuration_revision=?",
                 (after["next_native_id"], after["free_recruitment_left"], after["configuration_revision"], account, before["configuration_revision"])).rowcount == 1, "STALE_CREW")
             self._failpoint("after_transfer_meta_update")
             self._save_crew_projection(account, revision + 1, stored_raw)
-            response = contract._response(request, revision + 1, after, recruit=recruit, before_crew=before)
+            response = contract.operation_response(request, revision + 1, after, operation=operation, before_crew=before)
             result = {"schema": contract.SCHEMA, "command": command, "source_revision": revision,
                 "destination_revision": revision + 1, "before_crew": before, "after_crew": after, "response": response}
             raw, reply = canonical(result), canonical(response)
@@ -349,26 +382,29 @@ class NativeCrewTransferStore(NativeCrewStore):
             update_hex=cls.update_delta(crew, request["wire_revision"], recruit=recruit).hex(), replayed=False, result_code=0)
 
     def _transfer_replay(self, row, request, profile, *, recruit, contract=None):
+        return self._replay_mutation(row, request, profile, operation="recruit" if recruit else "transfer", contract=contract)
+
+    def _replay_mutation(self, row, request, profile, *, operation, contract=None):
         contract = self._contract() if contract is None else contract
         result = _object(row["result_json"])
         require(sha(canonical(result)) == row["p09c_result_sha256"] and set(result) == {"schema", "command",
             "source_revision", "destination_revision", "before_crew", "after_crew", "response"}, "CORRUPT_STORE")
         source, destination = result["source_revision"], result["destination_revision"]
-        require(result["schema"] == contract.SCHEMA and result["command"] == (contract.RECRUIT_COMMAND if recruit else contract.COMMAND)
+        require(result["schema"] == contract.SCHEMA and result["command"] == contract.operation_command(operation)
             and type(source) is int and type(destination) is int and source == request["expected_revision"]
             and source == row["source_revision"] and destination == row["destination_revision"]
             and destination == source + 1 and destination <= profile["revision"], "CORRUPT_STORE")
         try:
-            after = contract.plan_assignment(result["before_crew"], request["layout"], recruit=recruit, account_id=request["account_id"])
+            after = contract.plan_operation(result["before_crew"], request["layout"], operation=operation, account_id=request["account_id"])
             require(after == result["after_crew"], "CORRUPT_STORE")
             current = profile["crew_inventory"]
             for member in after["members"]:
                 actual = current["members"][member["native_id"] - 1]
-                require(all(member[k] == actual[k] for k in ("native_id", "crew_id", "role", "descriptor_hex")), "CORRUPT_STORE")
+                require(self._historical_member_matches(member, actual), "CORRUPT_STORE")
             require(after["configuration_revision"] <= current["configuration_revision"], "CORRUPT_STORE")
         except (ValueError, KeyError, TypeError, IndexError) as error:
             raise TransactionError("CORRUPT_STORE", str(error)) from error
-        expected = contract._response(request, destination, after, recruit=recruit, before_crew=result["before_crew"])
+        expected = contract.operation_response(request, destination, after, operation=operation, before_crew=result["before_crew"])
         native = self.connection.execute("SELECT * FROM p09d_native_command WHERE account_id=? AND command_id=?", (request["account_id"], request["command_key"])).fetchone()
         require(native is not None and native["request_sha256"] == sha(canonical(request))
             and native["response_json"] == canonical(expected).decode("ascii") and native["response_sha256"] == sha(canonical(expected))
