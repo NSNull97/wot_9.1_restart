@@ -2,7 +2,7 @@
 //! Rates/pivots are pinned #717 resources. The independent ballistic
 //! solver is test_lab approximate, not a claim about the historical server.
 use std::{f32::consts::PI, io};
-use super::{model::bad, pose};
+use super::{model::bad, pose, vehicle_profile::VehicleKind};
 
 pub const YAW_RATE: f32 = 39. * PI / 180.;
 pub const PITCH_RATE: f32 = 52.5 * PI / 180.;
@@ -24,9 +24,15 @@ pub(crate) fn shot_geometry(
 pub(crate) fn shot_geometry_pose(
     position: [f32; 3], direction: [f32; 3], turret_yaw: f32, pitch: f32, speed: f32,
 ) -> ([f32; 3], [f32; 3]) {
+    shot_geometry_pose_for(VehicleKind::Ms1,position,direction,turret_yaw,pitch,speed)
+}
+pub(crate) fn shot_geometry_pose_for(kind: VehicleKind,
+    position: [f32; 3], direction: [f32; 3], turret_yaw: f32, pitch: f32, speed: f32,
+) -> ([f32; 3], [f32; 3]) {
+    let spec=kind.aim(); let pivot=spec.pivot; let gun_offset=spec.gun;
     let local_origin = {
-        let gun = pose::rotate(GUN, [turret_yaw, 0., 0.]);
-        [PIVOT[0] + gun[0], PIVOT[1] + gun[1], PIVOT[2] + gun[2]]
+        let gun = pose::rotate(gun_offset, [turret_yaw, 0., 0.]);
+        [pivot[0] + gun[0], pivot[1] + gun[1], pivot[2] + gun[2]]
     };
     let origin_offset = pose::rotate(local_origin, direction);
     let origin = [
@@ -61,16 +67,20 @@ impl State {
         self.advance_pose(position, [hull_yaw, 0., 0.], dt)
     }
     pub fn advance_pose(&mut self, position: [f32; 3], direction: [f32; 3], dt: f32) -> io::Result<()> {
+        self.advance_pose_for(VehicleKind::Ms1,position,direction,dt)
+    }
+    pub fn advance_pose_for(&mut self, kind: VehicleKind, position: [f32; 3], direction: [f32; 3], dt: f32) -> io::Result<()> {
+        let spec=kind.aim();
         if !dt.is_finite() || !(0. ..=0.2).contains(&dt)
             || direction.iter().any(|x| !x.is_finite()) || position.iter().any(|x| !x.is_finite()) { return Err(bad()); }
         self.intent.validate()?;
         let (yaw, pitch) = match self.intent {
-            Intent::Point(point) => target_angles_pose(position, direction, point, self.yaw, self.pitch),
+            Intent::Point(point) => target_angles_pose_for(kind, position, direction, point, self.yaw, self.pitch),
             Intent::Hold { yaw, pitch } => (yaw, pitch),
         };
-        self.yaw = wrap(self.yaw + wrap(yaw - self.yaw).clamp(-YAW_RATE * dt, YAW_RATE * dt));
-        let target = pitch.clamp(MIN_PITCH, pitch_max(self.yaw));
-        self.pitch += (target - self.pitch).clamp(-PITCH_RATE * dt, PITCH_RATE * dt);
+        self.yaw = wrap(self.yaw + wrap(yaw - self.yaw).clamp(-spec.yaw_rate * dt, spec.yaw_rate * dt));
+        let target = pitch.clamp(spec.min_pitch, pitch_max_for(kind,self.yaw));
+        self.pitch += (target - self.pitch).clamp(-spec.pitch_rate * dt, spec.pitch_rate * dt);
         Ok(())
     }
 }
@@ -78,10 +88,12 @@ pub fn wrap(angle: f32) -> f32 { (angle + PI).rem_euclid(2. * PI) - PI }
 
 // Stock turret's rear sector is 35 degrees with a +1 degree lower-gun stop.
 // The 0.4 rad linear transition matched all 15 original native oracle samples.
-pub fn pitch_max(yaw: f32) -> f32 {
-    let outside = (PI - wrap(yaw).abs() - 35f32.to_radians()).max(0.);
+pub fn pitch_max(yaw: f32) -> f32 { pitch_max_for(VehicleKind::Ms1,yaw) }
+pub fn pitch_max_for(kind: VehicleKind,yaw: f32) -> f32 {
+    let spec=kind.aim();
+    let outside = (PI - wrap(yaw).abs() - spec.rear_sector_degrees.to_radians()).max(0.);
     let blend = (outside / 0.4).clamp(0., 1.);
-    (1. + 7. * blend).to_radians()
+    (spec.rear_max_degrees + (spec.max_pitch_degrees-spec.rear_max_degrees) * blend).to_radians()
 }
 
 /// A tilted hull also rotates gravity into local X/Z, so transforming only the
@@ -92,25 +104,29 @@ pub fn pitch_max(yaw: f32) -> f32 {
 /// Near-vertical, unreachable, or non-convergent tilted targets hold the prior
 /// angles. Limits/rates are applied by State after the unconstrained solve.
 fn target_angles_pose(position: [f32; 3], direction: [f32; 3], point: [f32; 3], old_yaw: f32, old_pitch: f32) -> (f32, f32) {
+    target_angles_pose_for(VehicleKind::Ms1,position,direction,point,old_yaw,old_pitch)
+}
+fn target_angles_pose_for(kind: VehicleKind, position: [f32; 3], direction: [f32; 3], point: [f32; 3], old_yaw: f32, old_pitch: f32) -> (f32, f32) {
+    let spec=kind.aim(); let pivot=spec.pivot; let gun=spec.gun;
     if direction[1] == 0. && direction[2] == 0. {
-        return target_angles(position, direction[0], point, old_yaw, old_pitch);
+        return target_angles_for(kind,position, direction[0], point, old_yaw, old_pitch);
     }
     let relative = std::array::from_fn(|i| point[i] - position[i]);
     let local = pose::inverse_rotate(relative, direction);
-    let x = (local[0] - PIVOT[0]) as f64;
-    let z = (local[2] - PIVOT[2]) as f64;
+    let x = (local[0] - pivot[0]) as f64;
+    let z = (local[2] - pivot[2]) as f64;
     let radius = x.hypot(z);
-    if radius <= GUN[0].abs() as f64 + 0.001 { return (old_yaw, old_pitch); }
-    let mut yaw = (x.atan2(z) - (GUN[0] as f64 / radius).asin()) as f32;
+    if radius <= gun[0].abs() as f64 + 0.001 { return (old_yaw, old_pitch); }
+    let mut yaw = (x.atan2(z) - (gun[0] as f64 / radius).asin()) as f32;
     for _ in 0..16 {
         // Work relative to chassis position to avoid subtracting two rounded
         // large world origins. Raw speed/gravity give the same parabola as the
         // effective pair (speed * factor, gravity * factor squared).
-        let (offset, _) = shot_geometry_pose([0.; 3], direction, yaw, 0., 1.);
+        let (offset, _) = shot_geometry_pose_for(kind,[0.; 3], direction, yaw, 0., 1.);
         let d: [f64; 3] = std::array::from_fn(|i| relative[i] as f64 - offset[i] as f64);
         let horizontal = d[0].hypot(d[2]);
         if horizontal <= 0.001 { return (old_yaw, old_pitch); }
-        let v2 = 442f64.powi(2); let g = 9.81;
+        let v2 = (kind.shell().raw_speed as f64).powi(2); let g = 9.81;
         let disc = v2 * v2 - g * (g * horizontal * horizontal + 2. * d[1] * v2);
         if !disc.is_finite() || disc < 0. { return (old_yaw, old_pitch); }
         let elevation = ((g * horizontal * horizontal + 2. * d[1] * v2)
@@ -131,17 +147,21 @@ fn target_angles_pose(position: [f32; 3], direction: [f32; 3], point: [f32; 3], 
 /// +Z forward, positive turret yaw right, negative pitch up. No client pose,
 /// clock, hit result or projectile is accepted. Degenerate points hold state.
 fn target_angles(position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, old_pitch: f32) -> (f32, f32) {
+    target_angles_for(VehicleKind::Ms1,position,hull,point,old_yaw,old_pitch)
+}
+fn target_angles_for(kind: VehicleKind, position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, old_pitch: f32) -> (f32, f32) {
+    let spec=kind.aim(); let pivot=spec.pivot; let gun=spec.gun;
     let dx = (point[0] - position[0]) as f64; let dz = (point[2] - position[2]) as f64;
     let (s,c) = (hull as f64).sin_cos();
-    let x = c * dx - s * dz - PIVOT[0] as f64;
-    let z = s * dx + c * dz - PIVOT[2] as f64;
-    let y = (point[1] - position[1]) as f64 - PIVOT[1] as f64 - GUN[1] as f64;
+    let x = c * dx - s * dz - pivot[0] as f64;
+    let z = s * dx + c * dz - pivot[2] as f64;
+    let y = (point[1] - position[1]) as f64 - pivot[1] as f64 - gun[1] as f64;
     let radial = x.hypot(z);
-    if radial <= GUN[0].abs() as f64 + 0.001 { return (old_yaw, old_pitch); }
-    let yaw = x.atan2(z) - (GUN[0] as f64 / radial).asin();
-    let distance = (radial * radial - (GUN[0] as f64).powi(2)).sqrt() - GUN[2] as f64;
+    if radial <= gun[0].abs() as f64 + 0.001 { return (old_yaw, old_pitch); }
+    let yaw = x.atan2(z) - (gun[0] as f64 / radial).asin();
+    let distance = (radial * radial - (gun[0] as f64).powi(2)).sqrt() - gun[2] as f64;
     if distance <= 0.001 { return (old_yaw, old_pitch); }
-    let v2 = 442f64.powi(2); let g = 9.81;
+    let v2 = (kind.shell().raw_speed as f64).powi(2); let g = 9.81;
     let disc = v2 * v2 - g * (g * distance * distance + 2. * y * v2);
     // For unreachable camera points use the geometric direction, not NaN.
     let elevation = if disc >= 0. {
@@ -153,6 +173,38 @@ fn target_angles(position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, o
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn is7_aim_matches_independent_native_samples_and_rear_sector() {
+        // Original #717 mounted catalogue native-profile-04, SHA058d8145...:
+        // these are captured wg_getShotAngles, not an encoder round trip.
+        for (point,native) in [
+            ([0.,0.,100.],[0.000466970494,0.018214484677]),
+            ([100.,0.,0.],[1.576547741890,0.018110755831]),
+            ([0.,0.,-100.],[-3.141120672226,0.018008407205]),
+            ([0.,30.,100.],[0.000466973957,-0.279066443443]),
+            ([0.,-30.,100.],[0.000467101956,0.312300086021]),
+            ([0.,0.,5.],[0.010389917530,0.492284148931]),
+            ([0.,0.,720.],[0.000064559848,-0.001772611053]),
+        ] {
+            let actual=target_angles_for(VehicleKind::Is7,[0.;3],0.,point,0.,0.);
+            assert!(wrap(actual.0-native[0]).abs()<0.000003,"{point:?} yaw={}",actual.0);
+            assert!((actual.1-native[1]).abs()<0.00003,"{point:?} pitch={}",actual.1);
+        }
+        for (deg,upper) in [(0f32,0.104719758),(90.,0.104719758),(120.,0.0745690614),
+            (135.,0.0174533054),(145.,0.0174532924),(160.,0.0174532924),(180.,0.0174532924)] {
+            for sign in [-1.,1.] { assert!((pitch_max_for(VehicleKind::Is7,sign*deg.to_radians())-upper).abs()<2e-7); }
+        }
+        let kind=VehicleKind::Is7;let mut state=State::new();
+        state.set(Intent::Hold{yaw:2.,pitch:-1.}).unwrap();
+        state.advance_pose_for(kind,[0.;3],[0.;3],0.1).unwrap();
+        assert!((state.yaw-25f32.to_radians()*0.1).abs()<1e-6);
+        assert!((state.pitch+26.25f32.to_radians()*0.1).abs()<1e-6);
+        for _ in 0..100 {state.advance_pose_for(kind,[0.;3],[0.;3],0.1).unwrap();}
+        assert_eq!(state.pitch,kind.aim().min_pitch);
+        state.set(Intent::Hold{yaw:PI,pitch:1.}).unwrap();
+        for _ in 0..100 {state.advance_pose_for(kind,[0.;3],[0.;3],0.1).unwrap();}
+        assert!((state.pitch-1f32.to_radians()).abs()<1e-6);
+    }
+
     #[test] fn independent_native_tilted_aim_and_point_to_hold_stay_within_measured_bounds() {
         // #717 getShotAngles on pure Math matrices; event SHA256
         // 4bb48fac175a4f4b8c29e72972ecfee6bbc9d62fb33365763287c65e413c7a83.

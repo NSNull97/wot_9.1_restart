@@ -7,7 +7,7 @@
 
 use std::{io, time::{Duration, Instant}};
 
-use super::{aim, model};
+use super::{aim, model, vehicle_profile::VehicleKind};
 
 /// Original `_37mm_Gochkins` stock AP speed before the common factor.
 pub const MS1_RAW_SPEED: f32 = 442.0;
@@ -30,6 +30,7 @@ const ROOT_LIMIT: f32 = 60.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Projectile {
+    pub vehicle_kind: VehicleKind,
     pub sequence: u32,
     pub slot: usize,
     pub origin: [f32; 3],
@@ -44,27 +45,29 @@ pub struct Projectile {
 
 impl Projectile {
     pub fn launch(sequence: u32, slot: usize, actor: &model::Actor, now: Instant) -> io::Result<Self> {
-        if sequence == 0 || slot >= model::CAPACITY || !actor.position.iter().all(|v| v.is_finite())
+        let kind=actor.vehicle_kind(); let shell=kind.shell();
+        if sequence == 0 || sequence as usize > kind.battle_shot_limit() || slot >= model::CAPACITY || !actor.position.iter().all(|v| v.is_finite())
             || actor.direction.iter().any(|v| !v.is_finite()) || !actor.aim.yaw.is_finite() || !actor.aim.pitch.is_finite()
         {
             return Err(model::bad());
         }
-        let (origin, velocity) = aim::shot_geometry_pose(
-            actor.position, actor.direction, actor.aim.yaw, actor.aim.pitch, MS1_SPEED,
+        let (origin, velocity) = aim::shot_geometry_pose_for(kind,
+            actor.position, actor.direction, actor.aim.yaw, actor.aim.pitch, shell.speed(),
         );
         let velocity = regularize_horizontal_x(velocity)?;
-        let flight_time = solve_range_time(velocity, MS1_GRAVITY, MS1_MAX_DISTANCE)?;
-        let terminal = position_at(origin, velocity, MS1_GRAVITY, flight_time.as_secs_f32());
+        let flight_time = solve_range_time(velocity, shell.effective_gravity(), shell.max_distance)?;
+        let terminal = position_at(origin, velocity, shell.effective_gravity(), flight_time.as_secs_f32());
         if terminal.iter().any(|v| !v.is_finite()) {
             return Err(model::bad());
         }
         Ok(Self {
+            vehicle_kind:kind,
             sequence,
             slot,
             origin,
             velocity,
-            gravity: MS1_GRAVITY,
-            max_distance: MS1_MAX_DISTANCE,
+            gravity: shell.effective_gravity(),
+            max_distance: shell.max_distance,
             launched: now,
             flight_time,
             terminal,

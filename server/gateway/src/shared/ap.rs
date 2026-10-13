@@ -16,9 +16,12 @@
 //! native effect IDs. The caller owns damage permission and the transaction.
 
 use std::io;
-use super::materials::{self, Component, MaterialFacts, SourceClass};
+use super::{materials::{self, Component, MaterialFacts, SourceClass}, vehicle_profile::VehicleKind};
 
 pub const PROFILE_REVISION: &str = "test_lab-ms1-ap-single-plate-v1";
+pub fn profile_revision_for(kind: VehicleKind) -> &'static str { match kind {
+    VehicleKind::Ms1 => PROFILE_REVISION, VehicleKind::Is7 => "test_lab-is7-ap-single-plate-v1",
+} }
 pub const HISTORICAL_FIDELITY: &str = "approximate";
 pub const CALIBER: f64 = 37.0;
 pub const DAMAGE: u16 = 30;
@@ -97,16 +100,19 @@ fn unit(vector: [f32; 3]) -> io::Result<[f64; 3]> {
     if !length.is_finite() || length == 0.0 { return Err(bad()); }
     Ok(vector.map(|v| v / length))
 }
-fn power(distance: f64) -> f64 {
-    if distance >= MAX_DISTANCE { 0.0 }
-    else if distance <= 100.0 { 34.0 }
-    else { (34.0 + (27.0 - 34.0) * (distance - 100.0) / 400.0).max(0.0) }
+fn power(distance: f64) -> f64 { power_for(VehicleKind::Ms1,distance) }
+fn power_for(kind: VehicleKind,distance: f64) -> f64 {
+    let shell=kind.shell();
+    if distance >= shell.max_distance as f64 { 0.0 }
+    else if distance <= 100.0 { shell.power_100 }
+    else { (shell.power_100 + (shell.power_500 - shell.power_100) * (distance - 100.0) / 400.0).max(0.0) }
 }
 
 /// Invalid numerical/contradictory input is an error, allowing complete World
 /// rollback. A valid but unsupported surface is a typed zero-damage outcome;
 /// it must never acquire invented armor or silently become an ordinary plate.
-pub fn resolve(input: Input<'_>) -> io::Result<Resolution> {
+pub fn resolve(input: Input<'_>) -> io::Result<Resolution> { resolve_for(VehicleKind::Ms1,input) }
+pub fn resolve_for(kind: VehicleKind, input: Input<'_>) -> io::Result<Resolution> {
     if !input.distance.is_finite() || !(0.0..=MAX_INPUT_DISTANCE).contains(&input.distance) { return Err(bad()); }
     let direction = unit(input.segment_direction)?;
     let normal = unit(input.winding_normal)?;
@@ -123,16 +129,19 @@ pub fn resolve(input: Input<'_>) -> io::Result<Resolution> {
     }
     let mut result = Resolution { outcome: Outcome::NotPierced, armor,
         incidence_degrees: Some(incidence), effective_armor: None,
-        nominal_power: Some(power(input.distance)), normalization_degrees: None,
-        damage: 0, profile_revision: PROFILE_REVISION };
-    let unsupported = if material.profile_revision != materials::PROFILE_REVISION { Some(Reason::MaterialRevision) }
+        nominal_power: Some(power_for(kind,input.distance)), normalization_degrees: None,
+        damage: 0, profile_revision: profile_revision_for(kind) };
+    let unsupported = if material.profile_revision != materials::profile_revision(kind) { Some(Reason::MaterialRevision) }
         else if !matches!(material.component, Component::Hull | Component::Turret01) { Some(Reason::Component) }
         else if material.source_class != SourceClass::ArmorDescriptor { Some(Reason::MaterialClass) }
         else if material.effective.is_none() { Some(Reason::MissingMaterial) }
         else if armor.is_none() { Some(Reason::MissingArmor) }
         else if armor == Some(0.0) { Some(Reason::ZeroArmor) }
         else {
-            let max_kind = if material.component == Component::Hull { 12 } else { 10 };
+            let max_kind = match (kind,material.component) {
+                (VehicleKind::Ms1,Component::Hull)=>12,(VehicleKind::Ms1,_)=>10,
+                (VehicleKind::Is7,Component::Hull)=>16,(VehicleKind::Is7,_)=>12,
+            };
             if material.kind == 0 || material.kind > max_kind || material.name != format!("armor_{}", material.kind) {
                 return Err(bad());
             }
@@ -148,17 +157,21 @@ pub fn resolve(input: Input<'_>) -> io::Result<Resolution> {
     if let Some(reason) = unsupported {
         result.outcome = Outcome::Unsupported(reason); return Ok(result);
     }
-    resolve_plate(&mut result, armor.ok_or_else(bad)?, incidence, power(input.distance));
+    resolve_plate_for(kind,&mut result, armor.ok_or_else(bad)?, incidence, power_for(kind,input.distance));
     Ok(result)
 }
 
 // Called only for validated, positive ordinary plates. Boundary choices are
 // part of v1's approximate contract, including equality at 2x/3x/70 deg.
 fn resolve_plate(result: &mut Resolution, armor: f64, incidence: f64, power: f64) {
-    if CALIBER < 3.0 * armor && incidence >= RICOCHET_DEGREES {
+    resolve_plate_for(VehicleKind::Ms1,result,armor,incidence,power)
+}
+fn resolve_plate_for(kind: VehicleKind,result: &mut Resolution, armor: f64, incidence: f64, power: f64) {
+    let caliber=kind.shell().caliber;
+    if caliber < 3.0 * armor && incidence >= RICOCHET_DEGREES {
         result.outcome = Outcome::Ricochet; return;
     }
-    let normalization = if CALIBER >= 2.0 * armor { NORMALIZATION_DEGREES * 1.4 * CALIBER / armor }
+    let normalization = if caliber >= 2.0 * armor { NORMALIZATION_DEGREES * 1.4 * caliber / armor }
         else { NORMALIZATION_DEGREES };
     let angle = (incidence - normalization).max(0.0);
     let cosine = angle.to_radians().cos();
@@ -169,7 +182,7 @@ fn resolve_plate(result: &mut Resolution, armor: f64, incidence: f64, power: f64
     // already ricocheted, while a >=3x plate gets >=21 deg normalization.
     // Strict equality is a laboratory stop; zero power cannot penetrate.
     if power > effective {
-        result.outcome = Outcome::Pierced; result.damage = DAMAGE;
+        result.outcome = Outcome::Pierced; result.damage = kind.damage();
     }
 }
 

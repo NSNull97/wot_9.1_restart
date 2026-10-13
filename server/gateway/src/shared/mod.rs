@@ -19,6 +19,7 @@ pub(crate) mod collision;
 pub(crate) mod impact;
 pub(crate) mod wire;
 mod server;
+pub(crate) mod vehicle_profile;
 pub use server::serve;
 pub use server::serve_integrated;
 use super::{Session, Frame, Instant};

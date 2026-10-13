@@ -109,6 +109,7 @@ pub enum Outcome {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct State {
     ammo: u16,
+    reload_duration: Duration,
     reload_until: Option<Instant>,
     accepted_shots: u32,
     rejected_shots: u32,
@@ -118,7 +119,7 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         Self {
-            ammo: MS1_INITIAL_AMMO,
+            ammo: MS1_INITIAL_AMMO, reload_duration: Duration::from_secs_f32(MS1_RELOAD_SECONDS),
             reload_until: None,
             accepted_shots: 0,
             rejected_shots: 0,
@@ -126,6 +127,13 @@ impl State {
         }
     }
 
+    /// Server-selected bounded laboratory loadout. No client supplies these values.
+    pub fn with_loadout(ammo: u16, reload_seconds: f32) -> io::Result<Self> {
+        if ammo==0 || ammo>96 || !reload_seconds.is_finite() || !(0.1..=120.).contains(&reload_seconds) {
+            return Err(invalid("laboratory fire profile"));
+        }
+        Ok(Self { ammo, reload_duration: Duration::from_secs_f32(reload_seconds), ..Self::new() })
+    }
     pub fn ammo(&self) -> u16 { self.ammo }
     pub fn accepted_shots(&self) -> u32 { self.accepted_shots }
     pub fn rejected_shots(&self) -> u32 { self.rejected_shots }
@@ -172,7 +180,7 @@ impl State {
                         next.ammo -= 1;
                         next.accepted_shots = next.accepted_shots.checked_add(1)
                             .ok_or_else(|| invalid("native fire counter overflow"))?;
-                        next.reload_until = Some(now.checked_add(Duration::from_secs_f32(MS1_RELOAD_SECONDS))
+                        next.reload_until = Some(now.checked_add(next.reload_duration)
                             .ok_or_else(|| invalid("native reload clock overflow"))?);
                         outcomes.push(Outcome::AcceptedShot { ammo_remaining: next.ammo });
                     }
@@ -242,6 +250,20 @@ pub fn outcome_name(outcome: Outcome) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    #[test] fn bounded_loadout_rejects_invalid_profiles_and_keeps_reload_at_exact_deadline() {
+        use super::*;
+        for (ammo,reload) in [(0,13.7),(97,13.7),(30,0.),(30,121.),(30,f32::NAN)] {
+            assert!(State::with_loadout(ammo,reload).is_err());
+        }
+        let now=Instant::now();let mut state=State::with_loadout(30,13.7).unwrap();
+        state.apply(&[Command::Shoot],now).unwrap();
+        let deadline=now+Duration::from_secs_f32(13.7);
+        assert_eq!(state.reload_until(),Some(deadline));
+        assert!(!state.finish_reload_if_due(deadline-Duration::from_nanos(1)));
+        assert!(state.finish_reload_if_due(deadline));
+        assert_eq!(state.apply(&[Command::Shoot],deadline).unwrap(),vec![Outcome::AcceptedShot{ammo_remaining:28}]);
+    }
+
     use super::*;
     use crate::arena_vehicle091::VEHICLE_ENTITY_ID;
 
