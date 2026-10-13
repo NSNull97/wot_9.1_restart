@@ -10,6 +10,9 @@ use sha2::{Digest,Sha256};
 mod catalog;
 #[path="worker/fracture.rs"]
 mod fracture;
+#[path="worker/profile.rs"]
+mod profile;
+use crate::gateway091::shared::vehicle_profile::VehicleKind;
 pub use fracture::Receipt as FractureReceipt;
 pub use catalog::{CatalogSpec,CatalogEntry,Scene,CatalogAck,MAX_CATALOG_OBJECTS,MAX_REMOVED_OBJECTS};
 
@@ -187,12 +190,18 @@ impl RemovalSpec {
 struct Asset {path:PathBuf,bytes:u64,sha256:String}
 #[derive(Clone,Debug)]
 pub struct Pool {pub local_root:PathBuf,pub maps:Vec<MapSpec>,pub sha256:String,executable:PathBuf,
-    runtime:PathBuf,assets:Vec<Asset>}
+    runtime:PathBuf,assets:Vec<Asset>,vehicle_profile:Option<profile::VehicleProfile>}
 impl Pool {
     pub fn load(local_root:&Path,path:&Path)->io::Result<Self>{
         non_reparse(local_root)?;let root=local_root.canonicalize()?;let raw=read(&owned(&root,path)?,16384)?;
-        let v=json(&raw,16384)?;fields(&v,&["version","profile","worker","maps"])?;
-        if uint(&v["version"])?!=1 || text(&v,"profile")?!="test_lab"{return Err(bad());}
+        let v=json(&raw,16384)?;
+        let vehicle_profile=match uint(&v["version"])? {
+            1=>{fields(&v,&["version","profile","worker","maps"])?;None},
+            2=>{fields(&v,&["version","profile","worker","maps","vehicle_profile"])?;
+                Some(profile::VehicleProfile::load(&root,&v["vehicle_profile"])?)},
+            _=>return Err(bad()),
+        };
+        if text(&v,"profile")?!="test_lab"{return Err(bad());}
         let w=&v["worker"];fields(w,&["executable","artifact_manifest","artifact_manifest_sha256"])?;
         let executable=owned(&root,Path::new(text(w,"executable")?))?;
         if executable.extension().and_then(|s|s.to_str())!=Some("exe"){return Err(bad());}
@@ -216,9 +225,11 @@ impl Pool {
         let specs=v["maps"].as_array().ok_or_else(bad)?;if specs.len()!=2{return Err(bad());}
         let maps=specs.iter().map(|m|MapSpec::load(&root,m)).collect::<io::Result<Vec<_>>>()?;
         if maps[0].arena_type_id==maps[1].arena_type_id || maps[0].config==maps[1].config{return Err(bad());}
-        let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets};
+        if let Some(profile)=&vehicle_profile {for map in &maps{profile.verify_map(&root,map)?;}}
+        let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets,vehicle_profile};
         out.verify_assets()?;Ok(out)
     }
+    pub fn vehicle_kind(&self)->VehicleKind{self.vehicle_profile.as_ref().map_or(VehicleKind::Ms1,|p|p.kind())}
     fn verify_assets(&self)->io::Result<()> {
         let mut found=BTreeSet::new();let mut stack=vec![self.runtime.clone()];let mut directories=0;
         while let Some(dir)=stack.pop(){directories+=1;if directories>256{return Err(bad());}non_reparse(&dir)?;
@@ -357,6 +368,7 @@ impl Worker {
         Self::launch_inner(pool,map,generation,now,spawn,None,Some((spec,initial_scene)))
     }
     fn launch_inner(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,removal:Option<RemovalSpec>,initial:Option<(CatalogSpec,Scene)>)->io::Result<Self>{
+        if let Some(profile)=&pool.vehicle_profile{profile.verify_map(&pool.local_root,&map)?;}
         if generation==0{return Err(bad());}
         if removal.is_some() && initial.is_some(){return Err(bad());}
         if let Some(target)=spawn {
@@ -527,7 +539,7 @@ pub(crate) mod controlled_ipc {
     }
     pub(crate) fn pool(map: MapSpec) -> Arc<Pool> {
         Arc::new(Pool { local_root: PathBuf::new(), maps: vec![map], sha256: "0".repeat(64),
-            executable: PathBuf::new(), runtime: PathBuf::new(), assets: Vec::new() })
+            executable: PathBuf::new(), runtime: PathBuf::new(), assets: Vec::new(), vehicle_profile: None })
     }
     pub(crate) fn ready(map: MapSpec, generation: u32, spec: CatalogSpec, scene: Scene,
         now: Instant) -> (Worker, Peer) {
@@ -674,7 +686,7 @@ pub(crate) mod tests {
             .join(format!("{}-{}",std::process::id(),NEXT.fetch_add(1,Ordering::Relaxed)));
         fs::create_dir_all(&p).unwrap();p.canonicalize().unwrap()
     }
-    fn fixture_pool()->(PathBuf,PathBuf,Value){
+    pub(super) fn fixture_pool()->(PathBuf,PathBuf,Value){
         let root=scratch();let runtime=root.join("runtime");fs::create_dir(&runtime).unwrap();
         let exe=runtime.join("worker.exe");fs::write(&exe,b"UNIT_ONLY_NEVER_EXECUTE").unwrap();
         let manifest=serde_json::json!({"version":1,"files":[{"relative_path":"worker.exe","bytes":b"UNIT_ONLY_NEVER_EXECUTE".len(),"sha256":format!("{:x}",Sha256::digest(b"UNIT_ONLY_NEVER_EXECUTE"))}]});
