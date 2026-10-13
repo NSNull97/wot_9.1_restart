@@ -71,13 +71,15 @@ TRANSFER_TARGETS = (('Crew', 'equipTankman'), ('Crew', 'unloadTankman'),
 class _CrewChangeGuard(object):
     """Own exact class descriptors; injectable dependencies permit unit checks."""
 
-    def __init__(self, classes, messages, record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False):
+    def __init__(self, classes, messages, record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False, allow_roster=False):
         if type(allow_actions) is not tuple or allow_actions not in ((), ('open_recruit', 'recruit')):
             raise ValueError('only the explicit free recruitment capability may be enabled')
         if type(allow_transfer) is not bool or allow_transfer and allow_actions != ('open_recruit', 'recruit'):
             raise ValueError('crew transfer requires the explicit recruitment capability pair')
         if type(allow_cross_vehicle) is not bool or allow_cross_vehicle and not allow_transfer:
             raise ValueError('cross-vehicle crew requires the explicit transfer capability')
+        if type(allow_roster) is not bool or allow_roster and not allow_cross_vehicle:
+            raise ValueError('roster recruitment requires all earlier crew capabilities')
         required = set(row[0] for row in TARGETS)
         if set(classes) != required or not callable(record):
             raise ValueError('exact audited crew classes and recorder required')
@@ -88,6 +90,7 @@ class _CrewChangeGuard(object):
         self.allowed_actions = allow_actions
         self.allow_transfer = allow_transfer
         self.allow_cross_vehicle = allow_cross_vehicle
+        self.allow_roster = allow_roster
         self.active = False
         self.bindings = []
         for class_name, name, action, is_static in TARGETS:
@@ -144,12 +147,12 @@ class _CrewChangeGuard(object):
         if self.allowed_actions:
             self.record('crew_recruitment_capability', policy_version=1,
                         allowed_actions=list(self.allowed_actions),
-                        policy='test_lab.free100.ms1-driver.v1',
+                        policy='test_lab.ms1_is7.roster.free50.capacity16.v1' if self.allow_roster else 'test_lab.free100.ms1-driver.v1',
                         other_crew_changes_available=False)
         if self.allow_transfer:
             self.record('crew_transfer_capability', policy_version=1,
                         callbacks=[a + '.' + b for a, b in TRANSFER_TARGETS],
-                        scope='existing_MS1_owned_commander_driver', other_crew_changes_available=False)
+                        scope='owned_MS1_IS7_roster_capacity16' if self.allow_roster else 'existing_MS1_owned_commander_driver', other_crew_changes_available=False)
         for cls, name, original, replacement, callback in self.bindings:
             setattr(cls, name, replacement)
         self.active = True
@@ -169,7 +172,7 @@ class _CrewChangeGuard(object):
                     original_binding_restored=True, restored_bindings=[row[4] for row in self.bindings])
 
 
-def init(record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False):
+def init(record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=False, allow_roster=False):
     """Call after items init but before original GUI BusinessHandler construction."""
     global _guard
     if _guard is not None:
@@ -185,7 +188,7 @@ def init(record, allow_actions=(), allow_transfer=False, allow_cross_vehicle=Fal
     classes = dict((cls.__name__, cls) for cls in (BusinessHandler, BusinessLobbyHandler,
                    Crew, Barracks, PersonalCase, CrewOperationsPopOver, RecruitWindow,
                    RetrainCrewWindow))
-    candidate = _CrewChangeGuard(classes, SystemMessages, record, allow_actions, allow_transfer, allow_cross_vehicle)
+    candidate = _CrewChangeGuard(classes, SystemMessages, record, allow_actions, allow_transfer, allow_cross_vehicle, allow_roster)
     candidate.install()
     _guard = candidate
 

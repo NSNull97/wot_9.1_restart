@@ -1,3 +1,34 @@
+## 2026-10-13 — P04H native recruitment for both full crews accepted
+
+**PASS_NATIVE_ROSTER_RECRUITMENT_CURRENT_MAIN.** Original #717 RecruitWindow
+hires all required primary roles for MS-1 and IS-7. Owner selected50% free
+new crew; existing100% members retain their descriptors. The same authoritative
+writer handles replacement, barracks and subsequent loader transfers. Final
+MS-1 `[4,5]`, IS-7 `[6,7,8,10,9]`, old IDs1/2/3 in barracks; quota13→6,
+revision31→41/configuration23→33. Both native crews are full; battle stays false.
+
+Native02/03 clients51048/18396 exit0, ten exact309/105 commands update inventory
+before success, original descriptors parse/repack, and fresh login preserves
+all22 non-rate-limit tables. Six final PNGs inspected; the initial clipped
+quota label was shortened and the complete scenario rerun from frozen H31.
+Three owned installs restored, all nine owned process IDs absent, ports free.
+
+Final checks:733 Rust PASS/build PASS;958 distinct applicable Python PASS;
+102 Node PASS;11 actual CPython2.7.3 compilations and Unicode/control execution
+PASS; layout94/22 PASS. Resolved metadata/provenance findings and source-scope
+exclusions are retained in receipts. Physical pointer/manual owner input is
+NOT_RUN. Historical daily quota, paid tariff table and combat crew effects
+remain UNKNOWN; the H capacity16 policy is explicitly test_lab.
+
+[Evidence, commands, changed files, limits and rollback](evidence-index/P04H_NATIVE_CREW_RECRUITMENT.md).
+Branch `codex/p04h-native-crew-recruitment`, accepted baseline626867c;
+commit/no-ff merge/remote SHA in `local/evidence/20261013-p04h-native-recruitment-01/acceptance-final/`.
+Owner expanded work to the entire historical crew system, with manual tests
+after09:00 on2026-10-14. Base Sixth Sense remains always active without learning,
+including50% crew. [Expanded plan](plans/P04_CREW_FUNCTIONALITY_091.md).
+**One next crew card:** PersonalCase and individual training/progression.
+Primary P05 work and its owner gate remain unchanged.
+
 ## 2026-10-13 — P04G native MS-1 / IS-7 crew transfers accepted
 
 **PASS_NATIVE_CROSS_VEHICLE_CREW_CURRENT_MAIN.** The shared assignment planner

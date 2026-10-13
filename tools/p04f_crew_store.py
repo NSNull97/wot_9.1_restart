@@ -75,6 +75,19 @@ class NativeCrewTransferStore(NativeCrewStore):
     project_crew = staticmethod(vehicle_crews)
     plan_assignment = staticmethod(plan_assignment)
     update_delta = staticmethod(update_delta)
+    COMMAND_RESULT_BOUND = 8192
+
+    @staticmethod
+    def validate_recruit_layout(layout):
+        require(layout[1:] == [1, 1, 0], "RECRUIT_SELECTION_UNSUPPORTED")
+
+    @staticmethod
+    def recruit_identity(account_id, native_id):
+        return account_id + ":recruit-ms1-driver:" + str(native_id)
+
+    @staticmethod
+    def member_role_level(row):
+        return 100
 
     def __init__(self, path, *, failpoint=None):
         super().__init__(path, failpoint=failpoint)
@@ -124,7 +137,7 @@ class NativeCrewTransferStore(NativeCrewStore):
         original = _object(imported["base_json"])["crew"]
         require([r["crew_id"] for r in value["members"][:2]] == [r["crew_id"] for r in original], "CORRUPT_STORE")
         for row in value["members"][2:]:
-            require(row["crew_id"] == account_id + ":recruit-ms1-driver:" + str(row["native_id"]), "CORRUPT_STORE")
+            require(row["crew_id"] == contract.recruit_identity(account_id, row["native_id"]), "CORRUPT_STORE")
         return value
 
     def _snapshot(self, account_id, revision, vehicles):
@@ -155,7 +168,7 @@ class NativeCrewTransferStore(NativeCrewStore):
         vehicle_ids = {native: value["inventory"][native - 1]["inventory_id"] for native in contract.CREW_VEHICLES}
         value.update(profile_version=contract.PROFILE_VERSION,
             crew=[{"crew_id": row["crew_id"], "vehicle_inventory_id": vehicle_ids.get(row["vehicle_native_id"]),
-                "role": row["role"], "role_level": 100, "skills": []} for row in current["members"]],
+                "role": row["role"], "role_level": contract.member_role_level(row), "skills": []} for row in current["members"]],
             crew_service={"schema": contract.SCHEMA, "policy_sha256": contract.POLICY_SHA256,
                 "free_recruitment_left": current["free_recruitment_left"],
                 "configuration_revision": current["configuration_revision"], "battle": False})
@@ -240,8 +253,9 @@ class NativeCrewTransferStore(NativeCrewStore):
             require(ledger["payload_sha256"] == old_sha, "DUPLICATE_PAYLOAD_MISMATCH")
             legacy = deepcopy(profile)
             inv = legacy["crew_inventory"]
-            require(len(inv["members"]) == 3, "CORRUPT_STORE")
-            inv.update(policy_sha256=OLD_POLICY, configuration_revision=2)
+            require(3 <= len(inv["members"]) <= 16, "CORRUPT_STORE")
+            inv["members"] = inv["members"][:3]
+            inv.update(policy_sha256=OLD_POLICY, configuration_revision=2, free_recruitment_left=0, next_native_id=4)
             for row in inv["members"]:
                 row.update(vehicle_native_id=-1 if row["native_id"] == 2 else 1,
                     seat=None if row["native_id"] == 2 else (0 if row["native_id"] == 1 else 1))
@@ -265,7 +279,7 @@ class NativeCrewTransferStore(NativeCrewStore):
             and all(type(v) is int and -2**31 <= v < 2**31 for v in layout))
         if recruit:
             require(layout[0] == SHOP_REVISION, "SHOP_REVISION_MISMATCH")
-            require(layout[1:] == [1, 1, 0], "RECRUIT_SELECTION_UNSUPPORTED")
+            contract.validate_recruit_layout(layout)
         request_bytes = canonical(request)
         require(len(request_bytes) <= MAX_REQUEST)
         request = _object(request_bytes.decode("ascii"))
@@ -310,11 +324,11 @@ class NativeCrewTransferStore(NativeCrewStore):
                 (after["next_native_id"], after["free_recruitment_left"], after["configuration_revision"], account, before["configuration_revision"])).rowcount == 1, "STALE_CREW")
             self._failpoint("after_transfer_meta_update")
             self._save_crew_projection(account, revision + 1, stored_raw)
-            response = contract._response(request, revision + 1, after, recruit=recruit)
+            response = contract._response(request, revision + 1, after, recruit=recruit, before_crew=before)
             result = {"schema": contract.SCHEMA, "command": command, "source_revision": revision,
                 "destination_revision": revision + 1, "before_crew": before, "after_crew": after, "response": response}
             raw, reply = canonical(result), canonical(response)
-            require(len(raw) <= 8192, "PROFILE_TOO_LARGE")
+            require(len(raw) <= contract.COMMAND_RESULT_BOUND, "PROFILE_TOO_LARGE")
             c.execute("INSERT INTO game_command_ledger VALUES (?,?,?,?,?,?,?,?)", (account, key, command, payload_sha,
                 revision, revision + 1, raw.decode("ascii"), sha(raw)))
             c.execute("INSERT INTO p09d_native_command VALUES (?,?,?,?,?)", (account, key, sha(request_bytes), reply.decode("ascii"), sha(reply)))
@@ -328,7 +342,7 @@ class NativeCrewTransferStore(NativeCrewStore):
             raise
 
     @classmethod
-    def _response(cls, request, revision, crew, *, recruit):
+    def _response(cls, request, revision, crew, *, recruit, before_crew=None):
         return dict(status="recruited" if recruit else "transferred", account_id=request["account_id"],
             native_database_id=request["native_database_id"], command_key=request["command_key"], revision=revision,
             wire_revision=request["wire_revision"] + 1,
@@ -354,7 +368,7 @@ class NativeCrewTransferStore(NativeCrewStore):
             require(after["configuration_revision"] <= current["configuration_revision"], "CORRUPT_STORE")
         except (ValueError, KeyError, TypeError, IndexError) as error:
             raise TransactionError("CORRUPT_STORE", str(error)) from error
-        expected = contract._response(request, destination, after, recruit=recruit)
+        expected = contract._response(request, destination, after, recruit=recruit, before_crew=result["before_crew"])
         native = self.connection.execute("SELECT * FROM p09d_native_command WHERE account_id=? AND command_id=?", (request["account_id"], request["command_key"])).fetchone()
         require(native is not None and native["request_sha256"] == sha(canonical(request))
             and native["response_json"] == canonical(expected).decode("ascii") and native["response_sha256"] == sha(canonical(expected))

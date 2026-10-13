@@ -455,9 +455,14 @@ fn grant_dossier_cursor(directory:&Path,raw:&[u8])->io::Result<Option<DossierCur
     // exact profile2 IS-7 dossier grant. The bridge validates the domain
     // snapshot. Profile5 additionally binds an explicit service fixture with
     // an independently evolving persistent revision and unchanged dossier.
-    let service_profile=if matches!((manifest.fixture_version,manifest.profile_version),(Some(5),Some(5))|(Some(6),Some(6))|(Some(7),Some(7))|(Some(8),Some(8))) {
+    let service_profile=if matches!((manifest.fixture_version,manifest.profile_version),(Some(5),Some(5))|(Some(6),Some(6))|(Some(7),Some(7))|(Some(8),Some(8))|(Some(9),Some(9))) {
         let binding=crate::ammo_service091::metadata(directory,&manifest.account_id,manifest.native_database_id)?;
-        if manifest.fixture_version==Some(8) {
+        if manifest.fixture_version==Some(9) {
+            crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::Roster,directory,&manifest.account_id,manifest.native_database_id,binding.revision,binding.wire_revision)?;
+            if manifest.crew_policy_sha256.as_deref()!=Some(crate::crew_transfer091::ROSTER_POLICY_SHA256) {
+                return Err(invalid("roster recruitment manifest policy binding"));
+            }
+        } else if manifest.fixture_version==Some(8) {
             crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::Ms1Is7,directory,&manifest.account_id,manifest.native_database_id,binding.revision,binding.wire_revision)?;
             if manifest.crew_policy_sha256.as_deref()!=Some(crate::crew_transfer091::CROSS_POLICY_SHA256) {
                 return Err(invalid("cross-vehicle crew manifest policy binding"));
@@ -472,7 +477,7 @@ fn grant_dossier_cursor(directory:&Path,raw:&[u8])->io::Result<Option<DossierCur
             if manifest.crew_policy_sha256.as_deref()!=Some(crate::crew_service091::POLICY_SHA256) {
                 return Err(invalid("crew manifest policy binding"));
             }
-        } else if manifest.crew_policy_sha256.is_some() {return Err(invalid("crew policy requires profile6/7/8"));}
+        } else if manifest.crew_policy_sha256.is_some() {return Err(invalid("crew policy requires profile6/7/8/9"));}
         manifest.snapshot_revision.map(u64::from)==Some(binding.revision)
             && compatibility.snapshot_revision.map(u64::from)==Some(binding.revision)
     } else {false};
