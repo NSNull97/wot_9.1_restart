@@ -1,3 +1,25 @@
+## 2026-10-13 — P05B overnight: cadence, side contact and turning slip
+
+Owner finished candidate08 MS-1 run ms1ram03 and reports reversal delay appears
+gone, but side-fence snag, ordinary turning drift and roughly1Hz speed/aim
+jerk remain. P05B acceptance stays OPEN. Night work is authorized until
+2026-10-14 09:00 Asia/Yekaterinburg; owner tests follow that time. Updated
+[P05B plan](plans/P05B_TRACKED_HANDLING.md) orders cadence diagnosis first,
+then side contact and real-terrain turning. Original #717 Space mapping is
+STOP_UNTIL_FIRE; an independent historical drift-handbrake is not established.
+
+ram09 ownerfinal03 retains both ready sessions/workers,238 areas, zero server
+faults/stderr, but A has Barracks KeyError 'lock'; readiness remains FAIL.
+Missing inventory lock column is separately audited in lobby-lock-audit01;
+it is not silently repaired or dismissed as a physics error. Exact receipt
+stop succeeded for A47808/B20600/gateway15056, both client installations and
+namespaces restored. Identity bridge43384 is unchanged. Current source6ad93ae;
+candidate08/gateway03 frozen rollback. No native driving or full acceptance.
+
+Parallel user-owned chat01a13619-255e-7870-9149-52babb173748 handles historical
+tank/module research and purchase with explicit0XP/0credits test policy in
+an isolated checkout. It must not edit this physics working tree or stand.
+
 ## 2026-10-13 — P05B owner feedback: handling improved, reversal still open
 
 Candidate08 correction now passes native control component1638 checks,

@@ -451,7 +451,7 @@ accepted P03M binaries/legacy pools to roll back behavior; revert only P05B
 commits if source rollback is needed. Original client and sibling service stand
 remain untouched. No main merge or production deployment is part of this gate.
 
-Single next step: owner's native handling comparison of MS-1, then IS-7.
+Single next step at that checkpoint: owner's native handling comparison of MS-1, then IS-7.
 # Native stand readiness recovery, 2026-10-13
 
 After final automatic gate, `native-handling-ram07/ms1ram01` passed8 real
@@ -496,3 +496,75 @@ physics results remain applicable by exact260-file source/hash comparison.
 Manual steering/ram feel and native acceptance are still NOT_RUN until owner
 feedback. Universal object coverage remains open P06R, including300 excluded
 fragiles; the wording "accepted ram" has been withdrawn beyond fence passage.
+
+## 2026-10-13 evening — owner candidate08 feedback and overnight reproduction
+
+OBSERVED owner: reversal delay appears gone. Remaining defects are side-fence
+snag, drift during ordinary turns, and approximately once-per-second speed
+loss30-to20km/h together with an aim-convergence jerk. Owner clarifies Space
+means a small inertial slide of a light tank while braking/turning, not boost
+or an artificial drift switch. Full P05B acceptance remains OPEN.
+
+The ram09/ms1ram03 final prefix is ownerfinal03/result.json: both ready workers,
+238 areas, four scene commits each preceded by both ACKs, zero server faults
+and stderr. A's Barracks KeyError 'lock' keeps readiness FAIL_OR_NOT_READY.
+The original inventory reader requires a top-level lock dictionary; accepted
+fixture producers omit it (VERIFIED), exact live response was not dumped
+(causal attribution INFERRED). Evidence: lobby-lock-audit01/receipt.json and
+REPORT.md. This separate inventory defect is not suppressed as physics noise.
+
+Root stopped only receipt-identified A47808/B20600/gateway15056, restored both
+install and namespace ledgers, and verified former workers18564/34700 no longer
+identify those executables. PID34700 was later reused by a Codex node process:
+the first closure collector failed its too-strict PID-only absence assertion,
+then the corrected collector recorded executable identity/PID reuse without
+stopping that unrelated process. Both the failure and correction are preserved
+in ram09/closure-attempt01.json and closed-run-receipt.json. Bridge43384 remains.
+
+Executed lifecycle commands (E is the evidence root defined above):
+
+```powershell
+python -B -X utf8 E/native-handling-ram09/ready_snapshot.py --run ms1ram03 --vehicle ms1 --out-name ownerfinal03
+python -B -X utf8 E/native-handling-ram09/stop_stand.py --receipt-dir E/native-handling-ram09 --run ms1ram03 --out-name ownerdone03 --reason '<owner completed run; overnight automatic work>'
+python -B -X utf8 tools/interactive_client.py rollback --out E/native-handling-ram09/install-a-ms1ram03
+python -B -X utf8 tools/interactive_client.py rollback --out E/native-handling-ram09/install-b-ms1ram03
+python -B -X utf8 E/native-handling-ram09/namespace_copies.py a --restore
+python -B -X utf8 E/native-handling-ram09/namespace_copies.py b --restore
+python -B -X utf8 E/native-handling-ram09/collect_stop03.py
+```
+
+VERIFIED cadence defect: retained server log has5825 shared snapshots but5159
+advances per worker. While holding throttle1/steer0, ticks1543/1553/1563/1573
+repeat the previous XYZ and then resume roughly8.75-8.87m/s movement. The
+dispatcher schedules from actual-send+100ms, while World advances by wall
+clock and reuses cached poses. Exact HUD30-to20 and aim correlation remain
+INFERRED; client interpolation behavior was not measured at that precision.
+night-jitter01/scan01.json pins the retained log and all cited source rows.
+
+Fresh controlled-IPC regression reproduces this on unchanged6ad93ae runtime:
+11ms polling repeats a moving pose at tick1011. Canonical command:
+
+```powershell
+python -B -X utf8 server/build.py gateway --test --test-filter nondividing_poll_interval_does_not_repeat_a_moving_pose_every_second --out local/build/server/gateway-p05b-night-cadence-before01
+```
+
+Result EXPECTED_FAIL:0 passed/1 failed/728 filtered; failing test, build logs,
+original source and hashes remain. This is coordinator proof, not native proof.
+The planned repair uses logical100ms deadlines, fresh paired poses, bounded
+late-worker handling and unchanged scene ACK barriers; tests must verify it.
+
+Fresh real-worker side fixture uses original fence3167 and source map geometry,
+both profiles, two workers per case,100 advances each. Both pivot and powered
+side steering produce94 hull-contact frames, no fracture and near-zero final
+motion. Exact paired-state repeatability passes; requested side behavior FAILS.
+COM-normal energy admission omits angular contact velocity and sustained load.
+Existing8kJ is project policy. Wheel impulse times distance is not energy,
+and track slip work is not proven deformation work delivered to the fence.
+Do not hide that gap behind invented historical constants. Evidence:
+night-side-contact01/run01/receipt.json. Space/key-order and actual terrain
+slip diagnostics live in night-slip01; native owner tests remain pending.
+
+Next: finish/review bounded cadence correction and its automatic regression,
+then continue unresolved side-contact and turning work under the overnight
+plan until2026-10-14 09:00 Asia/Yekaterinburg. Frozen6ad93ae/candidate08/gateway03
+remain rollback references. No merge, auto-driving or historical-ideal claim.

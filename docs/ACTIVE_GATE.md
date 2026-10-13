@@ -1,4 +1,17 @@
-# P05B — candidate08 reversal correction; fresh owner comparison pending
+# P05B — overnight correction after candidate08 owner feedback
+
+Current owner gate remains OPEN. Reversal appears improved; periodic speed/aim
+jerk, side-fence snag and ordinary-turn drift remain observed. Follow the
+overnight extension in [P05B](plans/P05B_TRACKED_HANDLING.md), with cadence
+diagnosis first and real contact/slip regression afterwards. Automatic work
+until2026-10-14 09:00 Asia/Yekaterinburg; no native driving, owner tests later.
+ram09/ms1ram03 is stopped and installs/namespaces restored; older LIVE notes
+below are history. ownerfinal03 readiness FAIL preserves A's Barracks lock
+exception despite both workers ready/238 areas/no server faults.
+Frozen rollback is6ad93ae/candidate08/gateway03. No merge or historical-ideal
+claim while native handling acceptance is open. Preserve unrelated P09B file.
+
+# P05B — candidate08 reversal correction; historical manual setup
 
 Owner reports improved handling but reversal delay and incomplete object
 coverage. Candidate08 cancels stale old-direction motor input; native component,

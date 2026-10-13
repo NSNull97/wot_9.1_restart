@@ -4,6 +4,51 @@ Date: 2026-10-13. Branch: `codex/p05b-tracked-handling`.
 Base: accepted main `0393857e2a67646e87dd03763baf3b98da98b0b9`.
 Status: PASS_AUTOMATIC_PRIVATE; native/owner NOT_RUN.
 
+## Overnight owner feedback — 2026-10-13, candidate08
+
+Current status: OWNER_PARTIAL_REVERSAL_IMPROVEMENT / HANDLING_OPEN.
+Owner completed native ram09/ms1ram03: reversal delay appears gone, but
+side rubbing against fences fails to break them and can snag the tank;
+ordinary turns drift; approximately once a second MS-1 speed falls from30
+to20km/h and aim convergence jumps. These are observations, not attribution.
+The two clients/gateway are receipt-stopped and both install/namespace ledgers
+restored. Preserve ownerfinal03 and the earlier Barracks lock exception; a
+clean native launch and general handling acceptance have not passed.
+
+Owner authorizes automatic work until 2026-10-14 09:00 Asia/Yekaterinburg
+(04:00 UTC); manual tests follow that time. Continue unresolved steps in this
+card without stopping at the first fix. No automatic native driving. The
+parallel tank/module research/purchase task owns a separate checkout.
+
+1. Correlate fixed physics steps, wall-clock world ticks, worker replies,
+   publication cadence, native filter speed and aim updates. Reproduce the
+   periodic jerk before tuning grip. Scope now includes narrow gateway
+   drive/shared scheduling and authoritative snapshot publication fixes,
+   with bounded late-worker/backpressure/replay tests. No protocol replacement,
+   accepting client pose, unlimited catch-up or interpolation hiding bad data.
+2. Reproduce side fence contact with actual map geometry for both profiles:
+   oblique/rubbing/steering from rest, repeated contact, sufficient/insufficient
+   normal work, and solid-wall controls. A purely tangential hit is not
+   automatically enough to destroy an object. Establish the supported contact
+   contract before changing the resistance/admission policy. Preserve both
+   worker ACKs, stable object identity and single-debit semantics.
+3. Reproduce turning slip on real terrain as well as flat synthetic fixtures;
+   distinguish body lateral motion from native filter corrections. Check the
+   original Space command before adding any braking mode: #717 binds
+   CMD_STOP_UNTIL_FIRE, not an independently verified drift handbrake. Retain
+   source mass/power/limits; engineering traction policy is explicitly labelled.
+4. Run applicable automatic tests at each reviewed candidate, preserve failing
+   baselines and complete source/build manifests, then prepare an exact morning
+   handoff. Keep required owner acceptance pending and do not merge this card.
+
+Evidence: existing P05B root, fresh night-jitter01/night-slip01/
+night-side-contact01 and subsequent uniquely named attempts. Check disk space
+before builds (D: was below400MB); never delete evidence to make a gate green.
+Rollback: frozen candidate08 + gateway03 and its exact pools, after stopping
+only receipt-owned processes and restoring all temporary installs/namespaces.
+Historical solver equivalence remains UNKNOWN without source/evidence; no
+claim of an overnight historical ideal based on synthetic tests alone.
+
 ## Owner correction after steering checkpoint491bde5
 
 Owner clarified that prior acceptance covers continuous fence-chain passage
