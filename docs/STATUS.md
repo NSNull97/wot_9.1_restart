@@ -1,3 +1,40 @@
+## 2026-10-13 — P04D actual native recruitment and fresh-login persistence
+
+Isolated branch `codex/p04d-native-crew-recruitment`, extending P04B/P09C/P04C
+with frozen P09D `db72382652ec18a475b3cf85a024dc78a7e13fe7` (local `b13ca5c`).
+**PASS_NATIVE_CREW_WIRE_RELOGIN** for one explicit free-test MS-1 driver.
+
+The actual RU0.9.1#717 RecruitWindow/original callback sent CMD309. Independent
+decryption confirms method0x90, VAR2 payload24, request226, exact158-byte
+inventory delta and update-before-success. Server-owned ID3 replaces driver2;
+ID2 remains in barracks, quota becomes0, balances remain100000credits/0gold.
+After fresh gateway/bridge/client processes, the same identities, descriptors
+and assignments return. Eleven state/ledger tables compare equal across restart.
+Actual native PNGs were inspected. Physical mouse/owner manual acceptance is
+NOT_RUN; no general graphics-quality or battle-admission claim is made.
+
+Final applicable Python groups:285 executed PASS and1 explicit Windows symlink
+NOT_RUN. Node regression22/22 PASS. Targeted Rust65/65 PASS and native build
+PASS. Full Rust after restoring exact ignored evidence inputs:654 PASS /
+9 FAIL /0 skipped (663 total). The remaining9 legacy/P06N/P06O worker-contract
+failures bind frozen pool hashes to absolute paths in another checkout.
+**MAIN INTEGRATION HOLD**: those failures are retained, not waived. No merge
+or push, and no modifications to the parallel primary/P09D stands.
+
+Both successful native runs exited normally, both installation ledgers are
+RESTORED, and this card's bridge/gateway processes are stopped. The own DB,
+consistent backups, source/build/install receipts and raw traces remain local.
+Paid recruitment, historical training tariffs, skills, retraining, dismissal
+and other roles/vehicles remain unsupported;100% and the fixed passport are
+explicit project test policy.
+
+Evidence/commands/files/rollback: [P04D index](evidence-index/P04D_NATIVE_CREW_RECRUITMENT.md).
+Facts and limits: [P04D research](research/P04D_NATIVE_CREW_RECRUITMENT.md).
+Current source/receipt hashes and final commit are bound under
+`local/evidence/20261013-p04d-native-crew-recruitment-01/acceptance-final/`.
+**One next step:** repair the historical pool fixture portability gate, rerun
+required integration checks and merge the accepted crew/ammo stack.
+
 ## 2026-10-13 — P04C source-bound configuration reservation
 
 Isolated branch `codex/p04c-configuration-reservation`, stacking frozen P04B

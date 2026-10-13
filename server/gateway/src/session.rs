@@ -875,15 +875,31 @@ impl Session {
     fn receive_account(&mut self,payload:&[u8],events:&mut Vec<String>)->io::Result<()> {
 use crate::hangar091::Incoming;
 let requests=if self.hangar.is_some() {
-    if self.ammo_service.is_some() {crate::hangar091::requests_ammo_service(payload)?}
+    if self.ammo_service.as_ref().is_some_and(ammo_session::State::crew_enabled) {crate::hangar091::requests_crew_service(payload)?}
+    else if self.ammo_service.is_some() {crate::hangar091::requests_ammo_service(payload)?}
     else if self.identity.is_some() {crate::hangar091::requests_interactive(payload)?}
     else {crate::hangar091::requests(payload)?}}
     else {crate::account091::requests(payload)?.into_iter().map(Incoming::Sync).collect()};
 for incoming in requests {
+    // The shared mutation namespace also guards later nonmutating commands.
+    // ClientChat uses its separate i64 namespace; transport duplicates never
+    // reach this newly received application bundle.
+    let account_id=match &incoming {
+        Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync{request:r,..}
+        |Incoming::CachedSync{request:r,..}|Incoming::CachedRefresh{request:r,..}|Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
+        Incoming::AmmoService(r)=>Some(r.id),Incoming::CrewService(r)=>Some(r.id),
+        Incoming::Language{id}|Incoming::UnsupportedIntArray{id,..}=>Some(*id),
+        Incoming::ServerStats=>Some(202),Incoming::Chat(_)=>None,
+    };
+    if account_id.is_some_and(|id|self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))) {return Err(invalid());}
     let r=match incoming {
         Incoming::Sync(r)=>r,
         Incoming::AmmoService(request)=>{
             ammo_session::enqueue(self,request,events)?;
+            continue;
+        },
+        Incoming::CrewService(request)=>{
+            ammo_session::enqueue_crew(self,request,events)?;
             continue;
         },
         Incoming::AmmoRefresh{request,revision,persistent_hash}=>{
@@ -1274,13 +1290,13 @@ pub fn serve_map_drive_probe(key_path:&str,digest_path:&str,config_path:&str,cap
 }
 struct Authenticated {identity:Arc<crate::identity091::Profile>,fixtures:Arc<crate::hangar091::Fixtures>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
-    ammo_service:Option<crate::ammo_service091::Metadata>}
+    ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool}
 impl Authenticated {
     fn new(identity:crate::identity091::Profile,fixtures:crate::hangar091::Fixtures,ordinary:bool)->io::Result<Self> {
         // Remains inside the existing bounded auth worker. A bad primary policy
         // reaches AUTH_REJECT before Session creation or any native state bytes.
         let policy=crate::map_drive_service091::AccountPolicy::for_mode(ordinary,&identity,&fixtures)?;
-        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None})
+        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None,crew_service:false})
     }
 }
 struct AuthJob {
@@ -1308,8 +1324,13 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
             let binding=if config.ammo_service {
                 Some(crate::ammo_service091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id)?)
             } else {None};
+            if config.crew_service {
+                let shared=binding.ok_or_else(invalid)?;
+                crate::crew_service091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
+            }
             let mut accepted=Authenticated::new(identity,fixtures,ordinary)?;
             accepted.ammo_service=binding;
+            accepted.crew_service=config.crew_service;
             Ok(accepted)
         }).transpose());
         let _=sender.send(outcome); // A stopped gateway has no recipient.
@@ -1476,7 +1497,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                                 accepted.identity.account_id,accepted.identity.database_id,accepted.identity.name,accepted.fixtures.sizes());
                             created.identity=Some(accepted.identity);created.hangar=Some(accepted.fixtures);
                             created.drive_account_policy=accepted.drive_account_policy;
-                            created.ammo_service=accepted.ammo_service.map(ammo_session::State::new);
+                            created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service));
                             if drive_pool.is_some(){created.drive=Some(crate::map_drive_world091::Arena::new(now));}
                             if let Some(policy)=&created.drive_account_policy {println!("{}",policy.binding_event(next_id));}
                             session=Some(created);next_id=next_id.checked_add(1).ok_or_else(invalid)?;

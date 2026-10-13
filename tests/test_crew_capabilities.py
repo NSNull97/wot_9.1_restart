@@ -204,6 +204,31 @@ class CrewCapabilitiesTests(unittest.TestCase):
         self.assertEqual(len(self.events), count)
         self.assertFalse(self.guard.active)
 
+    def test_recruitment_opt_in_preserves_only_two_original_callbacks(self):
+        guard = policy._CrewChangeGuard(self.classes, self.messages, self.record,
+                                       ('open_recruit', 'recruit'))
+        guard.install()
+        for class_name, name, action, is_static in policy.TARGETS:
+            original = self.originals[(class_name, name)]
+            actual = self.classes[class_name].__dict__[name]
+            if action in ('open_recruit', 'recruit'):
+                self.assertIs(actual, original)
+            else:
+                self.assertIsNot(actual, original)
+        self.classes['RecruitWindow']().buyTankman()
+        self.assertEqual(self.native_calls, ['RecruitWindow.buyTankman'])
+        self.classes['Crew']().unloadTankman(1)
+        self.assertEqual(len(self.native_calls), 1)
+        guard.restore()
+        for key, original in self.originals.items():
+            self.assertIs(self.classes[key[0]].__dict__[key[1]], original)
+
+    def test_capability_allowlist_cannot_enable_other_mutations(self):
+        for allowed in (('equip',), ('recruit',), ('recruit', 'open_recruit'),
+                        ('open_recruit', 'recruit', 'dismiss'), ['open_recruit', 'recruit'], None):
+            with self.subTest(allowed=allowed), self.assertRaises(ValueError):
+                policy._CrewChangeGuard(self.classes, self.messages, self.record, allowed)
+
 
 if __name__ == '__main__':
     unittest.main()

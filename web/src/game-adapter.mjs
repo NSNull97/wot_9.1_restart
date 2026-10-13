@@ -12,6 +12,7 @@ import { grantedOverview, isGrantedOverview, validateGrantedFixture } from './te
 import { crewOverview, isCrewOverview, validateCrewFixture } from './ms1-crew.mjs';
 import { ammoOverview, isAmmoOverview, validateAmmoFixture } from './ms1-ammo.mjs';
 import { createNativeAmmoService, nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
+import { createNativeCrewService, nativeCrewOverview, isNativeCrewOverview } from './p04d-crew.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const LOCAL = resolve(ROOT, 'local');
@@ -78,6 +79,7 @@ export function createGameReader({ origin, tokenFile } = {}) {
       const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (value.schemaVersion !== 'web-game-read.v1' || !['ready', 'unlinked'].includes(value.state)) return empty('unavailable');
       if (value.state === 'unlinked') return empty('unlinked');
+      if (value.crewService !== undefined) return isNativeCrewOverview(value, id) ? value : empty('unavailable');
       if (value.snapshotRevision >= 5) return isNativeAmmoOverview(value, id) ? value : empty('unavailable');
       if (value.snapshotRevision === 4) return isAmmoOverview(value, id) ? value : empty('unavailable');
       if (value.snapshotRevision === 3) return isCrewOverview(value, id) ? value : empty('unavailable');
@@ -154,6 +156,7 @@ function openGameStore(path, sourceHash, now) {
 }
 
 function overview(profile) {
+  if (profile.profile_version === 6) return nativeCrewOverview(profile);
   if (profile.profile_version === 5) return nativeAmmoOverview(profile);
   if (profile.profile_version === 4) return ammoOverview(profile);
   if (profile.profile_version === 3) return crewOverview(profile);
@@ -190,8 +193,10 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   const allowed = ['version', 'port', 'web_database', 'game_database', 'fixture_root', 'native_descriptors', 'python_executable', 'token_file'];
   if (options?.test_garage !== undefined) allowed.push('test_garage');
   if (options?.ammunition_service !== undefined) allowed.push('ammunition_service');
+  if (options?.crew_service !== undefined) allowed.push('crew_service');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
+  if (options.crew_service !== undefined && options.ammunition_service === undefined) throw new Error('Crew requires the shared ammunition writer');
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -226,13 +231,19 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       const profile = game.read(options.ammunition_service.account_id);
       if (!owner || !profile || profile.account_id !== owner.id || profile.username !== owner.display_nickname
           || profile.created_at_ms !== owner.created_at) throw new Error('Ammunition migration identity binding failed');
-      ammunition = await createNativeAmmoService(options.ammunition_service,
-        { database: options.game_database, fixtureRoot, python: options.python_executable, localPath });
+      const context = { database: options.game_database, fixtureRoot, python: options.python_executable, localPath };
+      ammunition = options.crew_service === undefined
+        ? await createNativeAmmoService(options.ammunition_service, context)
+        : await createNativeCrewService(options.ammunition_service, options.crew_service, context);
     }
   } catch (error) { identity.close(); game.close(); throw error; }
   const creating = new Map();
   async function fixture(profile) {
     const id = accountId(profile.account_id);
+    if (profile.profile_version === 6) {
+      if (!ammunition?.recruit) throw new Error('Crew service is not enabled');
+      return ammunition.fixture(profile);
+    }
     if (profile.profile_version === 5) {
       if (!ammunition) throw new Error('Ammunition service is not enabled');
       return ammunition.fixture(profile);
@@ -381,11 +392,17 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
         return json(res, 200, await ammunition.service(value));
       }
+      if (req.method === 'POST' && req.url === '/internal/native/crew') {
+        if (!ammunition?.recruit) return json(res, 404, { error: 'not_found' });
+        const value = await body(req);
+        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
+        return json(res, 200, await ammunition.recruit(value));
+      }
       const matched = /^\/internal\/accounts\/([0-9a-f-]{36})\/overview$/.exec(req.url);
       if (req.method === 'GET' && matched && UUID.test(matched[1])) {
         if (!identity.profile(matched[1])) return json(res, 404, { error: 'account_not_found' });
         const profile = game.read(matched[1]);
-        if ([2, 3, 4, 5].includes(profile?.profile_version)) await fixture(profile);
+        if ([2, 3, 4, 5, 6].includes(profile?.profile_version)) await fixture(profile);
         return json(res, 200, profile ? overview(profile) : empty('unlinked'));
       }
       return json(res, 404, { error: 'not_found' });
