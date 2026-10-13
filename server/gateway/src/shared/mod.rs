@@ -229,7 +229,9 @@ impl Session {
                 // The native initializer can emit its first target before
                 // ACK6 in the same envelope. It is only an intent: simulation
                 // cannot advance it before the binding/correction is accepted.
-                if !c.binding.is_some_and(|(_, ack)| ack) { return Err(bad()); }
+                // Keep it queued so an early native aim packet does not poison
+                // the reliable channel while the remaining catalog batches
+                // are still draining.
                 c.commands.push(Command::Aim(intent));
             } else {
                 let mut normalized = raw.to_vec();

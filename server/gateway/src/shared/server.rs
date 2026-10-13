@@ -1384,6 +1384,14 @@ mod tests {
         assert_eq!((w.actors[0].aim.yaw,w.actors[0].aim.pitch),pose);
         assert!(w.apply(0,1,&[model::Command::Aim(super::super::aim::Intent::Point([0.;3]))],now+model::STEP*4).is_err());
     }
+    #[test] fn native_aim_before_binding_ack_is_queued_until_correction() {
+        let now=Instant::now();let (mut s,_,_)=visible_pair(now);
+        let c=s.shared.as_mut().unwrap();c.correction=false;c.binding=None;
+        s.receive(&frame(&s,&point(0,[100.,100.,100.])),now).unwrap();
+        assert!(!s.shared.as_ref().unwrap().correction);
+        assert!(s.shared.as_ref().unwrap().binding.is_none());
+        assert_eq!(s.shared.as_ref().unwrap().commands.len(),1);
+    }
     #[test] fn backpressure_does_not_enqueue_a_history_of_aim_poses() {
         let now=Instant::now();let (mut a,_,mut w)=visible_pair(now);
         for _ in 0..4 {a.tx.enqueue_body(&[19]).unwrap();}
