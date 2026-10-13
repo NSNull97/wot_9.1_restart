@@ -226,11 +226,14 @@ def profile_calls(frame, phase, value):
     elif (source == 'scripts/client/AreaDestructibles.py'
           and _settings.get('enable_shared_lab') is True
           and method in ('onEnterWorld', 'set_destroyedFragiles', 'orderDestructibleDestroy',
-                         'set_fallenTrees', '__destroyFragile', '__launchEffect')):
+                         'set_fallenTrees', '__destroyFragile', '__destroyDestructible',
+                         '__dropDestructible', '__launchFallEffect', '__launchEffect')):
         kind = 'native_destructible_call'
         fields['owner_class'] = type(frame.f_locals.get('self')).__name__
         fields['arguments'] = primitive(dict((name, frame.f_locals[name]) for name in
-            ('chunkID', 'destrID', 'isShotDamage', 'isAnimation', 'syncWithProjectile',
+            ('chunkID', 'destrID', 'dmgType', 'destData', 'destrIndex', 'isShotDamage',
+             'isAnimation', 'isNeedAnimation', 'isAnimate', 'syncWithProjectile',
+             'fallDirYaw', 'pitchConstr', 'fallSpeed', 'obstacleCollisionFlags',
              'prev', 'oldValue', 'effectName', 'effectType') if name in frame.f_locals), budget=[64, 2048])
         owner = frame.f_locals.get('self')
         if fields['owner_class'] == 'AreaDestructibles':
