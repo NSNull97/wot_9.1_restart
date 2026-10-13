@@ -162,10 +162,15 @@ world admission and impact replay; never
 substitute point speed for COM velocity or bypass domain validation. Native
 identity/scene binding, prepare/both-ACK/rejoin semantics remain unchanged.
 
-The final proposal budget with raw9-component tensors, the legacy linear
-candidate and explicit solver branch is48237B/2258 JSON nodes/depth6;
-`night-angular-gateway-design01/budget-final02-receipt.json` preserves the
-calculation. The proposed new IPC6 limit is64KiB; IPC1–5 retain32KiB.
+The [closed IPC6 field contract](../research/P05B_ANGULAR_FENCE_IPC.md)
+freezes the schema, exact float identities, complete proof ownership and the
+unchanged pose-mapping trust boundary. Its final source table SHA256 is
+`e0d8406c3f660461075e046d417a0e37cf79ef1bf4f115cd6aa153adbaf16345`.
+The final spelling produces a structural estimate of48244 JSON payload bytes
+(48245 including LF),2258 nodes/depth6. Earlier48237B estimates remain saved
+in `night-angular-gateway-design01/budget-final02-receipt.json`; they are not
+silently rewritten. The new IPC6 payload cap is65536 bytes excluding LF;
+older versions retain32768 excluding LF, including their exact boundary.
 Keep4096-node/depth12 limits. No unbounded reader, truncation or extra receipt
 capacity. Include accepted/rejected boundary serialization tests.
 
