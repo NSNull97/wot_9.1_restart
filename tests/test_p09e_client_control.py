@@ -60,6 +60,23 @@ class ResearchCapabilityTests(unittest.TestCase):
             prior.POLICY._ModuleChangeGuard(self.Panel, self.Messages, self.record, "true")
 
 
+class AccountStreamBoundTests(unittest.TestCase):
+    def test_client_stream_bound_admits_the_largest_research_payload(self):
+        # owner stand 2026-10-14: a 22992-byte P09E shop exceeded the old 16395
+        # client bound and the hangar hung at shop synchronization.
+        tree = ast.parse((ROOT / "client_patch/sr_interactive.py").read_text(encoding="utf-8-sig"))
+        handler = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "onStreamComplete")
+        bounds = [c.comparators[0].value for c in ast.walk(handler) if isinstance(c, ast.Compare)
+                  and isinstance(c.left, ast.Call) and getattr(c.left.func, "id", None) == "len"
+                  and getattr(c.left.args[0], "id", None) == "data"]
+        self.assertEqual(len(bounds), 1)
+        import p09e_research_projection
+        rust = (ROOT / "server/gateway/src/account/research_service.rs").read_text(encoding="utf-8")
+        for name in ("MAX_STATE_BYTES", "MAX_SHOP_BYTES"):
+            self.assertIn("pub const " + name + ":usize=32768;", rust)
+        self.assertGreaterEqual(bounds[0], max(32768, p09e_research_projection.MAX_SHOP))
+
+
 class ResearchBootstrapTests(unittest.TestCase):
     def test_bad_feature_dependencies_rejected_before_engine_imports(self):
         for option in (True, "yes", 1):

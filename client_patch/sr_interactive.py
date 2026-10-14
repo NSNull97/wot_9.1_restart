@@ -1935,7 +1935,9 @@ def onGeometryMapped(*args):
 
 
 def onStreamComplete(stream_id, description, data):
-    if not 1 <= stream_id <= 32767 or len(description) > 64 or len(data) > 16395:
+    # Bound follows the largest server-authored Account payload: the P09E research
+    # state/shop may reach 32768 bytes (16384 before), plus the same 11-byte margin.
+    if not 1 <= stream_id <= 32767 or len(description) > 64 or len(data) > 32779:
         raise ValueError('incoming Account stream outside audited bound')
     record('native_stream', stream_id=stream_id, bytes=len(data), description_bytes=len(description))
     import game
