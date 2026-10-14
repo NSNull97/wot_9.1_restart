@@ -14,21 +14,28 @@ internal sealed class TrackedHandling
     // turns. Low scrub stays limited to near-rest pivots.
     private const float OuterMovingFrictionFraction = .4f;
     private const float MovingGripStartSpeed = 1.5f, MovingGripFullSpeed = 4f;
-    private const float CoastEnterSpeed = .5f, CoastPivotSpeed = .25f;
-    // Owner run 2026-10-14: a free-rolling steer-only coast circled for more
-    // than 15 s before pivoting. Jolt's shared brake locks both tracks and
-    // removes the turn, so a released throttle brakes the inner track only
-    // (clutch-brake steering), as a fraction of that track's brake torque.
-    private const float CoastInnerBrake = 1f;
-    // A single source track brake bounds IS-7 to about 2.9 m/s^2, so the
-    // outer track takes a smaller share; the difference keeps the turn.
-    private const float CoastOuterBrake = .3f;
+    // Hysteresis: a released-throttle turn starts above 1.5 m/s and hands
+    // off to the pivot below 1 m/s, so the turn does not fade near rest.
+    private const float CoastEnterSpeed = 1.5f, CoastPivotSpeed = 1f;
+    // Owner runs 2026-10-14: a free-rolling steer-only coast circled for more
+    // than 15 s before pivoting; braking both tracks then stopped the turn
+    // until rest. Jolt's shared brake locks both tracks, so a released
+    // throttle brakes each track separately (clutch-brake steering): the
+    // inner one harder than the outer. Targets are per-track half-mass
+    // decelerations so MS-1 and IS-7 behave alike; each is capped by that
+    // track's source brake torque. Project policy, m/s^2.
+    private const float CoastInnerDeceleration = 8f, CoastOuterDeceleration = 2f;
+    // Released-throttle turns keep pivot-level scrub; the higher moving-turn
+    // grip is for powered turns on slopes.
+    private const float CoastOuterFrictionFraction = .001f;
+    // Near-rest ratio crossing before the pivot: rate per second, minimum time.
+    private const float CoastRatioRate = 20f, CoastTransitionSeconds = .1f;
     // An opposite W/S request brakes through zero instead of waiting for the
     // transmission to reverse against the existing momentum.
     private const float ReversalBrakeSpeed = .5f;
     private const float MotorRampPerSecond = 4f;
     public const float GearSwitchTime = .15f, ClutchReleaseTime = .1f, GearSwitchLatency = .2f;
-    private readonly float width, maximumYaw;
+    private readonly float width, maximumYaw, halfMass, radius;
     private readonly WheelSettingsTV[] wheels;
     private readonly float[] lateral;
     private float yawTarget, motorInput;
@@ -48,12 +55,14 @@ internal sealed class TrackedHandling
         return MathF.Max(10, .02f * massKg * radius * radius);
     }
 
-    public TrackedHandling(float trackWidth, float maxYawRate, WheelSettingsTV[] supportWheels)
+    public TrackedHandling(float trackWidth, float maxYawRate, float massKg, WheelSettingsTV[] supportWheels)
     {
         if (!float.IsFinite(trackWidth) || trackWidth < .5f || trackWidth > 5 ||
-            !float.IsFinite(maxYawRate) || maxYawRate < .05f || maxYawRate > 2 || supportWheels.Length != 6)
-            throw new InvalidDataException("tracked handling geometry/yaw/support bounds");
+            !float.IsFinite(maxYawRate) || maxYawRate < .05f || maxYawRate > 2 ||
+            !float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || supportWheels.Length != 6)
+            throw new InvalidDataException("tracked handling geometry/yaw/mass/support bounds");
         width = trackWidth; maximumYaw = maxYawRate; wheels = supportWheels;
+        halfMass = massKg / 2; radius = wheels[0].Radius;
         lateral = wheels.Select(w => w.LateralFriction).ToArray();
         if (lateral.Any(x => !float.IsFinite(x) || x < .1f || x > 2))
             throw new InvalidDataException("tracked handling lateral friction bounds");
@@ -110,7 +119,7 @@ internal sealed class TrackedHandling
         // These thresholds/coefficient are engineering policy, not 0.9.1 data.
         float movingGrip = Math.Clamp((speed - MovingGripStartSpeed) /
             (MovingGripFullSpeed - MovingGripStartSpeed), 0, 1);
-        float outerFraction = OuterPivotFrictionFraction +
+        float outerFraction = coastPhase == 1 ? CoastOuterFrictionFraction : OuterPivotFrictionFraction +
             movingGrip * (OuterMovingFrictionFraction - OuterPivotFrictionFraction);
         float pivotBlend = steer == 0 || brake ? 0 : 1;
         for (int i = 0; i < wheels.Length; i++)
@@ -123,16 +132,16 @@ internal sealed class TrackedHandling
         if (coastPhase == 2)
         {
             // Only cross a track ratio through zero after measured near rest.
-            // A full +1 -> -1 change takes at least .2s with no engine request;
+            // A full +1 -> -1 change takes at least .1s with no engine request;
             // the next ordinary pivot still enters through the motor ramp.
-            left = NonzeroRatio(Approach(controller.LeftRatio, steer, 10 * deltaTime), steer);
-            right = NonzeroRatio(Approach(controller.RightRatio, -steer, 10 * deltaTime), -steer);
+            left = NonzeroRatio(Approach(controller.LeftRatio, steer, CoastRatioRate * deltaTime), steer);
+            right = NonzeroRatio(Approach(controller.RightRatio, -steer, CoastRatioRate * deltaTime), -steer);
             motor = 0;
             coastTransitionTime += deltaTime;
             // Reverse coast initially has the opposite yaw target. Do not
             // hand off until its slew agrees with these pivot ratios, or the
             // ordinary branch would flip them back for a few substeps.
-            if (coastTransitionTime >= .2f && left == steer && right == -steer &&
+            if (coastTransitionTime >= CoastTransitionSeconds && left == steer && right == -steer &&
                 yawTarget * steer > .001f) coastPhase = 0;
         }
         else if (steer != 0 || (throttle != 0 && MathF.Abs(yawTarget) > .001f))
@@ -176,8 +185,8 @@ internal sealed class TrackedHandling
             // zero: this can only dissipate track speed, not add energy.
             var inner = steer > 0 ? controller.RightTrack : controller.LeftTrack;
             var outer = steer > 0 ? controller.LeftTrack : controller.RightTrack;
-            Dissipate(inner, CoastInnerBrake * inner.MaxBrakeTorque * deltaTime / inner.Inertia);
-            Dissipate(outer, CoastOuterBrake * outer.MaxBrakeTorque * deltaTime / outer.Inertia);
+            Dissipate(inner, TrackBrake(inner, CoastInnerDeceleration, deltaTime));
+            Dissipate(outer, TrackBrake(outer, CoastOuterDeceleration, deltaTime));
         }
         if (throttle != 0 && throttle * signedSpeed < -ReversalBrakeSpeed)
         {
@@ -193,6 +202,11 @@ internal sealed class TrackedHandling
         motorInput = brakeInput > 0 || motor == 0 ? 0 : Approach(motorInput, motor, MotorRampPerSecond * deltaTime);
         controller.SetDriverInput(motorInput, left, right, brakeInput);
     }
+
+    // Track speed change for a retarding force halfMass*deceleration at the
+    // track radius, never more than the track's own brake torque allows.
+    private float TrackBrake(VehicleTrack track, float deceleration, float deltaTime) =>
+        MathF.Min(halfMass * deceleration * radius, track.MaxBrakeTorque) * deltaTime / track.Inertia;
 
     private static void Dissipate(VehicleTrack track, float limit)
     {

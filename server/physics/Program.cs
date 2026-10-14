@@ -197,7 +197,7 @@ try
         constraint.SetVehicleCollisionTester(tester); world.AddConstraint(constraint); world.AddStepListener(constraint);
         var controller = constraint.GetController<TrackedVehicleController>();
         var handling = configVersion == 3 ? new TrackedHandling(
-            MathF.Abs(wheelPoints[3].X - wheelPoints[0].X), maximumYawRate, wheels) : null;
+            MathF.Abs(wheelPoints[3].X - wheelPoints[0].X), maximumYawRate, mass, wheels) : null;
         handling?.VerifyWheelSettings(constraint);
         long tick = 0, sequence = 0;
         var contactMasks = new Queue<int>(6);
