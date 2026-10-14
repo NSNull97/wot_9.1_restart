@@ -4,14 +4,30 @@ namespace MapDrive;
 
 // Versioned test_lab steering policy. Jolt still owns drivetrain torque,
 // suspension, body integration and ground contact. This class changes driver
-// controls and track scrub coefficients only, never the body pose or velocity.
+// controls, track scrub coefficients and a bounded inner-track brake only,
+// never the body pose or velocity.
 internal sealed class TrackedHandling
 {
     private const float LateralAccelerationBudget = 3f; // Project policy, m/s^2.
     private const float OuterPivotFrictionFraction = .001f;
-    private const float OuterMovingFrictionFraction = .04f;
+    // Owner run 2026-10-14: 4% outer grip slid sideways on slopes in moving
+    // turns. Low scrub stays limited to near-rest pivots.
+    private const float OuterMovingFrictionFraction = .4f;
     private const float MovingGripStartSpeed = 1.5f, MovingGripFullSpeed = 4f;
     private const float CoastEnterSpeed = .5f, CoastPivotSpeed = .25f;
+    // Owner run 2026-10-14: a free-rolling steer-only coast circled for more
+    // than 15 s before pivoting. Jolt's shared brake locks both tracks and
+    // removes the turn, so a released throttle brakes the inner track only
+    // (clutch-brake steering), as a fraction of that track's brake torque.
+    private const float CoastInnerBrake = 1f;
+    // A single source track brake bounds IS-7 to about 2.9 m/s^2, so the
+    // outer track takes a smaller share; the difference keeps the turn.
+    private const float CoastOuterBrake = .3f;
+    // An opposite W/S request brakes through zero instead of waiting for the
+    // transmission to reverse against the existing momentum.
+    private const float ReversalBrakeSpeed = .5f;
+    private const float MotorRampPerSecond = 4f;
+    public const float GearSwitchTime = .15f, ClutchReleaseTime = .1f, GearSwitchLatency = .2f;
     private readonly float width, maximumYaw;
     private readonly WheelSettingsTV[] wheels;
     private readonly float[] lateral;
@@ -153,14 +169,35 @@ internal sealed class TrackedHandling
         }
         if (steer == 0 && throttle == 0) motor = 0;
         if ((throttle > 0 && signedSpeed >= forwardLimit) || (throttle < 0 && signedSpeed <= -reverseLimit)) motor = 0;
+        float brakeInput = brake ? 1 : 0;
+        if (coastPhase == 1)
+        {
+            // Bounded by the inner track's own brake torque and never past
+            // zero: this can only dissipate track speed, not add energy.
+            var inner = steer > 0 ? controller.RightTrack : controller.LeftTrack;
+            var outer = steer > 0 ? controller.LeftTrack : controller.RightTrack;
+            Dissipate(inner, CoastInnerBrake * inner.MaxBrakeTorque * deltaTime / inner.Inertia);
+            Dissipate(outer, CoastOuterBrake * outer.MaxBrakeTorque * deltaTime / outer.Inertia);
+        }
+        if (throttle != 0 && throttle * signedSpeed < -ReversalBrakeSpeed)
+        {
+            motor = 0;
+            brakeInput = 1;
+        }
         // A direction change cancels the old request immediately. Ramping
         // through zero would keep driving the wrong way for half a second.
-        // The new request still ramps from rest; Jolt owns braking/gear changes.
+        // The new request still ramps from rest after the reversal brake.
         if (motorInput * motor < 0) motorInput = 0;
         // Braking and a released throttle never leave a queued driving torque.
-        // Nonzero requests otherwise enter over a bounded half-second ramp.
-        motorInput = brake || motor == 0 ? 0 : Approach(motorInput, motor, 2 * deltaTime);
-        controller.SetDriverInput(motorInput, left, right, brake ? 1 : 0);
+        // Nonzero requests otherwise enter over a bounded quarter-second ramp.
+        motorInput = brakeInput > 0 || motor == 0 ? 0 : Approach(motorInput, motor, MotorRampPerSecond * deltaTime);
+        controller.SetDriverInput(motorInput, left, right, brakeInput);
+    }
+
+    private static void Dissipate(VehicleTrack track, float limit)
+    {
+        float w = track.AngularVelocity;
+        track.AngularVelocity = w - MathF.Sign(w) * MathF.Min(MathF.Abs(w), limit);
     }
 
     private static float Approach(float value, float target, float amount) =>

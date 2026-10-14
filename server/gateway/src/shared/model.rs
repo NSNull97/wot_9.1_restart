@@ -23,9 +23,16 @@ pub fn bad() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "shared l
 #[derive(Clone, Debug, PartialEq)]
 pub struct Identity { pub account: String, pub database: i32, pub name: String }
 
+/// `speed_percent` carries the native partial cruise stage (100, 50 or 25).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Input { pub throttle: i8, pub steer: i8 }
-impl Input { pub const STOP: Self = Self { throttle: 0, steer: 0 }; }
+pub struct Input { pub throttle: i8, pub steer: i8, pub speed_percent: u8 }
+impl Input {
+    pub const STOP: Self = Self { throttle: 0, steer: 0, speed_percent: 100 };
+    fn valid(&self) -> bool {
+        (-1..=1).contains(&self.throttle) && (-1..=1).contains(&self.steer)
+            && crate::map_drive_worker091::partial_cruise_valid(self.throttle, false, self.speed_percent)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Actor {
@@ -345,7 +352,7 @@ impl World {
                 match command {
                     Command::Aim(intent) => { intent.validate()?; continue; },
                     Command::Move(input) => {
-                        if !(-1..=1).contains(&input.throttle) || !(-1..=1).contains(&input.steer) { return Err(bad()); }
+                        if !input.valid() { return Err(bad()); }
                         continue;
                     },
                     Command::Fire(_) => continue,
@@ -355,7 +362,7 @@ impl World {
             match command {
                 Command::Aim(intent) => next.aim.set(*intent)?,
                 Command::Move(input) => {
-                    if !(-1..=1).contains(&input.throttle) || !(-1..=1).contains(&input.steer) { return Err(bad()); }
+                    if !input.valid() { return Err(bad()); }
                     next.input = *input;
                 },
                 Command::Fire(command) => {
@@ -887,7 +894,7 @@ pub(super) mod tests {
         let at = now+Duration::from_secs(9); w.advance(at).unwrap();
         let ammo = w.actors[1].fire.ammo(); let aim = w.actors[1].aim.clone();
         assert!(w.apply(1,2,&[Command::Aim(aim::Intent::Point([100.,20.,50.])),
-            Command::Move(Input{throttle:1,steer:1}),Command::Fire(fire::Command::Shoot)],at).unwrap().is_empty());
+            Command::Move(Input{throttle:1,steer:1,speed_percent:100}),Command::Fire(fire::Command::Shoot)],at).unwrap().is_empty());
         assert_eq!(w.actors[1].fire.ammo(),ammo); assert_eq!(w.actors[1].aim,aim);
         assert_eq!(w.actors[1].input,Input::STOP);
         // Already dead geometry emits one distinct block outcome, not another
@@ -1035,8 +1042,8 @@ pub(super) mod tests {
     }
     #[test] fn two_controllers_change_one_shared_world_without_cross_ownership() {
         let now = Instant::now(); let mut w = world(now); let other = w.actors[1].clone();
-        assert!(w.apply(1, 1, &[Command::Move(Input { throttle: 1, steer: 0 })], now).is_err());
-        w.apply(0, 1, &[Command::Move(Input { throttle: 1, steer: 0 })], now).unwrap();
+        assert!(w.apply(1, 1, &[Command::Move(Input { throttle: 1, steer: 0, speed_percent: 100 })], now).is_err());
+        w.apply(0, 1, &[Command::Move(Input { throttle: 1, steer: 0, speed_percent: 100 })], now).unwrap();
         w.advance(now + STEP).unwrap(); assert!(w.actors[0].position[2] > SPAWN[2]);
         assert_eq!(w.actors[1], other);
     }
@@ -1097,7 +1104,7 @@ pub(super) mod tests {
     #[test] fn disconnect_and_reconnect_keep_survivor_clock_pose_and_ammo() {
         let now = Instant::now(); let mut w = world(now);
         w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap();
-        w.apply(1, 2, &[Command::Move(Input { throttle: 1, steer: 0 })], now).unwrap();
+        w.apply(1, 2, &[Command::Move(Input { throttle: 1, steer: 0, speed_percent: 100 })], now).unwrap();
         w.detach(1).unwrap(); let parked = w.actors[0].position;
         w.advance(now + STEP).unwrap(); assert_eq!(w.actors[0].position, parked);
         assert!(w.actors[1].position[2] > SPAWN[2]);
@@ -1108,7 +1115,7 @@ pub(super) mod tests {
     #[test] fn bad_late_command_is_atomic_and_reload_is_separate() {
         let now = Instant::now(); let mut w = world(now); let before = w.actors.clone();
         assert!(w.apply(0, 1, &[Command::Fire(fire::Command::Shoot),
-            Command::Move(Input { throttle: 2, steer: 0 })], now).is_err());
+            Command::Move(Input { throttle: 2, steer: 0, speed_percent: 100 })], now).is_err());
         assert_eq!(w.actors, before);
         assert!(w.shots.is_empty());
         w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap();
@@ -1148,7 +1155,7 @@ pub(super) mod tests {
         let before = (w.actors.clone(), w.shots.clone(), w.projectiles.clone(),
             w.impact.clone(), w.tick, w.last);
         assert!(w.apply(0, 1, &[Command::Fire(fire::Command::Shoot),
-            Command::Move(Input { throttle: 2, steer: 0 })], now).is_err());
+            Command::Move(Input { throttle: 2, steer: 0, speed_percent: 100 })], now).is_err());
         assert_eq!((w.actors.clone(), w.shots.clone(), w.projectiles.clone(),
             w.impact.clone(), w.tick, w.last), before);
 
@@ -1182,7 +1189,7 @@ pub(super) mod tests {
     }
     #[test] fn clock_and_kinematic_bounds_do_not_depend_on_client_telemetry() {
         let now = Instant::now(); let mut w = world(now);
-        w.apply(0, 1, &[Command::Move(Input { throttle: 1, steer: 0 })], now).unwrap();
+        w.apply(0, 1, &[Command::Move(Input { throttle: 1, steer: 0, speed_percent: 100 })], now).unwrap();
         for n in 1..100 { w.advance(now + STEP * n).unwrap(); }
         assert!((w.actors[0].position[2] - SPAWN[2]).abs() <= 2.);
         assert_eq!(w.actors[0].position[1], SPAWN[1]);

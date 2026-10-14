@@ -7,7 +7,7 @@ use crate::map_drive_worker091::{CatalogSpec, FractureReceipt, Input as WorkerIn
 const BASE: &str = "evidence/20261013-p05b-tracked-handling-01";
 const DOMAIN_SHA: &str = "944ca90d9b8855fbba2206abc0d32138b9807106afb4c5d60c270d2257bd87c8";
 const CATALOG_SHA: &str = "6d9a57de3b86f1e3b9a66390ff0968677b9a29e9238ca8559158d99dfb3dce16";
-const FORWARD: WorkerInput = WorkerInput { throttle:1, steer:0, brake:false };
+const FORWARD: WorkerInput = WorkerInput { throttle:1, steer:0, brake:false,speed_percent:100 };
 
 struct Case {
     name: &'static str,
@@ -139,7 +139,7 @@ fn run_case(case:&Case) {
     for slot in 0..2 {world.attach(model::Identity{account:format!("whole-real-{slot}"),database:slot+1,
         name:format!("whole_{slot}")},slot as u32+1).unwrap();}
     world.start(begin).unwrap();world.rebase_external_spawns([map.spawn;2]).unwrap();
-    for slot in 0..2 {world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0};}
+    for slot in 0..2 {world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0,speed_percent:100};}
     let mut runtime=IntegratedRuntime::new_for_map(pool,MapId::Prohorovka);
     runtime.catalog=Some(spec.clone());runtime.started=true;
     for slot in 0..2 {

@@ -293,7 +293,7 @@ impl Session {
                             // one initial envelope (8a01000006). Neutral is safe
                             // before correction; nonzero remains gated.
                             if !c.correction && flags != 0 { return Err(bad()); }
-                            c.commands.push(Command::Move(Input { throttle: input.throttle, steer: input.steer }));
+                            c.commands.push(Command::Move(Input { throttle: input.throttle, steer: input.steer, speed_percent: input.speed_percent }));
                         },
                         drive::Method::UnsupportedMove(flags) => {
                             c.commands.push(Command::Move(Input::STOP));

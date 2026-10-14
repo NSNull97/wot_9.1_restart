@@ -175,6 +175,17 @@ try
             SuspensionSpring = new SpringSettings(SpringMode.FrequencyAndDamping, 2, .7f) }).ToArray();
         using var controllerSettings = new TrackedVehicleControllerSettings();
         var engine = controllerSettings.Engine; engine.MaxTorque = N("engine_max_torque_nm", 10, 10000); controllerSettings.Engine = engine;
+        if (configVersion == 3)
+        {
+            // Owner run 2026-10-14: Jolt's default 0.5 s shift + 0.3 s clutch
+            // release cut drive at every upshift and on W/S reversal. Engineering
+            // test_lab policy, not a recovered 0.9.1 gearbox model.
+            var transmission = controllerSettings.Transmission;
+            transmission.SwitchTime = TrackedHandling.GearSwitchTime;
+            transmission.ClutchReleaseTime = TrackedHandling.ClutchReleaseTime;
+            transmission.SwitchLatency = TrackedHandling.GearSwitchLatency;
+            controllerSettings.Transmission = transmission;
+        }
         float brakeTorque = N("track_max_brake_torque", 100, 100000);
         controllerSettings.SetTrack(0, new VehicleTrackSettings { DrivenWheel = 1, Wheels = [0, 1, 2], MaxBrakeTorque = brakeTorque,
             Inertia = configVersion == 3 ? TrackedHandling.TrackInertia(mass, radius) : new VehicleTrackSettings().Inertia });
@@ -264,8 +275,11 @@ try
         try
         {
             world.OptimizeBroadPhase();
-            void Advance(int throttle, int steer, bool brake, int count, bool captureContacts = false)
+            void Advance(int throttle, int steer, bool brake, int count, bool captureContacts = false, int speedPercent = 100)
             {
+                // Full speed reuses the exact limits; partial cruise only lowers the cutoff.
+                float stageForward = speedPercent == 100 ? forwardLimit : forwardLimit * speedPercent / 100f;
+                float stageReverse = speedPercent == 100 ? reverseLimit : reverseLimit * speedPercent / 100f;
                 for (int i = 0; i < count; i++)
                 {
                     currentSubstep = i + 1;
@@ -279,12 +293,12 @@ try
                     {
                         handling.Apply(controller, speed,
                             Vector3.Dot(bodies.GetAngularVelocity(body.ID), Vector3.Transform(Vector3.UnitY, q)),
-                            throttle, steer, brake, forwardLimit, reverseLimit, 1f / 60);
+                            throttle, steer, brake, stageForward, stageReverse, 1f / 60);
                     }
                     else
                     {
                     float motor = throttle;
-                    if ((throttle > 0 && speed >= forwardLimit) || (throttle < 0 && speed <= -reverseLimit)) motor = 0;
+                    if ((throttle > 0 && speed >= stageForward) || (throttle < 0 && speed <= -stageReverse)) motor = 0;
                     float left = 1, right = 1;
                     if (steer != 0)
                     {
@@ -551,9 +565,16 @@ try
                     (catalog != null && request.GetProperty("scene_sha256").GetString() != scene!.Hash) ||
                     request.GetProperty("seq").GetInt64() != sequence + 1 || sequence >= 36000 || request.GetProperty("ticks").GetInt32() != 6)
                     throw new InvalidDataException("IPC sequence or cadence mismatch");
-                var controls = request.GetProperty("input"); CheckedInput.Fields(controls, "throttle", "steer", "brake");
+                // Optional #717 partial cruise stage; absent means the original full-speed input.
+                var controls = request.GetProperty("input");
+                bool partialCruise = controls.TryGetProperty("speed_percent", out var stage);
+                if (partialCruise) CheckedInput.Fields(controls, "throttle", "steer", "brake", "speed_percent");
+                else CheckedInput.Fields(controls, "throttle", "steer", "brake");
                 int throttle = controls.GetProperty("throttle").GetInt32(), steer = controls.GetProperty("steer").GetInt32();
                 bool brake = controls.GetProperty("brake").GetBoolean();
+                int speedPercent = partialCruise ? stage.GetInt32() : 100;
+                if (partialCruise && !(speedPercent == 50 && !brake && throttle != 0 || speedPercent == 25 && !brake && throttle == 1))
+                    throw new InvalidDataException("invalid partial cruise stage");
                 if (Math.Abs((long)throttle) > 1 || Math.Abs((long)steer) > 1 || (brake && (throttle != 0 || steer != 0)))
                     throw new InvalidDataException("invalid domain driving input");
                 rawContactCount = 0; contactOverflow = 0; currentSubstep = 0;
@@ -561,7 +582,7 @@ try
                 fracture?.BeginAdvance();
                 angularFracture?.BeginAdvance();
                 captureContactsEnabled = catalog?.Contacts == true;
-                Advance(throttle, steer, brake, 6, catalog?.Contacts == true);
+                Advance(throttle, steer, brake, 6, catalog?.Contacts == true, speedPercent);
                 captureContactsEnabled = false;
                 CollectContacts(); sequence++; Write(fracture?.Receipts.Count > 0 || angularFracture?.Receipts.Count > 0 ? "prepared" : "state");
             }

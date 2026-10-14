@@ -173,7 +173,7 @@ fn fence_total_actual_source_profiles_commit_only_after_both_ack_and_restore_on_
         "312c6cf7c8a0609319e40da79557ce4d84e590bef990e0e241b62a833dba9cff",91u32),
         ("is7",VehicleKind::Is7,"f48defe4388fbf5930f54b026b337927a944c9c2fc5c679a17679834a3ae6292",
         "9876b8f09533bc813c7f3d9dd597d5d80d4efe03911075b5ce636163417e5313",73u32)];
-    let forward=drive::Input{throttle:1,steer:0,brake:false};
+    let forward=drive::Input{throttle:1,steer:0,brake:false,speed_percent:100};
     for (name,vehicle,pool_sha,config_sha,sequence) in cases {
         let local=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();let base=local.join(BASE);
         let path=base.join(format!("night-fence-runtime-fixtures03/{name}-pool.json"));
@@ -198,7 +198,7 @@ fn fence_total_actual_source_profiles_commit_only_after_both_ack_and_restore_on_
         world.impact.bind_fragiles(catalog.clone()).unwrap();world.fragiles=Some(fragiles::State::new(catalog));
         for slot in 0..2{world.attach(model::Identity{account:format!("fence-real-{slot}"),database:slot+1,name:format!("fence_{slot}")},slot as u32+1).unwrap();}
         world.start(begin).unwrap();world.rebase_external_spawns([map.spawn;2]).unwrap();
-        for slot in 0..2{world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0};}
+        for slot in 0..2{world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0,speed_percent:100};}
         // Private isolation only. Seed both domain and its replay trace through
         // the bounded atomic API. These1037 synthetic prior removals are
         // explicitly excluded from real collision/native acceptance evidence.

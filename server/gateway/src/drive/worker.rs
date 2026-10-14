@@ -270,14 +270,24 @@ impl Pool {
     }
 }
 
+/// `speed_percent` is the #717 partial cruise stage: 100 for ordinary keys and
+/// full cruise, 50 for FWD50/BCKW50, 25 for FWD25. The stage only lowers the
+/// worker's speed cutoff; it is never a client speed or position.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub struct Input {pub throttle:i8,pub steer:i8,pub brake:bool}
-impl Input {pub const STOP:Self=Self{throttle:0,steer:0,brake:true};}
+pub struct Input {pub throttle:i8,pub steer:i8,pub brake:bool,pub speed_percent:u8}
+impl Input {pub const STOP:Self=Self{throttle:0,steer:0,brake:true,speed_percent:100};}
+pub fn partial_cruise_valid(throttle:i8,brake:bool,speed_percent:u8)->bool{
+    match speed_percent{100=>true,50=>!brake && throttle!=0,25=>!brake && throttle==1,_=>false}
+}
 pub fn request(seq:u32,input:Input)->io::Result<Vec<u8>> {
     if seq==0 || seq>MAX_SEQUENCE || !(-1..=1).contains(&input.throttle) || !(-1..=1).contains(&input.steer)
-        || (input.brake && (input.throttle!=0 || input.steer!=0)){return Err(bad());}
+        || (input.brake && (input.throttle!=0 || input.steer!=0))
+        || !partial_cruise_valid(input.throttle,input.brake,input.speed_percent){return Err(bad());}
+    // Full-speed requests keep the original exact three-field input bytes.
+    let mut controls=serde_json::json!({"throttle":input.throttle,"steer":input.steer,"brake":input.brake});
+    if input.speed_percent!=100{controls["speed_percent"]=input.speed_percent.into();}
     let mut b=serde_json::to_vec(&serde_json::json!({"version":1,"op":"advance","seq":seq,"ticks":6,
-        "input":{"throttle":input.throttle,"steer":input.steer,"brake":input.brake}})).map_err(|_|bad())?;
+        "input":controls})).map_err(|_|bad())?;
     if b.len()>1024{return Err(bad());}b.push(b'\n');Ok(b)
 }
 fn request_scene(seq:u32,input:Input,scene:u32)->io::Result<Vec<u8>>{
@@ -727,9 +737,21 @@ pub(crate) mod tests {
     }
     #[test]fn request_has_only_domain_input_and_fixed_steps(){
         assert!(request(0,Input::STOP).is_err());assert!(request(36001,Input::STOP).is_err());
-        for throttle in -1..=1{for steer in -1..=1{let b=request(1,Input{throttle,steer,brake:false}).unwrap();let v=json(&b,1024).unwrap();assert_eq!(v["ticks"],6);assert!(v.get("position").is_none());}}
-        assert!(request(1,Input{throttle:1,steer:0,brake:true}).is_err());
-        assert!(request(1,Input{throttle:0,steer:2,brake:false}).is_err());
+        for throttle in -1..=1{for steer in -1..=1{let b=request(1,Input{throttle,steer,brake:false,speed_percent:100}).unwrap();let v=json(&b,1024).unwrap();assert_eq!(v["ticks"],6);assert!(v.get("position").is_none());}}
+        assert!(request(1,Input{throttle:1,steer:0,brake:true,speed_percent:100}).is_err());
+        assert!(request(1,Input{throttle:0,steer:2,brake:false,speed_percent:100}).is_err());
+    }
+    #[test]fn partial_cruise_stage_is_additive_and_bounded(){
+        // Full speed keeps the historical exact bytes and three input fields.
+        assert_eq!(request(7,Input{throttle:1,steer:-1,brake:false,speed_percent:100}).unwrap(),
+            b"{\"input\":{\"brake\":false,\"steer\":-1,\"throttle\":1},\"op\":\"advance\",\"seq\":7,\"ticks\":6,\"version\":1}\n".to_vec());
+        for (throttle,percent) in [(1,50),(-1,50),(1,25)]{
+            let v=json(&request(1,Input{throttle,steer:1,brake:false,speed_percent:percent}).unwrap(),1024).unwrap();
+            assert_eq!(v["input"],serde_json::json!({"throttle":throttle,"steer":1,"brake":false,"speed_percent":percent}));
+        }
+        for (throttle,brake,percent) in [(-1,false,25),(0,false,50),(0,true,50),(1,false,0),(1,false,75),(1,false,101)]{
+            assert!(request(1,Input{throttle,steer:0,brake,speed_percent:percent}).is_err());
+        }
     }
     #[test]fn actual_packaged_pool_and_saved_worker_output_readonly_contract(){
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
@@ -963,7 +985,7 @@ pub(crate) mod tests {
                 if let Some(s)=w.poll(Instant::now()).unwrap(){return s;}thread::sleep(Duration::from_millis(5));}}
             let initial=wait(&mut w,begin+Duration::from_secs(30));assert_eq!(initial.seq,0);let pid=w.process_id().unwrap();
             let mut ticks=vec![initial.tick];let mut samples=Vec::new();
-            for input in [Input::STOP,Input{throttle:1,steer:0,brake:false},Input::STOP]{
+            for input in [Input::STOP,Input{throttle:1,steer:0,brake:false,speed_percent:100},Input::STOP]{
                 w.advance(input,Instant::now()).unwrap();let state=wait(&mut w,Instant::now()+REPLY_TIMEOUT);ticks.push(state.tick);
                 samples.push(serde_json::json!({"seq":state.seq,"tick":state.tick,"position":state.pose.position,"direction":state.pose.direction,
                     "contacts":state.pose.contacts,"wheel_contact_masks":state.pose.wheel_contact_masks}));

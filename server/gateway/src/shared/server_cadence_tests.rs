@@ -19,7 +19,7 @@ fn fixture(now: Instant) -> Fixture {
     let mut world=model::tests::world(now);
     world.impact.bind_fragiles(catalog.clone()).unwrap();
     world.fragiles=Some(fragiles::State::new(catalog.clone()));
-    for actor in &mut world.actors { actor.input=model::Input { throttle:1,steer:0 }; }
+    for actor in &mut world.actors { actor.input=model::Input { throttle:1,steer:0,speed_percent:100 }; }
     let origins=std::array::from_fn(|slot|world.actors[slot].position);
     let manifest=json!({"version":3,"profile":"test_lab","map":"01_karelia","contacts":true,
         "physics_manifest_sha256":MapId::Karelia.spec().physics_manifest_sha256,
@@ -334,7 +334,7 @@ fn cadence_real_case(local:&Path,out:&Path,name:&str,kind:VehicleKind,pool_sha:&
     let catalog=Arc::new(fragiles::Catalog::load(local,&base.join("night-fence-export01/catalog/manifest.json"),REAL_DOMAIN).unwrap());
     let spec=CatalogSpec::load(local,&base.join("night-fence-export01/catalog/physics-removals.json"),REAL_CATALOG).unwrap();
     validate_catalog_projection(&catalog,&spec,MapId::Prohorovka).unwrap();
-    let scene=Scene::new(&spec,&[]).unwrap();let forward=drive::Input{throttle:1,steer:0,brake:false};
+    let scene=Scene::new(&spec,&[]).unwrap();let forward=drive::Input{throttle:1,steer:0,brake:false,speed_percent:100};
     let lanes: [[f32;3];2]=std::array::from_fn(|slot|IntegratedRuntime::lane_spawn(&map,slot));
     assert_eq!(lanes,[[-184.,2.5,-350.],[-176.,2.5,-350.]]);
     let mut reference:[Vec<drive::State>;2]=std::array::from_fn(|_|Vec::new());
@@ -402,7 +402,7 @@ fn cadence_real_case(local:&Path,out:&Path,name:&str,kind:VehicleKind,pool_sha:&
         assert_eq!(runtime.poses[slot],Some(expected_pose(slot,0)));
         let actor=&world.actors[slot];assert!(!actor.ready);
         assert_eq!((actor.position,actor.direction,actor.speed),expected_pose(slot,0));
-        world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0};
+        world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0,speed_percent:100};
         world.actors[slot].aim.set(super::super::aim::Intent::Hold{yaw:0.8,pitch:0.05}).unwrap();
     }
     let active=Instant::now();let deadline=active+Duration::from_secs(15);

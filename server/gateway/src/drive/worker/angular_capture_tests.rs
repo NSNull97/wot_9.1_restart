@@ -86,7 +86,7 @@ fn replay(scope:CaptureScope)->io::Result<Value>{
         value_same(requests[0],&catalog::scene_request(map,&catalog,generation,0,&scene,true)?)?;
         let ready=catalog::response_with_profile(replies[0],map,&catalog,generation,0,None,&scene,Some(profile))?;
         if ready.angular_proof.as_ref().is_none_or(|f|!f.receipts.is_empty()){return Err(bad());}
-        let input=if mode=="pivot"{Input{throttle:0,steer:1,brake:false}}else{Input{throttle:1,steer:0,brake:false}};
+        let input=if mode=="pivot"{Input{throttle:0,steer:1,brake:false,speed_percent:100}}else{Input{throttle:1,steer:0,brake:false,speed_percent:100}};
         let mut cursor=1;let mut fractures=0;let mut acks=0;let mut target_hull_frames=0;let mut target_outcomes=Vec::new();
         let mut target_angular_applied=0;
         for seq in 1..=120 {
@@ -240,7 +240,7 @@ fn replay_normal()->io::Result<Value> {
         value_same(requests[0],&catalog::scene_request(map,&catalog,generation,0,&scene,true)?)?;
         let ready=catalog::response_with_profile(replies[0],map,&catalog,generation,0,None,&scene,Some(profile))?;
         if !ready.fractures.is_empty()||(!old&&ready.angular_proof.as_ref().is_none_or(|p|!p.receipts.is_empty())){return Err(bad());}
-        let input=Input{throttle:1,steer:0,brake:false};let mut cursor=1;let mut fractures=0;let mut acks=0;
+        let input=Input{throttle:1,steer:0,brake:false,speed_percent:100};let mut cursor=1;let mut fractures=0;let mut acks=0;
         for seq in 1..=180 {
             let request=requests.get(cursor).ok_or_else(bad)?;let reply=replies.get(cursor).ok_or_else(bad)?;
             value_same(request,&catalog::request_catalog(seq,input,&scene,&catalog)?)?;

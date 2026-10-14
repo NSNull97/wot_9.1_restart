@@ -219,7 +219,7 @@ fn rejoin_scene_ack_keeps_survivor_contact_without_waiting_for_native_ready() {
     f.runtime.poses[1] = None;
     f.runtime.anchored[1] = false;
     let at = now + drive::STEP;
-    f.runtime.workers[0].as_mut().unwrap().advance(drive::Input { throttle: 1, steer: 0, brake: false }, at).unwrap();
+    f.runtime.workers[0].as_mut().unwrap().advance(drive::Input { throttle: 1, steer: 0, brake: false, speed_percent: 100 }, at).unwrap();
     f.runtime.dispatched[0] = Some(at);
     assert_eq!(f.peers[0].request()["seq"], 1);
     f.reply(0, 1, at + Duration::from_millis(1), vec![contact(1514, 2.)]);

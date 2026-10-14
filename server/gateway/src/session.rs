@@ -3557,7 +3557,7 @@ mod tests {
         assert!(s.receive(&arena_frame(&s,4,&[0x8a,1,0,1],5),t).is_err());drive_same(&s,&ready);
         assert!(s.receive(&arena_frame(&s,4,&[6,0x8a,1,0,1,7],5),t).is_err());drive_same(&s,&ready);
         let mut b=vec![6,2];for p in [99999f32,-99999f32,88888f32]{b.extend(p.to_le_bytes());}b.extend([255;4]);b.extend([0x8a,1,0,10]);
-        s.receive(&arena_frame(&s,4,&b,5),t).unwrap();let d=s.drive.as_ref().unwrap();assert_eq!(d.input,crate::map_drive_worker091::Input{throttle:-1,steer:1,brake:false});
+        s.receive(&arena_frame(&s,4,&b,5),t).unwrap();let d=s.drive.as_ref().unwrap();assert_eq!(d.input,crate::map_drive_worker091::Input{throttle:-1,steer:1,brake:false,speed_percent:100});
         assert_eq!(d.pose.as_ref().unwrap().position,[0.,10.,0.]);assert_eq!(d.telemetry,1);assert_eq!(d.commands,1);assert_eq!(d.correction_acks,1);
         let state=s.drive.clone();s.receive(&arena_frame(&s,4,&b,5),t).unwrap();assert_eq!(s.drive,state);
     }
@@ -3575,7 +3575,12 @@ mod tests {
         let t=Instant::now();let mut ready=drive_live(t);
         ready.receive(&arena_frame(&ready,4,&[6,0x8a,1,0,1],5),t).unwrap();
         assert_eq!(ready.drive.as_ref().unwrap().input.throttle,1);
-        for flags in [3,12,15,16,17,32,33,255]{
+        // #717 FWD50/FWD25 cruise stages are ordinary movement with a lower cutoff.
+        for (flags,percent) in [(17,50),(33,25)]{
+            let mut s=ready.clone();s.receive(&arena_frame(&s,5,&[0x8a,1,0,flags],5),t).unwrap();
+            assert_eq!(s.drive.as_ref().unwrap().input,crate::map_drive_worker091::Input{throttle:1,steer:0,brake:false,speed_percent:percent});
+        }
+        for flags in [3,12,15,16,32,34,48,255]{
             let mut s=ready.clone();s.receive(&arena_frame(&s,5,&[0x8a,1,0,flags],5),t).unwrap();
             assert_eq!(s.drive.as_ref().unwrap().input,crate::map_drive_worker091::Input::STOP);
             assert_eq!(s.drive.as_ref().unwrap().commands,2);assert_eq!(s.drive.as_ref().unwrap().pose,ready.drive.as_ref().unwrap().pose);

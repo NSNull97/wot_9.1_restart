@@ -148,7 +148,7 @@ fn run_case(local:&Path,binding:&Value,case:(&str,VehicleKind,&str,u32),out:&Pat
     let mut log=TimedLog::new(out);for slot in 0..2{launch(&mut runtime,&world,slot,slot as u32+2,scene.clone(),probes,&mut log,deadline);}
     for slot in 0..2{wait_pid(&mut runtime,&mut world,slot,deadline,&mut log);}
     while !runtime.ready_for_native()||!runtime.anchored.iter().all(|v|*v){loop_step(&mut runtime,&mut world,deadline,&mut log);assert_eq!(runtime.contact_sequences,[0,0]);}
-    let input=model::Input{throttle:if pivot{0}else{1},steer:if pivot{1}else{0}};
+    let input=model::Input{throttle:if pivot{0}else{1},steer:if pivot{1}else{0},speed_percent:100};
     for slot in 0..2{world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=input;}
     let before_events=world.impact.events().len();let mut staged_once=false;let mut prepared_seq=0;let mut old_slot1=None;
     while !staged_once {let before=world.clone();loop_step(&mut runtime,&mut world,deadline,&mut log);assert!(runtime.contact_sequences.iter().all(|n|*n<=120));

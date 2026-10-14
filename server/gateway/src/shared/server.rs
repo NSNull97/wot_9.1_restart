@@ -537,11 +537,11 @@ impl IntegratedRuntime {
                 && deadlines[slot].is_some() {
                 let actor = world.actors.get(slot).ok_or_else(model::bad)?;
                 let input = crate::map_drive_worker091::Input { throttle: actor.input.throttle,
-                    steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0 };
+                    steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0, speed_percent: actor.input.speed_percent };
                 let seq = worker.advance(input, now)?;
                 self.dispatched[slot] = deadlines[slot];
-                println!("SHARED_INTEGRATED_WORKER_INPUT battle={} slot={} seq={} throttle={} steer={} brake={}",
-                    world.id, slot, seq, input.throttle, input.steer, input.brake);
+                println!("SHARED_INTEGRATED_WORKER_INPUT battle={} slot={} seq={} throttle={} steer={} brake={} speed_percent={}",
+                    world.id, slot, seq, input.throttle, input.steer, input.brake, input.speed_percent);
             }
         }
         Ok(())
@@ -1360,7 +1360,7 @@ mod tests {
         // Global arena-entry readiness is false while the other worker restores,
         // but 64 successive survivor envelopes must be consumed without overflow.
         for _ in 0..64 {
-            a.shared.as_mut().unwrap().commands.push(model::Command::Move(model::Input{throttle:1,steer:0}));
+            a.shared.as_mut().unwrap().commands.push(model::Command::Move(model::Input{throttle:1,steer:0,speed_percent:100}));
             poll_with_native_start(&mut a,&mut w,now+model::STEP,false).unwrap();
             assert!(a.shared.as_ref().unwrap().commands.is_empty());
         }
@@ -1384,7 +1384,7 @@ mod tests {
         let now=Instant::now();let(mut a,mut b,_)=visible_pair(now);let mut w=destroyed_fixture(now);
         for s in [&mut a,&mut b] {
             let c=s.shared.as_mut().unwrap();c.view=Some(w.clone());c.shot_cursor=w.latest_shot();
-            c.area_creation=Some((0,false));c.commands.push(model::Command::Move(model::Input{throttle:1,steer:0}));
+            c.area_creation=Some((0,false));c.commands.push(model::Command::Move(model::Input{throttle:1,steer:0,speed_percent:100}));
             poll(s,&mut w,now+model::STEP).unwrap();assert_eq!(s.shared.as_ref().unwrap().commands.len(),1);
             assert_eq!(s.shared.as_ref().unwrap().area_scene_sent,0);
             s.shared.as_mut().unwrap().area_creation=Some((0,true));
