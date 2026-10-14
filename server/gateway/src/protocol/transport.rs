@@ -3,6 +3,12 @@ use std::{collections::VecDeque,io,time::{Duration,Instant}};
 pub(crate) const MAX_SEQUENCE:u32=32; // Lab lifetime bound, not the native wraparound modulus.
 pub(crate) const INTERACTIVE_MAX_SEQUENCE:u32=1_000_000; // Safety stop before any unmeasured wraparound.
 pub const RETRY:Duration=Duration::from_millis(700);
+/// Project policy, not a historical constant: an interactive #717 client may
+/// block its main thread for seconds (hangar refresh measured 6.7 s). Lab
+/// windows keep their five-send bound.
+pub const INTERACTIVE_LIVENESS:Duration=Duration::from_secs(30);
+const LAB_SENDS:u8=5;
+const LAB_IDLE:Duration=Duration::from_secs(8);
 fn invalid()->io::Error {io::Error::new(io::ErrorKind::InvalidData,"unsupported/bounded channel frame")}
 
 #[derive(Debug,Clone)]
@@ -44,19 +50,19 @@ pub fn ack(next:u32)->Vec<u8> {let mut b=vec![8,4];b.extend(next.to_le_bytes());
 pub fn reliable(sequence:u32,next:u32)->Vec<u8> {let mut b=vec![0x58,4];b.extend(sequence.to_le_bytes());b.extend(next.to_le_bytes());b}
 
 #[derive(Clone)]
-struct Pending {sequence:u32,last:Option<Instant>,attempts:u8,body:Vec<u8>}
+struct Pending {sequence:u32,first:Option<Instant>,last:Option<Instant>,attempts:u8,body:Vec<u8>}
 #[derive(Clone)]
-pub struct Window {pending:VecDeque<Pending>,next:u32,sent_prefix:u32,limit:u32,pub cumulative:u32}
+pub struct Window {pending:VecDeque<Pending>,next:u32,sent_prefix:u32,limit:u32,unacked:Option<Duration>,pub cumulative:u32}
 impl Window {
     pub fn new()->Self {Self::bounded(MAX_SEQUENCE)}
-    pub fn interactive()->Self {Self::bounded(INTERACTIVE_MAX_SEQUENCE)}
-    fn bounded(limit:u32)->Self {Self {pending:VecDeque::new(),next:0,sent_prefix:0,limit,cumulative:0}}
+    pub fn interactive()->Self {Self {unacked:Some(INTERACTIVE_LIVENESS),..Self::bounded(INTERACTIVE_MAX_SEQUENCE)}}
+    fn bounded(limit:u32)->Self {Self {pending:VecDeque::new(),next:0,sent_prefix:0,limit,unacked:None,cumulative:0}}
     pub fn enqueue(&mut self)->io::Result<()> {
         self.enqueue_body(&[])
     }
     pub fn enqueue_body(&mut self,body:&[u8])->io::Result<()> {
         if body.len()>512 || self.pending.len()>=8 || self.next>=self.limit {return Err(invalid());}
-        self.pending.push_back(Pending {sequence:self.next,last:None,attempts:0,body:body.to_vec()});self.next+=1;Ok(())
+        self.pending.push_back(Pending {sequence:self.next,first:None,last:None,attempts:0,body:body.to_vec()});self.next+=1;Ok(())
     }
     // Return the sequence only after the existing atomic enqueue succeeds.
     // This adds no ACK policy, wraparound or alternative queue implementation.
@@ -64,6 +70,8 @@ impl Window {
         let sequence=self.next;self.enqueue_body(body)?;Ok(sequence)
     }
     pub fn len(&self)->usize {self.pending.len()}
+    /// Inbound silence a session tolerates; the same bound as unacknowledged age.
+    pub fn idle_limit(&self)->Duration {self.unacked.unwrap_or(LAB_IDLE)}
     pub fn validate_ack(&self,frame:&Frame)->io::Result<()> {
         if let Some(c)=frame.cumulative {
             if c>self.sent_prefix {return Err(invalid());}
@@ -78,16 +86,20 @@ impl Window {
     }
     pub fn due(&mut self,now:Instant,next_rx:u32)->io::Result<Option<(u32,u8,Vec<u8>)>> {
         if let Some(p)=self.pending.iter_mut().find(|p|p.last.is_none_or(|t|now.duration_since(t)>=RETRY)) {
-            if p.attempts>=5 {return Err(io::Error::new(io::ErrorKind::TimedOut,"reliable retry exhausted"));}
+            let exhausted=match self.unacked {
+                Some(limit)=>p.first.is_some_and(|t|now.duration_since(t)>=limit),
+                None=>p.attempts>=LAB_SENDS,
+            };
+            if exhausted {return Err(io::Error::new(io::ErrorKind::TimedOut,"reliable retry exhausted"));}
             // The queue sends every first transmission in sequence order.
             // A prefix counter proves all older packets were actually sent,
             // including packets already selectively ACKed and freed. Memory
             // stays eight pending packets instead of a lifetime bitset/history.
             if p.last.is_none() {
                 if p.sequence!=self.sent_prefix {return Err(invalid());}
-                self.sent_prefix+=1;
+                self.sent_prefix+=1;p.first=Some(now);
             }
-            p.attempts+=1;p.last=Some(now);
+            p.attempts=p.attempts.saturating_add(1);p.last=Some(now);
             let mut clear=reliable(p.sequence,next_rx);clear.splice(2..2,p.body.iter().copied());
             return Ok(Some((p.sequence,p.attempts,clear)));
         } Ok(None)
@@ -125,6 +137,21 @@ mod tests {
         for i in 1..5 {assert!(w.due(now+RETRY*i,1).unwrap().is_some());}
         assert!(w.due(now+RETRY*5,1).is_err());
         let mut bounded=Window::new();for _ in 0..8 {bounded.enqueue().unwrap();}assert!(bounded.enqueue().is_err());
+    }
+    #[test] fn interactive_window_survives_a_measured_client_stall_and_bounds_by_age() {
+        let now=Instant::now();let mut w=Window::interactive();w.enqueue().unwrap();w.enqueue().unwrap();
+        assert_eq!(w.due(now,1).unwrap().unwrap().1,1);
+        // 7.07 s without client traffic was observed while #717 refreshed the hangar.
+        let mut at=now;let mut resends=0;
+        while at<now+Duration::from_millis(7070) {at+=RETRY;while w.due(at,1).unwrap().is_some() {resends+=1;}}
+        assert!(resends>2*LAB_SENDS as usize);
+        w.acknowledge(&feedback(2,None)).unwrap();assert_eq!(w.len(),0);
+        w.enqueue().unwrap();let start=now+Duration::from_secs(8);assert_eq!(w.due(start,1).unwrap().unwrap().0,2);
+        // The age counts from the first send of this packet, not the session start.
+        assert!(w.due(start+INTERACTIVE_LIVENESS-RETRY,1).unwrap().is_some());
+        assert!(w.due(start+INTERACTIVE_LIVENESS,1).is_err());
+        assert!(w.acknowledge(&feedback(4,None)).is_err());assert_eq!((w.len(),w.cumulative),(1,2));
+        assert_eq!((w.idle_limit(),Window::new().idle_limit()),(INTERACTIVE_LIVENESS,LAB_IDLE));
     }
     #[test] fn payload_is_owned_bounded_and_preserved_on_retry() {
         let now=Instant::now();let mut w=Window::new();
