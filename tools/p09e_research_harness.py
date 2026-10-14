@@ -64,7 +64,7 @@ def main():
         chassis = catalog.modules["module:ussr:chassis:T-18Bis"]["native_compact_id"]
         vehicle = catalog.vehicles["vehicle:ussr:SU-18"]["native_compact_id"]
         for index, (command, arguments) in enumerate(((201, [3329, 0, 0]), (302, [SHOP_REVISION, chassis, 1, 0]),
-                (101, [1, chassis, 0]), (201, [3329, 1, 0]), (301, [SHOP_REVISION, vehicle, 0, 0])), 1):
+                (101, [1, chassis, 0]), (201, [3329, 1, 0]), (301, [SHOP_REVISION, vehicle, 0, -1])), 1):
             request = dict(account_id=source.profile["account_id"], native_database_id=source.profile["native_database_id"],
                 command_key="harness:p09e:" + str(index), expected_revision=store.read_profile(source.profile["account_id"])["revision"],
                 wire_revision=index, command=command, arguments=arguments)

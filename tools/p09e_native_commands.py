@@ -92,7 +92,9 @@ crew and shell auto-purchase must never become free by a generic cost override.
     elif request.command == BUY_VEHICLE:
         require(a[0] == shop_revision, "SHOP_REVISION_MISMATCH")
         require(0 < a[1] < 2**31)
-        require(a[2:] == (0, 0), "AUTOBUY_CREW_SHELLS_UNSUPPORTED")
+        # Original Shop.buyVehicle sets the CREW/SHELLS flags; VehicleBuyer
+        # sends tariff -1 exactly when no crew is bought.
+        require(a[2:] == (0, -1), "AUTOBUY_CREW_SHELLS_UNSUPPORTED")
     elif request.command == BUY_ITEM:
         require(a[0] == shop_revision, "SHOP_REVISION_MISMATCH")
         require(0 < a[1] < 2**31 and 1 <= a[2] <= 100)

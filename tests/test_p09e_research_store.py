@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from tests import test_p04g_crew_store as previous
 from p04g_crew_store import NativeCrossVehicleCrewStore
 from p09e_research_catalog import load_catalog
-from p09e_research_store import ResearchStore, POLICY, SCHEMA, JOURNAL_SCHEMA, MAX_QUANTITY, MAX_STATE, assembly, plan, canonical, sha
+from p09e_research_store import ResearchStore, POLICY, SCHEMA, JOURNAL_SCHEMA, MAX_QUANTITY, MAX_STATE, SHOP_REVISION, assembly, plan, canonical, sha
 from game_profile_tx import TransactionError
 
 MS1 = "vehicle:ussr:MS-1"
@@ -167,11 +167,17 @@ class ResearchStoreTests(unittest.TestCase):
         self.install(HEAVY_ENGINE)
         self.assertLessEqual(assembly(self.catalog, MS1, self.profile()["research"]["vehicles"][0]["modules"])["mass_grams"], 6500000)
 
-    def unload(self):
+    def unload(self, shop_revision=SHOP_REVISION):
         revision = self.profile()["revision"]
         request = dict(account_id=self.account, native_database_id=self.native_id, command_key="ammo-" + str(revision),
-                       expected_revision=revision, wire_revision=1, layout=[4, 1, 6, 2570, 0, 2826, 0, 3082, 0, 6, 0, 0, 0, 0, 0, 0])
+                       expected_revision=revision, wire_revision=1,
+                       layout=[shop_revision, 1, 6, 2570, 0, 2826, 0, 3082, 0, 6, 0, 0, 0, 0, 0, 0])
         return self.store.service(request, authenticated_account_id=self.account)
+
+    def test_new_ammunition_layout_requires_current_shop_revision(self):
+        for stale in (3, 4, SHOP_REVISION + 1):
+            self.reject("SHOP_REVISION_MISMATCH", lambda: self.unload(stale))
+        self.unload()
 
     def test_turret_gun_pair_requires_ownership_and_empty_ammo_then_shared_atomic_swap(self):
         for index in (0, 7, 8, 13): self.research(index)

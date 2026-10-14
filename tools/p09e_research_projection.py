@@ -11,11 +11,10 @@ import json
 from p04g_crew_projection import CrossVehicleCrewProjectionSource
 from p09d_ammo_projection import encode, canonical
 from p09e_native_research_audit import plain_vehicle_descriptor
-from p09e_research_store import POLICY_SHA256
+from p09e_research_store import POLICY_SHA256, SHOP_REVISION
 from game_profile_tx import TransactionError
 import hashlib
 
-SHOP_REVISION = 4
 MAX_SHOP = 32768
 MAX_STATE = 32768
 MAX_UPDATE = 240
@@ -75,6 +74,11 @@ def shop_tree(catalog, source_shop):
         for row in (*catalog.vehicles.values(), *catalog.modules.values())}
     shop["items"]["notInShopItems"] = sorted(v["native_compact_id"]
         for v in catalog.vehicles.values() if v["not_in_shop"] or set(v["tags"]) & {"secret", "observer", "event_battles", "special"})
+    # Original VehicleBuyWindow._initData (lines 53-59) unconditionally reads
+    # row1 credits and row2 gold, and getTankmanCostWithDefaults reads
+    # isPremium. Zero rows only open the window: the store rejects every crew
+    # tariff. Historical tariff prices and training levels remain UNKNOWN.
+    shop["tankmanCost"] = [{"credits": 0, "gold": 0, "isPremium": premium} for premium in (False, False, True)]
     return shop
 
 

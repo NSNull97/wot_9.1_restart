@@ -49,6 +49,10 @@ class ResearchProjectionTests(unittest.TestCase):
             price = item["historical_price"]
             self.assertEqual(shop["items"]["itemPrices"][item["native_compact_id"]], (0, price["amount"] if price["currency"] == "gold" else 0))
         self.assertGreater(len(encode(shop, 32768, max_nodes=32768)), 16384)
+        # VehicleBuyWindow reads row1 credits and row2 gold; every row is free
+        # and no training level is invented.
+        self.assertEqual(shop["tankmanCost"], [{"credits": 0, "gold": 0, "isPremium": p} for p in (False, False, True)])
+        self.assertNotIn("tankmanCost", self.source.trees["shop.bin"].get("defaults", {}))
         with self.assertRaises(ValueError): encode(shop)
 
     def test_native_research_buy_install_and_durable_identical_replay(self):
@@ -69,7 +73,8 @@ class ResearchProjectionTests(unittest.TestCase):
     def test_prerequisite_gold_and_bad_inventory_fail_without_writes(self):
         before = self.state()
         for command, args in ((201, [3329, 4, 0]), (101, [999, 5892, 0]),
-                              (301, [SHOP_REVISION, 7169, 1, 0]), (302, [SHOP_REVISION, 5892, 1, 1])):
+                              (301, [SHOP_REVISION, 7169, 1, 0]), (301, [SHOP_REVISION, 7169, 0, 0]),
+                              (301, [SHOP_REVISION - 1, 7169, 0, -1]), (302, [SHOP_REVISION, 5892, 1, 1])):
             value, _ = self.native(command, args)
             self.assertEqual(value["status"], "rejected")
             self.assertEqual(value["update_hex"], "")
@@ -78,7 +83,7 @@ class ResearchProjectionTests(unittest.TestCase):
     def test_bought_vehicle_single_delta_full_state_and_fixture_reopen(self):
         self.native(201, [3329, 0, 0]); self.native(201, [3329, 1, 0])
         type_cd = self.catalog.vehicles["vehicle:ussr:SU-18"]["native_compact_id"]
-        response, request = self.native(301, [SHOP_REVISION, type_cd, 0, 0])
+        response, request = self.native(301, [SHOP_REVISION, type_cd, 0, -1])
         self.assertEqual(response["status"], "researched")
         self.assertLessEqual(len(bytes.fromhex(response["update_hex"])), 240)
         source = ResearchProjectionSource(self.source.bundle.root, self.catalog)

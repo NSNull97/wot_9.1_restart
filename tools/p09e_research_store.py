@@ -23,6 +23,10 @@ POLICY = {"id": "test_lab.research.free-credit-xp.v1", "mode": "test_lab",
           "xp": 0, "credits": 0, "gold": "UNSUPPORTED",
           "battle_admission": False, "initial_research": "retained-source-unlocks-plus-visible-credit-tier1-roots.v1"}
 POLICY_SHA256 = sha(canonical(POLICY))
+# 5: test_lab crew tariff rows added for the original VehicleBuyWindow.
+# Earlier committed ammunition layouts carry 3 or 4 and replay unchanged.
+SHOP_REVISION = 5
+EARLIER_SHOP_REVISIONS = (3, 4)
 MAX_STATE = 256 * 1024
 MAX_NATIVE_RESPONSE = 4096
 MAX_NATIVE_CONTEXT = 16 * 1024
@@ -383,7 +387,8 @@ class ResearchStore(NativeCrossVehicleCrewStore):
         require(request.get("account_id") == authenticated_account_id, "FOREIGN_ACCOUNT")
         _bounded_id(request["command_key"], "command_key")
         replay = self.connection.execute("SELECT 1 FROM game_command_ledger WHERE account_id=? AND command_id=?", (authenticated_account_id, request["command_key"])).fetchone() is not None
-        require(request["layout"][0] == 4 or (replay and request["layout"][0] == 3), "SHOP_REVISION_MISMATCH")
+        require(request["layout"][0] == SHOP_REVISION or (replay and request["layout"][0] in EARLIER_SHOP_REVISIONS),
+                "SHOP_REVISION_MISMATCH")
         profile = self.read_profile(authenticated_account_id)
         native = request["layout"][1]
         owned = next((r for r in profile["research"]["vehicles"] if r["native_id"] == native), None)
@@ -393,7 +398,7 @@ class ResearchStore(NativeCrossVehicleCrewStore):
 
     @staticmethod
     def _validate_layout(layout):
-        require(type(layout) is list and len(layout) == 16 and type(layout[0]) is int and layout[0] in (3, 4), "SHOP_REVISION_MISMATCH")
+        require(type(layout) is list and len(layout) == 16 and type(layout[0]) is int and layout[0] in (*EARLIER_SHOP_REVISIONS, SHOP_REVISION), "SHOP_REVISION_MISMATCH")
         return NativeAmmoStore._validate_layout([3, *layout[1:]])
 
     def migrate_research(self, source, *, account_id, policy):

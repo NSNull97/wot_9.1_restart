@@ -8,7 +8,7 @@ use sha2::{Digest,Sha256};
 
 pub const POLICY_SHA256:&str="46875923affb6bd307ad4d35397880fae1dd16fb1992ae2bfbfed607d132361c";
 pub const CATALOG_SHA256:&str="b6baecd204444d1e894253fa6c19c61478993b8ae87c71373633989d3a8ee460";
-pub const SHOP_REVISION:i64=4;
+pub const SHOP_REVISION:i64=5;
 pub const MAX_STATE_BYTES:usize=32768;
 pub const MAX_SHOP_BYTES:usize=32768;
 pub const MAX_STATE_NODES:usize=32768;
@@ -47,7 +47,7 @@ impl Request {
         let ok=self.id>0 && match (self.command,self.arguments.as_slice()) {
             (201,[vehicle,index,zero])=>positive(*vehicle) && (0..4096).contains(index) && *zero==0,
             (101,[vehicle,module,gun])=>positive(*vehicle) && positive(*module) && nonnegative(*gun),
-            (301,[shop,vehicle,flags,tariff])=>*shop==SHOP_REVISION && positive(*vehicle) && *flags==0 && *tariff==0,
+            (301,[shop,vehicle,flags,tariff])=>*shop==SHOP_REVISION && positive(*vehicle) && *flags==0 && *tariff==-1,
             (302,[shop,module,count,gold])=>*shop==SHOP_REVISION && positive(*module) && (1..=100).contains(count) && *gold==0,
             (308,[shop,module,vehicle,slot,paid,gun])=>*shop==SHOP_REVISION && positive(*module) && positive(*vehicle)
                 && *slot==0 && *paid==0 && nonnegative(*gun),
@@ -126,7 +126,7 @@ mod tests {
     use super::*;
     fn packet(command:i16)->(u8,Vec<u8>) {
         let (method,args):(u8,Vec<i64>)=match command {101=>(0x8e,vec![1,6658,0]),201=>(0x8e,vec![3329,1,0]),
-            301=>(0x90,vec![4,1,0,0]),302=>(0x90,vec![4,6658,1,0]),308=>(0x97,vec![4,6658,1,0,0,0]),_=>unreachable!()};
+            301=>(0x90,vec![SHOP_REVISION,1,0,-1]),302=>(0x90,vec![SHOP_REVISION,6658,1,0]),308=>(0x97,vec![SHOP_REVISION,6658,1,0,0,0]),_=>unreachable!()};
         let mut bytes=226i16.to_le_bytes().to_vec();bytes.extend(command.to_le_bytes());
         if method==0x97 {bytes.extend(6u32.to_le_bytes());for a in args {bytes.extend((a as i32).to_le_bytes());}}
         else {bytes.extend(args[0].to_le_bytes());for a in &args[1..] {bytes.extend((*a as i32).to_le_bytes());}}
@@ -144,7 +144,7 @@ mod tests {
     #[test] fn signed_widths_survive_decode_but_unsupported_cannot_dispatch() {
         let (method,mut raw)=packet(201);raw[4..12].copy_from_slice(&i64::MAX.to_le_bytes());raw[12..16].copy_from_slice(&i32::MIN.to_le_bytes());
         let r=Request::decode(method,&raw).unwrap();assert_eq!(r.arguments,[i64::MAX,i32::MIN as i64,0]);assert!(r.validate_supported().is_err());
-        for (command,index,value) in [(301,2,1),(301,2,16),(301,3,1),(302,0,3),(302,2,101),(302,3,1),(308,3,1),(308,4,1),(201,1,4096)] {
+        for (command,index,value) in [(301,2,1),(301,2,16),(301,3,0),(301,3,1),(301,3,2),(301,0,4),(302,0,3),(302,0,4),(302,2,101),(302,3,1),(308,3,1),(308,4,1),(201,1,4096)] {
             let (method,raw)=packet(command);let mut r=Request::decode(method,&raw).unwrap();r.arguments[index]=value;assert!(r.validate_supported().is_err());
         }
     }

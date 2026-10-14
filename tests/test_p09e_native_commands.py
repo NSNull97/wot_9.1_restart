@@ -13,7 +13,7 @@ class NativeResearchCommandsTests(unittest.TestCase):
     fixtures = (
         (0x8e, struct.pack("<hhqii", 226, 201, 3329, 0, 0), (3329, 0, 0)),
         (0x8e, struct.pack("<hhqii", 227, 101, 1, 5891, 5892), (1, 5891, 5892)),
-        (0x90, struct.pack("<hhqiii", 228, 301, 3, 7169, 0, 0), (3, 7169, 0, 0)),
+        (0x90, struct.pack("<hhqiii", 228, 301, 3, 7169, 0, -1), (3, 7169, 0, -1)),
         (0x90, struct.pack("<hhqiii", 229, 302, 3, 5892, 1, 0), (3, 5892, 1, 0)),
         (0x97, struct.pack("<hhI6i", 230, 308, 6, 3, 5891, 1, 0, 0, 5892), (3, 5891, 1, 0, 0, 5892)),
     )
@@ -49,7 +49,11 @@ class NativeResearchCommandsTests(unittest.TestCase):
             (0x8e, struct.pack("<hhqii", 1, 201, 3329, -1, 0)),
             (0x8e, struct.pack("<hhqii", 1, 201, 3329, 0, 1)),
             (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 17, 0)),
+            (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 0, 0)),
             (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 0, 1)),
+            (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 0, 2)),
+            (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 0, -2)),
+            (0x90, struct.pack("<hhqiii", 1, 301, 2, 7169, 0, -1)),
             (0x90, struct.pack("<hhqiii", 1, 302, 3, 5892, 1, 1)),
             (0x90, struct.pack("<hhqiii", 1, 302, 3, 5892, -1, 0)),
             (0x90, struct.pack("<hhqiii", 1, 302, 2, 5892, 1, 0)),
