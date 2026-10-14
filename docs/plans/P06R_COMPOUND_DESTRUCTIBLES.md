@@ -6,6 +6,16 @@ Branch: `codex/p06r-compound-destructibles`.
 
 ## Accepted scope — 2026-10-13
 
+Later owner clarification during P05B: the accepted fence-chain run does not
+accept all object coverage or impact momentum. Trees/crates still stop even
+IS-7 because only403 fences got the pre-solver response. The bounded repair
+for the existing1038 whole-object identities is tracked in
+[P05B](P05B_TRACKED_HANDLING.md); P06R's remaining partial/replacement coverage
+is still open. Source inventory proves300 excluded fragiles,71 fallingAtoms,
+58 structures and120 undefined instances.2317 additional source tree rows have
+no movement triangles, rather than missing solid colliders. Evidence:
+`local/evidence/20261013-p05b-tracked-handling-01/ram-audit/coverage.json`.
+
 **PASS_OWNER_FENCE_CHAIN_TEST_LAB.** The owner's priority update below narrowed
 this deliverable to the 403 source-complete movement-only fences and continuous
 chain passage, preserving accepted trees/whole fragiles. Owner confirmed:
@@ -136,6 +146,25 @@ before/after hashes and restore receipts. Do not release another process's
 mutex or bypass launch guards. Retry on fresh run fencechain03.
 
 ## Limits and rollback
+
+### Owner coverage clarification during P05B
+
+Owner names houses, logs, barrels and village outhouses as still not breaking.
+The fresh read-only `local/evidence/20261013-p05b-tracked-handling-01/
+coverage-owner02/` audit distinguishes28 excluded barrels,17 excluded log
+piles,26 firewood instances and58 structures/320 module instances. Six simple
+env014_Toilet objects are already in the legacy9 accepted union; movement-only
+exclusion reasons alone must not be mistaken for exclusion from that union.
+The frozen owner prefix has no confirmed toilet hit; nearby sheds are distinct
+resources. Partial improved handling is not acceptance of these missing groups.
+
+After P05B reversal handling, the next coherent proposed source slice is38
+whole normal73/paired damaged87 instances (28 barrels,8 farming machines,
+2 piers), selected by verified material/state predicates. Before admitting
+them, prove native visual transition and resource-specific collision behavior,
+bind both-worker mutation/ACKs and retain surviving/static geometry. This is
+queued research, not implemented coverage or a new whole-house collapse rule.
+Mixed-material logs and per-module structures retain their separate contracts.
 
 Original descriptors alone do not prove historical damage/ram formulas.
 Unknown formulas retain explicit approximate test_lab policy. Unmapped or

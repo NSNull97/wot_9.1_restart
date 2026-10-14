@@ -199,7 +199,7 @@ fn all_chunk_creation_acks_gate_commands_selective_ack_is_supported() {
     let now = Instant::now(); let (mut a, _, mut world) = pair(now);
     {
         let c = a.shared.as_mut().unwrap(); c.areas[0].0 = Some((10, false)); c.areas[1].0 = Some((11, false));
-        c.commands.push(model::Command::Move(model::Input { throttle: 1, steer: 0 }));
+        c.commands.push(model::Command::Move(model::Input { throttle: 1, steer: 0, speed_percent: 100 }));
     }
     let actors_before = world.actors.clone();
     poll(&mut a, &mut world, now).unwrap();
@@ -380,7 +380,7 @@ fn driving_mixed_area_requests_and_ready_compound_are_accepted() {
 fn late_outbox_failure_does_not_commit_sent_arrays_commands_or_world() {
     let now = Instant::now(); let (mut a, _, mut world) = pair(now);
     direct_contact(&mut world, 1513, 1); direct_contact(&mut world, 1512, 2);
-    a.shared.as_mut().unwrap().commands.push(model::Command::Move(model::Input { throttle: 1, steer: 0 }));
+    a.shared.as_mut().unwrap().commands.push(model::Command::Move(model::Input { throttle: 1, steer: 0, speed_percent: 100 }));
     a.outbox.push_back(vec![0; 513]);
     let rx = a.rx; let tx_len = a.tx.len(); let outbox = a.outbox.clone();
     let areas = a.shared.as_ref().unwrap().areas.clone();

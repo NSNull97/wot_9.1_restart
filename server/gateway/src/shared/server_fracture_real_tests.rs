@@ -36,7 +36,7 @@ fn real_ipc5_chain_receipts_cross_runtime_and_publish_only_after_both_workers_ac
             name:format!("fracture_{slot}") },slot as u32+1).unwrap();
     }
     world.start(begin).unwrap();world.rebase_external_spawns([map.spawn;2]).unwrap();
-    for slot in 0..2 {world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0};}
+    for slot in 0..2 {world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0,speed_percent:100};}
     let mut runtime=IntegratedRuntime::new_for_map(pool,MapId::Prohorovka);
     runtime.catalog=Some(spec.clone());runtime.started=true;
     let empty=Scene::new(&spec,&[]).unwrap();

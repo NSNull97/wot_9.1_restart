@@ -10,6 +10,15 @@ use sha2::{Digest,Sha256};
 mod catalog;
 #[path="worker/fracture.rs"]
 mod fracture;
+#[path="worker/angular.rs"]
+mod angular;
+#[cfg(test)]
+#[path="worker/angular_capture_tests.rs"]
+mod angular_capture_tests;
+#[cfg(test)]
+#[path="worker/real_test_capture.rs"]
+pub(crate) mod real_test_capture;
+use crate::gateway091::shared::ram_proof;
 #[path="worker/profile.rs"]
 mod profile;
 use crate::gateway091::shared::vehicle_profile::VehicleKind;
@@ -19,6 +28,7 @@ pub use catalog::{CatalogSpec,CatalogEntry,Scene,CatalogAck,MAX_CATALOG_OBJECTS,
 pub const STEP:Duration=Duration::from_millis(100);
 pub const MAX_SEQUENCE:u32=36000;
 pub const MAX_IPC_LINE:usize=32*1024;
+pub const MAX_ANGULAR_IPC_LINE:usize=64*1024;
 pub const START_TIMEOUT:Duration=Duration::from_secs(120);
 pub const REPLY_TIMEOUT:Duration=Duration::from_millis(500);
 pub const MAX_LAG:Duration=Duration::from_millis(500);
@@ -135,7 +145,7 @@ fn file_hash(path:&Path,size:u64)->io::Result<String>{
 pub struct MapSpec {pub asset:String,pub arena_type_id:i32,pub config:PathBuf,pub config_sha256:String,
     pub bounds:[f32;4],pub spawn:[f32;3],pub spawn_yaw:f32,pub mass_kg:f32}
 impl MapSpec {
-    fn load(root:&Path,v:&Value,profile_bound:bool)->io::Result<Self>{
+    fn load(root:&Path,v:&Value,config_version:u64)->io::Result<Self>{
         fields(v,&["asset","arena_type_id","config","config_sha256"])?;
         let asset=text(v,"asset")?;let id=uint(&v["arena_type_id"])?;
         if !matches!((asset,id),("01_karelia",1)|("05_prohorovka",4)){return Err(bad());}
@@ -145,9 +155,10 @@ impl MapSpec {
         let mut names=vec!["version","profile","map","terrain","obstacles","spawn_origin","spawn_yaw","body_half_extents",
             "body_center_offset","wheel_points","mass_kg","max_forward_mps","max_reverse_mps","engine_max_torque_nm",
             "wheel_radius","suspension_min","suspension_max","track_max_brake_torque","bounds_xz"];
-        if profile_bound {names.extend(["longitudinal_friction","lateral_friction","stationary_steering_ratio"]);}
+        if config_version>=2 {names.extend(["longitudinal_friction","lateral_friction","stationary_steering_ratio"]);}
+        if config_version==3 {names.push("handling");}
         fields(&c,&names)?;
-        if uint(&c["version"])?!=if profile_bound{2}else{1} || text(&c,"profile")?!="test_lab" || text(&c,"map")?!=asset{return Err(bad());}
+        if !(1..=3).contains(&config_version) || uint(&c["version"])?!=config_version || text(&c,"profile")?!="test_lab" || text(&c,"map")?!=asset{return Err(bad());}
         for k in ["terrain","obstacles"]{fields(&c[k],&["path","sha256"])?;hash_text(text(&c[k],"sha256")?)?;owned(root,Path::new(text(&c[k],"path")?))?;}
         let a=c["bounds_xz"].as_array().ok_or_else(bad)?;if a.len()!=4{return Err(bad());}
         let bounds=[number(&a[0],-1000.,0.)?,number(&a[1],-1000.,0.)?,number(&a[2],0.,1000.)?,number(&a[3],0.,1000.)?];
@@ -197,10 +208,11 @@ impl Pool {
     pub fn load(local_root:&Path,path:&Path)->io::Result<Self>{
         non_reparse(local_root)?;let root=local_root.canonicalize()?;let raw=read(&owned(&root,path)?,16384)?;
         let v=json(&raw,16384)?;
-        let vehicle_profile=match uint(&v["version"])? {
+        let pool_version=uint(&v["version"])?;
+        let vehicle_profile=match pool_version {
             1=>{fields(&v,&["version","profile","worker","maps"])?;None},
-            2=>{fields(&v,&["version","profile","worker","maps","vehicle_profile"])?;
-                Some(profile::VehicleProfile::load(&root,&v["vehicle_profile"])?)},
+            2|3=>{fields(&v,&["version","profile","worker","maps","vehicle_profile"])?;
+                Some(profile::VehicleProfile::load(&root,&v["vehicle_profile"],pool_version)?)},
             _=>return Err(bad()),
         };
         if text(&v,"profile")?!="test_lab"{return Err(bad());}
@@ -225,11 +237,24 @@ impl Pool {
         }
         if !seen.contains(&executable){return Err(bad());}
         let specs=v["maps"].as_array().ok_or_else(bad)?;if specs.len()!=2{return Err(bad());}
-        let maps=specs.iter().map(|m|MapSpec::load(&root,m,vehicle_profile.is_some())).collect::<io::Result<Vec<_>>>()?;
+        let config_version=vehicle_profile.as_ref().map_or(1,|p|p.config_version());
+        let maps=specs.iter().map(|m|MapSpec::load(&root,m,config_version)).collect::<io::Result<Vec<_>>>()?;
         if maps[0].arena_type_id==maps[1].arena_type_id || maps[0].config==maps[1].config{return Err(bad());}
         if let Some(profile)=&vehicle_profile {for map in &maps{profile.verify_map(&root,map)?;}}
         let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets,vehicle_profile};
         out.verify_assets()?;Ok(out)
+    }
+    fn angular_profile(&self,map:&MapSpec)->io::Result<ram_proof::Profile>{
+        let profile=self.vehicle_profile.as_ref().ok_or_else(bad)?;
+        profile.verify_map(&self.local_root,map)?;
+        let selected=profile.angular_profile()?;
+        for (relative,sha,bytes) in [
+            ("JoltPhysicsSharp.dll","b4a700ac859c9304a7217e2ea499dec6e2b280dcad2ee02e910c4cc909f0ba67",None),
+            ("runtimes/win-x64/native/joltc.dll","79125ab6882a1aeeecd5509bfe9edf383e8e48a34d9a8b642a6b9a197d44df74",Some(2013696))] {
+            let expected=self.runtime.join(relative);
+            if !self.assets.iter().any(|a|a.path==expected&&a.sha256==sha&&bytes.is_none_or(|n|a.bytes==n)){return Err(bad());}
+        }
+        Ok(selected)
     }
     pub fn vehicle_kind(&self)->VehicleKind{self.vehicle_profile.as_ref().map_or(VehicleKind::Ms1,|p|p.kind())}
     fn verify_assets(&self)->io::Result<()> {
@@ -245,14 +270,24 @@ impl Pool {
     }
 }
 
+/// `speed_percent` is the #717 partial cruise stage: 100 for ordinary keys and
+/// full cruise, 50 for FWD50/BCKW50, 25 for FWD25. The stage only lowers the
+/// worker's speed cutoff; it is never a client speed or position.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub struct Input {pub throttle:i8,pub steer:i8,pub brake:bool}
-impl Input {pub const STOP:Self=Self{throttle:0,steer:0,brake:true};}
+pub struct Input {pub throttle:i8,pub steer:i8,pub brake:bool,pub speed_percent:u8}
+impl Input {pub const STOP:Self=Self{throttle:0,steer:0,brake:true,speed_percent:100};}
+pub fn partial_cruise_valid(throttle:i8,brake:bool,speed_percent:u8)->bool{
+    match speed_percent{100=>true,50=>!brake && throttle!=0,25=>!brake && throttle==1,_=>false}
+}
 pub fn request(seq:u32,input:Input)->io::Result<Vec<u8>> {
     if seq==0 || seq>MAX_SEQUENCE || !(-1..=1).contains(&input.throttle) || !(-1..=1).contains(&input.steer)
-        || (input.brake && (input.throttle!=0 || input.steer!=0)){return Err(bad());}
+        || (input.brake && (input.throttle!=0 || input.steer!=0))
+        || !partial_cruise_valid(input.throttle,input.brake,input.speed_percent){return Err(bad());}
+    // Full-speed requests keep the original exact three-field input bytes.
+    let mut controls=serde_json::json!({"throttle":input.throttle,"steer":input.steer,"brake":input.brake});
+    if input.speed_percent!=100{controls["speed_percent"]=input.speed_percent.into();}
     let mut b=serde_json::to_vec(&serde_json::json!({"version":1,"op":"advance","seq":seq,"ticks":6,
-        "input":{"throttle":input.throttle,"steer":input.steer,"brake":input.brake}})).map_err(|_|bad())?;
+        "input":controls})).map_err(|_|bad())?;
     if b.len()>1024{return Err(bad());}b.push(b'\n');Ok(b)
 }
 fn request_scene(seq:u32,input:Input,scene:u32)->io::Result<Vec<u8>>{
@@ -289,7 +324,7 @@ pub struct ObjectContact {pub object_id:u32,pub kind:String,pub substep:u8,pub p
 pub struct Pose {pub position:[f32;3],pub direction:[f32;3],pub speed:f32,pub rspeed:f32,pub contacts:u8,
     pub linear_velocity:[f32;3],pub angular_velocity:[f32;3],pub wheel_contact_masks:[u8;6]}
 #[derive(Clone,Debug,PartialEq)]
-pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose,pub scene_version:u32,pub object_contacts:Vec<ObjectContact>,pub fractures:Vec<FractureReceipt>}
+pub struct State {pub seq:u32,pub tick:u32,pub pose:Pose,pub scene_version:u32,pub object_contacts:Vec<ObjectContact>,pub fractures:Vec<FractureReceipt>,pub angular_proof:Option<Arc<ram_proof::FrameProof>>}
 pub fn response(raw:&[u8],map:&MapSpec,seq:u32)->io::Result<State>{
     response_at_spawn(raw,map,seq,None)
 }
@@ -321,11 +356,12 @@ fn response_context(raw:&[u8],map:&MapSpec,seq:u32,expected_spawn:Option<[f32;3]
         if contacts<3 || pose.linear_velocity.iter().map(|v|v*v).sum::<f32>()>1.001
             || (pose.position[0]-spawn[0]).abs()>5. || (pose.position[2]-spawn[2]).abs()>5. { return Err(bad()); }
     }
-    Ok(State{seq,tick:180+seq*6,pose,scene_version,object_contacts:Vec::new(),fractures:Vec::new()})
+    Ok(State{seq,tick:180+seq*6,pose,scene_version,object_contacts:Vec::new(),fractures:Vec::new(),angular_proof:None})
 }
-fn line(reader:&mut impl Read)->io::Result<Vec<u8>> {
+fn line(reader:&mut impl Read)->io::Result<Vec<u8>> {line_with_limit(reader,MAX_IPC_LINE)}
+fn line_with_limit(reader:&mut impl Read,limit:usize)->io::Result<Vec<u8>> {
     let mut raw=Vec::new();loop{let mut b=[0];if reader.read(&mut b)?!=1{return Err(bad());}
-        if b[0]==10{return Ok(raw);}if raw.len()>=MAX_IPC_LINE || b[0]==0 || b[0]>127{return Err(bad());}raw.push(b[0]);}
+        if b[0]==10{return Ok(raw);}if raw.len()>=limit || b[0]==0 || b[0]>127{return Err(bad());}raw.push(b[0]);}
 }
 
 enum Event {Line(Instant,Vec<u8>),Failed}
@@ -353,7 +389,7 @@ pub struct Worker {pub generation:u32,pub map:MapSpec,receiver:mpsc::Receiver<Ev
     child:Arc<Mutex<Option<Child>>>,exit:Arc<Mutex<Option<ExitEvidence>>>,cancel:Arc<AtomicBool>,started:Instant,
     expected_spawn:Option<[f32;3]>,pending:Option<Pending>,ready:bool,last_seq:u32,
     removal:Option<RemovalSpec>,scene_version:u32,removal_ack:Option<RemovalAck>,
-    catalog:Option<CatalogSpec>,catalog_scene:Option<Scene>,pending_scene:Option<Scene>,catalog_ack:Option<CatalogAck>,prepared_ids:Vec<u32>}
+    catalog:Option<CatalogSpec>,catalog_scene:Option<Scene>,pending_scene:Option<Scene>,catalog_ack:Option<CatalogAck>,prepared_ids:Vec<u32>,angular_profile:Option<ram_proof::Profile>}
 impl Worker {
     pub fn launch(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant)->io::Result<Self>{
         Self::launch_at_spawn(pool,map,generation,now,None)
@@ -371,6 +407,7 @@ impl Worker {
     }
     fn launch_inner(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,removal:Option<RemovalSpec>,initial:Option<(CatalogSpec,Scene)>)->io::Result<Self>{
         if let Some(profile)=&pool.vehicle_profile{profile.verify_map(&pool.local_root,&map)?;}
+        let angular_profile=if initial.as_ref().is_some_and(|(s,_)|s.version()==8){Some(pool.angular_profile(&map)?)}else{None};
         if generation==0{return Err(bad());}
         if removal.is_some() && initial.is_some(){return Err(bad());}
         if let Some(target)=spawn {
@@ -388,7 +425,11 @@ impl Worker {
         let exit=Arc::new(Mutex::new(None));let exit_thread=exit.clone();
         let slot=child.clone();let revoked=cancel.clone();let selected=map.clone();let removal_thread=removal.clone();
         let catalog_thread=initial.as_ref().map(|(spec,_)|spec.clone());
+        #[cfg(test)] let capture=real_test_capture::lookup(&selected.config_sha256,generation)?;
         thread::spawn(move||{
+            #[cfg(test)] let _reader_complete=match real_test_capture::completion(&capture,0){
+                Ok(guard)=>guard,Err(_)=>{let _=events.try_send(Event::Failed);return;}
+            };
             let run=||->io::Result<()> {
                 pool.verify_assets()?;owned(&pool.local_root,&selected.config)?;let raw=read(&selected.config,16384)?;
                 if format!("{:x}",Sha256::digest(&raw))!=selected.config_sha256 || revoked.load(Ordering::SeqCst){return Err(bad());}
@@ -414,20 +455,44 @@ impl Worker {
                 let mut output=c.stdout.take().ok_or_else(bad)?;let mut errors=c.stderr.take().ok_or_else(bad)?;
                 {let mut guard=slot.lock().map_err(|_|bad())?;if revoked.load(Ordering::SeqCst){drop(input);reap_owned(c,generation,exit_thread.clone());return Err(bad());}*guard=Some(c);}
                 let e=events.clone();let stopped=revoked.clone();
-                thread::spawn(move||{while let Ok(bytes)=commands.recv(){if stopped.load(Ordering::SeqCst){break;}
-                    if input.write_all(&bytes).and_then(|_|input.flush()).is_err(){let _=e.try_send(Event::Failed);break;}}});
-                let e=events.clone();thread::spawn(move||{let mut b=[0;1024];let mut size=0usize;
+                #[cfg(test)] let writes=capture.clone();
+                #[cfg(test)] let writer_complete=real_test_capture::completion(&writes,1)?;
+                thread::spawn(move||{
+                    #[cfg(test)] let _writer_complete=writer_complete;
+                    while let Ok(bytes)=commands.recv(){if stopped.load(Ordering::SeqCst){break;}
+                    if input.write_all(&bytes).and_then(|_|input.flush()).is_err(){
+                        #[cfg(test)] real_test_capture::error(&writes,"actual stdin write/flush failed");
+                        let _=e.try_send(Event::Failed);break;}
+                    #[cfg(test)] if real_test_capture::record(&writes,true,&bytes).is_err(){let _=e.try_send(Event::Failed);break;}
+                }});
+                #[cfg(test)] let err_capture=capture.clone();
+                #[cfg(test)] let stderr_complete=real_test_capture::completion(&err_capture,2)?;
+                let e=events.clone();thread::spawn(move||{
+                    #[cfg(test)] let _stderr_complete=stderr_complete;
+                    let mut b=[0;1024];let mut size=0usize;
                     loop {match errors.read(&mut b){Ok(0)=>break,Ok(n)=>{
+                        #[cfg(test)] if real_test_capture::stderr(&err_capture,&b[..n]).is_err(){let _=e.try_send(Event::Failed);break;}
                         let keep=n.min(4096-size);let value=String::from_utf8_lossy(&b[..keep]);
                         println!("MAP_DRIVE_WORKER_STDERR generation={generation} bytes={keep} truncated={} text={}",keep<n,serde_json::to_string(&value).unwrap_or_else(|_|"\"diagnostic_encoding_error\"".into()));
                         size+=keep;let _=e.try_send(Event::Failed);if size>=4096{break;}
-                    },Err(_)=>{let _=e.try_send(Event::Failed);break;}}}
+                    },Err(_)=>{
+                        #[cfg(test)] real_test_capture::error(&err_capture,"actual stderr read failed");
+                        let _=e.try_send(Event::Failed);break;}}}
                 });
-                loop {let raw=line(&mut output)?;if revoked.load(Ordering::SeqCst){break;}
+                let line_limit=catalog_thread.as_ref().map_or(MAX_IPC_LINE,CatalogSpec::line_limit);
+                loop {let raw=line_with_limit(&mut output,line_limit)?;
+                    #[cfg(test)] real_test_capture::record(&capture,false,&raw)?;
+                    if revoked.load(Ordering::SeqCst){
+                        // Selected test captures drain complete final payloads to EOF.
+                        // Release binaries retain the original immediate cancellation.
+                        #[cfg(test)] if capture.is_some(){continue;}
+                        break;
+                    }
                     events.try_send(Event::Line(Instant::now(),raw)).map_err(|_|bad())?;}
                 Ok(())
             };
             if let Err(error)=run(){if !revoked.load(Ordering::SeqCst){
+                #[cfg(test)] real_test_capture::error(&capture,&format!("actual IPC thread: {error}"));
                 let message=error.to_string().chars().take(1024).collect::<String>();
                 println!("MAP_DRIVE_WORKER_IO_ERROR generation={generation} kind={:?} message={}",error.kind(),serde_json::to_string(&message).unwrap_or_else(|_|"\"diagnostic_encoding_error\"".into()));
                 let _=events.try_send(Event::Failed);
@@ -436,7 +501,7 @@ impl Worker {
         let (catalog,catalog_scene)=initial.map(|(spec,scene)|(Some(spec),Some(scene))).unwrap_or((None,None));
         Ok(Self{generation,map,receiver,sender:Some(sender),child,exit,cancel,started:now,expected_spawn:spawn,
             pending:None,ready:false,last_seq:0,removal,scene_version:0,removal_ack:None,
-            catalog,catalog_scene,pending_scene:None,catalog_ack:None,prepared_ids:Vec::new()})
+            catalog,catalog_scene,pending_scene:None,catalog_ack:None,prepared_ids:Vec::new(),angular_profile})
     }
     pub fn pending(&self)->bool{self.pending.is_some()}
     pub fn prepared_ids(&self)->&[u32]{&self.prepared_ids}
@@ -497,9 +562,10 @@ impl Worker {
                     }
                 };
                 let context=self.removal.as_ref().map(|spec|(spec,self.generation,self.scene_version));
-                let state=if let Some(spec)=&self.catalog{catalog::response(&raw,&self.map,spec,self.generation,seq,self.expected_spawn,self.catalog_scene.as_ref().ok_or_else(bad)?)?}
+                let state=if let Some(spec)=&self.catalog{catalog::response_with_profile(&raw,&self.map,spec,self.generation,seq,self.expected_spawn,self.catalog_scene.as_ref().ok_or_else(bad)?,self.angular_profile)?}
                     else{response_context(&raw,&self.map,seq,self.expected_spawn,context)?};
                 if !self.prepared_ids.is_empty(){return Err(bad());}
+                #[cfg(test)] real_test_capture::parsed(&self.map.config_sha256,self.generation,&state)?;
                 self.prepared_ids=state.fractures.iter().map(|receipt|receipt.object_id).collect();
                 self.prepared_ids.sort_unstable();
                 self.scene_version=state.scene_version;self.ready=true;self.last_seq=seq;self.pending=None;Ok(Some(state))
@@ -543,6 +609,14 @@ pub(crate) mod controlled_ipc {
         Arc::new(Pool { local_root: PathBuf::new(), maps: vec![map], sha256: "0".repeat(64),
             executable: PathBuf::new(), runtime: PathBuf::new(), assets: Vec::new(), vehicle_profile: None })
     }
+    pub(crate) fn angular_fixture(name:&str)->(Value,CatalogSpec,Arc<crate::gateway091::shared::fragiles::Catalog>,ram_proof::Profile){angular::tests::bound(name)}
+    pub(crate) fn angular_pool(map:MapSpec,profile:ram_proof::Profile)->Arc<Pool>{
+        let mut p=Arc::try_unwrap(pool(map)).ok().unwrap();p.vehicle_profile=Some(profile::component_profile(profile));Arc::new(p)
+    }
+    pub(crate) fn angular_ready(map:MapSpec,generation:u32,spec:CatalogSpec,scene:Scene,now:Instant,profile:ram_proof::Profile)->(Worker,Peer){
+        assert_eq!(spec.version(),8);assert_eq!(map.mass_kg.to_bits(),profile.mass().to_bits());
+        let(mut worker,peer)=ready(map,generation,spec,scene,now);worker.angular_profile=Some(profile);(worker,peer)
+    }
     pub(crate) fn ready(map: MapSpec, generation: u32, spec: CatalogSpec, scene: Scene,
         now: Instant) -> (Worker, Peer) {
         let (replies, receiver) = mpsc::sync_channel(2);
@@ -552,7 +626,7 @@ pub(crate) mod controlled_ipc {
             cancel: Arc::new(AtomicBool::new(false)), started: now, expected_spawn: None,
             pending: None, ready: true, last_seq: 0, removal: None, scene_version: scene.version(),
             removal_ack: None, catalog: Some(spec), catalog_scene: Some(scene),
-            pending_scene: None, catalog_ack: None, prepared_ids: Vec::new() };
+            pending_scene: None, catalog_ack: None, prepared_ids: Vec::new(), angular_profile:None };
         (worker, Peer { replies, requests })
     }
 }
@@ -663,9 +737,21 @@ pub(crate) mod tests {
     }
     #[test]fn request_has_only_domain_input_and_fixed_steps(){
         assert!(request(0,Input::STOP).is_err());assert!(request(36001,Input::STOP).is_err());
-        for throttle in -1..=1{for steer in -1..=1{let b=request(1,Input{throttle,steer,brake:false}).unwrap();let v=json(&b,1024).unwrap();assert_eq!(v["ticks"],6);assert!(v.get("position").is_none());}}
-        assert!(request(1,Input{throttle:1,steer:0,brake:true}).is_err());
-        assert!(request(1,Input{throttle:0,steer:2,brake:false}).is_err());
+        for throttle in -1..=1{for steer in -1..=1{let b=request(1,Input{throttle,steer,brake:false,speed_percent:100}).unwrap();let v=json(&b,1024).unwrap();assert_eq!(v["ticks"],6);assert!(v.get("position").is_none());}}
+        assert!(request(1,Input{throttle:1,steer:0,brake:true,speed_percent:100}).is_err());
+        assert!(request(1,Input{throttle:0,steer:2,brake:false,speed_percent:100}).is_err());
+    }
+    #[test]fn partial_cruise_stage_is_additive_and_bounded(){
+        // Full speed keeps the historical exact bytes and three input fields.
+        assert_eq!(request(7,Input{throttle:1,steer:-1,brake:false,speed_percent:100}).unwrap(),
+            b"{\"input\":{\"brake\":false,\"steer\":-1,\"throttle\":1},\"op\":\"advance\",\"seq\":7,\"ticks\":6,\"version\":1}\n".to_vec());
+        for (throttle,percent) in [(1,50),(-1,50),(1,25)]{
+            let v=json(&request(1,Input{throttle,steer:1,brake:false,speed_percent:percent}).unwrap(),1024).unwrap();
+            assert_eq!(v["input"],serde_json::json!({"throttle":throttle,"steer":1,"brake":false,"speed_percent":percent}));
+        }
+        for (throttle,brake,percent) in [(-1,false,25),(0,false,50),(0,true,50),(1,false,0),(1,false,75),(1,false,101)]{
+            assert!(request(1,Input{throttle,steer:0,brake,speed_percent:percent}).is_err());
+        }
     }
     #[test]fn actual_packaged_pool_and_saved_worker_output_readonly_contract(){
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
@@ -742,7 +828,7 @@ pub(crate) mod tests {
         let (send,receiver)=mpsc::sync_channel(4);let(sender,recv)=mpsc::sync_channel(1);
         (Worker{generation:1,map:map(),receiver,sender:Some(sender),child:Arc::new(Mutex::new(None)),exit:Arc::new(Mutex::new(None)),cancel:Arc::new(AtomicBool::new(false)),expected_spawn:None,
             started:now,pending:None,ready:false,last_seq:0,removal:None,scene_version:0,removal_ack:None,
-            catalog:None,catalog_scene:None,pending_scene:None,catalog_ack:None,prepared_ids:Vec::new()},send,recv)
+            catalog:None,catalog_scene:None,pending_scene:None,catalog_ack:None,prepared_ids:Vec::new(),angular_profile:None},send,recv)
     }
     fn good_catalog_state(seq:u32,spec:&CatalogSpec,scene:&Scene)->Value{
         let mut v=good(seq);v["version"]=3.into();v["generation"]=1.into();v["catalog_sha256"]=spec.sha256().into();
@@ -761,7 +847,8 @@ pub(crate) mod tests {
         }v
     }
     #[test]fn fracture_prepared_reply_requires_commit_inclusion_before_next_advance(){
-        let now=Instant::now();let spec=catalog::tests::fracture_spec(2);let empty=Scene::new(&spec,&[]).unwrap();
+        for spec in [catalog::tests::fracture_spec(2),catalog::tests::whole_spec(2)] {
+        let now=Instant::now();let empty=Scene::new(&spec,&[]).unwrap();
         let(mut worker,send,recv)=fake_worker(now);worker.catalog=Some(spec.clone());worker.catalog_scene=Some(empty.clone());
         send.send(Event::Line(now,serde_json::to_vec(&good_fracture_state(0,&spec,&empty,false)).unwrap())).unwrap();
         worker.poll(now).unwrap();worker.advance(Input::STOP,now).unwrap();
@@ -780,9 +867,11 @@ pub(crate) mod tests {
         send.send(Event::Line(now,serde_json::to_vec(&ack).unwrap())).unwrap();assert!(worker.poll(now).unwrap().is_none());
         assert!(worker.prepared_ids().is_empty());assert_eq!(worker.catalog_scene(),Some(&committed));
         worker.take_catalog_ack().unwrap();assert_eq!(worker.advance(Input::STOP,now).unwrap(),2);
+        }
     }
     #[test]fn fracture_state_filters_unreceipted_energy_contacts_and_rejects_wrong_event(){
-        let spec=catalog::tests::fracture_spec(2);let scene=Scene::new(&spec,&[]).unwrap();
+        for spec in [catalog::tests::fracture_spec(2),catalog::tests::whole_spec(2)] {
+        let scene=Scene::new(&spec,&[]).unwrap();
         let mut v=good_fracture_state(1,&spec,&scene,true);
         let mut denied=v["state"]["object_contacts"][0].clone();denied["object_id"]=2.into();
         v["state"]["object_contacts"].as_array_mut().unwrap().push(denied);
@@ -793,6 +882,7 @@ pub(crate) mod tests {
         changed["event"]="state".into();let state=parse(&changed).unwrap();assert!(state.object_contacts.is_empty());
         changed["state"].as_object_mut().unwrap().remove("fractures");assert!(parse(&changed).is_err());
         changed=v;changed["state"]["fractures"][0]["energy_j"]=1.into();assert!(parse(&changed).is_err());
+        }
     }
     #[test]fn catalog_ready_is_bound_to_its_selected_map_not_only_config_hash(){
         use crate::map_profile091::MapId;
@@ -895,7 +985,7 @@ pub(crate) mod tests {
                 if let Some(s)=w.poll(Instant::now()).unwrap(){return s;}thread::sleep(Duration::from_millis(5));}}
             let initial=wait(&mut w,begin+Duration::from_secs(30));assert_eq!(initial.seq,0);let pid=w.process_id().unwrap();
             let mut ticks=vec![initial.tick];let mut samples=Vec::new();
-            for input in [Input::STOP,Input{throttle:1,steer:0,brake:false},Input::STOP]{
+            for input in [Input::STOP,Input{throttle:1,steer:0,brake:false,speed_percent:100},Input::STOP]{
                 w.advance(input,Instant::now()).unwrap();let state=wait(&mut w,Instant::now()+REPLY_TIMEOUT);ticks.push(state.tick);
                 samples.push(serde_json::json!({"seq":state.seq,"tick":state.tick,"position":state.pose.position,"direction":state.pose.direction,
                     "contacts":state.pose.contacts,"wheel_contact_masks":state.pose.wheel_contact_masks}));

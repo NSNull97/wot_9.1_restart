@@ -23,6 +23,15 @@ def save(out, name, value):
         stream.write('\n')
 
 
+def test_counts(text):
+    """A successful empty Cargo filter is not evidence of a passing gate."""
+    counts = re.findall(r'test result: ok\. (\d+) passed; 0 failed', text)
+    if not counts or sum(map(int, counts)) == 0 or 'test result: FAILED.' in text:
+        raise ValueError('Nonempty passing Rust suite result absent')
+    ignored = re.findall(r'test result: ok\. \d+ passed; 0 failed; (\d+) ignored', text)
+    return sum(map(int, counts)), sum(map(int, ignored))
+
+
 def command(out, label, argv, env):
     started = datetime.now(timezone.utc).isoformat()
     with (out / (label + '.stdout.log')).open('xb') as stdout, \
@@ -42,6 +51,8 @@ def main():
     parser.add_argument('--legacy', action='store_true', help='Check old build entrypoint on the same sources')
     parser.add_argument('--test', action='store_true', help='Run gateway Rust tests before build')
     parser.add_argument('--test-filter', help='Run only the named gateway test filter; records targeted scope explicitly')
+    parser.add_argument('--run-ignored', action='store_true',
+                        help='Run exactly one named ignored gateway test in isolation; requires --test --test-filter')
     parser.add_argument('--out', required=True, help='Fresh directory below project local/build/')
     args = parser.parse_args()
     out = (ROOT / args.out).resolve()
@@ -56,6 +67,8 @@ def main():
         raise ValueError('--test belongs to the gateway; physics build is not a physics test')
     if args.test_filter and not args.test:
         raise ValueError('--test-filter requires --test')
+    if args.run_ignored and (args.component != 'gateway' or not args.test or not args.test_filter):
+        raise ValueError('--run-ignored requires gateway --test --test-filter')
     out.mkdir(parents=True)
     env = dict(os.environ)
     deployed = ROOT / 'local/vendor/wg-toolkit-rs/target/debug/p01-wg-probe.exe'
@@ -87,13 +100,16 @@ def main():
                 test_argv = [str(cargo), 'test', '--offline', '--locked', '--manifest-path', manifest]
                 if args.test_filter:
                     test_argv.append(args.test_filter)
+                if args.run_ignored:
+                    test_argv.extend(['--', '--ignored', '--exact', '--test-threads=1'])
                 command(out, 'test', test_argv, env)
                 text = (out / 'test.stdout.log').read_text(encoding='utf-8')
-                counts = re.findall(r'test result: ok\. (\d+) passed; 0 failed', text)
-                if not counts:
-                    raise ValueError('Passing Rust suite result absent')
-                result['tests_passed'] = sum(map(int, counts))
+                result['tests_passed'], result['tests_ignored'] = test_counts(text)
+                if args.run_ignored and (result['tests_passed'] != 1 or result['tests_ignored'] != 0):
+                    raise ValueError('Isolated ignored gate requires exactly one passing test and no ignored tests')
                 result['tests_scope'] = args.test_filter or 'full gateway suite'
+                if args.run_ignored:
+                    result['tests_execution'] = 'isolated ignored exact test; one test thread'
             command(out, 'build', [str(cargo), 'build', '--offline', '--locked', '--manifest-path', manifest], env)
             executable = out / 'target/debug' / ('p01-wg-probe.exe' if args.legacy else 'sr-gateway.exe')
             result['built_executable_sha256'] = sha(executable)

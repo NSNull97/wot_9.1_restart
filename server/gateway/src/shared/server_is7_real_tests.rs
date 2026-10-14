@@ -10,7 +10,7 @@ const DOMAIN_SHA: &str = "39bb68815dd2d7ca54789a1cc71be619cc4f2f5cf351bf52f22de9
 const CATALOG_SHA: &str = "0a7c8fd70f00c8c49c3282ac1fe574281f384d042b1adb7da549d1680c192ef9";
 const TARGETS: [u32; 2] = [3307,3308];
 const MASS: f32 = 68190.;
-const FORWARD: WorkerInput = WorkerInput { throttle:1, steer:0, brake:false };
+const FORWARD: WorkerInput = WorkerInput { throttle:1, steer:0, brake:false,speed_percent:100 };
 
 fn dot(a:[f32;3],b:[f32;3])->f64 {
     a.iter().zip(b).map(|(a,b)|f64::from(*a)*f64::from(b)).sum()
@@ -112,7 +112,7 @@ fn real_is7_receipts_match_domain_and_world_waits_for_both_scene_acks() {
     for slot in 0..2 {world.attach(model::Identity {account:format!("is7-real-{slot}"),database:slot+1,
         name:format!("is7_{slot}")},slot as u32+1).unwrap();}
     world.start(begin).unwrap();world.rebase_external_spawns([map.spawn;2]).unwrap();
-    for slot in 0..2 {world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0};
+    for slot in 0..2 {world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0,speed_percent:100};
         assert_eq!(world.actors[slot].vehicle_kind(),VehicleKind::Is7);assert_eq!(world.actors[slot].health,2150);
         assert_eq!(world.actors[slot].fire.ammo(),30);}
     let mut runtime=IntegratedRuntime::new_for_map(pool,MapId::Prohorovka);runtime.catalog=Some(spec.clone());runtime.started=true;

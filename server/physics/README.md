@@ -248,3 +248,39 @@ battle. There is no claimed rollback of a partly advanced physics world.
 Two actors contacting the same object in the same discrete frame can each
 spend their own impact energy; the domain transition and native publication
 are deduplicated. This is a documented test_lab approximation.
+
+P05B catalog v6/domain v5 explicitly selects
+`ram_policy="test_lab-whole-object-energy-v1"`, retaining IPC5 and its bounded
+receipt/prepared/commit contract. All existing source/native-joined whole
+fragiles and trees carry `ram_energy_j=8000`; v5's fence-only projection is
+unchanged. The new mode uses positive normal energy without the independent
+1m/s total-speed floor. With the fixed approximate8000J threshold, normal
+speed needed is about1.847m/s for4691kg and.484m/s for68190kg. Tangential speed
+does not authorize a fracture or get debited by the normal-energy reducer.
+Low-energy contacts and objects outside the catalog retain ordinary collision.
+This repairs the pre-removal rigid stop of trees/crates; it neither admits
+unmapped compound parts nor claims that8000J is historically correct for every
+object. Mass and velocity come from the server body/profile. No client impact
+claim or velocity restoration is introduced. Existing same-frame/multiple
+actor and native-acceptance limits above still apply.
+
+Catalog6 additionally evaluates the complete contacting body pair before its
+first manifold returns solver settings. Candidate05 exposed an oblique fence
+case where a weak first manifold cached rejection despite a later affordable
+normal. Retrying later would leave an already emitted rigid constraint.
+The first actual Added/Persisted hull callback now triggers a read-only
+`NarrowPhaseQueryNoLock.CollideShape` for the exact hull/static-body pair.
+It uses the pinned native defaults, world speculative separation and active
+edge setting. A bounded collector copies only finite point/normal values,
+selecting the strongest positive closing normal with a deterministic tie
+break; all manifolds of that object share one admission and energy budget.
+At most4096 query hits and32 distinct object decisions are permitted. Thread,
+value and capacity violations fail the worker after the native update; a
+faulted or wrong-thread callback cannot enter the mutable prepass.
+
+No actual contact callback means no query or destruction. Other body pairs
+remain ordinary solid contacts. A receipt can therefore describe a stronger
+real shape-query contact than the triggering callback manifold; the published
+hull contact is that exact admission contact. This is an explicit approximate
+policy, not a claim that the closed historical solver selected the same
+manifold. Catalog5 retains the original first-manifold decision and trajectories.

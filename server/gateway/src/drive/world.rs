@@ -189,12 +189,15 @@ pub fn late_queue_info(payload:&[u8])->io::Result<Option<bool>>{
 
 #[derive(Clone,Copy,Debug,PartialEq)]pub enum Method{Move(u8,Input),UnsupportedMove(u8),CorrectionAck,IgnoredTelemetry(u8),Aim(aim::Intent),UnsupportedAim(u8),UnsupportedCameraAutorotation(bool),Leave}
 pub fn driving_input(flags:u8)->io::Result<Input>{
-    // Source #717 ordinary keyboard flags. Cruise16/32 are NOT brake bits;
-    // Unsupported cruise is not interpreted as movement; the whole-envelope
-    // caller applies a separately logged safety-neutral policy, never old gas.
-    if ![0,1,2,4,8,5,9,6,10].contains(&flags){return Err(bad());}
-    Ok(Input{throttle:if flags&1!=0{1}else if flags&2!=0{-1}else{0},
-        steer:if flags&4!=0{-1}else if flags&8!=0{1}else{0},brake:flags==0})
+    // Source #717 Avatar.makeVehicleMovementCommandByKeys: ordinary keys and
+    // full cruise use bits1/2 (+turn4/8); partial cruise adds 16 to FWD50/BCKW50
+    // and 32 to FWD25. Stage bits are never brake bits. Any other shape is not
+    // interpreted as movement; the caller applies its logged safety stop.
+    let (base,stage)=(flags&0x0f,flags&0xf0);
+    if ![0,1,2,4,8,5,9,6,10].contains(&base){return Err(bad());}
+    let throttle=if base&1!=0{1}else if base&2!=0{-1}else{0};
+    let speed_percent=match stage{0=>100,16 if throttle!=0=>50,32 if throttle==1=>25,_=>return Err(bad())};
+    Ok(Input{throttle,steer:if base&4!=0{-1}else if base&8!=0{1}else{0},brake:flags==0,speed_percent})
 }
 pub fn methods(b:&[u8])->io::Result<Vec<Method>>{
     if b.is_empty() || b.len()>512{return Err(bad());}let mut at=0;let mut rows=Vec::new();
@@ -378,10 +381,22 @@ impl Arena {
         assert!(publication(1000,&p).is_err());assert!(publication(1001+WORLD_SECONDS*10,&p).is_err());
     }
     #[test]fn flags_do_not_confuse_cruise_with_brake_or_reverse_turn(){
-        for (f,t,s) in [(0,0,0),(1,1,0),(2,-1,0),(4,0,-1),(8,0,1),(5,1,-1),(9,1,1),(6,-1,-1),(10,-1,1)]{
-            assert_eq!(driving_input(f).unwrap(),Input{throttle:t,steer:s,brake:f==0});}
-        for f in 0..=255{if ![0,1,2,4,8,5,9,6,10].contains(&f){assert!(driving_input(f).is_err());}}
-        for f in [3,12,15,16,17,32,33,255]{assert_eq!(methods(&[0x8a,1,0,f]).unwrap(),vec![Method::UnsupportedMove(f)]);}
+        let ordinary=[(0,0,0),(1,1,0),(2,-1,0),(4,0,-1),(8,0,1),(5,1,-1),(9,1,1),(6,-1,-1),(10,-1,1)];
+        for (f,t,s) in ordinary{
+            assert_eq!(driving_input(f).unwrap(),Input{throttle:t,steer:s,brake:f==0,speed_percent:100});}
+        // #717 partial cruise: FWD50=17, BCKW50=18, FWD25=33, each with turn bits.
+        let mut accepted=ordinary.map(|row|row.0).to_vec();
+        for (stage,percent,directions) in [(16u8,50u8,&[1u8,2][..]),(32,25,&[1][..])]{
+            for &d in directions{for (turn,s) in [(0u8,0i8),(4,-1),(8,1)]{
+                let f=stage|d|turn;accepted.push(f);
+                assert_eq!(driving_input(f).unwrap(),Input{throttle:if d==1{1}else{-1},steer:s,brake:false,speed_percent:percent});
+                assert_eq!(methods(&[0x8a,1,0,f]).unwrap(),vec![Method::Move(f,driving_input(f).unwrap())]);
+            }}
+        }
+        assert_eq!(accepted.len(),9+9);
+        for f in 0..=255{if !accepted.contains(&f){assert!(driving_input(f).is_err());}}
+        // A stage without its direction, quarter reverse, both stages or high bits stay unsupported.
+        for f in [3,12,15,16,32,34,48,49,64,65,255]{assert_eq!(methods(&[0x8a,1,0,f]).unwrap(),vec![Method::UnsupportedMove(f)]);}
         // Framing remains strict; adding an unsupported byte is not a means of
         // hiding a corrupt suffix or of treating arbitrary bytes as commands.
         assert!(methods(&[0x8a,1,0,17,7]).is_err());assert!(methods(&[0x8a,2,0,17,0]).is_err());
@@ -393,7 +408,7 @@ impl Arena {
         assert_eq!(methods(&enter).unwrap(),vec![Method::UnsupportedCameraAutorotation(false)]);
         assert_eq!(methods(&leave).unwrap(),vec![Method::UnsupportedCameraAutorotation(true)]);
         let compound=[enter.as_slice(),&[0x8a,1,0,2]].concat();
-        assert_eq!(methods(&compound).unwrap(),vec![Method::UnsupportedCameraAutorotation(false),Method::Move(2,Input{throttle:-1,steer:0,brake:false})]);
+        assert_eq!(methods(&compound).unwrap(),vec![Method::UnsupportedCameraAutorotation(false),Method::Move(2,Input{throttle:-1,steer:0,brake:false,speed_percent:100})]);
         // Compound is a parser unit, not an observed12B camera packet.
         for setting in 0..=255{if setting!=2{let mut b=enter;b[3]=setting;assert!(methods(&b).is_err());}}
         for value in [-1,2,i32::MIN,i32::MAX]{let mut b=enter;b[4..].copy_from_slice(&value.to_le_bytes());assert!(methods(&b).is_err());}

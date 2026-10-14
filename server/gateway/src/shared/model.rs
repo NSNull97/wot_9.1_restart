@@ -2,7 +2,7 @@
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
 use std::{io, sync::Arc, time::{Duration, Instant}};
 use crate::battle091::fire;
-use super::{aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile, vehicle_profile::VehicleKind};
+use super::{ram_proof,aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile, vehicle_profile::VehicleKind};
 
 pub const CAPACITY: usize = 2;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
@@ -23,9 +23,16 @@ pub fn bad() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "shared l
 #[derive(Clone, Debug, PartialEq)]
 pub struct Identity { pub account: String, pub database: i32, pub name: String }
 
+/// `speed_percent` carries the native partial cruise stage (100, 50 or 25).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Input { pub throttle: i8, pub steer: i8 }
-impl Input { pub const STOP: Self = Self { throttle: 0, steer: 0 }; }
+pub struct Input { pub throttle: i8, pub steer: i8, pub speed_percent: u8 }
+impl Input {
+    pub const STOP: Self = Self { throttle: 0, steer: 0, speed_percent: 100 };
+    fn valid(&self) -> bool {
+        (-1..=1).contains(&self.throttle) && (-1..=1).contains(&self.steer)
+            && crate::map_drive_worker091::partial_cruise_valid(self.throttle, false, self.speed_percent)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Actor {
@@ -101,6 +108,7 @@ pub struct VehicleContactInput {
     pub mass_kg: f32,
     pub kind: String,
     pub shooter: usize,
+    pub proof: Option<ram_proof::ContactProof>,
 }
 
 #[derive(Clone)]
@@ -123,6 +131,8 @@ pub struct World {
     pub terrain_contacts: Vec<TerrainContact>,
     destructible: Option<destructible::State>,
     pub fragiles: Option<fragiles::State>,
+    contact_sources:[Option<ram_proof::Source>;CAPACITY],
+    contact_sequences:[u32;CAPACITY],
 }
 
 impl World {
@@ -138,7 +148,8 @@ impl World {
         Ok(Self { id, map, vehicle_kind:kind, actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind),
             geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
-            terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None })
+            terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None,
+            contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;CAPACITY] })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
         if bundle.vehicle_kind()!=self.vehicle_kind || self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
@@ -167,6 +178,19 @@ impl World {
     pub fn scene_version(&self)->u32{self.fragiles.as_ref().map_or_else(||self.destructible.as_ref().map_or(0,destructible::State::scene_version),fragiles::State::scene_version)}
     pub fn destructible_enabled(&self)->bool{self.destructible.is_some()}
     pub fn destructible_transition(&self)->Option<&destructible::Transition>{self.destructible.as_ref().and_then(destructible::State::transition)}
+    pub fn bind_contact_source(&mut self,slot:usize,source:ram_proof::Source)->io::Result<()> {
+        if slot>=CAPACITY||self.actors.get(slot).and_then(|a|a.session)!=Some(source.session)
+            ||source.profile!=match self.vehicle_kind{VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}
+            ||!source.follows(self.contact_sources[slot].as_ref()){return Err(bad());}
+        self.impact.bind_contact_source(slot,source.clone())?;
+        if self.contact_sources[slot].as_ref()!=Some(&source){self.contact_sequences[slot]=0;}
+        self.contact_sources[slot]=Some(source);Ok(())
+    }
+    pub fn revoke_contact_source(&mut self,slot:usize)->io::Result<()> {
+        if slot>=CAPACITY||self.actors.get(slot).and_then(|a|a.session).is_some(){return Err(bad());}
+        // Retain the generation floor; actor session absence revokes admission.
+        self.impact.revoke_contact_source(slot)?;Ok(())
+    }
     /// Apply contacts from a fully drained worker frame to a cloned candidate
     /// world. The caller stages the candidate and waits for both worker scene
     /// ACKs before committing it or publishing native state.
@@ -181,17 +205,37 @@ impl World {
         let mut state=self.fragiles.as_ref().ok_or_else(bad)?.clone();
         if !state.catalog.contacts { return Err(bad()); }
         let mut trace=self.impact.clone();
+        let mut sequences=self.contact_sequences;
+        if state.catalog.version==7 {
+            let mut frames:[Option<Arc<ram_proof::ContextFrame>>;CAPACITY]=std::array::from_fn(|_|None);
+            let mut indices:[Vec<usize>;CAPACITY]=std::array::from_fn(|_|Vec::new());
+            for contact in contacts {
+                let p=contact.proof.as_ref().ok_or_else(bad)?;let c=&p.frame.context;let slot=contact.shooter;
+                if slot>=CAPACITY||c.battle!=self.id||c.slot!=slot||self.actors.get(slot).and_then(|a|a.session)!=Some(c.session)
+                    ||!self.contact_sources[slot].as_ref().is_some_and(|s|s.matches(c,p.frame.proof.profile))
+                    ||c.seq<=self.contact_sequences[slot]||p.index!=indices[slot].len(){return Err(bad());}
+                indices[slot].push(p.index);
+                state.validate_proof(p)?;
+                if let Some(old)=&frames[slot]{if old.as_ref()!=p.frame.as_ref(){return Err(bad());}}
+                else{frames[slot]=Some(p.frame.clone());}
+                sequences[slot]=c.seq;
+            }
+            for (frame,ids) in frames.iter().zip(&indices){if let Some(frame)=frame {
+                if ids.iter().copied().collect::<Vec<_>>()!=(0..frame.proof.receipts.len()).collect::<Vec<_>>(){return Err(bad());}
+            }}
+        }
         let mut outcomes=Vec::new();
         for contact in contacts {
             if contact.shooter>=CAPACITY { return Err(bad()); }
-            if let Some(event)=state.ram_contact(contact.object_id,contact.shooter,self.tick,contact.substep,
-                contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone())? {
+            if let Some(event)=state.ram_contact_with_proof(contact.object_id,contact.shooter,self.tick,contact.substep,
+                contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone(),contact.proof.clone())? {
                 trace.vehicle_contact(self.id,event.tick,&event)?;
                 outcomes.push(event);
             }
         }
         self.fragiles=Some(state);
         self.impact=trace;
+        self.contact_sequences=sequences;
         Ok(outcomes)
     }
     /// Authenticated identity only. The caller reserves a transport retirement
@@ -308,7 +352,7 @@ impl World {
                 match command {
                     Command::Aim(intent) => { intent.validate()?; continue; },
                     Command::Move(input) => {
-                        if !(-1..=1).contains(&input.throttle) || !(-1..=1).contains(&input.steer) { return Err(bad()); }
+                        if !input.valid() { return Err(bad()); }
                         continue;
                     },
                     Command::Fire(_) => continue,
@@ -318,7 +362,7 @@ impl World {
             match command {
                 Command::Aim(intent) => next.aim.set(*intent)?,
                 Command::Move(input) => {
-                    if !(-1..=1).contains(&input.throttle) || !(-1..=1).contains(&input.steer) { return Err(bad()); }
+                    if !input.valid() { return Err(bad()); }
                     next.input = *input;
                 },
                 Command::Fire(command) => {
@@ -422,10 +466,18 @@ impl World {
         if tick_changed {
             'projectile_loop: for projectile in &mut next_projectiles {
                 if !projectile.stopped {
-                    let mut segment_start = if projectile.launched > prior_time { projectile.launched } else { prior_time };
+                    let shot_tick = self.shots.iter()
+                        .find(|shot| shot.sequence == projectile.sequence).ok_or_else(bad)?.tick;
+                    // The integrated runtime advances only after both workers reply, so
+                    // a shot can be admitted in a wall bucket the world has not reached.
+                    // An update in that same bucket has no tick interval for it; the
+                    // first segment waits for the next update and still starts at launch
+                    // (an empty interval stopped the server in is7c17owner01).
+                    if shot_tick >= tick { continue; }
+                    let first = impact_trace.last_segment_end(projectile.sequence).is_none();
+                    let mut segment_start = if first || projectile.launched > prior_time { projectile.launched } else { prior_time };
                     let segment_limit = now.min(projectile.end_at()?);
-                    let mut segment_tick_start = self.shots.iter()
-                        .find(|shot| shot.sequence == projectile.sequence).ok_or_else(bad)?.tick.max(prior_tick);
+                    let mut segment_tick_start = shot_tick.max(prior_tick);
                     while segment_start < segment_limit {
                         // Terrain-enabled flight keeps the nominal chord error
                         // bounded even after a delayed server poll. These are
@@ -577,6 +629,19 @@ impl World {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    #[test]fn shot_while_world_lags_wall_bucket_keeps_a_nonempty_first_segment(){
+        let now=Instant::now();let mut w=world(now);w.advance(now+STEP).unwrap();assert_eq!(w.tick,1001);
+        // Real time is already in bucket 1002 while the world is still at 1001.
+        let late=now+STEP*2+Duration::from_millis(10);
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],late).unwrap();assert_eq!(w.shots[0].tick,1002);
+        // The next world update lands in the same wall bucket as the shot: no
+        // empty interval and no error, the first segment is deferred.
+        w.advance(late+Duration::from_millis(20)).unwrap();assert_eq!(w.tick,1002);
+        assert!(!w.impact.events().iter().any(|e|matches!(e,impact::Event::Segment{..})));
+        w.advance(now+STEP*3).unwrap();assert_eq!(w.tick,1003);
+        let launched=w.projectiles[0].position_at(w.projectiles[0].launched);
+        assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::Segment{shot_id:1,segment_tick_start:1002,segment_tick_end:1003,start,..} if *start==launched)));
+    }
     pub fn world(now: Instant) -> World {
         let mut w = World::new(123, now).unwrap();
         for i in 0..2 { w.attach(Identity { account: format!("owned-{i}"), database: i + 1,
@@ -663,7 +728,7 @@ pub(super) mod tests {
         let now=Instant::now();let mut w=contact_world(now);
         let before_fragiles=w.fragiles.clone();let before_impact=w.impact.clone();
         let valid=VehicleContactInput{object_id:1513,substep:1,point:[0.,0.,0.],
-            normal:[1.,0.,0.],velocity:[2.,0.,0.],mass_kg:4691.,kind:"hull".into(),shooter:0};
+            normal:[1.,0.,0.],velocity:[2.,0.,0.],mass_kg:4691.,kind:"hull".into(),shooter:0,proof:None};
         let invalid=VehicleContactInput{object_id:9999,..valid.clone()};
         assert!(w.apply_vehicle_contacts(&[valid.clone(),invalid]).is_err());
         assert_eq!(w.fragiles,before_fragiles);
@@ -850,7 +915,7 @@ pub(super) mod tests {
         let at = now+Duration::from_secs(9); w.advance(at).unwrap();
         let ammo = w.actors[1].fire.ammo(); let aim = w.actors[1].aim.clone();
         assert!(w.apply(1,2,&[Command::Aim(aim::Intent::Point([100.,20.,50.])),
-            Command::Move(Input{throttle:1,steer:1}),Command::Fire(fire::Command::Shoot)],at).unwrap().is_empty());
+            Command::Move(Input{throttle:1,steer:1,speed_percent:100}),Command::Fire(fire::Command::Shoot)],at).unwrap().is_empty());
         assert_eq!(w.actors[1].fire.ammo(),ammo); assert_eq!(w.actors[1].aim,aim);
         assert_eq!(w.actors[1].input,Input::STOP);
         // Already dead geometry emits one distinct block outcome, not another
@@ -998,8 +1063,8 @@ pub(super) mod tests {
     }
     #[test] fn two_controllers_change_one_shared_world_without_cross_ownership() {
         let now = Instant::now(); let mut w = world(now); let other = w.actors[1].clone();
-        assert!(w.apply(1, 1, &[Command::Move(Input { throttle: 1, steer: 0 })], now).is_err());
-        w.apply(0, 1, &[Command::Move(Input { throttle: 1, steer: 0 })], now).unwrap();
+        assert!(w.apply(1, 1, &[Command::Move(Input { throttle: 1, steer: 0, speed_percent: 100 })], now).is_err());
+        w.apply(0, 1, &[Command::Move(Input { throttle: 1, steer: 0, speed_percent: 100 })], now).unwrap();
         w.advance(now + STEP).unwrap(); assert!(w.actors[0].position[2] > SPAWN[2]);
         assert_eq!(w.actors[1], other);
     }
@@ -1060,7 +1125,7 @@ pub(super) mod tests {
     #[test] fn disconnect_and_reconnect_keep_survivor_clock_pose_and_ammo() {
         let now = Instant::now(); let mut w = world(now);
         w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap();
-        w.apply(1, 2, &[Command::Move(Input { throttle: 1, steer: 0 })], now).unwrap();
+        w.apply(1, 2, &[Command::Move(Input { throttle: 1, steer: 0, speed_percent: 100 })], now).unwrap();
         w.detach(1).unwrap(); let parked = w.actors[0].position;
         w.advance(now + STEP).unwrap(); assert_eq!(w.actors[0].position, parked);
         assert!(w.actors[1].position[2] > SPAWN[2]);
@@ -1071,7 +1136,7 @@ pub(super) mod tests {
     #[test] fn bad_late_command_is_atomic_and_reload_is_separate() {
         let now = Instant::now(); let mut w = world(now); let before = w.actors.clone();
         assert!(w.apply(0, 1, &[Command::Fire(fire::Command::Shoot),
-            Command::Move(Input { throttle: 2, steer: 0 })], now).is_err());
+            Command::Move(Input { throttle: 2, steer: 0, speed_percent: 100 })], now).is_err());
         assert_eq!(w.actors, before);
         assert!(w.shots.is_empty());
         w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap();
@@ -1111,7 +1176,7 @@ pub(super) mod tests {
         let before = (w.actors.clone(), w.shots.clone(), w.projectiles.clone(),
             w.impact.clone(), w.tick, w.last);
         assert!(w.apply(0, 1, &[Command::Fire(fire::Command::Shoot),
-            Command::Move(Input { throttle: 2, steer: 0 })], now).is_err());
+            Command::Move(Input { throttle: 2, steer: 0, speed_percent: 100 })], now).is_err());
         assert_eq!((w.actors.clone(), w.shots.clone(), w.projectiles.clone(),
             w.impact.clone(), w.tick, w.last), before);
 
@@ -1145,7 +1210,7 @@ pub(super) mod tests {
     }
     #[test] fn clock_and_kinematic_bounds_do_not_depend_on_client_telemetry() {
         let now = Instant::now(); let mut w = world(now);
-        w.apply(0, 1, &[Command::Move(Input { throttle: 1, steer: 0 })], now).unwrap();
+        w.apply(0, 1, &[Command::Move(Input { throttle: 1, steer: 0, speed_percent: 100 })], now).unwrap();
         for n in 1..100 { w.advance(now + STEP * n).unwrap(); }
         assert!((w.actors[0].position[2] - SPAWN[2]).abs() <= 2.);
         assert_eq!(w.actors[0].position[1], SPAWN[1]);

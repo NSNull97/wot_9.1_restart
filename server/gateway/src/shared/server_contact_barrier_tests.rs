@@ -206,7 +206,7 @@ fn rejoin_scene_ack_keeps_survivor_contact_without_waiting_for_native_ready() {
     let mut f = fixture(now);
     f.world.apply_vehicle_contacts(&[model::VehicleContactInput { object_id: 1513,
         substep: 1, point: [0.;3], normal: [0.,0.,1.], velocity: [0.,0.,2.],
-        mass_kg: f.map.mass_kg, kind: "hull".into(), shooter: 0 }]).unwrap();
+        mass_kg: f.map.mass_kg, kind: "hull".into(), shooter: 0 ,proof:None}]).unwrap();
     f.world.advance(now + drive::STEP).unwrap();
     let scene1 = Scene::new(&f.spec, &[1513]).unwrap();
     // Survivor already knows scene1; the rejoining worker needs its scene ACK
@@ -219,7 +219,7 @@ fn rejoin_scene_ack_keeps_survivor_contact_without_waiting_for_native_ready() {
     f.runtime.poses[1] = None;
     f.runtime.anchored[1] = false;
     let at = now + drive::STEP;
-    f.runtime.workers[0].as_mut().unwrap().advance(drive::Input { throttle: 1, steer: 0, brake: false }, at).unwrap();
+    f.runtime.workers[0].as_mut().unwrap().advance(drive::Input { throttle: 1, steer: 0, brake: false, speed_percent: 100 }, at).unwrap();
     f.runtime.dispatched[0] = Some(at);
     assert_eq!(f.peers[0].request()["seq"], 1);
     f.reply(0, 1, at + Duration::from_millis(1), vec![contact(1514, 2.)]);
@@ -304,7 +304,7 @@ fn fracture_preparation_cannot_import_an_unready_pose_or_omit_the_domain_delta()
     // physical proposal. No commit request may reach either worker.
     let mut omitted=f.world.clone();
     omitted.apply_vehicle_contacts(&[model::VehicleContactInput {object_id:1514,substep:1,point:[0.;3],
-        normal:[0.,0.,1.],velocity:[0.,0.,4.],mass_kg:f.map.mass_kg,kind:"hull".into(),shooter:1}]).unwrap();
+        normal:[0.,0.,1.],velocity:[0.,0.,4.],mass_kg:f.map.mass_kg,kind:"hull".into(),shooter:1,proof:None}]).unwrap();
     f.runtime.staged=Some(omitted);
     assert!(f.runtime.finish_catalog(&mut f.world,now+drive::STEP).is_err());
     assert_eq!(f.events(),0);assert!(f.peers.iter().all(controlled_ipc::Peer::no_request));

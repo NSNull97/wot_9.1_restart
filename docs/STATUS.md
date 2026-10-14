@@ -1,3 +1,374 @@
+## 2026-10-14 — P05B управление MS-1/ИС-7 принято владельцем
+
+Ручные прогоны владельца на Прохоровке: ms1owner01/is7owner01 (candidate15),
+ms1c16owner01 (candidate16), ms1c17owner01 и is7c17bowner01 (candidate17).
+Итог: поворот при отпущенном газе, смена W/S, разгон, отсутствие заноса и
+круиз 25/50% приняты; стрельба, разрушения и таран работают. Пробел оставлен
+как в оригинале («стоп до выстрела»), по решению владельца.
+
+Коммиты: `5c87ebd` (тормоз гусениц при накате, торможение при смене
+направления, тайминги коробки, сцепление на ходу, ступени круиза),
+`9b972be` (поворот не гаснет после отпускания газа), `158b05a` (гонка тика
+выстрела, ронявшая сервер). Gateway 783 passed / 0 failed / 5 ignored; Python —
+те же 19 падений окружения, что до изменений; легаси-траектории 10/10 бит-в-бит.
+
+Не закрыто: микролаг клиента раз в 10 с, выход в ангар в режиме двух
+клиентов, остановка всего сервера при нарушении инварианта трассы.
+Незавершённая диагностика стены (Codex) не влита; её черновики сохранены в
+`local/evidence/20261014-p05b-handling-fixes-01/codex-uncommitted-wall-diagnostic/`.
+[Изменения, замеры, проверки и откат](research/P05B_OWNER_HANDLING_FIXES.md).
+
+## 2026-10-14 — P05B paired02/normal12/full781 verified checkpoint
+
+Reviewed test-only cooperative waits fix the paired harness starvation while
+retaining500ms protection. All three actual paired rows pass contact/both ACK/
+fresh rejoin:9 natural exit0,991 validated advances/6 ACKs; independent review
+PASS. Original paired01 FAIL remains unchanged. Separate source-profile
+normal12 passes exact14/15 physical parity, full-box passage, no stop and
+2160 full typed advances/12 normal receipts/12 ACKs; all12 exit0. Independent
+audit verifies176 pins/52160 exact float comparisons and energy/passage gates.
+Fresh full gateway16:781 PASS,0 FAIL,5 explicit ignored; physics remains15.
+
+Source/build/evidence checkpoint:
+`night-angular-integration01/verified16-checkpoint.json`, SHA256
+`70d1f6d9d676e7a1857f45f22c363af28867f109e0424d5a1a6064d1d154da43`.
+See [runtime report](research/P05B_ANGULAR_RUNTIME_GATE.md).
+Morning15 genuine full-source pools and six lifecycle helpers pass12 passive
+checks and independent review. Final clean-HEAD binding/six dry-runs pending.
+
+Continue existing-plan coverage qualification read-only: mixed-mode actual
+chain, simultaneous angular/solid-wall constraint and energetically eligible
+wheel-only contact remain NOT_RUN, not inferred from component/legacy passes.
+Then bind the morning stand at the final checked source point. Native owner
+after09:00, static pressure, excluded compound families and historical solver
+fidelity remain OPEN. No native input/launch/merge; preserve14, all failures,
+stopped installs and unrelated dirty P09B.
+
+## 2026-10-14 — P05B all-alive PASS; paired rejoin probe FAIL retained
+
+Four actual workers with all1038 eligible objects initially alive complete
+120 advances each and exact repeats. IS-7 angular3167 applied; MS-1 actual
+contact without removal. All4 exit0; separate full decoder passes480 advances,
+2 receipts/2 ACKs. Independent Fraction/raw/exit audit PASS. Canonical targeted
+Rust19 PASS/3 ignored and saved-first8 recheck1 PASS/0 ignored.
+
+The first actual paired MS-1 row validates both source proofs and both ACKs,
+then fails500ms logical-lag protection at rejoin. All3 children reaped; the
+replacement is forced exit1. Later IS-7 rows NOT_RUN. Test-only blocking exit/
+PID waits starve the survivor; actual production launch latency remains UNKNOWN.
+See [runtime report](research/P05B_ANGULAR_RUNTIME_GATE.md) and checkpoint
+`night-angular-integration01/allalive-paired-checkpoint02.json`.
+
+Next: reviewed test-only pumped-wait correction preserving500ms/grid and
+bounded fresh paired execution; normal-linear/source-profile preparation runs
+independently. Runtime binaries unchanged, stand stopped, no native/input/merge.
+Owner after09:00 NOT_RUN; static pressure/compound/historical fidelity OPEN.
+Preserve all failures, candidate14 rollback and unrelated dirty P09B.
+
+## 2026-10-14 — P05B candidate15 legacy42 and Python127 PASS
+
+All42 actual old-catalog regression workers exited0:21 exact repeated cases,
+7524 advances, full physical parity with14;14 handling runs also raw-byte
+identical. Independent review verifies215 pins/118918 scalars, zero historical
+unknown zero signs. Separate Python invocations pass99+28 disjoint tests,
+zero skips. First-eight independent Decimal90 audit confirms actual angular
+energy debit and the full-body passage checks. See
+[runtime gate](research/P05B_ANGULAR_RUNTIME_GATE.md).
+
+Old catalog7 compatibility is distinct from new catalog8 normal-linear proof.
+Next: reviewed bounded actual paired ACK/rejoin and all-alive gates, then the
+remaining applicable automatic coverage and fresh full gateway suite.
+Native owner after09:00 remains NOT_RUN; no merge/push or client/input.
+Candidate14 rollback, all failed evidence and unrelated dirty P09B preserved.
+
+## 2026-10-14 — P05B candidate15 first-eight and full frame decode PASS
+
+Reviewed C#/Rust integration is now in the card branch. Canonical worker15
+builds;219 linked C# checks and17 targeted Rust checks PASS (saved decoder
+initially ignored). Eight actual private source-profile workers then completed:
+IS-7 rotating corner removes3167 with angular POST applied; MS-1 actual weak
+contact stays intact; both chain cases remove3166/3167, preserve14 behavior
+and pass full-source-box passage. Exact repeated states/proofs, all owned exit0.
+Separate production Rust decode:8 ready/960 advances/10 receipts/6 ACKs,
+1 isolated test PASS0 ignored. Capture receipts remain unchanged.
+See [runtime gate](research/P05B_ANGULAR_RUNTIME_GATE.md).
+
+These fixtures have synthetic initial removals. All-alive map, actual paired
+ACK/rejoin, old-policy regressions and full gateway gate remain pending.
+Native owner after09:00 NOT_RUN; historical fidelity/static pressure/compound
+coverage OPEN. Candidate14 preserved; no native launch/input, merge or push.
+Next: reviewed old-policy regressions and bounded actual paired-worker gate.
+Unrelated dirty P09B remains untouched.
+
+## 2026-10-14 — P05B angular scalar PASS; runtime integration next
+
+Frozen C#/Rust angular kernels match256 scalar cases and2882 saved native
+tensor frames. C#3548+266 checks, Rust5 units, independent Fraction/Decimal90
+and18 mixed sequences/126 steps PASS. Early compile/coverage/harness failures
+are preserved. Root checked all evidence pins and262 unchanged runtime files;
+P09B remains untouched. No physics worker or native client was launched here.
+See [scalar report](research/P05B_ANGULAR_SCALAR_GATE.md).
+
+Stage B is now authorized in the isolated angular-worker/angular-gateway
+checkouts under the frozen two-profile body, numeric and IPC6 contracts.
+Candidate14 remains the working rollback until new integration gates pass.
+Actual angular contact, both ACKs, rejoin and passage are still NOT_RUN.
+Static pressure/compound coverage/historical fidelity stay OPEN; native owner
+after09:00 remains NOT_RUN and the card must not merge. Next: implement and
+automatically verify the existing angular-fence correction, then fresh handoff.
+
+## 2026-10-14 — P05B contact diagnostics complete; angular correction next
+
+Actual same-time getter-only measurement identifies an IS-7 rotating-corner
+gap: first selected normal-mode energy17324.64J while the current COM ledger
+has19.52J and rejects it. MS-1 recorded maximum492.15J remains insufficient.
+Four private workers/484 IPC replies exactly match14; both sidecar repeats
+match, actual tensor/point readback PASS, all four owned children exited0.
+Independent raw review PASS. No production physics change in this phase.
+
+The separate full-map wheel control remains failed/unexercised: MS-1 wheel
+contacts1–23 then hull24–30; IS-7 target not hit. Four clean exits and exact
+repeats do not turn this into PASS. Energetic wheel-only gate NOT_RUN.
+Original #717 filter-speed writer is statically verified; its network/native
+execution and the owner's speed/aim rendering remain unobserved overnight.
+See [contact diagnostics](research/P05B_CONTACT_DIAGNOSTICS.md).
+
+Next: separately specify and test a bounded angular fallback for existing
+fences, preserving14's moving-linear rule and both-worker ACK boundary.
+Static pressure, compound coverage, historical fidelity and owner acceptance
+remain OPEN. Candidate14/cadence/morning dry-run evidence is preserved; its
+2d66203 binding needs a fresh rebind after subsequent HEAD changes before
+manual launch. No native input/launch, merge or push; preserve dirty P09B.
+
+## 2026-10-13 — P05B real-worker cadence PASS; morning binding next
+
+Actual candidate14 producers and source MS-1/IS-7 profiles each pass120 fresh
+paired publications on the100ms logical grid with exact independent replay.
+Final focused04:1 test PASS/0 ignored, eight owned workers exit; actor/aim stays
+unchanged between publications. Ordinary suites explicitly skip this no-load
+timing gate; canonical --run-ignored executes it alone. Eight passive driver
+checks PASS. Failed01 PID race and02 obstacle-intersecting route are retained;
+the revised corridor preserves all geometry/catalog and changes only spawn.
+No game/runtime change after candidate14, no fictitious full756 test result.
+
+Report: [cadence and morning handoff](research/P05B_REAL_WORKER_CADENCE.md).
+Prepared candidate14 stand has12 passive helper checks PASS. Final committed
+binding and six actual dry-runs are recorded separately in
+P05B/native-handling-night14/actual-preflight-receipt.json and
+P05B/night-cadence-checkpoint.json; preparation never implies native acceptance.
+Owner manual after2026-10-14 09:00 Asia/Yekaterinburg remains NOT_RUN.
+Static side pressure FAIL/OPEN; compound coverage and historical fidelity OPEN.
+Space is the verified STOP_UNTIL_FIRE latch, not a new boost/drift command.
+No native launch/input, merge or push. Preserve unrelated P09B and original client.
+Next: final source binding/passive preflight, then the documented owner handoff.
+
+## 2026-10-13 — P05B night14 moving-fence checkpoint; acceptance OPEN
+
+Candidate14 adds versioned domain6/worker7 total-linear8000J response to the
+existing403 fences only;626 trees/9 whole fragiles retain normal response.
+Four moving-side cases for both masses now fracture and pass with both ACKs;
+parallel/away controls stay intact. Clear chain3166/3167 passes for both.
+New22 paired ram cases and old20 paired cases pass; old trajectories match13.
+Handling/coast38 runs also match13. Python119, linked C#162 and fresh full
+gateway755/755 PASS. Real source-profile gateway cases confirm both-ACK commit
+and fresh-worker topology restoration. Bindings: P05B/night14-checkpoint.json.
+
+This is scoped evidence, not full acceptance: actual wheel-only source-geometry
+fixture NOT_RUN after12 bounded launches (4 settle failures preserved); near-zero
+side pressure still FAIL/OPEN, including actual hull contacts without removal.
+Native owner, historical solver fidelity and excluded compound coverage remain
+OPEN. No native launch/input or merge. Candidate13 remains rollback.
+Full results/commands/analysis corrections: [moving-fence report](research/P05B_MOVING_FENCE_CONTACT.md).
+Next automatic step: real-worker cadence smoke within existing P05B to complement
+controlled IPC proof of the periodic speed/aim jerk correction.
+
+## 2026-10-13 — P05B night13 coasting checkpoint; owner gate OPEN
+
+Moving steering without throttle now keeps zero requested motor torque and
+positive track ratios, then transitions to a stationary pivot near rest.
+Reverse handoff and steering release regressions are fixed. Candidate13 has
+94 paired-replay worker runs/530 scoped checks plus8930 controller component
+checks,36 flat runs+2 calibrations,20 paired ram cases and a fresh736/736
+gateway gate PASS. The prior09 real-map grip metrics are exactly retained.
+Bindings and commands: P05B/night13-checkpoint.json and research report.
+
+Experimental11/12 low-speed reverse self-acceleration is retained as FAIL;
+13 removes sustained growth with an explicit project coast-curvature bound.
+Full sampled partial-energy balance still has an initial6.1–17.6% transient;
+suspension energy is UNKNOWN. No exact energy-conservation or historical
+solver claim. Native owner acceptance remains NOT_RUN; no merge.
+
+Next: bounded moving-fence contact phase within P05B, with a separate short
+plan and versioned test_lab policy. Static pressure and universal object
+coverage remain OPEN. Native stand is stopped/restored; preserve P09B.
+
+## 2026-10-13 — P05B night09 automatic checkpoint; owner gate OPEN
+
+Cadence regression reproduced on old code, fixed with logical100ms scheduling
+and one fresh paired pose per publication; overload/ACK/rejoin are bounded.
+Fresh canonical gateway-p05b-night-final09 passes736/736, including four
+whole-object cases explicitly bound to candidate09. Earlier retained fixtures
+in other suites remain their declared versions. Moving support grip reduces
+MS-1 sustained-turn lateral RMS71–79% in exact owner-command replay without
+stopping the turn. Both profiles pass36 flat runs+2 calibrations,12 supported
+real-map grip runs and20 paired ram cases. Engineering policy, not historical
+solver equivalence. Evidence: P05B/night09-checkpoint.json and research.
+
+Side-fence snag remains OPEN: candidate08 actual geometry reproduces94 contact
+frames with no fracture for both tanks. Original client predictor uses full
+speed magnitude, while current policy uses COM normal energy; that source is
+not proof of authoritative server pressure damage. No unreviewed resistance
+change. Next automatic work is moving coast-to-pivot steering, then the bounded
+side-contact contract. Native clients/stand remain stopped/restored; manual
+tests after2026-10-14 09:00 Asia/Yekaterinburg, no merge before owner acceptance.
+
+## 2026-10-13 — P05B overnight: cadence, side contact and turning slip
+
+Owner finished candidate08 MS-1 run ms1ram03 and reports reversal delay appears
+gone, but side-fence snag, ordinary turning drift and roughly1Hz speed/aim
+jerk remain. P05B acceptance stays OPEN. Night work is authorized until
+2026-10-14 09:00 Asia/Yekaterinburg; owner tests follow that time. Updated
+[P05B plan](plans/P05B_TRACKED_HANDLING.md) orders cadence diagnosis first,
+then side contact and real-terrain turning. Original #717 Space mapping is
+STOP_UNTIL_FIRE; an independent historical drift-handbrake is not established.
+
+ram09 ownerfinal03 retains both ready sessions/workers,238 areas, zero server
+faults/stderr, but A has Barracks KeyError 'lock'; readiness remains FAIL.
+Missing inventory lock column is separately audited in lobby-lock-audit01;
+it is not silently repaired or dismissed as a physics error. Exact receipt
+stop succeeded for A47808/B20600/gateway15056, both client installations and
+namespaces restored. Identity bridge43384 is unchanged. Current source6ad93ae;
+candidate08/gateway03 frozen rollback. No native driving or full acceptance.
+
+Parallel user-owned chat01a13619-255e-7870-9149-52babb173748 handles historical
+tank/module research and purchase with explicit0XP/0credits test policy in
+an isolated checkout. It must not edit this physics working tree or stand.
+
+## 2026-10-13 — P05B owner feedback: handling improved, reversal still open
+
+Candidate08 correction now passes native control component1638 checks,
+real-worker moving reversal replay for both profiles,36 flat runs+2 calibrations
+and20 paired ram cases. Old-sign ramp cancels immediately; normal clutch and
+physical braking remain. MS-1 short reverse crossing2.1→1.4s. No-reversal
+114 flat streams and76 ram streams byte-identical;4 wall ACK equivalents
+verified after exact fixture-path/hash validation. Prior gateway728 retained,
+not rerun this worker-only change. See P05B research and `regression08-summary`.
+Owner finished ms1ram02 and authorized restart: root A/B/gateway stopped and
+both install/namespace ledgers restored. Fresh08 manual stand is ram09;
+native candidate08 acceptance NOT_RUN. Objects outside current catalogue remain
+open; six Toilets are already included,28 barrels/17 log piles are excluded.
+
+OBSERVED owner feedback on live ms1ram02: handling improved; strange delay
+between acceleration/reverse; houses, logs, barrels and outhouses still intact.
+This is partial improvement, not P05B acceptance or universal ram acceptance.
+`native-handling-ram08/ownerfeedback01/` preserves both native/server prefixes:
+no errors,10 destruction commits all preceded by both-worker ACKs.
+`owner-feedback-receipt01.json` finds3 direct opposite worker commands among23
+throttle changes. Motor/gear/clutch values are absent from the native log.
+The signed controller ramp retains old-direction drive for0.5s on direct
+reversals; a bounded correction and missing moving-reversal tests are planned.
+Live candidate07 clients remain untouched while isolated diagnostics run.
+
+## 2026-10-13 — P05B manual-stand identity readiness recovered
+
+Fresh ms1ram02 is LIVE for owner: gateway44204, A24368, B28348. Final
+`native-handling-ram08/ms1ready02/result.json` is
+PASS_READY_PREFIX_NOT_OWNER_ACCEPTANCE:2 distinct ready workers/sessions,
+238 catalog areas, zero server faults/stderr/client diagnostic errors in the
+retained prefixes. Earlier ms1ready01 was captured during worker startup and
+is retained as NOT_READY, not overwritten. Native handling acceptance remains
+NOT_RUN. Runtime binding uses commita7ceca1; this readiness note is documentation
+only. Keep this lifecycle running for the owner, then receipt-stop and rollback
+both install/namespace ledgers before a fresh IS-7 comparison.
+
+First final launch ms1ram01 stopped before either native client: A auth503.
+Gateway stopped by exact receipt; both installs and namespaces restored.
+Audit reproduced historical `Crew generator source changed`; current source
+validates the unchanged A profile. Root-owned old identity PID32780 matched
+its P06N receipt, command, executable hash, creation time and idle loopback
+listener. Restart with unchanged config/current source produced PID43384:
+both A/B login200 and overview200/ready; DB quick_check OK, profiles unchanged.
+Normal service rate-limit writes occurred; no profile/fixture repair needed.
+Evidence: `local/evidence/20261013-p05b-tracked-handling-01/auth-audit/`,
+especially `restart-before.json`, `bridge-current-launch.json`,
+`restart-result.json`; failed launch/restoration receipts remain in
+`native-handling-ram07/`. Its README incorrectly used CLI `restore`; argparse
+rejected it without edits, then actual `rollback` succeeded for both installs.
+
+Fresh manual lifecycle: `native-handling-ram08/`, copied frozen07 helpers,
+corrected README command, new binding/ledgers. Automatic physics gate remains
+valid (runtime source unchanged). Native owner acceptance remains NOT_RUN.
+
+## 2026-10-13 — P05B handling and whole-object response automatic gate
+
+**PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN.** Final physics candidate07
+and canonical gateway03 pass728 tests.20 paired ram scenarios verify mass,
+speed, direction, contact slowdown, one energy debit, both-worker ACKs,
+full-body passage and surviving solid walls. The real runtime gate checks
+trees/crates on the complete1038-object map, including fallenTrees publication.
+At approximately3m/s, IS-7 crate/tree troughs improve from.040/.009m/s to
+2.949/2.976m/s; MS-1 from.146/.095 to2.385/2.361. The oblique fence false-first
+manifold rejection is repaired by a bounded exact-pair prepass.
+
+Final36 flat runs+2 calibrations,10 legacy cases,9 historical byte comparisons,
+83 component checks,10 metric tests and28 worker/catalog negative cases pass.
+Python96 PASS/one symlink NOT_RUN. Pinned final sources/builds, commands,
+failure history, limitations and rollback are in
+[P05B research](research/P05B_TRACKED_HANDLING.md) and
+`local/evidence/20261013-p05b-tracked-handling-01/`.
+Gateway02 compile failed disk-full before tests; safer NTFS compression retained
+all evidence/binary bytes and allowed fresh gateway03 to pass.
+
+This repairs response for the existing1038 verified whole objects.300 excluded
+fragiles and other compound families remain open P06R coverage;8000J remains
+project policy. Native steering/feel, exact historical physics and100-battle
+capacity remain unaccepted. Branch stays `codex/p05b-tracked-handling`.
+Next: reversible two-client MS-1 Prohorovka manual run, then separate IS-7,
+using final private `native-handling-ram07` bindings/ledgers.
+
+## 2026-10-13 — P05B owner correction: tree/crate ram response reopened
+
+Owner clarified that fence-chain passage acceptance does not accept all ram
+response or object coverage. Trees/crates can stop even IS-7 to zero. Source
+inspection confirms the old energy response applies only to403 movement
+fragiles;626 trees and9 whole fragiles remain rigid until post-step removal.
+The previous green `clear_tree` test required eventual passage, not bounded
+impact slowdown. Native launch is paused before any installation or process.
+
+Steering checkpoint491bde5 is preserved. Current bounded work extends contact
+response to the existing1038 verified identities via domain5/worker6, explicit
+`test_lab-whole-object-energy-v1`, normal8000J resistance and no independent
+1m/s floor. Mass/speed/direction gates and no-refund solid-wall behavior must
+pass before manual handoff.8000J is retained test policy, not historic source
+resistance. Excluded compound/part coverage remains open P06R scope.
+
+## 2026-10-13 — P05B steering automatic checkpoint, before ram correction
+
+Branch `codex/p05b-tracked-handling`, base accepted main0393857. Versioned
+pool/config3 now controls differential track steering, bounded yaw response,
+support scrub and mass-scaled track inertia for both source-bound tanks.
+No pose/velocity teleporting; v1/v2 remain unchanged. The approximate policy
+and source/UNKNOWN distinctions are in [P05B research](research/P05B_TRACKED_HANDLING.md).
+
+**PASS_AUTOMATIC_PRIVATE / NATIVE_OWNER_NOT_RUN.** Canonical gateway723/723;
+candidate04 physics;36 final flat runs with exact state/diagnostic replay;
+34 real-map paired cases;10 legacy cases;9 old/new byte-identical trajectories;
+16 worker rejections;76 Python PASS/one symlink NOT_RUN. Evidence:
+`local/evidence/20261013-p05b-tracked-handling-01/`, latest flat gate
+`controller-audit/candidate04c-final-receipt.json`. Map regressions include
+slopes, walls, trees, fence chains and both-worker ACK in private policy replay.
+Legacy IS-7 chain historical comparison is NOT_RUN because no old file exists.
+
+Flat pivot now about118deg/4s MS-1 and95deg/4s IS-7; moving slip below1.48deg
+and.18deg respectively. Straight flat acceleration/braking already passed
+baseline, so source torque/gears/brakes were not arbitrarily increased. MS-1
+brief support loss on hard launch/braking recoil remains an observed caveat.
+Native feel, visual/contact regression, reconciliation and historical accuracy
+remain unaccepted. Required owner gate keeps this card out of main.
+
+Next: two-client manual Prohorovka MS-1 run, then a fresh IS-7 run, with exact
+private stand bindings/restoration receipts under `native-handling/`.
+
 ## 2026-10-14 — P04K original Barracks recruitment accepted
 
 **PASS_NATIVE_BARRACKS_RECRUITMENT_CURRENT_SOURCE.** Original Barracks hires

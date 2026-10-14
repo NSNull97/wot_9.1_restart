@@ -291,6 +291,9 @@ pub struct Trace {
     last_tick: u32,
     battle_id: Option<u64>,
     fragiles: Option<fragiles::State>,
+    contact_sources:[Option<super::ram_proof::Source>;2],
+    contact_revoked:[bool;2],
+    source_history:Vec<(u32,usize,super::ram_proof::Source)>,
 }
 
 impl Trace {
@@ -308,6 +311,16 @@ impl Trace {
         if catalog.map!=self.map||!self.events.is_empty()||self.fragiles.is_some(){return Err(invalid("late or duplicate fragile catalog"));}
         self.fragiles=Some(fragiles::State::new(catalog));Ok(())
     }
+    pub fn bind_contact_source(&mut self,slot:usize,source:super::ram_proof::Source)->io::Result<()> {
+        if slot>=2||source.profile!=match self.vehicle{VehicleKind::Ms1=>super::ram_proof::Profile::Ms1,VehicleKind::Is7=>super::ram_proof::Profile::Is7}
+            ||!source.follows(self.contact_sources[slot].as_ref()){return Err(invalid("vehicle source authority"));}
+        if self.contact_revoked[slot]&&self.contact_sources[slot].as_ref().is_some_and(|old|source.generation<=old.generation){return Err(invalid("revoked vehicle source"));}
+        self.contact_sources[slot]=Some(source);self.contact_revoked[slot]=false;Ok(())
+    }
+    pub fn revoke_contact_source(&mut self,slot:usize)->io::Result<()> {
+        if slot>=2{return Err(invalid("vehicle source slot"));}self.contact_revoked[slot]=true;Ok(())
+    }
+    pub fn contact_source_history(&self)->&[(u32,usize,super::ram_proof::Source)]{&self.source_history}
     pub fn events(&self) -> &[Event] { &self.events }
     pub fn terminal_shots(&self) -> &[u32] { &self.terminal_shots }
     pub fn has_terminal(&self, shot_id: u32) -> bool { self.terminal_shots.contains(&shot_id) }
@@ -640,20 +653,30 @@ impl Trace {
             || contact.scene_after!=contact.scene_before.saturating_add(1) {
             return Err(invalid("vehicle contact identity or tick"));
         }
+        if let Some(p)=&contact.proof {
+            if p.frame.context.battle!=battle_id||self.contact_revoked.get(contact.shooter).copied().unwrap_or(true)||!self.contact_sources.get(contact.shooter).and_then(Option::as_ref)
+                .is_some_and(|s|s.matches(&p.frame.context,p.frame.proof.profile)){return Err(invalid("vehicle proof source"));}
+        }
         let expected_scene=self.scene_version_before(u32::MAX);
         if contact.scene_before!=expected_scene {
             return Err(invalid("vehicle contact scene revision"));
         }
         let mut state=self.fragiles.clone().ok_or_else(||invalid("fragile catalog absent"))?;
         if !state.catalog.contacts { return Err(invalid("vehicle contact profile absent")); }
-        let replayed=state.ram_contact(contact.object_id,contact.shooter,contact.tick,
-            contact.substep,contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone())?
+        let replayed=state.ram_contact_with_proof(contact.object_id,contact.shooter,contact.tick,
+            contact.substep,contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone(),contact.proof.clone())?
             .ok_or_else(||invalid("vehicle contact was already removed or below threshold"))?;
         if replayed!=*contact || state.scene_version()!=contact.scene_after {
             return Err(invalid("vehicle contact replay mismatch"));
         }
         let order=self.next_order_value()?;
+        let source=if contact.proof.is_some(){Some(self.contact_sources[contact.shooter].clone().ok_or_else(||invalid("missing source"))?)}else{None};
         self.push(Event::VehicleContact {order,battle_id,server_tick,contact:contact.clone()})?;
+        if let Some(source)=source {
+            if self.source_history.iter().rev().find(|(_,slot,_)|*slot==contact.shooter).is_none_or(|(_,_,old)|*old!=source){
+                self.source_history.push((order,contact.shooter,source));
+            }
+        }
         self.fragiles=Some(state);
         if self.battle_id.is_none() { self.battle_id=Some(battle_id); }
         self.last_tick=server_tick;
@@ -901,7 +924,7 @@ impl Trace {
         })
     }
 
-    fn last_segment_end(&self, shot_id: u32) -> Option<u32> {
+    pub(super) fn last_segment_end(&self, shot_id: u32) -> Option<u32> {
         self.events.iter().rev().find_map(|event| match event {
             Event::Segment { shot_id: id, segment_tick_end, .. } if *id == shot_id => Some(*segment_tick_end),
             _ => None,

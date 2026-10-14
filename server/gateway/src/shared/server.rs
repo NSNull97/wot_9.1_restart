@@ -4,6 +4,7 @@ use super::{model::{self, World}, ap, impact_wire, terrain_wire, wire, Client, P
 use super::super::*;
 use crate::map_profile091::MapId;
 use super::vehicle_profile::VehicleKind;
+use super::ram_proof;
 
 #[cfg(test)]
 #[path="server_catalog_tests.rs"]
@@ -17,11 +18,26 @@ use crate::worker_fixtures091 as worker_fixtures;
 #[path="server_contact_barrier_tests.rs"]
 mod contact_barrier_tests;
 #[cfg(test)]
+#[path="server_angular_tests.rs"]
+mod angular_tests;
+#[cfg(test)]
+#[path="server_angular_real_tests.rs"]
+mod angular_real_tests;
+#[cfg(test)]
+#[path="server_cadence_tests.rs"]
+mod cadence_tests;
+#[cfg(test)]
 #[path="server_fracture_real_tests.rs"]
 mod fracture_real_tests;
 #[cfg(test)]
+#[path="server_fence_total_real_tests.rs"]
+mod fence_total_real_tests;
+#[cfg(test)]
 #[path="server_is7_real_tests.rs"]
 mod is7_real_tests;
+#[cfg(test)]
+#[path="server_whole_fracture_real_tests.rs"]
+mod whole_fracture_real_tests;
 
 #[derive(Default)]
 struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
@@ -34,6 +50,7 @@ struct ContactBatch {
     seq: u32,
     scene_version: u32,
     contacts: Vec<model::VehicleContactInput>,
+    observed_contacts:usize,
 }
 
 /// Owns one accepted P05 worker per shared actor. The handles live outside
@@ -45,8 +62,12 @@ struct IntegratedRuntime {
     map_id: MapId,
     workers: [Option<crate::map_drive_worker091::Worker>; model::CAPACITY],
     poses: [Option<([f32; 3], [f32; 3], f32)>; model::CAPACITY],
+    // One validated advance per lane may wait for its peer/native tick. Never
+    // overwrite it with a catch-up reply or publish the same source twice.
+    pose_pending: [bool; model::CAPACITY],
     offsets: [[f32; 3]; model::CAPACITY],
     anchored: [bool; model::CAPACITY],
+    // Logical100ms deadlines, not the wall time at which the loop sent IPC.
     dispatched: [Option<Instant>; model::CAPACITY],
     started: bool,
     removal: Option<crate::map_drive_worker091::RemovalSpec>,
@@ -72,6 +93,28 @@ fn worker_frame_position(worker_position: [f32; 3], offset: [f32; 3]) -> [f32; 3
     [worker_position[0] + offset[0], worker_position[1], worker_position[2] + offset[2]]
 }
 
+fn drive_grid(start: Instant, now: Instant) -> io::Result<Instant> {
+    let elapsed = now.checked_duration_since(start).ok_or_else(model::bad)?;
+    let step = crate::map_drive_worker091::STEP;
+    let ticks = elapsed.as_nanos() / step.as_nanos();
+    let ticks: u32 = ticks.try_into().map_err(|_| model::bad())?;
+    start.checked_add(step.checked_mul(ticks).ok_or_else(model::bad)?).ok_or_else(model::bad)
+}
+
+fn drive_deadline(start: Instant, previous: Option<Instant>, now: Instant) -> io::Result<Option<Instant>> {
+    let deadline = match previous {
+        Some(previous) => previous.checked_add(crate::map_drive_worker091::STEP).ok_or_else(model::bad)?,
+        None => drive_grid(start, now)?,
+    };
+    if now < deadline { return Ok(None); }
+    // Engineering overload bound, shared with the existing worker contract.
+    // Ordinary latency cannot silently reset simulation time or burst forever.
+    if now.duration_since(deadline) > crate::map_drive_worker091::MAX_LAG {
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "integrated drive logical deadline lag exceeds500ms; fail closed"));
+    }
+    Ok(Some(deadline))
+}
+
 impl IntegratedRuntime {
     fn new(pool: Arc<crate::map_drive_worker091::Pool>) -> Self {
         Self::new_for_map(pool, MapId::Karelia)
@@ -79,6 +122,7 @@ impl IntegratedRuntime {
 
     fn new_for_map(pool: Arc<crate::map_drive_worker091::Pool>, map_id: MapId) -> Self {
         Self { pool, map_id, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
+            pose_pending: [false; model::CAPACITY],
             offsets: [[0.; 3]; model::CAPACITY],
             anchored: [false; model::CAPACITY],
             dispatched: [None; model::CAPACITY], started: false, removal: None,catalog:None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY],
@@ -97,6 +141,7 @@ impl IntegratedRuntime {
     fn clear_slot(&mut self, slot: usize) {
         self.workers[slot].take();
         self.poses[slot] = None;
+        self.pose_pending[slot] = false;
         self.anchored[slot] = false;
         self.dispatched[slot] = None;
         self.worker_sessions[slot] = None;
@@ -115,6 +160,7 @@ impl IntegratedRuntime {
         self.anchored[slot] = false;
         self.dispatched[slot] = None;
         self.worker_sessions[slot] = world.actors.get(slot).and_then(|a| a.session);
+        self.pose_pending[slot] = false;
         if self.worker_sessions[slot].is_none() { return Err(model::bad()); }
         self.contact_sequences[slot] = 0;
         self.contact_batches[slot] = None;
@@ -160,6 +206,16 @@ impl IntegratedRuntime {
 
     fn blocked(&self) -> bool { self.staged.is_some() || self.workers.iter().flatten().any(|worker|!worker.prepared_ids().is_empty()) }
 
+    fn resume_after_scene_ack(&mut self, world: &World, now: Instant) -> io::Result<()> {
+        let grid = drive_grid(world.started.ok_or_else(model::bad)?, now)?;
+        // This is an intentional transaction pause, not worker overload. Keep
+        // any early unpublished pose; only the schedule rebases after all ACKs.
+        for slot in 0..model::CAPACITY {
+            if self.dispatched[slot].is_some() { self.dispatched[slot] = Some(grid); }
+        }
+        Ok(())
+    }
+
     fn finish_catalog(&mut self,world:&mut World,now:Instant)->io::Result<()>{
         let staged=self.staged.as_ref().ok_or_else(model::bad)?;
         if staged.map!=world.map||world.map!=self.map_id||staged.vehicle_kind()!=world.vehicle_kind()
@@ -185,7 +241,7 @@ impl IntegratedRuntime {
             if worker.catalog_scene()!=Some(&scene){complete=false;if !worker.pending(){worker.sync_removed(scene.clone(),now)?;}}
         }
         if participants==0{return Err(model::bad());}
-        if complete{let before=world.scene_version();*world=self.staged.take().ok_or_else(model::bad)?;
+        if complete{let before=world.scene_version();self.resume_after_scene_ack(world,now)?;*world=self.staged.take().ok_or_else(model::bad)?;
             println!("SHARED_CATALOG_COMMITTED battle={} scene_before={} scene_after={} scene_sha256={} removed={:?} participating_workers={} workers_acknowledged=true",world.id,before,scene.version(),scene.hash(),scene.ids(),participants);}
         Ok(())
     }
@@ -226,6 +282,7 @@ impl IntegratedRuntime {
         }
         if participants == 0 { return Err(model::bad()); }
         if complete {
+            self.resume_after_scene_ack(world, now)?;
             *world = self.staged.take().ok_or_else(model::bad)?;
             let event = world.destructible_transition().ok_or_else(model::bad)?;
             println!("SHARED_DESTRUCTIBLE_COMMITTED battle={} shot={} tick={} instance_id={} scene_before=0 scene_after=1 participating_workers={} workers_acknowledged=true", world.id, event.shot, event.tick, event.instance_id,participants);
@@ -269,19 +326,32 @@ impl IntegratedRuntime {
                 // seq0 is the stationary startup/settle snapshot, not a game
                 // advance. Only subsequent replies may supply gameplay hits.
                 if state.seq != 0 {
-                    let held: usize = self.contact_batches.iter().flatten().map(|b| b.contacts.len()).sum();
-                    if self.contact_batches[slot].is_some()
+                    let held: usize = self.contact_batches.iter().flatten().map(|b| b.observed_contacts).sum();
+                    if self.pose_pending[slot] || self.contact_batches[slot].is_some()
                         || state.seq != self.contact_sequences[slot].checked_add(1).ok_or_else(model::bad)?
                         || state.scene_version != world.scene_version()
                         || held + state.object_contacts.len() > 32 { return Err(model::bad()); }
-                    let contacts = state.object_contacts.iter().map(|contact| model::VehicleContactInput {
-                        object_id: contact.object_id, substep: contact.substep, point: contact.point,
-                        normal: contact.normal, velocity: contact.velocity, mass_kg: worker.map.mass_kg,
-                        kind: contact.kind.clone(), shooter: slot,
-                    }).collect();
+                    let frame=if let Some(proof)=&state.angular_proof {
+                        let domain=world.fragiles.as_ref().ok_or_else(model::bad)?;
+                        let scene=worker.catalog_scene().ok_or_else(model::bad)?;
+                        Some(Arc::new(ram_proof::ContextFrame{proof:proof.clone(),context:ram_proof::Context{
+                            battle:world.id,slot,session:session.ok_or_else(model::bad)?,generation:worker.generation,
+                            seq:state.seq,tick:state.tick,config_sha256:worker.map.config_sha256.clone(),
+                            catalog_sha256:domain.catalog.worker_sha256.clone(),domain_sha256:domain.catalog.sha256.clone(),
+                            scene_version:scene.version(),scene_sha256:scene.hash().into()}}))
+                    }else{None};
+                    let mut contacts = state.object_contacts.iter().filter(|contact|frame.as_ref().is_none_or(|frame|frame.proof.receipts.iter().any(|r|r.object_id==contact.object_id))).map(|contact| {
+                        let proof=if let Some(frame)=&frame {Some(ram_proof::ContactProof{frame:frame.clone(),
+                            index:frame.proof.receipts.iter().position(|r|r.object_id==contact.object_id).ok_or_else(model::bad)?})}else{None};
+                        Ok(model::VehicleContactInput {object_id: contact.object_id, substep: contact.substep, point: contact.point,
+                            normal: contact.normal, velocity: contact.velocity, mass_kg: worker.map.mass_kg,
+                            kind: contact.kind.clone(), shooter: slot,proof})
+                    }).collect::<io::Result<Vec<_>>>()?;
+                    if frame.is_some(){contacts.sort_by_key(|contact|contact.proof.as_ref().map(|p|p.index));}
                     self.contact_sequences[slot] = state.seq;
+                    self.pose_pending[slot] = true;
                     self.contact_batches[slot] = Some(ContactBatch { session: session.ok_or_else(model::bad)?,
-                        generation: worker.generation, seq: state.seq, scene_version: state.scene_version, contacts });
+                        generation: worker.generation, seq: state.seq, scene_version: state.scene_version, contacts,observed_contacts:state.object_contacts.len() });
                     for receipt in &state.fractures {
                         println!("SHARED_FENCE_RESPONSE {}",serde_json::json!({"battle":world.id,
                             "slot":slot,"generation":worker.generation,"seq":state.seq,
@@ -316,12 +386,13 @@ impl IntegratedRuntime {
                 rows.push((slot,actor.position,actor.direction,0.));
             }
         }
+        let mut rejoin_ack = false;
         if self.catalog.is_some(){
             let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().unwrap(),&world.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids())?;
             for slot in 0..model::CAPACITY{
                 if world.actors[slot].session.is_none(){continue;}
                 let worker=self.workers[slot].as_mut().ok_or_else(model::bad)?;
-                if let Some(ack)=worker.take_catalog_ack(){println!("SHARED_CATALOG_REJOIN_ACK battle={} slot={} scene_version={} scene_sha256={}",world.id,slot,ack.scene_version,ack.scene_sha256);}
+                if let Some(ack)=worker.take_catalog_ack(){rejoin_ack=true;println!("SHARED_CATALOG_REJOIN_ACK battle={} slot={} scene_version={} scene_sha256={}",world.id,slot,ack.scene_version,ack.scene_sha256);}
                 if worker.catalog_scene()!=Some(&scene){
                     self.synchronizing[slot]=true;
                     if worker.ready()&&!worker.pending(){worker.sync_removed(scene.clone(),now)?;}
@@ -332,6 +403,7 @@ impl IntegratedRuntime {
                 if world.actors[slot].session.is_none() { continue; }
                 let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
                 if let Some(ack) = worker.take_removal_ack() {
+                    rejoin_ack = true;
                     println!("SHARED_DESTRUCTIBLE_REJOIN_ACK battle={} slot={} scene_version={}",world.id,slot,ack.scene_version);
                 }
                 if worker.scene_version() != 1 {
@@ -341,10 +413,14 @@ impl IntegratedRuntime {
             }
 
         }
+        // Restoring a reconnect also intentionally drains the paired movement
+        // snapshot. Its bounded ACK wait must not become ordinary drive debt.
+        if rejoin_ack { self.resume_after_scene_ack(world, now)?; }
         for (slot,position,direction,speed) in &rows {
             if !world.actors[*slot].ready && world.actors[*slot].session.is_some()
                 && !self.synchronizing[*slot] && self.anchored[*slot] && !self.blocked() {
                 world.import_unready_external_pose(*slot,*position,*direction,*speed)?;
+                self.pose_pending[*slot] = false;
             }
         }
         // A contact candidate can only use a fully drained movement snapshot.
@@ -370,8 +446,31 @@ impl IntegratedRuntime {
             }
             return Ok(());
         }
+        // Validate scheduling before mutating the published World. A fresh
+        // source must not turn into a final successful snapshot on overload.
+        let mut deadlines = [None; model::CAPACITY];
+        for slot in 0..model::CAPACITY {
+            if world.actors[slot].session.is_some() && !self.synchronizing[slot]
+                && self.workers[slot].as_ref().is_some_and(|w| w.ready() && !w.pending()) {
+                deadlines[slot] = drive_deadline(world.started.ok_or_else(model::bad)?, self.dispatched[slot], now)?;
+            }
+        }
+        let fresh_pair = world.actors.iter().enumerate().all(|(slot, actor)|
+            actor.session.is_none() || !actor.ready || self.pose_pending[slot]);
+        // Vacuously true only when every actor is parked/unready: preserve the
+        // existing projectile/world clock without moving any cached actor.
         let mut candidate = world.clone();
-        candidate.advance_with_external(now, Some(&rows))?;
+        if self.catalog.as_ref().is_some_and(|catalog|catalog.version()==8) {
+            for slot in 0..model::CAPACITY {
+                if let Some(session)=world.actors.get(slot).and_then(|a|a.session) {
+                    let worker=self.workers[slot].as_ref().ok_or_else(model::bad)?;
+                    candidate.bind_contact_source(slot,ram_proof::Source{session,generation:worker.generation,
+                        config_sha256:worker.map.config_sha256.clone(),profile:match self.pool.vehicle_kind(){
+                            VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}})?;
+                }else{candidate.revoke_contact_source(slot)?;}
+            }
+        }
+        let published = fresh_pair && candidate.advance_with_external(now, Some(&rows))?;
         let mut vehicle_contacts = Vec::new();
         for (slot, batch) in self.contact_batches.iter().enumerate() {
             if let Some(batch) = batch {
@@ -381,6 +480,11 @@ impl IntegratedRuntime {
                     || worker.generation != batch.generation || batch.seq != self.contact_sequences[slot]
                     || batch.scene_version != world.scene_version() || worker.scene_version() != batch.scene_version {
                     return Err(model::bad());
+                }
+                if let Some(proof)=batch.contacts.first().and_then(|contact|contact.proof.as_ref()) {
+                    let source=world.fragiles.as_ref().ok_or_else(model::bad)?;
+                    if proof.frame.context.scene_version!=world.scene_version()
+                        ||proof.frame.context.scene_sha256!=source.historical_scene_hash(world.scene_version())?{return Err(model::bad());}
                 }
                 vehicle_contacts.extend_from_slice(&batch.contacts);
             }
@@ -395,11 +499,22 @@ impl IntegratedRuntime {
         for event in &vehicle_events {
             let closing_speed=event.velocity.iter().zip(event.normal).map(|(v,n)|v*n).sum::<f32>();
             let energy_j=0.5*event.mass_kg*closing_speed*closing_speed;
+            let closing_f64=event.velocity.iter().zip(event.normal).map(|(v,n)|f64::from(*v)*f64::from(n)).sum::<f64>();
+            let normal_energy_j=0.5*f64::from(event.mass_kg)*closing_f64*closing_f64;
+            let ram_response=candidate.fragiles.as_ref().and_then(|s|s.catalog.objects.iter().find(|o|o.object_id==event.object_id)
+                .and_then(|o|s.catalog.ram_response(o))).unwrap_or("normal_linear");
+            let admission_energy_j=if let Some(p)=&event.proof {
+                let r=p.receipt()?;
+                if r.mode==ram_proof::Mode::Angular {let w=p.frame.proof.witness(r.substep)?;
+                    super::ram_response::inspect(w.pre.scalar(p.frame.proof.binding,w.pre.motion),r.geometry.scalar()).map_err(|_|model::bad())?.normal_energy
+                }else if r.mode==ram_proof::Mode::Total{0.5*f64::from(event.mass_kg)*event.velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}
+                else{normal_energy_j}
+            }else if ram_response=="total_linear" {0.5*f64::from(event.mass_kg)*event.velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}else{normal_energy_j};
             println!("SHARED_VEHICLE_CONTACT battle={} slot={} object_id={} instance_id={} kind={} substep={} closing_speed={} scene_before={} scene_after={} fallen_tree={:?}",
                 candidate.id,event.shooter,event.object_id,event.instance_id,event.kind,event.substep,
                 closing_speed,event.scene_before,event.scene_after,event.fallen_tree);
-            println!("SHARED_VEHICLE_CONTACT_ENERGY battle={} object_id={} mass_kg={} closing_speed={} energy_j={} policy_min_energy_j={}",
-                candidate.id,event.object_id,event.mass_kg,closing_speed,energy_j,super::fragiles::RAMMING_MIN_ENERGY_J);
+            println!("SHARED_VEHICLE_CONTACT_ENERGY battle={} object_id={} mass_kg={} closing_speed={} energy_j={} normal_energy_j={} admission_energy_j={} ram_response={} policy_min_energy_j={}",
+                candidate.id,event.object_id,event.mass_kg,closing_speed,energy_j,normal_energy_j,admission_energy_j,ram_response,super::fragiles::RAMMING_MIN_ENERGY_J);
         }
         if candidate.scene_version() != world.scene_version() {
             if self.catalog.is_none()&&(self.removal.is_none() || world.scene_version() != 0 || candidate.scene_version() != 1) {
@@ -408,23 +523,25 @@ impl IntegratedRuntime {
             // The staged candidate owns these outcomes now. ACK-only polls
             // must never apply the same advance's contacts a second time.
             self.contact_batches = std::array::from_fn(|_| None);
+            if published { self.pose_pending = [false; model::CAPACITY]; }
             self.staged = Some(candidate);
             return self.finish_removal(world, now);
         }
         *world = candidate;
+        if published { self.pose_pending = [false; model::CAPACITY]; }
         self.contact_batches = std::array::from_fn(|_| None);
         for slot in 0..model::CAPACITY {
             if world.actors.get(slot).and_then(|a| a.session).is_none() { continue; }
             let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
-            if !self.synchronizing[slot] && worker.ready() && !worker.pending()
-                && self.dispatched[slot].is_none_or(|sent| now.duration_since(sent) >= crate::map_drive_worker091::STEP) {
+            if !self.synchronizing[slot] && !self.pose_pending[slot] && worker.ready() && !worker.pending()
+                && deadlines[slot].is_some() {
                 let actor = world.actors.get(slot).ok_or_else(model::bad)?;
                 let input = crate::map_drive_worker091::Input { throttle: actor.input.throttle,
-                    steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0 };
+                    steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0, speed_percent: actor.input.speed_percent };
                 let seq = worker.advance(input, now)?;
-                self.dispatched[slot] = Some(now);
-                println!("SHARED_INTEGRATED_WORKER_INPUT battle={} slot={} seq={} throttle={} steer={} brake={}",
-                    world.id, slot, seq, input.throttle, input.steer, input.brake);
+                self.dispatched[slot] = deadlines[slot];
+                println!("SHARED_INTEGRATED_WORKER_INPUT battle={} slot={} seq={} throttle={} steer={} brake={} speed_percent={}",
+                    world.id, slot, seq, input.throttle, input.steer, input.brake, input.speed_percent);
             }
         }
         Ok(())
@@ -547,12 +664,21 @@ pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_pa
     let catalog=if let Some((path,sha))=catalog_path{
         let path=Path::new(path);let catalog=Arc::new(super::fragiles::Catalog::load(&pool.local_root,path,sha)?);
         let worker=crate::map_drive_worker091::CatalogSpec::load(&pool.local_root,&path.parent().ok_or_else(model::bad)?.join(&catalog.worker_file),&catalog.worker_sha256)?;
-        if catalog.map!=map||worker.map_id()!=map||catalog.contacts!=worker.contacts()||worker.version()!=catalog.version+1||worker.entries().len()!=catalog.objects.len()||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
-            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=b.kind.worker_kind()
-            ||a.ram_energy_j()!=if catalog.version==4&&matches!(b.kind,super::fragiles::ObjectKind::MovementFragile){super::fragiles::RAMMING_MIN_ENERGY_J as u32}else{0}){return Err(model::bad().into());}
+        validate_catalog_projection(&catalog,&worker,map)?;
         Some((catalog,worker))
     }else{None};
     serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle)
+}
+
+fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::map_drive_worker091::CatalogSpec,map:MapId)->io::Result<()> {
+    if catalog.map!=map||worker.map_id()!=map||catalog.worker_sha256!=worker.sha256()||catalog.contacts!=worker.contacts()
+        ||worker.version()!=catalog.version+1||worker.entries().len()!=catalog.objects.len()
+        ||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
+            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle
+            ||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=b.kind.worker_kind()
+            ||a.ram_response()!=catalog.ram_response(b)
+            ||a.ram_energy_j()!=if catalog.version>=5||catalog.version==4&&matches!(b.kind,super::fragiles::ObjectKind::MovementFragile){super::fragiles::RAMMING_MIN_ENERGY_J as u32}else{0}){return Err(model::bad());}
+    Ok(())
 }
 
 fn validate_vehicle_binding(vehicle:VehicleKind, pool:&crate::map_drive_worker091::Pool,
@@ -1233,7 +1359,7 @@ mod tests {
         // Global arena-entry readiness is false while the other worker restores,
         // but 64 successive survivor envelopes must be consumed without overflow.
         for _ in 0..64 {
-            a.shared.as_mut().unwrap().commands.push(model::Command::Move(model::Input{throttle:1,steer:0}));
+            a.shared.as_mut().unwrap().commands.push(model::Command::Move(model::Input{throttle:1,steer:0,speed_percent:100}));
             poll_with_native_start(&mut a,&mut w,now+model::STEP,false).unwrap();
             assert!(a.shared.as_ref().unwrap().commands.is_empty());
         }
@@ -1257,7 +1383,7 @@ mod tests {
         let now=Instant::now();let(mut a,mut b,_)=visible_pair(now);let mut w=destroyed_fixture(now);
         for s in [&mut a,&mut b] {
             let c=s.shared.as_mut().unwrap();c.view=Some(w.clone());c.shot_cursor=w.latest_shot();
-            c.area_creation=Some((0,false));c.commands.push(model::Command::Move(model::Input{throttle:1,steer:0}));
+            c.area_creation=Some((0,false));c.commands.push(model::Command::Move(model::Input{throttle:1,steer:0,speed_percent:100}));
             poll(s,&mut w,now+model::STEP).unwrap();assert_eq!(s.shared.as_ref().unwrap().commands.len(),1);
             assert_eq!(s.shared.as_ref().unwrap().area_scene_sent,0);
             s.shared.as_mut().unwrap().area_creation=Some((0,true));
