@@ -7,27 +7,33 @@ use serde_json::Value;
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
 
 // Reject duplicate top-level keys instead of accepting an ambiguous last value.
-struct Object(BTreeMap<String,Value>);
-impl<'de> Deserialize<'de> for Object {
+/// Unique-key JSON object with at most LIMIT top-level fields.
+struct Bounded<const LIMIT:usize>(BTreeMap<String,Value>);
+/// Requests, replies and the gateway config keep the original 16-field guard.
+const REQUEST_FIELDS:usize=16;
+/// Fixture manifests gain fields with each opt-in service (P09E writes 17) and
+/// are already size-bounded by bounded_file.
+const FIXTURE_METADATA_FIELDS:usize=64;
+impl<'de,const LIMIT:usize> Deserialize<'de> for Bounded<LIMIT> {
     fn deserialize<D:Deserializer<'de>>(deserializer:D)->Result<Self,D::Error> {
-        struct Fields;
-        impl<'de> Visitor<'de> for Fields {
-            type Value=Object;
+        struct Fields<const N:usize>;
+        impl<'de,const N:usize> Visitor<'de> for Fields<N> {
+            type Value=Bounded<N>;
             fn expecting(&self,f:&mut fmt::Formatter)->fmt::Result {f.write_str("a bounded object with unique keys")}
-            fn visit_map<M:MapAccess<'de>>(self,mut input:M)->Result<Object,M::Error> {
+            fn visit_map<M:MapAccess<'de>>(self,mut input:M)->Result<Bounded<N>,M::Error> {
                 let mut output=BTreeMap::new();
                 while let Some((key,value))=input.next_entry::<String,Value>()? {
-                    if output.len()>=16 || output.insert(key,value).is_some() {return Err(de::Error::custom("duplicate/too many fields"));}
+                    if output.len()>=N || output.insert(key,value).is_some() {return Err(de::Error::custom("duplicate/too many fields"));}
                 }
-                Ok(Object(output))
+                Ok(Bounded(output))
             }
         }
-        deserializer.deserialize_map(Fields)
+        deserializer.deserialize_map(Fields::<LIMIT>)
     }
 }
 fn object(bytes:&[u8],keys:&[&str])->io::Result<BTreeMap<String,Value>> {
     if bytes.len()>4096 {return Err(invalid("JSON size bound"));}
-    let Object(value)=serde_json::from_slice(bytes).map_err(|_|invalid("invalid bounded JSON object"))?;
+    let Bounded::<REQUEST_FIELDS>(value)=serde_json::from_slice(bytes).map_err(|_|invalid("invalid bounded JSON object"))?;
     if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("JSON field contract"));}
     Ok(value)
 }
@@ -54,7 +60,7 @@ pub struct Config {
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
         let bytes=bounded_file(Path::new(path),4096)?;
-        let Object(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        let Bounded::<REQUEST_FIELDS>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
         let ammo_service=match value.remove("ammunition_service") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
         };
@@ -311,7 +317,7 @@ fn verify_fixture_identity(profile:&Profile)->io::Result<()> {
         let path=profile.fixture_dir.join(name).canonicalize()?;
         if !path.starts_with(&profile.fixture_dir) {return Err(invalid("identity metadata escapes fixture"));}
         let bytes=bounded_file(&path,65536)?;
-        let Object(data)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid identity fixture metadata"))?;
+        let Bounded::<FIXTURE_METADATA_FIELDS>(data)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid identity fixture metadata"))?;
         if text(&data,"account_id")?!=profile.account_id || data.get("native_database_id").and_then(Value::as_i64)!=Some(profile.database_id as i64)
             || (name=="compatibility.json" && text(&data,"client_name")?!=profile.name) {
             return Err(invalid("fixture identity differs from authenticated website account"));
@@ -455,11 +461,23 @@ mod tests {
         let compatible=serde_json::json!({"account_id":account,"native_database_id":17,"client_name":"own_user"});
         fs::write(root.join("compatibility.json"),serde_json::to_vec(&compatible).unwrap()).unwrap();
         verify_fixture_identity(&profile).unwrap();
-        let mut wrong=compatible;wrong["account_id"]=Value::String("12345678-1234-4234-8234-123456789abd".to_owned());
+        let mut wrong=compatible.clone();wrong["account_id"]=Value::String("12345678-1234-4234-8234-123456789abd".to_owned());
         fs::write(root.join("compatibility.json"),serde_json::to_vec(&wrong).unwrap()).unwrap();
         assert!(verify_fixture_identity(&profile).is_err());
         wrong["account_id"]=Value::String(account.to_owned());wrong["native_database_id"]=serde_json::json!(18);
         fs::write(root.join("compatibility.json"),serde_json::to_vec(&wrong).unwrap()).unwrap();
         assert!(verify_fixture_identity(&profile).is_err());
+        // A P09E research manifest has 17 top-level fields; metadata keeps its
+        // own larger bound while duplicate keys stay rejected.
+        fs::write(root.join("compatibility.json"),serde_json::to_vec(&compatible).unwrap()).unwrap();
+        let manifest=|count:usize|{let mut v=serde_json::json!({"account_id":account,"native_database_id":17});
+            for i in 2..count {v[format!("field_{i}")]=serde_json::json!(i);} serde_json::to_vec(&v).unwrap()};
+        fs::write(root.join("manifest.json"),manifest(17)).unwrap();verify_fixture_identity(&profile).unwrap();
+        fs::write(root.join("manifest.json"),manifest(64)).unwrap();verify_fixture_identity(&profile).unwrap();
+        fs::write(root.join("manifest.json"),manifest(65)).unwrap();assert!(verify_fixture_identity(&profile).is_err());
+        fs::write(root.join("manifest.json"),format!(r#"{{"account_id":"{account}","native_database_id":17,"native_database_id":17}}"#)).unwrap();
+        assert!(verify_fixture_identity(&profile).is_err());
+        let seventeen=String::from_utf8(manifest(17)).unwrap();
+        assert!(object(seventeen.as_bytes(),&[]).is_err(),"requests keep the 16-field guard");
     }
 }

@@ -55,7 +55,7 @@ def _audit_class(vehicle_class):
     expected_consts = (None, 0, 1, 2, 'vehicle', ':', 'vehicleChassis',
                        'vehicleTurret', 'vehicleGun', 'vehicleEngine', 'vehicleFuelTank',
                        'vehicleRadio', "wrong name '%s' in <unlocks> of '%s'",
-                       "component '%s' in <unlocks> is not for '%s'", 3, [])
+                       "component '%s' in <unlocks> is not for '%s'", 3, ())
     if (code is None or code.co_argcount != 2 or code.co_firstlineno != 1961
             or code.co_filename != AUDITED_SOURCE or code.co_names != expected_names
             or code.co_consts != expected_consts

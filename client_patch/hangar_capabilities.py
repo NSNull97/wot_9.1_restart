@@ -60,6 +60,15 @@ def _research_selection(new_id, slot, old_id, remove):
             and (old_id is None or previous is not None and previous & 15 == compact & 15))
 
 
+def _default_step_callback():
+    """#717 adisp.process(func, stepCallback=lambda *args: None): only its own default is admitted."""
+    import adisp
+    defaults = getattr(adisp.process, 'func_defaults', getattr(adisp.process, '__defaults__', None))
+    if type(defaults) is not tuple or len(defaults) != 1 or not isinstance(defaults[0], types.FunctionType):
+        raise RuntimeError('native #717 module process wrapper mismatch')
+    return defaults[0]
+
+
 def _audit_module_class(panel_class):
     """Retain audited original @adisp.process wrapper and its generator closure."""
     wrapper = panel_class.__dict__['setVehicleModule']
@@ -70,7 +79,7 @@ def _audit_module_class(panel_class):
             or code.co_argcount != 0 or code.co_flags != 31
             or code.co_freevars != ('func', 'stepCallback') or code.co_names != ('CallbackDispatcher',)
             or code.co_consts != (None,) or hashlib.sha256(code.co_code).hexdigest() != PROCESS_WRAPPER_SHA256
-            or closure is None or len(closure) != 2 or closure[1].cell_contents is not None):
+            or closure is None or len(closure) != 2 or closure[1].cell_contents is not _default_step_callback()):
         raise RuntimeError('native #717 module process wrapper mismatch')
     original = closure[0].cell_contents
     code = getattr(original, 'func_code', getattr(original, '__code__', None))
