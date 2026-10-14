@@ -1668,7 +1668,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
         }
         if let Some(s)=session.as_mut() {
             if interactive.as_ref().is_some_and(|config|now.duration_since(s.created_at)>=config.session_duration) {close_reason=Some("session_deadline");}
-            if now.duration_since(s.last_rx)>=Duration::from_secs(8) {close_reason=Some("idle_timeout");}
+            if now.duration_since(s.last_rx)>=s.tx.idle_limit() {close_reason=Some("idle_timeout");}
             if close_reason.is_none() {
                 match s.preparation_expired(now) {
                     Ok(true)=>{
