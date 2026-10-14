@@ -51,7 +51,8 @@ card. Compilation alone did not install the policy or invoke Flash callbacks.
    Old stock chassis must return to depot once. Repeat/reconnect recovery must
    not manufacture a second purchased item.
 4. Research SU-18 through its source link (MS-1 index1 after chassis). Purchase
-   without crew or shell autopurchase: flags0, tariff0. One free source garage
+   without crew or shell autopurchase: flags0, tariff-1 (the original client sends
+   -1 for no crew; VERIFIED Shop.buyVehicle 773-784). One free source garage
    slot is available. Confirm a third owned tank with stock modules, no invented
    crew or shells, source hit points and unchanged balances.
 5. Exercise a compatible module change, and a turret/gun pair if the owner wants

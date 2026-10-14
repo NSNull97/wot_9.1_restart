@@ -7,7 +7,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from tests import test_p09e_research_store as store_tests
-from p09e_research_projection import ResearchProjectionSource, descriptor, shop_tree, update_delta, elite_ids, SHOP_REVISION
+from p09e_research_projection import (ResearchProjectionSource, descriptor, shop_tree, update_delta, delta_tree, elite_ids,
+    free_vehicle_purchases, SHOP_REVISION)
 from p09e_research_service import native_service, existing_service
 from p09d_ammo_projection import encode
 from p09e_native_commands import decode, domain_request
@@ -37,7 +38,7 @@ class ResearchProjectionTests(unittest.TestCase):
         for vehicle in self.profile()["research"]["vehicles"]:
             self.assertEqual(descriptor(self.catalog, vehicle), self.source.trees["state.bin"]["inventory"][1]["compDescr"][vehicle["native_id"]])
         for key, definition in self.catalog.vehicles.items():
-            before = {"unlocked": [], "depot": {}, "vehicles": []}
+            before = {"unlocked": [], "depot": {}, "vehicles": [], "garage_slots": 1}
             vehicle = {"native_id": 3, "vehicle_id": key, "modules": definition["defaults"]}
             raw = update_delta(self.catalog, before, {**before, "vehicles": [vehicle]}, 2**31 - 2)
             self.assertLessEqual(len(raw), 240, key)
@@ -83,8 +84,15 @@ class ResearchProjectionTests(unittest.TestCase):
     def test_bought_vehicle_single_delta_full_state_and_fixture_reopen(self):
         self.native(201, [3329, 0, 0]); self.native(201, [3329, 1, 0])
         type_cd = self.catalog.vehicles["vehicle:ussr:SU-18"]["native_compact_id"]
+        before = deepcopy(self.profile()["research"])
+        self.assertEqual(free_vehicle_purchases(before), 1)
         response, request = self.native(301, [SHOP_REVISION, type_cd, 0, -1])
         self.assertEqual(response["status"], "researched")
+        after = self.profile()["research"]
+        self.assertEqual(free_vehicle_purchases(after), 0)
+        self.assertNotIn("freeVehiclesLeft", delta_tree(self.catalog, before, after, 1).get("stats", {}))
+        # The client value stays 1 until the next full sync; the store still rejects.
+        self.assertEqual(self.native(301, [SHOP_REVISION, type_cd, 0, -1])[0]["status"], "rejected")
         self.assertLessEqual(len(bytes.fromhex(response["update_hex"])), 240)
         source = ResearchProjectionSource(self.source.bundle.root, self.catalog)
         value = self.store.publish(source, self.account, self.database.parent / "fixtures")

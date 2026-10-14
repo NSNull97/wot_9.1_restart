@@ -11,7 +11,7 @@ import json
 from p04g_crew_projection import CrossVehicleCrewProjectionSource
 from p09d_ammo_projection import encode, canonical
 from p09e_native_research_audit import plain_vehicle_descriptor
-from p09e_research_store import POLICY_SHA256, SHOP_REVISION
+from p09e_research_store import POLICY_SHA256, SHOP_REVISION, MAX_OWNED
 from game_profile_tx import TransactionError
 import hashlib
 
@@ -51,6 +51,20 @@ def elite_ids(catalog, unlocked):
     known = set(unlocked)
     incomplete = {row["vehicle_id"] for row in catalog.unlocks if row["item_id"] not in known}
     return {item_cd(catalog, key) for key in catalog.vehicles if key not in incomplete}
+
+
+def free_vehicle_purchases(research):
+    """Purchases the store will still admit: its GARAGE_LIMIT, not a daily quota.
+
+    Original VehicleFreeLimitConfirmator (plugins.py 587-589) blocks a 0/0
+    vehicle without paid crew unless stats.freeVehiclesLeft is truthy. Only
+    the full state carries it: about 30 more bytes do not fit the 240-byte
+    purchase delta (largest measured 217). A stale client value is a UI
+    gate only; the store still rejects a purchase past GARAGE_LIMIT.
+    """
+    left = min(MAX_OWNED, research["garage_slots"]) - len(research["vehicles"])
+    require(type(left) is int and left >= 0)
+    return left
 
 
 def garage_record(catalog, vehicle):
@@ -96,6 +110,7 @@ class ResearchProjectionSource(CrossVehicleCrewProjectionSource):
         state["stats"]["unlocks"] = sorted(item_cd(self.catalog, k) for k in research["unlocked"])
         state["stats"]["eliteVehicles"] = sorted(elite_ids(self.catalog, research["unlocked"]))
         state["stats"]["slots"] = research["garage_slots"]
+        state["stats"]["freeVehiclesLeft"] = free_vehicle_purchases(research)
         for kind in range(2, 8):
             inv[kind] = {item_cd(self.catalog, k): n for k, n in research["depot"].items()
                          if self.catalog.modules[k]["native_compact_id"] & 15 == kind}
@@ -146,6 +161,10 @@ class ResearchProjectionSource(CrossVehicleCrewProjectionSource):
 
 
 def update_delta(catalog, before, after, wire_revision):
+    return encode(delta_tree(catalog, before, after, wire_revision), MAX_UPDATE)
+
+
+def delta_tree(catalog, before, after, wire_revision):
     require(type(wire_revision) is int and 1 <= wire_revision < 2**31 - 1)
     delta = {"prevRev": wire_revision, "rev": wire_revision + 1}
     unlocked = sorted(set(after["unlocked"]) - set(before["unlocked"]))
@@ -171,4 +190,4 @@ def update_delta(catalog, before, after, wire_revision):
                 inv[1].setdefault("shells", {})[native] = []
                 inv[1].setdefault("shellsLayout", {})[native] = {}
     if inv: delta["inventory"] = inv
-    return encode(delta, MAX_UPDATE)
+    return delta
