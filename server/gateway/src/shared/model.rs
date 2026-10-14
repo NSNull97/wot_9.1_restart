@@ -466,10 +466,18 @@ impl World {
         if tick_changed {
             'projectile_loop: for projectile in &mut next_projectiles {
                 if !projectile.stopped {
-                    let mut segment_start = if projectile.launched > prior_time { projectile.launched } else { prior_time };
+                    let shot_tick = self.shots.iter()
+                        .find(|shot| shot.sequence == projectile.sequence).ok_or_else(bad)?.tick;
+                    // The integrated runtime advances only after both workers reply, so
+                    // a shot can be admitted in a wall bucket the world has not reached.
+                    // An update in that same bucket has no tick interval for it; the
+                    // first segment waits for the next update and still starts at launch
+                    // (an empty interval stopped the server in is7c17owner01).
+                    if shot_tick >= tick { continue; }
+                    let first = impact_trace.last_segment_end(projectile.sequence).is_none();
+                    let mut segment_start = if first || projectile.launched > prior_time { projectile.launched } else { prior_time };
                     let segment_limit = now.min(projectile.end_at()?);
-                    let mut segment_tick_start = self.shots.iter()
-                        .find(|shot| shot.sequence == projectile.sequence).ok_or_else(bad)?.tick.max(prior_tick);
+                    let mut segment_tick_start = shot_tick.max(prior_tick);
                     while segment_start < segment_limit {
                         // Terrain-enabled flight keeps the nominal chord error
                         // bounded even after a delayed server poll. These are
@@ -621,6 +629,19 @@ impl World {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    #[test]fn shot_while_world_lags_wall_bucket_keeps_a_nonempty_first_segment(){
+        let now=Instant::now();let mut w=world(now);w.advance(now+STEP).unwrap();assert_eq!(w.tick,1001);
+        // Real time is already in bucket 1002 while the world is still at 1001.
+        let late=now+STEP*2+Duration::from_millis(10);
+        w.apply(0,1,&[Command::Fire(fire::Command::Shoot)],late).unwrap();assert_eq!(w.shots[0].tick,1002);
+        // The next world update lands in the same wall bucket as the shot: no
+        // empty interval and no error, the first segment is deferred.
+        w.advance(late+Duration::from_millis(20)).unwrap();assert_eq!(w.tick,1002);
+        assert!(!w.impact.events().iter().any(|e|matches!(e,impact::Event::Segment{..})));
+        w.advance(now+STEP*3).unwrap();assert_eq!(w.tick,1003);
+        let launched=w.projectiles[0].position_at(w.projectiles[0].launched);
+        assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::Segment{shot_id:1,segment_tick_start:1002,segment_tick_end:1003,start,..} if *start==launched)));
+    }
     pub fn world(now: Instant) -> World {
         let mut w = World::new(123, now).unwrap();
         for i in 0..2 { w.attach(Identity { account: format!("owned-{i}"), database: i + 1,

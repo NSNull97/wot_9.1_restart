@@ -924,7 +924,7 @@ impl Trace {
         })
     }
 
-    fn last_segment_end(&self, shot_id: u32) -> Option<u32> {
+    pub(super) fn last_segment_end(&self, shot_id: u32) -> Option<u32> {
         self.events.iter().rev().find_map(|event| match event {
             Event::Segment { shot_id: id, segment_tick_end, .. } if *id == shot_id => Some(*segment_tick_end),
             _ => None,
