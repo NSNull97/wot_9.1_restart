@@ -62,7 +62,7 @@
 
 ## P03 два клиента, стрельба
 
-- [STAB01_BATTLE_STABILITY.md](STAB01_BATTLE_STABILITY.md) — STAB-01: диагностический head, свежий двухклиентный стенд и границы подтверждения
+- [STAB01_BATTLE_STABILITY.md](STAB01_BATTLE_STABILITY.md) — STAB-01 принята: caller context, изоляция боя, два native-возврата и повторный бой; ограничения диагностики/физики
 
 - [P03_BATTLE_SHOOTING.md](P03_BATTLE_SHOOTING.md) — P03: battle shooting — loadout preparation route
 - [P03F_TWO_CLIENT_WORLD.md](P03F_TWO_CLIENT_WORLD.md) — P03F — native two-client laboratory research

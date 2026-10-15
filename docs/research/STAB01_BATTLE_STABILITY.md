@@ -1,7 +1,65 @@
 # STAB-01 — диагностика устойчивости боя, 2026-10-15
 
-Карточка: `docs/ACTIVE_GATE.md`, пункт 1 `IMPLEMENTATION_ORDER.md`.
+Карточка STAB-01: пункт 1 `IMPLEMENTATION_ORDER.md`; после приёмки ACTIVE_GATE — P08B.
 Ветка `codex/stab01-battle-isolation`, база `main` `1d19d2e`.
+
+## Итог приёмки — VERIFIED / OBSERVED
+
+STAB-01 принята на runtime `0574ab0c1df7a060bb6b3906febebf5e69d483d3`:
+ошибка имеет caller context, world/trace fault закрывает только бой, оба клиента
+вручную возвращаются в ангар и повторно входят через родную кнопку. Владелец
+подтвердил движение, наведение и стрельбу обоих в повторном бою. P08B не начиналась.
+Последующие изменения карточки — документация; runtime source pins неизменны.
+
+- Финальный native-fix07: **5 worlds, 10 READY, 4 contained deadline faults,
+  8 автоматических и2 ручных возврата**, все10 ACK/reset + warm complete,
+  **0 SHARED_REJECT / SHARED_SESSION_CLOSED**, 10 workers завершились штатно.
+  Это проверка изоляции сбоев; причины deadline >500ms не устранены.
+- Ручной выход текущего head отделён от автоматического: session1
+  `native_leave`3996 → Account ACK4002 → warm complete4021; session2
+  `native_leave`4111 → ACK4116 → warm complete4122. В следующем мире
+  `5514766083138551873` оба native Join приняты и READY4264/4272, слоты
+  аккаунтов поменялись. Движение/aim обоих приняты; fire обоих подтверждён
+  в совокупности повторных миров и owner-проверкой, не каждым отдельным миром.
+- Evidence: `local/evidence/20261015-stab01-01/native-fix07/native-acceptance-summary.json`,
+  SHA256 `2da816fe4bf7c15e30ccda191a8b497e5aa6d6b1133abbc74cf50d8ef295520f`;
+  все строки выше — `gateway-stabfix07.stdout.log`. Сохранены две отдельные
+  owner-проверки: управление после повторного входа, затем короткий ручной Esc-выход.
+- Дополнительный старый helper `ready01/result.json` остаётся **FAIL_OR_NOT_READY**:
+  предсуществующий пассивный observer на sample3 вызывает `getShotAngles` при
+  `vehicleTypeDescriptor=None`, после ошибки перестаёт планировать снимки.
+  Git blob `client_patch/sr_interactive.py` в main1d19d2e и runtime0574ab0 одинаков;
+  игровая загрузка/родные обработчики продолжаются. Непрерывный native aim-oracle
+  **NOT_RUN**, не выдан за PASS; обязательный native-критерий подтверждён владельцем
+  и отдельными серверными событиями. Диагноз и source pins —
+  `native-fix07/ready01diagnosis.json` SHA256
+  `7b6b28b06a42d9ef1d0059297f69f5a1e0bf4812602d056fdb8c43f847fcff95`.
+- Применимые проверки: полный gateway854 PASS / 5 ignored и сборка PASS на0574ab0,
+  layout117files / 22relocations PASS; client/control194 PASS и Python2.7.3
+  61 PASS / 3 host-only skips на неизменных client sources13edf3b. Исторический
+  полный Python debt11failures / 8errors / 19skips, Linux и --legacy не закрывались.
+- Native-fix07 остановлен строго по собственным receipts (`stop-acceptedrestore.json`),
+  обе battle-установки и namespace откачены собственными ledgers. Ангар A/profile13
+  установлен заново по прежним9 feature flags: `local/stands/p09e-main-01/install02-stab01-restore/`,
+  fresh prepare/install PASS, прежний ledger повторно не использован. Его bridge/gateway
+  не останавливались, контроль скопирован без вывода credentials. Свежий запуск
+  восстановленного ангара **NOT_RUN**; эта операция восстановления не выдаётся
+  за новый native-тест profile13. План/исходные SHA — `hangar-restore-plan.json`.
+
+Файлы карточки: `client_patch/map_drive_client.py`; gateway `account/hangar.rs`,
+`drive/worker.rs`, `session.rs`, `shared/{account_policy,destructible_wire,fragiles,
+geometry,materials,mod,model,projectile,server,server_catalog_wire_tests,wire}.rs`;
+`tests/test_map_drive_client.py`, `tests/test_map_drive_click_contract.py`;
+`docs/{ACTIVE_GATE,STATUS}.md`, `docs/research/{INDEX,STAB01_BATTLE_STABILITY}.md`.
+План STAB-01 удаляется из рабочего дерева при закрытии; сохранён в истории0574ab0.
+
+Команды воспроизведения: fresh `create_stand.py --expected-head <полный runtime SHA>
+--build gateway-p05b-stab01-fix07 --stand-name <новый native-...> --run <новый ID>
+--stage fixed`, затем `run_commands.py --stand <...> prepare_a_dry_run
+prepare_b_dry_run server_dry_run`, `prepare_a prepare_b`, `launch_server launch_a`;
+после одного SESSION_ACTIVE — `launch_b`. Все argv сохранены в `native-fix07/commands.json`;
+исторический binding status — только проверка соответствия runtime, не native-приёмка.
+Следующий единственный шаг — P08B от main, начиная с одиночного map-drive пути.
 
 ## VERIFIED — диагностический срез
 
@@ -257,6 +315,33 @@
   отработали. Ручной выход обоих ранее подтверждён на fix05; полноценный повтор
   боя обоих на fix06 не подтверждён. После сохранения логов собственные процессы
   fix06 остановлены по receipts, обе установки откачены штатно. Merge закрыт.
+
+## VERIFIED — fix07: READY-prefix и проверка точного B204
+
+- Runtime `0574ab0c1df7a060bb6b3906febebf5e69d483d3`. Только shared parser и
+  meaningful Rust-регрессии; client runtime с проверенного `13edf3b` не менялся.
+  Strict owned READY33 теперь допускается перед native records, хвост полностью
+  проверяется существующим parser. Общий512-byte bound стоит до обеих веток
+  initial requests/READY. Собственное creation ACK, correction/fire gates и
+  атомарная Session receive-транзакция сохранены. Read-only source review PASS.
+- Полный gateway **854 passed / 0 failed / 5 ignored**, сборка PASS:
+  `python -B -X utf8 server/build.py gateway --test --out
+  local/build/server/gateway-p05b-stab01-fix07`.
+  Executable SHA256 `46cc6540a04be40bd7475b828b2d0b19f09cfd0717fc34d46cbc2405cbf33683`.
+  `python -B -X utf8 server/check_layout.py` — PASS117files / 22relocations;
+  `git diff --check` PASS. Полные stdout/stderr/argv/result — в каталоге сборки.
+- Четыре новые регрессии: точный native B75, оба slot, transport retry, fresh
+  duplicate READY и новые area tails без нового binding; damaged/truncated/foreign
+  READY, unknown/duplicate/future/truncated area и513B откатываются целиком;
+  own creation без ACK отвергается; обе очередности резервируют binding и
+  принимают ACK создания из того же frame при полном reliable window.
+- Свежий `native-fix07`, run `stabfix07`, binding SHA256
+  `96a1a8438a1330757699a703b8162d4c85c204b40fd73efa24bdc1003bec2842`:
+  322 runtime pins, исходные6 helpers byte-identical, assets/pools/build pins и
+  три dry-run PASS. Обе разрешённые копии подготовлены по новым ledger;
+  сервер и A запущены. Native-приёмка нового fix **NOT_RUN_PENDING_OWNER**,
+  прежний fix06 FAIL сохранён; merge закрыт до фактического движения/наведения
+  обоих во втором бою и подтверждения возврата.
 
 ## OBSERVED / VERIFIED — инцидент локальных фикстур
 
