@@ -31,7 +31,7 @@ MAX_REPLY = 8192
 COMMON = {"version", "operation", "account_id", "native_database_id", "command_key", "expected_revision", "run_id"}
 EXTRA = {"run_open": set(), "inspect": set(), "admit": {"battle_id", "native_inventory_id"},
     "finish": {"battle_id", "native_inventory_id", "reservation_id", "remaining_ap", "terminal_hp", "reason"}}
-REASONS = frozenset(("manual_leave", "battle_failure", "disconnect", "cancelled"))
+REASONS = frozenset(("manual_leave", "battle_failure", "disconnect", "cancelled", "battle_finished"))
 REJECTIONS = frozenset(("STALE_REVISION", "RUN_FENCED", "RUN_NOT_OPEN", "VEHICLE_RESERVED", "UNKNOWN_VEHICLE",
     "BATTLE_PROFILE_UNSUPPORTED", "INCOMPLETE_CREW", "AMMUNITION_EMPTY", "AMMUNITION_UNSUPPORTED",
     "RESERVATION_TERMINAL", "RESERVATION_MISMATCH", "DUPLICATE_PAYLOAD_MISMATCH", "INVALID_RESULT"))
@@ -52,7 +52,9 @@ def _integer(value, low=0, high=2**31 - 1, code="INVALID_INPUT"):
 
 def validate_request(value, authenticated_account_id):
     require(type(value) is dict and type(value.get("operation")) is str and value["operation"] in EXTRA, "INVALID_INPUT")
-    require(set(value) == COMMON | EXTRA[value["operation"]] and type(value["version"]) is int and value["version"] == 1)
+    natural = value["operation"] == "finish" and value.get("reason") == "battle_finished"
+    require(set(value) == COMMON | EXTRA[value["operation"]] | ({"results_json"} if natural else set())
+        and type(value["version"]) is int and value["version"] == 1)
     _bounded_id(authenticated_account_id, "authenticated_account_id")
     require(value["account_id"] == authenticated_account_id, "FOREIGN_ACCOUNT")
     _bounded_id(value["account_id"], "account_id"); _bounded_id(value["command_key"], "command_key")
@@ -68,7 +70,9 @@ def validate_request(value, authenticated_account_id):
         _bounded_id(value["reservation_id"], "reservation_id")
         _integer(value["remaining_ap"], 0, 96); _integer(value["terminal_hp"], 0, 100000)
         require(type(value["reason"]) is str and value["reason"] in REASONS, "INVALID_INPUT")
-    require(len(canonical(value)) <= 2048, "INVALID_INPUT")
+    if natural:
+        require(type(value["results_json"]) is str and len(value["results_json"].encode("utf-8")) <= 32768, "INVALID_INPUT")
+    require(len(canonical(value)) <= (65536 if natural else 2048), "INVALID_INPUT")
     return deepcopy(value)
 
 
@@ -268,7 +272,17 @@ class BattleStore(ResearchStore):
         c.execute("UPDATE p08b_reservation SET status=?,result_json=?,result_sha256=?,finished_revision=? WHERE account_id=? AND reservation_id=?",
             ("aborted_restart" if abort else "finished", raw, sha(raw.encode("ascii")), aggregate["revision"] + 1, account, row["reservation_id"]))
         self._failpoint("after_battle_result")
-        return self._reservation(c.execute("SELECT * FROM p08b_reservation WHERE account_id=? AND reservation_id=?", (account, row["reservation_id"])).fetchone())
+        reservation = self._reservation(c.execute("SELECT * FROM p08b_reservation WHERE account_id=? AND reservation_id=?", (account, row["reservation_id"])).fetchone())
+        if not abort and reason == "battle_finished": self._record_natural_result(request, reservation)
+        return reservation
+
+    def _record_natural_result(self, request, reservation):
+        # Plain P08B has no results writer. Never acknowledge a natural finish
+        # unless its subclass journals the full authoritative DTO atomically.
+        raise TransactionError("P08C_RESULTS_REQUIRED")
+
+    def _verify_natural_result(self, request, reservation):
+        raise TransactionError("P08C_RESULTS_REQUIRED")
 
     def battle(self, request, *, authenticated_account_id):
         request = validate_request(request, authenticated_account_id)
@@ -307,6 +321,7 @@ class BattleStore(ResearchStore):
                         and saved_reservation["reservation_id"] == request["reservation_id"] and saved_reservation["native_inventory_id"] == request["native_inventory_id"]
                         and all(saved_reservation["result"][field] == request[field] for field in ("reason", "remaining_ap", "terminal_hp"))
                         and saved_row["finished_revision"] == ledger["destination_revision"], "CORRUPT_STORE")
+                    if request["reason"] == "battle_finished": self._verify_natural_result(request, saved_reservation)
                 elif operation == "run_open" and saved_reservation is not None:
                     require(saved_reservation["status"] == "aborted_restart" and saved_reservation["run_id"] != request["run_id"]
                         and saved_row["finished_revision"] == ledger["destination_revision"], "CORRUPT_STORE")
@@ -357,7 +372,7 @@ class BattleStore(ResearchStore):
             if destination != revision: self._save_crew_projection(account, destination, public_before)
             response = self._reply(request, destination, status, reservation)
             journal = canonical({"schema": SCHEMA, "request": request, "response": response}).decode("ascii")
-            require(len(journal) <= MAX_REPLY, "PROFILE_TOO_LARGE")
+            require(len(journal) <= (65536 if request.get("reason") == "battle_finished" else MAX_REPLY), "PROFILE_TOO_LARGE")
             c.execute("INSERT INTO game_command_ledger VALUES (?,?,?,?,?,?,?,?)", (account, key, command, payload_sha, revision, destination, journal, sha(journal.encode("ascii"))))
             self._failpoint("after_battle_ledger"); self.read_profile(account); self._failpoint("before_battle_commit")
             c.commit(); return response

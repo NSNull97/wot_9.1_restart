@@ -6,7 +6,8 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from p08b_battle_store import BattleStore, POLICY_SHA256, REJECTIONS, validate_request
+from p08b_battle_store import POLICY_SHA256, REJECTIONS, validate_request
+from p08c_battle_results import ResultsStore as BattleStore, results_service
 from p08b_battle_projection import BattleProjectionSource, capabilities
 from p09e_research_store import POLICY as RESEARCH_POLICY
 from p09e_research_catalog import load_catalog
@@ -32,7 +33,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("database", "bundle", "original-root", "account-id", "fixture-root"):
         parser.add_argument("--" + name, required=True)
-    parser.add_argument("operation", choices=("activate", "fixture", "overview", "battle", "research", *CREW_OPERATIONS))
+    parser.add_argument("operation", choices=("activate", "fixture", "overview", "battle", "results", "research", *CREW_OPERATIONS))
     args = parser.parse_args()
     catalog = load_catalog(args.original_root)
     audit(args.original_root)
@@ -53,9 +54,11 @@ def main():
                 "policy_sha256": POLICY_SHA256, "capabilities": capabilities(catalog, aggregate)}
         else:
             store.initialize()
-            raw = sys.stdin.buffer.read(4097)
-            request = json_value(raw, limit=4096, nodes=64, depth=4)
+            limit = 65536 if args.operation in ("results", "battle") else 4096
+            raw = sys.stdin.buffer.read(limit + 1)
+            request = json_value(raw, limit=limit, nodes=64, depth=4)
             if args.operation == "battle": result = battle_service(store, request, authenticated_account_id=args.account_id)
+            elif args.operation == "results": result = results_service(store, request, authenticated_account_id=args.account_id)
             elif args.operation == "research": result = native_service(store, request, authenticated_account_id=args.account_id)
             else: result = existing_service(store, args.operation, request, authenticated_account_id=args.account_id)
         print(canonical(result).decode("ascii"))

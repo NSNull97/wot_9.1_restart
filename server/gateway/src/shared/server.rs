@@ -598,6 +598,7 @@ impl BattleTemplate {
         let mut world=World::new_for_vehicle(id,now,MapId::Prohorovka,r.kind)?;
         world.bind_geometry(r.geometry.clone())?;world.enable_ap_test_lab()?;
         world.bind_terrain(r.terrain.clone())?;world.bind_fragiles(r.catalog.0.clone())?;
+        world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?;
         Ok(Self{world,pool:Some(r.pool.clone()),removal:None,catalog:Some(r.catalog.1.clone())})
     }
     fn select(&self,world:&mut World,runtime:&mut Option<IntegratedRuntime>,now:Instant)->io::Result<()> {
@@ -635,19 +636,88 @@ impl BattleTemplate {
 fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:Instant, start:bool)->io::Result<()> {
     if start {
         world.start(now)?;
+        if world.lifecycle.is_some() {
+            world.lifecycle_created_unix=Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_|model::bad())?.as_secs().try_into().map_err(|_|model::bad())?);
+        }
         println!("SHARED_WORLD_STARTED battle={} sessions=2 actors=2 space=1 tick=1000",world.id);
     }
     if world.started.is_some() {
-        if let Some(r)=runtime {
+        if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {world.advance(now)?;}
+        else if let Some(r)=runtime {
             if !r.started {r.start(world,now)?;}
             r.step(world,now)?;
         } else {world.advance(now)?;}
+        // A candidate scene owns an atomic World clone. Do not advance the
+        // lifecycle outside it and then overwrite a frozen outcome on ACK.
+        if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.advance_lifecycle(now)? {
+            println!("P08C_LIFECYCLE battle={} view={:?} policy={}",world.id,
+                world.lifecycle.as_ref().map(|l|l.view()),super::lifecycle::POLICY);
+        }
     }
     Ok(())
 }
 
+fn stage_lifecycle_results(table:&mut Table,world:&World)->io::Result<()> {
+    if !world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {return Ok(());}
+    let needs=table.sessions.iter().any(|s|s.shared.as_ref().is_some_and(|c|c.natural_result.is_none()
+        && c.profile13.as_ref().is_some_and(|p|p.pending_return.is_none() && p.reservation.as_ref().is_some_and(|r|r.battle==world.id))));
+    if !needs {return Ok(());}
+    let result=Arc::new(super::lifecycle_result::build(world)?);
+    for s in &mut table.sessions {
+        let Some(c)=&mut s.shared else{continue;};
+        if c.natural_result.is_none() && c.profile13.as_ref().is_some_and(|p|p.pending_return.is_none()
+            && p.reservation.as_ref().is_some_and(|r|r.battle==world.id)) {
+            c.natural_result=Some(result.clone());
+            println!("P08C_RESULT_FROZEN battle={} session={} winner={} reason={} shots={} damage={} inventory_not_yet_released=true",
+                world.id,s.id,result.winner_team,result.finish_reason,
+                result.participants.iter().find(|p|s.identity.as_ref().is_some_and(|o|o.database_id==p.account_dbid)).map_or(0,|p|p.shots),
+                result.participants.iter().map(|p|p.damage_dealt).sum::<u32>());
+        }
+    }
+    Ok(())
+}
+
+/// Natural results are delivered only after their atomic writer transaction.
+/// A native confirmation must precede Account reset; timeout disconnects rather
+/// than pretending the original result handler successfully consumed the stream.
+fn deliver_lifecycle_result(s:&mut Session,now:Instant)->io::Result<bool> {
+    let Some(c)=s.shared.as_ref() else{return Ok(false);};
+    if !c.result_committed || c.natural_result.is_none() || !s.arena_base {return Ok(false);}
+    let mut next=s.clone();
+    if !c.result_stream_queued {
+        let result=c.natural_result.clone().ok_or_else(||model::bad())?;
+        let own=next.identity.as_ref().ok_or_else(||model::bad())?.database_id;
+        let bodies=super::lifecycle_wire::avatar_result_stream(&result,own)?;
+        if next.outbox.len()+bodies.len()>128 {return Ok(true);}
+        next.outbox.extend(bodies);
+        next.battle_results.cache_avatar(result,own)?;
+        let c=next.shared.as_mut().ok_or_else(||model::bad())?;
+        c.result_stream_queued=true;c.result_delivery_at=Some(now);
+        next.drain_outbox()?;
+        println!("P08C_RESULTS_AVATAR_QUEUED session={} durable=true waiting_native_confirmation=true",s.id);
+    }
+    if next.battle_results.avatar_confirmed() {
+        let mut events=Vec::new();next.shared_return("natural_result_confirmed",now,&mut events)?;
+        for event in events {println!("{event}");}
+    } else if next.shared.as_ref().and_then(|c|c.result_delivery_at).is_some_and(|at|now.duration_since(at)>=Duration::from_secs(30)) {
+        return Err(io::Error::new(io::ErrorKind::TimedOut,"native result stream was not confirmed; durable result retained for next login"));
+    } else {next.drain_outbox()?;}
+    *s=next;Ok(true)
+}
+
 fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_start:bool,blocked:bool)->io::Result<()> {
+    if deliver_lifecycle_result(s,now)? {return Ok(());}
     if s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.pending_return.is_some()) {return Ok(());}
+    let natural_due=if let Some(state)=world.lifecycle.as_ref().filter(|state|state.outcome().is_some()) {
+        state.ready_to_return(world.lifecycle_ms(now)?)
+    } else {false};
+    if natural_due
+        && s.shared.as_ref().is_some_and(|c|c.natural_result.is_some()) {
+        profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::BattleFinished)?;
+        if !blocked && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+        return Ok(());
+    }
     if s.shared.as_ref().is_some_and(|c|c.phase==Phase::Leaving && c.profile13.is_some()) {
         profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::ManualLeave)?;
         if !blocked && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
@@ -717,6 +787,16 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
     for id in retire {table.retire(id,world,now,"failed_battle_return")?;}
     template.replace(world,runtime,now)?;
     Ok(snapshot)
+}
+
+fn contain_results_failure(manager:&super::results_session::Manager,dispatcher:&mut profile13_dispatch::Dispatcher,
+    table:&mut Table,world:&mut World,now:Instant,error:&io::Error)->io::Result<()> {
+    let target=manager.failure_session(&table.sessions);
+    println!("P08C_RESULTS_SESSION_FAILED session={target:?} error={error} service_alive=true durable_result_retained=true");
+    if let Some(id)=target.filter(|id|table.sessions.iter().any(|s|s.id==*id)) {
+        dispatcher.retire(table,world,id,now,"native_results_delivery")?;
+    }
+    Ok(())
 }
 
 fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::Result<()> {
@@ -880,8 +960,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut table = Table::default();
     let mut battle_dispatch=profile13_dispatch::Dispatcher::default();
     let mut ammo_job=None;
+    let mut result_manager=super::results_session::Manager::default();
     let started = Instant::now();
-    let mut world = World::new_for_vehicle(OsRng.next_u64().max(1), started,map,vehicle)?;
+    // Native Account.doCmdInt3 carries the result arena key as signed INT64.
+    let mut world = World::new_for_vehicle((OsRng.next_u64() & i64::MAX as u64).max(1), started,map,vehicle)?;
     if let Some(bundle) = geometry {
         let geometry_revision=super::geometry::source_revision(vehicle);
         let material_revision=super::materials::profile_revision(vehicle);
@@ -911,6 +993,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut integrated = integrated_pool.map(|pool|IntegratedRuntime::new_for_map(pool,map));
     if let Some(runtime) = &mut integrated { runtime.removal = removal; }
     if let Some(runtime)=&mut integrated {runtime.catalog=catalog.map(|(_,worker)|worker);}
+    if profile13_mode { world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?; }
     let mut battle_template=BattleTemplate::new(&world,&integrated);
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
@@ -1002,7 +1085,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     } else { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
                     continue;
                 }
-                if battle_dispatch.busy() || ammo_job.is_some() || table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
+                if battle_dispatch.busy() || result_manager.busy() || ammo_job.is_some() || table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
                     send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; continue;
                 }
                 match start_auth(config.clone(), request, peer, &fields, false) {
@@ -1034,6 +1117,9 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         // Remove known disconnects before applying any queued intent or tick.
         for (id, reason) in closing.drain(..) { battle_dispatch.retire(&mut table,&mut world,id,now,reason)?; }
         if profile13_mode {
+            if let Err(error)=result_manager.poll(&mut table.sessions,now) {
+                contain_results_failure(&result_manager,&mut battle_dispatch,&mut table,&mut world,now,&error)?;
+            }
             for s in &mut table.sessions {
                 if world.started.is_some() {
                     let busy=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
@@ -1059,7 +1145,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     if table.sessions.iter().any(|s|s.id==id) {battle_dispatch.retire(&mut table,&mut world,id,now,"garage_writer_ambiguous")?;}
                 }
             }
-            if ammo_job.is_none() {
+            if ammo_job.is_none() && !result_manager.busy() {
                 battle_dispatch.poll(&mut table,config.clone(),now)?;
                 if battle_dispatch.finish_empty_queue(&table,&mut world,&mut integrated,&battle_template,now)? {
                     contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
@@ -1099,8 +1185,13 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 }
                 battle_dispatch.start(&mut table,&world,config.clone(),now)?;
             }
-            if !battle_dispatch.busy() {
+            if !battle_dispatch.busy() && !result_manager.busy() {
                 for s in &mut table.sessions {ammo_session::start(s,&mut ammo_job,config.clone())?;}
+            }
+            if !battle_dispatch.busy() && ammo_job.is_none() && auth.is_none() {
+                if let Err(error)=result_manager.start_if_idle(&mut table.sessions,config.clone(),now) {
+                    contain_results_failure(&result_manager,&mut battle_dispatch,&mut table,&mut world,now,&error)?;
+                }
             }
         }
         if !world.actors.is_empty() && world.actors.iter().all(|a|a.session.is_none()) {
@@ -1124,6 +1215,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"world_step",&error)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
+        if let Err(error)=stage_lifecycle_results(&mut table,&world) {
+            contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"result_snapshot",&error)?;
+            contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+        }
         let integrated_native_ready = integrated.as_ref().is_none_or(IntegratedRuntime::ready_for_native);
         let mut publication_failure=None;
         for s in &mut table.sessions {
@@ -1136,6 +1231,11 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             // heartbeats and made a client look disconnected during startup.
             if let Err(error) = poll_battle_session(s,&mut world,now,integrated_native_ready,
                 integrated.as_ref().is_some_and(IntegratedRuntime::blocked)) {
+                if s.shared.as_ref().is_some_and(|c|c.result_committed && c.result_delivery_at
+                    .is_some_and(|at|now.duration_since(at)>=Duration::from_secs(30))) {
+                    println!("P08C_RESULTS_CONFIRM_TIMEOUT session={} durable_result_retained=true",s.id);
+                    closing.push((s.id,"native_results_unconfirmed"));continue;
+                }
                 println!("SHARED_FAILED session={} reason={}", s.id, error);
                 publication_failure=Some(error); break;
             }
@@ -1377,7 +1477,12 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                             body.extend(impact_wire::owner_health_for(next_world.vehicle_kind(),event.health_after)?);
                             c.owner_health_sent = Some(event.health_after);
                         }
-                        if event.health_after == 0 { body.extend(wire::roster(&next_world)?); }
+                        if event.health_after == 0 {
+                            body.extend(wire::roster(&next_world)?);
+                            if next_world.lifecycle.is_some() {
+                                body.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
+                            }
+                        }
                     }
                 }
                 let queued = !body.is_empty();
@@ -1405,6 +1510,22 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 }
                 if !body.is_empty() { next.outbox.push_back(body); }
             }
+        }
+        if let Some(state) = &next_world.lifecycle {
+            let view = state.view();
+            // Native AFTERBATTLE clears the base panel. Final capture/death
+            // publications therefore precede that period transition.
+            for i in 0..2 {
+                if c.lifecycle_view.as_ref().is_none_or(|old| old.bases[i] != view.bases[i]) {
+                    let base = view.bases[i];
+                    next.outbox.push_back(super::lifecycle_wire::base_points(base.owner,1,base.points,base.stopped)?);
+                    if base.points == 100 {next.outbox.push_back(super::lifecycle_wire::base_captured(base.owner,1)?);}
+                }
+            }
+            if c.lifecycle_view.as_ref().is_none_or(|old|old.phase!=view.phase || old.ends_ms!=view.ends_ms) {
+                next.outbox.push_back(wire::lifecycle_period(&next_world)?);
+            }
+            c.lifecycle_view=Some(view);
         }
         for other in 0..2 {
             if next_world.actors[other].ready && !c.ready_sent[other] {

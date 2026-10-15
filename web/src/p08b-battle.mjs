@@ -20,6 +20,8 @@ export function validateBattleRequest(request, owner) {
   const common = ['version', 'operation', 'account_id', 'native_database_id', 'command_key', 'expected_revision', 'run_id'];
   const extra = { run_open: [], inspect: [], admit: ['battle_id', 'native_inventory_id'],
     finish: ['battle_id', 'native_inventory_id', 'reservation_id', 'remaining_ap', 'terminal_hp', 'reason'] };
+  const natural = request?.operation === 'finish' && request.reason === 'battle_finished';
+  if (natural) extra.finish.push('results_json');
   requireValue(request && Object.hasOwn(extra, request.operation) && exact(request, [...common, ...extra[request.operation]])
     && request.version === 1 && request.account_id === owner && UUID.test(owner)
     && integer(request.native_database_id, 1, 2147483647) && integer(request.expected_revision, request.operation === 'inspect' ? 0 : 13)
@@ -32,8 +34,10 @@ export function validateBattleRequest(request, owner) {
   }
   if (request.operation === 'finish') requireValue(key(request.reservation_id)
     && integer(request.remaining_ap, 0, 96) && integer(request.terminal_hp, 0, 2150)
-    && ['manual_leave', 'battle_failure', 'disconnect', 'cancelled'].includes(request.reason), 'result bounds');
-  requireValue(Buffer.byteLength(JSON.stringify(request)) <= 4096, 'request size');
+    && ['manual_leave', 'battle_failure', 'disconnect', 'cancelled', 'battle_finished'].includes(request.reason), 'result bounds');
+  if (natural) requireValue(typeof request.results_json === 'string' && request.results_json.length > 0
+    && Buffer.byteLength(request.results_json) <= 32768, 'natural result size');
+  requireValue(Buffer.byteLength(JSON.stringify(request)) <= (natural ? 65536 : 4096), 'request size');
   return request;
 }
 

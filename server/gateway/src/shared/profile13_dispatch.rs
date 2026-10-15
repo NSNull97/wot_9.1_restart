@@ -42,8 +42,10 @@ impl Dispatcher {
         let Some(p)=s.shared.as_ref().and_then(|c|c.profile13.as_ref()) else {return Ok(());};
         if p.pending_return.is_some() {return Ok(());}
         let Some(reservation)=&p.reservation else {return Ok(());};
+        let natural=s.shared.as_ref().and_then(|c|c.natural_result.as_deref());
+        let reason=if natural.is_some() {FinishReason::BattleFinished} else {reason};
         let terminal=if world.actors.iter().any(|a|a.session==Some(s.id)) {
-            Terminal::from_actor(reservation,world,s.shared.as_ref().ok_or_else(||model::bad())?.slot,s.id,reason)?
+            Terminal::from_actor_result(reservation,world,s.shared.as_ref().ok_or_else(||model::bad())?.slot,s.id,reason,natural)?
         } else {Terminal::cancelled(reservation)?};
         let p=state(s)?;p.retain_terminal(terminal)?;
         let c=s.shared.as_mut().ok_or_else(||model::bad())?;
@@ -78,7 +80,7 @@ impl Dispatcher {
             let p=state(s)?;p.in_flight=false;p.selection=None;
             // A rejected finish is not a successful return. Keep its immutable
             // terminal receipt for diagnosis/recovery; do not unlock the UI.
-            if matches!(completion.request,Request::Finish{..}) {
+            if completion.request.finished_battle().is_some() {
                 return Err(io::Error::new(io::ErrorKind::InvalidData,format!("P08B terminal rejected {:?}",reply.code)));
             }
             s.shared.as_mut().ok_or_else(||model::bad())?.join_requested=false;
@@ -114,8 +116,14 @@ impl Dispatcher {
                 p.reservation=None;p.pending_return=None;p.selection=None;
                 if s.active {
                     if s.arena_base {
-                        let mut events=Vec::new();s.shared_return("profile13_result_committed",now,&mut events)?;
-                        for event in events {println!("{event}");}
+                        if s.shared.as_ref().is_some_and(|c|c.natural_result.is_some()) {
+                            // Full result is already in the same durable writer
+                            // transaction. Deliver it to Avatar before Account reset.
+                            s.shared.as_mut().ok_or_else(||model::bad())?.result_committed=true;
+                        } else {
+                            let mut events=Vec::new();s.shared_return("profile13_result_committed",now,&mut events)?;
+                            for event in events {println!("{event}");}
+                        }
                     } else {
                         let c=s.shared.as_mut().ok_or_else(||model::bad())?;
                         if c.queue_announced {s.outbox.push_back(crate::map_drive_world091::queue_callback(false));}
@@ -135,7 +143,7 @@ impl Dispatcher {
             match result {
                 Ok(completion) if completion.refresh_error.is_none()=>{
                     let finished=if completion.reply.status==ReplyStatus::Finished {
-                        match &completion.request {Request::Finish{battle,..}=>Some(*battle),_=>None}
+                        completion.request.finished_battle()
                     } else {None};
                     let target=table.sessions.iter_mut().chain(self.retired.iter_mut()).find(|s|s.id==task.session);
                     let Some(target)=target else {return Err(model::bad());};

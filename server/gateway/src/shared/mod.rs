@@ -1,6 +1,10 @@
 //! Explicit local two-client test_lab route. The accepted single-client drive
 //! route and its frozen profile checks are not generalized through this module.
 pub(crate) mod model;
+pub(crate) mod lifecycle;
+pub(crate) mod lifecycle_wire;
+mod lifecycle_result;
+pub(crate) mod results_session;
 pub(crate) mod aim;
 pub(crate) mod pose;
 pub(crate) mod geometry;
@@ -77,13 +81,19 @@ pub(super) struct Client {
     queue_announced: bool,
     profile13: Option<profile13_session::State>,
     return_source_revision: i64,
+    lifecycle_view: Option<lifecycle::View>,
+    natural_result: Option<std::sync::Arc<lifecycle_wire::Results>>,
+    result_committed: bool,
+    result_stream_queued: bool,
+    result_leave_requested: bool,
+    result_delivery_at: Option<Instant>,
 }
 impl Client {
     fn new(slot: usize) -> Self {
         Self { slot, phase: Phase::Account, view: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; 2],
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; 2], owner_health_sent: None, tracer_started: [false; model::MAX_SHOTS],
-            tracer_stopped: [false; model::MAX_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1 }
+            tracer_stopped: [false; model::MAX_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -173,6 +183,7 @@ impl Session {
         // transport contract shared with the ordinary single-player return.
         next.drive_return_account = Some(super::WarmAccountReturn { generation,
             queue_ahead: next.outbox.len(), creation: None, enabled: false, stale_avatar_envelopes: 0 });
+        next.battle_results.begin_account_epoch()?;
         next.outbox.push_back(body);
         next.arena_base = false;
         let c = next.shared.as_mut().ok_or_else(|| bad())?;
@@ -343,6 +354,11 @@ impl Session {
             let mut retired=self.clone();
             retired.shared.as_mut().ok_or_else(||bad())?.phase=Phase::Driving;
             retired.shared_payload(payload,sequence,now,&mut Vec::new())?;
+            if self.shared.as_ref().is_some_and(|c|c.natural_result.is_some()) {
+                self.battle_results=retired.battle_results;
+                let leave=retired.shared.as_ref().is_some_and(|c|c.commands.iter().any(|v|matches!(v,Command::Leave)));
+                self.shared.as_mut().ok_or_else(||bad())?.result_leave_requested|=leave;
+            }
             self.shared.as_mut().and_then(|c|c.profile13.as_mut()).ok_or_else(||bad())?.stale_envelopes=count+1;
             events.push(format!("P08B_TERMINAL_AVATAR_DRAIN session={} envelopes={} domain_applied=false",self.id,count+1));
             return Ok(());
@@ -468,13 +484,17 @@ impl Session {
                 // fixed seven-byte VAR2 record; it has no length field.
                 8 => 7,
                 6 => 1, 2 => 17, 3 => 22,
-                0x88 | 0x89 | 0x8a | 0x8d | 0x8e | 0x8f | 0x0d | 0x0f | 0x99 => {
+                0x87 | 0x88 | 0x89 | 0x8a | 0x8d | 0x8e | 0x8f | 0x0d | 0x0f | 0x99 => {
                     if payload.len() - at < 3 { return Err(bad()); }
                     3 + u16::from_le_bytes([payload[at+1], payload[at+2]]) as usize
                 },
                 _ => return Err(bad()),
             };
             let raw = payload.get(at..at+size).ok_or_else(|| bad())?; at += size;
+            if id==0x87 {
+                if !self.battle_results.confirm_avatar(raw)? {return Err(bad());}
+                continue;
+            }
             if id == 8 {
                 if c.tree_areas.len()!=c.areas.len(){c.tree_areas=vec![Vec::new();c.areas.len()];}
                 if let Some(area)=destructible_wire::area_request(raw,c.areas.len()) {
@@ -531,7 +551,11 @@ impl Session {
                         },
                         drive::Method::IgnoredTelemetry(_) => {}, // validated then discarded
                         drive::Method::Leave => {
-                            if at != payload.len() { return Err(bad()); }
+                            // Original result handler queues Leave from the UI
+                            // callback and confirm afterwards in the same turn.
+                            let confirm_tail=c.natural_result.is_some() && self.battle_results.avatar_pending()
+                                && payload.get(at..)==Some(&[0x87,0,0][..]);
+                            if at != payload.len() && !confirm_tail { return Err(bad()); }
                             c.commands.push(Command::Leave); c.phase = Phase::Leaving;
                         },
                         other => events.push(format!("SHARED_UNSUPPORTED session={} method={other:?} domain_applied=false", self.id)),

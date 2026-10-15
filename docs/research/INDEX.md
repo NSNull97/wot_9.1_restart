@@ -7,6 +7,8 @@
 ## Общие (клиент, протокол, ресурсы, решения)
 
 - [P08B_PROFILE13_BATTLE.md](P08B_PROFILE13_BATTLE.md) — P08B: выбранный owned loadout профиля13, резерв/результат/restart и native gate в работе
+- [P08C_NATIVE_LIFECYCLE.md](P08C_NATIVE_LIFECYCLE.md) — #717 period/base/death/results field order, streams и источники
+- [P08C_BATTLE_CYCLE.md](P08C_BATTLE_CYCLE.md) — authoritative cycle, atomic writer results, policy и утренняя native матрица
 
 - [BATTLE_LOADOUT_REVISION_GATE.md](BATTLE_LOADOUT_REVISION_GATE.md) — Исследование: battle-loadout revision adapter
 - [CAPACITY_1000_CCU.md](CAPACITY_1000_CCU.md) — Инфраструктура для 1000 одновременных игроков: расчётная модель

@@ -76,6 +76,8 @@ pub(super) struct Terminal {
     pub(super) remaining_ap: u16,
     pub(super) terminal_hp: i16,
     pub(super) reason: FinishReason,
+    pub(super) results_json: Option<String>,
+    pub(super) native_database_id: i32,
 }
 impl Terminal {
     fn validate(&self) -> io::Result<()> {
@@ -88,7 +90,8 @@ impl Terminal {
             || self.remaining_ap > row.frozen.ap_count || !(0..=row.frozen.max_hp).contains(&self.terminal_hp) {
             return Err(bad("terminal reservation or authoritative outcome"));
         }
-        profile13::encode_request(&Context { account_id: account.into(), native_database_id: 1,
+        if (self.reason==FinishReason::BattleFinished)!=self.results_json.is_some() {return Err(bad("natural finish requires its result snapshot"));}
+        profile13::encode_request(&Context { account_id: account.into(), native_database_id: self.native_database_id,
             command_key: "p08b:validate".into(), expected_revision: 13, run_id: row.run_id.clone() }, &self.request())?;
         Ok(())
     }
@@ -96,6 +99,10 @@ impl Terminal {
     /// outcome; the world checks this slot's authenticated session authority.
     pub(super) fn from_actor(reservation: &Reservation, world: &World, slot: usize, session: u32,
         reason: FinishReason) -> io::Result<Self> {
+        Self::from_actor_result(reservation,world,slot,session,reason,None)
+    }
+    pub(super) fn from_actor_result(reservation: &Reservation, world: &World, slot: usize, session: u32,
+        reason: FinishReason,result:Option<&super::lifecycle_wire::Results>) -> io::Result<Self> {
         let actor = world.owned(slot, session)?;
         reservation.frozen.validate_owned(&actor.identity.account)?;
         if world.id != reservation.battle || world.vehicle_kind() != reservation.frozen.kind
@@ -103,7 +110,8 @@ impl Terminal {
             return Err(bad("terminal actor battle/profile mismatch"));
         }
         let terminal = Self { reservation: reservation.clone(), remaining_ap: actor.fire.ammo(),
-            terminal_hp: actor.health, reason };
+            terminal_hp: actor.health, reason, native_database_id:actor.identity.database,
+            results_json:result.map(serde_json::to_string).transpose().map_err(|_|bad("natural result serialization"))? };
         terminal.validate()?;
         Ok(terminal)
     }
@@ -111,11 +119,16 @@ impl Terminal {
     /// entered with the writer's fully repaired source health.
     pub(super) fn cancelled(reservation: &Reservation) -> io::Result<Self> {
         let terminal = Self { reservation: reservation.clone(), remaining_ap: reservation.frozen.ap_count,
-            terminal_hp: reservation.frozen.max_hp, reason: FinishReason::Cancelled };
+            terminal_hp: reservation.frozen.max_hp, reason: FinishReason::Cancelled, results_json:None, native_database_id:1 };
         terminal.validate()?;
         Ok(terminal)
     }
     pub(super) fn request(&self) -> Request {
+        if let Some(results_json)=&self.results_json {
+            return Request::FinishResults {battle:self.reservation.battle,native_inventory_id:self.reservation.native_inventory_id,
+                reservation_id:self.reservation.reservation_id.clone(),remaining_ap:self.remaining_ap,terminal_hp:self.terminal_hp,
+                results_json:results_json.clone()};
+        }
         Request::Finish { battle: self.reservation.battle, native_inventory_id: self.reservation.native_inventory_id,
             reservation_id: self.reservation.reservation_id.clone(), remaining_ap: self.remaining_ap,
             terminal_hp: self.terminal_hp, reason: self.reason }

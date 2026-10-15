@@ -55,6 +55,7 @@ pub struct Actor {
     pub input: Input,
     pub fire: fire::State,
     pub aim: aim::State,
+    pub mileage_metres: f64,
     origin: [f32; 3],
     vehicle_kind: VehicleKind,
     owned_loadout: Option<crate::battle091::profile13::FrozenLoadout>,
@@ -131,6 +132,10 @@ pub struct World {
     pub shots: Vec<Shot>,
     pub projectiles: Vec<Projectile>,
     pub impact: impact::Trace,
+    /// Enabled only by the profile13 battle service; legacy laboratory tests
+    /// preserve their accepted unrestricted drive route.
+    pub lifecycle: Option<super::lifecycle::State>,
+    pub lifecycle_created_unix: Option<u32>,
     geometry: Option<Arc<geometry::Bundle>>,
     pub contacts: Vec<Contact>,
     ap_test_lab: bool,
@@ -195,7 +200,7 @@ impl World {
     pub fn new_for_vehicle(id: u64, now: Instant, map: crate::map_profile091::MapId, kind: VehicleKind) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
         Ok(Self { id, map, vehicle_kind:kind, actors: Vec::new(), started: None, last: now, tick: 1000,
-            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind),
+            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
             geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None,
             contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;CAPACITY] })
@@ -203,6 +208,34 @@ impl World {
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
         if bundle.vehicle_kind()!=self.vehicle_kind || self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
         self.geometry = Some(bundle); Ok(())
+    }
+    pub fn enable_lifecycle(&mut self, rules: super::lifecycle::Rules) -> io::Result<()> {
+        if self.started.is_some() || !self.actors.is_empty() || self.lifecycle.is_some() { return Err(bad()); }
+        self.lifecycle = Some(super::lifecycle::State::new(rules)?); Ok(())
+    }
+    pub fn team(&self, slot: usize) -> io::Result<u8> {
+        if slot >= self.actors.len() { return Err(bad()); }
+        Ok(if self.lifecycle.is_some() { (slot % 2) as u8 + 1 } else { 1 })
+    }
+    pub fn lifecycle_ms(&self, now: Instant) -> io::Result<u64> {
+        let start = self.started.ok_or_else(|| bad())?;
+        now.checked_duration_since(start).ok_or_else(|| bad())?.as_millis().try_into().map_err(|_| bad())
+    }
+    pub fn advance_lifecycle(&mut self, now: Instant) -> io::Result<bool> {
+        if self.lifecycle.is_none() || self.started.is_none() { return Ok(false); }
+        let elapsed = self.lifecycle_ms(now)?;
+        let members = self.actors.iter().enumerate().map(|(slot, actor)| {
+            let damage = self.impacts.iter().filter(|i| i.target == slot && i.health_after < i.health_before);
+            let epoch: u32 = damage.clone().count().try_into().map_err(|_| bad())?;
+            Ok(super::lifecycle::Member { team: self.team(slot)?, present: actor.session.is_some(), ready: actor.ready,
+                alive: actor.health > 0, position: actor.position, damage_epoch: epoch,
+                last_damager: damage.last().map(|i| i.attacker) })
+        }).collect::<io::Result<Vec<_>>>()?;
+        let changed = self.lifecycle.as_mut().ok_or_else(|| bad())?.advance(elapsed, &members)?;
+        if !self.lifecycle.as_ref().ok_or_else(|| bad())?.allows_actions() {
+            for actor in &mut self.actors { actor.input = Input::STOP; }
+        }
+        Ok(changed)
     }
     pub fn enable_ap_test_lab(&mut self) -> io::Result<()> {
         if self.started.is_some() || self.geometry.is_none() || self.ap_test_lab { return Err(bad()); }
@@ -318,7 +351,7 @@ impl World {
         let ammo = loadout.as_ref().map_or(self.vehicle_kind.initial_ammo(), |value| value.ap_count);
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: self.vehicle_kind.max_health(), vehicle_kind:self.vehicle_kind,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire: fire::State::with_loadout(ammo,self.vehicle_kind.reload_seconds())?, aim: aim::State::new(), owned_loadout:loadout });
+            fire: fire::State::with_loadout(ammo,self.vehicle_kind.reload_seconds())?, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
@@ -408,6 +441,13 @@ impl World {
         let mut projectiles = self.projectiles.clone();
         let mut impact_trace = self.impact.clone();
         for (at, command) in commands.iter().enumerate() {
+            if self.lifecycle.as_ref().is_some_and(|state| !state.allows_actions()) {
+                match command {
+                    Command::Move(input) => { if !input.valid() { return Err(bad()); } continue; },
+                    Command::Fire(_) => { outcomes.push(fire::Outcome::RejectedBattlePeriod); continue; },
+                    Command::Aim(_) | Command::Leave => {},
+                }
+            }
             // Native dead players may still emit neutral input/aim packets.
             // Validate them, then ignore gameplay; leave remains available.
             if next.health == 0 {
@@ -470,6 +510,12 @@ impl World {
         external: Option<&[(usize, [f32; 3], [f32; 3], f32)]>) -> io::Result<bool> {
         let Some(start) = self.started else { return Ok(false); };
         if now < self.last || now.duration_since(start) >= LIFETIME { return Err(bad()); }
+        if self.lifecycle.as_ref().is_some_and(|state| state.outcome().is_some()) {
+            // Outcome/statistics are immutable; late in-flight projectiles do
+            // not change HP after the result snapshot has been frozen.
+            self.last = now; self.tick = 1000 + (now.duration_since(start).as_millis() / 100) as u32;
+            return Ok(false);
+        }
         if let Some(rows) = external {
             let slots = rows.iter().map(|row| row.0).collect::<std::collections::BTreeSet<_>>();
             if rows.len() != CAPACITY || slots.len() != CAPACITY || slots.iter().any(|slot| *slot >= CAPACITY) {
@@ -498,6 +544,7 @@ impl World {
             let dt = now.duration_since(self.last).as_secs_f32().min(0.2);
             for (slot, a) in next_actors.iter_mut().enumerate() {
                 if !a.ready || a.session.is_none() { continue; }
+                let previous_position = a.position;
                 if let Some(rows) = external {
                     if let Some((_, position, direction, speed)) = rows.iter().find(|(row, ..)| *row == slot) {
                         a.position = *position; a.direction = *direction; a.yaw = direction[0]; a.speed = *speed;
@@ -514,6 +561,11 @@ impl World {
                     a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
                 }
                 a.direction[0] = a.yaw;
+                if self.lifecycle.as_ref().is_some_and(|state| state.allows_actions()) && a.health > 0 {
+                    let distance = (0..3).map(|i| (f64::from(a.position[i]) - f64::from(previous_position[i])).powi(2)).sum::<f64>().sqrt();
+                    a.mileage_metres += distance;
+                    if !a.mileage_metres.is_finite() || a.mileage_metres > 200_000. { return Err(bad()); }
+                }
                 if a.health > 0 { a.aim.advance_pose_for(a.vehicle_kind,a.position, a.direction, dt)?; }
             }
             next_last = now; next_tick = tick;
@@ -691,7 +743,7 @@ impl World {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
-    pub(super) fn profile13_loadout(kind:VehicleKind,slot:usize,ap_count:u16)
+    pub(crate) fn profile13_loadout(kind:VehicleKind,slot:usize,ap_count:u16)
         ->(Identity,crate::battle091::profile13::FrozenLoadout) {
         use sha2::{Digest,Sha256};
         let account=format!("{:08x}-1234-4234-8234-123456789abc",slot+1);

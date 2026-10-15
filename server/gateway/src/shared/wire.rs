@@ -71,7 +71,7 @@ pub fn roster(w: &World) -> io::Result<Vec<u8>> {
         d.extend([b'(', b'J']); d.extend(vehicle_id(slot)?.to_le_bytes());
         d.push(b'U'); string(&mut d, a.vehicle_kind().descriptor())?;
         d.push(b'U'); string(&mut d, a.identity.name.as_bytes())?;
-        d.extend([b'K', 1, if a.health > 0 { 0x88 } else { 0x89 }, if a.ready { 0x88 } else { 0x89 }, 0x89, b'J']);
+        d.extend([b'K', w.team(slot)?, if a.health > 0 { 0x88 } else { 0x89 }, if a.ready { 0x88 } else { 0x89 }, 0x89, b'J']);
         d.extend(a.identity.database.to_le_bytes());
         d.extend([b'U', 0, b'K', 0, b'K', 0, 0x89, b'}', b'K', 0, b't', b'a']);
     }
@@ -85,6 +85,7 @@ pub fn announcement(w: &World, own: usize) -> io::Result<Vec<u8>> {
     let a = actor(w, own)?;
     let mut b = arena::create_cell_avatar(&arena::AvatarCellSeed { space_id: SPACE,
         player_vehicle_id: vehicle_id(own)?, position: a.position })?;
+    b[39] = w.team(own)?;
     // Native createCellPlayer's direction stream is roll/pitch/yaw, while
     // the domain/worker stores yaw/pitch/roll.
     for (i, value) in [a.direction[2], a.direction[1], a.direction[0]].into_iter().enumerate() {
@@ -214,8 +215,11 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
     let a = actor(w, own)?;
     let mut b = vec![2, 10, 3]; b.extend(w.tick.to_le_bytes());
     for slot in 0..model::CAPACITY { if slot == own || w.actors[slot].ready { b.extend(ready_update(slot)?); } }
-    let mut period = vec![0x80, 2, b'(', b'K', 3, b'G']; period.extend(3700f64.to_be_bytes());
-    period.push(b'G'); period.extend(3600f64.to_be_bytes()); period.extend(b"Nt."); b.extend(update(3, &period)?);
+    if w.lifecycle.is_some() { b.extend(lifecycle_period(w)?); }
+    else {
+        let mut period = vec![0x80, 2, b'(', b'K', 3, b'G']; period.extend(3700f64.to_be_bytes());
+        period.push(b'G'); period.extend(3600f64.to_be_bytes()); period.extend(b"Nt."); b.extend(update(3, &period)?);
+    }
     b.push(0x14); b.extend(avatar_id(own)?.to_le_bytes()); b.extend(SPACE.to_le_bytes()); b.extend(vehicle_id(own)?.to_le_bytes());
     for _ in 0..6 { b.extend(0f32.to_le_bytes()); }
     b.extend([0x13, 0x4a]); f3(&mut b, a.position); f3(&mut b, a.direction);
@@ -252,6 +256,22 @@ pub fn publication(w: &World, visible: [bool; 2]) -> io::Result<Vec<u8>> {
         b.push(0xa0); b.extend(packed_angles_for(a.vehicle_kind(),&a.aim)?.to_le_bytes()); b.push(0x13);
     }
     Ok(b)
+}
+
+pub fn finish_reason(reason: super::lifecycle::Reason) -> u8 {
+    // Original #717 FINISH_REASON: extermination1, base2, timeout3,
+    // failure4/technical5. No-contest uses the explicit technical result.
+    match reason { super::lifecycle::Reason::Elimination => 1, super::lifecycle::Reason::Capture => 2,
+        super::lifecycle::Reason::Timeout => 3, super::lifecycle::Reason::NoContest | super::lifecycle::Reason::Forfeit => 5 }
+}
+pub fn lifecycle_period(w: &World) -> io::Result<Vec<u8>> {
+    use super::{lifecycle::Phase, lifecycle_wire::{self,Period}};
+    let state = w.lifecycle.as_ref().ok_or_else(|| model::bad())?;
+    let view = state.view();
+    let phase = match view.phase { Phase::Waiting=>Period::Waiting,Phase::Prebattle=>Period::Prebattle,
+        Phase::Battle=>Period::Battle,Phase::Afterbattle=>Period::Afterbattle };
+    lifecycle_wire::period(phase,100. + view.ends_ms.unwrap_or(0) as f64 / 1_000.,
+        view.length_ms as f64 / 1_000.,view.outcome.map(|o|(o.winner,finish_reason(o.reason))))
 }
 
 #[cfg(test)]

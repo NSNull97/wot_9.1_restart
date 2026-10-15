@@ -5,15 +5,23 @@ use crate::battle091::profile13::{self, NativeCommand};
 impl Session {
     pub(super) fn profile13_account_payload(&mut self,payload:&[u8],events:&mut Vec<String>)->io::Result<()> {
         if payload.len()>512 {return Err(bad());}
-        let mut at=0; let mut records=Vec::new(); let mut queue=false;
+        let mut at=0; let mut records=Vec::new(); let mut queue=false; let mut results=false;
         while at<payload.len() {
             if records.len()>=16 || payload.len()-at<3 {return Err(bad());}
             let length=u16::from_le_bytes([payload[at+1],payload[at+2]]) as usize;
             let packet=payload.get(at..at+3+length).ok_or_else(||bad())?;
             queue|=profile13::native_command(packet)?.is_some(); records.push(packet);at+=packet.len();
+            results|=packet.len()>=7 && packet[..3]==[0x8e,20,0]
+                && [1500i16,1501i16].contains(&i16::from_le_bytes([packet[5],packet[6]]));
         }
-        if !queue {return self.receive_account(payload,events);}
+        if !queue && !results {return self.receive_account(payload,events);}
         for packet in records {
+            if self.battle_results.stage(packet)? {
+                if !self.active || !self.account_ready || self.arena_base || self.sync_mask!=7
+                    || !self.shared.as_ref().is_some_and(|c|c.profile13_account()) {return Err(bad());}
+                events.push(format!("P08C_RESULTS_REQUEST_STAGED session={} writer_started=false",self.id));
+                continue;
+            }
             let Some(command)=profile13::native_command(packet)? else {
                 self.receive_account(packet,events)?;continue;
             };

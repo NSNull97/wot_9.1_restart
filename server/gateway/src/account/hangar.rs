@@ -881,7 +881,7 @@ fn variable16(id: u8, payload: &[u8]) -> io::Result<Vec<u8>> {
 fn stream(id: i16, raw: &[u8], first: Vec<u8>) -> io::Result<Vec<Vec<u8>>> {
     stream_with_budget(id,raw,first,MAX_FIXTURE)
 }
-fn stream_with_budget(id:i16,raw:&[u8],mut first:Vec<u8>,maximum:usize)->io::Result<Vec<Vec<u8>>> {
+pub(crate) fn stream_with_budget(id:i16,raw:&[u8],mut first:Vec<u8>,maximum:usize)->io::Result<Vec<Vec<u8>>> {
     if raw.is_empty() || raw.len() > maximum || maximum>32768 { return Err(invalid("stream payload size")); }
     // One bounded stored DEFLATE block. Compression is optional; checksums are not.
     let mut data = vec![0x78, 0x01, 0x01];
