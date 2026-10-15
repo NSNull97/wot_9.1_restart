@@ -1,13 +1,13 @@
 # Текущая карточка — 2026-10-16
 
-**P05C — одна физическая сцена на бой**, ночная зависимая реализация после P08C:
-контакт танк–танк, смешанные MS-1/ИС-7 и до6 клиентов.
+**P07B — серверная видимость v1**, ночная зависимая реализация после P05C:
+дальность/LOS, отсутствие скрытого состояния в пакетах, native исчезновение/засвет.
 
-Полная постановка и приёмка — пункт 4 в
+Полная постановка и приёмка — пункт 5 в
 [IMPLEMENTATION_ORDER](IMPLEMENTATION_ORDER.md). Боевой стенд и команды — в
 [DEV_NOTES](DEV_NOTES.md). Состояние проекта — [STATUS](STATUS.md).
 
-План — [P05C](plans/P05C.md), ночное разрешение владельца и утренняя матрица —
+План — [P07B](plans/P07B.md), ночное разрешение владельца и утренняя матрица —
 [NIGHT_20261016](plans/NIGHT_20261016.md). Продолжать по порядку без ожидания
 ручных проверок; сохранять NOT_RUN и отдельные зависимые ветки до приёмки.
 
@@ -24,3 +24,7 @@ owner postrestart/mutation smoke отложен до утра. В main карт�
 P08C runtime8c96580:919gateway PASS/5ignored/build PASS; дополнительный test-only
 e1c1911 targeted1PASS/build. Native/UI/audio/итоги NOT_RUN до утра. Ветка
 codex/p08c-battle-lifecycle сохранена, main не изменён.
+
+P05C runtime019ed2f: полный gateway940PASS/5ignored/buildPASS и exact source
+before/after602files. Actual mixed2/6 scene/ACK/parked bodies PASS; native mixed
+таран/6клиентов NOT_RUN. Ветка codex/p05c-shared-physics сохранена, не main.
