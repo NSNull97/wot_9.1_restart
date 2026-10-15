@@ -1121,7 +1121,7 @@ for incoming in requests {
                     if !f.body.is_empty() {
                         if f.body.len()<(if self.hangar.is_some(){5}else{6}) || f.body[0]!=1 || f.body[1..5]!=self.token.to_le_bytes() {return Err(invalid());}
                         if f.body[5..]==[11,0] {close=true;}
-                        else if self.shared.is_some() {self.shared_payload(&f.body[5..],now,events)?;}
+                        else if self.shared.is_some() {self.shared_payload(&f.body[5..],n,now,events)?;}
                         else if self.drive.is_some() {
                             if self.arena_base {self.drive_avatar(&f.body[5..],n,now,events)?;}
                             else {self.drive_account(&f.body[5..],n,now,events)?;}
