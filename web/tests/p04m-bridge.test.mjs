@@ -68,14 +68,23 @@ async function setup(t, name) {
     pool_service: { version: 1, policy_sha256: POOL_POLICY_SHA256, accounts: source.pool_accounts } };
   let bridge = null;
   t.after(async () => { if (bridge) await bridge.close(); assert.equal(digest(readFileSync(source.database)), before); removeTestDirectory(directory); });
-  const start = async (configuration = options) => { bridge = await createIdentityBridge(configuration); };
+  const start = async (configuration = options) => {
+    bridge = await createIdentityBridge(configuration);
+    bridge.server.on('request', (req, res) => {
+      const initial = req.socket.timeout;
+      res.once('finish', () => events.push({ observer: 'actual-server-socket', path: req.url.startsWith('/internal/accounts/')
+        ? '/internal/accounts/:owner/overview' : req.url, method: req.method, http: res.statusCode,
+      initial_socket_timeout_ms: initial, socket_timeout_ms: req.socket.timeout }));
+    });
+  };
   const close = async () => { if (bridge) await bridge.close(); bridge = null; };
   const events = [];
   async function call(path, data, authorization = secret) {
+    const begin = Date.now();
     const r = await fetch(`http://127.0.0.1:${bridge.port}${path}`, { method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authorization}` }, body: JSON.stringify(data) });
     const result = { status: r.status, body: await r.json() };
-    events.push({ path, http: result.status, status: result.body.status ?? null, result_code: result.body.result_code ?? null });
+    events.push({ path, http: result.status, milliseconds: Date.now() - begin, status: result.body.status ?? null, result_code: result.body.result_code ?? null });
     return result;
   }
   const owner = source.pool_accounts[0]; let serial = 0;
@@ -83,7 +92,8 @@ async function setup(t, name) {
   const aggregate = (id = owner) => db(gameFile, d => d.prepare('SELECT snapshot_json FROM game_snapshot WHERE account_id=?').get(id).snapshot_json);
   const command = (layout, id = owner) => ({ account_id: id, native_database_id: profile(id).native_database_id,
     command_key: `p04m-http:${++serial}`, expected_revision: profile(id).snapshot_revision, wire_revision: 1, layout });
-  const login = id => call('/internal/native/login', { email: users.find(u => u.profile.account_id === id).email, password });
+  const login = (id, secretPassword = password) => call('/internal/native/login', { email: users.find(u => u.profile.account_id === id).email, password: secretPassword });
+  const socketBudget = (path, http = 200) => events.filter(e => e.observer === 'actual-server-socket' && e.path === path && e.http === http).at(-1)?.socket_timeout_ms;
   const read = async id => {
     const begin = Date.now(), response = await fetch(`http://127.0.0.1:${bridge.port}/internal/accounts/${id}/overview`,
       { headers: { Authorization: `Bearer ${secret}` } });
@@ -117,7 +127,7 @@ async function setup(t, name) {
     seed_database_unchanged: digest(readFileSync(source.database)) === before, native_ui: 'NOT_RUN', events,
     snapshot_sha256: digest(Buffer.from(aggregate())), read_gate: 'STRUCTURAL_CURRENT_PROFILE',
     commands_gate: 'CANONICAL_PYTHON_WRITER', ...extra });
-  return { options, owner, users, start, close, call, profile, aggregate, command, login, read, refresh, fixtureTree, malformedOverview, complete };
+  return { options, owner, users, start, close, call, profile, aggregate, command, login, read, refresh, socketBudget, fixtureTree, malformedOverview, complete };
 }
 
 test('P04M real HTTP logs in, recruits T26 primary crew, persists AP160 and republishes after restart', {
@@ -126,6 +136,9 @@ test('P04M real HTTP logs in, recruits T26 primary crew, persists AP160 and repu
   const s = await setup(t, 'http-seed-t26-02'); await s.start();
   const originalResources = s.profile().resources;
   assert.equal((await s.login(s.owner)).status, 200);
+  assert.ok(s.socketBudget('/internal/native/login') > 7000);
+  assert.equal((await s.login(s.owner, token())).status, 401);
+  assert.equal(s.socketBudget('/internal/native/login', 401), 5000);
   let view = await s.read(s.owner); assert.equal(isNativePoolOverview(view, s.owner), true);
   assert.equal(view.inventory[2].ammunition, 0); assert.equal(view.inventory[2].crewAssigned, false);
   for (let slot = 0; slot < 3; slot++) {
@@ -135,8 +148,27 @@ test('P04M real HTTP logs in, recruits T26 primary crew, persists AP160 and repu
   const request = s.command([5, 3, 6, 1034, 160, 1290, 0, 1546, 0, 6, 0, 0, 0, 0, 0, 0]);
   const result = await s.call('/internal/native/ammo', request);
   assert.equal(result.status, 200, JSON.stringify(result.body)); assert.equal(result.body.status, 'serviced');
+  assert.ok(s.socketBudget('/internal/native/ammo') > 7000);
   assert.equal(s.profile().inventory[2].ammunition_count, 160); assert.equal(s.profile().ammunition_depot['shell:t26-stock-ap'], 0);
   assert.deepEqual(s.profile().resources, originalResources);
+  const learningRequest = s.command([1, 37, 0]);
+  const learned = await s.call('/internal/native/crew-learn', learningRequest);
+  assert.equal(learned.status, 200, JSON.stringify(learned.body)); assert.equal(learned.body.status, 'learned');
+  assert.deepEqual(s.profile().crew.find(m => m.role === 'commander' && m.role_level === 100).skills,
+    [{ skill_id: 'gunner_gunsmith', level: 0 }]);
+  assert.equal((await s.read(s.owner)).state, 'ready');
+  const learningMember = s.profile().crew.find(m => m.crew_id.endsWith(':ms1-commander-v1'));
+  const parked = await s.call('/internal/native/crew-transfer', s.command([1, 0, -1]));
+  assert.equal(parked.status, 200, JSON.stringify(parked.body)); assert.equal(parked.body.status, 'transferred');
+  const parkedProfile = s.profile().crew.find(m => m.crew_id.endsWith(':ms1-commander-v1'));
+  assert.equal(parkedProfile.vehicle_inventory_id, null); assert.equal(parkedProfile.skills[0].skill_id, 'gunner_gunsmith');
+  assert.equal((await s.read(s.owner)).state, 'ready');
+  const restored = await s.call('/internal/native/crew-transfer', s.command([1, 0, 1]));
+  assert.equal(restored.status, 200, JSON.stringify(restored.body)); assert.equal(restored.body.status, 'transferred');
+  receipt('combined-role-retained.json', { version: 1, status: 'PASS_REAL_HTTP_PYTHON_SQLITE', native_ui: 'NOT_RUN',
+    request: learningRequest, response: learned.body, member_after_learning: learningMember, member_in_barracks: parkedProfile,
+    member_after_restore: s.profile().crew.find(m => m.crew_id.endsWith(':ms1-commander-v1')),
+    read_gate: 'STRUCTURAL_CURRENT_PROFILE', command_gate: 'CANONICAL_PYTHON_WRITER' });
   const beforeRead = s.aggregate(), beforeReadTree = s.fixtureTree();
   view = await s.read(s.owner); assert.equal(view.snapshotRevision, s.profile().snapshot_revision);
   assert.equal(view.inventory[2].ammunition, 160); assert.equal(view.inventory[2].crewAssigned, true);
@@ -149,6 +181,9 @@ test('P04M real HTTP logs in, recruits T26 primary crew, persists AP160 and repu
   assert.equal(rejected.status, 200); assert.equal(rejected.body.status, 'rejected'); assert.equal(rejected.body.result_code, -10);
   assert.equal(s.aggregate(), after);
   const bound = await s.refresh(s.owner); assert.equal(bound.status, 200);
+  assert.ok(s.socketBudget('/internal/native/profile') > 7000);
+  const wrongProfile = await s.call('/internal/native/profile', { account_id: s.owner, native_database_id: s.profile().native_database_id + 1 });
+  assert.equal(wrongProfile.status, 403); assert.equal(s.socketBudget('/internal/native/profile', 403), 5000);
   const companion = JSON.parse(readFileSync(join(bound.body.fixture_dir, 'p04m-pool.json')));
   assert.equal(companion.policy_sha256, POOL_POLICY_SHA256); assert.equal(companion.capabilities.find(c => c.kind === 't26').admission, false);
   assert.equal((await s.call('/internal/native/ammo', request, token())).status, 403);
@@ -157,7 +192,7 @@ test('P04M real HTTP logs in, recruits T26 primary crew, persists AP160 and repu
   assert.equal(view.inventory[2].crewAssigned, true); assert.equal(view.poolService.newBattleAdmission, false);
   await s.close(); const withoutPool = { ...s.options }; delete withoutPool.pool_service;
   await assert.rejects(() => s.start(withoutPool), /Curated pool activation\/configuration mismatch/);
-  assert.equal(s.aggregate(), after); s.complete({ ap: 160, crew_complete: true, admission: false, restart: 'PASS', implicit_pool: 'DENIED' });
+  assert.equal(s.aggregate(), after); s.complete({ ap: 160, crew_complete: true, admission: false, learned_combined_gunner_skill: 'PASS', retained_in_barracks: 'PASS', authenticated_socket_budget: 'POOL9000_OLD5000', restart: 'PASS', implicit_pool: 'DENIED' });
 });
 
 test('P04M real HTTP hires T34 type-zero radioman through both native crew routes', {
@@ -183,6 +218,7 @@ test('P04M real HTTP owner opt-in keeps the second profile13 account on its stri
   const s = await setup(t, 'http-seed-two-01'), other = s.users.find(u => u.profile.account_id !== s.owner).profile.account_id;
   const before = s.aggregate(other); await s.start();
   assert.equal((await s.login(s.owner)).status, 200); assert.equal((await s.login(other)).status, 200);
+  assert.equal(s.socketBudget('/internal/native/login'), 5000);
   assert.equal((await s.read(s.owner)).poolService.version, 1);
   const legacy = await s.read(other); assert.equal(legacy.state, 'ready'); assert.equal(legacy.poolService, undefined);
   assert.equal(legacy.crewService.version, 7); assert.equal(legacy.researchService.version, 1);

@@ -17,7 +17,7 @@ import { nativeCrewTransferOverview, isNativeCrewTransferOverview } from './p04f
 import { nativeCrossVehicleCrewOverview, isNativeCrossVehicleCrewOverview } from './p04g-crew.mjs';
 import { nativeResearchOverview, isNativeResearchOverview } from './p09e-research.mjs';
 import { battleConfiguration } from './p08b-battle.mjs';
-import { nativePoolOverview, isNativePoolOverview, poolConfiguration } from './p04m-pool.mjs';
+import { nativePoolOverview, isNativePoolOverview, poolConfiguration, nativePoolRequestTimeout, LEGACY_REQUEST_TIMEOUT_MS } from './p04m-pool.mjs';
 
 import { nativeRosterCrewOverview, isNativeRosterCrewOverview } from './p04h-crew.mjs';
 
@@ -454,7 +454,18 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
     if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ') || !equalToken(authorization.slice(7), secret)) return json(res, 403, { error: 'forbidden' });
     if (active >= 4) return json(res, 503, { error: 'busy' });
     active++;
-    const timer = setTimeout(() => { json(res, 503, { error: 'timeout' }); req.destroy(); }, 4500);
+    const started = performance.now();
+    const timedOut = () => { json(res, 503, { error: 'timeout' }); req.destroy(); };
+    let timer = setTimeout(timedOut, LEGACY_REQUEST_TIMEOUT_MS);
+    function poolRequestBudget(owner) {
+      const budget = nativePoolRequestTimeout(req.method, req.url, owner, poolOwners);
+      if (budget === LEGACY_REQUEST_TIMEOUT_MS) return;
+      const remaining = Math.max(1, budget - (performance.now() - started));
+      clearTimeout(timer); timer = setTimeout(timedOut, remaining);
+      // Response sockets otherwise inherit server.timeout=5000, shorter than
+      // the selected pool worker. This connection serves exactly one request.
+      req.socket.setTimeout(remaining);
+    }
     try {
       if (req.method === 'POST' && req.url === '/internal/native/login') {
         const value = await body(req);
@@ -470,6 +481,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         if (res.destroyed || res.writableEnded) return;
         if (options.battle_service !== undefined && !accountServices.has(user.id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.ensure(user);
+        poolRequestBudget(user.id); // Only after password and configured-account authorization.
         const directory = await fixture(profile);
         return json(res, 200, { account_id: user.id, native_database_id: profile.native_database_id,
           name: profile.username, fixture_dir: directory });
@@ -481,6 +493,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
             || !service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.read(value.account_id);
         if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        poolRequestBudget(value.account_id); // Identity and native database ID were checked above.
         return json(res, 200, { account_id: profile.account_id, native_database_id: profile.native_database_id,
           name: profile.username, fixture_dir: await fixture(profile) });
       }
@@ -503,6 +516,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
           && Number.isInteger(value.native_inventory_id) && value.native_inventory_id > 0 && value.native_inventory_id <= 2147483647
           && typeof value.reservation_id === 'string' && /^[A-Za-z0-9_:-]{1,96}$/.test(value.reservation_id)
           && typeof value.results_json === 'string' && Buffer.byteLength(value.results_json) <= 32768);
+        poolRequestBudget(value.account_id);
         const result = await service.results(value);
         const replyKeys = [...common, 'status', 'acked', 'replayed', 'results_json', 'code'];
         if (!result || Object.keys(result).sort().join(',') !== replyKeys.sort().join(',')
@@ -525,6 +539,11 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         const value = await body(req, nativeMethod === 'battle' ? 65536 : 2048), service = accountServices.get(value?.account_id);
         if (!service || !identity.profile(service.accountId)) return json(res, 403, { error: 'forbidden' });
         if (typeof service[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
+        if (poolOwners.includes(value.account_id)) {
+          const profile = game.read(value.account_id);
+          if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+          poolRequestBudget(value.account_id);
+        }
         return json(res, 200, await service[nativeMethod](value));
       }
       const matched = /^\/internal\/accounts\/([0-9a-f-]{36})\/overview$/.exec(req.url);

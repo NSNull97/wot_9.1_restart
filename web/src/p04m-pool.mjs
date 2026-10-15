@@ -1,6 +1,18 @@
 /** Explicit five-type owner projection; legacy P09E readers remain strict. */
 import { nicknameField } from './security.mjs';
 
+export const POOL_WORKER_TIMEOUT_MS = 7000;
+export const POOL_MUTATION_TIMEOUT_MS = 9000;
+export const LEGACY_REQUEST_TIMEOUT_MS = 4500;
+const POOL_NATIVE_REQUEST_ROUTES = new Set(['/internal/native/login', '/internal/native/profile', '/internal/native/ammo', '/internal/native/crew', '/internal/native/crew-recruit-barracks',
+  '/internal/native/crew-dismiss', '/internal/native/crew-learn', '/internal/native/crew-transfer',
+  '/internal/native/research', '/internal/native/battle', '/internal/native/battle-results']);
+
+export function nativePoolRequestTimeout(method, path, owner, configuredPoolOwners) {
+  return method === 'POST' && POOL_NATIVE_REQUEST_ROUTES.has(path) && configuredPoolOwners.includes(owner)
+    ? POOL_MUTATION_TIMEOUT_MS : LEGACY_REQUEST_TIMEOUT_MS;
+}
+
 export const POOL_POLICY_SHA256 = 'd1acd5590309c80b65307758bbee6f7f6de117f899668a00b1fad96ae6a13d3f';
 export const POOL_CREW_POLICY_SHA256 = '6621ad7d3ccb86ebe8cc9db43b135d88155762ed3428e2a12b4002aba431a99b';
 export const POOL_REGISTRY_SHA256 = 'e2f4ac21fe8970f3c5d29f6a45d845f9d80e4d2759f0e662c9f3bb9ac04c7b34';
@@ -28,6 +40,11 @@ const ROLE_SKILLS = {
   gunner: ['gunsmith', 'sniper', 'smoothTurret', 'rancorous'], loader: ['pedant', 'desperado', 'intuition'],
   radioman: ['inventor', 'finder', 'retransmitter', 'lastEffort'],
 };
+// Public crew rows omit trained type. The exact passport remains checked by
+// Python; the structural display permits the union of source combined roles
+// for that primary seat, including while its member is in the barracks.
+const SOURCE_ROLES = { commander: ['commander', 'gunner', 'radioman', 'loader'],
+  radioman: ['radioman'], driver: ['driver'], gunner: ['gunner', 'loader'], loader: ['loader', 'radioman'] };
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).sort().join(',') === [...keys].sort().join(',');
 const integer = (v, lo = 0, hi = 2147483647) => Number.isSafeInteger(v) && v >= lo && v <= hi;
@@ -127,7 +144,7 @@ export function nativePoolOverview(profile) {
       && Object.hasOwn(ROLE_IDS, member.role) && integer(member.role_level, 50, 100)
       && Array.isArray(member.skills) && member.skills.length <= 1
       && member.skills.every(s => exact(s, ['skill_id', 'level']) && s.level === 0 && member.role_level === 100
-        && (SHARED_SKILLS.has(s.skill_id) || ROLE_SKILLS[member.role].some(skill => s.skill_id === `${member.role}_${skill}`)))
+        && (SHARED_SKILLS.has(s.skill_id) || SOURCE_ROLES[member.role].some(role => ROLE_SKILLS[role].some(skill => s.skill_id === `${role}_${skill}`))))
       && (member.vehicle_inventory_id === null || types.get(member.vehicle_inventory_id)), 'pool member identity/assignment');
     identities.add(member.crew_id);
     if (member.vehicle_inventory_id !== null) {

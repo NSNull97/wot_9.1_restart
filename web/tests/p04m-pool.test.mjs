@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nativePoolOverview, isNativePoolOverview, poolConfiguration, POOL_POLICY_SHA256,
-  validatePoolBarracksRecruitmentResponse } from '../src/p04m-pool.mjs';
+  validatePoolBarracksRecruitmentResponse, nativePoolRequestTimeout, POOL_WORKER_TIMEOUT_MS, POOL_MUTATION_TIMEOUT_MS, LEGACY_REQUEST_TIMEOUT_MS } from '../src/p04m-pool.mjs';
 import { nativeResearchOverview, isNativeResearchOverview } from '../src/p09e-research.mjs';
 import { validateBarracksRecruitmentResponse } from '../src/p04k-crew.mjs';
 
@@ -36,6 +36,22 @@ test('P04M configuration is an explicit unique subset of battle owners', () => {
   assert.throws(() => poolConfiguration(input, [OWNER]));
 });
 
+test('P04M authenticated selected request deadline contains the actual worker budget and keeps legacy/read routes bounded', () => {
+  assert.equal(POOL_WORKER_TIMEOUT_MS, 7000); assert.equal(POOL_MUTATION_TIMEOUT_MS, 9000);
+  assert.ok(POOL_MUTATION_TIMEOUT_MS >= POOL_WORKER_TIMEOUT_MS + 2000);
+  for (const path of ['/internal/native/login', '/internal/native/profile', '/internal/native/ammo', '/internal/native/crew', '/internal/native/crew-recruit-barracks',
+    '/internal/native/crew-dismiss', '/internal/native/crew-learn', '/internal/native/crew-transfer',
+    '/internal/native/research', '/internal/native/battle', '/internal/native/battle-results']) {
+    assert.equal(nativePoolRequestTimeout('POST', path, OWNER, [OWNER]), POOL_MUTATION_TIMEOUT_MS);
+    assert.equal(nativePoolRequestTimeout('POST', path, OTHER, [OWNER]), LEGACY_REQUEST_TIMEOUT_MS);
+    assert.equal(nativePoolRequestTimeout('GET', path, OWNER, [OWNER]), LEGACY_REQUEST_TIMEOUT_MS);
+  }
+  for (const path of [`/internal/accounts/${OWNER}/overview`, '/internal/native/login?extra=1',
+    '/internal/native/crew-recruit-barracks/extra', '/internal/native/crew?owner=1', '/unknown']) {
+    assert.equal(nativePoolRequestTimeout('POST', path, OWNER, [OWNER]), 4500);
+  }
+});
+
 test('P04M actual T26 AP160/full primary crew projects without weakening P09E', { skip }, () => {
   const p = profile('t26-ap160'), value = nativePoolOverview(p), tank = value.inventory.find(i => i.researchVehicleId === 'vehicle:ussr:T-26');
   assert.equal(tank.ammunition, 160); assert.equal(tank.crewAssigned, true); assert.equal(tank.battle, false);
@@ -52,7 +68,7 @@ test('P04M input binds schema, owner, mounted shells, total capacity and primary
     v => { v.inventory[2].battle_admission = true; }, v => { v.inventory[2].ammunition_count = 161; },
     v => { v.ammunition[0].count = 159; }, v => { v.ammunition[1].shell_definition_id = v.ammunition[0].shell_definition_id; },
     v => { v.ammunition[0].shell_definition_id = 'shell:t34-stock-ap'; }, v => { delete v.ammunition_depot['shell:t34-stock-he']; },
-    v => { v.ammunition_depot.unknown = 0; }, v => { v.crew[4].role = 'radioman'; }, v => { v.crew[1].role = 'gunner'; }, v => { v.crew[4].crew_id = `${v.account_id}:recruit-crew:16`; },
+    v => { v.ammunition_depot.unknown = 0; }, v => { v.crew[4].role = 'radioman'; }, v => { v.crew[1].role = 'gunner'; }, v => { v.crew[1].skills = [{ skill_id: 'gunner_gunsmith', level: 0 }]; }, v => { v.crew[4].crew_id = `${v.account_id}:recruit-crew:16`; },
     v => { v.crew[4].vehicle_inventory_id = `${OTHER}:starter-vehicle-v1`; }, v => { v.crew[4].crew_id = v.crew[3].crew_id; },
     v => { v.inventory[2].crew_assigned = false; }, v => { v.extra = true; }];
   for (const change of changes) { const value = structuredClone(p); change(value); assert.throws(() => nativePoolOverview(value)); }

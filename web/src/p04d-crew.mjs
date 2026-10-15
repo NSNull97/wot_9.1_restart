@@ -7,7 +7,7 @@ import { nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
 
 import { BARRACKS_CREW_POLICY_SHA256, validateBarracksRecruitmentResponse } from './p04k-crew.mjs';
 import { BATTLE_POLICY_SHA256, validateBattleRequest, validateBattleReply } from './p08b-battle.mjs';
-import { POOL_POLICY_SHA256, validatePoolBarracksRecruitmentResponse } from './p04m-pool.mjs';
+import { POOL_POLICY_SHA256, POOL_WORKER_TIMEOUT_MS, validatePoolBarracksRecruitmentResponse } from './p04m-pool.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CREW_POLICY_SHA256 = '7d0e3d7ef28d85bfe32e4fcdea0547696a9b4fd04922a725a2d895e1395f0d55';
@@ -69,7 +69,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
           '--account-id', ammo.account_id, '--fixture-root', fixtures, operation],
         { cwd: ROOT, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
         let size = 0, errorSize = 0, exceeded = false; const parts = [];
-        const timer = setTimeout(() => { exceeded = true; child.kill(); }, operation === 'activate' ? 15000 : pool === null ? 3500 : 7000);
+        const timer = setTimeout(() => { exceeded = true; child.kill(); }, operation === 'activate' ? 15000 : pool === null ? 3500 : POOL_WORKER_TIMEOUT_MS);
         child.stdout.on('data', part => { size += part.length; if (size > (research === null ? 32768 : 262144)) { exceeded = true; child.kill(); } else parts.push(part); });
         child.stderr.on('data', part => { errorSize += part.length; if (errorSize > 4096) { exceeded = true; child.kill(); } });
         child.once('error', () => { clearTimeout(timer); fail(new Error('Crew worker failed')); });
