@@ -1,6 +1,6 @@
-//! Explicit P08B resource set. Both existing homogeneous native profiles are
-//! loaded and source-validated before login sockets are opened. Selection of
-//! one profile for a battle never changes another actor's owned loadout.
+//! Source-bound profile13 resources, validated before opening login sockets.
+//! Version1 retains homogeneous IPC6. Version2 explicitly binds the complete
+//! IPC7 artifact tree and admits both existing kinds to one physical scene.
 use std::{fs, io::{self, Read}, path::{Path, PathBuf}, sync::Arc};
 use serde_json::Value;
 use sha2::{Digest,Sha256};
@@ -160,5 +160,13 @@ mod tests {
         assert!(pin(&root,&reference,3).is_err());
         assert!(owned(&root,&Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).is_err());
         assert!(owned(&root,Path::new("relative.json")).is_err());assert!(owned(&root,&root).is_err());
+    }
+    #[test]fn p05c_template_version_two_requires_a_closed_pinned_shared_artifact_reference(){
+        let mut v=value();v["version"]=2.into();assert!(parse(&serde_json::to_vec(&v).unwrap()).is_err());
+        v["shared_physics"]=v["catalog"].clone();assert!(parse(&serde_json::to_vec(&v).unwrap()).unwrap().shared_physics.is_some());
+        for mutation in 0..5{let mut wrong=v.clone();match mutation{
+            0=>wrong["shared_physics"]["path"]="relative.json".into(),1=>wrong["shared_physics"]["sha256"]="A".repeat(64).into(),
+            2=>wrong["shared_physics"]["extra"]=true.into(),3=>wrong["version"]=1.into(),_=>wrong["version"]=3.into()}
+            assert!(parse(&serde_json::to_vec(&wrong).unwrap()).is_err());}
     }
 }

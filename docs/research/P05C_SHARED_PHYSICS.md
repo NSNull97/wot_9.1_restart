@@ -179,3 +179,87 @@ python -B -X utf8 tools/p05c_rust_worker_probe.py --asset-root D:/WoT_9.1_Server
 Единственный следующий шаг — связать checked batch с World/native в root после
 P08C, сохранив scalar proof admission и STAB-01 fail-closed boundary; затем
 отдельно выполнить утреннюю native-приёмку.
+
+## Интеграция P05C после P08C — VERIFIED на 2026-10-16
+
+Core snapshot `6967f6a` уже включает P08C `2ef781f` и native capacity snapshot.
+Новый маршрут включается только явным manifest **version2**: прежние поля
+`map/catalog/profiles` сохраняются, добавляется `shared_physics:{path,sha256}`
+с полным authored artifact manifest. Config `battle_players` — optional integer
+2..6 (default2), больше2 разрешено только в profile13 + version2. Version1 и
+legacy IPC1–6 продолжают использовать прежние два отдельных worker.
+
+VERIFIED: `World::new_for_roster(id,now,map,count)`, `expected_actors()`,
+`mixed_profiles()` и `shot_limit()` дают отдельную bounded модель. CAPACITY2
+сохранена для legacy; MAX_ACTORS6/MAX_BATTLE_SHOTS576 — абсолютные потолки.
+MS-1 сохраняет96 ББ, ИС-7 —30; смешанные3+3 имеют378 выстрелов, не576 подаренных.
+Каждый actor сохраняет frozen kind/HP/ammo/reload/geometry/material identity.
+Снаряд проверяет все остальные реальные meshes, выбирает ближайшую цель по
+параметру пересечения (точный tie — меньший slot), затем исходный Trace повторно
+считает выбранный collision batch и terrain precedence. AP использует shell
+стреляющей машины и material/HP цели. Предварительные query других машин не
+сохраняются как отдельные Trace events; World + complete actor snapshot нужны
+для воспроизведения выбора между целями. Это ограничение диагностики, не
+доказательство исторической баллистики.
+
+VERIFIED: `server_scene_runtime.rs` подключён через существующий runtime wrapper.
+Один background startup job создаёт маленький manifest, проверяет source/artifact
+pins и запускает один child. Transport loop не выполняет hash/read/sync больших
+ресурсов. Frame содержит всех акторов; перед candidate World каждый actor проходит
+**тот же** `drive/worker/angular.rs::parse` и `ram_proof::FrameProof::validate`,
+включая source body binding, witnesses, receipts, chain arithmetic и final motion.
+`shared_angular_proof` — только thin wrapper, нового scalar verifier нет.
+Новая сцена/подготовленный fracture становится доступна native только после
+единого точного ACK. Быстрый reply текущего100ms bucket хранится целиком до
+следующего domain tick; второго advance в этот момент нет.
+
+VERIFIED: physical epoch/session хранится отдельно от текущего transport session.
+Выход, disconnect и смерть дают STOP controls, но тело остаётся в PhysicsSystem,
+его подтверждённый pose импортируется и может измениться от контакта/инерции.
+Scene не перезапускается на выходе одного игрока. Frozen outcome останавливает
+physics dispatch/domain damage; прямой batch step остаётся успешным и неизменным
+на протяжении восьми секунд AFTERBATTLE. Drop убивает/reaps только owned child.
+
+Реальные интеграционные evidence:
+`D:/WoT_9.1_Server/local/evidence/20261016-p05c-night-01/domain-integration01/`.
+Сборка gateway в нашем worktree — `local/build/p05c-gateway-compile08.log` PASS;
+авторитетный full gateway gate после итогового commit выполняет root.
+
+- `p05c-actual-domain03.log`: **1 PASS**, два последовательных case2/6,
+  по120 complete batches / один неизменный PID на case. По7 реальных объектов
+  прошли producer→исходный scalar verifier→World+Trace→пять scene ACK commit.
+  После60 batches последний actor detached, в6-body case ещё один actor убит;
+  оставшиеся двигаются, HP/ammo не восстанавливаются, process ID сохраняется.
+  После этого80 шагов AFTERBATTLE не меняют actors/HP/ammo/Trace/scene/tick.
+- `p05c-scalar-bridge01.log`: **1 PASS**, сохранённый настоящий IPC7 frame
+  пропущен через исходный IPC6 parser; изменённый body binding отклонён.
+- `p05c-mixed-model01.log`: **3 PASS**, реальные per-kind бюджеты378,
+  ближайшая mixed цель slot3 с ИС-7 geometry/material, pushed parked/dead poses.
+- `p05c-ap01.log`: **11 PASS**, прежний AP gate; `p05c-impact01.log`:
+  **53 PASS**, прежний полный Trace gate. Ранее core model39 и native wire six2
+  также PASS; отдельные namespace/native six gates выполняет root.
+
+Сохранён FAIL `p05c-actual-domain01.log`: background job создавал свой более
+новый Instant, чем текущий dispatcher turn. Producer polling получал clock
+regression. Исправлено единым dispatcher start epoch; startup120s включает IO.
+`domain02` подтвердил2/6, `domain03` дополнительно восемь секунд freeze.
+
+UNKNOWN / NOT_RUN: настоящий mixed native таран/дребезг/звуки/UI, шесть живых
+клиентов, итоговый native экран и сетевой первый тест. Доменные owners в тестах
+изолированные authored fixtures, не шесть созданных настоящих аккаунтов.
+Урон тарана не реализован; контакт танк–танк — Jolt solid без HP policy.
+Новые исторические параметры/машины и видимость относятся к следующим карточкам.
+
+Команды для канонического checkout (fresh output):
+
+```powershell
+python -B -X utf8 server/build.py gateway --test --test-filter p05c_ --out local/build/server/gateway-p05c-focused-NN
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p05c-full-NN
+```
+
+В изолированном worktree — `tools/p05c_gateway_checks/README.md`; toolchain,
+resources и зависимости читаются по разрешённым абсолютным путям. Откат runtime:
+revert P05C commits на отдельной зависимой ветке и вернуть version1 manifest;
+main/клиентские файлы/БД этим integration gate не менялись. Статус приёмки —
+**автоматический focused gate PASS, полный gate ожидается; native NOT_RUN**.
+Следующий рекомендуемый шаг — полный gateway gate root и утренняя native matrix.

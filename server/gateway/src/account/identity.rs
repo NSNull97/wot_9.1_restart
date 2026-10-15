@@ -10,7 +10,8 @@ fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::Inval
 // Reject duplicate top-level keys instead of accepting an ambiguous last value.
 /// Unique-key JSON object with at most LIMIT top-level fields.
 struct Bounded<const LIMIT:usize>(BTreeMap<String,Value>);
-/// Requests, replies and the gateway config keep the original 16-field guard.
+/// Requests and replies keep the original16-field guard. P05C adds one
+/// explicitly validated optional field to the gateway configuration alone.
 const REQUEST_FIELDS:usize=16;
 /// Fixture manifests gain fields with each opt-in service (P09E writes 17) and
 /// are already size-bounded by bounded_file.
@@ -153,7 +154,7 @@ pub struct Config {
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
         let bytes=bounded_file(Path::new(path),4096)?;
-        let Bounded::<20>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        let Bounded::<17>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
         let ammo_service=match value.remove("ammunition_service") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
         };
@@ -648,6 +649,20 @@ mod tests {
         assert!(service_reply(&serde_json::to_vec(&rejected).unwrap(),&profile,"p04d_test_226",6,1,"recruited").is_err());
     }
 
+    #[test] fn p05c_configuration_roster_is_an_explicit_bounded_profile13_option() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("p05c-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let mut value=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        assert_eq!(load(&value).unwrap().battle_players,2);value["battle_players"]=6.into();assert!(load(&value).is_err());
+        for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
+            "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle"]{value[field]=true.into();}
+        for n in 2..=6{value["battle_players"]=n.into();assert_eq!(load(&value).unwrap().battle_players,n as usize);}
+        for bad in [serde_json::json!(1),serde_json::json!(7),serde_json::json!(-1),serde_json::json!(2.0),true.into(),"6".into(),Value::Null]{
+            value["battle_players"]=bad;assert!(load(&value).is_err());}
+    }
     #[test] fn crew_configuration_is_explicit_boolean_and_requires_ammunition_service() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs/p04d").join(format!("config-{stamp}"));
