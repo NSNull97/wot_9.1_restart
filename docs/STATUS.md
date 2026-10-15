@@ -48,8 +48,10 @@ Native/UI/audio NOT_RUN, main не изменён. [Факты P08C](research/P0
 P05C в codex/p05c-shared-physics: actual one-scene компонент2/6/mixed/контакт/
 repeatability/sceneACK PASS (отдельный component, не native). Core mixed Actor/Trace/AP
 и native bounds собраны; six02:7PASS/0ignored/buildPASS. Исправлен реальный конфликт
-ID/alias третьей машины с AreaDestructibles. Общая связка gateway↔Jolt и полный
-gate ещё выполняются; native mixed/6 NOT_RUN. [Физика](research/P05C_SHARED_PHYSICS.md),
+ID/alias третьей машины с AreaDestructibles. Actual gateway↔Jolt2/6, scene ACK,
+detach в ACK-окне и frozen outcome PASS. Runtime019ed2f: полный gateway940PASS/
+5ignored/buildPASS, source-before/after602files совпадают. Native mixed/6 NOT_RUN;
+ветка сохранена, main не изменён. [Физика](research/P05C_SHARED_PHYSICS.md),
 [передача клиенту](research/P05C_NATIVE_TRANSPORT.md).
 
 ## Принято владельцем на настоящем клиенте #717

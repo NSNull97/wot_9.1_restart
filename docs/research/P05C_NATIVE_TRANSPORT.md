@@ -60,7 +60,10 @@ duplicate seventh request без частичного эффекта, selective 
 Root physics build отдельно PASS: `physics-p05c-night01`, DLL SHA256
 9201b8f93b815c43189a957560eceb7a18a46e12c4b2eaae41aeeb6ab2395e53.
 Сборка не подменяет actual physics probes из компонентного отчёта.
-Полный integrated gateway gate и actual World↔batch runtime ещё впереди.
+Actual World↔batch runtime2/6 и detach/ACK проверены отдельно; итоговый
+`gateway-p05c-full03` на019ed2f:940PASS/5ignored/buildPASS. Source602files
+до/после совпадают; receipt `local/evidence/20261016-p05c-full03/`.
+Это не подтверждает native создание/управление дополнительных клиентов.
 
 ## Утро и откат
 

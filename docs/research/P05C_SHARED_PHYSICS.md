@@ -261,5 +261,26 @@ python -B -X utf8 server/build.py gateway --test --out local/build/server/gatewa
 resources и зависимости читаются по разрешённым абсолютным путям. Откат runtime:
 revert P05C commits на отдельной зависимой ветке и вернуть version1 manifest;
 main/клиентские файлы/БД этим integration gate не менялись. Статус приёмки —
-**автоматический focused gate PASS, полный gate ожидается; native NOT_RUN**.
-Следующий рекомендуемый шаг — полный gateway gate root и утренняя native matrix.
+**автоматический полный gate PASS; native NOT_RUN**.
+
+Итоговый runtime `019ed2f5bbb40b88e3e6967d2be914f9f6006827`:
+`gateway-p05c-full03` — **940 PASS / 5 прежних ignored / build PASS**.
+`local/evidence/20261016-p05c-full03/source-before.json` и `source-after.json`
+проверяют одинаковые602 runtime files и exact HEAD до/после canonical command.
+Exe SHA256 `187e445c3e905156110cddb1a003f89147f5f6cb4439b304d8b5c637f9ecba62`.
+`RUST_TEST_THREADS=1` закреплён в receipt; это автоматическая среда, не native gate.
+
+Последний actual `domain04` (1PASS,19.43s) дополнительно проверяет disconnect
+в prepared/ACK окне: разрешена потеря прежней authority, после ACK — повторная
+привязка прежнего owner без respawn/refill. Новая authority во время барьера
+отклоняется. Диагностика содержит PID/epoch/held frame/prepared/scene SHA.
+Во время Battle уход одного из6 не завершает бой, пока в каждой команде есть
+живой присутствующий игрок; до начала Battle missing readiness по-прежнему
+завершает несостоявшийся матч. Этот сценарий также входит в full940.
+
+Сохранены отрицательные прогоны: full01=936PASS/4FAIL (старые two-slot/mixed
+assertions и реальная потеря legacy projectile bound); full02=939PASS/1FAIL
+(новая fixture вызывала legacy launch для shot576). Legacy ИС-7 bound60 сохранён,
+mixed launch использует явный roster limit; boundary6 и разные descriptors
+проверены без удаления отрицательных сценариев.
+Следующий рекомендуемый шаг — P07B в отдельной зависимой ветке; native matrix утром.
