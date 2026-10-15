@@ -38,7 +38,15 @@ pub fn explode_material(shot_id: u32, point: [f32; 3], direction: [f32; 3], mate
     explode_material_for(VehicleKind::Ms1,shot_id,point,direction,material)
 }
 pub fn explode_material_for(kind: VehicleKind,shot_id: u32, point: [f32; 3], direction: [f32; 3], material: u8) -> io::Result<Vec<u8>> {
-    if shot_id == 0 || u64::from(shot_id) > kind.battle_shot_limit() as u64
+    explode_material_for_limit(kind,shot_id,point,direction,material,kind.battle_shot_limit())
+}
+
+/// A mixed battle allocates shot IDs across its whole roster. Keep the legacy
+/// wrapper's mounted limit, but publish admitted global IDs against that
+/// battle's explicit aggregate bound, as Projectile::launch_for_limit does.
+pub fn explode_material_for_limit(kind: VehicleKind,shot_id: u32, point: [f32; 3], direction: [f32; 3], material: u8, shot_limit: usize) -> io::Result<Vec<u8>> {
+    if shot_limit == 0 || shot_limit > super::model::MAX_BATTLE_SHOTS
+        || shot_id == 0 || u64::from(shot_id) > shot_limit as u64
         || material > 5
         || point.iter().any(|v| !v.is_finite() || v.abs() > MAX_COORDINATE)
         || direction.iter().any(|v| !v.is_finite()) {
@@ -125,5 +133,20 @@ mod tests {
             assert_eq!(&body[9 + index * 4..13 + index * 4], &value.to_le_bytes());
         }
         assert_eq!(&body[7..9], &[2, 0]);
+    }
+
+    #[test]
+    fn p04m_ground_effect_requires_explicit_bounded_aggregate_shot_budget() {
+        for (kind,shot,limit) in [(VehicleKind::Is7,61,576),(VehicleKind::Ms1,193,576),(VehicleKind::T26,960,960)] {
+            assert!(explode_material_for(kind,shot,[0.;3],[1.,0.,0.],0).is_err());
+            let body=explode_material_for_limit(kind,shot,[0.;3],[1.,0.,0.],0,limit).unwrap();
+            assert_eq!(i32::from_le_bytes(body[3..7].try_into().unwrap()),shot as i32);
+            assert_eq!(body[7],kind.shell().effects);
+            assert!(explode_material_for_limit(kind,limit as u32+1,[0.;3],[1.,0.,0.],0,limit).is_err());
+        }
+        for limit in [0,super::super::model::MAX_BATTLE_SHOTS+1,usize::MAX] {
+            assert!(explode_material_for_limit(VehicleKind::Ms1,1,[0.;3],[1.,0.,0.],0,limit).is_err());
+        }
+        assert!(explode_material_for(VehicleKind::Is7,61,[0.;3],[1.,0.,0.],0).is_err());
     }
 }

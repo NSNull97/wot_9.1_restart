@@ -113,6 +113,10 @@ codec проверен по настоящему ответу; старый со
 - Canonical companion05 **5PASS/buildPASS**; отдельно exact binary filter
   actual SQLite303/309 **2PASS**;
   `local/evidence/20261016-p04m-runtime01/actual-native-vectors05/result.json`.
+- Canonical focused05 **31PASS/0ignored/buildPASS**,98.18s tests; executable
+  `a685534abc624f2c3c4412449c0261e10a847df8be2befecad1c0c157deee291`.
+  `local/build/server/gateway-p04m-focused05/result.json`; включает новые
+  late-global-shot FX regression и окончательные actual SQLite fixtures03.
 - Python: новые registry/source/SQLite **17PASS**,260.677s; дополнительный
   actual chassis/ammo regression **1PASS**,45.153s; старые P08B/results
   **28PASS**,198.583s. Source/log pins и сохранённые сбои:
@@ -121,8 +125,20 @@ codec проверен по настоящему ответу; старый со
   пропущенной CARGO_TARGET_DIR в ручном runner. Оба затем exact rerun PASS с
   нужным окружением; это не canonical/current-source full gate. Логи сохранены
   в runtime01/interim-full01 и interim-env-repair01, production не ослаблялся.
-- Новый полный gateway/source gate, окончательная Python/Web/HTTP матрица и
-  SHA коммита дописываются после заморозки компонентов: пока **NOT_RUN**.
+- Новый Web03:9PASS/0FAIL/0skip,87.84s; legacy Web12PASS/0FAIL/0skip,
+  107.64s. Actual HTTP/SQLite: T26 hire/AP160/restart, T34 type0/radioman303,
+  mixed poolA/legacyB. Evidence `local/evidence/20261016-p04m-web03/` и
+  `local/evidence/20261016-p04m-web-regression01/`.
+- Full01 на1f93b67 намеренно остановлен после двух найденных дефектов:
+  структурный Web validator отвергал разрешённый secondary skill; terrain FX
+  использовал лимит одного вида вместо глобального shot sequence состава.
+  Сохранён `local/evidence/20261016-p04m-full01/interrupted.json`; это не PASS.
+  Исправление FX сохраняет старые wrappers и передаёт явный World::shot_limit.
+  Регрессия действительно допускает180/576/960 domain shots и публикует поздний
+  ground terminal один раз обоим peers; terminal contact в ней authored fixture,
+  это не native rendering/terrain-query gate.
+- Fresh full02, окончательные combined-skill/HTTP gates и SHA дописываются после
+  завершения: пока **NOT_RUN**.
 
 Команды: `python -B -X utf8 tools/p04m_battle_profiles.py --original
 C:\WoT_0.9.1_RU_0717_original --out local/evidence/20261016-p04m-source-import01`;

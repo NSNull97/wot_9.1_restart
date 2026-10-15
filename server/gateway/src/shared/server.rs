@@ -1498,8 +1498,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     if let Some(contact)=next_world.terrain_contacts.iter().find(|c|c.shot==projectile.sequence) {
                         // Original explodeProjectile terminates its own mover.
                         // A subsequent stopTracer would hide/cancel ground FX.
-                        c.queue_private(&mut next.outbox,super::terrain_wire::explode_material_for(projectile.vehicle_kind,projectile.sequence,
-                            contact.hit.point,contact.direction,contact.hit.effect_material_index())?,&targets)?;
+                        c.queue_private(&mut next.outbox,super::terrain_wire::explode_material_for_limit(projectile.vehicle_kind,projectile.sequence,
+                            contact.hit.point,contact.direction,contact.hit.effect_material_index(),next_world.shot_limit())?,&targets)?;
                     } else {
                         c.queue_private(&mut next.outbox,wire::tracer_stop(projectile)?,&targets)?;
                     }
@@ -2094,6 +2094,48 @@ mod tests {
             let after=queued_bodies(s,now+model::STEP);
             assert_eq!(after.iter().filter(|body|body.windows(fx.len()).any(|bytes|bytes==fx)).count(),1);
             assert!(!after.iter().any(|body|body.windows(stop.len()).any(|bytes|bytes==stop)));
+        }
+    }
+    #[test] fn p04m_admitted_six_actor_late_ground_terminal_publishes_once_without_battle_fault() {
+        // Exercise the production poll branch with real domain-admitted global
+        // shot IDs. Only the terminal contact is an authored packet fixture;
+        // this is not a native rendering or terrain-query acceptance claim.
+        for kind in [VehicleKind::Is7,VehicleKind::Ms1,VehicleKind::T26] {
+            let start=Instant::now();
+            let mut world=World::new_for_vehicle(4041,start,MapId::Prohorovka,kind).unwrap();
+            world.set_expected_actors(model::MAX_ACTORS).unwrap();
+            for slot in 0..model::MAX_ACTORS {
+                world.attach(model::Identity{account:format!("late-ground-{slot}"),database:slot as i32+1,name:format!("lab-{slot}")},slot as u32+1).unwrap();
+                world.actors[slot].fire=crate::battle091::fire::State::with_mounted_loadout(kind.ammo_limit(),kind.reload_seconds(),kind.ammo_limit()).unwrap();
+            }
+            world.start(start).unwrap();
+            for slot in 0..model::MAX_ACTORS {world.set_ready(slot,slot as u32+1).unwrap();}
+            for round in 0..kind.ammo_limit() {
+                let at=start+Duration::from_secs_f64(round as f64*(kind.reload_seconds() as f64+0.1));
+                for slot in (0..model::MAX_ACTORS).rev() {
+                    assert!(matches!(world.apply(slot,slot as u32+1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],at).unwrap()[0],crate::battle091::fire::Outcome::AcceptedShot{..}));
+                }
+            }
+            let sequence=world.latest_shot();let index=sequence as usize-1;
+            assert_eq!(sequence as usize,model::MAX_ACTORS*kind.ammo_limit() as usize);
+            assert!(sequence as usize>kind.battle_shot_limit());
+            world.projectiles[index].stopped=true;
+            world.terrain_contacts.push(model::TerrainContact{shot:sequence,shooter:0,tick:1,
+                hit:super::super::terrain::Hit{surface:super::super::terrain::Surface::Ground,triangle_id:0,t:0.5,point:[1.,2.,3.],normal:[0.,1.,0.]},
+                segment_start:[1.,3.,3.],segment_end:[1.,1.,3.],direction:[0.,-1.,0.]});
+            let now=start+Duration::from_secs(1000);let(mut a,mut b,_)=visible_pair(now);
+            let fx=terrain_wire::explode_material_for_limit(kind,sequence,[1.,2.,3.],[0.,-1.,0.],0,world.shot_limit()).unwrap();
+            let stop=wire::tracer_stop(&world.projectiles[index]).unwrap();
+            for s in [&mut a,&mut b] {
+                let c=s.shared.as_mut().unwrap();c.shot_cursor=sequence;c.tracer_started[index]=true;
+                poll(s,&mut world,now).unwrap();
+                let raw=queued_bodies(s,now).concat();
+                assert_eq!(raw.windows(fx.len()).filter(|bytes|*bytes==fx).count(),1);
+                assert!(!raw.windows(stop.len()).any(|bytes|bytes==stop));
+                assert!(s.shared.as_ref().unwrap().tracer_stopped[index]);
+                poll(s,&mut world,now).unwrap();
+                assert_eq!(queued_bodies(s,now).concat(),raw);
+            }
         }
     }
     #[test] fn delayed_terrain_fx_follows_tracer_and_reconnect_skips_old_effects() {
