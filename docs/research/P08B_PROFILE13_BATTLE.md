@@ -1,6 +1,7 @@
 # P08B — профиль13, выбранная машина и общий native-бой
 
-Дата: 2026-10-15. Статус: IMPLEMENTATION_IN_PROGRESS, native приёмка NOT_RUN.
+Дата: 2026-10-15. Статус: IMPLEMENTATION_IN_PROGRESS, native cycle PASS,
+active-reservation gateway restart PENDING.
 Ветка `codex/p08b-profile13-battle`, база main
 `ffce8cb660e9e6af6872aa4a5de444f461bc73fe`.
 План — `docs/plans/P08B.md`; evidence — `local/evidence/20261015-p08b-01/`.
@@ -180,10 +181,20 @@ legacy16448, точную shop revision и a0→b0. Новые regression cases 
 у обоих, активных резервов0. Full current-head и native повтор этой поправки
 full04 завершён:893 PASS/5 ignored, build PASS на `5c08ef5`;
 exe SHA96d10ba2eb3266cb5fbaa9335a83d97d4f07f192cef344007f0812ed15509445.
-Native повтор впереди; успешный READY/SQL не выдаётся за успешный возврат UI.
+Native-fix03: владелец подтвердил «Оба ангара загрузились с16ББ, повторный общий
+бой работает». Трасса/SQLite дополнительно подтверждают два полных общих боя:
+18→16, затем16→14 у каждого; 4 READY, 8 accepted shots, 4 manual_leave,
+4 committed результата и 4 завершённых warm-возврата, world faults0. В обоих
+native traces после возврата действительно загружены connected/gui/cache/model
+MS-1 ангары с14ББ. Предыдущие результаты20→18 сохранились после нового run.
+Начальный admit B один раз получил неоднозначный HTTP timeout; retained retry
+вернул тот же Admitted без двойного reserve. Это наблюдение, не потерянная ошибка.
+Исторический checkpoint-native-fix03.json ошибочно называет launcherfix02;
+фактический launcher — `run_native_fix03.py`, новый итог исправляет ссылку.
 
-- Native/UI обоих настоящих профилей13, выбор машины, отказ/отмена очереди,
-  расход после ручного возврата, повторный бой и перезапуск с резервом NOT_RUN.
+- Native/UI обоих настоящих профилей13, MS-1, расход после ручного возврата и
+  повторный общий бой PASS. Настоящая отмена очереди и whole-gateway restart
+  с active reservation ещё PENDING; IS-7 из профиля13 и native failure UI NOT_RUN.
 - Счётчики native full sync после настоящей ангарной мутации и цикла Avatar
   проверяются live; синтетические кадры/самосогласованный codec этого не доказывают.
 - Native owner gate обязателен; при FAIL/NOT_RUN карточка остаётся в ветке.

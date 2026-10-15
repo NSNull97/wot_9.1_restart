@@ -19,12 +19,15 @@ owner+writer28, новый Web7, Web-регрессия18 и client/control пр
 gateway893 PASS/5 ignored и сборка PASS на runtime `5c08ef5`.
 Свежая двухаккаунтная БД профиля13 сохраняет A. Первый native запуск поймал
 неверный bool-контракт isCrewFull до reserve; исправлен на native seat count,
-client314 PASS и CPython2.7.3 81 PASS/4 host-only skips. Повторный native/UI gate
-ещё NOT_RUN, карточка не принята. Исправлена корреляция latest verified login retry.
+client314 PASS и CPython2.7.3 81 PASS/4 host-only skips. Исправлена корреляция
+latest verified login retry. Native-fix03: владелец подтвердил оба ангара с16ББ
+и повторный общий бой; трасса/БД подтверждают два полных цикла18→16→14 у обоих,
+8 выстрелов, 4 manual_leave/committed результата, 0 world faults. До приёмки
+осталась native-проверка активного резерва после перезапуска gateway.
 Native-fix02: общий бой, 4 выстрела и 2 manual_leave с committed AP18 PASS по
 трассе/БД; owner сообщил black return. Причина — legacy shop cache limit16448,
 native profile13 прислал23107. Лимит привязан к research fixture32832; текущий
-повтор — `local/stands/p08b-profile13-01/native-fix03/`, начальный AP18 у обоих.
+повтор — `local/stands/p08b-profile13-01/native-fix03/`, текущий AP14 у обоих.
 [Факты и ограничения P08B](research/P08B_PROFILE13_BATTLE.md).
 
 ## Принято владельцем на настоящем клиенте #717
