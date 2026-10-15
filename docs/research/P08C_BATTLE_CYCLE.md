@@ -60,8 +60,13 @@ PASS/0skip, настоящий новый/старый HTTP→Python→SQLite PA
 immediate query, ack; 5612bytes/SHA
 793935ad298facc6dd68c49f56f0b4dc2cb0f28749aa14f2451f4b3ba70cc635.
 Входная статистика synthetic bounded, ответы настоящего writer; это не nativeplay.
-Промежуточные FAIL сохранены. Итоговый full/current-source gate будет записан
-отдельно; предыдущие targets не проверяют более поздние изменения интеграции.
+Промежуточные FAIL сохранены. Полный runtime8c96580:
+`python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p08c-full01`
+→919 PASS/5 прежних ignored, build PASS, executable SHA256
+968771fe2e5bec2fa37e0eada64d5605886495bca670db2f3d8081928c68eb7c.
+Новый дополнительный test-only commit e1c1911 отдельно проверяет выбор сессии
+при ошибке доставки; production runtime не менялся. Targeted check этого теста
+сохраняется в `gateway-p08c-target01`; он не подменяет полный прогон.
 
 ## Утро, ограничения, откат
 
