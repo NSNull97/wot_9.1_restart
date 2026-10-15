@@ -6,12 +6,12 @@
 Следующий шаг — [ACTIVE_GATE](ACTIVE_GATE.md), порядок — [IMPLEMENTATION_ORDER](IMPLEMENTATION_ORDER.md),
 практика — [DEV_NOTES](DEV_NOTES.md), факты — [research/INDEX](research/INDEX.md).
 
-STAB-01 в ветке `codex/stab01-battle-isolation`: runtime `9b4d26c`,
-845 gateway tests PASS / 5 ignored, сборка PASS; инъекция ошибки с настоящими
-workers и второй бой PASS. На native-fix04 настоящий deadline-сбой сохранил
-процесс и вернул A в ангар, B получил чёрный экран: warm300 требовал primary
-catalog3 вместо его catalog2. Исправляется привязка к фикстуре аккаунта;
-native-приёмка FAIL, в main ещё не слито. Факты —
+STAB-01 в ветке `codex/stab01-battle-isolation`: runtime `25e07d3`,
+847 gateway tests PASS / 5 ignored, сборка PASS; инъекция ошибки с настоящими
+workers и второй бой PASS. Native-fix04 выявил чёрный экран B на warm300rev2
+вместо primaryrev3; привязка к собственной фикстуре исправлена и проверена
+реальным replay пакета. Свежий native-fix05 запущен, приёмка обоих возвратов
+и повторного боя ожидает владельца. В main ещё не слито. Факты —
 [STAB-01](research/STAB01_BATTLE_STABILITY.md).
 
 ## Принято владельцем на настоящем клиенте #717

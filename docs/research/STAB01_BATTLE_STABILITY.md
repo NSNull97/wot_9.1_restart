@@ -136,6 +136,33 @@
   уже загруженным shop bytes конкретной сессии. **Native-приёмка FAIL** на этом
   срезе; оба ручных выхода и повторный вход пока UNKNOWN, merge не выполнен.
 
+## VERIFIED / OBSERVED — revision-bound возврат, fix05
+
+- Runtime `25e07d3122d84a4e15cb82b17d9614fdafe80843`. Новый
+  `Fixtures::shop_sync_revision()` читает положительный `rev` только из
+  канонического ограниченного префикса собственных уже загруженных shop bytes.
+  Входящий cache revision не определяет состояние сервера; произвольного
+  object decoder и ослабления ordered channel нет.
+- Прямой replay настоящего B payload153 проходит всю последовательность
+  reset821 → enable890/ACK822 → warm891/ACK823 → heartbeat892, rx893, Account,
+  прежние identity/state SHA/channel и join_requested=false. Встречные проверки
+  primary3/secondary2 отвергают чужой revision атомарно, затем принимают свой.
+  Прежние тесты ошибочно использовали primary fixture для обоих native slots;
+  новый сценарий загружает настоящий secondary r1-catalog2.
+- Полный suite и build: **847 passed, 0 failed, 5 ignored**, свежий каталог
+  `local/build/server/gateway-p05b-stab01-fix05/`, executable SHA256
+  `ad197e16002eb69bece75e50dbbc26fc1ebf394408ebaea646917ac3fc61607a`.
+  Команда — `python -B -X utf8 server/build.py gateway --test --out
+  local/build/server/gateway-p05b-stab01-fix05`. Layout/diff check PASS;
+  независимый read-only review новых условий и regression tests без замечаний.
+- Подготовлен и запущен новый стенд `native-fix05`, run `stabfix05`, binding SHA
+  `37271ef9e5e0b7eec6e0ec5fbfccb68843f8e4a54b7a9f56792bf62a700a26b0`;
+  321 runtime-файл, suite/build, helpers и assets закреплены. Все dry-runs PASS;
+  новые ledgers prepare/install и launch receipts сохранены, старые не переиспользованы.
+- UNKNOWN: owner/native-выход обоих и повторный бой на fix05. Предыдущий FAIL
+  сохранён отдельно в `native-fix04/native-failure-summary.json` с реальным пакетом
+  и ограниченными декодированными фактами (без keys/tokens/credentials).
+
 ## OBSERVED / VERIFIED — инцидент локальных фикстур
 
 - Вспомогательный managed worktree содержал junctions `local/server` и

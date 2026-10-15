@@ -51,12 +51,13 @@ Gateway: `python -B -X utf8 server/build.py gateway --test --out <fresh-local-bu
   старый binding `158b05a` не соответствует текущему коду (29 runtime-хешей).
 - VERIFIED / OBSERVED: свежий диагностический native-выход обоих подтвердил
   ошибочную 90-секундную проверку Leaving (`server.rs:985` на `56f5f17`).
-- VERIFIED: runtime `9b4d26c`, полный gateway 845 PASS / 5 ignored, сборка PASS;
+- VERIFIED: runtime `25e07d3`, полный gateway 847 PASS / 5 ignored, сборка PASS;
   Account-return и fault isolation проверены общим suite и real-worker injection.
   `native-fix04` вошёл двумя клиентами с SHARED_READY; настоящий deadline-сбой
   подтвердил жизнь процесса/reset, A вернулся в ангар, B получил чёрный экран.
-- VERIFIED: native B warm300rev2 отвергнут hardcoded primaryrev3. Исправляется
-  привязка к уже загруженному shop конкретного аккаунта с replay реального B bundle.
+- VERIFIED: native B warm300rev2 отвергнут hardcoded primaryrev3. Привязка к уже
+  загруженному shop аккаунта исправлена, replay реального B bundle и cross-fixture
+  отрицательные проверки PASS. Свежий `native-fix05` запущен.
 - UNKNOWN: успешный выход обоих и повторный native-вход после этой правки. До его
   подтверждения native приёмка FAIL, ветка не сливается.
 - Локальные фикстуры восстановлены после инцидента архивирования junction-worktree;
