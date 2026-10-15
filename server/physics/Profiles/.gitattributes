@@ -1,0 +1,2 @@
+# Small derived source definitions participate in profile identity hashes.
+*.json text eol=lf

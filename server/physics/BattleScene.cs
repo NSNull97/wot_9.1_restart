@@ -36,6 +36,7 @@ internal static class BattleScene
             MaxBodyPairs = 8192, MaxContactConstraints = 8192,
             ObjectLayerPairFilter = pairs, BroadPhaseLayerInterface = broad, ObjectVsBroadPhaseLayerFilter = filter
         });
+        int collisionSteps=manifest.Actors.Any(a=>a.Kind is "t26" or "t34" or "t3485")?TrackedBodySettings.StockCollisionSteps:1;
         var bodies = world.BodyInterface;
         var c = manifest.Actors[0].Config;
         using var terrain = CheckedInput.LoadMesh(root, c.GetProperty("terrain"), manifest.Map);
@@ -121,7 +122,7 @@ internal static class BattleScene
             {
                 substep = i + 1;
                 foreach (var tank in tanks) tank.BeforeStep(controls[tank.Source.Slot], substep, capture);
-                var result = world.Update(1f / 60, 1, jobs); jobs.CheckThread();
+                var result = world.Update(1f / 60, collisionSteps, jobs); jobs.CheckThread();
                 if (callbackFault != 0 || result != PhysicsUpdateError.None) throw new InvalidOperationException("IPC7 Jolt contact/update fault");
                 var post = capture ? tanks.Select(t => AngularMotionFrame.Capture(t.Body, t.Source.Binding)).ToArray() : [];
                 foreach (var tank in tanks)

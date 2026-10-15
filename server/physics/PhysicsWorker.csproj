@@ -10,5 +10,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="JoltPhysicsSharp" Version="[2.22.0]" />
+    <EmbeddedResource Include="Profiles/stock-definitions.json" LogicalName="MapDrive.StockDefinitions" />
   </ItemGroup>
 </Project>
