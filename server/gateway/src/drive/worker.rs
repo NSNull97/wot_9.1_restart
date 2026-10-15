@@ -507,6 +507,11 @@ impl Worker {
     pub fn prepared_ids(&self)->&[u32]{&self.prepared_ids}
     pub fn ready(&self)->bool{self.ready}
     pub fn process_id(&self)->Option<u32>{self.child.lock().ok().and_then(|c|c.as_ref().map(Child::id))}
+    #[cfg(test)]
+    pub(crate) fn exit_observer(&self)->impl Fn()->Option<(bool,Option<i32>,bool)>+'static {
+        let exit=self.exit.clone();
+        move||exit.lock().unwrap().as_ref().map(|e|(e.forced,e.code,e.reaped))
+    }
     pub fn scene_version(&self)->u32{self.scene_version}
     pub fn take_removal_ack(&mut self)->Option<RemovalAck>{self.removal_ack.take()}
     pub fn take_catalog_ack(&mut self)->Option<CatalogAck>{self.catalog_ack.take()}

@@ -6,6 +6,12 @@
 Следующий шаг — [ACTIVE_GATE](ACTIVE_GATE.md), порядок — [IMPLEMENTATION_ORDER](IMPLEMENTATION_ORDER.md),
 практика — [DEV_NOTES](DEV_NOTES.md), факты — [research/INDEX](research/INDEX.md).
 
+STAB-01 в ветке `codex/stab01-battle-isolation`: диагностический `56f5f17`,
+831 gateway tests PASS / 5 ignored; новый native-стенд запущен двумя клиентами.
+Выход воспроизведён владельцем: оба отключения — `server.rs:985` (ложный timeout
+в Leaving). Исправление возврата и изоляции в работе, приёмка ещё не закрыта; факты —
+[STAB-01](research/STAB01_BATTLE_STABILITY.md).
+
 ## Принято владельцем на настоящем клиенте #717
 
 - Вход и аккаунт: собственная авторизация, перезаход, ангар на реальном клиенте 0.9.1.

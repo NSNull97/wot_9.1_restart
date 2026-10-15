@@ -143,6 +143,47 @@ pub struct World {
 }
 
 impl World {
+    /// Only the pristine, source-bound template may seed another battle.
+    pub fn fresh_battle(&self, id: u64, now: Instant) -> io::Result<Self> {
+        if id == 0 || id == self.id || self.started.is_some() || !self.actors.is_empty()
+            || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version() != 0 {
+            return Err(bad());
+        }
+        let mut next = self.clone();
+        next.id = id; next.last = now;
+        Ok(next)
+    }
+
+    /// Bounded fault evidence, with resource identity rather than copied meshes.
+    /// The original input/cadence journal remains in the service/capture logs.
+    pub fn failure_snapshot(&self) -> serde_json::Value {
+        let events = self.impact.events();
+        let trace_from = events.len().saturating_sub(64);
+        serde_json::json!({
+            "battle":self.id.to_string(), "map":self.map.asset(), "vehicle":self.vehicle_kind.label(),
+            "tick":self.tick, "started":self.started.is_some(),
+            "actors":self.actors.iter().map(|a|serde_json::json!({
+                "account":a.identity.account,"session":a.session,"ready":a.ready,"health":a.health,
+                "position":a.position,"direction":a.direction,"speed":a.speed,
+                "input":format!("{:?}",a.input),"fire":format!("{:?}",a.fire),"aim":format!("{:?}",a.aim)
+            })).collect::<Vec<_>>(),
+            "shots":self.shots.iter().map(|s|serde_json::json!({"sequence":s.sequence,"slot":s.slot,"tick":s.tick})).collect::<Vec<_>>(),
+            "projectiles":self.projectiles.iter().map(|p|serde_json::json!({
+                "sequence":p.sequence,"slot":p.slot,"origin":p.origin,"velocity":p.velocity,
+                "gravity":p.gravity,"max_distance":p.max_distance,"terminal":p.terminal,"stopped":p.stopped,
+                "launch_ms":self.started.and_then(|start|p.launched.checked_duration_since(start)).map(|d|d.as_millis()),
+                "flight_ms":p.flight_time.as_millis()
+            })).collect::<Vec<_>>(),
+            "geometry_sha256":self.geometry.as_ref().map(|g|g.bundle_sha256()),
+            "scene_version":self.scene_version(),
+            "fragiles":self.fragiles.as_ref().map(|state|state.failure_snapshot()),
+            "destructible_fixture":self.destructible.as_ref().map(|state|format!("{state:?}")),
+            "trace_event_count":events.len(),"trace_omitted_prefix":trace_from,
+            "trace_tail":events[trace_from..].iter().map(|e|format!("{e:?}")).collect::<Vec<_>>(),
+            "scope":"committed world state and bounded trace tail; not a complete deterministic replay"
+        })
+    }
+
     pub fn new(id: u64, now: Instant) -> io::Result<Self> {
         Self::new_for_map(id, now, crate::map_profile091::MapId::Karelia)
     }
