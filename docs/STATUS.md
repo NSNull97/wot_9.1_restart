@@ -45,6 +45,13 @@ writer реализованы. Full runtime8c96580: gateway919 PASS/5 прежн
 build PASS (gateway-p08c-full01), writer10/P08B18, real HTTP/static contract5 PASS.
 Native/UI/audio NOT_RUN, main не изменён. [Факты P08C](research/P08C_BATTLE_CYCLE.md).
 
+P05C в codex/p05c-shared-physics: actual one-scene компонент2/6/mixed/контакт/
+repeatability/sceneACK PASS (отдельный component, не native). Core mixed Actor/Trace/AP
+и native bounds собраны; six02:7PASS/0ignored/buildPASS. Исправлен реальный конфликт
+ID/alias третьей машины с AreaDestructibles. Общая связка gateway↔Jolt и полный
+gate ещё выполняются; native mixed/6 NOT_RUN. [Физика](research/P05C_SHARED_PHYSICS.md),
+[передача клиенту](research/P05C_NATIVE_TRANSPORT.md).
+
 ## Принято владельцем на настоящем клиенте #717
 
 - Вход и аккаунт: собственная авторизация, перезаход, ангар на реальном клиенте 0.9.1.
