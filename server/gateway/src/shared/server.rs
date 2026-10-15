@@ -632,7 +632,11 @@ fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_
     // A prepared scene transaction must finish before membership changes.
     // Keep transport heartbeats outside this gate, including a pending Leave.
     if blocked {return Ok(());}
-    poll_with_native_start(s,world,now,allow_native_start)?;
+    // Native Leave is valid before the initial correction ACK as well.
+    // Its queued command must not enter the startup motion validator.
+    if !s.shared.as_ref().is_some_and(|c|c.phase==Phase::Leaving) {
+        poll_with_native_start(s,world,now,allow_native_start)?;
+    }
     if s.shared.as_ref().is_some_and(|c|c.phase==Phase::Leaving) {
         // Area/correction readiness can defer apply(Leave). Revoke authority
         // regardless of those publication gates before recreating Account.
@@ -1524,6 +1528,20 @@ mod tests {
         assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Returning);
         assert!(world.actors[0].session.is_none());assert!(world.owned(1,2).is_ok());
         assert!(s.shared.as_ref().unwrap().commands.is_empty());
+    }
+    #[test]
+    fn stab01_native_leave_before_correction_does_not_end_the_peers_battle() {
+        let now=Instant::now();let (mut table,mut world)=returning_pair_fixture(now);
+        let s=&mut table.sessions[0];s.shared.as_mut().unwrap().correction=false;
+        assert!(s.shared.as_ref().unwrap().areas_ready(&world));
+        s.receive(&frame(s,&[0x99,1,0,0]),now).unwrap();
+        assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Leaving);
+        poll_battle_session(s,&mut world,now,true,false).unwrap();
+        assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Returning);
+        assert!(world.actors[0].session.is_none());assert!(world.owned(1,2).is_ok());
+        assert!(world.started.is_some());assert!(table.sessions[1].active);
+        assert_eq!(table.sessions[1].shared.as_ref().unwrap().phase,Phase::Driving);
+        assert_eq!(table.retirement.retained_count(),0);
     }
     #[test]
     fn stab01_failure_before_avatar_cancels_only_an_announced_native_queue() {
