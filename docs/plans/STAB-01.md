@@ -49,9 +49,17 @@ Gateway: `python -B -X utf8 server/build.py gateway --test --out <fresh-local-bu
 
 - VERIFIED: предпроверка в `local/evidence/20261015-stab01-preflight-01/`;
   старый binding `158b05a` не соответствует текущему коду (29 runtime-хешей).
-- OBSERVED (исторический owner log): `SHARED_FAILED ... shared laboratory contract`
-  при выходе; точная ветка ошибки пока UNKNOWN.
-- INFERRED: проверка 90-секундной готовности может ошибочно сработать в Leaving;
-  подтвердить диагностической native-трассой до исправления.
-- UNKNOWN: необходимый native Account-return контракт в shared laboratory;
-  использовать исследованный map-drive/session путь, не выдумывать API клиента.
+- VERIFIED / OBSERVED: свежий диагностический native-выход обоих подтвердил
+  ошибочную 90-секундную проверку Leaving (`server.rs:985` на `56f5f17`).
+- VERIFIED: runtime `9b4d26c`, полный gateway 845 PASS / 5 ignored, сборка PASS;
+  Account-return и fault isolation проверены общим suite и real-worker injection.
+  `native-fix04` вошёл двумя клиентами с SHARED_READY; настоящий deadline-сбой
+  подтвердил жизнь процесса/reset, A вернулся в ангар, B получил чёрный экран.
+- VERIFIED: native B warm300rev2 отвергнут hardcoded primaryrev3. Исправляется
+  привязка к уже загруженному shop конкретного аккаунта с replay реального B bundle.
+- UNKNOWN: успешный выход обоих и повторный native-вход после этой правки. До его
+  подтверждения native приёмка FAIL, ветка не сливается.
+- Локальные фикстуры восстановлены после инцидента архивирования junction-worktree;
+  64 independent original SHA + 6 derived legacy JSON с original SHA UNKNOWN,
+  все 91 159 исходных файлов/размеров на месте. Детали и evidence —
+  `docs/research/STAB01_BATTLE_STABILITY.md`, `fixture-recovery/audit-final.json`.

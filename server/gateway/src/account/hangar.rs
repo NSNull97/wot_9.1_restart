@@ -439,6 +439,18 @@ impl Fixtures {
         Sha256::digest(&self.state).into()
     }
 
+    /// Own canonical encoder publishes the top-level shop revision first.
+    /// Read only that bounded literal from the immutable bytes already served;
+    /// never treat a client cache version as authoritative shop metadata.
+    pub(crate) fn shop_sync_revision(&self) -> io::Result<i64> {
+        const PREFIX:&[u8]=b"\x80\x02}(U\x03revK";
+        let tail=self.shop.strip_prefix(PREFIX).ok_or_else(||invalid("unsupported shop revision prefix"))?;
+        match tail.first().copied() {
+            Some(revision) if revision>0 => Ok(i64::from(revision)),
+            _=>Err(invalid("invalid shop sync revision")),
+        }
+    }
+
     /// Immutable source bytes for a separately versioned outgoing policy. The
     /// original fixture hash/VehicleSeed binding must never become its output.
     pub(crate) fn state_bytes(&self) -> &[u8] { &self.state }

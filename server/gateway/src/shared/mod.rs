@@ -263,8 +263,10 @@ impl Session {
                             self.outbox.push_back(crate::hangar091::response_refresh(&request)?);
                         },
                         300 => {
-                            if rev != 3 || !(0..=16448).contains(&a) || (a == 0 && b != 0) { return Err(bad()); }
-                            let bodies = crate::hangar091::response(&request, self.hangar.as_ref().ok_or_else(|| bad())?)?;
+                            let fixtures = self.hangar.as_ref().ok_or_else(|| bad())?;
+                            if rev != fixtures.shop_sync_revision()? || !(0..=16448).contains(&a)
+                                || (a == 0 && b != 0) { return Err(bad()); }
+                            let bodies = crate::hangar091::response(&request, fixtures)?;
                             if self.outbox.len() + bodies.len() > 127 { return Err(bad()); }
                             self.outbox.extend(bodies);
                         },
@@ -626,10 +628,30 @@ mod shared_return_tests {
             drive::return_account(&s.identity.as_ref().unwrap().name).unwrap());
         s
     }
+    fn live_secondary(now: Instant) -> Session {
+        let mut s = live(now, 1);
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/server/fixtures")
+            .join("271022a3-41e0-406e-b6fa-59930c320442").join("r1-catalog2").canonicalize().unwrap();
+        let compatibility: serde_json::Value = serde_json::from_slice(&std::fs::read(directory.join("compatibility.json")).unwrap()).unwrap();
+        s.identity = Some(Arc::new(identity091::Profile {
+            account_id: "271022a3-41e0-406e-b6fa-59930c320442".into(),
+            database_id: i32::try_from(compatibility["native_database_id"].as_i64().unwrap()).unwrap(),
+            name: compatibility["client_name"].as_str().unwrap().into(), fixture_dir: directory.clone() }));
+        s.hangar = Some(Arc::new(hangar091::Fixtures::load_interactive(&directory).unwrap()));
+        s
+    }
     // Exact accepted single-client Ride07 native sync/chat bundle. The shared
     // lifecycle must consume the same real Account contract on either slot.
     fn warm() -> Vec<u8> {
         let text = "8e1400e20064000100000000000000d66e1203000000008e1400e3002c01030000000000000006020000250f8ecd8e1400e400580201000000000000004d72c26a0000000093190001000000000000000a00000000ffffffffffffffff000000009319000200000000000000090000000000000000000000000000000093190003000000000000001e00000000000000000000000000000000";
+        text.as_bytes().chunks_exact(2).map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()).collect()
+    }
+    // Native fix04 B: capture-stabfix04/packet-005031-base_client_to_server.bin,
+    // SHA256 877c4027e6de5b03ea93fb19e20a27c1b1330eeb41a494718fb0e7baa1801e6a.
+    // Exact token-stripped153B body at client sequence891: Account100 rev1,
+    // Shop300 rev2, Dossier600 rev0, chatIDs1/2/3. No key/token is retained.
+    fn fix04_secondary_warm() -> Vec<u8> {
+        let text = "8e1400e200640001000000000000000c4cbf6a000000008e1400e3002c010200000000000000ae0100002c48f55c8e1400e40058020000000000000000000000000000000093190001000000000000000a00000000ffffffffffffffff000000009319000200000000000000090000000000000000000000000000000093190003000000000000001e00000000000000000000000000000000";
         text.as_bytes().chunks_exact(2).map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()).collect()
     }
     fn same(a: &Session, b: &Session) {
@@ -770,5 +792,57 @@ mod shared_return_tests {
         let before = s.clone(); let mut events = Vec::new();
         assert!(s.shared_return("unit_bad_queue", now, &mut events).is_err()); same(&s, &before);
         assert!(events.is_empty()); assert_eq!(s.shared.as_ref().unwrap().phase, Phase::Driving);
+    }
+
+    #[test]
+    fn shared_return_fix04_actual_secondary_shop2_sync_accepts_next_native_heartbeat() {
+        let now = Instant::now(); let mut s = live_secondary(now);
+        assert_eq!(s.hangar.as_ref().unwrap().shop_sync_revision().unwrap(), 2);
+        // Reproduce the measured reliable order: reset821, enable890/ACK822,
+        // warm891/ACK823, then the token-only heartbeat892. This is a unit
+        // replay of actual payload bytes, not a native acceptance claim.
+        for expected in 0..821 {
+            s.tx.enqueue().unwrap(); assert_eq!(s.tx.due(now, s.rx).unwrap().unwrap().0, expected);
+            s.tx.acknowledge(&Frame { flags: 0x408, sequence: None, cumulative: Some(expected+1),
+                selective: vec![], body: vec![], piggybacks: vec![] }).unwrap();
+        }
+        s.rx = 890;
+        let fixture_hash = s.hangar.as_ref().unwrap().state_sha256();
+        let identity = s.identity.as_ref().unwrap().clone();
+        let channel = (s.id, s.key, s.token, s.handoff, s.base_peer);
+        s.shared_return("fix04_natural_battle_failure_replay", now, &mut Vec::new()).unwrap();
+        assert_eq!(s.drive_return_account.as_ref().unwrap().creation, Some((821, false)));
+        assert_eq!(s.tx.due(now, s.rx).unwrap().unwrap().0, 821);
+        s.tx.enqueue().unwrap(); assert_eq!(s.tx.due(now, s.rx).unwrap().unwrap().0, 822);
+        s.receive(&frame(&s, &[9], 822), now).unwrap(); assert_eq!(s.rx, 891);
+        assert!(s.drive_return_account.as_ref().unwrap().enabled);
+        let native = fix04_secondary_warm(); assert_eq!(native.len(), 153);
+        let sync = frame(&s, &native, 823); s.receive(&sync, now).unwrap();
+        assert_eq!(s.rx, 892); assert_eq!(s.shared.as_ref().unwrap().phase, Phase::Account);
+        assert_eq!(s.shared.as_ref().unwrap().return_mask, 7); assert!(!s.shared.as_ref().unwrap().join_requested);
+        assert_eq!(s.request_ids, vec![226, 227, 228]); assert_eq!(s.chat_request_ids, vec![1, 2, 3]);
+        assert_eq!(s.account_cache_hash, Some(1790921740)); assert_eq!(s.sync_mask, 7);
+        assert_eq!(s.hangar.as_ref().unwrap().state_sha256(), fixture_hash);
+        assert_eq!((s.id, s.key, s.token, s.handoff, s.base_peer), channel);
+        assert_eq!(s.identity.as_ref().unwrap().account_id, identity.account_id);
+        assert!(s.drive.is_none()); assert!(!s.arena_base);
+        s.receive(&frame(&s, &[], 823), now).unwrap(); assert_eq!(s.rx, 893);
+        assert!(s.shared.as_ref().unwrap().commands.is_empty());
+    }
+
+    #[test]
+    fn shared_return_shop_revision_is_bound_to_each_loaded_fixture_atomically() {
+        let now = Instant::now();
+        for (mut s, expected, wrong) in [(live(now, 0), 3i64, 2i64), (live_secondary(now), 2, 3)] {
+            assert_eq!(s.hangar.as_ref().unwrap().shop_sync_revision().unwrap(), expected);
+            s.shared_return("unit_cross_fixture_revision", now, &mut Vec::new()).unwrap();
+            s.tx.due(now, s.rx).unwrap(); s.receive(&frame(&s, &[9], 1), now).unwrap();
+            let before = s.clone(); let mut mismatched = fix04_secondary_warm();
+            mismatched[30..38].copy_from_slice(&wrong.to_le_bytes());
+            assert!(s.receive(&frame(&s, &mismatched, 1), now).is_err()); same(&s, &before);
+            let mut own_revision = fix04_secondary_warm(); own_revision[30..38].copy_from_slice(&expected.to_le_bytes());
+            s.receive(&frame(&s, &own_revision, 1), now).unwrap();
+            assert_eq!(s.shared.as_ref().unwrap().phase, Phase::Account); assert_eq!(s.shared.as_ref().unwrap().return_mask, 7);
+        }
     }
 }
