@@ -13,6 +13,10 @@ const MAX_DEPTH: usize = 16;
 const CHUNK_SIZE: usize = 400;
 const EMPTY_DICT: &[u8] = b"\x80\x02}.";
 
+fn shop_cache_maximum(research:bool)->i32 {
+    ((if research {crate::research_service091::MAX_SHOP_BYTES}else {MAX_FIXTURE})+64) as i32
+}
+
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
@@ -198,7 +202,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                 // Existing laboratory requests and revision1 refresh stay strict.
                 let cache_hint = interactive && version==0 && match i16::from_le_bytes([packet[5],packet[6]]) {
                     100 => last_change_time!=0 && third==0,
-                    300 => (1..=((if research_service {crate::research_service091::MAX_SHOP_BYTES}else {MAX_FIXTURE})+64) as i32).contains(&last_change_time),
+                    300 => (1..=shop_cache_maximum(research_service)).contains(&last_change_time),
                     _ => false,
                 };
                 // UI10: __onSyncComplete advances revision, then the same
@@ -449,6 +453,28 @@ impl Fixtures {
             Some(revision) if revision>0 => Ok(i64::from(revision)),
             _=>Err(invalid("invalid shop sync revision")),
         }
+    }
+
+    /// Persistent shop size/CRC are bounded opaque hints. They never choose
+    /// content or authorize a revision; return always streams this fixture.
+    pub(crate) fn validate_shop_cursor(&self,version:i64,compressed_size:i32,crc:i32)->io::Result<()> {
+        if version!=self.shop_sync_revision()? || !(0..=shop_cache_maximum(self.research)).contains(&compressed_size)
+            || (compressed_size==0 && crc!=0) {
+            return Err(invalid("shop cache cursor differs from authenticated fixture budget/revision"));
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_research_shop_for_test(&self,bytes:usize,revision:u8)->io::Result<Self> {
+        // Authored inert bytes for the return parser/stream regression only;
+        // this bypasses no production loader or profile13 ownership check.
+        let mut shop=b"\x80\x02}(U\x03revK".to_vec();shop.push(revision);shop.extend(b"U\x01xT");
+        let padding=bytes.checked_sub(shop.len()+6).ok_or_else(||invalid("test shop size"))?;
+        shop.extend((padding as u32).to_le_bytes());shop.resize(shop.len()+padding,b'x');shop.extend(b"u.");
+        validate_research_shop(&shop)?;
+        let mut fixtures=self.clone();fixtures.shop=shop;fixtures.research=true;
+        fixtures.shop_sync_revision()?;Ok(fixtures)
     }
 
     /// Immutable source bytes for a separately versioned outgoing policy. The
@@ -1258,6 +1284,25 @@ mod tests {
         assert!(bytes>=14);let mut raw=b"\x80\x02}(U\x01xT".to_vec();
         raw.extend(((bytes-14) as u32).to_le_bytes());raw.resize(bytes-2,b'x');raw.extend(b"u.");raw
     }
+    #[test]
+    fn profile13_shop_cursor_uses_fixture_budget_exact_revision_and_opaque_crc() {
+        let legacy=Fixtures {state:EMPTY_DICT.to_vec(),shop:b"\x80\x02}(U\x03revK\x03u.".to_vec(),
+            dossier:b"\x80\x02(K\x00]t.".to_vec(),dossier_cursor:None,research:false};
+        let research=legacy.with_research_shop_for_test(24000,5).unwrap();
+        assert_eq!(research.sizes()[1],24000);assert_eq!(research.shop_sync_revision().unwrap(),5);
+        assert_eq!(shop_cache_maximum(false),16448);assert_eq!(shop_cache_maximum(true),32832);
+        for (revision,size,crc) in [(5,23107,248225827),(5,32832,i32::MIN),(5,1,0),(5,0,0)] {
+            research.validate_shop_cursor(revision,size,crc).unwrap();
+        }
+        for (revision,size,crc) in [(4,23107,248225827),(6,23107,248225827),(5,-1,0),
+            (5,32833,0),(5,i32::MAX,0),(5,0,1),(5,0,-1)] {
+            assert!(research.validate_shop_cursor(revision,size,crc).is_err());
+        }
+        legacy.validate_shop_cursor(3,16448,248225827).unwrap();
+        assert!(legacy.validate_shop_cursor(3,16449,248225827).is_err());
+        assert!(legacy.validate_shop_cursor(3,23107,248225827).is_err());
+    }
+
     #[test]
     fn research_fixture_budgets_are_explicit_bounded_and_streamable() {
         let maximum=crate::research_service091::MAX_STATE_BYTES;

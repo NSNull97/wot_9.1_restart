@@ -300,8 +300,7 @@ impl Session {
                         },
                         300 => {
                             let fixtures = self.hangar.as_ref().ok_or_else(|| bad())?;
-                            if rev != fixtures.shop_sync_revision()? || !(0..=16448).contains(&a)
-                                || (a == 0 && b != 0) { return Err(bad()); }
+                            fixtures.validate_shop_cursor(rev,a,b)?;
                             let bodies = crate::hangar091::response(&request, fixtures)?;
                             if self.outbox.len() + bodies.len() > 127 { return Err(bad()); }
                             self.outbox.extend(bodies);
@@ -880,6 +879,52 @@ mod shared_return_tests {
         assert!(s.drive.is_none()); assert!(!s.arena_base);
         s.receive(&frame(&s, &[], 823), now).unwrap(); assert_eq!(s.rx, 893);
         assert!(s.shared.as_ref().unwrap().commands.is_empty());
+    }
+
+    #[test]
+    fn profile13_shared_return_accepts_actual_large_shop_cache_and_rolls_back_bad_cursor() {
+        let now=Instant::now();let mut ready=pending(now,0);
+        ready.hangar=Some(Arc::new(ready.hangar.as_ref().unwrap().with_research_shop_for_test(24000,5).unwrap()));
+        let source_hash=ready.hangar.as_ref().unwrap().state_sha256();
+        // OBSERVED native-fix02 packet2687/seq264 and2725/seq299 both
+        // request Shop300(5,23107,248225827), beyond legacy16448. Keep
+        // only these public request fields; no native key/token is retained.
+        let payload=|revision:i64,size:i32,crc:i32| {
+            let mut body=vec![9];let mut sync=warm();
+            sync[30..38].copy_from_slice(&revision.to_le_bytes());
+            sync[38..42].copy_from_slice(&size.to_le_bytes());
+            sync[42..46].copy_from_slice(&crc.to_le_bytes());body.extend(sync);body
+        };
+        for (revision,size,crc) in [(4,23107,248225827),(6,23107,248225827),
+            (5,-1,0),(5,32833,248225827),(5,0,1),(5,0,-1)] {
+            let mut s=ready.clone();assert!(s.receive(&frame(&s,&payload(revision,size,crc),1),now).is_err());
+            same(&s,&ready);assert_eq!(s.hangar.as_ref().unwrap().state_sha256(),source_hash);
+        }
+        for (size,crc) in [(23107,248225827),(32832,i32::MIN),(0,0),(1,0)] {
+            let mut s=ready.clone();let envelope=frame(&s,&payload(5,size,crc),1);
+            s.receive(&envelope,now).unwrap();
+            assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Account);
+            assert_eq!(s.shared.as_ref().unwrap().return_mask,7);
+            assert!(!s.shared.as_ref().unwrap().join_requested);
+            assert_eq!(s.request_ids,vec![226,227,228]);assert_eq!(s.chat_request_ids,vec![1,2,3]);
+            assert_eq!(s.hangar.as_ref().unwrap().state_sha256(),source_hash);
+            assert_eq!(s.hangar.as_ref().unwrap().sizes()[1],24000);
+            let mut tx=s.tx.clone();let mut bodies=Vec::new();
+            while let Some((_,_,raw))=tx.due(now,s.rx).unwrap() {
+                bodies.push(transport091::parse_interactive(&raw).unwrap().body);
+            }
+            bodies.extend(s.outbox.iter().cloned());
+            let first=bodies.iter().position(|body|body.len()>5 && body[..2]==[0x13,0x4d]
+                && body[3..5]==227i16.to_le_bytes()).unwrap();
+            let chunks=(24000usize+11).div_ceil(400);
+            let shop=crate::map_drive_service091::tests::assembled(&bodies[first..first+chunks],227);
+            assert_eq!(shop.len(),24000);assert!(shop.starts_with(b"\x80\x02}(U\x03revK\x05U\x01xT"));
+            assert_eq!(&shop[shop.len()-2..],b"u.");
+            let once=s.clone();s.receive(&envelope,now).unwrap();same(&s,&once);
+        }
+        // The legacy fixture keeps its smaller admission bound.
+        let mut legacy=pending(now,0);let before=legacy.clone();
+        assert!(legacy.receive(&frame(&legacy,&payload(3,23107,248225827),1),now).is_err());same(&legacy,&before);
     }
 
     #[test]
