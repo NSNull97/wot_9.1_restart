@@ -123,7 +123,13 @@ fn resolve(m:&materials::MaterialFacts,distance:f64)->ap::Resolution {
         [0.,0.5,0.5],[1.,0.5,0.5],impact_wire::ShotOutcome::Pierced).unwrap();
     assert_eq!(&effect[23..],&[14,0x13]);
     let ground=terrain_wire::explode_material_for(kind,60,[0.;3],[0.,0.,1.],0).unwrap();
-    assert_eq!(ground[7],14);assert!(terrain_wire::explode(60,[0.;3],[0.,0.,1.]).is_err());
+    assert_eq!(ground[7],14);
+    // A real full MS-1 loadout now admits shot60 as well; the profile's
+    // native effects and distinct 192/60 history bounds still stay separate.
+    let ms1_ground=terrain_wire::explode(60,[0.;3],[0.,0.,1.]).unwrap();
+    assert_ne!(ms1_ground[7],ground[7]);
+    assert!(terrain_wire::explode_material_for(kind,61,[0.;3],[0.,0.,1.],0).is_err());
+    assert!(terrain_wire::explode(VehicleKind::Ms1.battle_shot_limit() as u32+1,[0.;3],[0.,0.,1.]).is_err());
     let mut state=aim::State::new();state.pitch=kind.aim().min_pitch;
     assert_eq!(wire::packed_angles_for(kind,&state).unwrap(),0x8000);
     state.pitch=kind.aim().max_pitch;assert_eq!(wire::packed_angles_for(kind,&state).unwrap(),0x803f);
