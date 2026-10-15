@@ -145,6 +145,23 @@ install01 откатились своими ledgers. Повтор — свежи
 compile3 PASS: `client-fix08-checks01/result.json`. Gateway code SHA не менялся;
 full02 890/5 относится к тому же серверному исходнику, новый native gate впереди.
 
+Повтор native-fix01 с VERSION6: A полностью загрузил настоящий ангар MS-1
+(gui/cache/model ready, connected, no waiting); B получил LOGIN_REJECTED_NO_LOGINAPP_RESPONSE.
+Это не ошибка B ownership: gateway подтвердил UUID/nativeID2 и создал pending
+session, но не увидел BaseApp. Capture показал начальный request47999 в
+t120.9227894, retries до48007 в t128.922203, поздний success в t129.0738594
+ошибочно адресован начальному47999. A авторизовался за7.671с, B за8.151с —
+его первый request уже истёк. Safe analysis/pins:
+`local/stands/p08b-profile13-01/native-fix01/auth-request-id-analysis.json`.
+В `87e2e8b` AuthJob сохраняет ID последнего строго совпадающего pending retry;
+credentials/digest/key/nonce/peer/worker result не изменяются. Обе native ветки
+используют общий метод. Negative и actual RSA/redirect wire tests проверяют,
+что чужой request ID не подменяет ожидающий auth. Native повтор — `native-fix02`;
+оба старых клиента/сервиса остановлены по receipts, оба install откатились,
+резервов в этих попытках0. Полный current-head gate поправки:
+891 PASS/5 ignored, build PASS, `local/build/server/gateway-p08b-full03/result.json`;
+exe SHA613d84f46dc752369648eef5da713a7ea0836f8f8b4ca3b6d94bc57251d59a75.
+
 - Native/UI обоих настоящих профилей13, выбор машины, отказ/отмена очереди,
   расход после ручного возврата, повторный бой и перезапуск с резервом NOT_RUN.
 - Счётчики native full sync после настоящей ангарной мутации и цикла Avatar
