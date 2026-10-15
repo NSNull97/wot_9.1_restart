@@ -391,6 +391,21 @@ mod tests {
         client.profile13=Some(super::super::profile13_session::State::new("12345678-1234-4234-8234-123456789abc".into(),16).unwrap());
         s.shared=Some(client);s.battle_results.inflight=Some(task.request.clone());s
     }
+    #[test] fn p08c_manager_failure_session_uses_live_pending_candidate_and_retained_task_priority() {
+        let task=task(Operation::Query);let mut manager=Manager::default();
+        assert_eq!(manager.failure_session(&[]),None);
+        let mut idle=session(&task);idle.battle_results=State::default();
+        assert_eq!(manager.failure_session(std::slice::from_ref(&idle)),None);
+        let mut retired=session(&task);retired.active=false;
+        let mut queued=session(&task);queued.id=8;queued.battle_results=State::default();
+        queued.battle_results.stage(&request(227,1500,results().arena_id as i64)).unwrap();
+        let sessions=vec![retired,idle,queued];
+        assert_eq!(manager.failure_session(&sessions),Some(8));
+        assert_eq!(manager.failure_session(std::slice::from_ref(&session(&task))),Some(7));
+        manager.task=Some(task);
+        assert_eq!(manager.failure_session(&sessions),Some(7));
+        assert_eq!(manager.failure_session(&[]),Some(7));
+    }
     #[test] fn p08c_manager_retains_complete_delivery_and_never_sends_into_a_new_account_epoch() {
         let task=task(Operation::Query);let complete=Reply{result:Some(Arc::new(results())),acked:false,replayed:false,rejected:false};
         let mut sessions=vec![session(&task)];sessions[0].battle_results.begin_account_epoch().unwrap();
