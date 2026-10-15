@@ -315,9 +315,8 @@ mod tests {
         w.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();
         for slot in 0..6 {
             let kind=if slot%2==0{VehicleKind::Ms1}else{VehicleKind::Is7};
-            let frozen=model::tests::profile13_loadout(kind,kind.ammo_limit());
-            w.attach_owned(model::Identity{account:format!("six-{slot}"),database:slot as i32+1,name:"Я".repeat(24)},
-                slot as u32+7,&frozen).unwrap();
+            let(mut owner,frozen)=model::tests::profile13_loadout(kind,slot,kind.ammo_limit());owner.name="Я".repeat(24);
+            w.attach_owned(owner,slot as u32+7,&frozen).unwrap();
         }
         w.start(now).unwrap();w
     }

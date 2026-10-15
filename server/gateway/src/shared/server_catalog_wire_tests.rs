@@ -141,8 +141,8 @@ fn six_actor_native_requests_commit_atomically_and_ready_remains_bound_to_slot_f
     let now=Instant::now();let mut world=World::new_for_roster(123,now,MapId::Karelia,6).unwrap();
     for slot in 0..6 {
         let kind=if slot%2==0{VehicleKind::Ms1}else{VehicleKind::Is7};
-        world.attach_owned(model::Identity{account:format!("native-six-{slot}"),database:slot as i32+1,name:format!("six_{slot}")},
-            slot as u32+7,&model::tests::profile13_loadout(kind,kind.ammo_limit())).unwrap();
+        let(owner,frozen)=model::tests::profile13_loadout(kind,slot,kind.ammo_limit());
+        world.attach_owned(owner,slot as u32+7,&frozen).unwrap();
     }
     world.start(now).unwrap();let(mut s,_)=driving(now);s.id=12;
     {let c=s.shared.as_mut().unwrap();c.slot=5;c.phase=Phase::Enable;c.view=Some(world.clone());
