@@ -12,6 +12,10 @@ mod batch_scene;
 use batch_scene::BatchRuntime;
 
 #[cfg(test)]
+#[path="server_visibility_tests.rs"]
+mod visibility_tests;
+
+#[cfg(test)]
 #[path="server_catalog_tests.rs"]
 mod catalog_tests;
 #[cfg(test)]
@@ -722,6 +726,8 @@ fn deliver_lifecycle_result(s:&mut Session,now:Instant)->io::Result<bool> {
 }
 
 fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_start:bool,blocked:bool)->io::Result<()> {
+    let mut fresh=s.clone();fresh.shared_refresh_world(world)?;
+    fresh.flush_shared_interest(&mut Vec::new())?;fresh.flush_shared_private()?;*s=fresh;
     if deliver_lifecycle_result(s,now)? {return Ok(());}
     if s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.pending_return.is_some()) {return Ok(());}
     let natural_due=if let Some(state)=world.lifecycle.as_ref().filter(|state|state.outcome().is_some()) {
@@ -1055,6 +1061,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                         s.account_probe = true; s.account_ready = true; s.tx = Window::interactive();
                         s.login_attempt = Some(job.attempt); s.identity = Some(accepted.identity);
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
+                        if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
                         if profile13_mode {
                             let binding=accepted.ammo_service.ok_or_else(||model::bad())?;
                             s.ammo_service=Some(ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
@@ -1125,7 +1132,11 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     let frame = match base::decrypt(packet, &s.key).and_then(|b| transport091::parse_interactive(&b)) {
                         Ok(frame) => frame, Err(_) => { println!("SHARED_REJECT session={} reason=channel_framing", s.id); continue; }
                     };
-                    match s.receive(&frame, now) {
+                    let received=(||->io::Result<bool>{
+                        let mut staged=s.clone();staged.shared_refresh_world(&world)?;
+                        let close=staged.receive(&frame,now)?;*s=staged;Ok(close)
+                    })();
+                    match received {
                         Ok(close) => {
                             if frame.flags & 0x10 != 0 { send(socket, peer, &transport091::ack(s.rx), &s.key, &mut capture)?; s.last_keepalive = now; }
                             if close { closing.push((s.id, "client_disconnect")); }
@@ -1389,6 +1400,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         }
     }
     if next_world.actors[slot].fire.finish_reload_if_due(now) { next.outbox.push_back(wire::reload_for(next_world.actors[slot].vehicle_kind(),slot,0.)?); }
+    next.shared_refresh_world(&next_world)?;
+    next.flush_shared_interest(&mut Vec::new())?;
     let c = next.shared.as_mut().ok_or_else(|| model::bad())?;
     let mut shot_publications = Vec::new();
     let mut tracer_starts = Vec::new();
@@ -1432,8 +1445,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     // Keep the existing native muzzle/sound cue and then send
                     // the original fixed showTracer callback in one reliable
                     // order. The start flag is committed with this clone.
-                    next.outbox.push_back(wire::shooting(shot.slot)?);
-                    next.outbox.push_back(wire::tracer_start(projectile)?);
+                    c.queue_private(&mut next.outbox,wire::shooting(shot.slot)?,&[shot.slot])?;
+                    c.queue_private(&mut next.outbox,wire::tracer_start(projectile)?,&[shot.slot])?;
                     c.tracer_started[index] = true;
                     tracer_starts.push((shot.sequence, shot.slot));
                 }
@@ -1451,13 +1464,21 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 let index = projectile.sequence.checked_sub(1).ok_or_else(|| model::bad())? as usize;
                 if index >= c.tracer_started.len() { return Err(model::bad()); }
                 if c.tracer_started[index] && !c.tracer_stopped[index] {
+                    let target=next_world.impacts.iter().find(|e|e.shot==projectile.sequence).map(|e|e.target);
+                    // A vehicle collision can reveal a hidden target even while
+                    // its shooter remains visible. Native range flight is bounded;
+                    // suppress the private terminal rather than invent a hit point.
+                    if c.spotting_enabled && (!c.visible()[projectile.slot] || target.is_some_and(|slot|!c.visible()[slot])) {
+                        c.tracer_stopped[index]=true;continue;
+                    }
+                    let mut targets=vec![projectile.slot];if let Some(slot)=target {targets.push(slot);}
                     if let Some(contact)=next_world.terrain_contacts.iter().find(|c|c.shot==projectile.sequence) {
                         // Original explodeProjectile terminates its own mover.
                         // A subsequent stopTracer would hide/cancel ground FX.
-                        next.outbox.push_back(super::terrain_wire::explode_material_for(projectile.vehicle_kind,projectile.sequence,
-                            contact.hit.point,contact.direction,contact.hit.effect_material_index())?);
+                        c.queue_private(&mut next.outbox,super::terrain_wire::explode_material_for(projectile.vehicle_kind,projectile.sequence,
+                            contact.hit.point,contact.direction,contact.hit.effect_material_index())?,&targets)?;
                     } else {
-                        next.outbox.push_back(wire::tracer_stop(projectile)?);
+                        c.queue_private(&mut next.outbox,wire::tracer_stop(projectile)?,&targets)?;
                     }
                     c.tracer_stopped[index] = true;
                     tracer_stops.push((projectile.sequence, projectile.slot));
@@ -1499,15 +1520,23 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                             c.owner_health_sent = Some(event.health_after);
                         }
                         if event.health_after == 0 {
-                            body.extend(wire::roster_updates(&next_world,event.target)?);
-                            if next_world.lifecycle.is_some() {
+                            if !c.spotting_enabled {body.extend(wire::roster_updates(&next_world,event.target)?);}
+                            if next_world.lifecycle.is_some() && !c.spotting_enabled {
                                 body.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
                             }
                         }
                     }
                 }
                 let queued = !body.is_empty();
-                if queued { next.outbox.push_back(body); }
+                if queued { c.queue_private(&mut next.outbox,body,&[event.attacker,event.target])?; }
+                // Arena kill/alive metadata is public. A hidden attacker must
+                // still produce the original kill event without private HP,
+                // shot geometry, entity creation or shooter coordinates.
+                if c.spotting_enabled && event.health_before>0 && event.health_after==0 && next_world.lifecycle.is_some() {
+                    let mut public=wire::roster_updates(&next_world,event.target)?;
+                    public.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
+                    next.outbox.push_back(public);
+                }
                 impact_publications.push((event.shot,event.target,event.health_after,queued));
                 c.impact_cursor += 1;
             }
@@ -1529,7 +1558,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 if target == c.slot && hp != next_world.actors[target].vehicle_kind().max_health() && c.owner_health_sent != Some(hp) {
                     body.extend(impact_wire::owner_health_for(next_world.actors[target].vehicle_kind(),hp)?); c.owner_health_sent = Some(hp);
                 }
-                if !body.is_empty() { next.outbox.push_back(body); }
+                if !body.is_empty() { c.queue_private(&mut next.outbox,body,&[target])?; }
             }
         }
         if let Some(state) = &next_world.lifecycle {
@@ -1549,16 +1578,16 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
             c.lifecycle_view=Some(view);
         }
         for other in 0..next_world.actors.len() {
-            if next_world.actors[other].ready && !c.ready_sent[other] {
+            if next_world.actors[other].ready && !c.ready_sent[other] && (!c.spotting_enabled || c.visible()[other]) {
                 next.outbox.push_back(wire::ready_update(other)?); c.ready_sent[other] = true;
             }
         }
         // No queue of stale poses for a slow peer. Reliable retries retain their
         // exact bytes; the next fresh pose is queued when capacity is available.
-        let old_tick = c.view.as_ref().map(|w| w.tick).unwrap_or(0);
+        let old_tick = if c.spotting_enabled {c.last_pose_tick.unwrap_or(0)} else {c.view.as_ref().map(|w| w.tick).unwrap_or(0)};
         if c.correction && c.binding.is_some_and(|(_, ack)| ack) && old_tick != next_world.tick && next.tx.len() < 4 {
             let body = wire::publication(&next_world, c.visible())?;
-            next.tx.enqueue_body(&body)?;
+            next.tx.enqueue_body(&body)?;c.last_pose_tick=Some(next_world.tick);
             println!("SHARED_SNAPSHOT battle={} session={} tick={} positions={:?} ready={:?} aim_yaw_pitch={:?}", next_world.id, s.id, next_world.tick,
                 next_world.actors.iter().map(|a| a.position).collect::<Vec<_>>(), c.visible(),
                 next_world.actors.iter().map(|a| (a.aim.yaw,a.aim.pitch)).collect::<Vec<_>>());
@@ -1566,7 +1595,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     }
     // At most40 MS-1 or60 IS-7 shots: start cue+tracer+stop+one compound impact, plus
     // bounded reload/readiness/health catch-up. Slow peers cannot grow forever.
-    if next.outbox.len() > next_world.shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;
+    if next.outbox.len()+next.shared.as_ref().ok_or_else(||model::bad())?.pending_private_len() > next_world.shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;next.flush_shared_private()?;
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
     for command in &commands { if let model::Command::Aim(intent) = command { println!("SHARED_AIM battle={} session={} slot={slot} intent={intent:?} client_angles_authoritative=false", world.id, s.id); } }

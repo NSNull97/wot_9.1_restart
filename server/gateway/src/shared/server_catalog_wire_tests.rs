@@ -82,7 +82,7 @@ fn native_catalog_announces_and_creates_both_chunks_with_vehicle_requests() {
     for i in 0..2 { assert_eq!(present(&announced, &area_wire::area_announcement(i).unwrap()), 1); }
     let (sequence, _) = c.announcement.unwrap();
     let ack = frame(&s, &[]);
-    s.shared.as_mut().unwrap().acknowledge(sequence + 1, &ack);
+    s.shared.as_mut().unwrap().acknowledge(sequence + 1, &ack).unwrap();
 
     let mut payload = Vec::new();
     for id in [area_wire::area_id(1).unwrap(), wire::vehicle_id(0).unwrap(),
@@ -132,7 +132,7 @@ fn ack_current_and_flush(s: &mut Session, now: Instant) {
     let cumulative = max_sequence + 1;
     let ack = Frame { flags: 0x408, sequence: None, cumulative: Some(cumulative), selective: Vec::new(), body: Vec::new(), piggybacks: Vec::new() };
     s.tx.acknowledge(&ack).unwrap();
-    s.shared.as_mut().unwrap().acknowledge(cumulative, &ack);
+    s.shared.as_mut().unwrap().acknowledge(cumulative, &ack).unwrap();
     s.flush_shared_requests(&mut Vec::new()).unwrap();
 }
 
@@ -157,7 +157,7 @@ fn six_actor_native_requests_commit_atomically_and_ready_remains_bound_to_slot_f
     assert_eq!(s.tx.len(),6);
     let selective=vec![c.creations[3].unwrap().0,c.creations[5].unwrap().0];
     let ack=Frame{flags:0x408,sequence:None,cumulative:Some(0),selective,body:vec![],piggybacks:vec![]};
-    s.shared.as_mut().unwrap().acknowledge(0,&ack);
+    s.shared.as_mut().unwrap().acknowledge(0,&ack).unwrap();
     assert_eq!(s.shared.as_ref().unwrap().visible(),[false,false,false,true,false,true]);
     let before=s.clone();assert!(s.receive(&frame(&s,&ready(0)),now).is_err());assert_input_rolled_back(&s,&before,now);
     ack_current_and_flush(&mut s,now);s.receive(&frame(&s,&ready(5)),now).unwrap();
@@ -242,14 +242,14 @@ fn all_chunk_creation_acks_gate_commands_selective_ack_is_supported() {
     assert_eq!(world.actors, actors_before);
     assert_eq!(a.shared.as_ref().unwrap().commands.len(), 1);
     let ack = frame(&a, &[]);
-    a.shared.as_mut().unwrap().acknowledge(11, &ack);
+    a.shared.as_mut().unwrap().acknowledge(11, &ack).unwrap();
     assert!(a.shared.as_ref().unwrap().areas[0].0.unwrap().1);
     assert!(!a.shared.as_ref().unwrap().areas[1].0.unwrap().1);
     poll(&mut a, &mut world, now).unwrap();
     assert_eq!(world.actors, actors_before);
     assert_eq!(a.shared.as_ref().unwrap().commands.len(), 1);
     let mut selective = frame(&a, &[]); selective.selective = vec![11];
-    a.shared.as_mut().unwrap().acknowledge(11, &selective);
+    a.shared.as_mut().unwrap().acknowledge(11, &selective).unwrap();
     poll(&mut a, &mut world, now).unwrap();
     assert!(a.shared.as_ref().unwrap().commands.is_empty());
     assert_eq!(world.actors[0].input.throttle, 1);

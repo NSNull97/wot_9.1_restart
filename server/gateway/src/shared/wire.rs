@@ -138,6 +138,43 @@ pub fn announcement_parts(w:&World,own:usize)->io::Result<Vec<Vec<u8>>> {
     }
     if !body.is_empty(){parts.push(body);}if parts.iter().any(|p|p.is_empty()||p.len()>500){return Err(model::bad());}Ok(parts)
 }
+/// Original fixed enterAoI: entity ID and alias, no visibility boolean.
+pub fn enter_vehicle(slot:usize)->io::Result<Vec<u8>> {
+    let mut body=vec![0x0a];body.extend(vehicle_id(slot)?.to_le_bytes());body.push(vehicle_alias(slot)?);Ok(body)
+}
+/// Original #717 leaveAoI is VAR2, with entity ID followed by zero or more
+/// u32 event numbers. This sender uses the source-backed empty event vector.
+pub fn leave_vehicle(slot:usize)->io::Result<Vec<u8>> {
+    let mut body=vec![0x0c,4,0];body.extend(vehicle_id(slot)?.to_le_bytes());Ok(body)
+}
+pub(super) struct AnnouncementPart {pub body:Vec<u8>,pub enters:Vec<usize>}
+/// Preserve cell/space and complete native roster metadata, filtering only
+/// actual Vehicle AoI. Enter metadata owns the exact reliable part epoch;
+/// callers must not substitute the last aggregate announcement sequence.
+pub(super) fn announcement_parts_for(w:&World,own:usize,desired:[bool;model::MAX_ACTORS])->io::Result<Vec<AnnouncementPart>> {
+    if !(2..=model::MAX_ACTORS).contains(&w.actors.len()) || w.actors.len()!=w.expected_actors()
+        || own>=w.actors.len() || !desired[own] || desired.iter().skip(w.actors.len()).any(|want|*want) {return Err(model::bad());}
+    let a=actor(w,own)?;
+    let mut body=arena::create_cell_avatar(&arena::AvatarCellSeed{space_id:SPACE,player_vehicle_id:vehicle_id(own)?,position:a.position})?;
+    body[39]=w.team(own)?;
+    for(i,value)in[a.direction[2],a.direction[1],a.direction[0]].into_iter().enumerate(){body[27+i*4..31+i*4].copy_from_slice(&value.to_le_bytes());}
+    body.extend(arena::space_data_for_map(SPACE,(SPACE as u64).to_le_bytes(),w.map)?);
+    body.extend(roster_list(w,0..1)?);
+    let mut parts=Vec::new();let mut enters=Vec::new();
+    for slot in 1..w.actors.len() {
+        let mut d=vec![0x80,2];d.extend(roster_row(w,slot)?);d.push(b'.');let record=update(2,&d)?;
+        if body.len()+record.len()>500 {parts.push(AnnouncementPart{body,enters});body=Vec::new();enters=Vec::new();}
+        body.extend(record);
+    }
+    for(slot,want)in desired.into_iter().take(w.actors.len()).enumerate() {
+        if !want {continue;}
+        let record=enter_vehicle(slot)?;
+        if body.len()+record.len()>500 {parts.push(AnnouncementPart{body,enters});body=Vec::new();enters=Vec::new();}
+        body.extend(record);enters.push(slot);
+    }
+    if !body.is_empty() {parts.push(AnnouncementPart{body,enters});}
+    if parts.iter().any(|p|p.body.is_empty()||p.body.len()>500) {return Err(model::bad());}Ok(parts)
+}
 pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     let a = actor(w, slot)?;
     let mut p = vec![0]; p.extend(vehicle_id(slot)?.to_le_bytes()); p.extend(2u16.to_le_bytes());

@@ -38,6 +38,10 @@ impl VehicleKind {
     pub fn shell_compact_id(self) -> u32 { match self { Self::Ms1 => 2570, Self::Is7 => 14602 } }
     pub fn max_health(self) -> i16 { match self { Self::Ms1 => 90, Self::Is7 => 2150 } }
     pub fn mass_kg(self) -> f64 { match self { Self::Ms1 => 4691., Self::Is7 => 68190. } }
+    /// Selected #717 stock turret circularVisionRadius: T-18_Standart/IS-7.
+    /// Source binding: local/evidence/20261016-p07b-01/viewrange-binding02.json.
+    /// Effective spotting still uses a separate, explicit test_lab LOS policy.
+    pub fn view_range(self) -> f32 { match self { Self::Ms1 => 240., Self::Is7 => 400. } }
     /// Explicit AP-only temporary lab ammunition, not owned inventory.
     pub fn initial_ammo(self) -> u16 { match self { Self::Ms1 => 20, Self::Is7 => 30 } }
     /// Mounted native source capacity; the owned route uses its writer receipt.
@@ -76,6 +80,10 @@ impl VehicleKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn p07b_stock_view_range_is_bound_to_each_selected_source_turret() {
+        assert_eq!(VehicleKind::Ms1.view_range(),240.);
+        assert_eq!(VehicleKind::Is7.view_range(),400.);
+    }
     #[test] fn profile13_capacity_is_distinct_from_temporary_lab_grant() {
         assert_eq!((VehicleKind::Ms1.initial_ammo(),VehicleKind::Ms1.ammo_limit(),VehicleKind::Ms1.battle_shot_limit()),(20,96,192));
         assert_eq!((VehicleKind::Is7.initial_ammo(),VehicleKind::Is7.ammo_limit(),VehicleKind::Is7.battle_shot_limit()),(30,30,60));

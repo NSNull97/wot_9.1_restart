@@ -10,8 +10,8 @@ fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::Inval
 // Reject duplicate top-level keys instead of accepting an ambiguous last value.
 /// Unique-key JSON object with at most LIMIT top-level fields.
 struct Bounded<const LIMIT:usize>(BTreeMap<String,Value>);
-/// Requests and replies keep the original16-field guard. P05C adds one
-/// explicitly validated optional field to the gateway configuration alone.
+/// Requests and replies keep the original16-field guard. The gateway config
+/// has a separate budget for explicitly validated opt-in service fields.
 const REQUEST_FIELDS:usize=16;
 /// Fixture manifests gain fields with each opt-in service (P09E writes 17) and
 /// are already size-bounded by bounded_file.
@@ -149,12 +149,12 @@ pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
     pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
-    pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,
+    pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
         let bytes=bounded_file(Path::new(path),4096)?;
-        let Bounded::<17>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        let Bounded::<20>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
         let ammo_service=match value.remove("ammunition_service") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
         };
@@ -188,6 +188,10 @@ impl Config {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("profile13 battle must be explicit boolean")),
         };
         if profile13_battle && !research_service {return Err(invalid("profile13 battle requires the complete research writer"));}
+        let visibility_v1=match value.remove("visibility_v1") {
+            None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("visibility_v1 must be explicit boolean")),
+        };
+        if visibility_v1&&!profile13_battle{return Err(invalid("visibility_v1 requires profile13 battle"));}
         let battle_players=match value.remove("battle_players") {
             None=>2,Some(Value::Number(n))=>n.as_u64().filter(|n|(2..=6).contains(n)).ok_or_else(||invalid("battle_players must be2..6"))? as usize,
             _=>return Err(invalid("battle_players must be integer")),
@@ -214,7 +218,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1})
     }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
@@ -649,6 +653,31 @@ mod tests {
         assert!(service_reply(&serde_json::to_vec(&rejected).unwrap(),&profile,"p04d_test_226",6,1,"recruited").is_err());
     }
 
+    #[test] fn p07b_configuration_visibility_requires_an_explicit_boolean_and_profile13() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("p07b-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let base=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        assert!(!load(&base).unwrap().visibility_v1);
+        let mut disabled=base.clone();disabled["visibility_v1"]=false.into();assert!(!load(&disabled).unwrap().visibility_v1);
+        let mut unsupported=base.clone();unsupported["visibility_v1"]=true.into();assert!(load(&unsupported).is_err());
+        let mut enabled=base.clone();
+        for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
+            "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle"]{enabled[field]=true.into();}
+        enabled["battle_players"]=6.into();enabled["visibility_v1"]=true.into();
+        assert_eq!(enabled.as_object().unwrap().len(),18);
+        let selected=load(&enabled).unwrap();assert!(selected.visibility_v1);assert_eq!(selected.battle_players,6);
+        for bad in [Value::Null,0.into(),1.into(),"true".into(),serde_json::json!([]),serde_json::json!({})]{
+            let mut row=enabled.clone();row["visibility_v1"]=bad;assert!(load(&row).is_err());}
+        let mut without_battle=enabled.clone();without_battle["profile13_battle"]=false.into();assert!(load(&without_battle).is_err());
+        let mut unknown=enabled.clone();unknown["visibility_v2"]=true.into();assert!(load(&unknown).is_err());
+        let mut duplicate=serde_json::to_string(&enabled).unwrap();duplicate.pop();duplicate.push_str(",\"visibility_v1\":false}");
+        fs::write(&path,duplicate).unwrap();assert!(Config::load(path.to_str().unwrap()).is_err());
+        // Configuration has its own budget; public request DTO guards stay16.
+        assert_eq!(REQUEST_FIELDS,16);
+    }
     #[test] fn p05c_configuration_roster_is_an_explicit_bounded_profile13_option() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("p05c-config-{stamp}"));

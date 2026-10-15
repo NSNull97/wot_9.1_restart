@@ -1,6 +1,8 @@
 //! Explicit local bounded-multiplayer test_lab route. The accepted single-client drive
 //! route and its frozen profile checks are not generalized through this module.
 pub(crate) mod model;
+pub(crate) mod visibility;
+pub(crate) mod interest_wire;
 pub(crate) mod lifecycle;
 pub(crate) mod lifecycle_wire;
 mod lifecycle_result;
@@ -49,6 +51,12 @@ const AREA_ANNOUNCEMENT_BATCH: usize = 6;
 pub(super) enum Phase { Account, Enable, Entities, Driving, Leaving, Returning }
 
 #[derive(Clone)]
+struct PrivatePending {
+    body: Vec<u8>,
+    targets: Vec<(usize, u32)>,
+}
+
+#[derive(Clone)]
 pub(super) struct Client {
     slot: usize,
     phase: Phase,
@@ -57,6 +65,11 @@ pub(super) struct Client {
     announcement_parts: Vec<(u32, bool)>,
     announced_areas: usize,
     creations: [Option<(u32, bool)>; model::MAX_ACTORS],
+    creation_announcements: [Option<u32>; model::MAX_ACTORS],
+    spotting_enabled: bool,
+    interest: Option<interest_wire::Book>,
+    private_pending: VecDeque<PrivatePending>,
+    last_pose_tick: Option<u32>,
     binding: Option<(u32, bool)>,
     area_creation: Option<(u32, bool)>,
     pending_area_scene: bool,
@@ -92,6 +105,8 @@ pub(super) struct Client {
 impl Client {
     fn new(slot: usize) -> Self {
         Self { slot, phase: Phase::Account, view: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; model::MAX_ACTORS],
+            creation_announcements: [None; model::MAX_ACTORS], spotting_enabled: false, interest: None,
+            private_pending: VecDeque::new(), last_pose_tick: None,
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
             tracer_stopped: [false; model::MAX_BATTLE_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
@@ -103,11 +118,16 @@ impl Client {
         let queue_announced = self.queue_announced;
         let profile13 = self.profile13.take();
         let return_source_revision = self.return_source_revision;
+        let spotting_enabled = self.spotting_enabled;
         *self = Self::new(slot);
         self.return_generation = generation;
         self.queue_announced = queue_announced;
         self.profile13 = profile13;
         self.return_source_revision = return_source_revision;
+        self.spotting_enabled = spotting_enabled;
+        // An invalid owner remains a checked error at refresh/enable, rather
+        // than a process panic during a battle reset.
+        if spotting_enabled { self.interest = interest_wire::Book::new(slot).ok(); }
     }
     pub(super) fn profile13_garage_idle(&self) -> bool {
         self.phase == Phase::Account && self.profile13.as_ref().is_some_and(|s| s.garage_idle())
@@ -116,7 +136,13 @@ impl Client {
     pub(super) fn profile13_arena_ready(&self) -> bool {
         self.profile13.as_ref().is_some_and(|s| s.reservation.is_some() && !s.in_flight && s.pending_return.is_none())
     }
-    pub(super) fn acknowledge(&mut self, cumulative: u32, frame: &Frame) {
+    pub(super) fn acknowledge(&mut self, cumulative: u32, frame: &Frame) -> io::Result<()> {
+        let cleared = match &mut self.interest {
+            Some(book) => book.acknowledge(cumulative, &frame.selective)?,
+            None if self.spotting_enabled => return Err(bad()),
+            None => Vec::new(),
+        };
+        for slot in cleared { self.clear_creation(slot); }
         for pending in [&mut self.announcement, &mut self.binding, &mut self.area_creation] {
             if let Some((seq, acked)) = pending { *acked |= cumulative > *seq || frame.selective.contains(seq); }
         }
@@ -130,16 +156,141 @@ impl Client {
         }
         for pending in &mut self.creations {if let Some((seq,acked))=pending{*acked|=cumulative>*seq||frame.selective.contains(seq);}}
         for (pending,_) in &mut self.areas{if let Some((seq,acked))=pending{*acked|=cumulative>*seq||frame.selective.contains(seq);}}
+        Ok(())
     }
     fn areas_ready(&self,world:&World)->bool{
         (!world.destructible_enabled()||self.area_creation.is_some_and(|(_,ack)|ack))
             &&world.fragiles.as_ref().is_none_or(|state|self.announced_areas==state.catalog.chunks().len()&&self.areas.len()==state.catalog.chunks().len()&&(self.tree_areas.is_empty()||self.tree_areas.len()==self.areas.len())&&self.areas.iter().all(|(p,_)|p.is_some_and(|(_,a)|a)))
     }
-    fn visible(&self) -> [bool; model::MAX_ACTORS] { self.creations.map(|row| row.is_some_and(|(_, ack)| ack)) }
+    fn visible(&self) -> [bool; model::MAX_ACTORS] {
+        std::array::from_fn(|slot| {
+            let acked=self.creations[slot].is_some_and(|(_,ack)|ack);
+            if !self.spotting_enabled { return acked; }
+            self.interest.as_ref().is_some_and(|book| book.publish_allowed(slot,acked)
+                && self.creation_announcements[slot] == book.announcement_sequence(slot))
+        })
+    }
+    pub(super) fn enable_spotting(&mut self) -> io::Result<()> {
+        // Enable only before a battle; replacing a live book would unpair AoI.
+        if self.phase!=Phase::Account || self.creations.iter().any(Option::is_some) { return Err(bad()); }
+        let book=interest_wire::Book::new(self.slot)?;
+        self.spotting_enabled=true;self.interest=Some(book);Ok(())
+    }
+    fn clear_creation(&mut self, slot:usize) {
+        self.creations[slot]=None;self.creation_announcements[slot]=None;self.health_sent[slot]=None;self.ready_sent[slot]=false;
+        self.pending_entity_requests.retain(|pending|*pending!=slot);
+        let pending=std::mem::take(&mut self.private_pending);
+        for p in pending {
+            if p.targets.iter().any(|(target,_)|*target==slot) {self.invalidate_private(&p);}
+            else {self.private_pending.push_back(p);}
+        }
+    }
+    fn invalidate_private(&mut self, pending:&PrivatePending) {
+        // A discarded compound can carry HP for a still-visible victim while
+        // its attacker vanished. Ensure current-state catch-up is not skipped.
+        for &(slot,_) in &pending.targets {
+            self.health_sent[slot]=None;
+            if slot==self.slot {self.owner_health_sent=None;}
+        }
+    }
+    fn request_allowed(&self, slot:usize)->bool {
+        !self.spotting_enabled || self.interest.as_ref().is_some_and(|book|book.request_allowed(slot))
+    }
+    fn mark_announced(&mut self, slots:&[usize], sequence:u32)->io::Result<()> {
+        if !self.spotting_enabled {return Ok(());}
+        for &slot in slots {
+            let action=self.interest.as_ref().ok_or_else(||bad())?.transitions().into_iter()
+                .find(|a|a.slot==slot && a.kind==interest_wire::Kind::Enter).ok_or_else(||bad())?;
+            self.interest.as_mut().ok_or_else(||bad())?.mark_queued(action,sequence)?;
+            self.clear_creation(slot);
+        }
+        Ok(())
+    }
+    fn private_current(&self, pending:&PrivatePending)->bool {
+        let visible=self.visible();
+        pending.targets.iter().all(|&(slot,epoch)|visible.get(slot)==Some(&true)
+            && self.interest.as_ref().and_then(|b|b.announcement_sequence(slot))==Some(epoch))
+    }
+    pub(super) fn pending_private_len(&self)->usize {self.private_pending.len()}
+    pub(super) fn queue_private(&mut self, outbox:&mut VecDeque<Vec<u8>>, body:Vec<u8>, targets:&[usize])->io::Result<()> {
+        if !self.spotting_enabled {outbox.push_back(body);return Ok(());}
+        if body.is_empty() || body.len()>512 || targets.is_empty() || targets.len()>model::MAX_ACTORS
+            || self.private_pending.len()>=model::MAX_BATTLE_SHOTS*4+32 {return Err(bad());}
+        let visible=self.visible();let book=self.interest.as_ref().ok_or_else(||bad())?;
+        let mut epochs=Vec::with_capacity(targets.len());
+        for &slot in targets {
+            if visible.get(slot)!=Some(&true) || epochs.iter().any(|(target,_)|*target==slot) {return Err(bad());}
+            epochs.push((slot,book.announcement_sequence(slot).ok_or_else(||bad())?));
+        }
+        self.private_pending.push_back(PrivatePending{body,targets:epochs});Ok(())
+    }
+    pub(super) fn refresh_interest(&mut self, world:&World)->io::Result<()> {
+        if !self.spotting_enabled {return Ok(());}
+        let desired=world.desired_visibility(self.slot)?;
+        let active=std::array::from_fn(|slot|slot<world.actors.len());
+        let mut book=self.interest.clone().ok_or_else(||bad())?;
+        book.set_desired(active,desired)?;
+        let mut abandoned=Vec::new();
+        for p in &world.projectiles {
+            if p.slot>=model::MAX_ACTORS {return Err(bad());}
+            if !desired[p.slot] {
+                let index=p.sequence.checked_sub(1).ok_or_else(||bad())? as usize;
+                if index>=self.tracer_started.len() {return Err(bad());}abandoned.push(index);
+            }
+        }
+        self.interest=Some(book);
+        self.pending_entity_requests.retain(|slot|self.interest.as_ref().is_some_and(|b|b.request_allowed(*slot)));
+        let pending=std::mem::take(&mut self.private_pending);
+        for p in pending {
+            if self.private_current(&p) {self.private_pending.push_back(p);}
+            else {self.invalidate_private(&p);}
+        }
+        for index in abandoned {self.tracer_started[index]=false;self.tracer_stopped[index]=true;}
+        Ok(())
+    }
     pub(super) fn needs_flush(&self) -> bool { matches!(self.phase, Phase::Entities | Phase::Driving) }
 }
 
 impl Session {
+    /// Refresh from the committed authoritative world, independently of any
+    /// inbound packet. No native queue or ACK changes escape this clone.
+    pub(super) fn shared_refresh_world(&mut self, world:&World)->io::Result<()> {
+        let Some(c)=self.shared.as_ref() else{return Ok(());};
+        if !c.spotting_enabled || !matches!(c.phase,Phase::Enable|Phase::Entities|Phase::Driving) {return Ok(());}
+        world.owned(c.slot,self.id)?;
+        let mut next=self.clone();let c=next.shared.as_mut().ok_or_else(||bad())?;
+        c.refresh_interest(world)?;c.view=Some(world.clone());*self=next;Ok(())
+    }
+    pub(super) fn flush_shared_private(&mut self)->io::Result<()> {
+        if self.shared.as_ref().is_none_or(|c|!c.spotting_enabled) || !self.outbox.is_empty() {return Ok(());}
+        let mut next=self.clone();
+        while next.tx.len()<8 {
+            let c=next.shared.as_mut().ok_or_else(||bad())?;
+            let Some(pending)=c.private_pending.pop_front() else{break;};
+            if !matches!(c.phase,Phase::Entities|Phase::Driving) || !c.private_current(&pending) {c.invalidate_private(&pending);continue;}
+            next.tx.enqueue_body(&pending.body)?;
+        }
+        *self=next;Ok(())
+    }
+    pub(super) fn flush_shared_interest(&mut self, events:&mut Vec<String>)->io::Result<()> {
+        let Some(c)=self.shared.as_ref() else{return Ok(());};
+        if !c.spotting_enabled || !matches!(c.phase,Phase::Entities|Phase::Driving) || !self.outbox.is_empty() {return Ok(());}
+        let mut next=self.clone();let mut committed=Vec::new();
+        let actions=next.shared.as_ref().and_then(|c|c.interest.as_ref()).ok_or_else(||bad())?.transitions();
+        for action in actions {
+            if next.tx.len()>=8 {break;}
+            let body=match action.kind {
+                interest_wire::Kind::Enter=>wire::enter_vehicle(action.slot)?,
+                interest_wire::Kind::Leave=>wire::leave_vehicle(action.slot)?,
+            };
+            let sequence=next.tx.enqueue_body_tracked(&body)?;
+            let c=next.shared.as_mut().ok_or_else(||bad())?;
+            c.interest.as_mut().ok_or_else(||bad())?.mark_queued(action,sequence)?;
+            c.clear_creation(action.slot);
+            committed.push(format!("P07B_INTEREST session={} slot={} action={:?} sequence={sequence}",next.id,action.slot,action.kind));
+        }
+        *self=next;events.extend(committed);Ok(())
+    }
     pub(super) fn shared_account_response(&self,request:&crate::account091::Request,events:&mut Vec<String>)->io::Result<Vec<Vec<u8>>> {
         if self.shared.is_none() || request.command!=100 {return Err(bad());}
         if self.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
@@ -191,6 +342,7 @@ impl Session {
         c.phase = Phase::Returning; c.return_mask = 0; c.join_requested = false; c.queue_announced = false;
         c.hangar_since = None; c.entered = Some(now); c.commands.clear();
         c.pending_entity_requests.clear(); c.pending_area_requests.clear(); c.pending_area_scene = false;
+        c.private_pending.clear();
         // Keep the old view and binding solely to validate already queued
         // Avatar envelopes. No authoritative command can leave Returning.
         next.drain_outbox()?;
@@ -368,18 +520,27 @@ impl Session {
             return self.shared_account_payload(payload, events);
         }
         if payload.is_empty() { return Ok(()); }
+        let current_world=self.shared.as_ref().and_then(|c|c.view.clone()).ok_or_else(||bad())?;
+        let world=&current_world;
         let c = self.shared.as_mut().ok_or_else(|| bad())?;
-        let world = c.view.as_ref().ok_or_else(|| bad())?;
         if c.phase == Phase::Enable {
             let late = drive::late_queue_info(payload)?;
             if late == Some(false) { return Ok(()); }
             if payload != [9] && late != Some(true) { return Err(bad()); }
             c.announcement_parts.clear();
-            let mut parts=wire::announcement_parts(world,c.slot)?;
-            let mut body=parts.pop().ok_or_else(||bad())?;
+            let mut parts=if c.spotting_enabled {
+                c.refresh_interest(world)?;
+                wire::announcement_parts_for(world,c.slot,world.desired_visibility(c.slot)?)?
+            } else {
+                wire::announcement_parts(world,c.slot)?.into_iter()
+                    .map(|body|wire::AnnouncementPart{body,enters:Vec::new()}).collect()
+            };
+            let last=parts.pop().ok_or_else(||bad())?;
+            let mut body=last.body;let mut entered_slots=last.enters;
             for part in parts {
-                let sequence=self.tx.enqueue_body_tracked(&part)?;
+                let sequence=self.tx.enqueue_body_tracked(&part.body)?;
                 c.announcement_parts.push((sequence,false));
+                c.mark_announced(&part.enters,sequence)?;
             }
             if world.destructible_enabled() {body.extend(destructible_wire::announcement());}
             c.announced_areas = 0;
@@ -392,6 +553,7 @@ impl Session {
                     if body.len() + record.len() > 512 {
                         let sequence = self.tx.enqueue_body_tracked(&body)?;
                         c.announcement_parts.push((sequence, false));
+                        c.mark_announced(&entered_slots,sequence)?;entered_slots.clear();
                         body = Vec::new();
                     }
                     body.extend(record);
@@ -401,6 +563,7 @@ impl Session {
             if !body.is_empty() {
                 let sequence = self.tx.enqueue_body_tracked(&body)?;
                 c.announcement_parts.push((sequence, false));
+                c.mark_announced(&entered_slots,sequence)?;
             }
             let sequence = c.announcement_parts.last().map(|(sequence, _)| *sequence).ok_or_else(|| bad())?;
             c.announcement = Some((sequence, false));
@@ -435,7 +598,11 @@ impl Session {
                 } else {
                     let slots = wire::entity_requests(raw)?.ok_or_else(|| bad())?;
                     for slot in slots {
-                        if slot>=world.actors.len() || c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
+                        if slot>=world.actors.len() {return Err(bad());}
+                        if !c.request_allowed(slot) {
+                            events.push(format!("P07B_STALE_ENTITY_REQUEST session={} slot={slot} private_body=false",self.id));continue;
+                        }
+                        if c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
                         c.pending_entity_requests.push_back(slot);
                     }
                 }
@@ -513,7 +680,11 @@ impl Session {
                 } else {
                     let slots = wire::entity_requests(raw)?.ok_or_else(|| bad())?;
                     for slot in slots {
-                        if slot>=world.actors.len() || c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
+                        if slot>=world.actors.len() {return Err(bad());}
+                        if !c.request_allowed(slot) {
+                            events.push(format!("P07B_STALE_ENTITY_REQUEST session={} slot={slot} private_body=false",self.id));continue;
+                        }
+                        if c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
                         c.pending_entity_requests.push_back(slot);
                     }
                 }
@@ -576,6 +747,9 @@ impl Session {
     pub(super) fn flush_shared_requests(&mut self, events: &mut Vec<String>) -> io::Result<()> {
         let world = self.shared.as_ref().and_then(|c| c.view.clone()).ok_or_else(|| bad())?;
         let mut next = self.clone();
+        let mut committed=Vec::new();
+        next.shared.as_mut().ok_or_else(||bad())?.refresh_interest(&world)?;
+        next.flush_shared_interest(&mut committed)?;
         loop {
             if next.tx.len() >= 8 { break; }
             enum Request { Scene, Vehicle(usize), Area(usize) }
@@ -598,14 +772,20 @@ impl Session {
                     let c = next.shared.as_mut().ok_or_else(|| bad())?;
                     c.area_creation = Some((sequence, false));
                     c.area_scene_sent = world.scene_version();
-                    events.push(format!("SHARED_AREA_CREATED battle={} session={} entity={} scene_version={} reliable_sequence={sequence}", world.id,next.id,destructible_wire::ENTITY_ID,world.scene_version()));
+                    committed.push(format!("SHARED_AREA_CREATED battle={} session={} entity={} scene_version={} reliable_sequence={sequence}", world.id,next.id,destructible_wire::ENTITY_ID,world.scene_version()));
                 }
                 Request::Vehicle(slot) => {
+                    let c=next.shared.as_ref().ok_or_else(||bad())?;
+                    if slot>=world.actors.len() {return Err(bad());}
+                    if !c.request_allowed(slot) {continue;}
+                    if c.creations[slot].is_some() {return Err(bad());}
+                    let epoch=if c.spotting_enabled {Some(c.interest.as_ref().and_then(|b|b.announcement_sequence(slot)).ok_or_else(||bad())?)} else {None};
                     let sequence = next.tx.enqueue_body_tracked(&wire::create_vehicle(&world, slot)?)?;
                     let c = next.shared.as_mut().ok_or_else(|| bad())?;
                     c.creations[slot] = Some((sequence, false));
+                    c.creation_announcements[slot]=epoch;
                     c.health_sent[slot] = Some(world.actors[slot].health);
-                    events.push(format!("SHARED_ENTITY_CREATED battle={} session={} entity={} own={} reliable_sequence={sequence}", world.id, next.id, wire::vehicle_id(slot)?, slot == c.slot));
+                    committed.push(format!("SHARED_ENTITY_CREATED battle={} session={} entity={} own={} reliable_sequence={sequence}", world.id, next.id, wire::vehicle_id(slot)?, slot == c.slot));
                 }
                 Request::Area(area) => {
                     let state = world.fragiles.as_ref().ok_or_else(|| bad())?;
@@ -618,12 +798,12 @@ impl Session {
                     if c.areas.get(area).is_none_or(|(pending, _)| pending.is_some()) { return Err(bad()); }
                     c.areas[area] = (Some((sequence,false)), indices);
                     c.tree_areas[area] = trees;
-                    events.push(format!("SHARED_CATALOG_AREA_CREATED battle={} session={} entity={} chunk={} scene={} reliable_sequence={sequence}",world.id,next.id,destructible_wire::area_id(area)?,chunk,world.scene_version()));
+                    committed.push(format!("SHARED_CATALOG_AREA_CREATED battle={} session={} entity={} chunk={} scene={} reliable_sequence={sequence}",world.id,next.id,destructible_wire::area_id(area)?,chunk,world.scene_version()));
                 }
             }
         }
-        *self = next;
-        self.flush_shared_announcements(events)?;
+        next.flush_shared_announcements(&mut committed)?;
+        *self = next;events.extend(committed);
         Ok(())
     }
 
@@ -670,6 +850,10 @@ impl Session {
 
 pub use server::serve_integrated_for_map;
 pub use server::serve_integrated_for_vehicle;
+
+#[cfg(test)]
+#[path = "interest_session_tests.rs"]
+mod p07b_interest_session_tests;
 
 #[cfg(test)]
 mod shared_return_tests {

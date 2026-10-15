@@ -242,6 +242,31 @@ impl World {
         if slot >= self.actors.len() { return Err(bad()); }
         Ok(if self.lifecycle.is_some() { (slot % 2) as u8 + 1 } else { 1 })
     }
+    /// Stateless recipient interest from this coherent authoritative snapshot.
+    /// Source stock range, centre-distance and one sight line are the explicit
+    /// v1 test_lab policy;0.5m above the stock turret pivot is not historical
+    /// camouflage/spotting reconstruction. Parked/dead geometry remains eligible.
+    pub(super) fn desired_visibility(&self, own:usize)->io::Result<[bool;MAX_ACTORS]> {
+        if own>=self.actors.len()||self.actors.len()>MAX_ACTORS{return Err(bad());}
+        let terrain=self.terrain.as_ref().ok_or_else(||bad())?;
+        let mut excluded=if let Some(state)=&self.fragiles {state.projectile_excluded()}
+            else{self.destructible.as_ref().and_then(|state|state.excluded_instance()).into_iter().collect()};
+        excluded.sort_unstable();
+        if excluded.windows(2).any(|rows|rows[0]==rows[1]){return Err(bad());}
+        let mut actors=Vec::with_capacity(self.actors.len());
+        for(slot,actor)in self.actors.iter().enumerate(){
+            if actor.direction.iter().any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI){return Err(bad());}
+            let kind=actor.vehicle_kind();let pivot=kind.aim().pivot;
+            let offset=super::pose::rotate([pivot[0],pivot[1]+0.5,pivot[2]],actor.direction);
+            actors.push(super::visibility::Actor{slot,team:self.team(slot)?,position:actor.position,
+                sight_point:std::array::from_fn(|axis|actor.position[axis]+offset[axis]),view_range:kind.view_range()});
+        }
+        let desired=super::visibility::desired_set(own,&actors,super::visibility::Allies::Always,|line|{
+            if line.start==line.end{return Ok(true);}
+            Ok(terrain.nearest_excluding_many(line.start,line.end,&excluded)?.is_none())
+        })?;
+        let mut result=[false;MAX_ACTORS];for slot in desired.slots(){result[slot]=true;}Ok(result)
+    }
     pub fn lifecycle_ms(&self, now: Instant) -> io::Result<u64> {
         let start = self.started.ok_or_else(|| bad())?;
         now.checked_duration_since(start).ok_or_else(|| bad())?.as_millis().try_into().map_err(|_| bad())
@@ -794,6 +819,9 @@ impl World {
 #[cfg(test)]
 #[path="model_scene_tests.rs"]
 mod scene_tests;
+#[cfg(test)]
+#[path="visibility_world_tests.rs"]
+mod visibility_world_tests;
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;

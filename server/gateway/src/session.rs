@@ -1085,7 +1085,7 @@ for incoming in requests {
             close|=self.receive_ready(p,now,events,depth+1,budget)?;
         }
         self.tx.acknowledge(f)?;
-        if let Some(shared)=&mut self.shared {shared.acknowledge(self.tx.cumulative,f);}
+        if let Some(shared)=&mut self.shared {shared.acknowledge(self.tx.cumulative,f)?;}
         if let Some((sequence,acked))=&mut self.arena_vehicle_announcement {
             *acked|=self.tx.cumulative>*sequence || f.selective.contains(sequence);
         }
