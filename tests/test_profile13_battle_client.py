@@ -30,7 +30,7 @@ class Profile13NativeTests(unittest.TestCase):
         spec = module.PROFILE13_VEHICLES[kind]
         sha, seats, hp, capacity, ids = spec
         self.player.databaseID = 900001
-        self.item = Box(invID=inventory, intCD=kind, isCrewFull=True,
+        self.item = Box(invID=inventory, intCD=kind, isCrewFull=seats,
             descriptor=Box(makeCompactDescr=lambda: compact),
             crew=[(seat, Box(invID=101 + seat, vehicleInvID=inventory, vehicleSlotIdx=seat))
                   for seat in range(seats)],
@@ -112,9 +112,31 @@ class Profile13NativeTests(unittest.TestCase):
         self.select(7169)
         self.item.isCrewFull = False
         self.assertFalse(self.eligible()['allowed'])
-        self.item.isCrewFull = True
+        self.item.isCrewFull = 5
         self.current.isReadyToFight = lambda: False
         self.assertFalse(self.eligible()['allowed'])
+
+    def test_native_crew_count_getter_requires_exact_seats_not_truthiness(self):
+        for kind in (3329, 7169):
+            self.select(kind)
+            seats = len(self.item.crew)
+            self.assertEqual(type(self.item.isCrewFull), int)
+            self.assertTrue(self.eligible()['allowed'])
+            for value in (False,) + tuple(range(seats)):
+                self.item.isCrewFull = value
+                self.assertEqual(self.eligible()['reason'], 'unsupported_crew_readiness')
+            for value in (True, float(seats), str(seats), None, lambda: seats, -1, seats + 1):
+                self.item.isCrewFull = value
+                with self.assertRaises(ValueError): self.eligible()
+
+    def test_native_ready_to_fight_stays_strict_boolean_with_complete_crew(self):
+        for value in (0, 1, 2, None, 'ready'):
+            self.current.isReadyToFight = lambda value=value: value
+            with self.assertRaises(ValueError): self.eligible()
+        self.current.isReadyToFight = lambda: False
+        self.assertFalse(self.eligible()['allowed'])
+        self.current.isReadyToFight = lambda: True
+        self.assertTrue(self.eligible()['allowed'])
 
     def test_crew_assignment_duplicate_and_damage_fail_closed(self):
         self.item.crew[1][1].vehicleInvID = 99
@@ -155,6 +177,50 @@ class Profile13NativeTests(unittest.TestCase):
         self.select(3329)
         self.item.crew[0][1].vehicleSlotIdx = False
         with self.assertRaises(ValueError): self.eligible()
+
+
+class Profile13SourceContractTests(unittest.TestCase):
+    @unittest.skipIf(sys.version_info[0] < 3, 'host-only bounded Python2 bytecode reader')
+    def test_original_crew_count_property_and_ready_boolean_contract(self):
+        # No importing/executing original pyc: use the bounded static reader.
+        import hashlib
+        from pathlib import Path
+        sys.path.insert(0, os.path.join(prior.ROOT, 'tools'))
+        from client_audit import config, read_limited
+        from py27_static import parse_pyc, records, opcode_table, disassemble
+        original = config()[1]['original_client_root'] / 'res/scripts/client'
+        raw = read_limited(original / 'gui/shared/gui_items/Vehicle.pyc', 1048576)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),
+                         'ec78e36ab100e2c2274dd69476da99a26791037c6d79d707921168b1e95ae1e8')
+        codes = dict(records(parse_pyc(raw)))
+        op = read_limited(Path(prior.ROOT) / 'local/vendor/cpython-2.7.3/opcode.py', 32768)
+        self.assertEqual(hashlib.sha256(op).hexdigest(),
+                         'acfe212847ecb81ca28bdab976a3caacff3568b45a9e8ca78d6957f9f3ef4884')
+        table = opcode_table(op.decode('utf8'))
+        crew = codes['<module>.Vehicle.isCrewFull']
+        ready = codes['<module>.Vehicle.isReadyToFight']
+        self.assertEqual((crew['firstlineno'], hashlib.sha256(crew['code']).hexdigest()),
+                         (584, '0485d9b1c76ff8423bdffb49b940aa28a1e2cc21a01f290b7437b6fde7920aec'))
+        self.assertEqual((ready['firstlineno'], hashlib.sha256(ready['code']).hexdigest()),
+                         (624, 'd126f27bb51dbde30b05b897dc6c69b2541d812c005bbae2bc53890d29ced5ed'))
+        cls = {row['offset']: row for row in disassemble(codes['<module>.Vehicle'], table)}
+        self.assertEqual((cls[668]['value'], cls[677]['opname'], cls[677]['arg'], cls[680]['value']),
+                         ('property', 'CALL_FUNCTION', 1, 'isCrewFull'))
+        ins = {row['offset']: row for row in disassemble(crew, table)}
+        self.assertEqual((ins[27]['opname'], ins[27]['arg'], ins[30]['opname'], ins[30]['arg']),
+                         ('COMPARE_OP', 7, 'JUMP_IF_FALSE_OR_POP', 42))
+        self.assertEqual((ins[33]['value'], ins[39]['opname'], ins[42]['opname']),
+                         ('len', 'CALL_FUNCTION', 'RETURN_VALUE'))
+        ins = {row['offset']: row for row in disassemble(ready, table)}
+        self.assertEqual((ins[31]['value'], ins[40]['value'], ins[43]['opname']),
+                         ('isCrewFull', 'isDisabledInRoaming', 'UNARY_NOT'))
+        raw = read_limited(original / 'CurrentVehicle.pyc', 1048576)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),
+                         'a57c32ca6e84c2ae4c343bba3b88213680c65f3a28adb50d8009e0c9df833953')
+        codes = dict(records(parse_pyc(raw)))
+        for name in ('isCrewFull', 'isReadyToFight', 'isInBattle', 'isAlive'):
+            ins = {row['offset']: row for row in disassemble(codes['<module>._CurrentVehicle.' + name], table)}
+            self.assertEqual((ins[18]['value'], ins[21]['opname']), (name, 'RETURN_VALUE'))
 
 
 class Profile13ButtonTests(unittest.TestCase):

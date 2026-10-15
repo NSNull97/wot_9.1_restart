@@ -131,6 +131,20 @@
 
 ## UNKNOWN — обязательная оставшаяся проверка
 
+Первый native P08B запуск A — FAIL_CLIENT_GATE до какого-либо reserve. Ангар
+дошёл до original FightButton.disable; `_bool(item.isCrewFull)` выбросил
+ValueError и сорвал LobbyView. У #717 это property с результатом
+`(None not in mapped_crew) and len(mapped_crew)`: полный MS-1 возвращает int2,
+ИС-7 int5, неполный False/0. Нельзя считать её boolean oracle. Исправлено в
+map_drive_client VERSION6 на точное сравнение count==source seats с проверкой
+типов; настоящие ownership/crew/AP/readiness checks сохранены.
+Receipt `native-first-result.json`: reserve0, A дошёл до native hangar,
+штатно завершился; gateway/bridge остановлены по своим receipts, оба client
+install01 откатились своими ledgers. Повтор — свежий `native-fix01/` под стендом.
+Клиентский fix:314 host PASS, CPython2.7.3 81 PASS/4 expected host-only SKIP,
+compile3 PASS: `client-fix08-checks01/result.json`. Gateway code SHA не менялся;
+full02 890/5 относится к тому же серверному исходнику, новый native gate впереди.
+
 - Native/UI обоих настоящих профилей13, выбор машины, отказ/отмена очереди,
   расход после ручного возврата, повторный бой и перезапуск с резервом NOT_RUN.
 - Счётчики native full sync после настоящей ангарной мутации и цикла Avatar

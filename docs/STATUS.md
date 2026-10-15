@@ -17,7 +17,10 @@ deadline faults закрывают только текущий бой, gateway �
 P08B в работе в `codex/p08b-profile13-battle`, в main не слита. Изолированные
 owner+writer28, новый Web7, Web-регрессия18 и client/control проверки PASS;
 gateway890 PASS/5 ignored и сборка PASS на runtime `0834fee`.
-Свежая двухаккаунтная БД профиля13 сохраняет A; native/UI gate ещё NOT_RUN.
+Свежая двухаккаунтная БД профиля13 сохраняет A. Первый native запуск поймал
+неверный bool-контракт isCrewFull до reserve; исправлен на native seat count,
+client314 PASS и CPython2.7.3 81 PASS/4 host-only skips. Повторный native/UI gate
+ещё NOT_RUN, карточка не принята.
 [Факты и ограничения P08B](research/P08B_PROFILE13_BATTLE.md).
 
 ## Принято владельцем на настоящем клиенте #717

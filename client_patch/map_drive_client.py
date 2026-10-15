@@ -16,7 +16,7 @@ import os
 import threading
 import types
 
-VERSION = 5
+VERSION = 6
 MS1_SHA256 = '4122429c052f5c8eb2ebeae456c775b1a368a007cf37bae8af7b3f87ff064c5c'
 # Exact #717 stock assemblies, independently checked by the server writer.
 PROFILE13_VEHICLES = {
@@ -465,7 +465,13 @@ class _Native(object):
             crew_ids.append(man.invID)
         if len(set(crew_ids)) != seats:
             raise RuntimeError('original profile13 crew identity is duplicated')
-        if (repair != (0, health) or not _bool(item.isCrewFull, 'isCrewFull')
+        # #717 Vehicle.isCrewFull (line584) returns False for a missing member,
+        # otherwise len(crew): int2 for MS-1, int5 for IS-7, int0 when empty.
+        # Require that exact complete count, not arbitrary truthiness/bool1.
+        crew_full = item.isCrewFull
+        if crew_full is not False:
+            crew_full = _integer(crew_full, 0, seats, 'isCrewFull') == seats
+        if (repair != (0, health) or not crew_full
                 or not _bool(current.isReadyToFight(), 'isReadyToFight')):
             return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
         loaded = _flat(inventory['shells'].get(selected))
