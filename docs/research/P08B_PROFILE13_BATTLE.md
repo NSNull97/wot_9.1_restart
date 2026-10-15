@@ -1,7 +1,7 @@
 # P08B — профиль13, выбранная машина и общий native-бой
 
 Дата: 2026-10-15. Статус: IMPLEMENTATION_IN_PROGRESS, native cycle PASS,
-active-reservation gateway restart PENDING.
+actual gateway crash/recovery PASS; owner postrestart smoke DEFERRED_TO_MORNING.
 Ветка `codex/p08b-profile13-battle`, база main
 `ffce8cb660e9e6af6872aa4a5de444f461bc73fe`.
 План — `docs/plans/P08B.md`; evidence — `local/evidence/20261015-p08b-01/`.
@@ -193,11 +193,29 @@ MS-1 ангары с14ББ. Предыдущие результаты20→18 с�
 фактический launcher — `run_native_fix03.py`, новый итог исправляет ссылку.
 
 - Native/UI обоих настоящих профилей13, MS-1, расход после ручного возврата и
-  повторный общий бой PASS. Настоящая отмена очереди и whole-gateway restart
-  с active reservation ещё PENDING; IS-7 из профиля13 и native failure UI NOT_RUN.
+  повторный общий бой PASS. Владелец подтвердил native queue→cancel→requeue.
+  В run02 cancellation при уже созданном owned actor честно записан manual_leave,
+  AP14/consumed0/HP90; native Avatar/READY/выстрелов не было. Новый Join получил
+  другой battle ID и durable active резерв с14ББ.
+- Gateway run02 остановлен первым, до клиентов/bridge: before/after-crash
+  snapshots совпадают, 7 finished +1 active. Новый run03/auth сделал ровно один
+  aborted_restart, revision106→107, AP14/consumed0/HP=null/destroyed=null/repair90.
+  Семь старых finished snapshots не изменились; машины available/battle_id=null,
+  активных0, SQLite/native ammo panels14 у обоих, оба connected/cache/modelready.
+  Это настоящий crash/recovery стенда, не HTTP mock. Доказательства:
+  `local/stands/p08b-profile13-01/native-fix03/restart-result.json` и
+  `restart-{before,after-crash,after-restart}.json`, launch/stop receipts02/03.
+- Owner postrestart smoke и live mutation/warmN→full1 отложены до утра прямым
+  указанием владельца 2026-10-16. Вся карточка пока не принята/не main.
+  IS-7 из профиля13 и native failure UI NOT_RUN.
 - Счётчики native full sync после настоящей ангарной мутации и цикла Avatar
   проверяются live; синтетические кадры/самосогласованный codec этого не доказывают.
 - Native owner gate обязателен; при FAIL/NOT_RUN карточка остаётся в ветке.
+
+Ночное указание владельца разрешает перейти к следующим карточкам без ожидания
+owner gates; оно не превращает NOT_RUN в PASS и не разрешает merge непринятого.
+Все run03 процессы после сохранения доказательств остановлены по своим receipts,
+client install01 остаётся с ledger для следующего документированного запуска.
 
 Оригинал клиента и рабочая БД при исследовании не меняются. Существенные решения
 будут внесены сюда по конкретному коду/трассам; предложенная архитектура не

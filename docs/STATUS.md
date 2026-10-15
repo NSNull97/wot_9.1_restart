@@ -1,4 +1,4 @@
-# Состояние проекта — 2026-10-15
+# Состояние проекта — 2026-10-16
 
 Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего
 дерева и доступна в git: `git show 1eaff5e:docs/STATUS.md` (а также удалённые
@@ -22,13 +22,22 @@ gateway893 PASS/5 ignored и сборка PASS на runtime `5c08ef5`.
 client314 PASS и CPython2.7.3 81 PASS/4 host-only skips. Исправлена корреляция
 latest verified login retry. Native-fix03: владелец подтвердил оба ангара с16ББ
 и повторный общий бой; трасса/БД подтверждают два полных цикла18→16→14 у обоих,
-8 выстрелов, 4 manual_leave/committed результата, 0 world faults. До приёмки
-осталась native-проверка активного резерва после перезапуска gateway.
+8 выстрелов, 4 manual_leave/committed результата, 0 world faults. Настоящие
+native queue→cancel→requeue подтверждены владельцем. Gateway аварийно остановлен
+с active резервом14ББ; новый run сделал один aborted_restart/возврат14,
+7 прежних finished не изменились, оба native ангара loaded/cache/model/AP14.
+Owner postrestart и mutation/warmN→full1 smoke отложены до утра по указанию
+владельца 2026-10-16; карточка пока не принята и в main не слита.
 Native-fix02: общий бой, 4 выстрела и 2 manual_leave с committed AP18 PASS по
 трассе/БД; owner сообщил black return. Причина — legacy shop cache limit16448,
 native profile13 прислал23107. Лимит привязан к research fixture32832; текущий
 повтор — `local/stands/p08b-profile13-01/native-fix03/`, текущий AP14 у обоих.
 [Факты и ограничения P08B](research/P08B_PROFILE13_BATTLE.md).
+
+Ночное задание 2026-10-16 разрешает продолжать следующие карточки по порядку
+без ожидания ручных gates. Автоматические результаты и native NOT_RUN разделяются;
+непринятые карточки остаются в отдельных зависимых ветках. План и утренняя матрица —
+[NIGHT_20261016](plans/NIGHT_20261016.md).
 
 ## Принято владельцем на настоящем клиенте #717
 
