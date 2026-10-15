@@ -32,9 +32,17 @@ pub fn aim_intent(raw: &[u8], own: usize) -> io::Result<Option<aim::Intent>> {
 }
 pub fn vehicle_id(slot: usize) -> io::Result<u32> {
     if slot >= model::MAX_ACTORS { return Err(model::bad()); }
-    Ok(vehicle::VEHICLE_ENTITY_ID + 2 * slot as u32)
+    // The original pair occupies3/5; AreaDestructibles owns7..150. New
+    // actors and their Avatars use another server-owned entity ID range.
+    Ok(if slot<2 {vehicle::VEHICLE_ENTITY_ID+2*slot as u32}
+        else {0x0911_0003+2*(slot as u32-2)})
 }
 pub fn avatar_id(slot: usize) -> io::Result<u32> { Ok(vehicle_id(slot)? - 1) }
+pub fn vehicle_alias(slot:usize)->io::Result<u8> {
+    vehicle_id(slot)?;
+    // Existing area aliases2..145 retain their accepted native layout.
+    Ok(if slot<2 {slot as u8}else{240+slot as u8-2})
+}
 pub fn slot_for_vehicle(id: u32) -> io::Result<usize> {
     (0..model::MAX_ACTORS).find(|slot| vehicle_id(*slot).ok() == Some(id)).ok_or_else(|| model::bad())
 }
@@ -103,7 +111,7 @@ pub fn announcement(w: &World, own: usize) -> io::Result<Vec<u8>> {
     b.extend(arena::space_data_for_map(SPACE, (SPACE as u64).to_le_bytes(), w.map)?);
     b.extend(roster(w)?);
     for slot in 0..model::CAPACITY {
-        b.push(0x0a); b.extend(vehicle_id(slot)?.to_le_bytes()); b.push(slot as u8);
+        b.push(0x0a); b.extend(vehicle_id(slot)?.to_le_bytes()); b.push(vehicle_alias(slot)?);
     }
     if b.len() > 500 { return Err(model::bad()); } Ok(b)
 }
@@ -125,7 +133,7 @@ pub fn announcement_parts(w:&World,own:usize)->io::Result<Vec<Vec<u8>>> {
         if body.len()+record.len()>500{parts.push(body);body=Vec::new();}body.extend(record);
     }
     for slot in 0..w.actors.len(){
-        let mut record=vec![0x0a];record.extend(vehicle_id(slot)?.to_le_bytes());record.push(slot as u8);
+        let mut record=vec![0x0a];record.extend(vehicle_id(slot)?.to_le_bytes());record.push(vehicle_alias(slot)?);
         if body.len()+record.len()>500{parts.push(body);body=Vec::new();}body.extend(record);
     }
     if !body.is_empty(){parts.push(body);}if parts.iter().any(|p|p.is_empty()||p.len()>500){return Err(model::bad());}Ok(parts)
@@ -342,7 +350,7 @@ mod tests {
             assert!(data.windows(48).any(|bytes|bytes=="Я".repeat(24).as_bytes()));
             assert!(data.windows(w.actors[slot].vehicle_kind().descriptor().len())
                 .any(|bytes|bytes==w.actors[slot].vehicle_kind().descriptor()));
-            let mut enter=vec![0x0a];enter.extend(vehicle_id(slot).unwrap().to_le_bytes());enter.push(slot as u8);
+            let mut enter=vec![0x0a];enter.extend(vehicle_id(slot).unwrap().to_le_bytes());enter.push(vehicle_alias(slot).unwrap());
             assert_eq!(raw.windows(enter.len()).filter(|bytes|*bytes==enter).count(),1);
             let create=create_vehicle(&w,slot).unwrap();assert!(create.len()<500);
         }
@@ -367,6 +375,22 @@ mod tests {
         assert_eq!(&tracer_start(&p).unwrap()[2..6],&vehicle_id(5).unwrap().to_le_bytes());
         p.stopped=true;assert!(tracer_stop(&p).is_ok());p.sequence+=1;
         assert!(tracer_start(&p).is_err());assert!(tracer_stop(&p).is_err());
+    }
+    #[test] fn six_actor_and_full_area_catalog_namespaces_never_overlap() {
+        use super::super::destructible_wire as areas;
+        let mut ids=std::collections::BTreeSet::new();let mut aliases=std::collections::BTreeSet::new();
+        for slot in 0..model::MAX_ACTORS {
+            assert!(ids.insert(vehicle_id(slot).unwrap()));assert!(ids.insert(avatar_id(slot).unwrap()));
+            assert!(aliases.insert(vehicle_alias(slot).unwrap()));
+        }
+        for area in 0..144 {
+            assert!(ids.insert(areas::area_id(area).unwrap()));
+            let announcement=areas::area_announcement(area).unwrap();
+            assert!(aliases.insert(*announcement.last().unwrap()));
+        }
+        assert_eq!(ids.len(),156);assert_eq!(aliases.len(),150);
+        assert_eq!(vehicle_id(0).unwrap(),0x09100003);assert_eq!(vehicle_id(1).unwrap(),0x09100005);
+        assert_eq!(vehicle_id(2).unwrap(),0x09110003);assert_eq!(vehicle_alias(5).unwrap(),243);
     }
     #[test] fn world_map_controls_native_base_and_geometry_without_changing_battle_binding() {
         use crate::map_profile091::MapId;
@@ -454,7 +478,7 @@ mod tests {
         // Vehicle first ClientMethod=59, UINT8 single-shot burst, selectPlayer=19.
         assert_eq!(shooting(0).unwrap(), [18,3,0,16,9,59,1,19]);
         assert_eq!(shooting(1).unwrap(), [18,5,0,16,9,59,1,19]);
-        assert_eq!(shooting(5).unwrap(),[18,13,0,16,9,59,1,19]);
+        assert_eq!(shooting(5).unwrap(),[18,9,0,17,9,59,1,19]);
         assert!(shooting(model::MAX_ACTORS).is_err());
     }
     #[test] fn identities_are_distinct_and_requests_cannot_select_an_unannounced_id() {
