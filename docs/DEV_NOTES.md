@@ -54,6 +54,16 @@ Harness профиля 12/13: `tools/p09e_research_harness.py --seed-only`.
 
 ## Стенды (`local/stands/`, не в git)
 
+- `night-battle-20261016-01`: ночной зависимый P04M-кандидат. Исходный
+  `game.sqlite` сохранён побайтно; рабочая opt-in копия `pool-01/game.sqlite`,
+  fixtures `pool-01/fixtures`, A109/B26/MS1AP14 у обоих/A IS7AP19. Политика
+  pool_service явная для A/B; v3 manifest5, gateway p04m_pool/visibility_v1=true.
+  `run.py check`52pins и пять local runner/negative tests PASS; source-bound
+  `binding-p04m.json` создавать только после нового canonical full02 PASS.
+  Старые binding-P05C/P07B исторические и не запускают текущий runtime.
+  `qualification.py`/`qualification-02` готовят временные Т26/Т34/Т34-85 без
+  owned grants/admission; собственные overlays PREPARED, native NOT_RUN.
+  Точные команды/откат — ignored `MORNING.md` и `pool-01/REPORT.md`.
 - `p08b-profile13-01` — свежая общая P08B БД A/B профиля13, bridge3481,
   login20130/base20131. Режим `legacy091-profile13 KEY DIGEST GATEWAY MANIFEST CAPTURE`;
   manifest `battle-profiles.json` закрепляет оба однородных stock MS-1/ИС-7 пула,

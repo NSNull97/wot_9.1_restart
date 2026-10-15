@@ -3,9 +3,10 @@
 **P04M — пять боевых профилей**, ночная зависимая реализация после P07B:
 MS-1/ИС-7 и stock Т-26/Т-34/Т-34-85, source/physics/combat/owned registry.
 
-Focused04:26PASS/build, настоящий coupled World/Trace/sceneACK и временная
-квалификация без owned grants. Companion05:5PASS/build; actualSQLite303/309
-дополнительно2PASS. Финальные writer/Web/HTTP/source gates в работе; native
+Focused05:31PASS/build, настоящий coupled World/Trace/sceneACK, late terrain FX
+global shot bound и временная квалификация без owned grants. Python17+1,
+legacy P08B/results28 и Web12 regression PASS; окончательный HTTP/source gate
+в работе. Pool-01 A109/B26 подготовлен без grants; оба MS1AP14. Native
 NOT_RUN, новые3 admissionfalse. [Реализация и proof](research/P04M_FIVE_PROFILES.md).
 
 Полная постановка и приёмка — пункт 6 в

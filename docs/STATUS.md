@@ -60,13 +60,17 @@ Focused23 и полный975PASS/5ignored/buildPASS;607files source before/after
 Actual source geometry Прохоровки/360LOS PASS; native исчезновение/засвет NOT_RUN.
 Стенд bound с visibility_v1=true; в main не слито. [Факты](research/P07B_SERVER_VISIBILITY.md).
 
-P04M в `codex/p04m-five-battle-profiles`, HEAD786a516+WIP: пять source-bound
+P04M в `codex/p04m-five-battle-profiles`: пять source-bound
 боевых видов, общий IPC7 и getter bits новых машин, броня/AP/наведение и БК160
 реализованы. Focused04:26PASS/0ignored/buildPASS, включая настоящий Jolt→Rust
 FrameProof и coupled World/Trace/sceneACK новых3/mixed6; C#contacts/repeatability
 PASS. Companion05:5PASS/build и два actual SQLite303/309→Rust tests PASS.
-Owned crew/ammo реализованы; финальные Python/Web/HTTP и full source gate
-ещё в работе. Новые3 admissionfalse,
+Owned crew/ammo реализованы; Python17+1 и старая P08B/results28 PASS. Web03:9PASS,
+legacy Web12PASS; обнаруженные secondary-skill/HTTP-budget дефекты исправляются
+с повтором actual HTTP. Focused05:31PASS/build, включая admitted180/576/960
+shots→late terrain FX обоим peers. Full01 намеренно прерван; fresh full02
+ещё NOT_RUN. Изолированный pool-01 stand A109/B26 подготовлен без grants,
+оба MS1AP14/A IS7AP19, исходная БД побайтно сохранена. Новые3 admissionfalse,
 native/UI NOT_RUN; main не изменён. [План](plans/P04M.md).
 
 ## Принято владельцем на настоящем клиенте #717
