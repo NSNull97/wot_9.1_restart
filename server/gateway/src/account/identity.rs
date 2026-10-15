@@ -224,12 +224,18 @@ impl Config {
         }else{String::new()};
         Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool})
     }
+    fn authentication_timeout(&self)->Duration {
+        // A configured curated owner publishes its source-bound projection
+        // during login. Its bounded 7s writer/9s bridge budget must fit inside
+        // this caller's deadline; legacy authentication retains its 5s limit.
+        Duration::from_secs(if self.p04m_pool {20} else {5})
+    }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
         let body=serde_json::to_vec(&serde_json::json!({"email":email,"password":password}))
             .map_err(|_|invalid("identity request serialization"))?;
         if body.len()>2048 {return Err(invalid("identity request size"));}
-        let (status,body)=self.post("/internal/native/login",&body,Duration::from_secs(5))?;
+        let (status,body)=self.post("/internal/native/login",&body,self.authentication_timeout())?;
         if status==401 {return Ok(None);}
         if status!=200 {return Err(invalid("identity service unavailable or rejected service authentication"));}
         let profile=profile(&body,&self.local_root)?;
@@ -633,9 +639,10 @@ mod tests {
         let mut v=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
             "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
         let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
-        assert!(!load(&v).unwrap().p04m_pool);v["p04m_pool"]=true.into();assert!(load(&v).is_err());
+        let legacy=load(&v).unwrap();assert!(!legacy.p04m_pool);assert_eq!(legacy.authentication_timeout(),Duration::from_secs(5));
+        v["p04m_pool"]=true.into();assert!(load(&v).is_err());
         for key in["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression","crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle"]{v[key]=true.into();}
-        assert!(load(&v).unwrap().p04m_pool);
+        let pool=load(&v).unwrap();assert!(pool.p04m_pool);assert_eq!(pool.authentication_timeout(),Duration::from_secs(20));
         for wrong in[Value::Null,1.into(),"true".into()]{v["p04m_pool"]=wrong;assert!(load(&v).is_err());}
         v["p04m_pool"]=true.into();let mut raw=serde_json::to_string(&v).unwrap();raw.pop();raw.push_str(",\"p04m_pool\":false}");fs::write(path,raw).unwrap();
         assert!(Config::load(root.join("gateway.json").to_str().unwrap()).is_err());
