@@ -163,6 +163,46 @@
   сохранён отдельно в `native-fix04/native-failure-summary.json` с реальным пакетом
   и ограниченными декодированными фактами (без keys/tokens/credentials).
 
+## OBSERVED / VERIFIED — ручной возврат fix05 и блокеры повторной кнопки
+
+- Владелец подтвердил: оба клиента в ангаре, повторный бой не начался. Лог
+  `native-fix05` подтверждает native_leave сначала session2, потом session1,
+  ACK/reset/warm100/300/600 и SHARED_HANGAR_RETURNED обоих. Между возвратами
+  оставшийся actor1 продвинулся ещё на 90 логических тиков (9 секунд); затем
+  оба workers завершены exit0/reaped, мир сброшен. Ошибок мира/SHARED_REJECT нет.
+  Partial receipt — `native-fix05/native-manual-return-acceptance.json`.
+- A: настоящий Flash click в client elapsed1098.1107 вызвал исходный fightClick /
+  enqueue begin-return; затем blocked_external_captcha (line50545) запретил
+  reCAPTCHA.getImageSource до внешнего HTTP. Исходный stats.battlesTillCaptcha=0
+  требует CAPTCHA. Исследованный ordinary AccountPolicy передаёт service counter1;
+  shared раньше публиковал raw state и возвращал no-change на warm100.
+- B: ordinary adapter допускает только nativeID1, B имеет nativeID2 и исходный
+  неполный экипаж. После возврата две battle_capability_disabled. Этот Account
+  не должен изображать владельца готовой машины: лабораторный actor выдаётся
+  сервером независимо от инвентаря. `native-fix05/reentry-failure-summary.json`.
+- Предел evidence: native UDP capture достиг 48000 пакетов до позднего выхода;
+  passive client profiler достиг 16 MiB. Поздние policy events записывались дальше.
+  Отсутствие700 в обрезанном capture не выдаётся за доказательство; факты основаны
+  на поздних policy events и отсутствии SHARED_QUEUE в полном серверном журнале.
+- Проверен исходный #717 байткод: crew readiness блокирует FightButton.update
+  через canPlayerDoAction; doAction проверяет presence. Сохраняемый decorated
+  vehicleAmmoCheck/checkAmmoLevel при isReadyToFight=false достигает callback(True).
+  SHA/code provenance семи оригинальных файлов —
+  `local/evidence/20261015-stab01-01/native-reentry-policy/bytecode-provenance.json`.
+- Минимальная коррекция: явный shared-lab режим существующего button adapter,
+  connected Account ID1/2, синхронизированный cache, inv1 и точный MS-1 descriptor;
+  только UI-доступность кнопки с пояснением временной серверной машины. Исходные
+  fightClick, decorated enqueue, ammo/dialog path и CAPTCHA guard сохраняются.
+  Готовность, экипаж, БК, инвентарь и ordinary-политика не подменяются.
+- Shared initial/warm100 публикует полный state с уже исследованным counter1;
+  PRIMARY использует прежнюю точную ordinary-проекцию, SECONDARY — независимый
+  source SHA aa855586... и единственный byte605, outgoing SHA
+  `d9b8e474f355b70ac2e2a4b3a29c44f78c4585c3eee623a9b4889d283f6aefb7`.
+  Исходные фикстуры/БД не меняются. Независимое сравнение literal tree подтверждает
+  только stats.battlesTillCaptcha0→1: `native-fix05/counter-policy-bindings.json`.
+- Новый native-повтор с этими policy пока UNKNOWN. Возврат fix05 PASS не закрывает
+  всю карточку: второй общий бой остаётся обязательным, merge не выполнен.
+
 ## OBSERVED / VERIFIED — инцидент локальных фикстур
 
 - Вспомогательный managed worktree содержал junctions `local/server` и

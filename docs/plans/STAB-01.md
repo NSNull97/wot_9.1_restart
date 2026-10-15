@@ -14,6 +14,13 @@
 Только разрешённые копии `local/clients/p03f/a` и `b`; оригинал не менять.
 Сохранить ledger установленного ангара A и откатывать патчи штатной утилитой.
 
+Уточнение после native-fix05: оба штатных возврата приняты владельцем, повторный
+вход блокируют CAPTCHA raw Account и ordinary-only политика кнопки для ID1.
+Для п.5 применимы минимальные compatibility-изменения `map_drive_client.py`,
+его тестов и исходящей Account service policy. Явный shared-lab допускает только
+временную серверную машину через исходный FightButton/decorated enqueue/native700;
+не меняет экипаж/БК/готовность/инвентарь и не реализует P08B профиля13.
+
 ## Порядок
 
 1. Добавить в `shared/model.rs::bad()` место нарушения (файл/строка/столбец),
@@ -58,8 +65,10 @@ Gateway: `python -B -X utf8 server/build.py gateway --test --out <fresh-local-bu
 - VERIFIED: native B warm300rev2 отвергнут hardcoded primaryrev3. Привязка к уже
   загруженному shop аккаунта исправлена, replay реального B bundle и cross-fixture
   отрицательные проверки PASS. Свежий `native-fix05` запущен.
-- UNKNOWN: успешный выход обоих и повторный native-вход после этой правки. До его
-  подтверждения native приёмка FAIL, ветка не сливается.
+- OBSERVED / VERIFIED: fix05 — оба ручных выхода в ангар PASS, повторный бой FAIL.
+  A упёрся в блокируемую внешнюю CAPTCHA, B — ordinary-политику ID1/готовности.
+  Исходный native queue chain исследован; новые lab-only policy и Account counter
+  готовятся к полному прогону и свежей native-проверке. До второго боя ветка не сливается.
 - Локальные фикстуры восстановлены после инцидента архивирования junction-worktree;
   64 independent original SHA + 6 derived legacy JSON с original SHA UNKNOWN,
   все 91 159 исходных файлов/размеров на месте. Детали и evidence —

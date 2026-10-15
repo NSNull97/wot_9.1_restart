@@ -10,8 +10,9 @@ STAB-01 в ветке `codex/stab01-battle-isolation`: runtime `25e07d3`,
 847 gateway tests PASS / 5 ignored, сборка PASS; инъекция ошибки с настоящими
 workers и второй бой PASS. Native-fix04 выявил чёрный экран B на warm300rev2
 вместо primaryrev3; привязка к собственной фикстуре исправлена и проверена
-реальным replay пакета. Свежий native-fix05 запущен, приёмка обоих возвратов
-и повторного боя ожидает владельца. В main ещё не слито. Факты —
+реальным replay пакета. Native-fix05: оба ручных возврата в ангар приняты;
+повторный бой FAIL (CAPTCHA A, ordinary-only кнопка B). Lab-only допуск и
+исходящий сервисный счётчик исправляются, P08B не начата. В main ещё не слито. Факты —
 [STAB-01](research/STAB01_BATTLE_STABILITY.md).
 
 ## Принято владельцем на настоящем клиенте #717

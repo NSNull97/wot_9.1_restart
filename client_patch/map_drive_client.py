@@ -6,13 +6,15 @@ quits, creates an Entity, moves a vehicle, changes a clock, fills ammunition,
 accepts a dialog, or calls an undecorated queue method. The server remains the
 authority. Two previously owned FightButton bindings are layered here. A
 separate fail-closed guard blocks the original external CAPTCHA image fetch.
+Explicit shared-lab admission enables this button for a temporary server actor;
+owned hangar vehicle readiness, crew and ammunition remain unchanged.
 """
 import hashlib
 import os
 import threading
 import types
 
-VERSION = 3
+VERSION = 4
 MS1_SHA256 = '4122429c052f5c8eb2ebeae456c775b1a368a007cf37bae8af7b3f87ff064c5c'
 SHELLS = (2570, 20, 2826, 0, 3082, 0)
 LIGHT_SOURCE = 'scripts/client/LightFx/LightManager.py'
@@ -38,6 +40,9 @@ MAX_CAPTCHA_BLOCK_RECORDS = 32
 CAPTCHA_ERROR = 'external legacy CAPTCHA is unavailable for this test service'
 ERROR_NOTICE = (u'Тестовая поездка недоступна: не удалось подготовить родные службы клиента. '
                 u'Вход на карту не отправлен. Подробности записаны в журнал.')
+SHARED_LAB_TOOLTIP = (u'{HEADER}Общая лаборатория{/HEADER}'
+                      u'{BODY}Сервер выдаст временную машину для этого боя. '
+                      u'Машины, экипаж и снаряды в ангаре не изменяются.{/BODY}')
 _controller = None
 _captcha_guard = None
 _attempted = _closing = _closed = False
@@ -305,7 +310,9 @@ class _Native(object):
         return dict(player_kind=kind, player_owner_id=None if player is None else id(player),
                     entity_id=None if player is None else _integer(player.id, 1, 2147483647, 'entity ID'))
 
-    def eligibility(self):
+    def eligibility(self, shared_lab=False):
+        if type(shared_lab) is not bool:
+            raise TypeError('explicit shared laboratory mode required')
         import Account
         import BigWorld
         from ConnectionManager import connectionManager
@@ -319,11 +326,12 @@ class _Native(object):
         # real ID. The native header may update during this legitimate gap.
         if database_id is None:
             return {'allowed': False, 'reason': 'account_identity_pending', 'queued': False}
-        if _integer(database_id, 1, 2147483647, 'databaseID') != 1:
+        database_id = _integer(database_id, 1, 2147483647, 'databaseID')
+        if database_id not in ((1, 2) if shared_lab else (1,)):
             return {'allowed': False, 'reason': 'unsupported_account', 'queued': False}
         queued = _bool(player.isInRandomQueue, 'isInRandomQueue')
         # Cancelling a real existing queue must not require entry readiness.
-        if queued:
+        if queued and not shared_lab:
             return {'allowed': True, 'reason': 'original_dequeue', 'queued': True}
         if not g_itemsCache.isSynced() or not g_currentVehicle.isPresent():
             return {'allowed': False, 'reason': 'inventory_not_ready', 'queued': False}
@@ -333,6 +341,13 @@ class _Native(object):
             return {'allowed': False, 'reason': 'unsupported_vehicle', 'queued': False}
         if _raw_sha(item.descriptor.makeCompactDescr()) != MS1_SHA256:
             return {'allowed': False, 'reason': 'unsupported_configuration', 'queued': False}
+        if shared_lab:
+            # This explicit lab uses a server-assigned temporary battle actor,
+            # not the selected owned vehicle. Preserve real readiness/getters,
+            # inventory and the original decorated queue/ammo-check path.
+            if BigWorld.player() is not player or g_currentVehicle.item is not item:
+                raise RuntimeError('native Account or selected item changed during lab entry check')
+            return dict(allowed=True, reason='shared_lab_temporary_vehicle', queued=queued)
         inventory = items.inventory.getCacheValue(1, {})
         if type(inventory) is not dict or len(inventory) > 32:
             raise ValueError('bounded original vehicle inventory required')
@@ -397,6 +412,7 @@ class _Controller(object):
         self.installed, self.active = [], False
         self.last_context = None
         self.click_records = 0
+        self.shared_lab = False
         owner = self
 
         def fight(self, mapID=None, actionName=''):
@@ -414,7 +430,7 @@ class _Controller(object):
             if (mapID is not None and (type(mapID) not in integer_types or mapID != 0)
                     or type(actionName) not in string_types or actionName != ''):
                 return owner.previous['fightClick'](self, mapID, actionName)
-            state = owner.native.eligibility()
+            state = owner.native.eligibility(shared_lab=owner.shared_lab)
             if not state['allowed']:
                 _emit(owner.record, 'map_drive_client_denied', reason=state['reason'], original_callback_called=False)
                 return owner.previous['fightClick'](self, mapID, actionName)
@@ -426,11 +442,12 @@ class _Controller(object):
                     owner.guard.messages.pushMessage(ERROR_NOTICE, type=owner.guard.messages.SM_TYPE.Warning)
                     raise
                 # Event or initialization callbacks may have changed selection.
-                state = owner.native.eligibility()
+                state = owner.native.eligibility(shared_lab=owner.shared_lab)
                 if not state['allowed'] or state['queued']:
                     raise RuntimeError('native entry state changed during arena service initialization')
             _emit(owner.record, 'map_drive_client_action', phase='begin',
-                  action='dequeue' if state['queued'] else 'enqueue', original_ammo_check_preserved=True)
+                  action='dequeue' if state['queued'] else 'enqueue', original_ammo_check_preserved=True,
+                  assignment='temporary_server_vehicle' if owner.shared_lab else 'selected_owned_vehicle')
             result = owner.originals['fightClick'](self, mapID, actionName)
             _emit(owner.record, 'map_drive_client_action', phase='return',
                   action='dequeue' if state['queued'] else 'enqueue', server_success_claimed=False)
@@ -438,7 +455,12 @@ class _Controller(object):
 
         def disable(self, isDisabled, toolTip):
             owner._require_owned()
-            if owner.native.eligibility()['allowed']:
+            if owner.native.eligibility(shared_lab=owner.shared_lab)['allowed']:
+                if owner.shared_lab:
+                    # Original dispatcher readiness describes the owned tank.
+                    # Only this owned button is enabled for temporary lab entry;
+                    # original FightButton/update/queue checks stay installed.
+                    return owner.originals['_FightButton__disableFightButton'](self, False, SHARED_LAB_TOOLTIP)
                 # Preserve original readiness, tooltip and original Flash call.
                 return owner.originals['_FightButton__disableFightButton'](self, isDisabled, toolTip)
             return owner.previous['_FightButton__disableFightButton'](self, isDisabled, toolTip)
@@ -533,7 +555,7 @@ def is_active():
 
 
 def prepare_shared_lab(record):
-    """Explicit two-client install: initialize original services before reset.
+    """Explicit two-client lab admission and original services before reset.
 
     No entity, position, ammo, clock or command is created here. This is the
     same original-service lifetime normally initialized by the Fight button.
@@ -542,8 +564,13 @@ def prepare_shared_lab(record):
         raise RuntimeError('shared lab requires the owned ordinary service controller')
     _controller._require_owned()
     _controller.services.initialize()
+    _controller._require_owned()
     _emit(record, 'shared_lab_services_ready', gameplay_applied=False,
-          authority='server', source='original_arena_services')
+          authority='server', source='original_arena_services',
+          client_entry_policy='temporary_server_vehicle', native_database_ids=[1, 2],
+          original_fight_callback_preserved=True, original_ammo_check_preserved=True,
+          original_readiness_unchanged=True, inventory_changed=False)
+    _controller.shared_lab = True
 
 
 def observe(record):

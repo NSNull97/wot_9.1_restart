@@ -154,7 +154,7 @@ class ClickPolicyTests(unittest.TestCase):
         self.assertFalse(self.button.dialog_accepted)
         self.assertEqual(['init'], self.services.calls)
         self.assertEqual([None, 0], [event['map_id_value'] for event in self.clicks()])
-        self.assertTrue(all(event['version'] == 3 for event in self.clicks()))
+        self.assertTrue(all(event['version'] == module.VERSION for event in self.clicks()))
         self.assertTrue(all(event['normalized_random_map'] is False for event in self.clicks()))
 
     def test_forbidden_values_stay_denied_with_bounded_strict_json_records(self):

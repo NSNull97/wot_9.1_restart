@@ -1008,7 +1008,8 @@ for incoming in requests {
     if self.sync_mask&bit!=0 || self.request_ids.contains(&r.id) {return Err(invalid());}
     if let Some(fixtures)=&self.hangar {
         let bodies=if r.command==100 {
-            if let Some(policy)=self.ordinary_account_policy()? {
+            if self.shared.is_some() {self.shared_account_response(&r,events)?}
+            else if let Some(policy)=self.ordinary_account_policy()? {
                 let bodies=policy.response(&r,self.identity.as_ref().ok_or_else(invalid)?,fixtures)?;
                 events.push(policy.stream_event(self.id,r.id));bodies
             } else {crate::hangar091::response(&r,fixtures)?}

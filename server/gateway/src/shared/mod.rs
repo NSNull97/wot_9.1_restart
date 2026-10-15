@@ -7,6 +7,7 @@ pub(crate) mod geometry;
 pub(crate) mod materials;
 pub(crate) mod client_marker;
 pub(crate) mod ap;
+mod account_policy;
 mod impact_wire;
 pub(crate) mod terrain;
 pub(crate) mod obstacles;
@@ -111,6 +112,12 @@ impl Client {
 }
 
 impl Session {
+    pub(super) fn shared_account_response(&self,request:&crate::account091::Request,events:&mut Vec<String>)->io::Result<Vec<Vec<u8>>> {
+        if self.shared.is_none() || request.command!=100 {return Err(bad());}
+        let (bodies,event)=account_policy::response(self.identity.as_ref().ok_or_else(||bad())?,
+            self.hangar.as_ref().ok_or_else(||bad())?,request,self.id)?;
+        events.push(event);Ok(bodies)
+    }
     fn shared_start(&mut self, world: &World, now: Instant) -> io::Result<()> {
         if !self.ready_for_arena_base() { return Err(bad()); }
         let slot = self.shared.as_ref().filter(|c| c.phase == Phase::Account).ok_or_else(|| bad())?.slot;
@@ -258,9 +265,11 @@ impl Session {
                     let request = crate::account091::Request { id, command };
                     match command {
                         100 => {
-                            if rev != 1 || b != 0 || self.outbox.len() >= 128 { return Err(bad()); }
+                            if rev != 1 || b != 0 { return Err(bad()); }
+                            let bodies=self.shared_account_response(&request,events)?;
+                            if self.outbox.len()+bodies.len()>127 {return Err(bad());}
                             self.account_cache_hash = if a == 0 { None } else { Some(a) };
-                            self.outbox.push_back(crate::hangar091::response_refresh(&request)?);
+                            self.outbox.extend(bodies);
                         },
                         300 => {
                             let fixtures = self.hangar.as_ref().ok_or_else(|| bad())?;
@@ -843,6 +852,42 @@ mod shared_return_tests {
             let mut own_revision = fix04_secondary_warm(); own_revision[30..38].copy_from_slice(&expected.to_le_bytes());
             s.receive(&frame(&s, &own_revision, 1), now).unwrap();
             assert_eq!(s.shared.as_ref().unwrap().phase, Phase::Account); assert_eq!(s.shared.as_ref().unwrap().return_mask, 7);
+        }
+    }
+
+    #[test]
+    fn shared_initial_and_return_sync_stream_service_policy_for_each_real_account() {
+        let now=Instant::now();
+        for secondary in [false,true] {
+            for returning in [false,true] {
+                let mut s=if secondary {live_secondary(now)}else{live(now,0)};
+                let before=s.hangar.as_ref().unwrap().state_sha256();
+                let source=s.hangar.as_ref().unwrap().state_bytes().to_vec();
+                if returning {
+                    s.shared_return("unit_policy_return",now,&mut Vec::new()).unwrap();
+                    s.tx.due(now,s.rx).unwrap();s.receive(&frame(&s,&[9],1),now).unwrap();
+                    let payload=if secondary {fix04_secondary_warm()}else{warm()};
+                    s.receive(&frame(&s,&payload,1),now).unwrap();
+                    assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Account);
+                } else {
+                    s.arena_base=false;s.sync_mask=0;s.request_ids.clear();s.chat_request_ids.clear();
+                    s.shared.as_mut().unwrap().phase=Phase::Account;
+                    let mut payload=fix04_secondary_warm()[..23].to_vec();payload[7..23].fill(0);
+                    s.receive(&frame(&s,&payload,0),now).unwrap();assert_eq!(s.sync_mask,1);
+                }
+                let mut tx=s.tx.clone();let mut bodies=Vec::new();
+                while let Some((_,_,raw))=tx.due(now,s.rx).unwrap() {
+                    bodies.push(transport091::parse_interactive(&raw).unwrap().body);
+                }
+                bodies.extend(s.outbox.iter().cloned());
+                let first=bodies.iter().position(|body|body.len()>5 && body[..2]==[0x13,0x4d]
+                    &&body[3..5]==226i16.to_le_bytes()).unwrap();
+                let chunks=(source.len()+11).div_ceil(400);
+                let published=crate::map_drive_service091::tests::assembled(&bodies[first..first+chunks],226);
+                let offset=if secondary {605}else{802};let mut expected=source;expected[offset]=1;
+                assert_eq!(published,expected);assert_eq!(s.hangar.as_ref().unwrap().state_sha256(),before);
+                assert!(s.drive.is_none());assert!(s.drive_account_policy.is_none());
+            }
         }
     }
 }
