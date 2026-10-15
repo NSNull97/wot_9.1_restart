@@ -349,6 +349,7 @@ impl Session {
             events.push(format!("SHARED_ANNOUNCED battle={} session={} rows=2 own={} areas={} parts={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(c.slot)?, c.announced_areas, c.announcement_parts.len()));
             return Ok(());
         }
+        if payload.len() > 512 { return Err(bad()); }
         if payload.first() == Some(&8) && c.phase == Phase::Entities {
             // treeobserve08: six area requests + the first READY compound
             // arrive together before Driving. Only a complete owned READY may
@@ -390,24 +391,28 @@ impl Session {
             // including ACKs and the final request flush, atomically.
             payload = tail;
         }
-        if wire::ready(payload, c.slot).is_ok() {
-            if c.phase == Phase::Driving { return Ok(()); }
-            if c.phase != Phase::Entities || !c.creations[c.slot].is_some_and(|(_, ack)| ack) { return Err(bad()); }
-            let sequence = self.tx.enqueue_body_tracked(&wire::binding(world, c.slot, now)?)?;
-            c.binding = Some((sequence, false)); c.phase = Phase::Driving;
-            // Loading/reconnecting a scene is not a replay of prior gun effects.
-            c.shot_cursor = world.latest_shot();
-            c.impact_cursor = world.impacts.len();
-            c.tracer_started = [false; model::MAX_SHOTS];
-            c.tracer_stopped = [false; model::MAX_SHOTS];
-            for slot in 0..2 { c.ready_sent[slot] = slot == c.slot || world.actors[slot].ready; }
-            events.push(format!("SHARED_READY battle={} session={} own={} reliable_sequence={sequence} tick={}", world.id, self.id, wire::vehicle_id(c.slot)?, world.tick));
-            return Ok(());
+        // Native fix06 B204 reverses the first-battle batching order: READY33
+        // precedes six area requests. Validate only the exact owned compound,
+        // then validate its entire tail in the same receive transaction.
+        if payload.get(..33).is_some_and(|prefix| wire::ready(prefix, c.slot).is_ok()) {
+            if c.phase != Phase::Driving {
+                if c.phase != Phase::Entities || !c.creations[c.slot].is_some_and(|(_, ack)| ack) { return Err(bad()); }
+                let sequence = self.tx.enqueue_body_tracked(&wire::binding(world, c.slot, now)?)?;
+                c.binding = Some((sequence, false)); c.phase = Phase::Driving;
+                // Loading/reconnecting a scene is not a replay of prior gun effects.
+                c.shot_cursor = world.latest_shot();
+                c.impact_cursor = world.impacts.len();
+                c.tracer_started = [false; model::MAX_SHOTS];
+                c.tracer_stopped = [false; model::MAX_SHOTS];
+                for slot in 0..2 { c.ready_sent[slot] = slot == c.slot || world.actors[slot].ready; }
+                events.push(format!("SHARED_READY battle={} session={} own={} reliable_sequence={sequence} tick={}", world.id, self.id, wire::vehicle_id(c.slot)?, world.tick));
+            }
+            payload = &payload[33..];
+            if payload.is_empty() { return Ok(()); }
         }
         if c.phase != Phase::Driving { return Err(bad()); }
         // A complete mixed input envelope is validated inside Session's receive
         // clone. No world command can escape a malformed later record/piggyback.
-        if payload.len() > 512 { return Err(bad()); }
         let mut at = 0; let mut count = 0;
         while at < payload.len() {
             count += 1; if count > 16 { return Err(bad()); }

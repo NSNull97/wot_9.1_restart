@@ -424,16 +424,165 @@ fn captured_requests_ready(slot: usize) -> Vec<u8> {
 fn assert_input_rolled_back(s: &Session, before: &Session, now: Instant) {
     assert_eq!(s.rx, before.rx); assert_eq!(s.received, before.received);
     assert_eq!(s.tx.cumulative, before.tx.cumulative);
+    assert_eq!(s.tx.len(), before.tx.len()); assert_eq!(s.last_rx, before.last_rx);
     assert_eq!(queued_bodies(s, now), queued_bodies(before, now));
     assert_eq!(s.outbox, before.outbox);
     let c = s.shared.as_ref().unwrap(); let old = before.shared.as_ref().unwrap();
     assert_eq!(c.phase, old.phase); assert_eq!(c.binding, old.binding);
     assert_eq!(c.correction, old.correction); assert_eq!(c.creations, old.creations);
+    assert_eq!(c.announcement, old.announcement); assert_eq!(c.announcement_parts, old.announcement_parts);
+    assert_eq!(c.announced_areas, old.announced_areas); assert_eq!(c.area_creation, old.area_creation);
+    assert_eq!(c.pending_area_scene, old.pending_area_scene); assert_eq!(c.area_scene_sent, old.area_scene_sent);
     assert_eq!(c.ready_sent, old.ready_sent); assert_eq!(c.areas, old.areas);
     assert_eq!(c.tree_areas, old.tree_areas);
     assert_eq!(c.pending_area_requests, old.pending_area_requests);
     assert_eq!(c.pending_entity_requests, old.pending_entity_requests);
     assert_eq!(c.commands, old.commands);
+    assert_eq!(c.shot_cursor, old.shot_cursor); assert_eq!(c.impact_cursor, old.impact_cursor);
+    assert_eq!(c.health_sent, old.health_sent); assert_eq!(c.owner_health_sent, old.owner_health_sent);
+    assert_eq!(c.tracer_started, old.tracer_started); assert_eq!(c.tracer_stopped, old.tracer_stopped);
+    assert_eq!(c.view.as_ref().map(World::failure_snapshot), old.view.as_ref().map(World::failure_snapshot));
+}
+
+fn captured_ready_requests_fix06(slot: usize) -> Vec<u8> {
+    // Native fix06 B sequence204/ACK271, packet-001947-base_client_to_server.bin.
+    // Packet SHA256 d55f115040b6d538fced5c1e111f0cc04d7e88c9d569b2ee347dd5b91726b344.
+    // Exact75 application bytes after stripping the private token: READY33
+    // precedes the six area36..41 requests (IDs152043563..152043568).
+    let text = "0d080000000000050010098d050002010000008600000c080000000000000000000804002b0010090804002c0010090804002d0010090804002e0010090804002f00100908040030001009";
+    let mut bytes = text.as_bytes().chunks_exact(2)
+        .map(|pair|u8::from_str_radix(std::str::from_utf8(pair).unwrap(),16).unwrap()).collect::<Vec<_>>();
+    assert_eq!(bytes.len(),75); assert_eq!(&bytes[..33],ready(1));
+    // Only the connection-owned ID is normalized to exercise the other slot.
+    bytes[7..11].copy_from_slice(&wire::vehicle_id(slot).unwrap().to_le_bytes());
+    bytes
+}
+
+fn captured_fix06_order(slot: usize, ready_first: bool) -> Vec<u8> {
+    let bytes=captured_ready_requests_fix06(slot);
+    if ready_first {bytes} else {[&bytes[33..],&bytes[..33]].concat()}
+}
+
+#[test]
+fn entities_fix06_actual_ready_prefix_both_slots_retry_and_fresh_ready_duplicate() {
+    let now=Instant::now();
+    for slot in 0..2 {
+        let mut s=before_first_ready(now,slot);
+        let payload=captured_ready_requests_fix06(slot);
+        for (index,raw) in payload[33..].chunks_exact(7).enumerate() {
+            assert_eq!(raw,request(152_043_563+index as u32));
+        }
+        let input=frame(&s,&payload); let rx=s.rx;
+        s.receive(&input,now).unwrap();
+        let c=s.shared.as_ref().unwrap();
+        assert_eq!(c.phase,Phase::Driving); assert!(!c.correction);
+        assert!(c.binding.is_some_and(|(_,acked)|!acked));
+        assert!(c.commands.is_empty()); assert_eq!(s.rx,rx+1); assert_eq!(s.tx.len(),7);
+        let created=c.areas.iter().enumerate().filter_map(|(area,(pending,_))|pending.map(|_|area)).collect::<Vec<_>>();
+        assert_eq!(created,(36..42).collect::<Vec<_>>());
+        let once=s.clone(); s.receive(&input,now).unwrap();
+        assert_input_rolled_back(&s,&once,now);
+        // A new ordered native envelope may repeat READY after phase change.
+        // It cannot allocate another binding, replay effects or create areas.
+        let mut expected=once;
+        let duplicate=frame(&s,&ready(slot));
+        s.receive(&duplicate,now).unwrap();
+        expected.rx=s.rx; expected.received=s.received.clone();
+        assert_input_rolled_back(&s,&expected,now);
+        let before=s.clone();
+        assert!(s.receive(&frame(&s,&payload),now).is_err());
+        assert_input_rolled_back(&s,&before,now);
+        // Driving may receive another READY prefix followed by fresh area
+        // requests. The original binding/cursors survive this new envelope.
+        let mut next=ready(slot);
+        for area in 6..12 {next.extend(request(area_wire::area_id(area).unwrap()));}
+        s.receive(&frame(&s,&next),now).unwrap();
+        let c=s.shared.as_ref().unwrap();let old=before.shared.as_ref().unwrap();
+        assert_eq!(c.binding,old.binding);assert_eq!(c.shot_cursor,old.shot_cursor);
+        assert_eq!(c.impact_cursor,old.impact_cursor);assert_eq!(c.tracer_started,old.tracer_started);
+        assert_eq!(c.tracer_stopped,old.tracer_stopped);assert!(!c.correction);
+        assert_eq!(s.tx.len(),8);assert_eq!(c.pending_area_requests.iter().copied().collect::<Vec<_>>(),(7..12).collect::<Vec<_>>());
+        assert!(c.areas[6].0.is_some());assert!(c.areas[36..42].iter().all(|(pending,_)|pending.is_some()));
+    }
+}
+
+#[test]
+fn entities_fix06_ready_prefix_bad_ready_or_request_tail_is_atomic() {
+    let now=Instant::now();
+    for slot in 0..2 {
+        let valid=captured_ready_requests_fix06(slot);
+        let requests=&valid[33..]; let mut bad_payloads=Vec::new();
+        for length in 1..33 {bad_payloads.push([&valid[..length],requests].concat());}
+        for length in 1..7 {bad_payloads.push([&valid[..68],&valid[68..68+length]].concat());}
+        let mut malformed=valid.clone(); malformed[0]=0x0e; bad_payloads.push(malformed);
+        bad_payloads.push([ready(1-slot).as_slice(),requests].concat());
+        bad_payloads.push([valid.as_slice(),&[0]].concat());
+        bad_payloads.push([valid.as_slice(),&vec![0;438]].concat()); //513 bytes.
+        for id in [123,area_wire::area_id(117).unwrap(),152_043_563] {
+            bad_payloads.push([valid.as_slice(),request(id).as_slice()].concat());
+        }
+        for payload in bad_payloads {
+            let mut s=before_first_ready(now,slot);
+            // Nonzero delivery cursors make a half-committed READY observable.
+            let c=s.shared.as_mut().unwrap();c.shot_cursor=9;c.impact_cursor=3;
+            c.tracer_started[2]=true;c.tracer_stopped[2]=true;c.health_sent=[Some(70),Some(80)];
+            let before=s.clone();
+            assert!(s.receive(&frame(&s,&payload),now).is_err(),"slot={slot} bytes={}",payload.len());
+            assert_input_rolled_back(&s,&before,now);
+        }
+        let mut future=before_first_ready(now,slot);
+        future.shared.as_mut().unwrap().announced_areas=36;
+        let before=future.clone();
+        assert!(future.receive(&frame(&future,&valid),now).is_err());
+        assert_input_rolled_back(&future,&before,now);
+    }
+}
+
+#[test]
+fn entities_fix06_ready_prefix_requires_owned_creation_ack_atomically() {
+    let now=Instant::now();
+    for slot in 0..2 {
+        for own in [None,Some((0,false))] {
+            let mut s=before_first_ready(now,slot);
+            s.shared.as_mut().unwrap().creations[slot]=own;
+            let before=s.clone();
+            assert!(s.receive(&frame(&s,&captured_ready_requests_fix06(slot)),now).is_err());
+            assert_input_rolled_back(&s,&before,now);
+        }
+    }
+}
+
+#[test]
+fn entities_fix06_both_orders_reserve_binding_and_accept_same_frame_creation_ack() {
+    let now=Instant::now();
+    for slot in 0..2 {
+        for ready_first in [false,true] {
+            let payload=captured_fix06_order(slot,ready_first);
+            let mut s=before_first_ready(now,slot);
+            for _ in 0..7 {s.tx.enqueue().unwrap();}
+            s.receive(&frame(&s,&payload),now).unwrap();
+            let c=s.shared.as_ref().unwrap();
+            assert_eq!(c.phase,Phase::Driving);assert_eq!(c.binding,Some((7,false)));
+            assert_eq!(s.tx.len(),8);assert_eq!(c.pending_area_requests.len(),6);
+            assert!(c.areas.iter().all(|(pending,_)|pending.is_none()));
+
+            let mut full=before_first_ready(now,slot);
+            let body=wire::create_vehicle(full.shared.as_ref().unwrap().view.as_ref().unwrap(),slot).unwrap();
+            let sequence=full.tx.enqueue_body_tracked(&body).unwrap();
+            full.shared.as_mut().unwrap().creations[slot]=Some((sequence,false));
+            for _ in 0..7 {full.tx.enqueue().unwrap();}
+            while full.tx.due(now,full.rx).unwrap().is_some() {}
+            let before=full.clone();let mut input=frame(&full,&payload);
+            assert!(full.receive(&input,now).is_err());assert_input_rolled_back(&full,&before,now);
+            input.cumulative=Some(sequence+1);
+            full.receive(&input,now).unwrap();
+            let c=full.shared.as_ref().unwrap();
+            assert_eq!(c.phase,Phase::Driving);assert_eq!(c.binding,Some((8,false)));
+            assert!(c.creations[slot].unwrap().1);assert_eq!(full.tx.len(),8);
+            assert_eq!(c.pending_area_requests.len(),6);
+            assert!(c.areas.iter().all(|(pending,_)|pending.is_none()));
+        }
+    }
 }
 
 #[test]

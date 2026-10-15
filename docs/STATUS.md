@@ -6,13 +6,16 @@
 Следующий шаг — [ACTIVE_GATE](ACTIVE_GATE.md), порядок — [IMPLEMENTATION_ORDER](IMPLEMENTATION_ORDER.md),
 практика — [DEV_NOTES](DEV_NOTES.md), факты — [research/INDEX](research/INDEX.md).
 
-STAB-01 в ветке `codex/stab01-battle-isolation`: runtime `25e07d3`,
-847 gateway tests PASS / 5 ignored, сборка PASS; инъекция ошибки с настоящими
+STAB-01 в ветке `codex/stab01-battle-isolation`: runtime `13edf3b`,
+850 gateway tests PASS / 5 ignored, сборка PASS; инъекция ошибки с настоящими
 workers и второй бой PASS. Native-fix04 выявил чёрный экран B на warm300rev2
 вместо primaryrev3; привязка к собственной фикстуре исправлена и проверена
 реальным replay пакета. Native-fix05: оба ручных возврата в ангар приняты;
 повторный бой FAIL (CAPTCHA A, ordinary-only кнопка B). Lab-only допуск и
-исходящий сервисный счётчик исправляются, P08B не начата. В main ещё не слито. Факты —
+исходящий сервисный счётчик исправлены, client regressions PASS. Fix06: оба native700
+приняты, но второй B завис на ожидании игроков — READY33 перед шестью area requests
+отвергнут. Разбор измеренного пакета исправляется; native-приёмка FAIL, merge закрыт.
+P08B не начата, в main ещё не слито. Факты —
 [STAB-01](research/STAB01_BATTLE_STABILITY.md).
 
 ## Принято владельцем на настоящем клиенте #717

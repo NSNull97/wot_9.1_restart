@@ -203,6 +203,61 @@
 - Новый native-повтор с этими policy пока UNKNOWN. Возврат fix05 PASS не закрывает
   всю карточку: второй общий бой остаётся обязательным, merge не выполнен.
 
+## VERIFIED — проверки lab-only повторного входа, fix06
+
+- Runtime `13edf3bfe8f4681f720709f6195ec5ade5ec85d6`; gateway полный suite и build:
+  **850 passed / 0 failed / 5 ignored**, `local/build/server/gateway-p05b-stab01-fix06/`.
+  Executable SHA256 `02f7565fad12a6cdd916b103eaaff8337d41f06934ef66bfafa02faa831889f2`.
+  Команда: `python -B -X utf8 server/build.py gateway --test --out
+  local/build/server/gateway-p05b-stab01-fix06`. Layout PASS: 117 files / 22 relocations.
+- Новые meaningful Rust-регрессии: full initial и full warm Account100 обоих
+  настоящих профилей содержат только служебный counter delta; source fixture SHA
+  неизменны, fake drive state не создаётся. Все 1106 однобайтных мутации secondary,
+  усечение/дописка, подмена identity/профиля отвергаются.
+- Клиент VERSION4: Python host 64 client-policy + 18 click-contract + 112
+  acceptance/control tests PASS. CPython2.7.3: 64 выполнены, 3 ожидаемых host-only
+  skip (61 PASS). Команды, stdout/stderr и результат —
+  `native-reentry-policy/root-checks01/`. Первоначальный scoped FAIL одного
+  VERSION3 assertion сохранён в subagent report; проверка обновлена до module.VERSION,
+  полный применимый host прогон прошёл.
+- Независимый read-only review client/server границ без замечаний. Фикстуры,
+  их source hashes, DB, экипаж/БК/готовность не менялись; native700 ещё требует
+  фактического повторного входа. Original внешняя CAPTCHA заблокирована как прежде.
+- Свежий `native-fix06`, run `stabfix06`: binding SHA256
+  `922e1578b0251bf02c6a05fbf0d493545efb43e428ea84ca718a3146a6c8b0e2`,
+  322 tracked runtime-файла, все helper/build/asset pins проверены, dry-runs PASS.
+  Новый client patch скомпилирован закреплённым Python2.7.3 и установлен в обе
+  разрешённые копии по свежим ledger. Старый fix05 остановлен по receipts, обе
+  установки откачены; оригинал не менялся. Новые процессы запущены.
+- OBSERVED: владелец сначала сообщил, что оба вошли во второй общий бой, затем
+  уточнил: один стрелял только прямо, второй висел на ожидании игроков.
+  Загрузка карты не считается законченной готовностью; native-приёмка **FAIL**.
+- VERIFIED: fix06 принял native700 обеих прежних сессий и создал второй мир
+  `13855427602537674578`. A завершил READY (строка1310), B получил первый
+  `SHARED_REJECT` на sequence204, `shared/mod.rs:407` (строка1311), затем gaps
+  и idle timeout. Все3246 capture packets декодированы без ошибок. B204 —
+  `packet-001947-base_client_to_server.bin`, SHA256
+  `d55f115040b6d538fced5c1e111f0cc04d7e88c9d569b2ee347dd5b91726b344`,
+  capture244.0124144s, body80 / application75, cumulative ACK271.
+- VERIFIED: фактический application75 содержит точный собственный READY33,
+  затем6 запросов областей152043563..568 (по7 байт). В первом бою оба клиента
+  присылали обратный порядок: requests42 + READY33. Initial parser принимал
+  только requests-prefix + READY-tail или голый READY33. Новый разбор проверяет
+  точный owned READY33-prefix и весь хвост тем же bounded mixed parser в одной
+  receive-транзакции; исходный `wire::ready` остаётся strict exact33.
+  Packet metadata, raw application hex, decode hashes и timeline —
+  `native-fix06/ready-failure-summary.json`.
+- VERIFIED / UNKNOWN: A отправил92 разных aim intents; поздний snapshot tick1495
+  имеет yaw−1.2608869 / pitch0.06873977, исходящие gunAnglesPacked меняются.
+  Постоянная серверная блокировка наведения этим опровергается; источник ощущения
+  «стрелял только прямо» ещё UNKNOWN. Раннее ожидание B — возможное объяснение,
+  не установленная причина. Повторная проверка должна включать наведение обоих.
+- VERIFIED: оба первых боя fix06 завершились отдельными deadline faults
+  (`logical deadline lag exceeds500ms`), процесс сохранился, возвраты/reset
+  отработали. Ручной выход обоих ранее подтверждён на fix05; полноценный повтор
+  боя обоих на fix06 не подтверждён. После сохранения логов собственные процессы
+  fix06 остановлены по receipts, обе установки откачены штатно. Merge закрыт.
+
 ## OBSERVED / VERIFIED — инцидент локальных фикстур
 
 - Вспомогательный managed worktree содержал junctions `local/server` и
