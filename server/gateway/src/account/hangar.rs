@@ -49,7 +49,68 @@ pub enum Incoming { Sync(Request), Refresh(Request), Chat(ChatRequest), Language
                     CrewBarracks(crate::crew_barracks091::Request),
                     CrewLearn(crate::crew_progression091::Request),
                     ResearchService(crate::research_service091::Request),
-                    UnsupportedIntArray { id:i16, command:i16, argument_count:usize } }
+                    Unavailable { id:i16, command:i16, method:CommandMethod, argument_count:usize } }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandMethod { Int3, Int4, IntArray }
+impl CommandMethod {
+    pub fn name(self)->&'static str {match self {Self::Int3=>"doCmdInt3",Self::Int4=>"doCmdInt4",Self::IntArray=>"doCmdIntArr"}}
+}
+
+// Commands answered RES_NOT_AVAILABLE when no enabled service claims them.
+// VERIFIED by a bytecode scan of every original #717 _doCmd* call site
+// (Stats/Inventory/Shop/Trader/Account): each proxy is
+// lambda(requestID, resultID, errorStr, ext={}), so the measured
+// onCmdResponseExt reply reaches the UI error handler. prb_*, tutorial and
+// financial-password callbacks take three arguments and stay unmeasured;
+// sync commands 100/300/600 keep their strict cache paths.
+const UNAVAILABLE_INT3:[i16;22]=[101,105,106,107,121,151,152,155,157,201,202,204,205,206,306,503,504,505,506,507,802,803];
+const UNAVAILABLE_INT4:[i16;6]=[153,301,302,303,305,309];
+const UNAVAILABLE_INT_ARRAY:[i16;14]=[102,103,104,108,120,122,123,154,156,203,304,308,1600,1601];
+const MAX_UNAVAILABLE_ARRAY:usize=100;
+
+/// Account request ID namespace shared by every request that receives a reply.
+fn request_id(row:&Incoming)->Option<i16> {
+    match row {
+        Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync{request:r,..}
+        |Incoming::CachedSync{request:r,..}|Incoming::CachedRefresh{request:r,..}
+        |Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
+        Incoming::Language{id}|Incoming::Unavailable{id,..}=>Some(*id),
+        Incoming::AmmoService(r)=>Some(r.id),
+        Incoming::CrewService(r)=>Some(r.id),
+        Incoming::CrewTransfer(r)=>Some(r.id),
+        Incoming::CrewLearn(r)=>Some(r.id),
+        Incoming::CrewDismiss(r)=>Some(r.id),
+        Incoming::CrewBarracks(r)=>Some(r.id),
+        Incoming::ResearchService(r)=>Some(r.id),
+        Incoming::ServerStats=>Some(202),
+        Incoming::Chat(_)=>None, // ClientChat has its own i64 request namespace.
+    }
+}
+
+/// A well-formed, explicitly listed command that no enabled service claimed.
+fn unavailable(rows:&[Incoming],packet:&[u8],method:CommandMethod)->io::Result<Incoming> {
+    let payload=&packet[3..];
+    let id=i16::from_le_bytes([payload[0],payload[1]]);
+    let command=i16::from_le_bytes([payload[2],payload[3]]);
+    let argument_count=match method {
+        CommandMethod::Int3=>3,CommandMethod::Int4=>4,
+        CommandMethod::IntArray=>{
+            let count=u32::from_le_bytes(payload[4..8].try_into().map_err(|_|invalid("array count"))?) as usize;
+            if count>MAX_UNAVAILABLE_ARRAY || payload.len()!=8+4*count {return Err(invalid("unavailable array shape"));}
+            count
+        },
+    };
+    if id<=0 || rows.iter().any(|row|request_id(row)==Some(id)) {return Err(invalid("unavailable command request ID"));}
+    Ok(Incoming::Unavailable{id,command,method,argument_count})
+}
+fn command_of(packet:&[u8])->i16 {i16::from_le_bytes([packet[5],packet[6]])}
+/// Test view of "never dispatched to a disabled service": the whole bundle is
+/// rejected, or every row is only answered RES_NOT_AVAILABLE.
+#[cfg(test)]
+pub(crate) fn refused(rows:io::Result<Vec<Incoming>>)->bool {
+    rows.map_or(true,|rows|!rows.is_empty() && rows.iter().all(|row|matches!(row,Incoming::Unavailable{..})))
+}
 
 /// Measured gui-01 bundle: three ordinary sync calls plus friend status, roster
 /// and service-history chat calls. No arbitrary command arguments are accepted.
@@ -113,6 +174,9 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                 && packet[5..7]==crate::crew_transfer091::COMMAND.to_le_bytes() => {
                 Incoming::CrewTransfer(crate::crew_transfer091::Request::decode(&packet[3..])?)
             },
+            0x8e if interactive && length==20 && UNAVAILABLE_INT3.contains(&command_of(packet)) => {
+                unavailable(&rows,packet,CommandMethod::Int3)?
+            },
             0x8e if length == 20 => {
                 // gui-02: after the state stream, AccountSyncData requests
                 // revision1 once more before releasing its subscribers.
@@ -159,7 +223,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                     | Incoming::CachedRefresh {request:previous,..}
                     | Incoming::AmmoRefresh {request:previous,..}
                     if previous.id == r.id || previous.command == r.command)
-                    || matches!(r0, Incoming::Language { id } | Incoming::UnsupportedIntArray {id,..} if *id == r.id)
+                    || matches!(r0, Incoming::Language { id } | Incoming::Unavailable {id,..} if *id == r.id)
                     || matches!(r0, Incoming::AmmoService(previous) if previous.id==r.id)
                     || matches!(r0, Incoming::CrewService(previous) if previous.id==r.id)
                     || matches!(r0, Incoming::CrewTransfer(previous) if previous.id==r.id)
@@ -208,21 +272,22 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                         Incoming::ResearchService(r) => r.id == id,
                         Incoming::Chat(_) => false,
                         Incoming::ServerStats => id == 202,
-                        Incoming::UnsupportedIntArray {id:previous,..} => *previous==id,
+                        Incoming::Unavailable {id:previous,..} => *previous==id,
                     }) {
                     return Err(invalid("unmeasured language request"));
                 }
                 Incoming::Language { id }
             },
-            crate::crew_service091::CANDIDATE_METHOD if crew_service && length==crate::crew_service091::PAYLOAD_BYTES => {
+            crate::crew_service091::CANDIDATE_METHOD if crew_service && length==crate::crew_service091::PAYLOAD_BYTES
+                && command_of(packet)==crate::crew_service091::COMMAND => {
                 // INFERRED wire0x90 from pinned inherited #717 method table.
                 // Explicit opt-in test_lab only; native capture is the gate.
                 Incoming::CrewService(crate::crew_service091::Request::decode(&packet[3..])?)
             },
-            0x97 if ammo_service && length==72 => {
+            0x97 if ammo_service && length==72 && command_of(packet)==108 => {
                 Incoming::AmmoService(crate::ammo_service091::Request::decode(&packet[3..])?)
             },
-            0x97 if interactive && length==72 => {
+            0x97 if interactive && length==72 && command_of(packet)==108 => {
                 // Actual auth09 packet222: doCmdIntArr, CMD_SET_AND_FILL_LAYOUTS.
                 // Only its measured 16-INT32 layout shape is recognized here.
                 // The command is unavailable; no ammo/equipment/price is applied.
@@ -243,35 +308,24 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                         Incoming::CrewDismiss(r)=>r.id==id,
                         Incoming::CrewBarracks(r)=>r.id==id,
                         Incoming::ResearchService(r)=>r.id==id,
-                        Incoming::Language{id:previous}|Incoming::UnsupportedIntArray{id:previous,..}=>*previous==id,
+                        Incoming::Language{id:previous}|Incoming::Unavailable{id:previous,..}=>*previous==id,
                         Incoming::ServerStats=>id==202,Incoming::Chat(_)=>false,
                     }) {return Err(invalid("unmeasured unavailable integer-array command"));}
-                Incoming::UnsupportedIntArray {id,command,argument_count:count as usize}
+                Incoming::Unavailable {id,command,method:CommandMethod::IntArray,argument_count:count as usize}
+            },
+            0x90 if interactive && length==24 && UNAVAILABLE_INT4.contains(&command_of(packet)) => {
+                unavailable(&rows,packet,CommandMethod::Int4)?
+            },
+            0x97 if interactive && length>=8 && UNAVAILABLE_INT_ARRAY.contains(&command_of(packet)) => {
+                unavailable(&rows,packet,CommandMethod::IntArray)?
             },
             _ => return Err(invalid("unmeasured hangar method")),
         };
         // The explicit service gate also checks request-ID collisions involving
         // statistics and layout calls in either order, before any dispatch.
         if ammo_service {
-            fn account_id(row:&Incoming)->Option<i16> {
-                match row {
-                    Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync{request:r,..}
-                    |Incoming::CachedSync{request:r,..}|Incoming::CachedRefresh{request:r,..}
-                    |Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
-                    Incoming::Language{id}|Incoming::UnsupportedIntArray{id,..}=>Some(*id),
-                    Incoming::AmmoService(r)=>Some(r.id),
-                    Incoming::CrewService(r)=>Some(r.id),
-                    Incoming::CrewTransfer(r)=>Some(r.id),
-                    Incoming::CrewLearn(r)=>Some(r.id),
-                    Incoming::CrewDismiss(r)=>Some(r.id),
-                        Incoming::CrewBarracks(r)=>Some(r.id),
-                    Incoming::ResearchService(r)=>Some(r.id),
-                    Incoming::ServerStats=>Some(202),
-                    Incoming::Chat(_)=>None, // ClientChat has its own i64 request namespace.
-                }
-            }
-            if let Some(id)=account_id(&row) {
-                if rows.iter().any(|previous|account_id(previous)==Some(id)) {
+            if let Some(id)=request_id(&row) {
+                if rows.iter().any(|previous|request_id(previous)==Some(id)) {
                     return Err(invalid("duplicate service account request ID"));
                 }
             }
@@ -1475,11 +1529,40 @@ mod tests {
         }
         assert_eq!(server_stats(),vec![0x13,0x48,1,0,0,0,1,0,0,0]);
     }
+    fn int3(id:i16,command:i16)->Vec<u8> {
+        let mut b=vec![0x8e,20,0];b.extend(id.to_le_bytes());b.extend(command.to_le_bytes());b.extend(3i64.to_le_bytes());b.extend([0;8]);b
+    }
+    #[test]
+    fn listed_unclaimed_commands_are_answered_unavailable_instead_of_stalling() {
+        // Owner stand 2026-10-15: CMD_BUY_SLOT205 via doCmdInt3 was dropped and the client waited forever.
+        let slot=int3(226,205);
+        assert_eq!(requests_interactive(&slot).unwrap(),vec![Incoming::Unavailable{id:226,command:205,method:CommandMethod::Int3,argument_count:3}]);
+        assert!(requests(&slot).is_err()); // the old laboratory stays strict
+        // Three-argument callbacks (prebattle402, tutorial1150) and unlisted commands stay unmeasured.
+        for command in [402,1150,9999] {assert!(requests_interactive(&int3(226,command)).is_err(),"{command}");}
+        assert!(requests_interactive(&[slot.clone(),int3(226,206)].concat()).is_err()); // shared request ID
+        assert_eq!(requests_interactive(&[slot.clone(),int3(227,206)].concat()).unwrap().len(),2);
+        let mut zero=slot.clone();zero[3..5].copy_from_slice(&0i16.to_le_bytes());assert!(requests_interactive(&zero).is_err());
+        // doCmdInt4: CMD303 is barracks recruitment only when that service is enabled.
+        let mut barracks=vec![0x90,24,0,228,0];barracks.extend(303i16.to_le_bytes());barracks.extend(3i64.to_le_bytes());
+        for value in [7169i32,4,0] {barracks.extend(value.to_le_bytes());}
+        assert_eq!(requests_interactive(&barracks).unwrap(),vec![Incoming::Unavailable{id:228,command:303,method:CommandMethod::Int4,argument_count:4}]);
+        assert!(matches!(requests_crew_barracks(&barracks).unwrap()[0],Incoming::CrewBarracks(_)));
+        assert!(matches!(requests_crew_service(&barracks).unwrap()[0],Incoming::Unavailable{command:303,..}));
+        // doCmdIntArr: exact count, bounded, e.g. CMD_SELL_VEHICLE304 and optional devices102.
+        let array=|command:i16,count:u32,values:usize|{let mut b=vec![0x97,(8+4*values) as u8,0,229,0];b.extend(command.to_le_bytes());
+            b.extend(count.to_le_bytes());b.extend(vec![0;4*values]);b};
+        assert_eq!(requests_interactive(&array(304,3,3)).unwrap(),vec![Incoming::Unavailable{id:229,command:304,method:CommandMethod::IntArray,argument_count:3}]);
+        for bad in [array(304,4,3),array(304,2,3),array(304,101,101)] {assert!(requests_interactive(&bad).is_err());}
+        assert!(requests_interactive(&array(9999,1,1)).is_err());
+        let devices=array(102,16,16);
+        assert!(matches!(requests_ammo_service(&devices).unwrap()[0],Incoming::Unavailable{command:102,..}));
+    }
     #[test]
     fn actual_layout_request_is_explicitly_unavailable_only_in_interactive_mode() {
         let mut packet=vec![0x97,72,0,226,0,108,0];packet.extend(16u32.to_le_bytes());
         for value in [1i32,1,6,2570,96,2826,0,3082,0,6,0,0,0,0,0,0] {packet.extend(value.to_le_bytes());}
-        assert_eq!(requests_interactive(&packet).unwrap(),vec![Incoming::UnsupportedIntArray{id:226,command:108,argument_count:16}]);
+        assert_eq!(requests_interactive(&packet).unwrap(),vec![Incoming::Unavailable{id:226,command:108,method:CommandMethod::IntArray,argument_count:16}]);
         assert!(requests(&packet).is_err());
         for end in 1..packet.len() {assert!(requests_interactive(&packet[..end]).is_err());}
         for offset in [0,1,2,5,6,7,8,9,10,19,20,21,22,47,48,49,50] {

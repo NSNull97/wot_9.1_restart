@@ -166,7 +166,7 @@ mod tests {
     #[test] fn mixed_account_bundle_rejects_reused_ids_and_preserves_legacy_opt_in() {
         for command in COMMANDS {
             let (method,payload)=packet(command);let mut wire=vec![method];wire.extend((payload.len() as u16).to_le_bytes());wire.extend(payload);
-            assert!(crate::hangar091::requests_interactive(&wire).is_err());
+            assert!(crate::hangar091::refused(crate::hangar091::requests_interactive(&wire)));
             assert_eq!(crate::hangar091::requests_research_service(&wire).unwrap().len(),1);
             assert!(crate::hangar091::requests_research_service(&[wire.clone(),wire].concat()).is_err());
         }

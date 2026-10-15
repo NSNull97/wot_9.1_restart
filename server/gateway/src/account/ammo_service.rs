@@ -225,7 +225,7 @@ mod tests {
         assert_eq!(&wire[..15],&[0x97,72,0,226,0,108,0,16,0,0,0,1,0,0,0]);
         assert_eq!(hangar091::requests_ammo_service(&wire).unwrap(),vec![Incoming::AmmoService(request.clone())]);
         assert!(hangar091::requests(&wire).is_err());
-        assert_eq!(hangar091::requests_interactive(&wire).unwrap(),vec![Incoming::UnsupportedIntArray{id:226,command:108,argument_count:16}]);
+        assert_eq!(hangar091::requests_interactive(&wire).unwrap(),vec![Incoming::Unavailable{id:226,command:108,method:hangar091::CommandMethod::IntArray,argument_count:16}]);
         assert_eq!(request.layout().unwrap(),[ShellCount{compact_id:2570,count:20},ShellCount{compact_id:2826,count:0},ShellCount{compact_id:3082,count:0}]);
     }
 

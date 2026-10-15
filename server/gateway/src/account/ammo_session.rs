@@ -309,7 +309,7 @@ mod tests {
 
     #[test] fn research_requires_explicit_profile_and_whole_frame_commit() {
         let now=Instant::now();let raw=research_packet(226);
-        assert!(crate::hangar091::requests_crew_transfer(&raw).is_err());
+        assert!(crate::hangar091::refused(crate::hangar091::requests_crew_transfer(&raw)));
         let mut disabled=ready_transfer(now);assert!(enqueue_research(&mut disabled,research_request(226),&mut vec![]).is_err());
         let original=ready_research(now);let before=original.ammo_service.clone();
         let mut s=original.clone();let mut bad=raw.clone();bad.push(0xff);
@@ -347,6 +347,18 @@ mod tests {
             .with_cross_vehicle(true).with_research(true).research_enabled());
     }
 
+    #[test] fn unclaimed_slot_purchase_is_answered_and_the_channel_keeps_working() {
+        // Owner stand 2026-10-15: an unanswered CMD_BUY_SLOT stalled every later client frame.
+        let now=Instant::now();let mut s=ready_research(now);let before=s.ammo_service.clone();
+        let mut slot=vec![0x8e,20,0,226,0];slot.extend(205i16.to_le_bytes());slot.extend(5i64.to_le_bytes());slot.extend([0;8]);
+        s.receive(&frame(&s,1,&slot),now).unwrap();assert_eq!(s.ammo_service,before);
+        let clear=s.tx.due(now,s.rx).unwrap().unwrap().2;
+        assert_eq!(transport091::parse_interactive(&clear).unwrap().body,crate::hangar091::unavailable_response(226).unwrap());
+        assert!(enqueue_research(&mut s,research_request(226),&mut vec![]).is_err()); // ID already answered
+        s.receive(&frame(&s,2,&research_packet(227)),now).unwrap();
+        assert_eq!(s.ammo_service.as_ref().unwrap().pending.len(),1);
+    }
+
     #[test] fn research_maps_only_its_shop_revision_for_crew_commands() {
         let barracks=|shop_revision|barracks_codec::Request{id:226,shop_revision,vehicle_type:7169,role:4,cost:0};
         let mut s=ready_research(Instant::now());let mut events=vec![];
@@ -382,7 +394,7 @@ mod tests {
     #[test] fn transfer_is_opt_in_and_complete_frame_validation_precedes_enqueue() {
         let now=Instant::now();let r=transfer_packet(transfer_request(226));
         for parse in [crate::hangar091::requests_interactive,crate::hangar091::requests_ammo_service,crate::hangar091::requests_crew_service] {
-            assert!(parse(&r).is_err());
+            assert!(crate::hangar091::refused(parse(&r)));
         }
         let original=ready_transfer(now);let mut bad=r.clone();bad.push(0xff);
         let mut parent=frame(&original,2,&[0xff]);parent.piggybacks.push(frame(&original,1,&r));
@@ -571,10 +583,12 @@ mod tests {
     #[test]
     fn crew_candidate_requires_explicit_gate_and_preserves_full_frame_atomicity() {
         let now=Instant::now();let wire=crew_packet(crew_request(226));
-        assert!(crate::hangar091::requests(&wire).is_err());assert!(crate::hangar091::requests_interactive(&wire).is_err());
-        assert!(crate::hangar091::requests_ammo_service(&wire).is_err());
+        assert!(crate::hangar091::requests(&wire).is_err());assert!(crate::hangar091::refused(crate::hangar091::requests_interactive(&wire)));
+        assert!(crate::hangar091::refused(crate::hangar091::requests_ammo_service(&wire)));
+        // Without the crew gate the command is answered unavailable, never queued.
         let mut session=ready(now);let before=session.ammo_service.clone();
-        assert!(session.receive(&frame(&session,1,&wire),now).is_err());assert_eq!(session.ammo_service,before);
+        session.receive(&frame(&session,1,&wire),now).unwrap();assert_eq!(session.ammo_service,before);
+        assert!(session.unsupported_request_ids.contains(&226));
         let original=ready_crew(now);
         let mut bad=wire.clone();bad.push(0xff);
         let mut invalid_parent=frame(&original,2,&[0xff]);invalid_parent.piggybacks.push(frame(&original,1,&wire));
@@ -690,7 +704,7 @@ mod tests {
         let now=Instant::now();let original=ready_dismissal(now);let dismiss=dismiss_packet(226,3);
         for parse in [crate::hangar091::requests,crate::hangar091::requests_interactive,crate::hangar091::requests_ammo_service,
             crate::hangar091::requests_crew_service,crate::hangar091::requests_crew_transfer,crate::hangar091::requests_crew_progression] {
-            assert!(parse(&dismiss).is_err());
+            assert!(crate::hangar091::refused(parse(&dismiss)));
         }
         let mut tail=dismiss.clone();tail.push(0xff);
         let mut payloads=vec![tail];
@@ -729,7 +743,7 @@ mod tests {
     #[test] fn progression_opt_in_and_whole_frame_atomicity_include_skill_commands() {
         let now=Instant::now();let original=ready_progression(now);let skill=skill_packet(226,16);
         for parse in [crate::hangar091::requests_interactive,crate::hangar091::requests_ammo_service,
-            crate::hangar091::requests_crew_service,crate::hangar091::requests_crew_transfer] {assert!(parse(&skill).is_err());}
+            crate::hangar091::requests_crew_service,crate::hangar091::requests_crew_transfer] {assert!(crate::hangar091::refused(parse(&skill)));}
         let mut tail=skill.clone();tail.push(0xff);
         for payload in [tail,[skill.clone(),transfer_packet(transfer_request(226))].concat(),
             [packet(request(226)),skill.clone()].concat(),[skill.clone(),refresh_packet(226,1)].concat()] {
