@@ -625,7 +625,8 @@ pub(super) mod tests {
         assert!(Bundle::from_bytes(&vec![0; MAX_BYTES as usize+1]).is_err());
         assert!(Bundle::load(Path::new("."), Path::new("relative.json")).is_err());
         let b = bundle(); let now = std::time::Instant::now(); let mut actor = super::super::model::tests::world(now).actors[0].clone();
-        assert!(b.world_mesh(&actor, 2, 1000).is_err());
+        for slot in 0..super::super::model::MAX_ACTORS { assert!(b.world_mesh(&actor, slot, 1000).is_ok()); }
+        assert!(b.world_mesh(&actor, super::super::model::MAX_ACTORS, 1000).is_err());
         actor.position[0] = f32::NAN; assert!(b.world_mesh(&actor, 0, 1000).is_err());
     }
 }

@@ -45,7 +45,9 @@ pub struct Projectile {
 
 impl Projectile {
     pub fn launch(sequence: u32, slot: usize, actor: &model::Actor, now: Instant) -> io::Result<Self> {
-        Self::launch_for_limit(sequence,slot,actor,now,model::MAX_BATTLE_SHOTS)
+        // Legacy homogeneous callers retain their mounted ammunition bound.
+        // Mixed rosters pass their explicit aggregate limit through the method below.
+        Self::launch_for_limit(sequence,slot,actor,now,actor.vehicle_kind().battle_shot_limit())
     }
     pub fn launch_for_limit(sequence:u32,slot:usize,actor:&model::Actor,now:Instant,shot_limit:usize)->io::Result<Self> {
         let kind=actor.vehicle_kind(); let shell=kind.shell();

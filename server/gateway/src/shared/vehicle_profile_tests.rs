@@ -11,7 +11,7 @@ fn world(now:Instant,kind:VehicleKind)->model::World {
     w.start(now).unwrap();w.set_ready(0,1).unwrap();w.set_ready(1,2).unwrap();w
 }
 
-#[test] fn is7_actor_descriptor_health_binding_and_mixed_kind_rejection() {
+#[test] fn is7_actor_descriptor_health_binding_and_mixed_kind_geometry_isolation() {
     let now=Instant::now();let w=world(now,VehicleKind::Is7);
     for slot in 0..2 {
         let a=&w.actors[slot];assert_eq!(a.vehicle_kind(),VehicleKind::Is7);
@@ -29,7 +29,12 @@ fn world(now:Instant,kind:VehicleKind)->model::World {
         assert_eq!(&binding[binding.len()-4..],&13.7f32.to_le_bytes());
     }
     let mut mixed=w.clone();mixed.actors[1]=world(now,VehicleKind::Ms1).actors[1].clone();
-    assert!(wire::roster(&mixed).is_err());assert!(wire::create_vehicle(&mixed,1).is_err());
+    let roster=wire::roster(&mixed).unwrap();
+    assert!(roster.windows(VehicleKind::Is7.descriptor().len()).any(|v|v==VehicleKind::Is7.descriptor()));
+    assert!(roster.windows(VehicleKind::Ms1.descriptor().len()).any(|v|v==VehicleKind::Ms1.descriptor()));
+    let create=wire::create_vehicle(&mixed,1).unwrap();
+    assert!(create.windows(VehicleKind::Ms1.descriptor().len()).any(|v|v==VehicleKind::Ms1.descriptor()));
+    assert_eq!(&create[43..45],&90i16.to_le_bytes());
     let mut fresh=model::World::new_for_vehicle(72,now,MapId::Prohorovka,VehicleKind::Is7).unwrap();
     assert!(fresh.bind_geometry(Arc::new(geometry::tests::bundle())).is_err());
     assert!(fresh.bind_destructible_test_lab().is_err());
