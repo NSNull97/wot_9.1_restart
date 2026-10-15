@@ -60,19 +60,30 @@ pub fn metadata(directory:&Path,account_id:&str,database_id:i32,revision:u64,wir
     metadata_for(Profile::Ms1,directory,account_id,database_id,revision,wire)
 }
 pub fn metadata_for(profile:Profile,directory:&Path,account_id:&str,database_id:i32,revision:u64,wire:i64)->io::Result<()> {
+    metadata_with_limit(profile,directory,account_id,database_id,revision,wire,16384,true)
+}
+/// Research profile13 keeps the accepted P04K crew binding. Its larger state and
+/// its research shop are bound by research metadata, not P04K's exact shop.
+pub fn metadata_for_research(directory:&Path,account_id:&str,database_id:i32,revision:u64,wire:i64)->io::Result<()> {
+    metadata_with_limit(Profile::Barracks,directory,account_id,database_id,revision,wire,crate::research_service091::MAX_STATE_BYTES,false)
+}
+fn metadata_with_limit(profile:Profile,directory:&Path,account_id:&str,database_id:i32,revision:u64,wire:i64,maximum:usize,barracks_shop:bool)->io::Result<()> {
     let filename=match profile {Profile::Barracks=>"crew-barracks.json",Profile::Dismissal=>"crew-dismissal.json",Profile::Progression=>"crew-progression.json",Profile::Roster=>"crew-roster.json",Profile::Ms1Is7=>"crew-cross-transfer.json",Profile::Ms1=>"crew-transfer.json"};
     let raw=super::crew_service091::fixture_file(directory,filename,4096)?;
-    let state=super::crew_service091::fixture_file(directory,"state.bin",16384)?;
-    if profile==Profile::Barracks {crate::crew_barracks091::shop(directory)?;}
-    metadata_bytes_for(profile,&raw,&state,account_id,database_id,revision,wire)
+    let state=super::crew_service091::fixture_file(directory,"state.bin",maximum)?;
+    if barracks_shop && profile==Profile::Barracks {crate::crew_barracks091::shop(directory)?;}
+    metadata_bytes_with_limit(profile,&raw,&state,account_id,database_id,revision,wire,maximum)
 }
 #[cfg(test)]
 fn metadata_bytes(raw:&[u8],state:&[u8],account_id:&str,database_id:i32,revision:u64,wire:i64)->io::Result<()> {
     metadata_bytes_for(Profile::Ms1,raw,state,account_id,database_id,revision,wire)
 }
 fn metadata_bytes_for(profile:Profile,raw:&[u8],state:&[u8],account_id:&str,database_id:i32,revision:u64,wire:i64)->io::Result<()> {
+    metadata_bytes_with_limit(profile,raw,state,account_id,database_id,revision,wire,16384)
+}
+fn metadata_bytes_with_limit(profile:Profile,raw:&[u8],state:&[u8],account_id:&str,database_id:i32,revision:u64,wire:i64,maximum:usize)->io::Result<()> {
     super::crew_service091::identity(account_id,database_id)?;
-    if raw.len()>4096 || state.is_empty() || state.len()>16384 {return Err(invalid("transfer metadata size"));}
+    if raw.len()>4096 || state.is_empty() || state.len()>maximum {return Err(invalid("transfer metadata size"));}
     let b=Binding::parse(raw,profile)?;
     if b.version!=1 || b.account_id!=account_id || b.native_database_id!=database_id
         || !(profile.minimum_revision()..=i32::MAX as u64).contains(&b.revision) || b.revision!=revision

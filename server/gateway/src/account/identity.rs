@@ -7,27 +7,33 @@ use serde_json::Value;
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
 
 // Reject duplicate top-level keys instead of accepting an ambiguous last value.
-struct Object(BTreeMap<String,Value>);
-impl<'de> Deserialize<'de> for Object {
+/// Unique-key JSON object with at most LIMIT top-level fields.
+struct Bounded<const LIMIT:usize>(BTreeMap<String,Value>);
+/// Requests, replies and the gateway config keep the original 16-field guard.
+const REQUEST_FIELDS:usize=16;
+/// Fixture manifests gain fields with each opt-in service (P09E writes 17) and
+/// are already size-bounded by bounded_file.
+const FIXTURE_METADATA_FIELDS:usize=64;
+impl<'de,const LIMIT:usize> Deserialize<'de> for Bounded<LIMIT> {
     fn deserialize<D:Deserializer<'de>>(deserializer:D)->Result<Self,D::Error> {
-        struct Fields;
-        impl<'de> Visitor<'de> for Fields {
-            type Value=Object;
+        struct Fields<const N:usize>;
+        impl<'de,const N:usize> Visitor<'de> for Fields<N> {
+            type Value=Bounded<N>;
             fn expecting(&self,f:&mut fmt::Formatter)->fmt::Result {f.write_str("a bounded object with unique keys")}
-            fn visit_map<M:MapAccess<'de>>(self,mut input:M)->Result<Object,M::Error> {
+            fn visit_map<M:MapAccess<'de>>(self,mut input:M)->Result<Bounded<N>,M::Error> {
                 let mut output=BTreeMap::new();
                 while let Some((key,value))=input.next_entry::<String,Value>()? {
-                    if output.len()>=16 || output.insert(key,value).is_some() {return Err(de::Error::custom("duplicate/too many fields"));}
+                    if output.len()>=N || output.insert(key,value).is_some() {return Err(de::Error::custom("duplicate/too many fields"));}
                 }
-                Ok(Object(output))
+                Ok(Bounded(output))
             }
         }
-        deserializer.deserialize_map(Fields)
+        deserializer.deserialize_map(Fields::<LIMIT>)
     }
 }
 fn object(bytes:&[u8],keys:&[&str])->io::Result<BTreeMap<String,Value>> {
     if bytes.len()>4096 {return Err(invalid("JSON size bound"));}
-    let Object(value)=serde_json::from_slice(bytes).map_err(|_|invalid("invalid bounded JSON object"))?;
+    let Bounded::<REQUEST_FIELDS>(value)=serde_json::from_slice(bytes).map_err(|_|invalid("invalid bounded JSON object"))?;
     if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("JSON field contract"));}
     Ok(value)
 }
@@ -50,11 +56,12 @@ pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
     pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
+    pub research_service:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
         let bytes=bounded_file(Path::new(path),4096)?;
-        let Object(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        let Bounded::<REQUEST_FIELDS>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
         let ammo_service=match value.remove("ammunition_service") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
         };
@@ -80,6 +87,10 @@ impl Config {
         if crew_dismissal && !crew_progression {return Err(invalid("crew dismissal requires crew progression"));}
         let crew_barracks_recruitment=match value.remove("crew_barracks_recruitment") {None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("crew barracks must be explicit boolean"))};
         if crew_barracks_recruitment && !crew_dismissal {return Err(invalid("crew barracks requires dismissal"));}
+        let research_service=match value.remove("research_service") {
+            None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("research service must be explicit boolean")),
+        };
+        if research_service && !crew_barracks_recruitment {return Err(invalid("research service requires accepted barracks profile"));}
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let login_bind=local_address(text(&value,"login_bind")?)?;
@@ -96,7 +107,7 @@ impl Config {
         if token.len()!=43 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b==b'_' || b==b'-') {return Err(invalid("service token must be exactly 43 base64url characters"));}
         let seconds=value["session_duration_seconds"].as_u64().ok_or_else(||invalid("session duration integer"))?;
         if !(600..=7200).contains(&seconds) {return Err(invalid("session duration must be 600..7200 seconds"));}
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service})
     }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
@@ -109,9 +120,12 @@ impl Config {
         let profile=profile(&body,&self.local_root)?;
         verify_fixture_identity(&profile)?;
         if self.ammo_service {
-            let binding=crate::ammo_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id)?;
+            let binding=if self.research_service {crate::ammo_service091::metadata_research(&profile.fixture_dir,&profile.account_id,profile.database_id)?}
+                else {crate::ammo_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id)?};
+            if self.research_service {crate::research_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;}
             if self.crew_transfer {
-                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_barracks(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression,self.crew_dismissal,self.crew_barracks_recruitment),&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
+                if self.research_service {crate::crew_transfer091::metadata_for_research(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;}
+                else {crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_barracks(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression,self.crew_dismissal,self.crew_barracks_recruitment),&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;}
             } else if self.crew_service {
                 crate::crew_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
             }
@@ -190,6 +204,15 @@ impl Config {
         service_reply(&bytes,profile,key,revision,wire,"learned")
     }
 
+    pub fn research(&self,profile:&Profile,command_key:&str,expected_revision:u64,
+                    wire_revision:i64,request:&crate::research_service091::Request)->io::Result<AmmoReply> {
+        if !self.research_service || !self.ammo_service {return Err(invalid("research service is not enabled"));}
+        let body=crate::research_service091::service_request(&profile.account_id,profile.database_id,command_key,expected_revision,wire_revision,request)?;
+        let (status,bytes)=self.post("/internal/native/research",&body,Duration::from_secs(20))?;
+        if status!=200 {return Err(invalid("research service HTTP failure; recover outcome by fresh login"));}
+        service_reply(&bytes,profile,command_key,expected_revision,wire_revision,"researched")
+    }
+
     pub fn transfer_crew(&self,profile:&Profile,command_key:&str,expected_revision:u64,
                          wire_revision:i64,request:crate::crew_transfer091::Request)->io::Result<AmmoReply> {
         if !self.crew_transfer || !self.crew_service || !self.ammo_service {return Err(invalid("crew transfer is not enabled"));}
@@ -237,7 +260,7 @@ fn barracks_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,re
 
 fn service_reply_value(value:BTreeMap<String,Value>,profile:&Profile,key:&str,expected:u64,wire:i64,success_status:&str)->io::Result<AmmoReply> {
     if !(5..i32::MAX as u64).contains(&expected) || !(1..i32::MAX as i64).contains(&wire)
-        || !matches!(success_status,"serviced"|"recruited"|"transferred"|"learned"|"dismissed") {return Err(invalid("service reply cursor/status boundary"));}
+        || !matches!(success_status,"serviced"|"recruited"|"transferred"|"learned"|"dismissed"|"researched") {return Err(invalid("service reply cursor/status boundary"));}
     if text(&value,"account_id")?!=profile.account_id || value["native_database_id"].as_i64()!=Some(profile.database_id as i64)
         || text(&value,"command_key")?!=key {return Err(invalid("ammo reply authentication binding"));}
     let status=text(&value,"status")?;
@@ -350,7 +373,7 @@ fn verify_fixture_identity(profile:&Profile)->io::Result<()> {
         let path=profile.fixture_dir.join(name).canonicalize()?;
         if !path.starts_with(&profile.fixture_dir) {return Err(invalid("identity metadata escapes fixture"));}
         let bytes=bounded_file(&path,65536)?;
-        let Object(data)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid identity fixture metadata"))?;
+        let Bounded::<FIXTURE_METADATA_FIELDS>(data)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid identity fixture metadata"))?;
         if text(&data,"account_id")?!=profile.account_id || data.get("native_database_id").and_then(Value::as_i64)!=Some(profile.database_id as i64)
             || (name=="compatibility.json" && text(&data,"client_name")?!=profile.name) {
             return Err(invalid("fixture identity differs from authenticated website account"));
@@ -519,12 +542,24 @@ mod tests {
         let compatible=serde_json::json!({"account_id":account,"native_database_id":17,"client_name":"own_user"});
         fs::write(root.join("compatibility.json"),serde_json::to_vec(&compatible).unwrap()).unwrap();
         verify_fixture_identity(&profile).unwrap();
-        let mut wrong=compatible;wrong["account_id"]=Value::String("12345678-1234-4234-8234-123456789abd".to_owned());
+        let mut wrong=compatible.clone();wrong["account_id"]=Value::String("12345678-1234-4234-8234-123456789abd".to_owned());
         fs::write(root.join("compatibility.json"),serde_json::to_vec(&wrong).unwrap()).unwrap();
         assert!(verify_fixture_identity(&profile).is_err());
         wrong["account_id"]=Value::String(account.to_owned());wrong["native_database_id"]=serde_json::json!(18);
         fs::write(root.join("compatibility.json"),serde_json::to_vec(&wrong).unwrap()).unwrap();
         assert!(verify_fixture_identity(&profile).is_err());
+        // A P09E research manifest has 17 top-level fields; metadata keeps its
+        // own larger bound while duplicate keys stay rejected.
+        fs::write(root.join("compatibility.json"),serde_json::to_vec(&compatible).unwrap()).unwrap();
+        let manifest=|count:usize|{let mut v=serde_json::json!({"account_id":account,"native_database_id":17});
+            for i in 2..count {v[format!("field_{i}")]=serde_json::json!(i);} serde_json::to_vec(&v).unwrap()};
+        fs::write(root.join("manifest.json"),manifest(17)).unwrap();verify_fixture_identity(&profile).unwrap();
+        fs::write(root.join("manifest.json"),manifest(64)).unwrap();verify_fixture_identity(&profile).unwrap();
+        fs::write(root.join("manifest.json"),manifest(65)).unwrap();assert!(verify_fixture_identity(&profile).is_err());
+        fs::write(root.join("manifest.json"),format!(r#"{{"account_id":"{account}","native_database_id":17,"native_database_id":17}}"#)).unwrap();
+        assert!(verify_fixture_identity(&profile).is_err());
+        let seventeen=String::from_utf8(manifest(17)).unwrap();
+        assert!(object(seventeen.as_bytes(),&[]).is_err(),"requests keep the 16-field guard");
     }
     #[test] fn barracks_reply_binds_both_extension_fields_to_request_delta_and_identity() {
         let profile=Profile{account_id:"00000000-0000-0000-0000-000000000001".into(),database_id:900001,name:"Test".into(),fixture_dir:PathBuf::from("unused")};

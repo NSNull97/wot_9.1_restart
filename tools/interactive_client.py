@@ -28,6 +28,7 @@ MODULES += ('p04d_crew_ui',)
 MODULES += ('p04f_crew_ui',)
 MODULES += ('p04g_crew_ui',)
 MODULES += ('p04h_crew_ui', 'p04i_crew_ui', 'p04j_crew_ui', 'p04k_crew_ui')
+MODULES += ('p09e_research_policy',)
 
 
 def digest(payload):
@@ -129,6 +130,7 @@ def prepare(args):
         raise ValueError('P04K Barracks recruitment requires all earlier explicit hangar services')
     if dismissal and not progression:
         raise ValueError('P04J dismissal requires all earlier explicit hangar services')
+    research_service = bool(getattr(args, 'enable_research_service', False))
     if ammo_service and (shared_lab or args.enable_map_drive):
         raise ValueError('P09D ammunition service is restricted to the native hangar')
     if recruitment and (copy_info is None or not ammo_service or shared_lab or args.enable_map_drive):
@@ -141,6 +143,9 @@ def prepare(args):
         raise ValueError('P04I progression requires all earlier explicit hangar services')
     if roster and not cross_vehicle:
         raise ValueError('P04H roster recruitment requires all previous explicit hangar services')
+    if research_service and (copy_info is None or not barracks or not ammo_service
+                             or shared_lab or args.enable_map_drive):
+        raise ValueError('P09E research requires an explicit isolated native P04K barracks hangar')
     if shared_lab and (copy_info is None or not args.enable_map_drive):
         raise ValueError('Shared lab requires an explicit isolated copy and native arena services')
     endpoint = args.endpoint
@@ -278,6 +283,8 @@ def prepare(args):
         settings['enable_crew_dismissal'] = True
     if barracks:
         settings['enable_barracks_recruitment'] = True
+    if research_service:
+        settings['enable_research_service'] = True
     if shared_lab:
         settings['enable_shared_lab'] = True
     if catalog_spec is not None:
@@ -464,6 +471,8 @@ def main():
     prep.add_argument('--enable-barracks-recruitment', action='store_true', help='Enable profile12 original Barracks free50 recruitment; requires dismissal')
     prep.add_argument('--enable-cross-vehicle-crew', action='store_true',
                       help='Original MS-1/IS-7 crew callbacks; requires transfer, recruitment and ammunition service')
+    prep.add_argument('--enable-research-service', action='store_true',
+                      help='Explicit P09E zero-credit/XP research policy; requires isolated cross-vehicle crew/ammo hangar')
     prep.add_argument('--capture-hangar', action='store_true',
                       help='One passive native Hangar PNG; no login, input or UI transitions')
     prep.add_argument('--capture-ui-passive', action='store_true',

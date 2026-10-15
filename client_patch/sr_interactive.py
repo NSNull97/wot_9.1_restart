@@ -46,6 +46,12 @@ if (type(_settings.get('enable_crew_dismissal', False)) is not bool
 if (type(_settings.get('enable_barracks_recruitment', False)) is not bool
         or (_settings.get('enable_barracks_recruitment') and _settings.get('enable_crew_dismissal') is not True)):
     raise ValueError('P04K Barracks recruitment requires all previous explicit hangar services')
+if (type(_settings.get('enable_research_service', False)) is not bool
+        or (_settings.get('enable_research_service') and (
+            _settings.get('enable_barracks_recruitment') is not True
+            or _settings.get('enable_p09d_ammo_service') is not True
+            or _settings.get('enable_shared_lab') or _settings.get('enable_map_drive')))):
+    raise ValueError('P09E research requires the explicit isolated native P04K barracks hangar')
 if (type(_settings.get('enable_shared_lab', False)) is not bool
         or (_settings.get('enable_shared_lab') and not _settings.get('enable_map_drive'))):
     raise ValueError('shared lab requires explicit original arena services')
@@ -998,7 +1004,8 @@ def init(*args):
                              enable_roster_recruitment=_settings.get('enable_roster_recruitment') is True,
                              enable_crew_progression=_settings.get('enable_crew_progression') is True,
                              enable_crew_dismissal=_settings.get('enable_crew_dismissal') is True,
-                             enable_barracks_recruitment=_settings.get('enable_barracks_recruitment') is True)
+                             enable_barracks_recruitment=_settings.get('enable_barracks_recruitment') is True,
+                             enable_research_service=_settings.get('enable_research_service') is True)
         if _settings.get('enable_p09d_ammo_service') is True:
             import p09d_ammo_ui
             p09d_ammo_ui.init(record, enabled=True)
@@ -2120,7 +2127,9 @@ def onGeometryMapped(*args):
 
 
 def onStreamComplete(stream_id, description, data):
-    if not 1 <= stream_id <= 32767 or len(description) > 64 or len(data) > 16395:
+    # Bound follows the largest server-authored Account payload: the P09E research
+    # state/shop may reach 32768 bytes (16384 before), plus the same 11-byte margin.
+    if not 1 <= stream_id <= 32767 or len(description) > 64 or len(data) > 32779:
         raise ValueError('incoming Account stream outside audited bound')
     record('native_stream', stream_id=stream_id, bytes=len(data), description_bytes=len(description))
     import game

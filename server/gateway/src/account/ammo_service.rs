@@ -59,6 +59,12 @@ fn fixture_file(directory:&Path,name:&str,maximum:usize)->io::Result<Vec<u8>> {
 /// outgoing state bytes. The dossier loader separately verifies the original
 /// granted cache payload and the matching v5 manifest/compatibility revisions.
 pub fn metadata(directory:&Path,account_id:&str,database_id:i32)->io::Result<Metadata> {
+    metadata_with_policy(directory,account_id,database_id,false)
+}
+pub fn metadata_research(directory:&Path,account_id:&str,database_id:i32)->io::Result<Metadata> {
+    metadata_with_policy(directory,account_id,database_id,true)
+}
+fn metadata_with_policy(directory:&Path,account_id:&str,database_id:i32,research:bool)->io::Result<Metadata> {
     if database_id<=0 || account_id.len()!=36 || !account_id.bytes().enumerate().all(|(index,byte)| {
         if [8,13,18,23].contains(&index) {byte==b'-'} else {byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)}
     }) {return Err(invalid("ammo authenticated identity shape"));}
@@ -76,8 +82,8 @@ pub fn metadata(directory:&Path,account_id:&str,database_id:i32)->io::Result<Met
         || values["purchases"].as_bool()!=Some(false) || values["battle"].as_bool()!=Some(false) {
         return Err(invalid("ammo metadata identity/catalog/policy/revision binding"));
     }
-    let state=fixture_file(directory,"state.bin",16384)?;
-    crate::hangar091::validate_account_delta(&state)?;
+    let state=fixture_file(directory,"state.bin",if research {crate::research_service091::MAX_STATE_BYTES}else {16384})?;
+    if research {crate::hangar091::validate_research_state(&state)?;}else {crate::hangar091::validate_account_delta(&state)?;}
     let expected=format!("{:x}",Sha256::digest(&state));
     if values["state_sha256"].as_str()!=Some(expected.as_str()) {return Err(invalid("ammo metadata state digest"));}
     Ok(Metadata{revision,wire_revision:1})

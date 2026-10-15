@@ -33,6 +33,8 @@ mod crew_progression091;
 mod crew_barracks091;
 #[path = "account/crew_dismissal.rs"]
 mod crew_dismissal091;
+#[path = "account/research_service.rs"]
+mod research_service091;
 #[path = "account/identity.rs"]
 mod identity091;
 #[path = "protocol/capture.rs"]

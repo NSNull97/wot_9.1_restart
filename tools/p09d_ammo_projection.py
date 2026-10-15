@@ -23,8 +23,10 @@ MAX_UPDATE = 240  # Fits the measured outgoing VAR1 native method envelope.
 SHOP_REVISION = 3  # Exact accepted profile4 shop.bin, distinct from Account rev1.
 
 
-def encode(value, maximum=MAX_BYTES):
+def encode(value, maximum=MAX_BYTES, *, max_nodes=MAX_NODES):
     """Protocol2 primitives only; no constructors, reducers, memo or imports."""
+    if type(maximum) is not int or not 4 <= maximum <= 65535 or type(max_nodes) is not int or not 1 <= max_nodes <= 32768:
+        raise ValueError('native projection configured bounds')
     out, active = bytearray(b'\x80\x02'), set()
     nodes = 0
     def emit(raw):
@@ -34,7 +36,7 @@ def encode(value, maximum=MAX_BYTES):
     def visit(item, depth):
         nonlocal nodes
         nodes += 1
-        if nodes > MAX_NODES or depth > MAX_DEPTH:
+        if nodes > max_nodes or depth > MAX_DEPTH:
             raise ValueError('native projection node/depth bound')
         kind = type(item)
         if item is None: emit(b'N')
@@ -50,7 +52,7 @@ def encode(value, maximum=MAX_BYTES):
             raw = item.encode('utf-8') if kind is str else item
             emit((b'U' + bytes([len(raw)]) if len(raw) < 256 else b'T' + struct.pack('<I', len(raw))) + raw)
         elif kind in (dict, list, tuple):
-            if id(item) in active or len(item) > MAX_NODES: raise ValueError('cyclic/large primitive')
+            if id(item) in active or len(item) > max_nodes: raise ValueError('cyclic/large primitive')
             active.add(id(item))
             if kind is dict:
                 emit(b'}')
@@ -146,7 +148,7 @@ class ProjectionSource:
         return state
 
     def fixture_files(self, profile, aggregate, layouts):
-        state = encode(self.state(aggregate, layouts))
+        state = self.encode_state(self.state(aggregate, layouts))
         compat = deepcopy(self.compatibility)
         compat.update(snapshot_revision=aggregate['revision'])
         compat['ammo_mapping'] = [dict(shell_definition_id=shell_id,
@@ -169,6 +171,9 @@ class ProjectionSource:
         return {'state.bin': state, 'shop.bin': self.raw['shop.bin'], 'dossier.bin': self.raw['dossier.bin'],
                 'manifest.json': canonical(manifest), 'compatibility.json': canonical(compat),
                 'ammo-service.json': canonical(info), 'profile-input.json': canonical(profile)}
+
+    def encode_state(self, state):
+        return encode(state)
 
 
 def canonical(value):

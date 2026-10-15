@@ -2,7 +2,7 @@
 """Measured #717 GUI bootstrap for the reversible local native experiment.
 
 No Account callback or entity is replaced. The optional local-service policy
-explicitly denies the original GUI's module mutation entry point. Original
+denies module mutation unless the explicit source-audited research lab is on. Original
 game.init is not called: it registers a replay association and starts RSS services.
 The caller owns numeric-loopback configuration, the profile, transport and quit.
 Runtime acceptance comes from original callbacks/UI state, never these markers.
@@ -60,7 +60,8 @@ def _descriptors():
 
 
 def init(args, record, start_gui=False, restrict_module_changes=False, restrict_crew_changes=False,
-         enable_crew_recruitment=False, enable_crew_transfer=False, enable_cross_vehicle_crew=False, enable_roster_recruitment=False, enable_crew_progression=False, enable_crew_dismissal=False, enable_barracks_recruitment=False):
+         enable_crew_recruitment=False, enable_crew_transfer=False, enable_cross_vehicle_crew=False, enable_roster_recruitment=False, enable_crew_progression=False, enable_crew_dismissal=False, enable_barracks_recruitment=False,
+         enable_research_service=False):
     """Call after the original Settings instance/profile have been installed.
 
     start_gui=False extracts authentic resource descriptors only. True also
@@ -72,6 +73,12 @@ def init(args, record, start_gui=False, restrict_module_changes=False, restrict_
     global _record, _gui_enabled
     if _record is not None:
         raise RuntimeError('hangar bootstrap initialized twice')
+    if (type(enable_research_service) is not bool or enable_research_service and
+            not (start_gui and restrict_module_changes and restrict_crew_changes
+                 and enable_crew_recruitment and enable_crew_transfer and enable_cross_vehicle_crew
+                 and enable_roster_recruitment and enable_crew_progression and enable_crew_dismissal
+                 and enable_barracks_recruitment)):
+        raise ValueError('research requires the explicit restricted native P04K barracks hangar')
     _record = record
     _gui_enabled = bool(start_gui)
     import BigWorld
@@ -84,6 +91,10 @@ def init(args, record, start_gui=False, restrict_module_changes=False, restrict_
     import SoundGroups
     SoundGroups.g_instance = _step('sound_groups', SoundGroups.SoundGroups)
     import items
+    if enable_research_service:
+        import p09e_research_policy
+        _step('research_cost_policy', p09e_research_policy.init, record,
+              p09e_research_policy.POLICY)
     _step('items', items.init, True, None)
     import dossiers1
     import dossiers2
@@ -163,7 +174,8 @@ def init(args, record, start_gui=False, restrict_module_changes=False, restrict_
     _step('gui_personality', personality.init, loadingScreenGUI=loading_screen)
     if restrict_module_changes:
         import hangar_capabilities
-        _step('module_capabilities', hangar_capabilities.init, record)
+        _step('module_capabilities', hangar_capabilities.init, record,
+              enable_research_service)
     # Native chunk callbacks are delegated to the original game personality.
     # Its manager must exist before the hangar starts loading any chunks.
     import AreaDestructibles
@@ -497,6 +509,9 @@ def fini():
     if 'module_capabilities' in _stages:
         import hangar_capabilities
         close('module_capabilities', hangar_capabilities.fini)
+    if 'research_cost_policy' in _stages:
+        import p09e_research_policy
+        close('research_cost_policy', p09e_research_policy.fini)
     if 'area_destructibles' in _stages:
         import AreaDestructibles
         close('area_destructibles', AreaDestructibles.clear)
