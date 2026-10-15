@@ -162,6 +162,26 @@ credentials/digest/key/nonce/peer/worker result не изменяются. Об�
 891 PASS/5 ignored, build PASS, `local/build/server/gateway-p08b-full03/result.json`;
 exe SHA613d84f46dc752369648eef5da713a7ea0836f8f8b4ca3b6d94bc57251d59a75.
 
+Native-fix02: оба настоящих profile13 Account загрузились, родные CMD700
+сделали два owned reserve, общий world и два Avatar READY. В бою сервер реально
+принял по2 выстрела (20→18), затем два manual_leave. Оба terminal результата
+committed: A revision97, B18, remaining_ap18/consumed2/HP90, free repair90,
+credits0/XP0; world faults0. Это VERIFIED серверной трассой и SQLite, но вся
+native приёмка FAIL: владелец сообщил два чёрных экрана при возврате.
+Первый reject — shared warm Shop300; у обоих настоящий cache tuple
+`(rev5,size23107,CRC248225827)` превосходит унаследованный lab limit16448.
+`native-fix02/native-result.json` сохраняет весь outcome, safe packet analysis —
+`warm-shop-cursor-analysis.json` (только sync поля, без tokens/keys/credentials).
+В `5c08ef5` warm parser использует бюджет загруженной Fixtures: research32832,
+legacy16448, точную shop revision и a0→b0. Новые regression cases проверяют
+полный warm/ACK/stream24000/повтор, rollback ошибок и сохранение legacy deny.
+Старые процессы остановлены по receipts, install откатились. Свежий `native-fix03`
+использует ту же test DB с сохранёнными результатами: ожидаемый начальный БК18
+у обоих, активных резервов0. Full current-head и native повтор этой поправки
+full04 завершён:893 PASS/5 ignored, build PASS на `5c08ef5`;
+exe SHA96d10ba2eb3266cb5fbaa9335a83d97d4f07f192cef344007f0812ed15509445.
+Native повтор впереди; успешный READY/SQL не выдаётся за успешный возврат UI.
+
 - Native/UI обоих настоящих профилей13, выбор машины, отказ/отмена очереди,
   расход после ручного возврата, повторный бой и перезапуск с резервом NOT_RUN.
 - Счётчики native full sync после настоящей ангарной мутации и цикла Avatar

@@ -53,8 +53,8 @@ Harness профиля 12/13: `tools/p09e_research_harness.py --seed-only`.
   manifest `battle-profiles.json` закрепляет оба однородных stock MS-1/ИС-7 пула,
   геометрию и общий каталог Прохоровки. Client installs `install-{a,b}-01`,
   только `--enable-profile13-battle` и полный набор9 hangar service flags.
-  Текущий запуск после двух диагностик — `native-fix02/` со своими install,
-  profile/runtime, binding и launch/stop receipts; source runtime `87e2e8b`.
+  Текущий запуск — `native-fix03/` со своими install, profile/runtime, binding
+  и launch/stop receipts; source runtime `5c08ef5`, gateway full04 893/5.
   Обычный map-drive/shared-lab с ними не смешивать. Native приёмка пока NOT_RUN;
   source/build/launch receipts нужны перед запуском. B создан отдельной явной
   owner-source policy; исходный A13 остался без изменений. Факты — исследование P08B.
