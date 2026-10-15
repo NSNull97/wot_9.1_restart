@@ -45,7 +45,7 @@ impl EffectiveMaterial {
             use_hit_angle: flag(&v["useHitAngle"])?,
             use_antifragmentation_lining: flag(&v["useAntifragmentationLining"])?,
             may_ricochet: flag(&v["mayRicochet"])?, collide_once_only: flag(&v["collideOnceOnly"])?,
-            damage_kind: u8::try_from(v["damageKind"].as_u64().filter(|x| *x <= 1).ok_or_else(bad)?).map_err(|_| bad())?,
+            damage_kind: u8::try_from(v["damageKind"].as_u64().filter(|x| *x <= 1).ok_or_else(|| bad())?).map_err(|_| bad())?,
             chance_to_hit_by_projectile: scalar(&v["chanceToHitByProjectile"], 1.)?,
             chance_to_hit_by_explosion: scalar(&v["chanceToHitByExplosion"], 1.)?,
             continue_trace_if_no_hit: flag(&v["continueTraceIfNoHit"])? })
@@ -72,9 +72,9 @@ impl MaterialFacts {
 #[derive(Clone, Debug)]
 pub struct Catalog { entries: Vec<MaterialFacts> }
 fn fields(v: &Value, keys: &[&str]) -> io::Result<()> { crate::map_drive_worker091::fields(v, keys).map(|_| ()) }
-fn flag(v: &Value) -> io::Result<bool> { v.as_bool().ok_or_else(bad) }
+fn flag(v: &Value) -> io::Result<bool> { v.as_bool().ok_or_else(|| bad()) }
 fn scalar(v: &Value, max: f64) -> io::Result<f32> {
-    let x = v.as_f64().filter(|x| x.is_finite() && *x >= 0. && *x <= max).ok_or_else(bad)?;
+    let x = v.as_f64().filter(|x| x.is_finite() && *x >= 0. && *x <= max).ok_or_else(|| bad())?;
     Ok(x as f32)
 }
 impl Catalog {
@@ -90,16 +90,16 @@ impl Catalog {
         let (hull_max, turret_max, gun) = match vehicle {
             VehicleKind::Ms1 => (12, 10, Component::Gun02), VehicleKind::Is7 => (16, 12, Component::Gun01),
         };
-        let rows = rows.as_array().filter(|a| a.len() == 3).ok_or_else(bad)?;
+        let rows = rows.as_array().filter(|a| a.len() == 3).ok_or_else(|| bad())?;
         let mut entries = Vec::new();
         for (index, row) in rows.iter().enumerate() {
             fields(row, &["component", "entries"])?;
-            let component = Component::parse(row["component"].as_str().ok_or_else(bad)?)?;
+            let component = Component::parse(row["component"].as_str().ok_or_else(|| bad())?)?;
             if component != [Component::Hull, Component::Turret01, gun][index] { return Err(bad()); }
             let expected: Vec<u16> = match component {
                 Component::Hull => (1..=hull_max).chain([28]).collect(),
                 Component::Turret01 => (1..=turret_max).chain([28]).collect(), Component::Gun02 | Component::Gun01 => vec![1,2,3,25] };
-            let values = row["entries"].as_array().filter(|a| a.len() == expected.len()).ok_or_else(bad)?;
+            let values = row["entries"].as_array().filter(|a| a.len() == expected.len()).ok_or_else(|| bad())?;
             for (entry, kind) in values.iter().zip(expected) {
                 fields(entry, &["name", "kind", "source_class", "effective"])?;
                 let (name, source_class) = match kind {
@@ -120,7 +120,7 @@ impl Catalog {
     }
     pub fn lookup(&self, component: &str, label: &str) -> io::Result<MaterialFacts> {
         let component = Component::parse(component)?;
-        self.entries.iter().find(|e| e.component == component && e.name == label).cloned().ok_or_else(bad)
+        self.entries.iter().find(|e| e.component == component && e.name == label).cloned().ok_or_else(|| bad())
     }
 }
 

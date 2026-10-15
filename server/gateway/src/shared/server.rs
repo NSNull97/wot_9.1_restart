@@ -94,16 +94,16 @@ fn worker_frame_position(worker_position: [f32; 3], offset: [f32; 3]) -> [f32; 3
 }
 
 fn drive_grid(start: Instant, now: Instant) -> io::Result<Instant> {
-    let elapsed = now.checked_duration_since(start).ok_or_else(model::bad)?;
+    let elapsed = now.checked_duration_since(start).ok_or_else(|| model::bad())?;
     let step = crate::map_drive_worker091::STEP;
     let ticks = elapsed.as_nanos() / step.as_nanos();
     let ticks: u32 = ticks.try_into().map_err(|_| model::bad())?;
-    start.checked_add(step.checked_mul(ticks).ok_or_else(model::bad)?).ok_or_else(model::bad)
+    start.checked_add(step.checked_mul(ticks).ok_or_else(|| model::bad())?).ok_or_else(|| model::bad())
 }
 
 fn drive_deadline(start: Instant, previous: Option<Instant>, now: Instant) -> io::Result<Option<Instant>> {
     let deadline = match previous {
-        Some(previous) => previous.checked_add(crate::map_drive_worker091::STEP).ok_or_else(model::bad)?,
+        Some(previous) => previous.checked_add(crate::map_drive_worker091::STEP).ok_or_else(|| model::bad())?,
         None => drive_grid(start, now)?,
     };
     if now < deadline { return Ok(None); }
@@ -164,10 +164,10 @@ impl IntegratedRuntime {
         if self.worker_sessions[slot].is_none() { return Err(model::bad()); }
         self.contact_sequences[slot] = 0;
         self.contact_batches[slot] = None;
-        self.generations[slot] = self.generations[slot].checked_add(1).ok_or_else(model::bad)?;
-        let generation = self.generations[slot].checked_mul(2).and_then(|n|n.checked_add(slot as u32)).ok_or_else(model::bad)?;
+        self.generations[slot] = self.generations[slot].checked_add(1).ok_or_else(|| model::bad())?;
+        let generation = self.generations[slot].checked_mul(2).and_then(|n|n.checked_add(slot as u32)).ok_or_else(|| model::bad())?;
         let worker = if let Some(spec)=&self.catalog {
-            let scene=crate::map_drive_worker091::Scene::new(spec,&world.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids())?;
+            let scene=crate::map_drive_worker091::Scene::new(spec,&world.fragiles.as_ref().ok_or_else(|| model::bad())?.removed_ids())?;
             crate::map_drive_worker091::Worker::launch_with_catalog(self.pool.clone(),map.clone(),generation,now,Some(lane),spec.clone(),scene)?
         }else if let Some(spec) = &self.removal {
             crate::map_drive_worker091::Worker::launch_with_removal(self.pool.clone(), map.clone(),
@@ -207,7 +207,7 @@ impl IntegratedRuntime {
     fn blocked(&self) -> bool { self.staged.is_some() || self.workers.iter().flatten().any(|worker|!worker.prepared_ids().is_empty()) }
 
     fn resume_after_scene_ack(&mut self, world: &World, now: Instant) -> io::Result<()> {
-        let grid = drive_grid(world.started.ok_or_else(model::bad)?, now)?;
+        let grid = drive_grid(world.started.ok_or_else(|| model::bad())?, now)?;
         // This is an intentional transaction pause, not worker overload. Keep
         // any early unpublished pose; only the schedule rebases after all ACKs.
         for slot in 0..model::CAPACITY {
@@ -217,20 +217,20 @@ impl IntegratedRuntime {
     }
 
     fn finish_catalog(&mut self,world:&mut World,now:Instant)->io::Result<()>{
-        let staged=self.staged.as_ref().ok_or_else(model::bad)?;
+        let staged=self.staged.as_ref().ok_or_else(|| model::bad())?;
         if staged.map!=world.map||world.map!=self.map_id||staged.vehicle_kind()!=world.vehicle_kind()
             ||world.vehicle_kind()!=self.pool.vehicle_kind()||staged.id!=world.id||staged.scene_version()<=world.scene_version()
             ||staged.actors.iter().map(|a|a.session).collect::<Vec<_>>()!=world.actors.iter().map(|a|a.session).collect::<Vec<_>>(){
             return Err(io::Error::new(io::ErrorKind::InvalidData,"catalog transaction membership or scene changed; fail closed"));}
-        let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().ok_or_else(model::bad)?,
-            &staged.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids())?;
+        let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().ok_or_else(|| model::bad())?,
+            &staged.fragiles.as_ref().ok_or_else(|| model::bad())?.removed_ids())?;
         if self.workers.iter().flatten().any(|worker|worker.prepared_ids().iter().any(|id|scene.ids().binary_search(id).is_err())) {
             return Err(io::Error::new(io::ErrorKind::InvalidData,"candidate omits prepared worker fracture; fail closed"));
         }
         let mut complete=true;let mut participants=0;
         for slot in 0..model::CAPACITY{
             if world.actors[slot].session.is_none(){continue;}
-            let worker=self.workers[slot].as_mut().ok_or_else(model::bad)?;
+            let worker=self.workers[slot].as_mut().ok_or_else(|| model::bad())?;
             if !worker.ready(){
                 if world.actors[slot].ready||self.anchored[slot]||self.poses[slot].is_some(){return Err(model::bad());}continue;
             }
@@ -241,7 +241,7 @@ impl IntegratedRuntime {
             if worker.catalog_scene()!=Some(&scene){complete=false;if !worker.pending(){worker.sync_removed(scene.clone(),now)?;}}
         }
         if participants==0{return Err(model::bad());}
-        if complete{let before=world.scene_version();self.resume_after_scene_ack(world,now)?;*world=self.staged.take().ok_or_else(model::bad)?;
+        if complete{let before=world.scene_version();self.resume_after_scene_ack(world,now)?;*world=self.staged.take().ok_or_else(|| model::bad())?;
             println!("SHARED_CATALOG_COMMITTED battle={} scene_before={} scene_after={} scene_sha256={} removed={:?} participating_workers={} workers_acknowledged=true",world.id,before,scene.version(),scene.hash(),scene.ids(),participants);}
         Ok(())
     }
@@ -250,7 +250,7 @@ impl IntegratedRuntime {
     /// native destruction can be published. Transport remains serviced outside.
     fn finish_removal(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
         if self.catalog.is_some(){return self.finish_catalog(world,now);}
-        let staged = self.staged.as_ref().ok_or_else(model::bad)?;
+        let staged = self.staged.as_ref().ok_or_else(|| model::bad())?;
         if staged.map != world.map || world.map != self.map_id || staged.id != world.id || staged.scene_version() != 1 || world.scene_version() != 0
             || staged.actors.iter().map(|a| a.session).collect::<Vec<_>>()
                 != world.actors.iter().map(|a| a.session).collect::<Vec<_>>() {
@@ -260,7 +260,7 @@ impl IntegratedRuntime {
         let mut participants = 0;
         for slot in 0..model::CAPACITY {
             if world.actors[slot].session.is_none() { continue; }
-            let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
+            let worker = self.workers[slot].as_mut().ok_or_else(|| model::bad())?;
             // A starting reconnect has supplied no authoritative pose and is
             // gated from native entry. Restore it to scene1 in the regular path.
             if !worker.ready() {
@@ -283,8 +283,8 @@ impl IntegratedRuntime {
         if participants == 0 { return Err(model::bad()); }
         if complete {
             self.resume_after_scene_ack(world, now)?;
-            *world = self.staged.take().ok_or_else(model::bad)?;
-            let event = world.destructible_transition().ok_or_else(model::bad)?;
+            *world = self.staged.take().ok_or_else(|| model::bad())?;
+            let event = world.destructible_transition().ok_or_else(|| model::bad())?;
             println!("SHARED_DESTRUCTIBLE_COMMITTED battle={} shot={} tick={} instance_id={} scene_before=0 scene_after=1 participating_workers={} workers_acknowledged=true", world.id, event.shot, event.tick, event.instance_id,participants);
         }
         Ok(())
@@ -321,28 +321,28 @@ impl IntegratedRuntime {
                 world.reset_external_spawn(slot, Self::lane_spawn(&map, slot))?;
                 self.spawn_slot(world, slot, map, now)?;
             }
-            let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
+            let worker = self.workers[slot].as_mut().ok_or_else(|| model::bad())?;
             if let Some(state) = worker.poll(now)? {
                 // seq0 is the stationary startup/settle snapshot, not a game
                 // advance. Only subsequent replies may supply gameplay hits.
                 if state.seq != 0 {
                     let held: usize = self.contact_batches.iter().flatten().map(|b| b.observed_contacts).sum();
                     if self.pose_pending[slot] || self.contact_batches[slot].is_some()
-                        || state.seq != self.contact_sequences[slot].checked_add(1).ok_or_else(model::bad)?
+                        || state.seq != self.contact_sequences[slot].checked_add(1).ok_or_else(|| model::bad())?
                         || state.scene_version != world.scene_version()
                         || held + state.object_contacts.len() > 32 { return Err(model::bad()); }
                     let frame=if let Some(proof)=&state.angular_proof {
-                        let domain=world.fragiles.as_ref().ok_or_else(model::bad)?;
-                        let scene=worker.catalog_scene().ok_or_else(model::bad)?;
+                        let domain=world.fragiles.as_ref().ok_or_else(|| model::bad())?;
+                        let scene=worker.catalog_scene().ok_or_else(|| model::bad())?;
                         Some(Arc::new(ram_proof::ContextFrame{proof:proof.clone(),context:ram_proof::Context{
-                            battle:world.id,slot,session:session.ok_or_else(model::bad)?,generation:worker.generation,
+                            battle:world.id,slot,session:session.ok_or_else(|| model::bad())?,generation:worker.generation,
                             seq:state.seq,tick:state.tick,config_sha256:worker.map.config_sha256.clone(),
                             catalog_sha256:domain.catalog.worker_sha256.clone(),domain_sha256:domain.catalog.sha256.clone(),
                             scene_version:scene.version(),scene_sha256:scene.hash().into()}}))
                     }else{None};
                     let mut contacts = state.object_contacts.iter().filter(|contact|frame.as_ref().is_none_or(|frame|frame.proof.receipts.iter().any(|r|r.object_id==contact.object_id))).map(|contact| {
                         let proof=if let Some(frame)=&frame {Some(ram_proof::ContactProof{frame:frame.clone(),
-                            index:frame.proof.receipts.iter().position(|r|r.object_id==contact.object_id).ok_or_else(model::bad)?})}else{None};
+                            index:frame.proof.receipts.iter().position(|r|r.object_id==contact.object_id).ok_or_else(|| model::bad())?})}else{None};
                         Ok(model::VehicleContactInput {object_id: contact.object_id, substep: contact.substep, point: contact.point,
                             normal: contact.normal, velocity: contact.velocity, mass_kg: worker.map.mass_kg,
                             kind: contact.kind.clone(), shooter: slot,proof})
@@ -350,7 +350,7 @@ impl IntegratedRuntime {
                     if frame.is_some(){contacts.sort_by_key(|contact|contact.proof.as_ref().map(|p|p.index));}
                     self.contact_sequences[slot] = state.seq;
                     self.pose_pending[slot] = true;
-                    self.contact_batches[slot] = Some(ContactBatch { session: session.ok_or_else(model::bad)?,
+                    self.contact_batches[slot] = Some(ContactBatch { session: session.ok_or_else(|| model::bad())?,
                         generation: worker.generation, seq: state.seq, scene_version: state.scene_version, contacts,observed_contacts:state.object_contacts.len() });
                     for receipt in &state.fractures {
                         println!("SHARED_FENCE_RESPONSE {}",serde_json::json!({"battle":world.id,
@@ -364,11 +364,11 @@ impl IntegratedRuntime {
                     }
                 }
                 if state.seq == 0 {
-                    let actor = world.actors.get(slot).ok_or_else(model::bad)?;
+                    let actor = world.actors.get(slot).ok_or_else(|| model::bad())?;
                     self.offsets[slot] = worker_frame_offset(actor.position, state.pose.position);
                     self.anchored[slot] = true;
                     println!("SHARED_INTEGRATED_WORKER_READY battle={} slot={} process_id={} map={} worker_tick={} settled_position={:?} direction={:?} contacts={} wheel_contact_masks={:?} anchor_offset={:?}",
-                        world.id, slot, worker.process_id().ok_or_else(model::bad)?, worker.map.asset,
+                        world.id, slot, worker.process_id().ok_or_else(|| model::bad())?, worker.map.asset,
                         state.tick, state.pose.position, state.pose.direction, state.pose.contacts, state.pose.wheel_contact_masks,
                         self.offsets[slot]);
                 }
@@ -388,10 +388,10 @@ impl IntegratedRuntime {
         }
         let mut rejoin_ack = false;
         if self.catalog.is_some(){
-            let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().unwrap(),&world.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids())?;
+            let scene=crate::map_drive_worker091::Scene::new(self.catalog.as_ref().unwrap(),&world.fragiles.as_ref().ok_or_else(|| model::bad())?.removed_ids())?;
             for slot in 0..model::CAPACITY{
                 if world.actors[slot].session.is_none(){continue;}
-                let worker=self.workers[slot].as_mut().ok_or_else(model::bad)?;
+                let worker=self.workers[slot].as_mut().ok_or_else(|| model::bad())?;
                 if let Some(ack)=worker.take_catalog_ack(){rejoin_ack=true;println!("SHARED_CATALOG_REJOIN_ACK battle={} slot={} scene_version={} scene_sha256={}",world.id,slot,ack.scene_version,ack.scene_sha256);}
                 if worker.catalog_scene()!=Some(&scene){
                     self.synchronizing[slot]=true;
@@ -401,7 +401,7 @@ impl IntegratedRuntime {
         }else if world.scene_version() == 1 {
             for slot in 0..model::CAPACITY {
                 if world.actors[slot].session.is_none() { continue; }
-                let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
+                let worker = self.workers[slot].as_mut().ok_or_else(|| model::bad())?;
                 if let Some(ack) = worker.take_removal_ack() {
                     rejoin_ack = true;
                     println!("SHARED_DESTRUCTIBLE_REJOIN_ACK battle={} slot={} scene_version={}",world.id,slot,ack.scene_version);
@@ -452,7 +452,7 @@ impl IntegratedRuntime {
         for slot in 0..model::CAPACITY {
             if world.actors[slot].session.is_some() && !self.synchronizing[slot]
                 && self.workers[slot].as_ref().is_some_and(|w| w.ready() && !w.pending()) {
-                deadlines[slot] = drive_deadline(world.started.ok_or_else(model::bad)?, self.dispatched[slot], now)?;
+                deadlines[slot] = drive_deadline(world.started.ok_or_else(|| model::bad())?, self.dispatched[slot], now)?;
             }
         }
         let fresh_pair = world.actors.iter().enumerate().all(|(slot, actor)|
@@ -463,7 +463,7 @@ impl IntegratedRuntime {
         if self.catalog.as_ref().is_some_and(|catalog|catalog.version()==8) {
             for slot in 0..model::CAPACITY {
                 if let Some(session)=world.actors.get(slot).and_then(|a|a.session) {
-                    let worker=self.workers[slot].as_ref().ok_or_else(model::bad)?;
+                    let worker=self.workers[slot].as_ref().ok_or_else(|| model::bad())?;
                     candidate.bind_contact_source(slot,ram_proof::Source{session,generation:worker.generation,
                         config_sha256:worker.map.config_sha256.clone(),profile:match self.pool.vehicle_kind(){
                             VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}})?;
@@ -474,7 +474,7 @@ impl IntegratedRuntime {
         let mut vehicle_contacts = Vec::new();
         for (slot, batch) in self.contact_batches.iter().enumerate() {
             if let Some(batch) = batch {
-                let worker = self.workers[slot].as_ref().ok_or_else(model::bad)?;
+                let worker = self.workers[slot].as_ref().ok_or_else(|| model::bad())?;
                 if world.actors[slot].session != Some(batch.session)
                     || self.worker_sessions[slot] != Some(batch.session)
                     || worker.generation != batch.generation || batch.seq != self.contact_sequences[slot]
@@ -482,7 +482,7 @@ impl IntegratedRuntime {
                     return Err(model::bad());
                 }
                 if let Some(proof)=batch.contacts.first().and_then(|contact|contact.proof.as_ref()) {
-                    let source=world.fragiles.as_ref().ok_or_else(model::bad)?;
+                    let source=world.fragiles.as_ref().ok_or_else(|| model::bad())?;
                     if proof.frame.context.scene_version!=world.scene_version()
                         ||proof.frame.context.scene_sha256!=source.historical_scene_hash(world.scene_version())?{return Err(model::bad());}
                 }
@@ -491,7 +491,7 @@ impl IntegratedRuntime {
         }
         let vehicle_events = candidate.apply_vehicle_contacts(&vehicle_contacts)?;
         if self.workers.iter().flatten().any(|worker|!worker.prepared_ids().is_empty()) {
-            let removed=candidate.fragiles.as_ref().ok_or_else(model::bad)?.removed_ids();
+            let removed=candidate.fragiles.as_ref().ok_or_else(|| model::bad())?.removed_ids();
             if self.workers.iter().flatten().any(|worker|worker.prepared_ids().iter().any(|id|removed.binary_search(id).is_err())) {
                 return Err(io::Error::new(io::ErrorKind::InvalidData,"domain rejected a prepared physical fracture; fail closed"));
             }
@@ -532,10 +532,10 @@ impl IntegratedRuntime {
         self.contact_batches = std::array::from_fn(|_| None);
         for slot in 0..model::CAPACITY {
             if world.actors.get(slot).and_then(|a| a.session).is_none() { continue; }
-            let worker = self.workers[slot].as_mut().ok_or_else(model::bad)?;
+            let worker = self.workers[slot].as_mut().ok_or_else(|| model::bad())?;
             if !self.synchronizing[slot] && !self.pose_pending[slot] && worker.ready() && !worker.pending()
                 && deadlines[slot].is_some() {
-                let actor = world.actors.get(slot).ok_or_else(model::bad)?;
+                let actor = world.actors.get(slot).ok_or_else(|| model::bad())?;
                 let input = crate::map_drive_worker091::Input { throttle: actor.input.throttle,
                     steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0, speed_percent: actor.input.speed_percent };
                 let seq = worker.advance(input, now)?;
@@ -568,13 +568,13 @@ impl Table {
                     (s.base_peer == Some(peer) || s.login_peer == peer)) { return Err(model::bad()); }
             Ok(index)
         } else {
-            self.sessions.iter().position(|s| s.base_peer == Some(peer)).ok_or_else(model::bad)
+            self.sessions.iter().position(|s| s.base_peer == Some(peer)).ok_or_else(|| model::bad())
         }
     }
     fn retire(&mut self, id: u32, world: &mut World, now: Instant, reason: &str) -> io::Result<()> {
-        let index = self.sessions.iter().position(|s| s.id == id).ok_or_else(model::bad)?;
+        let index = self.sessions.iter().position(|s| s.id == id).ok_or_else(|| model::bad())?;
         let s = &self.sessions[index];
-        self.retirement.retire(s.login_attempt.ok_or_else(model::bad)?, s.base_peer, now).map_err(|_| model::bad())?;
+        self.retirement.retire(s.login_attempt.ok_or_else(|| model::bad())?, s.base_peer, now).map_err(|_| model::bad())?;
         // An explicit leave intent already parked this actor. Disconnect and
         // timeout take the same stop-controller path without touching a peer.
         if world.actors.iter().any(|a| a.session == Some(id)) { world.detach(id)?; }
@@ -592,7 +592,7 @@ pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path:
 fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
     -> io::Result<&crate::map_drive_worker091::MapSpec> {
     let mut candidates=pool.maps.iter().filter(|map| map.asset==selected.asset());
-    let map=candidates.next().ok_or_else(model::bad)?;
+    let map=candidates.next().ok_or_else(|| model::bad())?;
     if candidates.next().is_some() || map.arena_type_id!=selected.arena_type_id() { return Err(model::bad()); }
     Ok(map)
 }
@@ -617,7 +617,7 @@ fn terrain_for_pool(pool: &crate::map_drive_worker091::Pool) -> io::Result<Arc<s
 
 fn terrain_for_pool_for_map(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<Arc<super::terrain::Terrain>> {
     let config=selected_pool_config(pool,selected)?;
-    let path=config["terrain"]["path"].as_str().ok_or_else(model::bad)?;
+    let path=config["terrain"]["path"].as_str().ok_or_else(|| model::bad())?;
     let terrain=super::terrain::Terrain::load_for(selected,&pool.local_root,Path::new(path))?;
     // Same original map resources, independently filtered with the original
     // projectile mask128. The vehicle-physics mask18 export is not substituted.
@@ -663,7 +663,7 @@ pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_pa
     } else { None };
     let catalog=if let Some((path,sha))=catalog_path{
         let path=Path::new(path);let catalog=Arc::new(super::fragiles::Catalog::load(&pool.local_root,path,sha)?);
-        let worker=crate::map_drive_worker091::CatalogSpec::load(&pool.local_root,&path.parent().ok_or_else(model::bad)?.join(&catalog.worker_file),&catalog.worker_sha256)?;
+        let worker=crate::map_drive_worker091::CatalogSpec::load(&pool.local_root,&path.parent().ok_or_else(|| model::bad())?.join(&catalog.worker_file),&catalog.worker_sha256)?;
         validate_catalog_projection(&catalog,&worker,map)?;
         Some((catalog,worker))
     }else{None};
@@ -763,7 +763,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             Err(mpsc::TryRecvError::Disconnected) => Some(Err(model::bad())),
         });
         if let Some(result) = result {
-            let job = auth.take().ok_or_else(model::bad)?;
+            let job = auth.take().ok_or_else(|| model::bad())?;
             match result {
                 Ok(Some(accepted)) => {
                     let admitted = (|| -> io::Result<usize> {
@@ -784,8 +784,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                         s.login_attempt = Some(job.attempt); s.identity = Some(accepted.identity);
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
                         println!("SHARED_SESSION_PENDING battle={} session={next_id} slot={slot} account={} database={} authenticated=true", world.id,
-                            s.identity.as_ref().ok_or_else(model::bad)?.account_id, s.identity.as_ref().ok_or_else(model::bad)?.database_id);
-                        next_id = next_id.checked_add(1).ok_or_else(model::bad)?;
+                            s.identity.as_ref().ok_or_else(|| model::bad())?.account_id, s.identity.as_ref().ok_or_else(|| model::bad())?.database_id);
+                        next_id = next_id.checked_add(1).ok_or_else(|| model::bad())?;
                         world = next_world; table.sessions.push(s); Ok(table.sessions.len() - 1)
                     })();
                     match admitted {
@@ -859,7 +859,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         for (id, reason) in closing.drain(..) { table.retire(id, &mut world, now, reason)?; }
         for s in &mut table.sessions {
             if s.ready_for_arena_base() {
-                let c = s.shared.as_mut().ok_or_else(model::bad)?;
+                let c = s.shared.as_mut().ok_or_else(|| model::bad())?;
                 if c.hangar_since.is_none() { c.hangar_since = Some(now); }
             }
         }
@@ -978,7 +978,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     allow_native_start: bool) -> io::Result<()> {
     if world.started.is_none() { return Ok(()); }
     if allow_native_start && entry_ready(s, now) { s.shared_start(world, now)?; }
-    let c = s.shared.as_ref().ok_or_else(model::bad)?;
+    let c = s.shared.as_ref().ok_or_else(|| model::bad())?;
     let full_ready = c.phase == Phase::Driving && c.correction
         && c.binding.is_some_and(|(_,ack)|ack)
         && c.areas_ready(world);
@@ -989,11 +989,11 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let area_ready = c.areas_ready(world);
     if !area_ready { return Ok(()); }
     if c.correction { next_world.set_ready(slot, s.id)?; }
-    let commands = std::mem::take(&mut next.shared.as_mut().ok_or_else(model::bad)?.commands);
+    let commands = std::mem::take(&mut next.shared.as_mut().ok_or_else(|| model::bad())?.commands);
     if !c.correction && !commands.is_empty() {
         // Keep a bounded startup intent until ACK6; no pre-correction motion.
         if commands.iter().any(|cmd| !matches!(cmd, model::Command::Aim(_) | model::Command::Move(model::Input::STOP))) { return Err(model::bad()); }
-        next.shared.as_mut().ok_or_else(model::bad)?.commands = commands;
+        next.shared.as_mut().ok_or_else(|| model::bad())?.commands = commands;
         *s = next; return Ok(());
     }
     if !c.correction { return Ok(()); }
@@ -1005,7 +1005,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         }
     }
     if next_world.actors[slot].fire.finish_reload_if_due(now) { next.outbox.push_back(wire::reload_for(next_world.vehicle_kind(),slot,0.)?); }
-    let c = next.shared.as_mut().ok_or_else(model::bad)?;
+    let c = next.shared.as_mut().ok_or_else(|| model::bad())?;
     let mut shot_publications = Vec::new();
     let mut tracer_starts = Vec::new();
     let mut tracer_stops = Vec::new();
@@ -1041,9 +1041,9 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         for shot in next_world.shots.iter().filter(|shot| shot.sequence > c.shot_cursor).copied().collect::<Vec<_>>() {
             let observable = c.correction && c.binding.is_some_and(|(_, ack)| ack) && c.visible()[shot.slot];
             if observable {
-                let index = shot.sequence.checked_sub(1).ok_or_else(model::bad)? as usize;
+                let index = shot.sequence.checked_sub(1).ok_or_else(|| model::bad())? as usize;
                 let projectile = next_world.projectiles.iter().find(|p| p.sequence == shot.sequence)
-                    .ok_or_else(model::bad)?;
+                    .ok_or_else(|| model::bad())?;
                 if !c.tracer_started[index] {
                     // Keep the existing native muzzle/sound cue and then send
                     // the original fixed showTracer callback in one reliable
@@ -1064,7 +1064,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         // cannot inherit old effects or produce orphan stops.
         if c.correction && c.binding.is_some_and(|(_, ack)| ack) {
             for projectile in next_world.projectiles.iter().filter(|p| p.stopped) {
-                let index = projectile.sequence.checked_sub(1).ok_or_else(model::bad)? as usize;
+                let index = projectile.sequence.checked_sub(1).ok_or_else(|| model::bad())? as usize;
                 if index >= c.tracer_started.len() { return Err(model::bad()); }
                 if c.tracer_started[index] && !c.tracer_stopped[index] {
                     if let Some(contact)=next_world.terrain_contacts.iter().find(|c|c.shot==projectile.sequence) {
@@ -1080,9 +1080,9 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 }
             }
             for event in next_world.impacts.iter().skip(c.impact_cursor) {
-                let shot_index = event.shot.checked_sub(1).ok_or_else(model::bad)? as usize;
+                let shot_index = event.shot.checked_sub(1).ok_or_else(|| model::bad())? as usize;
                 let visible = c.visible()[event.target] && c.visible()[event.attacker];
-                let observed_shot = c.tracer_started.get(shot_index).copied().ok_or_else(model::bad)?;
+                let observed_shot = c.tracer_started.get(shot_index).copied().ok_or_else(|| model::bad())?;
                 let mut body = Vec::new();
                 if visible && observed_shot {
                     if let Some(segment) = &event.segment {
@@ -1131,7 +1131,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 if c.health_sent[target] != Some(hp) {
                     if hp != next_world.vehicle_kind().max_health() {
                         let attacker = next_world.impacts.iter().rev().find(|e| e.target == target)
-                            .map(|e| e.attacker).ok_or_else(model::bad)?;
+                            .map(|e| e.attacker).ok_or_else(|| model::bad())?;
                         body.extend(impact_wire::health_changed_for(next_world.vehicle_kind(),target,hp,attacker)?);
                         if hp == 0 { body.extend(wire::roster(&next_world)?); }
                     }

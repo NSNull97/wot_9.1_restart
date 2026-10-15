@@ -100,11 +100,11 @@ impl Client {
 impl Session {
     fn shared_start(&mut self, world: &World, now: Instant) -> io::Result<()> {
         if !self.ready_for_arena_base() { return Err(bad()); }
-        let slot = self.shared.as_ref().filter(|c| c.phase == Phase::Account).ok_or_else(bad)?.slot;
+        let slot = self.shared.as_ref().filter(|c| c.phase == Phase::Account).ok_or_else(|| bad())?.slot;
         world.owned(slot, self.id)?;
         let mut next = self.clone();
         next.tx.enqueue_body(&wire::reset(world, slot)?)?; next.arena_base = true;
-        let c = next.shared.as_mut().ok_or_else(bad)?;
+        let c = next.shared.as_mut().ok_or_else(|| bad())?;
         c.phase = Phase::Enable; c.view = Some(world.clone()); c.entered = Some(now);
         c.shot_cursor = world.latest_shot();
         c.impact_cursor = world.impacts.len();
@@ -117,7 +117,7 @@ impl Session {
     }
     pub(super) fn shared_payload(&mut self, payload: &[u8], now: Instant, events: &mut Vec<String>) -> io::Result<()> {
         let mut payload = payload;
-        let phase = self.shared.as_ref().ok_or_else(bad)?.phase;
+        let phase = self.shared.as_ref().ok_or_else(|| bad())?.phase;
         if phase == Phase::Account {
             if drive::account_command(payload)?.is_some() {
                 events.push(format!("SHARED_WAIT session={} reason=automatic_two_hangar_gate command_applied=false", self.id));
@@ -126,8 +126,8 @@ impl Session {
             return self.receive_account(payload, events);
         }
         if payload.is_empty() { return Ok(()); }
-        let c = self.shared.as_mut().ok_or_else(bad)?;
-        let world = c.view.as_ref().ok_or_else(bad)?;
+        let c = self.shared.as_mut().ok_or_else(|| bad())?;
+        let world = c.view.as_ref().ok_or_else(|| bad())?;
         if c.phase == Phase::Enable {
             let late = drive::late_queue_info(payload)?;
             if late == Some(false) { return Ok(()); }
@@ -155,7 +155,7 @@ impl Session {
                 let sequence = self.tx.enqueue_body_tracked(&body)?;
                 c.announcement_parts.push((sequence, false));
             }
-            let sequence = c.announcement_parts.last().map(|(sequence, _)| *sequence).ok_or_else(bad)?;
+            let sequence = c.announcement_parts.last().map(|(sequence, _)| *sequence).ok_or_else(|| bad())?;
             c.announcement = Some((sequence, false));
             c.phase = Phase::Entities;
             events.push(format!("SHARED_ANNOUNCED battle={} session={} rows=2 own={} areas={} parts={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(c.slot)?, c.announced_areas, c.announcement_parts.len()));
@@ -185,7 +185,7 @@ impl Session {
                     if !world.destructible_enabled() || c.area_creation.is_some() || c.pending_area_scene { return Err(bad()); }
                     c.pending_area_scene = true;
                 } else {
-                    let slots = wire::entity_requests(raw)?.ok_or_else(bad)?;
+                    let slots = wire::entity_requests(raw)?.ok_or_else(|| bad())?;
                     for slot in slots {
                         if c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
                         c.pending_entity_requests.push_back(slot);
@@ -244,7 +244,7 @@ impl Session {
                 },
                 _ => return Err(bad()),
             };
-            let raw = payload.get(at..at+size).ok_or_else(bad)?; at += size;
+            let raw = payload.get(at..at+size).ok_or_else(|| bad())?; at += size;
             if id == 8 {
                 if c.tree_areas.len()!=c.areas.len(){c.tree_areas=vec![Vec::new();c.areas.len()];}
                 if let Some(area)=destructible_wire::area_request(raw,c.areas.len()) {
@@ -255,7 +255,7 @@ impl Session {
                     if !world.destructible_enabled() || c.area_creation.is_some() || c.pending_area_scene { return Err(bad()); }
                     c.pending_area_scene = true;
                 } else {
-                    let slots = wire::entity_requests(raw)?.ok_or_else(bad)?;
+                    let slots = wire::entity_requests(raw)?.ok_or_else(|| bad())?;
                     for slot in slots {
                         if c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
                         c.pending_entity_requests.push_back(slot);
@@ -314,13 +314,13 @@ impl Session {
     }
 
     pub(super) fn flush_shared_requests(&mut self, events: &mut Vec<String>) -> io::Result<()> {
-        let world = self.shared.as_ref().and_then(|c| c.view.clone()).ok_or_else(bad)?;
+        let world = self.shared.as_ref().and_then(|c| c.view.clone()).ok_or_else(|| bad())?;
         let mut next = self.clone();
         loop {
             if next.tx.len() >= 8 { break; }
             enum Request { Scene, Vehicle(usize), Area(usize) }
             let request = {
-                let c = next.shared.as_mut().ok_or_else(bad)?;
+                let c = next.shared.as_mut().ok_or_else(|| bad())?;
                 if c.pending_area_scene {
                     c.pending_area_scene = false;
                     Some(Request::Scene)
@@ -335,26 +335,26 @@ impl Session {
                 Request::Scene => {
                     let state = (world.scene_version() == 1).then_some(destructible_wire::NATIVE_INDEX);
                     let sequence = next.tx.enqueue_body_tracked(&destructible_wire::create(state)?)?;
-                    let c = next.shared.as_mut().ok_or_else(bad)?;
+                    let c = next.shared.as_mut().ok_or_else(|| bad())?;
                     c.area_creation = Some((sequence, false));
                     c.area_scene_sent = world.scene_version();
                     events.push(format!("SHARED_AREA_CREATED battle={} session={} entity={} scene_version={} reliable_sequence={sequence}", world.id,next.id,destructible_wire::ENTITY_ID,world.scene_version()));
                 }
                 Request::Vehicle(slot) => {
                     let sequence = next.tx.enqueue_body_tracked(&wire::create_vehicle(&world, slot)?)?;
-                    let c = next.shared.as_mut().ok_or_else(bad)?;
+                    let c = next.shared.as_mut().ok_or_else(|| bad())?;
                     c.creations[slot] = Some((sequence, false));
                     c.health_sent[slot] = Some(world.actors[slot].health);
                     events.push(format!("SHARED_ENTITY_CREATED battle={} session={} entity={} own={} reliable_sequence={sequence}", world.id, next.id, wire::vehicle_id(slot)?, slot == c.slot));
                 }
                 Request::Area(area) => {
-                    let state = world.fragiles.as_ref().ok_or_else(bad)?;
-                    let chunk = state.catalog.chunks().get(area).copied().ok_or_else(bad)?;
+                    let state = world.fragiles.as_ref().ok_or_else(|| bad())?;
+                    let chunk = state.catalog.chunks().get(area).copied().ok_or_else(|| bad())?;
                     let indices = state.native_destroyed(chunk);
                     let values = state.native_fragile_values(chunk);
                     let trees = state.native_fallen_trees(chunk);
                     let sequence = next.tx.enqueue_body_tracked(&destructible_wire::area_create_state(area,chunk,&values,&trees)?)?;
-                    let c = next.shared.as_mut().ok_or_else(bad)?;
+                    let c = next.shared.as_mut().ok_or_else(|| bad())?;
                     if c.areas.get(area).is_none_or(|(pending, _)| pending.is_some()) { return Err(bad()); }
                     c.areas[area] = (Some((sequence,false)), indices);
                     c.tree_areas[area] = trees;
@@ -386,7 +386,7 @@ impl Session {
                 pending.is_none_or(|(_, ack)| !ack)) {
             return Ok(());
         }
-        let world = shared.view.clone().ok_or_else(bad)?;
+        let world = shared.view.clone().ok_or_else(|| bad())?;
         let Some(total) = world.fragiles.as_ref().map(|state| state.catalog.chunks().len()) else { return Ok(()); };
         if shared.announced_areas >= total { return Ok(()); }
         let start = shared.announced_areas;
@@ -398,7 +398,7 @@ impl Session {
         if body.is_empty() || body.len() > 512 { return Err(bad()); }
         let mut next = self.clone();
         let sequence = next.tx.enqueue_body_tracked(&body)?;
-        let c = next.shared.as_mut().ok_or_else(bad)?;
+        let c = next.shared.as_mut().ok_or_else(|| bad())?;
         c.announced_areas = end;
         c.announcement_parts.push((sequence, false));
         c.announcement = Some((sequence, false));
