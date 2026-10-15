@@ -7,6 +7,9 @@ use super::vehicle_profile::VehicleKind;
 use super::ram_proof;
 #[path="profile13_dispatch.rs"]
 mod profile13_dispatch;
+#[path="server_scene_runtime.rs"]
+mod batch_scene;
+use batch_scene::BatchRuntime;
 
 #[cfg(test)]
 #[path="server_catalog_tests.rs"]
@@ -41,8 +44,8 @@ mod is7_real_tests;
 #[path="server_whole_fracture_real_tests.rs"]
 mod whole_fracture_real_tests;
 
-#[derive(Default)]
-struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
+struct Table { sessions: Vec<Session>, retirement: RetirementWindow,capacity:usize }
+impl Default for Table {fn default()->Self{Self{sessions:Vec::new(),retirement:RetirementWindow::default(),capacity:model::CAPACITY}}}
 
 /// A consumed worker reply must survive other lanes' pending replies. There
 /// is at most one unconsumed advance per lane, and 32 contacts across all lanes.
@@ -60,6 +63,7 @@ struct ContactBatch {
 /// worker would duplicate process authority. Every imported row is copied into
 /// the next world snapshot only after the worker contract has validated it.
 struct IntegratedRuntime {
+    batch:Option<BatchRuntime>,
     pool: Arc<crate::map_drive_worker091::Pool>,
     map_id: MapId,
     workers: [Option<crate::map_drive_worker091::Worker>; model::CAPACITY],
@@ -123,7 +127,7 @@ impl IntegratedRuntime {
     }
 
     fn new_for_map(pool: Arc<crate::map_drive_worker091::Pool>, map_id: MapId) -> Self {
-        Self { pool, map_id, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
+        Self { batch:None,pool, map_id, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
             pose_pending: [false; model::CAPACITY],
             offsets: [[0.; 3]; model::CAPACITY],
             anchored: [false; model::CAPACITY],
@@ -185,6 +189,7 @@ impl IntegratedRuntime {
     }
 
     fn start(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
+        if let Some(batch)=&mut self.batch{batch.start(world,now)?;self.started=true;return Ok(());}
         if world.map != self.map_id || world.vehicle_kind()!=self.pool.vehicle_kind()
             || self.started || world.actors.len() != model::CAPACITY
             || world.started.is_none() { return Err(model::bad()); }
@@ -203,10 +208,11 @@ impl IntegratedRuntime {
     }
 
     fn ready_for_native(&self) -> bool {
+        if let Some(batch)=&self.batch{return batch.ready_for_native();}
         !self.blocked() && !self.synchronizing.iter().any(|v|*v) && self.workers.iter().all(|worker| worker.as_ref().is_some_and(|value| value.ready()))
     }
 
-    fn blocked(&self) -> bool { self.staged.is_some() || self.workers.iter().flatten().any(|worker|!worker.prepared_ids().is_empty()) }
+    fn blocked(&self) -> bool {if let Some(batch)=&self.batch{return batch.blocked();} self.staged.is_some() || self.workers.iter().flatten().any(|worker|!worker.prepared_ids().is_empty()) }
 
     fn resume_after_scene_ack(&mut self, world: &World, now: Instant) -> io::Result<()> {
         let grid = drive_grid(world.started.ok_or_else(|| model::bad())?, now)?;
@@ -293,6 +299,7 @@ impl IntegratedRuntime {
     }
 
     fn step(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
+        if let Some(batch)=&mut self.batch{return batch.step(world,now);}
         if world.map != self.map_id || world.vehicle_kind()!=self.pool.vehicle_kind()
             || self.workers.iter().flatten().any(|worker|
             worker.map.asset != self.map_id.asset() || worker.map.arena_type_id != self.map_id.arena_type_id()) {
@@ -553,7 +560,7 @@ impl Table {
     fn admissible(&mut self, attempt: &LoginAttempt, now: Instant) -> io::Result<()> {
         self.retirement.check_login(attempt, now).map_err(|_| model::bad())?;
         if self.sessions.iter().any(|s| s.same_login_attempt(attempt)) { return Ok(()); }
-        if self.sessions.len() >= model::CAPACITY
+        if self.sessions.len() >= self.capacity
             || self.retirement.retained_count() + self.sessions.len() >= MAX_RETIRED
             || self.sessions.iter().any(|s| s.key == attempt.key || s.login_peer == attempt.login_peer
                 || s.base_peer == Some(attempt.login_peer)) { return Err(model::bad()); }
@@ -592,29 +599,40 @@ struct BattleTemplate {
     pool: Option<Arc<crate::map_drive_worker091::Pool>>,
     removal: Option<crate::map_drive_worker091::RemovalSpec>,
     catalog: Option<crate::map_drive_worker091::CatalogSpec>,
+    shared:Option<Arc<super::profile13_templates::SharedResources>>,
 }
 impl BattleTemplate {
+    fn from_shared(rows:&[super::profile13_templates::Resources;2],count:usize,id:u64,now:Instant)->io::Result<Self>{
+        let shared=rows[0].shared.clone().ok_or_else(||model::bad())?;
+        let mut world=World::new_for_roster(id,now,MapId::Prohorovka,count)?;
+        for row in rows{world.bind_geometry(row.geometry.clone())?;}
+        world.enable_ap_test_lab()?;world.bind_terrain(rows[0].terrain.clone())?;
+        world.bind_fragiles(rows[0].catalog.0.clone())?;world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?;
+        Ok(Self{world,pool:Some(rows[0].pool.clone()),removal:None,catalog:Some(rows[0].catalog.1.clone()),shared:Some(shared)})
+    }
+    fn runtime(&self,map:MapId)->io::Result<Option<IntegratedRuntime>>{self.pool.as_ref().map(|pool|{
+        let mut r=IntegratedRuntime::new_for_map(pool.clone(),map);r.removal=self.removal.clone();r.catalog=self.catalog.clone();
+        if let Some(shared)=&self.shared{r.batch=Some(BatchRuntime::new(shared.clone(),self.catalog.clone().ok_or_else(||model::bad())?));}Ok(r)
+    }).transpose()}
     fn from_resources(r:&super::profile13_templates::Resources,id:u64,now:Instant)->io::Result<Self> {
         let mut world=World::new_for_vehicle(id,now,MapId::Prohorovka,r.kind)?;
         world.bind_geometry(r.geometry.clone())?;world.enable_ap_test_lab()?;
         world.bind_terrain(r.terrain.clone())?;world.bind_fragiles(r.catalog.0.clone())?;
         world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?;
-        Ok(Self{world,pool:Some(r.pool.clone()),removal:None,catalog:Some(r.catalog.1.clone())})
+        Ok(Self{world,pool:Some(r.pool.clone()),removal:None,catalog:Some(r.catalog.1.clone()),shared:None})
     }
     fn select(&self,world:&mut World,runtime:&mut Option<IntegratedRuntime>,now:Instant)->io::Result<()> {
         if world.started.is_some() || world.actors.iter().any(|a|a.session.is_some()) {return Err(model::bad());}
         let id=world.id;
         *world=if self.world.id==id {self.world.clone()} else {self.world.fresh_battle(id,now)?};*runtime=None;
-        *runtime=self.pool.as_ref().map(|p|{
-            let mut r=IntegratedRuntime::new_for_map(p.clone(),world.map);r.catalog=self.catalog.clone();r
-        });
-        println!("P08B_WORLD_SELECTED battle={id} kind={} homogeneous=true",world.vehicle_kind().label());
+        *runtime=self.runtime(world.map)?;
+        println!("P08B_WORLD_SELECTED battle={id} kind={} homogeneous={} actors={}",world.vehicle_kind().label(),!world.mixed_profiles(),world.expected_actors());
         Ok(())
     }
     fn new(world: &World, runtime: &Option<IntegratedRuntime>) -> Self {
         Self { world:world.clone(), pool:runtime.as_ref().map(|r|r.pool.clone()),
             removal:runtime.as_ref().and_then(|r|r.removal.clone()),
-            catalog:runtime.as_ref().and_then(|r|r.catalog.clone()) }
+            catalog:runtime.as_ref().and_then(|r|r.catalog.clone()),shared:None }
     }
     fn replace(&self, world: &mut World, runtime: &mut Option<IntegratedRuntime>, now: Instant) -> io::Result<()> {
         let old = world.id;
@@ -623,10 +641,7 @@ impl BattleTemplate {
         // Drop the complete old runtime, including staged poses and owned children.
         *runtime = None;
         *world = fresh;
-        *runtime = self.pool.as_ref().map(|pool| {
-            let mut r=IntegratedRuntime::new_for_map(pool.clone(),world.map);
-            r.removal=self.removal.clone(); r.catalog=self.catalog.clone(); r
-        });
+        *runtime = self.runtime(world.map)?;
         println!("SHARED_BATTLE_RESET previous={old} battle={id} workers_revoked=true actors=0 trace_events=0 scene_version=0 service_alive=true");
         Ok(())
     }
@@ -640,7 +655,7 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
             world.lifecycle_created_unix=Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                 .map_err(|_|model::bad())?.as_secs().try_into().map_err(|_|model::bad())?);
         }
-        println!("SHARED_WORLD_STARTED battle={} sessions=2 actors=2 space=1 tick=1000",world.id);
+        println!("SHARED_WORLD_STARTED battle={} sessions={} actors={} space=1 tick=1000",world.id,world.actors.len(),world.actors.len());
     }
     if world.started.is_some() {
         if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {world.advance(now)?;}
@@ -808,7 +823,7 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
         let owned=s.shared.as_ref().and_then(|c|c.profile13.as_ref());
         let slot=if let Some(p)=owned {
             let receipt=p.reservation.as_ref().ok_or_else(||model::bad())?;
-            if receipt.battle!=world.id || receipt.frozen.kind!=world.vehicle_kind() {continue;}
+            if receipt.battle!=world.id || !world.mixed_profiles()&&receipt.frozen.kind!=world.vehicle_kind() {continue;}
             world.attach_owned(who,s.id,&receipt.frozen)?
         } else {world.attach(who,s.id)?};
         let c=s.shared.as_mut().ok_or_else(||model::bad())?;
@@ -957,7 +972,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let capture_profile = if integrated_pool.is_some() { crate::capture091::Profile::IntegratedWorldV1 }
         else { crate::capture091::Profile::SharedWorldV1 };
     let mut capture = Some(Recorder::open_profile(capture_path, &config.local_root, capture_profile)?);
-    let mut table = Table::default();
+    if config.battle_players!=2&&resources.as_ref().is_none_or(|rows|rows[0].shared.is_none()){return Err(model::bad().into());}
+    let mut table = Table{capacity:config.battle_players,..Table::default()};
     let mut battle_dispatch=profile13_dispatch::Dispatcher::default();
     let mut ammo_job=None;
     let mut result_manager=super::results_session::Manager::default();
@@ -995,6 +1011,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     if let Some(runtime)=&mut integrated {runtime.catalog=catalog.map(|(_,worker)|worker);}
     if profile13_mode { world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?; }
     let mut battle_template=BattleTemplate::new(&world,&integrated);
+    if let Some(rows)=resources.as_ref().filter(|rows|rows[0].shared.is_some()){
+        battle_template=BattleTemplate::from_shared(rows,config.battle_players,world.id,started)?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+    }
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
@@ -1165,7 +1185,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     let kind=table.sessions.iter().find_map(|s|s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
                         .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && p.pending_return.is_none())
                         .and_then(|p|p.reservation.as_ref()).filter(|r|r.battle==world.id).map(|r|r.frozen.kind));
-                    if let Some(kind)=kind.filter(|k|*k!=world.vehicle_kind()) {
+                    if let Some(kind)=kind.filter(|k|!world.mixed_profiles()&&*k!=world.vehicle_kind()) {
                         let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
                         battle_template=BattleTemplate::from_resources(r,world.id,now)?;
                         battle_template.select(&mut world,&mut integrated,now)?;
@@ -1175,7 +1195,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 for s in &mut table.sessions {
                     let mismatch=s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
                         .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && p.pending_return.is_none())
-                        .and_then(|p|p.reservation.as_ref()).is_some_and(|r|r.battle!=world.id || r.frozen.kind!=world.vehicle_kind());
+                        .and_then(|p|p.reservation.as_ref()).is_some_and(|r|r.battle!=world.id || !world.mixed_profiles()&&r.frozen.kind!=world.vehicle_kind());
                     if mismatch {
                         profile13_dispatch::Dispatcher::terminal(s,&world,crate::battle091::profile13::FinishReason::Cancelled)?;
                         if let Some(c)=&mut s.shared {c.queue_announced=false;}
@@ -1206,8 +1226,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         }
         let step=(||->io::Result<()> {
             attach_waiting_sessions(&mut table,&mut world,now)?;
-            let start=world.started.is_none() && table.sessions.len()==2
-                && world.actors.len()==2 && table.sessions.iter().all(|s|entry_ready(s,now)
+            let start=world.started.is_none() && table.sessions.len()==world.expected_actors()
+                && world.actors.len()==world.expected_actors() && table.sessions.iter().all(|s|entry_ready(s,now)
                     && world.actors.iter().any(|a|a.session==Some(s.id)));
             advance_battle(&mut world,&mut integrated,now,start)
         })();
@@ -1363,11 +1383,11 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let outcomes = next_world.apply(slot, s.id, &commands, now)?;
     for outcome in &outcomes {
         if let crate::battle091::fire::Outcome::AcceptedShot { ammo_remaining } = outcome {
-            let mut b = wire::ammo_count_for(next_world.vehicle_kind(),*ammo_remaining)?; b.extend(wire::reload_for(next_world.vehicle_kind(),slot,next_world.vehicle_kind().reload_seconds())?);
+            let mut b = wire::ammo_count_for(next_world.actors[slot].vehicle_kind(),*ammo_remaining)?; b.extend(wire::reload_for(next_world.actors[slot].vehicle_kind(),slot,next_world.actors[slot].vehicle_kind().reload_seconds())?);
             next.outbox.push_back(b);
         }
     }
-    if next_world.actors[slot].fire.finish_reload_if_due(now) { next.outbox.push_back(wire::reload_for(next_world.vehicle_kind(),slot,0.)?); }
+    if next_world.actors[slot].fire.finish_reload_if_due(now) { next.outbox.push_back(wire::reload_for(next_world.actors[slot].vehicle_kind(),slot,0.)?); }
     let c = next.shared.as_mut().ok_or_else(|| model::bad())?;
     let mut shot_publications = Vec::new();
     let mut tracer_starts = Vec::new();
@@ -1466,19 +1486,19 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                             super::materials::Component::Turret01 => 2,
                             super::materials::Component::Gun02 | super::materials::Component::Gun01 => 3,
                         };
-                        body.extend(impact_wire::show_damage_for(next_world.vehicle_kind(),event.attacker,event.target,component,
+                        body.extend(impact_wire::show_damage_for(next_world.actors[event.attacker].vehicle_kind(),event.attacker,event.target,component,
                             segment.bounds,segment.start,segment.end,outcome)?);
                     }
                     if event.health_after < event.health_before
                         && c.health_sent[event.target].is_none_or(|hp| hp > event.health_after) {
-                        body.extend(impact_wire::health_changed_for(next_world.vehicle_kind(),event.target,event.health_after,event.attacker)?);
+                        body.extend(impact_wire::health_changed_for(next_world.actors[event.target].vehicle_kind(),event.target,event.health_after,event.attacker)?);
                         c.health_sent[event.target] = Some(event.health_after);
                         if event.target == c.slot {
-                            body.extend(impact_wire::owner_health_for(next_world.vehicle_kind(),event.health_after)?);
+                            body.extend(impact_wire::owner_health_for(next_world.actors[event.target].vehicle_kind(),event.health_after)?);
                             c.owner_health_sent = Some(event.health_after);
                         }
                         if event.health_after == 0 {
-                            body.extend(wire::roster(&next_world)?);
+                            body.extend(wire::roster_updates(&next_world,event.target)?);
                             if next_world.lifecycle.is_some() {
                                 body.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
                             }
@@ -1492,21 +1512,21 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
             }
             // Late creation/reconnect gets current HP, never old effects or
             // an intermediate health value that would resurrect the actor.
-            for target in 0..model::CAPACITY {
+            for target in 0..next_world.actors.len() {
                 if !c.visible()[target] { continue; }
                 let hp = next_world.actors[target].health;
                 let mut body = Vec::new();
                 if c.health_sent[target] != Some(hp) {
-                    if hp != next_world.vehicle_kind().max_health() {
+                    if hp != next_world.actors[target].vehicle_kind().max_health() {
                         let attacker = next_world.impacts.iter().rev().find(|e| e.target == target)
                             .map(|e| e.attacker).ok_or_else(|| model::bad())?;
-                        body.extend(impact_wire::health_changed_for(next_world.vehicle_kind(),target,hp,attacker)?);
-                        if hp == 0 { body.extend(wire::roster(&next_world)?); }
+                        body.extend(impact_wire::health_changed_for(next_world.actors[target].vehicle_kind(),target,hp,attacker)?);
+                        if hp == 0 { body.extend(wire::roster_updates(&next_world,target)?); }
                     }
                     c.health_sent[target] = Some(hp);
                 }
-                if target == c.slot && hp != next_world.vehicle_kind().max_health() && c.owner_health_sent != Some(hp) {
-                    body.extend(impact_wire::owner_health_for(next_world.vehicle_kind(),hp)?); c.owner_health_sent = Some(hp);
+                if target == c.slot && hp != next_world.actors[target].vehicle_kind().max_health() && c.owner_health_sent != Some(hp) {
+                    body.extend(impact_wire::owner_health_for(next_world.actors[target].vehicle_kind(),hp)?); c.owner_health_sent = Some(hp);
                 }
                 if !body.is_empty() { next.outbox.push_back(body); }
             }
@@ -1527,7 +1547,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
             }
             c.lifecycle_view=Some(view);
         }
-        for other in 0..2 {
+        for other in 0..next_world.actors.len() {
             if next_world.actors[other].ready && !c.ready_sent[other] {
                 next.outbox.push_back(wire::ready_update(other)?); c.ready_sent[other] = true;
             }
@@ -1545,7 +1565,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     }
     // At most40 MS-1 or60 IS-7 shots: start cue+tracer+stop+one compound impact, plus
     // bounded reload/readiness/health catch-up. Slow peers cannot grow forever.
-    if next.outbox.len() > next_world.vehicle_kind().battle_shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;
+    if next.outbox.len() > next_world.shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
     for command in &commands { if let model::Command::Aim(intent) = command { println!("SHARED_AIM battle={} session={} slot={slot} intent={intent:?} client_angles_authoritative=false", world.id, s.id); } }

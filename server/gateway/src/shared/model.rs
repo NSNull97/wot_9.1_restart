@@ -172,9 +172,9 @@ impl World {
         let trace_from = events.len().saturating_sub(64);
         serde_json::json!({
             "battle":self.id.to_string(), "map":self.map.asset(), "vehicle":self.vehicle_kind.label(),
-            "tick":self.tick, "started":self.started.is_some(),
+            "tick":self.tick, "started":self.started.is_some(),"mixed_profiles":self.mixed_profiles,"expected_actors":self.expected_actors,
             "actors":self.actors.iter().map(|a|serde_json::json!({
-                "account":a.identity.account,"session":a.session,"ready":a.ready,"health":a.health,
+                "account":a.identity.account,"session":a.session,"ready":a.ready,"health":a.health,"kind":a.vehicle_kind.label(),
                 "position":a.position,"direction":a.direction,"speed":a.speed,
                 "input":format!("{:?}",a.input),"fire":format!("{:?}",a.fire),"aim":format!("{:?}",a.aim)
             })).collect::<Vec<_>>(),
@@ -791,6 +791,9 @@ impl World {
     }
 }
 
+#[cfg(test)]
+#[path="model_scene_tests.rs"]
+mod scene_tests;
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
