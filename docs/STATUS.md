@@ -41,9 +41,9 @@ native profile13 прислал23107. Лимит привязан к research fi
 
 P08C candidate в codex/p08c-battle-lifecycle: authoritative waiting/countdown/
 battle/capture/outcome, opposite teams, original result stream и atomic fullresult
-writer реализованы. Targeted lifecycle16/result manager6 PASS, writer10/P08B18,
-real HTTP/static contract5 PASS. Итоговый gateway full gate впереди;
-native/UI/audio NOT_RUN, main не изменён. [Факты P08C](research/P08C_BATTLE_CYCLE.md).
+writer реализованы. Full runtime8c96580: gateway919 PASS/5 прежних ignored,
+build PASS (gateway-p08c-full01), writer10/P08B18, real HTTP/static contract5 PASS.
+Native/UI/audio NOT_RUN, main не изменён. [Факты P08C](research/P08C_BATTLE_CYCLE.md).
 
 ## Принято владельцем на настоящем клиенте #717
 

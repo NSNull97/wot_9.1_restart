@@ -17,6 +17,12 @@
 - Web: `cd web && P04D_TEST_BUNDLE=<бандл> node --test tests/<файл>.test.mjs`.
 - Клиентский патч: CPython 2.7.3 `local/toolchains/cpython-2.7.3-x86/python.exe`;
   компилируется при `tools/interactive_client.py prepare`.
+- P08C candidate: `local/build/server/gateway-p08c-full01/`, runtime8c96580,
+  919PASS/5ignored/buildPASS. Natural result/AP/HP commit атомарен в том же writer;
+  private `/internal/native/battle-results` обслуживает Account1500/1501.
+  Original Avatar stream100 ждёт scoped confirm перед Account reset; native gate
+  NOT_RUN. P08B клиентская установка native-fix03 остаётся последней, процессы
+  своих run03 остановлены. Не запускать новый exe со старой source receipt.
 - Байткод клиента: оригинал `C:\WoT_0.9.1_RU_0717_original` (путь в
   `config/project.local.json`). Читать `.pyc` через `marshal` + `dis` этим CPython 2.7.3,
   без исполнения кода клиента. Так проверены все факты последних карточек.
