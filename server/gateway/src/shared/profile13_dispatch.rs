@@ -60,7 +60,7 @@ impl Dispatcher {
         let retain=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
             p.in_flight || p.reservation.is_some() || p.pending_return.is_some());
         if retain {
-            if self.retired.len()>=model::CAPACITY {return Err(model::bad());}
+            if self.retired.len()>=model::MAX_ACTORS {return Err(model::bad());}
             let mut retired=s.clone();retired.active=false;
             if let Some(c)=&mut retired.shared {c.join_requested=false;}
             self.retired.push(retired);

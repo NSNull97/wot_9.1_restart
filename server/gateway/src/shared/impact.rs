@@ -285,14 +285,16 @@ impl Event {
 pub struct Trace {
     map: crate::map_profile091::MapId,
     vehicle: VehicleKind,
+    roster: Option<usize>,
+    actor_kinds: [Option<VehicleKind>;super::model::MAX_ACTORS],
     events: Vec<Event>,
     terminal_shots: Vec<u32>,
     next_order: u32,
     last_tick: u32,
     battle_id: Option<u64>,
     fragiles: Option<fragiles::State>,
-    contact_sources:[Option<super::ram_proof::Source>;2],
-    contact_revoked:[bool;2],
+    contact_sources:[Option<super::ram_proof::Source>;super::model::MAX_ACTORS],
+    contact_revoked:[bool;super::model::MAX_ACTORS],
     source_history:Vec<(u32,usize,super::ram_proof::Source)>,
 }
 
@@ -302,23 +304,41 @@ impl Trace {
     pub fn new_for_vehicle(map:crate::map_profile091::MapId,vehicle:VehicleKind)->Self {
         Self {map,vehicle,..Self::default()}
     }
-    fn event_limit(&self)->usize { self.vehicle.battle_shot_limit()*EVENTS_PER_SHOT+fragiles::MAX_MOVEMENT_OBJECTS }
+    pub fn configure_roster(&mut self,count:usize)->io::Result<()> {
+        if !(2..=super::model::MAX_ACTORS).contains(&count)||!self.events.is_empty()||self.battle_id.is_some() {return Err(invalid("late or invalid trace roster"));}
+        self.roster=Some(count);Ok(())
+    }
+    pub fn bind_actor(&mut self,slot:usize,kind:VehicleKind)->io::Result<()> {
+        if self.roster.is_none_or(|n|slot>=n)||self.actor_kinds[slot].is_some_and(|old|old!=kind) {return Err(invalid("trace actor profile binding"));}
+        self.actor_kinds[slot]=Some(kind);Ok(())
+    }
+    fn actor_limit(&self)->usize {self.roster.unwrap_or(super::model::CAPACITY)}
+    fn shot_limit(&self)->usize {self.roster.map_or(self.vehicle.battle_shot_limit(),|n|n*96)}
+    fn kind_for_slot(&self,slot:usize)->io::Result<VehicleKind> {
+        if slot>=self.actor_limit() {return Err(invalid("trace actor slot"));}
+        if self.roster.is_some() {self.actor_kinds[slot].ok_or_else(||invalid("unbound trace actor profile"))}else{Ok(self.vehicle)}
+    }
+    fn shot_kind(&self,shot:u32)->io::Result<VehicleKind> {
+        self.admission_facts(shot).map(|(slot,_)|slot).ok_or_else(||invalid("shot source profile absent")).and_then(|s|self.kind_for_slot(s))
+    }
+    fn event_limit(&self)->usize { self.shot_limit()*EVENTS_PER_SHOT+fragiles::MAX_MOVEMENT_OBJECTS }
     fn profile(&self)->&'static str { match self.vehicle { VehicleKind::Ms1=>PROFILE,VehicleKind::Is7=>"is7_ap_14602" } }
     fn ruleset_revision(&self)->&'static str { match self.vehicle {
         VehicleKind::Ms1=>RULESET_REVISION,VehicleKind::Is7=>"wot-0.9.1-#717-is7-ap-full-pose-v1",
     } }
     pub fn bind_fragiles(&mut self,catalog:std::sync::Arc<fragiles::Catalog>)->io::Result<()>{
         if catalog.map!=self.map||!self.events.is_empty()||self.fragiles.is_some(){return Err(invalid("late or duplicate fragile catalog"));}
-        self.fragiles=Some(fragiles::State::new(catalog));Ok(())
+        let mut state=fragiles::State::new(catalog);if let Some(n)=self.roster {state.configure_roster(n)?;}
+        self.fragiles=Some(state);Ok(())
     }
     pub fn bind_contact_source(&mut self,slot:usize,source:super::ram_proof::Source)->io::Result<()> {
-        if slot>=2||source.profile!=match self.vehicle{VehicleKind::Ms1=>super::ram_proof::Profile::Ms1,VehicleKind::Is7=>super::ram_proof::Profile::Is7}
+        if slot>=self.actor_limit()||source.profile!=match self.kind_for_slot(slot)?{VehicleKind::Ms1=>super::ram_proof::Profile::Ms1,VehicleKind::Is7=>super::ram_proof::Profile::Is7}
             ||!source.follows(self.contact_sources[slot].as_ref()){return Err(invalid("vehicle source authority"));}
         if self.contact_revoked[slot]&&self.contact_sources[slot].as_ref().is_some_and(|old|source.generation<=old.generation){return Err(invalid("revoked vehicle source"));}
         self.contact_sources[slot]=Some(source);self.contact_revoked[slot]=false;Ok(())
     }
     pub fn revoke_contact_source(&mut self,slot:usize)->io::Result<()> {
-        if slot>=2{return Err(invalid("vehicle source slot"));}self.contact_revoked[slot]=true;Ok(())
+        if slot>=self.actor_limit(){return Err(invalid("vehicle source slot"));}self.contact_revoked[slot]=true;Ok(())
     }
     pub fn contact_source_history(&self)->&[(u32,usize,super::ram_proof::Source)]{&self.source_history}
     pub fn events(&self) -> &[Event] { &self.events }
@@ -360,9 +380,10 @@ impl Trace {
         ammo_after: u16,
     ) -> io::Result<()> {
         self.common(battle_id, shot_id, server_tick)?;
-        if shooter_slot >= 2 || shot_id as usize > self.vehicle.battle_shot_limit()
-            || ammo_before > self.vehicle.ammo_limit()
-            || ammo_after > self.vehicle.ammo_limit()
+        let kind=self.kind_for_slot(shooter_slot)?;
+        if shot_id as usize > self.shot_limit()
+            || ammo_before > kind.ammo_limit()
+            || ammo_after > kind.ammo_limit()
             || ammo_after.checked_add(1) != Some(ammo_before) {
             return Err(invalid("impact admission transition"));
         }
@@ -370,16 +391,16 @@ impl Trace {
             return Err(invalid("duplicate impact shot identity"));
         }
         if self.events.iter().filter(|event| matches!(event, Event::Admission { .. })).count()
-            >= self.vehicle.battle_shot_limit() {
+            >= self.shot_limit() {
             return Err(invalid("impact shot bound"));
         }
         let order = self.next_order_value()?;
         self.push(Event::Admission {
             order, battle_id, shot_id, server_tick, shooter_slot,
-            vehicle_compact_id: self.vehicle.vehicle_compact_id(),
-            gun_compact_id: self.vehicle.gun_compact_id(),
-            shell_compact_id: self.vehicle.shell_compact_id(),
-            profile: self.profile(),
+            vehicle_compact_id: kind.vehicle_compact_id(),
+            gun_compact_id: kind.gun_compact_id(),
+            shell_compact_id: kind.shell_compact_id(),
+            profile: if kind==VehicleKind::Ms1{PROFILE}else{"is7_ap_14602"},
             ammo_before, ammo_after, reload_ready: true,
         })?;
         if self.battle_id.is_none() { self.battle_id = Some(battle_id); }
@@ -395,8 +416,8 @@ impl Trace {
             || !finite_vector(projectile.origin) || !finite_vector(projectile.velocity)
             || !finite_vector(projectile.terminal)
             || !projectile.gravity.is_finite() || projectile.gravity <= 0.0
-            || projectile.vehicle_kind != self.vehicle
-            || projectile.slot >= 2
+            || projectile.vehicle_kind != self.kind_for_slot(projectile.slot)?
+            || projectile.slot >= self.actor_limit()
             || projectile.slot != admitted_slot
             || server_tick != admitted_tick
             || !projectile.max_distance.is_finite() || projectile.max_distance <= 0.0
@@ -413,7 +434,7 @@ impl Trace {
             origin: projectile.origin, velocity: projectile.velocity,
             gravity: projectile.gravity, max_distance: projectile.max_distance,
             max_lifetime_seconds: projectile.flight_time.as_secs_f32(),
-            pose_revision: self.ruleset_revision(),
+            pose_revision: if projectile.vehicle_kind==VehicleKind::Ms1{RULESET_REVISION}else{"wot-0.9.1-#717-is7-ap-full-pose-v1"},
         })?;
         self.last_tick = server_tick;
         Ok(())
@@ -504,17 +525,18 @@ impl Trace {
         server_tick: u32, attacker: usize, target: usize, resolution: &ap::Resolution,
         health_before: i16, health_after: i16) -> io::Result<()> {
         self.common(battle_id, shot_id, server_tick)?;
-        if attacker >= super::model::CAPACITY || target >= super::model::CAPACITY
+        let shooter_kind=self.kind_for_slot(attacker)?;let target_kind=self.kind_for_slot(target)?;
+        if attacker >= self.actor_limit() || target >= self.actor_limit()
             || attacker == target || self.has_terminal(shot_id)
             || self.admission_facts(shot_id).map(|(slot, _)| slot) != Some(attacker)
-            || !(0..=self.vehicle.max_health()).contains(&health_before) || !(0..=self.vehicle.max_health()).contains(&health_after)
-            || resolution.profile_revision != ap::profile_revision_for(self.vehicle)
-            || resolution.damage != (if resolution.outcome == ap::Outcome::Pierced { self.vehicle.damage() } else { 0 })
+            || !(0..=target_kind.max_health()).contains(&health_before) || !(0..=target_kind.max_health()).contains(&health_after)
+            || resolution.profile_revision != ap::profile_revision_for(shooter_kind)
+            || resolution.damage != (if resolution.outcome == ap::Outcome::Pierced { shooter_kind.damage() } else { 0 })
             || health_after != health_before.saturating_sub(resolution.damage as i16).max(0) {
             return Err(invalid("AP resolution identity, damage or health transition"));
         }
         let (material_order, facts) = self.outcome_material(battle_id, shot_id, server_tick, target)?;
-        if facts.profile_revision!=materials::profile_revision(self.vehicle) {
+        if facts.profile_revision!=materials::profile_revision(target_kind) {
             return Err(invalid("AP resolution vehicle material profile"));
         }
         if resolution.armor != facts.effective.as_ref().and_then(|e| e.armor).map(f64::from)
@@ -522,7 +544,7 @@ impl Trace {
                 resolution.nominal_power, resolution.normalization_degrees].into_iter().flatten()
                 .any(|x| !x.is_finite() || x < 0.0)
             || !resolution.incidence_degrees.is_some_and(|x| x <= 90.0)
-            || !resolution.nominal_power.is_some_and(|x| x <= self.vehicle.shell().power_100) {
+            || !resolution.nominal_power.is_some_and(|x| x <= shooter_kind.shell().power_100) {
             return Err(invalid("AP resolution material, target pose or numerical facts"));
         }
         let calculated_plate = matches!(resolution.outcome, ap::Outcome::Pierced | ap::Outcome::NotPierced);
@@ -549,7 +571,7 @@ impl Trace {
         server_tick: u32, attacker: usize, target: usize,
         health_before: i16, health_after: i16) -> io::Result<()> {
         self.common(battle_id, shot_id, server_tick)?;
-        if attacker >= super::model::CAPACITY || target >= super::model::CAPACITY
+        if attacker >= self.actor_limit() || target >= self.actor_limit()
             || attacker == target || self.has_terminal(shot_id)
             || self.admission_facts(shot_id).map(|(slot, _)| slot) != Some(attacker)
             || health_before != 0 || health_after != 0 {
@@ -561,7 +583,7 @@ impl Trace {
         }
         let order = self.next_order_value()?;
         self.push(Event::WreckImpact { order, battle_id, shot_id, server_tick, attacker, target,
-            material_order, policy_revision: super::model::wreck_policy_revision_for(self.vehicle),
+            material_order, policy_revision: super::model::wreck_policy_revision_for(self.kind_for_slot(target)?),
             health_before, health_after })?;
         self.last_tick = server_tick;
         Ok(())
@@ -634,7 +656,7 @@ impl Trace {
         };
         if hit!=damage.hit||self.terrain_for_query(battle_id,shot_id,server_tick,segment,query+1)?!=Some((query,Some(hit))){return Err(invalid("fragile damage query binding"));}
         let mut state=self.fragiles.clone().ok_or_else(||invalid("fragile catalog absent"))?;
-        if state.contact_for(self.vehicle,shot_id,damage.shooter,server_tick,hit)?.as_ref()!=Some(damage)
+        if state.contact_for(self.shot_kind(shot_id)?,shot_id,damage.shooter,server_tick,hit)?.as_ref()!=Some(damage)
             ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("fragile damage transaction"));}
         self.push(Event::FragileDamage{order:self.next_order_value()?,battle_id,shot_id,server_tick,terrain_contact_order:order,damage:damage.clone()})?;
         self.fragiles=Some(state);self.last_tick=server_tick;Ok(())
@@ -776,7 +798,7 @@ impl Trace {
                 if *battle == battle_id && *shot == shot_id && *tick == server_tick
                 && *query_order == query && *segment_order == segment
                 && mesh.as_str() == facts.component.name() && material == &facts.name
-                && geometry_revision == super::geometry::source_revision(self.vehicle)
+                && geometry_revision == super::geometry::source_revision(self.kind_for_slot(target)?)
                 && transform_revision.strip_prefix(&pose_tag).is_some_and(|digest|
                     digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))));
         if !target_bound { return Err(invalid("impact outcome material or target pose")); }

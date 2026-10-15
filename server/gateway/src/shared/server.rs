@@ -189,7 +189,7 @@ impl IntegratedRuntime {
             || self.started || world.actors.len() != model::CAPACITY
             || world.started.is_none() { return Err(model::bad()); }
         let map = self.map()?;
-        let lane_spawns = std::array::from_fn(|slot| {
+        let lane_spawns: [[f32;3];model::CAPACITY] = std::array::from_fn(|slot| {
             Self::lane_spawn(&map, slot)
         });
         // Native announcements are emitted later in this same loop. Rebase
@@ -833,7 +833,7 @@ pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_
         true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources))
 }
 
-fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
+pub(super) fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
     -> io::Result<&crate::map_drive_worker091::MapSpec> {
     let mut candidates=pool.maps.iter().filter(|map| map.asset==selected.asset());
     let map=candidates.next().ok_or_else(|| model::bad())?;
@@ -1741,8 +1741,8 @@ mod tests {
     }
     pub(super) fn visible_pair(now: Instant) -> (Session, Session, World) {
         let (mut a,w) = driving(now);
-        a.shared.as_mut().unwrap().creations = [Some((0,true));2];
-        a.shared.as_mut().unwrap().ready_sent = [true;2];
+        a.shared.as_mut().unwrap().creations = [Some((0,true));model::MAX_ACTORS];
+        a.shared.as_mut().unwrap().ready_sent = [true;model::MAX_ACTORS];
         let mut b = a.clone(); b.id = 2; b.shared.as_mut().unwrap().slot = 1;
         (a,b,w)
     }
@@ -1919,7 +1919,7 @@ mod tests {
     #[test] fn area_request_mixed_envelope_is_atomic_and_rejoin_uses_current_state() {
         let now=Instant::now(); let (mut s,_)=driving(now); let w=destroyed_fixture(now);
         let c=s.shared.as_mut().unwrap();c.phase=Phase::Entities;c.view=Some(w.clone());
-        c.announcement=Some((0,true));c.creations=[None;2];
+        c.announcement=Some((0,true));c.creations=[None;model::MAX_ACTORS];
         let mut request=vec![8,4,0];request.extend(super::super::destructible_wire::ENTITY_ID.to_le_bytes());
         request.extend([8,4,0]);request.extend(wire::vehicle_id(0).unwrap().to_le_bytes());
         let mut poisoned=request.clone();poisoned.extend([8,4,0]);poisoned.extend(123u32.to_le_bytes());
@@ -2102,7 +2102,7 @@ mod tests {
         let (_,mut rejoin,_)=visible_pair(at);
         rejoin.shared.as_mut().unwrap().impact_cursor=w.impacts.len();
         rejoin.shared.as_mut().unwrap().shot_cursor=w.latest_shot();
-        rejoin.shared.as_mut().unwrap().health_sent=[Some(90),Some(0)];
+        rejoin.shared.as_mut().unwrap().health_sent=[Some(90),Some(0),None,None,None,None];
         let creation=wire::create_vehicle(&w,1).unwrap();
         assert!(creation.windows(7).any(|r|r==[3,0,0,4,0,0,5]));
         rejoin.shared.as_mut().unwrap().view=Some(w.clone());
@@ -2152,7 +2152,7 @@ mod tests {
         let (_,mut rejoin,_)=visible_pair(at);
         let c=rejoin.shared.as_mut().unwrap();
         c.impact_cursor=w.impacts.len(); c.shot_cursor=w.latest_shot();
-        c.health_sent=[Some(90),Some(0)]; c.owner_health_sent=Some(0); c.view=Some(w.clone());
+        c.health_sent=[Some(90),Some(0),None,None,None,None]; c.owner_health_sent=Some(0); c.view=Some(w.clone());
         poll(&mut rejoin,&mut w,at).unwrap();
         assert!(queued_bodies(&rejoin,at).is_empty());
         assert_eq!(w.actors[1].health,0);
@@ -2277,7 +2277,7 @@ mod tests {
         w.attach(w.actors[0].identity.clone(),3).unwrap();
         let (mut rejoin,_) = driving(now); rejoin.id=3;
         let c=rejoin.shared.as_mut().unwrap(); c.phase=Phase::Entities; c.correction=false;
-        c.binding=None; c.creations=[Some((0,true));2]; c.view=Some(w.clone());
+        c.binding=None; c.creations=[Some((0,true));model::MAX_ACTORS]; c.view=Some(w.clone());
         let ready=[0x0d,8,0,0,0,0,0,3,0,16,9,0x8d,5,0,2,1,0,0,0,0x86,0,0,0x0c,8,0,0,0,0,0,0,0,0,0];
         rejoin.receive(&frame(&rejoin,&ready),end + Duration::from_millis(100)).unwrap();
         poll(&mut rejoin,&mut w,end + Duration::from_millis(100)).unwrap();
@@ -2328,7 +2328,7 @@ mod tests {
         w.detach(1).unwrap();w.attach(w.actors[0].identity.clone(),3).unwrap();
         let (mut rejoin,_) = driving(now);rejoin.id=3;
         let c=rejoin.shared.as_mut().unwrap();c.phase=Phase::Entities;c.correction=false;
-        c.binding=None;c.creations=[Some((0,true));2];c.view=Some(w.clone());
+        c.binding=None;c.creations=[Some((0,true));model::MAX_ACTORS];c.view=Some(w.clone());
         let ready=[0x0d,8,0,0,0,0,0,3,0,16,9,0x8d,5,0,2,1,0,0,0,0x86,0,0,0x0c,8,0,0,0,0,0,0,0,0,0];
         rejoin.receive(&frame(&rejoin,&ready),now).unwrap();poll(&mut rejoin,&mut w,now).unwrap();
         assert_eq!(rejoin.shared.as_ref().unwrap().shot_cursor,1);assert_eq!(w.actors[0].fire.ammo(),19);

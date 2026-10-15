@@ -147,7 +147,7 @@ pub struct Context {pub battle:u64,pub slot:usize,pub session:u32,pub generation
     pub config_sha256:String,pub catalog_sha256:String,pub domain_sha256:String,pub scene_version:u32,pub scene_sha256:String}
 impl Context {pub fn validate(&self)->io::Result<()> {
     let hash=|s:&str|s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
-    if self.battle==0||self.slot>=2||self.session==0||self.generation==0||!(1..=36000).contains(&self.seq)
+    if self.battle==0||self.slot>=super::model::MAX_ACTORS||self.session==0||self.generation==0||!(1..=36000).contains(&self.seq)
         ||self.tick!=180+self.seq*6||self.scene_version>2048
         ||[&self.config_sha256,&self.catalog_sha256,&self.domain_sha256,&self.scene_sha256].into_iter().any(|s|!hash(s)){return Err(bad());}Ok(())
 }}

@@ -45,8 +45,11 @@ pub struct Projectile {
 
 impl Projectile {
     pub fn launch(sequence: u32, slot: usize, actor: &model::Actor, now: Instant) -> io::Result<Self> {
+        Self::launch_for_limit(sequence,slot,actor,now,model::MAX_BATTLE_SHOTS)
+    }
+    pub fn launch_for_limit(sequence:u32,slot:usize,actor:&model::Actor,now:Instant,shot_limit:usize)->io::Result<Self> {
         let kind=actor.vehicle_kind(); let shell=kind.shell();
-        if sequence == 0 || sequence as usize > kind.battle_shot_limit() || slot >= model::CAPACITY || !actor.position.iter().all(|v| v.is_finite())
+        if shot_limit==0 || shot_limit>model::MAX_BATTLE_SHOTS || sequence == 0 || sequence as usize > shot_limit || slot >= model::MAX_ACTORS || !actor.position.iter().all(|v| v.is_finite())
             || actor.direction.iter().any(|v| !v.is_finite()) || !actor.aim.yaw.is_finite() || !actor.aim.pitch.is_finite()
         {
             return Err(model::bad());

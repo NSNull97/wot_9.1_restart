@@ -14,7 +14,7 @@ struct Reference {path:PathBuf,sha256:String}
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct Profile {kind:VehicleKind,pool:Reference,geometry:Reference}
 #[derive(Clone,Debug,PartialEq,Eq)]
-struct Manifest {catalog:Reference,profiles:[Profile;2]}
+struct Manifest {catalog:Reference,profiles:[Profile;2],shared_physics:Option<Reference>}
 
 fn keys(value:&Value,expected:&[&str])->io::Result<()> {
     let object=value.as_object().ok_or_else(||bad("object type"))?;
@@ -31,8 +31,10 @@ fn reference(value:&Value)->io::Result<Reference> {
 }
 fn parse(raw:&[u8])->io::Result<Manifest> {
     let value=profile13::bounded_json(raw,profile13::MAX_REPLY_BYTES)?;
-    keys(&value,&["version","map","catalog","profiles"])?;
-    if value["version"].as_u64()!=Some(1)||text(&value,"map")?!="05_prohorovka"{return Err(bad("version/map"));}
+    let version=value["version"].as_u64();
+    if version==Some(2){keys(&value,&["version","map","catalog","profiles","shared_physics"])?;}
+    else{keys(&value,&["version","map","catalog","profiles"])?;}
+    if !matches!(version,Some(1|2))||text(&value,"map")?!="05_prohorovka"{return Err(bad("version/map"));}
     let rows=value["profiles"].as_array().ok_or_else(||bad("profile list"))?;
     if rows.len()!=2{return Err(bad("exactly two source profiles required"));}
     let mut profiles=[None,None];
@@ -43,7 +45,7 @@ fn parse(raw:&[u8])->io::Result<Manifest> {
         profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?});
     }
     Ok(Manifest{catalog:reference(&value["catalog"])?,profiles:[profiles[0].take().ok_or_else(||bad("missing MS-1"))?,
-        profiles[1].take().ok_or_else(||bad("missing IS-7"))?]})
+        profiles[1].take().ok_or_else(||bad("missing IS-7"))?],shared_physics:if version==Some(2){Some(reference(&value["shared_physics"])?)}else{None}})
 }
 fn plain(path:&Path)->io::Result<()> {
     for parent in path.ancestors(){
@@ -80,7 +82,10 @@ pub(super) struct Resources {
     pub(super) geometry:Arc<Bundle>,
     pub(super) terrain:Arc<Terrain>,
     pub(super) catalog:(Arc<Catalog>,CatalogSpec),
+    pub(super) shared:Option<Arc<SharedResources>>,
 }
+#[derive(Clone)]
+pub(super) struct SharedResources {pub root:PathBuf,pub artifacts:crate::scene_worker::Artifacts,pub maps:[crate::map_drive_worker091::MapSpec;2]}
 
 pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<[Resources;2]> {
     let path=owned(local_root,manifest_path)?;let manifest=parse(&read(&path,profile13::MAX_REPLY_BYTES)?)?;
@@ -101,10 +106,17 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<[Resources;
         catalog.bind_geometry(&terrain)?;
         println!("P08B_TEMPLATE_VALIDATED kind={} pool_sha256={} geometry_sha256={} catalog_sha256={} map=05_prohorovka resources_only=true",
             profile.kind.label(),pool.sha256,profile.geometry.sha256,manifest.catalog.sha256);
-        Ok(Resources{kind:profile.kind,pool,geometry,terrain,catalog:(catalog.clone(),worker.clone())})
+        Ok(Resources{kind:profile.kind,pool,geometry,terrain,catalog:(catalog.clone(),worker.clone()),shared:None})
     };
     let [first,second]=manifest.profiles;
-    Ok([load_profile(first)?,load_profile(second)?])
+    let mut rows=[load_profile(first)?,load_profile(second)?];
+    if let Some(reference)=manifest.shared_physics {
+        let path=pin(local_root,&reference,65536)?;
+        let shared=Arc::new(SharedResources{root:local_root.canonicalize()?,artifacts:crate::scene_worker::Artifacts::load(&path)?,
+            maps:[super::server::selected_pool_map(&rows[0].pool,MapId::Prohorovka)?.clone(),super::server::selected_pool_map(&rows[1].pool,MapId::Prohorovka)?.clone()]});
+        for row in &mut rows{row.shared=Some(shared.clone());}
+    }
+    Ok(rows)
 }
 
 #[cfg(test)]
