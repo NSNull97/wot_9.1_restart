@@ -7,6 +7,7 @@ import { nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
 
 import { BARRACKS_CREW_POLICY_SHA256, validateBarracksRecruitmentResponse } from './p04k-crew.mjs';
 import { BATTLE_POLICY_SHA256, validateBattleRequest, validateBattleReply } from './p08b-battle.mjs';
+import { POOL_POLICY_SHA256, validatePoolBarracksRecruitmentResponse } from './p04m-pool.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CREW_POLICY_SHA256 = '7d0e3d7ef28d85bfe32e4fcdea0547696a9b4fd04922a725a2d895e1395f0d55';
@@ -22,7 +23,7 @@ const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null, pool = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
@@ -41,6 +42,8 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     && research.policy_sha256 === RESEARCH_POLICY_SHA256), 'Explicit research policy required');
   requireValue(battle === null || (research !== null && exact(battle, ['version', 'policy_sha256']) && battle.version === 1
     && battle.policy_sha256 === BATTLE_POLICY_SHA256), 'Explicit profile13 battle policy required');
+  requireValue(pool === null || (battle !== null && exact(pool, ['version', 'policy_sha256']) && pool.version === 1
+    && pool.policy_sha256 === POOL_POLICY_SHA256), 'Explicit curated pool policy required');
   const profileVersion = research !== null ? 13 : barracksRecruitment !== null ? 12 : dismissal !== null ? 11 : progression !== null ? 10 : rosterRecruitment !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
   const worker = battle !== null ? 'tools/p08b_battle_service.py' : research !== null ? 'tools/p09e_research_service.py' : barracksRecruitment !== null ? 'tools/p04k_crew_store.py' : dismissal !== null ? 'tools/p04j_crew_store.py' : progression !== null ? 'tools/p04i_crew_store.py' : rosterRecruitment !== null ? 'tools/p04h_crew_store.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
   requireValue(exact(ammo, ['version', 'bundle_root', 'original_root', 'account_id', 'grant'])
@@ -66,7 +69,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
           '--account-id', ammo.account_id, '--fixture-root', fixtures, operation],
         { cwd: ROOT, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
         let size = 0, errorSize = 0, exceeded = false; const parts = [];
-        const timer = setTimeout(() => { exceeded = true; child.kill(); }, operation === 'activate' ? 15000 : 3500);
+        const timer = setTimeout(() => { exceeded = true; child.kill(); }, operation === 'activate' ? 15000 : pool === null ? 3500 : 7000);
         child.stdout.on('data', part => { size += part.length; if (size > (research === null ? 32768 : 262144)) { exceeded = true; child.kill(); } else parts.push(part); });
         child.stderr.on('data', part => { errorSize += part.length; if (errorSize > 4096) { exceeded = true; child.kill(); } });
         child.once('error', () => { clearTimeout(timer); fail(new Error('Crew worker failed')); });
@@ -107,10 +110,13 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
         : value.result_code === -10 && value.update_hex === '' && value.wire_revision === request.wire_revision
           && value.revision === request.expected_revision && value.replayed === false),
     'Native crew response schema');
-    if (operation === 'recruit-barracks') validateBarracksRecruitmentResponse(value, request);
+    if (operation === 'recruit-barracks') (pool === null ? validateBarracksRecruitmentResponse : validatePoolBarracksRecruitmentResponse)(value, request);
     return value;
   }
-  await run('activate');
+  const activated = await run('activate');
+  requireValue(pool === null ? activated.profile?.pool_service === undefined
+    : activated.profile?.pool_service?.policy_sha256 === POOL_POLICY_SHA256,
+  'Curated pool activation/configuration mismatch');
   async function researchCommand(request) {
     requireValue(research !== null && exact(request, ['account_id', 'native_database_id', 'command_key', 'expected_revision', 'wire_revision', 'command', 'arguments'])
       && request.account_id === ammo.account_id && integer(request.native_database_id, 1)

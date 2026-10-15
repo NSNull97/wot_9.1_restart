@@ -17,6 +17,7 @@ import { nativeCrewTransferOverview, isNativeCrewTransferOverview } from './p04f
 import { nativeCrossVehicleCrewOverview, isNativeCrossVehicleCrewOverview } from './p04g-crew.mjs';
 import { nativeResearchOverview, isNativeResearchOverview } from './p09e-research.mjs';
 import { battleConfiguration } from './p08b-battle.mjs';
+import { nativePoolOverview, isNativePoolOverview, poolConfiguration } from './p04m-pool.mjs';
 
 import { nativeRosterCrewOverview, isNativeRosterCrewOverview } from './p04h-crew.mjs';
 
@@ -91,6 +92,7 @@ export function createGameReader({ origin, tokenFile } = {}) {
       const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (value.schemaVersion !== 'web-game-read.v1' || !['ready', 'unlinked'].includes(value.state)) return empty('unavailable');
       if (value.state === 'unlinked') return empty('unlinked');
+      if (value.poolService !== undefined) return isNativePoolOverview(value, id) ? value : empty('unavailable');
       if (value.researchService !== undefined) return isNativeResearchOverview(value, id) ? value : empty('unavailable');
       if (value.crewService !== undefined) return (value.crewService?.version === 7 ? isNativeBarracksCrewOverview(value, id) : value.crewService?.version === 6 ? isNativeDismissalCrewOverview(value, id) : value.crewService?.version === 5 ? isNativeProgressionCrewOverview(value, id) : value.crewService?.version === 4 ? isNativeRosterCrewOverview(value, id) : value.crewService?.version === 3 ? isNativeCrossVehicleCrewOverview(value, id) : value.crewService?.version === 2
         ? isNativeCrewTransferOverview(value, id) : isNativeCrewOverview(value, id)) ? value : empty('unavailable');
@@ -170,6 +172,7 @@ function openGameStore(path, sourceHash, now) {
 }
 
 function overview(profile) {
+  if (profile.pool_service !== undefined) return nativePoolOverview(profile);
   if (profile.profile_version === 13) return nativeResearchOverview(profile);
   if (profile.profile_version === 12) return nativeBarracksCrewOverview(profile);
   if (profile.profile_version === 11) return nativeDismissalCrewOverview(profile);
@@ -223,6 +226,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.crew_progression !== undefined) allowed.push('crew_progression');
   if (options?.research_service !== undefined) allowed.push('research_service');
   if (options?.battle_service !== undefined) allowed.push('battle_service');
+  if (options?.pool_service !== undefined) allowed.push('pool_service');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
   if (options.crew_service !== undefined && options.ammunition_service === undefined) throw new Error('Crew requires the shared ammunition writer');
@@ -235,6 +239,10 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options.crew_barracks_recruitment !== undefined && (options.crew_dismissal === undefined || options.crew_barracks_recruitment === null || typeof options.crew_barracks_recruitment !== 'object')) throw new Error('Barracks recruitment requires explicit dismissal');
   if (options.research_service !== undefined && (options.crew_barracks_recruitment === undefined || options.research_service === null || typeof options.research_service !== 'object')) throw new Error('Research requires the accepted barracks crew writer');
   if (options.battle_service !== undefined && options.research_service === undefined) throw new Error('Profile13 battle requires the complete research writer');
+  if (options.pool_service !== undefined && options.battle_service === undefined) throw new Error('Curated pool requires the profile13 battle writer');
+  const battleOwners = options.battle_service === undefined ? null
+    : battleConfiguration(options.battle_service, options.ammunition_service?.account_id);
+  const poolOwners = options.pool_service === undefined ? [] : poolConfiguration(options.pool_service, battleOwners);
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -266,8 +274,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   const accountServices = new Map();
   try {
     if (options.ammunition_service !== undefined) {
-      const owners = options.battle_service === undefined ? [options.ammunition_service.account_id]
-        : battleConfiguration(options.battle_service, options.ammunition_service.account_id);
+      const owners = battleOwners ?? [options.ammunition_service.account_id];
       for (const id of owners) {
         const owner = identity.profile(accountId(id)), profile = game.read(id);
         if (!owner || !profile || profile.account_id !== owner.id || profile.username !== owner.display_nickname
@@ -281,7 +288,8 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
               rosterRecruitment: options.crew_roster_recruitment ?? null, progression: options.crew_progression ?? null,
               dismissal: options.crew_dismissal ?? null, barracksRecruitment: options.crew_barracks_recruitment ?? null,
               research: options.research_service ?? null, battle: options.battle_service === undefined ? null
-                : { version: options.battle_service.version, policy_sha256: options.battle_service.policy_sha256 } });
+                : { version: options.battle_service.version, policy_sha256: options.battle_service.policy_sha256 },
+              pool: poolOwners.includes(id) ? { version: options.pool_service.version, policy_sha256: options.pool_service.policy_sha256 } : null });
         accountServices.set(id, service);
       }
       ammunition = accountServices.get(options.ammunition_service.account_id);
@@ -523,7 +531,11 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       if (req.method === 'GET' && matched && UUID.test(matched[1])) {
         if (!identity.profile(matched[1])) return json(res, 404, { error: 'account_not_found' });
         const profile = game.read(matched[1]);
-        if ([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13].includes(profile?.profile_version)) await fixture(profile);
+        if (profile?.pool_service !== undefined && !poolOwners.includes(matched[1])) throw new Error('Curated pool overview is not enabled');
+        // Pool GET validates the current stored representation structurally.
+        // Native login/profile and every command still use the canonical writer.
+        // Publishing a native fixture here adds seconds to a read-only website GET.
+        if (profile?.pool_service === undefined && [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13].includes(profile?.profile_version)) await fixture(profile);
         return json(res, 200, profile ? overview(profile) : empty('unlinked'));
       }
       return json(res, 404, { error: 'not_found' });
