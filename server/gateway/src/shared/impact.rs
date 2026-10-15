@@ -310,10 +310,12 @@ impl Trace {
     }
     pub fn bind_actor(&mut self,slot:usize,kind:VehicleKind)->io::Result<()> {
         if self.roster.is_none_or(|n|slot>=n)||self.actor_kinds[slot].is_some_and(|old|old!=kind) {return Err(invalid("trace actor profile binding"));}
+        if let Some(state)=&mut self.fragiles {state.bind_ammo_capacity(kind.ammo_limit())?;}
         self.actor_kinds[slot]=Some(kind);Ok(())
     }
     fn actor_limit(&self)->usize {self.roster.unwrap_or(super::model::CAPACITY)}
-    fn shot_limit(&self)->usize {self.roster.map_or(self.vehicle.battle_shot_limit(),|n|n*96)}
+    fn shot_limit(&self)->usize {self.roster.map_or(self.vehicle.battle_shot_limit(),|n|
+        n*self.actor_kinds.iter().flatten().map(|kind|kind.ammo_limit() as usize).max().unwrap_or(96).max(96))}
     fn kind_for_slot(&self,slot:usize)->io::Result<VehicleKind> {
         if slot>=self.actor_limit() {return Err(invalid("trace actor slot"));}
         if self.roster.is_some() {self.actor_kinds[slot].ok_or_else(||invalid("unbound trace actor profile"))}else{Ok(self.vehicle)}
@@ -322,17 +324,26 @@ impl Trace {
         self.admission_facts(shot).map(|(slot,_)|slot).ok_or_else(||invalid("shot source profile absent")).and_then(|s|self.kind_for_slot(s))
     }
     fn event_limit(&self)->usize { self.shot_limit()*EVENTS_PER_SHOT+fragiles::MAX_MOVEMENT_OBJECTS }
-    fn profile(&self)->&'static str { match self.vehicle { VehicleKind::Ms1=>PROFILE,VehicleKind::Is7=>"is7_ap_14602" } }
-    fn ruleset_revision(&self)->&'static str { match self.vehicle {
+    fn profile_for(kind:VehicleKind)->&'static str {match kind {
+        VehicleKind::Ms1=>PROFILE,VehicleKind::Is7=>"is7_ap_14602",VehicleKind::T26=>"t26_ap_1034",
+        VehicleKind::T34=>"t34_ap_7178",VehicleKind::T3485=>"t3485_ap_7946",
+    }}
+    fn profile(&self)->&'static str {Self::profile_for(self.vehicle)}
+    fn ruleset_for(kind:VehicleKind)->&'static str {match kind {
         VehicleKind::Ms1=>RULESET_REVISION,VehicleKind::Is7=>"wot-0.9.1-#717-is7-ap-full-pose-v1",
-    } }
+        VehicleKind::T26=>"wot-0.9.1-#717-t26-stock-ap-full-pose-v1",
+        VehicleKind::T34=>"wot-0.9.1-#717-t34-stock-ap-full-pose-v1",
+        VehicleKind::T3485=>"wot-0.9.1-#717-t3485-stock-ap-full-pose-v1",
+    }}
+    fn ruleset_revision(&self)->&'static str {Self::ruleset_for(self.vehicle)}
     pub fn bind_fragiles(&mut self,catalog:std::sync::Arc<fragiles::Catalog>)->io::Result<()>{
         if catalog.map!=self.map||!self.events.is_empty()||self.fragiles.is_some(){return Err(invalid("late or duplicate fragile catalog"));}
-        let mut state=fragiles::State::new(catalog);if let Some(n)=self.roster {state.configure_roster(n)?;}
+        let mut state=fragiles::State::new(catalog);if let Some(n)=self.roster {state.configure_roster(n)?;
+            for kind in self.actor_kinds.iter().flatten() {state.bind_ammo_capacity(kind.ammo_limit())?;}}
         self.fragiles=Some(state);Ok(())
     }
     pub fn bind_contact_source(&mut self,slot:usize,source:super::ram_proof::Source)->io::Result<()> {
-        if slot>=self.actor_limit()||source.profile!=match self.kind_for_slot(slot)?{VehicleKind::Ms1=>super::ram_proof::Profile::Ms1,VehicleKind::Is7=>super::ram_proof::Profile::Is7}
+        if slot>=self.actor_limit()||source.profile!=super::ram_proof::Profile::for_vehicle(self.kind_for_slot(slot)?)
             ||!source.follows(self.contact_sources[slot].as_ref()){return Err(invalid("vehicle source authority"));}
         if self.contact_revoked[slot]&&self.contact_sources[slot].as_ref().is_some_and(|old|source.generation<=old.generation){return Err(invalid("revoked vehicle source"));}
         self.contact_sources[slot]=Some(source);self.contact_revoked[slot]=false;Ok(())
@@ -400,7 +411,7 @@ impl Trace {
             vehicle_compact_id: kind.vehicle_compact_id(),
             gun_compact_id: kind.gun_compact_id(),
             shell_compact_id: kind.shell_compact_id(),
-            profile: if kind==VehicleKind::Ms1{PROFILE}else{"is7_ap_14602"},
+            profile: Self::profile_for(kind),
             ammo_before, ammo_after, reload_ready: true,
         })?;
         if self.battle_id.is_none() { self.battle_id = Some(battle_id); }
@@ -434,7 +445,7 @@ impl Trace {
             origin: projectile.origin, velocity: projectile.velocity,
             gravity: projectile.gravity, max_distance: projectile.max_distance,
             max_lifetime_seconds: projectile.flight_time.as_secs_f32(),
-            pose_revision: if projectile.vehicle_kind==VehicleKind::Ms1{RULESET_REVISION}else{"wot-0.9.1-#717-is7-ap-full-pose-v1"},
+            pose_revision: Self::ruleset_for(projectile.vehicle_kind),
         })?;
         self.last_tick = server_tick;
         Ok(())

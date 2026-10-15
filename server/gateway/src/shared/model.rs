@@ -11,12 +11,14 @@ pub const STEP: Duration = Duration::from_millis(100);
 pub const MAX_COMMANDS: usize = 32;
 /// Storage ceiling; each immutable profile enforces its own admission limit.
 pub const MAX_SHOTS: usize = CAPACITY * 96;
-pub const MAX_BATTLE_SHOTS: usize = MAX_ACTORS * 96;
+pub const MAX_AMMO_PER_ACTOR: usize = 160;
+pub const MAX_BATTLE_SHOTS: usize = MAX_ACTORS * MAX_AMMO_PER_ACTOR;
 /// Explicit laboratory policy: retained stock geometry blocks AP at a wreck.
 /// No penetration, material thickness or additional damage is inferred.
 pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
 pub fn wreck_policy_revision_for(kind:VehicleKind)->&'static str { match kind {
     VehicleKind::Ms1=>WRECK_POLICY_REVISION,VehicleKind::Is7=>"test_lab-is7-wreck-block-v1",
+    VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485=>"test_lab-curated-stock-wreck-block-v1",
 } }
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
@@ -141,7 +143,7 @@ pub struct World {
     pub lifecycle: Option<super::lifecycle::State>,
     pub lifecycle_created_unix: Option<u32>,
     geometry: Option<Arc<geometry::Bundle>>,
-    geometries: [Option<Arc<geometry::Bundle>>; 2],
+    geometries: [Option<Arc<geometry::Bundle>>; 5],
     pub contacts: Vec<Contact>,
     ap_test_lab: bool,
     pub impacts: Vec<AppliedImpact>,
@@ -204,7 +206,13 @@ impl World {
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
     pub fn expected_actors(&self) -> usize { self.expected_actors }
     pub fn mixed_profiles(&self) -> bool { self.mixed_profiles }
-    pub fn shot_limit(&self) -> usize { if self.mixed_profiles { self.expected_actors * 96 } else { self.vehicle_kind.battle_shot_limit() } }
+    pub fn shot_limit(&self) -> usize {
+        if self.mixed_profiles {
+            // Preserve the accepted two-kind v1 ceiling; a curated roster may
+            // raise it only to an actual mounted capacity of a bound actor.
+            self.expected_actors*self.actors.iter().map(|a|a.vehicle_kind().ammo_limit() as usize).max().unwrap_or(96).max(96)
+        } else { self.vehicle_kind.battle_shot_limit() }
+    }
     pub fn new_for_roster(id:u64,now:Instant,map:crate::map_profile091::MapId,expected_actors:usize)->io::Result<Self> {
         if !(2..=MAX_ACTORS).contains(&expected_actors) { return Err(bad()); }
         let mut world=Self::new_for_vehicle(id,now,map,VehicleKind::Ms1)?;
@@ -216,7 +224,7 @@ impl World {
         self.impact.configure_roster(expected_actors)?;self.expected_actors=expected_actors;self.mixed_profiles=true;Ok(())
     }
     pub fn geometry_for(&self,kind:VehicleKind)->io::Result<&Arc<geometry::Bundle>> {
-        let index=if kind==VehicleKind::Ms1 {0}else{1};
+        let index=kind.index();
         self.geometries[index].as_ref().or_else(||self.geometry.as_ref().filter(|g|g.vehicle_kind()==kind)).ok_or_else(||bad())
     }
     pub fn new_for_vehicle(id: u64, now: Instant, map: crate::map_profile091::MapId, kind: VehicleKind) -> io::Result<Self> {
@@ -228,7 +236,7 @@ impl World {
             contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS] })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
-        let kind=bundle.vehicle_kind();let index=if kind==VehicleKind::Ms1{0}else{1};
+        let kind=bundle.vehicle_kind();let index=kind.index();
         if !self.mixed_profiles && kind!=self.vehicle_kind || self.started.is_some() || !self.shots.is_empty()
             || self.geometries[index].is_some() || !self.mixed_profiles && self.geometry.is_some() { return Err(bad()); }
         if self.mixed_profiles {self.geometries[index]=Some(bundle.clone());}
@@ -289,7 +297,7 @@ impl World {
     }
     pub fn enable_ap_test_lab(&mut self) -> io::Result<()> {
         if self.started.is_some() || self.geometry.is_none() || self.ap_test_lab
-            || self.mixed_profiles && self.geometries.iter().any(Option::is_none) { return Err(bad()); }
+            || self.mixed_profiles && self.geometries[..if self.geometries[2..].iter().any(Option::is_some){5}else{2}].iter().any(Option::is_none) { return Err(bad()); }
         self.ap_test_lab = true; Ok(())
     }
     pub fn bind_terrain(&mut self, terrain: Arc<terrain::Terrain>) -> io::Result<()> {
@@ -307,7 +315,9 @@ impl World {
         if catalog.map!=self.map||self.started.is_some()||!self.shots.is_empty()||!self.ap_test_lab||self.destructible.is_some()||self.fragiles.is_some(){return Err(bad());}
         catalog.bind_geometry(self.terrain.as_ref().ok_or_else(|| bad())?)?;
         self.impact.bind_fragiles(catalog.clone())?;let mut state=fragiles::State::new(catalog);
-        if self.mixed_profiles{state.configure_roster(self.expected_actors)?;}self.fragiles=Some(state);Ok(())
+        if self.mixed_profiles{state.configure_roster(self.expected_actors)?;
+            for actor in &self.actors {state.bind_ammo_capacity(actor.vehicle_kind().ammo_limit())?;}}
+        self.fragiles=Some(state);Ok(())
     }
     pub fn scene_version(&self)->u32{self.fragiles.as_ref().map_or_else(||self.destructible.as_ref().map_or(0,destructible::State::scene_version),fragiles::State::scene_version)}
     pub fn destructible_enabled(&self)->bool{self.destructible.is_some()}
@@ -315,7 +325,7 @@ impl World {
     pub fn bind_contact_source(&mut self,slot:usize,source:ram_proof::Source)->io::Result<()> {
         if slot>=self.expected_actors||!(self.actors.get(slot).and_then(|a|a.session)==Some(source.session)
             ||self.mixed_profiles&&self.contact_sources[slot].as_ref()==Some(&source))
-            ||source.profile!=match self.actors[slot].vehicle_kind{VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}
+            ||source.profile!=ram_proof::Profile::for_vehicle(self.actors[slot].vehicle_kind)
             ||!source.follows(self.contact_sources[slot].as_ref()){return Err(bad());}
         self.impact.bind_contact_source(slot,source.clone())?;
         if self.contact_sources[slot].as_ref()!=Some(&source){self.contact_sequences[slot]=0;}
@@ -402,15 +412,22 @@ impl World {
         let slot = self.actors.len();
         let mut origin = SPAWN; origin[0] += if slot == 0 { -4. } else { 4. };
         let kind=loadout.as_ref().map_or(self.vehicle_kind,|v|v.kind);
-        if self.mixed_profiles {self.impact.bind_actor(slot,kind)?;}
         let ammo = loadout.as_ref().map_or(kind.initial_ammo(), |value| value.ap_count);
+        let fire=fire::State::with_mounted_loadout(ammo,kind.reload_seconds(),kind.ammo_limit())?;
+        if self.mixed_profiles {
+            let mut trace=self.impact.clone();trace.bind_actor(slot,kind)?;
+            let mut fragiles=self.fragiles.clone();
+            if let Some(state)=&mut fragiles {state.bind_ammo_capacity(kind.ammo_limit())?;}
+            self.impact=trace;self.fragiles=fragiles;
+        }
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire: fire::State::with_loadout(ammo,kind.reload_seconds())?, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout });
+            fire, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
         if self.started.is_some() || self.actors.len() != self.expected_actors || now < self.last { return Err(bad()); }
+        if self.ap_test_lab {for actor in &self.actors {self.geometry_for(actor.vehicle_kind())?;}}
         self.started = Some(now); self.last = now; Ok(())
     }
     /// Integrated map-drive owns the initial lane placement. Rebase happens
@@ -822,9 +839,24 @@ mod scene_tests;
 #[cfg(test)]
 #[path="visibility_world_tests.rs"]
 mod visibility_world_tests;
+
+#[cfg(test)]
+#[path="p04m_capacity_tests.rs"]
+mod p04m_capacity_tests;
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    /// Explicit physics laboratory fixture. It never manufactures an owned
+    /// receipt or bypasses the production admission check in attach_owned.
+    pub(crate) fn attach_physics_profile(world:&mut World,kind:VehicleKind,
+        identity:Identity,session:u32)->io::Result<usize> {
+        if !world.mixed_profiles || world.started.is_some() {return Err(bad());}
+        let previous=world.vehicle_kind;
+        world.vehicle_kind=kind;
+        let result=world.attach_loadout(identity,session,None);
+        world.vehicle_kind=previous;
+        result
+    }
     pub(crate) fn profile13_loadout(kind:VehicleKind,slot:usize,ap_count:u16)
         ->(Identity,crate::battle091::profile13::FrozenLoadout) {
         use sha2::{Digest,Sha256};

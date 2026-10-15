@@ -478,8 +478,7 @@ impl IntegratedRuntime {
                 if let Some(session)=world.actors.get(slot).and_then(|a|a.session) {
                     let worker=self.workers[slot].as_ref().ok_or_else(|| model::bad())?;
                     candidate.bind_contact_source(slot,ram_proof::Source{session,generation:worker.generation,
-                        config_sha256:worker.map.config_sha256.clone(),profile:match self.pool.vehicle_kind(){
-                            VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}})?;
+                        config_sha256:worker.map.config_sha256.clone(),profile:ram_proof::Profile::for_vehicle(self.pool.vehicle_kind())})?;
                 }else{candidate.revoke_contact_source(slot)?;}
             }
         }
@@ -606,12 +605,20 @@ struct BattleTemplate {
     shared:Option<Arc<super::profile13_templates::SharedResources>>,
 }
 impl BattleTemplate {
-    fn from_shared(rows:&[super::profile13_templates::Resources;2],count:usize,id:u64,now:Instant)->io::Result<Self>{
+    fn from_shared(rows:&[super::profile13_templates::Resources],count:usize,id:u64,now:Instant)->io::Result<Self>{
+        Self::from_shared_mode(rows,count,id,now,None)
+    }
+    fn from_shared_mode(rows:&[super::profile13_templates::Resources],count:usize,id:u64,now:Instant,
+        qualification:Option<VehicleKind>)->io::Result<Self>{
+        if !matches!(rows.len(),2|5)||rows.iter().enumerate().any(|(index,row)|row.kind.index()!=index) {return Err(model::bad());}
+        if qualification.is_some_and(|kind|rows.len()!=5||!rows.iter().any(|row|row.kind==kind)){return Err(model::bad());}
         let shared=rows[0].shared.clone().ok_or_else(||model::bad())?;
-        let mut world=World::new_for_roster(id,now,MapId::Prohorovka,count)?;
+        let mut world=World::new_for_vehicle(id,now,MapId::Prohorovka,qualification.unwrap_or(VehicleKind::Ms1))?;
+        world.set_expected_actors(count)?;
         for row in rows{world.bind_geometry(row.geometry.clone())?;}
         world.enable_ap_test_lab()?;world.bind_terrain(rows[0].terrain.clone())?;
-        world.bind_fragiles(rows[0].catalog.0.clone())?;world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?;
+        world.bind_fragiles(rows[0].catalog.0.clone())?;
+        if qualification.is_none(){world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?;}
         Ok(Self{world,pool:Some(rows[0].pool.clone()),removal:None,catalog:Some(rows[0].catalog.1.clone()),shared:Some(shared)})
     }
     fn runtime(&self,map:MapId)->io::Result<Option<IntegratedRuntime>>{self.pool.as_ref().map(|pool|{
@@ -842,7 +849,7 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia,VehicleKind::Ms1,None)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia,VehicleKind::Ms1,None,None)
 }
 
 pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,capture_path:&str)
@@ -850,9 +857,24 @@ pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_
     let config=crate::identity091::Config::load(config_path)?;
     if !config.profile13_battle || !config.research_service {return Err(model::bad().into());}
     let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
+    if config.p04m_pool&&resources.len()!=5{return Err(model::bad().into());}
     let initial=&resources[0];
     serve_with_pool(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
-        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources))
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources),None)
+}
+
+/// Explicit temporary qualification scene. It uses frozen laboratory account
+/// fixtures and never enters the owned writer/reservation/admission route.
+pub fn serve_curated_lab(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,
+    capture_path:&str,kind:VehicleKind)->Result<(),Box<dyn std::error::Error>> {
+    let config=crate::identity091::Config::load(config_path)?;
+    if config.profile13_battle||config.ammo_service||config.p04m_pool{return Err(model::bad().into());}
+    let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
+    if resources.len()!=5||resources.iter().any(|row|row.shared.is_none()){return Err(model::bad().into());}
+    let initial=&resources[0];
+    println!("P04M_QUALIFICATION kind={} assignment=temporary_server_selected owned_inventory_changed=false battle_admission_changed=false",kind.label());
+    serve_with_pool(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources),Some(kind))
 }
 
 pub(super) fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
@@ -908,7 +930,7 @@ pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: 
 pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_path: &str,
     pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool,
     destructible_test_lab: bool,catalog_path:Option<(&str,&str)>,map:MapId,vehicle:VehicleKind) -> Result<(), Box<dyn std::error::Error>> {
-    if vehicle==VehicleKind::Is7 && (map!=MapId::Prohorovka || !ap_test_lab || !terrain_test_lab) { return Err(model::bad().into()); }
+    if vehicle!=VehicleKind::Ms1 && (map!=MapId::Prohorovka || !ap_test_lab || !terrain_test_lab) { return Err(model::bad().into()); }
     if map==MapId::Prohorovka && (!ap_test_lab || !terrain_test_lab || destructible_test_lab) { return Err(model::bad().into()); }
     if ap_test_lab && geometry_path.is_none() { return Err(model::bad().into()); }
     if destructible_test_lab && !terrain_test_lab { return Err(model::bad().into()); }
@@ -933,7 +955,7 @@ pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_pa
         validate_catalog_projection(&catalog,&worker,map)?;
         Some((catalog,worker))
     }else{None};
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle,None)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle,None,None)
 }
 
 pub(super) fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::map_drive_worker091::CatalogSpec,map:MapId)->io::Result<()> {
@@ -950,13 +972,13 @@ pub(super) fn validate_catalog_projection(catalog:&super::fragiles::Catalog,work
 pub(super) fn validate_vehicle_binding(vehicle:VehicleKind, pool:&crate::map_drive_worker091::Pool,
     geometry:Option<&super::geometry::Bundle>) -> io::Result<()> {
     if pool.vehicle_kind()!=vehicle || geometry.is_some_and(|bundle|bundle.vehicle_kind()!=vehicle)
-        || vehicle==VehicleKind::Is7 && geometry.is_none() { return Err(model::bad()); }
+        || vehicle!=VehicleKind::Ms1 && geometry.is_none() { return Err(model::bad()); }
     Ok(())
 }
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
     integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
-    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,resources:Option<[super::profile13_templates::Resources;2]>)
+    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,resources:Option<Vec<super::profile13_templates::Resources>>,qualification:Option<VehicleKind>)
     -> Result<(), Box<dyn std::error::Error>> {
     if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
     if terrain.is_some() && !ap_test_lab { return Err(model::bad().into()); }
@@ -968,7 +990,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         return Err(model::bad().into());
     }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
-    let profile13_mode=resources.is_some();
+    let profile13_mode=resources.is_some()&&qualification.is_none();
     if config.profile13_battle!=profile13_mode || config.ammo_service!=profile13_mode { return Err(model::bad().into()); }
     let private = login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len() != 16 { return Err(model::bad().into()); }
@@ -1019,7 +1041,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     if profile13_mode { world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?; }
     let mut battle_template=BattleTemplate::new(&world,&integrated);
     if let Some(rows)=resources.as_ref().filter(|rows|rows[0].shared.is_some()){
-        battle_template=BattleTemplate::from_shared(rows,config.battle_players,world.id,started)?;
+        battle_template=BattleTemplate::from_shared_mode(rows,config.battle_players,world.id,started,qualification)?;
         battle_template.select(&mut world,&mut integrated,started)?;
     }
     let mut next_id = 1u32;
@@ -1027,10 +1049,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut last_auth: Option<Instant> = None;
     let mut fragments = login::LoginFragments::default();
     let mut rate_started = started; let mut rate_count = 0u32;
-    println!("BOUND {} base_backend={} profile={} battle={} capacity=2 scope=allied_temporary_{} motion={} physics={} map={} arena_type_id={} inventory_changed=false",
+    println!("BOUND {} base_backend={} profile={} battle={} capacity={} scope=allied_temporary_{} motion={} physics={} map={} arena_type_id={} inventory_changed=false",
         config.login_bind, config.base_bind,
-        if profile13_mode {"legacy091-profile13"} else if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
-        world.id, vehicle.label(), if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
+        if profile13_mode {"legacy091-profile13"} else if qualification.is_some(){"legacy091-curated-lab"}else if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
+        world.id,world.expected_actors(),world.vehicle_kind().label(), if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
     loop {
         let now = Instant::now();
         if now.duration_since(started) >= model::LIFETIME { println!("SHARED_STOP reason=lab_lifetime"); break; }
@@ -1065,6 +1087,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                         if profile13_mode {
                             let binding=accepted.ammo_service.ok_or_else(||model::bad())?;
                             s.ammo_service=Some(ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
+                            s.ammo_service.as_mut().ok_or_else(||model::bad())?.replace_pool(s.hangar.as_ref().and_then(|f|f.p04m_binding()).cloned())?;
                             let c=s.shared.as_mut().ok_or_else(||model::bad())?;c.join_requested=false;
                             c.profile13=Some(super::profile13_session::State::new(config.battle_run_id.clone(),binding.revision)?);
                         }

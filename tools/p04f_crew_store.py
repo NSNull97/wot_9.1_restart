@@ -333,6 +333,9 @@ class NativeCrewTransferStore(NativeCrewStore):
         require(ledger["command_type"] == command and ledger["payload_sha256"] == payload_sha, "DUPLICATE_PAYLOAD_MISMATCH")
         return self._transfer_replay(ledger, request, profile, recruit=recruit)
 
+    def _operation_vehicle_id(self, profile, stored, native):
+        return stored["inventory"][native - 1]["inventory_id"]
+
     def _mutate(self, request, authenticated_account_id, *, recruit=False, operation=None):
         self.initialize()
         contract = self._contract()
@@ -370,7 +373,7 @@ class NativeCrewTransferStore(NativeCrewStore):
             require(revision < 2**31 - 1, "REVISION_EXHAUSTED")
             before = profile["crew_inventory"]
             for native in contract.operation_vehicles(before, request["layout"], operation=operation):
-                vehicle_id = stored["inventory"][native - 1]["inventory_id"]
+                vehicle_id = self._operation_vehicle_id(profile, stored, native)
                 vehicle = next((r for r in profile["vehicles"] if r["vehicle_id"] == vehicle_id), None)
                 require(vehicle is not None and vehicle["state"] == "available", "VEHICLE_RESERVED")
             after = contract.plan_operation(before, request["layout"], operation=operation, account_id=account)

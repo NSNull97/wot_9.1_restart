@@ -30,14 +30,15 @@ def battle_service(store, request, *, authenticated_account_id):
 
 def main():
     from p08b_owner_source import projection_source
+    from p04m_pool_store import PoolStore
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("database", "bundle", "original-root", "account-id", "fixture-root"):
         parser.add_argument("--" + name, required=True)
-    parser.add_argument("operation", choices=("activate", "fixture", "overview", "battle", "results", "research", *CREW_OPERATIONS))
+    parser.add_argument("operation", choices=("activate", "fixture", "overview", "pool-activate", "pool-overview", "battle", "results", "research", *CREW_OPERATIONS))
     args = parser.parse_args()
     catalog = load_catalog(args.original_root)
     audit(args.original_root)
-    with BattleStore(args.database, catalog) as store:
+    with PoolStore(args.database, catalog, account_id=args.account_id) as store:
         if args.operation == "activate":
             source = projection_source(args.bundle, catalog, args.database, args.account_id)
             store._allow_prebattle = True
@@ -52,12 +53,20 @@ def main():
             aggregate = store.read_profile(args.account_id)
             result = {"profile": store._project_profile(args.account_id, aggregate), "revision": aggregate["revision"],
                 "policy_sha256": POLICY_SHA256, "capabilities": capabilities(catalog, aggregate)}
+        elif args.operation == "pool-overview":
+            from p04m_pool_store import POLICY_SHA256 as POOL_POLICY_SHA256
+            from p04m_stock_registry import SCHEMA as POOL_SCHEMA, DEFINITION_SHA256
+            aggregate = store.read_profile(args.account_id)
+            result = dict(version=1, schema=POOL_SCHEMA, definition_sha256=DEFINITION_SHA256,
+                registry_sha256=store.registry.sha256, policy_sha256=POOL_POLICY_SHA256, active=store.pool_active(),
+                capabilities=store.registry.capabilities(aggregate))
         else:
             store.initialize()
             limit = 65536 if args.operation in ("results", "battle") else 4096
             raw = sys.stdin.buffer.read(limit + 1)
             request = json_value(raw, limit=limit, nodes=64, depth=4)
-            if args.operation == "battle": result = battle_service(store, request, authenticated_account_id=args.account_id)
+            if args.operation == "pool-activate": result = store.activate_pool(request, authenticated_account_id=args.account_id)
+            elif args.operation == "battle": result = battle_service(store, request, authenticated_account_id=args.account_id)
             elif args.operation == "results": result = results_service(store, request, authenticated_account_id=args.account_id)
             elif args.operation == "research": result = native_service(store, request, authenticated_account_id=args.account_id)
             else: result = existing_service(store, args.operation, request, authenticated_account_id=args.account_id)

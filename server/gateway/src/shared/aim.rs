@@ -86,13 +86,16 @@ impl State {
 }
 pub fn wrap(angle: f32) -> f32 { (angle + PI).rem_euclid(2. * PI) - PI }
 
-// Stock turret's rear sector is 35 degrees with a +1 degree lower-gun stop.
-// The 0.4 rad linear transition matched all 15 original native oracle samples.
+// MS-1's rear sector is35deg/+1; its0.4rad transition matched the original
+// native oracle. P04M T-34 uses source back=-17/1/42 and the same original
+// default transition, with native equivalence NOT_RUN. No rear extra for
+// T-26/T-34-85: their rear maximum equals their basic maximum everywhere.
+const REAR_PITCH_TRANSITION:f32=0.4;
 pub fn pitch_max(yaw: f32) -> f32 { pitch_max_for(VehicleKind::Ms1,yaw) }
 pub fn pitch_max_for(kind: VehicleKind,yaw: f32) -> f32 {
     let spec=kind.aim();
     let outside = (PI - wrap(yaw).abs() - spec.rear_sector_degrees.to_radians()).max(0.);
-    let blend = (outside / 0.4).clamp(0., 1.);
+    let blend = (outside / REAR_PITCH_TRANSITION).clamp(0., 1.);
     (spec.rear_max_degrees + (spec.max_pitch_degrees-spec.rear_max_degrees) * blend).to_radians()
 }
 

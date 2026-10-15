@@ -149,12 +149,12 @@ pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
     pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
-    pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,
+    pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,pub p04m_pool:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
         let bytes=bounded_file(Path::new(path),4096)?;
-        let Bounded::<20>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        let Bounded::<21>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
         let ammo_service=match value.remove("ammunition_service") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
         };
@@ -188,6 +188,10 @@ impl Config {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("profile13 battle must be explicit boolean")),
         };
         if profile13_battle && !research_service {return Err(invalid("profile13 battle requires the complete research writer"));}
+        let p04m_pool=match value.remove("p04m_pool") {
+            None=>false,Some(Value::Bool(v))=>v,_=>return Err(invalid("p04m_pool must be explicit boolean")),
+        };
+        if p04m_pool&&!profile13_battle{return Err(invalid("P04M pool requires the complete profile13 writer"));}
         let visibility_v1=match value.remove("visibility_v1") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("visibility_v1 must be explicit boolean")),
         };
@@ -218,7 +222,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool})
     }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
@@ -234,6 +238,7 @@ impl Config {
             let binding=if self.research_service {crate::ammo_service091::metadata_research(&profile.fixture_dir,&profile.account_id,profile.database_id)?}
                 else {crate::ammo_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id)?};
             if self.research_service {crate::research_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;}
+            if self.p04m_pool {crate::p04m_companion091::Binding::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision)?;}
             if self.crew_transfer {
                 if self.research_service {crate::crew_transfer091::metadata_for_research(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;}
                 else {crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_barracks(self.crew_cross_vehicle,self.crew_roster_recruitment,self.crew_progression,self.crew_dismissal,self.crew_barracks_recruitment),&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;}
@@ -289,6 +294,7 @@ impl Config {
         crate::research_service091::metadata(&fresh.fixture_dir,&fresh.account_id,fresh.database_id,binding.revision,binding.wire_revision)?;
         crate::crew_transfer091::metadata_for_research(&fresh.fixture_dir,&fresh.account_id,fresh.database_id,binding.revision,binding.wire_revision)?;
         verify_battle_projection(&fresh,binding.revision)?;
+        if self.p04m_pool {crate::p04m_companion091::Binding::metadata(&fresh.fixture_dir,&fresh.account_id,fresh.database_id,binding.revision)?;}
         Ok(fresh)
     }
 
@@ -340,6 +346,25 @@ impl Config {
         let (status,bytes)=self.post("/internal/native/ammo",&body,Duration::from_secs(20))?;
         if status!=200 {return Err(invalid("ammo service HTTP failure; outcome must be recovered by fresh login"));}
         ammo_reply(&bytes,profile,command_key,expected_revision,wire_revision)
+    }
+
+    /// Expanded codecs are reachable only with a current authenticated P04M
+    /// projection. Fixed paths and immutable owner/request fields stay local.
+    pub(crate) fn service_pool(&self,profile:&Profile,pool:&crate::p04m_companion091::Binding,key:&str,revision:u64,wire:i64,
+        request:crate::p04m_companion091::Request)->io::Result<AmmoReply>{
+        use crate::p04m_companion091::Request;
+        if !self.p04m_pool||!self.profile13_battle||!pool.matches(&profile.account_id,profile.database_id,revision){return Err(invalid("P04M bound service owner/revision/opt-in"));}
+        let (path,status,layout,barracks)=match request{
+            Request::Ammo(r)=>{pool.ammo_layout(&r)?;("/internal/native/ammo","serviced",r.arguments.iter().map(|v|*v as i64).collect::<Vec<_>>(),None)},
+            Request::Crew(r)=>{pool.recruit(r)?;("/internal/native/crew","recruited",r.layout().to_vec(),None)},
+            Request::Transfer(r)=>{pool.transfer(r)?;("/internal/native/crew-transfer","transferred",r.layout().to_vec(),None)},
+            Request::Barracks(r)=>{pool.barracks(r)?;("/internal/native/crew-recruit-barracks","recruited",r.layout().to_vec(),Some(r))},
+        };
+        let body=pool.service_request(key,revision,wire,&layout)?;
+        let (http,bytes)=self.post(path,&body,Duration::from_secs(20))?;
+        if http!=200{return Err(invalid("P04M writer HTTP failure; recover by fresh login"));}
+        if let Some(r)=barracks{barracks_reply_bound(&bytes,profile,key,revision,wire,r,Some(pool))}
+        else{service_reply(&bytes,profile,key,revision,wire,status)}
     }
 
     pub fn recruit_crew(&self,profile:&Profile,command_key:&str,expected_revision:u64,
@@ -397,7 +422,8 @@ impl Config {
 }
 
 pub struct AmmoReply {pub serviced:bool,pub revision:u64,pub wire_revision:i64,
-    pub update:Vec<u8>,pub recruitment:Option<crate::crew_barracks091::Recruitment>,pub replayed:bool,pub result_code:i32}
+    pub update:Vec<u8>,pub recruitment:Option<crate::crew_barracks091::Recruitment>,pub replayed:bool,pub result_code:i32,
+    pub(crate) pool:Option<std::sync::Arc<crate::p04m_companion091::Binding>>}
 
 fn valid_command_key(key:&str)->bool {
     (1..=96).contains(&key.len()) && key.bytes().all(|b|b.is_ascii_alphanumeric() || b"-_:".contains(&b))
@@ -414,6 +440,9 @@ fn service_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,suc
 }
 
 fn barracks_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,request:crate::crew_barracks091::Request)->io::Result<AmmoReply> {
+    barracks_reply_bound(bytes,profile,key,expected,wire,request,None)
+}
+fn barracks_reply_bound(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,request:crate::crew_barracks091::Request,pool:Option<&crate::p04m_companion091::Binding>)->io::Result<AmmoReply> {
     let mut value=object(bytes,&["status","account_id","native_database_id","command_key","revision",
         "wire_revision","update_hex","replayed","result_code","tankman_inventory_id","tankman_descriptor_hex"])?;
     let id=value.remove("tankman_inventory_id").and_then(|v|v.as_u64()).ok_or_else(||invalid("barracks response ID type"))?;
@@ -424,7 +453,7 @@ fn barracks_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,re
         let mut raw=[0;25];
         for (index,byte) in raw.iter_mut().enumerate() {*byte=u8::from_str_radix(&descriptor[index*2..index*2+2],16).map_err(|_|invalid("barracks descriptor hex"))?;}
         let member=crate::crew_barracks091::Recruitment{tankman_id:id as u8,descriptor:raw};
-        member.validate_delta(request,wire,&reply.update)?;
+        if let Some(pool)=pool{pool.validate_recruitment(&member,request,wire,&reply.update)?;}else{member.validate_delta(request,wire,&reply.update)?;}
         reply.recruitment=Some(member);
     } else if id!=0 || !descriptor.is_empty() {return Err(invalid("rejected barracks response has recruitment"));}
     Ok(reply)
@@ -458,7 +487,7 @@ fn service_reply_value(value:BTreeMap<String,Value>,profile:&Profile,key:&str,ex
     }
     if serviced {crate::ammo_service091::response(1,&update)?;}
     else if !update.is_empty() || replayed {return Err(invalid("rejected ammo reply changed state"));}
-    Ok(AmmoReply{serviced,revision,wire_revision,update,recruitment:None,replayed,result_code:result_code as i32})
+    Ok(AmmoReply{serviced,revision,wire_revision,update,recruitment:None,replayed,result_code:result_code as i32,pool:None})
 }
 
 /// Native ConnectionManager.connect115, checked RU basic branch only. Other
@@ -560,6 +589,57 @@ fn verify_fixture_identity(profile:&Profile)->io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn p04m_vector_fixture(name:&str,sha:&str)->(Profile,crate::p04m_companion091::Binding,Value){
+        use sha2::{Digest,Sha256};
+        let root=std::env::var_os("WOT091_ROOT").map(PathBuf::from).unwrap_or_else(||Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
+        let directory=root.join("local/evidence/20261016-p04m-writer01/native-fixtures03").join(name);
+        let bytes=bounded_file(&directory.join("writer-vectors.json"),16384).expect("actual writer vectors required");
+        assert_eq!(format!("{:x}",Sha256::digest(&bytes)),sha);
+        let v:Value=serde_json::from_slice(&bytes).unwrap();let meta:Value=serde_json::from_slice(&bounded_file(&directory.join("p04m-pool.json"),65536).unwrap()).unwrap();
+        let owner=Profile{account_id:meta["account_id"].as_str().unwrap().into(),database_id:meta["native_database_id"].as_i64().unwrap()as i32,name:"actual-writer".into(),fixture_dir:directory};
+        let binding=crate::p04m_companion091::Binding::metadata(&owner.fixture_dir,&owner.account_id,owner.database_id,meta["revision"].as_u64().unwrap()).unwrap();
+        (owner,binding,v)
+    }
+    #[test]fn p04m_actual_sqlite_cmd309_all_t34_seats_and_radioman_parse_native_update(){
+        let(owner,pool,v)=p04m_vector_fixture("t34-full-crew","06f22a2d9d50a845b4cfbefd0867ea69306ec1c501457cd9f060c4d1f56ac218");
+        assert_eq!(v.as_array().unwrap().len(),4);
+        for(slot,row)in v.as_array().unwrap().iter().enumerate(){
+            assert_eq!(row["operation"],"recruit");let r=&row["request"];assert_eq!(r.as_object().unwrap().len(),6);assert_eq!(r["layout"],serde_json::json!([3,3,slot,0]));
+            let request=crate::crew_service091::Request{id:230+slot as i16,shop_revision:3,vehicle_inventory_id:3,slot:slot as i32,tariff_index:0};pool.recruit(request).unwrap();assert!(request.validate_for(true).is_err());
+            let reply=service_reply(&serde_json::to_vec(&row["response"]).unwrap(),&owner,r["command_key"].as_str().unwrap(),r["expected_revision"].as_u64().unwrap(),1,"recruited").unwrap();
+            assert!(reply.serviced);assert_eq!(reply.revision,30+slot as u64);let bodies=crate::ammo_service091::response(request.id,&reply.update).unwrap();
+            assert_eq!(bodies.len(),2);assert_eq!(bodies[0][1],0x57);assert_eq!(bodies[1][1],0x4d);
+        }
+        let fixtures=crate::hangar091::Fixtures::load_p04m(&owner.fixture_dir).unwrap();assert!(fixtures.p04m_binding().unwrap().matches(&owner.account_id,1,33));
+    }
+    #[test]fn p04m_actual_sqlite_cmd303_radioman_descriptor_and_delta_are_jointly_bound(){
+        let(owner,pool,v)=p04m_vector_fixture("t34-radioman-barracks","4522f0ae60a587550071776742a413b700e07bee5fb1692e48468a4955c86833");
+        let row=v.as_array().unwrap().last().unwrap();assert_eq!(row["operation"],"recruit_barracks");
+        assert_eq!(row["request"]["layout"],serde_json::json!([3,1,2,0]));
+        let request=crate::crew_barracks091::Request{id:230,shop_revision:3,vehicle_type:1,role:2,cost:0};
+        pool.barracks(request).unwrap();assert!(request.validate_supported().is_err());
+        let response=serde_json::to_vec(&row["response"]).unwrap();let reply=barracks_reply_bound(&response,&owner,"pool-crew:9",36,1,request,Some(&pool)).unwrap();
+        assert!(reply.serviced);let member=reply.recruitment.unwrap();assert_eq!(member.tankman_id,8);assert_eq!(member.descriptor[1..4],[0,2,50]);
+        pool.validate_recruitment(&member,request,1,&reply.update).unwrap();let body=member.success_response(request.id).unwrap();assert_eq!(body[1],0x4d);
+        assert!(body.windows(25).any(|b|b==member.descriptor.as_slice()));
+        assert!(barracks_reply(&response,&owner,"pool-crew:9",36,1,request).is_err());
+        for n in 0..3{let mut wrong=row["response"].clone();match n{0=>wrong["account_id"]="foreign".into(),1=>wrong["tankman_descriptor_hex"]="08000332000000080008000800400600000000420000000000".into(),_=>wrong["tankman_inventory_id"]=9.into()};
+            assert!(barracks_reply_bound(&serde_json::to_vec(&wrong).unwrap(),&owner,"pool-crew:9",36,1,request,Some(&pool)).is_err());}
+    }
+    #[test]fn p04m_configuration_requires_explicit_optin_and_full_profile13(){
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("p04m-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let mut v=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        assert!(!load(&v).unwrap().p04m_pool);v["p04m_pool"]=true.into();assert!(load(&v).is_err());
+        for key in["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression","crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle"]{v[key]=true.into();}
+        assert!(load(&v).unwrap().p04m_pool);
+        for wrong in[Value::Null,1.into(),"true".into()]{v["p04m_pool"]=wrong;assert!(load(&v).is_err());}
+        v["p04m_pool"]=true.into();let mut raw=serde_json::to_string(&v).unwrap();raw.pop();raw.push_str(",\"p04m_pool\":false}");fs::write(path,raw).unwrap();
+        assert!(Config::load(root.join("gateway.json").to_str().unwrap()).is_err());
+    }
     #[test] fn p08c_results_http_budget_does_not_widen_legacy_services_or_accept_bad_framing() {
         let response=|n:usize|{let mut raw=format!("HTTP/1.1 200 OK\r\nContent-Length: {n}\r\nConnection: close\r\n\r\n").into_bytes();raw.extend(vec![b'x';n]);raw};
         let large=response(5000);assert!(http_response(&large).is_err());

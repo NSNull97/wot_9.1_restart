@@ -135,6 +135,17 @@ impl Request {
             2=>([14602,14858,15114],30u32),
             _=>return Err(invalid("unsupported ammo service vehicle")),
         };
+        self.checked_layout(compatible,capacity)
+    }
+
+    /// P04M caller must first bind actual inventory -> curated mounted source.
+    /// The legacy selector above retains its exact two-vehicle policy.
+    pub(crate) fn layout_for_catalog(&self,compatible:[i32;3],capacity:u32,shop:i32)->io::Result<[ShellCount;3]> {
+        if self.id<=0 || self.shop_revision()!=shop || self.arguments[2]!=6
+            || self.arguments[9]!=6 || self.arguments[10..]!=[0;6] {return Err(invalid("pool ammo service layout/shop"));}
+        self.checked_layout(compatible,capacity)
+    }
+    fn checked_layout(&self,compatible:[i32;3],capacity:u32)->io::Result<[ShellCount;3]> {
         let mut layout=[ShellCount{compact_id:0,count:0};3];
         let mut seen=[0;3];
         let mut total=0u32;

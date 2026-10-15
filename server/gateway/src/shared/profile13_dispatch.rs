@@ -96,6 +96,7 @@ impl Dispatcher {
             s.ammo_service.as_mut().ok_or_else(||model::bad())?.rebind(fresh.binding)?;
         }
         else {s.ammo_service.as_mut().ok_or_else(||model::bad())?.refresh_revision(fresh.binding.revision)?;}
+        s.ammo_service.as_mut().ok_or_else(||model::bad())?.replace_pool(fresh.fixtures.p04m_binding().cloned())?;
         s.identity=Some(fresh.owner);s.hangar=Some(fresh.fixtures);
         let p=state(s)?;p.revision=reply.revision;p.in_flight=false;
         match reply.status {

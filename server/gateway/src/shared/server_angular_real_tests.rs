@@ -12,7 +12,7 @@ const CASES:[(&str,VehicleKind,&str,u32);3]=[
     ("is7_graze",VehicleKind::Is7,"9876b8f09533bc813c7f3d9dd597d5d80d4efe03911075b5ce636163417e5313",73),
     ("is7_pivot",VehicleKind::Is7,"01196e542262095406e59cc8ba9b17f9679a63704ee0e197dca53b5bcddf854c",120)];
 
-fn profile(kind:VehicleKind)->ram_proof::Profile{match kind{VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}}
+fn profile(kind:VehicleKind)->ram_proof::Profile{ram_proof::Profile::for_vehicle(kind)}
 fn closed(v:&Value,keys:&[&str]){let o=v.as_object().unwrap();assert_eq!(o.len(),keys.len());assert!(keys.iter().all(|k|o.contains_key(*k)));}
 fn no_reparse(path:&Path){for p in path.ancestors(){let m=fs::symlink_metadata(p).unwrap();assert!(!m.file_type().is_symlink());
     #[cfg(windows)] {use std::os::windows::fs::MetadataExt;assert_eq!(m.file_attributes()&0x400,0);}}}

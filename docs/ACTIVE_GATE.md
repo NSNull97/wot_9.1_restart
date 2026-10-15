@@ -3,6 +3,11 @@
 **P04M — пять боевых профилей**, ночная зависимая реализация после P07B:
 MS-1/ИС-7 и stock Т-26/Т-34/Т-34-85, source/physics/combat/owned registry.
 
+Focused04:26PASS/build, настоящий coupled World/Trace/sceneACK и временная
+квалификация без owned grants. Companion05:5PASS/build; actualSQLite303/309
+дополнительно2PASS. Финальные writer/Web/HTTP/source gates в работе; native
+NOT_RUN, новые3 admissionfalse. [Реализация и proof](research/P04M_FIVE_PROFILES.md).
+
 Полная постановка и приёмка — пункт 6 в
 [IMPLEMENTATION_ORDER](IMPLEMENTATION_ORDER.md). Боевой стенд и команды — в
 [DEV_NOTES](DEV_NOTES.md). Состояние проекта — [STATUS](STATUS.md).

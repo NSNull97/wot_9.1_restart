@@ -15,6 +15,30 @@ impl VehicleProfile {
     pub(super) fn load(root:&Path,reference:&Value,pool_version:u64)->io::Result<Self>{
         fields(reference,&["path","sha256"])?;
         let hash=text(reference,"sha256")?;
+        if let Some(kind)=VehicleKind::ALL.into_iter().filter(|kind|kind.index()>=2)
+            .find(|kind|ram_proof::Profile::for_vehicle(*kind).sha()==hash) {
+            if pool_version!=3 {return Err(bad());}
+            let path=owned(root,Path::new(text(reference,"path")?))?;
+            let raw=read(&path,16384)?;
+            if format!("{:x}",Sha256::digest(&raw))!=hash {return Err(bad());}
+            let v=json(&raw,16384)?;
+            fields(&v,&["version","profile","policy","kind","battle_admission","definition_sha256","definition","native_binding"])?;
+            if uint(&v["version"])?!=1 || text(&v,"profile")?!="test_lab" || text(&v,"kind")?!=kind.label()
+                ||text(&v,"policy")?!="p04m-stock-six-support-v1"||v["battle_admission"]!=false
+                ||text(&v["definition"],"kind")?!=kind.label() {return Err(bad());}
+            let definition=&v["definition"];fields(&definition["physics"],&PHYSICS_FIELDS)?;
+            let handling=&definition["handling"];
+            fields(handling,&["version","policy","max_yaw_rate_rad_s"])?;
+            if uint(&handling["version"])?!=1||text(handling,"policy")?!="p05b-track-yaw-v1" {return Err(bad());}
+            number(&handling["max_yaw_rate_rad_s"],0.1,1.)?;
+            let binding=ram_proof::Profile::for_vehicle(kind).binding();let native=&v["native_binding"];
+            if uint(&native["inverse_mass_bits"])?!=binding.inverse_mass.to_bits() as u64 {return Err(bad());}
+            for (field,want) in [("principal_inverse_bits",binding.principal.to_vec()),("inertia_rotation_bits_xyzw",binding.inertia_rotation.to_vec())] {
+                let rows=native[field].as_array().filter(|rows|rows.len()==want.len()).ok_or_else(bad)?;
+                for (row,want)in rows.iter().zip(want){if uint(row)?!=want.to_bits() as u64{return Err(bad());}}
+            }
+            return Ok(Self{path,sha256:hash.into(),kind,config_version:3,physics:definition["physics"].clone(),handling:Some(handling.clone())});
+        }
         let (kind,profile_version,revision)=match (pool_version,hash) {
             (2,IS7_PROFILE_SHA256)=>(VehicleKind::Is7,1,"is7-717-s70-no-optional-six-support-traction-v2"),
             (3,MS1_HANDLING_SHA256)=>(VehicleKind::Ms1,2,"p05b-tracked-handling-v1"),
@@ -43,10 +67,13 @@ impl VehicleProfile {
         Ok(Self{path,sha256:hash.into(),kind,config_version:pool_version,physics:v["physics"].clone(),handling})
     }
     pub(super) fn angular_profile(&self)->io::Result<ram_proof::Profile>{
-        let expected=match self.kind{VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7};
+        let expected=ram_proof::Profile::for_vehicle(self.kind);
         if self.config_version!=3||self.handling.is_none()||self.sha256!=expected.sha(){return Err(bad());}Ok(expected)
     }
     pub(super) fn kind(&self)->VehicleKind{self.kind}
+    pub(super) fn shared_source_profile(&self)->Option<(PathBuf,String)> {
+        (self.kind.index()>=2).then(||(self.path.clone(),self.sha256.clone()))
+    }
     pub(super) fn config_version(&self)->u64{self.config_version}
     pub(super) fn verify_map(&self,root:&Path,map:&MapSpec)->io::Result<()>{
         let raw=read(&owned(root,&self.path)?,16384)?;
@@ -70,9 +97,13 @@ impl VehicleProfile {
 #[cfg(test)]
 pub(super) fn component_profile(profile:ram_proof::Profile)->VehicleProfile {
     let (bytes,kind)=match profile{ram_proof::Profile::Ms1=>(include_bytes!("ms1-handling-profile.json").as_slice(),VehicleKind::Ms1),
-        ram_proof::Profile::Is7=>(include_bytes!("is7-handling-profile.json").as_slice(),VehicleKind::Is7)};
+        ram_proof::Profile::Is7=>(include_bytes!("is7-handling-profile.json").as_slice(),VehicleKind::Is7),
+        ram_proof::Profile::T26=>(include_bytes!("p04m-t26-qualified-profile.json").as_slice(),VehicleKind::T26),
+        ram_proof::Profile::T34=>(include_bytes!("p04m-t34-qualified-profile.json").as_slice(),VehicleKind::T34),
+        ram_proof::Profile::T3485=>(include_bytes!("p04m-t3485-qualified-profile.json").as_slice(),VehicleKind::T3485)};
     assert_eq!(format!("{:x}",Sha256::digest(bytes)),profile.sha());let v=json(bytes,16384).unwrap();
-    VehicleProfile{path:PathBuf::new(),sha256:profile.sha().into(),kind,config_version:3,physics:v["physics"].clone(),handling:Some(v["handling"].clone())}
+    let definition=if kind.index()>=2{&v["definition"]}else{&v};
+    VehicleProfile{path:PathBuf::new(),sha256:profile.sha().into(),kind,config_version:3,physics:definition["physics"].clone(),handling:Some(definition["handling"].clone())}
 }
 
 fn same_numeric(actual:&Value,expected:&Value)->bool{
@@ -106,7 +137,8 @@ mod tests {
     }
     fn handling_fixture(kind:VehicleKind)->(PathBuf,PathBuf,Value){
         let(root,path,mut pool)=super::super::tests::fixture_pool();
-        let(raw,hash)=match kind{VehicleKind::Ms1=>(MS1_HANDLING,MS1_HANDLING_SHA256),VehicleKind::Is7=>(IS7_HANDLING,IS7_HANDLING_SHA256)};
+        let(raw,hash)=match kind{VehicleKind::Ms1=>(MS1_HANDLING,MS1_HANDLING_SHA256),VehicleKind::Is7=>(IS7_HANDLING,IS7_HANDLING_SHA256),
+            VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485=>panic!("legacy profile schema fixture; use curated profile gates")};
         assert_eq!(format!("{:x}",Sha256::digest(raw)),hash);
         let profile=json(raw,16384).unwrap();let profile_path=root.join("handling-profile.json");
         fs::write(&profile_path,raw).unwrap();pool["version"]=3.into();

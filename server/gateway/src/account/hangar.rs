@@ -28,6 +28,7 @@ pub struct Fixtures {
     dossier: Vec<u8>,
     dossier_cursor: Option<DossierCursor>,
     research: bool,
+    p04m: Option<std::sync::Arc<crate::p04m_companion091::Binding>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -399,6 +400,16 @@ impl Fixtures {
         fixtures.dossier_cursor=grant_dossier_cursor(directory,&fixtures.dossier,true)?;
         Ok(fixtures)
     }
+    pub fn load_p04m(directory:&Path)->io::Result<Self> {
+        let mut fixtures=Self::load_with_budget(directory,crate::transport091::INTERACTIVE_MAX_SEQUENCE,true)?;
+        fixtures.dossier_cursor=grant_dossier_cursor_with_pool(directory,&fixtures.dossier,true,true)?;
+        let manifest=metadata::<DossierManifest>(directory,"manifest.json")?.ok_or_else(||invalid("pool manifest missing"))?;
+        let revision=manifest.snapshot_revision.ok_or_else(||invalid("pool snapshot revision"))? as u64;
+        let binding=crate::p04m_companion091::Binding::metadata(directory,&manifest.account_id,manifest.native_database_id,revision)?;
+        if !binding.matches_state(&fixtures.state){return Err(invalid("pool state changed while loading fixture"));}
+        fixtures.p04m=Some(std::sync::Arc::new(binding));Ok(fixtures)
+    }
+    pub(crate) fn p04m_binding(&self)->Option<&std::sync::Arc<crate::p04m_companion091::Binding>>{self.p04m.as_ref()}
     fn load_with_budget(directory:&Path,sequence_budget:u32,research:bool)->io::Result<Self> {
         fn read(directory: &Path, name: &str, root: Kind, maximum:usize, nodes:usize) -> io::Result<Vec<u8>> {
             let file = File::open(directory.join(name))?;
@@ -415,7 +426,7 @@ impl Fixtures {
             state: read(directory, "state.bin", Kind::Dict,if research {crate::research_service091::MAX_STATE_BYTES}else {MAX_FIXTURE},if research {crate::research_service091::MAX_STATE_NODES}else {MAX_NODES})?,
             shop: read(directory, "shop.bin", Kind::Dict,if research {crate::research_service091::MAX_SHOP_BYTES}else {MAX_FIXTURE},if research {crate::research_service091::MAX_STATE_NODES}else {MAX_NODES})?,
             dossier: read(directory, "dossier.bin", Kind::Tuple,MAX_FIXTURE,MAX_NODES)?,
-            dossier_cursor: None, research,
+            dossier_cursor: None, research,p04m:None,
         };
         // Necessary startup bound, not a promise of a 30-second session. Each
         // stream adds 11 zlib bytes; its response/header share the first chunk.
@@ -502,6 +513,7 @@ struct DossierManifest {
     account_id:String,native_database_id:i32,
     grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,crew_policy_sha256:Option<String>,
     research_policy_sha256:Option<String>,research_catalog_sha256:Option<String>,
+    pool_schema:Option<String>,pool_registry_sha256:Option<String>,pool_policy_sha256:Option<String>,
 }
 struct DossierCompatibility {
     snapshot_revision:Option<u32>,wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
@@ -547,7 +559,8 @@ metadata_fields!(DossierManifest,false,{fixture_version:Option<u32>,profile_vers
     wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
     account_id:String,native_database_id:i32,
     grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,crew_policy_sha256:Option<String>,
-    research_policy_sha256:Option<String>,research_catalog_sha256:Option<String>});
+    research_policy_sha256:Option<String>,research_catalog_sha256:Option<String>,
+    pool_schema:Option<String>,pool_registry_sha256:Option<String>,pool_policy_sha256:Option<String>});
 metadata_fields!(DossierCompatibility,false,{snapshot_revision:Option<u32>,wire_sync_revision:Option<u32>,
     compatibility_catalog_revision:Option<u32>,dossier_cache:Option<DossierCursor>});
 
@@ -576,8 +589,19 @@ fn granted_dossier_bytes(time:i32)->Vec<u8> {
 }
 
 fn grant_dossier_cursor(directory:&Path,raw:&[u8],research:bool)->io::Result<Option<DossierCursor>> {
+    grant_dossier_cursor_with_pool(directory,raw,research,false)
+}
+fn grant_dossier_cursor_with_pool(directory:&Path,raw:&[u8],research:bool,pool:bool)->io::Result<Option<DossierCursor>> {
     let manifest=metadata::<DossierManifest>(directory,"manifest.json")?;
     let compatibility=metadata::<DossierCompatibility>(directory,"compatibility.json")?;
+    if pool {
+        let m=manifest.as_ref().ok_or_else(||invalid("pool manifest missing"))?;
+        if !research || m.pool_schema.as_deref()!=Some(crate::p04m_companion091::SCHEMA)
+            ||m.pool_registry_sha256.as_deref()!=Some(crate::p04m_companion091::REGISTRY_SHA256)
+            ||m.pool_policy_sha256.as_deref()!=Some(crate::p04m_companion091::POLICY_SHA256){return Err(invalid("explicit pool manifest source/policy binding"));}
+    }else if manifest.as_ref().is_some_and(|m|m.pool_schema.is_some()||m.pool_registry_sha256.is_some()||m.pool_policy_sha256.is_some()){
+        return Err(invalid("pool fixture requires explicit P04M loader"));
+    }
     if research && !manifest.as_ref().is_some_and(|m| (m.fixture_version,m.profile_version)==(Some(13),Some(13))) {
         return Err(invalid("research loader requires explicit profile13"));
     }
@@ -999,7 +1023,7 @@ mod tests {
         }
         assert!(requests_interactive(&[packet.clone(),packet].concat()).is_err());
         let old=Fixtures {state:EMPTY_DICT.to_vec(),shop:EMPTY_DICT.to_vec(),
-            dossier:b"\x80\x02(K\x00]t.".to_vec(),dossier_cursor:None,research:false};
+            dossier:b"\x80\x02(K\x00]t.".to_vec(),dossier_cursor:None,research:false,p04m:None};
         old.validate_dossier_cursor(0,0).unwrap();assert!(old.validate_dossier_cursor(1,time).is_err());
         let granted=Fixtures {dossier:granted_dossier_bytes(time),dossier_cursor:Some(DossierCursor {
             version:1,last_change_time:time,vehicle_type_compact_descr:7169}),..old};
@@ -1287,7 +1311,7 @@ mod tests {
     #[test]
     fn profile13_shop_cursor_uses_fixture_budget_exact_revision_and_opaque_crc() {
         let legacy=Fixtures {state:EMPTY_DICT.to_vec(),shop:b"\x80\x02}(U\x03revK\x03u.".to_vec(),
-            dossier:b"\x80\x02(K\x00]t.".to_vec(),dossier_cursor:None,research:false};
+            dossier:b"\x80\x02(K\x00]t.".to_vec(),dossier_cursor:None,research:false,p04m:None};
         let research=legacy.with_research_shop_for_test(24000,5).unwrap();
         assert_eq!(research.sizes()[1],24000);assert_eq!(research.shop_sync_revision().unwrap(),5);
         assert_eq!(shop_cache_maximum(false),16448);assert_eq!(shop_cache_maximum(true),32832);
@@ -1474,7 +1498,7 @@ mod tests {
 
     #[test]
     fn response_does_not_accept_other_commands_and_gui_has_one_context() {
-        let fixtures = Fixtures { state: EMPTY_DICT.to_vec(), shop: EMPTY_DICT.to_vec(), dossier: b"\x80\x02).".to_vec(), dossier_cursor:None,research:false };
+        let fixtures = Fixtures { state: EMPTY_DICT.to_vec(), shop: EMPTY_DICT.to_vec(), dossier: b"\x80\x02).".to_vec(), dossier_cursor:None,research:false,p04m:None };
         assert!(response(&Request { id: 221, command: 999 }, &fixtures).is_err());
         assert!(response(&Request { id: 0, command: 100 }, &fixtures).is_err());
         let gui = show_gui(1).unwrap();

@@ -262,9 +262,9 @@ class BattleStore(ResearchStore):
             terminal_hp=hp, destroyed=None if abort else hp == 0, repaired_hp=frozen["max_hp"], credits=0, xp=0)
         c = self.connection; account = request["account_id"]
         mount = MOUNTS[frozen["kind"] + "-stock"]
+        layout = self.layouts(account)[row["native_inventory_id"]]
         ammo = {key: remaining if key == frozen["shell_definition_id"] else 0 for key in sorted(mount.shell_ids)}
         require(c.execute("UPDATE p09c_ammo_mount SET loaded_json=? WHERE account_id=? AND vehicle_id=?", (canonical(ammo).decode("ascii"), account, row["vehicle_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
-        layout = self.layouts(account)[row["native_inventory_id"]]
         for index in (0, 2, 4): layout[index + 1] = remaining if abs(layout[index]) == frozen["shell_compact_id"] else 0
         require(c.execute("UPDATE p09d_native_layout SET layout_json=? WHERE account_id=? AND native_vehicle_id=?", (json.dumps(layout), account, row["native_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
         require(c.execute("UPDATE game_vehicle SET state='available',battle_id=NULL WHERE account_id=? AND vehicle_id=? AND state='reserved' AND battle_id=?", (account, row["vehicle_inventory_id"], row["battle_id"])).rowcount == 1, "RESERVATION_MISMATCH")

@@ -257,6 +257,7 @@ impl Pool {
         Ok(selected)
     }
     pub fn vehicle_kind(&self)->VehicleKind{self.vehicle_profile.as_ref().map_or(VehicleKind::Ms1,|p|p.kind())}
+    pub fn shared_source_profile(&self)->Option<(PathBuf,String)> {self.vehicle_profile.as_ref().and_then(|p|p.shared_source_profile())}
     fn verify_assets(&self)->io::Result<()> {
         let mut found=BTreeSet::new();let mut stack=vec![self.runtime.clone()];let mut directories=0;
         while let Some(dir)=stack.pop(){directories+=1;if directories>256{return Err(bad());}non_reparse(&dir)?;

@@ -12,6 +12,7 @@ pub const MAX_MOVEMENT_OBJECTS:usize=2048;
 pub const POLICY:&str="test_lab-fragile-reference-hp-ap30-v1";
 pub fn policy_for(kind:VehicleKind)->&'static str { match kind {
     VehicleKind::Ms1=>POLICY, VehicleKind::Is7=>"test_lab-fragile-reference-hp-ap490-v1",
+    VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485=>"test_lab-fragile-reference-hp-curated-stock-ap-v1",
 } }
 /// Minimal authoritative ramming policy. The worker supplies a hash-bound
 /// vehicle mass from the map descriptor; client claims are never used. A
@@ -191,20 +192,27 @@ pub struct Damage {pub object_id:u32,pub instance_id:u32,pub object_revision:Str
 pub struct VehicleContact {pub object_id:u32,pub instance_id:u32,pub object_revision:String,pub shooter:usize,pub tick:u32,pub substep:u8,
     pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3],pub mass_kg:f32,pub kind:String,pub scene_before:u32,pub scene_after:u32,pub fallen_tree:Option<u32>,pub proof:Option<ram_proof::ContactProof>}
 #[derive(Clone,Debug,PartialEq)]
-pub struct State {pub catalog:Arc<Catalog>,health:Vec<u32>,fallen:Vec<Option<u32>>,pub events:Vec<Damage>,pub vehicle_events:Vec<VehicleContact>,roster:Option<usize>}
+pub struct State {pub catalog:Arc<Catalog>,health:Vec<u32>,fallen:Vec<Option<u32>>,pub events:Vec<Damage>,pub vehicle_events:Vec<VehicleContact>,roster:Option<usize>,ammo_capacity:u16}
 impl State {
     pub fn failure_snapshot(&self)->serde_json::Value{
         serde_json::json!({"catalog_sha256":self.catalog.sha256,"scene_version":self.scene_version(),
             "objects":self.catalog.objects.iter().zip(self.health.iter().zip(&self.fallen))
                 .map(|(o,(health,fallen))|serde_json::json!({"object_id":o.object_id,"health":health,"fallen":fallen})).collect::<Vec<_>>()})
     }
-    pub fn new(catalog:Arc<Catalog>)->Self{Self{health:catalog.objects.iter().map(|o|o.health).collect(),fallen:vec![None;catalog.objects.len()],catalog,events:Vec::new(),vehicle_events:Vec::new(),roster:None}}
+    pub fn new(catalog:Arc<Catalog>)->Self{Self{health:catalog.objects.iter().map(|o|o.health).collect(),fallen:vec![None;catalog.objects.len()],catalog,events:Vec::new(),vehicle_events:Vec::new(),roster:None,ammo_capacity:96}}
     pub fn configure_roster(&mut self,count:usize)->io::Result<()>{
         if !(2..=super::model::MAX_ACTORS).contains(&count)||!self.events.is_empty()||!self.vehicle_events.is_empty()||self.scene_version()!=0{return Err(bad());}
         self.roster=Some(count);Ok(())
     }
     fn actor_limit(&self)->usize{self.roster.unwrap_or(CAPACITY)}
-    fn shot_limit(&self,vehicle:VehicleKind)->usize{self.roster.map_or(vehicle.battle_shot_limit(),|n|n*96)}
+    pub fn bind_ammo_capacity(&mut self,capacity:u16)->io::Result<()> {
+        if capacity==0 || capacity as usize>super::model::MAX_AMMO_PER_ACTOR {return Err(bad());}
+        if capacity>self.ammo_capacity {
+            if self.roster.is_none()||!self.events.is_empty()||!self.vehicle_events.is_empty()||self.scene_version()!=0{return Err(bad());}
+            self.ammo_capacity=capacity;
+        }Ok(())
+    }
+    fn shot_limit(&self,vehicle:VehicleKind)->usize{self.roster.map_or(vehicle.battle_shot_limit(),|n|n*self.ammo_capacity as usize)}
     fn latest_tick(&self)->Option<u32>{self.events.last().map(|event|event.tick).into_iter()
         .chain(self.vehicle_events.last().map(|event|event.tick)).max()}
     pub fn scene_version(&self)->u32{self.health.iter().zip(&self.fallen).filter(|(h,f)|**h==0||f.is_some()).count() as u32}

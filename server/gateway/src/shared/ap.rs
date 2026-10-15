@@ -23,6 +23,8 @@ use super::{materials::{self, Component, MaterialFacts, SourceClass}, vehicle_pr
 pub const PROFILE_REVISION: &str = "test_lab-ms1-ap-single-plate-v1";
 pub fn profile_revision_for(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::Ms1 => PROFILE_REVISION, VehicleKind::Is7 => "test_lab-is7-ap-single-plate-v1",
+    VehicleKind::T26=>"test_lab-t26-ap-single-plate-v1",VehicleKind::T34=>"test_lab-t34-ap-single-plate-v1",
+    VehicleKind::T3485=>"test_lab-t3485-ap-single-plate-v1",
 } }
 pub const HISTORICAL_FIDELITY: &str = "approximate";
 pub const CALIBER: f64 = 37.0;
@@ -143,11 +145,8 @@ pub fn resolve_for_pair(kind:VehicleKind,target:VehicleKind,input:Input<'_>)->io
         else if armor.is_none() { Some(Reason::MissingArmor) }
         else if armor == Some(0.0) { Some(Reason::ZeroArmor) }
         else {
-            let max_kind = match (target,material.component) {
-                (VehicleKind::Ms1,Component::Hull)=>12,(VehicleKind::Ms1,_)=>10,
-                (VehicleKind::Is7,Component::Hull)=>16,(VehicleKind::Is7,_)=>12,
-            };
-            if material.kind == 0 || material.kind > max_kind || material.name != format!("armor_{}", material.kind) {
+            if !materials::armor_ids(target,material.component).contains(&material.kind)
+                || material.name != format!("armor_{}", material.kind) {
                 return Err(bad());
             }
             let e = material.effective.as_ref().ok_or_else(bad)?;

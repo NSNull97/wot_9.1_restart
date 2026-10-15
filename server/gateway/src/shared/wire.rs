@@ -408,9 +408,9 @@ mod tests {
         let mut requests=Vec::new();for slot in 0..6 {requests.extend([8,4,0]);requests.extend(vehicle_id(slot).unwrap().to_le_bytes());}
         assert_eq!(entity_requests(&requests).unwrap(),Some((0..6).collect()));
         let mut duplicate=requests.clone();duplicate.extend(&requests[..7]);assert!(entity_requests(&duplicate).is_err());
-        let mut p=Projectile::launch_for_limit(model::MAX_BATTLE_SHOTS as u32,5,&w.actors[5],now,w.shot_limit()).unwrap();
+        let mut p=Projectile::launch_for_limit(w.shot_limit() as u32,5,&w.actors[5],now,w.shot_limit()).unwrap();
         assert_eq!(&tracer_start(&p).unwrap()[2..6],&vehicle_id(5).unwrap().to_le_bytes());
-        p.stopped=true;assert!(tracer_stop(&p).is_ok());p.sequence+=1;
+        p.stopped=true;assert!(tracer_stop(&p).is_ok());p.sequence=model::MAX_BATTLE_SHOTS as u32+1;
         assert!(tracer_start(&p).is_err());assert!(tracer_stop(&p).is_err());
     }
     #[test] fn six_actor_and_full_area_catalog_namespaces_never_overlap() {

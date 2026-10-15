@@ -160,7 +160,8 @@ fn work(session: u32, owner: Arc<identity091::Profile>, config: Arc<identity091:
     let (fresh, refresh_error) = if refresh {
         let result = (|| -> io::Result<Fresh> {
             let fresh = config.refresh_battle_profile(&owner)?;
-            let fixtures = hangar091::Fixtures::load_research(&fresh.fixture_dir)?;
+            let fixtures = if config.p04m_pool {hangar091::Fixtures::load_p04m(&fresh.fixture_dir)?}
+                else {hangar091::Fixtures::load_research(&fresh.fixture_dir)?};
             let binding = ammo_service091::metadata_research(&fresh.fixture_dir, &fresh.account_id, fresh.database_id)?;
             if binding.revision != reply.revision || binding.wire_revision != 1 {
                 return Err(bad("fresh projection does not match committed revision"));

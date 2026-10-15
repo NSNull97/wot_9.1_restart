@@ -1368,7 +1368,8 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
     let (sender,receiver)=mpsc::sync_channel(1);
     thread::Builder::new().name("local-identity".to_owned()).spawn(move || {
         let outcome=config.authenticate(&email,&password).and_then(|identity|identity.map(|identity| {
-            let fixtures=if config.research_service {crate::hangar091::Fixtures::load_research(&identity.fixture_dir)?}
+            let fixtures=if config.p04m_pool {crate::hangar091::Fixtures::load_p04m(&identity.fixture_dir)?}
+                else if config.research_service {crate::hangar091::Fixtures::load_research(&identity.fixture_dir)?}
                 else {crate::hangar091::Fixtures::load_interactive(&identity.fixture_dir)?};
             let binding=if config.ammo_service {
                 Some(if config.research_service {crate::ammo_service091::metadata_research(&identity.fixture_dir,&identity.account_id,identity.database_id)?}
@@ -1565,6 +1566,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                             created.identity=Some(accepted.identity);created.hangar=Some(accepted.fixtures);
                             created.drive_account_policy=accepted.drive_account_policy;
                             created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
+                            if let Some(state)=&mut created.ammo_service {state.replace_pool(created.hangar.as_ref().and_then(|f|f.p04m_binding()).cloned())?;}
                             if drive_pool.is_some(){created.drive=Some(crate::map_drive_world091::Arena::new(now));}
                             if let Some(policy)=&created.drive_account_policy {println!("{}",policy.binding_event(next_id));}
                             session=Some(created);next_id=next_id.checked_add(1).ok_or_else(invalid)?;

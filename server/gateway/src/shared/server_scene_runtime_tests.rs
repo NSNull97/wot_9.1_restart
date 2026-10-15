@@ -1,6 +1,6 @@
 use super::*;
 use std::path::PathBuf;
-fn resources()->[super::super::super::profile13_templates::Resources;2]{
+fn resources()->Vec<super::super::super::profile13_templates::Resources>{
     let root=PathBuf::from(std::env::var("WOT091_ROOT").unwrap_or_else(|_|"D:/WoT_9.1_Server".into())).join("local");
     let source=root.join("stands/p08b-profile13-01/battle-profiles.json");
     let mut v:serde_json::Value=serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
@@ -9,6 +9,25 @@ fn resources()->[super::super::super::profile13_templates::Resources;2]{
     let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let path=root.join(format!("test-runs/p05c-template-{}-{stamp}.json",std::process::id()));fs::write(&path,serde_json::to_vec(&v).unwrap()).unwrap();
     super::super::super::profile13_templates::load(&root,&path).unwrap()
+}
+#[test]fn p04m_scene_rows_keep_v1_exact_and_require_explicit_null_or_new_pin_in_v2(){
+    let rows=resources();let shared=rows[0].shared.as_ref().unwrap();
+    let v1=BatchRuntime::actor_manifest(shared,0,VehicleKind::Ms1,1).unwrap();
+    assert_eq!(v1.as_object().unwrap().len(),5);assert!(v1.get("source_profile").is_none());
+    let old_v2=BatchRuntime::actor_manifest(shared,1,VehicleKind::Is7,2).unwrap();
+    assert_eq!(old_v2.as_object().unwrap().len(),6);assert!(old_v2["source_profile"].is_null());
+    assert!(BatchRuntime::actor_manifest(shared,2,VehicleKind::T26,2).is_err());
+    let mut fixture=(**shared).clone();fixture.maps=vec![shared.maps[0].clone();5];
+    // Row encoding only: this authored placeholder is never loaded/launched as
+    // a physical profile. Production Pool/SceneSpec perform exact pin binding.
+    for kind in VehicleKind::ALL.into_iter().skip(2){
+        assert!(BatchRuntime::actor_manifest(&fixture,kind.index(),kind,2).is_err());
+        fixture.source_profiles[kind.index()]=Some((fixture.root.join(format!("{}-qualified-placeholder.json",kind.label())),"a".repeat(64)));
+        let row=BatchRuntime::actor_manifest(&fixture,kind.index(),kind,2).unwrap();
+        assert_eq!(row.as_object().unwrap().len(),6);assert_eq!(row["source_profile"]["sha256"],"a".repeat(64));
+        assert_eq!(row["kind"],kind.label());assert!(BatchRuntime::actor_manifest(&fixture,kind.index(),kind,1).is_err());
+    }
+    assert!(BatchRuntime::actor_manifest(&fixture,model::MAX_ACTORS,VehicleKind::T26,2).is_err());
 }
 fn spin(runtime:&mut BatchRuntime,world:&mut World,now:Instant,until:impl Fn(&BatchRuntime,&World)->bool){
     let deadline=Instant::now()+Duration::from_secs(120);loop{runtime.step(world,now).unwrap();if until(runtime,world){return;}
