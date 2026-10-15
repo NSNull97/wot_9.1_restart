@@ -54,6 +54,12 @@ detach в ACK-окне и frozen outcome PASS. Runtime019ed2f: полный gate
 ветка сохранена, main не изменён. [Физика](research/P05C_SHARED_PHYSICS.md),
 [передача клиенту](research/P05C_NATIVE_TRANSPORT.md).
 
+P07B candidate `codex/p07b-server-visibility`, runtime8fecb9d: серверный range/LOS,
+native AoI и reliable epochs, фильтр Create/pose/HP/aim/fire/terminal реализованы.
+Focused23 и полный975PASS/5ignored/buildPASS;607files source before/after PASS.
+Actual source geometry Прохоровки/360LOS PASS; native исчезновение/засвет NOT_RUN.
+Стенд bound с visibility_v1=true; в main не слито. [Факты](research/P07B_SERVER_VISIBILITY.md).
+
 ## Принято владельцем на настоящем клиенте #717
 
 - Вход и аккаунт: собственная авторизация, перезаход, ангар на реальном клиенте 0.9.1.

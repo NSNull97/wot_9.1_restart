@@ -11,6 +11,8 @@
 - [P08C_BATTLE_CYCLE.md](P08C_BATTLE_CYCLE.md) — authoritative cycle, atomic writer results, policy и утренняя native матрица
 - [P05C_SHARED_PHYSICS.md](P05C_SHARED_PHYSICS.md) — one-scene IPC7 component, реальные mixed/6 Jolt probes и граница интеграции
 - [P05C_NATIVE_TRANSPORT.md](P05C_NATIVE_TRANSPORT.md) — bounded6actor roster/ACK/READY, отдельные ID/alias namespaces, synthetic Session gates
+- [P07B_NATIVE_INTEREST.md](P07B_NATIVE_INTEREST.md) — original AoI enter/leave и source stock vision ranges
+- [P07B_SERVER_VISIBILITY.md](P07B_SERVER_VISIBILITY.md) — recipient LOS/epochs/packet filtering, full975PASS, native NOT_RUN
 
 - [BATTLE_LOADOUT_REVISION_GATE.md](BATTLE_LOADOUT_REVISION_GATE.md) — Исследование: battle-loadout revision adapter
 - [CAPACITY_1000_CCU.md](CAPACITY_1000_CCU.md) — Инфраструктура для 1000 одновременных игроков: расчётная модель
