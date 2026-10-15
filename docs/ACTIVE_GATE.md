@@ -1,13 +1,13 @@
 # Текущая карточка — 2026-10-16
 
-**P07B — серверная видимость v1**, ночная зависимая реализация после P05C:
-дальность/LOS, отсутствие скрытого состояния в пакетах, native исчезновение/засвет.
+**P04M — пять боевых профилей**, ночная зависимая реализация после P07B:
+MS-1/ИС-7 и stock Т-26/Т-34/Т-34-85, source/physics/combat/owned registry.
 
-Полная постановка и приёмка — пункт 5 в
+Полная постановка и приёмка — пункт 6 в
 [IMPLEMENTATION_ORDER](IMPLEMENTATION_ORDER.md). Боевой стенд и команды — в
 [DEV_NOTES](DEV_NOTES.md). Состояние проекта — [STATUS](STATUS.md).
 
-План — [P07B](plans/P07B.md), ночное разрешение владельца и утренняя матрица —
+План — [P04M](plans/P04M.md), ночное разрешение владельца и утренняя матрица —
 [NIGHT_20261016](plans/NIGHT_20261016.md). Продолжать по порядку без ожидания
 ручных проверок; сохранять NOT_RUN и отдельные зависимые ветки до приёмки.
 
@@ -28,3 +28,7 @@ codex/p08c-battle-lifecycle сохранена, main не изменён.
 P05C runtime019ed2f: полный gateway940PASS/5ignored/buildPASS и exact source
 before/after602files. Actual mixed2/6 scene/ACK/parked bodies PASS; native mixed
 таран/6клиентов NOT_RUN. Ветка codex/p05c-shared-physics сохранена, не main.
+
+P07B runtime8fecb9d:975gatewayPASS/5ignored/buildPASS,607sourcefiles before/after
+совпадают; actual terrain/static LOS и packet absence/epoch gates PASS. Native
+исчезновение/повторный засвет NOT_RUN; ветка сохранена, не main.
