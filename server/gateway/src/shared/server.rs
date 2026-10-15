@@ -876,7 +876,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         let integrated_native_ready = integrated.as_ref().is_none_or(IntegratedRuntime::ready_for_native);
         for s in &mut table.sessions {
             let reason = if now.duration_since(s.created_at) >= config.session_duration { Some("session_deadline") }
-                else if now.duration_since(s.last_rx) >= Duration::from_secs(8) { Some("idle_timeout") } else { None };
+                else if now.duration_since(s.last_rx) >= s.tx.idle_limit() { Some("idle_timeout") } else { None };
             if let Some(reason) = reason { closing.push((s.id, reason)); continue; }
             // Keep the transport alive while workers settle, but gate the
             // native arena reset until both workers have supplied a settled
