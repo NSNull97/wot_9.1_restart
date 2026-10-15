@@ -284,6 +284,19 @@ impl Config {
 
     /// Bounded loopback transport; only fixed internal paths supplied by this module.
     fn post(&self,path:&str,body:&[u8],timeout:Duration)->io::Result<(u16,Vec<u8>)> {
+        self.post_with_budget(path,body,timeout,4096,8192)
+    }
+    /// P08C results alone need the bounded complete result string. Keep every
+    /// older service on its original4KiB body/8KiB response admission limits.
+    pub(crate) fn results_post(&self,owner:&Profile,body:&[u8])->io::Result<Vec<u8>> {
+        if !self.profile13_battle||owner.database_id<=0||body.is_empty()||body.len()>65536 {
+            return Err(invalid("battle result HTTP request bound"));
+        }
+        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;
+        if status!=200{return Err(invalid("battle results writer unavailable; immutable request retained"));}
+        Ok(reply)
+    }
+    fn post_with_budget(&self,path:&str,body:&[u8],timeout:Duration,max_body:usize,max_wire:usize)->io::Result<(u16,Vec<u8>)> {
         let deadline=Instant::now()+timeout;
         let mut stream=TcpStream::connect_timeout(&self.identity_endpoint.into(),Duration::from_millis(500))?;
         stream.set_write_timeout(Some(Duration::from_secs(2)))?;
@@ -296,12 +309,12 @@ impl Config {
             let mut buffer=[0u8;1024];
             match stream.read(&mut buffer) {
                 Ok(0)=>break,
-                Ok(n)=>{if response.len()+n>8192 {return Err(invalid("identity response size"));}response.extend(&buffer[..n]);},
+                Ok(n)=>{if response.len()+n>max_wire {return Err(invalid("identity response size"));}response.extend(&buffer[..n]);},
                 Err(error) if matches!(error.kind(),io::ErrorKind::WouldBlock|io::ErrorKind::TimedOut)=>{},
                 Err(error)=>return Err(error),
             }
         }
-        let (status,body)=http_response(&response)?;
+        let (status,body)=http_response_with_budget(&response,max_body,max_wire)?;
         Ok((status,body.to_vec()))
     }
 
@@ -479,8 +492,11 @@ fn valid_native_nickname(name:&str)->bool {
 }
 
 fn http_response(bytes:&[u8])->io::Result<(u16,&[u8])> {
+    http_response_with_budget(bytes,4096,8192)
+}
+fn http_response_with_budget(bytes:&[u8],max_body:usize,max_wire:usize)->io::Result<(u16,&[u8])> {
     let end=bytes.windows(4).position(|b|b==b"\r\n\r\n").ok_or_else(||invalid("HTTP header incomplete"))?;
-    if end>4096 || bytes.len()>8192 || !bytes[..end].is_ascii() {return Err(invalid("HTTP response size/ASCII bound"));}
+    if end>4096 || bytes.len()>max_wire || !bytes[..end].is_ascii() {return Err(invalid("HTTP response size/ASCII bound"));}
     let header=std::str::from_utf8(&bytes[..end]).map_err(|_|invalid("HTTP header encoding"))?;
     let mut lines=header.split("\r\n");let status=lines.next().ok_or_else(||invalid("HTTP status absent"))?;
     if !status.starts_with("HTTP/1.1 ") || status.len()<12 {return Err(invalid("HTTP version/status"));}
@@ -495,7 +511,7 @@ fn http_response(bytes:&[u8])->io::Result<(u16,&[u8])> {
         if key.eq_ignore_ascii_case("transfer-encoding") {return Err(invalid("chunked identity response is unsupported"));}
     }
     let body=&bytes[end+4..];
-    if body.len()>4096 || length!=Some(body.len()) {return Err(invalid("HTTP body length mismatch"));}
+    if body.len()>max_body || length!=Some(body.len()) {return Err(invalid("HTTP body length mismatch"));}
     Ok((status,body))
 }
 
@@ -534,6 +550,17 @@ fn verify_fixture_identity(profile:&Profile)->io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn p08c_results_http_budget_does_not_widen_legacy_services_or_accept_bad_framing() {
+        let response=|n:usize|{let mut raw=format!("HTTP/1.1 200 OK\r\nContent-Length: {n}\r\nConnection: close\r\n\r\n").into_bytes();raw.extend(vec![b'x';n]);raw};
+        let large=response(5000);assert!(http_response(&large).is_err());
+        assert_eq!(http_response_with_budget(&large,65536,65536+4100).unwrap().1.len(),5000);
+        assert_eq!(http_response_with_budget(&response(65536),65536,65536+4100).unwrap().1.len(),65536);
+        assert!(http_response_with_budget(&response(65537),65536,65536+4100).is_err());
+        assert!(http_response_with_budget(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 1\r\n\r\nx",65536,65536+4100).is_err());
+        assert!(http_response_with_budget(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\nx",65536,65536+4100).is_err());
+        assert!(http_response_with_budget(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nx",65536,65536+4100).is_err());
+        assert!(http_response(&response(4096)).is_ok());assert!(http_response(&response(4097)).is_err());
+    }
     #[test] fn profile13_projection_metadata_binds_owner_revision_state_policy_and_capabilities() {
         let owner=Profile{account_id:"12345678-1234-4234-8234-123456789abc".into(),database_id:17,name:"owned".into(),fixture_dir:PathBuf::new()};
         let sha="a".repeat(64);

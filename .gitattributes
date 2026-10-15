@@ -14,3 +14,9 @@ server/gateway/src/drive/worker/is7-physics-profile.json text eol=lf
 /web/src/native-evidence.mjs text eol=lf
 server/gateway/src/drive/worker/ms1-handling-profile.json text eol=lf
 server/gateway/src/drive/worker/is7-handling-profile.json text eol=lf
+
+# Cross-language writer vectors are hash-pinned byte evidence.
+tests/fixtures/profile13-writer-vectors.json text eol=lf
+tests/fixtures/profile13-results-vectors.json text eol=lf
+# Native Session source is kept in its established LF representation.
+server/gateway/src/session.rs -text

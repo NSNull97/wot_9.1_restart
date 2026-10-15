@@ -427,11 +427,11 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       'Cache-Control': 'no-store', Connection: 'close' });
     res.end(body);
   }
-  async function body(req) {
+  async function body(req, maximum = 2048) {
     if (req.headers['content-type'] !== 'application/json' || req.headers['content-encoding']
-        || req.headers['transfer-encoding'] || !/^\d{1,4}$/.test(req.headers['content-length'] || '')) throw Object.assign(new Error('Body shape'), { status: 400 });
+        || req.headers['transfer-encoding'] || !/^\d{1,5}$/.test(req.headers['content-length'] || '')) throw Object.assign(new Error('Body shape'), { status: 400 });
     const length = Number(req.headers['content-length']);
-    if (length < 2 || length > 2048) throw Object.assign(new Error('Body size'), { status: 413 });
+    if (length < 2 || length > maximum) throw Object.assign(new Error('Body size'), { status: 413 });
     const parts = []; let bytes = 0;
     for await (const part of req) { bytes += part.length; if (bytes > length) throw Object.assign(new Error('Body size'), { status: 413 }); parts.push(part); }
     if (bytes !== length) throw Object.assign(new Error('Body size'), { status: 400 });
@@ -476,6 +476,36 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         return json(res, 200, { account_id: profile.account_id, native_database_id: profile.native_database_id,
           name: profile.username, fixture_dir: await fixture(profile) });
       }
+      if (req.method === 'POST' && req.url === '/internal/native/battle-results') {
+        if (options.battle_service === undefined) return json(res, 404, { error: 'not_found' });
+        const value = await body(req, 65536), service = accountServices.get(value?.account_id);
+        if (!service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        const profile = game.read(value.account_id);
+        if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        const valid = condition => { if (!condition) throw Object.assign(new Error('Results schema'), { status: 400 }); };
+        const common = ['version', 'operation', 'account_id', 'native_database_id', 'command_key', 'arena_id'];
+        const extra = ['run_id', 'battle_id', 'native_inventory_id', 'reservation_id', 'results_json'];
+        valid(value && !Array.isArray(value) && ['store', 'query', 'ack'].includes(value.operation));
+        valid(Object.keys(value).sort().join(',') === [...common, ...(value.operation === 'store' ? extra : [])].sort().join(',')
+          && value.version === 1 && typeof value.command_key === 'string' && /^[A-Za-z0-9_:-]{1,96}$/.test(value.command_key)
+          && typeof value.arena_id === 'string' && /^[1-9][0-9]{0,18}$/.test(value.arena_id)
+          && BigInt(value.arena_id) <= 9223372036854775807n);
+        if (value.operation === 'store') valid(typeof value.run_id === 'string' && UUID.test(value.run_id)
+          && value.battle_id === `${value.run_id}:${value.arena_id}`
+          && Number.isInteger(value.native_inventory_id) && value.native_inventory_id > 0 && value.native_inventory_id <= 2147483647
+          && typeof value.reservation_id === 'string' && /^[A-Za-z0-9_:-]{1,96}$/.test(value.reservation_id)
+          && typeof value.results_json === 'string' && Buffer.byteLength(value.results_json) <= 32768);
+        const result = await service.results(value);
+        const replyKeys = [...common, 'status', 'acked', 'replayed', 'results_json', 'code'];
+        if (!result || Object.keys(result).sort().join(',') !== replyKeys.sort().join(',')
+          || common.some(key => result[key] !== value[key]) || typeof result.acked !== 'boolean' || typeof result.replayed !== 'boolean'
+          || !['stored', 'found', 'missing', 'acked', 'rejected'].includes(result.status)
+          || (result.status === 'rejected' ? !['RESULT_NOT_READY', 'RESULT_MISMATCH', 'DUPLICATE_PAYLOAD_MISMATCH'].includes(result.code) : result.code !== null)
+          || (['missing', 'rejected'].includes(result.status) ? result.results_json !== null || result.acked
+            : typeof result.results_json !== 'string' || Buffer.byteLength(result.results_json) > 32768)
+          || Buffer.byteLength(JSON.stringify(result)) > 65536) throw new Error('Results worker response schema');
+        return json(res, 200, result);
+      }
       const nativeMethod = new Map([
         ['/internal/native/ammo', 'service'], ['/internal/native/crew', 'recruit'],
         ['/internal/native/crew-recruit-barracks', 'recruitBarracks'], ['/internal/native/crew-dismiss', 'dismiss'],
@@ -484,7 +514,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       ]).get(req.url);
       if (req.method === 'POST' && nativeMethod) {
         if (!ammunition || typeof ammunition[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
-        const value = await body(req), service = accountServices.get(value?.account_id);
+        const value = await body(req, nativeMethod === 'battle' ? 65536 : 2048), service = accountServices.get(value?.account_id);
         if (!service || !identity.profile(service.accountId)) return json(res, 403, { error: 'forbidden' });
         if (typeof service[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
         return json(res, 200, await service[nativeMethod](value));

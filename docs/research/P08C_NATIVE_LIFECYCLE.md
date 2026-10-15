@@ -176,3 +176,44 @@ unknown/duplicate fields and participant count. Source/test binding and logs:
 `local/evidence/20261016-p08c-01/protocol-checks01.json` and
 `local/build/server/gateway-p08c-wire04/`. Executable SHA256:
 `f134a0605fcf69f089a43d78e9381cb8b437c54afc11f9534f904faa1fd6486c`.
+
+## Async Account cache fetch and receipt
+
+`shared/results_session.rs` stages only complete native doCmdInt3 records for
+CMD1500/1501 in the enclosing Session clone. At most8 pending/in-flight operations
+are retained. Query request IDs are positive; receipt uses the original202 and
+does not request a callback. Avatar confirmation is accepted only after the
+server queued that owned, already committed result. An exact repeat confirmation
+is idempotent. A different result cannot overwrite an unconfirmed Avatar result.
+
+The query callback is **onCmdResponseExt**, not the plain three-argument variant:
+the original cache's `__onGetResponse:87` argument list after partial application
+is `(requestID,resultID,errorStr,ext)`. A found result gets RES_STREAM1 with the
+existing empty ext, followed by the request-ID stream. Missing/explicitly rejected
+results get original RES_NOT_AVAILABLE-10; receipt gets no native response.
+
+The async manager owns the immutable authenticated account, arena, operation and
+command key outside Session clones. External query/ack starts only after the root
+loop commits the full receive transaction and grants the shared writer slot.
+A worker must actually finish before another begins. Ambiguous transport errors
+retain the same task and command key for retry. A complete output waits if its
+whole native response does not fit the bounded output queue. Retirement discards
+only native delivery; an already dispatched receipt remains owned until outcome.
+
+Account recreation advances a local callback epoch. Pending obsolete queries are
+discarded, receipts retained; a completed old query cannot send Account RPCs into
+an Avatar or the next Account callback registry. This epoch is local dispatch
+bookkeeping, not an invented client API or a client-authoritative revision.
+
+Only the fixed loopback `/internal/native/battle-results` HTTP path gets a64KiB
+request/reply body budget. The identity transport's old4KiB reply-body/8KiB wire
+limits remain unchanged for earlier services; HTTP header bound4096, exact unique
+Content-Length and rejection of chunked responses remain shared. The result
+envelope requires exactly11 unique typed fields and exact owner/nativeID/key/arena
+correlation. Nested results_json is limited to32768 bytes, parsed by the strict
+Results DTO and validated before native serialization. Raw response/credentials
+are never logged.
+
+These new cache-manager/transport tests are pending the root's combined build;
+the earlier wire04 PASS covers only the lifecycle encoder. Native result receipt
+and visual/audio behavior remain NOT_RUN until the deferred morning check.

@@ -178,6 +178,7 @@ struct Session {
     drive_return_account:Option<WarmAccountReturn>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
     shared:Option<shared::Client>,
+    battle_results:shared::results_session::State,
     ammo_service:Option<ammo_session::State>,
 }
 impl Session {
@@ -189,7 +190,7 @@ impl Session {
             arena_base:false,avatar_unsupported_envelopes:0,arena_space:ArenaSpaceStage::Disabled,
             arena_vehicle:ArenaVehicleStage::Disabled,arena_vehicle_seed:None,arena_vehicle_announcement:None,
             arena_ready:false,arena_vehicle_creation:None,arena_preparation:None,arena_battle_preparation:None,arena_fire:None,
-            arena_movement:false,arena_motion:None,map_drive:false,map_binding:None,drive:None,drive_return_account:None,drive_account_policy:None,shared:None,ammo_service:None}
+            arena_movement:false,arena_motion:None,map_drive:false,map_binding:None,drive:None,drive_return_account:None,drive_account_policy:None,shared:None,battle_results:shared::results_session::State::default(),ammo_service:None}
     }
     fn same_login_attempt(&self,candidate:&LoginAttempt)->bool {
         self.login_attempt.is_some_and(|attempt|attempt.same_attempt(candidate))
@@ -704,6 +705,8 @@ impl Session {
                 crate::battle091::fire::Outcome::ReplenishUnsupported=>events.push(format!(
                     "BATTLE_REPLENISH_UNSUPPORTED session={} sequence={sequence} method=vehicle_replenishAmmo base_method=0x89 domain_applied=false ammo_grant=false economy=false transport_acknowledged=true",
                     self.id)),
+                crate::battle091::fire::Outcome::RejectedBattlePeriod=>events.push(format!(
+                    "BATTLE_SHOT_REJECTED session={} sequence={sequence} reason=battle_period domain_applied=false ammo_mutation=false",self.id)),
             }
         }
         Ok(Some(()))

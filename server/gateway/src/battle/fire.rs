@@ -104,6 +104,8 @@ pub enum Outcome {
     RejectedReload,
     RejectedNoAmmo,
     ReplenishUnsupported,
+    /// Authoritative phase gate; no ammo/cooldown mutation.
+    RejectedBattlePeriod,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -245,6 +247,7 @@ pub fn outcome_name(outcome: Outcome) -> &'static str {
         Outcome::RejectedReload => "reload",
         Outcome::RejectedNoAmmo => "no_ammo",
         Outcome::ReplenishUnsupported => "replenish_unsupported",
+        Outcome::RejectedBattlePeriod => "battle_period",
     }
 }
 

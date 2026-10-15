@@ -92,6 +92,106 @@ fn driving(s:&mut Session,reservation:&Reservation,now:Instant)->World {
     c.binding=Some((0,true));c.return_generation=1;c.view=Some(world.clone());world
 }
 
+fn lifecycle_fixture(now:Instant)->(Session,World) {
+    let mut s=account(now);let receipt=reserve(&mut s,now);let mut world=driving(&mut s,&receipt,now);
+    let mut rules=crate::gateway091::shared::lifecycle::Rules::prohorovka();rules.prebattle_ms=1_000;rules.battle_ms=1_000;
+    world.lifecycle=Some(crate::gateway091::shared::lifecycle::State::new(rules).unwrap());
+    world.lifecycle_created_unix=Some(1792080000);world.advance_lifecycle(now).unwrap();
+    (s,world)
+}
+
+#[test] fn lifecycle_flow_countdown_does_not_admit_motion_or_spend_owned_ammo() {
+    let now=Instant::now();let (s,mut world)=lifecycle_fixture(now);
+    let ammo=world.actors[0].fire.ammo();
+    let actions=[model::Command::Move(model::Input{throttle:1,steer:1,speed_percent:100}),
+        model::Command::Fire(crate::battle091::fire::Command::Shoot)];
+    assert_eq!(world.apply(0,s.id,&actions,now).unwrap(),vec![crate::battle091::fire::Outcome::RejectedBattlePeriod]);
+    assert_eq!(world.actors[0].input,model::Input::STOP);assert_eq!(world.actors[0].fire.ammo(),ammo);assert!(world.shots.is_empty());
+    world.advance_lifecycle(now+Duration::from_secs(1)).unwrap();
+    assert_eq!(world.apply(0,s.id,&actions,now+Duration::from_secs(1)).unwrap(),vec![crate::battle091::fire::Outcome::AcceptedShot{ammo_remaining:ammo-1}]);
+}
+
+#[test] fn lifecycle_flow_natural_terminal_carries_the_complete_immutable_result_to_one_writer_call() {
+    let now=Instant::now();let (s,mut world)=lifecycle_fixture(now);
+    world.advance_lifecycle(now+Duration::from_secs(1)).unwrap();world.advance_lifecycle(now+Duration::from_secs(2)).unwrap();
+    let mut table=Table{sessions:vec![s],..Table::default()};stage_lifecycle_results(&mut table,&world).unwrap();
+    let s=&mut table.sessions[0];Dispatcher::terminal(s,&world,FinishReason::BattleFinished).unwrap();
+    let terminal=state(s).unwrap().pending_return.as_ref().unwrap().clone();
+    let Request::FinishResults{results_json,remaining_ap,terminal_hp,..}=terminal.request() else{panic!("atomic natural result required")};
+    let result:crate::gateway091::shared::lifecycle_wire::Results=serde_json::from_str(&results_json).unwrap();
+    assert_eq!(result.arena_id,world.id);assert_eq!(result.winner_team,0);assert_eq!(result.finish_reason,3);
+    let own=result.participants.iter().find(|p|p.account_dbid==s.identity.as_ref().unwrap().database_id).unwrap();
+    assert_eq!(own.health,terminal_hp);assert_eq!(own.shots,0);assert_eq!(remaining_ap,world.actors[0].fire.ammo());
+    let(context,_,_)=writer_admission();profile13::encode_request(&context,&terminal.request()).unwrap();
+    // First terminal remains frozen across a later disconnect, without replacing
+    // the result/reason or granting/refunding any ammo.
+    Dispatcher::terminal(s,&world,FinishReason::Disconnect).unwrap();assert_eq!(state(s).unwrap().pending_return.as_ref(),Some(&terminal));
+}
+
+#[test] fn lifecycle_flow_frozen_outcome_stops_inflight_damage_and_preserves_result_statistics() {
+    let now=Instant::now();let (s,mut world)=lifecycle_fixture(now);
+    world.advance_lifecycle(now+Duration::from_secs(1)).unwrap();
+    world.apply(0,s.id,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],now+Duration::from_secs(1)).unwrap();
+    assert_eq!(world.projectiles.len(),1);assert!(!world.projectiles[0].stopped);
+    world.advance_lifecycle(now+Duration::from_secs(2)).unwrap();
+    let actors=world.actors.clone();let projectiles=world.projectiles.clone();
+    let contacts=world.contacts.clone();let impacts=world.impacts.clone();
+    let before=crate::gateway091::shared::lifecycle_result::build(&world).unwrap();
+    // A live projectile crosses the terminal boundary. The committed result
+    // remains the same even when another world step arrives much later.
+    assert!(!world.advance(now+Duration::from_secs(3)).unwrap());
+    assert_eq!(world.actors,actors);assert_eq!(world.projectiles,projectiles);
+    assert_eq!(world.contacts,contacts);assert_eq!(world.impacts,impacts);
+    assert_eq!(crate::gateway091::shared::lifecycle_result::build(&world).unwrap(),before);
+    assert_eq!(world.apply(0,s.id,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],now+Duration::from_secs(3)).unwrap(),
+        vec![crate::battle091::fire::Outcome::RejectedBattlePeriod]);
+}
+
+#[test] fn lifecycle_flow_account_reset_waits_for_original_avatar_result_confirmation() {
+    let now=Instant::now();let (s,mut world)=lifecycle_fixture(now);
+    world.advance_lifecycle(now+Duration::from_secs(1)).unwrap();world.advance_lifecycle(now+Duration::from_secs(2)).unwrap();
+    let mut table=Table{sessions:vec![s],..Table::default()};stage_lifecycle_results(&mut table,&world).unwrap();
+    let s=&mut table.sessions[0];Dispatcher::terminal(s,&world,FinishReason::BattleFinished).unwrap();
+    state(s).unwrap().reservation=None;state(s).unwrap().pending_return=None;
+    s.shared.as_mut().unwrap().result_committed=true;
+    assert!(deliver_lifecycle_result(s,now+Duration::from_secs(2)).unwrap());
+    assert!(s.arena_base);assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Leaving);
+    assert!(s.battle_results.avatar_pending());assert!(s.drive_return_account.is_none());
+    let before=s.battle_results.clone();let rx=s.rx;
+    let poisoned=frame_at(s,rx,&[0x99,1,0,0,0x87,0,0,0xff]);
+    assert!(s.receive(&poisoned,now+Duration::from_secs(3)).is_err());
+    assert_eq!(s.battle_results,before);assert_eq!(s.rx,rx);
+    receive(s,&[0x99,1,0,0,0x87,0,0],now+Duration::from_secs(3));assert!(s.battle_results.avatar_confirmed());
+    assert!(deliver_lifecycle_result(s,now+Duration::from_secs(3)).unwrap());
+    assert!(!s.arena_base);assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Returning);
+    assert!(s.drive_return_account.is_some());
+}
+
+#[test] fn lifecycle_flow_poisoned_results_query_piggyback_has_no_external_or_partial_effect() {
+    let now=Instant::now();let mut s=account(now);let initial=s.battle_results.clone();
+    let mut query=native(1500,123,0);query[3..5].copy_from_slice(&221i16.to_le_bytes());let request=frame_at(&s,1,&query);
+    // A well-formed query followed by a wrong authenticated token must roll
+    // back queued query, receive history and any ACK in the complete envelope.
+    let mut poison=frame_at(&s,2,&[]);poison.body[1]^=1;
+    let mut parent=frame_at(&s,3,&[]);parent.piggybacks=vec![request,poison];
+    assert!(s.receive(&parent,now).is_err());assert_eq!(s.battle_results,initial);assert_eq!(s.rx,1);
+}
+
+#[test] fn lifecycle_flow_result_delivery_failure_retires_only_its_native_session() {
+    let now=Instant::now();let mut s=account(now);
+    let mut query=native(1500,123,0);query[3..5].copy_from_slice(&221i16.to_le_bytes());receive(&mut s,&query,now);
+    let mut peer=account(now);peer.id=8;
+    let peer_rx=peer.rx;let peer_results=peer.battle_results.clone();
+    let mut table=Table{sessions:vec![s,peer],..Table::default()};
+    let mut world=World::new(123,now).unwrap();let mut dispatcher=Dispatcher::default();
+    let manager=crate::gateway091::shared::results_session::Manager::default();
+    super::super::contain_results_failure(&manager,&mut dispatcher,&mut table,&mut world,now,
+        &std::io::Error::other("authored native callback delivery failure")).unwrap();
+    assert_eq!(table.sessions.len(),1);assert_eq!(table.sessions[0].id,8);
+    assert!(table.sessions[0].active);assert_eq!(table.sessions[0].rx,peer_rx);
+    assert_eq!(table.sessions[0].battle_results,peer_results);assert!(!dispatcher.busy());
+}
+
 #[test]
 fn profile13_flow_join_stages_only_after_a_complete_native_frame_without_ack_or_writer() {
     let now=Instant::now();let mut s=account(now);let old=s.ammo_service.clone();

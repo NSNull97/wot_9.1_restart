@@ -135,7 +135,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     ...(battle === null ? {} : { async battle(request) {
       validateBattleRequest(request, ammo.account_id);
       return validateBattleReply(await run('battle', request), request);
-    } }),
+    }, results: request => run('results', request) }),
     async fixture(profile) {
       requireValue(profile.account_id === ammo.account_id && profile.profile_version === profileVersion, 'Crew profile owner mismatch');
       const value = await run('fixture');

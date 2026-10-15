@@ -94,6 +94,7 @@ class NativeLifecycleContractTests(unittest.TestCase):
         self.assertTrue({"decompress", "loads", "save", "convertToFullForm", "onBattleResultsReceived",
                          "confirmBattleResultsReceiving"} <= set(avatar["names"]))
         cache = self.method("client/account_helpers/battleresultscache.pyc", "<module>.BattleResultsCache.__onGetResponse")
+        self.assertEqual(cache["varnames"], ["self", "callback", "requestID", "resultID", "errorStr", "ext"])
         self.assertIn("_subscribeForStream", cache["names"])
         self.assertIn("RES_STREAM", cache["names"])
         complete = self.method("client/account_helpers/battleresultscache.pyc", "<module>.BattleResultsCache.__onStreamComplete")

@@ -144,11 +144,11 @@ pub struct Context {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FinishReason { ManualLeave, BattleFailure, Disconnect, Cancelled }
+pub enum FinishReason { ManualLeave, BattleFailure, Disconnect, Cancelled, BattleFinished }
 impl FinishReason {
     pub fn name(self) -> &'static str {
         match self { Self::ManualLeave => "manual_leave", Self::BattleFailure => "battle_failure",
-            Self::Disconnect => "disconnect", Self::Cancelled => "cancelled" }
+            Self::Disconnect => "disconnect", Self::Cancelled => "cancelled", Self::BattleFinished => "battle_finished" }
     }
 }
 
@@ -159,11 +159,22 @@ pub enum Request {
     Admit { battle: u64, native_inventory_id: u32 },
     Finish { battle: u64, native_inventory_id: u32, reservation_id: String,
         remaining_ap: u16, terminal_hp: i16, reason: FinishReason },
+    /// Natural finish and its full result are one writer transaction.
+    FinishResults { battle: u64, native_inventory_id: u32, reservation_id: String,
+        remaining_ap: u16, terminal_hp: i16, results_json: String },
 }
 impl Request {
     pub fn operation(&self) -> &'static str {
         match self { Self::RunOpen => "run_open", Self::Inspect => "inspect",
-            Self::Admit { .. } => "admit", Self::Finish { .. } => "finish" }
+            Self::Admit { .. } => "admit", Self::Finish { .. } | Self::FinishResults { .. } => "finish" }
+    }
+    pub fn finished_battle(&self) -> Option<u64> {
+        match self {Self::Finish{battle,..}|Self::FinishResults{battle,..}=>Some(*battle),_=>None}
+    }
+    fn finish_without_results(&self) -> Option<Self> {
+        match self {Self::FinishResults {battle,native_inventory_id,reservation_id,remaining_ap,terminal_hp,..} =>
+            Some(Self::Finish {battle:*battle,native_inventory_id:*native_inventory_id,reservation_id:reservation_id.clone(),
+                remaining_ap:*remaining_ap,terminal_hp:*terminal_hp,reason:FinishReason::BattleFinished}),_=>None}
     }
 }
 
@@ -195,6 +206,18 @@ fn battle_id(run: &str, battle: u64) -> io::Result<String> {
 }
 
 pub fn encode_request(context: &Context, request: &Request) -> io::Result<Vec<u8>> {
+    if let Request::FinishResults {battle,terminal_hp,results_json,..} = request {
+        if results_json.is_empty() || results_json.len() > 32768 {return Err(bad("natural result size"));}
+        let results: crate::gateway091::shared::lifecycle_wire::Results = serde_json::from_str(results_json).map_err(|_|bad("natural result DTO"))?;
+        results.validate()?;
+        let own=results.participants.iter().find(|p|p.account_dbid==context.native_database_id).ok_or_else(||bad("natural result owner"))?;
+        if results.arena_id!=*battle || own.health!=*terminal_hp {return Err(bad("natural result battle/health"));}
+        let legacy=request.finish_without_results().ok_or_else(||bad("natural finish arguments"))?;
+        let mut value: Value=serde_json::from_slice(&encode_request(context,&legacy)?).map_err(|_|bad("own finish JSON"))?;
+        value["results_json"]=results_json.as_str().into();
+        let raw=serde_json::to_vec(&value).map_err(|_|bad("natural finish encoding"))?;
+        if raw.len()>65536{return Err(bad("natural finish size"));}return Ok(raw);
+    }
     validate_context(context)?;
     if !matches!(request, Request::Inspect) && context.expected_revision < 13 { return Err(bad("mutation source revision")); }
     let mut value = serde_json::json!({"version":1,"operation":request.operation(),
@@ -208,6 +231,7 @@ pub fn encode_request(context: &Context, request: &Request) -> io::Result<Vec<u8
             value["battle_id"] = battle_id(&context.run_id, *battle)?.into();
             value["native_inventory_id"] = (*native_inventory_id).into();
         },
+        Request::FinishResults {..} => unreachable!("handled above"),
     }
     if let Request::Finish { reservation_id, remaining_ap, terminal_hp, reason, .. } = request {
         if !identifier(reservation_id, 96) || *remaining_ap > 96 || !(0..=2150).contains(terminal_hp) {
@@ -374,7 +398,7 @@ fn reservation(value: &Value, account: &str) -> io::Result<Reservation> {
         };
         if remaining_ap.checked_add(consumed_ap) != Some(frozen.ap_count)
             || repaired_hp != frozen.max_hp || number(result, "credits")? != 0 || number(result, "xp")? != 0
-            || (status == ReservationStatus::Finished && !["manual_leave", "battle_failure", "disconnect", "cancelled"].contains(&reason))
+            || (status == ReservationStatus::Finished && !["manual_leave", "battle_failure", "disconnect", "cancelled", "battle_finished"].contains(&reason))
             || (status == ReservationStatus::AbortedRestart && (reason != "aborted_restart" || consumed_ap != 0)) {
             return Err(bad("terminal result policy"));
         }
@@ -402,6 +426,10 @@ const REJECTIONS: &[&str] = &["AMMUNITION_EMPTY", "AMMUNITION_UNSUPPORTED", "BAT
     "RESERVATION_TERMINAL", "RUN_FENCED", "RUN_NOT_OPEN", "STALE_REVISION", "UNKNOWN_VEHICLE", "VEHICLE_RESERVED"];
 
 pub fn parse_reply(raw: &[u8], context: &Context, request: &Request) -> io::Result<Reply> {
+    if let Some(legacy)=request.finish_without_results() {
+        encode_request(context,request)?;
+        return parse_reply(raw,context,&legacy);
+    }
     // This also rejects impossible caller-selected operation arguments.
     encode_request(context, request)?;
     let value = bounded_json(raw, MAX_REPLY_BYTES)?;
@@ -433,7 +461,8 @@ pub fn parse_reply(raw: &[u8], context: &Context, request: &Request) -> io::Resu
     if status == ReplyStatus::Rejected && reservation.is_some() { return Err(bad("rejection carries reservation")); }
     if status != ReplyStatus::Rejected {
         let expected_status = match request { Request::RunOpen => ReplyStatus::Ready, Request::Inspect => ReplyStatus::Inspected,
-            Request::Admit { .. } => ReplyStatus::Admitted, Request::Finish { .. } => ReplyStatus::Finished };
+            Request::Admit { .. } => ReplyStatus::Admitted, Request::Finish { .. } => ReplyStatus::Finished,
+            Request::FinishResults {..} => unreachable!("normalized above") };
         if status != expected_status { return Err(bad("operation result status")); }
         match request {
             Request::Inspect => {
@@ -475,6 +504,7 @@ pub fn parse_reply(raw: &[u8], context: &Context, request: &Request) -> io::Resu
                     _ => unreachable!(),
                 }
             },
+            Request::FinishResults {..} => unreachable!("normalized above"),
         }
     }
     Ok(Reply { status, source_revision, revision, replayed, code, reservation })
@@ -483,6 +513,22 @@ pub fn parse_reply(raw: &[u8], context: &Context, request: &Request) -> io::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn p08c_atomic_finish_matches_actual_sqlite_writer_dto_without_u64_rounding() {
+        let raw=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/profile13-results-vectors.json")).unwrap();
+        assert_eq!(raw.len(),5612);
+        assert_eq!(format!("{:x}",Sha256::digest(&raw)),"793935ad298facc6dd68c49f56f0b4dc2cb0f28749aa14f2451f4b3ba70cc635");
+        let data:Value=serde_json::from_slice(&raw).unwrap();let vector=&data["vectors"][0];let value=&vector["request"];
+        let context=Context{account_id:value["account_id"].as_str().unwrap().into(),native_database_id:value["native_database_id"].as_i64().unwrap().try_into().unwrap(),
+            command_key:value["command_key"].as_str().unwrap().into(),expected_revision:value["expected_revision"].as_u64().unwrap(),run_id:value["run_id"].as_str().unwrap().into()};
+        let request=Request::FinishResults {battle:9_007_199_254_740_993,native_inventory_id:value["native_inventory_id"].as_u64().unwrap().try_into().unwrap(),
+            reservation_id:value["reservation_id"].as_str().unwrap().into(),remaining_ap:value["remaining_ap"].as_u64().unwrap().try_into().unwrap(),
+            terminal_hp:value["terminal_hp"].as_i64().unwrap().try_into().unwrap(),results_json:value["results_json"].as_str().unwrap().into()};
+        assert_eq!(serde_json::from_slice::<Value>(&encode_request(&context,&request).unwrap()).unwrap(),*value);
+        let reply=parse_reply(&serde_json::to_vec(&vector["response"]).unwrap(),&context,&request).unwrap();
+        assert_eq!(reply.status,ReplyStatus::Finished);assert_eq!(reply.reservation.unwrap().result.unwrap().reason,"battle_finished");
+        let mut wrong=request.clone();if let Request::FinishResults{terminal_hp,..}=&mut wrong{*terminal_hp+=1;}
+        assert!(encode_request(&context,&wrong).is_err());
+    }
     const ACCOUNT: &str = "12345678-1234-4234-8234-123456789abc";
     const RUN: &str = "87654321-4321-4321-8321-cba987654321";
     const OLD_RUN: &str = "11111111-1111-4111-8111-111111111111";
