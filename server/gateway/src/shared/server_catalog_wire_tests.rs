@@ -48,7 +48,7 @@ fn entities(now: Instant, world: &World) -> Session {
     let (mut s, _) = driving(now);
     let c = s.shared.as_mut().unwrap();
     c.phase = Phase::Entities; c.announcement = Some((0, true));
-    c.creations = [None; 2]; c.view = Some(world.clone());
+    c.creations = [None; model::MAX_ACTORS]; c.view = Some(world.clone());
     c.areas = vec![(None, Vec::new()); world.fragiles.as_ref().unwrap().catalog.chunks().len()];
     c.announced_areas = c.areas.len();
     s
@@ -72,7 +72,7 @@ fn native_catalog_announces_and_creates_both_chunks_with_vehicle_requests() {
     let (mut s, _) = driving(now);
     {
         let c = s.shared.as_mut().unwrap(); c.phase = Phase::Enable;
-        c.view = Some(world.clone()); c.creations = [None; 2]; c.announcement = None;
+        c.view = Some(world.clone()); c.creations = [None; model::MAX_ACTORS]; c.announcement = None;
     }
     s.receive(&frame(&s, &[9]), now).unwrap();
     let c = s.shared.as_ref().unwrap();
@@ -89,7 +89,8 @@ fn native_catalog_announces_and_creates_both_chunks_with_vehicle_requests() {
         area_wire::area_id(0).unwrap(), wire::vehicle_id(1).unwrap()] { payload.extend(request(id)); }
     s.receive(&frame(&s, &payload), now).unwrap();
     let c = s.shared.as_ref().unwrap();
-    assert!(c.creations.iter().all(Option::is_some));
+    assert!(c.creations.iter().take(world.actors.len()).all(Option::is_some));
+    assert!(c.creations.iter().skip(world.actors.len()).all(Option::is_none));
     assert!(c.areas.iter().all(|(pending, ids)| pending.is_some_and(|(_, ack)| !ack) && ids.is_empty()));
     let created = queued_bodies(&s, now);
     for (i, chunk) in [31354, 31355].into_iter().enumerate() {
@@ -133,6 +134,41 @@ fn ack_current_and_flush(s: &mut Session, now: Instant) {
     s.tx.acknowledge(&ack).unwrap();
     s.shared.as_mut().unwrap().acknowledge(cumulative, &ack);
     s.flush_shared_requests(&mut Vec::new()).unwrap();
+}
+
+#[test]
+fn six_actor_native_requests_commit_atomically_and_ready_remains_bound_to_slot_five() {
+    let now=Instant::now();let mut world=World::new_for_roster(123,now,MapId::Karelia,6).unwrap();
+    for slot in 0..6 {
+        let kind=if slot%2==0{VehicleKind::Ms1}else{VehicleKind::Is7};
+        world.attach_owned(model::Identity{account:format!("native-six-{slot}"),database:slot as i32+1,name:format!("six_{slot}")},
+            slot as u32+7,&model::tests::profile13_loadout(kind,kind.ammo_limit())).unwrap();
+    }
+    world.start(now).unwrap();let(mut s,_)=driving(now);s.id=12;
+    {let c=s.shared.as_mut().unwrap();c.slot=5;c.phase=Phase::Enable;c.view=Some(world.clone());
+        c.creations=[None;model::MAX_ACTORS];c.announcement=None;c.announcement_parts.clear();}
+    s.receive(&frame(&s,&[9]),now).unwrap();
+    assert!(queued_bodies(&s,now).iter().all(|b|b.len()<=512));ack_current_and_flush(&mut s,now);
+    let mut requests=Vec::new();for slot in 0..6 {requests.extend(request(wire::vehicle_id(slot).unwrap()));}
+    let before=s.clone();let mut poisoned=requests.clone();poisoned.extend(request(wire::vehicle_id(5).unwrap()));
+    assert!(s.receive(&frame(&s,&poisoned),now).is_err());assert_input_rolled_back(&s,&before,now);
+    s.receive(&frame(&s,&requests),now).unwrap();let c=s.shared.as_ref().unwrap();
+    assert_eq!(c.pending_entity_requests.len(),0);assert!(c.creations.iter().all(Option::is_some));
+    assert_eq!(s.tx.len(),6);
+    let selective=vec![c.creations[3].unwrap().0,c.creations[5].unwrap().0];
+    let ack=Frame{flags:0x408,sequence:None,cumulative:Some(0),selective,body:vec![],piggybacks:vec![]};
+    s.shared.as_mut().unwrap().acknowledge(0,&ack);
+    assert_eq!(s.shared.as_ref().unwrap().visible(),[false,false,false,true,false,true]);
+    let before=s.clone();assert!(s.receive(&frame(&s,&ready(0)),now).is_err());assert_input_rolled_back(&s,&before,now);
+    ack_current_and_flush(&mut s,now);s.receive(&frame(&s,&ready(5)),now).unwrap();
+    assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Driving);assert_eq!(s.shared.as_ref().unwrap().slot,5);
+    assert!(queued_bodies(&s,now).contains(&wire::binding(&world,5,now).unwrap()));
+
+    // Expanded wire ID bounds never authorize a slot absent from this World.
+    let (mut two,world)=driving(now);let c=two.shared.as_mut().unwrap();c.phase=Phase::Entities;
+    c.announcement=Some((0,true));c.view=Some(world);let before=two.clone();
+    assert!(two.receive(&frame(&two,&request(wire::vehicle_id(5).unwrap())),now).is_err());
+    assert_input_rolled_back(&two,&before,now);
 }
 
 #[test]
@@ -278,7 +314,7 @@ fn fresh_connection_creation_contains_current_state_without_break_replay() {
     assert_eq!(present(&bodies, &area_wire::area_update(0, &[0, 1]).unwrap()), 0);
     {
         let c = s.shared.as_mut().unwrap(); c.phase = Phase::Driving;
-        c.creations = [Some((0, true)); 2]; c.ready_sent = [true; 2];
+        c.creations = [Some((0, true)); model::MAX_ACTORS]; c.ready_sent = [true; model::MAX_ACTORS];
         for (pending, _) in &mut c.areas { pending.as_mut().unwrap().1 = true; }
     }
     poll(&mut s, &mut world, now).unwrap();
@@ -298,7 +334,7 @@ fn mixed_unknown_or_duplicate_request_rolls_back_entire_envelope() {
         assert!(s.receive(&frame(&s, &payload), now).is_err());
         assert_eq!(s.rx, rx);
         assert!(s.shared.as_ref().unwrap().areas.iter().all(|(pending, ids)| pending.is_none() && ids.is_empty()));
-        assert_eq!(s.shared.as_ref().unwrap().creations, [None; 2]);
+        assert_eq!(s.shared.as_ref().unwrap().creations, [None; model::MAX_ACTORS]);
         assert_eq!(queued_bodies(&s, now), bodies);
         let mut valid = request(area_wire::area_id(0).unwrap()); valid.extend(request(area_wire::area_id(1).unwrap()));
         s.receive(&frame(&s, &valid), now).unwrap();
@@ -317,7 +353,7 @@ fn driving_mixed_area_requests_and_aim_are_accepted_atomically() {
         c.announced_areas = 117;
         c.areas = vec![(None, Vec::new()); 117];
         c.tree_areas = vec![Vec::new(); 117];
-        c.creations = [Some((0, true)); 2];
+        c.creations = [Some((0, true)); model::MAX_ACTORS];
         c.binding = Some((0, true));
         c.correction = true;
     }
@@ -337,7 +373,7 @@ fn driving_mixed_area_requests_and_aim_are_accepted_atomically() {
         c.announced_areas = 117;
         c.areas = vec![(None, Vec::new()); 117];
         c.tree_areas = vec![Vec::new(); 117];
-        c.creations = [Some((0, true)); 2];
+        c.creations = [Some((0, true)); model::MAX_ACTORS];
         c.binding = Some((0, true));
         c.correction = true;
     }
@@ -363,7 +399,7 @@ fn driving_mixed_area_requests_and_ready_compound_are_accepted() {
         c.announced_areas = 117;
         c.areas = vec![(None, Vec::new()); 117];
         c.tree_areas = vec![Vec::new(); 117];
-        c.creations = [Some((0, true)); 2];
+        c.creations = [Some((0, true)); model::MAX_ACTORS];
         c.binding = Some((0, true));
         c.correction = true;
     }
@@ -405,8 +441,8 @@ fn before_first_ready(now: Instant, slot: usize) -> Session {
     let mut s = entities(now, &world);
     s.id = slot as u32 + 1;
     let c = s.shared.as_mut().unwrap();
-    c.slot = slot; c.creations = [Some((0, true)); 2];
-    c.binding = None; c.correction = false; c.ready_sent = [false; 2];
+    c.slot = slot; c.creations = [Some((0, true)); model::MAX_ACTORS];
+    c.binding = None; c.correction = false; c.ready_sent = [false; model::MAX_ACTORS];
     s
 }
 
@@ -525,7 +561,7 @@ fn entities_fix06_ready_prefix_bad_ready_or_request_tail_is_atomic() {
             let mut s=before_first_ready(now,slot);
             // Nonzero delivery cursors make a half-committed READY observable.
             let c=s.shared.as_mut().unwrap();c.shot_cursor=9;c.impact_cursor=3;
-            c.tracer_started[2]=true;c.tracer_stopped[2]=true;c.health_sent=[Some(70),Some(80)];
+            c.tracer_started[2]=true;c.tracer_stopped[2]=true;c.health_sent[0]=Some(70);c.health_sent[1]=Some(80);
             let before=s.clone();
             assert!(s.receive(&frame(&s,&payload),now).is_err(),"slot={slot} bytes={}",payload.len());
             assert_input_rolled_back(&s,&before,now);

@@ -1,5 +1,5 @@
 //! Parameterized #717 layouts, kept separate from the frozen primary-profile
-//! probes. Two allied actors share one immutable server-selected vehicle kind.
+//! probes. Bounded actors retain their own immutable server-selected profiles.
 use std::io;
 use super::{model::{self, Actor, World}, projectile::Projectile};
 use super::{aim, vehicle_profile::VehicleKind};
@@ -31,12 +31,12 @@ pub fn aim_intent(raw: &[u8], own: usize) -> io::Result<Option<aim::Intent>> {
     intent.validate()?; Ok(Some(intent))
 }
 pub fn vehicle_id(slot: usize) -> io::Result<u32> {
-    if slot >= model::CAPACITY { return Err(model::bad()); }
+    if slot >= model::MAX_ACTORS { return Err(model::bad()); }
     Ok(vehicle::VEHICLE_ENTITY_ID + 2 * slot as u32)
 }
 pub fn avatar_id(slot: usize) -> io::Result<u32> { Ok(vehicle_id(slot)? - 1) }
 pub fn slot_for_vehicle(id: u32) -> io::Result<usize> {
-    (0..model::CAPACITY).find(|slot| vehicle_id(*slot).ok() == Some(id)).ok_or_else(|| model::bad())
+    (0..model::MAX_ACTORS).find(|slot| vehicle_id(*slot).ok() == Some(id)).ok_or_else(|| model::bad())
 }
 fn string(b: &mut Vec<u8>, value: &[u8]) -> io::Result<()> {
     if value.len() >= 255 { return Err(model::bad()); } b.push(value.len() as u8); b.extend(value); Ok(())
@@ -50,7 +50,7 @@ fn native_direction(b: &mut Vec<u8>, ypr: [f32; 3]) { f3(b, [ypr[2], ypr[1], ypr
 fn actor(w: &World, slot: usize) -> io::Result<&Actor> {
     vehicle_id(slot)?;
     let a = w.actors.get(slot).ok_or_else(|| model::bad())?;
-    if w.id == 0 || a.identity.database <= 0 || a.identity.name.len() > 48 || a.vehicle_kind()!=w.vehicle_kind() || !(0..=a.vehicle_kind().max_health()).contains(&a.health)
+    if w.id == 0 || a.identity.database <= 0 || a.identity.name.len() > 48 || !(0..=a.vehicle_kind().max_health()).contains(&a.health)
         || a.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
         || a.direction.iter().any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
         || a.direction[0] != a.yaw { return Err(model::bad()); }
@@ -64,24 +64,33 @@ pub fn reset(w: &World, slot: usize) -> io::Result<Vec<u8>> {
 }
 pub fn roster(w: &World) -> io::Result<Vec<u8>> {
     if w.actors.len() != model::CAPACITY { return Err(model::bad()); }
+    roster_list(w,0..model::CAPACITY)
+}
+fn roster_row(w:&World,slot:usize)->io::Result<Vec<u8>> {
+    let a=actor(w,slot)?;let mut d=vec![b'(',b'J'];d.extend(vehicle_id(slot)?.to_le_bytes());
+    d.push(b'U');string(&mut d,a.vehicle_kind().descriptor())?;
+    d.push(b'U');string(&mut d,a.identity.name.as_bytes())?;
+    d.extend([b'K',w.team(slot)?,if a.health>0{0x88}else{0x89},if a.ready{0x88}else{0x89},0x89,b'J']);
+    d.extend(a.identity.database.to_le_bytes());d.extend([b'U',0,b'K',0,b'K',0,0x89,b'}',b'K',0,b't']);Ok(d)
+}
+fn roster_list(w:&World,slots:std::ops::Range<usize>)->io::Result<Vec<u8>> {
     // Own bounded literal protocol2 data; never an input object decoder.
     let mut d = vec![0x80, 2, b']'];
-    for slot in 0..model::CAPACITY {
-        let a = actor(w, slot)?;
-        d.extend([b'(', b'J']); d.extend(vehicle_id(slot)?.to_le_bytes());
-        d.push(b'U'); string(&mut d, a.vehicle_kind().descriptor())?;
-        d.push(b'U'); string(&mut d, a.identity.name.as_bytes())?;
-        d.extend([b'K', w.team(slot)?, if a.health > 0 { 0x88 } else { 0x89 }, if a.ready { 0x88 } else { 0x89 }, 0x89, b'J']);
-        d.extend(a.identity.database.to_le_bytes());
-        d.extend([b'U', 0, b'K', 0, b'K', 0, 0x89, b'}', b'K', 0, b't', b'a']);
-    }
+    for slot in slots {d.extend(roster_row(w,slot)?);d.push(b'a');}
     d.push(b'.'); update(1, &d)
+}
+/// Original ClientArena updates2/11 each consume one vehicle tuple; the
+/// initial list is kept small enough for the measured UINT8 stream length.
+pub fn roster_updates(w:&World,slot:usize)->io::Result<Vec<u8>> {
+    if w.actors.len()==model::CAPACITY{return roster(w);}
+    let mut d=vec![0x80,2];d.extend(roster_row(w,slot)?);d.push(b'.');update(11,&d)
 }
 fn update(kind: u8, d: &[u8]) -> io::Result<Vec<u8>> {
     if d.len() > 252 { return Err(model::bad()); }
     let mut b = vec![0x13, 0x58, (d.len() + 2) as u8, kind, d.len() as u8]; b.extend(d); Ok(b)
 }
 pub fn announcement(w: &World, own: usize) -> io::Result<Vec<u8>> {
+    if w.actors.len()!=model::CAPACITY {return Err(model::bad());}
     let a = actor(w, own)?;
     let mut b = arena::create_cell_avatar(&arena::AvatarCellSeed { space_id: SPACE,
         player_vehicle_id: vehicle_id(own)?, position: a.position })?;
@@ -98,6 +107,29 @@ pub fn announcement(w: &World, own: usize) -> io::Result<Vec<u8>> {
     }
     if b.len() > 500 { return Err(model::bad()); } Ok(b)
 }
+/// Split only between complete native records. No oversized pickle or
+/// fragmented entity method is handed to the client's reliable dispatcher.
+pub fn announcement_parts(w:&World,own:usize)->io::Result<Vec<Vec<u8>>> {
+    if w.actors.len()==model::CAPACITY{return Ok(vec![announcement(w,own)?]);}
+    if !(2..=model::MAX_ACTORS).contains(&w.actors.len()) || w.actors.len()!=w.expected_actors() {return Err(model::bad());}
+    let a=actor(w,own)?;
+    let mut first=arena::create_cell_avatar(&arena::AvatarCellSeed{space_id:SPACE,player_vehicle_id:vehicle_id(own)?,position:a.position})?;
+    first[39]=w.team(own)?;
+    for(i,value)in[a.direction[2],a.direction[1],a.direction[0]].into_iter().enumerate(){first[27+i*4..31+i*4].copy_from_slice(&value.to_le_bytes());}
+    first.extend(arena::space_data_for_map(SPACE,(SPACE as u64).to_le_bytes(),w.map)?);
+    // Maximum-length owned names can make even two rows exceed252 bytes.
+    first.extend(roster_list(w,0..1)?);
+    let mut parts=Vec::new();let mut body=first;
+    for slot in 1..w.actors.len(){
+        let mut d=vec![0x80,2];d.extend(roster_row(w,slot)?);d.push(b'.');let record=update(2,&d)?;
+        if body.len()+record.len()>500{parts.push(body);body=Vec::new();}body.extend(record);
+    }
+    for slot in 0..w.actors.len(){
+        let mut record=vec![0x0a];record.extend(vehicle_id(slot)?.to_le_bytes());record.push(slot as u8);
+        if body.len()+record.len()>500{parts.push(body);body=Vec::new();}body.extend(record);
+    }
+    if !body.is_empty(){parts.push(body);}if parts.iter().any(|p|p.is_empty()||p.len()>500){return Err(model::bad());}Ok(parts)
+}
 pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     let a = actor(w, slot)?;
     let mut p = vec![0]; p.extend(vehicle_id(slot)?.to_le_bytes()); p.extend(2u16.to_le_bytes());
@@ -111,7 +143,7 @@ pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
 }
 pub fn entity_requests(b: &[u8]) -> io::Result<Option<Vec<usize>>> {
     if b.first() != Some(&8) { return Ok(None); }
-    if b.is_empty() || b.len() > 14 || b.len() % 7 != 0 { return Err(model::bad()); }
+    if b.is_empty() || b.len() > model::MAX_ACTORS*7 || b.len() % 7 != 0 { return Err(model::bad()); }
     let mut slots = Vec::new();
     for row in b.chunks_exact(7) {
         if row[..3] != [8, 4, 0] { return Err(model::bad()); }
@@ -178,8 +210,8 @@ pub fn shooting(slot: usize) -> io::Result<Vec<u8>> {
 /// collision/range stop so a delayed receiver can receive start then stop.
 /// Per-receiver delivery cursors own that order and exactly-once policy.
 pub fn tracer_start(projectile: &Projectile) -> io::Result<Vec<u8>> {
-    if projectile.sequence == 0 || projectile.sequence as usize > projectile.vehicle_kind.battle_shot_limit()
-        || projectile.slot >= model::CAPACITY
+    if projectile.sequence == 0 || projectile.sequence as usize > model::MAX_BATTLE_SHOTS
+        || projectile.slot >= model::MAX_ACTORS
         || !projectile.origin.iter().all(|v| v.is_finite())
         || !projectile.velocity.iter().all(|v| v.is_finite())
         || !projectile.gravity.is_finite() || projectile.gravity <= 0.0
@@ -201,8 +233,8 @@ pub fn tracer_start(projectile: &Projectile) -> io::Result<Vec<u8>> {
 /// Original Avatar.stopTracer fixed method. It is emitted once per tracer
 /// start, and only after the server has stopped the projectile.
 pub fn tracer_stop(projectile: &Projectile) -> io::Result<Vec<u8>> {
-    if projectile.sequence == 0 || projectile.sequence as usize > projectile.vehicle_kind.battle_shot_limit()
-        || projectile.slot >= model::CAPACITY || !projectile.stopped
+    if projectile.sequence == 0 || projectile.sequence as usize > model::MAX_BATTLE_SHOTS
+        || projectile.slot >= model::MAX_ACTORS || !projectile.stopped
         || !projectile.terminal.iter().all(|v| v.is_finite())
     { return Err(model::bad()); }
     let mut b = vec![0x13, 0x48];
@@ -214,7 +246,7 @@ pub fn tracer_stop(projectile: &Projectile) -> io::Result<Vec<u8>> {
 pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec<u8>> {
     let a = actor(w, own)?;
     let mut b = vec![2, 10, 3]; b.extend(w.tick.to_le_bytes());
-    for slot in 0..model::CAPACITY { if slot == own || w.actors[slot].ready { b.extend(ready_update(slot)?); } }
+    for slot in 0..w.actors.len() { if slot == own || w.actors[slot].ready { b.extend(ready_update(slot)?); } }
     if w.lifecycle.is_some() { b.extend(lifecycle_period(w)?); }
     else {
         let mut period = vec![0x80, 2, b'(', b'K', 3, b'G']; period.extend(3700f64.to_be_bytes());
@@ -242,10 +274,10 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
     let left = a.fire.reload_until().map(|end| end.saturating_duration_since(now).as_secs_f32()).unwrap_or(0.);
     b.extend(reload_for(kind,own, left.min(kind.reload_seconds()))?); Ok(b)
 }
-pub fn publication(w: &World, visible: [bool; 2]) -> io::Result<Vec<u8>> {
-    if !(1000..=37000).contains(&w.tick) { return Err(model::bad()); }
+pub fn publication<const N:usize>(w: &World, visible: [bool; N]) -> io::Result<Vec<u8>> {
+    if !(1000..=37000).contains(&w.tick) || N<w.actors.len() || N>model::MAX_ACTORS { return Err(model::bad()); }
     let mut b = vec![0x0d, w.tick as u8];
-    for (slot, known) in visible.into_iter().enumerate() {
+    for (slot, known) in visible.into_iter().take(w.actors.len()).enumerate() {
         if !known { continue; }
         let a = actor(w, slot)?;
         b.push(0x15); b.extend(vehicle_id(slot)?.to_le_bytes()); f3(&mut b, a.position);
@@ -278,6 +310,65 @@ pub fn lifecycle_period(w: &World) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
     use std::time::Instant;
+    fn six_mixed(now:Instant)->World {
+        let mut w=World::new_for_roster(123,now,crate::map_profile091::MapId::Karelia,6).unwrap();
+        w.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();
+        for slot in 0..6 {
+            let kind=if slot%2==0{VehicleKind::Ms1}else{VehicleKind::Is7};
+            let frozen=model::tests::profile13_loadout(kind,kind.ammo_limit());
+            w.attach_owned(model::Identity{account:format!("six-{slot}"),database:slot as i32+1,name:"Я".repeat(24)},
+                slot as u32+7,&frozen).unwrap();
+        }
+        w.start(now).unwrap();w
+    }
+    #[test] fn six_mixed_native_roster_splits_complete_single_vehicle_updates_and_preserves_own_profile() {
+        let now=Instant::now();let w=six_mixed(now);
+        let parts=announcement_parts(&w,5).unwrap();assert!(parts.len()>1);
+        assert!(parts.iter().all(|part|!part.is_empty()&&part.len()<=500));
+        let raw=parts.concat();let mut rosters=Vec::new();
+        // The pinned ClientArena stream uses UINT8 argument lengths. Inspect
+        // records independently of roster_row/roster_list construction.
+        for at in 0..raw.len().saturating_sub(5) {
+            if raw[at..at+2]==[0x13,0x58] {
+                let len=raw[at+4] as usize;assert_eq!(raw[at+2] as usize,len+2);
+                assert!(len<=252);let data=raw.get(at+5..at+5+len).unwrap();
+                assert_eq!(&data[..2],&[128,2]);assert_eq!(data.last(),Some(&b'.'));
+                rosters.push((raw[at+3],data.to_vec()));
+            }
+        }
+        assert_eq!(rosters.iter().map(|row|row.0).collect::<Vec<_>>(),vec![1,2,2,2,2,2]);
+        assert_eq!(&rosters[0].1[..3],&[128,2,b']']);
+        for(slot,(_,data))in rosters.iter().enumerate(){
+            assert!(data.windows(4).any(|bytes|bytes==vehicle_id(slot).unwrap().to_le_bytes()));
+            assert!(data.windows(48).any(|bytes|bytes=="Я".repeat(24).as_bytes()));
+            assert!(data.windows(w.actors[slot].vehicle_kind().descriptor().len())
+                .any(|bytes|bytes==w.actors[slot].vehicle_kind().descriptor()));
+            let mut enter=vec![0x0a];enter.extend(vehicle_id(slot).unwrap().to_le_bytes());enter.push(slot as u8);
+            assert_eq!(raw.windows(enter.len()).filter(|bytes|*bytes==enter).count(),1);
+            let create=create_vehicle(&w,slot).unwrap();assert!(create.len()<500);
+        }
+        assert_eq!(parts[0][39],2); // slot5's own native team, not slot0's.
+        assert!(announcement(&w,5).is_err());
+        let changed=roster_updates(&w,4).unwrap();assert_eq!(&changed[..2],&[19,88]);assert_eq!(changed[3],11);
+        assert_eq!(&changed[5..9],&[128,2,b'(',b'J']);
+        assert_eq!(&changed[9..13],&vehicle_id(4).unwrap().to_le_bytes());
+        let visible=publication(&w,[true;model::MAX_ACTORS]).unwrap();
+        assert!(visible.len()<=500);for slot in 0..6 {
+            let mut position=vec![0x15];position.extend(vehicle_id(slot).unwrap().to_le_bytes());
+            assert_eq!(visible.windows(position.len()).filter(|bytes|*bytes==position).count(),1);
+        }
+        assert!(publication(&w,[true;2]).is_err());
+    }
+    #[test] fn six_native_requests_and_last_actor_shot_ids_are_bounded() {
+        let now=Instant::now();let w=six_mixed(now);
+        let mut requests=Vec::new();for slot in 0..6 {requests.extend([8,4,0]);requests.extend(vehicle_id(slot).unwrap().to_le_bytes());}
+        assert_eq!(entity_requests(&requests).unwrap(),Some((0..6).collect()));
+        let mut duplicate=requests.clone();duplicate.extend(&requests[..7]);assert!(entity_requests(&duplicate).is_err());
+        let mut p=Projectile::launch(model::MAX_BATTLE_SHOTS as u32,5,&w.actors[5],now).unwrap();
+        assert_eq!(&tracer_start(&p).unwrap()[2..6],&vehicle_id(5).unwrap().to_le_bytes());
+        p.stopped=true;assert!(tracer_stop(&p).is_ok());p.sequence+=1;
+        assert!(tracer_start(&p).is_err());assert!(tracer_stop(&p).is_err());
+    }
     #[test] fn world_map_controls_native_base_and_geometry_without_changing_battle_binding() {
         use crate::map_profile091::MapId;
         let now = Instant::now();
@@ -364,15 +455,16 @@ mod tests {
         // Vehicle first ClientMethod=59, UINT8 single-shot burst, selectPlayer=19.
         assert_eq!(shooting(0).unwrap(), [18,3,0,16,9,59,1,19]);
         assert_eq!(shooting(1).unwrap(), [18,5,0,16,9,59,1,19]);
-        assert!(shooting(2).is_err());
+        assert_eq!(shooting(5).unwrap(),[18,13,0,16,9,59,1,19]);
+        assert!(shooting(model::MAX_ACTORS).is_err());
     }
     #[test] fn identities_are_distinct_and_requests_cannot_select_an_unannounced_id() {
         assert_eq!(vehicle_id(0).unwrap(), 0x09100003); assert_eq!(vehicle_id(1).unwrap(), 0x09100005);
-        assert_eq!(avatar_id(1).unwrap(), 0x09100004); assert!(vehicle_id(2).is_err());
+        assert_eq!(avatar_id(1).unwrap(), 0x09100004); assert!(vehicle_id(model::MAX_ACTORS).is_err());
         let two = [8, 4, 0, 3, 0, 16, 9, 8, 4, 0, 5, 0, 16, 9];
         assert_eq!(entity_requests(&two).unwrap(), Some(vec![0, 1]));
         for n in [1, 3, 6, 8, 13] { assert!(entity_requests(&two[..n]).is_err()); }
-        let mut bad = two; bad[10] = 7; assert!(entity_requests(&bad).is_err());
+        let mut bad = two; bad[10] = 15; assert!(entity_requests(&bad).is_err());
         let mut duplicate = two; duplicate[10] = 3; assert!(entity_requests(&duplicate).is_err());
     }
     #[test] fn ready_is_bound_to_each_players_own_vehicle() {
@@ -439,8 +531,8 @@ mod tests {
         let base = Projectile::launch(1, 0, &w.actors[0], now).unwrap();
         let corruptions: [fn(&mut Projectile); 11] = [
             |p| p.sequence = 0,
-            |p| p.sequence = model::MAX_SHOTS as u32 + 1,
-            |p| p.slot = model::CAPACITY,
+            |p| p.sequence = model::MAX_BATTLE_SHOTS as u32 + 1,
+            |p| p.slot = model::MAX_ACTORS,
             |p| p.origin[0] = f32::NAN,
             |p| p.velocity[2] = f32::INFINITY,
             |p| p.gravity = f32::NAN,
