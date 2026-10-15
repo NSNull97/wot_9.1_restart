@@ -9,7 +9,7 @@ pub const LIFETIME: Duration = Duration::from_secs(3600);
 pub const STEP: Duration = Duration::from_millis(100);
 pub const MAX_COMMANDS: usize = 32;
 /// Storage ceiling; each immutable profile enforces its own admission limit.
-pub const MAX_SHOTS: usize = CAPACITY * 30;
+pub const MAX_SHOTS: usize = CAPACITY * 96;
 /// Explicit laboratory policy: retained stock geometry blocks AP at a wreck.
 /// No penetration, material thickness or additional damage is inferred.
 pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
@@ -57,6 +57,7 @@ pub struct Actor {
     pub aim: aim::State,
     origin: [f32; 3],
     vehicle_kind: VehicleKind,
+    owned_loadout: Option<crate::battle091::profile13::FrozenLoadout>,
 }
 
 impl Actor { pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind } }
@@ -289,11 +290,23 @@ impl World {
     /// Authenticated identity only. The caller reserves a transport retirement
     /// slot before committing this world assignment. Rejoin never resets ammo.
     pub fn attach(&mut self, identity: Identity, session: u32) -> io::Result<usize> {
+        self.attach_loadout(identity, session, None)
+    }
+    /// Only a writer-confirmed stock mount can supply owned battle ammunition.
+    /// Reattaching the same receipt never replenishes an existing actor.
+    pub fn attach_owned(&mut self, identity: Identity, session: u32,
+        loadout: &crate::battle091::profile13::FrozenLoadout) -> io::Result<usize> {
+        loadout.validate_owned(&identity.account)?;
+        if loadout.kind != self.vehicle_kind { return Err(bad()); }
+        self.attach_loadout(identity, session, Some(loadout.clone()))
+    }
+    fn attach_loadout(&mut self, identity: Identity, session: u32,
+        loadout: Option<crate::battle091::profile13::FrozenLoadout>) -> io::Result<usize> {
         if session == 0 || identity.database <= 0 || identity.account.is_empty()
             || self.actors.iter().any(|a| a.session == Some(session)) { return Err(bad()); }
         if let Some(slot) = self.actors.iter().position(|a| a.identity.account == identity.account) {
             let a = &mut self.actors[slot];
-            if a.session.is_some() || a.identity != identity { return Err(bad()); }
+            if a.session.is_some() || a.identity != identity || a.owned_loadout != loadout { return Err(bad()); }
             a.session = Some(session); a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park();
             return Ok(slot);
         }
@@ -302,9 +315,10 @@ impl World {
         }
         let slot = self.actors.len();
         let mut origin = SPAWN; origin[0] += if slot == 0 { -4. } else { 4. };
+        let ammo = loadout.as_ref().map_or(self.vehicle_kind.initial_ammo(), |value| value.ap_count);
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: self.vehicle_kind.max_health(), vehicle_kind:self.vehicle_kind,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire: fire::State::with_loadout(self.vehicle_kind.initial_ammo(),self.vehicle_kind.reload_seconds())?, aim: aim::State::new() });
+            fire: fire::State::with_loadout(ammo,self.vehicle_kind.reload_seconds())?, aim: aim::State::new(), owned_loadout:loadout });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
@@ -677,6 +691,86 @@ impl World {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    pub(super) fn profile13_loadout(kind:VehicleKind,slot:usize,ap_count:u16)
+        ->(Identity,crate::battle091::profile13::FrozenLoadout) {
+        use sha2::{Digest,Sha256};
+        let account=format!("{:08x}-1234-4234-8234-123456789abc",slot+1);
+        let native_inventory_id=if kind==VehicleKind::Ms1{1}else{2};
+        let vehicle_inventory_id=format!("{account}:{}",if kind==VehicleKind::Ms1{"starter-vehicle-v1"}else{"test-is7-v1"});
+        let shell_definition_id=format!("shell:{}-stock-ap",kind.label());
+        let crew_ids=(0..if kind==VehicleKind::Ms1{2}else{5}).map(|n|format!("{account}:crew:{n}")).collect::<Vec<_>>();
+        let descriptor=kind.descriptor().to_vec();
+        let value=serde_json::json!({"kind":kind.label(),"descriptor_hex":descriptor.iter().map(|b|format!("{b:02x}")).collect::<String>(),
+            "native_inventory_id":native_inventory_id,"vehicle_inventory_id":vehicle_inventory_id,
+            "ap_count":ap_count,"shell_definition_id":shell_definition_id,"shell_compact_id":kind.shell_compact_id(),
+            "max_hp":kind.max_health(),"crew_ids":crew_ids});
+        let sha256=format!("{:x}",Sha256::digest(serde_json::to_vec(&value).unwrap()));
+        (Identity{account,database:slot as i32+1,name:format!("owned-{slot}")},crate::battle091::profile13::FrozenLoadout{
+            kind,descriptor,native_inventory_id,vehicle_inventory_id,ap_count,shell_definition_id,
+            shell_compact_id:kind.shell_compact_id(),max_hp:kind.max_health(),crew_ids,sha256})
+    }
+    #[test] fn profile13_owned_counts_survive_peer_leave_and_same_receipt_rejoin_without_refill() {
+        for kind in [VehicleKind::Ms1,VehicleKind::Is7] {
+            let now=Instant::now();let mut world=World::new_for_vehicle(91,now,crate::map_profile091::MapId::Prohorovka,kind).unwrap();
+            let (first,first_loadout)=profile13_loadout(kind,0,7);
+            let (second,second_loadout)=profile13_loadout(kind,1,11);
+            assert_eq!(world.attach_owned(first.clone(),1,&first_loadout).unwrap(),0);
+            assert_eq!(world.attach_owned(second.clone(),2,&second_loadout).unwrap(),1);
+            world.start(now).unwrap();world.set_ready(0,1).unwrap();world.set_ready(1,2).unwrap();
+            for slot in 0..2 {world.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();}
+            assert_eq!((world.actors[0].fire.ammo(),world.actors[1].fire.ammo()),(6,10));
+            let first_fire=world.actors[0].fire.clone();let second_fire=world.actors[1].fire.clone();
+            world.apply(1,2,&[Command::Leave],now).unwrap();
+            assert_eq!(world.actors[0].fire,first_fire);
+            assert!(world.attach(second.clone(),3).is_err());
+            let (_,changed)=profile13_loadout(kind,1,12);
+            assert!(world.attach_owned(second.clone(),3,&changed).is_err());
+            assert_eq!(world.attach_owned(second,3,&second_loadout).unwrap(),1);
+            assert_eq!(world.actors[1].fire,second_fire);assert_eq!(world.actors[0].fire,first_fire);
+            let binding=super::super::wire::binding(&world,1,now).unwrap();
+            let rows=&binding[binding.len()-54..binding.len()-21];
+            assert_eq!(&rows[2..6],&kind.shell_compact_id().to_le_bytes());
+            assert_eq!(&rows[6..8],&10u16.to_le_bytes());
+        }
+    }
+    #[test] fn profile13_owned_admission_rejects_foreign_changed_descriptor_kind_and_overflow_atomically() {
+        let now=Instant::now();
+        for kind in [VehicleKind::Ms1,VehicleKind::Is7] {
+            let (identity,loadout)=profile13_loadout(kind,0,7);
+            for change in 0..8 {
+                let mut world=World::new_for_vehicle(92,now,crate::map_profile091::MapId::Prohorovka,kind).unwrap();
+                let mut wrong=loadout.clone();let mut who=identity.clone();
+                match change {
+                    0=>wrong.descriptor[0]^=1,1=>wrong.kind=if kind==VehicleKind::Ms1{VehicleKind::Is7}else{VehicleKind::Ms1},
+                    2=>wrong.ap_count=0,3=>wrong.ap_count=kind.ammo_limit()+1,4=>wrong.max_hp+=1,
+                    5=>wrong.shell_compact_id+=1,6=>who.account="foreign".into(),7=>wrong.sha256="0".repeat(64),_=>unreachable!(),
+                }
+                assert!(world.attach_owned(who,1,&wrong).is_err(),"kind={kind:?} mutation={change}");
+                assert!(world.actors.is_empty());assert!(world.shots.is_empty());
+            }
+            let other=if kind==VehicleKind::Ms1{VehicleKind::Is7}else{VehicleKind::Ms1};
+            let (identity,other_loadout)=profile13_loadout(other,0,7);
+            let mut world=World::new_for_vehicle(93,now,crate::map_profile091::MapId::Prohorovka,kind).unwrap();
+            assert!(world.attach_owned(identity,1,&other_loadout).is_err());assert!(world.actors.is_empty());
+        }
+    }
+    #[test] fn profile13_two_full_ms1_loadouts_fire_all_192_owned_rounds_without_history_truncation() {
+        let now=Instant::now();let mut world=World::new(94,now).unwrap();
+        for slot in 0..2 {let (identity,loadout)=profile13_loadout(VehicleKind::Ms1,slot,96);
+            world.attach_owned(identity,slot as u32+1,&loadout).unwrap();}
+        world.start(now).unwrap();world.set_ready(0,1).unwrap();world.set_ready(1,2).unwrap();
+        for round in 0..96u64 {for slot in 0..2 {
+            let result=world.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],now+Duration::from_secs(round*3)).unwrap();
+            assert_eq!(result,vec![fire::Outcome::AcceptedShot{ammo_remaining:95-round as u16}]);
+        }}
+        assert_eq!(world.shots.len(),192);assert_eq!(world.projectiles.len(),192);
+        assert_eq!(world.impact.events().iter().filter(|event|matches!(event,impact::Event::Admission{..})).count(),192);
+        super::super::wire::tracer_start(world.projectiles.last().unwrap()).unwrap();
+        for slot in 0..2 {assert_eq!(world.actors[slot].fire.ammo(),0);
+            assert_eq!(world.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],now+Duration::from_secs(288)).unwrap(),
+                vec![fire::Outcome::RejectedNoAmmo]);}
+        assert_eq!(world.shots.len(),MAX_SHOTS);assert_eq!(VehicleKind::Ms1.battle_shot_limit(),MAX_SHOTS);
+    }
     #[test]
     fn contract_error_identifies_direct_and_lazy_call_sites() {
         let direct_line = line!() + 1;

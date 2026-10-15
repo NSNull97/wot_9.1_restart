@@ -40,9 +40,9 @@ impl VehicleKind {
     pub fn mass_kg(self) -> f64 { match self { Self::Ms1 => 4691., Self::Is7 => 68190. } }
     /// Explicit AP-only temporary lab ammunition, not owned inventory.
     pub fn initial_ammo(self) -> u16 { match self { Self::Ms1 => 20, Self::Is7 => 30 } }
-    /// Mounted native source capacity; admission uses initial_ammo instead.
+    /// Mounted native source capacity; the owned route uses its writer receipt.
     pub fn ammo_limit(self) -> u16 { match self { Self::Ms1 => 96, Self::Is7 => 30 } }
-    pub fn battle_shot_limit(self) -> usize { 2 * self.initial_ammo() as usize }
+    pub fn battle_shot_limit(self) -> usize { 2 * self.ammo_limit() as usize }
     pub fn reload_seconds(self) -> f32 { match self { Self::Ms1 => 2.5, Self::Is7 => 13.7 } }
     pub fn panel_rows(self) -> [(u32, u16); 3] { match self {
         Self::Ms1 => crate::battle091::native_ammo::MS1_PANEL_ROWS,
@@ -76,6 +76,10 @@ impl VehicleKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn profile13_capacity_is_distinct_from_temporary_lab_grant() {
+        assert_eq!((VehicleKind::Ms1.initial_ammo(),VehicleKind::Ms1.ammo_limit(),VehicleKind::Ms1.battle_shot_limit()),(20,96,192));
+        assert_eq!((VehicleKind::Is7.initial_ammo(),VehicleKind::Is7.ammo_limit(),VehicleKind::Is7.battle_shot_limit()),(30,30,60));
+    }
     #[test] fn mounted_is7_overrides_and_ap_only_loadout_are_consistent() {
         let k=VehicleKind::Is7;
         assert_eq!(k.descriptor(), &[1,28,58,0,36,0,205,0,11,0,47,0,58,0,0]);

@@ -4,7 +4,7 @@
 use super::*;
 use serde_json::json;
 // Existing wrappers remain bounded to the accepted 20 rounds per MS-1 actor.
-const MAX_SHOTS:usize=40;
+const MAX_SHOTS:usize=192;
 
 #[test]
 fn selected_ap_damage_and_shot_limit_preserve_partial_compounds_and_neighbors() {

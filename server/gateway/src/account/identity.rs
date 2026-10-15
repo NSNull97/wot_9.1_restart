@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, fs, fmt, io::{self,Read,Write}, net::{Ipv4Addr,
           path::{Path,PathBuf}, time::{Duration,Instant}};
 use serde::{Deserialize,Deserializer,de::{self,MapAccess,Visitor}};
 use serde_json::Value;
+use rsa::rand_core::{OsRng,RngCore};
 
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
 
@@ -52,11 +53,102 @@ fn bounded_file(path:&Path,max:u64)->io::Result<Vec<u8>> {
     if bytes.len() as u64>max {return Err(invalid("local input grew beyond bound"));}Ok(bytes)
 }
 
+struct BattleCapability {
+    native_inventory_id:u32,admission:bool,code:Value,kind:Value,
+}
+impl<'de> Deserialize<'de> for BattleCapability {
+    fn deserialize<D:Deserializer<'de>>(input:D)->Result<Self,D::Error> {
+        let Bounded::<4>(value)=Bounded::deserialize(input)?;
+        let expected=["native_inventory_id","admission","code","kind"];
+        if value.len()!=4 || expected.iter().any(|key|!value.contains_key(*key)) {
+            return Err(de::Error::custom("battle capability fields"));
+        }
+        let native_inventory_id=value["native_inventory_id"].as_u64().and_then(|v|u32::try_from(v).ok())
+            .ok_or_else(||de::Error::custom("battle inventory integer"))?;
+        let admission=value["admission"].as_bool().ok_or_else(||de::Error::custom("battle admission boolean"))?;
+        Ok(Self{native_inventory_id,admission,code:value["code"].clone(),kind:value["kind"].clone()})
+    }
+}
+struct BattleProjection {
+    version:u8,schema:String,policy_sha256:String,account_id:String,native_database_id:i32,
+    revision:u64,state_sha256:String,capabilities:Vec<BattleCapability>,
+}
+impl<'de> Deserialize<'de> for BattleProjection {
+    fn deserialize<D:Deserializer<'de>>(input:D)->Result<Self,D::Error> {
+        struct Fields;
+        impl<'de> Visitor<'de> for Fields {
+            type Value=BattleProjection;
+            fn expecting(&self,f:&mut fmt::Formatter)->fmt::Result {f.write_str("unique battle projection fields")}
+            fn visit_map<M:MapAccess<'de>>(self,mut input:M)->Result<BattleProjection,M::Error> {
+                let mut values=BTreeMap::new();let mut capabilities=None;
+                while let Some(key)=input.next_key::<String>()? {
+                    if values.len()>=8 || values.contains_key(&key) {return Err(de::Error::custom("duplicate/too many battle projection fields"));}
+                    if key=="capabilities" {
+                        let rows=input.next_value::<Vec<BattleCapability>>()?;
+                        if rows.len()>256 {return Err(de::Error::custom("battle capability count"));}
+                        capabilities=Some(rows);values.insert(key,Value::Null);
+                    }else{values.insert(key,input.next_value::<Value>()?);}
+                }
+                let expected=["version","schema","policy_sha256","account_id","native_database_id","revision","state_sha256","capabilities"];
+                if values.len()!=8 || expected.iter().any(|key|!values.contains_key(*key)) {return Err(de::Error::custom("battle projection fields"));}
+                let string=|key:&str|values[key].as_str().map(str::to_owned).ok_or_else(||de::Error::custom("battle projection string"));
+                let version=values["version"].as_u64().and_then(|v|u8::try_from(v).ok()).ok_or_else(||de::Error::custom("battle projection version"))?;
+                let native_database_id=values["native_database_id"].as_i64().and_then(|v|i32::try_from(v).ok()).ok_or_else(||de::Error::custom("battle projection native ID"))?;
+                let revision=values["revision"].as_u64().ok_or_else(||de::Error::custom("battle projection revision"))?;
+                Ok(BattleProjection{version,schema:string("schema")?,policy_sha256:string("policy_sha256")?,account_id:string("account_id")?,
+                    native_database_id,revision,state_sha256:string("state_sha256")?,capabilities:capabilities.ok_or_else(||de::Error::custom("battle capabilities absent"))?})
+            }
+        }
+        input.deserialize_map(Fields)
+    }
+}
+fn battle_projection_bytes(raw:&[u8],profile:&Profile,revision:u64,state_sha256:&str)->io::Result<()> {
+    if raw.is_empty() || raw.len()>65536 {return Err(invalid("battle projection metadata size"));}
+    let value:BattleProjection=serde_json::from_slice(raw).map_err(|_|invalid("battle projection unique typed fields"))?;
+    if value.version!=1 || value.schema!="p08b-profile13-battle.v1"
+        || value.policy_sha256!=crate::battle091::profile13::POLICY_SHA256
+        || value.account_id!=profile.account_id || value.native_database_id!=profile.database_id
+        || value.revision!=revision || value.state_sha256!=state_sha256
+        || !(2..=256).contains(&value.capabilities.len()) {return Err(invalid("battle projection identity/revision/policy"));}
+    let mut ids=Vec::new();
+    for row in value.capabilities {
+        if row.native_inventory_id==0 || row.native_inventory_id>i32::MAX as u32
+            || ids.last().is_some_and(|old|*old>=row.native_inventory_id) {return Err(invalid("battle capability inventory order/duplicates"));}
+        let expected=match row.native_inventory_id{1=>Some("ms1"),2=>Some("is7"),_=>None};
+        if row.kind.as_str()!=expected || (expected.is_none() && !row.kind.is_null()) {
+            return Err(invalid("battle capability mounted profile"));
+        }
+        if row.admission {
+            if expected.is_none() || !row.code.is_null() {return Err(invalid("unsupported battle capability admitted"));}
+        } else {
+            let code=row.code.as_str().ok_or_else(||invalid("battle capability rejection code"))?;
+            if code.is_empty() || code.len()>64 || !code.bytes().all(|b|b.is_ascii_uppercase()||b==b'_') {
+                return Err(invalid("battle capability rejection code"));
+            }
+        }
+        ids.push(row.native_inventory_id);
+    }
+    if ids.get(..2)!=Some(&[1,2]) {return Err(invalid("battle projection missing base vehicles"));}
+    Ok(())
+}
+fn verify_battle_projection(profile:&Profile,revision:u64)->io::Result<()> {
+    use sha2::{Digest,Sha256};
+    let root=profile.fixture_dir.canonicalize()?;
+    let file=|name:&str,maximum:u64|->io::Result<Vec<u8>>{
+        let path=root.join(name).canonicalize()?;
+        if !path.starts_with(&root){return Err(invalid("battle projection escapes fixture"));}
+        bounded_file(&path,maximum)
+    };
+    let state=file("state.bin",crate::research_service091::MAX_STATE_BYTES as u64)?;
+    let raw=file("p08b-battle.json",65536)?;
+    battle_projection_bytes(&raw,profile,revision,&format!("{:x}",Sha256::digest(&state)))
+}
+
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
     pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
-    pub research_service:bool,
+    pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -91,6 +183,10 @@ impl Config {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("research service must be explicit boolean")),
         };
         if research_service && !crew_barracks_recruitment {return Err(invalid("research service requires accepted barracks profile"));}
+        let profile13_battle=match value.remove("profile13_battle") {
+            None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("profile13 battle must be explicit boolean")),
+        };
+        if profile13_battle && !research_service {return Err(invalid("profile13 battle requires the complete research writer"));}
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let login_bind=local_address(text(&value,"login_bind")?)?;
@@ -107,7 +203,12 @@ impl Config {
         if token.len()!=43 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b==b'_' || b==b'-') {return Err(invalid("service token must be exactly 43 base64url characters"));}
         let seconds=value["session_duration_seconds"].as_u64().ok_or_else(||invalid("session duration integer"))?;
         if !(600..=7200).contains(&seconds) {return Err(invalid("session duration must be 600..7200 seconds"));}
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service})
+        let battle_run_id=if profile13_battle {
+            let mut raw=[0u8;16];OsRng.fill_bytes(&mut raw);raw[6]=(raw[6]&15)|64;raw[8]=(raw[8]&63)|128;
+            let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
+            format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
+        }else{String::new()};
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id})
     }
     pub fn authenticate(&self,email:&str,password:&str)->io::Result<Option<Profile>> {
         let email=canonical_email(email)?;
@@ -130,7 +231,55 @@ impl Config {
                 crate::crew_service091::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,binding.revision,binding.wire_revision)?;
             }
         }
+        if self.profile13_battle {return self.begin_battle_run(&profile).map(Some);}
         Ok(Some(profile))
+    }
+
+    pub fn battle(&self,owner:&Profile,context:&crate::battle091::profile13::Context,
+        request:&crate::battle091::profile13::Request)->io::Result<crate::battle091::profile13::Reply> {
+        if !self.profile13_battle || context.account_id!=owner.account_id
+            || context.native_database_id!=owner.database_id || context.run_id!=self.battle_run_id {
+            return Err(invalid("battle request authenticated owner/run mismatch"));
+        }
+        let body=crate::battle091::profile13::encode_request(context,request)?;
+        let(status,bytes)=self.post("/internal/native/battle",&body,Duration::from_secs(20))?;
+        if status!=200 {return Err(invalid("battle writer unavailable; outcome must be recovered"));}
+        crate::battle091::profile13::parse_reply(&bytes,context,request)
+    }
+
+    /// Called only by the credential worker after this gateway owns its ports.
+    /// A new run atomically aborts unfinished old transactions; an old fenced
+    /// run can never publish a late admission/result into the new process.
+    fn begin_battle_run(&self,owner:&Profile)->io::Result<Profile> {
+        let binding=crate::ammo_service091::metadata_research(&owner.fixture_dir,&owner.account_id,owner.database_id)?;
+        verify_battle_projection(owner,binding.revision)?;
+        let context=crate::battle091::profile13::Context {account_id:owner.account_id.clone(),
+            native_database_id:owner.database_id,command_key:format!("open:{}:{}:{}",self.battle_run_id,owner.database_id,binding.revision),
+            expected_revision:binding.revision,run_id:self.battle_run_id.clone()};
+        let reply=self.battle(owner,&context,&crate::battle091::profile13::Request::RunOpen)?;
+        if reply.status!=crate::battle091::profile13::ReplyStatus::Ready {return Err(invalid("battle run was not opened"));}
+        self.refresh_battle_profile(owner)
+    }
+
+    /// Reload an already authenticated owner after a committed battle write.
+    /// The bridge chooses its fixture; neither native input nor a result DTO
+    /// can supply a filesystem path or select a different identity.
+    pub fn refresh_battle_profile(&self,owner:&Profile)->io::Result<Profile> {
+        if !self.profile13_battle || !self.research_service {return Err(invalid("profile13 battle is not enabled"));}
+        let body=serde_json::to_vec(&serde_json::json!({"account_id":owner.account_id,
+            "native_database_id":owner.database_id})).map_err(|_|invalid("profile refresh encoding"))?;
+        let(status,bytes)=self.post("/internal/native/profile",&body,Duration::from_secs(20))?;
+        if status!=200 {return Err(invalid("battle profile refresh unavailable"));}
+        let fresh=profile(&bytes,&self.local_root)?;
+        if fresh.account_id!=owner.account_id || fresh.database_id!=owner.database_id || fresh.name!=owner.name {
+            return Err(invalid("battle profile refresh changed authenticated identity"));
+        }
+        verify_fixture_identity(&fresh)?;
+        let binding=crate::ammo_service091::metadata_research(&fresh.fixture_dir,&fresh.account_id,fresh.database_id)?;
+        crate::research_service091::metadata(&fresh.fixture_dir,&fresh.account_id,fresh.database_id,binding.revision,binding.wire_revision)?;
+        crate::crew_transfer091::metadata_for_research(&fresh.fixture_dir,&fresh.account_id,fresh.database_id,binding.revision,binding.wire_revision)?;
+        verify_battle_projection(&fresh,binding.revision)?;
+        Ok(fresh)
     }
 
     /// Bounded loopback transport; only fixed internal paths supplied by this module.
@@ -385,6 +534,32 @@ fn verify_fixture_identity(profile:&Profile)->io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn profile13_projection_metadata_binds_owner_revision_state_policy_and_capabilities() {
+        let owner=Profile{account_id:"12345678-1234-4234-8234-123456789abc".into(),database_id:17,name:"owned".into(),fixture_dir:PathBuf::new()};
+        let sha="a".repeat(64);
+        let value=serde_json::json!({"version":1,"schema":"p08b-profile13-battle.v1",
+            "policy_sha256":crate::battle091::profile13::POLICY_SHA256,"account_id":owner.account_id,
+            "native_database_id":17,"revision":14,"state_sha256":sha,
+            "capabilities":[{"native_inventory_id":1,"admission":true,"code":null,"kind":"ms1"},
+                {"native_inventory_id":2,"admission":false,"code":"INCOMPLETE_CREW","kind":"is7"},
+                {"native_inventory_id":3,"admission":false,"code":"BATTLE_PROFILE_UNSUPPORTED","kind":null}]});
+        battle_projection_bytes(&serde_json::to_vec(&value).unwrap(),&owner,14,&sha).unwrap();
+        for mutation in 0..15 {
+            let mut wrong=value.clone();match mutation{
+                0=>wrong["account_id"]="foreign".into(),1=>wrong["native_database_id"]=18.into(),
+                2=>wrong["revision"]=13.into(),3=>wrong["state_sha256"]="b".repeat(64).into(),
+                4=>wrong["policy_sha256"]="b".repeat(64).into(),5=>wrong["capabilities"][1]["native_inventory_id"]=1.into(),
+                6=>wrong["capabilities"][2]["admission"]=true.into(),7=>wrong["capabilities"][0]["kind"]="is7".into(),
+                8=>wrong["capabilities"][0]["code"]="VEHICLE_RESERVED".into(),9=>wrong["capabilities"][1]["code"]=Value::Null,
+                10=>wrong["capabilities"][2]["kind"]="ms1".into(),11=>wrong["capabilities"][0]["extra"]=true.into(),
+                12=>{wrong["capabilities"][0].as_object_mut().unwrap().remove("code");},13=>wrong["version"]=true.into(),
+                14=>wrong["extra"]=true.into(),_=>unreachable!(),
+            }
+            assert!(battle_projection_bytes(&serde_json::to_vec(&wrong).unwrap(),&owner,14,&sha).is_err(),"mutation={mutation}");
+        }
+        let bytes=serde_json::to_string(&value).unwrap().replacen("\"admission\":true","\"admission\":true,\"admission\":false",1);
+        assert!(battle_projection_bytes(bytes.as_bytes(),&owner,14,&sha).is_err());
+    }
     fn username()->Vec<u8> {br#"{"login":"registered@example.test","auth_method":"basic","session":"0123456789abcdef0123456789abcdef","auth_realm":"RU","game":"wot","temporary":"1"}"#.to_vec()}
     #[test] fn ammunition_reply_is_bound_to_identity_command_and_both_revisions() {
         let profile=Profile{account_id:"12345678-1234-4234-8234-123456789abc".into(),database_id:17,name:"own_user".into(),fixture_dir:PathBuf::new()};

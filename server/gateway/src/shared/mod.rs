@@ -22,6 +22,10 @@ pub(crate) mod collision;
 pub(crate) mod impact;
 pub(crate) mod wire;
 mod server;
+mod profile13_session;
+mod profile13_queue;
+mod profile13_templates;
+pub use server::serve_profile13;
 pub(crate) mod vehicle_profile;
 pub use server::serve;
 pub use server::serve_integrated;
@@ -71,22 +75,35 @@ pub(super) struct Client {
     return_mask: u8,
     join_requested: bool,
     queue_announced: bool,
+    profile13: Option<profile13_session::State>,
+    return_source_revision: i64,
 }
 impl Client {
     fn new(slot: usize) -> Self {
         Self { slot, phase: Phase::Account, view: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; 2],
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; 2], owner_health_sent: None, tracer_started: [false; model::MAX_SHOTS],
-            tracer_stopped: [false; model::MAX_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false }
+            tracer_stopped: [false; model::MAX_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1 }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
     fn reset_for_battle(&mut self, slot: usize) {
         let generation = self.return_generation;
         let queue_announced = self.queue_announced;
+        let profile13 = self.profile13.take();
+        let return_source_revision = self.return_source_revision;
         *self = Self::new(slot);
         self.return_generation = generation;
         self.queue_announced = queue_announced;
+        self.profile13 = profile13;
+        self.return_source_revision = return_source_revision;
+    }
+    pub(super) fn profile13_garage_idle(&self) -> bool {
+        self.phase == Phase::Account && self.profile13.as_ref().is_some_and(|s| s.garage_idle())
+    }
+    pub(super) fn profile13_account(&self) -> bool {self.phase==Phase::Account && self.profile13.is_some()}
+    pub(super) fn profile13_arena_ready(&self) -> bool {
+        self.profile13.as_ref().is_some_and(|s| s.reservation.is_some() && !s.in_flight && s.pending_return.is_none())
     }
     pub(super) fn acknowledge(&mut self, cumulative: u32, frame: &Frame) {
         for pending in [&mut self.announcement, &mut self.creations[0], &mut self.binding, &mut self.area_creation] {
@@ -114,6 +131,10 @@ impl Client {
 impl Session {
     pub(super) fn shared_account_response(&self,request:&crate::account091::Request,events:&mut Vec<String>)->io::Result<Vec<Vec<u8>>> {
         if self.shared.is_none() || request.command!=100 {return Err(bad());}
+        if self.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
+            events.push(format!("P08B_ACCOUNT_FULL session={} request={} source=confirmed_owner_projection",self.id,request.id));
+            return crate::hangar091::response(request,self.hangar.as_ref().ok_or_else(||bad())?);
+        }
         let (bodies,event)=account_policy::response(self.identity.as_ref().ok_or_else(||bad())?,
             self.hangar.as_ref().ok_or_else(||bad())?,request,self.id)?;
         events.push(event);Ok(bodies)
@@ -134,8 +155,10 @@ impl Session {
         c.tracer_started = [false; model::MAX_SHOTS];
         c.tracer_stopped = [false; model::MAX_SHOTS];
         *self = next;
-        println!("SHARED_ENTRY battle={} session={} slot={slot} avatar={} vehicle={} assignment=temporary_{} inventory_changed=false",
-            world.id, self.id, wire::avatar_id(slot)?, wire::vehicle_id(slot)?, world.vehicle_kind().label());
+        println!("SHARED_ENTRY battle={} session={} slot={slot} avatar={} vehicle={} assignment={} inventory_reserved={}",
+            world.id,self.id,wire::avatar_id(slot)?,wire::vehicle_id(slot)?,
+            if self.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {"confirmed_owned_loadout"} else {"temporary_server_selected"},
+            self.shared.as_ref().is_some_and(|c|c.profile13.is_some()));
         Ok(())
     }
     pub(super) fn shared_return(&mut self, reason: &str, now: Instant, events: &mut Vec<String>) -> io::Result<()> {
@@ -165,6 +188,9 @@ impl Session {
     }
 
     fn shared_account_payload(&mut self, payload: &[u8], events: &mut Vec<String>) -> io::Result<()> {
+        if self.shared.as_ref().is_some_and(|c| c.profile13.is_some()) {
+            return self.profile13_account_payload(payload,events);
+        }
         if payload.len() > 512 { return Err(bad()); }
         let mut at = 0; let mut count = 0;
         let mut records = Vec::new(); let mut has_queue_command = false;
@@ -265,7 +291,8 @@ impl Session {
                     let request = crate::account091::Request { id, command };
                     match command {
                         100 => {
-                            if rev != 1 || b != 0 { return Err(bad()); }
+                            let expected=self.shared.as_ref().filter(|c|c.profile13.is_some()).map_or(1,|c|c.return_source_revision);
+                            if rev != expected || b != 0 { return Err(bad()); }
                             let bodies=self.shared_account_response(&request,events)?;
                             if self.outbox.len()+bodies.len()>127 {return Err(bad());}
                             self.account_cache_hash = if a == 0 { None } else { Some(a) };
@@ -310,6 +337,17 @@ impl Session {
         let mut payload = payload;
         let phase = self.shared.as_ref().ok_or_else(|| bad())?.phase;
         if phase == Phase::Returning { return self.shared_return_payload(payload, sequence, now, events); }
+        if phase == Phase::Leaving && self.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
+            if payload.is_empty() {return Ok(());}
+            let count=self.shared.as_ref().and_then(|c|c.profile13.as_ref()).ok_or_else(||bad())?.stale_envelopes;
+            if count>=32 {return Err(bad());}
+            let mut retired=self.clone();
+            retired.shared.as_mut().ok_or_else(||bad())?.phase=Phase::Driving;
+            retired.shared_payload(payload,sequence,now,&mut Vec::new())?;
+            self.shared.as_mut().and_then(|c|c.profile13.as_mut()).ok_or_else(||bad())?.stale_envelopes=count+1;
+            events.push(format!("P08B_TERMINAL_AVATAR_DRAIN session={} envelopes={} domain_applied=false",self.id,count+1));
+            return Ok(());
+        }
         if phase == Phase::Account {
             return self.shared_account_payload(payload, events);
         }

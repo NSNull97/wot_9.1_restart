@@ -14,6 +14,11 @@ deadline faults закрывают только текущий бой, gateway �
 История исправлений, границы проверки и evidence —
 [STAB-01](research/STAB01_BATTLE_STABILITY.md). Следующая карточка — P08B.
 
+P08B в работе в `codex/p08b-profile13-battle`, в main не слита. Изолированные
+writer18, новый Web7, Web-регрессия18 и client/control проверки PASS; создана
+свежая двухаккаунтная БД профиля13 с сохранением A. Полный current-head gateway
+и native/UI gate ещё NOT_RUN. [Факты и ограничения P08B](research/P08B_PROFILE13_BATTLE.md).
+
 ## Принято владельцем на настоящем клиенте #717
 
 - Вход и аккаунт: собственная авторизация, перезаход, ангар на реальном клиенте 0.9.1.

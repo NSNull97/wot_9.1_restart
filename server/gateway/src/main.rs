@@ -67,6 +67,7 @@ mod battle091;
 
 #[derive(Debug, PartialEq)]
 enum Command<'a> {
+    Profile13 { key: &'a str, digest: &'a str, gateway: &'a str, templates: &'a str, capture: &'a str },
     SharedLab { key: &'a str, digest: &'a str, gateway: &'a str, capture: &'a str },
     IntegratedLab { key: &'a str, digest: &'a str, gateway: &'a str, pool: &'a str, capture: &'a str, geometry: Option<&'a str>, ap_test_lab: bool, terrain_test_lab: bool, destructible_test_lab: bool, catalog: Option<(&'a str,&'a str)>, map: MapId, vehicle: VehicleKind },
     Interactive { key: &'a str, digest: &'a str, gateway: &'a str, capture: Option<&'a str> },
@@ -76,7 +77,7 @@ enum Command<'a> {
 
 fn command(args: &[String]) -> io::Result<Command<'_>> {
     let invalid = || io::Error::new(io::ErrorKind::InvalidInput,
-        "usage: sr-gateway legacy091-interactive KEY DIGEST GATEWAY [CAPTURE] | legacy091-map-drive KEY DIGEST GATEWAY POOL [CAPTURE [map-drive-phase2-v1]] | legacy091-shared-lab KEY DIGEST GATEWAY CAPTURE | legacy091-integrated-lab KEY DIGEST GATEWAY POOL CAPTURE [MESH --ap-test-lab --terrain-test-lab [--destructible-catalog PATH SHA256] [--map MAP_ASSET] [--vehicle-test-lab ms1|is7]]");
+        "usage: sr-gateway legacy091-profile13 KEY DIGEST GATEWAY TEMPLATES CAPTURE | legacy091-interactive KEY DIGEST GATEWAY [CAPTURE] | legacy091-map-drive KEY DIGEST GATEWAY POOL [CAPTURE [map-drive-phase2-v1]] | legacy091-shared-lab KEY DIGEST GATEWAY CAPTURE | legacy091-integrated-lab KEY DIGEST GATEWAY POOL CAPTURE [MESH --ap-test-lab --terrain-test-lab [--destructible-catalog PATH SHA256] [--map MAP_ASSET] [--vehicle-test-lab ms1|is7]]");
     // A single trailing selector preserves every accepted Karelia invocation.
     // Prohorovka is available only on the cumulative AP + terrain path; the
     // catalog is optional for the read-only original native identity oracle.
@@ -94,6 +95,9 @@ fn command(args: &[String]) -> io::Result<Command<'_>> {
         (&args[..args.len() - 2], MapId::from_asset(&args[args.len() - 1])?)
     } else { (args, MapId::Karelia) };
     match args.get(1).map(String::as_str) {
+        Some("legacy091-profile13") if args.len()==7 && args[2..].iter().all(|value|!value.is_empty()&&!value.starts_with("--")) => Ok(Command::Profile13 {
+            key:&args[2],digest:&args[3],gateway:&args[4],templates:&args[5],capture:&args[6],
+        }),
         Some("legacy091-shared-lab") if args.len() == 6 && !args[5].is_empty() => Ok(Command::SharedLab {
             key: &args[2], digest: &args[3], gateway: &args[4], capture: &args[5],
         }),
@@ -125,6 +129,7 @@ fn command(args: &[String]) -> io::Result<Command<'_>> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     match command(&args)? {
+        Command::Profile13 { key,digest,gateway,templates,capture } => gateway091::shared::serve_profile13(key,digest,gateway,templates,capture),
         Command::SharedLab { key, digest, gateway, capture } => gateway091::serve_shared_lab(key, digest, gateway, capture),
         Command::IntegratedLab { key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab, destructible_test_lab, catalog, map, vehicle } => gateway091::serve_integrated_lab_for_vehicle(key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab, destructible_test_lab,catalog,map,vehicle),
         Command::Interactive { key, digest, gateway, capture } => gateway091::serve_interactive(key, digest, gateway, capture),
@@ -136,6 +141,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod cli_tests {
     use super::*;
     fn args(values: &[&str]) -> Vec<String> { values.iter().map(|s| (*s).into()).collect() }
+
+    #[test]fn profile13_mode_is_explicit_complete_and_does_not_inherit_lab_flags(){
+        let base=["exe","legacy091-profile13","key","digest","gateway","templates","capture"];
+        assert_eq!(command(&args(&base)).unwrap(),Command::Profile13{key:"key",digest:"digest",gateway:"gateway",templates:"templates",capture:"capture"});
+        for length in 0..base.len(){assert!(command(&args(&base[..length])).is_err());}
+        for offset in 2..base.len(){let mut wrong=base;wrong[offset]="";assert!(command(&args(&wrong)).is_err());}
+        for flag in ["--ap-test-lab","--vehicle-test-lab","--map"]{let mut wrong=args(&base);wrong.push(flag.into());assert!(command(&wrong).is_err());}
+    }
 
     #[test]
     fn shared_lab_is_explicit_and_requires_its_own_capture() {

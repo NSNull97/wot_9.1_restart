@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
 
 import { BARRACKS_CREW_POLICY_SHA256, validateBarracksRecruitmentResponse } from './p04k-crew.mjs';
+import { BATTLE_POLICY_SHA256, validateBattleRequest, validateBattleReply } from './p08b-battle.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CREW_POLICY_SHA256 = '7d0e3d7ef28d85bfe32e4fcdea0547696a9b4fd04922a725a2d895e1395f0d55';
@@ -21,7 +22,7 @@ const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
@@ -38,8 +39,10 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     && barracksRecruitment.version === 1 && barracksRecruitment.policy_sha256 === BARRACKS_CREW_POLICY_SHA256), 'Explicit barracks recruitment policy required');
   requireValue(research === null || (barracksRecruitment !== null && exact(research, ['version', 'policy_sha256']) && research.version === 1
     && research.policy_sha256 === RESEARCH_POLICY_SHA256), 'Explicit research policy required');
+  requireValue(battle === null || (research !== null && exact(battle, ['version', 'policy_sha256']) && battle.version === 1
+    && battle.policy_sha256 === BATTLE_POLICY_SHA256), 'Explicit profile13 battle policy required');
   const profileVersion = research !== null ? 13 : barracksRecruitment !== null ? 12 : dismissal !== null ? 11 : progression !== null ? 10 : rosterRecruitment !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
-  const worker = research !== null ? 'tools/p09e_research_service.py' : barracksRecruitment !== null ? 'tools/p04k_crew_store.py' : dismissal !== null ? 'tools/p04j_crew_store.py' : progression !== null ? 'tools/p04i_crew_store.py' : rosterRecruitment !== null ? 'tools/p04h_crew_store.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
+  const worker = battle !== null ? 'tools/p08b_battle_service.py' : research !== null ? 'tools/p09e_research_service.py' : barracksRecruitment !== null ? 'tools/p04k_crew_store.py' : dismissal !== null ? 'tools/p04j_crew_store.py' : progression !== null ? 'tools/p04i_crew_store.py' : rosterRecruitment !== null ? 'tools/p04h_crew_store.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
   requireValue(exact(ammo, ['version', 'bundle_root', 'original_root', 'account_id', 'grant'])
     && ammo.version === 1 && UUID.test(ammo.account_id) && isAbsolute(ammo.original_root)
     && exact(ammo.grant, ['grant_id', 'quantity_each']) && ammo.grant.grant_id === 'p09d-test-depot-v1'
@@ -129,6 +132,10 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
   }
   return {
     accountId: ammo.account_id,
+    ...(battle === null ? {} : { async battle(request) {
+      validateBattleRequest(request, ammo.account_id);
+      return validateBattleReply(await run('battle', request), request);
+    } }),
     async fixture(profile) {
       requireValue(profile.account_id === ammo.account_id && profile.profile_version === profileVersion, 'Crew profile owner mismatch');
       const value = await run('fixture');

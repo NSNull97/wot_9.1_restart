@@ -5,6 +5,8 @@ use super::super::*;
 use crate::map_profile091::MapId;
 use super::vehicle_profile::VehicleKind;
 use super::ram_proof;
+#[path="profile13_dispatch.rs"]
+mod profile13_dispatch;
 
 #[cfg(test)]
 #[path="server_catalog_tests.rs"]
@@ -592,6 +594,22 @@ struct BattleTemplate {
     catalog: Option<crate::map_drive_worker091::CatalogSpec>,
 }
 impl BattleTemplate {
+    fn from_resources(r:&super::profile13_templates::Resources,id:u64,now:Instant)->io::Result<Self> {
+        let mut world=World::new_for_vehicle(id,now,MapId::Prohorovka,r.kind)?;
+        world.bind_geometry(r.geometry.clone())?;world.enable_ap_test_lab()?;
+        world.bind_terrain(r.terrain.clone())?;world.bind_fragiles(r.catalog.0.clone())?;
+        Ok(Self{world,pool:Some(r.pool.clone()),removal:None,catalog:Some(r.catalog.1.clone())})
+    }
+    fn select(&self,world:&mut World,runtime:&mut Option<IntegratedRuntime>,now:Instant)->io::Result<()> {
+        if world.started.is_some() || world.actors.iter().any(|a|a.session.is_some()) {return Err(model::bad());}
+        let id=world.id;
+        *world=if self.world.id==id {self.world.clone()} else {self.world.fresh_battle(id,now)?};*runtime=None;
+        *runtime=self.pool.as_ref().map(|p|{
+            let mut r=IntegratedRuntime::new_for_map(p.clone(),world.map);r.catalog=self.catalog.clone();r
+        });
+        println!("P08B_WORLD_SELECTED battle={id} kind={} homogeneous=true",world.vehicle_kind().label());
+        Ok(())
+    }
     fn new(world: &World, runtime: &Option<IntegratedRuntime>) -> Self {
         Self { world:world.clone(), pool:runtime.as_ref().map(|r|r.pool.clone()),
             removal:runtime.as_ref().and_then(|r|r.removal.clone()),
@@ -629,6 +647,12 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
 }
 
 fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_start:bool,blocked:bool)->io::Result<()> {
+    if s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.pending_return.is_some()) {return Ok(());}
+    if s.shared.as_ref().is_some_and(|c|c.phase==Phase::Leaving && c.profile13.is_some()) {
+        profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::ManualLeave)?;
+        if !blocked && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+        return Ok(());
+    }
     // A prepared scene transaction must finish before membership changes.
     // Keep transport heartbeats outside this gate, including a pending Leave.
     if blocked {return Ok(());}
@@ -663,6 +687,12 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
     println!("SHARED_BATTLE_FAILED {snapshot}");
     let mut retire=Vec::new();
     for s in &mut table.sessions {
+        if s.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
+            profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::BattleFailure)?;
+            if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+            if let Some(c)=&mut s.shared {c.join_requested=false;c.commands.clear();c.hangar_since=None;}
+            continue;
+        }
         if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
         if s.arena_base {
             let mut events=Vec::new();
@@ -694,8 +724,13 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
     for s in &mut table.sessions {
         if !entry_ready(s,now) || world.actors.iter().any(|a|a.session==Some(s.id)) {continue;}
         let identity=s.identity.as_ref().ok_or_else(||model::bad())?;
-        let slot=world.attach(model::Identity{account:identity.account_id.clone(),database:identity.database_id,
-            name:identity.name.clone()},s.id)?;
+        let who=model::Identity{account:identity.account_id.clone(),database:identity.database_id,name:identity.name.clone()};
+        let owned=s.shared.as_ref().and_then(|c|c.profile13.as_ref());
+        let slot=if let Some(p)=owned {
+            let receipt=p.reservation.as_ref().ok_or_else(||model::bad())?;
+            if receipt.battle!=world.id || receipt.frozen.kind!=world.vehicle_kind() {continue;}
+            world.attach_owned(who,s.id,&receipt.frozen)?
+        } else {world.attach(who,s.id)?};
         let c=s.shared.as_mut().ok_or_else(||model::bad())?;
         let since=c.hangar_since;
         c.reset_for_battle(slot); c.hangar_since=since; c.view=Some(world.clone());
@@ -705,7 +740,17 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia,VehicleKind::Ms1)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia,VehicleKind::Ms1,None)
+}
+
+pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,capture_path:&str)
+    ->Result<(),Box<dyn std::error::Error>> {
+    let config=crate::identity091::Config::load(config_path)?;
+    if !config.profile13_battle || !config.research_service {return Err(model::bad().into());}
+    let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
+    let initial=&resources[0];
+    serve_with_pool(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources))
 }
 
 fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
@@ -716,7 +761,7 @@ fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
     Ok(map)
 }
 
-fn selected_pool_config(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<serde_json::Value> {
+pub(super) fn selected_pool_config(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<serde_json::Value> {
     use std::io::Read;
     let map=selected_pool_map(pool,selected)?;
     // Pool load already validated ownership/schema; recheck these exact bytes
@@ -734,7 +779,7 @@ fn terrain_for_pool(pool: &crate::map_drive_worker091::Pool) -> io::Result<Arc<s
     terrain_for_pool_for_map(pool,MapId::Karelia)
 }
 
-fn terrain_for_pool_for_map(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<Arc<super::terrain::Terrain>> {
+pub(super) fn terrain_for_pool_for_map(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<Arc<super::terrain::Terrain>> {
     let config=selected_pool_config(pool,selected)?;
     let path=config["terrain"]["path"].as_str().ok_or_else(|| model::bad())?;
     let terrain=super::terrain::Terrain::load_for(selected,&pool.local_root,Path::new(path))?;
@@ -786,10 +831,10 @@ pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_pa
         validate_catalog_projection(&catalog,&worker,map)?;
         Some((catalog,worker))
     }else{None};
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle,None)
 }
 
-fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::map_drive_worker091::CatalogSpec,map:MapId)->io::Result<()> {
+pub(super) fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::map_drive_worker091::CatalogSpec,map:MapId)->io::Result<()> {
     if catalog.map!=map||worker.map_id()!=map||catalog.worker_sha256!=worker.sha256()||catalog.contacts!=worker.contacts()
         ||worker.version()!=catalog.version+1||worker.entries().len()!=catalog.objects.len()
         ||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
@@ -800,7 +845,7 @@ fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::
     Ok(())
 }
 
-fn validate_vehicle_binding(vehicle:VehicleKind, pool:&crate::map_drive_worker091::Pool,
+pub(super) fn validate_vehicle_binding(vehicle:VehicleKind, pool:&crate::map_drive_worker091::Pool,
     geometry:Option<&super::geometry::Bundle>) -> io::Result<()> {
     if pool.vehicle_kind()!=vehicle || geometry.is_some_and(|bundle|bundle.vehicle_kind()!=vehicle)
         || vehicle==VehicleKind::Is7 && geometry.is_none() { return Err(model::bad()); }
@@ -809,7 +854,7 @@ fn validate_vehicle_binding(vehicle:VehicleKind, pool:&crate::map_drive_worker09
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
     integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
-    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind)
+    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,resources:Option<[super::profile13_templates::Resources;2]>)
     -> Result<(), Box<dyn std::error::Error>> {
     if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
     if terrain.is_some() && !ap_test_lab { return Err(model::bad().into()); }
@@ -821,7 +866,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         return Err(model::bad().into());
     }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
-    if config.ammo_service { return Err(model::bad().into()); }
+    let profile13_mode=resources.is_some();
+    if config.profile13_battle!=profile13_mode || config.ammo_service!=profile13_mode { return Err(model::bad().into()); }
     let private = login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len() != 16 { return Err(model::bad().into()); }
     let digest: [u8; 16] = fs::read(digest_path)?.try_into().map_err(|_| model::bad())?;
@@ -832,6 +878,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         else { crate::capture091::Profile::SharedWorldV1 };
     let mut capture = Some(Recorder::open_profile(capture_path, &config.local_root, capture_profile)?);
     let mut table = Table::default();
+    let mut battle_dispatch=profile13_dispatch::Dispatcher::default();
+    let mut ammo_job=None;
     let started = Instant::now();
     let mut world = World::new_for_vehicle(OsRng.next_u64().max(1), started,map,vehicle)?;
     if let Some(bundle) = geometry {
@@ -844,8 +892,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     }
     if ap_test_lab {
         world.enable_ap_test_lab()?;
-        println!("SHARED_AP_PROFILE revision={} historical_fidelity={} damage={} rng=false friendly_fire=true persistence=false",
-            ap::profile_revision_for(vehicle), ap::HISTORICAL_FIDELITY, vehicle.damage());
+        println!("SHARED_AP_PROFILE revision={} historical_fidelity={} damage={} rng=false friendly_fire=true persistence={}",
+            ap::profile_revision_for(vehicle),ap::HISTORICAL_FIDELITY,vehicle.damage(),profile13_mode);
     }
     if let Some(terrain) = terrain {
         let revision=terrain.source_revision();
@@ -863,7 +911,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut integrated = integrated_pool.map(|pool|IntegratedRuntime::new_for_map(pool,map));
     if let Some(runtime) = &mut integrated { runtime.removal = removal; }
     if let Some(runtime)=&mut integrated {runtime.catalog=catalog.map(|(_,worker)|worker);}
-    let battle_template=BattleTemplate::new(&world,&integrated);
+    let mut battle_template=BattleTemplate::new(&world,&integrated);
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
@@ -871,7 +919,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut rate_started = started; let mut rate_count = 0u32;
     println!("BOUND {} base_backend={} profile={} battle={} capacity=2 scope=allied_temporary_{} motion={} physics={} map={} arena_type_id={} inventory_changed=false",
         config.login_bind, config.base_bind,
-        if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
+        if profile13_mode {"legacy091-profile13"} else if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
         world.id, vehicle.label(), if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
     loop {
         let now = Instant::now();
@@ -892,17 +940,23 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                             if !table.sessions[index].verified_duplicate(&job.attempt, &accepted.identity.account_id) { return Err(model::bad()); }
                             return Ok(index);
                         }
-                        if table.sessions.iter().any(|s| s.identity.as_ref().is_some_and(|p| p.account_id == accepted.identity.account_id)) { return Err(model::bad()); }
+                        if battle_dispatch.owner_busy(&accepted.identity.account_id) || table.sessions.iter().any(|s| s.identity.as_ref().is_some_and(|p| p.account_id == accepted.identity.account_id)) { return Err(model::bad()); }
                         let mut s = Session::new(next_id, job.attempt.key, job.attempt.login_peer, now);
                         // Explicitly fail closed on the astronomically unlikely
                         // random capability collision instead of ambiguous routing.
                         if s.handoff == 0 || s.token == 0 || table.sessions.iter().any(|old| old.handoff == s.handoff || old.token == s.token) { return Err(model::bad()); }
                         let mut next_world = world.clone();
-                        let slot = next_world.attach(model::Identity { account: accepted.identity.account_id.clone(),
-                            database: accepted.identity.database_id, name: accepted.identity.name.clone() }, next_id)?;
+                        let slot = if profile13_mode {0} else {next_world.attach(model::Identity { account: accepted.identity.account_id.clone(),
+                            database: accepted.identity.database_id, name: accepted.identity.name.clone() }, next_id)?};
                         s.account_probe = true; s.account_ready = true; s.tx = Window::interactive();
                         s.login_attempt = Some(job.attempt); s.identity = Some(accepted.identity);
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
+                        if profile13_mode {
+                            let binding=accepted.ammo_service.ok_or_else(||model::bad())?;
+                            s.ammo_service=Some(ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
+                            let c=s.shared.as_mut().ok_or_else(||model::bad())?;c.join_requested=false;
+                            c.profile13=Some(super::profile13_session::State::new(config.battle_run_id.clone(),binding.revision)?);
+                        }
                         println!("SHARED_SESSION_PENDING battle={} session={next_id} slot={slot} account={} database={} authenticated=true", world.id,
                             s.identity.as_ref().ok_or_else(|| model::bad())?.account_id, s.identity.as_ref().ok_or_else(|| model::bad())?.database_id);
                         next_id = next_id.checked_add(1).ok_or_else(|| model::bad())?;
@@ -918,8 +972,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     }
                 },
                 Ok(None) => { send_wire(&login_socket, job.attempt.login_peer, &login::rejection(job.request, 67), Channel::Login, &mut capture)?; },
-                Err(_) => { send_wire(&login_socket, job.attempt.login_peer, &login::rejection(job.request, 73), Channel::Login, &mut capture)?;
-                    println!("SHARED_AUTH_REJECT reason=identity_unavailable allocated=0"); },
+                Err(error) => { send_wire(&login_socket, job.attempt.login_peer, &login::rejection(job.request, 73), Channel::Login, &mut capture)?;
+                    println!("SHARED_AUTH_REJECT reason=identity_unavailable allocated=0 error={error}"); },
             }
         }
         for (is_login, socket) in [(true, &login_socket), (false, &base_socket)] {
@@ -946,7 +1000,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     if !job.pending_duplicate(&attempt, &fields) { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
                     continue;
                 }
-                if table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
+                if battle_dispatch.busy() || ammo_job.is_some() || table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
                     send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; continue;
                 }
                 match start_auth(config.clone(), request, peer, &fields, false) {
@@ -976,7 +1030,77 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             }
         }
         // Remove known disconnects before applying any queued intent or tick.
-        for (id, reason) in closing.drain(..) { table.retire(id, &mut world, now, reason)?; }
+        for (id, reason) in closing.drain(..) { battle_dispatch.retire(&mut table,&mut world,id,now,reason)?; }
+        if profile13_mode {
+            for s in &mut table.sessions {
+                if world.started.is_some() {
+                    let busy=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
+                        p.selection.is_some() && p.reservation.is_none() && !p.in_flight);
+                    if busy {
+                        let c=s.shared.as_mut().ok_or_else(||model::bad())?;
+                        c.profile13.as_mut().ok_or_else(||model::bad())?.selection=None;c.join_requested=false;
+                        s.outbox.push_back(crate::battle091::profile13::enqueue_failure("BATTLE_BUSY")?);
+                        println!("P08B_ADMISSION_BUSY session={} battle={} peer_battle_unchanged=true",s.id,world.id);
+                    }
+                }
+                let pending=s.shared.as_ref().is_some_and(|c|c.profile13.is_some() &&
+                    (c.phase==Phase::Leaving || c.phase==Phase::Account && !c.join_requested
+                        && c.profile13.as_ref().is_some_and(|p|p.reservation.is_some())));
+                if pending {
+                    profile13_dispatch::Dispatcher::terminal(s,&world,crate::battle091::profile13::FinishReason::ManualLeave)?;
+                    if integrated.as_ref().is_none_or(|r|!r.blocked()) && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+                }
+            }
+            if let Some(id)=ammo_job.as_ref().map(ammo_session::Job::session_id) {
+                if let Err(error)=ammo_session::complete(table.sessions.iter_mut().find(|s|s.id==id),&mut ammo_job) {
+                    println!("P08B_GARAGE_FAILED session={id} error={error} reconnect_required=true service_alive=true");
+                    if table.sessions.iter().any(|s|s.id==id) {battle_dispatch.retire(&mut table,&mut world,id,now,"garage_writer_ambiguous")?;}
+                }
+            }
+            if ammo_job.is_none() {
+                battle_dispatch.poll(&mut table,config.clone(),now)?;
+                if battle_dispatch.finish_empty_queue(&table,&mut world,&mut integrated,&battle_template,now)? {
+                    contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+                }
+                if battle_dispatch.closed_queue(world.id) {
+                    for s in &mut table.sessions {
+                        let pending=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
+                            p.selection.is_some() && p.reservation.is_none() && !p.in_flight);
+                        if pending {
+                            let c=s.shared.as_mut().ok_or_else(||model::bad())?;
+                            c.profile13.as_mut().ok_or_else(||model::bad())?.selection=None;c.join_requested=false;
+                            s.outbox.push_back(crate::battle091::profile13::enqueue_failure("BATTLE_BUSY")?);
+                        }
+                    }
+                }
+                if world.started.is_none() && world.actors.iter().all(|a|a.session.is_none()) {
+                    let kind=table.sessions.iter().find_map(|s|s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
+                        .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && p.pending_return.is_none())
+                        .and_then(|p|p.reservation.as_ref()).filter(|r|r.battle==world.id).map(|r|r.frozen.kind));
+                    if let Some(kind)=kind.filter(|k|*k!=world.vehicle_kind()) {
+                        let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
+                        battle_template=BattleTemplate::from_resources(r,world.id,now)?;
+                        battle_template.select(&mut world,&mut integrated,now)?;
+                        contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+                    }
+                }
+                for s in &mut table.sessions {
+                    let mismatch=s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
+                        .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && p.pending_return.is_none())
+                        .and_then(|p|p.reservation.as_ref()).is_some_and(|r|r.battle!=world.id || r.frozen.kind!=world.vehicle_kind());
+                    if mismatch {
+                        profile13_dispatch::Dispatcher::terminal(s,&world,crate::battle091::profile13::FinishReason::Cancelled)?;
+                        if let Some(c)=&mut s.shared {c.queue_announced=false;}
+                        s.outbox.push_back(crate::battle091::profile13::enqueue_failure("BATTLE_BUSY")?);
+                        println!("P08B_HOMOGENEOUS_DENIAL session={} battle={} reservation_will_be_returned=true",s.id,world.id);
+                    }
+                }
+                battle_dispatch.start(&mut table,&world,config.clone(),now)?;
+            }
+            if !battle_dispatch.busy() {
+                for s in &mut table.sessions {ammo_session::start(s,&mut ammo_job,config.clone())?;}
+            }
+        }
         if !world.actors.is_empty() && world.actors.iter().all(|a|a.session.is_none()) {
             battle_template.replace(&mut world,&mut integrated,now)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
@@ -990,7 +1114,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         let step=(||->io::Result<()> {
             attach_waiting_sessions(&mut table,&mut world,now)?;
             let start=world.started.is_none() && table.sessions.len()==2
-                && table.sessions.iter().all(|s|entry_ready(s,now));
+                && world.actors.len()==2 && table.sessions.iter().all(|s|entry_ready(s,now)
+                    && world.actors.iter().any(|a|a.session==Some(s.id)));
             advance_battle(&mut world,&mut integrated,now,start)
         })();
         if let Err(error)=step {
@@ -1031,7 +1156,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
         for (id, reason) in closing {
-            if table.sessions.iter().any(|s|s.id==id) {table.retire(id, &mut world, now, reason)?;}
+            if table.sessions.iter().any(|s|s.id==id) {battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;}
         }
         for contact in world.contacts.iter().skip(contact_cursor) {
             println!("SHARED_GEOMETRIC_CONTACT {}", serde_json::json!({
@@ -1338,6 +1463,29 @@ fn entry_ready(s: &Session, now: Instant) -> bool {
     s.ready_for_arena_base() && s.shared.as_ref().is_some_and(|c| c.phase == Phase::Account
         && c.join_requested
         && c.hangar_since.is_some_and(|start| now.saturating_duration_since(start) >= Duration::from_secs(3)))
+}
+
+#[cfg(test)]
+mod profile13_template_regressions {
+    use super::*;
+    #[test] fn profile13_template_selection_keeps_same_battle_id_without_weakening_fresh_guard() {
+        let now=Instant::now();
+        let pristine=World::new_for_vehicle(991,now,MapId::Prohorovka,VehicleKind::Is7).unwrap();
+        assert!(pristine.fresh_battle(991,now).is_err());
+        let template=BattleTemplate::new(&pristine,&None);
+        let mut world=World::new_for_vehicle(991,now,MapId::Prohorovka,VehicleKind::Ms1).unwrap();
+        let mut runtime=None;
+        template.select(&mut world,&mut runtime,now+Duration::from_secs(1)).unwrap();
+        assert_eq!(world.id,991);assert_eq!(world.vehicle_kind(),VehicleKind::Is7);
+        assert!(world.actors.is_empty());assert!(world.shots.is_empty());assert!(world.started.is_none());
+        template.replace(&mut world,&mut runtime,now+Duration::from_secs(2)).unwrap();
+        assert_eq!(world.id,992);assert_eq!(world.vehicle_kind(),VehicleKind::Is7);
+        assert!(world.actors.is_empty());assert!(runtime.is_none());
+        world.attach(model::Identity{account:"already-owned".into(),database:1,name:"owned".into()},1).unwrap();
+        let actors=world.actors.clone();
+        assert!(template.select(&mut world,&mut runtime,now+Duration::from_secs(2)).is_err());
+        assert_eq!(world.actors,actors);assert_eq!(world.id,992);
+    }
 }
 
 #[cfg(test)]

@@ -6,6 +6,8 @@
 
 ## Общие (клиент, протокол, ресурсы, решения)
 
+- [P08B_PROFILE13_BATTLE.md](P08B_PROFILE13_BATTLE.md) — P08B: выбранный owned loadout профиля13, резерв/результат/restart и native gate в работе
+
 - [BATTLE_LOADOUT_REVISION_GATE.md](BATTLE_LOADOUT_REVISION_GATE.md) — Исследование: battle-loadout revision adapter
 - [CAPACITY_1000_CCU.md](CAPACITY_1000_CCU.md) — Инфраструктура для 1000 одновременных игроков: расчётная модель
 - [CLIENT_AUDIT.md](CLIENT_AUDIT.md) — CLIENT_AUDIT — P00–P01

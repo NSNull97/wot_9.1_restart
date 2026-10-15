@@ -218,7 +218,9 @@ impl Session {
     fn ready_for_arena_base(&self)->bool {
         self.active && self.account_ready && self.identity.is_some() && self.hangar.is_some()
             && self.base_peer.is_some() && self.sync_mask==7 && self.outbox.is_empty()
-            && self.tx.len()==0 && !self.arena_base && self.ammo_service.is_none()
+            && self.tx.len()==0 && !self.arena_base && (self.ammo_service.is_none()
+                || self.shared.as_ref().is_some_and(|c|c.profile13_arena_ready())
+                    && self.ammo_service.as_ref().is_some_and(ammo_session::State::idle))
     }
     fn queue_arena_base(&mut self)->io::Result<()> {
         if !self.ready_for_arena_base() {return Err(invalid());}
@@ -1480,6 +1482,9 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                interactive:Option<Arc<crate::identity091::Config>>,mut capture:Option<Recorder>,
                mut arena_control:Option<crate::arena_control091::ArenaControl>,
                drive_pool:Option<Arc<crate::map_drive_worker091::Pool>>)->Result<(),Box<dyn std::error::Error>> {
+    if interactive.as_ref().is_some_and(|config|config.profile13_battle) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput,"profile13 battle requires the explicit shared profile13 mode").into());
+    }
     if interactive.as_ref().is_some_and(|config|config.ammo_service) && (drive_pool.is_some() || arena_control.is_some()) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput,"ammunition service is hangar-only; battle integration unavailable").into());
     }

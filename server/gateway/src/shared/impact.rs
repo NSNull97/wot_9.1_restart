@@ -19,12 +19,12 @@ pub const MS1_GUN_COMPACT_ID: u32 = 5892;
 pub const MS1_AP_SHELL_COMPACT_ID: u32 = 2570;
 pub const MAX_SEGMENTS_PER_SHOT: usize = 256;
 // Admission + launch, segment/terrain-query/vehicle-query triples, one terminal collision batch, and
-// nearest material record, optional AP or wreck outcome and terminal. The model admits only both actors'
-// original 20-shell loadouts, plus at most one fragile damage event per shell
+// nearest material record, optional AP or wreck outcome and terminal. The model admits both actors'
+// source-bound 96-shell maximum loadouts, plus at most one fragile damage event per shell
 // and one vehicle contact for each catalog object.
 const EVENTS_PER_SHOT:usize = 2 + MAX_SEGMENTS_PER_SHOT * 3 + collision::MAX_CANDIDATES + 1 + 1 + 1 + 1;
-// Frozen MS-1 budget; each trace uses its selected profile's equivalent bound.
-pub const MAX_EVENTS: usize = 40 * EVENTS_PER_SHOT
+// Maximum MS-1 budget; each trace uses its selected profile's equivalent bound.
+pub const MAX_EVENTS: usize = super::model::MAX_SHOTS * EVENTS_PER_SHOT
     + fragiles::MAX_MOVEMENT_OBJECTS;
 pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
@@ -360,8 +360,9 @@ impl Trace {
         ammo_after: u16,
     ) -> io::Result<()> {
         self.common(battle_id, shot_id, server_tick)?;
-        if shooter_slot >= 2 || ammo_before > self.vehicle.initial_ammo()
-            || ammo_after > self.vehicle.initial_ammo()
+        if shooter_slot >= 2 || shot_id as usize > self.vehicle.battle_shot_limit()
+            || ammo_before > self.vehicle.ammo_limit()
+            || ammo_after > self.vehicle.ammo_limit()
             || ammo_after.checked_add(1) != Some(ammo_before) {
             return Err(invalid("impact admission transition"));
         }
@@ -963,7 +964,7 @@ mod tests {
         assert_eq!(MS1_GUN_COMPACT_ID, 5892);
         assert_eq!(MS1_AP_SHELL_COMPACT_ID, 2570);
         assert_eq!(MAX_SEGMENTS_PER_SHOT, 256);
-        assert_eq!(MAX_EVENTS, 38_128);
+        assert_eq!(MAX_EVENTS, 175_232);
         assert_eq!(Trace::new().event_limit(),MAX_EVENTS);
         let is7=Trace::new_for_vehicle(crate::map_profile091::MapId::Prohorovka,VehicleKind::Is7);
         assert_eq!(is7.event_limit(),56_168);
@@ -1958,6 +1959,10 @@ mod tests {
     }
 
     fn full_ammo_budget(wreck: bool, with_terrain: bool) {
+        // Retain the original complete 20+20-flight geometry stress case.
+        // P08B separately exercises all 96+96 admitted owned flights.
+        let shot_count = 2 * VehicleKind::Ms1.initial_ammo() as usize;
+        let trace_budget = shot_count * EVENTS_PER_SHOT + fragiles::MAX_MOVEMENT_OBJECTS;
         let bundle = super::super::geometry::tests::bundle();
         // Explicit synthetic world-revision fixture: its obstacle is far
         // below every shot. This is trace-capacity evidence, not native data.
@@ -1976,7 +1981,7 @@ mod tests {
             trace.bind_fragiles(catalog.clone()).unwrap();Some(fragiles::State::new(catalog))
         } else {None};
         let mut tick = 1000;
-        for index in 0..VehicleKind::Ms1.battle_shot_limit() {
+        for index in 0..shot_count {
             let shot_id = index as u32 + 1;
             let slot = index / 20;
             // Synthetic overlap geometry exercises the target-tag contract;
@@ -2018,16 +2023,16 @@ mod tests {
                 else { TerminalReason::TestLabImpact }).unwrap();
         }
         assert_eq!(trace.events().len(), if with_terrain {
-            MAX_EVENTS-fragiles::MAX_MOVEMENT_OBJECTS-VehicleKind::Ms1.battle_shot_limit()
+            trace_budget-fragiles::MAX_MOVEMENT_OBJECTS-shot_count
         } else { 25_800 });
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::TerrainQuery { .. })).count(),
-            if with_terrain { VehicleKind::Ms1.battle_shot_limit() * MAX_SEGMENTS_PER_SHOT } else { 0 });
-        assert_eq!(trace.terminal_shots().len(), VehicleKind::Ms1.battle_shot_limit());
-        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::MaterialContact { .. })).count(), VehicleKind::Ms1.battle_shot_limit());
+            if with_terrain { shot_count * MAX_SEGMENTS_PER_SHOT } else { 0 });
+        assert_eq!(trace.terminal_shots().len(), shot_count);
+        assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::MaterialContact { .. })).count(), shot_count);
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::ApResolution { .. })).count(),
-            if wreck { 0 } else { VehicleKind::Ms1.battle_shot_limit() });
+            if wreck { 0 } else { shot_count });
         assert_eq!(trace.events().iter().filter(|event| matches!(event, Event::WreckImpact { .. })).count(),
-            if wreck { VehicleKind::Ms1.battle_shot_limit() } else { 0 });
+            if wreck { shot_count } else { 0 });
         if let Some(source)=ram_source.as_mut() {
             // A full legitimate firing trace must still admit the entire
             // extended destruction catalog, independently of shot count.
@@ -2036,7 +2041,7 @@ mod tests {
                 let contact=source.ram_contact(id,0,tick,1,[0.;3],[1.,0.,0.],[4.,0.,0.],1000.,"hull".into()).unwrap().unwrap();
                 trace.vehicle_contact(123,tick,&contact).unwrap();
             }
-            assert_eq!(trace.events().len(),MAX_EVENTS-VehicleKind::Ms1.battle_shot_limit());
+            assert_eq!(trace.events().len(),trace_budget-shot_count);
             assert_eq!(trace.scene_version_before(u32::MAX),fragiles::MAX_MOVEMENT_OBJECTS as u32);
             assert!(trace.excluded_before(u32::MAX).is_empty());
         }

@@ -69,14 +69,14 @@ fn world(now:Instant,kind:VehicleKind)->model::World {
             let outcomes=w.apply(slot,slot as u32+1,&[model::Command::Fire(fire::Command::Shoot)],t).unwrap();
             assert!(matches!(outcomes.as_slice(),[fire::Outcome::AcceptedShot{..}]));
         } }
-        assert_eq!(w.latest_shot() as usize,kind.battle_shot_limit());
-        assert_eq!(w.projectiles.len(),kind.battle_shot_limit());
+        assert_eq!(w.latest_shot() as usize,2*kind.initial_ammo() as usize);
+        assert_eq!(w.projectiles.len(),2*kind.initial_ammo() as usize);
         for slot in 0..2 {
             assert_eq!(w.actors[slot].fire.ammo(),0);
             let outcomes=w.apply(slot,slot as u32+1,&[model::Command::Fire(fire::Command::Shoot)],now+Duration::from_secs(500)).unwrap();
             assert_eq!(outcomes,vec![fire::Outcome::RejectedNoAmmo]);
         }
-        assert_eq!(w.latest_shot() as usize,kind.battle_shot_limit());
+        assert_eq!(w.latest_shot() as usize,2*kind.initial_ammo() as usize);
     }
 }
 

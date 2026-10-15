@@ -8,14 +8,31 @@ authority. Two previously owned FightButton bindings are layered here. A
 separate fail-closed guard blocks the original external CAPTCHA image fetch.
 Explicit shared-lab admission enables this button for a temporary server actor;
 owned hangar vehicle readiness, crew and ammunition remain unchanged.
+The separate profile13 mode admits only a real stock owned MS-1/IS-7 with
+native readiness and AP-only loadout as a UI hint; the server owns admission.
 """
 import hashlib
 import os
 import threading
 import types
 
-VERSION = 4
+VERSION = 5
 MS1_SHA256 = '4122429c052f5c8eb2ebeae456c775b1a368a007cf37bae8af7b3f87ff064c5c'
+# Exact #717 stock assemblies, independently checked by the server writer.
+PROFILE13_VEHICLES = {
+    3329: (MS1_SHA256, 2, 90, 96, (2570, 2826, 3082)),
+    7169: ('10ec1923d6273cf7e970ea7a5aed6f850df3110ab4e526840c839ade9aa7bc30',
+           5, 2150, 30, (14602, 14858, 15114)),
+}
+PROFILE13_REASONS = {
+    'unsupported_vehicle': u'У этой машины пока нет проверенного боевого профиля.',
+    'unsupported_configuration': u'Для боя нужна проверенная стандартная сборка МС-1 или ИС-7.',
+    'unsupported_crew_readiness': u'Нужен полный экипаж и готовая к бою машина.',
+    'unsupported_ap_loadout': u'Пока поддерживаются только бронебойные: загрузите от одного снаряда до вместимости БК, остальные выгрузите.',
+    'vehicle_reserved': u'Эта машина уже зарезервирована для другого боя.',
+    'inventory_not_ready': u'Дождитесь синхронизации ангара и выберите свою машину.',
+}
+PROFILE13_NOTICE = u'Вход в бой недоступен: '
 SHELLS = (2570, 20, 2826, 0, 3082, 0)
 LIGHT_SOURCE = 'scripts/client/LightFx/LightManager.py'
 LIGHT_SHA256 = '1cab41ea55634ec05081bdb81902bd8dd781851b7b68042636ccc914d4d4a348'
@@ -310,9 +327,10 @@ class _Native(object):
         return dict(player_kind=kind, player_owner_id=None if player is None else id(player),
                     entity_id=None if player is None else _integer(player.id, 1, 2147483647, 'entity ID'))
 
-    def eligibility(self, shared_lab=False):
-        if type(shared_lab) is not bool:
-            raise TypeError('explicit shared laboratory mode required')
+    def eligibility(self, shared_lab=False, profile13_battle=False):
+        if (type(shared_lab) is not bool or type(profile13_battle) is not bool
+                or shared_lab and profile13_battle):
+            raise TypeError('exclusive explicit battle mode required')
         import Account
         import BigWorld
         from ConnectionManager import connectionManager
@@ -327,7 +345,7 @@ class _Native(object):
         if database_id is None:
             return {'allowed': False, 'reason': 'account_identity_pending', 'queued': False}
         database_id = _integer(database_id, 1, 2147483647, 'databaseID')
-        if database_id not in ((1, 2) if shared_lab else (1,)):
+        if not profile13_battle and database_id not in ((1, 2) if shared_lab else (1,)):
             return {'allowed': False, 'reason': 'unsupported_account', 'queued': False}
         queued = _bool(player.isInRandomQueue, 'isInRandomQueue')
         # Cancelling a real existing queue must not require entry readiness.
@@ -335,6 +353,8 @@ class _Native(object):
             return {'allowed': True, 'reason': 'original_dequeue', 'queued': True}
         if not g_itemsCache.isSynced() or not g_currentVehicle.isPresent():
             return {'allowed': False, 'reason': 'inventory_not_ready', 'queued': False}
+        if profile13_battle:
+            return self._profile13_selection(player, BigWorld, g_currentVehicle, g_itemsCache)
         item, items = g_currentVehicle.item, g_itemsCache.items
         if (_integer(g_currentVehicle.invID, 1, 2147483647, 'selected ID') != 1
                 or item.invID != 1 or item.intCD != 3329):
@@ -396,12 +416,81 @@ class _Native(object):
         return dict(allowed=allowed, reason='supported_ms1' if allowed else 'unsupported_crew_ammo_readiness',
                     queued=False)
 
+    def _profile13_selection(self, player, world, current, cache):
+        """Read native owned state as a UI hint; never grant server admission."""
+        item = current.item
+        selected = _integer(current.invID, 1, 2147483647, 'selected inventory ID')
+        if _integer(item.invID, 1, 2147483647, 'item inventory ID') != selected:
+            raise RuntimeError('original selected inventory identity disagrees')
+        spec = PROFILE13_VEHICLES.get(_integer(item.intCD, 1, 65535, 'vehicle type'))
+        if spec is None:
+            return dict(allowed=False, reason='unsupported_vehicle', queued=False)
+        descriptor_sha, seats, health, capacity, shell_ids = spec
+        if _raw_sha(item.descriptor.makeCompactDescr()) != descriptor_sha:
+            return dict(allowed=False, reason='unsupported_configuration', queued=False)
+        inventory = cache.items.inventory.getCacheValue(1, {})
+        if type(inventory) is not dict or len(inventory) > 32:
+            raise ValueError('bounded profile13 vehicle inventory required')
+        for key in ('compDescr', 'repair', 'crew', 'shells'):
+            if type(inventory.get(key)) is not dict or not 1 <= len(inventory[key]) <= 64:
+                raise ValueError('bounded profile13 inventory column required: ' + key)
+        if _raw_sha(inventory['compDescr'].get(selected)) != descriptor_sha:
+            raise RuntimeError('original selected descriptor and inventory disagree')
+        locks = inventory.get('lock', {})
+        if type(locks) is not dict or len(locks) > 64:
+            raise ValueError('bounded profile13 lock column required')
+        if _integer(locks.get(selected, 0), 0, 255, 'vehicle lock') != 0:
+            return dict(allowed=False, reason='vehicle_reserved', queued=False)
+        repair = inventory['repair'].get(selected)
+        if type(repair) not in (list, tuple) or len(repair) != 2:
+            raise ValueError('original profile13 repair tuple required')
+        repair = tuple(_integer(v, 0, 2147483647, 'repair') for v in repair)
+        crew, raw_crew = item.crew, inventory['crew'].get(selected)
+        if (type(crew) not in (list, tuple) or len(crew) != seats
+                or type(raw_crew) not in (list, tuple) or len(raw_crew) != seats):
+            return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
+        crew_ids = []
+        for seat, pair in enumerate(crew):
+            if (type(pair) not in (list, tuple) or len(pair) != 2
+                    or _integer(pair[0], 0, seats - 1, 'crew seat') != seat):
+                raise ValueError('original ordered profile13 crew pairs required')
+            man = pair[1]
+            if man is None or raw_crew[seat] is None:
+                return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
+            if (_integer(man.vehicleInvID, 1, 2147483647, 'crew vehicle') != selected
+                    or _integer(man.vehicleSlotIdx, 0, seats - 1, 'crew slot') != seat
+                    or _integer(man.invID, 1, 2147483647, 'crew inventory ID')
+                    != _integer(raw_crew[seat], 1, 2147483647, 'raw crew ID')):
+                raise RuntimeError('original profile13 crew assignment disagrees')
+            crew_ids.append(man.invID)
+        if len(set(crew_ids)) != seats:
+            raise RuntimeError('original profile13 crew identity is duplicated')
+        if (repair != (0, health) or not _bool(item.isCrewFull, 'isCrewFull')
+                or not _bool(current.isReadyToFight(), 'isReadyToFight')):
+            return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
+        loaded = _flat(inventory['shells'].get(selected))
+        if (tuple(loaded[::2]) != shell_ids or not 1 <= loaded[1] <= capacity
+                or loaded[3] != 0 or loaded[5] != 0):
+            return dict(allowed=False, reason='unsupported_ap_loadout', queued=False)
+        shells = item.shells
+        if type(shells) not in (tuple, list) or len(shells) != 3:
+            raise ValueError('three original profile13 shell getters required')
+        gui = tuple((_integer(s.intCD, 1, 65535, 'shell ID'),
+                     _integer(s.count, 0, capacity, 'shell count')) for s in shells)
+        if gui != tuple(zip(loaded[::2], loaded[1::2])):
+            raise RuntimeError('original profile13 GUI and loaded ammunition disagree')
+        if world.player() is not player or current.item is not item or current.invID != selected:
+            raise RuntimeError('native Account or selected item changed during profile13 entry check')
+        return dict(allowed=True, reason='supported_profile13_owned_vehicle', queued=False)
+
 
 class _Controller(object):
     """Exact descriptor ownership; isolated dependencies are unit-test seams."""
-    def __init__(self, guard, native, services, record, captcha_guard):
+    def __init__(self, guard, native, services, record, captcha_guard, profile13_battle=False):
         if not callable(record):
             raise TypeError('ordinary drive recorder must be callable')
+        if type(profile13_battle) is not bool:
+            raise TypeError('explicit profile13 battle mode required')
         self.captcha_guard = captcha_guard
         self.guard, self.native, self.services, self.record = guard, native, services, record
         self.button_class = guard.button_class
@@ -413,6 +502,7 @@ class _Controller(object):
         self.last_context = None
         self.click_records = 0
         self.shared_lab = False
+        self.profile13_battle = profile13_battle
         owner = self
 
         def fight(self, mapID=None, actionName=''):
@@ -430,9 +520,13 @@ class _Controller(object):
             if (mapID is not None and (type(mapID) not in integer_types or mapID != 0)
                     or type(actionName) not in string_types or actionName != ''):
                 return owner.previous['fightClick'](self, mapID, actionName)
-            state = owner.native.eligibility(shared_lab=owner.shared_lab)
+            state = owner._eligibility()
             if not state['allowed']:
                 _emit(owner.record, 'map_drive_client_denied', reason=state['reason'], original_callback_called=False)
+                if owner.profile13_battle:
+                    owner.guard.messages.pushMessage(owner._profile13_notice(state['reason']),
+                                                     type=owner.guard.messages.SM_TYPE.Warning)
+                    return
                 return owner.previous['fightClick'](self, mapID, actionName)
             if not state['queued']:
                 try:
@@ -442,7 +536,7 @@ class _Controller(object):
                     owner.guard.messages.pushMessage(ERROR_NOTICE, type=owner.guard.messages.SM_TYPE.Warning)
                     raise
                 # Event or initialization callbacks may have changed selection.
-                state = owner.native.eligibility(shared_lab=owner.shared_lab)
+                state = owner._eligibility()
                 if not state['allowed'] or state['queued']:
                     raise RuntimeError('native entry state changed during arena service initialization')
             _emit(owner.record, 'map_drive_client_action', phase='begin',
@@ -455,7 +549,8 @@ class _Controller(object):
 
         def disable(self, isDisabled, toolTip):
             owner._require_owned()
-            if owner.native.eligibility(shared_lab=owner.shared_lab)['allowed']:
+            state = owner._eligibility()
+            if state['allowed']:
                 if owner.shared_lab:
                     # Original dispatcher readiness describes the owned tank.
                     # Only this owned button is enabled for temporary lab entry;
@@ -463,9 +558,21 @@ class _Controller(object):
                     return owner.originals['_FightButton__disableFightButton'](self, False, SHARED_LAB_TOOLTIP)
                 # Preserve original readiness, tooltip and original Flash call.
                 return owner.originals['_FightButton__disableFightButton'](self, isDisabled, toolTip)
+            if owner.profile13_battle:
+                return owner.originals['_FightButton__disableFightButton'](
+                    self, True, u'{HEADER}Вход в бой недоступен{/HEADER}{BODY}'
+                    + owner._profile13_notice(state['reason']) + u'{/BODY}')
             return owner.previous['_FightButton__disableFightButton'](self, isDisabled, toolTip)
 
         self.replacements = (('fightClick', fight), ('_FightButton__disableFightButton', disable))
+
+    def _eligibility(self):
+        if self.profile13_battle:
+            return self.native.eligibility(profile13_battle=True)
+        return self.native.eligibility(shared_lab=self.shared_lab)
+
+    def _profile13_notice(self, reason):
+        return PROFILE13_NOTICE + PROFILE13_REASONS.get(reason, u'Дождитесь готовности своего аккаунта и ангара.')
 
     def _require_owned(self):
         self.captcha_guard.require_ready()
@@ -492,7 +599,8 @@ class _Controller(object):
         self.active = True
         _emit(self.record, 'map_drive_client_policy', phase='install', ordinary=True,
               bindings=[name for name, _ in self.replacements], native_input_unchanged=True,
-              original_ammo_check_preserved=True, automatic_quit=False)
+              original_ammo_check_preserved=True, automatic_quit=False,
+              profile13_battle=self.profile13_battle, admission_authority='server')
 
     def restore(self):
         if not self.installed:
@@ -517,7 +625,7 @@ class _Controller(object):
         return context
 
 
-def init(record):
+def init(record, profile13_battle=False):
     """Root invokes only for an explicitly installed ordinary service feature."""
     global _controller, _captcha_guard, _attempted
     if _attempted:
@@ -530,7 +638,8 @@ def init(record):
     _audit_originals(policy, guard)
     sources = _audit_sources(policy)
     _captcha_guard = _CaptchaGuard(_load_captcha_class(), record)
-    _controller = _Controller(guard, _Native(), _Services(record), record, _captcha_guard)
+    _controller = _Controller(guard, _Native(), _Services(record), record, _captcha_guard,
+                              profile13_battle=profile13_battle)
     try:
         _emit(record, 'map_drive_client_provenance', sources=sources,
               original_method_code_sha256=dict((r[0], r[4]) for r in policy.BATTLE_METHODS),
@@ -562,6 +671,8 @@ def prepare_shared_lab(record):
     """
     if not is_active() or record is not _controller.record:
         raise RuntimeError('shared lab requires the owned ordinary service controller')
+    if _controller.profile13_battle:
+        raise RuntimeError('profile13 owned vehicles cannot use temporary shared lab admission')
     _controller._require_owned()
     _controller.services.initialize()
     _controller._require_owned()

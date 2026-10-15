@@ -118,6 +118,9 @@ def prepare(args):
         from shared_client_copy import checked_copy
         root, copy_info = checked_copy(args.research_copy, paths)
     shared_lab = bool(getattr(args, 'enable_shared_lab', False))
+    profile13_battle = getattr(args, 'enable_profile13_battle', False)
+    if type(profile13_battle) is not bool:
+        raise ValueError('Explicit boolean profile13 battle option required')
     ammo_service = bool(getattr(args, 'enable_p09d_ammo_service', False))
     recruitment = bool(getattr(args, 'enable_crew_recruitment', False))
     transfer = bool(getattr(args, 'enable_crew_transfer', False))
@@ -131,6 +134,10 @@ def prepare(args):
     if dismissal and not progression:
         raise ValueError('P04J dismissal requires all earlier explicit hangar services')
     research_service = bool(getattr(args, 'enable_research_service', False))
+    if profile13_battle and (copy_info is None or shared_lab or args.enable_map_drive
+            or not all((ammo_service, recruitment, transfer, cross_vehicle, roster,
+                        progression, dismissal, barracks, research_service))):
+        raise ValueError('Profile13 battle requires isolated full research/crew/ammunition hangar; map-drive and shared lab are excluded')
     if ammo_service and (shared_lab or args.enable_map_drive):
         raise ValueError('P09D ammunition service is restricted to the native hangar')
     if recruitment and (copy_info is None or not ammo_service or shared_lab or args.enable_map_drive):
@@ -287,6 +294,8 @@ def prepare(args):
         settings['enable_research_service'] = True
     if shared_lab:
         settings['enable_shared_lab'] = True
+    if profile13_battle:
+        settings['enable_profile13_battle'] = True
     if catalog_spec is not None:
         settings['destructible_catalog_spec'] = catalog_spec
     payloads['sr_interactive_settings.json'] = (json.dumps(settings, ensure_ascii=True, indent=2)+'\n').encode()
@@ -459,6 +468,8 @@ def main():
                       help='Pinned local identity preprocessing specification; requires opt-in control/shared lab')
     prep.add_argument('--enable-map-drive', action='store_true',
                       help='Explicit test_lab native battle-button travel; no automatic input or quit')
+    prep.add_argument('--enable-profile13-battle', action='store_true',
+                      help='Owned stock MS-1/IS-7 AP-only battle entry from the full isolated profile13 hangar')
     prep.add_argument('--enable-p09d-ammo-service', action='store_true',
                       help='Native maintenance for the two source-bound MS-1 and IS-7 mounts')
     prep.add_argument('--enable-crew-recruitment', action='store_true',

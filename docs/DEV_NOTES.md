@@ -48,6 +48,15 @@ Harness профиля 12/13: `tools/p09e_research_harness.py --seed-only`.
 
 ## Стенды (`local/stands/`, не в git)
 
+- `p08b-profile13-01` — свежая общая P08B БД A/B профиля13, bridge3481,
+  login20130/base20131. Режим `legacy091-profile13 KEY DIGEST GATEWAY MANIFEST CAPTURE`;
+  manifest `battle-profiles.json` закрепляет оба однородных stock MS-1/ИС-7 пула,
+  геометрию и общий каталог Прохоровки. Client installs `install-{a,b}-01`,
+  только `--enable-profile13-battle` и полный набор9 hangar service flags.
+  Обычный map-drive/shared-lab с ними не смешивать. Native приёмка пока NOT_RUN;
+  source/build/launch receipts нужны перед запуском. B создан отдельной явной
+  owner-source policy; исходный A13 остался без изменений. Факты — исследование P08B.
+
 - `p09e-main-01` — ангар профиля 13 (экипаж, БК, исследования, покупка).
   Bridge 3480, вход 127.0.0.1:23480, `services.ps1 start|stop`.
   Клиент: `local/clients/p03f/a/WorldOfTanks.exe`; перед запуском скопировать

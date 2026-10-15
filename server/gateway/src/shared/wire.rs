@@ -145,9 +145,22 @@ pub fn reload_for(kind: VehicleKind,slot: usize, time_left: f32) -> io::Result<V
 }
 pub fn ammo_count(count: u16) -> io::Result<Vec<u8>> { ammo_count_for(VehicleKind::Ms1,count) }
 pub fn ammo_count_for(kind: VehicleKind,count: u16) -> io::Result<Vec<u8>> {
-    if count > kind.initial_ammo() { return Err(model::bad()); }
+    if count > kind.ammo_limit() { return Err(model::bad()); }
     let mut b = vec![0x13, 0x44]; b.extend(kind.shell_compact_id().to_le_bytes()); b.extend(count.to_le_bytes());
     b.extend([0, 0, 0]); Ok(b)
+}
+
+#[cfg(test)]
+#[test]
+fn profile13_owned_ammunition_publication_accepts_source_capacity_without_granting_any() {
+    for kind in [VehicleKind::Ms1,VehicleKind::Is7] {
+        for count in [0,7,11,kind.ammo_limit()] {
+            let body=ammo_count_for(kind,count).unwrap();
+            assert_eq!(&body[..2],&[0x13,0x44]);assert_eq!(&body[2..6],&kind.shell_compact_id().to_le_bytes());
+            assert_eq!(&body[6..8],&count.to_le_bytes());
+        }
+        assert!(ammo_count_for(kind,kind.ammo_limit()+1).is_err());
+    }
 }
 /// Pinned #717: selectEntity FIXED4, Vehicle.showShooting(UINT8), then restore
 /// Avatar selection. One MS-1 shot has burstCount=1. Native prediction handles

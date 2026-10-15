@@ -28,6 +28,27 @@ impl State {
              seen:Vec::new(),pending:VecDeque::new(),inflight:None}
     }
     pub(super) fn crew_enabled(&self)->bool {self.crew_enabled}
+    pub(super) fn revision(&self)->u64 {self.revision}
+    pub(super) fn wire_revision(&self)->i64 {self.wire_revision}
+    pub(super) fn idle(&self)->bool {self.pending.is_empty() && self.inflight.is_none()}
+    /// Reserving/cancelling while the same Account entity is alive advances the
+    /// durable cursor only. Its native AccountSyncData sequence and request
+    /// epoch keep matching the client until an actual Account recreation.
+    pub(super) fn refresh_revision(&mut self,revision:u64)->io::Result<()> {
+        if !self.idle() || revision<self.revision || revision>=i32::MAX as u64 {return Err(invalid());}
+        self.revision=revision;Ok(())
+    }
+    /// A fresh full Account publication resets its native cursor. Rebind only
+    /// after every old hangar command resolved; its old command keys must never
+    /// accidentally replay after an Account -> Avatar -> Account cycle.
+    pub(super) fn rebind(&mut self,binding:codec::Metadata)->io::Result<()> {
+        if !self.idle() || binding.revision<self.revision || binding.revision>=i32::MAX as u64
+            || binding.wire_revision!=1 {return Err(invalid());}
+        let mut random=[0;16];OsRng.fill_bytes(&mut random);
+        self.revision=binding.revision;self.wire_revision=binding.wire_revision;
+        self.prefix=random.iter().map(|byte|format!("{byte:02x}")).collect();self.seen.clear();
+        Ok(())
+    }
     pub(super) fn with_transfer(mut self,enabled:bool)->Self {self.transfer_enabled=enabled && self.crew_enabled;self}
     pub(super) fn with_cross_vehicle(mut self,enabled:bool)->Self {self.cross_vehicle_enabled=enabled && self.transfer_enabled;self}
     pub(super) fn with_roster_recruitment(mut self,enabled:bool)->Self {self.roster_recruitment=enabled && self.cross_vehicle_enabled;self}
@@ -51,7 +72,8 @@ impl State {
 fn available(session:&Session)->io::Result<()> {
     if !session.active || !session.account_ready || session.identity.is_none() || session.hangar.is_none()
         || session.sync_mask!=7 || session.ammo_service.is_none() || session.arena_base || session.drive.is_some()
-        || session.map_drive || session.shared.is_some() || session.drive_account_policy.is_some() {
+        || session.map_drive || session.shared.as_ref().is_some_and(|client|!client.profile13_account())
+        || session.drive_account_policy.is_some() {
         return Err(invalid());
     }
     Ok(())
@@ -96,6 +118,7 @@ pub(super) fn enqueue_research(session:&mut Session,request:research_codec::Requ
 }
 fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)->io::Result<()> {
     available(session)?;
+    let reserved=session.shared.as_ref().is_some_and(|client|!client.profile13_garage_idle());
     let state=session.ammo_service.as_mut().ok_or_else(invalid)?;
     let id=request.id();let kind=request.kind();
     if id==202 || state.seen.contains(&id) || state.seen.len()>=MAX_COMMANDS
@@ -104,7 +127,10 @@ fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)
         return Err(invalid());
     }
     state.seen.push(id);
-    if request.validate_supported(transfer_codec::Profile::selected_barracks(state.cross_vehicle_enabled,state.roster_recruitment,state.crew_progression,state.crew_dismissal,state.crew_barracks)).is_err() {
+    if reserved {
+        session.outbox.push_back(crate::hangar091::unavailable_response(id)?);
+        events.push(format!("{kind}_SERVICE_REJECTED session={} request={id} result=-10 reason=vehicle_reserved domain_applied=false",session.id));
+    } else if request.validate_supported(transfer_codec::Profile::selected_barracks(state.cross_vehicle_enabled,state.roster_recruitment,state.crew_progression,state.crew_dismissal,state.crew_barracks)).is_err() {
         session.outbox.push_back(crate::hangar091::unavailable_response(id)?);
         events.push(format!("{kind}_SERVICE_REJECTED session={} request={id} result=-10 reason=unsupported_layout domain_applied=false",session.id));
     } else {
@@ -142,6 +168,7 @@ pub(super) struct Job {
     session_id:u32,account_id:String,request_id:i16,
     receiver:mpsc::Receiver<io::Result<identity091::AmmoReply>>,
 }
+impl Job {pub(super) fn session_id(&self)->u32 {self.session_id}}
 
 /// At most one worker exists across active and retired sessions. Retain a
 /// retired worker until its bounded request returns; never launch a second DB
@@ -305,6 +332,50 @@ mod tests {
     fn inflight(session:&mut Session,id:i16) {
         enqueue(session,request(id),&mut vec![]).unwrap();
         let state=session.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
+    }
+
+    #[test] fn full_account_rebind_renews_command_epoch_and_preserves_service_capabilities() {
+        let mut session=ready_research(Instant::now());
+        let state=session.ammo_service.as_mut().unwrap();
+        state.seen.extend([226,227]);let previous=state.command_key(&Command::Research(research_request(226)));
+        state.rebind(codec::Metadata{revision:17,wire_revision:1}).unwrap();
+        assert_eq!(state.revision(),17);assert_eq!(state.wire_revision,1);assert!(state.idle() && state.seen.is_empty());
+        assert_ne!(state.command_key(&Command::Research(research_request(226))),previous);
+        assert!(state.research_enabled() && state.barracks_enabled() && state.dismissal_enabled()
+            && state.progression_enabled() && state.transfer_enabled() && state.crew_enabled());
+        enqueue_research(&mut session,research_request(226),&mut vec![]).unwrap();
+        assert_eq!(session.ammo_service.as_ref().unwrap().pending.len(),1);
+    }
+
+    #[test] fn full_account_rebind_rejects_busy_or_regressing_metadata_without_any_change() {
+        let mut state=State::new(codec::Metadata{revision:13,wire_revision:3},true).with_transfer(true)
+            .with_cross_vehicle(true).with_roster_recruitment(true).with_progression(true)
+            .with_dismissal(true).with_barracks(true).with_research(true);
+        state.seen.push(226);
+        for binding in [codec::Metadata{revision:12,wire_revision:1},codec::Metadata{revision:14,wire_revision:2},
+            codec::Metadata{revision:i32::MAX as u64,wire_revision:1}] {
+            let before=state.clone();assert!(state.rebind(binding).is_err());assert_eq!(state,before);
+        }
+        state.pending.push_back(Command::Research(research_request(226)));
+        let before=state.clone();assert!(!state.idle());assert!(state.rebind(codec::Metadata{revision:14,wire_revision:1}).is_err());assert_eq!(state,before);
+        state.inflight=state.pending.pop_front();let before=state.clone();
+        assert!(!state.idle());assert!(state.rebind(codec::Metadata{revision:14,wire_revision:1}).is_err());assert_eq!(state,before);
+        state.inflight=None;assert!(state.idle());state.rebind(codec::Metadata{revision:13,wire_revision:1}).unwrap();
+    }
+
+    #[test] fn queue_only_revision_refresh_preserves_native_cursor_epoch_and_duplicate_protection() {
+        let mut session=ready_research(Instant::now());
+        let state=session.ammo_service.as_mut().unwrap();state.wire_revision=4;state.seen.push(226);
+        let before=state.clone();state.refresh_revision(15).unwrap();
+        let mut expected=before.clone();expected.revision=15;assert_eq!(*state,expected);
+        let mut events=vec![];
+        assert!(enqueue_research(&mut session,research_request(226),&mut events).is_err());
+        enqueue_research(&mut session,research_request(227),&mut events).unwrap();
+        let state=session.ammo_service.as_mut().unwrap();
+        assert_eq!(state.wire_revision,4);assert_eq!(state.prefix,before.prefix);
+        let before=state.clone();assert!(state.refresh_revision(16).is_err());assert_eq!(*state,before);
+        state.pending.clear();let before=state.clone();
+        assert!(state.refresh_revision(14).is_err());assert_eq!(*state,before);
     }
 
     #[test] fn research_requires_explicit_profile_and_whole_frame_commit() {

@@ -30,7 +30,7 @@ class Native(object):
         self.current = {'player_kind': 'account', 'player_owner_id': 1, 'entity_id': 1}
         self.failure = None
         self.checked = 0
-    def eligibility(self, shared_lab=False):
+    def eligibility(self, shared_lab=False, profile13_battle=False):
         self.checked += 1
         if self.failure:
             raise self.failure

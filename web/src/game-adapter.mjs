@@ -16,6 +16,7 @@ import { createNativeCrewService, nativeCrewOverview, isNativeCrewOverview } fro
 import { nativeCrewTransferOverview, isNativeCrewTransferOverview } from './p04f-crew.mjs';
 import { nativeCrossVehicleCrewOverview, isNativeCrossVehicleCrewOverview } from './p04g-crew.mjs';
 import { nativeResearchOverview, isNativeResearchOverview } from './p09e-research.mjs';
+import { battleConfiguration } from './p08b-battle.mjs';
 
 import { nativeRosterCrewOverview, isNativeRosterCrewOverview } from './p04h-crew.mjs';
 
@@ -221,6 +222,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.crew_dismissal !== undefined) allowed.push('crew_dismissal');
   if (options?.crew_progression !== undefined) allowed.push('crew_progression');
   if (options?.research_service !== undefined) allowed.push('research_service');
+  if (options?.battle_service !== undefined) allowed.push('battle_service');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
   if (options.crew_service !== undefined && options.ammunition_service === undefined) throw new Error('Crew requires the shared ammunition writer');
@@ -232,6 +234,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options.crew_dismissal !== undefined && (options.crew_progression === undefined || options.crew_dismissal === null || typeof options.crew_dismissal !== 'object')) throw new Error('Crew dismissal requires explicit progression');
   if (options.crew_barracks_recruitment !== undefined && (options.crew_dismissal === undefined || options.crew_barracks_recruitment === null || typeof options.crew_barracks_recruitment !== 'object')) throw new Error('Barracks recruitment requires explicit dismissal');
   if (options.research_service !== undefined && (options.crew_barracks_recruitment === undefined || options.research_service === null || typeof options.research_service !== 'object')) throw new Error('Research requires the accepted barracks crew writer');
+  if (options.battle_service !== undefined && options.research_service === undefined) throw new Error('Profile13 battle requires the complete research writer');
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -260,22 +263,34 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   try { dummyHash = await hashPassword(token()); }
   catch (error) { identity.close(); game.close(); throw error; }
   let ammunition = null;
+  const accountServices = new Map();
   try {
     if (options.ammunition_service !== undefined) {
-      const owner = identity.profile(accountId(options.ammunition_service.account_id));
-      const profile = game.read(options.ammunition_service.account_id);
-      if (!owner || !profile || profile.account_id !== owner.id || profile.username !== owner.display_nickname
-          || profile.created_at_ms !== owner.created_at) throw new Error('Ammunition migration identity binding failed');
-      const context = { database: options.game_database, fixtureRoot, python: options.python_executable, localPath };
-      ammunition = options.crew_service === undefined
-        ? await createNativeAmmoService(options.ammunition_service, context)
-        : await createNativeCrewService(options.ammunition_service, options.crew_service,
-          { ...context, transfer: options.crew_transfer ?? null, crossVehicle: options.crew_cross_vehicle ?? null, rosterRecruitment: options.crew_roster_recruitment ?? null, progression: options.crew_progression ?? null, dismissal: options.crew_dismissal ?? null, barracksRecruitment: options.crew_barracks_recruitment ?? null, research: options.research_service ?? null });
+      const owners = options.battle_service === undefined ? [options.ammunition_service.account_id]
+        : battleConfiguration(options.battle_service, options.ammunition_service.account_id);
+      for (const id of owners) {
+        const owner = identity.profile(accountId(id)), profile = game.read(id);
+        if (!owner || !profile || profile.account_id !== owner.id || profile.username !== owner.display_nickname
+            || profile.created_at_ms !== owner.created_at) throw new Error('Ammunition migration identity binding failed');
+        const context = { database: options.game_database, fixtureRoot, python: options.python_executable, localPath };
+        const ammo = { ...options.ammunition_service, account_id: id };
+        const service = options.crew_service === undefined
+          ? await createNativeAmmoService(ammo, context)
+          : await createNativeCrewService(ammo, options.crew_service,
+            { ...context, transfer: options.crew_transfer ?? null, crossVehicle: options.crew_cross_vehicle ?? null,
+              rosterRecruitment: options.crew_roster_recruitment ?? null, progression: options.crew_progression ?? null,
+              dismissal: options.crew_dismissal ?? null, barracksRecruitment: options.crew_barracks_recruitment ?? null,
+              research: options.research_service ?? null, battle: options.battle_service === undefined ? null
+                : { version: options.battle_service.version, policy_sha256: options.battle_service.policy_sha256 } });
+        accountServices.set(id, service);
+      }
+      ammunition = accountServices.get(options.ammunition_service.account_id);
     }
   } catch (error) { identity.close(); game.close(); throw error; }
   const creating = new Map();
   async function fixture(profile) {
     const id = accountId(profile.account_id);
+    const ammunition = accountServices.get(id);
     if (profile.profile_version === 13) {
       if (options.research_service === undefined || !ammunition?.research) throw new Error('Research service is not enabled');
       return ammunition.fixture(profile);
@@ -445,52 +460,34 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         const matches = await verifyPassword(eligible ? value.password : 'invalid-password-input', user?.password_hash || dummyHash);
         if (!user || !eligible || !matches) return json(res, 401, { error: 'invalid_credentials' });
         if (res.destroyed || res.writableEnded) return;
+        if (options.battle_service !== undefined && !accountServices.has(user.id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.ensure(user);
         const directory = await fixture(profile);
         return json(res, 200, { account_id: user.id, native_database_id: profile.native_database_id,
           name: profile.username, fixture_dir: directory });
       }
-      if (req.method === 'POST' && req.url === '/internal/native/ammo') {
-        if (!ammunition) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.service(value));
+      if (req.method === 'POST' && req.url === '/internal/native/profile') {
+        if (options.battle_service === undefined) return json(res, 404, { error: 'not_found' });
+        const value = await body(req), service = accountServices.get(value?.account_id);
+        if (!value || Object.keys(value).sort().join(',') !== 'account_id,native_database_id'
+            || !service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        const profile = game.read(value.account_id);
+        if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        return json(res, 200, { account_id: profile.account_id, native_database_id: profile.native_database_id,
+          name: profile.username, fixture_dir: await fixture(profile) });
       }
-      if (req.method === 'POST' && req.url === '/internal/native/crew') {
-        if (!ammunition?.recruit) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.recruit(value));
-      }
-      if (req.method === 'POST' && req.url === '/internal/native/crew-recruit-barracks') {
-        if (!ammunition?.recruitBarracks) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.recruitBarracks(value));
-      }
-      if (req.method === 'POST' && req.url === '/internal/native/crew-dismiss') {
-        if (!ammunition?.dismiss) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.dismiss(value));
-      }
-      if (req.method === 'POST' && req.url === '/internal/native/crew-learn') {
-        if (!ammunition?.learn) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.learn(value));
-      }
-      if (req.method === 'POST' && req.url === '/internal/native/crew-transfer') {
-        if (!ammunition?.transfer) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.transfer(value));
-      }
-      if (req.method === 'POST' && req.url === '/internal/native/research') {
-        if (!ammunition?.research) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.research(value));
+      const nativeMethod = new Map([
+        ['/internal/native/ammo', 'service'], ['/internal/native/crew', 'recruit'],
+        ['/internal/native/crew-recruit-barracks', 'recruitBarracks'], ['/internal/native/crew-dismiss', 'dismiss'],
+        ['/internal/native/crew-learn', 'learn'], ['/internal/native/crew-transfer', 'transfer'],
+        ['/internal/native/research', 'research'], ['/internal/native/battle', 'battle'],
+      ]).get(req.url);
+      if (req.method === 'POST' && nativeMethod) {
+        if (!ammunition || typeof ammunition[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
+        const value = await body(req), service = accountServices.get(value?.account_id);
+        if (!service || !identity.profile(service.accountId)) return json(res, 403, { error: 'forbidden' });
+        if (typeof service[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
+        return json(res, 200, await service[nativeMethod](value));
       }
       const matched = /^\/internal\/accounts\/([0-9a-f-]{36})\/overview$/.exec(req.url);
       if (req.method === 'GET' && matched && UUID.test(matched[1])) {
