@@ -628,6 +628,23 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
     Ok(())
 }
 
+fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_start:bool,blocked:bool)->io::Result<()> {
+    // A prepared scene transaction must finish before membership changes.
+    // Keep transport heartbeats outside this gate, including a pending Leave.
+    if blocked {return Ok(());}
+    poll_with_native_start(s,world,now,allow_native_start)?;
+    if s.shared.as_ref().is_some_and(|c|c.phase==Phase::Leaving) {
+        // Area/correction readiness can defer apply(Leave). Revoke authority
+        // regardless of those publication gates before recreating Account.
+        let mut next_world=world.clone();
+        if next_world.actors.iter().any(|a|a.session==Some(s.id)) {next_world.detach(s.id)?;}
+        let mut events=Vec::new();s.shared_return("native_leave",now,&mut events)?;
+        *world=next_world;
+        for event in events {println!("{event}");}
+    }
+    Ok(())
+}
+
 fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Option<IntegratedRuntime>,
     template:&BattleTemplate, now:Instant, stage:&str, error:&io::Error)->io::Result<serde_json::Value> {
     let snapshot=serde_json::json!({"stage":stage,"reason":error.to_string().chars().take(2048).collect::<String>(),
@@ -650,7 +667,17 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
                 Err(e)=>{println!("SHARED_RETURN_FAILED session={} reason={e} transport_retired=true",s.id);retire.push(s.id);}
             }
         } else if let Some(c)=&mut s.shared {
-            c.join_requested=false; c.commands.clear(); c.hangar_since=None;
+            let cancel_queue=c.phase==Phase::Account && c.queue_announced;
+            c.join_requested=false; c.commands.clear(); c.hangar_since=None; c.queue_announced=false;
+            if cancel_queue {
+                if s.outbox.len()>=128 {retire.push(s.id);}
+                else {
+                    s.outbox.push_back(crate::map_drive_world091::queue_callback(false));
+                    if let Err(e)=s.drain_outbox() {
+                        println!("SHARED_RETURN_FAILED session={} reason={e} transport_retired=true",s.id);retire.push(s.id);
+                    }
+                }
+            }
         }
     }
     for id in retire {table.retire(id,world,now,"failed_battle_return")?;}
@@ -976,17 +1003,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             // native arena reset until both workers have supplied a settled
             // pose. This avoids the old outer `continue`, which also skipped
             // heartbeats and made a client look disconnected during startup.
-            if let Err(error) = if integrated.as_ref().is_some_and(IntegratedRuntime::blocked) { Ok(()) }
-                else { poll_with_native_start(s, &mut world, now, integrated_native_ready) } {
+            if let Err(error) = poll_battle_session(s,&mut world,now,integrated_native_ready,
+                integrated.as_ref().is_some_and(IntegratedRuntime::blocked)) {
                 println!("SHARED_FAILED session={} reason={}", s.id, error);
                 publication_failure=Some(error); break;
-            }
-            if s.shared.as_ref().is_some_and(|c| c.phase == Phase::Leaving) {
-                let mut events=Vec::new();
-                if let Err(error)=s.shared_return("native_leave",now,&mut events) {
-                    publication_failure=Some(error); break;
-                }
-                for event in events {println!("{event}");}
             }
             if !s.active { continue; }
             if s.tx.len() == 0 && now.duration_since(s.last_heartbeat) >= Duration::from_secs(2) {
@@ -1477,8 +1497,7 @@ mod tests {
             let id=table.sessions[index].id;
             let c=table.sessions[index].shared.as_mut().unwrap();
             c.phase=Phase::Leaving;c.commands.push(model::Command::Leave);
-            poll(&mut table.sessions[index],&mut world,later).unwrap();
-            table.sessions[index].shared_return("native_leave",later,&mut Vec::new()).unwrap();
+            poll_battle_session(&mut table.sessions[index],&mut world,later,true,false).unwrap();
             assert_eq!(table.sessions.len(),2);
             assert_eq!(table.sessions[index].shared.as_ref().unwrap().phase,Phase::Returning);
             assert!(world.actors[index].session.is_none());
@@ -1489,6 +1508,39 @@ mod tests {
             if index==0 {assert!(world.owned(1,2).is_ok());assert!(world.actors[1].ready);}
             assert!(!world.actors.iter().any(|a|a.session==Some(id)));
         }
+    }
+    #[test]
+    fn stab01_leave_waits_for_scene_barrier_then_detaches_even_before_area_ready() {
+        let now=Instant::now();let (mut table,_)=returning_pair_fixture(now);
+        let mut world=model::tests::destructible_world(now);
+        let s=&mut table.sessions[0];let c=s.shared.as_mut().unwrap();
+        c.view=Some(world.clone());c.area_creation=None;c.phase=Phase::Leaving;
+        c.commands=vec![model::Command::Leave];
+        assert!(!c.areas_ready(&world));
+        poll_battle_session(s,&mut world,now,true,true).unwrap();
+        assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Leaving);
+        assert!(world.owned(0,1).is_ok());
+        poll_battle_session(s,&mut world,now,true,false).unwrap();
+        assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Returning);
+        assert!(world.actors[0].session.is_none());assert!(world.owned(1,2).is_ok());
+        assert!(s.shared.as_ref().unwrap().commands.is_empty());
+    }
+    #[test]
+    fn stab01_failure_before_avatar_cancels_only_an_announced_native_queue() {
+        let now=Instant::now();let (mut table,mut world)=returning_pair_fixture(now);
+        let mut runtime=None;let pristine=World::new(world.id,now).unwrap();
+        let template=BattleTemplate::new(&pristine,&runtime);
+        for s in &mut table.sessions {
+            s.arena_base=false;let c=s.shared.as_mut().unwrap();c.phase=Phase::Account;
+            c.queue_announced=s.id==1;
+        }
+        let error=io::Error::new(io::ErrorKind::InvalidData,"injected startup failure");
+        contain_battle_failure(&mut table,&mut world,&mut runtime,&template,now,"world_step",&error).unwrap();
+        let cancelled=crate::map_drive_world091::queue_callback(false);
+        assert!(queued_bodies(&table.sessions[0],now).contains(&cancelled));
+        assert!(!queued_bodies(&table.sessions[1],now).contains(&cancelled));
+        assert!(table.sessions.iter().all(|s|s.active&&!s.shared.as_ref().unwrap().join_requested));
+        assert!(world.actors.is_empty());
     }
     #[test]
     fn stab01_trace_failure_reaps_real_workers_and_starts_second_battle_in_same_controller() {

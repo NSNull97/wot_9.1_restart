@@ -69,13 +69,14 @@ pub(super) struct Client {
     return_generation: u32,
     return_mask: u8,
     join_requested: bool,
+    queue_announced: bool,
 }
 impl Client {
     fn new(slot: usize) -> Self {
         Self { slot, phase: Phase::Account, view: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; 2],
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; 2], owner_health_sent: None, tracer_started: [false; model::MAX_SHOTS],
-            tracer_stopped: [false; model::MAX_SHOTS], return_generation: 0, return_mask: 0, join_requested: true }
+            tracer_stopped: [false; model::MAX_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -142,7 +143,7 @@ impl Session {
         next.outbox.push_back(body);
         next.arena_base = false;
         let c = next.shared.as_mut().ok_or_else(|| bad())?;
-        c.phase = Phase::Returning; c.return_mask = 0; c.join_requested = false;
+        c.phase = Phase::Returning; c.return_mask = 0; c.join_requested = false; c.queue_announced = false;
         c.hangar_since = None; c.entered = Some(now); c.commands.clear();
         c.pending_entity_requests.clear(); c.pending_area_requests.clear(); c.pending_area_scene = false;
         // Keep the old view and binding solely to validate already queued
@@ -179,11 +180,11 @@ impl Session {
                 || c.phase != Phase::Account || self.outbox.len() >= 128 { return Err(bad()); }
             match command {
                 drive::AccountCommand::Join => {
-                    c.join_requested = true;
+                    c.join_requested = true; c.queue_announced = true;
                     self.outbox.push_back(drive::queue_callback(true));
                 },
                 drive::AccountCommand::Cancel => {
-                    c.join_requested = false;
+                    c.join_requested = false; c.queue_announced = false;
                     self.outbox.push_back(drive::queue_callback(false));
                 },
                 drive::AccountCommand::QueueInfo => {
