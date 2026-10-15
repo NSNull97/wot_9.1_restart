@@ -82,8 +82,10 @@ impl Client {
     /// return epoch remains monotonic on its existing authenticated channel.
     fn reset_for_battle(&mut self, slot: usize) {
         let generation = self.return_generation;
+        let queue_announced = self.queue_announced;
         *self = Self::new(slot);
         self.return_generation = generation;
+        self.queue_announced = queue_announced;
     }
     pub(super) fn acknowledge(&mut self, cumulative: u32, frame: &Frame) {
         for pending in [&mut self.announcement, &mut self.creations[0], &mut self.binding, &mut self.area_creation] {
@@ -119,6 +121,7 @@ impl Session {
         let c = next.shared.as_mut().ok_or_else(|| bad())?;
         c.return_generation = c.return_generation.checked_add(1).ok_or_else(|| bad())?;
         c.phase = Phase::Enable; c.view = Some(world.clone()); c.entered = Some(now);
+        c.queue_announced = false;
         c.shot_cursor = world.latest_shot();
         c.impact_cursor = world.impacts.len();
         c.tracer_started = [false; model::MAX_SHOTS];

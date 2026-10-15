@@ -1546,12 +1546,19 @@ mod tests {
     #[test]
     fn stab01_failure_before_avatar_cancels_only_an_announced_native_queue() {
         let now=Instant::now();let (mut table,mut world)=returning_pair_fixture(now);
-        let mut runtime=None;let pristine=World::new(world.id,now).unwrap();
-        let template=BattleTemplate::new(&pristine,&runtime);
+        let mut runtime=None;world=World::new(world.id,now).unwrap();
+        let template=BattleTemplate::new(&world,&runtime);
+        let original=table.sessions[1].identity.as_ref().unwrap();
+        table.sessions[1].identity=Some(Arc::new(crate::identity091::Profile{account_id:"owned-second".into(),database_id:2,
+            name:"player_2".into(),fixture_dir:original.fixture_dir.clone()}));
         for s in &mut table.sessions {
             s.arena_base=false;let c=s.shared.as_mut().unwrap();c.phase=Phase::Account;
-            c.queue_announced=s.id==1;
+            c.queue_announced=s.id==1;c.hangar_since=Some(now-Duration::from_secs(3));
         }
+        // Reattachment precedes worker bootstrap and must retain announced UI state.
+        attach_waiting_sessions(&mut table,&mut world,now).unwrap();
+        assert_eq!(world.actors.len(),2);
+        assert!(table.sessions[0].shared.as_ref().unwrap().queue_announced);
         let error=io::Error::new(io::ErrorKind::InvalidData,"injected startup failure");
         contain_battle_failure(&mut table,&mut world,&mut runtime,&template,now,"world_step",&error).unwrap();
         let cancelled=crate::map_drive_world091::queue_callback(false);
