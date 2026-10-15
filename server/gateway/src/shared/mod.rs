@@ -1,4 +1,4 @@
-//! Explicit local two-client test_lab route. The accepted single-client drive
+//! Explicit local bounded-multiplayer test_lab route. The accepted single-client drive
 //! route and its frozen profile checks are not generalized through this module.
 pub(crate) mod model;
 pub(crate) mod lifecycle;
@@ -40,9 +40,9 @@ use std::collections::VecDeque;
 use model::{bad, Command, Input, World};
 use crate::{battle091::fire, map_drive_world091 as drive};
 
-/// Keep the first native request envelope within the measured eight-body
-/// reliable window (two vehicles plus six area controllers).  Later batches
-/// contain areas only; using the same bound keeps the state machine uniform.
+/// Area controllers are announced in bounded batches. Vehicle/area create
+/// requests share the measured eight-body reliable window through the pending
+/// queues; six actors do not enlarge that transport window.
 const AREA_ANNOUNCEMENT_BATCH: usize = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
