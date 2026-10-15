@@ -876,7 +876,8 @@ impl Session {
     fn receive_account(&mut self,payload:&[u8],events:&mut Vec<String>)->io::Result<()> {
 use crate::hangar091::Incoming;
 let requests=if self.hangar.is_some() {
-    if self.ammo_service.as_ref().is_some_and(ammo_session::State::barracks_enabled) {crate::hangar091::requests_crew_barracks(payload)?}
+    if self.ammo_service.as_ref().is_some_and(ammo_session::State::research_enabled) {crate::hangar091::requests_research_service(payload)?}
+    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::barracks_enabled) {crate::hangar091::requests_crew_barracks(payload)?}
     else if self.ammo_service.as_ref().is_some_and(ammo_session::State::dismissal_enabled) {crate::hangar091::requests_crew_dismissal(payload)?}
     else if self.ammo_service.as_ref().is_some_and(ammo_session::State::progression_enabled) {crate::hangar091::requests_crew_progression(payload)?}
     else if self.ammo_service.as_ref().is_some_and(ammo_session::State::transfer_enabled) {crate::hangar091::requests_crew_transfer(payload)?}
@@ -892,13 +893,17 @@ for incoming in requests {
     let account_id=match &incoming {
         Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync{request:r,..}
         |Incoming::CachedSync{request:r,..}|Incoming::CachedRefresh{request:r,..}|Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
-        Incoming::AmmoService(r)=>Some(r.id),Incoming::CrewService(r)=>Some(r.id),Incoming::CrewTransfer(r)=>Some(r.id),Incoming::CrewLearn(r)=>Some(r.id),Incoming::CrewDismiss(r)=>Some(r.id),Incoming::CrewBarracks(r)=>Some(r.id),
+        Incoming::AmmoService(r)=>Some(r.id),Incoming::CrewService(r)=>Some(r.id),Incoming::CrewTransfer(r)=>Some(r.id),Incoming::CrewLearn(r)=>Some(r.id),Incoming::CrewDismiss(r)=>Some(r.id),Incoming::CrewBarracks(r)=>Some(r.id),Incoming::ResearchService(r)=>Some(r.id),
         Incoming::Language{id}|Incoming::UnsupportedIntArray{id,..}=>Some(*id),
         Incoming::ServerStats=>Some(202),Incoming::Chat(_)=>None,
     };
     if account_id.is_some_and(|id|self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))) {return Err(invalid());}
     let r=match incoming {
         Incoming::Sync(r)=>r,
+        Incoming::ResearchService(request)=>{
+            ammo_session::enqueue_research(self,request,events)?;
+            continue;
+        },
         Incoming::AmmoService(request)=>{
             ammo_session::enqueue(self,request,events)?;
             continue;
@@ -1311,13 +1316,13 @@ pub fn serve_map_drive_probe(key_path:&str,digest_path:&str,config_path:&str,cap
 }
 struct Authenticated {identity:Arc<crate::identity091::Profile>,fixtures:Arc<crate::hangar091::Fixtures>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
-    ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool,crew_transfer:bool,crew_cross_vehicle:bool,crew_roster_recruitment:bool,crew_progression:bool,crew_dismissal:bool,crew_barracks_recruitment:bool}
+    ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool,crew_transfer:bool,crew_cross_vehicle:bool,crew_roster_recruitment:bool,crew_progression:bool,crew_dismissal:bool,crew_barracks_recruitment:bool,research_service:bool}
 impl Authenticated {
     fn new(identity:crate::identity091::Profile,fixtures:crate::hangar091::Fixtures,ordinary:bool)->io::Result<Self> {
         // Remains inside the existing bounded auth worker. A bad primary policy
         // reaches AUTH_REJECT before Session creation or any native state bytes.
         let policy=crate::map_drive_service091::AccountPolicy::for_mode(ordinary,&identity,&fixtures)?;
-        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false,crew_roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks_recruitment:false})
+        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false,crew_roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks_recruitment:false,research_service:false})
     }
 }
 struct AuthJob {
@@ -1350,13 +1355,16 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
     let (sender,receiver)=mpsc::sync_channel(1);
     thread::Builder::new().name("local-identity".to_owned()).spawn(move || {
         let outcome=config.authenticate(&email,&password).and_then(|identity|identity.map(|identity| {
-            let fixtures=crate::hangar091::Fixtures::load_interactive(&identity.fixture_dir)?;
+            let fixtures=if config.research_service {crate::hangar091::Fixtures::load_research(&identity.fixture_dir)?}
+                else {crate::hangar091::Fixtures::load_interactive(&identity.fixture_dir)?};
             let binding=if config.ammo_service {
-                Some(crate::ammo_service091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id)?)
+                Some(if config.research_service {crate::ammo_service091::metadata_research(&identity.fixture_dir,&identity.account_id,identity.database_id)?}
+                    else {crate::ammo_service091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id)?})
             } else {None};
             if config.crew_transfer {
                 let shared=binding.ok_or_else(invalid)?;
-                crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_barracks(config.crew_cross_vehicle,config.crew_roster_recruitment,config.crew_progression,config.crew_dismissal,config.crew_barracks_recruitment),&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
+                if config.research_service {crate::crew_transfer091::metadata_for_research(&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;}
+                else {crate::crew_transfer091::metadata_for(crate::crew_transfer091::Profile::selected_barracks(config.crew_cross_vehicle,config.crew_roster_recruitment,config.crew_progression,config.crew_dismissal,config.crew_barracks_recruitment),&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;}
             } else if config.crew_service {
                 let shared=binding.ok_or_else(invalid)?;
                 crate::crew_service091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
@@ -1370,6 +1378,7 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
             accepted.crew_progression=config.crew_progression;
             accepted.crew_dismissal=config.crew_dismissal;
             accepted.crew_barracks_recruitment=config.crew_barracks_recruitment;
+            accepted.research_service=config.research_service;
             Ok(accepted)
         }).transpose());
         let _=sender.send(outcome); // A stopped gateway has no recipient.
@@ -1539,7 +1548,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                                 accepted.identity.account_id,accepted.identity.database_id,accepted.identity.name,accepted.fixtures.sizes());
                             created.identity=Some(accepted.identity);created.hangar=Some(accepted.fixtures);
                             created.drive_account_policy=accepted.drive_account_policy;
-                            created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment));
+                            created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
                             if drive_pool.is_some(){created.drive=Some(crate::map_drive_world091::Arena::new(now));}
                             if let Some(policy)=&created.drive_account_policy {println!("{}",policy.binding_event(next_id));}
                             session=Some(created);next_id=next_id.checked_add(1).ok_or_else(invalid)?;

@@ -1,0 +1,2136 @@
+{
+  "schema": "p09e-source-pins.v1",
+  "target": "v.0.9.1 #717 RU",
+  "sources": {
+    "res/scripts/common/items/vehicles.pyc": {
+      "bytes": 125668,
+      "sha256": "805240e4b59d8a75950dbb97b41c17867606e7e96d7ff0c8d7b05312b83ae8b6",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/common/items/__init__.pyc": {
+      "bytes": 4303,
+      "sha256": "587ba137fee1b7de77ce81d5e963185ba20267c54d157ce8699a76f2f0d11176",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/common/nations.pyc": {
+      "bytes": 565,
+      "sha256": "34392915b0d2a70a3df0b8151e0fdbb9cb58aad6a708ffc85843c45c596a4562",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/ussr/list.xml": {
+      "bytes": 18228,
+      "sha256": "167a637d725a233d42e52bd7d5bac00b9af45c0ef225163ab578e202454f5138",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/components/chassis.xml": {
+      "bytes": 2850,
+      "sha256": "37f8abc432f36e789dcacbeb12e15c8d56f6c21c3a8d717d87c5e23d070c8618",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/ussr/components/turrets.xml": {
+      "bytes": 2501,
+      "sha256": "2a5927fc6bd030056c25fdca4cf70543b001560d03274b0661389ed2e80c5537",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/ussr/components/guns.xml": {
+      "bytes": 58493,
+      "sha256": "889fe1564987566478c474ddfef21cbc7742d23bebd19f6a200c59bfafd7d87b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/components/engines.xml": {
+      "bytes": 16153,
+      "sha256": "196e52561bd04d2d4e5838442f62704456f4b901627248e04b2c9bd37d32f60d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/components/fuelTanks.xml": {
+      "bytes": 457,
+      "sha256": "1f182b76fceeabf2ff1d828cc5b2aea37b94585f78488bd2dd7c195f8862b013",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/ussr/components/radios.xml": {
+      "bytes": 3986,
+      "sha256": "099292b8b5f5e250b2cd506419d18620f4f2504950776b54983bc303b2ca201a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/observer.xml": {
+      "bytes": 4843,
+      "sha256": "39ee7b1e708fcc2fe48736583a5ce5654a544286c33f73324f1a0259bd80c502",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-34.xml": {
+      "bytes": 11912,
+      "sha256": "eb83065dace1ca39e93c225c319b3ab857d790f8ea34abcabeb58d6e7138183b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su-85.xml": {
+      "bytes": 8740,
+      "sha256": "e2e0187faa2942a2d108242cdf501407582eaca9e319cece66ce56af5fc67e9c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/is.xml": {
+      "bytes": 13047,
+      "sha256": "a5f401e8475dba928bbda4af7ab4cc6a9c1f87e9ffb0b01cffb5776c2f53b874",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/bt-7.xml": {
+      "bytes": 10187,
+      "sha256": "2c656845b423d26d5f19918aa722a7ef02aafea2aac99438c700ee92ff50e655",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/bt-2.xml": {
+      "bytes": 12555,
+      "sha256": "2271ef53a90481b4036e3dd73a8148632f8b4482072278a644eb59cc9e4804a9",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/kv.xml": {
+      "bytes": 8271,
+      "sha256": "1e204b8cd14c185c29d9bd39a81453c5e105186dd0209edb3cd934cbe5414d31",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-28.xml": {
+      "bytes": 12267,
+      "sha256": "573c4788eaa8a9777dcde9b617af033b775dd8e3f5937d69b2b0091d95d8c33c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/s-51.xml": {
+      "bytes": 7647,
+      "sha256": "dfee22834f673f02af4b6b07dafd4549b837179db06c5d628d49e01f6a9f38a1",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/a-20.xml": {
+      "bytes": 11205,
+      "sha256": "e826128440d6e29bd791d09113f9987a0d26b749df6cec83a309e3bf33dce7ce",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su-152.xml": {
+      "bytes": 8441,
+      "sha256": "772d24592df501467dc4d1fa134224b1c5fcc54a17dd17077d548cc67be8a319",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-34-85.xml": {
+      "bytes": 18759,
+      "sha256": "3b69621a659e3369eddaefd078e7a6d3dbc52f8271c2c3318839956d3021cb92",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/kv-1s.xml": {
+      "bytes": 13083,
+      "sha256": "16cd67ba2f6297c74ee101d4edb819badbf9b76177f00cb9340ae4b315221994",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-46.xml": {
+      "bytes": 10762,
+      "sha256": "e19404f35eeac6864b99e4ccfb00c9a3beacf80719c71614e667d79b1ca1e4b4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/ms-1.xml": {
+      "bytes": 11839,
+      "sha256": "a494bf04d29da7d066fd6923dbb75a79b947559a52405298c494a943c4b0c535",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su-100.xml": {
+      "bytes": 8838,
+      "sha256": "51a30aae297d18ca43c2c9ac447dc51e2629a7a41f15ef68fb9412b57bd2365b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su-18.xml": {
+      "bytes": 7016,
+      "sha256": "1a31b8fddc0577dea98f72f447f9f12785038048557a47806c82feb8828e58b4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su-14.xml": {
+      "bytes": 7856,
+      "sha256": "70433b951aed606c371a3584332cb9a9a98fb3d0835e64a0fcd17295235e2bca",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-44.xml": {
+      "bytes": 12041,
+      "sha256": "e5b6872e53dad6ef473c521820150e28f8b7db9addc5229f6842573a4f25cdae",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-26.xml": {
+      "bytes": 11010,
+      "sha256": "ade0230c2511d64ef38d7e3f7bb850ede2004e0f2f39648031d763a884cfe3f8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su-5.xml": {
+      "bytes": 8238,
+      "sha256": "35b774706699277bedb8ac471831ead4b9b691734d324864ba756a948bb6bba8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/at-1.xml": {
+      "bytes": 8222,
+      "sha256": "2d7aef63d070dfb439c039fcb6353058f99ec64ba7db50924aa21036c013714c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/is-3.xml": {
+      "bytes": 13221,
+      "sha256": "f10c639cf93e4e803f7e4264c0c25053c4ec033bcfb259efacd999b38dba7b6b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su-8.xml": {
+      "bytes": 7538,
+      "sha256": "835133d8b83eb69ce64df862a3ddb65953cfe8d6100b8e8f9ced9cc2ba9fff77",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/kv-3.xml": {
+      "bytes": 13417,
+      "sha256": "7ebb604dca57ca77aa10b2f281e0c43d0e7187ef2e64ac753a8893f55ff43746",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/is-4.xml": {
+      "bytes": 6669,
+      "sha256": "0805957d4a37e4a01b9c93f0a70c2ddd9c9bf821472ed45747862fd12736200f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su-76.xml": {
+      "bytes": 7949,
+      "sha256": "343e85b8c0a6bb913d1f57db1ea0b1830e980ed7a2d6c490eb0107452af1a428",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-43.xml": {
+      "bytes": 11053,
+      "sha256": "841e6f3716647503a7a68f46e24783a6d988786d10d43b37c8039747c86d95a5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/gaz-74b.xml": {
+      "bytes": 8165,
+      "sha256": "78a978c0b334d27d6bed4cc7570b5cc0511698aea78d5e6d07e6a188f3034135",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/is-7.xml": {
+      "bytes": 5809,
+      "sha256": "8d55fa4657a88f1436cd164afe11bade875a906fa7b97256f1fb2f803b09c10d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/isu-152.xml": {
+      "bytes": 9467,
+      "sha256": "8fd4378f38c15efc3a3959ee9fc1213b8171158ba27f84c8a4d7a984f5bf9707",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su-26.xml": {
+      "bytes": 8040,
+      "sha256": "62f5e208fb232da4033076fd5b39ed009f82bb0a00fb4c51a65a7b0c3cec27a2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-54.xml": {
+      "bytes": 16495,
+      "sha256": "1224e26e880287f1a60f43a719d3615cf1937700b93317695219cb409861ba18",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/object_704.xml": {
+      "bytes": 8089,
+      "sha256": "6e9670dbdde8f346192439587d7fa4c7accfe4dbd9cc539962dd9df741647623",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/object_212.xml": {
+      "bytes": 8251,
+      "sha256": "a0b34c6b3bf68886f1b36b1df811b3b6218392e4fdc0905b12cd4f737fef556b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/object_261.xml": {
+      "bytes": 5767,
+      "sha256": "d9aa0be37ce3be76daf0c1791c3719eecdf0b85eee1f218e68d4c3a8f7b243e9",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/kv-13.xml": {
+      "bytes": 12304,
+      "sha256": "5acdc6dac6b6ec220b7e8a8fb852a2b7e9e3aa54851b7e8b3caf0df176fe4de9",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/object252.xml": {
+      "bytes": 5863,
+      "sha256": "81ca9d39f29fc57f4d184d6012c6544cdace866af5df1646e16c228d74d9cda2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-50.xml": {
+      "bytes": 8562,
+      "sha256": "a22f994869f402f9574e161f759b7b626d3133bd6bc3292bb72cc4aab645d104",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t_50_2.xml": {
+      "bytes": 9090,
+      "sha256": "f94a7b639d76657131cdf12672d327e25158a14f24891de3ed133ab5a34ab3a1",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su-101.xml": {
+      "bytes": 8423,
+      "sha256": "fa85fd6d82da89ef7ef5bb613ad815de10558d1768498a65d9839e34e79b7423",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su100m1.xml": {
+      "bytes": 7741,
+      "sha256": "8c018fe0d72329be4450a7ad6d743544980135e69d2024c48dcaee4ddf7844fe",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/kv2.xml": {
+      "bytes": 11846,
+      "sha256": "b69e0e5c5029c23be6e975f81777e30b654637357ccae006562ee4be9479c6da",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/st_i.xml": {
+      "bytes": 11427,
+      "sha256": "df895738d53585467f65539890caf748685dd9d5acc556187a645b4b830a92c9",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/kv4.xml": {
+      "bytes": 13365,
+      "sha256": "b688aa64ee48fd6b506f42b90e7aca212c75454ac09119c5e548c82ced849f95",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t150.xml": {
+      "bytes": 13452,
+      "sha256": "41406c20d2d061636664ffa29da161920bb6c763b2ae7c2120eb4b0fab57b604",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/is8.xml": {
+      "bytes": 12002,
+      "sha256": "73ea8ffa6b7f0522962d7ab5631eaaeeaa05d74f5b20b6c153c8f9feca3cb4be",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/kv1.xml": {
+      "bytes": 12430,
+      "sha256": "0db08af1461e25c3325fe9890bd0783a63df94a11564c6b42189cd5a974a1f82",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su122_54.xml": {
+      "bytes": 8689,
+      "sha256": "6475ef60377aed1bf796c8f8f84da4e58ec82e32cc998ac3e6b22732ea3fcf80",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/a43.xml": {
+      "bytes": 12044,
+      "sha256": "eb5bc852c8f003b09a6e61010bd2ca37b494cd79091fdb78cc7bccacbac98e06",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/a44.xml": {
+      "bytes": 12909,
+      "sha256": "d330b49dc0a472013c74de884e38b5aae41166928552232b630404594da577ce",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/object416.xml": {
+      "bytes": 10631,
+      "sha256": "72eb94c6dea743697c0e2827bbe270298cd42c61be2738e5bd7b1f8abbe9bfac",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/object268.xml": {
+      "bytes": 5794,
+      "sha256": "e58b05365a1b3f789501a0adc5c9b4b2697e43c7c0e1530ebe0e207f4d5772a5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t62a.xml": {
+      "bytes": 5946,
+      "sha256": "21fae434707e6d33e257ae14667cc62022861ae8b90aa158ce2f46c87f4c677e",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/object263.xml": {
+      "bytes": 5852,
+      "sha256": "623136e301e9c1704614c334c401aaf9a63176509071f8e43f78d5c237560baa",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-70.xml": {
+      "bytes": 10171,
+      "sha256": "523e6095d9431d770bcc5522918e11b319dc3b76b4254dfe598e5f1cdb1ada67",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-60.xml": {
+      "bytes": 11613,
+      "sha256": "2f78f6d1d85f8ca151243f7f473c8bbb3ae0467e7af7f768eb18da808024d47d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/object_907.xml": {
+      "bytes": 6223,
+      "sha256": "ddbb9518ff26e0103fdae3636f47389d34625452b6364216e997773ad486dd39",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t80.xml": {
+      "bytes": 8501,
+      "sha256": "b11f7acbc6f27c55cfc7796ef3be8b8f16a67b97bcb8a684a7999d9de2533b5f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su14_1.xml": {
+      "bytes": 9170,
+      "sha256": "3e45a9bfc39dd05d6ba6a2accd8c6dc545347f024f50729bb90e5101f4e139b9",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su122a.xml": {
+      "bytes": 7907,
+      "sha256": "f60479b0af817d680ebea1c00e602d1faf09ae635c0d6218479dd5b5b90ef7ae",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/mt25.xml": {
+      "bytes": 12482,
+      "sha256": "538908bfc4918c828043456d696d1c3c464be8ca0f7d448b18c9f3b09566f5bb",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/object_140.xml": {
+      "bytes": 6340,
+      "sha256": "dd17c269e46dea05178f173abd07d1f44254c81398c3b650ba4e19d169372fc6",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/object_430.xml": {
+      "bytes": 6215,
+      "sha256": "bfaaf7c0b689ae6277b3811bdb082623214f643611d6f233fc8486525f6270ef",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/r104_object_430_ii.xml": {
+      "bytes": 11554,
+      "sha256": "06ecab40552fa5a8720f2cd534daa66e43572a623d076634f097ccc5e1cdc774",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/kv-220.xml": {
+      "bytes": 5679,
+      "sha256": "b9cb3dcc2c38b23db41c2f5b905998fd5e803372ae10f54defe6b0b20309ff81",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/matilda_ii_ll.xml": {
+      "bytes": 5650,
+      "sha256": "be86cabbbc51745a9ca93946c9e2fb9cfcba9cfa29c5daccf176a20bc402970d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/churchill_ll.xml": {
+      "bytes": 5994,
+      "sha256": "a8e572a35867faf9aa9ceebcb13069c5f79c0abf5c777a544dc21aabe443a650",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/bt-sv.xml": {
+      "bytes": 5214,
+      "sha256": "952716dbb59e876c646df4360b723f7d239e1d3ec8021b915d55a61dfd856985",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/valentine_ll.xml": {
+      "bytes": 5579,
+      "sha256": "d6b8caf94de862f04806eee3819d5c829132a603eb24685e9f200902af67c400",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/m3_stuart_ll.xml": {
+      "bytes": 5589,
+      "sha256": "2331f9fb35b36055243bb129248116256c6d58be94cd257e58fec55b0c7d3670",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/a-32.xml": {
+      "bytes": 5225,
+      "sha256": "fdabb774231c8b2d086003aa9c297f3bc8c36c2d20cef4aa2181ffe1eef91fde",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/kv-5.xml": {
+      "bytes": 5745,
+      "sha256": "f3ab09094bcd2b52540630dba86e5e66ba2ad6eb916317d91a5819d430ee977f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-127.xml": {
+      "bytes": 5456,
+      "sha256": "abc3c30c583e8ae1472d6f03209354323a8a9a7ba33af995a9495de6efdf8fef",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su_85i.xml": {
+      "bytes": 5727,
+      "sha256": "35dfbef88fd3c82ce1be28949ca306cd636b6c2703810ef2f9a8f537f13e4fc8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/kv-220_action.xml": {
+      "bytes": 5677,
+      "sha256": "2d43fe16608c0b1085f0388f81cf737f00eff799a0a774608b08ffcdd30be85c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su76i.xml": {
+      "bytes": 5540,
+      "sha256": "d29be2bcd4e14d6b58c7f38edd0479c9b2f01ab4b55506d011ace9e2d52273c2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/tetrarch_ll.xml": {
+      "bytes": 5353,
+      "sha256": "16639fb9397dffe6a082b7fa61c1f52a286e549f419e66dfe716cb64b18b7a80",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su100y.xml": {
+      "bytes": 5802,
+      "sha256": "a173f1b5410ff841a4b099f7abf4bdd1437dbd6d9dcb686399244fdfeaa0f152",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/su122_44.xml": {
+      "bytes": 5463,
+      "sha256": "254be08e99df6087cd80192729b171e95cc92f4a5754f2260c1004682c009bb4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-34-85_training.xml": {
+      "bytes": 8276,
+      "sha256": "99b60ac154fc6aa06ab0c7e5a02ff1864141aace35da25b000ab22fbcede6098",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/ltp.xml": {
+      "bytes": 5438,
+      "sha256": "23846e87894353bff750327bfbc9be38febe4ebb968ed9ff17c05c8ab218fd62",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t44_122.xml": {
+      "bytes": 5867,
+      "sha256": "c03b95b399a4968d9c44863168087c32bd8f66fd9ffa3c7dd6f1149462079497",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t44_85.xml": {
+      "bytes": 5966,
+      "sha256": "9ddd1aba6b7969419a79f70d8e9f523658cab443d24dc5dcd110e937e221376d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/ussr/t62a_sport.xml": {
+      "bytes": 5256,
+      "sha256": "fd7044cfd06524bec88a491005bb97eb4457bfa2c5f050fa27e4bc35831e7fda",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/list.xml": {
+      "bytes": 23835,
+      "sha256": "e90ef85acd359e3d092ada8fc7fdff71aaa90eb43a826c179f4b0a1478b4bb42",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/components/chassis.xml": {
+      "bytes": 4164,
+      "sha256": "feafa2c9b5298a88ff866888f59b9ad1cb2693434ae99ee9d369f732ccab2613",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/germany/components/turrets.xml": {
+      "bytes": 3256,
+      "sha256": "3e8cf9246b8125c0f2391b5d9811f0adfa1f4a37b85872417dfd4db9157e8438",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/germany/components/guns.xml": {
+      "bytes": 47913,
+      "sha256": "4b2c18c233fcdbb1102792d5962b9a35a1dc237b7f49e0dbe5bed498747851c8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/components/engines.xml": {
+      "bytes": 22465,
+      "sha256": "ebac546bfa5554b5b849190135f411374f999ba0c035af683379d37fc8f7cf42",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/components/fuelTanks.xml": {
+      "bytes": 457,
+      "sha256": "ff040cfd4d22faac30f56dc7715620e56e4b6f116153e6a2eb80092959848552",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/germany/components/radios.xml": {
+      "bytes": 2991,
+      "sha256": "0f32402f01b0744a384db59fe699ee8ca2ac5e4b760a8046775ac73401993332",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pziv.xml": {
+      "bytes": 5789,
+      "sha256": "f95ed81d7efd31252cb42680091cf717ce7268de7d2a4f8606771a9cbfff5541",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/hummel.xml": {
+      "bytes": 8408,
+      "sha256": "3038bed6a90cf33080e674113a46466c797b1fed1ba6eec77adbdf77a0abf402",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzvi.xml": {
+      "bytes": 18471,
+      "sha256": "2d7ff33b3b5a7852abaac4e1876ef76fc6c8091e1b1af224b8e2c8c3d35d7fbf",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pz35t.xml": {
+      "bytes": 12199,
+      "sha256": "fb5ea9206fc3e48f69fe8a4005b9059a02faf3962820e6a3fdd2087e20a73364",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/stug_40_ausfg.xml": {
+      "bytes": 9867,
+      "sha256": "1292409beb27cc4b401fdabde7c40d6246e17e9637bca30996f646148fd0c086",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzv.xml": {
+      "bytes": 17665,
+      "sha256": "5d22aa37e947f55f0f7812144dc103cbd5031790830580056ef2d486b3e87c9b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/jagdpziv.xml": {
+      "bytes": 9391,
+      "sha256": "5870be9e34f502ed6160255e3ee9c9ebf5a7cb7b024a313e683af8311b014c81",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/hetzer.xml": {
+      "bytes": 7719,
+      "sha256": "b75a4641ae13b83df225b625bb984847a1c81f7eb6ce25b7c1dfb3425eab936c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzii.xml": {
+      "bytes": 10352,
+      "sha256": "5285dd8f6ef9e3617f2a1ba046b48563e76364249cda9f42821bcea3fe3c167b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk3601h.xml": {
+      "bytes": 12953,
+      "sha256": "3d941c50ad384b5ae13816bd8fedceb3d3a3bd0314ebce8ef2c3b6b7b6cbb9c1",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk3001h.xml": {
+      "bytes": 14884,
+      "sha256": "73b5518761cb493ff429f98d222d8df3511fd21f6cb740894512d6e11586d527",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/bison_i.xml": {
+      "bytes": 6948,
+      "sha256": "a2cf32d351533095f5dccd934492a602ad0d9d8a676805c605b0e38a805e2a89",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/ltraktor.xml": {
+      "bytes": 10581,
+      "sha256": "38159e070d960c6f15498df3c798404febb37e6ab7008ece74342523f57f1bed",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pz38t.xml": {
+      "bytes": 10256,
+      "sha256": "4ef0527ccdaefa7cc6ff4150858360b958f916405e89522576b8dad2349c8b32",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/panzerjager_i.xml": {
+      "bytes": 7553,
+      "sha256": "eb8c498d532a8378227de45382ac842b3d150f0c2fa32e3563943af657312cbf",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/jagdpanther.xml": {
+      "bytes": 9371,
+      "sha256": "7b21b04df97785c229b1195546758a8e602764a59cdda3e12bc4a860a218da63",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk3002db.xml": {
+      "bytes": 12447,
+      "sha256": "53f813bca78f75cc5e992e05441806eca531cd2dac8d985b46fefa34a3b2f794",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pziii_ausfj.xml": {
+      "bytes": 12383,
+      "sha256": "6d67b4f2ce90e3c53bfed9a1242fcf34facece92cb9850ac49e7d14e2f37af5e",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/sturmpanzer_ii.xml": {
+      "bytes": 6952,
+      "sha256": "517e7578b11c3ebd0d46a86e95ee58137172f8ef7696d18086e57d691b39cf8f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pziii_a.xml": {
+      "bytes": 10955,
+      "sha256": "04dfb2473d50e1120886ef5238b2aa04c673f172b6f38be619baba4e8507b259",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzvib_tiger_ii.xml": {
+      "bytes": 12610,
+      "sha256": "8e7bf66adbfa333b2a16d3eb29ab086ab7d3a1522605c9a1de5317b9a5a77561",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk1602.xml": {
+      "bytes": 8869,
+      "sha256": "82d65530568b04698c706e59289d530825978aca06b526083c4e1846c3e97ea6",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/grille.xml": {
+      "bytes": 7743,
+      "sha256": "0123b307a93bf9044b9b06fe406186d1e32adde2f4d173f8f626c965c6d341e7",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/wespe.xml": {
+      "bytes": 7501,
+      "sha256": "dcff2b344b49a1404171ea3e199c2aac71cc9b603ac9253d4b96cbfc76b8c3b8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzii_luchs.xml": {
+      "bytes": 12798,
+      "sha256": "2bdc9b1319d95eef2739357eae8c11e1acbc69361d5a733d2f98456f0f577832",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pziii_iv.xml": {
+      "bytes": 10316,
+      "sha256": "c427782bea9642951a03efd47b64f48406c36c8f25572e36501d3ddac94697ed",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/g20_marder_ii.xml": {
+      "bytes": 7452,
+      "sha256": "d980ee2624a1d47cae6849c15c4a5fcc98f7870ac34b59d5add80d65b15a0635",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/maus.xml": {
+      "bytes": 7425,
+      "sha256": "a277cdeaa588fac3e1966d30b589571471c045faef7a786c2535f102a0dcb643",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk3001p.xml": {
+      "bytes": 12672,
+      "sha256": "67ae1fffaf588736bf8d93e937099ac152aed43da84b1c64c24142d2d290fe3d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk4502p.xml": {
+      "bytes": 13508,
+      "sha256": "3d7d9d5b713e6980905c973bfe84a0936b8495f03f3d5043cb07bbccda1b7ba0",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/ferdinand.xml": {
+      "bytes": 8773,
+      "sha256": "63dd79f9a63008ffd02cb9a2f44afd8f7814d398d2c2161bb09d809c1550ec70",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/jagdtiger.xml": {
+      "bytes": 7986,
+      "sha256": "8b4a85c11aa1e50cdc70ac80fd5bbc8c15735829f728974be862741ebdeb0722",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pz38_na.xml": {
+      "bytes": 10902,
+      "sha256": "93a2627aa9e0faa91abe8de4925f9de942f14a116ff80be74639b1a0a7e17d22",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/panther_ii.xml": {
+      "bytes": 13036,
+      "sha256": "b0e195014e677586e27fe7d500ae7f2ba99ab17ac3f9fea8a2a9bce6c932c81d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/g_tiger.xml": {
+      "bytes": 8115,
+      "sha256": "b5747ca3b4e58ce06d34b5ed8f93535d3b40e41878147a9d91a18a718d76d23f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/g_panther.xml": {
+      "bytes": 8172,
+      "sha256": "6847e5e0c7f69d7d97c02d06e4f41b7457c4e08813b5cd25294431c2b467cf8f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/g_e.xml": {
+      "bytes": 6189,
+      "sha256": "ba5275802ac7783f69797c5745790a878060506bb99a65c1d546d4ca470c79d6",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/e-100.xml": {
+      "bytes": 7297,
+      "sha256": "5941da8a5166d4c6784f2c8ca9367fb92def9133632b34ecc8e1e184fb1a0af4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/e-75.xml": {
+      "bytes": 13190,
+      "sha256": "5bdf89dda0a3f67c25af72a89fbc9272a2a89eb6d7c200ba170cda9a04906252",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk2801.xml": {
+      "bytes": 14154,
+      "sha256": "108ca3269a011f81f31c033dc7459ce0499b4434e9b6c0e0133c8f861c2f21e4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/e-50.xml": {
+      "bytes": 13983,
+      "sha256": "1e4fff559911a0caaf410661c7201aa0f3372d7246c0c528348a5fcc24917c22",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk4502a.xml": {
+      "bytes": 12599,
+      "sha256": "6dbcd76ba6ea73bb5abfd40bd9daa878a0cdd1383cdab856b97adfd2813bd390",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzvi_tiger_p.xml": {
+      "bytes": 15111,
+      "sha256": "d951695c52bef1b6c859bee329eaa98a7205d3163939fe71a0ecad4e30ab2b23",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/sturer_emil.xml": {
+      "bytes": 8126,
+      "sha256": "b6e61d9cd336ec30aef4346af52660ac9a8d1b2fb877993743054fbc11e64fb6",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/marder_iii.xml": {
+      "bytes": 8158,
+      "sha256": "1fd32db1bb4fbb61c346daa1938787c09a7a9a3226f9a883fb1e5683b02d7642",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/jagdpantherii.xml": {
+      "bytes": 8677,
+      "sha256": "823d3712853cb24b9542a909df2a03d06348bb8fef99083e763b5aa127ae330c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/nashorn.xml": {
+      "bytes": 8623,
+      "sha256": "f9d8b888064589de5de168f97f3a3ccc9efe7b1cd0adcb08cea990076235ed72",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/jagdpz_e100.xml": {
+      "bytes": 6455,
+      "sha256": "d7116a120bc2c15973b11f1621973c899beae0c26c4eaa61aeb52f85bcb388dc",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/e50_ausf_m.xml": {
+      "bytes": 6046,
+      "sha256": "ff2f60065e14651867562eb0cdc80c3f3c51bcda601bef8cd06178734ec5c28a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzi_ausf_c.xml": {
+      "bytes": 10326,
+      "sha256": "62941911eedaed66514a0d7e587c24a88808d0a770b516ff623019e610087921",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzi.xml": {
+      "bytes": 10047,
+      "sha256": "c4d0f272930c46024a1343876712a40c5d0c6225fec2e576981b8708c1559dde",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pz_ii_ausfg.xml": {
+      "bytes": 10189,
+      "sha256": "8b52465a666f82674bb9d5bd1e27907a7f2c57026d884f24a617979e1c035f2c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/dw_ii.xml": {
+      "bytes": 10085,
+      "sha256": "677cd0564e8ed4556aac61bb2f6d603371be50cc2acb1fc3f500715825a11dde",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk2001db.xml": {
+      "bytes": 11654,
+      "sha256": "0040a3190e5ec045fe782c1f2f905241748a2d4e4f96845b832c06e62550f2fd",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/indien_panzer.xml": {
+      "bytes": 9180,
+      "sha256": "c0ce172439fc58d745e07714e546b150219772d60520a2ea42128e2619540ebc",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk3002db_v1.xml": {
+      "bytes": 10849,
+      "sha256": "fd20964dafdcbe930b88c2bffdc58541db626315404f96c81bf0a578f34177ad",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/auf_panther.xml": {
+      "bytes": 12445,
+      "sha256": "3d80686d75fc864cdb0f3a9fe3be79082c35c27eb5beca10a5bdfc71dca42486",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/leopard1.xml": {
+      "bytes": 6284,
+      "sha256": "b381ee0d7f160a4c5f9d47a443a645708d0635b90cb4ad48031b8bfe708383d0",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pro_ag_a.xml": {
+      "bytes": 11324,
+      "sha256": "5a9f279344e398321b20f7967ad4a173bf4ba14f8a088be742da821ecd396bce",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/gw_mk_vie.xml": {
+      "bytes": 7137,
+      "sha256": "63eb031865065315293f5d484b9c88ac85de09545a49206d2b48fb9fd954a3bd",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/gw_tiger_p.xml": {
+      "bytes": 8201,
+      "sha256": "10ec3d75d23e9577855bb925d6b6119ee9090a852148765ba9db43c0f9bc8a81",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pz_sfl_ivb.xml": {
+      "bytes": 7994,
+      "sha256": "5d20b3d6f8ca382717555fbf5708c0a66217bad5b068efe5b6e390d66c1cb6c4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk3002m.xml": {
+      "bytes": 10914,
+      "sha256": "ee17d6b8ed22db0f5ada87d42b36c8606cccecb24017b3ae91d5733c86477fdc",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pz_sfl_ivc.xml": {
+      "bytes": 8926,
+      "sha256": "bf76d0f8f5109bdc11e5c016e9a1c661484db7f3ec94dde0bb82fdc55ec3cb43",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/waffentrager_iv.xml": {
+      "bytes": 10816,
+      "sha256": "aa4d3ee2febf58a606cb87128deb12cab2d71833220fa7336be57566c7585fe2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/rhb_waffentrager.xml": {
+      "bytes": 8240,
+      "sha256": "63a10e7c159d9f7d0fe41834140fbb8b5cab9a70b95cd3c0470a029e6ebb3174",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/waffentrager_e100.xml": {
+      "bytes": 7551,
+      "sha256": "6d8de10ed31cb908738ca9b32935aacfe01fec78d47239dadbd86713cba052e2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pz_iv_ausfa.xml": {
+      "bytes": 9741,
+      "sha256": "4027cda2c84c69b0529756992d5da3df7945a74c53f474d9d3c87065e228bef3",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pz_iv_ausfd.xml": {
+      "bytes": 11491,
+      "sha256": "aab3a2faa10796aa4260a7a158f5d1f6df7694112da52741fae6339a564f5f44",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/g101_stug_iii.xml": {
+      "bytes": 8842,
+      "sha256": "de8614a50d790f97d966798c3ebde1853bd1f642f60600f72992e59cb7d465cc",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pz_iv_ausfh.xml": {
+      "bytes": 11721,
+      "sha256": "60cdd7dcae915db8d917c96b7a5628b9537cf63938de8e61e68957816e9b8b7f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzv_pziv.xml": {
+      "bytes": 6032,
+      "sha256": "5bbc94f9f8173f3519625ff7a138c42197c5c1fbcc05d407f1dff0e8e32cb4e2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzii_j.xml": {
+      "bytes": 5467,
+      "sha256": "6df5bab35ad5064c4a9412caebf32119010c9fa429bbf94c10447ed6eb0939b9",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/s35_captured.xml": {
+      "bytes": 5430,
+      "sha256": "97e48d03d8dfe85a91fd74f3d7a1f8cf8b20d47514f5aa42fe8b819df16a7fa8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/b-1bis_captured.xml": {
+      "bytes": 5617,
+      "sha256": "a31c5c6b7bc7e466a0033d4e71dfcba207373224e640eaa82f9706a56847f2af",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/h39_captured.xml": {
+      "bytes": 5364,
+      "sha256": "77e22dbebf4d0a2bf440fd9343efc9d35336c9f7b0a55db7e4f3fae0ee2c4b6d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzv_pziv_ausf_alfa.xml": {
+      "bytes": 6041,
+      "sha256": "c1fca6df1dd795234e9f6904d89301b7156afabc76b44ac22b303dbd30e8276b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/lowe.xml": {
+      "bytes": 5664,
+      "sha256": "e70f7f8dbdea65c308df2246e8bea484d38e1893da42a92e9aa087f326da68f7",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/t-25.xml": {
+      "bytes": 5626,
+      "sha256": "11a49d372a47c386b77cb2de1a3fc45c5935ad7f2f26aeb139a3cbdcca710236",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/t-15.xml": {
+      "bytes": 5398,
+      "sha256": "cc3347196823150e02d9e0f72232f6da0c44d58b997bfcf5139f4e18599f0036",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pziv_hydro.xml": {
+      "bytes": 6015,
+      "sha256": "a07d79f7250a831011102037f4e203d22d929648a9bc722b38dce72b6c9d071e",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/jagdtiger_sdkfz_185.xml": {
+      "bytes": 5923,
+      "sha256": "9d0e53678385a13f011955c17d7e6f4a8cf832f691bc42aae29957e2c5b3fa07",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/e-25.xml": {
+      "bytes": 5521,
+      "sha256": "41780de6c8733f26e628067c739281be83aa0a25ce8ef02da63443437e1b1443",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/dickermax.xml": {
+      "bytes": 5959,
+      "sha256": "1d3063dfed9aa47e654039fb599a51cb39bf7534e5769a3d909605016b28c6ea",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pziv_schmalturm.xml": {
+      "bytes": 6072,
+      "sha256": "9c2f88081241d718165f7d60b80d2e7271560f7ede2aace973d8d1771f6e27d7",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/panther_m10.xml": {
+      "bytes": 6108,
+      "sha256": "bd57aab8e4162010fad1c1aa71381af61d26d28e096b8eb6a9039f1bd38ee523",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pziii_training.xml": {
+      "bytes": 5841,
+      "sha256": "31cbd6a56324b7b15c57118d674a027b1f6102653dab23fe3d7de2317b996f32",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzvib_tiger_ii_training.xml": {
+      "bytes": 6252,
+      "sha256": "c1f9a3fe1f69f38c3e1d20a9db46af98e00ffeb93226e298c87af273814ba152",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/pzv_training.xml": {
+      "bytes": 6280,
+      "sha256": "efa8344a4cc8cf6531be1eebfc5ac05d6ef328f1ba68cadeef10b01a31f84770",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/vk7201.xml": {
+      "bytes": 6049,
+      "sha256": "534afcc2c986da370c757c8bb4e93e6408a3de89ea180719e067a53d6f09846e",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/g100_gtraktor_krupp.xml": {
+      "bytes": 6207,
+      "sha256": "058a88bd1b9cd85495de8f3c413cf7928cfc03609cdea9cf8f68e97cc2d7017b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/germany/karl.xml": {
+      "bytes": 4341,
+      "sha256": "d5dc8b37e3b8d8a4be3d20cf46dc529cd888bcadb007c07ad24a5f2eef30c838",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/list.xml": {
+      "bytes": 15883,
+      "sha256": "79f1d8cc8a62a606f9e1b7a755147e6cf5c1d8c4eda1201539e106826faad2eb",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/components/chassis.xml": {
+      "bytes": 2391,
+      "sha256": "c93c891019ea8c99addf94bb4665778349e8ce56cfa35583ca71291aac3e4c44",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/usa/components/turrets.xml": {
+      "bytes": 1961,
+      "sha256": "e1264fe33efe58e1799d7c8773ebf3edfb3ca2bd0d98a41758ad49b5b17dc7ae",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/usa/components/guns.xml": {
+      "bytes": 44337,
+      "sha256": "21aa082577f406f3c11231b435eea48c065f98d111b2a170710b9cf1c04e8254",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/components/engines.xml": {
+      "bytes": 17284,
+      "sha256": "c02f70c04055190228da2922eb0d58930b81ffcf81fa351a9f150e042d945d00",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/components/fuelTanks.xml": {
+      "bytes": 457,
+      "sha256": "ff040cfd4d22faac30f56dc7715620e56e4b6f116153e6a2eb80092959848552",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/usa/components/radios.xml": {
+      "bytes": 3498,
+      "sha256": "b7be9dc1d4ebfd4d5e1bd74140c0f80d94bdce3a8f2380421f3ff92e747f1cdc",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t14.xml": {
+      "bytes": 5718,
+      "sha256": "ba1c060104e3f1b39c0beb3840e6beaf0c7293614cfe0cc9823881888333c2d8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m3_stuart.xml": {
+      "bytes": 10484,
+      "sha256": "3856e8448c3520817228e9d1c5a96d054625bbf5dd3ee360a6b138cb12a17f94",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t1_cunningham.xml": {
+      "bytes": 10711,
+      "sha256": "aca284a10f4d13e57a9e500f2fd8e35b875a8fcc7802fe54051db2b3a4c2d540",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m6.xml": {
+      "bytes": 11678,
+      "sha256": "ef5f7db14e932c26738cf4c6179d8a506cc6b50a9348265b574fe59c59eff4b4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m4_sherman.xml": {
+      "bytes": 14929,
+      "sha256": "66fda0605f7683e32c4a3429ef66b949a4cb70db8c1ce43ed79eb2117caf9857",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m4a3e8_sherman.xml": {
+      "bytes": 13193,
+      "sha256": "a1d163f7fe6193eef8e686d4b26770696b13679291797ccaf3b9211ae8f76aaa",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t20.xml": {
+      "bytes": 11472,
+      "sha256": "3fe109b6c4eafe410f567180d08b04572c3dd321d27d1fbf736e609d94c54f22",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m2_lt.xml": {
+      "bytes": 10155,
+      "sha256": "6919542220243b70234c30aa031eafe1fd0e645d2b0e6f03c5b91b5680f2dc59",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t57.xml": {
+      "bytes": 7061,
+      "sha256": "9b01248e60d2a88b6b6392c3729ce44def4122ebe5decee451e53680ac99d1aa",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t23.xml": {
+      "bytes": 8315,
+      "sha256": "5179c6fe7a3e20e672e44172fb155ebabc01a60360f3158b88ff10e1fdc9b7ac",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t30.xml": {
+      "bytes": 8821,
+      "sha256": "67e875d8b3e8f084e87f928ea9bb9fc64754175ac6e4e8537d5b2a9de943ec15",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t34_hvy.xml": {
+      "bytes": 6411,
+      "sha256": "ff48ee48ff7151ba0ac2a1c1b1ba2f2332b60db9db875033be29784f1da6e32f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m3_grant.xml": {
+      "bytes": 7588,
+      "sha256": "580b3a2fae3d4c30c8464bf97b9df588976ffa94ddb9b5d6908cad582efa9216",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t1_hvy.xml": {
+      "bytes": 9687,
+      "sha256": "3bae87cfcf1778440614fc726b38fc8235e0c2691f070b77e382bdcaae7caa7e",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m7_priest.xml": {
+      "bytes": 7569,
+      "sha256": "11f2651977573f5f89016475cff175a04d9187d0a43b8ac3417e1b9cf854b0ff",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t29.xml": {
+      "bytes": 11799,
+      "sha256": "51fe23ae9bd2b2d017dc7e1ae932cefbd489f3c74bd882dcb3158be0a5c275a7",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m41.xml": {
+      "bytes": 7169,
+      "sha256": "0d59564bc590ca7c70feeecf1f3550cce3e4d186ec2075376eeec208929b2e2c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t32.xml": {
+      "bytes": 10490,
+      "sha256": "4d52c9e6ae8664dd9d91f40eeaefddad0cfc52e3a64ce677b6b26bb22c65a8f9",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m37.xml": {
+      "bytes": 7341,
+      "sha256": "4cab472cbc7ee61b5daed5b9551c42f0f48ffdaea3336d70519f31c6affa7937",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m2_med.xml": {
+      "bytes": 10050,
+      "sha256": "ff5501c06da3a64566a0bb4a7f168974f0a7d0ed9dbc2b5414ac429922697fa2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m5_stuart.xml": {
+      "bytes": 10584,
+      "sha256": "a2a33ab589a3668f855f86c3ac8be2868dec9f48479aa40a19e1fe22c0307437",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m7_med.xml": {
+      "bytes": 11761,
+      "sha256": "93a0a0d46801c166b66801ca3f37b4abe487689a9d164f5f85ce757e1f5e51b0",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t2_med.xml": {
+      "bytes": 10664,
+      "sha256": "3f4278c9008d34e686e62968de09765ecb8d76e7275d6e4ea92e07a603631eb3",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/pershing.xml": {
+      "bytes": 14107,
+      "sha256": "7c9e21b44c9ca3313d2f6d29a2e266ec7fc189ed1333b354b8e6080dc2a37895",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t18.xml": {
+      "bytes": 8068,
+      "sha256": "31759cc8b92fc47399a2ccc34ac7bf49d8cec28df0ec40610d3b833ba795ef9e",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t82.xml": {
+      "bytes": 8009,
+      "sha256": "61a426a26371eeb3759514f60cd0c49c2813a06d10de7d76301f264ede379c33",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m10_wolverine.xml": {
+      "bytes": 13311,
+      "sha256": "ac971aa4595e791db9b45440a01c39a1139667c06d2a6cfd14733f052ae615d4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m36_slagger.xml": {
+      "bytes": 10983,
+      "sha256": "6a419c5a691b947ea5bab57fd0b705c0107b5b111f77625756fa4c316c2cbd01",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m40m43.xml": {
+      "bytes": 8825,
+      "sha256": "65536a6d8797b9601a69c160e64a23b7beb0a05a2df792f84a582ae627d42c5a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t40.xml": {
+      "bytes": 8951,
+      "sha256": "d81f0989851f04c8c4fbe11e5c7f6b3da9629e620892f788132e57fd30fba334",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m12.xml": {
+      "bytes": 7950,
+      "sha256": "30bf5a36422acc108efee146873ff63f070160e1e59d7a11d48fb1adb1d62add",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t28.xml": {
+      "bytes": 8472,
+      "sha256": "5c8d5db36db8fe520501e3efcd113f2546a9c7d10d02f21581aa865df0ee622b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t92.xml": {
+      "bytes": 5654,
+      "sha256": "9eda964a28d9e01290380fe606c06d77b0a48803c113d3528f89a350c31e044b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t95.xml": {
+      "bytes": 8309,
+      "sha256": "89a9342914e534c979a73c2e0b3985643fc40c1cb489c68b1aee6fce76262269",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m46_patton.xml": {
+      "bytes": 14822,
+      "sha256": "f8c493c18ec43bcfdb11df67b0c024f428d1350c9bb1722e1eac20182e06a348",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t25_at.xml": {
+      "bytes": 8683,
+      "sha256": "e60bdcd5d37f22d18f060b1419937856013c3aca2ab67ee0ea6dab1f6acc61ff",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m103.xml": {
+      "bytes": 16312,
+      "sha256": "e014db08275a32ae96710fc288e10fb061478a32e1efbccd8ae31cd43d99cc44",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m24_chaffee.xml": {
+      "bytes": 10202,
+      "sha256": "396d682cd01b6f7386c1cdc992b94f26689c0d99d7327d7ba2a077e4312e6770",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/sherman_jumbo.xml": {
+      "bytes": 13013,
+      "sha256": "8514aff2153bacaee6d42f74471667a50fba269158b4444aa19628cde34b4a05",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m8a1.xml": {
+      "bytes": 11069,
+      "sha256": "3b28acee8a2257e15eecd09156e54b08ef09866771b11437cf7984d2bf7847da",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t49.xml": {
+      "bytes": 10533,
+      "sha256": "47d5f46d9e6891c7d9242b79b87774edb8486fac35d1bf00a2090f448f7aca76",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t110.xml": {
+      "bytes": 5962,
+      "sha256": "3c0acc12ebf75a4d9e24b76dd2b8ac596c7a2089e79aeda3717556478c70fad3",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t25_2.xml": {
+      "bytes": 10710,
+      "sha256": "f816991b5e391cc0b90f6ca89e4100500a4f5bd61d4216d1196528d51dd24efe",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t28_prototype.xml": {
+      "bytes": 9711,
+      "sha256": "8e61962063fe69856de3da3303de6ed8af910fab3961aca4e41df5123a732463",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m18_hellcat.xml": {
+      "bytes": 17020,
+      "sha256": "630eead397f16fb96bd0a0ecd51b7b0ba2b0ffbf26ea7aa4bae6de5887bcd155",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t23e3.xml": {
+      "bytes": 5903,
+      "sha256": "3543d37c5174bcb9da8e3b691e8c8953fe9556c19a2720a06e6d633d0c32d200",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t110e4.xml": {
+      "bytes": 6067,
+      "sha256": "4ce7d7d94385183a9f85c9deb7c1697f958ad8f5873962ba88279d957ed23577",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t26_e4_superpershing.xml": {
+      "bytes": 6569,
+      "sha256": "c54045bc199b3fd7841421ce2bfe9e8d12422a2551eef069cde1a49fa8837057",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t110e3.xml": {
+      "bytes": 5847,
+      "sha256": "045adc606d4a1ce321012a8d3078cc15f59e3095ee688339437daaed117cc730",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m48a1.xml": {
+      "bytes": 7553,
+      "sha256": "a734e5d2561d922ce6a37bed7a4e43c3c3de9d3697cfc0ae012e4cd86e4a5bab",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t69.xml": {
+      "bytes": 8576,
+      "sha256": "43c7761a6e8696642330c8fbdc88f4db3d043c7161264064642bde58b0c76190",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t57_58.xml": {
+      "bytes": 5995,
+      "sha256": "aa235c08fc7943328415ff1b95077c9a9c8bea44dede750cb53533fb69f6621c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t21.xml": {
+      "bytes": 9594,
+      "sha256": "ad0b4a680a8414f6687179f10c13b21eaf5b18100dd2b26ac718bf7f0f57ea47",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t54e1.xml": {
+      "bytes": 8511,
+      "sha256": "efdec2f9b87f052f5ca2cc6cc71c21722beb78ef706423916614b02ddc0587d8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t71.xml": {
+      "bytes": 7842,
+      "sha256": "f67b5172968e505de47b7e924d53fbe56cd49a8cb5d79a50d1e43224807d0737",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m60.xml": {
+      "bytes": 6219,
+      "sha256": "78517b8c2369125b04efc39bc873dd5f9588dd0eb464fad20e0abe4bca94f4d3",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m53_55.xml": {
+      "bytes": 8016,
+      "sha256": "2c2ee7b9d8143d3cf8c886c6d9393047b8b9b4b8954bd6f303697f49c1f6b493",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m44.xml": {
+      "bytes": 7926,
+      "sha256": "b9ac38813ae01ab820db5c12334dd9276bad00698fc1dac444e02bf7e9440194",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t2_lt.xml": {
+      "bytes": 5302,
+      "sha256": "56cf0c94b6d896bb470badeeb73dbeabbca61cedc7b4861d0f01b6c171d4a8a8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/ram-ii.xml": {
+      "bytes": 5593,
+      "sha256": "d4cb3c6ba732e72d543b41ca4ce48ed96e1339f0ceadeface56c274607009cd4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/mtls-1g14.xml": {
+      "bytes": 5733,
+      "sha256": "581e00c4979ba9b46a24036f036265a9e7e73024cf533d351fb705bd5d9c1c84",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m4a2e4.xml": {
+      "bytes": 6132,
+      "sha256": "57e7f6d78b5435466644510b7bd5ad6db602277a19717b13f4d4387ab3050b49",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m6a2e1.xml": {
+      "bytes": 5861,
+      "sha256": "7048ac1da47894dd56436ca686c9279d5fdc6c17e1ecc8685fd38fdd7fcc9cdc",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m22_locust.xml": {
+      "bytes": 5423,
+      "sha256": "14af8d0542541f38ac6fc4093324c3240a493f58b71d01eef25580b19a59b36a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t1_e6.xml": {
+      "bytes": 5656,
+      "sha256": "4ede118003f6e091d3e54c590c71d41243c1768ecf1b21470c84bb81d4455bc5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/sexton_i.xml": {
+      "bytes": 5691,
+      "sha256": "19d3ef1d2a3342cb44d61f7e04064ad96fca51b502416484b4351cf69c687473",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/m4a3e8_sherman_training.xml": {
+      "bytes": 6106,
+      "sha256": "c613f4ab051ef4b56d3b39100df960c54eab38923327e7e90898e8696bb20897",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t7_combat_car.xml": {
+      "bytes": 5668,
+      "sha256": "187af9a419471375afa7e85215e914fa9ae3613eb795ae4a18e3aad908d8c49f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/usa/t95_e6.xml": {
+      "bytes": 6117,
+      "sha256": "0ba00cba7fcc9227e0d6f624c1371c3b9be4be83a9c6d7d39f99f2ae3351b37a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/list.xml": {
+      "bytes": 10028,
+      "sha256": "289efdbddddc75d76dae47abc30e7bdb496dcc49d741740dc6c4487c618493b2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/components/chassis.xml": {
+      "bytes": 2056,
+      "sha256": "94d3e18cabb9523c2e052328d6dd1113cf8c7478da50bbfad40ae527ad097a2f",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/france/components/turrets.xml": {
+      "bytes": 1471,
+      "sha256": "de1ba14e79c831c10d6ddf5789144747b4cf7e4e1b9aaa564cb267525fd99063",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/france/components/guns.xml": {
+      "bytes": 28134,
+      "sha256": "525479e3a5d0a8413370781c732e7ef21d81573c33131a3a36836c9d85e2ab93",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/components/engines.xml": {
+      "bytes": 10845,
+      "sha256": "117c33377ea8f646adcc3ea4e33432ce0d959bba549f6ea962cf18c9717589bb",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/components/fuelTanks.xml": {
+      "bytes": 457,
+      "sha256": "ff040cfd4d22faac30f56dc7715620e56e4b6f116153e6a2eb80092959848552",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/france/components/radios.xml": {
+      "bytes": 1562,
+      "sha256": "270e4bc7c5b24ab911020fc6cdf467384d7d2c007a45a168b48d19d0ef33edf8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/d2.xml": {
+      "bytes": 11915,
+      "sha256": "f54882a89878a3fd2bf544239e65ce61383dfb07e0f11e26bbdae637bab03772",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/renaultft.xml": {
+      "bytes": 11268,
+      "sha256": "4126f72308b2a61043745d3ffb902f2bcb758fe6cafb577881e8b62c12ccc8c7",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/renaultbs.xml": {
+      "bytes": 7425,
+      "sha256": "7392d115153b365bfe2f343f82fc37769ddbac8d0c890506fa317dc59eb57ef2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/b1.xml": {
+      "bytes": 10764,
+      "sha256": "263655999b9185646407ed6dbb302d7dd31d387d98253951fcd57ba7488d2381",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/hotchkiss_h35.xml": {
+      "bytes": 8062,
+      "sha256": "6f7cc934d942239113d66b47e0db7bf4b65e9b4ab3ef9891323495cf86e6e44a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/d1.xml": {
+      "bytes": 10663,
+      "sha256": "1bee6ed252bfd20e3c33c78a2b820ab96792bf6c6b99995faf14205ae9fd8e41",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/_105_lefh18b2.xml": {
+      "bytes": 5828,
+      "sha256": "fb3d3332e93725991dd5c16f01c136613607fd1ddf69055528f7ebfe55679a86",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/fcm_36pak40.xml": {
+      "bytes": 5659,
+      "sha256": "aeca3589d2f8691d62e5abad8f799abbebfd707b7ff86dff80a0771575352385",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/arl_44.xml": {
+      "bytes": 13528,
+      "sha256": "d344bb5214c5fd5c5845e3af0b5afc8133453de110bb7873d688c628a36da110",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx40.xml": {
+      "bytes": 10092,
+      "sha256": "dfc928347afd0b43a209388c2db5677e21358b4161583f76cbc9674fbe0b749f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_50_100.xml": {
+      "bytes": 9746,
+      "sha256": "3f67e0e2c45d31ba736292b0da407adbe4b2d2170e21e079a9228df0f1c3191c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/lorraine39_l_am.xml": {
+      "bytes": 8130,
+      "sha256": "c266a88095e66f9f6ef4fe94e2c286917b418a260bc032a4749b3eb26bf58cb4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/bat_chatillon25t.xml": {
+      "bytes": 7896,
+      "sha256": "8c0635c34c3472369d556e6ecdcff279871be271d965944c5a7617c1cf0fcfd6",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_50_120.xml": {
+      "bytes": 9631,
+      "sha256": "ea2e551b13ee8da82c41bc4557c1d27fa645afaed89dee596e5a4a347b265599",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_105am.xml": {
+      "bytes": 7896,
+      "sha256": "5b5e63c565bf55ee3c1c6649191c736b80116cf5f3afb5d18c1639a72bb35ce2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_13f3am.xml": {
+      "bytes": 7942,
+      "sha256": "59c63c93837c6e9037d5f48aa3b2363d3518753e7e1b2aae54058ea7bfea440d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_13_90.xml": {
+      "bytes": 8387,
+      "sha256": "bb124a6ea2efefe74a2397023dc4d282c29b7f71f63a655b4f9e0640767b8c9b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_13_75.xml": {
+      "bytes": 8178,
+      "sha256": "31a8a2650fad58a7b1b150f1d1e367ec60cb96538c62bc0cfefa6ec62e7c8da7",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/lorraine40t.xml": {
+      "bytes": 8413,
+      "sha256": "467abbd355c87bd41086cd91484704f881f9d768abcf62f029d502428be8fade",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx38.xml": {
+      "bytes": 9177,
+      "sha256": "c8ff1d06f028e2bcf23fad4b5145acc14cc1795d64bfc0409a084f2be3bdc447",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/f10_amx_50b.xml": {
+      "bytes": 6292,
+      "sha256": "94e3e9a62160887ccc19a220fbb86c9e51f3b3d4753ec9684263c63a2add6aae",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_12t.xml": {
+      "bytes": 8316,
+      "sha256": "84e56dd2bf088529149e9d41257dee2bcd824e0a3ea8b41d4ed15c838c1ef9b2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/bdr_g1b.xml": {
+      "bytes": 11747,
+      "sha256": "618c3076d41483e235d7d1d54b5e64b609f6ea9925946a142505783e50feffcc",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_m4_1945.xml": {
+      "bytes": 13359,
+      "sha256": "4228ad4d2d4f36b405a393db5fdf81e6d4f00df3bcd1ea110e657b205cb65bbc",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/lorraine155_50.xml": {
+      "bytes": 8279,
+      "sha256": "965f20b65e1556027b26edec3d1697723e69aac5f6dd2fc7fc254475be03ea4b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/lorraine155_51.xml": {
+      "bytes": 8178,
+      "sha256": "8b63d11e183e18fb8c2c37fa486cdadcef797865a684d7bf94b5da8ba9ae9185",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/renaultft_ac.xml": {
+      "bytes": 9169,
+      "sha256": "592b9d37c752229d6f277bfb7af0c502f2ed57717a5a2fb83bed7ff95fda89d3",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/renaultue57.xml": {
+      "bytes": 7274,
+      "sha256": "bed6dad493225b62dde8c22e387cc391ed2f7d58f2c0f00d553bea20ac81f980",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/somua_sau_40.xml": {
+      "bytes": 8441,
+      "sha256": "c53727cbb412d7f95d76e378b73aef132358600dd16ed7fcbd9822aaa963d20a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/s_35ca.xml": {
+      "bytes": 8698,
+      "sha256": "40644bdc8cf8c8292395d88f5c4152baacf7d2eb55a19d21fdd057ccad3a83fb",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_ac_mle1946.xml": {
+      "bytes": 8938,
+      "sha256": "60eb311478a282e074c9a5157a90637824bfc3fb877e5620aefe6dad68ab5947",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx50_foch.xml": {
+      "bytes": 7229,
+      "sha256": "63229440385d40ece18a0fe5d6460f681d064221841ecd3ca9e367cb712d72b5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/arl_v39.xml": {
+      "bytes": 10801,
+      "sha256": "3eae1c9770249b9598327d4bb8b17304be9c911f576dd9f682fc604e6a8ede52",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/bat_chatillon155_58.xml": {
+      "bytes": 6165,
+      "sha256": "753baefbdb89e9c84cb7cd3bac47f5f563b32dad64ea5d6ee93e0f57af37beb4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_ac_mle1948.xml": {
+      "bytes": 8904,
+      "sha256": "5beded7e339b6d4062f29f0cbec3c97ba48399a43db53c31256edd61936c4850",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_50fosh_155.xml": {
+      "bytes": 5896,
+      "sha256": "6e70805f9eccb56c1efa7f5e2e648c575d3c95592b206e952b6e44151485fe79",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/elc_amx.xml": {
+      "bytes": 8459,
+      "sha256": "97f16d037b7e51372651cdd9f5ebc3bbbe43b44e129739096dc4dd6961a0e03d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/bat_chatillon155_55.xml": {
+      "bytes": 8732,
+      "sha256": "a01c2bb9169bbdc1d463dfee24655de8937bb2f7a7148c1bda944aff3c183cbd",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/amx_ob_am105.xml": {
+      "bytes": 8229,
+      "sha256": "8c1a5e185fe6bc22f5598121728fb8003f675f61c59da5dc5f91a9ca455b01b4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/france/fcm_50t.xml": {
+      "bytes": 5990,
+      "sha256": "80abece4e0fb654b144808716d6bc429bdc73a07eb9134bc39bbe8adc873eb2a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/list.xml": {
+      "bytes": 12478,
+      "sha256": "df3a7367838569a1346309dea38fa3d7db379e44c728fdfab8c2abac2c5ca373",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/components/chassis.xml": {
+      "bytes": 2714,
+      "sha256": "16b005d276ae98ffead2da112e547346dc46c6635912156f4c5829364c46ef51",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/uk/components/turrets.xml": {
+      "bytes": 2336,
+      "sha256": "553249dedc795d26f399b39601a8982710385f2fdf4c88853ac07e87d7a2e655",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/uk/components/guns.xml": {
+      "bytes": 30258,
+      "sha256": "4214df566a69b23e92f339f0a157bb89145a41a90ea7ce1db7762496342028cd",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/components/engines.xml": {
+      "bytes": 9771,
+      "sha256": "53463b9d75cbae87dfa9e5df98ee9dc95540aa303eb2469417eeba9f01c064e7",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/components/fuelTanks.xml": {
+      "bytes": 457,
+      "sha256": "ff040cfd4d22faac30f56dc7715620e56e4b6f116153e6a2eb80092959848552",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/uk/components/radios.xml": {
+      "bytes": 1478,
+      "sha256": "1676027ddaf72e0562616cf283122a718fe03d8bd09fe33be614f77d0a42a3da",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb01_medium_mark_i.xml": {
+      "bytes": 11139,
+      "sha256": "355784186028965c87517b70e3db7986658e55eda0a2b457e8a8a4b2c806f661",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb05_vickers_medium_mk_ii.xml": {
+      "bytes": 12243,
+      "sha256": "415becd88ffb823921ea3e76a40f58252820e71f44a0b1cd5d519278caa85681",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb07_matilda.xml": {
+      "bytes": 10720,
+      "sha256": "3a34737f6f59b36e76b9976341187e1a622c6f4e2d8c666cbadf6f2e21a5f21c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb21_cromwell.xml": {
+      "bytes": 13022,
+      "sha256": "f1d29fe4eb89c14888ef630c9f82bba0564380b4239958b9a3cdc0ac4bcdb425",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb20_crusader.xml": {
+      "bytes": 11368,
+      "sha256": "03d7c544296618cce546a362ed3e07935ca876f43f668318b1c04d59c9d0c258",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb06_vickers_medium_mk_iii.xml": {
+      "bytes": 11608,
+      "sha256": "10e739aa5e5d2c9bd9a0656ae8c506e805cf6eaf8f5979725fc983937ab41110",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb08_churchill_i.xml": {
+      "bytes": 14042,
+      "sha256": "a6529a7b8a53b40aae8b7770c6cef1cea0cc046423f5199a3c9ab266c11087c3",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb10_black_prince.xml": {
+      "bytes": 8503,
+      "sha256": "0d5f4827f469d14df2a5b3bec98e511b3a7c40fe4b7260ead883237a2a102a4b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb27_sexton.xml": {
+      "bytes": 8406,
+      "sha256": "3061142255817f5f77485358eca8cc861aa8f7a005fe7b4d1707e31773f0c2b5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb11_caernarvon.xml": {
+      "bytes": 10699,
+      "sha256": "79ccb985ad31adc3af02ed5f174e192eae2aef5e7e696f5da6167b386f80bfb4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb12_conqueror.xml": {
+      "bytes": 11480,
+      "sha256": "f7a1ab65f544ed0fb51d228f10cbaf8590523539e6c9bb041d711fd28a135c09",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb09_churchill_vii.xml": {
+      "bytes": 14115,
+      "sha256": "5decb5d42d0e2332be69d843c2dbea2389bd169617fb56a990288683845917b8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb04_valentine.xml": {
+      "bytes": 10800,
+      "sha256": "b045884f0d75a74c8f99b9234c1c9113d919e1f62f962981104b13f72c023a03",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb03_cruiser_mk_i.xml": {
+      "bytes": 10476,
+      "sha256": "0a07c168f06341fe2eb4ade56a1cbc93a5e71caca3999b0dc47940582936f5d7",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb22_comet.xml": {
+      "bytes": 12310,
+      "sha256": "d1b3fe6319f863b96c620c93ac92cac8469600c490c316edef0c0a4772862de2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb24_centurion_mk3.xml": {
+      "bytes": 16340,
+      "sha256": "e0712e64d9a7f8597c3b63cdb486e1998bda45781e9606cf821fb3038d56bf7f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb23_centurion.xml": {
+      "bytes": 11677,
+      "sha256": "2175d15309f96fd17b268874f45fcf5292454e5fcb42e082dc0f6e77ac420988",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb13_fv215b.xml": {
+      "bytes": 6154,
+      "sha256": "dd7ee644ffdb96ccef1da7baa4b80a450332afa80592a897b3868075b8b8a556",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb60_covenanter.xml": {
+      "bytes": 11576,
+      "sha256": "5ca72c9dd375cd1ecb5b1f37038e782357e40965d2882b3a4a3c7fcb02f88218",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb69_cruiser_mk_ii.xml": {
+      "bytes": 11161,
+      "sha256": "b932a9a568c8426a64ea47ff6bbf5dec03f399b0d58cf3b9d617bfc413f61209",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb70_fv4202_105.xml": {
+      "bytes": 6086,
+      "sha256": "1a51d19b547bbb93e50295803066fe901c1d2a89184d8fa47be7e256c1bd79a5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb59_cruiser_mk_iv.xml": {
+      "bytes": 10787,
+      "sha256": "3433aaa81acdccdd34cff74dac8ac1cdd2e54114163fd8424f91f2b24982225d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb58_cruiser_mk_iii.xml": {
+      "bytes": 11073,
+      "sha256": "f7af86851fde633256cd2255f32ee1882c267f9921c95467b2e12b11910cfd80",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb42_valentine_at.xml": {
+      "bytes": 8916,
+      "sha256": "d06afd22c0df209abaeecbfd8ec6120a3be2cb53d65e7084f58dc99006260c47",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb39_universal_carrierqf2.xml": {
+      "bytes": 8422,
+      "sha256": "89a2c1ca10634bdd4067bd8e1b39198401d263f26144f4e4c9cc5d2e94421cb8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb72_at15.xml": {
+      "bytes": 9483,
+      "sha256": "f6e109e83227dd2522dfa0c045501c0896191ebee6a3340c084f13c4c30d3537",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb73_at2.xml": {
+      "bytes": 8888,
+      "sha256": "412b633feb936ef085b72f4c2ce4072264f65478b95bd03c994a1e72c83ff21d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb57_alecto.xml": {
+      "bytes": 8463,
+      "sha256": "c55e5eea05dbef21588e380fea6a9f7dcd619145786e5273fe5ef44209b3d859",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb48_fv215b_183.xml": {
+      "bytes": 6264,
+      "sha256": "ffbe8c9bbffbddf61d9197ce0cd4d4d79b6e0a6bfcbf2846c10fc31dd38f6712",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb74_at8.xml": {
+      "bytes": 9525,
+      "sha256": "731d8816d2c182315d8af31f6cd1a6ed746514a331e8f2558ba422ff10e0be1a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb40_gun_carrier_churchill.xml": {
+      "bytes": 9393,
+      "sha256": "68ec5589f87199bd0dd8e086ebdb28bc619de1a2741a1a613328e2686c06a358",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb75_at7.xml": {
+      "bytes": 9447,
+      "sha256": "701de41c92c8164eac3a4f7c3d6c459806b0d7ff94ebf98ebd31b7dd29d75f97",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb25_loyd_carrier.xml": {
+      "bytes": 7307,
+      "sha256": "f50a50a8400239a43dd5f5902f3eaa040a542965a54ab61fd8eccd32c82bb724",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb26_birch_gun.xml": {
+      "bytes": 8566,
+      "sha256": "a522f9daf1b1e06967f6c1b1ab4f974ed1c56cd0340bac3c2b324dab4bdbf3ce",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb28_bishop.xml": {
+      "bytes": 8632,
+      "sha256": "c86c93d1b026178a41bce041ffc3af605221d4327965f44dd95801e78c374ef5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb29_crusader_5inch.xml": {
+      "bytes": 8720,
+      "sha256": "bf07104bce36073effc186d14008b0c5d6ae03f7fe5ff4870d0b92168e78a076",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb30_fv3805.xml": {
+      "bytes": 8739,
+      "sha256": "d36b1c0795789d0ba21619913b110b0e92d4e45268d1ed865e4b4f767dc9784d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb77_fv304.xml": {
+      "bytes": 8701,
+      "sha256": "9f89250a70aa39d8d34b16a5ba511e8ba9b493be64d8165c8e99a90eeb1baca3",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb79_fv206.xml": {
+      "bytes": 8637,
+      "sha256": "abccea6a9cb5cb3bec8e9f4a59d94540e9f995ba2d638de5a87744f24323510c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb31_conqueror_gun.xml": {
+      "bytes": 6014,
+      "sha256": "0bab90785881bfa587285f637de8c0a3921c4371a4d2f254e61e8b9b9b9ac575",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb32_tortoise.xml": {
+      "bytes": 10603,
+      "sha256": "5f7e273dc067dabbeff1472702740a990450c01add728568d5871b13254d5e03",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb68_matilda_black_prince.xml": {
+      "bytes": 6270,
+      "sha256": "92e5b9dd1f0717000f4365eae2d7eb1305b33ad45bc5809b43aee736df08737b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb63_tog_ii.xml": {
+      "bytes": 5915,
+      "sha256": "69cd2625189fe26b2389baf1d139ab6179371b07ecfa40e25a4bf27d3d1d75b6",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb71_at_15a.xml": {
+      "bytes": 5977,
+      "sha256": "6f710a6bd64db99b4d521412620387fd94f0bac395b6ed6cb733272f29daf4fb",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb51_excelsior.xml": {
+      "bytes": 6375,
+      "sha256": "cb58dba3b3e93e19d23f6af03b5828203d78f46cda2dd566d915f67fcac530d1",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb78_sexton_i.xml": {
+      "bytes": 5714,
+      "sha256": "419790b73165ca1b80035969435b7a2ede9a87eb8c41bcdeac68f9e8d025ef5c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/uk/gb76_mk_vic.xml": {
+      "bytes": 5557,
+      "sha256": "653c05c32c6f125395bbb400cd66f427784747ca78c78e82021e47a9073d9cc5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/list.xml": {
+      "bytes": 6072,
+      "sha256": "ea69395ab48b56064428b058e27634d7315c6a1f8c278ecb4103fc1be8b8ca5b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/components/chassis.xml": {
+      "bytes": 1199,
+      "sha256": "5d64f76dfb10323154bc1fc907a464b941a16d8b5efe23ed062f6135b545438d",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/china/components/turrets.xml": {
+      "bytes": 1209,
+      "sha256": "9ade2bfa8c1f577d9884246610140b0aa9a12cb4bafd2629529defc69ba58352",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/china/components/guns.xml": {
+      "bytes": 18317,
+      "sha256": "bf93851cf3f36f5375dae15af2e877d5f459387744a99b81b38cb3e74f0bc601",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/components/engines.xml": {
+      "bytes": 6434,
+      "sha256": "813d27f45b3477a38e2698248c9d6e09de4ddfed4fe9f7bdf667956836f18e69",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/components/fuelTanks.xml": {
+      "bytes": 457,
+      "sha256": "1f182b76fceeabf2ff1d828cc5b2aea37b94585f78488bd2dd7c195f8862b013",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/china/components/radios.xml": {
+      "bytes": 2305,
+      "sha256": "20c8d46f72be2cf288f05bb823a079b013d0d84d25f2eec3946ec1d4b8c65f03",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch01_type59.xml": {
+      "bytes": 5883,
+      "sha256": "50f0ffc7f74a63197896319c77d61b7b752c570f3c6b4976437edf7ba99a245a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch02_type62.xml": {
+      "bytes": 5921,
+      "sha256": "b0c1b2f661f13a6df85497893f492d6d9082863c3170800ea85dae53f55ffba1",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch01_type59_gold.xml": {
+      "bytes": 6030,
+      "sha256": "53b62e8c7e714a6e78848549427af2d0450e62c615984a157b4fd40def8a8941",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch03_wz-111.xml": {
+      "bytes": 6083,
+      "sha256": "48a5ef9ad93d150ab061658f28c708427b7ede3e02bb26a6485ffff1f4dabcb2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch04_t34_1.xml": {
+      "bytes": 11408,
+      "sha256": "5e1b1a984b938e6899c2f8eda605a285052037762ead06369b0322b81412950a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch06_renault_nc31.xml": {
+      "bytes": 10477,
+      "sha256": "6d7fc2f7429eb5b0f18f5bc9afb64b7d0bae6a337f27d194dff7ca2abaf95417",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch05_t34_2.xml": {
+      "bytes": 12612,
+      "sha256": "84b2de705113ae5a7593be8cca28d9c774b183962ed9de06215ebb3ea2d52647",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch18_wz-120.xml": {
+      "bytes": 12079,
+      "sha256": "4bbd0e3535d37d714dca70b6e3b5370b4a526a6994e49df9c384b5d24be28d59",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch12_111_1_2_3.xml": {
+      "bytes": 11970,
+      "sha256": "9e1e6d36a51b3d1f39f79ccf8d8e0df6354f843a6449a6a52fb79a1d6f2d63c6",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch07_vickers_mke_type_bt26.xml": {
+      "bytes": 11606,
+      "sha256": "3850ba607a619c386ec644889b5ed0939af3d21be2c450fc360d9044e8c1db0c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch11_110.xml": {
+      "bytes": 11738,
+      "sha256": "f01013c64dac7000dcd0c2278c0f6f57eb30254127d171f2728d15b8eefc88e5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch09_m5.xml": {
+      "bytes": 9949,
+      "sha256": "d54d534b16e9be7df7ae86843d440e60704ebe4d5d93bd482edd6d2221497d2a",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch16_wz_131.xml": {
+      "bytes": 12691,
+      "sha256": "f34a603a4536dd97bd25b8904b0e4f4fd29c132c8c594a625fe019c61d58e005",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch10_is2.xml": {
+      "bytes": 12080,
+      "sha256": "fa486419198d4e66750b45fc868a769ebc65002ca5fdd510fd884a34fadb5bf2",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch17_wz131_1_wz132.xml": {
+      "bytes": 12640,
+      "sha256": "e2442e18dcea7cd0584f3aeeab72802b8e3623d43db1f7b66ccbbf2d4d457afa",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch19_121.xml": {
+      "bytes": 5780,
+      "sha256": "1e0a35056727b1aeed3a450144b85153a4577273ec1bb7addc31156b90c41c0d",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch08_type97_chi_ha.xml": {
+      "bytes": 11250,
+      "sha256": "79dc6cbaf82a230078216eca5b7c70fd45caa8de312a03f247f2fbfec292b71b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch21_t34.xml": {
+      "bytes": 9835,
+      "sha256": "3097191122c0b728a2f6b489ddc155f711938735852d7f7ee67b9601794475bf",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch15_59_16.xml": {
+      "bytes": 11325,
+      "sha256": "4a192a1015d04ffa7cc383a86edf6150cac59d7760a291a49c4fbef2a7da6b52",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch20_type58.xml": {
+      "bytes": 10023,
+      "sha256": "2ebb139f9e9dc16d11ea804438dc0254bae87dc02f7cb5a493534c3fe5606b69",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch22_113.xml": {
+      "bytes": 5971,
+      "sha256": "9afd74f7faea019e4a9e229f23a8b3fca32deca532094dc0a9223ebc43551dd5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch14_t34_3.xml": {
+      "bytes": 5877,
+      "sha256": "b1d3a9664f7c48e29bf8849155916a9d688837cc35461a8438d82e5119f3b5cb",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch04_t34_1_training.xml": {
+      "bytes": 5377,
+      "sha256": "8ad2a02d999337642a2c1bf8382f5644154d7630a2928b51a2e43a0313ef57f0",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch23_112.xml": {
+      "bytes": 5851,
+      "sha256": "2c4ed76375b1e71f6ccd38f9e9e978bada54dc2cb69564b0d5736c3b6de9350e",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/china/ch24_type64.xml": {
+      "bytes": 6193,
+      "sha256": "64afd899928c7acc2a14756d3a7ceefcf1b67b7ede128026d00b06b289d1fc3b",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/list.xml": {
+      "bytes": 3507,
+      "sha256": "15b626f3edf4d6138e68fa085198ee321dafa114c1a278b4da00b09152259202",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/components/chassis.xml": {
+      "bytes": 673,
+      "sha256": "330eb03d45683816a85501e8416f5df92b0ba6648372f2f00e6de7c234c3a2a7",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/japan/components/turrets.xml": {
+      "bytes": 654,
+      "sha256": "fb055eba1641e64762ffeb19aebd34f8b21f364c98bbbff10a93c873460afb06",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/japan/components/guns.xml": {
+      "bytes": 13591,
+      "sha256": "87e2c1e24413d538ab3d7bbca04026ee427961a34a90daa2dc7e84ef1d3f643c",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/components/engines.xml": {
+      "bytes": 4547,
+      "sha256": "0b61873d18bbb30b19c9721407435208c3d2d47fb735192f1a5750d5faf1e98f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/components/fuelTanks.xml": {
+      "bytes": 457,
+      "sha256": "ff040cfd4d22faac30f56dc7715620e56e4b6f116153e6a2eb80092959848552",
+      "historical_catalog_baseline_match": false
+    },
+    "res/scripts/item_defs/vehicles/japan/components/radios.xml": {
+      "bytes": 1487,
+      "sha256": "7c79b4f85c27597672832512cb0818e0312fee8d3310e4e2743edd00d142e614",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/chi_ni.xml": {
+      "bytes": 8426,
+      "sha256": "e1998f2d8a0c92a2d77fe4de762081e83fe34d394462d3fd017541640420488f",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/nc27.xml": {
+      "bytes": 11082,
+      "sha256": "4df617532635c24d0d5423b521614e66d2e1e9b81a18dbc9170dd3584b1af8e8",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/ha_go.xml": {
+      "bytes": 10445,
+      "sha256": "4e0c8976ac2af7cd63ec2a61f8f20b6a3cae774600ad809f224693cfd3c77dbe",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/chi_ri.xml": {
+      "bytes": 11599,
+      "sha256": "692b81496c503417ab9b2fbc29f04c2b0a4947afd78785cc16232a30414f0f58",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/chi_nu.xml": {
+      "bytes": 12247,
+      "sha256": "0ab9c2328cdf07c5613d5fc715528fe79628beb6507927795d3b678b31fc2bdb",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/chi_he.xml": {
+      "bytes": 10156,
+      "sha256": "3a259d65594783c061c085e8d32957955c9d2e91fe22e241359393853eea57e9",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/chi_to.xml": {
+      "bytes": 10639,
+      "sha256": "b7232d93b2f38fd3f2cc1a130363d3d1ecb735741324fc8e53d2e428cb3573a5",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/chi_ha.xml": {
+      "bytes": 11611,
+      "sha256": "9e0077f3663656286d66e503bc768ed0ab415bb32bf91c2e8efcfcdd32b213e4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/ke_ni.xml": {
+      "bytes": 9433,
+      "sha256": "613c9891570d8dc96f2b792312f6373446ae4a3c27449a3e33e717462863d004",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/sta_1.xml": {
+      "bytes": 11529,
+      "sha256": "1e1ae18faa5f6b5b87246193dc7d8c9e5034d9cb08d69802397ce6e57b19bc97",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/ke_ho.xml": {
+      "bytes": 7680,
+      "sha256": "eb477d194ad17edb526f4c3807f510940546608c09a721b87a77e2c1e9825538",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/te_ke.xml": {
+      "bytes": 5694,
+      "sha256": "681a631c7017cc7e0064b62bbea7d8dfb07cfa4408704da169cd1d8fb8ec79cf",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/type_61.xml": {
+      "bytes": 10430,
+      "sha256": "78bc2b198e4b073554fbf71f7942fc317dddcb40d5de1b95a923570ea6afebc4",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/st_b1.xml": {
+      "bytes": 6006,
+      "sha256": "7a78689d73c57027e8a52fcd58d3155a072b27a8b27ee18b87e8c99ef101a771",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/chi_nu_kai.xml": {
+      "bytes": 6045,
+      "sha256": "4e59c700e0df6ab387d9fabd857d6c57d8255b199b662d2459fa47ce374c2822",
+      "historical_catalog_baseline_match": true
+    },
+    "res/scripts/item_defs/vehicles/japan/ke_ni_b.xml": {
+      "bytes": 5551,
+      "sha256": "f84c2829857b4db221c4da0c44a8e2b3025816e044e23a3bb4b31b2632bc181a",
+      "historical_catalog_baseline_match": true
+    }
+  }
+}
