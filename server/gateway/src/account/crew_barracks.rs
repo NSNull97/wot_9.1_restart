@@ -123,7 +123,7 @@ mod tests {
     }
     #[test] fn native_command_framing_and_cross_kind_collisions_require_opt_in() {
         let b=bytes(request());let mut packet=vec![0x90,24,0];packet.extend(b);
-        assert!(crate::hangar091::requests_crew_dismissal(&packet).is_err());
+        assert!(crate::hangar091::refused(crate::hangar091::requests_crew_dismissal(&packet)));
         assert!(matches!(crate::hangar091::requests_crew_barracks(&packet).unwrap().as_slice(),[crate::hangar091::Incoming::CrewBarracks(_)]));
         let mut twice=packet.clone();twice.extend(&packet);assert!(crate::hangar091::requests_crew_barracks(&twice).is_err());
         let mut other=vec![0x8e,20,0];other.extend(226i16.to_le_bytes());other.extend(306i16.to_le_bytes());other.extend(3i64.to_le_bytes());other.extend([0;8]);

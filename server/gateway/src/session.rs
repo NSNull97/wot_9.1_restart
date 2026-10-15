@@ -894,7 +894,7 @@ for incoming in requests {
         Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync{request:r,..}
         |Incoming::CachedSync{request:r,..}|Incoming::CachedRefresh{request:r,..}|Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
         Incoming::AmmoService(r)=>Some(r.id),Incoming::CrewService(r)=>Some(r.id),Incoming::CrewTransfer(r)=>Some(r.id),Incoming::CrewLearn(r)=>Some(r.id),Incoming::CrewDismiss(r)=>Some(r.id),Incoming::CrewBarracks(r)=>Some(r.id),Incoming::ResearchService(r)=>Some(r.id),
-        Incoming::Language{id}|Incoming::UnsupportedIntArray{id,..}=>Some(*id),
+        Incoming::Language{id}|Incoming::Unavailable{id,..}=>Some(*id),
         Incoming::ServerStats=>Some(202),Incoming::Chat(_)=>None,
     };
     if account_id.is_some_and(|id|self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))) {return Err(invalid());}
@@ -955,13 +955,13 @@ for incoming in requests {
             events.push(format!("SERVER_STATS session={} cluster_ccu=1 region_ccu=1 scope=own_lab",self.id));
             continue;
         },
-        Incoming::UnsupportedIntArray{id,command,argument_count}=>{
+        Incoming::Unavailable{id,command,method,argument_count}=>{
             if self.identity.is_none() || self.request_ids.contains(&id)
                 || self.unsupported_request_ids.contains(&id) || self.outbox.len()>=128 {return Err(invalid());}
             self.outbox.push_back(crate::hangar091::unavailable_response(id)?);
             self.unsupported_request_ids.push_back(id);
             if self.unsupported_request_ids.len()>64 {self.unsupported_request_ids.pop_front();}
-            events.push(format!("APPLICATION_UNAVAILABLE session={} request={id} command={command} method=doCmdIntArr arguments={argument_count} result=-10 state_changed=false",self.id));
+            events.push(format!("APPLICATION_UNAVAILABLE session={} request={id} command={command} method={} arguments={argument_count} result=-10 state_changed=false",self.id,method.name()));
             continue;
         },
         Incoming::Language{id}=>{
