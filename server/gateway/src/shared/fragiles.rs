@@ -57,8 +57,8 @@ impl ObjectKind {
 #[derive(Clone,Debug,PartialEq)]
 pub struct Catalog {pub map:MapId,pub sha256:String,pub worker_file:String,pub worker_sha256:String,pub contacts:bool,pub objects:Vec<Object>,pub version:u8,pub area_chunks:Vec<u16>}
 fn fields(v:&Value,k:&[&str])->io::Result<()> {crate::map_drive_worker091::fields(v,k).map(|_|())}
-fn uint(v:&Value)->io::Result<u32>{u32::try_from(v.as_u64().ok_or_else(bad)?).map_err(|_|bad())}
-fn text(v:&Value,max:usize)->io::Result<String>{v.as_str().filter(|s|!s.is_empty()&&s.len()<=max&&!s.chars().any(char::is_control)).map(str::to_owned).ok_or_else(bad)}
+fn uint(v:&Value)->io::Result<u32>{u32::try_from(v.as_u64().ok_or_else(|| bad())?).map_err(|_|bad())}
+fn text(v:&Value,max:usize)->io::Result<String>{v.as_str().filter(|s|!s.is_empty()&&s.len()<=max&&!s.chars().any(char::is_control)).map(str::to_owned).ok_or_else(|| bad())}
 fn hash(v:&Value)->io::Result<String>{let s=text(v,64)?;if s.len()!=64||!s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Err(bad());}Ok(s)}
 fn non_reparse(path:&Path)->io::Result<()>{for p in path.ancestors(){let m=fs::symlink_metadata(p)?;
     if m.file_type().is_symlink(){return Err(bad());}
@@ -82,16 +82,16 @@ impl Catalog {
             if v["ram_policy"]!=policy{return Err(bad());}
         } else if v["version"].as_u64()==Some(3){fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts","area_chunks"])?;}
         else if v.get("contacts").is_some(){fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts"])?;}else{fields(&v,&base_fields)?;}
-        let map=MapId::from_asset(v["map"].as_str().ok_or_else(bad)?)?;
+        let map=MapId::from_asset(v["map"].as_str().ok_or_else(|| bad())?)?;
         let profile=map.spec();
-        let version=v["version"].as_u64().ok_or_else(bad)?;
+        let version=v["version"].as_u64().ok_or_else(|| bad())?;
         if !(1..=7).contains(&version)||v["profile"]!="test_lab"||v["destructibles_sha256"]!=DEFINITIONS_SHA
             ||v["physics_manifest_sha256"]!=profile.physics_manifest_sha256||v["projectile_manifest_sha256"]!=profile.projectile_manifest_sha256{return Err(bad());}
         if version==1 && bytes.len()>131072{return Err(bad());}
         if version<3 { crate::map_drive_worker091::json_catalog(bytes,1024*1024)?; }
         let contacts=version>=2;
         if contacts && v["contacts"]!=true || !contacts && v.get("contacts").is_some(){return Err(bad());}
-        let exports=v["native_exports_sha256"].as_array().filter(|a|(1..=2).contains(&a.len())).ok_or_else(bad)?;
+        let exports=v["native_exports_sha256"].as_array().filter(|a|(1..=2).contains(&a.len())).ok_or_else(|| bad())?;
         let pins=exports.iter().map(hash).collect::<io::Result<Vec<_>>>()?;
         if pins.windows(2).any(|w|w[0]>=w[1]){return Err(bad());}
         fields(&v["worker"],&["file","sha256"])?;
@@ -99,9 +99,9 @@ impl Catalog {
         if worker_file!="physics-removals.json"{return Err(bad());}
         let worker_sha256=hash(&v["worker"]["sha256"])?;
         let limit=if version>=3{MAX_MOVEMENT_OBJECTS}else if contacts{MAX_CONTACT_OBJECTS}else{MAX_OBJECTS};
-        let rows=v["objects"].as_array().filter(|a|!a.is_empty()&&a.len()<=limit).ok_or_else(bad)?;
+        let rows=v["objects"].as_array().filter(|a|!a.is_empty()&&a.len()<=limit).ok_or_else(|| bad())?;
         let area_chunks=if version>=3 {
-            v["area_chunks"].as_array().filter(|a|!a.is_empty()&&a.len()<=128).ok_or_else(bad)?
+            v["area_chunks"].as_array().filter(|a|!a.is_empty()&&a.len()<=128).ok_or_else(|| bad())?
                 .iter().map(|c|u16::try_from(uint(c)?).map_err(|_|bad())).collect::<io::Result<Vec<_>>>()?
         }else{Vec::new()};
         let mut objects=Vec::with_capacity(rows.len());
@@ -193,6 +193,11 @@ pub struct VehicleContact {pub object_id:u32,pub instance_id:u32,pub object_revi
 #[derive(Clone,Debug,PartialEq)]
 pub struct State {pub catalog:Arc<Catalog>,health:Vec<u32>,fallen:Vec<Option<u32>>,pub events:Vec<Damage>,pub vehicle_events:Vec<VehicleContact>}
 impl State {
+    pub fn failure_snapshot(&self)->serde_json::Value{
+        serde_json::json!({"catalog_sha256":self.catalog.sha256,"scene_version":self.scene_version(),
+            "objects":self.catalog.objects.iter().zip(self.health.iter().zip(&self.fallen))
+                .map(|(o,(health,fallen))|serde_json::json!({"object_id":o.object_id,"health":health,"fallen":fallen})).collect::<Vec<_>>()})
+    }
     pub fn new(catalog:Arc<Catalog>)->Self{Self{health:catalog.objects.iter().map(|o|o.health).collect(),fallen:vec![None;catalog.objects.len()],catalog,events:Vec::new(),vehicle_events:Vec::new()}}
     fn latest_tick(&self)->Option<u32>{self.events.last().map(|event|event.tick).into_iter()
         .chain(self.vehicle_events.last().map(|event|event.tick)).max()}
@@ -226,7 +231,7 @@ impl State {
         if ids.windows(2).any(|w|w[0]==w[1]){return Err(bad());}
         let mut h=Sha256::new();h.update(b"wot091-fragile-scene-v3\0");
         for pair in self.catalog.worker_sha256.as_bytes().chunks_exact(2){
-            let value=std::str::from_utf8(pair).ok().and_then(|s|u8::from_str_radix(s,16).ok()).ok_or_else(bad)?;h.update([value]);}
+            let value=std::str::from_utf8(pair).ok().and_then(|s|u8::from_str_radix(s,16).ok()).ok_or_else(|| bad())?;h.update([value]);}
         h.update((ids.len() as u32).to_le_bytes());for id in ids{h.update(id.to_le_bytes());}
         Ok(format!("{:x}",h.finalize()))
     }
@@ -272,7 +277,7 @@ impl State {
             ||!mass_kg.is_finite()||!(RAMMING_MIN_MASS_KG..=RAMMING_MAX_MASS_KG).contains(&mass_kg)
             ||(normal.iter().map(|v|v*v).sum::<f32>()-1.).abs()>1e-4
             ||self.latest_tick().is_some_and(|last|last>tick){return Err(bad());}
-        let index=self.catalog.objects.iter().position(|o|o.object_id==object_id).ok_or_else(bad)?;let object=&self.catalog.objects[index];
+        let index=self.catalog.objects.iter().position(|o|o.object_id==object_id).ok_or_else(|| bad())?;let object=&self.catalog.objects[index];
         if kind=="wheel" { return Ok(None); }
         if self.catalog.version==7&&proof.is_none(){return Err(bad());}
         let whole_response=self.catalog.version>=5;

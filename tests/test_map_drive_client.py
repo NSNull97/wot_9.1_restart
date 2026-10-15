@@ -30,7 +30,7 @@ class Native(object):
         self.current = {'player_kind': 'account', 'player_owner_id': 1, 'entity_id': 1}
         self.failure = None
         self.checked = 0
-    def eligibility(self):
+    def eligibility(self, shared_lab=False):
         self.checked += 1
         if self.failure:
             raise self.failure
@@ -132,8 +132,52 @@ class OrdinaryPolicyTests(unittest.TestCase):
         self.assertEqual(self.button.calls, [])
         self.assertEqual(self.native.checked, 0)
         self.assertFalse(self.events[-1]['gameplay_applied'])
+        self.assertTrue(self.ctl.shared_lab)
+        self.assertEqual(self.events[-1]['client_entry_policy'], 'temporary_server_vehicle')
+        self.assertTrue(self.events[-1]['original_readiness_unchanged'])
         with self.assertRaises(RuntimeError):
             module.prepare_shared_lab(lambda *a, **k: None)
+    def test_shared_lab_enables_only_owned_button_and_preserves_original_checks(self):
+        self.assertFalse(self.ctl.shared_lab)
+        original_update = self.cls.__dict__['update']
+        original_callback = self.ctl.originals['fightClick']
+        module.prepare_shared_lab(self.ctl.record)
+        self.button._FightButton__disableFightButton(True, 'native crew restriction')
+        self.assertEqual(self.button.disables, [(False, module.SHARED_LAB_TOOLTIP)])
+        self.assertIs(self.cls.__dict__['update'], original_update)
+        self.assertIs(self.ctl.originals['fightClick'], original_callback)
+        self.assertFalse(self.button.fightClick(0.0, ''))
+        self.assertEqual(self.button.calls, [(0, '')])
+        self.assertEqual(self.button.ammo_check_calls, 1)
+        self.assertFalse(self.button.dialog_accepted)
+        begin = next(e for e in self.events if e['event']=='map_drive_client_action' and e['phase']=='begin')
+        self.assertEqual(begin['assignment'], 'temporary_server_vehicle')
+        self.assertTrue(begin['original_ammo_check_preserved'])
+    def test_shared_lab_stale_selection_and_unknown_callback_stay_closed(self):
+        module.prepare_shared_lab(self.ctl.record)
+        self.button._FightButton__disableFightButton(True, 'native crew restriction')
+        self.native.state.update(allowed=False, reason='unsupported_vehicle')
+        self.button.fightClick(0.0, '')
+        self.button._FightButton__disableFightButton(False, 'stale enabled')
+        self.assertEqual(self.button.calls, [])
+        self.assertEqual(self.button.disables[-1], (True, old.BATTLE_TOOLTIP))
+        self.native.state['allowed'] = True
+        for args in ((1, ''), (0, 'foreign'), (True, ''), (float('nan'), '')):
+            self.button.fightClick(*args)
+        self.assertEqual(self.button.calls, [])
+    def test_shared_lab_activation_rechecks_bindings_and_failed_service_stays_ordinary(self):
+        self.services.error_at.add('init')
+        with self.assertRaises(ValueError):module.prepare_shared_lab(self.ctl.record)
+        self.assertFalse(self.ctl.shared_lab)
+        self.services.error_at.clear()
+        original = self.cls.__dict__['update']
+        def replace_update():self.cls.update = lambda self: None
+        self.services.after_init = replace_update
+        try:
+            with self.assertRaises(RuntimeError):module.prepare_shared_lab(self.ctl.record)
+            self.assertFalse(self.ctl.shared_lab)
+        finally:
+            self.cls.update = original
     def test_native_disabled_and_tooltip_arguments_preserved(self):
         tooltip = object()
         self.assertEqual(self.button._FightButton__disableFightButton(True, tooltip), 'original disable result')
@@ -461,6 +505,15 @@ class CaptchaLifecycleTests(unittest.TestCase):
         self.assertEqual(self.captcha.original_calls,[])
         module.fini(self.policy.record,lambda:None)
         self.assertIs(self.captcha.cls.__dict__['getImageSource'],self.captcha.original)
+    def test_shared_lab_cannot_clear_or_bypass_external_captcha_fault(self):
+        module.init(self.policy.record)
+        module.prepare_shared_lab(module._controller.record)
+        self.assertTrue(module._controller.shared_lab)
+        with self.assertRaises(RuntimeError):self.captcha.cls().getImageSource('private')
+        with self.assertRaises(RuntimeError):self.policy.button.fightClick(0.0, '')
+        with self.assertRaises(RuntimeError):module.prepare_shared_lab(module._controller.record)
+        self.assertEqual(self.policy.button.calls, [])
+        self.assertEqual(self.captcha.original_calls, [])
     def test_failed_button_install_restores_both_even_when_policy_log_fails(self):
         def record(event,**fields):
             if event=='map_drive_client_policy':raise IOError('policy write failed')
@@ -574,9 +627,104 @@ class NativeEligibilityTests(unittest.TestCase):
     def test_descriptor_mismatch_fails_before_queue(self):
         self.inventory['compDescr'][1]=b'foreign'
         with self.assertRaises(RuntimeError):self.native.eligibility()
+    def test_shared_lab_temporary_actor_allows_both_accounts_without_owned_loadout_mutation(self):
+        self.item.crew = [(0, None), (1, None)]
+        self.item.shells[0].count = self.item.shells[0].defaultCount = 0
+        self.inventory['shells'][1] = self.inventory['shellsLayout'][1][(5891,5892)] = [2570,0,2826,0,3082,0]
+        before = copy.deepcopy(self.inventory)
+        calls = []
+        def unready():calls.append('readiness');return False
+        for name in ('isReadyToFight','isAutoLoadFull','isAutoEquipFull'):
+            setattr(self.current,name,unready)
+        getters = tuple(getattr(self.current,n) for n in ('isReadyToFight','isAutoLoadFull','isAutoEquipFull'))
+        for database in (1, 2):
+            self.player.databaseID = database
+            self.assertEqual(self.native.eligibility(shared_lab=True),
+                             dict(allowed=True,reason='shared_lab_temporary_vehicle',queued=False))
+        self.assertEqual(calls, [])
+        self.assertEqual(self.inventory, before)
+        self.assertEqual(self.item.crew, [(0, None), (1, None)])
+        self.assertEqual(tuple(getattr(self.current,n) for n in ('isReadyToFight','isAutoLoadFull','isAutoEquipFull')),getters)
+        self.player.databaseID = 1
+        self.assertFalse(self.native.eligibility()['allowed'])
+    def test_shared_lab_identity_connection_and_sync_fail_closed(self):
+        for database in (3, 99, None):
+            self.player.databaseID = database
+            self.assertFalse(self.native.eligibility(shared_lab=True)['allowed'])
+        for database in (True, 1.0):
+            self.player.databaseID = database
+            with self.assertRaises(ValueError):self.native.eligibility(shared_lab=True)
+        self.player.databaseID = 2
+        self.cache.isSynced = lambda:False
+        self.assertFalse(self.native.eligibility(shared_lab=True)['allowed'])
+        self.cache.isSynced = lambda:True
+        sys.modules['ConnectionManager'].connectionManager.isConnected = lambda:False
+        self.assertFalse(self.native.eligibility(shared_lab=True)['allowed'])
+        sys.modules['ConnectionManager'].connectionManager.isConnected = lambda:True
+        player = self.player;self.player = None
+        self.assertFalse(self.native.eligibility(shared_lab=True)['allowed'])
+        self.player = player
+    def test_shared_lab_requires_exact_present_selected_ms1_and_rejects_descriptor_race(self):
+        self.player.databaseID = 2
+        for target, name, value in ((self.current,'invID',2),(self.item,'invID',2),(self.item,'intCD',5377)):
+            previous = getattr(target,name);setattr(target,name,value)
+            self.assertFalse(self.native.eligibility(shared_lab=True)['allowed'])
+            setattr(target,name,previous)
+        self.current.isPresent = lambda:False
+        self.assertFalse(self.native.eligibility(shared_lab=True)['allowed'])
+        self.current.isPresent = lambda:True
+        descriptor = self.item.descriptor.makeCompactDescr
+        self.item.descriptor.makeCompactDescr = lambda:b'foreign'
+        self.assertFalse(self.native.eligibility(shared_lab=True)['allowed'])
+        def race():self.player = None;return self.real_compact
+        self.item.descriptor.makeCompactDescr = race
+        with self.assertRaises(RuntimeError):self.native.eligibility(shared_lab=True)
+        self.item.descriptor.makeCompactDescr = descriptor
+    def test_shared_lab_cancel_keeps_original_queue_state_and_requires_lab_selection(self):
+        self.player.databaseID = 2;self.player.isInRandomQueue = True
+        self.assertEqual(self.native.eligibility(shared_lab=True),
+                         dict(allowed=True,reason='shared_lab_temporary_vehicle',queued=True))
+        self.cache.isSynced = lambda:False
+        self.assertFalse(self.native.eligibility(shared_lab=True)['allowed'])
 
 
 class SourceBoundaryTests(unittest.TestCase):
+    @unittest.skipIf(sys.version_info[0]<3,'host-only safe Python2 static decoder')
+    def test_shared_lab_original_queue_chain_and_unready_ammo_branch_are_pinned(self):
+        # Read bytecode as data; do not import or execute the original client.
+        sys.path.insert(0,os.path.join(ROOT,'tools'))
+        from pathlib import Path
+        from client_audit import config,read_limited
+        from py27_static import parse_pyc,records,opcode_table,disassemble
+        original=config()[1]['original_client_root']
+        specs=(
+            ('gui/prb_control/dispatcher.pyc','fb8570094d848ccad4ce5f870a04ab660f1256bef8cfb2a261c6a993e9ac9847',(
+                ('<module>._PrebattleDispatcher.canPlayerDoAction',320,'2286692c2a037bb9c8de5e5a444f720e73d18fb6e48ad8a1fe5a9edb9206a93e'),
+                ('<module>._PrebattleDispatcher.doAction',357,'e63d0a1a6ee3f41fe40be469eeecd1187c907b4dc6ad5d4104b56f5660b7b0f5'))),
+            ('gui/prb_control/functional/random_queue.pyc','29fbe5ffce02bc6919a204471a57bd047db80f3e9efa30df9b7bd8b45c327137',(
+                ('<module>.RandomQueueFunctional.join',49,'cf67524e0f296c1c99f761acacd2d0a2926af20506733e2af514c3733508c504'),)),
+            ('gui/prb_control/functional/decorators.pyc','5a78a91a19f75b653219654ea93e507f1f5e2b1ced6760d1bfe8a8026f559840',(
+                ('<module>.vehicleAmmoCheck.wrapper',7,'4c0762caf54976abb92a54e1b5836efd9d2bdda2fb34a7b78f3345d8c3b12f23'),)),
+            ('gui/shared/utils/functions.pyc','dc7e27aacd46f0e2a3fa8b341554b95c2ef78fddfeaf427bc9663761d3a27d33',(
+                ('<module>.checkAmmoLevel',102,'49b25994ad22d4307f7f5c49117ee52fcfaa5929df8db07a5c8b80fe6cf8f95a'),)),
+            ('Account.pyc','bb6e88e4aec03161212847ffc3601d16917610b8f7815c42f91f610693f4d0ef',(
+                ('<module>.PlayerAccount.enqueueRandom',867,'c3fda396cf0c9f14eba9cbbda5871b5f8591854fbf6b19b04cce57abbea9085d'),)))
+        table=opcode_table(read_limited(Path(ROOT)/'local/vendor/cpython-2.7.3/opcode.py',32768).decode('utf8'))
+        for path,digest,wanted in specs:
+            raw=read_limited(original/('res/scripts/client/'+path),1048576)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(),digest)
+            decoded=dict(records(parse_pyc(raw)))
+            for name,line,code_sha in wanted:
+                c=decoded[name]
+                self.assertEqual(c['firstlineno'],line)
+                self.assertEqual(hashlib.sha256(c['code']).hexdigest(),code_sha)
+            if path=='gui/shared/utils/functions.pyc':
+                ins={i['offset']:i for i in disassemble(decoded['<module>.checkAmmoLevel'],table)}
+                self.assertEqual(ins[25]['value'],'isReadyToFight')
+                self.assertEqual(ins[31]['opname'],'POP_JUMP_IF_FALSE')
+                self.assertEqual(ins[31]['arg'],391)
+                self.assertEqual(ins[453]['value'],'True')
+                self.assertEqual(ins[456]['opname'],'CALL_FUNCTION')
     def test_no_quit_input_or_position_assignment(self):
         import ast
         with open(os.path.join(ROOT,'client_patch','map_drive_client.py'),'rb') as f:tree=ast.parse(f.read())

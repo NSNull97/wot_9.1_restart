@@ -104,7 +104,7 @@ pub(super) fn area_create_state(area:usize,chunk:u16,fragiles:&[u16],fallen_tree
 }
 
 fn area_update_property(area:usize,property:u8,element_size:usize,count:usize)->io::Result<Vec<u8>>{
-    let body_len=4usize.checked_add(element_size.checked_mul(count).ok_or_else(super::model::bad)?).ok_or_else(super::model::bad)?;
+    let body_len=4usize.checked_add(element_size.checked_mul(count).ok_or_else(|| super::model::bad())?).ok_or_else(|| super::model::bad())?;
     if body_len>u8::MAX as usize{return Err(super::model::bad());}
     let mut out=vec![0x12];out.extend(area_id(area)?.to_le_bytes());out.extend([property,body_len as u8]);
     out.extend((count as i32).to_le_bytes());Ok(out)

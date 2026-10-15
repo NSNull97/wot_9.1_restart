@@ -62,6 +62,8 @@
 
 ## P03 два клиента, стрельба
 
+- [STAB01_BATTLE_STABILITY.md](STAB01_BATTLE_STABILITY.md) — STAB-01 принята: caller context, изоляция боя, два native-возврата и повторный бой; ограничения диагностики/физики
+
 - [P03_BATTLE_SHOOTING.md](P03_BATTLE_SHOOTING.md) — P03: battle shooting — loadout preparation route
 - [P03F_TWO_CLIENT_WORLD.md](P03F_TWO_CLIENT_WORLD.md) — P03F — native two-client laboratory research
 - [P03G_SHARED_GUN_AIM.md](P03G_SHARED_GUN_AIM.md) — P03G — native shared aiming, 2026-10-07

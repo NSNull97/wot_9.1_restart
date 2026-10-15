@@ -1008,7 +1008,8 @@ for incoming in requests {
     if self.sync_mask&bit!=0 || self.request_ids.contains(&r.id) {return Err(invalid());}
     if let Some(fixtures)=&self.hangar {
         let bodies=if r.command==100 {
-            if let Some(policy)=self.ordinary_account_policy()? {
+            if self.shared.is_some() {self.shared_account_response(&r,events)?}
+            else if let Some(policy)=self.ordinary_account_policy()? {
                 let bodies=policy.response(&r,self.identity.as_ref().ok_or_else(invalid)?,fixtures)?;
                 events.push(policy.stream_event(self.id,r.id));bodies
             } else {crate::hangar091::response(&r,fixtures)?}
@@ -1121,7 +1122,7 @@ for incoming in requests {
                     if !f.body.is_empty() {
                         if f.body.len()<(if self.hangar.is_some(){5}else{6}) || f.body[0]!=1 || f.body[1..5]!=self.token.to_le_bytes() {return Err(invalid());}
                         if f.body[5..]==[11,0] {close=true;}
-                        else if self.shared.is_some() {self.shared_payload(&f.body[5..],now,events)?;}
+                        else if self.shared.is_some() {self.shared_payload(&f.body[5..],n,now,events)?;}
                         else if self.drive.is_some() {
                             if self.arena_base {self.drive_avatar(&f.body[5..],n,now,events)?;}
                             else {self.drive_account(&f.body[5..],n,now,events)?;}

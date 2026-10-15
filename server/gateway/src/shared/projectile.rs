@@ -76,7 +76,7 @@ impl Projectile {
     }
 
     pub fn end_at(&self) -> io::Result<Instant> {
-        self.launched.checked_add(self.flight_time).ok_or_else(model::bad)
+        self.launched.checked_add(self.flight_time).ok_or_else(|| model::bad())
     }
 
     pub fn position_at(&self, now: Instant) -> [f32; 3] {

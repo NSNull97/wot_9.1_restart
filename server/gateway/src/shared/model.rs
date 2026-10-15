@@ -18,7 +18,14 @@ pub fn wreck_policy_revision_for(kind:VehicleKind)->&'static str { match kind {
 } }
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
-pub fn bad() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "shared laboratory contract") }
+/// Report the invariant's call site, including lazy Option error branches.
+/// Keep calls inside closures: coercing this function to a pointer loses its caller.
+#[track_caller]
+pub fn bad() -> io::Error {
+    let site = std::panic::Location::caller();
+    io::Error::new(io::ErrorKind::InvalidData,
+        format!("shared laboratory contract at {}:{}:{}", site.file(), site.line(), site.column()))
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Identity { pub account: String, pub database: i32, pub name: String }
@@ -136,6 +143,47 @@ pub struct World {
 }
 
 impl World {
+    /// Only the pristine, source-bound template may seed another battle.
+    pub fn fresh_battle(&self, id: u64, now: Instant) -> io::Result<Self> {
+        if id == 0 || id == self.id || self.started.is_some() || !self.actors.is_empty()
+            || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version() != 0 {
+            return Err(bad());
+        }
+        let mut next = self.clone();
+        next.id = id; next.last = now;
+        Ok(next)
+    }
+
+    /// Bounded fault evidence, with resource identity rather than copied meshes.
+    /// The original input/cadence journal remains in the service/capture logs.
+    pub fn failure_snapshot(&self) -> serde_json::Value {
+        let events = self.impact.events();
+        let trace_from = events.len().saturating_sub(64);
+        serde_json::json!({
+            "battle":self.id.to_string(), "map":self.map.asset(), "vehicle":self.vehicle_kind.label(),
+            "tick":self.tick, "started":self.started.is_some(),
+            "actors":self.actors.iter().map(|a|serde_json::json!({
+                "account":a.identity.account,"session":a.session,"ready":a.ready,"health":a.health,
+                "position":a.position,"direction":a.direction,"speed":a.speed,
+                "input":format!("{:?}",a.input),"fire":format!("{:?}",a.fire),"aim":format!("{:?}",a.aim)
+            })).collect::<Vec<_>>(),
+            "shots":self.shots.iter().map(|s|serde_json::json!({"sequence":s.sequence,"slot":s.slot,"tick":s.tick})).collect::<Vec<_>>(),
+            "projectiles":self.projectiles.iter().map(|p|serde_json::json!({
+                "sequence":p.sequence,"slot":p.slot,"origin":p.origin,"velocity":p.velocity,
+                "gravity":p.gravity,"max_distance":p.max_distance,"terminal":p.terminal,"stopped":p.stopped,
+                "launch_ms":self.started.and_then(|start|p.launched.checked_duration_since(start)).map(|d|d.as_millis()),
+                "flight_ms":p.flight_time.as_millis()
+            })).collect::<Vec<_>>(),
+            "geometry_sha256":self.geometry.as_ref().map(|g|g.bundle_sha256()),
+            "scene_version":self.scene_version(),
+            "fragiles":self.fragiles.as_ref().map(|state|state.failure_snapshot()),
+            "destructible_fixture":self.destructible.as_ref().map(|state|format!("{state:?}")),
+            "trace_event_count":events.len(),"trace_omitted_prefix":trace_from,
+            "trace_tail":events[trace_from..].iter().map(|e|format!("{e:?}")).collect::<Vec<_>>(),
+            "scope":"committed world state and bounded trace tail; not a complete deterministic replay"
+        })
+    }
+
     pub fn new(id: u64, now: Instant) -> io::Result<Self> {
         Self::new_for_map(id, now, crate::map_profile091::MapId::Karelia)
     }
@@ -172,7 +220,7 @@ impl World {
     }
     pub fn bind_fragiles(&mut self,catalog:Arc<fragiles::Catalog>)->io::Result<()>{
         if catalog.map!=self.map||self.started.is_some()||!self.shots.is_empty()||!self.ap_test_lab||self.destructible.is_some()||self.fragiles.is_some(){return Err(bad());}
-        catalog.bind_geometry(self.terrain.as_ref().ok_or_else(bad)?)?;
+        catalog.bind_geometry(self.terrain.as_ref().ok_or_else(|| bad())?)?;
         self.impact.bind_fragiles(catalog.clone())?;self.fragiles=Some(fragiles::State::new(catalog));Ok(())
     }
     pub fn scene_version(&self)->u32{self.fragiles.as_ref().map_or_else(||self.destructible.as_ref().map_or(0,destructible::State::scene_version),fragiles::State::scene_version)}
@@ -202,7 +250,7 @@ impl World {
         // the same worker frame committed in this World. The integrated
         // runtime already calls this on a candidate clone, but keeping this
         // method atomic protects every caller and makes the boundary explicit.
-        let mut state=self.fragiles.as_ref().ok_or_else(bad)?.clone();
+        let mut state=self.fragiles.as_ref().ok_or_else(|| bad())?.clone();
         if !state.catalog.contacts { return Err(bad()); }
         let mut trace=self.impact.clone();
         let mut sequences=self.contact_sequences;
@@ -210,7 +258,7 @@ impl World {
             let mut frames:[Option<Arc<ram_proof::ContextFrame>>;CAPACITY]=std::array::from_fn(|_|None);
             let mut indices:[Vec<usize>;CAPACITY]=std::array::from_fn(|_|Vec::new());
             for contact in contacts {
-                let p=contact.proof.as_ref().ok_or_else(bad)?;let c=&p.frame.context;let slot=contact.shooter;
+                let p=contact.proof.as_ref().ok_or_else(|| bad())?;let c=&p.frame.context;let slot=contact.shooter;
                 if slot>=CAPACITY||c.battle!=self.id||c.slot!=slot||self.actors.get(slot).and_then(|a|a.session)!=Some(c.session)
                     ||!self.contact_sources[slot].as_ref().is_some_and(|s|s.matches(c,p.frame.proof.profile))
                     ||c.seq<=self.contact_sequences[slot]||p.index!=indices[slot].len(){return Err(bad());}
@@ -283,7 +331,7 @@ impl World {
     /// put the actor back on its server-owned lane so a stale parked pose
     /// cannot become a large cross-terrain anchor offset.
     pub fn reset_external_spawn(&mut self, slot: usize, position: [f32; 3]) -> io::Result<()> {
-        let actor = self.actors.get_mut(slot).ok_or_else(bad)?;
+        let actor = self.actors.get_mut(slot).ok_or_else(|| bad())?;
         if actor.session.is_none() || actor.ready || position.iter().any(|value| !value.is_finite() || value.abs() > 2000.) {
             return Err(bad());
         }
@@ -304,7 +352,7 @@ impl World {
         }
         let mut next = self.actors.clone();
         for (slot, position, direction, speed) in external {
-            let actor = next.get_mut(*slot).ok_or_else(bad)?;
+            let actor = next.get_mut(*slot).ok_or_else(|| bad())?;
             if actor.session.is_none() || position.iter().any(|value| !value.is_finite())
                 || direction.iter().any(|value| !value.is_finite()) || !speed.is_finite()
                 || direction.iter().any(|value| !(-std::f32::consts::PI..=std::f32::consts::PI).contains(value))
@@ -320,18 +368,18 @@ impl World {
     /// A joining actor receives a settled pose only after its scene is restored.
     /// The already playing actor and simulation clock remain untouched.
     pub fn import_unready_external_pose(&mut self, slot:usize, position:[f32;3], direction:[f32;3], speed:f32) -> io::Result<()> {
-        let actor=self.actors.get_mut(slot).ok_or_else(bad)?;
+        let actor=self.actors.get_mut(slot).ok_or_else(|| bad())?;
         if actor.ready || actor.session.is_none() || position.iter().any(|v|!v.is_finite() || v.abs()>2000.)
             || direction.iter().any(|v|!v.is_finite() || !(-std::f32::consts::PI..=std::f32::consts::PI).contains(v))
             || !speed.is_finite() || !(-25. ..=25.).contains(&speed) { return Err(bad()); }
         actor.position=position;actor.direction=direction;actor.yaw=direction[0];actor.speed=speed;Ok(())
     }
     pub fn detach(&mut self, session: u32) -> io::Result<()> {
-        let a = self.actors.iter_mut().find(|a| a.session == Some(session)).ok_or_else(bad)?;
+        let a = self.actors.iter_mut().find(|a| a.session == Some(session)).ok_or_else(|| bad())?;
         a.session = None; a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park(); Ok(())
     }
     pub fn owned(&self, slot: usize, session: u32) -> io::Result<&Actor> {
-        self.actors.get(slot).filter(|a| a.session == Some(session)).ok_or_else(bad)
+        self.actors.get(slot).filter(|a| a.session == Some(session)).ok_or_else(|| bad())
     }
     pub fn set_ready(&mut self, slot: usize, session: u32) -> io::Result<()> {
         self.owned(slot, session)?; self.actors[slot].ready = true; Ok(())
@@ -373,9 +421,9 @@ impl World {
                             if shots.len() >= self.vehicle_kind.battle_shot_limit() || projectiles.len() >= self.vehicle_kind.battle_shot_limit() { return Err(bad()); }
                             let sequence = shots.len() as u32 + 1;
                             let projectile = Projectile::launch(sequence, slot, &next, now)?;
-                            let elapsed_ticks = now.duration_since(self.started.ok_or_else(bad)?).as_millis() / 100;
+                            let elapsed_ticks = now.duration_since(self.started.ok_or_else(|| bad())?).as_millis() / 100;
                             let launch_tick = 1000u32.checked_add(u32::try_from(elapsed_ticks).map_err(|_| bad())?)
-                                .ok_or_else(bad)?;
+                                .ok_or_else(|| bad())?;
                             impact_trace.admission(self.id, sequence, launch_tick, slot, ammo_before, ammo_remaining)?;
                             impact_trace.launch(self.id, &projectile, launch_tick)?;
                             shots.push(Shot { sequence, slot, tick: launch_tick });
@@ -414,7 +462,7 @@ impl World {
                 return Err(bad());
             }
             for (slot, position, direction, speed) in rows {
-                let actor = self.actors.get(*slot).ok_or_else(bad)?;
+                let actor = self.actors.get(*slot).ok_or_else(|| bad())?;
                 // A disconnected actor is parked in the authoritative world;
                 // its missing worker must not pause the surviving actor's clock.
                 if actor.session.is_none() && (*position != actor.position || *direction != actor.direction || *speed != 0.) {
@@ -467,7 +515,7 @@ impl World {
             'projectile_loop: for projectile in &mut next_projectiles {
                 if !projectile.stopped {
                     let shot_tick = self.shots.iter()
-                        .find(|shot| shot.sequence == projectile.sequence).ok_or_else(bad)?.tick;
+                        .find(|shot| shot.sequence == projectile.sequence).ok_or_else(|| bad())?.tick;
                     // The integrated runtime advances only after both workers reply, so
                     // a shot can be admitted in a wall bucket the world has not reached.
                     // An update in that same bucket has no tick interval for it; the
@@ -483,15 +531,15 @@ impl World {
                         // bounded even after a delayed server poll. These are
                         // subsegments of one update, not invented world ticks.
                         let segment_end = if self.terrain.is_some() {
-                            segment_limit.min(segment_start.checked_add(STEP).ok_or_else(bad)?)
+                            segment_limit.min(segment_start.checked_add(STEP).ok_or_else(|| bad())?)
                         } else { segment_limit };
                         let start_point = projectile.position_at(segment_start);
                         let end_point = projectile.position_at(segment_end);
                         impact_trace.segment(self.id, projectile.sequence, tick, segment_tick_start,
                             start_point, end_point)?;
                         if let Some(bundle) = &self.geometry {
-                            let target_slot = 1usize.checked_sub(projectile.slot).ok_or_else(bad)?;
-                            let target = next_actors.get(target_slot).ok_or_else(bad)?;
+                            let target_slot = 1usize.checked_sub(projectile.slot).ok_or_else(|| bad())?;
+                            let target = next_actors.get(target_slot).ok_or_else(|| bad())?;
                             let mesh = bundle.world_mesh(target, target_slot, tick)?;
                             let (hits, material_facts, ground) = if let Some(terrain) = &self.terrain {
                                 if let Some(state)=&next_destructible {
@@ -543,7 +591,7 @@ impl World {
                                     target_aim: [target.aim.yaw, target.aim.pitch], triangle: nearest.clone(),
                                     geometry_revision: mesh.geometry_revision().into(),
                                     transform_revision: mesh.transform_revision().into(),
-                                    material_facts: material_facts.ok_or_else(bad)? };
+                                    material_facts: material_facts.ok_or_else(|| bad())? };
                                 let mut terminal_reason = impact::TerminalReason::UnresolvedCollision;
                                 if self.ap_test_lab && target.health > 0 {
                                     if impacts.len() >= MAX_SHOTS { return Err(bad()); }
@@ -567,7 +615,7 @@ impl World {
                                         attacker: projectile.slot, target: target_slot, tick,
                                         outcome: ImpactOutcome::Ap(resolution),
                                         health_before: before, health_after: after, segment });
-                                    let damaged = next_actors.get_mut(target_slot).ok_or_else(bad)?;
+                                    let damaged = next_actors.get_mut(target_slot).ok_or_else(|| bad())?;
                                     damaged.health = after;
                                     if after == 0 {
                                         damaged.input = Input::STOP; damaged.speed = 0.; damaged.aim.park();
@@ -629,6 +677,19 @@ impl World {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    #[test]
+    fn contract_error_identifies_direct_and_lazy_call_sites() {
+        let direct_line = line!() + 1;
+        let direct = bad();
+        assert_eq!(direct.kind(), io::ErrorKind::InvalidData);
+        assert!(direct.to_string().contains(&format!("{}:{}:", file!(), direct_line)));
+
+        let lazy_line = line!() + 1;
+        let lazy = None::<()>.ok_or_else(|| bad()).unwrap_err();
+        assert_eq!(lazy.kind(), io::ErrorKind::InvalidData);
+        assert!(lazy.to_string().contains(&format!("{}:{}:", file!(), lazy_line)));
+        assert_ne!(direct.to_string(), lazy.to_string());
+    }
     #[test]fn shot_while_world_lags_wall_bucket_keeps_a_nonempty_first_segment(){
         let now=Instant::now();let mut w=world(now);w.advance(now+STEP).unwrap();assert_eq!(w.tick,1001);
         // Real time is already in bucket 1002 while the world is still at 1001.

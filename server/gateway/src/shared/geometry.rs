@@ -114,17 +114,17 @@ fn fields(value: &Value, keys: &[&str]) -> io::Result<()> {
     crate::map_drive_worker091::fields(value, keys).map(|_| ())
 }
 fn vector(value: &Value) -> io::Result<[f32; 3]> {
-    let row = value.as_array().filter(|v| v.len() == 3).ok_or_else(bad)?;
+    let row = value.as_array().filter(|v| v.len() == 3).ok_or_else(|| bad())?;
     let mut out = [0.; 3];
-    for i in 0..3 { let x = row[i].as_f64().ok_or_else(bad)?;
+    for i in 0..3 { let x = row[i].as_f64().ok_or_else(|| bad())?;
         if !x.is_finite() || x.abs() > 10. { return Err(bad()); } out[i] = x as f32; }
     Ok(out)
 }
 fn text(value: &Value) -> io::Result<String> {
-    let s = value.as_str().filter(|s| !s.is_empty() && s.len() <= 128).ok_or_else(bad)?;
+    let s = value.as_str().filter(|s| !s.is_empty() && s.len() <= 128).ok_or_else(|| bad())?;
     Ok(s.into())
 }
-fn uint(value: &Value) -> io::Result<u32> { u32::try_from(value.as_u64().ok_or_else(bad)?).map_err(|_| bad()) }
+fn uint(value: &Value) -> io::Result<u32> { u32::try_from(value.as_u64().ok_or_else(|| bad())?).map_err(|_| bad()) }
 fn non_reparse(path: &Path) -> io::Result<()> {
     for p in path.ancestors() {
         let m = fs::symlink_metadata(p)?;
@@ -174,22 +174,22 @@ impl Bundle {
             || v["gun_compact_id"] != gun_id || v["source_revision"] != source_revision(vehicle) { return Err(bad()); }
         if vehicle == VehicleKind::Is7 {
             if v["excluded_degenerate_triangle_ids"] != serde_json::json!([[107, 157], [], []]) { return Err(bad()); }
-            let bounds = v["component_bounds"].as_array().filter(|a| a.len() == 3).ok_or_else(bad)?;
+            let bounds = v["component_bounds"].as_array().filter(|a| a.len() == 3).ok_or_else(|| bad())?;
             for (i, pair) in bounds.iter().enumerate() {
-                let pair = pair.as_array().filter(|a| a.len() == 2).ok_or_else(bad)?;
+                let pair = pair.as_array().filter(|a| a.len() == 2).ok_or_else(|| bad())?;
                 if [vector(&pair[0])?, vector(&pair[1])?] != IS7_VISUAL_BOUNDS[i] { return Err(bad()); }
             }
         }
         let hull = vector(&v["hull_position"])?; let turret = vector(&v["turret_position"])?;
         let gun = vector(&v["gun_position"])?;
         if [hull, turret, gun] != pivots { return Err(bad()); }
-        let rows = v["components"].as_array().filter(|a| a.len() == 3).ok_or_else(bad)?;
+        let rows = v["components"].as_array().filter(|a| a.len() == 3).ok_or_else(|| bad())?;
         let mut components = Vec::new();
         for (i, row) in rows.iter().enumerate() {
             fields(row, &["name", "vertices", "triangles"])?;
             if row["name"] != names[i] { return Err(bad()); }
-            let vr = row["vertices"].as_array().filter(|a| a.len() == counts[i].0).ok_or_else(bad)?;
-            let tr = row["triangles"].as_array().filter(|a| a.len() == counts[i].1).ok_or_else(bad)?;
+            let vr = row["vertices"].as_array().filter(|a| a.len() == counts[i].0).ok_or_else(|| bad())?;
+            let tr = row["triangles"].as_array().filter(|a| a.len() == counts[i].1).ok_or_else(|| bad())?;
             let vertices = vr.iter().map(vector).collect::<io::Result<Vec<_>>>()?;
             let mut triangles = Vec::new();
             for (index, t) in tr.iter().enumerate() {
@@ -242,7 +242,7 @@ impl Bundle {
         let component = facts.component;
         let index = match component { materials::Component::Hull => 0,
             materials::Component::Turret01 => 1, materials::Component::Gun02 | materials::Component::Gun01 => 2 };
-        let source = self.components[index].triangles.iter().find(|triangle| triangle.triangle_id == contact.triangle.triangle_id).ok_or_else(bad)?;
+        let source = self.components[index].triangles.iter().find(|triangle| triangle.triangle_id == contact.triangle.triangle_id).ok_or_else(|| bad())?;
         if source.mesh != contact.triangle.mesh || source.group != contact.triangle.group
             || source.material != contact.triangle.material { return Err(bad()); }
         let delta = subtract(contact.segment_end, contact.segment_start);

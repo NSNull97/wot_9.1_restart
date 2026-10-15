@@ -18,7 +18,7 @@ pub fn packed_angles_for(kind: VehicleKind,state: &aim::State) -> io::Result<u16
     Ok((yaw << 6) | pitch)
 }
 pub fn aim_intent(raw: &[u8], own: usize) -> io::Result<Option<aim::Intent>> {
-    let id = *raw.first().ok_or_else(model::bad)?;
+    let id = *raw.first().ok_or_else(|| model::bad())?;
     let expected = match id { 0x8e => 8, 0x8f => 12, 0x0f => 16, _ => return Ok(None) };
     if raw.len() != 3 + expected || raw[1..3] != (expected as u16).to_le_bytes() { return Err(model::bad()); }
     vehicle_id(own)?;
@@ -36,7 +36,7 @@ pub fn vehicle_id(slot: usize) -> io::Result<u32> {
 }
 pub fn avatar_id(slot: usize) -> io::Result<u32> { Ok(vehicle_id(slot)? - 1) }
 pub fn slot_for_vehicle(id: u32) -> io::Result<usize> {
-    (0..model::CAPACITY).find(|slot| vehicle_id(*slot).ok() == Some(id)).ok_or_else(model::bad)
+    (0..model::CAPACITY).find(|slot| vehicle_id(*slot).ok() == Some(id)).ok_or_else(|| model::bad())
 }
 fn string(b: &mut Vec<u8>, value: &[u8]) -> io::Result<()> {
     if value.len() >= 255 { return Err(model::bad()); } b.push(value.len() as u8); b.extend(value); Ok(())
@@ -49,7 +49,7 @@ fn f3(b: &mut Vec<u8>, p: [f32; 3]) { for x in p { b.extend(x.to_le_bytes()); } 
 fn native_direction(b: &mut Vec<u8>, ypr: [f32; 3]) { f3(b, [ypr[2], ypr[1], ypr[0]]); }
 fn actor(w: &World, slot: usize) -> io::Result<&Actor> {
     vehicle_id(slot)?;
-    let a = w.actors.get(slot).ok_or_else(model::bad)?;
+    let a = w.actors.get(slot).ok_or_else(|| model::bad())?;
     if w.id == 0 || a.identity.database <= 0 || a.identity.name.len() > 48 || a.vehicle_kind()!=w.vehicle_kind() || !(0..=a.vehicle_kind().max_health()).contains(&a.health)
         || a.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
         || a.direction.iter().any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
