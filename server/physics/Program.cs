@@ -10,6 +10,7 @@ using MapDrive;
 try
 {
     if (args.Length > 0 && args[0] == "--battle-scene") return BattleScene.Run(args);
+    if (args.Length > 0 && args[0] == "--qualify-stock-profile") return StockProfileQualification.Run(args);
     // Private opt-in diagnostics are a separate bounded file, never IPC fields.
     string? diagnosticPath = null;
     if (args.Length >= 2 && args[^2] == "--handling-diagnostics")

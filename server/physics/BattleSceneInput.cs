@@ -24,7 +24,8 @@ internal static class BattleSceneInput
         var m = doc.RootElement;
         CheckedInput.Fields(m, "version", "profile", "policy", "map", "catalog", "actors");
         string map = m.GetProperty("map").GetString()!;
-        if (m.GetProperty("version").GetInt32() != 1 || m.GetProperty("profile").GetString() != "test_lab" ||
+        int version=m.GetProperty("version").GetInt32();
+        if (version is not (1 or 2) || m.GetProperty("profile").GetString() != "test_lab" ||
             m.GetProperty("policy").GetString() != Policy || map is not ("01_karelia" or "05_prohorovka"))
             throw new InvalidDataException("battle scene policy/map");
         var rows = m.GetProperty("actors");
@@ -33,7 +34,8 @@ internal static class BattleSceneInput
         var actors = new List<Actor>();
         foreach (var row in rows.EnumerateArray())
         {
-            CheckedInput.Fields(row, "slot", "kind", "config", "spawn_origin", "spawn_yaw");
+            if(version==1)CheckedInput.Fields(row, "slot", "kind", "config", "spawn_origin", "spawn_yaw");
+            else CheckedInput.Fields(row,"slot","kind","config","source_profile","spawn_origin","spawn_yaw");
             if (row.GetProperty("slot").GetInt32() != actors.Count) throw new InvalidDataException("ordered contiguous actor slots");
             var reference = row.GetProperty("config"); CheckedInput.Fields(reference, "path", "sha256");
             string configHash = reference.GetProperty("sha256").GetString()!;
@@ -44,9 +46,15 @@ internal static class BattleSceneInput
                 "body_half_extents", "body_center_offset", "wheel_points", "mass_kg", "max_forward_mps", "max_reverse_mps",
                 "engine_max_torque_nm", "wheel_radius", "suspension_min", "suspension_max", "track_max_brake_torque", "bounds_xz",
                 "longitudinal_friction", "lateral_friction", "stationary_steering_ratio", "handling");
-            var binding = AngularBodyBinding.Select(c); // Verifies the complete admitted physical projection.
             string kind = row.GetProperty("kind").GetString()!;
-            if (c.GetProperty("map").GetString() != map || kind != (binding.MassKg == 4691 ? "ms1" : "is7"))
+            AngularBodyBinding binding;
+            if(version==2&&row.GetProperty("source_profile").ValueKind!=JsonValueKind.Null)
+            {
+                StockProfileQualification.Runtime();
+                binding=StockVehicleProfiles.Select(root,row.GetProperty("source_profile"),c,kind);
+            }
+            else binding=AngularBodyBinding.Select(c); // Existing v1 projections are unchanged.
+            if (c.GetProperty("map").GetString() != map || kind != binding.Kind)
                 throw new InvalidDataException("battle actor kind/config map");
             foreach (string key in new[] { "terrain", "obstacles" })
             {

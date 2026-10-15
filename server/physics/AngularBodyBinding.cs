@@ -9,6 +9,7 @@ namespace MapDrive;
 // Neither a mass match nor this lookup authenticates a foreign loadout.
 internal sealed class AngularBodyBinding
 {
+    public string Kind { get; }
     public string ProfileSha256 { get; }
     public float MassKg { get; }
     public Vector3 HalfExtents { get; }
@@ -16,8 +17,9 @@ internal sealed class AngularBodyBinding
     public Vector3 PrincipalInverse { get; }
     public Quaternion InertiaRotation { get; }
     static float F(uint bits) => BitConverter.UInt32BitsToSingle(bits);
-    AngularBodyBinding(string sha, float massKg, Vector3 half, uint mass, uint x, uint y, uint z)
+    AngularBodyBinding(string kind, string sha, float massKg, Vector3 half, uint mass, uint x, uint y, uint z)
     {
+        Kind=kind;
         ProfileSha256=sha;MassKg=massKg;HalfExtents=half;InverseMass=F(mass);
         PrincipalInverse=new(F(x),F(y),F(z));InertiaRotation=new(F(0x3f3504f3),F(0x3f3504f3),0,0);
     }
@@ -44,11 +46,27 @@ internal sealed class AngularBodyBinding
                 &&SameNumeric(handling.GetProperty("max_yaw_rate_rad_s"),want.GetProperty("max_yaw_rate_rad_s"));
         }
         var half=CheckedInput.Vector(config.GetProperty("body_half_extents"),.1f,5);
-        if(Matches(Ms1))return new("48f8ac675afafbe8605bd97bd92dc2c37f26673b65a548d4f0402b815f7ee9a1",4691,half,
+        if(Matches(Ms1))return new("ms1","48f8ac675afafbe8605bd97bd92dc2c37f26673b65a548d4f0402b815f7ee9a1",4691,half,
             0x395f8781,0x390ec909,0x3919bf9b,0x3a25f4bb);
-        if(Matches(Is7))return new("2b72923c904678b5471ca4c8e01125f787d0baeb8cf2153c322a126fa1b6cfd7",68190,half,
+        if(Matches(Is7))return new("is7","2b72923c904678b5471ca4c8e01125f787d0baeb8cf2153c322a126fa1b6cfd7",68190,half,
             0x3776094c,0x363bac7f,0x365da392,0x3775d3e2);
         throw new InvalidDataException("angular response unsupported physical projection");
+    }
+    // Only the explicit IPC7 v2 qualification route can load these bindings.
+    // Actual body creation still verifies every native getter bit.
+    internal AngularBodyBinding(string kind,string profileHash,float massKg,Vector3 half,
+        float inverseMass,Vector3 principal,Quaternion rotation)
+    {
+        CheckedInput.Sha256(profileHash);
+        if(kind is not ("t26" or "t34" or "t3485")||!float.IsFinite(massKg)||massKg<1000||massKg>100000
+            ||!float.IsFinite(inverseMass)||inverseMass<=0
+            ||!float.IsFinite(principal.X)||!float.IsFinite(principal.Y)||!float.IsFinite(principal.Z)
+            ||principal.X<=0||principal.Y<=0||principal.Z<=0
+            ||!float.IsFinite(rotation.X)||!float.IsFinite(rotation.Y)||!float.IsFinite(rotation.Z)||!float.IsFinite(rotation.W)
+            ||Math.Abs(rotation.LengthSquared()-1)>2e-5f)
+            throw new InvalidDataException("stock native binding bounds");
+        Kind=kind;ProfileSha256=profileHash;MassKg=massKg;HalfExtents=half;InverseMass=inverseMass;
+        PrincipalInverse=principal;InertiaRotation=rotation;
     }
     static bool SameNumeric(JsonElement a,JsonElement b)
     {

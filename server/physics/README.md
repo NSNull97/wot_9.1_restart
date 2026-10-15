@@ -306,3 +306,55 @@ the next advance. This is an explicit pinned-platform test_lab policy.
 
 The complete schema, Rust integration API, actual-worker evidence and remaining
 gateway/native gates are in [P05C_SHARED_PHYSICS](../../docs/research/P05C_SHARED_PHYSICS.md).
+
+P04M physics preparation adds an opt-in IPC7 manifest version2. It retains the
+same root fields, policy, pipe frames, scene ACK and192 fracture-claim ceiling.
+Every actor additionally has `source_profile`: null for the existing MS-1/IS-7
+projections, or a pinned `{path,sha256}` reference for precisely stock `t26`,
+`t34`, `t3485`. Version1 remains unchanged. No legacy IPC1–6 profile is added.
+Kind is explicit and checked against the complete binding; mass is not identity.
+
+`Profiles/stock-definitions.json` is a small embedded derived source definition.
+Its exact vehicle/component XML pins, selected Hull primitive member pins,
+assembly weights and source wheel metadata accompany the complete physics and
+handling projection. The source bounds/center, summed mass, support positions,
+speed, torque and brake projection are recomputed before loading a profile.
+All six supports deliberately use the equal main W_L/W_R group radius. T-26's
+other three source radii remain metadata. This is an explicit laboratory
+approximation, not a claim of native historical wheel/drivetrain fidelity.
+
+Scenes containing a new stock kind use four native collision steps within each
+outer1/60s update; the outer control/reducer tick and six-tick IPC batch stay the
+same. The exact `collision_steps_per_60hz=4` and `motion_quality="Discrete"`
+policy are pinned in every new definition. Old-only scenes keep one native
+collision step, including manifest v2 with null old-profile references. No CCD
+settings or quality overrides are applied. In qualification, the original
+one-step T-26 head-on test exceeded the fixed5cm overlap limit (7.6316cm); the
+four-step policy reduced that case to1.29mm without widening the gate. Actual
+catalog8 witness/prepare/ACK checks are still required with this stepping policy.
+
+The qualification authoring command requires an unbound, pinned source draft:
+
+```text
+MapDriveWorker.exe --qualify-stock-profile <draft.json> --profile-sha256 <sha256> --local-root <local> --source-root <verified-original-root>
+```
+
+It validates closed source/profile fields, bounded owned paths without reparse
+points, exact source file hashes and exact bounded Hull package member hash.
+The prior full-package hash remains labelled prior provenance: this command
+does not rehash1.18GB to qualify one small member. It then constructs real Jolt
+BoxShape bodies through the same settings factory used by IPC7, reads actual
+inverse-mass, principal inverse-inertia and inertia-quaternion getter bits at
+three body yaws, checks the scalar world-tensor basis and an independent box
+inertia formula. The sole bounded JSON output contains `qualified_profile`,
+three `basis_frames` and exact managed/native/worker build SHA provenance.
+
+The profile remains `battle_admission=false`, with owner acceptance `NOT_RUN`.
+Loading it on IPC7 v2 authenticates its complete definition and config projection;
+actual body creation must still match every getter bit. This physics-only route
+does not implement the P04M Rust scalar registry, ammunition160, owned inventory,
+crew/layout, native rendering or admission. Those require separate integration
+and actual checks. Existing Jolt2.22.0 and Windows x64 dependency pins are fixed.
+`qualified_worker_sha256` records the authoring build's provenance; it is not an
+equality requirement on later worker assemblies. The exact native getter checks
+and fixed managed/native dependency pins remain mandatory at runtime.

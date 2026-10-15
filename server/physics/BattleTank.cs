@@ -32,12 +32,9 @@ internal sealed class BattleTank : IDisposable
         forwardLimit = N("max_forward_mps", 1, 20); reverseLimit = N("max_reverse_mps", .5f, 10);
         var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, source.Yaw);
         shape = new BoxShape(source.Binding.HalfExtents);
-        using var bodySettings = new BodyCreationSettings(shape, source.Spawn + Vector3.Transform(center, rotation), rotation, MotionType.Dynamic, 1)
-        {
-            OverrideMassProperties = OverrideMassProperties.CalculateInertia, MassPropertiesOverride = new MassProperties { Mass = mass },
-            AllowSleeping = false, MaxLinearVelocity = 25, Friction = 1
-        };
-        Body = world.BodyInterface.CreateBody(bodySettings); world.BodyInterface.AddBody(Body.ID, Activation.Activate);
+        using var bodySettings = TrackedBodySettings.Create(shape,mass,source.Spawn + Vector3.Transform(center,rotation),rotation);
+        Body=world.BodyInterface.CreateBody(bodySettings);
+        world.BodyInterface.AddBody(Body.ID,Activation.Activate);
         source.Binding.Verify(Body);
         var points = c.GetProperty("wheel_points").EnumerateArray().Select(v => CheckedInput.Vector(v, -5, 5)).ToArray();
         if (points.Length != 6) throw new InvalidDataException("IPC7 support count");
