@@ -19,6 +19,24 @@ impl BatchRuntime {
     }
     pub(super) fn blocked(&self)->bool{self.staged.is_some()||self.runtime.as_ref().is_some_and(|r|!r.prepared_ids().is_empty())}
     pub(super) fn ready_for_native(&self)->bool{self.settled&&!self.blocked()&&self.runtime.as_ref().is_some_and(|r|r.ready())}
+    pub(super) fn failure_snapshot(&self)->serde_json::Value{serde_json::json!({
+        "process_id":self.runtime.as_ref().map(|r|r.process_id()),"startup":self.startup.is_some(),"settled":self.settled,
+        "generation":self.generation,"physical_sessions":self.sessions,
+        "dispatched_ms":self.dispatched.and_then(|at|self.started_at.and_then(|start|at.checked_duration_since(start))).map(|d|d.as_millis()),
+        "held":self.held.as_ref().map(|f|serde_json::json!({"sequence":f.sequence,"tick":f.tick})),
+        "staged":self.staged.as_ref().map(|w|serde_json::json!({"battle":w.id,"tick":w.tick,"scene":w.scene_version()})),
+        "pending":self.runtime.as_ref().map(|r|r.pending()),"prepared_ids":self.runtime.as_ref().map(|r|r.prepared_ids()),
+        "scene":self.runtime.as_ref().map(|r|serde_json::json!({"version":r.scene().version(),"sha256":r.scene().sha256})),
+        "manifest_sha256":self.spec.as_ref().map(|s|&s.manifest_sha256)})}
+    fn reconcile_departures(staged:&mut World,current:&World)->io::Result<()> {
+        if staged.id!=current.id||staged.map!=current.map||staged.expected_actors()!=current.expected_actors()
+            ||staged.actors.len()!=current.actors.len()||staged.actors.iter().zip(&current.actors).any(|(old,now)|
+                old.identity!=now.identity||old.vehicle_kind()!=now.vehicle_kind()
+                ||old.session!=now.session&&!(old.session.is_some()&&now.session.is_none())){return Err(model::bad());}
+        for (old,now)in staged.actors.iter_mut().zip(&current.actors){
+            if old.session.is_some()&&now.session.is_none(){old.session=None;old.ready=false;old.input=model::Input::STOP;old.aim.park();}
+        }Ok(())
+    }
     pub(super) fn start(&mut self,world:&mut World,now:Instant)->io::Result<()> {
         if self.started_at.is_some()||!world.mixed_profiles()||world.actors.len()!=world.expected_actors()
             ||world.started.is_none()||world.map!=self.catalog.map_id(){return Err(model::bad());}
@@ -90,8 +108,8 @@ impl BatchRuntime {
         let frame=if self.held.is_some(){self.held.take()}else{runtime.poll(now)?};
         if self.staged.is_some(){
             if frame.is_some(){return Err(model::bad());}
-            if runtime.take_scene_ack(){let staged=self.staged.take().ok_or_else(||model::bad())?;
-                if staged.id!=world.id||staged.actors.iter().map(|a|a.session).collect::<Vec<_>>()!=world.actors.iter().map(|a|a.session).collect::<Vec<_>>(){return Err(model::bad());}
+            if runtime.take_scene_ack(){let mut staged=self.staged.take().ok_or_else(||model::bad())?;
+                Self::reconcile_departures(&mut staged,world)?;
                 *world=staged;self.dispatched=Some(drive_grid(world.started.ok_or_else(||model::bad())?,now)?);
                 println!("P05C_SCENE_COMMIT battle={} version={} one_worker_ack=true",world.id,world.scene_version());}
             return Ok(());
