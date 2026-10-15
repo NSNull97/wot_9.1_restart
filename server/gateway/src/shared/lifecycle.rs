@@ -135,7 +135,7 @@ impl State {
             if !alive[0] || !alive[1] {
                 next.finish(if alive[0] { 1 } else if alive[1] { 2 } else { 0 },
                     if alive.iter().any(|v| *v) { Reason::Elimination } else { Reason::NoContest }, now_ms);
-            } else if members.iter().any(|a| !a.present) {
+            } else if [1,2].iter().any(|team|!members.iter().any(|a|a.team==*team&&a.present&&a.alive)) {
                 let present = [1,2].map(|team| members.iter().any(|a| a.team == team && a.present && a.alive));
                 next.finish(if present[0] && !present[1] {1} else if present[1] && !present[0] {2} else {0},Reason::Forfeit,now_ms);
             } else {
@@ -222,6 +222,18 @@ mod tests {
         assert!(!s.ready_to_return(208_999));assert!(s.ready_to_return(209_000));
         let (mut s,mut m)=battle();m[1].alive=false;s.advance(1_100,&m).unwrap();assert_eq!(s.outcome().unwrap().winner,1);
         let (mut s,mut m)=battle();m.iter_mut().for_each(|a|a.alive=false);s.advance(1_100,&m).unwrap();assert_eq!(s.outcome().unwrap().winner,0);
+    }
+    #[test] fn six_actor_battle_survives_individual_departures_until_a_whole_team_is_absent() {
+        let mut m:[Member;6]=std::array::from_fn(|i|Member{team:(i%2)as u8+1,present:true,ready:true,
+            alive:true,position:[500.,0.,500.],damage_epoch:0,last_damager:None});
+        let mut s=State::new(fast()).unwrap();s.advance(0,&m).unwrap();s.advance(1_000,&m).unwrap();
+        m[0].position=[51.599991,0.,-447.];m[5].present=false;s.advance(1_100,&m).unwrap();
+        assert!(s.allows_actions());assert!(s.outcome().is_none());
+        s.advance(2_000,&m).unwrap();assert_eq!(s.view().bases[1].points,1);
+        m[3].present=false;s.advance(2_100,&m).unwrap();assert!(s.outcome().is_none());
+        m[1].present=false;s.advance(2_200,&m).unwrap();
+        assert!(m.iter().all(|a|a.alive));
+        assert_eq!(s.outcome(),Some(Outcome{winner:1,reason:Reason::Forfeit,ended_ms:2_200}));
     }
     #[test] fn capture_uses_authoritative_pose_contest_damage_and_empty_reset() {
         let (mut s,mut m)=battle();m[0].position=[51.599991,0.,-447.];
