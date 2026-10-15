@@ -100,7 +100,7 @@
   `d61e38c2f36b7ef8338d274cebc1f70faf0732c13c84460551e22b72b6664a61`.
 - Targeted gateway23 PASS / zero ignored, isolated build PASS:
   `local/build/server/gateway-p08b-integration02/result.json`. После него
-  интеграция ещё менялась: полный current-head gate пока NOT_RUN.
+  интеграция после него менялась; актуальный полный gate указан ниже.
 - Шесть synthetic Session/transport flow tests PASS: полный piggyback rollback,
   pure JOIN до writer ACK, CANCEL во время admission, retired terminal receipt,
   bounded late Avatar drain и атомарный delivery. Реальные DTO writer закреплены
@@ -111,6 +111,21 @@
   Это проверка HTTP/projection, native остаётся NOT_RUN.
 - Повтор owner+writer с явно заданным bundle:28 PASS/0SKIP,
   `owner-checks02/result.json`; первоначальный missing-env skip сохранён в01.
+- Полный gateway890 PASS/5 штатных ignored, isolated build PASS на runtime
+  `0834fee027af83044c13db353c9bfcb1d4a7fdd7`:
+  `local/build/server/gateway-p08b-full02/result.json`, exe SHA256
+  `b6ccb28c531a490198b86f61a8c87ff8eab5db95748b78b35f0b374e2e941f1d`.
+  Первый full01:889 PASS/1 FAIL из-за старого теста, который считал shot60 MS-1
+  недопустимым при временном20 БК. Тест исправлен для настоящего max96 БК:
+  сохраняет разные native FX и пределы history192/60; production не менялся.
+- Восемь flow tests PASS, включая preserved warm4→full1 и новый battle ID
+  после завершения последнего queued reservation: `gateway-p08b-flow04`.
+  Writer запрещает повторный admission того же owner/battle; пустая завершённая
+  очередь получает новую генерацию. Пока peer держит старый резерв, новый JOIN
+  получает явный BATTLE_BUSY. Тренировочная комната/динамический матчмейкинг P10B
+  этим не реализуются.
+- Автоматический gate со ссылками на все проверки: `automatic-gate.json`;
+  native source/artifact/config binding: `local/stands/p08b-profile13-01/binding.json`.
 
 Все относительные evidence выше находятся в `local/evidence/20261015-p08b-01/`.
 
@@ -120,8 +135,7 @@
   расход после ручного возврата, повторный бой и перезапуск с резервом NOT_RUN.
 - Счётчики native full sync после настоящей ангарной мутации и цикла Avatar
   проверяются live; синтетические кадры/самосогласованный codec этого не доказывают.
-- Полный current-head gateway gate и source/artifact binding свежего стенда
-  ещё нужны; при FAIL/NOT_RUN карточка остаётся в ветке.
+- Native owner gate обязателен; при FAIL/NOT_RUN карточка остаётся в ветке.
 
 Оригинал клиента и рабочая БД при исследовании не меняются. Существенные решения
 будут внесены сюда по конкретному коду/трассам; предложенная архитектура не

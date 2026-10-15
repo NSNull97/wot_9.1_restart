@@ -16,5 +16,6 @@ STAB-01 принята на runtime `0574ab0`: изоляция ошибки, о
 повторный бой. Факты и ограничения — [исследование STAB-01](research/STAB01_BATTLE_STABILITY.md).
 Lab-only временная машина не реализует выбор/резерв машины профиля13.
 P08B в работе, ветка `codex/p08b-profile13-battle`: writer/Web/client проверки
-пройдены; общая gateway-интеграция и свежая native-приёмка ещё не закрыты.
+пройдены, gateway890 PASS/5 ignored и сборка PASS на `0834fee`;
+свежая native-приёмка ещё не закрыта, в main карточка не слита.
 Факты и явная test_lab policy — [исследование P08B](research/P08B_PROFILE13_BATTLE.md).
