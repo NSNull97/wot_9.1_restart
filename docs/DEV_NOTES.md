@@ -65,7 +65,11 @@ Harness профиля 12/13: `tools/p09e_research_harness.py --seed-only`.
 ## Слияние в main
 
 Ветка `codex/<card>-<purpose>` от main → проверки текущего head → `git merge --no-ff`
-в main → push → `git ls-remote origin refs/heads/main` = локальный main. Если main
+в main → push → `git ls-remote origin refs/heads/main` = локальный main.
+Allowlist перед push (файл ORG-0A удалён как устаревший): изменённые пути — только
+`client_patch/`, `docs/`, `server/`, `tests/`, `tools/`, `web/`, `config/` и корневые `.md`;
+никаких `local/`, ресурсов клиента, секретов, `.sqlite`/`.bin`/`.pyc`; дерево слияния
+совпадает с проверенным head карточки (`git diff --quiet <card> HEAD`). Если main
 открыт в другом worktree, слияние делать во временном worktree от main и переносить
 `git merge --ff-only` в том worktree, где открыт main.
 
