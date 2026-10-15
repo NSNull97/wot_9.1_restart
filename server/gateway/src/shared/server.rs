@@ -767,7 +767,8 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
             "queued_commands":s.shared.as_ref().map(|c|format!("{:?}",c.commands))})).collect::<Vec<_>>(),
         "runtime":runtime.as_ref().map(|r|serde_json::json!({"started":r.started,"poses":r.poses,
             "generations":r.generations,"worker_sessions":r.worker_sessions,
-            "pose_pending":r.pose_pending,"staged_tick":r.staged.as_ref().map(|w|w.tick)}))});
+            "pose_pending":r.pose_pending,"staged_tick":r.staged.as_ref().map(|w|w.tick),
+            "batch":r.batch.as_ref().map(BatchRuntime::failure_snapshot)}))});
     // Stdout is the stand's retained journal. Never continue the failed world.
     println!("SHARED_BATTLE_FAILED {snapshot}");
     let mut retire=Vec::new();

@@ -26,13 +26,31 @@ fn spin(runtime:&mut BatchRuntime,world:&mut World,now:Instant,until:impl Fn(&Ba
         spin(&mut runtime,&mut world,Instant::now(),|r,_|r.ready_for_native());
         let pid=runtime.runtime.as_ref().unwrap().process_id();let origins=world.actors.iter().map(|a|a.position).collect::<Vec<_>>();
         for slot in 0..n{world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0,speed_percent:100};}
-        let base=Instant::now();
+        let base=Instant::now();let mut barrier_departure=false;let mut barrier_rejoin=false;
         for frame in 1..=120{
-            if frame==61{world.detach(n as u32).unwrap();if n==6{world.actors[n-2].health=0;world.actors[n-2].input=model::Input::STOP;}}
+            if frame==61{world.detach(100+n as u32).unwrap();if n==6{world.actors[n-2].health=0;world.actors[n-2].input=model::Input::STOP;}}
             let at=base+Duration::from_millis(frame*100);let before=world.tick;
-            spin(&mut runtime,&mut world,at,|r,w|w.tick>before&&!r.blocked());
+            let deadline=Instant::now()+Duration::from_secs(120);
+            loop{runtime.step(&mut world,at).unwrap();
+                if runtime.staged.is_some()&&!barrier_departure{
+                    let snapshot=runtime.failure_snapshot();assert_eq!(snapshot["process_id"].as_u64(),Some(u64::from(pid)));
+                    assert!(snapshot["staged"].is_object());assert!(snapshot["prepared_ids"].as_array().unwrap().len()>0);
+                    world.detach(n as u32).unwrap();barrier_departure=true;
+                    println!("P05C_ACK_WINDOW_DISCONNECT actors={n} frame={frame} before_scene={} physical_session={}",world.scene_version(),runtime.sessions[n-1]);
+                }
+                if world.tick>before&&!runtime.blocked(){break;}
+                assert!(Instant::now()<deadline);std::thread::sleep(Duration::from_millis(1));
+            }
+            if barrier_departure&&!barrier_rejoin{
+                assert_eq!(world.actors[n-1].session,None);let parked=world.actors[n-1].position;
+                let(owner,loadout)=model::tests::profile13_loadout(VehicleKind::Is7,n-1,9);
+                assert_eq!(world.attach_owned(owner,100+n as u32,&loadout).unwrap(),n-1);
+                world.set_ready(n-1,100+n as u32).unwrap();assert_eq!(world.actors[n-1].position,parked);
+                world.actors[n-1].input=model::Input{throttle:1,steer:0,speed_percent:100};barrier_rejoin=true;
+            }
             assert_eq!(runtime.runtime.as_ref().unwrap().process_id(),pid);assert_eq!(world.actors.len(),n);
         }
+        assert!(barrier_departure&&barrier_rejoin,"actual prepared/ACK window must be exercised");
         assert!(world.actors[0].position[2]>origins[0][2]+5.);
         assert!(world.scene_version()>0,"real full catalog route must produce accepted fractures");
         let state=world.fragiles.as_ref().unwrap();let events=state.vehicle_events.len();assert_eq!(events,world.scene_version()as usize);
@@ -52,6 +70,20 @@ fn spin(runtime:&mut BatchRuntime,world:&mut World,now:Instant,until:impl Fn(&Ba
         assert_eq!(world.actors,actors);assert_eq!(world.impact,trace);assert_eq!(world.scene_version(),scene);assert_eq!(world.tick,tick);
         println!("P05C_DOMAIN_ACCEPTED actors={n} process_id={pid} batches=120 scene={} events={} physical_sessions={:?}",world.scene_version(),events,runtime.sessions);
         drop(runtime);
+    }
+}
+#[test]fn p05c_staged_ack_reconciles_only_departures_and_rejects_new_authority_atomically(){
+    let now=Instant::now();let mut current=World::new_for_roster(9401,now,MapId::Prohorovka,6).unwrap();
+    for slot in 0..6{let(owner,loadout)=model::tests::profile13_loadout(if slot%2==0{VehicleKind::Ms1}else{VehicleKind::Is7},slot,9);
+        current.attach_owned(owner,slot as u32+1,&loadout).unwrap();current.set_ready(slot,slot as u32+1).unwrap();}
+    let mut staged=current.clone();staged.actors[5].position=[20.,10.,30.];current.detach(6).unwrap();
+    BatchRuntime::reconcile_departures(&mut staged,&current).unwrap();assert_eq!(staged.actors[5].session,None);
+    assert_eq!(staged.actors[5].position,[20.,10.,30.]);assert!(!staged.actors[5].ready);assert_eq!(staged.actors[5].input,model::Input::STOP);
+    for mutation in 0..4{let mut changed=current.clone();match mutation{
+        0=>changed.actors[5].session=Some(66),1=>changed.actors[0].identity.name="changed".into(),
+        2=>{changed.actors.pop();},_=>changed.actors[4].session=Some(55)}
+        let mut candidate=staged.clone();let before=candidate.actors.clone();
+        assert!(BatchRuntime::reconcile_departures(&mut candidate,&changed).is_err());assert_eq!(candidate.actors,before);
     }
 }
 #[test]fn p05c_saved_actual_ipc7_actor_uses_existing_scalar_parser_and_rejects_tampered_binding(){
