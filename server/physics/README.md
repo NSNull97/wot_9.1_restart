@@ -284,3 +284,25 @@ real shape-query contact than the triggering callback manifold; the published
 hull contact is that exact admission contact. This is an explicit approximate
 policy, not a claim that the closed historical solver selected the same
 manifold. Catalog5 retains the original first-manifold decision and trajectories.
+
+P05C adds a separate IPC7 entrypoint, preserving all arguments and schemas above:
+
+```text
+MapDriveWorker.exe --battle-scene <manifest.json> --scene-sha256 <sha256> --local-root <local> --generation <positive-u32>
+```
+
+One source-pinned manifest selects1..6 existing MS-1/IS-7 config3 projections,
+server-owned spawns, one map and an optional existing catalog8. A one-actor scene
+is for handling comparisons; battle admission still belongs to the coordinator.
+One PhysicsSystem owns every tank, static mesh and catalog body. All controls are
+applied before one60Hz update; all poses return in one batch after six updates.
+Tank contacts remain solid Jolt contacts, with no added ram-damage policy.
+
+IPC7 requires `restore_scene` before ready and `sync_removed` after prepared
+fractures. A source-bound per-actor angular proof is retained. The first
+qualifying actual catalog callback claims one object globally; other manifolds
+see the same pending removal. One scene ACK commits all global removals before
+the next advance. This is an explicit pinned-platform test_lab policy.
+
+The complete schema, Rust integration API, actual-worker evidence and remaining
+gateway/native gates are in [P05C_SHARED_PHYSICS](../../docs/research/P05C_SHARED_PHYSICS.md).

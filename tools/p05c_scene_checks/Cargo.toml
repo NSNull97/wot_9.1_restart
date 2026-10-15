@@ -1,0 +1,10 @@
+[package]
+name = "p05c-scene-checks"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+serde = "=1.0.229"
+serde_json = "=1.0.151"
+sha2 = "=0.10.9"
