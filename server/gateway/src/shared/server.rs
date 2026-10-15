@@ -996,8 +996,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 };
                 if fields.digest != digest { send_wire(socket, peer, &login::rejection(request, 69), Channel::Login, &mut capture)?; continue; }
                 let attempt = LoginAttempt::new(fields.session_key, fields.nonce, peer);
-                if let Some(job) = &auth {
-                    if !job.pending_duplicate(&attempt, &fields) { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
+                if let Some(job) = auth.as_mut() {
+                    if job.refresh_pending_request(request,&attempt,&fields) {
+                        println!("AUTH_PENDING_DUPLICATE request_id={request} reply_request_refreshed=true");
+                    } else { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
                     continue;
                 }
                 if battle_dispatch.busy() || ammo_job.is_some() || table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {

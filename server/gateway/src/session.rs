@@ -1338,6 +1338,13 @@ impl AuthJob {
         self.attempt.same_attempt(candidate)
             && self.credential_tag.iter().zip(tag).fold(0u8,|difference,(left,right)|difference|(*left^right))==0
     }
+    fn refresh_pending_request(&mut self,request:u32,candidate:&LoginAttempt,fields:&login::Fields)->bool {
+        if !self.pending_duplicate(candidate,fields) {return false;}
+        // Native retries replace the outer request ID while the same bounded
+        // authentication is pending. Reply to the newest validated request;
+        // its credentials/attempt and the worker outcome remain unchanged.
+        self.request=request;true
+    }
 }
 fn pending_credential_tag(salt:&[u8;32],fields:&login::Fields)->[u8;32] {
     // OBSERVED native J04 retries identical plaintext with randomized RSA OAEP
@@ -1614,8 +1621,8 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                     }
                     if fields.digest!=digest {send_wire(socket,peer,&login::rejection(request,69),Channel::Login,&mut capture)?;println!("AUTH_REJECT code=69 allocated=0");continue;}
                     let candidate=LoginAttempt::new(fields.session_key,fields.nonce,peer);
-                    if let Some(pending)=&auth {
-                        if pending.pending_duplicate(&candidate,&fields) {println!("AUTH_PENDING_DUPLICATE request_id={request}");}
+                    if let Some(pending)=auth.as_mut() {
+                        if pending.refresh_pending_request(request,&candidate,&fields) {println!("AUTH_PENDING_DUPLICATE request_id={request} reply_request_refreshed=true");}
                         else {send_wire(socket,peer,&login::rejection(request,73),Channel::Login,&mut capture)?;println!("AUTH_REJECT code=73 allocated=0 reason=identity_busy");}
                         continue;
                     }
@@ -1910,11 +1917,44 @@ mod retirement_policy_tests {
             assert!(!pending.pending_duplicate(&changed,&fields));
         }
         // A duplicate leaves the real authentication outstanding; it neither
-        // creates a result nor changes the original reply request/peer.
+        // creates a result nor changes the original attempt/peer.
         assert_eq!(pending.request,1);
         assert!(matches!(pending.receiver.try_recv(),Err(mpsc::TryRecvError::Empty)));
         assert!(sender.send(Ok(None)).is_ok());
         assert!(pending.receiver.try_recv().unwrap().unwrap().is_none());
+    }
+
+    #[test]
+    fn pending_request_refresh_changes_only_the_reply_id_after_exact_identity_match() {
+        let original=attempt(7,41,40000);let fields=pending_fields();let salt=[3;32];
+        let (sender,receiver)=mpsc::sync_channel(1);
+        let mut pending=AuthJob {request:47999,attempt:original,credential_salt:salt,
+            credential_tag:pending_credential_tag(&salt,&fields),receiver};
+        let tag=pending.credential_tag;
+        for changed_attempt in [attempt(8,41,40000),attempt(7,42,40000),attempt(7,41,40001)] {
+            assert!(!pending.refresh_pending_request(48000,&changed_attempt,&fields));
+            assert_eq!(pending.request,47999);
+        }
+        for changed_field in 0..3 {
+            let mut changed=pending_fields();
+            match changed_field {0=>changed.username[0]^=1,1=>changed.password[0]^=1,_=>changed.digest[0]^=1}
+            assert!(!pending.refresh_pending_request(48000,&original,&changed));
+            assert_eq!(pending.request,47999);
+        }
+        for request in 48000..=48007 {
+            assert!(pending.refresh_pending_request(request,&original,&fields));
+            assert_eq!(pending.request,request);
+            assert!(pending.attempt.same_attempt(&original));
+            assert_eq!(pending.credential_salt,salt);assert_eq!(pending.credential_tag,tag);
+            assert!(matches!(pending.receiver.try_recv(),Err(mpsc::TryRecvError::Empty)));
+        }
+        // Refresh cannot authenticate. A real negative worker outcome remains
+        // negative and is correlated with the newest request on the wire.
+        sender.send(Ok(None)).unwrap();
+        assert!(pending.receiver.try_recv().unwrap().unwrap().is_none());
+        let rejected=login::rejection(pending.request,67);
+        assert_eq!(u32::from_le_bytes(rejected[7..11].try_into().unwrap()),48007);
+        assert_eq!(rejected[11],67);
     }
 
     #[test]
@@ -1939,14 +1979,25 @@ mod retirement_policy_tests {
             packet.extend(request.to_le_bytes());packet.extend([0,0]);packet.extend(login::PROTOCOL.to_le_bytes());
             packet.extend(cipher);packet.extend([2,0]);packet
         };
-        let first=encode(1);let second=encode(2);assert_ne!(&first[15..],&second[15..]);
+        let first=encode(47999);let second=encode(48007);assert_ne!(&first[15..],&second[15..]);
         let (first_id,first_fields)=login::decode_interactive(&first,&private).unwrap();
         let (second_id,second_fields)=login::decode_interactive(&second,&private).unwrap();assert_ne!(first_id,second_id);
-        let original=attempt(7,41,40000);let salt=[5;32];let (_,receiver)=mpsc::sync_channel(1);
-        let pending=AuthJob {request:first_id,attempt:original,credential_salt:salt,
+        let original=attempt(7,41,40000);let salt=[5;32];let (sender,receiver)=mpsc::sync_channel(1);
+        let mut pending=AuthJob {request:first_id,attempt:original,credential_salt:salt,
             credential_tag:pending_credential_tag(&salt,&first_fields),receiver};
         let candidate=LoginAttempt::new(second_fields.session_key,second_fields.nonce,original.login_peer);
-        assert!(pending.pending_duplicate(&candidate,&second_fields));
+        assert!(pending.refresh_pending_request(second_id,&candidate,&second_fields));
+        assert_eq!(pending.request,second_id);
+        assert!(matches!(pending.receiver.try_recv(),Err(mpsc::TryRecvError::Empty)));
+        // This exercises the real RSA decoder and redirect serializer, while
+        // preserving the worker as the sole authentication authority.
+        let reply=redirect091::reply_to(pending.request,&pending.attempt.key,123,
+            std::net::SocketAddrV4::new(Ipv4Addr::LOCALHOST,20131)).unwrap();
+        assert_eq!(u32::from_le_bytes(reply[7..11].try_into().unwrap()),second_id);
+        assert_ne!(u32::from_le_bytes(reply[7..11].try_into().unwrap()),first_id);
+        assert_eq!(reply[11],1);
+        sender.send(Ok(None)).unwrap();
+        assert!(pending.receiver.try_recv().unwrap().unwrap().is_none());
         for size in [0,14,16,second.len()-1] {assert!(login::decode_interactive(&second[..size],&private).is_err());}
         let mut trailing=second;trailing.push(0);assert!(login::decode_interactive(&trailing,&private).is_err());
     }
