@@ -26,6 +26,7 @@ pub(crate) mod collision;
 pub(crate) mod impact;
 pub(crate) mod wire;
 mod server;
+mod scene_runtime;
 mod profile13_session;
 mod profile13_queue;
 mod profile13_templates;
@@ -55,7 +56,7 @@ pub(super) struct Client {
     announcement: Option<(u32, bool)>,
     announcement_parts: Vec<(u32, bool)>,
     announced_areas: usize,
-    creations: [Option<(u32, bool)>; 2],
+    creations: [Option<(u32, bool)>; model::MAX_ACTORS],
     binding: Option<(u32, bool)>,
     area_creation: Option<(u32, bool)>,
     pending_area_scene: bool,
@@ -65,16 +66,16 @@ pub(super) struct Client {
     areas:Vec<(Option<(u32,bool)>,Vec<u8>)>,
     tree_areas:Vec<Vec<u32>>,
     correction: bool,
-    ready_sent: [bool; 2],
+    ready_sent: [bool; model::MAX_ACTORS],
     commands: Vec<Command>,
     entered: Option<Instant>,
     hangar_since: Option<Instant>,
     shot_cursor: u32,
     impact_cursor: usize,
-    health_sent: [Option<i16>; 2],
+    health_sent: [Option<i16>; model::MAX_ACTORS],
     owner_health_sent: Option<i16>,
-    tracer_started: [bool; model::MAX_SHOTS],
-    tracer_stopped: [bool; model::MAX_SHOTS],
+    tracer_started: [bool; model::MAX_BATTLE_SHOTS],
+    tracer_stopped: [bool; model::MAX_BATTLE_SHOTS],
     return_generation: u32,
     return_mask: u8,
     join_requested: bool,
@@ -90,10 +91,10 @@ pub(super) struct Client {
 }
 impl Client {
     fn new(slot: usize) -> Self {
-        Self { slot, phase: Phase::Account, view: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; 2],
-            area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; 2], commands: Vec::new(), entered: None,
-            hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; 2], owner_health_sent: None, tracer_started: [false; model::MAX_SHOTS],
-            tracer_stopped: [false; model::MAX_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
+        Self { slot, phase: Phase::Account, view: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; model::MAX_ACTORS],
+            area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
+            hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
+            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -116,7 +117,7 @@ impl Client {
         self.profile13.as_ref().is_some_and(|s| s.reservation.is_some() && !s.in_flight && s.pending_return.is_none())
     }
     pub(super) fn acknowledge(&mut self, cumulative: u32, frame: &Frame) {
-        for pending in [&mut self.announcement, &mut self.creations[0], &mut self.binding, &mut self.area_creation] {
+        for pending in [&mut self.announcement, &mut self.binding, &mut self.area_creation] {
             if let Some((seq, acked)) = pending { *acked |= cumulative > *seq || frame.selective.contains(seq); }
         }
         for (seq, acked) in &mut self.announcement_parts {
@@ -127,14 +128,14 @@ impl Client {
                 *acked = self.announcement_parts.iter().all(|(_, acked)| *acked);
             }
         }
-        if let Some((seq, acked)) = &mut self.creations[1] { *acked |= cumulative > *seq || frame.selective.contains(seq); }
+        for pending in &mut self.creations {if let Some((seq,acked))=pending{*acked|=cumulative>*seq||frame.selective.contains(seq);}}
         for (pending,_) in &mut self.areas{if let Some((seq,acked))=pending{*acked|=cumulative>*seq||frame.selective.contains(seq);}}
     }
     fn areas_ready(&self,world:&World)->bool{
         (!world.destructible_enabled()||self.area_creation.is_some_and(|(_,ack)|ack))
             &&world.fragiles.as_ref().is_none_or(|state|self.announced_areas==state.catalog.chunks().len()&&self.areas.len()==state.catalog.chunks().len()&&(self.tree_areas.is_empty()||self.tree_areas.len()==self.areas.len())&&self.areas.iter().all(|(p,_)|p.is_some_and(|(_,a)|a)))
     }
-    fn visible(&self) -> [bool; 2] { self.creations.map(|row| row.is_some_and(|(_, ack)| ack)) }
+    fn visible(&self) -> [bool; model::MAX_ACTORS] { self.creations.map(|row| row.is_some_and(|(_, ack)| ack)) }
     pub(super) fn needs_flush(&self) -> bool { matches!(self.phase, Phase::Entities | Phase::Driving) }
 }
 
@@ -162,8 +163,8 @@ impl Session {
         c.queue_announced = false;
         c.shot_cursor = world.latest_shot();
         c.impact_cursor = world.impacts.len();
-        c.tracer_started = [false; model::MAX_SHOTS];
-        c.tracer_stopped = [false; model::MAX_SHOTS];
+        c.tracer_started = [false; model::MAX_BATTLE_SHOTS];
+        c.tracer_stopped = [false; model::MAX_BATTLE_SHOTS];
         *self = next;
         println!("SHARED_ENTRY battle={} session={} slot={slot} avatar={} vehicle={} assignment={} inventory_reserved={}",
             world.id,self.id,wire::avatar_id(slot)?,wire::vehicle_id(slot)?,
@@ -373,9 +374,14 @@ impl Session {
             let late = drive::late_queue_info(payload)?;
             if late == Some(false) { return Ok(()); }
             if payload != [9] && late != Some(true) { return Err(bad()); }
-            let mut body = wire::announcement(world, c.slot)?;
-            if world.destructible_enabled() { body.extend(destructible_wire::announcement()); }
             c.announcement_parts.clear();
+            let mut parts=wire::announcement_parts(world,c.slot)?;
+            let mut body=parts.pop().ok_or_else(||bad())?;
+            for part in parts {
+                let sequence=self.tx.enqueue_body_tracked(&part)?;
+                c.announcement_parts.push((sequence,false));
+            }
+            if world.destructible_enabled() {body.extend(destructible_wire::announcement());}
             c.announced_areas = 0;
             if let Some(state)=&world.fragiles {
                 let chunks=state.catalog.chunks();
@@ -399,7 +405,7 @@ impl Session {
             let sequence = c.announcement_parts.last().map(|(sequence, _)| *sequence).ok_or_else(|| bad())?;
             c.announcement = Some((sequence, false));
             c.phase = Phase::Entities;
-            events.push(format!("SHARED_ANNOUNCED battle={} session={} rows=2 own={} areas={} parts={} reliable_sequence={sequence}", world.id, self.id, wire::vehicle_id(c.slot)?, c.announced_areas, c.announcement_parts.len()));
+            events.push(format!("SHARED_ANNOUNCED battle={} session={} rows={} own={} areas={} parts={} reliable_sequence={sequence}", world.id, self.id, world.actors.len(), wire::vehicle_id(c.slot)?, c.announced_areas, c.announcement_parts.len()));
             return Ok(());
         }
         if payload.len() > 512 { return Err(bad()); }
@@ -412,7 +418,7 @@ impl Session {
             if !tail.is_empty() && (payload.len() > 512 || wire::ready(tail, c.slot).is_err()) { return Err(bad()); }
             if c.announcement.is_none()
                 || requests.is_empty()
-                || requests.len() > 7*(2+if world.destructible_enabled(){1}else{c.announced_areas}) { return Err(bad()); }
+                || requests.len() > 7*(world.actors.len()+usize::from(world.destructible_enabled())+c.announced_areas) { return Err(bad()); }
             // Original requests can piggyback vehicles and area controllers.
             // Queue the complete envelope first, then release only as much as
             // the reliable eight-body window can carry. Session's outer receive
@@ -429,7 +435,7 @@ impl Session {
                 } else {
                     let slots = wire::entity_requests(raw)?.ok_or_else(|| bad())?;
                     for slot in slots {
-                        if c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
+                        if slot>=world.actors.len() || c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
                         c.pending_entity_requests.push_back(slot);
                     }
                 }
@@ -455,9 +461,9 @@ impl Session {
                 // Loading/reconnecting a scene is not a replay of prior gun effects.
                 c.shot_cursor = world.latest_shot();
                 c.impact_cursor = world.impacts.len();
-                c.tracer_started = [false; model::MAX_SHOTS];
-                c.tracer_stopped = [false; model::MAX_SHOTS];
-                for slot in 0..2 { c.ready_sent[slot] = slot == c.slot || world.actors[slot].ready; }
+                c.tracer_started = [false; model::MAX_BATTLE_SHOTS];
+                c.tracer_stopped = [false; model::MAX_BATTLE_SHOTS];
+                for slot in 0..world.actors.len() { c.ready_sent[slot] = slot == c.slot || world.actors[slot].ready; }
                 events.push(format!("SHARED_READY battle={} session={} own={} reliable_sequence={sequence} tick={}", world.id, self.id, wire::vehicle_id(c.slot)?, world.tick));
             }
             payload = &payload[33..];
@@ -507,7 +513,7 @@ impl Session {
                 } else {
                     let slots = wire::entity_requests(raw)?.ok_or_else(|| bad())?;
                     for slot in slots {
-                        if c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
+                        if slot>=world.actors.len() || c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
                         c.pending_entity_requests.push_back(slot);
                     }
                 }
@@ -686,7 +692,7 @@ mod shared_return_tests {
         s.request_ids = vec![1, 2, 3]; s.chat_request_ids = vec![1, 2, 3];
         s.unsupported_request_ids.push_back(9); s.account_cache_hash = Some(-42);
         let mut c = Client::new(slot); c.phase = Phase::Driving; c.correction = true;
-        c.return_generation = 1; c.binding = Some((0, true)); c.creations = [Some((0, true)); 2];
+        c.return_generation = 1; c.binding = Some((0, true)); c.creations = [Some((0, true)); model::MAX_ACTORS];
         c.view = Some(model::tests::world(now));
         s.shared = Some(c); s
     }
