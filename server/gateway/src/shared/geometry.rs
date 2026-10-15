@@ -226,7 +226,7 @@ impl Bundle {
     /// remains a native acceptance gate. Exploded/detached component transforms
     /// are not represented by Contact and must not call this route.
     pub fn impact_segment(&self, contact: &Contact) -> io::Result<ImpactSegment> {
-        if contact.geometry_revision != self.geometry_revision() || contact.target_slot >= 2 || contact.tick < 1000
+        if contact.geometry_revision != self.geometry_revision() || contact.target_slot >= super::model::MAX_ACTORS || contact.tick < 1000
             || contact.target_position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
             || contact.target_direction.iter().chain(contact.target_aim.iter())
                 .any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
@@ -285,7 +285,7 @@ impl Bundle {
         pose::inverse_rotate(vector, [0., aim[1], 0.])
     }
     pub fn world_mesh(&self, actor: &Actor, slot: usize, tick: u32) -> io::Result<Mesh> {
-        if actor.vehicle_kind() != self.vehicle || slot >= 2 || tick < 1000 || actor.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
+        if actor.vehicle_kind() != self.vehicle || slot >= super::model::MAX_ACTORS || tick < 1000 || actor.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
             || actor.direction.iter().any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
             || !actor.aim.yaw.is_finite() || !actor.aim.pitch.is_finite() { return Err(bad()); }
         let mut vertices = Vec::new(); let mut triangles = Vec::new();

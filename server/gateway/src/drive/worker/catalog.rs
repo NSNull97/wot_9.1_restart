@@ -127,6 +127,7 @@ impl CatalogSpec {
         }Ok(())
     }
     pub fn sha256(&self)->&str{&self.sha256}
+    pub(crate) fn path(&self)->&Path{&self.path}
     pub fn entries(&self)->&[CatalogEntry]{&self.entries}
     pub fn contacts(&self)->bool{self.contacts}
     pub fn version(&self)->u8{self.version}

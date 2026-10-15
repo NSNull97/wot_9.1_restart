@@ -55,6 +55,8 @@ mod map_drive091;
 mod map_profile091;
 #[path = "drive/worker.rs"]
 mod map_drive_worker091;
+#[path = "drive/scene_worker.rs"]
+mod scene_worker;
 #[cfg(test)]
 #[path = "shared/server_worker_fixtures.rs"]
 mod worker_fixtures091;

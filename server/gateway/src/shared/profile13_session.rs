@@ -105,7 +105,7 @@ impl Terminal {
         reason: FinishReason,result:Option<&super::lifecycle_wire::Results>) -> io::Result<Self> {
         let actor = world.owned(slot, session)?;
         reservation.frozen.validate_owned(&actor.identity.account)?;
-        if world.id != reservation.battle || world.vehicle_kind() != reservation.frozen.kind
+        if world.id != reservation.battle || !world.mixed_profiles() && world.vehicle_kind() != reservation.frozen.kind
             || actor.vehicle_kind() != reservation.frozen.kind {
             return Err(bad("terminal actor battle/profile mismatch"));
         }

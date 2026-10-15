@@ -325,7 +325,7 @@ impl Obstacles {
         self.query_excluding_many(start,end,excluded).map(|(hit,_)|hit)
     }
     fn query_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<(Option<Hit>,usize)>{
-        if excluded.len()>super::model::MAX_SHOTS||excluded.windows(2).any(|w|w[0]>=w[1])||excluded.iter().any(|&id|id>=self.mesh.instance_count) {
+        if excluded.len()>super::fragiles::MAX_MOVEMENT_OBJECTS||excluded.windows(2).any(|w|w[0]>=w[1])||excluded.iter().any(|&id|id>=self.mesh.instance_count) {
             return Err(bad("obstacles excluded instance outside source manifest"));
         }
         if start.into_iter().chain(end).any(|v| !v.is_finite() || v.abs() > MAX_QUERY_COORDINATE) {

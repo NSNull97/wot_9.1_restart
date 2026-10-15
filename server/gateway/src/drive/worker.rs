@@ -320,6 +320,10 @@ fn removal_ack(raw:&[u8],map:&MapSpec,spec:&RemovalSpec,generation:u32,seq:u32)-
 }
 #[derive(Clone,Debug,PartialEq)]
 pub struct ObjectContact {pub object_id:u32,pub kind:String,pub substep:u8,pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3]}
+/// IPC7 uses exactly the accepted IPC6 scalar proof parser and verifier.
+pub(crate) fn shared_angular_proof(state:&Value,contacts:&[ObjectContact],spec:&CatalogSpec,profile:ram_proof::Profile,seq:u32)->io::Result<Arc<ram_proof::FrameProof>> {
+    angular::parse(state,contacts,spec,profile,seq)
+}
 #[derive(Clone,Debug,PartialEq)]
 pub struct Pose {pub position:[f32;3],pub direction:[f32;3],pub speed:f32,pub rspeed:f32,pub contacts:u8,
     pub linear_velocity:[f32;3],pub angular_velocity:[f32;3],pub wheel_contact_masks:[u8;6]}

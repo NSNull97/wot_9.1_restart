@@ -5,11 +5,13 @@ use crate::battle091::fire;
 use super::{ram_proof,aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile, vehicle_profile::VehicleKind};
 
 pub const CAPACITY: usize = 2;
+pub const MAX_ACTORS: usize = 6;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
 pub const STEP: Duration = Duration::from_millis(100);
 pub const MAX_COMMANDS: usize = 32;
 /// Storage ceiling; each immutable profile enforces its own admission limit.
 pub const MAX_SHOTS: usize = CAPACITY * 96;
+pub const MAX_BATTLE_SHOTS: usize = MAX_ACTORS * 96;
 /// Explicit laboratory policy: retained stock geometry blocks AP at a wreck.
 /// No penetration, material thickness or additional damage is inferred.
 pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
@@ -124,6 +126,8 @@ pub struct VehicleContactInput {
 pub struct World {
     pub id: u64,
     vehicle_kind: VehicleKind,
+    expected_actors: usize,
+    mixed_profiles: bool,
     pub map: crate::map_profile091::MapId,
     pub actors: Vec<Actor>,
     pub started: Option<Instant>,
@@ -137,6 +141,7 @@ pub struct World {
     pub lifecycle: Option<super::lifecycle::State>,
     pub lifecycle_created_unix: Option<u32>,
     geometry: Option<Arc<geometry::Bundle>>,
+    geometries: [Option<Arc<geometry::Bundle>>; 2],
     pub contacts: Vec<Contact>,
     ap_test_lab: bool,
     pub impacts: Vec<AppliedImpact>,
@@ -144,8 +149,8 @@ pub struct World {
     pub terrain_contacts: Vec<TerrainContact>,
     destructible: Option<destructible::State>,
     pub fragiles: Option<fragiles::State>,
-    contact_sources:[Option<ram_proof::Source>;CAPACITY],
-    contact_sequences:[u32;CAPACITY],
+    contact_sources:[Option<ram_proof::Source>;MAX_ACTORS],
+    contact_sequences:[u32;MAX_ACTORS],
 }
 
 impl World {
@@ -197,17 +202,37 @@ impl World {
         Self::new_for_vehicle(id,now,map,VehicleKind::Ms1)
     }
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
+    pub fn expected_actors(&self) -> usize { self.expected_actors }
+    pub fn mixed_profiles(&self) -> bool { self.mixed_profiles }
+    pub fn shot_limit(&self) -> usize { if self.mixed_profiles { self.expected_actors * 96 } else { self.vehicle_kind.battle_shot_limit() } }
+    pub fn new_for_roster(id:u64,now:Instant,map:crate::map_profile091::MapId,expected_actors:usize)->io::Result<Self> {
+        if !(2..=MAX_ACTORS).contains(&expected_actors) { return Err(bad()); }
+        let mut world=Self::new_for_vehicle(id,now,map,VehicleKind::Ms1)?;
+        world.set_expected_actors(expected_actors)?;Ok(world)
+    }
+    pub fn set_expected_actors(&mut self,expected_actors:usize)->io::Result<()> {
+        if !(2..=MAX_ACTORS).contains(&expected_actors) || self.started.is_some() || !self.actors.is_empty()
+            || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version()!=0 {return Err(bad());}
+        self.impact.configure_roster(expected_actors)?;self.expected_actors=expected_actors;self.mixed_profiles=true;Ok(())
+    }
+    pub fn geometry_for(&self,kind:VehicleKind)->io::Result<&Arc<geometry::Bundle>> {
+        let index=if kind==VehicleKind::Ms1 {0}else{1};
+        self.geometries[index].as_ref().or_else(||self.geometry.as_ref().filter(|g|g.vehicle_kind()==kind)).ok_or_else(||bad())
+    }
     pub fn new_for_vehicle(id: u64, now: Instant, map: crate::map_profile091::MapId, kind: VehicleKind) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
-        Ok(Self { id, map, vehicle_kind:kind, actors: Vec::new(), started: None, last: now, tick: 1000,
+        Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
-            geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
+            geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None,
-            contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;CAPACITY] })
+            contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS] })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
-        if bundle.vehicle_kind()!=self.vehicle_kind || self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
-        self.geometry = Some(bundle); Ok(())
+        let kind=bundle.vehicle_kind();let index=if kind==VehicleKind::Ms1{0}else{1};
+        if !self.mixed_profiles && kind!=self.vehicle_kind || self.started.is_some() || !self.shots.is_empty()
+            || self.geometries[index].is_some() || !self.mixed_profiles && self.geometry.is_some() { return Err(bad()); }
+        if self.mixed_profiles {self.geometries[index]=Some(bundle.clone());}
+        if self.geometry.is_none() || kind==self.vehicle_kind {self.geometry=Some(bundle);}Ok(())
     }
     pub fn enable_lifecycle(&mut self, rules: super::lifecycle::Rules) -> io::Result<()> {
         if self.started.is_some() || !self.actors.is_empty() || self.lifecycle.is_some() { return Err(bad()); }
@@ -238,7 +263,8 @@ impl World {
         Ok(changed)
     }
     pub fn enable_ap_test_lab(&mut self) -> io::Result<()> {
-        if self.started.is_some() || self.geometry.is_none() || self.ap_test_lab { return Err(bad()); }
+        if self.started.is_some() || self.geometry.is_none() || self.ap_test_lab
+            || self.mixed_profiles && self.geometries.iter().any(Option::is_none) { return Err(bad()); }
         self.ap_test_lab = true; Ok(())
     }
     pub fn bind_terrain(&mut self, terrain: Arc<terrain::Terrain>) -> io::Result<()> {
@@ -255,21 +281,23 @@ impl World {
     pub fn bind_fragiles(&mut self,catalog:Arc<fragiles::Catalog>)->io::Result<()>{
         if catalog.map!=self.map||self.started.is_some()||!self.shots.is_empty()||!self.ap_test_lab||self.destructible.is_some()||self.fragiles.is_some(){return Err(bad());}
         catalog.bind_geometry(self.terrain.as_ref().ok_or_else(|| bad())?)?;
-        self.impact.bind_fragiles(catalog.clone())?;self.fragiles=Some(fragiles::State::new(catalog));Ok(())
+        self.impact.bind_fragiles(catalog.clone())?;let mut state=fragiles::State::new(catalog);
+        if self.mixed_profiles{state.configure_roster(self.expected_actors)?;}self.fragiles=Some(state);Ok(())
     }
     pub fn scene_version(&self)->u32{self.fragiles.as_ref().map_or_else(||self.destructible.as_ref().map_or(0,destructible::State::scene_version),fragiles::State::scene_version)}
     pub fn destructible_enabled(&self)->bool{self.destructible.is_some()}
     pub fn destructible_transition(&self)->Option<&destructible::Transition>{self.destructible.as_ref().and_then(destructible::State::transition)}
     pub fn bind_contact_source(&mut self,slot:usize,source:ram_proof::Source)->io::Result<()> {
-        if slot>=CAPACITY||self.actors.get(slot).and_then(|a|a.session)!=Some(source.session)
-            ||source.profile!=match self.vehicle_kind{VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}
+        if slot>=self.expected_actors||!(self.actors.get(slot).and_then(|a|a.session)==Some(source.session)
+            ||self.mixed_profiles&&self.contact_sources[slot].as_ref()==Some(&source))
+            ||source.profile!=match self.actors[slot].vehicle_kind{VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}
             ||!source.follows(self.contact_sources[slot].as_ref()){return Err(bad());}
         self.impact.bind_contact_source(slot,source.clone())?;
         if self.contact_sources[slot].as_ref()!=Some(&source){self.contact_sequences[slot]=0;}
         self.contact_sources[slot]=Some(source);Ok(())
     }
     pub fn revoke_contact_source(&mut self,slot:usize)->io::Result<()> {
-        if slot>=CAPACITY||self.actors.get(slot).and_then(|a|a.session).is_some(){return Err(bad());}
+        if slot>=self.expected_actors||self.actors.get(slot).and_then(|a|a.session).is_some(){return Err(bad());}
         // Retain the generation floor; actor session absence revokes admission.
         self.impact.revoke_contact_source(slot)?;Ok(())
     }
@@ -277,7 +305,7 @@ impl World {
     /// world. The caller stages the candidate and waits for both worker scene
     /// ACKs before committing it or publishing native state.
     pub fn apply_vehicle_contacts(&mut self, contacts:&[VehicleContactInput])->io::Result<Vec<fragiles::VehicleContact>> {
-        if contacts.len()>32 { return Err(bad()); }
+        if contacts.len()>if self.mixed_profiles {self.expected_actors*32}else{32} { return Err(bad()); }
         if contacts.is_empty() { return Ok(Vec::new()); }
         // Stage both domain state and trace state. A later malformed contact
         // or a trace admission failure must not leave an earlier contact from
@@ -289,11 +317,11 @@ impl World {
         let mut trace=self.impact.clone();
         let mut sequences=self.contact_sequences;
         if state.catalog.version==7 {
-            let mut frames:[Option<Arc<ram_proof::ContextFrame>>;CAPACITY]=std::array::from_fn(|_|None);
-            let mut indices:[Vec<usize>;CAPACITY]=std::array::from_fn(|_|Vec::new());
+            let mut frames:[Option<Arc<ram_proof::ContextFrame>>;MAX_ACTORS]=std::array::from_fn(|_|None);
+            let mut indices:[Vec<usize>;MAX_ACTORS]=std::array::from_fn(|_|Vec::new());
             for contact in contacts {
                 let p=contact.proof.as_ref().ok_or_else(|| bad())?;let c=&p.frame.context;let slot=contact.shooter;
-                if slot>=CAPACITY||c.battle!=self.id||c.slot!=slot||self.actors.get(slot).and_then(|a|a.session)!=Some(c.session)
+                if slot>=self.expected_actors||c.battle!=self.id||c.slot!=slot||!self.mixed_profiles&&self.actors.get(slot).and_then(|a|a.session)!=Some(c.session)
                     ||!self.contact_sources[slot].as_ref().is_some_and(|s|s.matches(c,p.frame.proof.profile))
                     ||c.seq<=self.contact_sequences[slot]||p.index!=indices[slot].len(){return Err(bad());}
                 indices[slot].push(p.index);
@@ -308,7 +336,7 @@ impl World {
         }
         let mut outcomes=Vec::new();
         for contact in contacts {
-            if contact.shooter>=CAPACITY { return Err(bad()); }
+            if contact.shooter>=self.expected_actors { return Err(bad()); }
             if let Some(event)=state.ram_contact_with_proof(contact.object_id,contact.shooter,self.tick,contact.substep,
                 contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone(),contact.proof.clone())? {
                 trace.vehicle_contact(self.id,event.tick,&event)?;
@@ -330,7 +358,7 @@ impl World {
     pub fn attach_owned(&mut self, identity: Identity, session: u32,
         loadout: &crate::battle091::profile13::FrozenLoadout) -> io::Result<usize> {
         loadout.validate_owned(&identity.account)?;
-        if loadout.kind != self.vehicle_kind { return Err(bad()); }
+        if !self.mixed_profiles && loadout.kind != self.vehicle_kind { return Err(bad()); }
         self.attach_loadout(identity, session, Some(loadout.clone()))
     }
     fn attach_loadout(&mut self, identity: Identity, session: u32,
@@ -343,32 +371,37 @@ impl World {
             a.session = Some(session); a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park();
             return Ok(slot);
         }
-        if self.actors.len() == CAPACITY || self.actors.iter().any(|a| a.identity.database == identity.database) {
+        if self.actors.len() == self.expected_actors || self.actors.iter().any(|a| a.identity.database == identity.database) {
             return Err(bad());
         }
         let slot = self.actors.len();
         let mut origin = SPAWN; origin[0] += if slot == 0 { -4. } else { 4. };
-        let ammo = loadout.as_ref().map_or(self.vehicle_kind.initial_ammo(), |value| value.ap_count);
-        self.actors.push(Actor { identity, session: Some(session), ready: false, health: self.vehicle_kind.max_health(), vehicle_kind:self.vehicle_kind,
+        let kind=loadout.as_ref().map_or(self.vehicle_kind,|v|v.kind);
+        if self.mixed_profiles {self.impact.bind_actor(slot,kind)?;}
+        let ammo = loadout.as_ref().map_or(kind.initial_ammo(), |value| value.ap_count);
+        self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire: fire::State::with_loadout(ammo,self.vehicle_kind.reload_seconds())?, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout });
+            fire: fire::State::with_loadout(ammo,kind.reload_seconds())?, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
-        if self.started.is_some() || self.actors.len() != CAPACITY || now < self.last { return Err(bad()); }
+        if self.started.is_some() || self.actors.len() != self.expected_actors || now < self.last { return Err(bad()); }
         self.started = Some(now); self.last = now; Ok(())
     }
     /// Integrated map-drive owns the initial lane placement. Rebase happens
     /// in the start tick before native arena announcements; after that first
     /// turn all poses come from the workers atomically.
-    pub fn rebase_external_spawns(&mut self, positions: [[f32; 3]; CAPACITY]) -> io::Result<()> {
+    pub fn rebase_external_spawns<const N:usize>(&mut self, positions: [[f32; 3]; N]) -> io::Result<()> {
+        self.rebase_external_spawn_rows(&positions)
+    }
+    pub fn rebase_external_spawn_rows(&mut self, positions: &[[f32; 3]]) -> io::Result<()> {
         // The integrated runtime calls this in the same loop turn as
         // `start`, before tick 1000 is published or either actor is ready.
-        if self.actors.len() != CAPACITY || self.tick != 1000 || self.actors.iter().any(|actor| actor.ready) { return Err(bad()); }
+        if positions.len()!=self.expected_actors || self.actors.len() != self.expected_actors || self.tick != 1000 || self.actors.iter().any(|actor| actor.ready) { return Err(bad()); }
         for position in positions {
             if position.iter().any(|value| !value.is_finite() || value.abs() > 2000.) { return Err(bad()); }
         }
-        for (actor, position) in self.actors.iter_mut().zip(positions) {
+        for (actor, position) in self.actors.iter_mut().zip(positions.iter().copied()) {
             actor.position = position;
             actor.origin = position;
         }
@@ -394,7 +427,7 @@ impl World {
     /// untouched until both native actors have completed their ready contract.
     pub fn import_external_poses(&mut self,
         external: &[(usize, [f32; 3], [f32; 3], f32)]) -> io::Result<()> {
-        if external.len() != CAPACITY || external.iter().map(|row| row.0).collect::<std::collections::BTreeSet<_>>().len() != CAPACITY {
+        if external.len() != self.expected_actors || external.iter().map(|row| row.0).collect::<std::collections::BTreeSet<_>>().len() != self.expected_actors {
             return Err(bad());
         }
         let mut next = self.actors.clone();
@@ -472,9 +505,10 @@ impl World {
                     let result = next.fire.apply(&[*command], now)?;
                     for outcome in &result {
                         if let fire::Outcome::AcceptedShot { ammo_remaining } = *outcome {
-                            if shots.len() >= self.vehicle_kind.battle_shot_limit() || projectiles.len() >= self.vehicle_kind.battle_shot_limit() { return Err(bad()); }
+                            if shots.len() >= self.shot_limit() || projectiles.len() >= self.shot_limit() { return Err(bad()); }
                             let sequence = shots.len() as u32 + 1;
-                            let projectile = Projectile::launch(sequence, slot, &next, now)?;
+                            let projectile = if self.mixed_profiles {Projectile::launch_for_limit(sequence,slot,&next,now,self.shot_limit())?}
+                                else {Projectile::launch(sequence, slot, &next, now)?};
                             let elapsed_ticks = now.duration_since(self.started.ok_or_else(|| bad())?).as_millis() / 100;
                             let launch_tick = 1000u32.checked_add(u32::try_from(elapsed_ticks).map_err(|_| bad())?)
                                 .ok_or_else(|| bad())?;
@@ -518,14 +552,14 @@ impl World {
         }
         if let Some(rows) = external {
             let slots = rows.iter().map(|row| row.0).collect::<std::collections::BTreeSet<_>>();
-            if rows.len() != CAPACITY || slots.len() != CAPACITY || slots.iter().any(|slot| *slot >= CAPACITY) {
+            if rows.len() != self.expected_actors || slots.len() != self.expected_actors || slots.iter().any(|slot| *slot >= self.expected_actors) {
                 return Err(bad());
             }
             for (slot, position, direction, speed) in rows {
                 let actor = self.actors.get(*slot).ok_or_else(|| bad())?;
                 // A disconnected actor is parked in the authoritative world;
                 // its missing worker must not pause the surviving actor's clock.
-                if actor.session.is_none() && (*position != actor.position || *direction != actor.direction || *speed != 0.) {
+                if !self.mixed_profiles && actor.session.is_none() && (*position != actor.position || *direction != actor.direction || *speed != 0.) {
                     return Err(bad());
                 }
                 if position.iter().any(|v| !v.is_finite()) || direction.iter().any(|v| !v.is_finite()) || !speed.is_finite()
@@ -543,7 +577,13 @@ impl World {
         if tick_changed {
             let dt = now.duration_since(self.last).as_secs_f32().min(0.2);
             for (slot, a) in next_actors.iter_mut().enumerate() {
-                if !a.ready || a.session.is_none() { continue; }
+                if !a.ready || a.session.is_none() {
+                    // A parked/wreck body stays in the single physical scene and
+                    // can be pushed. No disconnected controller gains authority.
+                    if self.mixed_profiles {if let Some(rows)=external {let(_,position,direction,speed)=rows.iter().find(|(row,..)|*row==slot).ok_or_else(||bad())?;
+                        a.position=*position;a.direction=*direction;a.yaw=direction[0];a.speed=*speed;}}
+                    continue;
+                }
                 let previous_position = a.position;
                 if let Some(rows) = external {
                     if let Some((_, position, direction, speed)) = rows.iter().find(|(row, ..)| *row == slot) {
@@ -603,9 +643,20 @@ impl World {
                         let end_point = projectile.position_at(segment_end);
                         impact_trace.segment(self.id, projectile.sequence, tick, segment_tick_start,
                             start_point, end_point)?;
-                        if let Some(bundle) = &self.geometry {
-                            let target_slot = 1usize.checked_sub(projectile.slot).ok_or_else(|| bad())?;
+                        if self.geometry.is_some() {
+                            let mut target_slot = 1usize.checked_sub(projectile.slot).unwrap_or(0);
+                            if self.mixed_profiles {
+                                let mut selected:Option<(f32,usize)>=None;
+                                for (slot,actor) in next_actors.iter().enumerate().filter(|(slot,_)|*slot!=projectile.slot) {
+                                    let mesh=self.geometry_for(actor.vehicle_kind())?.world_mesh(actor,slot,tick)?;
+                                    let hits=super::collision::query(&mesh,start_point,end_point)?;
+                                    let t=hits.first().map_or(f32::INFINITY,|hit|hit.t);
+                                    if selected.is_none_or(|(old_t,old_slot)|t<old_t||(t==old_t&&slot<old_slot)){selected=Some((t,slot));}
+                                }
+                                target_slot=selected.ok_or_else(||bad())?.1;
+                            }
                             let target = next_actors.get(target_slot).ok_or_else(|| bad())?;
+                            let bundle=self.geometry_for(target.vehicle_kind())?;
                             let mesh = bundle.world_mesh(target, target_slot, tick)?;
                             let (hits, material_facts, ground) = if let Some(terrain) = &self.terrain {
                                 if let Some(state)=&next_destructible {
@@ -624,7 +675,7 @@ impl World {
                             // Compare in the vehicle query's f32 parameter domain:
                             // terrain wins a shared rounding bucket, no epsilon.
                             if ground.as_ref().is_some_and(|g| hits.first().is_none_or(|v| (g.t as f32) <= v.t)) {
-                                if terrain_contacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                if terrain_contacts.len() >= self.shot_limit() { return Err(bad()); }
                                 let hit = impact_trace.terrain_contact(self.id, projectile.sequence, tick)?;
                                 let chord: [f64; 3] = std::array::from_fn(|i| f64::from(end_point[i])-f64::from(start_point[i]));
                                 let length = chord.iter().map(|v| v*v).sum::<f64>().sqrt();
@@ -649,7 +700,7 @@ impl World {
                             if let Some(nearest) = hits.first() {
                                 let endpoint = std::array::from_fn(|i|
                                     start_point[i] + nearest.t * (end_point[i] - start_point[i]));
-                                if contacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                if contacts.len() >= self.shot_limit() { return Err(bad()); }
                                 let contact = Contact { shot: projectile.sequence, target_slot, tick,
                                     segment_start: start_point, segment_end: end_point,
                                     segment_seconds: segment_end.duration_since(segment_start).as_secs_f32(), endpoint,
@@ -660,12 +711,12 @@ impl World {
                                     material_facts: material_facts.ok_or_else(|| bad())? };
                                 let mut terminal_reason = impact::TerminalReason::UnresolvedCollision;
                                 if self.ap_test_lab && target.health > 0 {
-                                    if impacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                    if impacts.len() >= self.shot_limit() { return Err(bad()); }
                                     let distance = (0..3).map(|i| {
                                         let delta = f64::from(endpoint[i]) - f64::from(projectile.origin[i]);
                                         delta * delta
                                     }).sum::<f64>().sqrt();
-                                    let resolution = ap::resolve_for(projectile.vehicle_kind,ap::Input {
+                                    let resolution = ap::resolve_for_pair(projectile.vehicle_kind,target.vehicle_kind(),ap::Input {
                                         material: &contact.material_facts,
                                         segment_direction: std::array::from_fn(|i| end_point[i] - start_point[i]),
                                         winding_normal: nearest.normal, distance,
@@ -688,7 +739,7 @@ impl World {
                                     }
                                     terminal_reason = impact::TerminalReason::TestLabImpact;
                                 } else if self.ap_test_lab && target.health == 0 {
-                                    if impacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                    if impacts.len() >= self.shot_limit() { return Err(bad()); }
                                     // Retained geometry blocks a shell on an already dead actor.
                                     // Require the same validated native segment, but never run
                                     // the live-armor resolver or mutate health/death/input state.

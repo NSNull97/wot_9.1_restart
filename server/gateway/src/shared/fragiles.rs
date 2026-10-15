@@ -191,14 +191,20 @@ pub struct Damage {pub object_id:u32,pub instance_id:u32,pub object_revision:Str
 pub struct VehicleContact {pub object_id:u32,pub instance_id:u32,pub object_revision:String,pub shooter:usize,pub tick:u32,pub substep:u8,
     pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3],pub mass_kg:f32,pub kind:String,pub scene_before:u32,pub scene_after:u32,pub fallen_tree:Option<u32>,pub proof:Option<ram_proof::ContactProof>}
 #[derive(Clone,Debug,PartialEq)]
-pub struct State {pub catalog:Arc<Catalog>,health:Vec<u32>,fallen:Vec<Option<u32>>,pub events:Vec<Damage>,pub vehicle_events:Vec<VehicleContact>}
+pub struct State {pub catalog:Arc<Catalog>,health:Vec<u32>,fallen:Vec<Option<u32>>,pub events:Vec<Damage>,pub vehicle_events:Vec<VehicleContact>,roster:Option<usize>}
 impl State {
     pub fn failure_snapshot(&self)->serde_json::Value{
         serde_json::json!({"catalog_sha256":self.catalog.sha256,"scene_version":self.scene_version(),
             "objects":self.catalog.objects.iter().zip(self.health.iter().zip(&self.fallen))
                 .map(|(o,(health,fallen))|serde_json::json!({"object_id":o.object_id,"health":health,"fallen":fallen})).collect::<Vec<_>>()})
     }
-    pub fn new(catalog:Arc<Catalog>)->Self{Self{health:catalog.objects.iter().map(|o|o.health).collect(),fallen:vec![None;catalog.objects.len()],catalog,events:Vec::new(),vehicle_events:Vec::new()}}
+    pub fn new(catalog:Arc<Catalog>)->Self{Self{health:catalog.objects.iter().map(|o|o.health).collect(),fallen:vec![None;catalog.objects.len()],catalog,events:Vec::new(),vehicle_events:Vec::new(),roster:None}}
+    pub fn configure_roster(&mut self,count:usize)->io::Result<()>{
+        if !(2..=super::model::MAX_ACTORS).contains(&count)||!self.events.is_empty()||!self.vehicle_events.is_empty()||self.scene_version()!=0{return Err(bad());}
+        self.roster=Some(count);Ok(())
+    }
+    fn actor_limit(&self)->usize{self.roster.unwrap_or(CAPACITY)}
+    fn shot_limit(&self,vehicle:VehicleKind)->usize{self.roster.map_or(vehicle.battle_shot_limit(),|n|n*96)}
     fn latest_tick(&self)->Option<u32>{self.events.last().map(|event|event.tick).into_iter()
         .chain(self.vehicle_events.last().map(|event|event.tick)).max()}
     pub fn scene_version(&self)->u32{self.health.iter().zip(&self.fallen).filter(|(h,f)|**h==0||f.is_some()).count() as u32}
@@ -270,7 +276,7 @@ impl State {
 
         let bounded_speed_squared=if self.catalog.version>=6 {velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>()}
             else {f64::from(velocity.iter().map(|v|v*v).sum::<f32>())};
-        if shooter>=CAPACITY||tick==0||!(1..=6).contains(&substep)||!matches!(kind.as_str(),"hull"|"wheel")
+        if shooter>=self.actor_limit()||tick==0||!(1..=6).contains(&substep)||!matches!(kind.as_str(),"hull"|"wheel")
             ||point.iter().chain(normal.iter()).chain(velocity.iter()).any(|v|!v.is_finite())
             ||point.iter().any(|v|v.abs()>terrain::MAX_QUERY_COORDINATE)
             ||bounded_speed_squared>625.
@@ -314,7 +320,7 @@ impl State {
         let Some(index)=self.catalog.objects.iter().position(|o|o.instance_id==instance_id) else{return Ok(None)};
         let object=&self.catalog.objects[index];let before=self.health[index];
         if !matches!(object.kind,ObjectKind::Fragile){return Ok(None);}
-        if before<=0||shot==0||shot>vehicle.battle_shot_limit() as u32||shooter>=CAPACITY||tick==0||self.events.len()>=vehicle.battle_shot_limit()
+        if before<=0||shot==0||shot>self.shot_limit(vehicle) as u32||shooter>=self.actor_limit()||tick==0||self.events.len()>=self.shot_limit(vehicle)
             ||self.events.iter().any(|e|e.shot==shot)||self.latest_tick().is_some_and(|last|last>tick)
             ||material_kind!=object.material_kind||!(object.projectile_first_triangle..object.projectile_first_triangle+object.projectile_triangle_count).contains(&hit.triangle_id)
             ||!hit.t.is_finite()||!(0. ..=1.).contains(&hit.t)||hit.point.iter().chain(hit.normal.iter()).any(|v|!v.is_finite())
