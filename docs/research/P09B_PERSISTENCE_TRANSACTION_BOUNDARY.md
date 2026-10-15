@@ -78,6 +78,11 @@ has SHA-256
 `PASS_P09B_SQLITE_TRANSACTION_HARNESS`. It covers duplicate replay and
 mismatch, stale revision, unknown/reserved vehicle, malformed revision,
 non-finite persisted JSON, injected rollback, and reopen/replay persistence.
+The same targeted suite and deterministic self-check were rerun on 2026-10-13;
+the fresh receipt is
+`local/evidence/20261013-p09b-transaction-recheck-01/receipt-strict.json` with the
+same SHA-256
+`cedec631a51a5bf802381f04ad6690582518f3b341e0ce1f78e4bd775a614150`.
 
 **INFERRED / NOT_IMPLEMENTED:** this receipt proves only the harness boundary.
 The schema is not a migration for the deployed service; there is no battle
