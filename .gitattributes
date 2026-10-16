@@ -42,3 +42,10 @@ server/gateway/src/session.rs -text
 /server/gateway/src/shared/late_results*.rs text eol=lf
 /server/gateway/src/account/identity_late_results_tests.rs text eol=lf
 /tests/fixtures/p08c-late-*.json text eol=lf
+/tools/p08c_late_results.py text eol=lf
+/web/src/p08c-late-results.mjs text eol=lf
+/tools/p08c_late_results_service.py text eol=lf
+/tests/test_p08c_late_results.py text eol=lf
+/tests/p08c_late_http_seed.py text eol=lf
+/web/tests/p08c-late-results.test.mjs text eol=lf
+/web/tests/p08c-late-http.test.mjs text eol=lf

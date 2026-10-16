@@ -18,7 +18,7 @@ fn load(root:&Path,v:&Value)->io::Result<Config>{let path=root.join("gateway.jso
 }
 #[test]fn p08c_late_config_exact_owner_allowlist_and_mode_are_closed(){
     let(root,mut v)=setup();v["p08c_late_results"]=true.into();let owner="12345678-1234-4234-8234-123456789abc";
-    for list in[serde_json::json!([]),serde_json::json!([owner,owner]),serde_json::json!(["FOREIGN"]),serde_json::json!(["12345678-1234-0234-8234-123456789abc"]),serde_json::json!([null]),Value::Array(vec![Value::String(owner.into());7])]{
+    for list in[serde_json::json!([]),serde_json::json!([owner,owner]),serde_json::json!(["FOREIGN"]),serde_json::json!(["12345678-1234-0234-8234-123456789abc"]),serde_json::json!(["12345678-1234-4234-0234-123456789abc"]),serde_json::json!([null]),Value::Array(vec![Value::String(owner.into());7])]{
         v["p08c_late_results_accounts"]=list;assert!(load(&root,&v).is_err());}
     v["p08c_late_results_accounts"]=serde_json::json!([owner]);assert!(load(&root,&v).is_ok());
     for flag in["p06t_mixed_ammo","profile13_battle"]{let mut bad=v.clone();bad[flag]=false.into();assert!(load(&root,&bad).is_err());}

@@ -20,6 +20,7 @@ import { battleConfiguration } from './p08b-battle.mjs';
 import { nativePoolOverview, isNativePoolOverview, poolConfiguration, nativePoolRequestTimeout, LEGACY_REQUEST_TIMEOUT_MS } from './p04m-pool.mjs';
 import { mixedConfiguration, validateMixedResultsRequest, validateMixedResultsReply } from './p06t-mixed.mjs';
 import { lossConfiguration, validateLossResultsRequest, validateLossResultsReply } from './p06t-ammo-loss.mjs';
+import { lateConfiguration, lateReaderFence, createLateResultService, validateLateRequest, validatePendingRequest, LATE_REQUEST_TIMEOUT_MS } from './p08c-late-results.mjs';
 
 import { nativeRosterCrewOverview, isNativeRosterCrewOverview } from './p04h-crew.mjs';
 
@@ -231,6 +232,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.pool_service !== undefined) allowed.push('pool_service');
   if (options?.mixed_service !== undefined) allowed.push('mixed_service');
   if (options?.ammo_loss_service !== undefined) allowed.push('ammo_loss_service');
+  if (options?.late_result_service !== undefined) allowed.push('late_result_service');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
   if (options.crew_service !== undefined && options.ammunition_service === undefined) throw new Error('Crew requires the shared ammunition writer');
@@ -249,6 +251,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   const poolOwners = options.pool_service === undefined ? [] : poolConfiguration(options.pool_service, battleOwners);
   const mixedOwners = options.mixed_service === undefined ? [] : mixedConfiguration(options.mixed_service, poolOwners);
   const lossOwners = options.ammo_loss_service === undefined ? [] : lossConfiguration(options.ammo_loss_service, mixedOwners);
+  const lateOwners = options.late_result_service === undefined ? [] : lateConfiguration(options.late_result_service, mixedOwners);
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -271,8 +274,8 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   mkdirSync(fixtureRoot, { recursive: true });
   const identity = openIdentityReader(webPath);
   let game;
-  try { game = openGameStore(options.game_database, hash(nativeBytes), now); }
-  catch (error) { identity.close(); throw error; }
+  try { game = openGameStore(options.game_database, hash(nativeBytes), now); lateReaderFence(localPath(options.game_database), lateOwners); }
+  catch (error) { identity.close(); game?.close(); throw error; }
   let dummyHash;
   try { dummyHash = await hashPassword(token()); }
   catch (error) { identity.close(); game.close(); throw error; }
@@ -300,6 +303,13 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
                 shell_catalog: options.mixed_service.shell_catalog, terminal_policy: options.mixed_service.terminal_policy } : null,
               ammoLoss: lossOwners.includes(id) ? { version: options.ammo_loss_service.version, contract: options.ammo_loss_service.contract,
                 policy_sha256: options.ammo_loss_service.policy_sha256 } : null });
+        if (lateOwners.includes(id)) {
+          const late = createLateResultService({ database: localPath(options.game_database), originalRoot: ammo.original_root,
+            accountId: id, shellCatalog: options.mixed_service.shell_catalog, terminalPolicy: options.mixed_service.terminal_policy,
+            loss: lossOwners.includes(id), python: options.python_executable,
+            worker: resolve(ROOT, 'tools/p08c_late_results_service.py'), cwd: ROOT });
+          service.results = late.results; service.lateResults = late.append; service.latePending = late.pending;
+        }
         accountServices.set(id, service);
       }
       ammunition = accountServices.get(options.ammunition_service.account_id);
@@ -506,6 +516,18 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         poolRequestBudget(value.account_id); // Identity and native database ID were checked above.
         return json(res, 200, { account_id: profile.account_id, native_database_id: profile.native_database_id,
           name: profile.username, fixture_dir: await fixture(profile) });
+      }
+      if (req.method === 'POST' && ['/internal/native/late-result-append', '/internal/native/late-result-pending'].includes(req.url)) {
+        if (options.late_result_service === undefined) return json(res, 404, { error: 'not_found' });
+        const pending = req.url === '/internal/native/late-result-pending';
+        const value = await body(req, pending ? 2048 : 65536), service = accountServices.get(value?.account_id);
+        if (!service || !lateOwners.includes(value.account_id) || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        const profile = game.read(value.account_id);
+        if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        (pending ? validatePendingRequest : validateLateRequest)(value, value.account_id);
+        const remaining = Math.max(1, LATE_REQUEST_TIMEOUT_MS - (performance.now() - started));
+        clearTimeout(timer); timer = setTimeout(timedOut, remaining); req.socket.setTimeout(remaining);
+        return json(res, 200, await (pending ? service.latePending : service.lateResults)(value));
       }
       if (req.method === 'POST' && req.url === '/internal/native/battle-results') {
         if (options.battle_service === undefined) return json(res, 404, { error: 'not_found' });

@@ -186,7 +186,7 @@ fn verify_mixed_projection(profile:&Profile,revision:u64)->io::Result<()> {
 
 fn late_results_owner_id(owner:&str)->bool{
     owner.len()==36&&owner.bytes().enumerate().all(|(i,b)|if [8,13,18,23].contains(&i){b==b'-'}else{b.is_ascii_digit()||(b'a'..=b'f').contains(&b)})
-        &&matches!(owner.as_bytes()[14],b'1'..=b'5')
+        &&matches!(owner.as_bytes()[14],b'1'..=b'5')&&matches!(owner.as_bytes()[19],b'8'|b'9'|b'a'|b'b')
 }
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
