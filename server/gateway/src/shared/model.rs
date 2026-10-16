@@ -201,7 +201,7 @@ impl World {
     pub fn failure_snapshot(&self) -> serde_json::Value {
         let events = self.impact.events();
         let trace_from = events.len().saturating_sub(64);
-        serde_json::json!({
+        let mut snapshot=serde_json::json!({
             "battle":self.id.to_string(), "map":self.map.asset(), "vehicle":self.vehicle_kind.label(),
             "tick":self.tick, "started":self.started.is_some(),"mixed_profiles":self.mixed_profiles,"mixed_ammo":self.mixed_ammo,"expected_actors":self.expected_actors,
             "damage_event_count":self.damage_events.len(),"device_event_count":self.device_events.len(),
@@ -230,7 +230,11 @@ impl World {
             "trace_event_count":events.len(),"trace_omitted_prefix":trace_from,
             "trace_tail":events[trace_from..].iter().map(|e|format!("{e:?}")).collect::<Vec<_>>(),
             "scope":"committed world state and bounded trace tail; not a complete deterministic replay"
-        })
+        });
+        if let Some(policy)=self.impact.extended_breech_lab_policy(){
+            snapshot.as_object_mut().expect("snapshot object").insert("unarmored_device_policy".into(),policy.into());
+        }
+        snapshot
     }
 
     pub fn new(id: u64, now: Instant) -> io::Result<Self> {

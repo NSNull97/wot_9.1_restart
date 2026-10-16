@@ -3,6 +3,8 @@ use std::io;
 use crate::p06t_shells091::{Family, Shell, PROFILES};
 
 pub const POLICY: &str = "test_lab.p06t.single-plate-splash.v1";
+/// Explicit opt-in LAB rule, not a reconstruction of the historical solver.
+pub const UNARMORED_DEVICE_POLICY: &str = "test_lab.p06t.unarmored-gun-breech.v2";
 pub const MAX_TARGETS: usize = 6;
 fn bad(reason: &'static str) -> io::Error { io::Error::new(io::ErrorKind::InvalidData, reason) }
 
@@ -18,7 +20,7 @@ pub struct Plate {
     pub ordinary: bool,
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Decision { Pierced, NotPierced, Ricochet, Unsupported, OutOfRange }
+pub enum Decision { Pierced, NotPierced, Ricochet, Unsupported, OutOfRange, UnarmoredDevice }
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Resolution {
     pub policy: &'static str, pub decision: Decision, pub damage_hp: u16,
@@ -83,6 +85,22 @@ pub fn resolve_direct(i: DirectInput) -> io::Result<Resolution> {
     else if i.shell.family==Family::HighExplosive {r.damage_hp=attenuated_he(i.shell,0.,armor)?;}
     Ok(r)
 }
+/// Geometry/source identity is established by the Trace source-witness adapter.
+/// The nominal HP factor is exactly one; no ordinary plate, ricochet,
+/// normalization, historical layer continuation or hidden RNG is invented.
+pub fn resolve_unarmored_device(i: DirectInput) -> io::Result<Resolution> {
+    if i.plate.ordinary || i.plate.armor_mm != Some(0.) {
+        return Err(bad("unarmored device requires explicit zero non-ordinary source plate"));
+    }
+    let mut result = resolve_direct(i)?; // unchanged canonical shell/range/vector bounds
+    result.policy = UNARMORED_DEVICE_POLICY;
+    if result.decision != Decision::OutOfRange {
+        if result.decision != Decision::Unsupported { return Err(bad("unarmored device plate decision")); }
+        result.decision = Decision::UnarmoredDevice;
+        result.damage_hp = i.shell.damage_hp;
+    }
+    Ok(result)
+}
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct SplashTarget {pub slot:u8,pub distance_m:f64,pub armor_mm:f64,pub los_clear:bool}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -108,3 +126,7 @@ pub fn resolve_splash(shell:Shell,targets:&[SplashTarget])->io::Result<Vec<Splas
 #[cfg(test)]
 #[path="p06t_damage_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path="p06t_breech_damage_tests.rs"]
+mod breech_tests;

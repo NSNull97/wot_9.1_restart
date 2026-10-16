@@ -2,33 +2,26 @@
 
 **P06T — типы снарядов, критические повреждения и пожар**, зависимая ветка
 `codex/p06t-mixed-shell-damage` после автоматически проверенного P04M.
-Source-bound БК3/current/next, frozen shell и v2writer, явный laboratory
-solver/module proxy/fire policy подключены. Full02 на dc27285:
-1087PASS/0FAIL/5oldignored/buildPASS,681sourcefiles before/after exact.
-Actual World/Trace/geometry/LOS, scene-controls, owner publication,
-SQLite/HTTP и client CPython2.7.3 проверены автоматически. Mixed-01 actual
-startup/5resources и два own UDP→v2run_open PASS, own services остановлены.
-После full02 исправлен old-only queue reservation/cancel guard, implicit
-cancel при busyJoin и commandbudget: focused09 **90PASS/0ignored/buildPASS**,
-включая9 новых actual-writer/native reliable flow regressions. Full03 на
-9920a63/coretag p06t-core-20261016-01:1096PASS/5oldignored/buildPASS,
-683sourcefiles exact. Mixed-01 newbinding/V7 install и оба настоящих native
-hangar/cache/model boot OBSERVED по трассе; own services/clients STOPPED.
-UI/control/combat NOT_RUN. WT128/FV183 physical foundation подключена:
-canonicalroot Jolt getters, Python7/negative8/legacy455exact и original Rust
-IPC7→scalarFrameProof→ACK4PASS/buildPASS. Full04 на c25fb84:
-1100PASS/5oldignored/buildPASS,692sourcefiles exact; physical tag сохранён.
-Проверенный full05 World/owned остаётся5. После него начата WIP интеграция
-VehicleKind7/World LAB/source geometry/Aim: focused13 134PASS/0ignored/buildPASS;
-полный общий regression/source gate ещё NOT_RUN.
-Боевого owned допуска WT/FV нет.
-В работе следующий компонент: семь source caps, шестое место экипажа WT и
-явная policy v2. Focused11:105PASS/0ignored/buildPASS; full05 на9080c47:
-1111PASS/5oldignored/buildPASS,695sourcefiles exact, device tag сохранён.
-Старый World остаётся на policy v1, native/новый owned допуск NOT_RUN.
-Full01 прерван из-за HE+wreck anchor bug, regression PASS в focused07/full02.
-Native/UI/audio NOT_RUN; WT/FV combat integration ещё отсутствует,
-полная карточка не принята. План [P06T](plans/P06T.md),
+Core tag9920a63/full03:1096PASS/5oldignored/build/683sourceexact; mixed-01/V7
+установлены, actual startup и оба native hangar/cache/model boot OBSERVED,
+UI/control/combat NOT_RUN. Core сохранён отдельно для утренней проверки.
+
+Physical tag c25fb84/full04:1100PASS/5ignored/build/692exact. Devices tag9080c47/
+full05:1111PASS/5ignored/build/695exact. После них World7/source geometry/Aim/
+explicit temporary LAB сохранены09ebe8a и1a6b93f; focused13=134PASS/build,
+focused14=5actual mesh→World→Trace→HP/device tests PASS/build. Новый separate
+LABv2 source31 resolver/first-mesh witness/atomic direct Gun ledger и CLI:
+focused15 **149PASS/0FAIL/0ignored/buildPASS**,171.93с. Old default31 Unsupported
+сохранён. Дополнительный template reset test войдёт в full06; ещё NOT_RUN.
+
+Self-contained OwnedV3 component11files перенесён в tools/tests, fresh actual
+C/D canonical migrations/research/buy135.88с и26tests/2CPython2.7.3 PASS.
+Ревью воспроизвело две реальные WAL read races; scoped read-TX fix и весь
+набор **29PASS/0FAIL/0SKIP**,48.856с. Live factory/router/cacheACK/новый owned
+допуск не подключены, WT/FV stock0; LABammo не меняет inventory.
+
+Следом clean commit и full06 source-before/after; его PASS ещё не получен.
+Карточка не принята и не main; native/UI/audio NOT_RUN. План [P06T](plans/P06T.md),
 [факты и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 
 Full02 runtime483bb2b:1006PASS/5oldignored/buildPASS,634sourcefiles before/after

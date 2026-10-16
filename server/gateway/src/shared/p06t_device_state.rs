@@ -28,8 +28,9 @@ pub struct Cause {pub shot:u32,pub attacker_slot:u8}
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct ModuleHit {
     pub cause:Cause,pub ordinal:u8,pub at_ms:u64,pub target:Target,pub shell:Shell,
-    /// A World-owned deterministic RNG draw, journaled with this hit. No global
-    /// RNG is used here. Replay must supply exactly the original draw.
+    /// World supplies and journals the deterministic draw for ignition-capable
+    /// engine/fuel hits. A direct nonigniting Gun-only policy supplies canonical
+    /// unused0 without consuming RNG. Replay must preserve that chosen input.
     pub ignition_roll:f64,
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]

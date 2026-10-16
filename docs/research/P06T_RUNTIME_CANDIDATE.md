@@ -467,6 +467,41 @@ Focused12 сохранил128PASS/6FAIL: пять были вызваны legacy
 Старый legacy minimum не ослаблен; cfgtest кеширует только immutable pinned
 resource Arcs, отдельные negative manifests загружаются заново.
 
-Единственный следующий рекомендуемый шаг: фактические new2 contact/Trace/
-damage tests, затем полный source-before/after gate согласованного слоя,
-сохраняя закреплённые full03–05 и прежние пять byte contracts.
+Focused14:5actual World Aim/Shoot→whole source mesh first contact→Trace→HP/
+device tests PASS/build46.54с. WTAP→FV hull560, FVAP→WT1150, frozenHESH275HE→
+WT1750. Gun25module-only, WT31 реально первая открытая поверхность и по старой
+policy Unsupported0 без device/RNG. Позиции явно synthetic airborne; driving,
+нативные FX/UI/audio не проверялись. Proof local/evidence/20261016-p06t-world07/focused14/.
+
+Новый opt-in `legacy091-p06t-curated-lab-v2` выбирает отдельную LABpolicy
+`test_lab.p06t.unarmored-gun-breech.v2`. Exact WT/Gun01/class31/armor0/VDF1/
+extraGunHealth32/chance1 факты связаны с закрытым Bundle и самостоятельным
+повторным whole-mesh first-hit query в Trace до мутаций. Новый Decision
+UnarmoredDevice не выдаётся за обычное penetration. Однократные nominalHP и
+source deviceDamage идут в прежние ledger; Gun не поджигается/unusedroll0,
+RNG не расходуется. Native visual boundary использует существующий hitFX,
+внутренний damage record остаётся pierced=false. Source chance/layer/angle/
+continuation исторического сервера UNKNOWN; это выбранная лабораторная формула.
+Старые CLI/Trace API/default Unsupported31 сохранены. Новые9tests проверяют
+actual World1150HP/Gun240→0, source witness poisoning, replay/late/capacity и
+полный откат при позднем переполнении deviceledger. Focused15 весьP06T:
+149PASS/0FAIL/0ignored/buildPASS171.93с, exeSHA
+5281f6e87dbf8deb2c336355020f592d132955de078ebee5a965a768ea65e1bf.
+После него добавлен один resource/template/reset gate, будет проверен full06.
+
+Отдельно перенесены11 self-contained tools/tests OwnedV3: native encodingV2,
+Registry7/foreign source passports/terminalv3, current projection и atomic SQL
+cutover/crew/ammo/reserve/result/restart. Старый semanticcatalog/rows/pins не
+переписаны, activated-owner old mutations fenced, остальные owners oldwriter
+сохраняют. Fresh realC/D через canonical migrations и source research/buy
+прошли135.88с, source/projection/SQLite26cases и оба own primitive CPython2.7.3
+checks PASS. WT/FV ammo0, новыхgrants нет. Proof local/evidence/20261016-p06t-owned-v3-01/.
+Ревью затем воспроизвело actualWAL falseCORRUPT_STORE и никогда не существовавшую
+пару revisionR/generationG2. Scoped DEFERRED read snapshot исправляет обе,
+не закрывая чужую writerTX; полный29PASS48.856с. OldRED и GREEN сохранены в
+local/evidence/20261016-p06t-owned-read-snapshot01/. Factory/HTTP/nativev3/
+cacheACK/ownedWTammo не подключены и остаются отдельными software gates.
+
+Единственный следующий рекомендуемый шаг: clean commit и full06 с exact
+source-before/after, затем источник-связанный qualification stand новых машин.
+Сохранить core morning tag и старые byte contracts, native приёмку не выдумывать.

@@ -41,3 +41,16 @@ server/gateway/src/shared/p06t_device_policy_v2.json text eol=lf
 tools/p06t_combat_geometry.py text eol=lf
 tools/p06t_combat_geometry_reader.py text eol=lf
 tools/p06t_combat_geometry_pins.json text eol=lf
+
+# P06T v3 source bootstrap and tests are captured as exact promoted bytes.
+tools/p06t_native_encoding_v3.py -text
+tools/p06t_owned_registry_v3.py -text
+tools/p06t_owned_source_v3.py -text
+tools/p06t_owned_projection_v3.py -text
+tools/p06t_terminal_v3.py -text
+tools/p06t_owned_store_v3.py -text
+tests/p06t_owned_fixture_v3.py -text
+tests/p06t_owned_cache_verify27_v3.py -text
+tests/test_p06t_owned_registry_v3.py -text
+tests/test_p06t_owned_store_v3.py -text
+tests/test_p06t_terminal_v3.py -text

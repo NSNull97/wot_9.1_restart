@@ -104,3 +104,22 @@ fn resources()->Vec<super::super::super::profile13_templates::Resources>{super::
     println!("P06T_EXTENDED_DOMAIN_ACCEPTED actors=6 process_id={pid} batches=120 scene={} receipts={extended_receipts} acks={barriers} evidence={}",world.scene_version(),out.display());
     runtime.runtime.take().unwrap().shutdown().unwrap();
 }
+
+#[test] fn p06t_extended_v2_template_is_explicit_and_survives_fresh_battle_without_upgrading_old_mode(){
+    let rows=resources();let now=Instant::now();
+    let old=BattleTemplate::from_shared_mode(&rows,2,11730,now,Some(VehicleKind::Wt128)).unwrap();
+    assert!(!old.world.extended_breech_lab());assert!(old.world.failure_snapshot().get("unarmored_device_policy").is_none());
+    let v2=BattleTemplate::from_shared_policy(&rows,2,11731,now,Some(VehicleKind::Wt128),true).unwrap();
+    assert!(v2.world.extended_breech_lab());
+    assert_eq!(v2.world.failure_snapshot()["unarmored_device_policy"],crate::p06t_damage::UNARMORED_DEVICE_POLICY);
+    assert!(BattleTemplate::from_shared_policy(&rows,2,11732,now,None,true).is_err());
+    assert!(BattleTemplate::from_shared_policy(&rows[..5],2,11732,now,Some(VehicleKind::Ms1),true).is_err());
+    let mut world=v2.world.clone();let mut runtime=None;
+    world.attach_extended_lab(model::Identity{account:"explicit-v2-lab".into(),database:11731,name:"Lab v2".into()},
+        1,model::extended::LabLoadout::temporary(VehicleKind::Wt128)).unwrap();
+    assert_eq!(world.actors.len(),1);v2.replace(&mut world,&mut runtime,now).unwrap();
+    assert_eq!(world.id,11732);assert!(world.actors.is_empty()&&world.extended_breech_lab());
+    assert_eq!(world.failure_snapshot()["unarmored_device_policy"],crate::p06t_damage::UNARMORED_DEVICE_POLICY);
+    assert!(runtime.as_ref().unwrap().batch.is_some());
+    assert!(!old.world.fresh_battle(11733,now).unwrap().extended_breech_lab());
+}

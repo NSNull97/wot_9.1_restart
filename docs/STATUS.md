@@ -73,32 +73,24 @@ Full02 runtime483bb2b:1006PASS/5oldignored/buildPASS,634sourcefiles before/after
 оба MS1AP14/A IS7AP19, исходная БД побайтно сохранена. Новые3 admissionfalse,
 native/UI NOT_RUN; main не изменён. [План](plans/P04M.md).
 
-P06T в `codex/p06t-mixed-shell-damage`: opt-in mixed stacks/current/next,
-frozen source shell, APCR/HEAT/HE laboratory solver, actual geometry/LOS splash,
-module/crew proxy, fire и единый HP/death ledger подключены к v2 reserve/result/
-restart и native publication. Focused07:81PASS/0ignored/buildPASS; Python21,
-legacyPython28, newWeb4/oldWeb25unique, client2.7.3 9+20+61PASS/4hostskips.
-Mixed-01 отдельная БД A110/B27/оба MS1[0AP,4HEAT,10HE] из своего склада,
-0grants; исходныйpool-01 сохранён. Full01 прерван: HE+wreck anchor bug;
-исправление/hidden-primary explosion privacy/late-anchor hardening и10World
-tests PASS в focused07. Full02 на dc27285:1087PASS/5oldignored/buildPASS,
-681sourcefiles before/after exact. Actual mixed-01 startup/5resources и два
-own UDP→v2run_open PASS; A111/B28/БК unchanged, services ownstop PASS.
-Новый old-only queue/cancel/busyJoin/commandbudget fix после full02:
-focused09 **90PASS/0ignored/buildPASS**,9 новых reliableflow regressions.
-Focused08:86PASS/4FAIL новых outbox assertions, исправлены на actualtx;
-production не ослаблен. Full03 на9920a63:1096PASS/5oldignored/buildPASS,
-683sourcefiles exact, coretag p06t-core-20261016-01. Mixed-01 binding-p06t02/V7
-INSTALLED; оба realnative hangar/cache/model boot OBSERVED по трассе, A112/B29,
-БК прежний/reserves0, ownclients/servicesSTOPPED. UI/control/combat NOT_RUN.
-WT128/FV183 physical-only foundation: rootJoltgetters/Python7/negative8/
-455legacyframesexact и canonicalRustIPC7→originalscalarFrameProof→ACK4PASS/
-buildPASS. Full04 c25fb84:1100PASS/5ignored/build/692sourceexact PASS;
-physical tag сохранён. Crew6/sourcecaps7/policyv2 focused11:105PASS/build;
-full05 на9080c47:1111PASS/5ignored/build/695sourceexact, device tag сохранён;
-Проверенный полный World/owned5; новый Kind7/World LAB/Aim/geometry:
-focused13 134PASS/0ignored/buildPASS, общий full gate ещё NOT_RUN.
-Native/UI/audio/combat admission WT/FV NOT_RUN, карточка не принята и не main.
+P06T в `codex/p06t-mixed-shell-damage`: source frozen shell/БК3/current/next/
+clip/reload, APCR/HEAT/HE LAB solver, actual geometry/LOS splash, module/crew/
+fire и HP/death ledger соединены с v2reserve/result/restart/publication.
+Core tag9920a63/full03:1096PASS/5oldignored/build/683sourceexact. Python21/
+old28/Web4+old25/client2.7.3 9+20+61PASS/4hostskips. Mixed-01/V7 INSTALLED,
+actual startup/5resources/ownUDPwriter и оба native hangar/cache/model boot
+OBSERVED; A112/B29/MS1[0,4,10]/reserves0, свои процессы STOPPED. UI/бой NOT_RUN.
+Full04 physical c25fb84:1100PASS/5ignored/build/692exact; Python7/negative8/
+455oldframesexact, actual canonicalJoltIPC7→scalarFrameProof→ACK4PASS.
+Full05 devices9080c47:1111PASS/5ignored/build/695exact; caps7/crew6/policyv2.
+Новый World7/Aim/geometry/temporary LAB сохранён09ebe8a/1a6b93f; focused13
+134PASS/build, focused14 actualhit5PASS/build. Explicit LABv2 source31/Trace/
+Gun ledger/CLI focused15 **149PASS/0FAIL/0ignored/buildPASS**,171.93с.
+OwnedV3 component11files: fresh actualC/D135.88с/26sourceSQL/2CPythonPASS;
+реальные WAL read races воспроизведены и исправлены, весь29tests PASS48.856с.
+Factory/router/cacheACK/ownedWTammo не подключены. Дополнительный template
+reset test и новый full06 source-before/after ещё NOT_RUN. Native/UI/audio/
+owned WT/FV admission NOT_RUN; обязательные gates в main не сливались.
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 
 ## Принято владельцем на настоящем клиенте #717

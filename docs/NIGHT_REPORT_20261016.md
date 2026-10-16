@@ -28,6 +28,14 @@ Synthetic airborne poses отделены от native driving. Полный об
 source gate этого слоя ещё NOT_RUN. Owned новых машин
 не подключён; temporary LAB ammo не считается своим складом.
 
+Новый explicit LABv2 class31 resolver прошёл focused15: **149PASS/0FAIL/
+0ignored/buildPASS**,171.93с, включая9 новых source-witness/actualWorld/
+rollback tests и отдельный CLI. Старый Unsupported31 default сохранён.
+Перенесён OwnedV3 authority component11files: actual freshC/D135.88с,
+26tests/2CPython PASS, затем исправлены две actual WAL read races и весь
+29tests PASS48.856с. Live router/cacheACK/ownedWTammo ещё не подключены.
+Дополнительный template/reset gate и full06 source-before/after пока NOT_RUN.
+
 ## Сохранённые ветки и приёмка
 
 | Карточка | Ветка / сохранённый head | Проверенный runtime и реальные автоматические результаты | Не закрыто |
@@ -38,7 +46,7 @@ source gate этого слоя ещё NOT_RUN. Owned новых машин
 | P05C | `codex/p05c-shared-physics` / `9f2df41` | `019ed2f`,940/5/build/602sourceexact; actual sharedscene2/6/mixed/scalar/ACK/detach | Native mixedcontact/6clients, ramHP не реализован |
 | P07B | `codex/p07b-server-visibility` / `e711844` | `8fecb9d`,975/5/build/607sourceexact; realterrain/staticLOS/packetabsence/epochs | Nativehide/respot; bush/camo/radio/delay отсутствуют |
 | P04M | `codex/p04m-five-battle-profiles` / `2340236` | `483bb2b`,1006/5/build/634sourceexact; source/actualJolt/new3/ownedcrew+ammo/Web10/Python17+1+28 | Native3newqualification, admissionfalse |
-| P06T | `codex/p06t-mixed-shell-damage` / см. текущий git | core `9920a63`:1096/5/build/683 exact; Python21+old28/Web4+old25unique/client2.7.3 9+20+61PASS/4hostskips; physical `c25fb84`:1100/5/build/692 exact; devices `9080c47`:1111/5/build/695 exact | Новый бой/UI/audio/critical/fire, WT/FV World/Aim/owned encoding integration |
+| P06T | `codex/p06t-mixed-shell-damage` / см. текущий git | core `9920a63`:1096/5/build/683 exact; Python21+old28/Web4+old25unique/client2.7.3 9+20+61PASS/4hostskips; physical `c25fb84`:1100/5/build/692 exact; devices `9080c47`:1111/5/build/695 exact | Новый бой/UI/audio/critical/fire, WT/FV native qualification, owned router/cacheACK/stock, full06 |
 | P10B | active ветки реализации ещё нет | Только ignoreddomain/nativecodec/aliases component33PASS, originalsource staticproof | Productionroom/selectedteamvector/own404causalbarrier/nativeNOT_RUN |
 | NET-02 | active ветки реализации ещё нет | Только исходный preflight/report | LANbind/allowlist/redirect/firewall/2ПК/hostingNOT_RUN |
 

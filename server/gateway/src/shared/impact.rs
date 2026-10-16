@@ -39,6 +39,28 @@ pub fn plate_for(kind:VehicleKind,facts:&materials::MaterialFacts,chord:[f32;3],
     Ok(crate::p06t_damage::Plate{armor_mm:old.armor,ordinary:!matches!(old.outcome,ap::Outcome::Unsupported(_))})
 }
 
+/// A distinct source class is required. Zero armor or extra32 alone cannot
+/// admit a device. The closed source-bundle loader additionally verifies that
+/// this class's common_extra is gunHealth/native32 before forming these facts.
+pub fn resolve_mixed_for(kind:VehicleKind,facts:&materials::MaterialFacts,shell:crate::p06t_shells091::Shell,
+    chord:[f32;3],normal:[f32;3],distance:f64,breech_lab:bool)->io::Result<crate::p06t_damage::Resolution>{
+    let marker=facts.kind==31||facts.name=="gunBreech"||facts.source_class==materials::SourceClass::GunBreechVisualMaterial;
+    if breech_lab&&marker {
+        let exact=kind==VehicleKind::Wt128&&facts.component==materials::Component::Gun01
+            &&facts.profile_revision==materials::profile_revision(kind)&&facts.name=="gunBreech"&&facts.kind==31
+            &&facts.source_class==materials::SourceClass::GunBreechVisualMaterial
+            &&facts.effective.as_ref().is_some_and(|m|m.kind==31&&m.armor==Some(0.)&&!m.extra_is_none
+                &&m.damage_kind==1&&m.vehicle_damage_factor==1.&&m.use_hit_angle&&m.use_armor_homogenization
+                &&!m.use_antifragmentation_lining&&m.may_ricochet&&!m.collide_once_only
+                &&m.chance_to_hit_by_projectile==1.&&m.chance_to_hit_by_explosion==1.&&m.continue_trace_if_no_hit);
+        if !exact{return Err(invalid("LAB31 source class/profile/flags"));}
+        return crate::p06t_damage::resolve_unarmored_device(crate::p06t_damage::DirectInput{
+            shell,plate:crate::p06t_damage::Plate{armor_mm:Some(0.),ordinary:false},chord,winding_normal:normal,distance_m:distance});
+    }
+    let plate=plate_for(kind,facts,chord,normal,distance)?;
+    crate::p06t_damage::resolve_direct(crate::p06t_damage::DirectInput{shell,plate,chord,winding_normal:normal,distance_m:distance})
+}
+
 fn splash_los_query(terrain:&terrain::Terrain,center:[f32;3],point:[f32;3],excluded:&[u32])->io::Result<([f32;3],Option<terrain::Hit>)>{
     if !finite_vector(center)||!finite_vector(point)||excluded.len()>fragiles::MAX_MOVEMENT_OBJECTS
         ||excluded.iter().enumerate().any(|(i,id)|excluded[..i].contains(id)){return Err(invalid("splash LOS points/exclusions"));}
@@ -347,6 +369,7 @@ pub struct Trace {
     contact_revoked:[bool;super::model::MAX_ACTORS],
     source_history:Vec<(u32,usize,super::ram_proof::Source)>,
     mixed:bool,
+    breech_lab:bool,
 }
 
 impl Trace {
@@ -358,6 +381,17 @@ impl Trace {
     pub fn configure_roster(&mut self,count:usize)->io::Result<()> {
         if !(2..=super::model::MAX_ACTORS).contains(&count)||!self.events.is_empty()||self.battle_id.is_some() {return Err(invalid("late or invalid trace roster"));}
         self.roster=Some(count);Ok(())
+    }
+    /// Only a pristine explicitly configured World LAB may enable this rule.
+    pub fn enable_extended_breech_lab(&mut self)->io::Result<()> {
+        if self.breech_lab||self.roster.is_none()||!self.events.is_empty()||self.battle_id.is_some()
+            ||self.actor_kinds.iter().any(Option::is_some){return Err(invalid("late/duplicate LAB31 trace policy"));}
+        self.breech_lab=true;Ok(())
+    }
+    pub fn extended_breech_lab(&self)->bool{self.breech_lab}
+    /// Evidence adapters may insert this only when Some, preserving old JSON.
+    pub fn extended_breech_lab_policy(&self)->Option<&'static str>{
+        self.breech_lab.then_some(crate::p06t_damage::UNARMORED_DEVICE_POLICY)
     }
     pub fn bind_actor(&mut self,slot:usize,kind:VehicleKind)->io::Result<()> {
         if self.roster.is_none_or(|n|slot>=n)||self.actor_kinds[slot].is_some_and(|old|old!=kind) {return Err(invalid("trace actor profile binding"));}
@@ -658,6 +692,19 @@ impl Trace {
     /// query and the immutable admitted shell before appending one HP fact.
     pub fn mixed_resolution(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,attacker:usize,target:usize,
         contact:&super::model::Contact,resolution:&crate::p06t_damage::Resolution,health_before:i16,health_after:i16)->io::Result<()>{
+        self.mixed_resolution_inner(battle_id,shot_id,server_tick,attacker,target,contact,resolution,health_before,health_after,None)
+    }
+    /// New source-device decisions require the actual closed source Bundle and
+    /// live pre-mutation actor, independently queried again here. Old callers
+    /// retain their original ordinary/Unsupported contract without new inputs.
+    pub fn mixed_resolution_source(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,attacker:usize,target:usize,
+        contact:&super::model::Contact,resolution:&crate::p06t_damage::Resolution,health_before:i16,health_after:i16,
+        bundle:&super::geometry::Bundle,actor:&super::model::Actor)->io::Result<()>{
+        self.mixed_resolution_inner(battle_id,shot_id,server_tick,attacker,target,contact,resolution,health_before,health_after,Some((bundle,actor)))
+    }
+    fn mixed_resolution_inner(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,attacker:usize,target:usize,
+        contact:&super::model::Contact,resolution:&crate::p06t_damage::Resolution,health_before:i16,health_after:i16,
+        source:Option<(&super::geometry::Bundle,&super::model::Actor)>)->io::Result<()>{
         self.common(battle_id,shot_id,server_tick)?;let target_kind=self.kind_for_slot(target)?;
         let shell=self.selected_shell(shot_id).flatten().ok_or_else(||invalid("mixed result without selected admission"))?;
         if attacker==target||self.has_terminal(shot_id)||self.admission_facts(shot_id).map(|v|v.0)!=Some(attacker)
@@ -690,8 +737,21 @@ impl Trace {
             .ok_or_else(||invalid("mixed result launch absent"))?;
         let distance=(0..3).map(|i|(f64::from(endpoint[i])-f64::from(origin[i])).powi(2)).sum::<f64>().sqrt();
         let chord=std::array::from_fn(|i|end[i]-start[i]);
-        let plate=plate_for(target_kind,facts,chord,contact.triangle.normal,distance)?;
-        let computed=crate::p06t_damage::resolve_direct(crate::p06t_damage::DirectInput{shell,plate,chord,winding_normal:contact.triangle.normal,distance_m:distance})?;
+        let computed=resolve_mixed_for(target_kind,facts,shell,chord,contact.triangle.normal,distance,self.breech_lab)?;
+        if computed.policy==crate::p06t_damage::UNARMORED_DEVICE_POLICY {
+            let(bundle,actor)=source.ok_or_else(||invalid("LAB31 absent actual source witness"))?;
+            if actor.vehicle_kind()!=target_kind||bundle.vehicle_kind()!=target_kind||actor.health!=health_before||!actor.alive()
+                ||actor.position!=contact.target_position||actor.direction!=contact.target_direction
+                ||[actor.aim.yaw,actor.aim.pitch]!=contact.target_aim
+                ||bundle.materials().lookup(contact.material_facts.component.name(),&contact.material_facts.name)?!=contact.material_facts{
+                return Err(invalid("LAB31 actual source actor/catalogue witness"));
+            }
+            let mesh=bundle.world_mesh(actor,target,server_tick)?;
+            if mesh.geometry_revision()!=contact.geometry_revision||mesh.transform_revision()!=contact.transform_revision
+                ||collision::query(&mesh,start,end)?.first()!=Some(&contact.triangle){
+                return Err(invalid("LAB31 actual nearest source triangle witness"));
+            }
+        }
         if computed!=*resolution||health_after!=health_before.saturating_sub(computed.damage_hp as i16).max(0)
             ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("mixed result policy/source/HP/capacity"));}
         self.push(Event::MixedResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,material_order,
@@ -2465,3 +2525,7 @@ mod tests {
         assert_eq!(trace.terminal_shots(), &[1, 2]);
     }
 }
+
+#[cfg(test)]
+#[path="p06t_breech_trace_tests.rs"]
+mod breech_tests;

@@ -64,3 +64,7 @@ impl World {
         *self=next;Ok(slot)
     }
 }
+
+#[cfg(test)]
+#[path="p06t_breech_world_tests.rs"]
+pub(crate) mod breech_tests;

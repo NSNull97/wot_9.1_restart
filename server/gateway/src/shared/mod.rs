@@ -35,6 +35,7 @@ mod profile13_queue;
 mod profile13_templates;
 pub use server::serve_profile13;
 pub use server::serve_curated_lab;
+pub use server::serve_curated_lab_v2;
 pub(crate) mod vehicle_profile;
 pub use server::serve;
 pub use server::serve_integrated;
