@@ -1,7 +1,9 @@
 # Текущая карточка — BUILD fresh test compression
 
-Ветка codex/build-fresh-test-compression от NET33d964e. Exact frozen22
-test-only helper+три parent calls установлены; Rust build/tests NOT_RUN.
+Ветка codex/build-fresh-test-compression от NET33d964e, runtimecc2a94d.
+Exact frozen22 helper+три parent calls: canonical4PASS/0FAIL/0ignored/build/
+877rawsourceexact; actual NTFS positive/refusals прошли. Full combined NOT_RUN
+до dependent Hold full. [Факты](research/BUILD_FRESH_TEST_COMPRESSION.md).
 [План](plans/BUILD_FRESH_TEST_COMPRESSION.md). Production Web paths не
 расширены; новые пустые owned dirs только, старые outputs untouched.
 
@@ -23,8 +25,8 @@ Main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe` без merge. До17.10 09:00
 Непринятые native карточки остаются в зависимых ветках. Historical STAB/P08B
 cycles/P08C marker/natural/autoaim приняты только в прежнем проверенном объёме.
 
-Следующий шаг — технический fresh-empty-output NTFS compression prerequisite:
-после full на D осталось40MiB, повторные SQL fixtures иначе займут остаток.
+Следующий шаг — Hold5 integration после focused compression checkpoint:
+после NET full на D осталось40MiB, повторные SQL fixtures иначе займут остаток.
 Трогать только новые пустые owned каталоги до первой записи; старые данные
 не удалять/перемещать/сжимать, production path guards не расширять. Затем
 отдельная codex/p08b-owner-battle-hold: reviewed runtime16 +writer11/19,

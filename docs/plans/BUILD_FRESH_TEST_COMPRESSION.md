@@ -28,3 +28,7 @@ Prototype22 уже OBSERVED на новом tiny owned D каталоге:1MiB z
 SHA equal, nonempty/foreign/existingjunction refused. Это не Rust/full PASS.
 Откат — predecessor33d964e либо revert test-only source commit; оставить все
 старые/новые outputs и retained C targets. Native/UI NOT_RUN.
+
+Actual checkpoint cc2a94d: canonical4PASS/0FAIL/0ignored/buildPASS/877rawsource
+exact,0.06stest/48.40driver. Полный combined runtime ещё NOT_RUN и будет
+проверен на следующем Hold head. Факты research/BUILD_FRESH_TEST_COMPRESSION.md.

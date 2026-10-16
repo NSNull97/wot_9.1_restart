@@ -168,3 +168,4 @@
 - [NET02_PRIVATE_LAN.md](NET02_PRIVATE_LAN.md) — explicit native LAN policy, private-service separation and actual acceptance boundaries
 - [NET02_LOSS_TRAINING_INTEGRATION.md](NET02_LOSS_TRAINING_INTEGRATION.md) — current loss/late/training LAN union, full1573, actual own-host Login/Base; native/two-PC NOT_RUN.
 - [BUILD_TEMP_EXECUTABLE_REFERENCE.md](BUILD_TEMP_EXECUTABLE_REFERENCE.md) — explicit verified retained-C executable,17+11guards/full/actual own-host execution.
+- [BUILD_FRESH_TEST_COMPRESSION.md](BUILD_FRESH_TEST_COMPRESSION.md) — fresh-empty-only owned NTFS test outputs, actual4focused/build; dependent full pending.

@@ -1,5 +1,10 @@
 # Состояние проекта — 2026-10-17
 
+BUILD fresh test compression runtimecc2a94d: canonical4PASS/0FAIL/0ignored/
+buildPASS/877rawsourceexact; full combined NOT_RUN до Hold integration.
+Только новые empty owned NTFS dirs/test-only parents, старые данные untouched.
+[Факты](research/BUILD_FRESH_TEST_COMPRESSION.md). Следующий шаг Hold5.
+
 NET-02 software checkpoint: union43790d1 поверх P10Bbce643f + separate
 retained-C technical runtime `442ce7daeed861b20b3b86168b0c6816ea9efafc`.
 **Full1573PASS/0FAIL/5oldignored/buildPASS/876rawsourceexact**. Actual own-host
@@ -34,7 +39,7 @@ Native/UI/six/two-PC NOT_RUN; main без merge.
 | codex/p10b-loss-training-integration | 689fb93 | full1553/5/build/source865; actual room Loss4 compensation/relaunch/Finished; Python17/Web4/HTTP3+old37 |
 | codex/net-02-loss-integration + codex/build-temp-retained-executable | 442ce7d | full1573/5/build/source876; typedConfig28; same-full late/rooms; actual own-host Login/Base2; source/binary exactC |
 
-Все full gates имеют raw source before/after и evidence. Последний exeSHA
+Все full gates имеют raw source before/after и evidence. Последний полный exeSHA
 `082217015b1167d300d825b5cd7d9307f08153afa3eaf1f5a7ce64f6438fc4a7`. Proof
 `local/evidence/20261017-net-retain-full01/composition-full.json`. Raw ZIP и
 verified exe retained в owned C target; D duplicate отсутствует.

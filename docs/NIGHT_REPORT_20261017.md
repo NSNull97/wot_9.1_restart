@@ -1,5 +1,15 @@
 # Ночь 16–17 октября: сервер до 09:00
 
+## Fresh-output compression focused checkpoint — runtimecc2a94d
+
+codex/build-fresh-test-compression от NET33d964e. Canonical4PASS/0FAIL/
+0ignored/buildPASS/877rawsourceexact, actualNTFS compression и unchanged
+authoredbytes/refusal fences,48.40sdriver. Только test-only helper+три parent
+calls, production path guards не расширялись. Старые outputs не изменялись.
+Full combined/actualSQLcompression ещё NOT_RUN до следующего Hold full.
+[Факты/команда/evidence/откат](research/BUILD_FRESH_TEST_COMPRESSION.md).
+Следующий шаг Hold5 на отдельной ветке; ночь до09:00 продолжается.
+
 ## NET-02 + retained-C software checkpoint — runtime442ce7d
 
 Normal savedNET merge43790d1 поверх P10Bbce643f; отдельная техническая ветка
