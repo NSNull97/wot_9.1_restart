@@ -119,6 +119,15 @@ PASS. Exact full02 binding-loss01 создан. Actual startup-loss01 загру
 профилей и объявил P06T_AMMO_DETONATION_BOUND/BOUND. Native клиенты не запускались,
 их новая приёмка NOT_RUN; installed V7 остаётся прежним. Старые morning-autoaim01
 клиенты/службы остановлены только своими PID/exe/creation receipts.
+Actual startup-loss02: по одному derived-corpus own UDP Login на каждого;
+настоящие loss4 RunOpen A128→129/B42→43, loaded/depot/crew/results/reservations
+не изменились,active0. Native UI/Base attach NOT_RUN. Оба новых own service
+PID58220/15492 остановлены и отсутствие проверено. Receipt
+`loss-01/runs/startup-loss02/login-smoke-v4.json`, SHA
+`871da59de4242881bc4f2c5234b41d6769b80adb778007c2ddeb4220294fa45d`.
+Smoke01 FAIL сохранён: слишком строгий guard принял штатное изменение
+auth throttle game_limits за игровую мутацию. Отдельный reconciliation доказал
+один успешный A127→128; второй прогон проверяет точные source limiter transitions.
 
 Полные команды и prospective запуск — ignored `loss-01/MORNING-full02.md`.
 Порты остаются прежними20130/20131/3481 из actual V7 plan. Перед стартом нового

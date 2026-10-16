@@ -69,8 +69,12 @@ SQL12+old15/actualHTTP1/Web13PASS0skip. Первый canonical01/diagnostic01 FA
 backup game/web, отдельный token, действительная loss активация/publish,0grants,
 неизменные исходные SQL rows/loaded/depot/revisions.161 resource checks и8guard
 tests PASS. `binding-loss01.json` закрепляет full02. Actual `startup-loss01`
-поднял5профилей/DETONATION_BOUND/BOUND. Native клиенты не запускались; новая
-приёмка NOT_RUN. Точные команды/ограничения — ignored `MORNING-full02.md`.
+поднял5профилей/DETONATION_BOUND/BOUND. Actual startup-loss02 затем проверил
+два own derived-corpus UDP Login и настоящие loss4 RunOpen A128→129/B42→43,
+loaded/depot/crew/results/reservations unchanged,active0; оба own services
+остановлены по receipts. Первый limiter-guard FAIL/partial A127→128 сохранены.
+Native UI/Base attach и клиенты NOT_RUN. Точные команды/ограничения — ignored
+`MORNING-full02.md`; новый актуальный остаток A[0,48,48]/B[0,50,46] при A129/B43.
 
 Ограничение сохранности: committed finish/replay/relogin/restart сохраняют
 потерю. При падении процесса до terminal commit старая явно сохранённая

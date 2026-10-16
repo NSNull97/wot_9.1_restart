@@ -7,6 +7,8 @@
 Runtime ed67531: full1188PASS/0FAIL/5oldignored/buildPASS;712rawsourceexact.
 Focused143PASS; writerSQL12+old15/actualHTTP1/Web13PASS0skip. Новый loss-01
 source-bound binding-loss01 и actual startup5profiles/DETONATION_BOUND PASS.
+Два own UDP→v4RunOpen PASS; copied A129/B43/ammo unchanged/active0;
+startup-loss02 службы ownSTOP, native UI/Base attach NOT_RUN.
 Native/UI/отрыв башни/ammo-loss NOT_RUN, в main не сливать. Автоматический
 checkpoint сохранён; следующая ночная работа — P08B restart/CAS composition.
 Факты [P06T_AMMO_RACK_LOSS](research/P06T_AMMO_RACK_LOSS.md).

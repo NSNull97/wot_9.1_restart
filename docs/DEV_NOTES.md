@@ -5,6 +5,14 @@
 
 ## Сборка и тесты
 
+- P06T loss checkpoint ed67531: fresh gateway-p06t-ammo-loss-full02,
+ 1188PASS/5oldignored/buildPASS,712rawsourceexact. Новый isolated loss-01
+  binding-loss01; команды/rollback `local/stands/night-battle-20261017-01/loss-01/MORNING-full02.md`.
+  Existing CoreV7 installed bytes сохранены; actual two own UDP Login→loss4
+  RunOpen PASS, A129/B43/96shells each/active0. Новые services ownSTOP;
+  native детонация/башня/потеря БК ещё NOT_RUN. Не запускать старый binding на
+  изменённом runtime tree и не выдавать startup smoke за игру клиента.
+
 - Gateway: `python -B -X utf8 server/build.py gateway --test --out local/build/server/<новый-каталог>`.
   Полный набор ~6 мин; выборочно — `--test-filter <имя>`. Каталог вывода всегда новый.
   Итог печатается JSON-строкой (`tests_passed`, `tests_ignored`, `status`); логи —
