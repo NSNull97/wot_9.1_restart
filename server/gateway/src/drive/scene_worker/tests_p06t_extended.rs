@@ -41,6 +41,7 @@ impl Fixture {
                 Kind::Ms1|Kind::Is7=>self.root.join(format!("evidence/20261014-p05b-handling-fixes-01/pools-{}-c17/05_prohorovka-{}-handling-config.json",kind.label(),kind.label())),
                 _=>prefix.join(format!("source-export06/05_prohorovka-{}-config.json",kind.label())),
             };
+            let (config,_)=crate::portable_test_fixtures::verified(&config,None);
             let source=if matches!(kind,Kind::Ms1|Kind::Is7){Value::Null}else{
                 let path=if kind.vehicle().is_none(){extended.join(format!("root-getters03/{}-qualified-profile.json",kind.label()))}
                     else{prefix.join(format!("getters06/{}-qualified-profile.json",kind.label()))};

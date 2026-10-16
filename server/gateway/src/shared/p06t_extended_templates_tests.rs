@@ -10,7 +10,7 @@ pub(super) fn actual_resources()->Vec<Resources> {
 }
 fn load_actual_resources()->Vec<Resources>{
     let root=PathBuf::from(std::env::var_os("WOT091_ROOT").unwrap_or_else(||"D:/WoT_9.1_Server".into())).join("local");
-    let path=root.join(TEMPLATE);let raw=fs::read(&path).unwrap();assert_eq!(format!("{:x}",Sha256::digest(&raw)),TEMPLATE_SHA);
+    let (path,_)=crate::portable_test_fixtures::verified(&root.join(TEMPLATE),Some(TEMPLATE_SHA));
     let rows=load(&root,&path).unwrap();assert_eq!(rows.len(),7);assert_eq!(rows.iter().map(|r|r.kind).collect::<Vec<_>>(),VehicleKind::SUPPORTED);
     rows
 }
@@ -67,7 +67,8 @@ fn structural()->Value {
     }
 }
 #[test] fn p06t_extended_actual_resources_deny_cross_kind_or_old_pool_substitution_at_last_profile() {
-    let rows=actual_resources();let root=&rows[0].shared.as_ref().unwrap().root;let source=root.join(TEMPLATE);
+    let rows=actual_resources();let root=&rows[0].shared.as_ref().unwrap().root;
+    let (source,_)=crate::portable_test_fixtures::verified(&root.join(TEMPLATE),Some(TEMPLATE_SHA));
     let value:Value=serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
     let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let dir=root.join(format!("test-runs/p06t-resources4-{}-{stamp}",std::process::id()));fs::create_dir_all(&dir).unwrap();

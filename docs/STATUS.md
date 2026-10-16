@@ -1,5 +1,18 @@
 # Состояние проекта — 2026-10-17
 
+Текущая technical prerequisite: codex/build-c-night-workspace, новый shortC
+C:/wot091-night-20261017-01/w. D~1MiB; старые checkout/данные/клиенты сохранены.
+Toolchain23889/vendor134 files SHAexact; finite resources367/198271436B,
+Python9 guardsPASS, cfg(test) portability prepared; canonical C full NOT_RUN.
+Full/source/binary strict gate05; no production path exemptions. Mainffce8cb
+без merge. После C full actual4 Hold, morning contexts, garageFresh.
+
+Hold5 Dsource3675a48: focused30+actual2/buildPASS; SQL17+reader4PASS,
+Web3/selection4/client79/CPython76+3oldskips/rawSQL2/CLI1+2PASS. LowD batch27
+FAIL_RETAINED beforeWeb, remainingHTTP/full NOT_RUN. [Факты](research/P08B_OWNER_BATTLE_HOLD.md).
+Native/UI/real4/twoPC остаются NOT_RUN. До09:00 продолжаем без ручных вопросов.
+
+
 P08B Hold5 integration в codex/p08b-owner-battle-hold: coherent runtime16+
 writer11/19 установлен, новые Rust/API5 tests NOT_RUN; full/native не принят.
 NET/P10B/late/compression hooks сохранены. [План](plans/P08B_OWNER_BATTLE_HOLD.md).

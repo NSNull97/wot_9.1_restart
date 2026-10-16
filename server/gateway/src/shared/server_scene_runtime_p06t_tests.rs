@@ -66,8 +66,8 @@ fn legal(input:Input)->bool {(-1..=1).contains(&input.throttle)&&(-1..=1).contai
 }
 fn resources()->Vec<super::super::super::profile13_templates::Resources> {
     let root=std::path::PathBuf::from(std::env::var_os("WOT091_ROOT").unwrap_or_else(||"D:/WoT_9.1_Server".into())).join("local");
-    let path=root.join("evidence/20261016-p04m-runtime01/domain-fixture01/battle-profiles-five.json");
-    assert_eq!(format!("{:x}",sha2::Sha256::digest(fs::read(&path).unwrap())),"b7f272aace7a7746643bf00f0a49d343931d139477765ab30fcacbbf24c668e4");
+    let (path,_)=crate::portable_test_fixtures::verified(&root.join("evidence/20261016-p04m-runtime01/domain-fixture01/battle-profiles-five.json"),
+        Some("b7f272aace7a7746643bf00f0a49d343931d139477765ab30fcacbbf24c668e4"));
     super::super::super::profile13_templates::load(&root,&path).unwrap()
 }
 #[test] fn p06t_actual_scene_destroyed_engine_stays_parked_while_same_worker_healthy_actor_moves() {

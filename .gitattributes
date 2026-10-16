@@ -157,3 +157,19 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /web/tests/helpers/p08b-owner-hold-composition.mjs text eol=lf
 /web/tests/helpers/p08b-hold-sql-barriers.mjs text eol=lf
 /tests/helpers/p08b_owner_hold_composition_seed.py text eol=lf
+
+# Fresh C workspace portable test-only files.
+/server/gateway/src/main.rs text eol=lf
+/server/gateway/src/shared/server_scene_runtime_p04m_tests.rs text eol=lf
+/server/gateway/src/shared/server_scene_runtime_p06t_tests.rs text eol=lf
+/server/gateway/src/shared/p06t_extended_templates_tests.rs text eol=lf
+/server/gateway/src/shared/server_scene_runtime_tests.rs text eol=lf
+/server/gateway/src/shared/profile13_templates.rs text eol=lf
+/server/gateway/src/drive/worker/p06t_extended_pool_tests.rs text eol=lf
+/server/gateway/src/drive/scene_worker/tests_p04m.rs text eol=lf
+/server/gateway/src/drive/scene_worker/tests_p06t_extended.rs text eol=lf
+/server/gateway/src/shared/server_angular_real_tests.rs text eol=lf
+/server/gateway/src/portable_test_fixtures.rs text eol=lf
+
+/server/gateway/src/shared/server_worker_fixtures.rs text eol=lf
+/.gitattributes text eol=lf

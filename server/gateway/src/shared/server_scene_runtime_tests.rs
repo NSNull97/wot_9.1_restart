@@ -2,7 +2,7 @@ use super::*;
 use std::path::PathBuf;
 fn resources()->Vec<super::super::super::profile13_templates::Resources>{
     let root=PathBuf::from(std::env::var("WOT091_ROOT").unwrap_or_else(|_|"D:/WoT_9.1_Server".into())).join("local");
-    let source=root.join("stands/p08b-profile13-01/battle-profiles.json");
+    let (source,_)=crate::portable_test_fixtures::verified(&root.join("stands/p08b-profile13-01/battle-profiles.json"),None);
     let mut v:serde_json::Value=serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
     let artifact=std::env::var_os("WOT_P05C_ARTIFACTS").map(PathBuf::from).unwrap_or_else(||root.join("build/server/physics-p05c-night01/artifacts.json"));
     v["version"]=2.into();v["shared_physics"]=serde_json::json!({"path":artifact,"sha256":format!("{:x}",sha2::Sha256::digest(fs::read(&artifact).unwrap()))});

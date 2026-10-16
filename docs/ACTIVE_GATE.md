@@ -1,49 +1,27 @@
-# Текущая карточка — P08B owner battle hold5
+# Current gate: BUILD fresh short C workspace
 
-Ветка codex/p08b-owner-battle-hold от checkpointdbb094e. Reviewed runtime16,
-writer11/19 установлены coherent set48paths; NET Config29/privateHTTP16,
-P10B routes и compression cfg сохранены. Strict preflight отказал на GitLF/
-worktreeCRLF; разрешены только bytes, нормализующиеся точно в pinned442 blob,
-новые изменяемые Rust files закреплены LF и требуют нового full. Static API
-fix test Result<i64> и map-matched actualProhorovka fixture внесены до первого
-запуска. Rust/API5 current-head tests пока NOT_RUN. [План](plans/P08B_OWNER_BATTLE_HOLD.md).
+Branch codex/build-c-night-workspace, original Hold5 source3675a48 plus
+technical test-only fixture portability. D has about1MiB free; original D
+checkout/data/clients/mainffce8cb remain unchanged. New isolated workspace:
+C:/wot091-night-20261017-01/w. First deep C clone is retained: Windows has
+LongPathsEnabled0 and actual275-character ordinary open failed. No registry,
+old-data deletion/move/compression or production localPath exemption.
 
-## Проверенный technical focused checkpoint
+Canonical C full is pending. Source-gate05 fixes exact short allocation677765e2,
+all test writes WOT091_ROOT=C, unchanged strict full/source/binary verifier.
+All23889 toolchain and134 vendor source files copied+SHA/source verified;
+367 immutable/derived test resources published198271436B, Python9 guardsPASS.
+Only cfg(test) helper/callers changed: original sourceSHA remains verified,
+new C JSON changes closed paths/ref hashes through quoted-token replacement;
+nonpath bytes/decimal spelling are exact. Original-byte old worker fixture
+relocator remains genuine; production loaders/authority guards unchanged.
 
-Ветка codex/build-fresh-test-compression от NET33d964e, runtimecc2a94d.
-Exact frozen22 helper+три parent calls: canonical4PASS/0FAIL/0ignored/build/
-877rawsourceexact; actual NTFS positive/refusals прошли. Full combined NOT_RUN
-до dependent Hold full. [Факты](research/BUILD_FRESH_TEST_COMPRESSION.md).
-[План](plans/BUILD_FRESH_TEST_COMPRESSION.md). Production Web paths не
-расширены; новые пустые owned dirs только, старые outputs untouched.
+Hold5 already passed D focused30/build and actual2 Runtime→HTTP→SQLite/build;
+SQL17+reader4, Web3/selection4, clienthost79/CPython76+3knownskips and rawSQL/CLI
+passed. Whole27 batch truthfully FAIL_RETAINED for lowD beforeWeb; full and
+remainingHTTP pending here. Details: research/P08B_OWNER_BATTLE_HOLD.md.
 
-## Последний полный software checkpoint NET-02
-
-NET union43790d1 поверх P10B bce643f, отдельный retained-C build runtime
-`442ce7daeed861b20b3b86168b0c6816ea9efafc`. **Full1573PASS/0FAIL/5oldignored/
-buildPASS/876rawsourceexact**; same-full actual late и Loss4 training
-HTTP/SQL compositions PASS. Python17+11 guards; точные host/CPython client
-counts и dependency carry-forward — [факты NET](research/NET02_LOSS_TRAINING_INTEGRATION.md).
-
-Actual own-host encrypted Login→RunOpen4→decrypted advertised Base→firstBase2
-PASS из C exe. Только own192.168.1.101/32, privateHTTP1273492. Новый diagnostic
-DB A129→130/B43→44/active0/grants0/ammo unchanged, исходныйloss01 A129/B43
-сохранён. ExactownPID98836/105456 STOP; native V8/UI/two-PC/hosting NOT_RUN.
-
-Main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe` без merge. До17.10 09:00
-продолжается [ночное задание](plans/NIGHT_20261017.md), без ручных вопросов.
-Непринятые native карточки остаются в зависимых ветках. Historical STAB/P08B
-cycles/P08C marker/natural/autoaim приняты только в прежнем проверенном объёме.
-
-Следующий шаг — Hold5 integration после focused compression checkpoint:
-после NET full на D осталось40MiB, повторные SQL fixtures иначе займут остаток.
-Трогать только новые пустые owned каталоги до первой записи; старые данные
-не удалять/перемещать/сжимать, production path guards не расширять. Затем
-отдельная codex/p08b-owner-battle-hold: reviewed runtime16 +writer11/19,
-actual runtime/SQL composition и свежие утренние contexts. Hold5 пока
-FROZEN_CANDIDATE_ONLY, не включён; Training5/pending5 unsupported.
-
-CoreV7 immutable96/original read-only сохранены. Старый binding-loss01 только
-runtimeed67531; новые сборки с ним не запускать. Retained-C operational
-runner20/21 готовятся отдельно; full/current binding/client ledger нужны
-перед утром. Все own службы/клиенты STOP. [Отчёт](NIGHT_REPORT_20261017.md).
+After actual complete C full/source-after: preserve software checkpoint; move
+to separate actual4 Hold composition, then fresh source-bound morning contexts
+and remaining garage Fresh defect. Native/UI/turret/six/two-PC NOT_RUN until
+owner after09:00. All own services/clients STOP. Night continues until04:00UTC.

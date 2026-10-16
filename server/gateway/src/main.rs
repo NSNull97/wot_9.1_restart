@@ -5,6 +5,8 @@ use gateway091::shared::vehicle_profile::VehicleKind;
 
 #[path = "protocol/login.rs"]
 mod login091;
+#[cfg(test)]
+mod portable_test_fixtures;
 #[path = "protocol/redirect.rs"]
 mod redirect091;
 #[path = "protocol/baseapp.rs"]

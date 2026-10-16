@@ -2,7 +2,9 @@
 
 Source checkpoint3675a48, D has about1.4MiB free. Original D checkout, data,
 clients, failed tests and mainffce8cb remain unchanged. A new isolated shared
-Git clone lives in one freshly allocated default-OS-temp directory onC.
+Git clone uses a fresh shortC:/wot091-night-20261017-01/w root. Its allocation
+metadata is retained under the original default-OS-temp parent; the first
+deep clone remains unchanged after an actual Win32 path-length refusal.
 All1179 tracked raw files equal the D source; index/tree equal3675. This is
 an independent workspace, not a filesystem junction or a moved old checkout.
 

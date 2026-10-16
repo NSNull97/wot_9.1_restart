@@ -2,6 +2,7 @@ use super::*;
 fn root()->PathBuf {PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()}
 fn fixture(kind:VehicleKind)->(PathBuf,PathBuf,Value) {
     let root=root();let path=root.join(format!("local/night-staging/20261016/p06t-vehicle-aim01/pool-v4/{}-pool.json",kind.label()));
+    let (path,_)=crate::portable_test_fixtures::verified(&path,None);
     let value=json(&fs::read(&path).unwrap(),16384).unwrap();(root,path,value)
 }
 fn fresh(root:&Path)->PathBuf {let path=root.join(format!("local/p06t-pool4-test-{}-{}",std::process::id(),

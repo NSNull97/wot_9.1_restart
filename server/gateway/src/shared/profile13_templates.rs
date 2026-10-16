@@ -255,7 +255,8 @@ mod tests {
     }
     #[test]fn p04m_real_source_geometry_cannot_bind_to_another_kind_pool() {
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
-        let old=parse(&read(&root.join("stands/p08b-profile13-01/battle-profiles.json"),profile13::MAX_REPLY_BYTES).unwrap()).unwrap();
+        let (path,_)=crate::portable_test_fixtures::verified(&root.join("stands/p08b-profile13-01/battle-profiles.json"),None);
+        let old=parse(&read(&path,profile13::MAX_REPLY_BYTES).unwrap()).unwrap();
         let pool=Pool::load(&root,&old.profiles[0].pool.path).unwrap();assert_eq!(pool.vehicle_kind(),VehicleKind::Ms1);
         let geometry=Bundle::load(&root,&root.join("evidence/20261016-p04m-source-import01/t26-stock.json")).unwrap();
         assert!(super::super::server::validate_vehicle_binding(VehicleKind::T26,&pool,Some(&geometry)).is_err());

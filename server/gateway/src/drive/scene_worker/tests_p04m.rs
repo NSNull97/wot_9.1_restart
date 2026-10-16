@@ -36,6 +36,7 @@ impl Fixture {
             let config=if kind.vehicle().expect("old five-kind fixture").index()<2 {
                 self.root.join(format!("evidence/20261014-p05b-handling-fixes-01/pools-{}-c17/05_prohorovka-{}-handling-config.json",kind.label(),kind.label()))
             }else{prefix.join(format!("source-export06/05_prohorovka-{}-config.json",kind.label()))};
+            let (config,_)=crate::portable_test_fixtures::verified(&config,None);
             let source=if kind.vehicle().expect("old five-kind fixture").index()<2 {Value::Null}else{
                 let path=prefix.join(format!("getters06/{}-qualified-profile.json",kind.label()));
                 assert_eq!(digest(&fs::read(&path).unwrap()),kind.profile_sha());

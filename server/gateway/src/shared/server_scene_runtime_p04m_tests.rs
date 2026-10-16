@@ -12,7 +12,7 @@ const KINDS:[VehicleKind;6]=[VehicleKind::T26,VehicleKind::T34,VehicleKind::T348
 
 fn resources()->Vec<super::super::super::profile13_templates::Resources> {
     let root=PathBuf::from(std::env::var_os("WOT091_ROOT").unwrap_or_else(||"D:/WoT_9.1_Server".into())).join("local");
-    let path=root.join(TEMPLATE);assert_eq!(format!("{:x}",Sha256::digest(fs::read(&path).unwrap())),TEMPLATE_SHA);
+    let (path,_)=crate::portable_test_fixtures::verified(&root.join(TEMPLATE),Some(TEMPLATE_SHA));
     let rows=super::super::super::profile13_templates::load(&root,&path).unwrap();
     assert_eq!(rows.len(),5);assert_eq!(rows.iter().map(|r|r.kind).collect::<Vec<_>>(),VehicleKind::ALL);
     let shared=rows[0].shared.as_ref().unwrap();
