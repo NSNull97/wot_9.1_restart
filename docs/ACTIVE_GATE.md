@@ -1,5 +1,15 @@
 # Текущая карточка — 2026-10-16
 
+**NET-02 — explicit private LAN для двух ПК**, ветка
+`codex/net-02-private-lan` от P10B docshead6c6b7b7/runtimee55ba01.
+По ночному разрешению native gates предыдущих карточек утром; обязательный
+NOT_RUN оставляет все эти ветки вне main. План [NET-02](plans/NET-02.md).
+Первый шаг — exact-baseline promotion frozen Rust/client кандидатов,
+focused/full source-stable gates; actualLAN/native/firewall/hosting NOT_RUN.
+Служебный HTTP остаётся loopback; originalclient/coreV7 не трогать.
+
+## Сохранённый предшествующий checkpoint
+
 **P10B — родная тренировочная комната на N игроков**, ветка
 `codex/p10b-native-training-room` от P06T docsheadb9239e3, runtimebase0f1db40.
 Прямое ночное разрешение позволяет продолжить без ожидания ручной приёмки
