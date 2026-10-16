@@ -582,11 +582,19 @@ impl Table {
         Ok(())
     }
     fn route(&self, peer: SocketAddr, packet: &[u8]) -> io::Result<usize> {
+        self.route_inner(peer,packet,None)
+    }
+    fn route_with_network(&self,peer:SocketAddr,packet:&[u8],network:&crate::identity091::game_network::Network)->io::Result<usize>{
+        if !network.allows_peer(peer){return Err(model::bad());}
+        self.route_inner(peer,packet,Some(network))
+    }
+    fn route_inner(&self,peer:SocketAddr,packet:&[u8],network:Option<&crate::identity091::game_network::Network>)->io::Result<usize>{
         if packet.len() == 21 {
             let matches: Vec<_> = self.sessions.iter().enumerate()
                 .filter(|(_, s)| base::base_request(packet, s.handoff).is_ok()).map(|(i, _)| i).collect();
             if matches.len() != 1 { return Err(model::bad()); }
             let index = matches[0];
+            if network.is_some_and(|n|!n.allows_first_base(self.sessions[index].login_peer,peer)){return Err(model::bad());}
             if self.sessions[index].base_peer.is_some_and(|bound| bound != peer)
                 || self.sessions.iter().enumerate().any(|(i, s)| i != index &&
                     (s.base_peer == Some(peer) || s.login_peer == peer)) { return Err(model::bad()); }
@@ -886,6 +894,7 @@ pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path:
 pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,capture_path:&str)
     ->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::SharedOwnedProfile13)?;
     if !config.profile13_battle || !config.research_service {return Err(model::bad().into());}
     let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
     if config.p04m_pool&&resources.len()!=5{return Err(model::bad().into());}
@@ -910,6 +919,7 @@ pub fn serve_curated_lab_v2(key_path:&str,digest_path:&str,config_path:&str,mani
 fn serve_curated_lab_policy(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,
     capture_path:&str,kind:VehicleKind,breech_v2:bool)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     if config.profile13_battle||config.ammo_service||config.p04m_pool{return Err(model::bad().into());}
     let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
     if resources.len()!=(if kind.is_extended(){7}else{5})||resources.iter().any(|row|row.shared.is_none()){return Err(model::bad().into());}
@@ -982,6 +992,7 @@ pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_pa
     if catalog_path.is_some()&&(!terrain_test_lab||destructible_test_lab){return Err(model::bad().into());}
     if terrain_test_lab && !ap_test_lab { return Err(model::bad().into()); }
     let config = crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     if config.ammo_service { return Err(model::bad().into()); }
     let pool = crate::map_drive_worker091::Pool::load(&config.local_root, Path::new(pool_path))?;
     selected_pool_config(&pool,map)?;
@@ -1099,6 +1110,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
     let profile13_mode=resources.is_some()&&qualification.is_none();
+    config.require_game_network(if profile13_mode{crate::identity091::game_network::Runtime::SharedOwnedProfile13}else{crate::identity091::game_network::Runtime::LoopbackOnly})?;
     if config.profile13_battle!=profile13_mode || config.ammo_service!=profile13_mode { return Err(model::bad().into()); }
     let private = login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len() != 16 { return Err(model::bad().into()); }
@@ -1224,7 +1236,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     match admitted {
                         Ok(index) => {
                             let s = &table.sessions[index];
-                            send_wire(&login_socket, job.attempt.login_peer, &redirect091::reply_to(job.request, &s.key, s.handoff, config.base_bind)?, Channel::Login, &mut capture)?;
+                            send_wire(&login_socket, job.attempt.login_peer, &redirect091::reply_advertised(job.request, &s.key, s.handoff, config.game_network().advertised_base())?, Channel::Login, &mut capture)?;
                         },
                         Err(_) => { send_wire(&login_socket, job.attempt.login_peer, &login::rejection(job.request, 73), Channel::Login, &mut capture)?;
                             println!("SHARED_AUTH_REJECT reason=admission_or_world_capacity allocated=0"); },
@@ -1242,9 +1254,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 Err(error) if error.raw_os_error() == Some(10054) => continue,
                 Err(error) => return Err(error.into()),
             };
-            rate_count += 1;
-            if peer.ip() != Ipv4Addr::LOCALHOST || rate_count > 256
-                || length > if is_login { login::MAX_INTERACTIVE_DATAGRAM } else { 1024 } { continue; }
+            if !config.game_network().admit_datagram(peer,length,if is_login{login::MAX_INTERACTIVE_DATAGRAM}else{1024},&mut rate_count){continue;}
             if let Some(recorder) = &mut capture { recorder.observe(if is_login { Channel::Login } else { Channel::Base }, true, peer, &data[..length]); }
             let packet = &data[..length];
             if is_login {
@@ -1269,7 +1279,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     Err(_) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; },
                 }
             } else {
-                let index = match table.route(peer, packet) { Ok(i) => i, Err(_) => { println!("SHARED_REJECT reason=base_route"); continue; } };
+                let index = match table.route_with_network(peer, packet,config.game_network()) { Ok(i) => i, Err(_) => { println!("SHARED_REJECT reason=base_route"); continue; } };
                 if table.sessions[index].guard_base_peer(&mut table.retirement,peer,now).is_err(){println!("SHARED_REJECT reason=retired_peer");continue;}
                 if length == 21 {
                     let s=&mut table.sessions[index];
@@ -2731,3 +2741,7 @@ mod tests {
         assert_eq!(world.actors[1].session,Some(2));
     }
 }
+
+#[cfg(test)]
+#[path="server_network_tests.rs"]
+mod net02_network_tests;

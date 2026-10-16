@@ -71,6 +71,8 @@ if (type(_settings.get('enable_training_rooms', False)) is not bool
         or (_settings.get('enable_training_rooms')
             and _settings.get('enable_profile13_battle') is not True)):
     raise ValueError('training rooms require explicit profile13 battle mode')
+import project_network
+project_network.validate_settings(_settings)
 _runtime = owned(_settings['trace_dir'], _settings['local_root'])
 if not os.path.isdir(_runtime):
     raise ValueError('prepared local runtime directory missing')
@@ -1010,7 +1012,10 @@ def init(*args):
         import project_preferences
         project_preferences.install(args, _settings, record)
         import project_auth
-        project_auth.install(_settings['endpoint'], record)
+        project_auth.install(_settings['endpoint'], record, _settings.get('network_policy'))
+        if _settings.get('network_policy') is not None:
+            record('client_network_policy', policy=_settings['network_policy'],
+                   registration_enabled=False, accounts='precreated_project_only')
         import hangar_bootstrap
         hangar_bootstrap.init(args, record, start_gui=True, restrict_module_changes=True,
                              restrict_crew_changes=True,

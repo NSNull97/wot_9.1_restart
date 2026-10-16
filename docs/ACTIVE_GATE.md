@@ -4,8 +4,12 @@
 `codex/net-02-private-lan` от P10B docshead6c6b7b7/runtimee55ba01.
 По ночному разрешению native gates предыдущих карточек утром; обязательный
 NOT_RUN оставляет все эти ветки вне main. План [NET-02](plans/NET-02.md).
-Первый шаг — exact-baseline promotion frozen Rust/client кандидатов,
-focused/full source-stable gates; actualLAN/native/firewall/hosting NOT_RUN.
+Exact-baseline promotion16files выполнен. Actual focused17PASS/buildPASS,
+CPythonauth6/network9/training15/mapdrive61PASS/3oldhostskips; hostmapdrive64/
+manual14/replay59PASS, prepare5/compile3/web7PASS. Source layout check FAIL на
+прежнем server/__pycache__, guard не менялся. Следом clean committed fullgate
+и отдельная LAN stand preparation; actualLAN/native/firewall/hosting NOT_RUN.
+Факты/ограничения — [NET02_PRIVATE_LAN](research/NET02_PRIVATE_LAN.md).
 Служебный HTTP остаётся loopback; originalclient/coreV7 не трогать.
 
 ## Сохранённый предшествующий checkpoint

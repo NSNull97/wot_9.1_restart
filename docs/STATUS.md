@@ -6,6 +6,13 @@
 Следующий шаг — [ACTIVE_GATE](ACTIVE_GATE.md), порядок — [IMPLEMENTATION_ORDER](IMPLEMENTATION_ORDER.md),
 практика — [DEV_NOTES](DEV_NOTES.md), факты — [research/INDEX](research/INDEX.md).
 
+Текущая NET-02 в `codex/net-02-private-lan` от P10B6c6b7b7/e55ba01:
+explicit RFC1918 native Login/Base + /32 allowlist, privateHTTP loopback,
+client lan-test-v1/original transport. Focused17PASS/build; CPythonauth6/
+network9/training15/mapdrive61PASS/3oldhostskips, host64+14+59/prepare5/web7PASS.
+Full/native/twoPC/firewall/hosting NOT_RUN; layoutcheck FAIL на прежнем cache.
+[План](plans/NET-02.md), [факты/границы](research/NET02_PRIVATE_LAN.md).
+
 STAB-01 принята на runtime `0574ab0`: 854 gateway tests PASS / 5 ignored,
 сборка PASS; инъекция ошибки с настоящими workers и следующий бой PASS.
 Native-fix07: два ручных native_leave с завершённым warm-возвратом; оба клиента

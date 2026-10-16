@@ -1473,12 +1473,14 @@ pub fn serve_hangar(key_path:&str,digest_path:&str,fixture_path:&str)->Result<()
 }
 pub fn serve_interactive(key_path:&str,digest_path:&str,config_path:&str,capture_path:Option<&str>)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let capture=capture_path.map(|path|Recorder::open(path,&config.local_root)).transpose()?;
     serve_inner(key_path,digest_path,true,true,None,Some(Arc::new(config)),capture,None)
 }
 pub fn serve_arena_base_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                              trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::new(Path::new(trigger_path),&config.local_root)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
     serve_inner(key_path,digest_path,true,true,None,Some(Arc::new(config)),Some(capture),Some(control))
@@ -1486,6 +1488,7 @@ pub fn serve_arena_base_probe(key_path:&str,digest_path:&str,config_path:&str,ca
 pub fn serve_arena_space_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                               trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
         crate::arena_control091::Checkpoint::AvatarSpace)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
@@ -1494,6 +1497,7 @@ pub fn serve_arena_space_probe(key_path:&str,digest_path:&str,config_path:&str,c
 pub fn serve_arena_vehicle_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                                 trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
         crate::arena_control091::Checkpoint::AvatarVehicle)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
@@ -1502,6 +1506,7 @@ pub fn serve_arena_vehicle_probe(key_path:&str,digest_path:&str,config_path:&str
 pub fn serve_arena_ready_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                               trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
         crate::arena_control091::Checkpoint::AvatarReady)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
@@ -1510,6 +1515,7 @@ pub fn serve_arena_ready_probe(key_path:&str,digest_path:&str,config_path:&str,c
 pub fn serve_arena_movement_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                                  trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
         crate::arena_control091::Checkpoint::AvatarMovement)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
@@ -1518,6 +1524,7 @@ pub fn serve_arena_movement_probe(key_path:&str,digest_path:&str,config_path:&st
 pub fn serve_map_drive_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                             trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
         crate::arena_control091::Checkpoint::AvatarDrive)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
@@ -1685,6 +1692,7 @@ pub fn serve_map_drive(key_path:&str,digest_path:&str,config_path:&str,pool_path
                        capture_profile:crate::capture091::Profile)->Result<(),Box<dyn std::error::Error>> {
     if capture_path.is_none() && capture_profile!=crate::capture091::Profile::Ordinary{return Err(invalid().into());}
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let pool=crate::map_drive_worker091::Pool::load(&config.local_root,Path::new(pool_path))?;
     // The older own-primary route still has the fixed MS-1 battle contract.
     // Only the integrated route binds a second kind to every subsystem.
@@ -1696,6 +1704,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                interactive:Option<Arc<crate::identity091::Config>>,mut capture:Option<Recorder>,
                mut arena_control:Option<crate::arena_control091::ArenaControl>,
                drive_pool:Option<Arc<crate::map_drive_worker091::Pool>>)->Result<(),Box<dyn std::error::Error>> {
+    if let Some(config)=&interactive{config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;}
     if interactive.as_ref().is_some_and(|config|config.profile13_battle) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput,"profile13 battle requires the explicit shared profile13 mode").into());
     }
@@ -4255,3 +4264,7 @@ mod p10b_session_tests;
 #[cfg(test)]
 #[path="training/request_namespace_tests.rs"]
 mod p10b_request_namespace_tests;
+
+#[cfg(test)]
+#[path="session_network_tests.rs"]
+mod net02_network_tests;
