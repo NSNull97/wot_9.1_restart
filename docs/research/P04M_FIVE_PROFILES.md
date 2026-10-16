@@ -137,8 +137,20 @@ codec проверен по настоящему ответу; старый со
   Регрессия действительно допускает180/576/960 domain shots и публикует поздний
   ground terminal один раз обоим peers; terminal contact в ней authored fixture,
   это не native rendering/terrain-query gate.
-- Fresh full02, окончательные combined-skill/HTTP gates и SHA дописываются после
-  завершения: пока **NOT_RUN**.
+- Final Web06: **10PASS/0FAIL/0skip**,101.976s, actual combined skill
+  learn→barracks→restore; pool/legacy owners, login/profile/mutation/read.
+  42 actual socket observations: authenticated pool запросы8790..9000мс,
+  wrong password401/wrong nativeDB403/legacy owner200 сохраняют5000мс.
+  Worker7000мс укладывается в явный pool outer9000мс; legacy outer4500мс,
+  read2500мс сохранены. Native Rust authenticate old5с/new opt-in20с.
+  `local/evidence/20261016-p04m-web06/result.json` и socket-observations.json.
+- Canonical **full02:1006PASS/0FAIL/5 прежних ignored/buildPASS**, test295.47s.
+  Tested runtime **483bb2b7a55769aff423d83c06f070c704567321**,634clean sourcefiles
+  до/после совпадают. Executable SHA
+  `5376778aeed8bc76e094e495ac32d0d93a401dd6ecd6209985d947bec5eb2c4e`.
+  `local/build/server/gateway-p04m-full02/result.json`,
+  `local/evidence/20261016-p04m-full02/source-before.json` и source-after.json.
+  Обязательные native/UI/audio gates этим не закрыты.
 
 Команды: `python -B -X utf8 tools/p04m_battle_profiles.py --original
 C:\WoT_0.9.1_RU_0717_original --out local/evidence/20261016-p04m-source-import01`;
@@ -158,12 +170,19 @@ TEMPLATES CAPTURE KIND` использует общий worker и старые f
 
 Утренние два overlays подготовлены CPython2.7.3 без install/launch:
 `local/stands/night-battle-20261016-01/qualification-02/`. Runner qualification.py
-требует финальный canonical runtime binding и собственные точные pins; actual
-native запуск пока не выполнялся. Повторять prepare поверх evidence нельзя.
+имеет actual source-bound normal/q binding-p04m.json для full02 и собственные
+точные pins. Normal CLI startup/5resources и три qualification CLI startup
+t26/t34/t3485 со штатными own PID stop PASS;
+actual native запуск пока не выполнялся. Повторять prepare поверх evidence нельзя.
+
+Изолированный pool-01 стенд создан backup API без выдачи имущества: A108→109,
+B25→26, MS1AP14 у обоих, A IS7AP19, старые crew/ledger/reserve/balances сохранены.
+Оригинальные DB/WAL/SHM побайтно совпали до/после. run.py check52pins и5local
+negative/legacy runner tests PASS; `pool-01/upgrade-receipt.json` и REPORT.md.
 
 Откат runtime — вернуться на сохранённую P07B ветку после сохранения P04M WIP;
 main ffce8cb не менялся. SQLite opt-in не откатывать удалением marker: восстановить
 полный isolated backup до миграции. Клиентские установки — только patch-ledger
-rollback. Единственный следующий шаг текущего кандидата — закончить полный
-source-bound автоматический gate, затем перейти к P06T отдельной веткой;
+rollback. Следующий шаг — P06T в отдельной зависимой ветке после сохранения
+этого автоматически проверенного кандидата;
 ручная квалификация каждой новой машины остаётся в утренней матрице.

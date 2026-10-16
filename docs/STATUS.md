@@ -65,11 +65,11 @@ P04M в `codex/p04m-five-battle-profiles`: пять source-bound
 реализованы. Focused04:26PASS/0ignored/buildPASS, включая настоящий Jolt→Rust
 FrameProof и coupled World/Trace/sceneACK новых3/mixed6; C#contacts/repeatability
 PASS. Companion05:5PASS/build и два actual SQLite303/309→Rust tests PASS.
-Owned crew/ammo реализованы; Python17+1 и старая P08B/results28 PASS. Web03:9PASS,
-legacy Web12PASS; обнаруженные secondary-skill/HTTP-budget дефекты исправляются
-с повтором actual HTTP. Focused05:31PASS/build, включая admitted180/576/960
-shots→late terrain FX обоим peers. Full01 намеренно прерван; fresh full02
-ещё NOT_RUN. Изолированный pool-01 stand A109/B26 подготовлен без grants,
+Owned crew/ammo реализованы; Python17+1/старая P08B/results28/legacyWeb12 PASS.
+FinalWeb06:10PASS, secondaryskill и scoped HTTP deadlines исправлены.
+Full02 runtime483bb2b:1006PASS/5oldignored/buildPASS,634sourcefiles before/after
+совпадают; executable5376778a…2c4e. Изолированный pool-01 stand A109/B26
+подготовлен без grants, normal/qbindings full02 созданы, CLIstartup/stop PASS,
 оба MS1AP14/A IS7AP19, исходная БД побайтно сохранена. Новые3 admissionfalse,
 native/UI NOT_RUN; main не изменён. [План](plans/P04M.md).
 

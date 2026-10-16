@@ -59,7 +59,8 @@ Harness профиля 12/13: `tools/p09e_research_harness.py --seed-only`.
   fixtures `pool-01/fixtures`, A109/B26/MS1AP14 у обоих/A IS7AP19. Политика
   pool_service явная для A/B; v3 manifest5, gateway p04m_pool/visibility_v1=true.
   `run.py check`52pins и пять local runner/negative tests PASS; source-bound
-  `binding-p04m.json` создавать только после нового canonical full02 PASS.
+  `binding-p04m.json` уже закрепляет full02/483bb2b/1006PASS+5ignored/buildPASS.
+  Actual normalCLI startup/5resources и ownPID stop PASS, client NOT_RUN.
   Старые binding-P05C/P07B исторические и не запускают текущий runtime.
   `qualification.py`/`qualification-02` готовят временные Т26/Т34/Т34-85 без
   owned grants/admission; собственные overlays PREPARED, native NOT_RUN.
