@@ -65,8 +65,74 @@ impl Config {
         let body=selection::encode_request(&request)?;
         let(status,reply)=self.post_with_budget("/internal/native/room-selection",&body,Duration::from_secs(9),
             selection::MAX_REPLY,selection::MAX_REPLY+4100)?;
-        if status!=200{return Err(invalid("room readiness unavailable; no ready/reserve committed"));}
+        if status!=200{return Err(selection_http_failure(status,&reply));}
         let selection=selection::parse_reply(&reply,&request)?;
         Ok(SelectionSnapshot{owner:Arc::new(fresh),fixtures:Arc::new(fixtures),binding,selection})
+    }
+}
+
+
+/// Log only the numeric status and an allowlisted static classification. Never
+/// put private HTTP response text, account fields or arbitrary worker errors in
+/// native logs. The failed read publishes neither Ready nor a reservation.
+fn selection_http_failure(status:u16,raw:&[u8])->io::Error{
+    const DENIALS:[&str;13]=["INVALID_INPUT","STALE_REVISION","SOURCE_STAMP_MISMATCH",
+        "NATIVE_STATE_STAMP_MISMATCH","RUN_NOT_OPEN","RUN_FENCED","VEHICLE_RESERVED",
+        "UNKNOWN_VEHICLE","BATTLE_PROFILE_UNSUPPORTED","OWNER_ACCEPTANCE_REQUIRED",
+        "INCOMPLETE_CREW","AMMUNITION_EMPTY","AMMUNITION_UNSUPPORTED"];
+    let detail=(||->Option<&'static str>{
+        if raw.len()>512{return None;}
+        let Bounded::<2>(value)=serde_json::from_slice(raw).ok()?;
+        let error=value.get("error")?.as_str()?;
+        if status==409&&error=="selection_not_ready"&&value.len()==2{
+            let code=value.get("code")?.as_str()?;
+            return DENIALS.iter().copied().find(|known|*known==code);
+        }
+        None
+    })().unwrap_or("unclassified");
+    io::Error::new(io::ErrorKind::InvalidData,format!(
+        "room readiness HTTP status={status} detail={detail}; no ready/reserve committed"))
+}
+
+#[cfg(test)]
+mod p10b_room_http_diagnostic_tests{
+    use super::*;
+    #[test]
+    fn p10b_room_http_preserves_status_and_all_closed_selection_denials(){
+        for code in ["INVALID_INPUT","STALE_REVISION","SOURCE_STAMP_MISMATCH","NATIVE_STATE_STAMP_MISMATCH",
+            "RUN_NOT_OPEN","RUN_FENCED","VEHICLE_RESERVED","UNKNOWN_VEHICLE","BATTLE_PROFILE_UNSUPPORTED",
+            "OWNER_ACCEPTANCE_REQUIRED","INCOMPLETE_CREW","AMMUNITION_EMPTY","AMMUNITION_UNSUPPORTED"]{
+            let raw=format!(r#"{{"error":"selection_not_ready","code":"{code}"}}"#);
+            let error=selection_http_failure(409,raw.as_bytes());
+            assert_eq!(error.kind(),io::ErrorKind::InvalidData);
+            assert_eq!(error.to_string(),format!("room readiness HTTP status=409 detail={code}; no ready/reserve committed"));
+        }
+    }
+    #[test]
+    fn p10b_room_http_preserves_status_without_copying_other_response_bodies(){
+        for(status,detail)in [(400,"invalid_request"),(403,"forbidden"),(404,"not_found"),
+            (413,"invalid_request"),(503,"busy"),(503,"timeout"),(503,"unavailable")]{
+            let raw=format!(r#"{{"error":"{detail}"}}"#);
+            assert_eq!(selection_http_failure(status,raw.as_bytes()).to_string(),
+                format!("room readiness HTTP status={status} detail=unclassified; no ready/reserve committed"));
+        }
+    }
+    #[test]
+    fn p10b_room_http_never_logs_arbitrary_private_response_or_ambiguous_json(){
+        let poison=[
+            br#"{"error":"selection_not_ready","code":"secret-password"}"#.as_slice(),
+            br#"{"error":"selection_not_ready","code":"STALE_REVISION","code":"SOURCE_STAMP_MISMATCH"}"#,
+            br#"{"error":"selection_not_ready","error":"selection_not_ready","code":"STALE_REVISION"}"#,
+            br#"{"error":"selection_not_ready","code":"STALE_REVISION","account_id":"secret-owner"}"#,
+            br#"{"error":"forbidden","account_id":"secret-owner"}"#,
+            b"<secret-worker-stderr>",
+        ];
+        for raw in poison{
+            assert_eq!(selection_http_failure(409,raw).to_string(),
+                "room readiness HTTP status=409 detail=unclassified; no ready/reserve committed");
+        }
+        let long=vec![b'x';513];assert!(selection_http_failure(503,&long).to_string().contains("detail=unclassified;"));
+        assert!(selection_http_failure(503,br#"{"error":"selection_not_ready","code":"STALE_REVISION"}"#)
+            .to_string().contains("detail=unclassified;"));
     }
 }

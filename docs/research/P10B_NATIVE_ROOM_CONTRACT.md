@@ -580,3 +580,45 @@ local/build/server/gateway-p10b-focused24; no PASS/build seal is claimed for it.
 Current-head full gate, actual socket→Rust→HTTP selection and native remain
 pending. Integration evidence local/evidence/20261016-p10b-components02;
 read-only review local/night-staging/20261016/p10b-server-retire-review01.
+
+## Actual host startup and first socket counterexample
+
+VERIFIED: full04 on9b5fc6d2132ec4e66879a7036df08d717e61708a/tag
+p10b-host-20261016-01 passed1394/0FAIL/5oldignored/build,533.65s. All784 runtime
+files matched before/after; exe ce372478dfee47109e8954e23e091acd1ad07a068904db4c5337f47a729bc40c.
+Evidence local/evidence/20261016-p10b-full04. Fresh stand02 bound that exact
+runtime; actual owned startup validated5templates/mixed policy/map4/loopback
+ports and unchanged seed rows except normal descriptor meta. Startup receipt
+local/night-staging/20261016/p10b-startup-verify01/startup-room01.json,
+SHAd7c2cbb10a43c4ccdad20a05a9bee70dc3314f1a879b47a486d61cc4cd6cc94c.
+Exact source restoration audit784/changes0 passed without active writes.
+
+OBSERVED first minimum synthetic socket run: two real authenticated Login/Base/
+Account sync and durable run_open succeeded. Both room Ready queries returned
+failure before readiness/reserve. No Avatar/launch was requested. Actual DB is
+C39/D40, ammo unchanged, active reserves0; own gateway/bridge stopped via receipts.
+Evidence local/stands/p10b-room-20261016-02/runs/room-startup01 and
+local/evidence/20261016-p10b-components02/sql-after-socket01.json.
+
+VERIFIED root cause: direct actual configured p10b_selection_service.py child,
+with the exact current source-bound C request, exited1 in0.123668s with
+ModuleNotFoundError: tools. Its catalog import requires repository ROOT, while
+script execution supplies tools/ as sys.path0. Existing service CLIs bootstrap
+ROOT explicitly; this new worker omitted it. Previous HTTP harness supplied
+PYTHONPATH and masked normal process startup. DB files/logical rows/active run
+were exactly unchanged. This was not the7s deadline. Proof retained in
+local/night-staging/20261016/p10b-ready-diagnosis01/proof01. Bootstrap and
+clean-env regression are required; no provenance/ownership fence is relaxed.
+
+Bootstrap correction VERIFIED by actual CLI regression: real service filename,
+unrelated empty cwd, child-only PYTHONPATH removal, invalid request returns the
+exact bounded INVALID_INPUT denial before source/DB access;1PASS0.256s. Test
+tests/test_p10b_selection_cli.py remains portable without original resources.
+Actual production adapter/worker clean-env HTTP suite then passed3/0FAIL/0skip
+82.740s, current source bytes unchanged. Evidence
+local/night-staging/20261016/p10b-selection-cleanenv01/http01-run.json. Positive/
+disabled paths use actual ROOT adapter/worker; only deadline-negative uses the
+explicit preserved slow-worker fault view. Caller environment is unchanged.
+Safe Rust diagnostic now retains numeric HTTP status and only static allowlisted
+selection codes for unique exact2-field409 responses≤512B; all other body text
+is omitted. Three diagnostic tests and full05/socket retry are pending.

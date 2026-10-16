@@ -303,3 +303,22 @@ member to remain after compensated abort. Corrected to exact surviving creator,
 without production policy relaxation. Four service-routing checks passed. Full04
 of the corrected committed runtime remains required. Fresh lightweight C/D
 room stand is prepared separately; native overlays/clients are untouched.
+
+P10B actualhost full04:9b5fc6d/tag p10b-host-20261016-01,1394PASS/0FAIL/
+5oldignored/buildPASS,533.65s/784exact. Stand02 final binding-room01.json and
+actualstartup5resources PASS; source restore audit784/changes0 PASS. Actual
+socket minimum passed both authenticated Login/Base/Account/run_open, then
+both Ready failed. Direct worker proved missing ROOT sys.path bootstrap
+(ModuleNotFoundError: tools,0.124s); old HTTP test harness masked it with
+PYTHONPATH. C39/D40, original mixed stacks unchanged, active reservations0.
+Own gateway and bridge stopped, failure state and full04 seal preserved.
+Bootstrap/clean-env regression and exact HTTP/socket repeat are current work;
+native room and Avatar/World launch remain NOT_RUN. NET-02 fresh preflight is
+ready; implementation waits for this actual readiness boundary.
+
+Worker bootstrap fixed. Actual clean-child CLI regression1PASS0.256s; actual
+production adapter/worker HTTP3PASS/0skip82.740s without child PYTHONPATH, source
+bytes before/after exact. Selection provenance/budgets unchanged. Rust HTTP
+diagnostic retains numeric status/closed denial only,3 new tests pending full05.
+Full05/current socket repeat remain the next gates; sealed full04 and failed
+socket evidence are preserved. Fresh stand02 has no running owned processes.

@@ -1,6 +1,9 @@
 """Configured read-only worker for the distinct P10B selection contract."""
 import argparse
+from pathlib import Path
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from game_profile_tx import TransactionError
 from p09e_research_catalog import load_catalog

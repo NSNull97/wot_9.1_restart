@@ -26,10 +26,18 @@ serialPreparing/launch, durableFinished и общий серверный цик�
 disconnect удерживает происхождение до компенсации; ошибки garage/results
 проходят ту же границу закрытия. WarmAccount того же Session читает List/Preview
 без освобождения Battle claim. CheckedReady rebase/Results isolation сохранены.
-Focused24:189PASS/1FAIL/0ignored; единственная ошибка — новое ожидание теста,
-которое оставляло отключённого бойца в комнате после abort. Исправлено на точный
-оставшийся состав, production semantics не ослаблены. Full04 текущего head пока
-NOT_RUN. Native/UI/управление и live RustHTTP→room→launch NOT_RUN; main не менялся.
+Full04 на9b5fc6d/tag p10b-host-20261016-01: **1394PASS/0FAIL/5oldignored/
+buildPASS**,533.65с,784runtimefiles exact. Новый stand02 actualstartup5resources/
+ownstop PASS; source-restore audit784/changes0 PASS. Actualsocket два Login/Base/
+Account/run_open PASS, но оба Ready получили отказ: **live readiness FAIL**.
+Actual directworker подтвердил ModuleNotFoundError: tools за0.124с; прежний
+HTTP harness маскировал отсутствующий ROOT bootstrap через PYTHONPATH. C39/D40,
+БК unchanged, активных резервов0. Bootstrap исправлен: actualCLI из чужого cwd
+без PYTHONPATH=1PASS; actual clean-env HTTP suite=3PASS/0skip82.740с на production
+adapter/worker, источники before/after exact. HTTP-ошибка теперь сохраняет status
+и только closed denial code;3 новых Rust tests ещё NOT_RUN до full05.
+Следом full05 текущего head и повтор socket. Native/UI/управление/launch NOT_RUN; main
+не менялся. Failed socket run и sealed full04 сохраняются отдельно.
 OneactiveWorld,2..6 бойцов,≤3 на стороне, map4/Прохоровка, one-shotroom LABpolicy.
 
 План [P10B](plans/P10B.md), originalsource

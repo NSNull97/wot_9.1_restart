@@ -28,10 +28,6 @@ native queue→cancel→requeue подтверждены владельцем. G
 7 прежних finished не изменились, оба native ангара loaded/cache/model/AP14.
 Owner postrestart и mutation/warmN→full1 smoke отложены до утра по указанию
 владельца 2026-10-16; карточка пока не принята и в main не слита.
-Native-fix02: общий бой, 4 выстрела и 2 manual_leave с committed AP18 PASS по
-трассе/БД; owner сообщил black return. Причина — legacy shop cache limit16448,
-native profile13 прислал23107. Лимит привязан к research fixture32832; текущий
-повтор — `local/stands/p08b-profile13-01/native-fix03/`, текущий AP14 у обоих.
 [Факты и ограничения P08B](research/P08B_PROFILE13_BATTLE.md).
 
 Ночное задание 2026-10-16 разрешает продолжать следующие карточки по порядку
@@ -102,8 +98,11 @@ serialreserve/compensation и Finishedhook собраны. ActualHTTP03 read-onl
 selection=3PASS/0skip77.768s; CPython2.7.3=76PASS/3oldskips. Native/UI/room
 NOT_RUN. LiveHost/серверный цикл подключены: retained selected/bench disconnect,
 garage/results close routing, warm List/Preview при сохранённом Battle claim.
-Focused24=189PASS/1FAIL: исправлено ошибочное новое test expectation, full04
-этого head пока NOT_RUN. CoreV7/оба утренних стенда сохранены.
+Full04/9b5fc6d:1394PASS/5oldignored/buildPASS/784exact. Stand02 startup PASS;
+actualsocket Login/Base/Account PASS, Ready FAIL из-за отсутствующего ROOT
+bootstrap Python worker (старый harness задавал PYTHONPATH). C39/D40, БК
+unchanged/reserves0. Bootstrap исправлен:CLI1PASS и actual clean-env HTTP3PASS/
+0skip82.740с. Текущий full05/socket repeat ещё NOT_RUN. CoreV7 сохранён.
 План [P10B](plans/P10B.md), ограничения/утренний сценарий —
 [NIGHT_REPORT_20261016](NIGHT_REPORT_20261016.md).
 
