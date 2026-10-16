@@ -1142,7 +1142,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     let mut capture = Some(Recorder::open_profile(capture_path, &config.local_root, capture_profile)?);
     if config.battle_players!=2&&resources.as_ref().is_none_or(|rows|rows[0].shared.is_none()){return Err(model::bad().into());}
     let mut table = Table{capacity:if config.training_rooms{crate::training091::domain::MAX_ACCOUNTS}else{config.battle_players},..Table::default()};
-    let mut room_host=config.training_rooms.then(p10b_host::Host::default);
+    let mut room_host=if config.training_rooms{Some(p10b_host::Host::for_config(&config)?)}else{None};
     let mut room_closing:Vec<(u32,&'static str)>=Vec::new();
     let mut battle_dispatch=profile13_dispatch::Dispatcher::default();
     if config.p08c_late_results{

@@ -82,3 +82,19 @@ tests/fixtures/p10b-selection-writer-vectors.json text eol=lf
 tests/fixtures/p10b-saga-writer-vectors.json -text
 
 tests/fixtures/p10b-ready-project-projection.json text eol=lf
+
+/server/gateway/src/training/selection_loss*.rs text eol=lf
+/server/gateway/src/shared/p10b_writer_loss*.rs text eol=lf
+/server/gateway/src/shared/p10b_writer_mode*.rs text eol=lf
+/server/gateway/src/account/room_selection_loss.rs text eol=lf
+/tools/p10b_selection_loss*.py text eol=lf
+/tests/test_p10b_selection_loss*.py text eol=lf
+/tests/fixtures/p10b-loss-selection-vectors.json text eol=lf
+/web/src/p10b-selection-loss.mjs text eol=lf
+
+/tests/helpers/p10b_selection_loss_seed.py text eol=lf
+/web/tests/p10b-selection-loss*.test.mjs text eol=lf
+
+/server/gateway/src/shared/p10b_loss*.rs text eol=lf
+/server/gateway/src/shared/p10b_compensated_reset_tests.rs text eol=lf
+/web/tests/helpers/p10b-loss-composition.mjs text eol=lf

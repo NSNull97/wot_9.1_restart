@@ -67,6 +67,13 @@ impl State {
             outcome: None, progress: [0; 2], stopped: [false; 2], damage_epochs: Vec::new(),
             capture_earned: Vec::new(), capture_dropped: Vec::new(), revision: 1 })
     }
+    /// Readonly constructor-state proof for a new explicit pristine roster.
+    /// Waiting/revision1 alone can hide already advanced member/clock cursors.
+    pub(super) fn is_pristine(&self)->bool{
+        self.phase==Phase::Waiting&&self.last_ms==0&&self.entered_ms==0&&self.battle_start_ms.is_none()
+            &&self.outcome.is_none()&&self.progress==[0;2]&&self.stopped==[false;2]
+            &&self.damage_epochs.is_empty()&&self.capture_earned.is_empty()&&self.capture_dropped.is_empty()&&self.revision==1
+    }
     pub fn phase(&self) -> Phase { self.phase }
     pub fn revision(&self) -> u64 { self.revision }
     pub fn allows_actions(&self) -> bool { self.phase == Phase::Battle }

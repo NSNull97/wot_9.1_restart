@@ -3,7 +3,7 @@
 use super::*;
 use std::collections::{BTreeMap,VecDeque};
 use crate::training091::{domain as d,controller::{Controller,Call,ReadyTask,Batch},adapter::NativeFacts,current_room::{Channel,ProfileStamp}};
-use super::super::{p10b_selection_job as query,p10b_writer::ReadySelection};
+use super::super::{p10b_selection_job as query,p10b_writer_mode::ReadySelection};
 
 fn bad(message:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,message)}
 pub(super) fn account(text:&str)->io::Result<d::Account>{
@@ -60,7 +60,7 @@ impl Manager{
             let accepted=self.accepted.get(&who).filter(|a|Some(a.selection.reference())==ready
                 &&a.selection.session()==s.id&&a.task.channel().generation==s.training_account_generation()
                 &&s.ammo_service.as_ref().is_some_and(|p|p.revision()==u64::from(a.selection.reference().revision())));
-            let(selected,descriptor)=match accepted{Some(a)=>(Some(a.selection.reference().clone()),a.selection.frozen().descriptor.clone()),None=>(None,Vec::new())};
+            let(selected,descriptor)=match accepted{Some(a)=>(Some(a.selection.reference().clone()),a.selection.loadout().descriptor.clone()),None=>(None,Vec::new())};
             facts.insert(who,NativeFacts{database_id:owner.database_id,selected,descriptor,igr_type:0,clan_database_id:0,clan_abbrev:String::new()});
         }Ok(facts)
     }
@@ -117,7 +117,7 @@ impl Manager{
             let mut facts=self.facts(&next_sessions,&next_engine)?;
             facts.retain(|who,fact|next_sessions.iter().any(|s|s.identity.as_ref().is_some_and(|p|account(&p.account_id).ok()==Some(*who))
                 &&next_engine.is_current_recipient(d::AuthLease{account:*who,generation:u64::from(s.id)},Channel{session:s.id,generation:s.training_account_generation()},fact.database_id)));
-            facts.insert(task.caller().account,NativeFacts{database_id:target_database(&next_sessions,task.channel().session)?,selected:Some(item.selection.reference().clone()),descriptor:item.selection.frozen().descriptor.clone(),igr_type:0,clan_database_id:0,clan_abbrev:String::new()});
+            facts.insert(task.caller().account,NativeFacts{database_id:target_database(&next_sessions,task.channel().session)?,selected:Some(item.selection.reference().clone()),descriptor:item.selection.loadout().descriptor.clone(),igr_type:0,clan_database_id:0,clan_abbrev:String::new()});
             let batch=next_engine.complete_ready(&task,current,task.native_inventory(),item.selection.reference().clone(),&facts,now_ms).map_err(|_|bad("P10B readiness Controller origin changed"))?;
             Ok((next_sessions,next_engine,item,batch))
         })();

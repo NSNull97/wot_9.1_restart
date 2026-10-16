@@ -44,6 +44,8 @@ mod server;
 mod scene_runtime;
 mod profile13_session;
 mod p10b_writer;
+mod p10b_writer_loss;
+mod p10b_writer_mode;
 mod p10b_selection_job;
 mod profile13_queue;
 mod profile13_templates;

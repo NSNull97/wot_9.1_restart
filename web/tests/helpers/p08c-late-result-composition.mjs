@@ -13,7 +13,7 @@ const HERE = dirname(localSpelling(fileURLToPath(import.meta.url)));
 const ROOT = resolve(HERE, '../../..'); // promoted web/tests/helpers -> repository
 const TEST = 'gateway091::shared::server::p08c_late_composition_tests::p08c_late_result_runtime05_real_http_phase';
 const SCOPES = ['server', 'tools', 'client_patch', 'web/src', 'tests', 'web/tests'];
-const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+export const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 function within(root, path) { const r = relative(root, path); assert.ok(r && !r.startsWith('..') && !isAbsolute(r)); return path; }
 export function localSpelling(value) {
   assert.equal(typeof value, 'string');
@@ -22,14 +22,14 @@ export function localSpelling(value) {
   if (value.startsWith('\\\\?\\')) value = value.slice(4);
   assert.match(value,/^[A-Za-z]:[\\/]/); assert.ok(isAbsolute(value)); return resolve(value);
 }
-function plain(value) {
+export function plain(value) {
   const path = localSpelling(value); let cursor = path;
   for (;;) { assert.equal(lstatSync(cursor).isSymbolicLink(), false, 'Linked/junction path refused'); const parent = dirname(cursor); if (parent === cursor) break; cursor = parent; }
   return realpathSync(path);
 }
-function readJson(path, budget = 16384) { const bytes = readFileSync(plain(path)); assert.ok(bytes.length <= budget); return JSON.parse(bytes); }
-function keys(value, expected) { assert.ok(value && typeof value === 'object' && !Array.isArray(value)); assert.deepEqual(Object.keys(value).sort(), [...expected].sort()); }
-function ref(value) {
+export function readJson(path, budget = 16384) { const bytes = readFileSync(plain(path)); assert.ok(bytes.length <= budget); return JSON.parse(bytes); }
+export function keys(value, expected) { assert.ok(value && typeof value === 'object' && !Array.isArray(value)); assert.deepEqual(Object.keys(value).sort(), [...expected].sort()); }
+export function ref(value) {
   keys(value, ['path', 'sha256']); assert.match(value.sha256, /^[0-9a-f]{64}$/);
   const path = plain(value.path); assert.equal(sha(readFileSync(path)), value.sha256); return path;
 }
@@ -53,7 +53,7 @@ export function allocationRecord(origin, metadata, environment, facts) {
   assert.equal(resolve(environment.CARGO_TARGET_DIR), facts.target);
   for (const [key,value] of Object.entries(environment)) assert.equal(value, facts.env[key], `Cargo environment differs: ${key}`);
 }
-function targetGuard(guard) {
+export function targetGuard(guard) {
   const target = plain(guard.target_dir), output = within(plain(join(ROOT, 'local/build')), plain(guard.build_output));
   const executable = ref(guard.test_executable);
   assert.equal(dirname(executable), plain(join(target, 'debug/deps'))); assert.match(basename(executable), /^sr_gateway-[0-9a-f]+\.exe$/);
@@ -90,9 +90,10 @@ function sourceGuard(guard) {
   assert.equal(sha(readFileSync(plain(fileURLToPath(import.meta.url)))),guard.compiled_driver_sha256);
   return targetGuard(guard);
 }
-function database(path, action) { const db = new DatabaseSync(path, { readOnly: true }); try { return action(db); } finally { db.close(); } }
-function write(path, value) { writeFileSync(path, JSON.stringify(value, null, 2), { flag: 'wx' }); }
-async function child(exe, control, output, prefix, name) {
+export function database(path, action) { const db = new DatabaseSync(path, { readOnly: true }); try { return action(db); } finally { db.close(); } }
+export function write(path, value) { writeFileSync(path, JSON.stringify(value, null, 2), { flag: 'wx' }); }
+export async function child(exe, control, output, prefix, name, deadlineMs = 100000) {
+  assert.ok(deadlineMs === 100000 || deadlineMs === 180000, "Closed test-only child deadline");
   let out, err, owned, closed, timer, spawnError;
   try {
     out = openSync(`${prefix}.stdout.log`, 'wx'); err = openSync(`${prefix}.stderr.log`, 'wx');
@@ -104,7 +105,7 @@ async function child(exe, control, output, prefix, name) {
       owned.once('error', error => { spawnError = error; });
       owned.once('close', (code, signal) => done({ code, signal }));
     });
-    const timeout = new Promise((_, fail) => { timer = setTimeout(() => fail(new Error('Own composition test timed out')), 100000); });
+    const timeout = new Promise((_, fail) => { timer = setTimeout(() => fail(new Error('Own composition test timed out')), deadlineMs); });
     const result = await Promise.race([closed, timeout]);
     if (spawnError) throw spawnError;
     assert.equal(result.signal, null, 'Own test exited by signal');

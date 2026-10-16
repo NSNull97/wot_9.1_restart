@@ -39,7 +39,7 @@ fn completion(index:usize,s:&Session)->query::Completion{
     let request=selection::Request::new(&c,q["native_inventory_id"].as_u64().unwrap()as u32,selection::Stamp::parse(&q["projection_stamp"]).unwrap()).unwrap();
     assert_eq!(serde_json::from_slice::<Value>(&selection::encode_request(&request).unwrap()).unwrap(),sql["request"]);
     let selected=selection::parse_reply(&serde_json::to_vec(&sql["response"]).unwrap(),&request).unwrap();
-    query::Completion{task:query::Task{session:s.id,owner:owner.clone(),expected_revision:c.expected_revision,native_inventory_id:request.native_inventory_id,run_id:c.run_id},snapshot:crate::identity091::room_selection::SelectionSnapshot{owner,fixtures:s.hangar.clone().unwrap(),binding:crate::ammo_service091::Metadata{revision:c.expected_revision,wire_revision:1},selection:selected}}
+    query::Completion{task:query::Task{session:s.id,owner:owner.clone(),expected_revision:c.expected_revision,native_inventory_id:request.native_inventory_id,run_id:c.run_id},snapshot:query::SelectionSnapshot{owner,fixtures:s.hangar.clone().unwrap(),binding:crate::ammo_service091::Metadata{revision:c.expected_revision,wire_revision:1},selection:selected.into()}}
 }
 fn rpc(id:i16,command:i16,a:i64,b:i32)->ingress::Request{let mut p=vec![0x8e,20,0];p.extend(id.to_le_bytes());p.extend(command.to_le_bytes());p.extend(a.to_le_bytes());p.extend(b.to_le_bytes());p.extend(0i32.to_le_bytes());ingress::record(&p).unwrap().unwrap()}
 fn create()->ingress::Request{let mut p=vec![0x9a,10,0];p.extend(4i32.to_le_bytes());p.extend(600i32.to_le_bytes());p.extend([1,0]);ingress::record(&p).unwrap().unwrap()}

@@ -2,6 +2,7 @@
 //! with explicitly AUTHORED small cache/Session/Fresh and retargeted Task keys.
 //! No current ownership, HTTP execution, Job thread or native UI proof.
 use super::*;
+use crate::profile13_v2091 as writer;
 use super::super::p10b_launch_host;
 use crate::training091::{adapter,aliases,controller::Call,current_room::{ProfileStamp,Channel},ingress,selection};
 use serde_json::{json,Value};
@@ -66,7 +67,7 @@ pub(in crate::gateway091::shared::server) fn input(now:Instant)->Input{
         let owner=Arc::new(crate::identity091::Profile{account_id:c.account_id.clone(),database_id:c.native_database_id,name:format!("Owner{}",c.native_database_id),fixture_dir:path});
         let selected=saga::ReadySelection::from_selection(owner.clone(),100+c.native_database_id as u32,parsed).unwrap()
             .with_launch_scheduler_seam_for_test(admitted.run_id.clone(),source_hex(&fixtures.state_sha256()));
-        let s=live(owner,fixtures,&admitted,now);let call=call(&s,selected.source_stamp());
+        let s=live(owner,fixtures,&admitted,now);let call=call(&s,selected.source_stamp().base());
         controller.bind(call.caller,call.channel,s.identity.as_ref().unwrap().name.clone(),c.native_database_id,0).unwrap();
         facts.insert(call.caller.account,adapter::NativeFacts{database_id:c.native_database_id,selected:None,descriptor:Vec::new(),igr_type:0,clan_database_id:0,clan_abbrev:String::new()});
         selections.push(selected);sessions.push(s);calls.push(call);
@@ -76,7 +77,7 @@ pub(in crate::gateway091::shared::server) fn input(now:Instant)->Input{
     controller.apply(calls[0],native(222,404,i64::from(aliases::OWN_ENTITY_ID+1),2),&facts,0).unwrap();
     let mut origins=BTreeMap::new();
     for index in 0..2{let selected=&selections[index];let batch=controller.apply(calls[index],native(223,402,1,0),&facts,0).unwrap();let task=batch.ready[0].clone();
-        let fact=facts.get_mut(&calls[index].caller.account).unwrap();fact.selected=Some(selected.reference().clone());fact.descriptor=selected.frozen().descriptor.clone();
+        let fact=facts.get_mut(&calls[index].caller.account).unwrap();fact.selected=Some(selected.reference().clone());fact.descriptor=selected.loadout().descriptor.clone();
         controller.complete_ready(&task,calls[index],1,selected.reference().clone(),&facts,0).unwrap();
         origins.insert(calls[index].caller.account,LaunchOrigin::capture(&sessions[index],&controller,task,selected.clone()).unwrap());
     }
@@ -90,10 +91,10 @@ fn state(table:&Table)->Vec<(u32,persistence::State,u64,i64,VecDeque<Vec<u8>>,us
 /// Retarget ONLY scheduler keys to actual State.next_context output. Frozen,
 /// source shell/crew/terminal data are actual DTOs; retargeted envelope is
 /// AUTHORED component input, not a new actual SQL/HTTP capture.
-fn completion(task:&saga::Task,sql:&Value,fresh:bool)->persistence::CompletionV2{
+fn completion(task:&saga::Task,sql:&Value,fresh:bool)->saga::Completion{
     let lane=if task.owner().database_id==3{"C"}else{"D"};
-    let row=sql["calls"][lane].as_array().unwrap().iter().find(|r|r["request"]["operation"]==task.request().operation()).unwrap();
-    let mut raw=row["response"].clone();let context=task.context().clone();let request=task.request().clone();
+    let row=sql["calls"][lane].as_array().unwrap().iter().find(|r|r["request"]["operation"]==task.request().v2().operation()).unwrap();
+    let mut raw=row["response"].clone();let context=task.context().clone();let request=task.request().v2().clone();
     raw["account_id"]=context.account_id.clone().into();raw["native_database_id"]=context.native_database_id.into();
     raw["command_key"]=context.command_key.clone().into();raw["run_id"]=context.run_id.clone().into();raw["source_revision"]=context.expected_revision.into();
     raw["revision"]=(context.expected_revision+1).into();
@@ -104,28 +105,28 @@ fn completion(task:&saga::Task,sql:&Value,fresh:bool)->persistence::CompletionV2
     let reply=writer::parse_reply(&serde_json::to_vec(&raw).unwrap(),&context,&request).unwrap();
     done(task,reply,fresh)
 }
-fn done(task:&saga::Task,reply:writer::Reply,fresh:bool)->persistence::CompletionV2{
+fn done(task:&saga::Task,reply:writer::Reply,fresh:bool)->saga::Completion{
     let f=if fresh{let(path,fixtures)=fixture(&task.owner().account_id,task.owner().database_id,reply.revision,false);
         Some(persistence::Fresh{owner:Arc::new(crate::identity091::Profile{fixture_dir:path,account_id:task.owner().account_id.clone(),database_id:task.owner().database_id,name:task.owner().name.clone()}),fixtures,
             binding:crate::ammo_service091::Metadata{revision:reply.revision,wire_revision:1}})}else{None};
-    persistence::CompletionV2{session:task.session(),old_owner:task.owner().clone(),context:task.context().clone(),request:task.request().clone(),reply,
-        fresh:f,refresh_error:if fresh{None}else{Some(bad("AUTHORED projection failure"))}}
+    saga::Completion::V2(persistence::CompletionV2{session:task.session(),old_owner:task.owner().clone(),context:task.context().clone(),request:task.request().v2().clone(),reply,
+        fresh:f,refresh_error:if fresh{None}else{Some(bad("AUTHORED projection failure"))}})
 }
-fn inspected(task:&saga::Task,fresh:bool)->persistence::CompletionV2{
-    assert_eq!(task.request(),&writer::Request::Inspect);let c=task.context();
+fn inspected(task:&saga::Task,fresh:bool)->saga::Completion{
+    assert_eq!(task.request().v2(),&writer::Request::Inspect);let c=task.context();
     let raw=json!({"version":2,"operation":"inspect","status":"inspected","account_id":c.account_id,"native_database_id":c.native_database_id,
         "command_key":c.command_key,"run_id":c.run_id,"source_revision":c.expected_revision,"revision":c.expected_revision,
         "replayed":false,"code":null,"reservation":null,"legacy_reservation":null,"policy_sha256":writer::POLICY_SHA256});
-    done(task,writer::parse_reply(&serde_json::to_vec(&raw).unwrap(),c,task.request()).unwrap(),fresh)
+    done(task,writer::parse_reply(&serde_json::to_vec(&raw).unwrap(),c,task.request().v2()).unwrap(),fresh)
 }
 fn admitted(p:&mut Preparing,i:&mut Input)->saga::Task{
-    let task=p.next_task(&mut i.table,true).unwrap().unwrap();assert!(matches!(task.request(),writer::Request::Admit{..}));
+    let task=p.next_task(&mut i.table,true).unwrap().unwrap();assert!(matches!(task.request().v2(),writer::Request::Admit{..}));
     p.accept(&completion(&task,&i.sql,true)).unwrap();task
 }
 pub(in crate::gateway091::shared::server) fn finish_all_abort(p:&mut Preparing,i:&mut Input){
     while !p.ready_to_abort(){
         let task=p.next_task(&mut i.table,true).unwrap().unwrap();
-        let c=if task.request()==&writer::Request::Inspect{inspected(&task,true)}else{completion(&task,&i.sql,true)};
+        let c=if task.request().v2()==&writer::Request::Inspect{inspected(&task,true)}else{completion(&task,&i.sql,true)};
         p.accept(&c).unwrap();
     }
 }
@@ -146,7 +147,7 @@ pub(in crate::gateway091::shared::server) fn finish_all_abort(p:&mut Preparing,i
 #[test]fn p10b_preparing_serial_actual_state_contexts_and_held_outputs_never_publish_partial_reserve(){
     let now=Instant::now();let mut i=input(now);let mut p=begin(&mut i);
     let task=p.next_task(&mut i.table,true).unwrap().unwrap();assert_eq!(task.session(),104);assert!(task.context().command_key.ends_with(":104:1"));
-    let before=state(&i.table);let retry=p.next_task(&mut i.table,true).unwrap().unwrap();assert_eq!(task.context(),retry.context());assert_eq!(task.request(),retry.request());assert_eq!(state(&i.table),before);
+    let before=state(&i.table);let retry=p.next_task(&mut i.table,true).unwrap().unwrap();assert_eq!(task.context(),retry.context());assert_eq!(task.request().v2(),retry.request().v2());assert_eq!(state(&i.table),before);
     assert!(!p.ready_to_launch());assert!(p.held.is_empty());p.accept(&completion(&task,&i.sql,true)).unwrap();assert_eq!(p.held.len(),1);assert!(!p.ready_to_launch());
     let task2=admitted(&mut p,&mut i);assert_eq!(task2.session(),103);assert!(p.ready_to_launch());assert_eq!(p.saga.reserved_refs().unwrap().len(),2);
     for s in &i.table.sessions{assert!(owned_state(s).unwrap().in_flight);assert!(!owned_state(s).unwrap().has_reservation());assert!(s.outbox.is_empty());assert_eq!(s.tx.len(),0);}
@@ -159,10 +160,10 @@ pub(in crate::gateway091::shared::server) fn finish_all_abort(p:&mut Preparing,i
     assert!(p.abort_on_disconnect(task.session()));assert!(!p.abort_on_disconnect(999));
     i.table.sessions.iter_mut().find(|s|s.id==task.session()).unwrap().active=false;
     assert!(p.next_task(&mut i.table,false).unwrap().is_none());let retry=p.next_task(&mut i.table,true).unwrap().unwrap();
-    assert_eq!(retry.context(),task.context());assert_eq!(retry.request(),task.request());assert!(!p.ready_to_abort());
+    assert_eq!(retry.context(),task.context());assert_eq!(retry.request().v2(),task.request().v2());assert!(!p.ready_to_abort());
     let c=completion(&task,&i.sql,true);assert_eq!(driver.completed(&mut p,Ok(c),now).progress,Progress::Accepted);
     let cancel=p.next_task(&mut i.table,true).unwrap().unwrap();assert_eq!(cancel.session(),task.session());
-    let writer::Request::Finish{reason,remaining_ammunition,terminal_hp,..}=cancel.request()else{panic!("late admit must be cancelled, never Inspect")};
+    let writer::Request::Finish{reason,remaining_ammunition,terminal_hp,..}=cancel.request().v2()else{panic!("late admit must be cancelled, never Inspect")};
     assert_eq!(*reason,crate::battle091::profile13::FinishReason::Cancelled);assert_eq!(remaining_ammunition.map(|a|a.count),[0,4,10]);assert_eq!(*terminal_hp,90);
     p.accept(&completion(&cancel,&i.sql,true)).unwrap();assert!(!p.ready_to_abort());
     finish_all_abort(&mut p,&mut i);assert_eq!(p.saga.released_refs().unwrap().len(),2);
@@ -175,9 +176,9 @@ pub(in crate::gateway091::shared::server) fn finish_all_abort(p:&mut Preparing,i
     let now=Instant::now();let mut i=input(now);let mut p=begin(&mut i);let task=p.next_task(&mut i.table,true).unwrap().unwrap();
     let mut driver=Driver{key:Some(p.key()),unresolved:true,..Driver::default()};
     assert_eq!(driver.completed(&mut p,Ok(completion(&task,&i.sql,false)),now).progress,Progress::RetryRetained);
-    assert_eq!(driver.known_status(),Some(writer::Status::Admitted));assert!(!driver.idle());assert!(p.held.is_empty());
-    let retry=p.saga.retry().unwrap();assert_eq!(retry.context(),task.context());assert_eq!(retry.request(),task.request());
-    let mut replay=completion(&task,&i.sql,true);replay.reply.replayed=true;
+    assert_eq!(driver.known_status(),Some(saga::Status::Admitted));assert!(!driver.idle());assert!(p.held.is_empty());
+    let retry=p.saga.retry().unwrap();assert_eq!(retry.context(),task.context());assert_eq!(retry.request().v2(),task.request().v2());
+    let mut replay=completion(&task,&i.sql,true);match &mut replay{saga::Completion::V2(c)=>c.reply.replayed=true,_=>panic!("V2 fixture")};
     assert_eq!(driver.completed(&mut p,Ok(replay),now).progress,Progress::Accepted);assert!(driver.idle());assert_eq!(p.held.len(),1);
     assert!(i.table.sessions.iter().all(|s|owned_state(s).unwrap().in_flight));
 }
@@ -185,7 +186,7 @@ pub(in crate::gateway091::shared::server) fn finish_all_abort(p:&mut Preparing,i
 #[test]fn p10b_preparing_issued_null_inspect_requires_global_drain_and_actual_current_fresh_for_all_slots(){
     let now=Instant::now();let mut i=input(now);let mut p=begin(&mut i);p.abort();
     let before=state(&i.table);assert!(p.next_task(&mut i.table,false).unwrap().is_none());assert_eq!(state(&i.table),before);
-    let task=p.next_task(&mut i.table,true).unwrap().unwrap();assert_eq!(task.request(),&writer::Request::Inspect);
+    let task=p.next_task(&mut i.table,true).unwrap().unwrap();assert_eq!(task.request().v2(),&writer::Request::Inspect);
     let mut driver=Driver{key:Some(p.key()),unresolved:true,..Driver::default()};
     assert_eq!(driver.completed(&mut p,Ok(inspected(&task,false)),now).progress,Progress::RetryRetained);assert!(!p.ready_to_abort());
     assert_eq!(p.saga.retry().unwrap().context(),task.context());

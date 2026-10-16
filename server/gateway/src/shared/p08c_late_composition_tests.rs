@@ -5,15 +5,15 @@ use super::*;
 use crate::{identity091,hangar091,ammo_service091,transport091};
 use sha2::{Digest,Sha256};use std::path::PathBuf;
 use super::super::{late_results_runtime,lifecycle_wire::Results,geometry,terrain,lifecycle};
-fn sync(id:i16,command:i16,value:i64)->Vec<u8>{let mut out=vec![0x8e,20,0];out.extend(id.to_le_bytes());out.extend(command.to_le_bytes());out.extend(value.to_le_bytes());out.extend([0;8]);out}
+pub(super) fn sync(id:i16,command:i16,value:i64)->Vec<u8>{let mut out=vec![0x8e,20,0];out.extend(id.to_le_bytes());out.extend(command.to_le_bytes());out.extend(value.to_le_bytes());out.extend([0;8]);out}
 fn receive(s:&mut Session,raw:&[u8]){let frame=Frame{flags:0x458,sequence:Some(s.rx),cumulative:Some(s.tx.cumulative),selective:vec![],
     body:[vec![1],s.token.to_le_bytes().to_vec(),raw.to_vec()].concat(),piggybacks:vec![]};assert!(!s.receive(&frame,Instant::now()).unwrap());}
-fn drain(s:&mut Session)->Vec<Vec<u8>>{let mut out=Vec::new();let mut rounds=0;
+pub(super) fn drain(s:&mut Session)->Vec<Vec<u8>>{let mut out=Vec::new();let mut rounds=0;
     while !s.outbox.is_empty()||s.tx.len()!=0{rounds+=1;assert!(rounds<=128,"bounded synthetic native ACK drain");s.drain_outbox().unwrap();let mut ack=s.tx.cumulative;
         while let Some((seq,_,raw))=s.tx.due(Instant::now()+Duration::from_secs(1),s.rx).unwrap(){ack=ack.max(seq+1);out.push(transport091::parse_interactive(&raw).unwrap().body);}
         let frame=Frame{flags:0x408,sequence:None,cumulative:Some(ack),selective:vec![],body:vec![],piggybacks:vec![]};assert!(!s.receive(&frame,Instant::now()).unwrap());
     }out}
-fn session(config:&identity091::Config,user:&serde_json::Value,id:u32)->Session{
+pub(super) fn session(config:&identity091::Config,user:&serde_json::Value,id:u32)->Session{
     assert!(config.p04m_pool&&config.p06t_ammo_rack_detonation&&config.p08c_late_results&&config.p06t_mixed_ammo&&config.visibility_v1);
     let owner=Arc::new(config.authenticate(user["email"].as_str().unwrap(),user["password"].as_str().unwrap()).unwrap().expect("actual isolated own login"));
     assert_eq!(owner.account_id,user["account_id"]);let fixtures=Arc::new(hangar091::Fixtures::load_p04m(&owner.fixture_dir).unwrap());
@@ -32,16 +32,16 @@ fn settle(dispatch:&mut profile13_dispatch::Dispatcher,table:&mut Table,world:&W
     dispatch.start(table,world,config.clone(),Instant::now()).unwrap();assert!(dispatch.busy(),"real JobLoss must start");let deadline=Instant::now()+Duration::from_secs(40);
     while dispatch.busy(){assert!(Instant::now()<deadline,"real writer completion bounded");dispatch.poll(table,config.clone(),Instant::now()).unwrap();std::thread::sleep(Duration::from_millis(10));}
 }
-fn results(table:&mut Table,manager:&mut super::super::results_session::Manager,config:Arc<identity091::Config>){
+pub(super) fn results(table:&mut Table,manager:&mut super::super::results_session::Manager,config:Arc<identity091::Config>){
     manager.start_if_idle(&mut table.sessions,config.clone(),Instant::now()).unwrap();assert!(manager.busy());let deadline=Instant::now()+Duration::from_secs(40);
     while manager.busy(){assert!(Instant::now()<deadline);manager.poll(&mut table.sessions,Instant::now()).unwrap();manager.start_if_idle(&mut table.sessions,config.clone(),Instant::now()).unwrap();std::thread::sleep(Duration::from_millis(10));}
 }
-fn warm(s:&mut Session){assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Returning);drain(s);receive(s,&[9]);drain(s);
+pub(super) fn warm(s:&mut Session){assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Returning);drain(s);receive(s,&[9]);drain(s);
     let cursor=s.shared.as_ref().unwrap().return_source_revision;let fixtures=s.hangar.as_ref().unwrap().clone();receive(s,&sync(501,100,cursor));drain(s);
     let mut tail=sync(502,300,fixtures.shop_sync_revision().unwrap());tail.extend(sync(503,600,0));receive(s,&tail);drain(s);
     assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Account);assert!(s.shared.as_ref().unwrap().profile13_garage_idle());
 }
-fn barrier(value:&serde_json::Value,phase:&str,summary:serde_json::Value){let root=PathBuf::from(value["barrier"].as_str().unwrap());
+pub(super) fn barrier(value:&serde_json::Value,phase:&str,summary:serde_json::Value){let root=PathBuf::from(value["barrier"].as_str().unwrap());
     let marker=root.join(format!("{phase}.ready.json"));assert!(!marker.exists());fs::write(marker,serde_json::to_vec_pretty(&summary).unwrap()).unwrap();let go=root.join(format!("{phase}.go"));
     let deadline=Instant::now()+Duration::from_secs(40);while !go.is_file(){assert!(Instant::now()<deadline,"controller read-only SQL barrier timed out");std::thread::sleep(Duration::from_millis(10));}
 }

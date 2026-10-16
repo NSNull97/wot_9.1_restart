@@ -24,7 +24,10 @@ def main():
     destination=no_links(sys.argv[1]);source_seed=no_links(sys.argv[2])
     expected=(ROOT/'local/evidence/20261016-p06t-owned01/seed01/seed.json').resolve()
     if source_seed!=expected:raise ValueError('closed actual own source seed required')
-    relative=destination.relative_to((ROOT/'local/test-runs/p08c-late-composition05').resolve())
+    roots=[(ROOT/'local/test-runs'/name).resolve() for name in ['p08c-late-composition05','p10b-loss-composition09']]
+    matches=[base for base in roots if destination.is_relative_to(base)]
+    if len(matches)!=1:raise ValueError('closed regular composition output scope required')
+    relative=destination.relative_to(matches[0])
     if len(relative.parts)!=2 or not relative.parts[0].startswith('run-') or relative.parts[1]!='game.sqlite' or destination.exists():raise ValueError('fresh controlled test destination required')
     if source_seed.stat().st_size>65536:raise ValueError('source metadata bound')
     seed=json.loads(source_seed.read_bytes())

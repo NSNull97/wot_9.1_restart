@@ -16,11 +16,34 @@ struct ClosedMember{
     display_task:Option<crate::training091::controller::ReadyTask>,
 }
 #[derive(Default)]pub(super) struct Host{
-    controller:Controller,ready:readiness::Manager,bindings:BTreeMap<u32,[u8;32]>,
+    mode:super::super::p10b_writer_mode::Mode,controller:Controller,ready:readiness::Manager,bindings:BTreeMap<u32,[u8;32]>,
     preparing:Option<prepare::Preparing>,driver:prepare::Driver,active:Option<Active>,
     deferred:Vec<receive::DeferredRead>,retired_closed:BTreeSet<u32>,closed_members:BTreeMap<room::Account,ClosedMember>,
 }
+/// A pure staged reset for an entirely compensated Preparing scope. The real
+/// Saga/Controller release proof is still required by the AllReleased caller.
+/// Construction never drops the old runtime or touches live state.
+struct CompensatedReset{world:World,runtime:Option<IntegratedRuntime>}
+impl CompensatedReset{
+    fn stage(world:&World,runtime:&Option<IntegratedRuntime>,template:&BattleTemplate,battle:room::BattleKey,now:Instant)->io::Result<Self>{
+        if world.id!=battle.0||world.started.is_some()||!world.actors.is_empty()
+            ||runtime.as_ref().is_some_and(|r|r.started||r.staged.is_some()||r.workers.iter().any(Option::is_some)||r.blocked()){
+            return Err(bad("P10B compensated reset requires its exact pristine battle"));
+        }
+        // Validate the live empty world too, not just the source template. A
+        // stray journal/scene transaction must not be silently thrown away.
+        let next=world.id.checked_add(1).filter(|id|*id<=i64::MAX as u64).ok_or_else(||bad("P10B compensated battle id overflow"))?;
+        drop(world.fresh_battle(next,now)?);
+        let fresh=template.world.fresh_battle(next,now)?;
+        let prepared_runtime=template.runtime(fresh.map)?;
+        Ok(Self{world:fresh,runtime:prepared_runtime})
+    }
+    fn commit(self,world:&mut World,runtime:&mut Option<IntegratedRuntime>){*world=self.world;*runtime=self.runtime;}
+}
 impl Host{
+    pub(super) fn for_config(config:&crate::identity091::Config)->io::Result<Self>{
+        Ok(Self{mode:super::super::p10b_writer_mode::Mode::config(config)?,..Self::default()})
+    }
     pub(super) fn bind_session(&mut self,s:&mut Session)->io::Result<()>{
         if self.bindings.len()>=room::MAX_ACCOUNTS||self.bindings.contains_key(&s.id){return Err(bad("P10B authenticated capacity"));}
         let source=readiness::source_binding(s)?;
@@ -73,6 +96,7 @@ impl Host{
             let mut origins=BTreeMap::new();
             for member in task.snapshot().members(){
                 let item=self.ready.accepted.get(&member.account()).ok_or_else(||bad("P10B launch missing accepted readonly selection"))?;
+                if item.selection.mode()!=self.mode{return Err(bad("P10B Preparing selected contract changed"));}
                 let s=staged.iter().find(|s|s.id==item.selection.session()).ok_or_else(||bad("P10B launch Session retired"))?;
                 origins.insert(member.account(),launch::LaunchOrigin::capture(s,&controller,item.task.clone(),item.selection.clone())?);
             }
@@ -114,6 +138,8 @@ impl Host{
     }
     pub(super) fn poll(&mut self,table:&mut Table,world:&mut World,runtime:&mut Option<IntegratedRuntime>,template:&BattleTemplate,
         dispatcher:&mut profile13_dispatch::Dispatcher,config:Arc<crate::identity091::Config>,now:Instant,logical_ms:u64,external_idle:bool)->io::Result<bool>{
+        if super::super::p10b_writer_mode::Mode::config(&config)?!=self.mode{
+            return Err(bad("P10B Host/Config spending mode changed"));}
         // Readonly publication failure retains its completed descriptor but is
         // not an outstanding SQLite worker. It cannot starve compensation.
         if let Err(error)=self.ready.poll(&mut table.sessions,&mut self.controller,logical_ms){
@@ -157,19 +183,41 @@ impl Host{
                         p.abort();
                         return Err(io::Error::new(error.kind(),format!("P10B Finished scope refused before launch commit; durable compensation retained: {error}")));
                     }
+                    // Both observer staging and launch staging precede the
+                    // infallible same-loop swaps. The Manager borrow cannot be
+                    // replaced between stage_install and commit_install.
+                    let late=dispatcher.late.as_mut();
+                    let late_install=match(late.as_deref(),staged.late_capture()){
+                        (Some(manager),Ok(capture))=>match manager.stage_install(capture.clone()){
+                            Ok(install)=>Some(install),
+                            Err(_)=>{println!("P08C_TRAINING_LATE_RESULTS_UNSUPPORTED battle={} reason=observer_install_refused authority_unchanged=true",world.id);None}
+                        },
+                        _=>{println!("P08C_TRAINING_LATE_RESULTS_UNSUPPORTED battle={} reason=observer_or_roster_unavailable authority_unchanged=true",world.id);None}
+                    };
                     let event=staged.commit(table,&mut self.controller,world,runtime);
+                    if let(Some(manager),Some(install))=(late,late_install){manager.commit_install(install);}
                     self.preparing=None;self.driver=prepare::Driver::default();
                     self.active=Some(Active{battle:event.battle,selected:event.awaiting_handoff,finished:Vec::new(),committed_at:now});
                     self.prune_accepted();
-                    committed=true;println!("P10B_LAUNCH_COMMITTED battle={} actors={} receipt_scope=actual_v2 stage=Account",world.id,world.expected_actors());
+                    committed=true;println!("P10B_LAUNCH_COMMITTED battle={} actors={} receipt_scope={:?} stage=Account",world.id,world.expected_actors(),self.mode);
                 },
                 prepare::Progress::AllReleased=>{
+                    let old_battle=world.id;
+                    let reset=CompensatedReset::stage(world,runtime,template,p.saga().battle(),now)?;
                     let mut stage=p.stage_abort(&self.driver,table,&self.controller,logical_ms)?;
                     let facts=self.ready.facts(&stage.sessions,&stage.controller)?;
                     receive::stage_batch(&mut stage.sessions,&stage.controller,&stage.batch,&self.bindings,&facts,None,None)?;
                     for s in &mut stage.sessions{s.drain_outbox()?;}
-                    table.sessions=stage.sessions;self.controller=stage.controller;self.preparing=None;self.driver=prepare::Driver::default();
+                    // Every actual reserve is released and abort publication is
+                    // fully staged. No fallible operation follows this hook.
+                    if let Some(late)=dispatcher.late.as_mut(){late.before_reset(world,"training_preparing_all_released");}
+                    table.sessions=stage.sessions;self.controller=stage.controller;
+                    reset.commit(world,runtime);self.preparing=None;self.driver=prepare::Driver::default();
                     self.prune_accepted();
+                    // Existing caller resets all four publication cursors on
+                    // true. This is a world replacement, never a launch claim.
+                    committed=true;
+                    println!("SHARED_BATTLE_RESET previous={old_battle} battle={} workers_revoked=true actors=0 trace_events=0 scene_version=0 service_alive=true",world.id);
                     println!("P10B_PREPARING_ABORTED all_reserves_released=true service_alive=true");
                 },_=>{},
             }
@@ -265,3 +313,7 @@ impl Host{
 
 #[cfg(test)]#[path="p10b_host_tests.rs"]mod tests;
 #[cfg(test)]#[path="p10b_host_bench_tests.rs"]mod bench_tests;
+
+#[cfg(test)]#[path="p10b_compensated_reset_tests.rs"]mod compensated_reset_tests;
+
+#[cfg(test)]#[path="p10b_loss_composition_tests.rs"]mod loss_composition_tests;

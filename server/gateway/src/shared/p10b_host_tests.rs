@@ -115,7 +115,10 @@ fn no_worker_config(input:&prep_fixture::Input)->Arc<crate::identity091::Config>
     let value=serde_json::json!({"login_bind":"127.0.0.1:28101","base_bind":"127.0.0.1:28102","identity_endpoint":"127.0.0.1:28103",
         "identity_token_file":root.join("host-test-token.txt"),"local_root":root,"session_duration_seconds":600});
     let path=root.join("host-test-config.json");fs::write(&path,serde_json::to_vec(&value).unwrap()).unwrap();
-    let config=crate::identity091::Config::load(path.to_str().unwrap()).unwrap();
+    let mut config=crate::identity091::Config::load(path.to_str().unwrap()).unwrap();
+    // AUTHORED Host scheduler mode only, deliberately no writer capabilities.
+    // The real Task.start still refuses before creating any external worker.
+    config.training_rooms=true;
     // Task.start structurally refuses this explicit configuration BEFORE any
     // worker/HTTP start. Host must still retain its allocated immutable Task.
     assert!(!config.profile13_battle&&!config.p06t_mixed_ammo);Arc::new(config)
@@ -132,7 +135,7 @@ fn no_worker_config(input:&prep_fixture::Input)->Arc<crate::identity091::Config>
     let mut runtime=None;let mut dispatcher=profile13_dispatch::Dispatcher::default();
     assert!(!host.poll(&mut input.table,&mut world,&mut runtime,&template,&mut dispatcher,config,now,0,true).unwrap());
     let pending=host.preparing.as_ref().unwrap().saga().retry().expect("durable task allocation must not be starved by readonly publication error");
-    assert!(matches!(pending.request(),crate::profile13_v2091::Request::Admit{..}));
+    assert!(matches!(pending.request().v2(),crate::profile13_v2091::Request::Admit{..}));
     assert_eq!(input.table.sessions.iter().map(|s|s.shared.as_ref().unwrap().profile13.as_ref().unwrap().command_counter).sum::<u32>(),1);
     assert!(host.ready.busy()&&!host.ready.query_running());assert!(host.driver.known_status().is_none());
     assert_eq!(host.deferred.len(),1);assert_eq!(input.table.sessions[0].outbox.len(),128);
@@ -153,7 +156,7 @@ fn room_only(now:Instant)->(Host,launch_fixture::Input){
         let selected=input.origins[&call.caller.account].selection().clone();
         host.bindings.insert(call.channel.session,call.profile.source_binding);
         let batch=host.controller.apply(*call,launch_fixture::native(223,402,1,0),&facts,0).unwrap();let task=batch.ready[0].clone();
-        let fact=facts.get_mut(&call.caller.account).unwrap();fact.selected=Some(selected.reference().clone());fact.descriptor=selected.frozen().descriptor.clone();
+        let fact=facts.get_mut(&call.caller.account).unwrap();fact.selected=Some(selected.reference().clone());fact.descriptor=selected.loadout().descriptor.clone();
         host.controller.complete_ready(&task,*call,1,selected.reference().clone(),&facts,0).unwrap();
         host.ready.accepted.insert(call.caller.account,readiness::Accepted{task,selection:selected});
     }(host,input)

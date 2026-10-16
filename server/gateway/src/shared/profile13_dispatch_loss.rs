@@ -8,6 +8,49 @@ impl TaskLoss{fn start(&self,config:Arc<crate::identity091::Config>)->io::Result
     service::JobLoss::start(self.session,self.owner.clone(),config,self.context.clone(),self.request.clone())}}
 
 impl Dispatcher{
+    /// API4 analogue of the preserved V2 finished collector. Stage the domain
+    /// receipt BEFORE Session delivery, then commit both only after it succeeds.
+    fn deliver_training_finished_loss(training_finished:&mut Option<finished_events::FinishedEvents>,late:&mut Option<super::super::late_results_runtime::Manager>,s:&mut Session,task:&TaskLoss,
+        completion:service::CompletionLoss,now:Instant)->io::Result<()>{
+        let staged=if let Some(queue)=training_finished.as_ref().filter(|q|q.battle().is_some()){
+            if completion.reply.status==Status::Finished{
+                let fresh=completion.fresh.as_ref().ok_or_else(||model::bad())?;
+                if completion.refresh_error.is_some()||completion.session!=task.session||s.id!=task.session
+                    ||completion.context!=task.context||completion.request!=task.request
+                    ||completion.old_owner.account_id!=task.owner.account_id||completion.old_owner.database_id!=task.owner.database_id
+                    ||task.context.account_id!=task.owner.account_id||task.context.native_database_id!=task.owner.database_id
+                    ||s.identity.as_ref().is_none_or(|p|p.account_id!=task.owner.account_id||p.database_id!=task.owner.database_id)
+                    ||fresh.owner.account_id!=task.owner.account_id||fresh.owner.database_id!=task.owner.database_id
+                    ||fresh.binding.revision!=completion.reply.revision{return Err(model::bad());}
+                let RequestLoss::Finish{battle,native_inventory_id,reservation_id,..}=&task.request else{return Err(model::bad());};
+                let row=completion.reply.reservation.as_ref().ok_or_else(||model::bad())?;
+                if row.status!=crate::profile13_loss091::ReservationStatus::Finished||row.result.is_none()
+                    ||row.battle!=*battle||row.run_id!=task.context.run_id||row.reservation_id!=*reservation_id
+                    ||row.frozen.base.native_inventory_id!=*native_inventory_id{return Err(model::bad());}
+                row.frozen.validate_owned(&task.owner.account_id)?;
+                Some(queue.staged(finished_events::account(&task.owner.account_id)?,&row.reservation_id,
+                    crate::training091::domain::BattleKey(row.battle))?)
+            }else{None}
+        }else{None};
+        let mut late_invalid=false;
+        let late_install=if completion.reply.status==Status::Finished{
+            match late.as_ref(){Some(manager)=>match manager.stage_finished_loss(&completion){
+                Ok(install)=>install,
+                Err(_)=>{late_invalid=true;None}
+            },None=>None}
+        }else{None};
+        Self::deliver_loss(s,completion,now)?;
+        if let Some(next)=staged{*training_finished=Some(next);}
+        if let(Some(manager),Some(install))=(late.as_mut(),late_install){manager.commit_install(install);}
+        if late_invalid{
+            if let(Some(manager),Some(battle))=(late.as_mut(),task.request.finished_battle()){
+                manager.invalidate_source(&task.context.run_id,battle);
+            }
+            println!("P08C_LATE_RESULTS_UNSUPPORTED session={} reason=finished_observer_refused inventory_authority_unchanged=true",task.session);
+        }Ok(())
+    }
+
+
     pub(super) fn terminal_loss(s:&mut Session,world:&World,reason:FinishReason)->io::Result<()>{
         let Some(p)=s.shared.as_ref().and_then(|c|c.profile13.as_ref())else{return Ok(());};
         if p.pending_return_loss.is_some(){return Ok(());}
@@ -80,16 +123,9 @@ impl Dispatcher{
             match result{
                 Ok(completion)if completion.refresh_error.is_none()=>{
                     let finished=if completion.reply.status==Status::Finished{completion.request.finished_battle()}else{None};
-                    let late=if let Some(observer)=&self.late{observer.stage_finished_loss(&completion)}else{Ok(None)};
                     let target=table.sessions.iter_mut().chain(self.retired.iter_mut()).find(|s|s.id==task.session).ok_or_else(||model::bad())?;
-                    match Self::deliver_loss(target,completion,now){
-                        Ok(())=>{
-                            if let Some(observer)=&mut self.late{match late{Ok(Some(install))=>observer.commit_install(install),Ok(None)=>{},Err(error)=>{
-                                if let Some(battle)=finished{observer.invalidate_source(&task.context.run_id,battle);}
-                                println!("P08C_LATE_OBSERVER_UNSUPPORTED session={} error={error} truthful_finish_delivered=true",task.session);
-                            }}}
-                            self.task_loss=None;self.retry_at=None;if finished.is_some(){self.settled_queue=finished;}
-                        },
+                    match Self::deliver_training_finished_loss(&mut self.training_finished,&mut self.late,target,&task,completion,now){
+                        Ok(())=>{self.task_loss=None;self.retry_at=None;if finished.is_some(){self.settled_queue=finished;}},
                         Err(e)=>{println!("P06T_LOSS_DELIVERY_ERROR session={} error={e} authority_closed=true retry_same_command=true",task.session);
                             state(target)?.in_flight=true;self.retry_at=Some(now+Duration::from_secs(2));},
                     }

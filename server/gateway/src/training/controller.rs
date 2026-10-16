@@ -66,6 +66,12 @@ pub struct Controller{
 }
 impl Controller{
     pub fn registry(&self)->&d::Registry{&self.registry}
+    /// Test-only observation of an alias already emitted by this Controller.
+    /// It cannot bind a recipient, allocate/reuse an alias or forge ownership.
+    #[cfg(test)]
+    pub(crate) fn published_entity_for_test(&self,recipient:d::Account,target:d::Account)->Option<u32>{
+        self.recipients.get(&recipient)?.last.as_ref()?.rows.get(&target).map(|row|row.entity_id)
+    }
     /// Readonly comparison with the actual native Account recipient.
     pub fn is_current_recipient(&self,lease:d::AuthLease,channel:current::Channel,database:i32)->bool{
         self.recipients.get(&lease.account).is_some_and(|r|r.lease==lease&&r.channel==channel&&r.database==database)

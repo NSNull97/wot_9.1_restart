@@ -3,8 +3,8 @@
 use super::*;
 use std::collections::{BTreeMap,BTreeSet};
 use crate::training091::{controller::{Controller,ReadyTask,Batch},current_room::Channel,domain as room};
-use crate::gateway091::shared::{p10b_writer as saga,profile13_session as persistence};
-use crate::profile13_v2091 as writer;
+use crate::gateway091::shared::{p10b_writer_mode as saga,profile13_session as persistence};
+use crate::gateway091::shared::p10b_writer_mode as writer;
 
 fn bad(message:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,message)}
 fn source_hex(bytes:&[u8;32])->String{bytes.iter().map(|b|format!("{b:02x}")).collect()}
@@ -26,14 +26,14 @@ impl LaunchOrigin{
     }
     pub(super) fn ready_task(&self)->&ReadyTask{&self.task}
     pub(super) fn selection(&self)->&saga::ReadySelection{&self.selection}
-    pub(super) fn source_stamp(&self)->&crate::training091::selection::Stamp{self.selection.source_stamp()}
+    pub(super) fn source_stamp(&self)->saga::Stamp{self.selection.source_stamp()}
     pub(super) fn matches_session(&self,s:&Session,controller:&Controller,preparing:bool)->io::Result<()>{self.validate_session(s,controller,preparing)}
     fn validate_session(&self,s:&Session,controller:&Controller,preparing:bool)->io::Result<()>{
         let owner=s.identity.as_ref().ok_or_else(||bad("launch unauthenticated Session"))?;
         let c=s.shared.as_ref().ok_or_else(||bad("launch missing Client"))?;
         let p=c.profile13.as_ref().ok_or_else(||bad("launch missing owned state"))?;
         let ammo=s.ammo_service.as_ref().ok_or_else(||bad("launch missing ammunition state"))?;
-        let stamp=self.selection.source_stamp();stamp.validate()?;
+        let stamp=self.selection.source_stamp();let stamp=stamp.base();stamp.validate()?;
         let channel=Channel{session:s.id,generation:s.training_account_generation()};
         if !s.training_account_ready()||c.phase!=Phase::Account||s.arena_base||c.join_requested||c.queue_announced
             ||p.in_flight!=preparing||p.has_reservation()||p.has_pending_return()||!ammo.idle()
@@ -45,7 +45,7 @@ impl LaunchOrigin{
             ||p.revision!=u64::from(self.task.expected_revision())||ammo.revision()!=p.revision
             ||self.task.profile().revision!=self.task.expected_revision()
             ||source_hex(&self.task.profile().source_binding)!=stamp.owner_source_sha256
-            ||self.task.native_inventory()!=self.selection.frozen().native_inventory_id
+            ||self.task.native_inventory()!=self.selection.loadout().native_inventory_id
             ||source_hex(&s.hangar.as_ref().ok_or_else(||bad("launch missing Account cache"))?.state_sha256())!=stamp.native_state_sha256
             ||s.hangar.as_ref().and_then(|f|f.p04m_binding()).is_none_or(|b|!b.matches(&owner.account_id,owner.database_id,p.revision)){
             return Err(bad("launch changed authenticated channel/source/readiness"));
@@ -58,28 +58,28 @@ impl LaunchOrigin{
 /// it. No ordinary deliver_v2 is run while individual reservations accumulate.
 #[derive(Clone)]
 pub(super) struct HeldFresh{
-    task:saga::Task,reply:writer::Reply,owner:Arc<crate::identity091::Profile>,
+    task:saga::Task,receipt:saga::Reservation,owner:Arc<crate::identity091::Profile>,
     fixtures:Arc<crate::hangar091::Fixtures>,binding:crate::ammo_service091::Metadata,
 }
 impl HeldFresh{
-    pub(super) fn capture(task:&saga::Task,c:&persistence::CompletionV2)->io::Result<Self>{
-        let f=c.fresh.as_ref().ok_or_else(||bad("launch admitted projection missing"))?;
-        let row=c.reply.reservation.as_ref().ok_or_else(||bad("launch admitted receipt missing"))?;
-        let writer::Request::Admit{battle,native_inventory_id}=task.request() else{return Err(bad("launch held operation"));};
-        if c.refresh_error.is_some()||c.reply.status!=writer::Status::Admitted||c.session!=task.session()
-            ||c.context!=*task.context()||c.request!=*task.request()
-            ||c.old_owner.account_id!=task.owner().account_id||c.old_owner.database_id!=task.owner().database_id
+    pub(super) fn capture(task:&saga::Task,c:&saga::Completion)->io::Result<Self>{
+        let f=c.fresh().ok_or_else(||bad("launch admitted projection missing"))?;
+        let row=c.reservation().ok_or_else(||bad("launch admitted receipt missing"))?;
+        let (battle,native_inventory_id)=task.request().admit().ok_or_else(||bad("launch held operation"))?;
+        if c.mode()!=task.mode()||row.mode()!=task.mode()||c.refresh_failed()||c.status()!=writer::Status::Admitted||c.session()!=task.session()
+            ||c.context()!=task.context()||c.request()!=task.request()
+            ||c.old_owner().account_id!=task.owner().account_id||c.old_owner().database_id!=task.owner().database_id
             ||f.owner.account_id!=task.owner().account_id||f.owner.database_id!=task.owner().database_id
-            ||f.binding.revision!=c.reply.revision||f.binding.wire_revision!=1
+            ||f.binding.revision!=c.revision()||f.binding.wire_revision!=1
             ||f.fixtures.p04m_binding().is_none_or(|b|!b.matches(&f.owner.account_id,f.owner.database_id,f.binding.revision))
-            ||c.reply.revision!=task.context().expected_revision+1||row.status!=writer::ReservationStatus::Active||row.result.is_some()
-            ||row.run_id!=task.context().run_id||row.battle!=*battle||row.reservation_id!=task.context().command_key
-            ||row.frozen.native_inventory_id!=*native_inventory_id{return Err(bad("launch held Task/completion/source binding"));}
-        row.frozen.validate_owned(&task.owner().account_id)?;
-        Ok(Self{task:task.clone(),reply:c.reply.clone(),owner:f.owner.clone(),fixtures:f.fixtures.clone(),binding:f.binding})
+            ||c.revision()!=task.context().expected_revision+1||!row.active()
+            ||row.run_id()!=task.context().run_id||row.battle()!=battle||row.id()!=task.context().command_key
+            ||row.loadout().native_inventory_id!=native_inventory_id{return Err(bad("launch held typed Task/completion/source binding"));}
+        row.validate_owned(&task.owner().account_id)?;
+        Ok(Self{task:task.clone(),receipt:row,owner:f.owner.clone(),fixtures:f.fixtures.clone(),binding:f.binding})
     }
     pub(super) fn session(&self)->u32{self.task.session()}
-    pub(super) fn receipt(&self)->&writer::Reservation{self.reply.reservation.as_ref().expect("private capture retains receipt")}
+    pub(super) fn receipt(&self)->&saga::Reservation{&self.receipt}
     pub(super) fn owner(&self)->&Arc<crate::identity091::Profile>{&self.owner}
     pub(super) fn fixtures(&self)->&Arc<crate::hangar091::Fixtures>{&self.fixtures}
     pub(super) fn binding(&self)->crate::ammo_service091::Metadata{self.binding}
@@ -88,8 +88,12 @@ impl HeldFresh{
 pub(super) struct CommitEvent{pub(super) battle:room::BattleKey,pub(super) awaiting_handoff:Vec<u32>}
 pub(super) struct LaunchStage{
     sessions:Vec<Session>,controller:Controller,world:World,runtime:Option<IntegratedRuntime>,event:CommitEvent,
+    late_capture:io::Result<super::super::late_results_capture::Capture>,
 }
 impl LaunchStage{
+    /// Optional ancillary observer staged from the EXACT attached actors and
+    /// typed admitted receipts. It cannot release any reservation or start work.
+    pub(super) fn late_capture(&self)->&io::Result<super::super::late_results_capture::Capture>{&self.late_capture}
     /// Parent removes its owning Saga/held outcomes in this same infallible
     /// outer commit. A retained clone is NEVER an active-battle abort handle.
     pub(super) fn commit(self,table:&mut Table,controller:&mut Controller,world:&mut World,runtime:&mut Option<IntegratedRuntime>)->CommitEvent{
@@ -114,11 +118,16 @@ pub(super) fn stage_launch(table:&Table,controller:&Controller,placeholder:&Worl
     // Preserve World::fresh_battle's strict same-id guard. Validation uses an
     // alternate ID, while the accepted template clone may retain this battle ID.
     let validation_id=if template.world.id==1{2}else{1};
-    let pristine=template.world.fresh_battle(validation_id,now)?;
-    let mut world=if template.world.id==battle.0{template.world.clone()}else{template.world.fresh_battle(battle.0,now)?};
-    drop(pristine);
-    if !world.mixed_ammo()||world.extended_lab(){return Err(bad("launch requires owned v2 template"));}
-    world.set_expected_actors(n)?;
+    let mut world=if reserved.mode==saga::Mode::LossV4{
+        template.world.fresh_loss_roster(battle.0,n,now)?
+    }else{
+        let pristine=template.world.fresh_battle(validation_id,now)?;
+        let selected=if template.world.id==battle.0{template.world.clone()}else{template.world.fresh_battle(battle.0,now)?};
+        drop(pristine);selected
+    };
+    if !world.mixed_ammo()||world.extended_lab()||world.ammo_detonation_enabled()!=(reserved.mode==saga::Mode::LossV4){
+        return Err(bad("launch owned template/spending contract mismatch"));}
+    if reserved.mode==saga::Mode::MixedV2{world.set_expected_actors(n)?;}
     let mut rules=super::super::lifecycle::Rules::prohorovka();rules.battle_ms=u64::from(snapshot.settings().seconds).checked_mul(1000).ok_or_else(||bad("launch duration overflow"))?;
     world.lifecycle=Some(super::super::lifecycle::State::new(rules)?);
     let teams=snapshot.members().iter().map(|m|match m.side(){room::Side::One=>1,room::Side::Two=>2}).collect::<Vec<_>>();
@@ -127,10 +136,10 @@ pub(super) fn stage_launch(table:&Table,controller:&Controller,placeholder:&Worl
     for(slot,member)in snapshot.members().iter().enumerate(){
         let binding=reserved.bindings.get(slot).ok_or_else(||bad("launch missing settled binding"))?;
         let origin=origins.get(&member.account()).ok_or_else(||bad("launch missing Ready origin"))?;
-        if binding.ready!=*member.ready()||binding.ready!=*origin.selection.reference()||binding.source_stamp!=*origin.selection.source_stamp()
-            ||binding.reservation.frozen!=*origin.selection.frozen()||binding.session!=origin.selection.session()
+        if binding.ready!=*member.ready()||binding.ready!=*origin.selection.reference()||binding.source_stamp!=origin.selection.source_stamp()
+            ||!origin.selection.matches_receipt(&binding.reservation)||binding.session!=origin.selection.session()
             ||origin.task.room()!=snapshot.room()||controller.registry().member_context(snapshot.room(),member.account())!=Some((origin.task.caller(),origin.task.membership()))
-            ||!ids.insert(binding.session)||!keys.insert(binding.reservation.reservation_id.clone()){
+            ||!ids.insert(binding.session)||!keys.insert(binding.reservation.id().to_owned()){
             return Err(bad("launch frozen order/source/membership mismatch"));
         }
         if sessions.iter().any(|s|s.id!=binding.session&&s.identity.as_ref().is_some_and(|p|p.account_id==binding.owner.account_id)){
@@ -152,19 +161,30 @@ pub(super) fn stage_launch(table:&Table,controller:&Controller,placeholder:&Worl
         s.identity=Some(f.owner.clone());s.hangar=Some(f.fixtures.clone());
         let c=s.shared.as_mut().ok_or_else(||bad("launch Client missing"))?;
         let p=c.profile13.as_mut().ok_or_else(||bad("launch owned state missing"))?;
-        if p.run_id!=binding.reservation.run_id{return Err(bad("launch writer run changed"));}
-        p.reservation_v2=Some(binding.reservation.clone());p.selection=None;p.revision=binding.revision;p.in_flight=false;
+        if p.run_id!=binding.reservation.run_id(){return Err(bad("launch writer run changed"));}
+        binding.reservation.install(p)?;p.selection=None;p.revision=binding.revision;p.in_flight=false;
         c.reset_for_battle(slot);c.join_requested=true;c.queue_announced=false;c.hangar_since=Some(now);
-        let actual=world.attach_owned_v2(model::Identity{account:f.owner.account_id.clone(),database:f.owner.database_id,name:f.owner.name.clone()},s.id,&binding.reservation.frozen)?;
+        let actual=binding.reservation.attach(&mut world,model::Identity{account:f.owner.account_id.clone(),database:f.owner.database_id,name:f.owner.name.clone()},s.id)?;
         if actual!=slot{return Err(bad("launch actor order changed"));}awaiting.push(s.id);
     }
     for s in &mut sessions{if ids.contains(&s.id){s.shared.as_mut().ok_or_else(||bad("launch Client vanished"))?.view=Some(world.clone());}}
+    // Training bypasses the ordinary join path: capture all actual admissions
+    // explicitly, on a SMALL separate transaction, before World.start. An
+    // unavailable ancillary late-results observer cannot abort a healthy match.
+    let late_capture=(||->io::Result<super::super::late_results_capture::Capture>{
+        let first=reserved.bindings.first().ok_or_else(||bad("launch capture empty bindings"))?;
+        let mut capture=super::super::late_results_capture::Capture::new(first.reservation.run_id().into(),world.id)?;
+        for(slot,binding)in reserved.bindings.iter().enumerate(){
+            capture.register(&world,slot,binding.session,binding.owner.clone(),binding.reservation.late_admission())?;
+        }
+        if capture.links().len()!=n{return Err(bad("launch capture incomplete roster"));}Ok(capture)
+    })();
     let mut next_controller=controller.clone();
     let batch=next_controller.commit_launch(snapshot.room(),snapshot.ticket(),battle,reserved.references,logical_ms)
         .map_err(|_|bad("launch Controller claim/publication commit refused"))?;
     stage_publication(&mut sessions,&next_controller,&batch)?;
     let runtime=template.runtime(world.map)?;
-    Ok(LaunchStage{sessions,controller:next_controller,world,runtime,event:CommitEvent{battle,awaiting_handoff:awaiting}})
+    Ok(LaunchStage{sessions,controller:next_controller,world,runtime,late_capture,event:CommitEvent{battle,awaiting_handoff:awaiting}})
 }
 
 fn stage_publication(sessions:&mut[Session],controller:&Controller,batch:&Batch)->io::Result<()>{

@@ -12,5 +12,6 @@ pub mod ingress;
 #[cfg(test)]mod integration_tests;
 pub mod list_preview;
 pub mod selection;
+pub mod selection_loss;
 pub mod stream_flight;
 pub mod controller;

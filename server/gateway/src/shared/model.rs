@@ -272,6 +272,33 @@ impl World {
             ||self.terrain.is_none()||self.lifecycle.as_ref().is_none_or(|life|life.phase()!=super::lifecycle::Phase::Waiting){return Err(bad());}
         self.ammo_detonation=Some(super::ammo_detonation::Ledger::new(self.expected_actors as u8)?);Ok(())
     }
+    /// Explicit Loss4 training-template constructor. Existing public roster
+    /// mutation and fresh_battle(same_id) guards stay unchanged. Ownership is
+    /// still supplied only by actual typed admitted receipts after this call.
+    pub(super) fn fresh_loss_roster(&self,id:u64,expected_actors:usize,now:Instant)->io::Result<Self>{
+        if id==0||id>i64::MAX as u64||!(2..=MAX_ACTORS).contains(&expected_actors)
+            ||!self.mixed_ammo||!self.mixed_profiles||!self.ap_test_lab||self.terrain.is_none()
+            ||self.extended_lab||self.vehicle_kind.is_extended()||self.impact.extended_breech_lab()
+            ||self.lab_loadouts.iter().any(Option::is_some)||self.team_plan().is_some()||self.tick!=1000
+            ||self.lifecycle.as_ref().is_none_or(|life|!life.is_pristine())||self.lifecycle_created_unix.is_some()
+            ||self.ammo_detonation.as_ref().is_none_or(|ledger|!ledger.is_pristine())
+            ||!self.projectiles.is_empty()||!self.contacts.is_empty()||!self.impacts.is_empty()||!self.terrain_contacts.is_empty()
+            ||self.contact_sources.iter().any(Option::is_some)||self.contact_sequences.iter().any(|seq|*seq!=0)
+            ||self.fragiles.as_ref().is_some_and(|state|!state.events.is_empty()||!state.vehicle_events.is_empty()){
+            return Err(bad());
+        }
+        // First launch legitimately keeps the template's own id. Prove source
+        // pristine state with a DISTINCT validation id, preserving the public
+        // same-id rejection rather than relaxing it for arbitrary callers.
+        let validation_id=if self.id==1{2}else{1};
+        let mut next=self.fresh_battle(validation_id,now)?;
+        let ledger=super::ammo_detonation::Ledger::new(expected_actors as u8)?;
+        next.id=id;next.rng_state=id;
+        next.ammo_detonation=None;
+        next.set_expected_actors(expected_actors)?;
+        next.ammo_detonation=Some(ledger);
+        Ok(next)
+    }
     pub fn ammo_detonation_enabled(&self)->bool{self.ammo_detonation.is_some()}
     pub fn ammo_detonations(&self)->&[super::ammo_detonation::Event]{
         self.ammo_detonation.as_ref().map_or(&[],super::ammo_detonation::Ledger::events)
@@ -1830,6 +1857,8 @@ mod first_spot_tests;
 #[cfg(test)]
 #[path="seven_loss_boundary_tests.rs"]
 mod seven_loss_boundary_tests;
+
+#[cfg(test)]#[path="p10b_loss_roster_tests.rs"]mod p10b_loss_roster_tests;
 
 #[cfg(test)]
 #[path="p10b_team_world_tests.rs"]

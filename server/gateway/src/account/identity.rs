@@ -8,6 +8,8 @@ use rsa::rand_core::{OsRng,RngCore};
 mod loss;
 #[path="room_selection.rs"]
 pub(crate) mod room_selection;
+#[path="room_selection_loss.rs"]
+pub(crate) mod room_selection_loss;
 
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
 

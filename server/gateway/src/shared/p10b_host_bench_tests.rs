@@ -33,7 +33,7 @@ fn input(now:Instant,creator_bench:bool)->Input{
     for index in 0..2{
         let call=calls[index];let selected=launched.origins[&call.caller.account].selection().clone();
         let batch=controller.apply(call,launch_fixture::native(223,402,1,0),&facts,0).unwrap();let task=batch.ready[0].clone();
-        let fact=facts.get_mut(&call.caller.account).unwrap();fact.selected=Some(selected.reference().clone());fact.descriptor=selected.frozen().descriptor.clone();
+        let fact=facts.get_mut(&call.caller.account).unwrap();fact.selected=Some(selected.reference().clone());fact.descriptor=selected.loadout().descriptor.clone();
         controller.complete_ready(&task,call,1,selected.reference().clone(),&facts,0).unwrap();
         let s=launched.table.sessions.iter().find(|s|s.id==call.channel.session).unwrap();
         origins.insert(call.caller.account,launch::LaunchOrigin::capture(s,&controller,task.clone(),selected.clone()).unwrap());
@@ -61,7 +61,9 @@ fn config(input:&Input)->Arc<crate::identity091::Config>{
     let raw=serde_json::json!({"login_bind":"127.0.0.1:28201","base_bind":"127.0.0.1:28202","identity_endpoint":"127.0.0.1:28203",
         "identity_token_file":root.join("host-bench-token.txt"),"local_root":root,"session_duration_seconds":600});
     let path=root.join("host-bench-config.json");fs::write(&path,serde_json::to_vec(&raw).unwrap()).unwrap();
-    Arc::new(crate::identity091::Config::load(path.to_str().unwrap()).unwrap())
+    let mut config=crate::identity091::Config::load(path.to_str().unwrap()).unwrap();
+    // AUTHORED room scheduler mode, no actual writer/HTTP capability granted.
+    config.training_rooms=true;Arc::new(config)
 }
 fn drain_abort(input:&mut Input,now:Instant){
     let config=config(input);

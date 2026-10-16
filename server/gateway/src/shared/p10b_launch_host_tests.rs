@@ -3,6 +3,7 @@
 //! the two separate SQL runs are bridged ONLY by an explicit cfg(test) helper.
 //! No current ownership, actual refresh, native or physical start is claimed.
 use super::*;
+use crate::profile13_v2091 as writer;
 use crate::training091::{adapter,aliases,controller::Call,current_room::ProfileStamp,ingress,selection,wire as room_wire};
 use serde_json::{json,Value};
 use sha2::{Digest,Sha256};
@@ -60,7 +61,7 @@ pub(in crate::gateway091::shared::server) fn input_mode(now:Instant,bench:bool)-
         let owner=Arc::new(crate::identity091::Profile{account_id:c.account_id.clone(),database_id:c.native_database_id,name:format!("Owner{}",c.native_database_id),fixture_dir:path});
         let selected=saga::ReadySelection::from_selection(owner.clone(),100+c.native_database_id as u32,parsed).unwrap()
             .with_launch_scheduler_seam_for_test(admit_context.run_id.clone(),source_hex(&fixtures.state_sha256()));
-        let s=live(owner,fixtures,&admit_context,now);let call=call(&s,selected.source_stamp());
+        let s=live(owner,fixtures,&admit_context,now);let call=call(&s,selected.source_stamp().base());
         controller.bind(call.caller,call.channel,s.identity.as_ref().unwrap().name.clone(),c.native_database_id,0).unwrap();
         facts.insert(call.caller.account,adapter::NativeFacts{database_id:c.native_database_id,selected:None,descriptor:Vec::new(),igr_type:0,clan_database_id:0,clan_abbrev:String::new()});
         selections.push(selected);sessions.push(s);calls.push(call);
@@ -75,13 +76,13 @@ pub(in crate::gateway091::shared::server) fn input_mode(now:Instant,bench:bool)-
         let uuid="55555555-5555-4555-8555-555555555555";let base=ctx(&select["vectors"][0]["request"]);
         let c=crate::battle091::profile13::Context{account_id:uuid.into(),native_database_id:5,expected_revision:13,..base};
         let(path,fixtures)=fixture(uuid,5,13,false);let owner=Arc::new(crate::identity091::Profile{account_id:uuid.into(),database_id:5,name:"Bench5".into(),fixture_dir:path});
-        let s=live(owner,fixtures,&c,now);let call=call(&s,selections[0].source_stamp());
+        let s=live(owner,fixtures,&c,now);let call=call(&s,selections[0].source_stamp().base());
         controller.bind(call.caller,call.channel,"Bench5".into(),5,0).unwrap();facts.insert(call.caller.account,adapter::NativeFacts{database_id:5,selected:None,descriptor:Vec::new(),igr_type:0,clan_database_id:0,clan_abbrev:String::new()});
         controller.apply(call,native(202,400,i64::from(native_room),0),&facts,0).unwrap();sessions.push(s);calls.push(call);
     }
     let mut origins=BTreeMap::new();
     for index in 0..2{let selected=&selections[index];let batch=controller.apply(calls[index],native(223,402,1,0),&facts,0).unwrap();let task=batch.ready[0].clone();
-        let fact=facts.get_mut(&calls[index].caller.account).unwrap();fact.selected=Some(selected.reference().clone());fact.descriptor=selected.frozen().descriptor.clone();
+        let fact=facts.get_mut(&calls[index].caller.account).unwrap();fact.selected=Some(selected.reference().clone());fact.descriptor=selected.loadout().descriptor.clone();
         controller.complete_ready(&task,calls[index],1,selected.reference().clone(),&facts,0).unwrap();
         let origin=LaunchOrigin::capture(&sessions[index],&controller,task,selected.clone()).unwrap();origins.insert(calls[index].caller.account,origin);
     }
@@ -91,10 +92,10 @@ pub(in crate::gateway091::shared::server) fn input_mode(now:Instant,bench:bool)-
     let mut held=Vec::new();
     for _ in 0..2{let(sid,owner,_)=saga.next_admission_origin().unwrap();let lane=if owner.database_id==3{"C"}else{"D"};let row=sql["calls"][lane].as_array().unwrap().iter().find(|r|r["request"]["operation"]=="admit").unwrap();
         let context=ctx(&row["request"]);let task=saga.next_admit(context.clone()).unwrap().unwrap();assert_eq!(sid,task.session());
-        let request=writer::Request::Admit{battle:battle.0,native_inventory_id:1};assert_eq!(&request,task.request());
+        let request=writer::Request::Admit{battle:battle.0,native_inventory_id:1};assert_eq!(&request,task.request().v2());
         let reply=writer::parse_reply(&serde_json::to_vec(&row["response"]).unwrap(),&context,&request).unwrap();
         let(path,fixtures)=fixture(&owner.account_id,owner.database_id,reply.revision,false);let fresh_owner=Arc::new(crate::identity091::Profile{fixture_dir:path,account_id:owner.account_id.clone(),database_id:owner.database_id,name:owner.name.clone()});
-        let done=persistence::CompletionV2{session:sid,old_owner:owner,context,request,fresh:Some(persistence::Fresh{owner:fresh_owner,fixtures,binding:crate::ammo_service091::Metadata{revision:reply.revision,wire_revision:1}}),reply,refresh_error:None};
+        let done=saga::Completion::V2(persistence::CompletionV2{session:sid,old_owner:owner,context,request,fresh:Some(persistence::Fresh{owner:fresh_owner,fixtures,binding:crate::ammo_service091::Metadata{revision:reply.revision,wire_revision:1}}),reply,refresh_error:None});
         let cached=HeldFresh::capture(&task,&done).unwrap();saga.complete(&done).unwrap();held.push(cached);
     }
     let mut world=World::new_for_roster(battle.0,now,MapId::Prohorovka,6).unwrap();world.enable_mixed_ammo().unwrap();world.enable_lifecycle(super::super::super::lifecycle::Rules::prohorovka()).unwrap();
@@ -139,7 +140,7 @@ fn unchanged(i:&Input)->(Controller,Vec<(u32,persistence::State,u64,usize,usize)
         7=>{i.controller.apply(i.calls[0],native(226,401,0,0),&i.facts,0).unwrap();},
         8=>{i.saga.abort();},
         9=>{let mut duplicate=i.table.sessions[0].clone();duplicate.id=999;i.table.sessions.push(duplicate);},
-        10=>{i.held[1].reply.reservation.as_mut().unwrap().reservation_id.push('x');},
+        10=>{match &mut i.held[1].receipt{saga::Reservation::V2(r)=>r.reservation_id.push('x'),_=>panic!("V2 fixture")};},
         11=>{let mut busy=World::new_for_roster(i.world.id,now,MapId::Prohorovka,6).unwrap();busy.attach(model::Identity{account:"authored-preexisting".into(),database:99,name:"BusyWorld".into()},999).unwrap();i.world=busy;},_=>unreachable!()}
         let before=unchanged(&i);assert!(stage(&i,now).is_err(),"poison {poison}");assert_eq!(unchanged(&i),before);
     }

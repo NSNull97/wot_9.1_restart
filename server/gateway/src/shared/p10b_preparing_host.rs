@@ -5,27 +5,27 @@ use super::*;
 use std::collections::{BTreeMap,BTreeSet};
 use crate::battle091::profile13::Context;
 use crate::training091::{controller::{Controller,PrepareTask,Batch},domain as room};
-use crate::gateway091::shared::{p10b_writer as saga,profile13_session as persistence};
-use crate::profile13_v2091 as writer;
+use crate::gateway091::shared::{p10b_writer_mode as saga,profile13_session as persistence};
+use crate::gateway091::shared::p10b_writer_mode as writer;
 use super::p10b_launch_host::{HeldFresh,LaunchOrigin};
 
 const RETRY:Duration=Duration::from_secs(2);
 fn bad(message:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,message)}
 
 /// Fresh is not Clone: retain its immutable Arc data manually after the actual
-/// JobV2 output and Saga acceptance. No constructor accepts caller strings.
+/// typed Job output and Saga acceptance. No constructor accepts caller strings.
 #[derive(Clone)]
 struct CurrentFresh{
     session:u32,owner:Arc<crate::identity091::Profile>,
     fixtures:Arc<crate::hangar091::Fixtures>,binding:crate::ammo_service091::Metadata,
 }
 impl CurrentFresh{
-    fn capture(task:&saga::Task,c:&persistence::CompletionV2)->io::Result<Self>{
-        let f=c.fresh.as_ref().ok_or_else(||bad("preparing current projection missing"))?;
-        if c.session!=task.session()||c.context!=*task.context()||c.request!=*task.request()
-            ||c.old_owner.account_id!=task.owner().account_id||c.old_owner.database_id!=task.owner().database_id
-            ||c.refresh_error.is_some()||f.owner.account_id!=task.owner().account_id||f.owner.database_id!=task.owner().database_id
-            ||f.owner.name!=task.owner().name||f.binding.revision!=c.reply.revision||f.binding.wire_revision!=1
+    fn capture(task:&saga::Task,c:&saga::Completion)->io::Result<Self>{
+        let f=c.fresh().ok_or_else(||bad("preparing current projection missing"))?;
+        if c.mode()!=task.mode()||c.session()!=task.session()||c.context()!=task.context()||c.request()!=task.request()
+            ||c.old_owner().account_id!=task.owner().account_id||c.old_owner().database_id!=task.owner().database_id
+            ||c.refresh_failed()||f.owner.account_id!=task.owner().account_id||f.owner.database_id!=task.owner().database_id
+            ||f.owner.name!=task.owner().name||f.binding.revision!=c.revision()||f.binding.wire_revision!=1
             ||f.fixtures.p04m_binding().is_none_or(|p|!p.matches(&f.owner.account_id,f.owner.database_id,f.binding.revision)){
             return Err(bad("preparing current projection identity/revision/source"));
         }
@@ -91,12 +91,12 @@ impl Preparing{
         self.saga.released_refs().is_ok()&&self.current.len()==self.origins.len()
     }
     /// All retained receipt, cache and stage updates either succeed together or
-    /// retain the immutable pending task. Called only with real JobV2 output.
-    fn accept(&mut self,c:&persistence::CompletionV2)->io::Result<()> {
+    /// retain the immutable pending task. Called only with real typed Job output.
+    fn accept(&mut self,c:&saga::Completion)->io::Result<()> {
         let task=self.saga.retry().ok_or_else(||bad("preparing completion without issued Task"))?;
         let mut next=self.clone();
-        let admitted=if c.reply.status==writer::Status::Admitted{Some(HeldFresh::capture(&task,c)?)}else{None};
-        let current=if c.reply.status==writer::Status::Rejected{None}else{Some(CurrentFresh::capture(&task,c)?)};
+        let admitted=if c.status()==writer::Status::Admitted{Some(HeldFresh::capture(&task,c)?)}else{None};
+        let current=if c.status()==writer::Status::Rejected{None}else{Some(CurrentFresh::capture(&task,c)?)};
         next.saga.complete(c)?;
         if let Some(f)=admitted{
             if next.held.iter().any(|old|old.session()==f.session())||next.held.len()>=6{return Err(bad("preparing duplicate held admission"));}
@@ -189,26 +189,25 @@ pub(super) struct Report{pub(super) progress:Progress,pub(super) error:Option<io
 /// Non-Clone actual worker owner. Root polls ONLY outside native frame clones.
 #[derive(Default)]
 pub(super) struct Driver{
-    key:Option<(room::RoomKey,u64,room::BattleKey)>,job:Option<persistence::JobV2>,
-    known:Option<persistence::CompletionV2>,retry_at:Option<Instant>,unresolved:bool,
+    key:Option<(room::RoomKey,u64,room::BattleKey)>,job:Option<saga::Job>,
+    known:Option<saga::Completion>,retry_at:Option<Instant>,unresolved:bool,
 }
 impl Driver{
     pub(super) fn idle(&self)->bool{self.job.is_none()&&self.known.is_none()&&!self.unresolved}
     pub(super) fn job_active(&self)->bool{self.job.is_some()}
-    pub(super) fn known_status(&self)->Option<writer::Status>{self.known.as_ref().map(|c|c.reply.status)}
+    pub(super) fn known_status(&self)->Option<writer::Status>{self.known.as_ref().map(|c|c.status())}
     fn report(progress:Progress,error:Option<io::Error>)->Report{Report{progress,error}}
     fn retained(&mut self,now:Instant,error:io::Error)->Report{
         self.retry_at=Some(now+RETRY);Self::report(Progress::RetryRetained,Some(error))
     }
-    fn completed(&mut self,p:&mut Preparing,outcome:io::Result<persistence::CompletionV2>,now:Instant)->Report{
+    fn completed(&mut self,p:&mut Preparing,outcome:io::Result<saga::Completion>,now:Instant)->Report{
         match outcome{
             Err(error)=>self.retained(now,error),
             Ok(c)=>{
                 // A known committed mutation cannot become another receipt
                 // when its exact command is replayed after projection error.
-                if let Some(old)=self.known.as_ref().filter(|old|matches!(old.reply.status,writer::Status::Admitted|writer::Status::Finished)){
-                    if old.context!=c.context||old.request!=c.request||old.reply.status!=c.reply.status||old.reply.revision!=c.reply.revision
-                        ||old.reply.reservation!=c.reply.reservation||old.reply.legacy_reservation!=c.reply.legacy_reservation{
+                if let Some(old)=self.known.as_ref().filter(|old|matches!(old.status(),writer::Status::Admitted|writer::Status::Finished)){
+                    if !old.same_durable(&c){
                         return self.retained(now,bad("preparing immutable durable reply changed on replay"));
                     }
                 }
@@ -234,7 +233,7 @@ impl Driver{
             Ok(Some(task))=>task,Ok(None)=>return Self::report(Progress::Waiting,None),Err(error)=>return self.retained(now,error),
         };
         self.unresolved=true;
-        // This is the only external writer start. JobV2 enforces the same
+        // This is the only external writer start. Each typed Job enforces the same
         // process-global singleton as the old dispatcher and checks Config.
         match task.start(config){
             Ok(job)=>{self.job=Some(job);Self::report(Progress::Started,None)},

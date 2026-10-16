@@ -89,7 +89,11 @@ pub(crate) struct CompletionLoss{
 }
 fn work(session:u32,owner:Arc<identity091::Profile>,config:Arc<identity091::Config>,context:Context,request:Request)->io::Result<CompletionLoss>{
     let reply=config.service_battle_loss(&owner,&context,&request)?;
-    let(fresh,refresh_error)=if matches!(reply.status,Status::Ready|Status::Admitted|Status::Finished){
+    // Only explicit room compensation reads require a canonical current cache.
+    // Never refresh or release on a non-null Inspect or an unresolved Admit.
+    let inspect_refresh=config.training_rooms && request==Request::Inspect && reply.status==Status::Inspected
+        && reply.reservation.is_none();
+    let(fresh,refresh_error)=if matches!(reply.status,Status::Ready|Status::Admitted|Status::Finished)||inspect_refresh{
         match load_fresh(&config,&owner,reply.revision){Ok(f)=>(Some(f),None),Err(e)=>(None,Some(e))}
     }else{(None,None)};
     Ok(CompletionLoss{session,old_owner:owner,context,request,reply,fresh,refresh_error})
