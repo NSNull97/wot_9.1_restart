@@ -1219,3 +1219,7 @@ mod shared_return_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path="p10b_special_account_tests.rs"]
+mod p10b_special_account_tests;

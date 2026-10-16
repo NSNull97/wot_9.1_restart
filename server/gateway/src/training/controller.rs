@@ -1,9 +1,11 @@
 //! Native room command/publication component. No sockets, async writer or World.
 //! Facts/leases/channels come from actual verified Session adapters, never input.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap,BTreeSet};
 use super::{adapter,aliases,current_room as current,domain as d,ingress as i,list_preview as lp,wire as w};
 
 pub const POLICY:&str="test_lab.p10b.controller-prohorovka-one-shot.v1";
+/// Checked server rebase; original autoReady has no extra in-room Ready click.
+pub const READY_REBASE_POLICY:&str="test_lab.p10b.ready-current-context-own-intent.v1";
 const MAX_PENDING:usize=4;
 #[derive(Clone,Debug,PartialEq)]
 pub enum Refusal{Domain(d::Error),Current(current::Error),Adapter(adapter::Error),BadArgs,Unsupported,StaleChannel,Facts,Codec,Limit,Busy}
@@ -60,12 +62,18 @@ pub struct Controller{
     held:BTreeMap<u64,PrepareTask>,
     departures:BTreeMap<u64,Vec<PendingDeparture>>,read_revision:u64,
     pending_ready:BTreeMap<d::Account,ReadyTask>,next_ready:u64,
+    cancelled_ready:BTreeSet<u64>,
 }
 impl Controller{
     pub fn registry(&self)->&d::Registry{&self.registry}
     /// Readonly comparison with the actual native Account recipient.
     pub fn is_current_recipient(&self,lease:d::AuthLease,channel:current::Channel,database:i32)->bool{
         self.recipients.get(&lease.account).is_some_and(|r|r.lease==lease&&r.channel==channel&&r.database==database)
+    }
+    /// Underlying authenticated Session retirement may occur after warm Account
+    /// recreation. Resolve only the retained exact lease/native DB recipient.
+    pub fn recipient_channel(&self,lease:d::AuthLease,database:i32)->Option<current::Channel>{
+        self.recipients.get(&lease.account).filter(|r|r.lease==lease&&r.database==database).map(|r|r.channel)
     }
     pub fn native_room(&self,key:d::RoomKey)->Option<u32>{self.rooms.get(&key).map(|m|m.native)}
     /// Server-owned observation generation, not a native/client timestamp.
@@ -254,7 +262,14 @@ impl Controller{
             kind=>{
                 let key=self.registry.authenticated_room(call.caller)?;let room=self.registry.room(key).ok_or(d::Error::NoRoom)?;
                 let action=match kind{
-                    i::Kind::Leave=>current::Action::Leave,i::Kind::NotReady{state:1}=>current::Action::NotReady,
+                    i::Kind::Leave=>current::Action::Leave,i::Kind::NotReady{state:1}=>{
+                        // Explicit own403 cancels only this exact pending query.
+                        // Never replace its nonce or synthesize another Ready.
+                        if let Some(task)=self.pending_ready.get(&call.caller.account){
+                            if !self.cancelled_ready.contains(&task.id)&&self.cancelled_ready.len()>=d::MAX_ACCOUNTS{return Err(Refusal::Limit);}
+                            self.cancelled_ready.insert(task.id);
+                        }current::Action::NotReady
+                    },
                     i::Kind::NotReady{..}=>return Err(Refusal::Unsupported),
                     i::Kind::Assign{account_entity,roster}=>current::Action::Assign{target_alias:u32::try_from(account_entity).map_err(|_|Refusal::BadArgs)?,roster:match roster{
                         1=>d::Roster::assigned(d::Side::One),2=>d::Roster::assigned(d::Side::Two),17=>d::Roster::bench(d::Side::One),18=>d::Roster::bench(d::Side::Two),_=>return Err(Refusal::BadArgs)}},
@@ -312,14 +327,19 @@ impl Controller{
     /// Pure binding completion; actual writer parser/admission must run first.
     pub fn complete_ready(&mut self,task:&ReadyTask,call:Call,verified_native_inventory:u32,selection:d::WriterReadyRef,facts:&BTreeMap<d::Account,adapter::NativeFacts>,now:u64)->Result<Batch>{
         let mut next=self.clone();next.channel(call)?;
-        if next.pending_ready.get(&task.caller.account)!=Some(task)||call.caller!=task.caller||call.channel!=task.channel||call.profile!=task.profile||call.expected_revision!=task.expected_revision
+        if next.cancelled_ready.contains(&task.id)||next.pending_ready.get(&task.caller.account)!=Some(task)||call.caller!=task.caller||call.channel!=task.channel||call.profile!=task.profile||call.expected_revision!=task.expected_revision
             ||verified_native_inventory!=task.native_inventory||selection.owner()!=call.caller.account||selection.revision()!=call.expected_revision
-            ||next.registry.authenticated_room(call.caller).ok()!=Some(task.room)||next.registry.room(task.room).map(d::Room::revision)!=Some(task.room_revision)
+            ||next.registry.authenticated_room(call.caller).ok()!=Some(task.room)
             ||next.registry.member_context(task.room,call.caller.account)!=Some((task.caller,task.membership)){return Err(Refusal::StaleChannel);}
         next.refresh_facts(facts)?;let fact=next.facts.get(&call.caller.account).ok_or(Refusal::Facts)?;
         if fact.selected.as_ref()!=Some(&selection)||fact.descriptor.is_empty(){return Err(Refusal::Facts);}
-        let events=next.registry.command(call.caller,d::Command::Ready{context:task.context,selection},now)?;
-        next.pending_ready.remove(&task.caller.account);
+        // LAB rebase permits unrelated room revision changes only AFTER exact
+        // nonce/auth/channel/profile/native ID/owner/revision/own-membership
+        // and verified DTO bindings above. room_revision is observed provenance.
+        // Own403 remains an explicit cancellation fence independent of revision.
+        let context=next.registry.selection_context(call.caller)?;
+        let events=next.registry.command(call.caller,d::Command::Ready{context,selection},now)?;
+        next.pending_ready.remove(&task.caller.account);next.cancelled_ready.remove(&task.id);
         next.changed()?;
         let mut batch=Batch{events,..Batch::default()};Self::callback(&mut batch,call.caller.account,task.callback,w::CommandResult::Success)?;
         let events=batch.events.clone();next.publish(call.caller.account,&events,now,&mut batch)?;*self=next;Ok(batch)
@@ -328,7 +348,7 @@ impl Controller{
     /// grants ready state. A vanished or recreated Account gets no old callback.
     pub fn finish_ready_failure(&mut self,task:&ReadyTask)->Result<Batch>{
         let mut next=self.clone();if next.pending_ready.get(&task.caller.account)!=Some(task){return Err(Refusal::StaleChannel);}
-        next.pending_ready.remove(&task.caller.account);let mut batch=Batch::default();
+        next.pending_ready.remove(&task.caller.account);next.cancelled_ready.remove(&task.id);let mut batch=Batch::default();
         if next.recipients.get(&task.caller.account).is_some_and(|r|r.lease==task.caller&&r.channel==task.channel){
             Self::callback(&mut batch,task.caller.account,task.callback,w::CommandResult::Failure)?;
         }*self=next;Ok(batch)

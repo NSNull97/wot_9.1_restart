@@ -58,3 +58,5 @@ tests/test_p06t_terminal_v3.py -text
 # Exact own P10B cross-language authority vectors.
 tests/fixtures/p10b-selection-writer-vectors.json text eol=lf
 tests/fixtures/p10b-saga-writer-vectors.json -text
+
+tests/fixtures/p10b-ready-project-projection.json text eol=lf

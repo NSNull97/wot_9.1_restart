@@ -285,3 +285,12 @@ ActualHTTP03 повторил3PASS/0skip77.768s; main remoteffce8cb сверён
 Компонентные launch/driver tests используют strict savedSQL DTO и явно
 authored cache/run seam; живой HTTP→Rust→room→launch ещё NOT_RUN. Rootсоединяет
 serverloop и сохраняет native/UI/control NOT_RUN.
+
+Current sealedP10Bfull03/36d57a0 (tag p10b-components-20261016-01):1341PASS/
+5oldignored/buildPASS,501.62s,775exact sourceinputs. Subsequentfocused22=
+164PASS/0FAIL/0ignored/buildPASS,exe6f64381dabe0a38202efb636ed026ca177dd52d2c9681588c2bee292b569da8e.
+Includes actualquery-onlySQLprojectedC/D readiness8 tests (no grants/reserves),
+simultaneousReady policy6, actualResults/queue-isolation12 andBusylaunchcallback.
+These are component checks; actualserverloop Host and retained Preparing
+selected/bench disconnect handling are the current integration work. Native
+room/start/return NOT_RUN; no new client overlay/standdeployment.

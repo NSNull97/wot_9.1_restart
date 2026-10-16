@@ -94,11 +94,16 @@ Extended-01 actual WT/FV startup7resources/LABv2/ownstop PASS,106 coreinputs
 unchanged; newoverlay/native NOT_RUN. Непринятые gates в main не сливались.
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 
-P10B начат в `codex/p10b-native-training-room` от P06Tbase0f1db40; production
-foundation focused01=51PASS/0ignored/buildPASS, actualhangarshim/defaultclosed.
-TeamPlan/actualscene3v1+1v3/list-preview/selection: focused06=35PASS/build;
-actualSQL9PASS/0skip47.204s. Session/Flights/Saga focused12=65PASS/build;
-CPython2.7.3=76PASS/3oldskips. WholeTable/HTTP/native ещё NOT_RUN. План [P10B](plans/P10B.md).
+P10B в `codex/p10b-native-training-room`, от P06Tbase0f1db40. Сохранённый
+componenttag `p10b-components-20261016-01` /36d57a0: **1341PASS/0FAIL/
+5oldignored/buildPASS**,501.62s,775sourceinputs exact до/после. Actual
+Session/Window/Controller atomicreceive, nativealiases/streams, typedTeamPlan,
+serialreserve/compensation и Finishedhook собраны. ActualHTTP03 read-only
+selection=3PASS/0skip77.768s; CPython2.7.3=76PASS/3oldskips. Native/UI/room
+NOT_RUN. Новый liveHost и исправления readiness/specialAccount подключаются;
+они ещё не входят в этот fullgate. CoreV7/оба утренних стенда сохранены.
+План [P10B](plans/P10B.md), ограничения/утренний сценарий —
+[NIGHT_REPORT_20261016](NIGHT_REPORT_20261016.md).
 
 ## Принято владельцем на настоящем клиенте #717
 
@@ -144,15 +149,7 @@ CPython2.7.3=76PASS/3oldskips. WholeTable/HTTP/native ещё NOT_RUN. План [
 | NET-01 | `b676f51` | Таймаут доставки интерактивной сессии по времени (30 с) вместо 5 попыток |
 | P05B | `caf0b0b` | Управление MS-1/ИС-7, круиз, гонка тика выстрела |
 
-Последний полный прогон: gateway 854 passed / 5 ignored (STAB-01); Python client/control
+Последний полный прогон main: gateway 854 passed / 5 ignored (STAB-01); Python client/control
 194 PASS, CPython2.7.3 61 PASS / 3 host-only skips; Python P09E 75,
 регрессия P04/P09D 216, web P09E 5/5 (P09E-M). Доказательства — `local/evidence/2026101[45]-*`.
 
-P10B current checkpoint: full02/1df690a=1269PASS/5oldignored/buildPASS,760
-sourceexact. Subsequent actualController/namespace/Finishedhook focused17=
-110PASS/0ignored/buildPASS. HTTP selection component promoted; native/live
-server room coordinator still NOT_RUN. Existing coreV7/stands unchanged.
-
-P10B focused21=137PASS/0ignored/buildPASS: wholeSession receive, reselection
-race fence, atomic launch and durable preparing/compensation components.
-HTTP03=3PASS/0skip77.768s. Live Host/actualroom integration still in progress.

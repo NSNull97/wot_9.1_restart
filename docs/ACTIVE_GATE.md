@@ -14,24 +14,19 @@ UI/audio/новыйoverlay NOT_RUN. CoreV7 установлен и сохран�
 OwnedV3 component29SQL/source/2CPythonPASS; live factory/cacheACK/newWTstock
 не подключены. P06T не принята и не main.
 
-P10B bounded foundation+actualhangarshim перенесены: focused01 **51PASS/
-0FAIL/0ignored/buildPASS**; wholeSession/actualwriter/route пока NOT_RUN.
-Ignored preparation: room/native/aliases33PASS,
-current-room-at-receipt +actualWindow51PASS, ingress9PASS/source17commands.
-Эти результаты не доказывают actual Session/Registry/writer/native room.
-ImmutableTeamPlan/World/actualscene3v1+1v3, list/preview и selection codec:
-focused06=35PASS/0ignored/buildPASS; root actualselectionSQL9PASS/0skip47.204s.
-Generationfloor сохраняется после auth removal. Следующий слой — actual
-Session/table transaction и live coordinator. Session collector, actual
-Flights и issued-inspect Saga: focused12=65PASS/0ignored/buildPASS; client
-CPython2.7.3=76PASS/3oldhostskips. Selection worker compiled; actual endpoint
-кандидат3HTTP tests PASS, ещё не promoted. Full02 на1df690a:1269PASS/5oldignored/buildPASS,760sourceexact.
-Controller+namespace+Finishedhook promoted: focused17=110PASS/0ignored/buildPASS.
-ActualwholeSessionController receive10tests и atomiclaunch/preparation
-components подключены к сборке: focused21=137PASS/0ignored/buildPASS.
-HTTP03 повтор3PASS/0skip77.768s. Live serverloop ещё не соединён;
-Live room route NOT_RUN. Один activeWorld,2..6 бойцов,≤3 на стороне;
-явная laboratory one-shot room policy, без дополнительных grants.
+P10B сохранённый componenttag `p10b-components-20261016-01`,36d57a0:
+**1341PASS/0FAIL/5oldignored/buildPASS**,501.62с,775sourceinputs exact
+до/после. ActualSession/Controller/Window transaction, TeamPlan/World/actual
+scene3v1+1v3, boundedaliases/streams200/201, strictread-onlyselection,
+serialreserve/compensation и Finishedhook проверены применимой автоматикой.
+HTTP03=3PASS/0skip77.768s; CPython2.7.3=76PASS/3oldhostskips.
+
+Текущие WIP changes: checkedReady rebase для одновременных nativeautoReady
+(свои403/nonce/roommembership/channel/source/CAS по-прежнему fence), actual
+Results1500/1501 и nativeRandomQueue isolation в trainingSession, liveHost
+serverloop. Они ещё не входят в full03. Native/UI/управление, actualRustHTTP
+readiness→launch и новыйстенд NOT_RUN; карточка не принята, main не менялся.
+OneactiveWorld,2..6 бойцов,≤3 на стороне, map4/Прохоровка, one-shotroom LABpolicy.
 
 План [P10B](plans/P10B.md), originalsource
 [контракт](research/P10B_NATIVE_ROOM_CONTRACT.md), порядок

@@ -154,3 +154,14 @@ fn peer_alias(bodies:&[Vec<u8>],name:&str)->u32{
     let got=send(&mut sessions,&mut c,&w,&b,&f,1,&listing(-1,50),now).unwrap();assert_eq!(got.refusals.len(),1);assert_eq!(got.refusals[0].refusal,Refusal::BadArgs);assert!(got.deferred_reads.is_empty());
     assert_eq!(bodies(&sessions[0],now),before);assert_eq!(c.read_revision(),revision);
 }
+
+
+#[test]fn p10b_receive_host_unavailable_launch_refuses_both411_without_votes_preparing_or_jobs(){
+    let now=Instant::now();let(mut sessions,mut c,w,b,f)=fixture(1,now);send(&mut sessions,&mut c,&w,&b,&f,1,&create(),now).unwrap();flush(&mut sessions,&mut c,&w,&b,&f,now);
+    let engine=c.clone();let payload=[rpc(221,411,1,0),rpc(222,411,2,1)].concat();let p=frame(&sessions[0],sessions[0].rx,&payload);
+    let out=receive_room_frame_with_launch(&mut sessions,&mut c,1,&p,&w,&b,&f,now,0,false).unwrap();
+    assert_eq!(out.refusals.len(),2);assert!(out.refusals.iter().all(|r|r.refusal==Refusal::Busy));
+    assert!(out.ready.is_empty()&&out.prepare.is_empty()&&out.events.is_empty());assert_eq!(c,engine);
+    let q=bodies(&sessions[0],now);for id in[221,222]{assert!(q.contains(&native::plain_response(id,native::CommandResult::Failure,"P10B_ROOM_REFUSED").unwrap()));}
+    assert!(c.registry().rooms().all(|r|r.preparing().is_none()&&r.team_ready()==[false;2]));
+}

@@ -263,3 +263,51 @@ fn denied(c:&mut Controller,who:u8,request:i::Request,facts:&BTreeMap<d::Account
     denied(&mut c,1,request(225,411,1,0),&facts);
     assert_ne!(Some(&old),c.registry.room(key).unwrap().members().find(|m|m.account()==lease(1).account).unwrap().ready());
 }
+
+
+// Explicit checked LAB rebase. Synthetic DTO refs are shape/binding fixtures,
+// never a replacement for the actual source/owned query at the host boundary.
+fn rebase_ref(n:u8,facts:&mut BTreeMap<d::Account,adapter::NativeFacts>)->d::WriterReadyRef{
+    let selected=d::WriterReadyRef::from_verified_writer(lease(n).account,format!("fixture-owned-{n}"),13,[n;32]).unwrap();
+    let f=facts.get_mut(&lease(n).account).unwrap();f.selected=Some(selected.clone());f.descriptor=vec![n,2,3];selected
+}
+#[test]fn p10b_rebase_two_simultaneous_original_ready_requests_complete_both_after_other_ready(){
+    let(mut c,mut f,k,_)=joined(2);let a=c.apply(call(1),request(221,402,1,0),&f,0).unwrap().ready.remove(0);
+    let b=c.apply(call(2),request(221,402,1,0),&f,0).unwrap().ready.remove(0);assert_eq!(a.room_revision(),b.room_revision());
+    let sa=rebase_ref(1,&mut f);let sb=rebase_ref(2,&mut f);c.complete_ready(&a,call(1),1,sa.clone(),&f,0).unwrap();
+    assert_ne!(c.registry.room(k).unwrap().revision(),b.room_revision());let done=c.complete_ready(&b,call(2),1,sb.clone(),&f,0).unwrap();
+    assert_eq!(done.bodies[&lease(2).account][0],w::plain_response(221,w::CommandResult::Success,"").unwrap());
+    for(n,selected)in[(1,sa),(2,sb)]{assert_eq!(c.registry.room(k).unwrap().members().find(|m|m.account()==lease(n).account).unwrap().ready(),Some(&selected));}
+}
+#[test]fn p10b_rebase_creator_query_survives_peer_join_and_same_membership(){
+    let(mut c,mut f)=fixture(2);let(k,native)=room(&mut c,&f,1,true);let task=c.apply(call(1),request(221,402,1,0),&f,0).unwrap().ready.remove(0);
+    let own=c.registry.member_context(k,lease(1).account);c.apply(call(2),request(202,400,i64::from(native),0),&f,0).unwrap();assert_eq!(c.registry.member_context(k,lease(1).account),own);
+    let selected=rebase_ref(1,&mut f);c.complete_ready(&task,call(1),1,selected.clone(),&f,0).unwrap();assert_eq!(c.registry.room(k).unwrap().members().find(|m|m.account()==lease(1).account).unwrap().ready(),Some(&selected));
+}
+#[test]fn p10b_rebase_explicit403_cancels_exact_pending_nonce_and_failure_drains_it(){
+    let(mut c,mut f,k,_)=joined(2);let task=c.apply(call(2),request(221,402,1,0),&f,0).unwrap().ready.remove(0);
+    c.apply(call(2),request(222,403,1,0),&f,0).unwrap();let selected=rebase_ref(2,&mut f);let before=c.clone();
+    assert!(c.complete_ready(&task,call(2),1,selected,&f,0).is_err());assert_eq!(c,before);assert!(c.registry.room(k).unwrap().members().all(|m|m.ready().is_none()));
+    let failed=c.finish_ready_failure(&task).unwrap();assert_eq!(failed.bodies[&lease(2).account],vec![w::plain_response(221,w::CommandResult::Failure,"").unwrap()]);assert!(c.pending_ready.is_empty());
+    let before=c.clone();assert!(c.finish_ready_failure(&task).is_err());assert_eq!(c,before);
+    let new=c.apply(call(2),request(223,402,1,0),&f,0).unwrap().ready.remove(0);assert!(new.id()>task.id());let selected=rebase_ref(2,&mut f);c.complete_ready(&new,call(2),1,selected,&f,0).unwrap();
+}
+#[test]fn p10b_rebase_side_swap_and_settings_do_not_require_unprompted_native_reready(){
+    let(mut c,mut f,k,_)=joined(2);let task=c.apply(call(2),request(221,402,1,0),&f,0).unwrap().ready.remove(0);
+    let alias=c.recipients[&lease(1).account].last.as_ref().unwrap().rows[&lease(2).account].entity_id;
+    c.apply(call(1),request(222,404,i64::from(alias),2),&f,0).unwrap();c.apply(call(1),request(223,405,0,0),&f,0).unwrap();c.apply(call(1),request(224,407,900,0),&f,0).unwrap();
+    let selected=rebase_ref(2,&mut f);c.complete_ready(&task,call(2),1,selected.clone(),&f,0).unwrap();let r=c.registry.room(k).unwrap();assert_eq!(r.settings().seconds,900);assert_eq!(r.members().find(|m|m.account()==lease(2).account).unwrap().ready(),Some(&selected));
+}
+#[test]fn p10b_rebase_still_rejects_own_rejoin_channel_CAS_source_and_native_selection_changes(){
+    for poison in 0..5{let(mut c,mut f,_,native)=joined(2);let task=c.apply(call(2),request(221,402,1,0),&f,0).unwrap().ready.remove(0);let mut actual=call(2);let mut selected=rebase_ref(2,&mut f);let mut inventory=1;
+        match poison{0=>{c.apply(call(2),request(222,401,0,0),&f,0).unwrap();c.apply(call(2),request(202,400,i64::from(native),0),&f,0).unwrap();},
+            1=>actual.channel.generation+=1,2=>{actual.profile.revision+=1;actual.expected_revision+=1;selected=d::WriterReadyRef::from_verified_writer(lease(2).account,"fixture-owned-2".into(),14,[2;32]).unwrap();f.get_mut(&lease(2).account).unwrap().selected=Some(selected.clone());},3=>actual.profile.source_binding[0]^=1,_=>inventory=2}
+        let before=c.clone();assert!(c.complete_ready(&task,actual,inventory,selected,&f,0).is_err(),"poison {poison}");assert_eq!(c,before);
+    }
+}
+#[test]fn p10b_rebase_cancelled_nonce_budget_is_pending24_and_exact_failure_removes_every_marker(){
+    let(mut c,mut f)=fixture(24);for host in[1u8,7,13,19]{let(_,native)=room(&mut c,&f,host,true);for who in host+1..host+6{c.apply(call(who),request(202,400,i64::from(native),0),&f,0).unwrap();}}
+    let mut tasks=Vec::new();for who in 1..=24{tasks.push(c.apply(call(who),request(221,402,1,0),&f,0).unwrap().ready.remove(0));c.apply(call(who),request(222,403,1,0),&f,0).unwrap();}
+    assert_eq!(c.pending_ready.len(),24);for task in tasks{let n=task.caller().account.0[0];let selected=rebase_ref(n,&mut f);let before=c.clone();assert!(c.complete_ready(&task,call(n),1,selected,&f,0).is_err());assert_eq!(c,before);c.finish_ready_failure(&task).unwrap();}
+    assert!(c.pending_ready.is_empty());for who in 1..=24{let task=c.apply(call(who),request(223,402,1,0),&f,0).unwrap().ready.remove(0);c.apply(call(who),request(224,403,1,0),&f,0).unwrap();c.finish_ready_failure(&task).unwrap();}assert!(c.pending_ready.is_empty());
+}

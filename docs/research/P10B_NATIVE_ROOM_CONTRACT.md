@@ -518,3 +518,29 @@ readiness или room acceptance. No incoming paths/Frozen/deserializerobjects.
 и local/build/server/gateway-p10b-focused06. Intermediate02..05 failures
 сохранены, причины относятся к новым тестовым fixtures/отсутствующему derive.
 ActualSession/globalRegistry/HTTP/writerSaga/native пока NOT_RUN.
+
+## Current component seal / checked Ready intent policy
+
+VERIFIED: clean36d57a0/tag p10b-components-20261016-01/full03 completed
+1341PASS/0FAIL/5oldignored/buildPASS,501.62s,775runtimefiles exact before/after.
+Exe c5270c4830faaf468811e2e94ee18c5c16db33230f5308efad44a25476d71063.
+Proof local/evidence/20261016-p10b-full03; exact full output retained in
+local/build/server/gateway-p10b-full03. Subsequent WIP is outside this seal.
+ActualSession/table-controller/Window atomicreceive10 tests, launch/preparing
+components, Finisheddelivery hook and opaque read-only source DTO are compiled.
+ActualHTTP03=3PASS/0skip77.768s; this proves bridge→reader→SQLite, not live
+Rust worker→room→launch or native GUI. Source-backed #717 autoReady/no in-room
+Ready-toggle proof is in ignored arena-transition01; native remains NOT_RUN.
+
+OBSERVED in component scheduling: old global room-revision conflict fence
+rejects a second otherwise valid simultaneous Ready and creator query followed
+by peer join. Direct actual Rust counterexample86PASS/3FAIL; checked policy
+candidate89PASS/0FAIL/0ignored. Explicit LAB policy
+`test_lab.p10b.ready-current-context-own-intent.v1` retains exact pendingnonce,
+actualauth/channel, owner/nativeID, source/profile/CAS and ownroom/membership.
+Own403 marks that exactnonce cancelled until failure drains it. Only after
+these checks and actual verified selection, server obtains current domain
+selection_context; unrelated player Ready/join and side/settings changes do
+not invalidate owned selection. Captured room_revision remains observed
+provenance. No new native epoch, request, success DTO or ownership is invented.
+Root wholeSession/current-head/native checks for this WIP policy are pending.

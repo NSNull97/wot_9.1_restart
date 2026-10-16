@@ -300,6 +300,7 @@ impl Session {
         if !self.training_opt_in || id<221 || self.request_ids.contains(&id)
             || self.unsupported_request_ids.contains(&id)
             || self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))
+            || self.battle_results.used_id(id)
             || current && (self.training_ids.contains(&id) || self.training_ids.len()>=512) {
             return Err(invalid());
         }
@@ -1007,6 +1008,7 @@ for incoming in requests {
         Incoming::ServerStats=>Some(202),Incoming::Chat(_)=>None,
     };
     if account_id.is_some_and(|id|self.training_request_used(id)
+        || self.training_opt_in&&self.battle_results.used_id(id)
         || self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))) {return Err(invalid());}
     let r=match incoming {
         Incoming::Sync(r)=>r,
@@ -1203,22 +1205,66 @@ for incoming in requests {
     }
     fn receive_training_account(&mut self,payload:&[u8],events:&mut Vec<String>,records:&mut Vec<TrainingRecord>)->io::Result<()> {
         use crate::hangar091::{Incoming,TrainingIncoming};
-        if !self.training_account_ready() {return Err(invalid());}
-        // Decode the complete legacy sub-bundle exactly once. In particular,
-        // duplicate legacy command checks must cross intervening Room records.
-        let requests=crate::hangar091::requests_training_with(payload,true,self.account_decoder())?;
-        for request in requests {match request {
-            TrainingIncoming::Account(incoming)=>{
-                // Predefined stream IDs200/201 belong to their own origin
-                // contexts, never to a synthetic initial AccountSync request.
-                if matches!(&incoming,Incoming::Sync(r)|Incoming::CachedSync{request:r,..} if [200,201].contains(&r.id)) {return Err(invalid());}
-                self.apply_account_requests(vec![incoming],events)?;
+        use crate::battle091::profile13::{self,NativeCommand};
+        if !self.training_account_ready() || payload.len()>crate::training091::ingress::MAX_BODY {return Err(invalid());}
+        // The original owned Account path also handles native random-queue and
+        // results records. Compact ONLY those special records out, decode ALL
+        // remaining legacy+Room records ONCE, then restore the original order.
+        enum Part<'a>{Remaining,Queue(NativeCommand),Results(&'a[u8])}
+        let(mut at,mut parts,mut compact)=(0,Vec::new(),Vec::new());
+        while at<payload.len(){
+            if parts.len()>=crate::training091::ingress::MAX_RECORDS || payload.len()-at<3{return Err(invalid());}
+            let length=usize::from(u16::from_le_bytes([payload[at+1],payload[at+2]]));
+            let end=at.checked_add(3+length).ok_or_else(invalid)?;
+            let packet=payload.get(at..end).ok_or_else(invalid)?;
+            let part=if let Some(queue)=profile13::native_command(packet)?{Part::Queue(queue)}
+                else if packet.first()==Some(&0x8e) && packet.len()>=7
+                    && [1500i16,1501i16].contains(&i16::from_le_bytes([packet[5],packet[6]])) {Part::Results(packet)}
+                else{compact.extend_from_slice(packet);Part::Remaining};
+            parts.push(part);at=end;
+        }
+        let mut remaining:VecDeque<_>=crate::hangar091::requests_training_with(&compact,true,self.account_decoder())?.into();
+        for part in parts{match part{
+            Part::Queue(command)=>{
+                // Explicit LAB training isolation: native random Join receives
+                // its real failure callback; Cancel/QueueInfo cannot cancel,
+                // alter or reserve the current room's selected owned vehicle.
+                if let NativeCommand::Join{..}=command{
+                    if self.outbox.len()>=crate::training091::wire::MAX_OUTBOX{return Err(invalid());}
+                    self.outbox.push_back(profile13::enqueue_failure("BATTLE_PROFILE_UNSUPPORTED")?);
+                }
+                events.push(format!("P10B_RANDOM_QUEUE_ISOLATED session={} command={command:?} writer_started=false room_changed=false",self.id));
             },
-            TrainingIncoming::Room(request)=>{
-                if records.len()>=32*crate::training091::ingress::MAX_RECORDS {return Err(invalid());}
-                records.push(TrainingRecord{outbox_index:self.outbox.len(),request});
+            Part::Results(packet)=>{
+                if !self.shared.as_ref().is_some_and(|c|c.profile13_account()){return Err(invalid());}
+                let id=i16::from_le_bytes([packet[3],packet[4]]);
+                let query=i16::from_le_bytes([packet[5],packet[6]])==1500;
+                // Training LAB namespace: fixed room streams200/201 and
+                // no-response202 cannot be dynamic result-query callbacks.
+                if query&&[200,201,202].contains(&id){return Err(invalid());}
+                // Only Query has a dynamic callback ID. ACK uses the fixed
+                // no-response202 even when an old Account ID202 was consumed;
+                // its exact ID/layout/lifetime remain owned by State.stage.
+                if query&&(self.request_ids.contains(&id)||self.unsupported_request_ids.contains(&id)
+                    ||self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))||self.training_request_used(id)){return Err(invalid());}
+                // The actual existing bounded parser owns layout/arena/ID/
+                // epoch/pending limits; no parallel fake result decoder.
+                if !self.battle_results.stage(packet)?{return Err(invalid());}
+                events.push(format!("P08C_RESULTS_REQUEST_STAGED session={} writer_started=false mode=training",self.id));
             },
-        }}Ok(())
+            Part::Remaining=>match remaining.pop_front().ok_or_else(invalid)?{
+                TrainingIncoming::Account(incoming)=>{
+                    // Fixed stream IDs belong only to source read contexts.
+                    if matches!(&incoming,Incoming::Sync(r)|Incoming::CachedSync{request:r,..} if [200,201].contains(&r.id)){return Err(invalid());}
+                    self.apply_account_requests(vec![incoming],events)?;
+                },
+                TrainingIncoming::Room(request)=>{
+                    if records.len()>=32*crate::training091::ingress::MAX_RECORDS{return Err(invalid());}
+                    records.push(TrainingRecord{outbox_index:self.outbox.len(),request});
+                },
+            },
+        }}
+        if !remaining.is_empty(){return Err(invalid());}Ok(())
     }
     fn receive_ready(&mut self,f:&Frame,now:Instant,events:&mut Vec<String>,depth:usize,budget:&mut usize)->io::Result<bool> {
         if self.training_opt_in {return Err(invalid());}

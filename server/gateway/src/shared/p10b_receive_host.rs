@@ -155,6 +155,13 @@ pub(super) fn stage_batch(sessions:&mut [Session],engine:&Controller,batch:&Batc
 pub(super) fn receive_room_frame(sessions:&mut Vec<Session>,engine:&mut Controller,receiver_session:u32,
     frame:&Frame,world:&World,source_bindings:&BTreeMap<u32,[u8;32]>,selectedfacts:&BTreeMap<Account,NativeFacts>,
     now:Instant,now_ms:u64)->io::Result<RoomReceived>{
+    receive_room_frame_with_launch(sessions,engine,receiver_session,frame,world,source_bindings,selectedfacts,now,now_ms,true)
+}
+/// The host computes availability from its actual World/Preparing state. Busy
+/// launch is a command refusal, never another queued Preparing claim or actor.
+pub(super) fn receive_room_frame_with_launch(sessions:&mut Vec<Session>,engine:&mut Controller,receiver_session:u32,
+    frame:&Frame,world:&World,source_bindings:&BTreeMap<u32,[u8;32]>,selectedfacts:&BTreeMap<Account,NativeFacts>,
+    now:Instant,now_ms:u64,launch_available:bool)->io::Result<RoomReceived>{
     if sessions.is_empty()||sessions.len()>room::MAX_ACCOUNTS||source_bindings.len()>room::MAX_ACCOUNTS||selectedfacts.len()>room::MAX_ACCOUNTS{
         return Err(bad("bounded live table"));}
     let mut ids=BTreeSet::new();if sessions.iter().any(|s|!ids.insert(s.id)){return Err(bad("duplicate Session ID"));}
@@ -195,6 +202,9 @@ pub(super) fn receive_room_frame(sessions:&mut Vec<Session>,engine:&mut Controll
                     }
                 }continue;
             }
+        }
+        if !launch_available&&matches!(request.kind,ingress::Kind::TeamReady{..}){
+            added+=insert(&mut next[index],at,fail(&mut out,call,request,Refusal::Busy)?)?;continue;
         }
         let batch=match controller.apply(call,request.clone(),&facts,now_ms){Ok(batch)=>batch,Err(reason)=>{
             added+=insert(&mut next[index],at,fail(&mut out,call,request,reason)?)?;continue;

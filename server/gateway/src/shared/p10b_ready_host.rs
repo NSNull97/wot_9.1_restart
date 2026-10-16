@@ -35,6 +35,8 @@ pub(super) fn current_call(s:&Session,source:[u8;32])->io::Result<Call>{
     pub(super) accepted:BTreeMap<d::Account,Accepted>,
 }
 impl Manager{
+    pub(super) fn running_or_completed(&self)->bool{self.pending.is_some()||self.completed.is_some()}
+    pub(super) fn query_running(&self)->bool{self.pending.is_some()}
     pub(super) fn busy(&self)->bool{self.pending.is_some()||self.completed.is_some()||!self.queued.is_empty()}
     pub(super) fn can_enqueue(&self,tasks:&[ReadyTask])->io::Result<()>{
         if self.queued.len()+usize::from(self.pending.is_some()||self.completed.is_some())+tasks.len()>d::MAX_ACCOUNTS{return Err(bad("P10B readiness queue full"));}
@@ -47,9 +49,10 @@ impl Manager{
             let Some(owner)=s.identity.as_ref()else{continue;};let who=account(&owner.account_id)?;
             let ready=engine.registry().claim(who).and_then(|claim|if let d::Claim::Room(room)=claim{engine.registry().room(room)}else{None})
                 .and_then(|room|room.members().find(|m|m.account()==who)).and_then(|m|m.ready());
-            let accepted=self.accepted.get(&who).filter(|a|Some(a.selection.reference())==ready);
+            let accepted=self.accepted.get(&who).filter(|a|Some(a.selection.reference())==ready
+                &&a.selection.session()==s.id&&a.task.channel().generation==s.training_account_generation()
+                &&s.ammo_service.as_ref().is_some_and(|p|p.revision()==u64::from(a.selection.reference().revision())));
             let(selected,descriptor)=match accepted{Some(a)=>(Some(a.selection.reference().clone()),a.selection.frozen().descriptor.clone()),None=>(None,Vec::new())};
-            if ready.is_some()&&selected.is_none(){return Err(bad("P10B room lost verified ready selection"));}
             facts.insert(who,NativeFacts{database_id:owner.database_id,selected,descriptor,igr_type:0,clan_database_id:0,clan_abbrev:String::new()});
         }Ok(facts)
     }
@@ -84,7 +87,7 @@ impl Manager{
                 ||completion.task.session!=target.id||completion.task.expected_revision!=u64::from(task.expected_revision())||completion.task.native_inventory_id!=task.native_inventory()
                 ||completion.task.owner.account_id!=target.identity.as_ref().ok_or_else(||bad("P10B readiness owner lost"))?.account_id
                 ||!target.ammo_service.as_ref().is_some_and(ammo_session::State::idle)
-                ||!target.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.garage_idle()){
+                ||!target.shared.as_ref().is_some_and(|c|!c.join_requested&&!c.queue_announced&&c.profile13.as_ref().is_some_and(|p|p.garage_idle())){
                 return Err(bad("P10B readonly selection origin changed"));
             }
             let snapshot=completion.snapshot;
@@ -92,7 +95,8 @@ impl Manager{
             let request=snapshot.selection.request();
             if snapshot.binding.revision!=u64::from(task.expected_revision())||snapshot.owner.database_id!=old.database_id
                 ||snapshot.owner.account_id!=old.account_id||snapshot.owner.name!=old.name
-                ||completion.task.owner.database_id!=old.database_id||completion.task.run_id!=request.run_id
+                ||snapshot.binding.wire_revision!=1||completion.task.owner.database_id!=old.database_id||completion.task.run_id!=request.run_id
+                ||target.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_none_or(|p|p.run_id!=request.run_id)
                 ||request.projection_stamp.native_state_sha256!=snapshot.fixtures.state_sha256().iter().map(|b|format!("{b:02x}")).collect::<String>()
                 ||request.projection_stamp.owner_source_sha256!=task.profile().source_binding.iter().map(|b|format!("{b:02x}")).collect::<String>(){
                 return Err(bad("P10B fresh selection CAS/native/source mismatch"));}
@@ -111,7 +115,7 @@ impl Manager{
         })();
         match accepted{
             Ok((mut next_sessions,next_engine,item,batch))=>{Self::publish(&mut next_sessions,&next_engine,&batch)?;*sessions=next_sessions;*engine=next_engine;self.accepted.insert(task.caller().account,item);println!("P10B_READY session={} room={} revision={} owned_readonly=true",task.channel().session,task.room().0,task.expected_revision());},
-            Err(error)=>{println!("P10B_READY_REFUSED session={} error={error} reserve_started=false",task.channel().session);self.fail(&task,sessions,engine)?;},
+            Err(error)=>{self.fail(&task,sessions,engine)?;println!("P10B_READY_REFUSED session={} error={error} reserve_started=false",task.channel().session);},
         }self.completed=None;Ok(())
     }
     pub(super) fn start(&mut self,sessions:&mut Vec<Session>,engine:&mut Controller,config:Arc<crate::identity091::Config>,external_idle:bool)->io::Result<()>{
@@ -121,7 +125,7 @@ impl Manager{
             let call=current_call(s,source_binding(s)?)?;
             if call.caller!=task.caller()||call.channel!=task.channel()||call.profile!=task.profile()
                 ||!s.ammo_service.as_ref().is_some_and(ammo_session::State::idle)
-                ||!s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.garage_idle()){
+                ||!s.shared.as_ref().is_some_and(|c|!c.join_requested&&!c.queue_announced&&c.profile13.as_ref().is_some_and(|p|p.garage_idle())){
                 return Err(bad("P10B queued readiness stale/busy"));}
             query::Job::start(query::Task{session:s.id,owner:s.identity.clone().ok_or_else(||bad("P10B identity missing"))?,expected_revision:u64::from(task.expected_revision()),native_inventory_id:task.native_inventory(),run_id:config.battle_run_id.clone()},config)
         })();
@@ -129,3 +133,7 @@ impl Manager{
     }
 }
 fn target_database(sessions:&[Session],id:u32)->io::Result<i32>{sessions.iter().find(|s|s.id==id).and_then(|s|s.identity.as_ref()).map(|p|p.database_id).ok_or_else(||bad("P10B native database absent"))}
+
+#[cfg(test)]
+#[path="p10b_ready_host_tests.rs"]
+mod tests;
