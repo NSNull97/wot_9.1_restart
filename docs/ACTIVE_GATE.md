@@ -14,7 +14,9 @@ UI/audio/новыйoverlay NOT_RUN. CoreV7 установлен и сохран�
 OwnedV3 component29SQL/source/2CPythonPASS; live factory/cacheACK/newWTstock
 не подключены. P06T не принята и не main.
 
-P10B production пока NOT_RUN. Ignored preparation: room/native/aliases33PASS,
+P10B bounded foundation+actualhangarshim перенесены: focused01 **51PASS/
+0FAIL/0ignored/buildPASS**; wholeSession/actualwriter/route пока NOT_RUN.
+Ignored preparation: room/native/aliases33PASS,
 current-room-at-receipt +actualWindow51PASS, ingress9PASS/source17commands.
 Эти результаты не доказывают actual Session/Registry/writer/native room.
 Следующий слой — review/promote domain/codecs +immutableTeamPlan и actual

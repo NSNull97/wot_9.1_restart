@@ -95,7 +95,8 @@ unchanged; newoverlay/native NOT_RUN. Непринятые gates в main не с
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 
 P10B начат в `codex/p10b-native-training-room` от P06Tbase0f1db40; production
-пока NOT_RUN, next: room/TeamPlan/Session/writer saga. План [P10B](plans/P10B.md).
+foundation focused01=51PASS/0ignored/buildPASS, actualhangarshim/defaultclosed.
+TeamPlan/Session/writer saga и native ещё NOT_RUN. План [P10B](plans/P10B.md).
 
 ## Принято владельцем на настоящем клиенте #717
 

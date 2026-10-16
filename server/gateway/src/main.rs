@@ -79,6 +79,9 @@ mod armament_wire091;
 mod p06t_armament_wire_tests;
 #[path = "battle/profile13_v2.rs"]
 mod profile13_v2091;
+#[path = "training/mod.rs"]
+mod training091;
+use training091::ingress as p10b_ingress091;
 #[path = "shared/p06t_damage.rs"]
 mod p06t_damage;
 #[path = "shared/p06t_device_state.rs"]

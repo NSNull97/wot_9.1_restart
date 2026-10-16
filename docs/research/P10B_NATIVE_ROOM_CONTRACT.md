@@ -477,3 +477,26 @@ Acceptance remains **research-only /P10B native NOT_RUN**. Rollback is removal o
 this addendum and its ignored proof directory. Single next step after P06T is
 committed: implement the bounded native room adapter against these closed
 contracts, keeping the initial controlled native trace as an outstanding gate.
+
+## 2026-10-16 — promoted bounded foundation
+
+Branch codex/p10b-native-training-room starts after P06T full06/1162PASS/
+725sourceexact. Domain, nativecallbacks/init, recipientaliases/current-room
+adapter and typed primitive ingress were reviewed/promoted in training/.
+The actual hangar::requests_training_with shim composes the unchanged selected
+legacy decoder once, preserves native record order and rejects cross-record
+callback/stream collisions and late poison atomically. Old Incoming/API/old
+modes are unchanged. The route is not activated. Protocol numbers remain
+INFERRED/VERIFIED_STATIC as above; no native PRB capture was performed.
+
+Focused01: **51PASS/0FAIL/0ignored/buildPASS**,0.03с tests, exeSHA
+6aceeb0557d1b986d2247468043f0660c8fc84fa837e54cee7e77be22a68dcce.
+Proof local/evidence/20261016-p10b-foundation01/ and build gateway-p10b-focused01.
+Includes actual promoted hangar shim and real transport Window counterexample:
+retry same body/seq can carry newer cumulative ACK, therefore ACK does not
+prove UI-origin. Explicit current-room-at-receipt handles new authenticated
+unscoped commands in current room; peeraliases tombstoned, async jobs retain
+room/revision/membership/channel/source/request. Fresh semantically old Leave
+may leave current lobby; this is disclosed laboratory policy, not historical.
+World teams, frozen selected identity order, wholeSession/Registry publication
+transaction, actual readiness/reserve saga and native UI/flow remain NOT_RUN.
