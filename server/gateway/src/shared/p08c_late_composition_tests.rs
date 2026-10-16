@@ -14,9 +14,9 @@ fn drain(s:&mut Session)->Vec<Vec<u8>>{let mut out=Vec::new();let mut rounds=0;
         let frame=Frame{flags:0x408,sequence:None,cumulative:Some(ack),selective:vec![],body:vec![],piggybacks:vec![]};assert!(!s.receive(&frame,Instant::now()).unwrap());
     }out}
 fn session(config:&identity091::Config,user:&serde_json::Value,id:u32)->Session{
-    assert!(config.p06t_ammo_rack_detonation&&config.p08c_late_results&&config.p06t_mixed_ammo&&config.visibility_v1);
+    assert!(config.p04m_pool&&config.p06t_ammo_rack_detonation&&config.p08c_late_results&&config.p06t_mixed_ammo&&config.visibility_v1);
     let owner=Arc::new(config.authenticate(user["email"].as_str().unwrap(),user["password"].as_str().unwrap()).unwrap().expect("actual isolated own login"));
-    assert_eq!(owner.account_id,user["account_id"]);let fixtures=Arc::new(hangar091::Fixtures::load_research(&owner.fixture_dir).unwrap());
+    assert_eq!(owner.account_id,user["account_id"]);let fixtures=Arc::new(hangar091::Fixtures::load_p04m(&owner.fixture_dir).unwrap());
     let binding=ammo_service091::metadata_research(&owner.fixture_dir,&owner.account_id,owner.database_id).unwrap();let now=Instant::now();
     let mut s=Session::new(id,[id as u8;16],format!("127.0.0.1:{}",41800+id).parse().unwrap(),now);
     s.active=true;s.account_ready=true;s.sync_mask=7;s.rx=1;s.tx=Window::interactive();s.base_peer=Some(format!("127.0.0.1:{}",41900+id).parse().unwrap());
