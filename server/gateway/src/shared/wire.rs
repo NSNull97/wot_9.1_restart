@@ -182,7 +182,7 @@ pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     p.extend([8, 0, 0, 1, u8::from(a.crew_active()), 2]); p.extend(packed_angles_for(a.vehicle_kind(),&a.aim)?.to_le_bytes());
     p.push(3); p.extend(a.health.to_le_bytes()); p.extend([4, 0, 0, 5]);
     string(&mut p, a.identity.name.as_bytes())?; string(&mut p, a.vehicle_kind().descriptor())?;
-    p.push(1); p.extend(0i32.to_le_bytes()); p.push(0);
+    p.push(w.team(slot)?); p.extend(0i32.to_le_bytes()); p.push(0);
     p.push(6); p.extend(0i32.to_le_bytes()); p.push(7);
     p.extend(crate::armament_wire091::modifiers_value(&a.public_modifiers())?);
     var16(9, &p)
@@ -367,6 +367,189 @@ pub fn lifecycle_period(w: &World) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
     use std::time::Instant;
+    // Static contract regression; no Flash replacement or native UI claim.
+    // #717 alias.xml PUBLIC_VEHICLE_INFO: name STRING, compDescr STRING,
+    // team UINT8, prebattleID OBJECT_ID, marksOnGun UINT8.
+    // Vehicle publicInfo is indexed property5. Do not use the encoder's helpers
+    // to locate its variable-length strings or its team field.
+    #[derive(Debug, PartialEq, Eq)]
+    struct MarkerPublicRow { entity: u32, name: String, descriptor: Vec<u8>, team: u8 }
+
+    struct MarkerRead<'a> { raw: &'a [u8], at: usize }
+    impl<'a> MarkerRead<'a> {
+        fn new(raw: &'a [u8]) -> Self { Self { raw, at: 0 } }
+        fn take(&mut self, n: usize) -> &'a [u8] {
+            assert!(n <= self.raw.len().saturating_sub(self.at), "truncated measured marker layout");
+            let value = &self.raw[self.at..self.at+n]; self.at += n; value
+        }
+        fn byte(&mut self) -> u8 { self.take(1)[0] }
+        fn u16(&mut self) -> u16 { u16::from_le_bytes(self.take(2).try_into().unwrap()) }
+        fn u32(&mut self) -> u32 { u32::from_le_bytes(self.take(4).try_into().unwrap()) }
+        fn expect(&mut self, value: &[u8]) { assert_eq!(self.take(value.len()), value); }
+        fn short_bytes(&mut self) -> &'a [u8] {
+            let n = usize::from(self.byte()); assert!(n < 255); self.take(n)
+        }
+        fn done(&self) { assert_eq!(self.at, self.raw.len(), "unexpected measured-layout suffix"); }
+    }
+
+    fn marker_decode_public_info(frame: &[u8]) -> MarkerPublicRow {
+        assert!(frame.len() <= 503);
+        let mut outer = MarkerRead::new(frame); outer.expect(&[9]);
+        let size = usize::from(outer.u16()); assert_eq!(size, frame.len()-3);
+        let mut p = MarkerRead::new(outer.take(size)); outer.done();
+        p.expect(&[0]); let entity = p.u32(); p.expect(&[2, 0]);
+        for _ in 0..6 { assert!(f32::from_le_bytes(p.take(4).try_into().unwrap()).is_finite()); }
+        // Eight indexed properties: bool0, bool1, UINT16 angles2, INT16 health3,
+        // engine tuple4, FIXED_DICT publicInfo5, sticker ARRAY6, modifier ARRAY7.
+        p.expect(&[8, 0, 0, 1]); assert!(p.byte() <= 1);
+        p.expect(&[2]); p.take(2); p.expect(&[3]); p.take(2);
+        p.expect(&[4, 0, 0, 5]);
+        let name_bytes = p.short_bytes(); assert!(name_bytes.len() <= 48);
+        let name = std::str::from_utf8(name_bytes).unwrap().to_owned();
+        let descriptor = p.short_bytes().to_vec(); assert!(!descriptor.is_empty());
+        let team = p.byte(); assert!((1..=2).contains(&team));
+        p.expect(&[0, 0, 0, 0, 0]); // prebattleID0 / marksOnGun0
+        p.expect(&[6]); assert_eq!(p.u32(), 0); // no damage stickers in these fixtures
+        p.expect(&[7]); let modifiers = p.u32() as usize; assert!(modifiers <= 16);
+        p.take(modifiers); p.done();
+        MarkerPublicRow { entity, name, descriptor, team }
+    }
+
+    // Narrow literal ClientArena update reader, not a general pickle loader.
+    // Accept only this source-pinned tuple/list shape; no object/import/eval opcode.
+    fn marker_decode_roster(frame: &[u8]) -> Vec<MarkerPublicRow> {
+        assert!(frame.len() <= 257);
+        let mut outer = MarkerRead::new(frame); outer.expect(&[0x13, 0x58]);
+        assert_eq!(usize::from(outer.byte()), frame.len()-3);
+        let kind = outer.byte(); assert!(matches!(kind, 1 | 2 | 11));
+        let size = usize::from(outer.byte());
+        let mut p = MarkerRead::new(outer.take(size)); outer.done(); p.expect(&[0x80, 2]);
+        let list = kind == 1; if list { p.expect(b"]"); }
+        let mut rows = Vec::new();
+        while p.raw.get(p.at) != Some(&b'.') {
+            assert!(rows.len() < 6); p.expect(b"(J"); let entity = p.u32();
+            p.expect(b"U"); let descriptor = p.short_bytes().to_vec();
+            p.expect(b"U"); let name = std::str::from_utf8(p.short_bytes()).unwrap().to_owned();
+            p.expect(b"K"); let team = p.byte(); assert!((1..=2).contains(&team));
+            assert!(matches!(p.byte(), 0x88 | 0x89)); assert!(matches!(p.byte(), 0x88 | 0x89));
+            p.expect(&[0x89, b'J']); assert!(p.u32() > 0);
+            p.expect(b"U"); assert!(p.short_bytes().is_empty());
+            p.expect(&[b'K', 0, b'K', 0, 0x89, b'}', b'K', 0, b't']);
+            if list { p.expect(b"a"); }
+            rows.push(MarkerPublicRow { entity, name, descriptor, team });
+            if !list { break; }
+        }
+        p.expect(b"."); p.done(); assert!(!rows.is_empty()); rows
+    }
+
+    fn marker_decode_own_avatar(first_part: &[u8]) -> (u32, u8) {
+        // Original createCellPlayer VAR2 contains a36-byte prefix before team.
+        let mut outer = MarkerRead::new(first_part); outer.expect(&[6]); assert_eq!(outer.u16(), 43);
+        let mut p = MarkerRead::new(outer.take(43));
+        p.expect(&[1, 0, 0, 0, 0, 0, 0, 0]); // space1 / coordinate frame0
+        p.take(12); p.expect(&1f32.to_le_bytes()); p.take(12);
+        let team = p.byte(); let entity = p.u32(); p.expect(&[0, 0]); p.done();
+        (entity, team)
+    }
+
+    const MARKER_NATIVE_IDS: [u32; 6] = [0x0910_0003, 0x0910_0005, 0x0911_0003,
+        0x0911_0005, 0x0911_0007, 0x0911_0009];
+
+    #[test]
+    fn p08c_marker_two_owned_lifecycle_teams_use_public_info_before_native_class_choice() {
+        let now = Instant::now();
+        let mut w = World::new_for_roster(401, now, crate::map_profile091::MapId::Prohorovka, 2).unwrap();
+        w.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();
+        for (slot, kind) in [VehicleKind::Ms1, VehicleKind::Is7].into_iter().enumerate() {
+            let (mut owner, frozen) = model::tests::profile13_loadout(kind, slot, 7 + slot as u16);
+            owner.name = ["Первый", "Ёж"][slot].to_owned();
+            assert_eq!(w.attach_owned(owner, 700 + slot as u32, &frozen).unwrap(), slot);
+        }
+        w.start(now).unwrap();
+        let roster = marker_decode_roster(&roster_updates(&w, 0).unwrap());
+        assert_eq!(roster.iter().map(|r| r.team).collect::<Vec<_>>(), [1, 2]);
+        for own in 0..2 {
+            let parts = announcement_parts(&w, own).unwrap();
+            assert_eq!(marker_decode_own_avatar(&parts[0]), (MARKER_NATIVE_IDS[own], [1, 2][own]));
+            for slot in 0..2 {
+                let public = marker_decode_public_info(&create_vehicle(&w, slot).unwrap());
+                assert_eq!(public.entity, MARKER_NATIVE_IDS[slot]); assert_eq!(public.team, [1, 2][slot]);
+                assert_eq!(public, roster[slot]);
+                // Original createMarker uses publicInfo for Ally/Enemy class, but
+                // BattleContext/init use Arena roster for entityName/entityType.
+                assert_eq!(public.team == [1, 2][own], slot == own);
+                assert_eq!(public.team == [1, 2][own], roster[slot].team == roster[own].team);
+            }
+        }
+    }
+
+    #[test]
+    fn p08c_marker_six_mixed_profiles_utf8_and_parked_recreate_keep_team_identity() {
+        let now = Instant::now();
+        let mut w = World::new_for_roster(402, now, crate::map_profile091::MapId::Prohorovka, 6).unwrap();
+        w.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();
+        let kinds = [VehicleKind::Ms1, VehicleKind::Is7, VehicleKind::T26,
+            VehicleKind::T34, VehicleKind::T3485, VehicleKind::Ms1];
+        let names = ["A".to_owned(), "Ёж".to_owned(), "Я".repeat(24),
+            "T-34 commander".to_owned(), "Пятый".to_owned(), "six".to_owned()];
+        for slot in 0..6 {
+            // Existing explicit LAB fixture; never an owned admission receipt.
+            model::tests::attach_physics_profile(&mut w, kinds[slot], model::Identity {
+                account: format!("marker-lab-{slot}"), database: slot as i32 + 1,
+                name: names[slot].clone() }, 800 + slot as u32).unwrap();
+        }
+        w.start(now).unwrap();
+        let teams = [1, 2, 1, 2, 1, 2];
+        for own in 0..6 {
+            let parts = announcement_parts(&w, own).unwrap();
+            assert_eq!(marker_decode_own_avatar(&parts[0]), (MARKER_NATIVE_IDS[own], teams[own]));
+            for slot in 0..6 {
+                let public = marker_decode_public_info(&create_vehicle(&w, slot).unwrap());
+                assert_eq!(public.entity, MARKER_NATIVE_IDS[slot]); assert_eq!(public.team, teams[slot]);
+                assert_eq!(public.name, names[slot]); assert_eq!(public.descriptor, kinds[slot].descriptor());
+                let roster = marker_decode_roster(&roster_updates(&w, slot).unwrap());
+                assert_eq!(roster, [public]);
+            }
+        }
+        let before = create_vehicle(&w, 3).unwrap();
+        w.detach(803).unwrap(); // retained parked actor, e.g. later visibility createDetailed
+        let recreated = create_vehicle(&w, 3).unwrap();
+        assert_eq!(recreated, before);
+        assert_eq!(marker_decode_public_info(&recreated).team, 2);
+        assert_eq!(marker_decode_roster(&roster_updates(&w, 3).unwrap())[0].team, 2);
+    }
+
+    #[test]
+    fn p08c_marker_legacy_without_lifecycle_keeps_allied_team_and_full_measured_layout() {
+        let now = Instant::now(); let mut w = World::new(403, now).unwrap();
+        for slot in 0..2 {
+            w.attach(model::Identity { account: format!("marker-legacy-{slot}"), database: slot + 1,
+                name: if slot == 0 { "A" } else { "B" }.to_owned() }, slot as u32 + 900).unwrap();
+        }
+        w.start(now).unwrap(); assert!(w.lifecycle.is_none());
+        // Independent source-derived literal for MS1/A, zero position/direction,
+        // minimum pitch and -pi turret yaw (packed angles0), health90, team1.
+        // This is an authored protocol golden, not a claimed native capture.
+        let golden: [u8; 83] = [
+            0x09, 0x50, 0x00, 0x00, 0x03, 0x00, 0x10, 0x09, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x08, 0x00, 0x00, 0x01, 0x01, 0x02, 0x00, 0x00, 0x03, 0x5a, 0x00, 0x04, 0x00, 0x00,
+            0x05, 0x01, 0x41, 0x0f, 0x01, 0x0d, 0x1a, 0x00, 0x0e, 0x00, 0xc9, 0x00, 0x00, 0x00, 0x17, 0x00,
+            0x17, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00,
+            0x00, 0x00, 0x00,
+        ];
+        for slot in 0..2 {
+            w.actors[slot].position = [0.; 3]; w.actors[slot].direction = [0.; 3]; w.actors[slot].yaw = 0.;
+            w.actors[slot].aim.yaw = -std::f32::consts::PI;
+            w.actors[slot].aim.pitch = VehicleKind::Ms1.aim().min_pitch;
+            let mut expected = golden;
+            expected[4..8].copy_from_slice(&MARKER_NATIVE_IDS[slot].to_le_bytes()); expected[50] = b'A' + slot as u8;
+            let actual = create_vehicle(&w, slot).unwrap(); assert_eq!(actual, expected);
+            assert_eq!(marker_decode_public_info(&actual).team, 1);
+            assert_eq!(marker_decode_own_avatar(&announcement_parts(&w, slot).unwrap()[0]).1, 1);
+        }
+        assert_eq!(marker_decode_roster(&roster_updates(&w, 0).unwrap()).iter().map(|r| r.team).collect::<Vec<_>>(), [1, 1]);
+    }
     #[test]fn p06t_native_binding_reconciles_ap_zero_current_next_and_full_source_counts(){
         use crate::p06t_armament091::{Command,Selection};
         let now=Instant::now();let mut w=model::tests::world(now);
