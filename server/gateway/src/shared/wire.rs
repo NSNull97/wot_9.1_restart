@@ -213,6 +213,15 @@ pub fn postmortem_rebind(payload: &[u8], own: usize) -> io::Result<()> {
         || payload[7..]!=vehicle_id(own)?.to_le_bytes() { return Err(model::bad()); }
     Ok(())
 }
+/// Measured natural-return suffix: an explicit old Avatar mailbox followed by
+/// its own Vehicle. The caller must keep this in the dead, retired epoch; this
+/// validates a queued camera call and never transfers control to a new entity.
+pub fn retired_postmortem_rebind(payload: &[u8], own: usize) -> io::Result<()> {
+    if payload.len()!=11 || payload[..3]!=[0x0d,8,0]
+        || payload[3..7]!=avatar_id(own)?.to_le_bytes()
+        || payload[7..]!=vehicle_id(own)?.to_le_bytes() { return Err(model::bad()); }
+    Ok(())
+}
 pub fn ready_update(slot: usize) -> io::Result<Vec<u8>> {
     let mut d = vec![0x80, 2, b'J']; d.extend(vehicle_id(slot)?.to_le_bytes()); d.push(b'.'); update(7, &d)
 }

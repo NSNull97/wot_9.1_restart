@@ -10,7 +10,8 @@ paired wire11183 packets/0conflicts, full1099/5oldignored/build/source683.
 rejected169byte frame. Оба durable результата сохранены. Own morning-marker01
 остановлен по receipts; A120/B35, ammoA[0,1,8]/B[0,3,9], active0. Логи и RO DB
 backup сохранены. Полный native P08C не принят. Текущий шаг — strict native
-return parser и source-bound personal details, затем fresh full/native replay.
+return parser и source-bound personal details реализованы, focused43/build и
+Python33/0skips PASS. Готов full committed source gate, затем fresh native replay.
 Ночные ветки, accepted marker972843a и mainffce8cb сохранены. Late manual-leaver
 results и spawn остаются отдельными открытыми пунктами.
 

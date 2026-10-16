@@ -35,6 +35,57 @@ def _unique(pairs):
     return result
 
 
+DETAILS_POLICY = "test_lab.authoritative-interactions.v1"
+SPOTTING_POLICY = "test_lab.p08c.first-visible-enemy-lowest-slot.v1"
+DETAIL_TARGET = {"vehicle_id", "spotted", "death_reason", "direct_hits", "explosion_hits", "piercings",
+    "damage_dealt", "damage_assisted_track", "damage_assisted_radio", "crits", "fire"}
+
+
+def _interaction_details(value):
+    details = value["interaction_details"]
+    require(type(details) is dict and set(details) == {"version", "policy", "spotting_policy", "rows"}, "INVALID_INPUT")
+    require(type(details["version"]) is int and details["version"] == 1
+        and details["policy"] == DETAILS_POLICY
+        and (details["spotting_policy"] is None or details["spotting_policy"] == SPOTTING_POLICY), "INVALID_INPUT")
+    roster = {p["vehicle_id"]: p for p in value["participants"]}
+    rows = details["rows"]
+    require(type(rows) is list and len(rows) == len(roster), "INVALID_INPUT")
+    seen, spotted, dead = set(), set(), set()
+    received = {vehicle: 0 for vehicle in roster}
+    for row in rows:
+        require(type(row) is dict and set(row) == {"attacker_vehicle_id", "targets"}, "INVALID_INPUT")
+        vehicle = row["attacker_vehicle_id"]
+        _integer(vehicle, 1, 2**31 - 1)
+        require(vehicle in roster and vehicle not in seen, "INVALID_INPUT"); seen.add(vehicle)
+        own = roster[vehicle]; targets = row["targets"]
+        require(type(targets) is list and len(targets) <= len(roster), "INVALID_INPUT")
+        previous = hits = pierced = damage = kills = 0
+        for target in targets:
+            require(type(target) is dict and set(target) == DETAIL_TARGET, "INVALID_INPUT")
+            tid = target["vehicle_id"]; _integer(tid, 1, 2**31 - 1)
+            require(tid in roster and tid > previous, "INVALID_INPUT"); previous = tid
+            _integer(target["spotted"], 0, 1); _integer(target["death_reason"], -1, 10)
+            for name in ("direct_hits", "explosion_hits", "piercings", "damage_dealt",
+                "damage_assisted_track", "damage_assisted_radio", "fire"): _integer(target[name], 0, 65535)
+            _integer(target["crits"], 0, 2**32 - 1)
+            require(target["piercings"] <= target["direct_hits"]
+                and all(target[name] == 0 for name in ("damage_assisted_track", "damage_assisted_radio", "crits", "fire"))
+                and (target["spotted"] or target["death_reason"] != -1 or target["direct_hits"]
+                    or target["explosion_hits"] or target["piercings"] or target["damage_dealt"]), "INVALID_INPUT")
+            victim = roster[tid]
+            if target["spotted"]:
+                require(details["spotting_policy"] == SPOTTING_POLICY and victim["team"] != own["team"]
+                    and tid not in spotted, "INVALID_INPUT"); spotted.add(tid)
+            if target["death_reason"] != -1:
+                require(victim["killer_id"] == vehicle and victim["death_reason"] == target["death_reason"]
+                    and tid not in dead, "INVALID_INPUT"); dead.add(tid); kills += 1
+            hits += target["direct_hits"]; pierced += target["piercings"]
+            damage += target["damage_dealt"]; received[tid] += target["damage_dealt"]
+        require((hits, pierced, damage, kills) == (own["direct_hits"], own["piercings"], own["damage_dealt"], own["kills"]), "INVALID_INPUT")
+    require(all(received[tid] == p["damage_received"] and (p["killer_id"] == 0 or tid in dead)
+        for tid, p in roster.items()), "INVALID_INPUT")
+
+
 def results_value(raw):
     require(type(raw) is str and len(raw.encode("utf-8")) <= MAX_RESULT_BYTES, "INVALID_INPUT")
     try:
@@ -43,7 +94,7 @@ def results_value(raw):
             parse_constant=lambda _: (_ for _ in ()).throw(TransactionError("INVALID_INPUT")))
     except (ValueError, RecursionError, UnicodeError) as error:
         raise TransactionError("INVALID_INPUT") from error
-    require(type(value) is dict and set(value) == HEADER, "INVALID_INPUT")
+    require(type(value) is dict and set(value) in (HEADER, HEADER | {"interaction_details"}), "INVALID_INPUT")
     _integer(value["arena_id"], 1, 2**63 - 1)
     require(type(value["arena_type_id"]) is int and value["arena_type_id"] in (1, 4), "INVALID_INPUT")
     _integer(value["created_unix"], 1, 2**32 - 1); _integer(value["winner_team"], 0, 2)
@@ -67,6 +118,7 @@ def results_value(raw):
         require(row["vehicle_id"] not in ids and row["account_dbid"] not in owners, "INVALID_INPUT")
         ids.add(row["vehicle_id"]); owners.add(row["account_dbid"]); teams.add(row["team"])
     require(teams == {1, 2}, "INVALID_INPUT")
+    if "interaction_details" in value: _interaction_details(value)
     require(len(canonical(value)) <= MAX_RESULT_BYTES, "INVALID_INPUT")
     return value
 

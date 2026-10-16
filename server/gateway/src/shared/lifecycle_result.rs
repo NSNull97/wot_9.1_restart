@@ -32,9 +32,31 @@ pub(super) fn build(world:&World)->io::Result<Results> {
     }
     let result=Results {arena_id:world.id,arena_type_id:world.map.arena_type_id() as i32,
         created_unix:world.lifecycle_created_unix.ok_or_else(||model::bad())?,winner_team:outcome.winner,
-        finish_reason:wire::finish_reason(outcome.reason),duration_seconds,participants};
+        finish_reason:wire::finish_reason(outcome.reason),duration_seconds,interaction_details:Some(project_details(world,&participants)?),participants};
     result.validate()?;Ok(result)
 }
+// Presentation consumes committed journals only. No simulation/terminal edits.
+fn project_details(world:&World,participants:&[Participant])->io::Result<super::lifecycle_details::Details>{
+    use super::lifecycle_details as d;
+    let roster=super::lifecycle_wire::summaries(participants);
+    let shots=world.shots.iter().map(|s|d::Shot{id:s.sequence,attacker:s.slot}).collect::<Vec<_>>();
+    let hits=world.contacts.iter().map(|c|d::Hit{shot:c.shot,target:c.target_slot}).collect::<Vec<_>>();
+    let pierced=world.impacts.iter().filter(|i|matches!(&i.outcome,
+        ImpactOutcome::Ap(r)if r.outcome==ap::Outcome::Pierced)||matches!(&i.outcome,
+        ImpactOutcome::Mixed(r)if r.decision==crate::p06t_damage::Decision::Pierced))
+        .map(|i|d::Hit{shot:i.shot,target:i.target}).collect::<Vec<_>>();
+    let damage=if world.mixed_ammo(){world.damage_events.iter().map(|e|d::Damage{sequence:e.sequence,
+        shot:e.shot,attacker:e.attacker,target:e.target,health_before:e.health_before,health_after:e.health_after,
+        lethal:e.lethal(),reason:e.reason}).collect::<Vec<_>>()}else{
+        world.impacts.iter().enumerate().filter(|(_,i)|i.health_before!=i.health_after).map(|(n,i)|d::Damage{
+            sequence:n as u32+1,shot:i.shot,attacker:i.attacker,target:i.target,health_before:i.health_before,
+            health_after:i.health_after,lethal:i.health_before>0&&i.health_after==0,reason:0}).collect::<Vec<_>>()};
+    let splash=world.impact.events().iter().filter_map(|e|match e{super::impact::Event::SplashResolution{
+        shot_id,target,terrain_blocker,..}=>Some(d::Splash{shot:*shot_id,target:*target,clear_los:terrain_blocker.is_none()}),_=>None}).collect::<Vec<_>>();
+    let spots=world.result_spots().map(|rows|rows.iter().map(|s|d::Spot{observer:s.observer(),target:s.target(),tick:s.tick()}).collect::<Vec<_>>());
+    d::project(&roster,&shots,&hits,&pierced,&damage,&splash,spots.as_deref())
+}
+
 #[path="p06t_lifecycle_result.rs"]
 mod p06t;
 

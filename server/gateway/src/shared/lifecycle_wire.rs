@@ -5,6 +5,7 @@
 //! Native UI/audio acceptance remains a separate owner gate.
 use std::io;
 use serde::{Deserialize,Serialize};
+use super::lifecycle_details::{self,Details,Row,Target,Summary};
 
 pub const AVATAR_RESULTS_STREAM:i16=100;
 pub const MAX_RESULT_BYTES:usize=32768;
@@ -82,6 +83,7 @@ pub struct Participant {
 pub struct Results {
     pub arena_id:u64,pub arena_type_id:i32,pub created_unix:u32,pub winner_team:u8,
     pub finish_reason:u8,pub duration_seconds:u32,pub participants:Vec<Participant>,
+    pub interaction_details:Option<Details>,
 }
 // Keep the existing dependency set: serde's derive feature is not enabled.
 macro_rules! next_dto_field {
@@ -138,10 +140,70 @@ dto_serde!(Participant,fields,{
     direct_hits:u16,piercings:u16,damage_dealt:u32,damage_received:u32,kills:u8,capture_points:u16,
     dropped_capture_points:u16,mileage_metres:u32,life_time:u32,killer_id:u32,death_reason:i8,premature_leave:bool,
 });
-dto_serde!(Results,fields,{
-    arena_id:u64,arena_type_id:i32,created_unix:u32,winner_team:u8,finish_reason:u8,duration_seconds:u32,
-    participants:Vec<Participant> => fields.next_value::<BoundedParticipants>()?.0,
+// All new nested collections are bounded during decoding, before growth.
+struct Bounded<T,const N:usize>(Vec<T>);
+impl<'de,T:Deserialize<'de>,const N:usize> Deserialize<'de> for Bounded<T,N>{
+    fn deserialize<D:serde::Deserializer<'de>>(d:D)->Result<Self,D::Error>{
+        struct V<T,const N:usize>(std::marker::PhantomData<T>);
+        impl<'de,T:Deserialize<'de>,const N:usize> serde::de::Visitor<'de> for V<T,N>{
+            type Value=Bounded<T,N>;
+            fn expecting(&self,f:&mut std::fmt::Formatter)->std::fmt::Result{write!(f,"at most {N} rows")}
+            fn visit_seq<S:serde::de::SeqAccess<'de>>(self,mut seq:S)->Result<Self::Value,S::Error>{
+                let mut rows=Vec::new();while let Some(row)=seq.next_element::<T>()?{
+                    if rows.len()>=N{return Err(serde::de::Error::custom("interaction row bound"));}rows.push(row);
+                }Ok(Bounded(rows))
+            }
+        }d.deserialize_seq(V::<T,N>(std::marker::PhantomData))
+    }
+}
+dto_serde!(Target,fields,{
+    vehicle_id:u32,spotted:u8,death_reason:i8,direct_hits:u16,explosion_hits:u16,piercings:u16,
+    damage_dealt:u16,damage_assisted_track:u16,damage_assisted_radio:u16,crits:u32,fire:u16,
 });
+dto_serde!(Row,fields,{attacker_vehicle_id:u32,targets:Vec<Target> => fields.next_value::<Bounded<Target,6>>()?.0,});
+dto_serde!(Details,fields,{version:u8,policy:String,spotting_policy:Option<String>,
+    rows:Vec<Row> => fields.next_value::<Bounded<Row,6>>()?.0,});
+impl Serialize for Results{
+    fn serialize<S:serde::Serializer>(&self,serializer:S)->Result<S::Ok,S::Error>{
+        use serde::ser::SerializeStruct;
+        let mut state=serializer.serialize_struct("Results",7+usize::from(self.interaction_details.is_some()))?;
+        state.serialize_field("arena_id",&self.arena_id)?;state.serialize_field("arena_type_id",&self.arena_type_id)?;
+        state.serialize_field("created_unix",&self.created_unix)?;state.serialize_field("winner_team",&self.winner_team)?;
+        state.serialize_field("finish_reason",&self.finish_reason)?;state.serialize_field("duration_seconds",&self.duration_seconds)?;
+        state.serialize_field("participants",&self.participants)?;
+        if let Some(details)=&self.interaction_details{state.serialize_field("interaction_details",details)?;}state.end()
+    }
+}
+impl<'de> Deserialize<'de> for Results{
+    fn deserialize<D:serde::Deserializer<'de>>(d:D)->Result<Self,D::Error>{
+        struct V;impl<'de> serde::de::Visitor<'de> for V{
+            type Value=Results;
+            fn expecting(&self,f:&mut std::fmt::Formatter)->std::fmt::Result{f.write_str("closed Results7 or Results8")}
+            fn visit_map<M:serde::de::MapAccess<'de>>(self,mut map:M)->Result<Results,M::Error>{
+                let(mut arena_id,mut arena_type_id,mut created_unix,mut winner_team,mut finish_reason,
+                    mut duration_seconds,mut participants,mut interaction_details)=(None,None,None,None,None,None,None,None);
+                macro_rules! take{($name:ident,$ty:ty)=>{{if $name.is_some(){return Err(serde::de::Error::duplicate_field(stringify!($name)));}
+                    $name=Some(map.next_value::<$ty>()?);}};}
+                while let Some(key)=map.next_key::<String>()?{match key.as_str(){
+                    "arena_id"=>take!(arena_id,u64),"arena_type_id"=>take!(arena_type_id,i32),
+                    "created_unix"=>take!(created_unix,u32),"winner_team"=>take!(winner_team,u8),
+                    "finish_reason"=>take!(finish_reason,u8),"duration_seconds"=>take!(duration_seconds,u32),
+                    "participants"=>{take!(participants,BoundedParticipants);},
+                    "interaction_details"=>take!(interaction_details,Details),
+                    _=>return Err(serde::de::Error::custom("unknown result field")),
+                }}
+                macro_rules! required{($name:ident)=>{$name.ok_or_else(||serde::de::Error::missing_field(stringify!($name)))?};}
+                Ok(Results{arena_id:required!(arena_id),arena_type_id:required!(arena_type_id),created_unix:required!(created_unix),
+                    winner_team:required!(winner_team),finish_reason:required!(finish_reason),duration_seconds:required!(duration_seconds),
+                    participants:required!(participants).0,interaction_details})
+            }
+        }d.deserialize_map(V)
+    }
+}
+pub(super) fn summaries(participants:&[Participant])->Vec<Summary>{participants.iter().map(|p|Summary{
+    vehicle_id:p.vehicle_id,team:p.team,direct_hits:p.direct_hits,piercings:p.piercings,damage_dealt:p.damage_dealt,
+    damage_received:p.damage_received,kills:p.kills,killer_id:p.killer_id,death_reason:p.death_reason}).collect()}
+
 impl Results {
     pub fn validate(&self)->io::Result<()> {
         self.validate_inner(false)
@@ -180,6 +242,7 @@ impl Results {
         if ![1,2].into_iter().all(|team|self.participants.iter().any(|p|p.team==team)) {
             return Err(bad("lifecycle result requires both teams"));
         }
+        if let Some(details)=&self.interaction_details{details.validate(&summaries(&self.participants))?;}
         Ok(())
     }
 }
@@ -204,7 +267,12 @@ const UPDATE_FIELDS:[&str;28]=["tmenXP","isPremium","eventCredits","eventGold","
     "movingAvgDamage","damageRating","orderCredits","orderXP","orderTMenXP","orderFreeXP","orderFortResource"];
 const FINAL_FIELDS:[&str;4]=["originalCredits","originalXP","originalFreeXP","questsProgress"];
 
-fn field(out:&mut Vec<u8>,name:&str,p:&Participant) {
+fn field(out:&mut Vec<u8>,name:&str,p:&Participant,result:&Results)->io::Result<()> {
+    if let Some(details)=&result.interaction_details{
+        if name=="details"{bytes(out,&details.packed(p.vehicle_id)?);return Ok(());}
+        if ["spotted","damaged","explosionHits"].contains(&name){integer(out,i64::from(details.outgoing(p.vehicle_id,name)));return Ok(());}
+        if ["directHitsReceived","explosionHitsReceived","piercingsReceived"].contains(&name){integer(out,i64::from(details.incoming(p.vehicle_id,name)));return Ok(());}
+    }
     // Zero economy, empty medals/quests and unavailable ancillary statistics are
     // explicit P08C test policy, not historical rewards or imported server code.
     let value=match name {
@@ -216,19 +284,19 @@ fn field(out:&mut Vec<u8>,name:&str,p:&Participant) {
         "accountDBID"=>p.account_dbid as i64,"team"=>p.team as i64,
         "typeCompDescr"=>p.type_compact_descr as i64,"deathReason"=>p.death_reason as i64,
         "premiumXPFactor10"|"premiumCreditsFactor10"|"dailyXPFactor10"|"igrXPFactor10"|"aogasFactor10"=>10,
-        "achievements"|"dossierPopUps"=>{out.push(b']');return;},
-        "details"=>{bytes(out,&[]);return;},
-        "questsProgress"=>{out.push(b'}');return;},
-        "autoLoadCost"|"autoEquipCost"|"histAmmoCost"=>{out.extend([b']',b'(',b'K',0,b'K',0,b'e']);return;},
-        "isPremium"|"isTeamKiller"=>{boolean(out,false);return;},
-        "isPrematureLeave"=>{boolean(out,p.premature_leave);return;},
+        "achievements"|"dossierPopUps"=>{out.push(b']');return Ok(());},
+        "details"=>{bytes(out,&[]);return Ok(());},
+        "questsProgress"=>{out.push(b'}');return Ok(());},
+        "autoLoadCost"|"autoEquipCost"|"histAmmoCost"=>{out.extend([b']',b'(',b'K',0,b'K',0,b'e']);return Ok(());},
+        "isPremium"|"isTeamKiller"=>{boolean(out,false);return Ok(());},
+        "isPrematureLeave"=>{boolean(out,p.premature_leave);return Ok(());},
         _=>0,
-    };integer(out,value);
+    };integer(out,value);Ok(())
 }
-fn row(out:&mut Vec<u8>,p:&Participant,personal:bool) {
-    out.extend([b']',b'(']);for name in PUBLIC_FIELDS {field(out,name,p);}
-    if personal {for name in PRIVATE_FIELDS.into_iter().chain(UPDATE_FIELDS).chain(FINAL_FIELDS){field(out,name,p);}}
-    out.push(b'e');
+fn row(out:&mut Vec<u8>,p:&Participant,personal:bool,result:&Results)->io::Result<()> {
+    out.extend([b']',b'(']);for name in PUBLIC_FIELDS {field(out,name,p,result)?;}
+    if personal {for name in PRIVATE_FIELDS.into_iter().chain(UPDATE_FIELDS).chain(FINAL_FIELDS){field(out,name,p,result)?;}}
+    out.push(b'e');Ok(())
 }
 
 /// Compact outer tuple: arenaID, personal81, pickle((common9,players,vehicles)).
@@ -254,9 +322,9 @@ fn compact_results_inner(result:&Results,own_account:i32,mixed:bool)->io::Result
         shared.push(b'e');
     }
     shared.extend([b'u',b'}',b'(']);
-    for p in &result.participants {integer(&mut shared,p.vehicle_id as i64);row(&mut shared,p,false);}
+    for p in &result.participants {integer(&mut shared,p.vehicle_id as i64);row(&mut shared,p,false,result)?;}
     shared.extend(b"ut.");
-    let mut out=vec![0x80,2];integer(&mut out,result.arena_id as i64);row(&mut out,own,true);
+    let mut out=vec![0x80,2];integer(&mut out,result.arena_id as i64);row(&mut out,own,true,result)?;
     bytes(&mut out,&shared);out.extend([0x87,b'.']);
     if out.len()>MAX_RESULT_BYTES{return Err(bad("lifecycle compact result size"));}Ok(out)
 }
@@ -285,10 +353,10 @@ pub fn account_result_stream(request_id:i16,first:Vec<u8>,result:&Results,own_ac
 mod tests {
     use super::*;
     #[derive(Debug,PartialEq)]
-    enum Data {Int(i64),Bool(bool),Bytes(Vec<u8>),List(Vec<Data>),Tuple(Vec<Data>),Dict(Vec<(Data,Data)>),Mark}
+    pub(super) enum Data {Int(i64),Bool(bool),Bytes(Vec<u8>),List(Vec<Data>),Tuple(Vec<Data>),Dict(Vec<(Data,Data)>),Mark}
     // Independent, deliberately tiny reader of this test's inert output. No
     // object constructors/imports, memo, incoming client data or production use.
-    fn inert(raw:&[u8])->Data {
+    pub(super) fn inert(raw:&[u8])->Data {
         assert!(raw.len()<32768);assert_eq!(&raw[..2],&[128,2]);let mut at=2;let mut stack=Vec::new();
         while at<raw.len() {let op=raw[at];at+=1;match op {
             b'K'=>{stack.push(Data::Int(raw[at] as i64));at+=1;},
@@ -309,8 +377,8 @@ mod tests {
             _=>panic!("unpermitted inert opcode {op}"),
         }}panic!("no STOP")
     }
-    fn list(data:&Data)->&[Data] {let Data::List(items)=data else{panic!("expected list")};items}
-    fn tuple(data:&Data)->&[Data] {let Data::Tuple(items)=data else{panic!("expected tuple")};items}
+    pub(super) fn list(data:&Data)->&[Data] {let Data::List(items)=data else{panic!("expected list")};items}
+    pub(super) fn tuple(data:&Data)->&[Data] {let Data::Tuple(items)=data else{panic!("expected tuple")};items}
     #[test] fn original_lifecycle_literals_and_afterbattle_additional_info() {
         assert_eq!(base_captured(2,0).unwrap(),[19,88,10,9,8,128,2,75,2,75,0,134,46]);
         assert_eq!(base_points(1,0,99,true).unwrap(),[19,88,14,8,12,128,2,40,75,1,75,0,75,99,136,116,46]);
@@ -322,9 +390,9 @@ mod tests {
         for bad in [0,3,255] {assert!(base_captured(bad,0).is_err());}
         assert!(base_points(1,0,101,false).is_err());assert!(vehicle_killed(0,0,0).is_err());
     }
-    fn result()->Results {
+    pub(super) fn result()->Results {
         Results {arena_id:0x1_0000_0001,arena_type_id:4,created_unix:1792080000,winner_team:1,
-            finish_reason:1,duration_seconds:75,participants:vec![
+            finish_reason:1,duration_seconds:75,interaction_details:None,participants:vec![
                 Participant {vehicle_id:0x09100003,account_dbid:1,name:"owner_1".into(),team:1,type_compact_descr:17,
                     health:90,shots:3,direct_hits:3,piercings:3,damage_dealt:90,kills:1,life_time:75,death_reason:-1,..Default::default()},
                 Participant {vehicle_id:0x09100005,account_dbid:2,name:"Танкист_Ёж".into(),team:2,type_compact_descr:17,
@@ -381,3 +449,6 @@ mod tests {
         assert_eq!(list(&vehicles[0].1)[11],Data::Int(90));assert_eq!(list(&vehicles[0].1)[23],Data::Int(1));
     }
 }
+
+#[cfg(test)]
+#[path="lifecycle_details_wire_tests.rs"]mod p08c_personal_wire_tests;

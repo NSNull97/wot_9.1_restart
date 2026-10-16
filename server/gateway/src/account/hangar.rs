@@ -477,6 +477,23 @@ impl Fixtures {
     }
 
     #[cfg(test)]
+    pub(crate) fn with_dossier_cursor_for_test(&self, version: i64, last_change_time: i32) -> io::Result<Self> {
+        // Authored unit fixture only: preserve the already supported original
+        // blank-grant pickle and its one exact cursor as an inseparable pair.
+        // No loader, actual owner metadata or production cursor rule changes.
+        if version != 1 || last_change_time <= 0 {
+            return Err(invalid("test dossier cursor version/time"));
+        }
+        let mut fixtures = self.clone();
+        fixtures.dossier = granted_dossier_bytes(last_change_time);
+        fixtures.dossier_cursor = Some(DossierCursor {
+            version, last_change_time, vehicle_type_compact_descr: 7169,
+        });
+        fixtures.validate_dossier_cursor(version, last_change_time)?;
+        Ok(fixtures)
+    }
+
+    #[cfg(test)]
     pub(crate) fn with_research_shop_for_test(&self,bytes:usize,revision:u8)->io::Result<Self> {
         // Authored inert bytes for the return parser/stream regression only;
         // this bypasses no production loader or profile13 ownership check.

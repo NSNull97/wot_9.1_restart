@@ -1062,6 +1062,11 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             crate::p06t_armament091::POLICY,crate::p06t_damage::POLICY,crate::p06t_device_state::POLICY,
             crate::p06t_lab_proxy::POLICY,model::p06t::MODULE_ADMISSION_POLICY,crate::p06t_shells091::SOURCE_REVISION);
     }
+    if profile13_mode && config.visibility_v1 {
+        battle_template.world.enable_result_spots()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("P08C_FIRST_SPOT_BOUND policy={}", model::result_spots::POLICY);
+    }
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
@@ -1241,6 +1246,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     if let Some(kind)=kind.filter(|k|!world.mixed_profiles()&&*k!=world.vehicle_kind()) {
                         let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
                         battle_template=BattleTemplate::from_resources(r,world.id,now)?;
+                        if config.visibility_v1 {battle_template.world.enable_result_spots()?;}
                         battle_template.select(&mut world,&mut integrated,now)?;
                         contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
                     }

@@ -9,7 +9,8 @@ Natural Elimination gate FAIL: winner personal summary пуста при team ta
 Оба durable результата записаны. Own run morning-marker01 остановлен по receipts,
 A120/B35, MS1 ammoA[0,1,8]/B[0,3,9], active0; logs/traces/RO DB backup сохранены.
 Текущая ветка codex/p08c-natural-results-return, план P08C_NATURAL_RESULTS_RETURN:
-source-bound details и strict native return, затем full/fresh native replay.
+source-bound details и strict native return реализованы; focused43/build и
+Python33/0skips PASS. Следующий gate — committed full, затем fresh native replay.
 UI/return FAIL до перепроверки. Late manual-leaver results и spawn отдельно открыты.
 
 Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего

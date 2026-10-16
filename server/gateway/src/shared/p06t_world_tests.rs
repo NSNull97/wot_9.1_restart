@@ -329,3 +329,116 @@ fn p06t_world_he_hits_retained_wreck_then_splashes_actual_nearby_live_source_geo
         assert_eq!(w.impact,before.impact);assert_eq!(w.damage_events,before.damage_events);assert_eq!(w.actors[2].health,before.actors[2].health);
     }
 }
+
+// Append inside model::p06t_world_tests. Authored cfg(test) LAB actors/poses and
+// low flat terrain; actual pinned vehicle mesh, World shots, Trace and journals.
+// No owned grant, SQL, worker-physics or original native/UI acceptance claim.
+#[test]
+fn p08c_actual_world_fired_journals_project_personal_details_and_native_pack() {
+    let now=Instant::now();let mut w=base(now,low_ground());
+    w.enable_lifecycle(super::super::lifecycle::Rules{prebattle_ms:1000,battle_ms:60000,
+        ..super::super::lifecycle::Rules::prohorovka()}).unwrap();
+    w.enable_result_spots().unwrap();
+    lab_attach(&mut w,VehicleKind::Ms1,0,[0,6,0]);
+    lab_attach(&mut w,VehicleKind::Ms1,1,[0,6,0]);start(&mut w,now);
+    w.lifecycle_created_unix=Some(1792080000);
+    w.actors[1].direction=[-std::f32::consts::PI,0.,0.];w.actors[1].yaw=-std::f32::consts::PI;
+    let target_before=w.actors[1].clone();let bundle=w.geometry_for(VehicleKind::Ms1).unwrap().clone();
+    // Same real first-surface endpoint as the pre-existing nearest-contact test.
+    let point=bundle.explosion_contact(&target_before,[0.,1.,15.],16.,1,1,1000).unwrap().unwrap().endpoint;
+    w.advance_lifecycle(now).unwrap();
+    for tick in 1..=10 {let at=now+Duration::from_millis(tick*100);w.advance(at).unwrap();w.advance_lifecycle(at).unwrap();}
+    assert!(w.lifecycle.as_ref().unwrap().allows_actions());
+    w.apply(0,1,&[Command::Aim(aim::Intent::Point(point))],now+Duration::from_secs(1)).unwrap();
+    for tick in 11..=30 {let at=now+Duration::from_millis(tick*100);w.advance(at).unwrap();w.advance_lifecycle(at).unwrap();}
+    let selected=source::profile(Mount::Ms1Stock).shots[1];
+    let mut tick=30u64;let mut fired=0usize;
+    for _ in 0..6 {
+        if !w.actors[1].alive(){break;}
+        let at=now+Duration::from_millis(tick*100);
+        let outcome=w.apply(0,1,&[Command::Armament(arm::Command::Shoot)],at).unwrap();
+        assert!(matches!(outcome.as_slice(),[fire::Outcome::Typed(arm::Outcome::Shot{shell,..})]if *shell==selected));
+        fired+=1;
+        // Real 100ms simulation and lifecycle publication ticks. Three seconds
+        // between requests exceeds this source reload; no ammo/cooldown edits.
+        for _ in 0..30 {
+            tick+=1;let at=now+Duration::from_millis(tick*100);
+            w.advance(at).unwrap();w.advance_lifecycle(at).unwrap();
+            if !w.actors[1].alive(){break;}
+        }
+    }
+    assert!((1..=6).contains(&fired));assert!(!w.actors[1].alive());
+    assert_eq!((w.actors[0].health,w.actors[1].health),(90,0));
+    assert!(w.lifecycle.as_ref().unwrap().outcome().is_some());
+    assert_eq!(w.shots.len(),fired);assert!(w.shots.iter().all(|s|s.slot==0));
+    assert!(w.projectiles.iter().all(|p|p.shell==Some(selected)));
+    assert!(!w.contacts.is_empty());assert!(w.contacts.iter().all(|c|c.target_slot==1));
+    let first=&w.contacts[0];assert!(bundle.proxy_ray(first).is_ok());
+    let mesh=bundle.world_mesh(&target_before,1,first.tick).unwrap();
+    assert_eq!(super::super::collision::query(&mesh,first.segment_start,first.segment_end).unwrap()[0],first.triangle);
+    assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::MaterialContact{..})));
+    assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::MixedResolution{..})));
+    assert!(w.damage_events.iter().all(|d|d.attacker==0&&d.target==1));
+    assert_eq!(w.damage_events.iter().map(|d|i32::from(d.health_before-d.health_after)).sum::<i32>(),90);
+    let lethal=w.damage_events.iter().find(|d|d.lethal()).expect("actual lethal journal entry");
+    assert_eq!(w.damage_events.iter().filter(|d|d.lethal()).count(),1);
+    // The exact shot count and death reason come from real journals: an actual
+    // engine ignition is allowed to finish the target between accepted shots.
+    let direct=u16::try_from(w.contacts.len()).unwrap();
+    let pierced=u16::try_from(w.impacts.iter().filter(|i|i.attacker==0&&matches!(&i.outcome,
+        ImpactOutcome::Mixed(r)if r.decision==crate::p06t_damage::Decision::Pierced)).count()).unwrap();
+    let result=super::super::lifecycle_result::build(&w).unwrap();
+    result.validate_p06t().unwrap();
+    let own=result.participants.iter().find(|p|p.account_dbid==100).unwrap();
+    let enemy=result.participants.iter().find(|p|p.account_dbid==101).unwrap();
+    assert_eq!((own.shots,own.direct_hits,own.piercings),(fired as u16,direct,pierced));
+    assert_eq!((own.damage_dealt,own.kills,own.damage_received),(90,1,0));
+    assert_eq!((enemy.health,enemy.damage_received,enemy.killer_id,enemy.death_reason),(0,90,own.vehicle_id,lethal.reason as i8));
+    let spots=w.result_spots().unwrap();
+    assert_eq!(spots.iter().filter(|s|s.observer()==0&&s.target()==1).count(),1);
+    let details=result.interaction_details.as_ref().unwrap();
+    assert_eq!(details.spotting_policy.as_deref(),Some(result_spots::POLICY));
+    let row=details.row(own.vehicle_id).unwrap();assert_eq!(row.targets.len(),1);let target=&row.targets[0];
+    assert_eq!((target.vehicle_id,target.spotted,target.damage_dealt,target.death_reason),(enemy.vehicle_id,1,90,enemy.death_reason));
+    assert_eq!((target.direct_hits,target.piercings,target.explosion_hits),(direct,pierced,0));
+    let packed=details.packed(own.vehicle_id).unwrap();assert_eq!(packed.len(),24);
+    // Independent #717 <I ID + BbHHHHHHIH scalar unpack, not a round trip of
+    // the production serializer. No input pickle deserialization is involved.
+    let u16_at=|offset|u16::from_le_bytes(packed[offset..offset+2].try_into().unwrap());
+    assert_eq!(u32::from_le_bytes(packed[0..4].try_into().unwrap()),enemy.vehicle_id);
+    assert_eq!((packed[4],packed[5] as i8),(1,lethal.reason as i8));
+    assert_eq!((u16_at(6),u16_at(8),u16_at(10),u16_at(12)),(direct,0,pierced,90));
+    assert_eq!((u16_at(14),u16_at(16),u16_at(22)),(0,0,0));
+    assert_eq!(u32::from_le_bytes(packed[18..22].try_into().unwrap()),0);
+
+    // Tiny independent reader of this test's own bounded protocol2 output.
+    // Deliberately no GLOBAL/REDUCE/INST/OBJ/memo/object construction or imports.
+    #[derive(Debug,PartialEq)]enum V{Int(i64),Bool(bool),Bytes(Vec<u8>),List(Vec<V>),Tuple(Vec<V>),Dict(Vec<(V,V)>),Mark}
+    fn inert(raw:&[u8])->V {
+        assert!(raw.len()<32768);assert_eq!(&raw[..2],&[128,2]);let mut at=2;let mut stack=Vec::new();
+        while at<raw.len(){let op=raw[at];at+=1;match op{
+            b'K'=>{stack.push(V::Int(i64::from(raw[at])));at+=1;},
+            b'J'=>{stack.push(V::Int(i64::from(i32::from_le_bytes(raw[at..at+4].try_into().unwrap()))));at+=4;},
+            0x8a=>{assert_eq!(raw[at],8);at+=1;stack.push(V::Int(i64::from_le_bytes(raw[at..at+8].try_into().unwrap())));at+=8;},
+            b'U'|b'T'=>{let n=if op==b'U'{let n=raw[at] as usize;at+=1;n}else{let n=u32::from_le_bytes(raw[at..at+4].try_into().unwrap())as usize;at+=4;n};
+                stack.push(V::Bytes(raw[at..at+n].to_vec()));at+=n;},
+            0x88|0x89=>stack.push(V::Bool(op==0x88)),b'('=>stack.push(V::Mark),
+            b']'=>stack.push(V::List(Vec::new())),b'}'=>stack.push(V::Dict(Vec::new())),
+            b'e'|b'u'|b't'=>{let mark=stack.iter().rposition(|x|matches!(x,V::Mark)).unwrap();let values=stack.split_off(mark+1);assert_eq!(stack.pop(),Some(V::Mark));
+                if op==b'e'{let Some(V::List(v))=stack.last_mut()else{panic!("list")};v.extend(values);}
+                else if op==b'u'{assert_eq!(values.len()%2,0);let Some(V::Dict(v))=stack.last_mut()else{panic!("dict")};let mut it=values.into_iter();while let Some(k)=it.next(){v.push((k,it.next().unwrap()));}}
+                else{stack.push(V::Tuple(values));}},
+            0x86|0x87=>{let count=if op==0x86{2}else{3};let values=stack.split_off(stack.len()-count);stack.push(V::Tuple(values));},
+            b'.'=>{assert_eq!(at,raw.len());assert_eq!(stack.len(),1);return stack.pop().unwrap();},
+            _=>panic!("unexpected primitive output opcode {op}"),
+        }}panic!("missing STOP")
+    }
+    let compact=super::super::lifecycle_wire::compact_results_p06t(&result,100).unwrap();
+    let V::Tuple(outer)=inert(&compact)else{panic!("compact tuple")};assert_eq!(outer.len(),3);
+    let V::List(personal)=&outer[1]else{panic!("personal list")};assert_eq!(personal.len(),81);
+    // Independent original field indices, not production field-name lookup.
+    for(index,value)in [(6,fired as i64),(7,i64::from(direct)),(10,i64::from(pierced)),(11,90),(21,1),(23,1)]{
+        assert_eq!(personal[index],V::Int(value));
+    }
+    assert_eq!(personal[43],V::Bytes(packed));
+}

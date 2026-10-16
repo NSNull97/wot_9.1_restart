@@ -6,6 +6,7 @@ pub(crate) mod interest_wire;
 pub(crate) mod lifecycle;
 pub(crate) mod lifecycle_wire;
 mod lifecycle_result;
+mod lifecycle_details;
 pub(crate) mod results_session;
 pub(crate) mod aim;
 pub(crate) mod pose;
@@ -447,6 +448,28 @@ impl Session {
             }
             if !self.drive_return_account.as_ref().is_some_and(|warm| warm.enabled)
                 || payload.len() - at < 3 { return Err(bad()); }
+            if payload[at] == 0x0d {
+                // Natural elimination capture: after enableEntities the dead
+                // Avatar's explicit-mailbox camera rebind may precede the
+                // ordinary Account sync/chat compound in the SAME frame.
+                // Keep it bounded to the retained dead epoch and do not pass
+                // it to Account dispatch or restore any Avatar authority.
+                let raw = payload.get(at..at+11).ok_or_else(|| bad())?;
+                let c = self.shared.as_ref().ok_or_else(|| bad())?;
+                let warm = self.drive_return_account.as_ref().ok_or_else(|| bad())?;
+                if c.phase != Phase::Returning || c.return_mask != 0 || !c.correction
+                    || !c.binding.is_some_and(|(_,acked)| acked)
+                    || c.view.as_ref().and_then(|world| world.actors.get(c.slot)).is_none_or(|actor| actor.alive())
+                    || c.return_generation != warm.generation
+                    || !warm.creation.is_some_and(|(_,acked)| acked)
+                    || warm.stale_avatar_envelopes >= 32 || seen.contains(&raw) { return Err(bad()); }
+                wire::retired_postmortem_rebind(raw,c.slot)?;
+                seen.push(raw); at += raw.len();
+                self.drive_return_account.as_mut().ok_or_else(|| bad())?.stale_avatar_envelopes += 1;
+                events.push(format!("SHARED_RETIRED_POSTMORTEM_DRAIN session={} generation={} client_sequence={sequence} authority_changed=false domain_applied=false",
+                    self.id,c.return_generation));
+                continue;
+            }
             let len = u16::from_le_bytes([payload[at+1], payload[at+2]]) as usize;
             let packet = payload.get(at..at+3+len).ok_or_else(|| bad())?;
             at += packet.len();
@@ -939,6 +962,218 @@ mod shared_return_tests {
         let text = "8e1400e200640001000000000000000c4cbf6a000000008e1400e3002c010200000000000000ae0100002c48f55c8e1400e40058020000000000000000000000000000000093190001000000000000000a00000000ffffffffffffffff000000009319000200000000000000090000000000000000000000000000000093190003000000000000001e00000000000000000000000000000000";
         text.as_bytes().chunks_exact(2).map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()).collect()
     }
+    // OBSERVED morning-marker01, session2/clientB sequence3528, flags0x458,
+    // cumulativeACK3027; packet-021121-base_client_to_server.bin ciphertext
+    // SHA256 ef9b87d728be090aa27866bea7e71d27a29eae3b097211eea0407815153fc259.
+    // Exact token-stripped164B application SHA256
+    // 5e8aed252f04679cbc695798a84947794e4b87372d74503969e34017696db8c5.
+    // Gameplay/cache fields only; no native token, key or credentials.
+    fn p08c_natural_return_captured() -> Vec<u8> {
+        let hex = "0d080002001009030010098e1400e200640001000000000000005e1a6d3d000000008e1400e3002c010500000000000000435a000023a0cb0e8e1400e4005802010000000000000006ead06a0000000093190001000000000000000a00000000ffffffffffffffff000000009319000200000000000000090000000000000000000000000000000093190003000000000000001e00000000000000000000000000000000";
+        let bytes: Vec<u8> = hex.as_bytes().chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()).collect();
+        assert_eq!(bytes.len(), 164);
+        assert_eq!(&bytes[..11], &[13,8,0,2,0,16,9,3,0,16,9]);
+        bytes
+    }
+
+    fn p08c_natural_return_for_slot(slot: usize) -> Vec<u8> {
+        let mut bytes = p08c_natural_return_captured();
+        // Slot0 is byte-for-byte observed. Slot1 is an explicit source-derived
+        // identity variant, not a second native capture or ownership claim.
+        if slot != 0 {
+            bytes[3..7].copy_from_slice(&wire::avatar_id(slot).unwrap().to_le_bytes());
+            bytes[7..11].copy_from_slice(&wire::vehicle_id(slot).unwrap().to_le_bytes());
+        }
+        bytes
+    }
+
+    fn p08c_natural_return_pending(now: Instant, slot: usize) -> Session {
+        let mut s = pending(now, slot);
+        let fixture = s.hangar.as_ref().unwrap().with_research_shop_for_test(24000, 5).unwrap()
+            .with_dossier_cursor_for_test(1, 1792076294).unwrap();
+        assert_eq!(fixture.shop_sync_revision().unwrap(), 5);
+        fixture.validate_shop_cursor(5, 23107, 248225827).unwrap();
+        fixture.validate_dossier_cursor(1, 1792076294).unwrap();
+        assert!(fixture.validate_dossier_cursor(1, 1792076295).is_err());
+        s.hangar = Some(Arc::new(fixture));
+        s.shared.as_mut().unwrap().view.as_mut().unwrap().actors[slot].health = 0;
+        s
+    }
+
+    fn p08c_natural_return_no_authority(before: &Session, after: &Session) {
+        let old = before.shared.as_ref().unwrap(); let current = after.shared.as_ref().unwrap();
+        let a = old.view.as_ref().unwrap(); let b = current.view.as_ref().unwrap();
+        // Actor equality covers HP/pose/input/aim/fire/owned loadout/device state.
+        assert_eq!(a.actors, b.actors);
+        assert_eq!((a.id, a.tick, a.shots.len(), a.projectiles.len(), a.damage_events.len(), a.device_events.len()),
+                   (b.id, b.tick, b.shots.len(), b.projectiles.len(), b.damage_events.len(), b.device_events.len()));
+        assert_eq!((old.slot, old.binding, old.correction, old.return_generation),
+                   (current.slot, current.binding, current.correction, current.return_generation));
+        assert!(current.commands.is_empty()); assert!(!current.join_requested);
+        assert!(after.drive.is_none()); assert!(!after.arena_base);
+        assert_eq!((before.id, before.key, before.token, before.handoff, before.base_peer),
+                   (after.id, after.key, after.token, after.handoff, after.base_peer));
+        assert_eq!(before.hangar.as_ref().unwrap().state_sha256(), after.hangar.as_ref().unwrap().state_sha256());
+    }
+
+    #[test]
+    fn p08c_natural_return_actual164_after_separate_enable_keeps_channel_replay_and_heartbeat() {
+        let now = Instant::now();
+        for slot in 0..2 {
+            let mut s = p08c_natural_return_pending(now, slot);
+            s.receive(&frame(&s, &[9], 1), now).unwrap();
+            let before = s.clone();
+            let packet = frame(&s, &p08c_natural_return_for_slot(slot), 1);
+            s.receive(&packet, now).unwrap();
+            assert_eq!(s.shared.as_ref().unwrap().phase, Phase::Account);
+            assert_eq!(s.shared.as_ref().unwrap().return_mask, 7);
+            assert_eq!(s.drive_return_account.as_ref().unwrap().stale_avatar_envelopes, 1);
+            assert_eq!(s.account_cache_hash, Some(1030560350));
+            assert_eq!(s.request_ids, vec![226, 227, 228]);
+            assert_eq!(s.chat_request_ids, vec![1, 2, 3]);
+            assert_eq!(s.rx, before.rx + 1);
+            p08c_natural_return_no_authority(&before, &s);
+            let once = s.clone(); s.receive(&packet, now).unwrap(); same(&s, &once);
+            p08c_natural_return_no_authority(&once, &s);
+            // Observed3529/3530/3531 were authentication-only, not new RPCs.
+            for _ in 0..3 {
+                let before = s.clone(); s.receive(&frame(&s, &[], 1), now).unwrap();
+                assert_eq!(s.rx, before.rx + 1);
+                assert_eq!(s.request_ids, before.request_ids);
+                assert_eq!(s.chat_request_ids, before.chat_request_ids);
+                assert_eq!(s.drive_return_account, before.drive_return_account);
+                p08c_natural_return_no_authority(&before, &s);
+            }
+        }
+    }
+
+    #[test]
+    fn p08c_natural_return_same_frame_enable_and_actual164_is_atomic_and_consumes_one_drain() {
+        let now = Instant::now();
+        for slot in 0..2 {
+            let mut s = p08c_natural_return_pending(now, slot); let before = s.clone();
+            let mut payload = vec![9]; payload.extend(p08c_natural_return_for_slot(slot));
+            s.receive(&frame(&s, &payload, 1), now).unwrap();
+            assert_eq!(s.shared.as_ref().unwrap().phase, Phase::Account);
+            assert_eq!(s.shared.as_ref().unwrap().return_mask, 7);
+            assert_eq!(s.drive_return_account.as_ref().unwrap().stale_avatar_envelopes, 1);
+            assert!(s.drive_return_account.as_ref().unwrap().enabled);
+            assert_eq!(s.rx, before.rx + 1);
+            p08c_natural_return_no_authority(&before, &s);
+        }
+    }
+
+    #[test]
+    fn p08c_natural_return_wrong_own_route_or_target_and_zero_mailbox_fail_atomically() {
+        let now = Instant::now();
+        for slot in 0..2 {
+            let mut ready = p08c_natural_return_pending(now, slot);
+            ready.receive(&frame(&ready, &[9], 1), now).unwrap();
+            for (field, replacement) in [
+                (3, wire::avatar_id(1-slot).unwrap()),
+                (3, 0), (3, wire::vehicle_id(slot).unwrap()),
+                (7, wire::vehicle_id(1-slot).unwrap()),
+                (7, 0), (7, wire::avatar_id(slot).unwrap()),
+            ] {
+                let mut payload = p08c_natural_return_for_slot(slot);
+                payload[field..field+4].copy_from_slice(&replacement.to_le_bytes());
+                let mut s = ready.clone();
+                assert!(s.receive(&frame(&s, &payload, 1), now).is_err()); same(&s, &ready);
+                p08c_natural_return_no_authority(&ready, &s);
+            }
+            // Source-only ID validator separation: ordinary Driving still uses
+            // the previously measured zero mailbox and rejects explicit Avatar.
+            let explicit = p08c_natural_return_for_slot(slot)[..11].to_vec();
+            assert!(wire::retired_postmortem_rebind(&explicit, slot).is_ok());
+            assert!(wire::postmortem_rebind(&explicit, slot).is_err());
+            let mut zero = explicit.clone(); zero[3..7].fill(0);
+            assert!(wire::postmortem_rebind(&zero, slot).is_ok());
+            assert!(wire::retired_postmortem_rebind(&zero, slot).is_err());
+        }
+    }
+
+    #[test]
+    fn p08c_natural_return_requires_dead_retained_view_binding_correction_and_epoch_guards() {
+        let now = Instant::now(); let mut enabled = p08c_natural_return_pending(now, 0);
+        enabled.receive(&frame(&enabled, &[9], 1), now).unwrap();
+        for guard in 0..10 {
+            let mut s = enabled.clone();
+            match guard {
+                0 => s.shared.as_mut().unwrap().view.as_mut().unwrap().actors[0].health = 90,
+                1 => s.shared.as_mut().unwrap().view = None,
+                2 => s.shared.as_mut().unwrap().binding = None,
+                // Sequence100 cannot be ACKed by the actual cumulative1 below.
+                3 => s.shared.as_mut().unwrap().binding = Some((100, false)),
+                4 => s.shared.as_mut().unwrap().correction = false,
+                5 => s.drive_return_account.as_mut().unwrap().creation = None,
+                6 => s.drive_return_account.as_mut().unwrap().creation = Some((100, false)),
+                7 => s.drive_return_account.as_mut().unwrap().generation += 1,
+                8 => s.shared.as_mut().unwrap().return_mask = 1,
+                9 => s.shared.as_mut().unwrap().phase = Phase::Account,
+                _ => unreachable!(),
+            }
+            let before = s.clone();
+            assert!(s.receive(&frame(&s, &p08c_natural_return_captured(), 1), now).is_err(), "guard={guard}");
+            same(&s, &before);
+            assert_eq!(s.shared.as_ref().unwrap().binding, before.shared.as_ref().unwrap().binding);
+            assert_eq!(s.shared.as_ref().unwrap().correction, before.shared.as_ref().unwrap().correction);
+            assert_eq!(s.shared.as_ref().unwrap().view.as_ref().map(|v| &v.actors),
+                       before.shared.as_ref().unwrap().view.as_ref().map(|v| &v.actors));
+        }
+        let preenable = p08c_natural_return_pending(now, 0);
+        for payload in [p08c_natural_return_captured(), [vec![9], p08c_natural_return_captured()].concat()] {
+            let mut s = preenable.clone();
+            // Without reset ACK, even enable+bind+warm must remain unchanged.
+            assert!(s.receive(&frame(&s, &payload, 0), now).is_err()); same(&s, &preenable);
+        }
+        let mut s = preenable.clone();
+        assert!(s.receive(&frame(&s, &p08c_natural_return_captured(), 1), now).is_err()); same(&s, &preenable);
+    }
+
+    #[test]
+    fn p08c_natural_return_exact_drain_budget_and_duplicate_bind_do_not_consume_warm_half() {
+        let now = Instant::now(); let mut enabled = p08c_natural_return_pending(now, 0);
+        enabled.receive(&frame(&enabled, &[9], 1), now).unwrap();
+        let app = p08c_natural_return_captured();
+        let mut last = enabled.clone(); last.drive_return_account.as_mut().unwrap().stale_avatar_envelopes = 31;
+        last.receive(&frame(&last, &app, 1), now).unwrap();
+        assert_eq!(last.drive_return_account.as_ref().unwrap().stale_avatar_envelopes, 32);
+        assert_eq!(last.shared.as_ref().unwrap().phase, Phase::Account);
+        let mut bounded = enabled.clone(); bounded.drive_return_account.as_mut().unwrap().stale_avatar_envelopes = 32;
+        let before = bounded.clone();
+        assert!(bounded.receive(&frame(&bounded, &app, 1), now).is_err()); same(&bounded, &before);
+        let duplicate = [&app[..11], app.as_slice()].concat();
+        let mut s = enabled.clone();
+        assert!(s.receive(&frame(&s, &duplicate, 1), now).is_err()); same(&s, &enabled);
+        assert_eq!(s.drive_return_account.as_ref().unwrap().stale_avatar_envelopes, 0);
+        // A late bind after an already committed first warm command is refused.
+        let mut s = enabled.clone(); s.receive(&frame(&s, &app[11..34], 1), now).unwrap();
+        assert_eq!(s.shared.as_ref().unwrap().return_mask, 1); let before = s.clone();
+        assert!(s.receive(&frame(&s, &app, 1), now).is_err()); same(&s, &before);
+    }
+
+    #[test]
+    fn p08c_natural_return_bad_late_warm_cursor_tail_and_piggyback_roll_back_everything() {
+        let now = Instant::now(); let ready = p08c_natural_return_pending(now, 0);
+        let actual = p08c_natural_return_captured();
+        let mut bad_shop = actual.clone(); bad_shop[41..49].copy_from_slice(&4i64.to_le_bytes());
+        let mut bad_dossier = actual.clone(); bad_dossier[72..76].copy_from_slice(&1792076295i32.to_le_bytes());
+        let mut bad_tail = actual.clone(); bad_tail.push(0);
+        for malformed in [bad_shop, bad_dossier, bad_tail] {
+            let mut payload = vec![9]; payload.extend(malformed);
+            let mut s = ready.clone();
+            assert!(s.receive(&frame(&s, &payload, 1), now).is_err()); same(&s, &ready);
+            p08c_natural_return_no_authority(&ready, &s);
+        }
+        let mut good = vec![9]; good.extend(actual);
+        let child = frame(&ready, &good, 1);
+        let mut outer = frame(&ready, &[0], 1); outer.sequence = Some(ready.rx+1); outer.piggybacks.push(child);
+        let mut s = ready.clone();
+        assert!(s.receive(&outer, now).is_err()); same(&s, &ready);
+        p08c_natural_return_no_authority(&ready, &s);
+    }
+
     fn same(a: &Session, b: &Session) {
         assert_eq!((a.rx, a.tx.cumulative, a.tx.len(), a.sync_mask, a.arena_base, a.last_rx),
             (b.rx, b.tx.cumulative, b.tx.len(), b.sync_mask, b.arena_base, b.last_rx));

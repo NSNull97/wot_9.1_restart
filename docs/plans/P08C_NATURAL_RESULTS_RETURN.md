@@ -47,6 +47,9 @@ research helpers. Старый ранний manual-leaver full-result append —
 карточки в эту правку не включать.
 
 Откат: свои процессы остановить по receipts; вернуть сохранённую marker ветку
-и matching full/binding04, сохранив текущую БД и ammo. Marker gate остаётся
+и matching full/binding04, сохранив текущую БД и ammo. Старый reader Results7
+не читает новые Results8; новые строки требуют нового reader даже после
+отката игрового бинарника. Не восстанавливать БД ради возврата потраченного БК.
+Marker gate остаётся
 принятым. В main эту зависимую цепочку не сливать до родительских gates.
 Следующий шаг — точный native parser/detail contract, затем узкая правка.

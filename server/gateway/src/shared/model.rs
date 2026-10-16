@@ -85,6 +85,8 @@ pub struct DamageRecord {
 }
 impl DamageRecord {pub fn lethal(&self)->bool{self.crew_before&&(!self.crew_after||self.health_after==0)}}
 pub const MAX_DAMAGE_EVENTS:usize=MAX_BATTLE_SHOTS*16;
+#[path="result_spots.rs"]
+pub(super) mod result_spots;
 #[path="p06t_world.rs"]
 pub(super) mod p06t;
 
@@ -160,6 +162,8 @@ pub struct World {
     /// preserve their accepted unrestricted drive route.
     pub lifecycle: Option<super::lifecycle::State>,
     pub lifecycle_created_unix: Option<u32>,
+    result_spots:Option<Vec<result_spots::SpotRecord>>,
+    result_spot_tick:Option<u32>,
     mixed_ammo:bool,
     pub damage_events:Vec<DamageRecord>,
     pub device_events:Vec<(usize,crate::p06t_device_state::Transition)>,
@@ -183,7 +187,8 @@ impl World {
     pub fn fresh_battle(&self, id: u64, now: Instant) -> io::Result<Self> {
         if id == 0 || id == self.id || self.started.is_some() || !self.actors.is_empty()
             || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version() != 0
-            || !self.damage_events.is_empty() || !self.device_events.is_empty() || !self.rng_draws.is_empty() {
+            || !self.damage_events.is_empty() || !self.device_events.is_empty() || !self.rng_draws.is_empty()
+            || self.result_spots.as_ref().is_some_and(|rows|!rows.is_empty()) || self.result_spot_tick.is_some() {
             return Err(bad());
         }
         let mut next = self.clone();
@@ -268,6 +273,7 @@ impl World {
         Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
             mixed_ammo:false,damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
+            result_spots:None,result_spot_tick:None,
             geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None,
             contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS] })
@@ -283,6 +289,16 @@ impl World {
         if self.started.is_some() || !self.actors.is_empty() || self.lifecycle.is_some() { return Err(bad()); }
         self.lifecycle = Some(super::lifecycle::State::new(rules)?); Ok(())
     }
+    /// Explicit result-statistics opt-in. Native interest itself remains the
+    /// existing visibility_v1 policy; legacy templates never query it here.
+    pub fn enable_result_spots(&mut self)->io::Result<()>{
+        if self.result_spots.is_some()||self.result_spot_tick.is_some()||self.started.is_some()
+            ||!self.actors.is_empty()||!self.shots.is_empty()||!self.projectiles.is_empty()
+            ||!self.impact.events().is_empty()||self.terrain.is_none()
+            ||self.lifecycle.as_ref().is_none_or(|state|state.phase()!=super::lifecycle::Phase::Waiting){return Err(bad());}
+        self.result_spots=Some(Vec::new());Ok(())
+    }
+    pub(super) fn result_spots(&self)->Option<&[result_spots::SpotRecord]>{self.result_spots.as_deref()}
     pub fn team(&self, slot: usize) -> io::Result<u8> {
         if slot >= self.actors.len() { return Err(bad()); }
         Ok(if self.lifecycle.is_some() { (slot % 2) as u8 + 1 } else { 1 })
@@ -328,7 +344,22 @@ impl World {
                 alive: actor.alive(), position: actor.position, damage_epoch: epoch,
                 last_damager: damage.last().copied() })
         }).collect::<io::Result<Vec<_>>>()?;
-        let changed = self.lifecycle.as_mut().ok_or_else(|| bad())?.advance(elapsed, &members)?;
+        let changed = if let Some(old)=&self.result_spots {
+            // A failed late LOS must leave lifecycle, journal and actor state
+            // untouched. Stage only the small lifecycle and <=6 records;
+            // cloning the whole World/Trace here would be unnecessary work.
+            let mut life=self.lifecycle.as_ref().ok_or_else(||bad())?.clone();
+            let changed=life.advance(elapsed,&members)?;
+            let next=if life.allows_actions(){
+                let observers=members.iter().map(|member|result_spots::Member{
+                    team:member.team,present:member.present,ready:member.ready,alive:member.alive}).collect::<Vec<_>>();
+                Some(result_spots::refresh(old,self.result_spot_tick,self.tick,&observers,
+                    |slot|self.desired_visibility(slot))?)
+            }else{None};
+            self.lifecycle=Some(life);
+            if let Some(next)=next{self.result_spots=Some(next);self.result_spot_tick=Some(self.tick);}
+            changed
+        }else{self.lifecycle.as_mut().ok_or_else(|| bad())?.advance(elapsed, &members)?};
         if !self.lifecycle.as_ref().ok_or_else(|| bad())?.allows_actions() {
             for actor in &mut self.actors { actor.input = Input::STOP; }
         }
@@ -1656,3 +1687,7 @@ pub(super) mod tests {
 #[cfg(test)]
 #[path = "p06t_world_tests.rs"]
 mod p06t_world_tests;
+
+#[cfg(test)]
+#[path="result_spots_world_tests.rs"]
+mod first_spot_tests;

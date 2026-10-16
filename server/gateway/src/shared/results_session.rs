@@ -319,7 +319,7 @@ mod tests {
     fn results()->Results {
         use lifecycle_wire::Participant;
         Results {arena_id:0x1_0000_0001,arena_type_id:4,created_unix:1792080000,winner_team:0,
-            finish_reason:3,duration_seconds:900,participants:vec![
+            finish_reason:3,interaction_details:None,duration_seconds:900,participants:vec![
                 Participant {vehicle_id:0x09100003,account_dbid:1,name:"owner_a".into(),team:1,
                     type_compact_descr:3329,health:90,life_time:900,death_reason:-1,..Default::default()},
                 Participant {vehicle_id:0x09100005,account_dbid:2,name:"owner_b".into(),team:2,
