@@ -85,17 +85,23 @@ pub(crate) fn verified(path:&Path,source_sha:Option<&str>)->(PathBuf,String) {
     assert_eq!(Path::new(context["source_root"].as_str().unwrap()),Path::new("D:/WoT_9.1_Server"));
     assert_eq!(context["allocation_sha256"],hash(&bytes(&parent.join("short-workspace01/allocation.json"),4096)));
     let rel=path.strip_prefix(&workspace).unwrap().to_string_lossy().replace('\\',"/");
-    let extra_raw=bytes(&parent.join("dependencies-missing04/supplement04.json"),1024*1024);
-    assert_eq!(hash(&extra_raw),"a7d49c2b601ee128a0cc06b221b1e0255edfe985de47b3f3915c7190491fd406");
-    let extra:Value=serde_json::from_slice(&extra_raw).unwrap();
-    assert_eq!(extra["schema"],"wot091-c-fixture-supplement.v1");
-    assert_eq!(extra["workspace"],context["workspace"]);
-    assert_eq!(extra["source_root"],context["source_root"]);
-    assert_eq!(extra["allocation_sha256"],context["allocation_sha256"]);
-    assert_eq!(Path::new(extra["base_context"]["path"].as_str().unwrap()),parent.join("dependencies-short02/resource-context.json"));
-    assert_eq!(extra["base_context"]["sha256"],hash(&context_raw));
     let mut rows=context["files"].as_object().unwrap().clone();
-    for(key,row)in extra["files"].as_object().unwrap(){assert!(rows.insert(key.clone(),row.clone()).is_none(),"supplement cannot replace an original fixture");}
+    for(name,pin)in [
+        ("dependencies-missing04/supplement04.json","a7d49c2b601ee128a0cc06b221b1e0255edfe985de47b3f3915c7190491fd406"),
+        ("dependencies-missing05/supplement05.json","6017336d691469f9fa9c88fc07a825b3ae144b388307224413ce1c4359348d2e"),
+        ("dependencies-missing06/supplement06.json","7eab39930524bd8c4e68a7fa85ac76c833d6a093d419dee0155c1bfffa9fff8c"),
+    ] {
+        let extra_raw=bytes(&parent.join(name),1024*1024);
+        assert_eq!(hash(&extra_raw),pin);
+        let extra:Value=serde_json::from_slice(&extra_raw).unwrap();
+        assert_eq!(extra["schema"],"wot091-c-fixture-supplement.v1");
+        assert_eq!(extra["workspace"],context["workspace"]);
+        assert_eq!(extra["source_root"],context["source_root"]);
+        assert_eq!(extra["allocation_sha256"],context["allocation_sha256"]);
+        assert_eq!(Path::new(extra["base_context"]["path"].as_str().unwrap()),parent.join("dependencies-short02/resource-context.json"));
+        assert_eq!(extra["base_context"]["sha256"],hash(&context_raw));
+        for(key,row)in extra["files"].as_object().unwrap(){assert!(rows.insert(key.clone(),row.clone()).is_none(),"supplement cannot replace an earlier fixture");}
+    }
     assert!(rows.len()<=1024);
     let mut verifier=Verifier{workspace:&workspace,rows:&rows,done:BTreeMap::new()};
     let actual=verifier.file(&rel,source_sha,0);(path,actual)

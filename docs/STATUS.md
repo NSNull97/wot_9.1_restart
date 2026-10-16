@@ -1,94 +1,59 @@
-# Состояние проекта — 2026-10-17
+# Состояние проекта — 2026-10-17, ночная работа до09:00
 
-Текущая technical prerequisite: codex/build-c-night-workspace, новый shortC
-C:/wot091-night-20261017-01/w. D~1MiB; старые checkout/данные/клиенты сохранены.
-Toolchain23889/vendor134 files SHAexact; finite resources367/198271436B,
-Python9 guardsPASS, cfg(test) portability prepared; canonical C full NOT_RUN.
-Full/source/binary strict gate05; no production path exemptions. Mainffce8cb
-без merge. После C full actual4 Hold, morning contexts, garageFresh.
+Текущая карточка: **BUILD short-C workspace**, ветка
+`codex/build-c-night-workspace`, рабочая папка
+`C:/wot091-night-20261017-01/w`. D почти заполнен; исходные checkout, данные,
+клиенты и main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe` сохранены.
+Непринятые карточки в main не слиты. Native/UI/звук/управление/два ПК — NOT_RUN.
 
-Hold5 Dsource3675a48: focused30+actual2/buildPASS; SQL17+reader4PASS,
-Web3/selection4/client79/CPython76+3oldskips/rawSQL2/CLI1+2PASS. LowD batch27
-FAIL_RETAINED beforeWeb, remainingHTTP/full NOT_RUN. [Факты](research/P08B_OWNER_BATTLE_HOLD.md).
-Native/UI/real4/twoPC остаются NOT_RUN. До09:00 продолжаем без ручных вопросов.
+C full01:1506PASS/105FAIL/5oldignored; C full02:1532PASS/79FAIL/5oldignored,
+909rawsourceexact,693.50s tests. Ошибки сохранены: недостающие тестовые ресурсы,
+Windows path spelling и отдельное сравнение архивного IPC с derived C config.
+Оригинальные source SHA сохраняются; production loaders/authority не ослаблены.
+Опубликованы513 finite resources и exact toolchain/vendor/Web dependencies.
+Следующий canonical C full03 пока PENDING. [Исследование](research/BUILD_C_NIGHT_WORKSPACE.md).
 
+**Hold5 runtime3675a48**: focused30+build и actual2 Runtime→HTTP→SQLite+build
+на D PASS. В C full02 actual2, restart, late и rooms HTTP/SQL compositions
+прошли отдельно; общий C full при этом FAIL. SQL17+reader4 PASS; Web3/selection4,
+clienthost79/CPython76+3knownhost-only skips/rawSQL2/CLI1+2 PASS.
+C components: reader4/HTTP3/selectionSQL5/snapshot8 PASS0skip; oldWeb26 PASS,
+game-adapter11 ещё требует отдельного rerun после точного переноса Web data.
+[Границы и доказательства](research/P08B_OWNER_BATTLE_HOLD.md).
 
-P08B Hold5 integration в codex/p08b-owner-battle-hold: coherent runtime16+
-writer11/19 установлен, новые Rust/API5 tests NOT_RUN; full/native не принят.
-NET/P10B/late/compression hooks сохранены. [План](plans/P08B_OWNER_BATTLE_HOLD.md).
+Hold5 сохраняет резерв вышедшего игрока до настоящего исхода; parked actor
+остаётся в мире. Final5 один, known completion переживает publication pressure.
+Crash до Final: старый явно сохранённый aborted_restart возвращает frozen
+резерв один раз; per-shot WAL не реализован. Training+Hold5 намеренно запрещён:
+нужен отдельный typed selection/Saga/Capture/Finished adapter, а не смена флага.
 
-BUILD fresh test compression runtimecc2a94d: canonical4PASS/0FAIL/0ignored/
-buildPASS/877rawsourceexact; full combined NOT_RUN до Hold integration.
-Только новые empty owned NTFS dirs/test-only parents, старые данные untouched.
-[Факты](research/BUILD_FRESH_TEST_COMPRESSION.md). Следующий шаг Hold5.
+Ночью подготовлены frozen candidates: actual4 composition33; source-bound
+утренние core/rooms/hold/LAB helpers31; own-LAN helper34; garage Fresh32/02.
+Их compilation/actual execution не объявлять PASS без отдельного запуска.
+Утренние stand backup/activation/publication/bind/services/client — NOT_RUN.
+После C full: отдельная actual4 ветка, garage Fresh с genuine Job proof,
+финальный full и реальные свежие утренние contexts. Ночь не заканчивается
+на одном checkpoint; ручных вопросов до09:00 нет.
 
-NET-02 software checkpoint: union43790d1 поверх P10Bbce643f + separate
-retained-C technical runtime `442ce7daeed861b20b3b86168b0c6816ea9efafc`.
-**Full1573PASS/0FAIL/5oldignored/buildPASS/876rawsourceexact**. Actual own-host
-encrypted Login/RunOpen4/advertisedBase/firstBase2 PASS; diagnosticA130/B44,
-active0/grants0/БК unchanged, originalA129/B43 unchanged, ownPIDSTOP.
-[Факты](research/NET02_LOSS_TRAINING_INTEGRATION.md). Native/two-PC NOT_RUN.
+Последние прежние software checkpoints:
 
-P10B software checkpoint завершён: `codex/p10b-loss-training-integration`,
-runtime `689fb93c4a1bfb05cf3bb1d63ce3836e2e2f4a74`. **Full1553PASS/0FAIL/5oldignored/buildPASS,
-865rawsourceexact**. Actual loss4 Host→HTTP/SQL compensation→same-run fresh
-room→Admit2/ACKlaunch→Finished2/claims released PASS; прежний late composition
-в том же full PASS. Python17/Web4/HTTP3/oldWeb37, own client host79 и
-CPython76+3старых host-only skips, oldCLI1. [Факты](research/P10B_LOSS_TRAINING_INTEGRATION.md).
-Этот P10B checkpoint сохранён и повторён в объединённом NET full. Следующая
-предпосылка fresh-empty-output compression, затем Hold5 и утренние contexts.
-Native/UI/six/two-PC NOT_RUN; main без merge.
-
-Ночь продолжается до09:00 Asia/Yekaterinburg без ручных вопросов. Незакрытые
-карточки остаются в зависимых ветках. Main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe`
-сохранён. [ACTIVE_GATE](ACTIVE_GATE.md), [порядок](IMPLEMENTATION_ORDER.md),
-[ночной отчёт](NIGHT_REPORT_20261017.md), [DEV_NOTES](DEV_NOTES.md).
-
-## Проверенные ночные software checkpoints
-
-| Ветка | Runtime | Реально выполнено |
+| Ветка | Runtime | Выполнено на своём source head |
 |---|---|---|
-| codex/p06t-ammo-rack-detonation | ed67531 | full1188/5/build; одна смерть/фраг, lost3/clip, depot untouched; SQL12+15/HTTP1/Web13 |
-| codex/build-temp-cargo-target | 0e970b7 | full1188/5/build; C-temp→D exe SHA exact; Python11 |
-| codex/p08b-restart-cas-composition | 7ff8b30 | full1189/5/build; actual AP-only restart/recovery/Fresh/warm2→full1→CAS2; Node11 |
-| codex/p08c-late-owner-results | ea43262 | full1224/5/build; actual loss4 late composition; SQL17+1/Web5+37/HTTP1+1 |
-| codex/p06t-seven-loss-integration | 0e03e19 | full1295/5/build; seven+loss boundaries5; Python102/source783 |
-| codex/p10b-loss-training-integration | 689fb93 | full1553/5/build/source865; actual room Loss4 compensation/relaunch/Finished; Python17/Web4/HTTP3+old37 |
-| codex/net-02-loss-integration + codex/build-temp-retained-executable | 442ce7d | full1573/5/build/source876; typedConfig28; same-full late/rooms; actual own-host Login/Base2; source/binary exactC |
+| codex/p06t-ammo-rack-detonation | ed67531 | full1188/5/build; SQL12+15/HTTP1/Web13 |
+| codex/p08b-restart-cas-composition | 7ff8b30 | full1189/5/build/716raw; actual restart/CAS |
+| codex/p08c-late-owner-results | ea43262 | full1224/5/build/740raw; actual append/reopen/1500/1501 |
+| codex/p06t-seven-loss-integration | 0e03e19 | full1295/5/build/783raw; Python102 |
+| codex/p10b-loss-training-integration | 689fb93 | full1553/5/build/865raw; actual compensation/relaunch/Finished |
+| codex/net-02-loss-integration + retained executable | 442ce7d | full1573/5/build/876raw; actual own-IP Login/RunOpen/Base2 |
 
-Все full gates имеют raw source before/after и evidence. Последний полный exeSHA
-`082217015b1167d300d825b5cd7d9307f08153afa3eaf1f5a7ce64f6438fc4a7`. Proof
-`local/evidence/20261017-net-retain-full01/composition-full.json`. Raw ZIP и
-verified exe retained в owned C target; D duplicate отсутствует.
+Старые full не являются приёмкой нового C source. Детали/история:
+[NIGHT_REPORT](NIGHT_REPORT_20261017.md), [DEV_NOTES](DEV_NOTES.md).
+Правило владельца: уничтоженная непустая БК убивает и теряет весь remaining
+loaded БК; fired отдельно, склад не меняется. Native башня/FX/остатки NOT_RUN.
+WT/FV и новые3 машины — explicit qualification LAB; owned admission false.
 
-Loss policy проекта: уничтоженная непустая БК убивает машину и теряет весь
-оставшийся loaded БК; fired и lost различаются, склад не меняется. Native
-башня/FX/учёт после реального выстрела NOT_RUN. Conservative late append не
-переписывает inventory/старый Finish; изменённый parked actor требует
-отдельного Hold5 contract. Его writer/runtime кандидаты пока не интегрированы.
-Новые WT/FV доступны только explicit seven LAB, не owned admission.
-
-## Стенды и принятые владельцем факты
-
-Все own службы/клиенты STOP, включая новый NET diagnosticA130/B44 безprogress
-merge. Старый изолированный loss-01 A129/B43, loaded
-A[0,48,48]/B[0,50,46],active0/grants0. CoreV7:96immutable files совпали.
-Binding-loss01 толькодляed67531; новую сборку со старым binding не запускать.
-Frozen runner15 исправляет binary rotation, но D-only; runner20/21 готовятся
-с explicit retained-C consumer и fresh-only compression. Actual утренние
-core/rooms/hold5 backup/publication/bind/start ещё NOT_RUN. Original read-only.
-
-STAB-01 main принят: ручной выход обоих, повторный бой, управление/наведение/
-стрельба; ошибка закрывает бой, не процесс. P08B native cycles18→16→14,
-queue cancel/requeue подтверждены. P08C marker04 оба красных и natural
- autoaim06 личные итоги/возврат подтверждены владельцем; broader gates открыты.
-
-Сохранённая предыдущая цепочка: P05C019ed2f/full940, P07B8fecb9d/975,
-P04M483bb2b/1006, sevenP06T0f1db40/1162, P10Be55ba01/1397,
-NET608bb23/1414; везде5oldignored/build на своих source heads. Эти старые
-проверки не доказывают нынешнюю объединённую цепочку. Native mixed/6,
-visibility/new3/training/two-PC NOT_RUN; owned admission new3/WT/FV не включать
-без qualification. [Исследования](research/INDEX.md).
-
-Хвост после подготовки боевого теста: микролаг, склад/оборудование/слоты/
-продажа, P04L, legacy/Python/rustfmt. Ночь не заканчивается на одном checkpoint.
+Все own службы и оба клиента STOP. Source loss-01: A129/B43,
+loaded A[0,48,48]/B[0,50,46],active0/grants0. CoreV7:96 immutable bytes сохранены.
+Старый D binding не запускать на новом C runtime; откат клиента только по
+последнему точному ledger, БД поверх нового прогресса не восстанавливать.
+Единственный ближайший шаг: настоящий полный C full03 с текущими ресурсами.

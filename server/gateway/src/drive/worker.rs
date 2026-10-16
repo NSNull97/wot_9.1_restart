@@ -779,7 +779,9 @@ pub(crate) mod tests {
         // config used by the separate real-child test. Preserve both hashes.
         let mut archived_map=pool.maps.iter().find(|m|m.asset=="01_karelia").unwrap().clone();
         archived_map.config=root.join("server/map-drive/01_karelia-v1.json");
-        archived_map.config_sha256=format!("{:x}",Sha256::digest(read(&archived_map.config,16384).unwrap()));
+        // Saved IPC names the immutable original config, not its C runtime derivation.
+        let original=crate::portable_test_fixtures::original_bytes(&archived_map.config,"cf93c617d328865faaf93b7081eb838eb13262b12fe27b4a603e1f2a7023f4c2",16384);
+        archived_map.config_sha256=format!("{:x}",Sha256::digest(original));
         assert_eq!(archived_map.config_sha256,"cf93c617d328865faaf93b7081eb838eb13262b12fe27b4a603e1f2a7023f4c2");
         for (i,line) in lines.iter().enumerate(){let s=response(line,&archived_map,i as u32).unwrap();assert_eq!(s.pose.contacts,5);assert_eq!(s.pose.wheel_contact_masks,[59;6]);}
     }

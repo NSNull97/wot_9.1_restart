@@ -176,3 +176,6 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 
 /server/gateway/src/shared/server_whole_fracture_real_tests.rs text eol=lf
 /server/gateway/src/shared/server_fence_total_real_tests.rs text eol=lf
+
+# Keep the existing CRLF worker source bytes stable in source-bound gates.
+/server/gateway/src/drive/worker.rs text eol=crlf
