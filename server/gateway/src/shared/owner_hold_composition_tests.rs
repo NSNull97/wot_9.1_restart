@@ -132,9 +132,10 @@ fn phase(value:&serde_json::Value)->serde_json::Value{
     let native_update_hex=updates[0].iter().map(|b|format!("{b:02x}")).collect::<String>();
     assert_eq!(dispatch.hold_capture_for_test().unwrap().link(0).unwrap().source(),&link);
     barrier(value,"final-update",serde_json::json!({"method_id":0x57,"source_revision":source_revision,"destination_revision":sql_revision,"old_wire_revision":old_wire,"new_wire_revision":old_wire+1,"lock_removed":true,"source_session_id":11,"delivery_session_id":77}));
+    assert_eq!(table.sessions[dindex].shared.as_ref().unwrap().phase,Phase::Driving);
     profile13_dispatch::Dispatcher::terminal(&mut table.sessions[dindex],&w,crate::battle091::profile13::FinishReason::BattleFinished).unwrap();w.detach(12).unwrap();
     settle_one(&mut dispatch,&mut table,&w,config.clone());assert!(pstate(&table.sessions[dindex]).reservation_hold.is_none());assert!(dispatch.hold_capture_for_test().is_none());
-    assert_eq!(table.sessions[dindex].shared.as_ref().unwrap().phase,Phase::Driving);
+    assert_eq!(table.sessions[dindex].shared.as_ref().unwrap().phase,Phase::Leaving);
     assert!(deliver_lifecycle_result(&mut table.sessions[dindex],&w,Instant::now()).unwrap());common::drain(&mut table.sessions[dindex]);receive(&mut table.sessions[dindex],&[0x99,1,0,0,0x87,0,0]);
     assert!(table.sessions[dindex].battle_results.avatar_confirmed());assert!(deliver_lifecycle_result(&mut table.sessions[dindex],&w,Instant::now()).unwrap());warm(&mut table.sessions[dindex],false);
     barrier(value,"all-final",serde_json::json!({"actual_finished":2,"actual_world_results8":true,"source_link_unchanged":true}));
