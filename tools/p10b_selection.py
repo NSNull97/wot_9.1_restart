@@ -1,4 +1,4 @@
-"""Ignored bounded read-only P10B selection DTO, not an active service route."""
+"""Bounded read-only P10B mixed-v2 selection for the explicit native room route."""
 from copy import deepcopy
 import re
 
@@ -68,7 +68,7 @@ class SelectionReader:
             require(store.pool_active()and store.mixed_active(),'P06T_ACTIVATION_REQUIRED')
             imported=c.execute('SELECT base_json,base_sha256,bundle_sha256 FROM p09d_import WHERE account_id=?',(store.pool_account,)).fetchone()
             require(imported is not None and sha(imported[0].encode('ascii'))==imported[1]
-                and canonical(source.profile)==imported[0].encode('ascii')and imported[2]==source.bundle_sha256,'SOURCE_STAMP_MISMATCH')
+                and type(source.profile_bytes)is bytes and source.profile_bytes==imported[0].encode('ascii')and imported[2]==source.bundle_sha256,'SOURCE_STAMP_MISMATCH')
             snapshot=store.read_profile(store.pool_account)
             public=store._project_profile(store.pool_account,snapshot)
             require(public['native_database_id']==request['native_database_id'],'FOREIGN_ACCOUNT')

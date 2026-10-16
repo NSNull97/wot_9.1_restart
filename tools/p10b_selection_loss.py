@@ -1,4 +1,4 @@
-"""Draft additive API4 training selection. No service route is registered.
+"""Additive API4 training selection for the explicit native room service route.
 
 This reader owns only a bounded query-only snapshot and source projection.
 No selection reply can be produced from a bare no-reservation Inspect.
@@ -85,7 +85,7 @@ class SelectionLossReader:
             imported = c.execute('SELECT base_json,base_sha256,bundle_sha256 FROM p09d_import WHERE account_id=?',
                                  (store.pool_account,)).fetchone()
             require(imported is not None and sha(imported[0].encode('ascii')) == imported[1]
-                    and canonical(source.profile) == imported[0].encode('ascii')
+                    and type(source.profile_bytes) is bytes and source.profile_bytes == imported[0].encode('ascii')
                     and imported[2] == source.bundle_sha256, 'SOURCE_STAMP_MISMATCH')
             snapshot = store.read_profile(store.pool_account)
             public = store._project_profile(store.pool_account,snapshot)
