@@ -37,4 +37,11 @@ follow-up P08C: Amanual117 не имеет полного p06t_result, Bnatural3
 Evidence: local/evidence/20261016-corev7-morning01 и
 local/evidence/20261016-p08c-marker-team01. Откат — сохранённый coretag/exe и
 matchingbinding03 после ownstop; клиент и БД этой правкой не меняются. Main
-ffce8cb неизменен. Единственный следующий шаг — узкая правка sharedteam.
+ffce8cb неизменен.
+
+Фактически выполнено: остановка по own receipts, runtime363daa3, targeted3PASS,
+canonical full1099PASS/5oldignored/buildPASS,683raw source до/после exact.
+Создана новая binding04; fresh morning-marker01 запущен с сохранёнными0/3/9,
+оба native ангара/cache/model загружены, A118/B33/active0,96 installed unchanged.
+Клиентская переустановка не выполнялась. Единственный следующий шаг — owner native gate:
+красные enemy имя и ромб в обоих окнах свежего общего боя.

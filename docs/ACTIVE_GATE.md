@@ -6,8 +6,12 @@ native queue/cancel/requeue/countdown/drive/aim обоими и typed1KS+1HE/в�
 Vehicle.publicInfo.team=1 для обоих, roster/Avatar1/2. Исправление толькоshared
 create_vehicle→World.team(slot), без clientreinstall/paint. План
 [P08C_NATIVE_MARKER_TEAM](plans/P08C_NATIVE_MARKER_TEAM.md). Свой morning01
-остановлен по receipts; next fresh native после fullgate. Marker UI FAIL до
-перепроверки; late leaver results и spawn — отдельные незакрытые пункты.
+остановлен по receipts. Runtime `363daa3`: targeted 3 PASS, full **1099 PASS /
+5 прежних ignored / build PASS**, все 683 source SHA до/после совпали.
+Создана свежая binding04; оба настоящих клиента `morning-marker01` загрузили
+ангары на прежней базе с БК 0/3/9, A118/B33/active0. Marker UI после правки
+NOT_RUN до ответа владельца; late leaver results
+и spawn — отдельные незакрытые пункты.
 Ночные ветки/NET b6c294f сохранены, mainffce8cb не менять без родительских gates.
 
 ## Сохранённый предшествующий core checkpoint

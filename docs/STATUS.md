@@ -5,8 +5,12 @@ drive/aim обеих машин подтверждены владельцем. �
 durable117/32/active0. Amanual/BnaturalForfeit; Bresultswindowесть,Afullresult
 missing — отдельныйP08Cgap. Native enemy marker уA зелёный при redname: shared
 Vehicle.publicInfo.team literal1 против roster1/2. Текущая узкая ветка
-codex/p08c-native-marker-team/план P08C_NATIVE_MARKER_TEAM; full/nativefix ещё
-NOT_RUN. Ночные ветки сохранены; main не менялся.
+codex/p08c-native-marker-team / план P08C_NATIVE_MARKER_TEAM. Runtime `363daa3`:
+targeted 3 PASS, full 1099 PASS / 5 прежних ignored / build PASS; 683 raw source
+SHA до/после совпали. Новая binding04 и fresh run `morning-marker01`: оба настоящих
+ангара загружены, 96 installed files unchanged, база A118/B33/0, у обоих 0/3/9.
+Native цвет после исправления ещё NOT_RUN, вопрос владельцу отправлен. Ночные ветки
+сохранены; main не менялся.
 
 Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего
 дерева и доступна в git: `git show 1eaff5e:docs/STATUS.md` (а также удалённые

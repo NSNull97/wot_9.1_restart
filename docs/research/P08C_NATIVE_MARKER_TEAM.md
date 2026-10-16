@@ -50,6 +50,34 @@ rosterB.team2; B.team2+VehicleA.team1 даёт корректный Enemyclass. 
 roundtrip нового собственного декодера сам по себе native gate не закрывает.
 После full gate нужен свежий бой обоих настоящих клиентов и owner colors.
 
+## VERIFIED automated gate — 2026-10-16
+
+Runtime `363daa371ca00da0ff0d7aa55e7a429d49bb6928`: targeted `p08c_marker_`
+3 PASS / 0 ignored и сборка PASS. Canonical full
+`python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p08c-marker-full01`
+при `RUST_TEST_THREADS=1`: **1099 PASS / 0 FAIL / 5 прежних ignored**, сборка PASS.
+Все 683 raw source SHA до/после совпали, head не менялся. Executable SHA256
+`288a7699aa265a3522db2661f7270804f922c36a15ec6c240125633aab57d6fd`.
+
+Три новых regression независимо читают native layout для owned MS-1/ИС-7,
+шести mixed profiles с UTF-8 именами и parked recreate. Отдельный source-derived
+golden сохраняет полный legacy all-team1 layout; это не выдаётся за native capture.
+Fresh `binding-p06t04.json` создана штатным guard после full/source gate.
+Старые binding02/03 не менялись. Перед запуском RO SQL подтвердил A117/B32,
+у обоих AP0/HEAT3/HE9, active reservations 0; SQL reset/grants не выполнялись.
+Evidence: `local/evidence/20261016-p08c-marker-team01/source-{before,after}.json`,
+canonical build logs и versioned launch receipts. Native цвет после правки
+ещё NOT_RUN до наблюдения владельца.
+
+Actual fresh `morning-marker01`: private services startup PASS, A затем B
+прошли native login и по два последовательных hangar/cache/model samples
+в новых PID-specific traces. Все 96 installed nonmutable files совпадают
+с прежними ledgers. После run_open база A118/B33, active0, БК у обоих 0/3/9.
+`ready11.json` SHA256
+`b7bc1ff92ae220780bd5153df8050322306188cbd00d61c4777652be0dce3f98`.
+Инструментация доказывает загрузку ангара; цвет маркера и управление в новом
+бою остаются NOT_RUN до отдельного ответа владельца.
+
 Отдельно зафиксированы неподтверждённая opposite-base spawn policy и отсутствие
 полного результата у раннего manual leaverA. Эти изменения не входят в marker
 fix и не объявлены нормальной исторической работой клиента.
