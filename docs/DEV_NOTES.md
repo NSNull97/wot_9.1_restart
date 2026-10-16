@@ -5,6 +5,12 @@
 
 ## Сборка и тесты
 
+- При нехватке D: `server/build.py gateway --test --cargo-temp-target --out
+  local/build/server/<fresh>` создаёт новый target только в default OS temp
+  другого локального диска. Cargo/temp остаётся для аудита; только проверенный
+  exe копируется в обычный output. Ничего автоматически не удаляется. Нужны
+  source-before/after и actual full gate; old default/physics/legacy не меняются.
+
 - P06T loss checkpoint ed67531: fresh gateway-p06t-ammo-loss-full02,
  1188PASS/5oldignored/buildPASS,712rawsourceexact. Новый isolated loss-01
   binding-loss01; команды/rollback `local/stands/night-battle-20261017-01/loss-01/MORNING-full02.md`.

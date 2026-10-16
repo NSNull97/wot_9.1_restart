@@ -1,4 +1,14 @@
-# Текущая карточка — P06T: детонация и потеря БК
+# Текущая карточка — BUILD-TEMP: место для ночных сборок
+
+Ветка `codex/build-temp-cargo-target` от P06T checkpoint4786c2a. На D
+осталось0.44GiB, на C64GiB. Явный opt-in `gateway --cargo-temp-target`
+создаёт только новые Cargo intermediates в default OS temp другого диска;
+проверенный exe экспортируется в свежий обычный D output. Ничего не удаляется.
+План [BUILD_TEMP_TARGET](plans/BUILD_TEMP_TARGET.md).11 Python guards PASS;
+actual canonical C-target build пока NOT_RUN. После этого — P08B composition.
+Mainffce8cb и native приёмка не меняются.
+
+## Сохранённый P06T: детонация и потеря БК
 
 Явная задача владельца 2026-10-16: при сносе БК машина гибнет/отрывается башня,
 все оставшиеся loaded снаряды теряются. Это правило нашего проекта.
