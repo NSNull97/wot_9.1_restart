@@ -19,8 +19,10 @@ P10B bounded foundation+actualhangarshim перенесены: focused01 **51PAS
 Ignored preparation: room/native/aliases33PASS,
 current-room-at-receipt +actualWindow51PASS, ingress9PASS/source17commands.
 Эти результаты не доказывают actual Session/Registry/writer/native room.
-Следующий слой — review/promote domain/codecs +immutableTeamPlan и actual
-receive transaction/reserve saga. Один activeWorld,2..6 бойцов,≤3 на стороне;
+ImmutableTeamPlan/World/actualscene3v1+1v3, list/preview и selection codec:
+focused06=35PASS/0ignored/buildPASS; root actualselectionSQL9PASS/0skip47.204s.
+Generationfloor сохраняется после auth removal. Следующий слой — actual
+Session receive transaction/selection HTTP/reserve saga. Один activeWorld,2..6 бойцов,≤3 на стороне;
 явная laboratory one-shot room policy, без дополнительных grants.
 
 План [P10B](plans/P10B.md), originalsource

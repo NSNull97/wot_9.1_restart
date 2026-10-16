@@ -59,7 +59,7 @@ impl BatchRuntime {
         "scene":self.runtime.as_ref().map(|r|serde_json::json!({"version":r.scene().version(),"sha256":r.scene().sha256})),
         "manifest_sha256":self.spec.as_ref().map(|s|&s.manifest_sha256)})}
     fn reconcile_departures(staged:&mut World,current:&World)->io::Result<()> {
-        if staged.id!=current.id||staged.map!=current.map||staged.expected_actors()!=current.expected_actors()||staged.extended_lab()!=current.extended_lab()
+        if staged.id!=current.id||staged.map!=current.map||staged.expected_actors()!=current.expected_actors()||staged.extended_lab()!=current.extended_lab()||staged.team_plan()!=current.team_plan()
             ||staged.actors.len()!=current.actors.len()||staged.actors.iter().zip(&current.actors).any(|(old,now)|
                 old.identity!=now.identity||old.vehicle_kind()!=now.vehicle_kind()
                 ||old.session!=now.session&&!(old.session.is_some()&&now.session.is_none())){return Err(model::bad());}
@@ -68,12 +68,15 @@ impl BatchRuntime {
         }Ok(())
     }
     fn actor_manifest(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8)->io::Result<serde_json::Value> {
-        if slot>=model::MAX_ACTORS || !matches!(version,1|2|3) || version==1&&kind.index()>=2
+        Self::actor_manifest_for_lane(resources,slot,kind,version,slot)
+    }
+    fn actor_manifest_for_lane(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,lane:usize)->io::Result<serde_json::Value> {
+        if slot>=model::MAX_ACTORS || lane>=model::MAX_ACTORS || !matches!(version,1|2|3) || version==1&&kind.index()>=2
             ||kind.is_extended()&&version!=3||version==3&&(resources.version!=4||resources.maps.len()!=7) {return Err(model::bad());}
         let map=resources.maps.get(kind.index()).ok_or_else(||model::bad())?;
         let mut row=serde_json::json!({"slot":slot,"kind":kind.label(),
             "config":{"path":Self::physical_path(&map.config),"sha256":map.config_sha256},
-            "spawn_origin":[map.spawn[0]+if slot%2==0{-4.}else{4.},map.spawn[1],map.spawn[2]-12.*(slot/2)as f32],"spawn_yaw":map.spawn_yaw});
+            "spawn_origin":[map.spawn[0]+if lane%2==0{-4.}else{4.},map.spawn[1],map.spawn[2]-12.*(lane/2)as f32],"spawn_yaw":map.spawn_yaw});
         if version>=2 {
             row["source_profile"]=if kind.index()>=2 {
                 let (path,sha256)=resources.source_profiles[kind.index()].as_ref().ok_or_else(||model::bad())?;
@@ -92,7 +95,10 @@ impl BatchRuntime {
             return Err(model::bad());
         }
         let version=if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
-        let rows=world.actors.iter().enumerate().map(|(slot,actor)|Self::actor_manifest(&self.resources,slot,actor.vehicle_kind(),version))
+        let rows=world.actors.iter().enumerate().map(|(slot,actor)|{
+            if world.team_plan().is_some(){Self::actor_manifest_for_lane(&self.resources,slot,actor.vehicle_kind(),version,world.spawn_lane(slot)?)}
+            else{Self::actor_manifest(&self.resources,slot,actor.vehicle_kind(),version)}
+        })
             .collect::<io::Result<Vec<_>>>()?;
         let manifest=serde_json::json!({"version":version,"profile":"test_lab","policy":scene_worker::POLICY,
             "map":world.map.asset(),"catalog":{"path":Self::physical_path(self.catalog.path()),"sha256":self.catalog.sha256()},"actors":rows});
@@ -215,3 +221,7 @@ mod p06t_tests;
 #[cfg(test)]
 #[path="p06t_extended_scene_tests.rs"]
 mod extended_tests;
+
+#[cfg(test)]
+#[path="p10b_team_scene_tests.rs"]
+mod p10b_team_scene_tests;

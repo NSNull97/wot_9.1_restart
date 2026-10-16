@@ -1,6 +1,7 @@
 //! Explicit local bounded-multiplayer test_lab route. The accepted single-client drive
 //! route and its frozen profile checks are not generalized through this module.
 pub(crate) mod model;
+pub(crate) mod p10b_team_plan;
 pub(crate) mod visibility;
 pub(crate) mod interest_wire;
 pub(crate) mod lifecycle;

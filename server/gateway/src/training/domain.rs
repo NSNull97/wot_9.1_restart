@@ -9,6 +9,8 @@ use std::collections::{BTreeMap,BTreeSet};
 pub const POLICY:&str="test_lab.p10b.room-one-shot-six.v1";
 pub const MAX_ROOMS:usize=4;
 pub const MAX_ACCOUNTS:usize=24;
+/// Per-Registry lifetime identity budget. Floors are never evicted or reused.
+pub const MAX_GENERATIONS:usize=1024;
 pub const MAX_MEMBERS:usize=6;
 pub const MAX_SIDE:usize=3;
 
@@ -121,6 +123,7 @@ pub type Result<T>=std::result::Result<T,Error>;
 
 #[derive(Clone,Debug,PartialEq,Eq,Default)]pub struct Registry{
     auth:BTreeMap<Account,Auth>,claims:BTreeMap<Account,Claim>,rooms:BTreeMap<RoomKey,Room>,battles:BTreeMap<BattleKey,Battle>,
+    generation_floors:BTreeMap<Account,u64>,
     next_room:u64,next_ticket:u64,next_membership:u64,last_now:u64,
 }
 impl Registry{
@@ -152,7 +155,14 @@ impl Registry{
             if old.generation==lease.generation&&old.connected&&old.name==name{old.last_seen=now;return Ok(());}
             if s.claims.contains_key(&lease.account){return Err(Error::AlreadyClaimed);}
             if lease.generation<=old.generation{return Err(Error::StaleLease);}
-        }else if s.auth.len()>=MAX_ACCOUNTS{return Err(Error::Limit);}
+        }
+        // Removing a disconnected auth row must not make its retired lease
+        // fresh again. This floor is independent of current room/battle claims.
+        if let Some(floor)=s.generation_floors.get(&lease.account){
+            if lease.generation<=*floor{return Err(Error::StaleLease);}
+        }else if s.generation_floors.len()>=MAX_GENERATIONS{return Err(Error::Limit);}
+        if !s.auth.contains_key(&lease.account)&&s.auth.len()>=MAX_ACCOUNTS{return Err(Error::Limit);}
+        s.generation_floors.insert(lease.account,lease.generation);
         s.auth.insert(lease.account,Auth{generation:lease.generation,name,last_seen:now,connected:true});Ok(())
     })}
     fn authenticated(&self,who:AuthLease)->Result<()>{
@@ -296,3 +306,7 @@ impl Registry{
 #[cfg(test)]
 #[path="room_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path="p10b_auth_generation_tests.rs"]
+mod auth_generation_tests;

@@ -500,3 +500,21 @@ room/revision/membership/channel/source/request. Fresh semantically old Leave
 may leave current lobby; this is disclosed laboratory policy, not historical.
 World teams, frozen selected identity order, wholeSession/Registry publication
 transaction, actual readiness/reserve saga and native UI/flow remain NOT_RUN.
+
+## Runtime component checkpoint 2026-10-16
+
+VERIFIED: focused06 прошёл35gateway tests/0ignored/buildPASS (test44.37s).
+Immutable TeamPlan сохраняет actor identity slots, source-qualified lanes;
+actual shared Jolt3v1+1v3 прошёл scalarFrameProof и неослабленную fracture/ACK
+проверку. Имеются World visibility/roster/result/directsourceContact проверки.
+Outgoing200/201 использует существующий storedDEFLATE/CRC stream encoder.
+Generation floor1024 безeviction запрещает retiredlease resurrection; live24.
+
+Promoted read-only selection strict2048/4096 DTO имеет7source/state stamps,
+отдельные aggregate/nativeState SHA и exactFrozen. RootactualSQLite9PASS/0skip
+47.204s; четыре actualSQL vectors прошли Rust validator. Это не HTTP, native
+readiness или room acceptance. No incoming paths/Frozen/deserializerobjects.
+Доказательства: local/evidence/20261016-p10b-{teams01,foundation02,selection01}/
+и local/build/server/gateway-p10b-focused06. Intermediate02..05 failures
+сохранены, причины относятся к новым тестовым fixtures/отсутствующему derive.
+ActualSession/globalRegistry/HTTP/writerSaga/native пока NOT_RUN.

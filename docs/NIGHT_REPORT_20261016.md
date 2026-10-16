@@ -11,7 +11,7 @@ buildPASS,683sourcefiles before/after exact. Оба настоящих клие�
 hangar/cache/model по трассе; UI/управление/бой этого core ещё NOT_RUN.
 V7 установлен в обе исследовательские копии, свои процессы остановлены.
 
-Текущая ветка продолжает P06T WT/FV physical foundation: `c25fb84`,4actual
+Сохранённый P06T WT/FV physical foundation: `c25fb84`,4actual
 RustIPC/scalar/ACK tests/buildPASS, canonicalphysics/Python/negative/legacy
 PASS. **Full04:1100PASS/0FAIL/5oldignored/buildPASS**,692sourcefiles before/after
 exact,340.80с; tag `p06t-physics-20261016-01`. Crew6/sourcecaps7/policyv2
@@ -49,10 +49,10 @@ tag p06t-world-seven-20261016-01, exeSHA
 | P07B | `codex/p07b-server-visibility` / `e711844` | `8fecb9d`,975/5/build/607sourceexact; realterrain/staticLOS/packetabsence/epochs | Nativehide/respot; bush/camo/radio/delay отсутствуют |
 | P04M | `codex/p04m-five-battle-profiles` / `2340236` | `483bb2b`,1006/5/build/634sourceexact; source/actualJolt/new3/ownedcrew+ammo/Web10/Python17+1+28 | Native3newqualification, admissionfalse |
 | P06T | `codex/p06t-mixed-shell-damage` / см. текущий git | core `9920a63`:1096/5/build/683 exact; Python21+old28/Web4+old25unique/client2.7.3 9+20+61PASS/4hostskips; physical `c25fb84`:1100/5/build/692 exact; devices `9080c47`:1111/5/build/695 exact | Новый бой/UI/audio/critical/fire, WT/FV native qualification, owned router/cacheACK/stock |
-| P10B | active ветки реализации ещё нет | Только ignoreddomain/nativecodec/aliases component33PASS, originalsource staticproof | Productionroom/selectedteamvector/own404causalbarrier/nativeNOT_RUN |
+| P10B | `codex/p10b-native-training-room` / foundation `95ceb73` | Actual hangar decoder shim + bounded domain/codecs/aliases:51PASS/0ignored/buildPASS. TeamPlan/actualscene3v1+1v3/list-preview/auth-floor/selection35PASS/build; rootSQL9PASS | Actual Session/Registry transaction, selection HTTP/writer saga, native room NOT_RUN |
 | NET-02 | active ветки реализации ещё нет | Только исходный preflight/report | LANbind/allowlist/redirect/firewall/2ПК/hostingNOT_RUN |
 
-Первый боевой тест ещё не подготовлен: программные P06T/P10B/NET-02 gates
+Первый боевой тест ещё не подготовлен: программные P10B/NET-02 gates
 не закончены. Указание не ждать ручные проверки не превращает их в PASS.
 
 ## Что изменено и проверено
@@ -208,3 +208,31 @@ P06T native/UI/audio и новые owned WT/FV admission остаются NOT_RU
 изменён. По ночному разрешению после сохранения этого автоматического результата
 следующая реализация — отдельная зависимая ветка P10B. Текущий first combat test
 всё ещё не готов до production P10B/NET-02 и общей ручной приёмки.
+
+
+## Текущий P10B checkpoint
+
+Foundation95ceb73 включает native ingress17commands, bounded domain, monotonic
+aliases и actualhangarshim; focused01=51PASS/0FAIL/0ignored/buildPASS. Изменённые
+файлы находятся в `server/gateway/src/training/`, регистрация — `main.rs`, shim —
+`account/hangar.rs`. Default старых режимов сохранён, живая room route ещё закрыта.
+
+Следующий слой добавляет immutable TeamPlan с выбранными сторонами и qualified
+spawn lanes при неизменном actor identity slot, outgoing list200/preview201 через
+существующий hangarstream helper, generation floor после retired auth. Исходный
+floor bug воспроизведён:3RED, fixed17PASS прямым rustc. Actual selection reader
+отдельно прошёл9SQL tests/0skip47.671s и выдал4 writer-vectors MS1/IS7; incoming
+Frozen/paths не принимаются. Он ещё не HTTP route. Actual saga6SQL cases PASS,
+Rust bridge не подключён. Client VERSION8/training guard исследуется отдельно.
+
+Focused02 остановился на неверном имени enum в новом тесте. Focused03=29PASS/
+3FAIL/0ignored: тесты не вызывали advance_lifecycle, export требовал harness env.
+Эти результаты сохранены, ожидание actual scene fracture/ACK не ослаблено.
+Focused04 выявил boundedradius/clock ошибки новых тестов; focused05 — ненужный
+serde derive (в проекте процедурные macros не включены). Исправлены тестовые
+границы и явный strict Stamp parser без новых dependencies. Focused06:
+35PASS/0FAIL/0ignored/buildPASS, actualscene3v1+1v3/realfractureACK и4actualSQL
+writer-vectors. Root повторил promoted selector SQL:9PASS/0skip47.204s.
+Full P10B gate ещё NOT_RUN.
+Own native/service processes core/extended остановлены; установленные coreV7
+и оба сохранённых source tags не менялись. Main merge не выполнялся.

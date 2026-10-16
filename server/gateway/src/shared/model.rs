@@ -150,6 +150,7 @@ pub struct World {
     pub id: u64,
     vehicle_kind: VehicleKind,
     expected_actors: usize,
+    team_plan:Option<super::p10b_team_plan::TeamPlan>,
     mixed_profiles: bool,
     pub map: crate::map_profile091::MapId,
     pub actors: Vec<Actor>,
@@ -264,7 +265,7 @@ impl World {
         world.set_expected_actors(expected_actors)?;Ok(world)
     }
     pub fn set_expected_actors(&mut self,expected_actors:usize)->io::Result<()> {
-        if !(2..=MAX_ACTORS).contains(&expected_actors) || self.started.is_some() || !self.actors.is_empty()
+        if !(2..=MAX_ACTORS).contains(&expected_actors) || self.team_plan.is_some() || self.started.is_some() || !self.actors.is_empty()
             || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version()!=0 {return Err(bad());}
         self.impact.configure_roster(expected_actors)?;self.expected_actors=expected_actors;self.mixed_profiles=true;Ok(())
     }
@@ -274,7 +275,7 @@ impl World {
     }
     pub fn new_for_vehicle(id: u64, now: Instant, map: crate::map_profile091::MapId, kind: VehicleKind) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
-        Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
+        Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,team_plan:None,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
             mixed_ammo:false,extended_lab:false,lab_loadouts:[None;MAX_ACTORS],damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
             geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
@@ -292,8 +293,23 @@ impl World {
         if self.started.is_some() || !self.actors.is_empty() || self.lifecycle.is_some() { return Err(bad()); }
         self.lifecycle = Some(super::lifecycle::State::new(rules)?); Ok(())
     }
+    /// Explicit frozen roster teams are set once, before actor identities or
+    /// any simulation/Trace events exist. Caller must bind the frozen roster's
+    /// identity order before transport attachment; arrival order is not a plan.
+    pub fn set_team_plan(&mut self,plan:super::p10b_team_plan::TeamPlan)->io::Result<()> {
+        if plan.len()!=self.expected_actors || self.team_plan.is_some() || self.lifecycle.is_none()
+            || self.started.is_some() || !self.actors.is_empty() || self.tick!=1000 || !self.shots.is_empty()
+            || !self.impact.events().is_empty() || self.scene_version()!=0 {return Err(bad());}
+        self.team_plan=Some(plan);Ok(())
+    }
+    pub fn team_plan(&self)->Option<&super::p10b_team_plan::TeamPlan>{self.team_plan.as_ref()}
+    pub fn spawn_lane(&self,slot:usize)->io::Result<usize>{
+        if slot>=self.expected_actors{return Err(bad());}
+        self.team_plan.as_ref().map_or(Ok(slot),|plan|plan.lane(slot))
+    }
     pub fn team(&self, slot: usize) -> io::Result<u8> {
         if slot >= self.actors.len() { return Err(bad()); }
+        if let Some(plan)=&self.team_plan {return plan.team(slot);}
         Ok(if self.lifecycle.is_some() { (slot % 2) as u8 + 1 } else { 1 })
     }
     /// Stateless recipient interest from this coherent authoritative snapshot.
@@ -503,7 +519,8 @@ impl World {
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
-        if self.started.is_some() || self.actors.len() != self.expected_actors || now < self.last { return Err(bad()); }
+        if self.started.is_some() || self.actors.len() != self.expected_actors || now < self.last
+            || self.team_plan.is_some()&&self.lifecycle.is_none() { return Err(bad()); }
         if self.ap_test_lab {for actor in &self.actors {self.geometry_for(actor.vehicle_kind())?;}}
         self.started = Some(now); self.last = now; Ok(())
     }
@@ -1674,3 +1691,7 @@ pub(super) mod tests {
 #[cfg(test)]
 #[path = "p06t_world_tests.rs"]
 mod p06t_world_tests;
+
+#[cfg(test)]
+#[path="p10b_team_world_tests.rs"]
+mod p10b_team_world_tests;
