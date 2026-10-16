@@ -8,7 +8,8 @@ pub const MODULE_ADMISSION_POLICY:&str="test_lab.p06t.plate-penetration-or-exter
 
 impl World {
     pub fn cancelled_terminal_state(loadout:&crate::profile13_v2091::Frozen)->io::Result<String>{
-        let state=device::State::new(caps::Profile::ALL[loadout.kind.index()])?;
+        let profile=caps::Profile::ALL.get(loadout.kind.index()).copied().ok_or_else(bad)?;
+        let state=device::State::new(profile)?;
         terminal_json(loadout,&state,0,None)
     }
     pub fn terminal_state_json(&self,slot:usize)->io::Result<String>{
@@ -87,7 +88,7 @@ impl World {
         if resolution.decision==crate::p06t_damage::Decision::Pierced||exterior_gun {
             let ray=bundle.proxy_ray(contact)?;
             if !ray.is_empty(){
-                let profile=caps::Profile::ALL[actors[slot].vehicle_kind().index()];
+                let profile=caps::Profile::SUPPORTED[actors[slot].vehicle_kind().index()];
                 let component=match ray.component{super::super::materials::Component::Hull=>crate::p06t_lab_proxy::Component::Hull,
                     super::super::materials::Component::Turret01=>crate::p06t_lab_proxy::Component::Turret,
                     super::super::materials::Component::Gun01|super::super::materials::Component::Gun02=>crate::p06t_lab_proxy::Component::Gun};
@@ -138,7 +139,9 @@ impl World {
 }
 
 fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<&DamageRecord>)->io::Result<String>{
-    if frozen.crew_ids.len()!=state.crew().len()||roster>MAX_ACTORS{return Err(bad());}
+    if frozen.crew_ids.len()!=state.crew().len()||roster>MAX_ACTORS
+        ||state.policy_version()!=device::PolicyVersion::V1
+        ||caps::Profile::ALL.get(frozen.kind.index())!=Some(&state.profile()){return Err(bad());}
     let value=serde_json::json!({"policy_revision":device::POLICY,"roster_size":roster,"crew_active":state.crew_active(),
         "crew":frozen.crew_ids.iter().zip(state.crew()).map(|(id,alive)|serde_json::json!({"crew_id":id,"alive":alive})).collect::<Vec<_>>(),
         "devices":state.health().iter().zip(caps::CAPS[state.profile().index()]).enumerate().map(|(index,(health,cap))|

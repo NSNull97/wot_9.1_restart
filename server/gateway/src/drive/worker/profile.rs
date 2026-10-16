@@ -15,16 +15,17 @@ impl VehicleProfile {
     pub(super) fn load(root:&Path,reference:&Value,pool_version:u64)->io::Result<Self>{
         fields(reference,&["path","sha256"])?;
         let hash=text(reference,"sha256")?;
-        if let Some(kind)=VehicleKind::ALL.into_iter().filter(|kind|kind.index()>=2)
+        if let Some(kind)=VehicleKind::SUPPORTED.into_iter().filter(|kind|if pool_version==4 {kind.is_extended()}else{kind.index()>=2&&!kind.is_extended()})
             .find(|kind|ram_proof::Profile::for_vehicle(*kind).sha()==hash) {
-            if pool_version!=3 {return Err(bad());}
+            let extended=kind.is_extended();
+            if pool_version!=if extended{4}else{3} {return Err(bad());}
             let path=owned(root,Path::new(text(reference,"path")?))?;
             let raw=read(&path,16384)?;
             if format!("{:x}",Sha256::digest(&raw))!=hash {return Err(bad());}
             let v=json(&raw,16384)?;
             fields(&v,&["version","profile","policy","kind","battle_admission","definition_sha256","definition","native_binding"])?;
-            if uint(&v["version"])?!=1 || text(&v,"profile")?!="test_lab" || text(&v,"kind")?!=kind.label()
-                ||text(&v,"policy")?!="p04m-stock-six-support-v1"||v["battle_admission"]!=false
+            if uint(&v["version"])?!=if extended{2}else{1} || text(&v,"profile")?!="test_lab" || text(&v,"kind")?!=kind.label()
+                ||text(&v,"policy")?!=if extended{"p06t-extended-six-support-v2"}else{"p04m-stock-six-support-v1"}||v["battle_admission"]!=false
                 ||text(&v["definition"],"kind")?!=kind.label() {return Err(bad());}
             let definition=&v["definition"];fields(&definition["physics"],&PHYSICS_FIELDS)?;
             let handling=&definition["handling"];
@@ -139,7 +140,7 @@ mod tests {
     fn handling_fixture(kind:VehicleKind)->(PathBuf,PathBuf,Value){
         let(root,path,mut pool)=super::super::tests::fixture_pool();
         let(raw,hash)=match kind{VehicleKind::Ms1=>(MS1_HANDLING,MS1_HANDLING_SHA256),VehicleKind::Is7=>(IS7_HANDLING,IS7_HANDLING_SHA256),
-            VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485=>panic!("legacy profile schema fixture; use curated profile gates")};
+            VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485|VehicleKind::Wt128|VehicleKind::Fv183=>panic!("legacy profile schema fixture; use curated profile gates")};
         assert_eq!(format!("{:x}",Sha256::digest(raw)),hash);
         let profile=json(raw,16384).unwrap();let profile_path=root.join("handling-profile.json");
         fs::write(&profile_path,raw).unwrap();pool["version"]=3.into();
@@ -302,3 +303,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path="p06t_extended_pool_tests.rs"]
+mod extended_tests;

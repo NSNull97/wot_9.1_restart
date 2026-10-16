@@ -13,6 +13,8 @@ pub fn packed_angles_for(kind: VehicleKind,state: &aim::State) -> io::Result<u16
     let spec=kind.aim();
     if !state.yaw.is_finite() || !state.pitch.is_finite() || state.yaw.abs() > std::f32::consts::PI
         || !(spec.min_pitch..=spec.max_pitch).contains(&state.pitch) { return Err(model::bad()); }
+    if kind.is_extended(){let(min,max)=aim::pitch_limits_for(kind,state.yaw)?;
+        if !(min..=max).contains(&state.pitch){return Err(model::bad());}}
     let yaw = ((state.yaw as f64 + std::f64::consts::PI) * 1024. / (2. * std::f64::consts::PI)).round() as u16 & 1023;
     let pitch = ((state.pitch as f64 - spec.min_pitch as f64) * 63. / (spec.max_pitch as f64 - spec.min_pitch as f64)).round() as u16;
     Ok((yaw << 6) | pitch)

@@ -10,6 +10,7 @@ pub(crate) mod results_session;
 pub(crate) mod aim;
 pub(crate) mod pose;
 pub(crate) mod geometry;
+pub(crate) mod p06t_geometry_source;
 pub(crate) mod materials;
 pub(crate) mod client_marker;
 pub(crate) mod ap;

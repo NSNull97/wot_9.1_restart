@@ -16,7 +16,13 @@ RustIPC/scalar/ACK tests/buildPASS, canonicalphysics/Python/negative/legacy
 PASS. **Full04:1100PASS/0FAIL/5oldignored/buildPASS**,692sourcefiles before/after
 exact,340.80с; tag `p06t-physics-20261016-01`. Crew6/sourcecaps7/policyv2
 подключены отдельным компонентом: focused11 **105PASS/0ignored/buildPASS**,
-43.95с; full05 PENDING. World/owned новых машин пока не подключены.
+43.95с. Full05 на9080c47: **1111PASS/5oldignored/buildPASS**,341.89с,
+695sourcefiles before/after exact; tag `p06t-devices-20261016-01`.
+После full05 начата WIP интеграция VehicleKind7/World LAB/геометрии/наведения;
+focused13 **134PASS/0ignored/buildPASS**,159.85с. Exe SHA
+`1f1baccc52f5412df85bf08c19b88a9a6520ba3b58dc7b09ceed2794ca68ec3f`.
+Полный общий regression/source gate этого слоя ещё NOT_RUN. Owned новых машин
+не подключён; temporary LAB ammo не считается своим складом.
 
 ## Сохранённые ветки и приёмка
 
@@ -28,7 +34,7 @@ exact,340.80с; tag `p06t-physics-20261016-01`. Crew6/sourcecaps7/policyv2
 | P05C | `codex/p05c-shared-physics` / `9f2df41` | `019ed2f`,940/5/build/602sourceexact; actual sharedscene2/6/mixed/scalar/ACK/detach | Native mixedcontact/6clients, ramHP не реализован |
 | P07B | `codex/p07b-server-visibility` / `e711844` | `8fecb9d`,975/5/build/607sourceexact; realterrain/staticLOS/packetabsence/epochs | Nativehide/respot; bush/camo/radio/delay отсутствуют |
 | P04M | `codex/p04m-five-battle-profiles` / `2340236` | `483bb2b`,1006/5/build/634sourceexact; source/actualJolt/new3/ownedcrew+ammo/Web10/Python17+1+28 | Native3newqualification, admissionfalse |
-| P06T | `codex/p06t-mixed-shell-damage` / см. текущий git | core `9920a63`:1096/5/build/683 exact; Python21+old28/Web4+old25unique/client2.7.3 9+20+61PASS/4hostskips; physical `c25fb84`: full04 1100/5/build/692 exact | Новый бой/UI/audio/critical/fire, WT/FV World/crew6/Aim/owned encoding integration |
+| P06T | `codex/p06t-mixed-shell-damage` / см. текущий git | core `9920a63`:1096/5/build/683 exact; Python21+old28/Web4+old25unique/client2.7.3 9+20+61PASS/4hostskips; physical `c25fb84`:1100/5/build/692 exact; devices `9080c47`:1111/5/build/695 exact | Новый бой/UI/audio/critical/fire, WT/FV World/Aim/owned encoding integration |
 | P10B | active ветки реализации ещё нет | Только ignoreddomain/nativecodec/aliases component33PASS, originalsource staticproof | Productionroom/selectedteamvector/own404causalbarrier/nativeNOT_RUN |
 | NET-02 | active ветки реализации ещё нет | Только исходный preflight/report | LANbind/allowlist/redirect/firewall/2ПК/hostingNOT_RUN |
 
@@ -90,6 +96,11 @@ finalmap03 с realcatalog/lane прошёл, допуски не менялис�
   `local/build/server/gateway-p06t-full04/` — отдельный общий gate1100PASS/
   5ignored/build/692sourceexact наc25fb84. ExecutableSHA
   `a2f7dea23dde083978fa6215fa721dc24639de2be76fb21693baf466696b908c`.
+- `local/evidence/20261016-p06t-full05/` и
+  `local/build/server/gateway-p06t-full05/` — 1111PASS/5ignored/build/695 exact
+  на9080c47. Exe SHA `26b85500cadcfbf86a60c47d3ab8574caad0670e5352d382b1c36900d5a5e599`.
+  Компонент63devices/30seats/crew6/v2policy отдельно зафиксирован в
+  `local/evidence/20261016-p06t-device-v2-01/component-freeze.json`.
 - `local/stands/night-battle-20261016-01/mixed-01/runs/native-p06t01/native-hangar-observed.json`,
   SHA`cc201b1e2099c3f76c75ac0092e1d307790e8c23b3c873eccaaca6911306784d`.
 

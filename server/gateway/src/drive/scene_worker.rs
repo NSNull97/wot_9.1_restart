@@ -83,6 +83,14 @@ impl Kind{
         Some(match self{Self::Ms1=>V::Ms1,Self::Is7=>V::Is7,Self::T26=>V::T26,Self::T34=>V::T34,Self::T3485=>V::T3485,
             Self::WtE100128|Self::Fv215b183=>return None})
     }
+    /// Explicit seven-kind mapping for a separately qualified combat route.
+    /// Caller must already require resources4 + SceneManifest3 + opt-in. The
+    /// legacy vehicle() above intentionally remains old5/None for new kinds.
+    pub(crate) fn extended_vehicle(self)->crate::gateway091::shared::vehicle_profile::VehicleKind {
+        use crate::gateway091::shared::vehicle_profile::VehicleKind as V;
+        match self{Self::Ms1=>V::Ms1,Self::Is7=>V::Is7,Self::T26=>V::T26,Self::T34=>V::T34,Self::T3485=>V::T3485,
+            Self::WtE100128=>V::Wt128,Self::Fv215b183=>V::Fv183}
+    }
     pub(crate) fn physical_profile(self)->crate::gateway091::shared::ram_proof::Profile {
         use crate::gateway091::shared::ram_proof::Profile as P;
         match self{Self::Ms1=>P::Ms1,Self::Is7=>P::Is7,Self::T26=>P::T26,Self::T34=>P::T34,Self::T3485=>P::T3485,

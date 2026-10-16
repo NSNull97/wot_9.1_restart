@@ -25,6 +25,8 @@ pub fn profile_revision_for(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::Ms1 => PROFILE_REVISION, VehicleKind::Is7 => "test_lab-is7-ap-single-plate-v1",
     VehicleKind::T26=>"test_lab-t26-ap-single-plate-v1",VehicleKind::T34=>"test_lab-t34-ap-single-plate-v1",
     VehicleKind::T3485=>"test_lab-t3485-ap-single-plate-v1",
+    VehicleKind::Wt128=>"test_lab-p06t-wt128-ap-single-plate-v1",
+    VehicleKind::Fv183=>"test_lab-p06t-fv183-ap-single-plate-v1",
 } }
 pub const HISTORICAL_FIDELITY: &str = "approximate";
 pub const CALIBER: f64 = 37.0;

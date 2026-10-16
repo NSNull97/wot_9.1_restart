@@ -18,9 +18,13 @@ UI/control/combat NOT_RUN. WT128/FV183 physical foundation подключена:
 canonicalroot Jolt getters, Python7/negative8/legacy455exact и original Rust
 IPC7→scalarFrameProof→ACK4PASS/buildPASS. Full04 на c25fb84:
 1100PASS/5oldignored/buildPASS,692sourcefiles exact; physical tag сохранён.
-VehicleKind/World/owned всё ещё5, боевого допуска WT/FV нет.
+Проверенный full05 World/owned остаётся5. После него начата WIP интеграция
+VehicleKind7/World LAB/source geometry/Aim: focused13 134PASS/0ignored/buildPASS;
+полный общий regression/source gate ещё NOT_RUN.
+Боевого owned допуска WT/FV нет.
 В работе следующий компонент: семь source caps, шестое место экипажа WT и
-явная policy v2. Focused11:105PASS/0ignored/buildPASS; full05 PENDING.
+явная policy v2. Focused11:105PASS/0ignored/buildPASS; full05 на9080c47:
+1111PASS/5oldignored/buildPASS,695sourcefiles exact, device tag сохранён.
 Старый World остаётся на policy v1, native/новый owned допуск NOT_RUN.
 Full01 прерван из-за HE+wreck anchor bug, regression PASS в focused07/full02.
 Native/UI/audio NOT_RUN; WT/FV combat integration ещё отсутствует,

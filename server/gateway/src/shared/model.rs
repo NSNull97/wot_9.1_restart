@@ -19,6 +19,7 @@ pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
 pub fn wreck_policy_revision_for(kind:VehicleKind)->&'static str { match kind {
     VehicleKind::Ms1=>WRECK_POLICY_REVISION,VehicleKind::Is7=>"test_lab-is7-wreck-block-v1",
     VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485=>"test_lab-curated-stock-wreck-block-v1",
+    VehicleKind::Wt128|VehicleKind::Fv183=>"test_lab-p06t-extended-source-wreck-block-v1",
 } }
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
@@ -87,6 +88,8 @@ impl DamageRecord {pub fn lethal(&self)->bool{self.crew_before&&(!self.crew_afte
 pub const MAX_DAMAGE_EVENTS:usize=MAX_BATTLE_SHOTS*16;
 #[path="p06t_world.rs"]
 pub(super) mod p06t;
+#[path="p06t_extended_world.rs"]
+pub(crate) mod extended;
 
 /// One accepted server action, independent of native entity/method IDs. The
 /// laboratory never replenishes ammo, so its complete event history is bounded.
@@ -161,12 +164,14 @@ pub struct World {
     pub lifecycle: Option<super::lifecycle::State>,
     pub lifecycle_created_unix: Option<u32>,
     mixed_ammo:bool,
+    extended_lab:bool,
+    lab_loadouts:[Option<extended::LabLoadout>;MAX_ACTORS],
     pub damage_events:Vec<DamageRecord>,
     pub device_events:Vec<(usize,crate::p06t_device_state::Transition)>,
     rng_state:u64,
     pub rng_draws:Vec<(u32,usize,u8,u64)>,
     geometry: Option<Arc<geometry::Bundle>>,
-    geometries: [Option<Arc<geometry::Bundle>>; 5],
+    geometries: [Option<Arc<geometry::Bundle>>; 7],
     pub contacts: Vec<Contact>,
     ap_test_lab: bool,
     pub impacts: Vec<AppliedImpact>,
@@ -267,7 +272,7 @@ impl World {
         if id == 0 { return Err(bad()); }
         Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
-            mixed_ammo:false,damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
+            mixed_ammo:false,extended_lab:false,lab_loadouts:[None;MAX_ACTORS],damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
             geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None,
             contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS] })
@@ -338,8 +343,10 @@ impl World {
         Ok(changed)
     }
     pub fn enable_ap_test_lab(&mut self) -> io::Result<()> {
+        let count=if self.geometries[5..].iter().any(Option::is_some){7}
+            else if self.geometries[2..5].iter().any(Option::is_some){5}else{2};
         if self.started.is_some() || self.geometry.is_none() || self.ap_test_lab
-            || self.mixed_profiles && self.geometries[..if self.geometries[2..].iter().any(Option::is_some){5}else{2}].iter().any(Option::is_none) { return Err(bad()); }
+            || self.mixed_profiles && self.geometries[..count].iter().any(Option::is_none) { return Err(bad()); }
         self.ap_test_lab = true; Ok(())
     }
     pub fn bind_terrain(&mut self, terrain: Arc<terrain::Terrain>) -> io::Result<()> {
@@ -440,7 +447,7 @@ impl World {
     }
     pub fn attach_owned_v2(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_v2091::Frozen)->io::Result<usize>{
         loadout.validate_owned(&identity.account)?;
-        if !self.mixed_ammo||!self.mixed_profiles{return Err(bad());}
+        if !self.mixed_ammo||!self.mixed_profiles||self.extended_lab{return Err(bad());}
         let existing=self.actors.iter().position(|actor|actor.identity.account==identity.account);
         if existing.is_some_and(|slot|self.actors[slot].owned_v2.as_ref()!=Some(loadout)){return Err(bad());}
         let mut next=self.clone();let previous=next.vehicle_kind;
@@ -456,7 +463,12 @@ impl World {
     }
     fn attach_loadout(&mut self, identity: Identity, session: u32,
         loadout: Option<crate::battle091::profile13::FrozenLoadout>) -> io::Result<usize> {
+        self.attach_loadout_fire(identity,session,loadout,None)
+    }
+    fn attach_loadout_fire(&mut self,identity:Identity,session:u32,
+        loadout:Option<crate::battle091::profile13::FrozenLoadout>,initial_fire:Option<fire::State>)->io::Result<usize>{
         if self.mixed_ammo{return Err(bad());}
+        if initial_fire.is_some()&&(!self.extended_lab||loadout.is_some()){return Err(bad());}
         if session == 0 || identity.database <= 0 || identity.account.is_empty()
             || self.actors.iter().any(|a| a.session == Some(session)) { return Err(bad()); }
         if let Some(slot) = self.actors.iter().position(|a| a.identity.account == identity.account) {
@@ -472,7 +484,9 @@ impl World {
         let mut origin = SPAWN; origin[0] += if slot == 0 { -4. } else { 4. };
         let kind=loadout.as_ref().map_or(self.vehicle_kind,|v|v.kind);
         let ammo = loadout.as_ref().map_or(kind.initial_ammo(), |value| value.ap_count);
-        let fire=fire::State::with_mounted_loadout(ammo,kind.reload_seconds(),kind.ammo_limit())?;
+        let fire=if let Some(fire)=initial_fire {
+            if fire.typed().is_none_or(|state|state.mount()!=kind.mount()){return Err(bad());}fire
+        }else{fire::State::with_mounted_loadout(ammo,kind.reload_seconds(),kind.ammo_limit())?};
         if self.mixed_profiles {
             let mut trace=self.impact.clone();trace.bind_actor(slot,kind)?;
             let mut fragiles=self.fragiles.clone();

@@ -95,7 +95,9 @@ WT128/FV183 physical-only foundation: rootJoltgetters/Python7/negative8/
 455legacyframesexact и canonicalRustIPC7→originalscalarFrameProof→ACK4PASS/
 buildPASS. Full04 c25fb84:1100PASS/5ignored/build/692sourceexact PASS;
 physical tag сохранён. Crew6/sourcecaps7/policyv2 focused11:105PASS/build;
-full05 PENDING; VehicleKind/World/owned пока5.
+full05 на9080c47:1111PASS/5ignored/build/695sourceexact, device tag сохранён;
+Проверенный полный World/owned5; новый Kind7/World LAB/Aim/geometry:
+focused13 134PASS/0ignored/buildPASS, общий full gate ещё NOT_RUN.
 Native/UI/audio/combat admission WT/FV NOT_RUN, карточка не принята и не main.
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 

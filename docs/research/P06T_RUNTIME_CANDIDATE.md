@@ -269,7 +269,7 @@ collision members; whole package SHA не пересчитан и не заяв�
 | WT assembly identity |128=100000кг/Gun_01,150=97800кг/Gun_02 из actual mass sum; один vehicleCD16913. Нужен различимый assembly/mount либо явно только128 runtime; перепутать profiles нельзя |
 | Aim | FV source yaw limits `-45 45`°; WT basic pitch `-15 5`°, rear `-7 5 37`°, explicit transition5°=.08726646rad. Original reader/PE доказаны: обе границы min/max интерполируются; default0.4rad относится только к отсутствующему transition. Текущий360° yaw и rear-only-max/constant-min не выражают это |
 | Closed Rust/C# | private physical Profile/scene Kind7 прошли full04; VehicleKind/World geometries[5], resource source_profiles[5], resource manifestv3 exact5 остаются закрыты. Для World7 нужен отдельный versioned startup/resource route |
-| Crew/damage | WT6 primary seats, FV5. Новый device component crew6/source caps7/policyv2: focused11 105PASS/build; full05 PENDING. World/PoolCrew/terminal old5 не расширены |
+| Crew/damage | WT6 primary seats, FV5. Новый device component crew6/source caps7/policyv2: focused11 105PASS/build; full05 на9080c47 1111/5/build/695sourceexact. World/PoolCrew/terminal old5 не расширены |
 | Owned/native | registry USSR-only, pool ammo closed15, v2 Frozen admission/terminal maxima закрытыMS1/IS7; нужны source descriptors, real SQLite ownership/ammo/crew proof и полный nation cycle China5→3/France3→4/UK4→5 |
 
 WT128100000кг находится ровно на существующей inclusive mass границе;
@@ -423,7 +423,11 @@ exe SHA `2a51a7bf8312639869213daef87d7fe5604b61f387d14d4f8c9b8acf596003d1`.
 Доказательства: `local/build/server/gateway-p06t-focused11/` и
 `local/evidence/20261016-p06t-device-v2-01/`. Focused10 сохранил compile FAIL:
 root пропустил alias device::State::new в cancelled_terminal_state; добавлен
-штатный `?`, без изменения алгоритма или ожиданий. **Full05 ещё PENDING**.
+штатный `?`, без изменения алгоритма или ожиданий. **Full05 на9080c47 завершён:
+1111PASS/0FAIL/5oldignored/buildPASS**,341.89с,695sourcefiles exact. Tag
+`p06t-devices-20261016-01`; exe SHA
+`26b85500cadcfbf86a60c47d3ab8574caad0670e5352d382b1c36900d5a5e599`.
+Source proof: `local/evidence/20261016-p06t-full05/source-{before,after}.json`.
 Новый leaf не приписывается1100. Gun31/geometry/damage/TerminalPython прежние.
 
 Пока не реализованы ammo-bay explosion, turret detach, ремонт/восстановление
@@ -432,7 +436,7 @@ Native правильность новых method IDs, всех critical/fire/HE
 переходов сохраняет NOT_RUN до настоящей ручной проверки владельца.
 Full02 и отдельный full03 source-bound regression/build прошли для своих
 head. WT/FV root physical foundation не включена в1096 и отдельно проверена
-full04/1100. Следующий device v2 leaf требует своих focused/full05 результатов.
+full04/1100. Device v2 leaf отдельно покрыт full05/1111.
 Ночное разрешение не заменяет native приёмку.
 
 Откат: сохранённые P04M branch/source-bound binary+binding, выключенный P06T
@@ -441,6 +445,28 @@ SQLite backup, без удаления version markers/ручного смеши
 Оригинальный клиент и соседние проекты не изменены; новые admission flags
 T26/T34/T34-85 остаются false до owner gates.
 
-Единственный следующий рекомендуемый шаг: полный source-before/after gate
-нового device v2 leaf перед дальнейшей World7 интеграцией, сохраняя
-закреплённый physical full04 и прежние пять byte contracts.
+World7/source geometry/source Aim соединены в явном temporary qualification:
+focused13 **134PASS/0FAIL/0ignored/buildPASS**,159.85с, exe SHA
+`1f1baccc52f5412df85bf08c19b88a9a6520ba3b58dc7b09ceed2794ca68ec3f`.
+Resources4 требуют exact7 и genuine shared-only Pool4; SceneManifest3 включён
+только world.extended_lab. Старые ALL5/DTO/parsers сохраняют прежние границы.
+Новый CLI legacy091-p06t-curated-lab принимает только WT128/FV183; LAB БК
+WT[12,6,6]/FV[4,4,4] не попадает в inventory и не создаёт owned receipt.
+Подтверждены actual canonical Jolt→scalarFrameProof→World/Trace→ACK mixed6,
+выход/reattach внутри ACK, source health/crew/физический SID, отсутствие refill.
+Отдельные root clock-only World tests проверяют clip6/2s/fullreload и frozen
+FV premium HE275; они не утверждают симуляцию кадров между clock commands.
+Source exporter из tools прошёл9 Python tests; raw geometry bundles0971.../
+c14b... повторились по SHA. Полный актуальный regression gate и native/UI/
+audio новых машин пока NOT_RUN. GunBreech31 остаётся Unsupported.
+
+Focused12 сохранил128PASS/6FAIL: пять были вызваны legacy ammo0 constructor
+перед typed initialisation (исправлен отдельный private typed factory), один
+— произвольным0.0005rad ожиданием AP/APCR вместо исходных~0.00049. Теперь
+проверяется независимое low-arc уравнение с2e-6rad и строгим source порядком.
+Старый legacy minimum не ослаблен; cfgtest кеширует только immutable pinned
+resource Arcs, отдельные negative manifests загружаются заново.
+
+Единственный следующий рекомендуемый шаг: фактические new2 contact/Trace/
+damage tests, затем полный source-before/after gate согласованного слоя,
+сохраняя закреплённые full03–05 и прежние пять byte contracts.

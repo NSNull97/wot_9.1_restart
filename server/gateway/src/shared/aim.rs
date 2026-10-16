@@ -3,6 +3,8 @@
 //! solver is test_lab approximate, not a claim about the historical server.
 use std::{f32::consts::PI, io};
 use super::{model::bad, pose, vehicle_profile::VehicleKind};
+#[path="p06t_source_aim.rs"]
+pub(crate) mod source_aim;
 
 pub const YAW_RATE: f32 = 39. * PI / 180.;
 pub const PITCH_RATE: f32 = 52.5 * PI / 180.;
@@ -70,6 +72,9 @@ impl State {
         self.advance_pose_for(VehicleKind::Ms1,position,direction,dt)
     }
     pub fn advance_pose_for(&mut self, kind: VehicleKind, position: [f32; 3], direction: [f32; 3], dt: f32) -> io::Result<()> {
+        if kind.is_extended() {
+            return self.advance_source_pose(kind,position,direction,dt,kind.shell().raw_speed as f64,9.81,1.,1.);
+        }
         let spec=kind.aim();
         if !dt.is_finite() || !(0. ..=0.2).contains(&dt)
             || direction.iter().any(|x| !x.is_finite()) || position.iter().any(|x| !x.is_finite()) { return Err(bad()); }
@@ -94,6 +99,10 @@ impl State {
             || position.iter().chain(direction.iter()).any(|v|!v.is_finite())
             || !self.yaw.is_finite() || !self.pitch.is_finite() {return Err(bad());}
         caps.validate()?;self.intent.validate()?;
+        if kind.is_extended() {
+            return self.advance_source_pose(kind,position,direction,dt,shell.raw_speed_mps,shell.raw_gravity_mps2,
+                caps.turret_scale,caps.aim_speed_scale);
+        }
         let spec=kind.aim();
         let (yaw,pitch)=match self.intent {
             Intent::Point(point)=>target_angles_pose_with_ballistics(kind,position,direction,point,self.yaw,self.pitch,
@@ -107,6 +116,56 @@ impl State {
         if caps.aim_speed_scale>0. {self.pitch+=(target-self.pitch).clamp(-pitch_step,pitch_step);}
         Ok(())
     }
+    /// New two-profile source envelope. The solver/rate model remains explicit
+    /// LAB. Mechanical clipping at the next yaw is immediate; it may retract a
+    /// previously legal pitch as WT traverses into its restricted rear sector.
+    /// This is no assertion about the historical server controller algorithm.
+    fn advance_source_pose(&mut self,kind:VehicleKind,position:[f32;3],direction:[f32;3],dt:f32,
+        raw_speed:f64,raw_gravity:f64,turret_scale:f32,aim_scale:f32)->io::Result<()> {
+        let source=kind.source_aim().ok_or_else(bad)?;let envelope=source.envelope;
+        if !dt.is_finite()||!(0. ..=0.2).contains(&dt)
+            ||position.iter().chain(direction.iter()).any(|v|!v.is_finite())
+            ||!raw_speed.is_finite()||raw_speed<=0.||!raw_gravity.is_finite()||raw_gravity<=0.
+            ||[turret_scale,aim_scale].iter().any(|v|!v.is_finite()||!(0. ..=1.).contains(v))
+            ||!self.yaw.is_finite()||!self.pitch.is_finite(){return Err(bad());}
+        self.intent.validate()?;
+        let current=envelope.pitch_limits(self.yaw).map_err(|_|bad())?;
+        if self.pitch<current.min||self.pitch>current.max{return Err(bad());}
+        let (target_yaw,target_pitch)=match self.intent {
+            Intent::Point(point)=>source_target_angles(kind,position,direction,point,self.yaw,self.pitch,raw_speed,raw_gravity)?,
+            Intent::Hold{yaw,pitch}=>source_target_bounds(kind,wrap(yaw),pitch)?,
+        };
+        let yaw_step=source.yaw_rate*turret_scale*aim_scale*dt;
+        // FV has a bounded interval: use its linear difference, never a wrapped
+        // shortest path through the forbidden rear. WT retains full-circle wrap.
+        let delta=if envelope.yaw_limits().is_some(){target_yaw-self.yaw}else{wrap(target_yaw-self.yaw)};
+        let next_yaw=if turret_scale>0.&&aim_scale>0.{
+            let raw=self.yaw+delta.clamp(-yaw_step,yaw_step);
+            envelope.clamp_yaw(if envelope.yaw_limits().is_some(){raw}else{wrap(raw)}).map_err(|_|bad())?
+        }else{self.yaw};
+        let target=envelope.clamp_pitch(next_yaw,target_pitch).map_err(|_|bad())?;
+        let pitch_step=source.pitch_rate*aim_scale*dt;
+        let moved=if aim_scale>0.{self.pitch+(target-self.pitch).clamp(-pitch_step,pitch_step)}else{self.pitch};
+        let next_pitch=envelope.clamp_pitch(next_yaw,moved).map_err(|_|bad())?;
+        self.yaw=next_yaw;self.pitch=next_pitch;Ok(())
+    }
+}
+/// Fallible authoritative bounds for the explicit extended route. Callers must
+/// use both values; old `pitch_max_for` remains a legacy upper-bound wrapper.
+pub(crate) fn pitch_limits_for(kind:VehicleKind,yaw:f32)->io::Result<(f32,f32)> {
+    if let Some(source)=kind.source_aim(){let limits=source.envelope.pitch_limits(yaw).map_err(|_|bad())?;return Ok((limits.min,limits.max));}
+    if !yaw.is_finite(){return Err(bad());}Ok((kind.aim().min_pitch,pitch_max_for(kind,yaw)))
+}
+fn source_target_bounds(kind:VehicleKind,yaw:f32,pitch:f32)->io::Result<(f32,f32)> {
+    let e=kind.source_aim().ok_or_else(bad)?.envelope;
+    let yaw=e.clamp_yaw(yaw).map_err(|_|bad())?;let pitch=e.clamp_pitch(yaw,pitch).map_err(|_|bad())?;Ok((yaw,pitch))
+}
+/// Both flat/tilted solver exits (including unreachable/degenerate fallback)
+/// pass through this checked envelope before reaching extended authority.
+fn source_target_angles(kind:VehicleKind,position:[f32;3],direction:[f32;3],point:[f32;3],old_yaw:f32,old_pitch:f32,
+    speed:f64,gravity:f64)->io::Result<(f32,f32)> {
+    let (yaw,pitch)=target_angles_pose_with_ballistics(kind,position,direction,point,old_yaw,old_pitch,speed,gravity);
+    source_target_bounds(kind,yaw,pitch)
 }
 pub fn wrap(angle: f32) -> f32 { (angle + PI).rem_euclid(2. * PI) - PI }
 
@@ -383,3 +442,7 @@ mod tests {
         assert!(s.yaw.is_finite() && s.pitch>=MIN_PITCH && s.pitch<=MAX_PITCH);
     }
 }
+
+#[cfg(test)]
+#[path="p06t_extended_aim_tests.rs"]
+mod extended_tests;

@@ -59,7 +59,7 @@ impl BatchRuntime {
         "scene":self.runtime.as_ref().map(|r|serde_json::json!({"version":r.scene().version(),"sha256":r.scene().sha256})),
         "manifest_sha256":self.spec.as_ref().map(|s|&s.manifest_sha256)})}
     fn reconcile_departures(staged:&mut World,current:&World)->io::Result<()> {
-        if staged.id!=current.id||staged.map!=current.map||staged.expected_actors()!=current.expected_actors()
+        if staged.id!=current.id||staged.map!=current.map||staged.expected_actors()!=current.expected_actors()||staged.extended_lab()!=current.extended_lab()
             ||staged.actors.len()!=current.actors.len()||staged.actors.iter().zip(&current.actors).any(|(old,now)|
                 old.identity!=now.identity||old.vehicle_kind()!=now.vehicle_kind()
                 ||old.session!=now.session&&!(old.session.is_some()&&now.session.is_none())){return Err(model::bad());}
@@ -68,14 +68,16 @@ impl BatchRuntime {
         }Ok(())
     }
     fn actor_manifest(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8)->io::Result<serde_json::Value> {
-        if slot>=model::MAX_ACTORS || !matches!(version,1|2) || version==1&&kind.index()>=2 {return Err(model::bad());}
+        if slot>=model::MAX_ACTORS || !matches!(version,1|2|3) || version==1&&kind.index()>=2
+            ||kind.is_extended()&&version!=3||version==3&&(resources.version!=4||resources.maps.len()!=7) {return Err(model::bad());}
         let map=resources.maps.get(kind.index()).ok_or_else(||model::bad())?;
         let mut row=serde_json::json!({"slot":slot,"kind":kind.label(),
             "config":{"path":Self::physical_path(&map.config),"sha256":map.config_sha256},
             "spawn_origin":[map.spawn[0]+if slot%2==0{-4.}else{4.},map.spawn[1],map.spawn[2]-12.*(slot/2)as f32],"spawn_yaw":map.spawn_yaw});
-        if version==2 {
+        if version>=2 {
             row["source_profile"]=if kind.index()>=2 {
                 let (path,sha256)=resources.source_profiles[kind.index()].as_ref().ok_or_else(||model::bad())?;
+                if version==3&&sha256!=ram_proof::Profile::for_vehicle(kind).sha(){return Err(model::bad());}
                 serde_json::json!({"path":Self::physical_path(path),"sha256":sha256})
             } else {
                 if resources.source_profiles[kind.index()].is_some() {return Err(model::bad());}serde_json::Value::Null
@@ -86,7 +88,10 @@ impl BatchRuntime {
     pub(super) fn start(&mut self,world:&mut World,now:Instant)->io::Result<()> {
         if self.started_at.is_some()||!world.mixed_profiles()||world.actors.len()!=world.expected_actors()
             ||world.started.is_none()||world.map!=self.catalog.map_id(){return Err(model::bad());}
-        let version=if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
+        if world.extended_lab()&&self.resources.version!=4||!world.extended_lab()&&world.actors.iter().any(|a|a.vehicle_kind().is_extended()) {
+            return Err(model::bad());
+        }
+        let version=if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
         let rows=world.actors.iter().enumerate().map(|(slot,actor)|Self::actor_manifest(&self.resources,slot,actor.vehicle_kind(),version))
             .collect::<io::Result<Vec<_>>>()?;
         let manifest=serde_json::json!({"version":version,"profile":"test_lab","policy":scene_worker::POLICY,
@@ -112,8 +117,8 @@ impl BatchRuntime {
         self.startup=Some(rx);self.started_at=Some(now);
         println!("P05C_SCENE_START battle={} actors={} generation={} one_scene=true",world.id,world.actors.len(),generation);Ok(())
     }
-    fn profile(kind:scene_worker::Kind)->io::Result<ram_proof::Profile>{
-        let vehicle=VehicleKind::from_label(kind.label()).ok_or_else(||model::bad())?;
+    fn profile(kind:scene_worker::Kind,extended:bool)->io::Result<ram_proof::Profile>{
+        let vehicle=if extended{kind.extended_vehicle()}else{VehicleKind::from_label(kind.label()).ok_or_else(||model::bad())?};
         Ok(ram_proof::Profile::for_vehicle(vehicle))
     }
     fn physical_path(path:&Path)->String{let text=path.to_string_lossy();
@@ -131,7 +136,7 @@ impl BatchRuntime {
                 substep:c["substep"].as_u64().ok_or_else(||model::bad())?.try_into().map_err(|_|model::bad())?,
                 kind:c["kind"].as_str().ok_or_else(||model::bad())?.into(),point:vec3(&c["point"])?,
                 normal:vec3(&c["normal"])?,velocity:vec3(&c["velocity"])?})).collect::<io::Result<Vec<_>>>()?;
-            let proof=crate::map_drive_worker091::shared_angular_proof(&actor.proof,&raw,&self.catalog,Self::profile(actor.kind)?,frame.sequence)?;
+            let proof=crate::map_drive_worker091::shared_angular_proof(&actor.proof,&raw,&self.catalog,Self::profile(actor.kind,world.extended_lab())?,frame.sequence)?;
             proof.final_motion(actor.pose.linear_velocity,actor.pose.angular_velocity,actor.pose.rspeed)?;
             if frame.sequence==0{continue;}
             let context=ram_proof::Context{battle:world.id,slot:actor.slot,session:self.sessions[actor.slot],generation:self.generation,
@@ -168,7 +173,7 @@ impl BatchRuntime {
                 candidate.import_external_poses(&rows)?;
                 let spec=self.spec.as_ref().ok_or_else(||model::bad())?;
                 for actor in &frame.actors{candidate.bind_contact_source(actor.slot,ram_proof::Source{session:self.sessions[actor.slot],generation:self.generation,
-                    config_sha256:spec.actors[actor.slot].config_sha256.clone(),profile:Self::profile(actor.kind)?})?;}
+                    config_sha256:spec.actors[actor.slot].config_sha256.clone(),profile:Self::profile(actor.kind,world.extended_lab())?})?;}
                 self.settled=true;println!("P05C_SCENE_READY battle={} process_id={} actors={} tick={}",world.id,self.runtime.as_ref().unwrap().process_id(),rows.len(),frame.tick);
             }else{
                 // A quick reply may arrive in the current wall-clock bucket.
@@ -194,7 +199,7 @@ impl BatchRuntime {
             let seq=runtime.advance(&inputs,now)?;self.dispatched=Some(deadline);
             println!("P05C_SCENE_INPUT battle={} seq={} actors={} physical_sessions={:?} inputs={:?} world_tick={} devices_policy={}",
                 world.id,seq,inputs.len(),self.sessions,inputs,world.tick,
-                if world.actors.iter().any(|a|a.devices.is_some()){crate::p06t_device_state::POLICY}else{"legacy"});
+                if world.extended_lab(){crate::p06t_device_state::POLICY_V2}else if world.actors.iter().any(|a|a.devices.is_some()){crate::p06t_device_state::POLICY}else{"legacy"});
         }Ok(())
     }
 }
@@ -207,3 +212,6 @@ mod p04m_tests;
 #[cfg(test)]
 #[path="server_scene_runtime_p06t_tests.rs"]
 mod p06t_tests;
+#[cfg(test)]
+#[path="p06t_extended_scene_tests.rs"]
+mod extended_tests;

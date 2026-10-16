@@ -381,6 +381,7 @@ impl Trace {
     fn profile_for(kind:VehicleKind)->&'static str {match kind {
         VehicleKind::Ms1=>PROFILE,VehicleKind::Is7=>"is7_ap_14602",VehicleKind::T26=>"t26_ap_1034",
         VehicleKind::T34=>"t34_ap_7178",VehicleKind::T3485=>"t3485_ap_7946",
+        VehicleKind::Wt128=>"p06t_wt128_ap_13850",VehicleKind::Fv183=>"p06t_fv183_ap_20826",
     }}
     fn profile(&self)->&'static str {Self::profile_for(self.vehicle)}
     fn ruleset_for(kind:VehicleKind)->&'static str {match kind {
@@ -388,6 +389,8 @@ impl Trace {
         VehicleKind::T26=>"wot-0.9.1-#717-t26-stock-ap-full-pose-v1",
         VehicleKind::T34=>"wot-0.9.1-#717-t34-stock-ap-full-pose-v1",
         VehicleKind::T3485=>"wot-0.9.1-#717-t3485-stock-ap-full-pose-v1",
+        VehicleKind::Wt128=>"test_lab-p06t-wt128-source-full-pose-v1",
+        VehicleKind::Fv183=>"test_lab-p06t-fv183-source-full-pose-v1",
     }}
     fn ruleset_revision(&self)->&'static str {Self::ruleset_for(self.vehicle)}
     pub fn bind_fragiles(&mut self,catalog:std::sync::Arc<fragiles::Catalog>)->io::Result<()>{

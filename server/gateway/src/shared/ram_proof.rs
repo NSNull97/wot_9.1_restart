@@ -19,6 +19,8 @@ impl Profile {
             VehicleKind::T26=>Self::T26,
             VehicleKind::T34=>Self::T34,
             VehicleKind::T3485=>Self::T3485,
+            VehicleKind::Wt128=>Self::WtE100128,
+            VehicleKind::Fv183=>Self::Fv215b183,
         }
     }
     pub fn sha(self)->&'static str {match self {
