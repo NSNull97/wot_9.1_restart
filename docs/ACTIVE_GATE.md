@@ -1,4 +1,13 @@
-# Текущая карточка — P08B: restart/CAS composition
+# Текущая карточка — P08C: итоги вернувшегося игрока
+
+Ветка `codex/p08c-late-owner-results` от6289216. План
+[P08C_LATE_OWNER_RESULTS](plans/P08C_LATE_OWNER_RESULTS.md).
+Conservative append только unchanged release/final actor; старые Finish/
+inventory/revisions не пересчитываются. Actual SQL/HTTP draft evidence в
+ignored staging; current runtime integration ещё NOT_COMPILED/NOT_RUN.
+Native notification experimental/defaultfalse и NOT_RUN. Mainffce8cb сохранён.
+
+## Сохранённый P08B: restart/CAS composition
 
 Ветка `codex/p08b-restart-cas-composition` от7d2252f. План
 [P08B_RESTART_CAS_COMPOSITION](plans/P08B_RESTART_CAS_COMPOSITION.md).
