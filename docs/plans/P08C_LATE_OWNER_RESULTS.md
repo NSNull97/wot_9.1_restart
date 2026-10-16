@@ -49,3 +49,13 @@ NOT_COMPILED. Source proofs/SQL vectors не доказывают native сов�
 поверх новой не восстанавливать — это вернуло бы потерянный БК. Для runtime
 rollback6289216 с такой DB требуется явная совместимая result reader миграция,
 а не молчаливая потеря итогов. Единственный следующий шаг — review/promotion04.
+
+Runtime04 frozen receipt da5cc51481b77ebb7934bd1647e1474bca1ac58ad6c5521ca3036fba695bd269:
+20files promoted после7rawbaseline checks. Commit332ea1a: canonicalfocused
+gateway-p08c-late-focused01 --test-filter late_results --cargo-temp-target,
+34PASS/0FAIL/0ignored/buildPASS,729rawsourcebefore/afterexact. Component включает
+actual savedSQL DTO/sourceWorld adapter и authored Lifecycle/Session pressure;
+actual Runtime→HTTP/SQL/Native ещё NOT_RUN. Evidence20261017-p08c-late-focused01.
+Из peer-review исправлены emptyCapture registry leak, globalpage noticecap
+starvation и worker-exit barrier доjoin. Writer04 final08 и coherent composition05
+пока независимые ignored candidates; card/full gate ещё не завершены.

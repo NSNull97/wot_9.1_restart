@@ -4,7 +4,9 @@
 [P08C_LATE_OWNER_RESULTS](plans/P08C_LATE_OWNER_RESULTS.md).
 Conservative append только unchanged release/final actor; старые Finish/
 inventory/revisions не пересчитываются. Actual SQL/HTTP draft evidence в
-ignored staging; current runtime integration ещё NOT_COMPILED/NOT_RUN.
+ignored staging. Runtime component332ea1a: focused34PASS/0FAIL/0ignored/buildPASS,
+729rawsourceexact; real Runtime→HTTP→SQL composition и полный gate ещё NOT_RUN.
+Writer final08/promotion и actual composition05 готовятся независимо.
 Native notification experimental/defaultfalse и NOT_RUN. Mainffce8cb сохранён.
 
 ## Сохранённый P08B: restart/CAS composition

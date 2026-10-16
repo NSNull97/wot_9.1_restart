@@ -1,5 +1,12 @@
 # Состояние проекта — 2026-10-17
 
+P08C late-owner runtime component332ea1a: focused34PASS/0FAIL/0ignored/buildPASS,
+729rawsourceexact. Current codex/p08c-late-owner-results; writer04 final08 и
+actual Runtime→HTTP/SQL composition05 ещё готовятся, полный gate NOT_RUN.
+Native notification experimental/defaultfalse/NOT_RUN. Старые Finish/ammo/
+revisions не переписываются; unchanged release/final actor только, остальные
+LATE_ACTOR_STATE_CHANGED. Mainffce8cb unchanged. План P08C_LATE_OWNER_RESULTS.
+
 P08B restart composition7ff8b30: full1189PASS/0FAIL/5oldignored/buildPASS,
 716rawsourceexact; actualHTTP/SQL/processrestart/Fresh/warm2→full1→nextCAS2
 PASS, focused1/Node11PASS0skip. AP-only contract1, syntheticSession/ACK/HP0;
