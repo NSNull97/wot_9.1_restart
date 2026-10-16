@@ -152,6 +152,8 @@ class OwnedV3Store:
         return bool(table and self.connection.execute('SELECT 1 FROM p06v3_owner WHERE account_id=?', (self.account,)).fetchone())
 
     def _owner(self):
+        from p08b_owner_hold_store import require_hold_compatible
+        require_hold_compatible(self.connection,self.account)
         row = self.connection.execute('SELECT * FROM p06v3_owner WHERE account_id=?', (self.account,)).fetchone()
         require(row is not None, 'V3_ACTIVATION_REQUIRED')
         require(row['schema'] == STORE_SCHEMA and row['policy_sha256'] == POLICY_SHA256

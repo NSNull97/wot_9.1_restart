@@ -11,6 +11,9 @@ pub(super) use mixed::{TerminalV2,JobV2,CompletionV2};
 #[path="profile13_session_loss.rs"]
 mod loss;
 pub(super) use loss::{TerminalLoss,JobLoss,CompletionLoss};
+#[path="profile13_session_hold.rs"]
+mod hold;
+pub(super) use hold::{JobHold,CompletionHold,FreshHold};
 
 const MAX_COMMANDS: u32 = 512;
 static WORKER_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -29,16 +32,21 @@ pub(crate) struct State {
     pub(super) pending_return_v2: Option<TerminalV2>,
     pub(super) reservation_loss: Option<crate::profile13_loss091::Reservation>,
     pub(super) pending_return_loss: Option<TerminalLoss>,
+    pub(super) reservation_hold:Option<crate::profile13_hold091::Reservation>,
+    pub(super) hold_projection:Option<Arc<crate::profile13_hold_projection091::Binding>>,
+    pub(super) hold_return_pending:bool,
+    pub(super) hold_departure_reason:Option<crate::profile13_hold091::DepartureReason>,
+    pub(super) hold_account_only:bool,
     pub(super) in_flight: bool,
     pub(super) command_counter: u32,
     pub(super) stale_envelopes: u8,
 }
 impl State {
-    pub(super) fn reservation_battle(&self)->Option<u64>{self.reservation.as_ref().map(|r|r.battle).or_else(||self.reservation_v2.as_ref().map(|r|r.battle)).or_else(||self.reservation_loss.as_ref().map(|r|r.battle))}
-    pub(super) fn reservation_kind(&self)->Option<super::vehicle_profile::VehicleKind>{self.reservation.as_ref().map(|r|r.frozen.kind).or_else(||self.reservation_v2.as_ref().map(|r|r.frozen.kind)).or_else(||self.reservation_loss.as_ref().map(|r|r.frozen.base.kind))}
-    pub(super) fn reservation_native_inventory_id(&self)->Option<u32>{self.reservation.as_ref().map(|r|r.native_inventory_id).or_else(||self.reservation_v2.as_ref().map(|r|r.frozen.native_inventory_id)).or_else(||self.reservation_loss.as_ref().map(|r|r.frozen.base.native_inventory_id))}
-    pub(super) fn has_reservation(&self)->bool{self.reservation.is_some()||self.reservation_v2.is_some()||self.reservation_loss.is_some()}
-    pub(super) fn has_pending_return(&self)->bool{self.pending_return.is_some()||self.pending_return_v2.is_some()||self.pending_return_loss.is_some()}
+    pub(super) fn reservation_battle(&self)->Option<u64>{self.reservation.as_ref().map(|r|r.battle).or_else(||self.reservation_v2.as_ref().map(|r|r.battle)).or_else(||self.reservation_loss.as_ref().map(|r|r.battle)).or_else(||self.reservation_hold.as_ref().map(|r|r.battle))}
+    pub(super) fn reservation_kind(&self)->Option<super::vehicle_profile::VehicleKind>{self.reservation.as_ref().map(|r|r.frozen.kind).or_else(||self.reservation_v2.as_ref().map(|r|r.frozen.kind)).or_else(||self.reservation_loss.as_ref().map(|r|r.frozen.base.kind)).or_else(||self.reservation_hold.as_ref().map(|r|r.frozen.loss().base.kind))}
+    pub(super) fn reservation_native_inventory_id(&self)->Option<u32>{self.reservation.as_ref().map(|r|r.native_inventory_id).or_else(||self.reservation_v2.as_ref().map(|r|r.frozen.native_inventory_id)).or_else(||self.reservation_loss.as_ref().map(|r|r.frozen.base.native_inventory_id)).or_else(||self.reservation_hold.as_ref().map(|r|r.frozen.loss().base.native_inventory_id))}
+    pub(super) fn has_reservation(&self)->bool{self.reservation.is_some()||self.reservation_v2.is_some()||self.reservation_loss.is_some()||self.reservation_hold.is_some()}
+    pub(super) fn has_pending_return(&self)->bool{self.pending_return.is_some()||self.pending_return_v2.is_some()||self.pending_return_loss.is_some()||self.hold_return_pending}
     /// Admission consumes one command; its required terminal write retains the
     /// final slot even when the native session has reached its lifetime budget.
     pub(super) fn can_admit_command(&self)->bool{self.command_counter<MAX_COMMANDS-1}
@@ -50,7 +58,7 @@ impl State {
             command_key: "p08b:validate".into(), expected_revision: revision, run_id: run_id.clone() };
         profile13::encode_request(&context, &Request::RunOpen)?;
         Ok(Self { run_id, revision, selection: None, reservation: None, pending_return: None,reservation_v2:None,pending_return_v2:None,
-            reservation_loss:None,pending_return_loss:None,
+            reservation_loss:None,pending_return_loss:None,reservation_hold:None,hold_projection:None,hold_return_pending:false,hold_departure_reason:None,hold_account_only:false,
             in_flight: false, command_counter: 0, stale_envelopes: 0 })
     }
     /// A retry retains the returned Context. Calling this again creates a new
@@ -71,6 +79,7 @@ impl State {
     /// same frozen snapshot, but must not change its AP or HP after authority
     /// has already been revoked.
     pub(super) fn retain_terminal(&mut self, terminal: Terminal) -> io::Result<bool> {
+        if self.reservation_hold.is_some(){return Err(bad("old terminal cannot settle owner hold5"));}
         terminal.validate()?;
         if self.reservation_loss.is_some()||self.pending_return_loss.is_some()||self.reservation_v2.is_some()||self.pending_return_v2.is_some()||self.reservation.as_ref() != Some(&terminal.reservation) || terminal.reservation.run_id != self.run_id {
             return Err(bad("terminal is not this client's reservation"));
@@ -88,6 +97,7 @@ impl State {
         Ok(true)
     }
     pub(super) fn retain_terminal_v2(&mut self,terminal:TerminalV2)->io::Result<bool>{
+        if self.reservation_hold.is_some(){return Err(bad("old terminal cannot settle owner hold5"));}
         terminal.validate()?;
         if self.reservation_loss.is_some()||self.pending_return_loss.is_some()||self.reservation.is_some()||self.pending_return.is_some()||self.reservation_v2.as_ref()!=Some(&terminal.reservation)
             ||terminal.reservation.run_id!=self.run_id{return Err(bad("v2 terminal is not this client's reservation"));}
@@ -100,6 +110,7 @@ impl State {
         self.pending_return_v2=Some(terminal);self.selection=None;self.stale_envelopes=0;Ok(true)
     }
     pub(super) fn retain_terminal_loss(&mut self,terminal:TerminalLoss)->io::Result<bool>{
+        if self.reservation_hold.is_some(){return Err(bad("old terminal cannot settle owner hold5"));}
         terminal.validate()?;
         if self.reservation.is_some()||self.pending_return.is_some()||self.reservation_v2.is_some()||self.pending_return_v2.is_some()
             ||self.reservation_loss.as_ref()!=Some(&terminal.reservation)||terminal.reservation.run_id!=self.run_id{

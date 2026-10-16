@@ -66,6 +66,7 @@ pub struct Actor {
     owned_loadout: Option<crate::battle091::profile13::FrozenLoadout>,
     pub owned_v2:Option<crate::profile13_v2091::Frozen>,
     pub owned_loss:Option<crate::profile13_loss091::FrozenLoss>,
+    pub owned_hold:Option<crate::profile13_hold091::FrozenHold>,
     pub devices:Option<crate::p06t_device_state::State>,
 }
 
@@ -174,6 +175,7 @@ pub struct World {
     turret_flights:Vec<super::ammo_detonation::Flight>,
     turret_visual_ms:Option<u64>,
     extended_lab:bool,
+    owner_hold:bool,
     lab_loadouts:[Option<extended::LabLoadout>;MAX_ACTORS],
     pub damage_events:Vec<DamageRecord>,
     pub device_events:Vec<(usize,crate::p06t_device_state::Transition)>,
@@ -300,6 +302,17 @@ impl World {
         Ok(next)
     }
     pub fn ammo_detonation_enabled(&self)->bool{self.ammo_detonation.is_some()}
+    /// Version5 is frozen only on a pristine future battle template. Neither
+    /// old v2/v4 rows nor temporary seven LAB profiles acquire hold semantics.
+    pub fn enable_owner_hold(&mut self)->io::Result<()> {
+        if self.owner_hold||!self.mixed_ammo||!self.mixed_profiles||self.ammo_detonation.is_none()||self.extended_lab
+            ||self.started.is_some()||!self.actors.is_empty()||!self.shots.is_empty()||!self.projectiles.is_empty()
+            ||!self.impact.events().is_empty()||!self.damage_events.is_empty()||!self.device_events.is_empty()
+            ||self.terrain.is_none()||self.result_spots.is_none()
+            ||self.lifecycle.as_ref().is_none_or(|s|s.phase()!=super::lifecycle::Phase::Waiting){return Err(bad());}
+        self.owner_hold=true;Ok(())
+    }
+    pub fn owner_hold_enabled(&self)->bool{self.owner_hold}
     pub fn ammo_detonations(&self)->&[super::ammo_detonation::Event]{
         self.ammo_detonation.as_ref().map_or(&[],super::ammo_detonation::Ledger::events)
     }
@@ -394,7 +407,7 @@ impl World {
         Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,team_plan:None,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
             mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,
-            extended_lab:false,lab_loadouts:[None;MAX_ACTORS],
+            extended_lab:false,owner_hold:false,lab_loadouts:[None;MAX_ACTORS],
             damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
             result_spots:None,result_spot_tick:None,
             geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
@@ -614,6 +627,18 @@ impl World {
         self.attach_owned_v2_inner(identity,session,loadout)
     }
     pub fn attach_owned_loss(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_loss091::FrozenLoss)->io::Result<usize>{
+        if self.owner_hold{return Err(bad());}
+        self.attach_owned_loss_inner(identity,session,loadout)
+    }
+    /// Only a typed writer5 admission can populate owned_hold. Re-login must
+    /// remain Account-only and cannot revive/replenish an existing body.
+    pub fn attach_owned_hold(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_hold091::FrozenHold)->io::Result<usize>{
+        loadout.validate_owned(&identity.account)?;
+        if !self.owner_hold||self.started.is_some()||self.actors.iter().any(|a|a.identity.account==identity.account){return Err(bad());}
+        let mut next=self.clone();let slot=next.attach_owned_loss_inner(identity,session,loadout.loss())?;
+        next.actors[slot].owned_hold=Some(loadout.clone());*self=next;Ok(slot)
+    }
+    fn attach_owned_loss_inner(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_loss091::FrozenLoss)->io::Result<usize>{
         loadout.validate_owned(&identity.account)?;
         if self.ammo_detonation.is_none()||self.extended_lab||loadout.base.kind.is_extended(){return Err(bad());}
         let existing=self.actors.iter().position(|actor|actor.identity.account==identity.account);
@@ -672,7 +697,7 @@ impl World {
         }
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,devices:None });
+            fire, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {

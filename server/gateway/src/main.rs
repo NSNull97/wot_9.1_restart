@@ -81,6 +81,10 @@ mod p06t_armament_wire_tests;
 mod profile13_v2091;
 #[path = "battle/profile13_loss.rs"]
 mod profile13_loss091;
+#[path="battle/profile13_hold.rs"]
+mod profile13_hold091;
+#[path="battle/profile13_hold_projection.rs"]
+mod profile13_hold_projection091;
 #[path = "training/mod.rs"]
 mod training091;
 use training091::ingress as p10b_ingress091;

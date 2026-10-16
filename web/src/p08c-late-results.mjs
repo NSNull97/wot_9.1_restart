@@ -53,6 +53,8 @@ export function lateReaderFence(database, owners) {
     valid(marker.length === 1 && exact(marker[0], ['version', 'policy_sha256', 'catalog_sha256'])
       && marker[0].version === 'p08c-late-results.v1' && marker[0].policy_sha256 === LATE_POLICY_SHA256
       && typeof marker[0].catalog_sha256 === 'string' && SHA.test(marker[0].catalog_sha256), 'reader schema policy');
+    const catalog = db.prepare('SELECT catalog_sha256 FROM p09e_schema LIMIT 2').all();
+    valid(catalog.length === 1 && catalog[0].catalog_sha256 === marker[0].catalog_sha256, 'reader actual catalog binding');
     const actual = db.prepare('SELECT DISTINCT account_id FROM p08c_late_result LIMIT 7').all().map(r => r.account_id);
     valid(actual.length <= 6 && actual.every(a => typeof a === 'string' && UUID.test(a) && owners.includes(a)), 'reader policy required for committed owners');
   } finally {

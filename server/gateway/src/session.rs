@@ -1531,6 +1531,7 @@ pub fn serve_map_drive_probe(key_path:&str,digest_path:&str,config_path:&str,cap
     serve_inner(key_path,digest_path,true,true,None,Some(Arc::new(config)),Some(capture),Some(control))
 }
 struct Authenticated {identity:Arc<crate::identity091::Profile>,fixtures:Arc<crate::hangar091::Fixtures>,
+    owner_hold:Option<crate::identity091::HoldLogin>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
     ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool,crew_transfer:bool,crew_cross_vehicle:bool,crew_roster_recruitment:bool,crew_progression:bool,crew_dismissal:bool,crew_barracks_recruitment:bool,research_service:bool}
 impl Authenticated {
@@ -1538,7 +1539,7 @@ impl Authenticated {
         // Remains inside the existing bounded auth worker. A bad primary policy
         // reaches AUTH_REJECT before Session creation or any native state bytes.
         let policy=crate::map_drive_service091::AccountPolicy::for_mode(ordinary,&identity,&fixtures)?;
-        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false,crew_roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks_recruitment:false,research_service:false})
+        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),owner_hold:None,ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false,crew_roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks_recruitment:false,research_service:false})
     }
 }
 struct AuthJob {
@@ -1603,6 +1604,9 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
             accepted.crew_dismissal=config.crew_dismissal;
             accepted.crew_barracks_recruitment=config.crew_barracks_recruitment;
             accepted.research_service=config.research_service;
+            if config.p08b_owner_battle_hold{
+                accepted.owner_hold=config.inspect_hold_login(&accepted.identity,&accepted.fixtures,binding.ok_or_else(invalid)?)?;
+            }
             Ok(accepted)
         }).transpose());
         let _=sender.send(outcome); // A stopped gateway has no recipient.

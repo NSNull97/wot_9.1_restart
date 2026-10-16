@@ -7,6 +7,8 @@ use super::vehicle_profile::VehicleKind;
 use super::ram_proof;
 #[path="profile13_dispatch.rs"]
 mod profile13_dispatch;
+#[path="owner_hold_delivery.rs"]
+mod owner_hold_delivery;
 #[path="server_scene_runtime.rs"]
 mod batch_scene;
 use batch_scene::BatchRuntime;
@@ -893,7 +895,11 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
         let owned=s.shared.as_ref().and_then(|c|c.profile13.as_ref());
         let slot=if let Some(p)=owned {
             if world.mixed_ammo(){
-                if world.ammo_detonation_enabled(){
+                if world.owner_hold_enabled(){
+                    let receipt=p.reservation_hold.as_ref().ok_or_else(||model::bad())?;
+                    if receipt.battle!=world.id{continue;}
+                    world.attach_owned_hold(who,s.id,&receipt.frozen)?
+                }else if world.ammo_detonation_enabled(){
                     let receipt=p.reservation_loss.as_ref().ok_or_else(||model::bad())?;
                     if receipt.battle!=world.id{continue;}
                     world.attach_owned_loss(who,s.id,&receipt.frozen)?
@@ -1222,6 +1228,10 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         println!("P06T_AMMO_DETONATION_BOUND policy={} flight_policy={} historical_solver=UNKNOWN",
             super::ammo_detonation::POLICY,super::ammo_detonation::FLIGHT_POLICY);
     }
+    if config.p08b_owner_battle_hold{
+        battle_template.world.enable_owner_hold()?;battle_template.select(&mut world,&mut integrated,started)?;
+        println!("P08B_HOLD5_BOUND policy={} early_finish=false training_supported=false",crate::profile13_hold091::POLICY_SHA256);
+    }
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
@@ -1273,6 +1283,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                             s.ammo_service.as_mut().ok_or_else(||model::bad())?.replace_pool(s.hangar.as_ref().and_then(|f|f.p04m_binding()).cloned())?;
                             let c=s.shared.as_mut().ok_or_else(||model::bad())?;c.join_requested=false;
                             c.profile13=Some(super::profile13_session::State::new(config.battle_run_id.clone(),binding.revision)?);
+                            if config.p08b_owner_battle_hold{
+                                battle_dispatch.install_hold_login(&mut s,accepted.owner_hold.ok_or_else(||model::bad())?)?;
+                            }
                         }
                         if let Some(host)=&mut room_host{host.bind_session(&mut s)?;}
                         println!("SHARED_SESSION_PENDING battle={} session={next_id} slot={slot} account={} database={} authenticated=true", world.id,
@@ -1381,7 +1394,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 }
                 let pending=s.shared.as_ref().is_some_and(|c|c.profile13.is_some() &&
                     (c.phase==Phase::Leaving || c.phase==Phase::Account && !c.join_requested
-                        && c.profile13.as_ref().is_some_and(|p|p.has_reservation())));
+                        && c.profile13.as_ref().is_some_and(|p|p.has_reservation()&&!p.hold_account_only)));
                 if pending {
                     profile13_dispatch::Dispatcher::terminal(s,&world,crate::battle091::profile13::FinishReason::ManualLeave)?;
                     if integrated.as_ref().is_none_or(|r|!r.blocked()) && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
@@ -1396,7 +1409,13 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     }
                 }
             }
-            if ammo_job.is_none() && !result_manager.busy() && !battle_dispatch.late_running() {
+            battle_dispatch.observe_hold_world(&table,&world)?;
+            if let Some(error)=battle_dispatch.hold_pre_avatar_failure(&table,&world){
+                battle_dispatch.before_hold_reset(&world)?;
+                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"hold5_pre_avatar_departure",&error)?;
+                contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+            }
+            if ammo_job.is_none() && !result_manager.busy() && !battle_dispatch.late_running() && (!config.p08b_owner_battle_hold||auth.is_none()) {
                 battle_dispatch.poll(&mut table,config.clone(),now)?;
                 if battle_dispatch.finish_empty_queue(&table,&mut world,&mut integrated,&battle_template,now)? {
                     contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
@@ -1440,7 +1459,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     battle_dispatch.start(&mut table,&world,config.clone(),now)?;
                 }
             }
-            if !battle_dispatch.busy() && !result_manager.busy() && room_host.as_ref().is_none_or(|h|!h.busy()){
+            if !battle_dispatch.busy() && !result_manager.busy() && room_host.as_ref().is_none_or(|h|!h.busy()) && (!config.p08b_owner_battle_hold||auth.is_none()){
                 for s in &mut table.sessions {ammo_session::start(s,&mut ammo_job,config.clone())?;}
             }
             if !battle_dispatch.busy() && ammo_job.is_none() && auth.is_none() && room_host.as_ref().is_none_or(|h|!h.busy()) {
@@ -1458,7 +1477,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
             if let Some(error)=host.prestart_failure(&world,None,now){
                 if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"training_handoff_failure");}
-                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"training_handoff",&error)?;
+                        battle_dispatch.before_hold_reset(&world)?;
+                        contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"training_handoff",&error)?;
                 contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
             }
         }
@@ -1471,10 +1491,15 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
             late.seal_world(&world);
         }
+        if world.owner_hold_enabled()&&world.started.is_some()&&world.actors.iter().all(|a|a.session.is_none())
+            &&integrated.as_ref().is_none_or(|r|!r.blocked()){
+            world.advance_lifecycle(now)?;battle_dispatch.observe_hold_world(&table,&world)?;
+        }
         if !world.actors.is_empty() && world.actors.iter().all(|a|a.session.is_none())
             && !turret_avatar_pending(&table,&world) {
             if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"normal_all_parked_reset");}
-            battle_template.replace(&mut world,&mut integrated,now)?;
+                battle_dispatch.before_hold_reset(&world)?;
+                battle_template.replace(&mut world,&mut integrated,now)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
         for s in &mut table.sessions {
@@ -1484,9 +1509,10 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
         }
         let step=(||->io::Result<()> {
-            attach_waiting_sessions(&mut table,&mut world,now)?;
+            if world.owner_hold_enabled(){battle_dispatch.attach_hold_ready_group(&mut table,&mut world,&config.battle_run_id,now)?;}
+            else{attach_waiting_sessions(&mut table,&mut world,now)?;}
             if let Some(late)=&mut battle_dispatch.late{
-                if let Err(error)=late.register_world(&table.sessions,&world,&config.battle_run_id){
+                if let Err(error)=if config.p08b_owner_battle_hold{Ok(())}else{late.register_world(&table.sessions,&world,&config.battle_run_id)}{
                     late.invalidate_source(&config.battle_run_id,world.id);
                     println!("P08C_LATE_ADMISSION_UNSUPPORTED battle={} error={error} normal_owned_battle_unchanged=true",world.id);
                 }
@@ -1500,14 +1526,17 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         })();
         if let Err(error)=step {
             if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_world_step");}
-            contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"world_step",&error)?;
+                battle_dispatch.before_hold_reset(&world)?;
+                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"world_step",&error)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
         if let Some(late)=&mut battle_dispatch.late{late.observe_sessions(table.sessions.iter());late.seal_world(&world);}
-        let sealed=battle_dispatch.late.as_ref().and_then(|m|m.sealed_results(world.id));
+        battle_dispatch.observe_hold_world(&table,&world)?;
+        let sealed=battle_dispatch.hold_results(world.id).or_else(||battle_dispatch.late.as_ref().and_then(|m|m.sealed_results(world.id)));
         if let Err(error)=stage_lifecycle_results_from(&mut table,&world,sealed) {
             if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_result_snapshot");}
-            contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"result_snapshot",&error)?;
+                battle_dispatch.before_hold_reset(&world)?;
+                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"result_snapshot",&error)?;
             contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
         }
         let integrated_native_ready = integrated.as_ref().is_none_or(IntegratedRuntime::ready_for_native);
@@ -1552,7 +1581,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         }
         if let Some(error)=publication_failure {
             if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_publication");}
-            contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"publication",&error)?;
+                battle_dispatch.before_hold_reset(&world)?;
+                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"publication",&error)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
         for(id,reason)in closing{

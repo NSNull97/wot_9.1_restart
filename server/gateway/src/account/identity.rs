@@ -6,6 +6,9 @@ use serde_json::Value;
 use rsa::rand_core::{OsRng,RngCore};
 #[path="identity_loss.rs"]
 mod loss;
+#[path="identity_hold.rs"]
+mod hold;
+pub(crate) use hold::HoldLogin;
 #[path="room_selection.rs"]
 pub(crate) mod room_selection;
 #[path="room_selection_loss.rs"]
@@ -206,7 +209,7 @@ impl<'de> Deserialize<'de> for ConfigFields{
             fn visit_map<M:MapAccess<'de>>(self,mut input:M)->Result<ConfigFields,M::Error>{
                 let mut fields=BTreeMap::new();let mut network=None;
                 while let Some(key)=input.next_key::<String>()?{
-                    if fields.len()>=28||fields.contains_key(&key){return Err(de::Error::custom("duplicate/too many config fields"));}
+                    if fields.len()>=29||fields.contains_key(&key){return Err(de::Error::custom("duplicate/too many config fields"));}
                     if key=="game_network"{
                         network=Some(input.next_value::<game_network::LanWire>()?);
                         fields.insert(key,Value::Null);
@@ -227,6 +230,7 @@ pub struct Config {
     pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,pub p04m_pool:bool,pub p06t_mixed_ammo:bool,pub p06t_ammo_rack_detonation:bool,
     pub p08c_late_results:bool,pub p08c_late_results_accounts:Vec<String>,pub p08c_late_notice_experimental:bool,
     pub training_rooms:bool,
+    pub p08b_owner_battle_hold:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -306,6 +310,12 @@ impl Config {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("training_rooms must be explicit boolean")),
         };
         if training_rooms&&(!p06t_mixed_ammo||!visibility_v1||battle_players!=6){return Err(invalid("training rooms require mixed owned profiles, visibility and six-place template"));}
+        let p08b_owner_battle_hold=match value.remove("p08b_owner_battle_hold"){
+            None=>false,Some(Value::Bool(v))=>v,_=>return Err(invalid("owner hold5 must be explicit boolean")),
+        };
+        if p08b_owner_battle_hold&&(!profile13_battle||!p04m_pool||!p06t_mixed_ammo||!p06t_ammo_rack_detonation||!visibility_v1||training_rooms||p08c_late_results){
+            return Err(invalid("hold5 requires complete owned loss policy; TrainingLoss4 and old late observer are not version5"));
+        }
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let game_network=game_network::Network::parse(text(&value,"login_bind")?,text(&value,"base_bind")?,network)?;
@@ -328,7 +338,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub(crate) fn require_game_network(&self,runtime:game_network::Runtime)->io::Result<()>{
@@ -398,7 +408,13 @@ impl Config {
         let context=crate::battle091::profile13::Context {account_id:owner.account_id.clone(),
             native_database_id:owner.database_id,command_key:format!("open:{}:{}:{}",self.battle_run_id,owner.database_id,binding.revision),
             expected_revision:binding.revision,run_id:self.battle_run_id.clone()};
-        if self.p06t_ammo_rack_detonation{
+        if self.p08b_owner_battle_hold{
+            verify_mixed_projection(owner,binding.revision)?;loss::verify_loss_projection(owner,binding.revision)?;
+            hold::verify_hold_projection(owner,binding.revision)?;
+            let reply=self.service_battle_hold(owner,&context,&crate::profile13_hold091::Request::RunOpen)?;
+            if reply.status!=crate::profile13_hold091::Status::Ready{return Err(invalid("owner hold5 run was not opened"));}
+        }else if self.p06t_ammo_rack_detonation{
+            if owner.fixture_dir.join("p08b-owner-hold.json").exists(){return Err(invalid("hold owner requires version5 gateway"));}
             verify_mixed_projection(owner,binding.revision)?;
             loss::verify_loss_projection(owner,binding.revision)?;
             let reply=self.service_battle_loss(owner,&context,&crate::profile13_loss091::Request::RunOpen)?;
@@ -437,6 +453,8 @@ impl Config {
         if self.p06t_mixed_ammo {verify_mixed_projection(&fresh,binding.revision)?;}
         if self.p06t_ammo_rack_detonation{loss::verify_loss_projection(&fresh,binding.revision)?;}
         else if fresh.fixture_dir.join("p06t-ammo-loss.json").exists(){return Err(invalid("loss owner requires version4 gateway"));}
+        if self.p08b_owner_battle_hold{hold::verify_hold_projection(&fresh,binding.revision)?;}
+        else if fresh.fixture_dir.join("p08b-owner-hold.json").exists(){return Err(invalid("hold owner requires version5 gateway"));}
         Ok(fresh)
     }
 

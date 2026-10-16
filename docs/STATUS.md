@@ -1,5 +1,9 @@
 # Состояние проекта — 2026-10-17
 
+P08B Hold5 integration в codex/p08b-owner-battle-hold: coherent runtime16+
+writer11/19 установлен, новые Rust/API5 tests NOT_RUN; full/native не принят.
+NET/P10B/late/compression hooks сохранены. [План](plans/P08B_OWNER_BATTLE_HOLD.md).
+
 BUILD fresh test compression runtimecc2a94d: canonical4PASS/0FAIL/0ignored/
 buildPASS/877rawsourceexact; full combined NOT_RUN до Hold integration.
 Только новые empty owned NTFS dirs/test-only parents, старые данные untouched.

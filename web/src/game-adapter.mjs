@@ -19,6 +19,7 @@ import { nativeResearchOverview, isNativeResearchOverview } from './p09e-researc
 import { battleConfiguration } from './p08b-battle.mjs';
 import { nativePoolOverview, isNativePoolOverview, poolConfiguration, nativePoolRequestTimeout, LEGACY_REQUEST_TIMEOUT_MS } from './p04m-pool.mjs';
 import { mixedConfiguration, validateMixedResultsRequest, validateMixedResultsReply } from './p06t-mixed.mjs';
+import { holdConfiguration, holdReaderFence, validateHoldResultsRequest, validateHoldResultsReply } from './p08b-owner-hold.mjs';
 import { lossConfiguration, validateLossResultsRequest, validateLossResultsReply } from './p06t-ammo-loss.mjs';
 import { ROOM_SELECTION_LOSS_PATH, LOSS_SELECTION_REQUEST_TIMEOUT_MS, lossSelectionConfiguration, lossRoomSelectionBody, createLossRoomSelectionService } from './p10b-selection-loss.mjs';
 import { lateConfiguration, lateReaderFence, createLateResultService, validateLateRequest, validatePendingRequest, LATE_REQUEST_TIMEOUT_MS } from './p08c-late-results.mjs';
@@ -234,6 +235,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.pool_service !== undefined) allowed.push('pool_service');
   if (options?.mixed_service !== undefined) allowed.push('mixed_service');
   if (options?.ammo_loss_service !== undefined) allowed.push('ammo_loss_service');
+  if (options?.owner_hold_service !== undefined) allowed.push('owner_hold_service');
   if (options?.late_result_service !== undefined) allowed.push('late_result_service');
   if (options?.room_selection_loss_service !== undefined) allowed.push('room_selection_loss_service');
   if (options?.room_selection_service !== undefined) allowed.push('room_selection_service');
@@ -255,6 +257,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   const poolOwners = options.pool_service === undefined ? [] : poolConfiguration(options.pool_service, battleOwners);
   const mixedOwners = options.mixed_service === undefined ? [] : mixedConfiguration(options.mixed_service, poolOwners);
   const lossOwners = options.ammo_loss_service === undefined ? [] : lossConfiguration(options.ammo_loss_service, mixedOwners);
+  const holdOwners = options.owner_hold_service === undefined ? [] : holdConfiguration(options.owner_hold_service, lossOwners);
   const lateOwners = options.late_result_service === undefined ? [] : lateConfiguration(options.late_result_service, mixedOwners);
   const selectionLossOwners = options.room_selection_loss_service === undefined ? [] : lossSelectionConfiguration(options.room_selection_loss_service, lossOwners);
   const selectionOwners = options.room_selection_service === undefined ? [] : selectionConfiguration(options.room_selection_service, mixedOwners);
@@ -280,7 +283,13 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   mkdirSync(fixtureRoot, { recursive: true });
   const identity = openIdentityReader(webPath);
   let game;
-  try { game = openGameStore(options.game_database, hash(nativeBytes), now); lateReaderFence(localPath(options.game_database), lateOwners); }
+  try {
+    const gamePath = localPath(options.game_database, true), existing = existsSync(gamePath);
+    const readerOwners = [...new Set([...lateOwners, ...holdOwners])];
+    if (existing) { lateReaderFence(gamePath, readerOwners); holdReaderFence(gamePath, holdOwners); }
+    game = openGameStore(options.game_database, hash(nativeBytes), now);
+    if (!existing) { lateReaderFence(gamePath, readerOwners); holdReaderFence(gamePath, holdOwners); }
+  }
   catch (error) { identity.close(); game?.close(); throw error; }
   let dummyHash;
   try { dummyHash = await hashPassword(token()); }
@@ -310,8 +319,9 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
               mixed: mixedOwners.includes(id) ? { version: options.mixed_service.version, policy_sha256: options.mixed_service.policy_sha256,
                 shell_catalog: options.mixed_service.shell_catalog, terminal_policy: options.mixed_service.terminal_policy } : null,
               ammoLoss: lossOwners.includes(id) ? { version: options.ammo_loss_service.version, contract: options.ammo_loss_service.contract,
-                policy_sha256: options.ammo_loss_service.policy_sha256 } : null });
-        if (lateOwners.includes(id)) {
+                policy_sha256: options.ammo_loss_service.policy_sha256 } : null,
+              ownerHold: holdOwners.includes(id) ? { version: options.owner_hold_service.version, contract: options.owner_hold_service.contract, policy_sha256: options.owner_hold_service.policy_sha256 } : null });
+        if (lateOwners.includes(id) && !holdOwners.includes(id)) {
           const late = createLateResultService({ database: localPath(options.game_database), originalRoot: ammo.original_root,
             accountId: id, shellCatalog: options.mixed_service.shell_catalog, terminalPolicy: options.mixed_service.terminal_policy,
             loss: lossOwners.includes(id), python: options.python_executable,
@@ -531,7 +541,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       if (req.method === 'POST' && req.url === ROOM_SELECTION_PATH) {
         if (options.room_selection_service === undefined) return json(res, 404, { error: 'not_found' });
         const { value, raw } = await roomSelectionBody(req), service = roomSelections.get(value?.account_id);
-        if (!service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        if (!service || holdOwners.includes(value.account_id) || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.read(value.account_id);
         if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
         // Same private auth gate above; extend only this enabled, bound owner route.
@@ -544,7 +554,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       if (req.method === 'POST' && req.url === ROOM_SELECTION_LOSS_PATH) {
         if (options.room_selection_loss_service === undefined) return json(res, 404, { error: 'not_found' });
         const { value, raw } = await lossRoomSelectionBody(req), service = lossRoomSelections.get(value?.account_id);
-        if (!service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        if (!service || holdOwners.includes(value.account_id) || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.read(value.account_id);
         if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
         const remaining = Math.max(1, LOSS_SELECTION_REQUEST_TIMEOUT_MS - (performance.now() - started));
@@ -568,7 +578,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         if (options.late_result_service === undefined) return json(res, 404, { error: 'not_found' });
         const pending = req.url === '/internal/native/late-result-pending';
         const value = await body(req, pending ? 2048 : 65536), service = accountServices.get(value?.account_id);
-        if (!service || !lateOwners.includes(value.account_id) || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        if (!service || holdOwners.includes(value.account_id) || !lateOwners.includes(value.account_id) || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.read(value.account_id);
         if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
         (pending ? validatePendingRequest : validateLateRequest)(value, value.account_id);
@@ -582,6 +592,10 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         if (!service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.read(value.account_id);
         if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        if (holdOwners.includes(value.account_id)) {
+          validateHoldResultsRequest(value, value.account_id); poolRequestBudget(value.account_id);
+          return json(res, 200, validateHoldResultsReply(await service.results(value), value));
+        }
         if (lossOwners.includes(value.account_id)) {
           validateLossResultsRequest(value, value.account_id); poolRequestBudget(value.account_id);
           return json(res, 200, validateLossResultsReply(await service.results(value), value));
@@ -627,7 +641,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         if (!service || !identity.profile(service.accountId)) return json(res, 403, { error: 'forbidden' });
         if (typeof service[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
         if (nativeMethod === 'battle' && options.mixed_service !== undefined
-          && value.version !== (lossOwners.includes(value.account_id) ? 4 : mixedOwners.includes(value.account_id) ? 2 : 1)) return json(res, 400, { error: 'invalid_request' });
+          && value.version !== (holdOwners.includes(value.account_id) ? 5 : lossOwners.includes(value.account_id) ? 4 : mixedOwners.includes(value.account_id) ? 2 : 1)) return json(res, 400, { error: 'invalid_request' });
         if (poolOwners.includes(value.account_id)) {
           const profile = game.read(value.account_id);
           if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });

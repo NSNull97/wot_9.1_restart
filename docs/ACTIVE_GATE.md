@@ -1,4 +1,14 @@
-# Текущая карточка — BUILD fresh test compression
+# Текущая карточка — P08B owner battle hold5
+
+Ветка codex/p08b-owner-battle-hold от checkpointdbb094e. Reviewed runtime16,
+writer11/19 установлены coherent set48paths; NET Config29/privateHTTP16,
+P10B routes и compression cfg сохранены. Strict preflight отказал на GitLF/
+worktreeCRLF; разрешены только bytes, нормализующиеся точно в pinned442 blob,
+новые изменяемые Rust files закреплены LF и требуют нового full. Static API
+fix test Result<i64> и map-matched actualProhorovka fixture внесены до первого
+запуска. Rust/API5 current-head tests пока NOT_RUN. [План](plans/P08B_OWNER_BATTLE_HOLD.md).
+
+## Проверенный technical focused checkpoint
 
 Ветка codex/build-fresh-test-compression от NET33d964e, runtimecc2a94d.
 Exact frozen22 helper+три parent calls: canonical4PASS/0FAIL/0ignored/build/

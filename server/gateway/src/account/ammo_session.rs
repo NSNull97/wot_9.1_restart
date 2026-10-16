@@ -32,6 +32,14 @@ impl State {
         Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,transfer_enabled:false,cross_vehicle_enabled:false,roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks:false,research_enabled:false,
              seen:Vec::new(),pending:VecDeque::new(),inflight:None,pool:None}
     }
+
+    /// Outer Session clone must enqueue/drain Account.update in the SAME
+    /// transaction. This never resets the native epoch/prefix/used-ID history.
+    pub(super) fn commit_external_update(&mut self,revision:u64,previous:i64,next:i64)->io::Result<()> {
+        if !self.idle()||revision!=self.revision.checked_add(1).ok_or_else(invalid)?||revision>=i32::MAX as u64
+            ||previous!=self.wire_revision||next!=previous.checked_add(1).ok_or_else(invalid)?||next>=i64::from(i32::MAX){return Err(invalid());}
+        self.revision=revision;self.wire_revision=next;Ok(())
+    }
     pub(super) fn crew_enabled(&self)->bool {self.crew_enabled}
     pub(super) fn revision(&self)->u64 {self.revision}
     pub(super) fn wire_revision(&self)->i64 {self.wire_revision}

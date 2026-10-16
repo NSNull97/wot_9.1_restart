@@ -135,6 +135,8 @@ class LateResults:
         require(isinstance(store, MixedAmmoStore), "INVALID_INPUT")
         self.store = store
         self.connection = store.connection
+        from p08b_owner_hold_store import require_hold_compatible
+        require_hold_compatible(self.connection,store.pool_account,contract=getattr(store,"OWNER_HOLD_CONTRACT",None))
 
     def namespace(self, create=False):
         c = self.connection
@@ -159,12 +161,17 @@ class LateResults:
         return bool(names)
 
     def native(self, account, native):
+        from p08b_owner_hold_store import require_hold_compatible
+        require_hold_compatible(self.connection,account,contract=getattr(self.store,"OWNER_HOLD_CONTRACT",None))
         row = self.connection.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account,)).fetchone()
         require(row is not None, "FOREIGN_ACCOUNT")
         profile = decode(row[0], 131072)
         require(profile["account_id"] == account and profile["native_database_id"] == native and profile["profile_version"] == 13, "FOREIGN_ACCOUNT")
 
     def source(self, link):
+        from p08b_owner_hold_store import namespace
+        if namespace(self.connection):
+            require(self.connection.execute("SELECT 1 FROM battle_owner_hold_reservation WHERE account_id=? AND reservation_id=?",(link["account_id"],link["reservation_id"])).fetchone()is None,"OWNER_HOLD_POLICY_REQUIRED")
         _uuid(link["account_id"])
         _integer(link["native_database_id"], 1); _integer(link["native_inventory_id"], 1)
         require(link["source_contract"] in ("mixed-v2", "loss-v1"), "RESULT_MISMATCH")
@@ -207,6 +214,8 @@ class LateResults:
         return value
 
     def release_stamp(self, request, authenticated_account_id):
+        from p08b_owner_hold_store import require_hold_compatible
+        require_hold_compatible(self.connection,authenticated_account_id)
         request = validate_request(request, authenticated_account_id)
         require(request["operation"] == "release_stamp" and authenticated_account_id == self.store.pool_account, "FOREIGN_ACCOUNT")
         c = self.connection
@@ -214,6 +223,7 @@ class LateResults:
         prior = c.execute("PRAGMA query_only").fetchone()[0]
         c.execute("PRAGMA query_only=ON"); c.execute("BEGIN")
         try:
+            require_hold_compatible(self.connection,authenticated_account_id)
             self.namespace(); result = self.reply(request, "stamped", self.stamp(request)); c.commit(); return result
         except Exception:
             c.rollback(); raise
@@ -274,10 +284,13 @@ class LateResults:
         return found
 
     def append(self, request, authenticated_account_id):
+        from p08b_owner_hold_store import require_hold_compatible
+        require_hold_compatible(self.connection,authenticated_account_id)
         request = validate_request(request, authenticated_account_id)
         require(request["operation"] == "append" and authenticated_account_id == self.store.pool_account, "FOREIGN_ACCOUNT")
         c = self.connection; require(not c.in_transaction, "LATE_TRANSACTION_REQUIRED"); c.execute("BEGIN IMMEDIATE")
         try:
+            require_hold_compatible(self.connection,authenticated_account_id)
             stamp = self.stamp(request)
             require(all(stamp[k] == request[k] for k in ("release_terminal_sha256", "finished_revision")), "RESULT_MISMATCH")
             seal, results, source = self.validate_seal(request); seal_sha = sha(canonical(seal)); self.namespace(create=True)

@@ -8,6 +8,9 @@ use mixed_dispatch::TaskV2;
 #[path="profile13_dispatch_loss.rs"]
 mod loss_dispatch;
 use loss_dispatch::TaskLoss;
+#[path="profile13_dispatch_hold.rs"]
+mod hold_dispatch;
+use hold_dispatch::HoldState;
 #[path="profile13_finished.rs"]
 mod finished_events;
 
@@ -25,6 +28,7 @@ pub(super) struct Dispatcher {
     job_v2:Option<service::JobV2>,task_v2:Option<TaskV2>,
     job_loss:Option<service::JobLoss>,task_loss:Option<TaskLoss>,
     retired:Vec<Session>,
+    hold:HoldState,
     settled_queue:Option<u64>,
     pub(super) late:Option<super::super::late_results_runtime::Manager>,
     // None preserves every old v1/v2 queue path without receipt collection.
@@ -57,16 +61,16 @@ impl Dispatcher {
             || world.actors.iter().any(|a|a.session.is_some()) {return Ok(false);}
         let outstanding=table.sessions.iter().chain(self.retired.iter()).any(|s|
             s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.in_flight
-                || p.reservation.as_ref().is_some_and(|r|r.battle==world.id)||p.reservation_v2.as_ref().is_some_and(|r|r.battle==world.id)||p.reservation_loss.as_ref().is_some_and(|r|r.battle==world.id)));
-        if outstanding || self.task.is_some()||self.task_v2.is_some()||self.task_loss.is_some() {return Ok(false);}
+                || p.reservation.as_ref().is_some_and(|r|r.battle==world.id)||p.reservation_v2.as_ref().is_some_and(|r|r.battle==world.id)||p.reservation_loss.as_ref().is_some_and(|r|r.battle==world.id)||p.reservation_hold.as_ref().is_some_and(|r|r.battle==world.id)));
+        if outstanding || self.hold.busy() || self.hold.unsettled() || self.task.is_some()||self.task_v2.is_some()||self.task_loss.is_some() {return Ok(false);}
         if let Some(late)=&mut self.late{late.before_reset(world,"unstarted_queue_cancelled");}
-        template.replace(world,runtime,now)?;self.settled_queue=None;Ok(true)
+        self.before_hold_reset(world)?;template.replace(world,runtime,now)?;self.settled_queue=None;Ok(true)
     }
     pub(super) fn closed_queue(&self,battle:u64)->bool {self.settled_queue==Some(battle)}
     pub(super) fn late_running(&self)->bool{self.late.as_ref().is_some_and(|m|m.worker_running())}
-    pub(super) fn busy(&self)->bool {self.late_running()||self.job.is_some() || self.task.is_some()||self.job_v2.is_some()||self.task_v2.is_some()||self.job_loss.is_some()||self.task_loss.is_some() || !self.retired.is_empty()}
+    pub(super) fn busy(&self)->bool {self.hold.busy()||self.late_running()||self.job.is_some() || self.task.is_some()||self.job_v2.is_some()||self.task_v2.is_some()||self.job_loss.is_some()||self.task_loss.is_some() || !self.retired.is_empty()}
     pub(super) fn owner_busy(&self,owner:&str)->bool {
-        self.task.as_ref().is_some_and(|t|t.owner.account_id==owner)
+        self.hold.owner_busy(owner)||self.task.as_ref().is_some_and(|t|t.owner.account_id==owner)
             ||self.task_v2.as_ref().is_some_and(|t|t.owner.account_id==owner)
             ||self.task_loss.as_ref().is_some_and(|t|t.owner.account_id==owner)
             || self.retired.iter().any(|s|s.identity.as_ref().is_some_and(|p|p.account_id==owner))
@@ -74,6 +78,7 @@ impl Dispatcher {
     /// Freeze AP/HP before revoking authority. This receipt outlives world reset.
     pub(super) fn terminal(s:&mut Session,world:&World,reason:FinishReason)->io::Result<()> {
         let Some(p)=s.shared.as_ref().and_then(|c|c.profile13.as_ref()) else {return Ok(());};
+        if p.reservation_hold.is_some(){return Self::terminal_hold(s,world,reason);}
         if p.pending_return.is_some()||p.pending_return_v2.is_some()||p.pending_return_loss.is_some() {return Ok(());}
         if p.reservation_loss.is_some(){return Self::terminal_loss(s,world,reason);}
         if p.reservation_v2.is_some(){return Self::terminal_mixed(s,world,reason);}
@@ -101,7 +106,13 @@ impl Dispatcher {
             if let Some(c)=&mut retired.shared {c.join_requested=false;}
             self.retired.push(retired);
         }
-        table.retire(id,world,now,reason)
+        table.retire(id,world,now,reason)?;
+        self.observe_hold_world(table,world)?;
+        if let Some(c)=&mut self.hold.capture{
+            if let Some(r)=self.retired.iter().find(|s|s.id==id).and_then(|s|s.shared.as_ref()).and_then(|c|c.profile13.as_ref()).and_then(|p|p.reservation_hold.as_ref()){
+                c.require_retired_inspect(r)?;
+            }
+        }Ok(())
     }
     fn deliver(s:&mut Session,completion:service::Completion,now:Instant)->io::Result<()> {
         let mut next=s.clone();
@@ -176,6 +187,7 @@ impl Dispatcher {
     pub(super) fn poll(&mut self,table:&mut Table,config:Arc<crate::identity091::Config>,now:Instant)->io::Result<()> {
         if let Some(late)=&mut self.late{late.observe_sessions(table.sessions.iter().chain(self.retired.iter()));}
 
+        if config.p08b_owner_battle_hold{return self.poll_hold(table,config,now);}
         if config.p06t_ammo_rack_detonation{return self.poll_loss(table,config,now);}
         if config.p06t_mixed_ammo{return self.poll_mixed(table,config,now);}
         if let Some(result)=self.job.as_mut().and_then(|j|j.poll()) {
@@ -213,6 +225,7 @@ impl Dispatcher {
         Ok(())
     }
     pub(super) fn start(&mut self,table:&mut Table,world:&World,config:Arc<crate::identity091::Config>,now:Instant)->io::Result<()> {
+        if config.p08b_owner_battle_hold{return self.start_hold(table,world,config,now);}
         if config.p06t_ammo_rack_detonation{return self.start_loss(table,world,config,now);}
         if config.p06t_mixed_ammo{return self.start_mixed(table,world,config,now);}
         if self.task.is_some() || self.job.is_some() {return Ok(());}

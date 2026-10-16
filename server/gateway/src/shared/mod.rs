@@ -43,6 +43,7 @@ pub(crate) mod wire;
 mod server;
 mod scene_runtime;
 mod profile13_session;
+mod owner_hold_capture;
 mod p10b_writer;
 mod p10b_writer_loss;
 mod p10b_writer_mode;

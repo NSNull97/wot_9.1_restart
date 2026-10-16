@@ -194,3 +194,6 @@ fn second(w:&mut World,now:Instant){
     assert_eq!(state.apply(&[arm::Command::Shoot],now+Duration::from_secs(120)).unwrap(),[arm::Outcome::Refused(arm::Refusal::Empty)]);
     assert_eq!(state.fired(),[1,0,0]);assert_eq!(state.lost(),[5,2,1]);
 }
+
+#[path="owner_hold_world_tests.rs"]
+mod owner_hold_world_tests;

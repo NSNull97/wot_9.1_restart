@@ -26,7 +26,7 @@ pub(super) fn verify_loss_projection(owner:&Profile,revision:u64)->io::Result<()
 }
 impl Config {
     pub(crate) fn service_battle_loss(&self,owner:&Profile,context:&crate::battle091::profile13::Context,request:&codec::Request)->io::Result<codec::Reply>{
-        if !self.p06t_ammo_rack_detonation||!self.p06t_mixed_ammo||!self.visibility_v1||!self.p04m_pool||!self.profile13_battle
+        if self.p08b_owner_battle_hold||!self.p06t_ammo_rack_detonation||!self.p06t_mixed_ammo||!self.visibility_v1||!self.p04m_pool||!self.profile13_battle
             ||context.account_id!=owner.account_id||context.native_database_id!=owner.database_id||context.run_id!=self.battle_run_id{
             return Err(invalid("ammo-loss authenticated owner/run/opt-in"));
         }
@@ -36,7 +36,7 @@ impl Config {
         codec::parse_reply(&bytes,context,request)
     }
     pub(crate) fn results_post_loss(&self,owner:&Profile,body:&[u8])->io::Result<Vec<u8>>{
-        if !self.p06t_ammo_rack_detonation||!self.p06t_mixed_ammo||!self.profile13_battle||owner.database_id<=0
+        if self.p08b_owner_battle_hold||!self.p06t_ammo_rack_detonation||!self.p06t_mixed_ammo||!self.profile13_battle||owner.database_id<=0
             ||body.is_empty()||body.len()>2048{return Err(invalid("ammo-loss result mode/body bound"));}
         let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;
         if status!=200{return Err(invalid("ammo-loss result writer unavailable; immutable task retained"));}Ok(reply)
