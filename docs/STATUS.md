@@ -87,7 +87,10 @@ own UDP→v2run_open PASS; A111/B28/БК unchanged, services ownstop PASS.
 Новый old-only queue/cancel/busyJoin/commandbudget fix после full02:
 focused09 **90PASS/0ignored/buildPASS**,9 новых reliableflow regressions.
 Focused08:86PASS/4FAIL новых outbox assertions, исправлены на actualtx;
-production не ослаблен. Текущий head требует нового full03.
+production не ослаблен. Full03 на9920a63:1096PASS/5oldignored/buildPASS,
+683sourcefiles exact, coretag p06t-core-20261016-01. Mixed-01 binding-p06t02/V7
+INSTALLED; оба realnative hangar/cache/model boot OBSERVED по трассе, A112/B29,
+БК прежний/reserves0, ownclients/servicesSTOPPED. UI/control/combat NOT_RUN.
 Native/UI/audio NOT_RUN, WT/FV source/scheduler-only без qualified physics/
 owned admission, карточка не принята и не main.
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).

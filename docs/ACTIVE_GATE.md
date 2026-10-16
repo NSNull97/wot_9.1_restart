@@ -10,7 +10,11 @@ SQLite/HTTP и client CPython2.7.3 проверены автоматически
 startup/5resources и два own UDP→v2run_open PASS, own services остановлены.
 После full02 исправлен old-only queue reservation/cancel guard, implicit
 cancel при busyJoin и commandbudget: focused09 **90PASS/0ignored/buildPASS**,
-включая9 новых actual-writer/native reliable flow regressions. Нужен full03.
+включая9 новых actual-writer/native reliable flow regressions. Full03 на
+9920a63/coretag p06t-core-20261016-01:1096PASS/5oldignored/buildPASS,
+683sourcefiles exact. Mixed-01 newbinding/V7 install и оба настоящих native
+hangar/cache/model boot OBSERVED по трассе; own services/clients STOPPED.
+UI/control/combat NOT_RUN. Далее отдельная WT/FV physical foundation.
 Full01 прерван из-за HE+wreck anchor bug, regression PASS в focused07/full02.
 Native/UI/audio NOT_RUN; WT/FV пока source/scheduler-only,
 полная карточка не принята. План [P06T](plans/P06T.md),

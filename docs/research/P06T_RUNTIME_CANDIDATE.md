@@ -167,7 +167,8 @@ roster size; writer проверяет также расход каждого st
 | Focused08 |86PASS/4FAIL/0ignored; новые queue tests ошибочно наблюдали drainedoutbox вместо фактического reliable packet, build NOT_RUN |
 | Focused09 |90PASS/0FAIL/0ignored/buildPASS;9 queue v1/v2 flow regressions проверяют actual reliable frame, durable cancel/replay, busyJoin и budget511/512 |
 | Full02 head dc27285b |1087PASS/0FAIL/5 старых ignored/buildPASS; source-before/after681 exactPASS, `local/evidence/20261016-p06t-full02/` и `local/build/server/gateway-p06t-full02/` |
-| Queue corrections после full02 | в работе; union v1/v2 reservation/duplicate guards, durable cancel→fresh callback и command512 bound; focused08/full03 **PENDING**, не покрыты1087 |
+| Queue corrections после full02 | union v1/v2 reservation/duplicate guards, durable cancel→fresh callback и command512 bound; покрыты отдельным full03, не приписываются1087 |
+| Full03 head9920a638 |1096PASS/0FAIL/5 старых ignored/buildPASS; source-before/after683 exactPASS, `local/evidence/20261016-p06t-full03/` и `local/build/server/gateway-p06t-full03/` |
 | Текущий binding/утренний native цикл | отдельный текущий startup/owner gate; native **NOT_RUN** |
 | Native/UI/audio/полный утренний цикл | **NOT_RUN** |
 
@@ -212,8 +213,10 @@ Output directories должны быть свежими; существующи�
 сверку681 source files для dc27285be170e57ff12ad78babce8f5e589d3f93.
 EXE full02 SHA256:
 `c229d44badb5891ac5fb4502d33603d29a04253c2d29baa54000e973998efe9c`.
-Этот результат не переносится на последующие queue corrections: им требуется
-собственный focused/full03 gate.
+Этот результат не переносится на последующие queue corrections. Их отдельный
+full03 прошёл1096 tests/build и сверку683 source files для
+`9920a638080c9ae6c3bc5b362646a4e1b414e665`; EXE SHA
+`7a334e399b39bd6fd5c1bbf8e4feff87eea6f1392582d283b58ed0aff31cbf37`.
 
 Read-only audit после05 обнаружил отдельный дефект: World запускает HE splash
 после retained-wreck contact, но Trace принимал explosion anchor только от
@@ -227,13 +230,13 @@ center и LOS не подставляются фикстурой. Статус �
 scale. FAIL в protocol poison8 обнаружил разрешение нового Segment между
 WreckImpact и splash; focused07 прошёл81 tests/build после закрытия этого
 late-anchor инварианта. Взрыв не подавляется заглушкой. Full02 прошёл1087
-tests/build; последующий текущий head с queue corrections ещё **PENDING**.
+tests/build; отдельный full03 с queue corrections затем прошёл1096 tests/build.
 
 Read-only queue audit после full02 отдельно обнаружил границы в смешанных
 v1/v2 reservations и callbacks. Исправление должно отвергать changed Join без
 неявной отмены старого резерва, не повторять durable cancel и сохранять один
 finish command в bounded512 journal. Это новый scope после сохранённого full02,
-а не уже прошедший результат. Реальный writer fixture:
+отдельно проверенный full03, а не часть результата1087. Реальный writer fixture:
 `tests/fixtures/p06t-queue-writer-vectors.json` SHA
 `6a0dd7856242a0105864de7985ec309c4e25b76616e1a5732102201c2abf580f`;
 read-only audit receipt SHA
@@ -330,13 +333,34 @@ GunBreech material31 сохраняется как **Unsupported**, не ordinar
 Никаких copied native inertia bits, historical hit-volume claims или owner
 admission из-за наличия geometry export.
 
+**OBSERVED PINNED PHYSICS COMPONENT, вне core full03.** Following source-only
+export подготовлен отдельный ignored кандидат `extended-foundation01/`.
+Новый definition/profile version2 и policy `p06t-extended-six-support-v2`
+реализуют только физические WT128/FV183 names и bounded SceneManifest3.
+Actual isolated C# build, source7 tests,8 negative process cases,4 map drives+
+mixed6,2 handling/rest и3contact cases,3catalog/witness/ACK cases прошли.
+Пять прежних профилей дают455 whole frames побайтово равных прежнему worker.
+Два genuine Jolt getter профиля проверены при3 actual yaw каждый, включая
+independent analytic box tensor и quaternion basis. Точные pins/commands и
+ранние honest map/spawn FAILs — в
+`local/night-staging/20261016/p06t-damage01/extended-foundation01/REPORT.md`.
+Active canonical physics18 files не изменены; интеграция не выполнена.
+
+Финальный component02 DLL SHA
+`693c458b56ec9dbeb6c40bdbf5234f23393abb802c42e15c268785a39d4874c7`.
+Это будущий private physical registry, не расширение VehicleKind/World/owned
+admission. Rust original FrameProof/ACK integration ещё NOT_RUN этим отчётом;
+Python caller ACK не заменяет domain gate. Финальная root сборка требует
+собственных getter provenance/profile SHA. Native/UI/audio WT/FV остаются
+NOT_RUN, WT150 source-only.
+
 Пока не реализованы ammo-bay explosion, turret detach, ремонт/восстановление
 экипажа, оригинальные multi-layer penetration и historical damage variance.
 Native правильность новых method IDs, всех critical/fire/HE UI/audio и
 переходов сохраняет NOT_RUN до настоящей ручной проверки владельца.
-Full02 source-bound regression/build прошёл для своего head. Повторный gate
-текущего queue-fix head ещё требуется; ночное разрешение не заменяет native
-приёмку.
+Full02 и отдельный full03 source-bound regression/build прошли для своих
+head. Staged WT/FV component не включён в1096 и требует отдельного gate при
+интеграции; ночное разрешение не заменяет native приёмку.
 
 Откат: сохранённые P04M branch/source-bound binary+binding, выключенный P06T
 opt-in и соответствующий прежний client patch ledger. БД откатывать целым
@@ -344,5 +368,6 @@ SQLite backup, без удаления version markers/ручного смеши
 Оригинальный клиент и соседние проекты не изменены; новые admission flags
 T26/T34/T34-85 остаются false до owner gates.
 
-Единственный следующий рекомендуемый шаг: полный canonical source-before/
-after/test/build gate конечного P06T head перед подготовкой утреннего стенда.
+Единственный следующий рекомендуемый шаг для новой physical foundation:
+coordinated actual Rust IPC7→original scalarFrameProof/ACK gate при сохранении
+закреплённого P06T core full03 и прежних пяти byte contracts.
