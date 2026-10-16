@@ -14,6 +14,9 @@ pub(crate) struct LabLoadout {
 #[cfg(test)]
 #[path="p06t_extended_world_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path="p06t_extended_hit_tests.rs"]
+mod hit_tests;
 impl LabLoadout {
     pub fn validate(self)->io::Result<()> {
         let source=crate::p06t_shells091::profile(self.kind.mount());

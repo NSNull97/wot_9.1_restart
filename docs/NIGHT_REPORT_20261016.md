@@ -18,10 +18,14 @@ exact,340.80с; tag `p06t-physics-20261016-01`. Crew6/sourcecaps7/policyv2
 подключены отдельным компонентом: focused11 **105PASS/0ignored/buildPASS**,
 43.95с. Full05 на9080c47: **1111PASS/5oldignored/buildPASS**,341.89с,
 695sourcefiles before/after exact; tag `p06t-devices-20261016-01`.
-После full05 начата WIP интеграция VehicleKind7/World LAB/геометрии/наведения;
+После full05 интеграция VehicleKind7/World LAB/геометрии/наведения сохранена
+в09ebe8a;
 focused13 **134PASS/0ignored/buildPASS**,159.85с. Exe SHA
 `1f1baccc52f5412df85bf08c19b88a9a6520ba3b58dc7b09ceed2794ca68ec3f`.
-Полный общий regression/source gate этого слоя ещё NOT_RUN. Owned новых машин
+Focused14:5actual first-contact World tests PASS/build,46.54с: WT→FV560HP,
+FV→WT1150HP, frozen HE HESH275→WT1750HP, gun25module-only, exposed31Unsupported.
+Synthetic airborne poses отделены от native driving. Полный общий regression/
+source gate этого слоя ещё NOT_RUN. Owned новых машин
 не подключён; temporary LAB ammo не считается своим складом.
 
 ## Сохранённые ветки и приёмка
