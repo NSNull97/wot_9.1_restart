@@ -104,3 +104,24 @@ ownhost initial43/44 proof на44/45 и не сбрасывать SQL ради �
 Карточка не принята: обязательные native/twoPC/hosting NOT_RUN, mainffce8cb.
 Единственный следующий шаг приёмки — сохранённый owner coreV7 native сценарий,
 затем явные actualB данные и отдельный paired stand после предыдущих native gates.
+
+## Дополнительные независимые проверки после утреннего отчёта
+
+Heartbeat 2026-10-16 разрешает продолжить без ручных вопросов. Новый узкий gate:
+отдельный gateway-only ingress стенд с новыми UDP20242/20243 и прежними80refs,
+без HTTP bridge, Login/auth и изменения БД. Разрешённый ownIP передаёт только
+malformed positive controls; запрещённый source127 и oversize1554/1025 должны
+отсутствовать в capture. Перед отрицательным выводом отдельный own canary20244
+обязан фактически подтвердить доставку loopback→ownprivateIP. До/после — positive
+controls, source794/exe/full proof, bounded time/traffic и receipt-owned stop.
+Это дополнительная проверка ingress/observer, не native/twoPC/firstBase-IP gate;
+consumed stand43/44 и его guards не переиспользуются и не ослабляются.
+
+Одновременно readonly аудит выявил маршрутную ошибку старой P04M матрицы:
+rollback ссылается на PREPARED планы без install ledger. Отдельный successor
+supplement должен использовать фактически установленные coreV7 ledgers и
+проверенный full02/raw634. Exact восстановление исходников допустимо только
+если все634 original raw pins воспроизводимы из Git или существующих retained
+bytes; отсутствие материала остаётся BLOCKED/NOT_RUN, fullproof не переписывать.
+Frozen инструкции/старые helpers сохраняются; actual overlay rollback, source
+apply и native проверки по-прежнему NOT_RUN.
