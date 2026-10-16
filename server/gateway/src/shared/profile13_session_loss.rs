@@ -154,6 +154,8 @@ mod tests{
     #[test]fn p06t_loss_actor_terminal_keeps_real_fired_ledger_and_survives_detach(){
         let r=reservation();let now=std::time::Instant::now();let mut world=World::new_for_roster(r.battle,now,crate::map_profile091::MapId::Karelia,2).unwrap();
         world.enable_mixed_ammo().unwrap();
+        world.bind_geometry(Arc::new(super::super::super::geometry::tests::bundle())).unwrap();
+        world.bind_geometry(Arc::new(super::super::super::geometry::tests::is7_bundle())).unwrap();world.enable_ap_test_lab().unwrap();
         world.bind_terrain(Arc::new(super::super::super::terrain::tests::fixture(-1000.,2000.,2,vec![-100.;4]))).unwrap();
         world.enable_lifecycle(super::super::super::lifecycle::Rules::prohorovka()).unwrap();world.enable_ammo_detonation().unwrap();
         let slot=world.attach_owned_loss(super::super::super::model::Identity{account:r.frozen.base.vehicle_inventory_id[..36].into(),database:1,name:"loss writer".into()},7,&r.frozen).unwrap();

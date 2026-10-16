@@ -10,6 +10,9 @@ pub(super) fn fixture(now:Instant)->(Session,World){
 pub(super) fn fixture_for(now:Instant,own:usize)->(Session,World){
     let authored=model::tests::world(now);
     let mut world=World::new_for_roster(6963,now,crate::map_profile091::MapId::Karelia,2).unwrap();
+    world.bind_geometry(Arc::new(geometry::tests::bundle())).unwrap();
+    world.bind_geometry(Arc::new(geometry::tests::is7_bundle())).unwrap();
+    world.enable_ap_test_lab().unwrap();
     world.bind_terrain(Arc::new(terrain::tests::fixture(-1000.,2000.,2,vec![0.;4]))).unwrap();
     world.enable_mixed_ammo().unwrap();world.enable_lifecycle(lifecycle::Rules::prohorovka()).unwrap();
     world.enable_ammo_detonation().unwrap();world.actors=authored.actors;

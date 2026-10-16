@@ -49,6 +49,13 @@ fn aim(w:&mut World,point:[f32;3],now:Instant){
     w.apply(0,1,&[Command::Aim(aim::Intent::Point(point))],now).unwrap();
     for step in 1..=20{let at=now+STEP*step;w.advance(at).unwrap();w.advance_lifecycle(at).unwrap();}
 }
+fn advance_until(w:&mut World,until:Instant){
+    // Exercise the production cadence. Lifecycle deliberately rejects a
+    // multi-second catch-up; waiting for reload must not skip its 1s bound.
+    while w.last<until{
+        let at=(w.last+STEP).min(until);w.advance(at).unwrap();w.advance_lifecycle(at).unwrap();
+    }
+}
 /// Search only finite legal Aim intents and actual first nearest contacts.
 /// No hand-authored triangle, internal target choice or fake Trace admission.
 fn first_rack_hit(base:&World,now:Instant)->(World,[f32;3]){
@@ -67,7 +74,7 @@ fn first_rack_hit(base:&World,now:Instant)->(World,[f32;3]){
     }panic!("actual source MS1 exterior ray must reach the explicit LAB AmmoBay proxy");
 }
 fn second(w:&mut World,now:Instant){
-    let at=now+Duration::from_secs(5);w.advance(at).unwrap();w.advance_lifecycle(at).unwrap();
+    let at=now+Duration::from_secs(5);advance_until(w,at);
     assert!(matches!(w.apply(0,1,&[Command::Armament(arm::Command::Shoot)],at).unwrap().as_slice(),
         [fire::Outcome::Typed(arm::Outcome::Shot{..})]));w.advance(at+STEP).unwrap();
 }
@@ -143,7 +150,7 @@ fn second(w:&mut World,now:Instant){
 #[test]fn p06t_ammo_detonation_authoritative_transition_late_poison_rolls_back_world_candidate(){
     let now=Instant::now();let mut w=template(now,96,true);lab_attach(&mut w,0,[0,4,4]);lab_attach(&mut w,1,[2,3,4]);start(&mut w,now);
     let(mut w,_)=first_rack_hit(&w,now);
-    let at=now+Duration::from_secs(5);w.advance(at).unwrap();w.advance_lifecycle(at).unwrap();
+    let at=now+Duration::from_secs(5);advance_until(&mut w,at);
     w.apply(0,1,&[Command::Armament(arm::Command::Shoot)],at).unwrap();
     let mut poison=w.projectiles[0];poison.sequence=3;poison.launched=at;poison.stopped=false;w.projectiles.push(poison);
     let before=w.clone();assert!(w.advance(at+STEP).is_err());
