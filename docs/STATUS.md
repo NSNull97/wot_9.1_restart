@@ -10,7 +10,11 @@ Natural Elimination gate FAIL: winner personal summary пуста при team ta
 A120/B35, MS1 ammoA[0,1,8]/B[0,3,9], active0; logs/traces/RO DB backup сохранены.
 Текущая ветка codex/p08c-natural-results-return, план P08C_NATURAL_RESULTS_RETURN:
 source-bound details и strict native return реализованы; focused43/build и
-Python33/0skips PASS. Следующий gate — committed full, затем fresh native replay.
+Python33/0skips PASS. Runtime09274f2 full1130PASS/5oldignored/buildPASS,
+689raw source exact. Binding05/services/startup PASS; оба клиента morning-natural01
+в fresh native ангарах, A121/B36/active0, ammoA[0,1,8]/B[0,3,9],96installedunchanged.
+Вопрос владельцу на повтор уничтожения/личных итогов/обоих natural возвратов
+отправлен; свежий UI gate NOT_RUN до ответа и actual wire/SQL сверки.
 UI/return FAIL до перепроверки. Late manual-leaver results и spawn отдельно открыты.
 
 Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего

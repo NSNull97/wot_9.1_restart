@@ -94,9 +94,27 @@ projector/codec/serde тестов плюс прежние P08C проверки
 SQLite finish/query/ack/reopen/failpoint/forgery теста PASS. Полная выбранная
 Python матрица результатов/mixed writer/original contract:33PASS,0skips,
 379.172s. После focused добавлен один actual World/geometry/fired-journal→
-personal81/details тест; его выполнит full. Full committed source gate и native replay
-пока NOT_RUN. Новый full build фиксирует `RUST_TEST_THREADS=1`,
+personal81/details тест; он PASS в полном наборе: реальные source contacts,
+выстрелы, Trace, damage/spot journals дали90damage/1kill/1spot и согласованный
+native81/details. Это World/component proof, не worker/native UI.
+
+Canonical full на `09274f2f273ba07113a50073eb3b7186e978317e`:
+**1130 PASS / 0 FAIL / 5 прежних ignored / build PASS**,327.38s tests.
+Все689raw source SHA до/после совпали, head во время прогона не менялся.
+Executable SHA256 `6de229a078333f064cc84eade21ab6c83bd201339fe58b8e542181fb60784360`.
+Новый full build фиксирует `RUST_TEST_THREADS=1`,
 `CARGO_INCREMENTAL=0`, чтобы не создавать дополнительный incremental cache.
+Evidence: `local/evidence/20261016-p08c-natural-results-fix01`,
+`local/build/server/gateway-p08c-natural-full01`. Свежая штатная binding05
+создана после полного gate; services/startup `morning-natural01` PASS,
+в actual log есть FIRST_SPOT_BOUND с точной policy. Оба клиента последовательно
+загрузили fresh native hangar/cache/model,96 installed files unchanged,
+база после run_open A121/B36/active0, ammoA[0,1,8]/B[0,3,9].
+`ready11.json` SHA256
+`92457329c3a9eb74835e8e869bbb1aeadc8ba1bc6c6155001b715d18e5ae2fef`.
+Клиентская переустановка, grants и reseed не выполнялись. Вопрос владельцу
+на повторное уничтожение отправлен. Native повторная приёмка ещё NOT_RUN;
+предыдущий естественный возврат остаётся FAIL до неё.
 
 План — [P08C_NATURAL_RESULTS_RETURN](../plans/P08C_NATURAL_RESULTS_RETURN.md).
 Marker

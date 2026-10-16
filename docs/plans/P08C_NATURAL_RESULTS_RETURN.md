@@ -52,4 +52,11 @@ research helpers. Старый ранний manual-leaver full-result append —
 отката игрового бинарника. Не восстанавливать БД ради возврата потраченного БК.
 Marker gate остаётся
 принятым. В main эту зависимую цепочку не сливать до родительских gates.
-Следующий шаг — точный native parser/detail contract, затем узкая правка.
+Выполнено: strict dead routed bind, versioned details из реальных журналов,
+first Battle observation с отдельной LAB policy. Focused43/build и Python33
+без skips PASS. Runtime09274f2 full1130PASS/5oldignored/buildPASS,689sourceexact;
+actual fired World→90damage/1kill/1spot→native81/details PASS. Fresh binding05
+и services/startup morning-natural01 PASS. Оба native ангара/cache/model загружены,
+96 installedunchanged, A121/B36/active0, ammoA[0,1,8]/B[0,3,9]. Следующий шаг —
+повторная owner приёмка уничтожения/личной сводки/обоих natural возвратов;
+вопрос отправлен. Fresh UI NOT_RUN до ответа и actual wire/SQL сверки.
