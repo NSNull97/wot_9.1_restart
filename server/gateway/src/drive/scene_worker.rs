@@ -75,20 +75,30 @@ fn read(path:&Path,max:usize,expected:&str)->io::Result<Vec<u8>>{hash(expected)?
     if n==0||n>max as u64{return Err(bad("asset size"));}let mut raw=Vec::new();f.take(max as u64+1).read_to_end(&mut raw)?;
     if raw.len()as u64!=n||digest(&raw)!=expected{return Err(bad("asset SHA/size changed"));}Ok(raw)}
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]pub enum Kind{Ms1,Is7,T26,T34,T3485}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]pub enum Kind{Ms1,Is7,T26,T34,T3485,WtE100128,Fv215b183}
 impl Kind{
-    fn vehicle(self)->crate::gateway091::shared::vehicle_profile::VehicleKind {
+    // Physical component kinds cannot implicitly enter the owned World enum.
+    fn vehicle(self)->Option<crate::gateway091::shared::vehicle_profile::VehicleKind> {
         use crate::gateway091::shared::vehicle_profile::VehicleKind as V;
-        match self{Self::Ms1=>V::Ms1,Self::Is7=>V::Is7,Self::T26=>V::T26,Self::T34=>V::T34,Self::T3485=>V::T3485}
+        Some(match self{Self::Ms1=>V::Ms1,Self::Is7=>V::Is7,Self::T26=>V::T26,Self::T34=>V::T34,Self::T3485=>V::T3485,
+            Self::WtE100128|Self::Fv215b183=>return None})
     }
-    pub fn label(self)->&'static str{self.vehicle().label()}
-    pub fn profile_sha(self)->&'static str{crate::gateway091::shared::ram_proof::Profile::for_vehicle(self.vehicle()).sha()}
+    pub(crate) fn physical_profile(self)->crate::gateway091::shared::ram_proof::Profile {
+        use crate::gateway091::shared::ram_proof::Profile as P;
+        match self{Self::Ms1=>P::Ms1,Self::Is7=>P::Is7,Self::T26=>P::T26,Self::T34=>P::T34,Self::T3485=>P::T3485,
+            Self::WtE100128=>P::WtE100128,Self::Fv215b183=>P::Fv215b183}
+    }
+    fn minimum_manifest_version(self)->u64{match self{Self::Ms1|Self::Is7=>1,Self::T26|Self::T34|Self::T3485=>2,
+        Self::WtE100128|Self::Fv215b183=>3}}
+    pub fn label(self)->&'static str{match self{Self::Ms1=>"ms1",Self::Is7=>"is7",Self::T26=>"t26",Self::T34=>"t34",Self::T3485=>"t3485",
+        Self::WtE100128=>"wt-e100-128",Self::Fv215b183=>"fv215b-183"}}
+    pub fn profile_sha(self)->&'static str{self.physical_profile().sha()}
     fn source(self)->&'static[u8]{match self{
         Self::Ms1=>include_bytes!("worker/ms1-handling-profile.json"),Self::Is7=>include_bytes!("worker/is7-handling-profile.json"),
         Self::T26=>include_bytes!("worker/p04m-t26-qualified-profile.json"),Self::T34=>include_bytes!("worker/p04m-t34-qualified-profile.json"),
-        Self::T3485=>include_bytes!("worker/p04m-t3485-qualified-profile.json")}}
-    fn binding_bits(self)->(u32,[u32;3]){let b=crate::gateway091::shared::ram_proof::Profile::for_vehicle(self.vehicle()).binding();
-        (b.inverse_mass.to_bits(),b.principal.map(f32::to_bits))}
+        Self::T3485=>include_bytes!("worker/p04m-t3485-qualified-profile.json"),
+        Self::WtE100128=>include_bytes!("worker/p06t-wt-e100-128-qualified-profile.json"),Self::Fv215b183=>include_bytes!("worker/p06t-fv215b-183-qualified-profile.json")}}
+    fn binding_bits(self)->(u32,[u32;3]){let b=self.physical_profile().binding();(b.inverse_mass.to_bits(),b.principal.map(f32::to_bits))}
 }
 #[derive(Clone,Debug)]pub struct ActorSpec{pub slot:usize,pub kind:Kind,pub config_sha256:String,pub spawn:[f32;3],pub yaw:f32}
 #[derive(Clone,Debug)]pub struct SceneSpec{
@@ -99,22 +109,23 @@ impl SceneSpec{
     pub fn load(root:&Path,path:&Path,sha:&str)->io::Result<Self>{let manifest_path=owned(root,path)?;let raw=read(&manifest_path,MAX_INPUT,sha)?;let m=parse(&raw,MAX_INPUT)?;
         keys(&m,&["version","profile","policy","map","catalog","actors"])?;
         let version=uint(&m["version"])?;
-        let map=string(&m,"map")?;if !matches!(version,1|2)||string(&m,"profile")?!="test_lab"||string(&m,"policy")?!=POLICY||!matches!(map,"01_karelia"|"05_prohorovka"){return Err(bad("manifest policy"));}
+        let map=string(&m,"map")?;if !matches!(version,1|2|3)||string(&m,"profile")?!="test_lab"||string(&m,"policy")?!=POLICY||!matches!(map,"01_karelia"|"05_prohorovka"){return Err(bad("manifest policy"));}
         let rows=array(&m["actors"],MAX_ACTORS)?;if rows.is_empty(){return Err(bad("empty roster"));}
         let mut actors=Vec::new();let mut pins=vec![(manifest_path.clone(),sha.to_string(),MAX_INPUT)];let mut geometry=None;
         for row in rows{
-            if version==2 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile"])?;}
+            if version>=2 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile"])?;}
             else {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw"])?;}
             if uint(&row["slot"])?!=actors.len()as u64{return Err(bad("ordered actor slots"));}
             let kind=match string(row,"kind")?{"ms1"=>Kind::Ms1,"is7"=>Kind::Is7,
-                "t26"=>Kind::T26,"t34"=>Kind::T34,"t3485"=>Kind::T3485,_=>return Err(bad("actor kind"))};
-            if kind.vehicle().index()>=2 {
-                if version!=2{return Err(bad("curated profile requires manifest2"));}
+                "t26"=>Kind::T26,"t34"=>Kind::T34,"t3485"=>Kind::T3485,
+                "wt-e100-128"=>Kind::WtE100128,"fv215b-183"=>Kind::Fv215b183,_=>return Err(bad("actor kind"))};
+            if version<kind.minimum_manifest_version(){return Err(bad("actor kind requires newer manifest"));}
+            if kind.minimum_manifest_version()>=2 {
                 let source=&row["source_profile"];keys(source,&["path","sha256"])?;
                 if string(source,"sha256")?!=kind.profile_sha(){return Err(bad("curated source identity"));}
                 let path=owned(root,Path::new(string(source,"path")?))?;
                 read(&path,16384,kind.profile_sha())?;pins.push((path,kind.profile_sha().into(),16384));
-            }else if version==2&&!row["source_profile"].is_null(){return Err(bad("legacy actor source profile must be null"));}
+            }else if version>=2&&!row["source_profile"].is_null(){return Err(bad("legacy actor source profile must be null"));}
             let r=&row["config"];keys(r,&["path","sha256"])?;let path=owned(root,Path::new(string(r,"path")?))?;let hash=string(r,"sha256")?;
             let c=parse(&read(&path,16384,hash)?,16384)?;
             keys(&c,&["version","profile","map","terrain","obstacles","spawn_origin","spawn_yaw","body_half_extents","body_center_offset","wheel_points",
@@ -122,7 +133,7 @@ impl SceneSpec{
                 "bounds_xz","longitudinal_friction","lateral_friction","stationary_steering_ratio","handling"])?;
             if uint(&c["version"])?!=3||string(&c,"profile")?!="test_lab"||string(&c,"map")?!=map||digest(kind.source())!=kind.profile_sha(){return Err(bad("source config identity"));}
             let source=parse(kind.source(),16384)?;
-            let profile=if kind.vehicle().index()>=2{&source["definition"]}else{&source};
+            let profile=if kind.minimum_manifest_version()>=2{&source["definition"]}else{&source};
             fn same(a:&Value,b:&Value)->bool{if b.is_number(){return a.as_f64()==b.as_f64();}if let(Value::Array(a),Value::Array(b))=(a,b){return a.len()==b.len()&&a.iter().zip(b).all(|(a,b)|same(a,b));}a==b}
             if profile["physics"].as_object().ok_or_else(||bad("profile object"))?.iter().any(|(k,v)|!same(&c[k],v))||!same(&c["handling"],&profile["handling"]){return Err(bad("complete source physical projection"));}
             let references=json!([c["terrain"],c["obstacles"],c["bounds_xz"]]);if geometry.as_ref().is_some_and(|g|*g!=references){return Err(bad("mixed map geometry"));}geometry=Some(references);
@@ -319,3 +330,5 @@ impl Worker{
 impl Drop for Worker{fn drop(&mut self){self.send.take();self.receive.take();let _=self.child.kill();let _=self.child.wait();for thread in self.threads.drain(..){let _=thread.join();}}}
 
 #[cfg(test)]#[path="scene_worker/tests.rs"]mod tests;
+
+#[cfg(test)]#[path="scene_worker/tests_p06t_extended.rs"]mod tests_p06t_extended;

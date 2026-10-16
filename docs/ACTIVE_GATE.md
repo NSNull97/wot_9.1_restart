@@ -14,9 +14,12 @@ cancel при busyJoin и commandbudget: focused09 **90PASS/0ignored/buildPASS**
 9920a63/coretag p06t-core-20261016-01:1096PASS/5oldignored/buildPASS,
 683sourcefiles exact. Mixed-01 newbinding/V7 install и оба настоящих native
 hangar/cache/model boot OBSERVED по трассе; own services/clients STOPPED.
-UI/control/combat NOT_RUN. Далее отдельная WT/FV physical foundation.
+UI/control/combat NOT_RUN. WT128/FV183 physical foundation подключена:
+canonicalroot Jolt getters, Python7/negative8/legacy455exact и original Rust
+IPC7→scalarFrameProof→ACK4PASS/buildPASS. Новый full04/sourcegate PENDING.
+VehicleKind/World/owned всё ещё5, боевого допуска WT/FV нет.
 Full01 прерван из-за HE+wreck anchor bug, regression PASS в focused07/full02.
-Native/UI/audio NOT_RUN; WT/FV пока source/scheduler-only,
+Native/UI/audio NOT_RUN; WT/FV combat integration ещё отсутствует,
 полная карточка не принята. План [P06T](plans/P06T.md),
 [факты и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 

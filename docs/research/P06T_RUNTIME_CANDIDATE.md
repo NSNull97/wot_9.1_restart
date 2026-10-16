@@ -333,7 +333,7 @@ GunBreech material31 сохраняется как **Unsupported**, не ordinar
 Никаких copied native inertia bits, historical hit-volume claims или owner
 admission из-за наличия geometry export.
 
-**OBSERVED PINNED PHYSICS COMPONENT, вне core full03.** Following source-only
+**OBSERVED PINNED PHYSICS COMPONENT, вне core full03.** После source-only
 export подготовлен отдельный ignored кандидат `extended-foundation01/`.
 Новый definition/profile version2 и policy `p06t-extended-six-support-v2`
 реализуют только физические WT128/FV183 names и bounded SceneManifest3.
@@ -344,23 +344,65 @@ mixed6,2 handling/rest и3contact cases,3catalog/witness/ACK cases прошли.
 independent analytic box tensor и quaternion basis. Точные pins/commands и
 ранние honest map/spawn FAILs — в
 `local/night-staging/20261016/p06t-damage01/extended-foundation01/REPORT.md`.
-Active canonical physics18 files не изменены; интеграция не выполнена.
+Эти staged gates предшествовали отдельной root интеграции и не включены1096.
 
 Финальный component02 DLL SHA
 `693c458b56ec9dbeb6c40bdbf5234f23393abb802c42e15c268785a39d4874c7`.
-Это будущий private physical registry, не расширение VehicleKind/World/owned
-admission. Rust original FrameProof/ACK integration ещё NOT_RUN этим отчётом;
-Python caller ACK не заменяет domain gate. Финальная root сборка требует
-собственных getter provenance/profile SHA. Native/UI/audio WT/FV остаются
-NOT_RUN, WT150 source-only.
+После baselineSHA проверки всех12 файлов foundation интегрирована в
+канонические C#/tools/newtest; отдельный private physical registry в Rust
+имеет7 профилей, а **VehicleKind/World/owned остаются прежними5**. Новые
+physical names не получают fallbackMS1 и явно Unsupported для owned World.
+WT150 не зарегистрирован. Старые manifest1/2 и все5 прежних byte contracts
+сохраняют свои проверки; source_profile refs старых3 не переписаны.
+
+Каноническая команда:
+
+```powershell
+python -B -X utf8 server/build.py physics --out local/build/server/physics-p06t-extended01
+```
+
+BuildPASS; канонический DLL SHA
+`39900645b1bab6819e47e140add661e7f0c5ab4c7a04992a6f5501f3881f2cfa`.
+Отдельная genuine rootDLL getter requalification сохранила те же measured
+численные bits/definition, изменив только qualification worker provenance.
+WT profile SHA
+`85c810a944828d23d42ea8691142d16dc1cfb1c73156a6c7b7f11723d4dfd777`,
+FV profile SHA
+`0e9eb47ba39b53592e1f7de6a302521ea8252bdb616df0d8f5dc10d2ab28b516`.
+Полные canonical configs/source/getters и receipts находятся в
+`local/evidence/20261016-p06t-extended01/`. Первый capture wrapper завершил
+измерения, но не сохранил итоговый metadata receipt из-за отсутствующего
+artifacts.json после server/build; это сохранено в root-getters03/result.json.
+После отдельной генерации complete16-file artifact manifest native qualifier
+повторён настоящим процессом с новыми stdout/stderr; оба profile outputs
+побайтово совпали с первым capture. Ошибка metadata не скрыта успехом compiler.
+
+На активных canonical sources выполнены7 Python projection tests и8 actual
+negative process cases; rootDLL также дал455 whole frames прежних5 профилей
+побайтово равных прежнему worker. Component source-freeze receipt SHA
+`be5172f959444e882d91770bb574fba6ba522d808facb3a60c76779d87c0f191`
+проверяет exact12 файлов, root profiles и все эти receipts.
+
+Отдельный канонический Rust gate
+`local/build/server/gateway-p06t-extended-focused01/` прошёл **4PASS/0FAIL/
+0ignored/buildPASS**,12.41с. Он действительно запускает root C# IPC7 для
+обоих новых profiles и mixed6, затем исходный scalarFrameProof и prepared
+scene ACK; отрицательные source/config pins отвергаются до worker launch.
+Другие tests проверяют manifest3/strictold rules и отсутствие owned World
+kind для новых physical profiles. Это уже не Python caller ACK вместо domain
+proof. Focused EXE SHA
+`58d475e1a58494c61f8a7cfe3d970dfe37766a9b72206753a2a6fbb6fa3a92e5`.
+**Полный общий full04 ещё PENDING.** Native/UI/audio WT/FV NOT_RUN, боевого
+owned допуска и реальных source World contacts этих2 машин нет.
 
 Пока не реализованы ammo-bay explosion, turret detach, ремонт/восстановление
 экипажа, оригинальные multi-layer penetration и historical damage variance.
 Native правильность новых method IDs, всех critical/fire/HE UI/audio и
 переходов сохраняет NOT_RUN до настоящей ручной проверки владельца.
 Full02 и отдельный full03 source-bound regression/build прошли для своих
-head. Staged WT/FV component не включён в1096 и требует отдельного gate при
-интеграции; ночное разрешение не заменяет native приёмку.
+head. WT/FV root physical foundation не включена в1096; её focused4 PASS
+требует полного отдельного full04. Ночное разрешение не заменяет native
+приёмку.
 
 Откат: сохранённые P04M branch/source-bound binary+binding, выключенный P06T
 opt-in и соответствующий прежний client patch ledger. БД откатывать целым
@@ -369,5 +411,5 @@ SQLite backup, без удаления version markers/ручного смеши
 T26/T34/T34-85 остаются false до owner gates.
 
 Единственный следующий рекомендуемый шаг для новой physical foundation:
-coordinated actual Rust IPC7→original scalarFrameProof/ACK gate при сохранении
-закреплённого P06T core full03 и прежних пяти byte contracts.
+полный source-before/after regression/build full04 при сохранении закреплённого
+P06T core full03 и прежних пяти byte contracts.

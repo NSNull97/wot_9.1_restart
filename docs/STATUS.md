@@ -91,8 +91,10 @@ production не ослаблен. Full03 на9920a63:1096PASS/5oldignored/buildP
 683sourcefiles exact, coretag p06t-core-20261016-01. Mixed-01 binding-p06t02/V7
 INSTALLED; оба realnative hangar/cache/model boot OBSERVED по трассе, A112/B29,
 БК прежний/reserves0, ownclients/servicesSTOPPED. UI/control/combat NOT_RUN.
-Native/UI/audio NOT_RUN, WT/FV source/scheduler-only без qualified physics/
-owned admission, карточка не принята и не main.
+WT128/FV183 physical-only foundation: rootJoltgetters/Python7/negative8/
+455legacyframesexact и canonicalRustIPC7→originalscalarFrameProof→ACK4PASS/
+buildPASS. Новый full04 PENDING; VehicleKind/World/owned пока5.
+Native/UI/audio/combat admission WT/FV NOT_RUN, карточка не принята и не main.
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 
 ## Принято владельцем на настоящем клиенте #717

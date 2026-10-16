@@ -17,6 +17,10 @@ server/gateway/src/drive/worker/is7-handling-profile.json text eol=lf
 server/gateway/src/drive/worker/p04m-t26-qualified-profile.json text eol=lf
 server/gateway/src/drive/worker/p04m-t34-qualified-profile.json text eol=lf
 server/gateway/src/drive/worker/p04m-t3485-qualified-profile.json text eol=lf
+server/gateway/src/drive/worker/p06t-wt-e100-128-qualified-profile.json text eol=lf
+server/gateway/src/drive/worker/p06t-fv215b-183-qualified-profile.json text eol=lf
+server/physics/Profiles/extended-definitions.json text eol=lf
+tools/p06t_extended_source_pins.json text eol=lf
 
 # Cross-language writer vectors are hash-pinned byte evidence.
 tests/fixtures/profile13-writer-vectors.json text eol=lf

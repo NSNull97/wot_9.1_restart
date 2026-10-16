@@ -100,7 +100,8 @@ pub(super) fn component_profile(profile:ram_proof::Profile)->VehicleProfile {
         ram_proof::Profile::Is7=>(include_bytes!("is7-handling-profile.json").as_slice(),VehicleKind::Is7),
         ram_proof::Profile::T26=>(include_bytes!("p04m-t26-qualified-profile.json").as_slice(),VehicleKind::T26),
         ram_proof::Profile::T34=>(include_bytes!("p04m-t34-qualified-profile.json").as_slice(),VehicleKind::T34),
-        ram_proof::Profile::T3485=>(include_bytes!("p04m-t3485-qualified-profile.json").as_slice(),VehicleKind::T3485)};
+        ram_proof::Profile::T3485=>(include_bytes!("p04m-t3485-qualified-profile.json").as_slice(),VehicleKind::T3485),
+        ram_proof::Profile::WtE100128|ram_proof::Profile::Fv215b183=>panic!("physical-only profile has no legacy owned VehicleProfile")};
     assert_eq!(format!("{:x}",Sha256::digest(bytes)),profile.sha());let v=json(bytes,16384).unwrap();
     let definition=if kind.index()>=2{&v["definition"]}else{&v};
     VehicleProfile{path:PathBuf::new(),sha256:profile.sha().into(),kind,config_version:3,physics:definition["physics"].clone(),handling:Some(definition["handling"].clone())}
