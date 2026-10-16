@@ -139,7 +139,7 @@ const outputBase = plain(join(ROOT, 'local/test-runs/p08b-composition02'));
 assert.equal(dirname(output), outputBase); assert.match(output.slice(outputBase.length + 1), /^run-[0-9]+-[0-9]+$/);
 assert.equal(guardPath, join(output, 'parent-control.json'));
 const guard = readJson(guardPath, 4 * 1024 * 1024), executable = sourceGuard(guard);
-const bundle = realpathSync(bundleArgument), original = realpathSync(originalArgument);
+const bundle = plain(bundleArgument), original = plain(originalArgument);
 const [{ createIdentityBridge }, security, crew, barracks, research, battle] = await Promise.all([
   import(pathToFileURL(join(ROOT, 'web/src/game-adapter.mjs'))), import(pathToFileURL(join(ROOT, 'web/src/security.mjs'))),
   import(pathToFileURL(join(ROOT, 'web/src/p04d-crew.mjs'))), import(pathToFileURL(join(ROOT, 'web/src/p04k-crew.mjs'))),
