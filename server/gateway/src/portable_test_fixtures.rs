@@ -21,6 +21,13 @@ fn bytes(path:&Path,max:usize)->Vec<u8> {
     let raw=fs::read(path).unwrap();assert_eq!(raw.len()as u64,size);raw
 }
 fn hash(raw:&[u8])->String {format!("{:x}",Sha256::digest(raw))}
+fn runtime_path(path:&Path)->String {
+    // Python's Windows Path publisher emits backslashes in every component.
+    // Rust join preserves slashes inside a relative input, so make the three
+    // allowed runtime path fields use that exact spelling before token checks.
+    #[cfg(windows)] {path.to_str().unwrap().replace('/',"\\")}
+    #[cfg(not(windows))] {path.to_str().unwrap().to_owned()}
+}
 fn allocation(workspace:&Path) {
     assert_eq!(workspace,Path::new("C:/wot091-night-20261017-01/w"),"closed short workspace only");
     let path=Path::new("C:/Users/NSNull/AppData/Local/Temp/wot091-night-workspace-kcadgetk/short-workspace01/allocation.json");
@@ -86,7 +93,7 @@ impl Verifier<'_>{
         let rel=old.strip_prefix("D:/WoT_9.1_Server").expect("source reference confined to original local tree").to_string_lossy().replace('\\',"/");
         assert!(rel.starts_with("local/"));let expected=row[hash_key].as_str().unwrap().to_owned();
         let actual=self.file(&rel,Some(&expected),depth+1);
-        row[path_key]=self.workspace.join(&rel).to_str().unwrap().into();row[hash_key]=actual.into();
+        row[path_key]=runtime_path(&self.workspace.join(&rel)).into();row[hash_key]=actual.into();
     }
     fn file(&mut self,rel:&str,expected:Option<&str>,depth:usize)->String {
         assert!(depth<=12&&self.rows.len()<=1024);let row=self.rows.get(rel).expect("finite published fixture").clone();
@@ -114,11 +121,11 @@ impl Verifier<'_>{
                         self.reference(&mut value["worker"],"artifact_manifest","artifact_manifest_sha256",depth);
                         let old=PathBuf::from(value["worker"]["executable"].as_str().unwrap());let suffix=old.strip_prefix("D:/WoT_9.1_Server").unwrap();
                         let key=suffix.to_string_lossy().replace('\\',"/");self.file(&key,None,depth+1);
-                        value["worker"]["executable"]=self.workspace.join(suffix).to_str().unwrap().into();
+                        value["worker"]["executable"]=runtime_path(&self.workspace.join(suffix)).into();
                     },
                     "config"=>{self.reference(&mut value["terrain"],"path","sha256",depth);self.reference(&mut value["obstacles"],"path","sha256",depth);},
                     "seed"=>{
-                        for name in ["database","bundle"] {let old=PathBuf::from(value[name].as_str().unwrap());let suffix=old.strip_prefix("D:/WoT_9.1_Server").unwrap();value[name]=self.workspace.join(suffix).to_str().unwrap().into();}
+                        for name in ["database","bundle"] {let old=PathBuf::from(value[name].as_str().unwrap());let suffix=old.strip_prefix("D:/WoT_9.1_Server").unwrap();value[name]=runtime_path(&self.workspace.join(suffix)).into();}
                     },
                     _=>panic!("unrecognized fixture derivation")
                 }
