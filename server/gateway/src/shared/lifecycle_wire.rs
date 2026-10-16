@@ -144,6 +144,17 @@ dto_serde!(Results,fields,{
 });
 impl Results {
     pub fn validate(&self)->io::Result<()> {
+        self.validate_inner(false)
+    }
+    /// A v2 terminal journal separately binds positive-HP crew death. The
+    /// legacy result contract remains strict and cannot accept these rows.
+    pub fn validate_p06t(&self)->io::Result<()>{self.validate_inner(true)}
+    pub fn from_json_p06t(raw:&str)->io::Result<Self>{
+        if raw.len()>MAX_RESULT_BYTES{return Err(bad("P06T results byte bound"));}
+        let result:Self=serde_json::from_str(raw).map_err(|_|bad("P06T bounded results schema"))?;
+        result.validate_p06t()?;Ok(result)
+    }
+    fn validate_inner(&self,mixed:bool)->io::Result<()> {
         if self.arena_id==0||self.arena_id>i64::MAX as u64||![1,4].contains(&self.arena_type_id)
             ||self.created_unix==0||self.winner_team>2||!(1..=5).contains(&self.finish_reason)
             ||self.duration_seconds>3600||!(2..=MAX_PARTICIPANTS).contains(&self.participants.len()) {
@@ -158,7 +169,8 @@ impl Results {
                 ||p.life_time>self.duration_seconds||p.killer_id>i32::MAX as u32
                 ||!(-1..=10).contains(&p.death_reason)||p.name.is_empty()||p.name.len()>48
                 ||p.name.chars().any(|c|c.is_control())
-                ||p.health>0&&(p.death_reason!=-1||p.killer_id!=0)
+                ||!mixed&&p.health>0&&(p.death_reason!=-1||p.killer_id!=0)
+                ||mixed&&p.death_reason==-1&&p.killer_id!=0
                 ||p.health==0&&p.death_reason<0
                 ||p.killer_id!=0&&!self.participants.iter().any(|q|q.vehicle_id==p.killer_id)
                 ||self.participants[..index].iter().any(|q|q.vehicle_id==p.vehicle_id||q.account_dbid==p.account_dbid) {
@@ -222,7 +234,13 @@ fn row(out:&mut Vec<u8>,p:&Participant,personal:bool) {
 /// Compact outer tuple: arenaID, personal81, pickle((common9,players,vehicles)).
 /// No GLOBAL/REDUCE/OBJ/INST or arbitrary serializer is exposed.
 pub fn compact_results(result:&Results,own_account:i32)->io::Result<Vec<u8>> {
-    result.validate()?;
+    compact_results_inner(result,own_account,false)
+}
+pub fn compact_results_p06t(result:&Results,own_account:i32)->io::Result<Vec<u8>>{
+    compact_results_inner(result,own_account,true)
+}
+fn compact_results_inner(result:&Results,own_account:i32,mixed:bool)->io::Result<Vec<u8>>{
+    if mixed{result.validate_p06t()?;}else{result.validate()?;}
     let own=result.participants.iter().find(|p|p.account_dbid==own_account)
         .ok_or_else(||bad("lifecycle result owner absent"))?;
     let mut shared=vec![0x80,2,b'(',b']',b'('];
@@ -245,6 +263,15 @@ pub fn compact_results(result:&Results,own_account:i32)->io::Result<Vec<u8>> {
 pub fn avatar_result_stream(result:&Results,own_account:i32)->io::Result<Vec<Vec<u8>>> {
     let raw=compact_results(result,own_account)?;
     crate::hangar091::stream_with_budget(AVATAR_RESULTS_STREAM,&raw,Vec::new(),MAX_RESULT_BYTES)
+}
+pub fn avatar_result_stream_p06t(result:&Results,own_account:i32)->io::Result<Vec<Vec<u8>>>{
+    let raw=compact_results_p06t(result,own_account)?;
+    crate::hangar091::stream_with_budget(AVATAR_RESULTS_STREAM,&raw,Vec::new(),MAX_RESULT_BYTES)
+}
+pub fn account_result_stream_p06t(request_id:i16,first:Vec<u8>,result:&Results,own_account:i32)->io::Result<Vec<Vec<u8>>>{
+    if request_id<=0{return Err(bad("P06T result request ID"));}
+    let raw=compact_results_p06t(result,own_account)?;
+    crate::hangar091::stream_with_budget(request_id,&raw,first,MAX_RESULT_BYTES)
 }
 /// Caller provides its existing authenticated RES_STREAM response prefix.
 pub fn account_result_stream(request_id:i16,first:Vec<u8>,result:&Results,own_account:i32)

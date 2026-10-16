@@ -78,7 +78,7 @@ fn roster_row(w:&World,slot:usize)->io::Result<Vec<u8>> {
     let a=actor(w,slot)?;let mut d=vec![b'(',b'J'];d.extend(vehicle_id(slot)?.to_le_bytes());
     d.push(b'U');string(&mut d,a.vehicle_kind().descriptor())?;
     d.push(b'U');string(&mut d,a.identity.name.as_bytes())?;
-    d.extend([b'K',w.team(slot)?,if a.health>0{0x88}else{0x89},if a.ready{0x88}else{0x89},0x89,b'J']);
+    d.extend([b'K',w.team(slot)?,if a.alive(){0x88}else{0x89},if a.ready{0x88}else{0x89},0x89,b'J']);
     d.extend(a.identity.database.to_le_bytes());d.extend([b'U',0,b'K',0,b'K',0,0x89,b'}',b'K',0,b't']);Ok(d)
 }
 fn roster_list(w:&World,slots:std::ops::Range<usize>)->io::Result<Vec<u8>> {
@@ -179,11 +179,12 @@ pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     let a = actor(w, slot)?;
     let mut p = vec![0]; p.extend(vehicle_id(slot)?.to_le_bytes()); p.extend(2u16.to_le_bytes());
     f3(&mut p, a.position); f3(&mut p, a.direction);
-    p.extend([8, 0, 0, 1, 1, 2]); p.extend(packed_angles_for(a.vehicle_kind(),&a.aim)?.to_le_bytes());
+    p.extend([8, 0, 0, 1, u8::from(a.crew_active()), 2]); p.extend(packed_angles_for(a.vehicle_kind(),&a.aim)?.to_le_bytes());
     p.push(3); p.extend(a.health.to_le_bytes()); p.extend([4, 0, 0, 5]);
     string(&mut p, a.identity.name.as_bytes())?; string(&mut p, a.vehicle_kind().descriptor())?;
     p.push(1); p.extend(0i32.to_le_bytes()); p.push(0);
-    p.push(6); p.extend(0i32.to_le_bytes()); p.push(7); p.extend(0i32.to_le_bytes());
+    p.push(6); p.extend(0i32.to_le_bytes()); p.push(7);
+    p.extend(crate::armament_wire091::modifiers_value(&a.public_modifiers())?);
     var16(9, &p)
 }
 pub fn entity_requests(b: &[u8]) -> io::Result<Option<Vec<usize>>> {
@@ -265,8 +266,12 @@ pub fn tracer_start(projectile: &Projectile) -> io::Result<Vec<u8>> {
     let mut b = vec![0x13, 0x4c];
     b.extend(vehicle_id(projectile.slot)?.to_le_bytes());
     b.extend(projectile.sequence.to_le_bytes());
-    // Pinned #717 ordered effects: smallArmorPiercing2 / largeArmorPiercing14.
-    b.push(projectile.vehicle_kind.shell().effects);
+    // Typed shots retain their source at launch. A later selection cannot
+    // change the already admitted projectile's model, flight or impact FX.
+    b.push(match projectile.shell {
+        Some(shell)=>crate::armament_wire091::effect_index(shell)?,
+        None=>projectile.vehicle_kind.shell().effects,
+    });
     f3(&mut b, projectile.origin);
     f3(&mut b, projectile.velocity);
     b.extend(projectile.gravity.to_le_bytes());
@@ -310,14 +315,21 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
         aiming.turret_dispersion, aiming.movement_dispersion, aiming.hull_dispersion, aiming.aiming_time] {
         b.extend(value.to_le_bytes());
     }
-    for (descriptor, original_count) in kind.panel_rows() {
-        b.extend([0x13, 0x44]); b.extend(descriptor.to_le_bytes());
-        b.extend((if descriptor == kind.shell_compact_id() { a.fire.ammo() } else { original_count }).to_le_bytes());
-        b.extend([0, 0, 0]);
+    if let Some(typed)=a.fire.typed() {
+        b.extend(crate::armament_wire091::ammo_snapshot(typed.mount(),typed.counts(),
+            typed.current().compact_descr,typed.next().compact_descr,typed.clip())?);
+        b.extend(crate::armament_wire091::reload(vehicle_id(own)?,typed.remaining_seconds(now),typed.base_reload_seconds())?);
+    } else {
+        for (descriptor, original_count) in kind.panel_rows() {
+            b.extend([0x13, 0x44]); b.extend(descriptor.to_le_bytes());
+            b.extend((if descriptor == kind.shell_compact_id() { a.fire.ammo() } else { original_count }).to_le_bytes());
+            b.extend([0, 0, 0]);
+        }
+        b.extend([0x13, 0x40, 0]); b.extend(kind.shell_compact_id().to_le_bytes());
+        let left = a.fire.reload_until().map(|end| end.saturating_duration_since(now).as_secs_f32()).unwrap_or(0.);
+        b.extend(reload_for(kind,own, left.min(kind.reload_seconds()))?);
     }
-    b.extend([0x13, 0x40, 0]); b.extend(kind.shell_compact_id().to_le_bytes());
-    let left = a.fire.reload_until().map(|end| end.saturating_duration_since(now).as_secs_f32()).unwrap_or(0.);
-    b.extend(reload_for(kind,own, left.min(kind.reload_seconds()))?); Ok(b)
+    Ok(b)
 }
 pub fn publication<const N:usize>(w: &World, visible: [bool; N]) -> io::Result<Vec<u8>> {
     if !(1000..=37000).contains(&w.tick) || N<w.actors.len() || N>model::MAX_ACTORS { return Err(model::bad()); }
@@ -355,6 +367,48 @@ pub fn lifecycle_period(w: &World) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
     use std::time::Instant;
+    #[test]fn p06t_native_binding_reconciles_ap_zero_current_next_and_full_source_counts(){
+        use crate::p06t_armament091::{Command,Selection};
+        let now=Instant::now();let mut w=model::tests::world(now);
+        w.actors[0].fire=crate::battle091::fire::State::with_typed(crate::p06t_shells091::Mount::Ms1Stock,[0,2,3],2826).unwrap();
+        w.actors[0].fire.apply_typed(&[Command::Select(Selection::Next,3082)],now).unwrap();
+        let packet=binding(&w,0,now).unwrap();
+        let mut expected=crate::armament_wire091::ammo_snapshot(crate::p06t_shells091::Mount::Ms1Stock,[0,2,3],2826,3082,1).unwrap();
+        expected.extend(crate::armament_wire091::reload(vehicle_id(0).unwrap(),0.,2.5).unwrap());
+        assert!(packet.ends_with(&expected));
+        w.actors[0].fire.apply_typed(&[Command::Select(Selection::Current,3082)],now).unwrap();
+        let mut expected=crate::armament_wire091::ammo_snapshot(crate::p06t_shells091::Mount::Ms1Stock,[0,2,3],3082,3082,0).unwrap();
+        expected.extend(crate::armament_wire091::reload(vehicle_id(0).unwrap(),2.5,2.5).unwrap());
+        assert!(binding(&w,0,now).unwrap().ends_with(&expected));
+    }
+    #[test]fn p06t_tracer_frozen_heat_survives_later_he_selection_and_stop(){
+        use crate::p06t_armament091::{Command,Selection};
+        let now=Instant::now();let mut w=model::tests::world(now);
+        w.actors[0].fire=crate::battle091::fire::State::with_typed(crate::p06t_shells091::Mount::Ms1Stock,[0,2,3],2826).unwrap();
+        let heat=crate::p06t_shells091::PROFILES[0].shots[1];
+        let mut projectile=Projectile::launch_shell_for_limit(1,0,&w.actors[0],now,w.shot_limit(),heat).unwrap();
+        let launch=tracer_start(&projectile).unwrap();assert_eq!(launch[10],4);
+        w.actors[0].fire.apply_typed(&[Command::Select(Selection::Current,3082)],now).unwrap();
+        assert_eq!(tracer_start(&projectile).unwrap(),launch);
+        projectile.stopped=true;assert_eq!(tracer_start(&projectile).unwrap(),launch);
+        assert!(tracer_stop(&projectile).is_ok());
+        let mut forged=heat;forged.effects_resource="smallHighExplosive";projectile.shell=Some(forged);
+        assert!(tracer_start(&projectile).is_err());
+    }
+    #[test]fn p06t_create_reentry_carries_real_fire_and_positive_hp_inactive_crew(){
+        use crate::{p06t_device_state::{State,Health,ModuleHit,Cause},p06t_device_caps::{Profile,Device},p06t_lab_proxy::Target};
+        let mut w=model::tests::world(Instant::now());let h=Health{hp:90,max_hp:90,terminal:false};
+        let shell=crate::p06t_shells091::PROFILES[1].shots[2];let mut state=State::new(Profile::Ms1);
+        state.apply_hits(&[ModuleHit{cause:Cause{shot:1,attacker_slot:1},ordinal:0,at_ms:0,
+            target:Target::Device(Device::Engine),shell,ignition_roll:0.}],h).unwrap();
+        assert!(state.fire_active());w.actors[0].devices=Some(state.clone());
+        let created=create_vehicle(&w,0).unwrap();assert!(created.ends_with(&[7,1,0,0,0,4]));assert_eq!(created[38],1);
+        let cause=Cause{shot:2,attacker_slot:1};state.apply_hits(&[
+            ModuleHit{cause,ordinal:0,at_ms:1,target:Target::Seat(0),shell,ignition_roll:0.},
+            ModuleHit{cause,ordinal:1,at_ms:1,target:Target::Seat(1),shell,ignition_roll:0.}],h).unwrap();
+        assert!(!state.crew_active());w.actors[0].devices=Some(state);
+        let created=create_vehicle(&w,0).unwrap();assert_eq!(w.actors[0].health,90);assert_eq!(created[38],0);
+    }
     fn six_mixed(now:Instant)->World {
         let mut w=World::new_for_roster(123,now,crate::map_profile091::MapId::Karelia,6).unwrap();
         w.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();

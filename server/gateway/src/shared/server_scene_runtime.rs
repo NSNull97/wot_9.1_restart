@@ -5,6 +5,36 @@ use crate::scene_worker::{self,Scene,SceneSpec,Input};
 use super::super::{scene_runtime::Runtime,profile13_templates::SharedResources};
 use sha2::Digest;
 
+/// Explicit LAB quantization to the existing IPC7 control alphabet. Fractional
+/// steering uses a four-domain-tick duty cycle; exact transmitted inputs and
+/// the domain tick are logged. No unsupported cruise values are invented.
+fn duty_active(tick:u32,scale:f32)->bool {
+    scale>=1. || scale>0. && (tick.saturating_sub(1000)%4)<(scale*4.).floor()as u32
+}
+fn actor_input(actor:&model::Actor,tick:u32,allows_actions:bool)->io::Result<Input> {
+    if actor.session.is_none() || !actor.ready || !actor.alive() || !allows_actions {return Ok(Input::STOP);}
+    let input=actor.input;
+    if tick<1000 || !(-1..=1).contains(&input.throttle)||!(-1..=1).contains(&input.steer)
+        || !crate::map_drive_worker091::partial_cruise_valid(input.throttle,false,input.speed_percent) {return Err(model::bad());}
+    let Some(devices)=&actor.devices else {return Ok(Input {throttle:input.throttle,steer:input.steer,
+        brake:input.throttle==0&&input.steer==0,speed_percent:input.speed_percent});};
+    if devices.profile().index()!=actor.vehicle_kind().index() {return Err(model::bad());}
+    let caps=devices.capabilities();caps.validate()?;
+    let mut throttle=if caps.drive_scale>0. {input.throttle}else{0};
+    let steer=if duty_active(tick,caps.steer_scale) {input.steer}else{0};
+    let scaled=f32::from(input.speed_percent)*caps.drive_scale;
+    // LAB minimum is25% when forward motion remains possible. Critical and
+    // driver factors compound before flooring to the supported alphabet.
+    let mut speed=if scaled>=100. {100}else if scaled>=50. {50}else{25};
+    if throttle<0 && speed==25 {
+        // The accepted protocol permits reverse100/50, but never reverse25.
+        // Use half-duty valid reverse50 rather than emitting an invalid row.
+        speed=50;if !duty_active(tick,0.5) {throttle=0;}
+    }
+    if throttle==0 {speed=100;}
+    Ok(Input {throttle,steer,brake:throttle==0&&steer==0,speed_percent:speed})
+}
+
 pub(super) struct BatchRuntime {
     resources:Arc<SharedResources>,catalog:crate::map_drive_worker091::CatalogSpec,
     spec:Option<Arc<SceneSpec>>,runtime:Option<Runtime>,
@@ -159,10 +189,12 @@ impl BatchRuntime {
         if runtime.pending(){return Ok(());}
         let deadline=drive_deadline(world.started.ok_or_else(||model::bad())?,self.dispatched,now)?;
         if let Some(deadline)=deadline{
-            let inputs=world.actors.iter().map(|a|if a.session.is_none()||!a.ready||a.health==0||world.lifecycle.as_ref().is_some_and(|s|!s.allows_actions()) {Input::STOP}
-                else{Input{throttle:a.input.throttle,steer:a.input.steer,brake:a.input.throttle==0&&a.input.steer==0,speed_percent:a.input.speed_percent}}).collect::<Vec<_>>();
+            let allows_actions=world.lifecycle.as_ref().is_none_or(|s|s.allows_actions());
+            let inputs=world.actors.iter().map(|a|actor_input(a,world.tick,allows_actions)).collect::<io::Result<Vec<_>>>()?;
             let seq=runtime.advance(&inputs,now)?;self.dispatched=Some(deadline);
-            println!("P05C_SCENE_INPUT battle={} seq={} actors={} physical_sessions={:?} inputs={:?}",world.id,seq,inputs.len(),self.sessions,inputs);
+            println!("P05C_SCENE_INPUT battle={} seq={} actors={} physical_sessions={:?} inputs={:?} world_tick={} devices_policy={}",
+                world.id,seq,inputs.len(),self.sessions,inputs,world.tick,
+                if world.actors.iter().any(|a|a.devices.is_some()){crate::p06t_device_state::POLICY}else{"legacy"});
         }Ok(())
     }
 }
@@ -172,3 +204,6 @@ mod tests;
 #[cfg(test)]
 #[path="server_scene_runtime_p04m_tests.rs"]
 mod p04m_tests;
+#[cfg(test)]
+#[path="server_scene_runtime_p06t_tests.rs"]
+mod p06t_tests;

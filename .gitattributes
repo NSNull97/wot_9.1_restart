@@ -21,5 +21,13 @@ server/gateway/src/drive/worker/p04m-t3485-qualified-profile.json text eol=lf
 # Cross-language writer vectors are hash-pinned byte evidence.
 tests/fixtures/profile13-writer-vectors.json text eol=lf
 tests/fixtures/profile13-results-vectors.json text eol=lf
+tests/fixtures/p06t-writer-vectors.json text eol=lf
+tests/fixtures/p06t-writer-companion.json text eol=lf
+tests/fixtures/p06t-shell-catalog.json text eol=lf
+# These frozen P06T manifests were generated and pinned with CRLF bytes.
+# Preserve those exact bytes instead of rewriting their provenance hashes.
+tests/fixtures/p06t-device-policy.json -text
+server/gateway/src/shared/p06t_device_policy.json -text
+server/gateway/src/shared/p06t_device_source_caps.json -text
 # Native Session source is kept in its established LF representation.
 server/gateway/src/session.rs -text

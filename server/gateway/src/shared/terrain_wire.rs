@@ -45,6 +45,17 @@ pub fn explode_material_for(kind: VehicleKind,shot_id: u32, point: [f32; 3], dir
 /// wrapper's mounted limit, but publish admitted global IDs against that
 /// battle's explicit aggregate bound, as Projectile::launch_for_limit does.
 pub fn explode_material_for_limit(kind: VehicleKind,shot_id: u32, point: [f32; 3], direction: [f32; 3], material: u8, shot_limit: usize) -> io::Result<Vec<u8>> {
+    explode_with_effects_for_limit(kind.shell().effects,shot_id,point,direction,material,shot_limit)
+}
+
+/// Typed flight terminates using its immutable source shell and the admitted
+/// world's explicit shot budget; never substitute the actor's current choice.
+pub fn explode_material_shell_for_limit(shell:crate::p06t_shells091::Shell,shot_id:u32,point:[f32;3],direction:[f32;3],material:u8,shot_limit:usize)->io::Result<Vec<u8>>{
+    let effects=crate::armament_wire091::effect_index(shell)?;
+    explode_with_effects_for_limit(effects,shot_id,point,direction,material,shot_limit)
+}
+
+fn explode_with_effects_for_limit(effects:u8,shot_id:u32,point:[f32;3],direction:[f32;3],material:u8,shot_limit:usize)->io::Result<Vec<u8>>{
     if shot_limit == 0 || shot_limit > super::model::MAX_BATTLE_SHOTS
         || shot_id == 0 || u64::from(shot_id) > shot_limit as u64
         || material > 5
@@ -60,7 +71,7 @@ pub fn explode_material_for_limit(kind: VehicleKind,shot_id: u32, point: [f32; 3
     let mut body = Vec::with_capacity(37);
     body.extend([0x13, 0x57, 34]);
     body.extend(shot.to_le_bytes());
-    body.extend([kind.shell().effects, material]);
+    body.extend([effects, material]);
     for coordinate in point.into_iter().chain(direction) { body.extend(coordinate.to_le_bytes()); }
     body.extend(0i32.to_le_bytes());
     Ok(body)
@@ -69,6 +80,20 @@ pub fn explode_material_for_limit(kind: VehicleKind,shot_id: u32, point: [f32; 3
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]fn p06t_ground_uses_all_frozen_shell_effects_and_explicit_world_budget(){
+        use crate::p06t_shells091::PROFILES;
+        for profile in PROFILES {for shell in profile.shots {
+            let body=explode_material_shell_for_limit(shell,960,[1.,2.,3.],[1.,0.,0.],5,960).unwrap();
+            assert_eq!(body.len(),37);assert_eq!(&body[3..7],&960i32.to_le_bytes());
+            assert_eq!(&body[7..9],&[crate::armament_wire091::effect_index(shell).unwrap(),5]);
+            assert!(explode_material_shell_for_limit(shell,961,[1.,2.,3.],[1.,0.,0.],5,960).is_err());
+        }}
+        let mut forged=PROFILES[0].shots[1];forged.effects_resource="smallArmorPiercing";
+        assert!(explode_material_shell_for_limit(forged,1,[0.;3],[1.,0.,0.],0,960).is_err());
+        assert_eq!(explode_material_shell_for_limit(PROFILES[0].shots[0],7,[1.,2.,3.],[1.,0.,0.],0,192).unwrap(),
+            explode_material_for_limit(VehicleKind::Ms1,7,[1.,2.,3.],[1.,0.,0.],0,192).unwrap());
+    }
 
     #[test] fn verified_material_indices_preserve_native_packet_shape() {
         let ground=explode(1,[1.,2.,3.],[1.,0.,0.]).unwrap();

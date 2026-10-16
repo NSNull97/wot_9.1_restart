@@ -10,13 +10,14 @@ Explicit shared-lab admission enables this button for a temporary server actor;
 owned hangar vehicle readiness, crew and ammunition remain unchanged.
 The separate profile13 mode admits only a real stock owned MS-1/IS-7 with
 native readiness and AP-only loadout as a UI hint; the server owns admission.
+The separate P06T opt-in accepts the same mounts' actual three source stacks.
 """
 import hashlib
 import os
 import threading
 import types
 
-VERSION = 6
+VERSION = 7
 MS1_SHA256 = '4122429c052f5c8eb2ebeae456c775b1a368a007cf37bae8af7b3f87ff064c5c'
 # Exact #717 stock assemblies, independently checked by the server writer.
 PROFILE13_VEHICLES = {
@@ -29,6 +30,7 @@ PROFILE13_REASONS = {
     'unsupported_configuration': u'Для боя нужна проверенная стандартная сборка МС-1 или ИС-7.',
     'unsupported_crew_readiness': u'Нужен полный экипаж и готовая к бою машина.',
     'unsupported_ap_loadout': u'Пока поддерживаются только бронебойные: загрузите от одного снаряда до вместимости БК, остальные выгрузите.',
+    'unsupported_mixed_loadout': u'Загрузите хотя бы один штатный снаряд; общий боекомплект не должен превышать вместимость машины.',
     'vehicle_reserved': u'Эта машина уже зарезервирована для другого боя.',
     'inventory_not_ready': u'Дождитесь синхронизации ангара и выберите свою машину.',
 }
@@ -327,9 +329,10 @@ class _Native(object):
         return dict(player_kind=kind, player_owner_id=None if player is None else id(player),
                     entity_id=None if player is None else _integer(player.id, 1, 2147483647, 'entity ID'))
 
-    def eligibility(self, shared_lab=False, profile13_battle=False):
+    def eligibility(self, shared_lab=False, profile13_battle=False, p06t_mixed_ammo=False):
         if (type(shared_lab) is not bool or type(profile13_battle) is not bool
-                or shared_lab and profile13_battle):
+                or type(p06t_mixed_ammo) is not bool or shared_lab and profile13_battle
+                or p06t_mixed_ammo and not profile13_battle):
             raise TypeError('exclusive explicit battle mode required')
         import Account
         import BigWorld
@@ -354,7 +357,8 @@ class _Native(object):
         if not g_itemsCache.isSynced() or not g_currentVehicle.isPresent():
             return {'allowed': False, 'reason': 'inventory_not_ready', 'queued': False}
         if profile13_battle:
-            return self._profile13_selection(player, BigWorld, g_currentVehicle, g_itemsCache)
+            return self._profile13_selection(player, BigWorld, g_currentVehicle, g_itemsCache,
+                                             p06t_mixed_ammo=p06t_mixed_ammo)
         item, items = g_currentVehicle.item, g_itemsCache.items
         if (_integer(g_currentVehicle.invID, 1, 2147483647, 'selected ID') != 1
                 or item.invID != 1 or item.intCD != 3329):
@@ -416,7 +420,7 @@ class _Native(object):
         return dict(allowed=allowed, reason='supported_ms1' if allowed else 'unsupported_crew_ammo_readiness',
                     queued=False)
 
-    def _profile13_selection(self, player, world, current, cache):
+    def _profile13_selection(self, player, world, current, cache, p06t_mixed_ammo=False):
         """Read native owned state as a UI hint; never grant server admission."""
         item = current.item
         selected = _integer(current.invID, 1, 2147483647, 'selected inventory ID')
@@ -475,7 +479,13 @@ class _Native(object):
                 or not _bool(current.isReadyToFight(), 'isReadyToFight')):
             return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
         loaded = _flat(inventory['shells'].get(selected))
-        if (tuple(loaded[::2]) != shell_ids or not 1 <= loaded[1] <= capacity
+        if p06t_mixed_ammo:
+            counts = loaded[1::2]
+            if (tuple(loaded[::2]) != shell_ids
+                    or any(count < 0 or count > capacity for count in counts)
+                    or not 1 <= sum(counts) <= capacity):
+                return dict(allowed=False, reason='unsupported_mixed_loadout', queued=False)
+        elif (tuple(loaded[::2]) != shell_ids or not 1 <= loaded[1] <= capacity
                 or loaded[3] != 0 or loaded[5] != 0):
             return dict(allowed=False, reason='unsupported_ap_loadout', queued=False)
         shells = item.shells
@@ -492,11 +502,14 @@ class _Native(object):
 
 class _Controller(object):
     """Exact descriptor ownership; isolated dependencies are unit-test seams."""
-    def __init__(self, guard, native, services, record, captcha_guard, profile13_battle=False):
+    def __init__(self, guard, native, services, record, captcha_guard, profile13_battle=False,
+                 p06t_mixed_ammo=False):
         if not callable(record):
             raise TypeError('ordinary drive recorder must be callable')
         if type(profile13_battle) is not bool:
             raise TypeError('explicit profile13 battle mode required')
+        if (type(p06t_mixed_ammo) is not bool or p06t_mixed_ammo and not profile13_battle):
+            raise TypeError('P06T mixed ammunition requires explicit profile13 battle mode')
         self.captcha_guard = captcha_guard
         self.guard, self.native, self.services, self.record = guard, native, services, record
         self.button_class = guard.button_class
@@ -509,6 +522,7 @@ class _Controller(object):
         self.click_records = 0
         self.shared_lab = False
         self.profile13_battle = profile13_battle
+        self.p06t_mixed_ammo = p06t_mixed_ammo
         owner = self
 
         def fight(self, mapID=None, actionName=''):
@@ -574,6 +588,8 @@ class _Controller(object):
 
     def _eligibility(self):
         if self.profile13_battle:
+            if self.p06t_mixed_ammo:
+                return self.native.eligibility(profile13_battle=True, p06t_mixed_ammo=True)
             return self.native.eligibility(profile13_battle=True)
         return self.native.eligibility(shared_lab=self.shared_lab)
 
@@ -606,7 +622,8 @@ class _Controller(object):
         _emit(self.record, 'map_drive_client_policy', phase='install', ordinary=True,
               bindings=[name for name, _ in self.replacements], native_input_unchanged=True,
               original_ammo_check_preserved=True, automatic_quit=False,
-              profile13_battle=self.profile13_battle, admission_authority='server')
+              profile13_battle=self.profile13_battle, p06t_mixed_ammo=self.p06t_mixed_ammo,
+              admission_authority='server')
 
     def restore(self):
         if not self.installed:
@@ -631,9 +648,12 @@ class _Controller(object):
         return context
 
 
-def init(record, profile13_battle=False):
+def init(record, profile13_battle=False, p06t_mixed_ammo=False):
     """Root invokes only for an explicitly installed ordinary service feature."""
     global _controller, _captcha_guard, _attempted
+    if (type(profile13_battle) is not bool or type(p06t_mixed_ammo) is not bool
+            or p06t_mixed_ammo and not profile13_battle):
+        raise TypeError('P06T mixed ammunition requires explicit profile13 battle mode')
     if _attempted:
         raise RuntimeError('ordinary drive initialization already attempted')
     if not callable(record):
@@ -645,7 +665,7 @@ def init(record, profile13_battle=False):
     sources = _audit_sources(policy)
     _captcha_guard = _CaptchaGuard(_load_captcha_class(), record)
     _controller = _Controller(guard, _Native(), _Services(record), record, _captcha_guard,
-                              profile13_battle=profile13_battle)
+                              profile13_battle=profile13_battle, p06t_mixed_ammo=p06t_mixed_ammo)
     try:
         _emit(record, 'map_drive_client_provenance', sources=sources,
               original_method_code_sha256=dict((r[0], r[4]) for r in policy.BATTLE_METHODS),

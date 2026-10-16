@@ -10,6 +10,8 @@ mod profile13_dispatch;
 #[path="server_scene_runtime.rs"]
 mod batch_scene;
 use batch_scene::BatchRuntime;
+#[path="p06t_publication.rs"]
+mod p06t_publication;
 
 #[cfg(test)]
 #[path="server_visibility_tests.rs"]
@@ -687,13 +689,13 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
 fn stage_lifecycle_results(table:&mut Table,world:&World)->io::Result<()> {
     if !world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {return Ok(());}
     let needs=table.sessions.iter().any(|s|s.shared.as_ref().is_some_and(|c|c.natural_result.is_none()
-        && c.profile13.as_ref().is_some_and(|p|p.pending_return.is_none() && p.reservation.as_ref().is_some_and(|r|r.battle==world.id))));
+        && c.profile13.as_ref().is_some_and(|p|!p.has_pending_return() && p.reservation_battle()==Some(world.id))));
     if !needs {return Ok(());}
     let result=Arc::new(super::lifecycle_result::build(world)?);
     for s in &mut table.sessions {
         let Some(c)=&mut s.shared else{continue;};
-        if c.natural_result.is_none() && c.profile13.as_ref().is_some_and(|p|p.pending_return.is_none()
-            && p.reservation.as_ref().is_some_and(|r|r.battle==world.id)) {
+        if c.natural_result.is_none() && c.profile13.as_ref().is_some_and(|p|!p.has_pending_return()
+            && p.reservation_battle()==Some(world.id)) {
             c.natural_result=Some(result.clone());
             println!("P08C_RESULT_FROZEN battle={} session={} winner={} reason={} shots={} damage={} inventory_not_yet_released=true",
                 world.id,s.id,result.winner_team,result.finish_reason,
@@ -714,10 +716,12 @@ fn deliver_lifecycle_result(s:&mut Session,now:Instant)->io::Result<bool> {
     if !c.result_stream_queued {
         let result=c.natural_result.clone().ok_or_else(||model::bad())?;
         let own=next.identity.as_ref().ok_or_else(||model::bad())?.database_id;
-        let bodies=super::lifecycle_wire::avatar_result_stream(&result,own)?;
+        let mixed=c.view.as_ref().is_some_and(|world|world.mixed_ammo());
+        let bodies=if mixed{super::lifecycle_wire::avatar_result_stream_p06t(&result,own)?}
+            else{super::lifecycle_wire::avatar_result_stream(&result,own)?};
         if next.outbox.len()+bodies.len()>128 {return Ok(true);}
         next.outbox.extend(bodies);
-        next.battle_results.cache_avatar(result,own)?;
+        if mixed{next.battle_results.cache_avatar_p06t(result,own)?;}else{next.battle_results.cache_avatar(result,own)?;}
         let c=next.shared.as_mut().ok_or_else(||model::bad())?;
         c.result_stream_queued=true;c.result_delivery_at=Some(now);
         next.drain_outbox()?;
@@ -736,7 +740,7 @@ fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_
     let mut fresh=s.clone();fresh.shared_refresh_world(world)?;
     fresh.flush_shared_interest(&mut Vec::new())?;fresh.flush_shared_private()?;*s=fresh;
     if deliver_lifecycle_result(s,now)? {return Ok(());}
-    if s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.pending_return.is_some()) {return Ok(());}
+    if s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.has_pending_return()) {return Ok(());}
     let natural_due=if let Some(state)=world.lifecycle.as_ref().filter(|state|state.outcome().is_some()) {
         state.ready_to_return(world.lifecycle_ms(now)?)
     } else {false};
@@ -836,9 +840,15 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
         let who=model::Identity{account:identity.account_id.clone(),database:identity.database_id,name:identity.name.clone()};
         let owned=s.shared.as_ref().and_then(|c|c.profile13.as_ref());
         let slot=if let Some(p)=owned {
+            if world.mixed_ammo(){
+                let receipt=p.reservation_v2.as_ref().ok_or_else(||model::bad())?;
+                if receipt.battle!=world.id{continue;}
+                world.attach_owned_v2(who,s.id,&receipt.frozen)?
+            }else{
             let receipt=p.reservation.as_ref().ok_or_else(||model::bad())?;
             if receipt.battle!=world.id || !world.mixed_profiles()&&receipt.frozen.kind!=world.vehicle_kind() {continue;}
             world.attach_owned(who,s.id,&receipt.frozen)?
+            }
         } else {world.attach(who,s.id)?};
         let c=s.shared.as_mut().ok_or_else(||model::bad())?;
         let since=c.hangar_since;
@@ -1044,6 +1054,14 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         battle_template=BattleTemplate::from_shared_mode(rows,config.battle_players,world.id,started,qualification)?;
         battle_template.select(&mut world,&mut integrated,started)?;
     }
+    if config.p06t_mixed_ammo{
+        if !profile13_mode||qualification.is_some(){return Err(model::bad().into());}
+        battle_template.world.enable_mixed_ammo()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("P06T_ARMAMENT_BOUND policy={} damage_policy={} device_policy={} proxy_policy={} module_admission={} source={} historical_internal_volumes=UNKNOWN",
+            crate::p06t_armament091::POLICY,crate::p06t_damage::POLICY,crate::p06t_device_state::POLICY,
+            crate::p06t_lab_proxy::POLICY,model::p06t::MODULE_ADMISSION_POLICY,crate::p06t_shells091::SOURCE_REVISION);
+    }
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
@@ -1178,7 +1196,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             for s in &mut table.sessions {
                 if world.started.is_some() {
                     let busy=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
-                        p.selection.is_some() && p.reservation.is_none() && !p.in_flight);
+                        p.selection.is_some() && !p.has_reservation() && !p.in_flight);
                     if busy {
                         let c=s.shared.as_mut().ok_or_else(||model::bad())?;
                         c.profile13.as_mut().ok_or_else(||model::bad())?.selection=None;c.join_requested=false;
@@ -1188,7 +1206,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 }
                 let pending=s.shared.as_ref().is_some_and(|c|c.profile13.is_some() &&
                     (c.phase==Phase::Leaving || c.phase==Phase::Account && !c.join_requested
-                        && c.profile13.as_ref().is_some_and(|p|p.reservation.is_some())));
+                        && c.profile13.as_ref().is_some_and(|p|p.has_reservation())));
                 if pending {
                     profile13_dispatch::Dispatcher::terminal(s,&world,crate::battle091::profile13::FinishReason::ManualLeave)?;
                     if integrated.as_ref().is_none_or(|r|!r.blocked()) && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
@@ -1208,7 +1226,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 if battle_dispatch.closed_queue(world.id) {
                     for s in &mut table.sessions {
                         let pending=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
-                            p.selection.is_some() && p.reservation.is_none() && !p.in_flight);
+                            p.selection.is_some() && !p.has_reservation() && !p.in_flight);
                         if pending {
                             let c=s.shared.as_mut().ok_or_else(||model::bad())?;
                             c.profile13.as_mut().ok_or_else(||model::bad())?.selection=None;c.join_requested=false;
@@ -1218,8 +1236,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 }
                 if world.started.is_none() && world.actors.iter().all(|a|a.session.is_none()) {
                     let kind=table.sessions.iter().find_map(|s|s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
-                        .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && p.pending_return.is_none())
-                        .and_then(|p|p.reservation.as_ref()).filter(|r|r.battle==world.id).map(|r|r.frozen.kind));
+                        .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && !p.has_pending_return())
+                        .filter(|p|p.reservation_battle()==Some(world.id)).and_then(|p|p.reservation_kind()));
                     if let Some(kind)=kind.filter(|k|!world.mixed_profiles()&&*k!=world.vehicle_kind()) {
                         let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
                         battle_template=BattleTemplate::from_resources(r,world.id,now)?;
@@ -1229,8 +1247,9 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 }
                 for s in &mut table.sessions {
                     let mismatch=s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
-                        .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && p.pending_return.is_none())
-                        .and_then(|p|p.reservation.as_ref()).is_some_and(|r|r.battle!=world.id || !world.mixed_profiles()&&r.frozen.kind!=world.vehicle_kind());
+                        .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && !p.has_pending_return())
+                        .is_some_and(|p|p.reservation_battle().is_some_and(|battle|battle!=world.id)
+                            ||!world.mixed_profiles()&&p.reservation_kind().is_some_and(|kind|kind!=world.vehicle_kind()));
                     if mismatch {
                         profile13_dispatch::Dispatcher::terminal(s,&world,crate::battle091::profile13::FinishReason::Cancelled)?;
                         if let Some(c)=&mut s.shared {c.queue_announced=false;}
@@ -1328,6 +1347,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 "material_facts":contact.material_facts.json(),
                 "terminal":match world.impacts.iter().find(|event| event.shot==contact.shot).map(|e| &e.outcome) {
                     Some(model::ImpactOutcome::Ap(_)) => "test_lab_impact",
+                    Some(model::ImpactOutcome::Mixed(_)) => "test_lab_mixed_impact",
                     Some(model::ImpactOutcome::WreckBlocked) => "test_lab_wreck_impact",
                     None => "unresolved_collision"},
                 "damage_applied":world.impacts.iter().any(|event| event.shot==contact.shot && event.health_after<event.health_before)}));
@@ -1358,6 +1378,11 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     "policy_revision":model::wreck_policy_revision_for(world.vehicle_kind()),"historical_fidelity":"approximate",
                     "outcome":"wreck_blocked","health_before":event.health_before,"health_after":event.health_after,
                     "damage":0,"native_effect_available":event.segment.is_some()}));
+                continue;
+            }
+            if let model::ImpactOutcome::Mixed(resolution)=&event.outcome{
+                println!("P06T_DIRECT_IMPACT battle={} shot={} attacker={} target={} tick={} resolution={resolution:?} hp_before={} hp_after={} historical_fidelity=explicit_lab",
+                    world.id,event.shot,event.attacker,event.target,event.tick,event.health_before,event.health_after);
                 continue;
             }
             let model::ImpactOutcome::Ap(resolution) = &event.outcome else { return Err(model::bad().into()); };
@@ -1416,13 +1441,18 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     }
     if !c.correction { return Ok(()); }
     let outcomes = next_world.apply(slot, s.id, &commands, now)?;
+    if next_world.mixed_ammo()&&outcomes.iter().any(|outcome|matches!(outcome,
+        crate::battle091::fire::Outcome::Typed(crate::p06t_armament091::Outcome::Refused(_))
+        |crate::battle091::fire::Outcome::RejectedBattlePeriod|crate::battle091::fire::Outcome::RejectedVehicleState)){
+        next.shared.as_mut().ok_or_else(||model::bad())?.armament_sent=None;
+    }
     for outcome in &outcomes {
         if let crate::battle091::fire::Outcome::AcceptedShot { ammo_remaining } = outcome {
             let mut b = wire::ammo_count_for(next_world.actors[slot].vehicle_kind(),*ammo_remaining)?; b.extend(wire::reload_for(next_world.actors[slot].vehicle_kind(),slot,next_world.actors[slot].vehicle_kind().reload_seconds())?);
             next.outbox.push_back(b);
         }
     }
-    if next_world.actors[slot].fire.finish_reload_if_due(now) { next.outbox.push_back(wire::reload_for(next_world.actors[slot].vehicle_kind(),slot,0.)?); }
+    if next_world.actors[slot].fire.finish_reload_if_due(now)&&!next_world.mixed_ammo() { next.outbox.push_back(wire::reload_for(next_world.actors[slot].vehicle_kind(),slot,0.)?); }
     next.shared_refresh_world(&next_world)?;
     next.flush_shared_interest(&mut Vec::new())?;
     let c = next.shared.as_mut().ok_or_else(|| model::bad())?;
@@ -1498,8 +1528,11 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     if let Some(contact)=next_world.terrain_contacts.iter().find(|c|c.shot==projectile.sequence) {
                         // Original explodeProjectile terminates its own mover.
                         // A subsequent stopTracer would hide/cancel ground FX.
-                        c.queue_private(&mut next.outbox,super::terrain_wire::explode_material_for_limit(projectile.vehicle_kind,projectile.sequence,
-                            contact.hit.point,contact.direction,contact.hit.effect_material_index(),next_world.shot_limit())?,&targets)?;
+                        let effect=if let Some(shell)=projectile.shell{super::terrain_wire::explode_material_shell_for_limit(shell,projectile.sequence,
+                            contact.hit.point,contact.direction,contact.hit.effect_material_index(),next_world.shot_limit())?}
+                            else{super::terrain_wire::explode_material_for_limit(projectile.vehicle_kind,projectile.sequence,
+                            contact.hit.point,contact.direction,contact.hit.effect_material_index(),next_world.shot_limit())?};
+                        c.queue_private(&mut next.outbox,effect,&targets)?;
                     } else {
                         c.queue_private(&mut next.outbox,wire::tracer_stop(projectile)?,&targets)?;
                     }
@@ -1513,6 +1546,12 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 let observed_shot = c.tracer_started.get(shot_index).copied().ok_or_else(|| model::bad())?;
                 let mut body = Vec::new();
                 if visible && observed_shot {
+                    let projectile=next_world.projectiles.iter().find(|projectile|projectile.sequence==event.shot).ok_or_else(||model::bad())?;
+                    let he=projectile.shell.filter(|shell|shell.family==crate::p06t_shells091::Family::HighExplosive);
+                    // A verified collision can stop HE on a non-ordinary surface
+                    // without authorizing fabricated penetration or hull damage.
+                    if let Some(shell)=he{body.extend(crate::armament_wire091::explosion(wire::vehicle_id(event.target)?,
+                        wire::vehicle_id(event.attacker)?,projectile.terminal,shell)?);}
                     if let Some(segment) = &event.segment {
                         let outcome = match &event.outcome {
                             // Explicit laboratory policy: a wreck blocks the shell.
@@ -1525,16 +1564,24 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                                 ap::Outcome::Pierced => impact_wire::ShotOutcome::Pierced,
                                 ap::Outcome::Unsupported(_) => return Err(model::bad()),
                             },
+                            model::ImpactOutcome::Mixed(resolution)=>match resolution.decision{
+                                crate::p06t_damage::Decision::Ricochet=>impact_wire::ShotOutcome::Ricochet,
+                                crate::p06t_damage::Decision::NotPierced=>impact_wire::ShotOutcome::NotPierced,
+                                crate::p06t_damage::Decision::Pierced=>impact_wire::ShotOutcome::Pierced,
+                                _=>return Err(model::bad()),
+                            },
                         };
                         let component = match segment.component {
                             super::materials::Component::Hull => 1,
                             super::materials::Component::Turret01 => 2,
                             super::materials::Component::Gun02 | super::materials::Component::Gun01 => 3,
                         };
-                        body.extend(impact_wire::show_damage_for(next_world.actors[event.attacker].vehicle_kind(),event.attacker,event.target,component,
-                            segment.bounds,segment.start,segment.end,outcome)?);
+                        if let Some(shell)=projectile.shell{
+                            if he.is_none(){body.extend(impact_wire::show_damage_shell(shell,event.attacker,event.target,component,segment.bounds,segment.start,segment.end,outcome)?);}
+                        }else{body.extend(impact_wire::show_damage_for(next_world.actors[event.attacker].vehicle_kind(),event.attacker,event.target,component,
+                            segment.bounds,segment.start,segment.end,outcome)?);}
                     }
-                    if event.health_after < event.health_before
+                    if !next_world.mixed_ammo()&&event.health_after < event.health_before
                         && c.health_sent[event.target].is_none_or(|hp| hp > event.health_after) {
                         body.extend(impact_wire::health_changed_for(next_world.actors[event.target].vehicle_kind(),event.target,event.health_after,event.attacker)?);
                         c.health_sent[event.target] = Some(event.health_after);
@@ -1555,7 +1602,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 // Arena kill/alive metadata is public. A hidden attacker must
                 // still produce the original kill event without private HP,
                 // shot geometry, entity creation or shooter coordinates.
-                if c.spotting_enabled && event.health_before>0 && event.health_after==0 && next_world.lifecycle.is_some() {
+                if !next_world.mixed_ammo()&&c.spotting_enabled && event.health_before>0 && event.health_after==0 && next_world.lifecycle.is_some() {
                     let mut public=wire::roster_updates(&next_world,event.target)?;
                     public.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
                     next.outbox.push_back(public);
@@ -1565,7 +1612,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
             }
             // Late creation/reconnect gets current HP, never old effects or
             // an intermediate health value that would resurrect the actor.
-            for target in 0..next_world.actors.len() {
+            if next_world.mixed_ammo(){p06t_publication::publish(c,&mut next.outbox,&next_world,now)?;}else{for target in 0..next_world.actors.len() {
                 if !c.visible()[target] { continue; }
                 let hp = next_world.actors[target].health;
                 let mut body = Vec::new();
@@ -1582,7 +1629,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     body.extend(impact_wire::owner_health_for(next_world.actors[target].vehicle_kind(),hp)?); c.owner_health_sent = Some(hp);
                 }
                 if !body.is_empty() { c.queue_private(&mut next.outbox,body,&[target])?; }
-            }
+            }}
         }
         if let Some(state) = &next_world.lifecycle {
             let view = state.view();

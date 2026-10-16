@@ -63,6 +63,10 @@ if (type(_settings.get('enable_profile13_battle', False)) is not bool
                 'enable_cross_vehicle_crew', 'enable_roster_recruitment', 'enable_crew_progression',
                 'enable_crew_dismissal', 'enable_barracks_recruitment', 'enable_research_service'))))):
     raise ValueError('profile13 battle requires the full isolated native research/crew/ammunition hangar')
+if (type(_settings.get('enable_p06t_mixed_ammo', False)) is not bool
+        or (_settings.get('enable_p06t_mixed_ammo')
+            and _settings.get('enable_profile13_battle') is not True)):
+    raise ValueError('P06T mixed ammunition requires explicit profile13 battle mode')
 _runtime = owned(_settings['trace_dir'], _settings['local_root'])
 if not os.path.isdir(_runtime):
     raise ValueError('prepared local runtime directory missing')
@@ -1020,7 +1024,8 @@ def init(*args):
         if (_settings.get('enable_map_drive') is True
                 or _settings.get('enable_profile13_battle') is True):
             import map_drive_client
-            map_drive_client.init(record, profile13_battle=_settings.get('enable_profile13_battle') is True)
+            map_drive_client.init(record, profile13_battle=_settings.get('enable_profile13_battle') is True,
+                                  p06t_mixed_ammo=_settings.get('enable_p06t_mixed_ammo') is True)
             if _settings.get('enable_shared_lab') is True:
                 map_drive_client.prepare_shared_lab(record)
         from ConnectionManager import connectionManager

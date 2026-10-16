@@ -1,0 +1,452 @@
+{
+  "schema": "p06t-device-policy.v1",
+  "policy_revision": "test_lab.p06t.devices-proxy-fire.v1",
+  "proxy_policy_revision": "test_lab.p06t.aabb-proxy-nearest-two.v1",
+  "source_caps_sha256": "3c4219c2adda799677dea310e84765bbfebca6edfa06aa3db450a7ddfb4875b5",
+  "historical_internal_volumes": "UNKNOWN",
+  "runtime_geometry": "EXPLICIT_LAB_PROXY",
+  "crew_active_rule": "any primary source seat alive; combined duties do not create extra seats",
+  "device_order": [
+    "engine",
+    "ammoBay",
+    "fuelTank",
+    "radio",
+    "leftTrack",
+    "rightTrack",
+    "gun",
+    "turretRotator",
+    "surveyingDevice"
+  ],
+  "profiles": [
+    {
+      "kind": "ms1",
+      "vehicle_max_health": 90,
+      "devices": [
+        {
+          "extra_index": 26,
+          "max_health": 25,
+          "max_regen_health": 17
+        },
+        {
+          "extra_index": 27,
+          "max_health": 60,
+          "max_regen_health": 40
+        },
+        {
+          "extra_index": 28,
+          "max_health": 100,
+          "max_regen_health": 40
+        },
+        {
+          "extra_index": 29,
+          "max_health": 90,
+          "max_regen_health": 75
+        },
+        {
+          "extra_index": 30,
+          "max_health": 40,
+          "max_regen_health": 30
+        },
+        {
+          "extra_index": 31,
+          "max_health": 40,
+          "max_regen_health": 30
+        },
+        {
+          "extra_index": 32,
+          "max_health": 54,
+          "max_regen_health": 27
+        },
+        {
+          "extra_index": 33,
+          "max_health": 50,
+          "max_regen_health": 25
+        },
+        {
+          "extra_index": 34,
+          "max_health": 30,
+          "max_regen_health": 15
+        }
+      ],
+      "crew": [
+        {
+          "seat": 0,
+          "extra_index": 35,
+          "roles": [
+            "commander",
+            "gunner",
+            "radioman",
+            "loader"
+          ]
+        },
+        {
+          "seat": 1,
+          "extra_index": 36,
+          "roles": [
+            "driver"
+          ]
+        }
+      ],
+      "engine_fire_starting_chance": 0.2
+    },
+    {
+      "kind": "is7",
+      "vehicle_max_health": 2150,
+      "devices": [
+        {
+          "extra_index": 26,
+          "max_health": 360,
+          "max_regen_health": 180
+        },
+        {
+          "extra_index": 27,
+          "max_health": 210,
+          "max_regen_health": 140
+        },
+        {
+          "extra_index": 28,
+          "max_health": 200,
+          "max_regen_health": 80
+        },
+        {
+          "extra_index": 29,
+          "max_health": 250,
+          "max_regen_health": 75
+        },
+        {
+          "extra_index": 30,
+          "max_health": 250,
+          "max_regen_health": 190
+        },
+        {
+          "extra_index": 31,
+          "max_health": 250,
+          "max_regen_health": 190
+        },
+        {
+          "extra_index": 32,
+          "max_health": 210,
+          "max_regen_health": 105
+        },
+        {
+          "extra_index": 33,
+          "max_health": 170,
+          "max_regen_health": 85
+        },
+        {
+          "extra_index": 34,
+          "max_health": 120,
+          "max_regen_health": 60
+        }
+      ],
+      "crew": [
+        {
+          "seat": 0,
+          "extra_index": 35,
+          "roles": [
+            "commander"
+          ]
+        },
+        {
+          "seat": 1,
+          "extra_index": 39,
+          "roles": [
+            "gunner"
+          ]
+        },
+        {
+          "seat": 2,
+          "extra_index": 36,
+          "roles": [
+            "driver"
+          ]
+        },
+        {
+          "seat": 3,
+          "extra_index": 41,
+          "roles": [
+            "loader"
+          ]
+        },
+        {
+          "seat": 4,
+          "extra_index": 42,
+          "roles": [
+            "loader",
+            "radioman"
+          ]
+        }
+      ],
+      "engine_fire_starting_chance": 0.15
+    },
+    {
+      "kind": "t26",
+      "vehicle_max_health": 150,
+      "devices": [
+        {
+          "extra_index": 26,
+          "max_health": 40,
+          "max_regen_health": 20
+        },
+        {
+          "extra_index": 27,
+          "max_health": 75,
+          "max_regen_health": 50
+        },
+        {
+          "extra_index": 28,
+          "max_health": 100,
+          "max_regen_health": 40
+        },
+        {
+          "extra_index": 29,
+          "max_health": 100,
+          "max_regen_health": 49
+        },
+        {
+          "extra_index": 30,
+          "max_health": 50,
+          "max_regen_health": 40
+        },
+        {
+          "extra_index": 31,
+          "max_health": 50,
+          "max_regen_health": 40
+        },
+        {
+          "extra_index": 32,
+          "max_health": 54,
+          "max_regen_health": 27
+        },
+        {
+          "extra_index": 33,
+          "max_health": 60,
+          "max_regen_health": 30
+        },
+        {
+          "extra_index": 34,
+          "max_health": 40,
+          "max_regen_health": 20
+        }
+      ],
+      "crew": [
+        {
+          "seat": 0,
+          "extra_index": 35,
+          "roles": [
+            "commander",
+            "radioman"
+          ]
+        },
+        {
+          "seat": 1,
+          "extra_index": 36,
+          "roles": [
+            "driver"
+          ]
+        },
+        {
+          "seat": 2,
+          "extra_index": 39,
+          "roles": [
+            "gunner",
+            "loader"
+          ]
+        }
+      ],
+      "engine_fire_starting_chance": 0.2
+    },
+    {
+      "kind": "t34",
+      "vehicle_max_health": 400,
+      "devices": [
+        {
+          "extra_index": 26,
+          "max_health": 105,
+          "max_regen_health": 52
+        },
+        {
+          "extra_index": 27,
+          "max_health": 130,
+          "max_regen_health": 85
+        },
+        {
+          "extra_index": 28,
+          "max_health": 150,
+          "max_regen_health": 60
+        },
+        {
+          "extra_index": 29,
+          "max_health": 110,
+          "max_regen_health": 55
+        },
+        {
+          "extra_index": 30,
+          "max_health": 90,
+          "max_regen_health": 70
+        },
+        {
+          "extra_index": 31,
+          "max_health": 90,
+          "max_regen_health": 70
+        },
+        {
+          "extra_index": 32,
+          "max_health": 106,
+          "max_regen_health": 53
+        },
+        {
+          "extra_index": 33,
+          "max_health": 100,
+          "max_regen_health": 50
+        },
+        {
+          "extra_index": 34,
+          "max_health": 70,
+          "max_regen_health": 35
+        }
+      ],
+      "crew": [
+        {
+          "seat": 0,
+          "extra_index": 35,
+          "roles": [
+            "commander",
+            "gunner"
+          ]
+        },
+        {
+          "seat": 1,
+          "extra_index": 37,
+          "roles": [
+            "radioman"
+          ]
+        },
+        {
+          "seat": 2,
+          "extra_index": 36,
+          "roles": [
+            "driver"
+          ]
+        },
+        {
+          "seat": 3,
+          "extra_index": 41,
+          "roles": [
+            "loader"
+          ]
+        }
+      ],
+      "engine_fire_starting_chance": 0.15
+    },
+    {
+      "kind": "t3485",
+      "vehicle_max_health": 670,
+      "devices": [
+        {
+          "extra_index": 26,
+          "max_health": 145,
+          "max_regen_health": 72
+        },
+        {
+          "extra_index": 27,
+          "max_health": 140,
+          "max_regen_health": 90
+        },
+        {
+          "extra_index": 28,
+          "max_health": 150,
+          "max_regen_health": 60
+        },
+        {
+          "extra_index": 29,
+          "max_health": 110,
+          "max_regen_health": 55
+        },
+        {
+          "extra_index": 30,
+          "max_health": 110,
+          "max_regen_health": 85
+        },
+        {
+          "extra_index": 31,
+          "max_health": 110,
+          "max_regen_health": 85
+        },
+        {
+          "extra_index": 32,
+          "max_health": 130,
+          "max_regen_health": 65
+        },
+        {
+          "extra_index": 33,
+          "max_health": 120,
+          "max_regen_health": 60
+        },
+        {
+          "extra_index": 34,
+          "max_health": 80,
+          "max_regen_health": 40
+        }
+      ],
+      "crew": [
+        {
+          "seat": 0,
+          "extra_index": 35,
+          "roles": [
+            "commander"
+          ]
+        },
+        {
+          "seat": 1,
+          "extra_index": 39,
+          "roles": [
+            "gunner"
+          ]
+        },
+        {
+          "seat": 2,
+          "extra_index": 37,
+          "roles": [
+            "radioman"
+          ]
+        },
+        {
+          "seat": 3,
+          "extra_index": 36,
+          "roles": [
+            "driver"
+          ]
+        },
+        {
+          "seat": 4,
+          "extra_index": 41,
+          "roles": [
+            "loader"
+          ]
+        }
+      ],
+      "engine_fire_starting_chance": 0.15
+    }
+  ],
+  "laboratory_rules": {
+    "critical": "0<hp<=max_health/2",
+    "wounded_seat": "one verified proxy device-damage hit wounds one whole primary seat and all combined duties",
+    "engine_ignition": "source device_damage>=21 and explicit caller_roll<source fireStartingChance; condition LAB",
+    "fuel_ignition": "fuelTank health reaches0; LAB",
+    "fire_interval_ms": 1000,
+    "max_ticks_per_ignition": 10,
+    "fire_vehicle_damage_per_tick": "ceil(source_vehicle_max_health/20), clamped to caller current HP",
+    "fire_device_burn_per_tick": "ceil(source engine/fuel max_health/20)",
+    "fire_first_cause": "preserved; repeated ignition does not extend clock",
+    "terminal": "no subsequent damage proposals or device/crew events"
+  },
+  "death_mapping_proposal": {
+    "hp_zero_by_shot": "shot",
+    "hp_zero_by_fire": "fire",
+    "no_primary_seat_alive_after_shot": "crew_inactive_shot; HP may remain positive",
+    "already_terminal": "unchanged; no new death",
+    "ammo_bay_zero": "device destroyed only; no invented ammo explosion/HP-1/turret detach"
+  },
+  "native_ui": "NOT_RUN"
+}

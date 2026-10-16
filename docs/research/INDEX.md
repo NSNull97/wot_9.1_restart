@@ -14,6 +14,7 @@
 - [P07B_NATIVE_INTEREST.md](P07B_NATIVE_INTEREST.md) — original AoI enter/leave и source stock vision ranges
 - [P07B_SERVER_VISIBILITY.md](P07B_SERVER_VISIBILITY.md) — recipient LOS/epochs/packet filtering, full975PASS, native NOT_RUN
 - [P04M_FIVE_PROFILES.md](P04M_FIVE_PROFILES.md) — пять source-bound боевых профилей, actual Jolt/World/ACK, версия SQLite/crew/ammo, native NOT_RUN
+- [P06T_RUNTIME_CANDIDATE.md](P06T_RUNTIME_CANDIDATE.md) — mixed-shell/единый HP ledger, source geometry и явные LAB module/fire policies; автоматические gates отдельно от native NOT_RUN
 
 - [BATTLE_LOADOUT_REVISION_GATE.md](BATTLE_LOADOUT_REVISION_GATE.md) — Исследование: battle-loadout revision adapter
 - [CAPACITY_1000_CCU.md](CAPACITY_1000_CCU.md) — Инфраструктура для 1000 одновременных игроков: расчётная модель

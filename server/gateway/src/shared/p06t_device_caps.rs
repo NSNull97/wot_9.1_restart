@@ -1,0 +1,31 @@
+//! Generated numeric source caps after fresh original-file checks. No historical damage algorithm.
+pub const SOURCE_SHA256:&str="3c4219c2adda799677dea310e84765bbfebca6edfa06aa3db450a7ddfb4875b5";
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[repr(usize)]
+pub enum Profile {Ms1,Is7,T26,T34,T3485}
+impl Profile {pub const ALL:[Self;5]=[Self::Ms1,Self::Is7,Self::T26,Self::T34,Self::T3485];pub fn index(self)->usize{self as usize}}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[repr(usize)]
+pub enum Device {Engine,AmmoBay,FuelTank,Radio,LeftTrack,RightTrack,Gun,TurretRotator,SurveyingDevice}
+impl Device {pub const ALL:[Self;9]=[Self::Engine,Self::AmmoBay,Self::FuelTank,Self::Radio,Self::LeftTrack,Self::RightTrack,Self::Gun,Self::TurretRotator,Self::SurveyingDevice];pub fn extra(self)->u8{26+self as u8}}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct Cap {pub max:u16,pub regen:u16}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct Seat {pub extra:u8,pub roles:u8,pub primary_driver:bool,pub primary_radioman:bool}
+pub const MAX_HP:[u16;5]=[90,2150,150,400,670];
+pub const ENGINE_FIRE_CHANCE:[f64;5]=[0.2,0.15,0.2,0.15,0.15];
+pub const MIN_FIRE_STARTING_DAMAGE:u16=21;
+pub const CAPS:[[Cap;9];5]=[
+[Cap{max:25,regen:17},Cap{max:60,regen:40},Cap{max:100,regen:40},Cap{max:90,regen:75},Cap{max:40,regen:30},Cap{max:40,regen:30},Cap{max:54,regen:27},Cap{max:50,regen:25},Cap{max:30,regen:15}],
+[Cap{max:360,regen:180},Cap{max:210,regen:140},Cap{max:200,regen:80},Cap{max:250,regen:75},Cap{max:250,regen:190},Cap{max:250,regen:190},Cap{max:210,regen:105},Cap{max:170,regen:85},Cap{max:120,regen:60}],
+[Cap{max:40,regen:20},Cap{max:75,regen:50},Cap{max:100,regen:40},Cap{max:100,regen:49},Cap{max:50,regen:40},Cap{max:50,regen:40},Cap{max:54,regen:27},Cap{max:60,regen:30},Cap{max:40,regen:20}],
+[Cap{max:105,regen:52},Cap{max:130,regen:85},Cap{max:150,regen:60},Cap{max:110,regen:55},Cap{max:90,regen:70},Cap{max:90,regen:70},Cap{max:106,regen:53},Cap{max:100,regen:50},Cap{max:70,regen:35}],
+[Cap{max:145,regen:72},Cap{max:140,regen:90},Cap{max:150,regen:60},Cap{max:110,regen:55},Cap{max:110,regen:85},Cap{max:110,regen:85},Cap{max:130,regen:65},Cap{max:120,regen:60},Cap{max:80,regen:40}],
+];
+pub const CREW:[&[Seat];5]=[
+&[Seat{extra:35,roles:27,primary_driver:false,primary_radioman:false},Seat{extra:36,roles:4,primary_driver:true,primary_radioman:false}],
+&[Seat{extra:35,roles:1,primary_driver:false,primary_radioman:false},Seat{extra:39,roles:2,primary_driver:false,primary_radioman:false},Seat{extra:36,roles:4,primary_driver:true,primary_radioman:false},Seat{extra:41,roles:8,primary_driver:false,primary_radioman:false},Seat{extra:42,roles:24,primary_driver:false,primary_radioman:false}],
+&[Seat{extra:35,roles:17,primary_driver:false,primary_radioman:false},Seat{extra:36,roles:4,primary_driver:true,primary_radioman:false},Seat{extra:39,roles:10,primary_driver:false,primary_radioman:false}],
+&[Seat{extra:35,roles:3,primary_driver:false,primary_radioman:false},Seat{extra:37,roles:16,primary_driver:false,primary_radioman:true},Seat{extra:36,roles:4,primary_driver:true,primary_radioman:false},Seat{extra:41,roles:8,primary_driver:false,primary_radioman:false}],
+&[Seat{extra:35,roles:1,primary_driver:false,primary_radioman:false},Seat{extra:39,roles:2,primary_driver:false,primary_radioman:false},Seat{extra:37,roles:16,primary_driver:false,primary_radioman:true},Seat{extra:36,roles:4,primary_driver:true,primary_radioman:false},Seat{extra:41,roles:8,primary_driver:false,primary_radioman:false}],
+];

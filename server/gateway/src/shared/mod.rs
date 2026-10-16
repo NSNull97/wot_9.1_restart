@@ -86,6 +86,12 @@ pub(super) struct Client {
     hangar_since: Option<Instant>,
     shot_cursor: u32,
     impact_cursor: usize,
+    damage_cursor:usize,
+    device_cursor:usize,
+    crew_sent:[Option<bool>;model::MAX_ACTORS],
+    fire_sent:[Option<bool>;model::MAX_ACTORS],
+    armament_sent:Option<([u16;3],u16,u16,u8,Option<Instant>,u32)>,
+    devices_snapshot_sent:bool,
     health_sent: [Option<i16>; model::MAX_ACTORS],
     owner_health_sent: Option<i16>,
     tracer_started: [bool; model::MAX_BATTLE_SHOTS],
@@ -109,7 +115,7 @@ impl Client {
             creation_announcements: [None; model::MAX_ACTORS], spotting_enabled: false, interest: None,
             private_pending: VecDeque::new(), last_pose_tick: None,
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
-            hangar_since: None, shot_cursor: 0, impact_cursor: 0, health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
+            hangar_since: None, shot_cursor: 0, impact_cursor: 0, damage_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:[None;model::MAX_ACTORS],armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
             tracer_stopped: [false; model::MAX_BATTLE_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
@@ -135,7 +141,7 @@ impl Client {
     }
     pub(super) fn profile13_account(&self) -> bool {self.phase==Phase::Account && self.profile13.is_some()}
     pub(super) fn profile13_arena_ready(&self) -> bool {
-        self.profile13.as_ref().is_some_and(|s| s.reservation.is_some() && !s.in_flight && s.pending_return.is_none())
+        self.profile13.as_ref().is_some_and(|s| s.has_reservation() && !s.in_flight && !s.has_pending_return())
     }
     pub(super) fn acknowledge(&mut self, cumulative: u32, frame: &Frame) -> io::Result<()> {
         let cleared = match &mut self.interest {
@@ -179,6 +185,7 @@ impl Client {
     }
     fn clear_creation(&mut self, slot:usize) {
         self.creations[slot]=None;self.creation_announcements[slot]=None;self.health_sent[slot]=None;self.ready_sent[slot]=false;
+        self.crew_sent[slot]=None;self.fire_sent[slot]=None;
         self.pending_entity_requests.retain(|pending|*pending!=slot);
         let pending=std::mem::take(&mut self.private_pending);
         for p in pending {
@@ -188,10 +195,12 @@ impl Client {
     }
     fn invalidate_private(&mut self, pending:&PrivatePending) {
         // A discarded compound can carry HP for a still-visible victim while
-        // its attacker vanished. Ensure current-state catch-up is not skipped.
+        // its attacker vanished. Rebuild HP, crew/fire and owner device state;
+        // a quick LOS flap may preserve the same native announcement epoch.
         for &(slot,_) in &pending.targets {
             self.health_sent[slot]=None;
-            if slot==self.slot {self.owner_health_sent=None;}
+            self.crew_sent[slot]=None;self.fire_sent[slot]=None;
+            if slot==self.slot {self.owner_health_sent=None;self.devices_snapshot_sent=false;}
         }
     }
     fn request_allowed(&self, slot:usize)->bool {
@@ -315,6 +324,7 @@ impl Session {
         c.queue_announced = false;
         c.shot_cursor = world.latest_shot();
         c.impact_cursor = world.impacts.len();
+        c.damage_cursor=world.damage_events.len();c.device_cursor=world.device_events.len();
         c.tracer_started = [false; model::MAX_BATTLE_SHOTS];
         c.tracer_stopped = [false; model::MAX_BATTLE_SHOTS];
         *self = next;
@@ -629,6 +639,7 @@ impl Session {
                 // Loading/reconnecting a scene is not a replay of prior gun effects.
                 c.shot_cursor = world.latest_shot();
                 c.impact_cursor = world.impacts.len();
+                c.damage_cursor=world.damage_events.len();c.device_cursor=world.device_events.len();
                 c.tracer_started = [false; model::MAX_BATTLE_SHOTS];
                 c.tracer_stopped = [false; model::MAX_BATTLE_SHOTS];
                 for slot in 0..world.actors.len() { c.ready_sent[slot] = slot == c.slot || world.actors[slot].ready; }
@@ -690,13 +701,21 @@ impl Session {
                     }
                 }
             } else if id == 0x0d {
-                if world.actors.get(c.slot).is_none_or(|actor| actor.health != 0)
+                if world.actors.get(c.slot).is_none_or(|actor| actor.alive())
                     || !c.correction || !c.binding.is_some_and(|(_,ack)| ack) { return Err(bad()); }
                 wire::postmortem_rebind(raw,c.slot)?;
                 events.push(format!("SHARED_POSTMORTEM_REBIND session={} slot={} target={} authority_changed=false",self.id,c.slot,wire::vehicle_id(c.slot)?));
             } else if let Some(commands) = fire::parse(raw)? {
                 if !c.correction { return Err(bad()); }
                 c.commands.extend(commands.into_iter().map(Command::Fire));
+            } else if let Some(intent)=if world.mixed_ammo(){crate::armament_wire091::command(raw)?}else{None}{
+                if !c.correction{return Err(bad());}
+                use crate::{armament_wire091::{Intent,Setting},p06t_armament091 as armed};
+                let command=match intent{
+                    Intent::Select(setting,compact)=>armed::Command::Select(match setting{Setting::Current=>armed::Selection::Current,Setting::Next=>armed::Selection::Next},compact),
+                    Intent::ReloadPartialClip=>armed::Command::ReloadClip,
+                };
+                c.commands.push(Command::Armament(command));
             } else if let Some(intent) = wire::aim_intent(raw, c.slot)? {
                 // The native initializer can emit its first target before
                 // ACK6 in the same envelope. It is only an intent: simulation

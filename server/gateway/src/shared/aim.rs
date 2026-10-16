@@ -83,6 +83,30 @@ impl State {
         self.pitch += (target - self.pitch).clamp(-spec.pitch_rate * dt, spec.pitch_rate * dt);
         Ok(())
     }
+    /// New mixed-shell path. The currently selected source shell determines
+    /// the arc; the caller freezes that same shell if a shot is later admitted.
+    /// Module/crew rate factors are explicit LAB policy, not historical server
+    /// mechanics. Legacy wrappers retain their original values and arithmetic.
+    pub fn advance_pose_for_selected(&mut self, kind: VehicleKind, position: [f32;3], direction: [f32;3], dt: f32,
+        shell: crate::p06t_shells091::Shell, caps: crate::p06t_device_state::Capabilities) -> io::Result<()> {
+        if !crate::p06t_shells091::PROFILES[kind.mount().index()].shots.contains(&shell)
+            || !dt.is_finite() || !(0. ..=0.2).contains(&dt)
+            || position.iter().chain(direction.iter()).any(|v|!v.is_finite())
+            || !self.yaw.is_finite() || !self.pitch.is_finite() {return Err(bad());}
+        caps.validate()?;self.intent.validate()?;
+        let spec=kind.aim();
+        let (yaw,pitch)=match self.intent {
+            Intent::Point(point)=>target_angles_pose_with_ballistics(kind,position,direction,point,self.yaw,self.pitch,
+                shell.raw_speed_mps,shell.raw_gravity_mps2),
+            Intent::Hold {yaw,pitch}=>(yaw,pitch),
+        };
+        let yaw_step=spec.yaw_rate*caps.turret_scale*caps.aim_speed_scale*dt;
+        let pitch_step=spec.pitch_rate*caps.aim_speed_scale*dt;
+        if caps.turret_scale>0. && caps.aim_speed_scale>0. {self.yaw=wrap(self.yaw+wrap(yaw-self.yaw).clamp(-yaw_step,yaw_step));}
+        let target=pitch.clamp(spec.min_pitch,pitch_max_for(kind,self.yaw));
+        if caps.aim_speed_scale>0. {self.pitch+=(target-self.pitch).clamp(-pitch_step,pitch_step);}
+        Ok(())
+    }
 }
 pub fn wrap(angle: f32) -> f32 { (angle + PI).rem_euclid(2. * PI) - PI }
 
@@ -110,9 +134,13 @@ fn target_angles_pose(position: [f32; 3], direction: [f32; 3], point: [f32; 3], 
     target_angles_pose_for(VehicleKind::Ms1,position,direction,point,old_yaw,old_pitch)
 }
 fn target_angles_pose_for(kind: VehicleKind, position: [f32; 3], direction: [f32; 3], point: [f32; 3], old_yaw: f32, old_pitch: f32) -> (f32, f32) {
+    target_angles_pose_with_ballistics(kind,position,direction,point,old_yaw,old_pitch,kind.shell().raw_speed as f64,9.81)
+}
+fn target_angles_pose_with_ballistics(kind: VehicleKind, position: [f32; 3], direction: [f32; 3], point: [f32; 3], old_yaw: f32, old_pitch: f32,
+    raw_speed: f64, raw_gravity: f64) -> (f32, f32) {
     let spec=kind.aim(); let pivot=spec.pivot; let gun=spec.gun;
     if direction[1] == 0. && direction[2] == 0. {
-        return target_angles_for(kind,position, direction[0], point, old_yaw, old_pitch);
+        return target_angles_with_ballistics(kind,position, direction[0], point, old_yaw, old_pitch,raw_speed,raw_gravity);
     }
     let relative = std::array::from_fn(|i| point[i] - position[i]);
     let local = pose::inverse_rotate(relative, direction);
@@ -129,7 +157,7 @@ fn target_angles_pose_for(kind: VehicleKind, position: [f32; 3], direction: [f32
         let d: [f64; 3] = std::array::from_fn(|i| relative[i] as f64 - offset[i] as f64);
         let horizontal = d[0].hypot(d[2]);
         if horizontal <= 0.001 { return (old_yaw, old_pitch); }
-        let v2 = (kind.shell().raw_speed as f64).powi(2); let g = 9.81;
+        let v2 = raw_speed.powi(2); let g = raw_gravity;
         let disc = v2 * v2 - g * (g * horizontal * horizontal + 2. * d[1] * v2);
         if !disc.is_finite() || disc < 0. { return (old_yaw, old_pitch); }
         let elevation = ((g * horizontal * horizontal + 2. * d[1] * v2)
@@ -153,6 +181,10 @@ fn target_angles(position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, o
     target_angles_for(VehicleKind::Ms1,position,hull,point,old_yaw,old_pitch)
 }
 fn target_angles_for(kind: VehicleKind, position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, old_pitch: f32) -> (f32, f32) {
+    target_angles_with_ballistics(kind,position,hull,point,old_yaw,old_pitch,kind.shell().raw_speed as f64,9.81)
+}
+fn target_angles_with_ballistics(kind: VehicleKind, position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, old_pitch: f32,
+    raw_speed: f64, raw_gravity: f64) -> (f32, f32) {
     let spec=kind.aim(); let pivot=spec.pivot; let gun=spec.gun;
     let dx = (point[0] - position[0]) as f64; let dz = (point[2] - position[2]) as f64;
     let (s,c) = (hull as f64).sin_cos();
@@ -164,7 +196,7 @@ fn target_angles_for(kind: VehicleKind, position: [f32; 3], hull: f32, point: [f
     let yaw = x.atan2(z) - (gun[0] as f64 / radial).asin();
     let distance = (radial * radial - (gun[0] as f64).powi(2)).sqrt() - gun[2] as f64;
     if distance <= 0.001 { return (old_yaw, old_pitch); }
-    let v2 = (kind.shell().raw_speed as f64).powi(2); let g = 9.81;
+    let v2 = raw_speed.powi(2); let g = raw_gravity;
     let disc = v2 * v2 - g * (g * distance * distance + 2. * y * v2);
     // For unreachable camera points use the geometric direction, not NaN.
     let elevation = if disc >= 0. {
@@ -172,6 +204,10 @@ fn target_angles_for(kind: VehicleKind, position: [f32; 3], hull: f32, point: [f
     } else { y.atan2(distance) };
     (wrap(yaw as f32), -elevation as f32)
 }
+
+#[cfg(test)]
+#[path="p06t_aim_tests.rs"]
+mod p06t_tests;
 
 #[cfg(test)]
 mod tests {

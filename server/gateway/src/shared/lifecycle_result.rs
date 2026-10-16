@@ -3,6 +3,7 @@ use std::io;
 use super::{model::{self,World,ImpactOutcome},ap,lifecycle_wire::{Results,Participant},wire};
 
 pub(super) fn build(world:&World)->io::Result<Results> {
+    if world.mixed_ammo(){return p06t::build(world);}
     let state=world.lifecycle.as_ref().ok_or_else(||model::bad())?;
     let outcome=state.outcome().ok_or_else(||model::bad())?;
     let duration_seconds=u32::try_from(state.elapsed_battle_ms()/1_000).map_err(|_|model::bad())?;
@@ -34,6 +35,8 @@ pub(super) fn build(world:&World)->io::Result<Results> {
         finish_reason:wire::finish_reason(outcome.reason),duration_seconds,participants};
     result.validate()?;Ok(result)
 }
+#[path="p06t_lifecycle_result.rs"]
+mod p06t;
 
 #[cfg(test)]
 mod tests {

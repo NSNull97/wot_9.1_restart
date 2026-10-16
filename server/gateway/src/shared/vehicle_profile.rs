@@ -29,6 +29,8 @@ pub struct AimSpec {
 impl VehicleKind {
     pub const ALL:[Self;5]=[Self::Ms1,Self::Is7,Self::T26,Self::T34,Self::T3485];
     pub fn index(self)->usize {match self {Self::Ms1=>0,Self::Is7=>1,Self::T26=>2,Self::T34=>3,Self::T3485=>4}}
+    pub fn mount(self)->crate::p06t_shells091::Mount {use crate::p06t_shells091::Mount;
+        match self{Self::Ms1=>Mount::Ms1Stock,Self::Is7=>Mount::Is7Stock,Self::T26=>Mount::T26Stock,Self::T34=>Mount::T34Stock,Self::T3485=>Mount::T3485Stock}}
     pub fn from_label(value:&str)->Option<Self> {Self::ALL.into_iter().find(|kind|kind.label()==value)}
     pub fn from_vehicle_compact_id(value:u32)->Option<Self> {Self::ALL.into_iter().find(|kind|kind.vehicle_compact_id()==value)}
     /// Source/component readiness never grants owner/native admission.

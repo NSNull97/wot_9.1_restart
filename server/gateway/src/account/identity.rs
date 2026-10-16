@@ -145,16 +145,53 @@ fn verify_battle_projection(profile:&Profile,revision:u64)->io::Result<()> {
     battle_projection_bytes(&raw,profile,revision,&format!("{:x}",Sha256::digest(&state)))
 }
 
+fn mixed_projection_bytes(raw:&[u8],profile:&Profile,revision:u64,state_sha256:&str)->io::Result<()> {
+    let value=crate::profile13_v2091::bounded_json(raw,65536)?;
+    let keys=["version","schema","policy_sha256","shell_catalog_sha256","account_id","native_database_id","revision","state_sha256","max_stacks","capabilities"];
+    if value.as_object().is_none_or(|m|m.len()!=keys.len()||keys.iter().any(|k|!m.contains_key(*k)))
+        ||value["version"].as_u64()!=Some(2)||value["schema"]!="p06t-owned-mixed-ammunition.v2"
+        ||value["policy_sha256"]!=crate::profile13_v2091::POLICY_SHA256||value["shell_catalog_sha256"]!=crate::p06t_shells091::SOURCE_DATA_SHA256
+        ||value["account_id"]!=profile.account_id||value["native_database_id"].as_i64()!=Some(profile.database_id as i64)
+        ||value["revision"].as_u64()!=Some(revision)||value["state_sha256"]!=state_sha256||value["max_stacks"].as_u64()!=Some(3){
+        return Err(invalid("P06T projection policy/identity/revision/state"));
+    }
+    let rows=value["capabilities"].as_array().ok_or_else(||invalid("P06T capabilities"))?;
+    if !(2..=256).contains(&rows.len()){return Err(invalid("P06T capability count"));}let mut previous=0;
+    for row in rows{
+        if row.as_object().is_none_or(|m|m.len()!=4||["native_inventory_id","kind","admission","code"].iter().any(|k|!m.contains_key(*k))){return Err(invalid("P06T capability fields"));}
+        let native=row["native_inventory_id"].as_u64().ok_or_else(||invalid("P06T inventory type"))?;
+        if native<=previous||native>i32::MAX as u64{return Err(invalid("P06T inventory order/bound"));}previous=native;
+        let kind=row["kind"].as_str();let admitted=row["admission"].as_bool().ok_or_else(||invalid("P06T admission boolean"))?;
+        if (native==1&&kind!=Some("ms1"))||(native==2&&kind!=Some("is7"))
+            ||(native>2&&!row["kind"].is_null()&&!matches!(kind,Some("t26"|"t34"|"t3485"))){return Err(invalid("P06T source kind"));}
+        if admitted{
+            if native>2||!row["code"].is_null(){return Err(invalid("P06T unaccepted machine admitted"));}
+        }else{
+            let code=row["code"].as_str().ok_or_else(||invalid("P06T denial code"))?;
+            if !["VEHICLE_RESERVED","BATTLE_PROFILE_UNSUPPORTED","OWNER_ACCEPTANCE_REQUIRED","INCOMPLETE_CREW","AMMUNITION_EMPTY","AMMUNITION_UNSUPPORTED"].contains(&code){return Err(invalid("P06T closed denial"));}
+        }
+    }
+    if rows[0]["native_inventory_id"]!=1||rows[1]["native_inventory_id"]!=2{return Err(invalid("P06T base vehicles missing"));}Ok(())
+}
+fn verify_mixed_projection(profile:&Profile,revision:u64)->io::Result<()> {
+    use sha2::{Digest,Sha256};
+    let root=profile.fixture_dir.canonicalize()?;
+    let file=|name:&str,maximum:u64|->io::Result<Vec<u8>>{let path=root.join(name).canonicalize()?;
+        if !path.starts_with(&root){return Err(invalid("P06T projection escapes fixture"));}bounded_file(&path,maximum)};
+    let state=file("state.bin",crate::research_service091::MAX_STATE_BYTES as u64)?;
+    mixed_projection_bytes(&file("p06t-ammunition.json",65536)?,profile,revision,&format!("{:x}",Sha256::digest(&state)))
+}
+
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
     pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
-    pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,pub p04m_pool:bool,
+    pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,pub p04m_pool:bool,pub p06t_mixed_ammo:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
         let bytes=bounded_file(Path::new(path),4096)?;
-        let Bounded::<21>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        let Bounded::<22>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
         let ammo_service=match value.remove("ammunition_service") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
         };
@@ -192,6 +229,10 @@ impl Config {
             None=>false,Some(Value::Bool(v))=>v,_=>return Err(invalid("p04m_pool must be explicit boolean")),
         };
         if p04m_pool&&!profile13_battle{return Err(invalid("P04M pool requires the complete profile13 writer"));}
+        let p06t_mixed_ammo=match value.remove("p06t_mixed_ammo"){
+            None=>false,Some(Value::Bool(v))=>v,_=>return Err(invalid("p06t_mixed_ammo must be explicit boolean")),
+        };
+        if p06t_mixed_ammo&&!p04m_pool{return Err(invalid("P06T mixed ammunition requires the complete P04M profile13 writer"));}
         let visibility_v1=match value.remove("visibility_v1") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("visibility_v1 must be explicit boolean")),
         };
@@ -222,7 +263,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo})
     }
     fn authentication_timeout(&self)->Duration {
         // A configured curated owner publishes its source-bound projection
@@ -268,6 +309,16 @@ impl Config {
         crate::battle091::profile13::parse_reply(&bytes,context,request)
     }
 
+    pub fn service_battle_v2(&self,owner:&Profile,context:&crate::battle091::profile13::Context,
+        request:&crate::profile13_v2091::Request)->io::Result<crate::profile13_v2091::Reply>{
+        if !self.p06t_mixed_ammo||!self.p04m_pool||!self.profile13_battle||context.account_id!=owner.account_id
+            ||context.native_database_id!=owner.database_id||context.run_id!=self.battle_run_id{return Err(invalid("P06T authenticated owner/run/opt-in"));}
+        let body=crate::profile13_v2091::encode_request(context,request)?;
+        let(status,bytes)=self.post_with_budget("/internal/native/battle",&body,Duration::from_secs(20),65536,8192+4100)?;
+        if status!=200{return Err(invalid("P06T writer unavailable; immutable outcome retained"));}
+        crate::profile13_v2091::parse_reply(&bytes,context,request)
+    }
+
     /// Called only by the credential worker after this gateway owns its ports.
     /// A new run atomically aborts unfinished old transactions; an old fenced
     /// run can never publish a late admission/result into the new process.
@@ -277,8 +328,14 @@ impl Config {
         let context=crate::battle091::profile13::Context {account_id:owner.account_id.clone(),
             native_database_id:owner.database_id,command_key:format!("open:{}:{}:{}",self.battle_run_id,owner.database_id,binding.revision),
             expected_revision:binding.revision,run_id:self.battle_run_id.clone()};
-        let reply=self.battle(owner,&context,&crate::battle091::profile13::Request::RunOpen)?;
-        if reply.status!=crate::battle091::profile13::ReplyStatus::Ready {return Err(invalid("battle run was not opened"));}
+        if self.p06t_mixed_ammo{
+            verify_mixed_projection(owner,binding.revision)?;
+            let reply=self.service_battle_v2(owner,&context,&crate::profile13_v2091::Request::RunOpen)?;
+            if reply.status!=crate::profile13_v2091::Status::Ready{return Err(invalid("P06T run was not opened"));}
+        }else{
+            let reply=self.battle(owner,&context,&crate::battle091::profile13::Request::RunOpen)?;
+            if reply.status!=crate::battle091::profile13::ReplyStatus::Ready {return Err(invalid("battle run was not opened"));}
+        }
         self.refresh_battle_profile(owner)
     }
 
@@ -301,6 +358,7 @@ impl Config {
         crate::crew_transfer091::metadata_for_research(&fresh.fixture_dir,&fresh.account_id,fresh.database_id,binding.revision,binding.wire_revision)?;
         verify_battle_projection(&fresh,binding.revision)?;
         if self.p04m_pool {crate::p04m_companion091::Binding::metadata(&fresh.fixture_dir,&fresh.account_id,fresh.database_id,binding.revision)?;}
+        if self.p06t_mixed_ammo {verify_mixed_projection(&fresh,binding.revision)?;}
         Ok(fresh)
     }
 
@@ -317,6 +375,13 @@ impl Config {
         let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;
         if status!=200{return Err(invalid("battle results writer unavailable; immutable request retained"));}
         Ok(reply)
+    }
+    pub(crate) fn results_post_v2(&self,owner:&Profile,body:&[u8])->io::Result<Vec<u8>>{
+        if !self.p06t_mixed_ammo||!self.p04m_pool||!self.profile13_battle||owner.database_id<=0||body.is_empty()||body.len()>2048{
+            return Err(invalid("P06T results authenticated mode/body bound"));
+        }
+        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;
+        if status!=200{return Err(invalid("P06T results writer unavailable; immutable task retained"));}Ok(reply)
     }
     fn post_with_budget(&self,path:&str,body:&[u8],timeout:Duration,max_body:usize,max_wire:usize)->io::Result<(u16,Vec<u8>)> {
         let deadline=Instant::now()+timeout;
@@ -646,6 +711,35 @@ mod tests {
         for wrong in[Value::Null,1.into(),"true".into()]{v["p04m_pool"]=wrong;assert!(load(&v).is_err());}
         v["p04m_pool"]=true.into();let mut raw=serde_json::to_string(&v).unwrap();raw.pop();raw.push_str(",\"p04m_pool\":false}");fs::write(path,raw).unwrap();
         assert!(Config::load(root.join("gateway.json").to_str().unwrap()).is_err());
+    }
+    #[test]fn p06t_configuration_requires_explicit_boolean_and_pool_profile13_chain(){
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("p06t-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let mut v=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        assert!(!load(&v).unwrap().p06t_mixed_ammo);v["p06t_mixed_ammo"]=true.into();assert!(load(&v).is_err());
+        for key in["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression","crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle"]{v[key]=true.into();}
+        assert!(load(&v).is_err());v["p04m_pool"]=true.into();assert!(load(&v).unwrap().p06t_mixed_ammo);
+        for wrong in[Value::Null,1.into(),"true".into()]{v["p06t_mixed_ammo"]=wrong;assert!(load(&v).is_err());}
+        v["p06t_mixed_ammo"]=true.into();let mut raw=serde_json::to_string(&v).unwrap();raw.pop();raw.push_str(",\"p06t_mixed_ammo\":false}");fs::write(path,raw).unwrap();
+        assert!(Config::load(root.join("gateway.json").to_str().unwrap()).is_err());
+    }
+    #[test]fn p06t_actual_sqlite_companion_binds_owner_state_policy_and_keeps_new_three_closed(){
+        use sha2::{Digest,Sha256};
+        let raw=include_bytes!("../../../../tests/fixtures/p06t-writer-companion.json");
+        assert_eq!(format!("{:x}",Sha256::digest(raw)),"e6c5bb9a1ad41574e9b449da76e00f265f0155bc518577d2a61a0aee4706a85e");
+        let value:Value=serde_json::from_slice(raw).unwrap();
+        let owner=Profile{account_id:value["account_id"].as_str().unwrap().into(),database_id:value["native_database_id"].as_i64().unwrap()as i32,
+            name:"actual SQLite".into(),fixture_dir:PathBuf::new()};
+        let state="23074e15758a028f907b9c68048f91976fac8a0980136da83918fb46b78510d5";
+        mixed_projection_bytes(raw,&owner,19,state).unwrap();
+        assert!(mixed_projection_bytes(raw,&owner,20,state).is_err());assert!(mixed_projection_bytes(raw,&owner,19,&"0".repeat(64)).is_err());
+        for n in 0..4{let mut bad=value.clone();match n{
+            0=>bad["account_id"]="foreign".into(),1=>bad["shell_catalog_sha256"]="0".repeat(64).into(),
+            2=>bad["max_stacks"]=4.into(),_=>bad["capabilities"].as_array_mut().unwrap().push(serde_json::json!({"native_inventory_id":3,"kind":"t26","admission":true,"code":null})),
+        }assert!(mixed_projection_bytes(&serde_json::to_vec(&bad).unwrap(),&owner,19,state).is_err());}
     }
     #[test] fn p08c_results_http_budget_does_not_widen_legacy_services_or_accept_bad_framing() {
         let response=|n:usize|{let mut raw=format!("HTTP/1.1 200 OK\r\nContent-Length: {n}\r\nConnection: close\r\n\r\n").into_bytes();raw.extend(vec![b'x';n]);raw};

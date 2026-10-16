@@ -72,11 +72,28 @@ pub struct ImpactSegment {
     pub end: [f32; 3],
 }
 
+/// New LAB proxy input after an actual revalidated source surface contact.
+/// This is distinct from the native wire segment, whose AABB entry may be in
+/// empty space before a recessed source surface. No internal volumes claimed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProxyRay {
+    pub component: materials::Component,
+    pub bbox_min: [f32; 3],
+    pub bbox_max: [f32; 3],
+    pub start: [f32; 3],
+    pub end: [f32; 3],
+}
+impl ProxyRay {
+    /// A surface at the forward AABB exit has no interior chord. It cannot
+    /// select an internal proxy box; callers skip this valid empty result.
+    pub fn is_empty(&self) -> bool { self.start == self.end }
+}
+
 fn subtract(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     std::array::from_fn(|i| a[i] - b[i])
 }
 
-fn transform_revision(position: [f32; 3], direction: [f32; 3], aim: [f32; 2], slot: usize, tick: u32) -> String {
+pub(super) fn transform_revision(position: [f32; 3], direction: [f32; 3], aim: [f32; 2], slot: usize, tick: u32) -> String {
     let mut hash = Sha256::new();
     for value in position.into_iter().chain(direction).chain(aim) { hash.update(value.to_le_bytes()); }
     format!("pose-v1:{slot}:{tick}:{:x}", hash.finalize())
@@ -342,6 +359,101 @@ impl Bundle {
         }
         Ok(ImpactSegment { component, bounds, start, end })
     }
+    /// Requery the exact authoritative source mesh and contact pose. A source
+    /// triangle ID/label alone does not validate the normal, fraction, nearest
+    /// order or contact point. This preserves the legacy wire segment method.
+    pub fn proxy_ray(&self, contact: &Contact) -> io::Result<ProxyRay> {
+        if contact.shot == 0 || contact.shot as usize > super::model::MAX_BATTLE_SHOTS
+            || !contact.segment_seconds.is_finite() || !(0. ..=1.).contains(&contact.segment_seconds)
+            || contact.geometry_revision != self.geometry_revision() || contact.target_slot >= super::model::MAX_ACTORS || contact.tick < 1000
+            || contact.target_position.iter().any(|v|!v.is_finite()||v.abs()>2000.)
+            || contact.target_direction.iter().chain(contact.target_aim.iter()).any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI)
+            || contact.segment_start.iter().chain(contact.segment_end.iter()).chain(contact.endpoint.iter()).any(|v|!v.is_finite()||v.abs()>100_000.)
+            || !contact.triangle.t.is_finite() || !(0. ..=1.).contains(&contact.triangle.t) {
+            return Err(bad());
+        }
+        if contact.transform_revision != transform_revision(contact.target_position,contact.target_direction,
+            contact.target_aim,contact.target_slot,contact.tick) {return Err(bad());}
+        let facts=self.materials.lookup(&contact.triangle.mesh,&contact.triangle.material)?;
+        if facts!=contact.material_facts {return Err(bad());}
+        let mesh = self.mesh_for_pose(contact.target_position, contact.target_direction,
+            contact.target_aim, contact.target_slot, contact.tick)?;
+        let expected = super::collision::query(&mesh, contact.segment_start, contact.segment_end)?
+            .into_iter().next().ok_or_else(|| bad())?;
+        let endpoint = std::array::from_fn(|i| contact.segment_start[i]
+            + expected.t * (contact.segment_end[i] - contact.segment_start[i]));
+        if expected != contact.triangle || endpoint != contact.endpoint { return Err(bad()); }
+        let index = match facts.component { materials::Component::Hull => 0,
+            materials::Component::Turret01 => 1, materials::Component::Gun02 | materials::Component::Gun01 => 2 };
+        let bounds=self.component_bounds()[index];
+        let point = pose::inverse_rotate(subtract(contact.endpoint, contact.target_position), contact.target_direction);
+        let start = self.inverse_component_point(index, point, contact.target_aim);
+        let direction = self.inverse_component_direction(index,
+            pose::inverse_rotate(subtract(contact.segment_end, contact.segment_start), contact.target_direction), contact.target_aim);
+        if start.iter().enumerate().any(|(i,v)| f64::from(*v) < f64::from(bounds[0][i])-CONTACT_TOLERANCE
+            || f64::from(*v) > f64::from(bounds[1][i])+CONTACT_TOLERANCE) { return Err(bad()); }
+        let norm = direction.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>().sqrt();
+        if !norm.is_finite() || norm == 0. { return Err(bad()); }
+        let unit = direction.map(|v| f64::from(v)/norm);
+        let mut exit = f64::INFINITY;
+        for i in 0..3 {
+            if unit[i] > 0. { exit = exit.min((f64::from(bounds[1][i])-f64::from(start[i]))/unit[i]); }
+            else if unit[i] < 0. { exit = exit.min((f64::from(bounds[0][i])-f64::from(start[i]))/unit[i]); }
+        }
+        if !exit.is_finite() { return Err(bad()); }
+        // Negative rounding-scale exit means a point on the forward boundary,
+        // not permission to extend beyond the source box or move backwards.
+        let exit = exit.max(0.);
+        let end = std::array::from_fn(|i| (f64::from(start[i])+unit[i]*exit) as f32);
+        Ok(ProxyRay { component: facts.component, bbox_min: bounds[0], bbox_max: bounds[1], start, end })
+    }
+    /// Explicit source-exterior HE sampling policy: one ray toward the posed
+    /// source Hull bbox center, extended beyond it to leave every actual source
+    /// component. Coincident center uses the actual chassis +Z direction. An
+    /// inside center is never accepted as an AABB hit: only a real triangle can
+    /// produce a Contact. Caller owns source shell radius and terrain/static LOS.
+    pub fn explosion_contact(&self, actor: &Actor, center: [f32;3], radius: f32,
+        shot: u32, target_slot: usize, tick: u32) -> io::Result<Option<Contact>> {
+        const MAX_RADIUS: f32 = 16.; // bounded API ceiling; actual #717 maximum is5.05
+        if center.iter().any(|v| !v.is_finite() || v.abs()>100_000.)
+            || !radius.is_finite() || radius<=0. || radius>MAX_RADIUS
+            || shot==0 || shot as usize>super::model::MAX_BATTLE_SHOTS
+            || target_slot>=super::model::MAX_ACTORS || tick<1000
+            || [actor.aim.yaw,actor.aim.pitch].iter().any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI) {
+            return Err(bad());
+        }
+        let mesh = self.world_mesh(actor,target_slot,tick)?;
+        let midpoint = std::array::from_fn(|i| (self.bounds[0][0][i]+self.bounds[0][1][i])*0.5);
+        let local_center = self.component_point(0,midpoint,actor.aim.yaw,actor.aim.pitch);
+        let rotated = pose::rotate(local_center,actor.direction);
+        let hull_center = std::array::from_fn::<_,3,_>(|i|actor.position[i]+rotated[i]);
+        let delta = std::array::from_fn::<_,3,_>(|i|f64::from(hull_center[i])-f64::from(center[i]));
+        let length = delta.iter().map(|v|v*v).sum::<f64>().sqrt();
+        let unit = if length==0. {pose::rotate([0.,0.,1.],actor.direction).map(f64::from)}
+            else {delta.map(|v|v/length)};
+        // Derive the ray endpoint from all mounted source vertices; the1cm
+        // endpoint margin changes neither triangle positions nor blast radius.
+        let mut extent:f64=0.;
+        for (index,part) in self.components.iter().enumerate() {
+            for vertex in &part.vertices {
+                let local=self.component_point(index,*vertex,actor.aim.yaw,actor.aim.pitch);
+                let distance=(0..3).map(|i|(f64::from(local[i])-f64::from(local_center[i])).powi(2)).sum::<f64>().sqrt();
+                extent=extent.max(distance);
+            }
+        }
+        let end=std::array::from_fn(|i|(f64::from(hull_center[i])+unit[i]*(extent+0.01))as f32);
+        if end==center {return Err(bad());}
+        let Some(triangle)=super::collision::query(&mesh,center,end)?.into_iter().next() else {return Ok(None)};
+        let endpoint=std::array::from_fn(|i|center[i]+triangle.t*(end[i]-center[i]));
+        let distance_squared=(0..3).map(|i|(f64::from(endpoint[i])-f64::from(center[i])).powi(2)).sum::<f64>();
+        if distance_squared>f64::from(radius).powi(2) {return Ok(None);}
+        let material_facts=self.materials.lookup(&triangle.mesh,&triangle.material)?;
+        Ok(Some(Contact {shot,target_slot,tick,segment_start:center,segment_end:end,
+            segment_seconds:0., // instantaneous geometric sample, not flight time
+            endpoint,target_position:actor.position,target_direction:actor.direction,
+            target_aim:[actor.aim.yaw,actor.aim.pitch],triangle,
+            geometry_revision:mesh.geometry_revision().into(),transform_revision:mesh.transform_revision().into(),material_facts}))
+    }
     fn inverse_component_point(&self, index: usize, point: [f32; 3], aim: [f32; 2]) -> [f32; 3] {
         let point = subtract(point, self.hull);
         if index == 0 { return point; }
@@ -359,13 +471,16 @@ impl Bundle {
         if actor.vehicle_kind() != self.vehicle || slot >= super::model::MAX_ACTORS || tick < 1000 || actor.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
             || actor.direction.iter().any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
             || !actor.aim.yaw.is_finite() || !actor.aim.pitch.is_finite() { return Err(bad()); }
+        self.mesh_for_pose(actor.position,actor.direction,[actor.aim.yaw,actor.aim.pitch],slot,tick)
+    }
+    fn mesh_for_pose(&self, position: [f32;3], direction: [f32;3], aim: [f32;2], slot: usize, tick: u32) -> io::Result<Mesh> {
         let mut vertices = Vec::new(); let mut triangles = Vec::new();
         for (i, component) in self.components.iter().enumerate() {
             let base = vertices.len() as u32;
             for &v in &component.vertices {
-                let local = self.component_point(i, v, actor.aim.yaw, actor.aim.pitch);
-                let rotated = pose::rotate(local, actor.direction);
-                vertices.push(std::array::from_fn(|axis| actor.position[axis] + rotated[axis]));
+                let local = self.component_point(i, v, aim[0], aim[1]);
+                let rotated = pose::rotate(local, direction);
+                vertices.push(std::array::from_fn(|axis| position[axis] + rotated[axis]));
             }
             for triangle in &component.triangles {
                 let mut t = triangle.clone(); t.a += base; t.b += base; t.c += base; triangles.push(t);
@@ -374,7 +489,7 @@ impl Bundle {
         // Hash the precise authoritative transform facts, including aim, so
         // the identity stays unambiguous even within one server tick.
         Mesh::new(vertices, triangles, self.geometry_revision(),
-            transform_revision(actor.position, actor.direction, [actor.aim.yaw, actor.aim.pitch], slot, tick))
+            transform_revision(position, direction, aim, slot, tick))
     }
     fn component_point(&self, index: usize, vertex: [f32; 3], yaw: f32, pitch: f32) -> [f32; 3] {
         let add = |a: [f32; 3], b: [f32; 3]| std::array::from_fn(|i| a[i] + b[i]);
@@ -391,6 +506,10 @@ impl Bundle {
 #[cfg(test)]
 #[path="p04m_geometry_tests.rs"]
 mod p04m_geometry_tests;
+
+#[cfg(test)]
+#[path="p06t_geometry_tests.rs"]
+mod p06t_geometry_tests;
 
 #[cfg(test)]
 pub(super) mod tests {

@@ -98,7 +98,7 @@ pub fn parse_prefix(payload: &[u8]) -> io::Result<Option<(Vec<Command>, usize)>>
     Ok(Some((commands, at)))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Outcome {
     AcceptedShot { ammo_remaining: u16 },
     RejectedReload,
@@ -106,9 +106,12 @@ pub enum Outcome {
     ReplenishUnsupported,
     /// Authoritative phase gate; no ammo/cooldown mutation.
     RejectedBattlePeriod,
+    RejectedVehicleState,
+    /// Versioned source-stack state; callers must publish all current rows.
+    Typed(crate::p06t_armament091::Outcome),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct State {
     ammo: u16,
     reload_duration: Duration,
@@ -116,6 +119,7 @@ pub struct State {
     accepted_shots: u32,
     rejected_shots: u32,
     replenish_requests: u32,
+    typed:Option<crate::p06t_armament091::State>,
 }
 
 impl State {
@@ -126,6 +130,7 @@ impl State {
             accepted_shots: 0,
             rejected_shots: 0,
             replenish_requests: 0,
+            typed:None,
         }
     }
 
@@ -141,17 +146,31 @@ impl State {
         }
         Ok(Self { ammo, reload_duration: Duration::from_secs_f32(reload_seconds), ..Self::new() })
     }
-    pub fn ammo(&self) -> u16 { self.ammo }
-    pub fn accepted_shots(&self) -> u32 { self.accepted_shots }
-    pub fn rejected_shots(&self) -> u32 { self.rejected_shots }
-    pub fn replenish_requests(&self) -> u32 { self.replenish_requests }
-    pub fn reload_until(&self) -> Option<Instant> { self.reload_until }
+    pub fn with_typed(mount:crate::p06t_shells091::Mount,counts:[u16;3],initial:u16)->io::Result<Self>{
+        Ok(Self{typed:Some(crate::p06t_armament091::State::new(mount,counts,initial)?),..Self::new()})
+    }
+    pub fn typed(&self)->Option<&crate::p06t_armament091::State>{self.typed.as_ref()}
+    pub fn adjust_reload_scale(&mut self,scale:f32,now:Instant)->io::Result<()>{
+        self.typed.as_mut().ok_or_else(||invalid("typed capability on legacy fire"))?.set_reload_scale(f64::from(scale),now)
+    }
+    pub fn apply_typed(&mut self,commands:&[crate::p06t_armament091::Command],now:Instant)->io::Result<Vec<Outcome>>{
+        self.typed.as_mut().ok_or_else(||invalid("typed armament command on legacy state"))?.apply(commands,now)
+            .map(|rows|rows.into_iter().map(Outcome::Typed).collect())
+    }
+    /// In v2 this is the total, never a count of AP. Typed terminals must use
+    /// counts() and refuse the old remaining_ap writer contract.
+    pub fn ammo(&self) -> u16 { self.typed.as_ref().map_or(self.ammo,|state|state.total()) }
+    pub fn accepted_shots(&self) -> u32 { self.typed.as_ref().map_or(self.accepted_shots,|state|state.accepted()) }
+    pub fn rejected_shots(&self) -> u32 { self.typed.as_ref().map_or(self.rejected_shots,|state|state.rejected()) }
+    pub fn replenish_requests(&self) -> u32 { self.typed.as_ref().map_or(self.replenish_requests,|state|state.replenish_requests()) }
+    pub fn reload_until(&self) -> Option<Instant> { self.typed.as_ref().map_or(self.reload_until,|state|state.deadline()) }
 
     /// Clear the server-owned cooldown only once its monotonic deadline has
     /// passed.  The caller queues the matching native client callback after
     /// this transition succeeds; a full transport queue must therefore leave
     /// the state unchanged by operating on a cloned `State`.
     pub fn finish_reload_if_due(&mut self, now: Instant) -> bool {
+        if let Some(state)=self.typed.as_mut(){return state.advance(now);}
         if self.reload_until.is_some_and(|until| now >= until) {
             self.reload_until = None;
             true
@@ -166,6 +185,7 @@ impl State {
     /// move the cooldown.  Replenishment is deliberately observable only: the
     /// card does not invent an economy or free ammunition grant.
     pub fn apply(&mut self, commands: &[Command], now: Instant) -> io::Result<Vec<Outcome>> {
+        if self.typed.is_some(){return Err(invalid("legacy fire command on typed armament"));}
         if commands.is_empty() || commands.len() > MAX_COMMANDS {
             return Err(invalid("native fire command count"));
         }
@@ -253,6 +273,8 @@ pub fn outcome_name(outcome: Outcome) -> &'static str {
         Outcome::RejectedNoAmmo => "no_ammo",
         Outcome::ReplenishUnsupported => "replenish_unsupported",
         Outcome::RejectedBattlePeriod => "battle_period",
+        Outcome::RejectedVehicleState => "vehicle_state",
+        Outcome::Typed(_) => "typed_armament",
     }
 }
 

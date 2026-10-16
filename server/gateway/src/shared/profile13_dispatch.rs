@@ -2,6 +2,9 @@
 use super::*;
 use super::super::profile13_session::{self as service, Terminal};
 use crate::battle091::profile13::{Context, Request, ReplyStatus, FinishReason};
+#[path="profile13_dispatch_v2.rs"]
+mod mixed_dispatch;
+use mixed_dispatch::TaskV2;
 
 #[derive(Clone)]
 struct Task {session:u32,owner:Arc<crate::identity091::Profile>,context:Context,request:Request}
@@ -14,6 +17,7 @@ impl Task {
 #[derive(Default)]
 pub(super) struct Dispatcher {
     job:Option<service::Job>,task:Option<Task>,retry_at:Option<Instant>,
+    job_v2:Option<service::JobV2>,task_v2:Option<TaskV2>,
     retired:Vec<Session>,
     settled_queue:Option<u64>,
 }
@@ -27,20 +31,22 @@ impl Dispatcher {
             || world.actors.iter().any(|a|a.session.is_some()) {return Ok(false);}
         let outstanding=table.sessions.iter().chain(self.retired.iter()).any(|s|
             s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.in_flight
-                || p.reservation.as_ref().is_some_and(|r|r.battle==world.id)));
-        if outstanding || self.task.is_some() {return Ok(false);}
+                || p.reservation.as_ref().is_some_and(|r|r.battle==world.id)||p.reservation_v2.as_ref().is_some_and(|r|r.battle==world.id)));
+        if outstanding || self.task.is_some()||self.task_v2.is_some() {return Ok(false);}
         template.replace(world,runtime,now)?;self.settled_queue=None;Ok(true)
     }
     pub(super) fn closed_queue(&self,battle:u64)->bool {self.settled_queue==Some(battle)}
-    pub(super) fn busy(&self)->bool {self.job.is_some() || self.task.is_some() || !self.retired.is_empty()}
+    pub(super) fn busy(&self)->bool {self.job.is_some() || self.task.is_some()||self.job_v2.is_some()||self.task_v2.is_some() || !self.retired.is_empty()}
     pub(super) fn owner_busy(&self,owner:&str)->bool {
         self.task.as_ref().is_some_and(|t|t.owner.account_id==owner)
+            ||self.task_v2.as_ref().is_some_and(|t|t.owner.account_id==owner)
             || self.retired.iter().any(|s|s.identity.as_ref().is_some_and(|p|p.account_id==owner))
     }
     /// Freeze AP/HP before revoking authority. This receipt outlives world reset.
     pub(super) fn terminal(s:&mut Session,world:&World,reason:FinishReason)->io::Result<()> {
         let Some(p)=s.shared.as_ref().and_then(|c|c.profile13.as_ref()) else {return Ok(());};
-        if p.pending_return.is_some() {return Ok(());}
+        if p.pending_return.is_some()||p.pending_return_v2.is_some() {return Ok(());}
+        if p.reservation_v2.is_some(){return Self::terminal_mixed(s,world,reason);}
         let Some(reservation)=&p.reservation else {return Ok(());};
         let natural=s.shared.as_ref().and_then(|c|c.natural_result.as_deref());
         let reason=if natural.is_some() {FinishReason::BattleFinished} else {reason};
@@ -58,7 +64,7 @@ impl Dispatcher {
         let s=table.sessions.iter_mut().find(|s|s.id==id).ok_or_else(||model::bad())?;
         Self::terminal(s,world,FinishReason::Disconnect)?;
         let retain=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
-            p.in_flight || p.reservation.is_some() || p.pending_return.is_some());
+            p.in_flight || p.reservation.is_some() || p.pending_return.is_some()||p.reservation_v2.is_some()||p.pending_return_v2.is_some());
         if retain {
             if self.retired.len()>=model::MAX_ACTORS {return Err(model::bad());}
             let mut retired=s.clone();retired.active=false;
@@ -138,6 +144,7 @@ impl Dispatcher {
         Ok(())
     }
     pub(super) fn poll(&mut self,table:&mut Table,config:Arc<crate::identity091::Config>,now:Instant)->io::Result<()> {
+        if config.p06t_mixed_ammo{return self.poll_mixed(table,config,now);}
         if let Some(result)=self.job.as_mut().and_then(|j|j.poll()) {
             self.job=None;
             let task=self.task.as_ref().ok_or_else(||model::bad())?.clone();
@@ -173,6 +180,7 @@ impl Dispatcher {
         Ok(())
     }
     pub(super) fn start(&mut self,table:&mut Table,world:&World,config:Arc<crate::identity091::Config>,now:Instant)->io::Result<()> {
+        if config.p06t_mixed_ammo{return self.start_mixed(table,world,config,now);}
         if self.task.is_some() || self.job.is_some() {return Ok(());}
         // Terminal receipts always precede new admissions. Retired owners stay
         // fenced until their known/ambiguous writer outcome is resolved.

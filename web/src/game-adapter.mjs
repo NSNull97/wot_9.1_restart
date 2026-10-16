@@ -18,6 +18,7 @@ import { nativeCrossVehicleCrewOverview, isNativeCrossVehicleCrewOverview } from
 import { nativeResearchOverview, isNativeResearchOverview } from './p09e-research.mjs';
 import { battleConfiguration } from './p08b-battle.mjs';
 import { nativePoolOverview, isNativePoolOverview, poolConfiguration, nativePoolRequestTimeout, LEGACY_REQUEST_TIMEOUT_MS } from './p04m-pool.mjs';
+import { mixedConfiguration, validateMixedResultsRequest, validateMixedResultsReply } from './p06t-mixed.mjs';
 
 import { nativeRosterCrewOverview, isNativeRosterCrewOverview } from './p04h-crew.mjs';
 
@@ -227,6 +228,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.research_service !== undefined) allowed.push('research_service');
   if (options?.battle_service !== undefined) allowed.push('battle_service');
   if (options?.pool_service !== undefined) allowed.push('pool_service');
+  if (options?.mixed_service !== undefined) allowed.push('mixed_service');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
   if (options.crew_service !== undefined && options.ammunition_service === undefined) throw new Error('Crew requires the shared ammunition writer');
@@ -243,6 +245,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   const battleOwners = options.battle_service === undefined ? null
     : battleConfiguration(options.battle_service, options.ammunition_service?.account_id);
   const poolOwners = options.pool_service === undefined ? [] : poolConfiguration(options.pool_service, battleOwners);
+  const mixedOwners = options.mixed_service === undefined ? [] : mixedConfiguration(options.mixed_service, poolOwners);
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -289,7 +292,9 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
               dismissal: options.crew_dismissal ?? null, barracksRecruitment: options.crew_barracks_recruitment ?? null,
               research: options.research_service ?? null, battle: options.battle_service === undefined ? null
                 : { version: options.battle_service.version, policy_sha256: options.battle_service.policy_sha256 },
-              pool: poolOwners.includes(id) ? { version: options.pool_service.version, policy_sha256: options.pool_service.policy_sha256 } : null });
+              pool: poolOwners.includes(id) ? { version: options.pool_service.version, policy_sha256: options.pool_service.policy_sha256 } : null,
+              mixed: mixedOwners.includes(id) ? { version: options.mixed_service.version, policy_sha256: options.mixed_service.policy_sha256,
+                shell_catalog: options.mixed_service.shell_catalog, terminal_policy: options.mixed_service.terminal_policy } : null });
         accountServices.set(id, service);
       }
       ammunition = accountServices.get(options.ammunition_service.account_id);
@@ -503,6 +508,10 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         if (!service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.read(value.account_id);
         if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        if (mixedOwners.includes(value.account_id)) {
+          validateMixedResultsRequest(value, value.account_id); poolRequestBudget(value.account_id);
+          return json(res, 200, validateMixedResultsReply(await service.results(value), value));
+        }
         const valid = condition => { if (!condition) throw Object.assign(new Error('Results schema'), { status: 400 }); };
         const common = ['version', 'operation', 'account_id', 'native_database_id', 'command_key', 'arena_id'];
         const extra = ['run_id', 'battle_id', 'native_inventory_id', 'reservation_id', 'results_json'];
@@ -539,6 +548,8 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         const value = await body(req, nativeMethod === 'battle' ? 65536 : 2048), service = accountServices.get(value?.account_id);
         if (!service || !identity.profile(service.accountId)) return json(res, 403, { error: 'forbidden' });
         if (typeof service[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
+        if (nativeMethod === 'battle' && options.mixed_service !== undefined
+          && value.version !== (mixedOwners.includes(value.account_id) ? 2 : 1)) return json(res, 400, { error: 'invalid_request' });
         if (poolOwners.includes(value.account_id)) {
           const profile = game.read(value.account_id);
           if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });

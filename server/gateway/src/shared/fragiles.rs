@@ -324,6 +324,13 @@ impl State {
         self.contact_for(VehicleKind::Ms1,shot,shooter,tick,hit)
     }
     pub fn contact_for(&mut self,vehicle:VehicleKind,shot:u32,shooter:usize,tick:u32,hit:terrain::Hit)->io::Result<Option<Damage>>{
+        self.contact_damage_for(vehicle,vehicle.damage(),shot,shooter,tick,hit)
+    }
+    pub fn contact_shell_for(&mut self,vehicle:VehicleKind,shell:crate::p06t_shells091::Shell,shot:u32,shooter:usize,tick:u32,hit:terrain::Hit)->io::Result<Option<Damage>>{
+        if !crate::p06t_shells091::PROFILES[vehicle.mount().index()].shots.contains(&shell){return Err(bad());}
+        self.contact_damage_for(vehicle,shell.damage_hp,shot,shooter,tick,hit)
+    }
+    fn contact_damage_for(&mut self,vehicle:VehicleKind,amount:u16,shot:u32,shooter:usize,tick:u32,hit:terrain::Hit)->io::Result<Option<Damage>>{
         let terrain::Surface::StaticObstacle{instance_id,material_kind}=hit.surface else{return Ok(None)};
         let Some(index)=self.catalog.objects.iter().position(|o|o.instance_id==instance_id) else{return Ok(None)};
         let object=&self.catalog.objects[index];let before=self.health[index];
@@ -333,7 +340,7 @@ impl State {
             ||material_kind!=object.material_kind||!(object.projectile_first_triangle..object.projectile_first_triangle+object.projectile_triangle_count).contains(&hit.triangle_id)
             ||!hit.t.is_finite()||!(0. ..=1.).contains(&hit.t)||hit.point.iter().chain(hit.normal.iter()).any(|v|!v.is_finite())
             ||hit.point.iter().any(|v|v.abs()>terrain::MAX_QUERY_COORDINATE)||(hit.normal.iter().map(|v|v*v).sum::<f32>()-1.).abs()>1e-4{return Err(bad());}
-        let after=before.saturating_sub(u32::from(vehicle.damage()));let scene=self.scene_version();
+        let after=before.saturating_sub(u32::from(amount));let scene=self.scene_version();
         let damage=Damage{object_id:object.object_id,instance_id,object_revision:object.object_revision.clone(),shot,shooter,tick,
             health_before:before,health_after:after,scene_before:scene,scene_after:scene+u32::from(after==0),hit};
         self.health[index]=after;self.events.push(damage.clone());Ok(Some(damage))

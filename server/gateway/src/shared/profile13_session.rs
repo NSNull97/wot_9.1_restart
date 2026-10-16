@@ -5,6 +5,9 @@ use std::{io, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, thread::{self, 
 use crate::{ammo_service091, hangar091, identity091};
 use crate::battle091::profile13::{self, Context, FinishReason, Reply, ReplyStatus, Request, Reservation, ReservationStatus};
 use super::model::World;
+#[path="profile13_session_v2.rs"]
+mod mixed;
+pub(super) use mixed::{TerminalV2,JobV2,CompletionV2};
 
 const MAX_COMMANDS: u32 = 512;
 static WORKER_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -19,19 +22,26 @@ pub(crate) struct State {
     pub(super) selection: Option<u32>,
     pub(super) reservation: Option<Reservation>,
     pub(super) pending_return: Option<Terminal>,
+    pub(super) reservation_v2: Option<crate::profile13_v2091::Reservation>,
+    pub(super) pending_return_v2: Option<TerminalV2>,
     pub(super) in_flight: bool,
     pub(super) command_counter: u32,
     pub(super) stale_envelopes: u8,
 }
 impl State {
+    pub(super) fn reservation_battle(&self)->Option<u64>{self.reservation.as_ref().map(|r|r.battle).or_else(||self.reservation_v2.as_ref().map(|r|r.battle))}
+    pub(super) fn reservation_kind(&self)->Option<super::vehicle_profile::VehicleKind>{self.reservation.as_ref().map(|r|r.frozen.kind).or_else(||self.reservation_v2.as_ref().map(|r|r.frozen.kind))}
+    pub(super) fn has_reservation(&self)->bool{self.reservation.is_some()||self.reservation_v2.is_some()}
+    pub(super) fn has_pending_return(&self)->bool{self.pending_return.is_some()||self.pending_return_v2.is_some()}
     pub(crate) fn garage_idle(&self) -> bool {
-        self.selection.is_none() && self.reservation.is_none() && self.pending_return.is_none() && !self.in_flight
+        self.selection.is_none() && self.reservation.is_none() && self.pending_return.is_none()
+            &&self.reservation_v2.is_none()&&self.pending_return_v2.is_none()&&!self.in_flight
     }
     pub(super) fn new(run_id: String, revision: u64) -> io::Result<Self> {
         let context = Context { account_id: "12345678-1234-4234-8234-123456789abc".into(), native_database_id: 1,
             command_key: "p08b:validate".into(), expected_revision: revision, run_id: run_id.clone() };
         profile13::encode_request(&context, &Request::RunOpen)?;
-        Ok(Self { run_id, revision, selection: None, reservation: None, pending_return: None,
+        Ok(Self { run_id, revision, selection: None, reservation: None, pending_return: None,reservation_v2:None,pending_return_v2:None,
             in_flight: false, command_counter: 0, stale_envelopes: 0 })
     }
     /// A retry retains the returned Context. Calling this again creates a new
@@ -53,7 +63,7 @@ impl State {
     /// has already been revoked.
     pub(super) fn retain_terminal(&mut self, terminal: Terminal) -> io::Result<bool> {
         terminal.validate()?;
-        if self.reservation.as_ref() != Some(&terminal.reservation) || terminal.reservation.run_id != self.run_id {
+        if self.reservation_v2.is_some()||self.pending_return_v2.is_some()||self.reservation.as_ref() != Some(&terminal.reservation) || terminal.reservation.run_id != self.run_id {
             return Err(bad("terminal is not this client's reservation"));
         }
         if let Some(existing) = &self.pending_return {
@@ -67,6 +77,18 @@ impl State {
         self.selection = None;
         self.stale_envelopes = 0;
         Ok(true)
+    }
+    pub(super) fn retain_terminal_v2(&mut self,terminal:TerminalV2)->io::Result<bool>{
+        terminal.validate()?;
+        if self.reservation.is_some()||self.pending_return.is_some()||self.reservation_v2.as_ref()!=Some(&terminal.reservation)
+            ||terminal.reservation.run_id!=self.run_id{return Err(bad("v2 terminal is not this client's reservation"));}
+        if let Some(previous)=&self.pending_return_v2{
+            if previous.reservation!=terminal.reservation||previous.remaining_ammunition!=terminal.remaining_ammunition
+                ||previous.terminal_hp!=terminal.terminal_hp||previous.terminal_state_json!=terminal.terminal_state_json
+                ||previous.results_json!=terminal.results_json{return Err(bad("conflicting v2 terminal snapshot"));}
+            return Ok(false);
+        }
+        self.pending_return_v2=Some(terminal);self.selection=None;self.stale_envelopes=0;Ok(true)
     }
 }
 
@@ -104,6 +126,7 @@ impl Terminal {
     pub(super) fn from_actor_result(reservation: &Reservation, world: &World, slot: usize, session: u32,
         reason: FinishReason,result:Option<&super::lifecycle_wire::Results>) -> io::Result<Self> {
         let actor = world.owned(slot, session)?;
+        if actor.fire.typed().is_some(){return Err(bad("version1 terminal cannot read typed ammunition"));}
         reservation.frozen.validate_owned(&actor.identity.account)?;
         if world.id != reservation.battle || !world.mixed_profiles() && world.vehicle_kind() != reservation.frozen.kind
             || actor.vehicle_kind() != reservation.frozen.kind {
@@ -158,19 +181,17 @@ fn work(session: u32, owner: Arc<identity091::Profile>, config: Arc<identity091:
     let reply = config.battle(&owner, &context, &request)?;
     let refresh = matches!(reply.status, ReplyStatus::Ready | ReplyStatus::Admitted | ReplyStatus::Finished);
     let (fresh, refresh_error) = if refresh {
-        let result = (|| -> io::Result<Fresh> {
-            let fresh = config.refresh_battle_profile(&owner)?;
-            let fixtures = if config.p04m_pool {hangar091::Fixtures::load_p04m(&fresh.fixture_dir)?}
-                else {hangar091::Fixtures::load_research(&fresh.fixture_dir)?};
-            let binding = ammo_service091::metadata_research(&fresh.fixture_dir, &fresh.account_id, fresh.database_id)?;
-            if binding.revision != reply.revision || binding.wire_revision != 1 {
-                return Err(bad("fresh projection does not match committed revision"));
-            }
-            Ok(Fresh { owner: Arc::new(fresh), fixtures: Arc::new(fixtures), binding })
-        })();
+        let result = load_fresh(&config,&owner,reply.revision);
         match result { Ok(fresh) => (Some(fresh), None), Err(error) => (None, Some(error)) }
     } else { (None, None) };
     Ok(Completion { session, old_owner: owner, context, request, reply, fresh, refresh_error })
+}
+fn load_fresh(config:&identity091::Config,owner:&identity091::Profile,revision:u64)->io::Result<Fresh>{
+    let fresh=config.refresh_battle_profile(owner)?;
+    let fixtures=if config.p04m_pool{hangar091::Fixtures::load_p04m(&fresh.fixture_dir)?}else{hangar091::Fixtures::load_research(&fresh.fixture_dir)?};
+    let binding=ammo_service091::metadata_research(&fresh.fixture_dir,&fresh.account_id,fresh.database_id)?;
+    if binding.revision!=revision||binding.wire_revision!=1{return Err(bad("fresh projection does not match committed revision"));}
+    Ok(Fresh{owner:Arc::new(fresh),fixtures:Arc::new(fixtures),binding})
 }
 
 fn report_result(session: u32, operation: &str, result: &io::Result<Completion>) {

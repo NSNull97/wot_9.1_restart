@@ -68,6 +68,25 @@ mod map_drive_world091;
 mod map_drive_service091;
 #[path = "battle/mod.rs"]
 mod battle091;
+#[path = "shared/p06t_shell_data.rs"]
+mod p06t_shells091;
+#[path = "battle/armament.rs"]
+mod p06t_armament091;
+#[path = "shared/armament_wire.rs"]
+mod armament_wire091;
+#[cfg(test)]
+#[path = "shared/armament_wire_tests.rs"]
+mod p06t_armament_wire_tests;
+#[path = "battle/profile13_v2.rs"]
+mod profile13_v2091;
+#[path = "shared/p06t_damage.rs"]
+mod p06t_damage;
+#[path = "shared/p06t_device_state.rs"]
+mod p06t_device_state;
+#[path = "shared/p06t_lab_proxy.rs"]
+mod p06t_lab_proxy;
+#[path = "shared/p06t_device_caps.rs"]
+mod p06t_device_caps;
 
 #[derive(Debug, PartialEq)]
 enum Command<'a> {

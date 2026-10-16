@@ -40,6 +40,13 @@ impl State {
     /// Root calls this only after enqueuing the committed natural Avatar stream.
     pub(crate) fn cache_avatar(&mut self,result:Arc<Results>,own_account:i32)->io::Result<()> {
         result.validate()?;
+        self.cache_avatar_validated(result,own_account)
+    }
+    pub(crate) fn cache_avatar_p06t(&mut self,result:Arc<Results>,own_account:i32)->io::Result<()>{
+        result.validate_p06t()?;
+        self.cache_avatar_validated(result,own_account)
+    }
+    fn cache_avatar_validated(&mut self,result:Arc<Results>,own_account:i32)->io::Result<()>{
         if !result.participants.iter().any(|p|p.account_dbid==own_account){return Err(bad("cached result owner"));}
         if self.cached.as_ref().is_some_and(|old|old.arena_id==result.arena_id) {
             if self.cached.as_ref()!=Some(&result){return Err(bad("conflicting immutable cached result"));}
@@ -95,7 +102,7 @@ impl State {
 }
 
 #[derive(Clone)]
-struct Task {session:u32,owner:Arc<identity091::Profile>,request:Request,key:String}
+struct Task {session:u32,owner:Arc<identity091::Profile>,request:Request,key:String,mixed:bool}
 impl Task {
     fn body(&self)->io::Result<Vec<u8>> {
         if self.session==0||self.owner.database_id<=0||self.owner.account_id.len()!=36
@@ -104,7 +111,7 @@ impl Task {
             ||!self.key.bytes().all(|b|b.is_ascii_alphanumeric()||[b'_',b':',b'-'].contains(&b)) {
             return Err(bad("HTTP immutable task identity"));
         }
-        let raw=serde_json::to_vec(&serde_json::json!({"version":1,"operation":self.request.operation.label(),
+        let raw=serde_json::to_vec(&serde_json::json!({"version":if self.mixed{2}else{1},"operation":self.request.operation.label(),
             "account_id":self.owner.account_id,"native_database_id":self.owner.database_id,"command_key":self.key,
             "arena_id":self.request.arena.to_string()})).map_err(|_|bad("HTTP task JSON"))?;
         if raw.len()>MAX_HTTP{return Err(bad("HTTP task size"));}Ok(raw)
@@ -129,10 +136,14 @@ impl<'de> Deserialize<'de> for Fields {
 struct Reply {result:Option<Arc<Results>>,acked:bool,replayed:bool,rejected:bool}
 fn reply(raw:&[u8],task:&Task)->io::Result<Reply> {
     if raw.is_empty()||raw.len()>MAX_HTTP{return Err(bad("HTTP reply size"));}
-    let Fields(fields)=serde_json::from_slice(raw).map_err(|_|bad("HTTP reply JSON unique fields"))?;
+    let fields=if task.mixed{
+        let value=crate::profile13_v2091::bounded_json(raw,MAX_HTTP)?;
+        value.as_object().ok_or_else(||bad("v2 result reply object"))?.clone().into_iter().collect::<BTreeMap<_,_>>()
+    }else{let Fields(fields)=serde_json::from_slice(raw).map_err(|_|bad("HTTP reply JSON unique fields"))?;fields};
     let expected=["version","operation","status","account_id","native_database_id","command_key","arena_id","acked","replayed","results_json","code"];
-    if fields.len()!=11||expected.iter().any(|k|!fields.contains_key(*k))
-        ||fields["version"].as_u64()!=Some(1)||fields["operation"].as_str()!=Some(task.request.operation.label())
+    if fields.len()!=(if task.mixed{12}else{11})||expected.iter().any(|k|!fields.contains_key(*k))
+        ||task.mixed&&fields.get("policy_sha256").and_then(Value::as_str)!=Some(crate::profile13_v2091::POLICY_SHA256)
+        ||fields["version"].as_u64()!=Some(if task.mixed{2}else{1})||fields["operation"].as_str()!=Some(task.request.operation.label())
         ||fields["account_id"].as_str()!=Some(&task.owner.account_id)
         ||fields["native_database_id"].as_i64()!=Some(task.owner.database_id as i64)
         ||fields["command_key"].as_str()!=Some(&task.key)
@@ -160,7 +171,8 @@ fn reply(raw:&[u8],task:&Task)->io::Result<Reply> {
     }else{
         let raw=fields["results_json"].as_str().ok_or_else(||bad("HTTP result string"))?;
         if raw.len()>lifecycle_wire::MAX_RESULT_BYTES{return Err(bad("HTTP result string size"));}
-        let parsed:Results=serde_json::from_str(raw).map_err(|_|bad("HTTP typed result fields"))?;parsed.validate()?;
+        let parsed:Results=serde_json::from_str(raw).map_err(|_|bad("HTTP typed result fields"))?;
+        if task.mixed{parsed.validate_p06t()?;}else{parsed.validate()?;}
         if parsed.arena_id!=task.request.arena||!parsed.participants.iter().any(|p|p.account_dbid==task.owner.database_id)
             ||status=="acked"&&!acked{return Err(bad("HTTP result owner/arena/ack binding"));}
         Some(Arc::new(parsed))
@@ -175,6 +187,8 @@ fn response_prefix(id:i16)->io::Result<Vec<u8>> {
 fn native_reply(task:&Task,reply:&Reply)->io::Result<Vec<Vec<u8>>> {
     if task.request.operation==Operation::Ack{return Ok(Vec::new());}
     match &reply.result {
+        Some(result)if task.mixed=>{let raw=lifecycle_wire::compact_results_p06t(result,task.owner.database_id)?;
+            hangar091::stream_with_budget(task.request.id,&raw,response_prefix(task.request.id)?,lifecycle_wire::MAX_RESULT_BYTES)},
         Some(result)=>lifecycle_wire::account_result_stream(task.request.id,response_prefix(task.request.id)?,result,task.owner.database_id),
         None=>Ok(vec![hangar091::unavailable_response(task.request.id)?]),
     }
@@ -184,10 +198,11 @@ struct Job {receiver:mpsc::Receiver<io::Result<Reply>>,worker:Option<JoinHandle<
 impl Job {
     fn start(task:&Task,config:Arc<identity091::Config>)->io::Result<Self> {
         if !config.profile13_battle{return Err(bad("result worker requires profile13 mode"));}
+        if task.mixed!=config.p06t_mixed_ammo{return Err(bad("result immutable task contract differs from configured mode"));}
         let body=task.body()?;let copied=task.clone();let(sender,receiver)=mpsc::sync_channel(1);
         let worker=thread::Builder::new().name("p08c-result-cache".into()).spawn(move||{
             let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||{
-                let bytes=config.results_post(&copied.owner,&body)?;reply(&bytes,&copied)
+                let bytes=if copied.mixed{config.results_post_v2(&copied.owner,&body)?}else{config.results_post(&copied.owner,&body)?};reply(&bytes,&copied)
             })).unwrap_or_else(|_|Err(bad("result worker panicked; immutable request retained")));
             println!("P08C_RESULTS_WORKER session={} operation={} arena={} success={} observer_pending=true",
                 copied.session,copied.request.operation.label(),copied.request.arena,result.is_ok());
@@ -271,7 +286,7 @@ impl Manager {
             if s.battle_results.inflight.is_some()||!s.active{continue;}
             let owner=s.identity.clone().ok_or_else(||bad("result session owner absent"))?;
             let counter=s.battle_results.counter.checked_add(1).filter(|c|*c<=MAX_COMMANDS).ok_or_else(||bad("result command count"))?;
-            let task=Task{session:s.id,owner,request:request.clone(),key:format!("p08c:{}:{}:{counter}",config.battle_run_id,s.id)};
+            let task=Task{session:s.id,owner,request:request.clone(),key:format!("p08c:{}:{}:{counter}",config.battle_run_id,s.id),mixed:config.p06t_mixed_ammo};
             task.body()?;
             // Reserve the complete immutable operation before asking the OS for
             // a thread. A failed spawn is a retryable executor outcome and must
@@ -315,7 +330,7 @@ mod tests {
         account_id:"12345678-1234-4234-8234-123456789abc".into(),database_id:1,name:"owner_a".into(),fixture_dir:std::path::PathBuf::new(),
     })}
     fn task(operation:Operation)->Task {Task{session:7,owner:owner(),request:Request{operation,id:if operation==Operation::Ack{202}else{227},
-        arena:results().arena_id,epoch:0},key:"p08c:12345678-1234-4234-8234-123456789abc:7:1".into()}}
+        arena:results().arena_id,epoch:0},key:"p08c:12345678-1234-4234-8234-123456789abc:7:1".into(),mixed:false}}
     fn response(task:&Task,status:&str)->Value {serde_json::json!({"version":1,"operation":task.request.operation.label(),
         "status":status,"account_id":task.owner.account_id,"native_database_id":task.owner.database_id,
         "command_key":task.key,"arena_id":task.request.arena.to_string(),"acked":status=="acked","replayed":false,
@@ -486,7 +501,7 @@ mod tests {
                 account_id:request["account_id"].as_str().unwrap().into(),database_id:request["native_database_id"].as_i64().unwrap() as i32,
                 name:"Авторитетный".into(),fixture_dir:std::path::PathBuf::new(),
             }),request:Request{operation,id,arena:request["arena_id"].as_str().unwrap().parse().unwrap(),epoch:0},
-                key:request["command_key"].as_str().unwrap().into()};
+                key:request["command_key"].as_str().unwrap().into(),mixed:false};
             assert_eq!(serde_json::from_slice::<Value>(&task.body().unwrap()).unwrap(),*request);
             let parsed=reply(&serde_json::to_vec(&vector["response"]).unwrap(),&task).unwrap();
             let result=parsed.result.as_ref().unwrap();assert_eq!(result.arena_id,9007199254740993);
@@ -510,5 +525,29 @@ mod tests {
             assert_eq!(length,compact.len());assert_eq!(u16::from_le_bytes([compressed[5],compressed[6]]),!(length as u16));
             assert_eq!(&compressed[7..7+length],compact.as_slice());assert_eq!(compressed.len(),length+11);
         }
+    }
+    #[test]fn p06t_actual_sqlite_result_query_ack_missing_preserve_positive_hull_crew_death_and_version(){
+        use sha2::{Digest,Sha256};
+        let raw=include_bytes!("../../../../tests/fixtures/p06t-writer-vectors.json");
+        assert_eq!(format!("{:x}",Sha256::digest(raw)),"0e293febb5e3053e34f5b543c19aa2f7420918415b22595aaa4bb16e532b2c21");
+        let fixture:Value=serde_json::from_slice(raw).unwrap();let mut checked=0;
+        for row in fixture["vectors"].as_array().unwrap().iter().filter(|r|r["operation"]=="results"){
+            let r=&row["request"];let operation=if r["operation"]=="ack"{Operation::Ack}else{Operation::Query};
+            let task=Task{session:7,owner:Arc::new(identity091::Profile{account_id:r["account_id"].as_str().unwrap().into(),database_id:r["native_database_id"].as_i64().unwrap()as i32,
+                name:"real writer".into(),fixture_dir:std::path::PathBuf::new()}),request:Request{operation,id:if operation==Operation::Ack{202}else{221},arena:r["arena_id"].as_str().unwrap().parse().unwrap(),epoch:0},
+                key:r["command_key"].as_str().unwrap().into(),mixed:true};
+            assert_eq!(serde_json::from_slice::<Value>(&task.body().unwrap()).unwrap(),*r);
+            let response=serde_json::to_vec(&row["response"]).unwrap();let parsed=reply(&response,&task).unwrap();
+            let mut legacy=task.clone();legacy.mixed=false;assert!(reply(&response,&legacy).is_err());
+            if let Some(result)=&parsed.result{
+                let own=result.participants.iter().find(|p|p.account_dbid==task.owner.database_id).unwrap();assert_eq!((own.health,own.death_reason,own.shots),(23,0,6));
+                assert!(result.validate().is_err());assert!(result.validate_p06t().is_ok());
+                let bodies=native_reply(&task,&parsed).unwrap();assert_eq!(bodies.is_empty(),operation==Operation::Ack);
+                let mut state=State::default();assert!(state.cache_avatar(result.clone(),task.owner.database_id).is_err());
+                state.cache_avatar_p06t(result.clone(),task.owner.database_id).unwrap();state.confirm_avatar(&[0x87,0,0]).unwrap();
+                assert_eq!(state.pending.front().unwrap().operation,Operation::Ack);
+            }else{assert_eq!(row["response"]["status"],"missing");assert!(!parsed.acked);assert_eq!(native_reply(&task,&parsed).unwrap().len(),1);}
+            let mut wrong=row["response"].clone();wrong["policy_sha256"]="0".repeat(64).into();assert!(reply(&serde_json::to_vec(&wrong).unwrap(),&task).is_err());checked+=1;
+        }assert_eq!(checked,3);
     }
 }

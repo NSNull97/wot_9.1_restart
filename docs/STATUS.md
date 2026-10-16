@@ -73,6 +73,17 @@ Full02 runtime483bb2b:1006PASS/5oldignored/buildPASS,634sourcefiles before/after
 оба MS1AP14/A IS7AP19, исходная БД побайтно сохранена. Новые3 admissionfalse,
 native/UI NOT_RUN; main не изменён. [План](plans/P04M.md).
 
+P06T в `codex/p06t-mixed-shell-damage`: opt-in mixed stacks/current/next,
+frozen source shell, APCR/HEAT/HE laboratory solver, actual geometry/LOS splash,
+module/crew proxy, fire и единый HP/death ledger подключены к v2 reserve/result/
+restart и native publication. Focused05:74PASS/0ignored/buildPASS; Python21,
+legacyPython28, newWeb4/oldWeb25unique, client2.7.3 9+20+61PASS/4hostskips.
+Mixed-01 отдельная БД A110/B27/оба MS1[0AP,4HEAT,10HE] из своего склада,
+0grants; исходныйpool-01 сохранён. Полный source-bound gate ещё NOT_RUN.
+Native/UI/audio NOT_RUN, WT/FV source/scheduler-only без qualified physics/
+owned admission, карточка не принята и не main.
+[Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
+
 ## Принято владельцем на настоящем клиенте #717
 
 - Вход и аккаунт: собственная авторизация, перезаход, ангар на реальном клиенте 0.9.1.

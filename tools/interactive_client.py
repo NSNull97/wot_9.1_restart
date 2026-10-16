@@ -121,6 +121,9 @@ def prepare(args):
     profile13_battle = getattr(args, 'enable_profile13_battle', False)
     if type(profile13_battle) is not bool:
         raise ValueError('Explicit boolean profile13 battle option required')
+    p06t_mixed_ammo = getattr(args, 'enable_p06t_mixed_ammo', False)
+    if (type(p06t_mixed_ammo) is not bool or p06t_mixed_ammo and not profile13_battle):
+        raise ValueError('P06T mixed ammunition requires explicit profile13 battle option')
     ammo_service = bool(getattr(args, 'enable_p09d_ammo_service', False))
     recruitment = bool(getattr(args, 'enable_crew_recruitment', False))
     transfer = bool(getattr(args, 'enable_crew_transfer', False))
@@ -296,6 +299,8 @@ def prepare(args):
         settings['enable_shared_lab'] = True
     if profile13_battle:
         settings['enable_profile13_battle'] = True
+    if p06t_mixed_ammo:
+        settings['enable_p06t_mixed_ammo'] = True
     if catalog_spec is not None:
         settings['destructible_catalog_spec'] = catalog_spec
     payloads['sr_interactive_settings.json'] = (json.dumps(settings, ensure_ascii=True, indent=2)+'\n').encode()
@@ -470,6 +475,8 @@ def main():
                       help='Explicit test_lab native battle-button travel; no automatic input or quit')
     prep.add_argument('--enable-profile13-battle', action='store_true',
                       help='Owned stock MS-1/IS-7 AP-only battle entry from the full isolated profile13 hangar')
+    prep.add_argument('--enable-p06t-mixed-ammo', action='store_true',
+                      help='Explicit P06T source-three-stack entry; requires --enable-profile13-battle and server v2 admission')
     prep.add_argument('--enable-p09d-ammo-service', action='store_true',
                       help='Native maintenance for the two source-bound MS-1 and IS-7 mounts')
     prep.add_argument('--enable-crew-recruitment', action='store_true',

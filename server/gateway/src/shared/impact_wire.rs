@@ -137,6 +137,19 @@ pub fn show_damage(attacker_slot: usize, target_slot: usize, component: u8,
 pub fn show_damage_for(kind: VehicleKind,attacker_slot: usize, target_slot: usize, component: u8,
     bbox: [[f32; 3]; 2], local_start: [f32; 3], local_end: [f32; 3],
     outcome: ShotOutcome) -> io::Result<Vec<u8>> {
+    show_damage_with_effects(kind.shell().effects,attacker_slot,target_slot,component,bbox,local_start,local_end,outcome)
+}
+
+/// Same native quantized hit presentation, preserving the shell frozen at
+/// launch. This does not decide damage and cannot create a module hit volume.
+pub fn show_damage_shell(shell:crate::p06t_shells091::Shell,attacker_slot:usize,target_slot:usize,component:u8,
+    bbox:[[f32;3];2],local_start:[f32;3],local_end:[f32;3],outcome:ShotOutcome)->io::Result<Vec<u8>>{
+    let effects=crate::armament_wire091::effect_index(shell)?;
+    show_damage_with_effects(effects,attacker_slot,target_slot,component,bbox,local_start,local_end,outcome)
+}
+
+fn show_damage_with_effects(effects:u8,attacker_slot:usize,target_slot:usize,component:u8,
+    bbox:[[f32;3];2],local_start:[f32;3],local_end:[f32;3],outcome:ShotOutcome)->io::Result<Vec<u8>>{
     let attacker = wire::vehicle_id(attacker_slot)?;
     let target = wire::vehicle_id(target_slot)?;
     let packed = packed_segment(component, bbox, local_start, local_end, outcome)?;
@@ -150,7 +163,7 @@ pub fn show_damage_for(kind: VehicleKind,attacker_slot: usize, target_slot: usiz
     // #717 native Sequence reader dedc84..dedc97: signed32LE count, not the
     // packed count used by newer BigWorld references. Exactly one UINT64.
     body.extend(1i32.to_le_bytes()); body.extend(packed);
-    body.push(kind.shell().effects); // Pinned ordered #717 shell effectsIndex.
+    body.push(effects); // Pinned ordered #717 shell effectsIndex, frozen at shot.
     body.push(0x13);
     Ok(body)
 }
@@ -159,6 +172,19 @@ pub fn show_damage_for(kind: VehicleKind,attacker_slot: usize, target_slot: usiz
 mod tests {
     use super::*;
     const BOX: [[f32; 3]; 2] = [[0.0; 3], [1.0; 3]];
+
+    #[test]fn p06t_quantized_hit_keeps_frozen_source_effect_for_all_shells(){
+        use crate::p06t_shells091::PROFILES;
+        let legacy=show_damage(0,1,1,BOX,[0.,0.5,1.],[1.,0.25,0.],ShotOutcome::Pierced).unwrap();
+        for profile in PROFILES {for shell in profile.shots {
+            let body=show_damage_shell(shell,0,1,1,BOX,[0.,0.5,1.],[1.,0.25,0.],ShotOutcome::Pierced).unwrap();
+            assert_eq!(&body[..23],&legacy[..23]);assert_eq!(body[23],crate::armament_wire091::effect_index(shell).unwrap());
+            assert_eq!(body[24],0x13);
+        }}
+        assert_eq!(show_damage_shell(PROFILES[0].shots[0],0,1,1,BOX,[0.,0.5,1.],[1.,0.25,0.],ShotOutcome::Pierced).unwrap(),legacy);
+        let mut forged=PROFILES[0].shots[0];forged.effects_resource="smallHighExplosive";
+        assert!(show_damage_shell(forged,0,1,1,BOX,[0.,0.5,1.],[1.,0.25,0.],ShotOutcome::Pierced).is_err());
+    }
 
     #[test]
     fn health_sets_property_before_callback_and_restores_avatar() {

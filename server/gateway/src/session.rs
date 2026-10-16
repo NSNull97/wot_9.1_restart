@@ -685,6 +685,10 @@ impl Session {
                 }
             }
         }
+        // This legacy single-tank path has no v2 loadout/publication contract.
+        if outcomes.iter().any(|outcome|matches!(outcome,crate::battle091::fire::Outcome::Typed(_)
+            |crate::battle091::fire::Outcome::RejectedVehicleState)){
+            return Err(io::Error::new(io::ErrorKind::InvalidData,"mixed armament in legacy battle"));}
         let mut response_sequences=Vec::with_capacity(response_bodies.len());
         for body in response_bodies {response_sequences.push(next.tx.enqueue_body_tracked(&body)?);}
         let response_sequence=response_sequences.first().copied();
@@ -707,6 +711,8 @@ impl Session {
                     self.id)),
                 crate::battle091::fire::Outcome::RejectedBattlePeriod=>events.push(format!(
                     "BATTLE_SHOT_REJECTED session={} sequence={sequence} reason=battle_period domain_applied=false ammo_mutation=false",self.id)),
+                crate::battle091::fire::Outcome::RejectedVehicleState|crate::battle091::fire::Outcome::Typed(_)=>
+                    return Err(io::Error::new(io::ErrorKind::InvalidData,"mixed armament in legacy battle")),
             }
         }
         Ok(Some(()))

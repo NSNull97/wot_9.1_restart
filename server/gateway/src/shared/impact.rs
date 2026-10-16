@@ -30,6 +30,27 @@ pub const MAX_COORDINATE: f32 = 100_000.0;
 pub const MAX_LIFETIME_SECONDS: f32 = 86_400.0;
 pub const MAX_SEGMENT_LENGTH: f32 = 200_000.0;
 pub const FLIGHT_ONLY_GEOMETRY_REVISION: &str = "flight-only-no-collision-v1";
+pub const SPLASH_LOS_POLICY:&str="test_lab.p06t.explosion-ray-self-contact-1mm.v1";
+
+/// Source plate eligibility only. The old AP computation supplies validated
+/// material flags/revision; its damage/penetration outcome is not reused.
+pub fn plate_for(kind:VehicleKind,facts:&materials::MaterialFacts,chord:[f32;3],normal:[f32;3],distance:f64)->io::Result<crate::p06t_damage::Plate>{
+    let old=ap::resolve_for_pair(VehicleKind::Ms1,kind,ap::Input{material:facts,segment_direction:chord,winding_normal:normal,distance})?;
+    Ok(crate::p06t_damage::Plate{armor_mm:old.armor,ordinary:!matches!(old.outcome,ap::Outcome::Unsupported(_))})
+}
+
+fn splash_los_query(terrain:&terrain::Terrain,center:[f32;3],point:[f32;3],excluded:&[u32])->io::Result<([f32;3],Option<terrain::Hit>)>{
+    if !finite_vector(center)||!finite_vector(point)||excluded.len()>fragiles::MAX_MOVEMENT_OBJECTS
+        ||excluded.iter().enumerate().any(|(i,id)|excluded[..i].contains(id)){return Err(invalid("splash LOS points/exclusions"));}
+    let chord:[f64;3]=std::array::from_fn(|i|f64::from(point[i])-f64::from(center[i]));
+    let length=chord.iter().map(|v|v*v).sum::<f64>().sqrt();
+    if length<=0.001{return Ok((center,None));}
+    let start=std::array::from_fn(|i|(f64::from(center[i])+chord[i]/length*0.001)as f32);
+    Ok((start,terrain.nearest_excluding_many(start,point,excluded)?))
+}
+pub fn splash_los(terrain:&terrain::Terrain,center:[f32;3],point:[f32;3],excluded:&[u32])->io::Result<bool>{
+    Ok(splash_los_query(terrain,center,point,excluded)?.1.is_none())
+}
 
 fn invalid(reason: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, reason)
@@ -49,6 +70,8 @@ pub enum Stage {
     Intersection,
     MaterialContact,
     ApResolution,
+    MixedResolution,
+    SplashResolution,
     WreckImpact,
     TerrainContact,
     DestructibleTransition,
@@ -63,6 +86,7 @@ pub enum TerminalReason {
     UnavailableImpactResolver,
     UnresolvedCollision,
     TestLabImpact,
+    TestLabMixedImpact,
     TestLabWreckImpact,
     TerrainCollision,
 }
@@ -84,6 +108,12 @@ pub enum Event {
         ammo_before: u16,
         ammo_after: u16,
         reload_ready: bool,
+    },
+    /// Versioned source-stack admission; legacy AP admission stays literal.
+    Selected {
+        order:u32,battle_id:u64,shot_id:u32,server_tick:u32,shooter_slot:usize,
+        vehicle_compact_id:u32,gun_compact_id:u32,shell:crate::p06t_shells091::Shell,
+        ammo_before:u16,ammo_after:u16,source_revision:&'static str,
     },
     Launch {
         order: u32,
@@ -179,6 +209,18 @@ pub enum Event {
         health_before: i16,
         health_after: i16,
     },
+    MixedResolution {
+        order:u32,battle_id:u64,shot_id:u32,server_tick:u32,attacker:usize,target:usize,
+        material_order:u32,shell:crate::p06t_shells091::Shell,contact:super::model::Contact,
+        resolution:crate::p06t_damage::Resolution,health_before:i16,health_after:i16,
+    },
+    SplashResolution {
+        order:u32,battle_id:u64,shot_id:u32,server_tick:u32,attacker:usize,target:usize,
+        anchor_order:u32,center:[f32;3],shell:crate::p06t_shells091::Shell,contact:super::model::Contact,
+        distance_m:f64,terrain_revision:&'static str,excluded_instances:Vec<u32>,
+        los_start:[f32;3],terrain_blocker:Option<terrain::Hit>,los_policy:&'static str,
+        resolution:crate::p06t_damage::SplashDamage,health_before:i16,health_after:i16,
+    },
     /// Retained stock geometry blocks a shell on a dead actor under a named
     /// laboratory policy. This is not an AP penetration/ricochet verdict.
     WreckImpact {
@@ -225,7 +267,7 @@ pub enum Event {
 impl Event {
     pub fn stage(&self) -> Stage {
         match self {
-            Self::Admission { .. } => Stage::Admission,
+            Self::Admission { .. } | Self::Selected { .. } => Stage::Admission,
             Self::Launch { .. } => Stage::Launch,
             Self::Segment { .. } => Stage::Segment,
             Self::TerrainQuery { .. } => Stage::TerrainQuery,
@@ -233,6 +275,8 @@ impl Event {
             Self::Intersection { .. } => Stage::Intersection,
             Self::MaterialContact { .. } => Stage::MaterialContact,
             Self::ApResolution { .. } => Stage::ApResolution,
+            Self::MixedResolution { .. } => Stage::MixedResolution,
+            Self::SplashResolution { .. } => Stage::SplashResolution,
             Self::WreckImpact { .. } => Stage::WreckImpact,
             Self::TerrainContact { .. } => Stage::TerrainContact,
             Self::DestructibleTransition { .. } => Stage::DestructibleTransition,
@@ -245,6 +289,7 @@ impl Event {
     pub fn order(&self) -> u32 {
         match self {
             Self::Admission { order, .. }
+            | Self::Selected { order, .. }
             | Self::Launch { order, .. }
             | Self::Segment { order, .. }
             | Self::TerrainQuery { order, .. }
@@ -252,6 +297,8 @@ impl Event {
             | Self::Intersection { order, .. }
             | Self::MaterialContact { order, .. }
             | Self::ApResolution { order, .. }
+            | Self::MixedResolution { order, .. }
+            | Self::SplashResolution { order, .. }
             | Self::WreckImpact { order, .. }
             | Self::TerrainContact { order, .. }
             | Self::DestructibleTransition { order, .. }
@@ -264,6 +311,7 @@ impl Event {
     pub fn shot_id(&self) -> u32 {
         match self {
             Self::Admission { shot_id, .. }
+            | Self::Selected { shot_id, .. }
             | Self::Launch { shot_id, .. }
             | Self::Segment { shot_id, .. }
             | Self::TerrainQuery { shot_id, .. }
@@ -271,6 +319,8 @@ impl Event {
             | Self::Intersection { shot_id, .. }
             | Self::MaterialContact { shot_id, .. }
             | Self::ApResolution { shot_id, .. }
+            | Self::MixedResolution { shot_id, .. }
+            | Self::SplashResolution { shot_id, .. }
             | Self::WreckImpact { shot_id, .. }
             | Self::TerrainContact { shot_id, .. }
             | Self::DestructibleTransition { shot_id, .. }
@@ -296,6 +346,7 @@ pub struct Trace {
     contact_sources:[Option<super::ram_proof::Source>;super::model::MAX_ACTORS],
     contact_revoked:[bool;super::model::MAX_ACTORS],
     source_history:Vec<(u32,usize,super::ram_proof::Source)>,
+    mixed:bool,
 }
 
 impl Trace {
@@ -323,7 +374,10 @@ impl Trace {
     fn shot_kind(&self,shot:u32)->io::Result<VehicleKind> {
         self.admission_facts(shot).map(|(slot,_)|slot).ok_or_else(||invalid("shot source profile absent")).and_then(|s|self.kind_for_slot(s))
     }
-    fn event_limit(&self)->usize { self.shot_limit()*EVENTS_PER_SHOT+fragiles::MAX_MOVEMENT_OBJECTS }
+    fn event_limit(&self)->usize {
+        let extra=if self.mixed{super::model::MAX_ACTORS}else{0};
+        self.shot_limit()*(EVENTS_PER_SHOT+extra)+fragiles::MAX_MOVEMENT_OBJECTS
+    }
     fn profile_for(kind:VehicleKind)->&'static str {match kind {
         VehicleKind::Ms1=>PROFILE,VehicleKind::Is7=>"is7_ap_14602",VehicleKind::T26=>"t26_ap_1034",
         VehicleKind::T34=>"t34_ap_7178",VehicleKind::T3485=>"t3485_ap_7946",
@@ -401,7 +455,7 @@ impl Trace {
         if self.events.iter().any(|event| event.shot_id() == shot_id) {
             return Err(invalid("duplicate impact shot identity"));
         }
-        if self.events.iter().filter(|event| matches!(event, Event::Admission { .. })).count()
+        if self.events.iter().filter(|event| matches!(event, Event::Admission { .. }|Event::Selected{..})).count()
             >= self.shot_limit() {
             return Err(invalid("impact shot bound"));
         }
@@ -419,11 +473,28 @@ impl Trace {
         Ok(())
     }
 
+    pub fn admission_shell(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,shooter_slot:usize,
+        ammo_before:u16,ammo_after:u16,shell:crate::p06t_shells091::Shell)->io::Result<()>{
+        self.common(battle_id,shot_id,server_tick)?;let kind=self.kind_for_slot(shooter_slot)?;
+        if shot_id as usize>self.shot_limit()||ammo_before>kind.ammo_limit()||ammo_after.checked_add(1)!=Some(ammo_before)
+            ||!crate::p06t_shells091::PROFILES[kind.mount().index()].shots.contains(&shell)
+            ||self.events.iter().any(|e|e.shot_id()==shot_id)
+            ||self.events.iter().filter(|e|matches!(e,Event::Admission{..}|Event::Selected{..})).count()>=self.shot_limit(){
+            return Err(invalid("selected shell admission source/count/identity"));
+        }
+        let order=self.next_order_value()?;
+        self.push(Event::Selected{order,battle_id,shot_id,server_tick,shooter_slot,vehicle_compact_id:kind.vehicle_compact_id(),
+            gun_compact_id:kind.gun_compact_id(),shell,ammo_before,ammo_after,source_revision:crate::p06t_shells091::SOURCE_REVISION})?;
+        self.mixed=true;
+        if self.battle_id.is_none(){self.battle_id=Some(battle_id);}self.last_tick=server_tick;Ok(())
+    }
+
     pub fn launch(&mut self, battle_id: u64, projectile: &Projectile, server_tick: u32) -> io::Result<()> {
         self.common(battle_id, projectile.sequence, server_tick)?;
         let (admitted_slot, admitted_tick) = self.admission_facts(projectile.sequence)
             .ok_or_else(|| invalid("impact launch without admission"))?;
         if !matches!(self.last_stage(projectile.sequence), Some(Stage::Admission))
+            || self.selected_shell(projectile.sequence)!=Some(projectile.shell)
             || !finite_vector(projectile.origin) || !finite_vector(projectile.velocity)
             || !finite_vector(projectile.terminal)
             || !projectile.gravity.is_finite() || projectile.gravity <= 0.0
@@ -509,8 +580,12 @@ impl Trace {
         let previous_segment_end = self.last_segment_end(shot_id);
         let valid_stage = match reason {
             TerminalReason::TestLabImpact => self.last_stage(shot_id) == Some(Stage::ApResolution),
+            TerminalReason::TestLabMixedImpact => matches!(self.last_stage(shot_id),Some(Stage::MixedResolution|Stage::SplashResolution))
+                &&self.events.iter().any(|e|matches!(e,Event::MixedResolution{shot_id:s,..}if *s==shot_id)),
             TerminalReason::TestLabWreckImpact => self.last_stage(shot_id) == Some(Stage::WreckImpact),
-            TerminalReason::TerrainCollision => matches!(self.last_stage(shot_id),Some(Stage::TerrainContact|Stage::DestructibleTransition|Stage::FragileDamage)),
+            TerminalReason::TerrainCollision => matches!(self.last_stage(shot_id),Some(Stage::TerrainContact|Stage::DestructibleTransition|Stage::FragileDamage))
+                ||matches!(self.events.iter().rev().find(|e|e.shot_id()==shot_id),Some(Event::SplashResolution{anchor_order,..})
+                    if matches!(self.events.iter().find(|e|e.order()==*anchor_order),Some(Event::TerrainContact{..}))),
             TerminalReason::UnresolvedCollision =>
                 matches!(self.last_stage(shot_id), Some(Stage::Intersection | Stage::MaterialContact))
                     && self.selected_terrain(battle_id, shot_id, server_tick)?.is_none(),
@@ -537,7 +612,7 @@ impl Trace {
         health_before: i16, health_after: i16) -> io::Result<()> {
         self.common(battle_id, shot_id, server_tick)?;
         let shooter_kind=self.kind_for_slot(attacker)?;let target_kind=self.kind_for_slot(target)?;
-        if attacker >= self.actor_limit() || target >= self.actor_limit()
+        if self.selected_shell(shot_id)!=Some(None)||attacker >= self.actor_limit() || target >= self.actor_limit()
             || attacker == target || self.has_terminal(shot_id)
             || self.admission_facts(shot_id).map(|(slot, _)| slot) != Some(attacker)
             || !(0..=target_kind.max_health()).contains(&health_before) || !(0..=target_kind.max_health()).contains(&health_after)
@@ -576,6 +651,90 @@ impl Trace {
         Ok(())
     }
 
+    /// Recompute the full family result from this flight's retained nearest
+    /// query and the immutable admitted shell before appending one HP fact.
+    pub fn mixed_resolution(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,attacker:usize,target:usize,
+        contact:&super::model::Contact,resolution:&crate::p06t_damage::Resolution,health_before:i16,health_after:i16)->io::Result<()>{
+        self.common(battle_id,shot_id,server_tick)?;let target_kind=self.kind_for_slot(target)?;
+        let shell=self.selected_shell(shot_id).flatten().ok_or_else(||invalid("mixed result without selected admission"))?;
+        if attacker==target||self.has_terminal(shot_id)||self.admission_facts(shot_id).map(|v|v.0)!=Some(attacker)
+            ||contact.shot!=shot_id||contact.tick!=server_tick||contact.target_slot!=target
+            ||health_before<=0||health_before>target_kind.max_health()||!(0..=target_kind.max_health()).contains(&health_after)
+            ||!contact.segment_seconds.is_finite()||contact.segment_seconds<=0.||contact.segment_seconds>MAX_LIFETIME_SECONDS{
+            return Err(invalid("mixed result identity/health/contact"));
+        }
+        let(material_order,facts)=self.outcome_material(battle_id,shot_id,server_tick,target)?;
+        let(segment_order,intersection_order)=match self.events.iter().find(|e|e.order()==material_order){
+            Some(Event::MaterialContact{segment_order,intersection_order,..})=>(*segment_order,*intersection_order),
+            _=>return Err(invalid("mixed result material order")),
+        };
+        let(start,end)=match self.events.iter().find(|e|e.order()==segment_order){
+            Some(Event::Segment{start,end,segment_tick_end,..})if *segment_tick_end==server_tick=>(*start,*end),
+            _=>return Err(invalid("mixed result segment order")),
+        };
+        let retained=matches!(self.events.iter().find(|e|e.order()==intersection_order),
+            Some(Event::Intersection{triangle_id,mesh,group,material,normal,t,candidate_index,geometry_revision,transform_revision,..})
+                if *triangle_id==contact.triangle.triangle_id&&*mesh==contact.triangle.mesh&&*group==contact.triangle.group
+                &&*material==contact.triangle.material&&*normal==contact.triangle.normal&&*t==contact.triangle.t
+                &&*candidate_index==contact.triangle.candidate_index&&*geometry_revision==contact.geometry_revision&&*transform_revision==contact.transform_revision);
+        let endpoint=std::array::from_fn(|i|start[i]+contact.triangle.t*(end[i]-start[i]));
+        if !retained||*facts!=contact.material_facts||contact.segment_start!=start||contact.segment_end!=end||contact.endpoint!=endpoint
+            ||!finite_vector(contact.target_position)||!finite_vector(contact.target_direction)||contact.target_aim.iter().any(|v|!v.is_finite())
+            ||contact.transform_revision!=super::geometry::transform_revision(contact.target_position,contact.target_direction,contact.target_aim,target,server_tick){
+            return Err(invalid("mixed result does not match exact retained query/pose"));
+        }
+        let origin=self.events.iter().find_map(|e|match e{Event::Launch{shot_id:s,origin,..}if *s==shot_id=>Some(*origin),_=>None})
+            .ok_or_else(||invalid("mixed result launch absent"))?;
+        let distance=(0..3).map(|i|(f64::from(endpoint[i])-f64::from(origin[i])).powi(2)).sum::<f64>().sqrt();
+        let chord=std::array::from_fn(|i|end[i]-start[i]);
+        let plate=plate_for(target_kind,facts,chord,contact.triangle.normal,distance)?;
+        let computed=crate::p06t_damage::resolve_direct(crate::p06t_damage::DirectInput{shell,plate,chord,winding_normal:contact.triangle.normal,distance_m:distance})?;
+        if computed!=*resolution||health_after!=health_before.saturating_sub(computed.damage_hp as i16).max(0)
+            ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("mixed result policy/source/HP/capacity"));}
+        self.push(Event::MixedResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,material_order,
+            shell,contact:contact.clone(),resolution:computed,health_before,health_after})?;
+        self.last_tick=server_tick;Ok(())
+    }
+
+    /// Requery both source vehicle triangles and terrain/static LOS. A supplied
+    /// bool/distance/material cannot stand in for the actual query witnesses.
+    pub fn splash_resolution(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,attacker:usize,target:usize,
+        contact:&super::model::Contact,center:[f32;3],resolution:&crate::p06t_damage::SplashDamage,health_before:i16,health_after:i16,
+        terrain:&terrain::Terrain,geometry:&super::geometry::Bundle,target_actor:&super::model::Actor)->io::Result<()>{
+        self.common(battle_id,shot_id,server_tick)?;let kind=self.kind_for_slot(target)?;
+        let shell=self.selected_shell(shot_id).flatten().ok_or_else(||invalid("splash without selected source"))?;
+        let radius=shell.explosion_radius_m.filter(|r|*r>0.).ok_or_else(||invalid("splash source radius"))?;
+        if self.has_terminal(shot_id)||self.admission_facts(shot_id).map(|v|v.0)!=Some(attacker)
+            ||terrain.map_id()!=self.map||geometry.vehicle_kind()!=kind||target_actor.vehicle_kind()!=kind||target_actor.health!=health_before
+            ||!target_actor.alive()||health_before<=0||health_before>kind.max_health()||!(0..=kind.max_health()).contains(&health_after)
+            ||contact.shot!=shot_id||contact.target_slot!=target||contact.tick!=server_tick||resolution.slot as usize!=target
+            ||self.events.iter().any(|e|matches!(e,Event::SplashResolution{shot_id:s,target:t,..}if *s==shot_id&&*t==target))
+            ||self.events.iter().any(|e|matches!(e,Event::MixedResolution{shot_id:s,target:t,..}if *s==shot_id&&*t==target))
+            ||self.events.iter().filter(|e|matches!(e,Event::SplashResolution{shot_id:s,..}if *s==shot_id)).count()>=self.actor_limit(){
+            return Err(invalid("splash identity/actor/duplicate/bounds"));
+        }
+        let(anchor_order,anchor)=self.events.iter().rev().find_map(|e|match e{
+            Event::MixedResolution{order,shot_id:s,server_tick:t,contact,..}if *s==shot_id&&*t==server_tick=>Some((*order,contact.endpoint)),
+            Event::TerrainContact{order,shot_id:s,server_tick:t,hit,..}if *s==shot_id&&*t==server_tick=>Some((*order,hit.point)),_=>None,
+        }).ok_or_else(||invalid("splash absent current explosion anchor"))?;
+        if center!=anchor||!finite_vector(center)||geometry.explosion_contact(target_actor,center,radius as f32,shot_id,target,server_tick)?.as_ref()!=Some(contact){
+            return Err(invalid("splash center or actual geometry witness differs"));
+        }
+        let chord=std::array::from_fn(|i|contact.segment_end[i]-contact.segment_start[i]);
+        let distance=(0..3).map(|i|(f64::from(contact.endpoint[i])-f64::from(center[i])).powi(2)).sum::<f64>().sqrt();
+        let plate=plate_for(kind,&contact.material_facts,chord,contact.triangle.normal,distance)?;
+        if !plate.ordinary{return Err(invalid("splash unsupported source plate"));}
+        let excluded=self.excluded_before(u32::MAX);let(los_start,blocker)=splash_los_query(terrain,center,contact.endpoint,&excluded)?;
+        let input=crate::p06t_damage::SplashTarget{slot:target as u8,distance_m:distance,armor_mm:plate.armor_mm.ok_or_else(||invalid("splash armor absent"))?,los_clear:blocker.is_none()};
+        let computed=crate::p06t_damage::resolve_splash(shell,&[input])?[0];
+        if computed!=*resolution||health_after!=health_before.saturating_sub(computed.damage_hp as i16).max(0)
+            ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("splash recomputed damage/health/capacity"));}
+        self.push(Event::SplashResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,anchor_order,center,shell,
+            contact:contact.clone(),distance_m:distance,terrain_revision:terrain.source_revision(),excluded_instances:excluded,los_start,terrain_blocker:blocker,
+            los_policy:SPLASH_LOS_POLICY,resolution:computed,health_before,health_after})?;
+        self.last_tick=server_tick;Ok(())
+    }
+
     /// Bind a zero-damage wreck block to the same exact nearest contact as an
     /// AP outcome. A different terminal reason keeps it out of armor results.
     pub fn wreck_impact(&mut self, battle_id: u64, shot_id: u32,
@@ -598,6 +757,25 @@ impl Trace {
             health_before, health_after })?;
         self.last_tick = server_tick;
         Ok(())
+    }
+
+    /// A source-profile actor with inactive crew blocks geometry while its
+    /// genuine HP may remain positive. Never forge a zero-HP wreck for this.
+    pub fn wreck_inactive(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,attacker:usize,target:usize,
+        health_before:i16,health_after:i16,target_actor:&super::model::Actor)->io::Result<()>{
+        self.common(battle_id,shot_id,server_tick)?;let kind=self.kind_for_slot(target)?;
+        if attacker==target||self.has_terminal(shot_id)||self.admission_facts(shot_id).map(|v|v.0)!=Some(attacker)
+            ||target_actor.vehicle_kind()!=kind||target_actor.alive()||target_actor.health!=health_before||health_before!=health_after
+            ||!(0..=kind.max_health()).contains(&health_before){return Err(invalid("inactive wreck actor/HP identity"));}
+        let(material_order,_)=self.outcome_material(battle_id,shot_id,server_tick,target)?;
+        let expected_pose=super::geometry::transform_revision(target_actor.position,target_actor.direction,
+            [target_actor.aim.yaw,target_actor.aim.pitch],target,server_tick);
+        if !self.events.iter().any(|e|matches!(e,Event::Intersection{shot_id:s,server_tick:t,candidate_index:0,transform_revision,..}
+            if *s==shot_id&&*t==server_tick&&*transform_revision==expected_pose))
+            ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("inactive wreck exact source pose/capacity"));}
+        self.push(Event::WreckImpact{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,material_order,
+            policy_revision:"test_lab.p06t.inactive-crew-retained-HP-wreck.v1",health_before,health_after})?;
+        self.last_tick=server_tick;Ok(())
     }
 
     pub fn terrain_contact(&mut self, battle_id: u64, shot_id: u32,
@@ -667,7 +845,12 @@ impl Trace {
         };
         if hit!=damage.hit||self.terrain_for_query(battle_id,shot_id,server_tick,segment,query+1)?!=Some((query,Some(hit))){return Err(invalid("fragile damage query binding"));}
         let mut state=self.fragiles.clone().ok_or_else(||invalid("fragile catalog absent"))?;
-        if state.contact_for(self.shot_kind(shot_id)?,shot_id,damage.shooter,server_tick,hit)?.as_ref()!=Some(damage)
+        let kind=self.shot_kind(shot_id)?;
+        let replay=match self.selected_shell(shot_id).flatten(){
+            Some(shell)=>state.contact_shell_for(kind,shell,shot_id,damage.shooter,server_tick,hit)?,
+            None=>state.contact_for(kind,shot_id,damage.shooter,server_tick,hit)?,
+        };
+        if replay.as_ref()!=Some(damage)
             ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("fragile damage transaction"));}
         self.push(Event::FragileDamage{order:self.next_order_value()?,battle_id,shot_id,server_tick,terrain_contact_order:order,damage:damage.clone()})?;
         self.fragiles=Some(state);self.last_tick=server_tick;Ok(())
@@ -952,9 +1135,16 @@ impl Trace {
 
     fn admission_facts(&self, shot_id: u32) -> Option<(usize, u32)> {
         self.events.iter().find_map(|event| match event {
-            Event::Admission { shot_id: id, shooter_slot, server_tick, .. } if *id == shot_id =>
+            Event::Admission { shot_id: id, shooter_slot, server_tick, .. }|Event::Selected { shot_id:id,shooter_slot,server_tick,.. } if *id == shot_id =>
                 Some((*shooter_slot, *server_tick)),
             _ => None,
+        })
+    }
+
+    fn selected_shell(&self,shot_id:u32)->Option<Option<crate::p06t_shells091::Shell>>{
+        self.events.iter().find_map(|e|match e{
+            Event::Admission{shot_id:s,..}if *s==shot_id=>Some(None),
+            Event::Selected{shot_id:s,shell,..}if *s==shot_id=>Some(Some(*shell)),_=>None,
         })
     }
 
@@ -973,6 +1163,10 @@ fn distance(start: [f32; 3], end: [f32; 3]) -> f32 {
 fn segment_tick_end(start: u32, end: u32) -> io::Result<()> {
     if end > start { Ok(()) } else { Err(invalid("impact segment tick interval")) }
 }
+
+#[cfg(test)]
+#[path="p06t_impact_tests.rs"]
+mod p06t_tests;
 
 #[cfg(test)]
 mod tests {
