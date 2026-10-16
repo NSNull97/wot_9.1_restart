@@ -13,7 +13,8 @@ Tag `net02-private-lan-20261016-01`, exe SHA256
 Actual ownhost Login/Base/Account/room/Ready/Leave PASS45.391с, ownstop PASS.
 Native двух ПК, firewall и hosting ещё NOT_RUN. Первый боевой тест пока не принят.
 Стабильная копия этого отчёта вне переключаемого checkout —
-`local/stands/night-battle-20261016-01/MORNING-ALL-CARDS-20261016.md`.
+`local/stands/night-battle-20261016-01/MORNING-ALL-CARDS-20261016-02.md`.
+Предыдущая стабильная копия без suffix02 сохранена как исторический checkpoint.
 
 Оба установленных клиента по-прежнему **coreV7**; их ledgers/nonmutable файлы
 сверены, rollback не выполнялся. Родные hangar/cache/model core наблюдались,
@@ -94,6 +95,16 @@ actual compensation stop обоих. Version02 с fixed90с измерила BOU
 полный startup42.718с. Runtime/HTTP/auth deadlines не менялись. Source restore
 actual capture4/audit794/changes0 PASS, applyNOT_RUN;15isolatedGit checks PASS.
 
+Дополнительный actual gateway-only ingress-size01: **размерный gate PASS**,
+34.445с/BOUND30.222с. Четыре max controls Login1553/Base1024 captured до/после,
+oversize1554/1025 отсутствуют, responses0; final capture/log после ownstop и
+source/resource binding recheck PASS. Own-IP canary DELIVERED; source127 canary
+FAIL WinError10051, поэтому allowlist-negative NOT_RUN и denied traffic не отправлен.
+HTTP3492 удерживался exclusive socket без listen; bridge/auth/HTTP/SQL actions0.
+Protected15/core installed96/runtime794 unchanged. Helper23componentPASS на fake
+socket/Popen fixtures отдельно от actual run. ПервыйBase cross-IP/nativefragment/
+remoteMTU/twoPC NOT_RUN. ReceiptSHAf9dae74c2cb32b26340e09d0c4606776a34684bcc67e1cbbfaa91017c35ff431.
+
 Не запускался весь Python/legacy/rustfmt набор. Первый broad CPython glob FAIL
 из-за Python3-only greeting сохранён; exact suites прошли отдельно.
 Layoutcheck FAIL на прежнем server/__pycache__, guard не ослаблялся.
@@ -143,6 +154,16 @@ python -B -X utf8 local/stands/night-battle-20261016-01/mixed-01/run.py client -
 | NET02 | Два ПК через actual LAN Login/advertisedBase, room/battle/return/rejoin | Два реальных sourceIP, private TCP недоступен сB, RTT/retransmit/gaps |
 
 Сначала core gate, затем lawful rollback реально установленного overlay.
+P04M квалификация имеет новый standalone маршрут
+`local/stands/night-battle-20261016-01/MORNING-P04M-QUALIFIED-01.md`.
+Старый parent MORNING rollback normal outputs не применять: они PREPARED,
+без ledger. Successor проверяет actual coreV7 ledgers и38 source/PYC records
+каждого из6 overlays, затем exact483/raw634/qVERSION6. Material634 полностью
+восстановимы:278 Git blob/355 wholeCRLF/1 retained own test;14 isolated Git/
+path/partialwrite tests PASS. Root повторно проверил actual materials/artifacts,
+source_ready/apply/install/native NOT_RUN; helper отказывает текущему NET head.
+Promotion receipt `local/evidence/20261016-morning-qualification01/promotion01.json`,
+SHA0d6addfbaf8c0eed13a148706bdb62a4e5dd634e15c35ad6de03ff3b847fb06f.
 WT/FV extended qualification — отдельные сохранённые команды
 `extended-01/MORNING-extended.md`; existing binding-full06 уже создан.
 Не обходить installed-target guard и не копировать тяжёлые client resources.
@@ -185,6 +206,13 @@ Native/UI/6windows/WAN/NAT/hosting все отдельно NOT_RUN.
   `local/stands/net02-ownhost-20261016-01/MORNING-NET02-EVIDENCE.md`.
   Финальный readonly raw+logical/source state:
   `local/evidence/20261016-net02-integration01/final-state03.json`.
+- `local/evidence/20261016-net02-ingress01`: canary-feasibility01 FAIL10051,
+  protected before02, prepare03/send04 commands/logs и after05 actual closure;
+  SHA06a11ceb7645caa658308eb5693aa8bed4fbdf6f0200aa04c30d9c3cc1f12d92.
+  Stand `local/stands/net02-ingress-20261016-01/runs/ingress-size01` содержит
+  actual capture4/rawbytes/startup/launch/ownstop/poststop result. Точные команды
+  и scope — новый stand-local `MORNING-INGRESS-EVIDENCE-01.md`; consumed ownhost
+  initial43/44 proof не затрагивался и не переиспользовался.
 
 Software rollback — соответствующий сохранённый tag/ветка и exact source restore.
 Client rollback — только actual latest install ledger с остановленным процессом;

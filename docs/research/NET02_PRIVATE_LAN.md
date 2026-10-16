@@ -140,3 +140,42 @@ actual data and realB/interface/per-PC overlays. Next owner step is the saved
 coreV7 native matrix, then later qualification/P10B/paired LAN; no tail before
 the first battle milestone. Acceptance: FULL_AND_OWNHOST_PASS; native/twoPC/
 firewall/hostingNOT_RUN, no main merge.
+## Дополнение: наблюдаемый UDP ingress-size gate
+
+Heartbeat после full/ownhost checkpoint использован для отдельного
+pre-auth gateway-only стенда. Production source/runtime608/794/full1414 и80
+ресурсных ссылок прежние; standalone binding не содержит owner/initial_state/
+credentials/DB. Derived config меняет только Login/Base20242/20243 и advertised
+Base. Служебный HTTP3492 блокируется exclusive socket без listen; Node/bridge,
+auth, SQL, fixtures и клиентские overlay не запускаются и не меняются.
+
+VERIFIED source: shared/server.rs вызывает admit_datagram до Recorder.observe;
+Login bound1553 и Base1024. ASCII marker не соответствует ни целому Login,
+ни measured fragments1437/142, а пустая Session Table отвергает Base. Helper
+frozen01 SHA b8264b6bd22f56b33997da4a0dcc6457174f1f1a38b3ae1ffc2569760904b643,
+23 authored component tests PASS на fake sockets/Popen; это отдельно от actual
+сети. Source/exe pin проверяется перед spawn, точный собственный Popen handle
+закрывается при любом postspawn failure; окончательный capture/log читается
+после stop, затем повторяется полный source/resource/config audit.
+
+OBSERVED Windows own run ingress-size01:34.445с/BOUND30.221626с; Login1553 и
+Base1024 записались по одному до/после, всего4точных peer/channel/payloadSHA.
+Пакеты1554/1025 не попали в capture, responses0. Own-IP canary доставлен;
+loopback→ownIP sendto получил WinError10051. Поэтому allowlist-negative
+NOT_RUN_ROUTE_UNAVAILABLE, запрещённые source-пакеты не отправлялись. Первый
+предварительный canary FAIL также сохранён; его молчание не считается отказом
+gateway. Никаких IP/profile/firewall изменений или source-rebind fallback.
+
+Root after05 проверяет protected15файлов,96installed nonmutable coreV7 файлов
+и794runtime source hashes unchanged. Gateway OWN_POPEN_TERMINATED/PIDabsent,
+HTTP interlock закрыт с процессом helper. Actual result SHA
+f9dae74c2cb32b26340e09d0c4606776a34684bcc67e1cbbfaa91017c35ff431;
+Rootclosure SHA06a11ceb7645caa658308eb5693aa8bed4fbdf6f0200aa04c30d9c3cc1f12d92.
+Evidence — `local/evidence/20261016-net02-ingress01` и отдельный ingress stand.
+
+Это OBSERVED configured datagram-size-before-capture на данном Windows.
+FirstBase cross-IP, native fragment semantics, remote MTU, twoPC/native/WAN
+остаются NOT_RUN/UNKNOWN. В live capture reader есть fail-closed окно: raw file
+появляется перед JSONL record; оно может дать ложный FAIL, но не PASS. Actualrun
+его не встретил, frozen helper не ослаблялся. Эта дополнительная диагностика
+не закрывает карточку NET-02 и не разрешает main merge или хвост.

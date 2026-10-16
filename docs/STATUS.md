@@ -14,6 +14,11 @@ Full01/608bb23 **1414PASS/5ignored/buildPASS/794rawexact**,542.04с; tag
 net02-private-lan-20261016-01. Actual ownhost Login/Base/room/Ready/Leave PASS,
 45.391с;NET C44/D45/БКunchanged/active0,sourceP10B43/44 unchanged,ownstop PASS;
 native/twoPC/firewall/hosting NOT_RUN; layoutcheck FAIL на прежнем cache.
+Дополнительный actual ingress-size01:34.445с, max1553/1024 captured4,
+oversize1554/1025 absent/responses0/ownstop PASS; helper23componentPASS.
+Allowlist-negative NOT_RUN/Windows10051; protected15/core96/source794 unchanged.
+P04M successor morning route исправляет stale rollback;14component/material634/
+artifact audits PASS, actual apply/install/native NOT_RUN.
 [План](plans/NET-02.md), [факты/границы](research/NET02_PRIVATE_LAN.md).
 
 STAB-01 принята/mainffce8cb: runtime0574ab0/854tests/5ignored/buildPASS,

@@ -24,6 +24,15 @@ Public, B неизвестен. Следующий gate — owner coreV7 native 
 Факты/ограничения — [NET02_PRIVATE_LAN](research/NET02_PRIVATE_LAN.md).
 Служебный HTTP остаётся loopback; originalclient/coreV7 не трогать.
 
+Дополнительный independent ingress-size01: actual gateway-only UDP gate PASS
+на Windows,34.445с/BOUND30.222с. Четыре max controls1553/1024 до/после,
+oversize1554/1025 отсутствуют в capture, responses0; окончательная сверка после
+ownstop. HTTP3492 только exclusive non-listening interlock, bridge/auth/SQL0.
+Allowlist-negative NOT_RUN: loopback canary WinError10051; own-IP canary delivered.
+FirstBase cross-IP/nativefragment/twoPC NOT_RUN. Protected15/core96/source794
+unchanged; helper23componentPASS. P04M утренний stale rollback исправлен новым
+supplement,14component/material634/artifact audits PASS, apply/install NOT_RUN.
+
 ## Сохранённый предшествующий checkpoint
 
 **P10B — родная тренировочная комната на N игроков**, ветка

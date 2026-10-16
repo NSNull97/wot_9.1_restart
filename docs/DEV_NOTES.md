@@ -54,6 +54,16 @@ Harness профиля 12/13: `tools/p09e_research_harness.py --seed-only`.
 
 ## Стенды (`local/stands/`, не в git)
 
+- P04M qualification после coreV7: применять новый parent supplement
+  `night-battle-20261016-01/MORNING-P04M-QUALIFIED-01.md`. Старый parent
+  MORNING ссылается на normal PREPARED outputs без ledger: это не текущий
+  rollback. Successor использует actual mixed-01 ledgers, exact runtime483bb2b,
+  raw634 restore из Git278/CRLF355/retained1 и q VERSION6 plans. Helper остаётся
+  `local/night-staging/20261016/p04m-native-morning01/restore_p04m_source.py`.
+  Component14/Root material634/artifact audits PASS; actual checkout/apply/
+  rollback/install/native NOT_RUN. Предшествующий identity20020 не останавливать;
+  q runner требует его доступности, собственную identity службу не запускает.
+
 - NET02 runtime608bb23/tag `net02-private-lan-20261016-01`: full1414PASS/
   5oldignored/build/794rawexact. `net02-ownhost-20261016-01` actual two own-IP
   Login/Base/Account/room/Ready/Leave PASS45.391с; ownstop. SourceP10B43/44
@@ -64,7 +74,12 @@ Harness профиля 12/13: `tools/p09e_research_harness.py --seed-only`.
   HTTP127 подтверждены Windows; remoteB/firewall/native/hosting NOT_RUN.
   Exactcommands/rollback — собственный MORNING-NET02-EVIDENCE.md. Общая
   стабильная утренняя матрица — night-battle-20261016-01/
-  MORNING-ALL-CARDS-20261016.md, first coreV7; clients не переставлялись.
+  MORNING-ALL-CARDS-20261016-02.md, first coreV7; clients не переставлялись.
+  Дополнительный `net02-ingress-20261016-01`: standalone binding099357da,
+  actual gateway-only max1553/1024→oversize1554/1025→max controls PASS34.445с,
+  captured4/responses0/ownstop. No bridge/auth/SQL, protected15/core96 unchanged.
+  Loopback canary10051 оставляет allowlist-negative NOT_RUN; см. отдельный
+  `MORNING-INGRESS-EVIDENCE-01.md`. Nativefragment/firstBasecrossIP/twoPC NOT_RUN.
 
 - `night-battle-20261016-01/mixed-01`: отдельный P06T opt-in backup, оба
   MS1[AP0,HEAT4,HE10] из своего склада,0grants; исходныйpool-01 сохранён.

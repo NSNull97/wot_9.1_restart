@@ -125,3 +125,13 @@ supplement должен использовать фактически устан
 bytes; отсутствие материала остаётся BLOCKED/NOT_RUN, fullproof не переписывать.
 Frozen инструкции/старые helpers сохраняются; actual overlay rollback, source
 apply и native проверки по-прежнему NOT_RUN.
+
+Фактический итог supplement:14isolated checks и Root readonly material634/
+artifact audits PASS; новый `MORNING-P04M-QUALIFIED-01.md` перенесён byteexact,
+source_ready/apply/install NOT_RUN. Ingress helper23componentPASS, frozen01;
+actual ingress-size01 завершён34.445с/BOUND30.222с, captured4max1553/1024 и
+oversize1554/1025 отсутствуют, responses0. Ownstop/PIDabsent и poststop exact
+capture/log/source/resource audit PASS. Loop canary10051, actual allowlist-negative
+и firstBase cross-IP NOT_RUN; native/twoPC не закрыты. Source794/protected15/
+installedcore96 exact. Evidence `local/evidence/20261016-net02-ingress01/after05.json`,
+SHA06a11ceb7645caa658308eb5693aa8bed4fbdf6f0200aa04c30d9c3cc1f12d92.
