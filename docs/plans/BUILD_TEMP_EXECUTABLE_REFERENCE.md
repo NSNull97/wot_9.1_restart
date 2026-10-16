@@ -25,3 +25,10 @@ PASS. Runner13 пока D-export-only, final morning build сохранить de
 
 Откат — P10B/NET predecessor или revert только технического source commit;
 все новые/старые target/receipts оставить. Native/client/gameplay NOT_RUN.
+
+17.10 actual checkpoint: runtime442ce7d,17+11PythonPASS; canonical full1573/
+0fail/5oldignored/build/876rawsourceexact и actual own-LAN Login/Base из этого
+C exe PASS. Source-before/after/outer seal и команды — research/BUILD_TEMP_
+EXECUTABLE_REFERENCE.md. D duplicate отсутствует; sourceZIP также новый ownC.
+Main без merge. После тестов на D осталось40MiB: отдельный fresh-empty-output
+NTFS compression candidate готовится без воздействия на старые данные.

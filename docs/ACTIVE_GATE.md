@@ -1,32 +1,30 @@
-# Текущая карточка — NET-02: интеграция поверх loss/late/training
+# Текущая карточка — NET-02 software checkpoint; далее Hold5
 
-Ветка `codex/net-02-loss-integration`, normal merge savedb6c294f поверх
-P10B bce643f. Reviewed union12 сохраняет82 текущих source blobs, typed
-Config28 и private HTTP16. Новые Rust/client/full проверки ещё NOT_RUN.
-[План интеграции](plans/NET02_LOSS_INTEGRATION.md). Mainffce8cb сохранён.
+NET union43790d1 поверх P10B bce643f, отдельный retained-C build runtime
+`442ce7daeed861b20b3b86168b0c6816ea9efafc`. **Full1573PASS/0FAIL/5oldignored/
+buildPASS/876rawsourceexact**; same-full actual late и Loss4 training
+HTTP/SQL compositions PASS. Python17+11 guards; точные host/CPython client
+counts и dependency carry-forward — [факты NET](research/NET02_LOSS_TRAINING_INTEGRATION.md).
 
-## Предыдущий проверенный checkpoint P10B
+Actual own-host encrypted Login→RunOpen4→decrypted advertised Base→firstBase2
+PASS из C exe. Только own192.168.1.101/32, privateHTTP1273492. Новый diagnostic
+DB A129→130/B43→44/active0/grants0/ammo unchanged, исходныйloss01 A129/B43
+сохранён. ExactownPID98836/105456 STOP; native V8/UI/two-PC/hosting NOT_RUN.
 
-Ветка `codex/p10b-loss-training-integration` от91dbdbe, runtime `689fb93c4a1bfb05cf3bb1d63ce3836e2e2f4a74`.
-Normal merge saved6c6b7b7 +typed Loss4 Saga/Host/Web +actual09/10/11 +strict raw
-source binding. **Full1553PASS/0FAIL/5oldignored/buildPASS/865rawsourceexact**;
-actual compensation→same-run room→launch→Finished2/claims release и прежний
-late composition PASS. Python17/Web4/HTTP3/oldWeb37; client host79 и actual
-CPython76+3старых host-onlyskip,CLI1. [Факты](research/P10B_LOSS_TRAINING_INTEGRATION.md),
-[план](plans/P10B_LOSS_TRAINING_INTEGRATION.md).
+Main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe` без merge. До17.10 09:00
+продолжается [ночное задание](plans/NIGHT_20261017.md), без ручных вопросов.
+Непринятые native карточки остаются в зависимых ветках. Historical STAB/P08B
+cycles/P08C marker/natural/autoaim приняты только в прежнем проверенном объёме.
 
-Native room/UI/callback IDs/real six/gameplayUDP/two-PC NOT_RUN. Не подменять
-этот gate software PASS; не сливать в mainffce8cb. Historical accepted STAB,
-P08B cycles и P08C marker/natural/autoaim остаются только в проверенном объёме.
+Следующий шаг — технический fresh-empty-output NTFS compression prerequisite:
+после full на D осталось40MiB, повторные SQL fixtures иначе займут остаток.
+Трогать только новые пустые owned каталоги до первой записи; старые данные
+не удалять/перемещать/сжимать, production path guards не расширять. Затем
+отдельная codex/p08b-owner-battle-hold: reviewed runtime16 +writer11/19,
+actual runtime/SQL composition и свежие утренние contexts. Hold5 пока
+FROZEN_CANDIDATE_ONLY, не включён; Training5/pending5 unsupported.
 
-Владелец разрешил ночь до17.10 09:00 без ручных остановок:
-[NIGHT_20261017](plans/NIGHT_20261017.md). Единственный следующий шаг — новая
-NET-02 integration ветка, normal merge savedb6c294f с typed Config28/private
-HTTP16 и сохранением текущих loss/late/room hooks, новый full и свежий binding.
-Затем operational morning contexts и отдельная Hold5 integration по готовым
-кандидатам; native оставлять NOT_RUN. Текущие службы/клиенты STOP.
-
-Старый loss-01 A129/B43/active0/0grants, loadedA[0,48,48]/B[0,50,46].
-CoreV7 immutable96 совпали, original read-only. Старый binding-loss01 только
-runtimeed67531; этот head с ним не запускать. Новые full/source/client ledger
-и manual matrix — [NIGHT_REPORT_20261017](NIGHT_REPORT_20261017.md).
+CoreV7 immutable96/original read-only сохранены. Старый binding-loss01 только
+runtimeed67531; новые сборки с ним не запускать. Retained-C operational
+runner20/21 готовятся отдельно; full/current binding/client ledger нужны
+перед утром. Все own службы/клиенты STOP. [Отчёт](NIGHT_REPORT_20261017.md).

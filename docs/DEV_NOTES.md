@@ -185,6 +185,19 @@ Allowlist перед push (файл ORG-0A удалён как устаревш�
 
 ## Документация
 
+- NET union17.10 использует typed ConfigFields28, private HTTP16. Не заменять
+  его старым Bounded23/27. Hold5 successor добавляет только bool и budget29.
+- При почти полном D --cargo-temp-target --retain-temp-executable оставляет
+  verified canonical exe в ownCtarget. Consumer обязан явно использовать
+  built_executable_for_result и actual full/source proof; bad mode/path не
+  выбирает старый Dexe. Старые runner13/15 D-only честно отказывают C mode.
+- Exact raw source hash сохраняет EOL: NET game_network.rs после normal merge
+  имеет140CRLF и raw e3d5cca1…, normalizedLF e90c8d… лишь provenance. После
+  full нельзя менять bytes ради совпадения старого diagnostic pin.
+- Старый Hold09 adapter test-view удаляет P10B routes: не применять его full
+  copy/patch. Reviewed writer19 восстанавливает bounded Hold hunks поверх
+  текущего adapter, сохраняет обе selection routes и явно403 для Hold5 owner.
+
 `STATUS.md` — короткое текущее состояние (до ~150 строк), история — в git.
 План карточки — `docs/plans/<CARD>.md` на время работы; после слияния удалить, факты
 оставить в `docs/research/` (+ строка в [INDEX](research/INDEX.md)) и одной записью в STATUS.
