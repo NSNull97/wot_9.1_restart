@@ -1,25 +1,18 @@
 # Состояние проекта — 2026-10-16
 
-P08C native marker принят: owner оба красных enemy имени/ромба и управление,
-actual paired wire11183packets/0conflicts, runtime363daa3 full1099PASS/5oldignored/
-buildPASS/source683exact. Checkpoint972843a сохранён, main не менялся.
-
-Natural Elimination gate FAIL: winner personal summary пуста при team tab90урона/
-1фраге; loser black return и выброс после rejected169byte frame/idle_timeout.
-Оба durable результата записаны. Own run morning-marker01 остановлен по receipts,
-A120/B35, MS1 ammoA[0,1,8]/B[0,3,9], active0; logs/traces/RO DB backup сохранены.
-Текущая ветка codex/p08c-natural-results-return, план P08C_NATURAL_RESULTS_RETURN:
-source-bound details и strict native return реализованы; focused43/build и
-Python33/0skips PASS. Runtime09274f2 full1130PASS/5oldignored/buildPASS,
-689raw source exact. Повтор natural05 прерван автоприцелом: strict Driving parser
-не принимал самостоятельный0x0c, reliable gap привёл к Disconnect/Forfeit.
-У Ёжа итоги с засветом owner OBSERVED; Results8 spotted1/Avatar+Account/hangar
-подтверждены. Оба HP90/damage0/kills0; natural kill/dead return NOT_RUN_INTERRUPTED.
-Own run остановлен по receipts, logs/traces/wire/RO backup сохранены;
-A123/B38,ammoA[0,0,5]/B[0,3,9],active0. Сейчас узкий parser/native отказ
-автоприцела через onAutoAimVehicleLost; полноценного сопровождения цели нет.
-Нужны regressions/current-head full/build и fresh native повтор.
-UI/return FAIL до перепроверки. Late manual-leaver results и spawn отдельно открыты.
+P08C narrow native natural-results/return принят на46d5c20: owner подтвердил
+снятие захвата, мышь, личные итоги и оба ангара. Actual arena2975833524010313505:
+Elimination/B90damage/1kill/1spot, оба BattleFinished/Avatar100/actualAccount1500/
+acked/naturalreturn/hangar, dead routed bind PASS, rejects/faults/idle_timeout0.
+A126/B41, ammoA[0,0,4]/B[0,3,4],active0. Full1136PASS/5oldignored/buildPASS,
+689sourceexact, original64static/Python7PASS; independent result wire9474packets PASS.
+Autoaim explicit refusal: B2actual nonzero/callback/ACK/input PASS; A nonzero
+coverageNOT_RUN (cancel0only), owner mousebothconfirmed. Auto-tracking unsupported.
+Marker gate ранее принят972843a. Полная P08C/цепочка не приняты: capture/timeout/
+repeat/early-leaver results остаются открыты; mainffce8cb не менялся.
+Evidence `local/evidence/20261016-p08c-autoaim-acceptance01/acceptance02.json`.
+Новая задача владельца — P06T ammo-rack detonation и потеря всех оставшихся
+loaded снарядов как особое правило проекта; прошлые строки не пересчитывать.
 
 Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего
 дерева и доступна в git: `git show 1eaff5e:docs/STATUS.md` (а также удалённые

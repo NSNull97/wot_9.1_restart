@@ -1,29 +1,28 @@
-# Текущая карточка — P08C: личные итоги и natural return, 2026-10-16
+# Текущая карточка — P08C: natural results/return checkpoint принят
 
-Ветка `codex/p08c-natural-results-return` от marker checkpoint972843a.
-План [P08C_NATURAL_RESULTS_RETURN](plans/P08C_NATURAL_RESULTS_RETURN.md).
-Marker gate PASS: owner оба красных enemy имени/ромба и управление; actual
-paired wire11183 packets/0conflicts, full1099/5oldignored/build/source683.
+Ветка `codex/p08c-natural-results-return`, runtime46d5c20. План
+[P08C_NATURAL_RESULTS_RETURN](plans/P08C_NATURAL_RESULTS_RETURN.md).
+Owner подтвердил: захват снялся, мышь работает, личные итоги верные, оба
+вернулись. Actual arena2975833524010313505: Elimination/B winner, AHP0/BHP90;
+B5HE/90damage/1kill/1spot. Оба BattleFinished/result committed/Avatar100/
+actual Account1500/acked/natural return/hangar PASS. Dead routed bind A
+отработал без reject; faults/idle_timeout0. A126/B41, ammoA[0,0,4]/B[0,3,4],active0.
 
-Следующий natural Elimination выявил FAIL: personal summary победителя пуста
-при team tab90damage/1frag; у уничтоженного black return и idle_timeout после
-rejected169byte frame. Оба durable результата сохранены. Own morning-marker01
-остановлен по receipts; A120/B35, ammoA[0,1,8]/B[0,3,9], active0. Логи и RO DB
-backup сохранены. Полный native P08C не принят. Текущий шаг — strict native
-return parser и source-bound personal details реализованы, focused43/build и
-Python33/0skips PASS. Runtime09274f2:full1130PASS/5oldignored/buildPASS,
-689raw source before/after exact. Fresh natural05 owner test прерван:
-автоприцел первого игрока отвергнут до parser, reliable gap → Disconnect;
-Forfeit победа Ёжа, оба HP90/damage0/kills0. У Ёжа owner наблюдал итоги с
-засветом; Results8 spotted1/Avatar+Account delivery/hangar подтверждены.
-Сохранены fresh log/wire/native traces/consistent backup, own run остановлен
-по receipts: A123/B38,ammoA[0,0,5]/B[0,3,9],active0. Natural kill/личная карточка
-урона/dead return NOT_RUN_INTERRUPTED. Текущий узкий ремонт: strict standalone
-autoAim parser и явная native отмена неподдерживаемого захвата через
-onAutoAimVehicleLost; сопровождение цели не объявляется реализованным.
-Нужны regressions/current-head full/build и новый fresh native повтор.
-Ночные ветки, accepted marker972843a и mainffce8cb сохранены. Late manual-leaver
-results и spawn остаются отдельными открытыми пунктами.
+Canonical full46d5c20:1136PASS/5oldignored/buildPASS/689rawsourceexact;
+original64static/Python7PASS. Result-only independent wire9474packets PASS.
+Optional autoaim checker03: B2nonzero requests/callback/ACK/ownaim/heartbeat PASS;
+A лишь cancel0, nonzero wire coverage NOT_RUN. Owner управление обоих подтверждено.
+Полноценный auto-tracking явно недоступен. Checker02 ложная коллизия ACK seq
+исправлена только в новом ignored03; оригинальный FAIL сохранён.
+
+Evidence `local/evidence/20261016-p08c-autoaim-acceptance01/acceptance02.json`.
+Полная P08C/родительские карточки ещё не приняты: capture/timeout/draw/repeat/
+early-leaver fullresult остаются открыты. Mainffce8cb и ночные ветки сохранены.
+Own morning-autoaim01 оставлен работающим, оба клиента вернулись в ангары.
+
+Новая явная задача владельца: детонация БК/гибель/башня и правило проекта
+«снесли БК — потерял все оставшиеся снаряды». После этого checkpoint — отдельная
+зависимая ветка/план P06T; прошлые результаты и расход не переписывать.
 
 ## Сохранённый предшествующий core checkpoint
 

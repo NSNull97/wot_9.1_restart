@@ -86,3 +86,21 @@ source proof, выполнить current-head full/build и новый fresh run
 Failure evidence: `local/evidence/20261016-p08c-autoaim-failure01`; собственные
 процессы morning-natural01 остановлены по receipts. Consistent backup сохранён,
 A123/B38, ammoA[0,0,5]/B[0,3,9],active0. Расход не компенсировать.
+
+## Принятый узкий checkpoint autoaim06
+
+Runtime46d5c20 full1136PASS/5oldignored/buildPASS/689raw source exact.
+Owner подтвердил снятие захвата/мышь/личные итоги/оба natural ангара.
+Actual arena2975833524010313505: Elimination/B90damage/1kill/1spot, оба
+BattleFinished/full Results8/Avatar100/actualAccount1500/acked/naturalreturn/
+hangar; dead routed bind A отработал, rejects/faults/idle_timeout0.
+Independent result-only wire9474packets PASS. Optional autoaim03: B2ненулевых
+запроса/2callbacks/ACK/own aim/heartbeat PASS, A лишьcancel0 и nonzeroNOT_RUN.
+Owner mouse обоих подтверждена, target tracking не реализован.
+A126/B41,ammoA[0,0,4]/B[0,3,4],active0. Evidence
+`local/evidence/20261016-p08c-autoaim-acceptance01/acceptance02.json`, SHA
+`6d607b6e4c2b29e1e07a756fe7f59cd6eeaf5fb182a9aba88ebd5af0825ea75a`.
+Полная карточка P08C и её родители не приняты; capture/timeout/repeat/early
+leaver остаются открыты. Main не менять. Owner отдельно поручил детонацию
+БК/башню и project-only потерю оставшегося loaded БК — новая зависимая P06T
+ветка после этого checkpoint, без ретроактивного изменения текущих результатов.

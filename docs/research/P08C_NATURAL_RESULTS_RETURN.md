@@ -163,3 +163,83 @@ Own processes остановлены по точным receipts. Consistent DB b
 A123/B38,ammoA[0,0,5]/B[0,3,9],active0. Независимый checker, требующий два
 own full result, корректно отказал `DURABLE_OWNER_RESULT_COUNT`; это покрытие
 данного прерванного сценария, а не PASS обоих natural возвратов.
+
+Runtime `46d5c2058b36d9c6480896b6e80dfbab2fc86cca`: строгий standalone parser
+и source-bound native отказ реализованы. Шесть новых регрессий включают actual
+11B в полном Session/Window receive, реальный sent predecessor ACK, replay,
+callback ACK и следующий heartbeat; cancel0 без echo; одинаковый parser отказ
+семи классов target; rollback malformed size/route/late Aim+Move/tail/piggyback;
+закрытые фазы/retired throwaway drain и outbox128. Test-only absent-roster и
+hidden Book cases изолированы до обычного interest refresh и не объявляются
+native/валидной World сценой. Source proof64static и Python original contract
+7PASS/0skips, включая2 новых проверки исходного loss/cancel и FIXED0/rank0/PE.
+При разработке исправлен только неверный ожидаемый tagged Packed XML scalar
+Interface: lossless decoder возвращает `{'base64':'Chat'}`; production parser
+ради теста не менялся. Независимый review committed8file diff замечаний не дал.
+
+Canonical full: **1136 PASS / 0 FAIL / 5 прежних ignored / build PASS**,
+333.34s tests, `RUST_TEST_THREADS=1/CARGO_INCREMENTAL=0`. Все689raw source SHA
+до/после совпали, runtime head не менялся. Executable SHA256
+`24cc44f18c3c919bbc51e07f4215fd95baf40f9028bec76c92e1d2550200770f`.
+Evidence: `local/build/server/gateway-p08c-autoaim-full01`,
+`local/evidence/20261016-p08c-autoaim-fix01`; source-bound binding06,
+read-only preflight и startup morning-autoaim01 PASS, клиенты запускаются.
+Callback/звук/мышь и natural kill/details/return до owner проверки NOT_RUN.
+
+Команды нового запуска: `run_step.py binding06`, RO stand checker preflight,
+`run_step.py services07`, `startup08`, `client-a09`, `hangar-a`, `client-b10`,
+`hangar-b`, RO checker ready; каждый результат сохраняется новым exclusive
+receipt. Штатный runner/guards и обе установки coreV7 сохранены. Следующий
+native сценарий: каждый пробует отказ автоприцела/мышь без выброса; затем Ёж
+с его3КС/9ОФ уничтожает первого игрока вручную, оба ждут естественных итогов
+и ангаров. Проверяются фактические урон/фраг/details, без фиксированного числа
+выстрелов и без восстановления потраченного БК. Main остаётся прежним.
+
+Actual new run: bridge97704/gateway101180/A90096/B92612; Root PID-specific
+hangar-a/hangar-b receipts подтвердили обоих fresh native cache/model/GUI
+ангары. Пока Root выполнял дополнительный current-idle ready, owner сам
+нажал Fight в обоих. Поэтому ready01 закономерно отказал
+CURRENT_CONSECUTIVE_HANGAR_READY: последняя lobby view уже BattleQueue.
+Это не runtime/native exception и не повод ослаблять checker или перезапускать
+бой. Отказ сохранён. Actual log: arena2975833524010313505, session1 A slot1,
+session2 B slot0, оба owned admission/READY, 30s Prebattle. Owner получил
+уточнённый сценарий для уже запущенного боя. Native callback/мышь, personal
+damage/kill и оба natural возврата ещё NOT_RUN до ответа/actual wire/SQL.
+
+## Owner + actual result-wire приёмка autoaim06
+
+OBSERVED owner: «Захват снялся, мышь работает; личные итоги верные, оба
+вернулись». VERIFIED actual arena2975833524010313505: Elimination/winner1,
+оба BattleFinished, полный Results8 одинакового SHA
+`b064c9def098c55f04801e64cf98976c619baa4a0308d56a80eb5299bc8ec66a`.
+A126:HP0/received90/killerB/death0,1HEshot,remaining[0,0,4].
+B41:HP90/5HEshots/direct5/pierced3/damage90/kill1/spot1,remaining[0,3,4].
+Оба active0, Avatar100/actualAccount1500/acked/naturalreturn/hangar по одному;
+manual leave отсутствует. Actual late routed dead bind A принят без передачи
+authority; rejects/faults/idle_timeout0. Owner + wire + SQL закрывают узкий
+natural death/details/return gate, не всю P08C и родительские карточки.
+
+Independent checker02 result-only:9474actualpackets/484046wirebytes, оба
+Avatar100 и actualAccount1500 payload/81fields/details согласованы с completed
+RO SQLite backup SHA
+`38888b11651fa889187c2ccf8179a08d4273aa47f5155041eb27df6a86e0fc7d`.
+`freshresults02.json` SHA
+`39da27da29e22dfc7c1bad5a6d9712525149e80b6c0615a99f88f2bc23327f02`.
+
+Первый optional autoaim checker02 дал ложный FAIL: ACK-only flags0x448 и
+reliable application0x458 могут иметь одинаковый seq. Новый ignored03
+разделяет application по transport reliable bit0x10; настоящий конфликт
+reliable replay остаётся FAIL. Реальные пары ciphertext/pins сохранены,
+28pure/source tests PASS. Aggregateautoaim03NOT_RUN: у A лишь cancel0,
+нет nonzero capture. У B2nonzero→exact133b callbacks seq824/853→ACK825/854,
+затем ownaim/authenticated reliable heartbeat в том же Avatar PASS. Это
+компонентное покрытие B, не выдуманное native покрытие A. Owner mouseboth
+подтверждена. Старый checker02 и его FAIL не переписаны.
+
+Root acceptance SHA
+`6d607b6e4c2b29e1e07a756fe7f59cd6eeaf5fb182a9aba88ebd5af0825ea75a`,
+evidence `local/evidence/20261016-p08c-autoaim-acceptance01`.
+Own run сохранён в ангарах. Mainffce8cb и ночные ветки не меняются.
+Новая screenshot18HP/ammoBayDestroyed — отдельный P06T gap. Владелец поручил
+actual детонацию/башню и новое project-only правило потери всего оставшегося
+loaded БК. Это не историческая механика и не применяется к прошлым результатам.
