@@ -10,7 +10,7 @@ impl TaskLoss{fn start(&self,config:Arc<crate::identity091::Config>)->io::Result
 impl Dispatcher{
     /// API4 analogue of the preserved V2 finished collector. Stage the domain
     /// receipt BEFORE Session delivery, then commit both only after it succeeds.
-    fn deliver_training_finished_loss(training_finished:&mut Option<finished_events::FinishedEvents>,late:&mut Option<super::super::late_results_runtime::Manager>,s:&mut Session,task:&TaskLoss,
+    fn deliver_training_finished_loss(training_finished:&mut Option<finished_events::FinishedEvents>,late:&mut Option<super::super::super::late_results_runtime::Manager>,s:&mut Session,task:&TaskLoss,
         completion:service::CompletionLoss,now:Instant)->io::Result<()>{
         let staged=if let Some(queue)=training_finished.as_ref().filter(|q|q.battle().is_some()){
             if completion.reply.status==Status::Finished{

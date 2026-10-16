@@ -221,6 +221,8 @@ pub(in crate::gateway091::shared::server) fn finish_all_abort(p:&mut Preparing,i
 
 #[test]fn p10b_preparing_wrong_completion_cannot_clear_guard_or_advance_saga(){
     let now=Instant::now();let mut i=input(now);let mut p=begin(&mut i);let task=p.next_task(&mut i.table,true).unwrap().unwrap();
-    for poison in 0..3{let mut c=completion(&task,&i.sql,true);match poison{0=>c.session+=1,1=>c.context.command_key.push_str("-late"),2=>c.fresh.as_mut().unwrap().binding.revision+=1,_=>unreachable!()}
+    for poison in 0..3{let mut c=completion(&task,&i.sql,true);
+        let saga::Completion::V2(value)=&mut c else{panic!("expected the original V2 fixture completion")};
+        match poison{0=>value.session+=1,1=>value.context.command_key.push_str("-late"),2=>value.fresh.as_mut().unwrap().binding.revision+=1,_=>unreachable!()}
         let before=state(&i.table);assert!(p.accept(&c).is_err());assert_eq!(state(&i.table),before);assert!(p.held.is_empty());assert_eq!(p.saga.retry().unwrap().context(),task.context());}
 }
