@@ -1,19 +1,16 @@
 # Состояние проекта — 2026-10-16
 
-Утренняя coreV7 приёмка: nativequeuecancel/requeue/commonbattle/countdown30/
-drive/aim обеих машин подтверждены владельцем. По1KS+1HEeach→обаангара0/3/9,
-durable117/32/active0. Amanual/BnaturalForfeit; Bresultswindowесть,Afullresult
-missing — отдельныйP08Cgap. Ошибка enemy marker уA исправлена: shared
-Vehicle.publicInfo.team теперь совпадает с roster/Avatar. Текущая узкая ветка
-codex/p08c-native-marker-team / план P08C_NATIVE_MARKER_TEAM. Runtime `363daa3`:
-targeted 3 PASS, full 1099 PASS / 5 прежних ignored / build PASS; 683 raw source
-SHA до/после совпали. Новая binding04 и fresh run `morning-marker01`: оба настоящих
-ангара загружены, 96 installed files unchanged, база A118/B33/0, у обоих 0/3/9.
-Владелец подтвердил красные enemy имя и ромб, движение/наведение обоими.
-Actual paired wire11183 packets:0 team/identity conflicts. Marker gate PASS;
-вся P08C не принята. Следующий шаг — естественное уничтожение/гибель/оба итога
-и ангара, вопрос отправлен. Late-leaver results и spawn остаются открыты.
-Ночные ветки сохранены; main не менялся.
+P08C native marker принят: owner оба красных enemy имени/ромба и управление,
+actual paired wire11183packets/0conflicts, runtime363daa3 full1099PASS/5oldignored/
+buildPASS/source683exact. Checkpoint972843a сохранён, main не менялся.
+
+Natural Elimination gate FAIL: winner personal summary пуста при team tab90урона/
+1фраге; loser black return и выброс после rejected169byte frame/idle_timeout.
+Оба durable результата записаны. Own run morning-marker01 остановлен по receipts,
+A120/B35, MS1 ammoA[0,1,8]/B[0,3,9], active0; logs/traces/RO DB backup сохранены.
+Текущая ветка codex/p08c-natural-results-return, план P08C_NATURAL_RESULTS_RETURN:
+source-bound details и strict native return, затем full/fresh native replay.
+UI/return FAIL до перепроверки. Late manual-leaver results и spawn отдельно открыты.
 
 Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего
 дерева и доступна в git: `git show 1eaff5e:docs/STATUS.md` (а также удалённые

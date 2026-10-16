@@ -1,22 +1,18 @@
-# Текущая карточка — P08C, утренняя native приёмка, 2026-10-16
+# Текущая карточка — P08C: личные итоги и natural return, 2026-10-16
 
-Ветка codex/p08c-native-marker-team от testedcore9920a638. Владелец прошёл
-native queue/cancel/requeue/countdown/drive/aim обоими и typed1KS+1HE/возврат
-с0/3/9; durable117/32/active0. У первого enemyredname/greendiamond: actual
-Vehicle.publicInfo.team=1 для обоих, roster/Avatar1/2. Исправление толькоshared
-create_vehicle→World.team(slot), без clientreinstall/paint. План
-[P08C_NATIVE_MARKER_TEAM](plans/P08C_NATIVE_MARKER_TEAM.md). Свой morning01
-остановлен по receipts. Runtime `363daa3`: targeted 3 PASS, full **1099 PASS /
-5 прежних ignored / build PASS**, все 683 source SHA до/после совпали.
-Создана свежая binding04; оба настоящих клиента `morning-marker01` загрузили
-ангары на прежней базе с БК 0/3/9, A118/B33/active0. Владелец подтвердил красные
-имя и ромб противника, движение и наведение в обоих окнах. Actual paired wire
-11183 пакета: Avatar/roster/publicInfo команды согласованы, конфликтов 0.
-Узкий marker gate PASS; вся P08C ещё не принята. Следующий шаг — уничтожение
-Ёжа первым игроком без ручного выхода, гибель/естественные итоги/оба ангара.
-Вопрос владельцу отправлен; этот шаг NOT_RUN до ответа и серверной сверки.
-Late leaver results и spawn — отдельные незакрытые пункты.
-Ночные ветки/NET b6c294f сохранены, mainffce8cb не менять без родительских gates.
+Ветка `codex/p08c-natural-results-return` от marker checkpoint972843a.
+План [P08C_NATURAL_RESULTS_RETURN](plans/P08C_NATURAL_RESULTS_RETURN.md).
+Marker gate PASS: owner оба красных enemy имени/ромба и управление; actual
+paired wire11183 packets/0conflicts, full1099/5oldignored/build/source683.
+
+Следующий natural Elimination выявил FAIL: personal summary победителя пуста
+при team tab90damage/1frag; у уничтоженного black return и idle_timeout после
+rejected169byte frame. Оба durable результата сохранены. Own morning-marker01
+остановлен по receipts; A120/B35, ammoA[0,1,8]/B[0,3,9], active0. Логи и RO DB
+backup сохранены. Полный native P08C не принят. Текущий шаг — strict native
+return parser и source-bound personal details, затем fresh full/native replay.
+Ночные ветки, accepted marker972843a и mainffce8cb сохранены. Late manual-leaver
+results и spawn остаются отдельными открытыми пунктами.
 
 ## Сохранённый предшествующий core checkpoint
 
