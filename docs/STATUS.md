@@ -88,9 +88,10 @@ Full05 devices9080c47:1111PASS/5ignored/build/695exact; caps7/crew6/policyv2.
 Gun ledger/CLI focused15 **149PASS/0FAIL/0ignored/buildPASS**,171.93с.
 OwnedV3 component11files: fresh actualC/D135.88с/26sourceSQL/2CPythonPASS;
 реальные WAL read races воспроизведены и исправлены, весь29tests PASS48.856с.
-Factory/router/cacheACK/ownedWTammo не подключены. Дополнительный template
-reset test и новый full06 source-before/after ещё NOT_RUN. Native/UI/audio/
-owned WT/FV admission NOT_RUN; обязательные gates в main не сливались.
+Factory/router/cacheACK/ownedWTammo не подключены. Full06 на0f1db40:
+**1162PASS/5oldignored/buildPASS**,469.71с/725exact; world-seven tag сохранён.
+Extended-01 actual WT/FV startup7resources/LABv2/ownstop PASS,106 coreinputs
+unchanged; newoverlay/native NOT_RUN. Непринятые gates в main не сливались.
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 
 ## Принято владельцем на настоящем клиенте #717

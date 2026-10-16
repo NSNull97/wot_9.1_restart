@@ -502,6 +502,15 @@ checks PASS. WT/FV ammo0, новыхgrants нет. Proof local/evidence/20261016
 local/evidence/20261016-p06t-owned-read-snapshot01/. Factory/HTTP/nativev3/
 cacheACK/ownedWTammo не подключены и остаются отдельными software gates.
 
-Единственный следующий рекомендуемый шаг: clean commit и full06 с exact
-source-before/after, затем источник-связанный qualification stand новых машин.
-Сохранить core morning tag и старые byte contracts, native приёмку не выдумывать.
+Full06 на0f1db4035849ed4fe7b78adee7a2d49bc6a2cb4c завершён:
+**1162PASS/0FAIL/5oldignored/buildPASS**,469.71с,725sourcefiles before/after exact.
+Tag p06t-world-seven-20261016-01, exeSHA
+2c88bb43bec1e757fd7a884ae3af100408ff8f9a3dde2e72e39acfdb9249c0f4.
+Actual extended-01 startup WT128/FV183 с7source resources/explicitLABv2 и
+ownstop PASS; исходные106core/client inputs unchanged. Newoverlay prepare/
+install/native/restoreapply NOT_RUN; sourcebyteaudit725/6readonlygates PASS.
+Proof full06/ и extended-01/startup-root01.json. P06T не принята и не main.
+
+Единственный следующий рекомендуемый шаг: по ночному разрешению открыть
+отдельную зависимую ветку P10B от сохранённого software результата, сохраняя
+оба утренних стенда и обязательную native приёмку P06T.

@@ -12,7 +12,7 @@ explicit temporary LAB сохранены09ebe8a и1a6b93f; focused13=134PASS/bu
 focused14=5actual mesh→World→Trace→HP/device tests PASS/build. Новый separate
 LABv2 source31 resolver/first-mesh witness/atomic direct Gun ledger и CLI:
 focused15 **149PASS/0FAIL/0ignored/buildPASS**,171.93с. Old default31 Unsupported
-сохранён. Дополнительный template reset test войдёт в full06; ещё NOT_RUN.
+сохранён. Дополнительный template reset test прошёл в full06.
 
 Self-contained OwnedV3 component11files перенесён в tools/tests, fresh actual
 C/D canonical migrations/research/buy135.88с и26tests/2CPython2.7.3 PASS.
@@ -20,7 +20,10 @@ C/D canonical migrations/research/buy135.88с и26tests/2CPython2.7.3 PASS.
 набор **29PASS/0FAIL/0SKIP**,48.856с. Live factory/router/cacheACK/новый owned
 допуск не подключены, WT/FV stock0; LABammo не меняет inventory.
 
-Следом clean commit и full06 source-before/after; его PASS ещё не получен.
+Full06 на0f1db40 завершён: **1162PASS/0FAIL/5oldignored/buildPASS**,
+469.71с,725sourcefiles before/after exact. Tag p06t-world-seven-20261016-01.
+Extended-01 bound: реальные WT/FV CLIstartup7resources/explicitLABv2/ownstop
+PASS,106 core/client inputs unchanged. Native/newoverlay prepare NOT_RUN.
 Карточка не принята и не main; native/UI/audio NOT_RUN. План [P06T](plans/P06T.md),
 [факты и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 

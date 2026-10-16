@@ -24,8 +24,7 @@ focused13 **134PASS/0ignored/buildPASS**,159.85с. Exe SHA
 `1f1baccc52f5412df85bf08c19b88a9a6520ba3b58dc7b09ceed2794ca68ec3f`.
 Focused14:5actual first-contact World tests PASS/build,46.54с: WT→FV560HP,
 FV→WT1150HP, frozen HE HESH275→WT1750HP, gun25module-only, exposed31Unsupported.
-Synthetic airborne poses отделены от native driving. Полный общий regression/
-source gate этого слоя ещё NOT_RUN. Owned новых машин
+Synthetic airborne poses отделены от native driving. Полный общий regression/source gate этого слоя теперь закрыт full06. Owned новых машин
 не подключён; temporary LAB ammo не считается своим складом.
 
 Новый explicit LABv2 class31 resolver прошёл focused15: **149PASS/0FAIL/
@@ -34,7 +33,10 @@ rollback tests и отдельный CLI. Старый Unsupported31 default с�
 Перенесён OwnedV3 authority component11files: actual freshC/D135.88с,
 26tests/2CPython PASS, затем исправлены две actual WAL read races и весь
 29tests PASS48.856с. Live router/cacheACK/ownedWTammo ещё не подключены.
-Дополнительный template/reset gate и full06 source-before/after пока NOT_RUN.
+Дополнительный template/reset gate прошёл: full06 **1162PASS/0FAIL/5oldignored/
+buildPASS**,469.71с/725sourceexact. Runtime0f1db4035849ed4fe7b78adee7a2d49bc6a2cb4c,
+tag p06t-world-seven-20261016-01, exeSHA
+2c88bb43bec1e757fd7a884ae3af100408ff8f9a3dde2e72e39acfdb9249c0f4.
 
 ## Сохранённые ветки и приёмка
 
@@ -46,7 +48,7 @@ rollback tests и отдельный CLI. Старый Unsupported31 default с�
 | P05C | `codex/p05c-shared-physics` / `9f2df41` | `019ed2f`,940/5/build/602sourceexact; actual sharedscene2/6/mixed/scalar/ACK/detach | Native mixedcontact/6clients, ramHP не реализован |
 | P07B | `codex/p07b-server-visibility` / `e711844` | `8fecb9d`,975/5/build/607sourceexact; realterrain/staticLOS/packetabsence/epochs | Nativehide/respot; bush/camo/radio/delay отсутствуют |
 | P04M | `codex/p04m-five-battle-profiles` / `2340236` | `483bb2b`,1006/5/build/634sourceexact; source/actualJolt/new3/ownedcrew+ammo/Web10/Python17+1+28 | Native3newqualification, admissionfalse |
-| P06T | `codex/p06t-mixed-shell-damage` / см. текущий git | core `9920a63`:1096/5/build/683 exact; Python21+old28/Web4+old25unique/client2.7.3 9+20+61PASS/4hostskips; physical `c25fb84`:1100/5/build/692 exact; devices `9080c47`:1111/5/build/695 exact | Новый бой/UI/audio/critical/fire, WT/FV native qualification, owned router/cacheACK/stock, full06 |
+| P06T | `codex/p06t-mixed-shell-damage` / см. текущий git | core `9920a63`:1096/5/build/683 exact; Python21+old28/Web4+old25unique/client2.7.3 9+20+61PASS/4hostskips; physical `c25fb84`:1100/5/build/692 exact; devices `9080c47`:1111/5/build/695 exact | Новый бой/UI/audio/critical/fire, WT/FV native qualification, owned router/cacheACK/stock |
 | P10B | active ветки реализации ещё нет | Только ignoreddomain/nativecodec/aliases component33PASS, originalsource staticproof | Productionroom/selectedteamvector/own404causalbarrier/nativeNOT_RUN |
 | NET-02 | active ветки реализации ещё нет | Только исходный preflight/report | LANbind/allowlist/redirect/firewall/2ПК/hostingNOT_RUN |
 
@@ -180,3 +182,29 @@ binary/sourcebinding и целый pool-01 backup; без schema downgrade/ру�
 Единственный следующий рекомендуемый **software** шаг: подключать source-bound
 WT/FV combat/crew6/Aim/encoding к World с
 новыми versioned contracts. Ручной сценарий выполняется утром независимо.
+
+## Закреплённый World7 и отдельный extended стенд
+
+Full06 proof: `local/evidence/20261016-p06t-full06/source-{before,after}.json`;
+component receipt: `local/evidence/20261016-p06t-world-seven-01/component-freeze.json`.
+Повторение: `RUST_TEST_THREADS=1 python -B -X utf8 server/build.py gateway --test
+--out local/build/server/<fresh>`; новый output обязателен. Полный прогон занял
+469.71с tests, compilers запускались отдельно штатным build.py.
+
+`local/stands/night-battle-20261016-01/extended-01/MORNING-extended.md` теперь
+содержит точный full06 runtime/source restore и дальнейшие overlay команды.
+Root actual bind/start/ownstop WT128 и FV183 PASS: оба загрузили7 genuine
+resources и explicit LABv2, UDP20142/20143. Proof `startup-root01.json` в стенде.
+Сверены107 runtime resource files,106 исходных core/client/ledger/config inputs
+после запусков byteexact. Клиенты/coreV7 не менялись, новых grants/DB/identity нет.
+Both gateways STOPPED. Source restore audit725/6closed readonly helper gates
+PASS; применение на checkout NOT_RUN. Реальная подготовка нового overlay
+пока NOT_RUN: prepare корректно отказывает уже установленным coreV7 targets.
+Сначала ручной core test, затем точный rollback ledger и штатный prepare/install
+по prospective argv; обхода installed-target guard нет. Повторять core install
+или existing extended bind не нужно.
+
+P06T native/UI/audio и новые owned WT/FV admission остаются NOT_RUN, main не
+изменён. По ночному разрешению после сохранения этого автоматического результата
+следующая реализация — отдельная зависимая ветка P10B. Текущий first combat test
+всё ещё не готов до production P10B/NET-02 и общей ручной приёмки.
