@@ -12,6 +12,9 @@ mod batch_scene;
 use batch_scene::BatchRuntime;
 #[path="p06t_publication.rs"]
 mod p06t_publication;
+#[cfg(test)]
+#[path="detached_turret_server_tests.rs"]
+mod detached_turret_server_tests;
 
 #[cfg(test)]
 #[path="server_visibility_tests.rs"]
@@ -682,6 +685,11 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
             println!("P08C_LIFECYCLE battle={} view={:?} policy={}",world.id,
                 world.lifecycle.as_ref().map(|l|l.view()),super::lifecycle::POLICY);
         }
+        // A separate bounded visual clock survives the authoritative outcome.
+        // Do not mutate a World while a prepared scene clone owns its commit.
+        if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.ammo_detonation_enabled(){
+            world.advance_turret_flights(now)?;
+        }
     }
     Ok(())
 }
@@ -709,9 +717,15 @@ fn stage_lifecycle_results(table:&mut Table,world:&World)->io::Result<()> {
 /// Natural results are delivered only after their atomic writer transaction.
 /// A native confirmation must precede Account reset; timeout disconnects rather
 /// than pretending the original result handler successfully consumed the stream.
-fn deliver_lifecycle_result(s:&mut Session,now:Instant)->io::Result<bool> {
+fn turret_avatar_pending(table:&Table,world:&World)->bool{
+    world.ammo_detonation_enabled()&&!world.ammo_detonations().is_empty()
+        &&table.sessions.iter().any(|s|s.arena_base&&s.shared.as_ref().is_some_and(|c|
+            matches!(c.phase,Phase::Driving|Phase::Leaving)&&c.view.as_ref().is_some_and(|view|view.id==world.id)))
+}
+fn deliver_lifecycle_result(s:&mut Session,world:&World,now:Instant)->io::Result<bool> {
     let Some(c)=s.shared.as_ref() else{return Ok(false);};
     if !c.result_committed || c.natural_result.is_none() || !s.arena_base {return Ok(false);}
+    if !c.result_stream_queued&&!s.turret_presentation_ready(world,now)?{return Ok(true);}
     let mut next=s.clone();
     if !c.result_stream_queued {
         let result=c.natural_result.clone().ok_or_else(||model::bad())?;
@@ -738,8 +752,16 @@ fn deliver_lifecycle_result(s:&mut Session,now:Instant)->io::Result<bool> {
 
 fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_start:bool,blocked:bool)->io::Result<()> {
     let mut fresh=s.clone();fresh.shared_refresh_world(world)?;
-    fresh.flush_shared_interest(&mut Vec::new())?;fresh.flush_shared_private()?;*s=fresh;
-    if deliver_lifecycle_result(s,now)? {return Ok(());}
+    fresh.flush_shared_interest(&mut Vec::new())?;
+    if world.ammo_detonation_enabled()&&fresh.shared.as_ref().is_some_and(|c|c.phase==Phase::Leaving){
+        let c=fresh.shared.as_mut().ok_or_else(||model::bad())?;
+        p06t_publication::publish(c,&mut fresh.outbox,world,now)?;
+        fresh.drain_outbox()?;
+    }
+    fresh.flush_shared_private()?;
+    let mut turret_events=Vec::new();fresh.flush_shared_turrets(world,&mut turret_events)?;*s=fresh;
+    for event in turret_events{println!("{event}");}
+    if deliver_lifecycle_result(s,world,now)? {return Ok(());}
     if s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.has_pending_return()) {return Ok(());}
     let natural_due=if let Some(state)=world.lifecycle.as_ref().filter(|state|state.outcome().is_some()) {
         state.ready_to_return(world.lifecycle_ms(now)?)
@@ -841,9 +863,15 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
         let owned=s.shared.as_ref().and_then(|c|c.profile13.as_ref());
         let slot=if let Some(p)=owned {
             if world.mixed_ammo(){
-                let receipt=p.reservation_v2.as_ref().ok_or_else(||model::bad())?;
-                if receipt.battle!=world.id{continue;}
-                world.attach_owned_v2(who,s.id,&receipt.frozen)?
+                if world.ammo_detonation_enabled(){
+                    let receipt=p.reservation_loss.as_ref().ok_or_else(||model::bad())?;
+                    if receipt.battle!=world.id{continue;}
+                    world.attach_owned_loss(who,s.id,&receipt.frozen)?
+                }else{
+                    let receipt=p.reservation_v2.as_ref().ok_or_else(||model::bad())?;
+                    if receipt.battle!=world.id{continue;}
+                    world.attach_owned_v2(who,s.id,&receipt.frozen)?
+                }
             }else{
             let receipt=p.reservation.as_ref().ok_or_else(||model::bad())?;
             if receipt.battle!=world.id || !world.mixed_profiles()&&receipt.frozen.kind!=world.vehicle_kind() {continue;}
@@ -1067,6 +1095,13 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         battle_template.select(&mut world,&mut integrated,started)?;
         println!("P08C_FIRST_SPOT_BOUND policy={}", model::result_spots::POLICY);
     }
+    if config.p06t_ammo_rack_detonation{
+        if !profile13_mode||!config.p06t_mixed_ammo||!config.visibility_v1||qualification.is_some(){return Err(model::bad().into());}
+        battle_template.world.enable_ammo_detonation()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("P06T_AMMO_DETONATION_BOUND policy={} flight_policy={} historical_solver=UNKNOWN",
+            super::ammo_detonation::POLICY,super::ammo_detonation::FLIGHT_POLICY);
+    }
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
@@ -1274,7 +1309,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 }
             }
         }
-        if !world.actors.is_empty() && world.actors.iter().all(|a|a.session.is_none()) {
+        if !world.actors.is_empty() && world.actors.iter().all(|a|a.session.is_none())
+            && !turret_avatar_pending(&table,&world) {
             battle_template.replace(&mut world,&mut integrated,now)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
@@ -1311,6 +1347,11 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             // heartbeats and made a client look disconnected during startup.
             if let Err(error) = poll_battle_session(s,&mut world,now,integrated_native_ready,
                 integrated.as_ref().is_some_and(IntegratedRuntime::blocked)) {
+                if error.kind()==io::ErrorKind::TimedOut&&world.ammo_detonation_enabled()
+                    &&s.shared.as_ref().is_some_and(|c|c.result_committed&&!c.result_stream_queued){
+                    println!("P06T_TURRET_PRESENTATION_TIMEOUT session={} durable_result_retained=true",s.id);
+                    closing.push((s.id,"native_turret_unconfirmed"));continue;
+                }
                 if s.shared.as_ref().is_some_and(|c|c.result_committed && c.result_delivery_at
                     .is_some_and(|at|now.duration_since(at)>=Duration::from_secs(30))) {
                     println!("P08C_RESULTS_CONFIRM_TIMEOUT session={} durable_result_retained=true",s.id);
@@ -1672,6 +1713,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     // At most40 MS-1 or60 IS-7 shots: start cue+tracer+stop+one compound impact, plus
     // bounded reload/readiness/health catch-up. Slow peers cannot grow forever.
     if next.outbox.len()+next.shared.as_ref().ok_or_else(||model::bad())?.pending_private_len() > next_world.shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;next.flush_shared_private()?;
+    let mut turret_events=Vec::new();next.flush_shared_turrets(&next_world,&mut turret_events)?;
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
     for command in &commands { if let model::Command::Aim(intent) = command { println!("SHARED_AIM battle={} session={} slot={slot} intent={intent:?} client_angles_authoritative=false", world.id, s.id); } }
@@ -1701,7 +1743,9 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         println!("SHARED_AP_PUBLICATION battle={} session={} shot={} target={} health={} queued={} historical_fidelity=approximate",
             world.id,s.id,shot,target,hp,queued);
     }
-    *world = next_world; *s = next; Ok(())
+    *world = next_world; *s = next;
+    for event in turret_events{println!("{event}");}
+    Ok(())
 }
 
 fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {

@@ -11,7 +11,7 @@ impl Dispatcher{
     pub(super) fn terminal_mixed(s:&mut Session,world:&World,reason:FinishReason)->io::Result<()>{
         let Some(p)=s.shared.as_ref().and_then(|c|c.profile13.as_ref())else{return Ok(());};
         if p.pending_return_v2.is_some(){return Ok(());}
-        if p.reservation.is_some()||p.pending_return.is_some(){return Err(model::bad());}
+        if p.reservation_loss.is_some()||p.pending_return_loss.is_some()||p.reservation.is_some()||p.pending_return.is_some(){return Err(model::bad());}
         let Some(reservation)=&p.reservation_v2 else{return Ok(());};
         let natural=s.shared.as_ref().and_then(|c|c.natural_result.as_deref());let reason=if natural.is_some(){FinishReason::BattleFinished}else{reason};
         let terminal=if world.actors.iter().any(|a|a.session==Some(s.id)){
@@ -45,7 +45,7 @@ impl Dispatcher{
         s.ammo_service.as_mut().ok_or_else(||model::bad())?.replace_pool(fresh.fixtures.p04m_binding().cloned())?;
         s.identity=Some(fresh.owner);s.hangar=Some(fresh.fixtures);
         let database=s.identity.as_ref().ok_or_else(||model::bad())?.database_id;
-        let p=state(s)?;if p.reservation.is_some()||p.pending_return.is_some(){return Err(model::bad());}
+        let p=state(s)?;if p.reservation_loss.is_some()||p.pending_return_loss.is_some()||p.reservation.is_some()||p.pending_return.is_some(){return Err(model::bad());}
         p.revision=reply.revision;p.in_flight=false;
         match reply.status{
             Status::Admitted=>{

@@ -102,8 +102,16 @@ impl State {
 }
 
 #[derive(Clone)]
-struct Task {session:u32,owner:Arc<identity091::Profile>,request:Request,key:String,mixed:bool}
+struct Task {session:u32,owner:Arc<identity091::Profile>,request:Request,key:String,mixed:bool,loss_run:Option<String>}
 impl Task {
+    fn loss_context(&self)->io::Result<crate::battle091::profile13::Context>{
+        if !self.mixed{return Err(bad("ammo-loss requires typed result mode"));}
+        Ok(crate::battle091::profile13::Context{account_id:self.owner.account_id.clone(),native_database_id:self.owner.database_id,
+            command_key:self.key.clone(),expected_revision:13,run_id:self.loss_run.clone().ok_or_else(||bad("missing frozen loss run"))?})
+    }
+    fn loss_request(&self)->crate::profile13_loss091::ResultsRequest{match self.request.operation{
+        Operation::Query=>crate::profile13_loss091::ResultsRequest::Query{arena:self.request.arena},
+        Operation::Ack=>crate::profile13_loss091::ResultsRequest::Ack{arena:self.request.arena}}}
     fn body(&self)->io::Result<Vec<u8>> {
         if self.session==0||self.owner.database_id<=0||self.owner.account_id.len()!=36
             ||self.request.arena==0||self.request.arena>i64::MAX as u64
@@ -111,6 +119,7 @@ impl Task {
             ||!self.key.bytes().all(|b|b.is_ascii_alphanumeric()||[b'_',b':',b'-'].contains(&b)) {
             return Err(bad("HTTP immutable task identity"));
         }
+        if self.loss_run.is_some(){return crate::profile13_loss091::encode_results_request(&self.loss_context()?,self.loss_request());}
         let raw=serde_json::to_vec(&serde_json::json!({"version":if self.mixed{2}else{1},"operation":self.request.operation.label(),
             "account_id":self.owner.account_id,"native_database_id":self.owner.database_id,"command_key":self.key,
             "arena_id":self.request.arena.to_string()})).map_err(|_|bad("HTTP task JSON"))?;
@@ -136,6 +145,11 @@ impl<'de> Deserialize<'de> for Fields {
 struct Reply {result:Option<Arc<Results>>,acked:bool,replayed:bool,rejected:bool}
 fn reply(raw:&[u8],task:&Task)->io::Result<Reply> {
     if raw.is_empty()||raw.len()>MAX_HTTP{return Err(bad("HTTP reply size"));}
+    if task.loss_run.is_some(){
+        let parsed=crate::profile13_loss091::parse_results_reply(raw,&task.loss_context()?,task.loss_request())?;
+        return Ok(Reply{result:parsed.results.map(Arc::new),acked:parsed.acked,replayed:parsed.replayed,
+            rejected:parsed.status==crate::profile13_loss091::ResultsStatus::Rejected});
+    }
     let fields=if task.mixed{
         let value=crate::profile13_v2091::bounded_json(raw,MAX_HTTP)?;
         value.as_object().ok_or_else(||bad("v2 result reply object"))?.clone().into_iter().collect::<BTreeMap<_,_>>()
@@ -198,11 +212,11 @@ struct Job {receiver:mpsc::Receiver<io::Result<Reply>>,worker:Option<JoinHandle<
 impl Job {
     fn start(task:&Task,config:Arc<identity091::Config>)->io::Result<Self> {
         if !config.profile13_battle{return Err(bad("result worker requires profile13 mode"));}
-        if task.mixed!=config.p06t_mixed_ammo{return Err(bad("result immutable task contract differs from configured mode"));}
+        if task.mixed!=config.p06t_mixed_ammo||task.loss_run.as_deref()!=config.p06t_ammo_rack_detonation.then_some(config.battle_run_id.as_str()){return Err(bad("result immutable task contract differs from configured mode"));}
         let body=task.body()?;let copied=task.clone();let(sender,receiver)=mpsc::sync_channel(1);
         let worker=thread::Builder::new().name("p08c-result-cache".into()).spawn(move||{
             let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||{
-                let bytes=if copied.mixed{config.results_post_v2(&copied.owner,&body)?}else{config.results_post(&copied.owner,&body)?};reply(&bytes,&copied)
+                let bytes=if copied.loss_run.is_some(){config.results_post_loss(&copied.owner,&body)?}else if copied.mixed{config.results_post_v2(&copied.owner,&body)?}else{config.results_post(&copied.owner,&body)?};reply(&bytes,&copied)
             })).unwrap_or_else(|_|Err(bad("result worker panicked; immutable request retained")));
             println!("P08C_RESULTS_WORKER session={} operation={} arena={} success={} observer_pending=true",
                 copied.session,copied.request.operation.label(),copied.request.arena,result.is_ok());
@@ -286,7 +300,7 @@ impl Manager {
             if s.battle_results.inflight.is_some()||!s.active{continue;}
             let owner=s.identity.clone().ok_or_else(||bad("result session owner absent"))?;
             let counter=s.battle_results.counter.checked_add(1).filter(|c|*c<=MAX_COMMANDS).ok_or_else(||bad("result command count"))?;
-            let task=Task{session:s.id,owner,request:request.clone(),key:format!("p08c:{}:{}:{counter}",config.battle_run_id,s.id),mixed:config.p06t_mixed_ammo};
+            let task=Task{session:s.id,owner,request:request.clone(),key:format!("p08c:{}:{}:{counter}",config.battle_run_id,s.id),mixed:config.p06t_mixed_ammo,loss_run:config.p06t_ammo_rack_detonation.then(||config.battle_run_id.clone())};
             task.body()?;
             // Reserve the complete immutable operation before asking the OS for
             // a thread. A failed spawn is a retryable executor outcome and must
@@ -312,6 +326,21 @@ impl Manager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]fn p06t_loss_results_worker_uses_actual_sqlite_v4_records_without_retagging(){
+        let data:Value=serde_json::from_slice(include_bytes!("../../../../tests/fixtures/p06t-ammo-loss-writer-vectors.json")).unwrap();let mut count=0;
+        for row in data["vectors"].as_array().unwrap(){let r=&row["request"];let Some(op)=r["operation"].as_str()else{panic!("operation")};
+            if !["query","ack"].contains(&op){continue;}
+            let task=Task{session:7,owner:Arc::new(identity091::Profile{account_id:r["account_id"].as_str().unwrap().into(),database_id:r["native_database_id"].as_i64().unwrap()as i32,
+                name:"loss SQL".into(),fixture_dir:std::path::PathBuf::new()}),request:Request{operation:if op=="query"{Operation::Query}else{Operation::Ack},
+                id:if op=="query"{221}else{202},arena:r["arena_id"].as_str().unwrap().parse().unwrap(),epoch:0},key:r["command_key"].as_str().unwrap().into(),mixed:true,
+                loss_run:Some("12345678-1234-4234-8234-123456789abc".into())};
+            assert_eq!(serde_json::from_slice::<Value>(&task.body().unwrap()).unwrap(),*r);let bytes=serde_json::to_vec(&row["response"]).unwrap();
+            let parsed=reply(&bytes,&task).unwrap();assert_eq!(parsed.result.as_ref().unwrap().participants[0].shots,3);
+            assert_eq!(native_reply(&task,&parsed).unwrap().is_empty(),op=="ack");
+            let mut legacy=task.clone();legacy.loss_run=None;assert!(reply(&bytes,&legacy).is_err());
+            let mut wrong=row["response"].clone();wrong["record_contract"]="unknown-policy".into();assert!(reply(&serde_json::to_vec(&wrong).unwrap(),&task).is_err());count+=1;
+        }assert!(count>=3);
+    }
     fn request(id:i16,command:i16,arena:i64)->Vec<u8> {
         let mut raw=vec![0x8e,20,0];raw.extend(id.to_le_bytes());raw.extend(command.to_le_bytes());
         raw.extend(arena.to_le_bytes());raw.extend([0;8]);raw
@@ -330,7 +359,7 @@ mod tests {
         account_id:"12345678-1234-4234-8234-123456789abc".into(),database_id:1,name:"owner_a".into(),fixture_dir:std::path::PathBuf::new(),
     })}
     fn task(operation:Operation)->Task {Task{session:7,owner:owner(),request:Request{operation,id:if operation==Operation::Ack{202}else{227},
-        arena:results().arena_id,epoch:0},key:"p08c:12345678-1234-4234-8234-123456789abc:7:1".into(),mixed:false}}
+        arena:results().arena_id,epoch:0},key:"p08c:12345678-1234-4234-8234-123456789abc:7:1".into(),mixed:false,loss_run:None}}
     fn response(task:&Task,status:&str)->Value {serde_json::json!({"version":1,"operation":task.request.operation.label(),
         "status":status,"account_id":task.owner.account_id,"native_database_id":task.owner.database_id,
         "command_key":task.key,"arena_id":task.request.arena.to_string(),"acked":status=="acked","replayed":false,
@@ -501,7 +530,7 @@ mod tests {
                 account_id:request["account_id"].as_str().unwrap().into(),database_id:request["native_database_id"].as_i64().unwrap() as i32,
                 name:"Авторитетный".into(),fixture_dir:std::path::PathBuf::new(),
             }),request:Request{operation,id,arena:request["arena_id"].as_str().unwrap().parse().unwrap(),epoch:0},
-                key:request["command_key"].as_str().unwrap().into(),mixed:false};
+                key:request["command_key"].as_str().unwrap().into(),mixed:false,loss_run:None};
             assert_eq!(serde_json::from_slice::<Value>(&task.body().unwrap()).unwrap(),*request);
             let parsed=reply(&serde_json::to_vec(&vector["response"]).unwrap(),&task).unwrap();
             let result=parsed.result.as_ref().unwrap();assert_eq!(result.arena_id,9007199254740993);
@@ -535,7 +564,7 @@ mod tests {
             let r=&row["request"];let operation=if r["operation"]=="ack"{Operation::Ack}else{Operation::Query};
             let task=Task{session:7,owner:Arc::new(identity091::Profile{account_id:r["account_id"].as_str().unwrap().into(),database_id:r["native_database_id"].as_i64().unwrap()as i32,
                 name:"real writer".into(),fixture_dir:std::path::PathBuf::new()}),request:Request{operation,id:if operation==Operation::Ack{202}else{221},arena:r["arena_id"].as_str().unwrap().parse().unwrap(),epoch:0},
-                key:r["command_key"].as_str().unwrap().into(),mixed:true};
+                key:r["command_key"].as_str().unwrap().into(),mixed:true,loss_run:None};
             assert_eq!(serde_json::from_slice::<Value>(&task.body().unwrap()).unwrap(),*r);
             let response=serde_json::to_vec(&row["response"]).unwrap();let parsed=reply(&response,&task).unwrap();
             let mut legacy=task.clone();legacy.mixed=false;assert!(reply(&response,&legacy).is_err());

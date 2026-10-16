@@ -9,6 +9,7 @@ import { BARRACKS_CREW_POLICY_SHA256, validateBarracksRecruitmentResponse } from
 import { BATTLE_POLICY_SHA256, validateBattleRequest, validateBattleReply } from './p08b-battle.mjs';
 import { POOL_POLICY_SHA256, POOL_WORKER_TIMEOUT_MS, validatePoolBarracksRecruitmentResponse } from './p04m-pool.mjs';
 import { mixedWorkerConfiguration, validateMixedBattleRequest, validateMixedBattleReply, validateMixedResultsRequest, validateMixedResultsReply } from './p06t-mixed.mjs';
+import { lossWorkerConfiguration, validateLossBattleRequest, validateLossBattleReply, validateLossResultsRequest, validateLossResultsReply } from './p06t-ammo-loss.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const CREW_POLICY_SHA256 = '7d0e3d7ef28d85bfe32e4fcdea0547696a9b4fd04922a725a2d895e1395f0d55';
@@ -24,7 +25,7 @@ const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null, pool = null, mixed = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null, pool = null, mixed = null, ammoLoss = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
@@ -46,6 +47,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
   requireValue(pool === null || (battle !== null && exact(pool, ['version', 'policy_sha256']) && pool.version === 1
     && pool.policy_sha256 === POOL_POLICY_SHA256), 'Explicit curated pool policy required');
   if (mixed !== null) { requireValue(pool !== null && battle !== null, 'Mixed ammunition requires explicit curated pool/battle'); mixedWorkerConfiguration(mixed); }
+  if (ammoLoss !== null) { requireValue(mixed !== null, 'Ammo-rack loss requires explicit mixed ammunition'); lossWorkerConfiguration(ammoLoss); }
   const profileVersion = research !== null ? 13 : barracksRecruitment !== null ? 12 : dismissal !== null ? 11 : progression !== null ? 10 : rosterRecruitment !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
   const worker = battle !== null ? 'tools/p08b_battle_service.py' : research !== null ? 'tools/p09e_research_service.py' : barracksRecruitment !== null ? 'tools/p04k_crew_store.py' : dismissal !== null ? 'tools/p04j_crew_store.py' : progression !== null ? 'tools/p04i_crew_store.py' : rosterRecruitment !== null ? 'tools/p04h_crew_store.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
   requireValue(exact(ammo, ['version', 'bundle_root', 'original_root', 'account_id', 'grant'])
@@ -66,11 +68,14 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     requireValue(active < 2, 'Crew worker busy'); active++;
     try {
       return await new Promise((done, fail) => {
+        const lossEnvironment = ammoLoss === null ? undefined : { ...process.env };
+        if (lossEnvironment !== undefined) delete lossEnvironment.PYTHONPATH;
         const child = spawn(python, ['-B', '-X', 'utf8', resolve(ROOT, worker),
           '--database', db, '--bundle', bundle, '--original-root', ammo.original_root,
           '--account-id', ammo.account_id, '--fixture-root', fixtures,
-          ...(mixed === null ? [] : ['--mixed-ammo', '--shell-catalog', mixed.shell_catalog, '--terminal-policy', mixed.terminal_policy]), operation],
-        { cwd: ROOT, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+          ...(mixed === null ? [] : ['--mixed-ammo', '--shell-catalog', mixed.shell_catalog, '--terminal-policy', mixed.terminal_policy]),
+          ...(ammoLoss === null ? [] : ['--ammo-rack-loss']), operation],
+        { cwd: ROOT, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], ...(lossEnvironment === undefined ? {} : { env: lossEnvironment }) });
         let size = 0, errorSize = 0, exceeded = false; const parts = [];
         const timer = setTimeout(() => { exceeded = true; child.kill(); }, operation === 'activate' ? 15000 : pool === null ? 3500 : POOL_WORKER_TIMEOUT_MS);
         child.stdout.on('data', part => { size += part.length; if (size > (research === null ? 32768 : 262144)) { exceeded = true; child.kill(); } else parts.push(part); });
@@ -142,10 +147,12 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
   return {
     accountId: ammo.account_id,
     ...(battle === null ? {} : { async battle(request) {
+      if (ammoLoss !== null) { validateLossBattleRequest(request, ammo.account_id); return validateLossBattleReply(await run('battle', request), request); }
       if (mixed !== null) { validateMixedBattleRequest(request, ammo.account_id); return validateMixedBattleReply(await run('battle', request), request); }
       validateBattleRequest(request, ammo.account_id);
       return validateBattleReply(await run('battle', request), request);
     }, async results(request) {
+      if (ammoLoss !== null) { validateLossResultsRequest(request, ammo.account_id); return validateLossResultsReply(await run('results', request), request); }
       if (mixed !== null) { validateMixedResultsRequest(request, ammo.account_id); return validateMixedResultsReply(await run('results', request), request); }
       return run('results', request);
     } }),

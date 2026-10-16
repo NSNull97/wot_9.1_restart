@@ -6,6 +6,11 @@ use crate::{armament_wire091 as native,p06t_device_state::{Change,Condition}};
 fn health(world:&World,target:usize,attacker:Option<usize>,reason:u8)->io::Result<Vec<u8>>{
     let actor=world.actors.get(target).ok_or_else(||model::bad())?;
     if !(0..=actor.vehicle_kind().max_health()).contains(&actor.health)||reason>10{return Err(model::bad());}
+    if world.ammo_detonations().iter().any(|event|event.target()==target){
+        if actor.health!=0{return Err(model::bad());}
+        return super::super::detached_turret::terminal_health(target,attacker,reason,
+            super::super::detached_turret::DeathKind::Detached);
+    }
     let mut body=vec![0x12];body.extend(wire::vehicle_id(target)?.to_le_bytes());
     body.push(0xa1);body.extend(actor.health.to_le_bytes());
     if let Some(attacker)=attacker{
@@ -104,9 +109,13 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
         }
         if !body.is_empty(){c.queue_private(outbox,body,&targets)?;}
     }
+    super::super::turret_publication::effects(c,outbox,world,now)?;
     Ok(())
 }
 
 #[cfg(test)]
 #[path="p06t_publication_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path="p06t_detonation_health_tests.rs"]
+mod detonation_tests;

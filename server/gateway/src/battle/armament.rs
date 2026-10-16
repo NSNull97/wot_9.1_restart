@@ -20,6 +20,7 @@ pub struct State {
     mount:Mount,counts:[u16;3],current:usize,next:usize,clip:u8,
     until:Option<Instant>,magazine_reload:bool,observed:Option<Instant>,
     accepted:u32,rejected:u32,replenish:u32,reload_scale:f64,
+    initial:[u16;3],fired:[u16;3],lost:[u16;3],
 }
 impl State {
     pub fn new(mount:Mount,counts:[u16;3],initial:u16)->io::Result<Self>{
@@ -31,10 +32,24 @@ impl State {
             ||!source.clip_interval_seconds.is_finite()||!(0. ..=120.).contains(&source.clip_interval_seconds)
             ||source.clip_count>1&&source.clip_interval_seconds<=0. {return Err(bad("armament mounted source bounds"));}
         Ok(Self{mount,counts,current,next:current,clip:counts[current].min(u16::from(source.clip_count))as u8,
-            until:None,magazine_reload:false,observed:None,accepted:0,rejected:0,replenish:0,reload_scale:1.})
+            until:None,magazine_reload:false,observed:None,accepted:0,rejected:0,replenish:0,reload_scale:1.,
+            initial:counts,fired:[0;3],lost:[0;3]})
     }
     pub fn mount(&self)->Mount{self.mount}
     pub fn counts(&self)->[u16;3]{self.counts}
+    pub fn initial_counts(&self)->[u16;3]{self.initial}
+    pub fn fired(&self)->[u16;3]{self.fired}
+    pub fn lost(&self)->[u16;3]{self.lost}
+    /// Only the opt-in World detonation transaction calls this after recording
+    /// its causal module event. Clip shells are already INCLUDED in counts.
+    /// Losing loaded ammunition is never a shot, reload or depot mutation.
+    pub fn lose_loaded_for_detonation(&mut self)->io::Result<[u16;3]>{
+        if self.counts==[0;3]||self.lost!=[0;3]
+            ||(0..3).any(|i|u32::from(self.initial[i])!=u32::from(self.fired[i])+u32::from(self.lost[i])+u32::from(self.counts[i]))
+            ||self.accepted!=self.fired.iter().map(|n|u32::from(*n)).sum::<u32>(){return Err(bad("armament detonation conservation"));}
+        let removed=self.counts;self.lost=removed;self.counts=[0;3];self.clip=0;
+        self.until=None;self.magazine_reload=false;Ok(removed)
+    }
     pub fn total(&self)->u16{self.counts.iter().sum()}
     pub fn current(&self)->Shell{PROFILES[self.mount.index()].shots[self.current]}
     pub fn next(&self)->Shell{PROFILES[self.mount.index()].shots[self.next]}
@@ -97,6 +112,7 @@ impl State {
                 if self.until.is_some(){return self.refuse(Refusal::Reloading);}
                 if self.counts[self.current]==0||self.clip==0{return self.refuse(Refusal::Empty);}
                 let shell=self.current();self.counts[self.current]-=1;self.clip-=1;
+                self.fired[self.current]=self.fired[self.current].checked_add(1).ok_or_else(||bad("armament fired stack overflow"))?;
                 self.accepted=self.accepted.checked_add(1).ok_or_else(||bad("armament shot counter"))?;
                 let magazine=self.clip==0||self.counts[self.current]==0;
                 self.reload(now,magazine)?;

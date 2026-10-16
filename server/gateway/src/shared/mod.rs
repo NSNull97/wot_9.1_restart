@@ -3,6 +3,11 @@
 pub(crate) mod model;
 pub(crate) mod visibility;
 pub(crate) mod interest_wire;
+pub(crate) mod ammo_detonation;
+mod detached_turret;
+mod turret_publication;
+#[cfg(test)]
+mod turret_publication_test_fixture;
 pub(crate) mod lifecycle;
 pub(crate) mod lifecycle_wire;
 mod lifecycle_result;
@@ -71,6 +76,7 @@ pub(super) struct Client {
     spotting_enabled: bool,
     interest: Option<interest_wire::Book>,
     private_pending: VecDeque<PrivatePending>,
+    turrets: turret_publication::State,
     last_pose_tick: Option<u32>,
     binding: Option<(u32, bool)>,
     area_creation: Option<(u32, bool)>,
@@ -114,7 +120,7 @@ impl Client {
     fn new(slot: usize) -> Self {
         Self { slot, phase: Phase::Account, view: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; model::MAX_ACTORS],
             creation_announcements: [None; model::MAX_ACTORS], spotting_enabled: false, interest: None,
-            private_pending: VecDeque::new(), last_pose_tick: None,
+            private_pending: VecDeque::new(), turrets:turret_publication::State::new(), last_pose_tick: None,
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, damage_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:[None;model::MAX_ACTORS],armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
             tracer_stopped: [false; model::MAX_BATTLE_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
@@ -145,6 +151,7 @@ impl Client {
         self.profile13.as_ref().is_some_and(|s| s.has_reservation() && !s.in_flight && !s.has_pending_return())
     }
     pub(super) fn acknowledge(&mut self, cumulative: u32, frame: &Frame) -> io::Result<()> {
+        self.turrets.book.ack(cumulative,&frame.selective)?;
         let cleared = match &mut self.interest {
             Some(book) => book.acknowledge(cumulative, &frame.selective)?,
             None if self.spotting_enabled => return Err(bad()),
@@ -267,8 +274,14 @@ impl Session {
     /// inbound packet. No native queue or ACK changes escape this clone.
     pub(super) fn shared_refresh_world(&mut self, world:&World)->io::Result<()> {
         let Some(c)=self.shared.as_ref() else{return Ok(());};
-        if !c.spotting_enabled || !matches!(c.phase,Phase::Enable|Phase::Entities|Phase::Driving) {return Ok(());}
-        world.owned(c.slot,self.id)?;
+        let terminal=c.phase==Phase::Leaving&&world.ammo_detonation_enabled();
+        if !c.spotting_enabled || !(terminal||matches!(c.phase,Phase::Enable|Phase::Entities|Phase::Driving)) {return Ok(());}
+        if terminal {
+            let actor=world.actors.get(c.slot).ok_or_else(||bad())?;
+            let owner=self.identity.as_ref().ok_or_else(||bad())?;
+            if c.view.as_ref().is_none_or(|old|old.id!=world.id)||actor.identity.account!=owner.account_id
+                ||actor.identity.database!=owner.database_id||actor.session.is_some_and(|id|id!=self.id){return Err(bad());}
+        }else{world.owned(c.slot,self.id)?;}
         let mut next=self.clone();let c=next.shared.as_mut().ok_or_else(||bad())?;
         c.refresh_interest(world)?;c.view=Some(world.clone());*self=next;Ok(())
     }
@@ -278,7 +291,8 @@ impl Session {
         while next.tx.len()<8 {
             let c=next.shared.as_mut().ok_or_else(||bad())?;
             let Some(pending)=c.private_pending.pop_front() else{break;};
-            if !matches!(c.phase,Phase::Entities|Phase::Driving) || !c.private_current(&pending) {c.invalidate_private(&pending);continue;}
+            let terminal=c.phase==Phase::Leaving&&c.view.as_ref().is_some_and(|w|w.ammo_detonation_enabled());
+            if !(terminal||matches!(c.phase,Phase::Entities|Phase::Driving)) || !c.private_current(&pending) {c.invalidate_private(&pending);continue;}
             next.tx.enqueue_body(&pending.body)?;
         }
         *self=next;Ok(())
@@ -537,10 +551,19 @@ impl Session {
         if phase == Phase::Leaving && self.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
             if payload.is_empty() {return Ok(());}
             let count=self.shared.as_ref().and_then(|c|c.profile13.as_ref()).ok_or_else(||bad())?.stale_envelopes;
-            if count>=32 {return Err(bad());}
+            // The opt-in detached visual lasts5s after terminal HP. Keep its
+            // authenticated request/ACK drain bounded without the old32-frame
+            // postmortem budget prematurely killing an otherwise live channel.
+            let detached=self.shared.as_ref().and_then(|c|c.view.as_ref()).is_some_and(|w|w.ammo_detonation_enabled());
+            if count>=if detached{240}else{32} {return Err(bad());}
             let mut retired=self.clone();
             retired.shared.as_mut().ok_or_else(||bad())?.phase=Phase::Driving;
             retired.shared_payload(payload,sequence,now,&mut Vec::new())?;
+            // Only current detached-entity requests survive terminal validation.
+            // World/drive commands still belong to the throwaway Avatar clone.
+            if detached{
+                turret_publication::retain_terminal_requests(self,payload)?;
+            }
             if self.shared.as_ref().is_some_and(|c|c.natural_result.is_some()) {
                 self.battle_results=retired.battle_results;
                 let leave=retired.shared.as_ref().is_some_and(|c|c.commands.iter().any(|v|matches!(v,Command::Leave)));
@@ -704,6 +727,12 @@ impl Session {
                 continue;
             }
             if id == 8 {
+                if let Some(slot)=detached_turret::request(raw)?{
+                    if !world.ammo_detonation_enabled(){return Err(bad());}
+                    let disposition=c.turrets.book.on_request(slot)?;
+                    events.push(format!("P06T_TURRET_REQUEST session={} slot={slot} disposition={disposition:?}",self.id));
+                    continue;
+                }
                 if c.tree_areas.len()!=c.areas.len(){c.tree_areas=vec![Vec::new();c.areas.len()];}
                 if let Some(area)=destructible_wire::area_request(raw,c.areas.len()) {
                     if area >= c.announced_areas || c.areas[area].0.is_some() || c.pending_area_requests.contains(&area) { return Err(bad()); }
@@ -838,7 +867,7 @@ impl Session {
                     if !c.request_allowed(slot) {continue;}
                     if c.creations[slot].is_some() {return Err(bad());}
                     let epoch=if c.spotting_enabled {Some(c.interest.as_ref().and_then(|b|b.announcement_sequence(slot)).ok_or_else(||bad())?)} else {None};
-                    let sequence = next.tx.enqueue_body_tracked(&wire::create_vehicle(&world, slot)?)?;
+                    let sequence = next.tx.enqueue_body_tracked(&turret_publication::parent_create(&world, slot)?)?;
                     let c = next.shared.as_mut().ok_or_else(|| bad())?;
                     c.creations[slot] = Some((sequence, false));
                     c.creation_announcements[slot]=epoch;

@@ -258,7 +258,7 @@ impl Terrain {
         Ok(ground)
     }
 
-    fn nearest_ground(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<Option<Hit>> {
+    pub(super) fn nearest_ground(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<Option<Hit>> {
         if start.into_iter().chain(end).any(|v| !v.is_finite() || v.abs() > MAX_QUERY_COORDINATE) {
             return Err(bad("terrain segment finite/coordinate bound"));
         }

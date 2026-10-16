@@ -64,6 +64,7 @@ pub struct Actor {
     vehicle_kind: VehicleKind,
     owned_loadout: Option<crate::battle091::profile13::FrozenLoadout>,
     pub owned_v2:Option<crate::profile13_v2091::Frozen>,
+    pub owned_loss:Option<crate::profile13_loss091::FrozenLoss>,
     pub devices:Option<crate::p06t_device_state::State>,
 }
 
@@ -165,6 +166,9 @@ pub struct World {
     result_spots:Option<Vec<result_spots::SpotRecord>>,
     result_spot_tick:Option<u32>,
     mixed_ammo:bool,
+    ammo_detonation:Option<super::ammo_detonation::Ledger>,
+    turret_flights:Vec<super::ammo_detonation::Flight>,
+    turret_visual_ms:Option<u64>,
     pub damage_events:Vec<DamageRecord>,
     pub device_events:Vec<(usize,crate::p06t_device_state::Transition)>,
     rng_state:u64,
@@ -188,7 +192,9 @@ impl World {
         if id == 0 || id == self.id || self.started.is_some() || !self.actors.is_empty()
             || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version() != 0
             || !self.damage_events.is_empty() || !self.device_events.is_empty() || !self.rng_draws.is_empty()
-            || self.result_spots.as_ref().is_some_and(|rows|!rows.is_empty()) || self.result_spot_tick.is_some() {
+            || self.result_spots.as_ref().is_some_and(|rows|!rows.is_empty()) || self.result_spot_tick.is_some()
+            ||self.ammo_detonation.as_ref().is_some_and(|ledger|!ledger.is_pristine())
+            ||!self.turret_flights.is_empty()||self.turret_visual_ms.is_some() {
             return Err(bad());
         }
         let mut next = self.clone();
@@ -205,6 +211,9 @@ impl World {
             "battle":self.id.to_string(), "map":self.map.asset(), "vehicle":self.vehicle_kind.label(),
             "tick":self.tick, "started":self.started.is_some(),"mixed_profiles":self.mixed_profiles,"mixed_ammo":self.mixed_ammo,"expected_actors":self.expected_actors,
             "damage_event_count":self.damage_events.len(),"device_event_count":self.device_events.len(),
+            "ammo_detonation_policy":self.ammo_detonation.as_ref().map(|_|super::ammo_detonation::POLICY),
+            "ammo_detonations":self.ammo_detonations().iter().map(|event|format!("{event:?}")).collect::<Vec<_>>(),
+            "turret_visual_ms":self.turret_visual_ms,"turret_flights":self.turret_flights.iter().map(|flight|format!("{flight:?}")).collect::<Vec<_>>(),
             "damage_tail":self.damage_events.iter().rev().take(64).map(|event|format!("{event:?}")).collect::<Vec<_>>(),
             "device_tail":self.device_events.iter().rev().take(64).map(|event|format!("{event:?}")).collect::<Vec<_>>(),
             "rng_policy":"test_lab.splitmix64.v1","rng_initial_seed":self.id.to_string(),"rng_state":self.rng_state.to_string(),
@@ -243,6 +252,80 @@ impl World {
     pub fn expected_actors(&self) -> usize { self.expected_actors }
     pub fn mixed_profiles(&self) -> bool { self.mixed_profiles }
     pub fn mixed_ammo(&self)->bool{self.mixed_ammo}
+    /// Future reserves only: an old V2 receipt cannot opt itself into losses.
+    /// Source-backed mixed simulation/terrain and lifecycle must be configured
+    /// before this immutable pristine-template policy is selected.
+    pub fn enable_ammo_detonation(&mut self)->io::Result<()>{
+        if self.ammo_detonation.is_some()||!self.mixed_ammo||!self.mixed_profiles
+            ||self.started.is_some()||!self.actors.is_empty()||!self.shots.is_empty()
+            ||!self.impact.events().is_empty()||!self.damage_events.is_empty()||!self.device_events.is_empty()
+            ||self.terrain.is_none()||self.lifecycle.as_ref().is_none_or(|life|life.phase()!=super::lifecycle::Phase::Waiting){return Err(bad());}
+        self.ammo_detonation=Some(super::ammo_detonation::Ledger::new(self.expected_actors as u8)?);Ok(())
+    }
+    pub fn ammo_detonation_enabled(&self)->bool{self.ammo_detonation.is_some()}
+    pub fn ammo_detonations(&self)->&[super::ammo_detonation::Event]{
+        self.ammo_detonation.as_ref().map_or(&[],super::ammo_detonation::Ledger::events)
+    }
+    pub fn turret_flights(&self)->&[super::ammo_detonation::Flight]{&self.turret_flights}
+    /// Detached points have their own current LOS/range. Native publication
+    /// additionally requires an already visible parent vehicle epoch.
+    pub(super) fn detached_turret_visible(&self,own:usize,target:usize,point:[f32;3])->io::Result<bool>{
+        if own>=self.actors.len()||target>=self.actors.len()||point.iter().any(|v|!v.is_finite()||v.abs()>2000.){return Err(bad());}
+        if own==target||self.team(own)?==self.team(target)?{return Ok(true);}
+        let actor=&self.actors[own];let kind=actor.vehicle_kind();let pivot=kind.aim().pivot;
+        if actor.position.iter().any(|v|!v.is_finite()||v.abs()>2000.)
+            ||actor.direction.iter().any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI){return Err(bad());}
+        let offset=super::pose::rotate([pivot[0],pivot[1]+0.5,pivot[2]],actor.direction);
+        let start:[f32;3]=std::array::from_fn(|i|actor.position[i]+offset[i]);
+        let scale=actor.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
+        let range=kind.view_range()*scale;
+        let distance=(0..3).map(|i|(f64::from(actor.position[i])-f64::from(point[i])).powi(2)).sum::<f64>();
+        if !range.is_finite()||!(0. ..=1000.).contains(&range)||!distance.is_finite(){return Err(bad());}
+        if distance>f64::from(range).powi(2){return Ok(false);}
+        let terrain=self.terrain.as_ref().ok_or_else(||bad())?;
+        let mut excluded=if let Some(state)=&self.fragiles{state.projectile_excluded()}
+            else{self.destructible.as_ref().and_then(|state|state.excluded_instance()).into_iter().collect()};
+        excluded.sort_unstable();if excluded.windows(2).any(|p|p[0]==p[1]){return Err(bad());}
+        if start==point{return Ok(true);}
+        Ok(terrain.nearest_excluding_many(start,point,&excluded)?.is_none())
+    }
+    /// AUTHORED publication fixture only. It does not prove exterior collision,
+    /// DeviceState source authority or inventory admission. Production only
+    /// creates these events through direct_mixed's actual module transition.
+    #[cfg(test)]
+    pub(super) fn install_detonation_publication_fixture(&mut self,input:super::ammo_detonation::Input)->io::Result<()>{
+        let actor=self.actors.get(input.target).ok_or_else(||bad())?;
+        if actor.vehicle_kind()!=input.kind||actor.health!=input.health_before as i16
+            ||actor.fire.typed().is_none_or(|state|state.counts()!=input.counts){return Err(bad());}
+        let mut next=self.clone();
+        let super::ammo_detonation::Outcome::New(event)=next.ammo_detonation.as_mut().ok_or_else(||bad())?.apply(input)?else{return Err(bad());};
+        if next.turret_flights.len()>=MAX_ACTORS{return Err(bad());}
+        if next.actors[input.target].fire.lose_loaded_for_detonation()?!=event.lost(){return Err(bad());}
+        next.actors[input.target].health=0;next.actors[input.target].input=Input::STOP;next.actors[input.target].speed=0.;
+        next.actors[input.target].aim.park();if let Some(state)=&mut next.actors[input.target].devices{state.freeze();}
+        next.turret_flights.push(super::ammo_detonation::Flight::new(event));*self=next;Ok(())
+    }
+    /// Server calls once per loop, including after outcome freeze. Only this
+    /// bounded visual timeline advances; battle HP/results/devices stay frozen.
+    /// Exact source ground triangles are sampled by a vertical point ray; no
+    /// static props, swept body or Jolt contact is invented for the detached FX.
+    pub fn advance_turret_flights(&mut self,now:Instant)->io::Result<bool>{
+        if self.turret_flights.is_empty(){return Ok(false);}
+        let ms=self.lifecycle_ms(now)?;
+        if ms>super::ammo_detonation::MAX_TIME_MS||self.turret_visual_ms.is_some_and(|old|ms<old){return Err(bad());}
+        if self.turret_visual_ms==Some(ms){return Ok(false);}
+        let terrain=self.terrain.as_ref().ok_or_else(||bad())?;
+        let mut next=self.turret_flights.clone();let mut changed=false;
+        for flight in &mut next{
+            let previous=flight.sample();
+            let sample=flight.advance(ms,|x,z|{
+                let max=terrain::MAX_QUERY_COORDINATE;
+                terrain.nearest_ground([x,max,z],[x,-max,z])?.map(|hit|hit.point[1]).ok_or_else(||bad())
+            })?;
+            changed|=previous!=sample;
+        }
+        self.turret_flights=next;self.turret_visual_ms=Some(ms);Ok(changed)
+    }
     pub fn enable_mixed_ammo(&mut self)->io::Result<()>{
         if self.mixed_ammo||!self.mixed_profiles||self.started.is_some()||!self.actors.is_empty()||!self.shots.is_empty(){return Err(bad());}
         self.mixed_ammo=true;Ok(())
@@ -261,7 +344,8 @@ impl World {
     }
     pub fn set_expected_actors(&mut self,expected_actors:usize)->io::Result<()> {
         if !(2..=MAX_ACTORS).contains(&expected_actors) || self.started.is_some() || !self.actors.is_empty()
-            || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version()!=0 {return Err(bad());}
+            || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version()!=0
+            ||self.ammo_detonation.is_some() {return Err(bad());}
         self.impact.configure_roster(expected_actors)?;self.expected_actors=expected_actors;self.mixed_profiles=true;Ok(())
     }
     pub fn geometry_for(&self,kind:VehicleKind)->io::Result<&Arc<geometry::Bundle>> {
@@ -272,7 +356,8 @@ impl World {
         if id == 0 { return Err(bad()); }
         Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
-            mixed_ammo:false,damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
+            mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,
+            damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
             result_spots:None,result_spot_tick:None,
             geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None,
@@ -470,6 +555,18 @@ impl World {
         self.attach_loadout(identity, session, Some(loadout.clone()))
     }
     pub fn attach_owned_v2(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_v2091::Frozen)->io::Result<usize>{
+        if self.ammo_detonation.is_some(){return Err(bad());}
+        self.attach_owned_v2_inner(identity,session,loadout)
+    }
+    pub fn attach_owned_loss(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_loss091::FrozenLoss)->io::Result<usize>{
+        loadout.validate_owned(&identity.account)?;
+        if self.ammo_detonation.is_none(){return Err(bad());}
+        let existing=self.actors.iter().position(|actor|actor.identity.account==identity.account);
+        if existing.is_some_and(|slot|self.actors[slot].owned_loss.as_ref()!=Some(loadout)){return Err(bad());}
+        let mut next=self.clone();let slot=next.attach_owned_v2_inner(identity,session,&loadout.base)?;
+        next.actors[slot].owned_loss=Some(loadout.clone());*self=next;Ok(slot)
+    }
+    fn attach_owned_v2_inner(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_v2091::Frozen)->io::Result<usize>{
         loadout.validate_owned(&identity.account)?;
         if !self.mixed_ammo||!self.mixed_profiles{return Err(bad());}
         let existing=self.actors.iter().position(|actor|actor.identity.account==identity.account);
@@ -512,7 +609,7 @@ impl World {
         }
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout,owned_v2:None,devices:None });
+            fire, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,devices:None });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
@@ -883,7 +980,8 @@ impl World {
                                     let segment=if matches!(resolution.decision,crate::p06t_damage::Decision::Unsupported|crate::p06t_damage::Decision::OutOfRange){None}
                                         else{Some(bundle.impact_segment(&contact)?)};
                                     impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,
-                                        outcome:ImpactOutcome::Mixed(resolution),health_before:before,health_after:next_actors[target_slot].health,segment});
+                                        outcome:ImpactOutcome::Mixed(resolution),health_before:before,
+                                        health_after:before.saturating_sub(resolution.damage_hp as i16).max(0),segment});
                                     terminal_reason=impact::TerminalReason::TestLabMixedImpact;
                                 }else if self.ap_test_lab && target.alive() {
                                     if impacts.len() >= self.shot_limit() { return Err(bad()); }

@@ -2,6 +2,7 @@
 //! mechanics are UNKNOWN; each proxy/damage/fire decision names its LAB policy.
 use super::*;
 use crate::{p06t_device_state as device,p06t_device_caps as caps};
+use super::super::ammo_detonation as rack;
 /// Source `gun`/extra gunHealth is verified. Admission and deterministic chance
 /// below are explicit LAB policy; this surface never applies vehicle HP damage.
 pub const MODULE_ADMISSION_POLICY:&str="test_lab.p06t.plate-penetration-or-exterior-gun.v1";
@@ -84,6 +85,7 @@ impl World {
             &&facts.effective.as_ref().is_some_and(|material|material.kind==25&&!material.extra_is_none
                 &&material.damage_kind==1&&material.vehicle_damage_factor==0.&&!material.use_hit_angle&&material.collide_once_only
                 &&material.armor.is_some_and(|armor|armor>0.&&resolution.nominal_power_mm>f64::from(armor)));
+        let mut additional=0;
         if resolution.decision==crate::p06t_damage::Decision::Pierced||exterior_gun {
             let ray=bundle.proxy_ray(contact)?;
             if !ray.is_empty(){
@@ -101,13 +103,47 @@ impl World {
                     let actor=&mut actors[slot];let health=device::Health{hp:before as u16,max_hp:actor.vehicle_kind().max_health()as u16,terminal:false};
                     let events=actor.devices.as_mut().ok_or_else(||bad())?.apply_hits(&inputs,health)?;
                     if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
+                    additional=self.apply_rack_transition(actors,slot,&events,before as u16,after as u16,
+                        projectile.sequence,projectile.slot,contact.tick)?;
                     self.device_events.extend(events.into_iter().map(|event|(slot,event)));
                 }
             }
         }
-        self.record_damage(actors,slot,projectile.slot,projectile.sequence,contact.tick,0,resolution.damage_hp,
+        // Preserve the raw plate Trace/AppliedImpact. The one authoritative
+        // HP/death record includes only the residual HP that detonation removes.
+        // Even a simultaneous final-seat wound must not create a second kill.
+        let damage=resolution.damage_hp.saturating_add(additional).min(before as u16);
+        self.record_damage(actors,slot,projectile.slot,projectile.sequence,contact.tick,0,damage,
             crew_before,true,resolution.decision==crate::p06t_damage::Decision::Pierced)?;
         Ok(resolution)
+    }
+    fn apply_rack_transition(&mut self,actors:&mut[Actor],slot:usize,events:&[device::Transition],
+        health_before:u16,residual_hp:u16,shot:u32,attacker:usize,tick:u32)->io::Result<u16>{
+        if self.ammo_detonation.is_none(){return Ok(0);}
+        let mut destroyed=events.iter().filter_map(|event|match event.change{
+            device::Change::Device{device:caps::Device::AmmoBay,before,after:0,..}if before>0=>Some((event,before)),_=>None});
+        let Some((transition,device_before))=destroyed.next()else{return Ok(0);};
+        if destroyed.next().is_some()||transition.cause.shot!=shot||usize::from(transition.cause.attacker_slot)!=attacker
+            ||transition.at_ms!=u64::from(tick.checked_sub(1000).ok_or_else(||bad())?)*100||transition.from_fire{return Err(bad());}
+        let actor=actors.get(slot).ok_or_else(||bad())?;
+        let input=rack::Input{shot,target:slot,attacker,tick,device_sequence:transition.sequence,device_before,device_after:0,
+            health_before,residual_hp,counts:actor.fire.typed().ok_or_else(||bad())?.counts(),kind:actor.vehicle_kind(),
+            joint:turret_joint(actor)?,from_fire:transition.from_fire};
+        let mut ledger=self.ammo_detonation.as_ref().ok_or_else(||bad())?.clone();
+        let outcome=ledger.apply(input)?;
+        match outcome{
+            rack::Outcome::New(event)=>{
+                if self.turret_flights.len()>=MAX_ACTORS{return Err(bad());}
+                let mut fire=actors[slot].fire.clone();
+                if fire.lose_loaded_for_detonation()?!=event.lost(){return Err(bad());}
+                actors[slot].fire=fire;self.turret_flights.push(rack::Flight::new(event));
+                self.ammo_detonation=Some(ledger);Ok(event.additional_damage())
+            },
+            rack::Outcome::Empty=>{self.ammo_detonation=Some(ledger);Ok(0)},
+            // Actual module replay emits no Transition. Seeing one twice here
+            // would attempt to apply HP again and is a causal integration bug.
+            rack::Outcome::Replay(_)=>Err(bad()),
+        }
     }
     pub(super) fn explode_mixed(&mut self,actors:&mut[Actor],trace:&mut impact::Trace,projectile:&Projectile,
         center:[f32;3],tick:u32,exclude_target:Option<usize>,fragile_state:Option<&fragiles::State>)->io::Result<()> {
@@ -137,6 +173,24 @@ impl World {
     }
 }
 
+/// Compose the actual authoritative chassis basis with the source turret yaw.
+/// Position is the source first turret joint, never muzzle/client coordinates.
+fn turret_joint(actor:&Actor)->io::Result<rack::JointPose>{
+    let pivot=super::super::pose::rotate(actor.vehicle_kind().aim().pivot,actor.direction);
+    let position=std::array::from_fn(|i|actor.position[i]+pivot[i]);
+    let(s,c)=actor.aim.yaw.sin_cos();
+    let forward=super::super::pose::rotate([s,0.,c],actor.direction);
+    let right=super::super::pose::rotate([c,0.,-s],actor.direction);
+    let up=super::super::pose::rotate([0.,1.,0.],actor.direction);
+    let pitch=-forward[1].clamp(-1.,1.).asin();
+    let horizontal=forward[0].hypot(forward[2]);
+    // At the Euler pole, roll=0 and yaw from right encode the same composed R.
+    let(yaw,roll)=if horizontal>1e-6{(forward[0].atan2(forward[2]),right[1].atan2(up[1]))}
+        else{((-right[2]).atan2(right[0]),0.)};
+    let joint=rack::JointPose{position,direction:[yaw,pitch,roll]};
+    if joint.position.iter().chain(joint.direction.iter()).any(|v|!v.is_finite()){return Err(bad());}Ok(joint)
+}
+
 fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<&DamageRecord>)->io::Result<String>{
     if frozen.crew_ids.len()!=state.crew().len()||roster>MAX_ACTORS{return Err(bad());}
     let value=serde_json::json!({"policy_revision":device::POLICY,"roster_size":roster,"crew_active":state.crew_active(),
@@ -148,3 +202,7 @@ fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,ros
             "tick":death.map_or(0,|event|event.tick)}});
     let raw=serde_json::to_string(&value).map_err(|_|bad())?;if raw.len()>8192{return Err(bad());}Ok(raw)
 }
+
+#[cfg(test)]
+#[path="ammo_detonation_world_tests.rs"]
+mod ammo_detonation_world_tests;

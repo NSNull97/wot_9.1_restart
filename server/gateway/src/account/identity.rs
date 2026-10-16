@@ -4,6 +4,8 @@ use std::{collections::BTreeMap, fs, fmt, io::{self,Read,Write}, net::{Ipv4Addr,
 use serde::{Deserialize,Deserializer,de::{self,MapAccess,Visitor}};
 use serde_json::Value;
 use rsa::rand_core::{OsRng,RngCore};
+#[path="identity_loss.rs"]
+mod loss;
 
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
 
@@ -186,12 +188,12 @@ pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
     pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
-    pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,pub p04m_pool:bool,pub p06t_mixed_ammo:bool,
+    pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,pub p04m_pool:bool,pub p06t_mixed_ammo:bool,pub p06t_ammo_rack_detonation:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
         let bytes=bounded_file(Path::new(path),4096)?;
-        let Bounded::<22>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        let Bounded::<23>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
         let ammo_service=match value.remove("ammunition_service") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
         };
@@ -237,6 +239,10 @@ impl Config {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("visibility_v1 must be explicit boolean")),
         };
         if visibility_v1&&!profile13_battle{return Err(invalid("visibility_v1 requires profile13 battle"));}
+        let p06t_ammo_rack_detonation=match value.remove("p06t_ammo_rack_detonation"){
+            None=>false,Some(Value::Bool(v))=>v,_=>return Err(invalid("p06t_ammo_rack_detonation must be explicit boolean")),
+        };
+        if p06t_ammo_rack_detonation&&(!p06t_mixed_ammo||!visibility_v1){return Err(invalid("ammo-rack loss requires mixed ammunition and server visibility"));}
         let battle_players=match value.remove("battle_players") {
             None=>2,Some(Value::Number(n))=>n.as_u64().filter(|n|(2..=6).contains(n)).ok_or_else(||invalid("battle_players must be2..6"))? as usize,
             _=>return Err(invalid("battle_players must be integer")),
@@ -263,7 +269,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation})
     }
     fn authentication_timeout(&self)->Duration {
         // A configured curated owner publishes its source-bound projection
@@ -299,7 +305,7 @@ impl Config {
 
     pub fn battle(&self,owner:&Profile,context:&crate::battle091::profile13::Context,
         request:&crate::battle091::profile13::Request)->io::Result<crate::battle091::profile13::Reply> {
-        if !self.profile13_battle || context.account_id!=owner.account_id
+        if self.p06t_ammo_rack_detonation||!self.profile13_battle || context.account_id!=owner.account_id
             || context.native_database_id!=owner.database_id || context.run_id!=self.battle_run_id {
             return Err(invalid("battle request authenticated owner/run mismatch"));
         }
@@ -311,7 +317,7 @@ impl Config {
 
     pub fn service_battle_v2(&self,owner:&Profile,context:&crate::battle091::profile13::Context,
         request:&crate::profile13_v2091::Request)->io::Result<crate::profile13_v2091::Reply>{
-        if !self.p06t_mixed_ammo||!self.p04m_pool||!self.profile13_battle||context.account_id!=owner.account_id
+        if self.p06t_ammo_rack_detonation||!self.p06t_mixed_ammo||!self.p04m_pool||!self.profile13_battle||context.account_id!=owner.account_id
             ||context.native_database_id!=owner.database_id||context.run_id!=self.battle_run_id{return Err(invalid("P06T authenticated owner/run/opt-in"));}
         let body=crate::profile13_v2091::encode_request(context,request)?;
         let(status,bytes)=self.post_with_budget("/internal/native/battle",&body,Duration::from_secs(20),65536,8192+4100)?;
@@ -328,7 +334,13 @@ impl Config {
         let context=crate::battle091::profile13::Context {account_id:owner.account_id.clone(),
             native_database_id:owner.database_id,command_key:format!("open:{}:{}:{}",self.battle_run_id,owner.database_id,binding.revision),
             expected_revision:binding.revision,run_id:self.battle_run_id.clone()};
-        if self.p06t_mixed_ammo{
+        if self.p06t_ammo_rack_detonation{
+            verify_mixed_projection(owner,binding.revision)?;
+            loss::verify_loss_projection(owner,binding.revision)?;
+            let reply=self.service_battle_loss(owner,&context,&crate::profile13_loss091::Request::RunOpen)?;
+            if reply.status!=crate::profile13_loss091::Status::Ready{return Err(invalid("ammo-loss run was not opened"));}
+        }else if self.p06t_mixed_ammo{
+            if owner.fixture_dir.join("p06t-ammo-loss.json").exists(){return Err(invalid("loss owner requires version4 gateway"));}
             verify_mixed_projection(owner,binding.revision)?;
             let reply=self.service_battle_v2(owner,&context,&crate::profile13_v2091::Request::RunOpen)?;
             if reply.status!=crate::profile13_v2091::Status::Ready{return Err(invalid("P06T run was not opened"));}
@@ -359,6 +371,8 @@ impl Config {
         verify_battle_projection(&fresh,binding.revision)?;
         if self.p04m_pool {crate::p04m_companion091::Binding::metadata(&fresh.fixture_dir,&fresh.account_id,fresh.database_id,binding.revision)?;}
         if self.p06t_mixed_ammo {verify_mixed_projection(&fresh,binding.revision)?;}
+        if self.p06t_ammo_rack_detonation{loss::verify_loss_projection(&fresh,binding.revision)?;}
+        else if fresh.fixture_dir.join("p06t-ammo-loss.json").exists(){return Err(invalid("loss owner requires version4 gateway"));}
         Ok(fresh)
     }
 
@@ -377,7 +391,7 @@ impl Config {
         Ok(reply)
     }
     pub(crate) fn results_post_v2(&self,owner:&Profile,body:&[u8])->io::Result<Vec<u8>>{
-        if !self.p06t_mixed_ammo||!self.p04m_pool||!self.profile13_battle||owner.database_id<=0||body.is_empty()||body.len()>2048{
+        if self.p06t_ammo_rack_detonation||!self.p06t_mixed_ammo||!self.p04m_pool||!self.profile13_battle||owner.database_id<=0||body.is_empty()||body.len()>2048{
             return Err(invalid("P06T results authenticated mode/body bound"));
         }
         let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;

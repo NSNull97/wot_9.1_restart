@@ -83,6 +83,21 @@ def validate_results_request(request,account):
 
 
 class MixedAmmoStore(PoolStore):
+    def _ammo_loss_fence(self):
+        # Lazy import avoids changing the immutable v2 policy/source namespace.
+        # Only the explicit new writer class carries this trusted capability.
+        from p06t_ammo_loss_store import require_loss_compatible
+        return require_loss_compatible(self.connection,self.pool_account,
+            contract=getattr(self,"AMMO_LOSS_CONTRACT",None))
+
+    def read_profile(self,account_id):
+        if hasattr(self,"pool_account"):self._ammo_loss_fence()
+        return super().read_profile(account_id)
+
+    def _guarded(self,function,*args,**kwargs):
+        self._ammo_loss_fence()
+        return super()._guarded(function,*args,**kwargs)
+
     def __init__(self, path, catalog, *, account_id, shell_catalog, terminal_policy, failpoint=None):
         super().__init__(path, catalog, account_id=account_id, failpoint=failpoint)
         self.terminal_policy=TerminalPolicy.from_manifest(no_links(terminal_policy))
@@ -114,6 +129,7 @@ class MixedAmmoStore(PoolStore):
         return self._mixed_tables() and self.connection.execute("SELECT 1 FROM p06t_owner WHERE account_id=?", (self.pool_account,)).fetchone() is not None
 
     def activate_mixed(self, *, account_id, authenticated_account_id, expected_revision=None, native_database_id=None):
+        self._ammo_loss_fence()
         require(account_id == authenticated_account_id == self.pool_account, "FOREIGN_ACCOUNT")
         c = self.connection; c.execute("BEGIN IMMEDIATE")
         try:
@@ -148,6 +164,7 @@ class MixedAmmoStore(PoolStore):
         except Exception: c.rollback(); raise
 
     def publish(self,source,account_id,fixture_root):
+        self._ammo_loss_fence()
         if self.mixed_active():
             from p06t_mixed_projection import publish_mixed
             return publish_mixed(self,source,account_id,fixture_root)
@@ -293,12 +310,14 @@ class MixedAmmoStore(PoolStore):
         require(len(canonical(value)) <= MAX_REPLY, "PROFILE_TOO_LARGE"); return value
 
     def battle(self, request, *, authenticated_account_id):
+        self._ammo_loss_fence()
         if type(request) is dict and request.get("version") == 2:
             return self.battle_mixed(request, authenticated_account_id=authenticated_account_id)
         require(not self._active_mixed(authenticated_account_id), "MIXED_RESERVATION_ACTIVE")
         return super().battle(request, authenticated_account_id=authenticated_account_id)
 
     def battle_mixed(self, request, *, authenticated_account_id):
+        self._ammo_loss_fence()
         request = validate_request(request, authenticated_account_id)
         account,key,operation = request["account_id"],request["command_key"],request["operation"]
         require(account == self.pool_account and self.mixed_active(), "P06T_ACTIVATION_REQUIRED")
@@ -387,6 +406,7 @@ class MixedAmmoStore(PoolStore):
         return row
 
     def results_mixed(self, request, *, authenticated_account_id):
+        self._ammo_loss_fence()
         request=validate_results_request(request,authenticated_account_id)
         account = request["account_id"]; require(account == authenticated_account_id == self.pool_account and self.mixed_active(), "FOREIGN_ACCOUNT")
         _bounded_id(request["command_key"],"command_key"); _integer(request["native_database_id"],1)

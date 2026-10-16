@@ -79,6 +79,8 @@ mod armament_wire091;
 mod p06t_armament_wire_tests;
 #[path = "battle/profile13_v2.rs"]
 mod profile13_v2091;
+#[path = "battle/profile13_loss.rs"]
+mod profile13_loss091;
 #[path = "shared/p06t_damage.rs"]
 mod p06t_damage;
 #[path = "shared/p06t_device_state.rs"]

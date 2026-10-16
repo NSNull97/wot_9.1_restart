@@ -29,7 +29,7 @@ impl TerminalV2{
         result:Option<&super::super::lifecycle_wire::Results>)->io::Result<Self>{
         let actor=world.owned(slot,session)?;
         reservation.frozen.validate_owned(&actor.identity.account)?;
-        if !world.mixed_ammo()||world.id!=reservation.battle||actor.vehicle_kind()!=reservation.frozen.kind
+        if world.ammo_detonation_enabled()||actor.owned_loss.is_some()||!world.mixed_ammo()||world.id!=reservation.battle||actor.vehicle_kind()!=reservation.frozen.kind
             ||actor.owned_v2.as_ref()!=Some(&reservation.frozen){return Err(bad("v2 terminal actor battle/frozen loadout"));}
         let counts=actor.fire.typed().ok_or_else(||bad("v2 actor lacks typed ammunition"))?.counts();
         let terminal=Self{reservation:reservation.clone(),remaining_ammunition:std::array::from_fn(|i|Remaining{
@@ -67,7 +67,7 @@ pub(crate) struct JobV2{
 impl JobV2{
     pub(crate) fn start(session:u32,owner:Arc<identity091::Profile>,config:Arc<identity091::Config>,context:Context,request:Request)->io::Result<Self>{
         codec::encode_request(&context,&request)?;
-        if session==0||context.account_id!=owner.account_id||context.native_database_id!=owner.database_id||!config.p06t_mixed_ammo
+        if config.p06t_ammo_rack_detonation||session==0||context.account_id!=owner.account_id||context.native_database_id!=owner.database_id||!config.p06t_mixed_ammo
             ||!config.profile13_battle||context.run_id!=config.battle_run_id{return Err(bad("v2 job authenticated owner/run/opt-in"));}
         if WORKER_ACTIVE.compare_exchange(false,true,Ordering::AcqRel,Ordering::Acquire).is_err(){return Err(bad("another battle writer call is still active"));}
         let(sender,receiver)=mpsc::sync_channel(1);let(task_owner,task_context,task_request)=(owner.clone(),context.clone(),request.clone());let operation=request.operation();
