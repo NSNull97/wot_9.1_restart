@@ -8,6 +8,38 @@ impl TaskV2{fn start(&self,config:Arc<crate::identity091::Config>)->io::Result<s
     service::JobV2::start(self.session,self.owner.clone(),config,self.context.clone(),self.request.clone())}}
 
 impl Dispatcher{
+    /// Completion is created by JobV2's strict real-writer parser. These checks
+    /// bind that receipt to the immutable issued Task and actual Session; the
+    /// FinishedRef constructor alone would only check metadata shape.
+    fn deliver_training_finished_v2(training_finished:&mut Option<finished_events::FinishedEvents>,s:&mut Session,task:&TaskV2,
+        completion:service::CompletionV2,now:Instant)->io::Result<()>{
+        let staged=if let Some(queue)=training_finished.as_ref().filter(|q|q.battle().is_some()){
+            if completion.reply.status==Status::Finished{
+                let fresh=completion.fresh.as_ref().ok_or_else(||model::bad())?;
+                if completion.refresh_error.is_some()||completion.session!=task.session||s.id!=task.session
+                    ||completion.context!=task.context||completion.request!=task.request
+                    ||completion.old_owner.account_id!=task.owner.account_id||completion.old_owner.database_id!=task.owner.database_id
+                    ||task.context.account_id!=task.owner.account_id||task.context.native_database_id!=task.owner.database_id
+                    ||s.identity.as_ref().is_none_or(|p|p.account_id!=task.owner.account_id||p.database_id!=task.owner.database_id)
+                    ||fresh.owner.account_id!=task.owner.account_id||fresh.owner.database_id!=task.owner.database_id
+                    ||fresh.binding.revision!=completion.reply.revision{return Err(model::bad());}
+                let RequestV2::Finish{battle,native_inventory_id,reservation_id,..}=&task.request else{return Err(model::bad());};
+                let row=completion.reply.reservation.as_ref().ok_or_else(||model::bad())?;
+                if row.status!=crate::profile13_v2091::ReservationStatus::Finished||row.result.is_none()
+                    ||row.battle!=*battle||row.run_id!=task.context.run_id||row.reservation_id!=*reservation_id
+                    ||row.frozen.native_inventory_id!=*native_inventory_id{return Err(model::bad());}
+                row.frozen.validate_owned(&task.owner.account_id)?;
+                Some(queue.staged(finished_events::account(&task.owner.account_id)?,&row.reservation_id,
+                    crate::training091::domain::BattleKey(row.battle))?)
+            }else{None}
+        }else{None};
+        // Both operations are transactional: failed delivery discards staged;
+        // full/conflicting receipt queue rejects BEFORE Session changes.
+        Self::deliver_v2(s,completion,now)?;
+        if let Some(next)=staged{*training_finished=Some(next);}
+        Ok(())
+    }
+
     pub(super) fn terminal_mixed(s:&mut Session,world:&World,reason:FinishReason)->io::Result<()>{
         let Some(p)=s.shared.as_ref().and_then(|c|c.profile13.as_ref())else{return Ok(());};
         if p.pending_return_v2.is_some(){return Ok(());}
@@ -82,7 +114,7 @@ impl Dispatcher{
                     let finished=if completion.reply.status==Status::Finished{completion.request.finished_battle()}else{None};
                     let late=if let Some(observer)=&self.late{observer.stage_finished_v2(&completion)}else{Ok(None)};
                     let target=table.sessions.iter_mut().chain(self.retired.iter_mut()).find(|s|s.id==task.session).ok_or_else(||model::bad())?;
-                    match Self::deliver_v2(target,completion,now){
+                    match Self::deliver_training_finished_v2(&mut self.training_finished,target,&task,completion,now){
                         Ok(())=>{
                             if let Some(observer)=&mut self.late{match late{Ok(Some(install))=>observer.commit_install(install),Ok(None)=>{},Err(error)=>{
                                 if let Some(battle)=finished{observer.invalidate_source(&task.context.run_id,battle);}
@@ -125,3 +157,7 @@ impl Dispatcher{
 #[cfg(test)]
 #[path="profile13_queue_v2_tests.rs"]
 mod queue_v2_tests;
+
+#[cfg(test)]
+#[path="profile13_finished_flow_tests.rs"]
+mod finished_flow_tests;

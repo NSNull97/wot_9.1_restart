@@ -11,7 +11,7 @@ buildPASS,683sourcefiles before/after exact. Оба настоящих клие�
 hangar/cache/model по трассе; UI/управление/бой этого core ещё NOT_RUN.
 V7 установлен в обе исследовательские копии, свои процессы остановлены.
 
-Текущая ветка продолжает P06T WT/FV physical foundation: `c25fb84`,4actual
+Сохранённый P06T WT/FV physical foundation: `c25fb84`,4actual
 RustIPC/scalar/ACK tests/buildPASS, canonicalphysics/Python/negative/legacy
 PASS. **Full04:1100PASS/0FAIL/5oldignored/buildPASS**,692sourcefiles before/after
 exact,340.80с; tag `p06t-physics-20261016-01`. Crew6/sourcecaps7/policyv2
@@ -49,10 +49,10 @@ tag p06t-world-seven-20261016-01, exeSHA
 | P07B | `codex/p07b-server-visibility` / `e711844` | `8fecb9d`,975/5/build/607sourceexact; realterrain/staticLOS/packetabsence/epochs | Nativehide/respot; bush/camo/radio/delay отсутствуют |
 | P04M | `codex/p04m-five-battle-profiles` / `2340236` | `483bb2b`,1006/5/build/634sourceexact; source/actualJolt/new3/ownedcrew+ammo/Web10/Python17+1+28 | Native3newqualification, admissionfalse |
 | P06T | `codex/p06t-mixed-shell-damage` / см. текущий git | core `9920a63`:1096/5/build/683 exact; Python21+old28/Web4+old25unique/client2.7.3 9+20+61PASS/4hostskips; physical `c25fb84`:1100/5/build/692 exact; devices `9080c47`:1111/5/build/695 exact | Новый бой/UI/audio/critical/fire, WT/FV native qualification, owned router/cacheACK/stock |
-| P10B | active ветки реализации ещё нет | Только ignoreddomain/nativecodec/aliases component33PASS, originalsource staticproof | Productionroom/selectedteamvector/own404causalbarrier/nativeNOT_RUN |
+| P10B | `codex/p10b-native-training-room` / foundation `95ceb73` | Actual hangar decoder shim + bounded domain/codecs/aliases:51PASS/0ignored/buildPASS. TeamPlan/actualscene3v1+1v3/list-preview/auth-floor/selection35PASS/build; rootSQL9PASS | Actual Session/Registry transaction, selection HTTP/writer saga, native room NOT_RUN |
 | NET-02 | active ветки реализации ещё нет | Только исходный preflight/report | LANbind/allowlist/redirect/firewall/2ПК/hostingNOT_RUN |
 
-Первый боевой тест ещё не подготовлен: программные P06T/P10B/NET-02 gates
+Первый боевой тест ещё не подготовлен: программные P10B/NET-02 gates
 не закончены. Указание не ждать ручные проверки не превращает их в PASS.
 
 ## Что изменено и проверено
@@ -208,3 +208,171 @@ P06T native/UI/audio и новые owned WT/FV admission остаются NOT_RU
 изменён. По ночному разрешению после сохранения этого автоматического результата
 следующая реализация — отдельная зависимая ветка P10B. Текущий first combat test
 всё ещё не готов до production P10B/NET-02 и общей ручной приёмки.
+
+
+## Текущий P10B checkpoint
+
+Foundation95ceb73 включает native ingress17commands, bounded domain, monotonic
+aliases и actualhangarshim; focused01=51PASS/0FAIL/0ignored/buildPASS. Изменённые
+файлы находятся в `server/gateway/src/training/`, регистрация — `main.rs`, shim —
+`account/hangar.rs`. Default старых режимов сохранён, живая room route ещё закрыта.
+
+Следующий слой добавляет immutable TeamPlan с выбранными сторонами и qualified
+spawn lanes при неизменном actor identity slot, outgoing list200/preview201 через
+существующий hangarstream helper, generation floor после retired auth. Исходный
+floor bug воспроизведён:3RED, fixed17PASS прямым rustc. Actual selection reader
+отдельно прошёл9SQL tests/0skip47.671s и выдал4 writer-vectors MS1/IS7; incoming
+Frozen/paths не принимаются. Он ещё не HTTP route. Actual saga6SQL cases PASS,
+Rust bridge не подключён. Client VERSION8/training guard исследуется отдельно.
+
+Focused02 остановился на неверном имени enum в новом тесте. Focused03=29PASS/
+3FAIL/0ignored: тесты не вызывали advance_lifecycle, export требовал harness env.
+Эти результаты сохранены, ожидание actual scene fracture/ACK не ослаблено.
+Focused04 выявил boundedradius/clock ошибки новых тестов; focused05 — ненужный
+serde derive (в проекте процедурные macros не включены). Исправлены тестовые
+границы и явный strict Stamp parser без новых dependencies. Focused06:
+35PASS/0FAIL/0ignored/buildPASS, actualscene3v1+1v3/realfractureACK и4actualSQL
+writer-vectors. Root повторил promoted selector SQL:9PASS/0skip47.204s.
+Full P10B gate ещё NOT_RUN.
+Own native/service processes core/extended остановлены; установленные coreV7
+и оба сохранённых source tags не менялись. Main merge не выполнялся.
+
+P10B follow-up: actual Session collector preserves full compound-frame order,
+legacy decoder once, ACK/history rollback and deferred outbox offsets. Actual
+Session fixed streams200/201 use all body ACKs, independent prior/suffix frames,
+monotonic preview aliases, and existing warm Account generation as separate
+callback origin. AuthLease remains actualSession.id; Account generation changes
+on warm return. Default old routes do not activate these helpers.
+
+Saga now issues its own exact Inspect task after drain; denial revision40 fences
+old no-reservation39. Opaque parsed Selection cannot be constructed/mutated by
+other runtime modules. Actual saved6SQL/40DTO corpus +4selection samples test
+strict codec and scheduling; Fresh in Rust scheduling tests is explicitly an
+authored cache fixture. Focused11=64PASS/build; focused12=65PASS/build includes
+warm-origin fence (exe615651f23b46a71bf3dfc63571e66d01e2ea07594088f7589f4dfbf8d0a30443).
+Focused10 tested54/build but an unused worker module was added between test/build;
+it is not treated as an immutable source gate. Source-stable focused11/12 replace
+that limitation. Fresh owned selection HTTP client/job compiled, endpoint itself
+is not yet connected; candidate actualHTTP3PASS/0skip74.091s remains separate.
+
+Client VERSION8/enable_training_rooms delegates original native PRB callbacks,
+preserves original tooltip/readiness and initializes original arena services.
+Root actual CPython2.7.3:79total=76PASS/3previoushost-onlyskips; hostnew15PASS.
+No prepare/install/client launch. All core/extended installed clients preserved.
+Actual wholeTable+Registry publication, live writer coordinator and native room
+remain NOT_RUN. Next work remains P10B; NET-02/tail have not started.
+
+P10B full02 на1df690a: **1269PASS/0FAIL/5oldignored/buildPASS**,760 runtime
+inputs до/после exact; exe cb7af11cdc37530141bbb5377d7ae9a7982696b25ce06c7f8bef33014f432efb.
+Путь evidence `local/evidence/20261016-p10b-full02`. Затем promoted actual
+Controller/native publication, Ready preservation across side/settings, HTTP
+selection route, Session callback namespace12tests и optional durable Finished
+hook5actualSessiontests. Focused17=110PASS/0FAIL/0ignored/buildPASS, exe
+bab99d06157427dff339a5545315c5077373e660c10f190d47a7e5103411bf13.
+Evidence `local/evidence/20261016-p10b-components02`. Новые helpers ещё не
+соединены с live serverloop; флаг training_rooms определён, не активирован
+на стенде. Full этого последующего head и native room NOT_RUN. Сохранены
+отдельно предыдущие compile/test FAIL; они не обозначены как PASS.
+
+P10B wholeSession receiver теперь проверен10actualSession/Window tests: full
+compound ACK/namespace/latepeer rollback, ordering, busyfixedstreams и warm origin.
+Повторный402 отзывает прежний ReadyRef+teamvotes до следующего411; selective
+completion держится до atomicnativepublication. Focused19=122PASS/build.
+Atomiclaunch/Preparing serialdriver и training-only nullInspect Fresh собраны:
+focused21=137PASS/0FAIL/0ignored/buildPASS; exe
+d12ee9bf2fec876f7c0ebc2f6af1e0befac1d8ff9fcc96ad924345e7062ccb5d.
+ActualHTTP03 повторил3PASS/0skip77.768s; main remoteffce8cb сверён и не менялся.
+Компонентные launch/driver tests используют strict savedSQL DTO и явно
+authored cache/run seam; живой HTTP→Rust→room→launch ещё NOT_RUN. Rootсоединяет
+serverloop и сохраняет native/UI/control NOT_RUN.
+
+Current sealedP10Bfull03/36d57a0 (tag p10b-components-20261016-01):1341PASS/
+5oldignored/buildPASS,501.62s,775exact sourceinputs. Subsequentfocused22=
+164PASS/0FAIL/0ignored/buildPASS,exe6f64381dabe0a38202efb636ed026ca177dd52d2c9681588c2bee292b569da8e.
+Includes actualquery-onlySQLprojectedC/D readiness8 tests (no grants/reserves),
+simultaneousReady policy6, actualResults/queue-isolation12 andBusylaunchcallback.
+These are component checks; actualserverloop Host and retained Preparing
+selected/bench disconnect handling are the current integration work. Native
+room/start/return NOT_RUN; no new client overlay/standdeployment.
+
+P10B integration checkpoint: actual liveHost/serverloop connected, retained
+Preparing selected/bench metadata and common garage/results retirement boundary
+added. Warm exactSession Account List/Preview retains Battle claims. Focused24
+compiled and ran190:189PASS/1FAIL/0ignored; one new test expected a departed selected
+member to remain after compensated abort. Corrected to exact surviving creator,
+without production policy relaxation. Four service-routing checks passed. Full04
+of the corrected committed runtime remains required. Fresh lightweight C/D
+room stand is prepared separately; native overlays/clients are untouched.
+
+P10B actualhost full04:9b5fc6d/tag p10b-host-20261016-01,1394PASS/0FAIL/
+5oldignored/buildPASS,533.65s/784exact. Stand02 final binding-room01.json and
+actualstartup5resources PASS; source restore audit784/changes0 PASS. Actual
+socket minimum passed both authenticated Login/Base/Account/run_open, then
+both Ready failed. Direct worker proved missing ROOT sys.path bootstrap
+(ModuleNotFoundError: tools,0.124s); old HTTP test harness masked it with
+PYTHONPATH. C39/D40, original mixed stacks unchanged, active reservations0.
+Own gateway and bridge stopped, failure state and full04 seal preserved.
+Bootstrap/clean-env regression and exact HTTP/socket repeat are current work;
+native room and Avatar/World launch remain NOT_RUN. NET-02 fresh preflight is
+ready; implementation waits for this actual readiness boundary.
+
+Worker bootstrap fixed. Actual clean-child CLI regression1PASS0.256s; actual
+production adapter/worker HTTP3PASS/0skip82.740s without child PYTHONPATH, source
+bytes before/after exact. Selection provenance/budgets unchanged. Rust HTTP
+diagnostic retains numeric status/closed denial only,3 new tests pending full05.
+Full05/current socket repeat remain the next gates; sealed full04 and failed
+socket evidence are preserved. Fresh stand02 has no running owned processes.
+
+## P10B final automatic checkpoint before NET-02
+
+Сохранён runtime **e55ba01245792f33e74d8449ecf84412476cd61f**, ветка
+`codex/p10b-native-training-room`, tag `p10b-host-20261016-02`.
+Полный gateway: **1397PASS/0FAIL/5oldignored/buildPASS**,535.18с;
+785runtime files exact before/after. Exe SHA256
+`b0fa1695795996d00e0645c3da3e73d6f2c5e1462407ac455070511533a1ffdf`.
+Исходники: Session/Host/Controller/Preparing/launch/Finished интеграция,
+read-only selection worker/bootstrap, диагностические HTTP tests и клиентский
+V8 training guard; точные paths/diffs — commits этой ветки. Main не менялся.
+
+Реально выполнены свежие actual stand02 startup и два socket-сценария:
+
+- `room-startup02`: оба Login/Base/Account/run_open, Create/Join, две настоящие
+  HTTP/SQL Ready, Assign/refusal/Leave/recreate, readonly БК/ledger и active0 PASS.
+  Receipt `local/stands/p10b-room-20261016-02/runs/room-startup02/p10b-socket-smoke.json`,
+  SHA `d48564867b1de2cd9ac602056e7e95bd5aa20b8b444e135a2a93bd58c81bc594`.
+- `room-durable01`: две Ready→два actual Admit→launchcommit/final411→два
+  ordinarydisconnect→training_prestart_disconnect→два actual Finished PASS.
+  Callback→последняя отправка5.750мс; World snapshot startedfalse/tick1000,
+  два MS1/HP90/нулевой расход. Exact SQL journals/Frozen/CAS подтверждены;
+  fresh Login и новая комната в том же процессе PASS. Receipt
+  `local/stands/p10b-room-20261016-02/runs/room-durable01/p10b-socket-phase2.json`,
+  SHA `438463647cc95ab24f63f9f81b1625bb2beb1fffd56f67ed5a6e1fb0391bd9b6`.
+
+Итоговая own DB: C43/D44, у обоих MS1[AP0,HEAT4,HE10], active reserves0,
+кредиты/XP не начислялись, старые истории не менялись. Свои службы обоих run
+остановлены runner receipts. БД и журналы сохраняются, ручного SQL cleanup нет.
+Новые baseline-room02/03 и startup-room02/startup-durable01 лежат в отдельном
+`local/night-staging/20261016/p10b-startup-verify02`; прежний verifier01 не менялся.
+
+Повторяемые команды из корня проекта, только на чистом сохранённом runtime:
+
+```powershell
+python -B -X utf8 server/build.py gateway --test --out local/build/server/<fresh>
+python -B -X utf8 local/stands/p10b-room-20261016-02/run.py check
+python -B -X utf8 local/night-staging/20261016/p10b-startup-verify02/verify.py --capture-baseline --baseline <fresh>.json
+python -B -X utf8 local/stands/p10b-room-20261016-02/run.py services --run <fresh> --binding binding-room02.json --training-rooms
+python -B -X utf8 local/night-staging/20261016/p10b-startup-verify02/verify.py --run <fresh> --baseline <fresh>.json --receipt <fresh-startup>.json --timeout 90
+```
+
+Это команды service/startup. Native launch пока отдельно **NOT_RUN**: старый
+stand02/run.py client ошибочно требует settings.version8, хотя настоящий prepare
+пишет schema_version1 и отдельно компилирует module VERSION8. Новый versioned
+client helper/sidecar подготавливается; не подделывать settings и не менять
+binding-room02 ради запуска. Сначала утром coreV7, затем lawful ledger rollback
+и fresh V8 preparation/install по отдельной точной матрице. CoreV7 не тронут.
+
+Приёмка P10B: автоматические/component/actual socket границы выше PASS;
+родная комната/UI/Avatar/Worldstart/управление/6окон — **NOT_RUN**, main merge
+запрещён до принятия. Откат: сохранённый P06T tag/own overlay ledger; БД whole
+backup и actual durable recovery, без удаления reservations. По прямому ночному
+разрешению следующий шаг — интеграция NET-02 в отдельной зависимой ветке.

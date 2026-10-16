@@ -477,3 +477,191 @@ Acceptance remains **research-only /P10B native NOT_RUN**. Rollback is removal o
 this addendum and its ignored proof directory. Single next step after P06T is
 committed: implement the bounded native room adapter against these closed
 contracts, keeping the initial controlled native trace as an outstanding gate.
+
+## 2026-10-16 — promoted bounded foundation
+
+Branch codex/p10b-native-training-room starts after P06T full06/1162PASS/
+725sourceexact. Domain, nativecallbacks/init, recipientaliases/current-room
+adapter and typed primitive ingress were reviewed/promoted in training/.
+The actual hangar::requests_training_with shim composes the unchanged selected
+legacy decoder once, preserves native record order and rejects cross-record
+callback/stream collisions and late poison atomically. Old Incoming/API/old
+modes are unchanged. The route is not activated. Protocol numbers remain
+INFERRED/VERIFIED_STATIC as above; no native PRB capture was performed.
+
+Focused01: **51PASS/0FAIL/0ignored/buildPASS**,0.03с tests, exeSHA
+6aceeb0557d1b986d2247468043f0660c8fc84fa837e54cee7e77be22a68dcce.
+Proof local/evidence/20261016-p10b-foundation01/ and build gateway-p10b-focused01.
+Includes actual promoted hangar shim and real transport Window counterexample:
+retry same body/seq can carry newer cumulative ACK, therefore ACK does not
+prove UI-origin. Explicit current-room-at-receipt handles new authenticated
+unscoped commands in current room; peeraliases tombstoned, async jobs retain
+room/revision/membership/channel/source/request. Fresh semantically old Leave
+may leave current lobby; this is disclosed laboratory policy, not historical.
+World teams, frozen selected identity order, wholeSession/Registry publication
+transaction, actual readiness/reserve saga and native UI/flow remain NOT_RUN.
+
+## Runtime component checkpoint 2026-10-16
+
+VERIFIED: focused06 прошёл35gateway tests/0ignored/buildPASS (test44.37s).
+Immutable TeamPlan сохраняет actor identity slots, source-qualified lanes;
+actual shared Jolt3v1+1v3 прошёл scalarFrameProof и неослабленную fracture/ACK
+проверку. Имеются World visibility/roster/result/directsourceContact проверки.
+Outgoing200/201 использует существующий storedDEFLATE/CRC stream encoder.
+Generation floor1024 безeviction запрещает retiredlease resurrection; live24.
+
+Promoted read-only selection strict2048/4096 DTO имеет7source/state stamps,
+отдельные aggregate/nativeState SHA и exactFrozen. RootactualSQLite9PASS/0skip
+47.204s; четыре actualSQL vectors прошли Rust validator. Это не HTTP, native
+readiness или room acceptance. No incoming paths/Frozen/deserializerobjects.
+Доказательства: local/evidence/20261016-p10b-{teams01,foundation02,selection01}/
+и local/build/server/gateway-p10b-focused06. Intermediate02..05 failures
+сохранены, причины относятся к новым тестовым fixtures/отсутствующему derive.
+ActualSession/globalRegistry/HTTP/writerSaga/native пока NOT_RUN.
+
+## Current component seal / checked Ready intent policy
+
+VERIFIED: clean36d57a0/tag p10b-components-20261016-01/full03 completed
+1341PASS/0FAIL/5oldignored/buildPASS,501.62s,775runtimefiles exact before/after.
+Exe c5270c4830faaf468811e2e94ee18c5c16db33230f5308efad44a25476d71063.
+Proof local/evidence/20261016-p10b-full03; exact full output retained in
+local/build/server/gateway-p10b-full03. Subsequent WIP is outside this seal.
+ActualSession/table-controller/Window atomicreceive10 tests, launch/preparing
+components, Finisheddelivery hook and opaque read-only source DTO are compiled.
+ActualHTTP03=3PASS/0skip77.768s; this proves bridge→reader→SQLite, not live
+Rust worker→room→launch or native GUI. Source-backed #717 autoReady/no in-room
+Ready-toggle proof is in ignored arena-transition01; native remains NOT_RUN.
+
+OBSERVED in component scheduling: old global room-revision conflict fence
+rejects a second otherwise valid simultaneous Ready and creator query followed
+by peer join. Direct actual Rust counterexample86PASS/3FAIL; checked policy
+candidate89PASS/0FAIL/0ignored. Explicit LAB policy
+`test_lab.p10b.ready-current-context-own-intent.v1` retains exact pendingnonce,
+actualauth/channel, owner/nativeID, source/profile/CAS and ownroom/membership.
+Own403 marks that exactnonce cancelled until failure drains it. Only after
+these checks and actual verified selection, server obtains current domain
+selection_context; unrelated player Ready/join and side/settings changes do
+not invalidate owned selection. Captured room_revision remains observed
+provenance. No new native epoch, request, success DTO or ownership is invented.
+Root focused22 checked this policy with actualSession/SQL-projected readiness:
+164PASS/0FAIL/0ignored/buildPASS. Native checks remain pending.
+
+## Integrated Host / retirement checkpoint
+
+VERIFIED by source review and focused24 compilation/execution: explicit training
+Host is wired into actual authenticated Session admission, whole-frame receive,
+readonly selection jobs, serial Preparing driver, exact selected World launch,
+Finished receipt collection and close retry/cleanup. Retained inactive metadata
+is display/identity provenance only; stage_batch still rejects inactive/unbound
+publication. Selected origins remain exact actual Preparing ReadyTask/reference;
+bench has no battle guard, Ready authority, reserve or ReleasedRef. Bench's old
+persistence cursor is captured separately from its garage cursor; any later
+change refuses the old display fallback. Compensation does not require that
+fallback and removes departed members before abort publication.
+
+Source review found a real bypass: old garage/result failures retired Sessions
+directly through Dispatcher, leaving room membership behind. Both result-manager
+sites and garage completion now use immediate Host-mediated close in training;
+legacy mode delegates to its original retirement path. Four routing tests passed
+in focused24. Scope is actual State/Manager/Host scheduling with labelled authored
+faults and fixture cache seams, not newly executed HTTP/SQLite/native delivery.
+
+Same connected AuthLease/nativeDB/underlying Session may advance its Account
+generation after return while Battle claim remains. Only its recipient channel
+changes; alias books/tombstones and claims persist. List and Preview are allowed;
+Create/Join/Ready/current-room mutations remain refused under Battle. This change
+does not authenticate a new Session or prove native return by itself.
+
+Focused24 retained189PASS/1FAIL/0ignored. Its one failure was an erroneous new
+assertion expecting a disconnected selected member to remain after compensated
+abort; actual domain removes both departures. The corrected test requires exact
+surviving creator membership. Intermediate failed output is preserved in
+local/build/server/gateway-p10b-focused24; no PASS/build seal is claimed for it.
+Current-head full gate, actual socket→Rust→HTTP selection and native remain
+pending. Integration evidence local/evidence/20261016-p10b-components02;
+read-only review local/night-staging/20261016/p10b-server-retire-review01.
+
+## Actual host startup and first socket counterexample
+
+VERIFIED: full04 on9b5fc6d2132ec4e66879a7036df08d717e61708a/tag
+p10b-host-20261016-01 passed1394/0FAIL/5oldignored/build,533.65s. All784 runtime
+files matched before/after; exe ce372478dfee47109e8954e23e091acd1ad07a068904db4c5337f47a729bc40c.
+Evidence local/evidence/20261016-p10b-full04. Fresh stand02 bound that exact
+runtime; actual owned startup validated5templates/mixed policy/map4/loopback
+ports and unchanged seed rows except normal descriptor meta. Startup receipt
+local/night-staging/20261016/p10b-startup-verify01/startup-room01.json,
+SHAd7c2cbb10a43c4ccdad20a05a9bee70dc3314f1a879b47a486d61cc4cd6cc94c.
+Exact source restoration audit784/changes0 passed without active writes.
+
+OBSERVED first minimum synthetic socket run: two real authenticated Login/Base/
+Account sync and durable run_open succeeded. Both room Ready queries returned
+failure before readiness/reserve. No Avatar/launch was requested. Actual DB is
+C39/D40, ammo unchanged, active reserves0; own gateway/bridge stopped via receipts.
+Evidence local/stands/p10b-room-20261016-02/runs/room-startup01 and
+local/evidence/20261016-p10b-components02/sql-after-socket01.json.
+
+VERIFIED root cause: direct actual configured p10b_selection_service.py child,
+with the exact current source-bound C request, exited1 in0.123668s with
+ModuleNotFoundError: tools. Its catalog import requires repository ROOT, while
+script execution supplies tools/ as sys.path0. Existing service CLIs bootstrap
+ROOT explicitly; this new worker omitted it. Previous HTTP harness supplied
+PYTHONPATH and masked normal process startup. DB files/logical rows/active run
+were exactly unchanged. This was not the7s deadline. Proof retained in
+local/night-staging/20261016/p10b-ready-diagnosis01/proof01. Bootstrap and
+clean-env regression are required; no provenance/ownership fence is relaxed.
+
+Bootstrap correction VERIFIED by actual CLI regression: real service filename,
+unrelated empty cwd, child-only PYTHONPATH removal, invalid request returns the
+exact bounded INVALID_INPUT denial before source/DB access;1PASS0.256s. Test
+tests/test_p10b_selection_cli.py remains portable without original resources.
+Actual production adapter/worker clean-env HTTP suite then passed3/0FAIL/0skip
+82.740s, current source bytes unchanged. Evidence
+local/night-staging/20261016/p10b-selection-cleanenv01/http01-run.json. Positive/
+disabled paths use actual ROOT adapter/worker; only deadline-negative uses the
+explicit preserved slow-worker fault view. Caller environment is unchanged.
+Safe Rust diagnostic now retains numeric HTTP status and only static allowlisted
+selection codes for unique exact2-field409 responses≤512B; all other body text
+is omitted. Three diagnostic tests and full05/socket retry are pending.
+
+## Full05 and actual owned socket boundary
+
+VERIFIED full05/e55ba01245792f33e74d8449ecf84412476cd61f:
+1397PASS/0FAIL/5oldignored/buildPASS,535.18s,785 source files exact before/after;
+exe SHA256 b0fa1695795996d00e0645c3da3e73d6f2c5e1462407ac455070511533a1ffdf.
+Evidence: local/evidence/20261016-p10b-full05 and
+local/build/server/gateway-p10b-full05/result.json. Full04 and its actual Ready
+failure remain separate preserved evidence. The three HTTP diagnostic tests
+passed in full05; the clean-env production HTTP3 gate remains a separate check.
+
+OBSERVED actual own loopback stand02, binding-room02.json: minimum socket
+room-startup02 PASS, receipt SHA256
+d48564867b1de2cd9ac602056e7e95bd5aa20b8b444e135a2a93bd58c81bc594.
+Both actual authenticated sessions reached Account/run_open, Create/Join,
+HTTP/SQL-backed Ready, side assignment and typed noncreator refusal, room Leave
+and recreate. Readonly readiness caused no reserve or ammunition mutation.
+
+OBSERVED actual phase2 room-durable01 PASS, receipt SHA256
+438463647cc95ab24f63f9f81b1625bb2beb1fffd56f67ed5a6e1fb0391bd9b6.
+Two actual durable Admit replies preceded Account-stage launchcommit/final411.
+Both ordinary logout sends occurred5.750ms after callback/6.113ms after observed
+commit, inside the existing3s prestart gate. Actual safe failure snapshot was
+training_prestart_disconnect, startedfalse/tick1000, two owned MS1/HP90,
+zero shots/projectiles/damage/device/RNG events; no World/Jolt start.
+Both actual non-replayed Finished deliveries correlate with exact archived
+Admit/Finish payload/journal/Frozen/result hashes and owner/run/battle/CAS.
+No pristine Cancel or aborted_restart was accepted. C43/D44, active reserves0,
+ammunition[0,4,10] unchanged. Fresh Login and a new room in the same live gateway
+passed with no second Admit/Finish or old-history mutation. Own services stopped
+through their exact process receipts. Probe itself used readonly SQL only.
+
+INFERRED: this supports correct durable release after a committed prestart
+disconnect for this exact two-owner environment. It does not prove native
+Account→Avatar or World lifecycle. Native/UI/audio/control/6actualclients and
+remote LAN remain UNKNOWN/NOT_RUN. All numerical native PRB candidates retain
+their original classification until actual native packets are measured.
+
+Read-only morning audit also found a launch-helper mismatch: frozen run.py
+checks settings.version8, but actual prepare emits schema_version1; map_drive
+module VERSION8 is separate. No native launch was attempted. A versioned helper
+and sidecar must validate actual module/compiled/source pins without modifying
+the sealed service binding. Installed coreV7 remains unchanged.

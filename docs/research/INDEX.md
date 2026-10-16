@@ -159,3 +159,4 @@
 ## P10 подбор
 
 - [P10A_TRAINING_ROOM_STATIC.md](P10A_TRAINING_ROOM_STATIC.md) — P10A — training-room lifecycle static research
+- [P10B_NATIVE_ROOM_CONTRACT.md](P10B_NATIVE_ROOM_CONTRACT.md) — P10B — original #717 room contract, owned selection and native host boundaries

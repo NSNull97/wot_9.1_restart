@@ -1,4 +1,12 @@
-# Текущая карточка — P06T: seven + loss4 integration
+# Текущая карточка — P10B: loss4 training integration
+
+Ветка `codex/p10b-loss-training-integration` от91dbdbe. Normal merge saved
+6c6b7b7 с актуальными loss4/late/firstspot/turret guards; typed Saga04/Host05/
+Web05 и actual09/10/11 интегрируются следом. Current-head compile/tests ещё
+NOT_RUN. План P10B_LOSS_TRAINING_INTEGRATION. Native/UI/six/two-PC NOT_RUN;
+mainffce8cb unchanged, ночное разрешение до09:00 сохраняется.
+
+## Сохранённый seven software checkpoint
 
 Software checkpoint завершён: runtime0e03e19, ветка
 `codex/p06t-seven-loss-integration`. Full1295PASS/0FAIL/5oldignored/buildPASS,

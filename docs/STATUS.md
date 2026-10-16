@@ -1,6 +1,10 @@
 # Состояние проекта — 2026-10-17
 
-Текущая P06T seven+loss integration завершила software checkpoint0e03e19:
+Текущая карточка P10B: `codex/p10b-loss-training-integration` от91dbdbe,
+normal merge6c6b7b7; typedLoss4/actualroomcomposition в работе. Current-head
+compile/tests NOT_RUN; план P10B_LOSS_TRAINING_INTEGRATION.
+
+Сохранённая P06T seven+loss integration завершила software checkpoint0e03e19:
 full1295PASS/0FAIL/5oldignored/buildPASS/783rawsourceexact, focused5,
 Python102PASS0skip. Ветка `codex/p06t-seven-loss-integration`.
 [Факты](research/P06T_SEVEN_LOSS_INTEGRATION.md). Следующая P10B typed loss4.

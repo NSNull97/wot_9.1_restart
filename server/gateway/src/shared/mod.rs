@@ -1,6 +1,7 @@
 //! Explicit local bounded-multiplayer test_lab route. The accepted single-client drive
 //! route and its frozen profile checks are not generalized through this module.
 pub(crate) mod model;
+pub(crate) mod p10b_team_plan;
 pub(crate) mod visibility;
 pub(crate) mod interest_wire;
 pub(crate) mod ammo_detonation;
@@ -42,6 +43,8 @@ pub(crate) mod wire;
 mod server;
 mod scene_runtime;
 mod profile13_session;
+mod p10b_writer;
+mod p10b_selection_job;
 mod profile13_queue;
 mod profile13_templates;
 pub use server::serve_profile13;
@@ -124,6 +127,7 @@ pub(super) struct Client {
     result_delivery_at: Option<Instant>,
 }
 impl Client {
+    pub(super) fn account_incarnation(&self)->u64{u64::from(self.return_generation)+1}
     fn new(slot: usize) -> Self {
         Self { slot, phase: Phase::Account, view: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; model::MAX_ACTORS],
             creation_announcements: [None; model::MAX_ACTORS], spotting_enabled: false, interest: None,
@@ -1663,3 +1667,7 @@ mod shared_return_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path="p10b_special_account_tests.rs"]
+mod p10b_special_account_tests;

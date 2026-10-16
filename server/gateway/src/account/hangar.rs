@@ -1683,3 +1683,23 @@ mod tests {
         assert!(creation_named("bad\nname").is_err());assert_eq!(creation(),creation_named("p02-hangar-player").unwrap());
     }
 }
+
+#[derive(Debug,Clone,PartialEq)]
+pub enum TrainingIncoming {
+    Account(Incoming),
+    Room(crate::p10b_ingress091::Request),
+}
+
+/// Session supplies its EXISTING selected legacy decoder. Disabled delegates
+/// the entire body directly; enabled preserves complete legacy-bundle checks
+/// and native record order. Caller stages Session + Registry atomically.
+pub fn requests_training_with(body:&[u8],enabled:bool,
+    legacy:fn(&[u8])->io::Result<Vec<Incoming>>)->io::Result<Vec<TrainingIncoming>>{
+    use crate::p10b_ingress091::{self as room,Gate};
+    room::requests(body,if enabled{Gate::TrainingV1}else{Gate::Disabled},legacy,request_id)
+        .map(|rows|rows.into_iter().map(|row|match row{
+            room::Incoming::Legacy(old)=>TrainingIncoming::Account(old),
+            room::Incoming::Room(request)=>TrainingIncoming::Room(request),
+        }).collect())
+        .map_err(|_|invalid("bounded native training/Account request"))
+}
