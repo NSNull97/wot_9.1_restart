@@ -31,3 +31,10 @@
 
 Откат — старый build command без флага и сохранённая ветка. Новые C/D outputs
 остаются для аудита; перемещения или удаления существующих файлов нет.
+
+Checkpoint0e970b7:11 Python guard tests PASS0fail, actual fresh C target и copy
+исполнены; canonical gateway-build-temp01 full1188PASS/0FAIL/5oldignored/buildPASS,
+299.21s tests,713rawsourceexact. Evidence20261016-build-temp01/source-after.json
+и actual-copy.json.19,599,083B exe60860207141afd2bdb00cfaf9436ca08c41d201238243b2cd97bb52f0a988d99
+совпадает в C и D; обе папки сохранены. Native/Linux/legacy/physics новый запуск
+NOT_RUN (не относятся к опции); deployed unchanged. Зависимая ветка вне main.

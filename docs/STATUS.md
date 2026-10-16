@@ -1,5 +1,11 @@
 # Состояние проекта — 2026-10-16
 
+BUILD-TEMP0e970b7:11 Python guards +actual C-target canonical full1188PASS/
+0FAIL/5oldignored/buildPASS,713rawsourceexact. Проверенный19.6MB exe скопирован
+в D output, C intermediates/старые данные сохранены, deployed не заменён.
+Evidence `local/evidence/20261016-build-temp01/actual-copy.json`.
+Зависимая codex/build-temp-cargo-target, не main; далее P08B restart/CAS.
+
 P06T ammo-rack-loss candidate ed67531: full1188PASS/0FAIL/5oldignored/buildPASS,
 712rawsourceexact; focused143. SQL12+old15/actualHTTP1/Web13PASS0skip.
 Переход непустой AmmoBay0 даёт одну смерть/фраг и lost всех loaded3/clip,

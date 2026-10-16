@@ -5,7 +5,10 @@
 создаёт только новые Cargo intermediates в default OS temp другого диска;
 проверенный exe экспортируется в свежий обычный D output. Ничего не удаляется.
 План [BUILD_TEMP_TARGET](plans/BUILD_TEMP_TARGET.md).11 Python guards PASS;
-actual canonical C-target build пока NOT_RUN. После этого — P08B composition.
+actual canonical C-target full1188PASS/0FAIL/5oldignored/buildPASS на0e970b7,
+713rawsourceexact; actual C→D exe SHA совпал, обе папки сохранены.
+Evidence `local/evidence/20261016-build-temp01/source-after.json`/`actual-copy.json`.
+Автоматический checkpoint завершён; далее новая P08B composition ветка.
 Mainffce8cb и native приёмка не меняются.
 
 ## Сохранённый P06T: детонация и потеря БК

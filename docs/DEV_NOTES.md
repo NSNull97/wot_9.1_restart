@@ -10,6 +10,9 @@
   другого локального диска. Cargo/temp остаётся для аудита; только проверенный
   exe копируется в обычный output. Ничего автоматически не удаляется. Нужны
   source-before/after и actual full gate; old default/physics/legacy не меняются.
+  Первый actual full: gateway-build-temp01 на0e970b7,1188PASS/5oldignored/
+  buildPASS/713rawsourceexact. Exe60860207141afd2bdb00cfaf9436ca08c41d201238243b2cd97bb52f0a988d99,
+  actual C→D hash equality PASS; evidence20261016-build-temp01.
 
 - P06T loss checkpoint ed67531: fresh gateway-p06t-ammo-loss-full02,
  1188PASS/5oldignored/buildPASS,712rawsourceexact. Новый isolated loss-01

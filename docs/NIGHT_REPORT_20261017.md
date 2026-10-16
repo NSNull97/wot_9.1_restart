@@ -19,6 +19,20 @@ buildPASS, 689 raw source files exact. Владелец подтвердил п�
 B42/[0,50,46],active0; источник не изменялся. Старые клиенты/службы затем
 остановлены только собственными PID/exe/creation receipts.
 
+## Техническая предпосылка: место для сборок
+
+Отдельная зависимая `codex/build-temp-cargo-target`, runtime0e970b7. Новый
+явный `server/build.py gateway --test --cargo-temp-target --out
+local/build/server/gateway-build-temp01` создал fresh Cargo target в C OS temp,
+провёл full1188PASS/0FAIL/5oldignored/buildPASS (299.21s tests),713 raw source
+before/after exact и экспортировал только проверенный exe19,599,083B на D.
+ExeSHA60860207141afd2bdb00cfaf9436ca08c41d201238243b2cd97bb52f0a988d99
+совпал до/после копии.11 Python guards PASS. Старые builds/evidence не удалялись,
+обе новые папки сохраняются, deployed не заменён. Evidence
+`local/evidence/20261016-build-temp01/source-after.json` и `actual-copy.json`.
+Откат — build без флага; новый native/Linux/legacy/physics NOT_RUN.
+В main не слито из-за непринятых игровых родителей. Следующий шаг P08B.
+
 ## P06T: детонация и потеря БК — автоматический checkpoint
 
 Ветка `codex/p06t-ammo-rack-detonation` от `1e87e1b`; план
