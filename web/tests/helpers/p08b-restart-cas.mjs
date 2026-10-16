@@ -9,7 +9,7 @@ import { resolve, join, relative, isAbsolute, dirname, basename, parse } from 'n
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = dirname(localSpelling(fileURLToPath(import.meta.url)));
 const ROOT = resolve(HERE, '../../..'); // promoted web/tests/helpers -> repository
 const TEST = 'gateway091::shared::server::p08b_restart_cas_tests::p08b_restart_cas_composition02_real_http_session_phase';
 const SCOPES = ['server', 'tools', 'client_patch', 'web/src', 'tests', 'web/tests'];
