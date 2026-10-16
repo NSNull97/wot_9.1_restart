@@ -1,5 +1,15 @@
 # Состояние проекта — 2026-10-16
 
+P06T ammo-rack-loss candidate ed67531: full1188PASS/0FAIL/5oldignored/buildPASS,
+712rawsourceexact; focused143. SQL12+old15/actualHTTP1/Web13PASS0skip.
+Переход непустой AmmoBay0 даёт одну смерть/фраг и lost всех loaded3/clip,
+shots отдельно; oldv2records/depot сохранены. Native DT8/HP-2/FX/ACK epochs
+подключены, фактический native/UI/ammo-loss NOT_RUN. Изолированный loss-01
+A127/B42/[0,48,48]/[0,50,46]/active0, grants0; full02 binding и actual
+startup5profiles/DETONATION_BOUND PASS. Mainffce8cb без слияний. Ночь продолжается
+до17.10 09:00; следующий checkpoint P08B restart/CAS composition.
+[Факты и ограничения](research/P06T_AMMO_RACK_LOSS.md).
+
 P08C narrow native natural-results/return принят на46d5c20: owner подтвердил
 снятие захвата, мышь, личные итоги и оба ангара. Actual arena2975833524010313505:
 Elimination/B90damage/1kill/1spot, оба BattleFinished/Avatar100/actualAccount1500/

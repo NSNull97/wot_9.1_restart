@@ -4,7 +4,12 @@
 все оставшиеся loaded снаряды теряются. Это правило нашего проекта.
 Ветка `codex/p06t-ammo-rack-detonation` от сохранённого P08C checkpoint1e87e1b.
 План [P06T_AMMO_RACK_DETONATION](plans/P06T_AMMO_RACK_DETONATION.md).
-Реализация ещё не проверена; native/UI/отрыв башни/ammo-loss NOT_RUN.
+Runtime ed67531: full1188PASS/0FAIL/5oldignored/buildPASS;712rawsourceexact.
+Focused143PASS; writerSQL12+old15/actualHTTP1/Web13PASS0skip. Новый loss-01
+source-bound binding-loss01 и actual startup5profiles/DETONATION_BOUND PASS.
+Native/UI/отрыв башни/ammo-loss NOT_RUN, в main не сливать. Автоматический
+checkpoint сохранён; следующая ночная работа — P08B restart/CAS composition.
+Факты [P06T_AMMO_RACK_LOSS](research/P06T_AMMO_RACK_LOSS.md).
 Новый frozen versioned contract обязателен; старые результаты не пересчитывать.
 Mainffce8cb, ночные ветки и предыдущие доказательства сохраняются.
 

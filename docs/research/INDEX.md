@@ -17,6 +17,7 @@
 - [P07B_SERVER_VISIBILITY.md](P07B_SERVER_VISIBILITY.md) — recipient LOS/epochs/packet filtering, full975PASS, native NOT_RUN
 - [P04M_FIVE_PROFILES.md](P04M_FIVE_PROFILES.md) — пять source-bound боевых профилей, actual Jolt/World/ACK, версия SQLite/crew/ammo, native NOT_RUN
 - [P06T_RUNTIME_CANDIDATE.md](P06T_RUNTIME_CANDIDATE.md) — mixed-shell/единый HP ledger, source geometry и явные LAB module/fire policies; автоматические gates отдельно от native NOT_RUN
+- [P06T_AMMO_RACK_LOSS.md](P06T_AMMO_RACK_LOSS.md) — отдельная loss4 policy, одна смерть/фраг, native DT8/HP-2/ACK epochs; full1188PASS, native NOT_RUN
 
 - [BATTLE_LOADOUT_REVISION_GATE.md](BATTLE_LOADOUT_REVISION_GATE.md) — Исследование: battle-loadout revision adapter
 - [CAPACITY_1000_CCU.md](CAPACITY_1000_CCU.md) — Инфраструктура для 1000 одновременных игроков: расчётная модель

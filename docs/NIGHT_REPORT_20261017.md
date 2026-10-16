@@ -13,12 +13,13 @@ buildPASS, 689 raw source files exact. Владелец подтвердил п�
 итоги и возврат обоих; wire/SQLite это подтверждают. Полная карточка P08C
 пока не принята: capture/timeout/repeat/early-leaver fullresult открыты.
 
-Последний живой старый стенд: `morning-autoaim01` в ignored mixed-01.
-Оба клиента вернулись в ангары. Последняя подтверждённая запись: A126,
-MS-1[AP0,HEAT0,HE4]; B41, MS-1[AP0,HEAT3,HE4]; active0. Это историческая
-точка, перед новым запуском обязательна свежая проверка БД/своих PID receipts.
+Старый стенд: `morning-autoaim01` в ignored mixed-01, оба клиента вернулись
+в ангары. Принятая natural запись A126/[0,0,4],B41/[0,3,4] сохранена как
+историческая. При новой подготовке actual SQL уже A127/[0,48,48],
+B42/[0,50,46],active0; источник не изменялся. Старые клиенты/службы затем
+остановлены только собственными PID/exe/creation receipts.
 
-## P06T: детонация и потеря БК — реализация, проверка ожидается
+## P06T: детонация и потеря БК — автоматический checkpoint
 
 Ветка `codex/p06t-ammo-rack-detonation` от `1e87e1b`; план
 [P06T_AMMO_RACK_DETONATION](plans/P06T_AMMO_RACK_DETONATION.md).
@@ -45,20 +46,31 @@ profile13 identity/session/dispatcher/results, отдельном SQLite writer/
 SQLite тестов, без изменения игрового стенда и без выдачи имущества. Они
 не являются доказательством сетевой игры.
 
-План canonical проверки:
+Выполненная canonical проверка runtime `ed675319cc9b46a6bbff8e9ff9a411f7fb58f48a`:
 
 ```powershell
 $env:RUST_TEST_THREADS='1'
 $env:CARGO_INCREMENTAL='0'
 $env:CARGO_PROFILE_DEV_DEBUG='0'
 $env:CARGO_PROFILE_TEST_DEBUG='0'
-python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06t-ammo-loss-full01
+python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-p06t-ammo-loss-full02
 ```
 
-Весь fresh build должен быть связан с чистым runtime commit и raw source
-before/after; evidence — ignored `local/evidence/20261016-p06t-ammo-loss-full01`.
-На момент создания этого отчёта canonical запуск NOT_RUN. Не использовать
-его путь как готовый executable до успешной проверки и binding.
+Full1188PASS/0FAIL/5oldignored/buildPASS;302.78s,712 raw source files before/
+after exact. ExeSHA `3962811b78cd0cbcc9edc7ad3001f79e74835d94439d8071aa3b55226e72b9f8`.
+Evidence — ignored `local/evidence/20261016-p06t-ammo-loss-full02/source-after.json`;
+там же exact raw source archive для EOL rollback. Focused143PASS/0ignored;
+SQL12+old15/actualHTTP1/Web13PASS0skip. Первый canonical01/diagnostic01 FAIL
+сохранён: неверные test module paths и неполные test prerequisites исправлены
+без ослабления production. Подробности —
+[P06T_AMMO_RACK_LOSS](research/P06T_AMMO_RACK_LOSS.md).
+
+Новый ignored стенд `local/stands/night-battle-20261017-01/loss-01`: consistent
+backup game/web, отдельный token, действительная loss активация/publish,0grants,
+неизменные исходные SQL rows/loaded/depot/revisions.161 resource checks и8guard
+tests PASS. `binding-loss01.json` закрепляет full02. Actual `startup-loss01`
+поднял5профилей/DETONATION_BOUND/BOUND. Native клиенты не запускались; новая
+приёмка NOT_RUN. Точные команды/ограничения — ignored `MORNING-full02.md`.
 
 Ограничение сохранности: committed finish/replay/relogin/restart сохраняют
 потерю. При падении процесса до terminal commit старая явно сохранённая
@@ -98,6 +110,6 @@ NOT_RUN. В существующие исторические БД ничего 
 CoreV7 ledgers и оригинальный клиент сохраняются; loss-v1 БД изолирована,
 старым writer её не обслуживать.
 
-Статус приёмки: P06T новая механика NOT_RUN; main без новых слияний.
-Единственный следующий шаг — завершить unified auto gate текущего runtime,
-зафиксировать доказательства и перейти к следующему ночному checkpoint.
+Статус приёмки: P06T автоматическая часть PASS, новая native механика NOT_RUN;
+main без новых слияний. Единственный следующий шаг — P08B restart/CAS
+composition в новой зависимой ветке и дальнейшая ночная работа по плану.
