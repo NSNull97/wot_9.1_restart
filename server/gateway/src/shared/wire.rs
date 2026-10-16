@@ -222,6 +222,16 @@ pub fn retired_postmortem_rebind(payload: &[u8], own: usize) -> io::Result<()> {
         || payload[7..]!=vehicle_id(own)?.to_le_bytes() { return Err(model::bad()); }
     Ok(())
 }
+/// OBSERVED native autoAim: Cell method12, zero current-Avatar mailbox, one
+/// OBJECT_ID argument. A target ID is only an untrusted request, never authority
+/// to read a hidden actor. Only this measured mailbox layout is accepted.
+pub fn auto_aim_target(payload: &[u8]) -> io::Result<u32> {
+    if payload.len()!=11 || payload[..7]!=[0x0c,8,0,0,0,0,0] {return Err(model::bad());}
+    Ok(u32::from_le_bytes(payload[7..11].try_into().map_err(|_|model::bad())?))
+}
+/// Original #717 Avatar exposed rank0/FIXED0. Its handler clears TARGET_LOCK
+/// and restores gunRotator.clientMode; selecting the current player is required.
+pub fn auto_aim_lost() -> Vec<u8> {vec![0x13,0x3b]}
 pub fn ready_update(slot: usize) -> io::Result<Vec<u8>> {
     let mut d = vec![0x80, 2, b'J']; d.extend(vehicle_id(slot)?.to_le_bytes()); d.push(b'.'); update(7, &d)
 }

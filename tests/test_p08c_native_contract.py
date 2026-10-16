@@ -113,5 +113,83 @@ class NativeLifecycleContractTests(unittest.TestCase):
             ("LOAD_FAST", "teamIdx"), ("BINARY_SUBSCR", None), ("LOAD_FAST", "id"), ("STORE_SUBSCR", None)])
 
 
+    def test_autoaim_loss_restores_native_mouse_rotator_without_recursive_command(self):
+        # Inert original source only: no producer encoder/decoder round trip.
+        lost = self.method("client/avatar.pyc", "<module>.PlayerAvatar.onAutoAimVehicleLost")
+        self.assertEqual(lost["firstlineno"], 1126)
+        ops = {row["offset"]: row for row in lost["instructions"]}
+        self.assertEqual([(ops[n]["opname"], ops[n].get("value")) for n in (9, 12, 15)], [
+            ("LOAD_CONST", 0), ("LOAD_FAST", "self"), ("STORE_ATTR", "_PlayerAvatar__autoAimVehID")])
+        self.assertEqual([(ops[n]["opname"], ops[n].get("value")) for n in (24, 27, 30, 33, 36)], [
+            ("LOAD_ATTR", "setAimingMode"), ("LOAD_GLOBAL", "False"),
+            ("LOAD_GLOBAL", "AIMING_MODE"), ("LOAD_ATTR", "TARGET_LOCK"), ("CALL_FUNCTION", None)])
+        self.assertEqual(ops[36]["arg"], 2)
+        self.assertEqual([(ops[n]["opname"], ops[n].get("value")) for n in (40, 43, 46, 49)], [
+            ("LOAD_GLOBAL", "True"), ("LOAD_FAST", "self"),
+            ("LOAD_ATTR", "gunRotator"), ("STORE_ATTR", "clientMode")])
+        self.assertFalse({"cell", "autoAim"} & set(lost["names"]))
+        auto = self.method("client/avatar.pyc", "<module>.PlayerAvatar.autoAim")
+        ops = {row["offset"]: row for row in auto["instructions"]}
+        self.assertEqual([(ops[n]["opname"], ops[n].get("value")) for n in (163, 166, 169, 172)], [
+            ("LOAD_ATTR", "cell"), ("LOAD_ATTR", "autoAim"), ("LOAD_FAST", "vehID"), ("CALL_FUNCTION", None)])
+        self.assertEqual(ops[172]["arg"], 1)
+        self.assertEqual([(ops[n]["opname"], ops[n].get("value")) for n in (250, 253, 256, 259)], [
+            ("LOAD_GLOBAL", "False"), ("LOAD_FAST", "self"),
+            ("LOAD_ATTR", "gunRotator"), ("STORE_ATTR", "clientMode")])
+        # Native autoAim(None/invalid/dead/same-target) sets vehID0 and restores
+        # mouse mode locally; no server callback echo is needed for cancel0.
+        self.assertEqual([(ops[n]["opname"], ops[n].get("value")) for n in (315, 318, 321, 324)], [
+            ("LOAD_GLOBAL", "False"), ("LOAD_GLOBAL", "AIMING_MODE"),
+            ("LOAD_ATTR", "TARGET_LOCK"), ("CALL_FUNCTION", None)])
+        self.assertEqual(ops[324]["arg"], 2)
+        self.assertEqual((ops[328]["value"], ops[337]["value"]), ("True", "clientMode"))
+
+    def test_autoaim_fixed_zero_loss_method_has_original_native_rank_zero(self):
+        from tools.packed_xml import decode
+        def children(node):
+            return node.get("children", []) if isinstance(node, dict) else []
+        schemas = {}
+        for path, pin in {
+            "entity_defs/avatar.def": "38cf983d6ea1fcaf1bbca25fd18567fed5abc3b2e07fbe14b168f46fa883f74d",
+            "entity_defs/interfaces/chat.def": "3f8f0f6d14e21ece8db54af467235110eaf495b04ab404434fd69eaf66270f3d",
+            "entity_defs/alias.xml": "14d5fcce8d979de6c24c50b3ff94d3ddf464f4ad27f2ef68c063407b4bbbc746",
+        }.items():
+            source = ORIGINAL / "res/scripts" / path
+            if not source.is_file():
+                self.skipTest("NOT_RUN: pinned original entity declarations unavailable")
+            raw = source.read_bytes()
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), pin)
+            schemas[path] = decode(raw)
+        avatar = {row["name"]: row["data"] for row in children(schemas["entity_defs/avatar.def"])}
+        self.assertEqual([(row["name"], row["data"]) for row in children(avatar["Implements"])], [("Interface", {"base64": "Chat"})])
+        rows = []
+        # Original interface declarations precede Avatar declarations.
+        for schema in (schemas["entity_defs/interfaces/chat.def"], schemas["entity_defs/avatar.def"]):
+            for group in children(schema):
+                if group["name"] == "ClientMethods":
+                    rows.extend(children(group["data"]))
+        fixed_zero = [row["name"] for row in rows
+                      if not any(arg["name"] == "Arg" for arg in children(row["data"]))]
+        self.assertEqual(fixed_zero, ["onAutoAimVehicleLost"])
+        native = next(row for row in rows if row["name"] == "onAutoAimVehicleLost")
+        self.assertEqual(native["data"], "")  # no args, FIXED0, no VAR1 length
+        aliases = {row["name"]: row["data"] for row in children(schemas["entity_defs/alias.xml"])}
+        self.assertEqual(aliases["OBJECT_ID"], "INT32")
+        cell = next(row for row in children(avatar["CellMethods"]) if row["name"] == "autoAim")
+        self.assertEqual([(row["name"], row["data"]) for row in children(cell["data"])],
+                         [("Exposed", "OWN_CLIENT"), ("Arg", "OBJECT_ID")])
+        # The reviewed #717 PE establishes stable ascending fixed-width sort
+        # (dd2b70/dd3100), variable last, and entityMethod range starts0x3b.
+        # This newly checks actual ORIGINAL bytes, not ignored generated tables.
+        exe = ORIGINAL / "WorldOfTanks.exe"
+        if not exe.is_file():
+            self.skipTest("NOT_RUN: pinned original #717 PE unavailable")
+        self.assertEqual(hashlib.sha256(exe.read_bytes()).hexdigest(),
+                         "86f5e351d44c12e0d2b89ed741ee9a4e70d21f234c39aa9cfd709536d49f04ed")
+        # Only FIXED0 occupies the minimum rank. Source/PE-derived literal body:
+        # select current player0x13 + entityMethod(0x3b+rank0), no payload bytes.
+        rank = fixed_zero.index("onAutoAimVehicleLost")
+        self.assertEqual(bytes((0x13, 0x3b + rank)), b"\x13\x3b")
+
 if __name__ == "__main__":
     unittest.main()

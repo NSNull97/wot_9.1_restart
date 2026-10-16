@@ -60,3 +60,29 @@ actual fired World→90damage/1kill/1spot→native81/details PASS. Fresh binding
 96 installedunchanged, A121/B36/active0, ammoA[0,1,8]/B[0,3,9]. Следующий шаг —
 повторная owner приёмка уничтожения/личной сводки/обоих natural возвратов;
 вопрос отправлен. Fresh UI NOT_RUN до ответа и actual wire/SQL сверки.
+
+## Прерванный повтор natural05: автоприцел
+
+Владелец включил родной автоприцел и был выброшен из сессии; у Ёжа после этого
+появились итоги с засветом. Сохранённый arena5172357154243584472 закончился
+Forfeit после Disconnect первого игрока: оба HP90, damage0/kills0. У Ёжа
+Results8 с spotted1, Avatar/Account delivery и возврат подтверждены; личная
+карточка уничтожения и dead natural return ещё NOT_RUN_INTERRUPTED.
+
+VERIFIED actual app11bytes `0c08000000000003001009`: Cell autoAim, routing0,
+единственный OBJECT_ID аргумент enemyVehicle03. Driving parser не включает
+0x0c в allowlist и отклоняет seq1076; последующий reliable gap ведёт к timeout.
+Original PlayerAvatar.autoAim сразу включает локальный захват и отключает
+gunRotator.clientMode. Поэтому ACK/ignore без native отмены запрещён.
+
+Узкий ремонт перед повтором: строгий размер/route0 parser; распознанный
+autoAim(target!=0) явно недоступен и отменяется original zero-argument
+onAutoAimVehicleLost, восстанавливающим мышь. Cancel0 принимается без обратного
+callback, чтобы исключить цикл. Серверное сопровождение цели не реализуется
+под видом ACK. Не читать и не публиковать скрытое состояние цели. Добавить
+captured regression, cancel/replay/whole-frame rollback и native callback
+source proof, выполнить current-head full/build и новый fresh run с текущим БК.
+
+Failure evidence: `local/evidence/20261016-p08c-autoaim-failure01`; собственные
+процессы morning-natural01 остановлены по receipts. Consistent backup сохранён,
+A123/B38, ammoA[0,0,5]/B[0,3,9],active0. Расход не компенсировать.

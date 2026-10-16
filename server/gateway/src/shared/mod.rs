@@ -692,7 +692,7 @@ impl Session {
                 // fixed seven-byte VAR2 record; it has no length field.
                 8 => 7,
                 6 => 1, 2 => 17, 3 => 22,
-                0x87 | 0x88 | 0x89 | 0x8a | 0x8d | 0x8e | 0x8f | 0x0d | 0x0f | 0x99 => {
+                0x87 | 0x88 | 0x89 | 0x8a | 0x8d | 0x8e | 0x8f | 0x0c | 0x0d | 0x0f | 0x99 => {
                     if payload.len() - at < 3 { return Err(bad()); }
                     3 + u16::from_le_bytes([payload[at+1], payload[at+2]]) as usize
                 },
@@ -722,6 +722,21 @@ impl Session {
                         if c.creations[slot].is_some() || c.pending_entity_requests.contains(&slot) { return Err(bad()); }
                         c.pending_entity_requests.push_back(slot);
                     }
+                }
+            } else if id == 0x0c {
+                let target=wire::auto_aim_target(raw)?;
+                // Target tracking is explicitly unavailable. The original
+                // client has already stopped its mouse rotator on lock, so an
+                // ACK-only no-op would leave a false lock. Refuse through its
+                // own native loss callback, without consulting target state.
+                if target!=0 {
+                    if self.outbox.len()>=128 {return Err(bad());}
+                    self.outbox.push_back(wire::auto_aim_lost());
+                    events.push(format!("SHARED_UNSUPPORTED session={} method=autoAim target={target} refused=true native_callback=onAutoAimVehicleLost domain_applied=false",self.id));
+                } else {
+                    // The client has already restored mouse control on cancel.
+                    // No callback echo, no domain command, no hidden-state read.
+                    events.push(format!("SHARED_AUTOAIM_CANCEL session={} domain_applied=false native_callback=false",self.id));
                 }
             } else if id == 0x0d {
                 if world.actors.get(c.slot).is_none_or(|actor| actor.alive())
@@ -948,6 +963,170 @@ mod shared_return_tests {
         s.hangar = Some(Arc::new(hangar091::Fixtures::load_interactive(&directory).unwrap()));
         s
     }
+    // OBSERVED morning-natural01/session1/slot1, seq1076, flags0x458,
+    // cumulativeACK1220. packet-007619-base_client_to_server.bin ciphertext
+    // SHA256 6769423feb84f8617be70aa7e3a12b9239e38940d091508114e3ca044a5864a8.
+    // Token-stripped application11B SHA256
+    // ef7f4c7af5335a14f6b385a3284a78f801fe5e530503224aa98157eca319cf14.
+    // Cell autoAim has one OBJECT_ID argument; preceding UINT32 is routing0.
+    const P08C_AUTOAIM_CAPTURED: [u8; 11] = [12,8,0,0,0,0,0,3,0,16,9];
+
+    fn p08c_autoaim_target(target: u32) -> Vec<u8> {
+        let mut raw = P08C_AUTOAIM_CAPTURED.to_vec(); raw[7..11].copy_from_slice(&target.to_le_bytes()); raw
+    }
+    fn p08c_autoaim_bodies(s: &Session, now: Instant) -> Vec<Vec<u8>> {
+        let mut tx = s.tx.clone(); let mut bodies = Vec::new();
+        while let Some((_, _, raw)) = tx.due(now, s.rx).unwrap() {
+            bodies.push(transport091::parse_interactive(&raw).unwrap().body);
+        }
+        bodies.extend(s.outbox.iter().cloned()); bodies
+    }
+    fn p08c_autoaim_no_domain(before: &Session, after: &Session) {
+        let a = before.shared.as_ref().unwrap(); let b = after.shared.as_ref().unwrap();
+        let x = a.view.as_ref().unwrap(); let y = b.view.as_ref().unwrap();
+        assert_eq!(x.actors, y.actors);
+        assert_eq!((x.id,x.tick,x.shots.len(),x.projectiles.len(),x.damage_events.len(),x.device_events.len()),
+                   (y.id,y.tick,y.shots.len(),y.projectiles.len(),y.damage_events.len(),y.device_events.len()));
+        assert_eq!((&a.commands,a.phase,a.slot,a.join_requested,a.return_generation,a.return_mask),
+                   (&b.commands,b.phase,b.slot,b.join_requested,b.return_generation,b.return_mask));
+        assert_eq!(a.interest,b.interest); assert_eq!(a.private_pending.len(),b.private_pending.len());
+        assert_eq!((before.key,before.token,before.handoff,before.base_peer,before.arena_base),
+                   (after.key,after.token,after.handoff,after.base_peer,after.arena_base));
+        assert_eq!(before.request_ids,after.request_ids); assert_eq!(before.chat_request_ids,after.chat_request_ids);
+        assert_eq!(before.hangar.as_ref().unwrap().state_sha256(),after.hangar.as_ref().unwrap().state_sha256());
+    }
+
+    #[test]
+    fn p08c_autoaim_actual_nonzero_refusal_preserves_ack_replay_and_next_heartbeats() {
+        let now=Instant::now();
+        for slot in 0..2 {
+            let mut s=live(now,slot);
+            // An actually sent reliable predecessor makes cumulativeACK1 real.
+            s.tx.enqueue_body(&[13,1]).unwrap(); assert_eq!(s.tx.due(now,s.rx).unwrap().unwrap().0,0);
+            let before=s.clone();let packet=frame(&s,&P08C_AUTOAIM_CAPTURED,1);
+            s.receive(&packet,now).unwrap();
+            assert_eq!(s.rx,before.rx+1);assert_eq!(s.tx.cumulative,1);
+            assert_eq!(p08c_autoaim_bodies(&s,now),vec![vec![0x13,0x3b]]);
+            p08c_autoaim_no_domain(&before,&s);
+            let once=s.clone();s.receive(&packet,now).unwrap();same(&s,&once);
+            assert_eq!(p08c_autoaim_bodies(&s,now),vec![vec![0x13,0x3b]]);
+            // No second callback is emitted by the following token-only frame.
+            let old_rx=s.rx;s.receive(&frame(&s,&[],1),now).unwrap();assert_eq!(s.rx,old_rx+1);
+            assert_eq!(p08c_autoaim_bodies(&s,now),vec![vec![0x13,0x3b]]);
+            p08c_autoaim_no_domain(&before,&s);
+            let sent=s.tx.due(now,s.rx).unwrap().unwrap();assert_eq!(sent.0,1);
+            assert_eq!(transport091::parse_interactive(&sent.2).unwrap().body,vec![0x13,0x3b]);
+            s.receive(&frame(&s,&[],2),now).unwrap();assert_eq!(s.tx.len(),0);
+            assert!(p08c_autoaim_bodies(&s,now).is_empty());p08c_autoaim_no_domain(&before,&s);
+        }
+    }
+
+    #[test]
+    fn p08c_autoaim_cancel_zero_is_acknowledged_without_echo_or_gameplay_command() {
+        let now=Instant::now();let cancel=p08c_autoaim_target(0);
+        assert_eq!(cancel,vec![12,8,0,0,0,0,0,0,0,0,0]);
+        for slot in 0..2 {
+            let mut s=live(now,slot);let before=s.clone();let packet=frame(&s,&cancel,0);
+            s.receive(&packet,now).unwrap();assert_eq!(s.rx,before.rx+1);
+            assert!(p08c_autoaim_bodies(&s,now).is_empty());p08c_autoaim_no_domain(&before,&s);
+            let once=s.clone();s.receive(&packet,now).unwrap();same(&s,&once);
+        }
+    }
+
+    #[test]
+    fn p08c_autoaim_all_target_classes_get_identical_refusal_without_target_oracle() {
+        // Parser-only target-oracle proof: full Session receive/ACK is covered
+        // above. Ordinary postreceive interest/LOS refresh is a separate action.
+        let now=Instant::now();
+        for class in 0..7 {
+            let mut s=live(now,1);let mut target=wire::vehicle_id(0).unwrap();
+            match class {
+                0=>{ // Existing legacy world: both actors have team1 (friendly).
+                    let w=s.shared.as_ref().unwrap().view.as_ref().unwrap();assert_eq!(w.team(0).unwrap(),w.team(1).unwrap());
+                },
+                1=>{ // Fresh, properly constructed two-team world, target alive.
+                    let mut w=World::new(123,now).unwrap();w.enable_lifecycle(lifecycle::Rules::prohorovka()).unwrap();
+                    for i in 0..2 {w.attach(model::Identity{account:format!("unit-{i}"),database:i+1,name:format!("unit_{i}")},i as u32+1).unwrap();}
+                    w.start(now).unwrap();w.set_ready(0,1).unwrap();w.set_ready(1,2).unwrap();
+                    assert_ne!(w.team(0).unwrap(),w.team(1).unwrap());s.shared.as_mut().unwrap().view=Some(w);
+                },
+                2=>s.shared.as_mut().unwrap().view.as_mut().unwrap().actors[0].health=0,
+                3=>{ // Known but unannounced target in an actual interest Book.
+                    let c=s.shared.as_mut().unwrap();c.spotting_enabled=true;
+                    c.interest=Some(interest_wire::Book::new(1).unwrap());c.creations[0]=None;
+                    assert!(!c.request_allowed(0));
+                },
+                4=>target=wire::vehicle_id(1).unwrap(), // Self is equally refused.
+                5=>target=u32::MAX, // Arbitrary nonexistent/untrusted ID.
+                6=>s.shared.as_mut().unwrap().view.as_mut().unwrap().actors.clear(), // Explicit unit-only absent-roster proof.
+                _=>unreachable!(),
+            }
+            let before=s.clone();s.shared_payload(&p08c_autoaim_target(target),s.rx,now,&mut Vec::new()).unwrap();
+            assert_eq!(p08c_autoaim_bodies(&s,now),vec![vec![0x13,0x3b]],"class={class}");
+            p08c_autoaim_no_domain(&before,&s);
+        }
+    }
+
+    #[test]
+    fn p08c_autoaim_bad_shape_route_and_late_valid_commands_roll_back_actual_ack() {
+        let now=Instant::now();let mut ready=live(now,1);
+        ready.tx.enqueue_body(&[13,1]).unwrap();ready.tx.due(now,ready.rx).unwrap();
+        let mut invalid=Vec::new();
+        for len in 1..11 {invalid.push(P08C_AUTOAIM_CAPTURED[..len].to_vec());}
+        for length in [0u16,7,9,u16::MAX] {
+            let mut raw=P08C_AUTOAIM_CAPTURED.to_vec();raw[1..3].copy_from_slice(&length.to_le_bytes());invalid.push(raw);
+        }
+        for route in [wire::avatar_id(1).unwrap(),wire::avatar_id(0).unwrap(),u32::MAX] {
+            let mut raw=P08C_AUTOAIM_CAPTURED.to_vec();raw[3..7].copy_from_slice(&route.to_le_bytes());invalid.push(raw);
+        }
+        let aim=vec![0x8e,8,0,0,0,0,0,0,0,0,0];let movement=vec![0x8a,1,0,1];
+        let mut late_bad=P08C_AUTOAIM_CAPTURED.to_vec();late_bad.extend(&aim);late_bad.extend(&movement);late_bad.push(0);invalid.push(late_bad);
+        let mut bad_route=P08C_AUTOAIM_CAPTURED.to_vec();bad_route[3]=1;
+        invalid.push([aim.clone(),movement.clone(),bad_route].concat());
+        for payload in invalid {
+            let mut s=ready.clone();assert!(s.receive(&frame(&s,&payload,1),now).is_err());same(&s,&ready);
+            p08c_autoaim_no_domain(&ready,&s);
+        }
+        // A valid autoAim + Aim + Move child cannot escape a bad later outer frame.
+        let child_payload=[P08C_AUTOAIM_CAPTURED.to_vec(),aim,movement].concat();
+        let child=frame(&ready,&child_payload,1);let mut parent=frame(&ready,&[0],1);
+        parent.sequence=Some(ready.rx+1);parent.piggybacks.push(child);
+        let mut s=ready.clone();assert!(s.receive(&parent,now).is_err());same(&s,&ready);p08c_autoaim_no_domain(&ready,&s);
+        assert_eq!(s.tx.cumulative,0);assert_eq!(s.tx.len(),1);
+    }
+
+    #[test]
+    fn p08c_autoaim_is_closed_outside_driving_but_retired_drain_has_no_callback() {
+        let now=Instant::now();
+        for phase in [Phase::Account,Phase::Enable,Phase::Entities,Phase::Leaving] {
+            let mut s=live(now,1);s.shared.as_mut().unwrap().phase=phase;let before=s.clone();
+            assert!(s.receive(&frame(&s,&P08C_AUTOAIM_CAPTURED,0),now).is_err(),"phase={phase:?}");same(&s,&before);
+            p08c_autoaim_no_domain(&before,&s);
+        }
+        let mut retired=pending(now,1);let before=retired.clone();
+        retired.receive(&frame(&retired,&P08C_AUTOAIM_CAPTURED,0),now).unwrap();
+        assert_eq!(retired.drive_return_account.as_ref().unwrap().stale_avatar_envelopes,1);
+        assert!(p08c_autoaim_bodies(&retired,now).is_empty());p08c_autoaim_no_domain(&before,&retired);
+        let mut enabled=pending(now,1);enabled.receive(&frame(&enabled,&[9],1),now).unwrap();let before=enabled.clone();
+        assert!(enabled.receive(&frame(&enabled,&P08C_AUTOAIM_CAPTURED,1),now).is_err());same(&enabled,&before);
+        p08c_autoaim_no_domain(&before,&enabled);
+    }
+
+    #[test]
+    fn p08c_autoaim_backpressure_is_bounded_and_cancel_does_not_need_callback_space() {
+        let now=Instant::now();let mut full=live(now,1);
+        for _ in 0..8 {full.tx.enqueue_body(&[13,1]).unwrap();full.tx.due(now,full.rx).unwrap();}
+        for _ in 0..128 {full.outbox.push_back(vec![13,1]);}
+        let before=full.clone();
+        assert!(full.receive(&frame(&full,&P08C_AUTOAIM_CAPTURED,0),now).is_err());same(&full,&before);p08c_autoaim_no_domain(&before,&full);
+        let mut last=before.clone();last.outbox.pop_back();let initial=last.clone();
+        last.receive(&frame(&last,&P08C_AUTOAIM_CAPTURED,0),now).unwrap();
+        assert_eq!(last.outbox.len(),128);assert_eq!(last.outbox.back(),Some(&vec![0x13,0x3b]));
+        assert_eq!(last.tx.len(),8);p08c_autoaim_no_domain(&initial,&last);
+        let mut cancel=before.clone();cancel.receive(&frame(&cancel,&p08c_autoaim_target(0),0),now).unwrap();
+        assert_eq!(cancel.outbox.len(),128);assert_eq!(cancel.outbox,before.outbox);p08c_autoaim_no_domain(&before,&cancel);
+    }
+
     // Exact accepted single-client Ride07 native sync/chat bundle. The shared
     // lifecycle must consume the same real Account contract on either slot.
     fn warm() -> Vec<u8> {

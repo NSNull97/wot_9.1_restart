@@ -120,3 +120,46 @@ Evidence: `local/evidence/20261016-p08c-natural-results-fix01`,
 Marker
 gate остаётся принятым; late manual-leaver append/spawn — отдельные открытые
 пункты. Main и ночные ветки не меняются.
+
+## Natural05 прерван автоприцелом
+
+OBSERVED owner: «нажал автоприцел и словил вылет из сессии»; после выброса
+у Ёжа открылись итоги с засветом. VERIFIED gateway: arena5172357154243584472,
+session1/slot1/team2 — A, session2/slot0/team1 — Ёж; Forfeit после Disconnect A,
+оба HP90,damage0,kills0. Natural уничтожение и dead return не состоялись,
+статус NOT_RUN_INTERRUPTED. У A собственный full result отсутствует — известный
+отдельный early-leaver gap. У B Results8 сохранён/acked, native Avatar100 и
+Account query/return присутствуют; B→A spotted1, A→B spotted1/directHits4/
+piercings0/damage0. Четыре выстрела A действительно списали1КС+3ОФ.
+
+VERIFIED actual first reject: seq1076, flags0x458, ACK1220, token-stripped
+application11B `0c08000000000003001009`, SHA256
+`ef7f4c7af5335a14f6b385a3284a78f801fe5e530503224aa98157eca319cf14`.
+Encrypted packet007619 SHA256
+`6769423feb84f8617be70aa7e3a12b9239e38940d091508114e3ca044a5864a8`.
+CellMethods autoAim id12: mailbox0 плюс один OBJECT_ID target152043523,
+не два Python аргумента. Driving allowlist не содержал0x0c; последующие
+настоящие aim/heartbeat отвергнуты из-за reliable gap, затем Disconnect.
+Принятый exact READY33 с autoAim0 этого самостоятельного пути не покрывал.
+
+VERIFIED original PlayerAvatar.autoAim:2183 сразу включает TARGET_LOCK и
+gunRotator.clientMode=false. PlayerAvatar.onAutoAimVehicleLost:1126 очищает
+__autoAimVehID, снимает TARGET_LOCK и возвращает clientMode=true. Original
+Avatar exposed rank0, FIXED0 даёт callback body `[0x13,0x3b]` с явным выбором
+текущего Avatar. Это не результат Account и не метод выбранного Vehicle.
+Поэтому ACK/ignore ненулевого захвата не используется.
+
+Текущий узкий ремонт: только exact11B/routing0; nonzero запрос явно отменяется
+native callback, без чтения цели или domain-команды. Нулевой cancel принимается
+без echo. Неизвестная/self/dead/hidden цель получает одинаковый отказ без
+раскрытия скрытого состояния. Серверный auto-tracking пока не реализован;
+native callback/mouse восстановление до фактического теста NOT_RUN.
+
+Evidence: `local/evidence/20261016-p08c-autoaim-failure01`,
+`local/night-staging/20261016/p08c-autoaim-native01`,
+`local/night-staging/20261016/p08c-autoaim-results01`.
+Own processes остановлены по точным receipts. Consistent DB backup SHA256
+`0a9736ffb36ce7486c105293afe8eddccff8731c3a5e4469b2653d66739bea76`,
+A123/B38,ammoA[0,0,5]/B[0,3,9],active0. Независимый checker, требующий два
+own full result, корректно отказал `DURABLE_OWNER_RESULT_COUNT`; это покрытие
+данного прерванного сценария, а не PASS обоих natural возвратов.

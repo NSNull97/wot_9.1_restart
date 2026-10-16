@@ -12,10 +12,16 @@ rejected169byte frame. Оба durable результата сохранены. O
 backup сохранены. Полный native P08C не принят. Текущий шаг — strict native
 return parser и source-bound personal details реализованы, focused43/build и
 Python33/0skips PASS. Runtime09274f2:full1130PASS/5oldignored/buildPASS,
-689raw source before/after exact. Fresh binding05/services/startup PASS;
-оба клиента morning-natural01 в fresh native ангарах, A121/B36/active0,
-ammoA[0,1,8]/B[0,3,9],96 installed unchanged. Вопрос владельцу на повтор
-уничтожения/личной сводки/обоих возвратов отправлен, fresh UI gate NOT_RUN.
+689raw source before/after exact. Fresh natural05 owner test прерван:
+автоприцел первого игрока отвергнут до parser, reliable gap → Disconnect;
+Forfeit победа Ёжа, оба HP90/damage0/kills0. У Ёжа owner наблюдал итоги с
+засветом; Results8 spotted1/Avatar+Account delivery/hangar подтверждены.
+Сохранены fresh log/wire/native traces/consistent backup, own run остановлен
+по receipts: A123/B38,ammoA[0,0,5]/B[0,3,9],active0. Natural kill/личная карточка
+урона/dead return NOT_RUN_INTERRUPTED. Текущий узкий ремонт: strict standalone
+autoAim parser и явная native отмена неподдерживаемого захвата через
+onAutoAimVehicleLost; сопровождение цели не объявляется реализованным.
+Нужны regressions/current-head full/build и новый fresh native повтор.
 Ночные ветки, accepted marker972843a и mainffce8cb сохранены. Late manual-leaver
 results и spawn остаются отдельными открытыми пунктами.
 

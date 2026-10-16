@@ -11,10 +11,14 @@ A120/B35, MS1 ammoA[0,1,8]/B[0,3,9], active0; logs/traces/RO DB backup сохр�
 Текущая ветка codex/p08c-natural-results-return, план P08C_NATURAL_RESULTS_RETURN:
 source-bound details и strict native return реализованы; focused43/build и
 Python33/0skips PASS. Runtime09274f2 full1130PASS/5oldignored/buildPASS,
-689raw source exact. Binding05/services/startup PASS; оба клиента morning-natural01
-в fresh native ангарах, A121/B36/active0, ammoA[0,1,8]/B[0,3,9],96installedunchanged.
-Вопрос владельцу на повтор уничтожения/личных итогов/обоих natural возвратов
-отправлен; свежий UI gate NOT_RUN до ответа и actual wire/SQL сверки.
+689raw source exact. Повтор natural05 прерван автоприцелом: strict Driving parser
+не принимал самостоятельный0x0c, reliable gap привёл к Disconnect/Forfeit.
+У Ёжа итоги с засветом owner OBSERVED; Results8 spotted1/Avatar+Account/hangar
+подтверждены. Оба HP90/damage0/kills0; natural kill/dead return NOT_RUN_INTERRUPTED.
+Own run остановлен по receipts, logs/traces/wire/RO backup сохранены;
+A123/B38,ammoA[0,0,5]/B[0,3,9],active0. Сейчас узкий parser/native отказ
+автоприцела через onAutoAimVehicleLost; полноценного сопровождения цели нет.
+Нужны regressions/current-head full/build и fresh native повтор.
 UI/return FAIL до перепроверки. Late manual-leaver results и spawn отдельно открыты.
 
 Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего
