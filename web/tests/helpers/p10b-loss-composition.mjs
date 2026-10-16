@@ -102,21 +102,22 @@ export async function main(args){
     // before closing the HTTP service or any controller-owned resource.
     promise.then(result=>{settled=true;},error=>{settled=true;childFailure=error;});
     let baseline,afterCompensation,oldReservations,oldWrappers;
-    await barrier('after-auth',v=>{assert.equal(v.actual_auth,2);assert.equal(v.native,'NOT_RUN');assert.equal(active().length,0);
+    const authenticated=await barrier('after-auth',v=>{assert.equal(v.actual_auth,2);assert.equal(v.native,'NOT_RUN');assert.equal(active().length,0);
       baseline=tables();oldReservations=reservations();oldWrappers=wrapperRows();assert.deepEqual(frozenResources(),resources);});
-    await barrier('first-ready',v=>{assert.equal(v.actual_http_ready,2);assert.deepEqual(tables(),baseline,'Ready must be actual readonly HTTP/SQL');});
+    const actualRun=authenticated.run;assert.match(actualRun,/^[0-9a-f-]{36}$/);
+    await barrier('first-ready',v=>{assert.equal(v.run,actualRun);assert.equal(v.actual_http_ready,2);assert.deepEqual(tables(),baseline,'Ready must be actual readonly HTTP/SQL');});
     const first=await barrier('first-admit',v=>{assert.equal(v.actual_admitted,1);assert.equal(v.actors,0);assert.equal(active().length,1);
       assert.equal(reservations().length,oldReservations.length+1);assert.equal(wrapperRows().length,oldWrappers.length+1);
-      assert.equal(active()[0].battle_id,v.battle);assert.deepEqual(frozenResources(),resources);});
+      assert.equal(active()[0].battle_id,`${actualRun}:${v.battle}`);assert.deepEqual(frozenResources(),resources);});
     const compensated=await barrier('compensated',v=>{assert.equal(v.claims_released,2);assert.equal(v.world_started,false);assert.notEqual(v.new_battle,first.battle);
       assert.equal(active().length,0);const added=reservations().filter(r=>!oldReservations.some(old=>old.account_id===r.account_id&&old.reservation_id===r.reservation_id));
-      assert.equal(added.length,1);assert.equal(added[0].status,'finished');assert.equal(added[0].battle_id,first.battle);
+      assert.equal(added.length,1);assert.equal(added[0].status,'finished');assert.equal(added[0].battle_id,`${actualRun}:${first.battle}`);
       assert.deepEqual(frozenResources(),resources);afterCompensation=tables();});
-    await barrier('second-ready',v=>{assert.equal(v.actual_http_ready,2);assert.equal(v.run,compensated.same_actual_run);
+    await barrier('second-ready',v=>{assert.equal(v.actual_http_ready,2);assert.equal(v.run,actualRun);assert.equal(compensated.same_actual_run,actualRun);
       assert.deepEqual(tables(),afterCompensation,'Second Ready must not issue writes/activate/recover');});
     const launched=await barrier('launched',v=>{assert.equal(v.actual_admitted,2);assert.equal(v.arena,compensated.new_battle);assert.deepEqual(v.teams,[2,1]);
       assert.equal(v.frozen_order,'B,A');assert.equal(v.arrival,'A,B');assert.equal(v.final411_acked,true);assert.equal(active().length,2);
-      assert.ok(active().every(r=>r.battle_id===v.arena));assert.equal(reservations().length,oldReservations.length+3);assert.equal(wrapperRows().length,oldWrappers.length+3);
+      assert.ok(active().every(r=>r.battle_id===`${actualRun}:${v.arena}`));assert.equal(reservations().length,oldReservations.length+3);assert.equal(wrapperRows().length,oldWrappers.length+3);
       assert.deepEqual(frozenResources(),resources);});
     await barrier('one-finished',v=>{assert.equal(v.actual_finished,1);assert.equal(v.both_claims_still_battle,true);assert.equal(v.arena,launched.arena);
       assert.equal(active().length,1);assert.deepEqual(frozenResources(),resources);});

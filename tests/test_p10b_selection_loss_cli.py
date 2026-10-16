@@ -11,7 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / 'tools/p10b_selection_loss_service.py'
 READER = ROOT / 'tools/p10b_selection_loss.py'
-READER_SHA = 'ad533816d4cf448c0e9cb4a4e6a98796859ee056d23a8eea5dd3299610a2eb62'
+READER_SHA = 'f8d1de8a56e2e74aa6e972f3813fd4c7519b1b41dca5f0d24a08902f3f2e866c'
 
 
 class SelectionLossCliTests(unittest.TestCase):
