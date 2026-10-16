@@ -248,3 +248,18 @@ fn denied(c:&mut Controller,who:u8,request:i::Request,facts:&BTreeMap<d::Account
     assert!(c.finish_ready_failure(&old).unwrap().bodies.is_empty());let next=c.apply(call(25),request(221,402,1,0),&facts,0).unwrap();
     assert_eq!(next.ready.len(),1);assert_eq!(c.pending_ready.len(),24);assert!(next.ready[0].id()>old.id());
 }
+
+#[test]fn p10b_controller_reselect_revokes_prior_ready_and_votes_before_later_start(){
+    let(mut c,mut facts,key,_)=joined(2);
+    let peer=c.recipients[&lease(1).account].last.as_ref().unwrap().rows[&lease(2).account].entity_id;
+    c.apply(call(1),request(222,404,i64::from(peer),2),&facts,0).unwrap();
+    let old=ready(&mut c,&mut facts,1);ready(&mut c,&mut facts,2);
+    c.apply(call(1),request(223,411,1,0),&facts,0).unwrap();
+    let batch=c.apply(call(1),request(224,402,1,0),&facts,0).unwrap();
+    assert_eq!(batch.ready.len(),1);assert!(batch.prepare.is_empty());
+    let room=c.registry.room(key).unwrap();assert_eq!(room.team_ready(),[false,false]);
+    assert!(room.members().find(|m|m.account()==lease(1).account).unwrap().ready().is_none());
+    assert!(!batch.bodies.values().flatten().any(|b|b==&w::plain_response(224,w::CommandResult::Success,"").unwrap()));
+    denied(&mut c,1,request(225,411,1,0),&facts);
+    assert_ne!(Some(&old),c.registry.room(key).unwrap().members().find(|m|m.account()==lease(1).account).unwrap().ready());
+}

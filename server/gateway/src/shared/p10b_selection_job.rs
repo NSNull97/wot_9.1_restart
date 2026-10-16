@@ -15,6 +15,7 @@ pub(super) struct Task{
     pub(super) native_inventory_id:u32,
     pub(super) run_id:String,
 }
+#[derive(Clone)]
 pub(super) struct Completion{pub(super) task:Task,pub(super) snapshot:SelectionSnapshot}
 pub(super) struct Job{
     receiver:Option<mpsc::Receiver<io::Result<Completion>>>,worker:Option<JoinHandle<()>>,

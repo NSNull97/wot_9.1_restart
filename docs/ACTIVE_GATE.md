@@ -27,6 +27,9 @@ Flights и issued-inspect Saga: focused12=65PASS/0ignored/buildPASS; client
 CPython2.7.3=76PASS/3oldhostskips. Selection worker compiled; actual endpoint
 кандидат3HTTP tests PASS, ещё не promoted. Full02 на1df690a:1269PASS/5oldignored/buildPASS,760sourceexact.
 Controller+namespace+Finishedhook promoted: focused17=110PASS/0ignored/buildPASS.
+ActualwholeSessionController receive10tests и atomiclaunch/preparation
+components подключены к сборке: focused21=137PASS/0ignored/buildPASS.
+HTTP03 повтор3PASS/0skip77.768s. Live serverloop ещё не соединён;
 Live room route NOT_RUN. Один activeWorld,2..6 бойцов,≤3 на стороне;
 явная laboratory one-shot room policy, без дополнительных grants.
 

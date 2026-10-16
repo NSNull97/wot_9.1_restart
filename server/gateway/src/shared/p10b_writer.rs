@@ -23,7 +23,7 @@ fn account(s:&str)->io::Result<Account>{
 }
 
 #[derive(Clone)]
-pub(super) struct ReadySelection{owner:Arc<identity091::Profile>,session:u32,context:Context,frozen:writer::Frozen,ready:WriterReadyRef}
+pub(super) struct ReadySelection{owner:Arc<identity091::Profile>,session:u32,context:Context,frozen:writer::Frozen,ready:WriterReadyRef,source_stamp:crate::training091::selection::Stamp}
 impl ReadySelection{
     /// Caller first fences actual Session/channel/room/source against the
     /// immutable query origin; parsing this DTO does not authenticate a socket.
@@ -37,7 +37,15 @@ impl ReadySelection{
             run_id:request.run_id.clone(),expected_revision:request.expected_revision,command_key:"p10b:read-only-selection".into()};
         let ready=WriterReadyRef::from_verified_writer(account(&owner.account_id)?,frozen.vehicle_inventory_id.clone(),
             request.expected_revision as u32,digest(&fingerprint)?).map_err(|_|bad("room ready ref"))?;
-        Ok(Self{owner,session,context,frozen,ready})
+        Ok(Self{owner,session,context,frozen,ready,source_stamp:request.projection_stamp})
+    }
+    pub(super) fn source_stamp(&self)->&crate::training091::selection::Stamp{&self.source_stamp}
+    pub(super) fn run_id(&self)->&str{&self.context.run_id}
+    /// AUTHORED cfg(test) scheduling seam between separately saved SQL runs and
+    /// tiny cache fixtures. Not a production readiness/ownership constructor.
+    #[cfg(test)]
+    pub(super) fn with_launch_scheduler_seam_for_test(mut self,run:String,native_state_sha256:String)->Self{
+        self.context.run_id=run;self.source_stamp.native_state_sha256=native_state_sha256;self
     }
     pub(super) fn reference(&self)->&WriterReadyRef{&self.ready}
     pub(super) fn session(&self)->u32{self.session}
@@ -58,6 +66,13 @@ impl Task{
     pub(super) fn start(&self,config:Arc<identity091::Config>)->io::Result<JobV2>{
         JobV2::start(self.session,self.owner.clone(),config,self.context.clone(),self.request.clone())
     }
+}
+pub(super) struct ReservedBinding{
+    pub(super) session:u32,pub(super) owner:Arc<identity091::Profile>,pub(super) reservation:writer::Reservation,
+    pub(super) ready:WriterReadyRef,pub(super) revision:u64,pub(super) source_stamp:crate::training091::selection::Stamp,
+}
+pub(super) struct ReservedLaunch{
+    pub(super) snapshot:LaunchSnapshot,pub(super) battle:BattleKey,pub(super) bindings:Vec<ReservedBinding>,pub(super) references:Vec<ReservedRef>,
 }
 #[derive(Clone)]pub(super) struct Saga{snapshot:LaunchSnapshot,battle:BattleKey,slots:Vec<Slot>,pending:Option<Task>,aborting:bool}
 impl Saga{
@@ -175,6 +190,19 @@ impl Saga{
         if self.aborting||self.pending.is_some()||self.slots.iter().any(|s|s.stage!=Stage::Reserved){return Err(bad("partial launch"));}
         self.slots.iter().map(|s|ReservedRef::from_verified_writer(s.selection.ready.clone(),s.reservation.as_ref().ok_or_else(||bad("missing reserve"))?.reservation_id.clone(),
             self.battle,self.snapshot.ticket()).map_err(|_|bad("room reserve ref"))).collect()
+    }
+    /// Caller consumes a staged Saga clone only. The owning coordinator removes
+    /// its Saga in the SAME transaction that installs all World/Session state.
+    /// A retained clone must never remain an active-battle cancellation handle.
+    pub(super) fn into_reserved(self)->io::Result<ReservedLaunch>{
+        let references=self.reserved_refs()?;
+        let mut bindings=Vec::with_capacity(self.slots.len());
+        for slot in self.slots{
+            let reservation=slot.reservation.ok_or_else(||bad("launch missing reserved receipt"))?;
+            bindings.push(ReservedBinding{session:slot.selection.session,owner:slot.selection.owner,reservation,
+                ready:slot.selection.ready,revision:slot.revision,source_stamp:slot.selection.source_stamp});
+        }
+        Ok(ReservedLaunch{snapshot:self.snapshot,battle:self.battle,bindings,references})
     }
     pub(super) fn released_refs(&self)->io::Result<Vec<ReleasedRef>>{
         if !self.aborting||self.pending.is_some()||self.slots.iter().any(|s|!matches!(s.stage,Stage::NoReservation|Stage::Released)){

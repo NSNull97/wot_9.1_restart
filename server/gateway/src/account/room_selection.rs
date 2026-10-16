@@ -4,6 +4,7 @@ use super::*;
 use crate::training091::selection::{self,Request,Selection,Stamp};
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub(crate) struct SelectionSnapshot {
     pub(crate) owner:Arc<Profile>,
     pub(crate) fixtures:Arc<crate::hangar091::Fixtures>,

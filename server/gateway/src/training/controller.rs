@@ -235,7 +235,16 @@ impl Controller{
             i::Kind::Ready{native_inventory}=>{
                 if self.pending_ready.contains_key(&call.caller.account){return Err(Refusal::Busy);}if self.pending_ready.len()>=d::MAX_ACCOUNTS{return Err(Refusal::Limit);}
                 let native_inventory=u32::try_from(native_inventory).ok().filter(|n|*n>0&&*n<=i32::MAX as u32).ok_or(Refusal::BadArgs)?;
-                let callback=callback.ok_or(Refusal::BadArgs)?;let context=self.registry.selection_context(call.caller)?;
+                let callback=callback.ok_or(Refusal::BadArgs)?;
+                let prior_room=self.registry.authenticated_room(call.caller)?;
+                if self.registry.room(prior_room).ok_or(d::Error::NoRoom)?.members().any(|m|m.account()==call.caller.account&&m.ready().is_some()){
+                    // A new selection query revokes the previous validated loadout
+                    // before any later411 in this same compound native frame.
+                    batch.events=self.registry.command(call.caller,d::Command::NotReady,now)?;
+                    self.changed()?;
+                    let events=batch.events.clone();self.publish(call.caller.account,&events,now,&mut batch)?;
+                }
+                let context=self.registry.selection_context(call.caller)?;
                 let room=self.registry.authenticated_room(call.caller)?;let revision=self.registry.room(room).ok_or(d::Error::NoRoom)?.revision();
                 let(lease,membership)=self.registry.member_context(room,call.caller.account).ok_or(Refusal::Facts)?;if lease!=call.caller{return Err(Refusal::StaleChannel);}
                 self.next_ready=self.next_ready.checked_add(1).ok_or(Refusal::Limit)?;

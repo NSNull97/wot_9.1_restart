@@ -273,3 +273,15 @@ Evidence `local/evidence/20261016-p10b-components02`. Новые helpers ещё 
 соединены с live serverloop; флаг training_rooms определён, не активирован
 на стенде. Full этого последующего head и native room NOT_RUN. Сохранены
 отдельно предыдущие compile/test FAIL; они не обозначены как PASS.
+
+P10B wholeSession receiver теперь проверен10actualSession/Window tests: full
+compound ACK/namespace/latepeer rollback, ordering, busyfixedstreams и warm origin.
+Повторный402 отзывает прежний ReadyRef+teamvotes до следующего411; selective
+completion держится до atomicnativepublication. Focused19=122PASS/build.
+Atomiclaunch/Preparing serialdriver и training-only nullInspect Fresh собраны:
+focused21=137PASS/0FAIL/0ignored/buildPASS; exe
+d12ee9bf2fec876f7c0ebc2f6af1e0befac1d8ff9fcc96ad924345e7062ccb5d.
+ActualHTTP03 повторил3PASS/0skip77.768s; main remoteffce8cb сверён и не менялся.
+Компонентные launch/driver tests используют strict savedSQL DTO и явно
+authored cache/run seam; живой HTTP→Rust→room→launch ещё NOT_RUN. Rootсоединяет
+serverloop и сохраняет native/UI/control NOT_RUN.

@@ -43,7 +43,10 @@ fn old_sql_selection(c:&Value,lane:&str)->ReadySelection{
  let r=c["readies"].as_array().unwrap().iter().find(|r|r["owner"]==owner.account_id).unwrap();
  let frozen_sha=format!("{:x}",Sha256::digest(serde_json::to_vec(&r["frozen"]).unwrap()));let frozen=writer::parse_frozen(&r["frozen"],&owner.account_id,&frozen_sha).unwrap();
  let ready=WriterReadyRef::from_verified_writer(account(&owner.account_id).unwrap(),frozen.vehicle_inventory_id.clone(),r["revision"].as_u64().unwrap().try_into().unwrap(),digest(r["fingerprint"].as_str().unwrap()).unwrap()).unwrap();
- ReadySelection{session:100+owner.database_id as u32,owner,context:Context{expected_revision:r["revision"].as_u64().unwrap(),..context},frozen,ready}
+ let selections:Value=serde_json::from_slice(SELECTION).unwrap();
+ let stamp_row=selections["vectors"].as_array().unwrap().iter().find(|v|v["request"]["account_id"]==owner.account_id).unwrap();
+ let source_stamp=selection::Stamp::parse(&stamp_row["request"]["projection_stamp"]).unwrap();
+ ReadySelection{session:100+owner.database_id as u32,owner,context:Context{expected_revision:r["revision"].as_u64().unwrap(),..context},frozen,ready,source_stamp}
 }
 fn prepared(selections:&[ReadySelection])->(room::Registry,LaunchSnapshot){
  assert_eq!(selections.len(),2);let mut reg=room::Registry::default();let leases=selections.iter().map(|s|room::AuthLease{account:s.ready.owner(),generation:1}).collect::<Vec<_>>();
@@ -73,7 +76,7 @@ fn pending_admit(s:&mut Saga,c:&Value)->(Task,Value){let index=s.slots.iter().po
   let request=selection::Request::new(&c,q["native_inventory_id"].as_u64().unwrap().try_into().unwrap(),selection::Stamp::parse(&q["projection_stamp"]).unwrap()).unwrap();
   let parsed=selection::parse_reply(&serde_json::to_vec(&row["response"]).unwrap(),&request).unwrap();let owner=profile(&c);
   let ready=ReadySelection::from_selection(owner.clone(),103,parsed.clone()).unwrap();assert_eq!(ready.frozen.counts().as_slice(),row["response"]["frozen"]["ammunition"].as_array().unwrap().iter().map(|a|a["count"].as_u64().unwrap()as u16).collect::<Vec<_>>().as_slice());
-  assert_eq!(ready.reference().owner(),account(&c.account_id).unwrap());assert_eq!(ready.reference().revision(),c.expected_revision as u32);
+  assert_eq!(ready.source_stamp(),&request.projection_stamp);assert_eq!(ready.reference().owner(),account(&c.account_id).unwrap());assert_eq!(ready.reference().revision(),c.expected_revision as u32);
   assert!(ReadySelection::from_selection(owner.clone(),0,parsed.clone()).is_err());
   let mut wrong=c.clone();wrong.native_database_id+=1;assert!(ReadySelection::from_selection(profile(&wrong),103,parsed.clone()).is_err());
   wrong.account_id="00000000-0000-4000-8000-000000000001".into();assert!(ReadySelection::from_selection(profile(&wrong),103,parsed).is_err());
@@ -169,4 +172,15 @@ fn pending_admit(s:&mut Saga,c:&Value)->(Task,Value){let index=s.slots.iter().po
  assert!(saga.released_refs().is_err());let retry=saga.retry().unwrap();assert_eq!(retry.context(),task.context());assert_eq!(retry.request(),task.request());
  assert!(saga.next_compensation_origin().is_none());assert!(saga.next_inspection_origin().is_none());
  saga.complete(&completion(&selected,&replay,true)).unwrap();assert_eq!(saga.released_refs().unwrap().len(),2);
+}
+
+#[test]fn p10b_saga_into_reserved_consumes_only_whole_set_and_preserves_frozen_order_source(){
+ let c=case("two_real_owned");let(_,mut saga)=saga(&c);assert!(saga.clone().into_reserved().is_err());
+ for n in 0..2{let(task,row)=pending_admit(&mut saga,&c);let selected=saga.slots[task.index].selection.clone();saga.complete(&completion(&selected,&row,true)).unwrap();
+  if n==0{assert!(saga.clone().into_reserved().is_err());}}
+ let snapshot=saga.snapshot().clone();let battle=saga.battle();let result=saga.clone().into_reserved().unwrap();
+ assert_eq!(result.snapshot,snapshot);assert_eq!(result.battle,battle);assert_eq!(result.references.len(),2);assert_eq!(result.bindings.len(),2);
+ for(i,b)in result.bindings.iter().enumerate(){let slot=&saga.slots[i];assert_eq!(b.ready,*snapshot.members()[i].ready());assert_eq!(b.session,slot.selection.session());
+  assert_eq!(b.reservation,slot.reservation.clone().unwrap());assert_eq!(b.source_stamp,*slot.selection.source_stamp());assert_eq!(b.revision,slot.revision);}
+ let mut abort=saga;abort.abort();assert!(abort.into_reserved().is_err());
 }

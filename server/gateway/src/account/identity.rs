@@ -718,6 +718,21 @@ mod tests {
         v["p04m_pool"]=true.into();let mut raw=serde_json::to_string(&v).unwrap();raw.pop();raw.push_str(",\"p04m_pool\":false}");fs::write(path,raw).unwrap();
         assert!(Config::load(root.join("gateway.json").to_str().unwrap()).is_err());
     }
+    #[test]fn p10b_configuration_requires_explicit_mixed_visible_six_place_template(){
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("p10b-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let mut v=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        assert!(!load(&v).unwrap().training_rooms);v["training_rooms"]=true.into();assert!(load(&v).is_err());
+        for key in["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression","crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle","p04m_pool","p06t_mixed_ammo","visibility_v1"]{v[key]=true.into();}
+        assert!(load(&v).is_err());v["battle_players"]=6.into();assert!(load(&v).unwrap().training_rooms);
+        for key in["p06t_mixed_ammo","visibility_v1"]{let mut wrong=v.clone();wrong[key]=false.into();assert!(load(&wrong).is_err());}
+        for bad in[Value::Null,1.into(),"true".into()]{let mut wrong=v.clone();wrong["training_rooms"]=bad;assert!(load(&wrong).is_err());}
+        for n in 2..6{let mut wrong=v.clone();wrong["battle_players"]=n.into();assert!(load(&wrong).is_err());}
+        let mut raw=serde_json::to_string(&v).unwrap();raw.pop();raw.push_str(",\"training_rooms\":false}");fs::write(&path,raw).unwrap();assert!(Config::load(path.to_str().unwrap()).is_err());
+    }
     #[test]fn p06t_configuration_requires_explicit_boolean_and_pool_profile13_chain(){
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("p06t-config-{stamp}"));

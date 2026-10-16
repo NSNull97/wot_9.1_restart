@@ -152,3 +152,7 @@ P10B current checkpoint: full02/1df690a=1269PASS/5oldignored/buildPASS,760
 sourceexact. Subsequent actualController/namespace/Finishedhook focused17=
 110PASS/0ignored/buildPASS. HTTP selection component promoted; native/live
 server room coordinator still NOT_RUN. Existing coreV7/stands unchanged.
+
+P10B focused21=137PASS/0ignored/buildPASS: wholeSession receive, reselection
+race fence, atomic launch and durable preparing/compensation components.
+HTTP03=3PASS/0skip77.768s. Live Host/actualroom integration still in progress.

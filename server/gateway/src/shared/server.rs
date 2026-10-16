@@ -14,6 +14,12 @@ use batch_scene::BatchRuntime;
 mod p06t_publication;
 #[path="p10b_ready_host.rs"]
 mod p10b_ready_host;
+#[path="p10b_receive_host.rs"]
+mod p10b_receive_host;
+#[path="p10b_launch_host.rs"]
+mod p10b_launch_host;
+#[path="p10b_preparing_host.rs"]
+mod p10b_preparing_host;
 
 #[cfg(test)]
 #[path="server_visibility_tests.rs"]

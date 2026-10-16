@@ -55,7 +55,12 @@ pub(crate) struct CompletionV2{
 }
 fn work(session:u32,owner:Arc<identity091::Profile>,config:Arc<identity091::Config>,context:Context,request:Request)->io::Result<CompletionV2>{
     let reply=config.service_battle_v2(&owner,&context,&request)?;
-    let(fresh,refresh_error)=if matches!(reply.status,Status::Ready|Status::Admitted|Status::Finished){
+    // Preparing abort cannot unlock an obsolete Account snapshot after a
+    // null Inspect. This additional refresh belongs ONLY to explicit training
+    // rooms; strict service_battle_v2 has already parsed the exact Inspect.
+    let inspect_refresh=config.training_rooms && request==Request::Inspect && reply.status==Status::Inspected
+        && reply.reservation.is_none() && reply.legacy_reservation.is_none();
+    let(fresh,refresh_error)=if matches!(reply.status,Status::Ready|Status::Admitted|Status::Finished)||inspect_refresh{
         match load_fresh(&config,&owner,reply.revision){Ok(f)=>(Some(f),None),Err(e)=>(None,Some(e))}
     }else{(None,None)};
     Ok(CompletionV2{session,old_owner:owner,context,request,reply,fresh,refresh_error})
