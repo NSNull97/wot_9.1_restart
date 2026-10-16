@@ -1,4 +1,11 @@
-# Текущая карточка — NET-02 software checkpoint; далее Hold5
+# Текущая карточка — BUILD fresh test compression
+
+Ветка codex/build-fresh-test-compression от NET33d964e. Exact frozen22
+test-only helper+три parent calls установлены; Rust build/tests NOT_RUN.
+[План](plans/BUILD_FRESH_TEST_COMPRESSION.md). Production Web paths не
+расширены; новые пустые owned dirs только, старые outputs untouched.
+
+## Последний полный software checkpoint NET-02
 
 NET union43790d1 поверх P10B bce643f, отдельный retained-C build runtime
 `442ce7daeed861b20b3b86168b0c6816ea9efafc`. **Full1573PASS/0FAIL/5oldignored/

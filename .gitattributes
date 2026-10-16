@@ -100,3 +100,7 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /web/tests/helpers/p10b-loss-composition.mjs text eol=lf
 
 /tests/test_build_temp_reference.py text eol=lf
+
+/server/gateway/src/shared/composition_storage_tests.rs text eol=lf
+/server/gateway/src/shared/profile13_restart_cas_tests.rs text eol=lf
+/server/gateway/src/shared/p08c_late_composition_tests.rs text eol=lf

@@ -183,6 +183,7 @@ fn parent(){
     let base=root.join("local/test-runs/p08c-late-composition05");fs::create_dir_all(&base).unwrap();
     let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let output=base.join(format!("run-{}-{stamp}",std::process::id()));fs::create_dir(&output).unwrap();
+    crate::gateway091::shared::composition_storage_tests::compress_fresh_output(&root,&output).unwrap();
     let guard=serde_json::json!({"schema":"p08c-late-result-parent-in-progress.v1","full_gate":"PENDING_PARENT_FULL_GATE",
         "head":head,"files":files,"parent_pid":std::process::id(),"target_dir":target,"build_output":output_root,"allocation":allocation,
         "compiled_test_source_sha256":compiled_test,"compiled_driver_sha256":compiled_helper,
