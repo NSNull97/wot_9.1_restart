@@ -33,7 +33,9 @@ fn source()->(hold::Context,hold::Reservation,u64){let d=data();let q=&d["rows"]
 fn session(now:Instant,avatar:bool)->Session{
     let(o,f,b)=directory(0);let(c,r,revision)=source();let mut s=Session::new(11,[11;16],"127.0.0.1:46011".parse().unwrap(),now);
     s.base_peer=Some("127.0.0.1:47011".parse().unwrap());s.active=true;s.account_ready=true;s.account_probe=true;s.sync_mask=7;s.rx=1;s.tx=Window::interactive();s.identity=Some(o);s.hangar=Some(f);
-    s.ammo_service=Some(ammo_session::State::new(crate::ammo_service091::Metadata{revision,wire_revision:7},true).with_research(true));
+    s.ammo_service=Some(ammo_session::State::new(crate::ammo_service091::Metadata{revision,wire_revision:7},true)
+        .with_transfer(true).with_cross_vehicle(true).with_roster_recruitment(true)
+        .with_progression(true).with_dismissal(true).with_barracks(true).with_research(true));
     s.ammo_service.as_mut().unwrap().replace_pool(s.hangar.as_ref().unwrap().p04m_binding().cloned()).unwrap();
     let sha=s.hangar.as_ref().unwrap().state_sha256().iter().map(|b|format!("{b:02x}")).collect::<String>();
     let projection=crate::profile13_hold_projection091::parse(&fs::read(s.identity.as_ref().unwrap().fixture_dir.join("p08b-owner-hold.json")).unwrap(),&c.account_id,c.native_database_id,b.revision,&sha).unwrap();
