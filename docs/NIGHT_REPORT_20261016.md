@@ -322,3 +322,57 @@ bytes before/after exact. Selection provenance/budgets unchanged. Rust HTTP
 diagnostic retains numeric status/closed denial only,3 new tests pending full05.
 Full05/current socket repeat remain the next gates; sealed full04 and failed
 socket evidence are preserved. Fresh stand02 has no running owned processes.
+
+## P10B final automatic checkpoint before NET-02
+
+Сохранён runtime **e55ba01245792f33e74d8449ecf84412476cd61f**, ветка
+`codex/p10b-native-training-room`, tag `p10b-host-20261016-02`.
+Полный gateway: **1397PASS/0FAIL/5oldignored/buildPASS**,535.18с;
+785runtime files exact before/after. Exe SHA256
+`b0fa1695795996d00e0645c3da3e73d6f2c5e1462407ac455070511533a1ffdf`.
+Исходники: Session/Host/Controller/Preparing/launch/Finished интеграция,
+read-only selection worker/bootstrap, диагностические HTTP tests и клиентский
+V8 training guard; точные paths/diffs — commits этой ветки. Main не менялся.
+
+Реально выполнены свежие actual stand02 startup и два socket-сценария:
+
+- `room-startup02`: оба Login/Base/Account/run_open, Create/Join, две настоящие
+  HTTP/SQL Ready, Assign/refusal/Leave/recreate, readonly БК/ledger и active0 PASS.
+  Receipt `local/stands/p10b-room-20261016-02/runs/room-startup02/p10b-socket-smoke.json`,
+  SHA `d48564867b1de2cd9ac602056e7e95bd5aa20b8b444e135a2a93bd58c81bc594`.
+- `room-durable01`: две Ready→два actual Admit→launchcommit/final411→два
+  ordinarydisconnect→training_prestart_disconnect→два actual Finished PASS.
+  Callback→последняя отправка5.750мс; World snapshot startedfalse/tick1000,
+  два MS1/HP90/нулевой расход. Exact SQL journals/Frozen/CAS подтверждены;
+  fresh Login и новая комната в том же процессе PASS. Receipt
+  `local/stands/p10b-room-20261016-02/runs/room-durable01/p10b-socket-phase2.json`,
+  SHA `438463647cc95ab24f63f9f81b1625bb2beb1fffd56f67ed5a6e1fb0391bd9b6`.
+
+Итоговая own DB: C43/D44, у обоих MS1[AP0,HEAT4,HE10], active reserves0,
+кредиты/XP не начислялись, старые истории не менялись. Свои службы обоих run
+остановлены runner receipts. БД и журналы сохраняются, ручного SQL cleanup нет.
+Новые baseline-room02/03 и startup-room02/startup-durable01 лежат в отдельном
+`local/night-staging/20261016/p10b-startup-verify02`; прежний verifier01 не менялся.
+
+Повторяемые команды из корня проекта, только на чистом сохранённом runtime:
+
+```powershell
+python -B -X utf8 server/build.py gateway --test --out local/build/server/<fresh>
+python -B -X utf8 local/stands/p10b-room-20261016-02/run.py check
+python -B -X utf8 local/night-staging/20261016/p10b-startup-verify02/verify.py --capture-baseline --baseline <fresh>.json
+python -B -X utf8 local/stands/p10b-room-20261016-02/run.py services --run <fresh> --binding binding-room02.json --training-rooms
+python -B -X utf8 local/night-staging/20261016/p10b-startup-verify02/verify.py --run <fresh> --baseline <fresh>.json --receipt <fresh-startup>.json --timeout 90
+```
+
+Это команды service/startup. Native launch пока отдельно **NOT_RUN**: старый
+stand02/run.py client ошибочно требует settings.version8, хотя настоящий prepare
+пишет schema_version1 и отдельно компилирует module VERSION8. Новый versioned
+client helper/sidecar подготавливается; не подделывать settings и не менять
+binding-room02 ради запуска. Сначала утром coreV7, затем lawful ledger rollback
+и fresh V8 preparation/install по отдельной точной матрице. CoreV7 не тронут.
+
+Приёмка P10B: автоматические/component/actual socket границы выше PASS;
+родная комната/UI/Avatar/Worldstart/управление/6окон — **NOT_RUN**, main merge
+запрещён до принятия. Откат: сохранённый P06T tag/own overlay ledger; БД whole
+backup и actual durable recovery, без удаления reservations. По прямому ночному
+разрешению следующий шаг — интеграция NET-02 в отдельной зависимой ветке.

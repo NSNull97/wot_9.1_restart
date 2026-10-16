@@ -98,11 +98,15 @@ serialreserve/compensation и Finishedhook собраны. ActualHTTP03 read-onl
 selection=3PASS/0skip77.768s; CPython2.7.3=76PASS/3oldskips. Native/UI/room
 NOT_RUN. LiveHost/серверный цикл подключены: retained selected/bench disconnect,
 garage/results close routing, warm List/Preview при сохранённом Battle claim.
-Full04/9b5fc6d:1394PASS/5oldignored/buildPASS/784exact. Stand02 startup PASS;
-actualsocket Login/Base/Account PASS, Ready FAIL из-за отсутствующего ROOT
-bootstrap Python worker (старый harness задавал PYTHONPATH). C39/D40, БК
-unchanged/reserves0. Bootstrap исправлен:CLI1PASS и actual clean-env HTTP3PASS/
-0skip82.740с. Текущий full05/socket repeat ещё NOT_RUN. CoreV7 сохранён.
+Первый actualsocket Ready FAIL из-за ROOT bootstrap worker исправлен;
+CLI1PASS и actual clean-env HTTP3PASS/0skip82.740с. Full05/e55ba01/tag
+p10b-host-20261016-02: **1397PASS/5oldignored/buildPASS/785sourceexact**.
+Stand02 actualstartup и minimumsocket room-startup02 PASS: две Ready через
+настоящие HTTP/SQL, комната/стороны/отказы/выход/повтор, без reserve/mutation.
+Actual phase2 room-durable01 PASS: два Admit→launchcommit→оба disconnect до
+Worldstart→два Finished, exactSQL journals/Frozen/CAS, повторный Login/комната.
+C43/D44, БК[0,4,10] unchanged, активных резервов0; свои службы остановлены.
+Native/UI/Avatar/Worldstart/6clients NOT_RUN; main не изменён. CoreV7 сохранён.
 План [P10B](plans/P10B.md), ограничения/утренний сценарий —
 [NIGHT_REPORT_20261016](NIGHT_REPORT_20261016.md).
 

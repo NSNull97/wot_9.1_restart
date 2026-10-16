@@ -35,9 +35,20 @@ HTTP harness маскировал отсутствующий ROOT bootstrap че
 БК unchanged, активных резервов0. Bootstrap исправлен: actualCLI из чужого cwd
 без PYTHONPATH=1PASS; actual clean-env HTTP suite=3PASS/0skip82.740с на production
 adapter/worker, источники before/after exact. HTTP-ошибка теперь сохраняет status
-и только closed denial code;3 новых Rust tests ещё NOT_RUN до full05.
-Следом full05 текущего head и повтор socket. Native/UI/управление/launch NOT_RUN; main
-не менялся. Failed socket run и sealed full04 сохраняются отдельно.
+и только closed denial code. Full05 наe55ba01/tag p10b-host-20261016-02:
+**1397PASS/0FAIL/5oldignored/buildPASS**,535.18с,785runtimefiles exact.
+Actual minimumsocket room-startup02 PASS: два Login/Base/Account/run_open,
+две реальные HTTP/SQL Ready, Create/Join/Assign/refusal/Leave/recreate;
+C40/D41, БК[0,4,10] unchanged, активных резервов0.
+Actual phase2 room-durable01 PASS: обе Ready→два durable Admit→launchcommit
+при Account→оба ordinarydisconnect за5.750мс после callback→безопасный
+training_prestart_disconnect до Worldstart→два actual Finished. ExactSQL
+Admit/Finish/Frozen/CAS/journal цепочки проверены; C43/D44, активных резервов0,
+HP90/БК unchanged, свежие Login и новая комната в том же процессе PASS.
+Собственные gateway/bridge остановлены по receipts. Native/UI/управление,
+Avatar/Worldstart и шесть клиентов NOT_RUN; main не менялся. Failedsocket/full04
+сохраняются отдельно. Ночной автоматический checkpoint позволяет следующую
+зависимую ветку NET-02; P10B не принята владельцем и не разрешена к merge.
 OneactiveWorld,2..6 бойцов,≤3 на стороне, map4/Прохоровка, one-shotroom LABpolicy.
 
 План [P10B](plans/P10B.md), originalsource

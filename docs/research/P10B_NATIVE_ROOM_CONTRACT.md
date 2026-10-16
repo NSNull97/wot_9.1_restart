@@ -622,3 +622,46 @@ explicit preserved slow-worker fault view. Caller environment is unchanged.
 Safe Rust diagnostic now retains numeric HTTP status and only static allowlisted
 selection codes for unique exact2-field409 responses≤512B; all other body text
 is omitted. Three diagnostic tests and full05/socket retry are pending.
+
+## Full05 and actual owned socket boundary
+
+VERIFIED full05/e55ba01245792f33e74d8449ecf84412476cd61f:
+1397PASS/0FAIL/5oldignored/buildPASS,535.18s,785 source files exact before/after;
+exe SHA256 b0fa1695795996d00e0645c3da3e73d6f2c5e1462407ac455070511533a1ffdf.
+Evidence: local/evidence/20261016-p10b-full05 and
+local/build/server/gateway-p10b-full05/result.json. Full04 and its actual Ready
+failure remain separate preserved evidence. The three HTTP diagnostic tests
+passed in full05; the clean-env production HTTP3 gate remains a separate check.
+
+OBSERVED actual own loopback stand02, binding-room02.json: minimum socket
+room-startup02 PASS, receipt SHA256
+d48564867b1de2cd9ac602056e7e95bd5aa20b8b444e135a2a93bd58c81bc594.
+Both actual authenticated sessions reached Account/run_open, Create/Join,
+HTTP/SQL-backed Ready, side assignment and typed noncreator refusal, room Leave
+and recreate. Readonly readiness caused no reserve or ammunition mutation.
+
+OBSERVED actual phase2 room-durable01 PASS, receipt SHA256
+438463647cc95ab24f63f9f81b1625bb2beb1fffd56f67ed5a6e1fb0391bd9b6.
+Two actual durable Admit replies preceded Account-stage launchcommit/final411.
+Both ordinary logout sends occurred5.750ms after callback/6.113ms after observed
+commit, inside the existing3s prestart gate. Actual safe failure snapshot was
+training_prestart_disconnect, startedfalse/tick1000, two owned MS1/HP90,
+zero shots/projectiles/damage/device/RNG events; no World/Jolt start.
+Both actual non-replayed Finished deliveries correlate with exact archived
+Admit/Finish payload/journal/Frozen/result hashes and owner/run/battle/CAS.
+No pristine Cancel or aborted_restart was accepted. C43/D44, active reserves0,
+ammunition[0,4,10] unchanged. Fresh Login and a new room in the same live gateway
+passed with no second Admit/Finish or old-history mutation. Own services stopped
+through their exact process receipts. Probe itself used readonly SQL only.
+
+INFERRED: this supports correct durable release after a committed prestart
+disconnect for this exact two-owner environment. It does not prove native
+Account→Avatar or World lifecycle. Native/UI/audio/control/6actualclients and
+remote LAN remain UNKNOWN/NOT_RUN. All numerical native PRB candidates retain
+their original classification until actual native packets are measured.
+
+Read-only morning audit also found a launch-helper mismatch: frozen run.py
+checks settings.version8, but actual prepare emits schema_version1; map_drive
+module VERSION8 is separate. No native launch was attempted. A versioned helper
+and sidecar must validate actual module/compiled/source pins without modifying
+the sealed service binding. Installed coreV7 remains unchanged.
