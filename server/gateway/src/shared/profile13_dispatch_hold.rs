@@ -151,7 +151,8 @@ impl Dispatcher{
                     let s=table.sessions.iter().chain(self.retired.iter()).find(|s|s.id==recipient).ok_or_else(||model::bad())?;
                     let staged=delivery::stage_held_return(s,capture,slot,c,now)?;
                     if let Some(next)=staged.session{
-                        *table.sessions.iter_mut().find(|s|s.id==next.id).ok_or_else(||model::bad())?=next;
+                        let recipient=next.id;
+                        *table.sessions.iter_mut().find(|s|s.id==recipient).ok_or_else(||model::bad())?=next;
                     }
                     if let Some(id)=staged.release_retired_source{self.retired.retain(|s|s.id!=id);}
                     self.hold.capture=Some(staged.capture);for d in staged.diagnostics{println!("{d}");}
