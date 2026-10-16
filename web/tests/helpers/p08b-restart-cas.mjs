@@ -220,6 +220,6 @@ try {
 } finally { if (bridge) await bridge.close(); }
 
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && localSpelling(process.argv[1]) === localSpelling(fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2)).catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 }

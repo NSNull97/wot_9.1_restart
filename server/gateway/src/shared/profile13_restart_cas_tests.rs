@@ -214,7 +214,8 @@ fn parent(){
         .current_dir(&root).stdin(Stdio::null()).stdout(Stdio::from(stdout)).stderr(Stdio::from(stderr));
     #[cfg(windows)]{use std::os::windows::process::CommandExt;child.creation_flags(0x08000000);}
     let mut child=child.spawn().unwrap();let status=child.wait().unwrap();assert!(status.success(),"composition controller failed; retained {}",output.display());
-    let result:serde_json::Value=serde_json::from_slice(&fs::read(output.join("result.json")).unwrap()).unwrap();
+    let result:serde_json::Value=serde_json::from_slice(&fs::read(output.join("result.json"))
+        .expect("controller exited successfully but actual composition result is absent")).unwrap();
     assert_eq!(result["status"],"PASS_ACTUAL_HTTP_SQLITE_SYNTHETIC_SESSION_COMPOSITION");
     assert_eq!(result["parent_full_gate"],"PENDING_PARENT_FULL_GATE");assert_eq!(result["native_client"],"NOT_RUN");
     println!("P08B_COMPOSITION_ACTUAL_PASS evidence={} native=NOT_RUN full_gate=PENDING_PARENT_FULL_GATE",output.display());

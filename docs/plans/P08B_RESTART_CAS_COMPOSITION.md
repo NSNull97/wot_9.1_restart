@@ -30,3 +30,10 @@ Source prerequisites — существующий source-bundle-05 и ориги
 временем/ChildProcess handles; ошибка сохраняет evidence и ожидает их close.
 Откат — предыдущий checkpoint7d2252f; удалить только регистрацию и два новых
 test source в новом коммите. Старые receipts/builds/stand не трогать.
+
+Canonical full01 на0b548f7: existing1188PASS/новый1FAIL/5oldignored. Ошибка
+не в runtime: Node guard сравнивал verbatim argv с обычным fileURL path и
+молча пропускал main; actual result отсутствовал. Source715 before/failure
+exact, evidence20261016-p08b-composition-full01 сохранён. Real Node invocation
+regression воспроизвёл10PASS/1FAIL до fix; guard нормализует обе стороны.
+Нужен fresh full02, прошлый FAIL не заменяется частичным запуском.
