@@ -39,3 +39,6 @@ server/gateway/src/session.rs -text
 /server/gateway/src/shared/profile13_restart_cas_tests.rs text eol=lf
 /web/tests/helpers/p08b-restart-cas.mjs text eol=lf
 /web/tests/p08b-composition-guards.test.mjs text eol=lf
+/server/gateway/src/shared/late_results*.rs text eol=lf
+/server/gateway/src/account/identity_late_results_tests.rs text eol=lf
+/tests/fixtures/p08c-late-*.json text eol=lf

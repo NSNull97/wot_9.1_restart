@@ -24,6 +24,7 @@ pub(super) struct Dispatcher {
     job_loss:Option<service::JobLoss>,task_loss:Option<TaskLoss>,
     retired:Vec<Session>,
     settled_queue:Option<u64>,
+    pub(super) late:Option<super::super::late_results_runtime::Manager>,
 }
 fn state(s:&mut Session)->io::Result<&mut service::State> {
     s.shared.as_mut().and_then(|c|c.profile13.as_mut()).ok_or_else(||model::bad())
@@ -37,10 +38,12 @@ impl Dispatcher {
             s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.in_flight
                 || p.reservation.as_ref().is_some_and(|r|r.battle==world.id)||p.reservation_v2.as_ref().is_some_and(|r|r.battle==world.id)||p.reservation_loss.as_ref().is_some_and(|r|r.battle==world.id)));
         if outstanding || self.task.is_some()||self.task_v2.is_some()||self.task_loss.is_some() {return Ok(false);}
+        if let Some(late)=&mut self.late{late.before_reset(world,"unstarted_queue_cancelled");}
         template.replace(world,runtime,now)?;self.settled_queue=None;Ok(true)
     }
     pub(super) fn closed_queue(&self,battle:u64)->bool {self.settled_queue==Some(battle)}
-    pub(super) fn busy(&self)->bool {self.job.is_some() || self.task.is_some()||self.job_v2.is_some()||self.task_v2.is_some()||self.job_loss.is_some()||self.task_loss.is_some() || !self.retired.is_empty()}
+    pub(super) fn late_running(&self)->bool{self.late.as_ref().is_some_and(|m|m.worker_running())}
+    pub(super) fn busy(&self)->bool {self.late_running()||self.job.is_some() || self.task.is_some()||self.job_v2.is_some()||self.task_v2.is_some()||self.job_loss.is_some()||self.task_loss.is_some() || !self.retired.is_empty()}
     pub(super) fn owner_busy(&self,owner:&str)->bool {
         self.task.as_ref().is_some_and(|t|t.owner.account_id==owner)
             ||self.task_v2.as_ref().is_some_and(|t|t.owner.account_id==owner)
@@ -150,6 +153,8 @@ impl Dispatcher {
         Ok(())
     }
     pub(super) fn poll(&mut self,table:&mut Table,config:Arc<crate::identity091::Config>,now:Instant)->io::Result<()> {
+        if let Some(late)=&mut self.late{late.observe_sessions(table.sessions.iter().chain(self.retired.iter()));}
+
         if config.p06t_ammo_rack_detonation{return self.poll_loss(table,config,now);}
         if config.p06t_mixed_ammo{return self.poll_mixed(table,config,now);}
         if let Some(result)=self.job.as_mut().and_then(|j|j.poll()) {

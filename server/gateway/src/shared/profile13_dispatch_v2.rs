@@ -80,9 +80,16 @@ impl Dispatcher{
             match result{
                 Ok(completion)if completion.refresh_error.is_none()=>{
                     let finished=if completion.reply.status==Status::Finished{completion.request.finished_battle()}else{None};
+                    let late=if let Some(observer)=&self.late{observer.stage_finished_v2(&completion)}else{Ok(None)};
                     let target=table.sessions.iter_mut().chain(self.retired.iter_mut()).find(|s|s.id==task.session).ok_or_else(||model::bad())?;
                     match Self::deliver_v2(target,completion,now){
-                        Ok(())=>{self.task_v2=None;self.retry_at=None;if finished.is_some(){self.settled_queue=finished;}},
+                        Ok(())=>{
+                            if let Some(observer)=&mut self.late{match late{Ok(Some(install))=>observer.commit_install(install),Ok(None)=>{},Err(error)=>{
+                                if let Some(battle)=finished{observer.invalidate_source(&task.context.run_id,battle);}
+                                println!("P08C_LATE_OBSERVER_UNSUPPORTED session={} error={error} truthful_finish_delivered=true",task.session);
+                            }}}
+                            self.task_v2=None;self.retry_at=None;if finished.is_some(){self.settled_queue=finished;}
+                        },
                         Err(e)=>{println!("P06T_DELIVERY_ERROR session={} error={e} authority_closed=true retry_same_command=true",task.session);
                             state(target)?.in_flight=true;self.retry_at=Some(now+Duration::from_secs(2));},
                     }

@@ -184,16 +184,21 @@ fn verify_mixed_projection(profile:&Profile,revision:u64)->io::Result<()> {
     mixed_projection_bytes(&file("p06t-ammunition.json",65536)?,profile,revision,&format!("{:x}",Sha256::digest(&state)))
 }
 
+fn late_results_owner_id(owner:&str)->bool{
+    owner.len()==36&&owner.bytes().enumerate().all(|(i,b)|if [8,13,18,23].contains(&i){b==b'-'}else{b.is_ascii_digit()||(b'a'..=b'f').contains(&b)})
+        &&matches!(owner.as_bytes()[14],b'1'..=b'5')
+}
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
     pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
     pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,pub p04m_pool:bool,pub p06t_mixed_ammo:bool,pub p06t_ammo_rack_detonation:bool,
+    pub p08c_late_results:bool,pub p08c_late_results_accounts:Vec<String>,pub p08c_late_notice_experimental:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
         let bytes=bounded_file(Path::new(path),4096)?;
-        let Bounded::<23>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        let Bounded::<26>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
         let ammo_service=match value.remove("ammunition_service") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
         };
@@ -243,6 +248,21 @@ impl Config {
             None=>false,Some(Value::Bool(v))=>v,_=>return Err(invalid("p06t_ammo_rack_detonation must be explicit boolean")),
         };
         if p06t_ammo_rack_detonation&&(!p06t_mixed_ammo||!visibility_v1){return Err(invalid("ammo-rack loss requires mixed ammunition and server visibility"));}
+        let p08c_late_results=match value.remove("p08c_late_results"){
+            None=>false,Some(Value::Bool(v))=>v,_=>return Err(invalid("late results must be explicit boolean")),
+        };
+        if p08c_late_results&&(!profile13_battle||!p06t_mixed_ammo){return Err(invalid("late results require owned mixed profile13; legacy unsupported"));}
+        let p08c_late_notice_experimental=match value.remove("p08c_late_notice_experimental"){
+            None=>false,Some(Value::Bool(v))=>v,_=>return Err(invalid("late notice must be explicit boolean")),
+        };
+        if p08c_late_notice_experimental&&!p08c_late_results{return Err(invalid("experimental native notice requires durable late results"));}
+        let p08c_late_results_accounts=match value.remove("p08c_late_results_accounts"){
+            None=>Vec::new(),Some(Value::Array(rows)) if rows.len()<=6=>{
+                let mut owners=Vec::new();for row in rows{let owner=row.as_str().ok_or_else(||invalid("late owner UUID string"))?;
+                    if !late_results_owner_id(owner)||owners.iter().any(|old|old==owner){return Err(invalid("late owner unique canonical UUID"));}owners.push(owner.to_owned());}owners
+            },_=>return Err(invalid("late owners bounded explicit array")),
+        };
+        if p08c_late_results!=!p08c_late_results_accounts.is_empty(){return Err(invalid("late flag requires explicit1..6 owner capability list; disabled requires empty"));}
         let battle_players=match value.remove("battle_players") {
             None=>2,Some(Value::Number(n))=>n.as_u64().filter(|n|(2..=6).contains(n)).ok_or_else(||invalid("battle_players must be2..6"))? as usize,
             _=>return Err(invalid("battle_players must be integer")),
@@ -269,7 +289,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental})
     }
     fn authentication_timeout(&self)->Duration {
         // A configured curated owner publishes its source-bound projection
@@ -396,6 +416,23 @@ impl Config {
         }
         let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;
         if status!=200{return Err(invalid("P06T results writer unavailable; immutable task retained"));}Ok(reply)
+    }
+    /// New fixed namespace alone. Old body/reply budgets and paths unchanged.
+    pub(crate) fn late_results_post(&self,owner:&Profile,body:&[u8])->io::Result<Vec<u8>>{
+        self.late_results_http(owner,body,false)
+    }
+    pub(crate) fn late_results_pending_post(&self,owner:&Profile,body:&[u8])->io::Result<Vec<u8>>{
+        self.late_results_http(owner,body,true)
+    }
+    fn late_results_http(&self,owner:&Profile,body:&[u8],pending:bool)->io::Result<Vec<u8>>{
+        if !self.p08c_late_results||!self.profile13_battle||!self.p06t_mixed_ammo||owner.database_id<=0
+            ||!self.p08c_late_results_accounts.contains(&owner.account_id)||body.is_empty()||body.len()>if pending{2048}else{65536}{
+            return Err(invalid("late results configured owner/mode/body boundary"));
+        }
+        let path=if pending{"/internal/native/late-result-pending"}else{"/internal/native/late-result-append"};
+        let(status,reply)=self.post_with_budget(path,body,Duration::from_secs(20),4096,4096+4100)?;
+        if status!=200{return Err(io::Error::new(io::ErrorKind::InvalidData,format!("late result HTTP status={status}; immutable request retained")));}
+        Ok(reply)
     }
     fn post_with_budget(&self,path:&str,body:&[u8],timeout:Duration,max_body:usize,max_wire:usize)->io::Result<(u16,Vec<u8>)> {
         let deadline=Instant::now()+timeout;
@@ -1034,3 +1071,7 @@ mod tests {
     }
 
 }
+
+#[cfg(test)]
+#[path="identity_late_results_tests.rs"]
+mod late_results_tests;

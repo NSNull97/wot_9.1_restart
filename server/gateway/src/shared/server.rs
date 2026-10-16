@@ -695,11 +695,14 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
 }
 
 fn stage_lifecycle_results(table:&mut Table,world:&World)->io::Result<()> {
+    stage_lifecycle_results_from(table,world,None)
+}
+fn stage_lifecycle_results_from(table:&mut Table,world:&World,sealed:Option<Arc<super::lifecycle_wire::Results>>)->io::Result<()> {
     if !world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {return Ok(());}
     let needs=table.sessions.iter().any(|s|s.shared.as_ref().is_some_and(|c|c.natural_result.is_none()
         && c.profile13.as_ref().is_some_and(|p|!p.has_pending_return() && p.reservation_battle()==Some(world.id))));
     if !needs {return Ok(());}
-    let result=Arc::new(super::lifecycle_result::build(world)?);
+    let result=if let Some(result)=sealed{result}else{Arc::new(super::lifecycle_result::build(world)?)};
     for s in &mut table.sessions {
         let Some(c)=&mut s.shared else{continue;};
         if c.natural_result.is_none() && c.profile13.as_ref().is_some_and(|p|!p.has_pending_return()
@@ -1042,6 +1045,10 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     if config.battle_players!=2&&resources.as_ref().is_none_or(|rows|rows[0].shared.is_none()){return Err(model::bad().into());}
     let mut table = Table{capacity:config.battle_players,..Table::default()};
     let mut battle_dispatch=profile13_dispatch::Dispatcher::default();
+    if config.p08c_late_results{
+        battle_dispatch.late=Some(super::late_results_runtime::Manager::new(config.p08c_late_results_accounts.clone(),config.p08c_late_notice_experimental)?);
+        println!("P08C_LATE_RESULTS_BOUND policy={} configured_owners={} native_notice_experimental={} native_method=INFERRED",super::late_results_capture::POLICY,config.p08c_late_results_accounts.len(),config.p08c_late_notice_experimental);
+    }
     let mut ammo_job=None;
     let mut result_manager=super::results_session::Manager::default();
     let started = Instant::now();
@@ -1258,7 +1265,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     if table.sessions.iter().any(|s|s.id==id) {battle_dispatch.retire(&mut table,&mut world,id,now,"garage_writer_ambiguous")?;}
                 }
             }
-            if ammo_job.is_none() && !result_manager.busy() {
+            if ammo_job.is_none() && !result_manager.busy() && !battle_dispatch.late_running() {
                 battle_dispatch.poll(&mut table,config.clone(),now)?;
                 if battle_dispatch.finish_empty_queue(&table,&mut world,&mut integrated,&battle_template,now)? {
                     contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
@@ -1309,8 +1316,18 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 }
             }
         }
+        if let Some(late)=&mut battle_dispatch.late{
+            late.observe_sessions(table.sessions.iter());
+            if world.started.is_some()&&world.actors.iter().all(|a|a.session.is_none())
+                &&integrated.as_ref().is_none_or(|r|!r.blocked()){
+                if let Err(error)=world.advance_lifecycle(now){late.invalidate_source(&config.battle_run_id,world.id);
+                    println!("P08C_LATE_FINAL_OUTCOME_UNSUPPORTED battle={} error={error}",world.id);}
+            }
+            late.seal_world(&world);
+        }
         if !world.actors.is_empty() && world.actors.iter().all(|a|a.session.is_none())
             && !turret_avatar_pending(&table,&world) {
+            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"normal_all_parked_reset");}
             battle_template.replace(&mut world,&mut integrated,now)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
@@ -1322,16 +1339,26 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         }
         let step=(||->io::Result<()> {
             attach_waiting_sessions(&mut table,&mut world,now)?;
+            if let Some(late)=&mut battle_dispatch.late{
+                if let Err(error)=late.register_world(&table.sessions,&world,&config.battle_run_id){
+                    late.invalidate_source(&config.battle_run_id,world.id);
+                    println!("P08C_LATE_ADMISSION_UNSUPPORTED battle={} error={error} normal_owned_battle_unchanged=true",world.id);
+                }
+            }
             let start=world.started.is_none() && table.sessions.len()==world.expected_actors()
                 && world.actors.len()==world.expected_actors() && table.sessions.iter().all(|s|entry_ready(s,now)
                     && world.actors.iter().any(|a|a.session==Some(s.id)));
             advance_battle(&mut world,&mut integrated,now,start)
         })();
         if let Err(error)=step {
+            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_world_step");}
             contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"world_step",&error)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
-        if let Err(error)=stage_lifecycle_results(&mut table,&world) {
+        if let Some(late)=&mut battle_dispatch.late{late.observe_sessions(table.sessions.iter());late.seal_world(&world);}
+        let sealed=battle_dispatch.late.as_ref().and_then(|m|m.sealed_results(world.id));
+        if let Err(error)=stage_lifecycle_results_from(&mut table,&world,sealed) {
+            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_result_snapshot");}
             contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"result_snapshot",&error)?;
             contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
         }
@@ -1375,11 +1402,17 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             }
         }
         if let Some(error)=publication_failure {
+            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_publication");}
             contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"publication",&error)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
         for (id, reason) in closing {
             if table.sessions.iter().any(|s|s.id==id) {battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;}
+        }
+        let late_idle=!battle_dispatch.busy()&&ammo_job.is_none()&&auth.is_none()&&!result_manager.busy();
+        if let Some(late)=&mut battle_dispatch.late{
+            let utc=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d|u32::try_from(d.as_secs()).ok()).unwrap_or(0);
+            late.poll(&mut table.sessions,config.clone(),now,late_idle,utc);
         }
         for contact in world.contacts.iter().skip(contact_cursor) {
             println!("SHARED_GEOMETRIC_CONTACT {}", serde_json::json!({

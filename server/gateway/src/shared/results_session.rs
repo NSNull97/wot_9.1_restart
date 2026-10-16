@@ -25,6 +25,7 @@ pub(crate) struct State {
     counter:u32,epoch:u32,cached:Option<Arc<Results>>,avatar_pending:bool,avatar_confirmed:bool,
 }
 impl State {
+    pub(crate) fn account_epoch(&self)->u32{self.epoch}
     pub(crate) fn idle(&self)->bool {self.pending.is_empty()&&self.inflight.is_none()}
     pub(crate) fn used_id(&self,id:i16)->bool {self.seen.iter().any(|(seen,_)|*seen==id)}
     pub(crate) fn cached(&self)->Option<&Arc<Results>> {self.cached.as_ref()}
