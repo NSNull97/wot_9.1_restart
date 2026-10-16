@@ -7,8 +7,20 @@ NOT_RUN оставляет все эти ветки вне main. План [NET-0
 Exact-baseline promotion16files выполнен. Actual focused17PASS/buildPASS,
 CPythonauth6/network9/training15/mapdrive61PASS/3oldhostskips; hostmapdrive64/
 manual14/replay59PASS, prepare5/compile3/web7PASS. Source layout check FAIL на
-прежнем server/__pycache__, guard не менялся. Следом clean committed fullgate
-и отдельная LAN stand preparation; actualLAN/native/firewall/hosting NOT_RUN.
+прежнем server/__pycache__, guard не менялся. Full01 на608bb23/tag
+net02-private-lan-20261016-01: **1414PASS/0FAIL/5oldignored/buildPASS**,
+542.04с,794rawsource exact до/после. Новый ownhost stand C43/D44/80refs
+подготовлен backupAPI; sourceDB raw/logical unchanged, no grants/activation.
+Actual ownhost socket net02-ownhost02 PASS: два Login→точный LAN Base→Account/
+run_open→Create/Join/две HTTP/SQL Ready→оба Leave/retire;45.391с. NETstand
+C44/D45,БК[0,4,10]/active0; sourceP10B C43/D44 unchanged. Windows actual UDP
+слушал выбранный privateIP, HTTP только127.0.0.1. Gateway BOUND30.736с;
+первая30с попытка FAIL сохранена, новая operator90с версия завершилась за42.718с.
+Все свои службы остановлены receipts. Source restore: capture4/audit794/changes0
+PASS,actualapply NOT_RUN. TwoPC/native/firewall/hosting NOT_RUN; A interface
+Public, B неизвестен. Следующий gate — owner coreV7 native по утренней матрице,
+затем genuineB/interface/overlay для отдельного paired LAN стенда; хвост до вехи
+не начинать. Не повторять consumed ownhost smoke с прежней initial43/44 binding.
 Факты/ограничения — [NET02_PRIVATE_LAN](research/NET02_PRIVATE_LAN.md).
 Служебный HTTP остаётся loopback; originalclient/coreV7 не трогать.
 

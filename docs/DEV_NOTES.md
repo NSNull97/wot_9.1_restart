@@ -54,6 +54,18 @@ Harness профиля 12/13: `tools/p09e_research_harness.py --seed-only`.
 
 ## Стенды (`local/stands/`, не в git)
 
+- NET02 runtime608bb23/tag `net02-private-lan-20261016-01`: full1414PASS/
+  5oldignored/build/794rawexact. `net02-ownhost-20261016-01` actual two own-IP
+  Login/Base/Account/room/Ready/Leave PASS45.391с; ownstop. SourceP10B43/44
+  preserved, NETcopy44/45/БКunchanged/active0. Ownhost initial43/44 binding
+  consumed; не переписывать snapshot/SQL и не повторять smoke на44/45.
+  Actualstartup BOUND30.736с,total42.718с; старый operator30с FAIL сохранён,
+  services02 fixed90с, runtime/HTTP budgets прежние. Actual UDPprivateIP/
+  HTTP127 подтверждены Windows; remoteB/firewall/native/hosting NOT_RUN.
+  Exactcommands/rollback — собственный MORNING-NET02-EVIDENCE.md. Общая
+  стабильная утренняя матрица — night-battle-20261016-01/
+  MORNING-ALL-CARDS-20261016.md, first coreV7; clients не переставлялись.
+
 - `night-battle-20261016-01/mixed-01`: отдельный P06T opt-in backup, оба
   MS1[AP0,HEAT4,HE10] из своего склада,0grants; исходныйpool-01 сохранён.
   Full02/dc27285/1087PASS source-bound binding-p06t.json исторически проверен:

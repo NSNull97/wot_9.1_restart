@@ -10,32 +10,23 @@
 explicit RFC1918 native Login/Base + /32 allowlist, privateHTTP loopback,
 client lan-test-v1/original transport. Focused17PASS/build; CPythonauth6/
 network9/training15/mapdrive61PASS/3oldhostskips, host64+14+59/prepare5/web7PASS.
-Full/native/twoPC/firewall/hosting NOT_RUN; layoutcheck FAIL на прежнем cache.
+Full01/608bb23 **1414PASS/5ignored/buildPASS/794rawexact**,542.04с; tag
+net02-private-lan-20261016-01. Actual ownhost Login/Base/room/Ready/Leave PASS,
+45.391с;NET C44/D45/БКunchanged/active0,sourceP10B43/44 unchanged,ownstop PASS;
+native/twoPC/firewall/hosting NOT_RUN; layoutcheck FAIL на прежнем cache.
 [План](plans/NET-02.md), [факты/границы](research/NET02_PRIVATE_LAN.md).
 
-STAB-01 принята на runtime `0574ab0`: 854 gateway tests PASS / 5 ignored,
-сборка PASS; инъекция ошибки с настоящими workers и следующий бой PASS.
-Native-fix07: два ручных native_leave с завершённым warm-возвратом; оба клиента
-повторно входят, движение/наведение/стрельба подтверждены владельцем. Реальные
-deadline faults закрывают только текущий бой, gateway и сессии сохраняются.
-История исправлений, границы проверки и evidence —
-[STAB-01](research/STAB01_BATTLE_STABILITY.md). Следующая карточка — P08B.
+STAB-01 принята/mainffce8cb: runtime0574ab0/854tests/5ignored/buildPASS,
+actual error containment и owner два manualleave/repeat/управление. Ошибка боя
+не закрывает сервер/сессии. [Факты](research/STAB01_BATTLE_STABILITY.md).
 
-P08B в работе в `codex/p08b-profile13-battle`, в main не слита. Изолированные
-owner+writer28, новый Web7, Web-регрессия18 и client/control проверки PASS;
-gateway893 PASS/5 ignored и сборка PASS на runtime `5c08ef5`.
-Свежая двухаккаунтная БД профиля13 сохраняет A. Первый native запуск поймал
-неверный bool-контракт isCrewFull до reserve; исправлен на native seat count,
-client314 PASS и CPython2.7.3 81 PASS/4 host-only skips. Исправлена корреляция
-latest verified login retry. Native-fix03: владелец подтвердил оба ангара с16ББ
-и повторный общий бой; трасса/БД подтверждают два полных цикла18→16→14 у обоих,
-8 выстрелов, 4 manual_leave/committed результата, 0 world faults. Настоящие
-native queue→cancel→requeue подтверждены владельцем. Gateway аварийно остановлен
-с active резервом14ББ; новый run сделал один aborted_restart/возврат14,
-7 прежних finished не изменились, оба native ангара loaded/cache/model/AP14.
-Owner postrestart и mutation/warmN→full1 smoke отложены до утра по указанию
-владельца 2026-10-16; карточка пока не принята и в main не слита.
-[Факты и ограничения P08B](research/P08B_PROFILE13_BATTLE.md).
+P08B в `codex/p08b-profile13-battle`, runtime5c08ef5/893tests/5ignored/buildPASS;
+writer28/Web7+18/client314/CPython81PASS. Owner оба ангара16ББ/repeat;
+actual два цикла18→16→14,8shots/4manualleave, queuecancel/requeue PASS.
+Actual crash active14→recovery один aborted_restart/возврат14, прежние7finished
+unchanged, оба native hangar/cache/model/AP14. Owner postrestart/mutation
+warmN→full1/refusal/ИС7 NOT_RUN до утра; в main не слита.
+[Факты и ограничения](research/P08B_PROFILE13_BATTLE.md).
 
 Ночное задание 2026-10-16 разрешает продолжать следующие карточки по порядку
 без ожидания ручных gates. Автоматические результаты и native NOT_RUN разделяются;
@@ -97,25 +88,17 @@ Extended-01 actual WT/FV startup7resources/LABv2/ownstop PASS,106 coreinputs
 unchanged; newoverlay/native NOT_RUN. Непринятые gates в main не сливались.
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 
-P10B в `codex/p10b-native-training-room`, от P06Tbase0f1db40. Сохранённый
-componenttag `p10b-components-20261016-01` /36d57a0: **1341PASS/0FAIL/
-5oldignored/buildPASS**,501.62s,775sourceinputs exact до/после. Actual
-Session/Window/Controller atomicreceive, nativealiases/streams, typedTeamPlan,
-serialreserve/compensation и Finishedhook собраны. ActualHTTP03 read-only
-selection=3PASS/0skip77.768s; CPython2.7.3=76PASS/3oldskips. Native/UI/room
-NOT_RUN. LiveHost/серверный цикл подключены: retained selected/bench disconnect,
-garage/results close routing, warm List/Preview при сохранённом Battle claim.
-Первый actualsocket Ready FAIL из-за ROOT bootstrap worker исправлен;
-CLI1PASS и actual clean-env HTTP3PASS/0skip82.740с. Full05/e55ba01/tag
-p10b-host-20261016-02: **1397PASS/5oldignored/buildPASS/785sourceexact**.
-Stand02 actualstartup и minimumsocket room-startup02 PASS: две Ready через
-настоящие HTTP/SQL, комната/стороны/отказы/выход/повтор, без reserve/mutation.
-Actual phase2 room-durable01 PASS: два Admit→launchcommit→оба disconnect до
-Worldstart→два Finished, exactSQL journals/Frozen/CAS, повторный Login/комната.
-C43/D44, БК[0,4,10] unchanged, активных резервов0; свои службы остановлены.
-Native/UI/Avatar/Worldstart/6clients NOT_RUN; main не изменён. CoreV7 сохранён.
-План [P10B](plans/P10B.md), ограничения/утренний сценарий —
-[NIGHT_REPORT_20261016](NIGHT_REPORT_20261016.md).
+P10B в `codex/p10b-native-training-room`,docs6c6b7b7/runtimee55ba01:
+**1397PASS/5oldignored/buildPASS/785sourceexact**,tag p10b-host-20261016-02.
+Actual Session/Host/Controller/Preparing/Finished интеграция и clean-env CLI1/
+HTTP3 PASS. Minimumsocket room-startup02: обе Ready через настоящие HTTP/SQL,
+комната/стороны/отказы/выход/повтор, без reserve/mutation PASS. Phase2
+room-durable01: Admit2→launchcommit→оба disconnect до Worldstart→Finished2,
+exact SQL journals/Frozen/CAS, повторный Login/комната PASS. C43/D44,
+БК[0,4,10]/active0; свои службы остановлены. Native/UI/Avatar/Worldstart/6clients
+NOT_RUN. CoreV7 сохранён. Новый client_v2 helper10PASS отдельно перенесён;
+positivebind/install/native NOT_RUN. [План](plans/P10B.md),
+[утренний сценарий и evidence](NIGHT_REPORT_20261016.md).
 
 ## Принято владельцем на настоящем клиенте #717
 

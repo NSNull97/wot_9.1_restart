@@ -51,7 +51,12 @@ local/build/server/gateway-net02-focused01/result.json, exe
 682fad6c58f6399fe5162a635ea509c1c90a8c7ea6d172722396761b3076e415.
 Это actual Config/Table/entrypoint/redirect tests: raw duplicate/budget,
 24vs25 peers, exactunsupported guard errors до missingresources, sameLoginIP,
-две Sessions с одного IP и независимые redirect literals. Fullgate ещё NOT_RUN.
+две Sessions с одного IP и независимые redirect literals.
+Canonical full01 на608bb239e06810cd7c17b7097e1e3e268f9945db:
+**1414PASS/0FAIL/5oldignored/buildPASS**,542.04с/794rawsource exact до/после;
+tag net02-private-lan-20261016-01, exe
+28e9589f0bfa88cf9d0ec821f8989582dbab201ccc64e71a5035616348cd3f0b.
+Evidence local/evidence/20261016-net02-full01 и fresh gateway-net02-full01.
 
 Actual CPython2.7.3: auth6/network9/training15/mapdrive61PASS и3 прежних host-only
 skips. Эти3 sourceboundary проверки выполнены Python3: mapdrive64PASS;
@@ -86,4 +91,52 @@ firewall, комнаты/бой/возврат двух PC, latency/6players, ho
 Откат: P10Btag p10b-host-20261016-02 + exactsource restore; own service receipts,
 own firewall rule и overlay ledger. Durable SQL recovery без ручной очистки
 резервов. Приёмка: focused/offline source checks PASS с перечисленным FAIL;
-full/native/twoPC NOT_RUN. Следующий шаг — sealed fullgate текущего head.
+native/twoPC NOT_RUN. Новый ownhost stand C43/D44/80existingrefs подготовлен
+SQLite backup API и actual existing writer fixture publication; source raw/
+logical hashes unchanged, no grants/activation. Он ещё UNBOUND/NO_NETWORK.
+Первый prepare attempt отказал до создания папки из-за convenience helper,
+требовавшего livePID; исправлен read-only Process.snapshot None contract для
+заведомо остановленных своих процессов, attempt сохранён отдельно. Следующий
+шаг — actual bound ownhost socket gate при сохранении NOT_RUN для двух ПК.
+
+## Actual own-host socket result and retained operator failure
+
+OBSERVED first ownhost01 attempt: operator wait30s expired before final BOUND;
+five templates/geometry/terrain/catalog present, stderr0, capture packetrecords0,
+no Login. Both actual own children stopped by compensation, no cleanup errors;
+SQL C43/D44/reserves0/full logical state unchanged. Failed attempt retained.
+This was not a runtime PASS and did not change a server/HTTP/auth deadline.
+
+New frozen services02/context03 use fresh binding-startup02.json; original
+binding.json/source-restore-binding.json/retained4files remain unchanged. Fixed
+operator90s budget never extends on progress. Actual startup net02-ownhost02
+PASS: gateway BOUND30.736466s, total42.717854s. Thus this measured run exceeded
+the previous operator30s limit. Source/runtime remained608bb23/794exact.
+
+OBSERVED actual synthetic own-IP Login→exact advertised LAN Base→two Account
+sync/run_open→Create/Join→two real HTTP/SQL Ready→both native-shaped Leave and
+actual Session retirements PASS45.391s. Receipt
+local/stands/net02-ownhost-20261016-01/runs/net02-ownhost02/net02-ownhost-smoke.json,
+SHA7ca2881a23c442f683e9a62eafb7b191faabc3ffbf760182d8a9ac09c945d4f7.
+New NET DB C44/D45, ammo[0,4,10]unchanged/active0; afterlogin exactly+1revision/
+ledger per owner and no Ready/Leave writes. No411/reserve/Worldstart occurred.
+Original P10B DBs/fixtures/client ledgers remain preserved separately.
+
+Actual Windows endpoint observation: gateway's two UDP listeners on selected
+RFC1918 host20240/20241; bridge's sole TCP listener127.0.0.1:3492. This does not
+prove B-to-A reachability or remote TCP refusal. Both own processes stopped by
+receipt after PASS. No firewall/profile change, B/native/WAN remain NOT_RUN.
+
+New source restore helper:15isolatedGit PASS, actual capture4ownraw/audit794/
+changes0 PASS, applyNOT_RUN. Separate P10B native companion10PASS promoted;
+actual wrong-NET runtime bind refusal PASS, positiveP10Binstall/native NOT_RUN.
+Operator commands were versioned to wait real90s gateway startup before clientA.
+
+Final evidence local/evidence/20261016-net02-integration01/checkpoint02.json,
+SHA708730d58ba81e7ea249a4fafd992f62a1f8b136fe321d3cf593eeddc0ac0014.
+This ownhost initial43/44 binding is consumed: do not rerun it against44/45 or
+rewrite initial_state/SQL. Actual twoPC needs new paired stand from current
+actual data and realB/interface/per-PC overlays. Next owner step is the saved
+coreV7 native matrix, then later qualification/P10B/paired LAN; no tail before
+the first battle milestone. Acceptance: FULL_AND_OWNHOST_PASS; native/twoPC/
+firewall/hostingNOT_RUN, no main merge.

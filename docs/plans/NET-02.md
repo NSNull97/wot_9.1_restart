@@ -84,4 +84,23 @@ whole SQLite backup/durable recovery без удаления reservations. Softw
 сохранённый P10B tag p10b-host-20261016-02; source restore guards не обходить.
 Обязательный native/twoPC NOT_RUN оставляет карточку в ветке, не main.
 
-Единственный следующий шаг сейчас: hash-checked promotion и actual focused gate.
+Исполнение и фактические ограничения сохранены ниже; checkpoints не подменяют
+обязательную native/twoPC приёмку.
+
+## Сохранённый итог реализации
+
+Runtime608bb23/tag net02-private-lan-20261016-01: focused17/build и canonical
+full1414/5oldignored/build/794rawexact PASS. Actual ownhost02 Login/Base/Account/
+room/две readonlyReady/обаLeave/retire PASS45.391с. NET C44/D45, ammo unchanged,
+active0; actualUDP на выбранномIP/HTTP127, ownstop. Source capture4/audit794/
+changes0 PASS; applyNOT_RUN. Первый operator30s startup FAIL сохранён; successor
+fixed90s завершилactualBOUND30.736с/total42.718с без runtime budget changes.
+
+Публичные исходники только проектные; local helper/evidence/DB/secret/resources
+не публиковались. B/IP/category/overlay ещё неизвестны, A Public; paired LAN
+plan остаётся UNBOUND, firewall/routing/WAN не менялись. Не повторять consumed
+ownhost initial43/44 proof на44/45 и не сбрасывать SQL ради зелёного сценария.
+Откат — saved P10Btag, own process receipts/wholeDBbackup/overlayledger.
+Карточка не принята: обязательные native/twoPC/hosting NOT_RUN, mainffce8cb.
+Единственный следующий шаг приёмки — сохранённый owner coreV7 native сценарий,
+затем явные actualB данные и отдельный paired stand после предыдущих native gates.
