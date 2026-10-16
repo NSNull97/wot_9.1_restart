@@ -1,4 +1,16 @@
-# Текущая карточка — 2026-10-16
+# Текущая карточка — P08C native Vehicle marker, 2026-10-16
+
+Ветка codex/p08c-native-marker-team от testedcore9920a638. Владелец прошёл
+native queue/cancel/requeue/countdown/drive/aim обоими и typed1KS+1HE/возврат
+с0/3/9; durable117/32/active0. У первого enemyredname/greendiamond: actual
+Vehicle.publicInfo.team=1 для обоих, roster/Avatar1/2. Исправление толькоshared
+create_vehicle→World.team(slot), без clientreinstall/paint. План
+[P08C_NATIVE_MARKER_TEAM](plans/P08C_NATIVE_MARKER_TEAM.md). Свой morning01
+остановлен по receipts; next fresh native после fullgate. Marker UI FAIL до
+перепроверки; late leaver results и spawn — отдельные незакрытые пункты.
+Ночные ветки/NET b6c294f сохранены, mainffce8cb не менять без родительских gates.
+
+## Сохранённый предшествующий core checkpoint
 
 **P06T — типы снарядов, критические повреждения и пожар**, зависимая ветка
 `codex/p06t-mixed-shell-damage` после автоматически проверенного P04M.

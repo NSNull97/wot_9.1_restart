@@ -1,5 +1,13 @@
 # Состояние проекта — 2026-10-16
 
+Утренняя coreV7 приёмка: nativequeuecancel/requeue/commonbattle/countdown30/
+drive/aim обеих машин подтверждены владельцем. По1KS+1HEeach→обаангара0/3/9,
+durable117/32/active0. Amanual/BnaturalForfeit; Bresultswindowесть,Afullresult
+missing — отдельныйP08Cgap. Native enemy marker уA зелёный при redname: shared
+Vehicle.publicInfo.team literal1 против roster1/2. Текущая узкая ветка
+codex/p08c-native-marker-team/план P08C_NATIVE_MARKER_TEAM; full/nativefix ещё
+NOT_RUN. Ночные ветки сохранены; main не менялся.
+
 Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего
 дерева и доступна в git: `git show 1eaff5e:docs/STATUS.md` (а также удалённые
 `docs/plans/`, `docs/evidence-index/`, `docs/archive/`, `MASTER_PLAN.md`).
