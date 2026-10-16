@@ -35,3 +35,10 @@ stands/clients не менять, manualдо09:00 не запускать. WT/FV
 LAB, new owned capability не выдаётся. Hold5 — отдельная будущая карточка,
 старую версию4 не переосмысливать. Откат91dbdbe с совместимым late reader;
 не возвращать committed fired/lost восстановлением старой игровой DB.
+
+## Software checkpoint
+
+Runtime689fb93: full1553/5/build/source865 PASS, dual actual Loss4 room+oldlate
+HTTP/SQL composition, Python17/Web4/HTTP3/oldWeb37, ownclient host79/CPython76
++3priorhostskip/CLI1. Source-fenced evidence20261017-p10b-loss-full01. Native
+NOT_RUN, поэтому план сохранён, main unchanged. Далее отдельная NET-02 ветка.

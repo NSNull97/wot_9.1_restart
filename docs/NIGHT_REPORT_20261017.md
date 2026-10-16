@@ -1,5 +1,9 @@
 # Ночь 16–17 октября: сервер до 09:00
 
+## P10B software checkpoint — runtime689fb93
+
+Ветка codex/p10b-loss-training-integration от91dbdbe; normal merge6c6b7b7. Full1553PASS/0FAIL/5oldignored/buildPASS/865rawsourceexact. Actual Loss4 Host/HTTP/SQL compensation→same-run freshroom→Admit2/ACKlaunch→Finished2/claims released PASS; прежний late composition в том же full PASS. Python17/Web4/HTTP3/oldWeb37; own client host79,CPython76+3hostonlyskip,CLI1. Native/UI/six/two-PC NOT_RUN. [Полные факты](research/P10B_LOSS_TRAINING_INTEGRATION.md). ExeSHA `1611241bd4f90005cc4559ba0172115d37a1ef1786127df331d05c27e5b9ec9c`; evidence `local/evidence/20261017-p10b-loss-full01/composition-full.json`. Mainffce8cb unchanged. Следующая отдельная NET-02 integration, затем свежий стенд; ночь продолжается до09:00.
+
 Рабочий отчёт, обновляется по проверенным checkpoint. Окончание задания:
 17.10.2026 09:00 Asia/Yekaterinburg (04:00 UTC). Ручные тесты выполняет
 владелец утром. Отложенная native/UI/звук/управление приёмка остаётся NOT_RUN.

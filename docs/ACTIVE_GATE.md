@@ -1,46 +1,25 @@
-# Текущая карточка — P10B: loss4 training integration
+# Текущая карточка — P10B: software checkpoint, native gate открыт
 
-Ветка `codex/p10b-loss-training-integration` от91dbdbe. Normal merge saved
-6c6b7b7 с актуальными loss4/late/firstspot/turret guards; typed Saga04/Host05/
-Web05 и actual09/10/11 интегрируются следом. Current-head compile/tests ещё
-NOT_RUN. План P10B_LOSS_TRAINING_INTEGRATION. Native/UI/six/two-PC NOT_RUN;
-mainffce8cb unchanged, ночное разрешение до09:00 сохраняется.
+Ветка `codex/p10b-loss-training-integration` от91dbdbe, runtime `689fb93c4a1bfb05cf3bb1d63ce3836e2e2f4a74`.
+Normal merge saved6c6b7b7 +typed Loss4 Saga/Host/Web +actual09/10/11 +strict raw
+source binding. **Full1553PASS/0FAIL/5oldignored/buildPASS/865rawsourceexact**;
+actual compensation→same-run room→launch→Finished2/claims release и прежний
+late composition PASS. Python17/Web4/HTTP3/oldWeb37; client host79 и actual
+CPython76+3старых host-onlyskip,CLI1. [Факты](research/P10B_LOSS_TRAINING_INTEGRATION.md),
+[план](plans/P10B_LOSS_TRAINING_INTEGRATION.md).
 
-## Сохранённый seven software checkpoint
+Native room/UI/callback IDs/real six/gameplayUDP/two-PC NOT_RUN. Не подменять
+этот gate software PASS; не сливать в mainffce8cb. Historical accepted STAB,
+P08B cycles и P08C marker/natural/autoaim остаются только в проверенном объёме.
 
-Software checkpoint завершён: runtime0e03e19, ветка
-`codex/p06t-seven-loss-integration`. Full1295PASS/0FAIL/5oldignored/buildPASS,
-783rawsourceexact; focused5, Python102PASS0skip. Actual seven/mixed6 scene/ACK
-и old late HTTP/SQL composition прошли на объединённом head. Native/UI/звук
-NOT_RUN; WT/FV только explicit LAB, old owned/loss policy не расширена.
-[Факты](research/P06T_SEVEN_LOSS_INTEGRATION.md),
-[план](plans/P06T_SEVEN_LOSS_INTEGRATION.md).
+Владелец разрешил ночь до17.10 09:00 без ручных остановок:
+[NIGHT_20261017](plans/NIGHT_20261017.md). Единственный следующий шаг — новая
+NET-02 integration ветка, normal merge savedb6c294f с typed Config28/private
+HTTP16 и сохранением текущих loss/late/room hooks, новый full и свежий binding.
+Затем operational morning contexts и отдельная Hold5 integration по готовым
+кандидатам; native оставлять NOT_RUN. Текущие службы/клиенты STOP.
 
-Ночь продолжается до09:00. Следующая отдельная ветка — P10B6c6b7b7 normal
-merge +typed loss4 Saga/Host/selection service, затем NET-02/боевой стенд.
-Mainffce8cb unchanged; новый binding/ручные gates ещё необходимы.
-
-## Сохранённый P08C software checkpoint
-
-Software checkpoint завершён: `codex/p08c-late-owner-results` от6289216,
-runtimeea43262. Full1224PASS/0FAIL/5oldignored/buildPASS,740rawsourceexact;
-actual Runtime→HTTP→SQLite→reopen→1500/1501 PASS. Focused1 и34 PASS,
-SQL17+1/Web5+37/HTTP1+1 PASS0skip. Доказательства/ограничения:
-[P08C_LATE_OWNER_RESULTS](research/P08C_LATE_OWNER_RESULTS.md),
-[план](plans/P08C_LATE_OWNER_RESULTS.md).
-
-Append presentation-only, только unchanged release/final actor. Старые
-Finish/inventory/revision не переписываются. Crash до committed append и
-изменённый parked actor остаются явными ограничениями. Experimental notice
-0x4b INFERRED/defaultfalse; native/UI/audio/gameplayUDP NOT_RUN.
-Mandatory gates карточки и родителей не закрыты: mainffce8cb без merge.
-
-Ночная работа разрешена до17.10 09:00 без ручных вопросов. Следующая отдельная
-ветка P06T объединяет сохранённый seven-profile b9239e3 с loss4 и late-results;
-затем typed loss4 P10B и NET-02. История software checkpoints и утренний
-сценарий — [NIGHT_REPORT_20261017](NIGHT_REPORT_20261017.md).
-
-Рабочие службы/клиенты остановлены. Сохранённый loss-01 A129/B43/active0,
-loadedA[0,48,48]/B[0,50,46],0grants. Старый binding-loss01 относится только
-к runtimeed67531: новым source tree его не запускать. Финальный ночной стенд
-потребует нового full/source binding; native до09:00 не запускать.
+Старый loss-01 A129/B43/active0/0grants, loadedA[0,48,48]/B[0,50,46].
+CoreV7 immutable96 совпали, original read-only. Старый binding-loss01 только
+runtimeed67531; этот head с ним не запускать. Новые full/source/client ledger
+и manual matrix — [NIGHT_REPORT_20261017](NIGHT_REPORT_20261017.md).

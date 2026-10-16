@@ -5,6 +5,15 @@
 
 ## Сборка и тесты
 
+- P10B loss4 runtime689fb93: full1553/5/build/source865, actual Host/HTTP/SQL
+  same-run compensation/relaunch/Finished2 PASS; proof20261017-p10b-loss-full01.
+  Training synthetic ACK/Account warm идти через Host.receive, обычный
+  Session.receive намеренноотказывает training_opt_in. Test startup обязан
+  вызывать config-gated Dispatcher.enable_training_finished. SQL battle_id
+  это runUUID:arena, arena хранится decimal string (не JS Number). READY
+  source compare использует profile_bytes, не canonical исторического JSON.
+
+
 - P08C late runtimeea43262 full1224PASS/5oldignored/buildPASS,740rawsourceexact;
   actual loss4 Runtime→HTTP/SQL/reopen/pending/1500/1501 PASS. Evidence
   20261017-p08c-late-full02/composition-full.json. Actual pool test helper

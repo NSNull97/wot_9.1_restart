@@ -160,3 +160,5 @@
 
 - [P10A_TRAINING_ROOM_STATIC.md](P10A_TRAINING_ROOM_STATIC.md) — P10A — training-room lifecycle static research
 - [P10B_NATIVE_ROOM_CONTRACT.md](P10B_NATIVE_ROOM_CONTRACT.md) — P10B — original #717 room contract, owned selection and native host boundaries
+
+- [P10B typed loss4 training integration](P10B_LOSS_TRAINING_INTEGRATION.md) — current software checkpoint, actual HTTP/SQL/Host cancellation/relaunch; native NOT_RUN.
