@@ -83,7 +83,7 @@ fn phase(v:&serde_json::Value)->serde_json::Value{
     let users=v["users"].as_array().unwrap();let a=common::session(&c,&users[0],7);let b=common::session(&c,&users[1],8);
     let mut t=Table{sessions:vec![a,b],capacity:24,..Table::default()};let mut h=Host::for_config(&c).unwrap();for s in&mut t.sessions{h.bind_session(s).unwrap();}
     let initial=v["arena_id"].as_str().unwrap().parse::<u64>().unwrap();let now=Instant::now();let mut w=pristine(initial,now);let template=BattleTemplate::new(&w,&None);let mut runtime=None;
-    let mut d=profile13_dispatch::Dispatcher::default();d.late=Some(late_results_runtime::Manager::new(c.p08c_late_results_accounts.clone(),false).unwrap());
+    let mut d=profile13_dispatch::Dispatcher::default();if c.training_rooms{d.enable_training_finished();}d.late=Some(late_results_runtime::Manager::new(c.p08c_late_results_accounts.clone(),false).unwrap());
     common::barrier(v,"after-auth",serde_json::json!({"run":c.battle_run_id,"actual_auth":2,"native":"NOT_RUN"}));
     let alias1=make_room(&mut h,&mut t,&w,221,0);ready(&mut h,&mut t,&mut w,&mut runtime,&template,&mut d,c.clone(),0);
     common::barrier(v,"first-ready",serde_json::json!({"actual_http_ready":2,"run":c.battle_run_id}));
