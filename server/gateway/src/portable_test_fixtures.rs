@@ -77,13 +77,27 @@ pub(crate) fn verified(path:&Path,source_sha:Option<&str>)->(PathBuf,String) {
     assert_eq!(allocation["schema"],"wot091-fresh-short-workspace.v1");
     assert_eq!(Path::new(allocation["workspace"].as_str().unwrap()),workspace);
     assert_eq!(allocation["source_root"],"D:\\WoT_9.1_Server");
-    let context:Value=serde_json::from_slice(&bytes(&parent.join("dependencies-short02/resource-context.json"),1024*1024)).unwrap();
+    let context_raw=bytes(&parent.join("dependencies-short02/resource-context.json"),1024*1024);
+    assert_eq!(hash(&context_raw),"a44579f46813ab449ee8107880e50ff11d1d7a68775abbd764683e6aed1a79bc");
+    let context:Value=serde_json::from_slice(&context_raw).unwrap();
     assert_eq!(context["schema"],"wot091-c-fixture-context.v1");
     assert_eq!(Path::new(context["workspace"].as_str().unwrap()),workspace);
     assert_eq!(Path::new(context["source_root"].as_str().unwrap()),Path::new("D:/WoT_9.1_Server"));
     assert_eq!(context["allocation_sha256"],hash(&bytes(&parent.join("short-workspace01/allocation.json"),4096)));
     let rel=path.strip_prefix(&workspace).unwrap().to_string_lossy().replace('\\',"/");
-    let mut verifier=Verifier{workspace:&workspace,rows:context["files"].as_object().unwrap(),done:BTreeMap::new()};
+    let extra_raw=bytes(&parent.join("dependencies-missing04/supplement04.json"),1024*1024);
+    assert_eq!(hash(&extra_raw),"a7d49c2b601ee128a0cc06b221b1e0255edfe985de47b3f3915c7190491fd406");
+    let extra:Value=serde_json::from_slice(&extra_raw).unwrap();
+    assert_eq!(extra["schema"],"wot091-c-fixture-supplement.v1");
+    assert_eq!(extra["workspace"],context["workspace"]);
+    assert_eq!(extra["source_root"],context["source_root"]);
+    assert_eq!(extra["allocation_sha256"],context["allocation_sha256"]);
+    assert_eq!(Path::new(extra["base_context"]["path"].as_str().unwrap()),parent.join("dependencies-short02/resource-context.json"));
+    assert_eq!(extra["base_context"]["sha256"],hash(&context_raw));
+    let mut rows=context["files"].as_object().unwrap().clone();
+    for(key,row)in extra["files"].as_object().unwrap(){assert!(rows.insert(key.clone(),row.clone()).is_none(),"supplement cannot replace an original fixture");}
+    assert!(rows.len()<=1024);
+    let mut verifier=Verifier{workspace:&workspace,rows:&rows,done:BTreeMap::new()};
     let actual=verifier.file(&rel,source_sha,0);(path,actual)
 }
 struct Verifier<'a>{workspace:&'a Path,rows:&'a serde_json::Map<String,Value>,done:BTreeMap<String,String>}
@@ -117,7 +131,7 @@ impl Verifier<'_>{
                     },
                     "pool"=>{
                         for item in value["maps"].as_array_mut().unwrap(){self.reference(item,"config","config_sha256",depth);}
-                        self.reference(&mut value["vehicle_profile"],"path","sha256",depth);
+                        if value.get("vehicle_profile").is_some(){self.reference(&mut value["vehicle_profile"],"path","sha256",depth);}
                         self.reference(&mut value["worker"],"artifact_manifest","artifact_manifest_sha256",depth);
                         let old=PathBuf::from(value["worker"]["executable"].as_str().unwrap());let suffix=old.strip_prefix("D:/WoT_9.1_Server").unwrap();
                         let key=suffix.to_string_lossy().replace('\\',"/");self.file(&key,None,depth+1);
