@@ -101,3 +101,107 @@ fn source_contact(index:usize,heavy:bool)->(Trace,Contact,crate::p06t_damage::Re
     assert_eq!(typed.contact_shell_for(VehicleKind::Ms1,PROFILES[0].shots[2],1,0,1001,hit).unwrap().unwrap().health_after,564);
     let before=typed.clone();assert!(typed.contact_shell_for(VehicleKind::Ms1,PROFILES[1].shots[2],2,0,1002,hit).is_err());assert_eq!(typed,before);
 }
+
+fn wreck_splash_fixture(positive_hp:bool)->(Trace,[f32;3],Contact,crate::p06t_damage::SplashDamage,Actor){
+    let(mut trace,contact,_,mut wreck)=source_contact(2,true);
+    if positive_hp{
+        use crate::{p06t_device_caps::Profile,p06t_device_state::{State,Health,ModuleHit,Cause},p06t_lab_proxy::Target};
+        let shell=PROFILES[1].shots[2];let cause=Cause{shot:2,attacker_slot:0};let mut state=State::new(Profile::Ms1);
+        state.apply_hits(&[
+            ModuleHit{cause,ordinal:0,at_ms:0,target:Target::Seat(0),shell,ignition_roll:0.9},
+            ModuleHit{cause,ordinal:1,at_ms:0,target:Target::Seat(1),shell,ignition_roll:0.9}],
+            Health{hp:90,max_hp:90,terminal:false}).unwrap();
+        wreck.devices=Some(state);assert_eq!(wreck.health,90);
+    }else{wreck.health=0;}
+    assert!(!wreck.alive());
+    trace.wreck_inactive(123,1,1001,0,1,wreck.health,wreck.health,&wreck).unwrap();
+    let mut live=model::tests::world(Instant::now()).actors[1].clone();live.position=[0.;3];
+    live.direction=[0.;3];live.aim.yaw=0.;live.aim.pitch=0.;
+    let center=contact.endpoint;let shell=PROFILES[1].shots[2];let bundle=super::super::geometry::tests::bundle();
+    let splash=bundle.explosion_contact(&live,center,shell.explosion_radius_m.unwrap()as f32,1,2,1001).unwrap().unwrap();
+    let chord=std::array::from_fn(|i|splash.segment_end[i]-splash.segment_start[i]);
+    let distance=(0..3).map(|i|(f64::from(splash.endpoint[i])-f64::from(center[i])).powi(2)).sum::<f64>().sqrt();
+    let plate=plate_for(VehicleKind::Ms1,&splash.material_facts,chord,splash.triangle.normal,distance).unwrap();assert!(plate.ordinary);
+    let terrain=terrain::tests::fixture(-10.,10.,3,vec![-10.;9]);let clear=splash_los(&terrain,center,splash.endpoint,&[]).unwrap();assert!(clear);
+    let damage=crate::p06t_damage::resolve_splash(shell,&[crate::p06t_damage::SplashTarget{slot:2,distance_m:distance,
+        armor_mm:plate.armor_mm.unwrap(),los_clear:clear}]).unwrap()[0];assert!(damage.damage_hp>0);
+    (trace,center,splash,damage,live)
+}
+fn append_wreck_splash(trace:&mut Trace,center:[f32;3],contact:&Contact,result:&crate::p06t_damage::SplashDamage,actor:&Actor)->io::Result<()>{
+    trace.splash_resolution(123,1,1001,0,2,contact,center,result,90,90i16.saturating_sub(result.damage_hp as i16).max(0),
+        &terrain::tests::fixture(-10.,10.,3,vec![-10.;9]),&super::super::geometry::tests::bundle(),actor)
+}
+
+#[test]fn p06t_trace_he_wreck_anchor_uses_retained_intersection_and_keeps_its_terminal(){
+    for positive_hp in [false,true]{
+        let(mut trace,center,contact,result,actor)=wreck_splash_fixture(positive_hp);
+        let wreck=trace.events.last().unwrap().order();
+        let material=match trace.events.last().unwrap(){Event::WreckImpact{material_order,..}=>*material_order,_=>unreachable!()};
+        assert_ne!(wreck,material);
+        append_wreck_splash(&mut trace,center,&contact,&result,&actor).unwrap();
+        assert!(matches!(trace.events.last(),Some(Event::SplashResolution{anchor_order,shell,..})
+            if *anchor_order==wreck&&*shell==PROFILES[1].shots[2]));
+        let before=trace.clone();
+        for reason in [TerminalReason::TestLabMixedImpact,TerminalReason::TerrainCollision,TerminalReason::UnresolvedCollision]{
+            assert!(trace.terminal(123,1,1001,reason).is_err());assert_eq!(trace,before);
+        }
+        trace.terminal(123,1,1001,TerminalReason::TestLabWreckImpact).unwrap();
+        assert_eq!(trace.terminal_shots(),&[1]);
+        let after=trace.clone();assert!(append_wreck_splash(&mut trace,center,&contact,&result,&actor).is_err());assert_eq!(trace,after);
+        assert_eq!(trace.events.iter().filter(|e|matches!(e,Event::WreckImpact{..})).count(),1);
+    }
+}
+
+#[test]fn p06t_trace_wreck_splash_rejects_forged_center_orders_pose_shell_and_late_anchor_atomically(){
+    let(base,center,contact,result,actor)=wreck_splash_fixture(true);
+    let mut shifted=center;shifted[0]+=0.001;
+    let mut trace=base.clone();assert!(append_wreck_splash(&mut trace,shifted,&contact,&result,&actor).is_err());assert_eq!(trace,base);
+    for which in 0..11{
+        let mut trace=base.clone();
+        match which{
+            0=>if let Some(Event::WreckImpact{material_order,..})=trace.events.last_mut(){*material_order-=1;},
+            1=>if let Some(Event::MaterialContact{intersection_order,..})=trace.events.iter_mut().find(|e|matches!(e,Event::MaterialContact{..})){*intersection_order+=1;},
+            2=>if let Some(Event::Intersection{query_order,..})=trace.events.iter_mut().find(|e|matches!(e,Event::Intersection{..})){*query_order+=1;},
+            3=>if let Some(Event::CollisionQuery{transform_revision,..})=trace.events.iter_mut().find(|e|matches!(e,Event::CollisionQuery{..})){*transform_revision=format!("pose-v1:1:1001:{}","f".repeat(64));},
+            4=>if let Some(Event::Intersection{transform_revision,..})=trace.events.iter_mut().find(|e|matches!(e,Event::Intersection{..})){*transform_revision=format!("pose-v1:2:1001:{}","f".repeat(64));},
+            5=>if let Some(Event::WreckImpact{server_tick,..})=trace.events.last_mut(){*server_tick=1000;},
+            6=>if let Some(Event::Selected{shell,..})=trace.events.iter_mut().find(|e|matches!(e,Event::Selected{..})){*shell=PROFILES[0].shots[2];},
+            7=>if let Some(Event::Segment{end,..})=trace.events.iter_mut().find(|e|matches!(e,Event::Segment{..})){end[0]+=1.;},
+            8=>trace.events.push(Event::Segment{order:trace.next_order,battle_id:123,shot_id:1,server_tick:1001,
+                segment_tick_start:1001,segment_tick_end:1001,start:center,end:[3.,0.,0.],geometry_revision:FLIGHT_ONLY_GEOMETRY_REVISION}),
+            9=>trace.events.push(Event::Segment{order:trace.next_order+1,battle_id:123,shot_id:1,server_tick:1001,
+                segment_tick_start:1001,segment_tick_end:1001,start:center,end:[3.,0.,0.],geometry_revision:FLIGHT_ONLY_GEOMETRY_REVISION}),
+            _=>if let Some(Event::WreckImpact{policy_revision,..})=trace.events.last_mut(){*policy_revision="unverified-wreck";},
+        }
+        let before=trace.clone();assert!(append_wreck_splash(&mut trace,center,&contact,&result,&actor).is_err(),"poison {which}");assert_eq!(trace,before);
+    }
+    // A fabricated live Actor for the original wreck slot cannot become a
+    // second damage target for the same shell.
+    let bundle=super::super::geometry::tests::bundle();let shell=PROFILES[1].shots[2];
+    let own=bundle.explosion_contact(&actor,center,shell.explosion_radius_m.unwrap()as f32,1,1,1001).unwrap().unwrap();
+    let mut duplicate=result;duplicate.slot=1;let mut trace=base.clone();
+    assert!(trace.splash_resolution(123,1,1001,0,1,&own,center,&duplicate,90,0,
+        &terrain::tests::fixture(-10.,10.,3,vec![-10.;9]),&bundle,&actor).is_err());assert_eq!(trace,base);
+    let mut trace=base;append_wreck_splash(&mut trace,center,&contact,&result,&actor).unwrap();
+    for poison_order in [false,true]{
+        let mut poisoned=trace.clone();
+        if let Some(Event::SplashResolution{order,anchor_order,..})=poisoned.events.last_mut(){
+            if poison_order{*order=*anchor_order;}else{*anchor_order-=1;}
+        }
+        let before=poisoned.clone();assert!(poisoned.terminal(123,1,1001,TerminalReason::TestLabWreckImpact).is_err());assert_eq!(poisoned,before);
+    }
+}
+
+#[test]fn p06t_trace_wreck_splash_capacity_and_order_fail_before_mutation_and_reserve_terminal(){
+    let(base,center,contact,result,actor)=wreck_splash_fixture(false);
+    let mut overflow=base.clone();overflow.next_order=u32::MAX-1;let before=overflow.clone();
+    let error=append_wreck_splash(&mut overflow,center,&contact,&result,&actor).unwrap_err();
+    assert!(error.to_string().contains("capacity"));assert_eq!(overflow,before);
+    let mut filler=base.events[0].clone();if let Event::Selected{shot_id,..}=&mut filler{*shot_id=2;}
+    let mut full=base.clone();full.events.resize(full.event_limit()-1,filler.clone());
+    let before=full.clone();let error=append_wreck_splash(&mut full,center,&contact,&result,&actor).unwrap_err();
+    assert!(error.to_string().contains("capacity"));assert_eq!(full,before);drop(before);drop(full);
+    let mut exact=base;exact.events.resize(exact.event_limit()-2,filler);
+    append_wreck_splash(&mut exact,center,&contact,&result,&actor).unwrap();
+    exact.terminal(123,1,1001,TerminalReason::TestLabWreckImpact).unwrap();assert_eq!(exact.events.len(),exact.event_limit());
+}

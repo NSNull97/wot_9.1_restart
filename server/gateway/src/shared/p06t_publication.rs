@@ -42,6 +42,7 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
     }
     owner_snapshot(c,outbox,world)?;
     for event in world.damage_events.iter().skip(c.damage_cursor){
+        let primary=world.impacts.iter().find(|impact|impact.shot==event.shot).map(|impact|impact.target);
         if event.lethal()&&world.lifecycle.is_some(){
             let mut public=wire::roster_updates(world,event.target)?;
             public.extend(super::super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,event.reason)?);
@@ -51,11 +52,13 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
         // center unless this recipient saw the launch and currently sees both.
         if !event.direct&&event.reason==0&&event.health_after<event.health_before
             &&c.visible()[event.target]&&c.visible()[event.attacker]
+            &&primary.is_none_or(|slot|c.visible()[slot])
             &&c.tracer_started.get(event.shot as usize-1)==Some(&true){
             let projectile=world.projectiles.iter().find(|p|p.sequence==event.shot).ok_or_else(||model::bad())?;
             let shell=projectile.shell.ok_or_else(||model::bad())?;
             let body=native::explosion(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,projectile.terminal,shell)?;
             let mut targets=vec![event.target];if event.attacker!=event.target{targets.push(event.attacker);}
+            if let Some(primary)=primary{if !targets.contains(&primary){targets.push(primary);}}
             c.queue_private(outbox,body,&targets)?;
         }
         c.damage_cursor=event.sequence as usize;

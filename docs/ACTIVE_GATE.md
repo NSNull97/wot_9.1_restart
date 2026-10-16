@@ -3,10 +3,11 @@
 **P06T — типы снарядов, критические повреждения и пожар**, зависимая ветка
 `codex/p06t-mixed-shell-damage` после автоматически проверенного P04M.
 Source-bound БК3/current/next, frozen shell и v2writer, явный laboratory
-solver/module proxy/fire policy подключены. Focused05:74PASS/0FAIL/0ignored/
+solver/module proxy/fire policy подключены. Focused07:81PASS/0FAIL/0ignored/
 buildPASS. Actual World/Trace/geometry/LOS, scene-controls, owner publication,
 SQLite/HTTP и client CPython2.7.3 проверены автоматически. Полный final source
-gate ещё NOT_RUN. Native/UI/audio NOT_RUN; WT/FV пока source/scheduler-only,
+gate ещё NOT_RUN. Full01 прерван из-за найденного HE+wreck anchor bug,
+исправление и regression PASS в focused07. Native/UI/audio NOT_RUN; WT/FV пока source/scheduler-only,
 полная карточка не принята. План [P06T](plans/P06T.md),
 [факты и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 

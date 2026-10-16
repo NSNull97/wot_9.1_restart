@@ -117,3 +117,60 @@ fn p06t_private_attacker_epoch_discards_health_and_critical_then_rebuilds_owner_
     assert!(contains(&sent,&health(&world,0,None,0).unwrap()));
     assert!(!contains(&sent,&critical));assert!(!contains(&sent,&health_body));
 }
+
+#[test]
+fn p06t_private_he_splash_never_reveals_a_hidden_primary_vehicle_anchor() {
+    let now=Instant::now();let(mut s,mut world)=fixture(now);
+    // Publication-only authored collision: the source shooter and this victim
+    // are visible, but the primary retained wreck/vehicle is outside AoI.
+    let mut hidden=world.actors[1].clone();hidden.identity.account="hidden-primary".into();
+    hidden.identity.database=103;hidden.identity.name="hidden".into();hidden.health=0;
+    world.actors.push(hidden);
+    let shell=crate::p06t_shells091::profile(crate::p06t_shells091::Mount::Ms1Stock).shots[2];
+    let mut projectile=crate::gateway091::shared::projectile::Projectile::launch_shell_for_limit(1,1,&world.actors[1],now,world.shot_limit(),shell).unwrap();
+    projectile.stopped=true;projectile.terminal=[41.125,1.75,62.5];world.projectiles.push(projectile);
+    world.impacts.push(model::AppliedImpact{shot:1,attacker:1,target:2,tick:1001,outcome:model::ImpactOutcome::WreckBlocked,
+        health_before:0,health_after:0,segment:None});
+    world.actors[0].health=80;world.damage_events.push(model::DamageRecord{sequence:1,tick:1001,attacker:1,target:0,shot:1,reason:0,
+        health_before:90,health_after:80,crew_before:true,crew_after:true,direct:false,pierced:false});
+    let forbidden=native::explosion(wire::vehicle_id(0).unwrap(),wire::vehicle_id(1).unwrap(),projectile.terminal,shell).unwrap();
+    let c=s.shared.as_mut().unwrap();c.tracer_started[0]=true;
+    assert!(c.visible()[0]&&c.visible()[1]&&!c.visible()[2]);
+    publish(c,&mut s.outbox,&world,now).unwrap();
+    assert_eq!(c.damage_cursor,1);
+    assert!(c.private_pending.iter().all(|packet|!contains(&packet.body,&forbidden)));
+    assert!(s.outbox.iter().all(|packet|!contains(packet,&forbidden)));
+    assert!(c.private_pending.iter().any(|packet|contains(&packet.body,&native::owner_health(80,true,90).unwrap())),
+        "private HP catch-up must survive suppression of the hidden explosion center");
+}
+
+#[test]
+fn p06t_private_he_center_tracks_the_primary_vehicle_epoch_until_flush() {
+    let now=Instant::now();let(mut s,mut world)=fixture(now);
+    let mut primary=world.actors[1].clone();primary.identity.account="visible-primary".into();
+    primary.identity.database=103;primary.identity.name="third".into();primary.devices=Some(fuel_damage(true).0);
+    assert_eq!(primary.health,90);assert!(!primary.alive());world.actors.push(primary);
+    let c=s.shared.as_mut().unwrap();
+    c.interest.as_mut().unwrap().set_desired(mask(&[0,1,2]),mask(&[0,1,2])).unwrap();
+    let enter=s.tx.enqueue_body_tracked(&wire::enter_vehicle(2).unwrap()).unwrap();c.mark_announced(&[2],enter).unwrap();
+    let create=s.tx.enqueue_body_tracked(&wire::create_vehicle(&world,2).unwrap()).unwrap();
+    c.creations[2]=Some((create,false));c.creation_announcements[2]=Some(enter);
+    while s.tx.due(now,s.rx).unwrap().is_some(){}
+    let ack=transport091::parse(&transport091::ack(create+1)).unwrap();s.tx.acknowledge(&ack).unwrap();c.acknowledge(s.tx.cumulative,&ack).unwrap();
+    assert!(c.visible()[2]);c.health_sent[2]=Some(90);c.crew_sent[2]=Some(false);c.fire_sent[2]=Some(true);
+    let shell=crate::p06t_shells091::profile(crate::p06t_shells091::Mount::Ms1Stock).shots[2];
+    let mut projectile=crate::gateway091::shared::projectile::Projectile::launch_shell_for_limit(1,1,&world.actors[1],now,world.shot_limit(),shell).unwrap();
+    projectile.stopped=true;projectile.terminal=[41.125,1.75,62.5];world.projectiles.push(projectile);
+    // Authored publication-only direct result; no geometric/native acceptance.
+    world.impacts.push(model::AppliedImpact{shot:1,attacker:1,target:2,tick:1001,outcome:model::ImpactOutcome::WreckBlocked,
+        health_before:90,health_after:90,segment:None});
+    world.actors[0].health=80;world.damage_events.push(model::DamageRecord{sequence:1,tick:1001,attacker:1,target:0,shot:1,reason:0,
+        health_before:90,health_after:80,crew_before:true,crew_after:true,direct:false,pierced:false});
+    c.tracer_started[0]=true;publish(c,&mut s.outbox,&world,now).unwrap();
+    let explosion=native::explosion(wire::vehicle_id(0).unwrap(),wire::vehicle_id(1).unwrap(),projectile.terminal,shell).unwrap();
+    let packet=c.private_pending.iter().find(|packet|contains(&packet.body,&explosion)).unwrap();
+    assert_eq!(packet.targets,vec![(0,0),(1,0),(2,enter)]);
+    c.interest.as_mut().unwrap().set_desired(mask(&[0,1,2]),mask(&[0,1])).unwrap();
+    s.flush_shared_private().unwrap();assert!(!contains(&fresh_bodies(&s,now),&explosion));
+    assert!(s.shared.as_ref().unwrap().private_pending.iter().all(|packet|!contains(&packet.body,&explosion)));
+}

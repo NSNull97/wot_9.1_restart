@@ -286,3 +286,46 @@ fn p06t_world_source_view_range_reacts_to_optics_and_combined_commander_capabili
         assert!(w.desired_visibility(1).unwrap()[0],"the healthy observer retains its own source range");
     }
 }
+
+#[test]
+fn p06t_world_he_hits_retained_wreck_then_splashes_actual_nearby_live_source_geometry() {
+    // Both HP0 and genuine HP90/inactive-crew bodies retain the original mesh.
+    // The shot and explosion are actual World queries; prior casualties are
+    // explicit LAB setup and do not manufacture a contact or a LOS result.
+    for wreck_hp in [0,90] {
+        let now=Instant::now();let mut w=World::new_for_roster(6973,now,crate::map_profile091::MapId::Karelia,3).unwrap();
+        for kind in VehicleKind::ALL {w.bind_geometry(geometry(kind)).unwrap();}
+        w.enable_ap_test_lab().unwrap();w.bind_terrain(low_ground()).unwrap();w.enable_mixed_ammo().unwrap();
+        lab_attach(&mut w,VehicleKind::Is7,0,[0,0,3]);lab_attach(&mut w,VehicleKind::Ms1,1,[2,2,2]);lab_attach(&mut w,VehicleKind::Ms1,2,[2,2,2]);
+        for(slot,p)in [[0.,0.,0.],[0.,0.,20.],[1.75,0.,20.]].into_iter().enumerate(){
+            w.actors[slot].position=p;w.actors[slot].origin=p;w.actors[slot].direction=[0.;3];w.actors[slot].yaw=0.;
+        }
+        w.actors[1].health=wreck_hp;
+        if wreck_hp>0 {
+            let shell=source::profile(Mount::Ms1Stock).shots[0];
+            for seat in 0..2 {w.actors[1].devices.as_mut().unwrap().apply_hits(&[device::ModuleHit{
+                cause:device::Cause{shot:seat as u32+1,attacker_slot:0},ordinal:0,at_ms:0,
+                target:crate::p06t_lab_proxy::Target::Seat(seat),shell,ignition_roll:0.9}],
+                device::Health{hp:90,max_hp:90,terminal:false}).unwrap();}
+        }
+        assert!(!w.actors[1].alive());w.actors[1].aim.park();
+        w.start(now).unwrap();for slot in 0..3 {w.set_ready(slot,slot as u32+1).unwrap();}
+        let bundle=w.geometry_for(VehicleKind::Ms1).unwrap().clone();
+        let point=bundle.explosion_contact(&w.actors[1],[0.,1.,15.],16.,1,1,1000).unwrap().unwrap().endpoint;
+        aim_at(&mut w,0,point,now);let at=now+Duration::from_secs(2);
+        w.apply(0,1,&[Command::Armament(arm::Command::Shoot)],at).unwrap();
+        assert_eq!(w.projectiles[0].shell.unwrap().family,source::Family::HighExplosive);
+        w.advance(at+STEP).unwrap();
+        assert_eq!(w.contacts.len(),1);assert_eq!(w.contacts[0].target_slot,1);assert!(bundle.proxy_ray(&w.contacts[0]).is_ok());
+        assert_eq!(w.impacts.len(),1);assert_eq!(w.impacts[0].outcome,ImpactOutcome::WreckBlocked);
+        assert_eq!((w.impacts[0].health_before,w.impacts[0].health_after),(wreck_hp,wreck_hp));
+        assert_eq!(w.actors[1].health,wreck_hp);assert!(!w.actors[1].alive());assert!(w.actors[2].health<90);
+        assert_eq!(w.damage_events.len(),1);let damage=&w.damage_events[0];
+        assert_eq!((damage.target,damage.attacker,damage.shot,damage.reason,damage.direct),(2,0,1,0,false));
+        assert_eq!(damage.health_before,90);assert_eq!(damage.health_after,w.actors[2].health);
+        assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::SplashResolution{target:2,center,..}if *center==w.projectiles[0].terminal)));
+        assert!(matches!(w.impact.events().last(),Some(impact::Event::Terminal{reason:impact::TerminalReason::TestLabWreckImpact,..})));
+        let before=w.clone();w.advance(at+STEP*2).unwrap();
+        assert_eq!(w.impact,before.impact);assert_eq!(w.damage_events,before.damage_events);assert_eq!(w.actors[2].health,before.actors[2].health);
+    }
+}

@@ -159,7 +159,11 @@ roster size; writer проверяет также расход каждого st
 | Focused04 |72PASS/2FAIL/0ignored; actual Jolt destroyed-engine/healthy движение PASS; обе ошибки в новых World fixtures |
 | Исправления после04 | wreck comparison исключает observed clocks; gun fixture проверяет фактический launch ray, исходный strict gun gate сохранён |
 | Focused05 |74PASS/0FAIL/0ignored,31.88с,buildPASS; все8 World tests PASS, включая actual gun и positive-HP crewless wreck |
-| Новый view-scale World test после05 | source240m baseline→optics120m/commander180m при target200m, **NOT_RUN** до полного gate |
+| View-scale World test после05 | source240m baseline→optics120m/commander180m при target200m, focused06 PASS |
+| Full01 head3a059f1 | запущен с681 source files, остановлен по найденному HE+wreck Trace edge; **NOT_PASS**, receipt сохранён |
+| HE+wreck World test после05 |3 actors, HP0/HP90 inactive wreck и actual nearby splash, focused06 PASS |
+| Focused06 |80PASS/1FAIL/0ignored; все10 World tests PASS, один protocol late-anchor poison FAIL; общий build gate не PASS |
+| Focused07 |81PASS/0FAIL/0ignored,31.34с,buildPASS;10 World tests, source-bound wreck anchor/terminal/poisons и2 publication privacy/epoch regressions PASS |
 | Полный gateway / новые bindings | **NOT_RUN / PENDING** до отдельного сохранённого результата |
 | Native/UI/audio/полный утренний цикл | **NOT_RUN** |
 
@@ -188,7 +192,10 @@ Standalone19PASS относится к закреплённому snapshot в е
 toolchains и source pins находятся в каждом result/test.command receipt.
 Gateway exe focused05 SHA256:
 `bb451571bb4f85b0a3222d83688701f45c858ebec838356ad14ba63eb2ac6959`.
-Дополнительный view-range World test написан после focused05 и не включён в74.
+Gateway exe focused07 SHA256:
+`cd8a9f62a9d0e457186595a5a81eacad0e185fa031745ea4e56b16be177c53e3`.
+Дополнительные view-range и HE+wreck World tests написаны после focused05
+и не включены в74.
 Каноническая команда focused gate:
 
 ```powershell
@@ -198,7 +205,21 @@ python -B -X utf8 tools/p06t_device_source.py --original-root C:/WoT_0.9.1_RU_07
 
 Output directories должны быть свежими; существующие receipts не перезаписывать.
 Первый пример выполнен в focused05; полный regression/build gate конечного
-head с дополнительным view-range test ещё требуется.
+head с двумя дополнительными World tests ещё требуется.
+
+Read-only audit после05 обнаружил отдельный дефект: World запускает HE splash
+после retained-wreck contact, но Trace принимал explosion anchor только от
+MixedResolution/TerrainContact, а wreck terminal требовал последний
+WreckImpact. Если рядом оказывалась живая машина в radius, корректный splash
+мог завершиться ошибкой Trace. Full01 остановлен, факт не скрыт зелёным74.
+Новый regression запускает настоящий IS7 HE в MS1 wreck и рядом живой MS1,
+для нулевого HP и положительного HP/погибшего экипажа. Контакт, explosion
+center и LOS не подставляются фикстурой. Статус исправления и реального
+запуска: focused06 прошёл10 World tests, в том числе обе wreck ветки и view
+scale. FAIL в protocol poison8 обнаружил разрешение нового Segment между
+WreckImpact и splash; focused07 прошёл81 tests/build после закрытия этого
+late-anchor инварианта. Взрыв не подавляется заглушкой. Полный общий regression
+gate конечного head ещё **PENDING**.
 
 ## WT/FV, границы приёмки и откат
 
@@ -208,6 +229,31 @@ VERIFIED SOURCE/компонент scheduler: WT E100128мм clip6/interval2с/r
 машин отсутствуют.** У FV также нужен отдельный versioned catalogue correction
 для original UK nationID5; frozen P04M catalogue под старым SHA не меняется.
 Нельзя на основании source-only scheduler назвать WT/FV playable/P06T accepted.
+
+Свежий read-only scope audit: `local/night-staging/20261016/p06t-damage01/
+wt-fv-scope01/{audit.py,result.json,REPORT.md}`, PASS_STATIC_SCOPE_ONLY.
+Rehashed pinned original WT/FV XML, национальные component files и27 небольших
+collision members; whole package SHA не пересчитан и не заявлен. Оригинальные
+пути установлены фактически: `res/packages/vehicles_german.pkg` →
+`vehicles/german/G98_Waffentrager_E100/collision/` и
+`res/packages/vehicles_british.pkg` →
+`vehicles/british/GB48_FV215b_183/collision/` под тем же проверенным original root.
+
+| Реальная граница WT/FV qualification | Что требуется сверх shell scheduler |
+|---|---|
+| Закрытые importers | `p04m_battle_profiles.py` принимает3 USSR сборки, `vehicle_physics_profile.py` только IS7. Переиспользуются bounded readers/алгебра, не их готовые profiles/pins |
+| Physics/supports | WT20 individual wheels/no groups; FV groups WD_L,W_L,WD_R,W_R. Нужна новая versioned mapping, текущая требует первые W_L/W_R; actual Jolt getter bits/inertia/contact gates обязательны |
+| WT assembly identity |128=100000кг/Gun_01,150=97800кг/Gun_02 из actual mass sum; один vehicleCD16913. Нужен различимый assembly/mount либо явно только128 runtime; перепутать profiles нельзя |
+| Aim | FV source yaw limits `-45 45`; WT basic pitch `-15 5`, rear `-7 5 37`, transition5. Текущий360° yaw и rear-only-max/constant-min не выражают это; units5 ещё нужно доказать reader-ом |
+| Closed Rust/C# | VehicleKind/Profile/scene Kind5, World geometries[5], source_profiles[5], manifestv3 exact5; C# StockDefinitions strict3 и AngularBodyBinding kinds требуют versioned расширения |
+| Crew/damage | WT6 primary seats, FV5; текущие crew[bool;5]/PoolCrew≤5 и source caps5 требуют новых source-bound maxima/roles/extras/terminal pins |
+| Owned/native | registry USSR-only, pool ammo closed15, v2 Frozen admission/terminal maxima закрытыMS1/IS7; нужны source descriptors, real SQLite ownership/ammo/crew proof и FV catalogue UK5 migration |
+
+WT128100000кг находится ровно на существующей inclusive mass границе;
+необходимость расширять её не установлена. Из этих source фактов не следует,
+что действующий контроллер, contact tolerance≤5см или native UI уже прошли
+квалификацию. Полноценные WT/FV требуют отдельных actual-source import,
+getter→scalarFrameProof→World/ACK и owner gates, сохраняя старые5 regressions.
 
 Пока не реализованы ammo-bay explosion, turret detach, ремонт/восстановление
 экипажа, оригинальные multi-layer penetration и historical damage variance.
@@ -223,5 +269,4 @@ SQLite backup, без удаления version markers/ручного смеши
 T26/T34/T34-85 остаются false до owner gates.
 
 Единственный следующий рекомендуемый шаг: полный canonical source-before/
-after/build gate конечного P06T head, включая новый view-range World test,
-перед подготовкой утреннего стенда.
+after/test/build gate конечного P06T head перед подготовкой утреннего стенда.

@@ -19,6 +19,12 @@ production guards и source contact assertions. Focused05 в
 31.88с tests; exe SHA256
 `bb451571bb4f85b0a3222d83688701f45c858ebec838356ad14ba63eb2ac6959`.
 Полный canonical source gate пока **NOT_RUN**.
+Следующий focused07 после HE+wreck anchor и скрытого primary explosion
+исправлений: **81PASS/0FAIL/0ignored/buildPASS**,31.34с; exe SHA
+`cd8a9f62a9d0e457186595a5a81eacad0e185fa031745ea4e56b16be177c53e3`.
+Все10World tests прошли. Full01 на3a059f1 прерван при обнаружении HE+wreck
+ошибки, `local/evidence/20261016-p06t-full01/interrupted.json`/partiallogs
+сохранены как NOT_PASS. Исправленный полный finalgate ещё NOT_RUN.
 
 Включение только явным `p06t_mixed_ammo=true` и client prepare флагом
 `--enable-p06t-mixed-ammo` вместе с profile13/P04M. Старый v1/AP режим сохраняется.

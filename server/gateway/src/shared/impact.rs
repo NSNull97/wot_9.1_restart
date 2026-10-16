@@ -580,12 +580,12 @@ impl Trace {
         let previous_segment_end = self.last_segment_end(shot_id);
         let valid_stage = match reason {
             TerminalReason::TestLabImpact => self.last_stage(shot_id) == Some(Stage::ApResolution),
-            TerminalReason::TestLabMixedImpact => matches!(self.last_stage(shot_id),Some(Stage::MixedResolution|Stage::SplashResolution))
-                &&self.events.iter().any(|e|matches!(e,Event::MixedResolution{shot_id:s,..}if *s==shot_id)),
-            TerminalReason::TestLabWreckImpact => self.last_stage(shot_id) == Some(Stage::WreckImpact),
+            TerminalReason::TestLabMixedImpact => self.last_stage(shot_id)==Some(Stage::MixedResolution)
+                ||self.last_splash_anchor_stage(battle_id,shot_id,server_tick)?==Some(Stage::MixedResolution),
+            TerminalReason::TestLabWreckImpact => self.last_stage(shot_id)==Some(Stage::WreckImpact)
+                ||self.last_splash_anchor_stage(battle_id,shot_id,server_tick)?==Some(Stage::WreckImpact),
             TerminalReason::TerrainCollision => matches!(self.last_stage(shot_id),Some(Stage::TerrainContact|Stage::DestructibleTransition|Stage::FragileDamage))
-                ||matches!(self.events.iter().rev().find(|e|e.shot_id()==shot_id),Some(Event::SplashResolution{anchor_order,..})
-                    if matches!(self.events.iter().find(|e|e.order()==*anchor_order),Some(Event::TerrainContact{..}))),
+                ||self.last_splash_anchor_stage(battle_id,shot_id,server_tick)?==Some(Stage::TerrainContact),
             TerminalReason::UnresolvedCollision =>
                 matches!(self.last_stage(shot_id), Some(Stage::Intersection | Stage::MaterialContact))
                     && self.selected_terrain(battle_id, shot_id, server_tick)?.is_none(),
@@ -696,6 +696,93 @@ impl Trace {
         self.last_tick=server_tick;Ok(())
     }
 
+    /// Derive the explosion position from the recorded server query. A wreck
+    /// has no MixedResolution/HP transaction, so follow its exact material link
+    /// back to the nearest intersection and its flight segment instead.
+    fn splash_anchor(&self,battle_id:u64,shot_id:u32,server_tick:u32,attacker:usize,
+        shell:crate::p06t_shells091::Shell)->io::Result<(u32,[f32;3],Stage)>{
+        crate::p06t_damage::source_shell(shell)?;
+        if shell.family!=crate::p06t_shells091::Family::HighExplosive
+            ||self.selected_shell(shot_id)!=Some(Some(shell))
+            ||self.admission_facts(shot_id).map(|v|v.0)!=Some(attacker)
+            ||!crate::p06t_shells091::profile(self.kind_for_slot(attacker)?.mount()).shots.contains(&shell){
+            return Err(invalid("splash anchor frozen HE source"));
+        }
+        let(anchor_index,anchor)=self.events.iter().enumerate().rev().find(|(_,e)|e.shot_id()==shot_id
+            &&matches!(e,Event::MixedResolution{..}|Event::WreckImpact{..}|Event::TerrainContact{..}))
+            .ok_or_else(||invalid("splash absent current explosion anchor"))?;
+        match anchor{
+            Event::MixedResolution{order,battle_id:b,server_tick:t,attacker:a,shell:retained,contact,..}
+                if *b==battle_id&&*t==server_tick&&*a==attacker&&*retained==shell=>Ok((*order,contact.endpoint,Stage::MixedResolution)),
+            Event::TerrainContact{order,battle_id:b,server_tick:t,hit,..}
+                if *b==battle_id&&*t==server_tick=>Ok((*order,hit.point,Stage::TerrainContact)),
+            Event::WreckImpact{order,battle_id:b,server_tick:t,attacker:a,target,material_order,policy_revision,health_before,health_after,..}
+                if *b==battle_id&&*t==server_tick&&*a==attacker=>{
+                let kind=self.kind_for_slot(*target)?;
+                if *target==attacker||health_before!=health_after||!(0..=kind.max_health()).contains(health_before)
+                    ||!(*policy_revision=="test_lab.p06t.inactive-crew-retained-HP-wreck.v1"
+                        ||*health_before==0&&*policy_revision==super::model::wreck_policy_revision_for(kind)){
+                    return Err(invalid("splash wreck source actor/health policy"));
+                }
+                let(query,segment,intersection,facts)=match self.events.iter().find(|e|e.order()==*material_order){
+                    Some(Event::MaterialContact{order:m,battle_id:mb,shot_id:s,server_tick:mt,query_order,segment_order,intersection_order,candidate_index:0,facts})
+                        if *mb==battle_id&&*s==shot_id&&*mt==server_tick&&*m<*order
+                            &&query_order.checked_add(1)==Some(*intersection_order)=>(*query_order,*segment_order,*intersection_order,facts),
+                    _=>return Err(invalid("splash wreck material order")),
+                };
+                let pose_prefix=format!("pose-v1:{target}:{server_tick}:");
+                let(parameter,geometry_revision,transform_revision)=match self.events.iter().find(|e|e.order()==intersection){
+                    Some(Event::Intersection{battle_id:ib,shot_id:s,server_tick:it,query_order,segment_order,candidate_index:0,mesh,material,t,normal,geometry_revision,transform_revision,..})
+                        if *ib==battle_id&&*s==shot_id&&*it==server_tick&&*query_order==query&&*segment_order==segment
+                            &&mesh.as_str()==facts.component.name()&&*material==facts.name&&finite_vector(*normal)
+                            &&t.is_finite()&&(0. ..=1.).contains(t)&&*geometry_revision==super::geometry::source_revision(kind)
+                            &&facts.profile_revision==materials::profile_revision(kind)
+                            &&transform_revision.strip_prefix(&pose_prefix).is_some_and(|digest|digest.len()==64
+                                &&digest.bytes().all(|c|c.is_ascii_digit()||(b'a'..=b'f').contains(&c)))=>(*t,geometry_revision,transform_revision),
+                    _=>return Err(invalid("splash wreck nearest intersection/pose/source")),
+                };
+                if !matches!(self.events.iter().find(|e|e.order()==query),
+                    Some(Event::CollisionQuery{battle_id:qb,shot_id:s,server_tick:qt,segment_order,candidate_count,geometry_revision:g,transform_revision:p,..})
+                        if *qb==battle_id&&*s==shot_id&&*qt==server_tick&&*segment_order==segment&&segment<query
+                            &&*candidate_count>0&&*candidate_count<=collision::MAX_CANDIDATES
+                            &&query.checked_add(*candidate_count as u32+1)==Some(*material_order)
+                            &&g==geometry_revision&&p==transform_revision){return Err(invalid("splash wreck collision query binding"));}
+                let(start,end)=match self.events.iter().find(|e|e.order()==segment){
+                    Some(Event::Segment{battle_id:sb,shot_id:s,server_tick:st,segment_tick_end,start,end,..})
+                        if *sb==battle_id&&*s==shot_id&&*st==server_tick&&*segment_tick_end==server_tick&&finite_vector(*start)&&finite_vector(*end)=>(*start,*end),
+                    _=>return Err(invalid("splash wreck retained flight segment")),
+                };
+                if self.terrain_for_query(battle_id,shot_id,server_tick,segment,query)?.is_some_and(|(_,hit)|hit.is_some_and(|hit|hit.t as f32<=parameter)){
+                    return Err(invalid("splash wreck behind selected terrain"));
+                }
+                let center=std::array::from_fn(|i|start[i]+parameter*(end[i]-start[i]));
+                // Once this shot reached the wreck, no later flight/query or
+                // unrelated outcome may borrow it as an old explosion anchor.
+                if !finite_vector(center){return Err(invalid("splash wreck center bound"));}
+                let mut previous_order=*order;
+                // Use actual journal position, not an order-number filter:
+                // a malformed duplicate/regressing order must not hide a row.
+                for event in self.events[anchor_index+1..].iter().filter(|e|e.shot_id()==shot_id){
+                    if event.order()<=previous_order||!matches!(event,Event::SplashResolution{battle_id:sb,server_tick:st,attacker:a,anchor_order,center:c,shell:retained,..}
+                        if *sb==battle_id&&*st==server_tick&&*a==attacker&&*anchor_order==*order&&*c==center&&*retained==shell){
+                        return Err(invalid("splash wreck late or substituted anchor"));
+                    }
+                    previous_order=event.order();
+                }
+                Ok((*order,center,Stage::WreckImpact))
+            },
+            _=>Err(invalid("splash stale explosion anchor")),
+        }
+    }
+    fn last_splash_anchor_stage(&self,battle_id:u64,shot_id:u32,server_tick:u32)->io::Result<Option<Stage>>{
+        let Some(Event::SplashResolution{battle_id:b,server_tick:t,attacker,anchor_order,center,shell,..})=
+            self.events.iter().rev().find(|e|e.shot_id()==shot_id) else{return Ok(None);};
+        if *b!=battle_id||*t!=server_tick{return Err(invalid("splash terminal tick/battle"));}
+        let(order,point,stage)=self.splash_anchor(battle_id,shot_id,server_tick,*attacker,*shell)?;
+        if order!=*anchor_order||point!=*center{return Err(invalid("splash terminal retained anchor"));}
+        Ok(Some(stage))
+    }
+
     /// Requery both source vehicle triangles and terrain/static LOS. A supplied
     /// bool/distance/material cannot stand in for the actual query witnesses.
     pub fn splash_resolution(&mut self,battle_id:u64,shot_id:u32,server_tick:u32,attacker:usize,target:usize,
@@ -710,13 +797,11 @@ impl Trace {
             ||contact.shot!=shot_id||contact.target_slot!=target||contact.tick!=server_tick||resolution.slot as usize!=target
             ||self.events.iter().any(|e|matches!(e,Event::SplashResolution{shot_id:s,target:t,..}if *s==shot_id&&*t==target))
             ||self.events.iter().any(|e|matches!(e,Event::MixedResolution{shot_id:s,target:t,..}if *s==shot_id&&*t==target))
+            ||self.events.iter().any(|e|matches!(e,Event::WreckImpact{shot_id:s,target:t,..}if *s==shot_id&&*t==target))
             ||self.events.iter().filter(|e|matches!(e,Event::SplashResolution{shot_id:s,..}if *s==shot_id)).count()>=self.actor_limit(){
             return Err(invalid("splash identity/actor/duplicate/bounds"));
         }
-        let(anchor_order,anchor)=self.events.iter().rev().find_map(|e|match e{
-            Event::MixedResolution{order,shot_id:s,server_tick:t,contact,..}if *s==shot_id&&*t==server_tick=>Some((*order,contact.endpoint)),
-            Event::TerrainContact{order,shot_id:s,server_tick:t,hit,..}if *s==shot_id&&*t==server_tick=>Some((*order,hit.point)),_=>None,
-        }).ok_or_else(||invalid("splash absent current explosion anchor"))?;
+        let(anchor_order,anchor,_)=self.splash_anchor(battle_id,shot_id,server_tick,attacker,shell)?;
         if center!=anchor||!finite_vector(center)||geometry.explosion_contact(target_actor,center,radius as f32,shot_id,target,server_tick)?.as_ref()!=Some(contact){
             return Err(invalid("splash center or actual geometry witness differs"));
         }
