@@ -41,3 +41,10 @@ output directories перед их первыми writes; старые файл�
 source/test файлов или predecessor43790d1; хранить C target и receipts до
 окончания зависимых проверок. Единственный следующий шаг — fresh-output
 compression prerequisite, затем Hold5, без изменения production path guards.
+
+После сохранения веток Git checkout нормализовал один новый тест в CRLF.
+Проверка876raw это обнаружила: normalized content был тем же. Точные проверенные
+LF bytes восстановлены из sealed C source archive; отдельный .gitattributes
+pin предотвращает повторение. Receipt checkout-eol-restoration.json рядом с
+полным proof. Это восстановление tested bytes, не новый запуск тестов и не
+подмена исходника ради прохождения gate; все876raw снова совпали с full.

@@ -98,3 +98,5 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /server/gateway/src/shared/p10b_loss*.rs text eol=lf
 /server/gateway/src/shared/p10b_compensated_reset_tests.rs text eol=lf
 /web/tests/helpers/p10b-loss-composition.mjs text eol=lf
+
+/tests/test_build_temp_reference.py text eol=lf
