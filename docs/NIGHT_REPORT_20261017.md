@@ -19,6 +19,26 @@ buildPASS, 689 raw source files exact. Владелец подтвердил п�
 B42/[0,50,46],active0; источник не изменялся. Старые клиенты/службы затем
 остановлены только собственными PID/exe/creation receipts.
 
+## P08C: поздние итоги — software checkpoint
+
+Ветка `codex/p08c-late-owner-results`, runtimeea43262 от6289216.
+Full1224PASS/0FAIL/5oldignored/buildPASS,740rawsourceexact,443.32s tests/
+484.18s driver. Actual loss4 Runtime→JobLoss/Dispatcher→World final seal→HTTP/
+SQLite→reopen/pending→1500/1501 PASS. Early A manual return и natural B используют
+один sealed Results; append не выполняет второй inventory Finish. SQL17+1,
+Web5+37, actualHTTP1+1 PASS0skip; focused34+1. Full01 FAIL1223/1/5 retained:
+в test helper исправлен только explicit pool loader. Подробности/команды:
+[P08C_LATE_OWNER_RESULTS](research/P08C_LATE_OWNER_RESULTS.md).
+
+Evidence `local/evidence/20261017-p08c-late-full02/composition-full.json`,
+exe e5310617717be1772e21f0a0d6d74297fad8c101d507551b2d6ea4211bcdaa0f.
+Raw archive12667ffada762c40352aec7673a73d6e13ac80df81bde8a29126ea2e6ee9f60f.
+Native notice0x4bINFERRED/defaultfalse, UI/UDP/Jolt composition NOT_RUN.
+Crash beforeappend и изменённый parked actor не закрыты; для N>2 отдельно
+проектируется заранее frozenHold5, старый contract4 не переосмысляется.
+Mainffce8cb unchanged. Следующая отдельная ветка — seven+loss P06T integration,
+затем typed loss4 P10B и NET-02; новый утренний binding ещё необходим.
+
 ## P08B: restart/warm/full/следующая CAS — software checkpoint
 
 Ветка `codex/p08b-restart-cas-composition`, runtime7ff8b30 от BUILD-TEMP7d2252f.
@@ -152,5 +172,5 @@ CoreV7 ledgers и оригинальный клиент сохраняются; 
 старым writer её не обслуживать.
 
 Статус приёмки: P06T автоматическая часть PASS, новая native механика NOT_RUN;
-main без новых слияний. Единственный следующий шаг — P08B restart/CAS
-composition в новой зависимой ветке и дальнейшая ночная работа по плану.
+main без новых слияний. Текущий следующий шаг после сохранённых P08B/P08C — отдельная seven+loss
+P06T integration ветка, затем P10B/NET и свежий утренний source binding.

@@ -5,6 +5,13 @@
 
 ## Сборка и тесты
 
+- P08C late runtimeea43262 full1224PASS/5oldignored/buildPASS,740rawsourceexact;
+  actual loss4 Runtime→HTTP/SQL/reopen/pending/1500/1501 PASS. Evidence
+  20261017-p08c-late-full02/composition-full.json. Actual pool test helper
+  обязан Fixtures::load_p04m, metadata_research остаётся original production.
+  SQL17+1/Web5+37/HTTP1+1 PASS0skip. Notice0x4b INFERRED/nativeNOT_RUN.
+  СтарыеDBнеоткатыватьповерхновойlatehistory; новыйreaderобязателен.
+
 - P08B regular restart composition на7ff8b30: gateway-p08b-composition-full02,
   1189PASS/5oldignored/buildPASS/716rawsourceexact. Новый test обычный, сам
   запускает Node controller и same test exe2phases; noextraignored/noenvskip.

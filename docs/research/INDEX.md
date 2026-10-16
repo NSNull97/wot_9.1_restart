@@ -9,6 +9,7 @@
 - [P08B_PROFILE13_BATTLE.md](P08B_PROFILE13_BATTLE.md) — P08B: выбранный owned loadout профиля13, резерв/результат/restart и native gate в работе
 - [P08B_RESTART_CAS_COMPOSITION.md](P08B_RESTART_CAS_COMPOSITION.md) — actual AP-only HTTP/SQL/restart/Fresh/warm/full/nextCAS, full1189PASS; native/loss4 variant NOT_RUN
 - [P08C_NATIVE_LIFECYCLE.md](P08C_NATIVE_LIFECYCLE.md) — #717 period/base/death/results field order, streams и источники
+- [P08C_LATE_OWNER_RESULTS.md](P08C_LATE_OWNER_RESULTS.md) — actual loss4 immutable late append/reopen/1500/1501, full1224; native notice/изменённый parked actor NOT_RUN
 - [P08C_BATTLE_CYCLE.md](P08C_BATTLE_CYCLE.md) — authoritative cycle, atomic writer results, policy и утренняя native матрица
 - [P08C_NATIVE_MARKER_TEAM.md](P08C_NATIVE_MARKER_TEAM.md) — исправление publicInfo.team, full1099 и owner+actual wire приёмка маркеров обоими
 - [P08C_NATURAL_RESULTS_RETURN.md](P08C_NATURAL_RESULTS_RETURN.md) — late bind/details fix1130PASS; native повтор прерван autoAim/Disconnect, засвет в итогах Ёжа OBSERVED

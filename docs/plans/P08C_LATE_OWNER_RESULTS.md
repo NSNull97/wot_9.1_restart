@@ -59,3 +59,11 @@ actual Runtime→HTTP/SQL/Native ещё NOT_RUN. Evidence20261017-p08c-late-focu
 Из peer-review исправлены emptyCapture registry leak, globalpage noticecap
 starvation и worker-exit barrier доjoin. Writer04 final08 и coherent composition05
 пока независимые ignored candidates; card/full gate ещё не завершены.
+
+
+Final software checkpoint runtimeea43262: full1224PASS/0FAIL/5oldignored/
+buildPASS/740rawsourceexact; actualcomposition06 focused1PASS и full02PASS.
+Writer17+1/Web5+37/HTTP1+1 PASS0skip. Точные scope/retainedFAIL/rollback в
+research/P08C_LATE_OWNER_RESULTS.md. Native0x4b/notice/UI/UDP NOT_RUN;
+mandatorycardнепринята, planсохраняетсядоmerge. Следующий ночной шаг —
+отдельнаяP06Tsevenintegration. НикакойстарыйFinishнепереписывался.

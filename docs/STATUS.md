@@ -1,187 +1,56 @@
 # Состояние проекта — 2026-10-17
 
-P08C late-owner runtime component332ea1a: focused34PASS/0FAIL/0ignored/buildPASS,
-729rawsourceexact. Current codex/p08c-late-owner-results; writer04 final08 и
-actual Runtime→HTTP/SQL composition05 ещё готовятся, полный gate NOT_RUN.
-Native notification experimental/defaultfalse/NOT_RUN. Старые Finish/ammo/
-revisions не переписываются; unchanged release/final actor только, остальные
-LATE_ACTOR_STATE_CHANGED. Mainffce8cb unchanged. План P08C_LATE_OWNER_RESULTS.
+Ночь продолжается до09:00 Asia/Yekaterinburg без ручных проверок. Текущая
+ветка `codex/p08c-late-owner-results`, runtimeea43262: software checkpoint
+**full1224PASS/0FAIL/5oldignored/buildPASS/740rawsourceexact**. Actual
+HTTP/SQL/Dispatcher/World seal/reopen/pending/1500/1501 PASS; native/UI/звук/
+gameplayUDP NOT_RUN. [Факты](research/P08C_LATE_OWNER_RESULTS.md).
+Следующий ночной шаг — P06T seven+loss integration, затем P10B и NET-02.
 
-P08B restart composition7ff8b30: full1189PASS/0FAIL/5oldignored/buildPASS,
-716rawsourceexact; actualHTTP/SQL/processrestart/Fresh/warm2→full1→nextCAS2
-PASS, focused1/Node11PASS0skip. AP-only contract1, syntheticSession/ACK/HP0;
-native/UI/gameplayUDP/loss4 complete composition NOT_RUN. Stand unchanged,
-loss-01 current A129/B43/active0, services stopped. Mainffce8cb unchanged.
-[Факты](research/P08B_RESTART_CAS_COMPOSITION.md). Следующий P08C late results.
+Main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe` сохранён. Непринятые карточки
+в отдельных зависимых ветках; отложенные ручные gates не подменяются PASS.
+[ACTIVE_GATE](ACTIVE_GATE.md), [порядок](IMPLEMENTATION_ORDER.md),
+[ночной отчёт](NIGHT_REPORT_20261017.md), [DEV_NOTES](DEV_NOTES.md).
 
-BUILD-TEMP0e970b7:11 Python guards +actual C-target canonical full1188PASS/
-0FAIL/5oldignored/buildPASS,713rawsourceexact. Проверенный19.6MB exe скопирован
-в D output, C intermediates/старые данные сохранены, deployed не заменён.
-Evidence `local/evidence/20261016-build-temp01/actual-copy.json`.
-Зависимая codex/build-temp-cargo-target, не main; далее P08B restart/CAS.
+## Проверенные ночные software checkpoints
 
-P06T ammo-rack-loss candidate ed67531: full1188PASS/0FAIL/5oldignored/buildPASS,
-712rawsourceexact; focused143. SQL12+old15/actualHTTP1/Web13PASS0skip.
-Переход непустой AmmoBay0 даёт одну смерть/фраг и lost всех loaded3/clip,
-shots отдельно; oldv2records/depot сохранены. Native DT8/HP-2/FX/ACK epochs
-подключены, фактический native/UI/ammo-loss NOT_RUN. Изолированный loss-01
-A127/B42/[0,48,48]/[0,50,46]/active0, grants0; full02 binding и actual
-startup5profiles/DETONATION_BOUND PASS. Mainffce8cb без слияний. Ночь продолжается
-до17.10 09:00; следующий checkpoint P08B restart/CAS composition.
-[Факты и ограничения](research/P06T_AMMO_RACK_LOSS.md).
-
-P08C narrow native natural-results/return принят на46d5c20: owner подтвердил
-снятие захвата, мышь, личные итоги и оба ангара. Actual arena2975833524010313505:
-Elimination/B90damage/1kill/1spot, оба BattleFinished/Avatar100/actualAccount1500/
-acked/naturalreturn/hangar, dead routed bind PASS, rejects/faults/idle_timeout0.
-A126/B41, ammoA[0,0,4]/B[0,3,4],active0. Full1136PASS/5oldignored/buildPASS,
-689sourceexact, original64static/Python7PASS; independent result wire9474packets PASS.
-Autoaim explicit refusal: B2actual nonzero/callback/ACK/input PASS; A nonzero
-coverageNOT_RUN (cancel0only), owner mousebothconfirmed. Auto-tracking unsupported.
-Marker gate ранее принят972843a. Полная P08C/цепочка не приняты: capture/timeout/
-repeat/early-leaver results остаются открыты; mainffce8cb не менялся.
-Evidence `local/evidence/20261016-p08c-autoaim-acceptance01/acceptance02.json`.
-Текущая задача владельца — P06T ammo-rack detonation и потеря всех оставшихся
-loaded снарядов как особое правило проекта. Ветка codex/p06t-ammo-rack-detonation
-от сохранённого1e87e1b; план P06T_AMMO_RACK_DETONATION, native/ammo-lossNOT_RUN.
-Прошлые строки не пересчитывать.
-
-Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего
-дерева и доступна в git: `git show 1eaff5e:docs/STATUS.md` (а также удалённые
-`docs/plans/`, `docs/evidence-index/`, `docs/archive/`, `MASTER_PLAN.md`).
-Следующий шаг — [ACTIVE_GATE](ACTIVE_GATE.md), порядок — [IMPLEMENTATION_ORDER](IMPLEMENTATION_ORDER.md),
-практика — [DEV_NOTES](DEV_NOTES.md), факты — [research/INDEX](research/INDEX.md).
-
-STAB-01 принята на runtime `0574ab0`: 854 gateway tests PASS / 5 ignored,
-сборка PASS; инъекция ошибки с настоящими workers и следующий бой PASS.
-Native-fix07: два ручных native_leave с завершённым warm-возвратом; оба клиента
-повторно входят, движение/наведение/стрельба подтверждены владельцем. Реальные
-deadline faults закрывают только текущий бой, gateway и сессии сохраняются.
-История исправлений, границы проверки и evidence —
-[STAB-01](research/STAB01_BATTLE_STABILITY.md). Следующая карточка — P08B.
-
-P08B в работе в `codex/p08b-profile13-battle`, в main не слита. Изолированные
-owner+writer28, новый Web7, Web-регрессия18 и client/control проверки PASS;
-gateway893 PASS/5 ignored и сборка PASS на runtime `5c08ef5`.
-Свежая двухаккаунтная БД профиля13 сохраняет A. Первый native запуск поймал
-неверный bool-контракт isCrewFull до reserve; исправлен на native seat count,
-client314 PASS и CPython2.7.3 81 PASS/4 host-only skips. Исправлена корреляция
-latest verified login retry. Native-fix03: владелец подтвердил оба ангара с16ББ
-и повторный общий бой; трасса/БД подтверждают два полных цикла18→16→14 у обоих,
-8 выстрелов, 4 manual_leave/committed результата, 0 world faults. Настоящие
-native queue→cancel→requeue подтверждены владельцем. Gateway аварийно остановлен
-с active резервом14ББ; новый run сделал один aborted_restart/возврат14,
-7 прежних finished не изменились, оба native ангара loaded/cache/model/AP14.
-Owner postrestart и mutation/warmN→full1 smoke отложены до утра по указанию
-владельца 2026-10-16; карточка пока не принята и в main не слита.
-Native-fix02: общий бой, 4 выстрела и 2 manual_leave с committed AP18 PASS по
-трассе/БД; owner сообщил black return. Причина — legacy shop cache limit16448,
-native profile13 прислал23107. Лимит привязан к research fixture32832; текущий
-повтор — `local/stands/p08b-profile13-01/native-fix03/`, текущий AP14 у обоих.
-[Факты и ограничения P08B](research/P08B_PROFILE13_BATTLE.md).
-
-Ночное задание 2026-10-16 разрешает продолжать следующие карточки по порядку
-без ожидания ручных gates. Автоматические результаты и native NOT_RUN разделяются;
-непринятые карточки остаются в отдельных зависимых ветках. План и утренняя матрица —
-[NIGHT_20261016](plans/NIGHT_20261016.md).
-
-P08C candidate в codex/p08c-battle-lifecycle: authoritative waiting/countdown/
-battle/capture/outcome, opposite teams, original result stream и atomic fullresult
-writer реализованы. Full runtime8c96580: gateway919 PASS/5 прежних ignored,
-build PASS (gateway-p08c-full01), writer10/P08B18, real HTTP/static contract5 PASS.
-Native/UI/audio NOT_RUN, main не изменён. [Факты P08C](research/P08C_BATTLE_CYCLE.md).
-
-P05C в codex/p05c-shared-physics: actual one-scene компонент2/6/mixed/контакт/
-repeatability/sceneACK PASS (отдельный component, не native). Core mixed Actor/Trace/AP
-и native bounds собраны; six02:7PASS/0ignored/buildPASS. Исправлен реальный конфликт
-ID/alias третьей машины с AreaDestructibles. Actual gateway↔Jolt2/6, scene ACK,
-detach в ACK-окне и frozen outcome PASS. Runtime019ed2f: полный gateway940PASS/
-5ignored/buildPASS, source-before/after602files совпадают. Native mixed/6 NOT_RUN;
-ветка сохранена, main не изменён. [Физика](research/P05C_SHARED_PHYSICS.md),
-[передача клиенту](research/P05C_NATIVE_TRANSPORT.md).
-
-P07B candidate `codex/p07b-server-visibility`, runtime8fecb9d: серверный range/LOS,
-native AoI и reliable epochs, фильтр Create/pose/HP/aim/fire/terminal реализованы.
-Focused23 и полный975PASS/5ignored/buildPASS;607files source before/after PASS.
-Actual source geometry Прохоровки/360LOS PASS; native исчезновение/засвет NOT_RUN.
-Стенд bound с visibility_v1=true; в main не слито. [Факты](research/P07B_SERVER_VISIBILITY.md).
-
-P04M в `codex/p04m-five-battle-profiles`: пять source-bound
-боевых видов, общий IPC7 и getter bits новых машин, броня/AP/наведение и БК160
-реализованы. Focused04:26PASS/0ignored/buildPASS, включая настоящий Jolt→Rust
-FrameProof и coupled World/Trace/sceneACK новых3/mixed6; C#contacts/repeatability
-PASS. Companion05:5PASS/build и два actual SQLite303/309→Rust tests PASS.
-Owned crew/ammo реализованы; Python17+1/старая P08B/results28/legacyWeb12 PASS.
-FinalWeb06:10PASS, secondaryskill и scoped HTTP deadlines исправлены.
-Full02 runtime483bb2b:1006PASS/5oldignored/buildPASS,634sourcefiles before/after
-совпадают; executable5376778a…2c4e. Изолированный pool-01 stand A109/B26
-подготовлен без grants, normal/qbindings full02 созданы, CLIstartup/stop PASS,
-оба MS1AP14/A IS7AP19, исходная БД побайтно сохранена. Новые3 admissionfalse,
-native/UI NOT_RUN; main не изменён. [План](plans/P04M.md).
-
-P06T в `codex/p06t-mixed-shell-damage`: opt-in mixed stacks/current/next,
-frozen source shell, APCR/HEAT/HE laboratory solver, actual geometry/LOS splash,
-module/crew proxy, fire и единый HP/death ledger подключены к v2 reserve/result/
-restart и native publication. Focused07:81PASS/0ignored/buildPASS; Python21,
-legacyPython28, newWeb4/oldWeb25unique, client2.7.3 9+20+61PASS/4hostskips.
-Mixed-01 отдельная БД A110/B27/оба MS1[0AP,4HEAT,10HE] из своего склада,
-0grants; исходныйpool-01 сохранён. Full01 прерван: HE+wreck anchor bug;
-исправление/hidden-primary explosion privacy/late-anchor hardening и10World
-tests PASS в focused07. Full02 на dc27285:1087PASS/5oldignored/buildPASS,
-681sourcefiles before/after exact. Actual mixed-01 startup/5resources и два
-own UDP→v2run_open PASS; A111/B28/БК unchanged, services ownstop PASS.
-Новый old-only queue/cancel/busyJoin/commandbudget fix после full02:
-focused09 **90PASS/0ignored/buildPASS**,9 новых reliableflow regressions.
-Focused08:86PASS/4FAIL новых outbox assertions, исправлены на actualtx;
-production не ослаблен. Текущий head требует нового full03.
-Native/UI/audio NOT_RUN, WT/FV source/scheduler-only без qualified physics/
-owned admission, карточка не принята и не main.
-[Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
-
-## Принято владельцем на настоящем клиенте #717
-
-- Вход и аккаунт: собственная авторизация, перезаход, ангар на реальном клиенте 0.9.1.
-- Бой двух клиентов на Прохоровке (MS-1 и ИС-7, однородные пары): движение, стрельба
-  бронебойными, урон и смерть, разрушение ящиков, падение деревьев, цепочки заборов,
-  таран объектов. Управление P05B (2026-10-14): поворот при отпущенном газе, смена W/S,
-  разгон, круиз 25/50 %, пробел как в оригинале.
-- Ангар профиля 13 (P09E-M, 2026-10-15): экипаж P04K сохранён при миграции и
-  переводится; исследование модулей и танков за 0 по историческим связям; покупка танка
-  без экипажа и БК; установка модулей; сохранение после перезахода.
-- NET-01 (2026-10-15): сессия переживает блокировку клиента при обновлении ангара (до 30 с).
-- ACC-01 (2026-10-15): неподдерживаемая покупка слота даёт ошибку, а не зависание.
-- STAB-01 (2026-10-15): ошибка боя изолирована, ручной возврат обоих в ангар и
-  повторный бой с рабочими управлением/наведением/стрельбой; account channels сохраняются.
-
-## Есть в main, вручную не проверено
-
-- Экипаж P04D–P04K: найм (в том числе в казарму), обучение и навыки, увольнение,
-  личное дело — проверены автоматически и частично вручную (переводы на профиле 13).
-- Боекомплект P09D: выгрузка/загрузка/пополнение из своего склада; покупки снарядов нет.
-- Найм в казарму и перезаход именно на профиле 13 — только автоматически.
-
-## В main ещё не реализовано и известные дефекты
-
-- Ангар и бой — разные режимы gateway: из ангара профиля 13 в бой не попасть (P08B).
-- Цикла боя нет: отсчёта, захвата, победы, итогов (P08C). Видимости нет (P07B).
-- Наблюдаются deadline faults физики >500 мс: бой корректно закрывается, но причина
-  задержек ещё не устранена. Пассивный native observer обрывает снимки при ещё
-  пустом vehicleTypeDescriptor; игровая приёмка STAB-01 подтверждена отдельно.
-- Физика — отдельный процесс на танк, танки не сталкиваются друг с другом (P05C).
-- В бою только MS-1 и ИС-7; снаряды — только бронебойные (P04M, P06T).
-- Экипаж и БК при покупке танка, покупка слота, продажа, оборудование — недоступны.
-- Микролаг клиента ~150 мс раз в 10 с; обновление ангара после исследований +3,9 с.
-- `--legacy` сборки сломаны; полный Python-набор — 19 падений окружения.
-
-## Последние карточки
-
-| Карточка | Main | Суть |
+| Ветка | Runtime | Реально выполнено |
 |---|---|---|
-| ACC-01 | `1eaff5e` | `RES_NOT_AVAILABLE` на неподдерживаемые команды аккаунта из списка по байткоду |
-| P09E-M | `b5b8b79` | Исследования и покупка как профиль 13 поверх P04K; ревизия магазина 5 → 3 для экипажа |
-| NET-01 | `b676f51` | Таймаут доставки интерактивной сессии по времени (30 с) вместо 5 попыток |
-| P05B | `caf0b0b` | Управление MS-1/ИС-7, круиз, гонка тика выстрела |
+| codex/p06t-ammo-rack-detonation | ed67531 | full1188/5/build; одна смерть/фраг, lost3/clip, depot untouched; SQL12+15/HTTP1/Web13 |
+| codex/build-temp-cargo-target | 0e970b7 | full1188/5/build; C-temp→D exe SHA exact; Python11 |
+| codex/p08b-restart-cas-composition | 7ff8b30 | full1189/5/build; actual AP-only restart/recovery/Fresh/warm2→full1→CAS2; Node11 |
+| codex/p08c-late-owner-results | ea43262 | full1224/5/build; actual loss4 late composition; SQL17+1/Web5+37/HTTP1+1 |
 
-Последний полный прогон: gateway 854 passed / 5 ignored (STAB-01); Python client/control
-194 PASS, CPython2.7.3 61 PASS / 3 host-only skips; Python P09E 75,
-регрессия P04/P09D 216, web P09E 5/5 (P09E-M). Доказательства — `local/evidence/2026101[45]-*`.
+Все полные проверки имеют raw source before/after и сохранённые evidence.
+Последний exeSHA e5310617717be1772e21f0a0d6d74297fad8c101d507551b2d6ea4211bcdaa0f.
+Evidence `local/evidence/20261017-p08c-late-full02/composition-full.json`.
+
+Loss policy проекта: уничтоженная непустая БК убивает машину и теряет весь
+оставшийся loaded БК; fired и lost различаются, склад не меняется. Native
+башня/FX/учёт после реального выстрела пока NOT_RUN. Консервативные late rows
+не меняют старую inventory; parked damage после раннего возврата требует
+нового future hold5 contract, не скрытой смены смысла старой версии4.
+
+## Стенд и принятые владельцем факты
+
+Все own службы/клиенты STOP. Изолированный loss-01 A129/B43, loaded
+A[0,48,48]/B[0,50,46],active0/grants0. CoreV7 сохранён; его96immutable files
+совпали. Binding-loss01 только дляed67531; новый runtime требует fresh binding.
+Оригинальный клиент read-only, старые DB/builds/evidence не удалялись.
+
+STAB-01 в main принят: выход обоих вручную, повторный бой, управление/наведение/
+стрельба; ошибка закрывает бой, а не сервер. P08B native cycles18→16→14,
+queue cancel/requeue подтверждены. P08C marker04 оба красных маркера и natural
+autoaim06 личные итоги/возврат подтверждены владельцем; полная приёмка
+P08B/P08C и последующей цепочки остаётся открытой.
+
+Сохранённая предыдущая ночная цепочка: P05C019ed2f/full940, P07B8fecb9d/975,
+P04M483bb2b/1006, seven P06T0f1db40/1162, P10Be55ba01/1397,
+NET608bb23/1414; везде5oldignored/buildPASS на своих source heads. Эти старые
+проверки не доказывают новую объединённую цепочку. Native mixed/6, visibility,
+новые машины, training иtwo-PC NOT_RUN. Owned3 новых/WT/FV не включать без
+qualification; временный seven LAB — отдельный explicit mode.
+
+Полная история доступна в git; текущие исследовательские границы —
+[research/INDEX](research/INDEX.md). Хвост после подготовки боевого теста:
+микролаг, склад/оборудование/слоты/продажа, P04L, legacy/Python/rustfmt.
