@@ -1,4 +1,11 @@
-# Состояние проекта — 2026-10-16
+# Состояние проекта — 2026-10-17
+
+P08B restart composition7ff8b30: full1189PASS/0FAIL/5oldignored/buildPASS,
+716rawsourceexact; actualHTTP/SQL/processrestart/Fresh/warm2→full1→nextCAS2
+PASS, focused1/Node11PASS0skip. AP-only contract1, syntheticSession/ACK/HP0;
+native/UI/gameplayUDP/loss4 complete composition NOT_RUN. Stand unchanged,
+loss-01 current A129/B43/active0, services stopped. Mainffce8cb unchanged.
+[Факты](research/P08B_RESTART_CAS_COMPOSITION.md). Следующий P08C late results.
 
 BUILD-TEMP0e970b7:11 Python guards +actual C-target canonical full1188PASS/
 0FAIL/5oldignored/buildPASS,713rawsourceexact. Проверенный19.6MB exe скопирован

@@ -37,3 +37,9 @@ Canonical full01 на0b548f7: existing1188PASS/новый1FAIL/5oldignored. Ош
 exact, evidence20261016-p08b-composition-full01 сохранён. Real Node invocation
 regression воспроизвёл10PASS/1FAIL до fix; guard нормализует обе стороны.
 Нужен fresh full02, прошлый FAIL не заменяется частичным запуском.
+
+Checkpoint7ff8b30: actualfocused04 1PASS/0ignored/buildPASS47.33s, Node11PASS0skip;
+canonicalfull02 1189PASS/0FAIL/5oldignored/buildPASS359.74s/716rawsourceexact.
+Source/finalparent attestation20261017-p08b-composition-full02/composition-full.json.
+Software PASS; native/gameplayUDP/loss4 composition NOT_RUN, main не изменён.
+[Факты/откат](../research/P08B_RESTART_CAS_COMPOSITION.md). Далее P08C branch.

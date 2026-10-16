@@ -5,6 +5,14 @@
 
 ## Сборка и тесты
 
+- P08B regular restart composition на7ff8b30: gateway-p08b-composition-full02,
+  1189PASS/5oldignored/buildPASS/716rawsourceexact. Новый test обычный, сам
+  запускает Node controller и same test exe2phases; noextraignored/noenvskip.
+  Зависимости исходного bundle/original/Node/Python обязательны, missing=FAIL.
+  Windows verbatim argv/HERE/source args нормализуются до project boundaries.
+  Evidence20261017-p08b-composition-full02/composition-full.json. Нельзя выдавать
+  authored Session/ACK/HP0 и AP-only proof за native/loss4 gameplay.
+
 - При нехватке D: `server/build.py gateway --test --cargo-temp-target --out
   local/build/server/<fresh>` создаёт новый target только в default OS temp
   другого локального диска. Cargo/temp остаётся для аудита; только проверенный

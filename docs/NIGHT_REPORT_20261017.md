@@ -19,6 +19,29 @@ buildPASS, 689 raw source files exact. Владелец подтвердил п�
 B42/[0,50,46],active0; источник не изменялся. Старые клиенты/службы затем
 остановлены только собственными PID/exe/creation receipts.
 
+## P08B: restart/warm/full/следующая CAS — software checkpoint
+
+Ветка `codex/p08b-restart-cas-composition`, runtime7ff8b30 от BUILD-TEMP7d2252f.
+Добавлен ordinary self-orchestrated regression, production поведение не менялось.
+Actual HTTP/SQLite/Config RunOpen/Dispatcher/Job/Fresh проведены двумя child
+процессами одного test exe. ReserveAP20 → restart/recoveryonce → unload19 →
+Admit → authoredHP0 Finish/repair90 → warm2 → full1 → unload18/CASwire2.
+SQL revision14→21, active0, consumedAP0, depotAP+2, ресурсы/crew/research/старые
+строки неизменны. Это isolated test seed с explicit test-only grant100, не стенд.
+
+Canonical `gateway-p08b-composition-full02 --cargo-temp-target`:1189PASS/0FAIL/
+5oldignored/buildPASS,359.74s,716rawsourceexact. Focused04 1PASS/0ignored,
+Node11PASS0skip. Exe1f7c998645b897dc22eca18e0873eacc2d23ed6f8644ffaea3947ac11f7d9b66.
+Evidence `local/evidence/20261017-p08b-composition-full02/composition-full.json`
+связывает actual result/rawmap/head/testexe с внешним fullgate; inner PENDING
+receipt не изменялся. Full01/focused02/03 FAIL retained: нормализованы только
+Node entrypoint/HERE/source paths Windows verbatim, production fences сохранены.
+Откат7d2252f/test-only files, DB не менялась.
+
+AP-only contract1 composition; syntheticSession/ACK/HP0, native/UI/UDP/death/
+loss4 complete composition NOT_RUN. Mandatory native gates не закрыты, main
+ffce8cb unchanged. Следующий шаг P08C conservative late results.
+
 ## Техническая предпосылка: место для сборок
 
 Отдельная зависимая `codex/build-temp-cargo-target`, runtime0e970b7. Новый

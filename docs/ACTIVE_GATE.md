@@ -3,8 +3,12 @@
 Ветка `codex/p08b-restart-cas-composition` от7d2252f. План
 [P08B_RESTART_CAS_COMPOSITION](plans/P08B_RESTART_CAS_COMPOSITION.md).
 Добавлен ordinary self-orchestrated test actual HTTP/SQL/restart/Fresh/CAS,
-runtime behaviour не меняется. Compilation/actual composition пока NOT_RUN;
-native/UI/gameplayUDP остаются NOT_RUN. После current-head full — P08C.
+runtime behaviour не меняется. Runtime7ff8b30 full1189PASS/0FAIL/5oldignored/
+buildPASS/716rawsourceexact; actualHTTP/SQL/restart/warm2→full1→CAS2 PASS.
+Focused1PASS/Node11PASS0skip. Native/UI/gameplayUDP остаются NOT_RUN;
+это AP-only contract1 composition, loss4 variant здесь NOT_RUN.
+Evidence20261017-p08b-composition-full02/composition-full.json. Software
+checkpoint завершён; далее новая P08C ветка. Mainffce8cb не меняется.
 
 ## Сохранённый BUILD-TEMP: место для ночных сборок
 
