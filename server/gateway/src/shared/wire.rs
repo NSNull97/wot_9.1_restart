@@ -398,7 +398,7 @@ mod tests {
     #[test]fn p06t_create_reentry_carries_real_fire_and_positive_hp_inactive_crew(){
         use crate::{p06t_device_state::{State,Health,ModuleHit,Cause},p06t_device_caps::{Profile,Device},p06t_lab_proxy::Target};
         let mut w=model::tests::world(Instant::now());let h=Health{hp:90,max_hp:90,terminal:false};
-        let shell=crate::p06t_shells091::PROFILES[1].shots[2];let mut state=State::new(Profile::Ms1);
+        let shell=crate::p06t_shells091::PROFILES[1].shots[2];let mut state=State::new(Profile::Ms1).unwrap();
         state.apply_hits(&[ModuleHit{cause:Cause{shot:1,attacker_slot:1},ordinal:0,at_ms:0,
             target:Target::Device(Device::Engine),shell,ignition_roll:0.}],h).unwrap();
         assert!(state.fire_active());w.actors[0].devices=Some(state.clone());

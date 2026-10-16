@@ -169,6 +169,7 @@ roster size; writer проверяет также расход каждого st
 | Full02 head dc27285b |1087PASS/0FAIL/5 старых ignored/buildPASS; source-before/after681 exactPASS, `local/evidence/20261016-p06t-full02/` и `local/build/server/gateway-p06t-full02/` |
 | Queue corrections после full02 | union v1/v2 reservation/duplicate guards, durable cancel→fresh callback и command512 bound; покрыты отдельным full03, не приписываются1087 |
 | Full03 head9920a638 |1096PASS/0FAIL/5 старых ignored/buildPASS; source-before/after683 exactPASS, `local/evidence/20261016-p06t-full03/` и `local/build/server/gateway-p06t-full03/` |
+| Full04 headc25fb84c |1100PASS/0FAIL/5 старых ignored/buildPASS,340.80с; source-before/after692 exactPASS, tag `p06t-physics-20261016-01` |
 | Текущий binding/утренний native цикл | отдельный текущий startup/owner gate; native **NOT_RUN** |
 | Native/UI/audio/полный утренний цикл | **NOT_RUN** |
 
@@ -267,8 +268,8 @@ collision members; whole package SHA не пересчитан и не заяв�
 | Physics/supports | WT20 individual wheels/no groups; FV groups WD_L,W_L,WD_R,W_R. Нужна новая versioned mapping, текущая требует первые W_L/W_R; actual Jolt getter bits/inertia/contact gates обязательны |
 | WT assembly identity |128=100000кг/Gun_01,150=97800кг/Gun_02 из actual mass sum; один vehicleCD16913. Нужен различимый assembly/mount либо явно только128 runtime; перепутать profiles нельзя |
 | Aim | FV source yaw limits `-45 45`°; WT basic pitch `-15 5`°, rear `-7 5 37`°, explicit transition5°=.08726646rad. Original reader/PE доказаны: обе границы min/max интерполируются; default0.4rad относится только к отсутствующему transition. Текущий360° yaw и rear-only-max/constant-min не выражают это |
-| Closed Rust/C# | VehicleKind/Profile/scene Kind5, World geometries[5], source_profiles[5], manifestv3 exact5; C# StockDefinitions strict3 и AngularBodyBinding kinds требуют versioned расширения |
-| Crew/damage | WT6 primary seats, FV5; текущие crew[bool;5]/PoolCrew≤5 и source caps5 требуют новых source-bound maxima/roles/extras/terminal pins |
+| Closed Rust/C# | private physical Profile/scene Kind7 прошли full04; VehicleKind/World geometries[5], resource source_profiles[5], resource manifestv3 exact5 остаются закрыты. Для World7 нужен отдельный versioned startup/resource route |
+| Crew/damage | WT6 primary seats, FV5. Новый device component crew6/source caps7/policyv2: focused11 105PASS/build; full05 PENDING. World/PoolCrew/terminal old5 не расширены |
 | Owned/native | registry USSR-only, pool ammo closed15, v2 Frozen admission/terminal maxima закрытыMS1/IS7; нужны source descriptors, real SQLite ownership/ammo/crew proof и полный nation cycle China5→3/France3→4/UK4→5 |
 
 WT128100000кг находится ровно на существующей inclusive mass границе;
@@ -392,17 +393,47 @@ scene ACK; отрицательные source/config pins отвергаются 
 kind для новых physical profiles. Это уже не Python caller ACK вместо domain
 proof. Focused EXE SHA
 `58d475e1a58494c61f8a7cfe3d970dfe37766a9b72206753a2a6fbb6fa3a92e5`.
-**Полный общий full04 ещё PENDING.** Native/UI/audio WT/FV NOT_RUN, боевого
-owned допуска и реальных source World contacts этих2 машин нет.
+Полный общий full04 прошёл **1100PASS/0FAIL/5 старых ignored/buildPASS**,
+340.80с, source-before/after692 exactPASS на
+`c25fb84cf81a238e7b1410ccbd453d0a44a2c45f`, tag
+`p06t-physics-20261016-01`. EXE SHA
+`a2f7dea23dde083978fa6215fa721dc24639de2be76fb21693baf466696b908c`.
+Это закрытый software gate physical foundation. Native/UI/audio WT/FV NOT_RUN,
+боевого owned допуска и реальных source World contacts этих2 машин нет.
+
+Следующий отдельный leaf component после full04: `p06t_device_caps.rs`
+сохраняет `Profile::ALL[5]` и old SOURCE_SHA256, добавляет SUPPORTED[7] и
+WT128/FV source maxima/roles. Новый raw caps schema v2 SHA
+`2d74a8e8f272e6305d6779d887cac44ad9794c4ec40807ddf76a5139e3db9da4`,
+новый policy schema v2/revision `test_lab.p06t.devices-proxy-fire.v2` SHA
+`a19115167b83e73ae80e83d578490ddbcbf81cbe759c62692fc390c732232918`.
+Old raw caps/policy и первые5 typed rows сохранены. Actual source preparation
+9PASS связывает7 profiles/63 devices/30 primary seats с оригинальными файлами;
+`local/night-staging/20261016/p06t-damage01/seven-combat01/REPORT.md`.
+
+`State::new(Profile)` стал fallible и отвергает новые2 под v1 без panic;
+`new_v2(Profile)` явно выбирает v2 для любых7. State хранит6 crew bits, а
+`crew()` возвращает прежнюю actual-length slice, поэтому не добавляет лишнее
+место старым payload. Source/policy/version getters отделяют per-profile
+provenance от общего v2 manifest. Текущий World по-прежнему создаёт только
+v1 State для прежних5; новый constructor не даёт owned/World admission.
+11 новых component tests написаны, статический63caps/30roles/JSON pin gate
+PASS. Focused11: **105 PASS / 0 FAIL / 0 ignored / build PASS**,43.95с,
+exe SHA `2a51a7bf8312639869213daef87d7fe5604b61f387d14d4f8c9b8acf596003d1`.
+Доказательства: `local/build/server/gateway-p06t-focused11/` и
+`local/evidence/20261016-p06t-device-v2-01/`. Focused10 сохранил compile FAIL:
+root пропустил alias device::State::new в cancelled_terminal_state; добавлен
+штатный `?`, без изменения алгоритма или ожиданий. **Full05 ещё PENDING**.
+Новый leaf не приписывается1100. Gun31/geometry/damage/TerminalPython прежние.
 
 Пока не реализованы ammo-bay explosion, turret detach, ремонт/восстановление
 экипажа, оригинальные multi-layer penetration и historical damage variance.
 Native правильность новых method IDs, всех critical/fire/HE UI/audio и
 переходов сохраняет NOT_RUN до настоящей ручной проверки владельца.
 Full02 и отдельный full03 source-bound regression/build прошли для своих
-head. WT/FV root physical foundation не включена в1096; её focused4 PASS
-требует полного отдельного full04. Ночное разрешение не заменяет native
-приёмку.
+head. WT/FV root physical foundation не включена в1096 и отдельно проверена
+full04/1100. Следующий device v2 leaf требует своих focused/full05 результатов.
+Ночное разрешение не заменяет native приёмку.
 
 Откат: сохранённые P04M branch/source-bound binary+binding, выключенный P06T
 opt-in и соответствующий прежний client patch ledger. БД откатывать целым
@@ -410,6 +441,6 @@ SQLite backup, без удаления version markers/ручного смеши
 Оригинальный клиент и соседние проекты не изменены; новые admission flags
 T26/T34/T34-85 остаются false до owner gates.
 
-Единственный следующий рекомендуемый шаг для новой physical foundation:
-полный source-before/after regression/build full04 при сохранении закреплённого
-P06T core full03 и прежних пяти byte contracts.
+Единственный следующий рекомендуемый шаг: полный source-before/after gate
+нового device v2 leaf перед дальнейшей World7 интеграцией, сохраняя
+закреплённый physical full04 и прежние пять byte contracts.

@@ -8,7 +8,7 @@ pub const MODULE_ADMISSION_POLICY:&str="test_lab.p06t.plate-penetration-or-exter
 
 impl World {
     pub fn cancelled_terminal_state(loadout:&crate::profile13_v2091::Frozen)->io::Result<String>{
-        let state=device::State::new(caps::Profile::ALL[loadout.kind.index()]);
+        let state=device::State::new(caps::Profile::ALL[loadout.kind.index()])?;
         terminal_json(loadout,&state,0,None)
     }
     pub fn terminal_state_json(&self,slot:usize)->io::Result<String>{

@@ -93,7 +93,9 @@ INSTALLED; оба realnative hangar/cache/model boot OBSERVED по трассе,
 БК прежний/reserves0, ownclients/servicesSTOPPED. UI/control/combat NOT_RUN.
 WT128/FV183 physical-only foundation: rootJoltgetters/Python7/negative8/
 455legacyframesexact и canonicalRustIPC7→originalscalarFrameProof→ACK4PASS/
-buildPASS. Новый full04 PENDING; VehicleKind/World/owned пока5.
+buildPASS. Full04 c25fb84:1100PASS/5ignored/build/692sourceexact PASS;
+physical tag сохранён. Crew6/sourcecaps7/policyv2 focused11:105PASS/build;
+full05 PENDING; VehicleKind/World/owned пока5.
 Native/UI/audio/combat admission WT/FV NOT_RUN, карточка не принята и не main.
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 

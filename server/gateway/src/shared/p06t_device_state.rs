@@ -1,9 +1,20 @@
 //! Explicit LAB module/seat/fire state. Root World owns vehicle HP and death.
 use std::io;
 use crate::{p06t_damage::source_shell,p06t_lab_proxy::Target,p06t_shells091::Shell,
-    p06t_device_caps::{Profile,Device,CAPS,CREW,MAX_HP,ENGINE_FIRE_CHANCE,MIN_FIRE_STARTING_DAMAGE}};
+    p06t_device_caps::{Profile,Device,CAPS,CREW,MAX_HP,ENGINE_FIRE_CHANCE,MIN_FIRE_STARTING_DAMAGE,SOURCE_SHA256,SOURCE_V2_SHA256}};
 
 pub const POLICY:&str="test_lab.p06t.devices-proxy-fire.v1";
+pub const POLICY_V2:&str="test_lab.p06t.devices-proxy-fire.v2";
+pub const POLICY_SHA256:&str="cded466bf3c21243c10c0bcee8a013ab4cffc20f31f7275d4eab1672060b3717";
+pub const POLICY_V2_SHA256:&str="a19115167b83e73ae80e83d578490ddbcbf81cbe759c62692fc390c732232918";
+pub const MAX_CREW:usize=6;
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum PolicyVersion {V1,V2}
+impl PolicyVersion {
+    pub fn revision(self)->&'static str{match self{Self::V1=>POLICY,Self::V2=>POLICY_V2}}
+    pub fn source_caps_sha(self)->&'static str{match self{Self::V1=>SOURCE_SHA256,Self::V2=>SOURCE_V2_SHA256}}
+    pub fn manifest_sha(self)->&'static str{match self{Self::V1=>POLICY_SHA256,Self::V2=>POLICY_V2_SHA256}}
+}
 pub const MAX_HITS:usize=1920;
 pub const MAX_TIME_MS:u64=3_600_000;
 pub const FIRE_INTERVAL_MS:u64=1000;
@@ -51,14 +62,32 @@ impl Capabilities {
 struct Fire {cause:Cause,next_tick_ms:u64,ticks:u8}
 #[derive(Clone,Debug,PartialEq)]
 pub struct State {
-    profile:Profile,health:[u16;9],crew:[bool;5],fire:Option<Fire>,
+    profile:Profile,policy:PolicyVersion,health:[u16;9],crew:[bool;MAX_CREW],fire:Option<Fire>,
     observed_ms:Option<u64>,sequence:u32,seen:Vec<ModuleHit>,frozen:bool,
     fire_ticks:u32,proposed_fire_damage:u32,
 }
 impl State {
-    pub fn new(profile:Profile)->Self {Self {profile,health:CAPS[profile.index()].map(|c|c.max),
-        crew:std::array::from_fn(|i|i<CREW[profile.index()].len()),fire:None,observed_ms:None,sequence:0,seen:Vec::new(),frozen:false,fire_ticks:0,proposed_fire_damage:0}}
+    /// The existing five-profile route never silently upgrades its policy.
+    pub fn new(profile:Profile)->io::Result<Self> {Self::create(profile,PolicyVersion::V1)}
+    /// Explicit component policy selection; this does not authorize a World,
+    /// owned loadout or terminal-journal schema to accept additional vehicles.
+    pub fn new_v2(profile:Profile)->io::Result<Self> {Self::create(profile,PolicyVersion::V2)}
+    fn create(profile:Profile,policy:PolicyVersion)->io::Result<Self> {
+        if policy==PolicyVersion::V1&&!profile.is_legacy() {return Err(bad("extended device profile requires explicit v2 policy"));}
+        let index=profile.index();let seats=CREW[index];
+        if seats.is_empty()||seats.len()>MAX_CREW||MAX_HP[index]==0
+            ||CAPS[index].iter().any(|c|c.max==0||c.regen==0||c.regen>c.max)
+            ||seats.iter().any(|seat|seat.roles==0||seat.roles&!31!=0||!(35..=42).contains(&seat.extra)) {
+            return Err(bad("device source caps/primary-seat bounds"));
+        }
+        Ok(Self {profile,policy,health:CAPS[index].map(|c|c.max),
+            crew:std::array::from_fn(|i|i<seats.len()),fire:None,observed_ms:None,sequence:0,seen:Vec::new(),frozen:false,fire_ticks:0,proposed_fire_damage:0})
+    }
     pub fn profile(&self)->Profile {self.profile}
+    pub fn policy_version(&self)->PolicyVersion {self.policy}
+    pub fn policy_revision(&self)->&'static str {self.policy.revision()}
+    pub fn source_caps_sha(&self)->&'static str {self.policy.source_caps_sha()}
+    pub fn policy_manifest_sha(&self)->&'static str {self.policy.manifest_sha()}
     pub fn health(&self)->[u16;9] {self.health}
     pub fn crew(&self)->&[bool] {&self.crew[..CREW[self.profile.index()].len()]}
     pub fn crew_active(&self)->bool {self.crew().iter().any(|a|*a)}
@@ -189,3 +218,7 @@ impl State {
         c
     }
 }
+
+#[cfg(test)]
+#[path="p06t_device_v2_tests.rs"]
+mod tests_v2;

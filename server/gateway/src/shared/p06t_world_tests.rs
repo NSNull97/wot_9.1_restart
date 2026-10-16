@@ -48,7 +48,7 @@ fn lab_attach(world:&mut World,kind:VehicleKind,slot:usize,counts:[u16;3]) {
     world.mixed_ammo=true;assert_eq!(attached,slot);
     let initial=source::profile(kind.mount()).shots[counts.iter().position(|n|*n>0).unwrap()].compact_descr;
     world.actors[slot].fire=fire::State::with_typed(kind.mount(),counts,initial).unwrap();
-    world.actors[slot].devices=Some(Devices::new(Profile::ALL[kind.index()]));
+    world.actors[slot].devices=Some(Devices::new(Profile::ALL[kind.index()]).unwrap());
 }
 fn start(world:&mut World,now:Instant) {
     for slot in 0..2 {

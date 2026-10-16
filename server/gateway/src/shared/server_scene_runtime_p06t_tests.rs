@@ -9,7 +9,7 @@ fn actor_kind(kind:VehicleKind)->model::Actor {
     let mut a=w.actors[0].clone();a.ready=true;a.input=model::Input{throttle:1,steer:1,speed_percent:100};a
 }
 #[test] fn p06t_scene_critical_engine_and_driver_compound_before_valid_control_quantization() {
-    let mut a=actor_kind(VehicleKind::T34);let mut state=Devices::new(Profile::T34);
+    let mut a=actor_kind(VehicleKind::T34);let mut state=Devices::new(Profile::T34).unwrap();
     let apply=|state:&mut Devices,shot,target|state.apply_hits(&[devices::ModuleHit{
         cause:devices::Cause{shot,attacker_slot:1},ordinal:0,at_ms:0,target,
         shell:source::profile(Mount::Ms1Stock).shots[0],ignition_roll:0.9}],devices::Health{hp:400,max_hp:400,terminal:false}).unwrap();
@@ -19,10 +19,10 @@ fn actor_kind(kind:VehicleKind)->model::Actor {
     apply(&mut state,3,Target::Seat(2));assert_eq!(state.capabilities().drive_scale,0.25);
     a.devices=Some(state);
     for tick in 1000..1008 {let input=actor_input(&a,tick,true).unwrap();assert_eq!(input.speed_percent,25);assert!(legal(input));}
-    a.devices=Some(Devices::new(Profile::Ms1));assert!(actor_input(&a,1000,true).is_err());
+    a.devices=Some(Devices::new(Profile::Ms1).unwrap());assert!(actor_input(&a,1000,true).is_err());
 }
 fn damaged(target:Target)->Devices {
-    let mut s=Devices::new(Profile::Ms1);s.apply_hits(&[devices::ModuleHit{
+    let mut s=Devices::new(Profile::Ms1).unwrap();s.apply_hits(&[devices::ModuleHit{
         cause:devices::Cause{shot:1,attacker_slot:1},ordinal:0,at_ms:0,target,
         shell:source::profile(Mount::Ms1Stock).shots[0],ignition_roll:0.9}],devices::Health{hp:90,max_hp:90,terminal:false}).unwrap();s
 }
@@ -36,7 +36,7 @@ fn legal(input:Input)->bool {(-1..=1).contains(&input.throttle)&&(-1..=1).contai
             a.input=model::Input{throttle,steer,speed_percent:speed};
             let expected=Input{throttle,steer,brake:throttle==0&&steer==0,speed_percent:speed};
             assert_eq!(actor_input(&a,1000,true).unwrap(),expected);
-            a.devices=Some(Devices::new(Profile::Ms1));assert_eq!(actor_input(&a,1000,true).unwrap(),expected);a.devices=None;
+            a.devices=Some(Devices::new(Profile::Ms1).unwrap());assert_eq!(actor_input(&a,1000,true).unwrap(),expected);a.devices=None;
         }
     }
     assert_eq!(actor_input(&a,1000,false).unwrap(),Input::STOP);
@@ -75,7 +75,7 @@ fn resources()->Vec<super::super::super::profile13_templates::Resources> {
     let mut world=template.world.clone();world.lifecycle=None;
     for slot in 0..2 {
         world.attach(model::Identity{account:format!("p06t-physical-{slot}"),database:6962+slot as i32,name:format!("physical{slot}")},6962+slot as u32).unwrap();
-        world.actors[slot].devices=Some(Devices::new(Profile::Ms1));
+        world.actors[slot].devices=Some(Devices::new(Profile::Ms1).unwrap());
     }
     world.actors[0].devices=Some(damaged(Target::Device(Device::Engine)));world.start(now).unwrap();
     let mut runtime=BatchRuntime::new(rows[0].shared.clone().unwrap(),rows[0].catalog.1.clone());runtime.start(&mut world,now).unwrap();

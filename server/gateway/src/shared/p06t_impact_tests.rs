@@ -106,7 +106,7 @@ fn wreck_splash_fixture(positive_hp:bool)->(Trace,[f32;3],Contact,crate::p06t_da
     let(mut trace,contact,_,mut wreck)=source_contact(2,true);
     if positive_hp{
         use crate::{p06t_device_caps::Profile,p06t_device_state::{State,Health,ModuleHit,Cause},p06t_lab_proxy::Target};
-        let shell=PROFILES[1].shots[2];let cause=Cause{shot:2,attacker_slot:0};let mut state=State::new(Profile::Ms1);
+        let shell=PROFILES[1].shots[2];let cause=Cause{shot:2,attacker_slot:0};let mut state=State::new(Profile::Ms1).unwrap();
         state.apply_hits(&[
             ModuleHit{cause,ordinal:0,at_ms:0,target:Target::Seat(0),shell,ignition_roll:0.9},
             ModuleHit{cause,ordinal:1,at_ms:0,target:Target::Seat(1),shell,ignition_roll:0.9}],

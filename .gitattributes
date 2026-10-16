@@ -36,3 +36,5 @@ server/gateway/src/shared/p06t_device_policy.json -text
 server/gateway/src/shared/p06t_device_source_caps.json -text
 # Native Session source is kept in its established LF representation.
 server/gateway/src/session.rs -text
+server/gateway/src/shared/p06t_device_source_caps_v2.json text eol=lf
+server/gateway/src/shared/p06t_device_policy_v2.json text eol=lf

@@ -450,7 +450,7 @@ impl World {
         if existing.is_none(){
             next.actors[slot].fire=fire::State::with_typed(loadout.mount,loadout.counts(),loadout.initial_shell_compact_id)?;
             next.actors[slot].owned_v2=Some(loadout.clone());
-            next.actors[slot].devices=Some(crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::ALL[loadout.kind.index()]));
+            next.actors[slot].devices=Some(crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::ALL[loadout.kind.index()])?);
         }
         *self=next;Ok(slot)
     }
