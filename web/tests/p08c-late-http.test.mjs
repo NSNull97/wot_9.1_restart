@@ -1,11 +1,11 @@
-/** Runs the ignored exact insertion view of the real adapter, actual worker/SQL. */
+/** Runs the actual tracked adapter, worker and isolated SQLite owner gates. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createIdentityBridge } from '../src/game-adapter.mjs';
 import { LATE_CONTRACT, LATE_POLICY_SHA256 } from '../src/p08c-late-results.mjs';
@@ -97,9 +97,45 @@ test('actual adapter HTTP append/read/ack/reopen with owner gates and old-owner 
   await assert.rejects(createIdentityBridge(oldConfig), /reader policy required/);
   bridge = await createIdentityBridge(options); assert.equal((await call('/internal/native/battle-results', query)).body.acked, true);
   assert.deepEqual(readOld(), before);
+  // The selected public battle method must use the very same late-aware store.
+  const currentRun = '918a034b-cba0-426a-85e9-a1a095aa0162'; let serial = 0;
+  const battleRequest = (operation, extra = {}) => ({ version: 4, contract: LOSS_CONTRACT, operation, account_id: owner,
+    native_database_id: request.native_database_id, command_key: `late:http:battle:${++serial}`,
+    expected_revision: profile(owner).snapshot_revision, run_id: currentRun, ...extra });
+  const battle = async value => { const reply = await call('/internal/native/battle', value); assert.equal(reply.http, 200); return reply.body; };
+  const sourceFinal = JSON.parse(request.seal_json).actors.find(a => a.account_id === owner).final_actor;
+  const finishRequest = (receipt, natural) => battleRequest('finish', { battle_id: receipt.battle_id, native_inventory_id: 1,
+    reservation_id: receipt.reservation_id, remaining_ammunition: sourceFinal.remaining_ammunition,
+    fired_ammunition: sourceFinal.fired_ammunition, lost_ammunition: sourceFinal.lost_ammunition, loss_event: null,
+    terminal_hp: sourceFinal.terminal_hp, terminal_state_json: JSON.stringify(sourceFinal.terminal_state),
+    reason: natural ? 'battle_finished' : 'cancelled', ...(natural ? { results_json: natural } : {}) });
+  const peerOld = db(game, d => Object.fromEntries(d.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()
+    .filter(r => d.prepare(`PRAGMA table_info("${r.name}")`).all().some(c => c.name === 'account_id'))
+    .map(r => [r.name, d.prepare(`SELECT * FROM "${r.name}" WHERE account_id=?`).all(other)])));
+  assert.equal((await battle(battleRequest('run_open'))).status, 'ready');
+  const reserved = await battle(battleRequest('admit', { battle_id: `${currentRun}:${request.arena_id}`, native_inventory_id: 1 }));
+  assert.equal(reserved.status, 'admitted');
+  const collision = finishRequest(reserved.reservation, seed.results_json), oldBeforeCollision = readOld();
+  const denied = await battle(collision); assert.equal(denied.status, 'rejected'); assert.equal(denied.code, 'RESULT_MISMATCH');
+  assert.deepEqual(readOld(), oldBeforeCollision); // Finish/CAS/ammo/ledger all roll back.
+  assert.equal((await battle(finishRequest(reserved.reservation, null))).status, 'finished');
+  const newArena = '9007199254740994';
+  const next = await battle(battleRequest('admit', { battle_id: `${currentRun}:${newArena}`, native_inventory_id: 1 }));
+  assert.equal(next.status, 'admitted');
+  const natural = seed.results_json.replace('"arena_id":9007199254740993', '"arena_id":9007199254740994');
+  assert.notEqual(natural, seed.results_json);
+  const finished = await battle(finishRequest(next.reservation, natural)); assert.equal(finished.status, 'finished');
+  assert.equal((await battle(finishRequest(next.reservation, natural))).code, 'RESERVATION_TERMINAL');
+  assert.equal((await call('/internal/native/battle-results', query)).body.results_json, seed.results_json);
+  assert.equal((await call('/internal/native/battle-results', { ...query, arena_id: newArena, command_key: 'late:http:next-query' })).body.results_json, natural.replace(/[\u0080-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')));
+  const peerAfter = db(game, d => Object.fromEntries(d.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()
+    .filter(r => d.prepare(`PRAGMA table_info("${r.name}")`).all().some(c => c.name === 'account_id'))
+    .map(r => [r.name, d.prepare(`SELECT * FROM "${r.name}" WHERE account_id=?`).all(other)])));
+  assert.deepEqual(peerAfter, peerOld);
+  assert.equal((await call('/internal/native/battle', { ...battleRequest('inspect'), version: 2 })).http, 400);
   const receipt = { status: 'PASS_ACTUAL_HTTP_SQL_COMPONENT', native: 'NOT_RUN', active_source_mutations: false, source_database_sha256: seed.source_database_sha256,
     PYTHONPATH_removed_in_worker: true, adapter: { mode: 'ACTUAL_TRACKED_SOURCE', sha256: hash(readFileSync(join(ROOT, 'web/src/game-adapter.mjs'))) }, events,
     worker_sha256: hash(readFileSync(join(STAGE, 'tools/p08c_late_results_service.py'))), module_sha256: hash(readFileSync(join(STAGE, 'web/src/p08c-late-results.mjs'))) };
-  const output = join(ROOT, 'local/evidence/20261017-p08c-late-active01'); mkdirSync(output, { recursive: true });
+  const output = join(ROOT, 'local/evidence/20261017-p08c-late-active01', basename(directory)); mkdirSync(output, { recursive: true });
   writeFileSync(join(output, `${process.env.LATE_HTTP_RECEIPT || 'http01'}.json`), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
 });

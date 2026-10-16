@@ -49,3 +49,8 @@ server/gateway/src/session.rs -text
 /tests/p08c_late_http_seed.py text eol=lf
 /web/tests/p08c-late-results.test.mjs text eol=lf
 /web/tests/p08c-late-http.test.mjs text eol=lf
+
+/tests/test_p08c_late_battle_facade.py text eol=lf
+/server/gateway/src/shared/p08c_late_composition_tests.rs text eol=lf
+/web/tests/helpers/p08c-late-result-composition.mjs text eol=lf
+/tests/helpers/p08c_late_composition_seed.py text eol=lf

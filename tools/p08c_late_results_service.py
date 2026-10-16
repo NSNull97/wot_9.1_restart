@@ -21,7 +21,7 @@ def main():
     for name in ("database", "original-root", "account-id", "shell-catalog", "terminal-policy"):
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--ammo-rack-loss", action="store_true")
-    parser.add_argument("operation", choices=("append", "results", "pending"))
+    parser.add_argument("operation", choices=("append", "results", "pending", "battle"))
     args = parser.parse_args()
     raw = sys.stdin.buffer.read(65537)
     request = decode(raw, 65536)
@@ -30,7 +30,13 @@ def main():
     with cls(args.database, catalog, account_id=args.account_id, shell_catalog=args.shell_catalog, terminal_policy=args.terminal_policy) as store:
         if not store.mixed_active(): raise ValueError("explicit existing mixed activation required")
         if args.ammo_rack_loss and not store.loss_active(): raise ValueError("explicit existing loss activation required")
-        if args.operation == "append":
+        if args.operation == "battle":
+            from p08b_battle_service import battle_service
+            from p09d_ammo_store import require
+            require(type(request) is dict and type(request.get("version")) is int
+                and request["version"] == (4 if args.ammo_rack_loss else 2), "INVALID_INPUT")
+            value = battle_service(store, request, authenticated_account_id=args.account_id)
+        elif args.operation == "append":
             value = service(store, request, authenticated_account_id=args.account_id)
         elif args.operation == "pending":
             value = pending_service(store, request, authenticated_account_id=args.account_id)

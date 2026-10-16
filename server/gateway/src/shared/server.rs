@@ -2671,3 +2671,7 @@ mod tests {
 #[cfg(test)]
 #[path="profile13_restart_cas_tests.rs"]
 mod p08b_restart_cas_tests;
+
+#[cfg(test)]
+#[path="p08c_late_composition_tests.rs"]
+mod p08c_late_composition_tests;

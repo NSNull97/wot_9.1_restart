@@ -1,3 +1,5 @@
+import { validateMixedBattleRequest, validateMixedBattleReply } from './p06t-mixed.mjs';
+import { validateLossBattleRequest, validateLossBattleReply } from './p06t-ammo-loss.mjs';
 /** Separate trusted presentation append. No battle Finish/CAS is performed here. */
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -150,6 +152,12 @@ export function createLateResultService({ database, originalRoot, accountId, she
     } finally { active = false; }
   }
   return {
+    async battle(request) {
+      const validateRequest = loss ? validateLossBattleRequest : validateMixedBattleRequest;
+      const validateReply = loss ? validateLossBattleReply : validateMixedBattleReply;
+      validateRequest(request, accountId);
+      return validateReply(await run('battle', request, 8192), request);
+    },
     async append(request) { validateLateRequest(request, accountId); return validateLateReply(await run('append', request, 4096), request); },
     async pending(request) { validatePendingRequest(request, accountId); return validatePendingReply(await run('pending', request, 4096), request); },
     async results(request) {
