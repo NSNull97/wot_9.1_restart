@@ -43,5 +43,15 @@ ffce8cb неизменен.
 canonical full1099PASS/5oldignored/buildPASS,683raw source до/после exact.
 Создана новая binding04; fresh morning-marker01 запущен с сохранёнными0/3/9,
 оба native ангара/cache/model загружены, A118/B33/active0,96 installed unchanged.
-Клиентская переустановка не выполнялась. Единственный следующий шаг — owner native gate:
-красные enemy имя и ромб в обоих окнах свежего общего боя.
+Клиентская переустановка не выполнялась.
+
+Owner gate PASS: «У обоих имя и ромб красные, управление работает».
+Actual paired battle9187569394802767952: два native session,11183 packets,
+Avatar/roster/Vehicle команды согласованы,0 mismatches. Порядок очереди обратный:
+A/session1 team2, B/session2 team1; checker читает actual identities, не угадывает
+команду по номеру сессии. phase12-owner-marker.json SHA
+4de0bdd0f2c435886e132748d5ab6a1016eb0d997f2a18e2fca00124c22c13f2.
+Узкий marker fix принят, parent gates не разрешают merge цепочки в main.
+Следующий шаг утреннего P08C сценария — уничтожение/гибель/естественные итоги
+обоим без manualleave; вопрос владельцу отправлен. Visibility recreate/repeat
+после этой правки отдельно NOT_RUN.

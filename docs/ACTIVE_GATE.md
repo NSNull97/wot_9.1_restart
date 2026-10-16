@@ -1,4 +1,4 @@
-# Текущая карточка — P08C native Vehicle marker, 2026-10-16
+# Текущая карточка — P08C, утренняя native приёмка, 2026-10-16
 
 Ветка codex/p08c-native-marker-team от testedcore9920a638. Владелец прошёл
 native queue/cancel/requeue/countdown/drive/aim обоими и typed1KS+1HE/возврат
@@ -9,9 +9,13 @@ create_vehicle→World.team(slot), без clientreinstall/paint. План
 остановлен по receipts. Runtime `363daa3`: targeted 3 PASS, full **1099 PASS /
 5 прежних ignored / build PASS**, все 683 source SHA до/после совпали.
 Создана свежая binding04; оба настоящих клиента `morning-marker01` загрузили
-ангары на прежней базе с БК 0/3/9, A118/B33/active0. Marker UI после правки
-NOT_RUN до ответа владельца; late leaver results
-и spawn — отдельные незакрытые пункты.
+ангары на прежней базе с БК 0/3/9, A118/B33/active0. Владелец подтвердил красные
+имя и ромб противника, движение и наведение в обоих окнах. Actual paired wire
+11183 пакета: Avatar/roster/publicInfo команды согласованы, конфликтов 0.
+Узкий marker gate PASS; вся P08C ещё не принята. Следующий шаг — уничтожение
+Ёжа первым игроком без ручного выхода, гибель/естественные итоги/оба ангара.
+Вопрос владельцу отправлен; этот шаг NOT_RUN до ответа и серверной сверки.
+Late leaver results и spawn — отдельные незакрытые пункты.
 Ночные ветки/NET b6c294f сохранены, mainffce8cb не менять без родительских gates.
 
 ## Сохранённый предшествующий core checkpoint

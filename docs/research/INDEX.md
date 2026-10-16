@@ -9,6 +9,7 @@
 - [P08B_PROFILE13_BATTLE.md](P08B_PROFILE13_BATTLE.md) — P08B: выбранный owned loadout профиля13, резерв/результат/restart и native gate в работе
 - [P08C_NATIVE_LIFECYCLE.md](P08C_NATIVE_LIFECYCLE.md) — #717 period/base/death/results field order, streams и источники
 - [P08C_BATTLE_CYCLE.md](P08C_BATTLE_CYCLE.md) — authoritative cycle, atomic writer results, policy и утренняя native матрица
+- [P08C_NATIVE_MARKER_TEAM.md](P08C_NATIVE_MARKER_TEAM.md) — исправление publicInfo.team, full1099 и owner+actual wire приёмка маркеров обоими
 - [P05C_SHARED_PHYSICS.md](P05C_SHARED_PHYSICS.md) — one-scene IPC7 component, реальные mixed/6 Jolt probes и граница интеграции
 - [P05C_NATIVE_TRANSPORT.md](P05C_NATIVE_TRANSPORT.md) — bounded6actor roster/ACK/READY, отдельные ID/alias namespaces, synthetic Session gates
 - [P07B_NATIVE_INTEREST.md](P07B_NATIVE_INTEREST.md) — original AoI enter/leave и source stock vision ranges

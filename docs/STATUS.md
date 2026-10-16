@@ -3,14 +3,17 @@
 Утренняя coreV7 приёмка: nativequeuecancel/requeue/commonbattle/countdown30/
 drive/aim обеих машин подтверждены владельцем. По1KS+1HEeach→обаангара0/3/9,
 durable117/32/active0. Amanual/BnaturalForfeit; Bresultswindowесть,Afullresult
-missing — отдельныйP08Cgap. Native enemy marker уA зелёный при redname: shared
-Vehicle.publicInfo.team literal1 против roster1/2. Текущая узкая ветка
+missing — отдельныйP08Cgap. Ошибка enemy marker уA исправлена: shared
+Vehicle.publicInfo.team теперь совпадает с roster/Avatar. Текущая узкая ветка
 codex/p08c-native-marker-team / план P08C_NATIVE_MARKER_TEAM. Runtime `363daa3`:
 targeted 3 PASS, full 1099 PASS / 5 прежних ignored / build PASS; 683 raw source
 SHA до/после совпали. Новая binding04 и fresh run `morning-marker01`: оба настоящих
 ангара загружены, 96 installed files unchanged, база A118/B33/0, у обоих 0/3/9.
-Native цвет после исправления ещё NOT_RUN, вопрос владельцу отправлен. Ночные ветки
-сохранены; main не менялся.
+Владелец подтвердил красные enemy имя и ромб, движение/наведение обоими.
+Actual paired wire11183 packets:0 team/identity conflicts. Marker gate PASS;
+вся P08C не принята. Следующий шаг — естественное уничтожение/гибель/оба итога
+и ангара, вопрос отправлен. Late-leaver results и spawn остаются открыты.
+Ночные ветки сохранены; main не менялся.
 
 Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего
 дерева и доступна в git: `git show 1eaff5e:docs/STATUS.md` (а также удалённые
