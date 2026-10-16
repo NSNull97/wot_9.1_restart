@@ -1,5 +1,26 @@
 # Ночь 16–17 октября: сервер до 09:00
 
+## NET-02 + retained-C software checkpoint — runtime442ce7d
+
+Normal savedNET merge43790d1 поверх P10Bbce643f; отдельная техническая ветка
+codex/build-temp-retained-executable. **Full1573PASS/0FAIL/5oldignored/buildPASS,
+876rawsourceexact**,709.31stest/757.77sdriver. Actual late +Loss4 training
+compositions повторены в этом full. ExeSHA082217015b1167d300d825b5cd7d9307f08153afa3eaf1f5a7ce64f6438fc4a7;
+rawZIP68b86504d20ce212d26d313446c5ae1ff16de5cd68f72f3bbe7ece24b11c628f
+новым файлом в ownCtarget. Dduplicate отсутствует. [Полные факты и команды](research/NET02_LOSS_TRAINING_INTEGRATION.md).
+
+Actual ownLAN192.168.1.101/32 encryptedLogin→RunOpen4→advertisedBase→firstBase2
+PASS, responses28/24bytes. Diagnostic freshDBA129→130/B43→44, active0/grants0/
+ammo unchanged; sourceLoss01A129/B43 unchanged. BOUND24.41s/operator73.09s,
+ownPID98836/105456 STOP. Evidence `local/evidence/20261017-net-retain-full01/composition-full.json`
+и `local/evidence/20261017-net-own16-execution01/result.json`. NativeV8/gameplay/
+twoPC/firewall/NAT/hosting NOT_RUN. CoreV7/native facts не расширять этим PASS.
+
+После fullD40MiB: следующий отдельный prerequisite сжимает ТОЛЬКО fresh empty
+owned output до первых writes; старые данные не чистить/перемещать/сжимать.
+Затем Hold5 candidate16+writer11/19, actualruntime composition, morning20/21.
+Mainffce8cb unchanged; ночь продолжается до09:00 без ручных вопросов.
+
 ## P10B software checkpoint — runtime689fb93
 
 Ветка codex/p10b-loss-training-integration от91dbdbe; normal merge6c6b7b7. Full1553PASS/0FAIL/5oldignored/buildPASS/865rawsourceexact. Actual Loss4 Host/HTTP/SQL compensation→same-run freshroom→Admit2/ACKlaunch→Finished2/claims released PASS; прежний late composition в том же full PASS. Python17/Web4/HTTP3/oldWeb37; own client host79,CPython76+3hostonlyskip,CLI1. Native/UI/six/two-PC NOT_RUN. [Полные факты](research/P10B_LOSS_TRAINING_INTEGRATION.md). ExeSHA `1611241bd4f90005cc4559ba0172115d37a1ef1786127df331d05c27e5b9ec9c`; evidence `local/evidence/20261017-p10b-loss-full01/composition-full.json`. Mainffce8cb unchanged. Следующая отдельная NET-02 integration, затем свежий стенд; ночь продолжается до09:00.

@@ -26,3 +26,9 @@ runtime689fb93, full1553/source865. Отдельная зависимая вет
 
 Следом — подготовка первого боевого теста и отдельная Hold5 integration;
 исходный порядок и native qualification новых машин сохраняются.
+
+17.10 software checkpoint: runtime442ce7d с отдельной retained-C technical
+предпосылкой; full1573/0fail/5oldignored/build/876rawsourceexact. ActualownLAN
+Login→RunOpen4→firstBase2 PASS, independentnewDB A129→130/B43→44/active0/
+grants0/БК unchanged; exactownPIDSTOP. Исходныйloss01 unchanged. Native/two-PC
+NOT_RUN. Факты research/NET02_LOSS_TRAINING_INTEGRATION.md; mainбезmerge.
