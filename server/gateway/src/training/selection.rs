@@ -74,7 +74,16 @@ pub fn encode_request(r:&Request)->io::Result<Vec<u8>>{
 }
 
 #[derive(Clone,Debug,PartialEq,Eq)]
-pub struct Selection{pub request:Request,pub aggregate_sha256:String,pub frozen:battle::Frozen,pub fingerprint:String}
+pub struct Selection{request:Request,aggregate_sha256:String,frozen:battle::Frozen,fingerprint:String}
+impl Selection{
+    pub fn request(&self)->&Request{&self.request}
+    pub fn frozen(&self)->&battle::Frozen{&self.frozen}
+    pub fn aggregate_sha256(&self)->&str{&self.aggregate_sha256}
+    pub fn fingerprint(&self)->&str{&self.fingerprint}
+    pub(crate) fn into_parts(self)->(Request,String,battle::Frozen,String){
+        (self.request,self.aggregate_sha256,self.frozen,self.fingerprint)
+    }
+}
 pub fn parse_reply(raw:&[u8],request:&Request)->io::Result<Selection>{
     request.validate()?;let v=battle::bounded_json(raw,MAX_REPLY)?;
     exact(&v,&["version","schema","operation","status","account_id","native_database_id","run_id","native_inventory_id", "revision",

@@ -22,7 +22,10 @@ current-room-at-receipt +actualWindow51PASS, ingress9PASS/source17commands.
 ImmutableTeamPlan/World/actualscene3v1+1v3, list/preview и selection codec:
 focused06=35PASS/0ignored/buildPASS; root actualselectionSQL9PASS/0skip47.204s.
 Generationfloor сохраняется после auth removal. Следующий слой — actual
-Session receive transaction/selection HTTP/reserve saga. Один activeWorld,2..6 бойцов,≤3 на стороне;
+Session/table transaction и live coordinator. Session collector, actual
+Flights и issued-inspect Saga: focused12=65PASS/0ignored/buildPASS; client
+CPython2.7.3=76PASS/3oldhostskips. Selection worker compiled; actual endpoint
+кандидат3HTTP tests PASS, ещё не promoted. Live room route NOT_RUN. Один activeWorld,2..6 бойцов,≤3 на стороне;
 явная laboratory one-shot room policy, без дополнительных grants.
 
 План [P10B](plans/P10B.md), originalsource

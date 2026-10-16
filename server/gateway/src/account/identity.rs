@@ -4,6 +4,8 @@ use std::{collections::BTreeMap, fs, fmt, io::{self,Read,Write}, net::{Ipv4Addr,
 use serde::{Deserialize,Deserializer,de::{self,MapAccess,Visitor}};
 use serde_json::Value;
 use rsa::rand_core::{OsRng,RngCore};
+#[path="room_selection.rs"]
+pub(crate) mod room_selection;
 
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
 

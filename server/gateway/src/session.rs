@@ -153,11 +153,27 @@ enum ArenaVehicleStage {Disabled,AwaitingEnable,AwaitingEntityRequest,Queued}
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct WarmAccountReturn {generation:u32,queue_ahead:usize,creation:Option<(u32,bool)>,enabled:bool,stale_avatar_envelopes:u8}
 
+/// Typed room intent collected from a newly accepted reliable Account record.
+/// The index is into the UN-DRAINED caller outbox, including its initial prefix.
+/// Identity/lease/channel authority is supplied only by the outer server.
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub(crate) struct TrainingRecord {
+    pub(crate) outbox_index:usize,
+    pub(crate) request:crate::training091::ingress::Request,
+}
+#[must_use="stage records and diagnostics with Registry/all Sessions; publish only after commit"]
+pub(crate) struct TrainingReceived {
+    pub(crate) close:bool,
+    pub(crate) diagnostics:Vec<String>,
+    pub(crate) records:Vec<TrainingRecord>,
+}
+
 #[derive(Clone)]
 struct Session {
     id:u32,key:[u8;16],login_peer:SocketAddr,base_peer:Option<SocketAddr>,handoff:u32,token:u32,
     active:bool,rx:u32,last_rx:Instant,last_keepalive:Instant,last_heartbeat:Instant,tx:Window,
-    account_probe:bool,account_ready:bool,
+    account_probe:bool,account_ready:bool,training_opt_in:bool,
+    training_flights:Option<crate::training091::stream_flight::Flights>,
     received:VecDeque<(u32,Vec<u8>)>,sync_mask:u8,request_ids:Vec<i16>,
     hangar:Option<Arc<crate::hangar091::Fixtures>>,outbox:VecDeque<Vec<u8>>,chat_request_ids:Vec<i64>,
     language:Option<&'static str>,
@@ -184,7 +200,7 @@ struct Session {
 impl Session {
     fn new(id:u32,key:[u8;16],peer:SocketAddr,now:Instant)->Self {
         Self {id,key,login_peer:peer,base_peer:None,handoff:OsRng.next_u32(),token:OsRng.next_u32(),
-            active:false,rx:0,last_rx:now,last_keepalive:now,last_heartbeat:now,tx:Window::new(),account_probe:false,account_ready:false,
+            active:false,rx:0,last_rx:now,last_keepalive:now,last_heartbeat:now,tx:Window::new(),account_probe:false,account_ready:false,training_opt_in:false,training_flights:None,
             received:VecDeque::new(),sync_mask:0,request_ids:Vec::new(),hangar:None,outbox:VecDeque::new(),chat_request_ids:Vec::new(),language:None,stats_requests:0,
             unsupported_request_ids:VecDeque::new(),identity:None,created_at:now,account_cache_hash:None,login_attempt:None,
             arena_base:false,avatar_unsupported_envelopes:0,arena_space:ArenaSpaceStage::Disabled,
@@ -205,6 +221,20 @@ impl Session {
         Ok(())
     }
     fn drain_outbox(&mut self)->io::Result<()> {
+        if self.training_flights.is_some() {
+            while self.tx.len()<8 && !self.outbox.is_empty() {
+                // Poll/flush callers also use this path outside receive's clone.
+                // A failed marker update must not partially enqueue live bytes.
+                let mut next=self.clone();
+                let sequence=next.tx.enqueue_body_tracked(next.outbox.front().ok_or_else(invalid)?)?;
+                next.training_flights.as_mut().ok_or_else(invalid)?.on_enqueued(sequence).map_err(|_|invalid())?;
+                if let Some(warm)=next.drive_return_account.as_mut().filter(|w|w.creation.is_none()) {
+                    if warm.queue_ahead==0 {warm.creation=Some((sequence,false));}else{warm.queue_ahead-=1;}
+                }
+                next.outbox.pop_front();*self=next;
+            }
+            return Ok(());
+        }
         while self.tx.len()<8 {
             let Some(body)=self.outbox.front() else {break;};
             if let Some(warm)=self.drive_return_account.as_mut().filter(|w|w.creation.is_none()) {
@@ -215,6 +245,46 @@ impl Session {
             self.outbox.pop_front();
         }
         Ok(())
+    }
+    /// Insert one complete closed-codec stream in the outer staged transaction.
+    /// Actual Session/auth/revision are checked here; Registry/query provenance
+    /// must separately match the current immutable Controller read context.
+    fn queue_training_stream(&mut self,context:crate::training091::stream_flight::StreamContext,
+        bodies:Vec<Vec<u8>>,at:usize)->io::Result<()> {
+        if !self.training_account_ready() || at>self.outbox.len() || bodies.is_empty()
+            || self.outbox.len()+bodies.len()>crate::training091::wire::MAX_OUTBOX
+            || bodies.iter().any(|b|b.is_empty()||b.len()>512)
+            || self.outbox.iter().chain(&bodies).map(Vec::len).sum::<usize>()>crate::training091::wire::MAX_OUTBOX_BYTES {
+            return Err(invalid());
+        }
+        let channel=context.channel();let caller=context.caller();
+        let principal=caller.account.0.iter().map(|b|format!("{b:02x}")).collect::<String>();
+        if channel.session!=self.id||channel.generation!=self.training_account_generation()||caller.generation!=u64::from(self.id)
+            ||self.identity.as_ref().is_none_or(|p|p.account_id.replace('-',"")!=principal)
+            ||self.ammo_service.as_ref().is_none_or(|p|p.revision()!=u64::from(context.profile_revision())) {
+            return Err(invalid());
+        }
+        for(index,body)in bodies.iter().enumerate(){
+            let mut offset=0;
+            if index==0 {
+                if body.len()<6||body[0]!=52||body[3..5]!=context.kind().stream_id().to_le_bytes(){return Err(invalid());}
+                let size=usize::from(u16::from_le_bytes([body[1],body[2]]));
+                if size!=3+usize::from(body[5]){return Err(invalid());}offset=3+size;
+            }
+            let chunk=body.get(offset..).ok_or_else(invalid)?;
+            if chunk.len()<8||chunk[0]!=53||usize::from(u16::from_le_bytes([chunk[1],chunk[2]]))+3!=chunk.len()
+                ||chunk[3..5]!=context.kind().stream_id().to_le_bytes()||usize::from(chunk[5])!=index
+                ||chunk[6]!=u8::from(index+1==bodies.len()){return Err(invalid());}
+        }
+        let mut next=self.clone();
+        next.training_flights.as_mut().ok_or_else(invalid)?.stage(context,at,bodies.len()).map_err(|_|invalid())?;
+        for (offset,body) in bodies.into_iter().enumerate(){next.outbox.insert(at+offset,body);}
+        *self=next;Ok(())
+    }
+    /// Authentication survives a warm Account recreation; callback/stream
+    /// origin does not. Use the existing server-owned return generation.
+    fn training_account_generation(&self)->u64{
+        self.shared.as_ref().map_or_else(||self.drive_return_account.as_ref().map_or(1,|w|u64::from(w.generation)+1),shared::Client::account_incarnation)
     }
     fn ready_for_arena_base(&self)->bool {
         self.active && self.account_ready && self.identity.is_some() && self.hangar.is_some()
@@ -884,19 +954,25 @@ impl Session {
         for body in aim_bodies { self.tx.enqueue_body_tracked(&body)?; }
         Ok(())
     }
+    fn account_decoder(&self)->fn(&[u8])->io::Result<Vec<crate::hangar091::Incoming>> {
+        if self.hangar.is_some() {
+            if self.ammo_service.as_ref().is_some_and(ammo_session::State::research_enabled) {crate::hangar091::requests_research_service}
+            else if self.ammo_service.as_ref().is_some_and(ammo_session::State::barracks_enabled) {crate::hangar091::requests_crew_barracks}
+            else if self.ammo_service.as_ref().is_some_and(ammo_session::State::dismissal_enabled) {crate::hangar091::requests_crew_dismissal}
+            else if self.ammo_service.as_ref().is_some_and(ammo_session::State::progression_enabled) {crate::hangar091::requests_crew_progression}
+            else if self.ammo_service.as_ref().is_some_and(ammo_session::State::transfer_enabled) {crate::hangar091::requests_crew_transfer}
+            else if self.ammo_service.as_ref().is_some_and(ammo_session::State::crew_enabled) {crate::hangar091::requests_crew_service}
+            else if self.ammo_service.is_some() {crate::hangar091::requests_ammo_service}
+            else if self.identity.is_some() {crate::hangar091::requests_interactive}
+            else {crate::hangar091::requests}
+        }else{|payload|crate::account091::requests(payload).map(|rows|rows.into_iter().map(crate::hangar091::Incoming::Sync).collect())}
+    }
     fn receive_account(&mut self,payload:&[u8],events:&mut Vec<String>)->io::Result<()> {
+        let requests=(self.account_decoder())(payload)?;
+        self.apply_account_requests(requests,events)
+    }
+    fn apply_account_requests(&mut self,requests:Vec<crate::hangar091::Incoming>,events:&mut Vec<String>)->io::Result<()> {
 use crate::hangar091::Incoming;
-let requests=if self.hangar.is_some() {
-    if self.ammo_service.as_ref().is_some_and(ammo_session::State::research_enabled) {crate::hangar091::requests_research_service(payload)?}
-    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::barracks_enabled) {crate::hangar091::requests_crew_barracks(payload)?}
-    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::dismissal_enabled) {crate::hangar091::requests_crew_dismissal(payload)?}
-    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::progression_enabled) {crate::hangar091::requests_crew_progression(payload)?}
-    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::transfer_enabled) {crate::hangar091::requests_crew_transfer(payload)?}
-    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::crew_enabled) {crate::hangar091::requests_crew_service(payload)?}
-    else if self.ammo_service.is_some() {crate::hangar091::requests_ammo_service(payload)?}
-    else if self.identity.is_some() {crate::hangar091::requests_interactive(payload)?}
-    else {crate::hangar091::requests(payload)?}}
-    else {crate::account091::requests(payload)?.into_iter().map(Incoming::Sync).collect()};
 for incoming in requests {
     // The shared mutation namespace also guards later nonmutating commands.
     // ClientChat uses its separate i64 namespace; transport duplicates never
@@ -1051,7 +1127,10 @@ for incoming in requests {
         } else if !self.active || !f.body.is_empty() || !f.piggybacks.is_empty() {return Err(invalid());}
         for p in &f.piggybacks {self.validate_frame(p,depth+1)?;} Ok(())
     }
+    /// Default entry point cannot discard collected room intents or print
+    /// transactional training diagnostics before the outer Registry commit.
     fn receive(&mut self,f:&Frame,now:Instant)->io::Result<bool> {
+        if self.training_opt_in {return Err(invalid());}
         if self.account_ready {
             // Validate and apply the complete piggyback tree atomically. A later
             // invalid message cannot advance ACK/state or consume earlier RPCs.
@@ -1082,15 +1161,59 @@ for incoming in requests {
         }
         self.last_rx=now;Ok(close)
     }
+    /// This commits only the RECEIVER clone supplied by the outer transaction.
+    /// The caller must clone Registry and every affected Session first, insert
+    /// publications at records' offsets, then drain all outboxes and commit all.
+    /// No writer/socket worker is dispatched here, and diagnostics are returned.
+    fn receive_training_collected(&mut self,f:&Frame,now:Instant)->io::Result<TrainingReceived> {
+        if !self.training_opt_in || !self.account_ready {return Err(invalid());}
+        let mut next=self.clone();let mut diagnostics=Vec::new();let mut records=Vec::new();
+        let close=next.receive_ready_inner(f,now,&mut diagnostics,0,&mut 32,Some(&mut records))?;
+        *self=next;Ok(TrainingReceived{close,diagnostics,records})
+    }
+    fn training_account_ready(&self)->bool {
+        self.training_opt_in && self.active && self.account_ready && !self.arena_base
+            && self.identity.is_some() && self.hangar.is_some() && self.base_peer.is_some() && self.sync_mask==7
+            && self.shared.as_ref().is_none_or(shared::Client::profile13_account)
+            && self.drive.as_ref().is_none_or(|d|d.phase==crate::map_drive_world091::Phase::Idle)
+            && self.drive_return_account.as_ref().is_none_or(|w|w.enabled)
+    }
+    fn receive_training_account(&mut self,payload:&[u8],events:&mut Vec<String>,records:&mut Vec<TrainingRecord>)->io::Result<()> {
+        use crate::hangar091::{Incoming,TrainingIncoming};
+        if !self.training_account_ready() {return Err(invalid());}
+        // Decode the complete legacy sub-bundle exactly once. In particular,
+        // duplicate legacy command checks must cross intervening Room records.
+        let requests=crate::hangar091::requests_training_with(payload,true,self.account_decoder())?;
+        for request in requests {match request {
+            TrainingIncoming::Account(incoming)=>{
+                // Predefined stream IDs200/201 belong to their own origin
+                // contexts, never to a synthetic initial AccountSync request.
+                if matches!(&incoming,Incoming::Sync(r)|Incoming::CachedSync{request:r,..} if [200,201].contains(&r.id)) {return Err(invalid());}
+                self.apply_account_requests(vec![incoming],events)?;
+            },
+            TrainingIncoming::Room(request)=>{
+                if records.len()>=32*crate::training091::ingress::MAX_RECORDS {return Err(invalid());}
+                records.push(TrainingRecord{outbox_index:self.outbox.len(),request});
+            },
+        }}Ok(())
+    }
     fn receive_ready(&mut self,f:&Frame,now:Instant,events:&mut Vec<String>,depth:usize,budget:&mut usize)->io::Result<bool> {
+        if self.training_opt_in {return Err(invalid());}
+        self.receive_ready_inner(f,now,events,depth,budget,None)
+    }
+    fn receive_ready_inner(&mut self,f:&Frame,now:Instant,events:&mut Vec<String>,depth:usize,budget:&mut usize,
+        mut training:Option<&mut Vec<TrainingRecord>>)->io::Result<bool> {
         if depth>8 || *budget==0 {return Err(invalid());}*budget-=1;
         self.tx.validate_ack(f)?;
         let mut close=false;
         for p in &f.piggybacks {
             if close {return Err(invalid());}
-            close|=self.receive_ready(p,now,events,depth+1,budget)?;
+            close|=self.receive_ready_inner(p,now,events,depth+1,budget,training.as_deref_mut())?;
         }
         self.tx.acknowledge(f)?;
+        if let Some(flights)=&mut self.training_flights {
+            flights.on_validated_ack(self.tx.cumulative,&f.selective).map_err(|_|invalid())?;
+        }
         if let Some(shared)=&mut self.shared {shared.acknowledge(self.tx.cumulative,f)?;}
         if let Some((sequence,acked))=&mut self.arena_vehicle_announcement {
             *acked|=self.tx.cumulative>*sequence || f.selective.contains(sequence);
@@ -1133,6 +1256,9 @@ for incoming in requests {
                     if !f.body.is_empty() {
                         if f.body.len()<(if self.hangar.is_some(){5}else{6}) || f.body[0]!=1 || f.body[1..5]!=self.token.to_le_bytes() {return Err(invalid());}
                         if f.body[5..]==[11,0] {close=true;}
+                        else if training.is_some() && self.training_account_ready() {
+                            self.receive_training_account(&f.body[5..],events,training.as_deref_mut().ok_or_else(invalid)?)?;
+                        }
                         else if self.shared.is_some() {self.shared_payload(&f.body[5..],n,now,events)?;}
                         else if self.drive.is_some() {
                             if self.arena_base {self.drive_avatar(&f.body[5..],n,now,events)?;}
@@ -1240,7 +1366,9 @@ for incoming in requests {
         if self.shared.as_ref().is_some_and(|c| c.needs_flush()) {
             self.flush_shared_requests(events)?;
         }
-        self.drain_outbox()?;
+        // A child frame must not drain the prefix while later Room events
+        // still record insertion offsets. Outer publication performs the drain.
+        if training.is_none() {self.drain_outbox()?;}
         self.last_rx=now;Ok(close)
     }
 }
@@ -4050,3 +4178,7 @@ mod tests {
         s.receive(&arena_frame(&s,36,&[9],6),t).unwrap();assert!(s.drive_return_account.as_ref().unwrap().enabled);
     }
 }
+
+#[cfg(test)]
+#[path="training/session_tests.rs"]
+mod p10b_session_tests;

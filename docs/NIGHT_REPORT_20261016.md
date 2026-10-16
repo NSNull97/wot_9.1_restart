@@ -236,3 +236,28 @@ writer-vectors. Root повторил promoted selector SQL:9PASS/0skip47.204s.
 Full P10B gate ещё NOT_RUN.
 Own native/service processes core/extended остановлены; установленные coreV7
 и оба сохранённых source tags не менялись. Main merge не выполнялся.
+
+P10B follow-up: actual Session collector preserves full compound-frame order,
+legacy decoder once, ACK/history rollback and deferred outbox offsets. Actual
+Session fixed streams200/201 use all body ACKs, independent prior/suffix frames,
+monotonic preview aliases, and existing warm Account generation as separate
+callback origin. AuthLease remains actualSession.id; Account generation changes
+on warm return. Default old routes do not activate these helpers.
+
+Saga now issues its own exact Inspect task after drain; denial revision40 fences
+old no-reservation39. Opaque parsed Selection cannot be constructed/mutated by
+other runtime modules. Actual saved6SQL/40DTO corpus +4selection samples test
+strict codec and scheduling; Fresh in Rust scheduling tests is explicitly an
+authored cache fixture. Focused11=64PASS/build; focused12=65PASS/build includes
+warm-origin fence (exe615651f23b46a71bf3dfc63571e66d01e2ea07594088f7589f4dfbf8d0a30443).
+Focused10 tested54/build but an unused worker module was added between test/build;
+it is not treated as an immutable source gate. Source-stable focused11/12 replace
+that limitation. Fresh owned selection HTTP client/job compiled, endpoint itself
+is not yet connected; candidate actualHTTP3PASS/0skip74.091s remains separate.
+
+Client VERSION8/enable_training_rooms delegates original native PRB callbacks,
+preserves original tooltip/readiness and initializes original arena services.
+Root actual CPython2.7.3:79total=76PASS/3previoushost-onlyskips; hostnew15PASS.
+No prepare/install/client launch. All core/extended installed clients preserved.
+Actual wholeTable+Registry publication, live writer coordinator and native room
+remain NOT_RUN. Next work remains P10B; NET-02/tail have not started.

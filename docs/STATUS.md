@@ -97,7 +97,8 @@ unchanged; newoverlay/native NOT_RUN. Непринятые gates в main не с
 P10B начат в `codex/p10b-native-training-room` от P06Tbase0f1db40; production
 foundation focused01=51PASS/0ignored/buildPASS, actualhangarshim/defaultclosed.
 TeamPlan/actualscene3v1+1v3/list-preview/selection: focused06=35PASS/build;
-actualSQL9PASS/0skip47.204s. Session/HTTP/saga/native ещё NOT_RUN. План [P10B](plans/P10B.md).
+actualSQL9PASS/0skip47.204s. Session/Flights/Saga focused12=65PASS/build;
+CPython2.7.3=76PASS/3oldskips. WholeTable/HTTP/native ещё NOT_RUN. План [P10B](plans/P10B.md).
 
 ## Принято владельцем на настоящем клиенте #717
 
