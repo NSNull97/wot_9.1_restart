@@ -81,7 +81,13 @@ legacyPython28, newWeb4/oldWeb25unique, client2.7.3 9+20+61PASS/4hostskips.
 Mixed-01 отдельная БД A110/B27/оба MS1[0AP,4HEAT,10HE] из своего склада,
 0grants; исходныйpool-01 сохранён. Full01 прерван: HE+wreck anchor bug;
 исправление/hidden-primary explosion privacy/late-anchor hardening и10World
-tests PASS в focused07. Полный source-bound gate ещё NOT_RUN.
+tests PASS в focused07. Full02 на dc27285:1087PASS/5oldignored/buildPASS,
+681sourcefiles before/after exact. Actual mixed-01 startup/5resources и два
+own UDP→v2run_open PASS; A111/B28/БК unchanged, services ownstop PASS.
+Новый old-only queue/cancel/busyJoin/commandbudget fix после full02:
+focused09 **90PASS/0ignored/buildPASS**,9 новых reliableflow regressions.
+Focused08:86PASS/4FAIL новых outbox assertions, исправлены на actualtx;
+production не ослаблен. Текущий head требует нового full03.
 Native/UI/audio NOT_RUN, WT/FV source/scheduler-only без qualified physics/
 owned admission, карточка не принята и не main.
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).

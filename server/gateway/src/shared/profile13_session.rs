@@ -31,8 +31,12 @@ pub(crate) struct State {
 impl State {
     pub(super) fn reservation_battle(&self)->Option<u64>{self.reservation.as_ref().map(|r|r.battle).or_else(||self.reservation_v2.as_ref().map(|r|r.battle))}
     pub(super) fn reservation_kind(&self)->Option<super::vehicle_profile::VehicleKind>{self.reservation.as_ref().map(|r|r.frozen.kind).or_else(||self.reservation_v2.as_ref().map(|r|r.frozen.kind))}
+    pub(super) fn reservation_native_inventory_id(&self)->Option<u32>{self.reservation.as_ref().map(|r|r.native_inventory_id).or_else(||self.reservation_v2.as_ref().map(|r|r.frozen.native_inventory_id))}
     pub(super) fn has_reservation(&self)->bool{self.reservation.is_some()||self.reservation_v2.is_some()}
     pub(super) fn has_pending_return(&self)->bool{self.pending_return.is_some()||self.pending_return_v2.is_some()}
+    /// Admission consumes one command; its required terminal write retains the
+    /// final slot even when the native session has reached its lifetime budget.
+    pub(super) fn can_admit_command(&self)->bool{self.command_counter<MAX_COMMANDS-1}
     pub(crate) fn garage_idle(&self) -> bool {
         self.selection.is_none() && self.reservation.is_none() && self.pending_return.is_none()
             &&self.reservation_v2.is_none()&&self.pending_return_v2.is_none()&&!self.in_flight

@@ -54,6 +54,16 @@ Harness профиля 12/13: `tools/p09e_research_harness.py --seed-only`.
 
 ## Стенды (`local/stands/`, не в git)
 
+- `night-battle-20261016-01/mixed-01`: отдельный P06T opt-in backup, оба
+  MS1[AP0,HEAT4,HE10] из своего склада,0grants; исходныйpool-01 сохранён.
+  Full02/dc27285/1087PASS source-bound binding-p06t.json исторически проверен:
+  actual startup-p06t01/5resources и два synthetic own UDP→v2run_open PASS,
+  A111/B28/БК unchanged, gateway/bridge STOPPED по своим receipts.
+  Новый queuefix после full02 требует нового full03+versioned binding.
+  `run.py bind --build` принимает basename build либо absolute path;
+  relative `local/build/server/...` не использовать. V7 clientplans только
+  PREPARED, actual native/UI/audio NOT_RUN. Точные команды/откат — собственный
+  `MORNING.md`; перед утренними клиентами использовать свежий run.
 - `night-battle-20261016-01`: ночной зависимый P04M-кандидат. Исходный
   `game.sqlite` сохранён побайтно; рабочая opt-in копия `pool-01/game.sqlite`,
   fixtures `pool-01/fixtures`, A109/B26/MS1AP14 у обоих/A IS7AP19. Политика

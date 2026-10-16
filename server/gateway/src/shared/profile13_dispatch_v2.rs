@@ -105,7 +105,7 @@ impl Dispatcher{
             if p.in_flight||p.reservation.is_some()||p.pending_return.is_some(){return Err(model::bad());}
             let pending=p.pending_return_v2.is_some();if terminal_only!=pending{continue;}
             if pending&&world.actors.iter().any(|a|a.session==Some(s.id)){continue;}
-            if !pending&&(world.started.is_some()||p.selection.is_none()||!s.active||!c.join_requested||!s.ammo_service.as_ref().is_some_and(ammo_session::State::idle)){continue;}
+            if !pending&&(p.reservation_v2.is_some()||world.started.is_some()||p.selection.is_none()||!s.active||!c.join_requested||!s.ammo_service.as_ref().is_some_and(ammo_session::State::idle)){continue;}
             let owner=s.identity.clone().ok_or_else(||model::bad())?;let revision=s.ammo_service.as_ref().ok_or_else(||model::bad())?.revision();let sid=s.id;
             let p=state(s)?;p.revision=revision;let request=if let Some(t)=&p.pending_return_v2{t.request()}else{RequestV2::Admit{battle:world.id,native_inventory_id:p.selection.ok_or_else(||model::bad())?}};
             let context=p.next_context(&owner,sid)?;let task=TaskV2{session:sid,owner,context,request};let job=task.start(config.clone())?;p.in_flight=true;
@@ -114,3 +114,7 @@ impl Dispatcher{
         }}Ok(())
     }
 }
+
+#[cfg(test)]
+#[path="profile13_queue_v2_tests.rs"]
+mod queue_v2_tests;

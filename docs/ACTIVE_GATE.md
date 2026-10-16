@@ -3,11 +3,16 @@
 **P06T — типы снарядов, критические повреждения и пожар**, зависимая ветка
 `codex/p06t-mixed-shell-damage` после автоматически проверенного P04M.
 Source-bound БК3/current/next, frozen shell и v2writer, явный laboratory
-solver/module proxy/fire policy подключены. Focused07:81PASS/0FAIL/0ignored/
-buildPASS. Actual World/Trace/geometry/LOS, scene-controls, owner publication,
-SQLite/HTTP и client CPython2.7.3 проверены автоматически. Полный final source
-gate ещё NOT_RUN. Full01 прерван из-за найденного HE+wreck anchor bug,
-исправление и regression PASS в focused07. Native/UI/audio NOT_RUN; WT/FV пока source/scheduler-only,
+solver/module proxy/fire policy подключены. Full02 на dc27285:
+1087PASS/0FAIL/5oldignored/buildPASS,681sourcefiles before/after exact.
+Actual World/Trace/geometry/LOS, scene-controls, owner publication,
+SQLite/HTTP и client CPython2.7.3 проверены автоматически. Mixed-01 actual
+startup/5resources и два own UDP→v2run_open PASS, own services остановлены.
+После full02 исправлен old-only queue reservation/cancel guard, implicit
+cancel при busyJoin и commandbudget: focused09 **90PASS/0ignored/buildPASS**,
+включая9 новых actual-writer/native reliable flow regressions. Нужен full03.
+Full01 прерван из-за HE+wreck anchor bug, regression PASS в focused07/full02.
+Native/UI/audio NOT_RUN; WT/FV пока source/scheduler-only,
 полная карточка не принята. План [P06T](plans/P06T.md),
 [факты и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 

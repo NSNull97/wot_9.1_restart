@@ -164,7 +164,11 @@ roster size; writer проверяет также расход каждого st
 | HE+wreck World test после05 |3 actors, HP0/HP90 inactive wreck и actual nearby splash, focused06 PASS |
 | Focused06 |80PASS/1FAIL/0ignored; все10 World tests PASS, один protocol late-anchor poison FAIL; общий build gate не PASS |
 | Focused07 |81PASS/0FAIL/0ignored,31.34с,buildPASS;10 World tests, source-bound wreck anchor/terminal/poisons и2 publication privacy/epoch regressions PASS |
-| Полный gateway / новые bindings | **NOT_RUN / PENDING** до отдельного сохранённого результата |
+| Focused08 |86PASS/4FAIL/0ignored; новые queue tests ошибочно наблюдали drainedoutbox вместо фактического reliable packet, build NOT_RUN |
+| Focused09 |90PASS/0FAIL/0ignored/buildPASS;9 queue v1/v2 flow regressions проверяют actual reliable frame, durable cancel/replay, busyJoin и budget511/512 |
+| Full02 head dc27285b |1087PASS/0FAIL/5 старых ignored/buildPASS; source-before/after681 exactPASS, `local/evidence/20261016-p06t-full02/` и `local/build/server/gateway-p06t-full02/` |
+| Queue corrections после full02 | в работе; union v1/v2 reservation/duplicate guards, durable cancel→fresh callback и command512 bound; focused08/full03 **PENDING**, не покрыты1087 |
+| Текущий binding/утренний native цикл | отдельный текущий startup/owner gate; native **NOT_RUN** |
 | Native/UI/audio/полный утренний цикл | **NOT_RUN** |
 
 Focused04 прошёл actual first-contact→Trace→LAB module→singleHP ledger,
@@ -204,8 +208,12 @@ python -B -X utf8 tools/p06t_device_source.py --original-root C:/WoT_0.9.1_RU_07
 ```
 
 Output directories должны быть свежими; существующие receipts не перезаписывать.
-Первый пример выполнен в focused05; полный regression/build gate конечного
-head с двумя дополнительными World tests ещё требуется.
+Первый пример выполнен в focused05. Full02 затем прошёл1087 tests/build и
+сверку681 source files для dc27285be170e57ff12ad78babce8f5e589d3f93.
+EXE full02 SHA256:
+`c229d44badb5891ac5fb4502d33603d29a04253c2d29baa54000e973998efe9c`.
+Этот результат не переносится на последующие queue corrections: им требуется
+собственный focused/full03 gate.
 
 Read-only audit после05 обнаружил отдельный дефект: World запускает HE splash
 после retained-wreck contact, но Trace принимал explosion anchor только от
@@ -218,16 +226,27 @@ center и LOS не подставляются фикстурой. Статус �
 запуска: focused06 прошёл10 World tests, в том числе обе wreck ветки и view
 scale. FAIL в protocol poison8 обнаружил разрешение нового Segment между
 WreckImpact и splash; focused07 прошёл81 tests/build после закрытия этого
-late-anchor инварианта. Взрыв не подавляется заглушкой. Полный общий regression
-gate конечного head ещё **PENDING**.
+late-anchor инварианта. Взрыв не подавляется заглушкой. Full02 прошёл1087
+tests/build; последующий текущий head с queue corrections ещё **PENDING**.
+
+Read-only queue audit после full02 отдельно обнаружил границы в смешанных
+v1/v2 reservations и callbacks. Исправление должно отвергать changed Join без
+неявной отмены старого резерва, не повторять durable cancel и сохранять один
+finish command в bounded512 journal. Это новый scope после сохранённого full02,
+а не уже прошедший результат. Реальный writer fixture:
+`tests/fixtures/p06t-queue-writer-vectors.json` SHA
+`6a0dd7856242a0105864de7985ec309c4e25b76616e1a5732102201c2abf580f`;
+read-only audit receipt SHA
+`516cc6a6d7de378487f401109122c9d1e53a6bed2a5a7cd7e2463f50633ae90b`.
 
 ## WT/FV, границы приёмки и откат
 
 VERIFIED SOURCE/компонент scheduler: WT E100128мм clip6/interval2с/reload60с,
 150мм clip4/3с/50с; FV215b183 premium HESH — HIGH_EXPLOSIVE275/275,
 а не новая физическая family. **Qualified World physics/owned admission этих
-машин отсутствуют.** У FV также нужен отдельный versioned catalogue correction
-для original UK nationID5; frozen P04M catalogue под старым SHA не меняется.
+машин отсутствуют.** Нужен отдельный versioned catalogue correction полного
+цикла China5→3, France3→4, UK4→5. Поправка только UK оставила бы неверный
+China ID. Frozen P04M catalogue под старым SHA не меняется.
 Нельзя на основании source-only scheduler назвать WT/FV playable/P06T accepted.
 
 Свежий read-only scope audit: `local/night-staging/20261016/p06t-damage01/
@@ -244,10 +263,10 @@ collision members; whole package SHA не пересчитан и не заяв�
 | Закрытые importers | `p04m_battle_profiles.py` принимает3 USSR сборки, `vehicle_physics_profile.py` только IS7. Переиспользуются bounded readers/алгебра, не их готовые profiles/pins |
 | Physics/supports | WT20 individual wheels/no groups; FV groups WD_L,W_L,WD_R,W_R. Нужна новая versioned mapping, текущая требует первые W_L/W_R; actual Jolt getter bits/inertia/contact gates обязательны |
 | WT assembly identity |128=100000кг/Gun_01,150=97800кг/Gun_02 из actual mass sum; один vehicleCD16913. Нужен различимый assembly/mount либо явно только128 runtime; перепутать profiles нельзя |
-| Aim | FV source yaw limits `-45 45`; WT basic pitch `-15 5`, rear `-7 5 37`, transition5. Текущий360° yaw и rear-only-max/constant-min не выражают это; units5 ещё нужно доказать reader-ом |
+| Aim | FV source yaw limits `-45 45`°; WT basic pitch `-15 5`°, rear `-7 5 37`°, explicit transition5°=.08726646rad. Original reader/PE доказаны: обе границы min/max интерполируются; default0.4rad относится только к отсутствующему transition. Текущий360° yaw и rear-only-max/constant-min не выражают это |
 | Closed Rust/C# | VehicleKind/Profile/scene Kind5, World geometries[5], source_profiles[5], manifestv3 exact5; C# StockDefinitions strict3 и AngularBodyBinding kinds требуют versioned расширения |
 | Crew/damage | WT6 primary seats, FV5; текущие crew[bool;5]/PoolCrew≤5 и source caps5 требуют новых source-bound maxima/roles/extras/terminal pins |
-| Owned/native | registry USSR-only, pool ammo closed15, v2 Frozen admission/terminal maxima закрытыMS1/IS7; нужны source descriptors, real SQLite ownership/ammo/crew proof и FV catalogue UK5 migration |
+| Owned/native | registry USSR-only, pool ammo closed15, v2 Frozen admission/terminal maxima закрытыMS1/IS7; нужны source descriptors, real SQLite ownership/ammo/crew proof и полный nation cycle China5→3/France3→4/UK4→5 |
 
 WT128100000кг находится ровно на существующей inclusive mass границе;
 необходимость расширять её не установлена. Из этих source фактов не следует,
@@ -255,12 +274,69 @@ WT128100000кг находится ровно на существующей incl
 квалификацию. Полноценные WT/FV требуют отдельных actual-source import,
 getter→scalarFrameProof→World/ACK и owner gates, сохраняя старые5 regressions.
 
+**VERIFIED STATIC SOURCE, экспорт не равен qualification.** В ignored
+`local/night-staging/20261016/p06t-damage01/wt-fv-source01/` подготовлены
+ограниченный exporter, отдельный xyznuvtb reader, проверки и три derived JSON:
+WT128, WT150 source-only, FV183. Текущие выходы `checks03-export/` и byteexact
+`checks03-repeat/` содержат настоящие Hull/Turret/Gun vertices/triangles,
+sparse material entries, source pivots, exact descriptors, mass sums,9 device
+maxima и ordered crew6/6/5. Source profiles не содержат runtime binding:
+`runtime_physics=null`, `native_binding=null`, admission/registration=false.
+Небольшие JSON численных фактов не заменяют исходные collision assets.
+
+Новый WT disk reader проверяет xyznuvtb header68/stride32 и читает только
+POSITION FLOAT3 по offsets0/4/8. Остальные20 bytes остаются opaque; packed
+normal DWORD не декодируется как float. Original shader XML и PE converter
+подтверждены независимо, GPU destination stride28 не перепутан с disk32.
+Index header72/list16-or32/groups16 проверяются отдельно. Proof:
+`local/evidence/20261016-p06t-vertex01/result.json` SHA
+`9855d66ec4fd9a165be872273112bf81e3c0bc6a04ed3df09f89e31ea89746f7`.
+45 exact PE instruction checks/3 shader declarations/5 WT primitive bounds/
+1085 triangles — STATIC_ONLY; исходный клиент не запускался.
+
+Aim proof `local/evidence/20261016-p06t-aim01/result.json` SHA
+`ad09cc66372a8ba03405128ea1f0a17c4909d622d13ed75ad7f469784e103733`
+связывает source XML, original bytecode и native PE f32 limits. На native
+границе min/max/sector/transition — radians; explicit XML transition5 сначала
+переводится из градусов. Это доказательство source semantics, не проверка
+нового runtime Aim. Nation proof
+`local/evidence/20261016-p06t-nation-migration01/result.json` SHA
+`0179f30b0db3954aaf45c007d67e766cf60c69dff5e027d3aed869745780e0d7`
+даёт2494 bijective item IDs,776 изменённых CDs и прежние5 byte-identical
+CDs/descriptors; migration/runtime пока NOT_RUN.
+
+Свежая команда preparation gate:
+
+```powershell
+python -B -X utf8 local/night-staging/20261016/p06t-damage01/wt-fv-source01/run_checks.py checks03
+```
+
+Результат9PASS/2.274с, test runner2.007с, exact argv/stdout/stderr и source
+before/after в `checks03-receipt/result.json` SHA
+`f326ebb2bcfab09a515b35be42ec2ba872b31ac8361b933e967ebfc59d065787`.
+Проверены actual descriptors/mass/clip6vs4/crew/devices; все original mesh
+indices/materials; поздний poisoned member и wrong metadata SHA отвергнуты
+до публикации; stale/outside output запрещены; экспорт повторён побайтово;
+xyznuvtb badformat/count/NaN-position/index/group poisons отвергнуты, NaN bits
+в opaque normal не меняют XYZ. Manifest SHA
+`d02d53a52ce9e9dcfb6ed3be19108a38e986b697cf77e1435cc468894c6293c1`.
+
+Будущая минимальная physics foundation: отдельный versioned importer и
+source-profile definition/loader для WT128+FV183, новый resource manifest,
+actual Jolt getter bindings и прежний scalarFrameProof/ACK. WT main W_L0/W_R0
+radius0.495184987783432 и FV named W_L/W_R radius0.240187004208565 требуют
+явной новой LAB support policy; старый reader policy не расширяется молча.
+GunBreech material31 сохраняется как **Unsupported**, не ordinary plate.
+Никаких copied native inertia bits, historical hit-volume claims или owner
+admission из-за наличия geometry export.
+
 Пока не реализованы ammo-bay explosion, turret detach, ремонт/восстановление
 экипажа, оригинальные multi-layer penetration и historical damage variance.
 Native правильность новых method IDs, всех critical/fire/HE UI/audio и
 переходов сохраняет NOT_RUN до настоящей ручной проверки владельца.
-Полный source-bound gateway regression/build gate текущего конечного head
-ещё требуется; ночное разрешение не заменяет эту приёмку.
+Full02 source-bound regression/build прошёл для своего head. Повторный gate
+текущего queue-fix head ещё требуется; ночное разрешение не заменяет native
+приёмку.
 
 Откат: сохранённые P04M branch/source-bound binary+binding, выключенный P06T
 opt-in и соответствующий прежний client patch ledger. БД откатывать целым

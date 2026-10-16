@@ -34,23 +34,26 @@ impl Session {
                 NativeCommand::Join{native_inventory_id,..} => {
                     let selected=native_inventory_id as u32;
                     if c.join_requested && (state.selection==Some(selected)
-                        || state.reservation.as_ref().is_some_and(|r|r.native_inventory_id==selected)) {
+                        || state.reservation_native_inventory_id()==Some(selected)) {
                         events.push(format!("P08B_QUEUE_DUPLICATE session={} native_inventory_id={selected} writer_started=false",self.id));
                         continue;
                     }
                     if !self.ammo_service.as_ref().is_some_and(super::super::ammo_session::State::idle)
-                        || state.in_flight || state.reservation.is_some() || state.pending_return.is_some()
+                        || state.in_flight || state.has_reservation() || state.has_pending_return()
                         || state.selection.is_some() {
-                        c.join_requested=false;state.selection=None;
                         self.outbox.push_back(profile13::enqueue_failure("VEHICLE_RESERVED")?);
                         events.push(format!("P08B_QUEUE_BUSY session={} writer_started=false",self.id));continue;
+                    }
+                    if !state.can_admit_command() {
+                        self.outbox.push_back(profile13::enqueue_failure("BATTLE_BUSY")?);
+                        events.push(format!("P08B_SESSION_COMMAND_LIMIT session={} reconnect_required=true writer_started=false",self.id));continue;
                     }
                     state.selection=Some(selected);c.join_requested=true;
                     // onEnqueued is emitted only after the writer commits.
                 },
                 NativeCommand::Cancel => {
                     state.selection=None;c.join_requested=false;
-                    if c.queue_announced && state.reservation.is_none() && !state.in_flight {
+                    if c.queue_announced && !state.has_reservation() && !state.has_pending_return() && !state.in_flight {
                         self.outbox.push_back(drive::queue_callback(false));c.queue_announced=false;
                     }
                 },

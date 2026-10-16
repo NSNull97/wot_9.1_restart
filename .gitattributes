@@ -23,6 +23,7 @@ tests/fixtures/profile13-writer-vectors.json text eol=lf
 tests/fixtures/profile13-results-vectors.json text eol=lf
 tests/fixtures/p06t-writer-vectors.json text eol=lf
 tests/fixtures/p06t-writer-companion.json text eol=lf
+tests/fixtures/p06t-queue-writer-vectors.json text eol=lf
 tests/fixtures/p06t-shell-catalog.json text eol=lf
 # These frozen P06T manifests were generated and pinned with CRLF bytes.
 # Preserve those exact bytes instead of rewriting their provenance hashes.
