@@ -162,3 +162,7 @@
 - [P10B_NATIVE_ROOM_CONTRACT.md](P10B_NATIVE_ROOM_CONTRACT.md) — P10B — original #717 room contract, owned selection and native host boundaries
 
 - [P10B typed loss4 training integration](P10B_LOSS_TRAINING_INTEGRATION.md) — current software checkpoint, actual HTTP/SQL/Host cancellation/relaunch; native NOT_RUN.
+
+## Сеть и стенды
+
+- [NET02_PRIVATE_LAN.md](NET02_PRIVATE_LAN.md) — explicit native LAN policy, private-service separation and actual acceptance boundaries

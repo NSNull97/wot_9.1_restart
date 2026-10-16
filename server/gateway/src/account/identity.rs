@@ -10,6 +10,8 @@ mod loss;
 pub(crate) mod room_selection;
 #[path="room_selection_loss.rs"]
 pub(crate) mod room_selection_loss;
+#[path="game_network.rs"]
+pub(crate) mod game_network;
 
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
 
@@ -192,9 +194,35 @@ fn late_results_owner_id(owner:&str)->bool{
     owner.len()==36&&owner.bytes().enumerate().all(|(i,b)|if [8,13,18,23].contains(&i){b==b'-'}else{b.is_ascii_digit()||(b'a'..=b'f').contains(&b)})
         &&matches!(owner.as_bytes()[14],b'1'..=b'5')&&matches!(owner.as_bytes()[19],b'8'|b'9'|b'a'|b'b')
 }
+/// Config-only streaming visitor. The nested typed decode must happen BEFORE
+/// serde_json::Value could collapse duplicate game_network fields.
+struct ConfigFields{fields:BTreeMap<String,Value>,network:Option<game_network::LanWire>}
+impl<'de> Deserialize<'de> for ConfigFields{
+    fn deserialize<D:Deserializer<'de>>(input:D)->Result<Self,D::Error>{
+        struct Fields;
+        impl<'de> Visitor<'de> for Fields{
+            type Value=ConfigFields;
+            fn expecting(&self,f:&mut fmt::Formatter)->fmt::Result{f.write_str("unique bounded gateway config")}
+            fn visit_map<M:MapAccess<'de>>(self,mut input:M)->Result<ConfigFields,M::Error>{
+                let mut fields=BTreeMap::new();let mut network=None;
+                while let Some(key)=input.next_key::<String>()?{
+                    if fields.len()>=28||fields.contains_key(&key){return Err(de::Error::custom("duplicate/too many config fields"));}
+                    if key=="game_network"{
+                        network=Some(input.next_value::<game_network::LanWire>()?);
+                        fields.insert(key,Value::Null);
+                    }else{fields.insert(key,input.next_value::<Value>()?);}
+                }
+                Ok(ConfigFields{fields,network})
+            }
+        }
+        input.deserialize_map(Fields)
+    }
+}
+
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
+    game_network:game_network::Network,
     pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
     pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,pub p04m_pool:bool,pub p06t_mixed_ammo:bool,pub p06t_ammo_rack_detonation:bool,
     pub p08c_late_results:bool,pub p08c_late_results_accounts:Vec<String>,pub p08c_late_notice_experimental:bool,
@@ -203,7 +231,8 @@ pub struct Config {
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
         let bytes=bounded_file(Path::new(path),4096)?;
-        let Bounded::<27>(mut value)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        let ConfigFields{fields:mut value,network}=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        value.remove("game_network");
         let ammo_service=match value.remove("ammunition_service") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
         };
@@ -279,8 +308,9 @@ impl Config {
         if training_rooms&&(!p06t_mixed_ammo||!visibility_v1||battle_players!=6){return Err(invalid("training rooms require mixed owned profiles, visibility and six-place template"));}
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
-        let login_bind=local_address(text(&value,"login_bind")?)?;
-        let base_bind=local_address(text(&value,"base_bind")?)?;
+        let game_network=game_network::Network::parse(text(&value,"login_bind")?,text(&value,"base_bind")?,network)?;
+        if game_network.is_lan()&&(!profile13_battle||!p04m_pool||!p06t_mixed_ammo){return Err(invalid("LAN game network requires the complete mixed profile13 writer"));}
+        let login_bind=game_network.login_bind();let base_bind=game_network.base_bind();
         let identity_endpoint=local_address(text(&value,"identity_endpoint")?)?;
         if login_bind==base_bind || login_bind==identity_endpoint || base_bind==identity_endpoint {return Err(invalid("service ports must be distinct"));}
         let root=Path::new(text(&value,"local_root")?);
@@ -298,7 +328,12 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms})
+    }
+    pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
+    pub(crate) fn require_game_network(&self,runtime:game_network::Runtime)->io::Result<()>{
+        self.game_network.require_runtime(runtime,self.login_bind,self.base_bind)?;
+        if self.game_network.is_lan()&&(!self.profile13_battle||!self.p04m_pool||!self.p06t_mixed_ammo){return Err(invalid("LAN game network requires the complete mixed profile13 writer"));}Ok(())
     }
     fn authentication_timeout(&self)->Duration {
         // A configured curated owner publishes its source-bound projection
@@ -1099,3 +1134,11 @@ mod tests {
 #[cfg(test)]
 #[path="identity_late_results_tests.rs"]
 mod late_results_tests;
+
+#[cfg(test)]
+#[path="network_config_tests.rs"]
+pub(crate) mod net02_config_tests;
+
+#[cfg(test)]
+#[path="network_loss_config_tests.rs"]
+mod net02_loss_config_tests;

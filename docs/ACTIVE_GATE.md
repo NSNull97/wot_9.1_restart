@@ -1,4 +1,11 @@
-# Текущая карточка — P10B: software checkpoint, native gate открыт
+# Текущая карточка — NET-02: интеграция поверх loss/late/training
+
+Ветка `codex/net-02-loss-integration`, normal merge savedb6c294f поверх
+P10B bce643f. Reviewed union12 сохраняет82 текущих source blobs, typed
+Config28 и private HTTP16. Новые Rust/client/full проверки ещё NOT_RUN.
+[План интеграции](plans/NET02_LOSS_INTEGRATION.md). Mainffce8cb сохранён.
+
+## Предыдущий проверенный checkpoint P10B
 
 Ветка `codex/p10b-loss-training-integration` от91dbdbe, runtime `689fb93c4a1bfb05cf3bb1d63ce3836e2e2f4a74`.
 Normal merge saved6c6b7b7 +typed Loss4 Saga/Host/Web +actual09/10/11 +strict raw

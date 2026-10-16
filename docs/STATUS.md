@@ -1,5 +1,10 @@
 # Состояние проекта — 2026-10-17
 
+Текущая работа NET-02: `codex/net-02-loss-integration`, normal merge
+savedb6c294f поверх P10Bbce643f. Reviewed Config28/privateHTTP16 union
+установлен; current-head network/client/full tests NOT_RUN. Приёмка и main
+сохранены. [План](plans/NET02_LOSS_INTEGRATION.md).
+
 P10B software checkpoint завершён: `codex/p10b-loss-training-integration`,
 runtime `689fb93c4a1bfb05cf3bb1d63ce3836e2e2f4a74`. **Full1553PASS/0FAIL/5oldignored/buildPASS,
 865rawsourceexact**. Actual loss4 Host→HTTP/SQL compensation→same-run fresh

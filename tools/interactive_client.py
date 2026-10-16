@@ -29,6 +29,7 @@ MODULES += ('p04f_crew_ui',)
 MODULES += ('p04g_crew_ui',)
 MODULES += ('p04h_crew_ui', 'p04i_crew_ui', 'p04j_crew_ui', 'p04k_crew_ui')
 MODULES += ('p09e_research_policy',)
+MODULES += ('project_network',)
 
 
 def digest(payload):
@@ -107,6 +108,36 @@ def interactive_resource_overrides(root, disable_legacy_license_dialog=False,
     return payloads, evidence
 
 
+def network_options(args, profile13, mixed_ammo):
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_network.py'
+    spec = importlib.util.spec_from_file_location('_project_network_prepare', path)
+    policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy)
+    return policy.prepare_options(args.endpoint, getattr(args, 'network_policy', None),
+                                  args.registration_url, profile13, mixed_ammo)
+
+
+def apply_registration(gui, evidence, options):
+    registration = [node for node in gui.iter() if node.findtext('name') == 'registrationURL']
+    if len(registration) != 1:
+        raise ValueError('unmeasured registration URL setting')
+    field = registration[0].find('value')
+    if field is None:
+        field = registration[0]
+    field.text = options['registration_url']
+    evidence.update(allowed_login=options['endpoint'], public_name='Стальной рубеж',
+                    remember_password=False, registration_url=options['registration_url'],
+                    token_login_enabled=False)
+    if options.get('network_policy') is not None:
+        evidence.update(network_policy=options['network_policy'], registration_enabled=False,
+                        registration_scope='precreated_project_accounts_only')
+        if 'registrationURL' not in evidence['empty_url_settings']:
+            raise ValueError('LAN registration must retain the existing empty-URL guard')
+    else:
+        evidence['empty_url_settings'] = [name for name in evidence['empty_url_settings']
+                                        if name != 'registrationURL']
+
+
 def prepare(args):
     _, paths = config()
     out = local_path(args.out, paths)
@@ -161,13 +192,8 @@ def prepare(args):
         raise ValueError('P09E research requires an explicit isolated native P04K barracks hangar')
     if shared_lab and (copy_info is None or not args.enable_map_drive):
         raise ValueError('Shared lab requires an explicit isolated copy and native arena services')
-    endpoint = args.endpoint
-    if not re.fullmatch(r'127\.0\.0\.1:([0-9]{1,5})', endpoint) or not 1024 <= int(endpoint.rsplit(':', 1)[1]) <= 65535:
-        raise ValueError('endpoint must be numeric IPv4 loopback with unprivileged port')
-    if not re.fullmatch(r'http://127\.0\.0\.1:[0-9]{1,5}/register',args.registration_url):
-        raise ValueError('registration URL must be the owned numeric loopback /register route')
-    if not 1024 <= int(args.registration_url.split(':')[2].split('/')[0]) <= 65535:
-        raise ValueError('registration port outside unprivileged range')
+    network = network_options(args, profile13_battle, p06t_mixed_ammo)
+    endpoint = network['endpoint']
     public = local_path(args.public_key, paths)
     public_payload = read_limited(public, 4096)
     if not public_payload.startswith(b'-----BEGIN PUBLIC KEY-----') or b'PRIVATE' in public_payload:
@@ -219,17 +245,8 @@ def prepare(args):
         if field is None:
             field = matches[0]
         field.text = 'false'
-    registration = [node for node in gui.iter() if node.findtext('name') == 'registrationURL']
-    if len(registration) != 1:
-        raise ValueError('unmeasured registration URL setting')
-    field = registration[0].find('value')
-    if field is None:
-        field = registration[0]
-    field.text = args.registration_url
+    apply_registration(gui, resource_evidence, network)
     payloads[gui_path] = xml_bytes(gui)
-    resource_evidence.update(allowed_login=endpoint, public_name='Стальной рубеж', remember_password=False,
-                             registration_url=args.registration_url, token_login_enabled=False)
-    resource_evidence['empty_url_settings'] = [name for name in resource_evidence['empty_url_settings'] if name != 'registrationURL']
     from project_login_resources import project_menu
     localized,localization_evidence = project_menu(read_limited(root/'res/text/LC_MESSAGES/menu.mo',8*1024*1024))
     # Original helpers.i18n resolves the DIRECTORY "text" once, then standard
@@ -280,6 +297,8 @@ def prepare(args):
                 'capture_hangar':bool(args.capture_hangar or args.capture_ui_passive),
                 'capture_ui_passive':bool(args.capture_ui_passive),
                 'enable_map_drive':bool(args.enable_map_drive)}
+    if network.get('network_policy') is not None:
+        settings['network_policy'] = network['network_policy']
     if ammo_service:
         settings['enable_p09d_ammo_service'] = True
     if recruitment:
@@ -470,7 +489,9 @@ def main():
     prep.add_argument('--enable-shared-lab', action='store_true', help='Initialize original arena services before server-assigned laboratory entry')
     prep.add_argument('--public-key',required=True)
     prep.add_argument('--endpoint',default='127.0.0.1:20014')
-    prep.add_argument('--registration-url',default='http://127.0.0.1:3092/register')
+    prep.add_argument('--network-policy', choices=('lan-test-v1',),
+                      help='Explicit private LAN test; pre-created own accounts only, registration disabled')
+    prep.add_argument('--registration-url', default=None)
     prep.add_argument('--profile-dir',required=True)
     prep.add_argument('--trace-dir',required=True)
     prep.add_argument('--test-control')

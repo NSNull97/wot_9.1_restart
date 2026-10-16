@@ -23,6 +23,13 @@ pub(super) fn reply(request_id: u32, session_key: &[u8;16], login_key: u32) -> i
 }
 pub(super) fn reply_to(request_id:u32,session_key:&[u8;16],login_key:u32,address:SocketAddrV4)->io::Result<Vec<u8>> {
     if *address.ip()!=Ipv4Addr::LOCALHOST || address.port()==0 {return Err(io::Error::new(io::ErrorKind::InvalidInput,"redirect must remain loopback"));}
+    encode_reply(request_id,session_key,login_key,address)
+}
+/// LAN endpoint can reach this codec only through the closed Config validator.
+pub(crate) fn reply_advertised(request_id:u32,session_key:&[u8;16],login_key:u32,address:crate::identity091::game_network::AdvertisedBase)->io::Result<Vec<u8>>{
+    encode_reply(request_id,session_key,login_key,address.address())
+}
+fn encode_reply(request_id:u32,session_key:&[u8;16],login_key:u32,address:SocketAddrV4)->io::Result<Vec<u8>>{
     let cipher = Blowfish::new_from_slice(session_key)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Blowfish key size"))?;
     let success = LoginResponse::Success(LoginSuccess {
@@ -91,3 +98,7 @@ pub fn serve(key_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     Err("diagnostic packet limit reached".into())
 }
+
+#[cfg(test)]
+#[path="redirect_network_tests.rs"]
+mod net02_network_tests;

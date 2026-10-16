@@ -96,8 +96,10 @@ def credential_safe_logger(original):
     return log
 
 
-def install(endpoint, record):
+def install(endpoint, record, network_policy=None):
     """Install input-only adaptations before original LoginView is constructed."""
+    import project_network
+    project_network.validate_endpoint(endpoint, network_policy)
     import sys
     import external_strings_utils
     import ConnectionManager
@@ -112,7 +114,7 @@ def install(endpoint, record):
 
     def submit(view, user, password, host):
         if host != endpoint:
-            raise ValueError('project login is restricted to its configured numeric loopback endpoint')
+            raise ValueError('project login is restricted to its exact configured numeric endpoint')
         # Invalid input still reaches the original UI validation/status path.
         # Valid passwords preserve exact bytes through original .strip().
         if valid_email(user):
