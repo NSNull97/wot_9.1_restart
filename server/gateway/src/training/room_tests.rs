@@ -146,5 +146,74 @@ fn reject_unchanged<T:std::fmt::Debug>(r:&mut Registry,f:impl FnOnce(&mut Regist
     let stale=r.selection_context(lease(2)).unwrap();let mut changed=settings(2);changed.map=QualifiedMap::Prohorovka;
     r.command(lease(2),Command::UpdateSettings(changed),0).unwrap();
     reject_unchanged(&mut r,|r|r.command(lease(2),Command::Ready{context:stale,selection:reference(2,14)},0),Error::StaleSelection);
-    assert!(r.room(new).unwrap().members[&lease(2).account].ready.is_none());
+    assert_eq!(r.room(new).unwrap().members[&lease(2).account].ready,Some(reference(2,14)));
+}
+
+
+// Explicit LAB policy: roster/settings retain only a previously checked opaque
+// WriterReadyRef. These synthetic fixtures prove no writer ownership or CAS.
+fn retained_refs(r:&Registry,k:RoomKey)->BTreeMap<Account,Option<WriterReadyRef>>{
+    r.room(k).unwrap().members.iter().map(|(a,m)|(*a,m.ready.clone())).collect()
+}
+#[test]fn p10b_ready_preserve_ready_bench_to_three_vs_one_starts_without_another_ready(){
+    let mut r=bound(4);let k=created(&mut r,4);
+    for n in 2..=4{r.command(lease(n),Command::Join(k),0).unwrap();}
+    r.command(lease(1),Command::Assign{target:lease(2).account,roster:Roster::assigned(Side::Two)},0).unwrap();
+    r.command(lease(1),Command::Assign{target:lease(3).account,roster:Roster::assigned(Side::One)},0).unwrap();
+    for n in 1..=4{r.command(lease(n),ready(&r,n,reference(n,13+u32::from(n))),0).unwrap();}
+    assert_eq!(r.room(k).unwrap().members[&lease(4).account].roster,Roster::bench(Side::One));
+    let refs=retained_refs(&r,k);let stale=r.selection_context(lease(4)).unwrap();
+    r.command(lease(1),Command::TeamReady{side:Side::One,ready:true,force:false},0).unwrap();
+    let revision=r.room(k).unwrap().revision;
+    let ev=r.command(lease(1),Command::Assign{target:lease(4).account,roster:Roster::assigned(Side::One)},0).unwrap();
+    assert_eq!(r.room(k).unwrap().revision,revision+1);assert_eq!(r.room(k).unwrap().team_ready,[false;2]);
+    assert_eq!(retained_refs(&r,k),refs);assert_eq!(ev,vec![Event::RosterChanged{room:k,account:lease(4).account},Event::TeamsChanged(k)]);
+    reject_unchanged(&mut r,|r|r.command(lease(4),Command::Ready{context:stale,selection:reference(4,90)},0),Error::StaleSelection);
+    // No new Ready is issued after the bench move: both native team steps use
+    // exactly the pre-existing owner/inventory/revision/fingerprint tuple.
+    let snapshot=prepare(&mut r);assert_eq!(snapshot.members.len(),4);
+    assert_eq!(snapshot.members.iter().filter(|m|m.side==Side::One).count(),3);
+    assert_eq!(snapshot.members.iter().filter(|m|m.side==Side::Two).count(),1);
+    for m in &snapshot.members{assert_eq!(Some(m.ready.clone()),refs[&m.account]);}
+    let b=BattleKey(91);r.commit_launch(k,snapshot.ticket,b,reserves(&snapshot,b),0).unwrap();
+    assert_eq!(r.battle_snapshot(b),Some(&snapshot));
+}
+#[test]fn p10b_ready_preserve_swap_and_settings_keep_exact_refs_but_fence_old_jobs_and_votes(){
+    let(mut r,k)=populated(4);let refs=retained_refs(&r,k);
+    let before_sides:BTreeMap<_,_>=r.room(k).unwrap().members.iter().map(|(a,m)|(*a,m.roster)).collect();
+    r.command(lease(1),Command::TeamReady{side:Side::One,ready:true,force:false},0).unwrap();
+    let stale=r.selection_context(lease(2)).unwrap();let revision=r.room(k).unwrap().revision;
+    r.command(lease(1),Command::SwapTeams,0).unwrap();
+    assert_eq!(retained_refs(&r,k),refs);assert_eq!(r.room(k).unwrap().revision,revision+1);assert_eq!(r.room(k).unwrap().team_ready,[false;2]);
+    for(a,m)in &r.room(k).unwrap().members{assert_eq!(m.roster.side,before_sides[a].side.other());assert_eq!(m.roster.assigned,before_sides[a].assigned);}
+    reject_unchanged(&mut r,|r|r.command(lease(2),Command::Ready{context:stale,selection:reference(2,90)},0),Error::StaleSelection);
+    r.command(lease(1),Command::TeamReady{side:Side::Two,ready:true,force:false},0).unwrap();
+    let stale=r.selection_context(lease(3)).unwrap();let revision=r.room(k).unwrap().revision;
+    let mut changed=settings(6);changed.map=QualifiedMap::Prohorovka;changed.seconds=1800;changed.opened=false;changed.comment="retained checked refs".into();
+    r.command(lease(1),Command::UpdateSettings(changed.clone()),0).unwrap();
+    assert_eq!(r.room(k).unwrap().settings,changed);assert_eq!(r.room(k).unwrap().revision,revision+1);assert_eq!(r.room(k).unwrap().team_ready,[false;2]);assert_eq!(retained_refs(&r,k),refs);
+    reject_unchanged(&mut r,|r|r.command(lease(3),Command::Ready{context:stale,selection:reference(3,90)},0),Error::StaleSelection);
+    let snapshot=prepare(&mut r);for m in snapshot.members{assert_eq!(Some(m.ready),refs[&m.account]);}
+}
+#[test]fn p10b_ready_preserve_never_invents_ready_and_keeps_explicit_clear_and_failure_atomicity(){
+    let(mut r,k)=populated(6);let refs=retained_refs(&r,k);
+    r.command(lease(1),Command::TeamReady{side:Side::One,ready:true,force:false},0).unwrap();
+    reject_unchanged(&mut r,|r|r.command(lease(1),Command::Assign{target:lease(2).account,roster:Roster::assigned(Side::One)},0),Error::InvalidTeam);
+    reject_unchanged(&mut r,|r|r.command(lease(2),Command::SwapTeams,0),Error::NotCreator);
+    let mut invalid=settings(6);invalid.comment="x".repeat(65);
+    reject_unchanged(&mut r,|r|r.command(lease(1),Command::UpdateSettings(invalid),0),Error::BadSettings);
+    assert_eq!(retained_refs(&r,k),refs);
+    r.command(lease(2),Command::NotReady,0).unwrap();assert!(r.room(k).unwrap().members[&lease(2).account].ready.is_none());
+    r.command(lease(1),Command::SwapTeams,0).unwrap();r.command(lease(1),Command::UpdateSettings(settings(6)),0).unwrap();
+    r.command(lease(1),Command::Assign{target:lease(2).account,roster:Roster::bench(Side::One)},0).unwrap();
+    r.command(lease(1),Command::Assign{target:lease(2).account,roster:Roster::assigned(Side::One)},0).unwrap();
+    assert!(r.room(k).unwrap().members[&lease(2).account].ready.is_none());
+    reject_unchanged(&mut r,|r|r.command(lease(1),Command::TeamReady{side:Side::One,ready:true,force:true},0),Error::NotReady);
+    let mut next=reference(2,99);next.fingerprint=[71;32];
+    r.command(lease(2),ready(&r,2,next.clone()),0).unwrap();
+    for n in[1,3,4,5,6]{assert_eq!(r.room(k).unwrap().members[&lease(n).account].ready,refs[&lease(n).account]);}
+    assert_eq!(r.room(k).unwrap().members[&lease(2).account].ready,Some(next));
+    let snapshot=prepare(&mut r);r.command(lease(6),Command::Leave,0).unwrap();
+    r.abort_launch(k,snapshot.ticket,released(&snapshot),0).unwrap();
+    assert!(r.room(k).unwrap().members.values().all(|m|m.ready.is_none()));assert_eq!(r.room(k).unwrap().team_ready,[false;2]);
 }

@@ -37,8 +37,8 @@ pub fn target_command(reg:&mut domain::Registry,book:&aliases::Book,caller:domai
 /// PLAYER_REMOVED/PLAYER_ADDED with the same staged Book, not reset Joined.
 /// Candidate queue surface is synthetic; actual production must clone all
 /// affected Sessions plus Registry and obey real reliable ACK/receive rules.
-pub fn stage_initialization(reg:&domain::Registry,book:&mut aliases::Book,caller:domain::AuthLease,native_room_id:u32,
-    facts:&BTreeMap<domain::Account,NativeFacts>,joined_seconds:f64,outbox:&mut VecDeque<wire::Body>)->Result<()>{
+pub fn stage_room_view(reg:&domain::Registry,book:&mut aliases::Book,caller:domain::AuthLease,native_room_id:u32,
+    facts:&BTreeMap<domain::Account,NativeFacts>,joined_seconds:f64)->Result<wire::RoomView>{
     if book.recipient()!=canonical(caller){return Err(Error::Alias(aliases::Error::Identity));}
     let key=reg.authenticated_room(caller)?;let room=reg.room(key).ok_or(domain::Error::NoRoom)?;
     let mut next=book.clone();let bindings=next.stage_view(key.0,&current_members(reg,key)?)?;let mut members=Vec::new();
@@ -55,6 +55,11 @@ pub fn stage_initialization(reg:&domain::Registry,book:&mut aliases::Book,caller
     let states=if room.preparing().is_some(){[wire::TeamState::Locked;2]}else{room.team_ready().map(|b|if b{wire::TeamState::Ready}else{wire::TeamState::NotReady})};
     let view=wire::RoomView{room_id:native_room_id,creator_database_id:creator.database_id,map:match settings.map{domain::QualifiedMap::Karelia=>wire::SourceMap::Karelia,domain::QualifiedMap::Prohorovka=>wire::SourceMap::Prohorovka},
         seconds:settings.seconds,opened:settings.opened,comment:settings.comment.clone(),members,team_states:states};
+    wire::validate_view(&view)?;*book=next;Ok(view)
+}
+pub fn stage_initialization(reg:&domain::Registry,book:&mut aliases::Book,caller:domain::AuthLease,native_room_id:u32,
+    facts:&BTreeMap<domain::Account,NativeFacts>,joined_seconds:f64,outbox:&mut VecDeque<wire::Body>)->Result<()>{
+    let mut next=book.clone();let view=stage_room_view(reg,&mut next,caller,native_room_id,facts,joined_seconds)?;
     let bodies=wire::initialization(&view,aliases::OWN_ENTITY_ID)?;
     let old_bytes=outbox.iter().try_fold(0usize,|sum,b|sum.checked_add(b.len())).ok_or(Error::Queue)?;
     if outbox.len()+bodies.len()>wire::MAX_OUTBOX||old_bytes+bodies.iter().map(Vec::len).sum::<usize>()>wire::MAX_OUTBOX_BYTES{return Err(Error::Queue);}

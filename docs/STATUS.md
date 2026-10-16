@@ -147,3 +147,8 @@ CPython2.7.3=76PASS/3oldskips. WholeTable/HTTP/native ещё NOT_RUN. План [
 Последний полный прогон: gateway 854 passed / 5 ignored (STAB-01); Python client/control
 194 PASS, CPython2.7.3 61 PASS / 3 host-only skips; Python P09E 75,
 регрессия P04/P09D 216, web P09E 5/5 (P09E-M). Доказательства — `local/evidence/2026101[45]-*`.
+
+P10B current checkpoint: full02/1df690a=1269PASS/5oldignored/buildPASS,760
+sourceexact. Subsequent actualController/namespace/Finishedhook focused17=
+110PASS/0ignored/buildPASS. HTTP selection component promoted; native/live
+server room coordinator still NOT_RUN. Existing coreV7/stands unchanged.

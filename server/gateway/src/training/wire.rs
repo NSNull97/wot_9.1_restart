@@ -98,7 +98,8 @@ pub fn roster_changed(entity:u32,old:u8,new:u8,actor:u32)->Result<Body>{
 }
 pub fn team_states(states:[TeamState;2])->Result<Body>{update(6,|p|p.tuple(|p|{p.integer(states[0].value())?;p.integer(states[1].value())}))}
 fn setting(name:&[u8],value:impl FnOnce(&mut Pickle)->Result<()>)->Result<Body>{update(8,|p|p.tuple(|p|{p.string(name)?;value(p)}))}
-fn patches(room:&RoomView)->Result<Vec<Body>>{
+pub fn settings_updates(room:&RoomView)->Result<Vec<Body>>{
+    room.validate()?;
     let creator=room.members.iter().find(|m|m.database_id==room.creator_database_id).ok_or(Error::MissingOwner)?;
     let b=vec![
         setting(b"arenaGuiType",|p|p.integer(2))?,setting(b"arenaTypeID",|p|p.integer(room.map.native()))?,
@@ -124,7 +125,7 @@ fn patches(room:&RoomView)->Result<Vec<Body>>{
 pub fn initialization(room:&RoomView,recipient:u32)->Result<Vec<Body>>{
     room.validate()?;let own=room.members.iter().find(|m|m.entity_id==recipient).ok_or(Error::NoRecipient)?;
     let mut result=vec![joined(room.room_id)?,update(7,|p|p.dict(|p|{p.string(b"type")?;p.integer(2)}))?];
-    result.extend(patches(room)?);result.push(team_states(room.team_states)?);result.push(update(1,|p|p.list(|p|row(p,own)))?);
+    result.extend(settings_updates(room)?);result.push(team_states(room.team_states)?);result.push(update(1,|p|p.list(|p|row(p,own)))?);
     for peer in &room.members{if peer.entity_id!=recipient{result.push(player_added(peer)?);}}
     if result.len()!=21+room.members.len(){return Err(Error::Settings);}Ok(result)
 }
@@ -145,3 +146,6 @@ pub fn stage_initializations(outboxes:&mut BTreeMap<u32,VecDeque<Body>>,room:&Ro
 }
 
 #[cfg(test)]#[path="room_wire_tests.rs"]mod tests;
+
+/// Validate a trusted projection without emitting or queuing any native body.
+pub fn validate_view(room:&RoomView)->Result<()>{room.validate()}

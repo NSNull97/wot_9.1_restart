@@ -13,3 +13,4 @@ pub mod ingress;
 pub mod list_preview;
 pub mod selection;
 pub mod stream_flight;
+pub mod controller;

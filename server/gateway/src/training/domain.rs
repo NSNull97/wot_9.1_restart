@@ -198,16 +198,20 @@ impl Registry{
             other=>{
                 let key=self.room_of(who)?;let room=self.rooms.get_mut(&key).ok_or(Error::NoRoom)?;room.lobby()?;
                 match other{
+                    // LAB policy: roster/settings changes preserve an already
+                    // verified opaque ReadyRef; they never manufacture one.
+                    // Team votes and revision still change, fencing old async
+                    // queries. Actual writer CAS remains mandatory at admit.
                     Command::Assign{target,roster}=>{
                         room.creator_only(who)?;if !room.members.contains_key(&target){return Err(Error::NotMember);}
                         if roster.assigned&&room.members.values().filter(|m|m.account!=target&&m.roster.assigned&&m.roster.side==roster.side).count()>=MAX_SIDE{return Err(Error::InvalidTeam);}
-                        let member=room.members.get_mut(&target).unwrap();if member.roster==roster{return Ok(Vec::new());}member.roster=roster;member.ready=None;
+                        let member=room.members.get_mut(&target).unwrap();if member.roster==roster{return Ok(Vec::new());}member.roster=roster;
                         room.invalidate_teams();room.revised()?;Ok(vec![Event::RosterChanged{room:key,account:target},Event::TeamsChanged(key)])
                     },
-                    Command::SwapTeams=>{room.creator_only(who)?;for m in room.members.values_mut(){m.roster.side=m.roster.side.other();m.ready=None;}
+                    Command::SwapTeams=>{room.creator_only(who)?;for m in room.members.values_mut(){m.roster.side=m.roster.side.other();}
                         room.invalidate_teams();room.revised()?;Ok(room.members.keys().map(|a|Event::RosterChanged{room:key,account:*a}).chain([Event::TeamsChanged(key)]).collect())},
                     Command::UpdateSettings(settings)=>{room.creator_only(who)?;settings.validate()?;if usize::from(settings.capacity)<room.members.len(){return Err(Error::RoomFull);}
-                        room.settings=settings;for m in room.members.values_mut(){m.ready=None;}room.invalidate_teams();room.revised()?;Ok(vec![Event::SettingsChanged(key),Event::TeamsChanged(key)])},
+                        room.settings=settings;room.invalidate_teams();room.revised()?;Ok(vec![Event::SettingsChanged(key),Event::TeamsChanged(key)])},
                     Command::Ready{context,selection:ready}=>{
                         if context.room!=key||context.revision!=room.revision{return Err(Error::StaleSelection);}
                         if ready.owner!=who{return Err(Error::WrongOwner);}let member=room.members.get_mut(&who).ok_or(Error::NotMember)?;

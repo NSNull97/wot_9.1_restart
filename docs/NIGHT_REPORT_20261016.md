@@ -261,3 +261,15 @@ Root actual CPython2.7.3:79total=76PASS/3previoushost-onlyskips; hostnew15PASS.
 No prepare/install/client launch. All core/extended installed clients preserved.
 Actual wholeTable+Registry publication, live writer coordinator and native room
 remain NOT_RUN. Next work remains P10B; NET-02/tail have not started.
+
+P10B full02 на1df690a: **1269PASS/0FAIL/5oldignored/buildPASS**,760 runtime
+inputs до/после exact; exe cb7af11cdc37530141bbb5377d7ae9a7982696b25ce06c7f8bef33014f432efb.
+Путь evidence `local/evidence/20261016-p10b-full02`. Затем promoted actual
+Controller/native publication, Ready preservation across side/settings, HTTP
+selection route, Session callback namespace12tests и optional durable Finished
+hook5actualSessiontests. Focused17=110PASS/0FAIL/0ignored/buildPASS, exe
+bab99d06157427dff339a5545315c5077373e660c10f190d47a7e5103411bf13.
+Evidence `local/evidence/20261016-p10b-components02`. Новые helpers ещё не
+соединены с live serverloop; флаг training_rooms определён, не активирован
+на стенде. Full этого последующего head и native room NOT_RUN. Сохранены
+отдельно предыдущие compile/test FAIL; они не обозначены как PASS.

@@ -19,6 +19,7 @@ import { nativeResearchOverview, isNativeResearchOverview } from './p09e-researc
 import { battleConfiguration } from './p08b-battle.mjs';
 import { nativePoolOverview, isNativePoolOverview, poolConfiguration, nativePoolRequestTimeout, LEGACY_REQUEST_TIMEOUT_MS } from './p04m-pool.mjs';
 import { mixedConfiguration, validateMixedResultsRequest, validateMixedResultsReply } from './p06t-mixed.mjs';
+import { ROOM_SELECTION_PATH, SELECTION_REQUEST_TIMEOUT_MS, selectionConfiguration, roomSelectionBody, createRoomSelectionService } from './p10b-selection.mjs';
 
 import { nativeRosterCrewOverview, isNativeRosterCrewOverview } from './p04h-crew.mjs';
 
@@ -229,6 +230,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.battle_service !== undefined) allowed.push('battle_service');
   if (options?.pool_service !== undefined) allowed.push('pool_service');
   if (options?.mixed_service !== undefined) allowed.push('mixed_service');
+  if (options?.room_selection_service !== undefined) allowed.push('room_selection_service');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
   if (options.crew_service !== undefined && options.ammunition_service === undefined) throw new Error('Crew requires the shared ammunition writer');
@@ -246,6 +248,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
     : battleConfiguration(options.battle_service, options.ammunition_service?.account_id);
   const poolOwners = options.pool_service === undefined ? [] : poolConfiguration(options.pool_service, battleOwners);
   const mixedOwners = options.mixed_service === undefined ? [] : mixedConfiguration(options.mixed_service, poolOwners);
+  const selectionOwners = options.room_selection_service === undefined ? [] : selectionConfiguration(options.room_selection_service, mixedOwners);
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -275,6 +278,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   catch (error) { identity.close(); game.close(); throw error; }
   let ammunition = null;
   const accountServices = new Map();
+  const roomSelections = new Map();
   try {
     if (options.ammunition_service !== undefined) {
       const owners = battleOwners ?? [options.ammunition_service.account_id];
@@ -296,6 +300,13 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
               mixed: mixedOwners.includes(id) ? { version: options.mixed_service.version, policy_sha256: options.mixed_service.policy_sha256,
                 shell_catalog: options.mixed_service.shell_catalog, terminal_policy: options.mixed_service.terminal_policy } : null });
         accountServices.set(id, service);
+      }
+      for (const id of selectionOwners) {
+        const profile = game.read(id);
+        roomSelections.set(id, createRoomSelectionService({ accountId: id, nativeDatabaseId: profile.native_database_id,
+          database: options.game_database, bundle: options.ammunition_service.bundle_root, original: options.ammunition_service.original_root,
+          python: options.python_executable, localPath, mixed: { version: options.mixed_service.version, policy_sha256: options.mixed_service.policy_sha256,
+            shell_catalog: options.mixed_service.shell_catalog, terminal_policy: options.mixed_service.terminal_policy } }));
       }
       ammunition = accountServices.get(options.ammunition_service.account_id);
     }
@@ -490,6 +501,19 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         const directory = await fixture(profile);
         return json(res, 200, { account_id: user.id, native_database_id: profile.native_database_id,
           name: profile.username, fixture_dir: directory });
+      }
+      if (req.method === 'POST' && req.url === ROOM_SELECTION_PATH) {
+        if (options.room_selection_service === undefined) return json(res, 404, { error: 'not_found' });
+        const { value, raw } = await roomSelectionBody(req), service = roomSelections.get(value?.account_id);
+        if (!service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        const profile = game.read(value.account_id);
+        if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        // Same private auth gate above; extend only this enabled, bound owner route.
+        const remaining = Math.max(1, SELECTION_REQUEST_TIMEOUT_MS - (performance.now() - started));
+        clearTimeout(timer); timer = setTimeout(timedOut, remaining); req.socket.setTimeout(remaining);
+        const selected = await service.select(value, raw);
+        if (selected.error === 'selection_not_ready') return json(res, 409, selected);
+        return json(res, 200, selected);
       }
       if (req.method === 'POST' && req.url === '/internal/native/profile') {
         if (options.battle_service === undefined) return json(res, 404, { error: 'not_found' });

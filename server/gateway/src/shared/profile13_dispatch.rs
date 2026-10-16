@@ -5,6 +5,8 @@ use crate::battle091::profile13::{Context, Request, ReplyStatus, FinishReason};
 #[path="profile13_dispatch_v2.rs"]
 mod mixed_dispatch;
 use mixed_dispatch::TaskV2;
+#[path="profile13_finished.rs"]
+mod finished_events;
 
 #[derive(Clone)]
 struct Task {session:u32,owner:Arc<crate::identity091::Profile>,context:Context,request:Request}
@@ -20,11 +22,25 @@ pub(super) struct Dispatcher {
     job_v2:Option<service::JobV2>,task_v2:Option<TaskV2>,
     retired:Vec<Session>,
     settled_queue:Option<u64>,
+    // None preserves every old v1/v2 queue path without receipt collection.
+    training_finished:Option<finished_events::FinishedEvents>,
 }
 fn state(s:&mut Session)->io::Result<&mut service::State> {
     s.shared.as_mut().and_then(|c|c.profile13.as_mut()).ok_or_else(||model::bad())
 }
 impl Dispatcher {
+    /// Host enables only for explicit training support. No implicit config gate.
+    pub(super) fn enable_training_finished(&mut self){
+        self.training_finished.get_or_insert_with(Default::default);
+    }
+    /// After an authoritative launch commit; previous claims MUST be settled.
+    /// Re-arming the current battle never clears replay tombstones.
+    pub(super) fn begin_training_finished_battle(&mut self,battle:crate::training091::domain::BattleKey)->io::Result<()>{
+        self.training_finished.as_mut().ok_or_else(||model::bad())?.begin(battle)
+    }
+    pub(super) fn take_training_finished(&mut self)->Option<crate::training091::domain::FinishedRef>{
+        self.training_finished.as_mut().and_then(|q|q.take())
+    }
     pub(super) fn finish_empty_queue(&mut self,table:&Table,world:&mut World,runtime:&mut Option<IntegratedRuntime>,
         template:&BattleTemplate,now:Instant)->io::Result<bool> {
         if self.settled_queue!=Some(world.id) || world.started.is_some()

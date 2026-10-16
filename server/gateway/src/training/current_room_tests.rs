@@ -24,7 +24,7 @@ fn channel()->Channel{Channel{session:7,generation:11}}
 fn profile()->ProfileStamp{ProfileStamp{revision:13,source_binding:[17;32]}}
 
 #[test]
-fn own404_after_room_reuse_is_explicitly_current_room_and_invalidates_ready_without_authority_escalation(){
+fn own404_after_room_reuse_is_current_room_preserves_checked_ready_and_invalidates_team_votes(){
     let(mut r,old)=setup(1);let mut b=book(&r,old,1);
     current(&mut r,&b,lease(1),Action::Leave,0).unwrap();b.leave_room();assert!(r.room(old).is_none());
     let e=r.command(lease(1),domain::Command::Create(settings()),0).unwrap();let domain::Event::Created(new)=e[0]else{panic!()};
@@ -36,7 +36,7 @@ fn own404_after_room_reuse_is_explicitly_current_room_and_invalidates_ready_with
     let events=current(&mut r,&b,lease(1),Action::Assign{target_alias:aliases::OWN_ENTITY_ID,
         roster:domain::Roster::assigned(domain::Side::Two)},0).unwrap();
     let room=r.room(new).unwrap();let own=room.members().find(|m|m.account()==lease(1).account).unwrap();
-    assert_eq!(own.roster(),domain::Roster::assigned(domain::Side::Two));assert!(own.ready().is_none());
+    assert_eq!(own.roster(),domain::Roster::assigned(domain::Side::Two));assert_eq!(own.ready(),Some(&reference(1)));
     assert_eq!(room.team_ready(),[false,false]);assert!(events.contains(&domain::Event::RosterChanged{room:new,account:lease(1).account}));
     assert_eq!(r.claim(lease(1).account),Some(domain::Claim::Room(new)));
 }

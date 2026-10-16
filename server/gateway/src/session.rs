@@ -174,6 +174,7 @@ struct Session {
     active:bool,rx:u32,last_rx:Instant,last_keepalive:Instant,last_heartbeat:Instant,tx:Window,
     account_probe:bool,account_ready:bool,training_opt_in:bool,
     training_flights:Option<crate::training091::stream_flight::Flights>,
+    training_ids:Vec<i16>,training_ids_generation:u64,
     received:VecDeque<(u32,Vec<u8>)>,sync_mask:u8,request_ids:Vec<i16>,
     hangar:Option<Arc<crate::hangar091::Fixtures>>,outbox:VecDeque<Vec<u8>>,chat_request_ids:Vec<i64>,
     language:Option<&'static str>,
@@ -200,7 +201,7 @@ struct Session {
 impl Session {
     fn new(id:u32,key:[u8;16],peer:SocketAddr,now:Instant)->Self {
         Self {id,key,login_peer:peer,base_peer:None,handoff:OsRng.next_u32(),token:OsRng.next_u32(),
-            active:false,rx:0,last_rx:now,last_keepalive:now,last_heartbeat:now,tx:Window::new(),account_probe:false,account_ready:false,training_opt_in:false,training_flights:None,
+            active:false,rx:0,last_rx:now,last_keepalive:now,last_heartbeat:now,tx:Window::new(),account_probe:false,account_ready:false,training_opt_in:false,training_flights:None,training_ids:Vec::new(),training_ids_generation:0,
             received:VecDeque::new(),sync_mask:0,request_ids:Vec::new(),hangar:None,outbox:VecDeque::new(),chat_request_ids:Vec::new(),language:None,stats_requests:0,
             unsupported_request_ids:VecDeque::new(),identity:None,created_at:now,account_cache_hash:None,login_attempt:None,
             arena_base:false,avatar_unsupported_envelopes:0,arena_space:ArenaSpaceStage::Disabled,
@@ -285,6 +286,27 @@ impl Session {
     /// origin does not. Use the existing server-owned return generation.
     fn training_account_generation(&self)->u64{
         self.shared.as_ref().map_or_else(||self.drive_return_account.as_ref().map_or(1,|w|u64::from(w.generation)+1),shared::Client::account_incarnation)
+    }
+    /// Plain PRB callbacks share native signed request IDs with legacy Account
+    /// commands, but not their small initialization-history budget. The outer
+    /// cloned transaction claims ONLY after the complete frame/piggyback parse.
+    fn training_request_used(&self,id:i16)->bool {
+        self.training_opt_in && self.training_ids_generation==self.training_account_generation()
+            && self.training_ids.contains(&id)
+    }
+    fn claim_training_request(&mut self,id:i16)->io::Result<()> {
+        let generation=self.training_account_generation();
+        let current=self.training_ids_generation==generation;
+        if !self.training_opt_in || id<221 || self.request_ids.contains(&id)
+            || self.unsupported_request_ids.contains(&id)
+            || self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))
+            || current && (self.training_ids.contains(&id) || self.training_ids.len()>=512) {
+            return Err(invalid());
+        }
+        // Validate before clearing: a malformed/fixed-stream claim or a final
+        // legacy collision cannot partially erase the previous generation.
+        if !current {self.training_ids.clear();self.training_ids_generation=generation;}
+        self.training_ids.push(id);Ok(())
     }
     fn ready_for_arena_base(&self)->bool {
         self.active && self.account_ready && self.identity.is_some() && self.hangar.is_some()
@@ -984,7 +1006,8 @@ for incoming in requests {
         Incoming::Language{id}|Incoming::Unavailable{id,..}=>Some(*id),
         Incoming::ServerStats=>Some(202),Incoming::Chat(_)=>None,
     };
-    if account_id.is_some_and(|id|self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))) {return Err(invalid());}
+    if account_id.is_some_and(|id|self.training_request_used(id)
+        || self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))) {return Err(invalid());}
     let r=match incoming {
         Incoming::Sync(r)=>r,
         Incoming::ResearchService(request)=>{
@@ -4182,3 +4205,7 @@ mod tests {
 #[cfg(test)]
 #[path="training/session_tests.rs"]
 mod p10b_session_tests;
+
+#[cfg(test)]
+#[path="training/request_namespace_tests.rs"]
+mod p10b_request_namespace_tests;

@@ -12,6 +12,8 @@ mod batch_scene;
 use batch_scene::BatchRuntime;
 #[path="p06t_publication.rs"]
 mod p06t_publication;
+#[path="p10b_ready_host.rs"]
+mod p10b_ready_host;
 
 #[cfg(test)]
 #[path="server_visibility_tests.rs"]
