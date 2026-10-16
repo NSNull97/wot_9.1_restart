@@ -2867,3 +2867,7 @@ mod p08c_late_composition_tests;
 #[cfg(test)]
 #[path="server_network_tests.rs"]
 mod net02_network_tests;
+
+#[cfg(test)]
+#[path="owner_hold_composition_tests.rs"]
+mod owner_hold_composition_tests;

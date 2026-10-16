@@ -272,3 +272,13 @@ impl Dispatcher{
 #[cfg(test)]
 #[path="owner_hold_integration_tests.rs"]
 mod tests;
+
+// Test-only immutable observations; no worker/receipt/authority injection.
+#[cfg(test)]
+impl Dispatcher{
+    pub(in super::super) fn hold_capture_for_test(&self)->Option<&Capture>{self.hold.capture.as_ref()}
+    pub(in super::super) fn hold_final_completed_for_test(&self)->Option<(u32,u64)>{
+        if !self.hold.task.as_ref().is_some_and(|t|matches!(t.purpose,Purpose::Final(_))){return None;}
+        self.hold.completed.as_ref().filter(|c|c.refresh_error.is_none()&&c.fresh.is_some()&&c.reply.status==hold::Status::Finished).map(|c|(c.source_session,c.reply.revision))
+    }
+}

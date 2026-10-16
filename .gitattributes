@@ -153,3 +153,7 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /web/src/p04d-crew.mjs text eol=lf
 /tests/test_p08b_owner_hold_reader_guard.py text eol=lf
 /web/tests/p08b-owner-hold-reader-guard.test.mjs text eol=lf
+/server/gateway/src/shared/owner_hold_composition_tests.rs text eol=lf
+/web/tests/helpers/p08b-owner-hold-composition.mjs text eol=lf
+/web/tests/helpers/p08b-hold-sql-barriers.mjs text eol=lf
+/tests/helpers/p08b_owner_hold_composition_seed.py text eol=lf
