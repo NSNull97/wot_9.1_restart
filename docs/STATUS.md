@@ -1,5 +1,9 @@
 # Состояние проекта — 2026-10-17
 
+Текущая карточка P06T: `codex/p06t-seven-loss-integration`, normal merge
+sevenb9239e3 с loss4/late. Current-head gates NOT_RUN; план
+[P06T_SEVEN_LOSS_INTEGRATION](plans/P06T_SEVEN_LOSS_INTEGRATION.md).
+
 Ночь продолжается до09:00 Asia/Yekaterinburg без ручных проверок. Текущая
 ветка `codex/p08c-late-owner-results`, runtimeea43262: software checkpoint
 **full1224PASS/0FAIL/5oldignored/buildPASS/740rawsourceexact**. Actual

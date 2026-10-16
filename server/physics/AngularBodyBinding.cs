@@ -58,7 +58,7 @@ internal sealed class AngularBodyBinding
         float inverseMass,Vector3 principal,Quaternion rotation)
     {
         CheckedInput.Sha256(profileHash);
-        if(kind is not ("t26" or "t34" or "t3485")||!float.IsFinite(massKg)||massKg<1000||massKg>100000
+        if(kind is not ("t26" or "t34" or "t3485" or "wt-e100-128" or "fv215b-183")||!float.IsFinite(massKg)||massKg<1000||massKg>100000
             ||!float.IsFinite(inverseMass)||inverseMass<=0
             ||!float.IsFinite(principal.X)||!float.IsFinite(principal.Y)||!float.IsFinite(principal.Z)
             ||principal.X<=0||principal.Y<=0||principal.Z<=0

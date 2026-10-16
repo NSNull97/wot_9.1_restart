@@ -8,8 +8,17 @@ use super::super::ammo_detonation as rack;
 pub const MODULE_ADMISSION_POLICY:&str="test_lab.p06t.plate-penetration-or-exterior-gun.v1";
 
 impl World {
+    /// Separate explicit LAB31 opt-in. It grants neither owned admission nor
+    /// a historical damage claim and cannot be enabled after actor attachment.
+    pub fn enable_extended_breech_lab(&mut self)->io::Result<()> {
+        if !self.extended_lab||!self.mixed_ammo||!self.mixed_profiles||self.started.is_some()
+            ||!self.actors.is_empty()||!self.shots.is_empty()||!self.projectiles.is_empty(){return Err(bad());}
+        self.impact.enable_extended_breech_lab()
+    }
+    pub fn extended_breech_lab(&self)->bool{self.impact.extended_breech_lab()}
     pub fn cancelled_terminal_state(loadout:&crate::profile13_v2091::Frozen)->io::Result<String>{
-        let state=device::State::new(caps::Profile::ALL[loadout.kind.index()]);
+        let profile=caps::Profile::ALL.get(loadout.kind.index()).copied().ok_or_else(bad)?;
+        let state=device::State::new(profile)?;
         terminal_json(loadout,&state,0,None)
     }
     pub fn terminal_state_json(&self,slot:usize)->io::Result<String>{
@@ -72,11 +81,10 @@ impl World {
         let before=actors.get(slot).ok_or_else(||bad())?.health;let crew_before=actors[slot].alive();
         let chord=std::array::from_fn(|i|contact.segment_end[i]-contact.segment_start[i]);
         let distance=(0..3).map(|i|(f64::from(contact.endpoint[i])-f64::from(projectile.origin[i])).powi(2)).sum::<f64>().sqrt();
-        let plate=impact::plate_for(actors[slot].vehicle_kind(),&contact.material_facts,chord,contact.triangle.normal,distance)?;
-        let resolution=crate::p06t_damage::resolve_direct(crate::p06t_damage::DirectInput{
-            shell,plate,chord,winding_normal:contact.triangle.normal,distance_m:distance})?;
+        let resolution=impact::resolve_mixed_for(actors[slot].vehicle_kind(),&contact.material_facts,shell,
+            chord,contact.triangle.normal,distance,trace.extended_breech_lab())?;
         let after=(i32::from(before)-i32::from(resolution.damage_hp)).max(0)as i16;
-        trace.mixed_resolution(self.id,projectile.sequence,contact.tick,projectile.slot,slot,contact,&resolution,before,after)?;
+        trace.mixed_resolution_source(self.id,projectile.sequence,contact.tick,projectile.slot,slot,contact,&resolution,before,after,bundle,&actors[slot])?;
         let facts=&contact.material_facts;
         let exterior_gun=resolution.decision!=crate::p06t_damage::Decision::OutOfRange
             &&facts.component==super::super::materials::gun_component(actors[slot].vehicle_kind())
@@ -86,10 +94,21 @@ impl World {
                 &&material.damage_kind==1&&material.vehicle_damage_factor==0.&&!material.use_hit_angle&&material.collide_once_only
                 &&material.armor.is_some_and(|armor|armor>0.&&resolution.nominal_power_mm>f64::from(armor)));
         let mut additional=0;
-        if resolution.decision==crate::p06t_damage::Decision::Pierced||exterior_gun {
+        if resolution.decision==crate::p06t_damage::Decision::UnarmoredDevice {
+            // Exact source class gunBreech31 names gunHealth/native extra32.
+            // One direct gun hit, no internal proxy or stochastic chance gate.
+            // Gun cannot ignite; the unused canonical roll0 is not an RNG draw.
+            let input=device::ModuleHit{cause:device::Cause{shot:projectile.sequence,attacker_slot:projectile.slot as u8},
+                ordinal:0,at_ms:u64::from(contact.tick-1000)*100,target:crate::p06t_lab_proxy::Target::Device(caps::Device::Gun),
+                shell,ignition_roll:0.};
+            let actor=&mut actors[slot];let health=device::Health{hp:before as u16,max_hp:actor.vehicle_kind().max_health()as u16,terminal:false};
+            let events=actor.devices.as_mut().ok_or_else(||bad())?.apply_hits(&[input],health)?;
+            if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
+            self.device_events.extend(events.into_iter().map(|event|(slot,event)));
+        }else if resolution.decision==crate::p06t_damage::Decision::Pierced||exterior_gun {
             let ray=bundle.proxy_ray(contact)?;
             if !ray.is_empty(){
-                let profile=caps::Profile::ALL[actors[slot].vehicle_kind().index()];
+                let profile=caps::Profile::SUPPORTED[actors[slot].vehicle_kind().index()];
                 let component=match ray.component{super::super::materials::Component::Hull=>crate::p06t_lab_proxy::Component::Hull,
                     super::super::materials::Component::Turret01=>crate::p06t_lab_proxy::Component::Turret,
                     super::super::materials::Component::Gun01|super::super::materials::Component::Gun02=>crate::p06t_lab_proxy::Component::Gun};
@@ -192,7 +211,9 @@ fn turret_joint(actor:&Actor)->io::Result<rack::JointPose>{
 }
 
 fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<&DamageRecord>)->io::Result<String>{
-    if frozen.crew_ids.len()!=state.crew().len()||roster>MAX_ACTORS{return Err(bad());}
+    if frozen.crew_ids.len()!=state.crew().len()||roster>MAX_ACTORS
+        ||state.policy_version()!=device::PolicyVersion::V1
+        ||caps::Profile::ALL.get(frozen.kind.index())!=Some(&state.profile()){return Err(bad());}
     let value=serde_json::json!({"policy_revision":device::POLICY,"roster_size":roster,"crew_active":state.crew_active(),
         "crew":frozen.crew_ids.iter().zip(state.crew()).map(|(id,alive)|serde_json::json!({"crew_id":id,"alive":alive})).collect::<Vec<_>>(),
         "devices":state.health().iter().zip(caps::CAPS[state.profile().index()]).enumerate().map(|(index,(health,cap))|

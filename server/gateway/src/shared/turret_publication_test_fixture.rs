@@ -18,7 +18,7 @@ pub(super) fn fixture_for(now:Instant,own:usize)->(Session,World){
     world.enable_ammo_detonation().unwrap();world.actors=authored.actors;
     for actor in &mut world.actors{
         actor.fire=fire::State::with_typed(actor.vehicle_kind().mount(),[2,3,4],2570).unwrap();
-        actor.devices=Some(Devices::new(Profile::Ms1));
+        actor.devices=Some(Devices::new(Profile::Ms1).unwrap());
     }
     world.start(now).unwrap();
     let owner=&world.actors[own].identity;

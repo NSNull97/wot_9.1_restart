@@ -1,6 +1,6 @@
 use super::*;
 use crate::{p06t_device_caps::{Device,Profile},p06t_device_state::{self as devices,State as Devices},p06t_lab_proxy::Target,p06t_shells091::{self as source,Mount}};
-fn healthy(kind:VehicleKind)->devices::Capabilities {Devices::new(Profile::ALL[kind.index()]).capabilities()}
+fn healthy(kind:VehicleKind)->devices::Capabilities {Devices::new(Profile::ALL[kind.index()]).unwrap().capabilities()}
 fn wound(state:&mut Devices,target:Target) {
     state.apply_hits(&[devices::ModuleHit{cause:devices::Cause{shot:1,attacker_slot:1},ordinal:0,at_ms:0,target,
         shell:source::profile(Mount::Is7Stock).shots[0],ignition_roll:0.9}],devices::Health{hp:90,max_hp:90,terminal:false}).unwrap();
@@ -42,13 +42,13 @@ fn wound(state:&mut Devices,target:Target) {
     let kind=VehicleKind::Ms1;let shell=source::profile(kind.mount()).shots[0];let intent=Intent::Hold{yaw:1.,pitch:-0.3};
     let mut initial=State::new();initial.set(intent).unwrap();
     let mut normal=initial.clone();normal.advance_pose_for_selected(kind,[0.;3],[0.;3],0.1,shell,healthy(kind)).unwrap();
-    let mut turret=Devices::new(Profile::Ms1);wound(&mut turret,Target::Device(Device::TurretRotator));
+    let mut turret=Devices::new(Profile::Ms1).unwrap();wound(&mut turret,Target::Device(Device::TurretRotator));
     let mut stopped=initial.clone();stopped.advance_pose_for_selected(kind,[0.;3],[0.;3],0.1,shell,turret.capabilities()).unwrap();
     assert_eq!(stopped.yaw.to_bits(),0f32.to_bits());assert_eq!(stopped.pitch,normal.pitch);
-    let mut gunner=Devices::new(Profile::Ms1);wound(&mut gunner,Target::Seat(0));
+    let mut gunner=Devices::new(Profile::Ms1).unwrap();wound(&mut gunner,Target::Seat(0));
     let mut slowed=initial.clone();slowed.advance_pose_for_selected(kind,[0.;3],[0.;3],0.1,shell,gunner.capabilities()).unwrap();
     assert!((slowed.yaw-normal.yaw*0.5).abs()<1e-6);assert!((slowed.pitch-normal.pitch*0.5).abs()<1e-6);
-    let mut gun=Devices::new(Profile::Ms1);wound(&mut gun,Target::Device(Device::Gun));assert!(!gun.capabilities().can_fire);
+    let mut gun=Devices::new(Profile::Ms1).unwrap();wound(&mut gun,Target::Device(Device::Gun));assert!(!gun.capabilities().can_fire);
 }
 #[test] fn p06t_selected_aim_rejects_wrong_mount_or_invalid_caps_atomically() {
     let mut aim=State::new();aim.set(Intent::Point([0.,0.,100.])).unwrap();let before=aim.clone();

@@ -40,7 +40,10 @@ pub struct Input{
 }
 impl Input{
     fn validate(self,roster:u8)->io::Result<()>{
-        let max=CAPS[Profile::ALL[self.kind.index()].index()][Device::AmmoBay as usize].max;
+        // Frozen loss-v1 has no qualified extended vehicle/device contract.
+        // A public pure Input must refuse these kinds, never index ALL5.
+        let profile=Profile::ALL.get(self.kind.index()).copied().ok_or_else(||bad("detonation source profile unsupported"))?;
+        let max=CAPS[profile.index()][Device::AmmoBay as usize].max;
         let total=self.counts.iter().map(|n|u32::from(*n)).sum::<u32>();
         if self.shot==0||self.shot>MAX_SHOT||self.target>=usize::from(roster)||self.attacker>=usize::from(roster)||self.attacker==self.target
             ||!(1000..=37000).contains(&self.tick)||!(1..=15360).contains(&self.device_sequence)

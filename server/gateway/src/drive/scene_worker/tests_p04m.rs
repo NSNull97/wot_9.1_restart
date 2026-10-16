@@ -33,10 +33,10 @@ impl Fixture {
     fn manifest(&self,kinds:&[Kind])->Value {
         let prefix=self.root.join("evidence/20261016-p04m-physics01");
         let rows=kinds.iter().enumerate().map(|(slot,&kind)|{
-            let config=if kind.vehicle().index()<2 {
+            let config=if kind.vehicle().expect("old five-kind fixture").index()<2 {
                 self.root.join(format!("evidence/20261014-p05b-handling-fixes-01/pools-{}-c17/05_prohorovka-{}-handling-config.json",kind.label(),kind.label()))
             }else{prefix.join(format!("source-export06/05_prohorovka-{}-config.json",kind.label()))};
-            let source=if kind.vehicle().index()<2 {Value::Null}else{
+            let source=if kind.vehicle().expect("old five-kind fixture").index()<2 {Value::Null}else{
                 let path=prefix.join(format!("getters06/{}-qualified-profile.json",kind.label()));
                 assert_eq!(digest(&fs::read(&path).unwrap()),kind.profile_sha());
                 json!({"path":path,"sha256":kind.profile_sha()})};
@@ -78,7 +78,7 @@ fn contacts(state:&Value)->Vec<ObjectContact> {
         point:vec3(&c["point"]),normal:vec3(&c["normal"]),velocity:vec3(&c["velocity"])}).collect()
 }
 fn scalar(actor:&ActorFrame,catalog:&CatalogSpec,seq:u32)->Arc<ram_proof::FrameProof> {
-    let raw=contacts(&actor.proof);let profile=ram_proof::Profile::for_vehicle(actor.kind.vehicle());
+    let raw=contacts(&actor.proof);let profile=actor.kind.physical_profile();
     let proof=legacy::shared_angular_proof(&actor.proof,&raw,catalog,profile,seq).unwrap();
     proof.final_motion(actor.pose.linear_velocity,actor.pose.angular_velocity,actor.pose.rspeed).unwrap();proof
 }

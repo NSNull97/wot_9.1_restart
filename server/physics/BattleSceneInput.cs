@@ -25,7 +25,7 @@ internal static class BattleSceneInput
         CheckedInput.Fields(m, "version", "profile", "policy", "map", "catalog", "actors");
         string map = m.GetProperty("map").GetString()!;
         int version=m.GetProperty("version").GetInt32();
-        if (version is not (1 or 2) || m.GetProperty("profile").GetString() != "test_lab" ||
+        if (version is not (1 or 2 or 3) || m.GetProperty("profile").GetString() != "test_lab" ||
             m.GetProperty("policy").GetString() != Policy || map is not ("01_karelia" or "05_prohorovka"))
             throw new InvalidDataException("battle scene policy/map");
         var rows = m.GetProperty("actors");
@@ -48,10 +48,19 @@ internal static class BattleSceneInput
                 "longitudinal_friction", "lateral_friction", "stationary_steering_ratio", "handling");
             string kind = row.GetProperty("kind").GetString()!;
             AngularBodyBinding binding;
-            if(version==2&&row.GetProperty("source_profile").ValueKind!=JsonValueKind.Null)
+            if(version>=2&&row.GetProperty("source_profile").ValueKind!=JsonValueKind.Null)
             {
-                StockProfileQualification.Runtime();
-                binding=StockVehicleProfiles.Select(root,row.GetProperty("source_profile"),c,kind);
+                if(kind is "wt-e100-128" or "fv215b-183")
+                {
+                    if(version!=3)throw new InvalidDataException("extended kind requires manifest3");
+                    ExtendedProfileQualification.Runtime();
+                    binding=ExtendedVehicleProfiles.Select(root,row.GetProperty("source_profile"),c,kind);
+                }
+                else
+                {
+                    StockProfileQualification.Runtime();
+                    binding=StockVehicleProfiles.Select(root,row.GetProperty("source_profile"),c,kind);
+                }
             }
             else binding=AngularBodyBinding.Select(c); // Existing v1 projections are unchanged.
             if (c.GetProperty("map").GetString() != map || kind != binding.Kind)

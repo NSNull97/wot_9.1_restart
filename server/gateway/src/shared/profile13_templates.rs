@@ -3,6 +3,8 @@
 //! IPC7 artifact tree and admits both existing kinds to one physical scene.
 //! Version3 adds the complete five-kind curated source registry; registering
 //! resources never overrides the separate owner/native battle-admission gate.
+//! Version4 separately binds seven profiles and shared-only extended pools;
+//! only the explicit LAB route may use the new source assemblies.
 use std::{fs, io::{self, Read}, path::{Path, PathBuf}, sync::Arc};
 use serde_json::Value;
 use sha2::{Digest,Sha256};
@@ -34,23 +36,25 @@ fn reference(value:&Value)->io::Result<Reference> {
 fn parse(raw:&[u8])->io::Result<Manifest> {
     let value=profile13::bounded_json(raw,profile13::MAX_REPLY_BYTES)?;
     let version=value["version"].as_u64();
-    if matches!(version,Some(2|3)){keys(&value,&["version","map","catalog","profiles","shared_physics"])?;}
+    if matches!(version,Some(2|3|4)){keys(&value,&["version","map","catalog","profiles","shared_physics"])?;}
     else{keys(&value,&["version","map","catalog","profiles"])?;}
-    if !matches!(version,Some(1|2|3))||text(&value,"map")?!="05_prohorovka"{return Err(bad("version/map"));}
+    if !matches!(version,Some(1|2|3|4))||text(&value,"map")?!="05_prohorovka"{return Err(bad("version/map"));}
     let rows=value["profiles"].as_array().ok_or_else(||bad("profile list"))?;
-    let count=if version==Some(3){5}else{2};
+    let count=match version{Some(4)=>7,Some(3)=>5,_=>2};
     if rows.len()!=count{return Err(bad("exact curated source profile count"));}
     let mut profiles:Vec<Option<Profile>>=vec![None;count];
     for row in rows {
         keys(row,&["kind","pool","geometry"])?;
-        let kind=VehicleKind::from_label(text(row,"kind")?).ok_or_else(||bad("unknown vehicle profile"))?;
+        let label=text(row,"kind")?;
+        let kind=if version==Some(4){VehicleKind::from_extended_label(label)}else{VehicleKind::from_label(label)}
+            .ok_or_else(||bad("unknown vehicle profile"))?;
         let index=kind.index();if index>=count{return Err(bad("kind requires version3 curated pool"));}
         if profiles[index].is_some(){return Err(bad("duplicate vehicle profile"));}
         profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?});
     }
     Ok(Manifest{version:version.ok_or_else(||bad("version"))? as u8,catalog:reference(&value["catalog"])?,
         profiles:profiles.into_iter().map(|p|p.ok_or_else(||bad("missing curated source profile"))).collect::<io::Result<_>>()?,
-        shared_physics:if matches!(version,Some(2|3)){Some(reference(&value["shared_physics"])?)}else{None}})
+        shared_physics:if matches!(version,Some(2|3|4)){Some(reference(&value["shared_physics"])?)}else{None}})
 }
 fn plain(path:&Path)->io::Result<()> {
     for parent in path.ancestors(){
@@ -91,15 +95,16 @@ pub(super) struct Resources {
 }
 #[derive(Clone)]
 pub(super) struct SharedResources {
+    pub version:u8,
     pub root:PathBuf,pub artifacts:crate::scene_worker::Artifacts,
     pub maps:Vec<crate::map_drive_worker091::MapSpec>,
-    pub source_profiles:[Option<(PathBuf,String)>;5],
+    pub source_profiles:[Option<(PathBuf,String)>;7],
 }
 fn shared_source_reference(kind:VehicleKind,version:u8,source:Option<(PathBuf,String)>)->io::Result<Option<Reference>> {
     if kind.index()<2 {
         if source.is_some(){return Err(bad("legacy kind with unexpected stock source profile"));}return Ok(None);
     }
-    if version!=3{return Err(bad("new profile requires version3"));}
+    if !(version==4||version==3&&!kind.is_extended()){return Err(bad("qualified source requires its explicit resource version"));}
     let (path,sha256)=source.ok_or_else(||bad("missing qualified stock source profile"))?;
     Ok(Some(reference(&serde_json::json!({"path":path,"sha256":sha256}))?))
 }
@@ -116,6 +121,9 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
         let pool_path=pin(local_root,&profile.pool,16384)?;
         let geometry_path=pin(local_root,&profile.geometry,512*1024)?;
         let pool=Arc::new(Pool::load(local_root,&pool_path)?);
+        if pool.shared_only()!=profile.kind.is_extended()||profile.kind.is_extended()&&manifest.version!=4 {
+            return Err(bad("extended profile requires shared-only pool and resource version4"));
+        }
         super::server::selected_pool_config(&pool,MapId::Prohorovka)?;
         let geometry=Arc::new(Bundle::load(local_root,&geometry_path)?);
         super::server::validate_vehicle_binding(profile.kind,&pool,Some(&geometry))?;
@@ -128,19 +136,25 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
     let mut rows=manifest.profiles.into_iter().map(load_profile).collect::<io::Result<Vec<_>>>()?;
     if let Some(reference)=manifest.shared_physics {
         let path=pin(local_root,&reference,65536)?;
-        let mut source_profiles:[Option<(PathBuf,String)>;5]=std::array::from_fn(|_|None);
+        let mut source_profiles:[Option<(PathBuf,String)>;7]=std::array::from_fn(|_|None);
         for row in &rows {
             if let Some(reference)=shared_source_reference(row.kind,manifest.version,row.pool.shared_source_profile())? {
                 let path=pin(local_root,&reference,65536)?;
                 source_profiles[row.kind.index()]=Some((path,reference.sha256));
             }
         }
-        let shared=Arc::new(SharedResources{root:local_root.canonicalize()?,artifacts:crate::scene_worker::Artifacts::load(&path)?,
+        let shared=Arc::new(SharedResources{version:manifest.version,root:local_root.canonicalize()?,artifacts:crate::scene_worker::Artifacts::load(&path)?,
             maps:rows.iter().map(|row|super::server::selected_pool_map(&row.pool,MapId::Prohorovka).cloned()).collect::<io::Result<_>>()?,source_profiles});
         for row in &mut rows{row.shared=Some(shared.clone());}
     }
     Ok(rows)
 }
+
+#[cfg(test)]
+#[path="p06t_extended_templates_tests.rs"]
+mod extended_tests;
+#[cfg(test)]
+pub(crate) fn extended_test_resources()->Vec<Resources>{extended_tests::actual_resources()}
 
 #[cfg(test)]
 mod tests {

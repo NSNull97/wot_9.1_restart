@@ -13,6 +13,8 @@ pub fn packed_angles_for(kind: VehicleKind,state: &aim::State) -> io::Result<u16
     let spec=kind.aim();
     if !state.yaw.is_finite() || !state.pitch.is_finite() || state.yaw.abs() > std::f32::consts::PI
         || !(spec.min_pitch..=spec.max_pitch).contains(&state.pitch) { return Err(model::bad()); }
+    if kind.is_extended(){let(min,max)=aim::pitch_limits_for(kind,state.yaw)?;
+        if !(min..=max).contains(&state.pitch){return Err(model::bad());}}
     let yaw = ((state.yaw as f64 + std::f64::consts::PI) * 1024. / (2. * std::f64::consts::PI)).round() as u16 & 1023;
     let pitch = ((state.pitch as f64 - spec.min_pitch as f64) * 63. / (spec.max_pitch as f64 - spec.min_pitch as f64)).round() as u16;
     Ok((yaw << 6) | pitch)
@@ -600,7 +602,7 @@ mod tests {
     #[test]fn p06t_create_reentry_carries_real_fire_and_positive_hp_inactive_crew(){
         use crate::{p06t_device_state::{State,Health,ModuleHit,Cause},p06t_device_caps::{Profile,Device},p06t_lab_proxy::Target};
         let mut w=model::tests::world(Instant::now());let h=Health{hp:90,max_hp:90,terminal:false};
-        let shell=crate::p06t_shells091::PROFILES[1].shots[2];let mut state=State::new(Profile::Ms1);
+        let shell=crate::p06t_shells091::PROFILES[1].shots[2];let mut state=State::new(Profile::Ms1).unwrap();
         state.apply_hits(&[ModuleHit{cause:Cause{shot:1,attacker_slot:1},ordinal:0,at_ms:0,
             target:Target::Device(Device::Engine),shell,ignition_roll:0.}],h).unwrap();
         assert!(state.fire_active());w.actors[0].devices=Some(state.clone());

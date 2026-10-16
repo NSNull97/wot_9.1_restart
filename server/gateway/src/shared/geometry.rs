@@ -13,12 +13,16 @@ pub fn source_revision(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::T26 => "p04m-t26-collision-717:7b6c41b5d8678a6f935701547781090c517649f741c05621a0cbaf063670e55e",
     VehicleKind::T34 => "p04m-t34-collision-717:6c64732e7421f139991df3cdb0d0d161a3d563a3312fcef040a089d26508c306",
     VehicleKind::T3485 => "p04m-t3485-collision-717:25b6c69fd51e26abbda9b16c35572b5f289f2320d0dffe4085dea1b7bdeba1bb",
+    VehicleKind::Wt128=>super::p06t_geometry_source::Assembly::Wt128.revision(),
+    VehicleKind::Fv183=>super::p06t_geometry_source::Assembly::Fv183.revision(),
 } }
 fn bundle_sha256(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::Ms1 => BUNDLE_SHA256, VehicleKind::Is7 => IS7_BUNDLE_SHA256,
     VehicleKind::T26 => "7b6c41b5d8678a6f935701547781090c517649f741c05621a0cbaf063670e55e",
     VehicleKind::T34 => "6c64732e7421f139991df3cdb0d0d161a3d563a3312fcef040a089d26508c306",
     VehicleKind::T3485 => "25b6c69fd51e26abbda9b16c35572b5f289f2320d0dffe4085dea1b7bdeba1bb",
+    VehicleKind::Wt128=>super::p06t_geometry_source::Assembly::Wt128.sha256(),
+    VehicleKind::Fv183=>super::p06t_geometry_source::Assembly::Fv183.sha256(),
 } }
 const MAX_BYTES: u64 = 512 * 1024;
 const NAMES: [&str; 3] = ["Hull", "Turret_01", "Gun_02"];
@@ -186,8 +190,13 @@ impl Bundle {
             "7b6c41b5d8678a6f935701547781090c517649f741c05621a0cbaf063670e55e"=>VehicleKind::T26,
             "6c64732e7421f139991df3cdb0d0d161a3d563a3312fcef040a089d26508c306"=>VehicleKind::T34,
             "25b6c69fd51e26abbda9b16c35572b5f289f2320d0dffe4085dea1b7bdeba1bb"=>VehicleKind::T3485,
+            "0971afa6aed7bbbb0c4ba647560e15002571544cc168005679a9d46a22962aae"=>VehicleKind::Wt128,
+            "c14b10be359a86c4c4632cd0943d06c43a47fc9ede2a982880c4f09aed6ecb1d"=>VehicleKind::Fv183,
             _ => return Err(bad()),
         };
+        // New schema is decoded by its closed, kind-neutral source importer.
+        // Existing five formats and their arithmetic below are unchanged.
+        if matches!(vehicle,VehicleKind::Wt128|VehicleKind::Fv183){return Self::from_p06t_source(vehicle,raw);}
         let value: Value = serde_json::from_slice(raw).map_err(|_| bad())?;
         if source_spec(vehicle).is_some() {return Self::from_p04m_source(vehicle,&value);}
         fields(&value, &["schema", "source_revision", "source_pins", "geometry", "materials"])?;
@@ -250,6 +259,21 @@ impl Bundle {
             components.push(Component { vertices, triangles });
         }
         Ok(Self { vehicle, components, hull, turret, gun, materials, bounds:if vehicle==VehicleKind::Ms1{NATIVE_BOUNDS}else{IS7_VISUAL_BOUNDS} })
+    }
+    fn from_p06t_source(vehicle:VehicleKind,raw:&[u8])->io::Result<Self>{
+        use super::p06t_geometry_source::{Assembly,SourceBundle};
+        let source=SourceBundle::parse(raw)?;
+        let expected=match vehicle{VehicleKind::Wt128=>Assembly::Wt128,VehicleKind::Fv183=>Assembly::Fv183,_=>return Err(bad())};
+        if source.assembly!=expected{return Err(bad());}
+        let materials=Catalog::from_p06t_source(vehicle,&source)?;
+        let bounds=std::array::from_fn(|i|source.components[i].visual_bounds);
+        let [hull,turret,gun]=source.pivots;
+        let mut components=Vec::with_capacity(3);
+        for component in source.components{
+            Mesh::new(component.vertices.clone(),component.triangles.clone(),source_revision(vehicle),"component-local-v1")?;
+            components.push(Component{vertices:component.vertices,triangles:component.triangles});
+        }
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds})
     }
     /// Separate closed P04M source export format; the enclosing raw digest was
     /// approved before JSON parsing. Visual bounds stay source facts, not a

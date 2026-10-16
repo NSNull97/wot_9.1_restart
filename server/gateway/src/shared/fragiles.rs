@@ -13,6 +13,7 @@ pub const POLICY:&str="test_lab-fragile-reference-hp-ap30-v1";
 pub fn policy_for(kind:VehicleKind)->&'static str { match kind {
     VehicleKind::Ms1=>POLICY, VehicleKind::Is7=>"test_lab-fragile-reference-hp-ap490-v1",
     VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485=>"test_lab-fragile-reference-hp-curated-stock-ap-v1",
+    VehicleKind::Wt128|VehicleKind::Fv183=>"test_lab-fragile-reference-hp-p06t-extended-source-v1",
 } }
 /// Minimal authoritative ramming policy. The worker supplies a hash-bound
 /// vehicle mass from the map descriptor; client claims are never used. A

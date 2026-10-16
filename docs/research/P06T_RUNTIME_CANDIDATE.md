@@ -167,7 +167,9 @@ roster size; writer проверяет также расход каждого st
 | Focused08 |86PASS/4FAIL/0ignored; новые queue tests ошибочно наблюдали drainedoutbox вместо фактического reliable packet, build NOT_RUN |
 | Focused09 |90PASS/0FAIL/0ignored/buildPASS;9 queue v1/v2 flow regressions проверяют actual reliable frame, durable cancel/replay, busyJoin и budget511/512 |
 | Full02 head dc27285b |1087PASS/0FAIL/5 старых ignored/buildPASS; source-before/after681 exactPASS, `local/evidence/20261016-p06t-full02/` и `local/build/server/gateway-p06t-full02/` |
-| Queue corrections после full02 | в работе; union v1/v2 reservation/duplicate guards, durable cancel→fresh callback и command512 bound; focused08/full03 **PENDING**, не покрыты1087 |
+| Queue corrections после full02 | union v1/v2 reservation/duplicate guards, durable cancel→fresh callback и command512 bound; покрыты отдельным full03, не приписываются1087 |
+| Full03 head9920a638 |1096PASS/0FAIL/5 старых ignored/buildPASS; source-before/after683 exactPASS, `local/evidence/20261016-p06t-full03/` и `local/build/server/gateway-p06t-full03/` |
+| Full04 headc25fb84c |1100PASS/0FAIL/5 старых ignored/buildPASS,340.80с; source-before/after692 exactPASS, tag `p06t-physics-20261016-01` |
 | Текущий binding/утренний native цикл | отдельный текущий startup/owner gate; native **NOT_RUN** |
 | Native/UI/audio/полный утренний цикл | **NOT_RUN** |
 
@@ -212,8 +214,10 @@ Output directories должны быть свежими; существующи�
 сверку681 source files для dc27285be170e57ff12ad78babce8f5e589d3f93.
 EXE full02 SHA256:
 `c229d44badb5891ac5fb4502d33603d29a04253c2d29baa54000e973998efe9c`.
-Этот результат не переносится на последующие queue corrections: им требуется
-собственный focused/full03 gate.
+Этот результат не переносится на последующие queue corrections. Их отдельный
+full03 прошёл1096 tests/build и сверку683 source files для
+`9920a638080c9ae6c3bc5b362646a4e1b414e665`; EXE SHA
+`7a334e399b39bd6fd5c1bbf8e4feff87eea6f1392582d283b58ed0aff31cbf37`.
 
 Read-only audit после05 обнаружил отдельный дефект: World запускает HE splash
 после retained-wreck contact, но Trace принимал explosion anchor только от
@@ -227,13 +231,13 @@ center и LOS не подставляются фикстурой. Статус �
 scale. FAIL в protocol poison8 обнаружил разрешение нового Segment между
 WreckImpact и splash; focused07 прошёл81 tests/build после закрытия этого
 late-anchor инварианта. Взрыв не подавляется заглушкой. Full02 прошёл1087
-tests/build; последующий текущий head с queue corrections ещё **PENDING**.
+tests/build; отдельный full03 с queue corrections затем прошёл1096 tests/build.
 
 Read-only queue audit после full02 отдельно обнаружил границы в смешанных
 v1/v2 reservations и callbacks. Исправление должно отвергать changed Join без
 неявной отмены старого резерва, не повторять durable cancel и сохранять один
 finish command в bounded512 journal. Это новый scope после сохранённого full02,
-а не уже прошедший результат. Реальный writer fixture:
+отдельно проверенный full03, а не часть результата1087. Реальный writer fixture:
 `tests/fixtures/p06t-queue-writer-vectors.json` SHA
 `6a0dd7856242a0105864de7985ec309c4e25b76616e1a5732102201c2abf580f`;
 read-only audit receipt SHA
@@ -264,8 +268,8 @@ collision members; whole package SHA не пересчитан и не заяв�
 | Physics/supports | WT20 individual wheels/no groups; FV groups WD_L,W_L,WD_R,W_R. Нужна новая versioned mapping, текущая требует первые W_L/W_R; actual Jolt getter bits/inertia/contact gates обязательны |
 | WT assembly identity |128=100000кг/Gun_01,150=97800кг/Gun_02 из actual mass sum; один vehicleCD16913. Нужен различимый assembly/mount либо явно только128 runtime; перепутать profiles нельзя |
 | Aim | FV source yaw limits `-45 45`°; WT basic pitch `-15 5`°, rear `-7 5 37`°, explicit transition5°=.08726646rad. Original reader/PE доказаны: обе границы min/max интерполируются; default0.4rad относится только к отсутствующему transition. Текущий360° yaw и rear-only-max/constant-min не выражают это |
-| Closed Rust/C# | VehicleKind/Profile/scene Kind5, World geometries[5], source_profiles[5], manifestv3 exact5; C# StockDefinitions strict3 и AngularBodyBinding kinds требуют versioned расширения |
-| Crew/damage | WT6 primary seats, FV5; текущие crew[bool;5]/PoolCrew≤5 и source caps5 требуют новых source-bound maxima/roles/extras/terminal pins |
+| Closed Rust/C# | private physical Profile/scene Kind7 прошли full04; VehicleKind/World geometries[5], resource source_profiles[5], resource manifestv3 exact5 остаются закрыты. Для World7 нужен отдельный versioned startup/resource route |
+| Crew/damage | WT6 primary seats, FV5. Новый device component crew6/source caps7/policyv2: focused11 105PASS/build; full05 на9080c47 1111/5/build/695sourceexact. World/PoolCrew/terminal old5 не расширены |
 | Owned/native | registry USSR-only, pool ammo closed15, v2 Frozen admission/terminal maxima закрытыMS1/IS7; нужны source descriptors, real SQLite ownership/ammo/crew proof и полный nation cycle China5→3/France3→4/UK4→5 |
 
 WT128100000кг находится ровно на существующей inclusive mass границе;
@@ -330,13 +334,110 @@ GunBreech material31 сохраняется как **Unsupported**, не ordinar
 Никаких copied native inertia bits, historical hit-volume claims или owner
 admission из-за наличия geometry export.
 
+**OBSERVED PINNED PHYSICS COMPONENT, вне core full03.** После source-only
+export подготовлен отдельный ignored кандидат `extended-foundation01/`.
+Новый definition/profile version2 и policy `p06t-extended-six-support-v2`
+реализуют только физические WT128/FV183 names и bounded SceneManifest3.
+Actual isolated C# build, source7 tests,8 negative process cases,4 map drives+
+mixed6,2 handling/rest и3contact cases,3catalog/witness/ACK cases прошли.
+Пять прежних профилей дают455 whole frames побайтово равных прежнему worker.
+Два genuine Jolt getter профиля проверены при3 actual yaw каждый, включая
+independent analytic box tensor и quaternion basis. Точные pins/commands и
+ранние honest map/spawn FAILs — в
+`local/night-staging/20261016/p06t-damage01/extended-foundation01/REPORT.md`.
+Эти staged gates предшествовали отдельной root интеграции и не включены1096.
+
+Финальный component02 DLL SHA
+`693c458b56ec9dbeb6c40bdbf5234f23393abb802c42e15c268785a39d4874c7`.
+После baselineSHA проверки всех12 файлов foundation интегрирована в
+канонические C#/tools/newtest; отдельный private physical registry в Rust
+имеет7 профилей, а **VehicleKind/World/owned остаются прежними5**. Новые
+physical names не получают fallbackMS1 и явно Unsupported для owned World.
+WT150 не зарегистрирован. Старые manifest1/2 и все5 прежних byte contracts
+сохраняют свои проверки; source_profile refs старых3 не переписаны.
+
+Каноническая команда:
+
+```powershell
+python -B -X utf8 server/build.py physics --out local/build/server/physics-p06t-extended01
+```
+
+BuildPASS; канонический DLL SHA
+`39900645b1bab6819e47e140add661e7f0c5ab4c7a04992a6f5501f3881f2cfa`.
+Отдельная genuine rootDLL getter requalification сохранила те же measured
+численные bits/definition, изменив только qualification worker provenance.
+WT profile SHA
+`85c810a944828d23d42ea8691142d16dc1cfb1c73156a6c7b7f11723d4dfd777`,
+FV profile SHA
+`0e9eb47ba39b53592e1f7de6a302521ea8252bdb616df0d8f5dc10d2ab28b516`.
+Полные canonical configs/source/getters и receipts находятся в
+`local/evidence/20261016-p06t-extended01/`. Первый capture wrapper завершил
+измерения, но не сохранил итоговый metadata receipt из-за отсутствующего
+artifacts.json после server/build; это сохранено в root-getters03/result.json.
+После отдельной генерации complete16-file artifact manifest native qualifier
+повторён настоящим процессом с новыми stdout/stderr; оба profile outputs
+побайтово совпали с первым capture. Ошибка metadata не скрыта успехом compiler.
+
+На активных canonical sources выполнены7 Python projection tests и8 actual
+negative process cases; rootDLL также дал455 whole frames прежних5 профилей
+побайтово равных прежнему worker. Component source-freeze receipt SHA
+`be5172f959444e882d91770bb574fba6ba522d808facb3a60c76779d87c0f191`
+проверяет exact12 файлов, root profiles и все эти receipts.
+
+Отдельный канонический Rust gate
+`local/build/server/gateway-p06t-extended-focused01/` прошёл **4PASS/0FAIL/
+0ignored/buildPASS**,12.41с. Он действительно запускает root C# IPC7 для
+обоих новых profiles и mixed6, затем исходный scalarFrameProof и prepared
+scene ACK; отрицательные source/config pins отвергаются до worker launch.
+Другие tests проверяют manifest3/strictold rules и отсутствие owned World
+kind для новых physical profiles. Это уже не Python caller ACK вместо domain
+proof. Focused EXE SHA
+`58d475e1a58494c61f8a7cfe3d970dfe37766a9b72206753a2a6fbb6fa3a92e5`.
+Полный общий full04 прошёл **1100PASS/0FAIL/5 старых ignored/buildPASS**,
+340.80с, source-before/after692 exactPASS на
+`c25fb84cf81a238e7b1410ccbd453d0a44a2c45f`, tag
+`p06t-physics-20261016-01`. EXE SHA
+`a2f7dea23dde083978fa6215fa721dc24639de2be76fb21693baf466696b908c`.
+Это закрытый software gate physical foundation. Native/UI/audio WT/FV NOT_RUN,
+боевого owned допуска и реальных source World contacts этих2 машин нет.
+
+Следующий отдельный leaf component после full04: `p06t_device_caps.rs`
+сохраняет `Profile::ALL[5]` и old SOURCE_SHA256, добавляет SUPPORTED[7] и
+WT128/FV source maxima/roles. Новый raw caps schema v2 SHA
+`2d74a8e8f272e6305d6779d887cac44ad9794c4ec40807ddf76a5139e3db9da4`,
+новый policy schema v2/revision `test_lab.p06t.devices-proxy-fire.v2` SHA
+`a19115167b83e73ae80e83d578490ddbcbf81cbe759c62692fc390c732232918`.
+Old raw caps/policy и первые5 typed rows сохранены. Actual source preparation
+9PASS связывает7 profiles/63 devices/30 primary seats с оригинальными файлами;
+`local/night-staging/20261016/p06t-damage01/seven-combat01/REPORT.md`.
+
+`State::new(Profile)` стал fallible и отвергает новые2 под v1 без panic;
+`new_v2(Profile)` явно выбирает v2 для любых7. State хранит6 crew bits, а
+`crew()` возвращает прежнюю actual-length slice, поэтому не добавляет лишнее
+место старым payload. Source/policy/version getters отделяют per-profile
+provenance от общего v2 manifest. Текущий World по-прежнему создаёт только
+v1 State для прежних5; новый constructor не даёт owned/World admission.
+11 новых component tests написаны, статический63caps/30roles/JSON pin gate
+PASS. Focused11: **105 PASS / 0 FAIL / 0 ignored / build PASS**,43.95с,
+exe SHA `2a51a7bf8312639869213daef87d7fe5604b61f387d14d4f8c9b8acf596003d1`.
+Доказательства: `local/build/server/gateway-p06t-focused11/` и
+`local/evidence/20261016-p06t-device-v2-01/`. Focused10 сохранил compile FAIL:
+root пропустил alias device::State::new в cancelled_terminal_state; добавлен
+штатный `?`, без изменения алгоритма или ожиданий. **Full05 на9080c47 завершён:
+1111PASS/0FAIL/5oldignored/buildPASS**,341.89с,695sourcefiles exact. Tag
+`p06t-devices-20261016-01`; exe SHA
+`26b85500cadcfbf86a60c47d3ab8574caad0670e5352d382b1c36900d5a5e599`.
+Source proof: `local/evidence/20261016-p06t-full05/source-{before,after}.json`.
+Новый leaf не приписывается1100. Gun31/geometry/damage/TerminalPython прежние.
+
 Пока не реализованы ammo-bay explosion, turret detach, ремонт/восстановление
 экипажа, оригинальные multi-layer penetration и historical damage variance.
 Native правильность новых method IDs, всех critical/fire/HE UI/audio и
 переходов сохраняет NOT_RUN до настоящей ручной проверки владельца.
-Full02 source-bound regression/build прошёл для своего head. Повторный gate
-текущего queue-fix head ещё требуется; ночное разрешение не заменяет native
-приёмку.
+Full02 и отдельный full03 source-bound regression/build прошли для своих
+head. WT/FV root physical foundation не включена в1096 и отдельно проверена
+full04/1100. Device v2 leaf отдельно покрыт full05/1111.
+Ночное разрешение не заменяет native приёмку.
 
 Откат: сохранённые P04M branch/source-bound binary+binding, выключенный P06T
 opt-in и соответствующий прежний client patch ledger. БД откатывать целым
@@ -344,5 +445,72 @@ SQLite backup, без удаления version markers/ручного смеши
 Оригинальный клиент и соседние проекты не изменены; новые admission flags
 T26/T34/T34-85 остаются false до owner gates.
 
-Единственный следующий рекомендуемый шаг: полный canonical source-before/
-after/test/build gate конечного P06T head перед подготовкой утреннего стенда.
+World7/source geometry/source Aim соединены в явном temporary qualification:
+focused13 **134PASS/0FAIL/0ignored/buildPASS**,159.85с, exe SHA
+`1f1baccc52f5412df85bf08c19b88a9a6520ba3b58dc7b09ceed2794ca68ec3f`.
+Resources4 требуют exact7 и genuine shared-only Pool4; SceneManifest3 включён
+только world.extended_lab. Старые ALL5/DTO/parsers сохраняют прежние границы.
+Новый CLI legacy091-p06t-curated-lab принимает только WT128/FV183; LAB БК
+WT[12,6,6]/FV[4,4,4] не попадает в inventory и не создаёт owned receipt.
+Подтверждены actual canonical Jolt→scalarFrameProof→World/Trace→ACK mixed6,
+выход/reattach внутри ACK, source health/crew/физический SID, отсутствие refill.
+Отдельные root clock-only World tests проверяют clip6/2s/fullreload и frozen
+FV premium HE275; они не утверждают симуляцию кадров между clock commands.
+Source exporter из tools прошёл9 Python tests; raw geometry bundles0971.../
+c14b... повторились по SHA. Полный актуальный regression gate и native/UI/
+audio новых машин пока NOT_RUN. GunBreech31 остаётся Unsupported.
+
+Focused12 сохранил128PASS/6FAIL: пять были вызваны legacy ammo0 constructor
+перед typed initialisation (исправлен отдельный private typed factory), один
+— произвольным0.0005rad ожиданием AP/APCR вместо исходных~0.00049. Теперь
+проверяется независимое low-arc уравнение с2e-6rad и строгим source порядком.
+Старый legacy minimum не ослаблен; cfgtest кеширует только immutable pinned
+resource Arcs, отдельные negative manifests загружаются заново.
+
+Focused14:5actual World Aim/Shoot→whole source mesh first contact→Trace→HP/
+device tests PASS/build46.54с. WTAP→FV hull560, FVAP→WT1150, frozenHESH275HE→
+WT1750. Gun25module-only, WT31 реально первая открытая поверхность и по старой
+policy Unsupported0 без device/RNG. Позиции явно synthetic airborne; driving,
+нативные FX/UI/audio не проверялись. Proof local/evidence/20261016-p06t-world07/focused14/.
+
+Новый opt-in `legacy091-p06t-curated-lab-v2` выбирает отдельную LABpolicy
+`test_lab.p06t.unarmored-gun-breech.v2`. Exact WT/Gun01/class31/armor0/VDF1/
+extraGunHealth32/chance1 факты связаны с закрытым Bundle и самостоятельным
+повторным whole-mesh first-hit query в Trace до мутаций. Новый Decision
+UnarmoredDevice не выдаётся за обычное penetration. Однократные nominalHP и
+source deviceDamage идут в прежние ledger; Gun не поджигается/unusedroll0,
+RNG не расходуется. Native visual boundary использует существующий hitFX,
+внутренний damage record остаётся pierced=false. Source chance/layer/angle/
+continuation исторического сервера UNKNOWN; это выбранная лабораторная формула.
+Старые CLI/Trace API/default Unsupported31 сохранены. Новые9tests проверяют
+actual World1150HP/Gun240→0, source witness poisoning, replay/late/capacity и
+полный откат при позднем переполнении deviceledger. Focused15 весьP06T:
+149PASS/0FAIL/0ignored/buildPASS171.93с, exeSHA
+5281f6e87dbf8deb2c336355020f592d132955de078ebee5a965a768ea65e1bf.
+После него добавлен один resource/template/reset gate, будет проверен full06.
+
+Отдельно перенесены11 self-contained tools/tests OwnedV3: native encodingV2,
+Registry7/foreign source passports/terminalv3, current projection и atomic SQL
+cutover/crew/ammo/reserve/result/restart. Старый semanticcatalog/rows/pins не
+переписаны, activated-owner old mutations fenced, остальные owners oldwriter
+сохраняют. Fresh realC/D через canonical migrations и source research/buy
+прошли135.88с, source/projection/SQLite26cases и оба own primitive CPython2.7.3
+checks PASS. WT/FV ammo0, новыхgrants нет. Proof local/evidence/20261016-p06t-owned-v3-01/.
+Ревью затем воспроизвело actualWAL falseCORRUPT_STORE и никогда не существовавшую
+пару revisionR/generationG2. Scoped DEFERRED read snapshot исправляет обе,
+не закрывая чужую writerTX; полный29PASS48.856с. OldRED и GREEN сохранены в
+local/evidence/20261016-p06t-owned-read-snapshot01/. Factory/HTTP/nativev3/
+cacheACK/ownedWTammo не подключены и остаются отдельными software gates.
+
+Full06 на0f1db4035849ed4fe7b78adee7a2d49bc6a2cb4c завершён:
+**1162PASS/0FAIL/5oldignored/buildPASS**,469.71с,725sourcefiles before/after exact.
+Tag p06t-world-seven-20261016-01, exeSHA
+2c88bb43bec1e757fd7a884ae3af100408ff8f9a3dde2e72e39acfdb9249c0f4.
+Actual extended-01 startup WT128/FV183 с7source resources/explicitLABv2 и
+ownstop PASS; исходные106core/client inputs unchanged. Newoverlay prepare/
+install/native/restoreapply NOT_RUN; sourcebyteaudit725/6readonlygates PASS.
+Proof full06/ и extended-01/startup-root01.json. P06T не принята и не main.
+
+Единственный следующий рекомендуемый шаг: по ночному разрешению открыть
+отдельную зависимую ветку P10B от сохранённого software результата, сохраняя
+оба утренних стенда и обязательную native приёмку P06T.

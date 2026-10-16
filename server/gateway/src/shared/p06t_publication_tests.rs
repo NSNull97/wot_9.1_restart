@@ -15,7 +15,7 @@ fn fixture(now:Instant)->(Session,World) {
     world.enable_mixed_ammo().unwrap();world.actors=authored.actors;
     for actor in &mut world.actors {
         actor.fire=crate::battle091::fire::State::with_typed(actor.vehicle_kind().mount(),[5,5,5],2570).unwrap();
-        actor.devices=Some(State::new(Profile::Ms1));
+        actor.devices=Some(State::new(Profile::Ms1).unwrap());
     }
     let mut s=Session::new(1,[1;16],"127.0.0.1:38302".parse().unwrap(),now);
     let mut c=Client::new(0);c.enable_spotting().unwrap();c.phase=Phase::Driving;
@@ -38,7 +38,7 @@ fn fixture(now:Instant)->(Session,World) {
     assert!(c.private_pending.is_empty());s.outbox.clear();s.shared=Some(c);(s,world)
 }
 fn fuel_damage(crew_dead:bool)->(State,Vec<crate::p06t_device_state::Transition>) {
-    let mut state=State::new(Profile::Ms1);let mut events=Vec::new();
+    let mut state=State::new(Profile::Ms1).unwrap();let mut events=Vec::new();
     let shell=crate::p06t_shells091::profile(crate::p06t_shells091::Mount::Ms1Stock).shots[2];
     let health=Health{hp:90,max_hp:90,terminal:false};
     for shot in 1..=6 {

@@ -615,14 +615,23 @@ impl BattleTemplate {
     }
     fn from_shared_mode(rows:&[super::profile13_templates::Resources],count:usize,id:u64,now:Instant,
         qualification:Option<VehicleKind>)->io::Result<Self>{
-        if !matches!(rows.len(),2|5)||rows.iter().enumerate().any(|(index,row)|row.kind.index()!=index) {return Err(model::bad());}
-        if qualification.is_some_and(|kind|rows.len()!=5||!rows.iter().any(|row|row.kind==kind)){return Err(model::bad());}
+        Self::from_shared_policy(rows,count,id,now,qualification,false)
+    }
+    fn from_shared_policy(rows:&[super::profile13_templates::Resources],count:usize,id:u64,now:Instant,
+        qualification:Option<VehicleKind>,breech_v2:bool)->io::Result<Self>{
+        let extended=qualification.is_some_and(VehicleKind::is_extended);
+        if breech_v2&&!extended{return Err(model::bad());}
+        if !matches!(rows.len(),2|5|7)||(rows.len()==7)!=extended
+            ||rows.iter().enumerate().any(|(index,row)|row.kind.index()!=index) {return Err(model::bad());}
+        if qualification.is_some_and(|kind|rows.len()!=(if extended{7}else{5})||!rows.iter().any(|row|row.kind==kind)){return Err(model::bad());}
         let shared=rows[0].shared.clone().ok_or_else(||model::bad())?;
         let mut world=World::new_for_vehicle(id,now,MapId::Prohorovka,qualification.unwrap_or(VehicleKind::Ms1))?;
         world.set_expected_actors(count)?;
         for row in rows{world.bind_geometry(row.geometry.clone())?;}
         world.enable_ap_test_lab()?;world.bind_terrain(rows[0].terrain.clone())?;
         world.bind_fragiles(rows[0].catalog.0.clone())?;
+        if extended{world.enable_extended_lab()?;}
+        if breech_v2{world.enable_extended_breech_lab()?;}
         if qualification.is_none(){world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?;}
         Ok(Self{world,pool:Some(rows[0].pool.clone()),removal:None,catalog:Some(rows[0].catalog.1.clone()),shared:Some(shared)})
     }
@@ -880,6 +889,8 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
             if receipt.battle!=world.id || !world.mixed_profiles()&&receipt.frozen.kind!=world.vehicle_kind() {continue;}
             world.attach_owned(who,s.id,&receipt.frozen)?
             }
+        } else if world.extended_lab(){
+            world.attach_extended_lab(who,s.id,model::extended::LabLoadout::temporary(world.vehicle_kind()))?
         } else {world.attach(who,s.id)?};
         let c=s.shared.as_mut().ok_or_else(||model::bad())?;
         let since=c.hangar_since;
@@ -908,14 +919,28 @@ pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_
 /// fixtures and never enters the owned writer/reservation/admission route.
 pub fn serve_curated_lab(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,
     capture_path:&str,kind:VehicleKind)->Result<(),Box<dyn std::error::Error>> {
+    serve_curated_lab_policy(key_path,digest_path,config_path,manifest_path,capture_path,kind,false)
+}
+/// Separate explicit qualification policy. Existing curated mode keeps its
+/// source-breech Unsupported behavior; this mode opts into unarmored Gun damage.
+pub fn serve_curated_lab_v2(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,
+    capture_path:&str,kind:VehicleKind)->Result<(),Box<dyn std::error::Error>> {
+    if !kind.is_extended(){return Err(model::bad().into());}
+    serve_curated_lab_policy(key_path,digest_path,config_path,manifest_path,capture_path,kind,true)
+}
+fn serve_curated_lab_policy(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,
+    capture_path:&str,kind:VehicleKind,breech_v2:bool)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
     if config.profile13_battle||config.ammo_service||config.p04m_pool{return Err(model::bad().into());}
     let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
-    if resources.len()!=5||resources.iter().any(|row|row.shared.is_none()){return Err(model::bad().into());}
+    if resources.len()!=(if kind.is_extended(){7}else{5})||resources.iter().any(|row|row.shared.is_none()){return Err(model::bad().into());}
     let initial=&resources[0];
     println!("P04M_QUALIFICATION kind={} assignment=temporary_server_selected owned_inventory_changed=false battle_admission_changed=false",kind.label());
-    serve_with_pool(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
-        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources),Some(kind))
+    if kind.is_extended(){println!("P06T_EXTENDED_QUALIFICATION policy={} device_policy={} temporary_ammunition=true inventory_grant=false scene_manifest=3",
+        model::extended::POLICY,crate::p06t_device_state::POLICY_V2);}
+    if breech_v2{println!("P06T_UNARMORED_BREECH_QUALIFICATION policy=test_lab.p06t.unarmored-gun-breech.v2 historical_server_solver=UNKNOWN");}
+    serve_with_pool_policy(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources),Some(kind),breech_v2)
 }
 
 pub(super) fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
@@ -1021,6 +1046,16 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
     terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,resources:Option<Vec<super::profile13_templates::Resources>>,qualification:Option<VehicleKind>)
     -> Result<(), Box<dyn std::error::Error>> {
+    serve_with_pool_policy(key_path,digest_path,config_path,capture_path,integrated_pool,geometry,ap_test_lab,
+        terrain,removal,catalog,map,vehicle,resources,qualification,false)
+}
+fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
+    integrated_pool:Option<Arc<crate::map_drive_worker091::Pool>>,geometry:Option<Arc<super::geometry::Bundle>>,ap_test_lab:bool,
+    terrain:Option<Arc<super::terrain::Terrain>>,removal:Option<crate::map_drive_worker091::RemovalSpec>,
+    catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,
+    resources:Option<Vec<super::profile13_templates::Resources>>,qualification:Option<VehicleKind>,breech_v2:bool)
+    ->Result<(),Box<dyn std::error::Error>> {
+    if breech_v2&&!qualification.is_some_and(VehicleKind::is_extended){return Err(model::bad().into());}
     if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
     if terrain.is_some() && !ap_test_lab { return Err(model::bad().into()); }
     if let Some(pool)=&integrated_pool { selected_pool_config(pool,map)?; validate_vehicle_binding(vehicle,pool,geometry.as_deref())?; }
@@ -1086,7 +1121,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     if profile13_mode { world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?; }
     let mut battle_template=BattleTemplate::new(&world,&integrated);
     if let Some(rows)=resources.as_ref().filter(|rows|rows[0].shared.is_some()){
-        battle_template=BattleTemplate::from_shared_mode(rows,config.battle_players,world.id,started,qualification)?;
+        battle_template=BattleTemplate::from_shared_policy(rows,config.battle_players,world.id,started,qualification,breech_v2)?;
         battle_template.select(&mut world,&mut integrated,started)?;
     }
     if config.p06t_mixed_ammo{
@@ -1143,8 +1178,12 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                         // random capability collision instead of ambiguous routing.
                         if s.handoff == 0 || s.token == 0 || table.sessions.iter().any(|old| old.handoff == s.handoff || old.token == s.token) { return Err(model::bad()); }
                         let mut next_world = world.clone();
-                        let slot = if profile13_mode {0} else {next_world.attach(model::Identity { account: accepted.identity.account_id.clone(),
-                            database: accepted.identity.database_id, name: accepted.identity.name.clone() }, next_id)?};
+                        let slot = if profile13_mode {0} else {
+                            let who=model::Identity{account:accepted.identity.account_id.clone(),database:accepted.identity.database_id,name:accepted.identity.name.clone()};
+                            if next_world.extended_lab(){
+                                next_world.attach_extended_lab(who,next_id,model::extended::LabLoadout::temporary(next_world.vehicle_kind()))?
+                            }else{next_world.attach(who,next_id)?}
+                        };
                         s.account_probe = true; s.account_ready = true; s.tx = Window::interactive();
                         s.login_attempt = Some(job.attempt); s.identity = Some(accepted.identity);
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
@@ -1648,6 +1687,10 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                                 crate::p06t_damage::Decision::Ricochet=>impact_wire::ShotOutcome::Ricochet,
                                 crate::p06t_damage::Decision::NotPierced=>impact_wire::ShotOutcome::NotPierced,
                                 crate::p06t_damage::Decision::Pierced=>impact_wire::ShotOutcome::Pierced,
+                                // Native visual category only. The authoritative LAB
+                                // decision and damage ledger keep UnarmoredDevice /
+                                // pierced=false; no ordinary armor claim is made.
+                                crate::p06t_damage::Decision::UnarmoredDevice=>impact_wire::ShotOutcome::Pierced,
                                 _=>return Err(model::bad()),
                             },
                         };

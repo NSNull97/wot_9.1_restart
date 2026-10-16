@@ -37,7 +37,7 @@ fn lab_attach(w:&mut World,slot:usize,counts:[u16;3]){
     w.mixed_ammo=true;
     let shell=source::PROFILES[0].shots[counts.iter().position(|v|*v>0).unwrap()];
     w.actors[slot].fire=fire::State::with_typed(source::Mount::Ms1Stock,counts,shell.compact_descr).unwrap();
-    w.actors[slot].devices=Some(device::State::new(caps::Profile::Ms1));
+    w.actors[slot].devices=Some(device::State::new(caps::Profile::Ms1).unwrap());
 }
 fn start(w:&mut World,now:Instant){
     for(slot,p)in [[0.;3],[0.,0.,20.]].into_iter().enumerate(){w.actors[slot].position=p;w.actors[slot].origin=p;}

@@ -80,7 +80,7 @@ fn direct(shell:Shell,armor:f64,angle:f32,distance:f64)->math::Resolution {
         [145,140,150,110,110,110,130,120,80]];
     let crew:&[&[u8]]=&[&[35,36],&[35,39,36,41,42],&[35,36,39],&[35,37,36,41],&[35,39,37,36,41]];
     for profile in Profile::ALL {
-        let s=devices::State::new(profile);assert_eq!(s.health(),expected[profile.index()]);
+        let s=devices::State::new(profile).unwrap();assert_eq!(s.health(),expected[profile.index()]);
         assert_eq!(source_caps::CREW[profile.index()].iter().map(|s|s.extra).collect::<Vec<_>>(),crew[profile.index()]);
         for (i,c) in source_caps::CAPS[profile.index()].iter().enumerate() {assert!(c.regen>0&&c.regen<=c.max);assert_eq!(Device::ALL[i].extra(),26+i as u8);}
         assert_eq!(s.crew(),vec![true;crew[profile.index()].len()]);
@@ -92,7 +92,7 @@ fn hit(shot:u32,target:proxy::Target,at:u64,roll:f64)->devices::ModuleHit {
     devices::ModuleHit {cause:devices::Cause {shot,attacker_slot:1},ordinal:0,at_ms:at,target,shell:shell(Mount::Ms1Stock,0),ignition_roll:roll}
 }
 #[test] fn module_replays_are_idempotent_conflicts_and_bad_compounds_roll_back() {
-    let mut s=devices::State::new(Profile::Ms1);let h=context(Profile::Ms1);let first=hit(1,proxy::Target::Device(Device::Engine),0,0.1);
+    let mut s=devices::State::new(Profile::Ms1).unwrap();let h=context(Profile::Ms1);let first=hit(1,proxy::Target::Device(Device::Engine),0,0.1);
     assert_eq!(s.apply_hits(&[first],h).unwrap().len(),2);let committed=s.clone();
     assert!(s.apply_hits(&[first],h).unwrap().is_empty());assert_eq!(s,committed);
     assert!(s.apply_hits(&[devices::ModuleHit{ignition_roll:0.11,..first}],h).is_err());assert_eq!(s,committed);
@@ -103,32 +103,32 @@ fn hit(shot:u32,target:proxy::Target,at:u64,roll:f64)->devices::ModuleHit {
     assert!(s.apply_hits(&[hit(2,proxy::Target::Seat(2),0,0.9)],h).is_err());
 }
 #[test] fn critical_and_destroyed_devices_change_actual_capability_outputs() {
-    let mut s=devices::State::new(Profile::T34);let h=context(Profile::T34);
+    let mut s=devices::State::new(Profile::T34).unwrap();let h=context(Profile::T34);
     s.apply_hits(&[hit(1,proxy::Target::Device(Device::Engine),0,0.9)],h).unwrap();assert_eq!(s.capabilities().drive_scale,1.);
     s.apply_hits(&[hit(2,proxy::Target::Device(Device::Engine),0,0.9)],h).unwrap();assert_eq!(s.capabilities().drive_scale,0.5);
     s.apply_hits(&[hit(3,proxy::Target::Device(Device::Engine),0,0.9)],h).unwrap();assert_eq!(s.capabilities().drive_scale,0.);assert_eq!(s.capabilities().steer_scale,0.);
-    let mut s=devices::State::new(Profile::Ms1);let h=context(Profile::Ms1);
+    let mut s=devices::State::new(Profile::Ms1).unwrap();let h=context(Profile::Ms1);
     s.apply_hits(&[hit(1,proxy::Target::Device(Device::LeftTrack),0,0.9)],h).unwrap();assert_eq!(s.capabilities().steer_scale,0.);
     s.apply_hits(&[hit(2,proxy::Target::Device(Device::TurretRotator),0,0.9)],h).unwrap();assert_eq!(s.capabilities().turret_scale,0.);
     s.apply_hits(&[hit(3,proxy::Target::Device(Device::Gun),0,0.9)],h).unwrap();assert_eq!(s.capabilities().dispersion_scale,2.);assert!(s.capabilities().can_fire);
     s.apply_hits(&[hit(4,proxy::Target::Device(Device::Gun),0,0.9)],h).unwrap();assert!(!s.capabilities().can_fire);
 }
 #[test] fn combined_role_wound_and_both_is7_loaders_use_real_seats_not_role_dedup() {
-    let mut s=devices::State::new(Profile::Ms1);let h=context(Profile::Ms1);
+    let mut s=devices::State::new(Profile::Ms1).unwrap();let h=context(Profile::Ms1);
     let changes=s.apply_hits(&[hit(1,proxy::Target::Seat(0),0,0.9)],h).unwrap();
     assert!(matches!(changes[0].change,devices::Change::Crew{seat:0,extra_index:35,..}));
     let c=s.capabilities();assert!(c.crew_active);assert_eq!(c.reload_scale,2.);assert_eq!(c.aim_speed_scale,0.5);assert_eq!(c.radio_scale,0.5);
     s.apply_hits(&[hit(2,proxy::Target::Seat(1),0,0.9)],h).unwrap();assert!(!s.capabilities().crew_active);assert!(!s.capabilities().can_fire);
     assert_eq!(h.hp,90,"crew inactivity does not fabricate HP0");
-    let mut s=devices::State::new(Profile::Is7);let h=context(Profile::Is7);
+    let mut s=devices::State::new(Profile::Is7).unwrap();let h=context(Profile::Is7);
     s.apply_hits(&[hit(1,proxy::Target::Seat(3),0,0.9)],h).unwrap();assert_eq!(s.capabilities().radio_scale,1.);
     let events=s.apply_hits(&[hit(2,proxy::Target::Seat(4),0,0.9)],h).unwrap();assert_eq!(s.capabilities().radio_scale,0.5);
     assert!(matches!(events[0].change,devices::Change::Crew{seat:4,extra_index:42,..}));
 }
 #[test] fn engine_ignition_boundary_and_first_cause_are_explicit_and_do_not_extend_fire() {
-    let h=context(Profile::Ms1);let mut no=devices::State::new(Profile::Ms1);
+    let h=context(Profile::Ms1);let mut no=devices::State::new(Profile::Ms1).unwrap();
     no.apply_hits(&[hit(1,proxy::Target::Device(Device::Engine),0,0.2)],h).unwrap();assert!(!no.fire_active());
-    let mut yes=devices::State::new(Profile::Ms1);
+    let mut yes=devices::State::new(Profile::Ms1).unwrap();
     yes.apply_hits(&[hit(1,proxy::Target::Device(Device::Engine),0,0.199999)],h).unwrap();
     let second=devices::ModuleHit {cause:devices::Cause{shot:2,attacker_slot:2},..hit(2,proxy::Target::Device(Device::Engine),500,0.)};
     assert!(yes.apply_hits(&[second],h).unwrap().is_empty());
@@ -137,7 +137,7 @@ fn hit(shot:u32,target:proxy::Target,at:u64,roll:f64)->devices::ModuleHit {
     yes.advance_fire(10_000,h).unwrap();assert!(!yes.fire_active());
 }
 #[test] fn fire_catchup_is_bounded_monotonic_attributed_and_terminal_freezes() {
-    let mut s=devices::State::new(Profile::Is7);let h=context(Profile::Is7);
+    let mut s=devices::State::new(Profile::Is7).unwrap();let h=context(Profile::Is7);
     let initial=devices::ModuleHit {shell:shell(Mount::Is7Stock,0),..hit(1,proxy::Target::Device(Device::Engine),0,0.)};
     s.apply_hits(&[initial],h).unwrap();let events=s.advance_fire(100_000,h).unwrap();
     let hp:Vec<_>=events.iter().filter_map(|e|if let devices::Change::VehicleDamage{amount}=e.change{Some(amount)}else{None}).collect();
@@ -147,13 +147,13 @@ fn hit(shot:u32,target:proxy::Target,at:u64,roll:f64)->devices::ModuleHit {
     assert!(events.windows(2).all(|w|w[0].sequence<w[1].sequence&&w[0].at_ms<=w[1].at_ms));
     let committed=s.clone();assert!(s.advance_fire(100_000,h).unwrap().is_empty());assert_eq!(s,committed);
     assert!(s.advance_fire(99_999,h).is_err());assert_eq!(s,committed);
-    let mut alive=devices::State::new(Profile::Ms1);let h=context(Profile::Ms1);
+    let mut alive=devices::State::new(Profile::Ms1).unwrap();let h=context(Profile::Ms1);
     alive.apply_hits(&[hit(1,proxy::Target::Device(Device::Engine),0,0.)],h).unwrap();let before=alive.health();let seq=alive.sequence();
     assert!(alive.advance_fire(10_000,devices::Health{terminal:true,..h}).unwrap().is_empty());
     assert_eq!(alive.health(),before);assert_eq!(alive.sequence(),seq);assert!(alive.frozen());
 }
 #[test] fn fire_death_proposal_clamps_to_real_context_hp_without_extra_ticks() {
-    let mut s=devices::State::new(Profile::Ms1);let h=devices::Health{hp:7,..context(Profile::Ms1)};
+    let mut s=devices::State::new(Profile::Ms1).unwrap();let h=devices::Health{hp:7,..context(Profile::Ms1)};
     s.apply_hits(&[hit(1,proxy::Target::Device(Device::Engine),0,0.)],h).unwrap();
     let events=s.advance_fire(10_000,h).unwrap();
     let hp:Vec<_>=events.iter().filter_map(|e|if let devices::Change::VehicleDamage{amount}=e.change{Some(amount)}else{None}).collect();
@@ -162,7 +162,7 @@ fn hit(shot:u32,target:proxy::Target,at:u64,roll:f64)->devices::ModuleHit {
     let seq=s.sequence();assert!(s.advance_fire(20_000,devices::Health{hp:0,..h}).unwrap().is_empty());assert_eq!(s.sequence(),seq);
 }
 #[test] fn pending_fire_ticks_must_commit_before_newer_hits_and_final_outcome_is_immutable() {
-    let mut s=devices::State::new(Profile::Ms1);let h=context(Profile::Ms1);
+    let mut s=devices::State::new(Profile::Ms1).unwrap();let h=context(Profile::Ms1);
     s.apply_hits(&[hit(1,proxy::Target::Device(Device::Engine),0,0.)],h).unwrap();
     let before=s.clone();let next=hit(2,proxy::Target::Device(Device::Gun),1500,0.9);
     assert!(s.apply_hits(&[next],h).is_err());assert_eq!(s,before);

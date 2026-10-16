@@ -19,6 +19,7 @@ pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
 pub fn wreck_policy_revision_for(kind:VehicleKind)->&'static str { match kind {
     VehicleKind::Ms1=>WRECK_POLICY_REVISION,VehicleKind::Is7=>"test_lab-is7-wreck-block-v1",
     VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485=>"test_lab-curated-stock-wreck-block-v1",
+    VehicleKind::Wt128|VehicleKind::Fv183=>"test_lab-p06t-extended-source-wreck-block-v1",
 } }
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
@@ -90,6 +91,8 @@ pub const MAX_DAMAGE_EVENTS:usize=MAX_BATTLE_SHOTS*16;
 pub(super) mod result_spots;
 #[path="p06t_world.rs"]
 pub(super) mod p06t;
+#[path="p06t_extended_world.rs"]
+pub(crate) mod extended;
 
 /// One accepted server action, independent of native entity/method IDs. The
 /// laboratory never replenishes ammo, so its complete event history is bounded.
@@ -169,12 +172,14 @@ pub struct World {
     ammo_detonation:Option<super::ammo_detonation::Ledger>,
     turret_flights:Vec<super::ammo_detonation::Flight>,
     turret_visual_ms:Option<u64>,
+    extended_lab:bool,
+    lab_loadouts:[Option<extended::LabLoadout>;MAX_ACTORS],
     pub damage_events:Vec<DamageRecord>,
     pub device_events:Vec<(usize,crate::p06t_device_state::Transition)>,
     rng_state:u64,
     pub rng_draws:Vec<(u32,usize,u8,u64)>,
     geometry: Option<Arc<geometry::Bundle>>,
-    geometries: [Option<Arc<geometry::Bundle>>; 5],
+    geometries: [Option<Arc<geometry::Bundle>>; 7],
     pub contacts: Vec<Contact>,
     ap_test_lab: bool,
     pub impacts: Vec<AppliedImpact>,
@@ -207,7 +212,7 @@ impl World {
     pub fn failure_snapshot(&self) -> serde_json::Value {
         let events = self.impact.events();
         let trace_from = events.len().saturating_sub(64);
-        serde_json::json!({
+        let mut snapshot=serde_json::json!({
             "battle":self.id.to_string(), "map":self.map.asset(), "vehicle":self.vehicle_kind.label(),
             "tick":self.tick, "started":self.started.is_some(),"mixed_profiles":self.mixed_profiles,"mixed_ammo":self.mixed_ammo,"expected_actors":self.expected_actors,
             "damage_event_count":self.damage_events.len(),"device_event_count":self.device_events.len(),
@@ -239,7 +244,11 @@ impl World {
             "trace_event_count":events.len(),"trace_omitted_prefix":trace_from,
             "trace_tail":events[trace_from..].iter().map(|e|format!("{e:?}")).collect::<Vec<_>>(),
             "scope":"committed world state and bounded trace tail; not a complete deterministic replay"
-        })
+        });
+        if let Some(policy)=self.impact.extended_breech_lab_policy(){
+            snapshot.as_object_mut().expect("snapshot object").insert("unarmored_device_policy".into(),policy.into());
+        }
+        snapshot
     }
 
     pub fn new(id: u64, now: Instant) -> io::Result<Self> {
@@ -256,7 +265,7 @@ impl World {
     /// Source-backed mixed simulation/terrain and lifecycle must be configured
     /// before this immutable pristine-template policy is selected.
     pub fn enable_ammo_detonation(&mut self)->io::Result<()>{
-        if self.ammo_detonation.is_some()||!self.mixed_ammo||!self.mixed_profiles
+        if self.ammo_detonation.is_some()||self.extended_lab||self.vehicle_kind.is_extended()||!self.mixed_ammo||!self.mixed_profiles
             ||self.started.is_some()||!self.actors.is_empty()||!self.shots.is_empty()
             ||!self.impact.events().is_empty()||!self.damage_events.is_empty()||!self.device_events.is_empty()
             ||self.terrain.is_none()||self.lifecycle.as_ref().is_none_or(|life|life.phase()!=super::lifecycle::Phase::Waiting){return Err(bad());}
@@ -357,6 +366,7 @@ impl World {
         Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
             mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,
+            extended_lab:false,lab_loadouts:[None;MAX_ACTORS],
             damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
             result_spots:None,result_spot_tick:None,
             geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
@@ -454,8 +464,10 @@ impl World {
         Ok(changed)
     }
     pub fn enable_ap_test_lab(&mut self) -> io::Result<()> {
+        let count=if self.geometries[5..].iter().any(Option::is_some){7}
+            else if self.geometries[2..5].iter().any(Option::is_some){5}else{2};
         if self.started.is_some() || self.geometry.is_none() || self.ap_test_lab
-            || self.mixed_profiles && self.geometries[..if self.geometries[2..].iter().any(Option::is_some){5}else{2}].iter().any(Option::is_none) { return Err(bad()); }
+            || self.mixed_profiles && self.geometries[..count].iter().any(Option::is_none) { return Err(bad()); }
         self.ap_test_lab = true; Ok(())
     }
     pub fn bind_terrain(&mut self, terrain: Arc<terrain::Terrain>) -> io::Result<()> {
@@ -560,7 +572,7 @@ impl World {
     }
     pub fn attach_owned_loss(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_loss091::FrozenLoss)->io::Result<usize>{
         loadout.validate_owned(&identity.account)?;
-        if self.ammo_detonation.is_none(){return Err(bad());}
+        if self.ammo_detonation.is_none()||self.extended_lab||loadout.base.kind.is_extended(){return Err(bad());}
         let existing=self.actors.iter().position(|actor|actor.identity.account==identity.account);
         if existing.is_some_and(|slot|self.actors[slot].owned_loss.as_ref()!=Some(loadout)){return Err(bad());}
         let mut next=self.clone();let slot=next.attach_owned_v2_inner(identity,session,&loadout.base)?;
@@ -568,7 +580,8 @@ impl World {
     }
     fn attach_owned_v2_inner(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_v2091::Frozen)->io::Result<usize>{
         loadout.validate_owned(&identity.account)?;
-        if !self.mixed_ammo||!self.mixed_profiles{return Err(bad());}
+        if !self.mixed_ammo||!self.mixed_profiles||self.extended_lab||loadout.kind.is_extended(){return Err(bad());}
+        let profile=crate::p06t_device_caps::Profile::ALL.get(loadout.kind.index()).copied().ok_or_else(bad)?;
         let existing=self.actors.iter().position(|actor|actor.identity.account==identity.account);
         if existing.is_some_and(|slot|self.actors[slot].owned_v2.as_ref()!=Some(loadout)){return Err(bad());}
         let mut next=self.clone();let previous=next.vehicle_kind;
@@ -578,13 +591,18 @@ impl World {
         if existing.is_none(){
             next.actors[slot].fire=fire::State::with_typed(loadout.mount,loadout.counts(),loadout.initial_shell_compact_id)?;
             next.actors[slot].owned_v2=Some(loadout.clone());
-            next.actors[slot].devices=Some(crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::ALL[loadout.kind.index()]));
+            next.actors[slot].devices=Some(crate::p06t_device_state::State::new(profile)?);
         }
         *self=next;Ok(slot)
     }
     fn attach_loadout(&mut self, identity: Identity, session: u32,
         loadout: Option<crate::battle091::profile13::FrozenLoadout>) -> io::Result<usize> {
+        self.attach_loadout_fire(identity,session,loadout,None)
+    }
+    fn attach_loadout_fire(&mut self,identity:Identity,session:u32,
+        loadout:Option<crate::battle091::profile13::FrozenLoadout>,initial_fire:Option<fire::State>)->io::Result<usize>{
         if self.mixed_ammo{return Err(bad());}
+        if initial_fire.is_some()&&(!self.extended_lab||loadout.is_some()){return Err(bad());}
         if session == 0 || identity.database <= 0 || identity.account.is_empty()
             || self.actors.iter().any(|a| a.session == Some(session)) { return Err(bad()); }
         if let Some(slot) = self.actors.iter().position(|a| a.identity.account == identity.account) {
@@ -600,7 +618,9 @@ impl World {
         let mut origin = SPAWN; origin[0] += if slot == 0 { -4. } else { 4. };
         let kind=loadout.as_ref().map_or(self.vehicle_kind,|v|v.kind);
         let ammo = loadout.as_ref().map_or(kind.initial_ammo(), |value| value.ap_count);
-        let fire=fire::State::with_mounted_loadout(ammo,kind.reload_seconds(),kind.ammo_limit())?;
+        let fire=if let Some(fire)=initial_fire {
+            if fire.typed().is_none_or(|state|state.mount()!=kind.mount()){return Err(bad());}fire
+        }else{fire::State::with_mounted_loadout(ammo,kind.reload_seconds(),kind.ammo_limit())?};
         if self.mixed_profiles {
             let mut trace=self.impact.clone();trace.bind_actor(slot,kind)?;
             let mut fragiles=self.fragiles.clone();
@@ -1789,3 +1809,7 @@ mod p06t_world_tests;
 #[cfg(test)]
 #[path="result_spots_world_tests.rs"]
 mod first_spot_tests;
+
+#[cfg(test)]
+#[path="seven_loss_boundary_tests.rs"]
+mod seven_loss_boundary_tests;

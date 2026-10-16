@@ -203,7 +203,7 @@ impl RemovalSpec {
 struct Asset {path:PathBuf,bytes:u64,sha256:String}
 #[derive(Clone,Debug)]
 pub struct Pool {pub local_root:PathBuf,pub maps:Vec<MapSpec>,pub sha256:String,executable:PathBuf,
-    runtime:PathBuf,assets:Vec<Asset>,vehicle_profile:Option<profile::VehicleProfile>}
+    runtime:PathBuf,assets:Vec<Asset>,vehicle_profile:Option<profile::VehicleProfile>,shared_only:bool}
 impl Pool {
     pub fn load(local_root:&Path,path:&Path)->io::Result<Self>{
         non_reparse(local_root)?;let root=local_root.canonicalize()?;let raw=read(&owned(&root,path)?,16384)?;
@@ -211,7 +211,7 @@ impl Pool {
         let pool_version=uint(&v["version"])?;
         let vehicle_profile=match pool_version {
             1=>{fields(&v,&["version","profile","worker","maps"])?;None},
-            2|3=>{fields(&v,&["version","profile","worker","maps","vehicle_profile"])?;
+            2|3|4=>{fields(&v,&["version","profile","worker","maps","vehicle_profile"])?;
                 Some(profile::VehicleProfile::load(&root,&v["vehicle_profile"],pool_version)?)},
             _=>return Err(bad()),
         };
@@ -241,7 +241,7 @@ impl Pool {
         let maps=specs.iter().map(|m|MapSpec::load(&root,m,config_version)).collect::<io::Result<Vec<_>>>()?;
         if maps[0].arena_type_id==maps[1].arena_type_id || maps[0].config==maps[1].config{return Err(bad());}
         if let Some(profile)=&vehicle_profile {for map in &maps{profile.verify_map(&root,map)?;}}
-        let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets,vehicle_profile};
+        let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets,vehicle_profile,shared_only:pool_version==4};
         out.verify_assets()?;Ok(out)
     }
     fn angular_profile(&self,map:&MapSpec)->io::Result<ram_proof::Profile>{
@@ -256,6 +256,8 @@ impl Pool {
         }
         Ok(selected)
     }
+    /// Version4 is metadata for IPC7 only; it never authorizes the independent worker.
+    pub fn shared_only(&self)->bool{self.shared_only}
     pub fn vehicle_kind(&self)->VehicleKind{self.vehicle_profile.as_ref().map_or(VehicleKind::Ms1,|p|p.kind())}
     pub fn shared_source_profile(&self)->Option<(PathBuf,String)> {self.vehicle_profile.as_ref().and_then(|p|p.shared_source_profile())}
     fn verify_assets(&self)->io::Result<()> {
@@ -411,6 +413,8 @@ impl Worker {
         Self::launch_inner(pool,map,generation,now,spawn,None,Some((spec,initial_scene)))
     }
     fn launch_inner(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,removal:Option<RemovalSpec>,initial:Option<(CatalogSpec,Scene)>)->io::Result<Self>{
+        if pool.shared_only {return Err(io::Error::new(io::ErrorKind::InvalidInput,
+            "extended shared-only pool requires IPC7 SceneManifest3"));}
         if let Some(profile)=&pool.vehicle_profile{profile.verify_map(&pool.local_root,&map)?;}
         let angular_profile=if initial.as_ref().is_some_and(|(s,_)|s.version()==8){Some(pool.angular_profile(&map)?)}else{None};
         if generation==0{return Err(bad());}
@@ -617,7 +621,7 @@ pub(crate) mod controlled_ipc {
     }
     pub(crate) fn pool(map: MapSpec) -> Arc<Pool> {
         Arc::new(Pool { local_root: PathBuf::new(), maps: vec![map], sha256: "0".repeat(64),
-            executable: PathBuf::new(), runtime: PathBuf::new(), assets: Vec::new(), vehicle_profile: None })
+            executable: PathBuf::new(), runtime: PathBuf::new(), assets: Vec::new(), vehicle_profile: None, shared_only:false })
     }
     pub(crate) fn angular_fixture(name:&str)->(Value,CatalogSpec,Arc<crate::gateway091::shared::fragiles::Catalog>,ram_proof::Profile){angular::tests::bound(name)}
     pub(crate) fn angular_pool(map:MapSpec,profile:ram_proof::Profile)->Arc<Pool>{
