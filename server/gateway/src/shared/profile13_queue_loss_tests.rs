@@ -76,8 +76,8 @@ fn reserved(now:Instant)->(Session,Reservation){
 fn world(r:&Reservation,now:Instant)->World{
     let mut w=World::new_for_roster(r.battle,now,crate::map_profile091::MapId::Karelia,2).unwrap();
     w.enable_mixed_ammo().unwrap();
-    w.bind_terrain(Arc::new(super::super::super::terrain::tests::fixture(-1000.,2000.,2,vec![-100.;4]))).unwrap();
-    w.enable_lifecycle(super::super::super::lifecycle::Rules::prohorovka()).unwrap();w.enable_ammo_detonation().unwrap();w
+    w.bind_terrain(Arc::new(super::super::super::super::terrain::tests::fixture(-1000.,2000.,2,vec![-100.;4]))).unwrap();
+    w.enable_lifecycle(super::super::super::super::lifecycle::Rules::prohorovka()).unwrap();w.enable_ammo_detonation().unwrap();w
 }
 #[test]fn p06t_loss_queue_duplicate_and_busy_join_keep_actual_new_contract_reservation(){
     let now=Instant::now();let(mut s,r)=reserved(now);let before=state(&mut s).unwrap().clone();

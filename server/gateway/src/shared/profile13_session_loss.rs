@@ -165,4 +165,3 @@ mod tests{
         assert_eq!(state.pending_return_loss,Some(t));
     }
 }
-
