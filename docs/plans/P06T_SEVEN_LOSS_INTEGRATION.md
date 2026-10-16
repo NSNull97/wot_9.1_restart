@@ -29,3 +29,5 @@ checkpoint5c86c03/runtimeea43262. Night17 owner разрешил продолж�
 отдельно от owned profile13 resource3/5. Историческая проверка b9239e3 не
 доказывает объединённый runtime. Откат — checkpoint5c86c03 с его reader;
 не откатывать игровые DB и не возвращать committed потери БК.
+
+Software checkpoint0e03e19: full1295/5/build/783rawexact, focused5, Python102PASS0skip. Evidence20261017-p06t-seven-full01. Native/card NOT_RUN, plan остаётся до merge. Следующий ночной шаг P10B.

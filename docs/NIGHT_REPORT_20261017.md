@@ -19,6 +19,19 @@ buildPASS, 689 raw source files exact. Владелец подтвердил п�
 B42/[0,50,46],active0; источник не изменялся. Старые клиенты/службы затем
 остановлены только собственными PID/exe/creation receipts.
 
+## P06T: объединённые seven/loss4/late — software checkpoint
+
+Ветка `codex/p06t-seven-loss-integration`, runtime0e03e19 от5c86c03;
+normal merge b9239e3,6 exactsource resolutions и сохранение новых hooks.
+Full1295PASS/0FAIL/5oldignored/buildPASS/783rawsourceexact;601.96s tests/
+646.14s driver. Focused5/Python102PASS0skip. Actual mixed6/seven scene/ACK
+и late HTTP/SQL/reopen проверены повторно. Evidence
+`local/evidence/20261017-p06t-seven-full01/composition-full.json`.
+Exe ee746ac03d02299c4a8a69d1a5d1a419dc2028f62e727a6f98850fc10680eba5; raw archive 177a632d65ff5841f676f5894cacbf8df3974440180fe44e8308a3f2f2ef6595.
+[Границы/команды/откат](research/P06T_SEVEN_LOSS_INTEGRATION.md).
+WT/FV explicit LAB; owned old5/source policy unchanged, native NOT_RUN.
+Следующая P10B typedLoss4 +actual repeated-compensation launch gate.
+
 ## P08C: поздние итоги — software checkpoint
 
 Ветка `codex/p08c-late-owner-results`, runtimeea43262 от6289216.

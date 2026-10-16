@@ -1,15 +1,16 @@
 # Состояние проекта — 2026-10-17
 
-Текущая карточка P06T: `codex/p06t-seven-loss-integration`, normal merge
-sevenb9239e3 с loss4/late. Current-head gates NOT_RUN; план
-[P06T_SEVEN_LOSS_INTEGRATION](plans/P06T_SEVEN_LOSS_INTEGRATION.md).
+Текущая P06T seven+loss integration завершила software checkpoint0e03e19:
+full1295PASS/0FAIL/5oldignored/buildPASS/783rawsourceexact, focused5,
+Python102PASS0skip. Ветка `codex/p06t-seven-loss-integration`.
+[Факты](research/P06T_SEVEN_LOSS_INTEGRATION.md). Следующая P10B typed loss4.
 
-Ночь продолжается до09:00 Asia/Yekaterinburg без ручных проверок. Текущая
+Ночь продолжается до09:00 Asia/Yekaterinburg без ручных проверок. Сохранённая
 ветка `codex/p08c-late-owner-results`, runtimeea43262: software checkpoint
 **full1224PASS/0FAIL/5oldignored/buildPASS/740rawsourceexact**. Actual
 HTTP/SQL/Dispatcher/World seal/reopen/pending/1500/1501 PASS; native/UI/звук/
 gameplayUDP NOT_RUN. [Факты](research/P08C_LATE_OWNER_RESULTS.md).
-Следующий ночной шаг — P06T seven+loss integration, затем P10B и NET-02.
+Следующий ночной шаг — P10B typed loss4 integration, затем NET-02.
 
 Main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe` сохранён. Непринятые карточки
 в отдельных зависимых ветках; отложенные ручные gates не подменяются PASS.
@@ -24,6 +25,7 @@ Main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe` сохранён. Неприня
 | codex/build-temp-cargo-target | 0e970b7 | full1188/5/build; C-temp→D exe SHA exact; Python11 |
 | codex/p08b-restart-cas-composition | 7ff8b30 | full1189/5/build; actual AP-only restart/recovery/Fresh/warm2→full1→CAS2; Node11 |
 | codex/p08c-late-owner-results | ea43262 | full1224/5/build; actual loss4 late composition; SQL17+1/Web5+37/HTTP1+1 |
+| codex/p06t-seven-loss-integration | 0e03e19 | full1295/5/build; seven+loss boundaries5; Python102/source783 |
 
 Все полные проверки имеют raw source before/after и сохранённые evidence.
 Последний exeSHA e5310617717be1772e21f0a0d6d74297fad8c101d507551b2d6ea4211bcdaa0f.
