@@ -94,6 +94,9 @@ Extended-01 actual WT/FV startup7resources/LABv2/ownstop PASS,106 coreinputs
 unchanged; newoverlay/native NOT_RUN. Непринятые gates в main не сливались.
 [Реализация и ограничения](research/P06T_RUNTIME_CANDIDATE.md).
 
+P10B начат в `codex/p10b-native-training-room` от P06Tbase0f1db40; production
+пока NOT_RUN, next: room/TeamPlan/Session/writer saga. План [P10B](plans/P10B.md).
+
 ## Принято владельцем на настоящем клиенте #717
 
 - Вход и аккаунт: собственная авторизация, перезаход, ангар на реальном клиенте 0.9.1.
