@@ -543,4 +543,40 @@ these checks and actual verified selection, server obtains current domain
 selection_context; unrelated player Ready/join and side/settings changes do
 not invalidate owned selection. Captured room_revision remains observed
 provenance. No new native epoch, request, success DTO or ownership is invented.
-Root wholeSession/current-head/native checks for this WIP policy are pending.
+Root focused22 checked this policy with actualSession/SQL-projected readiness:
+164PASS/0FAIL/0ignored/buildPASS. Native checks remain pending.
+
+## Integrated Host / retirement checkpoint
+
+VERIFIED by source review and focused24 compilation/execution: explicit training
+Host is wired into actual authenticated Session admission, whole-frame receive,
+readonly selection jobs, serial Preparing driver, exact selected World launch,
+Finished receipt collection and close retry/cleanup. Retained inactive metadata
+is display/identity provenance only; stage_batch still rejects inactive/unbound
+publication. Selected origins remain exact actual Preparing ReadyTask/reference;
+bench has no battle guard, Ready authority, reserve or ReleasedRef. Bench's old
+persistence cursor is captured separately from its garage cursor; any later
+change refuses the old display fallback. Compensation does not require that
+fallback and removes departed members before abort publication.
+
+Source review found a real bypass: old garage/result failures retired Sessions
+directly through Dispatcher, leaving room membership behind. Both result-manager
+sites and garage completion now use immediate Host-mediated close in training;
+legacy mode delegates to its original retirement path. Four routing tests passed
+in focused24. Scope is actual State/Manager/Host scheduling with labelled authored
+faults and fixture cache seams, not newly executed HTTP/SQLite/native delivery.
+
+Same connected AuthLease/nativeDB/underlying Session may advance its Account
+generation after return while Battle claim remains. Only its recipient channel
+changes; alias books/tombstones and claims persist. List and Preview are allowed;
+Create/Join/Ready/current-room mutations remain refused under Battle. This change
+does not authenticate a new Session or prove native return by itself.
+
+Focused24 retained189PASS/1FAIL/0ignored. Its one failure was an erroneous new
+assertion expecting a disconnected selected member to remain after compensated
+abort; actual domain removes both departures. The corrected test requires exact
+surviving creator membership. Intermediate failed output is preserved in
+local/build/server/gateway-p10b-focused24; no PASS/build seal is claimed for it.
+Current-head full gate, actual socket→Rust→HTTP selection and native remain
+pending. Integration evidence local/evidence/20261016-p10b-components02;
+read-only review local/night-staging/20261016/p10b-server-retire-review01.

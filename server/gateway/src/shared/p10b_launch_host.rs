@@ -200,4 +200,4 @@ pub(super) fn ready_to_start(table:&Table,world:&World,selected:&[u32],now:Insta
     }Ok(ready)
 }
 
-#[cfg(test)]#[path="p10b_launch_host_tests.rs"]mod tests;
+#[cfg(test)]#[path="p10b_launch_host_tests.rs"]pub(in crate::gateway091::shared::server) mod tests;

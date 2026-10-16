@@ -55,18 +55,114 @@ fn unique_session(sessions:&[Session],account:Account)->io::Result<usize>{
 /// Current trusted projection only. Idle authenticated Sessions that have never
 /// bound Controller are not yet native room recipients. In contrast, every
 /// retained room member must have its actual current Session/fact represented.
+/// Selected origin copied only from actual Preparing.origins, never input.
+#[derive(Clone)]pub(super) struct RetainedReady{pub task:ReadyTask,pub reference:room::WriterReadyRef}
+/// Immutable display/identity provenance captured BEFORE actual retirement.
+/// Bench metadata conveys no writer/Ready/admission authority.
+#[derive(Clone)]pub(super) struct RetainedMember{
+    call:Call,room:room::RoomKey,membership:u64,database:i32,name:String,
+    facts:NativeFacts,selected:Option<RetainedReady>,run_id:String,persistence_revision:u64,
+}
+impl RetainedMember{
+    pub(super) fn capture(s:&Session,engine:&Controller,bindings:&BTreeMap<u32,[u8;32]>,fact:&NativeFacts,selected:Option<RetainedReady>)->io::Result<Self>{
+        let(call,database,name)=bound_call(s,bindings)?;
+        if !engine.is_current_recipient(call.caller,call.channel,database)||fact.database_id!=database{return Err(bad("retained capture current recipient"));}
+        let key=engine.registry().authenticated_room(call.caller).map_err(|_|bad("retained capture room"))?;
+        let r=engine.registry().room(key).ok_or_else(||bad("retained capture room missing"))?;
+        let snapshot=r.preparing().ok_or_else(||bad("retained capture outside Preparing"))?;
+        let member=r.members().find(|m|m.account()==call.caller.account).ok_or_else(||bad("retained capture member"))?;
+        let(lease,membership)=engine.registry().member_context(key,call.caller.account).ok_or_else(||bad("retained capture membership"))?;
+        let p=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).ok_or_else(||bad("retained capture profile"))?;
+        if lease!=call.caller||member.name()!=name||p.has_reservation()||p.has_pending_return()||p.selection.is_some()
+            ||s.arena_base||s.shared.as_ref().is_none_or(|c|c.phase!=Phase::Account||c.join_requested||c.queue_announced)
+            ||fact.descriptor.len()>64{return Err(bad("retained capture account authority"));}
+        match(snapshot.members().iter().find(|m|m.account()==call.caller.account),selected.as_ref()){
+            (Some(frozen),Some(origin))=>{
+                let task=&origin.task;let reference=&origin.reference;
+                if !p.in_flight||p.revision!=u64::from(call.expected_revision)||task.caller()!=call.caller||task.channel()!=call.channel||task.profile()!=call.profile
+                    ||task.expected_revision()!=call.expected_revision||task.room()!=key||task.membership()!=membership
+                    ||reference.owner()!=call.caller.account||reference.revision()!=call.expected_revision
+                    ||member.ready()!=Some(reference)||frozen.ready()!=reference||frozen.name()!=name
+                    ||fact.selected.as_ref()!=Some(reference)||fact.descriptor.is_empty()
+                    ||!s.ammo_service.as_ref().is_some_and(|a|a.idle()){
+                    return Err(bad("retained selected capture origin"));
+                }
+            },
+            (None,None)=>{
+                // Legacy GARAGE work may still use ammo.inflight; it never
+                // creates the battle persistence guard p.in_flight.
+                if member.roster().assigned||p.in_flight||fact.selected.as_ref()!=member.ready()
+                    ||fact.selected.as_ref().is_some_and(|r|r.owner()!=call.caller.account||r.revision()!=call.expected_revision)
+                    ||fact.selected.is_some()!=!fact.descriptor.is_empty(){return Err(bad("retained bench capture facts"));}
+            },
+            _=>return Err(bad("retained selected/bench origin class")),
+        }
+        Ok(Self{call,room:key,membership,database,name:name.to_owned(),facts:fact.clone(),selected,run_id:p.run_id.clone(),persistence_revision:p.revision})
+    }
+    pub(super) fn session(&self)->u32{self.call.channel.session}
+    pub(super) fn room(&self)->room::RoomKey{self.room}
+    pub(super) fn membership(&self)->u64{self.membership}
+    pub(super) fn call(&self)->Call{self.call}
+}
 pub(super) fn current_facts(sessions:&[Session],engine:&Controller,selected:&BTreeMap<Account,NativeFacts>)->io::Result<BTreeMap<Account,NativeFacts>>{
+    current_facts_with_retained(sessions,engine,selected,&BTreeMap::new(),&BTreeMap::new())
+}
+pub(super) fn current_facts_with_retained(sessions:&[Session],engine:&Controller,selected:&BTreeMap<Account,NativeFacts>,
+    bindings:&BTreeMap<u32,[u8;32]>,retained:&BTreeMap<Account,RetainedMember>)->io::Result<BTreeMap<Account,NativeFacts>>{
+    if retained.len()>room::MAX_ACCOUNTS{return Err(bad("retained Preparing origin budget"));}
     let mut out=BTreeMap::new();
     for s in sessions{
         let Some(identity)=&s.identity else{continue;};let account=account_id(&identity.account_id)?;
         let lease=room::AuthLease{account,generation:u64::from(s.id)};
         let channel=current::Channel{session:s.id,generation:s.training_account_generation()};
-        if engine.is_current_recipient(lease,channel,identity.database_id){
+        if s.active&&engine.is_current_recipient(lease,channel,identity.database_id){
             let fact=selected.get(&account).filter(|f|f.database_id==identity.database_id).ok_or_else(||bad("bound recipient current facts missing"))?;
             if out.insert(account,fact.clone()).is_some(){return Err(bad("duplicate bound facts"));}
         }
     }
     for r in engine.registry().rooms(){for member in r.members(){
+        if !out.contains_key(&member.account()){
+            let origin=retained.get(&member.account()).ok_or_else(||bad("room member current facts missing"))?;
+            let index=unique_session(sessions,member.account())?;let s=&sessions[index];
+            let owner=s.identity.as_ref().ok_or_else(||bad("retained Preparing owner missing"))?;
+            let snapshot=r.preparing().ok_or_else(||bad("retained origin outside Preparing"))?;
+            let call=origin.call;let p=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).ok_or_else(||bad("retained profile missing"))?;
+            if s.active||!s.training_opt_in||!s.account_ready||s.arena_base||!r.abort_requested()
+                ||origin.room!=r.key()||call.caller.account!=member.account()||call.caller.generation!=u64::from(s.id)
+                ||call.channel.session!=s.id||call.channel.generation!=s.training_account_generation()
+                ||engine.is_current_recipient(call.caller,call.channel,origin.database)
+                ||engine.registry().member_context(r.key(),member.account())!=Some((call.caller,origin.membership))
+                ||call.profile.revision!=call.expected_revision||member.name()!=origin.name||owner.name!=origin.name
+                ||owner.database_id!=origin.database||origin.facts.database_id!=origin.database
+                ||bindings.get(&s.id)!=Some(&call.profile.source_binding)
+                ||!s.ammo_service.as_ref().is_some_and(|a|a.revision()==u64::from(call.expected_revision))
+                ||p.run_id!=origin.run_id||p.revision!=origin.persistence_revision||p.has_reservation()||p.has_pending_return()||p.selection.is_some()
+                ||s.shared.as_ref().is_none_or(|c|c.phase!=Phase::Account||c.join_requested||c.queue_announced){
+                return Err(bad("retained inactive Preparing identity mismatch"));
+            }
+            match(snapshot.members().iter().find(|m|m.account()==member.account()),origin.selected.as_ref()){
+                (Some(frozen),Some(selected))=>{
+                    let task=&selected.task;let reference=&selected.reference;
+                    if !p.in_flight||p.revision!=u64::from(call.expected_revision)||task.caller()!=call.caller||task.channel()!=call.channel||task.profile()!=call.profile
+                        ||task.room()!=r.key()||task.membership()!=origin.membership||task.expected_revision()!=call.expected_revision
+                        ||reference.owner()!=member.account()||reference.revision()!=call.expected_revision
+                        ||member.ready()!=Some(reference)||frozen.ready()!=reference||frozen.name()!=origin.name
+                        ||origin.facts.selected.as_ref()!=Some(reference)||origin.facts.descriptor.is_empty()
+                        ||!s.ammo_service.as_ref().is_some_and(|a|a.idle()){
+                        return Err(bad("retained inactive selected origin mismatch"));
+                    }
+                },
+                (None,None)=>{
+                    if member.roster().assigned||p.in_flight||member.ready()!=origin.facts.selected.as_ref(){
+                        return Err(bad("retained inactive bench metadata mismatch"));
+                    }
+                },
+                _=>return Err(bad("retained inactive origin class mismatch")),
+            }
+            // Use only the immutable pre-retire display fact, not an authored
+            // external replacement for a disconnected account.
+            out.insert(member.account(),origin.facts.clone());
+        }
         let fact=out.get_mut(&member.account()).ok_or_else(||bad("room member current facts missing"))?;
         let current=if let Some(ready)=member.ready(){let i=unique_session(sessions,member.account())?;
             ready.owner()==member.account()&&fact.selected.as_ref()==Some(ready)
@@ -162,6 +258,13 @@ pub(super) fn receive_room_frame(sessions:&mut Vec<Session>,engine:&mut Controll
 pub(super) fn receive_room_frame_with_launch(sessions:&mut Vec<Session>,engine:&mut Controller,receiver_session:u32,
     frame:&Frame,world:&World,source_bindings:&BTreeMap<u32,[u8;32]>,selectedfacts:&BTreeMap<Account,NativeFacts>,
     now:Instant,now_ms:u64,launch_available:bool)->io::Result<RoomReceived>{
+    receive_room_frame_with_retained(sessions,engine,receiver_session,frame,world,source_bindings,selectedfacts,now,now_ms,launch_available,&BTreeMap::new())
+}
+/// Only the actual host Preparing coordinator may supply retained immutable
+/// origins. All old APIs retain their strict no-retained-origin behavior.
+pub(super) fn receive_room_frame_with_retained(sessions:&mut Vec<Session>,engine:&mut Controller,receiver_session:u32,
+    frame:&Frame,world:&World,source_bindings:&BTreeMap<u32,[u8;32]>,selectedfacts:&BTreeMap<Account,NativeFacts>,
+    now:Instant,now_ms:u64,launch_available:bool,retained:&BTreeMap<Account,RetainedMember>)->io::Result<RoomReceived>{
     if sessions.is_empty()||sessions.len()>room::MAX_ACCOUNTS||source_bindings.len()>room::MAX_ACCOUNTS||selectedfacts.len()>room::MAX_ACCOUNTS{
         return Err(bad("bounded live table"));}
     let mut ids=BTreeSet::new();if sessions.iter().any(|s|!ids.insert(s.id)){return Err(bad("duplicate Session ID"));}
@@ -181,7 +284,7 @@ pub(super) fn receive_room_frame_with_launch(sessions:&mut Vec<Session>,engine:&
         if let Err(reason)=controller.bind(call.caller,call.channel,name.to_owned(),database,now_ms){
             added+=insert(&mut next[index],at,fail(&mut out,call,request,reason)?)?;continue;
         }
-        let facts=current_facts(&next,&controller,selectedfacts)?;
+        let facts=current_facts_with_retained(&next,&controller,selectedfacts,source_bindings,retained)?;
         if matches!(request.kind,ingress::Kind::Ready{..})&&next[index].ammo_service.as_ref().is_none_or(|s|!s.idle()){
             added+=insert(&mut next[index],at,fail(&mut out,call,request,Refusal::Busy)?)?;continue;
         }

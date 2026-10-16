@@ -29,6 +29,11 @@ fn state(s:&mut Session)->io::Result<&mut service::State> {
     s.shared.as_mut().and_then(|c|c.profile13.as_mut()).ok_or_else(||model::bad())
 }
 impl Dispatcher {
+    #[cfg(test)]
+    pub(super) fn retired_for_test(&self,session:u32)->Option<&Session>{
+        self.retired.iter().find(|s|s.id==session)
+    }
+
     /// Host enables only for explicit training support. No implicit config gate.
     pub(super) fn enable_training_finished(&mut self){
         self.training_finished.get_or_insert_with(Default::default);

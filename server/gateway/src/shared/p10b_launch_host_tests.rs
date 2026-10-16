@@ -40,16 +40,16 @@ fn live(owner:Arc<crate::identity091::Profile>,fixtures:Arc<crate::hangar091::Fi
     s.ammo_service.as_mut().unwrap().replace_pool(s.hangar.as_ref().unwrap().p04m_binding().cloned()).unwrap();
     let mut client=Client::new(0);client.join_requested=false;client.hangar_since=Some(now);client.profile13=Some(persistence::State::new(c.run_id.clone(),c.expected_revision).unwrap());s.shared=Some(client);s
 }
-fn native(id:i16,cmd:i16,a:i64,b:i32)->ingress::Request{let mut raw=vec![0x8e,20,0];raw.extend(id.to_le_bytes());raw.extend(cmd.to_le_bytes());raw.extend(a.to_le_bytes());raw.extend(b.to_le_bytes());raw.extend(0i32.to_le_bytes());ingress::record(&raw).unwrap().unwrap()}
-fn create()->ingress::Request{let mut raw=vec![0x9a,10,0];raw.extend(4i32.to_le_bytes());raw.extend(600i32.to_le_bytes());raw.extend([1,0]);ingress::record(&raw).unwrap().unwrap()}
+pub(in crate::gateway091::shared::server) fn native(id:i16,cmd:i16,a:i64,b:i32)->ingress::Request{let mut raw=vec![0x8e,20,0];raw.extend(id.to_le_bytes());raw.extend(cmd.to_le_bytes());raw.extend(a.to_le_bytes());raw.extend(b.to_le_bytes());raw.extend(0i32.to_le_bytes());ingress::record(&raw).unwrap().unwrap()}
+pub(in crate::gateway091::shared::server) fn create()->ingress::Request{let mut raw=vec![0x9a,10,0];raw.extend(4i32.to_le_bytes());raw.extend(600i32.to_le_bytes());raw.extend([1,0]);ingress::record(&raw).unwrap().unwrap()}
 fn call(s:&Session,stamp:&selection::Stamp)->Call{
     let mut source=[0;32];for(i,pair)in stamp.owner_source_sha256.as_bytes().chunks_exact(2).enumerate(){source[i]=u8::from_str_radix(std::str::from_utf8(pair).unwrap(),16).unwrap();}
     Call{caller:room::AuthLease{account:account(&s.identity.as_ref().unwrap().account_id).unwrap(),generation:u64::from(s.id)},
         channel:Channel{session:s.id,generation:s.training_account_generation()},profile:ProfileStamp{revision:s.ammo_service.as_ref().unwrap().revision()as u32,source_binding:source},expected_revision:s.ammo_service.as_ref().unwrap().revision()as u32}
 }
-struct Input{table:Table,controller:Controller,world:World,template:BattleTemplate,saga:saga::Saga,held:Vec<HeldFresh>,origins:BTreeMap<room::Account,LaunchOrigin>,calls:Vec<Call>,facts:BTreeMap<room::Account,adapter::NativeFacts>}
-fn input(now:Instant)->Input{input_mode(now,false)}
-fn input_mode(now:Instant,bench:bool)->Input{
+pub(in crate::gateway091::shared::server) struct Input{pub(in crate::gateway091::shared::server) table:Table,pub(in crate::gateway091::shared::server) controller:Controller,pub(in crate::gateway091::shared::server) world:World,pub(in crate::gateway091::shared::server) template:BattleTemplate,pub(in crate::gateway091::shared::server) saga:saga::Saga,pub(in crate::gateway091::shared::server) held:Vec<HeldFresh>,pub(in crate::gateway091::shared::server) origins:BTreeMap<room::Account,LaunchOrigin>,pub(in crate::gateway091::shared::server) calls:Vec<Call>,pub(in crate::gateway091::shared::server) facts:BTreeMap<room::Account,adapter::NativeFacts>}
+pub(in crate::gateway091::shared::server) fn input(now:Instant)->Input{input_mode(now,false)}
+pub(in crate::gateway091::shared::server) fn input_mode(now:Instant,bench:bool)->Input{
     let(select,sql)=values();let sql=sql["cases"].as_array().unwrap().iter().find(|c|c["case"].as_str().unwrap().contains("two_real_owned")).unwrap();
     let mut selections=Vec::new();let mut sessions=Vec::new();let mut calls=Vec::new();let mut controller=Controller::default();let mut facts=BTreeMap::new();
     for row in select["vectors"].as_array().unwrap().iter().take(2){let q=&row["request"];let c=ctx(q);

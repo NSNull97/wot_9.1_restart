@@ -20,6 +20,8 @@ mod p10b_receive_host;
 mod p10b_launch_host;
 #[path="p10b_preparing_host.rs"]
 mod p10b_preparing_host;
+#[path="p10b_host.rs"]
+mod p10b_host;
 
 #[cfg(test)]
 #[path="server_visibility_tests.rs"]
@@ -1019,6 +1021,59 @@ pub(super) fn validate_vehicle_binding(vehicle:VehicleKind, pool:&crate::map_dri
     Ok(())
 }
 
+
+fn hold_training_close(pending:&mut Vec<(u32,&'static str)>,id:u32,reason:&'static str){
+    if !pending.iter().any(|(old,_)|*old==id){pending.push((id,reason));}
+}
+fn retire_training_session(host:&mut Option<p10b_host::Host>,dispatcher:&mut profile13_dispatch::Dispatcher,
+    table:&mut Table,world:&mut World,runtime:&mut Option<IntegratedRuntime>,template:&BattleTemplate,
+    id:u32,reason:&'static str,now:Instant,logical_ms:u64)->io::Result<bool>{
+    let h=host.as_mut().ok_or_else(||model::bad())?;
+    if let Some(error)=h.prestart_failure(world,Some(id),now){
+        contain_battle_failure(table,world,runtime,template,now,"training_prestart_disconnect",&error)?;
+    }
+    if h.closing(table,id,now,logical_ms)?{return Ok(false);}
+    if h.previously_retired(id){
+        let index=table.sessions.iter().position(|s|s.id==id).ok_or_else(||model::bad())?;
+        if table.sessions[index].active||world.actors.iter().any(|a|a.session==Some(id))
+            ||table.sessions[index].shared.as_ref().and_then(|c|c.profile13.as_ref()).is_none_or(|p|!p.garage_idle()){
+            return Err(model::bad());
+        }
+        table.sessions.remove(index);
+        println!("P10B_HELD_SESSION_CLOSED session={id} all_reserves_released=true reason={reason}");
+    }else{dispatcher.retire(table,world,id,now,reason)?;}
+    h.forget_session(id);Ok(true)
+}
+
+
+/// Writer/result faults must cross the same training retirement boundary as a
+/// native disconnect. A held/failed close remains queued, including its first
+/// reason, and no Host/Registry/member metadata is discarded.
+fn retire_service_failure(host:&mut Option<p10b_host::Host>,dispatcher:&mut profile13_dispatch::Dispatcher,
+    table:&mut Table,world:&mut World,runtime:&mut Option<IntegratedRuntime>,template:&BattleTemplate,
+    pending:&mut Vec<(u32,&'static str)>,id:u32,reason:&'static str,now:Instant,logical_ms:u64)->io::Result<()>{
+    if host.is_none(){return dispatcher.retire(table,world,id,now,reason);}
+    match retire_training_session(host,dispatcher,table,world,runtime,template,id,reason,now,logical_ms){
+        Ok(true)=>{},
+        Ok(false)=>hold_training_close(pending,id,reason),
+        Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(pending,id,reason);},
+    }Ok(())
+}
+
+/// Retain the old helper/API for ordinary mode and its existing tests. Explicit
+/// training mode must never remove a room member behind Host's back.
+fn contain_results_failure_with_training(manager:&super::results_session::Manager,host:&mut Option<p10b_host::Host>,
+    dispatcher:&mut profile13_dispatch::Dispatcher,table:&mut Table,world:&mut World,
+    runtime:&mut Option<IntegratedRuntime>,template:&BattleTemplate,pending:&mut Vec<(u32,&'static str)>,
+    now:Instant,logical_ms:u64,error:&io::Error)->io::Result<()>{
+    if host.is_none(){return contain_results_failure(manager,dispatcher,table,world,now,error);}
+    let target=manager.failure_session(&table.sessions);
+    println!("P08C_RESULTS_SESSION_FAILED session={target:?} error={error} service_alive=true durable_result_retained=true");
+    if let Some(id)=target.filter(|id|table.sessions.iter().any(|s|s.id==*id)){
+        retire_service_failure(host,dispatcher,table,world,runtime,template,pending,id,"native_results_delivery",now,logical_ms)?;
+    }Ok(())
+}
+
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
     integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
     terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,resources:Option<Vec<super::profile13_templates::Resources>>,qualification:Option<VehicleKind>)
@@ -1055,8 +1110,11 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         else { crate::capture091::Profile::SharedWorldV1 };
     let mut capture = Some(Recorder::open_profile(capture_path, &config.local_root, capture_profile)?);
     if config.battle_players!=2&&resources.as_ref().is_none_or(|rows|rows[0].shared.is_none()){return Err(model::bad().into());}
-    let mut table = Table{capacity:config.battle_players,..Table::default()};
+    let mut table = Table{capacity:if config.training_rooms{crate::training091::domain::MAX_ACCOUNTS}else{config.battle_players},..Table::default()};
+    let mut room_host=config.training_rooms.then(p10b_host::Host::default);
+    let mut room_closing:Vec<(u32,&'static str)>=Vec::new();
     let mut battle_dispatch=profile13_dispatch::Dispatcher::default();
+    if room_host.is_some(){battle_dispatch.enable_training_finished();}
     let mut ammo_job=None;
     let mut result_manager=super::results_session::Manager::default();
     let started = Instant::now();
@@ -1118,7 +1176,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         let now = Instant::now();
         if now.duration_since(started) >= model::LIFETIME { println!("SHARED_STOP reason=lab_lifetime"); break; }
         if now.duration_since(rate_started) >= Duration::from_secs(1) { rate_started = now; rate_count = 0; }
-        let mut closing: Vec<(u32, &'static str)> = Vec::new();
+        let mut closing: Vec<(u32, &'static str)> = std::mem::take(&mut room_closing);
+        let logical_ms=u64::try_from(now.saturating_duration_since(started).as_millis()).map_err(|_|model::bad())?;
         let result = auth.as_ref().and_then(|job| match job.receiver.try_recv() {
             Ok(result) => Some(result), Err(mpsc::TryRecvError::Empty) => None,
             Err(mpsc::TryRecvError::Disconnected) => Some(Err(model::bad())),
@@ -1156,6 +1215,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                             let c=s.shared.as_mut().ok_or_else(||model::bad())?;c.join_requested=false;
                             c.profile13=Some(super::profile13_session::State::new(config.battle_run_id.clone(),binding.revision)?);
                         }
+                        if let Some(host)=&mut room_host{host.bind_session(&mut s)?;}
                         println!("SHARED_SESSION_PENDING battle={} session={next_id} slot={slot} account={} database={} authenticated=true", world.id,
                             s.identity.as_ref().ok_or_else(|| model::bad())?.account_id, s.identity.as_ref().ok_or_else(|| model::bad())?.database_id);
                         next_id = next_id.checked_add(1).ok_or_else(|| model::bad())?;
@@ -1201,7 +1261,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     } else { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
                     continue;
                 }
-                if battle_dispatch.busy() || result_manager.busy() || ammo_job.is_some() || table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
+                if battle_dispatch.busy() || result_manager.busy() || ammo_job.is_some() || room_host.as_ref().is_some_and(p10b_host::Host::busy) || table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
                     send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; continue;
                 }
                 match start_auth(config.clone(), request, peer, &fields, false) {
@@ -1210,20 +1270,23 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 }
             } else {
                 let index = match table.route(peer, packet) { Ok(i) => i, Err(_) => { println!("SHARED_REJECT reason=base_route"); continue; } };
-                let s = &mut table.sessions[index];
-                if s.guard_base_peer(&mut table.retirement, peer, now).is_err() { println!("SHARED_REJECT reason=retired_peer"); continue; }
+                if table.sessions[index].guard_base_peer(&mut table.retirement,peer,now).is_err(){println!("SHARED_REJECT reason=retired_peer");continue;}
                 if length == 21 {
+                    let s=&mut table.sessions[index];
                     let (request, _) = base::base_request(packet, s.handoff)?;
                     s.base_peer = Some(peer); send(socket, peer, &base::base_reply(request, s.token), &s.key, &mut capture)?;
                     println!("SHARED_BASE_BOUND battle={} session={} peer={peer}", world.id, s.id);
                 } else {
-                    let frame = match base::decrypt(packet, &s.key).and_then(|b| transport091::parse_interactive(&b)) {
-                        Ok(frame) => frame, Err(_) => { println!("SHARED_REJECT session={} reason=channel_framing", s.id); continue; }
+                    let sid=table.sessions[index].id;
+                    let frame=match base::decrypt(packet,&table.sessions[index].key).and_then(|b|transport091::parse_interactive(&b)){
+                        Ok(frame)=>frame,Err(_)=>{println!("SHARED_REJECT session={sid} reason=channel_framing");continue;}
                     };
-                    let received=(||->io::Result<bool>{
-                        let mut staged=s.clone();staged.shared_refresh_world(&world)?;
-                        let close=staged.receive(&frame,now)?;*s=staged;Ok(close)
-                    })();
+                    let received=if let Some(host)=&mut room_host{host.receive(&mut table,sid,&frame,&world,now,logical_ms)}else{
+                        let s=&mut table.sessions[index];
+                        (||->io::Result<bool>{let mut staged=s.clone();staged.shared_refresh_world(&world)?;
+                            let close=staged.receive(&frame,now)?;*s=staged;Ok(close)})()
+                    };
+                    let s=&mut table.sessions[index];
                     match received {
                         Ok(close) => {
                             if frame.flags & 0x10 != 0 { send(socket, peer, &transport091::ack(s.rx), &s.key, &mut capture)?; s.last_keepalive = now; }
@@ -1235,10 +1298,18 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
         }
         // Remove known disconnects before applying any queued intent or tick.
-        for (id, reason) in closing.drain(..) { battle_dispatch.retire(&mut table,&mut world,id,now,reason)?; }
+        for(id,reason)in closing.drain(..){
+            if !table.sessions.iter().any(|s|s.id==id){continue;}
+            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;continue;}
+            match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,&battle_template,id,reason,now,logical_ms){
+                Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
+                Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
+            }
+        }
         if profile13_mode {
             if let Err(error)=result_manager.poll(&mut table.sessions,now) {
-                contain_results_failure(&result_manager,&mut battle_dispatch,&mut table,&mut world,now,&error)?;
+                contain_results_failure_with_training(&result_manager,&mut room_host,&mut battle_dispatch,&mut table,&mut world,
+                    &mut integrated,&battle_template,&mut room_closing,now,logical_ms,&error)?;
             }
             for s in &mut table.sessions {
                 if world.started.is_some() {
@@ -1262,7 +1333,10 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             if let Some(id)=ammo_job.as_ref().map(ammo_session::Job::session_id) {
                 if let Err(error)=ammo_session::complete(table.sessions.iter_mut().find(|s|s.id==id),&mut ammo_job) {
                     println!("P08B_GARAGE_FAILED session={id} error={error} reconnect_required=true service_alive=true");
-                    if table.sessions.iter().any(|s|s.id==id) {battle_dispatch.retire(&mut table,&mut world,id,now,"garage_writer_ambiguous")?;}
+                    if table.sessions.iter().any(|s|s.id==id) {
+                        retire_service_failure(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,
+                            &battle_template,&mut room_closing,id,"garage_writer_ambiguous",now,logical_ms)?;
+                    }
                 }
             }
             if ammo_job.is_none() && !result_manager.busy() {
@@ -1304,15 +1378,29 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         println!("P08B_HOMOGENEOUS_DENIAL session={} battle={} reservation_will_be_returned=true",s.id,world.id);
                     }
                 }
-                battle_dispatch.start(&mut table,&world,config.clone(),now)?;
+                if room_host.as_ref().is_none_or(|h|!h.preparing()){
+                    battle_dispatch.start(&mut table,&world,config.clone(),now)?;
+                }
             }
-            if !battle_dispatch.busy() && !result_manager.busy() {
+            if !battle_dispatch.busy() && !result_manager.busy() && room_host.as_ref().is_none_or(|h|!h.busy()){
                 for s in &mut table.sessions {ammo_session::start(s,&mut ammo_job,config.clone())?;}
             }
-            if !battle_dispatch.busy() && ammo_job.is_none() && auth.is_none() {
+            if !battle_dispatch.busy() && ammo_job.is_none() && auth.is_none() && room_host.as_ref().is_none_or(|h|!h.busy()) {
                 if let Err(error)=result_manager.start_if_idle(&mut table.sessions,config.clone(),now) {
-                    contain_results_failure(&result_manager,&mut battle_dispatch,&mut table,&mut world,now,&error)?;
+                    contain_results_failure_with_training(&result_manager,&mut room_host,&mut battle_dispatch,&mut table,&mut world,
+                    &mut integrated,&battle_template,&mut room_closing,now,logical_ms,&error)?;
                 }
+            }
+        }
+        if let Some(host)=&mut room_host{
+            let idle=!battle_dispatch.busy()&&ammo_job.is_none()&&!result_manager.busy()&&auth.is_none();
+            match host.poll(&mut table,&mut world,&mut integrated,&battle_template,&mut battle_dispatch,config.clone(),now,logical_ms,idle){
+                Ok(true)=>{contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;},Ok(false)=>{},
+                Err(error)=>println!("P10B_HOST_RETRY error={error} authority_retained=true service_alive=true"),
+            }
+            if let Some(error)=host.prestart_failure(&world,None,now){
+                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"training_handoff",&error)?;
+                contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
             }
         }
         if !world.actors.is_empty() && world.actors.iter().all(|a|a.session.is_none()) {
@@ -1327,9 +1415,11 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         }
         let step=(||->io::Result<()> {
             attach_waiting_sessions(&mut table,&mut world,now)?;
-            let start=world.started.is_none() && table.sessions.len()==world.expected_actors()
-                && world.actors.len()==world.expected_actors() && table.sessions.iter().all(|s|entry_ready(s,now)
-                    && world.actors.iter().any(|a|a.session==Some(s.id)));
+            let start=if let Some(host)=&room_host{host.can_start(&table,&world,now)?}else{
+                world.started.is_none() && table.sessions.len()==world.expected_actors()
+                    && world.actors.len()==world.expected_actors() && table.sessions.iter().all(|s|entry_ready(s,now)
+                        && world.actors.iter().any(|a|a.session==Some(s.id)))
+            };
             advance_battle(&mut world,&mut integrated,now,start)
         })();
         if let Err(error)=step {
@@ -1343,6 +1433,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         let integrated_native_ready = integrated.as_ref().is_none_or(IntegratedRuntime::ready_for_native);
         let mut publication_failure=None;
         for s in &mut table.sessions {
+            if !s.active&&room_host.as_ref().is_some_and(|h|h.owns_preparing(s.id)){continue;}
             let reason = if now.duration_since(s.created_at) >= config.session_duration { Some("session_deadline") }
                 else if now.duration_since(s.last_rx) >= s.tx.idle_limit() { Some("idle_timeout") } else { None };
             if let Some(reason) = reason { closing.push((s.id, reason)); continue; }
@@ -1378,8 +1469,13 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"publication",&error)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
-        for (id, reason) in closing {
-            if table.sessions.iter().any(|s|s.id==id) {battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;}
+        for(id,reason)in closing{
+            if !table.sessions.iter().any(|s|s.id==id){continue;}
+            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;continue;}
+            match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,&battle_template,id,reason,now,logical_ms){
+                Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
+                Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
+            }
         }
         for contact in world.contacts.iter().skip(contact_cursor) {
             println!("SHARED_GEOMETRIC_CONTACT {}", serde_json::json!({

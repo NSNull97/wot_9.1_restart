@@ -95,7 +95,10 @@ impl Controller{
             if old.lease!=lease||old.database!=database{return Err(Refusal::StaleChannel);}
             if old.channel!=channel{
                 if old.channel.session!=channel.session||channel.generation<=old.channel.generation{return Err(Refusal::StaleChannel);}
-                if next.registry.claim(lease.account).is_some()||old.last.is_some()||next.pending_ready.contains_key(&lease.account)
+                // A returned Account may read rooms while its exact live Session
+                // retains Battle. Domain claims still forbid Create/Join/Ready;
+                // only the retired room channel changes, never aliases or claims.
+                if matches!(next.registry.claim(lease.account),Some(d::Claim::Room(_)))||old.last.is_some()||next.pending_ready.contains_key(&lease.account)
                     ||next.held.values().any(|p|p.caller.account==lease.account)||next.departures.values().flatten().any(|p|p.caller.account==lease.account){return Err(Refusal::Busy);}
                 // Warm Account recreation reuses its underlying Session. Keep
                 // peer/preview tombstones: a fresh old semantic404 has no epoch.
@@ -403,3 +406,5 @@ impl Controller{
 fn side(team:i64)->Result<d::Side>{match team{1=>Ok(d::Side::One),2=>Ok(d::Side::Two),_=>Err(Refusal::BadArgs)}}
 
 #[cfg(test)]#[path="controller_tests.rs"]mod tests;
+
+#[cfg(test)]#[path="p10b_warm_battle_bind_tests.rs"]mod warm_battle_bind_tests;

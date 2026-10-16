@@ -53,8 +53,8 @@ fn call(s:&Session,stamp:&selection::Stamp)->Call{
         channel:Channel{session:s.id,generation:s.training_account_generation()},profile:ProfileStamp{revision:s.ammo_service.as_ref().unwrap().revision()as u32,source_binding:source},expected_revision:s.ammo_service.as_ref().unwrap().revision()as u32}
 }
 
-struct Input{table:Table,controller:Controller,prepare:PrepareTask,origins:BTreeMap<room::Account,LaunchOrigin>,sql:Value}
-fn input(now:Instant)->Input{
+pub(in crate::gateway091::shared::server) struct Input{pub(in crate::gateway091::shared::server) table:Table,pub(in crate::gateway091::shared::server) controller:Controller,pub(in crate::gateway091::shared::server) prepare:PrepareTask,pub(in crate::gateway091::shared::server) origins:BTreeMap<room::Account,LaunchOrigin>,pub(in crate::gateway091::shared::server) sql:Value}
+pub(in crate::gateway091::shared::server) fn input(now:Instant)->Input{
     let(select,sql)=values();let sql=sql["cases"].as_array().unwrap().iter().find(|c|c["case"].as_str().unwrap().contains("two_real_owned")).unwrap().clone();
     let mut selections=Vec::new();let mut sessions=Vec::new();let mut calls=Vec::new();let mut controller=Controller::default();let mut facts=BTreeMap::new();
     for row in select["vectors"].as_array().unwrap().iter().take(2){let q=&row["request"];let c=ctx(q);
@@ -83,7 +83,7 @@ fn input(now:Instant)->Input{
     controller.apply(calls[0],native(224,411,1,0),&facts,0).unwrap();let batch=controller.apply(calls[0],native(225,411,2,0),&facts,0).unwrap();
     Input{table:Table{sessions,capacity:6,..Table::default()},controller,prepare:batch.prepare[0].clone(),origins,sql}
 }
-fn begin(i:&mut Input)->Preparing{Preparing::begin(i.prepare.clone(),room::BattleKey(9007199254740993),i.origins.clone(),&i.controller,&mut i.table).unwrap()}
+pub(in crate::gateway091::shared::server) fn begin(i:&mut Input)->Preparing{Preparing::begin(i.prepare.clone(),room::BattleKey(9007199254740993),i.origins.clone(),&i.controller,&mut i.table).unwrap()}
 fn state(table:&Table)->Vec<(u32,persistence::State,u64,i64,VecDeque<Vec<u8>>,usize,bool)>{
     table.sessions.iter().map(|s|(s.id,owned_state(s).unwrap().clone(),s.ammo_service.as_ref().unwrap().revision(),s.ammo_service.as_ref().unwrap().wire_revision(),s.outbox.clone(),s.tx.len(),s.active)).collect()
 }
@@ -122,7 +122,7 @@ fn admitted(p:&mut Preparing,i:&mut Input)->saga::Task{
     let task=p.next_task(&mut i.table,true).unwrap().unwrap();assert!(matches!(task.request(),writer::Request::Admit{..}));
     p.accept(&completion(&task,&i.sql,true)).unwrap();task
 }
-fn finish_all_abort(p:&mut Preparing,i:&mut Input){
+pub(in crate::gateway091::shared::server) fn finish_all_abort(p:&mut Preparing,i:&mut Input){
     while !p.ready_to_abort(){
         let task=p.next_task(&mut i.table,true).unwrap().unwrap();
         let c=if task.request()==&writer::Request::Inspect{inspected(&task,true)}else{completion(&task,&i.sql,true)};

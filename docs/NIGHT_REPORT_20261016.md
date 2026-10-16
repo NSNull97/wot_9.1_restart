@@ -294,3 +294,12 @@ simultaneousReady policy6, actualResults/queue-isolation12 andBusylaunchcallback
 These are component checks; actualserverloop Host and retained Preparing
 selected/bench disconnect handling are the current integration work. Native
 room/start/return NOT_RUN; no new client overlay/standdeployment.
+
+P10B integration checkpoint: actual liveHost/serverloop connected, retained
+Preparing selected/bench metadata and common garage/results retirement boundary
+added. Warm exactSession Account List/Preview retains Battle claims. Focused24
+compiled and ran190:189PASS/1FAIL/0ignored; one new test expected a departed selected
+member to remain after compensated abort. Corrected to exact surviving creator,
+without production policy relaxation. Four service-routing checks passed. Full04
+of the corrected committed runtime remains required. Fresh lightweight C/D
+room stand is prepared separately; native overlays/clients are untouched.

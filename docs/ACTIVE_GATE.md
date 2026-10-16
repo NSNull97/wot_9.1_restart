@@ -21,11 +21,15 @@ scene3v1+1v3, boundedaliases/streams200/201, strictread-onlyselection,
 serialreserve/compensation и Finishedhook проверены применимой автоматикой.
 HTTP03=3PASS/0skip77.768s; CPython2.7.3=76PASS/3oldhostskips.
 
-Текущие WIP changes: checkedReady rebase для одновременных nativeautoReady
-(свои403/nonce/roommembership/channel/source/CAS по-прежнему fence), actual
-Results1500/1501 и nativeRandomQueue isolation в trainingSession, liveHost
-serverloop. Они ещё не входят в full03. Native/UI/управление, actualRustHTTP
-readiness→launch и новыйстенд NOT_RUN; карточка не принята, main не менялся.
+После full03 подключён liveHost: actualSession receive, readonlyReady worker,
+serialPreparing/launch, durableFinished и общий серверный цикл. Selected/bench
+disconnect удерживает происхождение до компенсации; ошибки garage/results
+проходят ту же границу закрытия. WarmAccount того же Session читает List/Preview
+без освобождения Battle claim. CheckedReady rebase/Results isolation сохранены.
+Focused24:189PASS/1FAIL/0ignored; единственная ошибка — новое ожидание теста,
+которое оставляло отключённого бойца в комнате после abort. Исправлено на точный
+оставшийся состав, production semantics не ослаблены. Full04 текущего head пока
+NOT_RUN. Native/UI/управление и live RustHTTP→room→launch NOT_RUN; main не менялся.
 OneactiveWorld,2..6 бойцов,≤3 на стороне, map4/Прохоровка, one-shotroom LABpolicy.
 
 План [P10B](plans/P10B.md), originalsource

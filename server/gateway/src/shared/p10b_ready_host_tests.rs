@@ -116,3 +116,5 @@ fn retained(m:&Manager,task:&ReadyTask,success:bool){let(t,r)=m.completed.as_ref
     m.start(&mut sessions,&mut c,config.clone(),false).unwrap();assert_eq!(m.queued.len(),1);assert!(m.pending.is_none()&&m.completed.is_none());
     sessions[0].shared.as_mut().unwrap().return_generation+=1;m.start(&mut sessions,&mut c,config,true).unwrap();assert!(m.queued.is_empty()&&m.pending.is_none());assert!(m.completed.as_ref().unwrap().1.is_err());no_ready(&m,&c);
 }
+
+#[path="p10b_retained_facts_tests.rs"]mod retained_facts;

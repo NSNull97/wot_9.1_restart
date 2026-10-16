@@ -100,8 +100,10 @@ componenttag `p10b-components-20261016-01` /36d57a0: **1341PASS/0FAIL/
 Session/Window/Controller atomicreceive, nativealiases/streams, typedTeamPlan,
 serialreserve/compensation и Finishedhook собраны. ActualHTTP03 read-only
 selection=3PASS/0skip77.768s; CPython2.7.3=76PASS/3oldskips. Native/UI/room
-NOT_RUN. Новый liveHost и исправления readiness/specialAccount подключаются;
-они ещё не входят в этот fullgate. CoreV7/оба утренних стенда сохранены.
+NOT_RUN. LiveHost/серверный цикл подключены: retained selected/bench disconnect,
+garage/results close routing, warm List/Preview при сохранённом Battle claim.
+Focused24=189PASS/1FAIL: исправлено ошибочное новое test expectation, full04
+этого head пока NOT_RUN. CoreV7/оба утренних стенда сохранены.
 План [P10B](plans/P10B.md), ограничения/утренний сценарий —
 [NIGHT_REPORT_20261016](NIGHT_REPORT_20261016.md).
 

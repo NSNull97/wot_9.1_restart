@@ -35,6 +35,14 @@ pub(super) fn current_call(s:&Session,source:[u8;32])->io::Result<Call>{
     pub(super) accepted:BTreeMap<d::Account,Accepted>,
 }
 impl Manager{
+    // AUTHORED failed-read publication descriptor for Host scheduling tests.
+    // No Selection, writer receipt or ownership is constructed here.
+    #[cfg(test)]
+    pub(in crate::gateway091::shared::server) fn completed_failure_for_test(&mut self,task:ReadyTask){
+        assert!(self.pending.is_none()&&self.completed.is_none());
+        self.completed=Some((task,Err("AUTHORED readonly failure".into())));
+    }
+
     pub(super) fn running_or_completed(&self)->bool{self.pending.is_some()||self.completed.is_some()}
     pub(super) fn query_running(&self)->bool{self.pending.is_some()}
     pub(super) fn busy(&self)->bool{self.pending.is_some()||self.completed.is_some()||!self.queued.is_empty()}
