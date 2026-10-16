@@ -11,8 +11,10 @@ coverageNOT_RUN (cancel0only), owner mousebothconfirmed. Auto-tracking unsupport
 Marker gate ранее принят972843a. Полная P08C/цепочка не приняты: capture/timeout/
 repeat/early-leaver results остаются открыты; mainffce8cb не менялся.
 Evidence `local/evidence/20261016-p08c-autoaim-acceptance01/acceptance02.json`.
-Новая задача владельца — P06T ammo-rack detonation и потеря всех оставшихся
-loaded снарядов как особое правило проекта; прошлые строки не пересчитывать.
+Текущая задача владельца — P06T ammo-rack detonation и потеря всех оставшихся
+loaded снарядов как особое правило проекта. Ветка codex/p06t-ammo-rack-detonation
+от сохранённого1e87e1b; план P06T_AMMO_RACK_DETONATION, native/ammo-lossNOT_RUN.
+Прошлые строки не пересчитывать.
 
 Короткое текущее состояние. Полная история карточек до этой даты удалена из рабочего
 дерева и доступна в git: `git show 1eaff5e:docs/STATUS.md` (а также удалённые

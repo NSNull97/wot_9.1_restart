@@ -1,4 +1,14 @@
-# Текущая карточка — P08C: natural results/return checkpoint принят
+# Текущая карточка — P06T: детонация и потеря БК
+
+Явная задача владельца 2026-10-16: при сносе БК машина гибнет/отрывается башня,
+все оставшиеся loaded снаряды теряются. Это правило нашего проекта.
+Ветка `codex/p06t-ammo-rack-detonation` от сохранённого P08C checkpoint1e87e1b.
+План [P06T_AMMO_RACK_DETONATION](plans/P06T_AMMO_RACK_DETONATION.md).
+Реализация ещё не проверена; native/UI/отрыв башни/ammo-loss NOT_RUN.
+Новый frozen versioned contract обязателен; старые результаты не пересчитывать.
+Mainffce8cb, ночные ветки и предыдущие доказательства сохраняются.
+
+## Сохранённая приёмка natural P08C
 
 Ветка `codex/p08c-natural-results-return`, runtime46d5c20. План
 [P08C_NATURAL_RESULTS_RETURN](plans/P08C_NATURAL_RESULTS_RETURN.md).
