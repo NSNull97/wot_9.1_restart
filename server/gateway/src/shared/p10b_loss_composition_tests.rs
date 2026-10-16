@@ -13,7 +13,34 @@ fn send(h:&mut Host,t:&mut Table,w:&World,id:u32,payload:&[u8],logical:u64){
         body:[vec![1],s.token.to_le_bytes().to_vec(),payload.to_vec()].concat(),piggybacks:vec![]};
     assert!(!h.receive(t,id,&f,w,Instant::now(),logical).unwrap());
 }
-fn ack(t:&mut Table)->Vec<Vec<u8>>{t.sessions.iter_mut().flat_map(common::drain).collect()}
+/// Synthetic validated ACKs enter through the SAME actual outer training
+/// transaction as production. Ordinary Session.receive intentionally refuses
+/// training_opt_in, even for an ACK; never toggle that guard in a test.
+fn ack(h:&mut Host,t:&mut Table,w:&World,logical:u64)->Vec<Vec<u8>>{
+    let mut bodies=Vec::new();let mut rounds=0;
+    while t.sessions.iter().any(|s|!s.outbox.is_empty()||s.tx.len()!=0){
+        rounds+=1;assert!(rounds<=128,"bounded actual Host/Window synthetic ACK drain");
+        let ids=t.sessions.iter().filter(|s|!s.outbox.is_empty()||s.tx.len()!=0).map(|s|s.id).collect::<Vec<_>>();
+        for id in ids{
+            let cumulative={let s=t.sessions.iter_mut().find(|s|s.id==id).unwrap();s.drain_outbox().unwrap();let mut ack=s.tx.cumulative;
+                while let Some((sequence,_,raw))=s.tx.due(Instant::now()+Duration::from_secs(1),s.rx).unwrap(){
+                    ack=ack.max(sequence+1);bodies.push(crate::transport091::parse_interactive(&raw).unwrap().body);
+                }ack};
+            let frame=Frame{flags:0x408,sequence:None,cumulative:Some(cumulative),selective:vec![],body:vec![],piggybacks:vec![]};
+            assert!(!h.receive(t,id,&frame,w,Instant::now(),logical).unwrap());
+        }
+    }bodies
+}
+/// Original warm Account envelopes, also routed through real Host.receive.
+/// No source/generation flag is disabled and no fixtures/CAS are authored.
+fn warm(h:&mut Host,t:&mut Table,w:&World,id:u32,logical:u64){
+    assert_eq!(t.sessions.iter().find(|s|s.id==id).unwrap().shared.as_ref().unwrap().phase,Phase::Returning);
+    ack(h,t,w,logical);send(h,t,w,id,&[9],logical);ack(h,t,w,logical);
+    let(cursor,shop)={let s=t.sessions.iter().find(|s|s.id==id).unwrap();(s.shared.as_ref().unwrap().return_source_revision,s.hangar.as_ref().unwrap().shop_sync_revision().unwrap())};
+    send(h,t,w,id,&rpc(501,100,cursor,0),logical);ack(h,t,w,logical);
+    let mut tail=rpc(502,300,shop,0);tail.extend(rpc(503,600,0,0));send(h,t,w,id,&tail,logical);ack(h,t,w,logical);
+    let s=t.sessions.iter().find(|s|s.id==id).unwrap();assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Account);assert!(s.shared.as_ref().unwrap().profile13_garage_idle());
+}
 fn claim(h:&Host,s:&Session)->Option<room::Claim>{h.controller.registry().claim(readiness::account(&s.identity.as_ref().unwrap().account_id).unwrap())}
 fn pristine(battle:u64,now:Instant)->World{
     let mut w=World::new_for_roster(battle,now,MapId::Prohorovka,6).unwrap();
@@ -27,22 +54,22 @@ fn poll(h:&mut Host,t:&mut Table,w:&mut World,r:&mut Option<IntegratedRuntime>,t
 fn ready(h:&mut Host,t:&mut Table,w:&mut World,r:&mut Option<IntegratedRuntime>,template:&BattleTemplate,d:&mut profile13_dispatch::Dispatcher,c:Arc<identity091::Config>,logical:u64){
     let deadline=Instant::now()+Duration::from_secs(60);
     while h.ready.accepted.len()!=2{
-        assert!(Instant::now()<deadline,"real readonly Loss4 selections must become Ready");poll(h,t,w,r,template,d,c.clone(),logical);ack(t);std::thread::sleep(Duration::from_millis(10));
+        assert!(Instant::now()<deadline,"real readonly Loss4 selections must become Ready");poll(h,t,w,r,template,d,c.clone(),logical);ack(h,t,w,logical);std::thread::sleep(Duration::from_millis(10));
     }
     for item in h.ready.accepted.values(){assert_eq!(item.selection.mode(),super::super::super::p10b_writer_mode::Mode::LossV4);
         assert_eq!(item.selection.run_id(),c.battle_run_id.as_str());assert_eq!(item.selection.reference().owner(),item.task.caller().account);}
 }
 fn make_room(h:&mut Host,t:&mut Table,w:&World,callback:i16,logical:u64)->u32{
     let a=t.sessions[0].id;let b=t.sessions[1].id;let mut create=vec![0x9a,10,0];create.extend(4i32.to_le_bytes());create.extend(600i32.to_le_bytes());create.extend([1,0]);
-    send(h,t,w,a,&create,logical);ack(t);
+    send(h,t,w,a,&create,logical);ack(h,t,w,logical);
     let who=readiness::account(&t.sessions[0].identity.as_ref().unwrap().account_id).unwrap();let peer=readiness::account(&t.sessions[1].identity.as_ref().unwrap().account_id).unwrap();
     let room=h.controller.registry().authenticated_room(room::AuthLease{account:who,generation:u64::from(a)}).unwrap();let native=h.controller.native_room(room).unwrap();
-    send(h,t,w,b,&rpc(202,400,i64::from(native),0),logical);ack(t);
+    send(h,t,w,b,&rpc(202,400,i64::from(native),0),logical);ack(h,t,w,logical);
     let alias=h.controller.published_entity_for_test(who,peer).expect("actual already-published peer alias");
-    send(h,t,w,a,&rpc(callback,404,i64::from(alias),2),logical);ack(t);
-    send(h,t,w,a,&rpc(callback+1,402,1,0),logical);send(h,t,w,b,&rpc(callback,402,1,0),logical);ack(t);alias
+    send(h,t,w,a,&rpc(callback,404,i64::from(alias),2),logical);ack(h,t,w,logical);
+    send(h,t,w,a,&rpc(callback+1,402,1,0),logical);send(h,t,w,b,&rpc(callback,402,1,0),logical);ack(h,t,w,logical);alias
 }
-fn votes(h:&mut Host,t:&mut Table,w:&World,id:i16,logical:u64){let a=t.sessions[0].id;send(h,t,w,a,&rpc(id,411,1,0),logical);ack(t);send(h,t,w,a,&rpc(id+1,411,2,0),logical);}
+fn votes(h:&mut Host,t:&mut Table,w:&World,id:i16,logical:u64){let a=t.sessions[0].id;send(h,t,w,a,&rpc(id,411,1,0),logical);ack(h,t,w,logical);send(h,t,w,a,&rpc(id+1,411,2,0),logical);}
 fn finish(d:&mut profile13_dispatch::Dispatcher,t:&mut Table,w:&World,c:Arc<identity091::Config>){
     d.start(t,w,c.clone(),Instant::now()).unwrap();assert!(d.busy());let deadline=Instant::now()+Duration::from_secs(45);
     while d.busy(){assert!(Instant::now()<deadline);d.poll(t,c.clone(),Instant::now()).unwrap();std::thread::sleep(Duration::from_millis(10));}
@@ -62,12 +89,12 @@ fn phase(v:&serde_json::Value)->serde_json::Value{
     common::barrier(v,"first-ready",serde_json::json!({"actual_http_ready":2,"run":c.battle_run_id}));
     votes(&mut h,&mut t,&w,223,1);assert!(h.preparing());let deadline=Instant::now()+Duration::from_secs(45);
     while h.preparing.as_ref().map_or(0,|p|p.held().len())!=1{
-        assert!(Instant::now()<deadline);assert!(!poll(&mut h,&mut t,&mut w,&mut runtime,&template,&mut d,c.clone(),1));ack(&mut t);std::thread::sleep(Duration::from_millis(10));
+        assert!(Instant::now()<deadline);assert!(!poll(&mut h,&mut t,&mut w,&mut runtime,&template,&mut d,c.clone(),1));ack(&mut h,&mut t,&w,1);std::thread::sleep(Duration::from_millis(10));
     }
     assert!(!h.driver.job_active(),"accepted first Admit must have exited its worker");
     common::barrier(v,"first-admit",serde_json::json!({"actual_admitted":1,"actors":w.actors.len(),"battle":w.id.to_string()}));
-    let creator=t.sessions[0].id;send(&mut h,&mut t,&w,creator,&rpc(225,401,0,0),2);assert!(h.preparing.as_ref().unwrap().saga().aborting());ack(&mut t);
-    let deadline=Instant::now()+Duration::from_secs(60);while h.preparing(){assert!(Instant::now()<deadline);poll(&mut h,&mut t,&mut w,&mut runtime,&template,&mut d,c.clone(),2);ack(&mut t);std::thread::sleep(Duration::from_millis(10));}
+    let creator=t.sessions[0].id;send(&mut h,&mut t,&w,creator,&rpc(225,401,0,0),2);assert!(h.preparing.as_ref().unwrap().saga().aborting());ack(&mut h,&mut t,&w,2);
+    let deadline=Instant::now()+Duration::from_secs(60);while h.preparing(){assert!(Instant::now()<deadline);poll(&mut h,&mut t,&mut w,&mut runtime,&template,&mut d,c.clone(),2);ack(&mut h,&mut t,&w,2);std::thread::sleep(Duration::from_millis(10));}
     assert!(h.active.is_none()&&w.actors.is_empty()&&w.started.is_none());for s in&t.sessions{assert!(claim(&h,s).is_none());assert!(s.shared.as_ref().unwrap().profile13_garage_idle());}
     // Actual regression: no authored World reset, no new authentication/run.
     // An issued+compensated battle key must be revoked before next real Admit.
@@ -78,7 +105,7 @@ fn phase(v:&serde_json::Value)->serde_json::Value{
     votes(&mut h,&mut t,&w,233,4);let deadline=Instant::now()+Duration::from_secs(60);while h.active.is_none(){assert!(Instant::now()<deadline);poll(&mut h,&mut t,&mut w,&mut runtime,&template,&mut d,c.clone(),4);std::thread::sleep(Duration::from_millis(10));}
     let arena=w.id;assert_eq!(w.actors.len(),2);assert_eq!(w.expected_actors(),2);assert_eq!(w.actors[0].identity.account,users[1]["account_id"].as_str().unwrap());assert_eq!(w.actors[1].identity.account,users[0]["account_id"].as_str().unwrap());
     assert_eq!([w.team(0).unwrap(),w.team(1).unwrap()],[2,1]);let entry=Instant::now()+Duration::from_millis(3100);assert!(!h.can_start(&t,&w,entry).unwrap(),"actual final411 still in reliable queue");
-    ack(&mut t);assert!(h.can_start(&t,&w,entry).unwrap());
+    ack(&mut h,&mut t,&w,4);assert!(h.can_start(&t,&w,entry).unwrap());
     common::barrier(v,"launched",serde_json::json!({"actual_admitted":2,"arena":arena.to_string(),"teams":[2,1],"frozen_order":"B,A","arrival":"A,B","final411_acked":true}));
     // AUTHORED native engine binding/correction completion. Authority/source
     // ownership and World launch were actual Host/HTTP, no Avatar/Jolt claim.
@@ -87,7 +114,7 @@ fn phase(v:&serde_json::Value)->serde_json::Value{
         s.arena_base=true;let client=s.shared.as_mut().unwrap();client.phase=Phase::Driving;client.correction=true;client.binding=Some((0,true));client.return_generation=1;client.view=Some(w.clone());assert_eq!(client.slot,slot);}
     for slot in 0..2{w.set_ready(slot,w.actors[slot].session.unwrap()).unwrap();}w.advance_lifecycle(start).unwrap();clock(&mut w,start,0,30000);
     let sid=t.sessions[0].id;profile13_dispatch::Dispatcher::terminal(&mut t.sessions[0],&w,crate::battle091::profile13::FinishReason::ManualLeave).unwrap();w.detach(sid).unwrap();
-    finish(&mut d,&mut t,&w,c.clone());common::warm(&mut t.sessions[0]);poll(&mut h,&mut t,&mut w,&mut runtime,&template,&mut d,c.clone(),5);
+    finish(&mut d,&mut t,&w,c.clone());let owner=t.sessions[0].id;warm(&mut h,&mut t,&w,owner,5);poll(&mut h,&mut t,&mut w,&mut runtime,&template,&mut d,c.clone(),5);
     assert_eq!(h.active.as_ref().unwrap().finished.len(),1);for s in&t.sessions{assert_eq!(claim(&h,s),Some(room::Claim::Battle(room::BattleKey(arena))));}
     common::barrier(v,"one-finished",serde_json::json!({"actual_finished":1,"both_claims_still_battle":true,"arena":arena.to_string()}));
     w.advance_lifecycle(start+Duration::from_millis(30001)).unwrap();assert_eq!(w.lifecycle.as_ref().unwrap().outcome().unwrap().winner,2);

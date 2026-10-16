@@ -71,7 +71,10 @@ fn drain_abort(input:&mut Input,now:Instant){
     let released=input.host.preparing.as_ref().unwrap().saga().released_refs().unwrap();assert_eq!(released.len(),2);
     assert!(input.host.preparing.as_ref().unwrap().saga().snapshot().members().iter().all(|m|m.account()!=input.calls[2].caller.account));
     let mut dispatcher=profile13_dispatch::Dispatcher::default();let mut runtime=None;
-    assert!(!input.host.poll(&mut input.preparation.table,&mut input.world,&mut runtime,&input.template,&mut dispatcher,config,now,0,true).unwrap());
+    let previous=input.world.id;
+    assert!(input.host.poll(&mut input.preparation.table,&mut input.world,&mut runtime,&input.template,&mut dispatcher,config,now,0,true).unwrap());
+    assert_ne!(input.world.id,previous,"compensated scopes must not reuse a settled writer battle key");
+    assert_eq!(input.world.scene_version(),0);assert!(input.world.impact.events().is_empty());
     assert!(input.host.preparing.is_none()&&input.host.active.is_none());assert!(input.world.actors.is_empty()&&input.world.started.is_none());
 }
 
