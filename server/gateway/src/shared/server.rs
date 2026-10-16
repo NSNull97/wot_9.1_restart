@@ -2634,3 +2634,7 @@ mod tests {
         assert_eq!(world.actors[1].session,Some(2));
     }
 }
+
+#[cfg(test)]
+#[path="profile13_restart_cas_tests.rs"]
+mod p08b_restart_cas_tests;

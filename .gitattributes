@@ -36,3 +36,5 @@ server/gateway/src/shared/p06t_device_source_caps.json -text
 server/gateway/src/session.rs -text
 /server/build.py text eol=lf
 /tests/test_build_temp_target.py text eol=lf
+/server/gateway/src/shared/profile13_restart_cas_tests.rs text eol=lf
+/web/tests/helpers/p08b-restart-cas.mjs text eol=lf

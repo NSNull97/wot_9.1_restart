@@ -1,4 +1,12 @@
-# Текущая карточка — BUILD-TEMP: место для ночных сборок
+# Текущая карточка — P08B: restart/CAS composition
+
+Ветка `codex/p08b-restart-cas-composition` от7d2252f. План
+[P08B_RESTART_CAS_COMPOSITION](plans/P08B_RESTART_CAS_COMPOSITION.md).
+Добавлен ordinary self-orchestrated test actual HTTP/SQL/restart/Fresh/CAS,
+runtime behaviour не меняется. Compilation/actual composition пока NOT_RUN;
+native/UI/gameplayUDP остаются NOT_RUN. После current-head full — P08C.
+
+## Сохранённый BUILD-TEMP: место для ночных сборок
 
 Ветка `codex/build-temp-cargo-target` от P06T checkpoint4786c2a. На D
 осталось0.44GiB, на C64GiB. Явный opt-in `gateway --cargo-temp-target`
