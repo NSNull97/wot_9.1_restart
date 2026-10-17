@@ -201,3 +201,40 @@ Canonical full с новым `WOT_P05C_ARTIFACTS` и свежий Core successor
 Будущий [RULESET-01](../plans/RULESET01_SCOPE.md) записывает новые требования
 владельца: общие правила/конфиги, тимдамаг, командный/общий чат и обсуждение
 дальности. Это требования; gameplay/defaults и полёт снаряда здесь не менялись.
+
+## Native contact129: новый результат владельца
+
+OBSERVED владельцем: перевороты и столкновения в этом прогоне работают;
+естественный захват завершил бой с правильной причиной в итогах обоих.
+Оба ангара загрузились, после этого владелец закрыл окна сам. VERIFIED в
+gateway: arena8303176210728121358, winner1/Capture/base2points100,
+ended_ms568824; оба ResultFrozen shots0/damage0, оба durable Finished144/56,
+два native confirmed return, два HangarReturned, reset на следующую арену.
+Два client_disconnect зарегистрированы уже после reset при закрытии окон;
+FAILED/BATTLE_FAILED/CONTAINED_RETURN_FAILED0. Это не новый вылет.
+
+Общая приёмка FAIL по трём замечаниям владельца:
+
+- перевёрнутый МС1 и ИС7 взаимно пропадают из засвета;
+- ИС7 продолжает разгоняться под газом в повороте;
+- ИС7 на пригорке остановился и отказался ехать.
+
+Идеи о точке под землёй и сбое управления пока OWNER_HYPOTHESIS. Code audit
+VERIFIED: +0.5m LOS clearance вращается с fullYPR корпуса; при roofroll она
+направлена вниз. Native original log не содержит chassisYPR/LOS-hit, поэтому
+точную причинную цепочку конкретного эпизода пока считать INFERRED.
+Прежняя P05B matrix проверяла progress/yaw/slip/source speed cap, а не потерю
+разгона в powered turn: её PASS этот новый критерий не подтверждал.
+Причина пригорка UNKNOWN до контроля/контактов, не подставлять догадку.
+
+Private evidence в `local/evidence/20261017-morning-core01/`:
+`contact129-owner-feedback02.gateway-prefix.log` — exact prefix6470525bytes,
+SHA256 `441b10d3f91a9f4d5b39ccd52c0d915b2d131313b6e699b891467e4e39bfbb53`;
+`contact129-owner-feedback02.png` — owner screenshot,
+SHA256 `a1166d7f503934354c7ca22b440985ab5282e9b58331fc361176a3dd59d23cae`;
+`contact129-owner-feedback02.json`, затем `contact129-completion01.json`
+SHA256 `7d360b1664e9e65662532feb3adb23ad9879dad2b47817db9dcdfbd393c93a60`.
+Последний фиксирует отдельный ответ владельца про оба ангара/свои закрытия,
+readonly SQL144/56/active0 и exact129 stop receipts: клиенты уже отсутствуют,
+gateway/bridge штатно остановлены. Новых grants/выстрелов в этом бою нет.
+Source/main/прежние evidence не ретегать; текущую БД сохранять.

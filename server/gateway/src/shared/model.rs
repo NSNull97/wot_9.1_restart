@@ -322,11 +322,10 @@ impl World {
     pub(super) fn detached_turret_visible(&self,own:usize,target:usize,point:[f32;3])->io::Result<bool>{
         if own>=self.actors.len()||target>=self.actors.len()||point.iter().any(|v|!v.is_finite()||v.abs()>2000.){return Err(bad());}
         if own==target||self.team(own)?==self.team(target)?{return Ok(true);}
-        let actor=&self.actors[own];let kind=actor.vehicle_kind();let pivot=kind.aim().pivot;
+        let actor=&self.actors[own];let kind=actor.vehicle_kind();
         if actor.position.iter().any(|v|!v.is_finite()||v.abs()>2000.)
             ||actor.direction.iter().any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI){return Err(bad());}
-        let offset=super::pose::rotate([pivot[0],pivot[1]+0.5,pivot[2]],actor.direction);
-        let start:[f32;3]=std::array::from_fn(|i|actor.position[i]+offset[i]);
+        let start=Self::visibility_sight_point(actor);
         let scale=actor.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
         let range=kind.view_range()*scale;
         let distance=(0..3).map(|i|(f64::from(actor.position[i])-f64::from(point[i])).powi(2)).sum::<f64>();
@@ -455,9 +454,16 @@ impl World {
         Ok(if self.lifecycle.is_some() { (slot % 2) as u8 + 1 } else { 1 })
     }
     /// Stateless recipient interest from this coherent authoritative snapshot.
+    fn visibility_sight_point(actor:&Actor)->[f32;3]{
+        let mut offset=super::pose::rotate(actor.vehicle_kind().aim().pivot,actor.direction);
+        // The pivot follows the hull; the laboratory clearance remains world-up
+        // so a resting roof rollover does not rotate that clearance underground.
+        offset[1]+=0.5;
+        std::array::from_fn(|axis|actor.position[axis]+offset[axis])
+    }
     /// Source stock range, centre-distance and one sight line are the explicit
-    /// v1 test_lab policy;0.5m above the stock turret pivot is not historical
-    /// camouflage/spotting reconstruction. Parked/dead geometry remains eligible.
+    /// v1 test_lab policy;0.5m world-up from the rotated stock turret pivot is
+    /// not historical camouflage/spotting reconstruction. Parked/dead geometry remains eligible.
     pub(super) fn desired_visibility(&self, own:usize)->io::Result<[bool;MAX_ACTORS]> {
         if own>=self.actors.len()||self.actors.len()>MAX_ACTORS{return Err(bad());}
         let terrain=self.terrain.as_ref().ok_or_else(||bad())?;
@@ -468,11 +474,10 @@ impl World {
         let mut actors=Vec::with_capacity(self.actors.len());
         for(slot,actor)in self.actors.iter().enumerate(){
             if actor.direction.iter().any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI){return Err(bad());}
-            let kind=actor.vehicle_kind();let pivot=kind.aim().pivot;
-            let offset=super::pose::rotate([pivot[0],pivot[1]+0.5,pivot[2]],actor.direction);
+            let kind=actor.vehicle_kind();
             let view_scale=actor.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
             actors.push(super::visibility::Actor{slot,team:self.team(slot)?,position:actor.position,
-                sight_point:std::array::from_fn(|axis|actor.position[axis]+offset[axis]),view_range:kind.view_range()*view_scale});
+                sight_point:Self::visibility_sight_point(actor),view_range:kind.view_range()*view_scale});
         }
         let desired=super::visibility::desired_set(own,&actors,super::visibility::Allies::Always,|line|{
             if line.start==line.end{return Ok(true);}

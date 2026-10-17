@@ -1,20 +1,25 @@
 # Состояние проекта — утро17 октября2026
 
 **Текущая P05C ветка `codex/p05c-mixed-contact-handling` от2dcd5b9.**
-Mixed AИС7/BМС1: native загрузка/управление/возврат OBSERVED, контакт FAIL:
-подвешивание МС1 и остановка движущегося ИС7 на переходе flat→slope.
-Владелец разрешил полный переворот. BattleTank PI/3 VERIFIED; причина тяги
-UNKNOWN. Core120/оба own клиента штатно остановлены до source edits.
-SQL141/53, active0, БК/склад сохранены. Physics04 build/source25PASS;
+Mixed AИС7/BМС1: contact129 владелец подтвердил перевороты/столкновения,
+захват с правильной причиной итогов у обоих и оба загруженных ангара.
+Окна закрыл сам; оставшиеся gateway/bridge exact129 STOPPED. SQL144/56,
+active0, БК/склад сохранены, grants0. Лог Capture100/winner1/durableFinish×2,
+native returns×2/reset1; FAILED0, поздние disconnect2 — после reset/закрытия.
+P05C FAIL: rollover взаимно теряет засвет; ИС7 разгоняется в powered turn;
+стоп ИС7 на пригорке. Root cause пригорка UNKNOWN. Sight clearance вращается
+вниз вместе с корпусом VERIFIED; native underground endpoint INFERRED.
+Предыдущая P05B matrix не требовала снижения скорости в powered turn.
+LOS regression/turning measurement/stall audit в работе; native новых правок
+NOT_RUN. Physics04 build/source25PASS;
 math47870, actualfullroll4/4, P05B обоих9×2 и currentpolicy slope4/4PASS.
 Полная diagnostic slope matrix6PASS/2step1controlFAIL сохранена.
 MaxSAT recordedcontrols13.6→2см, actual385sample stop=mapboundary;
 остальные stops не объявлены все исправленными. Runtime6119019:
 canonical1628PASS/0FAIL/5oldignored+build/source938 exact; actual2/6new04PASS.
-Core contact129 live: actualbackup141/53/grants0, V8reuse/auth/дваHangar×2PASS;
-prebattle142/54/active0/БК unchanged/faults0. Mixed8303176210728121358
-уже загружен, physics04/READY×2, native snapshots124×2; качество контакта/
-склона/roll и возвраты ждут ответа владельца.
+Core contact129: actualbackup141/53/grants0, V8reuse/auth/дваHangar×2PASS;
+prebattle142/54. Mixed8303176210728121358 physics04/READY×2 прошёл указанный
+выше ручной прогон; не считать частичные PASS приёмкой всей карточки.
 [Отчёт](research/P05C_MIXED_CONTACT_HANDLING.md).
 Будущий [RULESET-01](plans/RULESET01_SCOPE.md) только фиксирует требования.
 Main прежний.

@@ -17,6 +17,98 @@ fn fixture(kinds:&[VehicleKind])->World{
 
 fn wall(x:f32)->[[f32;3];3]{[[x,-100.,-100.],[x,100.,-100.],[x,0.,100.]]}
 
+fn rollover_source_box(kind:VehicleKind)->([f32;3],[f32;3]){
+    use sha2::Digest;
+    let raw=match kind{
+        VehicleKind::Ms1=>include_bytes!("../drive/worker/ms1-handling-profile.json").as_slice(),
+        VehicleKind::Is7=>include_bytes!("../drive/worker/is7-handling-profile.json").as_slice(),
+        _=>panic!("rollover fixture requires the admitted MS-1/IS-7 body"),
+    };
+    let profile=super::super::ram_proof::Profile::for_vehicle(kind);
+    assert_eq!(format!("{:x}",sha2::Sha256::digest(raw)),profile.sha());
+    let value:serde_json::Value=serde_json::from_slice(raw).unwrap();
+    let vector=|field:&str|std::array::from_fn::<_,3,_>(|axis|value["physics"][field][axis].as_f64().unwrap()as f32);
+    let half=vector("body_half_extents");
+    assert_eq!(half.map(f32::to_bits),profile.half().map(f32::to_bits));
+    (vector("body_center_offset"),half)
+}
+
+fn place_box_on_flat(world:&mut World,slot:usize,com_x:f32,roof:bool,yaw:f32){
+    let(center,half)=rollover_source_box(world.actors[slot].vehicle_kind());
+    // Independent contact geometry: the actual box COM is half.y above y=0.
+    // A 180-degree roll negates center.x/y, then ordinary analytic Ry applies.
+    // No call to the sight-point helper or pose encoder determines this origin.
+    let sign=if roof{-1.}else{1.};let(s,c)=yaw.sin_cos();
+    let offset=[c*sign*center[0]+s*center[2],sign*center[1],-s*sign*center[0]+c*center[2]];
+    world.actors[slot].position=[com_x-offset[0],half[1]-offset[1],-offset[2]];
+    world.actors[slot].direction=[yaw,0.,if roof{std::f32::consts::PI}else{0.}];
+}
+
+#[test]fn p05c_rollover_los_source_boxes_resting_on_roof_remain_visible_both_ways(){
+    for roof_slot in 0..2{
+        for yaw in [0.,0.7,-2.1]{
+            let mut world=fixture(&[VehicleKind::Ms1,VehicleKind::Is7]);
+            world.terrain=Some(Arc::new(super::super::terrain::tests::fixture(-100.,200.,2,vec![0.;4])));
+            for slot in 0..2{place_box_on_flat(&mut world,slot,if slot==0{-10.}else{10.},slot==roof_slot,yaw);}
+            let before=world.failure_snapshot();
+            for own in 0..2{
+                assert!(world.desired_visibility(own).unwrap()[1-own],
+                    "source box roof_slot={roof_slot} yaw={yaw} recipient={own} must not put its LOS endpoint underground");
+            }
+            assert_eq!(world.failure_snapshot(),before);
+        }
+    }
+}
+
+#[test]fn p05c_rollover_los_roof_rest_does_not_bypass_a_static_wall_or_ground_ridge(){
+    for roof_slot in 0..2{
+        let mut world=fixture(&[VehicleKind::Ms1,VehicleKind::Is7]);
+        for slot in 0..2{place_box_on_flat(&mut world,slot,if slot==0{-10.}else{10.},slot==roof_slot,0.7);}
+        let wall=super::super::obstacles::tests::fixture(vec![wall(0.)]);
+        world.terrain=Some(Arc::new(super::super::terrain::tests::fixture(-100.,200.,2,vec![0.;4])
+            .with_obstacles(Arc::new(wall)).unwrap()));
+        for own in 0..2{assert!(!world.desired_visibility(own).unwrap()[1-own],"wall roof_slot={roof_slot} recipient={own}");}
+        // Both boxes rest on the flat y=0 portions at +/-60. The middle x=0
+        // column rises to20m; this is actual Terrain intersection, not a mock.
+        for slot in 0..2{place_box_on_flat(&mut world,slot,if slot==0{-60.}else{60.},slot==roof_slot,-2.1);}
+        let heights=(0..25).map(|index|if index%5==2{20.}else{0.}).collect();
+        world.terrain=Some(Arc::new(super::super::terrain::tests::fixture(-100.,50.,5,heights)));
+        for own in 0..2{assert!(!world.desired_visibility(own).unwrap()[1-own],"ridge roof_slot={roof_slot} recipient={own}");}
+    }
+}
+
+#[test]fn p05c_rollover_los_upright_yaw_keeps_previous_sight_points_exact(){
+    let mut world=fixture(&[VehicleKind::Ms1,VehicleKind::Is7]);
+    for slot in 0..2{
+        for yaw in [-std::f32::consts::PI,-2.1,0.,0.7,std::f32::consts::PI]{
+            world.actors[slot].position=[-17.25,7.75,99.125];
+            world.actors[slot].direction=[yaw,0.,0.];
+            let pivot=world.actors[slot].vehicle_kind().aim().pivot;
+            // Independent analytic yaw-only image of the previous local point.
+            // This is not a rotation encoder/decoder round trip.
+            let(s,c)=yaw.sin_cos();
+            let offset=[c*pivot[0]+s*pivot[2],pivot[1]+0.5,-s*pivot[0]+c*pivot[2]];
+            let expected=std::array::from_fn::<_,3,_>(|axis|world.actors[slot].position[axis]+offset[axis]);
+            let actual=World::visibility_sight_point(&world.actors[slot]);
+            assert_eq!(actual.map(f32::to_bits),expected.map(f32::to_bits),"slot={slot} yaw={yaw}");
+        }
+    }
+}
+
+#[test]fn p05c_rollover_los_detached_point_uses_the_same_roof_observer_and_keeps_wall_occlusion(){
+    for roof_slot in 0..2{
+        let mut world=fixture(&[VehicleKind::Ms1,VehicleKind::Is7]);
+        for slot in 0..2{place_box_on_flat(&mut world,slot,if slot==0{-10.}else{10.},slot==roof_slot,0.7);}
+        let flat=super::super::terrain::tests::fixture(-100.,200.,2,vec![0.;4]);
+        world.terrain=Some(Arc::new(flat.clone()));
+        let point=[if roof_slot==0{10.}else{-10.},3.,0.];
+        assert!(world.detached_turret_visible(roof_slot,1-roof_slot,point).unwrap());
+        let obstacles=super::super::obstacles::tests::fixture(vec![wall(0.)]);
+        world.terrain=Some(Arc::new(flat.with_obstacles(Arc::new(obstacles)).unwrap()));
+        assert!(!world.detached_turret_visible(roof_slot,1-roof_slot,point).unwrap());
+    }
+}
+
 #[test]fn p07b_world_pinned_prohorovka_six_mixed_recipients_twenty_snapshots(){
     // Exact source buffers are validated by both existing loaders. Independent
     // f64 triangle observation: local/evidence/20261016-p07b-01/independent-rays01.json

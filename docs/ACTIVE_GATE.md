@@ -1,24 +1,26 @@
 # Текущие ворота: P05C — смешанный контакт и полные перевороты
 
-Утренняя mixed native проверка AИС7/BМС1: загрузка, управление и возврат
-обоих работают; приёмка контакта НЕ пройдена. Владелец наблюдает зависание
-МС1 у ИС7 и остановку уже движущегося ИС7 при переходе flat→slope с толкаемым
-МС1. Полные перевороты явно разрешены владельцем. VERIFIED ограничитель
-BattleTank PI/3; причина потери тяги UNKNOWN до actual замера.
-Ветка `codex/p05c-mixed-contact-handling` от2dcd5b9; [план](plans/P05C_MIXED_CONTACT_HANDLING.md).
-Предыдущий Core/retest120 и оба own клиента остановлены exact receipts.
-Актуальные SQL141/53, active0, снаряды/склад сохранены.
-Physics04: fullroll actualJolt4/4 и math47870PASS, P05B обоих9×2PASS;
-непрерывный flat→6°/12° mixed push при4steps2/2PASS. Step1контроли2FAIL
-по потере контакта сохранены. MaxSAT replay13.6→2см; optional manifold
-не меняет output03/04. Runtime6119019: canonicalfull1628PASS/0FAIL/5oldignored,
-buildPASS/source938 exact, actual2/6 с новым04 PASS. Fresh Core contact129
-запущен: backup141/53/grants0, V8reuse/privateauth/дваactualHangar каждогоPASS.
-После запуска142/54, active0/loaded/depot unchanged, faults0. Владелец получил
-шаг «ровно→тот же подъём с непрерывным газом→отпустить контакт», ответ ждём.
-Новый mixed8303176210728121358 действительно загрузился: ИС7/МС1,
-physics04PID119500, READY×2, snapshots124×2/faults0. Управление/тот же подъём/
-новый roll/возвраты PENDING/NOT_RUN до ответа владельца.
+Ветка `codex/p05c-mixed-contact-handling` от2dcd5b9;
+[план](plans/P05C_MIXED_CONTACT_HANDLING.md). Runtime6119019/physics04:
+canonical1628PASS/0FAIL/5oldignored, build/source938 exact, actual2/6PASS.
+Component fullroll/math/P05B обоих/авторские склоны PASS, прежние контрольные
+FAIL и ограничения replay сохранены.
+
+Contact129 mixed8303176210728121358: владелец подтвердил перевороты,
+столкновения, захват с правильными итогами у обоих и загрузку обоих ангаров.
+Окна закрыл сам. Лог: Capture/base2=100, winner1, durableFinish144/56,
+2native returns/2HangarReturned/1reset; FAILED0. После reset2client_disconnect
+при закрытии окон не считать вылетом. Current SQL144/56, active0; БК/склад
+сохранены, grants0. Оба native absent, gateway/bridge exact129 STOPPED.
+
+Приёмка P05C остаётся FAIL: при перевороте МС1 пропадает взаимный засвет;
+ИС7 продолжает разгоняться в powered turn; на пригорке останавливается и
+отказывается ехать. Root cause пригорка UNKNOWN. Code sight clearance+0.5
+вращается вниз при roofroll VERIFIED; точное пересечение земли в native
+эпизоде INFERRED (original log без chassisYPR/LOS hit). Прежняя P05B matrix
+не проверяла потерю разгона powered turn. Текущая работа: LOS regression,
+matched-start actualJolt turning и stall/control audit, затем source-bound
+проверки. Новые исправления native NOT_RUN до нового ручного прогона.
 Main прежний. [Доказательства/границы](research/P05C_MIXED_CONTACT_HANDLING.md).
 Будущий [RULESET-01](plans/RULESET01_SCOPE.md): требования к общим настройкам,
 тимдамагу/чату записаны; текущие игровые defaults не менялись.
