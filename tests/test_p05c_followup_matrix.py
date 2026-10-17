@@ -91,6 +91,30 @@ class ReceiptGuardTests(unittest.TestCase):
             matrix.validate_handling_receipt({"scenario": "x", "samples": [bad],
                                               "profile_sha256": "a" * 64})
 
+    def test_handling_quality_guard_catches_observed_reverse_drift(self):
+        samples = [
+            {"seq": 0, "forward_mps": 0.0, "lateral_mps": 0.0, "yaw_rate_dps": 0.0,
+             "slope_grade": 0.12, "contacts": 6,
+             "control": {"throttle": 1, "steer": 1, "brake": False}},
+            {"seq": 1, "forward_mps": -1.0, "lateral_mps": 0.0, "yaw_rate_dps": 0.0,
+             "slope_grade": 0.12, "contacts": 6,
+             "control": {"throttle": 1, "steer": 1, "brake": False}},
+        ]
+        checks = matrix.handling_quality_checks({"scenario": "uphill_powered_turn_left",
+                                                 "samples": samples,
+                                                 "profile_sha256": "a" * 64})
+        statuses = {check["gate"]: check["status"] for check in checks}
+        self.assertEqual(statuses["forward_command_no_reverse_drift"], "FAIL")
+        self.assertEqual(statuses["steer_channel_has_response"], "FAIL")
+
+    def test_handling_quality_guard_does_not_claim_without_controls(self):
+        sample = {"seq": 0, "forward_mps": 1.0, "lateral_mps": 0.0,
+                  "yaw_rate_dps": 2.0, "slope_grade": 0.12, "contacts": 6}
+        checks = matrix.handling_quality_checks({"scenario": "uphill_powered_turn_left",
+                                                 "samples": [sample],
+                                                 "profile_sha256": "a" * 64})
+        self.assertEqual(checks[0]["status"], "NOT_RUN")
+
     def test_resting_contact_has_no_ram_damage_and_duplicate_is_rejected(self):
         event = {"impact_id": "contact-1", "attacker_slot": 0, "victim_slot": 1,
                  "relative_speed_mps": 0.0, "normal_speed_mps": 0.0, "impulse_ns": 10.0,

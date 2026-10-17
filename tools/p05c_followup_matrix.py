@@ -48,6 +48,8 @@ FILTERS = ("all", "pairwise", "same-kind", "mixed-kind", "all-5", "max-6")
 MAX_ACTORS = 6
 MAX_CASES = 1024
 RAM_MIN_RELATIVE_SPEED_MPS = 1.0
+FORWARD_REVERSAL_GUARD_MPS = 0.2
+TURN_RESPONSE_GUARD_DPS = 1.0
 
 
 class MatrixError(ValueError):
@@ -198,6 +200,51 @@ def validate_handling_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
                 "handling contact count")
     return {"status": "CHECKED_TELEMETRY", "samples": len(samples),
             "profile_sha256": receipt["profile_sha256"]}
+
+
+def handling_quality_checks(receipt: dict[str, Any]) -> list[dict[str, Any]]:
+    """Apply only conservative anti-regression guards to real samples.
+
+    These checks are deliberately narrower than a vehicle-quality acceptance
+    gate.  They catch the observed backwards drift under forward input and a
+    completely dead steering/brake channel; terrain traction and target
+    timings remain worker/native questions.
+    """
+    checked = validate_handling_receipt(receipt)
+    if checked["status"] != "CHECKED_TELEMETRY":
+        return [{"gate": "handling_telemetry", "status": "NOT_RUN",
+                 "reason": checked["reason"]}]
+    samples = receipt["samples"]
+    controls = [sample.get("control") for sample in samples]
+    if not all(type(control) is dict for control in controls):
+        return [{"gate": "handling_controls", "status": "NOT_RUN",
+                 "reason": "worker did not publish control channel"}]
+    for control in controls:
+        require(set(control) == {"throttle", "steer", "brake"}, "handling control fields")
+        require(control["throttle"] in (-1, 0, 1) and control["steer"] in (-1, 0, 1)
+                and type(control["brake"]) is bool, "handling control values")
+    forward_samples = [sample["forward_mps"] for sample, control in zip(samples, controls)
+                       if control["throttle"] > 0 and not control["brake"]]
+    turn_samples = [abs(sample["yaw_rate_dps"]) for sample, control in zip(samples, controls)
+                    if control["steer"] != 0 and not control["brake"]]
+    checks = []
+    if forward_samples:
+        minimum = min(forward_samples)
+        checks.append({"gate": "forward_command_no_reverse_drift", "actual_min_mps": minimum,
+                       "limit_mps": -FORWARD_REVERSAL_GUARD_MPS,
+                       "status": "PASS" if minimum >= -FORWARD_REVERSAL_GUARD_MPS else "FAIL"})
+    else:
+        checks.append({"gate": "forward_command_no_reverse_drift", "status": "NOT_RUN",
+                       "reason": "no forward control samples"})
+    if turn_samples:
+        maximum = max(turn_samples)
+        checks.append({"gate": "steer_channel_has_response", "actual_max_dps": maximum,
+                       "limit_dps": TURN_RESPONSE_GUARD_DPS,
+                       "status": "PASS" if maximum >= TURN_RESPONSE_GUARD_DPS else "FAIL"})
+    else:
+        checks.append({"gate": "steer_channel_has_response", "status": "NOT_RUN",
+                       "reason": "no steer control samples"})
+    return checks
 
 
 def validate_ram_receipts(events: list[dict[str, Any]]) -> dict[str, Any]:

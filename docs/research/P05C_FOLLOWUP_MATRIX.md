@@ -39,6 +39,13 @@ sample.  The implementation intentionally does not turn a guessed speed or
 yaw threshold into a pass; terrain/controller quality remains a real worker
 gate.
 
+When a worker actually publishes its control channel, two conservative
+anti-regression checks are applied: forward input may not produce a sustained
+reverse sample beyond 0.2 m/s, and a steer input must produce at least 1°/s of
+yaw response.  Missing controls remain `NOT_RUN`; these checks are intended to
+catch the observed uphill rollback/dead-steering symptom, not to replace a
+vehicle-quality or native acceptance threshold.
+
 The ram guard checks bounded event shape, distinct attacker/victim slots, one
 event per impact ID, non-negative impulse/damage, and zero damage for a resting
 contact below the relative-speed threshold.  Damage calculation, team damage,
