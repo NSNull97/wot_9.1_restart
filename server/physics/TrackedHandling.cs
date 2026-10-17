@@ -12,7 +12,10 @@ internal sealed class TrackedHandling
     private const float OuterPivotFrictionFraction = .001f;
     // Owner run 2026-10-14: 4% outer grip slid sideways on slopes in moving
     // turns. Low scrub stays limited to near-rest pivots.
-    private const float OuterMovingFrictionFraction = .4f;
+    // Keep enough outer-track grip for a powered turn to climb a grade.  The
+    // former .4 fraction could spend nearly all IS-7 torque on lateral scrub.
+    private const float OuterMovingFrictionFraction = .25f;
+    private const float PoweredTurnMinimumRatio = .2f;
     private const float MovingGripStartSpeed = 1.5f, MovingGripFullSpeed = 4f;
     // Hysteresis: a released-throttle turn starts above 1.5 m/s and hands
     // off to the pivot below 1 m/s, so the turn does not fade near rest.
@@ -187,14 +190,18 @@ internal sealed class TrackedHandling
                 float turn = Math.Clamp(yawTarget + correction, -yawLimit * 1.5f, yawLimit * 1.5f) * width / 2;
                 float leftSpeed = basisSpeed + turn, rightSpeed = basisSpeed - turn;
                 float divisor = MathF.Max(MathF.Abs(leftSpeed), MathF.Abs(rightSpeed));
-                left = MathF.Max(.05f, ratioDirection * leftSpeed / divisor);
-                right = MathF.Max(.05f, ratioDirection * rightSpeed / divisor);
+                float minimum = throttle != 0 && steer != 0 ? PoweredTurnMinimumRatio : .05f;
+                left = MathF.Max(minimum, ratioDirection * leftSpeed / divisor);
+                right = MathF.Max(minimum, ratioDirection * rightSpeed / divisor);
             }
         }
         if (steer == 0 && throttle == 0) motor = 0;
         if ((throttle > 0 && signedSpeed >= forwardLimit) || (throttle < 0 && signedSpeed <= -reverseLimit)) motor = 0;
         float brakeInput = brake ? 1 : 0;
-        if (coastPhase == 1)
+        // A rolling steer request carries momentum.  Engage the stronger
+        // clutch/brake hand-off only inside the pivot window; doing it during
+        // the whole moving turn looked like an accidental full stop.
+        if (coastPhase == 1 && speed <= CoastPivotSpeed + .25f)
         {
             // Bounded by the inner track's own brake torque and never past
             // zero: this can only dissipate track speed, not add energy.

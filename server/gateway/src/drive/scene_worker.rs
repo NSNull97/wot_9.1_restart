@@ -191,7 +191,10 @@ fn line(v:&Value)->io::Result<Vec<u8>>{let mut b=serde_json::to_vec(v).map_err(|
 #[derive(Clone,Debug)]pub struct ActorFrame{pub slot:usize,pub kind:Kind,pub pose:Pose,
     /// Exact source evidence, structurally checked. Domain must run its scalar proof verifier before commit.
     pub proof:Value}
-#[derive(Clone,Debug)]pub struct Frame{pub sequence:u32,pub tick:u32,pub actors:Vec<ActorFrame>,pub prepared:bool,pub prepared_ids:Vec<u32>,pub raw:Value}
+#[derive(Clone,Debug,PartialEq)]pub struct TankContact {
+    pub slot_a:usize,pub slot_b:usize,pub substep:u8,pub point:[f32;3],pub normal:[f32;3],pub relative_velocity:[f32;3],
+}
+#[derive(Clone,Debug)]pub struct Frame{pub sequence:u32,pub tick:u32,pub actors:Vec<ActorFrame>,pub tank_contacts:Vec<TankContact>,pub prepared:bool,pub prepared_ids:Vec<u32>,pub raw:Value}
 fn motion(v:&Value)->io::Result<()>{keys(v,&["linear_velocity","angular_velocity"])?;vector::<3>(&v["linear_velocity"],25.001)?;vector::<3>(&v["angular_velocity"],20.)?;Ok(())}
 fn witness(v:&Value)->io::Result<()>{keys(v,&["com","rotation_xyzw","linear_velocity","angular_velocity","inverse_inertia_row_major"])?;
     vector::<3>(&v["com"],2000.)?;let q=vector::<4>(&v["rotation_xyzw"],1.001)?;if(q.iter().map(|x|x*x).sum::<f32>()-1.).abs()>0.002{return Err(bad("quaternion unit"));}
@@ -236,15 +239,19 @@ pub fn response(raw:&[u8],spec:&SceneSpec,generation:u32,scene:&Scene,seq:u32)->
         !(seq==0&&event=="ready"||seq>0&&matches!(event,"state"|"prepared")){return Err(bad("reply cadence/map/scene"));}
     let rows=array(&v["actors"],MAX_ACTORS)?;if rows.len()!=spec.actors.len(){return Err(bad("complete actor batch"));}
     let actors=rows.iter().zip(&spec.actors).map(|(a,s)|actor_frame(a,s,&spec.catalog_ids)).collect::<io::Result<Vec<_>>>()?;
-    let mut pairs=BTreeSet::new();for c in array(&v["tank_contacts"],15)?{keys(c,&["slot_a","slot_b","substep","point","normal","relative_velocity"])?;
-        let a=uint(&c["slot_a"])?;let b=uint(&c["slot_b"])?;if a>=b||b>=actors.len()as u64||!pairs.insert((a,b))||!(1..=6).contains(&uint(&c["substep"])?){return Err(bad("tank contact ownership"));}
-        vector::<3>(&c["point"],2000.)?;normal(&c["normal"])?;vector::<3>(&c["relative_velocity"],50.002)?;}
+    let mut pairs=BTreeSet::new();let mut tank_contacts=Vec::new();let mut previous_pair=None;
+    for c in array(&v["tank_contacts"],15)?{keys(c,&["slot_a","slot_b","substep","point","normal","relative_velocity"])?;
+        let a=uint(&c["slot_a"])?;let b=uint(&c["slot_b"])?;let step=uint(&c["substep"])?;
+        if a>=b||b>=actors.len()as u64||!pairs.insert((a,b))||previous_pair.is_some_and(|old|old>=(a,b))||!(1..=6).contains(&step){return Err(bad("tank contact ownership/order"));}
+        previous_pair=Some((a,b));
+        let point=vector::<3>(&c["point"],2000.)?;let normal_value=normal(&c["normal"])?;let relative_velocity=vector::<3>(&c["relative_velocity"],50.002)?;
+        tank_contacts.push(TankContact{slot_a:a as usize,slot_b:b as usize,substep:step as u8,point,normal:normal_value,relative_velocity});}
     let mut claims=BTreeMap::new();for(i,c)in array(&v["fracture_claims"],192)?.iter().enumerate(){keys(c,&["object_id","slot","substep","order"])?;
         let id=u32::try_from(uint(&c["object_id"])?).map_err(|_|bad("claim ID"))?;let slot=uint(&c["slot"])?;
         if slot>=actors.len()as u64||!spec.catalog_ids.contains(&id)||claims.insert(id,(slot,uint(&c["substep"])?)).is_some()||uint(&c["order"])?!=i as u64+1||!(1..=6).contains(&uint(&c["substep"])?){return Err(bad("global fracture claims"));}}
     let mut actual=BTreeMap::new();for a in &actors{for r in a.proof["fractures"].as_array().unwrap(){let id=uint(&r["object_id"])?as u32;if actual.insert(id,(a.slot as u64,uint(&r["substep"])?)).is_some(){return Err(bad("two actors claimed same object"));}}}
     if claims!=actual||(event=="prepared")!=!claims.is_empty()||seq==0&&(!pairs.is_empty()||!claims.is_empty()){return Err(bad("prepared/receipt/claim agreement"));}
-    Ok(Frame{sequence:seq,tick:180+seq*6,actors,prepared:event=="prepared",prepared_ids:claims.into_keys().collect(),raw:v})
+    Ok(Frame{sequence:seq,tick:180+seq*6,actors,tank_contacts,prepared:event=="prepared",prepared_ids:claims.into_keys().collect(),raw:v})
 }
 fn check_header(v:&Value,spec:&SceneSpec,generation:u32)->io::Result<()>{if uint(&v["version"])?!=7||uint(&v["generation"])?!=generation as u64||string(v,"manifest_sha256")?!=spec.manifest_sha256||string(v,"catalog_sha256")?!=spec.catalog_sha256{return Err(bad("reply source/generation"));}Ok(())}
 

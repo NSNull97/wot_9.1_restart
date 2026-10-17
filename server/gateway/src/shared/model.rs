@@ -95,6 +95,9 @@ pub(super) mod p06t;
 #[path="p06t_extended_world.rs"]
 pub(crate) mod extended;
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct RamDamageRecord { pub sequence:u32,pub tick:u32,pub attacker:usize,pub target:usize,pub pair:(usize,usize),pub energy_j:f64,pub closing_speed:f64,pub health_before:i16,pub health_after:i16 }
+
 /// One accepted server action, independent of native entity/method IDs. The
 /// laboratory never replenishes ammo, so its complete event history is bounded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,6 +151,8 @@ pub struct VehicleContactInput {
     pub shooter: usize,
     pub proof: Option<ram_proof::ContactProof>,
 }
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TankContactInput { pub slot_a:usize,pub slot_b:usize,pub substep:u8,pub point:[f32;3],pub normal:[f32;3],pub relative_velocity:[f32;3] }
 
 #[derive(Clone)]
 pub struct World {
@@ -189,6 +194,8 @@ pub struct World {
     pub impacts: Vec<AppliedImpact>,
     terrain: Option<Arc<terrain::Terrain>>,
     pub terrain_contacts: Vec<TerrainContact>,
+    pub ram_damage_events: Vec<RamDamageRecord>,
+    active_ram_pairs: std::collections::BTreeSet<(usize,usize)>,
     destructible: Option<destructible::State>,
     pub fragiles: Option<fragiles::State>,
     contact_sources:[Option<ram_proof::Source>;MAX_ACTORS],
@@ -203,7 +210,8 @@ impl World {
             || !self.damage_events.is_empty() || !self.device_events.is_empty() || !self.rng_draws.is_empty()
             || self.result_spots.as_ref().is_some_and(|rows|!rows.is_empty()) || self.result_spot_tick.is_some()
             ||self.ammo_detonation.as_ref().is_some_and(|ledger|!ledger.is_pristine())
-            ||!self.turret_flights.is_empty()||self.turret_visual_ms.is_some() {
+            ||!self.turret_flights.is_empty()||self.turret_visual_ms.is_some()
+            || !self.ram_damage_events.is_empty() || !self.active_ram_pairs.is_empty() {
             return Err(bad());
         }
         let mut next = self.clone();
@@ -242,7 +250,7 @@ impl World {
                 "flight_ms":p.flight_time.as_millis()
             })).collect::<Vec<_>>(),
             "geometry_sha256":self.geometry.as_ref().map(|g|g.bundle_sha256()),
-            "scene_version":self.scene_version(),
+            "scene_version":self.scene_version(),"ram_damage_event_count":self.ram_damage_events.len(),
             "fragiles":self.fragiles.as_ref().map(|state|state.failure_snapshot()),
             "destructible_fixture":self.destructible.as_ref().map(|state|format!("{state:?}")),
             "trace_event_count":events.len(),"trace_omitted_prefix":trace_from,
@@ -411,7 +419,7 @@ impl World {
             damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
             result_spots:None,result_spot_tick:None,original_spotting:None,
             geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
-            terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None,
+            terrain: None, terrain_contacts: Vec::new(), ram_damage_events:Vec::new(), active_ram_pairs:std::collections::BTreeSet::new(), destructible: None,fragiles:None,
             contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS] })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
@@ -680,6 +688,27 @@ impl World {
         self.impact=trace;
         self.contact_sequences=sequences;
         Ok(outcomes)
+    }
+    pub fn apply_tank_contacts(&mut self, contacts:&[TankContactInput], sequence:u32, tick:u32)->io::Result<()> {
+        if sequence==0||tick==0||contacts.len()>15||contacts.len()>self.expected_actors.saturating_mul(self.expected_actors.saturating_sub(1))/2{return Err(bad());}
+        let mut pairs=std::collections::BTreeSet::new();let mut resolved=Vec::with_capacity(contacts.len());
+        for row in contacts {
+            if row.slot_a>=row.slot_b||row.slot_b>=self.actors.len()||!pairs.insert((row.slot_a,row.slot_b)){return Err(bad());}
+            let contact=super::tank_ram::Contact{slot_a:row.slot_a,slot_b:row.slot_b,substep:row.substep,point:row.point,normal:row.normal,relative_velocity:row.relative_velocity};
+            let a=self.actors[row.slot_a].vehicle_kind().mass_kg();let b=self.actors[row.slot_b].vehicle_kind().mass_kg();
+            resolved.push((contact,super::tank_ram::resolve(contact,a,b)?));
+        }
+        let mut next=self.clone();next.active_ram_pairs=pairs;
+        for (contact,result) in resolved {
+            if self.active_ram_pairs.contains(&(contact.slot_a,contact.slot_b)){continue;}
+            let Some(result)=result else{continue;};let before_a=next.actors[contact.slot_a].health;let before_b=next.actors[contact.slot_b].health;
+            if before_a<=0||before_b<=0{continue;}
+            let after_a=(before_a-i32::from(result.damage_a).min(i32::from(before_a))).max(0)as i16;let after_b=(before_b-i32::from(result.damage_b).min(i32::from(before_b))).max(0)as i16;
+            next.actors[contact.slot_a].health=after_a;next.actors[contact.slot_b].health=after_b;
+            for (attacker,target,before,after) in [(result.attacker,result.target,before_b,after_b),(result.target,result.attacker,before_a,after_a)]{next.ram_damage_events.push(RamDamageRecord{sequence,tick,attacker,target,pair:(contact.slot_a,contact.slot_b),energy_j:result.energy_j,closing_speed:result.closing_speed,health_before:before,health_after:after});}
+            if after_a==0{next.actors[contact.slot_a].input=Input::STOP;next.actors[contact.slot_a].speed=0.;}if after_b==0{next.actors[contact.slot_b].input=Input::STOP;next.actors[contact.slot_b].speed=0.;}
+        }
+        *self=next;Ok(())
     }
     /// Authenticated identity only. The caller reserves a transport retirement
     /// slot before committing this world assignment. Rejoin never resets ammo.
@@ -1356,6 +1385,15 @@ pub(super) mod tests {
         assert_eq!(lazy.kind(), io::ErrorKind::InvalidData);
         assert!(lazy.to_string().contains(&format!("{}:{}:", file!(), lazy_line)));
         assert_ne!(direct.to_string(), lazy.to_string());
+    }
+    #[test]fn tank_ram_damages_once_per_contact_and_rearms_after_separation(){
+        let now=Instant::now();let mut w=World::new_for_roster(401,now,crate::map_profile091::MapId::Prohorovka,2).unwrap();
+        attach_physics_profile(&mut w,VehicleKind::Ms1,Identity{account:"a".into(),database:1,name:"a".into()},1).unwrap();attach_physics_profile(&mut w,VehicleKind::Is7,Identity{account:"b".into(),database:2,name:"b".into()},2).unwrap();
+        let c=TankContactInput{slot_a:0,slot_b:1,substep:1,point:[0.,1.,0.],normal:[1.,0.,0.],relative_velocity:[5.,0.,0.]};let before=w.actors.iter().map(|a|a.health).collect::<Vec<_>>();w.apply_tank_contacts(&[c],1,1006).unwrap();let after=w.actors.iter().map(|a|a.health).collect::<Vec<_>>();
+        assert!(after[0]<before[0]&&after[1]<before[1]);assert_eq!(w.ram_damage_events.len(),2);w.apply_tank_contacts(&[c],2,1012).unwrap();assert_eq!(w.ram_damage_events.len(),2);w.apply_tank_contacts(&[],3,1018).unwrap();w.apply_tank_contacts(&[c],4,1024).unwrap();assert_eq!(w.ram_damage_events.len(),4);
+    }
+    #[test]fn tank_ram_batch_is_atomic_on_duplicate_or_bad_geometry(){
+        let now=Instant::now();let mut w=World::new_for_roster(402,now,crate::map_profile091::MapId::Prohorovka,2).unwrap();attach_physics_profile(&mut w,VehicleKind::Ms1,Identity{account:"a".into(),database:1,name:"a".into()},1).unwrap();attach_physics_profile(&mut w,VehicleKind::Is7,Identity{account:"b".into(),database:2,name:"b".into()},2).unwrap();let c=TankContactInput{slot_a:0,slot_b:1,substep:1,point:[0.,1.,0.],normal:[1.,0.,0.],relative_velocity:[5.,0.,0.]};assert!(w.apply_tank_contacts(&[c,c],1,1006).is_err());assert!(w.ram_damage_events.is_empty());let mut badc=c;badc.normal=[2.,0.,0.];assert!(w.apply_tank_contacts(&[badc],1,1006).is_err());assert!(w.ram_damage_events.is_empty());
     }
     #[test]fn shot_while_world_lags_wall_bucket_keeps_a_nonempty_first_segment(){
         let now=Instant::now();let mut w=world(now);w.advance(now+STEP).unwrap();assert_eq!(w.tick,1001);

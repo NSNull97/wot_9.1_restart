@@ -84,6 +84,21 @@ internal sealed class BattleTank : IDisposable
         handling.Apply(controller, Vector3.Dot(PreVelocity, forward), Vector3.Dot(Body.GetAngularVelocity(), up),
             input.Throttle, input.Steer, input.Brake, forwardLimit * input.SpeedPercent / 100, reverseLimit * input.SpeedPercent / 100, 1f / 60);
     }
+    // Contact hold is a bounded server-side traction policy.  When a forward
+    // command is active and this hull is pushing another hull, a solver impulse
+    // must not turn the pusher into a backwards teleport.  We remove only the
+    // negative component along the authoritative forward axis and preserve the
+    // lateral/vertical solver result.
+    public bool HoldForwardAgainstContact(bool contact, int throttle)
+    {
+        if (!contact || throttle <= 0) return false;
+        var forward = Vector3.Transform(Vector3.UnitZ, Body.Rotation);
+        var velocity = Body.GetLinearVelocity();
+        float signed = Vector3.Dot(velocity, forward);
+        if (!float.IsFinite(signed) || signed >= -.05f) return false;
+        world.BodyInterface.SetLinearVelocity(Body.ID, velocity - forward * signed);
+        return true;
+    }
     public void AfterStep()
     {
         int mask = 0;

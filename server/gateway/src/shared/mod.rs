@@ -39,6 +39,7 @@ pub(crate) mod dynamic_destructible;
 pub(crate) mod fragiles;
 pub(crate) mod ram_response;
 pub(crate) mod ram_proof;
+pub(crate) mod tank_ram;
 pub(crate) mod projectile;
 pub(crate) mod collision;
 pub(crate) mod impact;

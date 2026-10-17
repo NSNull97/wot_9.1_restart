@@ -19,6 +19,12 @@ fn good(s:&SceneSpec,seq:u32)->Value{json!({"version":7,"event":if seq==0{"ready
         12=>v["actors"][5]["state"]["rspeed"]=1.into(),13=>v["actors"][5]["state"]["wheel_contact_masks"][5]=64.into(),_=>unreachable!()}
         assert!(response(&serde_json::to_vec(&v).unwrap(),&s,9,&scene,1).is_err(),"mutation={mutation}");}
     assert!(response(&serde_json::to_vec(&good).unwrap(),&s,9,&scene,1).is_ok());}
+#[test]fn tank_contact_rows_are_typed_sorted_and_reject_reordered_wire_data(){let s=spec(3);let scene=Scene::new(&s,&[]).unwrap();let mut v=good(&s,1);
+    v["tank_contacts"]=json!([
+        {"slot_a":0,"slot_b":1,"substep":1,"point":[0,0,0],"normal":[1,0,0],"relative_velocity":[5,0,0]},
+        {"slot_a":1,"slot_b":2,"substep":2,"point":[1,0,0],"normal":[1,0,0],"relative_velocity":[2,0,0]}]);
+    let frame=response(&serde_json::to_vec(&v).unwrap(),&s,9,&scene,1).unwrap();assert_eq!(frame.tank_contacts.len(),2);assert_eq!((frame.tank_contacts[0].slot_a,frame.tank_contacts[1].slot_b),(0,2));
+    v["tank_contacts"]=json!([v["tank_contacts"][1].clone(),v["tank_contacts"][0].clone()]);assert!(response(&serde_json::to_vec(&v).unwrap(),&s,9,&scene,1).is_err());}
 #[test]fn duplicate_keys_and_oversized_or_deep_json_fail_before_value(){let raw=br#"{"x":{"y":1,"y":2}}"#;assert!(parse(raw,MAX_OUTPUT).is_err());
     assert!(parse(&vec![b' ';MAX_OUTPUT+1],MAX_OUTPUT).is_err());let mut raw="0".to_string();for _ in 0..14{raw=format!("[{raw}]");}assert!(parse(raw.as_bytes(),MAX_OUTPUT).is_err());}
 #[test]fn controls_are_exact_complete_batch_and_partial_cruise_is_not_a_brake(){let s=spec(6);let scene=Scene::new(&s,&[]).unwrap();let mut inputs=vec![Input::STOP;6];

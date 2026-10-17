@@ -186,6 +186,8 @@ impl BatchRuntime {
                 // Retain the whole validated batch until the domain tick can
                 // advance; never dispatch another batch or lose its contacts.
                 if !candidate.advance_with_external(now,Some(&rows))?{self.held=Some(frame);return Ok(());}
+                let tank_contacts=frame.tank_contacts.iter().map(|c|model::TankContactInput{slot_a:c.slot_a,slot_b:c.slot_b,substep:c.substep,point:c.point,normal:c.normal,relative_velocity:c.relative_velocity}).collect::<Vec<_>>();
+                candidate.apply_tank_contacts(&tank_contacts,frame.sequence,frame.tick)?;
                 candidate.apply_vehicle_contacts(&contacts)?;
             }
             if candidate.scene_version()!=world.scene_version()||frame.prepared {
