@@ -1,10 +1,11 @@
 # Текущие ворота: P05C — смешанный контакт и полные перевороты
 
 Ветка `codex/p05c-mixed-contact-handling` от2dcd5b9;
-[план](plans/P05C_MIXED_CONTACT_HANDLING.md). Runtime6119019/physics04:
-canonical1628PASS/0FAIL/5oldignored, build/source938 exact, actual2/6PASS.
-Component fullroll/math/P05B обоих/авторские склоны PASS, прежние контрольные
-FAIL и ограничения replay сохранены.
+[план](plans/P05C_MIXED_CONTACT_HANDLING.md). Исторический parent bc5c1c6/
+physics05: full02 завершён1632PASS/0FAIL/5oldignored, buildPASS/source941
+exact. Этот PASS не относится к новому physics06. Текущий physics06:
+canonical build25raw exactPASS, intent reversal сохраняет порог−0.5м/с,
+sharedopt-in включён/legacy defaultfalse; full03 **PREPARED_NOT_RUN**.
 
 Contact129 mixed8303176210728121358: владелец подтвердил перевороты,
 столкновения, захват с правильными итогами у обоих и загрузку обоих ангаров.
@@ -13,15 +14,26 @@ Contact129 mixed8303176210728121358: владелец подтвердил пе�
 при закрытии окон не считать вылетом. Current SQL144/56, active0; БК/склад
 сохранены, grants0. Оба native absent, gateway/bridge exact129 STOPPED.
 
-Приёмка P05C остаётся FAIL: при перевороте МС1 пропадает взаимный засвет;
-ИС7 продолжает разгоняться в powered turn; на пригорке останавливается и
-отказывается ехать. Root cause пригорка UNKNOWN. Code sight clearance+0.5
-вращается вниз при roofroll VERIFIED; точное пересечение земли в native
-эпизоде INFERRED (original log без chassisYPR/LOS hit). Прежняя P05B matrix
-не проверяла потерю разгона powered turn. Текущая работа: LOS regression,
-matched-start actualJolt turning и stall/control audit, затем source-bound
-проверки. Новые исправления native NOT_RUN до нового ручного прогона.
-Main прежний. [Доказательства/границы](research/P05C_MIXED_CONTACT_HANDLING.md).
+Приёмка P05C остаётся FAIL по трём замечаниям contact129: потеря взаимного
+засвета при перевороте МС1, разгон ИС7 в powered turn, откат около−1км/ч
+под W+поворотами на пригорке. Для сохранённого physics04 replay окна
+2961–3044 причина измерена:17циклов reversal brake при непрерывном W
+сбрасывают motor/RPM. Causal variant с теми же controls и byteexactprefix
+до2940 убирает повторный brake, возвращает uphill progress без retune.
+Атрибуция исходного native эпизода ограничена frozenreplay/intervention;
+новая native проверка не проведена. Ранние peer-support окна — другой случай.
+
+Current06 включает world-up LOS, measured powered loss выше4м/с и reversal
+brake только для нового rawthrottle intent; удержанный W после выхода при
+прежних−0.5м/с не перевооружает тормоз от скатывания. Production-linked
+proof50061cfa: synthetic driverlogic520assert/530Apply отдельно от72actual
+Jolt worlds; strict ramp24runs/8exercised/0notEx/0unmatched; powered128PASS,
+P05B обоих9×2 quality/replayPASS, publicstreams04==05==06 byteexact.
+35rawfiles before/after exact; legacy03build25exactPASS (simulationNOT_RUN).
+Native130/LOS/новое управление **NOT_RUN**. Mainffce8cb прежний.
+Следующий шаг: finalsourcecommit → full03 → source-bound stand130 из actual
+SQL144/56 либо более поздней БД без grants → единый ручной mixed сценарий.
+[Доказательства/границы](research/P05C_MIXED_CONTACT_HANDLING.md).
 Будущий [RULESET-01](plans/RULESET01_SCOPE.md): требования к общим настройкам,
 тимдамагу/чату записаны; текущие игровые defaults не менялись.
 

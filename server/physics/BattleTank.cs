@@ -23,11 +23,14 @@ internal sealed class BattleTank : IDisposable
     readonly float forwardLimit, reverseLimit;
     public Vector3 PreVelocity;
     public BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog)
-        : this(system, source, catalog, true) { }
+        : this(system, source, catalog, true, true) { }
     // The explicit policy seam also compares baseline/candidate in one actual
     // Jolt build. Network/shared callers always use the three-argument form.
     internal BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog,
         bool enablePoweredTurnLoss)
+        : this(system, source, catalog, enablePoweredTurnLoss, true) { }
+    internal BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog,
+        bool enablePoweredTurnLoss, bool enableIntentReversalBrake)
     {
         world = system; Source = source;
         var c = source.Config;
@@ -68,7 +71,7 @@ internal sealed class BattleTank : IDisposable
         world.AddConstraint(Constraint); world.AddStepListener(Constraint);
         controller = Constraint.GetController<TrackedVehicleController>();
         handling = new TrackedHandling(MathF.Abs(points[3].X - points[0].X),
-            CheckedInput.Number(c.GetProperty("handling").GetProperty("max_yaw_rate_rad_s"), .1f, 1.5f), mass, wheels, enablePoweredTurnLoss);
+            CheckedInput.Number(c.GetProperty("handling").GetProperty("max_yaw_rate_rad_s"), .1f, 1.5f), mass, wheels, enablePoweredTurnLoss, enableIntentReversalBrake);
         handling.VerifyWheelSettings(Constraint);
         Fracture = catalog == null ? null : new AngularFractureResponse(mass, catalog, source.Binding);
     }

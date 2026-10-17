@@ -41,10 +41,11 @@ internal sealed class TrackedHandling
     private const float MotorRampPerSecond = 4f;
     public const float GearSwitchTime = .15f, ClutchReleaseTime = .1f, GearSwitchLatency = .2f;
     private readonly float width, maximumYaw, halfMass, radius;
-    private readonly bool poweredTurnLoss;
+    private readonly bool poweredTurnLoss, intentReversalBrake;
     private readonly WheelSettingsTV[] wheels;
     private readonly float[] lateral;
     private float yawTarget, motorInput;
+    private int lastThrottle, reversalIntent;
     // 0: ordinary drive/pivot; 1: rolling turn; 2: near-rest ratio transition.
     private int coastPhase, coastDirection;
     private float coastTransitionTime;
@@ -62,7 +63,7 @@ internal sealed class TrackedHandling
     }
 
     public TrackedHandling(float trackWidth, float maxYawRate, float massKg, WheelSettingsTV[] supportWheels,
-        bool enablePoweredTurnLoss = false)
+        bool enablePoweredTurnLoss = false, bool enableIntentReversalBrake = false)
     {
         if (!float.IsFinite(trackWidth) || trackWidth < .5f || trackWidth > 5 ||
             !float.IsFinite(maxYawRate) || maxYawRate < .05f || maxYawRate > 2 ||
@@ -70,6 +71,7 @@ internal sealed class TrackedHandling
             throw new InvalidDataException("tracked handling geometry/yaw/mass/support bounds");
         width = trackWidth; maximumYaw = maxYawRate; wheels = supportWheels;
         poweredTurnLoss = enablePoweredTurnLoss;
+        intentReversalBrake = enableIntentReversalBrake;
         halfMass = massKg / 2; radius = wheels[0].Radius;
         lateral = wheels.Select(w => w.LateralFriction).ToArray();
         if (lateral.Any(x => !float.IsFinite(x) || x < .1f || x > 2))
@@ -92,6 +94,11 @@ internal sealed class TrackedHandling
             !float.IsFinite(forwardLimit) || forwardLimit <= 0 ||
             !float.IsFinite(reverseLimit) || reverseLimit <= 0 || (brake && (throttle != 0 || steer != 0)))
             throw new InvalidDataException("tracked handling command bounds");
+
+        // Only validated raw throttle changes express a new direction intent.
+        // Repeated held commands, governor cuts and gravity are not key edges.
+        int previousThrottle = lastThrottle;
+        if (intentReversalBrake) lastThrottle = throttle;
 
         float speed = MathF.Abs(signedSpeed);
         if (brake || throttle != 0 || steer == 0) coastPhase = 0;
@@ -196,10 +203,29 @@ internal sealed class TrackedHandling
             Dissipate(inner, TrackBrake(inner, CoastInnerDeceleration, deltaTime));
             Dissipate(outer, TrackBrake(outer, CoastOuterDeceleration, deltaTime));
         }
-        if (throttle != 0 && throttle * signedSpeed < -ReversalBrakeSpeed)
+        if (!intentReversalBrake)
         {
-            motor = 0;
-            brakeInput = 1;
+            if (throttle != 0 && throttle * signedSpeed < -ReversalBrakeSpeed)
+            {
+                motor = 0;
+                brakeInput = 1;
+            }
+        }
+        else
+        {
+            if (brake || throttle == 0 || (reversalIntent != 0 && reversalIntent != throttle))
+                reversalIntent = 0;
+            if (!brake && throttle != 0 && throttle != previousThrottle && throttle * signedSpeed < -ReversalBrakeSpeed)
+                reversalIntent = throttle;
+            // Preserve the old -0.5 m/s exit. A held intent cannot rearm after
+            // completing this first brake phase merely because it rolls back.
+            if (reversalIntent != 0 && throttle * signedSpeed >= -ReversalBrakeSpeed)
+                reversalIntent = 0;
+            if (reversalIntent != 0)
+            {
+                motor = 0;
+                brakeInput = 1;
+            }
         }
         if (poweredTurnLoss && !brake && coastPhase == 0 && throttle != 0 && steer != 0 &&
             motor != 0 && brakeInput == 0 && throttle * signedSpeed > PoweredBrakeStartSpeed)

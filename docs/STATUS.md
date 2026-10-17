@@ -1,28 +1,31 @@
 # Состояние проекта — утро17 октября2026
 
-**Текущая P05C ветка `codex/p05c-mixed-contact-handling` от2dcd5b9.**
-Mixed AИС7/BМС1: contact129 владелец подтвердил перевороты/столкновения,
-захват с правильной причиной итогов у обоих и оба загруженных ангара.
-Окна закрыл сам; оставшиеся gateway/bridge exact129 STOPPED. SQL144/56,
-active0, БК/склад сохранены, grants0. Лог Capture100/winner1/durableFinish×2,
-native returns×2/reset1; FAILED0, поздние disconnect2 — после reset/закрытия.
-P05C FAIL: rollover взаимно теряет засвет; ИС7 разгоняется в powered turn;
-стоп ИС7 на пригорке. Root cause пригорка UNKNOWN. Sight clearance вращается
-вниз вместе с корпусом VERIFIED; native underground endpoint INFERRED.
-Предыдущая P05B matrix не требовала снижения скорости в powered turn.
-LOS regression/turning measurement/stall audit в работе; native новых правок
-NOT_RUN. Physics04 build/source25PASS;
-math47870, actualfullroll4/4, P05B обоих9×2 и currentpolicy slope4/4PASS.
-Полная diagnostic slope matrix6PASS/2step1controlFAIL сохранена.
-MaxSAT recordedcontrols13.6→2см, actual385sample stop=mapboundary;
-остальные stops не объявлены все исправленными. Runtime6119019:
-canonical1628PASS/0FAIL/5oldignored+build/source938 exact; actual2/6new04PASS.
-Core contact129: actualbackup141/53/grants0, V8reuse/auth/дваHangar×2PASS;
-prebattle142/54. Mixed8303176210728121358 physics04/READY×2 прошёл указанный
-выше ручной прогон; не считать частичные PASS приёмкой всей карточки.
-[Отчёт](research/P05C_MIXED_CONTACT_HANDLING.md).
-Будущий [RULESET-01](plans/RULESET01_SCOPE.md) только фиксирует требования.
-Main прежний.
+**P05C: `codex/p05c-mixed-contact-handling` от2dcd5b9, приёмка FAIL/open.**
+Contact129: владелец принял перевороты/столкновения, захват/правильные итоги
+и оба ангара; затем сам закрыл окна. SQL144/56, active0, БК/склад сохранены,
+grants0; exact129 gateway/bridge STOPPED, FAILED0. Три замечания остаются
+до нового native: rollover-засвет, powered-turn разгон, откат ИС7 под W.
+Конкретный replay2961–3044: VERIFIED17циклов reversal brake на непрерывномW;
+causal latevariant с byteexactprefix≤2940 убирает reset и возвращает подъём.
+Это measured frozenreplay/intervention; originalnative attribution ограничена,
+остальные остановки/точный deliveredgroundtorque UNKNOWN.
+
+Исторический parent **bc5c1c6/physics05: full02 1632PASS/0FAIL/5ignored,
+buildPASS/source941exact**. Current06 добавляет новый rawintent reversal
+flag: sharedtrue/legacydefaultfalse, прежний arm/exit−0.5м/с. Ранее world-up
+LOS и powered loss>4м/с сохранены. Physics06canonical25rawexactPASS.
+Production-linked proof50061cfa: driverlogic520assert/530Apply (synthetic
+metrics,0worldupdates), отдельно core72actualworlds, strict ramp24/8/0/0,
+powered128PASS. Legacy03build25exactPASS; P05B06 обоих9×2 quality/replayPASS,
+3780publicframes/metrics/streams byteexact04==05==06. Source35before/afterexact.
+**Full03 PREPARED_NOT_RUN; native130 NOT_RUN. Mainffce8cb прежний.**
+Далее finalsourcecommit/full03 → свежий boundstand130 без grants из actual
+БД → manual mixed приёмка. [Отчёт](research/P05C_MIXED_CONTACT_HANDLING.md).
+Старые physics04 proofs/replayFAIL сохранены: math47870, fullroll4/4,
+P05B9×2×2, currentpolicy slopes4/4PASS; diagnostic slope6PASS/2controlFAIL.
+Runtime6119019/full01 source938 и contact129 остаются историческими;
+их PASS не переименован в current06 приёмку. Будущий
+[RULESET-01](plans/RULESET01_SCOPE.md) только фиксирует требования.
 
 Основной checkout C:/wot091-night-20261017-01/w; исходный D сохранён.
 Ночная ветка codex/build-legacy-entrypoints, runtime64767ec, tested checkpoint200dcd2;

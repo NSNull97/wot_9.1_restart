@@ -118,7 +118,8 @@ V8 обоих повторно проверен по новому full/source и
 переустановки клиента не было. Actual privateauth/own native launch и по два
 последовательных настоящих Hangar samples каждого PASS. A PID117132,
 B101916; own gateway119744/bridge106712. Startup25.939с, faults0 на snapshot.
-Native combat/тот же склон/новый roll/возвраты пока PENDING/NOT_RUN.
+На этом startup срезе combat/склон/roll/возвраты были PENDING/NOT_RUN;
+последующий результат contact129 зафиксирован ниже и не ретегает этот срез.
 
 После команды владельца/UI начался настоящий общий mixed бой
 `8303176210728121358`: slot0ИС7/slot1МС1 с прежними exactconfig pins,
@@ -153,7 +154,8 @@ obstacles161/161samples при0groundsupports, IS7 —38/161samples. Ground grad
 не воспроизведённая потеря тяги на открытом подъёме. Старый52sample эпизод
 имеет другую траекторию/место; равный номер команды не означает то же место.
 Низкая скорость сама по себе не устанавливает первопричину жалобы.
-Ни reverse-brake cycle, ни взаимное «прилипание» wheel rays там не подтверждены.
+В этих ранних интервалах ни reverse-brake cycle, ни взаимное «прилипание»
+wheel rays не подтверждены. Позднее окно2961–3044 исследовано отдельно ниже.
 
 Native/UI/камера/управление перевёрнутым корпусом, повтор exact места у склона,
 новый mixed таран/возврат и шесть живых клиентов — NOT_RUN. Не объявлять карточку
@@ -186,14 +188,15 @@ diagnostics; точные параметры/сценарии сохранены
 снимком, не возвращать потраченные снаряды. Старый ретест120 заморожен и уже
 содержит историю до141/53; новый стенд обязан сохранить эти данные.
 
-Canonical full с новым `WOT_P05C_ARTIFACTS` и свежий Core successor выполнены.
-Следующий шаг — ручное подтверждение владельца на уже загруженном mixed бою.
+Исторические full01 с `WOT_P05C_ARTIFACTS` и Core successor129 выполнены.
+Тогда следующим шагом было ручное подтверждение на загруженном mixed бою;
+его результат сохранён ниже. Эти старые инструкции не являются запуском130.
 В первом — ИС7, во втором — МС1, после отсчёта проверить управление/наведение;
 ИС7 толкает неподвижный МС1 по ровному на тот же подъём без отпускания газа,
 затем отъезжает назад. Отдельно — полный переворот/камера и возврат обоих.
 Не считать code/component PASS native приёмкой. Main не изменён.
 
-Остановка живого129: взять exact argv `stop.b`, затем `stop.a` из
+Сохранённая команда остановки129 (уже STOPPED): взять exact argv `stop.b`, затем `stop.a` из
 `native-commands129.json`, затем `stop_gateway`/`stop_bridge` из
 `operators-core129.json`. Только own identity-bound receipts; текущую БД
 сохранить. Не запускать старые120 packets на129 и не возвращать старый БК.
@@ -217,7 +220,8 @@ FAILED/BATTLE_FAILED/CONTAINED_RETURN_FAILED0. Это не новый вылет
 
 - перевёрнутый МС1 и ИС7 взаимно пропадают из засвета;
 - ИС7 продолжает разгоняться под газом в повороте;
-- ИС7 на пригорке остановился и отказался ехать.
+- ИС7 на пригорке откатывается около−1км/ч под удержанным W+поворотами
+  (последующее уточнение владельца).
 
 Идеи о точке под землёй и сбое управления пока OWNER_HYPOTHESIS. Code audit
 VERIFIED: +0.5m LOS clearance вращается с fullYPR корпуса; при roofroll она
@@ -225,7 +229,9 @@ VERIFIED: +0.5m LOS clearance вращается с fullYPR корпуса; пр
 точную причинную цепочку конкретного эпизода пока считать INFERRED.
 Прежняя P05B matrix проверяла progress/yaw/slip/source speed cap, а не потерю
 разгона в powered turn: её PASS этот новый критерий не подтверждал.
-Причина пригорка UNKNOWN до контроля/контактов, не подставлять догадку.
+На этом исходном срезе причина пригорка была UNKNOWN. Поздний frozen04
+replay/causal intervention ниже измеряет repeated reversal brake конкретного
+окна; это не подтверждение всех сил/остановок исходного native боя.
 
 Private evidence в `local/evidence/20261017-morning-core01/`:
 `contact129-owner-feedback02.gateway-prefix.log` — exact prefix6470525bytes,
@@ -238,3 +244,191 @@ SHA256 `7d360b1664e9e65662532feb3adb23ad9879dad2b47817db9dcdfbd393c93a60`.
 readonly SQL144/56/active0 и exact129 stop receipts: клиенты уже отсутствуют,
 gateway/bridge штатно остановлены. Новых grants/выстрелов в этом бою нет.
 Source/main/прежние evidence не ретегать; текущую БД сохранять.
+
+## Исторический parent после contact129: bc5c1c6/physics05
+
+Runtime `bc5c1c626b453406c8149f7fb6d1937953c1ab20`, source941. Изменены
+`shared/model.rs` и `visibility_world_tests.rs`: один sightpoint helper
+вращает stockpivot, затем добавляет0.5м по мировому+Y; обычный засвет и
+detached-turret observer используют его. Дальность/team/occluders/AoI прежние.
+Четыре новые actualWorld регрессии выполнены в завершённом full02;
+full03 для следующего physics06 ещё PREPARED_NOT_RUN.
+Source-derived plane diagnostic: oldroofpoint MS1−.364096/IS7−.519438м,
+new+.635904/+.480562м; quaternion/8OBBcorners grid211806случаев PASS на
+авторских flat/6/12/30/60°planes. Это не World/Jolt/native PASS.
+Evidence `local/evidence/20261017-p05c-rollover-los-fix01/`, final verification
+SHA256 `41107b222ab23fcf962c44a8356439ab8134b100a6f98acc9299a0a1c63d09c3`.
+
+`TrackedHandling`/`BattleTank` добавляют явную shared test_lab policy:
+powered steering тормозит внутреннюю гусеницу, inner2м/с² на полумассу,
+speedblend0до4м/с→1при8м/с, с yawFraction и sourceMaxBrakeTorque cap.
+Ни body pose/velocity, ни profile/mass/enginepower не переписываются.
+Политика включена обычным shared constructor; legacy TrackedHandling
+defaultfalse. При отпущенном повороте extra brake снимается сразу.
+Пороговые числа — инженерное правило проекта, не исторические параметры.
+
+Новый `tools/p05c_powered_turn_checks` compile-links настоящую production
+BattleTank, сравнивает disabled/enabled в свежих Jolt worlds с одинаковым
+стартом. Actual128runs PASS:48пар,3361initial low-speed frame exact,
+16straight traces exact,12coast/brake/reversal gates,4replays и4ordinary
+constructor defaults exact. Low-speed правило не меняет тягу до4м/с.
+ИС7: одинаковый старт12.8446м/с, flat4steps, изменение за1с
++0.3176→−0.0995м/с; скорость4с14.0310→12.3634м/с. МС1:
+8.8358м/с, +0.0120→−0.1885м/с,4с8.8342→8.0020м/с.
+12°launch: ИС7v4 5.1645→5.1488, МС1v4 3.920518exact.
+Evidence `local/evidence/20261017-powered-turn-production01/`, resultSHA
+`5a0330b1e58b1c7b183f460315949bfa685858210164f4fd0cc441298be0e267`.
+Специальные колебания непосредственно на speedcap NOT_RUN; измеренный
+motor!=0 gate не изменён. Native handling/UI NOT_RUN.
+
+Canonical physics05 build PASS,25rawsources before/after exact,16binfiles;
+artifactmanifest SHA256
+`c73870ba2a67d33b9e01787a3a0028a43b26add563a86f2673a29ad73b6f77f5`.
+Evidence `local/evidence/20261017-p05c-mixed-physics05`;
+build `local/build/server/physics-p05c-mixed05`.
+Canonical gateway full02/source941 на exactbc5c1c6 с явным05 завершён:
+**1632PASS/0FAIL/5прежних ignored, buildPASS, source941 raw exact**.
+Evidence `local/evidence/20261017-p05c-mixed-full02/source-after.json`, SHA256
+`06a944ad9dbe170ac18ba27cb7ebb3ddbeb9055d6a37efa44084e2212224d16b`;
+build `local/build/server/gateway-p05c-mixed-full02/`, exe SHA256
+`c49232028d57aefc142c30c773a6b509ef56cb38452151d06766c02edcf09575`.
+Это исторический parent physics05, не fullPASS для нового06. Старые outputs
+не изменяются. Current06 и следующий full03 описаны ниже.
+
+Уточнение владельца: «даже не то что вставал, а откатывался -1 км/ч назад»;
+до этого W удерживался с попытками поворотов, откат до остановки помогал.
+Сохранено в `contact129-owner-feedback04.json`, SHA256
+`a19ac28e7e33e35fe3b272deb15f1d821e12f4fa946d5aa88018d71977486f45`.
+IntegerHUD не устанавливает точную underlying speed/rounding. Нельзя
+продолжать называть жалобу неподвижным стопом или фильтровать только
+abs(speed)<.15м/с: номинальные−1км/ч вне такого фильтра.
+
+Отдельный immutable physics04 prefix2200 replay сохранил actualorigins
+within10мкм соседнего frame. В двух найденных low-speed powered окнах
+IS7wheel1 опирался наMS1, wheels3/5 — наterrain, motorpositive/brake0/gear1;
+передний bodybox вышеterrain минимум49мм. Но их signedspeed в основном
+положительный, они НЕдоказывают причину owner−1км/ч. Прямой deliveredground
+torque UNKNOWN. Source04 audit freeze
+`da007af86dc54f6ed41f6718ea3ebef32b3637666568795d03cecb0bfddca260`
+лежит в scratch `morning-contact129-stall-audit01`; отдельное signed
+supplement сохранено; поздний signed audit и causal experiment завершены
+с отдельным frozenprefix ниже.
+Эксперимент static-only wheel ray меняет траекторию и остаётся scratch;
+production filter/контакты/мощность не менялись. Новая turnpolicy выключена
+при таких малых скоростях и исправлением отката не объявляется.
+
+
+## Поздний replay2961–3044: измеренная причина отката
+
+VERIFIED для сохранённого physics04 replay:84samples/8.3с содержат
+непрерывный W (left22/straight41/right21), без запроса brake. Old helper
+включает общий reversal brake по одному знаку скорости, поэтому даёт
+17on/off cycles/34braked samples, сбрасывает motor ramp и оставляет RPM500.
+Signed speed−.539..−.072м/с, положительных samples нет; grade16–21°.
+Tank hull contact есть лишь в первых6samples, а не во всём интервале.
+Этот случай отделён от ранних peer-support окон и упоров в mapboundary/static.
+
+Causal scratch02 меняет только право перевооружения brake в позднем окне:
+после validated rawthrottle edge можно arm при projectedSpeed<−.5м/с,
+release остаётся прежним projectedSpeed>=−.5м/с. Ноль, explicit brake и
+смена intent снимают старый latch. Удержанный W после выхода не arm повторно
+только потому, что гравитация изменила знак скорости. Коэффициенты мощности,
+трения, тормоза, геометрия/слои/solver и motor ramp4/s прежние; body setters
+не применяются. Вариант release−.05 только подготовлен, NOT_BUILT/NOT_RUN,
+в production не включён. Static-only wheel-ray эксперимент не промотирован.
+
+Все5611controls совпали с frozen04 baseline. Publicprefix доseq2940
+побайтно совпал:5749949bytes, SHA256
+`2f5fd005ef81a4e5f8e9573c32063a6bc862f6f03e8ec5cf078ff99d7e7c0f30`.
+Первая public разница2970. В том же окне2961–3044 candidate motor1/brake0
+во всех84samples, RPM500→3505, gear1/2/3,55positive samples/first2990.
+Source-terrain height gain под origin−1.294→+1.533м, progress вдоль исходного
+forward−3.560→+7.220м. Старый brake/ramp цикл препятствовал восстановлению
+подъёма в этом replay; смена только request policy устранила цикл.
+
+Causal evidence `local/evidence/20261017-p05c-contact129-stall01/replay-late-intent-oldthreshold-01/`;
+точные controls/trajectory/driver comparisons запечатаны в helper
+`morning-contact129-intent-latch04/freeze04.json`, SHA256
+`0e573c2847462a2e542d3dc6b0ffb8e37e27aeb8addf91c4112f84b304403a7a`.
+Полный replay завершён5611commands/6.66с/EOF exit0; исходные отказы/первые
+эксперименты сохранены. Later trajectory меняется: другие упоры не выдаются
+за те же места/причины. Deliveredgroundtorque остаётся UNKNOWN.
+
+Граница причинности: VERIFIED — механизм old helper и сравнение retained
+replay/causal intervention. Связь с жалобой владельца подтверждена recorded
+controls и найденным late rollback, но original native log не содержал этой
+полной drivetrain telemetry. Новый native130/тот же склон ещё NOT_RUN;
+историческая точность или устранение всех остановок не заявлены.
+
+## Текущий physics06 и production-linked gates
+
+Current06 явно включает intent flag для shared BattleTank; legacy helper
+optionaldefaultfalse. Powered policy остаётся отдельным flag. Трёх-/четырёх-
+аргументные shared constructors делегируют полному internal constructor;
+component сравнивает intentfalse/true на том же genuine BattleTank, powered
+true в обоих плечах. `Program.cs`, профили, enginepower и source limits прежние.
+
+Canonical physics06 build PASS,25rawsources exact; artifactmanifest SHA256
+`cff138e72f0172ea98751884027f880e2ad5592665087b1f8cc6b77710b6aa4d`.
+Build `local/build/server/physics-p05c-mixed06/`, proof
+`local/evidence/20261017-p05c-mixed-physics06/`.
+
+Единый production-linked результат:
+`local/evidence/20261017-p05c-production06-checks01/result.json`, SHA256
+`50061cfaf61e63b713b5220740a7898f18d13d051dad17976cbb6e750eecd974`.
+Rawbefore/after охватывают physics25 + reversaltool7 + poweredtool3,
+35uniquefiles, включая9изменённых production/tool файлов. Source-after SHA256
+`bb4d8da9c42f8a1e115ff5c1d07577397ceced809b50666a6ea1a03f4a18a27e`.
+
+- Driverlogic:520assertions/530Apply PASS на настоящих native controller
+  readbacks с synthetic signed-speed metrics;0PhysicsSystem.Update. Это
+  input/state-machine unit, не движение/сцепление. Покрыты rawintent repeats,
+  steering/cruise,−.50001/−.5, clear/signswitch, governor cuts, invalid inputs.
+- Отдельный actualJolt core:72worldruns PASS,16flat matched W↔S tracepairs
+  полностью exact,743first-brakeframes/24replays exact. Оба профиля,1/4steps,
+  short/long prefixes; первый reversal сохранился. Core result SHA256
+  `accc47fe294a887555f2cc112d7cf5dac0a2e202fc84b20b3abec60620fe4cef`.
+  Uniform16/21°controls после bounded600STOP совпали, но rollback там
+  NOT_EXERCISED; исходный180STOP settleFAIL сохранён, CheckSettled не ослаблен.
+- Отдельный strict flat→ramp:24worldruns/8exercised/0notEx/0unmatched PASS,
+  оба профиля1/4steps,16/21°.180STOP наflat→600W→neutralcoast доactualv<−.6
+  →480freshW. Первый brakephase exact, затем heldW не перевооружается.
+  MS1old88–144braked steps→new2; IS7old211–287→new3–4. ИС7/4steps/21°:
+  finalspeed−.494821→+5.2173896м/с, originheightdelta−1.43318→+8.11153м.
+  Авторский mesh8vertices/6triangles не выдаётся за карту клиента. ResultSHA
+  `454ddc47cde723162fed5a88d98daee57291790c7897e43c9cf7d572ff5b9ea8`.
+- Powered component128actualworldruns PASS, result побайтно равен прежнему
+  `5a0330b1e58b1c7b183f460315949bfa685858210164f4fd0cc441298be0e267`.
+- Canonical legacy03 build25rawexactPASS; отдельная simulation его бинарника
+  NOT_RUN. Обе P05B06 matrices9×2 quality/replayPASS на actual Program route:
+  57streams/profile против каждого04/05 результата,3780publicframes с
+  calibration, metrics/checks/symmetry byteexact04==05==06.430historical
+  evidencefiles неизменны. Это не новое native принятие legacy/shared.
+
+Точные restore/build/run argv, local offline lock/config, source pins и own
+PID/creation/EOF/exit receipts находятся в этом combined evidence и fresh
+build folders. `tools/p05c_reversal_checks` compile-links productionphysics;
+core `--mode all` не запускает отдельный `RampFreshChecks`. Strict ramp PASS
+требует24runs/8exercised/0notEx/0unmatched; отсутствие кейса не скрывается.
+Production source/runtime/helpers прежних стендов/БД не ретеганы.
+
+## Следующий checkpoint и ручная приёмка
+
+Full03 **PREPARED_NOT_RUN** до фактического Root запуска на finalsourcecommit;
+исторический bc5c1c6/full02 не заменяет этот gate. После нового fullPASS и
+source-after: свежий source-bound stand130 из actual SQL144/56 либо более
+поздней БД, без grants/возврата потраченного БК; старый129 не менять.
+Native130/LOS/fullroll-control/новый poweredturn/тот же originalhill NOT_RUN.
+
+Единый manual сценарий после bound/seal130: общий AИС7/BМС1, READY/движение/
+наведение; разгон с поворотом, бок/крыша и взаимный засвет, original подъём
+под непрерывным W с попытками поворота и новый W после естественного отката;
+затем естественные итоги и возврат обоих. Точные commands/rollback берутся
+из нового sealed130, не из packets120/129. Актуальные БД/склад/историю не
+откатывать. Приёмка P05C остаётся FAIL/open до этих gates; mainffce8cb прежний.
+
+
+Отдельное поручение владельца P07B «оригинальный засвет0.9.1 без маскировки»:
+исходные points/rays/viewrange и SixthSensealways для командира исследуются
+в другом чате, собственной ветке/worktree. Его pending runtime не является
+частью P05C acceptance, здесь не запускался и не объявлен готовым.

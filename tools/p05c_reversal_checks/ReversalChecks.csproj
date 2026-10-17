@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs;DriverLogicUnits.cs;MovingReverseChecks.cs" />
+    <Compile Include="../../server/physics/*.cs" Exclude="../../server/physics/Program.cs" Link="Physics/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../server/physics/Profiles/stock-definitions.json" LogicalName="MapDrive.StockDefinitions" />
+    <EmbeddedResource Include="../../server/physics/Profiles/extended-definitions.json" LogicalName="MapDrive.ExtendedDefinitions" />
+    <PackageReference Include="JoltPhysicsSharp" Version="[2.22.0]" />
+  </ItemGroup>
+</Project>
