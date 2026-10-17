@@ -1,5 +1,11 @@
 # Состояние проекта — 17 октября 2026, ночная работа до 09:00
 
+Отдельный следующий precursor: `codex/p10b-hold-selection-cli` от0472ddbc,
+тот же независимый worktree. Добавлены только CLI5 и actual subprocess/SQLite
+тесты; прежние reader56 четыре файла сохранены. Новый scoped прогон pending,
+primary200/raw925/index/config нетронуты. Web/Rust/native Ready5 остаются закрыты.
+[План, конструкторная граница, команды и откат](plans/P10B_HOLD_SELECTION_CLI.md).
+
 Отдельная карточка reader56: `codex/p10b-hold-selection-reader`, worktree
 `C:/wot091-selection56/w`, base200dcd2. Один additive readonly Selection5 reader
 и три test/vector файла; текущие Loss2/4 и training+Hold5 запрет сохранены.
