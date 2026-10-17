@@ -29,3 +29,12 @@ local/evidence/20261017-c-short-full03/composition-full.json outerSHAf1d71bad6c6
 C reader4/HTTP3/selectionSQL5/snapshot8 PASS; oldWeb26+11 separatelyPASS, not a
 retagged37-run. Actual4 is next separate test card, native remainsNOT_RUN.
 See BUILD_C_NIGHT_WORKSPACE.md for earlier failed inputs and exact source copy.
+
+
+## Four-owner current software checkpoint
+
+The earlier actual4 NOT_RUN statements above are historical. Runtimeab7ad10
+has genuine canonical full1612/0/5oldignored/build/916raw exact, five same-full
+HTTP/SQL compositions sealed. Parked C receives real AmmoBay detonation and
+loses[0,4,10], all four get one Final/results. Native remains NOT_RUN.
+See P08B_OWNER_HOLD_FOUR_COMPOSITION.md for boundaries/evidence/rollback.

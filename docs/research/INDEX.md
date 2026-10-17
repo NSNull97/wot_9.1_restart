@@ -169,3 +169,5 @@
 - [NET02_LOSS_TRAINING_INTEGRATION.md](NET02_LOSS_TRAINING_INTEGRATION.md) — current loss/late/training LAN union, full1573, actual own-host Login/Base; native/two-PC NOT_RUN.
 - [BUILD_TEMP_EXECUTABLE_REFERENCE.md](BUILD_TEMP_EXECUTABLE_REFERENCE.md) — explicit verified retained-C executable,17+11guards/full/actual own-host execution.
 - [BUILD_FRESH_TEST_COMPRESSION.md](BUILD_FRESH_TEST_COMPRESSION.md) — fresh-empty-only owned NTFS test outputs, actual4focused/build; dependent full pending.
+
+- [P08B Hold5: настоящие четыре владельца](P08B_OWNER_HOLD_FOUR_COMPOSITION.md) — C runtimeab7ad10, full1612/5ignored, genuine parked AmmoBay death/Final4; native NOT_RUN.

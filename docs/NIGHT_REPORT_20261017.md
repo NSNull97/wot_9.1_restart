@@ -1,9 +1,12 @@
 # Ночь 16–17 октября: сервер до 09:00
 
-Current C checkpoint7595f3f: full1611/0/5oldignored/buildPASS/909rawexact,
-same-full restart/late/Hold2/rooms HTTP/SQL sealed. New root C:/wot091-night-20261017-01/w;
-original D preserved. Actual4/garage/warehouse/morning contexts next, nativeNOT_RUN.
-[Точные текущие факты](research/BUILD_C_NIGHT_WORKSPACE.md).
+Последний software checkpoint — runtimeab7ad10, ветка
+`codex/p08b-owner-hold-four-composition`: full1612 PASS/0 FAIL/5 прежних ignored,
+сборка PASS,916 raw source exact, пять same-full HTTP/SQL композиций.
+Рабочая папка C:/wot091-night-20261017-01/w; D/main/клиенты сохранены.
+[Точный отчёт](research/P08B_OWNER_HOLD_FOUR_COMPOSITION.md).
+Далее гаражный Fresh, складские ammo refs, legacy, финальные утренние стенды
+и Python; до09:00 работа продолжается. Native новых сборок NOT_RUN.
 
 Ниже сохранены прежние checkpoint; их NEXT/NOT_RUN относятся к указанному
 историческому моменту, текущее состояние — в STATUS и ACTIVE_GATE.

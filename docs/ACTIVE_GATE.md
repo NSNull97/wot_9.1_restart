@@ -16,3 +16,7 @@ continue separate garage Fresh32/03+39 then warehouse42 and final morning
 contexts31/NET34. Both operational input-only preflights already PASS on parent
 full; actual backup/bind/services/client/native stillNOT_RUN. No manual asks;
 night continues until04:00UTC/09:00local. Own services/clients STOP.
+
+Software checkpoint closed: runtimeab7ad10 full1612/0/5oldignored/build/916raw,
+five same-full compositions sealed b0d84816...7201e; nativeNOT_RUN. Next
+separate garage Fresh branch; no main merge.
