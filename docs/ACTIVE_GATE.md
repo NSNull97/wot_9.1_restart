@@ -16,7 +16,9 @@ buildPASS/source938 exact, actual2/6 с новым04 PASS. Fresh Core contact129
 запущен: backup141/53/grants0, V8reuse/privateauth/дваactualHangar каждогоPASS.
 После запуска142/54, active0/loaded/depot unchanged, faults0. Владелец получил
 шаг «ровно→тот же подъём с непрерывным газом→отпустить контакт», ответ ждём.
-Native нового боя/переворота/возврата PENDING/NOT_RUN.
+Новый mixed8303176210728121358 действительно загрузился: ИС7/МС1,
+physics04PID119500, READY×2, snapshots124×2/faults0. Управление/тот же подъём/
+новый roll/возвраты PENDING/NOT_RUN до ответа владельца.
 Main прежний. [Доказательства/границы](research/P05C_MIXED_CONTACT_HANDLING.md).
 Будущий [RULESET-01](plans/RULESET01_SCOPE.md): требования к общим настройкам,
 тимдамагу/чату записаны; текущие игровые defaults не менялись.

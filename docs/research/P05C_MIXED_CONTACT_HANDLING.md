@@ -120,6 +120,14 @@ V8 обоих повторно проверен по новому full/source и
 B101916; own gateway119744/bridge106712. Startup25.939с, faults0 на snapshot.
 Native combat/тот же склон/новый roll/возвраты пока PENDING/NOT_RUN.
 
+После команды владельца/UI начался настоящий общий mixed бой
+`8303176210728121358`: slot0ИС7/slot1МС1 с прежними exactconfig pins,
+one_scene=true, workerPID119500 из actual physics04, READY обоих. Captured
+native snapshots124укаждого, passive observer mutationsfalse, faults0 на
+snapshot. Это OBSERVED загрузка, не подтверждение качества управления/склона.
+Evidence `local/evidence/20261017-morning-core01/contact129-battle01-load.json`,
+SHA256 `8bdad67439b757c00dc70b9e9f344b824f9c25e5f629970fbefba9d20a08edf5`.
+
 Замороженный helper `C:/Users/NSNull/AppData/Local/Temp/wot091-night-workspace-kcadgetk/morning-p05c-contact129`.
 Freeze SHA256 `6827cfc1a6b613fb0b99362bdfffe4f0b7c1d855b94c0b99333ddcce3666fb68`;
 31guard tests и4passive CLI PASS. Actual binding SHA256
@@ -178,8 +186,8 @@ diagnostics; точные параметры/сценарии сохранены
 снимком, не возвращать потраченные снаряды. Старый ретест120 заморожен и уже
 содержит историю до141/53; новый стенд обязан сохранить эти данные.
 
-Следующий шаг: canonical gateway full с новым `WOT_P05C_ARTIFACTS`, затем
-свежий Core successor уже выполнены; осталось ручное подтверждение владельца.
+Canonical full с новым `WOT_P05C_ARTIFACTS` и свежий Core successor выполнены.
+Следующий шаг — ручное подтверждение владельца на уже загруженном mixed бою.
 В первом — ИС7, во втором — МС1, после отсчёта проверить управление/наведение;
 ИС7 толкает неподвижный МС1 по ровному на тот же подъём без отпускания газа,
 затем отъезжает назад. Отдельно — полный переворот/камера и возврат обоих.

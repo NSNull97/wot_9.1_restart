@@ -12,8 +12,10 @@ MaxSAT recordedcontrols13.6→2см, actual385sample stop=mapboundary;
 остальные stops не объявлены все исправленными. Runtime6119019:
 canonical1628PASS/0FAIL/5oldignored+build/source938 exact; actual2/6new04PASS.
 Core contact129 live: actualbackup141/53/grants0, V8reuse/auth/дваHangar×2PASS;
-теперь142/54/active0/БК unchanged/faults0. Новая native mixed проверка задана,
-ответ владельца ожидается. [Отчёт](research/P05C_MIXED_CONTACT_HANDLING.md).
+prebattle142/54/active0/БК unchanged/faults0. Mixed8303176210728121358
+уже загружен, physics04/READY×2, native snapshots124×2; качество контакта/
+склона/roll и возвраты ждут ответа владельца.
+[Отчёт](research/P05C_MIXED_CONTACT_HANDLING.md).
 Будущий [RULESET-01](plans/RULESET01_SCOPE.md) только фиксирует требования.
 Main прежний.
 
