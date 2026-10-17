@@ -30,6 +30,25 @@ FX незасвеченного стрелка и задержки сохран�
 объявить исправленными от устранения reset race. Реальные сроки queue/join
 снять до и после с разделением native/input/writer/Avatar этапов.
 
+Утренний full01 на25ac184 завершён:1624PASS/1FAIL/5old ignored,1292.59с.
+Все6новых STAB регрессий PASS. Единственный FAIL actual4Hold: Node watchdog180с;
+Final4/возвраты/all-finalSQL пройдены на162.139с, процесс остановлен в query/ACK
+tail. Production state/panic failures не наблюдались; причина wall-time variance
+UNKNOWN. Логи, failure.json и raw925-source equality сохранены; source-after gate
+NOT_RUN из-за FAIL, старый запуск не объявлять зелёным.
+Измеренный бюджет теста увеличен только в обвязке: Node180→210с, Rust parent
+240→360с (seed120+phase210+margin30). HTTP/Finish deadlines и assertions прежние.
+Read-only review выявил входящий native ACK containedAvatar, который обновлялся
+по replacementWorld до receive. Incoming03 использует production helper с
+проверкой retained identity/view/terminal receipt и атомарным receive на клоне;
+phaseLeaving сохраняется, старые команды разбираются без допуска к authority.
+Ошибка доставки результатов тоже выбирает retirement по сохранённому миру,
+сохраняя Hold5 outcome. Три новые регрессии: ACK/confirmation/rollback/подмена,
+обычный ingress refresh, Hold5 natural-old/new-live. Static review PASS;
+полный full02 и native retest PENDING до фактических запусков.
+Evidence: local/evidence/20261017-morning-core01/stab01_full01_failure_retained.json;
+внешние audit781cedfe/budget02freeze52aa1063 сохранены отдельно.
+
 Откат: остановить только новые ownпроцессы, вернуться к сохранённому runtime
 через его неизменные артефакты в новом совместимом контексте; mutableDB/расход
 не восстанавливать поверх позднего состояния. Следующий шаг — regression/full.

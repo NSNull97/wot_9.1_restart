@@ -807,6 +807,20 @@ fn contained_return_world(s:&Session,world:&World)->io::Result<Option<Arc<World>
         ||c.natural_result.as_ref().is_some_and(|r|r.arena_id!=retained.id){return Err(model::bad());}
     Ok(Some(retained))
 }
+// The actual ordinary-mode ingress transaction uses the same terminal
+// source proof as polling. A contained Avatar keeps its checked old view;
+// refreshing it from the replacement World would reject ACK/confirmation
+// before receive() and cannot grant authority in either battle.
+fn receive_battle_session(s:&mut Session,frame:&Frame,world:&World,now:Instant)->io::Result<bool>{
+    let mut staged=s.clone();
+    if contained_return_world(&staged,world)?.is_some(){
+        if !staged.active{return Err(model::bad());}
+    }else{staged.shared_refresh_world(world)?;}
+    // Leaving validates on the existing throwaway Driving clone and retains
+    // only terminal transport/result state, never its simulated commands.
+    let close=staged.receive(frame,now)?;*s=staged;Ok(close)
+}
+
 fn poll_contained_return(s:&mut Session,world:&World,now:Instant)->io::Result<bool>{
     let Some(retained)=contained_return_world(s,world)?else{return Ok(false);};
     if !s.active{return Err(model::bad());}
@@ -949,7 +963,9 @@ fn contain_results_failure(manager:&super::results_session::Manager,dispatcher:&
     let target=manager.failure_session(&table.sessions);
     println!("P08C_RESULTS_SESSION_FAILED session={target:?} error={error} service_alive=true durable_result_retained=true");
     if let Some(id)=target.filter(|id|table.sessions.iter().any(|s|s.id==*id)) {
-        dispatcher.retire(table,world,id,now,"native_results_delivery")?;
+        if !retire_contained_session(dispatcher,table,world,id,now,"native_results_delivery")?{
+            dispatcher.retire(table,world,id,now,"native_results_delivery")?;
+        }
     }
     Ok(())
 }
@@ -1421,8 +1437,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     };
                     let received=if let Some(host)=&mut room_host{host.receive(&mut table,sid,&frame,&world,now,logical_ms)}else{
                         let s=&mut table.sessions[index];
-                        (||->io::Result<bool>{let mut staged=s.clone();staged.shared_refresh_world(&world)?;
-                            let close=staged.receive(&frame,now)?;*s=staged;Ok(close)})()
+                        receive_battle_session(s,&frame,&world,now)
                     };
                     let s=&mut table.sessions[index];
                     match received {

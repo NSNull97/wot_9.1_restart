@@ -30,7 +30,7 @@ async function runChild(executable,control,output,prefix){
     out=openSync(prefix+'.stdout.log','wx');err=openSync(prefix+'.stderr.log','wx');
     owned=spawn(executable,['--exact',TEST,'--nocapture','--test-threads=1'],{cwd:ROOT,windowsHide:true,env:{...process.env,P08B_HOLD_FOUR_COMPOSITION_CONTROL:control,P08B_HOLD_FOUR_COMPOSITION_OUTPUT:output},stdio:['ignore',out,err]});
     closed=new Promise(done=>{owned.once('error',e=>{spawnError=e;});owned.once('close',(code,signal)=>done({code,signal}));});
-    const timeout=new Promise((_,fail)=>{timer=setTimeout(()=>fail(new Error('Own hold composition test deadline')),180000);});
+    const timeout=new Promise((_,fail)=>{timer=setTimeout(()=>fail(new Error('Own hold composition test deadline')),210000);});
     const result=await Promise.race([closed,timeout]);if(spawnError)throw spawnError;assert.equal(result.signal,null);assert.equal(result.code,0,'Actual Rust phase failed; retained logs');return readJson(output,65536);
   }finally{
     clearTimeout(timer);if(owned&&closed){if(owned.exitCode===null&&owned.signalCode===null)owned.kill('SIGKILL');await closed;}

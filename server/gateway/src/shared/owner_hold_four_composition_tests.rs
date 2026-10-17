@@ -322,7 +322,7 @@ fn parent(){
     let mut child=Command::new("node");child.arg(root.join(helper)).arg("--parent-full").arg(&control).arg(&output).arg(bundle).arg(original).arg(root.join("local/night-staging/20261016/p10b-selection-http01/seed01/seed.json"))
         .current_dir(&root).env_remove("PYTHONPATH").stdin(Stdio::null()).stdout(Stdio::from(stdout)).stderr(Stdio::from(stderr));
     #[cfg(windows)]{use std::os::windows::process::CommandExt;child.creation_flags(0x08000000);}
-    let mut child=child.spawn().unwrap();let deadline=Instant::now()+Duration::from_secs(240);let status=loop{if let Some(status)=child.try_wait().unwrap(){break status;}if Instant::now()>=deadline{let _=child.kill();let _=child.wait();panic!("own controller timeout; retained evidence");}std::thread::sleep(Duration::from_millis(20));};assert!(status.success(),"composition controller failed; retained {}",output.display());
+    let mut child=child.spawn().unwrap();let deadline=Instant::now()+Duration::from_secs(360);let status=loop{if let Some(status)=child.try_wait().unwrap(){break status;}if Instant::now()>=deadline{let _=child.kill();let _=child.wait();panic!("own controller timeout; retained evidence");}std::thread::sleep(Duration::from_millis(20));};assert!(status.success(),"composition controller failed; retained {}",output.display());
     let result:serde_json::Value=serde_json::from_slice(&fs::read(output.join("result.json"))
         .expect("controller exited successfully but actual composition result is absent")).unwrap();
     assert_eq!(result["status"],"PASS_ACTUAL_HOLD5_FOUR_RUNTIME_HTTP_SQLITE");

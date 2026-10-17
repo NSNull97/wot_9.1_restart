@@ -29,7 +29,12 @@ queue cancel→общий бой→управление/красные марк�
 шаг2: расход4снарядов/SQLitePASS, ручной возвратFAIL — выброс обоих.
 ActualA[0,47,47]/B[0,49,45],rev134/46,active0. Core остановлен по ownreceipts:
 reset опережает asyncFinish/Leaving→mod303→2157аварийных snapshots/103MB.
-Новая зависимая ветка codex/stab01-core-return-reset; regression/full PENDING.
+Новая зависимая ветка codex/stab01-core-return-reset. Full01 на25ac184:
+1624PASS/1FAIL/5old ignored; все6новых регрессий PASS. Единственный FAIL —
+actual4Hold Node180с watchdog послеFinal4/all-finalSQL; evidence сохранён.
+Test-only budgets210/360с; contained-input ACK и results retirement исправлены,
+3новые регрессии подготовлены, static reviewPASS; execution/full02 PENDING.
+Production join/cancel/leave deadlines не изменены.
 Невидимый shooter подавляет cross-peer FX VERIFIED; корректный anonymous FX
 ещё NOT_RUN. Join/cancel delays OBSERVED, причина доаварийной задержки UNKNOWN.
 

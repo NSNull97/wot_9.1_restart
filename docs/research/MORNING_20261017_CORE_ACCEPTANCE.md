@@ -100,7 +100,35 @@ gateway-лога. Gateway остановлен первым по своему re
 исходную точку выстрела нельзя. Native anonymous FX ещё NOT_RUN. Ранние
 join/cancel задержки возникли до logstorm; их причина UNKNOWN.
 
+Readonly latency124 уточнил критический путь: один writer удерживается во время
+последовательных battlePOST→profilePOST→полного fixture/metadata refresh. Два
+отдельных Python процесса каждый заново разбирают426catalogfiles/3,973,052B и
+audit16pyc/394,124B. Даже существующая revision проекция заново строится для
+byte-compare. Затем требуются реальные outbox/txACK, фиксированный entryhold3с,
+scene verification/spawn/180вычисленных settle steps и native handshake.
+Actual sampled enqueue→BattleQueue A9.392/10.763с,B13.321с; повторный
+enqueue→первыйPlayerAvatar A23.0867671с,B19.4731349с. Первые1000gatewaylines до
+Prebattle не содержат retry/error/failure. HTTP20с — deadline, не sleep;
+retry2с не наблюдался. Leaf durations и вклад CPU/IO UNKNOWN. Это диагностика,
+не исправление задержки; новый retest наблюдать через readonly121.
+Внешний audit124 SHA3f446fe1ca5c980945ca69a3ee1a4fea14a0d811f672fc08dfa4f50677828e1d.
+
 ## Остановка, откат и следующий шаг
+
+Исправление reset/retained-terminal-world проверено full01 на25ac184:
+1624PASS/1FAIL/5old ignored,1292.59с; все6новых регрессий PASS. Единственный
+FAIL actual4Hold — Node watchdog180с, Final4/all-finalSQL уже завершились на
+162.139с, запросы/ACK результатов ещё шли. Точная причина изменения wall time
+UNKNOWN. Raw925 исходников до/после совпали; source-after gate NOT_RUN приFAIL.
+`stab01_full01_failure_retained.json` и исходные логи/failure.json сохранены.
+Только тестовая обвязка получает Node210/Rust360с. Production timeouts и
+assertions не меняются. Дополнительный review нашёл containedAvatar input ACK,
+который до receive обновлял старый slot по replacementWorld. Incoming03 проверяет
+retained identity/view/receipt и сохраняет фазуLeaving в атомарном receive;
+результатный retirement также использует старый outcome. Три новые регрессии
+проверяют positiveACK/confirm, poison/forged input, ordinary ingress и Hold5
+natural-old/new-live. Static reviewPASS, execution/full02 PENDING.
+Native retest ещё NOT_RUN.
 
 Точные stop argv сохранены в `live-handoff01.json`. Сначала штатный выход или
 receipt-bound stop клиентаB, затемA; после них exact own gateway и bridge stop.

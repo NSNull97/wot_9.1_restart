@@ -162,3 +162,71 @@ fn commit_authored_result_boundary(s:&mut Session){
     assert!(s.drive_return_account.is_none());assert_eq!(w.id,old+1);
     assert_eq!(c.contained_world.as_ref().unwrap().turret_flights()[0].sample().phase,super::super::ammo_detonation::FlightPhase::Flying);
 }
+
+// End-to-end ordinary ingress boundary, not direct Session::receive. The old
+// wrapper would refresh this spotted Leaving Avatar from an empty, enabled
+// replacement World and fail before even applying its authenticated ACK.
+#[test]fn stab01_contained_incoming_keeps_ack_confirm_atomic_without_old_command_authority(){
+    let now=Instant::now();let(mut table,mut w)=parked_forfeit(now);let old=w.id;
+    let mut fresh=World::new_for_roster(old,now,crate::map_profile091::MapId::Karelia,2).unwrap();
+    fresh.bind_geometry(Arc::new(super::super::geometry::tests::bundle())).unwrap();
+    fresh.bind_geometry(Arc::new(super::super::geometry::tests::is7_bundle())).unwrap();fresh.enable_ap_test_lab().unwrap();
+    fresh.bind_terrain(Arc::new(super::super::terrain::tests::fixture(-1000.,2000.,2,vec![0.;4]))).unwrap();
+    fresh.enable_mixed_ammo().unwrap();fresh.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();fresh.enable_ammo_detonation().unwrap();
+    let mut runtime=None;let template=BattleTemplate::new(&fresh,&runtime);
+    contain_battle_failure(&mut table,&mut w,&mut runtime,&template,now,"publication",
+        &io::Error::new(io::ErrorKind::InvalidData,"authored ingress-boundary fault")).unwrap();
+    assert!(w.ammo_detonation_enabled());assert!(w.actors.is_empty());
+    let world_before=w.failure_snapshot();let s=&mut table.sessions[0];
+    let terminal=s.shared.as_ref().unwrap().profile13.as_ref().unwrap().pending_return_loss.clone().unwrap();
+    // All complete old commands are validated, but none reaches an authority
+    // queue or changes the immutable receipt, retained World or replacement.
+    let old_snapshot=s.shared.as_ref().unwrap().contained_world.as_ref().unwrap().failure_snapshot();
+    let commands=f::frame(s,&[0x8a,1,0,1,0x88,0,0,0x99,1,0,0]);
+    assert!(!receive_battle_session(s,&commands,&w,now+Duration::from_secs(1)).unwrap());
+    let c=s.shared.as_ref().unwrap();assert_eq!(c.phase,Phase::Leaving);assert!(c.commands.is_empty());assert!(!c.join_requested);
+    assert_eq!(c.profile13.as_ref().unwrap().pending_return_loss.as_ref(),Some(&terminal));
+    assert_eq!(c.contained_world.as_ref().unwrap().failure_snapshot(),old_snapshot);assert_eq!(w.failure_snapshot(),world_before);
+    commit_authored_result_boundary(s);let at=now+Duration::from_secs(50);
+    poll_battle_session(s,&mut w,at,true,false).unwrap();assert!(s.battle_results.avatar_pending());
+    let mut cumulative=s.tx.cumulative;
+    while let Some((seq,_,_))=s.tx.due(at,s.rx).unwrap(){cumulative=cumulative.max(seq+1);}
+    let ack=Frame{flags:0x408,sequence:None,cumulative:Some(cumulative),selective:vec![],body:vec![],piggybacks:vec![]};
+    let rx=s.rx;assert!(!receive_battle_session(s,&ack,&w,at+Duration::from_secs(1)).unwrap());
+    assert_eq!(s.rx,rx);assert_eq!(s.tx.len(),0);assert_eq!(s.last_rx,at+Duration::from_secs(1));
+    // A valid confirmation followed by a forged piggyback must roll back the
+    // complete envelope, including ACK/RX/last_rx and result confirmation.
+    let queued=s.tx.enqueue_body_tracked(&[0x13,0x10]).unwrap();
+    assert_eq!(s.tx.due(at+Duration::from_secs(1),s.rx).unwrap().unwrap().0,queued);
+    let advancing_ack=queued+1;let before=s.clone();let mut confirm=f::frame(s,&[0x99,1,0,0,0x87,0,0]);confirm.cumulative=Some(advancing_ack);
+    let mut poison=f::frame(s,&[]);poison.sequence=Some(s.rx+1);poison.cumulative=Some(advancing_ack);poison.body[1]^=1;
+    let mut compound=f::frame(s,&[]);compound.sequence=Some(s.rx+2);compound.cumulative=Some(advancing_ack);compound.piggybacks=vec![confirm,poison];
+    assert!(receive_battle_session(s,&compound,&w,at+Duration::from_secs(2)).is_err());
+    assert_eq!((s.rx,s.tx.cumulative,s.tx.len(),s.last_rx),(before.rx,before.tx.cumulative,before.tx.len(),before.last_rx));
+    assert_eq!(s.received,before.received);assert_eq!(s.outbox,before.outbox);assert_eq!(s.battle_results,before.battle_results);
+    assert_eq!(s.shared.as_ref().unwrap().profile13,before.shared.as_ref().unwrap().profile13);assert!(s.shared.as_ref().unwrap().commands.is_empty());
+    // Existing marker does not bypass forged owner/database/view/receipt proof.
+    for case in 0..4{
+        let mut bad=s.clone();let owner=bad.identity.as_ref().unwrap();
+        if case<2{bad.identity=Some(Arc::new(crate::identity091::Profile{account_id:if case==0{"foreign".into()}else{owner.account_id.clone()},
+            database_id:owner.database_id+if case==1{1}else{0},name:owner.name.clone(),fixture_dir:owner.fixture_dir.clone()}));}
+        else if case==2{bad.shared.as_mut().unwrap().view.as_mut().unwrap().id+=1;}
+        else{bad.shared.as_mut().unwrap().result_committed=false;}
+        let rx=bad.rx;let last=bad.last_rx;let frame=f::frame(&bad,&[0x87,0,0]);
+        assert!(receive_battle_session(&mut bad,&frame,&w,at+Duration::from_secs(2)).is_err());
+        assert_eq!((bad.rx,bad.last_rx),(rx,last));assert!(!bad.battle_results.avatar_confirmed());
+    }
+    let mut confirm=f::frame(s,&[0x99,1,0,0,0x87,0,0]);confirm.cumulative=Some(advancing_ack);
+    assert!(!receive_battle_session(s,&confirm,&w,at+Duration::from_secs(2)).unwrap());assert!(s.battle_results.avatar_confirmed());assert_eq!(s.tx.len(),0);
+    assert!(s.shared.as_ref().unwrap().commands.is_empty());assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Leaving);
+    poll_battle_session(s,&mut w,at+Duration::from_secs(2),true,false).unwrap();
+    assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Returning);assert!(s.shared.as_ref().unwrap().contained_world.is_none());
+    assert_eq!(w.failure_snapshot(),world_before);assert!(s.active);
+}
+#[test]fn stab01_ordinary_incoming_still_refreshes_the_current_authoritative_view(){
+    let now=Instant::now();let(mut s,mut w)=f::fixture(now);w.actors[0].position[0]+=1.;
+    let ack=Frame{flags:0x408,sequence:None,cumulative:Some(s.tx.cumulative),selective:vec![],body:vec![],piggybacks:vec![]};
+    assert!(!receive_battle_session(&mut s,&ack,&w,now+Duration::from_millis(1)).unwrap());
+    assert_eq!(s.shared.as_ref().unwrap().view.as_ref().unwrap().actors[0].position,w.actors[0].position);
+    assert!(s.shared.as_ref().unwrap().contained_world.is_none());
+}

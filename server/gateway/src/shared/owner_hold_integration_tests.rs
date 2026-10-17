@@ -205,3 +205,35 @@ fn same(a:&Session,b:&Session){assert_eq!((a.rx,a.tx.len(),a.tx.cumulative,a.are
     assert_eq!(second.0,1);assert_eq!(transport091::parse_interactive(&second.2).unwrap().body,crate::map_drive_world091::return_account(&s.identity.as_ref().unwrap().name).unwrap());
     assert!(out.tx.due(now,out.rx).unwrap().is_none());assert_eq!(out.drive_return_account.as_ref().unwrap().creation,Some((1,false)));
 }
+
+#[test]fn stab01_hold5_result_failure_retires_with_old_outcome_and_keeps_new_world_untouched(){
+    // Real source-bound Hold5 fixture and real Forfeit outcome; only transport
+    // and pending result-query selection are authored, no HTTP/SQL/native claim.
+    let now=Instant::now();let mut s=session(now,true);s.login_attempt=Some(LoginAttempt::new(s.key,s.id,s.login_peer));
+    {let c=s.shared.as_mut().unwrap();c.phase=Phase::Driving;let p=c.profile13.as_mut().unwrap();p.hold_return_pending=false;p.hold_departure_reason=None;}
+    let(mut old,mut capture)=attached_world(now,s.identity.clone().unwrap());let id=old.id;
+    old.detach(12).unwrap();old.advance_lifecycle(now+Duration::from_millis(100)).unwrap();
+    assert_eq!(old.lifecycle.as_ref().unwrap().outcome().unwrap().reason,super::super::super::super::lifecycle::Reason::Forfeit);
+    assert!(capture.freeze_outcome(&old).unwrap());let seal=capture.seal().unwrap().clone();
+    s.shared.as_mut().unwrap().view=Some(old.clone());
+    Dispatcher::terminal_hold(&mut s,&old,FinishReason::BattleFinished).unwrap();assert!(state(&mut s).unwrap().hold_departure_reason.is_none());
+    let mut table=Table{sessions:vec![s],..Table::default()};let mut runtime=None;
+    let template=super::super::super::BattleTemplate::new(&World::new(id,now).unwrap(),&runtime);
+    super::super::super::contain_battle_failure(&mut table,&mut old,&mut runtime,&template,now,"publication",
+        &io::Error::new(io::ErrorKind::InvalidData,"authored Hold result-path fault")).unwrap();
+    let old_state=state(&mut table.sessions[0]).unwrap().clone();assert!(old_state.hold_departure_reason.is_none());
+    old.attach(model::Identity{account:"replacement-live-owner".into(),database:99,name:"replacement-live-owner".into()},77).unwrap();
+    assert!(old.lifecycle.is_none());let replacement=old.failure_snapshot();
+    assert!(table.sessions[0].battle_results.stage(&sync(391,1500,id as i64)).unwrap());
+    let manager=super::super::super::super::results_session::Manager::default();assert_eq!(manager.failure_session(&table.sessions),Some(11));
+    let mut d=Dispatcher::default();d.hold.capture=Some(capture);
+    super::super::super::contain_results_failure(&manager,&mut d,&mut table,&mut old,now,
+        &io::Error::other("authored result publication failure")).unwrap();
+    assert!(table.sessions.is_empty());assert_eq!(d.retired.len(),1);
+    assert_eq!(d.retired[0].shared.as_ref().unwrap().profile13.as_ref(),Some(&old_state));
+    assert!(d.retired[0].shared.as_ref().unwrap().profile13.as_ref().unwrap().hold_departure_reason.is_none());
+    assert!(Arc::ptr_eq(d.hold.capture.as_ref().unwrap().seal().unwrap(),&seal));
+    assert_eq!(old.failure_snapshot(),replacement);assert!(old.owned(0,77).is_ok());
+    super::super::super::contain_results_failure(&manager,&mut d,&mut table,&mut old,now,
+        &io::Error::other("authored duplicate failure report")).unwrap();assert_eq!(d.retired.len(),1);
+}

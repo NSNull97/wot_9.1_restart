@@ -47,7 +47,11 @@
   изменённом runtime tree и не выдавать startup smoke за игру клиента.
 
 - Gateway: `python -B -X utf8 server/build.py gateway --test --out local/build/server/<новый-каталог>`.
-  Полный набор ~6 мин; выборочно — `--test-filter <имя>`. Каталог вывода всегда новый.
+  Нынешний полный набор с actual HTTP/SQLite compositions занимает около20–22мин
+  на закреплённой машине (утро17октября:1292.59с тестов плюс44.83с компиляции);
+  прежняя оценка6мин устарела. Выборочно — `--test-filter <имя>`.
+  Каталог вывода всегда новый. Внешний runner должен вмещать полный набор;
+  отдельные тестовые watchdog не заменяют игровые HTTP/Finish deadlines.
   Итог печатается JSON-строкой (`tests_passed`, `tests_ignored`, `status`); логи —
   `<out>/test.stdout.log`. Базовые 5 ignored — это `#[ignore]` в main.
 - Физика (C# worker): `python -B -X utf8 server/build.py physics --out local/build/server/<каталог>`.

@@ -19,6 +19,10 @@ publication обращается к oldslot в новом пустом world;215
 Все4own процесса штатно остановлены. Исправление в зависимой ветке
 `codex/stab01-core-return-reset`; [план](plans/STAB01_CORE_RETURN_RESET.md).
 Следующий шаг: regression/full новогоhead→новыйstand из actualCDB→ручной retest.
+Full01 на25ac184:1624PASS/1FAIL/5old ignored, все6новых STAB регрессий PASS;
+FAIL — measured actual4Hold watchdog180с, послеFinal4/all-finalSQL. Старый FAIL
+сохранён. Incoming03 исправляет review contained-input ACK/results retirement;
+3новых regression execution и full02 PENDING, test-only budgets210/360с.
 [Живая утренняя приёмка](research/MORNING_20261017_CORE_ACCEPTANCE.md).
 Новые остальные native/UI/звук/шесть клиентов/дваПК NOT_RUN. LAB99: genuine
 fixtures и2privateHTTP200 PASS; нового native launcher нет. Старый89 не ретегать.
