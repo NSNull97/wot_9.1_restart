@@ -1,5 +1,14 @@
 # Состояние проекта — утро17 октября2026
 
+**P07B audio follow-up:** владелец подтвердил геометрию/LOS/переворот и
+визуальную лампу, но не услышал отдельного звука. Статическая проверка #717
+показала: `updateVehicleMiscStatus` и `battle.swf` запускают только визуальный
+timeline; в исходном `gui.fev`/`sound_notifications.xml` нет отдельного
+Sixth-Sense/lamp event. Это VERIFIED original-path behavior, а не потеря
+серверного `0x47` payload. `onScoutEvent` оставлен отдельным enemy-spotted
+voice/FX callback и не подменяет лампу. Project-owned audio override — отдельная
+ветка/карточка, NOT_IMPLEMENTED/NOT_RUN. [Граница](research/P07B_AUDIO_BOUNDARY_20261018.md).
+
 **P07B: canonical full gate готов, native owner gate открыт.** Изолированная
 ветка `codex/p07b-full-gate-temp`, head
 `9ec193289b7afd67d5340056b5b6e5f02474a10b`, содержит оригинальный засвет без
