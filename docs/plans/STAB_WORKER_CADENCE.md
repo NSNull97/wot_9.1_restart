@@ -29,13 +29,16 @@ JSONL-файл в заранее существующем каталоге. За
 
 ## Проверки
 
-Unit checks sink проверяют bounded output, stderr hash/prefix и сохранение
-обоих `FAIL_CLOSED` receipts без статуса PASS (source metadata check
-выполнен; runtime unit execution остаётся NOT_RUN при недоступном linker).
-Существующие cadence tests
-сохраняют обе production guards и их timeout assertions. Native/client
-проверки и новый successor-stand выполняются отдельным следующим шагом
-после review этого коммита.
+Три unit checks sink прошли: bounded output, stderr hash/prefix и сохранение
+обоих `FAIL_CLOSED` receipts без статуса PASS. Исполняемый canonical build
+прошёл через временный локальный GNU/CRT overlay, потому что pinned driver
+сталкивается с двумя разными локальными CRT-наборами; исходники и toolchain
+в репозитории не менялись. Полный suite на canonical checkout завершился
+`1587 passed / 48 failed / 5 ignored`; 48 FAIL относятся к отсутствующим
+старым physics/fixture artifacts (`p06t`/portable source roots), поэтому
+карточка остаётся FAIL/непринятой, а не получает PASS по частичному suite.
+Свежий successor stand подготовлен отдельно; services/native/client checks и
+реальные cadence JSONL receipts остаются `NOT_RUN` до утреннего native прогона.
 
 ## Ограничения
 

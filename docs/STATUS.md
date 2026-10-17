@@ -98,10 +98,22 @@ Read-only diagnosis separates this from physics acceptance. Battle `184277930099
 
 ### STAB worker cadence branch
 
-Ветка `codex/stab-worker-cadence` подготовила opt-in bounded receipts для
-IPC7 `scene_worker::Worker` и `BatchRuntime`: каждый advance/reply, logical
-scheduler lag, обе fail-closed deadline ветви, bounded stderr и Windows CPU
-sample. Env `WOT091_STAB_DIAGNOSTICS_DIR` выключен по умолчанию; guards
-`REPLY_TIMEOUT=500ms`/`MAX_LAG=500ms` не менялись. Source metadata check PASS;
-unit runtime, canonical build и native successor NOT_RUN из-за отдельного
-linker/toolchain ограничения, поэтому ветка не принята в main.
+Ветка `codex/stab-worker-cadence` (`88114709a1062b6dfb4e821e8a99a0eed26e1e4f`)
+подготовила opt-in bounded receipts для IPC7 `scene_worker::Worker` и
+`BatchRuntime`: каждый advance/reply, logical scheduler lag, обе fail-closed
+deadline ветви, bounded stderr и Windows CPU sample. Env
+`WOT091_STAB_DIAGNOSTICS_DIR` выключен по умолчанию; guards
+`REPLY_TIMEOUT=500ms`/`MAX_LAG=500ms` не менялись. Три cadence unit tests
+прошли; отдельный canonical executable build прошёл через retained local
+toolchain overlay (exe SHA256
+`558564bac82fccc9416f151c5f47dd544bdbe915647251d9aaccf35dca61945f`). Полный
+suite на canonical checkout дал `1587 passed / 48 failed / 5 ignored`: FAIL
+сосредоточен на отсутствующих старых physics/fixture artifacts и не является
+основанием для P05C PASS. Ветка и новый stand остаются вне `main`.
+
+Свежий successor `local/stands/morning-p05c-contact-20261017-05/core-loss4`
+подготовлен с tag `p05c-contact132`, run `p05c-contact132-01` и отдельным
+`WOT091_STAB_DIAGNOSTICS_DIR`; receipt
+`local/evidence/20261017-stab-worker-cadence/contact132/successor-stand.json`
+SHA256 `9a78b79dd6712b7dd0a471079de50e0d4491fc417b4bbda898a15d93d1c682891`.
+Services, native/UI, two-PC и actual cadence receipts пока `NOT_RUN`.
