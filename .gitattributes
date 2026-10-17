@@ -197,5 +197,5 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /web/tests/helpers/p04m-garage-source-context.mjs text eol=lf
 /web/tests/helpers/p04m-garage-sql-barriers.mjs text eol=lf
 /server/gateway/src/account/ammo_session.rs text eol=lf
-/server/gateway/src/account/ammo_session_fresh.rs text eol=lf
+/server/gateway/src/account/ammo_session_fresh.rs text eol=crlf
 /server/gateway/src/shared/mod.rs text eol=lf
