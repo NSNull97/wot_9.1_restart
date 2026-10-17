@@ -1,5 +1,10 @@
 # Ночь 16–17 октября: сервер до 09:00
 
+Legacy runtime64767ec: gateway targeted3/0/0+physics builds PASS, genuine
+T26/FV183 IPC7 smoke PASS/source925exact. [Факты](research/BUILD_LEGACY_ENTRYPOINTS.md).
+Далее один canonical finalfull925 и полный Python43; фактические результаты
+ещё pending. HEAD остаётся неподвижен во время обоих прогонов.
+
 Warehouse runtime722fcf9: шесть исходных ammo refs, реальные остатки не менялись;
 Python9+Web11 PASS/0skip/925raw exact. UI NOT_RUN; joint full после legacy.
 [Факты](research/P04W_SHELL_DEPOT_DISPLAY.md).

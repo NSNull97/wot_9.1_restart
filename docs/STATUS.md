@@ -19,8 +19,10 @@ Loss4-режиме. Нельзя открывать эту комбинацию 
 Складские ссылки реализованы в codex/p04w-shell-depot-display runtime722fcf9:
 Python9+Web11 PASS/0skip,925raw exact; UI NOT_RUN, общий full после legacy.
 [Файлы, исходные цены, evidence, откат](research/P04W_SHELL_DEPOT_DISPLAY.md).
-Следующая карточка — legacy-входы,
-финальный полный прогон, новые утренние стенды и полный Python-набор.
+Legacy-входы исправлены в codex/build-legacy-entrypoints runtime64767ec:
+gateway3/0/0 иphysics build PASS, настоящий stock+extended IPC7 smoke PASS,
+925raw exact. [Команды и ограничения](research/BUILD_LEGACY_ENTRYPOINTS.md).
+Сейчас финальный общий full, затем новые утренние стенды и полный Python-набор.
 
 Native/UI/звук/управление/шесть живых клиентов/два ПК новых сборок — NOT_RUN.
 Утренние helpers31/34 прошли только input-preflight родителя7595f3f; фактические
