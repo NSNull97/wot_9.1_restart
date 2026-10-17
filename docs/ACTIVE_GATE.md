@@ -18,13 +18,13 @@ A[0,47,47]/B[0,49,45], revisions134/46, active reservations0.
 publication обращается к oldslot в новом пустом world;2157повторов/103MB snapshot.
 Все4own процесса штатно остановлены. Исправление в зависимой ветке
 `codex/stab01-core-return-reset`; [план](plans/STAB01_CORE_RETURN_RESET.md).
-Следующий шаг: regression/full новогоhead→новыйstand из actualCDB→ручной retest.
-Full01 на25ac184:1624PASS/1FAIL/5old ignored, все6новых STAB регрессий PASS;
-FAIL — measured actual4Hold watchdog180с, послеFinal4/all-finalSQL. Старый FAIL
-сохранён. Incoming03 исправляет review contained-input ACK/results retirement;
-Full02 compilePASS/early13PASS+1newHold fixtureFAIL; полный ownSTOP/ABORTED,
-артефакты сохранены. Fixture04 test-only peer departure hook; full03 PENDING.
-Test-only budgets210/360с, production deadlines прежние.
+Runtime19ba479: full03 1628PASS/0FAIL/5old ignored, buildPASS/source925 exact;
+early14PASS. Reset barrier +contained ingress/retirement исправлены; прежние
+full01FAIL/full02ABORTED сохранены. Test-only budgets210/360с, production
+deadlines прежние. Runtime checkpoint19ba479 опубликован/сверён, main прежний.
+Свежий Core retest120 из actualCDB134/46, loadedA[0,47,47]/B[0,49,45], grants0;
+оба auth/native launch/два настоящихангара каждого PASS. Следующий шаг —
+ручной retest4groundshots→быстрый manualEscобоих→остатки→следующийобщийбой.
 [Живая утренняя приёмка](research/MORNING_20261017_CORE_ACCEPTANCE.md).
 Новые остальные native/UI/звук/шесть клиентов/дваПК NOT_RUN. LAB99: genuine
 fixtures и2privateHTTP200 PASS; нового native launcher нет. Старый89 не ретегать.

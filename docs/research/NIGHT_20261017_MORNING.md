@@ -1,12 +1,13 @@
 # Утро 17 октября: Core → rooms → Hold → T26 LAB
 
-**Actual утреннее продолжение:** владелец дал GO, Core уже запущен и первый
-ручной сценарий прошёл. См. [живую приёмку](MORNING_20261017_CORE_ACCEPTANCE.md).
+**Actual утреннее продолжение:** первый Core запуск117 дал PASS очереди/управления
+и FAIL ручного возврата. Исправленный runtime19ba479/full03:1628PASS/5old ignored,
+build/source925PASS; новый Core retest120 и оба настоящихангара запущены.
+Следующий шаг — ручной возврат новойсборки. См. [живую приёмку](MORNING_20261017_CORE_ACCEPTANCE.md).
 Ниже сохранён исходный ночной план, а не команды для повторного выполнения:
 `morning-core31-01` и V7 rollback уже использованы. M61 check_clients фактически
 отказал на Windows compiled paths, successor116 — на размере pinned Node;
-Core запущен
-отдельным successor117 с guard114. Не повторять старый старт/rollback/prepare
+Старый Core117 с guard114 штатно остановлен. Не повторять старый старт/rollback/prepare
 и не применять Core-only117 к rooms/Hold. Для следующих режимов ещё нужны
 отдельные проверенные исправленные launchers; их native остаётся NOT_RUN.
 

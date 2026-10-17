@@ -115,6 +115,72 @@ retry2с не наблюдался. Leaf durations и вклад CPU/IO UNKNOWN.
 
 ## Остановка, откат и следующий шаг
 
+### Свежий исправленный запуск full03 / retest120
+
+Runtime/tested HEAD `19ba479917c0597495ebfa0a5f2b47a03521261b`, ветка
+`codex/stab01-core-return-reset`. Полный canonical gateway:1628PASS/0FAIL/
+5прежнихignored за1277.71с, buildPASS; source-before/source-after925raw exact.
+Early14STAB:14PASS/0FAIL/0ignored за5.65с, включая все9новых регрессий карточки.
+Серверный exe SHA `d159ff95041ac4eea7fc6aa0328625abb7cdf089b9aaac6d11829cbb293ddabc`.
+Backup push/runtime remoteSHA19ba479 сверён; mainffce8cb не менялся.
+Последующие docs-only descendants не меняют эти925source или testedHEAD.
+
+Изменённые runtime-файлы: shared/server.rs (barrier/retained world/ingress/
+retirement), shared/mod.rs (contained marker/reset); регрессии в detached_turret,
+profile13_flow и owner_hold_integration. Node helper и owner_hold_four test
+меняют только общий watchdog210/360с. Production deadlines прежние.
+
+Новый stand `C:/wot091-night-20261017-01/w/local/stands/morning-core-retest-20261017-01`,
+mode `core-loss4`, tag `core-retest118`, run `core-retest118-01`. Число118 —
+неиспользованная data identity; выполняется исправленный frozen package120,
+а не пакет118. Все21freeze members120 совпали. Исходный installedV8 обоих
+переиспользован после readonly проверки всех source/PYC/installed bytes.
+SQLite backup сохраняет все таблицы, depot/history, loaded и revisions134/46;
+новых grants0, sourceDB не изменена. LoadedA[0,47,47]/B[0,49,45], active0.
+
+Binding SHA `11adca7be7536664c8d18519bdf22e3531d6f5e29dc3a9b550ffc066f5e6bea5`;
+context120 SHA `754306ca7c3f624e04366d09777b7a462c00aa1fe160a8fcec0149130ec0fc3e`;
+operators SHA `8a1686be9c9f6e798fdd75b7595003b2736a19d6472ec9582b13335e714d5e5c`;
+native commands SHA `620fcb697ebfb3f7ddaace78f46f38820b10135e599b78831faa25f6410e558c`.
+
+Реально выполнены Python3.14 `-B -X utf8` команды из указанной папки evidence:
+`run_stab01_full03.py`, затем `prepare_retest120_03.py` (verify-freeze→data→
+publish→bind→seal), затем `run_retest120_action.py` с закрытыми действиями
+check/check_clients/services, preflight_a/launch_a/ready_a и
+preflight_b/launch_b/ready_b. Exact argv, UTC и exit0 сохранены в
+`retest120_03_*.command.json`; не повторять одноразовые prepare/launch argv.
+Public пакеты operators-core120.json/native-commands120.json находятся в
+`C:/Users/NSNull/AppData/Local/Temp/wot091-night-workspace-kcadgetk/morning-core-retest120`.
+
+GatewayPID118080, nativeA118548, nativeB114600 связаны с creation/image receipts.
+Оба privateauth и launchPASS; A дал два настоящих текущихангара до запускаB.
+У обоих currentPlayerAccount(nativeDB1/2), connected/cache/model=true,
+waiting=false, lobby_sub=Hangar/flash_bound=true. Это PASS запуска, а не боя.
+
+Evidence full/source:
+`C:/wot091-night-20261017-01/w/local/evidence/20261017-stab01-return-reset-full03`;
+build/test logs:
+`C:/wot091-night-20261017-01/w/local/build/server/gateway-stab01-return-reset-full03`;
+actual launch/readiness/old failures:
+`C:/wot091-night-20261017-01/w/local/evidence/20261017-morning-core01`.
+
+Manual retest новойсборки NOT_RUN: оба «В бой!»→отсчёт→каждым1КС+1ОФ в землю→
+первый Esc/Вангар и сразу второй Esc/Вангар (не ждать первогоангара, иначе
+Forfeit успеет вернуть второго автоматически). Ожидание loadedA[0,46,46]/
+B[0,48,44], оба настоящихангара, без выброса/чёрногоэкрана; наличие итогов
+зафиксировать отдельно. Затем новый общий бой/управление. БК detonation,
+эффекты/звук/UI и все остальные новые ручные случаи остаются NOT_RUN.
+FX незасвеченного стрелка пока UNFIXED; задержки имеют readonly124audit, fix
+не заявлен. Frozen observer121 подготовлен для actual run перед этим сценарием.
+
+Остановка этого нового run: native-commands120 commands.stop.b, затем.a;
+operators-core120 stop_gateway/stop_bridge — только с точными текущими receipts.
+Откат runtime — остановка нового run и сохранённый совместимый старый binding
+в новом контексте. Поздние mutableDB/израсходованные снаряды поверх старых не
+восстанавливать. Ни старые targets, ни evidence, ни исходные клиенты не удалены.
+
+### Сохранённая история неуспешных проверок
+
 Исправление reset/retained-terminal-world проверено full01 на25ac184:
 1624PASS/1FAIL/5old ignored,1292.59с; все6новых регрессий PASS. Единственный
 FAIL actual4Hold — Node watchdog180с, Final4/all-finalSQL уже завершились на
@@ -127,7 +193,7 @@ assertions не меняются. Дополнительный review нашёл
 retained identity/view/receipt и сохраняет фазуLeaving в атомарном receive;
 результатный retirement также использует старый outcome. Три новые регрессии
 проверяют positiveACK/confirm, poison/forged input, ordinary ingress и Hold5
-natural-old/new-live. Static reviewPASS, execution/full02 PENDING.
+natural-old/new-live. На этом checkpoint execution/full02 ещё не запускались.
 Full02 b1beb0f compilePASS; early14:13PASS/1FAIL нового Hold fixture — Capture
 не получил departed_after_detach peer12 до Forfeit. Строгий source/terminal
 validator отказал корректно. Полный02 остановлен exact own process handle после
@@ -135,15 +201,15 @@ validator отказал корректно. Полный02 остановлен
 925raw source совпал до остановки; full final counts отсутствуют, source-after
 NOT_RUN. `stab01_full02_abort_retained.json` сохраняет логи/бинарник/stop proof.
 Fixture04 добавляет только production departure hook и typed peer/own assertions;
-production/validators прежние. Early/full03 PENDING. Native retest ещё NOT_RUN.
+production/validators прежние. Последующий PASS full03 описан выше;
+ручной retest новойсборки ещё NOT_RUN.
 
-Точные stop argv сохранены в `live-handoff01.json`. Сначала штатный выход или
-receipt-bound stop клиентаB, затемA; после них exact own gateway и bridge stop.
-Не убивать процессы по одному имени/PID. Overlay rollback — только из исходного
-публичного packet с фактическими V8 ledgers; уже списанные снаряды и БД сохранять.
-Ничего не сбрасывать/не выдавать ради повторения сценария.
+Старый run из `live-handoff01.json` уже остановлен. Его одноразовые argv не
+применять к текущему run120; актуальные stop packets указаны выше. Не убивать
+процессы по одному имени/PID. Overlay rollback — только с фактическими V8
+ledgers; уже списанные снаряды и БД сохранять. Ничего не сбрасывать/не выдавать.
 
-Статус всей цепочки: **FAIL_MANUAL_RETURN, вне main**. Текущая зависимая ветка
-`codex/stab01-core-return-reset`; исходный tested200/runtime647 сохранён.
-Единственный следующий шаг: исправить reset/terminal publication, выполнить
-регрессию и полный suite новогоhead, затем свежий retest из actualCDB134/46.
+Статус всей цепочки: **PENDING_OWNER_RETEST, вне main**; прежний ручной FAIL
+сохранён. Текущая зависимая ветка `codex/stab01-core-return-reset`, runtime19ba479;
+исходный tested200/runtime647 сохранён. Единственный следующий шаг — ручной
+retest4groundshots→быстрый Escобоих→loadedA[0,46,46]/B[0,48,44]→общийбой.

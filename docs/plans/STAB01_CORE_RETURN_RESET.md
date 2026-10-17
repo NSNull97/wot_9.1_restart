@@ -59,6 +59,14 @@ Fixture04 добавляет только пропущенный production hook
 peerDisconnect/tick. Production/validators неизменны, static reviewPASS.
 Следующий fresh target full03 и early14; старые full01/02 не перезаписывать.
 
+Full03 на19ba479:1628PASS/0FAIL/5old ignored за1277.71с, buildPASS, source925
+before/after raw exact. Early14PASS/0FAIL/0ignored за5.65с. Actual4Hold тожеPASS
+вместе с query/ACK tail. Новый service exe d159ff95041ac4eea7fc6aa0328625abb7cdf089b9aaac6d11829cbb293ddabc.
+Prepare/publish/bind/seal120 PASS из actual134/46; installedV8 обоих readonly
+сверены с новымfull. Core services/privateauth/nativeA→readyA→nativeB→readyB
+PASS; оба PlayerAccount с загруженным Hangar. Ручной возврат новойсборки
+NOT_RUN до ответа владельца. Source/runtime ветка pushed, remote19ba479 сверён.
+
 Откат: остановить только новые ownпроцессы, вернуться к сохранённому runtime
 через его неизменные артефакты в новом совместимом контексте; mutableDB/расход
-не восстанавливать поверх позднего состояния. Следующий шаг — regression/full.
+не восстанавливать поверх позднего состояния. Следующий шаг — ручной retest.

@@ -29,14 +29,13 @@ queue cancel→общий бой→управление/красные марк�
 шаг2: расход4снарядов/SQLitePASS, ручной возвратFAIL — выброс обоих.
 ActualA[0,47,47]/B[0,49,45],rev134/46,active0. Core остановлен по ownreceipts:
 reset опережает asyncFinish/Leaving→mod303→2157аварийных snapshots/103MB.
-Новая зависимая ветка codex/stab01-core-return-reset. Full01 на25ac184:
-1624PASS/1FAIL/5old ignored; все6новых регрессий PASS. Единственный FAIL —
-actual4Hold Node180с watchdog послеFinal4/all-finalSQL; evidence сохранён.
-Test-only budgets210/360с; contained-input ACK и results retirement исправлены,
-Full02 compilePASS; early14:13PASS/1newHold fixtureFAIL (пропущен peer departure
-hook). Full02 досрочно ownSTOP/ABORTED, evidence/source925 сохранены. Fixture04
-восстанавливает только test hook, static reviewPASS; early/full03 PENDING.
-Production join/cancel/leave deadlines не изменены.
+Зависимая ветка codex/stab01-core-return-reset, runtime19ba479:
+full03 **1628PASS/0FAIL/5old ignored +buildPASS/source925 exact**, early14PASS.
+Reset barrier, contained-input ACK и results retirement исправлены. Старые
+full01FAIL/full02ABORTED сохранены; test-only budgets210/360с, production
+deadlines прежние. Runtime checkpoint19ba479 опубликован/сверён; main не менялся.
+Свежий Core retest120: backup actual134/46 безgrants, оба privateauth/native
+launch и два настоящихангара каждого PASS; ручной возврат новойсборки NOT_RUN.
 Невидимый shooter подавляет cross-peer FX VERIFIED; корректный anonymous FX
 ещё NOT_RUN. Join/cancel delays OBSERVED, причина доаварийной задержки UNKNOWN.
 
