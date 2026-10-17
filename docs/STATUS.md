@@ -1,5 +1,13 @@
 # Состояние проекта — утро17 октября2026
 
+**Текущая P05C ветка `codex/p05c-mixed-contact-handling` от2dcd5b9.**
+Mixed AИС7/BМС1: native загрузка/управление/возврат OBSERVED, контакт FAIL:
+подвешивание МС1 и остановка движущегося ИС7 на переходе flat→slope.
+Владелец разрешил полный переворот. BattleTank PI/3 VERIFIED; причина тяги
+UNKNOWN. Core120/оба own клиента штатно остановлены до source edits.
+SQL141/53, active0, БК/склад сохранены. Новая физика/native NOT_RUN;
+[план](plans/P05C_MIXED_CONTACT_HANDLING.md). Main прежний.
+
 Основной checkout C:/wot091-night-20261017-01/w; исходный D сохранён.
 Ночная ветка codex/build-legacy-entrypoints, runtime64767ec, tested checkpoint200dcd2;
 финальный descendant меняет только документацию. Mainffce8cb не менялся.
