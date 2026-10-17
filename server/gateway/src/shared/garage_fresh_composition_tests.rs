@@ -117,8 +117,9 @@ fn phase(v:&serde_json::Value,hold5:bool)->serde_json::Value{
         assert!(Instant::now()<end,"actual unknown HTTP completion bounded");std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(replacement.id,untouched.id);assert!(replacement.active&&untouched.active);
-    assert_eq!((replacement.key,replacement.token,replacement.handoff,replacement.login_peer,replacement.base_peer,replacement.login_attempt),
-        (untouched.key,untouched.token,untouched.handoff,untouched.login_peer,untouched.base_peer,untouched.login_attempt));
+    assert!((replacement.key,replacement.token,replacement.handoff,replacement.login_peer,replacement.base_peer,replacement.login_attempt)==
+        (untouched.key,untouched.token,untouched.handoff,untouched.login_peer,untouched.base_peer,untouched.login_attempt),
+        "opaque recipient channel identity must remain unchanged");
     assert_eq!(replacement.ammo_service,untouched.ammo_service);assert_eq!(replacement.outbox,untouched.outbox);assert!(replacement.outbox.is_empty());
     assert_eq!((replacement.rx,replacement.tx.len(),replacement.tx.cumulative,replacement.account_ready,replacement.sync_mask),
         (untouched.rx,untouched.tx.len(),untouched.tx.cumulative,untouched.account_ready,untouched.sync_mask));
