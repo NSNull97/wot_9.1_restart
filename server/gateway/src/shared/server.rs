@@ -749,10 +749,17 @@ fn stage_lifecycle_results_from(table:&mut Table,world:&World,sealed:Option<Arc<
 /// Natural results are delivered only after their atomic writer transaction.
 /// A native confirmation must precede Account reset; timeout disconnects rather
 /// than pretending the original result handler successfully consumed the stream.
-fn turret_avatar_pending(table:&Table,world:&World)->bool{
-    world.ammo_detonation_enabled()&&!world.ammo_detonations().is_empty()
-        &&table.sessions.iter().any(|s|s.arena_base&&s.shared.as_ref().is_some_and(|c|
-            matches!(c.phase,Phase::Driving|Phase::Leaving)&&c.view.as_ref().is_some_and(|view|view.id==world.id)))
+// Revoking World membership does not finish the asynchronous writer or the
+// native Avatar. Keep its current World until the real Account handoff, even
+// when no ammo rack detonated. Queue cancellation has no Avatar and may reset.
+fn current_avatar_pending(table:&Table,world:&World)->bool{
+    table.sessions.iter().any(|s|s.arena_base&&s.shared.as_ref().is_some_and(|c|
+        matches!(c.phase,Phase::Enable|Phase::Entities|Phase::Driving|Phase::Leaving)
+            &&c.view.as_ref().is_some_and(|view|view.id==world.id)))
+}
+fn parked_battle_reset_ready(table:&Table,world:&World)->bool{
+    !world.actors.is_empty()&&world.actors.iter().all(|a|a.session.is_none())
+        &&!current_avatar_pending(table,world)
 }
 fn deliver_lifecycle_result(s:&mut Session,world:&World,now:Instant)->io::Result<bool> {
     let Some(c)=s.shared.as_ref() else{return Ok(false);};
@@ -782,7 +789,48 @@ fn deliver_lifecycle_result(s:&mut Session,world:&World,now:Instant)->io::Result
     *s=next;Ok(true)
 }
 
+// A contained fault has explicitly revoked this exact old battle. Only its
+// immutable terminal receipt/result may drain; never publish the replacement
+// World to an old Avatar or replay commands into either World.
+fn contained_return_world(s:&Session,world:&World)->io::Result<Option<Arc<World>>>{
+    let Some(retained)=s.shared.as_ref().and_then(|c|c.contained_world.clone())else{return Ok(None);};
+    let c=s.shared.as_ref().ok_or_else(||model::bad())?;
+    let owner=s.identity.as_ref().ok_or_else(||model::bad())?;
+    let actor=retained.actors.get(c.slot).ok_or_else(||model::bad())?;
+    let p=c.profile13.as_ref().ok_or_else(||model::bad())?;
+    let pending=p.has_pending_return()&&p.reservation_battle()==Some(retained.id);
+    let committed=c.result_committed&&c.natural_result.as_ref().is_some_and(|r|r.arena_id==retained.id);
+    if !s.arena_base||c.phase!=Phase::Leaving||retained.id==world.id
+        ||c.view.as_ref().is_none_or(|view|view.id!=retained.id||view.mixed_ammo()!=retained.mixed_ammo())
+        ||actor.identity.account!=owner.account_id||actor.identity.database!=owner.database_id
+        ||actor.session.is_some()||!(pending||committed)
+        ||c.natural_result.as_ref().is_some_and(|r|r.arena_id!=retained.id){return Err(model::bad());}
+    Ok(Some(retained))
+}
+fn poll_contained_return(s:&mut Session,world:&World,now:Instant)->io::Result<bool>{
+    let Some(retained)=contained_return_world(s,world)?else{return Ok(false);};
+    if !s.active{return Err(model::bad());}
+    // The ordinary Finished delivery either starts warm Account return itself,
+    // or marks this immutable natural result committed. Original confirmation
+    // and bounded timeout still apply; containment never invents either one.
+    deliver_lifecycle_result(s,&retained,now)?;Ok(true)
+}
+fn contained_return_failure_reason(s:&Session)->Option<&'static str>{
+    s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()).then_some("contained_terminal_return_failed")
+}
+// Closing an old contained Avatar must not pass a new battle to terminal(),
+// including Hold5's outcome-sensitive retirement. Clone once on this boundary;
+// the current authoritative World is borrowed read-only and cannot be detached.
+fn retire_contained_session(dispatcher:&mut profile13_dispatch::Dispatcher,table:&mut Table,
+    world:&World,id:u32,now:Instant,reason:&str)->io::Result<bool>{
+    let Some(s)=table.sessions.iter().find(|s|s.id==id)else{return Ok(false);};
+    let Some(retained)=contained_return_world(s,world)?else{return Ok(false);};
+    let mut revoked=retained.as_ref().clone();
+    dispatcher.retire(table,&mut revoked,id,now,reason)?;Ok(true)
+}
+
 fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_start:bool,blocked:bool)->io::Result<()> {
+    if poll_contained_return(s,world,now)?{return Ok(());}
     let mut fresh=s.clone();fresh.shared_refresh_world(world)?;
     fresh.flush_shared_interest(&mut Vec::new())?;
     if world.ammo_detonation_enabled()&&fresh.shared.as_ref().is_some_and(|c|c.phase==Phase::Leaving){
@@ -844,6 +892,9 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
     println!("SHARED_BATTLE_FAILED {snapshot}");
     let mut retire=Vec::new();
     for s in &mut table.sessions {
+        if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
+            contained_return_world(s,world)?;continue;
+        }
         if s.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
             profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::BattleFailure)?;
             if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
@@ -872,6 +923,23 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
         }
     }
     for id in retire {table.retire(id,world,now,"failed_battle_return")?;}
+    // Snapshot once after every membership was revoked. A forced failure reset
+    // cannot wait for asynchronous Finish, unlike the ordinary reset barrier.
+    let retained=Arc::new(world.clone());
+    for s in &mut table.sessions {
+        if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {continue;}
+        if !s.arena_base||s.shared.as_ref().is_none_or(|c|c.profile13.is_none()){continue;}
+        let c=s.shared.as_ref().ok_or_else(||model::bad())?;
+        let owner=s.identity.as_ref().ok_or_else(||model::bad())?;
+        let actor=retained.actors.get(c.slot).ok_or_else(||model::bad())?;
+        let p=c.profile13.as_ref().ok_or_else(||model::bad())?;
+        let pending=p.has_pending_return()&&p.reservation_battle()==Some(retained.id);
+        let committed=c.result_committed&&c.natural_result.as_ref().is_some_and(|r|r.arena_id==retained.id);
+        if c.phase!=Phase::Leaving||c.view.as_ref().is_none_or(|view|view.id!=retained.id)
+            ||actor.identity.account!=owner.account_id||actor.identity.database!=owner.database_id
+            ||actor.session.is_some()||!(pending||committed){return Err(model::bad());}
+        s.shared.as_mut().ok_or_else(||model::bad())?.contained_world=Some(retained.clone());
+    }
     template.replace(world,runtime,now)?;
     Ok(snapshot)
 }
@@ -1370,6 +1438,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         // Remove known disconnects before applying any queued intent or tick.
         for(id,reason)in closing.drain(..){
             if !table.sessions.iter().any(|s|s.id==id){continue;}
+            if retire_contained_session(&mut battle_dispatch,&mut table,&world,id,now,reason)?{continue;}
             if room_host.is_none(){battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;continue;}
             match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,&battle_template,id,reason,now,logical_ms){
                 Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
@@ -1382,6 +1451,11 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     &mut integrated,&battle_template,&mut room_closing,now,logical_ms,&error)?;
             }
             for s in &mut table.sessions {
+                // An explicitly contained old Avatar has no authority in the
+                // replacement World, including the terminal-freeze pass.
+                if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
+                    contained_return_world(s,&world)?;continue;
+                }
                 if world.started.is_some() {
                     let busy=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
                         p.selection.is_some() && !p.has_reservation() && !p.in_flight);
@@ -1495,8 +1569,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             &&integrated.as_ref().is_none_or(|r|!r.blocked()){
             world.advance_lifecycle(now)?;battle_dispatch.observe_hold_world(&table,&world)?;
         }
-        if !world.actors.is_empty() && world.actors.iter().all(|a|a.session.is_none())
-            && !turret_avatar_pending(&table,&world) {
+        if parked_battle_reset_ready(&table,&world) {
             if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"normal_all_parked_reset");}
                 battle_dispatch.before_hold_reset(&world)?;
                 battle_template.replace(&mut world,&mut integrated,now)?;
@@ -1552,6 +1625,13 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             // heartbeats and made a client look disconnected during startup.
             if let Err(error) = poll_battle_session(s,&mut world,now,integrated_native_ready,
                 integrated.as_ref().is_some_and(IntegratedRuntime::blocked)) {
+                // A revoked old Avatar cannot fail the replacement battle.
+                // Retire only its authenticated session; its immutable writer
+                // task/durable result remains in the ordinary retired lane.
+                if let Some(reason)=contained_return_failure_reason(s){
+                    println!("SHARED_CONTAINED_RETURN_FAILED session={} reason={} durable_result_retained=true replacement_world_unchanged=true",s.id,error);
+                    closing.push((s.id,reason));continue;
+                }
                 if error.kind()==io::ErrorKind::TimedOut&&world.ammo_detonation_enabled()
                     &&s.shared.as_ref().is_some_and(|c|c.result_committed&&!c.result_stream_queued){
                     println!("P06T_TURRET_PRESENTATION_TIMEOUT session={} durable_result_retained=true",s.id);
@@ -1587,6 +1667,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         }
         for(id,reason)in closing{
             if !table.sessions.iter().any(|s|s.id==id){continue;}
+            if retire_contained_session(&mut battle_dispatch,&mut table,&world,id,now,reason)?{continue;}
             if room_host.is_none(){battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;continue;}
             match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,&battle_template,id,reason,now,logical_ms){
                 Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),

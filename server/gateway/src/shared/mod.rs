@@ -81,6 +81,8 @@ pub(super) struct Client {
     slot: usize,
     phase: Phase,
     view: Option<World>,
+    // Only fault containment may retain an immutable revoked battle for Finish/result drain.
+    contained_world: Option<std::sync::Arc<World>>,
     announcement: Option<(u32, bool)>,
     announcement_parts: Vec<(u32, bool)>,
     announced_areas: usize,
@@ -132,7 +134,7 @@ pub(super) struct Client {
 impl Client {
     pub(super) fn account_incarnation(&self)->u64{u64::from(self.return_generation)+1}
     fn new(slot: usize) -> Self {
-        Self { slot, phase: Phase::Account, view: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; model::MAX_ACTORS],
+        Self { slot, phase: Phase::Account, view: None, contained_world: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; model::MAX_ACTORS],
             creation_announcements: [None; model::MAX_ACTORS], spotting_enabled: false, interest: None,
             private_pending: VecDeque::new(), turrets:turret_publication::State::new(), last_pose_tick: None,
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
@@ -388,7 +390,7 @@ impl Session {
         next.outbox.push_back(body);
         next.arena_base = false;
         let c = next.shared.as_mut().ok_or_else(|| bad())?;
-        c.phase = Phase::Returning; c.return_mask = 0; c.join_requested = false; c.queue_announced = false;
+        c.phase = Phase::Returning; c.contained_world = None; c.return_mask = 0; c.join_requested = false; c.queue_announced = false;
         c.hangar_since = None; c.entered = Some(now); c.commands.clear();
         c.pending_entity_requests.clear(); c.pending_area_requests.clear(); c.pending_area_scene = false;
         c.private_pending.clear();

@@ -1,7 +1,7 @@
 # Состояние проекта — утро17 октября2026
 
 Основной checkout C:/wot091-night-20261017-01/w; исходный D сохранён.
-Ветка codex/build-legacy-entrypoints, runtime64767ec, tested checkpoint200dcd2;
+Ночная ветка codex/build-legacy-entrypoints, runtime64767ec, tested checkpoint200dcd2;
 финальный descendant меняет только документацию. Mainffce8cb не менялся.
 
 **Canonical gateway1619PASS/0FAIL/5old ignored, buildPASS, source925 raw exact;
@@ -21,11 +21,21 @@ Py3 module54PASS/3SKIP. Selection HTTP:Node15/Python18/derivedHold3PASS.
 Login/RunOpen4/firstBase PASS и2ownstops, это не дваПК. Privateauth95:
 Core/rooms/Hold6HTTP200/6ownstops; server-onlyLAB99 genuinefixtures/2HTTP200/
 2ownstops/Job0. НовыйnativeLABlauncher отсутствует; старый89authFAIL сохранён.
-[Утренние команды](research/NIGHT_20261017_MORNING.md) проверены по actual bindings.
+[Утренние команды](research/NIGHT_20261017_MORNING.md) сохранены как исходный план.
+Actual Core утро: V7 rollback/V8 prepare+install обоих, auth/дваангара PASS;
+guard11416PASS, launcher1179PASS и actual preflight A/B. Владелец подтвердил
+queue cancel→общий бой→управление/красные маркеры обоих, сервер — READY×2/30с.
+[Живая приёмка](research/MORNING_20261017_CORE_ACCEPTANCE.md): шаг1PASS,
+шаг2: расход4снарядов/SQLitePASS, ручной возвратFAIL — выброс обоих.
+ActualA[0,47,47]/B[0,49,45],rev134/46,active0. Core остановлен по ownreceipts:
+reset опережает asyncFinish/Leaving→mod303→2157аварийных snapshots/103MB.
+Новая зависимая ветка codex/stab01-core-return-reset; regression/full PENDING.
+Невидимый shooter подавляет cross-peer FX VERIFIED; корректный anonymous FX
+ещё NOT_RUN. Join/cancel delays OBSERVED, причина доаварийной задержки UNKNOWN.
 
-Новая native/UI/звук/управление/шесть живых клиентов/дваПК/публичный хостинг
+Остальные новые native/UI/звук/шесть живых клиентов/дваПК/публичный хостинг
 NOT_RUN. Training+Hold5 закрыт; crash доFinal —aborted_restart из frozen reserve,
 per-shotWAL нет. Причина микролага UNKNOWN; rustfmt закреплённой версии отсутствует.
 Оборудование/слоты/продажа/P04L не подключены к новому writer.
-После09:00 ночную реализацию не продолжать без нового задания; первый шаг владельца
-— Core manual по указанной инструкции. Непринятая цепочка остаётся вне main.
+После09:00 ночную реализацию не продолжать без нового задания; владелец уже
+запустил Core manual. Непринятая цепочка остаётся вне main.

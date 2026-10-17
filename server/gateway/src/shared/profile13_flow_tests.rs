@@ -385,3 +385,88 @@ fn profile13_flow_closed_empty_queue_waits_for_peer_receipt_then_renews_battle_i
     assert_eq!(encoded["battle_id"],format!("{}:{}",context.run_id,old+1));
     assert!(p.reservation.is_none() && !p.in_flight);
 }
+
+#[test]
+fn stab01_contained_fault_retains_exact_terminal_and_drains_without_replacement_publication(){
+    let now=Instant::now();let mut s=account(now);let receipt=reserve(&mut s,now);
+    let mut world=driving(&mut s,&receipt,now);let old=world.id;
+    // Match the pinned real SQLite finish vector, as in the warm-return test.
+    // World/Session fixture is explicitly authored, not an actual HTTP finish.
+    for step in 0..3{world.actors[0].fire.apply(&[crate::battle091::fire::Command::Shoot],now+Duration::from_secs(30*step)).unwrap();}
+    world.actors[0].health=23;s.shared.as_mut().unwrap().view=Some(world.clone());
+    Dispatcher::terminal(&mut s,&world,FinishReason::ManualLeave).unwrap();
+    let terminal=state(&mut s).unwrap().pending_return.clone().unwrap();
+    let mut table=Table{sessions:vec![s],..Table::default()};let mut runtime=None;
+    let template=super::super::BattleTemplate::new(&World::new(old,now).unwrap(),&runtime);
+    super::super::contain_battle_failure(&mut table,&mut world,&mut runtime,&template,now,"publication",
+        &io::Error::new(io::ErrorKind::InvalidData,"authored publication fault")).unwrap();
+    assert_eq!(world.id,old+1);assert!(world.actors.is_empty());
+    let retained=table.sessions[0].shared.as_ref().unwrap().contained_world.clone().unwrap();
+    assert_eq!(retained.id,old);assert!(retained.actors[0].session.is_none());
+    assert_eq!(retained.actors[0].health,23);
+    for second in [1,2,20]{
+        super::super::poll_battle_session(&mut table.sessions[0],&mut world,now+Duration::from_secs(second),true,false).unwrap();
+        assert_eq!(world.id,old+1);assert!(world.actors.is_empty());
+        assert_eq!(state(&mut table.sessions[0]).unwrap().pending_return.as_ref(),Some(&terminal));
+        assert!(Arc::ptr_eq(table.sessions[0].shared.as_ref().unwrap().contained_world.as_ref().unwrap(),&retained));
+    }
+    // A later independent battle may fail while this old Finish is pending.
+    // Its containment must not re-terminalize or overwrite the old snapshot.
+    super::super::contain_battle_failure(&mut table,&mut world,&mut runtime,&template,now,"world_step",
+        &io::Error::new(io::ErrorKind::InvalidData,"authored replacement fault")).unwrap();
+    assert_eq!(world.id,old+2);
+    assert!(Arc::ptr_eq(table.sessions[0].shared.as_ref().unwrap().contained_world.as_ref().unwrap(),&retained));
+    assert_eq!(state(&mut table.sessions[0]).unwrap().pending_return.as_ref(),Some(&terminal));
+    // Every closing reason uses the revoked World, not the new live actor.
+    let mut closing=Table{sessions:vec![table.sessions[0].clone()],..Table::default()};
+    let mut closer=Dispatcher::default();let mut replacement=World::new(old+2,now).unwrap();
+    replacement.attach(model::Identity{account:"new-battle-owner".into(),database:99,name:"new-battle-owner".into()},77).unwrap();
+    let before=replacement.failure_snapshot();let request=terminal.request();
+    assert!(super::super::retire_contained_session(&mut closer,&mut closing,&replacement,table.sessions[0].id,
+        now+Duration::from_secs(20),"retry_exhausted").unwrap());
+    assert_eq!(replacement.failure_snapshot(),before);assert!(replacement.owned(0,77).is_ok());
+    assert!(closing.sessions.is_empty());assert_eq!(closer.retired.len(),1);
+    let retired=closer.retired[0].shared.as_ref().unwrap().profile13.as_ref().unwrap().pending_return.as_ref().unwrap();
+    assert_eq!(retired,&terminal);assert_eq!(retired.request(),request);
+    assert!(!super::super::retire_contained_session(&mut closer,&mut closing,&replacement,table.sessions[0].id,
+        now+Duration::from_secs(21),"retry_exhausted").unwrap());assert_eq!(closer.retired.len(),1);
+    // A marker alone grants no bypass: wrong current battle, owner or receipt
+    // remains an error and cannot consume the original immutable terminal.
+    let mut bad=table.sessions[0].clone();
+    assert!(super::super::poll_battle_session(&mut bad,&mut retained.as_ref().clone(),now,true,false).is_err());
+    assert_eq!(state(&mut bad).unwrap().pending_return.as_ref(),Some(&terminal));
+    let(context,request,reply)=writer_result(4);assert_eq!(terminal.request(),request);
+    let s=&mut table.sessions[0];state(s).unwrap().in_flight=true;
+    let owner=s.identity.clone().unwrap();let fresh=service::Fresh{owner:owner.clone(),fixtures:s.hangar.clone().unwrap(),
+        binding:crate::ammo_service091::Metadata{revision:reply.revision,wire_revision:1}};
+    Dispatcher::deliver(s,service::Completion{session:s.id,old_owner:owner,context,request,reply,fresh:Some(fresh),refresh_error:None},
+        now+Duration::from_secs(61)).unwrap();
+    assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Returning);assert!(!s.arena_base);
+    assert!(s.shared.as_ref().unwrap().contained_world.is_none());assert!(state(s).unwrap().garage_idle());
+    super::super::poll_battle_session(s,&mut world,now+Duration::from_secs(62),true,false).unwrap();
+    assert_eq!(world.id,old+2);assert!(s.active);
+}
+
+#[test]
+fn stab01_contained_natural_confirmation_timeout_retires_only_old_session(){
+    let now=Instant::now();let(s,mut world)=lifecycle_fixture(now);let old=world.id;
+    world.advance_lifecycle(now+Duration::from_secs(1)).unwrap();world.advance_lifecycle(now+Duration::from_secs(2)).unwrap();
+    let mut table=Table{sessions:vec![s],..Table::default()};super::super::stage_lifecycle_results(&mut table,&world).unwrap();
+    Dispatcher::terminal(&mut table.sessions[0],&world,FinishReason::BattleFinished).unwrap();
+    let mut runtime=None;let template=super::super::BattleTemplate::new(&World::new(old,now).unwrap(),&runtime);
+    super::super::contain_battle_failure(&mut table,&mut world,&mut runtime,&template,now,"publication",
+        &io::Error::new(io::ErrorKind::InvalidData,"authored frozen-result fault")).unwrap();
+    // Authored successful Finished boundary, as in the existing confirmation
+    // test. It cannot stand in for a real SQL completion or a native consumer.
+    let s=&mut table.sessions[0];state(s).unwrap().reservation=None;state(s).unwrap().pending_return=None;
+    s.shared.as_mut().unwrap().result_committed=true;
+    super::super::poll_battle_session(s,&mut world,now+Duration::from_secs(3),true,false).unwrap();
+    assert!(s.battle_results.avatar_pending());
+    let error=super::super::poll_battle_session(s,&mut world,now+Duration::from_secs(33),true,false).unwrap_err();
+    assert_eq!(error.kind(),io::ErrorKind::TimedOut);
+    let reason=super::super::contained_return_failure_reason(s).expect("old return failure is session-local");
+    let sid=s.id;assert_eq!(world.id,old+1);
+    let mut dispatcher=Dispatcher::default();assert!(super::super::retire_contained_session(&mut dispatcher,&mut table,&world,sid,now+Duration::from_secs(33),reason).unwrap());
+    assert!(table.sessions.is_empty());assert_eq!(world.id,old+1);assert!(world.actors.is_empty());
+    assert!(dispatcher.retired.is_empty(),"committed result is durable, no invented unfinished writer");
+}

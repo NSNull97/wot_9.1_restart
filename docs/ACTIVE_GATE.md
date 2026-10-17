@@ -7,11 +7,23 @@ Canonical gateway1619PASS/0FAIL/5прежних ignored +buildPASS;7HTTP/SQL com
 Mainffce8cb сохранён. [Отчёт](research/NIGHT_20261017_REPORT.md),
 [точный утренний запуск](research/NIGHT_20261017_MORNING.md).
 
-Core/rooms/Hold подготовлены раздельными C03 SQLite. Новые client install,
-rollback/native/UI/управление/шесть клиентов/дваПК NOT_RUN. LAB99: genuine
+Core/rooms/Hold подготовлены раздельными C03 SQLite. Утром по команде владельца
+Core запущен с новым launcher117: rollback V7 обоих, prepare/install V8 обоих,
+actual private auth и два настоящих ангара PASS. Владелец подтвердил отмену
+очереди, общий бой, движение/наведение и красные маркеры обоих; сервер подтвердил
+READY обоих и отсчёт30с. Это PASS первого сценария, не приёмка всей цепочки.
+Шаг2FAIL: после4выстрелов manualEsc выбросил обоих. Остатки в SQLite верны:
+A[0,47,47]/B[0,49,45], revisions134/46, active reservations0.
+Причина VERIFIED: reset очищает world до завершения Leaving/asyncFinish,
+publication обращается к oldslot в новом пустом world;2157повторов/103MB snapshot.
+Все4own процесса штатно остановлены. Исправление в зависимой ветке
+`codex/stab01-core-return-reset`; [план](plans/STAB01_CORE_RETURN_RESET.md).
+Следующий шаг: regression/full новогоhead→новыйstand из actualCDB→ручной retest.
+[Живая утренняя приёмка](research/MORNING_20261017_CORE_ACCEPTANCE.md).
+Новые остальные native/UI/звук/шесть клиентов/дваПК NOT_RUN. LAB99: genuine
 fixtures и2privateHTTP200 PASS; нового native launcher нет. Старый89 не ретегать.
 Training+Hold5 и owned admission новых LAB машин закрыты.
 
-После09:00 не начинать новые ночные изменения. Ждать утренней команды владельца
-на фактический Core запуск/ручной сценарий. Не запускать WoT по одному времени
-или heartbeat. Непринятые карточки не merge в main. Первый следующий шаг — Core.
+После09:00 новые ночные изменения не начинать. Утренняя команда владельца на
+Core запуск и ручную проверку получена; продолжать этот сценарий по шагам.
+Не запускать WoT по одному времени или heartbeat. Непринятые карточки вне main.
