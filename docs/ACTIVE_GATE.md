@@ -1,11 +1,12 @@
-# Current gate: BUILD legacy entrypoints
+# Current gate: P10B Hold5 selection reader precursor
 
-Branch codex/build-legacy-entrypoints frombf499c2; Warehouse722fcf9
-Python9/Web11PASS0skip/925raw; parent471ac47 full1619/5oldignored/sevencompositions.
-Mainffce8cb unchanged. C:/wot091-night-20261017-01/w; D preserved.
+Branch codex/p10b-hold-selection-reader from200dcd221fb48c019b0939046ac38c18a85061dd.
+New worktree C:/wot091-selection56/w; primary C:/wot091-night-20261017-01/w
+HEAD/index/925raw remain unchanged. Mainffce8cb unchanged; old925 full is not929.
 
-Implement two frozen legacy entrypoints, actual targeted3 Rust+physics builds
-and genuine IPC smoke54/02. [Plan](plans/BUILD_LEGACY_ENTRYPOINTS.md).
-Training+Hold stays closed; native/UI/gameplay remainNOT_RUN. Night continues
-to04UTC/09local, no manual asks. Next finalfull, new morning
-contexts31/NET34 and Python43. Own services/clients STOP.
+One new readonly Python Selection5 reader, strict9/11/15 DTO and genuine
+AnchorA/OwnerB/C/D SQLite tests. [Plan](plans/P10B_HOLD_SELECTION_READER.md).
+Frozen candidate actual10PASS/0FAIL/0skip on200/925; rerun ordinary targeted tests
+after the new source commit, record new929/sourceHEAD before/after separately.
+No old Loss reader/Config/native flags, reserve, publication or migration changes.
+Training+Hold stays closed; CLI/Web/Rust/native integration is not this card.

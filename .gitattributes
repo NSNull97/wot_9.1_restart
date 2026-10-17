@@ -208,3 +208,9 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 # Existing legacy entrypoints were frozen with CRLF bytes.
 /tools/wg_probe/src/main.rs text eol=crlf
 /tools/map_drive_worker/MapDriveWorker.csproj text eol=crlf
+
+# Additive readonly Hold5 selected-loadout proof; exact frozen LF bytes.
+/tools/p10b_selection_hold.py text eol=lf
+/tests/p10b_selection_hold_support.py text eol=lf
+/tests/test_p10b_selection_hold.py text eol=lf
+/tests/fixtures/p10b-hold-selection-vectors.json text eol=lf

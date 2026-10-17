@@ -1,5 +1,15 @@
 # Состояние проекта — 17 октября 2026, ночная работа до 09:00
 
+Отдельная карточка reader56: `codex/p10b-hold-selection-reader`, worktree
+`C:/wot091-selection56/w`, base200dcd2. Один additive readonly Selection5 reader
+и три test/vector файла; текущие Loss2/4 и training+Hold5 запрет сохранены.
+Кандидат: actual10 SQLite PASS/0FAIL/0skip, AnchorA/OwnerB/C/D, query_only,
+raw import и WAL race; Source925 до/после exact. Обычный postcommit rerun и
+отдельный Source929 receipt записываются в `selection56-worktree60` у оператора.
+Это Python/SQLite precursor, без нового CLI/Web/Rust/native Ready/адмиссии.
+Полный gateway929 NOT_RUN; прежние полные результаты ниже относятся к родителям.
+[План, команды, ограничения, откат](plans/P10B_HOLD_SELECTION_READER.md).
+
 Рабочая папка: `C:/wot091-night-20261017-01/w`. Исходный D сохранён: там
 почти нет места. Main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe` не менялся;
 непринятые ночные карточки остаются в отдельных зависимых ветках.
