@@ -1,3 +1,11 @@
+# P02 isolated source-location pin — 17 October2026
+
+Current branch codex/p02-project-submit-pin, base200dcd2/raw925. Actual CPython2.7.3
+compile-only targeted RED1failure proves own project_submit line115 vs audit113;
+all other bytecode metadata exact. One-field fix and focused GREEN pending.
+Primary morning200/raw925, original CoreV7 and D data preserved. Native/UI NOT_RUN.
+[Plan](plans/P02_PROJECT_SUBMIT_PIN.md).
+
 # Состояние проекта — 17 октября 2026, ночная работа до 09:00
 
 Рабочая папка: `C:/wot091-night-20261017-01/w`. Исходный D сохранён: там
