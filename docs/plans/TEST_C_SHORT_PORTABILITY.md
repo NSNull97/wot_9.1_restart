@@ -17,3 +17,19 @@ Rollback: retain or revert this isolated test-only branch. No source checkout/re
 Fourth-file authority: A/python43-p06t-testrepair73/freeze01.json SHA e7f6c23ccc9c51c0313cf1be5cc6f9eeeaf685ec5b34c21d76ebb769c57c2832; candidate test_p06t_battle_control.py7faf2abf673d4a0eb97603bd53bece16b4c09c0601de1dc7a5cdb7cc9c8f88ee. Independent whole-module AST parity confirmed after removing exactly one network and one training_rooms keyword. Source/AST review only, project tests NOT_RUN while suite06 is active.
 
 Fifth-file scope approved by Root after the actual whole06 partial failure: tests/test_p10b_selection_cli.py currently derives its temporary cwd from inherited TEMP, while the whole-suite TEMP intentionally lives below ROOT/local. The unchanged assertFalse(cwd.is_relative_to(ROOT)) therefore fails before the production worker is spawned. The candidate adds only dir=ROOT.parent to the existing TemporaryDirectory call. This creates a genuine fresh sibling cwd outside the tested checkout; all child argv, clean environment, bounded readers, negative response and no-source/DB/write assertions stay byte-identical. If the parent directory is unwritable, the fixture fails honestly before child creation; there is no fallback, skip or new environment selector. On this card ROOT.parent is the freshly allocated C:/wot091-testrepair68 directory. This is test-only bootstrap evidence, not a successful selection/native/HTTP claim. Candidate preparation and AST/source review may happen while06 runs; promotion and ordinary project tests still require its actual final SHA/Job0.
+
+## Actual scoped gate
+
+The completed whole06 receipt is A/python-suite43-successor06/runs/suite06/result.json SHA18e0c9316494bad7329de96fa17f2ec89585318b6b95029595313fba2cdd3d3c: FAIL retained, worker exited and OwnJob0, source200/raw925 unchanged. It is a prerequisite receipt, not this card's PASS.
+
+Frozen build-temp65 after_suite_check02 ran against that exact receipt:29 component tests PASS, exit0; A/build-temp-tests65/checks01/result.json SHA4d60785b74afec10bb5fedd503d37e0f01350c8f549b38d30db5c8cb5bc550f5. This uses genuine tiny files/hash/receipt/reparse checks with authored volume identity only for one exact output, plus real same-drive refusal. No Cargo or actual cross-drive build ran.
+
+Code commit dba0865df380ced679e0d630c51d58a6ed33b41c contains exactly the five approved test files, explicit per-file raw EOL attributes and this plan's EOL clarification. Independent fifth-file source review found no concrete blocker. Ordinary command, cwd C:/wot091-testrepair68/w:
+
+```powershell
+& 'C:/Users/NSNull/AppData/Local/Python/pythoncore-3.14-64/python.exe' -B -X utf8 -m unittest -v tests.test_build_temp_reference tests.test_build_temp_target tests.test_p04d_crew_control tests.test_p06t_battle_control tests.test_p10b_selection_cli
+```
+
+Actual result:41 PASS,0 FAIL,0 SKIP, exit0,1.7749 seconds. Evidence A/testrepair68-gate01/{source-before.json,promotion.json,targeted-request.json,targeted.stdout.log,targeted.stderr.log,targeted-result.json}; result SHAe0e2b0c15e621ae8f9e42ee02e91ee64338d91892346a0940c2b86e523efe072. All925 source hashes and committed HEAD were exact before/after, the worktree was clean, and only these five raw files differ from base200 (all other920 match). Primary200/raw925/index/privatecfg stayed exact. Existing full1619 and prepared61 bindings are preserved as primary evidence, not relabelled as a new repair full.
+
+Acceptance: scoped targeted gate PASS; Root review pending before push/merge. Whole06 FAIL and existing native/HTTP/gameplay debts remain separate. Rollback is a revert or retention of this isolated branch; there is no primary checkout/reset/DB/client restoration. The sole next step is Root's review of this commit, frozen candidate provenance and ordinary gate evidence.

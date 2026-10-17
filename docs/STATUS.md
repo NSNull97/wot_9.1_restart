@@ -1,6 +1,6 @@
 # Isolated test repair checkpoint — 17 October2026
 
-Current worktree C:/wot091-testrepair68/w, branch codex/test-c-short-portability from200. Scope is five Python test-only fixture repairs, including a genuine outside-project temporary cwd for the selection CLI refusal test; plan committed before code. Candidate checks and promotion NOT_RUN pending real suite06 exit/Job0. Primary200/raw925/full1619 and prepared61 contexts are unchanged and are not retagged as this new branch proof. Production/runtime source, clients, services and data are outside this card. [Plan](plans/TEST_C_SHORT_PORTABILITY.md).
+Current worktree C:/wot091-testrepair68/w, branch codex/test-c-short-portability from200. Five exact Python test-only repairs are committed at dba0865; plan preceded code. After real suite06 exit/Job0, frozen65 component29 and ordinary targeted five-module41 checks passed with0 failures/skips. All925 repair source hashes match before/after; primary200/raw925/index/privatecfg and prepared61 bindings are unchanged. Whole Python06 remains FAIL; no full/Cargo/native proof is claimed for this repair branch. Ready for Root review, not pushed. [Plan and evidence](plans/TEST_C_SHORT_PORTABILITY.md).
 
 The inherited primary checkpoint below is historical context, not current test-repair acceptance.
 
