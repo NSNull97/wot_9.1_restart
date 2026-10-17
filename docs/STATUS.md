@@ -18,7 +18,7 @@ Production-linked proof50061cfa: driverlogic520assert/530Apply (synthetic
 metrics,0worldupdates), отдельно core72actualworlds, strict ramp24/8/0/0,
 powered128PASS. Legacy03build25exactPASS; P05B06 обоих9×2 quality/replayPASS,
 3780publicframes/metrics/streams byteexact04==05==06. Source35before/afterexact.
-**Full03 PREPARED_NOT_RUN; native130 NOT_RUN. Mainffce8cb прежний.**
+**Full03 PASS (1632/0/5, build/source-after exact); contact130 source-bound launch/hangars PASS, native gameplay NOT_RUN. Mainffce8cb прежний.**
 Далее finalsourcecommit/full03 → свежий boundstand130 без grants из actual
 БД → manual mixed приёмка. [Отчёт](research/P05C_MIXED_CONTACT_HANDLING.md).
 Старые physics04 proofs/replayFAIL сохранены: math47870, fullroll4/4,
@@ -77,3 +77,11 @@ per-shotWAL нет. Причина микролага UNKNOWN; rustfmt закр�
 Оборудование/слоты/продажа/P04L не подключены к новому writer.
 После09:00 ночную реализацию не продолжать без нового задания; владелец уже
 запустил Core manual. Непринятая цепочка остаётся вне main.
+
+
+**Current checkpoint:** full03 PASS 1632/0/5 and source-after exact; contact130 sealed/bound from actual SQL144/56 with grants0, services and both native hangar launches PASS. Client gameplay and native P05C acceptance remain NOT_RUN pending owner manual scenario. Evidence receipt: `local/evidence/20261017-morning-core01/contact130-preflight-completion.json` SHA256 `84145bed0503b5637349b784423040ea27f9fbad9522cb893bd9ff8c04317d29`.
+
+
+## Contact130 native observation
+
+Owner observed a normal full rollover: inverted MS-1 retained mutual visibility with IS-7. This is a native PASS for the rollover LOS regression only. The same live battle later ended with `SHARED_BATTLE_FAILED` reason `shared scene worker deadline` at the server worker deadline; the manual run is therefore interrupted and P05C overall remains open. Failure receipt: `local/evidence/20261017-morning-core01/contact130-worker-deadline-failure.json` SHA256 `59324a31e4dc3e0173cf193bec6e269413d38b4a9f8fd8e725feed6255fde582`. Native powered-turn/hill and full battle-return acceptance remain NOT_RUN/INCOMPLETE.

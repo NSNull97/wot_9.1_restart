@@ -5,7 +5,7 @@
 physics05: full02 завершён1632PASS/0FAIL/5oldignored, buildPASS/source941
 exact. Этот PASS не относится к новому physics06. Текущий physics06:
 canonical build25raw exactPASS, intent reversal сохраняет порог−0.5м/с,
-sharedopt-in включён/legacy defaultfalse; full03 **PREPARED_NOT_RUN**.
+sharedopt-in включён/legacy defaultfalse; full03 **PASS: 1632/0/5, build/source-after exact**.
 
 Contact129 mixed8303176210728121358: владелец подтвердил перевороты,
 столкновения, захват с правильными итогами у обоих и загрузку обоих ангаров.
@@ -30,7 +30,7 @@ proof50061cfa: synthetic driverlogic520assert/530Apply отдельно от72ac
 Jolt worlds; strict ramp24runs/8exercised/0notEx/0unmatched; powered128PASS,
 P05B обоих9×2 quality/replayPASS, publicstreams04==05==06 byteexact.
 35rawfiles before/after exact; legacy03build25exactPASS (simulationNOT_RUN).
-Native130/LOS/новое управление **NOT_RUN**. Mainffce8cb прежний.
+Native130 source-bound launch и два ангара PASS; LOS/новое управление **NOT_RUN**. Mainffce8cb прежний.
 Следующий шаг: finalsourcecommit → full03 → source-bound stand130 из actual
 SQL144/56 либо более поздней БД без grants → единый ручной mixed сценарий.
 [Доказательства/границы](research/P05C_MIXED_CONTACT_HANDLING.md).
@@ -77,3 +77,15 @@ Training+Hold5 и owned admission новых LAB машин закрыты.
 После09:00 новые ночные изменения не начинать. Утренняя команда владельца на
 Core запуск и ручную проверку получена; продолжать этот сценарий по шагам.
 Не запускать WoT по одному времени или heartbeat. Непринятые карточки вне main.
+
+
+## Current full03/contact130 checkpoint
+
+Full03 actual canonical gate PASS: 1632 tests passed, 5 ignored, build PASS; source-after SHA256 `a41a462e0f58669303389c27026940c56d048aa99e690077808f7ce17316b5dc`; executable SHA256 `dffeeb03acdfb3cec591410f5885dc1cfca69118a1cc7cc75e0d295c69d09d45`. Final physics06 artifact `cff138e72f0172ea98751884027f880e2ad5592665087b1f8cc6b77710b6aa4d`.
+
+Fresh contact130 was source-bound to HEAD `b3cffd559aea2c79be7eca4640134607718e5c0f`; capture-origin, data preparation, publish, bind, checks, client checks and sealed operator packet all PASS. Actual two own clients and gateway/bridge are live; two consecutive native hangar samples per client PASS. Native battle/LOS/physics/manual control remains NOT_RUN until owner interaction.
+
+
+## Contact130 native observation
+
+Owner observed a normal full rollover: inverted MS-1 retained mutual visibility with IS-7. This is a native PASS for the rollover LOS regression only. The same live battle later ended with `SHARED_BATTLE_FAILED` reason `shared scene worker deadline` at the server worker deadline; the manual run is therefore interrupted and P05C overall remains open. Failure receipt: `local/evidence/20261017-morning-core01/contact130-worker-deadline-failure.json` SHA256 `59324a31e4dc3e0173cf193bec6e269413d38b4a9f8fd8e725feed6255fde582`. Native powered-turn/hill and full battle-return acceptance remain NOT_RUN/INCOMPLETE.

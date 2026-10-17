@@ -114,7 +114,7 @@ BМС1[0,48,44]/ИС7[0,0,0], active reservations0. Склад прежний.
 
 P05C остаётся PARTIAL/FAIL: contact129 подтвердил перевороты/столкновения и
 итоги/возврат, но три замечания требуют native130 (NOT_RUN). Current06
-автоматические gates PASS; full03 PREPARED_NOT_RUN. Combined evidence:
+автоматические gates PASS; full03 PASS (1632/0/5, build/source-after exact). Combined evidence:
 `local/evidence/20261017-p05c-production06-checks01/result.json`, SHA256
 `50061cfaf61e63b713b5220740a7898f18d13d051dad17976cbb6e750eecd974`.
 Автоматические проверки не заменяют native приёмку. Откат —
@@ -126,3 +126,8 @@ P05C остаётся PARTIAL/FAIL: contact129 подтвердил перево
 исходные points/rays/viewrange и SixthSensealways для командира исследуются
 в другом чате, собственной ветке/worktree. Его pending runtime не является
 частью P05C acceptance, здесь не запускался и не объявлен готовым.
+
+
+## Contact130 native observation
+
+Owner observed a normal full rollover: inverted MS-1 retained mutual visibility with IS-7. This is a native PASS for the rollover LOS regression only. The same live battle later ended with `SHARED_BATTLE_FAILED` reason `shared scene worker deadline` at the server worker deadline; the manual run is therefore interrupted and P05C overall remains open. Failure receipt: `local/evidence/20261017-morning-core01/contact130-worker-deadline-failure.json` SHA256 `59324a31e4dc3e0173cf193bec6e269413d38b4a9f8fd8e725feed6255fde582`. Native powered-turn/hill and full battle-return acceptance remain NOT_RUN/INCOMPLETE.

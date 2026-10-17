@@ -252,7 +252,7 @@ Runtime `bc5c1c626b453406c8149f7fb6d1937953c1ab20`, source941. Изменены
 вращает stockpivot, затем добавляет0.5м по мировому+Y; обычный засвет и
 detached-turret observer используют его. Дальность/team/occluders/AoI прежние.
 Четыре новые actualWorld регрессии выполнены в завершённом full02;
-full03 для следующего physics06 ещё PREPARED_NOT_RUN.
+full03 для physics06 завершён PASS:1632/0/5, source-after exact; contact130 далее source-bound.
 Source-derived plane diagnostic: oldroofpoint MS1−.364096/IS7−.519438м,
 new+.635904/+.480562м; quaternion/8OBBcorners grid211806случаев PASS на
 авторских flat/6/12/30/60°planes. Это не World/Jolt/native PASS.
@@ -414,11 +414,11 @@ Production source/runtime/helpers прежних стендов/БД не рет
 
 ## Следующий checkpoint и ручная приёмка
 
-Full03 **PREPARED_NOT_RUN** до фактического Root запуска на finalsourcecommit;
+Full03 **PASS: 1632/0/5, build/source-after exact** до фактического Root запуска на finalsourcecommit;
 исторический bc5c1c6/full02 не заменяет этот gate. После нового fullPASS и
 source-after: свежий source-bound stand130 из actual SQL144/56 либо более
 поздней БД, без grants/возврата потраченного БК; старый129 не менять.
-Native130/LOS/fullroll-control/новый poweredturn/тот же originalhill NOT_RUN.
+Native130 source-bound launch и два ангара PASS; fullroll-control/новый poweredturn/тот же originalhill NOT_RUN.
 
 Единый manual сценарий после bound/seal130: общий AИС7/BМС1, READY/движение/
 наведение; разгон с поворотом, бок/крыша и взаимный засвет, original подъём
@@ -432,3 +432,8 @@ Native130/LOS/fullroll-control/новый poweredturn/тот же originalhill N
 исходные points/rays/viewrange и SixthSensealways для командира исследуются
 в другом чате, собственной ветке/worktree. Его pending runtime не является
 частью P05C acceptance, здесь не запускался и не объявлен готовым.
+
+
+## Contact130 native observation
+
+Owner observed a normal full rollover: inverted MS-1 retained mutual visibility with IS-7. This is a native PASS for the rollover LOS regression only. The same live battle later ended with `SHARED_BATTLE_FAILED` reason `shared scene worker deadline` at the server worker deadline; the manual run is therefore interrupted and P05C overall remains open. Failure receipt: `local/evidence/20261017-morning-core01/contact130-worker-deadline-failure.json` SHA256 `59324a31e4dc3e0173cf193bec6e269413d38b4a9f8fd8e725feed6255fde582`. Native powered-turn/hill and full battle-return acceptance remain NOT_RUN/INCOMPLETE.
