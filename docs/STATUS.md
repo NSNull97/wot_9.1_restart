@@ -125,3 +125,7 @@ receipt `local/evidence/20261017-stab-worker-cadence/contact132/native-cadence-e
 SHA256 `e29e8d224b9683f1e3e657d57b793f3590ebb830be0efa3b47c5d659091e4f98`.
 Этот тест напрямую гоняет Worker, поэтому `scheduler_lag` BatchRuntime и
 native/UI остаются `NOT_RUN` до successor прогона.
+
+## P07B original spotting successor (current card)
+
+Ветка `codex/p07b-original-spotting-successor` собрана от текущего P05C/STAB head и содержит P07B implementation `a7506983f8efad3165e9a7f8d971ce380501a556`: шесть source visibility points, два observer points, authoritative geometric LOS, no-camo ruleset и candidate Sixth Sense publication. Старый P07B AoI остаётся базовым слоем. После cherry-pick focused tests и canonical full gate должны быть перепроверены на этом descendant; native/UI/audio остаются NOT_RUN до ручного прогона.

@@ -27,6 +27,8 @@
 - [P05C_NATIVE_TRANSPORT.md](P05C_NATIVE_TRANSPORT.md) — bounded6actor roster/ACK/READY, отдельные ID/alias namespaces, synthetic Session gates
 - [P07B_NATIVE_INTEREST.md](P07B_NATIVE_INTEREST.md) — original AoI enter/leave и source stock vision ranges
 - [P07B_SERVER_VISIBILITY.md](P07B_SERVER_VISIBILITY.md) — recipient LOS/epochs/packet filtering, full975PASS, native NOT_RUN
+- [P07B_ORIGINAL_SOURCES.md](P07B_ORIGINAL_SOURCES.md) — bounded #717 source ledger for six static points, dynamic gunner point, mounted ranges and Sixth Sense
+- [P07B_PUBLICATION_BOUNDARY.md](P07B_PUBLICATION_BOUNDARY.md) — recipient publication gate for hidden-shooter terrain FX and current integration boundary
 - [P04M_FIVE_PROFILES.md](P04M_FIVE_PROFILES.md) — пять source-bound боевых профилей, actual Jolt/World/ACK, версия SQLite/crew/ammo, native NOT_RUN
 - [P06T_RUNTIME_CANDIDATE.md](P06T_RUNTIME_CANDIDATE.md) — mixed-shell/единый HP ledger, source geometry и явные LAB module/fire policies; автоматические gates отдельно от native NOT_RUN
 - [P06T_SEVEN_LOSS_INTEGRATION.md](P06T_SEVEN_LOSS_INTEGRATION.md) — seven LAB +loss4/late, full1295/5/build/Python102, nativeNOT_RUN

@@ -328,6 +328,11 @@ impl Bundle {
     }
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle }
     pub fn geometry_revision(&self) -> &'static str { source_revision(self.vehicle) }
+    /// Source-mounted positions and descriptor bounds used by P07B spotting.
+    pub(crate) fn spotting_parts(&self) -> super::spotting::Parts {
+        super::spotting::Parts { hull: self.hull, turret: self.turret, gun: self.gun,
+            hull_bounds: self.bounds[0], turret_top: self.bounds[1][1][1] }
+    }
     pub fn bundle_sha256(&self) -> &'static str { bundle_sha256(self.vehicle) }
     fn component_bounds(&self) -> [[[f32; 3]; 2]; 3] {self.bounds}
     pub fn materials(&self) -> &Catalog { &self.materials }

@@ -1,0 +1,10 @@
+{
+  "schema": "p07b-717-source-points-no-camo.v1",
+  "max_detection_m": 445.0,
+  "proximity_m": 50.0,
+  "scan_period_ms": 100,
+  "retention_ms": 5000,
+  "sixth_sense_delay_ms": 3000,
+  "share_with_team": true,
+  "rollover_world_up_fallback": true
+}

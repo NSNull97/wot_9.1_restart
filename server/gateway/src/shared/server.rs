@@ -14,6 +14,8 @@ mod batch_scene;
 use batch_scene::BatchRuntime;
 #[path="p06t_publication.rs"]
 mod p06t_publication;
+#[path="sixth_sense_wire.rs"]
+mod sixth_sense_wire;
 #[cfg(test)]
 #[path="detached_turret_server_tests.rs"]
 mod detached_turret_server_tests;
@@ -708,6 +710,7 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
             if !r.started {r.start(world,now)?;}
             r.step(world,now)?;
         } else {world.advance(now)?;}
+        if runtime.as_ref().is_none_or(|r|!r.blocked()) { world.refresh_original_spotting(now)?; }
         // A candidate scene owns an atomic World clone. Do not advance the
         // lifecycle outside it and then overwrite a frozen outcome on ACK.
         if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.advance_lifecycle(now)? {
@@ -1301,6 +1304,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             crate::p06t_lab_proxy::POLICY,model::p06t::MODULE_ADMISSION_POLICY,crate::p06t_shells091::SOURCE_REVISION);
     }
     if profile13_mode && config.visibility_v1 {
+        battle_template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
         battle_template.world.enable_result_spots()?;
         battle_template.select(&mut world,&mut integrated,started)?;
         println!("P08C_FIRST_SPOT_BOUND policy={}", model::result_spots::POLICY);
@@ -1527,7 +1531,10 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     if let Some(kind)=kind.filter(|k|!world.mixed_profiles()&&*k!=world.vehicle_kind()) {
                         let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
                         battle_template=BattleTemplate::from_resources(r,world.id,now)?;
-                        if config.visibility_v1 {battle_template.world.enable_result_spots()?;}
+                        if config.visibility_v1 {
+                            battle_template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
+                            battle_template.world.enable_result_spots()?;
+                        }
                         battle_template.select(&mut world,&mut integrated,now)?;
                         contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
                     }
@@ -1815,6 +1822,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     if next_world.actors[slot].fire.finish_reload_if_due(now)&&!next_world.mixed_ammo() { next.outbox.push_back(wire::reload_for(next_world.actors[slot].vehicle_kind(),slot,0.)?); }
     next.shared_refresh_world(&next_world)?;
     next.flush_shared_interest(&mut Vec::new())?;
+    sixth_sense_wire::publish(&mut next,&next_world)?;
     let c = next.shared.as_mut().ok_or_else(|| model::bad())?;
     let mut shot_publications = Vec::new();
     let mut tracer_starts = Vec::new();

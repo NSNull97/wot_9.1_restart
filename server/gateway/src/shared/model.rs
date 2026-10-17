@@ -170,6 +170,7 @@ pub struct World {
     pub lifecycle_created_unix: Option<u32>,
     result_spots:Option<Vec<result_spots::SpotRecord>>,
     result_spot_tick:Option<u32>,
+    original_spotting: Option<super::spotting::State>,
     mixed_ammo:bool,
     ammo_detonation:Option<super::ammo_detonation::Ledger>,
     turret_flights:Vec<super::ammo_detonation::Flight>,
@@ -408,7 +409,7 @@ impl World {
             mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,
             extended_lab:false,owner_hold:false,lab_loadouts:[None;MAX_ACTORS],
             damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
-            result_spots:None,result_spot_tick:None,
+            result_spots:None,result_spot_tick:None,original_spotting:None,
             geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None,
             contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS] })
@@ -419,6 +420,65 @@ impl World {
             || self.geometries[index].is_some() || !self.mixed_profiles && self.geometry.is_some() { return Err(bad()); }
         if self.mixed_profiles {self.geometries[index]=Some(bundle.clone());}
         if self.geometry.is_none() || kind==self.vehicle_kind {self.geometry=Some(bundle);}Ok(())
+    }
+    pub fn enable_original_spotting(&mut self, rules: super::spotting::Rules) -> io::Result<()> {
+        if self.original_spotting.is_some() || self.started.is_some() || !self.actors.is_empty()
+            || self.terrain.is_none() { return Err(bad()); }
+        self.original_spotting=Some(super::spotting::State::new(rules)?); Ok(())
+    }
+    pub fn original_spotting_enabled(&self) -> bool { self.original_spotting.is_some() }
+    fn spotting_excluded(&self) -> io::Result<Vec<u32>> {
+        let mut excluded=if let Some(state)=&self.fragiles {state.projectile_excluded()}
+            else {self.destructible.as_ref().and_then(|state|state.excluded_instance()).into_iter().collect()};
+        excluded.sort_unstable();
+        if excluded.windows(2).any(|pair|pair[0]==pair[1]) { return Err(bad()); }
+        Ok(excluded)
+    }
+    fn spotting_points(&self, slot: usize) -> io::Result<super::spotting::Points> {
+        let actor=self.actors.get(slot).ok_or_else(bad)?;
+        self.geometry_for(actor.vehicle_kind())?.spotting_parts().world(actor.position,actor.direction,actor.aim.yaw)
+    }
+    fn spotting_actors(&self) -> io::Result<Vec<super::spotting::Actor>> {
+        let terrain=self.terrain.as_ref().ok_or_else(bad)?;
+        self.actors.iter().enumerate().map(|(slot,actor)| {
+            if actor.position.into_iter().any(|v|!v.is_finite()||v.abs()>10_000.)
+                ||actor.direction.into_iter().any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI){return Err(bad());}
+            let mut points=self.spotting_points(slot)?;
+            // This is the inherited P05C project correction, not a recovered
+            // historical rule. It only rescues the observer when both source
+            // observer points are below real ground and never rewrites target points.
+            if self.original_spotting.as_ref().is_some_and(|s|s.rules.rollover_world_up_fallback) {
+                let underground=points.observers.into_iter().all(|point| {
+                    terrain.nearest_ground(point,[point[0],10_000.,point[2]]).ok().flatten().is_some_and(|hit|hit.point[1]>point[1]+0.001)
+                });
+                if underground { points.observers[0]=Self::visibility_sight_point(actor); }
+            }
+            let observer_active=actor.alive()&&actor.ready&&actor.session.is_some();
+            let commander_active=observer_active&&actor.devices.as_ref().is_none_or(|state|state.crew().first()==Some(&true));
+            let view_scale=actor.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
+            if !view_scale.is_finite()||!(0. ..=1.).contains(&view_scale){return Err(bad());}
+            Ok(super::spotting::Actor{slot,team:self.team(slot)?,position:actor.position,points,
+                view_range:actor.vehicle_kind().view_range()*view_scale,observer_active,commander_active})
+        }).collect()
+    }
+    pub fn refresh_original_spotting(&mut self, now: Instant) -> io::Result<()> {
+        let Some(state)=self.original_spotting.as_ref() else { return Ok(()); };
+        if self.actors.is_empty() { return Ok(()); }
+        let start=self.started.ok_or_else(bad)?;
+        let ms=u64::try_from(now.checked_duration_since(start).ok_or_else(bad)?.as_millis()).map_err(|_|bad())?;
+        let actors=self.spotting_actors()?; let excluded=self.spotting_excluded()?; let terrain=self.terrain.as_ref().ok_or_else(bad)?;
+        let mut next=state.clone();
+        next.refresh(ms,&actors,|_,_,start,end|Ok(terrain.nearest_excluding_many(start,end,&excluded)?.is_none()))?;
+        self.original_spotting=Some(next); Ok(())
+    }
+    pub fn sixth_sense_generation(&self, slot: usize) -> io::Result<u32> {
+        self.original_spotting.as_ref().map_or(Ok(0),|state|state.sixth_generation(slot))
+    }
+    pub fn sixth_sense_eligible(&self, slot: usize) -> io::Result<bool> {
+        let actor=self.actors.get(slot).ok_or_else(bad)?;
+        Ok(actor.alive() && actor.ready && actor.session.is_some()
+            && actor.devices.as_ref().is_none_or(|state|state.crew().first()==Some(&true))
+            && self.lifecycle.as_ref().is_none_or(|state|state.allows_actions()))
     }
     pub fn enable_lifecycle(&mut self, rules: super::lifecycle::Rules) -> io::Result<()> {
         if self.started.is_some() || !self.actors.is_empty() || self.lifecycle.is_some() { return Err(bad()); }
@@ -466,6 +526,13 @@ impl World {
     /// not historical camouflage/spotting reconstruction. Parked/dead geometry remains eligible.
     pub(super) fn desired_visibility(&self, own:usize)->io::Result<[bool;MAX_ACTORS]> {
         if own>=self.actors.len()||self.actors.len()>MAX_ACTORS{return Err(bad());}
+        if let Some(state)=&self.original_spotting {
+            let actors=self.spotting_actors()?;
+            if state.initialized() { return state.desired(own); }
+            let team=self.team(own)?; let mut row=[false;MAX_ACTORS];
+            for actor in actors { row[actor.slot]=actor.slot==own||actor.team==team; }
+            return Ok(row);
+        }
         let terrain=self.terrain.as_ref().ok_or_else(||bad())?;
         let mut excluded=if let Some(state)=&self.fragiles {state.projectile_excluded()}
             else{self.destructible.as_ref().and_then(|state|state.excluded_instance()).into_iter().collect()};
@@ -1176,6 +1243,9 @@ mod scene_tests;
 #[cfg(test)]
 #[path="visibility_world_tests.rs"]
 mod visibility_world_tests;
+#[cfg(test)]
+#[path="spotting_world_tests.rs"]
+mod spotting_world_tests;
 
 #[cfg(test)]
 #[path="p04m_capacity_tests.rs"]
