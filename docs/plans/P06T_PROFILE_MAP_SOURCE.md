@@ -45,5 +45,8 @@ Commit and push only this dependent branch for review. Do not merge into the
 prepared primary/main during the overnight source freeze. Rollback: retain or
 drop this separate branch; no old source config/cache/stand is rewritten.
 
-Status at plan creation: implementation/tests NOT_RUN. Next: implement the two
-bounded argument/test-context changes, then actual focused Python checks.
+Actual runtime54f1c7f: implementation complete;11 focused Python cases passed
+with0fail/0error/0skip, actual authoring CLI passed, original D raw inputs and
+primary200/raw925 unchanged. No Jolt/native/gateway/DB/network action. Evidence
+and remaining limits are recorded in `docs/research/P06T_PROFILE_MAP_SOURCE.md`.
+Next: review this separate dependent branch; do not alter frozen primary.
