@@ -12,7 +12,7 @@ class SelectionCLITests(unittest.TestCase):
         worker=ROOT/'tools/p10b_selection_service.py';self.assertTrue(worker.is_file())
         environment=os.environ.copy();environment.pop('PYTHONPATH',None)
         parent_path=os.environ.get('PYTHONPATH');budget=4096
-        with tempfile.TemporaryDirectory(prefix='p10b-selection-cli-no-source-')as temporary:
+        with tempfile.TemporaryDirectory(prefix='p10b-selection-cli-no-source-',dir=ROOT.parent)as temporary:
             cwd=Path(temporary).resolve();self.assertFalse(cwd.is_relative_to(ROOT))
             nonexistent={key:cwd/('absent-'+key)for key in('database','bundle','original-root','shell-catalog','terminal-policy')}
             argv=[sys.executable,'-B','-X','utf8',str(worker)]

@@ -21,14 +21,53 @@ spec=importlib.util.spec_from_file_location('temp_reference_candidate',BUILD);bu
 OUT=OUTPUT_ROOT/('run-'+uuid.uuid4().hex)
 RETAINED=[]
 
+class _AuthoredOtherVolumeOutput(os.PathLike):
+    """One output's volume identity is authored; every filesystem path stays real.
+
+    The production Path class/drive property and all ancestors/target/artifact
+    paths remain untouched. This component fixture is NOT actual cross-drive
+    allocation/build evidence. C/C real-host refusal is tested independently.
+    """
+    def __init__(self, actual, volume):
+        self.actual, self.drive = Path(actual), volume
+    def __fspath__(self):return os.fspath(self.actual)
+    def __str__(self):return str(self.actual)
+    def __truediv__(self, other):return self.actual / other
+    def __getattr__(self, name):return getattr(self.actual, name)
+    def absolute(self):return type(self)(self.actual.absolute(), self.drive)
+    def resolve(self, **kwargs):return type(self)(self.actual.resolve(**kwargs), self.drive)
+
+
 class ReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):OUT.mkdir(parents=True)
     def fixture(self):
-        out=OUT/uuid.uuid4().hex;out.mkdir();target,metadata=build.allocate_temp_target(out);RETAINED.append(str(target))
+        actual=OUT/uuid.uuid4().hex;actual.mkdir()
+        # Mock exactly this freshly-owned output's volume identity, not Path.drive
+        # or filesystem operations. This permits leaf artifact/receipt tests on
+        # a C-root/C-TEMP host without claiming a real other-drive build.
+        volume='Z:' if Path(tempfile.gettempdir()).drive.upper()!='Z:' else 'Y:'
+        out=_AuthoredOtherVolumeOutput(actual,volume);prior_path=build.Path
+        def exact_output_path(*args):
+            value=Path(*args)
+            return out if value==actual else prior_path(*args)
+        self.enterContext(mock.patch.object(build,'Path',side_effect=exact_output_path))
+        target,metadata=build.allocate_temp_target(out);RETAINED.append(str(target))
         build.save(out,'cargo-temp-environment.json',{'CARGO_TARGET_DIR':str(target),'CARGO_INCREMENTAL':'0','RUST_TEST_THREADS':'1'})
         (target/'debug').mkdir();source=target/'debug/sr-gateway.exe';source.write_bytes(b'MZ'+bytes(range(256))*4)
         return out,target,source
+    def test_volume_fixture_preserves_real_paths_and_same_drive_guard(self):
+        out,target,source=self.fixture()
+        self.assertEqual(str(out),os.fspath(out))
+        self.assertEqual(tuple(out.parents),tuple(Path(str(out)).parents))
+        self.assertEqual(out.lstat(),Path(str(out)).lstat())
+        self.assertEqual(build.Path(source),source)
+        self.assertEqual(build.Path(target),target)
+        actual=OUT/uuid.uuid4().hex;actual.mkdir()
+        with mock.patch.object(build.tempfile,'gettempdir',return_value=str(actual.parent)),mock.patch.object(build.tempfile,'mkdtemp')as allocate:
+            with self.assertRaisesRegex(ValueError,'another drive'):build.allocate_temp_target(actual)
+            allocate.assert_not_called()
+        self.assertFalse((actual/'cargo-temp-target.json').exists())
     def test_selector_is_explicit_canonical_and_requires_temp_target(self):
         build.check_retain_selector('gateway',False,True,True)
         for component,legacy,temp in [('gateway',False,False),('gateway',True,True),('physics',False,True),('physics',True,False)]:
@@ -40,7 +79,7 @@ class ReferenceTests(unittest.TestCase):
             out=OUT/uuid.uuid4().hex
             p=subprocess.run([sys.executable,'-B','-X','utf8',str(BUILD),'gateway','--retain-temp-executable',*extra,'--out',str(out)],capture_output=True,timeout=10)
             self.assertNotEqual(p.returncode,0);self.assertFalse(out.exists());self.assertIn(b'canonical gateway',p.stderr)
-    def test_real_fresh_os_temp_artifact_is_verified_without_any_duplicate(self):
+    def test_authored_other_volume_identity_preserves_real_artifact_checks_without_duplicate(self):
         out,target,source=self.fixture();before=source.read_bytes();receipt=build.retain_verified_executable(source,out,target)
         self.assertEqual(receipt['schema'],'wot091-cargo-temp-executable-reference.v1');self.assertEqual(receipt['mode'],'retained-os-temp')
         self.assertEqual(Path(receipt['executable']),source);self.assertEqual(receipt['bytes'],len(before))
@@ -140,6 +179,6 @@ class ReferenceTests(unittest.TestCase):
 if __name__=='__main__':
     suite=unittest.defaultTestLoader.loadTestsFromTestCase(ReferenceTests);result=unittest.TextTestRunner(verbosity=2).run(suite)
     receipt={'schema':'build-temp-reference02-tests.v1','tests_run':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),'retained_new_os_temp_targets':RETAINED,
-        'authored_pe_bytes':True,'cargo':'NOT_RUN','native':'NOT_RUN','old_data_deleted':False,'test_output':str(OUT),'status':'PASS'if result.wasSuccessful()else'FAIL'}
+        'authored_pe_bytes':True,'authored_output_volume_identity':True,'actual_cross_drive_build':'NOT_RUN','cargo':'NOT_RUN','native':'NOT_RUN','old_data_deleted':False,'test_output':str(OUT),'status':'PASS'if result.wasSuccessful()else'FAIL'}
     with (OUT/'receipt.json').open('x',encoding='utf8',newline='\n')as f:json.dump(receipt,f,indent=2);f.write('\n')
     print(json.dumps({'receipt':str(OUT/'receipt.json'),'status':receipt['status']}));raise SystemExit(not result.wasSuccessful())

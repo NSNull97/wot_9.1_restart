@@ -85,7 +85,8 @@ class P06TPreparedModeTests(unittest.TestCase):
                              screenshot_dir='local/shots', paths={'local_artifacts_root': 'local'}, control=None,
                              args=SimpleNamespace(capture_hangar=False, capture_ui_passive=False,
                                                   enable_map_drive=False),
-                             shared_lab=False, profile13_battle=True, p06t_mixed_ammo=enabled)
+                             shared_lab=False, profile13_battle=True, p06t_mixed_ammo=enabled,
+                             network={'network_policy': None}, training_rooms=False)
             namespace.update((name, True) for name in ('ammo_service', 'recruitment', 'transfer',
                              'cross_vehicle', 'roster', 'progression', 'dismissal', 'barracks', 'research_service'))
             exec(code, namespace)

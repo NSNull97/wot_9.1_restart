@@ -6,7 +6,7 @@ Actual whole Python suite06 exposed15 build-temp errors because output and OS TE
 
 1. Retain source/candidate/audit pins. Wait for real suite06 exit/Job active0/source equality before tests.
 2. Run frozen build-temp65 after_suite_check02 in its new tiny A scratch. This checks exact production helpers with real files/receipts/hash/reparse, authored volume identity for one exact output, and actual same-drive refusal; it is not Cargo/cross-drive/native proof.
-3. Only after PASS, copy the two frozen65 tests,43's exact one-line P04D fixture correction, frozen73's two P06T namespace defaults and the reviewed selection CLI outside-project temporary-cwd correction. Preserve LF raw bytes and pin changed test attributes. Commit the five test files before ordinary targeted discovery.
+3. Only after PASS, copy the two frozen65 tests,43's exact one-line P04D fixture correction, frozen73's two P06T namespace defaults and the reviewed selection CLI outside-project temporary-cwd correction. Preserve each frozen candidate's raw EOL bytes and pin changed test attributes (P04D and selection CLI CRLF; build-temp and P06T LF). Commit the five test files before ordinary targeted discovery.
 4. Run all five modules on that exact committed repair HEAD, with source before/after and primary925/index/privatecfg unchanged. Do not rerun whole Python/Cargo or change environment selection.
 5. Record scoped counts/evidence and update this branch ACTIVE_GATE/STATUS. No push or merge until Root review. Remaining whole-suite skips/debt are not relabelled PASS.
 

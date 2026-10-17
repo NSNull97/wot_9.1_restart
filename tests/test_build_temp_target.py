@@ -67,8 +67,19 @@ class TempTargetTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     build.checked_output(root, value)
 
-    def test_real_default_system_temp_is_fresh_other_drive_and_retained(self):
+    def test_real_default_system_temp_obeys_actual_drive_policy(self):
         out = self.fresh('actual-allocation')
+        # The opt-in has meaning only across real drives. On a C-root/C-TEMP
+        # workspace the expected real result is refusal BEFORE any allocation.
+        # Positive artifact/receipt component cases use an explicit authored
+        # volume identity in test_build_temp_reference; no actual build is claimed.
+        if out.drive.lower() == Path(tempfile.gettempdir()).resolve().drive.lower():
+            with mock.patch.object(build.tempfile, 'mkdtemp') as allocate:
+                with self.assertRaisesRegex(ValueError, 'another drive'):
+                    build.allocate_temp_target(out)
+                allocate.assert_not_called()
+            self.assertFalse((out / 'cargo-temp-target.json').exists())
+            return
         target, receipt = build.allocate_temp_target(out)
         RETAINED.append(str(target))
         self.assertNotEqual(target.drive.lower(), out.drive.lower())
@@ -164,7 +175,7 @@ if __name__ == '__main__':
     receipt = {'schema': 'build-temp-target-tests.v1', 'tests_run': result.testsRun,
                'failures': len(result.failures), 'errors': len(result.errors),
                'test_fixtures': str(RUN), 'retained_system_temp_targets': RETAINED,
-               'automatic_delete': False, 'cargo': 'NOT_RUN', 'native': 'NOT_RUN',
+               'automatic_delete': False, 'actual_cross_drive_branch': 'NOT_RUN_SAME_DRIVE' if RUN.drive.lower()==Path(tempfile.gettempdir()).resolve().drive.lower() else 'REAL_ALLOCATION_ONLY_NO_BUILD', 'cargo': 'NOT_RUN', 'native': 'NOT_RUN',
                'authored_hash_fault': True, 'status': 'PASS' if result.wasSuccessful() else 'FAIL'}
     with (RUN / 'receipt.json').open('x', encoding='utf-8', newline='\n') as f:
         json.dump(receipt, f, indent=2)

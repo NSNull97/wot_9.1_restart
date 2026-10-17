@@ -128,7 +128,7 @@ class InstallerTests(unittest.TestCase):
             base = Path(temp)
             paths = dict(local_artifacts_root=base, original_client_root=base / 'original',
                          research_client_root=base / 'shared-research')
-            args = SimpleNamespace(out=str(base / 'prepare'), research_copy='copy', endpoint='not-loopback',
+            args = SimpleNamespace(out=str(base / 'prepare'), research_copy='copy', endpoint='not-loopback', registration_url=None,
                                    enable_p09d_ammo_service=True, enable_shared_lab=False,
                                    enable_map_drive=False, enable_crew_recruitment=True)
             with patch.object(installer, 'config', return_value=({}, paths)), \
