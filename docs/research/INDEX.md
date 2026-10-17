@@ -23,6 +23,7 @@
 - [P08C_NATIVE_MARKER_TEAM.md](P08C_NATIVE_MARKER_TEAM.md) — исправление publicInfo.team, full1099 и owner+actual wire приёмка маркеров обоими
 - [P08C_NATURAL_RESULTS_RETURN.md](P08C_NATURAL_RESULTS_RETURN.md) — late bind/details fix1130PASS; native повтор прерван autoAim/Disconnect, засвет в итогах Ёжа OBSERVED
 - [P05C_SHARED_PHYSICS.md](P05C_SHARED_PHYSICS.md) — one-scene IPC7 component, реальные mixed/6 Jolt probes и граница интеграции
+- [P05C_MIXED_CONTACT_HANDLING.md](P05C_MIXED_CONTACT_HANDLING.md) — physics04 fullroll/4collision steps, currentfull1628/source938, живойCore129 и ожидаемая native приёмка
 - [P05C_NATIVE_TRANSPORT.md](P05C_NATIVE_TRANSPORT.md) — bounded6actor roster/ACK/READY, отдельные ID/alias namespaces, synthetic Session gates
 - [P07B_NATIVE_INTEREST.md](P07B_NATIVE_INTEREST.md) — original AoI enter/leave и source stock vision ranges
 - [P07B_SERVER_VISIBILITY.md](P07B_SERVER_VISIBILITY.md) — recipient LOS/epochs/packet filtering, full975PASS, native NOT_RUN

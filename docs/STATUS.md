@@ -9,8 +9,12 @@ SQL141/53, active0, БК/склад сохранены. Physics04 build/source25
 math47870, actualfullroll4/4, P05B обоих9×2 и currentpolicy slope4/4PASS.
 Полная diagnostic slope matrix6PASS/2step1controlFAIL сохранена.
 MaxSAT recordedcontrols13.6→2см, actual385sample stop=mapboundary;
-остальные stops не объявлены все исправленными. Canonical gateway full
-предстоит, native NOT_RUN; [отчёт](research/P05C_MIXED_CONTACT_HANDLING.md).
+остальные stops не объявлены все исправленными. Runtime6119019:
+canonical1628PASS/0FAIL/5oldignored+build/source938 exact; actual2/6new04PASS.
+Core contact129 live: actualbackup141/53/grants0, V8reuse/auth/дваHangar×2PASS;
+теперь142/54/active0/БК unchanged/faults0. Новая native mixed проверка задана,
+ответ владельца ожидается. [Отчёт](research/P05C_MIXED_CONTACT_HANDLING.md).
+Будущий [RULESET-01](plans/RULESET01_SCOPE.md) только фиксирует требования.
 Main прежний.
 
 Основной checkout C:/wot091-night-20261017-01/w; исходный D сохранён.

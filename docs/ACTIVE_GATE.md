@@ -11,8 +11,15 @@ BattleTank PI/3; причина потери тяги UNKNOWN до actual зам
 Physics04: fullroll actualJolt4/4 и math47870PASS, P05B обоих9×2PASS;
 непрерывный flat→6°/12° mixed push при4steps2/2PASS. Step1контроли2FAIL
 по потере контакта сохранены. MaxSAT replay13.6→2см; optional manifold
-не меняет output03/04. Canonical gateway full предстоит; native NOT_RUN.
+не меняет output03/04. Runtime6119019: canonicalfull1628PASS/0FAIL/5oldignored,
+buildPASS/source938 exact, actual2/6 с новым04 PASS. Fresh Core contact129
+запущен: backup141/53/grants0, V8reuse/privateauth/дваactualHangar каждогоPASS.
+После запуска142/54, active0/loaded/depot unchanged, faults0. Владелец получил
+шаг «ровно→тот же подъём с непрерывным газом→отпустить контакт», ответ ждём.
+Native нового боя/переворота/возврата PENDING/NOT_RUN.
 Main прежний. [Доказательства/границы](research/P05C_MIXED_CONTACT_HANDLING.md).
+Будущий [RULESET-01](plans/RULESET01_SCOPE.md): требования к общим настройкам,
+тимдамагу/чату записаны; текущие игровые defaults не менялись.
 
 ## Сохранённый Core checkpoint
 
