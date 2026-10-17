@@ -1,5 +1,8 @@
-# Текущие ворота: P05C — смешанный контакт и полные перевороты
+# Текущие ворота: P07B — оригинальный серверный засвет без маскировки
 
+Ветка `codex/p07b-original-spotting-successor` от текущего P05C/STAB head `206ded4`; интеграция P07B commit `de428a3` (исходный candidate `a750698`). Сюда подтянуты шесть source visibility points, два observer points, authoritative geometric LOS, no-camo ruleset и candidate Sixth Sense event. Старый `visibility_v1` AoI остаётся совместимым базовым слоем.
+
+Текущий этап: повторить bounded source reader, focused P07B tests и canonical full gate на этом descendant; затем source-bound successor rebind и ручной native-прогон точек/лучей/появления-исчезновения/постоянного 6-го чувства. Native UI/audio/control остаются NOT_RUN до фактического прогона. Camouflage, bushes, equipment и guessed historical server rules вне карточки.
 Ветка `codex/p05c-mixed-contact-handling` от2dcd5b9;
 [план](plans/P05C_MIXED_CONTACT_HANDLING.md). Исторический parent bc5c1c6/
 physics05: full02 завершён1632PASS/0FAIL/5oldignored, buildPASS/source941
