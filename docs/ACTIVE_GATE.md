@@ -1,22 +1,12 @@
-# Current gate: P08B four-owner Hold5 composition
+# Current gate: P04M garage Fresh publication
 
-Branch codex/p08b-owner-hold-four-composition from C technical checkpointf814ecf.
-Actual parent source7595f3f: full1611PASS/0FAIL/5oldignored/buildPASS/909rawexact,
-four old HTTP/SQL compositions sealed; branch pushed exact. Mainffce8cb remains.
-Workspace C:/wot091-night-20261017-01/w; original D/clients/data preserved.
+Branch codex/p04m-garage-fresh-publication from e48af3c; parent runtimeab7ad10
+full1612/0/5oldignored/build/916raw exact, five HTTP/SQL compositions sealed.
+Mainffce8cb unchanged. C:/wot091-night-20261017-01/w; D preserved.
 
-Promote seven frozen33 files plus narrow test registration/namespace. Goal:
-actual4 Config→Job→HTTP/SQLite→World retained C actor→real AmmoBay death/loss→
-sole Final4→Account0x57/results4. All source hashes stay genuine; transport,
-ACK, clock/placement are authored. No native/Jolt claim and no fabricated
-completion/Frozen/HP/outcome. [Plan](plans/P08B_OWNER_HOLD_FOUR_COMPOSITION.md).
-
-After focused and canonical full/current-source seal: preserve/push checkpoint,
-continue separate garage Fresh32/03+39 then warehouse42 and final morning
-contexts31/NET34. Both operational input-only preflights already PASS on parent
-full; actual backup/bind/services/client/native stillNOT_RUN. No manual asks;
-night continues until04:00UTC/09:00local. Own services/clients STOP.
-
-Software checkpoint closed: runtimeab7ad10 full1612/0/5oldignored/build/916raw,
-five same-full compositions sealed b0d84816...7201e; nativeNOT_RUN. Next
-separate garage Fresh branch; no main merge.
+Implement32/03 known reply/read-only Fresh/atomic same-Account publication and
+39/04 genuine Loss4+Hold5 CMD108 proofs. [Plan](plans/P04M_GARAGE_FRESH_PUBLICATION.md).
+No SQL retry/refund/full1 rebind; only exact old-channel recipient containment.
+Training+Hold stays closed; native/UI/gameplay remainNOT_RUN. Night continues
+to04UTC/09local, no manual asks. Next warehouse42, legacy, finalfull, new morning
+contexts31/NET34 and Python43. Own services/clients STOP.
