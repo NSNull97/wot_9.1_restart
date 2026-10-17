@@ -47,7 +47,7 @@ AUDIT = {
     'login': ('scripts/client/gui/Scaleform/daapi/view/login/__init__.py', 319, 4,
               ('self', 'user', 'password', 'host'), (), 67,
               '71bb9d77ffdd85d0185aa763cbaee3c0df1ca33ec7d18171709fa3bb78eccc7f'),
-    'project_submit': ('project_auth.py', 113, 4, ('view', 'user', 'password', 'host'),
+    'project_submit': ('project_auth.py', 115, 4, ('view', 'user', 'password', 'host'),
                        ('endpoint', 'original', 'record'), 19,
                        '66212cbb7a3b1224dfda6b7d606530074681af64da5f108fee4dbe6e0074b2ba'),
 }
