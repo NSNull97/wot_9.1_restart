@@ -25,6 +25,11 @@ internal sealed class TrackedHandling
     // decelerations so MS-1 and IS-7 behave alike; each is capped by that
     // track's source brake torque. Project policy, m/s^2.
     private const float CoastInnerDeceleration = 8f, CoastOuterDeceleration = 2f;
+    // Shared-battle test_lab policy: powered steering dissipates inner-track
+    // energy at speed. Preserve launch/pivot forces through 4 m/s, then blend
+    // to 2 m/s^2 at 8 m/s. These are project thresholds, not historical data.
+    private const float PoweredInnerDeceleration = 2f;
+    private const float PoweredBrakeStartSpeed = 4f, PoweredBrakeFullSpeed = 8f;
     // Released-throttle turns keep pivot-level scrub; the higher moving-turn
     // grip is for powered turns on slopes.
     private const float CoastOuterFrictionFraction = .001f;
@@ -36,6 +41,7 @@ internal sealed class TrackedHandling
     private const float MotorRampPerSecond = 4f;
     public const float GearSwitchTime = .15f, ClutchReleaseTime = .1f, GearSwitchLatency = .2f;
     private readonly float width, maximumYaw, halfMass, radius;
+    private readonly bool poweredTurnLoss;
     private readonly WheelSettingsTV[] wheels;
     private readonly float[] lateral;
     private float yawTarget, motorInput;
@@ -55,13 +61,15 @@ internal sealed class TrackedHandling
         return MathF.Max(10, .02f * massKg * radius * radius);
     }
 
-    public TrackedHandling(float trackWidth, float maxYawRate, float massKg, WheelSettingsTV[] supportWheels)
+    public TrackedHandling(float trackWidth, float maxYawRate, float massKg, WheelSettingsTV[] supportWheels,
+        bool enablePoweredTurnLoss = false)
     {
         if (!float.IsFinite(trackWidth) || trackWidth < .5f || trackWidth > 5 ||
             !float.IsFinite(maxYawRate) || maxYawRate < .05f || maxYawRate > 2 ||
             !float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || supportWheels.Length != 6)
             throw new InvalidDataException("tracked handling geometry/yaw/mass/support bounds");
         width = trackWidth; maximumYaw = maxYawRate; wheels = supportWheels;
+        poweredTurnLoss = enablePoweredTurnLoss;
         halfMass = massKg / 2; radius = wheels[0].Radius;
         lateral = wheels.Select(w => w.LateralFriction).ToArray();
         if (lateral.Any(x => !float.IsFinite(x) || x < .1f || x > 2))
@@ -192,6 +200,15 @@ internal sealed class TrackedHandling
         {
             motor = 0;
             brakeInput = 1;
+        }
+        if (poweredTurnLoss && !brake && coastPhase == 0 && throttle != 0 && steer != 0 &&
+            motor != 0 && brakeInput == 0 && throttle * signedSpeed > PoweredBrakeStartSpeed)
+        {
+            var inner = steer > 0 ? controller.RightTrack : controller.LeftTrack;
+            float speedBlend = Math.Clamp((speed - PoweredBrakeStartSpeed) /
+                (PoweredBrakeFullSpeed - PoweredBrakeStartSpeed), 0, 1);
+            float yawFraction = Math.Clamp(MathF.Abs(yawTarget) / maximumYaw, 0, 1);
+            Dissipate(inner, TrackBrake(inner, PoweredInnerDeceleration * speedBlend * yawFraction, deltaTime));
         }
         // A direction change cancels the old request immediately. Ramping
         // through zero would keep driving the wrong way for half a second.
