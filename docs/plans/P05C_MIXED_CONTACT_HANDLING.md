@@ -136,3 +136,8 @@ Owner observed a normal full rollover: inverted MS-1 retained mutual visibility 
 ### Contact130 failure reasons
 
 The live run emitted two fail-closed reasons in order: `integrated drive logical deadline lag exceeds500ms; fail closed`, then `shared scene worker deadline`. Both clients still committed loss results and returned to hangars. The authoritative extract records the last world snapshot (IS-7 speed `-4.7230258` with `Input { throttle: -1, steer: 1 }`; MS-1 stationary) but this late state is not attributed to the owner's earlier W hill episode without matching input semantics. Receipt `local/evidence/20261017-morning-core01/contact130-failure-reasons.json` SHA256 `02a5e37d52753a3a455f012aadd559e7e700ec9d24cdbbc958ae41a44af52fde`; extract SHA256 `7857780049a518066e5180bd1a1e8ff088d61697fc3d53a7fa8f68559a3432a5`.
+
+
+### Worker deadline classification
+
+Read-only diagnosis separates this from physics acceptance. Battle `1842779300997493393` failed first because the shared main loop exceeded the 500 ms logical-drive lag while no worker reply was pending. Battle `1842779300997493394` then failed because a pending scene-worker advance exceeded the 500 ms IPC/world-step reply deadline. CPU/OS scheduling duration is not recorded, so runtime overload/latency remains UNKNOWN. Keep both fail-closed guards unchanged; the next card is a bounded worker-cadence diagnostic with per-advance wall timing, child stderr/CPU and scheduler receipts, not a silent timeout relaxation or P05C physics retune.
