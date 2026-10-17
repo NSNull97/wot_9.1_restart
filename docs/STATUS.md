@@ -119,4 +119,9 @@ SHA256 `9a78b79dd671ddad0a471079de50e0d4491fc417b4bbda898a15d93d1c682891`.
 Services, native/UI, two-PC и actual cadence receipts пока `NOT_RUN`.
 Cadence unit receipt `local/evidence/20261017-stab-worker-cadence/contact132/cadence-unit-evidence.json`
 SHA256 `bc0cb64dca7440633c1d0b8dc36475e7e4b4ec252bae732664fda9053ae3fae5`
-фиксирует 3/0/0; actual advance/CPU/scheduler JSONL остаются `NOT_RUN`.
+фиксирует 3/0/0. Точечный actual IPC7 Worker gate прошёл 1/0/0 и записал
+600 `advance_dispatched`, 620 replies и CPU samples в четыре bounded JSONL;
+receipt `local/evidence/20261017-stab-worker-cadence/contact132/native-cadence-evidence.json`
+SHA256 `e29e8d224b9683f1e3e657d57b793f3590ebb830be0efa3b47c5d659091e4f98`.
+Этот тест напрямую гоняет Worker, поэтому `scheduler_lag` BatchRuntime и
+native/UI остаются `NOT_RUN` до successor прогона.
