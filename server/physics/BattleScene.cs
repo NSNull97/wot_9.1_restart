@@ -11,8 +11,9 @@ internal static class BattleScene
     sealed record TankContact(int A, int B, int Substep, Vector3 Point, Vector3 Normal, Vector3 Relative);
     public static int Run(string[] args)
     {
-        if (args.Length != 8 || args[0] != "--battle-scene" || args[2] != "--scene-sha256" || args[4] != "--local-root" ||
-            args[6] != "--generation" || !uint.TryParse(args[7], NumberStyles.None, CultureInfo.InvariantCulture, out uint generation) || generation == 0)
+        if ((args.Length != 8 && args.Length != 10) || args[0] != "--battle-scene" || args[2] != "--scene-sha256" || args[4] != "--local-root" ||
+            args[6] != "--generation" || (args.Length == 10 && args[8] != "--diagnostics") ||
+            !uint.TryParse(args[7], NumberStyles.None, CultureInfo.InvariantCulture, out uint generation) || generation == 0)
             throw new InvalidDataException("expected pinned battle-scene/local-root/generation");
         string root = Path.GetFullPath(args[5]);
         var manifest = BattleSceneInput.Load(root, args[1], args[3]);
@@ -20,11 +21,16 @@ internal static class BattleScene
         using var bootstrap = CheckedInput.Json(BattleSceneInput.ReadLine(input) ?? throw new InvalidDataException("IPC7 missing bootstrap"));
         var scene = BattleSceneInput.Scene(bootstrap.RootElement, manifest, generation, 0, "restore_scene");
         if (!Foundation.Init(false)) throw new InvalidOperationException("Jolt initialization failed");
-        try { RunWorld(root, manifest, generation, scene, input, output); }
+        try
+        {
+            using var diagnostics = args.Length == 10 ? new MixedContactDiagnostics(root, args[9]) : null;
+            RunWorld(root, manifest, generation, scene, input, output, diagnostics);
+        }
         finally { Foundation.Shutdown(); }
         return 0;
     }
-    static void RunWorld(string root, BattleSceneInput.Manifest manifest, uint generation, CheckedInput.Scene scene, Stream input, Stream output)
+    static void RunWorld(string root, BattleSceneInput.Manifest manifest, uint generation, CheckedInput.Scene scene, Stream input, Stream output,
+        MixedContactDiagnostics? diagnostics)
     {
         using var pairs = new ObjectLayerPairFilterTable(2); pairs.EnableCollision(0, 1); pairs.EnableCollision(1, 1);
         using var broad = new BroadPhaseLayerInterfaceTable(2, 2); broad.MapObjectToBroadPhaseLayer(0, 0); broad.MapObjectToBroadPhaseLayer(1, 1);
@@ -36,7 +42,10 @@ internal static class BattleScene
             MaxBodyPairs = 8192, MaxContactConstraints = 8192,
             ObjectLayerPairFilter = pairs, BroadPhaseLayerInterface = broad, ObjectVsBroadPhaseLayerFilter = filter
         });
-        int collisionSteps=manifest.Actors.Any(a=>a.Kind is "t26" or "t34" or "t3485" or "wt-e100-128" or "fv215b-183")?TrackedBodySettings.StockCollisionSteps:1;
+        // Resolve dynamic hull pairs at the same four collision steps already
+        // used by stock/extended profiles. Keep the single-body MS-1/IS-7
+        // route at its accepted P05B step policy.
+        int collisionSteps=manifest.Actors.Length > 1 || manifest.Actors.Any(a=>a.Kind is "t26" or "t34" or "t3485" or "wt-e100-128" or "fv215b-183")?TrackedBodySettings.StockCollisionSteps:1;
         var bodies = world.BodyInterface;
         var c = manifest.Actors[0].Config;
         using var terrain = CheckedInput.LoadMesh(root, c.GetProperty("terrain"), manifest.Map);
@@ -49,6 +58,8 @@ internal static class BattleScene
         var claimOrder = new List<(uint Object, int Slot, int Substep)>();
         var tanks = new List<BattleTank>(); var tankIds = new Dictionary<uint, BattleTank>();
         var tankContacts = new Dictionary<(int, int), TankContact>();
+        var diagnosticContacts = new Dictionary<(int, uint), object>();
+        int diagnosticContactsOmitted = 0;
         using var prepass = manifest.Catalog == null ? null : new WholeObjectContactPrepass(world.Settings);
         int substep = 0, callbackCount = 0, callbackFault = 0; bool capture = false;
         long tick = 0, sequence = 0;
@@ -57,7 +68,7 @@ internal static class BattleScene
             using var creation = new BodyCreationSettings(shape, position, Quaternion.Identity, MotionType.Static, 0) { Friction = 1 };
             var body = bodies.CreateBody(creation); bodies.AddBody(body.ID, Activation.DontActivate); statics.Add(body.ID); return body.ID;
         }
-        AddStatic(terrain, Vector3.Zero); AddStatic(obstacles, Vector3.Zero);
+        var terrainId = AddStatic(terrain, Vector3.Zero); var obstacleId = AddStatic(obstacles, Vector3.Zero);
         foreach (var entry in catalogShapes)
         {
             if (!scene.Ids.Contains(entry.Key))
@@ -81,6 +92,29 @@ internal static class BattleScene
                 if (m.IsNull || m.PointCount == 0) return;
                 if (++callbackCount > 24576) throw new InvalidOperationException("IPC7 contact callback bound");
                 bool first = tankIds.TryGetValue(body1.ID.ID, out var a), second = tankIds.TryGetValue(body2.ID.ID, out var b);
+                if (diagnostics != null && (first || second))
+                {
+                    // Private observation of the first actual manifold per
+                    // actor/body pair in this batch, before fracture policy.
+                    // Never changes a contact, body or the public IPC frame.
+                    var actor = first ? a! : b!; var otherBody = first ? body2 : body1;
+                    var key = (actor.Source.Slot, otherBody.ID.ID);
+                    if (!diagnosticContacts.ContainsKey(key))
+                    {
+                        if (diagnosticContacts.Count == 64) diagnosticContactsOmitted++;
+                        else
+                        {
+                            float depth = m.PenetrationDepth;
+                            if (!float.IsFinite(depth)) throw new InvalidOperationException("nonfinite diagnostic manifold");
+                            string otherKind = first && second ? "tank" : otherBody.ID == terrainId ? "terrain" :
+                                otherBody.ID == obstacleId ? "static_obstacles" : catalogIds.ContainsKey(otherBody.ID.ID) ? "catalog_object" : "map_boundary";
+                            diagnosticContacts.Add(key, new { slot = actor.Source.Slot, other_body_id = otherBody.ID.ID,
+                                other_kind = otherKind, substep, penetration_depth_m = depth,
+                                point = AngularMotionFrame.V(first ? m.GetWorldSpaceContactPointOn1(0) : m.GetWorldSpaceContactPointOn2(0)),
+                                normal_actor_to_other = AngularMotionFrame.V(first ? m.WorldSpaceNormal : -m.WorldSpaceNormal) });
+                        }
+                    }
+                }
                 if (first && second)
                 {
                     // Physical tank contact always remains solid; it never enters catalog energy policy.
@@ -164,6 +198,7 @@ internal static class BattleScene
             foreach (var actor in manifest.Actors) { var tank = new BattleTank(world, actor, manifest.Catalog); tanks.Add(tank); tankIds.Add(tank.Body.ID.ID, tank); }
             Advance(tanks.Select(_ => BattleSceneInput.Control.Stop).ToArray(), 180);
             foreach (var tank in tanks) tank.CheckSettled();
+            diagnostics?.Write(0, tick, tanks.Select(t => t.Metrics(BattleSceneInput.Control.Stop)).ToArray(), [], 0);
             Write("ready");
             for (byte[]? raw; (raw = BattleSceneInput.ReadLine(input)) != null;)
             {
@@ -189,13 +224,17 @@ internal static class BattleScene
                 var controls = BattleSceneInput.Advance(request, manifest, generation, sequence, scene);
                 if (pending.Count > 0) throw new InvalidDataException("IPC7 prepared fracture requires scene commit");
                 callbackCount = 0; callbackFault = 0; tankContacts.Clear(); claims.Clear(); claimOrder.Clear();
+                diagnosticContacts.Clear(); diagnosticContactsOmitted = 0;
                 foreach (var tank in tanks) tank.BeginAdvance();
                 capture = true; Advance(controls, 6); capture = false;
                 foreach (var tank in tanks)
                     foreach (var receipt in (tank.Fracture?.Receipts ?? []).OrderBy(r => r.ObjectId))
                         tank.ObjectContacts.Add(new { object_id = receipt.ObjectId, kind = "hull", substep = receipt.Substep,
                             point = AngularMotionFrame.V(receipt.Point), normal = AngularMotionFrame.V(receipt.Normal), velocity = AngularMotionFrame.V(receipt.Velocity) });
-                sequence++; Write(pending.Count == 0 ? "state" : "prepared");
+                sequence++;
+                diagnostics?.Write(sequence, tick, tanks.Select(t => t.Metrics(controls[t.Source.Slot])).ToArray(),
+                    diagnosticContacts.Values.ToArray(), diagnosticContactsOmitted);
+                Write(pending.Count == 0 ? "state" : "prepared");
             }
         }
         finally

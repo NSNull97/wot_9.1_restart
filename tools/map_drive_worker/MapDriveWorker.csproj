@@ -25,6 +25,8 @@
     <Compile Include="../../server/physics/BattleScene.cs" />
     <Compile Include="../../server/physics/BattleSceneInput.cs" />
     <Compile Include="../../server/physics/BattleTank.cs" />
+    <Compile Include="../../server/physics/BodyOrientation.cs" />
+    <Compile Include="../../server/physics/MixedContactDiagnostics.cs" />
     <Compile Include="../../server/physics/ExtendedProfileQualification.cs" />
     <Compile Include="../../server/physics/ExtendedVehicleProfiles.cs" />
     <Compile Include="../../server/physics/StockProfileQualification.cs" />

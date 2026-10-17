@@ -7,8 +7,12 @@
 BattleTank PI/3; причина потери тяги UNKNOWN до actual замера.
 Ветка `codex/p05c-mixed-contact-handling` от2dcd5b9; [план](plans/P05C_MIXED_CONTACT_HANDLING.md).
 Предыдущий Core/retest120 и оба own клиента остановлены exact receipts.
-Актуальные SQL141/53, active0, снаряды/склад сохранены. Новая физика/native
-NOT_RUN; main прежний. Никакой подмены source/power/friction для приёмки.
+Актуальные SQL141/53, active0, снаряды/склад сохранены.
+Physics04: fullroll actualJolt4/4 и math47870PASS, P05B обоих9×2PASS;
+непрерывный flat→6°/12° mixed push при4steps2/2PASS. Step1контроли2FAIL
+по потере контакта сохранены. MaxSAT replay13.6→2см; optional manifold
+не меняет output03/04. Canonical gateway full предстоит; native NOT_RUN.
+Main прежний. [Доказательства/границы](research/P05C_MIXED_CONTACT_HANDLING.md).
 
 ## Сохранённый Core checkpoint
 

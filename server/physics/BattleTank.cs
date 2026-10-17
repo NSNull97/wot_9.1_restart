@@ -54,7 +54,10 @@ internal sealed class BattleTank : IDisposable
         settings.SetTrack(1, new VehicleTrackSettings { DrivenWheel = 4, Wheels = [3, 4, 5], MaxBrakeTorque = brake, Inertia = TrackedHandling.TrackInertia(mass, radius) });
         Constraint = new VehicleConstraint(Body, new VehicleConstraintSettings
         {
-            Up = Vector3.UnitY, Forward = Vector3.UnitZ, Wheels = wheels, Controller = settings, MaxPitchRollAngle = MathF.PI / 3
+            // Owner policy 2026-10-17: shared battles allow side/roof rollovers.
+            // PI spans the full up-vector angle; no artificial upright tether.
+            // Legacy single-vehicle Program keeps its accepted handling policy.
+            Up = Vector3.UnitY, Forward = Vector3.UnitZ, Wheels = wheels, Controller = settings, MaxPitchRollAngle = MathF.PI
         });
         tester = new VehicleCollisionTesterRay(1); Constraint.SetVehicleCollisionTester(tester);
         world.AddConstraint(Constraint); world.AddStepListener(Constraint);
@@ -90,19 +93,21 @@ internal sealed class BattleTank : IDisposable
         if (Enumerable.Range(0, 6).Count(i => Constraint.GetWheel(i).HasContact) < 3 || Body.GetLinearVelocity().Length() > 1)
             throw new InvalidOperationException($"IPC7 actor failed to settle slot={Source.Slot} kind={Source.Kind} position={Body.Position} velocity={Body.GetLinearVelocity()}");
     }
+    public object Metrics(BattleSceneInput.Control input) => MixedContactDiagnostics.Capture(
+        Source.Slot, Source.Kind, Source.ConfigHash, Body, Constraint, controller, input);
     public object State()
     {
         Source.Binding.Verify(Body);
         var q = Body.Rotation; var origin = Body.Position - Vector3.Transform(center, q);
         var velocity = Body.GetLinearVelocity(); var angular = Body.GetAngularVelocity();
-        var forward = Vector3.Transform(Vector3.UnitZ, q); var right = Vector3.Transform(Vector3.UnitX, q); var up = Vector3.Transform(Vector3.UnitY, q);
+        var forward = Vector3.Transform(Vector3.UnitZ, q);
         var v = AngularMotionFrame.V;
         return new
         {
             slot = Source.Slot, kind = Source.Kind, config_sha256 = Source.ConfigHash, profile_sha256 = Source.Binding.ProfileSha256,
             state = new
             {
-                position = v(origin), direction = new[] { MathF.Atan2(forward.X, forward.Z), MathF.Asin(Math.Clamp(-forward.Y, -1, 1)), MathF.Atan2(right.Y, up.Y) },
+                position = v(origin), direction = v(BodyOrientation.ToYawPitchRoll(q)),
                 speed = Vector3.Dot(velocity, forward), rspeed = angular.Y, contacts = Enumerable.Range(0, 6).Count(i => Constraint.GetWheel(i).HasContact),
                 linear_velocity = v(velocity), angular_velocity = v(angular), wheel_contact_masks = masks.ToArray(),
                 object_contacts = ObjectContacts.ToArray(), fractures = Fracture?.Receipts.Select(r => r.ToWire()).ToArray() ?? [],
