@@ -33,6 +33,7 @@
 - [P06T_RUNTIME_CANDIDATE.md](P06T_RUNTIME_CANDIDATE.md) — mixed-shell/единый HP ledger, source geometry и явные LAB module/fire policies; автоматические gates отдельно от native NOT_RUN
 - [P06T_SEVEN_LOSS_INTEGRATION.md](P06T_SEVEN_LOSS_INTEGRATION.md) — seven LAB +loss4/late, full1295/5/build/Python102, nativeNOT_RUN
 - [P06T_AMMO_RACK_LOSS.md](P06T_AMMO_RACK_LOSS.md) — отдельная loss4 policy, одна смерть/фраг, native DT8/HP-2/ACK epochs; full1188PASS, native NOT_RUN
+- [P06T_MODULE_RESULTS.md](P06T_MODULE_RESULTS.md) — module/fire counters in Results8 packed details; focused implementation, native replay required
 
 - [BATTLE_LOADOUT_REVISION_GATE.md](BATTLE_LOADOUT_REVISION_GATE.md) — Исследование: battle-loadout revision adapter
 - [CAPACITY_1000_CCU.md](CAPACITY_1000_CCU.md) — Инфраструктура для 1000 одновременных игроков: расчётная модель

@@ -71,6 +71,35 @@ fn build()->Details{project(&roster(),&shot(),&hit(),&hit(),&damage(),&[],Some(&
     assert_eq!(format!("{r:?}"),original);build().validate(&r).unwrap();
     for n in 0..9{let mut d=build();let t=&mut d.rows[0].targets[0];match n{
         0=>t.vehicle_id=999,1=>t.damage_dealt=89,2=>t.death_reason=1,3=>t.spotted=2,
-        4=>t.damage_assisted_track=1,5=>t.crits=1,6=>t.fire=1,7=>d.policy="fake".into(),_=>d.spotting_policy=None,
+        4=>t.damage_assisted_track=1,5=>t.crits=193,6=>t.fire=11,7=>d.policy="fake".into(),_=>d.spotting_policy=None,
     }assert!(d.validate(&r).is_err(),"poison{n}");}
+}
+
+#[test]fn p06t_module_and_fire_facts_are_projected_into_personal_details(){
+    let r=roster();let mut d=build();
+    apply_module_facts(&mut d,&r,&[
+        Module{attacker:0,target:1,critical:true,fire:false},
+        Module{attacker:0,target:1,critical:false,fire:true},
+    ]).unwrap();
+    let target=&d.rows[0].targets[0];
+    assert_eq!((target.crits,target.fire),(1,1));
+    assert_eq!((d.outgoing(10,"crits"),d.outgoing(10,"fire")),(1,1));
+    assert!(d.validate(&r).is_ok());
+}
+
+#[test]fn p06t_module_fact_can_create_a_zero_damage_target_row(){
+    let mut r=roster();r[0].direct_hits=0;r[0].piercings=0;r[0].damage_dealt=0;r[0].kills=0;
+    r[1].damage_received=0;r[1].killer_id=0;r[1].death_reason=-1;
+    let mut d=project(&r,&shot(),&[],&[],&[],&[],None).unwrap();
+    apply_module_facts(&mut d,&r,&[Module{attacker:0,target:1,critical:true,fire:false}]).unwrap();
+    assert_eq!(d.rows[0].targets[0].crits,1);
+}
+
+#[test]fn p06t_module_fact_rejects_bad_slot_without_partial_mutation(){
+    let r=roster();let mut d=build();let before=d.clone();
+    assert!(apply_module_facts(&mut d,&r,&[
+        Module{attacker:0,target:1,critical:true,fire:false},
+        Module{attacker:2,target:1,critical:true,fire:false},
+    ]).is_err());
+    assert_eq!(d,before);
 }

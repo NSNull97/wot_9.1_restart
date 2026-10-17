@@ -14,7 +14,8 @@ pub struct Target {
 impl Target {
     fn empty(vehicle_id:u32)->Self{Self{vehicle_id,death_reason:-1,..Self::default()}}
     fn has_facts(&self)->bool{self.spotted!=0||self.death_reason!=-1||self.direct_hits!=0
-        ||self.explosion_hits!=0||self.piercings!=0||self.damage_dealt!=0}
+        ||self.explosion_hits!=0||self.piercings!=0||self.damage_dealt!=0
+        ||self.crits!=0||self.fire!=0}
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Row{pub attacker_vehicle_id:u32,pub targets:Vec<Target>}
@@ -34,6 +35,10 @@ pub struct Damage{pub sequence:u32,pub shot:u32,pub attacker:usize,pub target:us
     pub health_before:i16,pub health_after:i16,pub lethal:bool,pub reason:u8}
 #[derive(Clone,Copy,Debug)]
 pub struct Spot{pub observer:usize,pub target:usize,pub tick:u32}
+/// A committed module/crew/fire transition projected into native personal details.
+/// This is presentation only; the authoritative device journal remains in World.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct Module{pub attacker:usize,pub target:usize,pub critical:bool,pub fire:bool}
 fn add(v:&mut u16,n:u16)->io::Result<()>{*v=v.checked_add(n).ok_or_else(bad)?;Ok(())}
 impl Details {
     pub fn validate(&self,roster:&[Summary])->io::Result<()>{
@@ -53,7 +58,7 @@ impl Details {
                 let target=roster.iter().find(|s|s.vehicle_id==t.vehicle_id).ok_or_else(bad)?;
                 if t.vehicle_id<=previous||t.spotted>1||!(-1..=10).contains(&t.death_reason)
                     ||t.piercings>t.direct_hits||t.damage_assisted_track!=0||t.damage_assisted_radio!=0
-                    ||t.crits!=0||t.fire!=0||!t.has_facts(){return Err(bad());}
+                    ||t.crits>192||t.fire>10||!t.has_facts(){return Err(bad());}
                 previous=t.vehicle_id;
                 if t.spotted!=0&&(self.spotting_policy.is_none()||own.team==target.team
                     ||!spotted.insert(t.vehicle_id)){return Err(bad());}
@@ -85,7 +90,7 @@ impl Details {
     }
     pub fn outgoing(&self,id:u32,field:&str)->u32{self.row(id).map_or(0,|r|r.targets.iter().map(|t|match field{
         "spotted"=>u32::from(t.spotted),"damaged"=>u32::from(t.damage_dealt>0),
-        "explosionHits"=>u32::from(t.explosion_hits),_=>0}).sum())}
+        "explosionHits"=>u32::from(t.explosion_hits),"crits"=>t.crits,"fire"=>u32::from(t.fire),_=>0}).sum())}
     pub fn incoming(&self,id:u32,field:&str)->u32{self.rows.iter().flat_map(|r|&r.targets).filter(|t|t.vehicle_id==id).map(|t|match field{
         "directHitsReceived"=>u32::from(t.direct_hits),"explosionHitsReceived"=>u32::from(t.explosion_hits),
         "piercingsReceived"=>u32::from(t.piercings),_=>0}).sum()}
@@ -136,6 +141,33 @@ pub fn project(roster:&[Summary],shots:&[Shot],direct:&[Hit],pierced:&[Hit],
         Row{attacker_vehicle_id:roster[a].vehicle_id,targets}}).collect();
     let result=Details{version:1,policy:POLICY.into(),spotting_policy:spots.map(|_|SPOTTING_POLICY.into()),rows};
     result.validate(roster)?;Ok(result)
+}
+
+/// Add committed module/fire facts to a previously validated details snapshot.
+/// Device names/HP are intentionally not exported here; the original packed
+/// contract exposes only the critical and fire counters in this section.
+pub fn apply_module_facts(details:&mut Details,roster:&[Summary],modules:&[Module])->io::Result<()> {
+    if modules.len()>MAX_ACTORS*192{return Err(bad());}
+    let mut next=details.clone();
+    for module in modules {
+        if module.attacker>=roster.len()||module.target>=roster.len() {return Err(bad());}
+        let target_id=roster[module.target].vehicle_id;
+        let row=next.rows.iter_mut().find(|row|row.attacker_vehicle_id==roster[module.attacker].vehicle_id).ok_or_else(bad)?;
+        if let Some(target)=row.targets.iter_mut().find(|target|target.vehicle_id==target_id) {
+            if module.critical {target.crits=target.crits.checked_add(1).ok_or_else(bad)?;}
+            if module.fire {target.fire=target.fire.checked_add(1).ok_or_else(bad)?;}
+        } else {
+            if row.targets.len()>=roster.len(){return Err(bad());}
+            let mut target=Target::empty(target_id);
+            if module.critical {target.crits=1;}
+            if module.fire {target.fire=1;}
+            row.targets.push(target);
+            row.targets.sort_by_key(|target|target.vehicle_id);
+        }
+    }
+    next.validate(roster)?;
+    *details=next;
+    Ok(())
 }
 
 #[cfg(test)]

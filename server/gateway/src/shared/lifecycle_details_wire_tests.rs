@@ -12,6 +12,21 @@ fn result()->Results{
         &[],Some(&[lifecycle_details::Spot{observer:0,target:1,tick:1001}])).unwrap();
     result.interaction_details=Some(d);result
 }
+#[test]fn p06t_compact_results_carries_critical_and_fire_counters(){
+    let mut result=result();
+    let mut details=result.interaction_details.take().unwrap();
+    lifecycle_details::apply_module_facts(&mut details,&summaries(&result.participants),&[
+        lifecycle_details::Module{attacker:0,target:1,critical:true,fire:true},
+    ]).unwrap();
+    result.interaction_details=Some(details);
+    let root=tests::inert(&compact_results(&result,1).unwrap());let outer=tests::tuple(&root);
+    let personal=tests::list(&outer[1]);
+    let fields=PUBLIC_FIELDS.into_iter().chain(PRIVATE_FIELDS).chain(UPDATE_FIELDS).chain(FINAL_FIELDS).collect::<Vec<_>>();
+    let get=|name|&personal[fields.iter().position(|f|*f==name).unwrap()];
+    let tests::Data::Bytes(packed)=get("details")else{panic!("details bytes")};
+    assert_eq!(&packed[18..22],&[1,0,0,0]);
+    assert_eq!(&packed[22..24],&[1,0]);
+}
 #[test]fn p08c_personal_closed_old7_and_new8_json_serde(){
     let old=tests::result();let raw=serde_json::to_string(&old).unwrap();
     assert_eq!(serde_json::from_str::<Results>(&raw).unwrap(),old);

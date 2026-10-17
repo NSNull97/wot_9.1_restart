@@ -54,7 +54,19 @@ fn project_details(world:&World,participants:&[Participant])->io::Result<super::
     let splash=world.impact.events().iter().filter_map(|e|match e{super::impact::Event::SplashResolution{
         shot_id,target,terrain_blocker,..}=>Some(d::Splash{shot:*shot_id,target:*target,clear_los:terrain_blocker.is_none()}),_=>None}).collect::<Vec<_>>();
     let spots=world.result_spots().map(|rows|rows.iter().map(|s|d::Spot{observer:s.observer(),target:s.target(),tick:s.tick()}).collect::<Vec<_>>());
-    d::project(&roster,&shots,&hits,&pierced,&damage,&splash,spots.as_deref())
+    let modules=world.device_events.iter().filter_map(|(target,event)|{
+        let (critical,fire)=match event.change {
+            crate::p06t_device_state::Change::Device{before_condition,after_condition,..}=>
+                (before_condition!=after_condition&&!event.from_fire,false),
+            crate::p06t_device_state::Change::Crew{before_active:true,after_active:false,..}=> (true,false),
+            crate::p06t_device_state::Change::Fire{before_active:false,after_active:true,..}=>(false,true),
+            _=>(false,false),
+        };
+        (critical||fire).then_some(d::Module{attacker:usize::from(event.cause.attacker_slot),target:*target,critical,fire})
+    }).collect::<Vec<_>>();
+    let mut details=d::project(&roster,&shots,&hits,&pierced,&damage,&splash,spots.as_deref())?;
+    d::apply_module_facts(&mut details,&roster,&modules)?;
+    Ok(details)
 }
 
 #[path="p06t_lifecycle_result.rs"]
