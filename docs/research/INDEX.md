@@ -6,6 +6,7 @@
 
 ## Общие (клиент, протокол, ресурсы, решения)
 
+- [P02_PROJECT_SUBMIT_PIN.md](P02_PROJECT_SUBMIT_PIN.md) — own submit firstline113→115, actual CPython2.7.3 RED→GREEN1; ordinaryPython3 54PASS/3skip, native NOT_RUN
 - [BUILD_LEGACY_ENTRYPOINTS.md](BUILD_LEGACY_ENTRYPOINTS.md) — legacy gateway3/physics builds и actual stock+extended IPC7 PASS; native/full legacy NOT_RUN
 - [P04W_SHELL_DEPOT_DISPLAY.md](P04W_SHELL_DEPOT_DISPLAY.md) — шесть original ammo refs/hidden purchases, actual Python9+Web11, native Warehouse NOT_RUN
 - [P04M_GARAGE_FRESH_PUBLICATION.md](P04M_GARAGE_FRESH_PUBLICATION.md) — known reply/readonly Fresh/atomic delta, actual Loss4+Hold5, full1619; native NOT_RUN
