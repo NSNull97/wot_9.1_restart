@@ -204,3 +204,7 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /tools/p04w_shell_display.py text eol=lf
 /tools/p09e_research_projection.py text eol=crlf
 /tests/test_p04w_shell_display.py text eol=lf
+
+# Existing legacy entrypoints were frozen with CRLF bytes.
+/tools/wg_probe/src/main.rs text eol=crlf
+/tools/map_drive_worker/MapDriveWorker.csproj text eol=crlf

@@ -14,7 +14,7 @@ mod reliable091;
 #[path = "../../../server/gateway/src/protocol/transport.rs"]
 mod transport091;
 #[path = "../../../server/gateway/src/session.rs"]
-mod gateway091;
+pub(crate) mod gateway091;
 #[path = "../../../server/gateway/src/account/model.rs"]
 mod account091;
 #[path = "../../../server/gateway/src/account/hangar.rs"]
@@ -45,6 +45,60 @@ mod map_drive_world091;
 mod map_drive_service091;
 #[path = "../../../server/gateway/src/battle/mod.rs"]
 mod battle091;
+
+// Keep root aliases on the same canonical sources; legacy CLI below is unchanged.
+#[cfg(test)]
+#[path = "../../../server/gateway/src/portable_test_fixtures.rs"]
+mod portable_test_fixtures;
+#[path = "../../../server/gateway/src/account/ammo_service.rs"]
+mod ammo_service091;
+#[path = "../../../server/gateway/src/account/crew_service.rs"]
+mod crew_service091;
+#[path = "../../../server/gateway/src/account/p04m_companion.rs"]
+mod p04m_companion091;
+#[path = "../../../server/gateway/src/account/crew_transfer.rs"]
+mod crew_transfer091;
+#[path = "../../../server/gateway/src/account/crew_progression.rs"]
+mod crew_progression091;
+#[path = "../../../server/gateway/src/account/crew_barracks.rs"]
+mod crew_barracks091;
+#[path = "../../../server/gateway/src/account/crew_dismissal.rs"]
+mod crew_dismissal091;
+#[path = "../../../server/gateway/src/account/research_service.rs"]
+mod research_service091;
+#[path = "../../../server/gateway/src/drive/scene_worker.rs"]
+mod scene_worker;
+#[cfg(test)]
+#[path = "../../../server/gateway/src/shared/server_worker_fixtures.rs"]
+mod worker_fixtures091;
+#[path = "../../../server/gateway/src/shared/p06t_shell_data.rs"]
+mod p06t_shells091;
+#[path = "../../../server/gateway/src/battle/armament.rs"]
+mod p06t_armament091;
+#[path = "../../../server/gateway/src/shared/armament_wire.rs"]
+mod armament_wire091;
+#[cfg(test)]
+#[path = "../../../server/gateway/src/shared/armament_wire_tests.rs"]
+mod p06t_armament_wire_tests;
+#[path = "../../../server/gateway/src/battle/profile13_v2.rs"]
+mod profile13_v2091;
+#[path = "../../../server/gateway/src/battle/profile13_loss.rs"]
+mod profile13_loss091;
+#[path = "../../../server/gateway/src/battle/profile13_hold.rs"]
+mod profile13_hold091;
+#[path = "../../../server/gateway/src/battle/profile13_hold_projection.rs"]
+mod profile13_hold_projection091;
+#[path = "../../../server/gateway/src/training/mod.rs"]
+mod training091;
+#[path = "../../../server/gateway/src/shared/p06t_damage.rs"]
+mod p06t_damage;
+#[path = "../../../server/gateway/src/shared/p06t_device_state.rs"]
+mod p06t_device_state;
+#[path = "../../../server/gateway/src/shared/p06t_lab_proxy.rs"]
+mod p06t_lab_proxy;
+#[path = "../../../server/gateway/src/shared/p06t_device_caps.rs"]
+mod p06t_device_caps;
+use training091::ingress as p10b_ingress091;
 
 fn map_drive_capture_args(args:&[String])->io::Result<(Option<&str>,capture091::Profile)> {
     if args.get(1).map(String::as_str)!=Some("legacy091-map-drive") || !(6..=8).contains(&args.len()) {
