@@ -22,6 +22,7 @@ import { mixedConfiguration, validateMixedResultsRequest, validateMixedResultsRe
 import { holdConfiguration, holdReaderFence, validateHoldResultsRequest, validateHoldResultsReply } from './p08b-owner-hold.mjs';
 import { lossConfiguration, validateLossResultsRequest, validateLossResultsReply } from './p06t-ammo-loss.mjs';
 import { ROOM_SELECTION_LOSS_PATH, LOSS_SELECTION_REQUEST_TIMEOUT_MS, lossSelectionConfiguration, lossRoomSelectionBody, createLossRoomSelectionService } from './p10b-selection-loss.mjs';
+import { ROOM_SELECTION_HOLD_PATH, HOLD_SELECTION_REQUEST_TIMEOUT_MS, holdSelectionConfiguration, holdRoomSelectionBody, createHoldRoomSelectionService } from './p10b-selection-hold.mjs';
 import { lateConfiguration, lateReaderFence, createLateResultService, validateLateRequest, validatePendingRequest, LATE_REQUEST_TIMEOUT_MS } from './p08c-late-results.mjs';
 import { ROOM_SELECTION_PATH, SELECTION_REQUEST_TIMEOUT_MS, selectionConfiguration, roomSelectionBody, createRoomSelectionService } from './p10b-selection.mjs';
 
@@ -238,6 +239,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.owner_hold_service !== undefined) allowed.push('owner_hold_service');
   if (options?.late_result_service !== undefined) allowed.push('late_result_service');
   if (options?.room_selection_loss_service !== undefined) allowed.push('room_selection_loss_service');
+  if (options?.room_selection_hold_service !== undefined) allowed.push('room_selection_hold_service');
   if (options?.room_selection_service !== undefined) allowed.push('room_selection_service');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
@@ -261,6 +263,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   const lateOwners = options.late_result_service === undefined ? [] : lateConfiguration(options.late_result_service, mixedOwners);
   const selectionLossOwners = options.room_selection_loss_service === undefined ? [] : lossSelectionConfiguration(options.room_selection_loss_service, lossOwners);
   const selectionOwners = options.room_selection_service === undefined ? [] : selectionConfiguration(options.room_selection_service, mixedOwners);
+  const selectionHoldOwners = options.room_selection_hold_service === undefined ? [] : holdSelectionConfiguration(options.room_selection_hold_service, holdOwners, lossOwners, [...selectionOwners, ...selectionLossOwners]);
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -296,6 +299,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   catch (error) { identity.close(); game.close(); throw error; }
   let ammunition = null;
   const accountServices = new Map();
+  const holdRoomSelections = new Map();
   const lossRoomSelections = new Map();
   const roomSelections = new Map();
   try {
@@ -329,6 +333,13 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
           service.battle = late.battle; service.results = late.results; service.lateResults = late.append; service.latePending = late.pending;
         }
         accountServices.set(id, service);
+      }
+      for (const id of selectionHoldOwners) {
+        const profile = game.read(id);
+        holdRoomSelections.set(id, createHoldRoomSelectionService({ accountId: id, nativeDatabaseId: profile.native_database_id,
+          database: options.game_database, bundle: options.ammunition_service.bundle_root, original: options.ammunition_service.original_root,
+          python: options.python_executable, localPath, mixed: { version: options.mixed_service.version, policy_sha256: options.mixed_service.policy_sha256,
+            shell_catalog: options.mixed_service.shell_catalog, terminal_policy: options.mixed_service.terminal_policy } }));
       }
       for (const id of selectionLossOwners) {
         const profile = game.read(id);
@@ -558,6 +569,18 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         const profile = game.read(value.account_id);
         if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
         const remaining = Math.max(1, LOSS_SELECTION_REQUEST_TIMEOUT_MS - (performance.now() - started));
+        clearTimeout(timer); timer = setTimeout(timedOut, remaining); req.socket.setTimeout(remaining);
+        const selected = await service.select(value, raw);
+        if (selected.error === 'selection_not_ready') return json(res, 409, selected);
+        return json(res, 200, selected);
+      }
+      if (req.method === 'POST' && req.url === ROOM_SELECTION_HOLD_PATH) {
+        if (options.room_selection_hold_service === undefined) return json(res, 404, { error: 'not_found' });
+        const { value, raw } = await holdRoomSelectionBody(req), service = holdRoomSelections.get(value?.account_id);
+        if (!service || !holdOwners.includes(value.account_id) || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        const profile = game.read(value.account_id);
+        if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        const remaining = Math.max(1, HOLD_SELECTION_REQUEST_TIMEOUT_MS - (performance.now() - started));
         clearTimeout(timer); timer = setTimeout(timedOut, remaining); req.socket.setTimeout(remaining);
         const selected = await service.select(value, raw);
         if (selected.error === 'selection_not_ready') return json(res, 409, selected);

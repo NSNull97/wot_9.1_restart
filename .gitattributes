@@ -219,3 +219,10 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /tools/p10b_selection_hold_service.py text eol=lf
 /tests/test_p10b_selection_hold_service.py text eol=lf
 /docs/plans/P10B_HOLD_SELECTION_CLI.md text eol=lf
+
+# Explicit private Hold5 selection bridge; preserve new LF source bytes.
+/web/src/p10b-selection-hold.mjs text eol=lf
+/web/tests/p10b-selection-hold.test.mjs text eol=lf
+/web/tests/p10b-selection-hold-http.test.mjs text eol=lf
+/tests/helpers/p10b_selection_hold_http_seed.py text eol=lf
+/docs/plans/P10B_HOLD_SELECTION_BRIDGE.md text eol=lf
