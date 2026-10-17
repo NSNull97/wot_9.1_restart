@@ -115,5 +115,8 @@ suite на canonical checkout дал `1587 passed / 48 failed / 5 ignored`: FAIL
 подготовлен с tag `p05c-contact132`, run `p05c-contact132-01` и отдельным
 `WOT091_STAB_DIAGNOSTICS_DIR`; receipt
 `local/evidence/20261017-stab-worker-cadence/contact132/successor-stand.json`
-SHA256 `9a78b79dd6712b7dd0a471079de50e0d4491fc417b4bbda898a15d93d1c682891`.
+SHA256 `9a78b79dd671ddad0a471079de50e0d4491fc417b4bbda898a15d93d1c682891`.
 Services, native/UI, two-PC и actual cadence receipts пока `NOT_RUN`.
+Cadence unit receipt `local/evidence/20261017-stab-worker-cadence/contact132/cadence-unit-evidence.json`
+SHA256 `bc0cb64dca7440633c1d0b8dc36475e7e4b4ec252bae732664fda9053ae3fae5`
+фиксирует 3/0/0; actual advance/CPU/scheduler JSONL остаются `NOT_RUN`.
