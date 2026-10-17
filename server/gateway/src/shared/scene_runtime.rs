@@ -7,6 +7,7 @@ impl Runtime{
     pub fn launch(artifacts:Artifacts,spec:Arc<SceneSpec>,generation:u32,scene:Scene,now:Instant)->io::Result<Self>{
         Ok(Self{worker:Worker::launch(artifacts,spec,generation,scene,now)?,last_frame:0,last_tick:180})}
     pub fn process_id(&self)->u32{self.worker.process_id()}
+    pub fn record_scheduler_lag(&self,now:Instant,deadline:Instant){self.worker.record_scheduler_lag(now,deadline)}
     pub fn advance(&mut self,inputs:&[Input],now:Instant)->io::Result<u32>{self.worker.advance(inputs,now)}
     pub fn poll(&mut self,now:Instant)->io::Result<Option<Frame>>{
         let Some(frame)=self.worker.poll(now)? else{return Ok(None);};
