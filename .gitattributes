@@ -218,3 +218,4 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 # Explicit Hold5 selection CLI precursor; prior reader bytes stay frozen.
 /tools/p10b_selection_hold_service.py text eol=lf
 /tests/test_p10b_selection_hold_service.py text eol=lf
+/docs/plans/P10B_HOLD_SELECTION_CLI.md text eol=lf
