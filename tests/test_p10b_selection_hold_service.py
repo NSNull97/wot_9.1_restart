@@ -1,5 +1,6 @@
 """Actual four-owner subprocess/SQLite CLI precursor; no native Training5."""
 from copy import deepcopy
+from contextlib import closing
 from pathlib import Path
 from unittest import mock
 import atexit
@@ -153,19 +154,33 @@ class SelectionHoldServiceTests(unittest.TestCase):
         self.unavailable(self.call(fx, request, database=missing, label='missing-db'))
         self.assertFalse(missing.exists())
         empty = OUT / 'non-hold.sqlite'
-        with sqlite3.connect(empty) as c:
+        with closing(sqlite3.connect(empty)) as c, c:
             c.execute('CREATE TABLE sentinel(value TEXT)')
             c.execute("INSERT INTO sentinel VALUES ('authored non-Hold fixture')")
         before = s.files(empty)
         self.denial(self.call(fx, request, database=empty, label='existing-no-hold'), 'OWNER_HOLD_POLICY_REQUIRED')
         self.assertEqual(s.files(empty), before)
-        with sqlite3.connect(empty) as c:
+        with closing(sqlite3.connect(empty)) as c:
             self.assertEqual(c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall(), [('sentinel',)])
         corrupt = OUT / 'not-sqlite.bin'
         corrupt.write_bytes(b'authored-invalid-sqlite\n')
         before = s.files(corrupt)
         self.unavailable(self.call(fx, request, database=corrupt, label='corrupt-db'))
         self.assertEqual(s.files(corrupt), before)
+        poisoned = OUT / 'poisoned-hold-marker.sqlite'
+        # Real backup of the already activated test DB, then an explicit
+        # corruption fixture. This is not another ownership/admission source.
+        with closing(sqlite3.connect(fx.database.as_uri() + '?mode=ro', uri=True)) as src, \
+                closing(sqlite3.connect(poisoned)) as dst:
+            src.execute('PRAGMA query_only=ON')
+            src.backup(dst)
+        with closing(sqlite3.connect(poisoned)) as c, c:
+            c.execute('UPDATE battle_owner_hold_schema SET policy_sha256=?', ('0' * 64,))
+        with closing(sqlite3.connect(poisoned)) as c:
+            before = (s.logical(c), s.files(poisoned))
+        self.unavailable(self.call(fx, request, database=poisoned, label='poisoned-existing-hold-schema'))
+        with closing(sqlite3.connect(poisoned)) as c:
+            self.assertEqual((s.logical(c), s.files(poisoned)), before)
 
     def test_actual_constructor_trace_query_only_write_refusal_and_all_handle_cleanup(self):
         fx = self.fixtures[1]
