@@ -30,7 +30,7 @@ Asia/Yekaterinburg (04:00 UTC), без ручных вопросов. Автом
 | `local/build/server/gateway-c-final-full01/result.json` | `72036e41cb2884ed6fb7b53a632391d62a24ef9513ea97177307b92d39d8a9ea` |
 | `local/evidence/20261017-c-final-full01/composition-full.json` | `e2ca06a9084dd2f8eb88bc814583561c303cae0e2144073b24c13295e3da3e70` |
 | `local/evidence/20261017-c-final-full01/tested-source-raw.zip` | `d423b9f8272295b32c6ce487d03a8bdba771f4feb1f13baf4c1a3721705f85bc` |
-| `target/debug/sr-gateway.exe` | `1fb725ed11373b066db25a8e3fa85b30dc4e6dd96127dc18084a4d7dd0973f0e` |
+| `local/build/server/gateway-c-final-full01/target/debug/sr-gateway.exe` | `1fb725ed11373b066db25a8e3fa85b30dc4e6dd96127dc18084a4d7dd0973f0e` |
 
 Команда актуального полного прогона сохранена в OS Temp
 `wot091-night-workspace-kcadgetk/full-final03/run.py` и его `result.json`;
