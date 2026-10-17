@@ -1,6 +1,6 @@
 # Isolated test repair checkpoint — 17 October2026
 
-Current worktree C:/wot091-testrepair68/w, branch codex/test-c-short-portability from200. Scope is three Python test-only repairs; plan committed before code. Candidate checks and promotion NOT_RUN pending real suite06 exit/Job0. Primary200/raw925/full1619 and prepared61 contexts are unchanged and are not retagged as this new branch proof. Production/runtime source, clients, services and data are outside this card. [Plan](plans/TEST_C_SHORT_PORTABILITY.md).
+Current worktree C:/wot091-testrepair68/w, branch codex/test-c-short-portability from200. Scope is four Python test-only fixture repairs; plan committed before code. Candidate checks and promotion NOT_RUN pending real suite06 exit/Job0. Primary200/raw925/full1619 and prepared61 contexts are unchanged and are not retagged as this new branch proof. Production/runtime source, clients, services and data are outside this card. [Plan](plans/TEST_C_SHORT_PORTABILITY.md).
 
 The inherited primary checkpoint below is historical context, not current test-repair acceptance.
 
