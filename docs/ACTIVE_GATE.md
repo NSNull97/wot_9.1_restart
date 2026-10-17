@@ -1,11 +1,7 @@
-# Current gate: BUILD legacy entrypoints
+# Current gate: TEST C short-workspace portability
 
-Branch codex/build-legacy-entrypoints frombf499c2; Warehouse722fcf9
-Python9/Web11PASS0skip/925raw; parent471ac47 full1619/5oldignored/sevencompositions.
-Mainffce8cb unchanged. C:/wot091-night-20261017-01/w; D preserved.
+Isolated branch codex/test-c-short-portability from200dcd221fb48c019b0939046ac38c18a85061dd, C:/wot091-testrepair68/w. [Plan](plans/TEST_C_SHORT_PORTABILITY.md).
 
-Implement two frozen legacy entrypoints, actual targeted3 Rust+physics builds
-and genuine IPC smoke54/02. [Plan](plans/BUILD_LEGACY_ENTRYPOINTS.md).
-Training+Hold stays closed; native/UI/gameplay remainNOT_RUN. Night continues
-to04UTC/09local, no manual asks. Next finalfull, new morning
-contexts31/NET34 and Python43. Own services/clients STOP.
+Scope: two build-temp unit fixture assumptions plus one P04D SimpleNamespace registration_url=None correction. Production different-drive guard and every runtime/config/asset/client boundary remain unchanged. Primary morning workspace200/raw925 and bindings61 are preserved.
+
+Plan committed before code. Candidate tests NOT_RUN; wait for actual Python06 completed receipt/Job0, then bounded scratch proof, exact3-file promotion/commit and ordinary targeted three-module check. No whole-suite/Cargo replay, no services/native/UI, no push before Root review.
