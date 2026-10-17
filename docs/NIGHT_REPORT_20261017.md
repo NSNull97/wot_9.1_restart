@@ -1,5 +1,12 @@
 # Ночь 16–17 октября: сервер до 09:00
 
+Последний checkpoint: codex/p04m-garage-fresh-publication, runtime471ac47;
+full1619PASS/0FAIL/5oldignored/build/923raw exact, семь same-full compositions.
+Две реальные Loss4/Hold5 garage108 mutation сохраняются один раз, Fresh retry
+readonly, native delta атомарен. [Факты](research/P04M_GARAGE_FRESH_PUBLICATION.md).
+Далее warehouse/legacy/finalfull/новые operational contexts/Python43.
+Ниже — история предыдущих checkpoint, не утверждение текущего NEXT.
+
 Последний software checkpoint — runtimeab7ad10, ветка
 `codex/p08b-owner-hold-four-composition`: full1612 PASS/0 FAIL/5 прежних ignored,
 сборка PASS,916 raw source exact, пять same-full HTTP/SQL композиций.
