@@ -57,3 +57,53 @@ Rollback: revert this additive branch's service/test/docs/attrs changes; no DB
 migration or restore is required. Retain all new temporary test DBs/receipts.
 Next step after actual scoped tests and Root review: a separate private Web/
 Rust codec card; keep native Training+Hold5 Config refusal closed throughout.
+
+## Actual committed-source gate
+
+Source02c25d37f5ae784d57cfa014b57d0e275526a005, runtime931:
+
+    $env:WOT091_ROOT='C:/wot091-night-20261017-01/w'
+    python -B -X utf8 -m unittest discover -s tests -p 'test_p10b_selection_hold*.py' -v
+
+18PASS/0FAIL/0errors/0skips,200.682 seconds. These are the existing10 actual
+reader tests and8 new CLI tests. Both explicit own committed HEAD/raw931/index/
+config and primary200/raw925/index/config remain exact before/after. The four
+parent reader/support/test/vector bytes remain exact; full931 was not run.
+No old full is treated as this new CLI source closure's acceptance.
+
+The new tests perform19 real Python subprocess calls with PYTHONPATH removed
+and unrelated cwd: four genuine source-owned positive selections (A/B in one
+attested source context,C/D in another, NOT a four-player room), malformed/
+duplicate/oversize/unknown-path input, CAS/new Hold stamp denials, foreign-owner
+generic failure, actual held5 reserve exclusion, missing/non-Hold/corrupt file
+and actual copied Hold-policy-marker corruption rejection. Setup operations
+are separate fixture-only actual writers with no grants. All13 source-DB
+main/WAL/SHM observations in the combined report remain exact.
+
+A test-only connect observer always delegates the real original sqlite3.connect
+and only installs trace callbacks. It captures343 actual SQL statements across
+RO preflight, genuine constructor and selection. No DDL/insert/update occurs;
+the actual attempted DELETE fails readonly, total_changes stays0, and both
+actual connections are closed. A failing genuine constructor with an invalid
+configured shell source also closes its partially opened handle. No runtime
+monkeypatch/subclass/private field construction is used. The brief RW-capable
+constructor connection remains an explicit reviewed limitation, not an OS-RO
+guarantee. Query_only is set before any source/reader/store method.
+
+First scoped run on6c13eef had8PASS/0FAIL/0skip in73.587s, with two ResourceWarning
+messages from new test fixtures using SQLite's transaction context without
+closing. That result/stderr is retained unchanged. Commit02c25d3 fixes only the
+new test handles with closing() and adds genuine copied-schema corruption
+coverage; service bytes are unchanged. Final18PASS stderr has no warnings.
+
+Evidence: local/evidence/20261017-p10b-hold-selection-cli-01. The original
+operator/test records are retained under C temp/training-hold-selection-cli63;
+finite SHA-verified copies contain reports/logs/source maps, not DBs, assets,
+toolchains, private configs or client resources. Actual source-generated SQL
+report a790b8695dd165689cd1de6829d5cb3f8cc62cb58259097131647f1a3cae90df
+is retained independently with its exact source/argv/status proof.
+
+Software precursor scope passes. CLI response 'ready' means only the existing
+selected-loadout proof; it is no native Ready, reserve or allowed Training5
+mode. No Web/Rust/config route, services, network, client/native test, push or
+merge was executed. Root reviews the exact branch tree/receipts before push.

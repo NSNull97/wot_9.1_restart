@@ -2,8 +2,14 @@
 
 Отдельный следующий precursor: `codex/p10b-hold-selection-cli` от0472ddbc,
 тот же независимый worktree. Добавлены только CLI5 и actual subprocess/SQLite
-тесты; прежние reader56 четыре файла сохранены. Новый scoped прогон pending,
-primary200/raw925/index/config нетронуты. Web/Rust/native Ready5 остаются закрыты.
+тесты; прежние reader56 четыре файла сохранены. Обычный committed-source прогон:
+18PASS/0FAIL/0errors/0skips за200.682s на02c25d3/raw931, reader10+CLI8.
+19 настоящих subprocess-вызовов, четыре владельца из двух attested seedDB,
+реальный SQL trace/query_only/отказ DELETE, raw/logical DB без изменений.
+Primary200/raw925/index/config и own931/HEAD/index до/после exact.
+Evidence local/evidence/20261017-p10b-hold-selection-cli-01; full931 NOT_RUN.
+Первый8PASS имел два test-only ResourceWarning; сохранён, closing исправлен,
+финальный18PASS stderr чист. Web/Rust/native Ready5 остаются закрыты.
 [План, конструкторная граница, команды и откат](plans/P10B_HOLD_SELECTION_CLI.md).
 
 Отдельная карточка reader56: `codex/p10b-hold-selection-reader`, worktree
