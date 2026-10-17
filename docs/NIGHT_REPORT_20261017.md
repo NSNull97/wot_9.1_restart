@@ -1,5 +1,9 @@
 # Ночь 16–17 октября: сервер до 09:00
 
+Warehouse runtime722fcf9: шесть исходных ammo refs, реальные остатки не менялись;
+Python9+Web11 PASS/0skip/925raw exact. UI NOT_RUN; joint full после legacy.
+[Факты](research/P04W_SHELL_DEPOT_DISPLAY.md).
+
 Последний checkpoint: codex/p04m-garage-fresh-publication, runtime471ac47;
 full1619PASS/0FAIL/5oldignored/build/923raw exact, семь same-full compositions.
 Две реальные Loss4/Hold5 garage108 mutation сохраняются один раз, Fresh retry
