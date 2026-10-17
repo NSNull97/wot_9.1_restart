@@ -34,10 +34,15 @@ full03 **1628PASS/0FAIL/5old ignored +buildPASS/source925 exact**, early14PASS.
 Reset barrier, contained-input ACK и results retirement исправлены. Старые
 full01FAIL/full02ABORTED сохранены; test-only budgets210/360с, production
 deadlines прежние. Runtime checkpoint19ba479 опубликован/сверён; main не менялся.
-Свежий Core retest120: backup actual134/46 безgrants, оба privateauth/native
-launch и два настоящихангара каждого PASS; ручной возврат новойсборки NOT_RUN.
-Невидимый shooter подавляет cross-peer FX VERIFIED; корректный anonymous FX
-ещё NOT_RUN. Join/cancel delays OBSERVED, причина доаварийной задержки UNKNOWN.
+Свежий Core retest120: два общихбоя/управление/возвраты PASS владельца и native.
+A вручную вышел в первом, B во втором; peer каждыйраз получил naturalForfeit.
+4terminal Finished, 2reset, faults/disconnect0, active0; revisions139/51,
+loadedA[0,46,46]/B[0,48,44], depot прежний. STAB Core regression принят,
+остальная зависимая ночная цепочка внеmain. Следующий Core случай — AИС7/BМС1
+без выстрелов перед разрушающим БК-тестом на AМС1 (сохранить armedB).
+Невидимый shooter подавляет cross-peer FX VERIFIED; anonymous FX UNFIXED.
+Actual observer121 PASS/EVENT_BOUND: writer+fresh7–8с, warm sync~0.4с;
+второй игрок дополнительно ждёт writer. Leaf/общийCPU UNKNOWN; fix не заявлен.
 
 Остальные новые native/UI/звук/шесть живых клиентов/дваПК/публичный хостинг
 NOT_RUN. Training+Hold5 закрыт; crash доFinal —aborted_restart из frozen reserve,

@@ -23,8 +23,13 @@ early14PASS. Reset barrier +contained ingress/retirement исправлены; �
 full01FAIL/full02ABORTED сохранены. Test-only budgets210/360с, production
 deadlines прежние. Runtime checkpoint19ba479 опубликован/сверён, main прежний.
 Свежий Core retest120 из actualCDB134/46, loadedA[0,47,47]/B[0,49,45], grants0;
-оба auth/native launch/два настоящихангара каждого PASS. Следующий шаг —
-ручной retest4groundshots→быстрый manualEscобоих→остатки→следующийобщийбой.
+оба auth/native launch/два настоящихангара каждого PASS. Два общихбоя теперь
+приняты владельцем: Amanual/Bnatural, затем Bmanual/Anatural, управление обоих
+работает. Native/SQLite подтверждают4Finished,2reset,faults0,active0;
+loadedA[0,46,46]/B[0,48,44],rev139/51,depot unchanged. STAB Core regressionPASS;
+main остаётся прежним из-за непринятой зависимой ночной цепочки.
+Следующий ручной Core случай — AИС7/BМС1, без выстрелов, затем БК-жертва AМС1;
+не обнулять БК B до остальных вооружённых проверок (у BИС7 loaded0).
 [Живая утренняя приёмка](research/MORNING_20261017_CORE_ACCEPTANCE.md).
 Новые остальные native/UI/звук/шесть клиентов/дваПК NOT_RUN. LAB99: genuine
 fixtures и2privateHTTP200 PASS; нового native launcher нет. Старый89 не ретегать.

@@ -73,7 +73,8 @@ guard SHA `3fe3899e2000a1711b221ac2c9c958d6142ce92c827d55693c5df82dfb11c22b`.
 |---|---|---|
 | Отмена и повтор очереди, общий бой, управление и красные маркеры | PASS этого случая | OBSERVED владельцем; VERIFIED сервером Cancel, повторные Join, READY×2 и Prebattle30000→Battle900000 |
 | По1КС/1ОФ в землю каждым; ручной выход обоих; остатки A[0,47,47]/B[0,49,45] | FAIL возврата / PASS расхода | Владелец: выброс обоих; все4accepted shots и writerFinished×2; readonlySQLite revisions134/46, active0, остатки совпали |
-| Повторный общий бой после ручного выхода | NOT_RUN | После подтверждения предыдущего шага |
+| Core19ba: первый возврат Amanual/Bnatural и расход4shells | PASS | Владелец: возврат нормальный, итоги у Ёжа; SQLA[0,46,46]/B[0,48,44], дваFinished |
+| Core19ba: повторный общий бой/управление/Bmanual/Anatural | PASS | Владелец: «Да, все нормально, первый получил итоги»; оба nativeAccount/Hangar, всего4Finished/2reset/faults0 |
 | Уничтожение/личные и командные итоги/захват/таймер/автоприцел | NOT_RUN новой сборки | Отдельные случаи; автоприцел пока штатно сбрасывается, полного захвата нет |
 | Смешанные машины/таран/засвет/rooms/Hold/детонация/дваПК | NOT_RUN новой сборки | Не подменять software compositions ручной приёмкой |
 
@@ -209,7 +210,38 @@ production/validators прежние. Последующий PASS full03 опи�
 процессы по одному имени/PID. Overlay rollback — только с фактическими V8
 ledgers; уже списанные снаряды и БД сохранять. Ничего не сбрасывать/не выдавать.
 
-Статус всей цепочки: **PENDING_OWNER_RETEST, вне main**; прежний ручной FAIL
-сохранён. Текущая зависимая ветка `codex/stab01-core-return-reset`, runtime19ba479;
-исходный tested200/runtime647 сохранён. Единственный следующий шаг — ручной
-retest4groundshots→быстрый Escобоих→loadedA[0,46,46]/B[0,48,44]→общийбой.
+### Фактическая приёмка Core19ba
+
+Первый ответ: «Итоги появились у ежа, выход в ангар нормально прошел». Сервер
+установил AManualLeave, BForfeit→native result confirmation. Это не две ручные
+команды в одном бою: B вернулся естественно. Во втором общем бою роли поменялись:
+BManualLeave, ANaturalForfeit. Ответ владельца: «Да, все нормально, первый получил
+итоги». Он подтвердил повторное управление/возврат обоих. Нативные снимки обоих
+боёв содержат изменяющиеся собственные позиции и упакованные углы; gameplay=false.
+Оба текущих процесса снова PlayerAccount1/2, Hangar ready. Всего4Finished,2reset,
+0SHARED_FAILED/BATTLE_FAILED/CONTAINED_FAILED/SESSION_CLOSED. FinalSQL revisions
+A139/B51, loadedA[0,46,46]/B[0,48,44], active0, depot/другие mounts сохранены.
+Evidence `manual-retest01-actual.json` и `manual-retest02-actual.json` в утренней
+папке; final02 SHA `a0265ca5e31a84a44d9cd416e9ce15e146e17c890d1d17f350d88047f562a93e`.
+
+Readonly observer121 завершился OBSERVATION_COMPLETE/EVENT_BOUND,errornull:
+68markers+432CPU=500,434.543с,1,213,898B, partial/buffer0. Первый возврат охвачен
+полностью, второй — до AFinish dispatch; конец второго подтверждён отдельным
+Root native/server/SQLite audit02. Actual Admit7.36–7.66с, Finish7.857–8.167с,
+после sharedReturn warm sync~0.4с; второй owner ждёт serial writer дополнительно.
+Это внешний writer+fresh interval, не раздельный HTTP/Python/DB timing.
+Gateway95.625CPUс/434.433wallс (22.01%одногоCPU), Node0.140625CPUс; Pythonchildren,
+physics/native и общийhostCPU не измерялись. Скорость UI относительно старых
+native samples численно не сравнивать. Result SHA
+`5bad49803cf16a2991df4f0e4ffab5a9def8feacd0c2630bd27c48555db9f801`, файл
+`transitiontiming-retest01/result.json` в утренней папке. Подробный readonly126audit
+сохранён отдельно, SHA9163b1b052a2bfb9795b7182145391f264b72c278919f2527b620568b7a94073.
+
+Статус Core STAB-регрессии: **PASS_MANUAL_EACH_AND_REENTRY**. Ветка/runtime19ba479
+проверены; прежний FAIL сохранён. Вся зависимая ночная цепочка ещё не принята,
+поэтому merge вmain не выполняется. Следующий Core случай — Aего ownedИС7(19AP),
+BМС1 без выстрелов: roster/control/низкоскоростной контакт/visibility, штатный возврат.
+Затем обаМС1 для БК, жертваA: уBИС7 loaded0, поэтому не обнулять его единственную
+вооружённую машину до прочих проверок. Native aiming recipe/исторические объёмы
+БК UNKNOWN; softwareLAB proxy допускает2успешныхКС hits в MS1 rack, но это не
+гарантия ручного попадания. Следить за реальным hit/device log после первого.
