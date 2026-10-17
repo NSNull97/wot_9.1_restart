@@ -91,3 +91,25 @@ failure/evidence data retained; use prior source-bound D checkpoints if needed.
 Do not roll SQL back over committed ammo loss or apply an old client ledger.
 No merge into main while mandatory native gates remain NOT_RUN. Single next
 step: run complete full03; after PASS continue actual4, garage and morning prep.
+
+## Full03 accepted software checkpoint
+
+Runtime7595f3f4e6b4ff8bb1f857267b777e37598a8848: actual1611PASS/0FAIL/
+5oldignored/buildPASS,871.40s tests/922.89s driver. Source909 raw bytes exact.
+Source-after local/evidence/20261017-c-short-full03/source-after.json; same-full
+outer composition-full.json SHAf1d71bad6c688f6b5ff0fadb2f9536fd62dc618d8608a16f8fcaf48eafba2874.
+Four genuine inner compositions (restart, late, Hold2, rooms) are bound to that
+full test executable/source; original PENDING records were not edited.
+Exe SHA24105f970458443f21cfd088c4faef4929c613ca79730552ed073ae356008aad.
+Raw source archive SHAe54ddc8c22e050436bd0b5036f6fae6d76f6f2c10af90d55af3b707c358ce2ae.
+
+Outer audit37 initially refused Windows verbatim-vs-ordinary path comparison;
+no partial archive/proof was written. New audit38 normalizes that spelling,
+retains local/non-reparse bounds and pins, then passed. Old failure receipt is
+A/full-seal37/failure01.json. Script38 SHA543a534d31b302f221101538eb8cfd27d0bd68cce7dd2d04565cbacbce1494bd.
+Web regression is actual26+separate11 PASS, all prior failed batches preserved;
+summary A/remaining-components-summary41.json SHAfe09395536a675a7a8310db8d409cc8e7b596dcef14e979300c82bbfd6c20f4e.
+
+Acceptance now PASS_SOFTWARE_C_WORKSPACE; mandatory native/UI remainNOT_RUN,
+main unchanged. Next is new actual4 card; later garage Fresh/warehouse/final
+source-bound morning contexts. This checkpoint does not end the night.

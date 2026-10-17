@@ -6,19 +6,19 @@
 клиенты и main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe` сохранены.
 Непринятые карточки в main не слиты. Native/UI/звук/управление/два ПК — NOT_RUN.
 
-C full01:1506PASS/105FAIL/5oldignored; C full02:1532PASS/79FAIL/5oldignored,
-909rawsourceexact,693.50s tests. Ошибки сохранены: недостающие тестовые ресурсы,
-Windows path spelling и отдельное сравнение архивного IPC с derived C config.
-Оригинальные source SHA сохраняются; production loaders/authority не ослаблены.
-Опубликованы513 finite resources и exact toolchain/vendor/Web dependencies.
-Следующий canonical C full03 пока PENDING. [Исследование](research/BUILD_C_NIGHT_WORKSPACE.md).
+**Canonical C full03 PASS:**1611PASS/0FAIL/5oldignored/buildPASS,
+909rawsourceexact; runtime7595f3f. Actual restart/late/Hold2/room compositions
+sealed against this same full; outer SHAf1d71bad6c688f6b5ff0fadb2f9536fd62dc618d8608a16f8fcaf48eafba2874.
+Source archive and exe24105f97... are retained. Earlier full01(1506/105/5) and
+full02(1532/79/5) remain FAIL_RETAINED.513 finite resources/source SHAs verified,
+production authority unchanged. [Исследование](research/BUILD_C_NIGHT_WORKSPACE.md).
 
 **Hold5 runtime3675a48**: focused30+build и actual2 Runtime→HTTP→SQLite+build
 на D PASS. В C full02 actual2, restart, late и rooms HTTP/SQL compositions
 прошли отдельно; общий C full при этом FAIL. SQL17+reader4 PASS; Web3/selection4,
 clienthost79/CPython76+3knownhost-only skips/rawSQL2/CLI1+2 PASS.
 C components: reader4/HTTP3/selectionSQL5/snapshot8 PASS0skip; oldWeb26 PASS,
-game-adapter11 ещё требует отдельного rerun после точного переноса Web data.
+game-adapter11 отдельно PASS0skip; oldWeb доказательства26+11, не единый37-run.
 [Границы и доказательства](research/P08B_OWNER_BATTLE_HOLD.md).
 
 Hold5 сохраняет резерв вышедшего игрока до настоящего исхода; parked actor
@@ -56,4 +56,4 @@ WT/FV и новые3 машины — explicit qualification LAB; owned admissio
 loaded A[0,48,48]/B[0,50,46],active0/grants0. CoreV7:96 immutable bytes сохранены.
 Старый D binding не запускать на новом C runtime; откат клиента только по
 последнему точному ledger, БД поверх нового прогресса не восстанавливать.
-Единственный ближайший шаг: настоящий полный C full03 с текущими ресурсами.
+Единственный ближайший шаг: отдельная actual4 composition33 на новой ветке.

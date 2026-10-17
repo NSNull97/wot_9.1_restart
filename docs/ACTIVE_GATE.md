@@ -18,11 +18,10 @@ Actual C full01:1506PASS/105FAIL/5oldignored; full02:1532PASS/79FAIL/5oldignored
 passed actual restart/late/Hold2/rooms HTTP/SQLite compositions, but is not a
 whole-suite PASS. Missing mesh flags/runtime members/catalogs now published;
 archived IPC test verifies original D config bytes rather than derived C hash.
-Full03 is PENDING. Exact source-gate05/allocation677765e2, WOT091_ROOT=C,
+Full03 on7595f3f is PASS:1611/0/5oldignored/buildPASS/909rawexact. Same-full four old compositions sealed with raw source archive. Exact source-gate05/allocation677765e2, WOT091_ROOT=C,
 unchanged canonical build.py with default C target. [Facts](research/BUILD_C_NIGHT_WORKSPACE.md).
 
-After complete actual C full/source-after: retain checkpoint and source archive,
-then separate actual4 Hold composition33; garage Fresh32/02 with actual Job
+Next: separate actual4 Hold composition33; garage Fresh32/02 with actual Job
 composition39; fresh source-bound morning31/NET34 contexts. Candidates are not
 accepted by their pure checks. Training+Hold5 remains unsupported behind its
 existing explicit fences; plan35 records the required typed integration.

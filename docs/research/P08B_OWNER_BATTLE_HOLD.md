@@ -17,3 +17,15 @@ Native/UI/audio/Jolt/network ownership timing and actual4 ongoing parked-body da
 Crash before final still has no per-shot WAL or durable Departure; next-run recovery honestly uses aborted_restart from the frozen reservation. Committed finals are never refunded. Rollback requires quiescent code and a compatible API5 reader once rows5 exist; do not restore an old inventory DB over spent ammunition. Leave unaccepted cards out of main.
 
 Next: finish strict C prerequisite, actual remaining components/full; then separate real-four composition24 and a fresh morning manual matrix.
+
+
+## Complete C software full after D capacity exhaustion
+
+Isolated C technical branch codex/build-c-night-workspace at7595f3f has genuine
+full1611PASS/0FAIL/5oldignored/buildPASS/909rawsourceexact, including actual2
+Hold5 and old restart/late/room compositions in the same canonical test exe.
+Only test portability changed from original Hold5 production3675a48. Evidence
+local/evidence/20261017-c-short-full03/composition-full.json outerSHAf1d71bad6c688f6b5ff0fadb2f9536fd62dc618d8608a16f8fcaf48eafba2874.
+C reader4/HTTP3/selectionSQL5/snapshot8 PASS; oldWeb26+11 separatelyPASS, not a
+retagged37-run. Actual4 is next separate test card, native remainsNOT_RUN.
+See BUILD_C_NIGHT_WORKSPACE.md for earlier failed inputs and exact source copy.

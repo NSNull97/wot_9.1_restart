@@ -1,5 +1,13 @@
 # Ночь 16–17 октября: сервер до 09:00
 
+Current C checkpoint7595f3f: full1611/0/5oldignored/buildPASS/909rawexact,
+same-full restart/late/Hold2/rooms HTTP/SQL sealed. New root C:/wot091-night-20261017-01/w;
+original D preserved. Actual4/garage/warehouse/morning contexts next, nativeNOT_RUN.
+[Точные текущие факты](research/BUILD_C_NIGHT_WORKSPACE.md).
+
+Ниже сохранены прежние checkpoint; их NEXT/NOT_RUN относятся к указанному
+историческому моменту, текущее состояние — в STATUS и ACTIVE_GATE.
+
 ## Fresh-output compression focused checkpoint — runtimecc2a94d
 
 codex/build-fresh-test-compression от NET33d964e. Canonical4PASS/0FAIL/
