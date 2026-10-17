@@ -1,7 +1,7 @@
 //! Test-only fresh output compression. No recursive operation, arbitrary path,
 //! production path-policy change, old file compression, cleanup or process.
 use std::{fs,io,path::{Component,Path,PathBuf},time::{SystemTime,UNIX_EPOCH}};
-const NAMESPACES:[&str;5]=["p08b-composition02","p08c-late-composition05","p10b-loss-composition09","p08b-owner-hold-composition10","composition-storage22"];
+const NAMESPACES:[&str;6]=["p08b-composition02","p08c-late-composition05","p10b-loss-composition09","p08b-owner-hold-composition10","p08b-owner-hold-composition17","composition-storage22"];
 const FRESH_NS:u128=30_000_000_000;
 fn bad(reason:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidInput,reason)}
 fn now_ns()->io::Result<u128>{SystemTime::now().duration_since(UNIX_EPOCH).map(|v|v.as_nanos()).map_err(|_|bad("system clock before UNIX epoch"))}

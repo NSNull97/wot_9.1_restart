@@ -179,3 +179,12 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 
 # Keep the existing CRLF worker source bytes stable in source-bound gates.
 /server/gateway/src/drive/worker.rs text eol=crlf
+
+# Genuine four-owner Hold5 composition.
+/web/tests/helpers/p08b-hold-four-source-context.mjs text eol=lf
+/web/tests/helpers/p08b-hold-four-sql-barriers.mjs text eol=lf
+/web/tests/helpers/p08b-owner-hold-four-composition.mjs text eol=lf
+/tests/helpers/p08b_owner_hold_four_context.py text eol=lf
+/tests/helpers/p08b_owner_hold_four_seed.py text eol=lf
+/tests/helpers/p08b_owner_hold_four_source.py text eol=lf
+/server/gateway/src/shared/owner_hold_four_composition_tests.rs text eol=lf
