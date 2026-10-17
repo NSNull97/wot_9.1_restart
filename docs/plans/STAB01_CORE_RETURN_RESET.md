@@ -49,6 +49,16 @@ phaseLeaving сохраняется, старые команды разбира�
 Evidence: local/evidence/20261017-morning-core01/stab01_full01_failure_retained.json;
 внешние audit781cedfe/budget02freeze52aa1063 сохранены отдельно.
 
+Full02 наb1beb0f скомпилирован. Ранний focused14:13PASS/1FAIL — новый Hold5
+fixture пропустил реальный Capture.departed_after_detach для ушедшего peer до
+Forfeit, валидатор actual result/source terminal mismatch корректно отказал.
+Полный запуск остановлен раньше через exact own test handle/image/creation и
+runner ancestry, children0; cargo/build/runner завершились1. Все артефакты
+сохранены, source925 до остановки совпал; full/source-after NOT_RUN/ABORTED.
+Fixture04 добавляет только пропущенный production hook и проверки ownNone /
+peerDisconnect/tick. Production/validators неизменны, static reviewPASS.
+Следующий fresh target full03 и early14; старые full01/02 не перезаписывать.
+
 Откат: остановить только новые ownпроцессы, вернуться к сохранённому runtime
 через его неизменные артефакты в новом совместимом контексте; mutableDB/расход
 не восстанавливать поверх позднего состояния. Следующий шаг — regression/full.

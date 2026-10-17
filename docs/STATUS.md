@@ -33,7 +33,9 @@ reset опережает asyncFinish/Leaving→mod303→2157аварийных s
 1624PASS/1FAIL/5old ignored; все6новых регрессий PASS. Единственный FAIL —
 actual4Hold Node180с watchdog послеFinal4/all-finalSQL; evidence сохранён.
 Test-only budgets210/360с; contained-input ACK и results retirement исправлены,
-3новые регрессии подготовлены, static reviewPASS; execution/full02 PENDING.
+Full02 compilePASS; early14:13PASS/1newHold fixtureFAIL (пропущен peer departure
+hook). Full02 досрочно ownSTOP/ABORTED, evidence/source925 сохранены. Fixture04
+восстанавливает только test hook, static reviewPASS; early/full03 PENDING.
 Production join/cancel/leave deadlines не изменены.
 Невидимый shooter подавляет cross-peer FX VERIFIED; корректный anonymous FX
 ещё NOT_RUN. Join/cancel delays OBSERVED, причина доаварийной задержки UNKNOWN.

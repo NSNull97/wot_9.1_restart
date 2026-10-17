@@ -22,7 +22,9 @@ publication обращается к oldslot в новом пустом world;215
 Full01 на25ac184:1624PASS/1FAIL/5old ignored, все6новых STAB регрессий PASS;
 FAIL — measured actual4Hold watchdog180с, послеFinal4/all-finalSQL. Старый FAIL
 сохранён. Incoming03 исправляет review contained-input ACK/results retirement;
-3новых regression execution и full02 PENDING, test-only budgets210/360с.
+Full02 compilePASS/early13PASS+1newHold fixtureFAIL; полный ownSTOP/ABORTED,
+артефакты сохранены. Fixture04 test-only peer departure hook; full03 PENDING.
+Test-only budgets210/360с, production deadlines прежние.
 [Живая утренняя приёмка](research/MORNING_20261017_CORE_ACCEPTANCE.md).
 Новые остальные native/UI/звук/шесть клиентов/дваПК NOT_RUN. LAB99: genuine
 fixtures и2privateHTTP200 PASS; нового native launcher нет. Старый89 не ретегать.

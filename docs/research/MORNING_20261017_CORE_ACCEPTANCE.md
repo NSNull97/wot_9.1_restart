@@ -128,7 +128,14 @@ retained identity/view/receipt и сохраняет фазуLeaving в атом
 результатный retirement также использует старый outcome. Три новые регрессии
 проверяют positiveACK/confirm, poison/forged input, ordinary ingress и Hold5
 natural-old/new-live. Static reviewPASS, execution/full02 PENDING.
-Native retest ещё NOT_RUN.
+Full02 b1beb0f compilePASS; early14:13PASS/1FAIL нового Hold fixture — Capture
+не получил departed_after_detach peer12 до Forfeit. Строгий source/terminal
+validator отказал корректно. Полный02 остановлен exact own process handle после
+проверок image/creation/runner ancestry/children0; cargo/build/runner exited1.
+925raw source совпал до остановки; full final counts отсутствуют, source-after
+NOT_RUN. `stab01_full02_abort_retained.json` сохраняет логи/бинарник/stop proof.
+Fixture04 добавляет только production departure hook и typed peer/own assertions;
+production/validators прежние. Early/full03 PENDING. Native retest ещё NOT_RUN.
 
 Точные stop argv сохранены в `live-handoff01.json`. Сначала штатный выход или
 receipt-bound stop клиентаB, затемA; после них exact own gateway и bridge stop.

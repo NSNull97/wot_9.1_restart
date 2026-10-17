@@ -212,9 +212,17 @@ fn same(a:&Session,b:&Session){assert_eq!((a.rx,a.tx.len(),a.tx.cumulative,a.are
     let now=Instant::now();let mut s=session(now,true);s.login_attempt=Some(LoginAttempt::new(s.key,s.id,s.login_peer));
     {let c=s.shared.as_mut().unwrap();c.phase=Phase::Driving;let p=c.profile13.as_mut().unwrap();p.hold_return_pending=false;p.hold_departure_reason=None;}
     let(mut old,mut capture)=attached_world(now,s.identity.clone().unwrap());let id=old.id;
-    old.detach(12).unwrap();old.advance_lifecycle(now+Duration::from_millis(100)).unwrap();
+    old.detach(12).unwrap();
+    // Mirror the actual departure observation before lifecycle freezes the
+    // Forfeit. The departed peer must have premature_leave AND a typed source
+    // departure; the remaining natural-result recipient must have neither.
+    assert!(capture.departed_after_detach(&old,1,12,hold::DepartureReason::Disconnect).unwrap());
+    assert!(capture.departure(0).unwrap().is_none());
+    assert_eq!(capture.departure(1).unwrap().unwrap().reason,hold::DepartureReason::Disconnect);
+    old.advance_lifecycle(now+Duration::from_millis(100)).unwrap();
     assert_eq!(old.lifecycle.as_ref().unwrap().outcome().unwrap().reason,super::super::super::super::lifecycle::Reason::Forfeit);
     assert!(capture.freeze_outcome(&old).unwrap());let seal=capture.seal().unwrap().clone();
+    assert!(capture.departure(1).unwrap().unwrap().tick<=seal.finish(1).unwrap().finalization.tick().unwrap());
     s.shared.as_mut().unwrap().view=Some(old.clone());
     Dispatcher::terminal_hold(&mut s,&old,FinishReason::BattleFinished).unwrap();assert!(state(&mut s).unwrap().hold_departure_reason.is_none());
     let mut table=Table{sessions:vec![s],..Table::default()};let mut runtime=None;
