@@ -199,3 +199,8 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /server/gateway/src/account/ammo_session.rs text eol=lf
 /server/gateway/src/account/ammo_session_fresh.rs text eol=crlf
 /server/gateway/src/shared/mod.rs text eol=lf
+
+# Original-price depot display, preserve frozen projection CRLF.
+/tools/p04w_shell_display.py text eol=lf
+/tools/p09e_research_projection.py text eol=crlf
+/tests/test_p04w_shell_display.py text eol=lf

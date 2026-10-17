@@ -11,6 +11,7 @@ import json
 from p04k_crew_projection import BarracksRecruitmentProjectionSource
 from p09d_ammo_projection import encode, canonical
 from p09e_native_research_audit import plain_vehicle_descriptor
+from p04w_shell_display import add_shell_display_references
 from p09e_research_store import POLICY_SHA256, SHOP_REVISION, MAX_OWNED, PROFILE_VERSION
 from game_profile_tx import TransactionError
 import hashlib
@@ -93,7 +94,7 @@ def shop_tree(catalog, source_shop):
     # isPremium. Zero rows only open the window: the store rejects every crew
     # tariff. Historical tariff prices and training levels remain UNKNOWN.
     shop["tankmanCost"] = [{"credits": 0, "gold": 0, "isPremium": premium} for premium in (False, False, True)]
-    return shop
+    return add_shell_display_references(shop)
 
 
 class ResearchProjectionSource(BarracksRecruitmentProjectionSource):
