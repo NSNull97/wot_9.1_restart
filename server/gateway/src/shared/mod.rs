@@ -161,6 +161,15 @@ impl Client {
         self.phase == Phase::Account && self.profile13.as_ref().is_some_and(|s| s.garage_idle())
     }
     pub(super) fn profile13_account(&self) -> bool {self.phase==Phase::Account && self.profile13.is_some()}
+    /// Candidate32: only the idle garage durable cursor changes here. The
+    /// enclosing Session clone also publishes its actual fresh cache +0x57.
+    pub(super) fn commit_garage_source_revision(&mut self,old:u64,next:u64)->io::Result<()> {
+        let state=self.profile13.as_mut().ok_or_else(bad)?;
+        if self.phase!=Phase::Account||!state.garage_idle()||state.revision!=old
+            ||next!=old.checked_add(1).ok_or_else(bad)?||next>=i32::MAX as u64
+            ||state.hold_projection.is_some(){return Err(bad());}
+        state.revision=next;Ok(())
+    }
     pub(super) fn profile13_arena_ready(&self) -> bool {
         self.profile13.as_ref().is_some_and(|s| s.has_reservation() && !s.in_flight && !s.has_pending_return())
     }
@@ -1677,3 +1686,37 @@ mod p10b_special_account_tests;
 
 #[cfg(test)]
 pub(crate) mod composition_storage_tests;
+
+#[cfg(test)]
+mod garage_fresh32_cursor_tests {
+    use super::*;
+    fn client()->Client {
+        let mut c=Client::new(0);c.join_requested=false;c.return_generation=3;c.return_source_revision=7;
+        c.profile13=Some(profile13_session::State::new("e6ef9b6e-1316-4d78-9f6a-18659b03b231".into(),13).unwrap());
+        c.profile13.as_mut().unwrap().command_counter=19;c
+    }
+    #[test]fn garage_fresh32_shared_cursor_commits_once_without_resetting_account_epoch(){
+        let mut c=client();let mut expected=c.clone();expected.profile13.as_mut().unwrap().revision=14;
+        c.commit_garage_source_revision(13,14).unwrap();
+        assert_eq!(c.profile13,expected.profile13);assert_eq!(c.account_incarnation(),4);
+        assert_eq!((c.return_source_revision,c.join_requested,c.queue_announced),(7,false,false));
+        assert!(c.commit_garage_source_revision(13,14).is_err());assert_eq!(c.profile13,expected.profile13);
+        c.commit_garage_source_revision(14,15).unwrap();assert_eq!(c.profile13.as_ref().unwrap().revision,15);
+        assert_eq!(c.profile13.as_ref().unwrap().command_counter,19);assert_eq!(c.account_incarnation(),4);
+    }
+    #[test]fn garage_fresh32_shared_busy_phase_and_wrong_cas_refuse_atomically(){
+        for case in 0..6 {
+            let mut c=client();match case {
+                0=>c.phase=Phase::Enable,1=>c.profile13.as_mut().unwrap().selection=Some(1),
+                2=>c.profile13.as_mut().unwrap().in_flight=true,
+                3=>c.profile13.as_mut().unwrap().hold_return_pending=true,
+                4=>{},_=>{},
+            }
+            let before=c.profile13.clone();let epoch=c.account_incarnation();
+            let(old,next)=match case{4=>(12,13),5=>(13,15),_=>(13,14)};
+            assert!(c.commit_garage_source_revision(old,next).is_err());
+            assert_eq!(c.profile13,before);assert_eq!(c.account_incarnation(),epoch);
+            assert_eq!(c.return_source_revision,7);
+        }
+    }
+}

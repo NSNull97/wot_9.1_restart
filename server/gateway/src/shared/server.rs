@@ -2874,3 +2874,6 @@ mod owner_hold_composition_tests;
 #[cfg(test)]
 #[path="owner_hold_four_composition_tests.rs"]
 mod owner_hold_four_composition_tests;
+#[cfg(test)]
+#[path="garage_fresh_composition_tests.rs"]
+mod garage_fresh_composition_tests;

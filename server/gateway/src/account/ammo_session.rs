@@ -3,6 +3,9 @@
 use super::*;
 use crate::{account091,ammo_service091 as codec,crew_service091 as crew_codec,crew_transfer091 as transfer_codec,crew_progression091 as skill_codec,crew_dismissal091 as dismiss_codec,crew_barracks091 as barracks_codec,research_service091 as research_codec,identity091};
 
+#[path="ammo_session_fresh.rs"]
+mod fresh;
+
 const MAX_COMMANDS:usize=512;
 const MAX_PENDING:usize=4;
 
@@ -187,8 +190,13 @@ pub(super) fn refresh(session:&mut Session,request:account091::Request,revision:
 pub(super) struct Job {
     session_id:u32,account_id:String,request_id:i16,
     receiver:mpsc::Receiver<io::Result<identity091::AmmoReply>>,
+    fresh:Option<fresh::Flow>,
 }
-impl Job {pub(super) fn session_id(&self)->u32 {self.session_id}}
+impl Job {
+    pub(super) fn session_id(&self)->u32 {self.session_id}
+    #[cfg(test)] pub(super) fn known_reply_for_test(&self)->Option<(u64,i64,bool)>{self.fresh.as_ref().and_then(fresh::Flow::known_for_test)}
+    #[cfg(test)] pub(super) fn fresh_attempts_for_test(&self)->Option<u8>{self.fresh.as_ref().map(fresh::Flow::attempts_for_test)}
+}
 
 /// At most one worker exists across active and retired sessions. Retain a
 /// retired worker until its bounded request returns; never launch a second DB
@@ -202,6 +210,8 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
     let profile=session.identity.clone().ok_or_else(invalid)?;
     let (revision,wire_revision,key)=(state.revision,state.wire_revision,state.command_key(&request));
     let account_id=profile.account_id.clone();let request_id=request.id();let kind=request.kind();
+    if config.p04m_pool!=state.pool.is_some(){return Err(invalid());}
+    let fresh=if state.pool.is_some(){Some(fresh::Flow::capture(session,&request,config.clone())?)}else{None};
     let (sender,receiver)=mpsc::sync_channel(1);
     let dispatched=request.clone();
     let pool=state.pool.clone();
@@ -225,16 +235,12 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
             Command::Skill(request)=>config.learn_crew(&profile,&key,revision,wire_revision,request),
             Command::Transfer(request)=>config.transfer_crew(&profile,&key,revision,wire_revision,request),
             Command::Research(request)=>config.research(&profile,&key,revision,wire_revision,&request),
-        }}.and_then(|mut reply|{
-            if config.p04m_pool{
-                reply.pool=Some(Arc::new(crate::p04m_companion091::Binding::metadata(&profile.fixture_dir,&profile.account_id,profile.database_id,reply.revision)?));
-            }Ok(reply)
-        });
+        }};
         let _=sender.send(outcome); // A stopped gateway has no native recipient.
     })?;
     let state=session.ammo_service.as_mut().ok_or_else(invalid)?;
     state.pending.pop_front();state.inflight=Some(request);
-    *slot=Some(Job{session_id:session.id,account_id,request_id,receiver});
+    *slot=Some(Job{session_id:session.id,account_id,request_id,receiver,fresh});
     println!("{kind}_SERVICE_DISPATCH session={} request={request_id} source_revision={revision} wire_revision={wire_revision} shared_writer=true",session.id);
     Ok(())
 }
@@ -277,6 +283,7 @@ fn apply(session:&mut Session,request_id:i16,reply:identity091::AmmoReply)->io::
 }
 
 pub(super) fn complete(session:Option<&mut Session>,slot:&mut Option<Job>)->io::Result<()> {
+    if slot.as_ref().is_some_and(|j|j.fresh.is_some()){return fresh::complete(session,slot);}
     let Some(job)=slot.as_ref() else {return Ok(());};
     let result=match job.receiver.try_recv() {
         Ok(value)=>value,
@@ -696,7 +703,7 @@ mod tests {
     fn worker_slot_retains_inflight_and_retired_result_never_applies_to_new_session() {
         let now=Instant::now();let mut old=ready(now);inflight(&mut old,226);
         let (sender,receiver)=mpsc::sync_channel(1);
-        let mut slot=Some(Job{session_id:old.id,account_id:old.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver});
+        let mut slot=Some(Job{session_id:old.id,account_id:old.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver,fresh:None});
         complete(Some(&mut old),&mut slot).unwrap();assert!(slot.is_some());assert!(old.ammo_service.as_ref().unwrap().inflight.is_some());
         let mut next=ready(now);next.id=2;let before=next.ammo_service.clone();
         sender.send(Ok(reply(true))).unwrap();complete(Some(&mut next),&mut slot).unwrap();
@@ -707,7 +714,7 @@ mod tests {
     fn ambiguous_worker_failure_leaves_no_success_or_claimed_local_commit() {
         let now=Instant::now();let mut session=ready(now);inflight(&mut session,226);let before=session.ammo_service.clone();
         let (sender,receiver)=mpsc::sync_channel(1);let mut slot=Some(Job{session_id:session.id,
-            account_id:session.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver});
+            account_id:session.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver,fresh:None});
         sender.send(Err(io::Error::new(io::ErrorKind::TimedOut,"test timeout"))).unwrap();
         assert!(complete(Some(&mut session),&mut slot).is_err());assert!(slot.is_none());
         assert_eq!(session.ammo_service,before);assert_eq!(session.tx.len(),0);
@@ -806,7 +813,7 @@ mod tests {
         assert!(apply(&mut session,226,invalid_reply).is_err());assert_eq!(session.ammo_service,before);assert_eq!(session.tx.len(),0);
         invalid_reply=crew_reply(7,3);assert!(apply(&mut session,226,invalid_reply).is_err());assert_eq!(session.ammo_service,before);
         let (sender,receiver)=mpsc::sync_channel(1);let mut slot=Some(Job{session_id:session.id,
-            account_id:session.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver});
+            account_id:session.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver,fresh:None});
         complete(Some(&mut session),&mut slot).unwrap();assert!(slot.is_some());
         let mut next=ready_crew(now);next.id=2;let clean=next.ammo_service.clone();
         sender.send(Ok(crew_reply(7,2))).unwrap();complete(Some(&mut next),&mut slot).unwrap();
