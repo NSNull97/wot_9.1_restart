@@ -1,5 +1,23 @@
 # Состояние проекта — утро17 октября2026
 
+**P07B: canonical full gate готов, native owner gate открыт.** Изолированная
+ветка `codex/p07b-full-gate-temp`, head
+`9ec193289b7afd67d5340056b5b6e5f02474a10b`, содержит оригинальный засвет без
+маскировки: шесть габаритных точек, два observer points, геометрические лучи,
+team publication и постоянное базовое 6-е чувство с проектной задержкой
+3000 ms. Canonical Windows GNU gate: **1649 PASS / 0 FAIL / 5 ignored**,
+build PASS, executable SHA-256
+`cd9d9b01eb779d7768bc568e36d41048c5591d2fd9cc7927db0cb82e696dc0ed`.
+Successor `core-loss4/p05c-contact132` source-bound без SQL/client mutation:
+binding SHA-256
+`8a5fa98ee8b1ef488e20b2a8d0ab82d12cf9698dfd1b5269fe231da0e2664cd7`, freeze
+SHA-256 `4a67c6fdb0c630689956387251ceb38924b55de04352bfc6a4481a76df9e7428`;
+`check` и read-only `check-clients` PASS. Native/UI/audio/control/two-client
+пока `NOT_RUN`. Ручная матрица габаритных точек, лучей, переворота,
+постоянного 6-го чувства и приватности записана в
+`docs/research/P07B_FULL_GATE_20261017.md`. Отрыв башки и потеря загруженного
+БК остаются отдельным P06T damage gate.
+
 **P05C: `codex/p05c-mixed-contact-handling` от2dcd5b9, приёмка FAIL/open.**
 Contact129: владелец принял перевороты/столкновения, захват/правильные итоги
 и оба ангара; затем сам закрыл окна. SQL144/56, active0, БК/склад сохранены,

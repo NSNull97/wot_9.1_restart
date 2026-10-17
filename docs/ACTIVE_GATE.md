@@ -1,8 +1,28 @@
 # Текущие ворота: P07B — оригинальный серверный засвет без маскировки
 
-Ветка `codex/p07b-original-spotting-successor` от текущего P05C/STAB head `206ded4`; интеграция P07B commit `de428a3` (исходный candidate `a750698`). Сюда подтянуты шесть source visibility points, два observer points, authoritative geometric LOS, no-camo ruleset и candidate Sixth Sense event. Старый `visibility_v1` AoI остаётся совместимым базовым слоем.
+Каноническая изолированная ветка `codex/p07b-full-gate-temp`, текущий head
+`9ec193289b7afd67d5340056b5b6e5f02474a10b`, собрана от P05C/STAB head
+`206ded423d81ed3a44f99254b5de2f763eaf26d2`. В неё вошли шесть source
+visibility points, два observer points, authoritative geometric LOS, no-camo
+ruleset и candidate Sixth Sense event. Полный gate: **1649 PASS / 0 FAIL / 5
+ignored**, `PASS_ISOLATED_BUILD`; executable SHA-256
+`cd9d9b01eb779d7768bc568e36d41048c5591d2fd9cc7927db0cb82e696dc0ed`.
 
-Текущий этап: повторить bounded source reader, focused P07B tests и canonical full gate на этом descendant; затем source-bound successor rebind и ручной native-прогон точек/лучей/появления-исчезновения/постоянного 6-го чувства. Native UI/audio/control остаются NOT_RUN до фактического прогона. Camouflage, bushes, equipment и guessed historical server rules вне карточки.
+Source-bound successor `core-loss4/p05c-contact132` перепривязан к этому
+head без SQL-мутации и установки клиентов: binding SHA-256
+`8a5fa98ee8b1ef488e20b2a8d0ab82d12cf9698dfd1b5269fe231da0e2664cd7`, freeze
+SHA-256 `4a67c6fdb0c630689956387251ceb38924b55de04352bfc6a4481a76df9e7428`.
+`check` и read-only `check-clients` прошли; native/UI/audio/control/two-client
+остаются `NOT_RUN` до владельческого прогона. Старый
+`codex/p07b-original-spotting-successor` сохранён как focused-история и не
+является текущим canonical full-gate источником.
+
+Следующий шаг — sealed native matrix: габаритные точки и лучи на укрытиях,
+переворот MS-1 с сохранением видимости, постоянное 6-е чувство с задержкой
+3000 ms, приватность скрытых поз и обычный возврат в ангар. Полная матрица и
+границы записаны в `docs/research/P07B_FULL_GATE_20261017.md`. Native UI/audio/
+control остаются `NOT_RUN` до фактического прогона. Camouflage, bushes,
+equipment и guessed historical server rules вне карточки.
 Ветка `codex/p05c-mixed-contact-handling` от2dcd5b9;
 [план](plans/P05C_MIXED_CONTACT_HANDLING.md). Исторический parent bc5c1c6/
 physics05: full02 завершён1632PASS/0FAIL/5oldignored, buildPASS/source941
