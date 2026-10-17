@@ -111,15 +111,20 @@ def definitions(original,poison=None):
             mapping=dict(policy=POLICY,classification='INFERRED_TEST_LAB_ONLY',historical_fidelity=False,support_radius='named-equal-main-W_L0-W_R0-or-group-W_L-W_R',
                 support_count=6,support_y_offset=.28,motion_quality='Discrete',collision_steps_per_60hz=4)))
     return dict(version=2,profile='test_lab',policy=POLICY,profiles=result)
-def generate(original,out,poison=None):
+def map_configs(map_source=None):
+    base=MAP_BASE if map_source is None else unlinked(map_source)
+    if map_source is not None:require(base.is_dir(),'map source directory required')
+    return {map_id:json.loads(read(base/(map_id+'-ms1-handling-config.json'),16384,pin))
+            for map_id,pin in MAP_PINS.items()}
+
+def generate(original,out,poison=None,*,map_source=None):
     out=unlinked(out).resolve();local=unlinked(PROJECT/'local').resolve(strict=True)
     require(out.is_relative_to(local)and out!=local and out.parent.is_dir()and not out.exists(),'fresh local output required')
-    document=definitions(original,poison);objects={'extended-definitions.json':document};rows=[]
+    document=definitions(original,poison);maps=map_configs(map_source);objects={'extended-definitions.json':document};rows=[]
     for definition in document['profiles']:
         kind=definition['kind'];objects[kind+'-profile-draft.json']=dict(version=2,profile='test_lab',policy=POLICY,kind=kind,battle_admission=False,
             definition_sha256=sha(encoded(definition)),definition=definition,native_binding=None)
-        for map_id,pin in MAP_PINS.items():
-            base=json.loads(read(MAP_BASE/(map_id+'-ms1-handling-config.json'),16384,pin))
+        for map_id,base in maps.items():
             config={k:base[k]for k in ('version','profile','map','terrain','obstacles','spawn_origin','spawn_yaw','bounds_xz')}
             config.update(definition['physics'],handling=definition['handling']);objects[map_id+'-'+kind+'-config.json']=config
     require(all(len(encoded(v))<=32768 for v in objects.values()),'extended output JSON bounds')
@@ -132,6 +137,7 @@ def generate(original,out,poison=None):
     with(out/'generation.json').open('xb')as stream:stream.write(encoded(receipt))
     return receipt
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--original-root',type=Path,required=True);parser.add_argument('--out',type=Path,required=True);args=parser.parse_args()
-    result=generate(args.original_root,args.out);print(json.dumps(dict(status=result['status'],out=str(args.out))));return 0
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--original-root',type=Path,required=True);parser.add_argument('--out',type=Path,required=True)
+    parser.add_argument('--map-source',type=Path,help='Explicit read-only directory for the two unchanged raw MAP_PINS; absent uses MAP_BASE');args=parser.parse_args()
+    result=generate(args.original_root,args.out,map_source=args.map_source);print(json.dumps(dict(status=result['status'],out=str(args.out))));return 0
 if __name__=='__main__':raise SystemExit(main())
