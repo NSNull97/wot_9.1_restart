@@ -37,8 +37,12 @@ JSONL-файл в заранее существующем каталоге. За
 `1587 passed / 48 failed / 5 ignored`; 48 FAIL относятся к отсутствующим
 старым physics/fixture artifacts (`p06t`/portable source roots), поэтому
 карточка остаётся FAIL/непринятой, а не получает PASS по частичному suite.
-Свежий successor stand подготовлен отдельно; services/native/client checks и
-реальные cadence JSONL receipts остаются `NOT_RUN` до утреннего native прогона.
+Точечный direct IPC7 Worker test на p04m06 fixture прошёл 1/0/0 и сохранил
+четыре bounded JSONL: 600 `advance_dispatched`, 620 replies и Windows CPU
+samples; stderr был пуст, поэтому `worker_stderr` не появился. Receipt лежит
+в `local/evidence/20261017-stab-worker-cadence/contact132/`.
+Scheduler lag именно `BatchRuntime` и services/native/client checks остаются
+`NOT_RUN` до successor/native прогона.
 
 ## Ограничения
 
