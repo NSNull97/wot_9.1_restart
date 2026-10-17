@@ -65,3 +65,25 @@ setup diagnosis. No failure or old full result is relabeled.
 Rollback: revert this additive card in its own branch; no schema migration or DB
 restore is required. Keep failed/new evidence. Next after Root review: push this
 scoped reader checkpoint, then a separate CLI/Web/private Rust codec precursor.
+
+## Actual normal postcommit gate
+
+Source commit dbbda9e7e1a0071d0d7f7300e2c776c06e3354be: ordinary discovery10PASS,
+0FAIL/0errors/0skips in126.456s. Both explicit committed HEAD/raw929/index and
+primary200/raw925/index stayed exact before/after. No full929 was executed.
+The documentation checkpoint changes no runtime source or frozen four files.
+
+First normal attempt failed honestly because the new worktree lacked private
+config/project.local.json. Root approved copying only its exact1206B SHA
+752d08eec4e0c67f388afd54b6e0e8c4d5fd4d7c1e2ef292f397435e7a83edec from primary,
+without rewriting paths. Its local_artifacts_root remains the primary C/local
+and is used only by inherited readonly local_file input checks in this test.
+No output_dir/export/publish/service path is called. No assets or toolchains
+were copied. The config is ignored and uncommitted; original/source/target hash
+remains exact. Second normal attempt passes with unchanged code4.
+
+All31 selected normal/candidate/review/operator receipt+log files are retained
+byte-exact in local/evidence/20261017-p10b-hold-selection-reader-01 (1,440,074B).
+copy-proof.json SHA b071cdb5dc670d4e9e4d18df0c443350bd2a35c26754075e0ae1af24bad684c0
+maps every original absolute path to copied bytes. No SQLite DB, asset,
+toolchain, client resource or private config content is embedded in that copy.
