@@ -8,6 +8,7 @@ use std::{collections::{BTreeMap,BTreeSet},fmt,fs,io::{self,Read,Write,BufRead,B
 use serde::{Deserialize,Deserializer,de::{self,Visitor,MapAccess,SeqAccess}};
 use serde_json::{Value,Map,Number,json};
 use sha2::{Digest,Sha256};
+use crate::worker_cadence091::{self as cadence, Sink};
 pub const MAX_ACTORS:usize=6;
 #[cfg(test)]
 #[path="scene_worker/tests_p04m.rs"]
@@ -270,17 +271,26 @@ impl Artifacts{
         if actual!=self.pins.iter().map(|p|p.0.clone()).collect(){return Err(bad("artifact tree changed"));}Ok(())}
 }
 
-enum Event{Line(Vec<u8>),Failed(io::Error)}
+enum Event{Line(Instant,Vec<u8>),Failed(io::Error)}
 enum Pending{Ready(Instant),Advance(u32,Instant),Scene(Scene,Instant)}
+impl Pending{
+    fn started(&self)->Instant{match self{Self::Ready(at)|Self::Advance(_,at)|Self::Scene(_,at)=>*at}}
+    fn kind(&self)->&'static str{match self{Self::Ready(_)=>"ready",Self::Advance(_,_)=>"advance",Self::Scene(_,_)=>"scene"}}
+}
 pub struct Worker{spec:Arc<SceneSpec>,generation:u32,child:Child,send:Option<mpsc::SyncSender<Vec<u8>>>,receive:Option<mpsc::Receiver<Event>>,
-    threads:Vec<thread::JoinHandle<()>>,pending:Option<Pending>,scene:Scene,seq:u32,ready:bool,prepared:Vec<u32>,ack:bool,failed:bool,stderr:Arc<Mutex<Vec<u8>>>}
+    threads:Vec<thread::JoinHandle<()>>,pending:Option<Pending>,scene:Scene,seq:u32,ready:bool,prepared:Vec<u32>,ack:bool,failed:bool,stderr:Arc<Mutex<Vec<u8>>>,
+    diagnostics:Option<Arc<Sink>>}
 impl Worker{
     pub fn launch(artifacts:Artifacts,spec:Arc<SceneSpec>,generation:u32,scene:Scene,now:Instant)->io::Result<Self>{
         if generation==0||scene!=Scene::new(&spec,&scene.ids)?{return Err(bad("launch generation/scene"));}artifacts.verify()?;spec.verify()?;
+        // Diagnostics are explicitly opt-in and are opened before spawning a
+        // child, so a bad output path cannot leave an unowned process behind.
+        let diagnostics=cadence::Sink::from_env("scene-worker",generation)?;
         let mut command=Command::new(&artifacts.executable);command.args(["--battle-scene"]).arg(worker_argument(&spec.manifest_path)?).args(["--scene-sha256",&spec.manifest_sha256,"--local-root"])
             .arg(worker_argument(&spec.local_root)?).args(["--generation",&generation.to_string()]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         #[cfg(windows)]{use std::os::windows::process::CommandExt;command.creation_flags(0x08000000);}
         let mut child=command.spawn()?;
+        let child_pid=child.id();
         let stdin=child.stdin.take().ok_or_else(||bad("stdin pipe"))?;let stdout=child.stdout.take().ok_or_else(||bad("stdout pipe"))?;let stderr_pipe=child.stderr.take().ok_or_else(||bad("stderr pipe"))?;
         let(send,requests)=mpsc::sync_channel::<Vec<u8>>(1);let(events,receive)=mpsc::sync_channel::<Event>(2);
         let ev=events.clone();let writer=thread::spawn(move||{let mut stream=stdin;while let Ok(raw)=requests.recv(){if let Err(e)=stream.write_all(&raw).and_then(|_|stream.flush()){let _=ev.send(Event::Failed(e));break;}}});
@@ -289,15 +299,38 @@ impl Worker{
             let n=available.iter().position(|b|*b==10).map_or(available.len(),|i|i+1);let piece=&available[..n];
             if line.len()+piece.len()>MAX_OUTPUT+1||piece.iter().any(|b|*b!=10&&!(32..=126).contains(b)){return Err(bad("output ASCII/size"));}
             let done=piece.last()==Some(&10);line.extend_from_slice(piece);stream.consume(n);if done{line.pop();break;}}
-            total+=line.len();if total>256*1024*1024{return Err(bad("lifetime output bound"));}if events.send(Event::Line(line)).is_err(){return Ok(());}
+            total+=line.len();if total>256*1024*1024{return Err(bad("lifetime output bound"));}if events.send(Event::Line(Instant::now(),line)).is_err(){return Ok(());}
         }};let mut run=run;if let Err(e)=run(){let _=events.send(Event::Failed(e));}});
-        let stderr=Arc::new(Mutex::new(Vec::new()));let target=stderr.clone();let errors=thread::spawn(move||{let mut raw=Vec::new();let _=stderr_pipe.take(65537).read_to_end(&mut raw);if let Ok(mut out)=target.lock(){*out=raw;}});
-        let mut worker=Self{spec,generation,child,send:Some(send),receive:Some(receive),threads:vec![writer,reader,errors],pending:Some(Pending::Ready(now)),scene,seq:0,ready:false,prepared:Vec::new(),ack:false,failed:false,stderr};
+        let stderr=Arc::new(Mutex::new(Vec::new()));let target=stderr.clone();let stderr_diag=diagnostics.clone();let errors=thread::spawn(move||{
+            let mut raw=Vec::new();let mut total=0usize;let mut buffer=[0u8;1024];let mut stream=stderr_pipe;
+            loop{match stream.read(&mut buffer){Ok(0)=>break,Ok(n)=>{
+                total=total.saturating_add(n);if raw.len()<65537{raw.extend_from_slice(&buffer[..n.min(65537-raw.len())]);}
+                if let Some(sink)=&stderr_diag{sink.record_stderr(Instant::now(),&buffer[..n.min(cadence::MAX_STDERR_PREFIX)],total,total>cadence::MAX_STDERR_BYTES);}
+            },Err(_)=>break}}
+            if let Ok(mut out)=target.lock(){*out=raw;}
+        });
+        if let Some(sink)=&diagnostics{sink.record_process("worker_spawned",now,child_pid,cadence::process_cpu_100ns(child_pid));}
+        let mut worker=Self{spec,generation,child,send:Some(send),receive:Some(receive),threads:vec![writer,reader,errors],pending:Some(Pending::Ready(now)),scene,seq:0,ready:false,prepared:Vec::new(),ack:false,failed:false,stderr,diagnostics};
         worker.send_value(&scene_request(&worker.spec,generation,&worker.scene,0,"restore_scene"))?;Ok(worker)
     }
     fn send_value(&mut self,value:&Value)->io::Result<()>{self.send_bytes(line(value)?)}
     fn send_bytes(&mut self,raw:Vec<u8>)->io::Result<()>{self.send.as_ref().ok_or_else(||bad("closed writer"))?.try_send(raw).map_err(|_|bad("single pending writer"))}
     pub fn process_id(&self)->u32{self.child.id()}
+    fn diag_process(&self,event:&str,at:Instant){if let Some(sink)=&self.diagnostics{sink.record_process(event,at,self.child.id(),cadence::process_cpu_100ns(self.child.id()));}}
+    /// Record the dispatcher-side logical deadline before the existing
+    /// fail-closed check runs. This retains evidence for both normal due
+    /// advances and >500 ms scheduler lag without changing the guard.
+    pub fn record_scheduler_lag(&self,now:Instant,deadline:Instant){
+        if let Some(sink)=&self.diagnostics{
+            let lag_us=now.checked_duration_since(deadline).map(|d|d.as_micros().min(u128::from(u64::MAX))as u64);
+            let lead_us=deadline.checked_duration_since(now).map(|d|d.as_micros().min(u128::from(u64::MAX))as u64);
+            let fail_closed=lag_us.is_some_and(|v|v>crate::map_drive_worker091::MAX_LAG.as_micros()as u64);
+            sink.record(json!({"event":"scheduler_lag","at_us":sink.elapsed_us(now),"deadline_us":sink.elapsed_us(deadline),
+                "lag_us":lag_us,"lead_us":lead_us,"status":if fail_closed{"FAIL_CLOSED"}else if lag_us.is_some(){"DUE"}else{"EARLY"},
+                "max_lag_us":crate::map_drive_worker091::MAX_LAG.as_micros()}));
+            self.diag_process("scheduler_sample",now);
+        }
+    }
     pub fn shutdown(mut self)->io::Result<()>{
         self.send.take();self.receive.take();let deadline=Instant::now()+Duration::from_secs(3);
         loop{if let Some(status)=self.child.try_wait()?{if status.success(){return Ok(());}return Err(bad("producer failed during EOF shutdown"));}
@@ -309,7 +342,9 @@ impl Worker{
     pub fn prepared_ids(&self)->&[u32]{&self.prepared}
     pub fn advance(&mut self,inputs:&[Input],now:Instant)->io::Result<u32>{if !self.ready()||self.pending()||!self.prepared.is_empty()||self.ack{return Err(bad("advance barrier"));}
         let seq=self.seq.checked_add(1).ok_or_else(||bad("sequence overflow"))?;let raw=advance_request(&self.spec,self.generation,&self.scene,seq,inputs)?;
-        self.send_bytes(raw)?;self.pending=Some(Pending::Advance(seq,now));Ok(seq)}
+        self.send_bytes(raw)?;self.pending=Some(Pending::Advance(seq,now));
+        if let Some(sink)=&self.diagnostics{sink.record(json!({"event":"advance_dispatched","seq":seq,"at_us":sink.elapsed_us(now),"inputs":inputs.len()}));}
+        self.diag_process("advance_sample",now);Ok(seq)}
     pub fn sync_removed(&mut self,scene:Scene,now:Instant)->io::Result<()>{if !self.ready()||self.pending()||self.ack||scene!=Scene::new(&self.spec,&scene.ids)?||
         self.scene.ids.iter().chain(&self.prepared).any(|id|scene.ids.binary_search(id).is_err()){return Err(bad("scene commit barrier/set"));}
         self.send_value(&scene_request(&self.spec,self.generation,&scene,self.seq,"sync_removed"))?;self.pending=Some(Pending::Scene(scene,now));Ok(())}
@@ -317,13 +352,17 @@ impl Worker{
     pub fn poll(&mut self,now:Instant)->io::Result<Option<Frame>>{if self.failed{return Err(bad("worker failed"));}let result=self.poll_inner(now);if result.is_err(){self.failed=true;}result}
     fn poll_inner(&mut self,now:Instant)->io::Result<Option<Frame>>{
         if let Some(pending)=&self.pending{let(start,limit)=match pending{Pending::Ready(t)=>(*t,START_TIMEOUT),Pending::Advance(_,t)|Pending::Scene(_,t)=>(*t,REPLY_TIMEOUT)};
-            if now.checked_duration_since(start).ok_or_else(||bad("clock regression"))?>limit{return Err(io::Error::new(io::ErrorKind::TimedOut,"shared scene worker deadline"));}}
+            let elapsed=now.checked_duration_since(start).ok_or_else(||{self.diag_process("deadline_clock_regression",now);bad("clock regression")})?;
+            if elapsed>limit{if let Some(sink)=&self.diagnostics{sink.record(json!({"event":"worker_deadline","at_us":sink.elapsed_us(now),"elapsed_us":elapsed.as_micros().min(u128::from(u64::MAX)),"limit_us":limit.as_micros(),"status":"FAIL_CLOSED"}));}self.diag_process("worker_deadline_sample",now);return Err(io::Error::new(io::ErrorKind::TimedOut,"shared scene worker deadline"));}}
         let event=match self.receive.as_ref().ok_or_else(||bad("closed receiver"))?.try_recv(){Ok(e)=>Some(e),Err(mpsc::TryRecvError::Empty)=>None,Err(_)=>return Err(bad("producer channel closed"))};
         let Some(event)=event else{if let Some(pending)=&self.pending{let(start,limit)=match pending{Pending::Ready(t)=>(*t,START_TIMEOUT),Pending::Advance(_,t)|Pending::Scene(_,t)=>(*t,REPLY_TIMEOUT)};
-            if now.checked_duration_since(start).ok_or_else(||bad("clock regression"))?>limit{return Err(io::Error::new(io::ErrorKind::TimedOut,"shared scene worker deadline"));}}
+            let elapsed=now.checked_duration_since(start).ok_or_else(||{self.diag_process("deadline_clock_regression",now);bad("clock regression")})?;
+            if elapsed>limit{if let Some(sink)=&self.diagnostics{sink.record(json!({"event":"worker_deadline","at_us":sink.elapsed_us(now),"elapsed_us":elapsed.as_micros().min(u128::from(u64::MAX)),"limit_us":limit.as_micros(),"status":"FAIL_CLOSED"}));}self.diag_process("worker_deadline_sample",now);return Err(io::Error::new(io::ErrorKind::TimedOut,"shared scene worker deadline"));}}
             if self.stderr.lock().map_err(|_|bad("stderr lock"))?.len()>65536{return Err(bad("stderr overflow"));}return Ok(None);};
-        let raw=match event{Event::Line(raw)=>raw,Event::Failed(e)=>return Err(e)};
+        let (received,raw)=match event{Event::Line(received,raw)=>(received,raw),Event::Failed(e)=>{if let Some(sink)=&self.diagnostics{sink.record_error("worker_event_failed",now,&e.to_string());}self.diag_process("worker_event_failed_sample",now);return Err(e)}};
         let pending=self.pending.as_ref().ok_or_else(||bad("unsolicited producer frame"))?;
+        if let Some(sink)=&self.diagnostics{let wait_us=received.checked_duration_since(pending.started()).unwrap_or_default().as_micros().min(u128::from(u64::MAX))as u64;sink.record(json!({"event":"worker_reply","at_us":sink.elapsed_us(received),"consumed_us":sink.elapsed_us(now),"wait_us":wait_us,"kind":pending.kind()}));}
+        self.diag_process("reply_sample",received);
         if let Pending::Scene(scene,_)=pending{let v=parse(&raw,MAX_OUTPUT)?;keys(&v,&["version","event","generation","manifest_sha256","catalog_sha256","advance_seq","tick","scene_version","removed_object_ids","scene_sha256"])?;
             check_header(&v,&self.spec,self.generation)?;
             if string(&v,"event")?!="scene_synced"||uint(&v["advance_seq"])?!=self.seq as u64||uint(&v["tick"])?!=180+self.seq as u64*6||

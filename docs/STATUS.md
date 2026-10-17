@@ -95,3 +95,13 @@ The live run emitted two fail-closed reasons in order: `integrated drive logical
 ### Worker deadline classification
 
 Read-only diagnosis separates this from physics acceptance. Battle `1842779300997493393` failed first because the shared main loop exceeded the 500 ms logical-drive lag while no worker reply was pending. Battle `1842779300997493394` then failed because a pending scene-worker advance exceeded the 500 ms IPC/world-step reply deadline. CPU/OS scheduling duration is not recorded, so runtime overload/latency remains UNKNOWN. Keep both fail-closed guards unchanged; the next card is a bounded worker-cadence diagnostic with per-advance wall timing, child stderr/CPU and scheduler receipts, not a silent timeout relaxation or P05C physics retune.
+
+### STAB worker cadence branch
+
+Ветка `codex/stab-worker-cadence` подготовила opt-in bounded receipts для
+IPC7 `scene_worker::Worker` и `BatchRuntime`: каждый advance/reply, logical
+scheduler lag, обе fail-closed deadline ветви, bounded stderr и Windows CPU
+sample. Env `WOT091_STAB_DIAGNOSTICS_DIR` выключен по умолчанию; guards
+`REPLY_TIMEOUT=500ms`/`MAX_LAG=500ms` не менялись. Source metadata check PASS;
+unit runtime, canonical build и native successor NOT_RUN из-за отдельного
+linker/toolchain ограничения, поэтому ветка не принята в main.

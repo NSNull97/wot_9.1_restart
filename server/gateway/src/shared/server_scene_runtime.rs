@@ -198,7 +198,13 @@ impl BatchRuntime {
         if !self.settled||world.tick==1000&&world.actors.iter().any(|a|a.session.is_some()&&!a.ready){return Ok(());}
         let runtime=self.runtime.as_mut().ok_or_else(||model::bad())?;
         if runtime.pending(){return Ok(());}
-        let deadline=drive_deadline(world.started.ok_or_else(||model::bad())?,self.dispatched,now)?;
+        let started=world.started.ok_or_else(||model::bad())?;
+        // Capture the dispatcher-side wall lag before the existing 500 ms
+        // fail-closed check. This is a receipt only; it never rebases or
+        // relaxes the logical clock.
+        let target=match self.dispatched{Some(previous)=>previous.checked_add(crate::map_drive_worker091::STEP).ok_or_else(||model::bad())?,None=>drive_grid(started,now)?};
+        if now>=target{runtime.record_scheduler_lag(now,target);}
+        let deadline=drive_deadline(started,self.dispatched,now)?;
         if let Some(deadline)=deadline{
             let allows_actions=world.lifecycle.as_ref().is_none_or(|s|s.allows_actions());
             let inputs=world.actors.iter().map(|a|actor_input(a,world.tick,allows_actions)).collect::<io::Result<Vec<_>>>()?;
