@@ -1,11 +1,17 @@
-# Current gate: BUILD legacy entrypoints
+# Текущие ворота: утренняя native-приёмка 17 октября
 
-Branch codex/build-legacy-entrypoints frombf499c2; Warehouse722fcf9
-Python9/Web11PASS0skip/925raw; parent471ac47 full1619/5oldignored/sevencompositions.
-Mainffce8cb unchanged. C:/wot091-night-20261017-01/w; D preserved.
+Ночное задание владельца до04:00UTC/09:00Екатеринбурга: основной runtime64767ec,
+tested checkpoint200dcd2, ветка codex/build-legacy-entrypoints, source925.
+Canonical gateway1619PASS/0FAIL/5прежних ignored +buildPASS;7HTTP/SQL compositions.
+Полный Python06 остаётсяFAIL; исправления и новые кандидаты в отдельных ветках.
+Mainffce8cb сохранён. [Отчёт](research/NIGHT_20261017_REPORT.md),
+[точный утренний запуск](research/NIGHT_20261017_MORNING.md).
 
-Implement two frozen legacy entrypoints, actual targeted3 Rust+physics builds
-and genuine IPC smoke54/02. [Plan](plans/BUILD_LEGACY_ENTRYPOINTS.md).
-Training+Hold stays closed; native/UI/gameplay remainNOT_RUN. Night continues
-to04UTC/09local, no manual asks. Next finalfull, new morning
-contexts31/NET34 and Python43. Own services/clients STOP.
+Core/rooms/Hold подготовлены раздельными C03 SQLite. Новые client install,
+rollback/native/UI/управление/шесть клиентов/дваПК NOT_RUN. LAB99: genuine
+fixtures и2privateHTTP200 PASS; нового native launcher нет. Старый89 не ретегать.
+Training+Hold5 и owned admission новых LAB машин закрыты.
+
+После09:00 не начинать новые ночные изменения. Ждать утренней команды владельца
+на фактический Core запуск/ручной сценарий. Не запускать WoT по одному времени
+или heartbeat. Непринятые карточки не merge в main. Первый следующий шаг — Core.

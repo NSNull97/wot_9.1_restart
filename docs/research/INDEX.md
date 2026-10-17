@@ -4,6 +4,12 @@
 Ссылки внутри исследований на `docs/plans/` и `docs/evidence-index/` ведут в историю:
 `git show 1eaff5e:<путь>` (удалены 2026-10-15 при сокращении документации).
 
+## Ночь16–17 октября и ручная приёмка
+
+- [NIGHT_20261017_REPORT.md](NIGHT_20261017_REPORT.md) — exact925/full1619, честные PythonFAIL, отдельные ветки, evidence и ограничения
+- [NIGHT_20261017_MORNING.md](NIGHT_20261017_MORNING.md) — actual bindings и порядок Core→rooms→Hold; LAB/NET ограничения
+- [NIGHT_20261017_FILES.txt](NIGHT_20261017_FILES.txt) —427 изменённых source/config/test paths от main до tested200
+
 ## Общие (клиент, протокол, ресурсы, решения)
 
 - [BUILD_LEGACY_ENTRYPOINTS.md](BUILD_LEGACY_ENTRYPOINTS.md) — legacy gateway3/physics builds и actual stock+extended IPC7 PASS; native/full legacy NOT_RUN

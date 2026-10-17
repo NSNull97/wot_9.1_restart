@@ -1,30 +1,31 @@
-# Состояние проекта — 17 октября 2026, ночная работа до 09:00
+# Состояние проекта — утро17 октября2026
 
-Рабочая папка: `C:/wot091-night-20261017-01/w`. Исходный D сохранён: там
-почти нет места. Main `ffce8cb660e9e6af6872aa4a5de444f461bc73fe` не менялся;
-непринятые ночные карточки остаются в отдельных зависимых ветках.
+Основной checkout C:/wot091-night-20261017-01/w; исходный D сохранён.
+Ветка codex/build-legacy-entrypoints, runtime64767ec, tested checkpoint200dcd2;
+финальный descendant меняет только документацию. Mainffce8cb не менялся.
 
-Текущий checkpoint: `codex/p04m-garage-fresh-publication`, runtime471ac47.
-**Полный gateway: 1619 PASS, 0 FAIL, 5 прежних ignored; сборка PASS,
-923 исходных файла совпали побайтно.** Семь настоящих HTTP/SQLite compositions
-из одного полного прогона запечатаны. Known garage reply сохраняется до
-readonly Fresh и атомарного native delta; две actual Loss4/Hold5 CMD108 проверки
-без повторной mutation прошли. [Факты и откат](research/P04M_GARAGE_FRESH_PUBLICATION.md).
+**Canonical gateway1619PASS/0FAIL/5old ignored, buildPASS, source925 raw exact;
+7настоящихHTTP/SQLite compositions одного full запечатаны.**
+Loss4/БК-loss, Hold5, поздние итоги, Fresh, склад и legacy описаны в
+[ночном отчёте](research/NIGHT_20261017_REPORT.md). Новые selection5-reader/CLI/
+HTTP935, portability68, map-source74 и own Python2.7 pin90 — отдельные ветки.
 
-Hold5 удерживает резерв вышедшего игрока до настоящего исхода. Crash до Final
-по-прежнему использует явный aborted_restart из frozen-резерва; per-shot WAL
-не реализован. Training+Hold5 запрещён: обычные комнаты работают в отдельном
-Loss4-режиме. Нельзя открывать эту комбинацию простой сменой флага.
+**Python06:FAIL —3338tests_run,3232success,12FAIL,45ERROR,90SKIP.**
+Focused72:FAIL; targeted88:181success/1ERROR и4classSKIP. Старые FAIL сохранены;
+исправления и восстановленные inputs не объявлены повторным полнымPASS.
+Isolated68:41PASS;74:11PASS+CLI projection;90:realPy2.7 target1PASS,
+Py3 module54PASS/3SKIP. Selection HTTP:Node15/Python18/derivedHold3PASS.
 
-Складские ссылки реализованы в codex/p04w-shell-depot-display runtime722fcf9:
-Python9+Web11 PASS/0skip,925raw exact; UI NOT_RUN, общий full после legacy.
-[Файлы, исходные цены, evidence, откат](research/P04W_SHELL_DEPOT_DISPLAY.md).
-Legacy-входы исправлены в codex/build-legacy-entrypoints runtime64767ec:
-gateway3/0/0 иphysics build PASS, настоящий stock+extended IPC7 smoke PASS,
-925raw exact. [Команды и ограничения](research/BUILD_LEGACY_ENTRYPOINTS.md).
-Сейчас финальный общий full, затем новые утренние стенды и полный Python-набор.
+СвежиеCore/rooms/Hold/LAB C03 data contexts подготовлены без grants.
+Четыре служебных режима actualBOUND/health/8ownstops PASS83; ownLAN69
+Login/RunOpen4/firstBase PASS и2ownstops, это не дваПК. Privateauth95:
+Core/rooms/Hold6HTTP200/6ownstops; server-onlyLAB99 genuinefixtures/2HTTP200/
+2ownstops/Job0. НовыйnativeLABlauncher отсутствует; старый89authFAIL сохранён.
+[Утренние команды](research/NIGHT_20261017_MORNING.md) проверены по actual bindings.
 
-Native/UI/звук/управление/шесть живых клиентов/два ПК новых сборок — NOT_RUN.
-Утренние helpers31/34 прошли только input-preflight родителя7595f3f; фактические
-backup/activation/bind/install/services/client для нового checkpoint ещё NOT_RUN.
-Ночь продолжается до 04:00 UTC / 09:00 местного времени без ручных вопросов.
+Новая native/UI/звук/управление/шесть живых клиентов/дваПК/публичный хостинг
+NOT_RUN. Training+Hold5 закрыт; crash доFinal —aborted_restart из frozen reserve,
+per-shotWAL нет. Причина микролага UNKNOWN; rustfmt закреплённой версии отсутствует.
+Оборудование/слоты/продажа/P04L не подключены к новому writer.
+После09:00 ночную реализацию не продолжать без нового задания; первый шаг владельца
+— Core manual по указанной инструкции. Непринятая цепочка остаётся вне main.
