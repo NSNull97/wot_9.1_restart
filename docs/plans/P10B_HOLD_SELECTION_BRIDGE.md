@@ -1,119 +1,97 @@
-# Proposed P10B private Hold5 selection bridge
+# P10B private Hold5 selection bridge
 
-Root-approved bounded private bridge implementation card, before code. CLI63 is already
-preserved at ed53addea71a5b3623d0a6602caf9dd7c43b23b0 / tree
-15eedecca01295e1c1ba718c02a0172034a60861. Primary200/raw925 stays untouched.
-This proposal is one functional private bridge step, not native Training5.
+One bounded component card, branch codex/p10b-hold-selection-bridge from
+reviewed/pushed CLI63 ed53adde. Implementation tested at5b8c2b4/raw935.
+Primary200/raw925, prior CLI/reader branches, all Python writers and the native
+training+Hold5 prohibition remain unchanged. This is private selection proof,
+not a native Ready/claim/reserve/admit or full P10B acceptance.
 
-## Concrete integration choice
+## Functional contract and scope
 
-Use the existing private createIdentityBridge listener and its fixed POST
-/internal/native/room-selection-hold. Add one new adapter module
-web/src/p10b-selection-hold.mjs and narrow game-adapter.mjs hooks. This avoids an
-unused service and a second listener/auth implementation. A route needs one
-explicit new bridge option, so this scope requires Root approval; no option or
-route is changed by this plan. Gateway Config, Rust flags and the existing
-training+Hold5 rejection remain completely unchanged.
+Add web/src/p10b-selection-hold.mjs and narrow game-adapter.mjs hooks. The fixed
+POST /internal/native/room-selection-hold uses existing private bearer, exact
+Host/Origin and actual registered owner/native database identity checks.
+Absent option returns404. New exact optional room_selection_hold_service has:
+version5, schema p10b-owned-selection-hold.v1, contract
+p08b-owner-battle-hold.v1, policy_sha256
+98cdc5d657e4cdf30225c26913f2c70a89865de9ae2bb97704fa4b623efd806e,
+and1..6 unique accounts. They must belong to both configured Hold and Loss
+owners, and be disjoint from existing Selection2/4 owner sets. There is no
+fallback to4, implicit activation or default enabling. Existing Hold/late
+startup and all-method writer/factory fences remain in force.
 
-Proposed exact optional config:
+The fixed intrinsic tools/p10b_selection_hold_service.py receives only trusted
+configured argv paths/bound owner and original incoming Request9 bytes. Its
+unique-key parser remains authoritative for duplicates. Request4096B,
+reply12288B, stderr4096B; worker7s, outer request9s, one active read per owner.
+Timeout and all three stdio error paths kill the same child and wait close
+before releasing capacity. Read snapshots may coexist with SQLite WAL writes;
+this does not claim a mutation-worker lane. Only known typed denials become409;
+malformed400, oversize413, foreign403, unexpected generic503.
 
-    room_selection_hold_service = {
-      version: 5, schema: 'p10b-owned-selection-hold.v1',
-      contract: 'p08b-owner-battle-hold.v1',
-      policy_sha256: '98cdc5d657e4cdf30225c26913f2c70a89865de9ae2bb97704fa4b623efd806e',
-      accounts: [one to six unique configured owner UUIDs]
-    }
+Reply15/Stamp11 and FrozenHold3 are validated directly: explicit Hold policy,
+nested Loss3 policy/hash and base9 stock MS1/IS7 fields, every nested hash,
+request identity/revision/stamp and selection fingerprint. No fake Selection4
+envelope/cast. 'ready' is only readonly selected-loadout proof. Gateway Config,
+Rust/native flags, callbacks402/411 and server admission remain untouched.
+The CLI63 genuine constructor briefly owns a RW-capable handle before verified
+query_only; its existing-schema preflight/trace/cleanup proof is retained.
+There is no claim of OS-readonly from the first actual constructor handle.
 
-The subset must belong to BOTH existing owner_hold_service and ammo_loss_service
-owners and be disjoint from configured old2/4 selection owners. Existing
-holdReaderFence / lateReaderFence and the real all-method OwnerHold factory stay
-in force. No deriving new capabilities from a table marker, fallback to4 or
-implicit activation. Absent new option returns404. Other config schemas and
-old2/4 routes keep their current behavior and Hold-owner denials.
+## Actual verification and evidence
 
-The handler lives after current private bearer/Host/Origin/method checks. It
-requires a registered selected owner and actual identity/game native DB ID,
-then invokes only the bound per-owner reader service. A successful 'ready'
-response means selected-loadout proof, never native402/411/WriterReadyRef.
-No new economic or client-facing API is introduced.
+Ordinary committed-source Node15 PASS/0FAIL/0skip; exact four-file invocation
+96.289s test/97.362s wrapper. New unit6 include four actual source-owned golden
+vectors, recomputed-hash semantic poisons, closed config/body and authored
+failure-only stdout/stderr errors proving same-child kill and close-before-slot
+release. Actual HTTP2 exercise the real bridge -> fixed CLI63 -> genuine C/D
+SQLite setup, actual Fresh, ordinary ammo layout mutation, stale CAS/stamp
+refusal, current success, real Admit5/held denial, auth/Host/Origin/foreign/body/
+duplicate rejection, concurrent owner200/503 and disabled mode404.
+Selection main/WAL/logical tables/CAS are unchanged; normal layout mutation
+conserves actual loaded+depot totals, resources and crew. Original source DB
+main/WAL/SHM and finite project-generated descriptor bytes stay exact. Setup
+activation/RunOpen/copy/publication are explicit fixture-only writers with no
+grants, separate from the reader baseline. All fresh test outputs are retained.
 
-## Worker and DTO contract
+Unchanged reader10+CLI8 ordinary Python PASS18/0FAIL/0errors/0skip in203.605s:
+four genuine source owners, raw AnchorA, readonly constructor/attempted DELETE,
+all handle cleanup, current run/CAS/source stamps and actual WAL race.
 
-The adapter uses the intrinsic normal project ROOT and fixed
-tools/p10b_selection_hold_service.py. No caller worker path or env ROOT.
-Arguments are actual configured database/bundle/original/source files and
-bound owner; incoming raw bytes are only the existing Request9/Stamp11.
-Preserve original bytes through Python's duplicate-key parser. Request4096B,
-reply12288B, stderr4096B; fixed per-owner one-active read, worker7s / request9s
-matching the existing loss selection contract. Real tests must prove success
-within this bound; a timing failure is retained, not silently widened.
+Existing Hold HTTP driver also PASS3 (one complete factory scenario plus two
+Selection2/4 fence subtests),86.298s test/87.327s wrapper. This is explicitly a
+DERIVED_TEST_DRIVER: only ROOT D->exact W and suppression of its fresh directory
+removal. Every assertion/bridge close/DB close is preserved. Its final World
+facts remain AUTHORED; it proves SQL/HTTP/cache behavior, not combat/native UI.
 
-Validate exact Reply15 with actual owner/native/run/inventory/current revision
-and exact Stamp11. Validate explicit FrozenHold3, nested actual Loss wrapper
-and base9 stock MS1/IS7 constraints, all three hashes and selection fingerprint.
-Do not construct a fake Selection4 envelope or cast a Hold payload to old4.
-Reuse only policy constants/canonical digest helpers, not old Ready authority.
-Known CLI denials map409; malformed request400/oversize413; foreign owner403;
-unexpected worker/schema/exit/timeout503 with generic details. Child timeout or
-stdio failure kills the SAME child and waits close before releasing active
-capacity. Reads may coexist with ordinary SQLite WAL writes; do not claim this
-is another mutation lane or reserve/ledger writer.
+Durable evidence: local/evidence/20261017-p10b-hold-selection-bridge-01.
+Primary200/925 and own5b8c2b4/935 raw source, HEAD/index/config before/after are
+exact for all normal and derived gates. Parent931 changes only the reviewed
+adapter plus four new runtime paths; total card allowlist9 includes docs/attrs.
+Scoped peer source review found one readable-pipe error gap; it was fixed and
+covered before final gates. No further concrete blocker in that reviewed scope.
 
-## Minimal proposed file allowlist
+Preserved harness history: normal01 failed before any tests due scratch config
+proof filename; normal02 used the actual unchanged config/project.local.json.
+Its extra unmatched old test argument was noticed; exact four-file Node03 rerun
+removed ambiguity. Derived initial verifier expected one test instead of the
+three containing/subtests: actual Node exit0/pass3 logs were retained, and
+verified-result02 corrects only the external count contract, not assertions.
 
-Production: new web/src/p10b-selection-hold.mjs; narrow existing
-web/src/game-adapter.mjs. Preserve CLI63/reader56 and every Python writer.
+## Commands, limits and rollback
 
-Tests: new web/tests/p10b-selection-hold.test.mjs;
-web/tests/p10b-selection-hold-http.test.mjs;
-tests/helpers/p10b_selection_hold_http_seed.py.
+From C:/wot091-selection56/w, WOT091_ROOT points only test resource provenance
+to C:/wot091-night-20261017-01/w; production paths remain intrinsic worktree:
 
-Administrative: .gitattributes, docs/ACTIVE_GATE.md, docs/STATUS.md and a new
-docs/plans/P10B_HOLD_SELECTION_BRIDGE.md on its own future card branch. No other
-runtime source, schema, original client, resource or operational helper edit.
+    node --test --test-concurrency=1 web/tests/p10b-selection-hold.test.mjs web/tests/p10b-selection-hold-http.test.mjs web/tests/p10b-selection-loss.test.mjs web/tests/p08b-owner-hold.test.mjs
+    python -B -X utf8 -m unittest discover -s tests -p "test_p10b_selection_hold*.py" -v
 
-## Actual proof plan after approval
+Full935, Rust consumption, native Training5, native UI/physics and broken-pipe
+OS reproduction are NOT_RUN. The pipe regression authors only the failing
+stream seam and no successful SQL/DTO. Two HTTP owners are source-owned setup;
+this is not a four-player room or native match. Historical925 full receipts
+are never relabeled as935. No main merge; Root reviews exact tree before push.
 
-1. Golden unit validation uses the actual source-owned four-vector fixture
-   already committed by reader56. Reject all new stamp/wrapper/hash/identity/
-   version/field poisons and owner subset errors without fabricating SQL proof.
-2. An explicit fixture-only Python seed helper reuses genuine attested C/D
-   resource/source context and actual setup writers, preserving all old input
-   main/WAL/SHM hashes and no grants. A/B raw-anchor positive is already proven
-   by CLI63; this first HTTP composition uses two actual owners, not four rooms.
-   Any setup backup/publication is distinct from the selection baseline.
-3. Coherent ordinary module imports require this branch's real CLI63, never an
-   ignored loader/worker substitution for a positive. New test DBs/identity/
-   fixture dirs live only beneath this own worktree's local test namespace so
-   production Web localPath stays unchanged. WOT091_ROOT is a test-only attested
-   resource pointer; no production path scope is widened. Retain new outputs.
-4. Start only the test's own loopback ephemeral HTTP listener. Existing exact
-   createIdentityBridge auth/factory publishes real current Hold5 Fresh during
-   allowed setup/profile refresh. Capture complete logical/raw DB baseline
-   AFTER setup and BEFORE selection. Actual HTTP -> new Node adapter -> CLI63
-   -> existing SQLite -> strict Hold5 response must leave every table/CAS/
-   command ledger/reserve/resource/crew/ammo/depot unchanged.
-5. Wrong bearer/Origin/Host/owner/native, duplicate/malformed/oversize/path input,
-   missing mode404, missing owner activation and wrong5 stamps must fail. An
-   actual fixture Admit5 must block selection without another reserve. An
-   ordinary existing garage mutation and genuine Fresh must make oldCAS/stamp
-   fail while the new actual projection succeeds. New selection never performs
-   RunOpen, activation, garage mutation, fixture publish or Finish itself.
-6. If time allows, a separately labeled trusted test stall proves bounded own
-   child termination/close and no SQL changes; no fabricated positive worker.
-   Every listener/worker stops in finally, errors retain evidence, no old
-   cleanup/firewall/real stand action. No external network or native UI test.
-7. Normal Node tests and existing relevant bridge tests on one committed source;
-   exact own/primary before/after raw/head/index proofs, finite durable evidence
-   copy and Root review before push. Full new source/native remain NOT_RUN.
-
-UNKNOWN until actual gates: new HTTP end-to-end latency under concurrent full
-Python load; current fixture factory compatibility from the independent
-worktree's local output root. If a required source/output seam fails, preserve
-the failure; do not alias roots, weaken source hashes, grant resources or open
-Training5. Root decides any wider follow-up separately.
-
-Rollback: revert only the new optional private bridge module/hook/test/docs
-card; preserve old records and runtime fences, no database restore or migration.
-Next step: Root reviews this exact bounded endpoint/config/allowlist proposal
-and approves implementation, or keeps this artifact source-only.
+Rollback only this additive bridge card/option, preserve existing Hold reader
+fences and all durable records; never restore a DB/refund inventory. The next
+step is Root review of exact nine-path tree and receipts, then branch push.

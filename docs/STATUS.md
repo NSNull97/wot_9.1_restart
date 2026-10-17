@@ -1,12 +1,14 @@
 # Состояние проекта — 17 октября 2026, ночная работа до 09:00
 
 Отдельная карточка codex/p10b-hold-selection-bridge отCLI63 ed53adde:
-явный private Selection5 bridge с exact9/11/15 и FrozenHold3, fixed CLI63.
-Первый actual HTTP2/C-D PASS97.101s, unit6 PASS; обычный committed-source
-прогон ещё PENDING. Primary200/925 не менялся. Native Training5/полный935
-NOT_RUN, никаких reserve/Ready/activation из Selection. Новые тесты сохраняют
-свои DB/evidence и не меняют старые стенды.
-[План](plans/P10B_HOLD_SELECTION_BRIDGE.md).
+implementation5b8c2b4/raw935, обычные Node15+Python18 PASS/0FAIL/0skip;
+existing Hold HTTP derived driver3 PASS (две явные адаптации, все assertions
+сохранены). Реальные CLI/SQL/Fresh/owned ammo mutation/held refusal; selection
+raw/logical/CAS без изменений, ammo+depot/resources/crew сохранены без grants.
+Primary200/925 и own935 HEAD/index/config до/после exact. Evidence
+local/evidence/20261017-p10b-hold-selection-bridge-01. Full935/Rust/native
+NOT_RUN, Training+Hold5 закрыт; Root review/push pending, main не менялся.
+[План, команды, ограничения и откат](plans/P10B_HOLD_SELECTION_BRIDGE.md).
 
 Отдельный следующий precursor: `codex/p10b-hold-selection-cli` от0472ddbc,
 тот же независимый worktree. Добавлены только CLI5 и actual subprocess/SQLite
