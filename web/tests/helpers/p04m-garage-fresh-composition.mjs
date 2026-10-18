@@ -9,17 +9,18 @@ import {existsSync,readFileSync,writeFileSync,openSync,closeSync,readdirSync,sta
 import {resolve,join,relative,isAbsolute,dirname,basename} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {localSpelling,plain,readJson,keys,targetGuard,write} from './p08c-late-result-composition.mjs';
-import {sourceContext,SHORT_ROOT} from './p04m-garage-source-context.mjs';
+import {sourceContext,SHORT_ROOT,ORIGINAL_ROOT} from './p04m-garage-source-context.mjs';
 import {sha,snapshot,unchanged,noReservations,mutation,nativeUpdate,authenticated} from './p04m-garage-sql-barriers.mjs';
 const ROOT=resolve(dirname(localSpelling(fileURLToPath(import.meta.url))),'../../..');
 const TEST='gateway091::shared::server::garage_fresh_composition_tests::p04m_garage_fresh39_actual_http_sqlite';
 const HOLD_TEST='gateway091::shared::server::garage_fresh_composition_tests::p04m_garage_fresh39_hold5_actual_http_sqlite';
 const SCOPES=['server','tools','client_patch','web/src','tests','web/tests'];
 const COMPILED=['server/gateway/src/shared/garage_fresh_composition_tests.rs','web/tests/helpers/p04m-garage-fresh-composition.mjs','web/tests/helpers/p04m-garage-sql-barriers.mjs','web/tests/helpers/p04m-garage-source-context.mjs','web/tests/helpers/p08c-late-result-composition.mjs','tests/helpers/p04m_garage_fresh_seed.py','tests/helpers/p04m_garage_fresh_source.py','server/gateway/src/account/ammo_session.rs','server/gateway/src/account/ammo_session_fresh.rs','server/gateway/src/shared/mod.rs'];
+const ALLOWED_ROOTS=[resolve(SHORT_ROOT),resolve(ORIGINAL_ROOT)];
 function within(root,p){const r=relative(root,p);assert.ok(r&&!r.startsWith('..')&&!isAbsolute(r));return p;}
 function sourceGuard(g){
  keys(g,['schema','full_gate','head','files','parent_pid','target_dir','build_output','allocation','compiled_files','test_executable','test_name']);
- assert.equal(g.schema,g.test_name===HOLD_TEST?'p04m-garage-hold5-fresh39-parent-in-progress.v1':'p04m-garage-fresh39-parent-in-progress.v1');assert.equal(g.full_gate,'PENDING_PARENT_FULL_GATE');assert.equal(g.parent_pid,process.ppid);assert.ok(g.test_name===TEST||g.test_name===HOLD_TEST);assert.equal(ROOT,resolve(SHORT_ROOT));
+ assert.equal(g.schema,g.test_name===HOLD_TEST?'p04m-garage-hold5-fresh39-parent-in-progress.v1':'p04m-garage-fresh39-parent-in-progress.v1');assert.equal(g.full_gate,'PENDING_PARENT_FULL_GATE');assert.equal(g.parent_pid,process.ppid);assert.ok(g.test_name===TEST||g.test_name===HOLD_TEST);assert.ok(ALLOWED_ROOTS.includes(ROOT),'39 composition root must be a verified source checkout');
  const git=a=>execFileSync('git',a,{cwd:ROOT,encoding:'utf8',windowsHide:true,maxBuffer:4*1024*1024});assert.equal(git(['rev-parse','HEAD']).trim(),g.head);assert.match(g.head,/^[0-9a-f]{40}$/);assert.equal(git(['status','--porcelain','--untracked-files=all','--',...SCOPES]),'');
  const names=git(['ls-files','-z','--',...SCOPES]).split('\0').filter(Boolean).sort();assert.deepEqual(Object.keys(g.files).sort(),names);for(const n of names)assert.equal(sha(readFileSync(within(ROOT,plain(join(ROOT,n))))),g.files[n]);
  assert.deepEqual(Object.keys(g.compiled_files).sort(),[...COMPILED].sort());for(const n of COMPILED)assert.equal(g.files[n],g.compiled_files[n],n);assert.equal(sha(readFileSync(fileURLToPath(import.meta.url))),g.compiled_files['web/tests/helpers/p04m-garage-fresh-composition.mjs']);return targetGuard(g);
@@ -66,7 +67,7 @@ async function proxyTo(port){
 }
 function cachePins(path,fixtureRoot){const dir=plain(path);within(plain(fixtureRoot),dir);const names=readdirSync(dir);assert.ok(names.length>=10&&names.length<=32);const files={};for(const n of names){const p=plain(join(dir,n));assert.equal(dirname(p),dir);assert.ok(statSync(p).isFile()&&statSync(p).size<=1024*1024);files[p]=sha(readFileSync(p));}return files;}
 export async function main(args){
- assert.equal(args.length,6);const[mode,guardArg,outArg,bundleArg,originalArg,seedArg]=args;assert.equal(mode,'--parent-full');assert.equal(process.env.PYTHONPATH,undefined);assert.equal(ROOT,resolve(SHORT_ROOT));
+ assert.equal(args.length,6);const[mode,guardArg,outArg,bundleArg,originalArg,seedArg]=args;assert.equal(mode,'--parent-full');assert.equal(process.env.PYTHONPATH,undefined);assert.ok(ALLOWED_ROOTS.includes(ROOT),'39 composition root must be a verified source checkout');
  const output=plain(outArg),guard=readJson(guardArg,4*1024*1024),hold5=guard.test_name===HOLD_TEST,base=plain(join(ROOT,'local/test-runs',hold5?'p04m-garage-hold5-fresh39':'p04m-garage-fresh39'));assert.equal(dirname(output),base);assert.match(basename(output),/^run-[0-9]+-[0-9]+$/);assert.equal(plain(guardArg),join(output,'parent-control.json'));
  const executable=sourceGuard(guard),source=sourceContext(1,ROOT,plain(seedArg)),metadata=source.metadata,bundle=plain(bundleArg),original=plain(originalArg);assert.equal(plain(metadata.bundle),bundle);assert.equal(plain(metadata.original),original);const sourceDB=plain(metadata.database),sourceSHA=sha(readFileSync(sourceDB)),contextSHA=sha(readFileSync(seedArg));
  const py=spawnSync('python',['-B','-c','import sys;print(sys.executable)'],{encoding:'utf8',windowsHide:true,timeout:10000});assert.equal(py.status,0);const python=plain(py.stdout.trim());
