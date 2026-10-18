@@ -12,7 +12,7 @@ def canonical(v):return json.dumps(v,sort_keys=True,separators=(',',':'),ensure_
 def main():
  if len(sys.argv)!=4 or sys.argv[3]not in('loss4','hold5'):raise ValueError('exact destination,context seed and closed loss4/hold5 mode required')
  hold5=sys.argv[3]=='hold5'
- if ROOT!=Path('C:/wot091-night-20261017-01/w'):raise ValueError('composition39 requires exact short C workspace')
+ if ROOT not in (Path('C:/wot091-night-20261017-01/w'),Path('D:/WoT_9.1_Server')):raise ValueError('composition39 requires a verified C or D workspace')
  seed,context=context_seed(1,ROOT)
  if plain(sys.argv[2])!=plain(context['path']):raise ValueError('closed C/D source path')
  destination=Path(sys.argv[1]);parent=plain(destination.parent);base=plain(ROOT/'local/test-runs'/('p04m-garage-hold5-fresh39'if hold5 else'p04m-garage-fresh39'))
