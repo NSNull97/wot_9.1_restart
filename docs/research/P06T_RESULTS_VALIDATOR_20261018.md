@@ -36,5 +36,5 @@ Native P06T death/return и fresh gateway build после этой ветки �
 **NOT_RUN**; canonical suite был запущен, но не принят из-за трёх старых
 composition/stand failures. Следующий шаг — свежий D-only native run: детонация
 БК/отрыв башни, два естественных `finish`, Results8 с `crits/fire`, ACK и возврат
-обоих клиентов в ангары. Откат — `git revert 4554211`; база, клиентские ресурсы и
+обоих клиентов в ангары. Откат — `git revert d350201`; база, клиентские ресурсы и
 `main` не менялись.
