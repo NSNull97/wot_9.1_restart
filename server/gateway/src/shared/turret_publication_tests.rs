@@ -85,6 +85,15 @@ fn created(s:&mut Session,w:&World,now:Instant){
     assert!(matches!(s.shared.as_ref().unwrap().turrets.book.entry(1),Some(Entry::Created{acked:true,..})));
     assert!(s.turret_presentation_ready(&w,now+Duration::from_secs(20)).unwrap());
 }
+#[test]fn p06t_unacked_turret_does_not_block_terminal_result_after_bounded_timeout(){
+    let now=Instant::now();let(mut s,mut w)=fixture_for(now,1);detonate(&mut w);created(&mut s,&w,now);
+    s.shared.as_mut().unwrap().phase=Phase::Leaving;
+    let timeout=now+Duration::from_secs(20);w.advance_turret_flights(timeout).unwrap();
+    // The native child ACK is optional for terminal return. A client that
+    // cannot confirm its own detached turret must still receive Results8 and
+    // be allowed to confirm Esc -> Hangar.
+    assert!(s.turret_presentation_ready(&w,timeout).unwrap());
+}
 #[test]fn p06t_turret_landing_updates_source_bool_only_after_creation_ack_and_has_bounded_timeout(){
     assert_eq!(colliding(1,true).unwrap(),[18,2,0,18,9,159,1,19]);
     let now=Instant::now();let(mut s,mut w)=fixture_for(now,1);detonate(&mut w);created(&mut s,&w,now);ack_all(&mut s,now);

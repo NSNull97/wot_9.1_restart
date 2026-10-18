@@ -148,6 +148,21 @@ suite после фикса запущен и дал 1653 PASS / 3 FAIL / 5 igno
 native death/return остаётся
 **NOT_RUN**; main не менялся.
 
+**P06T native exit follow-up (2026-10-18):** свежий двухклиентский прогон на
+successor `p06t-successor-20261018-03` подтвердил: один клиент получил
+`P06T_TURRET_NATIVE Enter/Create`, но не прислал ACK DetachedTurret; через
+20 секунд старый путь закрывал сессию с `native_turret_unconfirmed` до
+постановки Results8. Второй клиент того же боя получил `Leave`, Results8 и
+вернулся в ангар. Узкий source fix оставляет terminal result/handoff
+проходимыми после bounded turret-ACK timeout; detached child доживает до
+обычного старого-world handoff и не блокирует `Esc -> В ангар`. Focused
+regression `p06t_unacked_turret_does_not_block_terminal_result_after_bounded_timeout`
+проходит `1/0`; turret publication suite остаётся `8/0`. Новый executable
+`local/build/server/gateway-p06t-exitfix-focused01/.../sr-gateway.exe` SHA-256
+`D90F91B5ACB263699A554865464F23AA4ECFEDC0F9966470199B665DC666ED9D`.
+Native повторный прогон после фикса ещё **NOT_RUN**; текущий live стенд не
+перезапускался во время владельческого боя.
+
 
 **Current checkpoint:** full03 PASS 1632/0/5 and source-after exact; contact130 sealed/bound from actual SQL144/56 with grants0, services and both native hangar launches PASS. Client gameplay and native P05C acceptance remain NOT_RUN pending owner manual scenario. Evidence receipt: `local/evidence/20261017-morning-core01/contact130-preflight-completion.json` SHA256 `84145bed0503b5637349b784423040ea27f9fbad9522cb893bd9ff8c04317d29`.
 

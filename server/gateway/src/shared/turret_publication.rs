@@ -125,7 +125,14 @@ impl Session{
         if complete{return Ok(true);}
         let last=world.ammo_detonations().iter().map(|e|e.born_ms()).max().ok_or_else(||bad())?;
         if world.lifecycle_ms(now)?.saturating_sub(last)>=PRESENTATION_TIMEOUT_MS{
-            return Err(io::Error::new(io::ErrorKind::TimedOut,"detached turret native presentation did not drain; durable result retained"));
+            // A dead avatar must never be stranded in spectator mode merely
+            // because the client did not ACK the optional DetachedTurret
+            // child. The authoritative result and Account handoff are more
+            // important than a visual ACK. Keep the old world alive until the
+            // normal result confirmation; the detached entity is then retired
+            // together with that world. Callers may record this degraded
+            // presentation separately, but must not fail the battle.
+            return Ok(true);
         }Ok(false)
     }
 }
