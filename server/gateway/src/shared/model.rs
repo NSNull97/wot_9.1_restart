@@ -703,7 +703,7 @@ impl World {
             if self.active_ram_pairs.contains(&(contact.slot_a,contact.slot_b)){continue;}
             let Some(result)=result else{continue;};let before_a=next.actors[contact.slot_a].health;let before_b=next.actors[contact.slot_b].health;
             if before_a<=0||before_b<=0{continue;}
-            let after_a=(before_a-i32::from(result.damage_a).min(i32::from(before_a))).max(0)as i16;let after_b=(before_b-i32::from(result.damage_b).min(i32::from(before_b))).max(0)as i16;
+            let after_a=(i32::from(before_a)-i32::from(result.damage_a).min(i32::from(before_a))).max(0)as i16;let after_b=(i32::from(before_b)-i32::from(result.damage_b).min(i32::from(before_b))).max(0)as i16;
             next.actors[contact.slot_a].health=after_a;next.actors[contact.slot_b].health=after_b;
             for (attacker,target,before,after) in [(result.attacker,result.target,before_b,after_b),(result.target,result.attacker,before_a,after_a)]{next.ram_damage_events.push(RamDamageRecord{sequence,tick,attacker,target,pair:(contact.slot_a,contact.slot_b),energy_j:result.energy_j,closing_speed:result.closing_speed,health_before:before,health_after:after});}
             if after_a==0{next.actors[contact.slot_a].input=Input::STOP;next.actors[contact.slot_a].speed=0.;}if after_b==0{next.actors[contact.slot_b].input=Input::STOP;next.actors[contact.slot_b].speed=0.;}
