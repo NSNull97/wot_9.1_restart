@@ -409,7 +409,17 @@ fn p08c_actual_world_fired_journals_project_personal_details_and_native_pack() {
     assert_eq!((packed[4],packed[5] as i8),(1,lethal.reason as i8));
     assert_eq!((u16_at(6),u16_at(8),u16_at(10),u16_at(12)),(direct,0,pierced,90));
     assert_eq!((u16_at(14),u16_at(16),u16_at(22)),(0,0,0));
-    assert_eq!(u32::from_le_bytes(packed[18..22].try_into().unwrap()),0);
+    // P06T now projects committed module transitions into the packed native
+    // result.  Keep the wire assertion tied to the authoritative journal so
+    // a future fixture change cannot silently erase the critical counter.
+    let expected_crits=w.device_events.iter().filter(|(_,event)|match &event.change {
+        device::Change::Device{before_condition,after_condition,..} =>
+            before_condition!=after_condition&&!event.from_fire,
+        device::Change::Crew{before_active:true,after_active:false,..} => true,
+        _ => false,
+    }).count() as u32;
+    assert!(expected_crits>0);
+    assert_eq!(u32::from_le_bytes(packed[18..22].try_into().unwrap()),expected_crits);
 
     // Tiny independent reader of this test's own bounded protocol2 output.
     // Deliberately no GLOBAL/REDUCE/INST/OBJ/memo/object construction or imports.
