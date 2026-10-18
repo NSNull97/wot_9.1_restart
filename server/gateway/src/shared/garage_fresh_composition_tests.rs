@@ -205,7 +205,8 @@ fn allocation(root:&std::path::Path,target:&std::path::Path)->(PathBuf,serde_jso
 
 fn parent(test_name:&str,hold5:bool){
     use std::{collections::BTreeMap,process::{Command,Stdio}};
-    let root=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();assert_eq!(root,PathBuf::from("C:/wot091-night-20261017-01/w").canonicalize().unwrap(),"39 is the closed shortC composition successor");
+    let root=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
+    assert!(root.is_absolute()&&root.join("server").is_dir()&&root.join("web").is_dir()&&root.join("tests").is_dir(),"39 composition root must be the current source checkout");
     let compiled:BTreeMap<String,String>=[
         ("server/gateway/src/shared/garage_fresh_composition_tests.rs",include_bytes!("garage_fresh_composition_tests.rs").as_slice()),
         ("web/tests/helpers/p04m-garage-fresh-composition.mjs",include_bytes!("../../../../web/tests/helpers/p04m-garage-fresh-composition.mjs").as_slice()),

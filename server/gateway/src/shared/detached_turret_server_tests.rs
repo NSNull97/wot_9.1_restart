@@ -144,7 +144,7 @@ fn commit_authored_result_boundary(s:&mut Session){
     assert!(!parked_battle_reset_ready(&table,&w));
 }
 
-#[test]fn stab01_contained_turret_fault_times_out_without_inventing_expired_flight(){
+#[test]fn stab01_contained_turret_fault_queues_terminal_result_without_inventing_expired_flight(){
     let now=Instant::now();let(mut s,mut w)=f::fixture(now);f::detonate(&mut w);let old=w.id;
     for actor in &mut w.actors{actor.session=None;}
     // AUTHORED already-committed boundary. The actual flight stays immutable;
@@ -156,9 +156,9 @@ fn commit_authored_result_boundary(s:&mut Session){
     let template=BattleTemplate::new(&World::new(old,now).unwrap(),&runtime);
     contain_battle_failure(&mut table,&mut w,&mut runtime,&template,now,"publication",
         &io::Error::new(io::ErrorKind::InvalidData,"authored mid-flight fault")).unwrap();
-    let s=&mut table.sessions[0];let error=poll_battle_session(s,&mut w,now+Duration::from_secs(20),true,false).unwrap_err();
-    assert_eq!(error.kind(),io::ErrorKind::TimedOut);assert!(contained_return_failure_reason(s).is_some());
-    let c=s.shared.as_ref().unwrap();assert!(!c.result_stream_queued);assert!(!s.battle_results.avatar_confirmed());
+    let s=&mut table.sessions[0];poll_battle_session(s,&mut w,now+Duration::from_secs(20),true,false).unwrap();
+    assert!(contained_return_failure_reason(s).is_none());
+    let c=s.shared.as_ref().unwrap();assert!(c.result_stream_queued);assert!(!s.battle_results.avatar_confirmed());
     assert!(s.drive_return_account.is_none());assert_eq!(w.id,old+1);
     assert_eq!(c.contained_world.as_ref().unwrap().turret_flights()[0].sample().phase,super::super::ammo_detonation::FlightPhase::Flying);
 }
