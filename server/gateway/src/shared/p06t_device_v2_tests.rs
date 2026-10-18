@@ -164,9 +164,16 @@ fn role_mask(role:&str)->u8 {match role{"commander"=>1,"gunner"=>2,"driver"=>4,"
     assert!(state.fire_active());
     let events=state.advance_fire(10*FIRE_INTERVAL_MS,h).unwrap();
     assert!(!state.fire_active());
+    // The last fire tick only stops the fire.  Engine/fuel repair starts a
+    // separate bounded timer after that boundary; it must not snap back in
+    // the same advance call.
+    assert_eq!(state.health()[Device::FuelTank as usize],0);
+    assert_eq!(state.health()[Device::Engine as usize],5);
+    assert!(events.iter().all(|event|!matches!(event.change,Change::Device{repair:true,..})));
+    let repairs=state.advance_fire(10*FIRE_INTERVAL_MS+MODULE_REPAIR_DELAY_MS,h).unwrap();
     assert_eq!(state.health()[Device::FuelTank as usize],CAPS[Profile::Ms1.index()][Device::FuelTank as usize].regen);
     assert_eq!(state.health()[Device::Engine as usize],5);
-    assert!(events.iter().any(|event|matches!(event.change,Change::Device{device:Device::FuelTank,before:0,repair:true,..})));
+    assert!(repairs.iter().any(|event|matches!(event.change,Change::Device{device:Device::FuelTank,before:0,repair:true,..})));
 }
 
 #[test] fn p06t_device_v2_hp_clamp_and_terminal_freeze_propose_no_extra_damage() {

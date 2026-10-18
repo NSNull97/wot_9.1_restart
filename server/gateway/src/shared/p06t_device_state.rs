@@ -139,6 +139,22 @@ impl State {
         }
         Ok(())
     }
+    /// A module destroyed by the fire is not repaired at the same instant as
+    /// the last fire tick.  The native client starts a separate repair clock
+    /// after the fire has stopped; when a coarse server advance catches up all
+    /// ticks in one call, keep that boundary explicit instead of restoring the
+    /// engine/fuel tank immediately in the same transaction.
+    fn defer_repairs_after_fire(&mut self,at:u64)->io::Result<()> {
+        let due=at.checked_add(MODULE_REPAIR_DELAY_MS)
+            .ok_or_else(||bad("module post-fire repair clock overflow"))?;
+        for device in [Device::Engine,Device::FuelTank] {
+            let index=device as usize;
+            if self.health[index]==0 && self.repair_due[index].is_some() {
+                self.repair_due[index]=Some(self.repair_due[index].unwrap().max(due));
+            }
+        }
+        Ok(())
+    }
     fn start_fire(&mut self,out:&mut Vec<Transition>,at:u64,cause:Cause)->io::Result<()> {
         if self.fire.is_none() {
             self.fire=Some(Fire {cause,next_tick_ms:at.checked_add(FIRE_INTERVAL_MS).ok_or_else(||bad("fire clock overflow"))?,ticks:0});
@@ -215,6 +231,7 @@ impl State {
             }
             if fire.ticks==MAX_FIRE_TICKS || remaining==0 {
                 next.fire=None;next.emit(&mut out,at,fire.cause,true,Change::Fire {before_active:true,after_active:false})?;
+                next.defer_repairs_after_fire(at)?;
                 if remaining==0 {next.frozen=true;}break;
             }
             fire.next_tick_ms=fire.next_tick_ms.checked_add(FIRE_INTERVAL_MS).ok_or_else(||bad("fire clock overflow"))?;
