@@ -188,3 +188,5 @@
 - [P05C ram handling](P05C_RAM_HANDLING.md) — authoritative bounded contact damage and native boundary.
 
 - [P09E full stand gap](P09E_FULL_STAND_GAP_20261018.md) — purchase/crew/ammo/equipment boundary for a source-bound native stand.
+
+- [P09E full stand preparation](P09E_FULL_STAND_PREP_20261018.md) — source-bound garage/loadout planner and fail-closed promotion guards.
