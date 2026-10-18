@@ -16,7 +16,7 @@ fn result()->Results{
     let mut result=result();
     let mut details=result.interaction_details.take().unwrap();
     lifecycle_details::apply_module_facts(&mut details,&summaries(&result.participants),&[
-        lifecycle_details::Module{attacker:0,target:1,critical:true,fire:true},
+        lifecycle_details::Module{attacker:0,target:1,extra_index:27,critical:true,fire:true},
     ]).unwrap();
     result.interaction_details=Some(details);
     let root=tests::inert(&compact_results(&result,1).unwrap());let outer=tests::tuple(&root);

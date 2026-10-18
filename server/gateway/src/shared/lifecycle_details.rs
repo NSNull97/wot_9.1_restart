@@ -38,7 +38,7 @@ pub struct Spot{pub observer:usize,pub target:usize,pub tick:u32}
 /// A committed module/crew/fire transition projected into native personal details.
 /// This is presentation only; the authoritative device journal remains in World.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub struct Module{pub attacker:usize,pub target:usize,pub critical:bool,pub fire:bool}
+pub struct Module{pub attacker:usize,pub target:usize,pub extra_index:u8,pub critical:bool,pub fire:bool}
 fn add(v:&mut u16,n:u16)->io::Result<()>{*v=v.checked_add(n).ok_or_else(bad)?;Ok(())}
 impl Details {
     pub fn validate(&self,roster:&[Summary])->io::Result<()>{
@@ -150,7 +150,8 @@ pub fn apply_module_facts(details:&mut Details,roster:&[Summary],modules:&[Modul
     if modules.len()>MAX_ACTORS*192{return Err(bad());}
     let mut next=details.clone();
     for module in modules {
-        if module.attacker>=roster.len()||module.target>=roster.len() {return Err(bad());}
+        if module.attacker>=roster.len()||module.target>=roster.len()
+            ||!(module.extra_index==4||(26..=42).contains(&module.extra_index)) {return Err(bad());}
         let target_id=roster[module.target].vehicle_id;
         let row=next.rows.iter_mut().find(|row|row.attacker_vehicle_id==roster[module.attacker].vehicle_id).ok_or_else(bad)?;
         if let Some(target)=row.targets.iter_mut().find(|target|target.vehicle_id==target_id) {
