@@ -415,7 +415,9 @@ mod tests {
         let destroy = ServerContact::projectile(11, 10, 73, 0, 11, 13).unwrap();
         let event = match state.apply_contact(destroy.clone()).unwrap() { ApplyResult::Destroyed(event) => event, other => panic!("unexpected result: {other:?}") };
         assert_eq!((event.scene_before, event.scene_after, state.scene_version()), (0, 1, 1));
-        assert_eq!(state.apply_contact(destroy).unwrap(), ApplyResult::AlreadyDestroyed);
+        assert_eq!(state.apply_contact(destroy).unwrap(), ApplyResult::DuplicateContact);
+        let after_destroy = ServerContact::projectile(12, 10, 73, 0, 12, 1).unwrap();
+        assert_eq!(state.apply_contact(after_destroy).unwrap(), ApplyResult::AlreadyDestroyed);
         assert_eq!(state.scene_version(), 1);
     }
 

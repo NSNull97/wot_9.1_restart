@@ -67,7 +67,10 @@ scene version и destruction state; координаты, скрытые поз�
 gateway build/test после изменения. Evidence сохраняется в новой карточке под
 `local/evidence/<date>-p05c-map-destructibility/`; отсутствие native/client run
 помечается `NOT_RUN`, синтетический round-trip не выдаётся за совместимость с
-настоящим клиентом.
+настоящим клиентом. Для этого worktree pinned LLVM `ld` исправляется только в
+ignored local overlay: исполняемый GNU `ld.exe` берётся из pinned Rust
+self-contained toolchain, а `server/build.py` направляет `LIBRARY_PATH` на тот
+же локальный CRT. Оригинальный toolchain и клиентские ресурсы не изменяются.
 
 ## Откат и следующий шаг
 

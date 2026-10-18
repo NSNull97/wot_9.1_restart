@@ -323,7 +323,8 @@ def main():
                        CARGO_TARGET_DIR=str(target),
                        CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=str(linker_dir / 'x86_64-w64-mingw32-gcc.exe'),
                        RUSTFLAGS='-L native=' + self_contained_lib.as_posix()
-                       + ' -C link-arg=-B' + linker_dir.as_posix() + '/')
+                       + ' -C link-arg=-B' + linker_dir.as_posix() + '/',
+                       LIBRARY_PATH=str(self_contained_lib))
             env['PATH'] = os.pathsep.join([str(linker_dir),
                 str(toolchains / 'llvm-mingw-20250910-ucrt-x86_64/bin'),
                 str(rust / 'bin'), str(toolchains / 'cargo/bin'), env.get('PATH', '')])
