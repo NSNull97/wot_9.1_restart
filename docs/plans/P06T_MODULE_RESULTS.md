@@ -18,7 +18,8 @@ the owner saw the battle outcome while the module section stayed empty.
 ## Change
 
 Project condition-changing device/crew transitions as `crits` and fire-start
-transitions as `fire`. The packed contract remains the original 24-byte target
+transitions as `fire`, while retaining the source `extra_index` (AmmoBay=27) in
+the typed pre-pack fact. The packed contract remains the original 24-byte target
 row; module names and HP are not added. Counters are bounded and validated.
 
 ## Verification

@@ -36,6 +36,22 @@ pub(super) fn build(world:&World)->io::Result<Results> {
     result.validate()?;Ok(result)
 }
 // Presentation consumes committed journals only. No simulation/terminal edits.
+pub(crate) fn project_module_facts(world:&World)->io::Result<Vec<super::lifecycle_details::Module>>{
+    use super::lifecycle_details as d;
+    let mut facts=Vec::new();
+    for (target,event) in &world.device_events {
+        let (extra_index,critical,fire)=match event.change {
+            crate::p06t_device_state::Change::Device{device,extra_index,before_condition,after_condition,..}=>
+                if extra_index!=device.extra(){return Err(model::bad());}
+                else {(extra_index,before_condition!=after_condition&&!event.from_fire,false)},
+            crate::p06t_device_state::Change::Crew{extra_index,before_active:true,after_active:false,..}=> (extra_index,true,false),
+            crate::p06t_device_state::Change::Fire{before_active:false,after_active:true,..}=>(4,false,true),
+            _=>(0,false,false),
+        };
+        if critical||fire {facts.push(d::Module{attacker:usize::from(event.cause.attacker_slot),target:*target,extra_index,critical,fire});}
+    }
+    Ok(facts)
+}
 fn project_details(world:&World,participants:&[Participant])->io::Result<super::lifecycle_details::Details>{
     use super::lifecycle_details as d;
     let roster=super::lifecycle_wire::summaries(participants);
@@ -54,16 +70,7 @@ fn project_details(world:&World,participants:&[Participant])->io::Result<super::
     let splash=world.impact.events().iter().filter_map(|e|match e{super::impact::Event::SplashResolution{
         shot_id,target,terrain_blocker,..}=>Some(d::Splash{shot:*shot_id,target:*target,clear_los:terrain_blocker.is_none()}),_=>None}).collect::<Vec<_>>();
     let spots=world.result_spots().map(|rows|rows.iter().map(|s|d::Spot{observer:s.observer(),target:s.target(),tick:s.tick()}).collect::<Vec<_>>());
-    let modules=world.device_events.iter().filter_map(|(target,event)|{
-        let (critical,fire)=match event.change {
-            crate::p06t_device_state::Change::Device{before_condition,after_condition,repair,..}=>
-                (before_condition!=after_condition&&!event.from_fire&&!repair,false),
-            crate::p06t_device_state::Change::Crew{before_active:true,after_active:false,..}=> (true,false),
-            crate::p06t_device_state::Change::Fire{before_active:false,after_active:true,..}=>(false,true),
-            _=>(false,false),
-        };
-        (critical||fire).then_some(d::Module{attacker:usize::from(event.cause.attacker_slot),target:*target,critical,fire})
-    }).collect::<Vec<_>>();
+    let modules=project_module_facts(world)?;
     let mut details=d::project(&roster,&shots,&hits,&pierced,&damage,&splash,spots.as_deref())?;
     d::apply_module_facts(&mut details,&roster,&modules)?;
     Ok(details)
@@ -105,5 +112,25 @@ mod tests {
         assert_eq!(r.duration_seconds,0);assert_eq!(r.participants[0].health,90);
         assert_eq!(r.participants[0].shots,0);assert!(r.participants[1].premature_leave);
         assert_eq!(r.participants[1].death_reason,-1);
+    }
+    #[test] fn p06t_result_projection_keeps_ammo_bay_extra_identity_before_packing() {
+        let now=Instant::now();let mut w=World::new_for_roster(123,now,
+            crate::map_profile091::MapId::Karelia,2).unwrap();
+        w.device_events.push((1,crate::p06t_device_state::Transition{sequence:1,at_ms:1000,
+            cause:crate::p06t_device_state::Cause{shot:1,attacker_slot:0},from_fire:false,
+            change:crate::p06t_device_state::Change::Device{device:crate::p06t_device_caps::Device::AmmoBay,
+                extra_index:27,max_health:60,before:60,after:10,
+                before_condition:crate::p06t_device_state::Condition::Normal,
+                after_condition:crate::p06t_device_state::Condition::Critical}}));
+        let facts=project_module_facts(&w).unwrap();assert_eq!(facts.len(),1);
+        assert_eq!((facts[0].extra_index,facts[0].critical,facts[0].fire),(27,true,false));
+        let mut forged=w.clone();
+        if let Some((_,event))=forged.device_events.first_mut(){
+            event.change=crate::p06t_device_state::Change::Device{device:crate::p06t_device_caps::Device::AmmoBay,
+                extra_index:28,max_health:60,before:60,after:10,
+                before_condition:crate::p06t_device_state::Condition::Normal,
+                after_condition:crate::p06t_device_state::Condition::Critical};
+        }
+        assert!(project_module_facts(&forged).is_err());
     }
 }

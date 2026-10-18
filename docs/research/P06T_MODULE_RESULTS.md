@@ -15,7 +15,10 @@ The fix keeps the original packed details schema. A condition-changing device
 or crew transition increments `crits`; a fire start increments `fire`. Fire
 ticks and repeated unchanged module health do not create duplicate counters;
 device condition transitions caused by a fire tick are not counted as a new
-critical hit.
+critical hit. The projection now retains the source `extra_index` (for example
+AmmoBay `27`) in the typed pre-pack fact so server evidence cannot silently
+replace AmmoBay with an anonymous critical. The original packed result still
+does not carry module names; it carries only the aggregate counter.
 The counters are validated (`crits <= 192`, `fire <= 10`) and the normal
 cross-ledger validation still applies. No module identity or numeric module HP
 is invented in the result packet.
@@ -35,3 +38,7 @@ The current native run log was inspected at
 `local/stands/morning-p05c-contact-20261017-05/core-loss4/runs/p05c-contact132-01/gateway.stdout.log`.
 Native re-run after integration is required to confirm the original client
 renders the non-zero packed counters.
+The typed projection also rejects a journal transition whose `extra_index` does
+not match its source `Device` enum, so a forged or stale identity cannot be
+silently relabeled as another module.
+

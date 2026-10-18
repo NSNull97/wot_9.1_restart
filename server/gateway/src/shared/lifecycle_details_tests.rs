@@ -78,8 +78,8 @@ fn build()->Details{project(&roster(),&shot(),&hit(),&hit(),&damage(),&[],Some(&
 #[test]fn p06t_module_and_fire_facts_are_projected_into_personal_details(){
     let r=roster();let mut d=build();
     apply_module_facts(&mut d,&r,&[
-        Module{attacker:0,target:1,critical:true,fire:false},
-        Module{attacker:0,target:1,critical:false,fire:true},
+        Module{attacker:0,target:1,extra_index:27,critical:true,fire:false},
+        Module{attacker:0,target:1,extra_index:4,critical:false,fire:true},
     ]).unwrap();
     let target=&d.rows[0].targets[0];
     assert_eq!((target.crits,target.fire),(1,1));
@@ -91,15 +91,15 @@ fn build()->Details{project(&roster(),&shot(),&hit(),&hit(),&damage(),&[],Some(&
     let mut r=roster();r[0].direct_hits=0;r[0].piercings=0;r[0].damage_dealt=0;r[0].kills=0;
     r[1].damage_received=0;r[1].killer_id=0;r[1].death_reason=-1;
     let mut d=project(&r,&shot(),&[],&[],&[],&[],None).unwrap();
-    apply_module_facts(&mut d,&r,&[Module{attacker:0,target:1,critical:true,fire:false}]).unwrap();
+    apply_module_facts(&mut d,&r,&[Module{attacker:0,target:1,extra_index:27,critical:true,fire:false}]).unwrap();
     assert_eq!(d.rows[0].targets[0].crits,1);
 }
 
 #[test]fn p06t_module_fact_rejects_bad_slot_without_partial_mutation(){
     let r=roster();let mut d=build();let before=d.clone();
     assert!(apply_module_facts(&mut d,&r,&[
-        Module{attacker:0,target:1,critical:true,fire:false},
-        Module{attacker:2,target:1,critical:true,fire:false},
+        Module{attacker:0,target:1,extra_index:27,critical:true,fire:false},
+        Module{attacker:2,target:1,extra_index:27,critical:true,fire:false},
     ]).is_err());
     assert_eq!(d,before);
 }
