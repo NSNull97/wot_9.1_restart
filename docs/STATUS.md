@@ -157,9 +157,12 @@ successor `p06t-successor-20261018-03` подтвердил: один клиен
 проходимыми после bounded turret-ACK timeout; detached child доживает до
 обычного старого-world handoff и не блокирует `Esc -> В ангар`. Focused
 regression `p06t_unacked_turret_does_not_block_terminal_result_after_bounded_timeout`
-проходит `1/0`; turret publication suite остаётся `8/0`. Новый executable
+и `p06t_turret_ready_ignores_unrelated_window_pending_after_child_ack`
+проходят `1/0` каждый; turret publication suite остаётся `8/0`. Readiness
+больше не зависит от постороннего `Window` pending, поэтому возврат не ждёт
+полный timeout при уже подтверждённой башне. Новый executable
 `local/build/server/gateway-p06t-exitfix-focused01/.../sr-gateway.exe` SHA-256
-`D90F91B5ACB263699A554865464F23AA4ECFEDC0F9966470199B665DC666ED9D`.
+`C7638CD06B83DB5D234D72C472B606E80A3996186B43D16EBD507D9A417E2799`.
 Native повторный прогон после фикса ещё **NOT_RUN**; текущий live стенд не
 перезапускался во время владельческого боя.
 

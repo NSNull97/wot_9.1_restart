@@ -120,8 +120,13 @@ impl Session{
         let settled=world.turret_flights().iter().all(|f|f.sample().phase==FlightPhase::Resting);
         let entries_ready=(0..6).all(|slot|matches!(c.turrets.book.entry(slot),
             Some(Entry::Hidden)|Some(Entry::Created{acked:true,..})));
+        // The detached-turret gate owns only its own reliable request/ACK
+        // lifecycle. A normal heartbeat, results envelope, or unrelated
+        // entity packet may legitimately remain in the shared Window while
+        // this child is already acknowledged; tying readiness to the global
+        // queue strands a dead avatar until the bounded timeout.
         let complete=settled&&entries_ready
-            &&self.outbox.is_empty()&&c.private_pending.is_empty()&&self.tx.len()==0;
+            &&self.outbox.is_empty()&&c.private_pending.is_empty();
         if complete{return Ok(true);}
         let last=world.ammo_detonations().iter().map(|e|e.born_ms()).max().ok_or_else(||bad())?;
         if world.lifecycle_ms(now)?.saturating_sub(last)>=PRESENTATION_TIMEOUT_MS{
