@@ -217,3 +217,5 @@ native/UI остаются `NOT_RUN` до successor прогона.
 ## P07B original spotting successor (current card)
 
 Ветка `codex/p07b-original-spotting-successor` собрана от текущего P05C/STAB head и содержит P07B implementation `a7506983f8efad3165e9a7f8d971ce380501a556`: шесть source visibility points, два observer points, authoritative geometric LOS, no-camo ruleset и candidate Sixth Sense publication. Старый P07B AoI остаётся базовым слоем. После cherry-pick focused tests и canonical full gate должны быть перепроверены на этом descendant; native/UI/audio остаются NOT_RUN до ручного прогона.
+
+**Nightly full-polygon integration (2026-10-18):** branch codex/nightly-full-polygon-20261018 is source-bound to the P06T exit-fix head. Generic map-agnostic dynamic-destruction contract is present in dynamic_destructible.rs; its native map catalog/import/publication remains NOT_RUN. P06T focused gate on the pre-integration head: 221 PASS / 0 FAIL / 0 ignored, executable SHA-256 d27ac3288fcb1c3e449efdf1953b319951dbdf7528b53fd1017d50e431b85f6a. The full polygon gate will be rerun after ram/map sources settle; main remains unchanged.

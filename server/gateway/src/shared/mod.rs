@@ -35,6 +35,7 @@ pub(crate) mod obstacles;
 mod terrain_wire;
 mod destructible_wire;
 pub(crate) mod destructible;
+pub(crate) mod dynamic_destructible;
 pub(crate) mod fragiles;
 pub(crate) mod ram_response;
 pub(crate) mod ram_proof;
