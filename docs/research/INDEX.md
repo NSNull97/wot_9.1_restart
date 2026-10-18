@@ -186,3 +186,5 @@
 - [P08B Hold5: настоящие четыре владельца](P08B_OWNER_HOLD_FOUR_COMPOSITION.md) — C runtimeab7ad10, full1612/5ignored, genuine parked AmmoBay death/Final4; native NOT_RUN.
 
 - [P05C ram handling](P05C_RAM_HANDLING.md) — authoritative bounded contact damage and native boundary.
+
+- [P09E full stand gap](P09E_FULL_STAND_GAP_20261018.md) — purchase/crew/ammo/equipment boundary for a source-bound native stand.
