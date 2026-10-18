@@ -1,5 +1,21 @@
 # Состояние проекта — утро17 октября2026
 
+**P06T successor fixes on `codex/p06t-loss-writer-observability`:** current
+head `0ffa971` includes `bd204a9` persistent detached-turret presentation and
+`9dfaa33` module identity retention. A detached turret now stays in `Resting`
+after the authoritative ground clamp, is created with the native collision
+property already enabled (so the original client's detachment confirmation can
+hide the parent turret), and is released with the old battle world. The packed
+Results8 contract remains aggregate-only, while the server-side facts retain
+`AmmoBay` extra index `27` and reject forged device/index mismatches. Focused
+checks passed: turret publication `8/0`, flight settle `1/0`, module identity
+projection `1/0`, and module/fire packing `1/0`. Isolated executable
+`local/build/server/gateway-p06t-current-focused08/debug/deps/` is built; its
+full `p06t_` run was intentionally not used as a gate because it enters long
+scene tests and was stopped after the targeted checks. Native visual collision,
+parent-turret disappearance, and audio remain **NOT_RUN** until the next owner
+run. The server still has no separate Jolt body for the detached child.
+
 **P06T damaged-module recovery:** ветка `codex/p06t-damaged-module-recovery` добавляет
 ограниченное восстановление engine/fuel tank из `Destroyed` до source
 `maxRegenHealth`, отдельный `repair` transition с публикацией исторических code
