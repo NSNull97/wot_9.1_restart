@@ -1,5 +1,19 @@
 # Состояние проекта — утро17 октября2026
 
+**P06T damaged-module recovery:** ветка `codex/p06t-damaged-module-recovery` добавляет
+ограниченное восстановление engine/fuel tank из `Destroyed` до source
+`maxRegenHealth`, отдельный `repair` transition с публикацией исторических code
+`18/19` по итоговой condition, и контрольные проверки steering/cruise после
+восстановления. После исправления relocatable pinned GNU driver focused gate
+`p06t_` дал **215 PASS / 0 FAIL / 0 ignored**, build PASS, executable SHA-256
+`303a9cb8e9dd08abe3da2e0e6efccb0bfcae3229dd31722dc3eec4087a624a4a`. Первый
+targeted recovery smoke тоже PASS: `1/0/0`, SHA-256
+`d20e471fe25f8990c2a54d257a57007da48ad6a7513a2165d649c38ea1d11356`. Receipts:
+`local/build/server/gateway-p06t-recovery-fixed01` и
+`local/build/server/gateway-p06t-recovery-focused-pass02`. Native/UI/audio и
+двухклиентский replay **NOT_RUN**; карточка остаётся в ветке до владельческого
+native-прогона.
+
 **P07B audio follow-up:** владелец подтвердил геометрию/LOS/переворот и
 визуальную лампу, но не услышал отдельного звука. Статическая проверка #717
 показала: `updateVehicleMiscStatus` и `battle.swf` запускают только визуальный

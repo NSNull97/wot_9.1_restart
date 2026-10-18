@@ -15,7 +15,10 @@ fn actor_kind(kind:VehicleKind)->model::Actor {
         shell:source::profile(Mount::Ms1Stock).shots[0],ignition_roll:0.9}],devices::Health{hp:400,max_hp:400,terminal:false}).unwrap();
     apply(&mut state,1,Target::Device(Device::Engine));apply(&mut state,2,Target::Device(Device::Engine));
     assert_eq!(state.health()[0],5);assert_eq!(state.capabilities().drive_scale,0.5);
-    a.devices=Some(state.clone());assert_eq!(actor_input(&a,1000,true).unwrap().speed_percent,50);
+    a.devices=Some(state.clone());
+    let critical_rows=(1000..1004).map(|tick|actor_input(&a,tick,true).unwrap()).collect::<Vec<_>>();
+    assert_eq!(critical_rows.iter().map(|input|input.speed_percent).collect::<Vec<_>>(),[50;4]);
+    assert_eq!(critical_rows.iter().map(|input|input.steer).collect::<Vec<_>>(),[1;4]);
     apply(&mut state,3,Target::Seat(2));assert_eq!(state.capabilities().drive_scale,0.25);
     a.devices=Some(state);
     for tick in 1000..1008 {let input=actor_input(&a,tick,true).unwrap();assert_eq!(input.speed_percent,25);assert!(legal(input));}
@@ -63,6 +66,19 @@ fn legal(input:Input)->bool {(-1..=1).contains(&input.throttle)&&(-1..=1).contai
     assert_eq!(reverse.iter().map(|r|r.throttle).collect::<Vec<_>>(),[-1,-1,0,0]);
     assert_eq!(reverse.iter().map(|r|r.speed_percent).collect::<Vec<_>>(),[50,50,100,100]);
     assert!(rows.into_iter().chain(reverse).all(legal));
+}
+
+#[test] fn p06t_scene_repaired_engine_restores_pivot_control_and_cruise() {
+    let mut a=actor();
+    let mut state=damaged(Target::Device(Device::Engine));
+    assert_eq!(state.health()[Device::Engine as usize],0);
+    state.advance_fire(devices::MODULE_REPAIR_DELAY_MS,devices::Health{hp:90,max_hp:90,terminal:false}).unwrap();
+    assert!(state.health()[Device::Engine as usize]>0);
+    a.devices=Some(state);
+    let rows=(1000..1004).map(|tick|actor_input(&a,tick,true).unwrap()).collect::<Vec<_>>();
+    assert_eq!(rows.iter().map(|input|input.speed_percent).collect::<Vec<_>>(),[100;4]);
+    assert_eq!(rows.iter().map(|input|input.steer).collect::<Vec<_>>(),[1;4]);
+    assert!(rows.iter().all(|input|legal(*input)));
 }
 fn resources()->Vec<super::super::super::profile13_templates::Resources> {
     let root=std::path::PathBuf::from(std::env::var_os("WOT091_ROOT").unwrap_or_else(||"D:/WoT_9.1_Server".into())).join("local");

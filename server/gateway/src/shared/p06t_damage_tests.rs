@@ -141,7 +141,10 @@ fn hit(shot:u32,target:proxy::Target,at:u64,roll:f64)->devices::ModuleHit {
     let initial=devices::ModuleHit {shell:shell(Mount::Is7Stock,0),..hit(1,proxy::Target::Device(Device::Engine),0,0.)};
     s.apply_hits(&[initial],h).unwrap();let events=s.advance_fire(100_000,h).unwrap();
     let hp:Vec<_>=events.iter().filter_map(|e|if let devices::Change::VehicleDamage{amount}=e.change{Some(amount)}else{None}).collect();
-    assert_eq!(hp,[108;10]);assert!(!s.fire_active());assert_eq!(s.health()[0],0);assert_eq!(s.health()[2],100);
+    assert_eq!(hp,[108;10]);assert!(!s.fire_active());
+    assert_eq!(s.health()[0],source_caps::CAPS[Profile::Is7.index()][Device::Engine as usize].regen);
+    assert_eq!(s.health()[2],100);
+    assert!(events.iter().any(|e|matches!(e.change,devices::Change::Device{device:Device::Engine,repair:true,..})));
     assert_eq!(s.fire_ticks(),10);assert_eq!(s.proposed_fire_damage(),1080);
     assert!(events.iter().all(|e|e.cause==initial.cause&&e.from_fire));
     assert!(events.windows(2).all(|w|w[0].sequence<w[1].sequence&&w[0].at_ms<=w[1].at_ms));

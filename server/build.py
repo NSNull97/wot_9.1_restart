@@ -313,12 +313,20 @@ def main():
             target = out / 'target'
             if args.cargo_temp_target:
                 target, result['cargo_temp_target'] = allocate_temp_target(out)
+            linker_dir = native / 'bin/self-contained'
+            self_contained_lib = native / 'lib/self-contained'
+            # The pinned GCC driver carries an absolute build-root prefix in its
+            # specs.  Keep the driver relocatable: -B points it at the bundled
+            # startup objects/runtime, while PATH puts the matching ld.exe ahead
+            # of llvm-mingw's POSIX shell wrapper named `ld`.
             env.update(CARGO_HOME=str(toolchains / 'cargo'), RUSTUP_HOME=str(toolchains / 'rustup'),
                        CARGO_TARGET_DIR=str(target),
-                       CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=str(native / 'bin/self-contained/x86_64-w64-mingw32-gcc.exe'),
-                       RUSTFLAGS='-L native=' + str(native / 'lib/self-contained'))
-            env['PATH'] = os.pathsep.join([str(toolchains / 'llvm-mingw-20250910-ucrt-x86_64/bin'),
-                str(native / 'bin/self-contained'), str(rust / 'bin'), str(toolchains / 'cargo/bin'), env.get('PATH', '')])
+                       CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=str(linker_dir / 'x86_64-w64-mingw32-gcc.exe'),
+                       RUSTFLAGS='-L native=' + self_contained_lib.as_posix()
+                       + ' -C link-arg=-B' + linker_dir.as_posix() + '/')
+            env['PATH'] = os.pathsep.join([str(linker_dir),
+                str(toolchains / 'llvm-mingw-20250910-ucrt-x86_64/bin'),
+                str(rust / 'bin'), str(toolchains / 'cargo/bin'), env.get('PATH', '')])
             manifest = 'tools/wg_probe/Cargo.toml' if args.legacy else 'server/gateway/Cargo.toml'
             save(out, 'toolchain.json', {'cargo': str(cargo), 'cargo_sha256': sha(cargo),
                                          'rustc_sha256': sha(rust / 'bin/rustc.exe')})

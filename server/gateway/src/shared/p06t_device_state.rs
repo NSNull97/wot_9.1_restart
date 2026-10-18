@@ -19,6 +19,10 @@ pub const MAX_HITS:usize=1920;
 pub const MAX_TIME_MS:u64=3_600_000;
 pub const FIRE_INTERVAL_MS:u64=1000;
 pub const MAX_FIRE_TICKS:u8=10;
+/// Explicit bounded LAB repair delay. The original client exposes the
+/// repaired-state notifications, but the historical server timer/crew
+/// modifiers are not established by the available evidence.
+pub const MODULE_REPAIR_DELAY_MS:u64=1000;
 fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,reason)}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Condition {Normal,Critical,Destroyed}
@@ -35,7 +39,7 @@ pub struct ModuleHit {
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Change {
-    Device {device:Device,extra_index:u8,max_health:u16,before:u16,after:u16,before_condition:Condition,after_condition:Condition},
+    Device {device:Device,extra_index:u8,max_health:u16,before:u16,after:u16,before_condition:Condition,after_condition:Condition,repair:bool},
     Crew {seat:u8,extra_index:u8,before_active:bool,after_active:bool},
     Fire {before_active:bool,after_active:bool},
     /// Requested delta; caller must apply through its one HP/death ledger.
@@ -64,6 +68,7 @@ struct Fire {cause:Cause,next_tick_ms:u64,ticks:u8}
 #[derive(Clone,Debug,PartialEq)]
 pub struct State {
     profile:Profile,policy:PolicyVersion,health:[u16;9],crew:[bool;MAX_CREW],fire:Option<Fire>,
+    repair_due:[Option<u64>;9],repair_cause:[Option<Cause>;9],
     observed_ms:Option<u64>,sequence:u32,seen:Vec<ModuleHit>,frozen:bool,
     fire_ticks:u32,proposed_fire_damage:u32,
 }
@@ -82,7 +87,8 @@ impl State {
             return Err(bad("device source caps/primary-seat bounds"));
         }
         Ok(Self {profile,policy,health:CAPS[index].map(|c|c.max),
-            crew:std::array::from_fn(|i|i<seats.len()),fire:None,observed_ms:None,sequence:0,seen:Vec::new(),frozen:false,fire_ticks:0,proposed_fire_damage:0})
+            crew:std::array::from_fn(|i|i<seats.len()),fire:None,repair_due:[None;9],repair_cause:[None;9],
+            observed_ms:None,sequence:0,seen:Vec::new(),frozen:false,fire_ticks:0,proposed_fire_damage:0})
     }
     pub fn profile(&self)->Profile {self.profile}
     pub fn policy_version(&self)->PolicyVersion {self.policy}
@@ -112,8 +118,26 @@ impl State {
         if before!=after {
             self.health[index]=after;
             self.emit(out,at,cause,from_fire,Change::Device {device,extra_index:device.extra(),max_health:max,before,after,
-                before_condition:condition(before,max),after_condition:condition(after,max)})?;
+                before_condition:condition(before,max),after_condition:condition(after,max),repair:false})?;
+            if after==0 && matches!(device,Device::Engine|Device::FuelTank) {
+                self.repair_due[index]=Some(at.checked_add(MODULE_REPAIR_DELAY_MS).ok_or_else(||bad("module repair clock overflow"))?);
+                self.repair_cause[index]=Some(cause);
+            }
         } Ok(())
+    }
+    fn repair_due_devices(&mut self,out:&mut Vec<Transition>,now:u64)->io::Result<()> {
+        for device in [Device::Engine,Device::FuelTank] {
+            let index=device as usize;
+            if self.health[index]!=0 || self.repair_due[index].is_none_or(|due|due>now) {continue;}
+            let cause=self.repair_cause[index].ok_or_else(||bad("module repair cause missing"))?;
+            let max=CAPS[self.profile.index()][index].max;
+            let after=CAPS[self.profile.index()][index].regen;
+            if after==0 || after>max {return Err(bad("module repair health bounds"));}
+            self.health[index]=after;self.repair_due[index]=None;self.repair_cause[index]=None;
+            self.emit(out,now,cause,true,Change::Device {device,extra_index:device.extra(),max_health:max,
+                before:0,after,before_condition:Condition::Destroyed,after_condition:condition(after,max),repair:true})?;
+        }
+        Ok(())
     }
     fn start_fire(&mut self,out:&mut Vec<Transition>,at:u64,cause:Cause)->io::Result<()> {
         if self.fire.is_none() {
@@ -196,6 +220,7 @@ impl State {
             fire.next_tick_ms=fire.next_tick_ms.checked_add(FIRE_INTERVAL_MS).ok_or_else(||bad("fire clock overflow"))?;
             next.fire=Some(fire);
         }
+        if !next.frozen && next.fire.is_none() {next.repair_due_devices(&mut out,now)?;}
         *self=next;Ok(out)
     }
     pub fn capabilities(&self)->Capabilities {

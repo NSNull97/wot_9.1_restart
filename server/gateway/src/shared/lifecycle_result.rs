@@ -56,8 +56,8 @@ fn project_details(world:&World,participants:&[Participant])->io::Result<super::
     let spots=world.result_spots().map(|rows|rows.iter().map(|s|d::Spot{observer:s.observer(),target:s.target(),tick:s.tick()}).collect::<Vec<_>>());
     let modules=world.device_events.iter().filter_map(|(target,event)|{
         let (critical,fire)=match event.change {
-            crate::p06t_device_state::Change::Device{before_condition,after_condition,..}=>
-                (before_condition!=after_condition&&!event.from_fire,false),
+            crate::p06t_device_state::Change::Device{before_condition,after_condition,repair,..}=>
+                (before_condition!=after_condition&&!event.from_fire&&!repair,false),
             crate::p06t_device_state::Change::Crew{before_active:true,after_active:false,..}=> (true,false),
             crate::p06t_device_state::Change::Fire{before_active:false,after_active:true,..}=>(false,true),
             _=>(false,false),

@@ -71,9 +71,12 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
     for(target,event)in world.device_events.iter().skip(c.device_cursor){
         if *target==c.slot&&c.visible()[c.slot]{
             let notification=match event.change{
-                Change::Device{extra_index,before_condition,after_condition,..} if before_condition!=after_condition=>match after_condition{
-                    Condition::Critical=>Some((if event.from_fire{12}else{4},extra_index)),
-                    Condition::Destroyed=>Some((if event.from_fire{13}else{5},extra_index)),Condition::Normal=>None},
+                Change::Device{extra_index,before_condition,after_condition,repair,..} if before_condition!=after_condition=>
+                    if repair {match after_condition{
+                        Condition::Critical=>Some((18,extra_index)),Condition::Normal=>Some((19,extra_index)),Condition::Destroyed=>None}
+                    } else {match after_condition{
+                        Condition::Critical=>Some((if event.from_fire{12}else{4},extra_index)),
+                        Condition::Destroyed=>Some((if event.from_fire{13}else{5},extra_index)),Condition::Normal=>None}},
                 Change::Crew{extra_index,before_active:true,after_active:false,..}=>Some((10,extra_index)),
                 Change::Fire{after_active,..}=>Some((if after_active{3}else{35},4)),
                 _=>None,

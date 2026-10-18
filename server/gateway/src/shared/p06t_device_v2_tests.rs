@@ -141,6 +141,34 @@ fn role_mask(role:&str)->u8 {match role{"commander"=>1,"gunner"=>2,"driver"=>4,"
     }
 }
 
+#[test] fn p06t_device_v2_destroyed_engine_recovers_to_damaged_and_emits_repair() {
+    let mut state=State::new_v2(Profile::Ms1).unwrap();
+    let h=context(Profile::Ms1);
+    let shell=shell(Mount::WtE100128,0);
+    state.apply_hits(&[ModuleHit{shell,..hit(1,Target::Device(Device::Engine),0,0.99)}],h).unwrap();
+    assert_eq!(state.health()[Device::Engine as usize],0);
+    assert_eq!(state.capabilities().drive_scale,0.);
+    assert!(!state.fire_active());
+    let events=state.advance_fire(MODULE_REPAIR_DELAY_MS,h).unwrap();
+    assert_eq!(state.health()[Device::Engine as usize],CAPS[Profile::Ms1.index()][Device::Engine as usize].regen);
+    assert!(state.capabilities().drive_scale>0.);
+    assert!(events.iter().any(|event|matches!(event.change,Change::Device{device:Device::Engine,before:0,repair:true,after_condition:Condition::Normal,..})));
+}
+
+#[test] fn p06t_device_v2_fuel_fire_recovers_fuel_after_fire_stops() {
+    let mut state=State::new_v2(Profile::Ms1).unwrap();
+    let h=context(Profile::Ms1);
+    let shell=shell(Mount::WtE100128,0);
+    state.apply_hits(&[ModuleHit{shell,..hit(1,Target::Device(Device::FuelTank),0,0.99)}],h).unwrap();
+    assert_eq!(state.health()[Device::FuelTank as usize],0);
+    assert!(state.fire_active());
+    let events=state.advance_fire(10*FIRE_INTERVAL_MS,h).unwrap();
+    assert!(!state.fire_active());
+    assert_eq!(state.health()[Device::FuelTank as usize],CAPS[Profile::Ms1.index()][Device::FuelTank as usize].regen);
+    assert_eq!(state.health()[Device::Engine as usize],5);
+    assert!(events.iter().any(|event|matches!(event.change,Change::Device{device:Device::FuelTank,before:0,repair:true,..})));
+}
+
 #[test] fn p06t_device_v2_hp_clamp_and_terminal_freeze_propose_no_extra_damage() {
     for profile in [Profile::Wt128,Profile::Fv183] {
         let mut state=State::new_v2(profile).unwrap();let h=Health{hp:7,..context(profile)};
