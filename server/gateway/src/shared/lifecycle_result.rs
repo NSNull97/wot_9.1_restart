@@ -121,7 +121,7 @@ mod tests {
             change:crate::p06t_device_state::Change::Device{device:crate::p06t_device_caps::Device::AmmoBay,
                 extra_index:27,max_health:60,before:60,after:10,
                 before_condition:crate::p06t_device_state::Condition::Normal,
-                after_condition:crate::p06t_device_state::Condition::Critical}}));
+                after_condition:crate::p06t_device_state::Condition::Critical,repair:false}}));
         let facts=project_module_facts(&w).unwrap();assert_eq!(facts.len(),1);
         assert_eq!((facts[0].extra_index,facts[0].critical,facts[0].fire),(27,true,false));
         let mut forged=w.clone();
@@ -129,7 +129,7 @@ mod tests {
             event.change=crate::p06t_device_state::Change::Device{device:crate::p06t_device_caps::Device::AmmoBay,
                 extra_index:28,max_health:60,before:60,after:10,
                 before_condition:crate::p06t_device_state::Condition::Normal,
-                after_condition:crate::p06t_device_state::Condition::Critical};
+                after_condition:crate::p06t_device_state::Condition::Critical,repair:false};
         }
         assert!(project_module_facts(&forged).is_err());
     }
