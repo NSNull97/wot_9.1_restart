@@ -223,3 +223,6 @@ native/UI остаются `NOT_RUN` до successor прогона.
 **Nightly full-polygon integration:** generic dynamic destruction contract and pinned GNU linker path are carried on this branch. The map-agnostic contract is source/test complete, while per-map catalog import, renderer/native publication and rubble collision remain NOT_RUN. P06T pre-integration focused gate was 221/0/0 with executable SHA d27ac3288fcb1c3e449efdf1953b319951dbdf7528b53fd1017d50e431b85f6a; it will be rerun after ram wiring.
 
 **Nightly polygon ram/destruction integration:** authoritative ram source and map-agnostic dynamic destruction contract are carried on codex/nightly-full-polygon-20261018; native collision damage and per-map catalog/import remain NOT_RUN pending the sealed morning stand.
+
+
+Nightly full polygon 2026-10-19: branch codex/nightly-full-polygon-20261018, head 356c21a, main untouched. Canonical sequential gate 1670 PASS / 0 FAIL / 5 ignored; executable SHA-256 04f2c94262a2f9bb973cac7840f54e4885cfdbbf85fbeae126f98ea5e3208bdd. Fresh D-only successor-05 is prepared with SQLite quick/integrity ok, ports 20330/20331/3691; native/UI/audio/control/two-PC remain NOT_RUN. See docs/research/NIGHTLY_FULL_POLYGON_20261019.md and local/evidence/20261019-nightly-full-polygon/receipt.json.
