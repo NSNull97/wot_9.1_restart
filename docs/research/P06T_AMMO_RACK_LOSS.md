@@ -98,11 +98,13 @@ terrain clamp, без swept body, Jolt contacts, вторичного blast dama
   свободный Window, не хранятся в отложенной скрытой очереди. Смена parent epoch
   требует leave ACK и нового create. Повторное появление не воспроизводит FX.
 - Визуальные часы продолжаются после заморозки результата, без изменения HP,
-  устройств и статистики. TTL5s, drain timeout20s; native result stream ждёт
-  подтверждённого удаления child. Зависший канал закрывается с сохранённым
-  durable результатом, ACK не подделывается. Старый World не сбрасывается до
-  handoff Avatar. В Leaving сохраняются только проверенные child requests,
-  world commands остаются в throwaway clone.
+  устройств и статистики. Пять секунд — это верхняя граница полёта до
+  authoritative ground clamp; после неё child остаётся в `Resting` до handoff
+  Avatar, а не получает `Leave`. Результат можно подтвердить после ACK его
+  последней позы; зависший канал закрывается с сохранённым durable
+  результатом, ACK не подделывается. Старый World не сбрасывается до handoff
+  Avatar. В Leaving сохраняются только проверенные child requests, world
+  commands остаются в throwaway clone.
 
 ## Сохранность, стенд и откат
 

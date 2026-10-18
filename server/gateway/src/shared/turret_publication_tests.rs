@@ -31,7 +31,7 @@ fn created(s:&mut Session,w:&World,now:Instant){
     // It cannot announce before the parent negative-health publication.
     s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();assert_eq!(s.tx.len(),0);
     created(&mut s,&w,now);assert!(!s.shared.as_ref().unwrap().turrets.book.pose_allowed(1));
-    let expected=detached_turret::create(1,w.actors[1].vehicle_kind(),Pose{position:w.turret_flights()[0].sample().position,direction:[0.;3]},false,false).unwrap();
+    let expected=detached_turret::create(1,w.actors[1].vehicle_kind(),Pose{position:w.turret_flights()[0].sample().position,direction:[0.;3]},false,true).unwrap();
     let bodies=send_pending(&mut s,now);assert!(bodies.windows(expected.len()).any(|part|part==expected));
     assert!(!bodies.windows(5).any(|part|part==[0x15,2,0,18,9]));
     let before=s.shared.as_ref().unwrap().turrets.book.clone();
@@ -73,16 +73,16 @@ fn created(s:&mut Session,w:&World,now:Instant){
     s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();assert_eq!(s.tx.len(),1);
     ack_all(&mut s,now);s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();assert!(matches!(s.shared.as_ref().unwrap().turrets.book.entry(1),Some(Entry::Announced{requested:false,..})));
 }
-#[test]fn p06t_turret_expired_leaving_avatar_result_gate_requires_actual_leave_ack(){
-    let now=Instant::now();let(mut s,mut w)=fixture(now);detonate(&mut w);created(&mut s,&w,now);ack_all(&mut s,now);
+#[test]fn p06t_turret_resting_child_stays_collidable_until_avatar_release(){
+    let now=Instant::now();let(mut s,mut w)=fixture_for(now,1);detonate(&mut w);created(&mut s,&w,now);ack_all(&mut s,now);
     s.shared.as_mut().unwrap().phase=Phase::Leaving;
     assert!(!s.turret_presentation_ready(&w,now).unwrap());
-    let expired=now+Duration::from_secs(5);w.advance_turret_flights(expired).unwrap();
-    s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();assert!(!s.turret_presentation_ready(&w,expired).unwrap());
-    let body=send_pending(&mut s,expired);assert_eq!(body,detached_turret::leave(1).unwrap());
-    ack_all(&mut s,expired);assert!(s.turret_presentation_ready(&w,expired).unwrap());
-    s.tx.enqueue().unwrap();assert!(!s.turret_presentation_ready(&w,expired).unwrap());
-    ack_all(&mut s,expired);assert!(s.turret_presentation_ready(&w,expired).unwrap());
+    let settled=now+Duration::from_secs(5);w.advance_turret_flights(settled).unwrap();
+    assert_eq!(w.turret_flights()[0].sample().phase,FlightPhase::Resting);
+    s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();
+    let body=send_pending(&mut s,settled);assert!(!body.is_empty());
+    ack_all(&mut s,settled);assert!(s.turret_presentation_ready(&w,settled).unwrap());
+    assert!(matches!(s.shared.as_ref().unwrap().turrets.book.entry(1),Some(Entry::Created{acked:true,..})));
     assert!(s.turret_presentation_ready(&w,now+Duration::from_secs(20)).unwrap());
 }
 #[test]fn p06t_turret_landing_updates_source_bool_only_after_creation_ack_and_has_bounded_timeout(){
@@ -92,8 +92,12 @@ fn created(s:&mut Session,w:&World,now:Instant){
     let landed=now+Duration::from_secs(4);w.advance_turret_flights(landed).unwrap();
     assert_eq!(w.turret_flights()[0].sample().phase,FlightPhase::Resting);
     s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();let body=send_pending(&mut s,landed);
-    assert!(body.starts_with(&colliding(1,true).unwrap()));
-    let expired=now+Duration::from_secs(5);w.advance_turret_flights(expired).unwrap();
+    let sample=w.turret_flights()[0].sample();
+    assert_eq!(body,detached_turret::pose(1,1000+u32::try_from(landed.duration_since(now).as_millis()/100).unwrap(),Pose{
+        position:sample.position,direction:sample.direction}).unwrap());
+    let settled=now+Duration::from_secs(5);w.advance_turret_flights(settled).unwrap();
     s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();
-    assert_eq!(s.turret_presentation_ready(&w,now+Duration::from_secs(20)).unwrap_err().kind(),io::ErrorKind::TimedOut);
+    assert_eq!(w.turret_flights()[0].sample().phase,FlightPhase::Resting);
+    let _=send_pending(&mut s,settled);ack_all(&mut s,settled);
+    assert!(s.turret_presentation_ready(&w,now+Duration::from_secs(20)).unwrap());
 }

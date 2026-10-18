@@ -59,8 +59,8 @@ fn event()->Event{let Outcome::New(event)=Ledger::new(2).unwrap().apply(input())
     assert!((s.position[0]-2.).abs()<1e-6);assert!((s.position[1]-4.095).abs()<1e-5);assert!((s.position[2]-1.5).abs()<1e-6);
     let landed=f.advance(e.born_ms()+2000,|x,z|{assert_eq!([x,z],[4.,3.]);Ok(0.)}).unwrap();
     assert_eq!(landed.phase,FlightPhase::Resting);assert_eq!(landed.position,[4.,0.,3.]);
-    let expired=f.advance(e.born_ms()+5000,|_,_|panic!("resting flight re-queried terrain")).unwrap();
-    assert_eq!(expired.phase,FlightPhase::Expired);assert_eq!(expired.position,landed.position);
+    let resting=f.advance(e.born_ms()+5000,|_,_|panic!("resting flight re-queried terrain")).unwrap();
+    assert_eq!(resting.phase,FlightPhase::Resting);assert_eq!(resting.position,landed.position);
 }
 #[test]fn p06t_ammo_detonation_flight_uses_source_joint_world_yaw_and_supplied_ground(){
     let mut l=Ledger::new(2).unwrap();let Outcome::New(e)=l.apply(Input{joint:JointPose{position:[10.,5.,20.],direction:[PI/2.,0.2,-0.1]},..input()}).unwrap()else{panic!()};
@@ -78,8 +78,8 @@ fn event()->Event{let Outcome::New(event)=Ledger::new(2).unwrap().apply(input())
     assert_eq!(f.advance(e.born_ms()+500,|_,_|panic!("duplicate timestamp queried terrain")).unwrap(),s);
     let before=f.clone();assert!(f.advance(e.born_ms()+400,|_,_|Ok(0.)).is_err());assert_eq!(f,before);
 }
-#[test]fn p06t_ammo_detonation_flight_ttl_expires_even_without_ground_contact(){
+#[test]fn p06t_ammo_detonation_flight_settles_at_lifetime_even_without_contact(){
     let e=event();let mut f=Flight::new(e);let s=f.advance(e.born_ms()+FLIGHT_LIFETIME_MS,|_,_|Ok(-1000.)).unwrap();
-    assert_eq!(s.phase,FlightPhase::Expired);assert!(s.position[1]>-1000.);
-    let late=f.advance(MAX_TIME_MS,|_,_|panic!("expired flight queried terrain")).unwrap();assert_eq!(late.position,s.position);
+    assert_eq!(s.phase,FlightPhase::Resting);assert_eq!(s.position[1],-1000.);
+    let late=f.advance(MAX_TIME_MS,|_,_|panic!("resting flight queried terrain")).unwrap();assert_eq!(late.position,s.position);
 }

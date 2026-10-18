@@ -84,15 +84,18 @@ impl Session{
                 ActionKind::Create=>{
                     let flight=world.turret_flights().iter().find(|f|f.event().target()==action.slot).ok_or_else(||bad())?;
                     let sample=flight.sample();if sample.phase==FlightPhase::Expired{return Err(bad());}
+                    // Collision belongs to the detached entity from the
+                    // moment it is created. Waiting until ground contact made
+                    // the gun ghost through the first part of the fall.
                     detached_turret::create(action.slot,flight.event().kind(),Pose{position:sample.position,direction:sample.direction},
-                        false,sample.phase==FlightPhase::Resting)?
+                        false,true)?
                 },
             };
             let seq=next.tx.enqueue_body_tracked(&body)?;
             let c=next.shared.as_mut().ok_or_else(||bad())?;c.turrets.book.mark_queued(action,seq)?;
             c.turrets.last_pose[action.slot]=None;
             c.turrets.last_colliding[action.slot]=if action.kind==ActionKind::Create{
-                Some(world.turret_flights().iter().find(|f|f.event().target()==action.slot).ok_or_else(||bad())?.sample().phase==FlightPhase::Resting)
+                Some(true)
             }else{None};
             committed.push(format!("P06T_TURRET_NATIVE session={} target={} action={:?} sequence={seq}",next.id,action.slot,action.kind));
         }
@@ -101,18 +104,23 @@ impl Session{
             let slot=flight.event().target();let sample=flight.sample();let c=next.shared.as_mut().ok_or_else(||bad())?;
             if !c.turrets.book.pose_allowed(slot)||c.turrets.last_pose[slot]==Some(sample.at_ms){continue;}
             let tick=1000u32.checked_add(u32::try_from(sample.at_ms/100).map_err(|_|bad())?).ok_or_else(||bad())?;
-            let grounded=sample.phase==FlightPhase::Resting;let mut body=Vec::new();
-            if c.turrets.last_colliding[slot]!=Some(grounded){body.extend(colliding(slot,grounded)?);}
+            // The detached entity carries the gun collider for the whole
+            // flight and while it rests. Do not briefly switch it off between
+            // the Create packet and the landing sample.
+            let collidable=true;let mut body=Vec::new();
+            if c.turrets.last_colliding[slot]!=Some(collidable){body.extend(colliding(slot,collidable)?);}
             body.extend(detached_turret::pose(slot,tick,Pose{position:sample.position,direction:sample.direction})?);
-            next.tx.enqueue_body(&body)?;c.turrets.last_pose[slot]=Some(sample.at_ms);c.turrets.last_colliding[slot]=Some(grounded);
+            next.tx.enqueue_body(&body)?;c.turrets.last_pose[slot]=Some(sample.at_ms);c.turrets.last_colliding[slot]=Some(collidable);
         }
         *self=next;events.extend(committed);Ok(())
     }
     pub(super) fn turret_presentation_ready(&self,world:&World,now:Instant)->io::Result<bool>{
         if !world.ammo_detonation_enabled()||world.ammo_detonations().is_empty(){return Ok(true);}
         let c=self.shared.as_ref().ok_or_else(||bad())?;
-        let complete=world.turret_flights().iter().all(|f|f.sample().phase==FlightPhase::Expired)
-            &&(0..6).all(|slot|c.turrets.book.entry(slot)==Some(Entry::Hidden))
+        let settled=world.turret_flights().iter().all(|f|f.sample().phase==FlightPhase::Resting);
+        let entries_ready=(0..6).all(|slot|matches!(c.turrets.book.entry(slot),
+            Some(Entry::Hidden)|Some(Entry::Created{acked:true,..})));
+        let complete=settled&&entries_ready
             &&self.outbox.is_empty()&&c.private_pending.is_empty()&&self.tx.len()==0;
         if complete{return Ok(true);}
         let last=world.ammo_detonations().iter().map(|e|e.born_ms()).max().ok_or_else(||bad())?;

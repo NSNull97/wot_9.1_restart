@@ -6,7 +6,7 @@ use super::vehicle_profile::VehicleKind;
 use crate::p06t_device_caps::{CAPS,Device,Profile};
 
 pub const POLICY:&str="test_lab.p06t.ammo-bay-zero-loaded-detonation.v1";
-pub const FLIGHT_POLICY:&str="test_lab.p06t.detached-turret-ballistic-terrain-clamp.v1";
+pub const FLIGHT_POLICY:&str="test_lab.p06t.detached-turret-ballistic-terrain-clamp.v2-persistent-resting";
 pub const MAX_EVENTS:usize=6;
 pub const MAX_TIME_MS:u64=3_600_000;
 pub const FLIGHT_LIFETIME_MS:u64=5_000;
@@ -126,6 +126,10 @@ impl Flight{
     /// callback supplies actual authoritative terrain height at world(X,Z),
     /// never client data. This PROJECT point clamp is neither a swept volume
     /// nor Jolt collision. No actor HP/device/shot state enters this method.
+    /// Once the point reaches ground it remains `Resting` for the lifetime of
+    /// the battle. The old five-second `Expired` transition made the native
+    /// child leave the world while the dead parent was still being observed,
+    /// which made the turret snap back or disappear per recipient.
     pub fn advance<F>(&mut self,now_ms:u64,mut ground:F)->io::Result<FlightSample>
         where F:FnMut(f32,f32)->io::Result<f32>{
         if now_ms>MAX_TIME_MS||now_ms<self.event.born_ms()||self.last_ms.is_some_and(|old|now_ms<old){return Err(bad("detached turret flight monotonic clock"));}
@@ -144,11 +148,12 @@ impl Flight{
             let height=ground(position[0],position[2])?;
             if !height.is_finite()||height.abs()>MAX_POSITION{return Err(bad("detached turret terrain height bounds"));}
             let direction=std::array::from_fn(|i|wrap(f64::from(born.direction[i])+ANGULAR_VELOCITY[i]*t));
-            if position[1]<=height{position[1]=height;let landed=JointPose{position,direction};next.landing=Some(landed);landed}
+            if position[1]<=height||elapsed>=FLIGHT_LIFETIME_MS{
+                position[1]=height;let landed=JointPose{position,direction};next.landing=Some(landed);landed
+            }
             else{JointPose{position,direction}}
         };
-        let phase=if elapsed>=FLIGHT_LIFETIME_MS||now_ms==MAX_TIME_MS{FlightPhase::Expired}
-            else if next.landing.is_some(){FlightPhase::Resting}else{FlightPhase::Flying};
+        let phase=if next.landing.is_some(){FlightPhase::Resting}else{FlightPhase::Flying};
         next.sample=FlightSample{position:joint.position,direction:joint.direction,phase,at_ms:now_ms};
         next.last_ms=Some(now_ms);*self=next;Ok(self.sample)
     }
