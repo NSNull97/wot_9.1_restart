@@ -66,12 +66,20 @@ def _interaction_details(value):
             require(tid in roster and tid > previous, "INVALID_INPUT"); previous = tid
             _integer(target["spotted"], 0, 1); _integer(target["death_reason"], -1, 10)
             for name in ("direct_hits", "explosion_hits", "piercings", "damage_dealt",
-                "damage_assisted_track", "damage_assisted_radio", "fire"): _integer(target[name], 0, 65535)
-            _integer(target["crits"], 0, 2**32 - 1)
+                "damage_assisted_track", "damage_assisted_radio"): _integer(target[name], 0, 65535)
+            _integer(target["fire"], 0, 10)
+            # Module/crew transitions are authoritative zero-damage facts.
+            # Keep their counters bounded to the same native Results8 limits
+            # as the Rust projection; rejecting them here turns a valid P06T
+            # terminal result into a writer INVALID_INPUT and strands the
+            # dead client in its postmortem camera.
+            _integer(target["crits"], 0, 192)
             require(target["piercings"] <= target["direct_hits"]
-                and all(target[name] == 0 for name in ("damage_assisted_track", "damage_assisted_radio", "crits", "fire"))
+                and target["damage_assisted_track"] == 0
+                and target["damage_assisted_radio"] == 0
                 and (target["spotted"] or target["death_reason"] != -1 or target["direct_hits"]
-                    or target["explosion_hits"] or target["piercings"] or target["damage_dealt"]), "INVALID_INPUT")
+                    or target["explosion_hits"] or target["piercings"] or target["damage_dealt"]
+                    or target["crits"] or target["fire"]), "INVALID_INPUT")
             victim = roster[tid]
             if target["spotted"]:
                 require(details["spotting_policy"] == SPOTTING_POLICY and victim["team"] != own["team"]

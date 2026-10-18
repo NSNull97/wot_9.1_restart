@@ -84,6 +84,28 @@ class InteractionStoreTests(unittest.TestCase):
         self.assertEqual(self.send(finish),dict(response,replayed=True))
         self.assertEqual(json.loads(self.read(query)['results_json']),self.result())
         self.assertEqual(self.read(ack),dict(acked,replayed=True));self.assertEqual(self.profile(),before)
+
+    def test_p08c_p06t_module_and_fire_facts_survive_natural_finish(self):
+        # P06T publishes critical/fire counters even when the shot did no
+        # additional vehicle damage. The result writer must accept and retain
+        # those Results8 facts so the second owner can finish and leave.
+        value=self.result()
+        target=value['interaction_details']['rows'][0]['targets'][0]
+        target.update(crits=1,fire=1,damage_dealt=0)
+        value['participants'][0].update(direct_hits=0,piercings=0,damage_dealt=0,kills=0)
+        value['participants'][1].update(health=90,damage_received=0,killer_id=0,death_reason=-1)
+        value['winner_team']=2; value['finish_reason']=5
+        raw=canonical(value).decode('ascii')
+        parsed=details.results_value(raw)
+        self.assertEqual(parsed['interaction_details']['rows'][0]['targets'][0]['crits'],1)
+        self.assertEqual(parsed['interaction_details']['rows'][0]['targets'][0]['fire'],1)
+        _,admitted=self.start((0,3,9)); reservation=admitted['reservation']
+        request=self.finish(reservation,(0,1,8),reason='battle_finished',terminal_hp=90,
+            terminal_state_json=canonical(self.terminal(reservation['frozen'],90)).decode('ascii'),
+            results_json=raw)
+        response=self.send(request)
+        self.assertEqual(response['status'],'finished')
+        self.assertEqual(json.loads(self.read(self.query())['results_json']),value)
     def test_p08c_personal_finish_and_ack_failpoints_rollback_whole_transaction(self):
         finish=self.prepared_finish()
         for point in ('after_mixed_full_result','before_mixed_commit'):

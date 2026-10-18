@@ -119,6 +119,19 @@ per-shotWAL нет. Причина микролага UNKNOWN; rustfmt закр�
 После09:00 ночную реализацию не продолжать без нового задания; владелец уже
 запустил Core manual. Непринятая цепочка остаётся вне main.
 
+**P06T Results8 writer repair (2026-10-18):** ветка
+`codex/p06t-loss-writer-observability`, head `39eb92f`. Python results validator
+теперь принимает bounded authoritative `crits`/`fire` module facts, поэтому
+естественный ammo-loss `finish` не отбрасывается как `INVALID_INPUT` после
+публикации P06T module details. Focused Python 1/0 и Rust 13+3/0 прошли с
+target на D; receipt и SHA записаны в
+`docs/research/P06T_RESULTS_VALIDATOR_20261018.md`. Focused gates PASS; canonical
+suite после фикса запущен и дал 1653 PASS / 3 FAIL / 5 ignored, но не принят из-за
+трёх successor-stand composition failures; standalone executable build
+`B3B318B22867E35F2EEF76CE5D9553B2B1B0975CA609E924B241BF00CD7EA46A` прошёл;
+native death/return остаётся
+**NOT_RUN**; main не менялся.
+
 
 **Current checkpoint:** full03 PASS 1632/0/5 and source-after exact; contact130 sealed/bound from actual SQL144/56 with grants0, services and both native hangar launches PASS. Client gameplay and native P05C acceptance remain NOT_RUN pending owner manual scenario. Evidence receipt: `local/evidence/20261017-morning-core01/contact130-preflight-completion.json` SHA256 `84145bed0503b5637349b784423040ea27f9fbad9522cb893bd9ff8c04317d29`.
 
