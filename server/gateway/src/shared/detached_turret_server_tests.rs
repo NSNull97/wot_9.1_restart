@@ -157,7 +157,7 @@ fn commit_authored_result_boundary(s:&mut Session){
     contain_battle_failure(&mut table,&mut w,&mut runtime,&template,now,"publication",
         &io::Error::new(io::ErrorKind::InvalidData,"authored mid-flight fault")).unwrap();
     let s=&mut table.sessions[0];poll_battle_session(s,&mut w,now+Duration::from_secs(20),true,false).unwrap();
-    assert!(contained_return_failure_reason(s).is_none());
+    assert!(contained_return_failure_reason(s).is_some());
     let c=s.shared.as_ref().unwrap();assert!(c.result_stream_queued);assert!(!s.battle_results.avatar_confirmed());
     assert!(s.drive_return_account.is_none());assert_eq!(w.id,old+1);
     assert_eq!(c.contained_world.as_ref().unwrap().turret_flights()[0].sample().phase,super::super::ammo_detonation::FlightPhase::Flying);
