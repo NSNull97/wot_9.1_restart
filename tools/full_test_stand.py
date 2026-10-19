@@ -173,15 +173,56 @@ def prepare(args):
     print(json.dumps(receipt, indent=2))
 
 
+def economy(args):
+    """Owner order 2026-10-19: zero economy and an exact garage capacity.
+
+    Uses the same top store class as the stand's bridge worker
+    (p08b_battle_service --mixed-ammo --ammo-rack-loss) on the stand DB.
+    Services must be stopped; each grant raises the account revision."""
+    import sys
+    sys.path[:0] = [str(ROOT), str(ROOT / 'tools')]
+    from p09e_research_catalog import load_catalog
+    from p06t_ammo_loss_store import AmmoLossStore
+    from p09e_research_store import ECONOMY_POLICY
+    stand = (ROOT / args.stand).resolve(strict=True)
+    if not stand.is_relative_to(LOCAL / 'stands') or (stand / 'gateway-process.json').exists():
+        raise ValueError('stopped stand below this checkout local/stands required')
+    bridge = json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))
+    catalog = load_catalog(Path(bridge['ammunition_service']['original_root']))
+    results = {}
+    for account in bridge['mixed_service']['accounts']:
+        store = AmmoLossStore(bridge['game_database'], catalog, account_id=account,
+                              shell_catalog=bridge['mixed_service']['shell_catalog'],
+                              terminal_policy=bridge['mixed_service']['terminal_policy'])
+        try:
+            results[account] = store.apply_test_lab_economy(account_id=account, garage_slots=args.slots, policy=ECONOMY_POLICY)
+        finally:
+            store.close()
+    receipt = stand / 'economy-receipt.json'
+    text = json.dumps(dict(schema='wot091-full-test-economy.v1', policy=ECONOMY_POLICY, results=results), indent=2)
+    receipt.write_text(text + chr(10), encoding='utf-8')
+    print(json.dumps(results, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('prepare',))
-    parser.add_argument('--source-stand', required=True, help='latest actual stand directory (read-only)')
-    parser.add_argument('--physics', required=True, help='physics build dir below local/build')
-    parser.add_argument('--gateway', required=True, help='sr-gateway.exe from a recorded build')
+    parser.add_argument('command', choices=('prepare', 'economy'))
+    parser.add_argument('--source-stand', help='latest actual stand directory (read-only)')
+    parser.add_argument('--physics', help='physics build dir below local/build')
+    parser.add_argument('--gateway', help='sr-gateway.exe from a recorded build')
     parser.add_argument('--allow-gateway-root', help='additional recorded build root (build.py --cargo-temp-target)')
-    parser.add_argument('--out', required=True, help='fresh stand dir below local/stands')
-    prepare(parser.parse_args())
+    parser.add_argument('--out', help='fresh stand dir below local/stands')
+    parser.add_argument('--stand', help='economy: stopped stand dir below local/stands')
+    parser.add_argument('--slots', type=int, default=100, help='economy: garage slots per account')
+    args = parser.parse_args()
+    if args.command == 'prepare':
+        if not all((args.source_stand, args.physics, args.gateway, args.out)):
+            parser.error('prepare requires --source-stand, --physics, --gateway and --out')
+        prepare(args)
+    else:
+        if not args.stand:
+            parser.error('economy requires --stand')
+        economy(args)
 
 
 if __name__ == '__main__':
