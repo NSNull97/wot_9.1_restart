@@ -33,6 +33,14 @@ internal sealed class TrackedHandling
     // to 2 m/s^2 at 8 m/s. These are project thresholds, not historical data.
     private const float PoweredInnerDeceleration = 2f;
     private const float PoweredBrakeStartSpeed = 4f, PoweredBrakeFullSpeed = 8f;
+    // Owner runs 2026-10-17 (contact129) and 2026-10-19 (full-test): W+A/D kept
+    // or exceeded the straight-line speed, because the governor watched only
+    // centre speed while the lateral budget keeps the yaw small at speed.
+    // With the same shared policy flag, a powered turn now shares drivetrain
+    // speed with hull rotation: the travel limit falls linearly to 60% at the
+    // full chassis yaw rate, and an overspeed is dissipated on both tracks.
+    // Project policy; the historical 0.9.1 turn-speed relation is UNKNOWN.
+    private const float PoweredTurnSpeedShare = .4f, TurnOverspeedDeceleration = 2.5f, TurnOverspeedMargin = .25f;
     // Released-throttle turns keep pivot-level scrub; the higher moving-turn
     // grip is for powered turns on slopes.
     private const float CoastOuterFrictionFraction = .001f;
@@ -196,7 +204,10 @@ internal sealed class TrackedHandling
             }
         }
         if (steer == 0 && throttle == 0) motor = 0;
-        if ((throttle > 0 && signedSpeed >= forwardLimit) || (throttle < 0 && signedSpeed <= -reverseLimit)) motor = 0;
+        bool poweredTurn = poweredTurnLoss && !brake && coastPhase == 0 && throttle != 0 && steer != 0;
+        float turnScale = poweredTurn ? 1 - PoweredTurnSpeedShare * Math.Clamp(MathF.Abs(yawTarget) / maximumYaw, 0, 1) : 1;
+        float governed = (throttle < 0 ? reverseLimit : forwardLimit) * turnScale;
+        if ((throttle > 0 && signedSpeed >= forwardLimit * turnScale) || (throttle < 0 && signedSpeed <= -reverseLimit * turnScale)) motor = 0;
         float brakeInput = brake ? 1 : 0;
         // A rolling steer request carries momentum.  Engage the stronger
         // clutch/brake hand-off only inside the pivot window; doing it during
@@ -242,6 +253,11 @@ internal sealed class TrackedHandling
                 (PoweredBrakeFullSpeed - PoweredBrakeStartSpeed), 0, 1);
             float yawFraction = Math.Clamp(MathF.Abs(yawTarget) / maximumYaw, 0, 1);
             Dissipate(inner, TrackBrake(inner, PoweredInnerDeceleration * speedBlend * yawFraction, deltaTime));
+        }
+        if (poweredTurn && brakeInput == 0 && throttle * signedSpeed > governed + TurnOverspeedMargin)
+        {
+            Dissipate(controller.LeftTrack, TrackBrake(controller.LeftTrack, TurnOverspeedDeceleration, deltaTime));
+            Dissipate(controller.RightTrack, TrackBrake(controller.RightTrack, TurnOverspeedDeceleration, deltaTime));
         }
         // A direction change cancels the old request immediately. Ramping
         // through zero would keep driving the wrong way for half a second.
