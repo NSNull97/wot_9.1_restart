@@ -21,7 +21,7 @@ fn result(w:&World)->Arc<Results>{
     table.sessions[0].arena_base=false;table.sessions[0].shared.as_mut().unwrap().phase=Phase::Returning;
     assert!(!current_avatar_pending(&table,&w));
 }
-#[test]fn p06t_detonation_server_result_stream_waits_expiry_and_real_leave_ack(){
+#[test]fn p06t_detonation_server_result_stream_waits_settled_acked_turret_without_leave(){
     let now=Instant::now();let(mut s,mut w)=f::fixture(now);f::detonate(&mut w);
     s.tx.enqueue_body(&dt::terminal_health(1,Some(0),0,dt::DeathKind::Detached).unwrap()).unwrap();f::ack_all(&mut s,now);
     s.shared.as_mut().unwrap().health_sent[1]=Some(0);s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();
@@ -29,11 +29,12 @@ fn result(w:&World)->Arc<Results>{
     s.receive(&f::frame(&s,&req),now).unwrap();s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();f::ack_all(&mut s,now);
     let frozen=result(&w);let c=s.shared.as_mut().unwrap();c.phase=Phase::Leaving;c.natural_result=Some(frozen);c.result_committed=true;
     assert!(deliver_lifecycle_result(&mut s,&w,now).unwrap());assert!(!s.shared.as_ref().unwrap().result_stream_queued);
-    let expired=now+Duration::from_secs(5);w.advance_turret_flights(expired).unwrap();
-    s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();
-    assert!(deliver_lifecycle_result(&mut s,&w,expired).unwrap());assert!(!s.shared.as_ref().unwrap().result_stream_queued);
-    assert_eq!(f::send_pending(&mut s,expired),dt::leave(1).unwrap());f::ack_all(&mut s,expired);
-    assert!(deliver_lifecycle_result(&mut s,&w,expired).unwrap());
+    // The resting turret is part of the published wreck: no Leave while the
+    // parent stays visible; the result waits only for the settled, ACKed child.
+    let settled=now+Duration::from_secs(5);w.advance_turret_flights(settled).unwrap();
+    s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();f::ack_all(&mut s,settled);
+    assert!(matches!(s.shared.as_ref().unwrap().turrets.book.entry(1),Some(dt::Entry::Created{acked:true,..})));
+    assert!(deliver_lifecycle_result(&mut s,&w,settled).unwrap());
     assert!(s.shared.as_ref().unwrap().result_stream_queued);assert!(s.battle_results.avatar_pending());
     assert_eq!(w.actors[1].health,0);assert_eq!(w.ammo_detonations().len(),1);
 }

@@ -367,27 +367,6 @@ impl World {
         self.ammo_detonation.as_ref().map_or(&[],super::ammo_detonation::Ledger::events)
     }
     pub fn turret_flights(&self)->&[super::ammo_detonation::Flight]{&self.turret_flights}
-    /// Detached points have their own current LOS/range. Native publication
-    /// additionally requires an already visible parent vehicle epoch.
-    pub(super) fn detached_turret_visible(&self,own:usize,target:usize,point:[f32;3])->io::Result<bool>{
-        if own>=self.actors.len()||target>=self.actors.len()||point.iter().any(|v|!v.is_finite()||v.abs()>2000.){return Err(bad());}
-        if own==target||self.team(own)?==self.team(target)?{return Ok(true);}
-        let actor=&self.actors[own];let kind=actor.vehicle_kind();
-        if actor.position.iter().any(|v|!v.is_finite()||v.abs()>2000.)
-            ||actor.direction.iter().any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI){return Err(bad());}
-        let start=Self::visibility_sight_point(actor);
-        let scale=actor.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
-        let range=kind.view_range()*scale;
-        let distance=(0..3).map(|i|(f64::from(actor.position[i])-f64::from(point[i])).powi(2)).sum::<f64>();
-        if !range.is_finite()||!(0. ..=1000.).contains(&range)||!distance.is_finite(){return Err(bad());}
-        if distance>f64::from(range).powi(2){return Ok(false);}
-        let terrain=self.terrain.as_ref().ok_or_else(||bad())?;
-        let mut excluded=if let Some(state)=&self.fragiles{state.projectile_excluded()}
-            else{self.destructible.as_ref().and_then(|state|state.excluded_instance()).into_iter().collect()};
-        excluded.sort_unstable();if excluded.windows(2).any(|p|p[0]==p[1]){return Err(bad());}
-        if start==point{return Ok(true);}
-        Ok(terrain.nearest_excluding_many(start,point,&excluded)?.is_none())
-    }
     /// AUTHORED publication fixture only. It does not prove exterior collision,
     /// DeviceState source authority or inventory admission. Production only
     /// creates these events through direct_mixed's actual module transition.
@@ -507,7 +486,7 @@ impl World {
             let view_scale=actor.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
             if !view_scale.is_finite()||!(0. ..=1.).contains(&view_scale){return Err(bad());}
             Ok(super::spotting::Actor{slot,team:self.team(slot)?,position:actor.position,points,
-                view_range:actor.vehicle_kind().view_range()*view_scale,observer_active,commander_active})
+                view_range:actor.vehicle_kind().view_range()*view_scale,observer_active,commander_active,wreck:actor.health<=0})
         }).collect()
     }
     pub fn refresh_original_spotting(&mut self, now: Instant) -> io::Result<()> {

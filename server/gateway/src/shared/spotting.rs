@@ -103,7 +103,10 @@ impl Rules {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Actor { pub slot: usize, pub team: u8, pub position: Point, pub points: Points, pub view_range: f32, pub observer_active: bool, pub commander_active: bool }
+/// `wreck`: destroyed target. A wreck cannot move or hide, so once published to
+/// a recipient it stays published (no retention expiry); a never-seen wreck is
+/// still revealed only by ordinary direct LOS. Project policy, owner run 2026-10-19.
+pub struct Actor { pub slot: usize, pub team: u8, pub position: Point, pub points: Points, pub view_range: f32, pub observer_active: bool, pub commander_active: bool, pub wreck: bool }
 
 fn validate_actors(actors: &[Actor]) -> io::Result<()> {
     if actors.is_empty() || actors.len() > MAX_ACTORS { return Err(bad("spotting actor count")); }
@@ -165,7 +168,8 @@ impl State {
         }
         next.desired = [[false; MAX_ACTORS]; MAX_ACTORS];
         for recipient in actors { for target in actors {
-            let visible = recipient.slot == target.slot || recipient.team == target.team || actors.iter().any(|observer| {
+            let visible = recipient.slot == target.slot || recipient.team == target.team
+                || target.wreck && self.desired[recipient.slot][target.slot] || actors.iter().any(|observer| {
                 let share = observer.slot == recipient.slot || (next.rules.share_with_team && observer.team == recipient.team);
                 share && next.last_seen[observer.slot][target.slot].is_some_and(|at| next.direct[observer.slot][target.slot] || ms.saturating_sub(at) < next.rules.retention_ms)
             });
@@ -184,7 +188,7 @@ impl State {
 mod tests {
     use super::*;
     fn parts() -> Parts { Parts { hull:[1.,2.,3.], turret:[4.,5.,6.], gun:[7.,8.,9.], hull_bounds:[[-2.,-1.,-4.],[2.,3.,4.]], turret_top:6. } }
-    fn actor(slot:usize,team:u8,x:f32)->Actor { Actor {slot,team,position:[x,0.,0.],points:Points{checks:[[x,1.,0.];7],observers:[[x,1.,0.];2]},view_range:400.,observer_active:true,commander_active:true} }
+    fn actor(slot:usize,team:u8,x:f32)->Actor { Actor {slot,team,position:[x,0.,0.],points:Points{checks:[[x,1.,0.];7],observers:[[x,1.,0.];2]},view_range:400.,observer_active:true,commander_active:true,wreck:false} }
     #[test] fn source_static_and_dynamic_points_are_bounded_and_transform_full_ypr() {
         let p=parts().local().unwrap(); assert_eq!(p.checks,[[0.,13.,0.],[12.,15.,18.],[1.,3.,7.],[1.,3.,-1.],[3.,15.,3.],[-1.,15.,3.],[12.,15.,18.]]); assert_eq!(p.observers,[[0.,13.,0.],[7.,8.,9.]]);
         let world=parts().world([10.,20.,30.],[0.,0.,0.],std::f32::consts::FRAC_PI_2).unwrap(); assert_eq!(world.checks[6],world.observers[1]); assert!((world.observers[1][0]-24.).abs()<1e-5); assert!((world.observers[1][2]-32.).abs()<1e-5);
@@ -197,5 +201,19 @@ mod tests {
     }
     #[test] fn sixth_sense_is_delayed_and_requires_functioning_commander() {
         let mut actors=[actor(0,1,0.),actor(1,2,100.)]; let mut state=State::new(Rules::selected().unwrap()).unwrap(); state.refresh(0,&actors,|_,_,_,_|Ok(true)).unwrap(); state.refresh(2999,&actors,|_,_,_,_|Ok(true)).unwrap(); assert_eq!(state.sixth_generation(0).unwrap(),0); state.refresh(3000,&actors,|_,_,_,_|Ok(true)).unwrap(); assert_eq!(state.sixth_generation(0).unwrap(),1); actors[0].commander_active=false; state.refresh(3100,&actors,|_,_,_,_|Ok(true)).unwrap(); state.refresh(6200,&actors,|_,_,_,_|Ok(true)).unwrap(); assert_eq!(state.sixth_generation(0).unwrap(),1);
+    }
+    #[test] fn a_published_wreck_stays_published_but_an_unseen_wreck_needs_direct_los() {
+        // Owner run 2026-10-19: the attacker lost the wreck (and its detached
+        // turret) five seconds after the kill once direct LOS was gone.
+        let mut actors=[actor(0,1,0.),actor(1,2,100.)]; let mut state=State::new(Rules::selected().unwrap()).unwrap();
+        state.refresh(0,&actors,|_,_,_,_|Ok(true)).unwrap(); assert!(state.desired(0).unwrap()[1]);
+        actors[1].wreck=true; actors[1].observer_active=false; actors[1].commander_active=false;
+        for ms in [100,5100,60_000] { state.refresh(ms,&actors,|_,_,_,_|Ok(false)).unwrap(); assert!(state.desired(0).unwrap()[1],"ms={ms}"); }
+        let mut fresh=State::new(Rules::selected().unwrap()).unwrap();
+        fresh.refresh(0,&actors,|_,_,_,_|Ok(false)).unwrap(); assert!(!fresh.desired(0).unwrap()[1]);
+        fresh.refresh(100,&actors,|_,_,_,_|Ok(true)).unwrap(); assert!(fresh.desired(0).unwrap()[1]);
+        fresh.refresh(10_000,&actors,|_,_,_,_|Ok(false)).unwrap(); assert!(fresh.desired(0).unwrap()[1]);
+        actors[1].wreck=false; let mut alive=State::new(Rules::selected().unwrap()).unwrap();
+        alive.refresh(0,&actors,|_,_,_,_|Ok(true)).unwrap(); alive.refresh(5100,&actors,|_,_,_,_|Ok(false)).unwrap(); assert!(!alive.desired(0).unwrap()[1]);
     }
 }

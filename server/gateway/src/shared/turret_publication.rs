@@ -32,7 +32,10 @@ fn refresh(c:&mut Client,world:&World)->io::Result<()>{
         seen[slot]=true;let sample=flight.sample();
         let epoch=if c.spotting_enabled{c.interest.as_ref().and_then(|b|b.announcement_sequence(slot))}
             else{c.creations[slot].map(|(seq,_)|seq)};
-        let desired=sample.phase!=FlightPhase::Expired&&visible[slot]&&world.detached_turret_visible(c.slot,slot,sample.position)?;
+        // The detached turret is part of the published wreck. A separate LOS
+        // ray to its ground-clamped point blocked on the terrain it rests on
+        // and sent the attacker an early Leave (owner run 2026-10-19).
+        let desired=sample.phase!=FlightPhase::Expired&&visible[slot];
         // Native parent death must already be queued ahead of the child. The
         // private flush below preserves that reliable order before Enter/Create.
         let parent_ready=c.creations[slot].is_some_and(|(_,ack)|ack)&&epoch.is_some()&&c.health_sent[slot]==Some(0);

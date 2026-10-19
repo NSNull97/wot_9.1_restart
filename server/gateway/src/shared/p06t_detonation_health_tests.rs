@@ -18,7 +18,9 @@ fn contains(body:&[u8],bytes:&[u8])->bool{body.windows(bytes.len()).any(|part|pa
     let now=Instant::now();let(mut s,mut world)=f::fixture_for(now,1);f::detonate(&mut world);
     let c=s.shared.as_mut().unwrap();publish(c,&mut s.outbox,&world,now).unwrap();
     let death=dt::terminal_health(1,Some(0),0,dt::DeathKind::Detached).unwrap();
-    let fx=dt::explosion(1,1.,8.).unwrap();let hud=native::owner_health(0,false,90).unwrap();
+    // #717 Avatar.updateVehicleHealth copies rawHealth into the own Vehicle:
+    // the owner value must keep the -2 mark; domain and HUD stay zero.
+    let fx=dt::explosion(1,1.,8.).unwrap();let hud=native::owner_health(-2,false,90).unwrap();
     assert!(c.private_pending.iter().any(|p|contains(&p.body,&death)));
     assert!(c.private_pending.iter().any(|p|contains(&p.body,&fx)));
     assert!(c.private_pending.iter().any(|p|contains(&p.body,&hud)));

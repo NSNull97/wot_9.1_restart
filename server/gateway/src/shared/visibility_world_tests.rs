@@ -95,20 +95,6 @@ fn place_box_on_flat(world:&mut World,slot:usize,com_x:f32,roof:bool,yaw:f32){
     }
 }
 
-#[test]fn p05c_rollover_los_detached_point_uses_the_same_roof_observer_and_keeps_wall_occlusion(){
-    for roof_slot in 0..2{
-        let mut world=fixture(&[VehicleKind::Ms1,VehicleKind::Is7]);
-        for slot in 0..2{place_box_on_flat(&mut world,slot,if slot==0{-10.}else{10.},slot==roof_slot,0.7);}
-        let flat=super::super::terrain::tests::fixture(-100.,200.,2,vec![0.;4]);
-        world.terrain=Some(Arc::new(flat.clone()));
-        let point=[if roof_slot==0{10.}else{-10.},3.,0.];
-        assert!(world.detached_turret_visible(roof_slot,1-roof_slot,point).unwrap());
-        let obstacles=super::super::obstacles::tests::fixture(vec![wall(0.)]);
-        world.terrain=Some(Arc::new(flat.with_obstacles(Arc::new(obstacles)).unwrap()));
-        assert!(!world.detached_turret_visible(roof_slot,1-roof_slot,point).unwrap());
-    }
-}
-
 #[test]fn p07b_world_pinned_prohorovka_six_mixed_recipients_twenty_snapshots(){
     // Exact source buffers are validated by both existing loaders. Independent
     // f64 triangle observation: local/evidence/20261016-p07b-01/independent-rays01.json

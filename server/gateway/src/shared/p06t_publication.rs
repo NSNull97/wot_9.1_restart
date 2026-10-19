@@ -120,7 +120,13 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
             body.extend(native::public_modifiers(wire::vehicle_id(target)?,&actor.public_modifiers())?);c.fire_sent[target]=Some(fire);
         }
         if target==c.slot&&(c.owner_health_sent!=Some(actor.health)||changed_crew){
-            body.extend(native::owner_health(actor.health,crew,actor.vehicle_kind().max_health()as u16)?);c.owner_health_sent=Some(actor.health);
+            // #717 Avatar.updateVehicleHealth ends with vehicle.health=rawHealth
+            // for a dead player vehicle. Sending 0 after the parent's -2 erased
+            // the detachment mark, so the victim kept its own turret while the
+            // DetachedTurret flew (owner run 2026-10-19). HUD clamps to 0.
+            let native=if actor.health==0&&world.ammo_detonations().iter().any(|e|e.target()==target)
+                {super::super::detached_turret::DeathKind::Detached.native_health()}else{actor.health};
+            body.extend(native::owner_health(native,crew,actor.vehicle_kind().max_health()as u16)?);c.owner_health_sent=Some(actor.health);
         }
         if !body.is_empty(){c.queue_private(outbox,body,&targets)?;}
     }
