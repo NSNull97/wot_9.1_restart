@@ -176,7 +176,9 @@ fn mixed_projection_bytes(raw:&[u8],profile:&Profile,revision:u64,state_sha256:&
         if (native==1&&kind!=Some("ms1"))||(native==2&&kind!=Some("is7"))
             ||(native>2&&!row["kind"].is_null()&&!matches!(kind,Some("t26"|"t34"|"t3485"))){return Err(invalid("P06T source kind"));}
         if admitted{
-            if native>2||!row["code"].is_null(){return Err(invalid("P06T unaccepted machine admitted"));}
+            // Purchased pool kinds (t26/t34/t3485, checked above) are admitted by
+            // the writer only under the owner's explicit full-stand policy.
+            if native>2&&row["kind"].is_null()||!row["code"].is_null(){return Err(invalid("P06T unaccepted machine admitted"));}
         }else{
             let code=row["code"].as_str().ok_or_else(||invalid("P06T denial code"))?;
             if !["VEHICLE_RESERVED","BATTLE_PROFILE_UNSUPPORTED","OWNER_ACCEPTANCE_REQUIRED","INCOMPLETE_CREW","AMMUNITION_EMPTY","AMMUNITION_UNSUPPORTED"].contains(&code){return Err(invalid("P06T closed denial"));}
@@ -866,7 +868,7 @@ mod tests {
         assert!(mixed_projection_bytes(raw,&owner,20,state).is_err());assert!(mixed_projection_bytes(raw,&owner,19,&"0".repeat(64)).is_err());
         for n in 0..4{let mut bad=value.clone();match n{
             0=>bad["account_id"]="foreign".into(),1=>bad["shell_catalog_sha256"]="0".repeat(64).into(),
-            2=>bad["max_stacks"]=4.into(),_=>bad["capabilities"].as_array_mut().unwrap().push(serde_json::json!({"native_inventory_id":3,"kind":"t26","admission":true,"code":null})),
+            2=>bad["max_stacks"]=4.into(),_=>bad["capabilities"].as_array_mut().unwrap().push(serde_json::json!({"native_inventory_id":3,"kind":null,"admission":true,"code":null})),
         }assert!(mixed_projection_bytes(&serde_json::to_vec(&bad).unwrap(),&owner,19,state).is_err());}
     }
     #[test] fn p08c_results_http_budget_does_not_widen_legacy_services_or_accept_bad_framing() {

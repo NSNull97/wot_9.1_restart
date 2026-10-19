@@ -172,7 +172,9 @@ class MixedAmmoStore(PoolStore):
 
     def freeze_mixed(self, aggregate, native, *, available=True):
         p = self.registry.resolve_selected(aggregate, aggregate["account_id"], native)
-        require(p.kind not in NEW_KINDS, "OWNER_ACCEPTANCE_REQUIRED")
+        # Purchased T-26/T-34/T-34-85 stay closed unless the account carries the
+        # owner's explicit full-stand zero-economy policy (order 2026-10-19).
+        require(p.kind not in NEW_KINDS or self.zero_economy(aggregate["account_id"]), "OWNER_ACCEPTANCE_REQUIRED")
         vehicle = next(r for r in aggregate["vehicles"] if r["vehicle_id"] == self.registry.inventory_id(aggregate["account_id"], native, p.kind))
         if available: require(vehicle["state"] == "available" and vehicle["battle_id"] is None, "VEHICLE_RESERVED")
         members = sorted((r for r in aggregate["crew_inventory"]["members"] if r["vehicle_native_id"] == native), key=lambda r: r["seat"])
@@ -210,7 +212,7 @@ class MixedAmmoStore(PoolStore):
         require(len(row["frozen_json"]) <= 4096 and sha(canonical(f)) == row["frozen_sha256"]
             and set(f) == {"kind", "descriptor_hex", "native_inventory_id", "vehicle_inventory_id", "max_hp", "crew_ids", "capacity", "ammunition", "initial_shell_compact_id"}, "CORRUPT_STORE")
         p = self.registry.profiles.get(f["kind"])
-        require(p is not None and p.kind not in NEW_KINDS and f["descriptor_hex"] == p.descriptor_hex and f["max_hp"] == p.max_hp
+        require(p is not None and (p.kind not in NEW_KINDS or self.zero_economy(row["account_id"])) and f["descriptor_hex"] == p.descriptor_hex and f["max_hp"] == p.max_hp
             and type(f["max_hp"]) is int and type(f["capacity"]) is int and f["capacity"] == p.capacity
             and f["native_inventory_id"] == row["native_inventory_id"] and type(f["native_inventory_id"]) is int
             and f["vehicle_inventory_id"] == row["vehicle_inventory_id"] == self.registry.inventory_id(row["account_id"], f["native_inventory_id"], p.kind), "CORRUPT_STORE")

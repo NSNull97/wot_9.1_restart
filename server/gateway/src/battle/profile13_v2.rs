@@ -61,13 +61,24 @@ impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.co
             "shell_definition_id":r.shell_definition_id,"shell_compact_id":r.shell_compact_id,"family":r.family.source_name(),"count":r.count})).collect::<Vec<_>>()});
         if parse_frozen(&v,account,&self.sha256)?!=*self{return Err(bad("changed frozen"));}Ok(())}}
 
+fn device_profile(kind:VehicleKind)->Option<crate::p06t_device_caps::Profile>{use crate::p06t_device_caps::Profile as P;
+    Some(match kind{VehicleKind::Ms1=>P::Ms1,VehicleKind::Is7=>P::Is7,VehicleKind::T26=>P::T26,VehicleKind::T34=>P::T34,VehicleKind::T3485=>P::T3485,_=>return None})}
+
 pub fn parse_frozen(v:&Value,account:&str,expected_sha:&str)->io::Result<Frozen>{
     keys(v,&["kind","descriptor_hex","native_inventory_id","vehicle_inventory_id","max_hp","crew_ids","capacity","ammunition","initial_shell_compact_id"])?;
-    let(kind,mount,native,suffix,crew_count)=match text(v,"kind")?{
-        "ms1"=>(VehicleKind::Ms1,source::Mount::Ms1Stock,1,"starter-vehicle-v1",2),
-        "is7"=>(VehicleKind::Is7,source::Mount::Is7Stock,2,"test-is7-v1",5),_=>return Err(bad("owner acceptance required/unknown kind"))};
+    let(kind,mount)=match text(v,"kind")?{
+        "ms1"=>(VehicleKind::Ms1,source::Mount::Ms1Stock),"is7"=>(VehicleKind::Is7,source::Mount::Is7Stock),
+        // Purchased P04M pool kinds. The Python writer admits them only under the
+        // owner's explicit full-stand zero-economy policy (order 2026-10-19).
+        "t26"=>(VehicleKind::T26,source::Mount::T26Stock),"t34"=>(VehicleKind::T34,source::Mount::T34Stock),
+        "t3485"=>(VehicleKind::T3485,source::Mount::T3485Stock),_=>return Err(bad("owner acceptance required/unknown kind"))};
+    let native=number(v,"native_inventory_id")?;
+    let suffix=match kind{VehicleKind::Ms1 if native==1=>"starter-vehicle-v1".to_string(),VehicleKind::Is7 if native==2=>"test-is7-v1".to_string(),
+        VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485 if (3..=i32::MAX as u64).contains(&native)=>format!("p09e-vehicle:{native}"),
+        _=>return Err(bad("stock/source/ownership"))};
+    let crew_count=crate::p06t_device_caps::CREW[device_profile(kind).ok_or_else(||bad("device profile"))?.index()].len();
     let p=source::profile(mount);let descriptor=kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>();
-    if!uuid(account)||number(v,"native_inventory_id")?!=native||text(v,"vehicle_inventory_id")?!=format!("{account}:{suffix}")
+    if!uuid(account)||text(v,"vehicle_inventory_id")?!=format!("{account}:{suffix}")
         ||text(v,"descriptor_hex")?!=descriptor||number(v,"max_hp")?!=kind.max_health()as u64||number(v,"capacity")?!=u64::from(p.capacity)
         ||p.clip_count!=1||p.additional_vehicle_qualification_required{return Err(bad("stock/source/ownership"));}
     let crew=v["crew_ids"].as_array().ok_or_else(||bad("crew"))?;let mut crew_ids=Vec::new();
@@ -75,7 +86,7 @@ pub fn parse_frozen(v:&Value,account:&str,expected_sha:&str)->io::Result<Frozen>
         if!id(s)||!s.starts_with(&format!("{account}:"))||s.len()<=account.len()+1||crew_ids.iter().any(|x|x==s){return Err(bad("crew owner/unique"));}crew_ids.push(s.to_owned());}
     if crew_ids.len()!=crew_count{return Err(bad("crew seats"));}
     let a=v["ammunition"].as_array().ok_or_else(||bad("ammo"))?;if a.len()!=3{return Err(bad("three stacks"));}
-    let suffixes=if kind==VehicleKind::Ms1{["ap","heat","he"]}else{["ap","apcr","he"]};let mut stacks=Vec::new();
+    let suffixes=match kind{VehicleKind::Ms1|VehicleKind::T34=>["ap","heat","he"],_=>["ap","apcr","he"]};let mut stacks=Vec::new();
     for(i,row)in a.iter().enumerate(){keys(row,&["shell_definition_id","shell_compact_id","family","count"])?;let s=p.shots[i];
         let count=u16::try_from(number(row,"count")?).map_err(|_|bad("count bound"))?;
         if number(row,"shell_compact_id")?!=u64::from(s.compact_descr)||text(row,"family")?!=s.family.source_name()
@@ -148,9 +159,9 @@ fn terminal_state(v:&Value,f:&Frozen,hp:i16)->io::Result<TerminalState>{
     if crew.len()!=f.crew_ids.len(){return Err(bad("frozen crew count"));}let mut any=false;
     for(row,id)in crew.iter().zip(&f.crew_ids){keys(row,&["crew_id","alive"])?;if text(row,"crew_id")?!=id{return Err(bad("frozen crew identity/order"));}any|=flag(row,"alive")?;}
     if any!=crew_active{return Err(bad("crew active policy"));}
-    // Exactly the two admitted stock profiles from TERMINAL_MANIFEST_SHA256.
-    // These indices/maxima are pinned source values, not universal defaults.
-    let maxima=match f.kind{VehicleKind::Ms1=>[25,60,100,90,40,40,54,50,30],VehicleKind::Is7=>[360,210,200,250,250,250,210,170,120],_=>return Err(bad("terminal admission"))};
+    // Source device maxima of the admitted stock profiles (the MS-1/IS-7 rows
+    // are the pinned TERMINAL_MANIFEST values). Not universal defaults.
+    let maxima=crate::p06t_device_caps::CAPS[device_profile(f.kind).ok_or_else(||bad("terminal admission"))?.index()].map(|c|u64::from(c.max));
     let devices=v["devices"].as_array().ok_or_else(||bad("devices"))?;if devices.len()!=maxima.len(){return Err(bad("device count"));}
     for(i,(row,max))in devices.iter().zip(maxima).enumerate(){keys(row,&["extra_index","health","max_health"])?;
         if number(row,"extra_index")?!=26+i as u64||number(row,"max_health")?!=max||number(row,"health")?>max{return Err(bad("source device maxima/order"));}}
@@ -279,5 +290,39 @@ mod tests{
             _=>response["policy_sha256"]="0".repeat(64).into(),
         }assert!(parse_reply(&serde_json::to_vec(&response).unwrap(),&c,&r).is_err(),"poison {n}");}
         assert!(bounded_json(br#"{"x":1,"x":2}"#,2048).is_err());assert!(bounded_json(br#"{"x":0.5}"#,2048).is_err());
+    }
+    fn pool_frozen(account:&str,kind:VehicleKind,mount:source::Mount,native:u64,suffixes:[&str;3])->Value{
+        let p=source::profile(mount);let crew=crate::p06t_device_caps::CREW[device_profile(kind).unwrap().index()].len();
+        serde_json::json!({"kind":kind.label(),"descriptor_hex":kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>(),
+            "native_inventory_id":native,"vehicle_inventory_id":format!("{account}:p09e-vehicle:{native}"),"max_hp":kind.max_health(),
+            "crew_ids":(0..crew).map(|i|format!("{account}:recruit-crew:{}",20+i)).collect::<Vec<_>>(),"capacity":p.capacity,
+            "ammunition":(0..3).map(|i|serde_json::json!({"shell_definition_id":format!("shell:{}-stock-{}",kind.label(),suffixes[i]),
+                "shell_compact_id":p.shots[i].compact_descr,"family":p.shots[i].family.source_name(),"count":if i==0{10}else{0}})).collect::<Vec<_>>(),
+            "initial_shell_compact_id":p.shots[0].compact_descr})
+    }
+    #[test]fn purchased_pool_kinds_parse_only_on_their_own_inventory_and_source_shell_order(){
+        // Owner full stand 2026-10-20: a bought T-26/T-34/T-34-85 is a p09e
+        // inventory row (native >= 3) with its source mount and device maxima.
+        let account="12345678-1234-4234-8234-123456789abc";
+        for(kind,mount,suffixes)in[(VehicleKind::T26,source::Mount::T26Stock,["ap","apcr","he"]),
+            (VehicleKind::T34,source::Mount::T34Stock,["ap","heat","he"]),(VehicleKind::T3485,source::Mount::T3485Stock,["ap","apcr","he"])]{
+            let v=pool_frozen(account,kind,mount,4,suffixes);let f=parse_frozen(&v,account,&digest(&v).unwrap()).unwrap();
+            assert_eq!((f.kind,f.native_inventory_id,f.crew_ids.len()),(kind,4,crate::p06t_device_caps::CREW[device_profile(kind).unwrap().index()].len()));
+            f.validate_owned(account).unwrap();
+            for n in 0..4{let mut wrong=v.clone();match n{
+                0=>{wrong["native_inventory_id"]=2.into();wrong["vehicle_inventory_id"]=format!("{account}:p09e-vehicle:2").into();},
+                1=>wrong["vehicle_inventory_id"]=format!("{account}:test-is7-v1").into(),
+                2=>wrong["ammunition"][1]["shell_definition_id"]=format!("shell:{}-stock-he",kind.label()).into(),
+                _=>wrong["crew_ids"].as_array_mut().unwrap().pop().map(|_|()).unwrap(),
+            }assert!(parse_frozen(&wrong,account,&digest(&wrong).unwrap()).is_err(),"{kind:?} mutation {n}");}
+            let maxima=crate::p06t_device_caps::CAPS[device_profile(kind).unwrap().index()];
+            let terminal=serde_json::json!({"policy_revision":"test_lab.p06t.devices-proxy-fire.v1","roster_size":2,"crew_active":true,
+                "crew":f.crew_ids.iter().map(|id|serde_json::json!({"crew_id":id,"alive":true})).collect::<Vec<_>>(),
+                "devices":maxima.iter().enumerate().map(|(i,c)|serde_json::json!({"extra_index":26+i,"health":c.max,"max_health":c.max})).collect::<Vec<_>>(),
+                "fire":{"active":false,"ticks":0,"damage":0},"death":{"reason":-1,"killer_slot":null,"tick":0}});
+            validate_terminal_json(&terminal.to_string(),&f,f.max_hp).unwrap();
+        }
+        let ms1=pool_frozen(account,VehicleKind::Ms1,source::Mount::Ms1Stock,3,["ap","heat","he"]);
+        assert!(parse_frozen(&ms1,account,&digest(&ms1).unwrap()).is_err());
     }
 }
