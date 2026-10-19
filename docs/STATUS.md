@@ -34,8 +34,11 @@ ram publication (213 коммитов над main). Каждая карточк�
 - Native: движение после `279be0c`, выстрелы/модули/пожар, детонация БК и отрыв
   башни (parent hide, лежащая башня), итоги/повторный бой — FULL-TEST.
 - Звук лампы 6-го чувства: в оригинальном #717 его нет (VERIFIED,
-  [P07B_AUDIO_BOUNDARY](research/P07B_AUDIO_BOUNDARY_20261018.md)); нужен
-  проектный клиентский звук — решение владельца.
+  [P07B_AUDIO_BOUNDARY](research/P07B_AUDIO_BOUNDARY_20261018.md)). Ветка
+  `codex/p07b-sixth-sense-sound`: проектный звук (не оригинал) за флагом
+  `prepare --sixth-sense-sound` — один FX из `gui.fev` при загорании лампы,
+  без повторов. Тесты PASS (Python 3 и 2.7.3), prepare PASS; выбор звука,
+  установка на a/b и native-проверка — за владельцем (NOT_RUN).
 - Причина пауз главного цикла gateway — UNKNOWN (кандидат: D: заполнен на 100%).
 - Python full suite (Python06): 12 FAIL / 45 ERROR — прежний долг.
 - Купленные машины native_id≥3, P10B (N игроков), NET-02 (два ПК), микролаг ~150 мс.

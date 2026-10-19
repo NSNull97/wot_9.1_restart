@@ -33,6 +33,7 @@
 - [P07B_SERVER_VISIBILITY.md](P07B_SERVER_VISIBILITY.md) — recipient LOS/epochs/packet filtering, full975PASS, native NOT_RUN
 - [P07B_ORIGINAL_SOURCES.md](P07B_ORIGINAL_SOURCES.md) — bounded #717 source ledger for six static points, dynamic gunner point, mounted ranges and Sixth Sense
 - [P07B_PUBLICATION_BOUNDARY.md](P07B_PUBLICATION_BOUNDARY.md) — recipient publication gate for hidden-shooter terrain FX and current integration boundary
+- [P07B_AUDIO_BOUNDARY_20261018.md](P07B_AUDIO_BOUNDARY_20261018.md) — лампа 6-го чувства в #717 без звука (VERIFIED); проектный FX за флагом `--sixth-sense-sound`, native NOT_RUN
 - [P04M_FIVE_PROFILES.md](P04M_FIVE_PROFILES.md) — пять source-bound боевых профилей, actual Jolt/World/ACK, версия SQLite/crew/ammo, native NOT_RUN
 - [P06T_RUNTIME_CANDIDATE.md](P06T_RUNTIME_CANDIDATE.md) — mixed-shell/единый HP ledger, source geometry и явные LAB module/fire policies; автоматические gates отдельно от native NOT_RUN
 - [P06T_SEVEN_LOSS_INTEGRATION.md](P06T_SEVEN_LOSS_INTEGRATION.md) — seven LAB +loss4/late, full1295/5/build/Python102, nativeNOT_RUN
