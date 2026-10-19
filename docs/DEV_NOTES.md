@@ -60,8 +60,11 @@
   `P04G_TEST_BUNDLE` … `P04K_TEST_BUNDLE` и `P09D_TEST_BUNDLE` = каталог `source-bundle-05`
   любого стенда (например `local/stands/p09e-main-01/source-bundle-05`).
 - Web: `cd web && P04D_TEST_BUNDLE=<бандл> node --test tests/<файл>.test.mjs`.
-- Клиентский патч: CPython 2.7.3 `local/toolchains/cpython-2.7.3-x86/python.exe`;
-  компилируется при `tools/interactive_client.py prepare`.
+- Клиентский патч: CPython 2.7.3, компилируется при `tools/interactive_client.py prepare`.
+  С 18.10 `local/toolchains` — junction на C: без CPython, а `prepare` отвергает
+  пути через junction. Интерпретатор восстановлен из `local/downloads/python-2.7.3.msi`
+  (`tools/extract_python273.py`, python.exe 702e31ed…) в
+  `local/toolchains-py27-20261019/cpython-2.7.3-x86/`; передавать `--compiler`.
 - P08C candidate: `local/build/server/gateway-p08c-full01/`, runtime8c96580,
   919PASS/5ignored/buildPASS. Natural result/AP/HP commit атомарен в том же writer;
   private `/internal/native/battle-results` обслуживает Account1500/1501.
