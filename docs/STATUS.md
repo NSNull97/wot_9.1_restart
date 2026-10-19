@@ -1,4 +1,21 @@
-# Состояние проекта — утро17 октября2026
+# Состояние проекта
+
+**19 октября: идёт фактический full-polygon native-прогон.** Ветка
+`codex/nightly-full-polygon-20261018`; canonical gateway full03 (исторически
+1670/0/5) запущен со свежей physics DLL `27760442` после actual IPC7 smoke
+100 advances/2 actors PASS. Взята latest actual БД successor-03 (A/B131/53,
+grants0), а не устаревшая sealed-05. Оба клиента загрузили LoginView и,
+по подтверждению владельца, настоящие ангары. Подготовка пары IS-7 через
+обслуживание 15/5/10 подтверждена владельцем и durable service обоих;
+общий бой и READY обоих есть в логе. Управление PENDING OWNER,
+damage/turret/Results8 на этом запуске NOT_RUN. Начальные553 advances:
+wait≤5,805мс/lag≤91,243мс, затем diagnostic512KiB cap (частичный trace).
+Main `ffce8cb` не изменён. Map-wide importer, purchased native>=3
+battle readiness, отдельный звук лампы и P10B этим стендом не закрыты.
+[Запуск, доказательства, матрица и откат](research/FULL_POLYGON_NATIVE_20261019.md).
+
+Ниже — сохранённые сведения предыдущих карточек; они не заменяют текущую
+native-приёмку.
 
 **P06T successor fixes on `codex/p06t-loss-writer-observability`:** current
 head `0ffa971` includes `bd204a9` persistent detached-turret presentation and
