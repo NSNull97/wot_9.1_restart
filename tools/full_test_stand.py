@@ -207,9 +207,86 @@ def economy(args):
     print(json.dumps(results, indent=2))
 
 
+def provision(args):
+    """Ready one purchased pool vehicle offline (services stopped).
+
+    The #717 crew/ammunition UI patches cover only MS-1/IS-7, so a bought
+    T-26/T-34/T-34-85 is readied through the bridge's own store: free research
+    path, zero-economy purchase, barracks then free recruits per source seat,
+    a 60/20/20 load from the depot, then the same freeze_mixed admission."""
+    import sys
+    sys.path[:0] = [str(ROOT), str(ROOT / 'tools')]
+    from p09e_research_catalog import load_catalog
+    from p06t_ammo_loss_store import AmmoLossStore
+    from p04m_pool_crew import PINS
+    stand = (ROOT / args.stand).resolve(strict=True)
+    if not stand.is_relative_to(LOCAL / 'stands') or (stand / 'gateway-process.json').exists():
+        raise ValueError('stopped stand below this checkout local/stands required')
+    bridge = json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))
+    catalog = load_catalog(Path(bridge['ammunition_service']['original_root']))
+    account, vehicle_id = args.account, args.vehicle
+    store = AmmoLossStore(bridge['game_database'], catalog, account_id=account,
+                          shell_catalog=bridge['mixed_service']['shell_catalog'],
+                          terminal_policy=bridge['mixed_service']['terminal_policy'])
+    steps, counter = [], [0]
+    try:
+        if not store.zero_economy(account):
+            raise ValueError('apply the economy policy first')
+        profile = lambda: store.read_profile(account)
+        def key(name):
+            counter[0] += 1
+            return 'stand-provision-' + name + '-' + str(profile()['revision']) + '-' + str(counter[0])
+        def research(operation, payload):
+            result = store.execute(dict(account_id=account, command_key=key(operation), expected_revision=profile()['revision'],
+                                        operation=operation, payload=payload), authenticated_account_id=account)
+            steps.append([operation, payload, result['status']])
+        def native_request(name, layout):
+            return dict(account_id=account, native_database_id=store._project_profile(account, profile())['native_database_id'],
+                        command_key=key(name), expected_revision=profile()['revision'], wire_revision=1, layout=layout)
+        def unlock(item, depth=0):
+            if item in profile()['research']['unlocked']:
+                return
+            edges = [e for e in catalog.unlocks if e['item_id'] == item]
+            if not edges or depth > 40:
+                raise ValueError('no bounded research path to ' + item)
+            for need in [edges[0]['vehicle_id'], *edges[0]['prerequisite_ids']]:
+                unlock(need, depth + 1)
+            if item not in profile()['research']['unlocked']:
+                research('research', {'vehicle_id': edges[0]['vehicle_id'], 'unlock_index': edges[0]['native_index']})
+        kind = store.registry.by_vehicle[vehicle_id].kind
+        unlock(vehicle_id)
+        if not any(r['vehicle_id'] == vehicle_id for r in profile()['research']['vehicles']):
+            research('buy_vehicle', {'vehicle_id': vehicle_id})
+        native = next(r for r in profile()['research']['vehicles'] if r['vehicle_id'] == vehicle_id)['native_id']
+        for seat, roles in enumerate(PINS[kind][6]):
+            members = profile()['crew_inventory']['members']
+            if any(m['vehicle_native_id'] == native and m['seat'] == seat for m in members):
+                continue
+            spare = next((m for m in members if m['vehicle_native_id'] == -1 and m['role'] == roles[0]), None)
+            name, layout = ('transfer', [native, seat, spare['native_id']]) if spare else ('recruit', [3, native, seat, 0])
+            steps.append([name, layout, getattr(store, name)(native_request(name, layout), authenticated_account_id=account).get('status')])
+        mount = store.mounts[store.registry.by_vehicle[vehicle_id].assembly_id]
+        counts = [int(mount.capacity * 0.6), int(mount.capacity * 0.2)]
+        counts.append(mount.capacity - sum(counts))
+        layout = [5, native, 6]
+        for shell, n in zip(mount.shell_ids, counts):
+            layout += [store.shells[shell].native_compact_id, n]
+        layout += [6, 0, 0, 0, 0, 0, 0]
+        steps.append(['ammo', layout, store.service(native_request('ammo', layout), authenticated_account_id=account).get('status')])
+        frozen = store.freeze_mixed(profile(), native)
+        result = dict(account=account, vehicle=vehicle_id, kind=kind, native_inventory_id=native, revision=profile()['revision'],
+                      admission=dict(crew=len(frozen['crew_ids']), ammunition=[[a['shell_definition_id'], a['count']] for a in frozen['ammunition']]),
+                      steps=steps)
+    finally:
+        store.close()
+    receipt = stand / ('provision-' + account[:8] + '-' + kind + '.json')
+    receipt.write_text(json.dumps(result, indent=1, ensure_ascii=False) + chr(10), encoding='utf-8')
+    print(json.dumps({k: result[k] for k in ('vehicle', 'native_inventory_id', 'revision', 'admission')}, ensure_ascii=False))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('prepare', 'economy'))
+    parser.add_argument('command', choices=('prepare', 'economy', 'provision'))
     parser.add_argument('--source-stand', help='latest actual stand directory (read-only)')
     parser.add_argument('--physics', help='physics build dir below local/build')
     parser.add_argument('--gateway', help='sr-gateway.exe from a recorded build')
@@ -217,15 +294,21 @@ def main():
     parser.add_argument('--out', help='fresh stand dir below local/stands')
     parser.add_argument('--stand', help='economy: stopped stand dir below local/stands')
     parser.add_argument('--slots', type=int, default=100, help='economy: garage slots per account')
+    parser.add_argument('--account', help='provision: account id')
+    parser.add_argument('--vehicle', help='provision: catalogue vehicle id of a P04M pool type, e.g. vehicle:ussr:T-34')
     args = parser.parse_args()
     if args.command == 'prepare':
         if not all((args.source_stand, args.physics, args.gateway, args.out)):
             parser.error('prepare requires --source-stand, --physics, --gateway and --out')
         prepare(args)
-    else:
+    elif args.command == 'economy':
         if not args.stand:
             parser.error('economy requires --stand')
         economy(args)
+    else:
+        if not (args.stand and args.account and args.vehicle):
+            parser.error('provision requires --stand, --account and --vehicle')
+        provision(args)
 
 
 if __name__ == '__main__':
