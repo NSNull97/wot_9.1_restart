@@ -158,7 +158,10 @@ def prepare(args):
         pin['sha256'] = sha(path)
     for name, value in rebased.items():
         text = json.dumps(value, indent=2, ensure_ascii=False)
-        for old, _ in mapping:
+        for old, new in mapping:
+            # A source stand already in this checkout keeps the same local root.
+            if Path(old).resolve() == Path(new).resolve():
+                continue
             if any(spelling.lower() in text.replace('\\\\', '\\').lower() for spelling in spellings(old)):
                 raise ValueError(f'{name} still references {old}')
         (out / name).write_text(text + '\n', encoding='utf-8')
