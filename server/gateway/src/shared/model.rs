@@ -96,7 +96,11 @@ pub(super) mod p06t;
 pub(crate) mod extended;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RamDamageRecord { pub sequence:u32,pub tick:u32,pub attacker:usize,pub target:usize,pub pair:(usize,usize),pub energy_j:f64,pub closing_speed:f64,pub health_before:i16,pub health_after:i16 }
+pub struct RamDamageRecord { pub sequence:u32,pub tick:u32,pub domain_tick:u32,pub attacker:usize,pub target:usize,pub pair:(usize,usize),pub energy_j:f64,pub closing_speed:f64,pub health_before:i16,pub health_after:i16 }
+/// Terminal cause shared by HP publication, writer state and Results8. The tick
+/// is always the domain clock; a worker's fixed-step counter is not that clock.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct DeathCause { pub attacker:usize,pub reason:u8,pub tick:u32 }
 
 /// One accepted server action, independent of native entity/method IDs. The
 /// laboratory never replenishes ammo, so its complete event history is bounded.
@@ -203,6 +207,43 @@ pub struct World {
 }
 
 impl World {
+    pub(super) fn death_cause(&self,target:usize)->io::Result<Option<DeathCause>> {
+        let actor=self.actors.get(target).ok_or_else(bad)?;
+        let mut found=None;
+        let projectile=self.damage_events.iter().filter(|e|self.mixed_ammo&&e.target==target&&e.lethal())
+            .map(|e|(DeathCause{attacker:e.attacker,reason:e.reason,tick:e.tick},e.health_after));
+        let ap=self.impacts.iter().filter(|e|!self.mixed_ammo&&e.target==target&&e.health_before>0&&e.health_after==0)
+            .map(|e|(DeathCause{attacker:e.attacker,reason:0,tick:e.tick},e.health_after));
+        let ram=self.ram_damage_events.iter().filter(|e|e.target==target&&e.health_before>0&&e.health_after==0)
+            .map(|e|(DeathCause{attacker:e.attacker,reason:2,tick:e.domain_tick},e.health_after));
+        for(cause,hp)in projectile.chain(ap).chain(ram){
+            if found.is_some()||cause.attacker>=self.actors.len()||cause.reason>10||cause.tick<1000
+                ||hp!=actor.health{return Err(bad());}
+            found=Some(cause);
+        }
+        if actor.alive()!=found.is_none(){return Err(bad());}
+        Ok(found)
+    }
+    pub(super) fn health_cause(&self,target:usize)->io::Result<Option<(usize,u8)>> {
+        let actor=self.actors.get(target).ok_or_else(bad)?;
+        if !(0..=actor.vehicle_kind().max_health()).contains(&actor.health){return Err(bad());}
+        // Crew-only terminal transitions can retain the HP of an earlier ram.
+        // Their actual lethal journal entry owns the final terminal packet.
+        if !actor.alive(){return self.death_cause(target).map(|c|c.map(|c|(c.attacker,c.reason)));}
+        if actor.health==actor.vehicle_kind().max_health(){return Ok(None);}
+        let projectile=self.damage_events.iter().filter(|e|self.mixed_ammo&&e.target==target
+            &&e.health_before>e.health_after&&e.health_after==actor.health).map(|e|(e.attacker,e.reason));
+        let ap=self.impacts.iter().filter(|e|!self.mixed_ammo&&e.target==target
+            &&e.health_before>e.health_after&&e.health_after==actor.health).map(|e|(e.attacker,0));
+        let ram=self.ram_damage_events.iter().filter(|e|e.target==target
+            &&e.health_before>e.health_after&&e.health_after==actor.health).map(|e|(e.attacker,2));
+        let mut found=None;
+        for cause in projectile.chain(ap).chain(ram){
+            if found.is_some()||cause.0>=self.actors.len()||cause.1>10{return Err(bad());}
+            found=Some(cause);
+        }
+        found.map(Some).ok_or_else(bad)
+    }
     /// Only the pristine, source-bound template may seed another battle.
     pub fn fresh_battle(&self, id: u64, now: Instant) -> io::Result<Self> {
         if id == 0 || id == self.id || self.started.is_some() || !self.actors.is_empty()
@@ -570,10 +611,12 @@ impl World {
         let members = self.actors.iter().enumerate().map(|(slot, actor)| {
             let damage=if self.mixed_ammo {self.damage_events.iter().filter(|i|i.target==slot&&(i.health_after<i.health_before||i.lethal())).map(|i|i.attacker).collect::<Vec<_>>()}
                 else{self.impacts.iter().filter(|i|i.target==slot&&i.health_after<i.health_before).map(|i|i.attacker).collect::<Vec<_>>()};
-            let epoch:u32=damage.len().try_into().map_err(|_|bad())?;
+            let ram_count=self.ram_damage_events.iter().filter(|e|e.target==slot&&e.health_after<e.health_before).count();
+            let epoch:u32=damage.len().checked_add(ram_count).ok_or_else(bad)?.try_into().map_err(|_|bad())?;
+            let last_damager=if ram_count>0{self.health_cause(slot)?.map(|c|c.0)}else{damage.last().copied()};
             Ok(super::lifecycle::Member { team: self.team(slot)?, present: actor.session.is_some(), ready: actor.ready,
                 alive: actor.alive(), position: actor.position, damage_epoch: epoch,
-                last_damager: damage.last().copied() })
+                last_damager })
         }).collect::<io::Result<Vec<_>>>()?;
         let changed = if let Some(old)=&self.result_spots {
             // A failed late LOS must leave lifecycle, journal and actor state
@@ -702,11 +745,14 @@ impl World {
         for (contact,result) in resolved {
             if self.active_ram_pairs.contains(&(contact.slot_a,contact.slot_b)){continue;}
             let Some(result)=result else{continue;};let before_a=next.actors[contact.slot_a].health;let before_b=next.actors[contact.slot_b].health;
-            if before_a<=0||before_b<=0{continue;}
+            if !next.actors[contact.slot_a].alive()||!next.actors[contact.slot_b].alive(){continue;}
             let after_a=(i32::from(before_a)-i32::from(result.damage_a).min(i32::from(before_a))).max(0)as i16;let after_b=(i32::from(before_b)-i32::from(result.damage_b).min(i32::from(before_b))).max(0)as i16;
             next.actors[contact.slot_a].health=after_a;next.actors[contact.slot_b].health=after_b;
-            for (attacker,target,before,after) in [(result.attacker,result.target,before_b,after_b),(result.target,result.attacker,before_a,after_a)]{next.ram_damage_events.push(RamDamageRecord{sequence,tick,attacker,target,pair:(contact.slot_a,contact.slot_b),energy_j:result.energy_j,closing_speed:result.closing_speed,health_before:before,health_after:after});}
-            if after_a==0{next.actors[contact.slot_a].input=Input::STOP;next.actors[contact.slot_a].speed=0.;}if after_b==0{next.actors[contact.slot_b].input=Input::STOP;next.actors[contact.slot_b].speed=0.;}
+            for (attacker,target,before,after) in [(result.attacker,result.target,before_b,after_b),(result.target,result.attacker,before_a,after_a)]{next.ram_damage_events.push(RamDamageRecord{sequence,tick,domain_tick:next.tick,attacker,target,pair:(contact.slot_a,contact.slot_b),energy_j:result.energy_j,closing_speed:result.closing_speed,health_before:before,health_after:after});}
+            for slot in [contact.slot_a,contact.slot_b]{if next.actors[slot].health==0{
+                let actor=&mut next.actors[slot];actor.input=Input::STOP;actor.speed=0.;actor.aim.park();
+                if let Some(devices)=&mut actor.devices{devices.freeze();}
+            }}
         }
         *self=next;Ok(())
     }
@@ -2001,3 +2047,7 @@ mod seven_loss_boundary_tests;
 #[cfg(test)]
 #[path="p10b_team_world_tests.rs"]
 mod p10b_team_world_tests;
+
+#[cfg(test)]
+#[path="p05c_ram_terminal_tests.rs"]
+mod ram_terminal_tests;

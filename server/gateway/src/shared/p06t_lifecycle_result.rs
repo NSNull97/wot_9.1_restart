@@ -7,12 +7,14 @@ pub(super) fn build(world:&World)->io::Result<Results>{
     let duration_seconds=u32::try_from(state.elapsed_battle_ms()/1000).map_err(|_|model::bad())?;
     let mut participants=Vec::with_capacity(world.actors.len());
     for(slot,actor)in world.actors.iter().enumerate(){
-        let death=world.damage_events.iter().find(|event|event.target==slot&&event.lethal());
-        if actor.alive()!=death.is_none(){return Err(model::bad());}
+        let death=world.death_cause(slot)?;
+        let(ram_dealt,ram_received,ram_kills)=ram_totals(world,slot)?;
         let damage_dealt=world.damage_events.iter().filter(|event|event.attacker==slot)
-            .map(|event|u32::from((event.health_before-event.health_after).max(0)as u16)).sum();
+            .map(|event|u32::from((event.health_before-event.health_after).max(0)as u16)).sum::<u32>()
+            .checked_add(ram_dealt).ok_or_else(||model::bad())?;
         let damage_received=world.damage_events.iter().filter(|event|event.target==slot)
-            .map(|event|u32::from((event.health_before-event.health_after).max(0)as u16)).sum();
+            .map(|event|u32::from((event.health_before-event.health_after).max(0)as u16)).sum::<u32>()
+            .checked_add(ram_received).ok_or_else(||model::bad())?;
         let life_time=death.map_or(duration_seconds,|event|{
             let elapsed=u64::from(event.tick.saturating_sub(1000))*100;
             (elapsed.saturating_sub(state.battle_start_ms().unwrap_or(elapsed))/1000).min(u64::from(duration_seconds))as u32});
@@ -22,7 +24,8 @@ pub(super) fn build(world:&World)->io::Result<Results>{
             direct_hits:world.contacts.iter().filter(|contact|world.shots.iter().any(|shot|shot.sequence==contact.shot&&shot.slot==slot)).count().try_into().map_err(|_|model::bad())?,
             piercings:world.impacts.iter().filter(|event|event.attacker==slot&&matches!(&event.outcome,
                 ImpactOutcome::Mixed(result)if result.decision==crate::p06t_damage::Decision::Pierced)).count().try_into().map_err(|_|model::bad())?,
-            damage_dealt,damage_received,kills:world.damage_events.iter().filter(|event|event.attacker==slot&&event.lethal()).count().try_into().map_err(|_|model::bad())?,
+            damage_dealt,damage_received,kills:u8::try_from(world.damage_events.iter().filter(|event|event.attacker==slot&&event.lethal()).count())
+                .map_err(|_|model::bad())?.checked_add(ram_kills).ok_or_else(||model::bad())?,
             capture_points:state.capture_points(slot),dropped_capture_points:state.dropped_capture_points(slot),
             mileage_metres:actor.mileage_metres.floor()as u32,life_time,killer_id:death.map(|event|wire::vehicle_id(event.attacker)).transpose()?.unwrap_or(0),
             death_reason:death.map_or(-1,|event|event.reason as i8),premature_leave:actor.session.is_none()});

@@ -25,8 +25,7 @@ impl World {
         let actor=self.actors.get(slot).ok_or_else(||bad())?;
         let frozen=actor.owned_v2.as_ref().ok_or_else(||bad())?;
         let state=actor.devices.as_ref().ok_or_else(||bad())?;
-        let death=self.damage_events.iter().find(|event|event.target==slot&&event.lethal());
-        if actor.alive()!=death.is_none(){return Err(bad());}
+        let death=self.death_cause(slot)?;
         terminal_json(frozen,state,self.actors.len(),death)
     }
     fn record_damage(&mut self,actors:&mut[Actor],target:usize,attacker:usize,shot:u32,tick:u32,
@@ -210,7 +209,7 @@ fn turret_joint(actor:&Actor)->io::Result<rack::JointPose>{
     if joint.position.iter().chain(joint.direction.iter()).any(|v|!v.is_finite()){return Err(bad());}Ok(joint)
 }
 
-fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<&DamageRecord>)->io::Result<String>{
+fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<DeathCause>)->io::Result<String>{
     if frozen.crew_ids.len()!=state.crew().len()||roster>MAX_ACTORS
         ||state.policy_version()!=device::PolicyVersion::V1
         ||caps::Profile::ALL.get(frozen.kind.index())!=Some(&state.profile()){return Err(bad());}

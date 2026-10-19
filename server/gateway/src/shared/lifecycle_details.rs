@@ -33,6 +33,14 @@ pub struct Splash{pub shot:u32,pub target:usize,pub clear_los:bool}
 #[derive(Clone,Copy,Debug)]
 pub struct Damage{pub sequence:u32,pub shot:u32,pub attacker:usize,pub target:usize,
     pub health_before:i16,pub health_after:i16,pub lethal:bool,pub reason:u8}
+/// The domain clock orders projectile/fire damage with other health causes.
+/// A physics worker's private fixed-step tick must never be used here.
+#[derive(Clone,Copy,Debug)]
+pub struct TimedDamage{pub tick:u32,pub damage:Damage}
+/// Committed contact damage has no projectile, direct hit or piercing identity.
+#[derive(Clone,Copy,Debug)]
+pub struct RamDamage{pub sequence:u32,pub tick:u32,pub attacker:usize,pub target:usize,
+    pub health_before:i16,pub health_after:i16}
 #[derive(Clone,Copy,Debug)]
 pub struct Spot{pub observer:usize,pub target:usize,pub tick:u32}
 /// A committed module/crew/fire transition projected into native personal details.
@@ -99,8 +107,18 @@ impl Details {
 /// component checks cross-ledger identities and totals; it grants no authority.
 pub fn project(roster:&[Summary],shots:&[Shot],direct:&[Hit],pierced:&[Hit],
     damage:&[Damage],splash:&[Splash],spots:Option<&[Spot]>)->io::Result<Details>{
+    let timed=damage.iter().map(|d|TimedDamage{tick:d.sequence,damage:*d}).collect::<Vec<_>>();
+    project_with_ram(roster,shots,direct,pierced,&timed,&[],splash,spots)
+}
+/// Project the two typed authoritative journals together. Sorting the committed
+/// records by domain tick and descending pre-damage HP preserves the actual
+/// chain when a shot and contact are committed during the same domain frame.
+/// It does not supply a missing shot identity to a contact.
+pub fn project_with_ram(roster:&[Summary],shots:&[Shot],direct:&[Hit],pierced:&[Hit],
+    damage:&[TimedDamage],ram:&[RamDamage],splash:&[Splash],spots:Option<&[Spot]>)->io::Result<Details>{
     if !(2..=MAX_ACTORS).contains(&roster.len())||shots.len()>960||direct.len()>960
         ||pierced.len()>960||damage.len()>15360||splash.len()>5760
+        ||ram.len()>36000*MAX_ACTORS*(MAX_ACTORS-1)
         ||spots.is_some_and(|s|s.len()>MAX_ACTORS){return Err(bad());}
     let mut shotmap=BTreeMap::new();for s in shots{if s.id==0||s.attacker>=roster.len()
         ||shotmap.insert(s.id,s.attacker).is_some(){return Err(bad());}}
@@ -118,18 +136,35 @@ pub fn project(roster:&[Summary],shots:&[Shot],direct:&[Hit],pierced:&[Hit],
         if h.target>=roster.len()||directs.contains(&(h.shot,h.target))||!splashkeys.insert((h.shot,h.target)){return Err(bad());}
         if h.clear_los{add(&mut matrix.entry((a,h.target)).or_insert_with(||Target::empty(roster[h.target].vehicle_id)).explosion_hits,1)?;}
     }
-    let mut sequence=0;let mut lethals=BTreeSet::new();let mut health=BTreeMap::new();
-    for d in damage{
-        if d.sequence<=sequence||d.target>=roster.len()||shotmap.get(&d.shot)!=Some(&d.attacker)
+    let mut sequence=0;let mut tick=0;
+    let mut events=Vec::with_capacity(damage.len()+ram.len());
+    for timed in damage{let d=&timed.damage;
+        if d.sequence<=sequence||timed.tick==0||timed.tick<tick||d.target>=roster.len()
+            ||shotmap.get(&d.shot)!=Some(&d.attacker)
             ||d.health_before<0||d.health_before>10000||d.health_after<0||d.health_after>d.health_before
             ||d.reason>10||d.health_before==d.health_after&&!d.lethal
-            ||!d.lethal&&d.health_after==0||lethals.contains(&d.target)
-            ||health.get(&d.target).is_some_and(|previous|*previous!=d.health_before)
+            ||!d.lethal&&d.health_after==0
             ||!directs.contains(&(d.shot,d.target))&&!splashkeys.contains(&(d.shot,d.target)){return Err(bad());}
-        health.insert(d.target,d.health_after);
-        sequence=d.sequence;let t=matrix.entry((d.attacker,d.target)).or_insert_with(||Target::empty(roster[d.target].vehicle_id));
-        add(&mut t.damage_dealt,(d.health_before-d.health_after)as u16)?;
-        if d.lethal{if !lethals.insert(d.target){return Err(bad());}t.death_reason=d.reason as i8;}
+        sequence=d.sequence;tick=timed.tick;
+        events.push((timed.tick,d.attacker,d.target,d.health_before,d.health_after,d.lethal,d.reason));
+    }
+    let mut keys=BTreeSet::new();let mut sequence=0;let mut tick=0;
+    for r in ram{
+        if r.sequence==0||r.sequence<sequence||r.tick==0||r.tick<tick||r.attacker>=roster.len()
+            ||r.target>=roster.len()||r.attacker==r.target||r.health_before<=0||r.health_before>10000
+            ||r.health_after<0||r.health_after>=r.health_before
+            ||!keys.insert((r.sequence,r.attacker,r.target)){return Err(bad());}
+        sequence=r.sequence;tick=r.tick;
+        events.push((r.tick,r.attacker,r.target,r.health_before,r.health_after,r.health_after==0,2));
+    }
+    events.sort_by_key(|&(tick,_,target,before,_,lethal,_)|(tick,target,std::cmp::Reverse(before),lethal));
+    let mut lethals=BTreeSet::new();let mut health=BTreeMap::new();
+    for (_,attacker,target,before,after,lethal,reason) in events{
+        if lethals.contains(&target)||health.get(&target).is_some_and(|previous|*previous!=before){return Err(bad());}
+        health.insert(target,after);
+        let t=matrix.entry((attacker,target)).or_insert_with(||Target::empty(roster[target].vehicle_id));
+        add(&mut t.damage_dealt,(before-after)as u16)?;
+        if lethal{if !lethals.insert(target){return Err(bad());}t.death_reason=reason as i8;}
     }
     if let Some(spots)=spots{let mut targets=BTreeSet::new();for s in spots{
         if s.observer>=roster.len()||s.target>=roster.len()||s.tick==0

@@ -1,4 +1,13 @@
-# Текущие ворота: единый native regression ночной интеграции
+# Текущие ворота: P05C — публикация урона тараном после native FAIL
+
+Ветка `codex/p05c-ram-health-publication` от integration checkpoint `ea3343b`.
+19 октября оба actual контакта IS-7/IS-7 и IS-7/MS-1 закрыли бой с ошибкой
+`p06t_publication.rs:99:106`: ram HP не имеет projectile DamageRecord.
+Native FAIL/open; damage/turret regression ещё не пройден. Исправляется вся
+цепочка ram → HP → death/Results8 → terminal writer, без поддельных shots.
+[План](plans/P05C_RAM_HEALTH_PUBLICATION.md). Main не менять.
+
+## Предшествующий единый запуск
 
 19 октября по команде владельца запущен новый `full-polygon-native-20261019-01`
 с latest actual snapshot и freshly built physics. Оба настоящих ангара

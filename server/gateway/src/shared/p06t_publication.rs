@@ -68,6 +68,18 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
         }
         c.damage_cursor=event.sequence as usize;
     }
+    for event in world.ram_damage_events.iter().skip(c.ram_cursor){
+        if event.health_before>0&&event.health_after==0&&world.lifecycle.is_some(){
+            let mut public=wire::roster_updates(world,event.target)?;
+            // Source #717 ATTACK_REASONS[2] = ramming, independently of the
+            // damageInfo device-notification namespace. Kill attribution is
+            // public roster metadata, as for projectile kills above; no pose
+            // or private health packet escapes the recipient epoch fence.
+            public.extend(super::super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,2)?);
+            outbox.push_back(public);
+        }
+        c.ram_cursor+=1;
+    }
     for(target,event)in world.device_events.iter().skip(c.device_cursor){
         if *target==c.slot&&c.visible()[c.slot]{
             let notification=match event.change{
@@ -96,9 +108,9 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
         let changed_crew=c.crew_sent[target]!=Some(crew);let mut targets=vec![target];
         if c.health_sent[target]!=Some(actor.health){
             if actor.health!=actor.vehicle_kind().max_health(){
-                let last=world.damage_events.iter().rev().find(|event|event.target==target).ok_or_else(||model::bad())?;
-                let attacker=c.visible()[last.attacker].then_some(last.attacker);
-                body.extend(health(world,target,attacker,last.reason)?);
+                let(source,reason)=world.health_cause(target)?.ok_or_else(||model::bad())?;
+                let attacker=c.visible()[source].then_some(source);
+                body.extend(health(world,target,attacker,reason)?);
                 if let Some(attacker)=attacker{if attacker!=target{targets.push(attacker);}}
             }
             c.health_sent[target]=Some(actor.health);
@@ -122,3 +134,6 @@ mod tests;
 #[cfg(test)]
 #[path="p06t_detonation_health_tests.rs"]
 mod detonation_tests;
+#[cfg(test)]
+#[path="p05c_ram_publication_tests.rs"]
+mod ram_tests;

@@ -1,5 +1,15 @@
 # Состояние проекта
 
+**19 октября, native regression FAIL:** контакт IS-7/IS-7, затем IS-7/MS-1
+закрывает бой в `p06t_publication.rs:99:106`. Корректный ram HP не находился
+в projectile journal. Оба failure сохранены, процесс сервера жив, durable
+возврат обоих подтверждён; snapshot A/B137/59, IS-7 ammo30 сохранён.
+Ветка исправления `codex/p05c-ram-health-publication`: красная регрессия
+1PASS/4ожидаемыхFAIL. HP/death/Results8/terminal интеграция в работе;
+зелёный/full/native gate пока NOT_RUN. Авторитетные физические коробки в двух
+снимках имеют пересечение7,3мм/0мм; владелец уточнил визуальный артефакт при
+сбросе. Solver не перенастраивается. Main не изменён.
+
 **19 октября: идёт фактический full-polygon native-прогон.** Ветка
 `codex/nightly-full-polygon-20261018`; canonical gateway full03 (исторически
 1670/0/5) запущен со свежей physics DLL `27760442` после actual IPC7 smoke

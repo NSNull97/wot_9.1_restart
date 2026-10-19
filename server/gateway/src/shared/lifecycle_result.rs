@@ -9,9 +9,12 @@ pub(super) fn build(world:&World)->io::Result<Results> {
     let duration_seconds=u32::try_from(state.elapsed_battle_ms()/1_000).map_err(|_|model::bad())?;
     let mut participants=Vec::with_capacity(world.actors.len());
     for (slot,actor) in world.actors.iter().enumerate() {
-        let damage_dealt=world.impacts.iter().filter(|i|i.attacker==slot).map(|i|u32::from((i.health_before-i.health_after).max(0) as u16)).sum();
-        let damage_received=world.impacts.iter().filter(|i|i.target==slot).map(|i|u32::from((i.health_before-i.health_after).max(0) as u16)).sum();
-        let death=world.impacts.iter().find(|i|i.target==slot && i.health_before>0 && i.health_after==0);
+        let(ram_dealt,ram_received,ram_kills)=ram_totals(world,slot)?;
+        let damage_dealt=world.impacts.iter().filter(|i|i.attacker==slot).map(|i|u32::from((i.health_before-i.health_after).max(0) as u16)).sum::<u32>()
+            .checked_add(ram_dealt).ok_or_else(||model::bad())?;
+        let damage_received=world.impacts.iter().filter(|i|i.target==slot).map(|i|u32::from((i.health_before-i.health_after).max(0) as u16)).sum::<u32>()
+            .checked_add(ram_received).ok_or_else(||model::bad())?;
+        let death=world.death_cause(slot)?;
         let life_time=death.map_or(duration_seconds,|i| {
             let elapsed=u64::from(i.tick.saturating_sub(1_000))*100;
             (elapsed.saturating_sub(state.battle_start_ms().unwrap_or(elapsed))/1_000).min(u64::from(duration_seconds)) as u32
@@ -22,11 +25,12 @@ pub(super) fn build(world:&World)->io::Result<Results> {
             direct_hits:world.contacts.iter().filter(|i|world.shots.iter().any(|s|s.sequence==i.shot && s.slot==slot)).count().try_into().map_err(|_|model::bad())?,
             piercings:world.impacts.iter().filter(|i|i.attacker==slot && matches!(&i.outcome,ImpactOutcome::Ap(r) if r.outcome==ap::Outcome::Pierced)).count().try_into().map_err(|_|model::bad())?,
             damage_dealt,damage_received,
-            kills:world.impacts.iter().filter(|i|i.attacker==slot && i.health_before>0 && i.health_after==0).count().try_into().map_err(|_|model::bad())?,
+            kills:u8::try_from(world.impacts.iter().filter(|i|i.attacker==slot && i.health_before>0 && i.health_after==0).count())
+                .map_err(|_|model::bad())?.checked_add(ram_kills).ok_or_else(||model::bad())?,
             capture_points:state.capture_points(slot),dropped_capture_points:state.dropped_capture_points(slot),
             mileage_metres:actor.mileage_metres.floor() as u32,life_time,
             killer_id:death.map(|i|wire::vehicle_id(i.attacker)).transpose()?.unwrap_or(0),
-            death_reason:if actor.health==0 {0} else {-1},premature_leave:actor.session.is_none(),
+            death_reason:death.map_or(-1,|i|i.reason as i8),premature_leave:actor.session.is_none(),
         };
         participants.push(result);
     }
@@ -34,6 +38,25 @@ pub(super) fn build(world:&World)->io::Result<Results> {
         created_unix:world.lifecycle_created_unix.ok_or_else(||model::bad())?,winner_team:outcome.winner,
         finish_reason:wire::finish_reason(outcome.reason),duration_seconds,interaction_details:Some(project_details(world,&participants)?),participants};
     result.validate()?;Ok(result)
+}
+/// Contact HP is independent of accepted shots and direct-hit statistics.
+/// Count the strict committed HP delta; the policy's requested damage may be
+/// capped by the victim's remaining health and is not a results statistic.
+fn ram_totals(world:&World,slot:usize)->io::Result<(u32,u32,u8)>{
+    let(mut dealt,mut received,mut kills)=(0u32,0u32,0u8);
+    for event in &world.ram_damage_events{
+        if event.attacker>=world.actors.len()||event.target>=world.actors.len()
+            ||event.attacker==event.target||event.sequence==0||event.domain_tick<1000
+            ||event.health_before<=0||event.health_before>world.actors[event.target].vehicle_kind().max_health()
+            ||event.health_after<0||event.health_after>=event.health_before{return Err(model::bad());}
+        let damage=(event.health_before-event.health_after)as u32;
+        if event.attacker==slot{
+            dealt=dealt.checked_add(damage).ok_or_else(||model::bad())?;
+            if event.health_after==0{kills=kills.checked_add(1).ok_or_else(||model::bad())?;}
+        }
+        if event.target==slot{received=received.checked_add(damage).ok_or_else(||model::bad())?;}
+    }
+    Ok((dealt,received,kills))
 }
 // Presentation consumes committed journals only. No simulation/terminal edits.
 pub(crate) fn project_module_facts(world:&World)->io::Result<Vec<super::lifecycle_details::Module>>{
@@ -61,17 +84,19 @@ fn project_details(world:&World,participants:&[Participant])->io::Result<super::
         ImpactOutcome::Ap(r)if r.outcome==ap::Outcome::Pierced)||matches!(&i.outcome,
         ImpactOutcome::Mixed(r)if r.decision==crate::p06t_damage::Decision::Pierced))
         .map(|i|d::Hit{shot:i.shot,target:i.target}).collect::<Vec<_>>();
-    let damage=if world.mixed_ammo(){world.damage_events.iter().map(|e|d::Damage{sequence:e.sequence,
+    let damage=if world.mixed_ammo(){world.damage_events.iter().map(|e|d::TimedDamage{tick:e.tick,damage:d::Damage{sequence:e.sequence,
         shot:e.shot,attacker:e.attacker,target:e.target,health_before:e.health_before,health_after:e.health_after,
-        lethal:e.lethal(),reason:e.reason}).collect::<Vec<_>>()}else{
-        world.impacts.iter().enumerate().filter(|(_,i)|i.health_before!=i.health_after).map(|(n,i)|d::Damage{
+        lethal:e.lethal(),reason:e.reason}}).collect::<Vec<_>>()}else{
+        world.impacts.iter().enumerate().filter(|(_,i)|i.health_before!=i.health_after).map(|(n,i)|d::TimedDamage{tick:i.tick,damage:d::Damage{
             sequence:n as u32+1,shot:i.shot,attacker:i.attacker,target:i.target,health_before:i.health_before,
-            health_after:i.health_after,lethal:i.health_before>0&&i.health_after==0,reason:0}).collect::<Vec<_>>()};
+            health_after:i.health_after,lethal:i.health_before>0&&i.health_after==0,reason:0}}).collect::<Vec<_>>()};
+    let ram=world.ram_damage_events.iter().map(|e|d::RamDamage{sequence:e.sequence,tick:e.domain_tick,
+        attacker:e.attacker,target:e.target,health_before:e.health_before,health_after:e.health_after}).collect::<Vec<_>>();
     let splash=world.impact.events().iter().filter_map(|e|match e{super::impact::Event::SplashResolution{
         shot_id,target,terrain_blocker,..}=>Some(d::Splash{shot:*shot_id,target:*target,clear_los:terrain_blocker.is_none()}),_=>None}).collect::<Vec<_>>();
     let spots=world.result_spots().map(|rows|rows.iter().map(|s|d::Spot{observer:s.observer(),target:s.target(),tick:s.tick()}).collect::<Vec<_>>());
     let modules=project_module_facts(world)?;
-    let mut details=d::project(&roster,&shots,&hits,&pierced,&damage,&splash,spots.as_deref())?;
+    let mut details=d::project_with_ram(&roster,&shots,&hits,&pierced,&damage,&ram,&splash,spots.as_deref())?;
     d::apply_module_facts(&mut details,&roster,&modules)?;
     Ok(details)
 }
@@ -83,6 +108,10 @@ mod p06t;
 mod tests {
     use super::*;
     use std::time::{Duration,Instant};
+    fn roster()->Vec<super::super::lifecycle_details::Summary>{vec![
+        super::super::lifecycle_details::Summary{vehicle_id:10,team:1,direct_hits:1,piercings:1,damage_dealt:90,damage_received:0,kills:1,killer_id:0,death_reason:-1},
+        super::super::lifecycle_details::Summary{vehicle_id:20,team:2,direct_hits:0,piercings:0,damage_dealt:0,damage_received:90,kills:0,killer_id:10,death_reason:0},
+    ]}
     #[test] fn natural_terminal_binds_each_real_actor_database_id_with_different_hp() {
         use crate::battle091::profile13::{Reservation,ReservationStatus,FinishReason,Request};
         use crate::gateway091::shared::{profile13_session::Terminal,vehicle_profile::VehicleKind};
@@ -132,5 +161,42 @@ mod tests {
                 after_condition:crate::p06t_device_state::Condition::Critical,repair:false};
         }
         assert!(project_module_facts(&forged).is_err());
+    }
+
+    #[test] fn p05c_ram_result_has_health_kill_and_reason_without_fake_shot() {
+        let mut r=roster();
+        r[0].direct_hits=0;r[0].piercings=0;r[0].damage_dealt=90;r[0].kills=1;
+        r[1].damage_received=90;r[1].killer_id=10;r[1].death_reason=2;
+        let ram=[
+            super::super::lifecycle_details::RamDamage{sequence:1,tick:1001,attacker:0,target:1,health_before:90,health_after:45},
+            super::super::lifecycle_details::RamDamage{sequence:2,tick:1002,attacker:0,target:1,health_before:45,health_after:0},
+        ];
+        let d=super::super::lifecycle_details::project_with_ram(&r,&[],&[],&[],&[],&ram,&[],None).unwrap();
+        let target=&d.row(10).unwrap().targets[0];
+        assert_eq!((target.direct_hits,target.piercings,target.damage_dealt,target.death_reason),(0,0,90,2));
+        assert_eq!(d.outgoing(10,"damaged"),1);assert!(d.validate(&r).is_ok());
+    }
+
+    #[test] fn p05c_ram_and_projectile_share_domain_hp_chain_without_contact_shot() {
+        let mut r=roster();
+        r[0].piercings=0;r[0].damage_dealt=90;r[0].kills=1;r[1].damage_received=90;r[1].killer_id=10;r[1].death_reason=2;
+        let timed=[super::super::lifecycle_details::TimedDamage{tick:1001,damage:super::super::lifecycle_details::Damage{sequence:1,shot:1,attacker:0,target:1,
+            health_before:90,health_after:50,lethal:false,reason:0}}];
+        let ram=[super::super::lifecycle_details::RamDamage{sequence:1,tick:1001,attacker:0,target:1,health_before:50,health_after:0}];
+        let d=super::super::lifecycle_details::project_with_ram(&r,&[super::super::lifecycle_details::Shot{id:1,attacker:0}],&[super::super::lifecycle_details::Hit{shot:1,target:1}],&[],&timed,&ram,&[],None).unwrap();
+        let target=&d.row(10).unwrap().targets[0];
+        assert_eq!((target.direct_hits,target.piercings,target.damage_dealt,target.death_reason),(1,0,90,2));
+        assert!(d.validate(&r).is_ok());
+    }
+
+    #[test] fn p05c_ram_rejects_forged_health_chain_or_duplicate_commit() {
+        let mut r=roster();r[0].direct_hits=0;r[0].piercings=0;r[0].damage_dealt=45;r[0].kills=0;
+        r[1].damage_received=45;r[1].killer_id=0;r[1].death_reason=-1;
+        let forged=[super::super::lifecycle_details::RamDamage{sequence:1,tick:1001,attacker:0,target:1,health_before:90,health_after:45},
+            super::super::lifecycle_details::RamDamage{sequence:2,tick:1002,attacker:0,target:1,health_before:90,health_after:45}];
+        assert!(super::super::lifecycle_details::project_with_ram(&r,&[],&[],&[],&[],&forged,&[],None).is_err());
+        let duplicate=[super::super::lifecycle_details::RamDamage{sequence:1,tick:1001,attacker:0,target:1,health_before:90,health_after:45},
+            super::super::lifecycle_details::RamDamage{sequence:1,tick:1001,attacker:0,target:1,health_before:45,health_after:0}];
+        assert!(super::super::lifecycle_details::project_with_ram(&r,&[],&[],&[],&[],&duplicate,&[],None).is_err());
     }
 }
