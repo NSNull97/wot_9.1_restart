@@ -11,7 +11,8 @@ ram publication (213 коммитов над main). Каждая карточк�
 слилась. Текущая ветка `codex/full-test-20261019` — интеграционная голова этой
 цепочки; [ACTIVE_GATE](ACTIVE_GATE.md) — один общий сценарий.
 
-Исправлено в этой карточке (gateway, автотесты PASS, native NOT_RUN):
+Исправлено в этой карточке (канонический gate 1684 PASS / 1 FAIL под нагрузкой,
+проходит отдельно 1/0; native NOT_RUN; [доказательства](research/FULL_TEST_20261019.md)):
 
 - выстрел в упор с дулом внутри корпуса цели (`impact segment first surface
   differs from contact`) — регрессия по позам из лога владельца;

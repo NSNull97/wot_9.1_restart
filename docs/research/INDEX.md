@@ -4,6 +4,10 @@
 Ссылки внутри исследований на `docs/plans/` и `docs/evidence-index/` ведут в историю:
 `git show 1eaff5e:<путь>` (удалены 2026-10-15 при сокращении документации).
 
+## Общий тест 19 октября
+
+- [FULL_TEST_20261019.md](FULL_TEST_20261019.md) — физика из чужого checkout, выстрел в упор, паузы gateway; gate1684/1, стенд одного checkout, native NOT_RUN
+
 ## Ночь16–17 октября и ручная приёмка
 
 - [NIGHT_20261017_REPORT.md](NIGHT_20261017_REPORT.md) — exact925/full1619, честные PythonFAIL, отдельные ветки, evidence и ограничения
