@@ -553,11 +553,16 @@ impl Worker {
     }
     pub fn poll(&mut self,now:Instant)->io::Result<Option<State>>{
         if now<self.started || (!self.ready && now.duration_since(self.started)>START_TIMEOUT)
-            || self.pending.is_some_and(|pending|now<pending.sent() || now.duration_since(pending.sent())>REPLY_TIMEOUT){return Err(bad());}
+            || self.pending.is_some_and(|pending|now<pending.sent()){return Err(bad());}
+        // The reply deadline is judged by the reader thread's receipt time: a
+        // timely reply that waited while the gateway loop stalled is scheduler
+        // lag (bounded by the shared drive_deadline), not a worker timeout.
+        let late=|pending:Option<Pending>,at:Instant|pending.is_some_and(|pending|at.duration_since(pending.sent())>REPLY_TIMEOUT);
         match self.receiver.try_recv(){
             Ok(Event::Failed)|Err(mpsc::TryRecvError::Disconnected)=>Err(bad()),
-            Err(mpsc::TryRecvError::Empty)=>Ok(None),
+            Err(mpsc::TryRecvError::Empty)=>if late(self.pending,now){Err(bad())}else{Ok(None)},
             Ok(Event::Line(received,raw))=>{
+                if late(self.pending,received.min(now)){return Err(bad());}
                 let seq=if !self.ready {0}else{
                     let pending=self.pending.ok_or_else(bad)?;if received<pending.sent(){return Err(bad());}
                     match pending {

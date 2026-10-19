@@ -376,16 +376,37 @@ impl Bundle {
         // A line continued behind the current simulation segment must not
         // select another, earlier surface (e.g. a projectile starting inside a
         // component). Verify the first surface before any wire quantization.
-        let extended_start = std::array::from_fn(|i| start[i] - 0.01 * (end[i] - start[i]));
-        let extended_end = std::array::from_fn(|i| end[i] + 0.01 * (end[i] - start[i]));
         let part = &self.components[index];
         let mesh = Mesh::new(part.vertices.clone(), part.triangles.clone(), self.geometry_revision(), "impact-component-local-v1")?;
-        let hits = super::collision::query(&mesh, extended_start, extended_end)?;
-        let first = hits.first().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "impact segment has no local surface"))?;
-        if (0..3).any(|i| (f64::from(extended_start[i] + first.t * (extended_end[i] - extended_start[i]))
-            - f64::from(point[i])).abs() > CONTACT_TOLERANCE) {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "impact segment first surface differs from contact"));
-        }
+        let native_hits = |start: [f32; 3], end: [f32; 3]| -> io::Result<_> {
+            let extended_start: [f32; 3] = std::array::from_fn(|i| start[i] - 0.01 * (end[i] - start[i]));
+            let extended_end: [f32; 3] = std::array::from_fn(|i| end[i] + 0.01 * (end[i] - start[i]));
+            let hits = super::collision::query(&mesh, extended_start, extended_end)?;
+            let at_contact: Vec<bool> = hits.iter().map(|hit| (0..3).all(|i| (f64::from(extended_start[i]
+                + hit.t * (extended_end[i] - extended_start[i])) - f64::from(point[i])).abs() <= CONTACT_TOLERANCE)).collect();
+            Ok((hits, at_contact))
+        };
+        let (hits, at_contact) = native_hits(start, end)?;
+        if hits.is_empty() { return Err(io::Error::new(io::ErrorKind::InvalidData, "impact segment has no local surface")); }
+        if at_contact[0] { return Ok(ImpactSegment { component, bounds, start, end }); }
+        // Point-blank shot: the projectile segment starts just past another
+        // surface of this component (owner run 2026-10-19: an MS-1 muzzle
+        // already inside the IS-7 hull). The native 1% backward extension
+        // would select that surface. Move only the presentation start forward
+        // so the extension stays between it and the contact, then re-verify.
+        // Contact, armor decision and HP are unchanged.
+        let differs = || io::Error::new(io::ErrorKind::InvalidData, "impact segment first surface differs from contact");
+        let contact = at_contact.iter().position(|&hit| hit).ok_or_else(differs)?;
+        // Extended query parameter t maps to segment fraction 1.02t - 0.01; a
+        // start at fraction s is extended by the native decoder to s - 0.01(1 - s).
+        let fraction = |t: f32| f64::from(t) * 1.02 - 0.01;
+        let lowest = (fraction(hits[contact - 1].t) + 0.01) / 1.01;
+        let highest = fraction(hits[contact].t);
+        if !(lowest < highest) { return Err(differs()); }
+        let shifted = 0.5 * (lowest + highest);
+        let start: [f32; 3] = std::array::from_fn(|i| (f64::from(start[i]) + shifted * (f64::from(end[i]) - f64::from(start[i]))) as f32);
+        let (_, at_contact) = native_hits(start, end)?;
+        if at_contact.first() != Some(&true) { return Err(differs()); }
         Ok(ImpactSegment { component, bounds, start, end })
     }
     /// Requery the exact authoritative source mesh and contact pose. A source
@@ -664,6 +685,58 @@ pub(super) mod tests {
         let mesh = Mesh::new(part.vertices.clone(), part.triangles.clone(), SOURCE_REVISION, "local-start-inside").unwrap();
         let hit = super::super::collision::query(&mesh, segment.start, segment.end).unwrap().remove(0);
         assert_eq!(hit.triangle_id, contact.triangle.triangle_id);
+    }
+    /// First surface the native decoder selects after its 1% extension at both ends.
+    fn native_decoder_first(b: &Bundle, segment: &ImpactSegment) -> super::super::collision::Candidate {
+        let index = match segment.component { materials::Component::Hull => 0,
+            materials::Component::Turret01 => 1, materials::Component::Gun02 | materials::Component::Gun01 => 2 };
+        let part = &b.components[index];
+        let mesh = Mesh::new(part.vertices.clone(), part.triangles.clone(), b.geometry_revision(), "native-decoder-extension").unwrap();
+        let (s, e) = (segment.start, segment.end);
+        let extended_start = std::array::from_fn(|i| s[i] - 0.01 * (e[i] - s[i]));
+        let extended_end = std::array::from_fn(|i| e[i] + 0.01 * (e[i] - s[i]));
+        super::super::collision::query(&mesh, extended_start, extended_end).unwrap().remove(0)
+    }
+    #[test] fn impact_start_just_past_entry_surface_keeps_contact_as_native_first_surface() {
+        // A muzzle already inside the target component: the native 1% backward
+        // extension would reach the entry surface behind the projectile start.
+        for (b, y, z) in [(bundle(), -0.25, 0.15), (is7_bundle(), 0., 0.)] {
+            let part = &b.components[0];
+            let mesh = Mesh::new(part.vertices.clone(), part.triangles.clone(), b.geometry_revision(), "entry-probe").unwrap();
+            let entry = super::super::collision::query(&mesh, [-4., y, z], [4., y, z]).unwrap().remove(0);
+            let entry_x = -4. + 8. * entry.t;
+            for (direction, aim) in [([0.; 3], [0.; 2]), ([0.7, -0.3, 0.2], [1.1, -0.09])] {
+                let contact = contact_for(&b, 0, [entry_x + 0.004, y, z], [4., y, z], direction, aim);
+                assert_ne!(contact.triangle.triangle_id, entry.triangle_id);
+                let segment = b.impact_segment(&contact).unwrap();
+                assert_eq!(native_decoder_first(&b, &segment).triangle_id, contact.triangle.triangle_id);
+                for axis in 0..3 { for edge in [segment.start, segment.end] {
+                    assert!(edge[axis] >= segment.bounds[0][axis] - 1e-6 && edge[axis] <= segment.bounds[1][axis] + 1e-6);
+                } }
+            }
+        }
+    }
+    #[test] fn impact_owner_point_blank_ms1_under_is7_20261019_keeps_battle_alive() {
+        // Values from local/evidence/20261019-full-polygon-ramfix01/gateway-restart02.stdout.log:
+        // battle 4438936055444238071 failed with "impact segment first surface
+        // differs from contact" after MS-1 shot 2 from under the IS-7.
+        let b = is7_bundle();
+        let mut target = actor_for(VehicleKind::Is7);
+        target.position = [38.712982177734375, 5.927037239074707, 461.0643615722656];
+        target.direction = [-1.8954676389694214, 0.012824684381484985, 0.13134384155273438];
+        target.aim.yaw = 2.97872; target.aim.pitch = 0.017453292;
+        let origin = [38.204372, 6.614436, 461.4934];
+        let end = super::super::projectile::position_at(origin, [323.96603, 140.58948, -17.708313], 6.2784004, 0.1);
+        let mesh = b.world_mesh(&target, 1, 4129).unwrap();
+        let nearest = super::super::collision::query(&mesh, origin, end).unwrap().remove(0);
+        let endpoint = std::array::from_fn(|i| origin[i] + nearest.t * (end[i] - origin[i]));
+        let material_facts = b.materials.lookup(&nearest.mesh, &nearest.material).unwrap();
+        let contact = Contact { shot: 2, target_slot: 1, tick: 4129, segment_start: origin, segment_end: end,
+            segment_seconds: 0.1, endpoint, target_position: target.position, target_direction: target.direction,
+            target_aim: [target.aim.yaw, target.aim.pitch], triangle: nearest,
+            geometry_revision: b.geometry_revision().into(), transform_revision: mesh.transform_revision().into(), material_facts };
+        let segment = b.impact_segment(&contact).unwrap();
+        assert_eq!(native_decoder_first(&b, &segment).triangle_id, contact.triangle.triangle_id);
     }
     pub fn invalid_material_bundle() -> Bundle {
         let mut b = bundle(); b.materials = Catalog::empty_for_test(); b

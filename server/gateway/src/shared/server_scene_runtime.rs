@@ -40,12 +40,12 @@ pub(super) struct BatchRuntime {
     spec:Option<Arc<SceneSpec>>,runtime:Option<Runtime>,
     startup:Option<mpsc::Receiver<io::Result<(Arc<SceneSpec>,Runtime)>>>,
     sessions:Vec<u32>,started_at:Option<Instant>,dispatched:Option<Instant>,
-    settled:bool,staged:Option<World>,generation:u32,held:Option<scene_worker::Frame>,
+    settled:bool,staged:Option<World>,generation:u32,held:Option<scene_worker::Frame>,lag_resync:LagResync,
 }
 impl BatchRuntime {
     pub(super) fn new(resources:Arc<SharedResources>,catalog:crate::map_drive_worker091::CatalogSpec)->Self{
         Self{resources,catalog,spec:None,runtime:None,startup:None,sessions:Vec::new(),started_at:None,
-            dispatched:None,settled:false,staged:None,generation:1,held:None}
+            dispatched:None,settled:false,staged:None,generation:1,held:None,lag_resync:LagResync::default()}
     }
     pub(super) fn blocked(&self)->bool{self.staged.is_some()||self.runtime.as_ref().is_some_and(|r|!r.prepared_ids().is_empty())}
     pub(super) fn ready_for_native(&self)->bool{self.settled&&!self.blocked()&&self.runtime.as_ref().is_some_and(|r|r.ready())}
@@ -201,12 +201,11 @@ impl BatchRuntime {
         let runtime=self.runtime.as_mut().ok_or_else(||model::bad())?;
         if runtime.pending(){return Ok(());}
         let started=world.started.ok_or_else(||model::bad())?;
-        // Capture the dispatcher-side wall lag before the existing 500 ms
-        // fail-closed check. This is a receipt only; it never rebases or
-        // relaxes the logical clock.
+        // Capture the dispatcher-side wall lag before the bounded resync in
+        // drive_deadline. This is a receipt only.
         let target=match self.dispatched{Some(previous)=>previous.checked_add(crate::map_drive_worker091::STEP).ok_or_else(||model::bad())?,None=>drive_grid(started,now)?};
         if now>=target{runtime.record_scheduler_lag(now,target);}
-        let deadline=drive_deadline(started,self.dispatched,now)?;
+        let deadline=drive_deadline(started,self.dispatched,now,&mut self.lag_resync)?;
         if let Some(deadline)=deadline{
             let allows_actions=world.lifecycle.as_ref().is_none_or(|s|s.allows_actions());
             let inputs=world.actors.iter().map(|a|actor_input(a,world.tick,allows_actions)).collect::<io::Result<Vec<_>>>()?;

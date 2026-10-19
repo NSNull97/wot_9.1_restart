@@ -107,6 +107,7 @@ struct IntegratedRuntime {
     worker_sessions: [Option<u32>; model::CAPACITY],
     contact_sequences: [u32; model::CAPACITY],
     contact_batches: [Option<ContactBatch>; model::CAPACITY],
+    lag_resync: [LagResync; model::CAPACITY],
 }
 
 /// A worker frame may be compared with a client frame in focused tests, but an
@@ -130,7 +131,22 @@ fn drive_grid(start: Instant, now: Instant) -> io::Result<Instant> {
     start.checked_add(step.checked_mul(ticks).ok_or_else(|| model::bad())?).ok_or_else(|| model::bad())
 }
 
-fn drive_deadline(start: Instant, previous: Option<Instant>, now: Instant) -> io::Result<Option<Instant>> {
+/// Single gateway-loop stall longer than this still closes the battle.
+const MAX_STALL: Duration = Duration::from_secs(5);
+/// More than `MAX_RESYNCS` lag recoveries inside this window is persistent overload.
+const RESYNC_WINDOW: Duration = Duration::from_secs(30);
+const MAX_RESYNCS: u32 = 3;
+
+/// Bounded, logged recovery from a transient gateway-loop stall. The owner
+/// runs of 2026-10-17/19 lost whole battles to one >500 ms stall with healthy
+/// workers. A stall up to MAX_STALL rebases the logical deadline onto the
+/// current grid (the skipped steps are not simulated; the domain tick already
+/// follows wall time) and prints SHARED_DRIVE_LAG_RESYNC. Longer stalls and
+/// repeated recoveries remain fail-closed overload.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct LagResync { window: Option<Instant>, count: u32 }
+
+fn drive_deadline(start: Instant, previous: Option<Instant>, now: Instant, resync: &mut LagResync) -> io::Result<Option<Instant>> {
     let deadline = match previous {
         Some(previous) => previous.checked_add(crate::map_drive_worker091::STEP).ok_or_else(|| model::bad())?,
         None => drive_grid(start, now)?,
@@ -138,10 +154,24 @@ fn drive_deadline(start: Instant, previous: Option<Instant>, now: Instant) -> io
     if now < deadline { return Ok(None); }
     // Engineering overload bound, shared with the existing worker contract.
     // Ordinary latency cannot silently reset simulation time or burst forever.
-    if now.duration_since(deadline) > crate::map_drive_worker091::MAX_LAG {
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "integrated drive logical deadline lag exceeds500ms; fail closed"));
+    let lag = now.duration_since(deadline);
+    if lag <= crate::map_drive_worker091::MAX_LAG { return Ok(Some(deadline)); }
+    if lag > MAX_STALL {
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "integrated drive logical deadline lag exceeds5s; fail closed"));
     }
-    Ok(Some(deadline))
+    if resync.window.is_none_or(|window| now.duration_since(window) > RESYNC_WINDOW) {
+        *resync = LagResync { window: Some(now), count: 0 };
+    }
+    resync.count += 1;
+    if resync.count > MAX_RESYNCS {
+        return Err(io::Error::new(io::ErrorKind::TimedOut,
+            "integrated drive logical deadline lag exceeds500ms repeatedly; fail closed"));
+    }
+    let grid = drive_grid(start, now)?;
+    println!("SHARED_DRIVE_LAG_RESYNC lag_ms={} skipped_steps={} resyncs_in_window={} max_resyncs={}",
+        lag.as_millis(), grid.duration_since(deadline).as_millis() / crate::map_drive_worker091::STEP.as_millis(),
+        resync.count, MAX_RESYNCS);
+    Ok(Some(grid))
 }
 
 impl IntegratedRuntime {
@@ -156,7 +186,7 @@ impl IntegratedRuntime {
             anchored: [false; model::CAPACITY],
             dispatched: [None; model::CAPACITY], started: false, removal: None,catalog:None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY],
             worker_sessions: [None; model::CAPACITY], contact_sequences: [0; model::CAPACITY],
-            contact_batches: std::array::from_fn(|_| None) }
+            contact_batches: std::array::from_fn(|_| None), lag_resync: [LagResync::default(); model::CAPACITY] }
     }
 
     fn map(&self) -> io::Result<crate::map_drive_worker091::MapSpec> {
@@ -484,7 +514,7 @@ impl IntegratedRuntime {
         for slot in 0..model::CAPACITY {
             if world.actors[slot].session.is_some() && !self.synchronizing[slot]
                 && self.workers[slot].as_ref().is_some_and(|w| w.ready() && !w.pending()) {
-                deadlines[slot] = drive_deadline(world.started.ok_or_else(|| model::bad())?, self.dispatched[slot], now)?;
+                deadlines[slot] = drive_deadline(world.started.ok_or_else(|| model::bad())?, self.dispatched[slot], now, &mut self.lag_resync[slot])?;
             }
         }
         let fresh_pair = world.actors.iter().enumerate().all(|(slot, actor)|

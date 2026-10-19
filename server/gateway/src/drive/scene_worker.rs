@@ -357,16 +357,25 @@ impl Worker{
         self.send_value(&scene_request(&self.spec,self.generation,&scene,self.seq,"sync_removed"))?;self.pending=Some(Pending::Scene(scene,now));Ok(())}
     pub fn take_scene_ack(&mut self)->bool{let ack=self.ack;self.ack=false;ack}
     pub fn poll(&mut self,now:Instant)->io::Result<Option<Frame>>{if self.failed{return Err(bad("worker failed"));}let result=self.poll_inner(now);if result.is_err(){self.failed=true;}result}
-    fn poll_inner(&mut self,now:Instant)->io::Result<Option<Frame>>{
+    /// Outstanding request deadline at `now`; a reply already received is
+    /// judged at its earlier reader-thread receipt time instead.
+    fn check_deadline(&self,now:Instant,received:Option<Instant>)->io::Result<()>{
         if let Some(pending)=&self.pending{let(start,limit)=match pending{Pending::Ready(t)=>(*t,START_TIMEOUT),Pending::Advance(_,t)|Pending::Scene(_,t)=>(*t,REPLY_TIMEOUT)};
             let elapsed=now.checked_duration_since(start).ok_or_else(||{self.diag_process("deadline_clock_regression",now);bad("clock regression")})?;
+            let elapsed=received.map_or(elapsed,|received|received.min(now).saturating_duration_since(start));
             if elapsed>limit{if let Some(sink)=&self.diagnostics{sink.record(json!({"event":"worker_deadline","at_us":sink.elapsed_us(now),"elapsed_us":elapsed.as_micros().min(u128::from(u64::MAX)),"limit_us":limit.as_micros(),"status":"FAIL_CLOSED"}));}self.diag_process("worker_deadline_sample",now);return Err(io::Error::new(io::ErrorKind::TimedOut,"shared scene worker deadline"));}}
+        Ok(())
+    }
+    fn poll_inner(&mut self,now:Instant)->io::Result<Option<Frame>>{
         let event=match self.receive.as_ref().ok_or_else(||bad("closed receiver"))?.try_recv(){Ok(e)=>Some(e),Err(mpsc::TryRecvError::Empty)=>None,Err(_)=>return Err(bad("producer channel closed"))};
-        let Some(event)=event else{if let Some(pending)=&self.pending{let(start,limit)=match pending{Pending::Ready(t)=>(*t,START_TIMEOUT),Pending::Advance(_,t)|Pending::Scene(_,t)=>(*t,REPLY_TIMEOUT)};
-            let elapsed=now.checked_duration_since(start).ok_or_else(||{self.diag_process("deadline_clock_regression",now);bad("clock regression")})?;
-            if elapsed>limit{if let Some(sink)=&self.diagnostics{sink.record(json!({"event":"worker_deadline","at_us":sink.elapsed_us(now),"elapsed_us":elapsed.as_micros().min(u128::from(u64::MAX)),"limit_us":limit.as_micros(),"status":"FAIL_CLOSED"}));}self.diag_process("worker_deadline_sample",now);return Err(io::Error::new(io::ErrorKind::TimedOut,"shared scene worker deadline"));}}
+        let Some(event)=event else{self.check_deadline(now,None)?;
             if self.stderr.lock().map_err(|_|bad("stderr lock"))?.len()>65536{return Err(bad("stderr overflow"));}return Ok(None);};
         let (received,raw)=match event{Event::Line(received,raw)=>(received,raw),Event::Failed(e)=>{if let Some(sink)=&self.diagnostics{sink.record_error("worker_event_failed",now,&e.to_string());}self.diag_process("worker_event_failed_sample",now);return Err(e)}};
+        // Judge the worker by the reader thread's receipt time. A timely reply
+        // that waited in the channel while the gateway loop stalled is
+        // scheduler lag (bounded by drive_deadline), not a worker deadline
+        // (owner runs contact130 and full-polygon 2026-10-19).
+        self.check_deadline(now,Some(received))?;
         let pending=self.pending.as_ref().ok_or_else(||bad("unsolicited producer frame"))?;
         if let Some(sink)=&self.diagnostics{let wait_us=received.checked_duration_since(pending.started()).unwrap_or_default().as_micros().min(u128::from(u64::MAX))as u64;sink.record(json!({"event":"worker_reply","at_us":sink.elapsed_us(received),"consumed_us":sink.elapsed_us(now),"wait_us":wait_us,"kind":pending.kind()}));}
         self.diag_process("reply_sample",received);
