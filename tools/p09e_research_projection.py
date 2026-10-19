@@ -79,13 +79,14 @@ def garage_record(catalog, vehicle):
         "shellsLayout": {}, "eqs": [0, 0, 0], "eqsLayout": [0, 0, 0]}
 
 
-def shop_tree(catalog, source_shop):
+def shop_tree(catalog, source_shop, *, zero_gold=False):
     shop = deepcopy(source_shop)
     shop["rev"] = SHOP_REVISION
     # Source gold remains source gold. Only ordinary credit transactions are
     # admitted by the store. Removing a price is not a security boundary.
+    # zero_gold: the account's explicit ECONOMY_POLICY admits gold items free.
     shop["items"]["itemPrices"] = {row["native_compact_id"]:
-        (0, row["historical_price"]["amount"] if row["historical_price"]["currency"] == "gold" else 0)
+        (0, row["historical_price"]["amount"] if row["historical_price"]["currency"] == "gold" and not zero_gold else 0)
         for row in (*catalog.vehicles.values(), *catalog.modules.values())}
     shop["items"]["notInShopItems"] = sorted(v["native_compact_id"]
         for v in catalog.vehicles.values() if v["not_in_shop"] or set(v["tags"]) & {"secret", "observer", "event_battles", "special"})

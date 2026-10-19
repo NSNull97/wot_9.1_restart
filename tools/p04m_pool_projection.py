@@ -21,6 +21,7 @@ class PoolProjectionSource(BattleProjectionSource):
         self._pool_snapshot, self._pool_profile = store._baseline(store._pool_row())
         self.registry, self.shells, self.mounts = store.registry, store.shells, store.mounts
         self.ammo_catalog_sha256 = store.ammo_catalog_sha256
+        self._zero_gold = store.zero_economy(self._pool_profile["account_id"])
 
     def state(self, aggregate, layouts):
         require(aggregate["account_id"] == self._pool_profile["account_id"], "FOREIGN_ACCOUNT")
@@ -75,7 +76,7 @@ class PoolProjectionSource(BattleProjectionSource):
             baseline_layouts[by_id[row["vehicle_id"]]] = [n for key in mount.shell_ids for n in (SHELLS[key].native_compact_id, row["loaded"][key])]
         files = self._pool_base.fixture_files(self._pool_profile, self._pool_snapshot, baseline_layouts)
         files["state.bin"] = encode(self.state(aggregate, layouts), MAX_STATE, max_nodes=MAX_NODES)
-        files["shop.bin"] = encode(shop_tree(self.catalog, self.trees["shop.bin"]), MAX_SHOP, max_nodes=MAX_NODES)
+        files["shop.bin"] = encode(shop_tree(self.catalog, self.trees["shop.bin"], zero_gold=self._zero_gold), MAX_SHOP, max_nodes=MAX_NODES)
         files["profile-input.json"] = canonical(profile)
         state_sha = sha(files["state.bin"])
         manifest = json.loads(files["manifest.json"])

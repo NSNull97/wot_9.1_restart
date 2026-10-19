@@ -27,6 +27,13 @@ POLICY = {"id": "test_lab.research.free-credit-xp.v1", "mode": "test_lab",
           "xp": 0, "credits": 0, "gold": "UNSUPPORTED",
           "battle_admission": False, "initial_research": "retained-source-unlocks-plus-visible-credit-tier1-roots.v1"}
 POLICY_SHA256 = sha(canonical(POLICY))
+# Owner order 2026-10-19: a full test stand replaces every economy cost with
+# zero and gives each account 100 garage slots. Opt-in per account row in its
+# own table; without it every rule above (including gold rejection) holds.
+# Not a historical price or slot contract; CMD_BUY_SLOT stays unavailable.
+ECONOMY_POLICY = {"id": "test_lab.zero-economy.v1", "mode": "test_lab", "credits": 0, "gold": 0, "xp": 0,
+                  "garage_slots": "explicit-stand-grant", "historical_prices": "retained-in-command-details"}
+ECONOMY_POLICY_SHA256 = sha(canonical(ECONOMY_POLICY))
 # 5: test_lab crew tariff rows added for the original VehicleBuyWindow.
 # Earlier committed ammunition layouts carry 3 or 4 and replay unchanged.
 SHOP_REVISION = 5
@@ -125,19 +132,23 @@ def assembly(catalog, vehicle_id, modules):
     return {"mass_grams": mass, "max_load_grams": maximum, "battle_admission": False}
 
 
-def _price(record):
+def _price(record, zero_gold=False):
     price = record["historical_price"]
     require(type(price) is dict and set(price) == {"amount", "currency"}
             and type(price["amount"]) is int and price["amount"] >= 0, "SOURCE_PRICE_UNKNOWN")
-    require(price["currency"] == "credits", "GOLD_PURCHASE_UNSUPPORTED")
+    require(price["currency"] == "credits" or (zero_gold and price["currency"] == "gold"), "GOLD_PURCHASE_UNSUPPORTED")
     return deepcopy(price)
 
 
-def _available_type(vehicle):
+def _available_type(vehicle, zero_gold=False):
     require(not vehicle.get("unsupported_reason"), "UNSUPPORTED_CONFIGURATION")
     # Imported catalogue determines visibility/acquisition rather than guessed
     # names or current Tankopedia data. Missing proof remains unavailable.
-    require(vehicle.get("acquisition_allowed") is True, "VEHICLE_ACQUISITION_UNSUPPORTED")
+    # The pinned catalogue excludes gold rows only for their currency; the
+    # explicit zero-economy policy re-applies the same shop/tag exclusions.
+    premium_in_shop = (zero_gold and vehicle["historical_price"]["currency"] == "gold" and vehicle.get("not_in_shop") is False
+                       and not set(vehicle.get("tags", ())) & {"secret", "observer", "event_battles", "special"})
+    require(vehicle.get("acquisition_allowed") is True or premium_in_shop, "VEHICLE_ACQUISITION_UNSUPPORTED")
 
 
 def _default_unlocks(catalog, vehicle_id):
@@ -147,8 +158,10 @@ def _default_unlocks(catalog, vehicle_id):
     return values
 
 
-def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=()):
-    """Pure bounded transition, also re-executed when replaying the journal."""
+def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=(), zero_gold=False):
+    """Pure bounded transition, also re-executed when replaying the journal.
+
+    ``zero_gold`` is the explicit ECONOMY_POLICY of the account's stand."""
     value = deepcopy(state)
     unlocked, depot = set(value["unlocked"]), value["depot"]
     details = {}
@@ -170,9 +183,12 @@ def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=
         vehicle_id = payload["vehicle_id"]
         require(vehicle_id in catalog.vehicles, "UNKNOWN_VEHICLE_TYPE")
         vehicle = catalog.vehicles[vehicle_id]
-        price = _price(vehicle)
-        _available_type(vehicle)
-        require(vehicle_id in unlocked, "VEHICLE_NOT_RESEARCHED")
+        price = _price(vehicle, zero_gold)
+        _available_type(vehicle, zero_gold)
+        # A gold (premium) vehicle has no research edge; it reaches this point
+        # only under the explicit zero-economy policy and becomes unlocked.
+        premium = price["currency"] == "gold"
+        require(vehicle_id in unlocked or premium, "VEHICLE_NOT_RESEARCHED")
         require(not any(r["vehicle_id"] == vehicle_id for r in value["vehicles"]), "VEHICLE_ALREADY_OWNED")
         require(len(value["vehicles"]) < min(MAX_OWNED, value["garage_slots"]), "GARAGE_LIMIT")
         native = value["next_native_id"]
@@ -184,13 +200,15 @@ def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=
         value["vehicles"].append({"vehicle_inventory_id": inventory_id, "native_id": native,
                                   "vehicle_id": vehicle_id, "modules": modules, "runtime_supported": False})
         value["next_native_id"] += 1
+        if premium:
+            unlocked.add(vehicle_id); unlocked.update(_default_unlocks(catalog, vehicle_id))
         details = {"vehicle_inventory_id": inventory_id, "historical_price": price}
     elif operation == "buy_module":
         item, count = payload["module_id"], payload["count"]
         require(item in catalog.modules, "UNKNOWN_MODULE")
         require(catalog.modules[item]["kind"] != "fuelTank", "INTERNAL_COMPONENT_UNSUPPORTED")
         require(item in unlocked, "MODULE_NOT_RESEARCHED")
-        price = _price(catalog.modules[item])
+        price = _price(catalog.modules[item], zero_gold)
         require(depot.get(item, 0) + count <= MAX_QUANTITY, "DEPOT_OVERFLOW")
         depot[item] = depot.get(item, 0) + count
         details = {"module_id": item, "count": count, "historical_price": price}
@@ -216,7 +234,7 @@ def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=
         for role, item in changes.items():
             if depot.get(item, 0) < 1 and operation == "buy_equip":
                 require(item in unlocked, "MODULE_NOT_RESEARCHED")
-                bought.append({"module_id": item, "historical_price": _price(catalog.modules[item])})
+                bought.append({"module_id": item, "historical_price": _price(catalog.modules[item], zero_gold)})
                 depot[item] = 1
             require(depot.get(item, 0) >= 1, "MODULE_NOT_OWNED")
             depot[item] -= 1
@@ -470,6 +488,57 @@ class ResearchStore(NativeBarracksRecruitmentStore):
         finally:
             self._allow_preresearch = False
 
+    def _economy_schema(self):
+        return self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='p09e_test_lab_economy'").fetchone() is not None
+
+    def zero_economy(self, account):
+        """True only for an account carrying the exact explicit ECONOMY_POLICY row."""
+        if not self._economy_schema(): return False
+        row = self.connection.execute("SELECT policy_json,policy_sha256 FROM p09e_test_lab_economy WHERE account_id=?", (account,)).fetchone()
+        if row is None: return False
+        require(row["policy_sha256"] == ECONOMY_POLICY_SHA256 and _json(row["policy_json"]) == ECONOMY_POLICY
+                and sha(row["policy_json"].encode("ascii")) == ECONOMY_POLICY_SHA256, "CORRUPT_STORE")
+        return True
+
+    def apply_test_lab_economy(self, *, account_id, garage_slots, policy):
+        """Explicit stand grant: zero-cost economy and an exact garage capacity.
+
+        Raises the account revision and re-projects the same snapshot/profile
+        chain as any other writer; owned vehicles, crew and ammunition stay."""
+        _bounded_id(account_id, "account_id")
+        require(policy == ECONOMY_POLICY, "EXPLICIT_TEST_LAB_POLICY_REQUIRED")
+        require(type(garage_slots) is int and 2 <= garage_slots <= MAX_OWNED, "INVALID_INPUT")
+        self.initialize()
+        c = self.connection
+        c.execute("BEGIN IMMEDIATE")
+        try:
+            profile = self.read_profile(account_id)
+            require(all(row["state"] == "available" for row in profile["vehicles"]), "VEHICLE_RESERVED")
+            require(profile["revision"] < 2**31 - 1, "REVISION_EXHAUSTED")
+            state = self._research(account_id)
+            require(len(state["vehicles"]) <= garage_slots, "GARAGE_LIMIT")
+            raw_policy = canonical(ECONOMY_POLICY).decode("ascii")
+            if self.zero_economy(account_id) and state["garage_slots"] == garage_slots:
+                c.commit()
+                return {"status": "unchanged", "revision": profile["revision"], "garage_slots": garage_slots, "policy": ECONOMY_POLICY}
+            c.execute("CREATE TABLE IF NOT EXISTS p09e_test_lab_economy(account_id TEXT PRIMARY KEY REFERENCES game_snapshot(account_id),"
+                      "policy_json TEXT NOT NULL,policy_sha256 TEXT NOT NULL,granted_revision INTEGER NOT NULL)")
+            before = c.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account_id,)).fetchone()[0]
+            c.execute("INSERT OR REPLACE INTO p09e_test_lab_economy VALUES (?,?,?,?)",
+                      (account_id, raw_policy, ECONOMY_POLICY_SHA256, profile["revision"] + 1))
+            state["garage_slots"] = garage_slots
+            raw = _encode(state)
+            require(c.execute("UPDATE p09e_research SET state_json=?,state_sha256=? WHERE account_id=?",
+                              (raw, sha(raw.encode("ascii")), account_id)).rowcount == 1, "UNKNOWN_ACCOUNT")
+            self._save_crew_projection(account_id, profile["revision"] + 1, before)
+            after = self.read_profile(account_id)
+            require(after["research"]["garage_slots"] == garage_slots and self.zero_economy(account_id), "CORRUPT_STORE")
+            c.commit()
+            return {"status": "granted", "revision": after["revision"], "garage_slots": garage_slots, "policy": ECONOMY_POLICY}
+        except Exception:
+            c.rollback()
+            raise
+
     def execute(self, request, *, authenticated_account_id, prepare_response=None, native_binding=None):
         request = validate_request(request, authenticated_account_id)
         require((prepare_response is None and native_binding is None) or
@@ -494,7 +563,8 @@ class ResearchStore(NativeBarracksRecruitmentStore):
             reserved = [r["vehicle_id"] for r in profile["vehicles"] if r["state"] != "available"]
             loaded = [r["vehicle_id"] for r in profile["ammunition"] if any(r["loaded"].values())]
             before = profile["research"]
-            after, details = plan(self.catalog, before, request["operation"], request["payload"], account_id=account, reserved=reserved, loaded=loaded)
+            after, details = plan(self.catalog, before, request["operation"], request["payload"], account_id=account, reserved=reserved, loaded=loaded,
+                                  zero_gold=self.zero_economy(account))
             new_ids = {r["vehicle_inventory_id"] for r in after["vehicles"]} - {r["vehicle_inventory_id"] for r in before["vehicles"]}
             for vehicle_id in new_ids:
                 c.execute("INSERT INTO game_vehicle VALUES (?,?,'available',NULL)", (account, vehicle_id))
@@ -559,7 +629,8 @@ class ResearchStore(NativeBarracksRecruitmentStore):
         source, destination = row["source_revision"], row["destination_revision"]
         require(type(source) is int and source == request["expected_revision"] and destination == source + 1 and destination <= profile["revision"], "CORRUPT_STORE")
         try:
-            after, details = plan(self.catalog, journal["before"], request["operation"], request["payload"], account_id=request["account_id"], reserved=journal["reserved"], loaded=journal["loaded"])
+            after, details = plan(self.catalog, journal["before"], request["operation"], request["payload"], account_id=request["account_id"], reserved=journal["reserved"], loaded=journal["loaded"],
+                                  zero_gold=self.zero_economy(request["account_id"]))
             response = self._response_research(request, destination, details)
             require((after == journal["after"] if legacy else sha(canonical(after)) == journal["after_sha256"])
                     and response == journal["response"], "CORRUPT_STORE")
