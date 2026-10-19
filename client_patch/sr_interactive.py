@@ -73,6 +73,8 @@ if (type(_settings.get('enable_training_rooms', False)) is not bool
     raise ValueError('training rooms require explicit profile13 battle mode')
 import project_network
 project_network.validate_settings(_settings)
+import project_sixth_sense_sound
+project_sixth_sense_sound.validate_settings(_settings)
 _runtime = owned(_settings['trace_dir'], _settings['local_root'])
 if not os.path.isdir(_runtime):
     raise ValueError('prepared local runtime directory missing')
@@ -1038,6 +1040,9 @@ def init(*args):
                                   training_rooms=_settings.get('enable_training_rooms') is True)
             if _settings.get('enable_shared_lab') is True:
                 map_drive_client.prepare_shared_lab(record)
+        if _settings.get(project_sixth_sense_sound.SETTING) is not None:
+            # Project policy, not original #717 behaviour: see the module docstring.
+            project_sixth_sense_sound.install(record, _settings[project_sixth_sense_sound.SETTING])
         from ConnectionManager import connectionManager
         connectionManager.connectionStatusCallbacks += connection_status
         _ready = True
@@ -2245,6 +2250,8 @@ def fini():
                         sys.modules['p09d_ammo_ui'].fini()
                 finally:
                     sys.modules['hangar_bootstrap'].fini()
+        if 'project_sixth_sense_sound' in sys.modules:
+            sys.modules['project_sixth_sense_sound'].restore(record)
         if 'Account' in sys.modules:
             sys.modules['Account']._delAccountRepository()
             record('account_repository_closed')

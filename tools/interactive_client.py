@@ -30,6 +30,7 @@ MODULES += ('p04g_crew_ui',)
 MODULES += ('p04h_crew_ui', 'p04i_crew_ui', 'p04j_crew_ui', 'p04k_crew_ui')
 MODULES += ('p09e_research_policy',)
 MODULES += ('project_network',)
+MODULES += ('project_sixth_sense_sound',)
 
 
 def digest(payload):
@@ -117,6 +118,20 @@ def network_options(args, profile13, mixed_ammo):
                                   args.registration_url, profile13, mixed_ammo)
 
 
+def sixth_sense_policy():
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_sixth_sense_sound.py'
+    spec = importlib.util.spec_from_file_location('_project_sixth_sense_prepare', path)
+    policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy)
+    return policy
+
+
+def sixth_sense_option(args, profile13, map_drive):
+    # Project policy (not original #717): absent option keeps the silent original lamp.
+    return sixth_sense_policy().prepare_option(getattr(args, 'sixth_sense_sound', None),
+                                               profile13, map_drive)
+
+
 def apply_registration(gui, evidence, options):
     registration = [node for node in gui.iter() if node.findtext('name') == 'registrationURL']
     if len(registration) != 1:
@@ -193,6 +208,7 @@ def prepare(args):
     if shared_lab and (copy_info is None or not args.enable_map_drive):
         raise ValueError('Shared lab requires an explicit isolated copy and native arena services')
     network = network_options(args, profile13_battle, p06t_mixed_ammo)
+    sixth_sense = sixth_sense_option(args, profile13_battle, bool(args.enable_map_drive))
     endpoint = network['endpoint']
     public = local_path(args.public_key, paths)
     public_payload = read_limited(public, 4096)
@@ -327,6 +343,9 @@ def prepare(args):
         settings['enable_training_rooms'] = True
     if catalog_spec is not None:
         settings['destructible_catalog_spec'] = catalog_spec
+    if sixth_sense is not None:
+        settings['sixth_sense_sound'] = sixth_sense['candidate']
+        resource_evidence['project_sixth_sense_sound'] = sixth_sense
     payloads['sr_interactive_settings.json'] = (json.dumps(settings, ensure_ascii=True, indent=2)+'\n').encode()
     sources = []
     for module in MODULES:
@@ -505,6 +524,9 @@ def main():
                       help='Explicit P06T source-three-stack entry; requires --enable-profile13-battle and server v2 admission')
     prep.add_argument('--enable-training-rooms', action='store_true',
                       help='Explicit P10B native training context; requires isolated profile13 hangar and server rooms')
+    prep.add_argument('--sixth-sense-sound', choices=sorted(sixth_sense_policy().CANDIDATES),
+                      help='Project policy, not original 0.9.1: one existing GUI FX cue when '
+                           'the Sixth Sense lamp lights; requires a battle mode; off by default')
     prep.add_argument('--enable-p09d-ammo-service', action='store_true',
                       help='Native maintenance for the two source-bound MS-1 and IS-7 mounts')
     prep.add_argument('--enable-crew-recruitment', action='store_true',
