@@ -205,6 +205,17 @@ class PoolStore(ResultsStore):
         require(public is not None and public["native_id"] == expected["native_database_id"] and _json(public["profile_json"]) == expected, "CORRUPT_STORE")
         self.layouts(account); self._verify_active(aggregate); return aggregate
 
+    def _economy_grants(self, account):
+        # Zero economy: every pool shell (incl. the new T-26/T-34/T-34-85 mounts,
+        # otherwise depot-only and empty) is topped up, never reduced.
+        super()._economy_grants(account)
+        if not self.pool_active(): return
+        from p09e_research_store import ECONOMY_SHELL_MINIMUM
+        self._ensure_pool_rows(account)
+        for key in sorted(self.shells):
+            require(self.connection.execute("UPDATE p09c_ammo_depot SET quantity=MAX(quantity,?) WHERE account_id=? AND shell_id=?",
+                (ECONOMY_SHELL_MINIMUM, account, key)).rowcount == 1, "CORRUPT_STORE")
+
     def _ensure_pool_rows(self, account):
         require(self.connection.in_transaction, "POOL_TRANSACTION_REQUIRED")
         for key in self.shells:

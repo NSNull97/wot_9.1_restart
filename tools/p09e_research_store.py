@@ -32,7 +32,9 @@ POLICY_SHA256 = sha(canonical(POLICY))
 # own table; without it every rule above (including gold rejection) holds.
 # Not a historical price or slot contract; CMD_BUY_SLOT stays unavailable.
 ECONOMY_POLICY = {"id": "test_lab.zero-economy.v1", "mode": "test_lab", "credits": 0, "gold": 0, "xp": 0,
-                  "garage_slots": "explicit-stand-grant", "historical_prices": "retained-in-command-details"}
+                  "garage_slots": "explicit-stand-grant", "historical_prices": "retained-in-command-details",
+                  "shell_depot_minimum": 100}
+ECONOMY_SHELL_MINIMUM = ECONOMY_POLICY["shell_depot_minimum"]
 ECONOMY_POLICY_SHA256 = sha(canonical(ECONOMY_POLICY))
 # 5: test_lab crew tariff rows added for the original VehicleBuyWindow.
 # Earlier committed ammunition layouts carry 3 or 4 and replay unchanged.
@@ -530,6 +532,7 @@ class ResearchStore(NativeBarracksRecruitmentStore):
             raw = _encode(state)
             require(c.execute("UPDATE p09e_research SET state_json=?,state_sha256=? WHERE account_id=?",
                               (raw, sha(raw.encode("ascii")), account_id)).rowcount == 1, "UNKNOWN_ACCOUNT")
+            self._economy_grants(account_id)
             self._save_crew_projection(account_id, profile["revision"] + 1, before)
             after = self.read_profile(account_id)
             require(after["research"]["garage_slots"] == garage_slots and self.zero_economy(account_id), "CORRUPT_STORE")
@@ -538,6 +541,9 @@ class ResearchStore(NativeBarracksRecruitmentStore):
         except Exception:
             c.rollback()
             raise
+
+    def _economy_grants(self, account_id):
+        """Store-specific grants of the economy policy, inside its transaction."""
 
     def execute(self, request, *, authenticated_account_id, prepare_response=None, native_binding=None):
         request = validate_request(request, authenticated_account_id)
