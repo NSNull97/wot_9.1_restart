@@ -6,6 +6,7 @@
 
 ## Общий тест 19 октября
 
+- [FULL_TEST_20261020.md](FULL_TEST_20261020.md) — отрыв башни (#717 SynchronousDetachment), поворот, zero-economy/100 слотов, бой на купленных пуловых танках, звук лампы; gate1685/1
 - [FULL_TEST_20261019.md](FULL_TEST_20261019.md) — физика из чужого checkout, выстрел в упор, паузы gateway; gate1684/1, стенд одного checkout, native NOT_RUN
 
 ## Ночь16–17 октября и ручная приёмка
