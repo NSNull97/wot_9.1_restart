@@ -47,8 +47,14 @@ impl Sink {
     /// the function never creates or cleans user paths.
     pub fn from_env(scope: &str, generation: u32) -> io::Result<Option<Arc<Self>>> {
         let Some(raw) = std::env::var_os(ENV_DIR) else { return Ok(None); };
-        let root = PathBuf::from(raw);
-        validate_dir(&root)?;
+        Self::from_dir(&PathBuf::from(raw), scope, generation).map(Some)
+    }
+
+    /// Same sink in an explicit directory. Tests use this instead of mutating
+    /// the process-wide variable, which raced with parallel actual-worker tests
+    /// ("diagnostics directory must exist").
+    fn from_dir(root: &Path, scope: &str, generation: u32) -> io::Result<Arc<Self>> {
+        validate_dir(root)?;
         let nonce = FILE_NONCE.fetch_add(1, Ordering::Relaxed);
         let pid = std::process::id();
         let path = root.join(format!("{scope}-g{generation}-p{pid}-n{nonce}.jsonl"));
@@ -57,7 +63,7 @@ impl Sink {
             file, events: 0, bytes: 0, truncated: false,
         })});
         sink.record(json!({"event":"diagnostic_open","generation":generation,"pid":pid}));
-        Ok(Some(sink))
+        Ok(sink)
     }
 
     pub fn path(&self) -> &Path { &self.path }
@@ -171,48 +177,39 @@ mod tests {
     #[test]
     fn sink_is_bounded_and_marks_truncation_without_pass_claim() {
         let dir = temp_dir();
-        let old = std::env::var_os(ENV_DIR);
-        unsafe { std::env::set_var(ENV_DIR, &dir); }
-        let sink = Sink::from_env("test", 9).unwrap().unwrap();
+        let sink = Sink::from_dir(&dir, "test", 9).unwrap();
         for i in 0..(MAX_EVENTS + 10) { sink.record(json!({"event":"sample","i":i})); }
         let path = sink.path().to_owned(); drop(sink);
         let raw = fs::read_to_string(path).unwrap();
         assert!(raw.len() <= MAX_BYTES);
         assert!(raw.lines().any(|line| line.contains("diagnostic_truncated")));
         assert!(!raw.contains("PASS"));
-        if let Some(v) = old { unsafe { std::env::set_var(ENV_DIR, v); } } else { unsafe { std::env::remove_var(ENV_DIR); } }
         let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn stderr_receipt_is_bounded_and_hashed() {
         let dir = temp_dir();
-        let old = std::env::var_os(ENV_DIR);
-        unsafe { std::env::set_var(ENV_DIR, &dir); }
-        let sink = Sink::from_env("test", 10).unwrap().unwrap();
+        let sink = Sink::from_dir(&dir, "test", 10).unwrap();
         sink.record_stderr(Instant::now() + Duration::from_millis(1), &[b'a'; 8192], 8192, true);
         let path = sink.path().to_owned(); drop(sink);
         let text = fs::read_to_string(path).unwrap();
         assert!(text.contains("worker_stderr"));
         assert!(text.contains("sha256"));
         assert!(text.len() < 4096);
-        if let Some(v) = old { unsafe { std::env::set_var(ENV_DIR, v); } } else { unsafe { std::env::remove_var(ENV_DIR); } }
         let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn fail_closed_receipt_is_structured_and_never_pass() {
         let dir = temp_dir();
-        let old = std::env::var_os(ENV_DIR);
-        unsafe { std::env::set_var(ENV_DIR, &dir); }
-        let sink = Sink::from_env("test", 11).unwrap().unwrap();
+        let sink = Sink::from_dir(&dir, "test", 11).unwrap();
         sink.record(json!({"event":"scheduler_lag","lag_us":500001,"max_lag_us":500000,"status":"FAIL_CLOSED"}));
         sink.record(json!({"event":"worker_deadline","elapsed_us":500001,"limit_us":500000,"status":"FAIL_CLOSED"}));
         let path = sink.path().to_owned(); drop(sink);
         let text = fs::read_to_string(path).unwrap();
         assert_eq!(text.matches("FAIL_CLOSED").count(), 2);
         assert!(!text.contains("\"status\":\"PASS\""));
-        if let Some(v) = old { unsafe { std::env::set_var(ENV_DIR, v); } } else { unsafe { std::env::remove_var(ENV_DIR); } }
         let _ = fs::remove_dir_all(dir);
     }
 }
