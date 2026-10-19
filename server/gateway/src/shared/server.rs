@@ -131,6 +131,11 @@ fn drive_grid(start: Instant, now: Instant) -> io::Result<Instant> {
     start.checked_add(step.checked_mul(ticks).ok_or_else(|| model::bad())?).ok_or_else(|| model::bad())
 }
 
+/// Profile13 resets its World for every battle (each bounded by model::LIFETIME),
+/// so the hangar service itself may stay up for an owner session. The 1 h
+/// process stop made a stand started ahead of the owner's test exit on its
+/// own (full-test 2026-10-19). Single-world labs keep model::LIFETIME.
+const PROFILE13_SERVICE_LIFETIME: Duration = Duration::from_secs(12 * 3600);
 /// Single gateway-loop stall longer than this still closes the battle.
 const MAX_STALL: Duration = Duration::from_secs(5);
 /// More than `MAX_RESYNCS` lag recoveries inside this window is persistent overload.
@@ -1361,7 +1366,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         world.id,world.expected_actors(),world.vehicle_kind().label(), if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
     loop {
         let now = Instant::now();
-        if now.duration_since(started) >= model::LIFETIME { println!("SHARED_STOP reason=lab_lifetime"); break; }
+        if now.duration_since(started) >= if profile13_mode {PROFILE13_SERVICE_LIFETIME} else {model::LIFETIME} {
+            println!("SHARED_STOP reason=lab_lifetime"); break;
+        }
         if now.duration_since(rate_started) >= Duration::from_secs(1) { rate_started = now; rate_count = 0; }
         let mut closing: Vec<(u32, &'static str)> = std::mem::take(&mut room_closing);
         let logical_ms=u64::try_from(now.saturating_duration_since(started).as_millis()).map_err(|_|model::bad())?;
