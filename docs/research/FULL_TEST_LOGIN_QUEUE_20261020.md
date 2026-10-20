@@ -79,5 +79,12 @@
 
 ## Проверки и откат
 
-Тесты и gate — в отчёте ветки (`local/build/server/gateway-login-queue-*`).
+- Новые unit-тесты `login_queue` (два перекрывающихся входа, истечение окна, FIFO/предел/конфликты):
+  3 PASS, `gateway-login-queue-filter03` (в worktree ветки).
+- Полный прогон из worktree: ветка 1606 PASS / 83 FAIL / 5 ignored (`gateway-login-queue-full02`), база
+  `28c7aad` там же 1603 / 83 / 5 (`gateway-login-queue-base01`); наборы FAIL совпадают. Все 83 — guard'ы
+  рабочего пространства («fixture must belong to current source workspace», «Linked/junction path refused»):
+  worktree видит `local/` через junction. Composition-тесты с настоящим UDP-входом здесь не выполнялись.
+- Канонический gate в `D:/WoT_9.1_Server` — **NOT_RUN**: нужен checkout этой ветки там, а стенд `-05` берёт
+  оттуда tools.
 Откат: не сливать ветку или `git revert` её коммита; данные и схемы не меняются.
