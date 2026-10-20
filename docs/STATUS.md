@@ -51,4 +51,8 @@ ram publication (213 коммитов над main). Каждая карточк�
   `SHARED_DRIVE_LAG_RESYNC`).
 - Python full suite (Python06): 12 FAIL / 45 ERROR — прежний долг.
 - P10B (N игроков), NET-02 (два ПК), микролаг ~150 мс.
+- Задержка bridge (ветка `codex/full-test-bridge-latency`, не слита, стенд не
+  перезапущен): кэш производного каталога + memo `Catalog.sha256` + один `lstat`
+  на компонент — воркер ~3× быстрее (≈3,1 → ≈1,05 с), ответы побайтно равны base;
+  [план](plans/FULL_TEST_BRIDGE_LATENCY.md). Долгоживущие воркеры — после очереди входа.
 - D: освобождено 44 ГБ удалением старых `local/build/*/target` (решение владельца 19.10).

@@ -7,14 +7,18 @@ does not grant ownership, shop availability or battle eligibility.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
+import marshal
+import os
 from pathlib import Path
 import re
+import sys
+import tempfile
 
-from tools.destructible_catalog import no_links, read, json_value
+from tools.destructible_catalog import CatalogError, no_links, read, json_value
 from tools.packed_xml import decode
 
 TARGET = "v.0.9.1 #717 RU"
@@ -27,6 +31,13 @@ KINDS = {"chassis": (2, "chassis"), "turret": (3, "turrets"),
 NAME = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_BYTES = 16 * 1024 * 1024
+CACHE_SCHEMA = "p09e-research-catalog-cache.v1"
+# Derived-document cache only; pinned sources are still read and hashed on every load.
+CACHE_DIR = Path(__file__).resolve().parents[1] / "local" / "cache" / "p09e-research-catalog"
+MAX_CACHE_BYTES = 8 * 1024 * 1024
+# Code that turns pinned source bytes into the document; any edit is a new cache key.
+DERIVATION_CODE = ("p09e_research_catalog.py", "packed_xml.py", "destructible_catalog.py")
+_DEFAULT = object()
 
 
 class ResearchCatalogError(ValueError):
@@ -91,6 +102,8 @@ def identifier(kind, nation, name):
 @dataclass(frozen=True)
 class Catalog:
     document: dict
+    # [exact marshal snapshot of document, its canonical SHA-256]; see sha256.
+    _digest: list = field(default_factory=list, init=False, repr=False, compare=False)
 
     @property
     def vehicles(self): return self.document["vehicles"]
@@ -101,7 +114,20 @@ class Catalog:
     @property
     def initial_unlocked(self): return self.document["initial_unlocked"]
     @property
-    def sha256(self): return hashlib.sha256(canonical(self.document)).hexdigest()
+    def sha256(self):
+        """Canonical document digest, recomputed whenever the document may differ.
+
+        The memo is reused only while ``marshal`` bytes of the live document equal
+        the snapshot taken with the digest. Equal bytes mean the same values, types
+        and order, hence the same canonical JSON; any mutation recomputes.
+        """
+        try: snapshot = marshal.dumps(self.document)
+        except ValueError: snapshot = None
+        if snapshot is not None and self._digest and self._digest[0] == snapshot:
+            return self._digest[1]
+        digest = hashlib.sha256(canonical(self.document)).hexdigest()
+        self._digest[:] = [] if snapshot is None else [snapshot, digest]
+        return digest
     @property
     def audit(self):
         return {"schema": "p09e-catalog-audit.v1", "target": TARGET,
@@ -116,29 +142,45 @@ class Catalog:
                 "battle_eligibility": "NOT_GRANTED_BY_CATALOGUE"}
 
 
-def load_catalog(original_root, manifest_path=PIN_PATH):
+def load_catalog(original_root, manifest_path=PIN_PATH, cache_dir=_DEFAULT):
     """Load exact local sources; caller must use the owner-authorized original root.
 
     ``manifest_path`` is a developer-controlled pin manifest, never request input.
     All reads are bounded, reject links, and rechecked after extraction.
+    ``cache_dir`` (default: ``local/cache/...`` when ``local/`` exists; ``None``
+    disables) may hold the derived document. A cached document is used only after
+    every pinned source it was derived from passes the same size/SHA-256/link checks.
     """
+    if cache_dir is _DEFAULT:
+        cache_dir = CACHE_DIR if CACHE_DIR.parent.parent.is_dir() else None
     try:
-        return _load_catalog(original_root, manifest_path)
+        return _load_catalog(original_root, manifest_path, cache_dir)
     except ResearchCatalogError:
         raise
     except (OSError, ValueError, KeyError, TypeError, OverflowError) as error:
         raise ResearchCatalogError("catalogue source verification failed: " + str(error)) from error
 
 
-def _load_catalog(original_root, manifest_path):
+def _load_catalog(original_root, manifest_path, cache_dir):
     root = no_links(original_root).resolve(strict=True)
     require(root.is_dir(), "original root must be a directory")
-    pins = json_value(read(no_links(manifest_path), 256 * 1024), limit=256 * 1024,
-                      nodes=6000, depth=8)
+    # read() applies no_links to its path first.
+    manifest = read(manifest_path, 256 * 1024)
+    pins = json_value(manifest, limit=256 * 1024, nodes=6000, depth=8)
     require(pins.get("schema") == "p09e-source-pins.v1" and pins.get("target") == TARGET,
             "wrong source pin manifest")
     source_pins = pins["sources"]
     require(type(source_pins) is dict and 1 <= len(source_pins) <= 512, "source count")
+    path = _cache_path(cache_dir, root, manifest)
+    cached = _cached_catalog(path, root, source_pins)
+    if cached is not None:
+        return cached
+    result = _build_catalog(root, source_pins)
+    _store_cache(path, result)
+    return result
+
+
+def _build_catalog(root, source_pins):
     cache, sources, total = {}, {}, 0
 
     def source(relative):
@@ -147,7 +189,7 @@ def _load_catalog(original_root, manifest_path):
         if relative not in cache:
             pin = source_pins[relative]
             require(type(pin["bytes"]) is int and 0 < pin["bytes"] <= MAX_SOURCE_BYTES, "source size")
-            raw = read(no_links(root / relative), pin["bytes"], pin["sha256"])
+            raw = read(root / relative, pin["bytes"], pin["sha256"])
             require(len(raw) == pin["bytes"], "source length changed")
             total += len(raw)
             require(total <= MAX_TOTAL_BYTES, "total source bound")
@@ -313,12 +355,96 @@ def _load_catalog(original_root, manifest_path):
         if row["tier"] == 1 and row["acquisition_allowed"]:
             initial += [key] + row["default_unlocks"]
     # Recheck every source; immutable output may be used beyond this read operation.
-    for relative, pin in sources.items():
-        require(len(read(no_links(root / relative), pin["bytes"], pin["sha256"])) == pin["bytes"], "source changed")
+    _verify_sources(root, sources)
     return Catalog({"schema": SCHEMA, "target": TARGET, "vehicles": vehicles, "modules": modules,
                     "unlocks": unlocks, "initial_unlocked": sorted(set(initial)),
                     "initial_unlock_policy": "test_lab-visible-credit-tier1-and-native-defaults.v1",
                     "sources": sources})
+
+
+def _verify_sources(root, sources):
+    """Bounded, link-free, exact-size and SHA-256 read of every listed source."""
+    total = 0
+    for relative, pin in sources.items():
+        require(".." not in relative.split("/"), "unlisted source")
+        require(type(pin["bytes"]) is int and 0 < pin["bytes"] <= MAX_SOURCE_BYTES, "source size")
+        total += pin["bytes"]
+        require(total <= MAX_TOTAL_BYTES, "total source bound")
+        require(len(read(root / relative, pin["bytes"], pin["sha256"])) == pin["bytes"], "source changed")
+
+
+def _cache_path(cache_dir, root, manifest):
+    """Cache file named by everything the derived document depends on, or None."""
+    if cache_dir is None:
+        return None
+    code = {name: hashlib.sha256(read(Path(__file__).with_name(name), 1024 * 1024)).hexdigest()
+            for name in DERIVATION_CODE}
+    key = hashlib.sha256(canonical({"cache": CACHE_SCHEMA, "schema": SCHEMA, "target": TARGET,
+        "manifest_sha256": hashlib.sha256(manifest).hexdigest(), "code": code,
+        "original_root": str(root), "python": sys.implementation.name + " " + sys.version})).hexdigest()
+    try:
+        return no_links(Path(cache_dir) / (key + ".json"))
+    except CatalogError:
+        return None  # a linked cache location is never read or written
+
+
+def _cached_catalog(path, root, source_pins):
+    """Return the verified cached catalogue, or None to rebuild from sources.
+
+    Unreadable, malformed or mismatching cache files are a miss, never a result.
+    Changed pinned sources raise exactly as the full build's final recheck does.
+    """
+    if path is None or not path.is_file():
+        return None
+    try:
+        raw = read(path, MAX_CACHE_BYTES)
+        header, separator, body = raw.partition(b"\n")
+        meta = json_value(header, limit=4096, nodes=16, depth=2)
+        if (not separator or type(meta) is not dict or meta.get("cache") != CACHE_SCHEMA
+                or meta.get("key") != path.stem
+                or meta.get("document_sha256") != hashlib.sha256(body).hexdigest()):
+            return None
+        document = json_value(body, limit=MAX_CACHE_BYTES, nodes=200000, depth=16)
+        if type(document) is not dict or document.get("schema") != SCHEMA or document.get("target") != TARGET:
+            return None
+        catalog = Catalog(document)
+        sources = document["sources"]
+        if (catalog.sha256 != meta.get("catalog_sha256") or type(sources) is not dict or not sources
+                or any(relative not in source_pins or source_pins[relative] != pin
+                       for relative, pin in sources.items())):
+            return None
+    except (CatalogError, OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    _verify_sources(root, sources)
+    return catalog
+
+
+def _store_cache(path, catalog):
+    """Best effort: a failed write only means the next load rebuilds from sources."""
+    if path is None:
+        return
+    # Insertion order is kept (no sort_keys): consumers iterate these mappings.
+    body = json.dumps(catalog.document, separators=(",", ":"), ensure_ascii=True,
+                      allow_nan=False).encode("ascii")
+    header = canonical({"cache": CACHE_SCHEMA, "key": path.stem, "catalog_sha256": catalog.sha256,
+                        "document_sha256": hashlib.sha256(body).hexdigest()})
+    if len(header) + 1 + len(body) > MAX_CACHE_BYTES:
+        return
+    temp = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        no_links(path.parent)
+        handle, temp = tempfile.mkstemp(prefix=".tmp-", suffix=".json", dir=path.parent)
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(header + b"\n" + body)
+        os.replace(temp, path)
+        temp = None
+    except (OSError, CatalogError):
+        pass  # concurrent writer or read-only local/: the returned result is already verified
+    finally:
+        if temp is not None:
+            try: os.unlink(temp)
+            except OSError: pass
 
 
 def _fact(node):

@@ -122,11 +122,13 @@ def no_links(path):
     path = Path(path).absolute()
     require('..' not in path.parts, 'parent traversal forbidden')
     for part in (path, *path.parents):
-        require(not part.is_symlink(), 'linked path forbidden')
+        # One lstat answers both checks: is_symlink() is S_ISLNK of this same
+        # lstat (and False for a missing part, which is skipped either way).
         try:
             info = part.lstat()
         except FileNotFoundError:
             continue
+        require(not stat.S_ISLNK(info.st_mode), 'linked path forbidden')
         require(not getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
                 'reparse path forbidden')
     return path
