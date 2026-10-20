@@ -75,6 +75,8 @@ import project_network
 project_network.validate_settings(_settings)
 import project_sixth_sense_sound
 project_sixth_sense_sound.validate_settings(_settings)
+import project_player_kill_marker
+project_player_kill_marker.validate_settings(_settings)
 _runtime = owned(_settings['trace_dir'], _settings['local_root'])
 if not os.path.isdir(_runtime):
     raise ValueError('prepared local runtime directory missing')
@@ -1046,6 +1048,9 @@ def init(*args):
         if _settings.get(project_sixth_sense_sound.SETTING) is not None:
             # Project policy, not original #717 behaviour: see the module docstring.
             project_sixth_sense_sound.install(record, _settings[project_sixth_sense_sound.SETTING])
+        if _settings.get(project_player_kill_marker.SETTING) is True:
+            # Project policy, not original #717 behaviour: see the module docstring.
+            project_player_kill_marker.install(record)
         from ConnectionManager import connectionManager
         connectionManager.connectionStatusCallbacks += connection_status
         _ready = True
@@ -2255,6 +2260,8 @@ def fini():
                     sys.modules['hangar_bootstrap'].fini()
         if 'project_sixth_sense_sound' in sys.modules:
             sys.modules['project_sixth_sense_sound'].restore(record)
+        if 'project_player_kill_marker' in sys.modules:
+            sys.modules['project_player_kill_marker'].restore(record)
         if 'Account' in sys.modules:
             sys.modules['Account']._delAccountRepository()
             record('account_repository_closed')

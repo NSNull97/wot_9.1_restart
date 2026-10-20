@@ -31,6 +31,7 @@ MODULES += ('p04h_crew_ui', 'p04i_crew_ui', 'p04j_crew_ui', 'p04k_crew_ui')
 MODULES += ('p09e_research_policy',)
 MODULES += ('project_network',)
 MODULES += ('project_sixth_sense_sound',)
+MODULES += ('project_player_kill_marker',)
 
 
 def digest(payload):
@@ -346,6 +347,11 @@ def prepare(args):
     if sixth_sense is not None:
         settings['sixth_sense_sound'] = sixth_sense['candidate']
         resource_evidence['project_sixth_sense_sound'] = sixth_sense
+    if getattr(args, 'player_kill_marker', False):
+        # Owner order 2026-10-20: keep the player's killing hit/explosion colour.
+        if not profile13_battle:
+            raise ValueError('--player-kill-marker requires --enable-profile13-battle')
+        settings['player_kill_marker'] = True
     sample = getattr(args, 'sixth_sense_sample', None)
     if sample is not None:
         # Owner order 2026-10-20: the gun_intuition bank carries the owner's lamp
@@ -546,6 +552,9 @@ def main():
     prep.add_argument('--sixth-sense-sound', choices=sorted(sixth_sense_policy().CANDIDATES),
                       help='Project policy, not original 0.9.1: one existing GUI FX cue when '
                            'the Sixth Sense lamp lights; requires a battle mode; off by default')
+    prep.add_argument('--player-kill-marker', action='store_true',
+                      help='Project policy, not original 0.9.1: a kill by the player keeps the player-coloured '
+                           'marker damage label (dead marker state applied as immediate); requires profile13 battle')
     prep.add_argument('--sixth-sense-sample',
                       help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
                            'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')
