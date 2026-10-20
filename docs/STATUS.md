@@ -2,7 +2,16 @@
 
 Подробная история прежних записей — `git log -p docs/STATUS.md` (до `aa0dfcc`).
 
-## Сейчас: FULL-TEST (2026-10-19) — слит в main 2026-10-20
+## Сейчас: BRIDGE-01 + LOGIN-01 приняты (2026-10-20)
+
+Интеграционная ветка `codex/full-test-integration-20261020` (main `859452d` +
+`codex/full-test-pending-login-queue` + `codex/full-test-bridge-latency`): канонический
+gate `gateway-integration-20261020-01` **1691 PASS / 0 FAIL / 5 ignored** (composition02
+больше не падает), exe `e28b646e…`. Стенд `-06`: владелец — оба клиента вошли
+одновременно, операции ангара быстрее, бой работает (native PASS). Следующая карточка —
+CAT-01 (ADR-002).
+
+## Ранее: FULL-TEST (2026-10-19) — слит в main 2026-10-20
 
 Слит по приёмке владельца (native PASS, стенд `-05`) с явным исключением: полный gate
 1685 PASS / 1 FAIL — `p08b_restart_cas_composition02` падает только под нагрузкой из-за
