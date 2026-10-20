@@ -364,10 +364,14 @@ def prepare(args):
         if file_hash(root/'res'/bank) != digest(source_bank):
             raise ValueError('research copy lamp bank differs from original')
         payload = fsb5_lamp.build(source_bank, fsb5_lamp.decode_source(sample))
-        payloads['res_mods/0.9.1/'+bank] = payload
+        # engine_config <soundMgr><mediaPath>audio</mediaPath> resolves to the
+        # first audio directory: a res_mods/0.9.1/audio holding one bank made
+        # FMOD miss every other project (owner run 2026-10-20: silent hangar and
+        # battle). Replace the research copy's own bank in place, with backup.
+        payloads['res/'+bank] = payload
         resource_evidence['project_sixth_sense_sample'] = {
             'source_sha256':sha256(Path(sample)), 'source_bytes':Path(sample).stat().st_size,
-            'original_bank_sha256':digest(source_bank), 'bank':'res_mods/0.9.1/'+bank,
+            'original_bank_sha256':digest(source_bank), 'bank':'res/'+bank,
             'bank_sha256':digest(payload), 'tool_sha256':sha256(ROOT/'tools/fsb5_lamp.py'),
             'format':'FSB5 v1 mono IMA ADPCM 48 kHz', 'provenance':'owner-supplied file; not committed',
             'native_audio_check':'NOT_RUN'}
@@ -388,6 +392,8 @@ def prepare(args):
                          'res/text/LC_MESSAGES/system_messages.mo'}
     if disable_dialog:
         overwrite_allowed.add('version.xml')
+    if 'project_sixth_sense_sample' in resource_evidence:
+        overwrite_allowed.add(resource_evidence['project_sixth_sense_sample']['bank'])
     for relative, payload in sorted(payloads.items()):
         current = target(root, relative)
         before = file_hash(current)
