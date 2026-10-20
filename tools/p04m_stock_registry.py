@@ -36,6 +36,38 @@ POLICY = {"id": "test_lab.p04m-stock-identity-only.v1", "definition_sha256": DEF
 POLICY_SHA256 = sha(canonical(POLICY))
 
 
+# CAT-01: with an active catalog (worker ``--catalog-sha256``) identity and
+# admission come from data; the closed lists above remain the default and every
+# kind present in both must agree exactly. Policy/definition hashes stay legacy.
+def _catalog():
+    import catalog_v1
+    return catalog_v1 if catalog_v1.active() else None
+
+
+def active_pins():
+    c = _catalog()
+    if c is None:
+        return PINS
+    pins = c.stock_pins()
+    require(all(pins[kind] == PINS[kind] for kind in set(pins) & set(PINS)), "CAT01_CATALOG_DISAGREES")
+    return MappingProxyType(pins)
+
+
+def mixed_admission(kind, zero_economy):
+    """Owned mixed battle admission: legacy NEW_KINDS rule or the catalog field."""
+    c = _catalog()
+    if c is None:
+        return kind not in NEW_KINDS or zero_economy()
+    value = c.admission(kind)
+    return value == "always" or (value == "zero_economy_policy" and zero_economy())
+
+
+def legacy_route_admitted(kind):
+    """Version1 P08B route: only kinds admitted without any policy."""
+    c = _catalog()
+    return kind not in NEW_KINDS if c is None else c.admission(kind) == "always"
+
+
 @dataclass(frozen=True)
 class StockProfile:
     kind: str
@@ -63,7 +95,7 @@ class StockRegistry:
         require(catalog.sha256 == CATALOG_SHA256, "P04M_CATALOG_MISMATCH")
         self.catalog = catalog
         profiles = {}
-        for kind, (resource, cd, encoded, hp, capacity, shell, crew) in PINS.items():
+        for kind, (resource, cd, encoded, hp, capacity, shell, crew) in active_pins().items():
             key = "vehicle:ussr:" + resource
             row = catalog.vehicles.get(key)
             require(row is not None and row["native_compact_id"] == cd, "P04M_DEFINITION_MISMATCH")
@@ -71,7 +103,7 @@ class StockRegistry:
             require(set(modules) == set(ROLES) and descriptor(catalog, {"vehicle_id": key, "modules": modules}).hex() == encoded
                 and row["hull_max_hp"] + row["turret_max_hp"][modules["turret"]] == hp
                 and tuple(map(tuple, row["crew_roles"])) == crew, "P04M_DEFINITION_MISMATCH")
-            if kind in NEW_KINDS:
+            if kind + "-stock" in SPECS:
                 spec = SPECS[kind + "-stock"]
                 require(tuple(catalog.modules[modules[role]]["native_compact_id"] for role in ROLES) == spec["module_cds"], "P04M_DEFINITION_MISMATCH")
             profiles[kind] = StockProfile(kind, key, cd, encoded, hp, capacity, shell,
@@ -85,6 +117,15 @@ class StockRegistry:
     def inventory_id(account, native, kind):
         from p08b_battle_store import _uuid, _integer
         _uuid(account); _integer(native, 1)
+        c = _catalog()
+        if c is not None:
+            legacy = {row["legacy_inventory"]["native_inventory_id"]: (row["kind"], row["legacy_inventory"]["suffix"])
+                      for row in c.vehicles() if row["legacy_inventory"] is not None}
+            if native in legacy:
+                require(kind == legacy[native][0], "P04M_INVENTORY_MISMATCH")
+                return account + ":" + legacy[native][1]
+            require(kind not in {k for k, _ in legacy.values()}, "P04M_INVENTORY_MISMATCH")
+            return account + ":p09e-vehicle:" + str(native)
         if native == 1:
             require(kind == "ms1", "P04M_INVENTORY_MISMATCH")
             return account + ":starter-vehicle-v1"
@@ -144,7 +185,7 @@ class StockRegistry:
                     entry["kind"] = known.kind
                 p = self.resolve_owned(aggregate["account_id"], owned)
                 entry.update(kind=p.kind, assembly_id=p.assembly_id)
-                if p.kind in NEW_KINDS:
+                if not legacy_route_admitted(p.kind):
                     entry["readiness_code"] = "OWNER_ACCEPTANCE_REQUIRED"
                 else:
                     freeze_loadout(self.catalog, aggregate, owned["native_id"])

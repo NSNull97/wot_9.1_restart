@@ -1,5 +1,6 @@
 /** Explicit five-type owner projection; legacy P09E readers remain strict. */
 import { nicknameField } from './security.mjs';
+import { CATALOG_SHA256, CATALOG_VEHICLES } from './catalog-v1.mjs';
 
 export const POOL_WORKER_TIMEOUT_MS = 7000;
 export const POOL_MUTATION_TIMEOUT_MS = 9000;
@@ -31,8 +32,21 @@ const TYPES = [
   { kind: 't34', resource: 'T-34', cd: 1, capacity: 77, roles: ['commander', 'radioman', 'driver', 'loader'], shells: ['ap', 'heat', 'he'] },
   { kind: 't3485', resource: 'T-34-85', cd: 2561, capacity: 68, roles: ['commander', 'gunner', 'radioman', 'driver', 'loader'], shells: ['ap', 'apcr', 'he'] },
 ];
-const BY_VEHICLE = new Map(TYPES.map(t => [`vehicle:ussr:${t.resource}`, t]));
-const SHELLS = TYPES.flatMap(t => t.shells.map(s => `shell:${t.kind}-stock-${s}`));
+// CAT-01: the same rows derived from the single catalog (every catalog kind is
+// a registry kind; admission is not decided here). Legacy rows stay the default.
+export const LEGACY_POOL_TYPES = TYPES;
+export const catalogPoolTypes = (vehicles = CATALOG_VEHICLES) => vehicles.map(v => ({ kind: v.kind, resource: v.resource_name,
+  cd: v.native_compact_id, capacity: v.ammo_capacity, roles: v.crew.map(c => c.roles[0]), shells: v.shells.map(s => s.suffix) }));
+let ACTIVE_TYPES = TYPES;
+let BY_VEHICLE = new Map(TYPES.map(t => [`vehicle:ussr:${t.resource}`, t]));
+let SHELLS = TYPES.flatMap(t => t.shells.map(s => `shell:${t.kind}-stock-${s}`));
+export function usePoolCatalog(sha256) {
+  requireValue(sha256 === CATALOG_SHA256, 'catalog hash differs from this bridge build');
+  ACTIVE_TYPES = catalogPoolTypes();
+  BY_VEHICLE = new Map(CATALOG_VEHICLES.map(v => [v.vehicle_id, ACTIVE_TYPES.find(t => t.kind === v.kind)]));
+  SHELLS = ACTIVE_TYPES.flatMap(t => t.shells.map(s => `shell:${t.kind}-stock-${s}`));
+}
+export const poolTypes = () => ACTIVE_TYPES;
 const SHARED_SKILLS = new Set(['repair', 'fireFighting', 'camouflage', 'brotherhood']);
 const ROLE_SKILLS = {
   commander: ['tutor', 'eagleEye', 'expert', 'universalist'],
@@ -226,7 +240,7 @@ export function validatePoolBarracksRecruitmentResponse(value, request) {
     requireValue(value.tankman_inventory_id === 0 && value.tankman_descriptor_hex === '', 'rejected barracks allocation'); return;
   }
   const id = value.tankman_inventory_id, [shop, cd, role, cost] = request.layout;
-  const type = TYPES.find(t => t.cd === cd);
+  const type = ACTIVE_TYPES.find(t => t.cd === cd);
   requireValue(integer(request.wire_revision, 1, 2147483646) && shop === 3 && cost === 0 && type
     && type.roles.some(r => ROLE_IDS[r] === role) && integer(id, 4, 16), 'barracks selected type/primary role');
   const descriptor = Buffer.from([8, cd >> 8, role, 50, 0, 0, 0, id, 0, id, 0, id, 0, 64, 6, 0, 0, 0, 0, 66, 0, 0, 0, 0, 0]);

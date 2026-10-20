@@ -2,7 +2,17 @@
 
 Подробная история прежних записей — `git log -p docs/STATUS.md` (до `aa0dfcc`).
 
-## Сейчас: BRIDGE-01 + LOGIN-01 приняты (2026-10-20)
+## Сейчас: CAT-01 единый каталог — ветка `codex/cat-01-single-catalog` (2026-10-20, не слита)
+
+Каталог `config/catalog/catalog.v1.json` (SHA `a6bd44f4…`) собирается `tools/catalog_build.py`
+из пинов клиента + `server_profiles.v1.json`; генерации Rust/Python/JS/Py2.7; допуск —
+поле `battle_admission`. Потребители (шлюз `parse_frozen`, bridge `p06t-mixed`/`p04m-pool`,
+Python реестр/`freeze_mixed`, клиент `map_drive_client`) читают каталог только за флагами,
+прежние списки остаются ([research](research/CAT01_SINGLE_CATALOG.md)). Контракт и сторы в
+обоих режимах PASS; канонический gate в основном checkout и native — NOT_RUN (владелец:
+купить машину пула, бой, окна ангара MS-1/ИС-7 без изменений).
+
+## Ранее: BRIDGE-01 + LOGIN-01 приняты (2026-10-20)
 
 Интеграционная ветка `codex/full-test-integration-20261020` (main `859452d` +
 `codex/full-test-pending-login-queue` + `codex/full-test-bridge-latency`): канонический

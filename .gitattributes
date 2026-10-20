@@ -208,3 +208,13 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 # Existing legacy entrypoints were frozen with CRLF bytes.
 /tools/wg_probe/src/main.rs text eol=crlf
 /tools/map_drive_worker/MapDriveWorker.csproj text eol=crlf
+
+# CAT-01 single catalog: SHA-256 is over exact bytes; bindings are generated.
+/config/catalog/*.json text eol=lf
+/tools/catalog_build.py text eol=lf
+/tools/catalog_v1.py text eol=lf
+/tools/catalog_v1_data.py text eol=lf
+/web/src/catalog-v1.mjs text eol=lf
+/client_patch/catalog_v1_hints.py text eol=lf
+/server/gateway/src/shared/vehicle_catalog.rs text eol=lf
+/server/gateway/src/shared/vehicle_catalog_tests.rs text eol=lf

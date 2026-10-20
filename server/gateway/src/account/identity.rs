@@ -233,6 +233,8 @@ pub struct Config {
     pub p08c_late_results:bool,pub p08c_late_results_accounts:Vec<String>,pub p08c_late_notice_experimental:bool,
     pub training_rooms:bool,
     pub p08b_owner_battle_hold:bool,
+    /// CAT-01 single catalog for mixed admission identity (default: legacy lists).
+    pub catalog_v1:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -318,6 +320,14 @@ impl Config {
         if p08b_owner_battle_hold&&(!profile13_battle||!p04m_pool||!p06t_mixed_ammo||!p06t_ammo_rack_detonation||!visibility_v1||training_rooms||p08c_late_results){
             return Err(invalid("hold5 requires complete owned loss policy; TrainingLoss4 and old late observer are not version5"));
         }
+        // CAT-01: exact {"version":1,"sha256":<this build's catalog>}; a foreign hash refuses start.
+        let catalog_v1=match value.remove("catalog"){
+            None=>false,
+            Some(Value::Object(c)) if c.len()==2&&c.get("version")==Some(&Value::from(1u64))
+                &&c.get("sha256").and_then(Value::as_str)==Some(crate::gateway091::shared::vehicle_catalog::CATALOG_SHA256)=>true,
+            _=>return Err(invalid("catalog must be {version:1,sha256} of this gateway build")),
+        };
+        if catalog_v1&&(!profile13_battle||!p06t_mixed_ammo){return Err(invalid("catalog v1 applies to the owned mixed profile13 writer only"));}
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let game_network=game_network::Network::parse(text(&value,"login_bind")?,text(&value,"base_bind")?,network)?;
@@ -340,7 +350,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub(crate) fn require_game_network(&self,runtime:game_network::Runtime)->io::Result<()>{
@@ -1002,6 +1012,24 @@ mod tests {
         for n in 2..=6{value["battle_players"]=n.into();assert_eq!(load(&value).unwrap().battle_players,n as usize);}
         for bad in [serde_json::json!(1),serde_json::json!(7),serde_json::json!(-1),serde_json::json!(2.0),true.into(),"6".into(),Value::Null]{
             value["battle_players"]=bad;assert!(load(&value).is_err());}
+    }
+    #[test] fn cat01_catalog_is_an_explicit_hash_bound_mixed_profile13_option() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("cat01-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let mut value=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        let sha=crate::gateway091::shared::vehicle_catalog::CATALOG_SHA256;
+        assert!(!load(&value).unwrap().catalog_v1);
+        value["catalog"]=serde_json::json!({"version":1,"sha256":sha});assert!(load(&value).is_err(),"legacy writer must refuse catalog");
+        for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
+            "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle","p04m_pool","p06t_mixed_ammo"]{value[field]=true.into();}
+        assert!(load(&value).unwrap().catalog_v1);
+        for bad in [serde_json::json!({"version":1,"sha256":"0".repeat(64)}),serde_json::json!({"version":2,"sha256":sha}),
+            serde_json::json!({"version":1,"sha256":sha,"extra":true}),serde_json::json!({"version":1}),true.into(),Value::Null,sha.into()]{
+            value["catalog"]=bad;assert!(load(&value).is_err());}
+        value.as_object_mut().unwrap().remove("catalog");assert!(!load(&value).unwrap().catalog_v1);
     }
     #[test] fn crew_configuration_is_explicit_boolean_and_requires_ammunition_service() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();

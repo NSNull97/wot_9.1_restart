@@ -71,6 +71,10 @@ if (type(_settings.get('enable_training_rooms', False)) is not bool
         or (_settings.get('enable_training_rooms')
             and _settings.get('enable_profile13_battle') is not True)):
     raise ValueError('training rooms require explicit profile13 battle mode')
+if (type(_settings.get('enable_catalog_v1', False)) is not bool
+        or (_settings.get('enable_catalog_v1')
+            and _settings.get('enable_profile13_battle') is not True)):
+    raise ValueError('CAT-01 catalog requires explicit profile13 battle mode')
 import project_network
 project_network.validate_settings(_settings)
 import project_sixth_sense_sound
@@ -1042,7 +1046,8 @@ def init(*args):
             import map_drive_client
             map_drive_client.init(record, profile13_battle=_settings.get('enable_profile13_battle') is True,
                                   p06t_mixed_ammo=_settings.get('enable_p06t_mixed_ammo') is True,
-                                  training_rooms=_settings.get('enable_training_rooms') is True)
+                                  training_rooms=_settings.get('enable_training_rooms') is True,
+                                  catalog_v1=_settings.get('enable_catalog_v1') is True)
             if _settings.get('enable_shared_lab') is True:
                 map_drive_client.prepare_shared_lab(record)
         if _settings.get(project_sixth_sense_sound.SETTING) is not None:

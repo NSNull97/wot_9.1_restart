@@ -24,6 +24,11 @@
 
 ## Сборка и тесты
 
+- Единый каталог (CAT-01): после правки `config/catalog/server_profiles.v1.json` —
+  `python -B -X utf8 tools/catalog_build.py build --original C:/WoT_0.9.1_RU_0717_original`
+  (пересобирает каталог и четыре генерации), затем `tools/catalog_build.py check` и
+  `python -B -X utf8 -m unittest tests.test_catalog_v1`. Генерации руками не править.
+
 - P10B loss4 runtime689fb93: full1553/5/build/source865, actual Host/HTTP/SQL
   same-run compensation/relaunch/Finished2 PASS; proof20261017-p10b-loss-full01.
   Training synthetic ACK/Account warm идти через Host.receive, обычный

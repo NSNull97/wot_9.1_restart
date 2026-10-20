@@ -29,6 +29,20 @@ POLICY = {"schema": SCHEMA, "definition_sha256": DEFINITION_SHA256, "crew_policy
     "ammo": "existing-owned-depot-only-no-grants-no-purchases", "new_admission": False, "crew_capacity": 16,
     "new_shells": SHELL_ROWS}
 POLICY_SHA256 = sha(canonical(POLICY))
+
+
+def _shell_rows(registry):
+    """Legacy SHELL_ROWS, or (CAT-01 active) catalog rows for every registry kind
+    without a P09C mount; kinds present in both must agree exactly."""
+    import catalog_v1
+    if not catalog_v1.active():
+        return SHELL_ROWS
+    rows = {kind: row for kind, row in catalog_v1.shell_rows().items()
+            if kind in registry.profiles and registry.profiles[kind].assembly_id not in MOUNTS}
+    require(all(rows[kind] == SHELL_ROWS[kind] for kind in set(rows) & set(SHELL_ROWS)), "CAT01_CATALOG_DISAGREES")
+    return rows
+
+
 LINEAGE = ("p09d_import", "p04f_crew_meta", "p04g_crew_meta", "p04h_crew_meta", "p04i_crew_meta", "p04j_crew_meta", "p04k_crew_meta")
 
 
@@ -40,10 +54,10 @@ class PoolStore(ResultsStore):
         self._pool_activating = False
         self._legacy_contract = False
         self.shells, self.mounts = dict(SHELLS), dict(MOUNTS)
-        for kind in sorted(NEW_KINDS):
+        for kind, rows in sorted(_shell_rows(self.registry).items()):
             p = self.registry.profiles[kind]
             shells = []
-            for suffix, name, shell_kind, item_id in SHELL_ROWS[kind]:
+            for suffix, name, shell_kind, item_id in rows:
                 key = "shell:" + p.assembly_id + "-" + suffix
                 self.shells[key] = Shell(key, name, shell_kind, item_id, (item_id << 8) + 10); shells.append(key)
             modules = dict(p.modules)

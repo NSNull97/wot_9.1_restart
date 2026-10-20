@@ -17,8 +17,9 @@ import { nativeCrewTransferOverview, isNativeCrewTransferOverview } from './p04f
 import { nativeCrossVehicleCrewOverview, isNativeCrossVehicleCrewOverview } from './p04g-crew.mjs';
 import { nativeResearchOverview, isNativeResearchOverview } from './p09e-research.mjs';
 import { battleConfiguration } from './p08b-battle.mjs';
-import { nativePoolOverview, isNativePoolOverview, poolConfiguration, nativePoolRequestTimeout, LEGACY_REQUEST_TIMEOUT_MS } from './p04m-pool.mjs';
-import { mixedConfiguration, validateMixedResultsRequest, validateMixedResultsReply } from './p06t-mixed.mjs';
+import { nativePoolOverview, isNativePoolOverview, poolConfiguration, nativePoolRequestTimeout, LEGACY_REQUEST_TIMEOUT_MS, usePoolCatalog } from './p04m-pool.mjs';
+import { mixedConfiguration, validateMixedResultsRequest, validateMixedResultsReply, useMixedCatalog } from './p06t-mixed.mjs';
+import { CATALOG_SHA256 } from './catalog-v1.mjs';
 import { holdConfiguration, holdReaderFence, validateHoldResultsRequest, validateHoldResultsReply } from './p08b-owner-hold.mjs';
 import { lossConfiguration, validateLossResultsRequest, validateLossResultsReply } from './p06t-ammo-loss.mjs';
 import { ROOM_SELECTION_LOSS_PATH, LOSS_SELECTION_REQUEST_TIMEOUT_MS, lossSelectionConfiguration, lossRoomSelectionBody, createLossRoomSelectionService } from './p10b-selection-loss.mjs';
@@ -239,6 +240,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.late_result_service !== undefined) allowed.push('late_result_service');
   if (options?.room_selection_loss_service !== undefined) allowed.push('room_selection_loss_service');
   if (options?.room_selection_service !== undefined) allowed.push('room_selection_service');
+  if (options?.catalog !== undefined) allowed.push('catalog');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
   if (options.crew_service !== undefined && options.ammunition_service === undefined) throw new Error('Crew requires the shared ammunition writer');
@@ -256,6 +258,11 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
     : battleConfiguration(options.battle_service, options.ammunition_service?.account_id);
   const poolOwners = options.pool_service === undefined ? [] : poolConfiguration(options.pool_service, battleOwners);
   const mixedOwners = options.mixed_service === undefined ? [] : mixedConfiguration(options.mixed_service, poolOwners);
+  // CAT-01: explicit {version:1, sha256} of this build's single catalog; absent = legacy lists.
+  const catalogSha256 = options.catalog === undefined ? null : options.catalog?.version === 1
+    && Object.keys(options.catalog).sort().join(',') === 'sha256,version' && options.catalog.sha256 === CATALOG_SHA256
+    && options.mixed_service !== undefined ? CATALOG_SHA256 : (() => { throw new Error('Catalog must be {version:1,sha256} of this bridge build with mixed service'); })();
+  if (catalogSha256 !== null) { useMixedCatalog(catalogSha256); usePoolCatalog(catalogSha256); }
   const lossOwners = options.ammo_loss_service === undefined ? [] : lossConfiguration(options.ammo_loss_service, mixedOwners);
   const holdOwners = options.owner_hold_service === undefined ? [] : holdConfiguration(options.owner_hold_service, lossOwners);
   const lateOwners = options.late_result_service === undefined ? [] : lateConfiguration(options.late_result_service, mixedOwners);
@@ -318,6 +325,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
               pool: poolOwners.includes(id) ? { version: options.pool_service.version, policy_sha256: options.pool_service.policy_sha256 } : null,
               mixed: mixedOwners.includes(id) ? { version: options.mixed_service.version, policy_sha256: options.mixed_service.policy_sha256,
                 shell_catalog: options.mixed_service.shell_catalog, terminal_policy: options.mixed_service.terminal_policy } : null,
+              catalogSha256: mixedOwners.includes(id) ? catalogSha256 : null,
               ammoLoss: lossOwners.includes(id) ? { version: options.ammo_loss_service.version, contract: options.ammo_loss_service.contract,
                 policy_sha256: options.ammo_loss_service.policy_sha256 } : null,
               ownerHold: holdOwners.includes(id) ? { version: options.owner_hold_service.version, contract: options.owner_hold_service.contract, policy_sha256: options.owner_hold_service.policy_sha256 } : null });

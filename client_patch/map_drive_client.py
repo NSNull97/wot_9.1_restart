@@ -38,6 +38,23 @@ PROFILE13_VEHICLES = {
     2561: ('cf1fd00b51c3c157df9996198a356af10ef8447de6a1f8baed574c02a6ccf28a',
            5, 670, 68, (7946, 8202, 8458)),
 }
+
+
+def catalog_profile13_vehicles(hints):
+    """CAT-01: the same {type: spec} table from the generated catalog hints.
+
+    Only rows whose server `battle_admission` is not 'none' are offered; the
+    server still decides admission. Shape equals PROFILE13_VEHICLES rows.
+    """
+    table = {}
+    for row in hints.VEHICLES:
+        if row['battle_admission'] == 'none':
+            continue
+        table[row['native_compact_id']] = (row['descriptor_sha256'], row['seats'], row['max_hp'],
+                                           row['ammo_capacity'], tuple(row['shell_compact_ids']))
+    return table
+
+
 PROFILE13_REASONS = {
     'unsupported_vehicle': u'У этой машины пока нет проверенного боевого профиля.',
     'unsupported_configuration': u'Для боя нужна проверенная стандартная сборка МС-1 или ИС-7.',
@@ -354,6 +371,9 @@ class _Services(object):
 
 
 class _Native(object):
+    # Legacy closed table; the controller replaces it only under --catalog-v1.
+    profile13_vehicles = PROFILE13_VEHICLES
+
     def context(self):
         import Account
         import Avatar
@@ -473,7 +493,7 @@ class _Native(object):
         selected = _integer(current.invID, 1, 2147483647, 'selected inventory ID')
         if _integer(item.invID, 1, 2147483647, 'item inventory ID') != selected:
             raise RuntimeError('original selected inventory identity disagrees')
-        spec = PROFILE13_VEHICLES.get(_integer(item.intCD, 1, 65535, 'vehicle type'))
+        spec = self.profile13_vehicles.get(_integer(item.intCD, 1, 65535, 'vehicle type'))
         if spec is None:
             return dict(allowed=False, reason='unsupported_vehicle', queued=False)
         descriptor_sha, seats, health, capacity, shell_ids = spec
@@ -556,7 +576,7 @@ class _Native(object):
 class _Controller(object):
     """Exact descriptor ownership; isolated dependencies are unit-test seams."""
     def __init__(self, guard, native, services, record, captcha_guard, profile13_battle=False,
-                 p06t_mixed_ammo=False, training_rooms=False):
+                 p06t_mixed_ammo=False, training_rooms=False, profile13_vehicles=None):
         if not callable(record):
             raise TypeError('ordinary drive recorder must be callable')
         if type(profile13_battle) is not bool:
@@ -579,6 +599,10 @@ class _Controller(object):
         self.shared_lab = False
         self.profile13_battle = profile13_battle
         self.p06t_mixed_ammo = p06t_mixed_ammo
+        if profile13_vehicles is not None and (type(profile13_vehicles) is not dict or not profile13_battle):
+            raise TypeError('catalog vehicle table requires explicit profile13 battle mode')
+        if profile13_vehicles is not None:
+            native.profile13_vehicles = profile13_vehicles
         owner = self
 
         def fight(self, mapID=None, actionName=''):
@@ -745,9 +769,11 @@ class _Controller(object):
         return context
 
 
-def init(record, profile13_battle=False, p06t_mixed_ammo=False, training_rooms=False):
+def init(record, profile13_battle=False, p06t_mixed_ammo=False, training_rooms=False, catalog_v1=False):
     """Root invokes only for an explicitly installed ordinary service feature."""
     global _controller, _captcha_guard, _attempted
+    if type(catalog_v1) is not bool or catalog_v1 and not profile13_battle:
+        raise TypeError('catalog v1 requires explicit profile13 battle mode')
     if (type(profile13_battle) is not bool or type(p06t_mixed_ammo) is not bool
             or p06t_mixed_ammo and not profile13_battle):
         raise TypeError('P06T mixed ammunition requires explicit profile13 battle mode')
@@ -763,9 +789,15 @@ def init(record, profile13_battle=False, p06t_mixed_ammo=False, training_rooms=F
     _audit_originals(policy, guard)
     sources = _audit_sources(policy, training_rooms=True) if training_rooms else _audit_sources(policy)
     _captcha_guard = _CaptchaGuard(_load_captcha_class(), record)
+    vehicles = None
+    if catalog_v1:
+        import catalog_v1_hints
+        vehicles = catalog_profile13_vehicles(catalog_v1_hints)
+        _emit(record, 'map_drive_client_catalog', catalog_sha256=catalog_v1_hints.CATALOG_SHA256,
+              vehicle_types=sorted(vehicles), server_authority=True)
     _controller = _Controller(guard, _Native(), _Services(record), record, _captcha_guard,
                               profile13_battle=profile13_battle, p06t_mixed_ammo=p06t_mixed_ammo,
-                              training_rooms=training_rooms)
+                              training_rooms=training_rooms, profile13_vehicles=vehicles)
     try:
         _emit(record, 'map_drive_client_provenance', sources=sources,
               original_method_code_sha256=dict((r[0], r[4]) for r in policy.BATTLE_METHODS),

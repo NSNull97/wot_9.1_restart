@@ -1,0 +1,22 @@
+{
+  "schema": "wot091-server-profiles.v1",
+  "vehicles": [
+    {"kind": "ms1", "vehicle_id": "vehicle:ussr:MS-1", "device_profile": "ms1-stock",
+     "battle_admission": "always",
+     "legacy_inventory": {"native_inventory_id": 1, "suffix": "starter-vehicle-v1"},
+     "client_ui": {"crew": true, "ammo": true}},
+    {"kind": "is7", "vehicle_id": "vehicle:ussr:IS-7", "device_profile": "is7-stock",
+     "battle_admission": "always",
+     "legacy_inventory": {"native_inventory_id": 2, "suffix": "test-is7-v1"},
+     "client_ui": {"crew": true, "ammo": true}},
+    {"kind": "t26", "vehicle_id": "vehicle:ussr:T-26", "device_profile": "t26-stock",
+     "battle_admission": "zero_economy_policy", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}},
+    {"kind": "t34", "vehicle_id": "vehicle:ussr:T-34", "device_profile": "t34-stock",
+     "battle_admission": "zero_economy_policy", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}},
+    {"kind": "t3485", "vehicle_id": "vehicle:ussr:T-34-85", "device_profile": "t3485-stock",
+     "battle_admission": "zero_economy_policy", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}}
+  ]
+}
