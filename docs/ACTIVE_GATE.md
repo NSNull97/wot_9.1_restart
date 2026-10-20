@@ -37,7 +37,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File local/stands/full-test-20261
 пула 5 типов; разрушаемость всех объектов всех карт. Лог сервера: `gateway-*.stdout.log` стенда, сбой — `SHARED_BATTLE_FAILED`.
 Native/UI/звук/управление — NOT_RUN до прогона.
 
-## Предложение ARCH-01 — ожидает решения владельца
+## ARCH-01 — принято владельцем 2026-10-20; следующая карточка CAT-01 после BRIDGE-01 и LOGIN-01
 
 Документы [текущего состояния](research/ARCH01_CURRENT_STATE.md),
 [ADR-002](decisions/ADR_ARCH01_TARGET.md) и [плана перехода](plans/ARCH01_MIGRATION.md).

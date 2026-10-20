@@ -1,6 +1,6 @@
 # ADR-002 (ARCH-01) — целевая архитектура многопользовательского сервиса
 
-Статус: **PROPOSED — ожидает решения владельца**. Дата: 2026-10-20.
+Статус: **ACCEPTED — принят владельцем 2026-10-20**. Дата: 2026-10-20.
 Основание: [текущее состояние](../research/ARCH01_CURRENT_STATE.md), [02_ARCHITECTURE](../02_ARCHITECTURE.md),
 [ADR-001](ADR_TRANSPORT_AND_STACK.md), [CAPACITY_1000_CCU](../research/CAPACITY_1000_CCU.md).
 План перехода: [ARCH01_MIGRATION](../plans/ARCH01_MIGRATION.md).
