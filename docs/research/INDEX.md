@@ -197,4 +197,4 @@
 
 - [P09E full stand preparation](P09E_FULL_STAND_PREP_20261018.md) — source-bound garage/loadout planner and fail-closed promotion guards.
 
-- [FULL-TEST очередь второго входа](FULL_TEST_LOGIN_QUEUE_20261020.md) — код 73 без автоповтора, окно native-входа ~17 с, ограниченная очередь identity; native NOT_RUN.
+- [FULL-TEST независимый вход аккаунтов](FULL_TEST_LOGIN_QUEUE_20261020.md) — код 73 без автоповтора, окно native-входа ~17 с, identity/гараж по аккаунтам, один воркер моста на аккаунт; native NOT_RUN.
