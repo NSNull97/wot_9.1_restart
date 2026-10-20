@@ -14,7 +14,9 @@ With the explicit prepare option this module wraps those two original methods
 of one class. The original calls run unchanged; only a 'dead' state that
 directly follows a lethal health change from the player's own vehicle is
 passed as immediate, so the label keeps the player's colour. Every lethal
-marker health change is traced with the original damage-type flag.
+marker health change is traced with the original damage-type flag. Vehicle.set_isCrewActive then refreshes
+the marker with the same health and no attacker (-1, drawn as an enemy): such
+an unchanged refresh right after the player's kill keeps the player as source.
 
 Pure Python 2.7 at import time: prepare (Python 3) and tests load this module;
 engine modules are imported only by install() inside the client.
@@ -62,16 +64,35 @@ class Policy(object):
             raise TypeError('player kill marker requires callable seams')
         self.player_vehicle, self.record = player_vehicle, record
         self.pending = set()
+        self.kills = {}
+
+    def source(self, handle, cur_health, attacker):
+        # #717 Vehicle.set_isCrewActive (lines 372-378) refreshes the marker with
+        # onVehicleHealthChanged(marker, self.health) and the default attackerID
+        # -1, which the marker draws as FROM_ENEMY: the lethal explosion of the
+        # player's own kill turned red (owner run 2026-10-20). An unchanged
+        # health refresh right after that kill keeps the player as its source.
+        if attacker != -1 or self.kills.get(handle) != cur_health:
+            return attacker
+        own = self.player_vehicle()
+        self.record(EVENT, version=VERSION, phase='sourceless_refresh', cur_health=cur_health,
+                    original_attacker=attacker, attacker=own)
+        return own
 
     def health(self, handle, cur_health, attacker, flag):
         lethal = type(cur_health) in integer_types and cur_health <= 0
         own = type(attacker) in integer_types and attacker != 0 and attacker == self.player_vehicle()
-        if lethal and own:
-            if len(self.pending) >= 64:
-                raise RuntimeError('bounded pending player kills')
+        if lethal and own and self.kills.get(handle) == cur_health and handle not in self.pending:
+            pass  # the sourced crew refresh of a kill whose 'dead' state is done
+        elif lethal and own:
+            if len(self.pending) >= 64 or len(self.kills) >= 64:
+                # Handles of earlier battles are stale; never fail the client.
+                self.pending.clear(); self.kills.clear()
             self.pending.add(handle)
-        elif handle in self.pending:
+            self.kills[handle] = cur_health
+        elif not (attacker == -1 and self.kills.get(handle) == cur_health):
             self.pending.discard(handle)
+            self.kills.pop(handle, None)
         if lethal:
             self.record(EVENT, version=VERSION, phase='health', cur_health=cur_health, attacker=attacker,
                         own_vehicle=own, damage_type=flag)
@@ -112,6 +133,8 @@ def install(record):
     _contract(damage_type, TYPE_CONTRACT)
     if getattr(state_original, 'func_defaults', None) != (False,):
         raise RuntimeError('original updateMarkerState default differs')
+    if getattr(health_original, 'func_defaults', None) != (-1, 0):
+        raise RuntimeError('original onVehicleHealthChanged defaults differ')
 
     def player_vehicle():
         return getattr(BigWorld.player(), 'playerVehicleID', None)
@@ -119,6 +142,11 @@ def install(record):
     policy = Policy(player_vehicle, record)
 
     def onVehicleHealthChanged(self, handle, curHealth, attackerID=-1, attackReasonID=0):
+        try:
+            attackerID = policy.source(handle, curHealth, attackerID)
+        except Exception:
+            record(EVENT + '_error', version=VERSION, traceback=traceback.format_exc()[-4000:])
+            raise
         result = health_original(self, handle, curHealth, attackerID, attackReasonID)
         try:
             policy.health(handle, curHealth, attackerID, damage_type(self, attackerID))

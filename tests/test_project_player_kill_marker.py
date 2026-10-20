@@ -28,6 +28,30 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual([e[1]['phase'] for e in self.events], ['health', 'dead_state'])
         self.assertEqual(self.events[0][1]['damage_type'], 4)
 
+    def test_crew_refresh_after_own_kill_keeps_the_player_source_only(self):
+        # #717 set_isCrewActive: onVehicleHealthChanged(marker, health) with default -1.
+        self.policy.health(7, -2, 523, 4)
+        self.assertEqual(self.policy.source(7, -2, -1), 523)
+        self.policy.health(7, -2, 523, 4)
+        self.assertEqual(self.policy.state(7, 'dead', False), True)
+        self.assertEqual(self.policy.source(7, -2, -1), 523)
+        self.assertEqual(self.policy.source(7, -1, -1), -1)      # different health
+        self.assertEqual(self.policy.source(8, -2, -1), -1)      # no own kill on this marker
+        self.assertEqual(self.policy.source(7, -2, 525), 525)    # an actual attacker is never replaced
+        self.policy.health(7, 50, 525, 2)
+        self.assertEqual(self.policy.source(7, -2, -1), -1)      # a later change clears the kill
+        self.policy.health(9, 0, 525, 2)
+        self.assertEqual(self.policy.source(9, 0, -1), -1)       # other player's kill stays original
+        self.assertEqual([e[1]['phase'] for e in self.events].count('sourceless_refresh'), 2)
+
+    def test_refresh_does_not_rearm_and_many_battles_never_fail(self):
+        self.policy.health(7, -2, 523, 4); self.policy.state(7, 'dead', False)
+        self.policy.health(7, self.policy.source(7, -2, -1) and -2, 523, 4)
+        self.assertNotIn(7, self.policy.pending)
+        for handle in range(1000, 1300):
+            self.policy.health(handle, -2, 523, 4); self.policy.state(handle, 'dead', False)
+        self.assertLessEqual(len(self.policy.kills), 64); self.assertLessEqual(len(self.policy.pending), 64)
+
     def test_other_attackers_survivals_and_already_dead_are_unchanged(self):
         for attacker in (0, -1, 525, None, True):
             self.policy.health(7, 0, attacker, 0)
