@@ -13,9 +13,9 @@
 - Канонический gate требует чистого git-дерева; `p08b_restart_cas_composition02` падает
   только под полной параллельной нагрузкой (identity), отдельно проходит — exe брать из
   `--test-filter p08b_restart_cas_composition02` прогона.
-- Клиенты a/b: установка из этого checkout `local/stands/full-test-clients-20261020/install-X-05`
-  (head `a5c1a8c`, `--sixth-sense-sample <mp3 владельца>`, `--sixth-sense-sound gun_intuition`; `install-X`, `-02`, `-03` откатаны; стенд `-05`); откат
-  `tools/interactive_client.py rollback --out <install-X-05>`. Флаги prepare — в
+- Клиенты a/b: установка из этого checkout `local/stands/full-test-clients-20261020/install-X-06`
+  (head `b9ba0b8`, `--sixth-sense-sample <mp3 владельца> --player-kill-marker`, `--sixth-sense-sound gun_intuition`; `install-X`, `-02`, `-03` откатаны; стенд `-05`); откат
+  `tools/interactive_client.py rollback --out <install-X-06>`. Флаги prepare — в
   `command` его `install-plan.json`.
   CPython 2.7.3: `local/toolchains-py27-20261019/cpython-2.7.3-x86/python.exe`.
 - Python-тесты списком модулей: часть тестов импортирует соседей из `tests/` —
