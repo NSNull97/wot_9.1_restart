@@ -16,6 +16,19 @@ def function(method):
     return getattr(method, 'im_func', method)
 
 
+# Seat roles (tools/p04m_stock_registry.PINS) and #717 Tankman.TANKMEN_ROLES_ORDER.
+SEAT_ROLES = {3329: ('commander', 'driver'), 7169: ('commander', 'gunner', 'driver', 'loader', 'loader'),
+              4609: ('commander', 'driver', 'gunner'), 1: ('commander', 'radioman', 'driver', 'loader'),
+              2561: ('commander', 'gunner', 'radioman', 'driver', 'loader')}
+ROLES_ORDER = {'commander': 0, 'gunner': 1, 'driver': 2, 'radioman': 3, 'loader': 4}
+
+
+def native_crew_order(kind):
+    # #717 Vehicle._buildCrew: stable sort of (seat, Tankman) by first-role order.
+    roles = SEAT_ROLES[kind]
+    return sorted(range(len(roles)), key=lambda seat: ROLES_ORDER[roles[seat]])
+
+
 class Profile13NativeTests(unittest.TestCase):
     def setUp(self):
         function(prior.NativeEligibilityTests.setUp)(self)
@@ -34,7 +47,7 @@ class Profile13NativeTests(unittest.TestCase):
         self.item = Box(invID=inventory, intCD=kind, isCrewFull=seats,
             descriptor=Box(makeCompactDescr=lambda: compact),
             crew=[(seat, Box(invID=101 + seat, vehicleInvID=inventory, vehicleSlotIdx=seat))
-                  for seat in range(seats)],
+                  for seat in native_crew_order(kind)],
             shells=[Box(intCD=shell, count=count if i == 0 else 0, defaultCount=capacity if i == 0 else 0)
                     for i, shell in enumerate(ids)])
         self.current.invID, self.current.item = inventory, self.item
@@ -68,6 +81,23 @@ class Profile13NativeTests(unittest.TestCase):
             self.select(kind, inventory=4)
             self.inventory['compDescr'][4] = bytes(bytearray.fromhex('010d1a000e00c90000001700170000'))
             with self.assertRaises(RuntimeError): self.native.eligibility(profile13_battle=True, p06t_mixed_ammo=True)
+
+    def test_native_role_sorted_crew_of_purchased_types_is_admitted_by_seat(self):
+        # Owner full stand 2026-10-20: the enabled T-34 / T-34-85 button did
+        # nothing; the native crew list is role-sorted, not seat-ordered.
+        self.assertEqual((native_crew_order(1), native_crew_order(2561), native_crew_order(4609)),
+                         ([0, 2, 1, 3], [0, 1, 3, 2, 4], [0, 2, 1]))
+        for kind in (4609, 1, 2561):
+            self.select(kind, inventory=4)
+            self.assertEqual([pair[0] for pair in self.item.crew], native_crew_order(kind))
+            self.assertTrue(self.native.eligibility(profile13_battle=True, p06t_mixed_ammo=True)['allowed'])
+            self.item.crew[1] = (self.item.crew[0][0], self.item.crew[1][1])
+            with self.assertRaises(ValueError):
+                self.native.eligibility(profile13_battle=True, p06t_mixed_ammo=True)
+            self.select(kind, inventory=4)
+            self.item.crew[2][1].vehicleSlotIdx = self.item.crew[1][0]
+            with self.assertRaises(RuntimeError):
+                self.native.eligibility(profile13_battle=True, p06t_mixed_ammo=True)
 
     def test_positive_owned_inventory_and_account_ids_are_not_fixture_slots(self):
         self.select(7169, inventory=2147483647)

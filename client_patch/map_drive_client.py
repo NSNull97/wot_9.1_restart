@@ -500,11 +500,17 @@ class _Native(object):
         if (type(crew) not in (list, tuple) or len(crew) != seats
                 or type(raw_crew) not in (list, tuple) or len(raw_crew) != seats):
             return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
+        for pair in crew:
+            if type(pair) not in (list, tuple) or len(pair) != 2:
+                raise ValueError('original profile13 crew pairs required')
+        # #717 Vehicle._buildCrew (line 265-287) sorts (seat, Tankman) by
+        # Tankman.TANKMEN_ROLES_ORDER of the seat's first role, not by seat:
+        # T-34 gives seats 0,2,1,3 and T-34-85 0,1,3,2,4. Restore seat order.
+        crew = sorted(crew, key=lambda pair: _integer(pair[0], 0, seats - 1, 'crew seat'))
         crew_ids = []
         for seat, pair in enumerate(crew):
-            if (type(pair) not in (list, tuple) or len(pair) != 2
-                    or _integer(pair[0], 0, seats - 1, 'crew seat') != seat):
-                raise ValueError('original ordered profile13 crew pairs required')
+            if pair[0] != seat:
+                raise ValueError('original profile13 crew seats required')
             man = pair[1]
             if man is None or raw_crew[seat] is None:
                 return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
