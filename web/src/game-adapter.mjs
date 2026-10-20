@@ -478,7 +478,10 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
     creating.set(id, task);
     try { return await task; } finally { creating.delete(id); }
   }
-  let active = 0;
+  // Logins verify scrypt and publish a projection: bound them separately so
+  // concurrent accounts' garage/battle requests still find a request slot.
+  const MAX_ACTIVE_REQUESTS = 12, MAX_ACTIVE_LOGINS = 4;
+  let active = 0, loginActive = 0;
   const pending = new Set();
   function json(res, status, value) {
     if (res.destroyed || res.writableEnded) return;
@@ -504,7 +507,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
     if (req.method === 'GET' && req.url === '/health') return json(res, 200, { status: 'ok', scope: 'game-identity-bridge' });
     const authorization = req.headers.authorization;
     if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ') || !equalToken(authorization.slice(7), secret)) return json(res, 403, { error: 'forbidden' });
-    if (active >= 4) return json(res, 503, { error: 'busy' });
+    if (active >= MAX_ACTIVE_REQUESTS) return json(res, 503, { error: 'busy' });
     active++;
     const started = performance.now();
     const timedOut = () => { json(res, 503, { error: 'timeout' }); req.destroy(); };
@@ -520,23 +523,27 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
     }
     try {
       if (req.method === 'POST' && req.url === '/internal/native/login') {
-        const value = await body(req);
-        if (!value || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'email,password'
-            || typeof value.email !== 'string' || value.email.length > 1024 || typeof value.password !== 'string'
-            || Buffer.byteLength(value.password) > 512) return json(res, 400, { error: 'invalid_request' });
-        const email = emailField(value.email);
-        if (!game.limit('bridge-global', 60, 60_000) || !game.limit(`login-email:${email || 'invalid'}`, 10, 15 * 60_000)) return json(res, 429, { error: 'rate_limited' });
-        const user = email ? identity.findByEmail(email) : null;
-        const eligible = validPassword(value.password);
-        const matches = await verifyPassword(eligible ? value.password : 'invalid-password-input', user?.password_hash || dummyHash);
-        if (!user || !eligible || !matches) return json(res, 401, { error: 'invalid_credentials' });
-        if (res.destroyed || res.writableEnded) return;
-        if (options.battle_service !== undefined && !accountServices.has(user.id)) return json(res, 403, { error: 'forbidden' });
-        const profile = game.ensure(user);
-        poolRequestBudget(user.id); // Only after password and configured-account authorization.
-        const directory = await fixture(profile);
-        return json(res, 200, { account_id: user.id, native_database_id: profile.native_database_id,
-          name: profile.username, fixture_dir: directory });
+        if (loginActive >= MAX_ACTIVE_LOGINS) return json(res, 503, { error: 'busy' });
+        loginActive++;
+        try {
+          const value = await body(req);
+          if (!value || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'email,password'
+              || typeof value.email !== 'string' || value.email.length > 1024 || typeof value.password !== 'string'
+              || Buffer.byteLength(value.password) > 512) return json(res, 400, { error: 'invalid_request' });
+          const email = emailField(value.email);
+          if (!game.limit('bridge-global', 60, 60_000) || !game.limit(`login-email:${email || 'invalid'}`, 10, 15 * 60_000)) return json(res, 429, { error: 'rate_limited' });
+          const user = email ? identity.findByEmail(email) : null;
+          const eligible = validPassword(value.password);
+          const matches = await verifyPassword(eligible ? value.password : 'invalid-password-input', user?.password_hash || dummyHash);
+          if (!user || !eligible || !matches) return json(res, 401, { error: 'invalid_credentials' });
+          if (res.destroyed || res.writableEnded) return;
+          if (options.battle_service !== undefined && !accountServices.has(user.id)) return json(res, 403, { error: 'forbidden' });
+          const profile = game.ensure(user);
+          poolRequestBudget(user.id); // Only after password and configured-account authorization.
+          const directory = await fixture(profile);
+          return json(res, 200, { account_id: user.id, native_database_id: profile.native_database_id,
+            name: profile.username, fixture_dir: directory });
+        } finally { loginActive--; }
       }
       if (req.method === 'POST' && req.url === ROOM_SELECTION_PATH) {
         if (options.room_selection_service === undefined) return json(res, 404, { error: 'not_found' });

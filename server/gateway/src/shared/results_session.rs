@@ -267,6 +267,7 @@ pub(crate) struct Manager {task:Option<Task>,job:Option<Job>,completed:Option<Re
 impl Manager {
     pub(crate) fn busy(&self)->bool {self.task.is_some()||self.job.is_some()||self.completed.is_some()}
     pub(crate) fn target_session(&self)->Option<u32> {self.task.as_ref().map(|task|task.session)}
+    pub(crate) fn owner_account(&self)->Option<&str> {self.task.as_ref().map(|task|task.owner.account_id.as_str())}
     /// A pre-dispatch validation failure has no retained task yet. The root can
     /// still contain it to the first affected live Session instead of the service.
     pub(crate) fn failure_session(&self,sessions:&[Session])->Option<u32> {

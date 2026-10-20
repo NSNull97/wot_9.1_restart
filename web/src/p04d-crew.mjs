@@ -4,6 +4,7 @@ import { resolve, isAbsolute } from 'node:path';
 import { realpathSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
+import { createAccountLane } from './account-worker-lane.mjs';
 
 import { BARRACKS_CREW_POLICY_SHA256, validateBarracksRecruitmentResponse } from './p04k-crew.mjs';
 import { BATTLE_POLICY_SHA256, validateBattleRequest, validateBattleReply } from './p08b-battle.mjs';
@@ -65,11 +66,10 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     return resolve(ammo.bundle_root);
   })();
   const db = localPath(database), fixtures = localPath(fixtureRoot);
-  let active = 0;
+  // One worker of this account at a time; one more caller may wait.
+  const lane = createAccountLane(2, 'Crew worker busy');
   async function run(operation, request) {
-    requireValue(active < 2, 'Crew worker busy'); active++;
-    try {
-      return await new Promise((done, fail) => {
+    return lane(() => new Promise((done, fail) => {
         const lossEnvironment = ammoLoss === null ? undefined : { ...process.env };
         if (lossEnvironment !== undefined) delete lossEnvironment.PYTHONPATH;
         const child = spawn(python, ['-B', '-X', 'utf8', resolve(ROOT, worker),
@@ -91,8 +91,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
         });
         child.stdin.on('error', () => { exceeded = true; child.kill(); });
         child.stdin.end(request ? JSON.stringify(request) : '');
-      });
-    } finally { active--; }
+    }));
   }
   async function mutate(operation, request) {
     requireValue(['recruit', 'service', ...(transfer === null ? [] : ['transfer']), ...(progression === null ? [] : ['learn']), ...(dismissal === null ? [] : ['dismiss']), ...(barracksRecruitment === null ? [] : ['recruit-barracks'])].includes(operation), 'Unsupported crew operation');

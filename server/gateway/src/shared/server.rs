@@ -29,6 +29,9 @@ mod p10b_launch_host;
 mod p10b_preparing_host;
 #[path="p10b_host.rs"]
 mod p10b_host;
+#[path="server_login_admission.rs"]
+mod login_admission;
+use login_admission::{AccountTag,Admission,Decision,Writers};
 
 #[cfg(test)]
 #[path="server_visibility_tests.rs"]
@@ -656,6 +659,27 @@ impl Table {
         println!("SHARED_SESSION_CLOSED battle={} session={id} reason={reason} survivors={} tick={}", world.id, self.sessions.len(), world.tick);
         Ok(())
     }
+}
+
+const MAX_GARAGE_JOBS:usize=4;
+/// A garage writer keeps its owner after the Session retires.
+struct GarageJob {job:ammo_session::Job,account_id:String,account:Option<AccountTag>}
+
+/// Per-account view of every account writer a new login must not overlap.
+fn login_writers(serial:bool,dispatch:&profile13_dispatch::Dispatcher,results:&super::results_session::Manager,
+    room_host:&Option<p10b_host::Host>,garage:&[GarageJob],table:&Table)->Writers {
+    let mut writers=Writers::default();
+    let resolve=|owner:&str|table.sessions.iter().chain(dispatch.retired_sessions())
+        .find(|s|s.identity.as_ref().is_some_and(|p|p.account_id==owner)).and_then(|s|s.login_account);
+    let mut add=|account:Option<AccountTag>|match account.filter(|_|!serial) {
+        Some(tag)=>writers.accounts.push(tag), None=>writers.global=true};
+    if room_host.as_ref().is_some_and(p10b_host::Host::busy) {add(None);}
+    if dispatch.busy() {
+        match dispatch.writer_owners() {Some(owners)=>for owner in owners {add(resolve(owner));}, None=>add(None)}
+    }
+    if results.busy() {add(results.owner_account().and_then(resolve));}
+    for job in garage {add(job.account);}
+    writers
 }
 
 /// Immutable validated resources survive a failed battle; worker handles do not.
@@ -1290,7 +1314,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         println!("P08C_LATE_RESULTS_BOUND policy={} configured_owners={} native_notice_experimental={} native_method=INFERRED",super::late_results_capture::POLICY,config.p08c_late_results_accounts.len(),config.p08c_late_notice_experimental);
     }
     if room_host.is_some(){battle_dispatch.enable_training_finished();}
-    let mut ammo_job=None;
+    let mut garage:Vec<GarageJob>=Vec::new();
     let mut result_manager=super::results_session::Manager::default();
     let started = Instant::now();
     // Native Account.doCmdInt3 carries the result arena key as signed INT64.
@@ -1356,8 +1380,11 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         println!("P08B_HOLD5_BOUND policy={} early_finish=false training_supported=false",crate::profile13_hold091::POLICY_SHA256);
     }
     let mut next_id = 1u32;
-    let mut auth: Option<AuthJob> = None;
-    let mut last_auth: Option<Instant> = None;
+    // Owner hold and training rooms keep one login/garage writer at a time:
+    // their writers have no per-account owner to separate accounts by.
+    let serial_writers=config.p08b_owner_battle_hold||config.training_rooms;
+    let mut admission=Admission::new(if serial_writers {1} else {login_admission::MAX_IDENTITY_JOBS})?;
+    let garage_limit=if serial_writers {1} else {MAX_GARAGE_JOBS};
     let mut fragments = login::LoginFragments::default();
     let mut rate_started = started; let mut rate_count = 0u32;
     println!("BOUND {} base_backend={} profile={} battle={} capacity={} scope=allied_temporary_{} motion={} physics={} map={} arena_type_id={} inventory_changed=false",
@@ -1372,12 +1399,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         if now.duration_since(rate_started) >= Duration::from_secs(1) { rate_started = now; rate_count = 0; }
         let mut closing: Vec<(u32, &'static str)> = std::mem::take(&mut room_closing);
         let logical_ms=u64::try_from(now.saturating_duration_since(started).as_millis()).map_err(|_|model::bad())?;
-        let result = auth.as_ref().and_then(|job| match job.receiver.try_recv() {
-            Ok(result) => Some(result), Err(mpsc::TryRecvError::Empty) => None,
-            Err(mpsc::TryRecvError::Disconnected) => Some(Err(model::bad())),
-        });
-        if let Some(result) = result {
-            let job = auth.take().ok_or_else(|| model::bad())?;
+        for (pending, result) in admission.completed(now) {
+            let job = pending.job;
             match result {
                 Ok(Some(accepted)) => {
                     let admitted = (|| -> io::Result<usize> {
@@ -1386,7 +1409,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                             if !table.sessions[index].verified_duplicate(&job.attempt, &accepted.identity.account_id) { return Err(model::bad()); }
                             return Ok(index);
                         }
-                        if battle_dispatch.owner_busy(&accepted.identity.account_id) || table.sessions.iter().any(|s| s.identity.as_ref().is_some_and(|p| p.account_id == accepted.identity.account_id)) { return Err(model::bad()); }
+                        if battle_dispatch.owner_busy(&accepted.identity.account_id) || table.sessions.iter().any(|s| s.identity.as_ref().is_some_and(|p| p.account_id == accepted.identity.account_id))
+                            || garage.iter().any(|g| g.account_id == accepted.identity.account_id)
+                            || result_manager.owner_account() == Some(accepted.identity.account_id.as_str()) { return Err(model::bad()); }
                         let mut s = Session::new(next_id, job.attempt.key, job.attempt.login_peer, now);
                         // Explicitly fail closed on the astronomically unlikely
                         // random capability collision instead of ambiguous routing.
@@ -1399,7 +1424,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                             }else{next_world.attach(who,next_id)?}
                         };
                         s.account_probe = true; s.account_ready = true; s.tx = Window::interactive();
-                        s.login_attempt = Some(job.attempt); s.identity = Some(accepted.identity);
+                        s.login_attempt = Some(job.attempt); s.login_account = Some(pending.account); s.identity = Some(accepted.identity);
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
                         if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
                         if profile13_mode {
@@ -1450,18 +1475,37 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 };
                 if fields.digest != digest { send_wire(socket, peer, &login::rejection(request, 69), Channel::Login, &mut capture)?; continue; }
                 let attempt = LoginAttempt::new(fields.session_key, fields.nonce, peer);
-                if let Some(job) = auth.as_mut() {
-                    if job.refresh_pending_request(request,&attempt,&fields) {
-                        println!("AUTH_PENDING_DUPLICATE request_id={request} reply_request_refreshed=true");
-                    } else { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
+                if admission.refresh(request,&attempt,&fields) {
+                    println!("AUTH_PENDING_DUPLICATE request_id={request} reply_request_refreshed=true");
                     continue;
                 }
-                if battle_dispatch.busy() || result_manager.busy() || ammo_job.is_some() || room_host.as_ref().is_some_and(p10b_host::Host::busy) || table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
+                if table.admissible(&attempt, now).is_err() {
                     send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; continue;
                 }
-                match start_auth(config.clone(), request, peer, &fields, false) {
-                    Ok(job) => { auth = Some(job); last_auth = Some(now); },
-                    Err(_) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; },
+                let account=match crate::identity091::credentials(&fields.username,&fields.password) {
+                    Ok((email,_))=>admission.account(&email),
+                    Err(_)=>{ send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
+                        println!("SHARED_LOGIN_REJECT request_id={request} reason=unsupported_native_credentials code=73"); continue; },
+                };
+                let writers=login_writers(serial_writers,&battle_dispatch,&result_manager,&room_host,&garage,&table);
+                let sessions=table.sessions.iter().chain(battle_dispatch.retired_sessions())
+                    .map(|s|(s.login_account,s.same_login_attempt(&attempt)));
+                match admission.decide(&attempt,&account,sessions,&writers,now) {
+                    Decision::Start => match start_auth(config.clone(), request, peer, &fields, false) {
+                        Ok(job) => { admission.started(job,account,now);
+                            println!("SHARED_LOGIN_STARTED request_id={request} identity_jobs={}",admission.len()); },
+                        Err(_) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
+                            println!("SHARED_LOGIN_REJECT request_id={request} reason=identity_start code=73"); },
+                    },
+                    Decision::Defer(reason) => if admission.defer(attempt,now) {
+                        println!("SHARED_LOGIN_DEFERRED request_id={request} reason={reason} waited_ms={} max_wait_ms={}",
+                            admission.waited(&attempt,now).as_millis(),admission.max_wait().as_millis());
+                    } else {
+                        send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
+                        println!("SHARED_LOGIN_REJECT request_id={request} reason={reason}_window code=73");
+                    },
+                    Decision::Reject(reason) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
+                        println!("SHARED_LOGIN_REJECT request_id={request} reason={reason} code=73"); },
                 }
             } else {
                 let index = match table.route_with_network(peer, packet,config.game_network()) { Ok(i) => i, Err(_) => { println!("SHARED_REJECT reason=base_route"); continue; } };
@@ -1530,8 +1574,13 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     if integrated.as_ref().is_none_or(|r|!r.blocked()) && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
                 }
             }
-            if let Some(id)=ammo_job.as_ref().map(ammo_session::Job::session_id) {
-                if let Err(error)=ammo_session::complete(table.sessions.iter_mut().find(|s|s.id==id),&mut ammo_job) {
+            let mut index=0;
+            while index<garage.len() {
+                let GarageJob{job,account_id,account}=garage.remove(index);
+                let id=job.session_id();let mut slot=Some(job);
+                let outcome=ammo_session::complete(table.sessions.iter_mut().find(|s|s.id==id),&mut slot);
+                if let Some(job)=slot {garage.insert(index,GarageJob{job,account_id,account});index+=1;}
+                if let Err(error)=outcome {
                     println!("P08B_GARAGE_FAILED session={id} error={error} reconnect_required=true service_alive=true");
                     if table.sessions.iter().any(|s|s.id==id) {
                         retire_service_failure(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,
@@ -1545,7 +1594,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"hold5_pre_avatar_departure",&error)?;
                 contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
             }
-            if ammo_job.is_none() && !result_manager.busy() && !battle_dispatch.late_running() && (!config.p08b_owner_battle_hold||auth.is_none()) {
+            if garage.is_empty() && !result_manager.busy() && !battle_dispatch.late_running() && (!config.p08b_owner_battle_hold||admission.is_empty()) {
                 battle_dispatch.poll(&mut table,config.clone(),now)?;
                 if battle_dispatch.finish_empty_queue(&table,&mut world,&mut integrated,&battle_template,now)? {
                     contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
@@ -1592,10 +1641,22 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     battle_dispatch.start(&mut table,&world,config.clone(),now)?;
                 }
             }
-            if !battle_dispatch.busy() && !result_manager.busy() && room_host.as_ref().is_none_or(|h|!h.busy()) && (!config.p08b_owner_battle_hold||auth.is_none()){
-                for s in &mut table.sessions {ammo_session::start(s,&mut ammo_job,config.clone())?;}
+            if !battle_dispatch.busy() && !result_manager.busy() && room_host.as_ref().is_none_or(|h|!h.busy()) && (!config.p08b_owner_battle_hold||admission.is_empty()){
+                // One garage writer per account; a login of that account and
+                // its retired writer stay mutually exclusive.
+                for s in &mut table.sessions {
+                    let owner=s.identity.as_ref().map(|p|p.account_id.clone());
+                    if garage.len()>=garage_limit || owner.as_ref().is_some_and(|o|garage.iter().any(|g|&g.account_id==o))
+                        || s.login_account.is_some_and(|t|admission.has_account(&t)) {continue;}
+                    let mut slot=None;ammo_session::start(s,&mut slot,config.clone())?;
+                    if let Some(job)=slot {garage.push(GarageJob{job,account_id:owner.ok_or_else(||model::bad())?,account:s.login_account});}
+                }
             }
-            if !battle_dispatch.busy() && ammo_job.is_none() && auth.is_none() && room_host.as_ref().is_none_or(|h|!h.busy()) {
+            // Results wait only for a login of an account that is already live
+            // here (a same-attempt redirect resend); serial modes keep the old order.
+            let results_login_clear=if serial_writers {admission.is_empty()} else {
+                !admission.accounts().any(|t|table.sessions.iter().any(|s|s.login_account.as_ref()==Some(t)))};
+            if !battle_dispatch.busy() && garage.is_empty() && results_login_clear && room_host.as_ref().is_none_or(|h|!h.busy()) {
                 if let Err(error)=result_manager.start_if_idle(&mut table.sessions,config.clone(),now) {
                     contain_results_failure_with_training(&result_manager,&mut room_host,&mut battle_dispatch,&mut table,&mut world,
                     &mut integrated,&battle_template,&mut room_closing,now,logical_ms,&error)?;
@@ -1603,7 +1664,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
         }
         if let Some(host)=&mut room_host{
-            let idle=!battle_dispatch.busy()&&ammo_job.is_none()&&!result_manager.busy()&&auth.is_none();
+            let idle=!battle_dispatch.busy()&&garage.is_empty()&&!result_manager.busy()&&admission.is_empty();
             match host.poll(&mut table,&mut world,&mut integrated,&battle_template,&mut battle_dispatch,config.clone(),now,logical_ms,idle){
                 Ok(true)=>{contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;},Ok(false)=>{},
                 Err(error)=>println!("P10B_HOST_RETRY error={error} authority_retained=true service_alive=true"),
@@ -1733,7 +1794,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
             }
         }
-        let late_idle=!battle_dispatch.busy()&&ammo_job.is_none()&&auth.is_none()&&!result_manager.busy();
+        let late_idle=!battle_dispatch.busy()&&garage.is_empty()&&admission.is_empty()&&!result_manager.busy();
         if let Some(late)=&mut battle_dispatch.late{
             let utc=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d|u32::try_from(d.as_secs()).ok()).unwrap_or(0);
             late.poll(&mut table.sessions,config.clone(),now,late_idle,utc);
