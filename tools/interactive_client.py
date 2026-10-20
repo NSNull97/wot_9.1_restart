@@ -560,7 +560,7 @@ def main():
                            'the Sixth Sense lamp lights; requires a battle mode; off by default')
     prep.add_argument('--player-kill-marker', action='store_true',
                       help='Project policy, not original 0.9.1: a kill by the player keeps the player-coloured '
-                           'marker damage label (dead marker state applied as immediate); requires profile13 battle')
+                           'marker colour (its crew-inactive refresh keeps the player as source); requires profile13 battle')
     prep.add_argument('--sixth-sense-sample',
                       help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
                            'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')
