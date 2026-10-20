@@ -60,7 +60,7 @@
   `late_results_*`, флаги конфигурации по карточкам (`identity.rs:232`) — правило 2
   [SOURCE_LAYOUT](../SOURCE_LAYOUT.md) нарушено ростом карточек — VERIFIED (листинг).
   `python -B -X utf8 server/check_layout.py` на `d3ffab6` падает: `Version/phase in
-  canonical file name: gateway\srcattle\p08b_hold_policy_v1.json` — VERIFIED 2026-10-20.
+  canonical file name: gateway/src/battle/p08b_hold_policy_v1.json` — VERIFIED 2026-10-20.
 
 ## Доменная логика: процесс на запрос
 
