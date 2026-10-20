@@ -2,7 +2,16 @@
 
 Подробная история прежних записей — `git log -p docs/STATUS.md` (до `aa0dfcc`).
 
-## Сейчас: FULL-TEST (2026-10-19) — слит в main 2026-10-20
+## Сейчас: BRIDGE-01 + LOGIN-01 приняты (2026-10-20)
+
+Интеграционная ветка `codex/full-test-integration-20261020` (main `859452d` +
+`codex/full-test-pending-login-queue` + `codex/full-test-bridge-latency`): канонический
+gate `gateway-integration-20261020-01` **1691 PASS / 0 FAIL / 5 ignored** (composition02
+больше не падает), exe `e28b646e…`. Стенд `-06`: владелец — оба клиента вошли
+одновременно, операции ангара быстрее, бой работает (native PASS). Следующая карточка —
+CAT-01 (ADR-002).
+
+## Ранее: FULL-TEST (2026-10-19) — слит в main 2026-10-20
 
 Слит по приёмке владельца (native PASS, стенд `-05`) с явным исключением: полный gate
 1685 PASS / 1 FAIL — `p08b_restart_cas_composition02` падает только под нагрузкой из-за
@@ -51,4 +60,8 @@ ram publication (213 коммитов над main). Каждая карточк�
   `SHARED_DRIVE_LAG_RESYNC`).
 - Python full suite (Python06): 12 FAIL / 45 ERROR — прежний долг.
 - P10B (N игроков), NET-02 (два ПК), микролаг ~150 мс.
+- Задержка bridge (ветка `codex/full-test-bridge-latency`, не слита, стенд не
+  перезапущен): кэш производного каталога + memo `Catalog.sha256` + один `lstat`
+  на компонент — воркер ~3× быстрее (≈3,1 → ≈1,05 с), ответы побайтно равны base;
+  [план](plans/FULL_TEST_BRIDGE_LATENCY.md). Долгоживущие воркеры — после очереди входа.
 - D: освобождено 44 ГБ удалением старых `local/build/*/target` (решение владельца 19.10).

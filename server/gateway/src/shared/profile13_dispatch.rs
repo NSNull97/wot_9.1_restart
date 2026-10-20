@@ -69,6 +69,20 @@ impl Dispatcher {
     pub(super) fn closed_queue(&self,battle:u64)->bool {self.settled_queue==Some(battle)}
     pub(super) fn late_running(&self)->bool{self.late.as_ref().is_some_and(|m|m.worker_running())}
     pub(super) fn busy(&self)->bool {self.hold.busy()||self.late_running()||self.job.is_some() || self.task.is_some()||self.job_v2.is_some()||self.task_v2.is_some()||self.job_loss.is_some()||self.task_loss.is_some() || !self.retired.is_empty()}
+    /// Owners of every running or retained writer. None when one has no
+    /// per-account owner (hold group, late worker): logins then serialize.
+    pub(super) fn writer_owners(&self)->Option<Vec<&str>> {
+        if self.hold.busy()||self.late_running(){return None;}
+        if self.job.is_some()&&self.task.is_none()||self.job_v2.is_some()&&self.task_v2.is_none()
+            ||self.job_loss.is_some()&&self.task_loss.is_none(){return None;}
+        let mut owners:Vec<&str>=Vec::new();
+        if let Some(t)=&self.task{owners.push(&t.owner.account_id);}
+        if let Some(t)=&self.task_v2{owners.push(&t.owner.account_id);}
+        if let Some(t)=&self.task_loss{owners.push(&t.owner.account_id);}
+        for s in &self.retired{owners.push(&s.identity.as_ref()?.account_id);}
+        Some(owners)
+    }
+    pub(super) fn retired_sessions(&self)->&[Session]{&self.retired}
     pub(super) fn owner_busy(&self,owner:&str)->bool {
         self.hold.owner_busy(owner)||self.task.as_ref().is_some_and(|t|t.owner.account_id==owner)
             ||self.task_v2.as_ref().is_some_and(|t|t.owner.account_id==owner)
