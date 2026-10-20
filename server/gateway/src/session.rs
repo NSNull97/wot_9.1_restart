@@ -182,6 +182,8 @@ struct Session {
     unsupported_request_ids:VecDeque<i16>,
     identity:Option<Arc<crate::identity091::Profile>>,created_at:Instant,
     account_cache_hash:Option<i32>,login_attempt:Option<LoginAttempt>,
+    // Shared gateway: salted canonical-email key of the admitted login.
+    login_account:Option<[u8;32]>,
     arena_base:bool,avatar_unsupported_envelopes:u8,arena_space:ArenaSpaceStage,
     arena_vehicle:ArenaVehicleStage,arena_vehicle_seed:Option<crate::arena_vehicle091::VehicleSeed>,
     arena_vehicle_announcement:Option<(u32,bool)>,
@@ -203,7 +205,7 @@ impl Session {
         Self {id,key,login_peer:peer,base_peer:None,handoff:OsRng.next_u32(),token:OsRng.next_u32(),
             active:false,rx:0,last_rx:now,last_keepalive:now,last_heartbeat:now,tx:Window::new(),account_probe:false,account_ready:false,training_opt_in:false,training_flights:None,training_ids:Vec::new(),training_ids_generation:0,
             received:VecDeque::new(),sync_mask:0,request_ids:Vec::new(),hangar:None,outbox:VecDeque::new(),chat_request_ids:Vec::new(),language:None,stats_requests:0,
-            unsupported_request_ids:VecDeque::new(),identity:None,created_at:now,account_cache_hash:None,login_attempt:None,
+            unsupported_request_ids:VecDeque::new(),identity:None,created_at:now,account_cache_hash:None,login_attempt:None,login_account:None,
             arena_base:false,avatar_unsupported_envelopes:0,arena_space:ArenaSpaceStage::Disabled,
             arena_vehicle:ArenaVehicleStage::Disabled,arena_vehicle_seed:None,arena_vehicle_announcement:None,
             arena_ready:false,arena_vehicle_creation:None,arena_preparation:None,arena_battle_preparation:None,arena_fire:None,
