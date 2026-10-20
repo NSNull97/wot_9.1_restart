@@ -24,8 +24,9 @@ class Profile13NativeTests(unittest.TestCase):
     tearDown = function(prior.NativeEligibilityTests.tearDown)
 
     def select(self, kind, inventory=37, count=7):
-        descriptor = ('010d1a000e00c90000001700170000' if kind == 3329
-                      else '011c3a002400cd000b002f003a0000')
+        descriptor = {3329: '010d1a000e00c90000001700170000', 7169: '011c3a002400cd000b002f003a0000',
+                      4609: '011224001300c90001001e00100000', 1: '010000000000cb0003000000000000',
+                      2561: '010a14000100cb0003001100060000'}[kind]
         compact = bytes(bytearray.fromhex(descriptor))
         spec = module.PROFILE13_VEHICLES[kind]
         sha, seats, hp, capacity, ids = spec
@@ -53,6 +54,20 @@ class Profile13NativeTests(unittest.TestCase):
                 reason='supported_profile13_owned_vehicle', queued=False))
             self.assertEqual(self.inventory, before)
             self.assertFalse(self.native.eligibility()['allowed'])
+
+    def test_purchased_pool_types_open_the_button_only_with_full_crew_and_source_stacks(self):
+        # Owner full stand 2026-10-20: a server-readied T-34 / T-34-85 kept a
+        # disabled fight button because only MS-1/IS-7 were known here.
+        for kind in (4609, 1, 2561):
+            self.select(kind, inventory=4)
+            self.assertEqual(self.native.eligibility(profile13_battle=True, p06t_mixed_ammo=True),
+                dict(allowed=True, reason='supported_profile13_owned_vehicle', queued=False))
+            self.inventory['crew'][4][-1] = None
+            self.assertEqual(self.native.eligibility(profile13_battle=True, p06t_mixed_ammo=True)['reason'],
+                'unsupported_crew_readiness')
+            self.select(kind, inventory=4)
+            self.inventory['compDescr'][4] = bytes(bytearray.fromhex('010d1a000e00c90000001700170000'))
+            with self.assertRaises(RuntimeError): self.native.eligibility(profile13_battle=True, p06t_mixed_ammo=True)
 
     def test_positive_owned_inventory_and_account_ids_are_not_fixture_slots(self):
         self.select(7169, inventory=2147483647)

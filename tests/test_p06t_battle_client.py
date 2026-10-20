@@ -78,9 +78,12 @@ class P06TNativeSelectionTests(unittest.TestCase):
         self.inventory['repair'][37] = (0, 2150)
         self.inventory['lock'][37] = 1
         self.assertEqual(self.eligible()['reason'], 'vehicle_reserved')
-        # P06T does not admit the other three P04M vehicles through this hint.
+        # Purchased P04M pool types are known hints (owner full stand 2026-10-20),
+        # but only with their own stock descriptor; unknown types stay closed.
         self.inventory['lock'][37] = 0
         self.item.intCD = 4609
+        self.assertEqual(self.eligible()['reason'], 'unsupported_configuration')
+        self.item.intCD = 7425
         self.assertEqual(self.eligible()['reason'], 'unsupported_vehicle')
 
     def test_mixed_gui_mismatch_and_bool_counts_fail_closed(self):

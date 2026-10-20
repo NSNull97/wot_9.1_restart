@@ -8,7 +8,8 @@ authority. Two previously owned FightButton bindings are layered here. A
 separate fail-closed guard blocks the original external CAPTCHA image fetch.
 Explicit shared-lab admission enables this button for a temporary server actor;
 owned hangar vehicle readiness, crew and ammunition remain unchanged.
-The separate profile13 mode admits only a real stock owned MS-1/IS-7 with
+The separate profile13 mode admits only a real stock owned MS-1/IS-7 (and the
+purchased T-26/T-34/T-34-85 pool types) with
 native readiness and AP-only loadout as a UI hint; the server owns admission.
 The separate P06T opt-in accepts the same mounts' actual three source stacks.
 The P10B opt-in preserves native training dispatch/readiness and eagerly prepares
@@ -26,6 +27,16 @@ PROFILE13_VEHICLES = {
     3329: (MS1_SHA256, 2, 90, 96, (2570, 2826, 3082)),
     7169: ('10ec1923d6273cf7e970ea7a5aed6f850df3110ab4e526840c839ade9aa7bc30',
            5, 2150, 30, (14602, 14858, 15114)),
+    # Purchased P04M pool types (owner full stand 2026-10-20). The server
+    # admits them only under its explicit zero-economy policy; this stays a
+    # UI hint. Values: #717 stock compact descriptor SHA-256, seats, hull HP,
+    # magazine capacity and the source three shell stacks.
+    4609: ('c3bc66ee093acea26df666485a00500063b095db3c0bd7ca279cb8272e363276',
+           3, 150, 160, (1034, 1290, 1546)),
+    1: ('c3532fef5cd8deb1ccaca4a0a112c8c4e295885d5cfe60378c27b2e2573cd137',
+        4, 400, 77, (7178, 7434, 7690)),
+    2561: ('cf1fd00b51c3c157df9996198a356af10ef8447de6a1f8baed574c02a6ccf28a',
+           5, 670, 68, (7946, 8202, 8458)),
 }
 PROFILE13_REASONS = {
     'unsupported_vehicle': u'У этой машины пока нет проверенного боевого профиля.',
