@@ -346,6 +346,25 @@ def prepare(args):
     if sixth_sense is not None:
         settings['sixth_sense_sound'] = sixth_sense['candidate']
         resource_evidence['project_sixth_sense_sound'] = sixth_sense
+    sample = getattr(args, 'sixth_sense_sample', None)
+    if sample is not None:
+        # Owner order 2026-10-20: the gun_intuition bank carries the owner's lamp
+        # sample (res_mods override, ledgered/rolled back like every payload).
+        if sixth_sense is None or sixth_sense['candidate'] != 'gun_intuition':
+            raise ValueError('--sixth-sense-sample requires --sixth-sense-sound gun_intuition')
+        import fsb5_lamp
+        bank = 'audio/gui_notifications_fx_intuition.fsb'
+        source_bank = read_limited(original/'res'/bank, 1024*1024)
+        if file_hash(root/'res'/bank) != digest(source_bank):
+            raise ValueError('research copy lamp bank differs from original')
+        payload = fsb5_lamp.build(source_bank, fsb5_lamp.decode_source(sample))
+        payloads['res_mods/0.9.1/'+bank] = payload
+        resource_evidence['project_sixth_sense_sample'] = {
+            'source_sha256':sha256(Path(sample)), 'source_bytes':Path(sample).stat().st_size,
+            'original_bank_sha256':digest(source_bank), 'bank':'res_mods/0.9.1/'+bank,
+            'bank_sha256':digest(payload), 'tool_sha256':sha256(ROOT/'tools/fsb5_lamp.py'),
+            'format':'FSB5 v1 mono IMA ADPCM 48 kHz', 'provenance':'owner-supplied file; not committed',
+            'native_audio_check':'NOT_RUN'}
     payloads['sr_interactive_settings.json'] = (json.dumps(settings, ensure_ascii=True, indent=2)+'\n').encode()
     sources = []
     for module in MODULES:
@@ -527,6 +546,9 @@ def main():
     prep.add_argument('--sixth-sense-sound', choices=sorted(sixth_sense_policy().CANDIDATES),
                       help='Project policy, not original 0.9.1: one existing GUI FX cue when '
                            'the Sixth Sense lamp lights; requires a battle mode; off by default')
+    prep.add_argument('--sixth-sense-sample',
+                      help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
+                           'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')
     prep.add_argument('--enable-p09d-ammo-service', action='store_true',
                       help='Native maintenance for the two source-bound MS-1 and IS-7 mounts')
     prep.add_argument('--enable-crew-recruitment', action='store_true',
