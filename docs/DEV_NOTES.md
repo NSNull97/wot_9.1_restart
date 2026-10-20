@@ -15,7 +15,7 @@
   `--test-filter p08b_restart_cas_composition02` прогона.
 - Клиенты a/b: установка из этого checkout `local/stands/full-test-clients-20261020/install-a-08` / `install-b-07`
   (head `1fd5ee4`, `--sixth-sense-sample <mp3 владельца> --player-kill-marker`, `--sixth-sense-sound gun_intuition`; `install-X`, `-02`, `-03` откатаны; стенд `-05`); откат
-  `tools/interactive_client.py rollback --out <install-a-08|install-b-07>`. Флаги prepare — в
+  `tools/interactive_client.py rollback --out <install-a-09|install-b-08>`. Флаги prepare — в
   `command` его `install-plan.json`.
   CPython 2.7.3: `local/toolchains-py27-20261019/cpython-2.7.3-x86/python.exe`.
 - Python-тесты списком модулей: часть тестов импортирует соседей из `tests/` —
