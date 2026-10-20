@@ -196,3 +196,5 @@
 - [P09E full stand gap](P09E_FULL_STAND_GAP_20261018.md) — purchase/crew/ammo/equipment boundary for a source-bound native stand.
 
 - [P09E full stand preparation](P09E_FULL_STAND_PREP_20261018.md) — source-bound garage/loadout planner and fail-closed promotion guards.
+
+- [FULL-TEST очередь второго входа](FULL_TEST_LOGIN_QUEUE_20261020.md) — код 73 без автоповтора, окно native-входа ~17 с, ограниченная очередь identity; native NOT_RUN.
