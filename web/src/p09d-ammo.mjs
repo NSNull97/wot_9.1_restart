@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ammoOverview, isAmmoOverview } from './ms1-ammo.mjs';
+import { createAccountLane } from './account-worker-lane.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -16,11 +17,10 @@ export async function createNativeAmmoService(options, { database, fixtureRoot, 
     && exact(options.grant, ['grant_id', 'quantity_each']) && options.grant.grant_id === 'p09d-test-depot-v1'
     && options.grant.quantity_each === 100, 'Explicit versioned test ammunition configuration required');
   const bundle = localPath(options.bundle_root), db = localPath(database), fixtures = localPath(fixtureRoot);
-  let active = 0;
+  // One worker of this account at a time; one more caller may wait.
+  const lane = createAccountLane(2, 'Ammunition worker busy');
   async function run(operation, request) {
-    requireValue(active < 2, 'Ammunition worker busy'); active++;
-    try {
-      return await new Promise((done, fail) => {
+    return lane(() => new Promise((done, fail) => {
         const child = spawn(python, ['-B', '-X', 'utf8', resolve(ROOT, 'tools/p09d_ammo_store.py'),
           '--database', db, '--bundle', bundle, '--original-root', options.original_root,
           '--account-id', options.account_id, '--fixture-root', fixtures, operation],
@@ -38,8 +38,7 @@ export async function createNativeAmmoService(options, { database, fixtureRoot, 
         });
         child.stdin.on('error', () => { exceeded = true; child.kill(); });
         child.stdin.end(request ? JSON.stringify(request) : '');
-      });
-    } finally { active--; }
+    }));
   }
   await run('activate');
   return {
