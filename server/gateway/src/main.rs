@@ -153,7 +153,7 @@ fn command(args: &[String]) -> io::Result<Command<'_>> {
             key: &args[2], digest: &args[3], gateway: &args[4], capture: &args[5],
         }),
         Some("legacy091-integrated-lab") if matches!(args.len(), 7 | 8 | 9 | 10 | 11 | 13) && !args[5].is_empty() && !args[6].is_empty()
-            && (vehicle == VehicleKind::Ms1 || map == MapId::Prohorovka && matches!(args.len(), 10 | 13))
+            && (vehicle == VehicleKind::Ms1 || map != MapId::Karelia && matches!(args.len(), 10 | 13))
             && (map == MapId::Karelia || matches!(args.len(), 10 | 13))
             && args.get(7).is_none_or(|s| !s.is_empty() && !s.starts_with("--"))
             && args.get(8).is_none_or(|s| s == "--ap-test-lab")

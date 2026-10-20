@@ -18,7 +18,7 @@ struct Reference {path:PathBuf,sha256:String}
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct Profile {kind:VehicleKind,pool:Reference,geometry:Reference}
 #[derive(Clone,Debug,PartialEq,Eq)]
-struct Manifest {version:u8,catalog:Reference,profiles:Vec<Profile>,shared_physics:Option<Reference>}
+struct Manifest {version:u8,map:MapId,catalog:Reference,profiles:Vec<Profile>,shared_physics:Option<Reference>}
 
 fn keys(value:&Value,expected:&[&str])->io::Result<()> {
     let object=value.as_object().ok_or_else(||bad("object type"))?;
@@ -38,7 +38,10 @@ fn parse(raw:&[u8])->io::Result<Manifest> {
     let version=value["version"].as_u64();
     if matches!(version,Some(2|3|4)){keys(&value,&["version","map","catalog","profiles","shared_physics"])?;}
     else{keys(&value,&["version","map","catalog","profiles"])?;}
-    if !matches!(version,Some(1|2|3|4))||text(&value,"map")?!="05_prohorovka"{return Err(bad("version/map"));}
+    if !matches!(version,Some(1|2|3|4)){return Err(bad("version/map"));}
+    // Any registry map whose client arena has ctf bases (lifecycle rules).
+    let map=MapId::from_asset(text(&value,"map")?).map_err(|_|bad("version/map"))?;
+    super::lifecycle::Rules::for_map(map).map_err(|_|bad("map lifecycle rules"))?;
     let rows=value["profiles"].as_array().ok_or_else(||bad("profile list"))?;
     let count=match version{Some(4)=>7,Some(3)=>5,_=>2};
     if rows.len()!=count{return Err(bad("exact curated source profile count"));}
@@ -52,7 +55,7 @@ fn parse(raw:&[u8])->io::Result<Manifest> {
         if profiles[index].is_some(){return Err(bad("duplicate vehicle profile"));}
         profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?});
     }
-    Ok(Manifest{version:version.ok_or_else(||bad("version"))? as u8,catalog:reference(&value["catalog"])?,
+    Ok(Manifest{version:version.ok_or_else(||bad("version"))? as u8,map,catalog:reference(&value["catalog"])?,
         profiles:profiles.into_iter().map(|p|p.ok_or_else(||bad("missing curated source profile"))).collect::<io::Result<_>>()?,
         shared_physics:if matches!(version,Some(2|3|4)){Some(reference(&value["shared_physics"])?)}else{None}})
 }
@@ -92,6 +95,7 @@ pub(super) struct Resources {
     pub(super) terrain:Arc<Terrain>,
     pub(super) catalog:(Arc<Catalog>,CatalogSpec),
     pub(super) shared:Option<Arc<SharedResources>>,
+    pub(super) map:MapId,
 }
 #[derive(Clone)]
 pub(super) struct SharedResources {
@@ -116,7 +120,8 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
     let worker_path=catalog_path.parent().ok_or_else(||bad("catalog parent"))?.join(&catalog.worker_file);
     owned(local_root,&worker_path)?;
     let worker=CatalogSpec::load(local_root,&worker_path,&catalog.worker_sha256)?;
-    super::server::validate_catalog_projection(&catalog,&worker,MapId::Prohorovka)?;
+    let map=manifest.map;
+    super::server::validate_catalog_projection(&catalog,&worker,map)?;
     let load_profile=|profile:Profile|->io::Result<Resources>{
         let pool_path=pin(local_root,&profile.pool,16384)?;
         let geometry_path=pin(local_root,&profile.geometry,512*1024)?;
@@ -124,14 +129,14 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
         if pool.shared_only()!=profile.kind.is_extended()||profile.kind.is_extended()&&manifest.version!=4 {
             return Err(bad("extended profile requires shared-only pool and resource version4"));
         }
-        super::server::selected_pool_config(&pool,MapId::Prohorovka)?;
+        super::server::selected_pool_config(&pool,map)?;
         let geometry=Arc::new(Bundle::load(local_root,&geometry_path)?);
         super::server::validate_vehicle_binding(profile.kind,&pool,Some(&geometry))?;
-        let terrain=super::server::terrain_for_pool_for_map(&pool,MapId::Prohorovka)?;
+        let terrain=super::server::terrain_for_pool_for_map(&pool,map)?;
         catalog.bind_geometry(&terrain)?;
-        println!("P08B_TEMPLATE_VALIDATED kind={} pool_sha256={} geometry_sha256={} catalog_sha256={} map=05_prohorovka resources_only=true",
-            profile.kind.label(),pool.sha256,profile.geometry.sha256,manifest.catalog.sha256);
-        Ok(Resources{kind:profile.kind,pool,geometry,terrain,catalog:(catalog.clone(),worker.clone()),shared:None})
+        println!("P08B_TEMPLATE_VALIDATED kind={} pool_sha256={} geometry_sha256={} catalog_sha256={} map={} resources_only=true",
+            profile.kind.label(),pool.sha256,profile.geometry.sha256,manifest.catalog.sha256,map.asset());
+        Ok(Resources{kind:profile.kind,pool,geometry,terrain,catalog:(catalog.clone(),worker.clone()),shared:None,map})
     };
     let mut rows=manifest.profiles.into_iter().map(load_profile).collect::<io::Result<Vec<_>>>()?;
     if let Some(reference)=manifest.shared_physics {
@@ -144,7 +149,7 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
             }
         }
         let shared=Arc::new(SharedResources{version:manifest.version,root:local_root.canonicalize()?,artifacts:crate::scene_worker::Artifacts::load(&path)?,
-            maps:rows.iter().map(|row|super::server::selected_pool_map(&row.pool,MapId::Prohorovka).cloned()).collect::<io::Result<_>>()?,source_profiles});
+            maps:rows.iter().map(|row|super::server::selected_pool_map(&row.pool,map).cloned()).collect::<io::Result<_>>()?,source_profiles});
         for row in &mut rows{row.shared=Some(shared.clone());}
     }
     Ok(rows)
@@ -171,9 +176,13 @@ mod tests {
         assert_eq!(expected.profiles[0].kind,VehicleKind::Ms1);assert_eq!(expected.profiles[1].kind,VehicleKind::Is7);
         let mut reversed=value.clone();reversed["profiles"].as_array_mut().unwrap().reverse();
         assert_eq!(parse(&serde_json::to_vec(&reversed).unwrap()).unwrap(),expected);
+        assert_eq!(expected.map,MapId::Prohorovka);
+        // MAPS-01: the map is registry data; another registry map with client ctf bases is carried through.
+        let mut karelia=value.clone();karelia["map"]="01_karelia".into();
+        assert_eq!(parse(&serde_json::to_vec(&karelia).unwrap()).unwrap().map,MapId::Karelia);
         for mutation in 0..10{
             let mut wrong=value.clone();match mutation{
-                0=>wrong["map"]="01_karelia".into(),1=>wrong["version"]=2.into(),
+                0=>wrong["map"]="98_unregistered".into(),1=>wrong["version"]=2.into(),
                 2=>wrong["profiles"][1]["kind"]="ms1".into(),3=>wrong["profiles"][0]["kind"]="unknown".into(),
                 4=>wrong["profiles"][0]["pool"]["path"]="relative.json".into(),
                 5=>wrong["profiles"][0]["pool"]["sha256"]="A".repeat(64).into(),

@@ -2,7 +2,17 @@
 
 Подробная история прежних записей — `git log -p docs/STATUS.md` (до `aa0dfcc`).
 
-## Сейчас: BRIDGE-01 + LOGIN-01 приняты (2026-10-20)
+## MAPS-01 — конвейер карт (ветка `codex/maps-01-map-pipeline`, не слита)
+
+Один экспортёр `tools/map_package.py` (пакет карты с SHA-256: рельеф, физика, снарядная
+геометрия, арена, статический native-индекс разрушаемого), реестр карт
+`server/contracts/map_registry.json` вместо `enum MapId` в gateway и физике. Карелия/
+Прохоровка — побайтно прежние пины/буферы/каталог; Малиновка — новая карта реестра.
+Отчёт по 44 картам и факты — [MAPS01](research/MAPS01_MAP_PIPELINE.md).
+Native-бой на Малиновке — NOT_RUN (владелец); `fallingAtoms` — исключены (правило
+падения UNKNOWN).
+
+## Ранее: BRIDGE-01 + LOGIN-01 приняты (2026-10-20)
 
 Интеграционная ветка `codex/full-test-integration-20261020` (main `859452d` +
 `codex/full-test-pending-login-queue` + `codex/full-test-bridge-latency`): канонический

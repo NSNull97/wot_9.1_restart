@@ -1,8 +1,9 @@
 //! Pinned original #717 terrain triangles and a bounded nearest-segment query.
 //!
 //! Geometry is the exact accepted map-drive export, not a bilinear surface.
-//! Each supported map has 144 source chunks without hole members. Other maps,
-//! hole-bearing export, LOD or changed bytes is unsupported, not filled in.
+//! Each registry map (drive/map_profile.rs) pins one square grid of complete
+//! original chunks without hole members. Unregistered maps, hole-bearing
+//! export, LOD or changed bytes is unsupported, not filled in.
 //! The checkerboard topology matches the static #717 heightAt parity evidence
 //! (0x101dd20, XOR at 0x101de09). Native projectile collision equivalence is a
 //! separate measured gate. Two-sided closed triangles, no coplanar contact and
@@ -27,17 +28,13 @@ pub const SOURCE_REVISION: &str = "karelia-terrain-717:5e23f58d4e9d78398bd9cd861
 pub const WORLD_SOURCE_REVISION: &str = "karelia-projectile-world-717:5e23f58d4e9d78398bd9cd861f6bc09a038cce7e8f7b311731e50c30bcc958f9:ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447c5bd95dd97d80cea";
 const VERTICES_SHA256: &str = "dc0752ceaaa6b469b36062a5c0a1d397edfa7a39815bf0d19d1290d0c8a08a92";
 const TRIANGLES_SHA256: &str = "27ba25b1f81a37cb678584a898b0efed2b497ef1fc26ecb342ff852f72ec479c";
-const GRID_WIDTH: usize = 769;
-const GRID_CELLS: usize = GRID_WIDTH - 1;
-const SPACING: f64 = 1.5625;
-const ORIGIN: f64 = -600.;
-const VERTEX_BYTES: usize = GRID_WIDTH * GRID_WIDTH * 12;
-const TRIANGLE_BYTES: usize = GRID_CELLS * GRID_CELLS * 24;
+/// Largest registry grid admitted (map_profile.rs bounds the same width).
+const MAX_GRID_WIDTH: usize = 1025;
 const MANIFEST_MAX_BYTES: usize = 16 * 1024;
 pub const MAX_QUERY_COORDINATE: f32 = 10_000.;
 /// Supercover includes cells on both sides of grid lines and at corners.
-pub const MAX_QUERY_CELLS: usize = 8 * GRID_CELLS + 16;
-pub const MAX_QUERY_CROSSINGS: usize = 2 * GRID_WIDTH + 2;
+fn max_query_cells(width: usize) -> usize { 8 * (width - 1) + 16 }
+fn max_query_crossings(width: usize) -> usize { 2 * width + 2 }
 const TOLERANCE: f64 = 1e-12;
 // Broadphase only: include both neighbors of a rounded grid boundary. This
 // does not inflate triangles or change the narrowphase contact parameter.
@@ -137,6 +134,13 @@ fn read_pinned(root: &Path, path: &Path, limit: usize, exact_size: Option<usize>
     Ok(raw)
 }
 
+/// Exact vertex/index buffer sizes of a registry map's square grid.
+fn grid_bytes(map: MapId) -> io::Result<(usize, usize, usize)> {
+    let width = map.spec().grid_width;
+    if !(3..=MAX_GRID_WIDTH).contains(&width) { return Err(bad("terrain registry grid width")); }
+    Ok((width, width * width * 12, (width - 1) * (width - 1) * 24))
+}
+
 fn indices(width: usize, x: usize, z: usize) -> [[usize; 3]; 2] {
     let a = z * width + x; let b = a + 1; let c = a + width; let d = c + 1;
     if (x ^ z) & 1 == 1 { [[a, c, b], [b, c, d]] } else { [[a, c, d], [a, d, b]] }
@@ -160,19 +164,20 @@ impl Terrain {
         let profile = map.spec();
         non_reparse(local_root)?;
         let root = local_root.canonicalize()?;
+        let (width, vertex_bytes, triangle_bytes) = grid_bytes(map)?;
         let manifest = read_pinned(&root, manifest_path, MANIFEST_MAX_BYTES, None, profile.terrain_manifest_sha256)?;
         let value: Value = serde_json::from_slice(&manifest).map_err(|_| bad("terrain manifest JSON"))?;
         if value["version"] != 1 || value["kind"] != "original_091_static_triangle_mesh"
             || value["map"] != map.asset() || value["vertices"]["file"] != "terrain.vertices.f32"
             || value["triangles"]["file"] != "terrain.triangles.u32"
-            || value["vertices"]["count"] != GRID_WIDTH * GRID_WIDTH
-            || value["triangles"]["count"] != GRID_CELLS * GRID_CELLS * 2
+            || value["vertices"]["count"] != width * width
+            || value["triangles"]["count"] != (width - 1) * (width - 1) * 2
             || value["vertices"]["sha256"] != profile.terrain_vertices_sha256 || value["triangles"]["sha256"] != profile.terrain_triangles_sha256 {
             return Err(bad("terrain manifest schema/profile"));
         }
         let directory = manifest_path.parent().ok_or_else(|| bad("terrain manifest parent"))?;
-        let vertices = read_pinned(&root, &directory.join("terrain.vertices.f32"), VERTEX_BYTES, Some(VERTEX_BYTES), profile.terrain_vertices_sha256)?;
-        let triangles = read_pinned(&root, &directory.join("terrain.triangles.u32"), TRIANGLE_BYTES, Some(TRIANGLE_BYTES), profile.terrain_triangles_sha256)?;
+        let vertices = read_pinned(&root, &directory.join("terrain.vertices.f32"), vertex_bytes, Some(vertex_bytes), profile.terrain_vertices_sha256)?;
+        let triangles = read_pinned(&root, &directory.join("terrain.triangles.u32"), triangle_bytes, Some(triangle_bytes), profile.terrain_triangles_sha256)?;
         Self::decode_buffers_for(map, &vertices, &triangles)
     }
 
@@ -181,16 +186,19 @@ impl Terrain {
         Self::decode_buffers_for(MapId::Karelia, vertices, triangles)
     }
     fn decode_buffers_for(map: MapId, vertices: &[u8], triangles: &[u8]) -> io::Result<Self> {
-        if vertices.len() != VERTEX_BYTES || triangles.len() != TRIANGLE_BYTES {
+        let (width, vertex_bytes, triangle_bytes) = grid_bytes(map)?;
+        let (origin, spacing) = (map.spec().grid_origin, map.spec().grid_spacing);
+        let cells = width - 1;
+        if vertices.len() != vertex_bytes || triangles.len() != triangle_bytes {
             return Err(bad("terrain exact buffer lengths"));
         }
-        let mut heights = Vec::with_capacity(GRID_WIDTH * GRID_WIDTH);
+        let mut heights = Vec::with_capacity(width * width);
         for (index, vertex) in vertices.chunks_exact(12).enumerate() {
             let numbers: [f32; 3] = std::array::from_fn(|axis| {
                 f32::from_le_bytes(vertex[axis * 4..axis * 4 + 4].try_into().expect("bounded four bytes"))
             });
-            let x = (ORIGIN + (index % GRID_WIDTH) as f64 * SPACING) as f32;
-            let z = (ORIGIN + (index / GRID_WIDTH) as f64 * SPACING) as f32;
+            let x = (origin + (index % width) as f64 * spacing) as f32;
+            let z = (origin + (index / width) as f64 * spacing) as f32;
             if numbers.iter().any(|v| !v.is_finite() || v.abs() > MAX_QUERY_COORDINATE)
                 || numbers[0].to_bits() != x.to_bits() || numbers[2].to_bits() != z.to_bits() {
                 return Err(bad("terrain vertex grid/finite bound"));
@@ -198,7 +206,7 @@ impl Terrain {
             heights.push(numbers[1]);
         }
         for (cell, data) in triangles.chunks_exact(24).enumerate() {
-            let expected = indices(GRID_WIDTH, cell % GRID_CELLS, cell / GRID_CELLS);
+            let expected = indices(width, cell % cells, cell / cells);
             for (index, bytes) in data.chunks_exact(4).enumerate() {
                 let value = u32::from_le_bytes(bytes.try_into().expect("bounded four bytes"));
                 if value as usize != expected[index / 3][index % 3] {
@@ -206,7 +214,7 @@ impl Terrain {
                 }
             }
         }
-        Ok(Self { map, heights: heights.into(), width: GRID_WIDTH, origin: ORIGIN, spacing: SPACING, obstacles: None })
+        Ok(Self { map, heights: heights.into(), width, origin, spacing, obstacles: None })
     }
 
     fn vertex(&self, index: usize) -> [f64; 3] {
@@ -312,7 +320,7 @@ impl Terrain {
                 if t >= enter && t <= leave { crossings.push(t); }
             }
         }
-        if crossings.len() > MAX_QUERY_CROSSINGS { return Err(bad("terrain crossing bound")); }
+        if crossings.len() > max_query_crossings(self.width) { return Err(bad("terrain crossing bound")); }
         crossings.sort_by(f64::total_cmp);
         crossings.dedup();
         let mut cells = BTreeSet::new();
@@ -336,7 +344,7 @@ impl Terrain {
         for x in neighbors(0) { for z in neighbors(2) {
             if x >= 0 && z >= 0 && x < count as isize && z < count as isize {
                 cells.insert(z as usize * count + x as usize);
-                if cells.len() > MAX_QUERY_CELLS { return Err(bad("terrain visited-cell bound")); }
+                if cells.len() > max_query_cells(self.width) { return Err(bad("terrain visited-cell bound")); }
             }
         }}
         Ok(())
@@ -373,7 +381,7 @@ pub(crate) mod tests {
     use std::sync::OnceLock;
 
     pub(crate) fn fixture(origin: f32, spacing: f32, width: usize, heights: Vec<f32>) -> Terrain {
-        assert!((2..=GRID_WIDTH).contains(&width) && heights.len()==width*width);
+        assert!((2..=769).contains(&width) && heights.len()==width*width);
         assert!(origin.is_finite() && spacing.is_finite() && spacing>0.);
         assert!(heights.iter().all(|height| height.is_finite() && height.abs()<=MAX_QUERY_COORDINATE));
         Terrain { map: MapId::Karelia, heights:heights.into(),width,origin:f64::from(origin),spacing:f64::from(spacing),obstacles:None }
@@ -544,7 +552,7 @@ pub(crate) mod tests {
         assert_eq!(terrain.width,769);assert_eq!(terrain.heights.len(),591361);
         assert_eq!(terrain.vertex(0)[0],-600.);assert_eq!(terrain.vertex(591360)[2],600.);
         let cells=terrain.segment_cells([-10000.,500.,-10000.],[20000.,0.,20000.]).unwrap();
-        assert!(cells.len()<=3*GRID_CELLS && cells.len()<MAX_QUERY_CELLS);
+        assert!(cells.len()<=3*768 && cells.len()<max_query_cells(769));
         assert!(terrain.nearest([-10000.,500.,-10000.],[10000.,500.,10000.]).unwrap().is_none());
         let local=terrain.segment_cells([-64.,40.,-441.],[1.,-50.,1.]).unwrap();
         assert!(local.len()<=4);

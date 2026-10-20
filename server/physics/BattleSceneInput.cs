@@ -26,7 +26,7 @@ internal static class BattleSceneInput
         string map = m.GetProperty("map").GetString()!;
         int version=m.GetProperty("version").GetInt32();
         if (version is not (1 or 2 or 3) || m.GetProperty("profile").GetString() != "test_lab" ||
-            m.GetProperty("policy").GetString() != Policy || map is not ("01_karelia" or "05_prohorovka"))
+            m.GetProperty("policy").GetString() != Policy || !CheckedInput.IsRegisteredMap(map))
             throw new InvalidDataException("battle scene policy/map");
         var rows = m.GetProperty("actors");
         if (rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() is < 1 or > MaxActors)

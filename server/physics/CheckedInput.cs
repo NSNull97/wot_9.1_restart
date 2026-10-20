@@ -38,13 +38,44 @@ internal static class CheckedInput
     private sealed record CatalogSource(string PhysicsHash, string ProjectileHash, int InstanceCount, int TriangleCount);
     // Only source-audited initial geometry is admitted. These are map identities,
     // not per-object allowlists; the catalog still supplies exact full spans.
-    private static CatalogSource CatalogProfile(string map) => map switch
+    // Identities come from the compiled-in server/contracts/map_registry.json
+    // (the gateway reads the same file); the accepted maps must keep their pins.
+    private static readonly Lazy<Dictionary<string, CatalogSource>> Registry = new(LoadRegistry);
+    private static Dictionary<string, CatalogSource> LoadRegistry()
     {
-        "01_karelia" => new(PhysicsManifestHash, ProjectileManifestHash, 2918, 335551),
-        "05_prohorovka" => new("9d358a48da303abaf15572f478dddc16971864960d9341943cc6d207b32b3265",
-            "3db1ad3859ae2f5fed678ac5f148005cff38a3c915bb33dde3303de22e22bef7", 3904, 428597),
-        _ => throw new InvalidDataException("catalog map outside checked profiles")
-    };
+        using var stream = typeof(CheckedInput).Assembly.GetManifestResourceStream("MapDrive.MapRegistry")
+            ?? throw new InvalidDataException("map registry resource missing");
+        if (stream.Length > 1024 * 1024) throw new InvalidDataException("map registry size");
+        using var doc = JsonDocument.Parse(stream, new JsonDocumentOptions { MaxDepth = 8 });
+        var root = doc.RootElement;
+        Fields(root, "version", "kind", "maps");
+        if (root.GetProperty("version").GetInt32() != 1 || root.GetProperty("kind").GetString() != "wot091_server_map_registry")
+            throw new InvalidDataException("map registry identity");
+        var result = new Dictionary<string, CatalogSource>(StringComparer.Ordinal);
+        foreach (var row in root.GetProperty("maps").EnumerateArray())
+        {
+            string asset = row.GetProperty("asset").GetString()!;
+            if (asset.Length is < 4 or > 43 || !char.IsAsciiDigit(asset[0]) || !char.IsAsciiDigit(asset[1]) || asset[2] != '_' ||
+                asset.Skip(3).Any(c => !(char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '_')))
+                throw new InvalidDataException("map registry asset");
+            var physics = row.GetProperty("physics");
+            string physicsHash = physics.GetProperty("manifest_sha256").GetString()!;
+            string projectileHash = row.GetProperty("projectile").GetProperty("manifest_sha256").GetString()!;
+            Sha256(physicsHash); Sha256(projectileHash);
+            int instances = physics.GetProperty("instance_count").GetInt32(), triangles = physics.GetProperty("triangle_count").GetInt32();
+            if (instances < 1 || triangles < 1 || !result.TryAdd(asset, new(physicsHash, projectileHash, instances, triangles)))
+                throw new InvalidDataException("map registry entry");
+        }
+        if (!result.TryGetValue("01_karelia", out var karelia) || karelia != new CatalogSource(PhysicsManifestHash, ProjectileManifestHash, 2918, 335551) ||
+            !result.TryGetValue("05_prohorovka", out var prohorovka) || prohorovka != new CatalogSource(
+                "9d358a48da303abaf15572f478dddc16971864960d9341943cc6d207b32b3265",
+                "3db1ad3859ae2f5fed678ac5f148005cff38a3c915bb33dde3303de22e22bef7", 3904, 428597))
+            throw new InvalidDataException("accepted map registry pins changed");
+        return result;
+    }
+    public static bool IsRegisteredMap(string map) => Registry.Value.ContainsKey(map);
+    private static CatalogSource CatalogProfile(string map) =>
+        Registry.Value.TryGetValue(map, out var source) ? source : throw new InvalidDataException("catalog map outside checked profiles");
 
     public static void Sha256(string? value)
     {
