@@ -29,6 +29,8 @@ mod p10b_launch_host;
 mod p10b_preparing_host;
 #[path="p10b_host.rs"]
 mod p10b_host;
+#[path="server_login_queue.rs"]
+mod login_queue;
 
 #[cfg(test)]
 #[path="server_visibility_tests.rs"]
@@ -1358,6 +1360,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
+    let mut login_queue = login_queue::LoginQueue::default();
     let mut fragments = login::LoginFragments::default();
     let mut rate_started = started; let mut rate_count = 0u32;
     println!("BOUND {} base_backend={} profile={} battle={} capacity={} scope=allied_temporary_{} motion={} physics={} map={} arena_type_id={} inventory_changed=false",
@@ -1378,6 +1381,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         });
         if let Some(result) = result {
             let job = auth.take().ok_or_else(|| model::bad())?;
+            if let Some(started)=last_auth {login_queue.record_identity(now.saturating_duration_since(started));}
             match result {
                 Ok(Some(accepted)) => {
                     let admitted = (|| -> io::Result<usize> {
@@ -1453,11 +1457,25 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 if let Some(job) = auth.as_mut() {
                     if job.refresh_pending_request(request,&attempt,&fields) {
                         println!("AUTH_PENDING_DUPLICATE request_id={request} reply_request_refreshed=true");
-                    } else { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
+                        continue;
+                    }
+                }
+                if login_queue.refresh(request,&attempt,&fields) {
+                    println!("SHARED_LOGIN_QUEUE_DUPLICATE request_id={request} reply_request_refreshed=true");
                     continue;
                 }
-                if battle_dispatch.busy() || result_manager.busy() || ammo_job.is_some() || room_host.as_ref().is_some_and(p10b_host::Host::busy) || table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
+                if table.admissible(&attempt, now).is_err() {
                     send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; continue;
+                }
+                // FIFO: a free moment never lets a newcomer pass a queued login.
+                if auth.is_some() || !login_queue.is_empty() || battle_dispatch.busy() || result_manager.busy() || ammo_job.is_some() || room_host.as_ref().is_some_and(p10b_host::Host::busy) || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
+                    match login_queue.push(request,attempt,fields,auth.as_ref().map(|job|&job.attempt),now) {
+                        Ok(position) => println!("SHARED_LOGIN_QUEUED request_id={request} position={position} max_wait_ms={} identity_in_flight={}",
+                            login_queue.max_wait().as_millis(),auth.is_some()),
+                        Err(denial) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
+                            println!("SHARED_LOGIN_QUEUE_REJECT request_id={request} reason={denial:?} code=73"); },
+                    }
+                    continue;
                 }
                 match start_auth(config.clone(), request, peer, &fields, false) {
                     Ok(job) => { auth = Some(job); last_auth = Some(now); },
@@ -1613,6 +1631,26 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         battle_dispatch.before_hold_reset(&world)?;
                         contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"training_handoff",&error)?;
                 contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+            }
+        }
+        // Writers and the room host had their turn above; a queued login
+        // starts only from the same idle state as an unqueued one.
+        for expired in login_queue.expire(now) {
+            send_wire(&login_socket, expired.peer, &login::rejection(expired.request, 73), Channel::Login, &mut capture)?;
+            println!("SHARED_LOGIN_QUEUE_EXPIRED request_id={} waited_ms={} code=73", expired.request, expired.waited.as_millis());
+        }
+        while auth.is_none() && !battle_dispatch.busy() && !result_manager.busy() && ammo_job.is_none()
+            && room_host.as_ref().is_none_or(|h|!h.busy()) && last_auth.is_none_or(|last| now.duration_since(last) >= Duration::from_millis(250)) {
+            let Some(ready)=login_queue.pop(now) else {break};
+            if table.admissible(&ready.attempt, now).is_err() {
+                send_wire(&login_socket, ready.attempt.login_peer, &login::rejection(ready.request, 73), Channel::Login, &mut capture)?;
+                println!("SHARED_LOGIN_QUEUE_REJECT request_id={} reason=admission code=73", ready.request); continue;
+            }
+            match start_auth(config.clone(), ready.request, ready.attempt.login_peer, &ready.fields, false) {
+                Ok(job) => { auth = Some(job); last_auth = Some(now);
+                    println!("SHARED_LOGIN_DEQUEUED request_id={} waited_ms={} remaining={}", ready.request, ready.waited.as_millis(), login_queue.len()); },
+                Err(_) => { send_wire(&login_socket, ready.attempt.login_peer, &login::rejection(ready.request, 73), Channel::Login, &mut capture)?;
+                    println!("SHARED_LOGIN_QUEUE_REJECT request_id={} reason=unsupported_native_credentials code=73", ready.request); },
             }
         }
         if let Some(late)=&mut battle_dispatch.late{
