@@ -41,6 +41,16 @@ internal sealed class TrackedHandling
     // full chassis yaw rate, and an overspeed is dissipated on both tracks.
     // Project policy; the historical 0.9.1 turn-speed relation is UNKNOWN.
     private const float PoweredTurnSpeedShare = .4f, TurnOverspeedDeceleration = 2.5f, TurnOverspeedMargin = .25f;
+    // Owner run 2026-10-20 (T-34 vs T-34-85): releasing W while holding A/D
+    // still circled ~308 degrees in 13.6 s, keeping 5.8 of 12.3 m/s; the
+    // near-pivot brakes below engage only under 1.25 m/s. The gateway maps
+    // no keys to a full brake (#717 movement flags 0), but a steer-only key
+    // has no forward request at all. With the shared policy flag the whole
+    // rolling turn is a clutch-brake turn: inner track harder than outer, so
+    // the hull keeps turning while forward speed is shed. Per-track half-mass
+    // decelerations, capped by source brake torque. Project policy, m/s^2;
+    // the historical 0.9.1 coast law is UNKNOWN.
+    private const float CoastTurnInnerDeceleration = 6f, CoastTurnOuterDeceleration = 3f;
     // Released-throttle turns keep pivot-level scrub; the higher moving-turn
     // grip is for powered turns on slopes.
     private const float CoastOuterFrictionFraction = .001f;
@@ -220,6 +230,14 @@ internal sealed class TrackedHandling
             var outer = steer > 0 ? controller.LeftTrack : controller.RightTrack;
             Dissipate(inner, TrackBrake(inner, CoastInnerDeceleration, deltaTime));
             Dissipate(outer, TrackBrake(outer, CoastOuterDeceleration, deltaTime));
+        }
+        else if (coastPhase == 1 && poweredTurnLoss)
+        {
+            // Can only dissipate track speed, never past zero (see above).
+            var inner = steer > 0 ? controller.RightTrack : controller.LeftTrack;
+            var outer = steer > 0 ? controller.LeftTrack : controller.RightTrack;
+            Dissipate(inner, TrackBrake(inner, CoastTurnInnerDeceleration, deltaTime));
+            Dissipate(outer, TrackBrake(outer, CoastTurnOuterDeceleration, deltaTime));
         }
         if (!intentReversalBrake)
         {

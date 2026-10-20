@@ -140,6 +140,9 @@ internal static class PoweredTurnChecks
                         { Need(Equal(before.Window[i],after.Window[i]),"reversal-brake behavior changed"); reversalSteps++; }
                         Need(reversalSteps>0,"reversal brake not exercised");
                     }
+                    // A released-throttle turn is a clutch-brake turn under the same
+                    // shared policy (2026-10-20); tools/p05c_coast_turn_checks gates it.
+                    else if (command.Steer != 0) Need(after.Window[119].Speed < before.Window[119].Speed - 1, "coast turn did not shed speed");
                     else Need(before.TraceSha==after.TraceSha,"coast/brake behavior changed");
                     excludedExact++;
                 }

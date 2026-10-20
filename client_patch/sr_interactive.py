@@ -570,11 +570,14 @@ def profile_calls(frame, phase, value):
             fields[name] = primitive(frame.f_locals.get(name), budget=[2, 128])
     elif (((source == 'scripts/client/Vehicle.py' and method in ('showDamageFromShot', 'onHealthChanged'))
            or (source == 'scripts/client/Avatar.py' and method == 'updateVehicleHealth'))
-          and _settings.get('enable_shared_lab') is True):
+          and (_settings.get('enable_shared_lab') is True or _settings.get('enable_profile13_battle') is True)):
         # Observe original callbacks only; the server is the damage authority.
+        # Profile13 too (owner run 2026-10-20: ammo-rack marker colour needs
+        # the actual attackerID/newHealth each client received).
         kind = 'native_shared_impact_call'
         instance = frame.f_locals.get('self')
         fields['entity_id'] = getattr(instance, 'id', None)
+        fields['is_player'] = getattr(instance, 'isPlayer', None)
         fields['impact_method'] = method
         fields['entity_health'] = getattr(instance, 'health', None)
         for name in ('attackerID', 'newHealth', 'health', 'attackReasonID',

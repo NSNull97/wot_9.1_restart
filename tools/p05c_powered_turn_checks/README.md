@@ -21,7 +21,7 @@ traces, exact initial low-speed frames through 4 m/s, negative high-speed flat
 turn acceleration and at least 0.25 m/s speed loss relative to matched baseline,
 12-degree launch speed at least 95% of baseline, immediate extra-brake release,
 recovered straight speed, torque/energy bounds, deterministic selected repeats
-and exact coast/brake/reversal pairs. Existing P05B gates are separate and must
+and exact brake/reversal pairs and a faster released-throttle turn (gated in `tools/p05c_coast_turn_checks`). Existing P05B gates are separate and must
 still run; native handling/UI remain NOT_RUN until owner acceptance.
 
 Use a fresh build/output folder and an existing offline NuGet cache. For example:
