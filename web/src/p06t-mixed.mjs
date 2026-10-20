@@ -26,7 +26,19 @@ const TYPES = {
     shells: [2570, 2826, 3082], suffixes: ['ap', 'heat', 'he'], families: ['ARMOR_PIERCING', 'HOLLOW_CHARGE', 'HIGH_EXPLOSIVE'], devices: [25, 60, 100, 90, 40, 40, 54, 50, 30] },
   is7: { native: 2, suffix: 'test-is7-v1', descriptor: '011c3a002400cd000b002f003a0000', hp: 2150, capacity: 30, crew: 5,
     shells: [14602, 14858, 15114], suffixes: ['ap', 'apcr', 'he'], families: ['ARMOR_PIERCING', 'ARMOR_PIERCING_CR', 'HIGH_EXPLOSIVE'], devices: [360, 210, 200, 250, 250, 250, 210, 170, 120] },
+  // Purchased P04M pool kinds (owner full-stand order 2026-10-19): the Python
+  // writer admits them only under the explicit zero-economy policy, on their
+  // own purchased native inventory (>= 3). Values mirror the gateway
+  // vehicle_profile/p06t_device_caps and tools/p04m_pool_store.SHELL_ROWS.
+  t26: { native: null, descriptor: '011224001300c90001001e00100000', hp: 150, capacity: 160, crew: 3,
+    shells: [1034, 1290, 1546], suffixes: ['ap', 'apcr', 'he'], families: ['ARMOR_PIERCING', 'ARMOR_PIERCING_CR', 'HIGH_EXPLOSIVE'], devices: [40, 75, 100, 100, 50, 50, 54, 60, 40] },
+  t34: { native: null, descriptor: '010000000000cb0003000000000000', hp: 400, capacity: 77, crew: 4,
+    shells: [7178, 7434, 7690], suffixes: ['ap', 'heat', 'he'], families: ['ARMOR_PIERCING', 'HOLLOW_CHARGE', 'HIGH_EXPLOSIVE'], devices: [105, 130, 150, 110, 90, 90, 106, 100, 70] },
+  t3485: { native: null, descriptor: '010a14000100cb0003001100060000', hp: 670, capacity: 68, crew: 5,
+    shells: [7946, 8202, 8458], suffixes: ['ap', 'apcr', 'he'], families: ['ARMOR_PIERCING', 'ARMOR_PIERCING_CR', 'HIGH_EXPLOSIVE'], devices: [145, 140, 150, 110, 110, 110, 130, 120, 80] },
 };
+const sourceVehicle = (p, native) => p.native === null ? (integer(native, 3) ? `p09e-vehicle:${native}` : null)
+  : native === p.native ? p.suffix : null;
 
 export function mixedWorkerConfiguration(value) {
   requireValue(exact(value, ['version', 'policy_sha256', 'shell_catalog', 'terminal_policy']) && value.version === 2
@@ -65,7 +77,8 @@ function frozen(v, owner, expectedSha) {
   requireValue(exact(v, ['kind', 'descriptor_hex', 'native_inventory_id', 'vehicle_inventory_id', 'max_hp', 'crew_ids', 'capacity', 'ammunition', 'initial_shell_compact_id'])
     && Object.hasOwn(TYPES, v.kind), 'closed admitted frozen profile');
   const p = TYPES[v.kind];
-  requireValue(v.descriptor_hex === p.descriptor && v.native_inventory_id === p.native && v.vehicle_inventory_id === `${owner}:${p.suffix}`
+  const vehicle = sourceVehicle(p, v.native_inventory_id);
+  requireValue(v.descriptor_hex === p.descriptor && vehicle !== null && v.vehicle_inventory_id === `${owner}:${vehicle}`
     && v.max_hp === p.hp && v.capacity === p.capacity && Array.isArray(v.crew_ids) && v.crew_ids.length === p.crew
     && new Set(v.crew_ids).size === p.crew && v.crew_ids.every(id => key(id) && id.length > owner.length + 1 && id.startsWith(`${owner}:`))
     && Array.isArray(v.ammunition) && v.ammunition.length === 3
