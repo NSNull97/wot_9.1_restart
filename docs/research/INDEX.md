@@ -4,7 +4,42 @@
 Ссылки внутри исследований на `docs/plans/` и `docs/evidence-index/` ведут в историю:
 `git show 1eaff5e:<путь>` (удалены 2026-10-15 при сокращении документации).
 
+## Общий тест 19 октября
+
+- [FULL_TEST_20261020.md](FULL_TEST_20261020.md) — отрыв башни (#717 SynchronousDetachment), поворот, zero-economy/100 слотов, бой на купленных пуловых танках, звук лампы; gate1685/1
+- [FULL_TEST_20261019.md](FULL_TEST_20261019.md) — физика из чужого checkout, выстрел в упор, паузы gateway; gate1684/1, стенд одного checkout, native NOT_RUN
+
+## Ночь16–17 октября и ручная приёмка
+
+- [NIGHT_20261017_REPORT.md](NIGHT_20261017_REPORT.md) — exact925/full1619, честные PythonFAIL, отдельные ветки, evidence и ограничения
+- [NIGHT_20261017_MORNING.md](NIGHT_20261017_MORNING.md) — actual bindings и порядок Core→rooms→Hold; LAB/NET ограничения
+- [NIGHT_20261017_FILES.txt](NIGHT_20261017_FILES.txt) —427 изменённых source/config/test paths от main до tested200
+
 ## Общие (клиент, протокол, ресурсы, решения)
+
+- [BUILD_LEGACY_ENTRYPOINTS.md](BUILD_LEGACY_ENTRYPOINTS.md) — legacy gateway3/physics builds и actual stock+extended IPC7 PASS; native/full legacy NOT_RUN
+- [P04W_SHELL_DEPOT_DISPLAY.md](P04W_SHELL_DEPOT_DISPLAY.md) — шесть original ammo refs/hidden purchases, actual Python9+Web11, native Warehouse NOT_RUN
+- [P04M_GARAGE_FRESH_PUBLICATION.md](P04M_GARAGE_FRESH_PUBLICATION.md) — known reply/readonly Fresh/atomic delta, actual Loss4+Hold5, full1619; native NOT_RUN
+- [P08B_PROFILE13_BATTLE.md](P08B_PROFILE13_BATTLE.md) — P08B: выбранный owned loadout профиля13, резерв/результат/restart и native gate в работе
+- [P08B_RESTART_CAS_COMPOSITION.md](P08B_RESTART_CAS_COMPOSITION.md) — actual AP-only HTTP/SQL/restart/Fresh/warm/full/nextCAS, full1189PASS; native/loss4 variant NOT_RUN
+- [P08C_NATIVE_LIFECYCLE.md](P08C_NATIVE_LIFECYCLE.md) — #717 period/base/death/results field order, streams и источники
+- [P08C_LATE_OWNER_RESULTS.md](P08C_LATE_OWNER_RESULTS.md) — actual loss4 immutable late append/reopen/1500/1501, full1224; native notice/изменённый parked actor NOT_RUN
+- [P08C_BATTLE_CYCLE.md](P08C_BATTLE_CYCLE.md) — authoritative cycle, atomic writer results, policy и утренняя native матрица
+- [P08C_NATIVE_MARKER_TEAM.md](P08C_NATIVE_MARKER_TEAM.md) — исправление publicInfo.team, full1099 и owner+actual wire приёмка маркеров обоими
+- [P08C_NATURAL_RESULTS_RETURN.md](P08C_NATURAL_RESULTS_RETURN.md) — late bind/details fix1130PASS; native повтор прерван autoAim/Disconnect, засвет в итогах Ёжа OBSERVED
+- [P05C_SHARED_PHYSICS.md](P05C_SHARED_PHYSICS.md) — one-scene IPC7 component, реальные mixed/6 Jolt probes и граница интеграции
+- [P05C_MIXED_CONTACT_HANDLING.md](P05C_MIXED_CONTACT_HANDLING.md) — physics04 fullroll/4collision steps, currentfull1628/source938, живойCore129 и ожидаемая native приёмка
+- [P05C_NATIVE_TRANSPORT.md](P05C_NATIVE_TRANSPORT.md) — bounded6actor roster/ACK/READY, отдельные ID/alias namespaces, synthetic Session gates
+- [P07B_NATIVE_INTEREST.md](P07B_NATIVE_INTEREST.md) — original AoI enter/leave и source stock vision ranges
+- [P07B_SERVER_VISIBILITY.md](P07B_SERVER_VISIBILITY.md) — recipient LOS/epochs/packet filtering, full975PASS, native NOT_RUN
+- [P07B_ORIGINAL_SOURCES.md](P07B_ORIGINAL_SOURCES.md) — bounded #717 source ledger for six static points, dynamic gunner point, mounted ranges and Sixth Sense
+- [P07B_PUBLICATION_BOUNDARY.md](P07B_PUBLICATION_BOUNDARY.md) — recipient publication gate for hidden-shooter terrain FX and current integration boundary
+- [P07B_AUDIO_BOUNDARY_20261018.md](P07B_AUDIO_BOUNDARY_20261018.md) — лампа 6-го чувства в #717 без звука (VERIFIED); проектный FX за флагом `--sixth-sense-sound`, native NOT_RUN
+- [P04M_FIVE_PROFILES.md](P04M_FIVE_PROFILES.md) — пять source-bound боевых профилей, actual Jolt/World/ACK, версия SQLite/crew/ammo, native NOT_RUN
+- [P06T_RUNTIME_CANDIDATE.md](P06T_RUNTIME_CANDIDATE.md) — mixed-shell/единый HP ledger, source geometry и явные LAB module/fire policies; автоматические gates отдельно от native NOT_RUN
+- [P06T_SEVEN_LOSS_INTEGRATION.md](P06T_SEVEN_LOSS_INTEGRATION.md) — seven LAB +loss4/late, full1295/5/build/Python102, nativeNOT_RUN
+- [P06T_AMMO_RACK_LOSS.md](P06T_AMMO_RACK_LOSS.md) — отдельная loss4 policy, одна смерть/фраг, native DT8/HP-2/ACK epochs; full1188PASS, native NOT_RUN
+- [P06T_MODULE_RESULTS.md](P06T_MODULE_RESULTS.md) — module/fire counters in Results8 packed details; focused implementation, native replay required
 
 - [BATTLE_LOADOUT_REVISION_GATE.md](BATTLE_LOADOUT_REVISION_GATE.md) — Исследование: battle-loadout revision adapter
 - [CAPACITY_1000_CCU.md](CAPACITY_1000_CCU.md) — Инфраструктура для 1000 одновременных игроков: расчётная модель
@@ -143,3 +178,21 @@
 ## P10 подбор
 
 - [P10A_TRAINING_ROOM_STATIC.md](P10A_TRAINING_ROOM_STATIC.md) — P10A — training-room lifecycle static research
+- [P10B_NATIVE_ROOM_CONTRACT.md](P10B_NATIVE_ROOM_CONTRACT.md) — P10B — original #717 room contract, owned selection and native host boundaries
+
+- [P10B typed loss4 training integration](P10B_LOSS_TRAINING_INTEGRATION.md) — current software checkpoint, actual HTTP/SQL/Host cancellation/relaunch; native NOT_RUN.
+
+## Сеть и стенды
+
+- [NET02_PRIVATE_LAN.md](NET02_PRIVATE_LAN.md) — explicit native LAN policy, private-service separation and actual acceptance boundaries
+- [NET02_LOSS_TRAINING_INTEGRATION.md](NET02_LOSS_TRAINING_INTEGRATION.md) — current loss/late/training LAN union, full1573, actual own-host Login/Base; native/two-PC NOT_RUN.
+- [BUILD_TEMP_EXECUTABLE_REFERENCE.md](BUILD_TEMP_EXECUTABLE_REFERENCE.md) — explicit verified retained-C executable,17+11guards/full/actual own-host execution.
+- [BUILD_FRESH_TEST_COMPRESSION.md](BUILD_FRESH_TEST_COMPRESSION.md) — fresh-empty-only owned NTFS test outputs, actual4focused/build; dependent full pending.
+
+- [P08B Hold5: настоящие четыре владельца](P08B_OWNER_HOLD_FOUR_COMPOSITION.md) — C runtimeab7ad10, full1612/5ignored, genuine parked AmmoBay death/Final4; native NOT_RUN.
+
+- [P05C ram handling](P05C_RAM_HANDLING.md) — authoritative bounded contact damage and native boundary.
+
+- [P09E full stand gap](P09E_FULL_STAND_GAP_20261018.md) — purchase/crew/ammo/equipment boundary for a source-bound native stand.
+
+- [P09E full stand preparation](P09E_FULL_STAND_PREP_20261018.md) — source-bound garage/loadout planner and fail-closed promotion guards.

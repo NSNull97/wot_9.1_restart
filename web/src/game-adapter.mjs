@@ -16,6 +16,14 @@ import { createNativeCrewService, nativeCrewOverview, isNativeCrewOverview } fro
 import { nativeCrewTransferOverview, isNativeCrewTransferOverview } from './p04f-crew.mjs';
 import { nativeCrossVehicleCrewOverview, isNativeCrossVehicleCrewOverview } from './p04g-crew.mjs';
 import { nativeResearchOverview, isNativeResearchOverview } from './p09e-research.mjs';
+import { battleConfiguration } from './p08b-battle.mjs';
+import { nativePoolOverview, isNativePoolOverview, poolConfiguration, nativePoolRequestTimeout, LEGACY_REQUEST_TIMEOUT_MS } from './p04m-pool.mjs';
+import { mixedConfiguration, validateMixedResultsRequest, validateMixedResultsReply } from './p06t-mixed.mjs';
+import { holdConfiguration, holdReaderFence, validateHoldResultsRequest, validateHoldResultsReply } from './p08b-owner-hold.mjs';
+import { lossConfiguration, validateLossResultsRequest, validateLossResultsReply } from './p06t-ammo-loss.mjs';
+import { ROOM_SELECTION_LOSS_PATH, LOSS_SELECTION_REQUEST_TIMEOUT_MS, lossSelectionConfiguration, lossRoomSelectionBody, createLossRoomSelectionService } from './p10b-selection-loss.mjs';
+import { lateConfiguration, lateReaderFence, createLateResultService, validateLateRequest, validatePendingRequest, LATE_REQUEST_TIMEOUT_MS } from './p08c-late-results.mjs';
+import { ROOM_SELECTION_PATH, SELECTION_REQUEST_TIMEOUT_MS, selectionConfiguration, roomSelectionBody, createRoomSelectionService } from './p10b-selection.mjs';
 
 import { nativeRosterCrewOverview, isNativeRosterCrewOverview } from './p04h-crew.mjs';
 
@@ -90,6 +98,7 @@ export function createGameReader({ origin, tokenFile } = {}) {
       const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (value.schemaVersion !== 'web-game-read.v1' || !['ready', 'unlinked'].includes(value.state)) return empty('unavailable');
       if (value.state === 'unlinked') return empty('unlinked');
+      if (value.poolService !== undefined) return isNativePoolOverview(value, id) ? value : empty('unavailable');
       if (value.researchService !== undefined) return isNativeResearchOverview(value, id) ? value : empty('unavailable');
       if (value.crewService !== undefined) return (value.crewService?.version === 7 ? isNativeBarracksCrewOverview(value, id) : value.crewService?.version === 6 ? isNativeDismissalCrewOverview(value, id) : value.crewService?.version === 5 ? isNativeProgressionCrewOverview(value, id) : value.crewService?.version === 4 ? isNativeRosterCrewOverview(value, id) : value.crewService?.version === 3 ? isNativeCrossVehicleCrewOverview(value, id) : value.crewService?.version === 2
         ? isNativeCrewTransferOverview(value, id) : isNativeCrewOverview(value, id)) ? value : empty('unavailable');
@@ -169,6 +178,7 @@ function openGameStore(path, sourceHash, now) {
 }
 
 function overview(profile) {
+  if (profile.pool_service !== undefined) return nativePoolOverview(profile);
   if (profile.profile_version === 13) return nativeResearchOverview(profile);
   if (profile.profile_version === 12) return nativeBarracksCrewOverview(profile);
   if (profile.profile_version === 11) return nativeDismissalCrewOverview(profile);
@@ -221,6 +231,14 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.crew_dismissal !== undefined) allowed.push('crew_dismissal');
   if (options?.crew_progression !== undefined) allowed.push('crew_progression');
   if (options?.research_service !== undefined) allowed.push('research_service');
+  if (options?.battle_service !== undefined) allowed.push('battle_service');
+  if (options?.pool_service !== undefined) allowed.push('pool_service');
+  if (options?.mixed_service !== undefined) allowed.push('mixed_service');
+  if (options?.ammo_loss_service !== undefined) allowed.push('ammo_loss_service');
+  if (options?.owner_hold_service !== undefined) allowed.push('owner_hold_service');
+  if (options?.late_result_service !== undefined) allowed.push('late_result_service');
+  if (options?.room_selection_loss_service !== undefined) allowed.push('room_selection_loss_service');
+  if (options?.room_selection_service !== undefined) allowed.push('room_selection_service');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
   if (options.crew_service !== undefined && options.ammunition_service === undefined) throw new Error('Crew requires the shared ammunition writer');
@@ -232,6 +250,17 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options.crew_dismissal !== undefined && (options.crew_progression === undefined || options.crew_dismissal === null || typeof options.crew_dismissal !== 'object')) throw new Error('Crew dismissal requires explicit progression');
   if (options.crew_barracks_recruitment !== undefined && (options.crew_dismissal === undefined || options.crew_barracks_recruitment === null || typeof options.crew_barracks_recruitment !== 'object')) throw new Error('Barracks recruitment requires explicit dismissal');
   if (options.research_service !== undefined && (options.crew_barracks_recruitment === undefined || options.research_service === null || typeof options.research_service !== 'object')) throw new Error('Research requires the accepted barracks crew writer');
+  if (options.battle_service !== undefined && options.research_service === undefined) throw new Error('Profile13 battle requires the complete research writer');
+  if (options.pool_service !== undefined && options.battle_service === undefined) throw new Error('Curated pool requires the profile13 battle writer');
+  const battleOwners = options.battle_service === undefined ? null
+    : battleConfiguration(options.battle_service, options.ammunition_service?.account_id);
+  const poolOwners = options.pool_service === undefined ? [] : poolConfiguration(options.pool_service, battleOwners);
+  const mixedOwners = options.mixed_service === undefined ? [] : mixedConfiguration(options.mixed_service, poolOwners);
+  const lossOwners = options.ammo_loss_service === undefined ? [] : lossConfiguration(options.ammo_loss_service, mixedOwners);
+  const holdOwners = options.owner_hold_service === undefined ? [] : holdConfiguration(options.owner_hold_service, lossOwners);
+  const lateOwners = options.late_result_service === undefined ? [] : lateConfiguration(options.late_result_service, mixedOwners);
+  const selectionLossOwners = options.room_selection_loss_service === undefined ? [] : lossSelectionConfiguration(options.room_selection_loss_service, lossOwners);
+  const selectionOwners = options.room_selection_service === undefined ? [] : selectionConfiguration(options.room_selection_service, mixedOwners);
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -254,28 +283,74 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   mkdirSync(fixtureRoot, { recursive: true });
   const identity = openIdentityReader(webPath);
   let game;
-  try { game = openGameStore(options.game_database, hash(nativeBytes), now); }
-  catch (error) { identity.close(); throw error; }
+  try {
+    const gamePath = localPath(options.game_database, true), existing = existsSync(gamePath);
+    const readerOwners = [...new Set([...lateOwners, ...holdOwners])];
+    if (existing) { lateReaderFence(gamePath, readerOwners); holdReaderFence(gamePath, holdOwners); }
+    game = openGameStore(options.game_database, hash(nativeBytes), now);
+    if (!existing) { lateReaderFence(gamePath, readerOwners); holdReaderFence(gamePath, holdOwners); }
+  }
+  catch (error) { identity.close(); game?.close(); throw error; }
   let dummyHash;
   try { dummyHash = await hashPassword(token()); }
   catch (error) { identity.close(); game.close(); throw error; }
   let ammunition = null;
+  const accountServices = new Map();
+  const lossRoomSelections = new Map();
+  const roomSelections = new Map();
   try {
     if (options.ammunition_service !== undefined) {
-      const owner = identity.profile(accountId(options.ammunition_service.account_id));
-      const profile = game.read(options.ammunition_service.account_id);
-      if (!owner || !profile || profile.account_id !== owner.id || profile.username !== owner.display_nickname
-          || profile.created_at_ms !== owner.created_at) throw new Error('Ammunition migration identity binding failed');
-      const context = { database: options.game_database, fixtureRoot, python: options.python_executable, localPath };
-      ammunition = options.crew_service === undefined
-        ? await createNativeAmmoService(options.ammunition_service, context)
-        : await createNativeCrewService(options.ammunition_service, options.crew_service,
-          { ...context, transfer: options.crew_transfer ?? null, crossVehicle: options.crew_cross_vehicle ?? null, rosterRecruitment: options.crew_roster_recruitment ?? null, progression: options.crew_progression ?? null, dismissal: options.crew_dismissal ?? null, barracksRecruitment: options.crew_barracks_recruitment ?? null, research: options.research_service ?? null });
+      const owners = battleOwners ?? [options.ammunition_service.account_id];
+      for (const id of owners) {
+        const owner = identity.profile(accountId(id)), profile = game.read(id);
+        if (!owner || !profile || profile.account_id !== owner.id || profile.username !== owner.display_nickname
+            || profile.created_at_ms !== owner.created_at) throw new Error('Ammunition migration identity binding failed');
+        const context = { database: options.game_database, fixtureRoot, python: options.python_executable, localPath };
+        const ammo = { ...options.ammunition_service, account_id: id };
+        const service = options.crew_service === undefined
+          ? await createNativeAmmoService(ammo, context)
+          : await createNativeCrewService(ammo, options.crew_service,
+            { ...context, transfer: options.crew_transfer ?? null, crossVehicle: options.crew_cross_vehicle ?? null,
+              rosterRecruitment: options.crew_roster_recruitment ?? null, progression: options.crew_progression ?? null,
+              dismissal: options.crew_dismissal ?? null, barracksRecruitment: options.crew_barracks_recruitment ?? null,
+              research: options.research_service ?? null, battle: options.battle_service === undefined ? null
+                : { version: options.battle_service.version, policy_sha256: options.battle_service.policy_sha256 },
+              pool: poolOwners.includes(id) ? { version: options.pool_service.version, policy_sha256: options.pool_service.policy_sha256 } : null,
+              mixed: mixedOwners.includes(id) ? { version: options.mixed_service.version, policy_sha256: options.mixed_service.policy_sha256,
+                shell_catalog: options.mixed_service.shell_catalog, terminal_policy: options.mixed_service.terminal_policy } : null,
+              ammoLoss: lossOwners.includes(id) ? { version: options.ammo_loss_service.version, contract: options.ammo_loss_service.contract,
+                policy_sha256: options.ammo_loss_service.policy_sha256 } : null,
+              ownerHold: holdOwners.includes(id) ? { version: options.owner_hold_service.version, contract: options.owner_hold_service.contract, policy_sha256: options.owner_hold_service.policy_sha256 } : null });
+        if (lateOwners.includes(id) && !holdOwners.includes(id)) {
+          const late = createLateResultService({ database: localPath(options.game_database), originalRoot: ammo.original_root,
+            accountId: id, shellCatalog: options.mixed_service.shell_catalog, terminalPolicy: options.mixed_service.terminal_policy,
+            loss: lossOwners.includes(id), python: options.python_executable,
+            worker: resolve(ROOT, 'tools/p08c_late_results_service.py'), cwd: ROOT });
+          service.battle = late.battle; service.results = late.results; service.lateResults = late.append; service.latePending = late.pending;
+        }
+        accountServices.set(id, service);
+      }
+      for (const id of selectionLossOwners) {
+        const profile = game.read(id);
+        lossRoomSelections.set(id, createLossRoomSelectionService({ accountId: id, nativeDatabaseId: profile.native_database_id,
+          database: options.game_database, bundle: options.ammunition_service.bundle_root, original: options.ammunition_service.original_root,
+          python: options.python_executable, localPath, mixed: { version: options.mixed_service.version, policy_sha256: options.mixed_service.policy_sha256,
+            shell_catalog: options.mixed_service.shell_catalog, terminal_policy: options.mixed_service.terminal_policy } }));
+      }
+      for (const id of selectionOwners) {
+        const profile = game.read(id);
+        roomSelections.set(id, createRoomSelectionService({ accountId: id, nativeDatabaseId: profile.native_database_id,
+          database: options.game_database, bundle: options.ammunition_service.bundle_root, original: options.ammunition_service.original_root,
+          python: options.python_executable, localPath, mixed: { version: options.mixed_service.version, policy_sha256: options.mixed_service.policy_sha256,
+            shell_catalog: options.mixed_service.shell_catalog, terminal_policy: options.mixed_service.terminal_policy } }));
+      }
+      ammunition = accountServices.get(options.ammunition_service.account_id);
     }
   } catch (error) { identity.close(); game.close(); throw error; }
   const creating = new Map();
   async function fixture(profile) {
     const id = accountId(profile.account_id);
+    const ammunition = accountServices.get(id);
     if (profile.profile_version === 13) {
       if (options.research_service === undefined || !ammunition?.research) throw new Error('Research service is not enabled');
       return ammunition.fixture(profile);
@@ -412,11 +487,11 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       'Cache-Control': 'no-store', Connection: 'close' });
     res.end(body);
   }
-  async function body(req) {
+  async function body(req, maximum = 2048) {
     if (req.headers['content-type'] !== 'application/json' || req.headers['content-encoding']
-        || req.headers['transfer-encoding'] || !/^\d{1,4}$/.test(req.headers['content-length'] || '')) throw Object.assign(new Error('Body shape'), { status: 400 });
+        || req.headers['transfer-encoding'] || !/^\d{1,5}$/.test(req.headers['content-length'] || '')) throw Object.assign(new Error('Body shape'), { status: 400 });
     const length = Number(req.headers['content-length']);
-    if (length < 2 || length > 2048) throw Object.assign(new Error('Body size'), { status: 413 });
+    if (length < 2 || length > maximum) throw Object.assign(new Error('Body size'), { status: 413 });
     const parts = []; let bytes = 0;
     for await (const part of req) { bytes += part.length; if (bytes > length) throw Object.assign(new Error('Body size'), { status: 413 }); parts.push(part); }
     if (bytes !== length) throw Object.assign(new Error('Body size'), { status: 400 });
@@ -431,7 +506,18 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
     if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ') || !equalToken(authorization.slice(7), secret)) return json(res, 403, { error: 'forbidden' });
     if (active >= 4) return json(res, 503, { error: 'busy' });
     active++;
-    const timer = setTimeout(() => { json(res, 503, { error: 'timeout' }); req.destroy(); }, 4500);
+    const started = performance.now();
+    const timedOut = () => { json(res, 503, { error: 'timeout' }); req.destroy(); };
+    let timer = setTimeout(timedOut, LEGACY_REQUEST_TIMEOUT_MS);
+    function poolRequestBudget(owner) {
+      const budget = nativePoolRequestTimeout(req.method, req.url, owner, poolOwners);
+      if (budget === LEGACY_REQUEST_TIMEOUT_MS) return;
+      const remaining = Math.max(1, budget - (performance.now() - started));
+      clearTimeout(timer); timer = setTimeout(timedOut, remaining);
+      // Response sockets otherwise inherit server.timeout=5000, shorter than
+      // the selected pool worker. This connection serves exactly one request.
+      req.socket.setTimeout(remaining);
+    }
     try {
       if (req.method === 'POST' && req.url === '/internal/native/login') {
         const value = await body(req);
@@ -445,58 +531,133 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
         const matches = await verifyPassword(eligible ? value.password : 'invalid-password-input', user?.password_hash || dummyHash);
         if (!user || !eligible || !matches) return json(res, 401, { error: 'invalid_credentials' });
         if (res.destroyed || res.writableEnded) return;
+        if (options.battle_service !== undefined && !accountServices.has(user.id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.ensure(user);
+        poolRequestBudget(user.id); // Only after password and configured-account authorization.
         const directory = await fixture(profile);
         return json(res, 200, { account_id: user.id, native_database_id: profile.native_database_id,
           name: profile.username, fixture_dir: directory });
       }
-      if (req.method === 'POST' && req.url === '/internal/native/ammo') {
-        if (!ammunition) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.service(value));
+      if (req.method === 'POST' && req.url === ROOM_SELECTION_PATH) {
+        if (options.room_selection_service === undefined) return json(res, 404, { error: 'not_found' });
+        const { value, raw } = await roomSelectionBody(req), service = roomSelections.get(value?.account_id);
+        if (!service || holdOwners.includes(value.account_id) || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        const profile = game.read(value.account_id);
+        if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        // Same private auth gate above; extend only this enabled, bound owner route.
+        const remaining = Math.max(1, SELECTION_REQUEST_TIMEOUT_MS - (performance.now() - started));
+        clearTimeout(timer); timer = setTimeout(timedOut, remaining); req.socket.setTimeout(remaining);
+        const selected = await service.select(value, raw);
+        if (selected.error === 'selection_not_ready') return json(res, 409, selected);
+        return json(res, 200, selected);
       }
-      if (req.method === 'POST' && req.url === '/internal/native/crew') {
-        if (!ammunition?.recruit) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.recruit(value));
+      if (req.method === 'POST' && req.url === ROOM_SELECTION_LOSS_PATH) {
+        if (options.room_selection_loss_service === undefined) return json(res, 404, { error: 'not_found' });
+        const { value, raw } = await lossRoomSelectionBody(req), service = lossRoomSelections.get(value?.account_id);
+        if (!service || holdOwners.includes(value.account_id) || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        const profile = game.read(value.account_id);
+        if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        const remaining = Math.max(1, LOSS_SELECTION_REQUEST_TIMEOUT_MS - (performance.now() - started));
+        clearTimeout(timer); timer = setTimeout(timedOut, remaining); req.socket.setTimeout(remaining);
+        const selected = await service.select(value, raw);
+        if (selected.error === 'selection_not_ready') return json(res, 409, selected);
+        return json(res, 200, selected);
       }
-      if (req.method === 'POST' && req.url === '/internal/native/crew-recruit-barracks') {
-        if (!ammunition?.recruitBarracks) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.recruitBarracks(value));
+      if (req.method === 'POST' && req.url === '/internal/native/profile') {
+        if (options.battle_service === undefined) return json(res, 404, { error: 'not_found' });
+        const value = await body(req), service = accountServices.get(value?.account_id);
+        if (!value || Object.keys(value).sort().join(',') !== 'account_id,native_database_id'
+            || !service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        const profile = game.read(value.account_id);
+        if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        poolRequestBudget(value.account_id); // Identity and native database ID were checked above.
+        return json(res, 200, { account_id: profile.account_id, native_database_id: profile.native_database_id,
+          name: profile.username, fixture_dir: await fixture(profile) });
       }
-      if (req.method === 'POST' && req.url === '/internal/native/crew-dismiss') {
-        if (!ammunition?.dismiss) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.dismiss(value));
+      if (req.method === 'POST' && ['/internal/native/late-result-append', '/internal/native/late-result-pending'].includes(req.url)) {
+        if (options.late_result_service === undefined) return json(res, 404, { error: 'not_found' });
+        const pending = req.url === '/internal/native/late-result-pending';
+        const value = await body(req, pending ? 2048 : 65536), service = accountServices.get(value?.account_id);
+        if (!service || holdOwners.includes(value.account_id) || !lateOwners.includes(value.account_id) || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        const profile = game.read(value.account_id);
+        if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        (pending ? validatePendingRequest : validateLateRequest)(value, value.account_id);
+        const remaining = Math.max(1, LATE_REQUEST_TIMEOUT_MS - (performance.now() - started));
+        clearTimeout(timer); timer = setTimeout(timedOut, remaining); req.socket.setTimeout(remaining);
+        return json(res, 200, await (pending ? service.latePending : service.lateResults)(value));
       }
-      if (req.method === 'POST' && req.url === '/internal/native/crew-learn') {
-        if (!ammunition?.learn) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.learn(value));
+      if (req.method === 'POST' && req.url === '/internal/native/battle-results') {
+        if (options.battle_service === undefined) return json(res, 404, { error: 'not_found' });
+        const value = await body(req, 65536), service = accountServices.get(value?.account_id);
+        if (!service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
+        const profile = game.read(value.account_id);
+        if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+        if (holdOwners.includes(value.account_id)) {
+          validateHoldResultsRequest(value, value.account_id); poolRequestBudget(value.account_id);
+          return json(res, 200, validateHoldResultsReply(await service.results(value), value));
+        }
+        if (lossOwners.includes(value.account_id)) {
+          validateLossResultsRequest(value, value.account_id); poolRequestBudget(value.account_id);
+          return json(res, 200, validateLossResultsReply(await service.results(value), value));
+        }
+        if (mixedOwners.includes(value.account_id)) {
+          validateMixedResultsRequest(value, value.account_id); poolRequestBudget(value.account_id);
+          return json(res, 200, validateMixedResultsReply(await service.results(value), value));
+        }
+        const valid = condition => { if (!condition) throw Object.assign(new Error('Results schema'), { status: 400 }); };
+        const common = ['version', 'operation', 'account_id', 'native_database_id', 'command_key', 'arena_id'];
+        const extra = ['run_id', 'battle_id', 'native_inventory_id', 'reservation_id', 'results_json'];
+        valid(value && !Array.isArray(value) && ['store', 'query', 'ack'].includes(value.operation));
+        valid(Object.keys(value).sort().join(',') === [...common, ...(value.operation === 'store' ? extra : [])].sort().join(',')
+          && value.version === 1 && typeof value.command_key === 'string' && /^[A-Za-z0-9_:-]{1,96}$/.test(value.command_key)
+          && typeof value.arena_id === 'string' && /^[1-9][0-9]{0,18}$/.test(value.arena_id)
+          && BigInt(value.arena_id) <= 9223372036854775807n);
+        if (value.operation === 'store') valid(typeof value.run_id === 'string' && UUID.test(value.run_id)
+          && value.battle_id === `${value.run_id}:${value.arena_id}`
+          && Number.isInteger(value.native_inventory_id) && value.native_inventory_id > 0 && value.native_inventory_id <= 2147483647
+          && typeof value.reservation_id === 'string' && /^[A-Za-z0-9_:-]{1,96}$/.test(value.reservation_id)
+          && typeof value.results_json === 'string' && Buffer.byteLength(value.results_json) <= 32768);
+        poolRequestBudget(value.account_id);
+        const result = await service.results(value);
+        const replyKeys = [...common, 'status', 'acked', 'replayed', 'results_json', 'code'];
+        if (!result || Object.keys(result).sort().join(',') !== replyKeys.sort().join(',')
+          || common.some(key => result[key] !== value[key]) || typeof result.acked !== 'boolean' || typeof result.replayed !== 'boolean'
+          || !['stored', 'found', 'missing', 'acked', 'rejected'].includes(result.status)
+          || (result.status === 'rejected' ? !['RESULT_NOT_READY', 'RESULT_MISMATCH', 'DUPLICATE_PAYLOAD_MISMATCH'].includes(result.code) : result.code !== null)
+          || (['missing', 'rejected'].includes(result.status) ? result.results_json !== null || result.acked
+            : typeof result.results_json !== 'string' || Buffer.byteLength(result.results_json) > 32768)
+          || Buffer.byteLength(JSON.stringify(result)) > 65536) throw new Error('Results worker response schema');
+        return json(res, 200, result);
       }
-      if (req.method === 'POST' && req.url === '/internal/native/crew-transfer') {
-        if (!ammunition?.transfer) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.transfer(value));
-      }
-      if (req.method === 'POST' && req.url === '/internal/native/research') {
-        if (!ammunition?.research) return json(res, 404, { error: 'not_found' });
-        const value = await body(req);
-        if (value?.account_id !== ammunition.accountId || !identity.profile(ammunition.accountId)) return json(res, 403, { error: 'forbidden' });
-        return json(res, 200, await ammunition.research(value));
+      const nativeMethod = new Map([
+        ['/internal/native/ammo', 'service'], ['/internal/native/crew', 'recruit'],
+        ['/internal/native/crew-recruit-barracks', 'recruitBarracks'], ['/internal/native/crew-dismiss', 'dismiss'],
+        ['/internal/native/crew-learn', 'learn'], ['/internal/native/crew-transfer', 'transfer'],
+        ['/internal/native/research', 'research'], ['/internal/native/battle', 'battle'],
+      ]).get(req.url);
+      if (req.method === 'POST' && nativeMethod) {
+        if (!ammunition || typeof ammunition[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
+        const value = await body(req, nativeMethod === 'battle' ? 65536 : 2048), service = accountServices.get(value?.account_id);
+        if (!service || !identity.profile(service.accountId)) return json(res, 403, { error: 'forbidden' });
+        if (typeof service[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
+        if (nativeMethod === 'battle' && options.mixed_service !== undefined
+          && value.version !== (holdOwners.includes(value.account_id) ? 5 : lossOwners.includes(value.account_id) ? 4 : mixedOwners.includes(value.account_id) ? 2 : 1)) return json(res, 400, { error: 'invalid_request' });
+        if (poolOwners.includes(value.account_id)) {
+          const profile = game.read(value.account_id);
+          if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
+          poolRequestBudget(value.account_id);
+        }
+        return json(res, 200, await service[nativeMethod](value));
       }
       const matched = /^\/internal\/accounts\/([0-9a-f-]{36})\/overview$/.exec(req.url);
       if (req.method === 'GET' && matched && UUID.test(matched[1])) {
         if (!identity.profile(matched[1])) return json(res, 404, { error: 'account_not_found' });
         const profile = game.read(matched[1]);
-        if ([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13].includes(profile?.profile_version)) await fixture(profile);
+        if (profile?.pool_service !== undefined && !poolOwners.includes(matched[1])) throw new Error('Curated pool overview is not enabled');
+        // Pool GET validates the current stored representation structurally.
+        // Native login/profile and every command still use the canonical writer.
+        // Publishing a native fixture here adds seconds to a read-only website GET.
+        if (profile?.pool_service === undefined && [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13].includes(profile?.profile_version)) await fixture(profile);
         return json(res, 200, profile ? overview(profile) : empty('unlinked'));
       }
       return json(res, 404, { error: 'not_found' });

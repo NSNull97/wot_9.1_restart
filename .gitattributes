@@ -14,3 +14,197 @@ server/gateway/src/drive/worker/is7-physics-profile.json text eol=lf
 /web/src/native-evidence.mjs text eol=lf
 server/gateway/src/drive/worker/ms1-handling-profile.json text eol=lf
 server/gateway/src/drive/worker/is7-handling-profile.json text eol=lf
+server/gateway/src/drive/worker/p04m-t26-qualified-profile.json text eol=lf
+server/gateway/src/drive/worker/p04m-t34-qualified-profile.json text eol=lf
+server/gateway/src/drive/worker/p04m-t3485-qualified-profile.json text eol=lf
+server/gateway/src/drive/worker/p06t-wt-e100-128-qualified-profile.json text eol=lf
+server/gateway/src/drive/worker/p06t-fv215b-183-qualified-profile.json text eol=lf
+server/physics/Profiles/extended-definitions.json text eol=lf
+tools/p06t_extended_source_pins.json text eol=lf
+
+# Cross-language writer vectors are hash-pinned byte evidence.
+tests/fixtures/profile13-writer-vectors.json text eol=lf
+tests/fixtures/profile13-results-vectors.json text eol=lf
+tests/fixtures/p06t-writer-vectors.json text eol=lf
+tests/fixtures/p06t-writer-companion.json text eol=lf
+tests/fixtures/p06t-queue-writer-vectors.json text eol=lf
+tests/fixtures/p06t-ammo-loss-writer-vectors.json text eol=lf
+tests/fixtures/p06t-ammo-loss-queue-vectors.json text eol=lf
+tests/fixtures/p06t-shell-catalog.json text eol=lf
+# These frozen P06T manifests were generated and pinned with CRLF bytes.
+# Preserve those exact bytes instead of rewriting their provenance hashes.
+tests/fixtures/p06t-device-policy.json -text
+server/gateway/src/shared/p06t_device_policy.json -text
+server/gateway/src/shared/p06t_device_source_caps.json -text
+# Native Session source is kept in its established LF representation.
+server/gateway/src/session.rs -text
+/server/build.py text eol=lf
+/tests/test_build_temp_target.py text eol=lf
+/server/gateway/src/shared/profile13_restart_cas_tests.rs text eol=lf
+/web/tests/helpers/p08b-restart-cas.mjs text eol=lf
+/web/tests/p08b-composition-guards.test.mjs text eol=lf
+/server/gateway/src/shared/late_results*.rs text eol=lf
+/server/gateway/src/account/identity_late_results_tests.rs text eol=lf
+/tests/fixtures/p08c-late-*.json text eol=lf
+/tools/p08c_late_results.py text eol=lf
+/web/src/p08c-late-results.mjs text eol=lf
+/tools/p08c_late_results_service.py text eol=lf
+/tests/test_p08c_late_results.py text eol=lf
+/tests/p08c_late_http_seed.py text eol=lf
+/web/tests/p08c-late-results.test.mjs text eol=lf
+/web/tests/p08c-late-http.test.mjs text eol=lf
+
+/tests/test_p08c_late_battle_facade.py text eol=lf
+/server/gateway/src/shared/p08c_late_composition_tests.rs text eol=lf
+/web/tests/helpers/p08c-late-result-composition.mjs text eol=lf
+/tests/helpers/p08c_late_composition_seed.py text eol=lf
+server/gateway/src/shared/p06t_device_source_caps_v2.json text eol=lf
+server/gateway/src/shared/p06t_device_policy_v2.json text eol=lf
+tools/p06t_combat_geometry.py text eol=lf
+tools/p06t_combat_geometry_reader.py text eol=lf
+tools/p06t_combat_geometry_pins.json text eol=lf
+
+# P06T v3 source bootstrap and tests are captured as exact promoted bytes.
+tools/p06t_native_encoding_v3.py -text
+tools/p06t_owned_registry_v3.py -text
+tools/p06t_owned_source_v3.py -text
+tools/p06t_owned_projection_v3.py -text
+tools/p06t_terminal_v3.py -text
+tools/p06t_owned_store_v3.py -text
+tests/p06t_owned_fixture_v3.py -text
+tests/p06t_owned_cache_verify27_v3.py -text
+tests/test_p06t_owned_registry_v3.py -text
+tests/test_p06t_owned_store_v3.py -text
+tests/test_p06t_terminal_v3.py -text
+
+# Exact own P10B cross-language authority vectors.
+tests/fixtures/p10b-selection-writer-vectors.json text eol=lf
+tests/fixtures/p10b-saga-writer-vectors.json -text
+
+tests/fixtures/p10b-ready-project-projection.json text eol=lf
+
+/server/gateway/src/training/selection_loss*.rs text eol=lf
+/server/gateway/src/shared/p10b_writer_loss*.rs text eol=lf
+/server/gateway/src/shared/p10b_writer_mode*.rs text eol=lf
+/server/gateway/src/account/room_selection_loss.rs text eol=lf
+/tools/p10b_selection_loss*.py text eol=lf
+/tests/test_p10b_selection_loss*.py text eol=lf
+/tests/fixtures/p10b-loss-selection-vectors.json text eol=lf
+/web/src/p10b-selection-loss.mjs text eol=lf
+
+/tests/helpers/p10b_selection_loss_seed.py text eol=lf
+/web/tests/p10b-selection-loss*.test.mjs text eol=lf
+
+/server/gateway/src/shared/p10b_loss*.rs text eol=lf
+/server/gateway/src/shared/p10b_compensated_reset_tests.rs text eol=lf
+/web/tests/helpers/p10b-loss-composition.mjs text eol=lf
+
+/tests/test_build_temp_reference.py text eol=lf
+
+/server/gateway/src/shared/composition_storage_tests.rs text eol=lf
+/server/gateway/src/shared/profile13_restart_cas_tests.rs text eol=lf
+/server/gateway/src/shared/p08c_late_composition_tests.rs text eol=lf
+
+/server/gateway/src/battle/profile13_hold*.rs text eol=lf
+/server/gateway/src/battle/p08b_hold_policy_v1.json text eol=lf
+/server/gateway/src/account/identity_hold.rs text eol=lf
+/server/gateway/src/shared/*hold*.rs text eol=lf
+/tools/p08b_owner_hold_store.py text eol=lf
+/tests/helpers/p08b_owner_hold*.py text eol=lf
+/tests/test_p08b_owner_hold*.py text eol=lf
+/tests/fixtures/p08b-hold-*.json text eol=lf
+/tests/fixtures/p08b-owner-hold-*.json text eol=lf
+/tests/fixtures/p08b-hold-update-golden.json -text whitespace=cr-at-eol
+/web/src/p08b-owner-hold.mjs text eol=lf
+/web/tests/p08b-owner-hold*.test.mjs text eol=lf
+/server/gateway/src/account/ammo_session.rs text eol=lf
+/server/gateway/src/account/identity.rs text eol=lf
+/server/gateway/src/account/identity_hold.rs text eol=lf
+/server/gateway/src/account/identity_loss.rs text eol=lf
+/server/gateway/src/account/network_loss_config_tests.rs text eol=lf
+/server/gateway/src/battle/profile13_hold.rs text eol=lf
+/server/gateway/src/battle/profile13_hold_projection.rs text eol=lf
+/server/gateway/src/battle/profile13_hold_projection_tests.rs text eol=lf
+/server/gateway/src/battle/profile13_hold_tests.rs text eol=lf
+/server/gateway/src/main.rs text eol=lf
+/server/gateway/src/session.rs text eol=lf
+/server/gateway/src/shared/ammo_detonation_world_tests.rs text eol=lf
+/server/gateway/src/shared/mod.rs text eol=lf
+/server/gateway/src/shared/model.rs text eol=lf
+/server/gateway/src/shared/owner_hold_capture.rs text eol=lf
+/server/gateway/src/shared/owner_hold_delivery.rs text eol=lf
+/server/gateway/src/shared/owner_hold_integration_tests.rs text eol=lf
+/server/gateway/src/shared/owner_hold_world_tests.rs text eol=lf
+/server/gateway/src/shared/profile13_dispatch.rs text eol=lf
+/server/gateway/src/shared/profile13_dispatch_hold.rs text eol=lf
+/server/gateway/src/shared/profile13_session.rs text eol=lf
+/server/gateway/src/shared/profile13_session_hold.rs text eol=lf
+/server/gateway/src/shared/results_session.rs text eol=lf
+/server/gateway/src/shared/server.rs text eol=lf
+/tools/game_profile_tx.py text eol=lf
+/tools/p06t_owned_store_v3.py text eol=lf
+/tools/p08b_battle_service.py text eol=lf
+/tests/helpers/p08b_owner_hold_fixture.py text eol=lf
+/tests/helpers/p08b_owner_hold_http_seed.py text eol=lf
+/tests/test_p08b_owner_hold_store.py text eol=lf
+/web/tests/p08b-owner-hold-http.test.mjs text eol=lf
+/web/tests/p08b-owner-hold.test.mjs text eol=lf
+/web/src/game-adapter.mjs text eol=lf
+/web/src/p04d-crew.mjs text eol=lf
+/tests/test_p08b_owner_hold_reader_guard.py text eol=lf
+/web/tests/p08b-owner-hold-reader-guard.test.mjs text eol=lf
+/server/gateway/src/shared/owner_hold_composition_tests.rs text eol=lf
+/web/tests/helpers/p08b-owner-hold-composition.mjs text eol=lf
+/web/tests/helpers/p08b-hold-sql-barriers.mjs text eol=lf
+/tests/helpers/p08b_owner_hold_composition_seed.py text eol=lf
+
+# Fresh C workspace portable test-only files.
+/server/gateway/src/main.rs text eol=lf
+/server/gateway/src/shared/server_scene_runtime_p04m_tests.rs text eol=lf
+/server/gateway/src/shared/server_scene_runtime_p06t_tests.rs text eol=lf
+/server/gateway/src/shared/p06t_extended_templates_tests.rs text eol=lf
+/server/gateway/src/shared/server_scene_runtime_tests.rs text eol=lf
+/server/gateway/src/shared/profile13_templates.rs text eol=lf
+/server/gateway/src/drive/worker/p06t_extended_pool_tests.rs text eol=lf
+/server/gateway/src/drive/scene_worker/tests_p04m.rs text eol=lf
+/server/gateway/src/drive/scene_worker/tests_p06t_extended.rs text eol=lf
+/server/gateway/src/shared/server_angular_real_tests.rs text eol=lf
+/server/gateway/src/portable_test_fixtures.rs text eol=lf
+
+/server/gateway/src/shared/server_worker_fixtures.rs text eol=lf
+/.gitattributes text eol=lf
+
+/server/gateway/src/shared/server_whole_fracture_real_tests.rs text eol=lf
+/server/gateway/src/shared/server_fence_total_real_tests.rs text eol=lf
+
+# Keep the existing CRLF worker source bytes stable in source-bound gates.
+/server/gateway/src/drive/worker.rs text eol=crlf
+
+# Genuine four-owner Hold5 composition.
+/web/tests/helpers/p08b-hold-four-source-context.mjs text eol=lf
+/web/tests/helpers/p08b-hold-four-sql-barriers.mjs text eol=lf
+/web/tests/helpers/p08b-owner-hold-four-composition.mjs text eol=lf
+/tests/helpers/p08b_owner_hold_four_context.py text eol=lf
+/tests/helpers/p08b_owner_hold_four_seed.py text eol=lf
+/tests/helpers/p08b_owner_hold_four_source.py text eol=lf
+/server/gateway/src/shared/owner_hold_four_composition_tests.rs text eol=lf
+
+# Source-bound garage Fresh and actual Loss4/Hold5 proofs.
+/server/gateway/src/shared/garage_fresh_composition_tests.rs text eol=lf
+/tests/helpers/p04m_garage_fresh_seed.py text eol=lf
+/tests/helpers/p04m_garage_fresh_source.py text eol=lf
+/web/tests/helpers/p04m-garage-fresh-composition.mjs text eol=lf
+/web/tests/helpers/p04m-garage-source-context.mjs text eol=lf
+/web/tests/helpers/p04m-garage-sql-barriers.mjs text eol=lf
+/server/gateway/src/account/ammo_session.rs text eol=lf
+/server/gateway/src/account/ammo_session_fresh.rs text eol=crlf
+/server/gateway/src/shared/mod.rs text eol=lf
+
+# Original-price depot display, preserve frozen projection CRLF.
+/tools/p04w_shell_display.py text eol=lf
+/tools/p09e_research_projection.py text eol=crlf
+/tests/test_p04w_shell_display.py text eol=lf
+
+# Existing legacy entrypoints were frozen with CRLF bytes.
+/tools/wg_probe/src/main.rs text eol=crlf
+/tools/map_drive_worker/MapDriveWorker.csproj text eol=crlf

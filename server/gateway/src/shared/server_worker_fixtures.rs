@@ -105,7 +105,7 @@ fn replace_config_path(raw: &str, original: &str, relocated: &str) -> io::Result
 }
 fn relocate(source: &str, source_sha: &str, tag: &str) -> io::Result<Pool> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize()?;
-    let original = pinned(&root, &root.join(source), source_sha, 16384)?;
+    let original = crate::portable_test_fixtures::original_bytes(&root.join(source), source_sha, 16384);
     let mut value: Value = serde_json::from_slice(&original).map_err(|_| invalid())?;
     let base = directories(&root, &Path::new("test-runs/pinned-worker-relocation").join(std::process::id().to_string()))?;
     let output = base.join(tag);
@@ -144,7 +144,7 @@ fn relocate(source: &str, source_sha: &str, tag: &str) -> io::Result<Pool> {
         if tag == "p03m" && text(map, "asset")? == "05_prohorovka" && source_hash != P03M_CONFIG_SHA {
             return Err(invalid());
         }
-        let raw = pinned(&root, &source_path, &source_hash, 16384)?;
+        let raw = crate::portable_test_fixtures::original_bytes(&source_path, &source_hash, 16384);
         let mut config: Value = serde_json::from_slice(&raw).map_err(|_| invalid())?;
         let mut exact_config = std::str::from_utf8(&raw).map_err(|_| invalid())?.to_owned();
         for key in ["terrain", "obstacles"] {

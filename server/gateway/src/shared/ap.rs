@@ -23,6 +23,10 @@ use super::{materials::{self, Component, MaterialFacts, SourceClass}, vehicle_pr
 pub const PROFILE_REVISION: &str = "test_lab-ms1-ap-single-plate-v1";
 pub fn profile_revision_for(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::Ms1 => PROFILE_REVISION, VehicleKind::Is7 => "test_lab-is7-ap-single-plate-v1",
+    VehicleKind::T26=>"test_lab-t26-ap-single-plate-v1",VehicleKind::T34=>"test_lab-t34-ap-single-plate-v1",
+    VehicleKind::T3485=>"test_lab-t3485-ap-single-plate-v1",
+    VehicleKind::Wt128=>"test_lab-p06t-wt128-ap-single-plate-v1",
+    VehicleKind::Fv183=>"test_lab-p06t-fv183-ap-single-plate-v1",
 } }
 pub const HISTORICAL_FIDELITY: &str = "approximate";
 pub const CALIBER: f64 = 37.0;
@@ -115,6 +119,9 @@ fn power_for(kind: VehicleKind,distance: f64) -> f64 {
 /// it must never acquire invented armor or silently become an ordinary plate.
 pub fn resolve(input: Input<'_>) -> io::Result<Resolution> { resolve_for(VehicleKind::Ms1,input) }
 pub fn resolve_for(kind: VehicleKind, input: Input<'_>) -> io::Result<Resolution> {
+    resolve_for_pair(kind,kind,input)
+}
+pub fn resolve_for_pair(kind:VehicleKind,target:VehicleKind,input:Input<'_>)->io::Result<Resolution> {
     if !input.distance.is_finite() || !(0.0..=MAX_INPUT_DISTANCE).contains(&input.distance) { return Err(bad()); }
     let direction = unit(input.segment_direction)?;
     let normal = unit(input.winding_normal)?;
@@ -133,18 +140,15 @@ pub fn resolve_for(kind: VehicleKind, input: Input<'_>) -> io::Result<Resolution
         incidence_degrees: Some(incidence), effective_armor: None,
         nominal_power: Some(power_for(kind,input.distance)), normalization_degrees: None,
         damage: 0, profile_revision: profile_revision_for(kind) };
-    let unsupported = if material.profile_revision != materials::profile_revision(kind) { Some(Reason::MaterialRevision) }
+    let unsupported = if material.profile_revision != materials::profile_revision(target) { Some(Reason::MaterialRevision) }
         else if !matches!(material.component, Component::Hull | Component::Turret01) { Some(Reason::Component) }
         else if material.source_class != SourceClass::ArmorDescriptor { Some(Reason::MaterialClass) }
         else if material.effective.is_none() { Some(Reason::MissingMaterial) }
         else if armor.is_none() { Some(Reason::MissingArmor) }
         else if armor == Some(0.0) { Some(Reason::ZeroArmor) }
         else {
-            let max_kind = match (kind,material.component) {
-                (VehicleKind::Ms1,Component::Hull)=>12,(VehicleKind::Ms1,_)=>10,
-                (VehicleKind::Is7,Component::Hull)=>16,(VehicleKind::Is7,_)=>12,
-            };
-            if material.kind == 0 || material.kind > max_kind || material.name != format!("armor_{}", material.kind) {
+            if !materials::armor_ids(target,material.component).contains(&material.kind)
+                || material.name != format!("armor_{}", material.kind) {
                 return Err(bad());
             }
             let e = material.effective.as_ref().ok_or_else(bad)?;

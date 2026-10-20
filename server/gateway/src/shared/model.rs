@@ -5,16 +5,21 @@ use crate::battle091::fire;
 use super::{ram_proof,aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile, vehicle_profile::VehicleKind};
 
 pub const CAPACITY: usize = 2;
+pub const MAX_ACTORS: usize = 6;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
 pub const STEP: Duration = Duration::from_millis(100);
 pub const MAX_COMMANDS: usize = 32;
 /// Storage ceiling; each immutable profile enforces its own admission limit.
-pub const MAX_SHOTS: usize = CAPACITY * 30;
+pub const MAX_SHOTS: usize = CAPACITY * 96;
+pub const MAX_AMMO_PER_ACTOR: usize = 160;
+pub const MAX_BATTLE_SHOTS: usize = MAX_ACTORS * MAX_AMMO_PER_ACTOR;
 /// Explicit laboratory policy: retained stock geometry blocks AP at a wreck.
 /// No penetration, material thickness or additional damage is inferred.
 pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
 pub fn wreck_policy_revision_for(kind:VehicleKind)->&'static str { match kind {
     VehicleKind::Ms1=>WRECK_POLICY_REVISION,VehicleKind::Is7=>"test_lab-is7-wreck-block-v1",
+    VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485=>"test_lab-curated-stock-wreck-block-v1",
+    VehicleKind::Wt128|VehicleKind::Fv183=>"test_lab-p06t-extended-source-wreck-block-v1",
 } }
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
@@ -55,14 +60,47 @@ pub struct Actor {
     pub input: Input,
     pub fire: fire::State,
     pub aim: aim::State,
+    pub mileage_metres: f64,
     origin: [f32; 3],
     vehicle_kind: VehicleKind,
+    owned_loadout: Option<crate::battle091::profile13::FrozenLoadout>,
+    pub owned_v2:Option<crate::profile13_v2091::Frozen>,
+    pub owned_loss:Option<crate::profile13_loss091::FrozenLoss>,
+    pub owned_hold:Option<crate::profile13_hold091::FrozenHold>,
+    pub devices:Option<crate::p06t_device_state::State>,
 }
 
-impl Actor { pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind } }
+impl Actor {
+    pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
+    pub fn crew_active(&self)->bool{self.health>0&&self.devices.as_ref().is_none_or(|state|state.crew_active())}
+    pub fn alive(&self)->bool{self.crew_active()}
+    pub fn public_modifiers(&self)->Vec<u8>{if self.devices.as_ref().is_some_and(|state|state.fire_active()){vec![4]}else{Vec::new()}}
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Command { Move(Input), Aim(aim::Intent), Fire(fire::Command), Leave }
+pub enum Command { Move(Input), Aim(aim::Intent), Fire(fire::Command), Armament(crate::p06t_armament091::Command), Leave }
+
+#[derive(Clone,Debug,PartialEq)]
+pub struct DamageRecord {
+    pub sequence:u32,pub tick:u32,pub attacker:usize,pub target:usize,pub shot:u32,pub reason:u8,
+    pub health_before:i16,pub health_after:i16,pub crew_before:bool,pub crew_after:bool,
+    pub direct:bool,pub pierced:bool,
+}
+impl DamageRecord {pub fn lethal(&self)->bool{self.crew_before&&(!self.crew_after||self.health_after==0)}}
+pub const MAX_DAMAGE_EVENTS:usize=MAX_BATTLE_SHOTS*16;
+#[path="result_spots.rs"]
+pub(super) mod result_spots;
+#[path="p06t_world.rs"]
+pub(super) mod p06t;
+#[path="p06t_extended_world.rs"]
+pub(crate) mod extended;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RamDamageRecord { pub sequence:u32,pub tick:u32,pub domain_tick:u32,pub attacker:usize,pub target:usize,pub pair:(usize,usize),pub energy_j:f64,pub closing_speed:f64,pub health_before:i16,pub health_after:i16 }
+/// Terminal cause shared by HP publication, writer state and Results8. The tick
+/// is always the domain clock; a worker's fixed-step counter is not that clock.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct DeathCause { pub attacker:usize,pub reason:u8,pub tick:u32 }
 
 /// One accepted server action, independent of native entity/method IDs. The
 /// laboratory never replenishes ammo, so its complete event history is bounded.
@@ -81,7 +119,7 @@ pub struct Contact {
 
 /// Committed authoritative outcome. No native IDs or client damage claims.
 #[derive(Clone, Debug, PartialEq)]
-pub enum ImpactOutcome { Ap(ap::Resolution), WreckBlocked }
+pub enum ImpactOutcome { Ap(ap::Resolution), Mixed(crate::p06t_damage::Resolution), WreckBlocked }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppliedImpact {
@@ -117,11 +155,16 @@ pub struct VehicleContactInput {
     pub shooter: usize,
     pub proof: Option<ram_proof::ContactProof>,
 }
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TankContactInput { pub slot_a:usize,pub slot_b:usize,pub substep:u8,pub point:[f32;3],pub normal:[f32;3],pub relative_velocity:[f32;3] }
 
 #[derive(Clone)]
 pub struct World {
     pub id: u64,
     vehicle_kind: VehicleKind,
+    expected_actors: usize,
+    team_plan:Option<super::p10b_team_plan::TeamPlan>,
+    mixed_profiles: bool,
     pub map: crate::map_profile091::MapId,
     pub actors: Vec<Actor>,
     pub started: Option<Instant>,
@@ -130,27 +173,90 @@ pub struct World {
     pub shots: Vec<Shot>,
     pub projectiles: Vec<Projectile>,
     pub impact: impact::Trace,
+    /// Enabled only by the profile13 battle service; legacy laboratory tests
+    /// preserve their accepted unrestricted drive route.
+    pub lifecycle: Option<super::lifecycle::State>,
+    pub lifecycle_created_unix: Option<u32>,
+    result_spots:Option<Vec<result_spots::SpotRecord>>,
+    result_spot_tick:Option<u32>,
+    original_spotting: Option<super::spotting::State>,
+    mixed_ammo:bool,
+    ammo_detonation:Option<super::ammo_detonation::Ledger>,
+    turret_flights:Vec<super::ammo_detonation::Flight>,
+    turret_visual_ms:Option<u64>,
+    extended_lab:bool,
+    owner_hold:bool,
+    lab_loadouts:[Option<extended::LabLoadout>;MAX_ACTORS],
+    pub damage_events:Vec<DamageRecord>,
+    pub device_events:Vec<(usize,crate::p06t_device_state::Transition)>,
+    rng_state:u64,
+    pub rng_draws:Vec<(u32,usize,u8,u64)>,
     geometry: Option<Arc<geometry::Bundle>>,
+    geometries: [Option<Arc<geometry::Bundle>>; 7],
     pub contacts: Vec<Contact>,
     ap_test_lab: bool,
     pub impacts: Vec<AppliedImpact>,
     terrain: Option<Arc<terrain::Terrain>>,
     pub terrain_contacts: Vec<TerrainContact>,
+    pub ram_damage_events: Vec<RamDamageRecord>,
+    active_ram_pairs: std::collections::BTreeSet<(usize,usize)>,
     destructible: Option<destructible::State>,
     pub fragiles: Option<fragiles::State>,
-    contact_sources:[Option<ram_proof::Source>;CAPACITY],
-    contact_sequences:[u32;CAPACITY],
+    contact_sources:[Option<ram_proof::Source>;MAX_ACTORS],
+    contact_sequences:[u32;MAX_ACTORS],
 }
 
 impl World {
+    pub(super) fn death_cause(&self,target:usize)->io::Result<Option<DeathCause>> {
+        let actor=self.actors.get(target).ok_or_else(bad)?;
+        let mut found=None;
+        let projectile=self.damage_events.iter().filter(|e|self.mixed_ammo&&e.target==target&&e.lethal())
+            .map(|e|(DeathCause{attacker:e.attacker,reason:e.reason,tick:e.tick},e.health_after));
+        let ap=self.impacts.iter().filter(|e|!self.mixed_ammo&&e.target==target&&e.health_before>0&&e.health_after==0)
+            .map(|e|(DeathCause{attacker:e.attacker,reason:0,tick:e.tick},e.health_after));
+        let ram=self.ram_damage_events.iter().filter(|e|e.target==target&&e.health_before>0&&e.health_after==0)
+            .map(|e|(DeathCause{attacker:e.attacker,reason:2,tick:e.domain_tick},e.health_after));
+        for(cause,hp)in projectile.chain(ap).chain(ram){
+            if found.is_some()||cause.attacker>=self.actors.len()||cause.reason>10||cause.tick<1000
+                ||hp!=actor.health{return Err(bad());}
+            found=Some(cause);
+        }
+        if actor.alive()!=found.is_none(){return Err(bad());}
+        Ok(found)
+    }
+    pub(super) fn health_cause(&self,target:usize)->io::Result<Option<(usize,u8)>> {
+        let actor=self.actors.get(target).ok_or_else(bad)?;
+        if !(0..=actor.vehicle_kind().max_health()).contains(&actor.health){return Err(bad());}
+        // Crew-only terminal transitions can retain the HP of an earlier ram.
+        // Their actual lethal journal entry owns the final terminal packet.
+        if !actor.alive(){return self.death_cause(target).map(|c|c.map(|c|(c.attacker,c.reason)));}
+        if actor.health==actor.vehicle_kind().max_health(){return Ok(None);}
+        let projectile=self.damage_events.iter().filter(|e|self.mixed_ammo&&e.target==target
+            &&e.health_before>e.health_after&&e.health_after==actor.health).map(|e|(e.attacker,e.reason));
+        let ap=self.impacts.iter().filter(|e|!self.mixed_ammo&&e.target==target
+            &&e.health_before>e.health_after&&e.health_after==actor.health).map(|e|(e.attacker,0));
+        let ram=self.ram_damage_events.iter().filter(|e|e.target==target
+            &&e.health_before>e.health_after&&e.health_after==actor.health).map(|e|(e.attacker,2));
+        let mut found=None;
+        for cause in projectile.chain(ap).chain(ram){
+            if found.is_some()||cause.0>=self.actors.len()||cause.1>10{return Err(bad());}
+            found=Some(cause);
+        }
+        found.map(Some).ok_or_else(bad)
+    }
     /// Only the pristine, source-bound template may seed another battle.
     pub fn fresh_battle(&self, id: u64, now: Instant) -> io::Result<Self> {
         if id == 0 || id == self.id || self.started.is_some() || !self.actors.is_empty()
-            || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version() != 0 {
+            || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version() != 0
+            || !self.damage_events.is_empty() || !self.device_events.is_empty() || !self.rng_draws.is_empty()
+            || self.result_spots.as_ref().is_some_and(|rows|!rows.is_empty()) || self.result_spot_tick.is_some()
+            ||self.ammo_detonation.as_ref().is_some_and(|ledger|!ledger.is_pristine())
+            ||!self.turret_flights.is_empty()||self.turret_visual_ms.is_some()
+            || !self.ram_damage_events.is_empty() || !self.active_ram_pairs.is_empty() {
             return Err(bad());
         }
         let mut next = self.clone();
-        next.id = id; next.last = now;
+        next.id = id; next.last = now;next.rng_state=id;
         Ok(next)
     }
 
@@ -159,29 +265,43 @@ impl World {
     pub fn failure_snapshot(&self) -> serde_json::Value {
         let events = self.impact.events();
         let trace_from = events.len().saturating_sub(64);
-        serde_json::json!({
+        let mut snapshot=serde_json::json!({
             "battle":self.id.to_string(), "map":self.map.asset(), "vehicle":self.vehicle_kind.label(),
-            "tick":self.tick, "started":self.started.is_some(),
+            "tick":self.tick, "started":self.started.is_some(),"mixed_profiles":self.mixed_profiles,"mixed_ammo":self.mixed_ammo,"expected_actors":self.expected_actors,
+            "damage_event_count":self.damage_events.len(),"device_event_count":self.device_events.len(),
+            "ammo_detonation_policy":self.ammo_detonation.as_ref().map(|_|super::ammo_detonation::POLICY),
+            "ammo_detonations":self.ammo_detonations().iter().map(|event|format!("{event:?}")).collect::<Vec<_>>(),
+            "turret_visual_ms":self.turret_visual_ms,"turret_flights":self.turret_flights.iter().map(|flight|format!("{flight:?}")).collect::<Vec<_>>(),
+            "damage_tail":self.damage_events.iter().rev().take(64).map(|event|format!("{event:?}")).collect::<Vec<_>>(),
+            "device_tail":self.device_events.iter().rev().take(64).map(|event|format!("{event:?}")).collect::<Vec<_>>(),
+            "rng_policy":"test_lab.splitmix64.v1","rng_initial_seed":self.id.to_string(),"rng_state":self.rng_state.to_string(),
+            "rng_draw_count":self.rng_draws.len(),"rng_tail":self.rng_draws.iter().rev().take(64).map(|event|format!("{event:?}")).collect::<Vec<_>>(),
             "actors":self.actors.iter().map(|a|serde_json::json!({
-                "account":a.identity.account,"session":a.session,"ready":a.ready,"health":a.health,
+                "account":a.identity.account,"session":a.session,"ready":a.ready,"health":a.health,"kind":a.vehicle_kind.label(),
                 "position":a.position,"direction":a.direction,"speed":a.speed,
-                "input":format!("{:?}",a.input),"fire":format!("{:?}",a.fire),"aim":format!("{:?}",a.aim)
+                "input":format!("{:?}",a.input),"fire":format!("{:?}",a.fire),"aim":format!("{:?}",a.aim),
+                "devices":a.devices.as_ref().map(|state|format!("{state:?}"))
             })).collect::<Vec<_>>(),
             "shots":self.shots.iter().map(|s|serde_json::json!({"sequence":s.sequence,"slot":s.slot,"tick":s.tick})).collect::<Vec<_>>(),
             "projectiles":self.projectiles.iter().map(|p|serde_json::json!({
                 "sequence":p.sequence,"slot":p.slot,"origin":p.origin,"velocity":p.velocity,
+                "shell":p.shell.map(|shell|shell.compact_descr),
                 "gravity":p.gravity,"max_distance":p.max_distance,"terminal":p.terminal,"stopped":p.stopped,
                 "launch_ms":self.started.and_then(|start|p.launched.checked_duration_since(start)).map(|d|d.as_millis()),
                 "flight_ms":p.flight_time.as_millis()
             })).collect::<Vec<_>>(),
             "geometry_sha256":self.geometry.as_ref().map(|g|g.bundle_sha256()),
-            "scene_version":self.scene_version(),
+            "scene_version":self.scene_version(),"ram_damage_event_count":self.ram_damage_events.len(),
             "fragiles":self.fragiles.as_ref().map(|state|state.failure_snapshot()),
             "destructible_fixture":self.destructible.as_ref().map(|state|format!("{state:?}")),
             "trace_event_count":events.len(),"trace_omitted_prefix":trace_from,
             "trace_tail":events[trace_from..].iter().map(|e|format!("{e:?}")).collect::<Vec<_>>(),
             "scope":"committed world state and bounded trace tail; not a complete deterministic replay"
-        })
+        });
+        if let Some(policy)=self.impact.extended_breech_lab_policy(){
+            snapshot.as_object_mut().expect("snapshot object").insert("unarmored_device_policy".into(),policy.into());
+        }
+        snapshot
     }
 
     pub fn new(id: u64, now: Instant) -> io::Result<Self> {
@@ -191,20 +311,321 @@ impl World {
         Self::new_for_vehicle(id,now,map,VehicleKind::Ms1)
     }
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
+    pub fn expected_actors(&self) -> usize { self.expected_actors }
+    pub fn mixed_profiles(&self) -> bool { self.mixed_profiles }
+    pub fn mixed_ammo(&self)->bool{self.mixed_ammo}
+    /// Future reserves only: an old V2 receipt cannot opt itself into losses.
+    /// Source-backed mixed simulation/terrain and lifecycle must be configured
+    /// before this immutable pristine-template policy is selected.
+    pub fn enable_ammo_detonation(&mut self)->io::Result<()>{
+        if self.ammo_detonation.is_some()||self.extended_lab||self.vehicle_kind.is_extended()||!self.mixed_ammo||!self.mixed_profiles
+            ||self.started.is_some()||!self.actors.is_empty()||!self.shots.is_empty()
+            ||!self.impact.events().is_empty()||!self.damage_events.is_empty()||!self.device_events.is_empty()
+            ||self.terrain.is_none()||self.lifecycle.as_ref().is_none_or(|life|life.phase()!=super::lifecycle::Phase::Waiting){return Err(bad());}
+        self.ammo_detonation=Some(super::ammo_detonation::Ledger::new(self.expected_actors as u8)?);Ok(())
+    }
+    /// Explicit Loss4 training-template constructor. Existing public roster
+    /// mutation and fresh_battle(same_id) guards stay unchanged. Ownership is
+    /// still supplied only by actual typed admitted receipts after this call.
+    pub(super) fn fresh_loss_roster(&self,id:u64,expected_actors:usize,now:Instant)->io::Result<Self>{
+        if id==0||id>i64::MAX as u64||!(2..=MAX_ACTORS).contains(&expected_actors)
+            ||!self.mixed_ammo||!self.mixed_profiles||!self.ap_test_lab||self.terrain.is_none()
+            ||self.extended_lab||self.vehicle_kind.is_extended()||self.impact.extended_breech_lab()
+            ||self.lab_loadouts.iter().any(Option::is_some)||self.team_plan().is_some()||self.tick!=1000
+            ||self.lifecycle.as_ref().is_none_or(|life|!life.is_pristine())||self.lifecycle_created_unix.is_some()
+            ||self.ammo_detonation.as_ref().is_none_or(|ledger|!ledger.is_pristine())
+            ||!self.projectiles.is_empty()||!self.contacts.is_empty()||!self.impacts.is_empty()||!self.terrain_contacts.is_empty()
+            ||self.contact_sources.iter().any(Option::is_some)||self.contact_sequences.iter().any(|seq|*seq!=0)
+            ||self.fragiles.as_ref().is_some_and(|state|!state.events.is_empty()||!state.vehicle_events.is_empty()){
+            return Err(bad());
+        }
+        // First launch legitimately keeps the template's own id. Prove source
+        // pristine state with a DISTINCT validation id, preserving the public
+        // same-id rejection rather than relaxing it for arbitrary callers.
+        let validation_id=if self.id==1{2}else{1};
+        let mut next=self.fresh_battle(validation_id,now)?;
+        let ledger=super::ammo_detonation::Ledger::new(expected_actors as u8)?;
+        next.id=id;next.rng_state=id;
+        next.ammo_detonation=None;
+        next.set_expected_actors(expected_actors)?;
+        next.ammo_detonation=Some(ledger);
+        Ok(next)
+    }
+    pub fn ammo_detonation_enabled(&self)->bool{self.ammo_detonation.is_some()}
+    /// Version5 is frozen only on a pristine future battle template. Neither
+    /// old v2/v4 rows nor temporary seven LAB profiles acquire hold semantics.
+    pub fn enable_owner_hold(&mut self)->io::Result<()> {
+        if self.owner_hold||!self.mixed_ammo||!self.mixed_profiles||self.ammo_detonation.is_none()||self.extended_lab
+            ||self.started.is_some()||!self.actors.is_empty()||!self.shots.is_empty()||!self.projectiles.is_empty()
+            ||!self.impact.events().is_empty()||!self.damage_events.is_empty()||!self.device_events.is_empty()
+            ||self.terrain.is_none()||self.result_spots.is_none()
+            ||self.lifecycle.as_ref().is_none_or(|s|s.phase()!=super::lifecycle::Phase::Waiting){return Err(bad());}
+        self.owner_hold=true;Ok(())
+    }
+    pub fn owner_hold_enabled(&self)->bool{self.owner_hold}
+    pub fn ammo_detonations(&self)->&[super::ammo_detonation::Event]{
+        self.ammo_detonation.as_ref().map_or(&[],super::ammo_detonation::Ledger::events)
+    }
+    pub fn turret_flights(&self)->&[super::ammo_detonation::Flight]{&self.turret_flights}
+    /// AUTHORED publication fixture only. It does not prove exterior collision,
+    /// DeviceState source authority or inventory admission. Production only
+    /// creates these events through direct_mixed's actual module transition.
+    #[cfg(test)]
+    pub(super) fn install_detonation_publication_fixture(&mut self,input:super::ammo_detonation::Input)->io::Result<()>{
+        let actor=self.actors.get(input.target).ok_or_else(||bad())?;
+        if actor.vehicle_kind()!=input.kind||actor.health!=input.health_before as i16
+            ||actor.fire.typed().is_none_or(|state|state.counts()!=input.counts){return Err(bad());}
+        let mut next=self.clone();
+        let super::ammo_detonation::Outcome::New(event)=next.ammo_detonation.as_mut().ok_or_else(||bad())?.apply(input)?else{return Err(bad());};
+        if next.turret_flights.len()>=MAX_ACTORS{return Err(bad());}
+        if next.actors[input.target].fire.lose_loaded_for_detonation()?!=event.lost(){return Err(bad());}
+        next.actors[input.target].health=0;next.actors[input.target].input=Input::STOP;next.actors[input.target].speed=0.;
+        next.actors[input.target].aim.park();if let Some(state)=&mut next.actors[input.target].devices{state.freeze();}
+        next.turret_flights.push(super::ammo_detonation::Flight::new(event));*self=next;Ok(())
+    }
+    /// Server calls once per loop, including after outcome freeze. Only this
+    /// bounded visual timeline advances; battle HP/results/devices stay frozen.
+    /// Exact source ground triangles are sampled by a vertical point ray; no
+    /// static props, swept body or Jolt contact is invented for the detached FX.
+    pub fn advance_turret_flights(&mut self,now:Instant)->io::Result<bool>{
+        if self.turret_flights.is_empty(){return Ok(false);}
+        let ms=self.lifecycle_ms(now)?;
+        if ms>super::ammo_detonation::MAX_TIME_MS||self.turret_visual_ms.is_some_and(|old|ms<old){return Err(bad());}
+        if self.turret_visual_ms==Some(ms){return Ok(false);}
+        let terrain=self.terrain.as_ref().ok_or_else(||bad())?;
+        let mut next=self.turret_flights.clone();let mut changed=false;
+        for flight in &mut next{
+            let previous=flight.sample();
+            let sample=flight.advance(ms,|x,z|{
+                let max=terrain::MAX_QUERY_COORDINATE;
+                terrain.nearest_ground([x,max,z],[x,-max,z])?.map(|hit|hit.point[1]).ok_or_else(||bad())
+            })?;
+            changed|=previous!=sample;
+        }
+        self.turret_flights=next;self.turret_visual_ms=Some(ms);Ok(changed)
+    }
+    pub fn enable_mixed_ammo(&mut self)->io::Result<()>{
+        if self.mixed_ammo||!self.mixed_profiles||self.started.is_some()||!self.actors.is_empty()||!self.shots.is_empty(){return Err(bad());}
+        self.mixed_ammo=true;Ok(())
+    }
+    pub fn shot_limit(&self) -> usize {
+        if self.mixed_profiles {
+            // Preserve the accepted two-kind v1 ceiling; a curated roster may
+            // raise it only to an actual mounted capacity of a bound actor.
+            self.expected_actors*self.actors.iter().map(|a|a.vehicle_kind().ammo_limit() as usize).max().unwrap_or(96).max(96)
+        } else { self.vehicle_kind.battle_shot_limit() }
+    }
+    pub fn new_for_roster(id:u64,now:Instant,map:crate::map_profile091::MapId,expected_actors:usize)->io::Result<Self> {
+        if !(2..=MAX_ACTORS).contains(&expected_actors) { return Err(bad()); }
+        let mut world=Self::new_for_vehicle(id,now,map,VehicleKind::Ms1)?;
+        world.set_expected_actors(expected_actors)?;Ok(world)
+    }
+    pub fn set_expected_actors(&mut self,expected_actors:usize)->io::Result<()> {
+        if !(2..=MAX_ACTORS).contains(&expected_actors) || self.team_plan.is_some() || self.started.is_some() || !self.actors.is_empty()
+            || !self.shots.is_empty() || !self.impact.events().is_empty() || self.scene_version()!=0
+            ||self.ammo_detonation.is_some() {return Err(bad());}
+        self.impact.configure_roster(expected_actors)?;self.expected_actors=expected_actors;self.mixed_profiles=true;Ok(())
+    }
+    pub fn geometry_for(&self,kind:VehicleKind)->io::Result<&Arc<geometry::Bundle>> {
+        let index=kind.index();
+        self.geometries[index].as_ref().or_else(||self.geometry.as_ref().filter(|g|g.vehicle_kind()==kind)).ok_or_else(||bad())
+    }
     pub fn new_for_vehicle(id: u64, now: Instant, map: crate::map_profile091::MapId, kind: VehicleKind) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
-        Ok(Self { id, map, vehicle_kind:kind, actors: Vec::new(), started: None, last: now, tick: 1000,
-            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind),
-            geometry: None, contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
-            terrain: None, terrain_contacts: Vec::new(), destructible: None,fragiles:None,
-            contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;CAPACITY] })
+        Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,team_plan:None,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
+            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
+            mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,
+            extended_lab:false,owner_hold:false,lab_loadouts:[None;MAX_ACTORS],
+            damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
+            result_spots:None,result_spot_tick:None,original_spotting:None,
+            geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
+            terrain: None, terrain_contacts: Vec::new(), ram_damage_events:Vec::new(), active_ram_pairs:std::collections::BTreeSet::new(), destructible: None,fragiles:None,
+            contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS] })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
-        if bundle.vehicle_kind()!=self.vehicle_kind || self.started.is_some() || !self.shots.is_empty() || self.geometry.is_some() { return Err(bad()); }
-        self.geometry = Some(bundle); Ok(())
+        let kind=bundle.vehicle_kind();let index=kind.index();
+        if !self.mixed_profiles && kind!=self.vehicle_kind || self.started.is_some() || !self.shots.is_empty()
+            || self.geometries[index].is_some() || !self.mixed_profiles && self.geometry.is_some() { return Err(bad()); }
+        if self.mixed_profiles {self.geometries[index]=Some(bundle.clone());}
+        if self.geometry.is_none() || kind==self.vehicle_kind {self.geometry=Some(bundle);}Ok(())
+    }
+    pub fn enable_original_spotting(&mut self, rules: super::spotting::Rules) -> io::Result<()> {
+        if self.original_spotting.is_some() || self.started.is_some() || !self.actors.is_empty()
+            || self.terrain.is_none() { return Err(bad()); }
+        self.original_spotting=Some(super::spotting::State::new(rules)?); Ok(())
+    }
+    pub fn original_spotting_enabled(&self) -> bool { self.original_spotting.is_some() }
+    fn spotting_excluded(&self) -> io::Result<Vec<u32>> {
+        let mut excluded=if let Some(state)=&self.fragiles {state.projectile_excluded()}
+            else {self.destructible.as_ref().and_then(|state|state.excluded_instance()).into_iter().collect()};
+        excluded.sort_unstable();
+        if excluded.windows(2).any(|pair|pair[0]==pair[1]) { return Err(bad()); }
+        Ok(excluded)
+    }
+    fn spotting_points(&self, slot: usize) -> io::Result<super::spotting::Points> {
+        let actor=self.actors.get(slot).ok_or_else(bad)?;
+        self.geometry_for(actor.vehicle_kind())?.spotting_parts().world(actor.position,actor.direction,actor.aim.yaw)
+    }
+    fn spotting_actors(&self) -> io::Result<Vec<super::spotting::Actor>> {
+        let terrain=self.terrain.as_ref().ok_or_else(bad)?;
+        self.actors.iter().enumerate().map(|(slot,actor)| {
+            if actor.position.into_iter().any(|v|!v.is_finite()||v.abs()>10_000.)
+                ||actor.direction.into_iter().any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI){return Err(bad());}
+            let mut points=self.spotting_points(slot)?;
+            // This is the inherited P05C project correction, not a recovered
+            // historical rule. It only rescues the observer when both source
+            // observer points are below real ground and never rewrites target points.
+            if self.original_spotting.as_ref().is_some_and(|s|s.rules.rollover_world_up_fallback) {
+                let underground=points.observers.into_iter().all(|point| {
+                    terrain.nearest_ground(point,[point[0],10_000.,point[2]]).ok().flatten().is_some_and(|hit|hit.point[1]>point[1]+0.001)
+                });
+                if underground { points.observers[0]=Self::visibility_sight_point(actor); }
+            }
+            let observer_active=actor.alive()&&actor.ready&&actor.session.is_some();
+            let commander_active=observer_active&&actor.devices.as_ref().is_none_or(|state|state.crew().first()==Some(&true));
+            let view_scale=actor.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
+            if !view_scale.is_finite()||!(0. ..=1.).contains(&view_scale){return Err(bad());}
+            Ok(super::spotting::Actor{slot,team:self.team(slot)?,position:actor.position,points,
+                view_range:actor.vehicle_kind().view_range()*view_scale,observer_active,commander_active,wreck:actor.health<=0})
+        }).collect()
+    }
+    pub fn refresh_original_spotting(&mut self, now: Instant) -> io::Result<()> {
+        let Some(state)=self.original_spotting.as_ref() else { return Ok(()); };
+        if self.actors.is_empty() { return Ok(()); }
+        let start=self.started.ok_or_else(bad)?;
+        let ms=u64::try_from(now.checked_duration_since(start).ok_or_else(bad)?.as_millis()).map_err(|_|bad())?;
+        let actors=self.spotting_actors()?; let excluded=self.spotting_excluded()?; let terrain=self.terrain.as_ref().ok_or_else(bad)?;
+        let mut next=state.clone();
+        next.refresh(ms,&actors,|_,_,start,end|Ok(terrain.nearest_excluding_many(start,end,&excluded)?.is_none()))?;
+        self.original_spotting=Some(next); Ok(())
+    }
+    pub fn sixth_sense_generation(&self, slot: usize) -> io::Result<u32> {
+        self.original_spotting.as_ref().map_or(Ok(0),|state|state.sixth_generation(slot))
+    }
+    pub fn sixth_sense_eligible(&self, slot: usize) -> io::Result<bool> {
+        let actor=self.actors.get(slot).ok_or_else(bad)?;
+        Ok(actor.alive() && actor.ready && actor.session.is_some()
+            && actor.devices.as_ref().is_none_or(|state|state.crew().first()==Some(&true))
+            && self.lifecycle.as_ref().is_none_or(|state|state.allows_actions()))
+    }
+    pub fn enable_lifecycle(&mut self, rules: super::lifecycle::Rules) -> io::Result<()> {
+        if self.started.is_some() || !self.actors.is_empty() || self.lifecycle.is_some() { return Err(bad()); }
+        self.lifecycle = Some(super::lifecycle::State::new(rules)?); Ok(())
+    }
+    /// Explicit result-statistics opt-in. Native interest itself remains the
+    /// existing visibility_v1 policy; legacy templates never query it here.
+    pub fn enable_result_spots(&mut self)->io::Result<()>{
+        if self.result_spots.is_some()||self.result_spot_tick.is_some()||self.started.is_some()
+            ||!self.actors.is_empty()||!self.shots.is_empty()||!self.projectiles.is_empty()
+            ||!self.impact.events().is_empty()||self.terrain.is_none()
+            ||self.lifecycle.as_ref().is_none_or(|state|state.phase()!=super::lifecycle::Phase::Waiting){return Err(bad());}
+        self.result_spots=Some(Vec::new());Ok(())
+    }
+    pub(super) fn result_spots(&self)->Option<&[result_spots::SpotRecord]>{self.result_spots.as_deref()}
+    /// Explicit frozen roster teams are set once, before actor identities or
+    /// any simulation/Trace events exist. Caller must bind the frozen roster's
+    /// identity order before transport attachment; arrival order is not a plan.
+    pub fn set_team_plan(&mut self,plan:super::p10b_team_plan::TeamPlan)->io::Result<()> {
+        if plan.len()!=self.expected_actors || self.team_plan.is_some() || self.lifecycle.is_none()
+            || self.started.is_some() || !self.actors.is_empty() || self.tick!=1000 || !self.shots.is_empty()
+            || !self.impact.events().is_empty() || self.scene_version()!=0 {return Err(bad());}
+        self.team_plan=Some(plan);Ok(())
+    }
+    pub fn team_plan(&self)->Option<&super::p10b_team_plan::TeamPlan>{self.team_plan.as_ref()}
+    pub fn spawn_lane(&self,slot:usize)->io::Result<usize>{
+        if slot>=self.expected_actors{return Err(bad());}
+        self.team_plan.as_ref().map_or(Ok(slot),|plan|plan.lane(slot))
+    }
+    pub fn team(&self, slot: usize) -> io::Result<u8> {
+        if slot >= self.actors.len() { return Err(bad()); }
+        if let Some(plan)=&self.team_plan {return plan.team(slot);}
+        Ok(if self.lifecycle.is_some() { (slot % 2) as u8 + 1 } else { 1 })
+    }
+    /// Stateless recipient interest from this coherent authoritative snapshot.
+    fn visibility_sight_point(actor:&Actor)->[f32;3]{
+        let mut offset=super::pose::rotate(actor.vehicle_kind().aim().pivot,actor.direction);
+        // The pivot follows the hull; the laboratory clearance remains world-up
+        // so a resting roof rollover does not rotate that clearance underground.
+        offset[1]+=0.5;
+        std::array::from_fn(|axis|actor.position[axis]+offset[axis])
+    }
+    /// Source stock range, centre-distance and one sight line are the explicit
+    /// v1 test_lab policy;0.5m world-up from the rotated stock turret pivot is
+    /// not historical camouflage/spotting reconstruction. Parked/dead geometry remains eligible.
+    pub(super) fn desired_visibility(&self, own:usize)->io::Result<[bool;MAX_ACTORS]> {
+        if own>=self.actors.len()||self.actors.len()>MAX_ACTORS{return Err(bad());}
+        if let Some(state)=&self.original_spotting {
+            let actors=self.spotting_actors()?;
+            if state.initialized() { return state.desired(own); }
+            let team=self.team(own)?; let mut row=[false;MAX_ACTORS];
+            for actor in actors { row[actor.slot]=actor.slot==own||actor.team==team; }
+            return Ok(row);
+        }
+        let terrain=self.terrain.as_ref().ok_or_else(||bad())?;
+        let mut excluded=if let Some(state)=&self.fragiles {state.projectile_excluded()}
+            else{self.destructible.as_ref().and_then(|state|state.excluded_instance()).into_iter().collect()};
+        excluded.sort_unstable();
+        if excluded.windows(2).any(|rows|rows[0]==rows[1]){return Err(bad());}
+        let mut actors=Vec::with_capacity(self.actors.len());
+        for(slot,actor)in self.actors.iter().enumerate(){
+            if actor.direction.iter().any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI){return Err(bad());}
+            let kind=actor.vehicle_kind();
+            let view_scale=actor.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
+            actors.push(super::visibility::Actor{slot,team:self.team(slot)?,position:actor.position,
+                sight_point:Self::visibility_sight_point(actor),view_range:kind.view_range()*view_scale});
+        }
+        let desired=super::visibility::desired_set(own,&actors,super::visibility::Allies::Always,|line|{
+            if line.start==line.end{return Ok(true);}
+            Ok(terrain.nearest_excluding_many(line.start,line.end,&excluded)?.is_none())
+        })?;
+        let mut result=[false;MAX_ACTORS];for slot in desired.slots(){result[slot]=true;}Ok(result)
+    }
+    pub fn lifecycle_ms(&self, now: Instant) -> io::Result<u64> {
+        let start = self.started.ok_or_else(|| bad())?;
+        now.checked_duration_since(start).ok_or_else(|| bad())?.as_millis().try_into().map_err(|_| bad())
+    }
+    pub fn advance_lifecycle(&mut self, now: Instant) -> io::Result<bool> {
+        if self.lifecycle.is_none() || self.started.is_none() { return Ok(false); }
+        let elapsed = self.lifecycle_ms(now)?;
+        let members = self.actors.iter().enumerate().map(|(slot, actor)| {
+            let damage=if self.mixed_ammo {self.damage_events.iter().filter(|i|i.target==slot&&(i.health_after<i.health_before||i.lethal())).map(|i|i.attacker).collect::<Vec<_>>()}
+                else{self.impacts.iter().filter(|i|i.target==slot&&i.health_after<i.health_before).map(|i|i.attacker).collect::<Vec<_>>()};
+            let ram_count=self.ram_damage_events.iter().filter(|e|e.target==slot&&e.health_after<e.health_before).count();
+            let epoch:u32=damage.len().checked_add(ram_count).ok_or_else(bad)?.try_into().map_err(|_|bad())?;
+            let last_damager=if ram_count>0{self.health_cause(slot)?.map(|c|c.0)}else{damage.last().copied()};
+            Ok(super::lifecycle::Member { team: self.team(slot)?, present: actor.session.is_some(), ready: actor.ready,
+                alive: actor.alive(), position: actor.position, damage_epoch: epoch,
+                last_damager })
+        }).collect::<io::Result<Vec<_>>>()?;
+        let changed = if let Some(old)=&self.result_spots {
+            // A failed late LOS must leave lifecycle, journal and actor state
+            // untouched. Stage only the small lifecycle and <=6 records;
+            // cloning the whole World/Trace here would be unnecessary work.
+            let mut life=self.lifecycle.as_ref().ok_or_else(||bad())?.clone();
+            let changed=life.advance(elapsed,&members)?;
+            let next=if life.allows_actions(){
+                let observers=members.iter().map(|member|result_spots::Member{
+                    team:member.team,present:member.present,ready:member.ready,alive:member.alive}).collect::<Vec<_>>();
+                Some(result_spots::refresh(old,self.result_spot_tick,self.tick,&observers,
+                    |slot|self.desired_visibility(slot))?)
+            }else{None};
+            self.lifecycle=Some(life);
+            if let Some(next)=next{self.result_spots=Some(next);self.result_spot_tick=Some(self.tick);}
+            changed
+        }else{self.lifecycle.as_mut().ok_or_else(|| bad())?.advance(elapsed, &members)?};
+        if !self.lifecycle.as_ref().ok_or_else(|| bad())?.allows_actions() {
+            for actor in &mut self.actors { actor.input = Input::STOP; }
+        }
+        if self.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()){
+            for actor in &mut self.actors{if let Some(devices)=&mut actor.devices{devices.freeze();}}
+        }
+        Ok(changed)
     }
     pub fn enable_ap_test_lab(&mut self) -> io::Result<()> {
-        if self.started.is_some() || self.geometry.is_none() || self.ap_test_lab { return Err(bad()); }
+        let count=if self.geometries[5..].iter().any(Option::is_some){7}
+            else if self.geometries[2..5].iter().any(Option::is_some){5}else{2};
+        if self.started.is_some() || self.geometry.is_none() || self.ap_test_lab
+            || self.mixed_profiles && self.geometries[..count].iter().any(Option::is_none) { return Err(bad()); }
         self.ap_test_lab = true; Ok(())
     }
     pub fn bind_terrain(&mut self, terrain: Arc<terrain::Terrain>) -> io::Result<()> {
@@ -221,21 +642,25 @@ impl World {
     pub fn bind_fragiles(&mut self,catalog:Arc<fragiles::Catalog>)->io::Result<()>{
         if catalog.map!=self.map||self.started.is_some()||!self.shots.is_empty()||!self.ap_test_lab||self.destructible.is_some()||self.fragiles.is_some(){return Err(bad());}
         catalog.bind_geometry(self.terrain.as_ref().ok_or_else(|| bad())?)?;
-        self.impact.bind_fragiles(catalog.clone())?;self.fragiles=Some(fragiles::State::new(catalog));Ok(())
+        self.impact.bind_fragiles(catalog.clone())?;let mut state=fragiles::State::new(catalog);
+        if self.mixed_profiles{state.configure_roster(self.expected_actors)?;
+            for actor in &self.actors {state.bind_ammo_capacity(actor.vehicle_kind().ammo_limit())?;}}
+        self.fragiles=Some(state);Ok(())
     }
     pub fn scene_version(&self)->u32{self.fragiles.as_ref().map_or_else(||self.destructible.as_ref().map_or(0,destructible::State::scene_version),fragiles::State::scene_version)}
     pub fn destructible_enabled(&self)->bool{self.destructible.is_some()}
     pub fn destructible_transition(&self)->Option<&destructible::Transition>{self.destructible.as_ref().and_then(destructible::State::transition)}
     pub fn bind_contact_source(&mut self,slot:usize,source:ram_proof::Source)->io::Result<()> {
-        if slot>=CAPACITY||self.actors.get(slot).and_then(|a|a.session)!=Some(source.session)
-            ||source.profile!=match self.vehicle_kind{VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}
+        if slot>=self.expected_actors||!(self.actors.get(slot).and_then(|a|a.session)==Some(source.session)
+            ||self.mixed_profiles&&self.contact_sources[slot].as_ref()==Some(&source))
+            ||source.profile!=ram_proof::Profile::for_vehicle(self.actors[slot].vehicle_kind)
             ||!source.follows(self.contact_sources[slot].as_ref()){return Err(bad());}
         self.impact.bind_contact_source(slot,source.clone())?;
         if self.contact_sources[slot].as_ref()!=Some(&source){self.contact_sequences[slot]=0;}
         self.contact_sources[slot]=Some(source);Ok(())
     }
     pub fn revoke_contact_source(&mut self,slot:usize)->io::Result<()> {
-        if slot>=CAPACITY||self.actors.get(slot).and_then(|a|a.session).is_some(){return Err(bad());}
+        if slot>=self.expected_actors||self.actors.get(slot).and_then(|a|a.session).is_some(){return Err(bad());}
         // Retain the generation floor; actor session absence revokes admission.
         self.impact.revoke_contact_source(slot)?;Ok(())
     }
@@ -243,7 +668,7 @@ impl World {
     /// world. The caller stages the candidate and waits for both worker scene
     /// ACKs before committing it or publishing native state.
     pub fn apply_vehicle_contacts(&mut self, contacts:&[VehicleContactInput])->io::Result<Vec<fragiles::VehicleContact>> {
-        if contacts.len()>32 { return Err(bad()); }
+        if contacts.len()>if self.mixed_profiles {self.expected_actors*32}else{32} { return Err(bad()); }
         if contacts.is_empty() { return Ok(Vec::new()); }
         // Stage both domain state and trace state. A later malformed contact
         // or a trace admission failure must not leave an earlier contact from
@@ -255,11 +680,11 @@ impl World {
         let mut trace=self.impact.clone();
         let mut sequences=self.contact_sequences;
         if state.catalog.version==7 {
-            let mut frames:[Option<Arc<ram_proof::ContextFrame>>;CAPACITY]=std::array::from_fn(|_|None);
-            let mut indices:[Vec<usize>;CAPACITY]=std::array::from_fn(|_|Vec::new());
+            let mut frames:[Option<Arc<ram_proof::ContextFrame>>;MAX_ACTORS]=std::array::from_fn(|_|None);
+            let mut indices:[Vec<usize>;MAX_ACTORS]=std::array::from_fn(|_|Vec::new());
             for contact in contacts {
                 let p=contact.proof.as_ref().ok_or_else(|| bad())?;let c=&p.frame.context;let slot=contact.shooter;
-                if slot>=CAPACITY||c.battle!=self.id||c.slot!=slot||self.actors.get(slot).and_then(|a|a.session)!=Some(c.session)
+                if slot>=self.expected_actors||c.battle!=self.id||c.slot!=slot||!self.mixed_profiles&&self.actors.get(slot).and_then(|a|a.session)!=Some(c.session)
                     ||!self.contact_sources[slot].as_ref().is_some_and(|s|s.matches(c,p.frame.proof.profile))
                     ||c.seq<=self.contact_sequences[slot]||p.index!=indices[slot].len(){return Err(bad());}
                 indices[slot].push(p.index);
@@ -274,7 +699,7 @@ impl World {
         }
         let mut outcomes=Vec::new();
         for contact in contacts {
-            if contact.shooter>=CAPACITY { return Err(bad()); }
+            if contact.shooter>=self.expected_actors { return Err(bad()); }
             if let Some(event)=state.ram_contact_with_proof(contact.object_id,contact.shooter,self.tick,contact.substep,
                 contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone(),contact.proof.clone())? {
                 trace.vehicle_contact(self.id,event.tick,&event)?;
@@ -286,42 +711,141 @@ impl World {
         self.contact_sequences=sequences;
         Ok(outcomes)
     }
+    pub fn apply_tank_contacts(&mut self, contacts:&[TankContactInput], sequence:u32, tick:u32)->io::Result<()> {
+        if sequence==0||tick==0||contacts.len()>15||contacts.len()>self.expected_actors.saturating_mul(self.expected_actors.saturating_sub(1))/2{return Err(bad());}
+        let mut pairs=std::collections::BTreeSet::new();let mut resolved=Vec::with_capacity(contacts.len());
+        for row in contacts {
+            if row.slot_a>=row.slot_b||row.slot_b>=self.actors.len()||!pairs.insert((row.slot_a,row.slot_b)){return Err(bad());}
+            let contact=super::tank_ram::Contact{slot_a:row.slot_a,slot_b:row.slot_b,substep:row.substep,point:row.point,normal:row.normal,relative_velocity:row.relative_velocity};
+            let a=self.actors[row.slot_a].vehicle_kind().mass_kg();let b=self.actors[row.slot_b].vehicle_kind().mass_kg();
+            resolved.push((contact,super::tank_ram::resolve(contact,a,b)?));
+        }
+        let mut next=self.clone();next.active_ram_pairs=pairs;
+        for (contact,result) in resolved {
+            if self.active_ram_pairs.contains(&(contact.slot_a,contact.slot_b)){continue;}
+            let Some(result)=result else{continue;};let before_a=next.actors[contact.slot_a].health;let before_b=next.actors[contact.slot_b].health;
+            if !next.actors[contact.slot_a].alive()||!next.actors[contact.slot_b].alive(){continue;}
+            let after_a=(i32::from(before_a)-i32::from(result.damage_a).min(i32::from(before_a))).max(0)as i16;let after_b=(i32::from(before_b)-i32::from(result.damage_b).min(i32::from(before_b))).max(0)as i16;
+            next.actors[contact.slot_a].health=after_a;next.actors[contact.slot_b].health=after_b;
+            for (attacker,target,before,after) in [(result.attacker,result.target,before_b,after_b),(result.target,result.attacker,before_a,after_a)]{next.ram_damage_events.push(RamDamageRecord{sequence,tick,domain_tick:next.tick,attacker,target,pair:(contact.slot_a,contact.slot_b),energy_j:result.energy_j,closing_speed:result.closing_speed,health_before:before,health_after:after});}
+            for slot in [contact.slot_a,contact.slot_b]{if next.actors[slot].health==0{
+                let actor=&mut next.actors[slot];actor.input=Input::STOP;actor.speed=0.;actor.aim.park();
+                if let Some(devices)=&mut actor.devices{devices.freeze();}
+            }}
+        }
+        *self=next;Ok(())
+    }
     /// Authenticated identity only. The caller reserves a transport retirement
     /// slot before committing this world assignment. Rejoin never resets ammo.
     pub fn attach(&mut self, identity: Identity, session: u32) -> io::Result<usize> {
+        self.attach_loadout(identity, session, None)
+    }
+    /// Only a writer-confirmed stock mount can supply owned battle ammunition.
+    /// Reattaching the same receipt never replenishes an existing actor.
+    pub fn attach_owned(&mut self, identity: Identity, session: u32,
+        loadout: &crate::battle091::profile13::FrozenLoadout) -> io::Result<usize> {
+        loadout.validate_owned(&identity.account)?;
+        if !self.mixed_profiles && loadout.kind != self.vehicle_kind { return Err(bad()); }
+        self.attach_loadout(identity, session, Some(loadout.clone()))
+    }
+    pub fn attach_owned_v2(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_v2091::Frozen)->io::Result<usize>{
+        if self.ammo_detonation.is_some(){return Err(bad());}
+        self.attach_owned_v2_inner(identity,session,loadout)
+    }
+    pub fn attach_owned_loss(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_loss091::FrozenLoss)->io::Result<usize>{
+        if self.owner_hold{return Err(bad());}
+        self.attach_owned_loss_inner(identity,session,loadout)
+    }
+    /// Only a typed writer5 admission can populate owned_hold. Re-login must
+    /// remain Account-only and cannot revive/replenish an existing body.
+    pub fn attach_owned_hold(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_hold091::FrozenHold)->io::Result<usize>{
+        loadout.validate_owned(&identity.account)?;
+        if !self.owner_hold||self.started.is_some()||self.actors.iter().any(|a|a.identity.account==identity.account){return Err(bad());}
+        let mut next=self.clone();let slot=next.attach_owned_loss_inner(identity,session,loadout.loss())?;
+        next.actors[slot].owned_hold=Some(loadout.clone());*self=next;Ok(slot)
+    }
+    fn attach_owned_loss_inner(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_loss091::FrozenLoss)->io::Result<usize>{
+        loadout.validate_owned(&identity.account)?;
+        if self.ammo_detonation.is_none()||self.extended_lab||loadout.base.kind.is_extended(){return Err(bad());}
+        let existing=self.actors.iter().position(|actor|actor.identity.account==identity.account);
+        if existing.is_some_and(|slot|self.actors[slot].owned_loss.as_ref()!=Some(loadout)){return Err(bad());}
+        let mut next=self.clone();let slot=next.attach_owned_v2_inner(identity,session,&loadout.base)?;
+        next.actors[slot].owned_loss=Some(loadout.clone());*self=next;Ok(slot)
+    }
+    fn attach_owned_v2_inner(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_v2091::Frozen)->io::Result<usize>{
+        loadout.validate_owned(&identity.account)?;
+        if !self.mixed_ammo||!self.mixed_profiles||self.extended_lab||loadout.kind.is_extended(){return Err(bad());}
+        let profile=crate::p06t_device_caps::Profile::ALL.get(loadout.kind.index()).copied().ok_or_else(bad)?;
+        let existing=self.actors.iter().position(|actor|actor.identity.account==identity.account);
+        if existing.is_some_and(|slot|self.actors[slot].owned_v2.as_ref()!=Some(loadout)){return Err(bad());}
+        let mut next=self.clone();let previous=next.vehicle_kind;
+        next.mixed_ammo=false;next.vehicle_kind=loadout.kind;
+        let slot=next.attach_loadout(identity,session,None)?;
+        next.vehicle_kind=previous;next.mixed_ammo=true;
+        if existing.is_none(){
+            next.actors[slot].fire=fire::State::with_typed(loadout.mount,loadout.counts(),loadout.initial_shell_compact_id)?;
+            next.actors[slot].owned_v2=Some(loadout.clone());
+            next.actors[slot].devices=Some(crate::p06t_device_state::State::new(profile)?);
+        }
+        *self=next;Ok(slot)
+    }
+    fn attach_loadout(&mut self, identity: Identity, session: u32,
+        loadout: Option<crate::battle091::profile13::FrozenLoadout>) -> io::Result<usize> {
+        self.attach_loadout_fire(identity,session,loadout,None)
+    }
+    fn attach_loadout_fire(&mut self,identity:Identity,session:u32,
+        loadout:Option<crate::battle091::profile13::FrozenLoadout>,initial_fire:Option<fire::State>)->io::Result<usize>{
+        if self.mixed_ammo{return Err(bad());}
+        if initial_fire.is_some()&&(!self.extended_lab||loadout.is_some()){return Err(bad());}
         if session == 0 || identity.database <= 0 || identity.account.is_empty()
             || self.actors.iter().any(|a| a.session == Some(session)) { return Err(bad()); }
         if let Some(slot) = self.actors.iter().position(|a| a.identity.account == identity.account) {
             let a = &mut self.actors[slot];
-            if a.session.is_some() || a.identity != identity { return Err(bad()); }
+            if a.session.is_some() || a.identity != identity || a.owned_loadout != loadout { return Err(bad()); }
             a.session = Some(session); a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park();
             return Ok(slot);
         }
-        if self.actors.len() == CAPACITY || self.actors.iter().any(|a| a.identity.database == identity.database) {
+        if self.actors.len() == self.expected_actors || self.actors.iter().any(|a| a.identity.database == identity.database) {
             return Err(bad());
         }
         let slot = self.actors.len();
         let mut origin = SPAWN; origin[0] += if slot == 0 { -4. } else { 4. };
-        self.actors.push(Actor { identity, session: Some(session), ready: false, health: self.vehicle_kind.max_health(), vehicle_kind:self.vehicle_kind,
+        let kind=loadout.as_ref().map_or(self.vehicle_kind,|v|v.kind);
+        let ammo = loadout.as_ref().map_or(kind.initial_ammo(), |value| value.ap_count);
+        let fire=if let Some(fire)=initial_fire {
+            if fire.typed().is_none_or(|state|state.mount()!=kind.mount()){return Err(bad());}fire
+        }else{fire::State::with_mounted_loadout(ammo,kind.reload_seconds(),kind.ammo_limit())?};
+        if self.mixed_profiles {
+            let mut trace=self.impact.clone();trace.bind_actor(slot,kind)?;
+            let mut fragiles=self.fragiles.clone();
+            if let Some(state)=&mut fragiles {state.bind_ammo_capacity(kind.ammo_limit())?;}
+            self.impact=trace;self.fragiles=fragiles;
+        }
+        self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire: fire::State::with_loadout(self.vehicle_kind.initial_ammo(),self.vehicle_kind.reload_seconds())?, aim: aim::State::new() });
+            fire, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
-        if self.started.is_some() || self.actors.len() != CAPACITY || now < self.last { return Err(bad()); }
+        if self.started.is_some() || self.actors.len() != self.expected_actors || now < self.last
+            || self.team_plan.is_some()&&self.lifecycle.is_none() { return Err(bad()); }
+        if self.ap_test_lab {for actor in &self.actors {self.geometry_for(actor.vehicle_kind())?;}}
         self.started = Some(now); self.last = now; Ok(())
     }
     /// Integrated map-drive owns the initial lane placement. Rebase happens
     /// in the start tick before native arena announcements; after that first
     /// turn all poses come from the workers atomically.
-    pub fn rebase_external_spawns(&mut self, positions: [[f32; 3]; CAPACITY]) -> io::Result<()> {
+    pub fn rebase_external_spawns<const N:usize>(&mut self, positions: [[f32; 3]; N]) -> io::Result<()> {
+        self.rebase_external_spawn_rows(&positions)
+    }
+    pub fn rebase_external_spawn_rows(&mut self, positions: &[[f32; 3]]) -> io::Result<()> {
         // The integrated runtime calls this in the same loop turn as
         // `start`, before tick 1000 is published or either actor is ready.
-        if self.actors.len() != CAPACITY || self.tick != 1000 || self.actors.iter().any(|actor| actor.ready) { return Err(bad()); }
+        if positions.len()!=self.expected_actors || self.actors.len() != self.expected_actors || self.tick != 1000 || self.actors.iter().any(|actor| actor.ready) { return Err(bad()); }
         for position in positions {
             if position.iter().any(|value| !value.is_finite() || value.abs() > 2000.) { return Err(bad()); }
         }
-        for (actor, position) in self.actors.iter_mut().zip(positions) {
+        for (actor, position) in self.actors.iter_mut().zip(positions.iter().copied()) {
             actor.position = position;
             actor.origin = position;
         }
@@ -347,7 +871,7 @@ impl World {
     /// untouched until both native actors have completed their ready contract.
     pub fn import_external_poses(&mut self,
         external: &[(usize, [f32; 3], [f32; 3], f32)]) -> io::Result<()> {
-        if external.len() != CAPACITY || external.iter().map(|row| row.0).collect::<std::collections::BTreeSet<_>>().len() != CAPACITY {
+        if external.len() != self.expected_actors || external.iter().map(|row| row.0).collect::<std::collections::BTreeSet<_>>().len() != self.expected_actors {
             return Err(bad());
         }
         let mut next = self.actors.clone();
@@ -394,16 +918,23 @@ impl World {
         let mut projectiles = self.projectiles.clone();
         let mut impact_trace = self.impact.clone();
         for (at, command) in commands.iter().enumerate() {
+            if self.lifecycle.as_ref().is_some_and(|state| !state.allows_actions()) {
+                match command {
+                    Command::Move(input) => { if !input.valid() { return Err(bad()); } continue; },
+                    Command::Fire(_) | Command::Armament(_) => { outcomes.push(fire::Outcome::RejectedBattlePeriod); continue; },
+                    Command::Aim(_) | Command::Leave => {},
+                }
+            }
             // Native dead players may still emit neutral input/aim packets.
             // Validate them, then ignore gameplay; leave remains available.
-            if next.health == 0 {
+            if !next.alive() {
                 match command {
                     Command::Aim(intent) => { intent.validate()?; continue; },
                     Command::Move(input) => {
                         if !input.valid() { return Err(bad()); }
                         continue;
                     },
-                    Command::Fire(_) => continue,
+                    Command::Fire(_) | Command::Armament(_) => {if next.fire.typed().is_some(){outcomes.push(fire::Outcome::RejectedVehicleState);}continue;},
                     Command::Leave => {},
                 }
             }
@@ -413,18 +944,39 @@ impl World {
                     if !input.valid() { return Err(bad()); }
                     next.input = *input;
                 },
-                Command::Fire(command) => {
+                Command::Fire(_) | Command::Armament(_) => {
                     let ammo_before = next.fire.ammo();
-                    let result = next.fire.apply(&[*command], now)?;
+                    let counts_before=next.fire.typed().map(|state|state.counts());
+                    let shooting=matches!(command,Command::Fire(fire::Command::Shoot)|Command::Armament(crate::p06t_armament091::Command::Shoot));
+                    if shooting&&next.devices.as_ref().is_some_and(|state|!state.capabilities().can_fire){outcomes.push(fire::Outcome::RejectedVehicleState);continue;}
+                    if let Some(state)=next.devices.as_ref(){next.fire.adjust_reload_scale(state.capabilities().reload_scale,now)?;}
+                    let result = match command {
+                        Command::Fire(command) if next.fire.typed().is_none()=>next.fire.apply(&[*command],now)?,
+                        Command::Fire(command)=>next.fire.apply_typed(&[match command{
+                            fire::Command::Shoot=>crate::p06t_armament091::Command::Shoot,
+                            fire::Command::ReplenishAmmo=>crate::p06t_armament091::Command::Replenish}],now)?,
+                        Command::Armament(command)=>next.fire.apply_typed(&[*command],now)?,
+                        _=>unreachable!(),
+                    };
                     for outcome in &result {
-                        if let fire::Outcome::AcceptedShot { ammo_remaining } = *outcome {
-                            if shots.len() >= self.vehicle_kind.battle_shot_limit() || projectiles.len() >= self.vehicle_kind.battle_shot_limit() { return Err(bad()); }
+                        let accepted=match *outcome{
+                            fire::Outcome::AcceptedShot{ammo_remaining}=>Some((ammo_remaining,None)),
+                            fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot{shell,remaining,..})=>Some((remaining,Some(shell))),
+                            _=>None,
+                        };
+                        if let Some((ammo_remaining,shell))=accepted {
+                            if shots.len() >= self.shot_limit() || projectiles.len() >= self.shot_limit() { return Err(bad()); }
                             let sequence = shots.len() as u32 + 1;
-                            let projectile = Projectile::launch(sequence, slot, &next, now)?;
+                            let projectile = if let Some(shell)=shell{Projectile::launch_shell_for_limit(sequence,slot,&next,now,self.shot_limit(),shell)?}
+                                else if self.mixed_profiles {Projectile::launch_for_limit(sequence,slot,&next,now,self.shot_limit())?}
+                                else {Projectile::launch(sequence, slot, &next, now)?};
                             let elapsed_ticks = now.duration_since(self.started.ok_or_else(|| bad())?).as_millis() / 100;
                             let launch_tick = 1000u32.checked_add(u32::try_from(elapsed_ticks).map_err(|_| bad())?)
                                 .ok_or_else(|| bad())?;
-                            impact_trace.admission(self.id, sequence, launch_tick, slot, ammo_before, ammo_remaining)?;
+                            if let Some(shell)=shell{
+                                let index=crate::p06t_shells091::PROFILES[next.vehicle_kind().mount().index()].shots.iter().position(|source|*source==shell).ok_or_else(||bad())?;
+                                impact_trace.admission_shell(self.id,sequence,launch_tick,slot,counts_before.ok_or_else(||bad())?[index],ammo_remaining,shell)?;
+                            }else{impact_trace.admission(self.id, sequence, launch_tick, slot, ammo_before, ammo_remaining)?;}
                             impact_trace.launch(self.id, &projectile, launch_tick)?;
                             shots.push(Shot { sequence, slot, tick: launch_tick });
                             projectiles.push(projectile);
@@ -454,18 +1006,29 @@ impl World {
     /// the projectile/trace state.
     pub fn advance_with_external(&mut self, now: Instant,
         external: Option<&[(usize, [f32; 3], [f32; 3], f32)]>) -> io::Result<bool> {
+        if self.mixed_ammo {
+            let mut next=self.clone();let changed=next.advance_inner(now,external)?;*self=next;Ok(changed)
+        }else{self.advance_inner(now,external)}
+    }
+    fn advance_inner(&mut self, now:Instant,external:Option<&[(usize,[f32;3],[f32;3],f32)]>)->io::Result<bool>{
         let Some(start) = self.started else { return Ok(false); };
         if now < self.last || now.duration_since(start) >= LIFETIME { return Err(bad()); }
+        if self.lifecycle.as_ref().is_some_and(|state| state.outcome().is_some()) {
+            // Outcome/statistics are immutable; late in-flight projectiles do
+            // not change HP after the result snapshot has been frozen.
+            self.last = now; self.tick = 1000 + (now.duration_since(start).as_millis() / 100) as u32;
+            return Ok(false);
+        }
         if let Some(rows) = external {
             let slots = rows.iter().map(|row| row.0).collect::<std::collections::BTreeSet<_>>();
-            if rows.len() != CAPACITY || slots.len() != CAPACITY || slots.iter().any(|slot| *slot >= CAPACITY) {
+            if rows.len() != self.expected_actors || slots.len() != self.expected_actors || slots.iter().any(|slot| *slot >= self.expected_actors) {
                 return Err(bad());
             }
             for (slot, position, direction, speed) in rows {
                 let actor = self.actors.get(*slot).ok_or_else(|| bad())?;
                 // A disconnected actor is parked in the authoritative world;
                 // its missing worker must not pause the surviving actor's clock.
-                if actor.session.is_none() && (*position != actor.position || *direction != actor.direction || *speed != 0.) {
+                if !self.mixed_profiles && actor.session.is_none() && (*position != actor.position || *direction != actor.direction || *speed != 0.) {
                     return Err(bad());
                 }
                 if position.iter().any(|v| !v.is_finite()) || direction.iter().any(|v| !v.is_finite()) || !speed.is_finite()
@@ -480,10 +1043,18 @@ impl World {
         let mut next_actors = self.actors.clone();
         let mut next_last = self.last;
         let mut next_tick = self.tick;
+        if tick_changed&&self.mixed_ammo{self.drain_fire(&mut next_actors,u64::from(tick-1000)*100)?;}
         if tick_changed {
             let dt = now.duration_since(self.last).as_secs_f32().min(0.2);
             for (slot, a) in next_actors.iter_mut().enumerate() {
-                if !a.ready || a.session.is_none() { continue; }
+                if !a.ready || a.session.is_none() || !a.alive() {
+                    // A parked/wreck body stays in the single physical scene and
+                    // can be pushed. No disconnected controller gains authority.
+                    if self.mixed_profiles {if let Some(rows)=external {let(_,position,direction,speed)=rows.iter().find(|(row,..)|*row==slot).ok_or_else(||bad())?;
+                        a.position=*position;a.direction=*direction;a.yaw=direction[0];a.speed=*speed;}}
+                    continue;
+                }
+                let previous_position = a.position;
                 if let Some(rows) = external {
                     if let Some((_, position, direction, speed)) = rows.iter().find(|(row, ..)| *row == slot) {
                         a.position = *position; a.direction = *direction; a.yaw = direction[0]; a.speed = *speed;
@@ -500,7 +1071,17 @@ impl World {
                     a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
                 }
                 a.direction[0] = a.yaw;
-                if a.health > 0 { a.aim.advance_pose_for(a.vehicle_kind,a.position, a.direction, dt)?; }
+                if self.lifecycle.as_ref().is_some_and(|state| state.allows_actions()) && a.alive() {
+                    let distance = (0..3).map(|i| (f64::from(a.position[i]) - f64::from(previous_position[i])).powi(2)).sum::<f64>().sqrt();
+                    a.mileage_metres += distance;
+                    if !a.mileage_metres.is_finite() || a.mileage_metres > 200_000. { return Err(bad()); }
+                }
+                if a.alive() {
+                    if let Some(armament)=a.fire.typed(){
+                        let caps=a.devices.as_ref().ok_or_else(||bad())?.capabilities();
+                        a.aim.advance_pose_for_selected(a.vehicle_kind,a.position,a.direction,dt,armament.current(),caps)?;
+                    }else{a.aim.advance_pose_for(a.vehicle_kind,a.position,a.direction,dt)?;}
+                }
             }
             next_last = now; next_tick = tick;
         }
@@ -537,10 +1118,21 @@ impl World {
                         let end_point = projectile.position_at(segment_end);
                         impact_trace.segment(self.id, projectile.sequence, tick, segment_tick_start,
                             start_point, end_point)?;
-                        if let Some(bundle) = &self.geometry {
-                            let target_slot = 1usize.checked_sub(projectile.slot).ok_or_else(|| bad())?;
-                            let target = next_actors.get(target_slot).ok_or_else(|| bad())?;
-                            let mesh = bundle.world_mesh(target, target_slot, tick)?;
+                        if self.geometry.is_some() {
+                            let mut target_slot = 1usize.checked_sub(projectile.slot).unwrap_or(0);
+                            if self.mixed_profiles {
+                                let mut selected:Option<(f32,usize)>=None;
+                                for (slot,actor) in next_actors.iter().enumerate().filter(|(slot,_)|*slot!=projectile.slot) {
+                                    let mesh=self.geometry_for(actor.vehicle_kind())?.world_mesh(actor,slot,tick)?;
+                                    let hits=super::collision::query(&mesh,start_point,end_point)?;
+                                    let t=hits.first().map_or(f32::INFINITY,|hit|hit.t);
+                                    if selected.is_none_or(|(old_t,old_slot)|t<old_t||(t==old_t&&slot<old_slot)){selected=Some((t,slot));}
+                                }
+                                target_slot=selected.ok_or_else(||bad())?.1;
+                            }
+                            let target = next_actors.get(target_slot).ok_or_else(|| bad())?.clone();
+                            let bundle=self.geometry_for(target.vehicle_kind())?.clone();
+                            let mesh = bundle.world_mesh(&target, target_slot, tick)?;
                             let (hits, material_facts, ground) = if let Some(terrain) = &self.terrain {
                                 if let Some(state)=&next_destructible {
                                     impact_trace.collision_query_world_filtered(self.id,projectile.sequence,tick,&mesh,bundle.materials(),terrain,
@@ -558,7 +1150,7 @@ impl World {
                             // Compare in the vehicle query's f32 parameter domain:
                             // terrain wins a shared rounding bucket, no epsilon.
                             if ground.as_ref().is_some_and(|g| hits.first().is_none_or(|v| (g.t as f32) <= v.t)) {
-                                if terrain_contacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                if terrain_contacts.len() >= self.shot_limit() { return Err(bad()); }
                                 let hit = impact_trace.terrain_contact(self.id, projectile.sequence, tick)?;
                                 let chord: [f64; 3] = std::array::from_fn(|i| f64::from(end_point[i])-f64::from(start_point[i]));
                                 let length = chord.iter().map(|v| v*v).sum::<f64>().sqrt();
@@ -572,18 +1164,21 @@ impl World {
                                     }
                                 }
                                 if let Some(state)=&mut next_fragiles {
-                                    if let Some(damage)=state.contact_for(projectile.vehicle_kind,projectile.sequence,projectile.slot,tick,hit)?{
+                                    let damaged=if let Some(shell)=projectile.shell{state.contact_shell_for(projectile.vehicle_kind,shell,projectile.sequence,projectile.slot,tick,hit)?}
+                                        else{state.contact_for(projectile.vehicle_kind,projectile.sequence,projectile.slot,tick,hit)?};
+                                    if let Some(damage)=damaged{
                                         impact_trace.fragile_damage(self.id,projectile.sequence,tick,&damage)?;
                                     }
                                 }
                                 projectile.terminal = hit.point; projectile.stopped = true;
+                                if projectile.shell.is_some(){self.explode_mixed(&mut next_actors,&mut impact_trace,projectile,hit.point,tick,None,next_fragiles.as_ref())?;}
                                 impact_trace.terminal(self.id, projectile.sequence, tick, impact::TerminalReason::TerrainCollision)?;
                                 continue 'projectile_loop;
                             }
                             if let Some(nearest) = hits.first() {
                                 let endpoint = std::array::from_fn(|i|
                                     start_point[i] + nearest.t * (end_point[i] - start_point[i]));
-                                if contacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                if contacts.len() >= self.shot_limit() { return Err(bad()); }
                                 let contact = Contact { shot: projectile.sequence, target_slot, tick,
                                     segment_start: start_point, segment_end: end_point,
                                     segment_seconds: segment_end.duration_since(segment_start).as_secs_f32(), endpoint,
@@ -593,13 +1188,23 @@ impl World {
                                     transform_revision: mesh.transform_revision().into(),
                                     material_facts: material_facts.ok_or_else(|| bad())? };
                                 let mut terminal_reason = impact::TerminalReason::UnresolvedCollision;
-                                if self.ap_test_lab && target.health > 0 {
-                                    if impacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                if projectile.shell.is_some()&&target.alive(){
+                                    if impacts.len()>=self.shot_limit(){return Err(bad());}
+                                    let before=target.health;
+                                    let resolution=self.direct_mixed(&mut next_actors,&mut impact_trace,projectile,&contact,&bundle)?;
+                                    let segment=if matches!(resolution.decision,crate::p06t_damage::Decision::Unsupported|crate::p06t_damage::Decision::OutOfRange){None}
+                                        else{Some(bundle.impact_segment(&contact)?)};
+                                    impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,
+                                        outcome:ImpactOutcome::Mixed(resolution),health_before:before,
+                                        health_after:before.saturating_sub(resolution.damage_hp as i16).max(0),segment});
+                                    terminal_reason=impact::TerminalReason::TestLabMixedImpact;
+                                }else if self.ap_test_lab && target.alive() {
+                                    if impacts.len() >= self.shot_limit() { return Err(bad()); }
                                     let distance = (0..3).map(|i| {
                                         let delta = f64::from(endpoint[i]) - f64::from(projectile.origin[i]);
                                         delta * delta
                                     }).sum::<f64>().sqrt();
-                                    let resolution = ap::resolve_for(projectile.vehicle_kind,ap::Input {
+                                    let resolution = ap::resolve_for_pair(projectile.vehicle_kind,target.vehicle_kind(),ap::Input {
                                         material: &contact.material_facts,
                                         segment_direction: std::array::from_fn(|i| end_point[i] - start_point[i]),
                                         winding_normal: nearest.normal, distance,
@@ -621,8 +1226,16 @@ impl World {
                                         damaged.input = Input::STOP; damaged.speed = 0.; damaged.aim.park();
                                     }
                                     terminal_reason = impact::TerminalReason::TestLabImpact;
+                                } else if projectile.shell.is_some()&&!target.alive(){
+                                    if impacts.len()>=self.shot_limit(){return Err(bad());}
+                                    let segment=Some(bundle.impact_segment(&contact)?);
+                                    impact_trace.wreck_inactive(self.id,projectile.sequence,tick,projectile.slot,target_slot,
+                                        target.health,target.health,&target)?;
+                                    impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,
+                                        outcome:ImpactOutcome::WreckBlocked,health_before:target.health,health_after:target.health,segment});
+                                    terminal_reason=impact::TerminalReason::TestLabWreckImpact;
                                 } else if self.ap_test_lab && target.health == 0 {
-                                    if impacts.len() >= MAX_SHOTS { return Err(bad()); }
+                                    if impacts.len() >= self.shot_limit() { return Err(bad()); }
                                     // Retained geometry blocks a shell on an already dead actor.
                                     // Require the same validated native segment, but never run
                                     // the live-armor resolver or mutate health/death/input state.
@@ -637,6 +1250,7 @@ impl World {
                                 }
                                 contacts.push(contact);
                                 projectile.terminal = endpoint; projectile.stopped = true;
+                                if projectile.shell.is_some(){self.explode_mixed(&mut next_actors,&mut impact_trace,projectile,endpoint,tick,Some(target_slot),next_fragiles.as_ref())?;}
                                 impact_trace.terminal(self.id, projectile.sequence, tick,
                                     terminal_reason)?;
                                 continue 'projectile_loop;
@@ -660,6 +1274,9 @@ impl World {
                 expired = true;
             }
         }
+        if self.mixed_ammo{for actor in &mut next_actors{if let Some(state)=actor.devices.as_ref(){
+            actor.fire.adjust_reload_scale(state.capabilities().reload_scale,now)?;
+        }}}
         self.actors = next_actors;
         self.last = next_last;
         self.tick = next_tick;
@@ -675,8 +1292,112 @@ impl World {
 }
 
 #[cfg(test)]
+#[path="model_scene_tests.rs"]
+mod scene_tests;
+#[cfg(test)]
+#[path="visibility_world_tests.rs"]
+mod visibility_world_tests;
+#[cfg(test)]
+#[path="spotting_world_tests.rs"]
+mod spotting_world_tests;
+
+#[cfg(test)]
+#[path="p04m_capacity_tests.rs"]
+mod p04m_capacity_tests;
+#[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    /// Explicit physics laboratory fixture. It never manufactures an owned
+    /// receipt or bypasses the production admission check in attach_owned.
+    pub(crate) fn attach_physics_profile(world:&mut World,kind:VehicleKind,
+        identity:Identity,session:u32)->io::Result<usize> {
+        if !world.mixed_profiles || world.started.is_some() {return Err(bad());}
+        let previous=world.vehicle_kind;
+        world.vehicle_kind=kind;
+        let result=world.attach_loadout(identity,session,None);
+        world.vehicle_kind=previous;
+        result
+    }
+    pub(crate) fn profile13_loadout(kind:VehicleKind,slot:usize,ap_count:u16)
+        ->(Identity,crate::battle091::profile13::FrozenLoadout) {
+        use sha2::{Digest,Sha256};
+        let account=format!("{:08x}-1234-4234-8234-123456789abc",slot+1);
+        let native_inventory_id=if kind==VehicleKind::Ms1{1}else{2};
+        let vehicle_inventory_id=format!("{account}:{}",if kind==VehicleKind::Ms1{"starter-vehicle-v1"}else{"test-is7-v1"});
+        let shell_definition_id=format!("shell:{}-stock-ap",kind.label());
+        let crew_ids=(0..if kind==VehicleKind::Ms1{2}else{5}).map(|n|format!("{account}:crew:{n}")).collect::<Vec<_>>();
+        let descriptor=kind.descriptor().to_vec();
+        let value=serde_json::json!({"kind":kind.label(),"descriptor_hex":descriptor.iter().map(|b|format!("{b:02x}")).collect::<String>(),
+            "native_inventory_id":native_inventory_id,"vehicle_inventory_id":vehicle_inventory_id,
+            "ap_count":ap_count,"shell_definition_id":shell_definition_id,"shell_compact_id":kind.shell_compact_id(),
+            "max_hp":kind.max_health(),"crew_ids":crew_ids});
+        let sha256=format!("{:x}",Sha256::digest(serde_json::to_vec(&value).unwrap()));
+        (Identity{account,database:slot as i32+1,name:format!("owned-{slot}")},crate::battle091::profile13::FrozenLoadout{
+            kind,descriptor,native_inventory_id,vehicle_inventory_id,ap_count,shell_definition_id,
+            shell_compact_id:kind.shell_compact_id(),max_hp:kind.max_health(),crew_ids,sha256})
+    }
+    #[test] fn profile13_owned_counts_survive_peer_leave_and_same_receipt_rejoin_without_refill() {
+        for kind in [VehicleKind::Ms1,VehicleKind::Is7] {
+            let now=Instant::now();let mut world=World::new_for_vehicle(91,now,crate::map_profile091::MapId::Prohorovka,kind).unwrap();
+            let (first,first_loadout)=profile13_loadout(kind,0,7);
+            let (second,second_loadout)=profile13_loadout(kind,1,11);
+            assert_eq!(world.attach_owned(first.clone(),1,&first_loadout).unwrap(),0);
+            assert_eq!(world.attach_owned(second.clone(),2,&second_loadout).unwrap(),1);
+            world.start(now).unwrap();world.set_ready(0,1).unwrap();world.set_ready(1,2).unwrap();
+            for slot in 0..2 {world.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();}
+            assert_eq!((world.actors[0].fire.ammo(),world.actors[1].fire.ammo()),(6,10));
+            let first_fire=world.actors[0].fire.clone();let second_fire=world.actors[1].fire.clone();
+            world.apply(1,2,&[Command::Leave],now).unwrap();
+            assert_eq!(world.actors[0].fire,first_fire);
+            assert!(world.attach(second.clone(),3).is_err());
+            let (_,changed)=profile13_loadout(kind,1,12);
+            assert!(world.attach_owned(second.clone(),3,&changed).is_err());
+            assert_eq!(world.attach_owned(second,3,&second_loadout).unwrap(),1);
+            assert_eq!(world.actors[1].fire,second_fire);assert_eq!(world.actors[0].fire,first_fire);
+            let binding=super::super::wire::binding(&world,1,now).unwrap();
+            let rows=&binding[binding.len()-54..binding.len()-21];
+            assert_eq!(&rows[2..6],&kind.shell_compact_id().to_le_bytes());
+            assert_eq!(&rows[6..8],&10u16.to_le_bytes());
+        }
+    }
+    #[test] fn profile13_owned_admission_rejects_foreign_changed_descriptor_kind_and_overflow_atomically() {
+        let now=Instant::now();
+        for kind in [VehicleKind::Ms1,VehicleKind::Is7] {
+            let (identity,loadout)=profile13_loadout(kind,0,7);
+            for change in 0..8 {
+                let mut world=World::new_for_vehicle(92,now,crate::map_profile091::MapId::Prohorovka,kind).unwrap();
+                let mut wrong=loadout.clone();let mut who=identity.clone();
+                match change {
+                    0=>wrong.descriptor[0]^=1,1=>wrong.kind=if kind==VehicleKind::Ms1{VehicleKind::Is7}else{VehicleKind::Ms1},
+                    2=>wrong.ap_count=0,3=>wrong.ap_count=kind.ammo_limit()+1,4=>wrong.max_hp+=1,
+                    5=>wrong.shell_compact_id+=1,6=>who.account="foreign".into(),7=>wrong.sha256="0".repeat(64),_=>unreachable!(),
+                }
+                assert!(world.attach_owned(who,1,&wrong).is_err(),"kind={kind:?} mutation={change}");
+                assert!(world.actors.is_empty());assert!(world.shots.is_empty());
+            }
+            let other=if kind==VehicleKind::Ms1{VehicleKind::Is7}else{VehicleKind::Ms1};
+            let (identity,other_loadout)=profile13_loadout(other,0,7);
+            let mut world=World::new_for_vehicle(93,now,crate::map_profile091::MapId::Prohorovka,kind).unwrap();
+            assert!(world.attach_owned(identity,1,&other_loadout).is_err());assert!(world.actors.is_empty());
+        }
+    }
+    #[test] fn profile13_two_full_ms1_loadouts_fire_all_192_owned_rounds_without_history_truncation() {
+        let now=Instant::now();let mut world=World::new(94,now).unwrap();
+        for slot in 0..2 {let (identity,loadout)=profile13_loadout(VehicleKind::Ms1,slot,96);
+            world.attach_owned(identity,slot as u32+1,&loadout).unwrap();}
+        world.start(now).unwrap();world.set_ready(0,1).unwrap();world.set_ready(1,2).unwrap();
+        for round in 0..96u64 {for slot in 0..2 {
+            let result=world.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],now+Duration::from_secs(round*3)).unwrap();
+            assert_eq!(result,vec![fire::Outcome::AcceptedShot{ammo_remaining:95-round as u16}]);
+        }}
+        assert_eq!(world.shots.len(),192);assert_eq!(world.projectiles.len(),192);
+        assert_eq!(world.impact.events().iter().filter(|event|matches!(event,impact::Event::Admission{..})).count(),192);
+        super::super::wire::tracer_start(world.projectiles.last().unwrap()).unwrap();
+        for slot in 0..2 {assert_eq!(world.actors[slot].fire.ammo(),0);
+            assert_eq!(world.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],now+Duration::from_secs(288)).unwrap(),
+                vec![fire::Outcome::RejectedNoAmmo]);}
+        assert_eq!(world.shots.len(),MAX_SHOTS);assert_eq!(VehicleKind::Ms1.battle_shot_limit(),MAX_SHOTS);
+    }
     #[test]
     fn contract_error_identifies_direct_and_lazy_call_sites() {
         let direct_line = line!() + 1;
@@ -689,6 +1410,15 @@ pub(super) mod tests {
         assert_eq!(lazy.kind(), io::ErrorKind::InvalidData);
         assert!(lazy.to_string().contains(&format!("{}:{}:", file!(), lazy_line)));
         assert_ne!(direct.to_string(), lazy.to_string());
+    }
+    #[test]fn tank_ram_damages_once_per_contact_and_rearms_after_separation(){
+        let now=Instant::now();let mut w=World::new_for_roster(401,now,crate::map_profile091::MapId::Prohorovka,2).unwrap();
+        attach_physics_profile(&mut w,VehicleKind::Ms1,Identity{account:"a".into(),database:1,name:"a".into()},1).unwrap();attach_physics_profile(&mut w,VehicleKind::Is7,Identity{account:"b".into(),database:2,name:"b".into()},2).unwrap();
+        let c=TankContactInput{slot_a:0,slot_b:1,substep:1,point:[0.,1.,0.],normal:[1.,0.,0.],relative_velocity:[5.,0.,0.]};let before=w.actors.iter().map(|a|a.health).collect::<Vec<_>>();w.apply_tank_contacts(&[c],1,1006).unwrap();let after=w.actors.iter().map(|a|a.health).collect::<Vec<_>>();
+        assert!(after[0]<before[0]&&after[1]<before[1]);assert_eq!(w.ram_damage_events.len(),2);w.apply_tank_contacts(&[c],2,1012).unwrap();assert_eq!(w.ram_damage_events.len(),2);w.apply_tank_contacts(&[],3,1018).unwrap();w.apply_tank_contacts(&[c],4,1024).unwrap();assert_eq!(w.ram_damage_events.len(),4);
+    }
+    #[test]fn tank_ram_batch_is_atomic_on_duplicate_or_bad_geometry(){
+        let now=Instant::now();let mut w=World::new_for_roster(402,now,crate::map_profile091::MapId::Prohorovka,2).unwrap();attach_physics_profile(&mut w,VehicleKind::Ms1,Identity{account:"a".into(),database:1,name:"a".into()},1).unwrap();attach_physics_profile(&mut w,VehicleKind::Is7,Identity{account:"b".into(),database:2,name:"b".into()},2).unwrap();let c=TankContactInput{slot_a:0,slot_b:1,substep:1,point:[0.,1.,0.],normal:[1.,0.,0.],relative_velocity:[5.,0.,0.]};assert!(w.apply_tank_contacts(&[c,c],1,1006).is_err());assert!(w.ram_damage_events.is_empty());let mut badc=c;badc.normal=[2.,0.,0.];assert!(w.apply_tank_contacts(&[badc],1,1006).is_err());assert!(w.ram_damage_events.is_empty());
     }
     #[test]fn shot_while_world_lags_wall_bucket_keeps_a_nonempty_first_segment(){
         let now=Instant::now();let mut w=world(now);w.advance(now+STEP).unwrap();assert_eq!(w.tick,1001);
@@ -1278,3 +2008,25 @@ pub(super) mod tests {
         assert!(w.advance(now).is_err()); assert!(w.advance(now + LIFETIME).is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "p06t_world_tests.rs"]
+mod p06t_world_tests;
+
+#[cfg(test)]
+#[path="result_spots_world_tests.rs"]
+mod first_spot_tests;
+
+#[cfg(test)]
+#[path="seven_loss_boundary_tests.rs"]
+mod seven_loss_boundary_tests;
+
+#[cfg(test)]#[path="p10b_loss_roster_tests.rs"]mod p10b_loss_roster_tests;
+
+#[cfg(test)]
+#[path="p10b_team_world_tests.rs"]
+mod p10b_team_world_tests;
+
+#[cfg(test)]
+#[path="p05c_ram_terminal_tests.rs"]
+mod ram_terminal_tests;

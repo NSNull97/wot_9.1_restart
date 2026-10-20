@@ -1,0 +1,51 @@
+{
+  "schema": "p08b-hold-update-golden.v1",
+  "classification": "AUTHORED_PRIMITIVE_GOLDEN_NOT_NATIVE",
+  "cases": [
+    {
+      "native_inventory_id": 1,
+      "turret_compact_id": 5891,
+      "gun_compact_id": 5892,
+      "shells_layout": [
+        -2570,
+        0,
+        -2826,
+        2,
+        3082,
+        9
+      ],
+      "wire_revision": 7,
+      "delta_hex": "80027d285507707265765265764b0755037265764b085509696e76656e746f72797d284b017d2855067368656c6c737d284b015d284d0a0a4b004d0a0b4b024d0a0c4b096575550c7368656c6c734c61796f75747d284b017d28284d03174d0417745d284af6f5ffff4b004af6f4ffff4b024d0a0c4b0965757555046c6f636b7d284b014e757575752e",
+      "body_hex": "13578b8a80027d285507707265765265764b0755037265764b085509696e76656e746f72797d284b017d2855067368656c6c737d284b015d284d0a0a4b004d0a0b4b024d0a0c4b096575550c7368656c6c734c61796f75747d284b017d28284d03174d0417745d284af6f5ffff4b004af6f4ffff4b024d0a0c4b0965757555046c6f636b7d284b014e757575752e",
+      "delta_bytes": 138,
+      "sha256": "75d31f48fa45ca7c49a5e82c9cd02ef4836cf5ab5b3f63cd8d9ab297b30e5cd1"
+    },
+    {
+      "native_inventory_id": 2,
+      "turret_compact_id": 12035,
+      "gun_compact_id": 14852,
+      "shells_layout": [
+        -14602,
+        3,
+        -14858,
+        0,
+        15114,
+        1
+      ],
+      "wire_revision": 255,
+      "delta_hex": "80027d285507707265765265764bff55037265764d00015509696e76656e746f72797d284b017d2855067368656c6c737d284b025d284d0a394b034d0a3a4b004d0a3b4b016575550c7368656c6c734c61796f75747d284b027d28284d032f4d043a745d284af6c6ffff4b034af6c5ffff4b004d0a3b4b0165757555046c6f636b7d284b024e757575752e",
+      "body_hex": "13578c8b80027d285507707265765265764bff55037265764d00015509696e76656e746f72797d284b017d2855067368656c6c737d284b025d284d0a394b034d0a3a4b004d0a3b4b016575550c7368656c6c734c61796f75747d284b027d28284d032f4d043a745d284af6c6ffff4b034af6c5ffff4b004d0a3b4b0165757555046c6f636b7d284b024e757575752e",
+      "delta_bytes": 139,
+      "sha256": "7aff5cdc55435f3cee0086279d8737805a3fb7e74502e7bb88ab9a94b3fb9db3"
+    }
+  ],
+  "source_encoder": {
+    "path": "tools/p09d_ammo_projection.py",
+    "sha256": "58a5e5f477c7ef79f1fb55d9c2e4efac694d2518f7a92cc56e7d6314880ed5d5"
+  },
+  "source_mounts": {
+    "path": "tools/p09c_ammo_catalog.py",
+    "sha256": "e9c269133033bcf4ec1ebfdff97decadd219f51da0c5e9c727302edc8a03faff"
+  },
+  "checks": "bounded protocol2 primitive output; no executable opcodes; exact one update envelope; no warehouse10 or synthetic success"
+}

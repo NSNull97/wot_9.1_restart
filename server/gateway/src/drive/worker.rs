@@ -203,7 +203,7 @@ impl RemovalSpec {
 struct Asset {path:PathBuf,bytes:u64,sha256:String}
 #[derive(Clone,Debug)]
 pub struct Pool {pub local_root:PathBuf,pub maps:Vec<MapSpec>,pub sha256:String,executable:PathBuf,
-    runtime:PathBuf,assets:Vec<Asset>,vehicle_profile:Option<profile::VehicleProfile>}
+    runtime:PathBuf,assets:Vec<Asset>,vehicle_profile:Option<profile::VehicleProfile>,shared_only:bool}
 impl Pool {
     pub fn load(local_root:&Path,path:&Path)->io::Result<Self>{
         non_reparse(local_root)?;let root=local_root.canonicalize()?;let raw=read(&owned(&root,path)?,16384)?;
@@ -211,7 +211,7 @@ impl Pool {
         let pool_version=uint(&v["version"])?;
         let vehicle_profile=match pool_version {
             1=>{fields(&v,&["version","profile","worker","maps"])?;None},
-            2|3=>{fields(&v,&["version","profile","worker","maps","vehicle_profile"])?;
+            2|3|4=>{fields(&v,&["version","profile","worker","maps","vehicle_profile"])?;
                 Some(profile::VehicleProfile::load(&root,&v["vehicle_profile"],pool_version)?)},
             _=>return Err(bad()),
         };
@@ -241,7 +241,7 @@ impl Pool {
         let maps=specs.iter().map(|m|MapSpec::load(&root,m,config_version)).collect::<io::Result<Vec<_>>>()?;
         if maps[0].arena_type_id==maps[1].arena_type_id || maps[0].config==maps[1].config{return Err(bad());}
         if let Some(profile)=&vehicle_profile {for map in &maps{profile.verify_map(&root,map)?;}}
-        let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets,vehicle_profile};
+        let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets,vehicle_profile,shared_only:pool_version==4};
         out.verify_assets()?;Ok(out)
     }
     fn angular_profile(&self,map:&MapSpec)->io::Result<ram_proof::Profile>{
@@ -256,7 +256,10 @@ impl Pool {
         }
         Ok(selected)
     }
+    /// Version4 is metadata for IPC7 only; it never authorizes the independent worker.
+    pub fn shared_only(&self)->bool{self.shared_only}
     pub fn vehicle_kind(&self)->VehicleKind{self.vehicle_profile.as_ref().map_or(VehicleKind::Ms1,|p|p.kind())}
+    pub fn shared_source_profile(&self)->Option<(PathBuf,String)> {self.vehicle_profile.as_ref().and_then(|p|p.shared_source_profile())}
     fn verify_assets(&self)->io::Result<()> {
         let mut found=BTreeSet::new();let mut stack=vec![self.runtime.clone()];let mut directories=0;
         while let Some(dir)=stack.pop(){directories+=1;if directories>256{return Err(bad());}non_reparse(&dir)?;
@@ -320,6 +323,10 @@ fn removal_ack(raw:&[u8],map:&MapSpec,spec:&RemovalSpec,generation:u32,seq:u32)-
 }
 #[derive(Clone,Debug,PartialEq)]
 pub struct ObjectContact {pub object_id:u32,pub kind:String,pub substep:u8,pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3]}
+/// IPC7 uses exactly the accepted IPC6 scalar proof parser and verifier.
+pub(crate) fn shared_angular_proof(state:&Value,contacts:&[ObjectContact],spec:&CatalogSpec,profile:ram_proof::Profile,seq:u32)->io::Result<Arc<ram_proof::FrameProof>> {
+    angular::parse(state,contacts,spec,profile,seq)
+}
 #[derive(Clone,Debug,PartialEq)]
 pub struct Pose {pub position:[f32;3],pub direction:[f32;3],pub speed:f32,pub rspeed:f32,pub contacts:u8,
     pub linear_velocity:[f32;3],pub angular_velocity:[f32;3],pub wheel_contact_masks:[u8;6]}
@@ -406,6 +413,8 @@ impl Worker {
         Self::launch_inner(pool,map,generation,now,spawn,None,Some((spec,initial_scene)))
     }
     fn launch_inner(pool:Arc<Pool>,map:MapSpec,generation:u32,now:Instant,spawn:Option<[f32;3]>,removal:Option<RemovalSpec>,initial:Option<(CatalogSpec,Scene)>)->io::Result<Self>{
+        if pool.shared_only {return Err(io::Error::new(io::ErrorKind::InvalidInput,
+            "extended shared-only pool requires IPC7 SceneManifest3"));}
         if let Some(profile)=&pool.vehicle_profile{profile.verify_map(&pool.local_root,&map)?;}
         let angular_profile=if initial.as_ref().is_some_and(|(s,_)|s.version()==8){Some(pool.angular_profile(&map)?)}else{None};
         if generation==0{return Err(bad());}
@@ -544,11 +553,16 @@ impl Worker {
     }
     pub fn poll(&mut self,now:Instant)->io::Result<Option<State>>{
         if now<self.started || (!self.ready && now.duration_since(self.started)>START_TIMEOUT)
-            || self.pending.is_some_and(|pending|now<pending.sent() || now.duration_since(pending.sent())>REPLY_TIMEOUT){return Err(bad());}
+            || self.pending.is_some_and(|pending|now<pending.sent()){return Err(bad());}
+        // The reply deadline is judged by the reader thread's receipt time: a
+        // timely reply that waited while the gateway loop stalled is scheduler
+        // lag (bounded by the shared drive_deadline), not a worker timeout.
+        let late=|pending:Option<Pending>,at:Instant|pending.is_some_and(|pending|at.duration_since(pending.sent())>REPLY_TIMEOUT);
         match self.receiver.try_recv(){
             Ok(Event::Failed)|Err(mpsc::TryRecvError::Disconnected)=>Err(bad()),
-            Err(mpsc::TryRecvError::Empty)=>Ok(None),
+            Err(mpsc::TryRecvError::Empty)=>if late(self.pending,now){Err(bad())}else{Ok(None)},
             Ok(Event::Line(received,raw))=>{
+                if late(self.pending,received.min(now)){return Err(bad());}
                 let seq=if !self.ready {0}else{
                     let pending=self.pending.ok_or_else(bad)?;if received<pending.sent(){return Err(bad());}
                     match pending {
@@ -612,7 +626,7 @@ pub(crate) mod controlled_ipc {
     }
     pub(crate) fn pool(map: MapSpec) -> Arc<Pool> {
         Arc::new(Pool { local_root: PathBuf::new(), maps: vec![map], sha256: "0".repeat(64),
-            executable: PathBuf::new(), runtime: PathBuf::new(), assets: Vec::new(), vehicle_profile: None })
+            executable: PathBuf::new(), runtime: PathBuf::new(), assets: Vec::new(), vehicle_profile: None, shared_only:false })
     }
     pub(crate) fn angular_fixture(name:&str)->(Value,CatalogSpec,Arc<crate::gateway091::shared::fragiles::Catalog>,ram_proof::Profile){angular::tests::bound(name)}
     pub(crate) fn angular_pool(map:MapSpec,profile:ram_proof::Profile)->Arc<Pool>{
@@ -770,7 +784,9 @@ pub(crate) mod tests {
         // config used by the separate real-child test. Preserve both hashes.
         let mut archived_map=pool.maps.iter().find(|m|m.asset=="01_karelia").unwrap().clone();
         archived_map.config=root.join("server/map-drive/01_karelia-v1.json");
-        archived_map.config_sha256=format!("{:x}",Sha256::digest(read(&archived_map.config,16384).unwrap()));
+        // Saved IPC names the immutable original config, not its C runtime derivation.
+        let original=crate::portable_test_fixtures::original_bytes(&archived_map.config,"cf93c617d328865faaf93b7081eb838eb13262b12fe27b4a603e1f2a7023f4c2",16384);
+        archived_map.config_sha256=format!("{:x}",Sha256::digest(original));
         assert_eq!(archived_map.config_sha256,"cf93c617d328865faaf93b7081eb838eb13262b12fe27b4a603e1f2a7023f4c2");
         for (i,line) in lines.iter().enumerate(){let s=response(line,&archived_map,i as u32).unwrap();assert_eq!(s.pose.contacts,5);assert_eq!(s.pose.wheel_contact_masks,[59;6]);}
     }

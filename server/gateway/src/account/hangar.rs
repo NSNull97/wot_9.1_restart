@@ -13,6 +13,10 @@ const MAX_DEPTH: usize = 16;
 const CHUNK_SIZE: usize = 400;
 const EMPTY_DICT: &[u8] = b"\x80\x02}.";
 
+fn shop_cache_maximum(research:bool)->i32 {
+    ((if research {crate::research_service091::MAX_SHOP_BYTES}else {MAX_FIXTURE})+64) as i32
+}
+
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
@@ -24,6 +28,7 @@ pub struct Fixtures {
     dossier: Vec<u8>,
     dossier_cursor: Option<DossierCursor>,
     research: bool,
+    p04m: Option<std::sync::Arc<crate::p04m_companion091::Binding>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -198,7 +203,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                 // Existing laboratory requests and revision1 refresh stay strict.
                 let cache_hint = interactive && version==0 && match i16::from_le_bytes([packet[5],packet[6]]) {
                     100 => last_change_time!=0 && third==0,
-                    300 => (1..=((if research_service {crate::research_service091::MAX_SHOP_BYTES}else {MAX_FIXTURE})+64) as i32).contains(&last_change_time),
+                    300 => (1..=shop_cache_maximum(research_service)).contains(&last_change_time),
                     _ => false,
                 };
                 // UI10: __onSyncComplete advances revision, then the same
@@ -395,6 +400,16 @@ impl Fixtures {
         fixtures.dossier_cursor=grant_dossier_cursor(directory,&fixtures.dossier,true)?;
         Ok(fixtures)
     }
+    pub fn load_p04m(directory:&Path)->io::Result<Self> {
+        let mut fixtures=Self::load_with_budget(directory,crate::transport091::INTERACTIVE_MAX_SEQUENCE,true)?;
+        fixtures.dossier_cursor=grant_dossier_cursor_with_pool(directory,&fixtures.dossier,true,true)?;
+        let manifest=metadata::<DossierManifest>(directory,"manifest.json")?.ok_or_else(||invalid("pool manifest missing"))?;
+        let revision=manifest.snapshot_revision.ok_or_else(||invalid("pool snapshot revision"))? as u64;
+        let binding=crate::p04m_companion091::Binding::metadata(directory,&manifest.account_id,manifest.native_database_id,revision)?;
+        if !binding.matches_state(&fixtures.state){return Err(invalid("pool state changed while loading fixture"));}
+        fixtures.p04m=Some(std::sync::Arc::new(binding));Ok(fixtures)
+    }
+    pub(crate) fn p04m_binding(&self)->Option<&std::sync::Arc<crate::p04m_companion091::Binding>>{self.p04m.as_ref()}
     fn load_with_budget(directory:&Path,sequence_budget:u32,research:bool)->io::Result<Self> {
         fn read(directory: &Path, name: &str, root: Kind, maximum:usize, nodes:usize) -> io::Result<Vec<u8>> {
             let file = File::open(directory.join(name))?;
@@ -411,7 +426,7 @@ impl Fixtures {
             state: read(directory, "state.bin", Kind::Dict,if research {crate::research_service091::MAX_STATE_BYTES}else {MAX_FIXTURE},if research {crate::research_service091::MAX_STATE_NODES}else {MAX_NODES})?,
             shop: read(directory, "shop.bin", Kind::Dict,if research {crate::research_service091::MAX_SHOP_BYTES}else {MAX_FIXTURE},if research {crate::research_service091::MAX_STATE_NODES}else {MAX_NODES})?,
             dossier: read(directory, "dossier.bin", Kind::Tuple,MAX_FIXTURE,MAX_NODES)?,
-            dossier_cursor: None, research,
+            dossier_cursor: None, research,p04m:None,
         };
         // Necessary startup bound, not a promise of a 30-second session. Each
         // stream adds 11 zlib bytes; its response/header share the first chunk.
@@ -451,6 +466,45 @@ impl Fixtures {
         }
     }
 
+    /// Persistent shop size/CRC are bounded opaque hints. They never choose
+    /// content or authorize a revision; return always streams this fixture.
+    pub(crate) fn validate_shop_cursor(&self,version:i64,compressed_size:i32,crc:i32)->io::Result<()> {
+        if version!=self.shop_sync_revision()? || !(0..=shop_cache_maximum(self.research)).contains(&compressed_size)
+            || (compressed_size==0 && crc!=0) {
+            return Err(invalid("shop cache cursor differs from authenticated fixture budget/revision"));
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_dossier_cursor_for_test(&self, version: i64, last_change_time: i32) -> io::Result<Self> {
+        // Authored unit fixture only: preserve the already supported original
+        // blank-grant pickle and its one exact cursor as an inseparable pair.
+        // No loader, actual owner metadata or production cursor rule changes.
+        if version != 1 || last_change_time <= 0 {
+            return Err(invalid("test dossier cursor version/time"));
+        }
+        let mut fixtures = self.clone();
+        fixtures.dossier = granted_dossier_bytes(last_change_time);
+        fixtures.dossier_cursor = Some(DossierCursor {
+            version, last_change_time, vehicle_type_compact_descr: 7169,
+        });
+        fixtures.validate_dossier_cursor(version, last_change_time)?;
+        Ok(fixtures)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_research_shop_for_test(&self,bytes:usize,revision:u8)->io::Result<Self> {
+        // Authored inert bytes for the return parser/stream regression only;
+        // this bypasses no production loader or profile13 ownership check.
+        let mut shop=b"\x80\x02}(U\x03revK".to_vec();shop.push(revision);shop.extend(b"U\x01xT");
+        let padding=bytes.checked_sub(shop.len()+6).ok_or_else(||invalid("test shop size"))?;
+        shop.extend((padding as u32).to_le_bytes());shop.resize(shop.len()+padding,b'x');shop.extend(b"u.");
+        validate_research_shop(&shop)?;
+        let mut fixtures=self.clone();fixtures.shop=shop;fixtures.research=true;
+        fixtures.shop_sync_revision()?;Ok(fixtures)
+    }
+
     /// Immutable source bytes for a separately versioned outgoing policy. The
     /// original fixture hash/VehicleSeed binding must never become its output.
     pub(crate) fn state_bytes(&self) -> &[u8] { &self.state }
@@ -476,6 +530,7 @@ struct DossierManifest {
     account_id:String,native_database_id:i32,
     grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,crew_policy_sha256:Option<String>,
     research_policy_sha256:Option<String>,research_catalog_sha256:Option<String>,
+    pool_schema:Option<String>,pool_registry_sha256:Option<String>,pool_policy_sha256:Option<String>,
 }
 struct DossierCompatibility {
     snapshot_revision:Option<u32>,wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
@@ -521,7 +576,8 @@ metadata_fields!(DossierManifest,false,{fixture_version:Option<u32>,profile_vers
     wire_sync_revision:Option<u32>,compatibility_catalog_revision:Option<u32>,
     account_id:String,native_database_id:i32,
     grant:Option<TestGrantMetadata>,preservation:Option<DossierPreservation>,crew_policy_sha256:Option<String>,
-    research_policy_sha256:Option<String>,research_catalog_sha256:Option<String>});
+    research_policy_sha256:Option<String>,research_catalog_sha256:Option<String>,
+    pool_schema:Option<String>,pool_registry_sha256:Option<String>,pool_policy_sha256:Option<String>});
 metadata_fields!(DossierCompatibility,false,{snapshot_revision:Option<u32>,wire_sync_revision:Option<u32>,
     compatibility_catalog_revision:Option<u32>,dossier_cache:Option<DossierCursor>});
 
@@ -550,8 +606,19 @@ fn granted_dossier_bytes(time:i32)->Vec<u8> {
 }
 
 fn grant_dossier_cursor(directory:&Path,raw:&[u8],research:bool)->io::Result<Option<DossierCursor>> {
+    grant_dossier_cursor_with_pool(directory,raw,research,false)
+}
+fn grant_dossier_cursor_with_pool(directory:&Path,raw:&[u8],research:bool,pool:bool)->io::Result<Option<DossierCursor>> {
     let manifest=metadata::<DossierManifest>(directory,"manifest.json")?;
     let compatibility=metadata::<DossierCompatibility>(directory,"compatibility.json")?;
+    if pool {
+        let m=manifest.as_ref().ok_or_else(||invalid("pool manifest missing"))?;
+        if !research || m.pool_schema.as_deref()!=Some(crate::p04m_companion091::SCHEMA)
+            ||m.pool_registry_sha256.as_deref()!=Some(crate::p04m_companion091::REGISTRY_SHA256)
+            ||m.pool_policy_sha256.as_deref()!=Some(crate::p04m_companion091::POLICY_SHA256){return Err(invalid("explicit pool manifest source/policy binding"));}
+    }else if manifest.as_ref().is_some_and(|m|m.pool_schema.is_some()||m.pool_registry_sha256.is_some()||m.pool_policy_sha256.is_some()){
+        return Err(invalid("pool fixture requires explicit P04M loader"));
+    }
     if research && !manifest.as_ref().is_some_and(|m| (m.fixture_version,m.profile_version)==(Some(13),Some(13))) {
         return Err(invalid("research loader requires explicit profile13"));
     }
@@ -855,7 +922,7 @@ fn variable16(id: u8, payload: &[u8]) -> io::Result<Vec<u8>> {
 fn stream(id: i16, raw: &[u8], first: Vec<u8>) -> io::Result<Vec<Vec<u8>>> {
     stream_with_budget(id,raw,first,MAX_FIXTURE)
 }
-fn stream_with_budget(id:i16,raw:&[u8],mut first:Vec<u8>,maximum:usize)->io::Result<Vec<Vec<u8>>> {
+pub(crate) fn stream_with_budget(id:i16,raw:&[u8],mut first:Vec<u8>,maximum:usize)->io::Result<Vec<Vec<u8>>> {
     if raw.is_empty() || raw.len() > maximum || maximum>32768 { return Err(invalid("stream payload size")); }
     // One bounded stored DEFLATE block. Compression is optional; checksums are not.
     let mut data = vec![0x78, 0x01, 0x01];
@@ -973,7 +1040,7 @@ mod tests {
         }
         assert!(requests_interactive(&[packet.clone(),packet].concat()).is_err());
         let old=Fixtures {state:EMPTY_DICT.to_vec(),shop:EMPTY_DICT.to_vec(),
-            dossier:b"\x80\x02(K\x00]t.".to_vec(),dossier_cursor:None,research:false};
+            dossier:b"\x80\x02(K\x00]t.".to_vec(),dossier_cursor:None,research:false,p04m:None};
         old.validate_dossier_cursor(0,0).unwrap();assert!(old.validate_dossier_cursor(1,time).is_err());
         let granted=Fixtures {dossier:granted_dossier_bytes(time),dossier_cursor:Some(DossierCursor {
             version:1,last_change_time:time,vehicle_type_compact_descr:7169}),..old};
@@ -1259,6 +1326,25 @@ mod tests {
         raw.extend(((bytes-14) as u32).to_le_bytes());raw.resize(bytes-2,b'x');raw.extend(b"u.");raw
     }
     #[test]
+    fn profile13_shop_cursor_uses_fixture_budget_exact_revision_and_opaque_crc() {
+        let legacy=Fixtures {state:EMPTY_DICT.to_vec(),shop:b"\x80\x02}(U\x03revK\x03u.".to_vec(),
+            dossier:b"\x80\x02(K\x00]t.".to_vec(),dossier_cursor:None,research:false,p04m:None};
+        let research=legacy.with_research_shop_for_test(24000,5).unwrap();
+        assert_eq!(research.sizes()[1],24000);assert_eq!(research.shop_sync_revision().unwrap(),5);
+        assert_eq!(shop_cache_maximum(false),16448);assert_eq!(shop_cache_maximum(true),32832);
+        for (revision,size,crc) in [(5,23107,248225827),(5,32832,i32::MIN),(5,1,0),(5,0,0)] {
+            research.validate_shop_cursor(revision,size,crc).unwrap();
+        }
+        for (revision,size,crc) in [(4,23107,248225827),(6,23107,248225827),(5,-1,0),
+            (5,32833,0),(5,i32::MAX,0),(5,0,1),(5,0,-1)] {
+            assert!(research.validate_shop_cursor(revision,size,crc).is_err());
+        }
+        legacy.validate_shop_cursor(3,16448,248225827).unwrap();
+        assert!(legacy.validate_shop_cursor(3,16449,248225827).is_err());
+        assert!(legacy.validate_shop_cursor(3,23107,248225827).is_err());
+    }
+
+    #[test]
     fn research_fixture_budgets_are_explicit_bounded_and_streamable() {
         let maximum=crate::research_service091::MAX_STATE_BYTES;
         let raw=research_dictionary(maximum);
@@ -1429,7 +1515,7 @@ mod tests {
 
     #[test]
     fn response_does_not_accept_other_commands_and_gui_has_one_context() {
-        let fixtures = Fixtures { state: EMPTY_DICT.to_vec(), shop: EMPTY_DICT.to_vec(), dossier: b"\x80\x02).".to_vec(), dossier_cursor:None,research:false };
+        let fixtures = Fixtures { state: EMPTY_DICT.to_vec(), shop: EMPTY_DICT.to_vec(), dossier: b"\x80\x02).".to_vec(), dossier_cursor:None,research:false,p04m:None };
         assert!(response(&Request { id: 221, command: 999 }, &fixtures).is_err());
         assert!(response(&Request { id: 0, command: 100 }, &fixtures).is_err());
         let gui = show_gui(1).unwrap();
@@ -1596,4 +1682,24 @@ mod tests {
         assert!(creation_named(&"Я".repeat(24)).is_ok());assert!(creation_named(&"Я".repeat(25)).is_err());
         assert!(creation_named("bad\nname").is_err());assert_eq!(creation(),creation_named("p02-hangar-player").unwrap());
     }
+}
+
+#[derive(Debug,Clone,PartialEq)]
+pub enum TrainingIncoming {
+    Account(Incoming),
+    Room(crate::p10b_ingress091::Request),
+}
+
+/// Session supplies its EXISTING selected legacy decoder. Disabled delegates
+/// the entire body directly; enabled preserves complete legacy-bundle checks
+/// and native record order. Caller stages Session + Registry atomically.
+pub fn requests_training_with(body:&[u8],enabled:bool,
+    legacy:fn(&[u8])->io::Result<Vec<Incoming>>)->io::Result<Vec<TrainingIncoming>>{
+    use crate::p10b_ingress091::{self as room,Gate};
+    room::requests(body,if enabled{Gate::TrainingV1}else{Gate::Disabled},legacy,request_id)
+        .map(|rows|rows.into_iter().map(|row|match row{
+            room::Incoming::Legacy(old)=>TrainingIncoming::Account(old),
+            room::Incoming::Room(request)=>TrainingIncoming::Room(request),
+        }).collect())
+        .map_err(|_|invalid("bounded native training/Account request"))
 }

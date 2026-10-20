@@ -29,6 +29,9 @@ MODULES += ('p04f_crew_ui',)
 MODULES += ('p04g_crew_ui',)
 MODULES += ('p04h_crew_ui', 'p04i_crew_ui', 'p04j_crew_ui', 'p04k_crew_ui')
 MODULES += ('p09e_research_policy',)
+MODULES += ('project_network',)
+MODULES += ('project_sixth_sense_sound',)
+MODULES += ('project_player_kill_marker',)
 
 
 def digest(payload):
@@ -107,6 +110,50 @@ def interactive_resource_overrides(root, disable_legacy_license_dialog=False,
     return payloads, evidence
 
 
+def network_options(args, profile13, mixed_ammo):
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_network.py'
+    spec = importlib.util.spec_from_file_location('_project_network_prepare', path)
+    policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy)
+    return policy.prepare_options(args.endpoint, getattr(args, 'network_policy', None),
+                                  args.registration_url, profile13, mixed_ammo)
+
+
+def sixth_sense_policy():
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_sixth_sense_sound.py'
+    spec = importlib.util.spec_from_file_location('_project_sixth_sense_prepare', path)
+    policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy)
+    return policy
+
+
+def sixth_sense_option(args, profile13, map_drive):
+    # Project policy (not original #717): absent option keeps the silent original lamp.
+    return sixth_sense_policy().prepare_option(getattr(args, 'sixth_sense_sound', None),
+                                               profile13, map_drive)
+
+
+def apply_registration(gui, evidence, options):
+    registration = [node for node in gui.iter() if node.findtext('name') == 'registrationURL']
+    if len(registration) != 1:
+        raise ValueError('unmeasured registration URL setting')
+    field = registration[0].find('value')
+    if field is None:
+        field = registration[0]
+    field.text = options['registration_url']
+    evidence.update(allowed_login=options['endpoint'], public_name='Стальной рубеж',
+                    remember_password=False, registration_url=options['registration_url'],
+                    token_login_enabled=False)
+    if options.get('network_policy') is not None:
+        evidence.update(network_policy=options['network_policy'], registration_enabled=False,
+                        registration_scope='precreated_project_accounts_only')
+        if 'registrationURL' not in evidence['empty_url_settings']:
+            raise ValueError('LAN registration must retain the existing empty-URL guard')
+    else:
+        evidence['empty_url_settings'] = [name for name in evidence['empty_url_settings']
+                                        if name != 'registrationURL']
+
+
 def prepare(args):
     _, paths = config()
     out = local_path(args.out, paths)
@@ -118,6 +165,15 @@ def prepare(args):
         from shared_client_copy import checked_copy
         root, copy_info = checked_copy(args.research_copy, paths)
     shared_lab = bool(getattr(args, 'enable_shared_lab', False))
+    profile13_battle = getattr(args, 'enable_profile13_battle', False)
+    if type(profile13_battle) is not bool:
+        raise ValueError('Explicit boolean profile13 battle option required')
+    p06t_mixed_ammo = getattr(args, 'enable_p06t_mixed_ammo', False)
+    if (type(p06t_mixed_ammo) is not bool or p06t_mixed_ammo and not profile13_battle):
+        raise ValueError('P06T mixed ammunition requires explicit profile13 battle option')
+    training_rooms = getattr(args, 'enable_training_rooms', False)
+    if type(training_rooms) is not bool or training_rooms and not profile13_battle:
+        raise ValueError('Training rooms require explicit profile13 battle option')
     ammo_service = bool(getattr(args, 'enable_p09d_ammo_service', False))
     recruitment = bool(getattr(args, 'enable_crew_recruitment', False))
     transfer = bool(getattr(args, 'enable_crew_transfer', False))
@@ -131,6 +187,10 @@ def prepare(args):
     if dismissal and not progression:
         raise ValueError('P04J dismissal requires all earlier explicit hangar services')
     research_service = bool(getattr(args, 'enable_research_service', False))
+    if profile13_battle and (copy_info is None or shared_lab or args.enable_map_drive
+            or not all((ammo_service, recruitment, transfer, cross_vehicle, roster,
+                        progression, dismissal, barracks, research_service))):
+        raise ValueError('Profile13 battle requires isolated full research/crew/ammunition hangar; map-drive and shared lab are excluded')
     if ammo_service and (shared_lab or args.enable_map_drive):
         raise ValueError('P09D ammunition service is restricted to the native hangar')
     if recruitment and (copy_info is None or not ammo_service or shared_lab or args.enable_map_drive):
@@ -148,13 +208,9 @@ def prepare(args):
         raise ValueError('P09E research requires an explicit isolated native P04K barracks hangar')
     if shared_lab and (copy_info is None or not args.enable_map_drive):
         raise ValueError('Shared lab requires an explicit isolated copy and native arena services')
-    endpoint = args.endpoint
-    if not re.fullmatch(r'127\.0\.0\.1:([0-9]{1,5})', endpoint) or not 1024 <= int(endpoint.rsplit(':', 1)[1]) <= 65535:
-        raise ValueError('endpoint must be numeric IPv4 loopback with unprivileged port')
-    if not re.fullmatch(r'http://127\.0\.0\.1:[0-9]{1,5}/register',args.registration_url):
-        raise ValueError('registration URL must be the owned numeric loopback /register route')
-    if not 1024 <= int(args.registration_url.split(':')[2].split('/')[0]) <= 65535:
-        raise ValueError('registration port outside unprivileged range')
+    network = network_options(args, profile13_battle, p06t_mixed_ammo)
+    sixth_sense = sixth_sense_option(args, profile13_battle, bool(args.enable_map_drive))
+    endpoint = network['endpoint']
     public = local_path(args.public_key, paths)
     public_payload = read_limited(public, 4096)
     if not public_payload.startswith(b'-----BEGIN PUBLIC KEY-----') or b'PRIVATE' in public_payload:
@@ -206,17 +262,8 @@ def prepare(args):
         if field is None:
             field = matches[0]
         field.text = 'false'
-    registration = [node for node in gui.iter() if node.findtext('name') == 'registrationURL']
-    if len(registration) != 1:
-        raise ValueError('unmeasured registration URL setting')
-    field = registration[0].find('value')
-    if field is None:
-        field = registration[0]
-    field.text = args.registration_url
+    apply_registration(gui, resource_evidence, network)
     payloads[gui_path] = xml_bytes(gui)
-    resource_evidence.update(allowed_login=endpoint, public_name='Стальной рубеж', remember_password=False,
-                             registration_url=args.registration_url, token_login_enabled=False)
-    resource_evidence['empty_url_settings'] = [name for name in resource_evidence['empty_url_settings'] if name != 'registrationURL']
     from project_login_resources import project_menu
     localized,localization_evidence = project_menu(read_limited(root/'res/text/LC_MESSAGES/menu.mo',8*1024*1024))
     # Original helpers.i18n resolves the DIRECTORY "text" once, then standard
@@ -267,6 +314,8 @@ def prepare(args):
                 'capture_hangar':bool(args.capture_hangar or args.capture_ui_passive),
                 'capture_ui_passive':bool(args.capture_ui_passive),
                 'enable_map_drive':bool(args.enable_map_drive)}
+    if network.get('network_policy') is not None:
+        settings['network_policy'] = network['network_policy']
     if ammo_service:
         settings['enable_p09d_ammo_service'] = True
     if recruitment:
@@ -287,8 +336,45 @@ def prepare(args):
         settings['enable_research_service'] = True
     if shared_lab:
         settings['enable_shared_lab'] = True
+    if profile13_battle:
+        settings['enable_profile13_battle'] = True
+    if p06t_mixed_ammo:
+        settings['enable_p06t_mixed_ammo'] = True
+    if training_rooms:
+        settings['enable_training_rooms'] = True
     if catalog_spec is not None:
         settings['destructible_catalog_spec'] = catalog_spec
+    if sixth_sense is not None:
+        settings['sixth_sense_sound'] = sixth_sense['candidate']
+        resource_evidence['project_sixth_sense_sound'] = sixth_sense
+    if getattr(args, 'player_kill_marker', False):
+        # Owner order 2026-10-20: keep the player's killing hit/explosion colour.
+        if not profile13_battle:
+            raise ValueError('--player-kill-marker requires --enable-profile13-battle')
+        settings['player_kill_marker'] = True
+    sample = getattr(args, 'sixth_sense_sample', None)
+    if sample is not None:
+        # Owner order 2026-10-20: the gun_intuition bank carries the owner's lamp
+        # sample (res_mods override, ledgered/rolled back like every payload).
+        if sixth_sense is None or sixth_sense['candidate'] != 'gun_intuition':
+            raise ValueError('--sixth-sense-sample requires --sixth-sense-sound gun_intuition')
+        import fsb5_lamp
+        bank = 'audio/gui_notifications_fx_intuition.fsb'
+        source_bank = read_limited(original/'res'/bank, 1024*1024)
+        if file_hash(root/'res'/bank) != digest(source_bank):
+            raise ValueError('research copy lamp bank differs from original')
+        payload = fsb5_lamp.build(source_bank, fsb5_lamp.decode_source(sample))
+        # engine_config <soundMgr><mediaPath>audio</mediaPath> resolves to the
+        # first audio directory: a res_mods/0.9.1/audio holding one bank made
+        # FMOD miss every other project (owner run 2026-10-20: silent hangar and
+        # battle). Replace the research copy's own bank in place, with backup.
+        payloads['res/'+bank] = payload
+        resource_evidence['project_sixth_sense_sample'] = {
+            'source_sha256':sha256(Path(sample)), 'source_bytes':Path(sample).stat().st_size,
+            'original_bank_sha256':digest(source_bank), 'bank':'res/'+bank,
+            'bank_sha256':digest(payload), 'tool_sha256':sha256(ROOT/'tools/fsb5_lamp.py'),
+            'format':'FSB5 v1 mono IMA ADPCM 48 kHz', 'provenance':'owner-supplied file; not committed',
+            'native_audio_check':'NOT_RUN'}
     payloads['sr_interactive_settings.json'] = (json.dumps(settings, ensure_ascii=True, indent=2)+'\n').encode()
     sources = []
     for module in MODULES:
@@ -306,6 +392,8 @@ def prepare(args):
                          'res/text/LC_MESSAGES/system_messages.mo'}
     if disable_dialog:
         overwrite_allowed.add('version.xml')
+    if 'project_sixth_sense_sample' in resource_evidence:
+        overwrite_allowed.add(resource_evidence['project_sixth_sense_sample']['bank'])
     for relative, payload in sorted(payloads.items()):
         current = target(root, relative)
         before = file_hash(current)
@@ -451,7 +539,9 @@ def main():
     prep.add_argument('--enable-shared-lab', action='store_true', help='Initialize original arena services before server-assigned laboratory entry')
     prep.add_argument('--public-key',required=True)
     prep.add_argument('--endpoint',default='127.0.0.1:20014')
-    prep.add_argument('--registration-url',default='http://127.0.0.1:3092/register')
+    prep.add_argument('--network-policy', choices=('lan-test-v1',),
+                      help='Explicit private LAN test; pre-created own accounts only, registration disabled')
+    prep.add_argument('--registration-url', default=None)
     prep.add_argument('--profile-dir',required=True)
     prep.add_argument('--trace-dir',required=True)
     prep.add_argument('--test-control')
@@ -459,6 +549,21 @@ def main():
                       help='Pinned local identity preprocessing specification; requires opt-in control/shared lab')
     prep.add_argument('--enable-map-drive', action='store_true',
                       help='Explicit test_lab native battle-button travel; no automatic input or quit')
+    prep.add_argument('--enable-profile13-battle', action='store_true',
+                      help='Owned stock MS-1/IS-7 AP-only battle entry from the full isolated profile13 hangar')
+    prep.add_argument('--enable-p06t-mixed-ammo', action='store_true',
+                      help='Explicit P06T source-three-stack entry; requires --enable-profile13-battle and server v2 admission')
+    prep.add_argument('--enable-training-rooms', action='store_true',
+                      help='Explicit P10B native training context; requires isolated profile13 hangar and server rooms')
+    prep.add_argument('--sixth-sense-sound', choices=sorted(sixth_sense_policy().CANDIDATES),
+                      help='Project policy, not original 0.9.1: one existing GUI FX cue when '
+                           'the Sixth Sense lamp lights; requires a battle mode; off by default')
+    prep.add_argument('--player-kill-marker', action='store_true',
+                      help='Project policy, not original 0.9.1: a kill by the player keeps the player-coloured '
+                           'marker colour (its crew-inactive refresh keeps the player as source); requires profile13 battle')
+    prep.add_argument('--sixth-sense-sample',
+                      help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
+                           'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')
     prep.add_argument('--enable-p09d-ammo-service', action='store_true',
                       help='Native maintenance for the two source-bound MS-1 and IS-7 mounts')
     prep.add_argument('--enable-crew-recruitment', action='store_true',

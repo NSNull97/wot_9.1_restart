@@ -6,7 +6,8 @@ use serde_json::{json,Value};
 struct Fixture {world:World,runtime:IntegratedRuntime,peers:[controlled_ipc::Peer;2],template:Value}
 fn fixture(now:Instant,name:&str)->Fixture {
     let(template,spec,catalog,profile)=controlled_ipc::angular_fixture(name);
-    let kind=match profile{ram_proof::Profile::Ms1=>VehicleKind::Ms1,ram_proof::Profile::Is7=>VehicleKind::Is7};
+    let kind=match profile{ram_proof::Profile::Ms1=>VehicleKind::Ms1,ram_proof::Profile::Is7=>VehicleKind::Is7,
+        ram_proof::Profile::T26|ram_proof::Profile::T34|ram_proof::Profile::T3485|ram_proof::Profile::WtE100128|ram_proof::Profile::Fv215b183=>panic!("legacy two-profile fixture; curated profiles have separate actual gates")};
     let mut world=World::new_for_vehicle(7,now,spec.map_id(),kind).unwrap();
     for(i,name)in["one","two"].into_iter().enumerate(){world.attach(model::Identity{account:name.into(),name:name.into(),database:i as i32+1},i as u32+1).unwrap();}
     world.actors.iter_mut().for_each(|a|a.ready=true);world.started=Some(now);

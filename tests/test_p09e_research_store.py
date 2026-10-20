@@ -258,6 +258,32 @@ class ResearchStoreTests(unittest.TestCase):
         hidden = next(k for k, v in self.catalog.vehicles.items() if not v["acquisition_allowed"] and not v["unsupported_reason"] and v["historical_price"]["currency"] == "credits")
         self.reject("VEHICLE_ACQUISITION_UNSUPPORTED", lambda: self.act("buy_vehicle", {"vehicle_id": hidden}))
 
+    def test_explicit_zero_economy_grants_slots_and_free_premium_purchase(self):
+        from p09e_research_store import ECONOMY_POLICY
+        self.reject("EXPLICIT_TEST_LAB_POLICY_REQUIRED", lambda: self.store.apply_test_lab_economy(
+            account_id=self.account, garage_slots=100, policy={**ECONOMY_POLICY, "gold": 1}))
+        self.reject("INVALID_INPUT", lambda: self.store.apply_test_lab_economy(account_id=self.account, garage_slots=257, policy=ECONOMY_POLICY))
+        self.reject("INVALID_INPUT", lambda: self.store.apply_test_lab_economy(account_id=self.account, garage_slots=1, policy=ECONOMY_POLICY))
+        revision = self.profile()["revision"]
+        granted = self.store.apply_test_lab_economy(account_id=self.account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.assertEqual((granted["status"], granted["revision"], granted["garage_slots"]), ("granted", revision + 1, 100))
+        self.assertEqual(self.profile()["research"]["garage_slots"], 100)
+        self.assertTrue(self.store.zero_economy(self.account))
+        self.assertEqual(self.store.apply_test_lab_economy(account_id=self.account, garage_slots=100, policy=ECONOMY_POLICY)["status"], "unchanged")
+        gold = next(k for k, v in self.catalog.vehicles.items() if v["historical_price"]["currency"] == "gold"
+                    and not v["not_in_shop"] and not set(v["tags"]) & {"secret", "observer", "event_battles", "special"})
+        hidden = next(k for k, v in self.catalog.vehicles.items() if v["historical_price"]["currency"] == "gold" and v["not_in_shop"])
+        self.reject("VEHICLE_ACQUISITION_UNSUPPORTED", lambda: self.act("buy_vehicle", {"vehicle_id": hidden}))
+        request = self.request("buy_vehicle", {"vehicle_id": gold})
+        bought = self.store.execute(request, authenticated_account_id=self.account)
+        self.assertEqual(bought["details"]["historical_price"]["currency"], "gold")
+        self.assertEqual((bought["effective_credits"], bought["effective_xp"]), (0, 0))
+        research = self.profile()["research"]
+        self.assertIn(gold, research["unlocked"])
+        self.assertEqual([r["vehicle_id"] for r in research["vehicles"]][-1], gold)
+        self.reopen()
+        self.assertEqual(self.store.execute(request, authenticated_account_id=self.account), {**bought, "replayed": True})
+
     def test_concurrent_identical_and_competing_commands_only_one_purchase(self):
         self.research(0)
         request = self.request("buy_module", {"module_id": CHASSIS, "count": 1})

@@ -252,9 +252,12 @@ class GameProfileStore:
             "vehicle_id": vehicle_id,
         }
         payload_sha256 = _sha(_canonical(payload))
+        from p08b_owner_hold_store import require_hold_compatible
+        require_hold_compatible(self.connection, account_id, contract=None)
         connection = self.connection
         connection.execute("BEGIN IMMEDIATE")
         try:
+            require_hold_compatible(self.connection,account_id)
             ledger = connection.execute(
                 "SELECT * FROM game_command_ledger WHERE account_id = ? AND command_id = ?",
                 (account_id, command_id),
@@ -328,6 +331,8 @@ class GameProfileStore:
 
     def read_profile(self, account_id: str) -> dict[str, Any]:
         account_id = _bounded_id(account_id, "account_id")
+        from p08b_owner_hold_store import require_hold_compatible
+        require_hold_compatible(self.connection, account_id, contract=getattr(self, "OWNER_HOLD_CONTRACT", None))
         row = self.connection.execute(
             "SELECT * FROM game_snapshot WHERE account_id = ?", (account_id,)
         ).fetchone()

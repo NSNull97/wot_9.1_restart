@@ -129,19 +129,56 @@ fn delayed_peer_and_fast_catchup_never_overwrite_or_skip_an_unpublished_source()
 #[test]
 fn persistent_slow_worker_is_bounded_and_overload_does_not_publish_a_last_success() {
     //Each actual reply takes200ms, within the existing500ms IPC timeout.
-    //Accumulating logical debt reaches500ms, then fails rather than silently
-    //slowing simulation forever or accepting unlimited catch-up requests.
+    //Logical debt above500ms is rebased onto the grid at most three times in
+    //the window, then fails rather than silently slowing simulation forever or
+    //accepting unlimited catch-up requests.
     let start=Instant::now();let mut f=fixture(start);f.dispatch(start);
-    for seq in 1..=5 {
-        let now=start+Duration::from_millis(seq as u64*200);f.pair(now,seq);f.step(now);
-        assert_eq!(f.world.actors[0].position[0],f.origins[0][0]+seq as f32);
-        for peer in &f.peers { assert_eq!(peer.request()["seq"],seq+1); }
+    let mut resyncs=0;
+    for seq in 1u32.. {
+        assert!(seq<100,"persistent overload must fail closed");
+        let now=start+Duration::from_millis(seq as u64*200);f.pair(now,seq);
+        let before=f.world.actors.clone();let tick=f.world.tick;let lag=f.runtime.lag_resync[0];
+        match f.runtime.step(&mut f.world,now) {
+            Ok(())=>{
+                assert_eq!(f.world.actors[0].position[0],f.origins[0][0]+seq as f32);
+                for peer in &f.peers { assert_eq!(peer.request()["seq"],seq+1); }
+                if f.runtime.lag_resync[0]!=lag {
+                    resyncs+=1;assert_eq!(f.runtime.dispatched,[Some(now);2]);
+                }
+            }
+            Err(error)=>{
+                assert_eq!(error.kind(),io::ErrorKind::TimedOut);
+                assert!(error.to_string().contains("logical deadline lag exceeds500ms repeatedly"));
+                assert_eq!(f.world.tick,tick);assert_eq!(f.world.actors,before);
+                assert!(f.peers.iter().all(controlled_ipc::Peer::no_request));
+                break;
+            }
+        }
     }
-    let before=f.world.actors.clone();let tick=f.world.tick;let now=start+Duration::from_millis(1200);
-    f.pair(now,6);let error=f.runtime.step(&mut f.world,now).unwrap_err();
-    assert_eq!(error.kind(),io::ErrorKind::TimedOut);assert!(error.to_string().contains("logical deadline lag"));
-    assert_eq!(f.world.tick,tick);assert_eq!(f.world.actors,before);
-    assert!(f.peers.iter().all(controlled_ipc::Peer::no_request));
+    assert_eq!(resyncs,3);
+}
+
+#[test]
+fn single_gateway_stall_rebases_onto_grid_and_longer_stall_still_fails_closed() {
+    // Healthy workers reply at once; only the gateway loop stalls (owner runs
+    // contact130 and full-polygon 2026-10-19 lost whole battles this way).
+    let start=Instant::now();let mut f=fixture(start);f.dispatch(start);
+    f.pair(start+Duration::from_millis(1),1);
+    f.step(start+Duration::from_millis(950));
+    assert_eq!(f.world.tick,1009);assert_eq!(f.world.actors[0].position[0],f.origins[0][0]+1.);
+    for peer in &f.peers { assert_eq!(peer.request()["seq"],2); }
+    assert_eq!(f.runtime.dispatched,[Some(start+Duration::from_millis(900));2]);
+    // Ordinary cadence resumes from the rebased grid.
+    f.pair(start+Duration::from_millis(960),2);f.step(start+Duration::from_millis(1000));
+    assert_eq!(f.world.tick,1010);assert_eq!(f.world.actors[0].position[0],f.origins[0][0]+2.);
+    for peer in &f.peers { assert_eq!(peer.request()["seq"],3); }
+    assert_eq!(f.runtime.dispatched,[Some(start+Duration::from_millis(1000));2]);
+    // A stall beyond five seconds is not a transient hiccup.
+    f.pair(start+Duration::from_millis(1001),3);
+    let before=f.world.actors.clone();
+    let error=f.runtime.step(&mut f.world,start+Duration::from_millis(7000)).unwrap_err();
+    assert_eq!(error.kind(),io::ErrorKind::TimedOut);assert!(error.to_string().contains("logical deadline lag exceeds5s"));
+    assert_eq!(f.world.actors,before);
 }
 
 #[test]

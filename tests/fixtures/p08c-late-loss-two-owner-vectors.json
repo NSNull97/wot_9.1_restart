@@ -1,0 +1,907 @@
+{
+  "schema": "p08c-late-result-actual-sql-vectors.v1",
+  "classification": "ACTUAL_ISOLATED_SQLITE_WITH_AUTHORED_GATEWAY_FINAL_ACTOR_STATS",
+  "native": "NOT_RUN",
+  "policy_sha256": "f6ae697fb920b9359a2cb0375aa1fd68538a183fab1c8f136772c703de6abe04",
+  "source_seed": "D:\\WoT_9.1_Server\\local\\evidence\\20261016-p06t-owned01\\seed01\\seed.json",
+  "battle_vectors": [
+    {
+      "request": {
+        "version": 4,
+        "operation": "run_open",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:battle:1",
+        "expected_revision": 110,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "contract": "p06t-ammo-rack-loss.v1"
+      },
+      "response": {
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "run_open",
+        "native_database_id": 1,
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "command_key": "late:battle:1",
+        "version": 4,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "status": "ready",
+        "source_revision": 110,
+        "revision": 111,
+        "replayed": false,
+        "code": null,
+        "reservation": null,
+        "legacy_reservation": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "operation": "admit",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:battle:2",
+        "expected_revision": 111,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+        "native_inventory_id": 1
+      },
+      "response": {
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "admit",
+        "native_database_id": 1,
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "command_key": "late:battle:2",
+        "version": 4,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "status": "admitted",
+        "source_revision": 111,
+        "revision": 112,
+        "replayed": false,
+        "code": null,
+        "reservation": {
+          "reservation_id": "late:battle:2",
+          "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+          "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+          "native_inventory_id": 1,
+          "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1",
+          "status": "active",
+          "frozen": {
+            "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+            "loadout": {
+              "ammunition": [
+                {
+                  "count": 0,
+                  "family": "ARMOR_PIERCING",
+                  "shell_compact_id": 2570,
+                  "shell_definition_id": "shell:ms1-stock-ap"
+                },
+                {
+                  "count": 4,
+                  "family": "HOLLOW_CHARGE",
+                  "shell_compact_id": 2826,
+                  "shell_definition_id": "shell:ms1-stock-heat"
+                },
+                {
+                  "count": 11,
+                  "family": "HIGH_EXPLOSIVE",
+                  "shell_compact_id": 3082,
+                  "shell_definition_id": "shell:ms1-stock-he"
+                }
+              ],
+              "capacity": 96,
+              "crew_ids": [
+                "c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1",
+                "c5326cc1-8524-479c-8bba-72e973489c22:recruit-crew:11"
+              ],
+              "descriptor_hex": "010d1a000e00c90000001700170000",
+              "initial_shell_compact_id": 2826,
+              "kind": "ms1",
+              "max_hp": 90,
+              "native_inventory_id": 1,
+              "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1"
+            },
+            "loadout_sha256": "6c1478cc59048d51f3438f7a86045713684286bd2dbeee64a2cdda6f9091bde5"
+          },
+          "frozen_sha256": "cd8983ddfd2928a4b6c18382d33ef3e335dd29955a1db5ceb6b74ddad5b1bfce",
+          "result": null
+        },
+        "legacy_reservation": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "operation": "run_open",
+        "account_id": "271022a3-41e0-406e-b6fa-59930c320442",
+        "native_database_id": 2,
+        "command_key": "late:battle:3",
+        "expected_revision": 26,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "contract": "p06t-ammo-rack-loss.v1"
+      },
+      "response": {
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "run_open",
+        "native_database_id": 2,
+        "account_id": "271022a3-41e0-406e-b6fa-59930c320442",
+        "command_key": "late:battle:3",
+        "version": 4,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "status": "ready",
+        "source_revision": 26,
+        "revision": 27,
+        "replayed": false,
+        "code": null,
+        "reservation": null,
+        "legacy_reservation": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "operation": "admit",
+        "account_id": "271022a3-41e0-406e-b6fa-59930c320442",
+        "native_database_id": 2,
+        "command_key": "late:battle:4",
+        "expected_revision": 27,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+        "native_inventory_id": 1
+      },
+      "response": {
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "admit",
+        "native_database_id": 2,
+        "account_id": "271022a3-41e0-406e-b6fa-59930c320442",
+        "command_key": "late:battle:4",
+        "version": 4,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "status": "admitted",
+        "source_revision": 27,
+        "revision": 28,
+        "replayed": false,
+        "code": null,
+        "reservation": {
+          "reservation_id": "late:battle:4",
+          "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+          "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+          "native_inventory_id": 1,
+          "vehicle_inventory_id": "271022a3-41e0-406e-b6fa-59930c320442:starter-vehicle-v1",
+          "status": "active",
+          "frozen": {
+            "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+            "loadout": {
+              "ammunition": [
+                {
+                  "count": 14,
+                  "family": "ARMOR_PIERCING",
+                  "shell_compact_id": 2570,
+                  "shell_definition_id": "shell:ms1-stock-ap"
+                },
+                {
+                  "count": 0,
+                  "family": "HOLLOW_CHARGE",
+                  "shell_compact_id": 2826,
+                  "shell_definition_id": "shell:ms1-stock-heat"
+                },
+                {
+                  "count": 0,
+                  "family": "HIGH_EXPLOSIVE",
+                  "shell_compact_id": 3082,
+                  "shell_definition_id": "shell:ms1-stock-he"
+                }
+              ],
+              "capacity": 96,
+              "crew_ids": [
+                "271022a3-41e0-406e-b6fa-59930c320442:ms1-commander-v1",
+                "271022a3-41e0-406e-b6fa-59930c320442:recruit-ms1-driver:3"
+              ],
+              "descriptor_hex": "010d1a000e00c90000001700170000",
+              "initial_shell_compact_id": 2570,
+              "kind": "ms1",
+              "max_hp": 90,
+              "native_inventory_id": 1,
+              "vehicle_inventory_id": "271022a3-41e0-406e-b6fa-59930c320442:starter-vehicle-v1"
+            },
+            "loadout_sha256": "eec388564e9396c98f3427a5860dfa559fdfa28a8ccf5cd0c01f08c402799e36"
+          },
+          "frozen_sha256": "02a083d479ca248d5175579b5ff55b39fb4f40a8dd76d57009c37016327494a0",
+          "result": null
+        },
+        "legacy_reservation": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "operation": "finish",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:battle:5",
+        "expected_revision": 112,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+        "native_inventory_id": 1,
+        "reservation_id": "late:battle:2",
+        "remaining_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 4
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 11
+          }
+        ],
+        "terminal_hp": 90,
+        "terminal_state_json": "{\"crew\":[{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1\"},{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:recruit-crew:11\"}],\"crew_active\":true,\"death\":{\"killer_slot\":null,\"reason\":-1,\"tick\":0},\"devices\":[{\"extra_index\":26,\"health\":25,\"max_health\":25},{\"extra_index\":27,\"health\":60,\"max_health\":60},{\"extra_index\":28,\"health\":100,\"max_health\":100},{\"extra_index\":29,\"health\":90,\"max_health\":90},{\"extra_index\":30,\"health\":40,\"max_health\":40},{\"extra_index\":31,\"health\":40,\"max_health\":40},{\"extra_index\":32,\"health\":54,\"max_health\":54},{\"extra_index\":33,\"health\":50,\"max_health\":50},{\"extra_index\":34,\"health\":30,\"max_health\":30}],\"fire\":{\"active\":false,\"damage\":0,\"ticks\":0},\"policy_revision\":\"test_lab.p06t.devices-proxy-fire.v1\",\"roster_size\":2}",
+        "reason": "manual_leave",
+        "fired_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 0
+          }
+        ],
+        "lost_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 0
+          }
+        ],
+        "loss_event": null
+      },
+      "response": {
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "finish",
+        "native_database_id": 1,
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "command_key": "late:battle:5",
+        "version": 4,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "status": "finished",
+        "source_revision": 112,
+        "revision": 113,
+        "replayed": false,
+        "code": null,
+        "reservation": {
+          "reservation_id": "late:battle:2",
+          "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+          "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+          "native_inventory_id": 1,
+          "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1",
+          "status": "finished",
+          "frozen": {
+            "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+            "loadout": {
+              "ammunition": [
+                {
+                  "count": 0,
+                  "family": "ARMOR_PIERCING",
+                  "shell_compact_id": 2570,
+                  "shell_definition_id": "shell:ms1-stock-ap"
+                },
+                {
+                  "count": 4,
+                  "family": "HOLLOW_CHARGE",
+                  "shell_compact_id": 2826,
+                  "shell_definition_id": "shell:ms1-stock-heat"
+                },
+                {
+                  "count": 11,
+                  "family": "HIGH_EXPLOSIVE",
+                  "shell_compact_id": 3082,
+                  "shell_definition_id": "shell:ms1-stock-he"
+                }
+              ],
+              "capacity": 96,
+              "crew_ids": [
+                "c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1",
+                "c5326cc1-8524-479c-8bba-72e973489c22:recruit-crew:11"
+              ],
+              "descriptor_hex": "010d1a000e00c90000001700170000",
+              "initial_shell_compact_id": 2826,
+              "kind": "ms1",
+              "max_hp": 90,
+              "native_inventory_id": 1,
+              "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1"
+            },
+            "loadout_sha256": "6c1478cc59048d51f3438f7a86045713684286bd2dbeee64a2cdda6f9091bde5"
+          },
+          "frozen_sha256": "cd8983ddfd2928a4b6c18382d33ef3e335dd29955a1db5ceb6b74ddad5b1bfce",
+          "result": {
+            "credits": 0,
+            "destroyed": false,
+            "fired_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 3082
+              }
+            ],
+            "loss_event": null,
+            "lost_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 3082
+              }
+            ],
+            "reason": "manual_leave",
+            "remaining_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 4,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 11,
+                "shell_compact_id": 3082
+              }
+            ],
+            "repaired_hp": 90,
+            "terminal_hp": 90,
+            "terminal_state": {
+              "crew": [
+                {
+                  "alive": true,
+                  "crew_id": "c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1"
+                },
+                {
+                  "alive": true,
+                  "crew_id": "c5326cc1-8524-479c-8bba-72e973489c22:recruit-crew:11"
+                }
+              ],
+              "crew_active": true,
+              "death": {
+                "killer_slot": null,
+                "reason": -1,
+                "tick": 0
+              },
+              "devices": [
+                {
+                  "extra_index": 26,
+                  "health": 25,
+                  "max_health": 25
+                },
+                {
+                  "extra_index": 27,
+                  "health": 60,
+                  "max_health": 60
+                },
+                {
+                  "extra_index": 28,
+                  "health": 100,
+                  "max_health": 100
+                },
+                {
+                  "extra_index": 29,
+                  "health": 90,
+                  "max_health": 90
+                },
+                {
+                  "extra_index": 30,
+                  "health": 40,
+                  "max_health": 40
+                },
+                {
+                  "extra_index": 31,
+                  "health": 40,
+                  "max_health": 40
+                },
+                {
+                  "extra_index": 32,
+                  "health": 54,
+                  "max_health": 54
+                },
+                {
+                  "extra_index": 33,
+                  "health": 50,
+                  "max_health": 50
+                },
+                {
+                  "extra_index": 34,
+                  "health": 30,
+                  "max_health": 30
+                }
+              ],
+              "fire": {
+                "active": false,
+                "damage": 0,
+                "ticks": 0
+              },
+              "policy_revision": "test_lab.p06t.devices-proxy-fire.v1",
+              "roster_size": 2
+            },
+            "xp": 0
+          }
+        },
+        "legacy_reservation": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "operation": "finish",
+        "account_id": "271022a3-41e0-406e-b6fa-59930c320442",
+        "native_database_id": 2,
+        "command_key": "late:battle:6",
+        "expected_revision": 28,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+        "native_inventory_id": 1,
+        "reservation_id": "late:battle:4",
+        "remaining_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 14
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 0
+          }
+        ],
+        "terminal_hp": 90,
+        "terminal_state_json": "{\"crew\":[{\"alive\":true,\"crew_id\":\"271022a3-41e0-406e-b6fa-59930c320442:ms1-commander-v1\"},{\"alive\":true,\"crew_id\":\"271022a3-41e0-406e-b6fa-59930c320442:recruit-ms1-driver:3\"}],\"crew_active\":true,\"death\":{\"killer_slot\":null,\"reason\":-1,\"tick\":0},\"devices\":[{\"extra_index\":26,\"health\":25,\"max_health\":25},{\"extra_index\":27,\"health\":60,\"max_health\":60},{\"extra_index\":28,\"health\":100,\"max_health\":100},{\"extra_index\":29,\"health\":90,\"max_health\":90},{\"extra_index\":30,\"health\":40,\"max_health\":40},{\"extra_index\":31,\"health\":40,\"max_health\":40},{\"extra_index\":32,\"health\":54,\"max_health\":54},{\"extra_index\":33,\"health\":50,\"max_health\":50},{\"extra_index\":34,\"health\":30,\"max_health\":30}],\"fire\":{\"active\":false,\"damage\":0,\"ticks\":0},\"policy_revision\":\"test_lab.p06t.devices-proxy-fire.v1\",\"roster_size\":2}",
+        "reason": "battle_finished",
+        "fired_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 0
+          }
+        ],
+        "lost_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 0
+          }
+        ],
+        "loss_event": null,
+        "results_json": "{\"arena_id\":9007199254740993,\"arena_type_id\":4,\"created_unix\":1792080000,\"duration_seconds\":0,\"finish_reason\":5,\"participants\":[{\"account_dbid\":1,\"capture_points\":0,\"damage_dealt\":0,\"damage_received\":0,\"death_reason\":-1,\"direct_hits\":0,\"dropped_capture_points\":0,\"health\":90,\"killer_id\":0,\"kills\":0,\"life_time\":0,\"mileage_metres\":0,\"name\":\"sr_ascii_f4d1e9\",\"piercings\":0,\"premature_leave\":true,\"shots\":0,\"team\":1,\"type_compact_descr\":3329,\"vehicle_id\":152043523},{\"account_dbid\":2,\"capture_points\":0,\"damage_dealt\":0,\"damage_received\":0,\"death_reason\":-1,\"direct_hits\":0,\"dropped_capture_points\":0,\"health\":90,\"killer_id\":0,\"kills\":0,\"life_time\":0,\"mileage_metres\":0,\"name\":\"Танкист_Ёж_e91322\",\"piercings\":0,\"premature_leave\":false,\"shots\":0,\"team\":2,\"type_compact_descr\":3329,\"vehicle_id\":152043525}],\"winner_team\":2}"
+      },
+      "response": {
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "finish",
+        "native_database_id": 2,
+        "account_id": "271022a3-41e0-406e-b6fa-59930c320442",
+        "command_key": "late:battle:6",
+        "version": 4,
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "status": "finished",
+        "source_revision": 28,
+        "revision": 29,
+        "replayed": false,
+        "code": null,
+        "reservation": {
+          "reservation_id": "late:battle:4",
+          "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+          "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+          "native_inventory_id": 1,
+          "vehicle_inventory_id": "271022a3-41e0-406e-b6fa-59930c320442:starter-vehicle-v1",
+          "status": "finished",
+          "frozen": {
+            "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+            "loadout": {
+              "ammunition": [
+                {
+                  "count": 14,
+                  "family": "ARMOR_PIERCING",
+                  "shell_compact_id": 2570,
+                  "shell_definition_id": "shell:ms1-stock-ap"
+                },
+                {
+                  "count": 0,
+                  "family": "HOLLOW_CHARGE",
+                  "shell_compact_id": 2826,
+                  "shell_definition_id": "shell:ms1-stock-heat"
+                },
+                {
+                  "count": 0,
+                  "family": "HIGH_EXPLOSIVE",
+                  "shell_compact_id": 3082,
+                  "shell_definition_id": "shell:ms1-stock-he"
+                }
+              ],
+              "capacity": 96,
+              "crew_ids": [
+                "271022a3-41e0-406e-b6fa-59930c320442:ms1-commander-v1",
+                "271022a3-41e0-406e-b6fa-59930c320442:recruit-ms1-driver:3"
+              ],
+              "descriptor_hex": "010d1a000e00c90000001700170000",
+              "initial_shell_compact_id": 2570,
+              "kind": "ms1",
+              "max_hp": 90,
+              "native_inventory_id": 1,
+              "vehicle_inventory_id": "271022a3-41e0-406e-b6fa-59930c320442:starter-vehicle-v1"
+            },
+            "loadout_sha256": "eec388564e9396c98f3427a5860dfa559fdfa28a8ccf5cd0c01f08c402799e36"
+          },
+          "frozen_sha256": "02a083d479ca248d5175579b5ff55b39fb4f40a8dd76d57009c37016327494a0",
+          "result": {
+            "credits": 0,
+            "destroyed": false,
+            "fired_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 3082
+              }
+            ],
+            "loss_event": null,
+            "lost_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 3082
+              }
+            ],
+            "reason": "battle_finished",
+            "remaining_ammunition": [
+              {
+                "count": 14,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 3082
+              }
+            ],
+            "repaired_hp": 90,
+            "terminal_hp": 90,
+            "terminal_state": {
+              "crew": [
+                {
+                  "alive": true,
+                  "crew_id": "271022a3-41e0-406e-b6fa-59930c320442:ms1-commander-v1"
+                },
+                {
+                  "alive": true,
+                  "crew_id": "271022a3-41e0-406e-b6fa-59930c320442:recruit-ms1-driver:3"
+                }
+              ],
+              "crew_active": true,
+              "death": {
+                "killer_slot": null,
+                "reason": -1,
+                "tick": 0
+              },
+              "devices": [
+                {
+                  "extra_index": 26,
+                  "health": 25,
+                  "max_health": 25
+                },
+                {
+                  "extra_index": 27,
+                  "health": 60,
+                  "max_health": 60
+                },
+                {
+                  "extra_index": 28,
+                  "health": 100,
+                  "max_health": 100
+                },
+                {
+                  "extra_index": 29,
+                  "health": 90,
+                  "max_health": 90
+                },
+                {
+                  "extra_index": 30,
+                  "health": 40,
+                  "max_health": 40
+                },
+                {
+                  "extra_index": 31,
+                  "health": 40,
+                  "max_health": 40
+                },
+                {
+                  "extra_index": 32,
+                  "health": 54,
+                  "max_health": 54
+                },
+                {
+                  "extra_index": 33,
+                  "health": 50,
+                  "max_health": 50
+                },
+                {
+                  "extra_index": 34,
+                  "health": 30,
+                  "max_health": 30
+                }
+              ],
+              "fire": {
+                "active": false,
+                "damage": 0,
+                "ticks": 0
+              },
+              "policy_revision": "test_lab.p06t.devices-proxy-fire.v1",
+              "roster_size": 2
+            },
+            "xp": 0
+          }
+        },
+        "legacy_reservation": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+      }
+    }
+  ],
+  "append_vectors": [
+    {
+      "request": {
+        "version": 1,
+        "contract": "p08c-late-result-append.v1",
+        "operation": "release_stamp",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:stamp:7",
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+        "arena_id": "9007199254740993",
+        "native_inventory_id": 1,
+        "reservation_id": "late:battle:2",
+        "source_contract": "loss-v1",
+        "frozen_sha256": "cd8983ddfd2928a4b6c18382d33ef3e335dd29955a1db5ceb6b74ddad5b1bfce"
+      },
+      "response": {
+        "version": 1,
+        "contract": "p08c-late-result-append.v1",
+        "operation": "release_stamp",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:stamp:7",
+        "request_sha256": "17f676f4253d11c07120a1eb56c7f3dd086287f5f82393719ea4f92f8a735767",
+        "policy_sha256": "f6ae697fb920b9359a2cb0375aa1fd68538a183fab1c8f136772c703de6abe04",
+        "status": "stamped",
+        "replayed": false,
+        "code": null,
+        "seal_sha256": null,
+        "release_stamp": {
+          "reservation_id": "late:battle:2",
+          "frozen_sha256": "cd8983ddfd2928a4b6c18382d33ef3e335dd29955a1db5ceb6b74ddad5b1bfce",
+          "source_contract": "loss-v1",
+          "native_inventory_id": 1,
+          "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+          "arena_id": "9007199254740993",
+          "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+          "release_terminal_sha256": "3f49a42b58bff6e954478fd0e6252028f35bca4caa46f294339acfc8a5b79523",
+          "finished_revision": 113,
+          "reason": "manual_leave"
+        }
+      }
+    },
+    {
+      "request": {
+        "version": 1,
+        "contract": "p08c-late-result-append.v1",
+        "operation": "append",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:append:7",
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+        "arena_id": "9007199254740993",
+        "native_inventory_id": 1,
+        "reservation_id": "late:battle:2",
+        "source_contract": "loss-v1",
+        "frozen_sha256": "cd8983ddfd2928a4b6c18382d33ef3e335dd29955a1db5ceb6b74ddad5b1bfce",
+        "release_terminal_sha256": "3f49a42b58bff6e954478fd0e6252028f35bca4caa46f294339acfc8a5b79523",
+        "finished_revision": 113,
+        "seal_json": "{\"actors\":[{\"account_id\":\"c5326cc1-8524-479c-8bba-72e973489c22\",\"final_actor\":{\"fired_ammunition\":[{\"count\":0,\"shell_compact_id\":2570},{\"count\":0,\"shell_compact_id\":2826},{\"count\":0,\"shell_compact_id\":3082}],\"loss_event\":null,\"lost_ammunition\":[{\"count\":0,\"shell_compact_id\":2570},{\"count\":0,\"shell_compact_id\":2826},{\"count\":0,\"shell_compact_id\":3082}],\"remaining_ammunition\":[{\"count\":0,\"shell_compact_id\":2570},{\"count\":4,\"shell_compact_id\":2826},{\"count\":11,\"shell_compact_id\":3082}],\"terminal_hp\":90,\"terminal_state\":{\"crew\":[{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1\"},{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:recruit-crew:11\"}],\"crew_active\":true,\"death\":{\"killer_slot\":null,\"reason\":-1,\"tick\":0},\"devices\":[{\"extra_index\":26,\"health\":25,\"max_health\":25},{\"extra_index\":27,\"health\":60,\"max_health\":60},{\"extra_index\":28,\"health\":100,\"max_health\":100},{\"extra_index\":29,\"health\":90,\"max_health\":90},{\"extra_index\":30,\"health\":40,\"max_health\":40},{\"extra_index\":31,\"health\":40,\"max_health\":40},{\"extra_index\":32,\"health\":54,\"max_health\":54},{\"extra_index\":33,\"health\":50,\"max_health\":50},{\"extra_index\":34,\"health\":30,\"max_health\":30}],\"fire\":{\"active\":false,\"damage\":0,\"ticks\":0},\"policy_revision\":\"test_lab.p06t.devices-proxy-fire.v1\",\"roster_size\":2}},\"frozen_sha256\":\"cd8983ddfd2928a4b6c18382d33ef3e335dd29955a1db5ceb6b74ddad5b1bfce\",\"native_database_id\":1,\"native_inventory_id\":1,\"reservation_id\":\"late:battle:2\",\"slot\":0,\"source_contract\":\"loss-v1\",\"team\":1,\"vehicle_id\":152043523},{\"account_id\":\"271022a3-41e0-406e-b6fa-59930c320442\",\"final_actor\":{\"fired_ammunition\":[{\"count\":0,\"shell_compact_id\":2570},{\"count\":0,\"shell_compact_id\":2826},{\"count\":0,\"shell_compact_id\":3082}],\"loss_event\":null,\"lost_ammunition\":[{\"count\":0,\"shell_compact_id\":2570},{\"count\":0,\"shell_compact_id\":2826},{\"count\":0,\"shell_compact_id\":3082}],\"remaining_ammunition\":[{\"count\":14,\"shell_compact_id\":2570},{\"count\":0,\"shell_compact_id\":2826},{\"count\":0,\"shell_compact_id\":3082}],\"terminal_hp\":90,\"terminal_state\":{\"crew\":[{\"alive\":true,\"crew_id\":\"271022a3-41e0-406e-b6fa-59930c320442:ms1-commander-v1\"},{\"alive\":true,\"crew_id\":\"271022a3-41e0-406e-b6fa-59930c320442:recruit-ms1-driver:3\"}],\"crew_active\":true,\"death\":{\"killer_slot\":null,\"reason\":-1,\"tick\":0},\"devices\":[{\"extra_index\":26,\"health\":25,\"max_health\":25},{\"extra_index\":27,\"health\":60,\"max_health\":60},{\"extra_index\":28,\"health\":100,\"max_health\":100},{\"extra_index\":29,\"health\":90,\"max_health\":90},{\"extra_index\":30,\"health\":40,\"max_health\":40},{\"extra_index\":31,\"health\":40,\"max_health\":40},{\"extra_index\":32,\"health\":54,\"max_health\":54},{\"extra_index\":33,\"health\":50,\"max_health\":50},{\"extra_index\":34,\"health\":30,\"max_health\":30}],\"fire\":{\"active\":false,\"damage\":0,\"ticks\":0},\"policy_revision\":\"test_lab.p06t.devices-proxy-fire.v1\",\"roster_size\":2}},\"frozen_sha256\":\"02a083d479ca248d5175579b5ff55b39fb4f40a8dd76d57009c37016327494a0\",\"native_database_id\":2,\"native_inventory_id\":1,\"reservation_id\":\"late:battle:4\",\"slot\":1,\"source_contract\":\"loss-v1\",\"team\":2,\"vehicle_id\":152043525}],\"arena_id\":\"9007199254740993\",\"battle_id\":\"a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993\",\"policy\":\"test_lab.p08c.late-result-unchanged-release.v1\",\"results_json\":\"{\\\"arena_id\\\":9007199254740993,\\\"arena_type_id\\\":4,\\\"created_unix\\\":1792080000,\\\"duration_seconds\\\":0,\\\"finish_reason\\\":5,\\\"participants\\\":[{\\\"account_dbid\\\":1,\\\"capture_points\\\":0,\\\"damage_dealt\\\":0,\\\"damage_received\\\":0,\\\"death_reason\\\":-1,\\\"direct_hits\\\":0,\\\"dropped_capture_points\\\":0,\\\"health\\\":90,\\\"killer_id\\\":0,\\\"kills\\\":0,\\\"life_time\\\":0,\\\"mileage_metres\\\":0,\\\"name\\\":\\\"sr_ascii_f4d1e9\\\",\\\"piercings\\\":0,\\\"premature_leave\\\":true,\\\"shots\\\":0,\\\"team\\\":1,\\\"type_compact_descr\\\":3329,\\\"vehicle_id\\\":152043523},{\\\"account_dbid\\\":2,\\\"capture_points\\\":0,\\\"damage_dealt\\\":0,\\\"damage_received\\\":0,\\\"death_reason\\\":-1,\\\"direct_hits\\\":0,\\\"dropped_capture_points\\\":0,\\\"health\\\":90,\\\"killer_id\\\":0,\\\"kills\\\":0,\\\"life_time\\\":0,\\\"mileage_metres\\\":0,\\\"name\\\":\\\"Танкист_Ёж_e91322\\\",\\\"piercings\\\":0,\\\"premature_leave\\\":false,\\\"shots\\\":0,\\\"team\\\":2,\\\"type_compact_descr\\\":3329,\\\"vehicle_id\\\":152043525}],\\\"winner_team\\\":2}\",\"run_id\":\"a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a\",\"version\":1}"
+      },
+      "response": {
+        "version": 1,
+        "contract": "p08c-late-result-append.v1",
+        "operation": "append",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:append:7",
+        "request_sha256": "87153919b6ce98d768830853606eed960fd3f64fb9a7551b7086a219f8e216f1",
+        "policy_sha256": "f6ae697fb920b9359a2cb0375aa1fd68538a183fab1c8f136772c703de6abe04",
+        "status": "appended",
+        "replayed": false,
+        "code": null,
+        "seal_sha256": "a438ee8736a29884f12064e46ed9a938f248f61f5dccc5d793e06dc188fd6483",
+        "release_stamp": {
+          "reservation_id": "late:battle:2",
+          "frozen_sha256": "cd8983ddfd2928a4b6c18382d33ef3e335dd29955a1db5ceb6b74ddad5b1bfce",
+          "source_contract": "loss-v1",
+          "native_inventory_id": 1,
+          "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+          "arena_id": "9007199254740993",
+          "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+          "release_terminal_sha256": "3f49a42b58bff6e954478fd0e6252028f35bca4caa46f294339acfc8a5b79523",
+          "finished_revision": 113,
+          "reason": "manual_leave"
+        }
+      }
+    },
+    {
+      "request": {
+        "version": 1,
+        "contract": "p08c-late-result-append.v1",
+        "operation": "append",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:append:7",
+        "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+        "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+        "arena_id": "9007199254740993",
+        "native_inventory_id": 1,
+        "reservation_id": "late:battle:2",
+        "source_contract": "loss-v1",
+        "frozen_sha256": "cd8983ddfd2928a4b6c18382d33ef3e335dd29955a1db5ceb6b74ddad5b1bfce",
+        "release_terminal_sha256": "3f49a42b58bff6e954478fd0e6252028f35bca4caa46f294339acfc8a5b79523",
+        "finished_revision": 113,
+        "seal_json": "{\"actors\":[{\"account_id\":\"c5326cc1-8524-479c-8bba-72e973489c22\",\"final_actor\":{\"fired_ammunition\":[{\"count\":0,\"shell_compact_id\":2570},{\"count\":0,\"shell_compact_id\":2826},{\"count\":0,\"shell_compact_id\":3082}],\"loss_event\":null,\"lost_ammunition\":[{\"count\":0,\"shell_compact_id\":2570},{\"count\":0,\"shell_compact_id\":2826},{\"count\":0,\"shell_compact_id\":3082}],\"remaining_ammunition\":[{\"count\":0,\"shell_compact_id\":2570},{\"count\":4,\"shell_compact_id\":2826},{\"count\":11,\"shell_compact_id\":3082}],\"terminal_hp\":90,\"terminal_state\":{\"crew\":[{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1\"},{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:recruit-crew:11\"}],\"crew_active\":true,\"death\":{\"killer_slot\":null,\"reason\":-1,\"tick\":0},\"devices\":[{\"extra_index\":26,\"health\":25,\"max_health\":25},{\"extra_index\":27,\"health\":60,\"max_health\":60},{\"extra_index\":28,\"health\":100,\"max_health\":100},{\"extra_index\":29,\"health\":90,\"max_health\":90},{\"extra_index\":30,\"health\":40,\"max_health\":40},{\"extra_index\":31,\"health\":40,\"max_health\":40},{\"extra_index\":32,\"health\":54,\"max_health\":54},{\"extra_index\":33,\"health\":50,\"max_health\":50},{\"extra_index\":34,\"health\":30,\"max_health\":30}],\"fire\":{\"active\":false,\"damage\":0,\"ticks\":0},\"policy_revision\":\"test_lab.p06t.devices-proxy-fire.v1\",\"roster_size\":2}},\"frozen_sha256\":\"cd8983ddfd2928a4b6c18382d33ef3e335dd29955a1db5ceb6b74ddad5b1bfce\",\"native_database_id\":1,\"native_inventory_id\":1,\"reservation_id\":\"late:battle:2\",\"slot\":0,\"source_contract\":\"loss-v1\",\"team\":1,\"vehicle_id\":152043523},{\"account_id\":\"271022a3-41e0-406e-b6fa-59930c320442\",\"final_actor\":{\"fired_ammunition\":[{\"count\":0,\"shell_compact_id\":2570},{\"count\":0,\"shell_compact_id\":2826},{\"count\":0,\"shell_compact_id\":3082}],\"loss_event\":null,\"lost_ammunition\":[{\"count\":0,\"shell_compact_id\":2570},{\"count\":0,\"shell_compact_id\":2826},{\"count\":0,\"shell_compact_id\":3082}],\"remaining_ammunition\":[{\"count\":14,\"shell_compact_id\":2570},{\"count\":0,\"shell_compact_id\":2826},{\"count\":0,\"shell_compact_id\":3082}],\"terminal_hp\":90,\"terminal_state\":{\"crew\":[{\"alive\":true,\"crew_id\":\"271022a3-41e0-406e-b6fa-59930c320442:ms1-commander-v1\"},{\"alive\":true,\"crew_id\":\"271022a3-41e0-406e-b6fa-59930c320442:recruit-ms1-driver:3\"}],\"crew_active\":true,\"death\":{\"killer_slot\":null,\"reason\":-1,\"tick\":0},\"devices\":[{\"extra_index\":26,\"health\":25,\"max_health\":25},{\"extra_index\":27,\"health\":60,\"max_health\":60},{\"extra_index\":28,\"health\":100,\"max_health\":100},{\"extra_index\":29,\"health\":90,\"max_health\":90},{\"extra_index\":30,\"health\":40,\"max_health\":40},{\"extra_index\":31,\"health\":40,\"max_health\":40},{\"extra_index\":32,\"health\":54,\"max_health\":54},{\"extra_index\":33,\"health\":50,\"max_health\":50},{\"extra_index\":34,\"health\":30,\"max_health\":30}],\"fire\":{\"active\":false,\"damage\":0,\"ticks\":0},\"policy_revision\":\"test_lab.p06t.devices-proxy-fire.v1\",\"roster_size\":2}},\"frozen_sha256\":\"02a083d479ca248d5175579b5ff55b39fb4f40a8dd76d57009c37016327494a0\",\"native_database_id\":2,\"native_inventory_id\":1,\"reservation_id\":\"late:battle:4\",\"slot\":1,\"source_contract\":\"loss-v1\",\"team\":2,\"vehicle_id\":152043525}],\"arena_id\":\"9007199254740993\",\"battle_id\":\"a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993\",\"policy\":\"test_lab.p08c.late-result-unchanged-release.v1\",\"results_json\":\"{\\\"arena_id\\\":9007199254740993,\\\"arena_type_id\\\":4,\\\"created_unix\\\":1792080000,\\\"duration_seconds\\\":0,\\\"finish_reason\\\":5,\\\"participants\\\":[{\\\"account_dbid\\\":1,\\\"capture_points\\\":0,\\\"damage_dealt\\\":0,\\\"damage_received\\\":0,\\\"death_reason\\\":-1,\\\"direct_hits\\\":0,\\\"dropped_capture_points\\\":0,\\\"health\\\":90,\\\"killer_id\\\":0,\\\"kills\\\":0,\\\"life_time\\\":0,\\\"mileage_metres\\\":0,\\\"name\\\":\\\"sr_ascii_f4d1e9\\\",\\\"piercings\\\":0,\\\"premature_leave\\\":true,\\\"shots\\\":0,\\\"team\\\":1,\\\"type_compact_descr\\\":3329,\\\"vehicle_id\\\":152043523},{\\\"account_dbid\\\":2,\\\"capture_points\\\":0,\\\"damage_dealt\\\":0,\\\"damage_received\\\":0,\\\"death_reason\\\":-1,\\\"direct_hits\\\":0,\\\"dropped_capture_points\\\":0,\\\"health\\\":90,\\\"killer_id\\\":0,\\\"kills\\\":0,\\\"life_time\\\":0,\\\"mileage_metres\\\":0,\\\"name\\\":\\\"Танкист_Ёж_e91322\\\",\\\"piercings\\\":0,\\\"premature_leave\\\":false,\\\"shots\\\":0,\\\"team\\\":2,\\\"type_compact_descr\\\":3329,\\\"vehicle_id\\\":152043525}],\\\"winner_team\\\":2}\",\"run_id\":\"a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a\",\"version\":1}"
+      },
+      "response": {
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "code": null,
+        "command_key": "late:append:7",
+        "contract": "p08c-late-result-append.v1",
+        "native_database_id": 1,
+        "operation": "append",
+        "policy_sha256": "f6ae697fb920b9359a2cb0375aa1fd68538a183fab1c8f136772c703de6abe04",
+        "release_stamp": {
+          "arena_id": "9007199254740993",
+          "battle_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a:9007199254740993",
+          "finished_revision": 113,
+          "frozen_sha256": "cd8983ddfd2928a4b6c18382d33ef3e335dd29955a1db5ceb6b74ddad5b1bfce",
+          "native_inventory_id": 1,
+          "reason": "manual_leave",
+          "release_terminal_sha256": "3f49a42b58bff6e954478fd0e6252028f35bca4caa46f294339acfc8a5b79523",
+          "reservation_id": "late:battle:2",
+          "run_id": "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a",
+          "source_contract": "loss-v1"
+        },
+        "replayed": true,
+        "request_sha256": "87153919b6ce98d768830853606eed960fd3f64fb9a7551b7086a219f8e216f1",
+        "seal_sha256": "a438ee8736a29884f12064e46ed9a938f248f61f5dccc5d793e06dc188fd6483",
+        "status": "appended",
+        "version": 1
+      }
+    }
+  ],
+  "result_vectors": [
+    {
+      "request": {
+        "version": 4,
+        "operation": "query",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:result:8",
+        "arena_id": "9007199254740993",
+        "contract": "p06t-ammo-rack-loss.v1"
+      },
+      "response": {
+        "version": 4,
+        "operation": "query",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:result:8",
+        "arena_id": "9007199254740993",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "status": "found",
+        "acked": false,
+        "results_json": "{\"arena_id\":9007199254740993,\"arena_type_id\":4,\"created_unix\":1792080000,\"duration_seconds\":0,\"finish_reason\":5,\"participants\":[{\"account_dbid\":1,\"capture_points\":0,\"damage_dealt\":0,\"damage_received\":0,\"death_reason\":-1,\"direct_hits\":0,\"dropped_capture_points\":0,\"health\":90,\"killer_id\":0,\"kills\":0,\"life_time\":0,\"mileage_metres\":0,\"name\":\"sr_ascii_f4d1e9\",\"piercings\":0,\"premature_leave\":true,\"shots\":0,\"team\":1,\"type_compact_descr\":3329,\"vehicle_id\":152043523},{\"account_dbid\":2,\"capture_points\":0,\"damage_dealt\":0,\"damage_received\":0,\"death_reason\":-1,\"direct_hits\":0,\"dropped_capture_points\":0,\"health\":90,\"killer_id\":0,\"kills\":0,\"life_time\":0,\"mileage_metres\":0,\"name\":\"Танкист_Ёж_e91322\",\"piercings\":0,\"premature_leave\":false,\"shots\":0,\"team\":2,\"type_compact_descr\":3329,\"vehicle_id\":152043525}],\"winner_team\":2}",
+        "replayed": false,
+        "code": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+        "record_contract": "loss-v1"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "operation": "ack",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:result:9",
+        "arena_id": "9007199254740993",
+        "contract": "p06t-ammo-rack-loss.v1"
+      },
+      "response": {
+        "version": 4,
+        "operation": "ack",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "late:result:9",
+        "arena_id": "9007199254740993",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "status": "acked",
+        "acked": true,
+        "results_json": "{\"arena_id\":9007199254740993,\"arena_type_id\":4,\"created_unix\":1792080000,\"duration_seconds\":0,\"finish_reason\":5,\"participants\":[{\"account_dbid\":1,\"capture_points\":0,\"damage_dealt\":0,\"damage_received\":0,\"death_reason\":-1,\"direct_hits\":0,\"dropped_capture_points\":0,\"health\":90,\"killer_id\":0,\"kills\":0,\"life_time\":0,\"mileage_metres\":0,\"name\":\"sr_ascii_f4d1e9\",\"piercings\":0,\"premature_leave\":true,\"shots\":0,\"team\":1,\"type_compact_descr\":3329,\"vehicle_id\":152043523},{\"account_dbid\":2,\"capture_points\":0,\"damage_dealt\":0,\"damage_received\":0,\"death_reason\":-1,\"direct_hits\":0,\"dropped_capture_points\":0,\"health\":90,\"killer_id\":0,\"kills\":0,\"life_time\":0,\"mileage_metres\":0,\"name\":\"Танкист_Ёж_e91322\",\"piercings\":0,\"premature_leave\":false,\"shots\":0,\"team\":2,\"type_compact_descr\":3329,\"vehicle_id\":152043525}],\"winner_team\":2}",
+        "replayed": false,
+        "code": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+        "record_contract": "loss-v1"
+      }
+    }
+  ]
+}

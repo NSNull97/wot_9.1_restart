@@ -7,6 +7,11 @@ pub const PROFILE_REVISION: &str = "ms1-contact-717:7666849add0757fd91c224dbc6c0
 pub const IS7_PROFILE_REVISION: &str = "is7-contact-717:ebb3b8ae6dd383f1f8c31bde7c97257f8569fd626ff79ca8ad030848c1c3ab26";
 pub fn profile_revision(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::Ms1 => PROFILE_REVISION, VehicleKind::Is7 => IS7_PROFILE_REVISION,
+    VehicleKind::T26=>"p04m-t26-materials-717:7b6c41b5d8678a6f935701547781090c517649f741c05621a0cbaf063670e55e",
+    VehicleKind::T34=>"p04m-t34-materials-717:6c64732e7421f139991df3cdb0d0d161a3d563a3312fcef040a089d26508c306",
+    VehicleKind::T3485=>"p04m-t3485-materials-717:25b6c69fd51e26abbda9b16c35572b5f289f2320d0dffe4085dea1b7bdeba1bb",
+    VehicleKind::Wt128=>"p06t-wt128-materials-717:0971afa6aed7bbbb0c4ba647560e15002571544cc168005679a9d46a22962aae",
+    VehicleKind::Fv183=>"p06t-fv183-materials-717:c14b10be359a86c4c4632cd0943d06c43a47fc9ede2a982880c4f09aed6ecb1d",
 } }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,12 +21,41 @@ impl Component {
     fn parse(s: &str) -> io::Result<Self> { match s {
         "Hull" => Ok(Self::Hull), "Turret_01" => Ok(Self::Turret01), "Gun_02" => Ok(Self::Gun02), "Gun_01" => Ok(Self::Gun01), _ => Err(bad()) } }
 }
+/// Exact source armor IDs, including genuine holes. No renumbering to a
+/// guessed 1..max range. Non-mounted gun components have no valid IDs.
+pub(super) fn armor_ids(vehicle:VehicleKind,component:Component)->&'static[u16] {
+    match (vehicle,component) {
+        (VehicleKind::Ms1,Component::Hull)=>&[1,2,3,4,5,6,7,8,9,10,11,12],
+        (VehicleKind::Ms1,Component::Turret01)=>&[1,2,3,4,5,6,7,8,9,10],
+        (VehicleKind::Ms1,Component::Gun02)=>&[1,2,3],
+        (VehicleKind::Is7,Component::Hull)=>&[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],
+        (VehicleKind::Is7,Component::Turret01)=>&[1,2,3,4,5,6,7,8,9,10,11,12],
+        (VehicleKind::Is7,Component::Gun01)=>&[1,2,3],
+        (VehicleKind::T26|VehicleKind::T34,Component::Hull)=>&[1,2,3,4,5,6,7,8,9,10],
+        (VehicleKind::T26,Component::Turret01)=>&[1,2,3,4,5,6,7,8],
+        (VehicleKind::T26,Component::Gun02)=>&[1,2],
+        (VehicleKind::T34,Component::Turret01)=>&[1,2,3,4,5,6,7,8,9],
+        (VehicleKind::T34,Component::Gun01)=>&[1,2,3],
+        (VehicleKind::T3485,Component::Hull)=>&[1,2,3,4,5,6,7,8,9,10,11,12,13,15,16],
+        (VehicleKind::T3485,Component::Turret01)=>&[1,2,3,4,5,6,7,8,9,10,11,12,13],
+        (VehicleKind::T3485,Component::Gun01)=>&[1,2,4,5,6],
+        (VehicleKind::Wt128,Component::Hull)=>&[1,2,3,4,5,7,8,9,10,11,12,13],
+        (VehicleKind::Wt128,Component::Turret01)=>&[1,2,3,4,5,6,7,8],
+        (VehicleKind::Fv183,Component::Hull|Component::Turret01)=>&[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],
+        (VehicleKind::Fv183,Component::Gun01)=>&[1],
+        _=>&[],
+    }
+}
+pub(super) fn gun_component(vehicle:VehicleKind)->Component {
+    match vehicle {VehicleKind::Ms1|VehicleKind::T26=>Component::Gun02,_=>Component::Gun01}
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SourceClass { ArmorDescriptor, GunVisualMaterial, SurveyingDeviceVisualMaterial }
+pub enum SourceClass { ArmorDescriptor, GunVisualMaterial, SurveyingDeviceVisualMaterial, GunBreechVisualMaterial }
 impl SourceClass {
     fn name(self) -> &'static str { match self {
         Self::ArmorDescriptor => "armor_descriptor", Self::GunVisualMaterial => "gun_visual_material",
-        Self::SurveyingDeviceVisualMaterial => "surveying_device_visual_material" } }
+        Self::SurveyingDeviceVisualMaterial => "surveying_device_visual_material",
+        Self::GunBreechVisualMaterial=>"gun_breech_visual_material" } }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct EffectiveMaterial {
@@ -89,6 +123,7 @@ impl Catalog {
         if revision.as_str() != Some(revision_expected) { return Err(bad()); }
         let (hull_max, turret_max, gun) = match vehicle {
             VehicleKind::Ms1 => (12, 10, Component::Gun02), VehicleKind::Is7 => (16, 12, Component::Gun01),
+            _=>return Err(bad()), // New source export has a distinct checked shape.
         };
         let rows = rows.as_array().filter(|a| a.len() == 3).ok_or_else(|| bad())?;
         let mut entries = Vec::new();
@@ -117,6 +152,52 @@ impl Catalog {
             }
         }
         Ok(Self { entries })
+    }
+    /// Closed new-source facts only. Gun31 remains a separate unsupported
+    /// source class: ordinary armor and exterior gun25 policy do not accept it.
+    pub(super) fn from_p06t_source(vehicle:VehicleKind,source:&super::p06t_geometry_source::SourceBundle)->io::Result<Self>{
+        use super::p06t_geometry_source::{Assembly,SourceClass as Source};
+        let expected=match vehicle{VehicleKind::Wt128=>Assembly::Wt128,VehicleKind::Fv183=>Assembly::Fv183,_=>return Err(bad())};
+        if source.assembly!=expected||source.components.len()!=3{return Err(bad());}
+        let mut entries=Vec::new();
+        for(i,c)in source.components.iter().enumerate(){
+            let component=[Component::Hull,Component::Turret01,Component::Gun01][i];
+            if c.name!=component.name(){return Err(bad());}
+            for m in &c.materials{
+                let source_class=match m.source_class{Source::ArmorDescriptor=>SourceClass::ArmorDescriptor,
+                    Source::GunVisual=>SourceClass::GunVisualMaterial,Source::SurveyingDeviceVisual=>SourceClass::SurveyingDeviceVisualMaterial,
+                    Source::GunBreechVisualUnsupported=>SourceClass::GunBreechVisualMaterial};
+                let effective=m.effective.as_ref().map(|v|EffectiveMaterial::from_value(v,m.kind)).transpose()?;
+                entries.push(MaterialFacts{component,name:m.name.clone(),kind:m.kind,source_class,effective,profile_revision:profile_revision(vehicle).into()});
+            }
+        }
+        Ok(Self{entries})
+    }
+    /// Only used after the exact approved P04M full-source export digest gate.
+    pub(super) fn from_p04m_for(vehicle:VehicleKind,components:&Value)->io::Result<Self> {
+        if !matches!(vehicle,VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485) {return Err(bad());}
+        let rows=components.as_array().filter(|rows|rows.len()==3).ok_or_else(||bad())?;
+        let mut entries=Vec::new();
+        for (index,row) in rows.iter().enumerate() {
+            let component=[Component::Hull,Component::Turret01,gun_component(vehicle)][index];
+            if row["name"].as_str()!=Some(component.name()) {return Err(bad());}
+            let mut expected=armor_ids(vehicle,component).to_vec();expected.push(if index==2{25}else{28});
+            let values=row["materials"].as_array().filter(|v|v.len()==expected.len()).ok_or_else(||bad())?;
+            for (value,kind) in values.iter().zip(expected) {
+                fields(value,&["name","kind","effective"])?;
+                let(name,source_class)=match kind {
+                    25=>("gun".to_owned(),SourceClass::GunVisualMaterial),
+                    28=>("surveyingDevice".to_owned(),SourceClass::SurveyingDeviceVisualMaterial),
+                    _=>(format!("armor_{kind}"),SourceClass::ArmorDescriptor),
+                };
+                if value["kind"].as_u64()!=Some(kind as u64)||value["name"].as_str()!=Some(name.as_str()) {return Err(bad());}
+                let effective=if kind==28 {
+                    if !value["effective"].is_null() {return Err(bad());}None
+                } else {Some(EffectiveMaterial::from_value(&value["effective"],kind)?)};
+                entries.push(MaterialFacts{component,name,kind,source_class,effective,profile_revision:profile_revision(vehicle).into()});
+            }
+        }
+        Ok(Self{entries})
     }
     pub fn lookup(&self, component: &str, label: &str) -> io::Result<MaterialFacts> {
         let component = Component::parse(component)?;

@@ -11,7 +11,7 @@ fn world(now:Instant,kind:VehicleKind)->model::World {
     w.start(now).unwrap();w.set_ready(0,1).unwrap();w.set_ready(1,2).unwrap();w
 }
 
-#[test] fn is7_actor_descriptor_health_binding_and_mixed_kind_rejection() {
+#[test] fn is7_actor_descriptor_health_binding_and_mixed_kind_geometry_isolation() {
     let now=Instant::now();let w=world(now,VehicleKind::Is7);
     for slot in 0..2 {
         let a=&w.actors[slot];assert_eq!(a.vehicle_kind(),VehicleKind::Is7);
@@ -29,7 +29,12 @@ fn world(now:Instant,kind:VehicleKind)->model::World {
         assert_eq!(&binding[binding.len()-4..],&13.7f32.to_le_bytes());
     }
     let mut mixed=w.clone();mixed.actors[1]=world(now,VehicleKind::Ms1).actors[1].clone();
-    assert!(wire::roster(&mixed).is_err());assert!(wire::create_vehicle(&mixed,1).is_err());
+    let roster=wire::roster(&mixed).unwrap();
+    assert!(roster.windows(VehicleKind::Is7.descriptor().len()).any(|v|v==VehicleKind::Is7.descriptor()));
+    assert!(roster.windows(VehicleKind::Ms1.descriptor().len()).any(|v|v==VehicleKind::Ms1.descriptor()));
+    let create=wire::create_vehicle(&mixed,1).unwrap();
+    assert!(create.windows(VehicleKind::Ms1.descriptor().len()).any(|v|v==VehicleKind::Ms1.descriptor()));
+    assert_eq!(&create[43..45],&90i16.to_le_bytes());
     let mut fresh=model::World::new_for_vehicle(72,now,MapId::Prohorovka,VehicleKind::Is7).unwrap();
     assert!(fresh.bind_geometry(Arc::new(geometry::tests::bundle())).is_err());
     assert!(fresh.bind_destructible_test_lab().is_err());
@@ -69,14 +74,14 @@ fn world(now:Instant,kind:VehicleKind)->model::World {
             let outcomes=w.apply(slot,slot as u32+1,&[model::Command::Fire(fire::Command::Shoot)],t).unwrap();
             assert!(matches!(outcomes.as_slice(),[fire::Outcome::AcceptedShot{..}]));
         } }
-        assert_eq!(w.latest_shot() as usize,kind.battle_shot_limit());
-        assert_eq!(w.projectiles.len(),kind.battle_shot_limit());
+        assert_eq!(w.latest_shot() as usize,2*kind.initial_ammo() as usize);
+        assert_eq!(w.projectiles.len(),2*kind.initial_ammo() as usize);
         for slot in 0..2 {
             assert_eq!(w.actors[slot].fire.ammo(),0);
             let outcomes=w.apply(slot,slot as u32+1,&[model::Command::Fire(fire::Command::Shoot)],now+Duration::from_secs(500)).unwrap();
             assert_eq!(outcomes,vec![fire::Outcome::RejectedNoAmmo]);
         }
-        assert_eq!(w.latest_shot() as usize,kind.battle_shot_limit());
+        assert_eq!(w.latest_shot() as usize,2*kind.initial_ammo() as usize);
     }
 }
 
@@ -123,7 +128,13 @@ fn resolve(m:&materials::MaterialFacts,distance:f64)->ap::Resolution {
         [0.,0.5,0.5],[1.,0.5,0.5],impact_wire::ShotOutcome::Pierced).unwrap();
     assert_eq!(&effect[23..],&[14,0x13]);
     let ground=terrain_wire::explode_material_for(kind,60,[0.;3],[0.,0.,1.],0).unwrap();
-    assert_eq!(ground[7],14);assert!(terrain_wire::explode(60,[0.;3],[0.,0.,1.]).is_err());
+    assert_eq!(ground[7],14);
+    // A real full MS-1 loadout now admits shot60 as well; the profile's
+    // native effects and distinct 192/60 history bounds still stay separate.
+    let ms1_ground=terrain_wire::explode(60,[0.;3],[0.,0.,1.]).unwrap();
+    assert_ne!(ms1_ground[7],ground[7]);
+    assert!(terrain_wire::explode_material_for(kind,61,[0.;3],[0.,0.,1.],0).is_err());
+    assert!(terrain_wire::explode(VehicleKind::Ms1.battle_shot_limit() as u32+1,[0.;3],[0.,0.,1.]).is_err());
     let mut state=aim::State::new();state.pitch=kind.aim().min_pitch;
     assert_eq!(wire::packed_angles_for(kind,&state).unwrap(),0x8000);
     state.pitch=kind.aim().max_pitch;assert_eq!(wire::packed_angles_for(kind,&state).unwrap(),0x803f);

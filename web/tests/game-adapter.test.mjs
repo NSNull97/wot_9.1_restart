@@ -13,7 +13,7 @@ import { token } from '../src/security.mjs';
 import { browser, freePort, testDirectory, removeTestDirectory } from './helpers.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const NATIVE = resolve(ROOT, 'local/evidence/20261004-p02-hangar/native-descriptors.json');
+const NATIVE = resolve(process.env.WOT091_TEST_NATIVE || join(ROOT, 'local/evidence/20261004-p02-hangar/native-descriptors.json'));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const jsonFile = path => JSON.parse(readFileSync(path, 'utf8'));
 const getPair = (tree, key) => tree.pairs.find(([name]) => name === key)[1];

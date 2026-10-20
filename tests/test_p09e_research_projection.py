@@ -56,6 +56,11 @@ class ResearchProjectionTests(unittest.TestCase):
         self.assertNotIn("tankmanCost", self.source.trees["shop.bin"].get("defaults", {}))
         with self.assertRaises(ValueError): encode(shop)
 
+    def test_zero_economy_shop_shows_gold_rows_free(self):
+        shop = shop_tree(self.catalog, self.source.trees["shop.bin"], zero_gold=True)
+        for item in (*self.catalog.modules.values(), *self.catalog.vehicles.values()):
+            self.assertEqual(shop["items"]["itemPrices"][item["native_compact_id"]], (0, 0))
+
     def test_native_research_buy_install_and_durable_identical_replay(self):
         money = deepcopy(self.public()["resources"])
         result, research = self.native(201, [3329, 0, 0])

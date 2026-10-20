@@ -11,6 +11,7 @@ import json
 from p04k_crew_projection import BarracksRecruitmentProjectionSource
 from p09d_ammo_projection import encode, canonical
 from p09e_native_research_audit import plain_vehicle_descriptor
+from p04w_shell_display import add_shell_display_references
 from p09e_research_store import POLICY_SHA256, SHOP_REVISION, MAX_OWNED, PROFILE_VERSION
 from game_profile_tx import TransactionError
 import hashlib
@@ -78,13 +79,14 @@ def garage_record(catalog, vehicle):
         "shellsLayout": {}, "eqs": [0, 0, 0], "eqsLayout": [0, 0, 0]}
 
 
-def shop_tree(catalog, source_shop):
+def shop_tree(catalog, source_shop, *, zero_gold=False):
     shop = deepcopy(source_shop)
     shop["rev"] = SHOP_REVISION
     # Source gold remains source gold. Only ordinary credit transactions are
     # admitted by the store. Removing a price is not a security boundary.
+    # zero_gold: the account's explicit ECONOMY_POLICY admits gold items free.
     shop["items"]["itemPrices"] = {row["native_compact_id"]:
-        (0, row["historical_price"]["amount"] if row["historical_price"]["currency"] == "gold" else 0)
+        (0, row["historical_price"]["amount"] if row["historical_price"]["currency"] == "gold" and not zero_gold else 0)
         for row in (*catalog.vehicles.values(), *catalog.modules.values())}
     shop["items"]["notInShopItems"] = sorted(v["native_compact_id"]
         for v in catalog.vehicles.values() if v["not_in_shop"] or set(v["tags"]) & {"secret", "observer", "event_battles", "special"})
@@ -93,7 +95,7 @@ def shop_tree(catalog, source_shop):
     # isPremium. Zero rows only open the window: the store rejects every crew
     # tariff. Historical tariff prices and training levels remain UNKNOWN.
     shop["tankmanCost"] = [{"credits": 0, "gold": 0, "isPremium": premium} for premium in (False, False, True)]
-    return shop
+    return add_shell_display_references(shop)
 
 
 class ResearchProjectionSource(BarracksRecruitmentProjectionSource):

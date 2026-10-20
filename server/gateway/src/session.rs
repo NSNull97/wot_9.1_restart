@@ -153,11 +153,28 @@ enum ArenaVehicleStage {Disabled,AwaitingEnable,AwaitingEntityRequest,Queued}
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct WarmAccountReturn {generation:u32,queue_ahead:usize,creation:Option<(u32,bool)>,enabled:bool,stale_avatar_envelopes:u8}
 
+/// Typed room intent collected from a newly accepted reliable Account record.
+/// The index is into the UN-DRAINED caller outbox, including its initial prefix.
+/// Identity/lease/channel authority is supplied only by the outer server.
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub(crate) struct TrainingRecord {
+    pub(crate) outbox_index:usize,
+    pub(crate) request:crate::training091::ingress::Request,
+}
+#[must_use="stage records and diagnostics with Registry/all Sessions; publish only after commit"]
+pub(crate) struct TrainingReceived {
+    pub(crate) close:bool,
+    pub(crate) diagnostics:Vec<String>,
+    pub(crate) records:Vec<TrainingRecord>,
+}
+
 #[derive(Clone)]
 struct Session {
     id:u32,key:[u8;16],login_peer:SocketAddr,base_peer:Option<SocketAddr>,handoff:u32,token:u32,
     active:bool,rx:u32,last_rx:Instant,last_keepalive:Instant,last_heartbeat:Instant,tx:Window,
-    account_probe:bool,account_ready:bool,
+    account_probe:bool,account_ready:bool,training_opt_in:bool,
+    training_flights:Option<crate::training091::stream_flight::Flights>,
+    training_ids:Vec<i16>,training_ids_generation:u64,
     received:VecDeque<(u32,Vec<u8>)>,sync_mask:u8,request_ids:Vec<i16>,
     hangar:Option<Arc<crate::hangar091::Fixtures>>,outbox:VecDeque<Vec<u8>>,chat_request_ids:Vec<i64>,
     language:Option<&'static str>,
@@ -178,18 +195,19 @@ struct Session {
     drive_return_account:Option<WarmAccountReturn>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
     shared:Option<shared::Client>,
+    battle_results:shared::results_session::State,
     ammo_service:Option<ammo_session::State>,
 }
 impl Session {
     fn new(id:u32,key:[u8;16],peer:SocketAddr,now:Instant)->Self {
         Self {id,key,login_peer:peer,base_peer:None,handoff:OsRng.next_u32(),token:OsRng.next_u32(),
-            active:false,rx:0,last_rx:now,last_keepalive:now,last_heartbeat:now,tx:Window::new(),account_probe:false,account_ready:false,
+            active:false,rx:0,last_rx:now,last_keepalive:now,last_heartbeat:now,tx:Window::new(),account_probe:false,account_ready:false,training_opt_in:false,training_flights:None,training_ids:Vec::new(),training_ids_generation:0,
             received:VecDeque::new(),sync_mask:0,request_ids:Vec::new(),hangar:None,outbox:VecDeque::new(),chat_request_ids:Vec::new(),language:None,stats_requests:0,
             unsupported_request_ids:VecDeque::new(),identity:None,created_at:now,account_cache_hash:None,login_attempt:None,
             arena_base:false,avatar_unsupported_envelopes:0,arena_space:ArenaSpaceStage::Disabled,
             arena_vehicle:ArenaVehicleStage::Disabled,arena_vehicle_seed:None,arena_vehicle_announcement:None,
             arena_ready:false,arena_vehicle_creation:None,arena_preparation:None,arena_battle_preparation:None,arena_fire:None,
-            arena_movement:false,arena_motion:None,map_drive:false,map_binding:None,drive:None,drive_return_account:None,drive_account_policy:None,shared:None,ammo_service:None}
+            arena_movement:false,arena_motion:None,map_drive:false,map_binding:None,drive:None,drive_return_account:None,drive_account_policy:None,shared:None,battle_results:shared::results_session::State::default(),ammo_service:None}
     }
     fn same_login_attempt(&self,candidate:&LoginAttempt)->bool {
         self.login_attempt.is_some_and(|attempt|attempt.same_attempt(candidate))
@@ -204,6 +222,20 @@ impl Session {
         Ok(())
     }
     fn drain_outbox(&mut self)->io::Result<()> {
+        if self.training_flights.is_some() {
+            while self.tx.len()<8 && !self.outbox.is_empty() {
+                // Poll/flush callers also use this path outside receive's clone.
+                // A failed marker update must not partially enqueue live bytes.
+                let mut next=self.clone();
+                let sequence=next.tx.enqueue_body_tracked(next.outbox.front().ok_or_else(invalid)?)?;
+                next.training_flights.as_mut().ok_or_else(invalid)?.on_enqueued(sequence).map_err(|_|invalid())?;
+                if let Some(warm)=next.drive_return_account.as_mut().filter(|w|w.creation.is_none()) {
+                    if warm.queue_ahead==0 {warm.creation=Some((sequence,false));}else{warm.queue_ahead-=1;}
+                }
+                next.outbox.pop_front();*self=next;
+            }
+            return Ok(());
+        }
         while self.tx.len()<8 {
             let Some(body)=self.outbox.front() else {break;};
             if let Some(warm)=self.drive_return_account.as_mut().filter(|w|w.creation.is_none()) {
@@ -215,10 +247,74 @@ impl Session {
         }
         Ok(())
     }
+    /// Insert one complete closed-codec stream in the outer staged transaction.
+    /// Actual Session/auth/revision are checked here; Registry/query provenance
+    /// must separately match the current immutable Controller read context.
+    fn queue_training_stream(&mut self,context:crate::training091::stream_flight::StreamContext,
+        bodies:Vec<Vec<u8>>,at:usize)->io::Result<()> {
+        if !self.training_account_ready() || at>self.outbox.len() || bodies.is_empty()
+            || self.outbox.len()+bodies.len()>crate::training091::wire::MAX_OUTBOX
+            || bodies.iter().any(|b|b.is_empty()||b.len()>512)
+            || self.outbox.iter().chain(&bodies).map(Vec::len).sum::<usize>()>crate::training091::wire::MAX_OUTBOX_BYTES {
+            return Err(invalid());
+        }
+        let channel=context.channel();let caller=context.caller();
+        let principal=caller.account.0.iter().map(|b|format!("{b:02x}")).collect::<String>();
+        if channel.session!=self.id||channel.generation!=self.training_account_generation()||caller.generation!=u64::from(self.id)
+            ||self.identity.as_ref().is_none_or(|p|p.account_id.replace('-',"")!=principal)
+            ||self.ammo_service.as_ref().is_none_or(|p|p.revision()!=u64::from(context.profile_revision())) {
+            return Err(invalid());
+        }
+        for(index,body)in bodies.iter().enumerate(){
+            let mut offset=0;
+            if index==0 {
+                if body.len()<6||body[0]!=52||body[3..5]!=context.kind().stream_id().to_le_bytes(){return Err(invalid());}
+                let size=usize::from(u16::from_le_bytes([body[1],body[2]]));
+                if size!=3+usize::from(body[5]){return Err(invalid());}offset=3+size;
+            }
+            let chunk=body.get(offset..).ok_or_else(invalid)?;
+            if chunk.len()<8||chunk[0]!=53||usize::from(u16::from_le_bytes([chunk[1],chunk[2]]))+3!=chunk.len()
+                ||chunk[3..5]!=context.kind().stream_id().to_le_bytes()||usize::from(chunk[5])!=index
+                ||chunk[6]!=u8::from(index+1==bodies.len()){return Err(invalid());}
+        }
+        let mut next=self.clone();
+        next.training_flights.as_mut().ok_or_else(invalid)?.stage(context,at,bodies.len()).map_err(|_|invalid())?;
+        for (offset,body) in bodies.into_iter().enumerate(){next.outbox.insert(at+offset,body);}
+        *self=next;Ok(())
+    }
+    /// Authentication survives a warm Account recreation; callback/stream
+    /// origin does not. Use the existing server-owned return generation.
+    fn training_account_generation(&self)->u64{
+        self.shared.as_ref().map_or_else(||self.drive_return_account.as_ref().map_or(1,|w|u64::from(w.generation)+1),shared::Client::account_incarnation)
+    }
+    /// Plain PRB callbacks share native signed request IDs with legacy Account
+    /// commands, but not their small initialization-history budget. The outer
+    /// cloned transaction claims ONLY after the complete frame/piggyback parse.
+    fn training_request_used(&self,id:i16)->bool {
+        self.training_opt_in && self.training_ids_generation==self.training_account_generation()
+            && self.training_ids.contains(&id)
+    }
+    fn claim_training_request(&mut self,id:i16)->io::Result<()> {
+        let generation=self.training_account_generation();
+        let current=self.training_ids_generation==generation;
+        if !self.training_opt_in || id<221 || self.request_ids.contains(&id)
+            || self.unsupported_request_ids.contains(&id)
+            || self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))
+            || self.battle_results.used_id(id)
+            || current && (self.training_ids.contains(&id) || self.training_ids.len()>=512) {
+            return Err(invalid());
+        }
+        // Validate before clearing: a malformed/fixed-stream claim or a final
+        // legacy collision cannot partially erase the previous generation.
+        if !current {self.training_ids.clear();self.training_ids_generation=generation;}
+        self.training_ids.push(id);Ok(())
+    }
     fn ready_for_arena_base(&self)->bool {
         self.active && self.account_ready && self.identity.is_some() && self.hangar.is_some()
             && self.base_peer.is_some() && self.sync_mask==7 && self.outbox.is_empty()
-            && self.tx.len()==0 && !self.arena_base && self.ammo_service.is_none()
+            && self.tx.len()==0 && !self.arena_base && (self.ammo_service.is_none()
+                || self.shared.as_ref().is_some_and(|c|c.profile13_arena_ready())
+                    && self.ammo_service.as_ref().is_some_and(ammo_session::State::idle))
     }
     fn queue_arena_base(&mut self)->io::Result<()> {
         if !self.ready_for_arena_base() {return Err(invalid());}
@@ -682,6 +778,10 @@ impl Session {
                 }
             }
         }
+        // This legacy single-tank path has no v2 loadout/publication contract.
+        if outcomes.iter().any(|outcome|matches!(outcome,crate::battle091::fire::Outcome::Typed(_)
+            |crate::battle091::fire::Outcome::RejectedVehicleState)){
+            return Err(io::Error::new(io::ErrorKind::InvalidData,"mixed armament in legacy battle"));}
         let mut response_sequences=Vec::with_capacity(response_bodies.len());
         for body in response_bodies {response_sequences.push(next.tx.enqueue_body_tracked(&body)?);}
         let response_sequence=response_sequences.first().copied();
@@ -702,6 +802,10 @@ impl Session {
                 crate::battle091::fire::Outcome::ReplenishUnsupported=>events.push(format!(
                     "BATTLE_REPLENISH_UNSUPPORTED session={} sequence={sequence} method=vehicle_replenishAmmo base_method=0x89 domain_applied=false ammo_grant=false economy=false transport_acknowledged=true",
                     self.id)),
+                crate::battle091::fire::Outcome::RejectedBattlePeriod=>events.push(format!(
+                    "BATTLE_SHOT_REJECTED session={} sequence={sequence} reason=battle_period domain_applied=false ammo_mutation=false",self.id)),
+                crate::battle091::fire::Outcome::RejectedVehicleState|crate::battle091::fire::Outcome::Typed(_)=>
+                    return Err(io::Error::new(io::ErrorKind::InvalidData,"mixed armament in legacy battle")),
             }
         }
         Ok(Some(()))
@@ -873,19 +977,25 @@ impl Session {
         for body in aim_bodies { self.tx.enqueue_body_tracked(&body)?; }
         Ok(())
     }
+    fn account_decoder(&self)->fn(&[u8])->io::Result<Vec<crate::hangar091::Incoming>> {
+        if self.hangar.is_some() {
+            if self.ammo_service.as_ref().is_some_and(ammo_session::State::research_enabled) {crate::hangar091::requests_research_service}
+            else if self.ammo_service.as_ref().is_some_and(ammo_session::State::barracks_enabled) {crate::hangar091::requests_crew_barracks}
+            else if self.ammo_service.as_ref().is_some_and(ammo_session::State::dismissal_enabled) {crate::hangar091::requests_crew_dismissal}
+            else if self.ammo_service.as_ref().is_some_and(ammo_session::State::progression_enabled) {crate::hangar091::requests_crew_progression}
+            else if self.ammo_service.as_ref().is_some_and(ammo_session::State::transfer_enabled) {crate::hangar091::requests_crew_transfer}
+            else if self.ammo_service.as_ref().is_some_and(ammo_session::State::crew_enabled) {crate::hangar091::requests_crew_service}
+            else if self.ammo_service.is_some() {crate::hangar091::requests_ammo_service}
+            else if self.identity.is_some() {crate::hangar091::requests_interactive}
+            else {crate::hangar091::requests}
+        }else{|payload|crate::account091::requests(payload).map(|rows|rows.into_iter().map(crate::hangar091::Incoming::Sync).collect())}
+    }
     fn receive_account(&mut self,payload:&[u8],events:&mut Vec<String>)->io::Result<()> {
+        let requests=(self.account_decoder())(payload)?;
+        self.apply_account_requests(requests,events)
+    }
+    fn apply_account_requests(&mut self,requests:Vec<crate::hangar091::Incoming>,events:&mut Vec<String>)->io::Result<()> {
 use crate::hangar091::Incoming;
-let requests=if self.hangar.is_some() {
-    if self.ammo_service.as_ref().is_some_and(ammo_session::State::research_enabled) {crate::hangar091::requests_research_service(payload)?}
-    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::barracks_enabled) {crate::hangar091::requests_crew_barracks(payload)?}
-    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::dismissal_enabled) {crate::hangar091::requests_crew_dismissal(payload)?}
-    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::progression_enabled) {crate::hangar091::requests_crew_progression(payload)?}
-    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::transfer_enabled) {crate::hangar091::requests_crew_transfer(payload)?}
-    else if self.ammo_service.as_ref().is_some_and(ammo_session::State::crew_enabled) {crate::hangar091::requests_crew_service(payload)?}
-    else if self.ammo_service.is_some() {crate::hangar091::requests_ammo_service(payload)?}
-    else if self.identity.is_some() {crate::hangar091::requests_interactive(payload)?}
-    else {crate::hangar091::requests(payload)?}}
-    else {crate::account091::requests(payload)?.into_iter().map(Incoming::Sync).collect()};
 for incoming in requests {
     // The shared mutation namespace also guards later nonmutating commands.
     // ClientChat uses its separate i64 namespace; transport duplicates never
@@ -897,7 +1007,9 @@ for incoming in requests {
         Incoming::Language{id}|Incoming::Unavailable{id,..}=>Some(*id),
         Incoming::ServerStats=>Some(202),Incoming::Chat(_)=>None,
     };
-    if account_id.is_some_and(|id|self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))) {return Err(invalid());}
+    if account_id.is_some_and(|id|self.training_request_used(id)
+        || self.training_opt_in&&self.battle_results.used_id(id)
+        || self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))) {return Err(invalid());}
     let r=match incoming {
         Incoming::Sync(r)=>r,
         Incoming::ResearchService(request)=>{
@@ -1040,7 +1152,10 @@ for incoming in requests {
         } else if !self.active || !f.body.is_empty() || !f.piggybacks.is_empty() {return Err(invalid());}
         for p in &f.piggybacks {self.validate_frame(p,depth+1)?;} Ok(())
     }
+    /// Default entry point cannot discard collected room intents or print
+    /// transactional training diagnostics before the outer Registry commit.
     fn receive(&mut self,f:&Frame,now:Instant)->io::Result<bool> {
+        if self.training_opt_in {return Err(invalid());}
         if self.account_ready {
             // Validate and apply the complete piggyback tree atomically. A later
             // invalid message cannot advance ACK/state or consume earlier RPCs.
@@ -1071,16 +1186,104 @@ for incoming in requests {
         }
         self.last_rx=now;Ok(close)
     }
+    /// This commits only the RECEIVER clone supplied by the outer transaction.
+    /// The caller must clone Registry and every affected Session first, insert
+    /// publications at records' offsets, then drain all outboxes and commit all.
+    /// No writer/socket worker is dispatched here, and diagnostics are returned.
+    fn receive_training_collected(&mut self,f:&Frame,now:Instant)->io::Result<TrainingReceived> {
+        if !self.training_opt_in || !self.account_ready {return Err(invalid());}
+        let mut next=self.clone();let mut diagnostics=Vec::new();let mut records=Vec::new();
+        let close=next.receive_ready_inner(f,now,&mut diagnostics,0,&mut 32,Some(&mut records))?;
+        *self=next;Ok(TrainingReceived{close,diagnostics,records})
+    }
+    fn training_account_ready(&self)->bool {
+        self.training_opt_in && self.active && self.account_ready && !self.arena_base
+            && self.identity.is_some() && self.hangar.is_some() && self.base_peer.is_some() && self.sync_mask==7
+            && self.shared.as_ref().is_none_or(shared::Client::profile13_account)
+            && self.drive.as_ref().is_none_or(|d|d.phase==crate::map_drive_world091::Phase::Idle)
+            && self.drive_return_account.as_ref().is_none_or(|w|w.enabled)
+    }
+    fn receive_training_account(&mut self,payload:&[u8],events:&mut Vec<String>,records:&mut Vec<TrainingRecord>)->io::Result<()> {
+        use crate::hangar091::{Incoming,TrainingIncoming};
+        use crate::battle091::profile13::{self,NativeCommand};
+        if !self.training_account_ready() || payload.len()>crate::training091::ingress::MAX_BODY {return Err(invalid());}
+        // The original owned Account path also handles native random-queue and
+        // results records. Compact ONLY those special records out, decode ALL
+        // remaining legacy+Room records ONCE, then restore the original order.
+        enum Part<'a>{Remaining,Queue(NativeCommand),Results(&'a[u8])}
+        let(mut at,mut parts,mut compact)=(0,Vec::new(),Vec::new());
+        while at<payload.len(){
+            if parts.len()>=crate::training091::ingress::MAX_RECORDS || payload.len()-at<3{return Err(invalid());}
+            let length=usize::from(u16::from_le_bytes([payload[at+1],payload[at+2]]));
+            let end=at.checked_add(3+length).ok_or_else(invalid)?;
+            let packet=payload.get(at..end).ok_or_else(invalid)?;
+            let part=if let Some(queue)=profile13::native_command(packet)?{Part::Queue(queue)}
+                else if packet.first()==Some(&0x8e) && packet.len()>=7
+                    && [1500i16,1501i16].contains(&i16::from_le_bytes([packet[5],packet[6]])) {Part::Results(packet)}
+                else{compact.extend_from_slice(packet);Part::Remaining};
+            parts.push(part);at=end;
+        }
+        let mut remaining:VecDeque<_>=crate::hangar091::requests_training_with(&compact,true,self.account_decoder())?.into();
+        for part in parts{match part{
+            Part::Queue(command)=>{
+                // Explicit LAB training isolation: native random Join receives
+                // its real failure callback; Cancel/QueueInfo cannot cancel,
+                // alter or reserve the current room's selected owned vehicle.
+                if let NativeCommand::Join{..}=command{
+                    if self.outbox.len()>=crate::training091::wire::MAX_OUTBOX{return Err(invalid());}
+                    self.outbox.push_back(profile13::enqueue_failure("BATTLE_PROFILE_UNSUPPORTED")?);
+                }
+                events.push(format!("P10B_RANDOM_QUEUE_ISOLATED session={} command={command:?} writer_started=false room_changed=false",self.id));
+            },
+            Part::Results(packet)=>{
+                if !self.shared.as_ref().is_some_and(|c|c.profile13_account()){return Err(invalid());}
+                let id=i16::from_le_bytes([packet[3],packet[4]]);
+                let query=i16::from_le_bytes([packet[5],packet[6]])==1500;
+                // Training LAB namespace: fixed room streams200/201 and
+                // no-response202 cannot be dynamic result-query callbacks.
+                if query&&[200,201,202].contains(&id){return Err(invalid());}
+                // Only Query has a dynamic callback ID. ACK uses the fixed
+                // no-response202 even when an old Account ID202 was consumed;
+                // its exact ID/layout/lifetime remain owned by State.stage.
+                if query&&(self.request_ids.contains(&id)||self.unsupported_request_ids.contains(&id)
+                    ||self.ammo_service.as_ref().is_some_and(|state|state.used_id(id))||self.training_request_used(id)){return Err(invalid());}
+                // The actual existing bounded parser owns layout/arena/ID/
+                // epoch/pending limits; no parallel fake result decoder.
+                if !self.battle_results.stage(packet)?{return Err(invalid());}
+                events.push(format!("P08C_RESULTS_REQUEST_STAGED session={} writer_started=false mode=training",self.id));
+            },
+            Part::Remaining=>match remaining.pop_front().ok_or_else(invalid)?{
+                TrainingIncoming::Account(incoming)=>{
+                    // Fixed stream IDs belong only to source read contexts.
+                    if matches!(&incoming,Incoming::Sync(r)|Incoming::CachedSync{request:r,..} if [200,201].contains(&r.id)){return Err(invalid());}
+                    self.apply_account_requests(vec![incoming],events)?;
+                },
+                TrainingIncoming::Room(request)=>{
+                    if records.len()>=32*crate::training091::ingress::MAX_RECORDS{return Err(invalid());}
+                    records.push(TrainingRecord{outbox_index:self.outbox.len(),request});
+                },
+            },
+        }}
+        if !remaining.is_empty(){return Err(invalid());}Ok(())
+    }
     fn receive_ready(&mut self,f:&Frame,now:Instant,events:&mut Vec<String>,depth:usize,budget:&mut usize)->io::Result<bool> {
+        if self.training_opt_in {return Err(invalid());}
+        self.receive_ready_inner(f,now,events,depth,budget,None)
+    }
+    fn receive_ready_inner(&mut self,f:&Frame,now:Instant,events:&mut Vec<String>,depth:usize,budget:&mut usize,
+        mut training:Option<&mut Vec<TrainingRecord>>)->io::Result<bool> {
         if depth>8 || *budget==0 {return Err(invalid());}*budget-=1;
         self.tx.validate_ack(f)?;
         let mut close=false;
         for p in &f.piggybacks {
             if close {return Err(invalid());}
-            close|=self.receive_ready(p,now,events,depth+1,budget)?;
+            close|=self.receive_ready_inner(p,now,events,depth+1,budget,training.as_deref_mut())?;
         }
         self.tx.acknowledge(f)?;
-        if let Some(shared)=&mut self.shared {shared.acknowledge(self.tx.cumulative,f);}
+        if let Some(flights)=&mut self.training_flights {
+            flights.on_validated_ack(self.tx.cumulative,&f.selective).map_err(|_|invalid())?;
+        }
+        if let Some(shared)=&mut self.shared {shared.acknowledge(self.tx.cumulative,f)?;}
         if let Some((sequence,acked))=&mut self.arena_vehicle_announcement {
             *acked|=self.tx.cumulative>*sequence || f.selective.contains(sequence);
         }
@@ -1122,6 +1325,9 @@ for incoming in requests {
                     if !f.body.is_empty() {
                         if f.body.len()<(if self.hangar.is_some(){5}else{6}) || f.body[0]!=1 || f.body[1..5]!=self.token.to_le_bytes() {return Err(invalid());}
                         if f.body[5..]==[11,0] {close=true;}
+                        else if training.is_some() && self.training_account_ready() {
+                            self.receive_training_account(&f.body[5..],events,training.as_deref_mut().ok_or_else(invalid)?)?;
+                        }
                         else if self.shared.is_some() {self.shared_payload(&f.body[5..],n,now,events)?;}
                         else if self.drive.is_some() {
                             if self.arena_base {self.drive_avatar(&f.body[5..],n,now,events)?;}
@@ -1229,7 +1435,9 @@ for incoming in requests {
         if self.shared.as_ref().is_some_and(|c| c.needs_flush()) {
             self.flush_shared_requests(events)?;
         }
-        self.drain_outbox()?;
+        // A child frame must not drain the prefix while later Room events
+        // still record insertion offsets. Outer publication performs the drain.
+        if training.is_none() {self.drain_outbox()?;}
         self.last_rx=now;Ok(close)
     }
 }
@@ -1265,12 +1473,14 @@ pub fn serve_hangar(key_path:&str,digest_path:&str,fixture_path:&str)->Result<()
 }
 pub fn serve_interactive(key_path:&str,digest_path:&str,config_path:&str,capture_path:Option<&str>)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let capture=capture_path.map(|path|Recorder::open(path,&config.local_root)).transpose()?;
     serve_inner(key_path,digest_path,true,true,None,Some(Arc::new(config)),capture,None)
 }
 pub fn serve_arena_base_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                              trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::new(Path::new(trigger_path),&config.local_root)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
     serve_inner(key_path,digest_path,true,true,None,Some(Arc::new(config)),Some(capture),Some(control))
@@ -1278,6 +1488,7 @@ pub fn serve_arena_base_probe(key_path:&str,digest_path:&str,config_path:&str,ca
 pub fn serve_arena_space_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                               trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
         crate::arena_control091::Checkpoint::AvatarSpace)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
@@ -1286,6 +1497,7 @@ pub fn serve_arena_space_probe(key_path:&str,digest_path:&str,config_path:&str,c
 pub fn serve_arena_vehicle_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                                 trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
         crate::arena_control091::Checkpoint::AvatarVehicle)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
@@ -1294,6 +1506,7 @@ pub fn serve_arena_vehicle_probe(key_path:&str,digest_path:&str,config_path:&str
 pub fn serve_arena_ready_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                               trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
         crate::arena_control091::Checkpoint::AvatarReady)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
@@ -1302,6 +1515,7 @@ pub fn serve_arena_ready_probe(key_path:&str,digest_path:&str,config_path:&str,c
 pub fn serve_arena_movement_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                                  trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
         crate::arena_control091::Checkpoint::AvatarMovement)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
@@ -1310,12 +1524,14 @@ pub fn serve_arena_movement_probe(key_path:&str,digest_path:&str,config_path:&st
 pub fn serve_map_drive_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                             trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
         crate::arena_control091::Checkpoint::AvatarDrive)?;
     let capture=Recorder::open(capture_path,&config.local_root)?;
     serve_inner(key_path,digest_path,true,true,None,Some(Arc::new(config)),Some(capture),Some(control))
 }
 struct Authenticated {identity:Arc<crate::identity091::Profile>,fixtures:Arc<crate::hangar091::Fixtures>,
+    owner_hold:Option<crate::identity091::HoldLogin>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
     ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool,crew_transfer:bool,crew_cross_vehicle:bool,crew_roster_recruitment:bool,crew_progression:bool,crew_dismissal:bool,crew_barracks_recruitment:bool,research_service:bool}
 impl Authenticated {
@@ -1323,7 +1539,7 @@ impl Authenticated {
         // Remains inside the existing bounded auth worker. A bad primary policy
         // reaches AUTH_REJECT before Session creation or any native state bytes.
         let policy=crate::map_drive_service091::AccountPolicy::for_mode(ordinary,&identity,&fixtures)?;
-        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false,crew_roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks_recruitment:false,research_service:false})
+        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),owner_hold:None,ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false,crew_roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks_recruitment:false,research_service:false})
     }
 }
 struct AuthJob {
@@ -1335,6 +1551,13 @@ impl AuthJob {
         let tag=pending_credential_tag(&self.credential_salt,fields);
         self.attempt.same_attempt(candidate)
             && self.credential_tag.iter().zip(tag).fold(0u8,|difference,(left,right)|difference|(*left^right))==0
+    }
+    fn refresh_pending_request(&mut self,request:u32,candidate:&LoginAttempt,fields:&login::Fields)->bool {
+        if !self.pending_duplicate(candidate,fields) {return false;}
+        // Native retries replace the outer request ID while the same bounded
+        // authentication is pending. Reply to the newest validated request;
+        // its credentials/attempt and the worker outcome remain unchanged.
+        self.request=request;true
     }
 }
 fn pending_credential_tag(salt:&[u8;32],fields:&login::Fields)->[u8;32] {
@@ -1356,7 +1579,8 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
     let (sender,receiver)=mpsc::sync_channel(1);
     thread::Builder::new().name("local-identity".to_owned()).spawn(move || {
         let outcome=config.authenticate(&email,&password).and_then(|identity|identity.map(|identity| {
-            let fixtures=if config.research_service {crate::hangar091::Fixtures::load_research(&identity.fixture_dir)?}
+            let fixtures=if config.p04m_pool {crate::hangar091::Fixtures::load_p04m(&identity.fixture_dir)?}
+                else if config.research_service {crate::hangar091::Fixtures::load_research(&identity.fixture_dir)?}
                 else {crate::hangar091::Fixtures::load_interactive(&identity.fixture_dir)?};
             let binding=if config.ammo_service {
                 Some(if config.research_service {crate::ammo_service091::metadata_research(&identity.fixture_dir,&identity.account_id,identity.database_id)?}
@@ -1380,6 +1604,9 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
             accepted.crew_dismissal=config.crew_dismissal;
             accepted.crew_barracks_recruitment=config.crew_barracks_recruitment;
             accepted.research_service=config.research_service;
+            if config.p08b_owner_battle_hold{
+                accepted.owner_hold=config.inspect_hold_login(&accepted.identity,&accepted.fixtures,binding.ok_or_else(invalid)?)?;
+            }
             Ok(accepted)
         }).transpose());
         let _=sender.send(outcome); // A stopped gateway has no recipient.
@@ -1469,6 +1696,7 @@ pub fn serve_map_drive(key_path:&str,digest_path:&str,config_path:&str,pool_path
                        capture_profile:crate::capture091::Profile)->Result<(),Box<dyn std::error::Error>> {
     if capture_path.is_none() && capture_profile!=crate::capture091::Profile::Ordinary{return Err(invalid().into());}
     let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     let pool=crate::map_drive_worker091::Pool::load(&config.local_root,Path::new(pool_path))?;
     // The older own-primary route still has the fixed MS-1 battle contract.
     // Only the integrated route binds a second kind to every subsystem.
@@ -1480,6 +1708,10 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                interactive:Option<Arc<crate::identity091::Config>>,mut capture:Option<Recorder>,
                mut arena_control:Option<crate::arena_control091::ArenaControl>,
                drive_pool:Option<Arc<crate::map_drive_worker091::Pool>>)->Result<(),Box<dyn std::error::Error>> {
+    if let Some(config)=&interactive{config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;}
+    if interactive.as_ref().is_some_and(|config|config.profile13_battle) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput,"profile13 battle requires the explicit shared profile13 mode").into());
+    }
     if interactive.as_ref().is_some_and(|config|config.ammo_service) && (drive_pool.is_some() || arena_control.is_some()) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput,"ammunition service is hangar-only; battle integration unavailable").into());
     }
@@ -1550,6 +1782,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                             created.identity=Some(accepted.identity);created.hangar=Some(accepted.fixtures);
                             created.drive_account_policy=accepted.drive_account_policy;
                             created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
+                            if let Some(state)=&mut created.ammo_service {state.replace_pool(created.hangar.as_ref().and_then(|f|f.p04m_binding()).cloned())?;}
                             if drive_pool.is_some(){created.drive=Some(crate::map_drive_world091::Arena::new(now));}
                             if let Some(policy)=&created.drive_account_policy {println!("{}",policy.binding_event(next_id));}
                             session=Some(created);next_id=next_id.checked_add(1).ok_or_else(invalid)?;
@@ -1609,8 +1842,8 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                     }
                     if fields.digest!=digest {send_wire(socket,peer,&login::rejection(request,69),Channel::Login,&mut capture)?;println!("AUTH_REJECT code=69 allocated=0");continue;}
                     let candidate=LoginAttempt::new(fields.session_key,fields.nonce,peer);
-                    if let Some(pending)=&auth {
-                        if pending.pending_duplicate(&candidate,&fields) {println!("AUTH_PENDING_DUPLICATE request_id={request}");}
+                    if let Some(pending)=auth.as_mut() {
+                        if pending.refresh_pending_request(request,&candidate,&fields) {println!("AUTH_PENDING_DUPLICATE request_id={request} reply_request_refreshed=true");}
                         else {send_wire(socket,peer,&login::rejection(request,73),Channel::Login,&mut capture)?;println!("AUTH_REJECT code=73 allocated=0 reason=identity_busy");}
                         continue;
                     }
@@ -1905,11 +2138,44 @@ mod retirement_policy_tests {
             assert!(!pending.pending_duplicate(&changed,&fields));
         }
         // A duplicate leaves the real authentication outstanding; it neither
-        // creates a result nor changes the original reply request/peer.
+        // creates a result nor changes the original attempt/peer.
         assert_eq!(pending.request,1);
         assert!(matches!(pending.receiver.try_recv(),Err(mpsc::TryRecvError::Empty)));
         assert!(sender.send(Ok(None)).is_ok());
         assert!(pending.receiver.try_recv().unwrap().unwrap().is_none());
+    }
+
+    #[test]
+    fn pending_request_refresh_changes_only_the_reply_id_after_exact_identity_match() {
+        let original=attempt(7,41,40000);let fields=pending_fields();let salt=[3;32];
+        let (sender,receiver)=mpsc::sync_channel(1);
+        let mut pending=AuthJob {request:47999,attempt:original,credential_salt:salt,
+            credential_tag:pending_credential_tag(&salt,&fields),receiver};
+        let tag=pending.credential_tag;
+        for changed_attempt in [attempt(8,41,40000),attempt(7,42,40000),attempt(7,41,40001)] {
+            assert!(!pending.refresh_pending_request(48000,&changed_attempt,&fields));
+            assert_eq!(pending.request,47999);
+        }
+        for changed_field in 0..3 {
+            let mut changed=pending_fields();
+            match changed_field {0=>changed.username[0]^=1,1=>changed.password[0]^=1,_=>changed.digest[0]^=1}
+            assert!(!pending.refresh_pending_request(48000,&original,&changed));
+            assert_eq!(pending.request,47999);
+        }
+        for request in 48000..=48007 {
+            assert!(pending.refresh_pending_request(request,&original,&fields));
+            assert_eq!(pending.request,request);
+            assert!(pending.attempt.same_attempt(&original));
+            assert_eq!(pending.credential_salt,salt);assert_eq!(pending.credential_tag,tag);
+            assert!(matches!(pending.receiver.try_recv(),Err(mpsc::TryRecvError::Empty)));
+        }
+        // Refresh cannot authenticate. A real negative worker outcome remains
+        // negative and is correlated with the newest request on the wire.
+        sender.send(Ok(None)).unwrap();
+        assert!(pending.receiver.try_recv().unwrap().unwrap().is_none());
+        let rejected=login::rejection(pending.request,67);
+        assert_eq!(u32::from_le_bytes(rejected[7..11].try_into().unwrap()),48007);
+        assert_eq!(rejected[11],67);
     }
 
     #[test]
@@ -1934,14 +2200,25 @@ mod retirement_policy_tests {
             packet.extend(request.to_le_bytes());packet.extend([0,0]);packet.extend(login::PROTOCOL.to_le_bytes());
             packet.extend(cipher);packet.extend([2,0]);packet
         };
-        let first=encode(1);let second=encode(2);assert_ne!(&first[15..],&second[15..]);
+        let first=encode(47999);let second=encode(48007);assert_ne!(&first[15..],&second[15..]);
         let (first_id,first_fields)=login::decode_interactive(&first,&private).unwrap();
         let (second_id,second_fields)=login::decode_interactive(&second,&private).unwrap();assert_ne!(first_id,second_id);
-        let original=attempt(7,41,40000);let salt=[5;32];let (_,receiver)=mpsc::sync_channel(1);
-        let pending=AuthJob {request:first_id,attempt:original,credential_salt:salt,
+        let original=attempt(7,41,40000);let salt=[5;32];let (sender,receiver)=mpsc::sync_channel(1);
+        let mut pending=AuthJob {request:first_id,attempt:original,credential_salt:salt,
             credential_tag:pending_credential_tag(&salt,&first_fields),receiver};
         let candidate=LoginAttempt::new(second_fields.session_key,second_fields.nonce,original.login_peer);
-        assert!(pending.pending_duplicate(&candidate,&second_fields));
+        assert!(pending.refresh_pending_request(second_id,&candidate,&second_fields));
+        assert_eq!(pending.request,second_id);
+        assert!(matches!(pending.receiver.try_recv(),Err(mpsc::TryRecvError::Empty)));
+        // This exercises the real RSA decoder and redirect serializer, while
+        // preserving the worker as the sole authentication authority.
+        let reply=redirect091::reply_to(pending.request,&pending.attempt.key,123,
+            std::net::SocketAddrV4::new(Ipv4Addr::LOCALHOST,20131)).unwrap();
+        assert_eq!(u32::from_le_bytes(reply[7..11].try_into().unwrap()),second_id);
+        assert_ne!(u32::from_le_bytes(reply[7..11].try_into().unwrap()),first_id);
+        assert_eq!(reply[11],1);
+        sender.send(Ok(None)).unwrap();
+        assert!(pending.receiver.try_recv().unwrap().unwrap().is_none());
         for size in [0,14,16,second.len()-1] {assert!(login::decode_interactive(&second[..size],&private).is_err());}
         let mut trailing=second;trailing.push(0);assert!(login::decode_interactive(&trailing,&private).is_err());
     }
@@ -3983,3 +4260,15 @@ mod tests {
         s.receive(&arena_frame(&s,36,&[9],6),t).unwrap();assert!(s.drive_return_account.as_ref().unwrap().enabled);
     }
 }
+
+#[cfg(test)]
+#[path="training/session_tests.rs"]
+mod p10b_session_tests;
+
+#[cfg(test)]
+#[path="training/request_namespace_tests.rs"]
+mod p10b_request_namespace_tests;
+
+#[cfg(test)]
+#[path="session_network_tests.rs"]
+mod net02_network_tests;

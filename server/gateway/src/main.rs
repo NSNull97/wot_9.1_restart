@@ -5,6 +5,8 @@ use gateway091::shared::vehicle_profile::VehicleKind;
 
 #[path = "protocol/login.rs"]
 mod login091;
+#[cfg(test)]
+mod portable_test_fixtures;
 #[path = "protocol/redirect.rs"]
 mod redirect091;
 #[path = "protocol/baseapp.rs"]
@@ -25,6 +27,8 @@ mod hangar091;
 mod ammo_service091;
 #[path = "account/crew_service.rs"]
 mod crew_service091;
+#[path = "account/p04m_companion.rs"]
+mod p04m_companion091;
 #[path = "account/crew_transfer.rs"]
 mod crew_transfer091;
 #[path = "account/crew_progression.rs"]
@@ -55,6 +59,10 @@ mod map_drive091;
 mod map_profile091;
 #[path = "drive/worker.rs"]
 mod map_drive_worker091;
+#[path = "drive/scene_worker.rs"]
+mod scene_worker;
+#[path = "drive/worker_cadence.rs"]
+mod worker_cadence091;
 #[cfg(test)]
 #[path = "shared/server_worker_fixtures.rs"]
 mod worker_fixtures091;
@@ -64,9 +72,40 @@ mod map_drive_world091;
 mod map_drive_service091;
 #[path = "battle/mod.rs"]
 mod battle091;
+#[path = "shared/p06t_shell_data.rs"]
+mod p06t_shells091;
+#[path = "battle/armament.rs"]
+mod p06t_armament091;
+#[path = "shared/armament_wire.rs"]
+mod armament_wire091;
+#[cfg(test)]
+#[path = "shared/armament_wire_tests.rs"]
+mod p06t_armament_wire_tests;
+#[path = "battle/profile13_v2.rs"]
+mod profile13_v2091;
+#[path = "battle/profile13_loss.rs"]
+mod profile13_loss091;
+#[path="battle/profile13_hold.rs"]
+mod profile13_hold091;
+#[path="battle/profile13_hold_projection.rs"]
+mod profile13_hold_projection091;
+#[path = "training/mod.rs"]
+mod training091;
+use training091::ingress as p10b_ingress091;
+#[path = "shared/p06t_damage.rs"]
+mod p06t_damage;
+#[path = "shared/p06t_device_state.rs"]
+mod p06t_device_state;
+#[path = "shared/p06t_lab_proxy.rs"]
+mod p06t_lab_proxy;
+#[path = "shared/p06t_device_caps.rs"]
+mod p06t_device_caps;
 
 #[derive(Debug, PartialEq)]
 enum Command<'a> {
+    CuratedLabV2 { key:&'a str,digest:&'a str,gateway:&'a str,templates:&'a str,capture:&'a str,vehicle:VehicleKind },
+    CuratedLab { key:&'a str,digest:&'a str,gateway:&'a str,templates:&'a str,capture:&'a str,vehicle:VehicleKind },
+    Profile13 { key: &'a str, digest: &'a str, gateway: &'a str, templates: &'a str, capture: &'a str },
     SharedLab { key: &'a str, digest: &'a str, gateway: &'a str, capture: &'a str },
     IntegratedLab { key: &'a str, digest: &'a str, gateway: &'a str, pool: &'a str, capture: &'a str, geometry: Option<&'a str>, ap_test_lab: bool, terrain_test_lab: bool, destructible_test_lab: bool, catalog: Option<(&'a str,&'a str)>, map: MapId, vehicle: VehicleKind },
     Interactive { key: &'a str, digest: &'a str, gateway: &'a str, capture: Option<&'a str> },
@@ -76,7 +115,7 @@ enum Command<'a> {
 
 fn command(args: &[String]) -> io::Result<Command<'_>> {
     let invalid = || io::Error::new(io::ErrorKind::InvalidInput,
-        "usage: sr-gateway legacy091-interactive KEY DIGEST GATEWAY [CAPTURE] | legacy091-map-drive KEY DIGEST GATEWAY POOL [CAPTURE [map-drive-phase2-v1]] | legacy091-shared-lab KEY DIGEST GATEWAY CAPTURE | legacy091-integrated-lab KEY DIGEST GATEWAY POOL CAPTURE [MESH --ap-test-lab --terrain-test-lab [--destructible-catalog PATH SHA256] [--map MAP_ASSET] [--vehicle-test-lab ms1|is7]]");
+        "usage: sr-gateway legacy091-p06t-curated-lab-v2 KEY DIGEST GATEWAY TEMPLATES CAPTURE wt-e100-128|fv215b-183 | legacy091-p06t-curated-lab KEY DIGEST GATEWAY TEMPLATES CAPTURE wt-e100-128|fv215b-183 | legacy091-curated-lab KEY DIGEST GATEWAY TEMPLATES CAPTURE KIND | legacy091-profile13 KEY DIGEST GATEWAY TEMPLATES CAPTURE | legacy091-interactive KEY DIGEST GATEWAY [CAPTURE] | legacy091-map-drive KEY DIGEST GATEWAY POOL [CAPTURE [map-drive-phase2-v1]] | legacy091-shared-lab KEY DIGEST GATEWAY CAPTURE | legacy091-integrated-lab KEY DIGEST GATEWAY POOL CAPTURE [MESH --ap-test-lab --terrain-test-lab [--destructible-catalog PATH SHA256] [--map MAP_ASSET] [--vehicle-test-lab ms1|is7]]");
     // A single trailing selector preserves every accepted Karelia invocation.
     // Prohorovka is available only on the cumulative AP + terrain path; the
     // catalog is optional for the read-only original native identity oracle.
@@ -85,7 +124,8 @@ fn command(args: &[String]) -> io::Result<Command<'_>> {
     let (args, vehicle) = if args.get(1).is_some_and(|v| v == "legacy091-integrated-lab")
         && args.len() >= 4 && args[args.len() - 2] == "--vehicle-test-lab" {
         let kind = match args[args.len() - 1].as_str() {
-            "ms1" => VehicleKind::Ms1, "is7" => VehicleKind::Is7, _ => return Err(invalid()),
+            "ms1" => VehicleKind::Ms1, "is7" => VehicleKind::Is7,
+            _ => return Err(invalid()),
         };
         (&args[..args.len() - 2], kind)
     } else { (args, VehicleKind::Ms1) };
@@ -94,6 +134,21 @@ fn command(args: &[String]) -> io::Result<Command<'_>> {
         (&args[..args.len() - 2], MapId::from_asset(&args[args.len() - 1])?)
     } else { (args, MapId::Karelia) };
     match args.get(1).map(String::as_str) {
+        Some("legacy091-p06t-curated-lab-v2") if args.len()==8&&args[2..].iter().all(|v|!v.is_empty()&&!v.starts_with("--")) => {
+            let vehicle=VehicleKind::from_extended_label(&args[7]).filter(|kind|kind.is_extended()).ok_or_else(invalid)?;
+            Ok(Command::CuratedLabV2{key:&args[2],digest:&args[3],gateway:&args[4],templates:&args[5],capture:&args[6],vehicle})
+        },
+        Some("legacy091-p06t-curated-lab") if args.len()==8&&args[2..].iter().all(|v|!v.is_empty()&&!v.starts_with("--")) => {
+            let vehicle=VehicleKind::from_extended_label(&args[7]).filter(|kind|kind.is_extended()).ok_or_else(invalid)?;
+            Ok(Command::CuratedLab{key:&args[2],digest:&args[3],gateway:&args[4],templates:&args[5],capture:&args[6],vehicle})
+        },
+        Some("legacy091-curated-lab") if args.len()==8&&args[2..].iter().all(|v|!v.is_empty()&&!v.starts_with("--")) => {
+            let vehicle=VehicleKind::from_label(&args[7]).ok_or_else(invalid)?;
+            Ok(Command::CuratedLab{key:&args[2],digest:&args[3],gateway:&args[4],templates:&args[5],capture:&args[6],vehicle})
+        },
+        Some("legacy091-profile13") if args.len()==7 && args[2..].iter().all(|value|!value.is_empty()&&!value.starts_with("--")) => Ok(Command::Profile13 {
+            key:&args[2],digest:&args[3],gateway:&args[4],templates:&args[5],capture:&args[6],
+        }),
         Some("legacy091-shared-lab") if args.len() == 6 && !args[5].is_empty() => Ok(Command::SharedLab {
             key: &args[2], digest: &args[3], gateway: &args[4], capture: &args[5],
         }),
@@ -125,6 +180,9 @@ fn command(args: &[String]) -> io::Result<Command<'_>> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     match command(&args)? {
+        Command::CuratedLabV2{key,digest,gateway,templates,capture,vehicle}=>gateway091::shared::serve_curated_lab_v2(key,digest,gateway,templates,capture,vehicle),
+        Command::CuratedLab{key,digest,gateway,templates,capture,vehicle}=>gateway091::shared::serve_curated_lab(key,digest,gateway,templates,capture,vehicle),
+        Command::Profile13 { key,digest,gateway,templates,capture } => gateway091::shared::serve_profile13(key,digest,gateway,templates,capture),
         Command::SharedLab { key, digest, gateway, capture } => gateway091::serve_shared_lab(key, digest, gateway, capture),
         Command::IntegratedLab { key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab, destructible_test_lab, catalog, map, vehicle } => gateway091::serve_integrated_lab_for_vehicle(key, digest, gateway, pool, capture, geometry, ap_test_lab, terrain_test_lab, destructible_test_lab,catalog,map,vehicle),
         Command::Interactive { key, digest, gateway, capture } => gateway091::serve_interactive(key, digest, gateway, capture),
@@ -136,6 +194,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod cli_tests {
     use super::*;
     fn args(values: &[&str]) -> Vec<String> { values.iter().map(|s| (*s).into()).collect() }
+
+    #[test]fn p06t_extended_v2_cli_is_explicit_and_does_not_upgrade_v1(){
+        for vehicle in [VehicleKind::Wt128,VehicleKind::Fv183]{
+            let base=["exe","legacy091-p06t-curated-lab-v2","key","digest","gateway","templates","capture",vehicle.label()];
+            assert_eq!(command(&args(&base)).unwrap(),Command::CuratedLabV2{key:"key",digest:"digest",gateway:"gateway",templates:"templates",capture:"capture",vehicle});
+            for end in 0..base.len(){assert!(command(&args(&base[..end])).is_err());}
+            for index in 2..base.len(){let mut wrong=base;wrong[index]="";assert!(command(&args(&wrong)).is_err());}
+            let mut extra=args(&base);extra.push("--ap-test-lab".into());assert!(command(&extra).is_err());
+            let mut old=base;old[1]="legacy091-p06t-curated-lab";
+            assert!(matches!(command(&args(&old)).unwrap(),Command::CuratedLab{..}));
+        }
+        for label in ["ms1","is7","wt-e100-150","9281",""]{
+            assert!(command(&args(&["exe","legacy091-p06t-curated-lab-v2","key","digest","gateway","templates","capture",label])).is_err());
+        }
+    }
+
+    #[test]fn p06t_extended_cli_requires_its_own_mode_and_closed_extended_assembly(){
+        for vehicle in [VehicleKind::Wt128,VehicleKind::Fv183]{
+            let base=["exe","legacy091-p06t-curated-lab","key","digest","gateway","templates","capture",vehicle.label()];
+            assert_eq!(command(&args(&base)).unwrap(),Command::CuratedLab{key:"key",digest:"digest",gateway:"gateway",templates:"templates",capture:"capture",vehicle});
+            let mut old=base;old[1]="legacy091-curated-lab";assert!(command(&args(&old)).is_err());
+            for end in 0..base.len(){assert!(command(&args(&base[..end])).is_err());}
+            let mut extra=args(&base);extra.push("--vehicle-test-lab".into());assert!(command(&extra).is_err());
+        }
+        for label in ["ms1","wt-e100-150","9281","fv215b-183 ",""]{
+            assert!(command(&args(&["exe","legacy091-p06t-curated-lab","key","digest","gateway","templates","capture",label])).is_err());
+        }
+    }
+
+    #[test]fn p04m_curated_lab_requires_explicit_source_template_and_exact_known_kind(){
+        for vehicle in VehicleKind::ALL {
+            let base=["exe","legacy091-curated-lab","key","digest","gateway","templates","capture",vehicle.label()];
+            assert_eq!(command(&args(&base)).unwrap(),Command::CuratedLab{key:"key",digest:"digest",gateway:"gateway",templates:"templates",capture:"capture",vehicle});
+            for end in 0..base.len(){assert!(command(&args(&base[..end])).is_err());}
+            for i in 2..base.len(){let mut wrong=base;wrong[i]="";assert!(command(&args(&wrong)).is_err());}
+            let mut extra=args(&base);extra.push("--ap-test-lab".into());assert!(command(&extra).is_err());
+        }
+        for kind in ["mixed","T-26","kv1","--vehicle-test-lab"]{assert!(command(&args(&["exe","legacy091-curated-lab","key","digest","gateway","templates","capture",kind])).is_err());}
+    }
+
+    #[test]fn profile13_mode_is_explicit_complete_and_does_not_inherit_lab_flags(){
+        let base=["exe","legacy091-profile13","key","digest","gateway","templates","capture"];
+        assert_eq!(command(&args(&base)).unwrap(),Command::Profile13{key:"key",digest:"digest",gateway:"gateway",templates:"templates",capture:"capture"});
+        for length in 0..base.len(){assert!(command(&args(&base[..length])).is_err());}
+        for offset in 2..base.len(){let mut wrong=base;wrong[offset]="";assert!(command(&args(&wrong)).is_err());}
+        for flag in ["--ap-test-lab","--vehicle-test-lab","--map"]{let mut wrong=args(&base);wrong.push(flag.into());assert!(command(&wrong).is_err());}
+    }
 
     #[test]
     fn shared_lab_is_explicit_and_requires_its_own_capture() {

@@ -55,6 +55,28 @@ if (type(_settings.get('enable_research_service', False)) is not bool
 if (type(_settings.get('enable_shared_lab', False)) is not bool
         or (_settings.get('enable_shared_lab') and not _settings.get('enable_map_drive'))):
     raise ValueError('shared lab requires explicit original arena services')
+if (type(_settings.get('enable_profile13_battle', False)) is not bool
+        or (_settings.get('enable_profile13_battle') and (
+            _settings.get('enable_map_drive') or _settings.get('enable_shared_lab')
+            or not all(_settings.get(key) is True for key in (
+                'enable_p09d_ammo_service', 'enable_crew_recruitment', 'enable_crew_transfer',
+                'enable_cross_vehicle_crew', 'enable_roster_recruitment', 'enable_crew_progression',
+                'enable_crew_dismissal', 'enable_barracks_recruitment', 'enable_research_service'))))):
+    raise ValueError('profile13 battle requires the full isolated native research/crew/ammunition hangar')
+if (type(_settings.get('enable_p06t_mixed_ammo', False)) is not bool
+        or (_settings.get('enable_p06t_mixed_ammo')
+            and _settings.get('enable_profile13_battle') is not True)):
+    raise ValueError('P06T mixed ammunition requires explicit profile13 battle mode')
+if (type(_settings.get('enable_training_rooms', False)) is not bool
+        or (_settings.get('enable_training_rooms')
+            and _settings.get('enable_profile13_battle') is not True)):
+    raise ValueError('training rooms require explicit profile13 battle mode')
+import project_network
+project_network.validate_settings(_settings)
+import project_sixth_sense_sound
+project_sixth_sense_sound.validate_settings(_settings)
+import project_player_kill_marker
+project_player_kill_marker.validate_settings(_settings)
 _runtime = owned(_settings['trace_dir'], _settings['local_root'])
 if not os.path.isdir(_runtime):
     raise ValueError('prepared local runtime directory missing')
@@ -550,11 +572,14 @@ def profile_calls(frame, phase, value):
             fields[name] = primitive(frame.f_locals.get(name), budget=[2, 128])
     elif (((source == 'scripts/client/Vehicle.py' and method in ('showDamageFromShot', 'onHealthChanged'))
            or (source == 'scripts/client/Avatar.py' and method == 'updateVehicleHealth'))
-          and _settings.get('enable_shared_lab') is True):
+          and (_settings.get('enable_shared_lab') is True or _settings.get('enable_profile13_battle') is True)):
         # Observe original callbacks only; the server is the damage authority.
+        # Profile13 too (owner run 2026-10-20: ammo-rack marker colour needs
+        # the actual attackerID/newHealth each client received).
         kind = 'native_shared_impact_call'
         instance = frame.f_locals.get('self')
         fields['entity_id'] = getattr(instance, 'id', None)
+        fields['is_player'] = getattr(instance, 'isPlayer', None)
         fields['impact_method'] = method
         fields['entity_health'] = getattr(instance, 'health', None)
         for name in ('attackerID', 'newHealth', 'health', 'attackReasonID',
@@ -994,7 +1019,10 @@ def init(*args):
         import project_preferences
         project_preferences.install(args, _settings, record)
         import project_auth
-        project_auth.install(_settings['endpoint'], record)
+        project_auth.install(_settings['endpoint'], record, _settings.get('network_policy'))
+        if _settings.get('network_policy') is not None:
+            record('client_network_policy', policy=_settings['network_policy'],
+                   registration_enabled=False, accounts='precreated_project_only')
         import hangar_bootstrap
         hangar_bootstrap.init(args, record, start_gui=True, restrict_module_changes=True,
                              restrict_crew_changes=True,
@@ -1009,11 +1037,20 @@ def init(*args):
         if _settings.get('enable_p09d_ammo_service') is True:
             import p09d_ammo_ui
             p09d_ammo_ui.init(record, enabled=True)
-        if _settings.get('enable_map_drive') is True:
+        if (_settings.get('enable_map_drive') is True
+                or _settings.get('enable_profile13_battle') is True):
             import map_drive_client
-            map_drive_client.init(record)
+            map_drive_client.init(record, profile13_battle=_settings.get('enable_profile13_battle') is True,
+                                  p06t_mixed_ammo=_settings.get('enable_p06t_mixed_ammo') is True,
+                                  training_rooms=_settings.get('enable_training_rooms') is True)
             if _settings.get('enable_shared_lab') is True:
                 map_drive_client.prepare_shared_lab(record)
+        if _settings.get(project_sixth_sense_sound.SETTING) is not None:
+            # Project policy, not original #717 behaviour: see the module docstring.
+            project_sixth_sense_sound.install(record, _settings[project_sixth_sense_sound.SETTING])
+        if _settings.get(project_player_kill_marker.SETTING) is True:
+            # Project policy, not original #717 behaviour: see the module docstring.
+            project_player_kill_marker.install(record)
         from ConnectionManager import connectionManager
         connectionManager.connectionStatusCallbacks += connection_status
         _ready = True
@@ -1118,6 +1155,32 @@ def _schedule_shared_tracer_probe(mover, shot_id):
 
 _shared_native_samples = 0
 _shared_collision_oracle_attempted = False
+_shared_aim_oracle_done = False
+_shared_aim_descriptor_attempts = 0
+_shared_aim_arena = None
+
+
+def shared_native_aim_descriptor(player):
+    """Defer optional native descriptor attachment, bounded once per arena."""
+    global _shared_aim_oracle_done, _shared_aim_descriptor_attempts, _shared_aim_arena
+    arena = player.arenaUniqueID
+    if type(arena) not in (int, long) or not 1 <= arena <= 0xffffffffffffffff:
+        raise ValueError('native arena identity required for passive aim observation')
+    if arena != _shared_aim_arena:
+        _shared_aim_arena = arena
+        _shared_aim_oracle_done = False
+        _shared_aim_descriptor_attempts = 0
+    if _shared_aim_oracle_done or _shared_aim_descriptor_attempts >= 60:
+        return None
+    _shared_aim_descriptor_attempts += 1
+    descr = getattr(player, 'vehicleTypeDescriptor', None)
+    if descr is None or getattr(descr, 'gun', None) is None or getattr(descr, 'turret', None) is None:
+        record('shared_native_aim_oracle_pending', reason='native_descriptor_not_attached',
+               arena_unique_id=arena, attempt=_shared_aim_descriptor_attempts, maximum_attempts=60,
+               retry_exhausted=_shared_aim_descriptor_attempts == 60,
+               observer_mutated_gameplay=False)
+        return None
+    return descr
 
 
 def shared_native_vehicles(entity_map, vehicle_class):
@@ -1133,6 +1196,34 @@ def shared_native_vehicles(entity_map, vehicle_class):
     return vehicles
 
 
+def shared_native_aim_oracle(player):
+    global _shared_aim_oracle_done
+    import math
+    # Pure native maths on an identity matrix: an independent oracle, not
+    # game input or a client-authored pose fed to the server.
+    import Math
+    from projectile_trajectory import getShotAngles
+    from gun_rotation_shared import calcPitchLimitsFromDesc
+    descr = shared_native_aim_descriptor(player)
+    if descr is None:
+        return
+    matrix = Math.Matrix()
+    matrix.setIdentity()
+    samples = []
+    for point in ((0., 0., 100.), (100., 0., 0.), (0., 0., -100.),
+                  (0., 30., 100.), (0., -30., 100.), (0., 0., 5.),
+                  (0., 0., 720.), (0., 0., 10000.)):
+        samples.append(dict(point=list(point), angles=list(getShotAngles(descr, matrix, (0., 0.), Math.Vector3(*point)))))
+    limits = [dict(yaw_degrees=deg, limits=list(calcPitchLimitsFromDesc(math.radians(deg), descr.gun['pitchLimits'])))
+              for deg in (0, 90, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180)]
+    record('shared_native_aim_oracle', version=1, samples=samples, pitch_limit_samples=limits,
+           turret=descr.turret['name'], gun=descr.gun['name'],
+           pitch_limits=primitive(descr.gun['pitchLimits']),
+           turret_rate=descr.turret['rotationSpeed'], gun_rate=descr.gun['rotationSpeed'],
+           observer_mutated_gameplay=False)
+    _shared_aim_oracle_done = True
+
+
 def observe_shared_lab():
     """Read-only native entity receipt and bounded engine-written screenshots.
 
@@ -1140,7 +1231,9 @@ def observe_shared_lab():
     Values are what this real client currently sees, not server pose substitutes.
     """
     global _shared_native_samples, _shared_collision_oracle_attempted
-    if _settings.get('enable_shared_lab') is not True:
+    global _shared_aim_oracle_done, _shared_aim_descriptor_attempts
+    if (_settings.get('enable_shared_lab') is not True
+            and _settings.get('enable_profile13_battle') is not True):
         return
     import Avatar
     import Vehicle
@@ -1162,9 +1255,12 @@ def observe_shared_lab():
             raise ValueError('native shared vehicle position is not bounded')
         row = dict(entity_id=entity.id, position=position, health=entity.health,
                    own=entity.id == player.playerVehicleID, is_started=entity.isStarted)
-        if entity.isStarted:
+        descriptor = getattr(entity, 'typeDescriptor', None)
+        row['gun_descriptor_pending'] = (entity.isStarted and
+            (descriptor is None or getattr(descriptor, 'gun', None) is None))
+        if entity.isStarted and not row['gun_descriptor_pending']:
             packed = entity.gunAnglesPacked
-            limits = entity.typeDescriptor.gun['pitchLimits']['absolute']
+            limits = descriptor.gun['pitchLimits']['absolute']
             angles = decodeGunAngles(packed, limits)
             if not 0 <= packed <= 65535 or len(limits) != 2 or len(angles) != 2:
                 raise ValueError('native shared gun angle shape differs')
@@ -1210,27 +1306,8 @@ def observe_shared_lab():
     if _control and _control.get('probe_destructible_catalog') is True:
         import destructible_catalog_probe
         destructible_catalog_probe.observe(player, record, _settings)
-    if _shared_native_samples == 3:
-        # Pure native maths on an identity matrix: an independent oracle, not
-        # game input or a client-authored pose fed to the server.
-        import Math
-        from projectile_trajectory import getShotAngles
-        from gun_rotation_shared import calcPitchLimitsFromDesc
-        descr = player.vehicleTypeDescriptor
-        matrix = Math.Matrix()
-        matrix.setIdentity()
-        samples = []
-        for point in ((0., 0., 100.), (100., 0., 0.), (0., 0., -100.),
-                      (0., 30., 100.), (0., -30., 100.), (0., 0., 5.),
-                      (0., 0., 720.), (0., 0., 10000.)):
-            samples.append(dict(point=list(point), angles=list(getShotAngles(descr, matrix, (0., 0.), Math.Vector3(*point)))))
-        limits = [dict(yaw_degrees=deg, limits=list(calcPitchLimitsFromDesc(math.radians(deg), descr.gun['pitchLimits'])))
-                  for deg in (0, 90, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180)]
-        record('shared_native_aim_oracle', version=1, samples=samples, pitch_limit_samples=limits,
-               turret=descr.turret['name'], gun=descr.gun['name'],
-               pitch_limits=primitive(descr.gun['pitchLimits']),
-               turret_rate=descr.turret['rotationSpeed'], gun_rate=descr.gun['rotationSpeed'],
-               observer_mutated_gameplay=False)
+    if _shared_native_samples >= 3:
+        shared_native_aim_oracle(player)
     if len(rows) == 2 and _shared_native_samples in (3, 10, 30, 60):
         directory = owned(_settings['screenshot_dir'], _settings['local_root'])
         configured = Settings.g_instance.engineConfig.readString('screenShot/path')
@@ -1762,7 +1839,8 @@ def observe():
                   'name_utf8_bytes':len(name_utf8) if isinstance(name_utf8, str) else None,
                   'database_id':getattr(player, 'databaseID', None)}
         record('native_player', **fields)
-        if _settings.get('enable_map_drive') is True:
+        if (_settings.get('enable_map_drive') is True
+                or _settings.get('enable_profile13_battle') is True):
             import map_drive_client
             drive_context = map_drive_client.observe(record)
             observe_shared_lab()
@@ -2103,7 +2181,8 @@ def wg_onChunkLoose(*args):
 
 def onChangeEnvironments(*args):
     record('environment_changed', args_count=len(args))
-    if _settings.get('enable_map_drive') is True:
+    if (_settings.get('enable_map_drive') is True
+            or _settings.get('enable_profile13_battle') is True):
         return _input('onChangeEnvironments', *args)
     if _control and (_control.get('probe_arena_space') or _control.get('probe_arena_vehicle') or _control.get('probe_arena_ready') or _control.get('probe_arena_movement') or _control.get('probe_map_drive') or _control.get('probe_map_drive_acceptance')):
         return _input('onChangeEnvironments', *args)
@@ -2152,12 +2231,17 @@ def fini():
             from ConnectionManager import connectionManager
             connectionManager.connectionStatusCallbacks -= connection_status
         if 'hangar_bootstrap' in sys.modules:
-            if 'map_drive_client' in sys.modules and _settings.get('enable_map_drive') is True:
+            if ('map_drive_client' in sys.modules and (_settings.get('enable_map_drive') is True
+                    or _settings.get('enable_profile13_battle') is True)):
                 try:
                     if 'map_drive_acceptance' in sys.modules:
                         sys.modules['map_drive_acceptance'].fini(record)
                 finally:
-                    sys.modules['map_drive_client'].fini(record, sys.modules['hangar_bootstrap'].fini)
+                    try:
+                        if 'p09d_ammo_ui' in sys.modules:
+                            sys.modules['p09d_ammo_ui'].fini()
+                    finally:
+                        sys.modules['map_drive_client'].fini(record, sys.modules['hangar_bootstrap'].fini)
             elif 'map_drive_scenario' in sys.modules:
                 sys.modules['map_drive_scenario'].fini(record, sys.modules['hangar_bootstrap'].fini)
             elif 'arena_movement_scenario' in sys.modules:
@@ -2174,6 +2258,10 @@ def fini():
                         sys.modules['p09d_ammo_ui'].fini()
                 finally:
                     sys.modules['hangar_bootstrap'].fini()
+        if 'project_sixth_sense_sound' in sys.modules:
+            sys.modules['project_sixth_sense_sound'].restore(record)
+        if 'project_player_kill_marker' in sys.modules:
+            sys.modules['project_player_kill_marker'].restore(record)
         if 'Account' in sys.modules:
             sys.modules['Account']._delAccountRepository()
             record('account_repository_closed')

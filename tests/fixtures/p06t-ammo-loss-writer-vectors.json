@@ -1,0 +1,1003 @@
+{
+  "schema": "p06t-ammo-loss-actual-writer-vectors.v1",
+  "classification": "ACTUAL_ISOLATED_SQLITE_WRITER_WITH_AUTHORED_GATEWAY_TERMINAL_STATS",
+  "contract": "p06t-ammo-rack-loss.v1",
+  "version": 4,
+  "source_bundle_path": "D:\\WoT_9.1_Server\\local\\stands\\p09e-main-01\\source-bundle-05",
+  "vectors": [
+    {
+      "request": {
+        "version": 4,
+        "operation": "run_open",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "mixed-test:2",
+        "expected_revision": 16,
+        "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+        "contract": "p06t-ammo-rack-loss.v1"
+      },
+      "response": {
+        "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+        "operation": "run_open",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "command_key": "mixed-test:2",
+        "native_database_id": 1,
+        "version": 4,
+        "status": "ready",
+        "source_revision": 16,
+        "revision": 17,
+        "replayed": false,
+        "code": null,
+        "reservation": null,
+        "legacy_reservation": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "operation": "admit",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "mixed-test:3",
+        "expected_revision": 17,
+        "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+        "battle_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3:9007199254740993",
+        "native_inventory_id": 1,
+        "contract": "p06t-ammo-rack-loss.v1"
+      },
+      "response": {
+        "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+        "operation": "admit",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "command_key": "mixed-test:3",
+        "native_database_id": 1,
+        "version": 4,
+        "status": "admitted",
+        "source_revision": 17,
+        "revision": 18,
+        "replayed": false,
+        "code": null,
+        "reservation": {
+          "reservation_id": "mixed-test:3",
+          "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+          "battle_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3:9007199254740993",
+          "native_inventory_id": 1,
+          "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1",
+          "status": "active",
+          "frozen": {
+            "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+            "loadout": {
+              "ammunition": [
+                {
+                  "count": 0,
+                  "family": "ARMOR_PIERCING",
+                  "shell_compact_id": 2570,
+                  "shell_definition_id": "shell:ms1-stock-ap"
+                },
+                {
+                  "count": 4,
+                  "family": "HOLLOW_CHARGE",
+                  "shell_compact_id": 2826,
+                  "shell_definition_id": "shell:ms1-stock-heat"
+                },
+                {
+                  "count": 10,
+                  "family": "HIGH_EXPLOSIVE",
+                  "shell_compact_id": 3082,
+                  "shell_definition_id": "shell:ms1-stock-he"
+                }
+              ],
+              "capacity": 96,
+              "crew_ids": [
+                "c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1",
+                "c5326cc1-8524-479c-8bba-72e973489c22:recruit-ms1-driver:3"
+              ],
+              "descriptor_hex": "010d1a000e00c90000001700170000",
+              "initial_shell_compact_id": 2826,
+              "kind": "ms1",
+              "max_hp": 90,
+              "native_inventory_id": 1,
+              "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1"
+            },
+            "loadout_sha256": "0d18dd14d489792c9e22365e70523e983bc9d1858b61ffb017ae94b4d7f215c3"
+          },
+          "frozen_sha256": "0bcc27f9d4ccc36d9005a9356924c746ae262c7ca54cf90bbcba023b4fa8d5da",
+          "result": null
+        },
+        "legacy_reservation": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "operation": "finish",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "mixed-test:4",
+        "expected_revision": 18,
+        "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+        "battle_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3:9007199254740993",
+        "native_inventory_id": 1,
+        "reservation_id": "mixed-test:3",
+        "terminal_hp": 0,
+        "reason": "battle_finished",
+        "remaining_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 0
+          }
+        ],
+        "fired_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 1
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 2
+          }
+        ],
+        "lost_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 3
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 8
+          }
+        ],
+        "loss_event": {
+          "shot": 1,
+          "attacker_slot": 1,
+          "target_slot": 0,
+          "tick": 1250,
+          "device_sequence": 3
+        },
+        "terminal_state_json": "{\"crew\":[{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1\"},{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:recruit-ms1-driver:3\"}],\"crew_active\":true,\"death\":{\"killer_slot\":1,\"reason\":0,\"tick\":1250},\"devices\":[{\"extra_index\":26,\"health\":25,\"max_health\":25},{\"extra_index\":27,\"health\":0,\"max_health\":60},{\"extra_index\":28,\"health\":100,\"max_health\":100},{\"extra_index\":29,\"health\":90,\"max_health\":90},{\"extra_index\":30,\"health\":40,\"max_health\":40},{\"extra_index\":31,\"health\":40,\"max_health\":40},{\"extra_index\":32,\"health\":54,\"max_health\":54},{\"extra_index\":33,\"health\":50,\"max_health\":50},{\"extra_index\":34,\"health\":30,\"max_health\":30}],\"fire\":{\"active\":false,\"damage\":0,\"ticks\":0},\"policy_revision\":\"test_lab.p06t.devices-proxy-fire.v1\",\"roster_size\":2}",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "results_json": "{\"arena_id\":9007199254740993,\"arena_type_id\":4,\"created_unix\":1792080000,\"duration_seconds\":120,\"finish_reason\":1,\"participants\":[{\"account_dbid\":1,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":90,\"death_reason\":0,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":0,\"killer_id\":152043524,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Authoritative owner\",\"piercings\":1,\"premature_leave\":false,\"shots\":3,\"team\":1,\"type_compact_descr\":3329,\"vehicle_id\":152043523},{\"account_dbid\":2,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":67,\"death_reason\":-1,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":83,\"killer_id\":0,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Synthetic peer\",\"piercings\":1,\"premature_leave\":false,\"shots\":1,\"team\":2,\"type_compact_descr\":3329,\"vehicle_id\":152043524}],\"winner_team\":1}"
+      },
+      "response": {
+        "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+        "operation": "finish",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "command_key": "mixed-test:4",
+        "native_database_id": 1,
+        "version": 4,
+        "status": "finished",
+        "source_revision": 18,
+        "revision": 19,
+        "replayed": false,
+        "code": null,
+        "reservation": {
+          "reservation_id": "mixed-test:3",
+          "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+          "battle_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3:9007199254740993",
+          "native_inventory_id": 1,
+          "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1",
+          "status": "finished",
+          "frozen": {
+            "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+            "loadout": {
+              "ammunition": [
+                {
+                  "count": 0,
+                  "family": "ARMOR_PIERCING",
+                  "shell_compact_id": 2570,
+                  "shell_definition_id": "shell:ms1-stock-ap"
+                },
+                {
+                  "count": 4,
+                  "family": "HOLLOW_CHARGE",
+                  "shell_compact_id": 2826,
+                  "shell_definition_id": "shell:ms1-stock-heat"
+                },
+                {
+                  "count": 10,
+                  "family": "HIGH_EXPLOSIVE",
+                  "shell_compact_id": 3082,
+                  "shell_definition_id": "shell:ms1-stock-he"
+                }
+              ],
+              "capacity": 96,
+              "crew_ids": [
+                "c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1",
+                "c5326cc1-8524-479c-8bba-72e973489c22:recruit-ms1-driver:3"
+              ],
+              "descriptor_hex": "010d1a000e00c90000001700170000",
+              "initial_shell_compact_id": 2826,
+              "kind": "ms1",
+              "max_hp": 90,
+              "native_inventory_id": 1,
+              "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1"
+            },
+            "loadout_sha256": "0d18dd14d489792c9e22365e70523e983bc9d1858b61ffb017ae94b4d7f215c3"
+          },
+          "frozen_sha256": "0bcc27f9d4ccc36d9005a9356924c746ae262c7ca54cf90bbcba023b4fa8d5da",
+          "result": {
+            "credits": 0,
+            "destroyed": true,
+            "fired_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 1,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 2,
+                "shell_compact_id": 3082
+              }
+            ],
+            "loss_event": {
+              "attacker_slot": 1,
+              "device_sequence": 3,
+              "shot": 1,
+              "target_slot": 0,
+              "tick": 1250
+            },
+            "lost_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 3,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 8,
+                "shell_compact_id": 3082
+              }
+            ],
+            "reason": "battle_finished",
+            "remaining_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 3082
+              }
+            ],
+            "repaired_hp": 90,
+            "terminal_hp": 0,
+            "terminal_state": {
+              "crew": [
+                {
+                  "alive": true,
+                  "crew_id": "c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1"
+                },
+                {
+                  "alive": true,
+                  "crew_id": "c5326cc1-8524-479c-8bba-72e973489c22:recruit-ms1-driver:3"
+                }
+              ],
+              "crew_active": true,
+              "death": {
+                "killer_slot": 1,
+                "reason": 0,
+                "tick": 1250
+              },
+              "devices": [
+                {
+                  "extra_index": 26,
+                  "health": 25,
+                  "max_health": 25
+                },
+                {
+                  "extra_index": 27,
+                  "health": 0,
+                  "max_health": 60
+                },
+                {
+                  "extra_index": 28,
+                  "health": 100,
+                  "max_health": 100
+                },
+                {
+                  "extra_index": 29,
+                  "health": 90,
+                  "max_health": 90
+                },
+                {
+                  "extra_index": 30,
+                  "health": 40,
+                  "max_health": 40
+                },
+                {
+                  "extra_index": 31,
+                  "health": 40,
+                  "max_health": 40
+                },
+                {
+                  "extra_index": 32,
+                  "health": 54,
+                  "max_health": 54
+                },
+                {
+                  "extra_index": 33,
+                  "health": 50,
+                  "max_health": 50
+                },
+                {
+                  "extra_index": 34,
+                  "health": 30,
+                  "max_health": 30
+                }
+              ],
+              "fire": {
+                "active": false,
+                "damage": 0,
+                "ticks": 0
+              },
+              "policy_revision": "test_lab.p06t.devices-proxy-fire.v1",
+              "roster_size": 2
+            },
+            "xp": 0
+          }
+        },
+        "legacy_reservation": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "operation": "finish",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "mixed-test:4",
+        "expected_revision": 18,
+        "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+        "battle_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3:9007199254740993",
+        "native_inventory_id": 1,
+        "reservation_id": "mixed-test:3",
+        "terminal_hp": 0,
+        "reason": "battle_finished",
+        "remaining_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 0
+          }
+        ],
+        "fired_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 1
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 2
+          }
+        ],
+        "lost_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 3
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 8
+          }
+        ],
+        "loss_event": {
+          "shot": 1,
+          "attacker_slot": 1,
+          "target_slot": 0,
+          "tick": 1250,
+          "device_sequence": 3
+        },
+        "terminal_state_json": "{\"crew\":[{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1\"},{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:recruit-ms1-driver:3\"}],\"crew_active\":true,\"death\":{\"killer_slot\":1,\"reason\":0,\"tick\":1250},\"devices\":[{\"extra_index\":26,\"health\":25,\"max_health\":25},{\"extra_index\":27,\"health\":0,\"max_health\":60},{\"extra_index\":28,\"health\":100,\"max_health\":100},{\"extra_index\":29,\"health\":90,\"max_health\":90},{\"extra_index\":30,\"health\":40,\"max_health\":40},{\"extra_index\":31,\"health\":40,\"max_health\":40},{\"extra_index\":32,\"health\":54,\"max_health\":54},{\"extra_index\":33,\"health\":50,\"max_health\":50},{\"extra_index\":34,\"health\":30,\"max_health\":30}],\"fire\":{\"active\":false,\"damage\":0,\"ticks\":0},\"policy_revision\":\"test_lab.p06t.devices-proxy-fire.v1\",\"roster_size\":2}",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "results_json": "{\"arena_id\":9007199254740993,\"arena_type_id\":4,\"created_unix\":1792080000,\"duration_seconds\":120,\"finish_reason\":1,\"participants\":[{\"account_dbid\":1,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":90,\"death_reason\":0,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":0,\"killer_id\":152043524,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Authoritative owner\",\"piercings\":1,\"premature_leave\":false,\"shots\":3,\"team\":1,\"type_compact_descr\":3329,\"vehicle_id\":152043523},{\"account_dbid\":2,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":67,\"death_reason\":-1,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":83,\"killer_id\":0,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Synthetic peer\",\"piercings\":1,\"premature_leave\":false,\"shots\":1,\"team\":2,\"type_compact_descr\":3329,\"vehicle_id\":152043524}],\"winner_team\":1}"
+      },
+      "response": {
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "code": null,
+        "command_key": "mixed-test:4",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "legacy_reservation": null,
+        "native_database_id": 1,
+        "operation": "finish",
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+        "replayed": true,
+        "reservation": {
+          "battle_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3:9007199254740993",
+          "frozen": {
+            "loadout": {
+              "ammunition": [
+                {
+                  "count": 0,
+                  "family": "ARMOR_PIERCING",
+                  "shell_compact_id": 2570,
+                  "shell_definition_id": "shell:ms1-stock-ap"
+                },
+                {
+                  "count": 4,
+                  "family": "HOLLOW_CHARGE",
+                  "shell_compact_id": 2826,
+                  "shell_definition_id": "shell:ms1-stock-heat"
+                },
+                {
+                  "count": 10,
+                  "family": "HIGH_EXPLOSIVE",
+                  "shell_compact_id": 3082,
+                  "shell_definition_id": "shell:ms1-stock-he"
+                }
+              ],
+              "capacity": 96,
+              "crew_ids": [
+                "c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1",
+                "c5326cc1-8524-479c-8bba-72e973489c22:recruit-ms1-driver:3"
+              ],
+              "descriptor_hex": "010d1a000e00c90000001700170000",
+              "initial_shell_compact_id": 2826,
+              "kind": "ms1",
+              "max_hp": 90,
+              "native_inventory_id": 1,
+              "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1"
+            },
+            "loadout_sha256": "0d18dd14d489792c9e22365e70523e983bc9d1858b61ffb017ae94b4d7f215c3",
+            "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+          },
+          "frozen_sha256": "0bcc27f9d4ccc36d9005a9356924c746ae262c7ca54cf90bbcba023b4fa8d5da",
+          "native_inventory_id": 1,
+          "reservation_id": "mixed-test:3",
+          "result": {
+            "credits": 0,
+            "destroyed": true,
+            "fired_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 1,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 2,
+                "shell_compact_id": 3082
+              }
+            ],
+            "loss_event": {
+              "attacker_slot": 1,
+              "device_sequence": 3,
+              "shot": 1,
+              "target_slot": 0,
+              "tick": 1250
+            },
+            "lost_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 3,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 8,
+                "shell_compact_id": 3082
+              }
+            ],
+            "reason": "battle_finished",
+            "remaining_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 3082
+              }
+            ],
+            "repaired_hp": 90,
+            "terminal_hp": 0,
+            "terminal_state": {
+              "crew": [
+                {
+                  "alive": true,
+                  "crew_id": "c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1"
+                },
+                {
+                  "alive": true,
+                  "crew_id": "c5326cc1-8524-479c-8bba-72e973489c22:recruit-ms1-driver:3"
+                }
+              ],
+              "crew_active": true,
+              "death": {
+                "killer_slot": 1,
+                "reason": 0,
+                "tick": 1250
+              },
+              "devices": [
+                {
+                  "extra_index": 26,
+                  "health": 25,
+                  "max_health": 25
+                },
+                {
+                  "extra_index": 27,
+                  "health": 0,
+                  "max_health": 60
+                },
+                {
+                  "extra_index": 28,
+                  "health": 100,
+                  "max_health": 100
+                },
+                {
+                  "extra_index": 29,
+                  "health": 90,
+                  "max_health": 90
+                },
+                {
+                  "extra_index": 30,
+                  "health": 40,
+                  "max_health": 40
+                },
+                {
+                  "extra_index": 31,
+                  "health": 40,
+                  "max_health": 40
+                },
+                {
+                  "extra_index": 32,
+                  "health": 54,
+                  "max_health": 54
+                },
+                {
+                  "extra_index": 33,
+                  "health": 50,
+                  "max_health": 50
+                },
+                {
+                  "extra_index": 34,
+                  "health": 30,
+                  "max_health": 30
+                }
+              ],
+              "fire": {
+                "active": false,
+                "damage": 0,
+                "ticks": 0
+              },
+              "policy_revision": "test_lab.p06t.devices-proxy-fire.v1",
+              "roster_size": 2
+            },
+            "xp": 0
+          },
+          "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+          "status": "finished",
+          "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1"
+        },
+        "revision": 19,
+        "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+        "source_revision": 18,
+        "status": "finished",
+        "version": 4
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "query",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "loss-result:query",
+        "arena_id": "9007199254740993"
+      },
+      "response": {
+        "version": 4,
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "query",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "loss-result:query",
+        "arena_id": "9007199254740993",
+        "status": "found",
+        "acked": false,
+        "results_json": "{\"arena_id\":9007199254740993,\"arena_type_id\":4,\"created_unix\":1792080000,\"duration_seconds\":120,\"finish_reason\":1,\"participants\":[{\"account_dbid\":1,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":90,\"death_reason\":0,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":0,\"killer_id\":152043524,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Authoritative owner\",\"piercings\":1,\"premature_leave\":false,\"shots\":3,\"team\":1,\"type_compact_descr\":3329,\"vehicle_id\":152043523},{\"account_dbid\":2,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":67,\"death_reason\":-1,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":83,\"killer_id\":0,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Synthetic peer\",\"piercings\":1,\"premature_leave\":false,\"shots\":1,\"team\":2,\"type_compact_descr\":3329,\"vehicle_id\":152043524}],\"winner_team\":1}",
+        "replayed": false,
+        "code": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+        "record_contract": "loss-v1"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "ack",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "loss-result:ack",
+        "arena_id": "9007199254740993"
+      },
+      "response": {
+        "version": 4,
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "ack",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "loss-result:ack",
+        "arena_id": "9007199254740993",
+        "status": "acked",
+        "acked": true,
+        "results_json": "{\"arena_id\":9007199254740993,\"arena_type_id\":4,\"created_unix\":1792080000,\"duration_seconds\":120,\"finish_reason\":1,\"participants\":[{\"account_dbid\":1,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":90,\"death_reason\":0,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":0,\"killer_id\":152043524,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Authoritative owner\",\"piercings\":1,\"premature_leave\":false,\"shots\":3,\"team\":1,\"type_compact_descr\":3329,\"vehicle_id\":152043523},{\"account_dbid\":2,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":67,\"death_reason\":-1,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":83,\"killer_id\":0,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Synthetic peer\",\"piercings\":1,\"premature_leave\":false,\"shots\":1,\"team\":2,\"type_compact_descr\":3329,\"vehicle_id\":152043524}],\"winner_team\":1}",
+        "replayed": false,
+        "code": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+        "record_contract": "loss-v1"
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "ack",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "loss-result:ack",
+        "arena_id": "9007199254740993"
+      },
+      "response": {
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "acked": true,
+        "arena_id": "9007199254740993",
+        "code": null,
+        "command_key": "loss-result:ack",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "native_database_id": 1,
+        "operation": "ack",
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+        "record_contract": "loss-v1",
+        "replayed": true,
+        "results_json": "{\"arena_id\":9007199254740993,\"arena_type_id\":4,\"created_unix\":1792080000,\"duration_seconds\":120,\"finish_reason\":1,\"participants\":[{\"account_dbid\":1,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":90,\"death_reason\":0,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":0,\"killer_id\":152043524,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Authoritative owner\",\"piercings\":1,\"premature_leave\":false,\"shots\":3,\"team\":1,\"type_compact_descr\":3329,\"vehicle_id\":152043523},{\"account_dbid\":2,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":67,\"death_reason\":-1,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":83,\"killer_id\":0,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Synthetic peer\",\"piercings\":1,\"premature_leave\":false,\"shots\":1,\"team\":2,\"type_compact_descr\":3329,\"vehicle_id\":152043524}],\"winner_team\":1}",
+        "status": "acked",
+        "version": 4
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "operation": "finish",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "mixed-test:4",
+        "expected_revision": 18,
+        "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+        "battle_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3:9007199254740993",
+        "native_inventory_id": 1,
+        "reservation_id": "mixed-test:3",
+        "terminal_hp": 0,
+        "reason": "battle_finished",
+        "remaining_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 0
+          }
+        ],
+        "fired_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 1
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 2
+          }
+        ],
+        "lost_ammunition": [
+          {
+            "shell_compact_id": 2570,
+            "count": 0
+          },
+          {
+            "shell_compact_id": 2826,
+            "count": 3
+          },
+          {
+            "shell_compact_id": 3082,
+            "count": 8
+          }
+        ],
+        "loss_event": {
+          "shot": 1,
+          "attacker_slot": 1,
+          "target_slot": 0,
+          "tick": 1250,
+          "device_sequence": 3
+        },
+        "terminal_state_json": "{\"crew\":[{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1\"},{\"alive\":true,\"crew_id\":\"c5326cc1-8524-479c-8bba-72e973489c22:recruit-ms1-driver:3\"}],\"crew_active\":true,\"death\":{\"killer_slot\":1,\"reason\":0,\"tick\":1250},\"devices\":[{\"extra_index\":26,\"health\":25,\"max_health\":25},{\"extra_index\":27,\"health\":0,\"max_health\":60},{\"extra_index\":28,\"health\":100,\"max_health\":100},{\"extra_index\":29,\"health\":90,\"max_health\":90},{\"extra_index\":30,\"health\":40,\"max_health\":40},{\"extra_index\":31,\"health\":40,\"max_health\":40},{\"extra_index\":32,\"health\":54,\"max_health\":54},{\"extra_index\":33,\"health\":50,\"max_health\":50},{\"extra_index\":34,\"health\":30,\"max_health\":30}],\"fire\":{\"active\":false,\"damage\":0,\"ticks\":0},\"policy_revision\":\"test_lab.p06t.devices-proxy-fire.v1\",\"roster_size\":2}",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "results_json": "{\"arena_id\":9007199254740993,\"arena_type_id\":4,\"created_unix\":1792080000,\"duration_seconds\":120,\"finish_reason\":1,\"participants\":[{\"account_dbid\":1,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":90,\"death_reason\":0,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":0,\"killer_id\":152043524,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Authoritative owner\",\"piercings\":1,\"premature_leave\":false,\"shots\":3,\"team\":1,\"type_compact_descr\":3329,\"vehicle_id\":152043523},{\"account_dbid\":2,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":67,\"death_reason\":-1,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":83,\"killer_id\":0,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Synthetic peer\",\"piercings\":1,\"premature_leave\":false,\"shots\":1,\"team\":2,\"type_compact_descr\":3329,\"vehicle_id\":152043524}],\"winner_team\":1}"
+      },
+      "response": {
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "code": null,
+        "command_key": "mixed-test:4",
+        "contract": "p06t-ammo-rack-loss.v1",
+        "legacy_reservation": null,
+        "native_database_id": 1,
+        "operation": "finish",
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+        "replayed": true,
+        "reservation": {
+          "battle_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3:9007199254740993",
+          "frozen": {
+            "loadout": {
+              "ammunition": [
+                {
+                  "count": 0,
+                  "family": "ARMOR_PIERCING",
+                  "shell_compact_id": 2570,
+                  "shell_definition_id": "shell:ms1-stock-ap"
+                },
+                {
+                  "count": 4,
+                  "family": "HOLLOW_CHARGE",
+                  "shell_compact_id": 2826,
+                  "shell_definition_id": "shell:ms1-stock-heat"
+                },
+                {
+                  "count": 10,
+                  "family": "HIGH_EXPLOSIVE",
+                  "shell_compact_id": 3082,
+                  "shell_definition_id": "shell:ms1-stock-he"
+                }
+              ],
+              "capacity": 96,
+              "crew_ids": [
+                "c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1",
+                "c5326cc1-8524-479c-8bba-72e973489c22:recruit-ms1-driver:3"
+              ],
+              "descriptor_hex": "010d1a000e00c90000001700170000",
+              "initial_shell_compact_id": 2826,
+              "kind": "ms1",
+              "max_hp": 90,
+              "native_inventory_id": 1,
+              "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1"
+            },
+            "loadout_sha256": "0d18dd14d489792c9e22365e70523e983bc9d1858b61ffb017ae94b4d7f215c3",
+            "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e"
+          },
+          "frozen_sha256": "0bcc27f9d4ccc36d9005a9356924c746ae262c7ca54cf90bbcba023b4fa8d5da",
+          "native_inventory_id": 1,
+          "reservation_id": "mixed-test:3",
+          "result": {
+            "credits": 0,
+            "destroyed": true,
+            "fired_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 1,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 2,
+                "shell_compact_id": 3082
+              }
+            ],
+            "loss_event": {
+              "attacker_slot": 1,
+              "device_sequence": 3,
+              "shot": 1,
+              "target_slot": 0,
+              "tick": 1250
+            },
+            "lost_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 3,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 8,
+                "shell_compact_id": 3082
+              }
+            ],
+            "reason": "battle_finished",
+            "remaining_ammunition": [
+              {
+                "count": 0,
+                "shell_compact_id": 2570
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 2826
+              },
+              {
+                "count": 0,
+                "shell_compact_id": 3082
+              }
+            ],
+            "repaired_hp": 90,
+            "terminal_hp": 0,
+            "terminal_state": {
+              "crew": [
+                {
+                  "alive": true,
+                  "crew_id": "c5326cc1-8524-479c-8bba-72e973489c22:ms1-commander-v1"
+                },
+                {
+                  "alive": true,
+                  "crew_id": "c5326cc1-8524-479c-8bba-72e973489c22:recruit-ms1-driver:3"
+                }
+              ],
+              "crew_active": true,
+              "death": {
+                "killer_slot": 1,
+                "reason": 0,
+                "tick": 1250
+              },
+              "devices": [
+                {
+                  "extra_index": 26,
+                  "health": 25,
+                  "max_health": 25
+                },
+                {
+                  "extra_index": 27,
+                  "health": 0,
+                  "max_health": 60
+                },
+                {
+                  "extra_index": 28,
+                  "health": 100,
+                  "max_health": 100
+                },
+                {
+                  "extra_index": 29,
+                  "health": 90,
+                  "max_health": 90
+                },
+                {
+                  "extra_index": 30,
+                  "health": 40,
+                  "max_health": 40
+                },
+                {
+                  "extra_index": 31,
+                  "health": 40,
+                  "max_health": 40
+                },
+                {
+                  "extra_index": 32,
+                  "health": 54,
+                  "max_health": 54
+                },
+                {
+                  "extra_index": 33,
+                  "health": 50,
+                  "max_health": 50
+                },
+                {
+                  "extra_index": 34,
+                  "health": 30,
+                  "max_health": 30
+                }
+              ],
+              "fire": {
+                "active": false,
+                "damage": 0,
+                "ticks": 0
+              },
+              "policy_revision": "test_lab.p06t.devices-proxy-fire.v1",
+              "roster_size": 2
+            },
+            "xp": 0
+          },
+          "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+          "status": "finished",
+          "vehicle_inventory_id": "c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1"
+        },
+        "revision": 19,
+        "run_id": "788fa1bf-8a21-4bdb-84de-a63310e390a3",
+        "source_revision": 18,
+        "status": "finished",
+        "version": 4
+      }
+    },
+    {
+      "request": {
+        "version": 4,
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "query",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "loss-result:query",
+        "arena_id": "9007199254740993"
+      },
+      "response": {
+        "version": 4,
+        "contract": "p06t-ammo-rack-loss.v1",
+        "operation": "query",
+        "account_id": "c5326cc1-8524-479c-8bba-72e973489c22",
+        "native_database_id": 1,
+        "command_key": "loss-result:query",
+        "arena_id": "9007199254740993",
+        "status": "found",
+        "acked": true,
+        "results_json": "{\"arena_id\":9007199254740993,\"arena_type_id\":4,\"created_unix\":1792080000,\"duration_seconds\":120,\"finish_reason\":1,\"participants\":[{\"account_dbid\":1,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":90,\"death_reason\":0,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":0,\"killer_id\":152043524,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Authoritative owner\",\"piercings\":1,\"premature_leave\":false,\"shots\":3,\"team\":1,\"type_compact_descr\":3329,\"vehicle_id\":152043523},{\"account_dbid\":2,\"capture_points\":42,\"damage_dealt\":7,\"damage_received\":67,\"death_reason\":-1,\"direct_hits\":1,\"dropped_capture_points\":3,\"health\":83,\"killer_id\":0,\"kills\":0,\"life_time\":90,\"mileage_metres\":135,\"name\":\"Synthetic peer\",\"piercings\":1,\"premature_leave\":false,\"shots\":1,\"team\":2,\"type_compact_descr\":3329,\"vehicle_id\":152043524}],\"winner_team\":1}",
+        "replayed": false,
+        "code": null,
+        "policy_sha256": "f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e",
+        "record_contract": "loss-v1"
+      }
+    }
+  ],
+  "native_compatibility": "NOT_RUN",
+  "stand_db_mutations": 0,
+  "ammunition_grants": 0
+}

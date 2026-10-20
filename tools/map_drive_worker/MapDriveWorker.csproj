@@ -19,5 +19,22 @@
     <Compile Include="../../server/physics/InlineJobSystem.cs" />
     <Compile Include="../../server/physics/HandlingDiagnostics.cs" />
     <Compile Include="../../server/physics/TrackedHandling.cs" />
+    <Compile Include="../../server/physics/AngularBodyBinding.cs" />
+    <Compile Include="../../server/physics/AngularContactResponse.cs" />
+    <Compile Include="../../server/physics/AngularFractureResponse.cs" />
+    <Compile Include="../../server/physics/BattleScene.cs" />
+    <Compile Include="../../server/physics/BattleSceneInput.cs" />
+    <Compile Include="../../server/physics/BattleTank.cs" />
+    <Compile Include="../../server/physics/BodyOrientation.cs" />
+    <Compile Include="../../server/physics/MixedContactDiagnostics.cs" />
+    <Compile Include="../../server/physics/ExtendedProfileQualification.cs" />
+    <Compile Include="../../server/physics/ExtendedVehicleProfiles.cs" />
+    <Compile Include="../../server/physics/StockProfileQualification.cs" />
+    <Compile Include="../../server/physics/StockVehicleProfiles.cs" />
+    <Compile Include="../../server/physics/TrackedBodySettings.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../server/physics/Profiles/stock-definitions.json" LogicalName="MapDrive.StockDefinitions" />
+    <EmbeddedResource Include="../../server/physics/Profiles/extended-definitions.json" LogicalName="MapDrive.ExtendedDefinitions" />
   </ItemGroup>
 </Project>

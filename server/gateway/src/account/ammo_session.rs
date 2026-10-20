@@ -3,6 +3,9 @@
 use super::*;
 use crate::{account091,ammo_service091 as codec,crew_service091 as crew_codec,crew_transfer091 as transfer_codec,crew_progression091 as skill_codec,crew_dismissal091 as dismiss_codec,crew_barracks091 as barracks_codec,research_service091 as research_codec,identity091};
 
+#[path="ammo_session_fresh.rs"]
+mod fresh;
+
 const MAX_COMMANDS:usize=512;
 const MAX_PENDING:usize=4;
 
@@ -13,21 +16,55 @@ impl Command {
     fn vehicle(&self)->i64 {match self {Self::Ammo(r)=>r.vehicle_inventory_id() as i64,Self::Crew(r)=>r.vehicle_inventory_id as i64,Self::Transfer(r)=>r.vehicle_inventory_id,Self::Skill(_)|Self::Dismiss(_)|Self::Barracks(_)=>-1,Self::Research(r)=>r.vehicle_hint()}}
     fn kind(&self)->&'static str {match self {Self::Ammo(_)=>"AMMO",Self::Crew(_)=>"CREW",Self::Transfer(_)=>"CREW_TRANSFER",Self::Skill(_)=>"CREW_LEARN",Self::Dismiss(_)=>"CREW_DISMISS",Self::Barracks(_)=>"CREW_BARRACKS",Self::Research(_)=>"RESEARCH"}}
     fn validate_supported(&self,profile:transfer_codec::Profile)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_for(profile.roster()),Self::Transfer(r)=>r.validate_for(profile),Self::Skill(r)=>if matches!(profile,transfer_codec::Profile::Progression|transfer_codec::Profile::Dismissal|transfer_codec::Profile::Barracks) {r.validate_supported()}else {Err(invalid())},Self::Dismiss(r)=>if matches!(profile,transfer_codec::Profile::Dismissal|transfer_codec::Profile::Barracks) {r.validate_supported()}else {Err(invalid())},Self::Barracks(r)=>if profile==transfer_codec::Profile::Barracks {r.validate_supported()}else {Err(invalid())},Self::Research(r)=>r.validate_supported()}}
+    fn validate_bound(&self,profile:transfer_codec::Profile,pool:Option<&crate::p04m_companion091::Binding>)->io::Result<()> {
+        if let Some(p)=pool{match self{Self::Ammo(r)=>p.ammo_layout(r).map(|_|()),Self::Crew(r)=>p.recruit(*r),Self::Transfer(r)=>p.transfer(*r),Self::Barracks(r)=>p.barracks(*r),_=>self.validate_supported(profile)}}
+        else{self.validate_supported(profile)}
+    }
 }
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub(super) struct State {
     revision:u64,wire_revision:i64,prefix:String,crew_enabled:bool,transfer_enabled:bool,cross_vehicle_enabled:bool,roster_recruitment:bool,crew_progression:bool,crew_dismissal:bool,crew_barracks:bool,research_enabled:bool,
     seen:Vec<i16>,pending:VecDeque<Command>,inflight:Option<Command>,
+    pool:Option<Arc<crate::p04m_companion091::Binding>>,
 }
 impl State {
     pub(super) fn new(binding:codec::Metadata,crew_enabled:bool)->Self {
         let mut random=[0;16];OsRng.fill_bytes(&mut random);
         let prefix=random.iter().map(|byte|format!("{byte:02x}")).collect();
         Self{revision:binding.revision,wire_revision:binding.wire_revision,prefix,crew_enabled,transfer_enabled:false,cross_vehicle_enabled:false,roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks:false,research_enabled:false,
-             seen:Vec::new(),pending:VecDeque::new(),inflight:None}
+             seen:Vec::new(),pending:VecDeque::new(),inflight:None,pool:None}
+    }
+
+    /// Outer Session clone must enqueue/drain Account.update in the SAME
+    /// transaction. This never resets the native epoch/prefix/used-ID history.
+    pub(super) fn commit_external_update(&mut self,revision:u64,previous:i64,next:i64)->io::Result<()> {
+        if !self.idle()||revision!=self.revision.checked_add(1).ok_or_else(invalid)?||revision>=i32::MAX as u64
+            ||previous!=self.wire_revision||next!=previous.checked_add(1).ok_or_else(invalid)?||next>=i64::from(i32::MAX){return Err(invalid());}
+        self.revision=revision;self.wire_revision=next;Ok(())
     }
     pub(super) fn crew_enabled(&self)->bool {self.crew_enabled}
+    pub(super) fn revision(&self)->u64 {self.revision}
+    pub(super) fn wire_revision(&self)->i64 {self.wire_revision}
+    pub(super) fn idle(&self)->bool {self.pending.is_empty() && self.inflight.is_none()}
+    /// Reserving/cancelling while the same Account entity is alive advances the
+    /// durable cursor only. Its native AccountSyncData sequence and request
+    /// epoch keep matching the client until an actual Account recreation.
+    pub(super) fn refresh_revision(&mut self,revision:u64)->io::Result<()> {
+        if !self.idle() || revision<self.revision || revision>=i32::MAX as u64 {return Err(invalid());}
+        self.revision=revision;Ok(())
+    }
+    /// A fresh full Account publication resets its native cursor. Rebind only
+    /// after every old hangar command resolved; its old command keys must never
+    /// accidentally replay after an Account -> Avatar -> Account cycle.
+    pub(super) fn rebind(&mut self,binding:codec::Metadata)->io::Result<()> {
+        if !self.idle() || binding.revision<self.revision || binding.revision>=i32::MAX as u64
+            || binding.wire_revision!=1 {return Err(invalid());}
+        let mut random=[0;16];OsRng.fill_bytes(&mut random);
+        self.revision=binding.revision;self.wire_revision=binding.wire_revision;
+        self.prefix=random.iter().map(|byte|format!("{byte:02x}")).collect();self.seen.clear();
+        Ok(())
+    }
     pub(super) fn with_transfer(mut self,enabled:bool)->Self {self.transfer_enabled=enabled && self.crew_enabled;self}
     pub(super) fn with_cross_vehicle(mut self,enabled:bool)->Self {self.cross_vehicle_enabled=enabled && self.transfer_enabled;self}
     pub(super) fn with_roster_recruitment(mut self,enabled:bool)->Self {self.roster_recruitment=enabled && self.cross_vehicle_enabled;self}
@@ -37,6 +74,10 @@ impl State {
     pub(super) fn barracks_enabled(&self)->bool {self.crew_barracks}
     pub(super) fn with_research(mut self,enabled:bool)->Self {self.research_enabled=enabled && self.crew_barracks;self}
     pub(super) fn research_enabled(&self)->bool {self.research_enabled}
+    pub(super) fn replace_pool(&mut self,pool:Option<Arc<crate::p04m_companion091::Binding>>)->io::Result<()> {
+        if self.pool.is_some()&&pool.is_none() || pool.as_ref().is_some_and(|p|!self.research_enabled||p.revision!=self.revision){return Err(invalid());}
+        self.pool=pool;Ok(())
+    }
     pub(super) fn dismissal_enabled(&self)->bool {self.crew_dismissal}
     pub(super) fn progression_enabled(&self)->bool {self.crew_progression}
     pub(super) fn transfer_enabled(&self)->bool {self.transfer_enabled}
@@ -44,6 +85,7 @@ impl State {
     fn command_key(&self,request:&Command)->String {
         let card=match request {Command::Ammo(_)=>"p09d",Command::Research(_)=>"p09e",Command::Barracks(_)=>"p04k",Command::Dismiss(_)=>"p04j",Command::Skill(_)=>if self.crew_dismissal {"p04j"}else {"p04i"},Command::Crew(_)=>if self.crew_dismissal {"p04j"}else if self.crew_progression {"p04i"}else if self.roster_recruitment {"p04h"}else {"p04d"},Command::Transfer(_)=>if self.crew_dismissal {"p04j"}else if self.crew_progression {"p04i"}else if self.roster_recruitment {"p04h"}else if self.cross_vehicle_enabled {"p04g"}else {"p04f"}};
         let card=if self.crew_barracks && !matches!(request,Command::Ammo(_)|Command::Research(_)) {"p04k"}else {card};
+        let card=if self.pool.is_some(){"p04m"}else{card};
         format!("{card}:{}:{}",self.prefix,request.id())
     }
 }
@@ -51,9 +93,12 @@ impl State {
 fn available(session:&Session)->io::Result<()> {
     if !session.active || !session.account_ready || session.identity.is_none() || session.hangar.is_none()
         || session.sync_mask!=7 || session.ammo_service.is_none() || session.arena_base || session.drive.is_some()
-        || session.map_drive || session.shared.is_some() || session.drive_account_policy.is_some() {
+        || session.map_drive || session.shared.as_ref().is_some_and(|client|!client.profile13_account())
+        || session.drive_account_policy.is_some() {
         return Err(invalid());
     }
+    let state=session.ammo_service.as_ref().ok_or_else(invalid)?;
+    if state.pool.as_ref().is_some_and(|p|session.identity.as_ref().is_none_or(|owner|!p.matches(&owner.account_id,owner.database_id,state.revision))){return Err(invalid());}
     Ok(())
 }
 
@@ -96,6 +141,7 @@ pub(super) fn enqueue_research(session:&mut Session,request:research_codec::Requ
 }
 fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)->io::Result<()> {
     available(session)?;
+    let reserved=session.shared.as_ref().is_some_and(|client|!client.profile13_garage_idle());
     let state=session.ammo_service.as_mut().ok_or_else(invalid)?;
     let id=request.id();let kind=request.kind();
     if id==202 || state.seen.contains(&id) || state.seen.len()>=MAX_COMMANDS
@@ -104,7 +150,10 @@ fn enqueue_command(session:&mut Session,request:Command,events:&mut Vec<String>)
         return Err(invalid());
     }
     state.seen.push(id);
-    if request.validate_supported(transfer_codec::Profile::selected_barracks(state.cross_vehicle_enabled,state.roster_recruitment,state.crew_progression,state.crew_dismissal,state.crew_barracks)).is_err() {
+    if reserved {
+        session.outbox.push_back(crate::hangar091::unavailable_response(id)?);
+        events.push(format!("{kind}_SERVICE_REJECTED session={} request={id} result=-10 reason=vehicle_reserved domain_applied=false",session.id));
+    } else if request.validate_bound(transfer_codec::Profile::selected_barracks(state.cross_vehicle_enabled,state.roster_recruitment,state.crew_progression,state.crew_dismissal,state.crew_barracks),state.pool.as_deref()).is_err() {
         session.outbox.push_back(crate::hangar091::unavailable_response(id)?);
         events.push(format!("{kind}_SERVICE_REJECTED session={} request={id} result=-10 reason=unsupported_layout domain_applied=false",session.id));
     } else {
@@ -141,6 +190,12 @@ pub(super) fn refresh(session:&mut Session,request:account091::Request,revision:
 pub(super) struct Job {
     session_id:u32,account_id:String,request_id:i16,
     receiver:mpsc::Receiver<io::Result<identity091::AmmoReply>>,
+    fresh:Option<fresh::Flow>,
+}
+impl Job {
+    pub(super) fn session_id(&self)->u32 {self.session_id}
+    #[cfg(test)] pub(super) fn known_reply_for_test(&self)->Option<(u64,i64,bool)>{self.fresh.as_ref().and_then(fresh::Flow::known_for_test)}
+    #[cfg(test)] pub(super) fn fresh_attempts_for_test(&self)->Option<u8>{self.fresh.as_ref().map(fresh::Flow::attempts_for_test)}
 }
 
 /// At most one worker exists across active and retired sessions. Retain a
@@ -155,10 +210,24 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
     let profile=session.identity.clone().ok_or_else(invalid)?;
     let (revision,wire_revision,key)=(state.revision,state.wire_revision,state.command_key(&request));
     let account_id=profile.account_id.clone();let request_id=request.id();let kind=request.kind();
+    if config.p04m_pool!=state.pool.is_some(){return Err(invalid());}
+    let fresh=if state.pool.is_some(){Some(fresh::Flow::capture(session,&request,config.clone())?)}else{None};
     let (sender,receiver)=mpsc::sync_channel(1);
     let dispatched=request.clone();
+    let pool=state.pool.clone();
     thread::Builder::new().name("local-account-service".to_owned()).spawn(move || {
-        let outcome=match dispatched {
+        let outcome=if let Some(pool)=pool.as_deref(){
+            use crate::p04m_companion091::Request as P;
+            match dispatched{
+                Command::Ammo(r)=>config.service_pool(&profile,pool,&key,revision,wire_revision,P::Ammo(r)),
+                Command::Crew(r)=>config.service_pool(&profile,pool,&key,revision,wire_revision,P::Crew(r)),
+                Command::Transfer(r)=>config.service_pool(&profile,pool,&key,revision,wire_revision,P::Transfer(r)),
+                Command::Barracks(r)=>config.service_pool(&profile,pool,&key,revision,wire_revision,P::Barracks(r)),
+                Command::Dismiss(r)=>config.dismiss_crew(&profile,&key,revision,wire_revision,r),
+                Command::Skill(r)=>config.learn_crew(&profile,&key,revision,wire_revision,r),
+                Command::Research(r)=>config.research(&profile,&key,revision,wire_revision,&r),
+            }
+        }else{match dispatched {
             Command::Ammo(request)=>config.service_ammunition(&profile,&key,revision,wire_revision,request.arguments),
             Command::Crew(request)=>config.recruit_crew(&profile,&key,revision,wire_revision,request),
             Command::Barracks(request)=>config.recruit_barracks(&profile,&key,revision,wire_revision,request),
@@ -166,12 +235,12 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
             Command::Skill(request)=>config.learn_crew(&profile,&key,revision,wire_revision,request),
             Command::Transfer(request)=>config.transfer_crew(&profile,&key,revision,wire_revision,request),
             Command::Research(request)=>config.research(&profile,&key,revision,wire_revision,&request),
-        };
+        }};
         let _=sender.send(outcome); // A stopped gateway has no native recipient.
     })?;
     let state=session.ammo_service.as_mut().ok_or_else(invalid)?;
     state.pending.pop_front();state.inflight=Some(request);
-    *slot=Some(Job{session_id:session.id,account_id,request_id,receiver});
+    *slot=Some(Job{session_id:session.id,account_id,request_id,receiver,fresh});
     println!("{kind}_SERVICE_DISPATCH session={} request={request_id} source_revision={revision} wire_revision={wire_revision} shared_writer=true",session.id);
     Ok(())
 }
@@ -188,7 +257,8 @@ fn apply(session:&mut Session,request_id:i16,reply:identity091::AmmoReply)->io::
         let mut bodies=codec::response(request_id,&reply.update)?;
         match (state.inflight.as_ref(),reply.recruitment.as_ref()) {
             (Some(Command::Barracks(request)),Some(member))=>{
-                member.validate_delta(*request,state.wire_revision,&reply.update)?;
+                if let Some(pool)=state.pool.as_deref(){pool.validate_recruitment(member,*request,state.wire_revision,&reply.update)?;}
+                else{member.validate_delta(*request,state.wire_revision,&reply.update)?;}
                 bodies[1]=member.success_response(request_id)?;
             },
             (Some(Command::Barracks(_)),None)|(_,Some(_))=>return Err(invalid()),
@@ -202,7 +272,9 @@ fn apply(session:&mut Session,request_id:i16,reply:identity091::AmmoReply)->io::
         vec![crate::hangar091::unavailable_response(request_id)?]
     };
     if next.outbox.len()+bodies.len()>128 {return Err(invalid());}
-    state.revision=reply.revision;state.wire_revision=reply.wire_revision;state.inflight=None;
+    if state.pool.is_some()!=reply.pool.is_some(){return Err(invalid());}
+    if reply.pool.as_ref().is_some_and(|p|next.identity.as_ref().is_none_or(|owner|!p.matches(&owner.account_id,owner.database_id,reply.revision))){return Err(invalid());}
+    state.revision=reply.revision;state.wire_revision=reply.wire_revision;state.inflight=None;state.replace_pool(reply.pool)?;
     next.outbox.extend(bodies);next.drain_outbox()?;
     *session=next;
     println!("{kind}_SERVICE_RESULT session={} request={request_id} serviced={} revision={} wire_revision={} replayed={} result={} update_bytes={} response_queued=true",
@@ -211,6 +283,7 @@ fn apply(session:&mut Session,request_id:i16,reply:identity091::AmmoReply)->io::
 }
 
 pub(super) fn complete(session:Option<&mut Session>,slot:&mut Option<Job>)->io::Result<()> {
+    if slot.as_ref().is_some_and(|j|j.fresh.is_some()){return fresh::complete(session,slot);}
     let Some(job)=slot.as_ref() else {return Ok(());};
     let result=match job.receiver.try_recv() {
         Ok(value)=>value,
@@ -229,6 +302,29 @@ pub(super) fn complete(session:Option<&mut Session>,slot:&mut Option<Job>)->io::
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]fn p04m_bound_native_ammo160_and_source_seat_requests_stage_without_io(){
+        let now=Instant::now();let mut s=ready_research(now);
+        s.ammo_service.as_mut().unwrap().replace_pool(Some(Arc::new(crate::p04m_companion091::test_binding("00000000-0000-0000-0000-000000000001",13)))).unwrap();
+        let ammo=codec::Request{id:230,arguments:[5,7,6,1034,160,1290,0,1546,0,6,0,0,0,0,0,0]};
+        s.receive(&frame(&s,1,&packet(ammo)),now).unwrap();
+        assert!(matches!(s.ammo_service.as_ref().unwrap().pending.front(),Some(Command::Ammo(r)) if r.arguments[4]==160&&r.vehicle_inventory_id()==7));
+        let radio=crew_codec::Request{id:231,shop_revision:5,vehicle_inventory_id:3,slot:1,tariff_index:0};
+        s.receive(&frame(&s,2,&crew_packet(radio)),now).unwrap();
+        assert!(matches!(s.ammo_service.as_ref().unwrap().pending.back(),Some(Command::Crew(r)) if r.shop_revision==3&&r.slot==1&&r.vehicle_inventory_id==3));
+        assert!(s.ammo_service.as_ref().unwrap().inflight.is_none());
+        let mut legacy=ready_research(now);legacy.receive(&frame(&legacy,1,&packet(codec::Request{id:230,arguments:[5,7,6,1034,160,1290,0,1546,0,6,0,0,0,0,0,0]})),now).unwrap();
+        assert!(legacy.ammo_service.as_ref().unwrap().pending.is_empty());
+        let clear=legacy.tx.due(now,legacy.rx).unwrap().unwrap().2;assert_eq!(transport091::parse_interactive(&clear).unwrap().body,crate::hangar091::unavailable_response(230).unwrap());
+    }
+    #[test]fn p04m_bound_projection_cannot_downgrade_and_compound_poison_rolls_back(){
+        let now=Instant::now();let mut s=ready_research(now);
+        s.ammo_service.as_mut().unwrap().replace_pool(Some(Arc::new(crate::p04m_companion091::test_binding("00000000-0000-0000-0000-000000000001",13)))).unwrap();
+        let before=s.ammo_service.clone();let mut body=packet(codec::Request{id:230,arguments:[5,7,6,1034,160,1290,0,1546,0,6,0,0,0,0,0,0]});body.push(0xff);
+        assert!(s.receive(&frame(&s,1,&body),now).is_err());assert_eq!(s.ammo_service,before);
+        assert!(s.ammo_service.as_mut().unwrap().replace_pool(None).is_err());
+        let wrong=Arc::new(crate::p04m_companion091::test_binding("00000000-0000-0000-0000-000000000001",14));
+        assert!(s.ammo_service.as_mut().unwrap().replace_pool(Some(wrong)).is_err());assert_eq!(s.ammo_service,before);
+    }
     fn ready(now:Instant)->Session {
         // Synthetic scheduling fixture only; no native UI/compatibility claim.
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
@@ -264,7 +360,7 @@ mod tests {
     fn crew_reply(revision:u64,wire:i64)->identity091::AmmoReply {
         let mut delta=b"\x80\x02}(U\x07prevRevJ".to_vec();delta.extend((wire as i32-1).to_le_bytes());
         delta.extend(b"U\x03revJ");delta.extend((wire as i32).to_le_bytes());delta.extend(b"u.");
-        identity091::AmmoReply{serviced:true,revision,wire_revision:wire,update:delta,recruitment:None,replayed:false,result_code:0}
+        identity091::AmmoReply{serviced:true,revision,wire_revision:wire,update:delta,recruitment:None,pool:None,replayed:false,result_code:0}
     }
     fn ready_transfer(now:Instant)->Session {
         let mut s=ready_crew(now);s.ammo_service=Some(State::new(codec::Metadata{revision:8,wire_revision:1},true).with_transfer(true));s
@@ -300,11 +396,55 @@ mod tests {
         identity091::AmmoReply{serviced,revision:if serviced{6}else{5},wire_revision:if serviced{2}else{1},
             recruitment:None,
             update:if serviced {b"\x80\x02}(U\x07prevRevK\x01U\x03revK\x02u.".to_vec()}else{vec![]},
-            replayed:false,result_code:if serviced{0}else{-10}}
+            pool:None,replayed:false,result_code:if serviced{0}else{-10}}
     }
     fn inflight(session:&mut Session,id:i16) {
         enqueue(session,request(id),&mut vec![]).unwrap();
         let state=session.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
+    }
+
+    #[test] fn full_account_rebind_renews_command_epoch_and_preserves_service_capabilities() {
+        let mut session=ready_research(Instant::now());
+        let state=session.ammo_service.as_mut().unwrap();
+        state.seen.extend([226,227]);let previous=state.command_key(&Command::Research(research_request(226)));
+        state.rebind(codec::Metadata{revision:17,wire_revision:1}).unwrap();
+        assert_eq!(state.revision(),17);assert_eq!(state.wire_revision,1);assert!(state.idle() && state.seen.is_empty());
+        assert_ne!(state.command_key(&Command::Research(research_request(226))),previous);
+        assert!(state.research_enabled() && state.barracks_enabled() && state.dismissal_enabled()
+            && state.progression_enabled() && state.transfer_enabled() && state.crew_enabled());
+        enqueue_research(&mut session,research_request(226),&mut vec![]).unwrap();
+        assert_eq!(session.ammo_service.as_ref().unwrap().pending.len(),1);
+    }
+
+    #[test] fn full_account_rebind_rejects_busy_or_regressing_metadata_without_any_change() {
+        let mut state=State::new(codec::Metadata{revision:13,wire_revision:3},true).with_transfer(true)
+            .with_cross_vehicle(true).with_roster_recruitment(true).with_progression(true)
+            .with_dismissal(true).with_barracks(true).with_research(true);
+        state.seen.push(226);
+        for binding in [codec::Metadata{revision:12,wire_revision:1},codec::Metadata{revision:14,wire_revision:2},
+            codec::Metadata{revision:i32::MAX as u64,wire_revision:1}] {
+            let before=state.clone();assert!(state.rebind(binding).is_err());assert_eq!(state,before);
+        }
+        state.pending.push_back(Command::Research(research_request(226)));
+        let before=state.clone();assert!(!state.idle());assert!(state.rebind(codec::Metadata{revision:14,wire_revision:1}).is_err());assert_eq!(state,before);
+        state.inflight=state.pending.pop_front();let before=state.clone();
+        assert!(!state.idle());assert!(state.rebind(codec::Metadata{revision:14,wire_revision:1}).is_err());assert_eq!(state,before);
+        state.inflight=None;assert!(state.idle());state.rebind(codec::Metadata{revision:13,wire_revision:1}).unwrap();
+    }
+
+    #[test] fn queue_only_revision_refresh_preserves_native_cursor_epoch_and_duplicate_protection() {
+        let mut session=ready_research(Instant::now());
+        let state=session.ammo_service.as_mut().unwrap();state.wire_revision=4;state.seen.push(226);
+        let before=state.clone();state.refresh_revision(15).unwrap();
+        let mut expected=before.clone();expected.revision=15;assert_eq!(*state,expected);
+        let mut events=vec![];
+        assert!(enqueue_research(&mut session,research_request(226),&mut events).is_err());
+        enqueue_research(&mut session,research_request(227),&mut events).unwrap();
+        let state=session.ammo_service.as_mut().unwrap();
+        assert_eq!(state.wire_revision,4);assert_eq!(state.prefix,before.prefix);
+        let before=state.clone();assert!(state.refresh_revision(16).is_err());assert_eq!(*state,before);
+        state.pending.clear();let before=state.clone();
+        assert!(state.refresh_revision(14).is_err());assert_eq!(*state,before);
     }
 
     #[test] fn research_requires_explicit_profile_and_whole_frame_commit() {
@@ -453,7 +593,7 @@ mod tests {
         }
         let mut s=ready_transfer(now);enqueue_transfer(&mut s,transfer_request(226),&mut vec![]).unwrap();
         let state=s.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
-        apply(&mut s,226,identity091::AmmoReply{serviced:false,revision:8,wire_revision:1,update:vec![],recruitment:None,replayed:false,result_code:-10}).unwrap();
+        apply(&mut s,226,identity091::AmmoReply{serviced:false,revision:8,wire_revision:1,update:vec![],recruitment:None,pool:None,replayed:false,result_code:-10}).unwrap();
         assert_eq!(s.ammo_service.as_ref().unwrap().revision,8);
     }
 
@@ -563,7 +703,7 @@ mod tests {
     fn worker_slot_retains_inflight_and_retired_result_never_applies_to_new_session() {
         let now=Instant::now();let mut old=ready(now);inflight(&mut old,226);
         let (sender,receiver)=mpsc::sync_channel(1);
-        let mut slot=Some(Job{session_id:old.id,account_id:old.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver});
+        let mut slot=Some(Job{session_id:old.id,account_id:old.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver,fresh:None});
         complete(Some(&mut old),&mut slot).unwrap();assert!(slot.is_some());assert!(old.ammo_service.as_ref().unwrap().inflight.is_some());
         let mut next=ready(now);next.id=2;let before=next.ammo_service.clone();
         sender.send(Ok(reply(true))).unwrap();complete(Some(&mut next),&mut slot).unwrap();
@@ -574,7 +714,7 @@ mod tests {
     fn ambiguous_worker_failure_leaves_no_success_or_claimed_local_commit() {
         let now=Instant::now();let mut session=ready(now);inflight(&mut session,226);let before=session.ammo_service.clone();
         let (sender,receiver)=mpsc::sync_channel(1);let mut slot=Some(Job{session_id:session.id,
-            account_id:session.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver});
+            account_id:session.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver,fresh:None});
         sender.send(Err(io::Error::new(io::ErrorKind::TimedOut,"test timeout"))).unwrap();
         assert!(complete(Some(&mut session),&mut slot).is_err());assert!(slot.is_none());
         assert_eq!(session.ammo_service,before);assert_eq!(session.tx.len(),0);
@@ -673,12 +813,12 @@ mod tests {
         assert!(apply(&mut session,226,invalid_reply).is_err());assert_eq!(session.ammo_service,before);assert_eq!(session.tx.len(),0);
         invalid_reply=crew_reply(7,3);assert!(apply(&mut session,226,invalid_reply).is_err());assert_eq!(session.ammo_service,before);
         let (sender,receiver)=mpsc::sync_channel(1);let mut slot=Some(Job{session_id:session.id,
-            account_id:session.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver});
+            account_id:session.identity.as_ref().unwrap().account_id.clone(),request_id:226,receiver,fresh:None});
         complete(Some(&mut session),&mut slot).unwrap();assert!(slot.is_some());
         let mut next=ready_crew(now);next.id=2;let clean=next.ammo_service.clone();
         sender.send(Ok(crew_reply(7,2))).unwrap();complete(Some(&mut next),&mut slot).unwrap();
         assert_eq!(next.ammo_service,clean);assert_eq!(next.tx.len(),0);
-        apply(&mut session,226,identity091::AmmoReply{serviced:false,revision:6,wire_revision:1,update:vec![],recruitment:None,replayed:false,result_code:-10}).unwrap();
+        apply(&mut session,226,identity091::AmmoReply{serviced:false,revision:6,wire_revision:1,update:vec![],recruitment:None,pool:None,replayed:false,result_code:-10}).unwrap();
         assert_eq!(session.ammo_service.as_ref().unwrap().revision,6);
         let clear=session.tx.due(now,session.rx).unwrap().unwrap().2;
         assert_eq!(transport091::parse_interactive(&clear).unwrap().body,crate::hangar091::unavailable_response(226).unwrap());
@@ -820,10 +960,10 @@ mod tests {
         member.validate_delta(request,1,&delta).unwrap();
         let before=session.ammo_service.clone();
         for wrong in [None,Some(barracks_codec::Recruitment{tankman_id:13,..member.clone()})] {
-            let reply=identity091::AmmoReply{serviced:true,revision:57,wire_revision:2,update:delta.clone(),recruitment:wrong,replayed:false,result_code:0};
+            let reply=identity091::AmmoReply{serviced:true,revision:57,wire_revision:2,update:delta.clone(),recruitment:wrong,pool:None,replayed:false,result_code:0};
             assert!(apply(&mut session,226,reply).is_err());assert_eq!(session.ammo_service,before);assert_eq!(session.tx.len(),0);
         }
-        let reply=identity091::AmmoReply{serviced:true,revision:57,wire_revision:2,update:delta,recruitment:Some(member.clone()),replayed:false,result_code:0};
+        let reply=identity091::AmmoReply{serviced:true,revision:57,wire_revision:2,update:delta,recruitment:Some(member.clone()),pool:None,replayed:false,result_code:0};
         apply(&mut session,226,reply).unwrap();
         let first=session.tx.due(now,session.rx).unwrap().unwrap().2;let second=session.tx.due(now,session.rx).unwrap().unwrap().2;
         assert_eq!(transport091::parse_interactive(&first).unwrap().body[1],0x57);

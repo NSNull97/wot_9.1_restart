@@ -8,14 +8,46 @@ authority. Two previously owned FightButton bindings are layered here. A
 separate fail-closed guard blocks the original external CAPTCHA image fetch.
 Explicit shared-lab admission enables this button for a temporary server actor;
 owned hangar vehicle readiness, crew and ammunition remain unchanged.
+The separate profile13 mode admits only a real stock owned MS-1/IS-7 (and the
+purchased T-26/T-34/T-34-85 pool types) with
+native readiness and AP-only loadout as a UI hint; the server owns admission.
+The separate P06T opt-in accepts the same mounts' actual three source stacks.
+The P10B opt-in preserves native training dispatch/readiness and eagerly prepares
+original arena services, without creating a command or granting a loadout.
 """
 import hashlib
 import os
 import threading
 import types
 
-VERSION = 4
+VERSION = 8
 MS1_SHA256 = '4122429c052f5c8eb2ebeae456c775b1a368a007cf37bae8af7b3f87ff064c5c'
+# Exact #717 stock assemblies, independently checked by the server writer.
+PROFILE13_VEHICLES = {
+    3329: (MS1_SHA256, 2, 90, 96, (2570, 2826, 3082)),
+    7169: ('10ec1923d6273cf7e970ea7a5aed6f850df3110ab4e526840c839ade9aa7bc30',
+           5, 2150, 30, (14602, 14858, 15114)),
+    # Purchased P04M pool types (owner full stand 2026-10-20). The server
+    # admits them only under its explicit zero-economy policy; this stays a
+    # UI hint. Values: #717 stock compact descriptor SHA-256, seats, hull HP,
+    # magazine capacity and the source three shell stacks.
+    4609: ('c3bc66ee093acea26df666485a00500063b095db3c0bd7ca279cb8272e363276',
+           3, 150, 160, (1034, 1290, 1546)),
+    1: ('c3532fef5cd8deb1ccaca4a0a112c8c4e295885d5cfe60378c27b2e2573cd137',
+        4, 400, 77, (7178, 7434, 7690)),
+    2561: ('cf1fd00b51c3c157df9996198a356af10ef8447de6a1f8baed574c02a6ccf28a',
+           5, 670, 68, (7946, 8202, 8458)),
+}
+PROFILE13_REASONS = {
+    'unsupported_vehicle': u'У этой машины пока нет проверенного боевого профиля.',
+    'unsupported_configuration': u'Для боя нужна проверенная стандартная сборка МС-1 или ИС-7.',
+    'unsupported_crew_readiness': u'Нужен полный экипаж и готовая к бою машина.',
+    'unsupported_ap_loadout': u'Пока поддерживаются только бронебойные: загрузите от одного снаряда до вместимости БК, остальные выгрузите.',
+    'unsupported_mixed_loadout': u'Загрузите хотя бы один штатный снаряд; общий боекомплект не должен превышать вместимость машины.',
+    'vehicle_reserved': u'Эта машина уже зарезервирована для другого боя.',
+    'inventory_not_ready': u'Дождитесь синхронизации ангара и выберите свою машину.',
+}
+PROFILE13_NOTICE = u'Вход в бой недоступен: '
 SHELLS = (2570, 20, 2826, 0, 3082, 0)
 LIGHT_SOURCE = 'scripts/client/LightFx/LightManager.py'
 LIGHT_SHA256 = '1cab41ea55634ec05081bdb81902bd8dd781851b7b68042636ccc914d4d4a348'
@@ -35,6 +67,27 @@ CAPTCHA_CHAIN_SOURCES = (
      '09ac1aa482c7394d7790a26a04281af870a3da71ef397c2c4de35865736eb334'),
     ('scripts/client/gui/Scaleform/daapi/view/dialogs/CaptchaDialog.py',
      'fb2df2f6a6ba434c40f095034521c0b828c55870d60d236cdb078880f14c9529'),
+)
+TRAINING_SOURCE_VERSION = 1
+TRAINING_CHAIN_SOURCES = (
+    ('scripts/client/gui/scaleform/daapi/view/lobby/header/battletypeselectpopover.py',
+     'a0dc8848cb5091ad9f9c3a2b6409f62a41ef6bf39b7ac2c1db678a4656113f08'),
+    ('scripts/client/gui/shared/utils/selectorbattletypesutils.py',
+     'a0dc7a27acaa6d7790dafc9d2f0fdaeb5a0ae38028bc1ec53f69527d6ba8bc8b'),
+    ('scripts/client/gui/prb_control/settings.py',
+     '4df22b924ec40cf1a435fd765216fbcf4f95caeb93d66db2dba1f14f3a4bf2c2'),
+    ('scripts/client/gui/prb_control/factories/prebattlefactory.py',
+     '6a288b4c15026de6ac20968121014c5e4ec037396d1f0c1a054fd3bcee67b7dc'),
+    ('scripts/client/gui/prb_control/dispatcher.py',
+     'fb8570094d848ccad4ce5f870a04ab660f1256bef8cfb2a261c6a993e9ac9847'),
+    ('scripts/client/gui/prb_control/items/__init__.py',
+     '5bb114523b753e83f594c684f8e1e388372d72a74ef45af1b77515da12214006'),
+    ('scripts/client/gui/prb_control/functional/training.py',
+     '7f3108df25ec269442596e292753b0014c88bcc54f9d60e6e77558764c4eb4bf'),
+    ('scripts/client/gui/prb_control/functional/default.py',
+     '5f0dfde838e96f20775326281fa42fc696d33443a25dbc67e8f7fe527a4361c0'),
+    ('scripts/client/gui/scaleform/daapi/view/lobby/trainings/trainingroom.py',
+     'a0647da875489f330281d614d24cddc9d8c08b79245e0064c47fd2b4a57f3970'),
 )
 MAX_CAPTCHA_BLOCK_RECORDS = 32
 CAPTCHA_ERROR = 'external legacy CAPTCHA is unavailable for this test service'
@@ -106,7 +159,8 @@ def _raw_sha(value):
     return hashlib.sha256(value).hexdigest()
 
 
-def _audit_sources(policy):
+def _audit_sources(policy, training_rooms=False):
+    _bool(training_rooms, 'training_rooms source audit')
     rows = []
     root = os.path.normcase(os.path.realpath(os.getcwd()))
     for relative, expected in (
@@ -114,7 +168,7 @@ def _audit_sources(policy):
             ('res/' + LIGHT_SOURCE[:-3] + '.pyc', LIGHT_SHA256),
             ('res/' + CAPTCHA_SOURCE[:-3] + '.pyc', CAPTCHA_SHA256)) + tuple(
                 ('res/' + source[:-3] + '.pyc', digest)
-                for source, digest in CAPTCHA_CHAIN_SOURCES):
+                for source, digest in CAPTCHA_CHAIN_SOURCES + (TRAINING_CHAIN_SOURCES if training_rooms else ())):
         path = os.path.join(root, *relative.split('/'))
         if (not os.path.normcase(os.path.realpath(path)).startswith(root + os.sep)
                 or os.path.islink(path) or not os.path.isfile(path)
@@ -310,9 +364,23 @@ class _Native(object):
         return dict(player_kind=kind, player_owner_id=None if player is None else id(player),
                     entity_id=None if player is None else _integer(player.id, 1, 2147483647, 'entity ID'))
 
-    def eligibility(self, shared_lab=False):
-        if type(shared_lab) is not bool:
-            raise TypeError('explicit shared laboratory mode required')
+    def training_context(self, button):
+        # Exact #717 FightButton.update + native locked-view bookkeeping.
+        from constants import PREBATTLE_TYPE
+        from gui.prb_control.dispatcher import g_prbLoader
+        from gui.Scaleform.daapi.settings import VIEW_ALIAS
+        dispatcher = g_prbLoader.getDispatcher()
+        in_room = (False if dispatcher is None else _bool(
+            dispatcher.getFunctionalState().isInPrebattle(PREBATTLE_TYPE.TRAINING),
+            'FunctionalState.isInPrebattle(TRAINING)'))
+        in_list = getattr(button, '_FightButton__currentLockedView', None) == VIEW_ALIAS.LOBBY_TRAININGS
+        return (in_room, in_list)
+
+    def eligibility(self, shared_lab=False, profile13_battle=False, p06t_mixed_ammo=False):
+        if (type(shared_lab) is not bool or type(profile13_battle) is not bool
+                or type(p06t_mixed_ammo) is not bool or shared_lab and profile13_battle
+                or p06t_mixed_ammo and not profile13_battle):
+            raise TypeError('exclusive explicit battle mode required')
         import Account
         import BigWorld
         from ConnectionManager import connectionManager
@@ -327,7 +395,7 @@ class _Native(object):
         if database_id is None:
             return {'allowed': False, 'reason': 'account_identity_pending', 'queued': False}
         database_id = _integer(database_id, 1, 2147483647, 'databaseID')
-        if database_id not in ((1, 2) if shared_lab else (1,)):
+        if not profile13_battle and database_id not in ((1, 2) if shared_lab else (1,)):
             return {'allowed': False, 'reason': 'unsupported_account', 'queued': False}
         queued = _bool(player.isInRandomQueue, 'isInRandomQueue')
         # Cancelling a real existing queue must not require entry readiness.
@@ -335,6 +403,9 @@ class _Native(object):
             return {'allowed': True, 'reason': 'original_dequeue', 'queued': True}
         if not g_itemsCache.isSynced() or not g_currentVehicle.isPresent():
             return {'allowed': False, 'reason': 'inventory_not_ready', 'queued': False}
+        if profile13_battle:
+            return self._profile13_selection(player, BigWorld, g_currentVehicle, g_itemsCache,
+                                             p06t_mixed_ammo=p06t_mixed_ammo)
         item, items = g_currentVehicle.item, g_itemsCache.items
         if (_integer(g_currentVehicle.invID, 1, 2147483647, 'selected ID') != 1
                 or item.invID != 1 or item.intCD != 3329):
@@ -396,12 +467,105 @@ class _Native(object):
         return dict(allowed=allowed, reason='supported_ms1' if allowed else 'unsupported_crew_ammo_readiness',
                     queued=False)
 
+    def _profile13_selection(self, player, world, current, cache, p06t_mixed_ammo=False):
+        """Read native owned state as a UI hint; never grant server admission."""
+        item = current.item
+        selected = _integer(current.invID, 1, 2147483647, 'selected inventory ID')
+        if _integer(item.invID, 1, 2147483647, 'item inventory ID') != selected:
+            raise RuntimeError('original selected inventory identity disagrees')
+        spec = PROFILE13_VEHICLES.get(_integer(item.intCD, 1, 65535, 'vehicle type'))
+        if spec is None:
+            return dict(allowed=False, reason='unsupported_vehicle', queued=False)
+        descriptor_sha, seats, health, capacity, shell_ids = spec
+        if _raw_sha(item.descriptor.makeCompactDescr()) != descriptor_sha:
+            return dict(allowed=False, reason='unsupported_configuration', queued=False)
+        inventory = cache.items.inventory.getCacheValue(1, {})
+        if type(inventory) is not dict or len(inventory) > 32:
+            raise ValueError('bounded profile13 vehicle inventory required')
+        for key in ('compDescr', 'repair', 'crew', 'shells'):
+            if type(inventory.get(key)) is not dict or not 1 <= len(inventory[key]) <= 64:
+                raise ValueError('bounded profile13 inventory column required: ' + key)
+        if _raw_sha(inventory['compDescr'].get(selected)) != descriptor_sha:
+            raise RuntimeError('original selected descriptor and inventory disagree')
+        locks = inventory.get('lock', {})
+        if type(locks) is not dict or len(locks) > 64:
+            raise ValueError('bounded profile13 lock column required')
+        if _integer(locks.get(selected, 0), 0, 255, 'vehicle lock') != 0:
+            return dict(allowed=False, reason='vehicle_reserved', queued=False)
+        repair = inventory['repair'].get(selected)
+        if type(repair) not in (list, tuple) or len(repair) != 2:
+            raise ValueError('original profile13 repair tuple required')
+        repair = tuple(_integer(v, 0, 2147483647, 'repair') for v in repair)
+        crew, raw_crew = item.crew, inventory['crew'].get(selected)
+        if (type(crew) not in (list, tuple) or len(crew) != seats
+                or type(raw_crew) not in (list, tuple) or len(raw_crew) != seats):
+            return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
+        for pair in crew:
+            if type(pair) not in (list, tuple) or len(pair) != 2:
+                raise ValueError('original profile13 crew pairs required')
+        # #717 Vehicle._buildCrew (line 265-287) sorts (seat, Tankman) by
+        # Tankman.TANKMEN_ROLES_ORDER of the seat's first role, not by seat:
+        # T-34 gives seats 0,2,1,3 and T-34-85 0,1,3,2,4. Restore seat order.
+        crew = sorted(crew, key=lambda pair: _integer(pair[0], 0, seats - 1, 'crew seat'))
+        crew_ids = []
+        for seat, pair in enumerate(crew):
+            if pair[0] != seat:
+                raise ValueError('original profile13 crew seats required')
+            man = pair[1]
+            if man is None or raw_crew[seat] is None:
+                return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
+            if (_integer(man.vehicleInvID, 1, 2147483647, 'crew vehicle') != selected
+                    or _integer(man.vehicleSlotIdx, 0, seats - 1, 'crew slot') != seat
+                    or _integer(man.invID, 1, 2147483647, 'crew inventory ID')
+                    != _integer(raw_crew[seat], 1, 2147483647, 'raw crew ID')):
+                raise RuntimeError('original profile13 crew assignment disagrees')
+            crew_ids.append(man.invID)
+        if len(set(crew_ids)) != seats:
+            raise RuntimeError('original profile13 crew identity is duplicated')
+        # #717 Vehicle.isCrewFull (line584) returns False for a missing member,
+        # otherwise len(crew): int2 for MS-1, int5 for IS-7, int0 when empty.
+        # Require that exact complete count, not arbitrary truthiness/bool1.
+        crew_full = item.isCrewFull
+        if crew_full is not False:
+            crew_full = _integer(crew_full, 0, seats, 'isCrewFull') == seats
+        if (repair != (0, health) or not crew_full
+                or not _bool(current.isReadyToFight(), 'isReadyToFight')):
+            return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
+        loaded = _flat(inventory['shells'].get(selected))
+        if p06t_mixed_ammo:
+            counts = loaded[1::2]
+            if (tuple(loaded[::2]) != shell_ids
+                    or any(count < 0 or count > capacity for count in counts)
+                    or not 1 <= sum(counts) <= capacity):
+                return dict(allowed=False, reason='unsupported_mixed_loadout', queued=False)
+        elif (tuple(loaded[::2]) != shell_ids or not 1 <= loaded[1] <= capacity
+                or loaded[3] != 0 or loaded[5] != 0):
+            return dict(allowed=False, reason='unsupported_ap_loadout', queued=False)
+        shells = item.shells
+        if type(shells) not in (tuple, list) or len(shells) != 3:
+            raise ValueError('three original profile13 shell getters required')
+        gui = tuple((_integer(s.intCD, 1, 65535, 'shell ID'),
+                     _integer(s.count, 0, capacity, 'shell count')) for s in shells)
+        if gui != tuple(zip(loaded[::2], loaded[1::2])):
+            raise RuntimeError('original profile13 GUI and loaded ammunition disagree')
+        if world.player() is not player or current.item is not item or current.invID != selected:
+            raise RuntimeError('native Account or selected item changed during profile13 entry check')
+        return dict(allowed=True, reason='supported_profile13_owned_vehicle', queued=False)
+
 
 class _Controller(object):
     """Exact descriptor ownership; isolated dependencies are unit-test seams."""
-    def __init__(self, guard, native, services, record, captcha_guard):
+    def __init__(self, guard, native, services, record, captcha_guard, profile13_battle=False,
+                 p06t_mixed_ammo=False, training_rooms=False):
         if not callable(record):
             raise TypeError('ordinary drive recorder must be callable')
+        if type(profile13_battle) is not bool:
+            raise TypeError('explicit profile13 battle mode required')
+        if (type(p06t_mixed_ammo) is not bool or p06t_mixed_ammo and not profile13_battle):
+            raise TypeError('P06T mixed ammunition requires explicit profile13 battle mode')
+        if (type(training_rooms) is not bool or training_rooms and not profile13_battle):
+            raise TypeError('training rooms require explicit profile13 battle mode')
+        self.training_rooms = training_rooms
         self.captcha_guard = captcha_guard
         self.guard, self.native, self.services, self.record = guard, native, services, record
         self.button_class = guard.button_class
@@ -413,10 +577,17 @@ class _Controller(object):
         self.last_context = None
         self.click_records = 0
         self.shared_lab = False
+        self.profile13_battle = profile13_battle
+        self.p06t_mixed_ammo = p06t_mixed_ammo
         owner = self
 
         def fight(self, mapID=None, actionName=''):
             owner._require_owned()
+            if owner.training_rooms and owner._training_action(self, mapID, actionName):
+                # Preserve native prb dispatch/readiness; no random eligibility/RPC.
+                _emit(owner.record, 'training_rooms_native_action', source_version=TRAINING_SOURCE_VERSION,
+                      server_success_claimed=False)
+                return owner.originals['fightClick'](self, mapID, actionName)
             native_map_id = mapID
             # Verified #717 Flash random-battle callback: float 0.0, ''.
             # Original native RPC requires INT32; retain the native handler.
@@ -430,9 +601,13 @@ class _Controller(object):
             if (mapID is not None and (type(mapID) not in integer_types or mapID != 0)
                     or type(actionName) not in string_types or actionName != ''):
                 return owner.previous['fightClick'](self, mapID, actionName)
-            state = owner.native.eligibility(shared_lab=owner.shared_lab)
+            state = owner._eligibility()
             if not state['allowed']:
                 _emit(owner.record, 'map_drive_client_denied', reason=state['reason'], original_callback_called=False)
+                if owner.profile13_battle:
+                    owner.guard.messages.pushMessage(owner._profile13_notice(state['reason']),
+                                                     type=owner.guard.messages.SM_TYPE.Warning)
+                    return
                 return owner.previous['fightClick'](self, mapID, actionName)
             if not state['queued']:
                 try:
@@ -442,7 +617,7 @@ class _Controller(object):
                     owner.guard.messages.pushMessage(ERROR_NOTICE, type=owner.guard.messages.SM_TYPE.Warning)
                     raise
                 # Event or initialization callbacks may have changed selection.
-                state = owner.native.eligibility(shared_lab=owner.shared_lab)
+                state = owner._eligibility()
                 if not state['allowed'] or state['queued']:
                     raise RuntimeError('native entry state changed during arena service initialization')
             _emit(owner.record, 'map_drive_client_action', phase='begin',
@@ -455,7 +630,10 @@ class _Controller(object):
 
         def disable(self, isDisabled, toolTip):
             owner._require_owned()
-            if owner.native.eligibility(shared_lab=owner.shared_lab)['allowed']:
+            if owner.training_rooms and any(owner._training_context(self)):
+                return owner.originals['_FightButton__disableFightButton'](self, isDisabled, toolTip)
+            state = owner._eligibility()
+            if state['allowed']:
                 if owner.shared_lab:
                     # Original dispatcher readiness describes the owned tank.
                     # Only this owned button is enabled for temporary lab entry;
@@ -463,9 +641,56 @@ class _Controller(object):
                     return owner.originals['_FightButton__disableFightButton'](self, False, SHARED_LAB_TOOLTIP)
                 # Preserve original readiness, tooltip and original Flash call.
                 return owner.originals['_FightButton__disableFightButton'](self, isDisabled, toolTip)
+            if owner.profile13_battle:
+                return owner.originals['_FightButton__disableFightButton'](
+                    self, True, u'{HEADER}Вход в бой недоступен{/HEADER}{BODY}'
+                    + owner._profile13_notice(state['reason']) + u'{/BODY}')
             return owner.previous['_FightButton__disableFightButton'](self, isDisabled, toolTip)
 
         self.replacements = (('fightClick', fight), ('_FightButton__disableFightButton', disable))
+
+    def _training_context(self, button):
+        state = self.native.training_context(button)
+        if type(state) is not tuple or len(state) != 2 or any(type(v) is not bool for v in state):
+            raise TypeError('exact native training context booleans required')
+        return state
+
+    def _training_action(self, button, map_id, action_name):
+        # Literal action values pinned in PREBATTLE_ACTION_NAME #717. Only a
+        # joined training room may delegate blank/prebattleLeave callbacks.
+        if (type(action_name) not in string_types or
+                map_id is not None and (type(map_id) not in integer_types + (float,) or map_id != 0)):
+            return False
+        in_room, in_list = self._training_context(button)
+        delegate = (action_name == 'trainingList' or
+                    action_name == 'leaveTrainingList' and in_list or
+                    action_name in ('', 'prebattleLeave') and in_room)
+        if delegate and not self.services.initialized:
+            raise RuntimeError('explicit training arena services not ready')
+        return delegate
+
+    def prepare_training_rooms(self):
+        self._require_owned()
+        if not self.training_rooms or not self.profile13_battle or self.shared_lab:
+            raise RuntimeError('explicit isolated training mode required')
+        # Native popover and TrainingRoom start bypass FightButton, so prepare
+        # services before any UI action. No Entity/RPC/ready/ammo is generated.
+        self.services.initialize()
+        self._require_owned()
+        if not self.services.initialized:
+            raise RuntimeError('training original arena services not initialized')
+        _emit(self.record, 'training_rooms_services_ready', source_version=TRAINING_SOURCE_VERSION,
+              gameplay_applied=False, authority='server', original_readiness_unchanged=True)
+
+    def _eligibility(self):
+        if self.profile13_battle:
+            if self.p06t_mixed_ammo:
+                return self.native.eligibility(profile13_battle=True, p06t_mixed_ammo=True)
+            return self.native.eligibility(profile13_battle=True)
+        return self.native.eligibility(shared_lab=self.shared_lab)
+
+    def _profile13_notice(self, reason):
+        return PROFILE13_NOTICE + PROFILE13_REASONS.get(reason, u'Дождитесь готовности своего аккаунта и ангара.')
 
     def _require_owned(self):
         self.captcha_guard.require_ready()
@@ -492,7 +717,10 @@ class _Controller(object):
         self.active = True
         _emit(self.record, 'map_drive_client_policy', phase='install', ordinary=True,
               bindings=[name for name, _ in self.replacements], native_input_unchanged=True,
-              original_ammo_check_preserved=True, automatic_quit=False)
+              original_ammo_check_preserved=True, automatic_quit=False,
+              profile13_battle=self.profile13_battle, p06t_mixed_ammo=self.p06t_mixed_ammo,
+              training_rooms=self.training_rooms,
+              admission_authority='server')
 
     def restore(self):
         if not self.installed:
@@ -517,9 +745,14 @@ class _Controller(object):
         return context
 
 
-def init(record):
+def init(record, profile13_battle=False, p06t_mixed_ammo=False, training_rooms=False):
     """Root invokes only for an explicitly installed ordinary service feature."""
     global _controller, _captcha_guard, _attempted
+    if (type(profile13_battle) is not bool or type(p06t_mixed_ammo) is not bool
+            or p06t_mixed_ammo and not profile13_battle):
+        raise TypeError('P06T mixed ammunition requires explicit profile13 battle mode')
+    if type(training_rooms) is not bool or training_rooms and not profile13_battle:
+        raise TypeError('training rooms require explicit profile13 battle mode')
     if _attempted:
         raise RuntimeError('ordinary drive initialization already attempted')
     if not callable(record):
@@ -528,15 +761,19 @@ def init(record):
     import hangar_capabilities as policy
     guard = policy._battle_guard
     _audit_originals(policy, guard)
-    sources = _audit_sources(policy)
+    sources = _audit_sources(policy, training_rooms=True) if training_rooms else _audit_sources(policy)
     _captcha_guard = _CaptchaGuard(_load_captcha_class(), record)
-    _controller = _Controller(guard, _Native(), _Services(record), record, _captcha_guard)
+    _controller = _Controller(guard, _Native(), _Services(record), record, _captcha_guard,
+                              profile13_battle=profile13_battle, p06t_mixed_ammo=p06t_mixed_ammo,
+                              training_rooms=training_rooms)
     try:
         _emit(record, 'map_drive_client_provenance', sources=sources,
               original_method_code_sha256=dict((r[0], r[4]) for r in policy.BATTLE_METHODS),
               captcha_method_code_sha256=CAPTCHA_CODE_SHA256)
         _captcha_guard.install()  # Must precede enabling the original button.
         _controller.install()
+        if training_rooms:
+            _controller.prepare_training_rooms()
     except Exception as error:
         failures = []
         for name, restore in (('policy', _controller.restore), ('captcha', _captcha_guard.restore)):
@@ -562,6 +799,8 @@ def prepare_shared_lab(record):
     """
     if not is_active() or record is not _controller.record:
         raise RuntimeError('shared lab requires the owned ordinary service controller')
+    if _controller.profile13_battle:
+        raise RuntimeError('profile13 owned vehicles cannot use temporary shared lab admission')
     _controller._require_owned()
     _controller.services.initialize()
     _controller._require_owned()

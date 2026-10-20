@@ -67,6 +67,13 @@ python -B -X utf8 server/build.py gateway --test --out local/build/server/gatewa
 python -B -X utf8 server/build.py physics --out local/build/server/physics-check-03
 ```
 
+Если проектному диску не хватает места, canonical gateway поддерживает явный
+`--cargo-temp-target`. Драйвер создаёт новый `wot091-cargo-*` только в системном
+временном каталоге другого локального диска, сохраняет provenance и Cargo logs,
+затем копирует exe в обычный `--out/target/debug` с проверкой SHA до/после.
+Промежуточные файлы остаются для аудита; автоматической очистки нет. Произвольный
+внешний путь, `physics` и `--legacy` с этим флагом не принимаются.
+
 Gateway создаёт `sr-gateway.exe`. Проект физики называется `PhysicsWorker.csproj`;
 assembly пока сохраняет имя `MapDriveWorker` для действующего IPC/loader.
 `--legacy` проверяет старую Cargo/MSBuild точку сборки на тех же исходниках.

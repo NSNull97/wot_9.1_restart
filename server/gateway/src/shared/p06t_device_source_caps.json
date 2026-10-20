@@ -1,0 +1,569 @@
+{
+  "schema": "p06t-device-source-caps.v1",
+  "classification": "VERIFIED_STATIC_ORIGINAL_717",
+  "source_pins": {
+    "res/scripts/item_defs/vehicles/common/vehicle.xml": {
+      "bytes": 13786,
+      "sha256": "599ea82e48e98bf9a00c10256030097da31ce5d5889fa03737bc3b79230d256a"
+    },
+    "res/scripts/item_defs/vehicles/ussr/components/engines.xml": {
+      "bytes": 16153,
+      "sha256": "196e52561bd04d2d4e5838442f62704456f4b901627248e04b2c9bd37d32f60d"
+    },
+    "res/scripts/item_defs/vehicles/ussr/components/fueltanks.xml": {
+      "bytes": 457,
+      "sha256": "1f182b76fceeabf2ff1d828cc5b2aea37b94585f78488bd2dd7c195f8862b013"
+    },
+    "res/scripts/item_defs/vehicles/ussr/components/radios.xml": {
+      "bytes": 3986,
+      "sha256": "099292b8b5f5e250b2cd506419d18620f4f2504950776b54983bc303b2ca201a"
+    },
+    "res/scripts/item_defs/vehicles/ussr/components/guns.xml": {
+      "bytes": 58493,
+      "sha256": "889fe1564987566478c474ddfef21cbc7742d23bebd19f6a200c59bfafd7d87b"
+    },
+    "res/scripts/item_defs/vehicles/ussr/ms-1.xml": {
+      "bytes": 11839,
+      "sha256": "a494bf04d29da7d066fd6923dbb75a79b947559a52405298c494a943c4b0c535"
+    },
+    "res/scripts/item_defs/vehicles/ussr/is-7.xml": {
+      "bytes": 5809,
+      "sha256": "8d55fa4657a88f1436cd164afe11bade875a906fa7b97256f1fb2f803b09c10d"
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-26.xml": {
+      "bytes": 11010,
+      "sha256": "ade0230c2511d64ef38d7e3f7bb850ede2004e0f2f39648031d763a884cfe3f8"
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-34.xml": {
+      "bytes": 11912,
+      "sha256": "eb83065dace1ca39e93c225c319b3ab857d790f8ea34abcabeb58d6e7138183b"
+    },
+    "res/scripts/item_defs/vehicles/ussr/t-34-85.xml": {
+      "bytes": 18759,
+      "sha256": "3b69621a659e3369eddaefd078e7a6d3dbc52f8271c2c3318839956d3021cb92"
+    }
+  },
+  "profiles": [
+    {
+      "profile": "ms1-stock",
+      "vehicle_max_health": 90,
+      "devices": [
+        {
+          "device": "engine",
+          "extra_index": 26,
+          "max_health": 25,
+          "max_regen_health": 17,
+          "source_prefix": "/shared[1]/MS-1[1]"
+        },
+        {
+          "device": "ammoBay",
+          "extra_index": 27,
+          "max_health": 60,
+          "max_regen_health": 40,
+          "source_prefix": "/hull[1]/ammoBayHealth[1]"
+        },
+        {
+          "device": "fuelTank",
+          "extra_index": 28,
+          "max_health": 100,
+          "max_regen_health": 40,
+          "source_prefix": "/shared[1]/Small[1]"
+        },
+        {
+          "device": "radio",
+          "extra_index": 29,
+          "max_health": 90,
+          "max_regen_health": 75,
+          "source_prefix": "/shared[1]/Alarm_flags[1]"
+        },
+        {
+          "device": "leftTrack",
+          "extra_index": 30,
+          "max_health": 40,
+          "max_regen_health": 30,
+          "source_prefix": "/chassis[1]/T-18[1]"
+        },
+        {
+          "device": "rightTrack",
+          "extra_index": 31,
+          "max_health": 40,
+          "max_regen_health": 30,
+          "source_prefix": "/chassis[1]/T-18[1]"
+        },
+        {
+          "device": "gun",
+          "extra_index": 32,
+          "max_health": 54,
+          "max_regen_health": 27,
+          "source_prefix": "/shared[1]/_37mm_Gochkins[1]"
+        },
+        {
+          "device": "turretRotator",
+          "extra_index": 33,
+          "max_health": 50,
+          "max_regen_health": 25,
+          "source_prefix": "/turrets0[1]/T-18_Standart[1]/turretRotatorHealth[1]"
+        },
+        {
+          "device": "surveyingDevice",
+          "extra_index": 34,
+          "max_health": 30,
+          "max_regen_health": 15,
+          "source_prefix": "/turrets0[1]/T-18_Standart[1]/surveyingDeviceHealth[1]"
+        }
+      ],
+      "crew": [
+        {
+          "seat": 0,
+          "extra_index": 35,
+          "roles": [
+            "commander",
+            "gunner",
+            "radioman",
+            "loader"
+          ]
+        },
+        {
+          "seat": 1,
+          "extra_index": 36,
+          "roles": [
+            "driver"
+          ]
+        }
+      ],
+      "engine_fire_starting_chance": 0.2,
+      "internal_volumes": "UNKNOWN",
+      "crew_health_numeric": "UNKNOWN; bool wounded state is laboratory policy"
+    },
+    {
+      "profile": "is7-stock",
+      "vehicle_max_health": 2150,
+      "devices": [
+        {
+          "device": "engine",
+          "extra_index": 26,
+          "max_health": 360,
+          "max_regen_health": 180,
+          "source_prefix": "/shared[1]/M-50T[1]"
+        },
+        {
+          "device": "ammoBay",
+          "extra_index": 27,
+          "max_health": 210,
+          "max_regen_health": 140,
+          "source_prefix": "/hull[1]/ammoBayHealth[1]"
+        },
+        {
+          "device": "fuelTank",
+          "extra_index": 28,
+          "max_health": 200,
+          "max_regen_health": 80,
+          "source_prefix": "/shared[1]/Large[1]"
+        },
+        {
+          "device": "radio",
+          "extra_index": 29,
+          "max_health": 250,
+          "max_regen_health": 75,
+          "source_prefix": "/shared[1]/_10RK-26[1]"
+        },
+        {
+          "device": "leftTrack",
+          "extra_index": 30,
+          "max_health": 250,
+          "max_regen_health": 190,
+          "source_prefix": "/chassis[1]/IS-7[1]"
+        },
+        {
+          "device": "rightTrack",
+          "extra_index": 31,
+          "max_health": 250,
+          "max_regen_health": 190,
+          "source_prefix": "/chassis[1]/IS-7[1]"
+        },
+        {
+          "device": "gun",
+          "extra_index": 32,
+          "max_health": 210,
+          "max_regen_health": 105,
+          "source_prefix": "/shared[1]/_130mm_S-70[1]"
+        },
+        {
+          "device": "turretRotator",
+          "extra_index": 33,
+          "max_health": 170,
+          "max_regen_health": 85,
+          "source_prefix": "/turrets0[1]/IS-7[1]/turretRotatorHealth[1]"
+        },
+        {
+          "device": "surveyingDevice",
+          "extra_index": 34,
+          "max_health": 120,
+          "max_regen_health": 60,
+          "source_prefix": "/turrets0[1]/IS-7[1]/surveyingDeviceHealth[1]"
+        }
+      ],
+      "crew": [
+        {
+          "seat": 0,
+          "extra_index": 35,
+          "roles": [
+            "commander"
+          ]
+        },
+        {
+          "seat": 1,
+          "extra_index": 39,
+          "roles": [
+            "gunner"
+          ]
+        },
+        {
+          "seat": 2,
+          "extra_index": 36,
+          "roles": [
+            "driver"
+          ]
+        },
+        {
+          "seat": 3,
+          "extra_index": 41,
+          "roles": [
+            "loader"
+          ]
+        },
+        {
+          "seat": 4,
+          "extra_index": 42,
+          "roles": [
+            "loader",
+            "radioman"
+          ]
+        }
+      ],
+      "engine_fire_starting_chance": 0.15,
+      "internal_volumes": "UNKNOWN",
+      "crew_health_numeric": "UNKNOWN; bool wounded state is laboratory policy"
+    },
+    {
+      "profile": "t26-stock",
+      "vehicle_max_health": 150,
+      "devices": [
+        {
+          "device": "engine",
+          "extra_index": 26,
+          "max_health": 40,
+          "max_regen_health": 20,
+          "source_prefix": "/shared[1]/T-26[1]"
+        },
+        {
+          "device": "ammoBay",
+          "extra_index": 27,
+          "max_health": 75,
+          "max_regen_health": 50,
+          "source_prefix": "/hull[1]/ammoBayHealth[1]"
+        },
+        {
+          "device": "fuelTank",
+          "extra_index": 28,
+          "max_health": 100,
+          "max_regen_health": 40,
+          "source_prefix": "/shared[1]/Small[1]"
+        },
+        {
+          "device": "radio",
+          "extra_index": 29,
+          "max_health": 100,
+          "max_regen_health": 49,
+          "source_prefix": "/shared[1]/_71-TK-1[1]"
+        },
+        {
+          "device": "leftTrack",
+          "extra_index": 30,
+          "max_health": 50,
+          "max_regen_health": 40,
+          "source_prefix": "/chassis[1]/T-26[1]"
+        },
+        {
+          "device": "rightTrack",
+          "extra_index": 31,
+          "max_health": 50,
+          "max_regen_health": 40,
+          "source_prefix": "/chassis[1]/T-26[1]"
+        },
+        {
+          "device": "gun",
+          "extra_index": 32,
+          "max_health": 54,
+          "max_regen_health": 27,
+          "source_prefix": "/shared[1]/_37mm_B-3[1]"
+        },
+        {
+          "device": "turretRotator",
+          "extra_index": 33,
+          "max_health": 60,
+          "max_regen_health": 30,
+          "source_prefix": "/turrets0[1]/T-26_cylindrical[1]/turretRotatorHealth[1]"
+        },
+        {
+          "device": "surveyingDevice",
+          "extra_index": 34,
+          "max_health": 40,
+          "max_regen_health": 20,
+          "source_prefix": "/turrets0[1]/T-26_cylindrical[1]/surveyingDeviceHealth[1]"
+        }
+      ],
+      "crew": [
+        {
+          "seat": 0,
+          "extra_index": 35,
+          "roles": [
+            "commander",
+            "radioman"
+          ]
+        },
+        {
+          "seat": 1,
+          "extra_index": 36,
+          "roles": [
+            "driver"
+          ]
+        },
+        {
+          "seat": 2,
+          "extra_index": 39,
+          "roles": [
+            "gunner",
+            "loader"
+          ]
+        }
+      ],
+      "engine_fire_starting_chance": 0.2,
+      "internal_volumes": "UNKNOWN",
+      "crew_health_numeric": "UNKNOWN; bool wounded state is laboratory policy"
+    },
+    {
+      "profile": "t34-stock",
+      "vehicle_max_health": 400,
+      "devices": [
+        {
+          "device": "engine",
+          "extra_index": 26,
+          "max_health": 105,
+          "max_regen_health": 52,
+          "source_prefix": "/shared[1]/V-2[1]"
+        },
+        {
+          "device": "ammoBay",
+          "extra_index": 27,
+          "max_health": 130,
+          "max_regen_health": 85,
+          "source_prefix": "/hull[1]/ammoBayHealth[1]"
+        },
+        {
+          "device": "fuelTank",
+          "extra_index": 28,
+          "max_health": 150,
+          "max_regen_health": 60,
+          "source_prefix": "/shared[1]/Average[1]"
+        },
+        {
+          "device": "radio",
+          "extra_index": 29,
+          "max_health": 110,
+          "max_regen_health": 55,
+          "source_prefix": "/shared[1]/_9R[1]"
+        },
+        {
+          "device": "leftTrack",
+          "extra_index": 30,
+          "max_health": 90,
+          "max_regen_health": 70,
+          "source_prefix": "/chassis[1]/T-34_mod_1941[1]"
+        },
+        {
+          "device": "rightTrack",
+          "extra_index": 31,
+          "max_health": 90,
+          "max_regen_health": 70,
+          "source_prefix": "/chassis[1]/T-34_mod_1941[1]"
+        },
+        {
+          "device": "gun",
+          "extra_index": 32,
+          "max_health": 106,
+          "max_regen_health": 53,
+          "source_prefix": "/shared[1]/_76mm_L-11[1]"
+        },
+        {
+          "device": "turretRotator",
+          "extra_index": 33,
+          "max_health": 100,
+          "max_regen_health": 50,
+          "source_prefix": "/turrets0[1]/T-34_mod_1940[1]/turretRotatorHealth[1]"
+        },
+        {
+          "device": "surveyingDevice",
+          "extra_index": 34,
+          "max_health": 70,
+          "max_regen_health": 35,
+          "source_prefix": "/turrets0[1]/T-34_mod_1940[1]/surveyingDeviceHealth[1]"
+        }
+      ],
+      "crew": [
+        {
+          "seat": 0,
+          "extra_index": 35,
+          "roles": [
+            "commander",
+            "gunner"
+          ]
+        },
+        {
+          "seat": 1,
+          "extra_index": 37,
+          "roles": [
+            "radioman"
+          ]
+        },
+        {
+          "seat": 2,
+          "extra_index": 36,
+          "roles": [
+            "driver"
+          ]
+        },
+        {
+          "seat": 3,
+          "extra_index": 41,
+          "roles": [
+            "loader"
+          ]
+        }
+      ],
+      "engine_fire_starting_chance": 0.15,
+      "internal_volumes": "UNKNOWN",
+      "crew_health_numeric": "UNKNOWN; bool wounded state is laboratory policy"
+    },
+    {
+      "profile": "t3485-stock",
+      "vehicle_max_health": 670,
+      "devices": [
+        {
+          "device": "engine",
+          "extra_index": 26,
+          "max_health": 145,
+          "max_regen_health": 72,
+          "source_prefix": "/shared[1]/V-2-34[1]"
+        },
+        {
+          "device": "ammoBay",
+          "extra_index": 27,
+          "max_health": 140,
+          "max_regen_health": 90,
+          "source_prefix": "/hull[1]/ammoBayHealth[1]"
+        },
+        {
+          "device": "fuelTank",
+          "extra_index": 28,
+          "max_health": 150,
+          "max_regen_health": 60,
+          "source_prefix": "/shared[1]/Average[1]"
+        },
+        {
+          "device": "radio",
+          "extra_index": 29,
+          "max_health": 110,
+          "max_regen_health": 55,
+          "source_prefix": "/shared[1]/_9R[1]"
+        },
+        {
+          "device": "leftTrack",
+          "extra_index": 30,
+          "max_health": 110,
+          "max_regen_health": 85,
+          "source_prefix": "/chassis[1]/T-34-85[1]"
+        },
+        {
+          "device": "rightTrack",
+          "extra_index": 31,
+          "max_health": 110,
+          "max_regen_health": 85,
+          "source_prefix": "/chassis[1]/T-34-85[1]"
+        },
+        {
+          "device": "gun",
+          "extra_index": 32,
+          "max_health": 130,
+          "max_regen_health": 65,
+          "source_prefix": "/shared[1]/_76mm_S-54[1]"
+        },
+        {
+          "device": "turretRotator",
+          "extra_index": 33,
+          "max_health": 120,
+          "max_regen_health": 60,
+          "source_prefix": "/turrets0[1]/T-34-85[1]/turretRotatorHealth[1]"
+        },
+        {
+          "device": "surveyingDevice",
+          "extra_index": 34,
+          "max_health": 80,
+          "max_regen_health": 40,
+          "source_prefix": "/turrets0[1]/T-34-85[1]/surveyingDeviceHealth[1]"
+        }
+      ],
+      "crew": [
+        {
+          "seat": 0,
+          "extra_index": 35,
+          "roles": [
+            "commander"
+          ]
+        },
+        {
+          "seat": 1,
+          "extra_index": 39,
+          "roles": [
+            "gunner"
+          ]
+        },
+        {
+          "seat": 2,
+          "extra_index": 37,
+          "roles": [
+            "radioman"
+          ]
+        },
+        {
+          "seat": 3,
+          "extra_index": 36,
+          "roles": [
+            "driver"
+          ]
+        },
+        {
+          "seat": 4,
+          "extra_index": 41,
+          "roles": [
+            "loader"
+          ]
+        }
+      ],
+      "engine_fire_starting_chance": 0.15,
+      "internal_volumes": "UNKNOWN",
+      "crew_health_numeric": "UNKNOWN; bool wounded state is laboratory policy"
+    }
+  ],
+  "min_fire_starting_damage": 21,
+  "unknowns": [
+    "internal module/crew volumes",
+    "historical critical threshold",
+    "burn/repair rates and RNG algorithm"
+  ],
+  "notes": [
+    "Crew ordinal/combined seats retain earlier verified P06T and P04M source bindings. No deduplication of loaders.",
+    "Source maxRegenHealth does not establish critical threshold or repair algorithm.",
+    "No original client code was imported or executed."
+  ]
+}

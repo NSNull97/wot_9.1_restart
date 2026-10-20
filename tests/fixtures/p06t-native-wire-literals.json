@@ -1,0 +1,105 @@
+{
+  "schema": "p06t-static-derived-wire-literals.v1",
+  "classification": "STATIC_SOURCE_DERIVED_EXAMPLES_NOT_CAPTURED_PACKETS",
+  "source_json_sha256": "ad207ec122770e51e068c87324a026db2024025070f490c86999ae3c8aa75ed1",
+  "sample_target_entity_id": 1002,
+  "sample_attacker_entity_id": 1001,
+  "native": "NOT_RUN",
+  "fixtures": [
+    {
+      "name": "ammo-t26-capacity160",
+      "method": "Avatar.updateVehicleAmmo",
+      "hex": "13440a040000a000000000"
+    },
+    {
+      "name": "ammo-wt128-clip6",
+      "method": "Avatar.updateVehicleAmmo",
+      "hex": "13441a3600003c00060000"
+    },
+    {
+      "name": "ammo-wt150-clip4",
+      "method": "Avatar.updateVehicleAmmo",
+      "hex": "13441a4c00003c00040000"
+    },
+    {
+      "name": "current-ms1-heat",
+      "method": "Avatar.updateVehicleSetting",
+      "hex": "1340000a0b0000"
+    },
+    {
+      "name": "next-ms1-he",
+      "method": "Avatar.updateVehicleSetting",
+      "hex": "1340010a0c0000"
+    },
+    {
+      "name": "input-partial-clip-zero",
+      "method": "BaseAvatar.vehicle_changeSetting",
+      "hex": "8d05001100000000"
+    },
+    {
+      "name": "reload-wt-left2-base60",
+      "method": "Avatar.updateVehicleGunReloadTime",
+      "hex": "1346ea0300000000004000007042"
+    },
+    {
+      "name": "reload-wt-complete-base60",
+      "method": "Avatar.updateVehicleGunReloadTime",
+      "hex": "1346ea0300000000000000007042"
+    },
+    {
+      "name": "fire-start",
+      "method": "Vehicle.publicStateModifiers",
+      "hex": "12ea030000a505010000000413"
+    },
+    {
+      "name": "fire-end",
+      "method": "Vehicle.publicStateModifiers",
+      "hex": "12ea030000a5040000000013"
+    },
+    {
+      "name": "fire-preserve-engine-start",
+      "method": "Vehicle.publicStateModifiers",
+      "hex": "12ea030000a506020000001a0413"
+    },
+    {
+      "name": "fire-preserve-engine-end",
+      "method": "Vehicle.publicStateModifiers",
+      "hex": "12ea030000a505010000001a13"
+    },
+    {
+      "name": "critical-shot-gun",
+      "method": "Avatar.showVehicleDamageInfo",
+      "hex": "1345ea0300000420e9030000"
+    },
+    {
+      "name": "owner-fire-start",
+      "method": "Avatar.showVehicleDamageInfo",
+      "hex": "1345ea0300000300e9030000"
+    },
+    {
+      "name": "owner-fire-stop",
+      "method": "Avatar.showVehicleDamageInfo",
+      "hex": "1345ea030000230000000000"
+    },
+    {
+      "name": "owner-HP90-inactive-crew",
+      "method": "Avatar.updateVehicleHealth",
+      "hex": "133f5a0000"
+    },
+    {
+      "name": "public-inactive-crew",
+      "method": "Vehicle.isCrewActive",
+      "hex": "12ea0300009f0013"
+    },
+    {
+      "name": "is7-he-explosion-center",
+      "method": "Vehicle.showDamageFromExplosion",
+      "hex": "12ea03000040e90300000000c03f00000040000050c00f13"
+    },
+    {
+      "name": "ammo-bay-visual-only",
+      "method": "Vehicle.showAmmoBayExplosion",
+      "hex": "12ea0300003d000000400000404013"
+    }
+  ]
+}

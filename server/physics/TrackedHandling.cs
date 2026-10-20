@@ -12,7 +12,10 @@ internal sealed class TrackedHandling
     private const float OuterPivotFrictionFraction = .001f;
     // Owner run 2026-10-14: 4% outer grip slid sideways on slopes in moving
     // turns. Low scrub stays limited to near-rest pivots.
-    private const float OuterMovingFrictionFraction = .4f;
+    // Keep enough outer-track grip for a powered turn to climb a grade.  The
+    // former .4 fraction could spend nearly all IS-7 torque on lateral scrub.
+    private const float OuterMovingFrictionFraction = .25f;
+    private const float PoweredTurnMinimumRatio = .2f;
     private const float MovingGripStartSpeed = 1.5f, MovingGripFullSpeed = 4f;
     // Hysteresis: a released-throttle turn starts above 1.5 m/s and hands
     // off to the pivot below 1 m/s, so the turn does not fade near rest.
@@ -25,6 +28,29 @@ internal sealed class TrackedHandling
     // decelerations so MS-1 and IS-7 behave alike; each is capped by that
     // track's source brake torque. Project policy, m/s^2.
     private const float CoastInnerDeceleration = 8f, CoastOuterDeceleration = 2f;
+    // Shared-battle test_lab policy: powered steering dissipates inner-track
+    // energy at speed. Preserve launch/pivot forces through 4 m/s, then blend
+    // to 2 m/s^2 at 8 m/s. These are project thresholds, not historical data.
+    private const float PoweredInnerDeceleration = 2f;
+    private const float PoweredBrakeStartSpeed = 4f, PoweredBrakeFullSpeed = 8f;
+    // Owner runs 2026-10-17 (contact129) and 2026-10-19 (full-test): W+A/D kept
+    // or exceeded the straight-line speed, because the governor watched only
+    // centre speed while the lateral budget keeps the yaw small at speed.
+    // With the same shared policy flag, a powered turn now shares drivetrain
+    // speed with hull rotation: the travel limit falls linearly to 60% at the
+    // full chassis yaw rate, and an overspeed is dissipated on both tracks.
+    // Project policy; the historical 0.9.1 turn-speed relation is UNKNOWN.
+    private const float PoweredTurnSpeedShare = .4f, TurnOverspeedDeceleration = 2.5f, TurnOverspeedMargin = .25f;
+    // Owner run 2026-10-20 (T-34 vs T-34-85): releasing W while holding A/D
+    // still circled ~308 degrees in 13.6 s, keeping 5.8 of 12.3 m/s; the
+    // near-pivot brakes below engage only under 1.25 m/s. The gateway maps
+    // no keys to a full brake (#717 movement flags 0), but a steer-only key
+    // has no forward request at all. With the shared policy flag the whole
+    // rolling turn is a clutch-brake turn: inner track harder than outer, so
+    // the hull keeps turning while forward speed is shed. Per-track half-mass
+    // decelerations, capped by source brake torque. Project policy, m/s^2;
+    // the historical 0.9.1 coast law is UNKNOWN.
+    private const float CoastTurnInnerDeceleration = 6f, CoastTurnOuterDeceleration = 3f;
     // Released-throttle turns keep pivot-level scrub; the higher moving-turn
     // grip is for powered turns on slopes.
     private const float CoastOuterFrictionFraction = .001f;
@@ -36,9 +62,11 @@ internal sealed class TrackedHandling
     private const float MotorRampPerSecond = 4f;
     public const float GearSwitchTime = .15f, ClutchReleaseTime = .1f, GearSwitchLatency = .2f;
     private readonly float width, maximumYaw, halfMass, radius;
+    private readonly bool poweredTurnLoss, intentReversalBrake;
     private readonly WheelSettingsTV[] wheels;
     private readonly float[] lateral;
     private float yawTarget, motorInput;
+    private int lastThrottle, reversalIntent;
     // 0: ordinary drive/pivot; 1: rolling turn; 2: near-rest ratio transition.
     private int coastPhase, coastDirection;
     private float coastTransitionTime;
@@ -55,13 +83,16 @@ internal sealed class TrackedHandling
         return MathF.Max(10, .02f * massKg * radius * radius);
     }
 
-    public TrackedHandling(float trackWidth, float maxYawRate, float massKg, WheelSettingsTV[] supportWheels)
+    public TrackedHandling(float trackWidth, float maxYawRate, float massKg, WheelSettingsTV[] supportWheels,
+        bool enablePoweredTurnLoss = false, bool enableIntentReversalBrake = false)
     {
         if (!float.IsFinite(trackWidth) || trackWidth < .5f || trackWidth > 5 ||
             !float.IsFinite(maxYawRate) || maxYawRate < .05f || maxYawRate > 2 ||
             !float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || supportWheels.Length != 6)
             throw new InvalidDataException("tracked handling geometry/yaw/mass/support bounds");
         width = trackWidth; maximumYaw = maxYawRate; wheels = supportWheels;
+        poweredTurnLoss = enablePoweredTurnLoss;
+        intentReversalBrake = enableIntentReversalBrake;
         halfMass = massKg / 2; radius = wheels[0].Radius;
         lateral = wheels.Select(w => w.LateralFriction).ToArray();
         if (lateral.Any(x => !float.IsFinite(x) || x < .1f || x > 2))
@@ -84,6 +115,11 @@ internal sealed class TrackedHandling
             !float.IsFinite(forwardLimit) || forwardLimit <= 0 ||
             !float.IsFinite(reverseLimit) || reverseLimit <= 0 || (brake && (throttle != 0 || steer != 0)))
             throw new InvalidDataException("tracked handling command bounds");
+
+        // Only validated raw throttle changes express a new direction intent.
+        // Repeated held commands, governor cuts and gravity are not key edges.
+        int previousThrottle = lastThrottle;
+        if (intentReversalBrake) lastThrottle = throttle;
 
         float speed = MathF.Abs(signedSpeed);
         if (brake || throttle != 0 || steer == 0) coastPhase = 0;
@@ -172,14 +208,21 @@ internal sealed class TrackedHandling
                 float turn = Math.Clamp(yawTarget + correction, -yawLimit * 1.5f, yawLimit * 1.5f) * width / 2;
                 float leftSpeed = basisSpeed + turn, rightSpeed = basisSpeed - turn;
                 float divisor = MathF.Max(MathF.Abs(leftSpeed), MathF.Abs(rightSpeed));
-                left = MathF.Max(.05f, ratioDirection * leftSpeed / divisor);
-                right = MathF.Max(.05f, ratioDirection * rightSpeed / divisor);
+                float minimum = throttle != 0 && steer != 0 ? PoweredTurnMinimumRatio : .05f;
+                left = MathF.Max(minimum, ratioDirection * leftSpeed / divisor);
+                right = MathF.Max(minimum, ratioDirection * rightSpeed / divisor);
             }
         }
         if (steer == 0 && throttle == 0) motor = 0;
-        if ((throttle > 0 && signedSpeed >= forwardLimit) || (throttle < 0 && signedSpeed <= -reverseLimit)) motor = 0;
+        bool poweredTurn = poweredTurnLoss && !brake && coastPhase == 0 && throttle != 0 && steer != 0;
+        float turnScale = poweredTurn ? 1 - PoweredTurnSpeedShare * Math.Clamp(MathF.Abs(yawTarget) / maximumYaw, 0, 1) : 1;
+        float governed = (throttle < 0 ? reverseLimit : forwardLimit) * turnScale;
+        if ((throttle > 0 && signedSpeed >= forwardLimit * turnScale) || (throttle < 0 && signedSpeed <= -reverseLimit * turnScale)) motor = 0;
         float brakeInput = brake ? 1 : 0;
-        if (coastPhase == 1)
+        // A rolling steer request carries momentum.  Engage the stronger
+        // clutch/brake hand-off only inside the pivot window; doing it during
+        // the whole moving turn looked like an accidental full stop.
+        if (coastPhase == 1 && speed <= CoastPivotSpeed + .25f)
         {
             // Bounded by the inner track's own brake torque and never past
             // zero: this can only dissipate track speed, not add energy.
@@ -188,10 +231,51 @@ internal sealed class TrackedHandling
             Dissipate(inner, TrackBrake(inner, CoastInnerDeceleration, deltaTime));
             Dissipate(outer, TrackBrake(outer, CoastOuterDeceleration, deltaTime));
         }
-        if (throttle != 0 && throttle * signedSpeed < -ReversalBrakeSpeed)
+        else if (coastPhase == 1 && poweredTurnLoss)
         {
-            motor = 0;
-            brakeInput = 1;
+            // Can only dissipate track speed, never past zero (see above).
+            var inner = steer > 0 ? controller.RightTrack : controller.LeftTrack;
+            var outer = steer > 0 ? controller.LeftTrack : controller.RightTrack;
+            Dissipate(inner, TrackBrake(inner, CoastTurnInnerDeceleration, deltaTime));
+            Dissipate(outer, TrackBrake(outer, CoastTurnOuterDeceleration, deltaTime));
+        }
+        if (!intentReversalBrake)
+        {
+            if (throttle != 0 && throttle * signedSpeed < -ReversalBrakeSpeed)
+            {
+                motor = 0;
+                brakeInput = 1;
+            }
+        }
+        else
+        {
+            if (brake || throttle == 0 || (reversalIntent != 0 && reversalIntent != throttle))
+                reversalIntent = 0;
+            if (!brake && throttle != 0 && throttle != previousThrottle && throttle * signedSpeed < -ReversalBrakeSpeed)
+                reversalIntent = throttle;
+            // Preserve the old -0.5 m/s exit. A held intent cannot rearm after
+            // completing this first brake phase merely because it rolls back.
+            if (reversalIntent != 0 && throttle * signedSpeed >= -ReversalBrakeSpeed)
+                reversalIntent = 0;
+            if (reversalIntent != 0)
+            {
+                motor = 0;
+                brakeInput = 1;
+            }
+        }
+        if (poweredTurnLoss && !brake && coastPhase == 0 && throttle != 0 && steer != 0 &&
+            motor != 0 && brakeInput == 0 && throttle * signedSpeed > PoweredBrakeStartSpeed)
+        {
+            var inner = steer > 0 ? controller.RightTrack : controller.LeftTrack;
+            float speedBlend = Math.Clamp((speed - PoweredBrakeStartSpeed) /
+                (PoweredBrakeFullSpeed - PoweredBrakeStartSpeed), 0, 1);
+            float yawFraction = Math.Clamp(MathF.Abs(yawTarget) / maximumYaw, 0, 1);
+            Dissipate(inner, TrackBrake(inner, PoweredInnerDeceleration * speedBlend * yawFraction, deltaTime));
+        }
+        if (poweredTurn && brakeInput == 0 && throttle * signedSpeed > governed + TurnOverspeedMargin)
+        {
+            Dissipate(controller.LeftTrack, TrackBrake(controller.LeftTrack, TurnOverspeedDeceleration, deltaTime));
+            Dissipate(controller.RightTrack, TrackBrake(controller.RightTrack, TurnOverspeedDeceleration, deltaTime));
         }
         // A direction change cancels the old request immediately. Ramping
         // through zero would keep driving the wrong way for half a second.

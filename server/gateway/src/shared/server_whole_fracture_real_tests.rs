@@ -91,13 +91,13 @@ fn wait_owned_exit(pid:u32,deadline:Instant) {
 
 fn run_case(case:&Case) {
     let local=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
-    let base=local.join(BASE);let path=base.join(case.pool_path);
+    let base=local.join(BASE);let (path,_)=crate::portable_test_fixtures::verified(&base.join(case.pool_path),Some(case.pool_sha));
     let metadata=fs::metadata(&path).expect("required pinned whole-object contact pool");
     assert!(metadata.is_file() && metadata.len()<=16_384);
-    assert_eq!(format!("{:x}",Sha256::digest(fs::read(&path).unwrap())),case.pool_sha);
     let pool=Arc::new(Pool::load(&local,&path).unwrap());assert_eq!(pool.vehicle_kind(),case.vehicle);
     let map=selected_pool_map(&pool,MapId::Prohorovka).unwrap().clone();
-    assert_eq!(map.config_sha256,case.config_sha);assert_eq!(f64::from(map.mass_kg),case.vehicle.mass_kg());
+    let (_,actual_config_sha)=crate::portable_test_fixtures::verified(&map.config,Some(case.config_sha));
+    assert_eq!(map.config_sha256,actual_config_sha);assert_eq!(f64::from(map.mass_kg),case.vehicle.mass_kg());
     let spec=CatalogSpec::load(&local,&base.join("ram-import01/physics-removals.json"),CATALOG_SHA).unwrap();
     let catalog=Arc::new(fragiles::Catalog::load(&local,&base.join("ram-import01/manifest.json"),DOMAIN_SHA).unwrap());
     assert_eq!(catalog.version,5);assert_eq!(spec.version(),6);assert_eq!(catalog.worker_sha256,spec.sha256());

@@ -10,19 +10,57 @@ pub fn bits<const N:usize>(a:[f32;N],b:[f32;N])->bool { a.map(f32::to_bits)==b.m
 fn dot(a:[f32;3],b:[f32;3])->f64 { let a=a.map(f64::from);let b=b.map(f64::from);(a[0]*b[0]+a[1]*b[1])+a[2]*b[2] }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Profile { Ms1, Is7 }
+pub enum Profile { Ms1, Is7, T26, T34, T3485, WtE100128, Fv215b183 }
 impl Profile {
-    pub fn sha(self)->&'static str { match self {
+    pub fn for_vehicle(kind:super::vehicle_profile::VehicleKind)->Self {
+        use super::vehicle_profile::VehicleKind;match kind {
+            VehicleKind::Ms1=>Self::Ms1,
+            VehicleKind::Is7=>Self::Is7,
+            VehicleKind::T26=>Self::T26,
+            VehicleKind::T34=>Self::T34,
+            VehicleKind::T3485=>Self::T3485,
+            VehicleKind::Wt128=>Self::WtE100128,
+            VehicleKind::Fv183=>Self::Fv215b183,
+        }
+    }
+    pub fn sha(self)->&'static str {match self {
         Self::Ms1=>"48f8ac675afafbe8605bd97bd92dc2c37f26673b65a548d4f0402b815f7ee9a1",
-        Self::Is7=>"2b72923c904678b5471ca4c8e01125f787d0baeb8cf2153c322a126fa1b6cfd7" } }
-    pub fn mass(self)->f32 {match self{Self::Ms1=>4691.,Self::Is7=>68190.}}
-    pub fn half(self)->[f32;3] {match self{Self::Ms1=>[0x3f51f106,0x3f14c187,0x400061e9],
-        Self::Is7=>[0x3fd295e4,0x3f0b3f54,0x4066fa42]}.map(f32::from_bits)}
+        Self::Is7=>"2b72923c904678b5471ca4c8e01125f787d0baeb8cf2153c322a126fa1b6cfd7",
+        Self::T26=>"9674a5e9ef24b9f1c857845bd6021aeb302333ed2c3d52e92f07eb0bb85c7217",
+        Self::T34=>"1ac77973e1ca2b18449102b814c23c9208e9b91f61d9f16afeb73a58f9d0583e",
+        Self::T3485=>"ebe62bae0281f775b45f269a37919e86fbc99789eac789fc9368c42210880a0a",
+        Self::Fv215b183=>"0e9eb47ba39b53592e1f7de6a302521ea8252bdb616df0d8f5dc10d2ab28b516",
+        Self::WtE100128=>"85c810a944828d23d42ea8691142d16dc1cfb1c73156a6c7b7f11723d4dfd777",
+    }}
+    pub fn mass(self)->f32 {match self {
+        Self::Ms1=>4691.0,
+        Self::Is7=>68190.0,
+        Self::T26=>9302.0,
+        Self::T34=>27940.0,
+        Self::T3485=>32370.0,
+        Self::Fv215b183=>60000.0,
+        Self::WtE100128=>100000.0,
+    }}
+    pub fn half(self)->[f32;3] {match self {
+        Self::Ms1=>[1062334726, 1058324871, 1073766889],
+        Self::Is7=>[1070765540, 1057701716, 1080490562],
+        Self::T26=>[1063348639, 1057918816, 1074313859],
+        Self::T34=>[1067860166, 1060034181, 1077318550],
+        Self::T3485=>[1067741503, 1060176048, 1077678709],
+        Self::Fv215b183=>[1071931720, 1059939242, 1080605838],
+        Self::WtE100128=>[1070290874, 1060339020, 1082354210],
+    }.map(f32::from_bits)}
     pub fn binding(self)->BodyBinding {
-        let (u,p)=match self{Self::Ms1=>(0x395f8781,[0x390ec909,0x3919bf9b,0x3a25f4bb]),
-            Self::Is7=>(0x3776094c,[0x363bac7f,0x365da392,0x3775d3e2])};
-        BodyBinding{inverse_mass:f32::from_bits(u),principal:p.map(f32::from_bits),
-            inertia_rotation:[0x3f3504f3,0x3f3504f3,0,0].map(f32::from_bits)}
+        let (u,p,q)=match self {
+            Self::Ms1=>(962561921,[957270281, 957988763, 975566011],[1060439283, 1060439283, 0, 0]),
+            Self::Is7=>(930482508,[909880447, 912106386, 930468834],[1060439283, 1060439283, 0, 0]),
+            Self::T26=>(954299301,[947738559, 948617937, 966510618],[1060439283, 1060439283, 0, 0]),
+            Self::T34=>(940973638,[926374033, 928078481, 944841139],[1060439283, 1060439283, 0, 0]),
+            Self::T3485=>(939627237,[924265041, 925539494, 943103976],[1060439283, 1060439283, 0, 0]),
+            Self::Fv215b183=>(931909477,[910983497, 913652340, 929452436],[1060439283, 1060439283, 0, 0]),
+            Self::WtE100128=>(925353388,[902802560, 904396031, 925297667],[1060439283, 1060439283, 0, 0]),
+        };
+        BodyBinding{inverse_mass:f32::from_bits(u),principal:p.map(f32::from_bits),inertia_rotation:q.map(f32::from_bits)}
     }
     fn lever(self,p:[f32;3],com:[f32;3])->bool {
         let h=self.half().map(f64::from);let r=std::array::from_fn::<_,3,_>(|i|f64::from(p[i])-f64::from(com[i]));
@@ -147,7 +185,7 @@ pub struct Context {pub battle:u64,pub slot:usize,pub session:u32,pub generation
     pub config_sha256:String,pub catalog_sha256:String,pub domain_sha256:String,pub scene_version:u32,pub scene_sha256:String}
 impl Context {pub fn validate(&self)->io::Result<()> {
     let hash=|s:&str|s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
-    if self.battle==0||self.slot>=2||self.session==0||self.generation==0||!(1..=36000).contains(&self.seq)
+    if self.battle==0||self.slot>=super::model::MAX_ACTORS||self.session==0||self.generation==0||!(1..=36000).contains(&self.seq)
         ||self.tick!=180+self.seq*6||self.scene_version>2048
         ||[&self.config_sha256,&self.catalog_sha256,&self.domain_sha256,&self.scene_sha256].into_iter().any(|s|!hash(s)){return Err(bad());}Ok(())
 }}

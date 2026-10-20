@@ -12,7 +12,7 @@ const CASES:[(&str,VehicleKind,&str,u32);3]=[
     ("is7_graze",VehicleKind::Is7,"9876b8f09533bc813c7f3d9dd597d5d80d4efe03911075b5ce636163417e5313",73),
     ("is7_pivot",VehicleKind::Is7,"01196e542262095406e59cc8ba9b17f9679a63704ee0e197dca53b5bcddf854c",120)];
 
-fn profile(kind:VehicleKind)->ram_proof::Profile{match kind{VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}}
+fn profile(kind:VehicleKind)->ram_proof::Profile{ram_proof::Profile::for_vehicle(kind)}
 fn closed(v:&Value,keys:&[&str]){let o=v.as_object().unwrap();assert_eq!(o.len(),keys.len());assert!(keys.iter().all(|k|o.contains_key(*k)));}
 fn no_reparse(path:&Path){for p in path.ancestors(){let m=fs::symlink_metadata(p).unwrap();assert!(!m.file_type().is_symlink());
     #[cfg(windows)] {use std::os::windows::fs::MetadataExt;assert_eq!(m.file_attributes()&0x400,0);}}}
@@ -80,8 +80,11 @@ fn make_world(kind:VehicleKind,catalog:Arc<fragiles::Catalog>,spawn:[f32;3])->Wo
     let out=target.join(format!("angular-bootstrap-component-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));fs::create_dir(&out).unwrap();
     for (name,kind,config,_) in CASES.into_iter().take(2){let p=profile(kind);
         let path=e.join(format!("night-angular-integration01/paired-pools/{}-graze-pool.json",kind.label()));
-        let pool=drive::Pool::load(&local,&path).unwrap();assert_eq!(pool.sha256,if name=="ms1_graze"{"8386381562420f9b0ad9edcc5395ffecba1f80c9380521a795144f26e24bbf29"}else{"738d2da23683ef46a0a88a0bd0b5aeaef03bc65d44a3941de9f1eefec2fad064"});
-        let map=selected_pool_map(&pool,MapId::Prohorovka).unwrap();assert_eq!(map.config_sha256,config);assert_eq!(capture::verified_profile(&pool,map).unwrap(),p);
+        let (path,actual_pool_sha)=crate::portable_test_fixtures::verified(&path,Some(if name=="ms1_graze"{"8386381562420f9b0ad9edcc5395ffecba1f80c9380521a795144f26e24bbf29"}else{"738d2da23683ef46a0a88a0bd0b5aeaef03bc65d44a3941de9f1eefec2fad064"}));
+        let pool=drive::Pool::load(&local,&path).unwrap();assert_eq!(pool.sha256,actual_pool_sha);
+        let map=selected_pool_map(&pool,MapId::Prohorovka).unwrap();
+        let (_,actual_config_sha)=crate::portable_test_fixtures::verified(&map.config,Some(config));
+        assert_eq!(map.config_sha256,actual_config_sha);assert_eq!(capture::verified_profile(&pool,map).unwrap(),p);
         let mut world=make_world(kind,catalog.clone(),map.spawn);
         let mut record=file(&out,&format!("{}-synthetic.jsonl",kind.label()));bootstrap(&mut world,map,&spec,&mut record);
         assert_eq!(world.impact.contact_source_history().len(),1);assert_eq!(world.impact.events().len(),1037);

@@ -31,6 +31,9 @@ const ROOT_LIMIT: f32 = 60.0;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Projectile {
     pub vehicle_kind: VehicleKind,
+    /// V2 source identity is frozen at admission; actor selection cannot alter
+    /// an airborne projectile. None retains the accepted legacy AP contract.
+    pub shell:Option<crate::p06t_shells091::Shell>,
     pub sequence: u32,
     pub slot: usize,
     pub origin: [f32; 3],
@@ -45,29 +48,46 @@ pub struct Projectile {
 
 impl Projectile {
     pub fn launch(sequence: u32, slot: usize, actor: &model::Actor, now: Instant) -> io::Result<Self> {
+        // Legacy homogeneous callers retain their mounted ammunition bound.
+        // Mixed rosters pass their explicit aggregate limit through the method below.
+        Self::launch_for_limit(sequence,slot,actor,now,actor.vehicle_kind().battle_shot_limit())
+    }
+    pub fn launch_for_limit(sequence:u32,slot:usize,actor:&model::Actor,now:Instant,shot_limit:usize)->io::Result<Self> {
+        Self::launch_selected(sequence,slot,actor,now,shot_limit,None)
+    }
+    pub fn launch_shell_for_limit(sequence:u32,slot:usize,actor:&model::Actor,now:Instant,shot_limit:usize,shell:crate::p06t_shells091::Shell)->io::Result<Self>{
+        if !crate::p06t_shells091::PROFILES[actor.vehicle_kind().mount().index()].shots.contains(&shell){return Err(model::bad());}
+        Self::launch_selected(sequence,slot,actor,now,shot_limit,Some(shell))
+    }
+    fn launch_selected(sequence:u32,slot:usize,actor:&model::Actor,now:Instant,shot_limit:usize,selected:Option<crate::p06t_shells091::Shell>)->io::Result<Self>{
         let kind=actor.vehicle_kind(); let shell=kind.shell();
-        if sequence == 0 || sequence as usize > kind.battle_shot_limit() || slot >= model::CAPACITY || !actor.position.iter().all(|v| v.is_finite())
+        // Keep the accepted f32 conversion order, including for selected AP.
+        let (speed,gravity,max_distance)=selected.map_or((shell.speed(),shell.effective_gravity(),shell.max_distance),|shot|{
+            let factor=shot.projectile_speed_factor as f32;
+            (shot.raw_speed_mps as f32*factor,shot.raw_gravity_mps2 as f32*factor*factor,shot.max_distance_m as f32)});
+        if shot_limit==0 || shot_limit>model::MAX_BATTLE_SHOTS || sequence == 0 || sequence as usize > shot_limit || slot >= model::MAX_ACTORS || !actor.position.iter().all(|v| v.is_finite())
             || actor.direction.iter().any(|v| !v.is_finite()) || !actor.aim.yaw.is_finite() || !actor.aim.pitch.is_finite()
         {
             return Err(model::bad());
         }
         let (origin, velocity) = aim::shot_geometry_pose_for(kind,
-            actor.position, actor.direction, actor.aim.yaw, actor.aim.pitch, shell.speed(),
+            actor.position, actor.direction, actor.aim.yaw, actor.aim.pitch, speed,
         );
         let velocity = regularize_horizontal_x(velocity)?;
-        let flight_time = solve_range_time(velocity, shell.effective_gravity(), shell.max_distance)?;
-        let terminal = position_at(origin, velocity, shell.effective_gravity(), flight_time.as_secs_f32());
+        let flight_time = solve_range_time(velocity, gravity, max_distance)?;
+        let terminal = position_at(origin, velocity, gravity, flight_time.as_secs_f32());
         if terminal.iter().any(|v| !v.is_finite()) {
             return Err(model::bad());
         }
         Ok(Self {
             vehicle_kind:kind,
+            shell:selected,
             sequence,
             slot,
             origin,
             velocity,
-            gravity: shell.effective_gravity(),
-            max_distance: shell.max_distance,
+            gravity,
+            max_distance,
             launched: now,
             flight_time,
             terminal,

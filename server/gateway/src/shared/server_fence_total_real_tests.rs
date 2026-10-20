@@ -177,9 +177,10 @@ fn fence_total_actual_source_profiles_commit_only_after_both_ack_and_restore_on_
     for (name,vehicle,pool_sha,config_sha,sequence) in cases {
         let local=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();let base=local.join(BASE);
         let path=base.join(format!("night-fence-runtime-fixtures03/{name}-pool.json"));
-        assert_eq!(format!("{:x}",Sha256::digest(fs::read(&path).unwrap())),pool_sha);
+        let (path,_)=crate::portable_test_fixtures::verified(&path,Some(pool_sha));
         let pool=Arc::new(drive::Pool::load(&local,&path).unwrap());assert_eq!(pool.vehicle_kind(),vehicle);
-        let map=selected_pool_map(&pool,MapId::Prohorovka).unwrap().clone();assert_eq!(map.config_sha256,config_sha);
+        let map=selected_pool_map(&pool,MapId::Prohorovka).unwrap().clone();
+        let (_,actual_config_sha)=crate::portable_test_fixtures::verified(&map.config,Some(config_sha));assert_eq!(map.config_sha256,actual_config_sha);
         let spec=CatalogSpec::load(&local,&base.join("night-fence-export01/catalog/physics-removals.json"),WORKER_SHA).unwrap();
         let catalog=Arc::new(fragiles::Catalog::load(&local,&base.join("night-fence-export01/catalog/manifest.json"),DOMAIN_SHA).unwrap());
         validate_catalog_projection(&catalog,&spec,MapId::Prohorovka).unwrap();

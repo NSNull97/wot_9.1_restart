@@ -5,6 +5,34 @@ use super::super::*;
 use crate::map_profile091::MapId;
 use super::vehicle_profile::VehicleKind;
 use super::ram_proof;
+#[path="profile13_dispatch.rs"]
+mod profile13_dispatch;
+#[path="owner_hold_delivery.rs"]
+mod owner_hold_delivery;
+#[path="server_scene_runtime.rs"]
+mod batch_scene;
+use batch_scene::BatchRuntime;
+#[path="p06t_publication.rs"]
+mod p06t_publication;
+#[path="sixth_sense_wire.rs"]
+mod sixth_sense_wire;
+#[cfg(test)]
+#[path="detached_turret_server_tests.rs"]
+mod detached_turret_server_tests;
+#[path="p10b_ready_host.rs"]
+mod p10b_ready_host;
+#[path="p10b_receive_host.rs"]
+mod p10b_receive_host;
+#[path="p10b_launch_host.rs"]
+mod p10b_launch_host;
+#[path="p10b_preparing_host.rs"]
+mod p10b_preparing_host;
+#[path="p10b_host.rs"]
+mod p10b_host;
+
+#[cfg(test)]
+#[path="server_visibility_tests.rs"]
+mod visibility_tests;
 
 #[cfg(test)]
 #[path="server_catalog_tests.rs"]
@@ -39,8 +67,8 @@ mod is7_real_tests;
 #[path="server_whole_fracture_real_tests.rs"]
 mod whole_fracture_real_tests;
 
-#[derive(Default)]
-struct Table { sessions: Vec<Session>, retirement: RetirementWindow }
+struct Table { sessions: Vec<Session>, retirement: RetirementWindow,capacity:usize }
+impl Default for Table {fn default()->Self{Self{sessions:Vec::new(),retirement:RetirementWindow::default(),capacity:model::CAPACITY}}}
 
 /// A consumed worker reply must survive other lanes' pending replies. There
 /// is at most one unconsumed advance per lane, and 32 contacts across all lanes.
@@ -58,6 +86,7 @@ struct ContactBatch {
 /// worker would duplicate process authority. Every imported row is copied into
 /// the next world snapshot only after the worker contract has validated it.
 struct IntegratedRuntime {
+    batch:Option<BatchRuntime>,
     pool: Arc<crate::map_drive_worker091::Pool>,
     map_id: MapId,
     workers: [Option<crate::map_drive_worker091::Worker>; model::CAPACITY],
@@ -78,6 +107,7 @@ struct IntegratedRuntime {
     worker_sessions: [Option<u32>; model::CAPACITY],
     contact_sequences: [u32; model::CAPACITY],
     contact_batches: [Option<ContactBatch>; model::CAPACITY],
+    lag_resync: [LagResync; model::CAPACITY],
 }
 
 /// A worker frame may be compared with a client frame in focused tests, but an
@@ -101,7 +131,27 @@ fn drive_grid(start: Instant, now: Instant) -> io::Result<Instant> {
     start.checked_add(step.checked_mul(ticks).ok_or_else(|| model::bad())?).ok_or_else(|| model::bad())
 }
 
-fn drive_deadline(start: Instant, previous: Option<Instant>, now: Instant) -> io::Result<Option<Instant>> {
+/// Profile13 resets its World for every battle (each bounded by model::LIFETIME),
+/// so the hangar service itself may stay up for an owner session. The 1 h
+/// process stop made a stand started ahead of the owner's test exit on its
+/// own (full-test 2026-10-19). Single-world labs keep model::LIFETIME.
+const PROFILE13_SERVICE_LIFETIME: Duration = Duration::from_secs(12 * 3600);
+/// Single gateway-loop stall longer than this still closes the battle.
+const MAX_STALL: Duration = Duration::from_secs(5);
+/// More than `MAX_RESYNCS` lag recoveries inside this window is persistent overload.
+const RESYNC_WINDOW: Duration = Duration::from_secs(30);
+const MAX_RESYNCS: u32 = 3;
+
+/// Bounded, logged recovery from a transient gateway-loop stall. The owner
+/// runs of 2026-10-17/19 lost whole battles to one >500 ms stall with healthy
+/// workers. A stall up to MAX_STALL rebases the logical deadline onto the
+/// current grid (the skipped steps are not simulated; the domain tick already
+/// follows wall time) and prints SHARED_DRIVE_LAG_RESYNC. Longer stalls and
+/// repeated recoveries remain fail-closed overload.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct LagResync { window: Option<Instant>, count: u32 }
+
+fn drive_deadline(start: Instant, previous: Option<Instant>, now: Instant, resync: &mut LagResync) -> io::Result<Option<Instant>> {
     let deadline = match previous {
         Some(previous) => previous.checked_add(crate::map_drive_worker091::STEP).ok_or_else(|| model::bad())?,
         None => drive_grid(start, now)?,
@@ -109,10 +159,24 @@ fn drive_deadline(start: Instant, previous: Option<Instant>, now: Instant) -> io
     if now < deadline { return Ok(None); }
     // Engineering overload bound, shared with the existing worker contract.
     // Ordinary latency cannot silently reset simulation time or burst forever.
-    if now.duration_since(deadline) > crate::map_drive_worker091::MAX_LAG {
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "integrated drive logical deadline lag exceeds500ms; fail closed"));
+    let lag = now.duration_since(deadline);
+    if lag <= crate::map_drive_worker091::MAX_LAG { return Ok(Some(deadline)); }
+    if lag > MAX_STALL {
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "integrated drive logical deadline lag exceeds5s; fail closed"));
     }
-    Ok(Some(deadline))
+    if resync.window.is_none_or(|window| now.duration_since(window) > RESYNC_WINDOW) {
+        *resync = LagResync { window: Some(now), count: 0 };
+    }
+    resync.count += 1;
+    if resync.count > MAX_RESYNCS {
+        return Err(io::Error::new(io::ErrorKind::TimedOut,
+            "integrated drive logical deadline lag exceeds500ms repeatedly; fail closed"));
+    }
+    let grid = drive_grid(start, now)?;
+    println!("SHARED_DRIVE_LAG_RESYNC lag_ms={} skipped_steps={} resyncs_in_window={} max_resyncs={}",
+        lag.as_millis(), grid.duration_since(deadline).as_millis() / crate::map_drive_worker091::STEP.as_millis(),
+        resync.count, MAX_RESYNCS);
+    Ok(Some(grid))
 }
 
 impl IntegratedRuntime {
@@ -121,13 +185,13 @@ impl IntegratedRuntime {
     }
 
     fn new_for_map(pool: Arc<crate::map_drive_worker091::Pool>, map_id: MapId) -> Self {
-        Self { pool, map_id, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
+        Self { batch:None,pool, map_id, workers: std::array::from_fn(|_| None), poses: [None; model::CAPACITY],
             pose_pending: [false; model::CAPACITY],
             offsets: [[0.; 3]; model::CAPACITY],
             anchored: [false; model::CAPACITY],
             dispatched: [None; model::CAPACITY], started: false, removal: None,catalog:None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY],
             worker_sessions: [None; model::CAPACITY], contact_sequences: [0; model::CAPACITY],
-            contact_batches: std::array::from_fn(|_| None) }
+            contact_batches: std::array::from_fn(|_| None), lag_resync: [LagResync::default(); model::CAPACITY] }
     }
 
     fn map(&self) -> io::Result<crate::map_drive_worker091::MapSpec> {
@@ -183,11 +247,12 @@ impl IntegratedRuntime {
     }
 
     fn start(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
+        if let Some(batch)=&mut self.batch{batch.start(world,now)?;self.started=true;return Ok(());}
         if world.map != self.map_id || world.vehicle_kind()!=self.pool.vehicle_kind()
             || self.started || world.actors.len() != model::CAPACITY
             || world.started.is_none() { return Err(model::bad()); }
         let map = self.map()?;
-        let lane_spawns = std::array::from_fn(|slot| {
+        let lane_spawns: [[f32;3];model::CAPACITY] = std::array::from_fn(|slot| {
             Self::lane_spawn(&map, slot)
         });
         // Native announcements are emitted later in this same loop. Rebase
@@ -201,10 +266,11 @@ impl IntegratedRuntime {
     }
 
     fn ready_for_native(&self) -> bool {
+        if let Some(batch)=&self.batch{return batch.ready_for_native();}
         !self.blocked() && !self.synchronizing.iter().any(|v|*v) && self.workers.iter().all(|worker| worker.as_ref().is_some_and(|value| value.ready()))
     }
 
-    fn blocked(&self) -> bool { self.staged.is_some() || self.workers.iter().flatten().any(|worker|!worker.prepared_ids().is_empty()) }
+    fn blocked(&self) -> bool {if let Some(batch)=&self.batch{return batch.blocked();} self.staged.is_some() || self.workers.iter().flatten().any(|worker|!worker.prepared_ids().is_empty()) }
 
     fn resume_after_scene_ack(&mut self, world: &World, now: Instant) -> io::Result<()> {
         let grid = drive_grid(world.started.ok_or_else(|| model::bad())?, now)?;
@@ -291,6 +357,7 @@ impl IntegratedRuntime {
     }
 
     fn step(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
+        if let Some(batch)=&mut self.batch{return batch.step(world,now);}
         if world.map != self.map_id || world.vehicle_kind()!=self.pool.vehicle_kind()
             || self.workers.iter().flatten().any(|worker|
             worker.map.asset != self.map_id.asset() || worker.map.arena_type_id != self.map_id.arena_type_id()) {
@@ -452,7 +519,7 @@ impl IntegratedRuntime {
         for slot in 0..model::CAPACITY {
             if world.actors[slot].session.is_some() && !self.synchronizing[slot]
                 && self.workers[slot].as_ref().is_some_and(|w| w.ready() && !w.pending()) {
-                deadlines[slot] = drive_deadline(world.started.ok_or_else(|| model::bad())?, self.dispatched[slot], now)?;
+                deadlines[slot] = drive_deadline(world.started.ok_or_else(|| model::bad())?, self.dispatched[slot], now, &mut self.lag_resync[slot])?;
             }
         }
         let fresh_pair = world.actors.iter().enumerate().all(|(slot, actor)|
@@ -465,8 +532,7 @@ impl IntegratedRuntime {
                 if let Some(session)=world.actors.get(slot).and_then(|a|a.session) {
                     let worker=self.workers[slot].as_ref().ok_or_else(|| model::bad())?;
                     candidate.bind_contact_source(slot,ram_proof::Source{session,generation:worker.generation,
-                        config_sha256:worker.map.config_sha256.clone(),profile:match self.pool.vehicle_kind(){
-                            VehicleKind::Ms1=>ram_proof::Profile::Ms1,VehicleKind::Is7=>ram_proof::Profile::Is7}})?;
+                        config_sha256:worker.map.config_sha256.clone(),profile:ram_proof::Profile::for_vehicle(self.pool.vehicle_kind())})?;
                 }else{candidate.revoke_contact_source(slot)?;}
             }
         }
@@ -551,18 +617,26 @@ impl Table {
     fn admissible(&mut self, attempt: &LoginAttempt, now: Instant) -> io::Result<()> {
         self.retirement.check_login(attempt, now).map_err(|_| model::bad())?;
         if self.sessions.iter().any(|s| s.same_login_attempt(attempt)) { return Ok(()); }
-        if self.sessions.len() >= model::CAPACITY
+        if self.sessions.len() >= self.capacity
             || self.retirement.retained_count() + self.sessions.len() >= MAX_RETIRED
             || self.sessions.iter().any(|s| s.key == attempt.key || s.login_peer == attempt.login_peer
                 || s.base_peer == Some(attempt.login_peer)) { return Err(model::bad()); }
         Ok(())
     }
     fn route(&self, peer: SocketAddr, packet: &[u8]) -> io::Result<usize> {
+        self.route_inner(peer,packet,None)
+    }
+    fn route_with_network(&self,peer:SocketAddr,packet:&[u8],network:&crate::identity091::game_network::Network)->io::Result<usize>{
+        if !network.allows_peer(peer){return Err(model::bad());}
+        self.route_inner(peer,packet,Some(network))
+    }
+    fn route_inner(&self,peer:SocketAddr,packet:&[u8],network:Option<&crate::identity091::game_network::Network>)->io::Result<usize>{
         if packet.len() == 21 {
             let matches: Vec<_> = self.sessions.iter().enumerate()
                 .filter(|(_, s)| base::base_request(packet, s.handoff).is_ok()).map(|(i, _)| i).collect();
             if matches.len() != 1 { return Err(model::bad()); }
             let index = matches[0];
+            if network.is_some_and(|n|!n.allows_first_base(self.sessions[index].login_peer,peer)){return Err(model::bad());}
             if self.sessions[index].base_peer.is_some_and(|bound| bound != peer)
                 || self.sessions.iter().enumerate().any(|(i, s)| i != index &&
                     (s.base_peer == Some(peer) || s.login_peer == peer)) { return Err(model::bad()); }
@@ -590,12 +664,57 @@ struct BattleTemplate {
     pool: Option<Arc<crate::map_drive_worker091::Pool>>,
     removal: Option<crate::map_drive_worker091::RemovalSpec>,
     catalog: Option<crate::map_drive_worker091::CatalogSpec>,
+    shared:Option<Arc<super::profile13_templates::SharedResources>>,
 }
 impl BattleTemplate {
+    fn from_shared(rows:&[super::profile13_templates::Resources],count:usize,id:u64,now:Instant)->io::Result<Self>{
+        Self::from_shared_mode(rows,count,id,now,None)
+    }
+    fn from_shared_mode(rows:&[super::profile13_templates::Resources],count:usize,id:u64,now:Instant,
+        qualification:Option<VehicleKind>)->io::Result<Self>{
+        Self::from_shared_policy(rows,count,id,now,qualification,false)
+    }
+    fn from_shared_policy(rows:&[super::profile13_templates::Resources],count:usize,id:u64,now:Instant,
+        qualification:Option<VehicleKind>,breech_v2:bool)->io::Result<Self>{
+        let extended=qualification.is_some_and(VehicleKind::is_extended);
+        if breech_v2&&!extended{return Err(model::bad());}
+        if !matches!(rows.len(),2|5|7)||(rows.len()==7)!=extended
+            ||rows.iter().enumerate().any(|(index,row)|row.kind.index()!=index) {return Err(model::bad());}
+        if qualification.is_some_and(|kind|rows.len()!=(if extended{7}else{5})||!rows.iter().any(|row|row.kind==kind)){return Err(model::bad());}
+        let shared=rows[0].shared.clone().ok_or_else(||model::bad())?;
+        let mut world=World::new_for_vehicle(id,now,MapId::Prohorovka,qualification.unwrap_or(VehicleKind::Ms1))?;
+        world.set_expected_actors(count)?;
+        for row in rows{world.bind_geometry(row.geometry.clone())?;}
+        world.enable_ap_test_lab()?;world.bind_terrain(rows[0].terrain.clone())?;
+        world.bind_fragiles(rows[0].catalog.0.clone())?;
+        if extended{world.enable_extended_lab()?;}
+        if breech_v2{world.enable_extended_breech_lab()?;}
+        if qualification.is_none(){world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?;}
+        Ok(Self{world,pool:Some(rows[0].pool.clone()),removal:None,catalog:Some(rows[0].catalog.1.clone()),shared:Some(shared)})
+    }
+    fn runtime(&self,map:MapId)->io::Result<Option<IntegratedRuntime>>{self.pool.as_ref().map(|pool|{
+        let mut r=IntegratedRuntime::new_for_map(pool.clone(),map);r.removal=self.removal.clone();r.catalog=self.catalog.clone();
+        if let Some(shared)=&self.shared{r.batch=Some(BatchRuntime::new(shared.clone(),self.catalog.clone().ok_or_else(||model::bad())?));}Ok(r)
+    }).transpose()}
+    fn from_resources(r:&super::profile13_templates::Resources,id:u64,now:Instant)->io::Result<Self> {
+        let mut world=World::new_for_vehicle(id,now,MapId::Prohorovka,r.kind)?;
+        world.bind_geometry(r.geometry.clone())?;world.enable_ap_test_lab()?;
+        world.bind_terrain(r.terrain.clone())?;world.bind_fragiles(r.catalog.0.clone())?;
+        world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?;
+        Ok(Self{world,pool:Some(r.pool.clone()),removal:None,catalog:Some(r.catalog.1.clone()),shared:None})
+    }
+    fn select(&self,world:&mut World,runtime:&mut Option<IntegratedRuntime>,now:Instant)->io::Result<()> {
+        if world.started.is_some() || world.actors.iter().any(|a|a.session.is_some()) {return Err(model::bad());}
+        let id=world.id;
+        *world=if self.world.id==id {self.world.clone()} else {self.world.fresh_battle(id,now)?};*runtime=None;
+        *runtime=self.runtime(world.map)?;
+        println!("P08B_WORLD_SELECTED battle={id} kind={} homogeneous={} actors={}",world.vehicle_kind().label(),!world.mixed_profiles(),world.expected_actors());
+        Ok(())
+    }
     fn new(world: &World, runtime: &Option<IntegratedRuntime>) -> Self {
         Self { world:world.clone(), pool:runtime.as_ref().map(|r|r.pool.clone()),
             removal:runtime.as_ref().and_then(|r|r.removal.clone()),
-            catalog:runtime.as_ref().and_then(|r|r.catalog.clone()) }
+            catalog:runtime.as_ref().and_then(|r|r.catalog.clone()),shared:None }
     }
     fn replace(&self, world: &mut World, runtime: &mut Option<IntegratedRuntime>, now: Instant) -> io::Result<()> {
         let old = world.id;
@@ -604,10 +723,7 @@ impl BattleTemplate {
         // Drop the complete old runtime, including staged poses and owned children.
         *runtime = None;
         *world = fresh;
-        *runtime = self.pool.as_ref().map(|pool| {
-            let mut r=IntegratedRuntime::new_for_map(pool.clone(),world.map);
-            r.removal=self.removal.clone(); r.catalog=self.catalog.clone(); r
-        });
+        *runtime = self.runtime(world.map)?;
         println!("SHARED_BATTLE_RESET previous={old} battle={id} workers_revoked=true actors=0 trace_events=0 scene_version=0 service_alive=true");
         Ok(())
     }
@@ -617,18 +733,182 @@ impl BattleTemplate {
 fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:Instant, start:bool)->io::Result<()> {
     if start {
         world.start(now)?;
-        println!("SHARED_WORLD_STARTED battle={} sessions=2 actors=2 space=1 tick=1000",world.id);
+        if world.lifecycle.is_some() {
+            world.lifecycle_created_unix=Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_|model::bad())?.as_secs().try_into().map_err(|_|model::bad())?);
+        }
+        println!("SHARED_WORLD_STARTED battle={} sessions={} actors={} space=1 tick=1000",world.id,world.actors.len(),world.actors.len());
     }
     if world.started.is_some() {
-        if let Some(r)=runtime {
+        if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {world.advance(now)?;}
+        else if let Some(r)=runtime {
             if !r.started {r.start(world,now)?;}
             r.step(world,now)?;
         } else {world.advance(now)?;}
+        if runtime.as_ref().is_none_or(|r|!r.blocked()) { world.refresh_original_spotting(now)?; }
+        // A candidate scene owns an atomic World clone. Do not advance the
+        // lifecycle outside it and then overwrite a frozen outcome on ACK.
+        if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.advance_lifecycle(now)? {
+            println!("P08C_LIFECYCLE battle={} view={:?} policy={}",world.id,
+                world.lifecycle.as_ref().map(|l|l.view()),super::lifecycle::POLICY);
+        }
+        // A separate bounded visual clock survives the authoritative outcome.
+        // Do not mutate a World while a prepared scene clone owns its commit.
+        if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.ammo_detonation_enabled(){
+            world.advance_turret_flights(now)?;
+        }
     }
     Ok(())
 }
 
+fn stage_lifecycle_results(table:&mut Table,world:&World)->io::Result<()> {
+    stage_lifecycle_results_from(table,world,None)
+}
+fn stage_lifecycle_results_from(table:&mut Table,world:&World,sealed:Option<Arc<super::lifecycle_wire::Results>>)->io::Result<()> {
+    if !world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {return Ok(());}
+    let needs=table.sessions.iter().any(|s|s.shared.as_ref().is_some_and(|c|c.natural_result.is_none()
+        && c.profile13.as_ref().is_some_and(|p|!p.has_pending_return() && p.reservation_battle()==Some(world.id))));
+    if !needs {return Ok(());}
+    let result=if let Some(result)=sealed{result}else{Arc::new(super::lifecycle_result::build(world)?)};
+    for s in &mut table.sessions {
+        let Some(c)=&mut s.shared else{continue;};
+        if c.natural_result.is_none() && c.profile13.as_ref().is_some_and(|p|!p.has_pending_return()
+            && p.reservation_battle()==Some(world.id)) {
+            c.natural_result=Some(result.clone());
+            println!("P08C_RESULT_FROZEN battle={} session={} winner={} reason={} shots={} damage={} inventory_not_yet_released=true",
+                world.id,s.id,result.winner_team,result.finish_reason,
+                result.participants.iter().find(|p|s.identity.as_ref().is_some_and(|o|o.database_id==p.account_dbid)).map_or(0,|p|p.shots),
+                result.participants.iter().map(|p|p.damage_dealt).sum::<u32>());
+        }
+    }
+    Ok(())
+}
+
+/// Natural results are delivered only after their atomic writer transaction.
+/// A native confirmation must precede Account reset; timeout disconnects rather
+/// than pretending the original result handler successfully consumed the stream.
+// Revoking World membership does not finish the asynchronous writer or the
+// native Avatar. Keep its current World until the real Account handoff, even
+// when no ammo rack detonated. Queue cancellation has no Avatar and may reset.
+fn current_avatar_pending(table:&Table,world:&World)->bool{
+    table.sessions.iter().any(|s|s.arena_base&&s.shared.as_ref().is_some_and(|c|
+        matches!(c.phase,Phase::Enable|Phase::Entities|Phase::Driving|Phase::Leaving)
+            &&c.view.as_ref().is_some_and(|view|view.id==world.id)))
+}
+fn parked_battle_reset_ready(table:&Table,world:&World)->bool{
+    !world.actors.is_empty()&&world.actors.iter().all(|a|a.session.is_none())
+        &&!current_avatar_pending(table,world)
+}
+fn deliver_lifecycle_result(s:&mut Session,world:&World,now:Instant)->io::Result<bool> {
+    let Some(c)=s.shared.as_ref() else{return Ok(false);};
+    if !c.result_committed || c.natural_result.is_none() || !s.arena_base {return Ok(false);}
+    if !c.result_stream_queued&&!s.turret_presentation_ready(world,now)?{return Ok(true);}
+    let mut next=s.clone();
+    if !c.result_stream_queued {
+        let result=c.natural_result.clone().ok_or_else(||model::bad())?;
+        let own=next.identity.as_ref().ok_or_else(||model::bad())?.database_id;
+        let mixed=c.view.as_ref().is_some_and(|world|world.mixed_ammo());
+        let bodies=if mixed{super::lifecycle_wire::avatar_result_stream_p06t(&result,own)?}
+            else{super::lifecycle_wire::avatar_result_stream(&result,own)?};
+        if next.outbox.len()+bodies.len()>128 {return Ok(true);}
+        next.outbox.extend(bodies);
+        if mixed{next.battle_results.cache_avatar_p06t(result,own)?;}else{next.battle_results.cache_avatar(result,own)?;}
+        let c=next.shared.as_mut().ok_or_else(||model::bad())?;
+        c.result_stream_queued=true;c.result_delivery_at=Some(now);
+        next.drain_outbox()?;
+        println!("P08C_RESULTS_AVATAR_QUEUED session={} durable=true waiting_native_confirmation=true",s.id);
+    }
+    if next.battle_results.avatar_confirmed() {
+        let mut events=Vec::new();next.shared_return("natural_result_confirmed",now,&mut events)?;
+        for event in events {println!("{event}");}
+    } else if next.shared.as_ref().and_then(|c|c.result_delivery_at).is_some_and(|at|now.duration_since(at)>=Duration::from_secs(30)) {
+        return Err(io::Error::new(io::ErrorKind::TimedOut,"native result stream was not confirmed; durable result retained for next login"));
+    } else {next.drain_outbox()?;}
+    *s=next;Ok(true)
+}
+
+// A contained fault has explicitly revoked this exact old battle. Only its
+// immutable terminal receipt/result may drain; never publish the replacement
+// World to an old Avatar or replay commands into either World.
+fn contained_return_world(s:&Session,world:&World)->io::Result<Option<Arc<World>>>{
+    let Some(retained)=s.shared.as_ref().and_then(|c|c.contained_world.clone())else{return Ok(None);};
+    let c=s.shared.as_ref().ok_or_else(||model::bad())?;
+    let owner=s.identity.as_ref().ok_or_else(||model::bad())?;
+    let actor=retained.actors.get(c.slot).ok_or_else(||model::bad())?;
+    let p=c.profile13.as_ref().ok_or_else(||model::bad())?;
+    let pending=p.has_pending_return()&&p.reservation_battle()==Some(retained.id);
+    let committed=c.result_committed&&c.natural_result.as_ref().is_some_and(|r|r.arena_id==retained.id);
+    if !s.arena_base||c.phase!=Phase::Leaving||retained.id==world.id
+        ||c.view.as_ref().is_none_or(|view|view.id!=retained.id||view.mixed_ammo()!=retained.mixed_ammo())
+        ||actor.identity.account!=owner.account_id||actor.identity.database!=owner.database_id
+        ||actor.session.is_some()||!(pending||committed)
+        ||c.natural_result.as_ref().is_some_and(|r|r.arena_id!=retained.id){return Err(model::bad());}
+    Ok(Some(retained))
+}
+// The actual ordinary-mode ingress transaction uses the same terminal
+// source proof as polling. A contained Avatar keeps its checked old view;
+// refreshing it from the replacement World would reject ACK/confirmation
+// before receive() and cannot grant authority in either battle.
+fn receive_battle_session(s:&mut Session,frame:&Frame,world:&World,now:Instant)->io::Result<bool>{
+    let mut staged=s.clone();
+    if contained_return_world(&staged,world)?.is_some(){
+        if !staged.active{return Err(model::bad());}
+    }else{staged.shared_refresh_world(world)?;}
+    // Leaving validates on the existing throwaway Driving clone and retains
+    // only terminal transport/result state, never its simulated commands.
+    let close=staged.receive(frame,now)?;*s=staged;Ok(close)
+}
+
+fn poll_contained_return(s:&mut Session,world:&World,now:Instant)->io::Result<bool>{
+    let Some(retained)=contained_return_world(s,world)?else{return Ok(false);};
+    if !s.active{return Err(model::bad());}
+    // The ordinary Finished delivery either starts warm Account return itself,
+    // or marks this immutable natural result committed. Original confirmation
+    // and bounded timeout still apply; containment never invents either one.
+    deliver_lifecycle_result(s,&retained,now)?;Ok(true)
+}
+fn contained_return_failure_reason(s:&Session)->Option<&'static str>{
+    s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()).then_some("contained_terminal_return_failed")
+}
+// Closing an old contained Avatar must not pass a new battle to terminal(),
+// including Hold5's outcome-sensitive retirement. Clone once on this boundary;
+// the current authoritative World is borrowed read-only and cannot be detached.
+fn retire_contained_session(dispatcher:&mut profile13_dispatch::Dispatcher,table:&mut Table,
+    world:&World,id:u32,now:Instant,reason:&str)->io::Result<bool>{
+    let Some(s)=table.sessions.iter().find(|s|s.id==id)else{return Ok(false);};
+    let Some(retained)=contained_return_world(s,world)?else{return Ok(false);};
+    let mut revoked=retained.as_ref().clone();
+    dispatcher.retire(table,&mut revoked,id,now,reason)?;Ok(true)
+}
+
 fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_start:bool,blocked:bool)->io::Result<()> {
+    if poll_contained_return(s,world,now)?{return Ok(());}
+    let mut fresh=s.clone();fresh.shared_refresh_world(world)?;
+    fresh.flush_shared_interest(&mut Vec::new())?;
+    if world.ammo_detonation_enabled()&&fresh.shared.as_ref().is_some_and(|c|c.phase==Phase::Leaving){
+        let c=fresh.shared.as_mut().ok_or_else(||model::bad())?;
+        p06t_publication::publish(c,&mut fresh.outbox,world,now)?;
+        fresh.drain_outbox()?;
+    }
+    fresh.flush_shared_private()?;
+    let mut turret_events=Vec::new();fresh.flush_shared_turrets(world,&mut turret_events)?;*s=fresh;
+    for event in turret_events{println!("{event}");}
+    if deliver_lifecycle_result(s,world,now)? {return Ok(());}
+    if s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|p.has_pending_return()) {return Ok(());}
+    let natural_due=if let Some(state)=world.lifecycle.as_ref().filter(|state|state.outcome().is_some()) {
+        state.ready_to_return(world.lifecycle_ms(now)?)
+    } else {false};
+    if natural_due
+        && s.shared.as_ref().is_some_and(|c|c.natural_result.is_some()) {
+        profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::BattleFinished)?;
+        if !blocked && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+        return Ok(());
+    }
+    if s.shared.as_ref().is_some_and(|c|c.phase==Phase::Leaving && c.profile13.is_some()) {
+        profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::ManualLeave)?;
+        if !blocked && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+        return Ok(());
+    }
     // A prepared scene transaction must finish before membership changes.
     // Keep transport heartbeats outside this gate, including a pending Leave.
     if blocked {return Ok(());}
@@ -658,11 +938,21 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
             "queued_commands":s.shared.as_ref().map(|c|format!("{:?}",c.commands))})).collect::<Vec<_>>(),
         "runtime":runtime.as_ref().map(|r|serde_json::json!({"started":r.started,"poses":r.poses,
             "generations":r.generations,"worker_sessions":r.worker_sessions,
-            "pose_pending":r.pose_pending,"staged_tick":r.staged.as_ref().map(|w|w.tick)}))});
+            "pose_pending":r.pose_pending,"staged_tick":r.staged.as_ref().map(|w|w.tick),
+            "batch":r.batch.as_ref().map(BatchRuntime::failure_snapshot)}))});
     // Stdout is the stand's retained journal. Never continue the failed world.
     println!("SHARED_BATTLE_FAILED {snapshot}");
     let mut retire=Vec::new();
     for s in &mut table.sessions {
+        if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
+            contained_return_world(s,world)?;continue;
+        }
+        if s.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
+            profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::BattleFailure)?;
+            if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+            if let Some(c)=&mut s.shared {c.join_requested=false;c.commands.clear();c.hangar_since=None;}
+            continue;
+        }
         if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
         if s.arena_base {
             let mut events=Vec::new();
@@ -685,8 +975,37 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
         }
     }
     for id in retire {table.retire(id,world,now,"failed_battle_return")?;}
+    // Snapshot once after every membership was revoked. A forced failure reset
+    // cannot wait for asynchronous Finish, unlike the ordinary reset barrier.
+    let retained=Arc::new(world.clone());
+    for s in &mut table.sessions {
+        if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {continue;}
+        if !s.arena_base||s.shared.as_ref().is_none_or(|c|c.profile13.is_none()){continue;}
+        let c=s.shared.as_ref().ok_or_else(||model::bad())?;
+        let owner=s.identity.as_ref().ok_or_else(||model::bad())?;
+        let actor=retained.actors.get(c.slot).ok_or_else(||model::bad())?;
+        let p=c.profile13.as_ref().ok_or_else(||model::bad())?;
+        let pending=p.has_pending_return()&&p.reservation_battle()==Some(retained.id);
+        let committed=c.result_committed&&c.natural_result.as_ref().is_some_and(|r|r.arena_id==retained.id);
+        if c.phase!=Phase::Leaving||c.view.as_ref().is_none_or(|view|view.id!=retained.id)
+            ||actor.identity.account!=owner.account_id||actor.identity.database!=owner.database_id
+            ||actor.session.is_some()||!(pending||committed){return Err(model::bad());}
+        s.shared.as_mut().ok_or_else(||model::bad())?.contained_world=Some(retained.clone());
+    }
     template.replace(world,runtime,now)?;
     Ok(snapshot)
+}
+
+fn contain_results_failure(manager:&super::results_session::Manager,dispatcher:&mut profile13_dispatch::Dispatcher,
+    table:&mut Table,world:&mut World,now:Instant,error:&io::Error)->io::Result<()> {
+    let target=manager.failure_session(&table.sessions);
+    println!("P08C_RESULTS_SESSION_FAILED session={target:?} error={error} service_alive=true durable_result_retained=true");
+    if let Some(id)=target.filter(|id|table.sessions.iter().any(|s|s.id==*id)) {
+        if !retire_contained_session(dispatcher,table,world,id,now,"native_results_delivery")?{
+            dispatcher.retire(table,world,id,now,"native_results_delivery")?;
+        }
+    }
+    Ok(())
 }
 
 fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::Result<()> {
@@ -694,8 +1013,31 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
     for s in &mut table.sessions {
         if !entry_ready(s,now) || world.actors.iter().any(|a|a.session==Some(s.id)) {continue;}
         let identity=s.identity.as_ref().ok_or_else(||model::bad())?;
-        let slot=world.attach(model::Identity{account:identity.account_id.clone(),database:identity.database_id,
-            name:identity.name.clone()},s.id)?;
+        let who=model::Identity{account:identity.account_id.clone(),database:identity.database_id,name:identity.name.clone()};
+        let owned=s.shared.as_ref().and_then(|c|c.profile13.as_ref());
+        let slot=if let Some(p)=owned {
+            if world.mixed_ammo(){
+                if world.owner_hold_enabled(){
+                    let receipt=p.reservation_hold.as_ref().ok_or_else(||model::bad())?;
+                    if receipt.battle!=world.id{continue;}
+                    world.attach_owned_hold(who,s.id,&receipt.frozen)?
+                }else if world.ammo_detonation_enabled(){
+                    let receipt=p.reservation_loss.as_ref().ok_or_else(||model::bad())?;
+                    if receipt.battle!=world.id{continue;}
+                    world.attach_owned_loss(who,s.id,&receipt.frozen)?
+                }else{
+                    let receipt=p.reservation_v2.as_ref().ok_or_else(||model::bad())?;
+                    if receipt.battle!=world.id{continue;}
+                    world.attach_owned_v2(who,s.id,&receipt.frozen)?
+                }
+            }else{
+            let receipt=p.reservation.as_ref().ok_or_else(||model::bad())?;
+            if receipt.battle!=world.id || !world.mixed_profiles()&&receipt.frozen.kind!=world.vehicle_kind() {continue;}
+            world.attach_owned(who,s.id,&receipt.frozen)?
+            }
+        } else if world.extended_lab(){
+            world.attach_extended_lab(who,s.id,model::extended::LabLoadout::temporary(world.vehicle_kind()))?
+        } else {world.attach(who,s.id)?};
         let c=s.shared.as_mut().ok_or_else(||model::bad())?;
         let since=c.hangar_since;
         c.reset_for_battle(slot); c.hangar_since=since; c.view=Some(world.clone());
@@ -705,10 +1047,51 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia,VehicleKind::Ms1)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia,VehicleKind::Ms1,None,None)
 }
 
-fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
+pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,capture_path:&str)
+    ->Result<(),Box<dyn std::error::Error>> {
+    let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::SharedOwnedProfile13)?;
+    if !config.profile13_battle || !config.research_service {return Err(model::bad().into());}
+    let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
+    if config.p04m_pool&&resources.len()!=5{return Err(model::bad().into());}
+    let initial=&resources[0];
+    serve_with_pool(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources),None)
+}
+
+/// Explicit temporary qualification scene. It uses frozen laboratory account
+/// fixtures and never enters the owned writer/reservation/admission route.
+pub fn serve_curated_lab(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,
+    capture_path:&str,kind:VehicleKind)->Result<(),Box<dyn std::error::Error>> {
+    serve_curated_lab_policy(key_path,digest_path,config_path,manifest_path,capture_path,kind,false)
+}
+/// Separate explicit qualification policy. Existing curated mode keeps its
+/// source-breech Unsupported behavior; this mode opts into unarmored Gun damage.
+pub fn serve_curated_lab_v2(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,
+    capture_path:&str,kind:VehicleKind)->Result<(),Box<dyn std::error::Error>> {
+    if !kind.is_extended(){return Err(model::bad().into());}
+    serve_curated_lab_policy(key_path,digest_path,config_path,manifest_path,capture_path,kind,true)
+}
+fn serve_curated_lab_policy(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,
+    capture_path:&str,kind:VehicleKind,breech_v2:bool)->Result<(),Box<dyn std::error::Error>> {
+    let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
+    if config.profile13_battle||config.ammo_service||config.p04m_pool{return Err(model::bad().into());}
+    let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
+    if resources.len()!=(if kind.is_extended(){7}else{5})||resources.iter().any(|row|row.shared.is_none()){return Err(model::bad().into());}
+    let initial=&resources[0];
+    println!("P04M_QUALIFICATION kind={} assignment=temporary_server_selected owned_inventory_changed=false battle_admission_changed=false",kind.label());
+    if kind.is_extended(){println!("P06T_EXTENDED_QUALIFICATION policy={} device_policy={} temporary_ammunition=true inventory_grant=false scene_manifest=3",
+        model::extended::POLICY,crate::p06t_device_state::POLICY_V2);}
+    if breech_v2{println!("P06T_UNARMORED_BREECH_QUALIFICATION policy=test_lab.p06t.unarmored-gun-breech.v2 historical_server_solver=UNKNOWN");}
+    serve_with_pool_policy(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources),Some(kind),breech_v2)
+}
+
+pub(super) fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
     -> io::Result<&crate::map_drive_worker091::MapSpec> {
     let mut candidates=pool.maps.iter().filter(|map| map.asset==selected.asset());
     let map=candidates.next().ok_or_else(|| model::bad())?;
@@ -716,7 +1099,7 @@ fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
     Ok(map)
 }
 
-fn selected_pool_config(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<serde_json::Value> {
+pub(super) fn selected_pool_config(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<serde_json::Value> {
     use std::io::Read;
     let map=selected_pool_map(pool,selected)?;
     // Pool load already validated ownership/schema; recheck these exact bytes
@@ -734,7 +1117,7 @@ fn terrain_for_pool(pool: &crate::map_drive_worker091::Pool) -> io::Result<Arc<s
     terrain_for_pool_for_map(pool,MapId::Karelia)
 }
 
-fn terrain_for_pool_for_map(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<Arc<super::terrain::Terrain>> {
+pub(super) fn terrain_for_pool_for_map(pool: &crate::map_drive_worker091::Pool, selected: MapId) -> io::Result<Arc<super::terrain::Terrain>> {
     let config=selected_pool_config(pool,selected)?;
     let path=config["terrain"]["path"].as_str().ok_or_else(|| model::bad())?;
     let terrain=super::terrain::Terrain::load_for(selected,&pool.local_root,Path::new(path))?;
@@ -761,13 +1144,14 @@ pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: 
 pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_path: &str,
     pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool,
     destructible_test_lab: bool,catalog_path:Option<(&str,&str)>,map:MapId,vehicle:VehicleKind) -> Result<(), Box<dyn std::error::Error>> {
-    if vehicle==VehicleKind::Is7 && (map!=MapId::Prohorovka || !ap_test_lab || !terrain_test_lab) { return Err(model::bad().into()); }
+    if vehicle!=VehicleKind::Ms1 && (map!=MapId::Prohorovka || !ap_test_lab || !terrain_test_lab) { return Err(model::bad().into()); }
     if map==MapId::Prohorovka && (!ap_test_lab || !terrain_test_lab || destructible_test_lab) { return Err(model::bad().into()); }
     if ap_test_lab && geometry_path.is_none() { return Err(model::bad().into()); }
     if destructible_test_lab && !terrain_test_lab { return Err(model::bad().into()); }
     if catalog_path.is_some()&&(!terrain_test_lab||destructible_test_lab){return Err(model::bad().into());}
     if terrain_test_lab && !ap_test_lab { return Err(model::bad().into()); }
     let config = crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
     if config.ammo_service { return Err(model::bad().into()); }
     let pool = crate::map_drive_worker091::Pool::load(&config.local_root, Path::new(pool_path))?;
     selected_pool_config(&pool,map)?;
@@ -786,10 +1170,10 @@ pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_pa
         validate_catalog_projection(&catalog,&worker,map)?;
         Some((catalog,worker))
     }else{None};
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle,None,None)
 }
 
-fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::map_drive_worker091::CatalogSpec,map:MapId)->io::Result<()> {
+pub(super) fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::map_drive_worker091::CatalogSpec,map:MapId)->io::Result<()> {
     if catalog.map!=map||worker.map_id()!=map||catalog.worker_sha256!=worker.sha256()||catalog.contacts!=worker.contacts()
         ||worker.version()!=catalog.version+1||worker.entries().len()!=catalog.objects.len()
         ||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
@@ -800,17 +1184,80 @@ fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::
     Ok(())
 }
 
-fn validate_vehicle_binding(vehicle:VehicleKind, pool:&crate::map_drive_worker091::Pool,
+pub(super) fn validate_vehicle_binding(vehicle:VehicleKind, pool:&crate::map_drive_worker091::Pool,
     geometry:Option<&super::geometry::Bundle>) -> io::Result<()> {
     if pool.vehicle_kind()!=vehicle || geometry.is_some_and(|bundle|bundle.vehicle_kind()!=vehicle)
-        || vehicle==VehicleKind::Is7 && geometry.is_none() { return Err(model::bad()); }
+        || vehicle!=VehicleKind::Ms1 && geometry.is_none() { return Err(model::bad()); }
     Ok(())
+}
+
+
+fn hold_training_close(pending:&mut Vec<(u32,&'static str)>,id:u32,reason:&'static str){
+    if !pending.iter().any(|(old,_)|*old==id){pending.push((id,reason));}
+}
+fn retire_training_session(host:&mut Option<p10b_host::Host>,dispatcher:&mut profile13_dispatch::Dispatcher,
+    table:&mut Table,world:&mut World,runtime:&mut Option<IntegratedRuntime>,template:&BattleTemplate,
+    id:u32,reason:&'static str,now:Instant,logical_ms:u64)->io::Result<bool>{
+    let h=host.as_mut().ok_or_else(||model::bad())?;
+    if let Some(error)=h.prestart_failure(world,Some(id),now){
+        contain_battle_failure(table,world,runtime,template,now,"training_prestart_disconnect",&error)?;
+    }
+    if h.closing(table,id,now,logical_ms)?{return Ok(false);}
+    if h.previously_retired(id){
+        let index=table.sessions.iter().position(|s|s.id==id).ok_or_else(||model::bad())?;
+        if table.sessions[index].active||world.actors.iter().any(|a|a.session==Some(id))
+            ||table.sessions[index].shared.as_ref().and_then(|c|c.profile13.as_ref()).is_none_or(|p|!p.garage_idle()){
+            return Err(model::bad());
+        }
+        table.sessions.remove(index);
+        println!("P10B_HELD_SESSION_CLOSED session={id} all_reserves_released=true reason={reason}");
+    }else{dispatcher.retire(table,world,id,now,reason)?;}
+    h.forget_session(id);Ok(true)
+}
+
+
+/// Writer/result faults must cross the same training retirement boundary as a
+/// native disconnect. A held/failed close remains queued, including its first
+/// reason, and no Host/Registry/member metadata is discarded.
+fn retire_service_failure(host:&mut Option<p10b_host::Host>,dispatcher:&mut profile13_dispatch::Dispatcher,
+    table:&mut Table,world:&mut World,runtime:&mut Option<IntegratedRuntime>,template:&BattleTemplate,
+    pending:&mut Vec<(u32,&'static str)>,id:u32,reason:&'static str,now:Instant,logical_ms:u64)->io::Result<()>{
+    if host.is_none(){return dispatcher.retire(table,world,id,now,reason);}
+    match retire_training_session(host,dispatcher,table,world,runtime,template,id,reason,now,logical_ms){
+        Ok(true)=>{},
+        Ok(false)=>hold_training_close(pending,id,reason),
+        Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(pending,id,reason);},
+    }Ok(())
+}
+
+/// Retain the old helper/API for ordinary mode and its existing tests. Explicit
+/// training mode must never remove a room member behind Host's back.
+fn contain_results_failure_with_training(manager:&super::results_session::Manager,host:&mut Option<p10b_host::Host>,
+    dispatcher:&mut profile13_dispatch::Dispatcher,table:&mut Table,world:&mut World,
+    runtime:&mut Option<IntegratedRuntime>,template:&BattleTemplate,pending:&mut Vec<(u32,&'static str)>,
+    now:Instant,logical_ms:u64,error:&io::Error)->io::Result<()>{
+    if host.is_none(){return contain_results_failure(manager,dispatcher,table,world,now,error);}
+    let target=manager.failure_session(&table.sessions);
+    println!("P08C_RESULTS_SESSION_FAILED session={target:?} error={error} service_alive=true durable_result_retained=true");
+    if let Some(id)=target.filter(|id|table.sessions.iter().any(|s|s.id==*id)){
+        retire_service_failure(host,dispatcher,table,world,runtime,template,pending,id,"native_results_delivery",now,logical_ms)?;
+    }Ok(())
 }
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
     integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
-    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind)
+    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,resources:Option<Vec<super::profile13_templates::Resources>>,qualification:Option<VehicleKind>)
     -> Result<(), Box<dyn std::error::Error>> {
+    serve_with_pool_policy(key_path,digest_path,config_path,capture_path,integrated_pool,geometry,ap_test_lab,
+        terrain,removal,catalog,map,vehicle,resources,qualification,false)
+}
+fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
+    integrated_pool:Option<Arc<crate::map_drive_worker091::Pool>>,geometry:Option<Arc<super::geometry::Bundle>>,ap_test_lab:bool,
+    terrain:Option<Arc<super::terrain::Terrain>>,removal:Option<crate::map_drive_worker091::RemovalSpec>,
+    catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,
+    resources:Option<Vec<super::profile13_templates::Resources>>,qualification:Option<VehicleKind>,breech_v2:bool)
+    ->Result<(),Box<dyn std::error::Error>> {
+    if breech_v2&&!qualification.is_some_and(VehicleKind::is_extended){return Err(model::bad().into());}
     if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
     if terrain.is_some() && !ap_test_lab { return Err(model::bad().into()); }
     if let Some(pool)=&integrated_pool { selected_pool_config(pool,map)?; validate_vehicle_binding(vehicle,pool,geometry.as_deref())?; }
@@ -821,7 +1268,9 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
         return Err(model::bad().into());
     }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
-    if config.ammo_service { return Err(model::bad().into()); }
+    let profile13_mode=resources.is_some()&&qualification.is_none();
+    config.require_game_network(if profile13_mode{crate::identity091::game_network::Runtime::SharedOwnedProfile13}else{crate::identity091::game_network::Runtime::LoopbackOnly})?;
+    if config.profile13_battle!=profile13_mode || config.ammo_service!=profile13_mode { return Err(model::bad().into()); }
     let private = login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len() != 16 { return Err(model::bad().into()); }
     let digest: [u8; 16] = fs::read(digest_path)?.try_into().map_err(|_| model::bad())?;
@@ -831,9 +1280,21 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let capture_profile = if integrated_pool.is_some() { crate::capture091::Profile::IntegratedWorldV1 }
         else { crate::capture091::Profile::SharedWorldV1 };
     let mut capture = Some(Recorder::open_profile(capture_path, &config.local_root, capture_profile)?);
-    let mut table = Table::default();
+    if config.battle_players!=2&&resources.as_ref().is_none_or(|rows|rows[0].shared.is_none()){return Err(model::bad().into());}
+    let mut table = Table{capacity:if config.training_rooms{crate::training091::domain::MAX_ACCOUNTS}else{config.battle_players},..Table::default()};
+    let mut room_host=if config.training_rooms{Some(p10b_host::Host::for_config(&config)?)}else{None};
+    let mut room_closing:Vec<(u32,&'static str)>=Vec::new();
+    let mut battle_dispatch=profile13_dispatch::Dispatcher::default();
+    if config.p08c_late_results{
+        battle_dispatch.late=Some(super::late_results_runtime::Manager::new(config.p08c_late_results_accounts.clone(),config.p08c_late_notice_experimental)?);
+        println!("P08C_LATE_RESULTS_BOUND policy={} configured_owners={} native_notice_experimental={} native_method=INFERRED",super::late_results_capture::POLICY,config.p08c_late_results_accounts.len(),config.p08c_late_notice_experimental);
+    }
+    if room_host.is_some(){battle_dispatch.enable_training_finished();}
+    let mut ammo_job=None;
+    let mut result_manager=super::results_session::Manager::default();
     let started = Instant::now();
-    let mut world = World::new_for_vehicle(OsRng.next_u64().max(1), started,map,vehicle)?;
+    // Native Account.doCmdInt3 carries the result arena key as signed INT64.
+    let mut world = World::new_for_vehicle((OsRng.next_u64() & i64::MAX as u64).max(1), started,map,vehicle)?;
     if let Some(bundle) = geometry {
         let geometry_revision=super::geometry::source_revision(vehicle);
         let material_revision=super::materials::profile_revision(vehicle);
@@ -844,8 +1305,8 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     }
     if ap_test_lab {
         world.enable_ap_test_lab()?;
-        println!("SHARED_AP_PROFILE revision={} historical_fidelity={} damage={} rng=false friendly_fire=true persistence=false",
-            ap::profile_revision_for(vehicle), ap::HISTORICAL_FIDELITY, vehicle.damage());
+        println!("SHARED_AP_PROFILE revision={} historical_fidelity={} damage={} rng=false friendly_fire=true persistence={}",
+            ap::profile_revision_for(vehicle),ap::HISTORICAL_FIDELITY,vehicle.damage(),profile13_mode);
     }
     if let Some(terrain) = terrain {
         let revision=terrain.source_revision();
@@ -863,21 +1324,54 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
     let mut integrated = integrated_pool.map(|pool|IntegratedRuntime::new_for_map(pool,map));
     if let Some(runtime) = &mut integrated { runtime.removal = removal; }
     if let Some(runtime)=&mut integrated {runtime.catalog=catalog.map(|(_,worker)|worker);}
-    let battle_template=BattleTemplate::new(&world,&integrated);
+    if profile13_mode { world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?; }
+    let mut battle_template=BattleTemplate::new(&world,&integrated);
+    if let Some(rows)=resources.as_ref().filter(|rows|rows[0].shared.is_some()){
+        battle_template=BattleTemplate::from_shared_policy(rows,config.battle_players,world.id,started,qualification,breech_v2)?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+    }
+    if config.p06t_mixed_ammo{
+        if !profile13_mode||qualification.is_some(){return Err(model::bad().into());}
+        battle_template.world.enable_mixed_ammo()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("P06T_ARMAMENT_BOUND policy={} damage_policy={} device_policy={} proxy_policy={} module_admission={} source={} historical_internal_volumes=UNKNOWN",
+            crate::p06t_armament091::POLICY,crate::p06t_damage::POLICY,crate::p06t_device_state::POLICY,
+            crate::p06t_lab_proxy::POLICY,model::p06t::MODULE_ADMISSION_POLICY,crate::p06t_shells091::SOURCE_REVISION);
+    }
+    if profile13_mode && config.visibility_v1 {
+        battle_template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
+        battle_template.world.enable_result_spots()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("P08C_FIRST_SPOT_BOUND policy={}", model::result_spots::POLICY);
+    }
+    if config.p06t_ammo_rack_detonation{
+        if !profile13_mode||!config.p06t_mixed_ammo||!config.visibility_v1||qualification.is_some(){return Err(model::bad().into());}
+        battle_template.world.enable_ammo_detonation()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("P06T_AMMO_DETONATION_BOUND policy={} flight_policy={} historical_solver=UNKNOWN",
+            super::ammo_detonation::POLICY,super::ammo_detonation::FLIGHT_POLICY);
+    }
+    if config.p08b_owner_battle_hold{
+        battle_template.world.enable_owner_hold()?;battle_template.select(&mut world,&mut integrated,started)?;
+        println!("P08B_HOLD5_BOUND policy={} early_finish=false training_supported=false",crate::profile13_hold091::POLICY_SHA256);
+    }
     let mut next_id = 1u32;
     let mut auth: Option<AuthJob> = None;
     let mut last_auth: Option<Instant> = None;
     let mut fragments = login::LoginFragments::default();
     let mut rate_started = started; let mut rate_count = 0u32;
-    println!("BOUND {} base_backend={} profile={} battle={} capacity=2 scope=allied_temporary_{} motion={} physics={} map={} arena_type_id={} inventory_changed=false",
+    println!("BOUND {} base_backend={} profile={} battle={} capacity={} scope=allied_temporary_{} motion={} physics={} map={} arena_type_id={} inventory_changed=false",
         config.login_bind, config.base_bind,
-        if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
-        world.id, vehicle.label(), if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
+        if profile13_mode {"legacy091-profile13"} else if qualification.is_some(){"legacy091-curated-lab"}else if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
+        world.id,world.expected_actors(),world.vehicle_kind().label(), if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
     loop {
         let now = Instant::now();
-        if now.duration_since(started) >= model::LIFETIME { println!("SHARED_STOP reason=lab_lifetime"); break; }
+        if now.duration_since(started) >= if profile13_mode {PROFILE13_SERVICE_LIFETIME} else {model::LIFETIME} {
+            println!("SHARED_STOP reason=lab_lifetime"); break;
+        }
         if now.duration_since(rate_started) >= Duration::from_secs(1) { rate_started = now; rate_count = 0; }
-        let mut closing: Vec<(u32, &'static str)> = Vec::new();
+        let mut closing: Vec<(u32, &'static str)> = std::mem::take(&mut room_closing);
+        let logical_ms=u64::try_from(now.saturating_duration_since(started).as_millis()).map_err(|_|model::bad())?;
         let result = auth.as_ref().and_then(|job| match job.receiver.try_recv() {
             Ok(result) => Some(result), Err(mpsc::TryRecvError::Empty) => None,
             Err(mpsc::TryRecvError::Disconnected) => Some(Err(model::bad())),
@@ -892,17 +1386,33 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                             if !table.sessions[index].verified_duplicate(&job.attempt, &accepted.identity.account_id) { return Err(model::bad()); }
                             return Ok(index);
                         }
-                        if table.sessions.iter().any(|s| s.identity.as_ref().is_some_and(|p| p.account_id == accepted.identity.account_id)) { return Err(model::bad()); }
+                        if battle_dispatch.owner_busy(&accepted.identity.account_id) || table.sessions.iter().any(|s| s.identity.as_ref().is_some_and(|p| p.account_id == accepted.identity.account_id)) { return Err(model::bad()); }
                         let mut s = Session::new(next_id, job.attempt.key, job.attempt.login_peer, now);
                         // Explicitly fail closed on the astronomically unlikely
                         // random capability collision instead of ambiguous routing.
                         if s.handoff == 0 || s.token == 0 || table.sessions.iter().any(|old| old.handoff == s.handoff || old.token == s.token) { return Err(model::bad()); }
                         let mut next_world = world.clone();
-                        let slot = next_world.attach(model::Identity { account: accepted.identity.account_id.clone(),
-                            database: accepted.identity.database_id, name: accepted.identity.name.clone() }, next_id)?;
+                        let slot = if profile13_mode {0} else {
+                            let who=model::Identity{account:accepted.identity.account_id.clone(),database:accepted.identity.database_id,name:accepted.identity.name.clone()};
+                            if next_world.extended_lab(){
+                                next_world.attach_extended_lab(who,next_id,model::extended::LabLoadout::temporary(next_world.vehicle_kind()))?
+                            }else{next_world.attach(who,next_id)?}
+                        };
                         s.account_probe = true; s.account_ready = true; s.tx = Window::interactive();
                         s.login_attempt = Some(job.attempt); s.identity = Some(accepted.identity);
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
+                        if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
+                        if profile13_mode {
+                            let binding=accepted.ammo_service.ok_or_else(||model::bad())?;
+                            s.ammo_service=Some(ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
+                            s.ammo_service.as_mut().ok_or_else(||model::bad())?.replace_pool(s.hangar.as_ref().and_then(|f|f.p04m_binding()).cloned())?;
+                            let c=s.shared.as_mut().ok_or_else(||model::bad())?;c.join_requested=false;
+                            c.profile13=Some(super::profile13_session::State::new(config.battle_run_id.clone(),binding.revision)?);
+                            if config.p08b_owner_battle_hold{
+                                battle_dispatch.install_hold_login(&mut s,accepted.owner_hold.ok_or_else(||model::bad())?)?;
+                            }
+                        }
+                        if let Some(host)=&mut room_host{host.bind_session(&mut s)?;}
                         println!("SHARED_SESSION_PENDING battle={} session={next_id} slot={slot} account={} database={} authenticated=true", world.id,
                             s.identity.as_ref().ok_or_else(|| model::bad())?.account_id, s.identity.as_ref().ok_or_else(|| model::bad())?.database_id);
                         next_id = next_id.checked_add(1).ok_or_else(|| model::bad())?;
@@ -911,15 +1421,15 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     match admitted {
                         Ok(index) => {
                             let s = &table.sessions[index];
-                            send_wire(&login_socket, job.attempt.login_peer, &redirect091::reply_to(job.request, &s.key, s.handoff, config.base_bind)?, Channel::Login, &mut capture)?;
+                            send_wire(&login_socket, job.attempt.login_peer, &redirect091::reply_advertised(job.request, &s.key, s.handoff, config.game_network().advertised_base())?, Channel::Login, &mut capture)?;
                         },
                         Err(_) => { send_wire(&login_socket, job.attempt.login_peer, &login::rejection(job.request, 73), Channel::Login, &mut capture)?;
                             println!("SHARED_AUTH_REJECT reason=admission_or_world_capacity allocated=0"); },
                     }
                 },
                 Ok(None) => { send_wire(&login_socket, job.attempt.login_peer, &login::rejection(job.request, 67), Channel::Login, &mut capture)?; },
-                Err(_) => { send_wire(&login_socket, job.attempt.login_peer, &login::rejection(job.request, 73), Channel::Login, &mut capture)?;
-                    println!("SHARED_AUTH_REJECT reason=identity_unavailable allocated=0"); },
+                Err(error) => { send_wire(&login_socket, job.attempt.login_peer, &login::rejection(job.request, 73), Channel::Login, &mut capture)?;
+                    println!("SHARED_AUTH_REJECT reason=identity_unavailable allocated=0 error={error}"); },
             }
         }
         for (is_login, socket) in [(true, &login_socket), (false, &base_socket)] {
@@ -929,9 +1439,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 Err(error) if error.raw_os_error() == Some(10054) => continue,
                 Err(error) => return Err(error.into()),
             };
-            rate_count += 1;
-            if peer.ip() != Ipv4Addr::LOCALHOST || rate_count > 256
-                || length > if is_login { login::MAX_INTERACTIVE_DATAGRAM } else { 1024 } { continue; }
+            if !config.game_network().admit_datagram(peer,length,if is_login{login::MAX_INTERACTIVE_DATAGRAM}else{1024},&mut rate_count){continue;}
             if let Some(recorder) = &mut capture { recorder.observe(if is_login { Channel::Login } else { Channel::Base }, true, peer, &data[..length]); }
             let packet = &data[..length];
             if is_login {
@@ -942,11 +1450,13 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 };
                 if fields.digest != digest { send_wire(socket, peer, &login::rejection(request, 69), Channel::Login, &mut capture)?; continue; }
                 let attempt = LoginAttempt::new(fields.session_key, fields.nonce, peer);
-                if let Some(job) = &auth {
-                    if !job.pending_duplicate(&attempt, &fields) { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
+                if let Some(job) = auth.as_mut() {
+                    if job.refresh_pending_request(request,&attempt,&fields) {
+                        println!("AUTH_PENDING_DUPLICATE request_id={request} reply_request_refreshed=true");
+                    } else { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; }
                     continue;
                 }
-                if table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
+                if battle_dispatch.busy() || result_manager.busy() || ammo_job.is_some() || room_host.as_ref().is_some_and(p10b_host::Host::busy) || table.admissible(&attempt, now).is_err() || last_auth.is_some_and(|last| now.duration_since(last) < Duration::from_millis(250)) {
                     send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; continue;
                 }
                 match start_auth(config.clone(), request, peer, &fields, false) {
@@ -954,18 +1464,24 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     Err(_) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; },
                 }
             } else {
-                let index = match table.route(peer, packet) { Ok(i) => i, Err(_) => { println!("SHARED_REJECT reason=base_route"); continue; } };
-                let s = &mut table.sessions[index];
-                if s.guard_base_peer(&mut table.retirement, peer, now).is_err() { println!("SHARED_REJECT reason=retired_peer"); continue; }
+                let index = match table.route_with_network(peer, packet,config.game_network()) { Ok(i) => i, Err(_) => { println!("SHARED_REJECT reason=base_route"); continue; } };
+                if table.sessions[index].guard_base_peer(&mut table.retirement,peer,now).is_err(){println!("SHARED_REJECT reason=retired_peer");continue;}
                 if length == 21 {
+                    let s=&mut table.sessions[index];
                     let (request, _) = base::base_request(packet, s.handoff)?;
                     s.base_peer = Some(peer); send(socket, peer, &base::base_reply(request, s.token), &s.key, &mut capture)?;
                     println!("SHARED_BASE_BOUND battle={} session={} peer={peer}", world.id, s.id);
                 } else {
-                    let frame = match base::decrypt(packet, &s.key).and_then(|b| transport091::parse_interactive(&b)) {
-                        Ok(frame) => frame, Err(_) => { println!("SHARED_REJECT session={} reason=channel_framing", s.id); continue; }
+                    let sid=table.sessions[index].id;
+                    let frame=match base::decrypt(packet,&table.sessions[index].key).and_then(|b|transport091::parse_interactive(&b)){
+                        Ok(frame)=>frame,Err(_)=>{println!("SHARED_REJECT session={sid} reason=channel_framing");continue;}
                     };
-                    match s.receive(&frame, now) {
+                    let received=if let Some(host)=&mut room_host{host.receive(&mut table,sid,&frame,&world,now,logical_ms)}else{
+                        let s=&mut table.sessions[index];
+                        receive_battle_session(s,&frame,&world,now)
+                    };
+                    let s=&mut table.sessions[index];
+                    match received {
                         Ok(close) => {
                             if frame.flags & 0x10 != 0 { send(socket, peer, &transport091::ack(s.rx), &s.key, &mut capture)?; s.last_keepalive = now; }
                             if close { closing.push((s.id, "client_disconnect")); }
@@ -976,9 +1492,146 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             }
         }
         // Remove known disconnects before applying any queued intent or tick.
-        for (id, reason) in closing.drain(..) { table.retire(id, &mut world, now, reason)?; }
-        if !world.actors.is_empty() && world.actors.iter().all(|a|a.session.is_none()) {
-            battle_template.replace(&mut world,&mut integrated,now)?;
+        for(id,reason)in closing.drain(..){
+            if !table.sessions.iter().any(|s|s.id==id){continue;}
+            if retire_contained_session(&mut battle_dispatch,&mut table,&world,id,now,reason)?{continue;}
+            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;continue;}
+            match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,&battle_template,id,reason,now,logical_ms){
+                Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
+                Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
+            }
+        }
+        if profile13_mode {
+            if let Err(error)=result_manager.poll(&mut table.sessions,now) {
+                contain_results_failure_with_training(&result_manager,&mut room_host,&mut battle_dispatch,&mut table,&mut world,
+                    &mut integrated,&battle_template,&mut room_closing,now,logical_ms,&error)?;
+            }
+            for s in &mut table.sessions {
+                // An explicitly contained old Avatar has no authority in the
+                // replacement World, including the terminal-freeze pass.
+                if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
+                    contained_return_world(s,&world)?;continue;
+                }
+                if world.started.is_some() {
+                    let busy=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
+                        p.selection.is_some() && !p.has_reservation() && !p.in_flight);
+                    if busy {
+                        let c=s.shared.as_mut().ok_or_else(||model::bad())?;
+                        c.profile13.as_mut().ok_or_else(||model::bad())?.selection=None;c.join_requested=false;
+                        s.outbox.push_back(crate::battle091::profile13::enqueue_failure("BATTLE_BUSY")?);
+                        println!("P08B_ADMISSION_BUSY session={} battle={} peer_battle_unchanged=true",s.id,world.id);
+                    }
+                }
+                let pending=s.shared.as_ref().is_some_and(|c|c.profile13.is_some() &&
+                    (c.phase==Phase::Leaving || c.phase==Phase::Account && !c.join_requested
+                        && c.profile13.as_ref().is_some_and(|p|p.has_reservation()&&!p.hold_account_only)));
+                if pending {
+                    profile13_dispatch::Dispatcher::terminal(s,&world,crate::battle091::profile13::FinishReason::ManualLeave)?;
+                    if integrated.as_ref().is_none_or(|r|!r.blocked()) && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+                }
+            }
+            if let Some(id)=ammo_job.as_ref().map(ammo_session::Job::session_id) {
+                if let Err(error)=ammo_session::complete(table.sessions.iter_mut().find(|s|s.id==id),&mut ammo_job) {
+                    println!("P08B_GARAGE_FAILED session={id} error={error} reconnect_required=true service_alive=true");
+                    if table.sessions.iter().any(|s|s.id==id) {
+                        retire_service_failure(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,
+                            &battle_template,&mut room_closing,id,"garage_writer_ambiguous",now,logical_ms)?;
+                    }
+                }
+            }
+            battle_dispatch.observe_hold_world(&table,&world)?;
+            if let Some(error)=battle_dispatch.hold_pre_avatar_failure(&table,&world){
+                battle_dispatch.before_hold_reset(&world)?;
+                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"hold5_pre_avatar_departure",&error)?;
+                contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+            }
+            if ammo_job.is_none() && !result_manager.busy() && !battle_dispatch.late_running() && (!config.p08b_owner_battle_hold||auth.is_none()) {
+                battle_dispatch.poll(&mut table,config.clone(),now)?;
+                if battle_dispatch.finish_empty_queue(&table,&mut world,&mut integrated,&battle_template,now)? {
+                    contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+                }
+                if battle_dispatch.closed_queue(world.id) {
+                    for s in &mut table.sessions {
+                        let pending=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
+                            p.selection.is_some() && !p.has_reservation() && !p.in_flight);
+                        if pending {
+                            let c=s.shared.as_mut().ok_or_else(||model::bad())?;
+                            c.profile13.as_mut().ok_or_else(||model::bad())?.selection=None;c.join_requested=false;
+                            s.outbox.push_back(crate::battle091::profile13::enqueue_failure("BATTLE_BUSY")?);
+                        }
+                    }
+                }
+                if world.started.is_none() && world.actors.iter().all(|a|a.session.is_none()) {
+                    let kind=table.sessions.iter().find_map(|s|s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
+                        .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && !p.has_pending_return())
+                        .filter(|p|p.reservation_battle()==Some(world.id)).and_then(|p|p.reservation_kind()));
+                    if let Some(kind)=kind.filter(|k|!world.mixed_profiles()&&*k!=world.vehicle_kind()) {
+                        let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
+                        battle_template=BattleTemplate::from_resources(r,world.id,now)?;
+                        if config.visibility_v1 {
+                            battle_template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
+                            battle_template.world.enable_result_spots()?;
+                        }
+                        battle_template.select(&mut world,&mut integrated,now)?;
+                        contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+                    }
+                }
+                for s in &mut table.sessions {
+                    let mismatch=s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
+                        .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && !p.has_pending_return())
+                        .is_some_and(|p|p.reservation_battle().is_some_and(|battle|battle!=world.id)
+                            ||!world.mixed_profiles()&&p.reservation_kind().is_some_and(|kind|kind!=world.vehicle_kind()));
+                    if mismatch {
+                        profile13_dispatch::Dispatcher::terminal(s,&world,crate::battle091::profile13::FinishReason::Cancelled)?;
+                        if let Some(c)=&mut s.shared {c.queue_announced=false;}
+                        s.outbox.push_back(crate::battle091::profile13::enqueue_failure("BATTLE_BUSY")?);
+                        println!("P08B_HOMOGENEOUS_DENIAL session={} battle={} reservation_will_be_returned=true",s.id,world.id);
+                    }
+                }
+                if room_host.as_ref().is_none_or(|h|!h.preparing()){
+                    battle_dispatch.start(&mut table,&world,config.clone(),now)?;
+                }
+            }
+            if !battle_dispatch.busy() && !result_manager.busy() && room_host.as_ref().is_none_or(|h|!h.busy()) && (!config.p08b_owner_battle_hold||auth.is_none()){
+                for s in &mut table.sessions {ammo_session::start(s,&mut ammo_job,config.clone())?;}
+            }
+            if !battle_dispatch.busy() && ammo_job.is_none() && auth.is_none() && room_host.as_ref().is_none_or(|h|!h.busy()) {
+                if let Err(error)=result_manager.start_if_idle(&mut table.sessions,config.clone(),now) {
+                    contain_results_failure_with_training(&result_manager,&mut room_host,&mut battle_dispatch,&mut table,&mut world,
+                    &mut integrated,&battle_template,&mut room_closing,now,logical_ms,&error)?;
+                }
+            }
+        }
+        if let Some(host)=&mut room_host{
+            let idle=!battle_dispatch.busy()&&ammo_job.is_none()&&!result_manager.busy()&&auth.is_none();
+            match host.poll(&mut table,&mut world,&mut integrated,&battle_template,&mut battle_dispatch,config.clone(),now,logical_ms,idle){
+                Ok(true)=>{contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;},Ok(false)=>{},
+                Err(error)=>println!("P10B_HOST_RETRY error={error} authority_retained=true service_alive=true"),
+            }
+            if let Some(error)=host.prestart_failure(&world,None,now){
+                if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"training_handoff_failure");}
+                        battle_dispatch.before_hold_reset(&world)?;
+                        contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"training_handoff",&error)?;
+                contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+            }
+        }
+        if let Some(late)=&mut battle_dispatch.late{
+            late.observe_sessions(table.sessions.iter());
+            if world.started.is_some()&&world.actors.iter().all(|a|a.session.is_none())
+                &&integrated.as_ref().is_none_or(|r|!r.blocked()){
+                if let Err(error)=world.advance_lifecycle(now){late.invalidate_source(&config.battle_run_id,world.id);
+                    println!("P08C_LATE_FINAL_OUTCOME_UNSUPPORTED battle={} error={error}",world.id);}
+            }
+            late.seal_world(&world);
+        }
+        if world.owner_hold_enabled()&&world.started.is_some()&&world.actors.iter().all(|a|a.session.is_none())
+            &&integrated.as_ref().is_none_or(|r|!r.blocked()){
+            world.advance_lifecycle(now)?;battle_dispatch.observe_hold_world(&table,&world)?;
+        }
+        if parked_battle_reset_ready(&table,&world) {
+            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"normal_all_parked_reset");}
+                battle_dispatch.before_hold_reset(&world)?;
+                battle_template.replace(&mut world,&mut integrated,now)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
         for s in &mut table.sessions {
@@ -988,18 +1641,40 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             }
         }
         let step=(||->io::Result<()> {
-            attach_waiting_sessions(&mut table,&mut world,now)?;
-            let start=world.started.is_none() && table.sessions.len()==2
-                && table.sessions.iter().all(|s|entry_ready(s,now));
+            if world.owner_hold_enabled(){battle_dispatch.attach_hold_ready_group(&mut table,&mut world,&config.battle_run_id,now)?;}
+            else{attach_waiting_sessions(&mut table,&mut world,now)?;}
+            if let Some(late)=&mut battle_dispatch.late{
+                if let Err(error)=if config.p08b_owner_battle_hold{Ok(())}else{late.register_world(&table.sessions,&world,&config.battle_run_id)}{
+                    late.invalidate_source(&config.battle_run_id,world.id);
+                    println!("P08C_LATE_ADMISSION_UNSUPPORTED battle={} error={error} normal_owned_battle_unchanged=true",world.id);
+                }
+            }
+            let start=if let Some(host)=&room_host{host.can_start(&table,&world,now)?}else{
+                world.started.is_none() && table.sessions.len()==world.expected_actors()
+                    && world.actors.len()==world.expected_actors() && table.sessions.iter().all(|s|entry_ready(s,now)
+                        && world.actors.iter().any(|a|a.session==Some(s.id)))
+            };
             advance_battle(&mut world,&mut integrated,now,start)
         })();
         if let Err(error)=step {
-            contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"world_step",&error)?;
+            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_world_step");}
+                battle_dispatch.before_hold_reset(&world)?;
+                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"world_step",&error)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
+        }
+        if let Some(late)=&mut battle_dispatch.late{late.observe_sessions(table.sessions.iter());late.seal_world(&world);}
+        battle_dispatch.observe_hold_world(&table,&world)?;
+        let sealed=battle_dispatch.hold_results(world.id).or_else(||battle_dispatch.late.as_ref().and_then(|m|m.sealed_results(world.id)));
+        if let Err(error)=stage_lifecycle_results_from(&mut table,&world,sealed) {
+            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_result_snapshot");}
+                battle_dispatch.before_hold_reset(&world)?;
+                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"result_snapshot",&error)?;
+            contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
         }
         let integrated_native_ready = integrated.as_ref().is_none_or(IntegratedRuntime::ready_for_native);
         let mut publication_failure=None;
         for s in &mut table.sessions {
+            if !s.active&&room_host.as_ref().is_some_and(|h|h.owns_preparing(s.id)){continue;}
             let reason = if now.duration_since(s.created_at) >= config.session_duration { Some("session_deadline") }
                 else if now.duration_since(s.last_rx) >= s.tx.idle_limit() { Some("idle_timeout") } else { None };
             if let Some(reason) = reason { closing.push((s.id, reason)); continue; }
@@ -1009,6 +1684,23 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             // heartbeats and made a client look disconnected during startup.
             if let Err(error) = poll_battle_session(s,&mut world,now,integrated_native_ready,
                 integrated.as_ref().is_some_and(IntegratedRuntime::blocked)) {
+                // A revoked old Avatar cannot fail the replacement battle.
+                // Retire only its authenticated session; its immutable writer
+                // task/durable result remains in the ordinary retired lane.
+                if let Some(reason)=contained_return_failure_reason(s){
+                    println!("SHARED_CONTAINED_RETURN_FAILED session={} reason={} durable_result_retained=true replacement_world_unchanged=true",s.id,error);
+                    closing.push((s.id,reason));continue;
+                }
+                if error.kind()==io::ErrorKind::TimedOut&&world.ammo_detonation_enabled()
+                    &&s.shared.as_ref().is_some_and(|c|c.result_committed&&!c.result_stream_queued){
+                    println!("P06T_TURRET_PRESENTATION_TIMEOUT session={} durable_result_retained=true",s.id);
+                    closing.push((s.id,"native_turret_unconfirmed"));continue;
+                }
+                if s.shared.as_ref().is_some_and(|c|c.result_committed && c.result_delivery_at
+                    .is_some_and(|at|now.duration_since(at)>=Duration::from_secs(30))) {
+                    println!("P08C_RESULTS_CONFIRM_TIMEOUT session={} durable_result_retained=true",s.id);
+                    closing.push((s.id,"native_results_unconfirmed"));continue;
+                }
                 println!("SHARED_FAILED session={} reason={}", s.id, error);
                 publication_failure=Some(error); break;
             }
@@ -1027,11 +1719,24 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
             }
         }
         if let Some(error)=publication_failure {
-            contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"publication",&error)?;
+            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_publication");}
+                battle_dispatch.before_hold_reset(&world)?;
+                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"publication",&error)?;
             contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
-        for (id, reason) in closing {
-            if table.sessions.iter().any(|s|s.id==id) {table.retire(id, &mut world, now, reason)?;}
+        for(id,reason)in closing{
+            if !table.sessions.iter().any(|s|s.id==id){continue;}
+            if retire_contained_session(&mut battle_dispatch,&mut table,&world,id,now,reason)?{continue;}
+            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;continue;}
+            match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,&battle_template,id,reason,now,logical_ms){
+                Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
+                Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
+            }
+        }
+        let late_idle=!battle_dispatch.busy()&&ammo_job.is_none()&&auth.is_none()&&!result_manager.busy();
+        if let Some(late)=&mut battle_dispatch.late{
+            let utc=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d|u32::try_from(d.as_secs()).ok()).unwrap_or(0);
+            late.poll(&mut table.sessions,config.clone(),now,late_idle,utc);
         }
         for contact in world.contacts.iter().skip(contact_cursor) {
             println!("SHARED_GEOMETRIC_CONTACT {}", serde_json::json!({
@@ -1046,6 +1751,7 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                 "material_facts":contact.material_facts.json(),
                 "terminal":match world.impacts.iter().find(|event| event.shot==contact.shot).map(|e| &e.outcome) {
                     Some(model::ImpactOutcome::Ap(_)) => "test_lab_impact",
+                    Some(model::ImpactOutcome::Mixed(_)) => "test_lab_mixed_impact",
                     Some(model::ImpactOutcome::WreckBlocked) => "test_lab_wreck_impact",
                     None => "unresolved_collision"},
                 "damage_applied":world.impacts.iter().any(|event| event.shot==contact.shot && event.health_after<event.health_before)}));
@@ -1076,6 +1782,11 @@ fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture
                     "policy_revision":model::wreck_policy_revision_for(world.vehicle_kind()),"historical_fidelity":"approximate",
                     "outcome":"wreck_blocked","health_before":event.health_before,"health_after":event.health_after,
                     "damage":0,"native_effect_available":event.segment.is_some()}));
+                continue;
+            }
+            if let model::ImpactOutcome::Mixed(resolution)=&event.outcome{
+                println!("P06T_DIRECT_IMPACT battle={} shot={} attacker={} target={} tick={} resolution={resolution:?} hp_before={} hp_after={} historical_fidelity=explicit_lab",
+                    world.id,event.shot,event.attacker,event.target,event.tick,event.health_before,event.health_after);
                 continue;
             }
             let model::ImpactOutcome::Ap(resolution) = &event.outcome else { return Err(model::bad().into()); };
@@ -1134,13 +1845,21 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     }
     if !c.correction { return Ok(()); }
     let outcomes = next_world.apply(slot, s.id, &commands, now)?;
+    if next_world.mixed_ammo()&&outcomes.iter().any(|outcome|matches!(outcome,
+        crate::battle091::fire::Outcome::Typed(crate::p06t_armament091::Outcome::Refused(_))
+        |crate::battle091::fire::Outcome::RejectedBattlePeriod|crate::battle091::fire::Outcome::RejectedVehicleState)){
+        next.shared.as_mut().ok_or_else(||model::bad())?.armament_sent=None;
+    }
     for outcome in &outcomes {
         if let crate::battle091::fire::Outcome::AcceptedShot { ammo_remaining } = outcome {
-            let mut b = wire::ammo_count_for(next_world.vehicle_kind(),*ammo_remaining)?; b.extend(wire::reload_for(next_world.vehicle_kind(),slot,next_world.vehicle_kind().reload_seconds())?);
+            let mut b = wire::ammo_count_for(next_world.actors[slot].vehicle_kind(),*ammo_remaining)?; b.extend(wire::reload_for(next_world.actors[slot].vehicle_kind(),slot,next_world.actors[slot].vehicle_kind().reload_seconds())?);
             next.outbox.push_back(b);
         }
     }
-    if next_world.actors[slot].fire.finish_reload_if_due(now) { next.outbox.push_back(wire::reload_for(next_world.vehicle_kind(),slot,0.)?); }
+    if next_world.actors[slot].fire.finish_reload_if_due(now)&&!next_world.mixed_ammo() { next.outbox.push_back(wire::reload_for(next_world.actors[slot].vehicle_kind(),slot,0.)?); }
+    next.shared_refresh_world(&next_world)?;
+    next.flush_shared_interest(&mut Vec::new())?;
+    sixth_sense_wire::publish(&mut next,&next_world)?;
     let c = next.shared.as_mut().ok_or_else(|| model::bad())?;
     let mut shot_publications = Vec::new();
     let mut tracer_starts = Vec::new();
@@ -1184,8 +1903,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     // Keep the existing native muzzle/sound cue and then send
                     // the original fixed showTracer callback in one reliable
                     // order. The start flag is committed with this clone.
-                    next.outbox.push_back(wire::shooting(shot.slot)?);
-                    next.outbox.push_back(wire::tracer_start(projectile)?);
+                    c.queue_private(&mut next.outbox,wire::shooting(shot.slot)?,&[shot.slot])?;
+                    c.queue_private(&mut next.outbox,wire::tracer_start(projectile)?,&[shot.slot])?;
                     c.tracer_started[index] = true;
                     tracer_starts.push((shot.sequence, shot.slot));
                 }
@@ -1203,13 +1922,24 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 let index = projectile.sequence.checked_sub(1).ok_or_else(|| model::bad())? as usize;
                 if index >= c.tracer_started.len() { return Err(model::bad()); }
                 if c.tracer_started[index] && !c.tracer_stopped[index] {
+                    let target=next_world.impacts.iter().find(|e|e.shot==projectile.sequence).map(|e|e.target);
+                    // A vehicle collision can reveal a hidden target even while
+                    // its shooter remains visible. Native range flight is bounded;
+                    // suppress the private terminal rather than invent a hit point.
+                    if c.spotting_enabled && (!c.visible()[projectile.slot] || target.is_some_and(|slot|!c.visible()[slot])) {
+                        c.tracer_stopped[index]=true;continue;
+                    }
+                    let mut targets=vec![projectile.slot];if let Some(slot)=target {targets.push(slot);}
                     if let Some(contact)=next_world.terrain_contacts.iter().find(|c|c.shot==projectile.sequence) {
                         // Original explodeProjectile terminates its own mover.
                         // A subsequent stopTracer would hide/cancel ground FX.
-                        next.outbox.push_back(super::terrain_wire::explode_material_for(projectile.vehicle_kind,projectile.sequence,
-                            contact.hit.point,contact.direction,contact.hit.effect_material_index())?);
+                        let effect=if let Some(shell)=projectile.shell{super::terrain_wire::explode_material_shell_for_limit(shell,projectile.sequence,
+                            contact.hit.point,contact.direction,contact.hit.effect_material_index(),next_world.shot_limit())?}
+                            else{super::terrain_wire::explode_material_for_limit(projectile.vehicle_kind,projectile.sequence,
+                            contact.hit.point,contact.direction,contact.hit.effect_material_index(),next_world.shot_limit())?};
+                        c.queue_private(&mut next.outbox,effect,&targets)?;
                     } else {
-                        next.outbox.push_back(wire::tracer_stop(projectile)?);
+                        c.queue_private(&mut next.outbox,wire::tracer_stop(projectile)?,&targets)?;
                     }
                     c.tracer_stopped[index] = true;
                     tracer_stops.push((projectile.sequence, projectile.slot));
@@ -1221,6 +1951,12 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 let observed_shot = c.tracer_started.get(shot_index).copied().ok_or_else(|| model::bad())?;
                 let mut body = Vec::new();
                 if visible && observed_shot {
+                    let projectile=next_world.projectiles.iter().find(|projectile|projectile.sequence==event.shot).ok_or_else(||model::bad())?;
+                    let he=projectile.shell.filter(|shell|shell.family==crate::p06t_shells091::Family::HighExplosive);
+                    // A verified collision can stop HE on a non-ordinary surface
+                    // without authorizing fabricated penetration or hull damage.
+                    if let Some(shell)=he{body.extend(crate::armament_wire091::explosion(wire::vehicle_id(event.target)?,
+                        wire::vehicle_id(event.attacker)?,projectile.terminal,shell)?);}
                     if let Some(segment) = &event.segment {
                         let outcome = match &event.outcome {
                             // Explicit laboratory policy: a wreck blocks the shell.
@@ -1233,63 +1969,104 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                                 ap::Outcome::Pierced => impact_wire::ShotOutcome::Pierced,
                                 ap::Outcome::Unsupported(_) => return Err(model::bad()),
                             },
+                            model::ImpactOutcome::Mixed(resolution)=>match resolution.decision{
+                                crate::p06t_damage::Decision::Ricochet=>impact_wire::ShotOutcome::Ricochet,
+                                crate::p06t_damage::Decision::NotPierced=>impact_wire::ShotOutcome::NotPierced,
+                                crate::p06t_damage::Decision::Pierced=>impact_wire::ShotOutcome::Pierced,
+                                // Native visual category only. The authoritative LAB
+                                // decision and damage ledger keep UnarmoredDevice /
+                                // pierced=false; no ordinary armor claim is made.
+                                crate::p06t_damage::Decision::UnarmoredDevice=>impact_wire::ShotOutcome::Pierced,
+                                _=>return Err(model::bad()),
+                            },
                         };
                         let component = match segment.component {
                             super::materials::Component::Hull => 1,
                             super::materials::Component::Turret01 => 2,
                             super::materials::Component::Gun02 | super::materials::Component::Gun01 => 3,
                         };
-                        body.extend(impact_wire::show_damage_for(next_world.vehicle_kind(),event.attacker,event.target,component,
-                            segment.bounds,segment.start,segment.end,outcome)?);
+                        if let Some(shell)=projectile.shell{
+                            if he.is_none(){body.extend(impact_wire::show_damage_shell(shell,event.attacker,event.target,component,segment.bounds,segment.start,segment.end,outcome)?);}
+                        }else{body.extend(impact_wire::show_damage_for(next_world.actors[event.attacker].vehicle_kind(),event.attacker,event.target,component,
+                            segment.bounds,segment.start,segment.end,outcome)?);}
                     }
-                    if event.health_after < event.health_before
+                    if !next_world.mixed_ammo()&&event.health_after < event.health_before
                         && c.health_sent[event.target].is_none_or(|hp| hp > event.health_after) {
-                        body.extend(impact_wire::health_changed_for(next_world.vehicle_kind(),event.target,event.health_after,event.attacker)?);
+                        body.extend(impact_wire::health_changed_for(next_world.actors[event.target].vehicle_kind(),event.target,event.health_after,event.attacker)?);
                         c.health_sent[event.target] = Some(event.health_after);
                         if event.target == c.slot {
-                            body.extend(impact_wire::owner_health_for(next_world.vehicle_kind(),event.health_after)?);
+                            body.extend(impact_wire::owner_health_for(next_world.actors[event.target].vehicle_kind(),event.health_after)?);
                             c.owner_health_sent = Some(event.health_after);
                         }
-                        if event.health_after == 0 { body.extend(wire::roster(&next_world)?); }
+                        if event.health_after == 0 {
+                            if !c.spotting_enabled {body.extend(wire::roster_updates(&next_world,event.target)?);}
+                            if next_world.lifecycle.is_some() && !c.spotting_enabled {
+                                body.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
+                            }
+                        }
                     }
                 }
                 let queued = !body.is_empty();
-                if queued { next.outbox.push_back(body); }
+                if queued { c.queue_private(&mut next.outbox,body,&[event.attacker,event.target])?; }
+                // Arena kill/alive metadata is public. A hidden attacker must
+                // still produce the original kill event without private HP,
+                // shot geometry, entity creation or shooter coordinates.
+                if !next_world.mixed_ammo()&&c.spotting_enabled && event.health_before>0 && event.health_after==0 && next_world.lifecycle.is_some() {
+                    let mut public=wire::roster_updates(&next_world,event.target)?;
+                    public.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
+                    next.outbox.push_back(public);
+                }
                 impact_publications.push((event.shot,event.target,event.health_after,queued));
                 c.impact_cursor += 1;
             }
             // Late creation/reconnect gets current HP, never old effects or
             // an intermediate health value that would resurrect the actor.
-            for target in 0..model::CAPACITY {
+            if next_world.mixed_ammo(){p06t_publication::publish(c,&mut next.outbox,&next_world,now)?;}else{for target in 0..next_world.actors.len() {
                 if !c.visible()[target] { continue; }
                 let hp = next_world.actors[target].health;
                 let mut body = Vec::new();
                 if c.health_sent[target] != Some(hp) {
-                    if hp != next_world.vehicle_kind().max_health() {
+                    if hp != next_world.actors[target].vehicle_kind().max_health() {
                         let attacker = next_world.impacts.iter().rev().find(|e| e.target == target)
                             .map(|e| e.attacker).ok_or_else(|| model::bad())?;
-                        body.extend(impact_wire::health_changed_for(next_world.vehicle_kind(),target,hp,attacker)?);
-                        if hp == 0 { body.extend(wire::roster(&next_world)?); }
+                        body.extend(impact_wire::health_changed_for(next_world.actors[target].vehicle_kind(),target,hp,attacker)?);
+                        if hp == 0 { body.extend(wire::roster_updates(&next_world,target)?); }
                     }
                     c.health_sent[target] = Some(hp);
                 }
-                if target == c.slot && hp != next_world.vehicle_kind().max_health() && c.owner_health_sent != Some(hp) {
-                    body.extend(impact_wire::owner_health_for(next_world.vehicle_kind(),hp)?); c.owner_health_sent = Some(hp);
+                if target == c.slot && hp != next_world.actors[target].vehicle_kind().max_health() && c.owner_health_sent != Some(hp) {
+                    body.extend(impact_wire::owner_health_for(next_world.actors[target].vehicle_kind(),hp)?); c.owner_health_sent = Some(hp);
                 }
-                if !body.is_empty() { next.outbox.push_back(body); }
-            }
+                if !body.is_empty() { c.queue_private(&mut next.outbox,body,&[target])?; }
+            }}
         }
-        for other in 0..2 {
-            if next_world.actors[other].ready && !c.ready_sent[other] {
+        if let Some(state) = &next_world.lifecycle {
+            let view = state.view();
+            // Native AFTERBATTLE clears the base panel. Final capture/death
+            // publications therefore precede that period transition.
+            for i in 0..2 {
+                if c.lifecycle_view.as_ref().is_none_or(|old| old.bases[i] != view.bases[i]) {
+                    let base = view.bases[i];
+                    next.outbox.push_back(super::lifecycle_wire::base_points(base.owner,1,base.points,base.stopped)?);
+                    if base.points == 100 {next.outbox.push_back(super::lifecycle_wire::base_captured(base.owner,1)?);}
+                }
+            }
+            if c.lifecycle_view.as_ref().is_none_or(|old|old.phase!=view.phase || old.ends_ms!=view.ends_ms) {
+                next.outbox.push_back(wire::lifecycle_period(&next_world)?);
+            }
+            c.lifecycle_view=Some(view);
+        }
+        for other in 0..next_world.actors.len() {
+            if next_world.actors[other].ready && !c.ready_sent[other] && (!c.spotting_enabled || c.visible()[other]) {
                 next.outbox.push_back(wire::ready_update(other)?); c.ready_sent[other] = true;
             }
         }
         // No queue of stale poses for a slow peer. Reliable retries retain their
         // exact bytes; the next fresh pose is queued when capacity is available.
-        let old_tick = c.view.as_ref().map(|w| w.tick).unwrap_or(0);
+        let old_tick = if c.spotting_enabled {c.last_pose_tick.unwrap_or(0)} else {c.view.as_ref().map(|w| w.tick).unwrap_or(0)};
         if c.correction && c.binding.is_some_and(|(_, ack)| ack) && old_tick != next_world.tick && next.tx.len() < 4 {
             let body = wire::publication(&next_world, c.visible())?;
-            next.tx.enqueue_body(&body)?;
+            next.tx.enqueue_body(&body)?;c.last_pose_tick=Some(next_world.tick);
             println!("SHARED_SNAPSHOT battle={} session={} tick={} positions={:?} ready={:?} aim_yaw_pitch={:?}", next_world.id, s.id, next_world.tick,
                 next_world.actors.iter().map(|a| a.position).collect::<Vec<_>>(), c.visible(),
                 next_world.actors.iter().map(|a| (a.aim.yaw,a.aim.pitch)).collect::<Vec<_>>());
@@ -1297,7 +2074,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     }
     // At most40 MS-1 or60 IS-7 shots: start cue+tracer+stop+one compound impact, plus
     // bounded reload/readiness/health catch-up. Slow peers cannot grow forever.
-    if next.outbox.len() > next_world.vehicle_kind().battle_shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;
+    if next.outbox.len()+next.shared.as_ref().ok_or_else(||model::bad())?.pending_private_len() > next_world.shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;next.flush_shared_private()?;
+    let mut turret_events=Vec::new();next.flush_shared_turrets(&next_world,&mut turret_events)?;
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
     for command in &commands { if let model::Command::Aim(intent) = command { println!("SHARED_AIM battle={} session={} slot={slot} intent={intent:?} client_angles_authoritative=false", world.id, s.id); } }
@@ -1327,7 +2105,9 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         println!("SHARED_AP_PUBLICATION battle={} session={} shot={} target={} health={} queued={} historical_fidelity=approximate",
             world.id,s.id,shot,target,hp,queued);
     }
-    *world = next_world; *s = next; Ok(())
+    *world = next_world; *s = next;
+    for event in turret_events{println!("{event}");}
+    Ok(())
 }
 
 fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
@@ -1338,6 +2118,29 @@ fn entry_ready(s: &Session, now: Instant) -> bool {
     s.ready_for_arena_base() && s.shared.as_ref().is_some_and(|c| c.phase == Phase::Account
         && c.join_requested
         && c.hangar_since.is_some_and(|start| now.saturating_duration_since(start) >= Duration::from_secs(3)))
+}
+
+#[cfg(test)]
+mod profile13_template_regressions {
+    use super::*;
+    #[test] fn profile13_template_selection_keeps_same_battle_id_without_weakening_fresh_guard() {
+        let now=Instant::now();
+        let pristine=World::new_for_vehicle(991,now,MapId::Prohorovka,VehicleKind::Is7).unwrap();
+        assert!(pristine.fresh_battle(991,now).is_err());
+        let template=BattleTemplate::new(&pristine,&None);
+        let mut world=World::new_for_vehicle(991,now,MapId::Prohorovka,VehicleKind::Ms1).unwrap();
+        let mut runtime=None;
+        template.select(&mut world,&mut runtime,now+Duration::from_secs(1)).unwrap();
+        assert_eq!(world.id,991);assert_eq!(world.vehicle_kind(),VehicleKind::Is7);
+        assert!(world.actors.is_empty());assert!(world.shots.is_empty());assert!(world.started.is_none());
+        template.replace(&mut world,&mut runtime,now+Duration::from_secs(2)).unwrap();
+        assert_eq!(world.id,992);assert_eq!(world.vehicle_kind(),VehicleKind::Is7);
+        assert!(world.actors.is_empty());assert!(runtime.is_none());
+        world.attach(model::Identity{account:"already-owned".into(),database:1,name:"owned".into()},1).unwrap();
+        let actors=world.actors.clone();
+        assert!(template.select(&mut world,&mut runtime,now+Duration::from_secs(2)).is_err());
+        assert_eq!(world.actors,actors);assert_eq!(world.id,992);
+    }
 }
 
 #[cfg(test)]
@@ -1470,8 +2273,8 @@ mod tests {
     }
     pub(super) fn visible_pair(now: Instant) -> (Session, Session, World) {
         let (mut a,w) = driving(now);
-        a.shared.as_mut().unwrap().creations = [Some((0,true));2];
-        a.shared.as_mut().unwrap().ready_sent = [true;2];
+        a.shared.as_mut().unwrap().creations = [Some((0,true));model::MAX_ACTORS];
+        a.shared.as_mut().unwrap().ready_sent = [true;model::MAX_ACTORS];
         let mut b = a.clone(); b.id = 2; b.shared.as_mut().unwrap().slot = 1;
         (a,b,w)
     }
@@ -1648,7 +2451,7 @@ mod tests {
     #[test] fn area_request_mixed_envelope_is_atomic_and_rejoin_uses_current_state() {
         let now=Instant::now(); let (mut s,_)=driving(now); let w=destroyed_fixture(now);
         let c=s.shared.as_mut().unwrap();c.phase=Phase::Entities;c.view=Some(w.clone());
-        c.announcement=Some((0,true));c.creations=[None;2];
+        c.announcement=Some((0,true));c.creations=[None;model::MAX_ACTORS];
         let mut request=vec![8,4,0];request.extend(super::super::destructible_wire::ENTITY_ID.to_le_bytes());
         request.extend([8,4,0]);request.extend(wire::vehicle_id(0).unwrap().to_le_bytes());
         let mut poisoned=request.clone();poisoned.extend([8,4,0]);poisoned.extend(123u32.to_le_bytes());
@@ -1752,6 +2555,48 @@ mod tests {
             assert!(!after.iter().any(|body|body.windows(stop.len()).any(|bytes|bytes==stop)));
         }
     }
+    #[test] fn p04m_admitted_six_actor_late_ground_terminal_publishes_once_without_battle_fault() {
+        // Exercise the production poll branch with real domain-admitted global
+        // shot IDs. Only the terminal contact is an authored packet fixture;
+        // this is not a native rendering or terrain-query acceptance claim.
+        for kind in [VehicleKind::Is7,VehicleKind::Ms1,VehicleKind::T26] {
+            let start=Instant::now();
+            let mut world=World::new_for_vehicle(4041,start,MapId::Prohorovka,kind).unwrap();
+            world.set_expected_actors(model::MAX_ACTORS).unwrap();
+            for slot in 0..model::MAX_ACTORS {
+                world.attach(model::Identity{account:format!("late-ground-{slot}"),database:slot as i32+1,name:format!("lab-{slot}")},slot as u32+1).unwrap();
+                world.actors[slot].fire=crate::battle091::fire::State::with_mounted_loadout(kind.ammo_limit(),kind.reload_seconds(),kind.ammo_limit()).unwrap();
+            }
+            world.start(start).unwrap();
+            for slot in 0..model::MAX_ACTORS {world.set_ready(slot,slot as u32+1).unwrap();}
+            for round in 0..kind.ammo_limit() {
+                let at=start+Duration::from_secs_f64(round as f64*(kind.reload_seconds() as f64+0.1));
+                for slot in (0..model::MAX_ACTORS).rev() {
+                    assert!(matches!(world.apply(slot,slot as u32+1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],at).unwrap()[0],crate::battle091::fire::Outcome::AcceptedShot{..}));
+                }
+            }
+            let sequence=world.latest_shot();let index=sequence as usize-1;
+            assert_eq!(sequence as usize,model::MAX_ACTORS*kind.ammo_limit() as usize);
+            assert!(sequence as usize>kind.battle_shot_limit());
+            world.projectiles[index].stopped=true;
+            world.terrain_contacts.push(model::TerrainContact{shot:sequence,shooter:0,tick:1,
+                hit:super::super::terrain::Hit{surface:super::super::terrain::Surface::Ground,triangle_id:0,t:0.5,point:[1.,2.,3.],normal:[0.,1.,0.]},
+                segment_start:[1.,3.,3.],segment_end:[1.,1.,3.],direction:[0.,-1.,0.]});
+            let now=start+Duration::from_secs(1000);let(mut a,mut b,_)=visible_pair(now);
+            let fx=terrain_wire::explode_material_for_limit(kind,sequence,[1.,2.,3.],[0.,-1.,0.],0,world.shot_limit()).unwrap();
+            let stop=wire::tracer_stop(&world.projectiles[index]).unwrap();
+            for s in [&mut a,&mut b] {
+                let c=s.shared.as_mut().unwrap();c.shot_cursor=sequence;c.tracer_started[index]=true;
+                poll(s,&mut world,now).unwrap();
+                let raw=queued_bodies(s,now).concat();
+                assert_eq!(raw.windows(fx.len()).filter(|bytes|*bytes==fx).count(),1);
+                assert!(!raw.windows(stop.len()).any(|bytes|bytes==stop));
+                assert!(s.shared.as_ref().unwrap().tracer_stopped[index]);
+                poll(s,&mut world,now).unwrap();
+                assert_eq!(queued_bodies(s,now).concat(),raw);
+            }
+        }
+    }
     #[test] fn delayed_terrain_fx_follows_tracer_and_reconnect_skips_old_effects() {
         let now=Instant::now(); let (mut a,mut b,_)=visible_pair(now);
         let mut w=model::tests::terrain_world(now,3.);
@@ -1831,7 +2676,7 @@ mod tests {
         let (_,mut rejoin,_)=visible_pair(at);
         rejoin.shared.as_mut().unwrap().impact_cursor=w.impacts.len();
         rejoin.shared.as_mut().unwrap().shot_cursor=w.latest_shot();
-        rejoin.shared.as_mut().unwrap().health_sent=[Some(90),Some(0)];
+        rejoin.shared.as_mut().unwrap().health_sent=[Some(90),Some(0),None,None,None,None];
         let creation=wire::create_vehicle(&w,1).unwrap();
         assert!(creation.windows(7).any(|r|r==[3,0,0,4,0,0,5]));
         rejoin.shared.as_mut().unwrap().view=Some(w.clone());
@@ -1881,7 +2726,7 @@ mod tests {
         let (_,mut rejoin,_)=visible_pair(at);
         let c=rejoin.shared.as_mut().unwrap();
         c.impact_cursor=w.impacts.len(); c.shot_cursor=w.latest_shot();
-        c.health_sent=[Some(90),Some(0)]; c.owner_health_sent=Some(0); c.view=Some(w.clone());
+        c.health_sent=[Some(90),Some(0),None,None,None,None]; c.owner_health_sent=Some(0); c.view=Some(w.clone());
         poll(&mut rejoin,&mut w,at).unwrap();
         assert!(queued_bodies(&rejoin,at).is_empty());
         assert_eq!(w.actors[1].health,0);
@@ -2006,7 +2851,7 @@ mod tests {
         w.attach(w.actors[0].identity.clone(),3).unwrap();
         let (mut rejoin,_) = driving(now); rejoin.id=3;
         let c=rejoin.shared.as_mut().unwrap(); c.phase=Phase::Entities; c.correction=false;
-        c.binding=None; c.creations=[Some((0,true));2]; c.view=Some(w.clone());
+        c.binding=None; c.creations=[Some((0,true));model::MAX_ACTORS]; c.view=Some(w.clone());
         let ready=[0x0d,8,0,0,0,0,0,3,0,16,9,0x8d,5,0,2,1,0,0,0,0x86,0,0,0x0c,8,0,0,0,0,0,0,0,0,0];
         rejoin.receive(&frame(&rejoin,&ready),end + Duration::from_millis(100)).unwrap();
         poll(&mut rejoin,&mut w,end + Duration::from_millis(100)).unwrap();
@@ -2057,7 +2902,7 @@ mod tests {
         w.detach(1).unwrap();w.attach(w.actors[0].identity.clone(),3).unwrap();
         let (mut rejoin,_) = driving(now);rejoin.id=3;
         let c=rejoin.shared.as_mut().unwrap();c.phase=Phase::Entities;c.correction=false;
-        c.binding=None;c.creations=[Some((0,true));2];c.view=Some(w.clone());
+        c.binding=None;c.creations=[Some((0,true));model::MAX_ACTORS];c.view=Some(w.clone());
         let ready=[0x0d,8,0,0,0,0,0,3,0,16,9,0x8d,5,0,2,1,0,0,0,0x86,0,0,0x0c,8,0,0,0,0,0,0,0,0,0];
         rejoin.receive(&frame(&rejoin,&ready),now).unwrap();poll(&mut rejoin,&mut w,now).unwrap();
         assert_eq!(rejoin.shared.as_ref().unwrap().shot_cursor,1);assert_eq!(w.actors[0].fire.ammo(),19);
@@ -2151,3 +2996,25 @@ mod tests {
         assert_eq!(world.actors[1].session,Some(2));
     }
 }
+
+#[cfg(test)]
+#[path="profile13_restart_cas_tests.rs"]
+mod p08b_restart_cas_tests;
+
+#[cfg(test)]
+#[path="p08c_late_composition_tests.rs"]
+mod p08c_late_composition_tests;
+
+#[cfg(test)]
+#[path="server_network_tests.rs"]
+mod net02_network_tests;
+
+#[cfg(test)]
+#[path="owner_hold_composition_tests.rs"]
+mod owner_hold_composition_tests;
+#[cfg(test)]
+#[path="owner_hold_four_composition_tests.rs"]
+mod owner_hold_four_composition_tests;
+#[cfg(test)]
+#[path="garage_fresh_composition_tests.rs"]
+mod garage_fresh_composition_tests;

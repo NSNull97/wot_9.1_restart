@@ -3,6 +3,8 @@
 //! solver is test_lab approximate, not a claim about the historical server.
 use std::{f32::consts::PI, io};
 use super::{model::bad, pose, vehicle_profile::VehicleKind};
+#[path="p06t_source_aim.rs"]
+pub(crate) mod source_aim;
 
 pub const YAW_RATE: f32 = 39. * PI / 180.;
 pub const PITCH_RATE: f32 = 52.5 * PI / 180.;
@@ -70,6 +72,9 @@ impl State {
         self.advance_pose_for(VehicleKind::Ms1,position,direction,dt)
     }
     pub fn advance_pose_for(&mut self, kind: VehicleKind, position: [f32; 3], direction: [f32; 3], dt: f32) -> io::Result<()> {
+        if kind.is_extended() {
+            return self.advance_source_pose(kind,position,direction,dt,kind.shell().raw_speed as f64,9.81,1.,1.);
+        }
         let spec=kind.aim();
         if !dt.is_finite() || !(0. ..=0.2).contains(&dt)
             || direction.iter().any(|x| !x.is_finite()) || position.iter().any(|x| !x.is_finite()) { return Err(bad()); }
@@ -83,16 +88,97 @@ impl State {
         self.pitch += (target - self.pitch).clamp(-spec.pitch_rate * dt, spec.pitch_rate * dt);
         Ok(())
     }
+    /// New mixed-shell path. The currently selected source shell determines
+    /// the arc; the caller freezes that same shell if a shot is later admitted.
+    /// Module/crew rate factors are explicit LAB policy, not historical server
+    /// mechanics. Legacy wrappers retain their original values and arithmetic.
+    pub fn advance_pose_for_selected(&mut self, kind: VehicleKind, position: [f32;3], direction: [f32;3], dt: f32,
+        shell: crate::p06t_shells091::Shell, caps: crate::p06t_device_state::Capabilities) -> io::Result<()> {
+        if !crate::p06t_shells091::PROFILES[kind.mount().index()].shots.contains(&shell)
+            || !dt.is_finite() || !(0. ..=0.2).contains(&dt)
+            || position.iter().chain(direction.iter()).any(|v|!v.is_finite())
+            || !self.yaw.is_finite() || !self.pitch.is_finite() {return Err(bad());}
+        caps.validate()?;self.intent.validate()?;
+        if kind.is_extended() {
+            return self.advance_source_pose(kind,position,direction,dt,shell.raw_speed_mps,shell.raw_gravity_mps2,
+                caps.turret_scale,caps.aim_speed_scale);
+        }
+        let spec=kind.aim();
+        let (yaw,pitch)=match self.intent {
+            Intent::Point(point)=>target_angles_pose_with_ballistics(kind,position,direction,point,self.yaw,self.pitch,
+                shell.raw_speed_mps,shell.raw_gravity_mps2),
+            Intent::Hold {yaw,pitch}=>(yaw,pitch),
+        };
+        let yaw_step=spec.yaw_rate*caps.turret_scale*caps.aim_speed_scale*dt;
+        let pitch_step=spec.pitch_rate*caps.aim_speed_scale*dt;
+        if caps.turret_scale>0. && caps.aim_speed_scale>0. {self.yaw=wrap(self.yaw+wrap(yaw-self.yaw).clamp(-yaw_step,yaw_step));}
+        let target=pitch.clamp(spec.min_pitch,pitch_max_for(kind,self.yaw));
+        if caps.aim_speed_scale>0. {self.pitch+=(target-self.pitch).clamp(-pitch_step,pitch_step);}
+        Ok(())
+    }
+    /// New two-profile source envelope. The solver/rate model remains explicit
+    /// LAB. Mechanical clipping at the next yaw is immediate; it may retract a
+    /// previously legal pitch as WT traverses into its restricted rear sector.
+    /// This is no assertion about the historical server controller algorithm.
+    fn advance_source_pose(&mut self,kind:VehicleKind,position:[f32;3],direction:[f32;3],dt:f32,
+        raw_speed:f64,raw_gravity:f64,turret_scale:f32,aim_scale:f32)->io::Result<()> {
+        let source=kind.source_aim().ok_or_else(bad)?;let envelope=source.envelope;
+        if !dt.is_finite()||!(0. ..=0.2).contains(&dt)
+            ||position.iter().chain(direction.iter()).any(|v|!v.is_finite())
+            ||!raw_speed.is_finite()||raw_speed<=0.||!raw_gravity.is_finite()||raw_gravity<=0.
+            ||[turret_scale,aim_scale].iter().any(|v|!v.is_finite()||!(0. ..=1.).contains(v))
+            ||!self.yaw.is_finite()||!self.pitch.is_finite(){return Err(bad());}
+        self.intent.validate()?;
+        let current=envelope.pitch_limits(self.yaw).map_err(|_|bad())?;
+        if self.pitch<current.min||self.pitch>current.max{return Err(bad());}
+        let (target_yaw,target_pitch)=match self.intent {
+            Intent::Point(point)=>source_target_angles(kind,position,direction,point,self.yaw,self.pitch,raw_speed,raw_gravity)?,
+            Intent::Hold{yaw,pitch}=>source_target_bounds(kind,wrap(yaw),pitch)?,
+        };
+        let yaw_step=source.yaw_rate*turret_scale*aim_scale*dt;
+        // FV has a bounded interval: use its linear difference, never a wrapped
+        // shortest path through the forbidden rear. WT retains full-circle wrap.
+        let delta=if envelope.yaw_limits().is_some(){target_yaw-self.yaw}else{wrap(target_yaw-self.yaw)};
+        let next_yaw=if turret_scale>0.&&aim_scale>0.{
+            let raw=self.yaw+delta.clamp(-yaw_step,yaw_step);
+            envelope.clamp_yaw(if envelope.yaw_limits().is_some(){raw}else{wrap(raw)}).map_err(|_|bad())?
+        }else{self.yaw};
+        let target=envelope.clamp_pitch(next_yaw,target_pitch).map_err(|_|bad())?;
+        let pitch_step=source.pitch_rate*aim_scale*dt;
+        let moved=if aim_scale>0.{self.pitch+(target-self.pitch).clamp(-pitch_step,pitch_step)}else{self.pitch};
+        let next_pitch=envelope.clamp_pitch(next_yaw,moved).map_err(|_|bad())?;
+        self.yaw=next_yaw;self.pitch=next_pitch;Ok(())
+    }
+}
+/// Fallible authoritative bounds for the explicit extended route. Callers must
+/// use both values; old `pitch_max_for` remains a legacy upper-bound wrapper.
+pub(crate) fn pitch_limits_for(kind:VehicleKind,yaw:f32)->io::Result<(f32,f32)> {
+    if let Some(source)=kind.source_aim(){let limits=source.envelope.pitch_limits(yaw).map_err(|_|bad())?;return Ok((limits.min,limits.max));}
+    if !yaw.is_finite(){return Err(bad());}Ok((kind.aim().min_pitch,pitch_max_for(kind,yaw)))
+}
+fn source_target_bounds(kind:VehicleKind,yaw:f32,pitch:f32)->io::Result<(f32,f32)> {
+    let e=kind.source_aim().ok_or_else(bad)?.envelope;
+    let yaw=e.clamp_yaw(yaw).map_err(|_|bad())?;let pitch=e.clamp_pitch(yaw,pitch).map_err(|_|bad())?;Ok((yaw,pitch))
+}
+/// Both flat/tilted solver exits (including unreachable/degenerate fallback)
+/// pass through this checked envelope before reaching extended authority.
+fn source_target_angles(kind:VehicleKind,position:[f32;3],direction:[f32;3],point:[f32;3],old_yaw:f32,old_pitch:f32,
+    speed:f64,gravity:f64)->io::Result<(f32,f32)> {
+    let (yaw,pitch)=target_angles_pose_with_ballistics(kind,position,direction,point,old_yaw,old_pitch,speed,gravity);
+    source_target_bounds(kind,yaw,pitch)
 }
 pub fn wrap(angle: f32) -> f32 { (angle + PI).rem_euclid(2. * PI) - PI }
 
-// Stock turret's rear sector is 35 degrees with a +1 degree lower-gun stop.
-// The 0.4 rad linear transition matched all 15 original native oracle samples.
+// MS-1's rear sector is35deg/+1; its0.4rad transition matched the original
+// native oracle. P04M T-34 uses source back=-17/1/42 and the same original
+// default transition, with native equivalence NOT_RUN. No rear extra for
+// T-26/T-34-85: their rear maximum equals their basic maximum everywhere.
+const REAR_PITCH_TRANSITION:f32=0.4;
 pub fn pitch_max(yaw: f32) -> f32 { pitch_max_for(VehicleKind::Ms1,yaw) }
 pub fn pitch_max_for(kind: VehicleKind,yaw: f32) -> f32 {
     let spec=kind.aim();
     let outside = (PI - wrap(yaw).abs() - spec.rear_sector_degrees.to_radians()).max(0.);
-    let blend = (outside / 0.4).clamp(0., 1.);
+    let blend = (outside / REAR_PITCH_TRANSITION).clamp(0., 1.);
     (spec.rear_max_degrees + (spec.max_pitch_degrees-spec.rear_max_degrees) * blend).to_radians()
 }
 
@@ -107,9 +193,13 @@ fn target_angles_pose(position: [f32; 3], direction: [f32; 3], point: [f32; 3], 
     target_angles_pose_for(VehicleKind::Ms1,position,direction,point,old_yaw,old_pitch)
 }
 fn target_angles_pose_for(kind: VehicleKind, position: [f32; 3], direction: [f32; 3], point: [f32; 3], old_yaw: f32, old_pitch: f32) -> (f32, f32) {
+    target_angles_pose_with_ballistics(kind,position,direction,point,old_yaw,old_pitch,kind.shell().raw_speed as f64,9.81)
+}
+fn target_angles_pose_with_ballistics(kind: VehicleKind, position: [f32; 3], direction: [f32; 3], point: [f32; 3], old_yaw: f32, old_pitch: f32,
+    raw_speed: f64, raw_gravity: f64) -> (f32, f32) {
     let spec=kind.aim(); let pivot=spec.pivot; let gun=spec.gun;
     if direction[1] == 0. && direction[2] == 0. {
-        return target_angles_for(kind,position, direction[0], point, old_yaw, old_pitch);
+        return target_angles_with_ballistics(kind,position, direction[0], point, old_yaw, old_pitch,raw_speed,raw_gravity);
     }
     let relative = std::array::from_fn(|i| point[i] - position[i]);
     let local = pose::inverse_rotate(relative, direction);
@@ -126,7 +216,7 @@ fn target_angles_pose_for(kind: VehicleKind, position: [f32; 3], direction: [f32
         let d: [f64; 3] = std::array::from_fn(|i| relative[i] as f64 - offset[i] as f64);
         let horizontal = d[0].hypot(d[2]);
         if horizontal <= 0.001 { return (old_yaw, old_pitch); }
-        let v2 = (kind.shell().raw_speed as f64).powi(2); let g = 9.81;
+        let v2 = raw_speed.powi(2); let g = raw_gravity;
         let disc = v2 * v2 - g * (g * horizontal * horizontal + 2. * d[1] * v2);
         if !disc.is_finite() || disc < 0. { return (old_yaw, old_pitch); }
         let elevation = ((g * horizontal * horizontal + 2. * d[1] * v2)
@@ -150,6 +240,10 @@ fn target_angles(position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, o
     target_angles_for(VehicleKind::Ms1,position,hull,point,old_yaw,old_pitch)
 }
 fn target_angles_for(kind: VehicleKind, position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, old_pitch: f32) -> (f32, f32) {
+    target_angles_with_ballistics(kind,position,hull,point,old_yaw,old_pitch,kind.shell().raw_speed as f64,9.81)
+}
+fn target_angles_with_ballistics(kind: VehicleKind, position: [f32; 3], hull: f32, point: [f32; 3], old_yaw: f32, old_pitch: f32,
+    raw_speed: f64, raw_gravity: f64) -> (f32, f32) {
     let spec=kind.aim(); let pivot=spec.pivot; let gun=spec.gun;
     let dx = (point[0] - position[0]) as f64; let dz = (point[2] - position[2]) as f64;
     let (s,c) = (hull as f64).sin_cos();
@@ -161,7 +255,7 @@ fn target_angles_for(kind: VehicleKind, position: [f32; 3], hull: f32, point: [f
     let yaw = x.atan2(z) - (gun[0] as f64 / radial).asin();
     let distance = (radial * radial - (gun[0] as f64).powi(2)).sqrt() - gun[2] as f64;
     if distance <= 0.001 { return (old_yaw, old_pitch); }
-    let v2 = (kind.shell().raw_speed as f64).powi(2); let g = 9.81;
+    let v2 = raw_speed.powi(2); let g = raw_gravity;
     let disc = v2 * v2 - g * (g * distance * distance + 2. * y * v2);
     // For unreachable camera points use the geometric direction, not NaN.
     let elevation = if disc >= 0. {
@@ -169,6 +263,10 @@ fn target_angles_for(kind: VehicleKind, position: [f32; 3], hull: f32, point: [f
     } else { y.atan2(distance) };
     (wrap(yaw as f32), -elevation as f32)
 }
+
+#[cfg(test)]
+#[path="p06t_aim_tests.rs"]
+mod p06t_tests;
 
 #[cfg(test)]
 mod tests {
@@ -344,3 +442,7 @@ mod tests {
         assert!(s.yaw.is_finite() && s.pitch>=MIN_PITCH && s.pitch<=MAX_PITCH);
     }
 }
+
+#[cfg(test)]
+#[path="p06t_extended_aim_tests.rs"]
+mod extended_tests;
