@@ -2,15 +2,16 @@
 
 Подробная история прежних записей — `git log -p docs/STATUS.md` (до `aa0dfcc`).
 
-## Сейчас: CAT-01 единый каталог — ветка `codex/cat-01-single-catalog` (2026-10-20, не слита)
+## Сейчас: CAT-01 единый каталог — принят владельцем 2026-10-21 (стенд `-07`, Прохоровка, флаги каталога включены)
 
 Каталог `config/catalog/catalog.v1.json` (SHA `a6bd44f4…`) собирается `tools/catalog_build.py`
 из пинов клиента + `server_profiles.v1.json`; генерации Rust/Python/JS/Py2.7; допуск —
 поле `battle_admission`. Потребители (шлюз `parse_frozen`, bridge `p06t-mixed`/`p04m-pool`,
 Python реестр/`freeze_mixed`, клиент `map_drive_client`) читают каталог только за флагами,
 прежние списки остаются ([research](research/CAT01_SINGLE_CATALOG.md)). Контракт и сторы в
-обоих режимах PASS; канонический gate в основном checkout и native — NOT_RUN (владелец:
-купить машину пула, бой, окна ангара MS-1/ИС-7 без изменений).
+обоих режимах PASS; канонический gate `gateway-integration-20261021-01` (CAT-01 + MAPS-01)
+1700/0/5; native владелец: бой Т-34 против Т-34-85, покупка, окна MS-1/ИС-7 — как прежде (PASS).
+Флаги по умолчанию выключены; включение по умолчанию — отдельное решение.
 
 ## Ранее: BRIDGE-01 + LOGIN-01 приняты (2026-10-20)
 
