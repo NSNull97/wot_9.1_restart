@@ -63,14 +63,16 @@
 
 | Что | Команда | Итог |
 |---|---|---|
-| Сторы пула + v2 (legacy и каталог), миграция, 192 | `python -B -X utf8 -m unittest tests.test_p04m_pool_store tests.test_p04m_pool_store_catalog tests.test_p04m_pool_crew tests.test_p04m_pool_crew_v2 tests.test_catalog_v1 tests.test_full_test_stand` (env `local/testenv.sh`) | см. `local/test-runs/pool-stores.txt` |
+| Сторы пула + v2 (legacy и каталог), миграция, 192 | `python -B -X utf8 -m unittest tests.test_p04m_pool_store tests.test_p04m_pool_store_catalog tests.test_p04m_pool_crew tests.test_p04m_pool_crew_v2 tests.test_catalog_v1 tests.test_full_test_stand` (env `local/testenv.sh`) | 76 run / 0 fail / 4 skip (NOT_RUN окружения); двухвладельческий тест с `P04M_MULTI_OWNER_SOURCE` — 2/2 PASS |
+| Прежние сторы экипажа | `unittest tests.test_p04d…p04k_crew_store tests.test_p09e_research_store tests.test_p06t_ammo_loss_store` | 185/185 OK |
 | Клиент Python 3, флаг выкл. | `unittest tests.test_p04d_crew_ui … tests.test_p04k_crew_ui tests.test_p09d_ammo_ui tests.test_catalog_v1 tests.test_crew_capabilities` | 213/213 OK |
 | Клиент Python 3, флаг вкл. | `unittest tests.test_crew_any_client` | 12/12 OK |
 | CPython 2.7.3 | компиляция 44 файлов `client_patch`; smoke `crew_vehicles.enable(catalog_v1_hints)` | PASS |
 | JS | `node --test` в `web/` (head vs база `4b46f7e`, те же env) | 65/38/16 vs 63/38/16, множество FAIL идентично; `p04m-pool.test.mjs` 9/9 |
 | Rust (инкрементально) | `cargo test p04m` с `WOT091_ROOT=D:/WoT_9.1_Server` | 26 PASS / 9 FAIL — portable-фикстуры требуют checkout `D:/WoT_9.1_Server` |
 | Стенд-команда | `full_test_stand.py crew-contract --version 2/1` на копии `-04` | PASS (выше) |
-| Канонический gate шлюза | см. STATUS | |
+| Gate шлюза в worktree | `server/build.py gateway --test --cargo-temp-target` на `4125b4a` и на базе `4b46f7e` (то же окружение) | 1425/286/6 против 1423/286/6, множество FAIL идентично (portable-фикстуры вне `D:/WoT_9.1_Server`) |
+| Канонический gate в `D:/WoT_9.1_Server` | — | NOT_RUN: checkout обслуживает стенд `-09` |
 
 Доказательства: векторы писателя v2 `local/evidence/crew-any-v2-vectors/v2-barracks-32`
 (этот worktree), проверка стенда `local/stands/crew-any-check-01/crew-contract-v*-receipt.json`,
