@@ -109,6 +109,8 @@ def run_worker(executable, local, config_path, config_sha, steps):
         except (OSError, subprocess.TimeoutExpired):
             process.kill()
             process.wait()
+        for stream in (process.stdout, process.stderr):
+            stream.close()
     return ready, states, lines, process.returncode, round(time.monotonic() - started, 3)
 
 

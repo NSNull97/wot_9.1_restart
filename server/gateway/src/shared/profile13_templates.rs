@@ -194,6 +194,18 @@ mod tests {
         let raw=serde_json::to_string(&value).unwrap().replacen("\"kind\":\"ms1\"","\"kind\":\"ms1\",\"kind\":\"is7\"",1);
         assert!(parse(raw.as_bytes()).is_err());
     }
+    /// MAPS-01 stand check, run explicitly: `--test-filter <this name> --run-ignored`
+    /// with MAPS01_BATTLE_PROFILES=<stand>/battle-profiles.json and MAPS01_LOCAL_ROOT=<local>.
+    #[test]#[ignore]fn external_battle_profiles_load_every_kind_on_their_registry_map(){
+        let path=std::env::var("MAPS01_BATTLE_PROFILES").expect("MAPS01_BATTLE_PROFILES");
+        let root=PathBuf::from(std::env::var("MAPS01_LOCAL_ROOT").expect("MAPS01_LOCAL_ROOT"));
+        let value:Value=serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let map=MapId::from_asset(value["map"].as_str().unwrap()).unwrap();
+        let rows=load(&root,Path::new(&path)).unwrap();
+        assert_eq!(rows.len(),value["profiles"].as_array().unwrap().len());
+        assert!(rows.iter().all(|row|row.map==map&&row.catalog.0.map==map&&row.terrain.map_id()==map&&row.shared.is_some()));
+        println!("MAPS01_TEMPLATES_LOADED map={} kinds={}",map.asset(),rows.iter().map(|row|row.kind.label()).collect::<Vec<_>>().join(","));
+    }
     #[test]fn profile13_templates_pin_bytes_and_refuse_paths_outside_local_root(){
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();

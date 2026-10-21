@@ -284,9 +284,109 @@ def provision(args):
     print(json.dumps({k: result[k] for k in ('vehicle', 'native_inventory_id', 'revision', 'admission')}, ensure_ascii=False))
 
 
+def stand_stopped(stand):
+    for kind in ('gateway', 'bridge'):
+        if (stand / (kind + '-process.json')).exists():
+            raise ValueError(f'{kind} has a live receipt; stop the stand first')
+
+
+def battle_map(args):
+    """MAPS-01: switch a stopped stand's profile-13 battle to another registry map.
+
+    For every battle kind a new hash-pinned pool is written under the stand:
+    the accepted pool's first map entry unchanged plus one entry for the new
+    map, whose worker config is the accepted Prohorovka config of that kind
+    with only map identity, the package's pinned meshes, the test_lab ctf-base
+    spawn and the playable bounds replaced (tools/map_physics_probe.py). Each
+    derived config is settled and driven once on the stand's own physics
+    build. The previous battle-profiles.json is kept for rollback. Accepted
+    pools, configs and catalogs are never modified.
+    """
+    import sys
+    sys.path.insert(0, str(ROOT / 'tools'))
+    import map_package as mp
+    import map_physics_probe as probe
+    # The local root that holds this checkout's stands (equals local/ unless
+    # local/stands is a junction into another checkout's local/).
+    local = (LOCAL / 'stands').resolve(strict=True).parent
+    stand = Path(args.stand).resolve(strict=True)
+    if not stand.is_relative_to(local / 'stands'):
+        raise ValueError('stand must be below this checkout local/stands')
+    stand_stopped(stand)
+    package_dir = Path(args.package).resolve(strict=True)
+    package, package_sha = mp.verify(package_dir)
+    name = package['map']
+    target = stand / ('map-' + name)
+    if target.exists():
+        raise ValueError(f'{target} already exists')
+    catalog = Path(args.catalog).resolve(strict=True)
+    if not catalog.is_relative_to(local) or not package_dir.is_relative_to(local):
+        raise ValueError('package and catalog must be below this checkout local/')
+    catalog_value = json.loads(catalog.read_text(encoding='utf-8'))
+    if catalog_value.get('map') != name or catalog_value.get('version') != 7:
+        raise ValueError('catalog must be a v7 catalog of the same map')
+    profiles_path = stand / 'battle-profiles.json'
+    profiles = json.loads(profiles_path.read_text(encoding='utf-8'))
+    if profiles.get('map') == name:
+        raise ValueError('stand already battles on this map')
+    physics_build = Path(profiles['shared_physics']['path']).resolve(strict=True).parent
+    dll = (physics_build / 'bin/MapDriveWorker.dll').read_bytes()
+    if f'"asset": "{name}"'.encode() not in dll:
+        raise ValueError('stand physics build does not embed this map in its registry; rebuild physics from this checkout')
+    executable = physics_build / 'bin/MapDriveWorker.exe'
+    arena = json.loads((package_dir / 'arena.json').read_text(encoding='utf-8'))
+    target.mkdir()
+    receipt = dict(schema='wot091-stand-battle-map.v1', map=name, package=str(package_dir), package_sha256=package_sha,
+                   catalog=dict(path=str(catalog), sha256=sha(catalog)), physics_build=str(physics_build),
+                   previous_battle_profiles_sha256=sha(profiles_path), spawn_policy=probe.SPAWN_POLICY, kinds={},
+                   native='NOT_RUN')
+    for profile in profiles['profiles']:
+        kind = profile['kind']
+        pool_path = Path(profile['pool']['path'])
+        if sha(pool_path) != profile['pool']['sha256']:
+            raise ValueError(f'{kind} pool pin differs')
+        pool = json.loads(pool_path.read_text(encoding='utf-8'))
+        source = [m for m in pool['maps'] if m['asset'] == profiles['map']]
+        if len(pool['maps']) != 2 or len(source) != 1:
+            raise ValueError(f'{kind} pool must hold two maps including the current battle map')
+        template_path = Path(source[0]['config'])
+        if sha(template_path) != source[0]['config_sha256']:
+            raise ValueError(f'{kind} template config pin differs')
+        config, _ = probe.derived_config(json.loads(template_path.read_text(encoding='utf-8')), package, package_dir,
+                                         arena, args.team, local)
+        config_raw = json.dumps(config, separators=(',', ':'), sort_keys=True).encode('ascii')
+        config_path = target / f'{name}-{kind}-config.json'
+        config_path.write_bytes(config_raw)
+        keep = [m for m in pool['maps'] if m['asset'] != profiles['map']][0]
+        pool['maps'] = [keep, dict(arena_type_id=package['arena_type_id'], asset=name, config=str(config_path),
+                                   config_sha256=hashlib.sha256(config_raw).hexdigest())]
+        new_pool = target / f'pool-{kind}.json'
+        new_pool.write_text(json.dumps(pool, indent=1) + '\n', encoding='utf-8')
+        ready, states, _, code, _ = probe.run_worker(executable, local, config_path, hashlib.sha256(config_raw).hexdigest(), 80)
+        result = probe.check(ready, states, probe.Ground(package_dir))
+        if result['status'] != 'PASS' or code != 0:
+            raise ValueError(f'{kind} derived config failed the physics probe: {result["problems"]}')
+        profile['pool'] = dict(path=str(new_pool), sha256=sha(new_pool))
+        receipt['kinds'][kind] = dict(template=str(template_path), template_sha256=source[0]['config_sha256'],
+                                      config_sha256=hashlib.sha256(config_raw).hexdigest(), pool_sha256=profile['pool']['sha256'],
+                                      probe=dict(driven_m=result['driven_m'], min_clearance_m=result['min_clearance_m'],
+                                                 max_clearance_m=result['max_clearance_m'], contacts=result['ready']['contacts']))
+    profiles['map'] = name
+    profiles['catalog'] = dict(path=str(catalog), sha256=sha(catalog))
+    backup = stand / f'battle-profiles.before-{name}.json'
+    shutil.copy2(profiles_path, backup)
+    profiles_path.write_text(json.dumps(profiles, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    receipt.update(battle_profiles_sha256=sha(profiles_path), rollback=f'copy {backup.name} over battle-profiles.json')
+    (target / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
+    print(json.dumps(receipt, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('prepare', 'economy', 'provision'))
+    parser.add_argument('command', choices=('prepare', 'economy', 'provision', 'map'))
+    parser.add_argument('--package', help='map: tools/map_package.py package directory of the new battle map')
+    parser.add_argument('--catalog', help='map: v7 destructible catalog manifest of that map')
+    parser.add_argument('--team', default='team1', choices=('team1', 'team2'), help='map: ctf base used as test_lab spawn')
     parser.add_argument('--source-stand', help='latest actual stand directory (read-only)')
     parser.add_argument('--physics', help='physics build dir below local/build')
     parser.add_argument('--gateway', help='sr-gateway.exe from a recorded build')
@@ -301,6 +401,10 @@ def main():
         if not all((args.source_stand, args.physics, args.gateway, args.out)):
             parser.error('prepare requires --source-stand, --physics, --gateway and --out')
         prepare(args)
+    elif args.command == 'map':
+        if not (args.stand and args.package and args.catalog):
+            parser.error('map requires --stand, --package and --catalog')
+        battle_map(args)
     elif args.command == 'economy':
         if not args.stand:
             parser.error('economy requires --stand')
