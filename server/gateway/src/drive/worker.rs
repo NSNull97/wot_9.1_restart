@@ -148,7 +148,7 @@ impl MapSpec {
     fn load(root:&Path,v:&Value,config_version:u64)->io::Result<Self>{
         fields(v,&["asset","arena_type_id","config","config_sha256"])?;
         let asset=text(v,"asset")?;let id=uint(&v["arena_type_id"])?;
-        if !matches!((asset,id),("01_karelia",1)|("05_prohorovka",4)){return Err(bad());}
+        if !crate::map_profile091::MapId::from_asset(asset).is_ok_and(|map|i64::from(map.arena_type_id())==id as i64){return Err(bad());}
         let config=owned(root,Path::new(text(v,"config")?))?;let hash=text(v,"config_sha256")?;hash_text(hash)?;
         let raw=read(&config,16384)?;if format!("{:x}",Sha256::digest(&raw))!=hash{return Err(bad());}
         let c=json(&raw,16384)?;

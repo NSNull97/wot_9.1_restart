@@ -10,6 +10,11 @@
   <exe> --out local/stands/<новый>`; затем `economy --stand <новый>` (100 слотов, цены 0)
   и при необходимости `provision --stand <новый> --account <id> --vehicle vehicle:ussr:T-34`
   (UI экипажа/БК клиента — только MS-1/ИС-7). Сервисы стенда при этом остановлены.
+- Бой на другой карте реестра (MAPS-01): на остановленном стенде, собранном с физикой из
+  checkout с этой картой в `server/contracts/map_registry.json`, — `python -B -X utf8
+  tools/full_test_stand.py map --stand <stand> --package local/evidence/20261020-maps01/final01/packages/02_malinovka
+  --catalog local/evidence/20261020-maps01/final01/catalogs/02_malinovka/manifest.json`; откат —
+  `battle-profiles.before-<map>.json`. Новые карты: `tools/map_package.py` export/report/registry-entry.
 - Канонический gate требует чистого git-дерева; `p08b_restart_cas_composition02` падает
   только под полной параллельной нагрузкой (identity), отдельно проходит — exe брать из
   `--test-filter p08b_restart_cas_composition02` прогона.

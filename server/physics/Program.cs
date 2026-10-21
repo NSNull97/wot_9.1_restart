@@ -53,7 +53,7 @@ try
         maximumYawRate = CheckedInput.Number(policy.GetProperty("max_yaw_rate_rad_s"), .1f, 1.5f);
     }
     string map = c.GetProperty("map").GetString()!;
-    if (map is not ("01_karelia" or "05_prohorovka")) throw new InvalidDataException("map outside checked pool");
+    if (!CheckedInput.IsRegisteredMap(map)) throw new InvalidDataException("map outside checked pool");
     CheckedInput.RemovalSpec? removal = null;
     CheckedInput.CatalogSpec? catalog = null;
     CheckedInput.Scene? scene = null;

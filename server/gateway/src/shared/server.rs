@@ -67,6 +67,9 @@ mod fence_total_real_tests;
 #[path="server_is7_real_tests.rs"]
 mod is7_real_tests;
 #[cfg(test)]
+#[path="server_map_registry_real_tests.rs"]
+mod map_registry_real_tests;
+#[cfg(test)]
 #[path="server_whole_fracture_real_tests.rs"]
 mod whole_fracture_real_tests;
 
@@ -706,14 +709,15 @@ impl BattleTemplate {
             ||rows.iter().enumerate().any(|(index,row)|row.kind.index()!=index) {return Err(model::bad());}
         if qualification.is_some_and(|kind|rows.len()!=(if extended{7}else{5})||!rows.iter().any(|row|row.kind==kind)){return Err(model::bad());}
         let shared=rows[0].shared.clone().ok_or_else(||model::bad())?;
-        let mut world=World::new_for_vehicle(id,now,MapId::Prohorovka,qualification.unwrap_or(VehicleKind::Ms1))?;
+        let map=rows[0].map;if rows.iter().any(|row|row.map!=map){return Err(model::bad());}
+        let mut world=World::new_for_vehicle(id,now,map,qualification.unwrap_or(VehicleKind::Ms1))?;
         world.set_expected_actors(count)?;
         for row in rows{world.bind_geometry(row.geometry.clone())?;}
         world.enable_ap_test_lab()?;world.bind_terrain(rows[0].terrain.clone())?;
         world.bind_fragiles(rows[0].catalog.0.clone())?;
         if extended{world.enable_extended_lab()?;}
         if breech_v2{world.enable_extended_breech_lab()?;}
-        if qualification.is_none(){world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?;}
+        if qualification.is_none(){world.enable_lifecycle(super::lifecycle::Rules::for_map(map)?)?;}
         Ok(Self{world,pool:Some(rows[0].pool.clone()),removal:None,catalog:Some(rows[0].catalog.1.clone()),shared:Some(shared)})
     }
     fn runtime(&self,map:MapId)->io::Result<Option<IntegratedRuntime>>{self.pool.as_ref().map(|pool|{
@@ -721,10 +725,10 @@ impl BattleTemplate {
         if let Some(shared)=&self.shared{r.batch=Some(BatchRuntime::new(shared.clone(),self.catalog.clone().ok_or_else(||model::bad())?));}Ok(r)
     }).transpose()}
     fn from_resources(r:&super::profile13_templates::Resources,id:u64,now:Instant)->io::Result<Self> {
-        let mut world=World::new_for_vehicle(id,now,MapId::Prohorovka,r.kind)?;
+        let mut world=World::new_for_vehicle(id,now,r.map,r.kind)?;
         world.bind_geometry(r.geometry.clone())?;world.enable_ap_test_lab()?;
         world.bind_terrain(r.terrain.clone())?;world.bind_fragiles(r.catalog.0.clone())?;
-        world.enable_lifecycle(super::lifecycle::Rules::prohorovka())?;
+        world.enable_lifecycle(super::lifecycle::Rules::for_map(r.map)?)?;
         Ok(Self{world,pool:Some(r.pool.clone()),removal:None,catalog:Some(r.catalog.1.clone()),shared:None})
     }
     fn select(&self,world:&mut World,runtime:&mut Option<IntegratedRuntime>,now:Instant)->io::Result<()> {
@@ -1081,9 +1085,9 @@ pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_
     if !config.profile13_battle || !config.research_service {return Err(model::bad().into());}
     let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
     if config.p04m_pool&&resources.len()!=5{return Err(model::bad().into());}
-    let initial=&resources[0];
+    let initial=&resources[0];let map=initial.map;
     serve_with_pool(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
-        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources),None)
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),map,VehicleKind::Ms1,Some(resources),None)
 }
 
 /// Explicit temporary qualification scene. It uses frozen laboratory account
@@ -1111,8 +1115,9 @@ fn serve_curated_lab_policy(key_path:&str,digest_path:&str,config_path:&str,mani
     if kind.is_extended(){println!("P06T_EXTENDED_QUALIFICATION policy={} device_policy={} temporary_ammunition=true inventory_grant=false scene_manifest=3",
         model::extended::POLICY,crate::p06t_device_state::POLICY_V2);}
     if breech_v2{println!("P06T_UNARMORED_BREECH_QUALIFICATION policy=test_lab.p06t.unarmored-gun-breech.v2 historical_server_solver=UNKNOWN");}
+    let map=initial.map;
     serve_with_pool_policy(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
-        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),MapId::Prohorovka,VehicleKind::Ms1,Some(resources),Some(kind),breech_v2)
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),map,VehicleKind::Ms1,Some(resources),Some(kind),breech_v2)
 }
 
 pub(super) fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
@@ -1168,8 +1173,10 @@ pub fn serve_integrated_for_map(key_path: &str, digest_path: &str, config_path: 
 pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_path: &str,
     pool_path: &str, capture_path: &str, geometry_path: Option<&str>, ap_test_lab: bool, terrain_test_lab: bool,
     destructible_test_lab: bool,catalog_path:Option<(&str,&str)>,map:MapId,vehicle:VehicleKind) -> Result<(), Box<dyn std::error::Error>> {
-    if vehicle!=VehicleKind::Ms1 && (map!=MapId::Prohorovka || !ap_test_lab || !terrain_test_lab) { return Err(model::bad().into()); }
-    if map==MapId::Prohorovka && (!ap_test_lab || !terrain_test_lab || destructible_test_lab) { return Err(model::bad().into()); }
+    // Karelia keeps its accepted legacy lab modes; every other registry map
+    // needs the full pinned stack (AP, terrain, pool), as Prohorovka did.
+    if vehicle!=VehicleKind::Ms1 && (map==MapId::Karelia || !ap_test_lab || !terrain_test_lab) { return Err(model::bad().into()); }
+    if map!=MapId::Karelia && (!ap_test_lab || !terrain_test_lab || destructible_test_lab) { return Err(model::bad().into()); }
     if ap_test_lab && geometry_path.is_none() { return Err(model::bad().into()); }
     if destructible_test_lab && !terrain_test_lab { return Err(model::bad().into()); }
     if catalog_path.is_some()&&(!terrain_test_lab||destructible_test_lab){return Err(model::bad().into());}
@@ -1288,7 +1295,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     else if vehicle!=VehicleKind::Ms1 { return Err(model::bad().into()); }
     if terrain.as_ref().is_some_and(|t|t.map_id()!=map)
         || catalog.as_ref().is_some_and(|(c,w)|c.map!=map||w.map_id()!=map)
-        || map==MapId::Prohorovka && (integrated_pool.is_none()||!ap_test_lab||terrain.is_none()||removal.is_some()) {
+        || map!=MapId::Karelia && (integrated_pool.is_none()||!ap_test_lab||terrain.is_none()||removal.is_some()) {
         return Err(model::bad().into());
     }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);

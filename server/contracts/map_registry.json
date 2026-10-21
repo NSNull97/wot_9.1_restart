@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "kind": "wot091_server_map_registry",
+  "maps": [
+    {
+      "asset": "01_karelia",
+      "arena_type_id": 1,
+      "revision_name": "karelia",
+      "grid": {
+        "width": 769,
+        "origin": -600.0,
+        "spacing": 1.5625
+      },
+      "chunk_bounds": {
+        "minX": -6,
+        "maxX": 5,
+        "minY": -6,
+        "maxY": 5
+      },
+      "terrain": {
+        "manifest_sha256": "5e23f58d4e9d78398bd9cd861f6bc09a038cce7e8f7b311731e50c30bcc958f9",
+        "vertices_sha256": "dc0752ceaaa6b469b36062a5c0a1d397edfa7a39815bf0d19d1290d0c8a08a92",
+        "triangles_sha256": "27ba25b1f81a37cb678584a898b0efed2b497ef1fc26ecb342ff852f72ec479c"
+      },
+      "physics": {
+        "manifest_sha256": "ea6ef22aed0fdd4e4826500c280a616737f8990ce7ab7cd808b9382227ec5ffd",
+        "triangle_count": 335551,
+        "instance_count": 2918
+      },
+      "projectile": {
+        "manifest_sha256": "ccd28d8e3320d041e569e217a8c20e0285db0459bc2ef447c5bd95dd97d80cea",
+        "manifest_bytes": 2190312,
+        "vertex_count": 538095,
+        "triangle_count": 179365,
+        "vertices_sha256": "8900634a1fd9dacbebe785d6c0289e2102f0811df7a677be473e2d0ea607db26",
+        "triangles_sha256": "06f3dcd079e6de79b4f653b4c6a23865b92d20449aab7480bbc8d6d2c8b85304",
+        "flags_sha256": "9c601f8bc5463af3dc7107d1592d984eeaffd6cb453f338b34cffdf5dc02d1a1",
+        "manifest_relative": "evidence/20261010-p06m-terrain-impact-01/projectile-obstacles01/01_karelia/manifest.json"
+      },
+      "arena": {
+        "round_length_s": 900,
+        "ctf_bases": [
+          [
+            397.5322265625,
+            402.58441162109375
+          ],
+          [
+            -401.34033203125,
+            -399.9750061035156
+          ]
+        ]
+      },
+      "source": "legacy-accepted-evidence"
+    },
+    {
+      "asset": "05_prohorovka",
+      "arena_type_id": 4,
+      "revision_name": "prohorovka",
+      "grid": {
+        "width": 769,
+        "origin": -600.0,
+        "spacing": 1.5625
+      },
+      "chunk_bounds": {
+        "minX": -6,
+        "maxX": 5,
+        "minY": -6,
+        "maxY": 5
+      },
+      "terrain": {
+        "manifest_sha256": "d598db1dafee75e56e71a3453c1bc9824e86f32280df56854780127ceedad984",
+        "vertices_sha256": "4038d2967c2b8f66affdd729cc475050b1b9cadec3c1f1d187f0c99114d3fcbf",
+        "triangles_sha256": "27ba25b1f81a37cb678584a898b0efed2b497ef1fc26ecb342ff852f72ec479c"
+      },
+      "physics": {
+        "manifest_sha256": "9d358a48da303abaf15572f478dddc16971864960d9341943cc6d207b32b3265",
+        "triangle_count": 428597,
+        "instance_count": 3904
+      },
+      "projectile": {
+        "manifest_sha256": "3db1ad3859ae2f5fed678ac5f148005cff38a3c915bb33dde3303de22e22bef7",
+        "manifest_bytes": 3004854,
+        "vertex_count": 856050,
+        "triangle_count": 285350,
+        "vertices_sha256": "e764c437c1f7676ec7916daba59e88f8ecea4fac558653d1fb3eb6fb3856de16",
+        "triangles_sha256": "c954bbc7bc893d80d26d720cb6be09e4059047a614ba6288af56c11803648a31",
+        "flags_sha256": "088d726205104d0da6a79b7a956f1e1281cd516c0b8a5248f7110dd8205f6bc5",
+        "manifest_relative": "evidence/20261012-p06p-prohorovka-01/import/projectile-obstacles01/05_prohorovka/manifest.json"
+      },
+      "arena": {
+        "round_length_s": 900,
+        "ctf_bases": [
+          [
+            -125.10002136230469,
+            448.30010986328125
+          ],
+          [
+            51.59999084472656,
+            -447.0
+          ]
+        ]
+      },
+      "source": "legacy-accepted-evidence"
+    },
+    {
+      "asset": "02_malinovka",
+      "arena_type_id": 2,
+      "revision_name": "malinovka",
+      "grid": {
+        "width": 769,
+        "origin": -600.0,
+        "spacing": 1.5625
+      },
+      "chunk_bounds": {
+        "minX": -6,
+        "maxX": 5,
+        "minY": -6,
+        "maxY": 5
+      },
+      "terrain": {
+        "manifest_sha256": "9e8787343404791e0ff2064beba9e4902112943e7cddfcc8cbe7f340c1216dbb",
+        "vertices_sha256": "2c71cc769a6ba3671620a567a9c5ee3dfe9ab38e55c034c39d28dd612eba4e2b",
+        "triangles_sha256": "27ba25b1f81a37cb678584a898b0efed2b497ef1fc26ecb342ff852f72ec479c"
+      },
+      "physics": {
+        "manifest_sha256": "53623ab13a6ca29f2ff9e2d3df0fd90ec8c46cc14063f66ecabf82c30faa6528",
+        "triangle_count": 282712,
+        "instance_count": 3078
+      },
+      "projectile": {
+        "manifest_sha256": "cab87f5edad76a2322351f6cc173467d9d3cef6d54cac9f0399b3370c5a9f5ea",
+        "manifest_bytes": 2471986,
+        "vertex_count": 302052,
+        "triangle_count": 100684,
+        "vertices_sha256": "d8cb5f71a54d07e28427b5274577b244f0a12013ae96c5ac698d929c2b09ae7c",
+        "triangles_sha256": "aa68c9a1aa688ad798c711b624564980bb04b92a08260489676c232751aff817",
+        "flags_sha256": "723c921773f7111f43628ccd44ec4183d3bbf41312c16db856df4f766739eb19",
+        "manifest_relative": "evidence/20261020-maps01/final01/packages/02_malinovka/projectile/manifest.json"
+      },
+      "arena": {
+        "round_length_s": 900,
+        "ctf_bases": [
+          [
+            75.59989929199219,
+            -391.9455261230469
+          ],
+          [
+            -372.6998596191406,
+            108.11964416503906
+          ]
+        ]
+      },
+      "source": {
+        "package_relative": "evidence/20261020-maps01/final01/packages/02_malinovka",
+        "package_sha256": "e2f9dc0662ac4d6c8d94036a09d991d5a66d4ae3cfec8cfb934af1529df660aa"
+      }
+    }
+  ]
+}

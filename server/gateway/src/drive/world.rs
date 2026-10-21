@@ -32,7 +32,9 @@ fn pose(p:&Pose)->io::Result<()>{
         || !p.speed.is_finite() || p.speed.abs()>25. || !p.rspeed.is_finite() || p.rspeed.abs()>20. {return Err(bad());}Ok(())
 }
 fn world(map:&MapSpec,space:u32)->io::Result<()>{
-    if space==0 || space>MAX_ARENAS || !matches!((map.asset.as_str(),map.arena_type_id),("01_karelia",1)|("05_prohorovka",4)){return Err(bad());}Ok(())
+    // Registry identity: asset and native arena type must name the same pinned map.
+    let registered=crate::map_profile091::MapId::from_asset(&map.asset).is_ok_and(|id|id.arena_type_id()==map.arena_type_id);
+    if space==0 || space>MAX_ARENAS || !registered{return Err(bad());}Ok(())
 }
 pub fn reset_avatar(seed:&vehicle::VehicleSeed,map:&MapSpec,space:u32,unique:u64)->io::Result<Vec<u8>>{
     world(map,space)?;if unique==0{return Err(bad());}

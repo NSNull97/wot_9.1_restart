@@ -20,6 +20,17 @@ pub struct Rules {
     pub bases: [Base; 2],
 }
 impl Rules {
+    /// Rules of one registry map: the client's ctf bases and round length
+    /// (arena_defs), the accepted 30 s / 8 s periods and the accepted 50 m
+    /// test_lab capture radius. A map without two ctf bases is unsupported.
+    pub fn for_map(map: crate::map_profile091::MapId) -> io::Result<Self> {
+        let profile = map.spec();
+        let [a, b] = profile.ctf_bases.ok_or_else(|| bad("map has no client ctf bases"))?;
+        let rules = Self { prebattle_ms: 30_000, battle_ms: u64::from(profile.round_length_s) * 1_000, afterbattle_ms: 8_000,
+            bases: [Base { owner: 1, xz: a, radius: 50. }, Base { owner: 2, xz: b, radius: 50. }] };
+        rules.validate()?;
+        Ok(rules)
+    }
     pub fn prohorovka() -> Self {
         Self { prebattle_ms: 30_000, battle_ms: 900_000, afterbattle_ms: 8_000,
             bases: [Base { owner: 1, xz: [-125.100021, 448.300110], radius: 50. },

@@ -78,7 +78,17 @@ impl Catalog {
         if format!("{:x}",Sha256::digest(bytes))!=sha{return Err(bad());}
         let v=crate::map_drive_worker091::json_catalog_extended(bytes,1024*1024)?;
         let base_fields=["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects"];
-        if matches!(v["version"].as_u64(),Some(4|5|6|7)){
+        // A v7 catalog states its native index source: recorded passive
+        // native exports, or the explicit static chunk-order rule of a
+        // tools/map_package.py package (INFERRED; never presented as native).
+        let static_index=v["version"].as_u64()==Some(7)&&v.get("native_index_source").is_some();
+        if static_index{
+            fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_index_source","worker","objects","contacts","area_chunks","ram_policy"])?;
+            let source=&v["native_index_source"];fields(source,&["rule","static_index_sha256","classification"])?;
+            if source["rule"]!=STATIC_INDEX_RULE||source["classification"]!=STATIC_INDEX_CLASSIFICATION{return Err(bad());}
+            hash(&source["static_index_sha256"])?;
+            if v["ram_policy"]!=ram_proof::POLICY{return Err(bad());}
+        } else if matches!(v["version"].as_u64(),Some(4|5|6|7)){
             fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_exports_sha256","worker","objects","contacts","area_chunks","ram_policy"])?;
             let policy=match v["version"].as_u64(){Some(7)=>ram_proof::POLICY,Some(6)=>FENCE_TOTAL_RAM_POLICY,Some(5)=>WHOLE_RAM_POLICY,_=>FENCE_RAM_POLICY};
             if v["ram_policy"]!=policy{return Err(bad());}
@@ -93,9 +103,11 @@ impl Catalog {
         if version<3 { crate::map_drive_worker091::json_catalog(bytes,1024*1024)?; }
         let contacts=version>=2;
         if contacts && v["contacts"]!=true || !contacts && v.get("contacts").is_some(){return Err(bad());}
-        let exports=v["native_exports_sha256"].as_array().filter(|a|(1..=2).contains(&a.len())).ok_or_else(|| bad())?;
-        let pins=exports.iter().map(hash).collect::<io::Result<Vec<_>>>()?;
-        if pins.windows(2).any(|w|w[0]>=w[1]){return Err(bad());}
+        if !static_index {
+            let exports=v["native_exports_sha256"].as_array().filter(|a|(1..=2).contains(&a.len())).ok_or_else(|| bad())?;
+            let pins=exports.iter().map(hash).collect::<io::Result<Vec<_>>>()?;
+            if pins.windows(2).any(|w|w[0]>=w[1]){return Err(bad());}
+        }
         fields(&v["worker"],&["file","sha256"])?;
         let worker_file=text(&v["worker"]["file"],64)?;
         if worker_file!="physics-removals.json"{return Err(bad());}
@@ -103,7 +115,7 @@ impl Catalog {
         let limit=if version>=3{MAX_MOVEMENT_OBJECTS}else if contacts{MAX_CONTACT_OBJECTS}else{MAX_OBJECTS};
         let rows=v["objects"].as_array().filter(|a|!a.is_empty()&&a.len()<=limit).ok_or_else(|| bad())?;
         let area_chunks=if version>=3 {
-            v["area_chunks"].as_array().filter(|a|!a.is_empty()&&a.len()<=128).ok_or_else(|| bad())?
+            v["area_chunks"].as_array().filter(|a|!a.is_empty()&&a.len()<=max_area_chunks(map)).ok_or_else(|| bad())?
                 .iter().map(|c|u16::try_from(uint(c)?).map_err(|_|bad())).collect::<io::Result<Vec<_>>>()?
         }else{Vec::new()};
         let mut objects=Vec::with_capacity(rows.len());
@@ -136,9 +148,9 @@ impl Catalog {
         let profile=self.map.spec();
         if self.objects.is_empty()||self.objects.len()>if self.version>=3{MAX_MOVEMENT_OBJECTS}else if self.contacts{MAX_CONTACT_OBJECTS}else{MAX_OBJECTS}
             ||self.objects.windows(2).any(|w|w[0].object_id>=w[1].object_id){return Err(bad());}
-        if self.version>=3 && (self.area_chunks.is_empty()||self.area_chunks.len()>128
+        if self.version>=3 && (self.area_chunks.is_empty()||self.area_chunks.len()>max_area_chunks(self.map)
             ||self.area_chunks.windows(2).any(|w|w[0]>=w[1])
-            ||self.area_chunks.iter().any(|c|!((121..=132).contains(&(c>>8))&&(121..=132).contains(&(c&255))))) {return Err(bad());}
+            ||self.area_chunks.iter().any(|c|!profile.contains_chunk_id(*c))) {return Err(bad());}
         for (i,o) in self.objects.iter().enumerate(){
             if matches!(self.version,6|7) && o.kind==ObjectKind::MovementFragile && !FENCE_TOTAL_RESOURCES.contains(&o.resource.as_str()) {return Err(bad());}
             let (resource_ok,material_ok,projectile_ok)=match o.kind {
@@ -151,7 +163,7 @@ impl Catalog {
                 ||!projectile_ok||o.physics_triangle_count==0
                 ||o.projectile_first_triangle.checked_add(o.projectile_triangle_count).is_none_or(|end|end as usize>profile.projectile_triangle_count)
                 ||o.physics_first_triangle.checked_add(o.physics_triangle_count).is_none_or(|end|end as usize>profile.physics_triangle_count)
-                || !((121..=132).contains(&(o.chunk_id>>8))&&(121..=132).contains(&(o.chunk_id&255))) {return Err(bad());}
+                || !profile.contains_chunk_id(o.chunk_id) {return Err(bad());}
             if self.version>=3 && self.area_chunks.binary_search(&o.chunk_id).is_err(){return Err(bad());}
             for old in &self.objects[..i]{
                 if (old.chunk_id,old.native_index)==(o.chunk_id,o.native_index)
@@ -185,6 +197,15 @@ impl Catalog {
     }
 }
 fn ranges_overlap(a:u32,n:u32,b:u32,m:u32)->bool{a<b+m&&b<a+n}
+/// Explicit static native-index provenance (tools/compound_destructible_catalog.py).
+pub const STATIC_INDEX_RULE:&str="static-chunk-order-v1";
+const STATIC_INDEX_CLASSIFICATION:&str="INFERRED_STATIC_RULE_NATIVE_CONFIRMATION_NOT_RUN";
+/// The accepted maps keep the original 128-area probe budget; other registry
+/// maps are bounded by the area-controller count (destructible_wire MAX_AREAS)
+/// and their own chunk count.
+fn max_area_chunks(map:MapId)->usize{
+    let profile=map.spec();if profile.accepted_legacy{128}else{super::destructible_wire::MAX_AREAS.min(profile.chunk_count())}
+}
 
 #[derive(Clone,Debug,PartialEq)]
 pub struct Damage {pub object_id:u32,pub instance_id:u32,pub object_revision:String,pub shot:u32,pub shooter:usize,pub tick:u32,

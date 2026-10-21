@@ -118,7 +118,7 @@ impl SceneSpec{
     pub fn load(root:&Path,path:&Path,sha:&str)->io::Result<Self>{let manifest_path=owned(root,path)?;let raw=read(&manifest_path,MAX_INPUT,sha)?;let m=parse(&raw,MAX_INPUT)?;
         keys(&m,&["version","profile","policy","map","catalog","actors"])?;
         let version=uint(&m["version"])?;
-        let map=string(&m,"map")?;if !matches!(version,1|2|3)||string(&m,"profile")?!="test_lab"||string(&m,"policy")?!=POLICY||!matches!(map,"01_karelia"|"05_prohorovka"){return Err(bad("manifest policy"));}
+        let map=string(&m,"map")?;if !matches!(version,1|2|3)||string(&m,"profile")?!="test_lab"||string(&m,"policy")?!=POLICY||crate::map_profile091::MapId::from_asset(map).is_err(){return Err(bad("manifest policy"));}
         let rows=array(&m["actors"],MAX_ACTORS)?;if rows.is_empty(){return Err(bad("empty roster"));}
         let mut actors=Vec::new();let mut pins=vec![(manifest_path.clone(),sha.to_string(),MAX_INPUT)];let mut geometry=None;
         for row in rows{

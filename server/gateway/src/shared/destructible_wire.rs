@@ -22,7 +22,7 @@ const DESTROYED_FRAGILES: u8 = 0x9f;
 const FALLEN_TREES: u8 = 0xa1;
 /// Prohorovka has 144 destructible chunks.  This is an area-controller
 /// bound, separate from the 64-object fragile catalog bound.
-const MAX_AREAS: usize = 144;
+pub(super) const MAX_AREAS: usize = 144;
 /// A short VAR1 property length is one byte.  ARRAY<UINT32> carries a signed
 /// i32 count, so 4 + 4*62 = 252 is the largest safe body before 255.
 const MAX_TREES_PER_AREA: usize = 62;

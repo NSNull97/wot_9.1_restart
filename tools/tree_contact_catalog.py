@@ -27,6 +27,9 @@ MAP = "05_prohorovka"
 MAX_OBJECTS = 1024
 MAX_REMOVED = 1024
 MAX_CHUNKS = 128
+# Static-index catalogs are bounded by the gateway's area-controller count
+# (server/gateway/src/shared/destructible_wire.rs MAX_AREAS), not a probe budget.
+MAX_STATIC_AREAS = 144
 MAX_ITEMS_PER_CHUNK = 256
 MAX_TREE_ITEMS_PER_CHUNK = 62
 MAX_NATIVE_BYTES = 16 * 1024 * 1024
@@ -44,28 +47,49 @@ def sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def load_sources():
-    sources = dc.load_sources(MAP)
-    geometry = dc.json_value(sources["physics"])["geometries"]
+def load_sources(map_name=MAP):
+    sources = dc.load_sources(map_name)
+    physics = dc.json_value(sources["physics"])
+    geometry = physics["geometries"]
+    served = {row["entry"]: dc.served_by(row) for row in physics["resources"]}
     original = dc.configured_paths()["original_client_root"]
-    package = dc.no_links(original / "res/packages" / (MAP + ".pkg"))
-    size, expected = dc.map_profile(MAP).package_pins()[MAP + ".pkg"]
-    require(package.stat().st_size == size, "tree package size pin")
-    with package.open("rb") as stream:
-        require(hashlib.file_digest(stream, "sha256").hexdigest() == expected, "tree package SHA256 pin")
+    pins = dc.map_profile(map_name).package_pins()
+    # Search order of the pinned packages: map first, then shared_content and
+    # any further package the geometry export recorded (paths.xml first match).
+    order = [map_name + ".pkg"] + [name for name in pins if name != map_name + ".pkg"]
     sources["tree_resources"] = {}
-    with zipfile.ZipFile(package) as archive:
-        require(len(archive.infolist()) <= 20000 and len(set(archive.namelist())) == len(archive.namelist()),
-                "tree package index bound/duplicates")
+    archives = {}
+    try:
+        for filename in order:
+            package = dc.no_links(original / "res/packages" / filename)
+            size, expected = pins[filename]
+            require(package.stat().st_size == size, "tree package size pin")
+            with package.open("rb") as stream:
+                require(hashlib.file_digest(stream, "sha256").hexdigest() == expected, "tree package SHA256 pin")
+            archive = zipfile.ZipFile(package)
+            archives[filename] = archive
+            require(len(archive.infolist()) <= 20000 and len(set(archive.namelist())) == len(archive.namelist()),
+                    "tree package index bound/duplicates")
         for name, meta in sorted(geometry.items()):
             if name.endswith(".spt"):
-                bsp = dc.member(archive, name[:-4] + ".bsp2")
+                bsp_name = name[:-4] + ".bsp2"
+                bsp_package = served.get(bsp_name) or map_name + ".pkg"
+                require(bsp_package in archives, "tree BSP package not pinned")
+                bsp = dc.member(archives[bsp_package], bsp_name)
                 require(len(bsp) == meta["bytes"] and sha(bsp) == meta["sha256"], "tree BSP source pin")
-                sources["tree_resources"][name] = {"spt": dc.member(archive, name), "bsp": bsp}
+                holders = [f for f in order if name in archives[f].NameToInfo]
+                require(holders, "tree SPT missing from pinned packages")
+                sources["tree_resources"][name] = {"spt": dc.member(archives[holders[0]], name), "bsp": bsp}
+    finally:
+        for archive in archives.values():
+            archive.close()
     return sources
 
 
-def tree_material_contracts(sources, meshes):
+TREE_SOURCE_FLAGS = {18336, 18608}
+
+
+def tree_material_contracts(sources, meshes, *, generalized=False):
     contracts = {}
     geometries = meshes["physics"]["geometries"]
     names = {i["resource"] for i in meshes["physics"]["instances"] if i["kind"] == "speedtree"}
@@ -84,7 +108,12 @@ def tree_material_contracts(sources, meshes):
         require(count == meta["triangles"] and count <= 100000 and 60 + count * 40 <= len(bsp),
                 "tree BSP triangle bound")
         flags = Counter(struct.unpack_from("<H", bsp, 60 + i * 40 + 36)[0] for i in range(count))
-        require(set(flags) <= {18336, 18608}, "unsupported tree source material flags")
+        if generalized and not set(flags) <= TREE_SOURCE_FLAGS:
+            # Other flags have no established tree contract; such trees stay static.
+            contracts[name] = {"bsp_sha256": sha(bsp), "spt_sha256": sha(spt), "source_flags": dict(flags),
+                               "unsupported": "tree_source_material_flags_without_contract"}
+            continue
+        require(set(flags) <= TREE_SOURCE_FLAGS, "unsupported tree source material flags")
         contracts[name] = {"bsp_sha256": sha(bsp), "spt_sha256": sha(spt),
                            "bsp_bytes": len(bsp), "spt_bytes": len(spt), "source_flags": dict(flags),
                            "movement_triangles_before_quantization": sum(n for f, n in flags.items() if not f & 18),
@@ -111,7 +140,7 @@ def _chunk_objects(sources):
     return result
 
 
-def _tree_rows(sources, meshes, defs, contracts):
+def _tree_rows(sources, meshes, defs, contracts, *, generalized=False):
     """Build every source tree row, retaining exclusions for coverage audits."""
     original = _chunk_objects(sources)
     physics, projectile = meshes["physics"], meshes["projectile"]
@@ -133,14 +162,24 @@ def _tree_rows(sources, meshes, defs, contracts):
                 source.get("/transform[1]") == phy["transform"],
                 "tree source resource/transform differs")
         definition = defs.get(phy["resource"])
-        require(definition is not None and definition["family"] == "trees",
-                "speedtree has no pinned tree definition")
         chunk = phy["chunk"]
         chunk_id = ((chunk[0] + 127) << 8) | (chunk[1] + 127)
+        contract = contracts[phy["resource"]]
+        if generalized and (definition is None or definition["family"] != "trees" or "unsupported" in contract
+                            or not (type(definition["reference_health"]) is int
+                                    and 1 <= definition["reference_health"] <= 0xFFFFFFFF)):
+            # A static speedtree: recorded with its reason, never admitted.
+            reason = ("speedtree_not_registered_destructible_tree" if definition is None or definition["family"] != "trees"
+                      else contract.get("unsupported") or "tree_reference_health_outside_u32")
+            rows.append({"instance_id": instance_id, "resource": phy["resource"], "kind": "tree", "chunk": chunk,
+                         "chunk_id": chunk_id, "source_instance": phy["instance"], "eligible": False,
+                         "exclusions": [reason], "native_index": None})
+            continue
+        require(definition is not None and definition["family"] == "trees",
+                "speedtree has no pinned tree definition")
         candidates[chunk_id].append({"instance_id": instance_id, "resource": phy["resource"],
                                      "kind": "tree"})
         reasons = []
-        contract = contracts[phy["resource"]]
         require(phy["triangles"] + phy["degenerate"] == contract["movement_triangles_before_quantization"] and
                 shot["triangles"] == contract["projectile_triangles"], "tree source material/span coverage")
         require(type(shot["triangles"]) is int and shot["triangles"] == 0,
@@ -192,11 +231,11 @@ def _tree_rows(sources, meshes, defs, contracts):
             points = dc._points(sources, "physics", phy)
             identity = {
                 "schema": "destructible-object-source.v2",
-                "map": MAP,
+                "map": sources["map"],
                 "kind": "tree",
                 "destructibles_sha256": dc.DESTRUCTIBLES_SHA256,
-                "physics_manifest_sha256": dc.map_profile(MAP).files()["physics"][1],
-                "projectile_manifest_sha256": dc.map_profile(MAP).files()["projectile"][1],
+                "physics_manifest_sha256": dc.map_profile(sources["map"]).files()["physics"][1],
+                "projectile_manifest_sha256": dc.map_profile(sources["map"]).files()["projectile"][1],
                 "instance": {k: v for k, v in row.items()
                              if k not in ("eligible", "exclusions", "native_index")},
                 "world_triangle_points_sha256": sha(points),
@@ -209,15 +248,19 @@ def _tree_rows(sources, meshes, defs, contracts):
     return rows, eligible, candidates
 
 
-def build_inventory(sources=None):
-    """Import old fragiles and all eligible trees from pinned Prohorovka."""
+GENERALIZED_MAX_OBJECTS = 2048
+
+
+def build_inventory(sources=None, *, chunk_limit=MAX_CHUNKS, generalized=False):
+    """Import old fragiles and all eligible trees from one pinned map (default Prohorovka)."""
     sources = load_sources() if sources is None else sources
-    require(sources.get("map") == MAP, "tree catalog requires Prohorovka sources")
+    name = sources.get("map")
+    dc.map_profile(name)
     meshes = dc.verify_sources(sources)
     definitions, defs, duplicates = dc.parse_definitions(sources["destructibles"])
-    legacy = dc.build_inventory(sources)
-    contracts = tree_material_contracts(sources, meshes)
-    tree_rows, tree_eligible, tree_candidates = _tree_rows(sources, meshes, defs, contracts)
+    legacy = dc.build_inventory(sources, generalized=generalized)
+    contracts = tree_material_contracts(sources, meshes, generalized=generalized)
+    tree_rows, tree_eligible, tree_candidates = _tree_rows(sources, meshes, defs, contracts, generalized=generalized)
     eligible = []
     for row in legacy["eligible"]:
         copy = dict(row)
@@ -229,11 +272,13 @@ def build_inventory(sources=None):
     # increasing.  Legacy and tree rows originate from the same instance list,
     # so sort once after merging rather than relying on family traversal order.
     eligible.sort(key=lambda row: row["instance_id"])
-    require(0 < len(eligible) <= MAX_OBJECTS, "bounded nonempty combined catalog")
+    require(0 < len(eligible) <= (GENERALIZED_MAX_OBJECTS if generalized else MAX_OBJECTS),
+            "bounded nonempty combined catalog")
     # The native probe audits each chunk containing an admitted object.  Every
     # one of the 116 tree chunks is included; no source chunk is silently cut.
     target_chunks = sorted({r["chunk_id"] for r in eligible})
-    require(len(target_chunks) <= MAX_CHUNKS, "native target chunk bound")
+    require(chunk_limit in (MAX_CHUNKS, MAX_STATIC_AREAS) and len(target_chunks) <= chunk_limit,
+            "native target chunk bound")
     tree_counts = Counter(r["chunk_id"] for r in tree_eligible)
     require(max(tree_counts.values(), default=0) <= MAX_TREE_ITEMS_PER_CHUNK,
             "tree objects per chunk exceed native probe budget")
@@ -242,16 +287,16 @@ def build_inventory(sources=None):
         candidates[int(chunk)].extend(values)
     for chunk, values in tree_candidates.items():
         candidates[int(chunk)].extend(values)
-    files = dc.map_profile(MAP).files()
-    spec = {"version": 2, "kind": "p06q_tree_contact_catalog_spec", "map": MAP,
+    files = dc.map_profile(name).files()
+    spec = {"version": 2, "kind": "p06q_tree_contact_catalog_spec", "map": name,
             "source_pins": sources["pins"], "chunk_ids": target_chunks}
     tree_exclusions = Counter(reason for row in tree_rows for reason in row["exclusions"])
     return {
         "version": 2,
         "kind": "p06q_tree_contact_catalog_inventory",
-        "map": MAP,
+        "map": name,
         "source_pins": sources["pins"],
-        "package_pins": dc.map_profile(MAP).package_pins(),
+        "package_pins": dc.map_profile(name).package_pins(),
         "summary": {
             "definition_rows": len(definitions),
             "unique_definition_resources": len(defs),
@@ -304,7 +349,7 @@ def validate_native(raw, inventory):
         "version", "kind", "map", "space_id", "source_pins", "spec_sha256",
         "observation_count", "chunks"}, "tree native export fields")
     require(value["version"] == 2 and value["kind"] == "p06q_tree_contact_catalog" and
-            value["map"] == MAP and value["observation_count"] == 2,
+            value["map"] == inventory["map"] and value["observation_count"] == 2,
             "tree native export identity")
     dc.integer(value["space_id"], 1, 2 ** 32 - 1, "native space ID")
     require(value["source_pins"] == inventory["source_pins"] and
@@ -389,10 +434,10 @@ def join_exports(inventory, exports):
             "object_revision": obj["object_revision"],
         })
     require(0 < len(objects) <= MAX_OBJECTS, "runtime object bound")
-    profile = dc.map_profile(MAP)
+    profile = dc.map_profile(inventory["map"])
     files = profile.files()
     worker = {
-        "version": 3, "profile": "test_lab", "map": MAP,
+        "version": 3, "profile": "test_lab", "map": inventory["map"],
         "physics_manifest_sha256": files["physics"][1],
         "projectile_manifest_sha256": files["projectile"][1],
         "contacts": CONTACTS, "objects": worker_objects,
@@ -400,7 +445,7 @@ def join_exports(inventory, exports):
     worker_raw = dc.canonical(worker) + b"\n"
     dc.json_value(worker_raw, MAX_WORKER_BYTES, 12000, 12)
     manifest = {
-        "version": 2, "profile": "test_lab", "map": MAP,
+        "version": 2, "profile": "test_lab", "map": inventory["map"],
         "destructibles_sha256": dc.DESTRUCTIBLES_SHA256,
         "physics_manifest_sha256": files["physics"][1],
         "projectile_manifest_sha256": files["projectile"][1],

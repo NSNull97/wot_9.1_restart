@@ -56,6 +56,13 @@ class MapProfile:
     instance_count: int
     local_files: tuple
     packages: tuple
+    # Original space chunk bounds (minX, maxX, minY, maxY); both accepted maps are 12x12.
+    chunk_bounds: tuple = (-6, 5, -6, 5)
+
+    @property
+    def chunk_count(self):
+        x0, x1, z0, z1 = self.chunk_bounds
+        return (x1 - x0 + 1) * (z1 - z0 + 1)
 
     def files(self):
         return dict(self.local_files)
@@ -85,6 +92,45 @@ PROFILES = (
 
 class CatalogError(ValueError):
     pass
+
+
+def register_package(package_dir, local=None):
+    """Admit one verified tools/map_package.py package as a pinned map profile.
+
+    The package's own SHA-256 pins become this profile's local file and
+    original package pins; nothing is inferred from file names.
+    """
+    import map_package
+    global PROFILES
+    local = configured_paths()['local_artifacts_root'] if local is None else Path(local)
+    directory = no_links(Path(package_dir).absolute())
+    require(directory.is_relative_to(local), 'map package must be under local')
+    package, _ = map_package.verify(directory)
+    name = package['map']
+    files = package['files']
+    relative = directory.relative_to(local).as_posix()
+    local_files = tuple((key, (relative + '/' + path, files[path]['sha256'])) for key, path in (
+        ('physics', 'physics/manifest.json'), ('projectile', 'projectile/manifest.json'), ('surface', 'surface.json')))
+    sources = package['sources']
+    packages = [(name + '.pkg', (sources['map_package']['bytes'], sources['map_package']['sha256'])),
+                ('shared_content.pkg', (sources['shared_content']['bytes'], sources['shared_content']['sha256']))]
+    require(packages[1][1] == PACKAGES['shared_content.pkg'], 'package shared_content pin differs')
+    for relative, pin in sorted(sources['resource_packages'].items()):
+        basename = relative.rsplit('/', 1)[-1]
+        require(relative == 'res/packages/' + basename and basename.endswith('.pkg'), 'resource package path')
+        if basename not in dict(packages):
+            packages.append((basename, (pin['bytes'], pin['sha256'])))
+        require(dict(packages)[basename] == (pin['bytes'], pin['sha256']), 'resource package pin differs')
+    packages = tuple(packages)
+    require(sources['destructibles_sha256'] == DESTRUCTIBLES_SHA256, 'package destructibles pin differs')
+    bounds = package['grid']['chunk_bounds']
+    profile = MapProfile(name, package['counts']['instances'], local_files, packages,
+                         (bounds['minX'], bounds['maxX'], bounds['minY'], bounds['maxY']))
+    existing = [p for p in PROFILES if p.name == name]
+    require(not existing or existing[0] == profile, 'map profile already registered with other pins')
+    if not existing:
+        PROFILES = PROFILES + (profile,)
+    return profile
 
 
 def require(value, reason):
@@ -312,8 +358,9 @@ def load_sources(map_name=MAP):
     entries = {r['entry']:r for r in meshes['projectile']['resources']}
     names = set()
     for name in wanted:
-        visual = meshes['projectile']['geometries'][name]['visual']
-        names.update((name,visual,visual[:-7]+'.primitives'))
+        geometry = meshes['projectile']['geometries'][name]
+        visual = geometry['visual']
+        names.update((name,visual,geometry.get('primitives',visual[:-7]+'.primitives')))
     payloads['resources'], payloads['chunks'] = {}, {}
     archives = []
     try:
@@ -328,6 +375,11 @@ def load_sources(map_name=MAP):
             require(len(infos)<=20000 and len({i.filename for i in infos})==len(infos), 'duplicate/oversized package index')
             available = {i.filename for i in infos}
             for name in sorted(names & available):
+                # A resource is read from the package its geometry manifest
+                # recorded (original first-match search order); a copy in
+                # another package is ignored, never a second source.
+                if served_by(entries.get(name, {})) not in (None, filename):
+                    continue
                 require(name not in payloads['resources'], 'ambiguous package resource')
                 raw = member(archive,name)
                 require(name in entries and sha(raw)==entries[name]['sha256'], 'resource member SHA256')
@@ -336,12 +388,20 @@ def load_sources(map_name=MAP):
                 for name in sorted(n for n in available if n.endswith('.chunk')):
                     require(re.fullmatch(r'spaces/'+re.escape(profile.name)+r'/[0-9a-f]{8}o\.chunk',name), 'unexpected chunk naming')
                     payloads['chunks'][name] = member(archive,name)
-        require(set(payloads['resources'])==names and len(payloads['chunks'])==144, 'complete original sources required')
+        require(set(payloads['resources'])==names and len(payloads['chunks'])==profile.chunk_count, 'complete original sources required')
     finally:
         for archive in archives:
             archive.close()
     payloads['pins'] = pins
     return payloads
+
+
+def served_by(entry):
+    """Basename of the package a manifest resource row names, if any."""
+    value = entry.get('package')
+    if type(value) is not str:
+        return None
+    return value.replace('\\', '/').rsplit('/', 1)[-1]
 
 
 def verify_sources(sources):
@@ -364,12 +424,13 @@ def verify_sources(sources):
     surface = json_value(sources['surface'])
     require(surface['map'] == profile.name, 'surface map identity differs')
     expected_chunks = {}
-    for row in surface['height_sources']:
+    # Packages also pin original chunks that carry no terrain block.
+    for row in surface['height_sources'] + surface.get('chunks_without_terrain_pins', []):
         x, z = row['chunk']
         name = 'spaces/'+profile.name+'/'+format(x & 65535, '04x')+format(z & 65535, '04x')+'o.chunk'
         require(name not in expected_chunks, 'duplicate original chunk pin')
         expected_chunks[name] = digest(row['chunk_sha256'])
-    require(len(expected_chunks) == 144 and set(sources['chunks']) == set(expected_chunks), 'complete pinned chunk set')
+    require(len(expected_chunks) == profile.chunk_count and set(sources['chunks']) == set(expected_chunks), 'complete pinned chunk set')
     for name, raw in sources['chunks'].items():
         require(type(raw) is bytes and sha(raw) == expected_chunks[name], 'chunk pins before XML parsing')
     return meshes
@@ -390,7 +451,7 @@ def material_contract(resource_name, geometry, sources):
                'kept_projectile_mask128':not bool(flags&128),'kept_physics_mask18':not bool(flags&18)}
         require(name not in materials or materials[name]==row, 'conflicting visual material')
         materials[name] = row
-    raw = sources['resources'][visual_name[:-7]+'.primitives']
+    raw = sources['resources'][geometry.get('primitives',visual_name[:-7]+'.primitives')]
     sections = primitive_sections(raw)
     def section(name):
         info = sections[name]
@@ -445,7 +506,13 @@ def eligibility(row, definition, contract, physics):
     return reasons
 
 
-def build_inventory(sources):
+# Generalized policy (tools/map_package.py packages and every map other than
+# the accepted Prohorovka catalog): an empty projectile-fragile family is a
+# valid result and the bound is the runtime object bound, not the P06O 64.
+GENERALIZED_MAX_OBJECTS = 2048
+
+
+def build_inventory(sources, *, generalized=False):
     meshes=verify_sources(sources)
     profile=map_profile(sources['map'])
     files=profile.files()
@@ -459,7 +526,8 @@ def build_inventory(sources):
         stem=Path(name).name
         coords=[int(stem[i:i+4],16) for i in (0,4)]
         coords=[v-65536 if v>=32768 else v for v in coords]
-        require(all(-6<=v<=5 for v in coords), 'chunk coordinate bounds')
+        x0,x1,z0,z1=profile.chunk_bounds
+        require(x0<=coords[0]<=x1 and z0<=coords[1]<=z1, 'chunk coordinate bounds')
         counts=Counter()
         for row in decode(raw)['children']:
             counts[row['name']]+=1
@@ -517,7 +585,10 @@ def build_inventory(sources):
             row['world_triangle_points_sha256']=sha(points)
             eligible.append(row)
         rows.append(row)
-    require(0<len(eligible)<=MAX_OBJECTS, 'bounded nonempty eligible catalog')
+    if generalized:
+        require(len(eligible)<=GENERALIZED_MAX_OBJECTS, 'bounded eligible catalog')
+    else:
+        require(0<len(eligible)<=MAX_OBJECTS, 'bounded nonempty eligible catalog')
     # Audit every fragile-containing chunk, including currently ineligible
     # geometry, so the trusted preprocessing catalog cannot hide coverage gaps.
     wanted=sorted({r['chunk_id'] for r in rows})
