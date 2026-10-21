@@ -253,13 +253,15 @@ def render_py27(document, digest):
                       "vehicle_class": v["vehicle_class"], "descriptor_sha256": v["descriptor_sha256"],
                       "max_hp": v["max_hp"], "ammo_capacity": v["ammo_capacity"],
                       "seats": len(v["crew"]), "primary_roles": [c["roles"][0] for c in v["crew"]],
+                      "crew_roles": [c["roles"] for c in v["crew"]],
                       "turret_compact_id": v["modules"]["turret"]["native_compact_id"],
                       "gun_compact_id": v["modules"]["gun"]["native_compact_id"],
                       "shell_compact_ids": [s["native_compact_id"] for s in v["shells"]],
                       "battle_admission": v["battle_admission"], "client_ui": v["client_ui"]})
     return ("# -*- coding: utf-8 -*-\n"
             '"""%s\n\nClient UI hints only (Python 2.7.3 in #717). The server stays authoritative;\n'
-            "map_drive_client reads this table only when installed with --catalog-v1.\n\"\"\"\n"
+            "map_drive_client reads this table only when installed with --catalog-v1, the\n"
+            "crew/ammunition windows (crew_vehicles) only when installed with --crew-any.\n\"\"\"\n"
             "SCHEMA = %r\nCATALOG_SHA256 = %r\nVEHICLES = %s\n" % (
                 HEADER, SCHEMA, digest, _py_literal(hints)))
 

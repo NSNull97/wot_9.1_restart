@@ -75,6 +75,9 @@ if (type(_settings.get('enable_catalog_v1', False)) is not bool
         or (_settings.get('enable_catalog_v1')
             and _settings.get('enable_profile13_battle') is not True)):
     raise ValueError('CAT-01 catalog requires explicit profile13 battle mode')
+if (type(_settings.get('enable_crew_any', False)) is not bool
+        or (_settings.get('enable_crew_any') and _settings.get('enable_catalog_v1') is not True)):
+    raise ValueError('CREW-ANY requires the CAT-01 catalog mode')
 import project_network
 project_network.validate_settings(_settings)
 import project_sixth_sense_sound
@@ -1027,6 +1030,13 @@ def init(*args):
         if _settings.get('network_policy') is not None:
             record('client_network_policy', policy=_settings['network_policy'],
                    registration_enabled=False, accounts='precreated_project_only')
+        if _settings.get('enable_crew_any') is True:
+            # Before any crew/ammunition guard reads its vehicle table.
+            import crew_vehicles
+            import catalog_v1_hints
+            record('crew_any_policy', catalog_sha256=crew_vehicles.enable(catalog_v1_hints),
+                   max_tankmen=crew_vehicles.CATALOG_MAX_TANKMEN, server_authoritative=True,
+                   evidence_scenarios='MS-1/IS-7 only')
         import hangar_bootstrap
         hangar_bootstrap.init(args, record, start_gui=True, restrict_module_changes=True,
                              restrict_crew_changes=True,

@@ -210,7 +210,8 @@ def economy(args):
 def provision(args):
     """Ready one purchased pool vehicle offline (services stopped).
 
-    The #717 crew/ammunition UI patches cover only MS-1/IS-7, so a bought
+    Without the CREW-ANY client (prepare --crew-any) the #717 crew/ammunition
+    UI patches cover only MS-1/IS-7, so a bought
     T-26/T-34/T-34-85 is readied through the bridge's own store: free research
     path, zero-economy purchase, barracks then free recruits per source seat,
     a 60/20/20 load from the depot, then the same freeze_mixed admission."""
@@ -282,6 +283,55 @@ def provision(args):
     receipt = stand / ('provision-' + account[:8] + '-' + kind + '.json')
     receipt.write_text(json.dumps(result, indent=1, ensure_ascii=False) + chr(10), encoding='utf-8')
     print(json.dumps({k: result[k] for k in ('vehicle', 'native_inventory_id', 'revision', 'admission')}, ensure_ascii=False))
+
+
+def crew_contract(args):
+    """CREW-ANY: move every stand pool owner to crew contract v2 (lifetime 192)
+    or back to v1 (only while no identity above 16 was issued).
+
+    Services must be stopped. The stand DB is first copied next to it; each
+    account change is one ledger command and one revision (same top store class
+    as the bridge worker). Rollback: --version 1, or restore the copy."""
+    import sys
+    import time
+    from contextlib import closing
+    sys.path[:0] = [str(ROOT), str(ROOT / 'tools')]
+    from p09e_research_catalog import load_catalog
+    from p06t_ammo_loss_store import AmmoLossStore
+    from p04m_pool_crew import CrewContract, CrewContractV2
+    stand = (ROOT / args.stand).resolve(strict=True)
+    if not stand.is_relative_to(LOCAL / 'stands') or (stand / 'gateway-process.json').exists():
+        raise ValueError('stopped stand below this checkout local/stands required')
+    stand_stopped(stand)
+    bridge = json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))
+    catalog = load_catalog(Path(bridge['ammunition_service']['original_root']))
+    target = CrewContractV2 if args.version == 2 else CrewContract
+    database = Path(bridge['game_database'])
+    backup = stand / ('game.before-crew-v%d-%d.sqlite' % (args.version, int(time.time())))
+    with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)) as source, closing(sqlite3.connect(backup)) as copy:
+        source.backup(copy)
+    results = {}
+    for account in bridge['mixed_service']['accounts']:
+        store = AmmoLossStore(bridge['game_database'], catalog, account_id=account,
+                              shell_catalog=bridge['mixed_service']['shell_catalog'],
+                              terminal_policy=bridge['mixed_service']['terminal_policy'])
+        try:
+            profile = store.read_profile(account)
+            if store._crew_contract(account) is target:
+                results[account] = dict(status='unchanged', crew_schema=target.SCHEMA)
+                continue
+            native = store._project_profile(account, profile)['native_database_id']
+            request = dict(version=args.version, account_id=account, native_database_id=native,
+                           command_key='stand-crew-contract-v%d-%d' % (args.version, profile['revision']),
+                           expected_revision=profile['revision'], crew_policy_sha256=target.POLICY_SHA256)
+            results[account] = store.set_crew_contract(request, authenticated_account_id=account)
+        finally:
+            store.close()
+    receipt = dict(schema='wot091-stand-crew-contract.v1', version=args.version, crew_schema=target.SCHEMA,
+                   capacity=target.CAPACITY, backup=str(backup), results=results,
+                   rollback='tools/full_test_stand.py crew-contract --stand <stand> --version 1 (identities <= 16) or restore the backup')
+    (stand / ('crew-contract-v%d-receipt.json' % args.version)).write_text(json.dumps(receipt, indent=2) + chr(10), encoding='utf-8')
+    print(json.dumps(receipt, indent=2))
 
 
 def stand_stopped(stand):
@@ -383,7 +433,8 @@ def battle_map(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('prepare', 'economy', 'provision', 'map'))
+    parser.add_argument('command', choices=('prepare', 'economy', 'provision', 'map', 'crew-contract'))
+    parser.add_argument('--version', type=int, choices=(1, 2), help='crew-contract: target pool crew contract (2 = lifetime 192)')
     parser.add_argument('--package', help='map: tools/map_package.py package directory of the new battle map')
     parser.add_argument('--catalog', help='map: v7 destructible catalog manifest of that map')
     parser.add_argument('--team', default='team1', choices=('team1', 'team2'), help='map: ctf base used as test_lab spawn')
@@ -405,6 +456,10 @@ def main():
         if not (args.stand and args.package and args.catalog):
             parser.error('map requires --stand, --package and --catalog')
         battle_map(args)
+    elif args.command == 'crew-contract':
+        if not (args.stand and args.version):
+            parser.error('crew-contract requires --stand and --version')
+        crew_contract(args)
     elif args.command == 'economy':
         if not args.stand:
             parser.error('economy requires --stand')

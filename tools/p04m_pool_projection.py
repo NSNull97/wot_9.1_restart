@@ -9,7 +9,7 @@ from p09e_research_projection import garage_record, shop_tree, elite_ids, item_c
 from p08b_battle_projection import BattleProjectionSource, capabilities as legacy_capabilities
 from p08b_battle_store import POLICY_SHA256 as LEGACY_BATTLE_POLICY, SCHEMA as LEGACY_BATTLE_SCHEMA
 from p04m_stock_registry import SCHEMA, DEFINITION_SHA256
-from p04m_pool_crew import native_crew, POLICY_SHA256 as CREW_POLICY_SHA256
+from p04m_pool_crew import native_crew, contract_for_crew
 from p04m_pool_store import POLICY_SHA256
 
 
@@ -27,7 +27,7 @@ class PoolProjectionSource(BattleProjectionSource):
         require(aggregate["account_id"] == self._pool_profile["account_id"], "FOREIGN_ACCOUNT")
         state = deepcopy(self.trees["state.bin"]); state["rev"] = 1
         research, inventory = aggregate["research"], state["inventory"]
-        crew_inventory, crews = native_crew(aggregate["crew_inventory"])
+        crew_inventory, crews = native_crew(aggregate["crew_inventory"], contract_for_crew(aggregate["crew_inventory"]))
         inventory[8] = crew_inventory
         inventory[10] = {self.shells[key].native_compact_id: n for key, n in aggregate["depot"].items()}
         for kind in range(2, 8):
@@ -104,9 +104,10 @@ class PoolProjectionSource(BattleProjectionSource):
         files["p08b-battle.json"] = canonical(dict(version=1, schema=LEGACY_BATTLE_SCHEMA, policy_sha256=LEGACY_BATTLE_POLICY,
             account_id=profile["account_id"], native_database_id=profile["native_database_id"], revision=aggregate["revision"],
             state_sha256=state_sha, capabilities=legacy_capabilities(self.catalog, aggregate)))
+        crew = contract_for_crew(aggregate["crew_inventory"])
         files["p04m-pool.json"] = canonical(dict(version=1, schema=SCHEMA, definition_sha256=DEFINITION_SHA256,
-            registry_sha256=self.registry.sha256, policy_sha256=POLICY_SHA256, crew_policy_sha256=CREW_POLICY_SHA256,
+            registry_sha256=self.registry.sha256, policy_sha256=POLICY_SHA256, crew_policy_sha256=crew.POLICY_SHA256,
             ammo_catalog_sha256=self.ammo_catalog_sha256, account_id=profile["account_id"], native_database_id=profile["native_database_id"],
-            revision=aggregate["revision"], state_sha256=state_sha, crew_capacity=16, capabilities=self.registry.capabilities(aggregate)))
+            revision=aggregate["revision"], state_sha256=state_sha, crew_capacity=crew.CAPACITY, capabilities=self.registry.capabilities(aggregate)))
         require(len(files["p04m-pool.json"]) <= 65536, "PROFILE_TOO_LARGE")
         return files

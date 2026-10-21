@@ -9,7 +9,10 @@
   --source-stand <последний actual стенд> --physics local/build/server/<physics> --gateway
   <exe> --out local/stands/<новый>`; затем `economy --stand <новый>` (100 слотов, цены 0)
   и при необходимости `provision --stand <новый> --account <id> --vehicle vehicle:ussr:T-34`
-  (UI экипажа/БК клиента — только MS-1/ИС-7). Сервисы стенда при этом остановлены.
+  (UI экипажа/БК клиента без `--crew-any` — только MS-1/ИС-7). Сервисы стенда при этом остановлены.
+- CREW-ANY: `full_test_stand.py crew-contract --stand <stand> --version 2` (остановленный стенд;
+  копия БД рядом, пожизненно 192 танкиста), откат `--version 1` пока номера ≤ 16; клиенты —
+  `interactive_client.py prepare … --catalog-v1 --crew-any` (окна экипажа/БК для всех машин каталога).
 - Бой на другой карте реестра (MAPS-01): на остановленном стенде, собранном с физикой из
   checkout с этой картой в `server/contracts/map_registry.json`, — `python -B -X utf8
   tools/full_test_stand.py map --stand <stand> --package local/evidence/20261020-maps01/final01/packages/02_malinovka

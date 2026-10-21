@@ -8,7 +8,7 @@ import { createAccountLane } from './account-worker-lane.mjs';
 
 import { BARRACKS_CREW_POLICY_SHA256, validateBarracksRecruitmentResponse } from './p04k-crew.mjs';
 import { BATTLE_POLICY_SHA256, validateBattleRequest, validateBattleReply } from './p08b-battle.mjs';
-import { POOL_POLICY_SHA256, POOL_WORKER_TIMEOUT_MS, validatePoolBarracksRecruitmentResponse } from './p04m-pool.mjs';
+import { POOL_POLICY_SHA256, POOL_WORKER_TIMEOUT_MS, validatePoolBarracksRecruitmentResponse, poolCrewContract } from './p04m-pool.mjs';
 import { mixedWorkerConfiguration, validateMixedBattleRequest, validateMixedBattleReply, validateMixedResultsRequest, validateMixedResultsReply } from './p06t-mixed.mjs';
 import { holdWorkerConfiguration, validateHoldBattleRequest, validateHoldBattleReply, validateHoldResultsRequest, validateHoldResultsReply } from './p08b-owner-hold.mjs';
 import { lossWorkerConfiguration, validateLossBattleRequest, validateLossBattleReply, validateLossResultsRequest, validateLossResultsReply } from './p06t-ammo-loss.mjs';
@@ -121,13 +121,15 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
         : value.result_code === -10 && value.update_hex === '' && value.wire_revision === request.wire_revision
           && value.revision === request.expected_revision && value.replayed === false),
     'Native crew response schema');
-    if (operation === 'recruit-barracks') (pool === null ? validateBarracksRecruitmentResponse : validatePoolBarracksRecruitmentResponse)(value, request);
+    if (operation === 'recruit-barracks') (pool === null ? validateBarracksRecruitmentResponse : validatePoolBarracksRecruitmentResponse)(value, request, poolCrewCapacity);
     return value;
   }
   const activated = await run('activate');
   requireValue(pool === null ? activated.profile?.pool_service === undefined
     : activated.profile?.pool_service?.policy_sha256 === POOL_POLICY_SHA256,
   'Curated pool activation/configuration mismatch');
+  // The crew contract (v1/v2) is the stored one; it changes only offline.
+  const poolCrewCapacity = pool === null ? undefined : poolCrewContract(activated.profile.crew_service).capacity;
   async function researchCommand(request) {
     requireValue(research !== null && exact(request, ['account_id', 'native_database_id', 'command_key', 'expected_revision', 'wire_revision', 'command', 'arguments'])
       && request.account_id === ammo.account_id && integer(request.native_database_id, 1)

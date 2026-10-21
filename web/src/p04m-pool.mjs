@@ -16,6 +16,21 @@ export function nativePoolRequestTimeout(method, path, owner, configuredPoolOwne
 
 export const POOL_POLICY_SHA256 = 'd1acd5590309c80b65307758bbee6f7f6de117f899668a00b1fad96ae6a13d3f';
 export const POOL_CREW_POLICY_SHA256 = '6621ad7d3ccb86ebe8cc9db43b135d88155762ed3428e2a12b4002aba431a99b';
+export const POOL_CREW_V2_POLICY_SHA256 = '7ff51fd896ab4e9f97c1a4dc7b46e75da08876f025a9afe7408f611f8d8caa1d';
+// tools/p04m_pool_crew.py: the account's stored contract (v2 only after its
+// explicit migration) fixes the lifetime allocator. Barracks berths stay 16.
+const CREW_CONTRACTS = Object.freeze({
+  'p04m-pool-crew.v1': Object.freeze({ schema: 'p04m-pool-crew.v1', policySha256: POOL_CREW_POLICY_SHA256, capacity: 16 }),
+  'p04m-pool-crew.v2': Object.freeze({ schema: 'p04m-pool-crew.v2', policySha256: POOL_CREW_V2_POLICY_SHA256, capacity: 192 }),
+});
+export const poolCrewContract = service => {
+  const contract = typeof service?.schema === 'string' && Object.hasOwn(CREW_CONTRACTS, service.schema) ? CREW_CONTRACTS[service.schema] : null;
+  requireValue(contract && service.policy_sha256 === contract.policySha256, 'pool crew contract');
+  return contract;
+};
+const crewContractBySha = sha => Object.values(CREW_CONTRACTS).find(c => c.policySha256 === sha) ?? null;
+// Source name/surname/icon catalogue bounds (p04h_tankman_descriptor.CATALOG_BOUNDS).
+const NAME_BOUNDS = [112, 1036, 30];
 export const POOL_REGISTRY_SHA256 = 'e2f4ac21fe8970f3c5d29f6a45d845f9d80e4d2759f0e662c9f3bb9ac04c7b34';
 const SCHEMA = 'p04m-curated-stock-pool.v1';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -141,19 +156,21 @@ export function nativePoolOverview(profile) {
     && integer(research.garage_slots, 2, 256) && integer(research.unlocked_count, 1, 8192)
     && integer(research.depot_types, 0, 8192) && inventoryValid(profile.inventory, id, research.garage_slots, false),
   'research inventory bounds');
-  requireValue(exact(crew, ['schema', 'policy_sha256', 'battle', 'free_recruitment_left', 'configuration_revision'])
-    && crew.schema === 'p04m-pool-crew.v1' && crew.policy_sha256 === POOL_CREW_POLICY_SHA256 && crew.battle === false
-    && integer(crew.free_recruitment_left, 0, 13) && integer(crew.configuration_revision, 2)
-    && Array.isArray(profile.crew) && integer(profile.crew.length, 0, 16 - crew.free_recruitment_left), 'pool crew schema');
+  const crewContract = exact(crew, ['schema', 'policy_sha256', 'battle', 'free_recruitment_left', 'configuration_revision'])
+    && Object.hasOwn(CREW_CONTRACTS, crew.schema) ? CREW_CONTRACTS[crew.schema] : null;
+  const capacity = crewContract?.capacity ?? 0;
+  requireValue(crewContract && crew.policy_sha256 === crewContract.policySha256 && crew.battle === false
+    && integer(crew.free_recruitment_left, 0, capacity - 3) && integer(crew.configuration_revision, 2)
+    && Array.isArray(profile.crew) && integer(profile.crew.length, 0, capacity - crew.free_recruitment_left), 'pool crew schema');
   const types = new Map(profile.inventory.map(item => [item.inventory_id, BY_VEHICLE.get(item.research_vehicle_id)]));
   const occupied = new Map(), identities = new Set(); let assigned = 0;
   for (const member of profile.crew) {
     const legacy = [`${id}:ms1-commander-v1`, `${id}:ms1-driver-v1`, `${id}:recruit-ms1-driver:3`];
-    const match = typeof member?.crew_id === 'string' ? new RegExp(`^${id}:recruit-crew:([0-9]{1,2})$`).exec(member.crew_id) : null;
+    const match = typeof member?.crew_id === 'string' ? new RegExp(`^${id}:recruit-crew:([1-9][0-9]{0,2})$`).exec(member.crew_id) : null;
     requireValue(exact(member, ['crew_id', 'vehicle_inventory_id', 'role', 'role_level', 'skills'])
       && (legacy.includes(member.crew_id)
         ? member.role === (legacy.indexOf(member.crew_id) === 0 ? 'commander' : 'driver') && member.role_level === 100
-        : match && integer(Number(match[1]), 4, 16 - crew.free_recruitment_left) && member.role_level === 50)
+        : match && integer(Number(match[1]), 4, capacity - crew.free_recruitment_left) && member.role_level === 50)
       && !identities.has(member.crew_id)
       && Object.hasOwn(ROLE_IDS, member.role) && integer(member.role_level, 50, 100)
       && Array.isArray(member.skills) && member.skills.length <= 1
@@ -197,7 +214,7 @@ export function nativePoolOverview(profile) {
       modules: structuredClone(item.modules), battle: false })),
     poolService: { version: 1, schema: SCHEMA, policySha256: POOL_POLICY_SHA256, registrySha256: POOL_REGISTRY_SHA256,
       newBattleAdmission: false, garageSlots: research.garage_slots },
-    crewService: { version: 8, policySha256: POOL_CREW_POLICY_SHA256, freeRecruitmentLeft: crew.free_recruitment_left,
+    crewService: { version: 8, policySha256: crewContract.policySha256, freeRecruitmentLeft: crew.free_recruitment_left,
       configurationRevision: crew.configuration_revision, tankmen: profile.crew.length, assigned, barracks: profile.crew.length - assigned,
       vehicles: profile.inventory.filter(i => types.get(i.inventory_id)).map(i => ({ inventoryItemId: i.inventory_id,
         assigned: occupied.get(i.inventory_id)?.length ?? 0, capacity: types.get(i.inventory_id).roles.length })), battle: false },
@@ -207,7 +224,7 @@ export function nativePoolOverview(profile) {
 
 export function isNativePoolOverview(value, id) {
   try {
-    const p = value?.poolService, c = value?.crewService;
+    const p = value?.poolService, c = value?.crewService, contract = crewContractBySha(c?.policySha256);
     if (!exact(value, ['schemaVersion', 'state', 'ruleset', 'snapshotRevision', 'asOf', 'account', 'resources', 'statistics',
       'capabilities', 'inventory', 'poolService', 'crewService', 'ammunitionService'])
       || typeof id !== 'string' || !UUID.test(id) || value.schemaVersion !== 'web-game-read.v1' || value.state !== 'ready' || value.ruleset !== 'test_lab'
@@ -220,8 +237,8 @@ export function isNativePoolOverview(value, id) {
       || p.version !== 1 || p.schema !== SCHEMA || p.policySha256 !== POOL_POLICY_SHA256 || p.registrySha256 !== POOL_REGISTRY_SHA256
       || p.newBattleAdmission !== false || !integer(p.garageSlots, 2, 256) || !inventoryValid(value.inventory, id, p.garageSlots, true)
       || !exact(c, ['version', 'policySha256', 'freeRecruitmentLeft', 'configurationRevision', 'tankmen', 'assigned', 'barracks', 'vehicles', 'battle'])
-      || c.version !== 8 || c.policySha256 !== POOL_CREW_POLICY_SHA256 || c.battle !== false || !integer(c.freeRecruitmentLeft, 0, 13)
-      || !integer(c.configurationRevision, 2) || !integer(c.tankmen, 0, 16 - c.freeRecruitmentLeft)
+      || c.version !== 8 || contract === null || c.battle !== false || !integer(c.freeRecruitmentLeft, 0, contract.capacity - 3)
+      || !integer(c.configurationRevision, 2) || !integer(c.tankmen, 0, contract.capacity - c.freeRecruitmentLeft)
       || !integer(c.assigned, 0, c.tankmen) || c.barracks !== c.tankmen - c.assigned
       || !exact(value.ammunitionService, ['version', 'funding', 'purchases']) || value.ammunitionService.version !== 2
       || value.ammunitionService.funding !== 'owned_test_depot' || value.ammunitionService.purchases !== false) return false;
@@ -234,7 +251,8 @@ export function isNativePoolOverview(value, id) {
   } catch { return false; }
 }
 
-export function validatePoolBarracksRecruitmentResponse(value, request) {
+export function validatePoolBarracksRecruitmentResponse(value, request, capacity = CREW_CONTRACTS['p04m-pool-crew.v1'].capacity) {
+  requireValue(Object.values(CREW_CONTRACTS).some(c => c.capacity === capacity), 'pool crew capacity');
   requireValue(['recruited', 'rejected'].includes(value.status), 'barracks response status');
   if (value.status === 'rejected') {
     requireValue(value.tankman_inventory_id === 0 && value.tankman_descriptor_hex === '', 'rejected barracks allocation'); return;
@@ -242,8 +260,10 @@ export function validatePoolBarracksRecruitmentResponse(value, request) {
   const id = value.tankman_inventory_id, [shop, cd, role, cost] = request.layout;
   const type = ACTIVE_TYPES.find(t => t.cd === cd);
   requireValue(integer(request.wire_revision, 1, 2147483646) && shop === 3 && cost === 0 && type
-    && type.roles.some(r => ROLE_IDS[r] === role) && integer(id, 4, 16), 'barracks selected type/primary role');
-  const descriptor = Buffer.from([8, cd >> 8, role, 50, 0, 0, 0, id, 0, id, 0, id, 0, 64, 6, 0, 0, 0, 0, 66, 0, 0, 0, 0, 0]);
+    && type.roles.some(r => ROLE_IDS[r] === role) && integer(id, 4, capacity), 'barracks selected type/primary role');
+  // Passport names/surname/icon: ((id-1) mod bound)+1 — equal to id for 1..16.
+  const names = NAME_BOUNDS.flatMap(bound => { const n = (id - 1) % bound + 1; return [n & 255, n >> 8]; });
+  const descriptor = Buffer.from([8, cd >> 8, role, 50, 0, 0, 0, ...names, 64, 6, 0, 0, 0, 0, 66, 0, 0, 0, 0, 0]);
   requireValue(descriptor.toString('hex') === value.tankman_descriptor_hex, 'barracks source passport');
   function encodedInt(n) {
     if (n <= 255) return Buffer.from([75, n]);
@@ -253,6 +273,6 @@ export function validatePoolBarracksRecruitmentResponse(value, request) {
   const raw = text => Buffer.from(text, 'latin1');
   const delta = Buffer.concat([raw('\x80\x02}(U\x07prevRev'), encodedInt(request.wire_revision), raw('U\x03rev'), encodedInt(request.wire_revision + 1),
     raw('U\x09inventory}(K\x08}(U\x07vehicle}(K'), Buffer.from([id]), raw('J\xff\xff\xff\xffuU\x09compDescr}(K'),
-    Buffer.from([id]), raw('U\x19'), descriptor, raw('uuuU\x05stats}(U\x0cfreeTMenLeftK'), Buffer.from([16 - id]), raw('uu.')]);
+    Buffer.from([id]), raw('U\x19'), descriptor, raw('uuuU\x05stats}(U\x0cfreeTMenLeftK'), Buffer.from([capacity - id]), raw('uu.')]);
   requireValue(delta.toString('hex') === value.update_hex, 'barracks delta/allocator binding');
 }

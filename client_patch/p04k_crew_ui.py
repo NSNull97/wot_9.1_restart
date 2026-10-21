@@ -12,6 +12,7 @@ import math
 import os
 import re
 import time
+import crew_vehicles
 import p04d_crew_ui as recruitment
 import p04f_crew_ui as transfer
 import p04g_crew_ui as cross
@@ -34,6 +35,10 @@ checked_expected = dismissal.checked_expected
 native_snapshot = dismissal.native_snapshot
 _guard = _record = _scenario = None
 _ABSENT = object()
+
+
+def max_tankmen():
+    return crew_vehicles.max_tankmen(16)
 
 
 def checked_hires(rows):
@@ -80,6 +85,11 @@ def native_shop():
     count = sum(not item.isInTank for item in members)
     integer(count, 0, 16)
     unlocks = stats.unlocks
+    if crew_vehicles.enabled():
+        # The original selector lists unlocked types; serve the catalog ones.
+        unlocked = sorted(identity for identity in crew_vehicles.mounts(None) if identity in unlocks)
+        return dict(revision=revision, berths=berths, unassigned=count,
+                    free_berths=berths - count, unlocked_vehicle_types=unlocked)
     if not all(VEHICLES[vehicle][0] in unlocks for vehicle in (1, 2)):
         raise RuntimeError('original selector requires both source vehicle unlocks')
     return dict(revision=revision, berths=berths, unassigned=count,
@@ -155,7 +165,7 @@ class _RecruitGuard(dismissal._RecruitGuard):
         free.type = 'free'
         free.validateNow()
         free.visible, free.selected, free.typeSwitcher.visible = True, True, False
-        free.enabled = state['free_quota'] > 0 and len(state['tankmen']) < 16 and not self.submitted
+        free.enabled = state['free_quota'] > 0 and len(state['tankmen']) < max_tankmen() and not self.submitted
         free.typeLabel.text = roster.LABEL % state['free_quota']
         flash.btnRecruit.enabled = free.enabled
 
@@ -190,9 +200,15 @@ class _RecruitGuard(dismissal._RecruitGuard):
                 return seated(window, nationID, vehTypeID, role, studyType, slot)
             state = guard._state()
             shop = native_shop()
-            vehicle = next((identity for identity in (1, 2)
-                            if recruitment._number_equals(vehTypeID, VEHICLES[identity][1])), None)
-            if (window is not guard.window or vehicle is None or role not in VEHICLES[vehicle][3]
+            if crew_vehicles.enabled():
+                # Unlocked catalog types the original selector offers, keyed by compact ID.
+                served = dict((cd, (cd, cd >> 8, None, tuple(crew_vehicles.kind_by_type(cd >> 8)['primary_roles'])))
+                              for cd in shop['unlocked_vehicle_types'])
+            else:
+                served = VEHICLES
+            vehicle = next((identity for identity in sorted(served)
+                            if recruitment._number_equals(vehTypeID, served[identity][1])), None)
+            if (window is not guard.window or vehicle is None or role not in served[vehicle][3]
                     or not recruitment._number_equals(nationID, 0)
                     or not recruitment._number_equals(studyType, 0)
                     or not (slot is None or recruitment._number_equals(slot, -1))
@@ -201,7 +217,7 @@ class _RecruitGuard(dismissal._RecruitGuard):
             guard.submitted = True
             guard._mask(window, state)
             guard.record('p04k_barracks_submit', owner_id=id(window), native_cmd=303,
-                         vehicle_type=VEHICLES[vehicle][0], role=role, tariff=0, role_level=50,
+                         vehicle_type=served[vehicle][0], role=role, tariff=0, role_level=50,
                          shop=shop, original_callback_called=True, original_processor='TankmanRecruit')
             return original(window, nationID, vehTypeID, role, studyType, slot)
         return buy
@@ -221,7 +237,7 @@ def _renderer_row(data):
         return ['buy', None]
     if empty is True:
         return ['empty', None]
-    return ['tankman', dismissal.callback_integer(tankman, 1, 16)]
+    return ['tankman', dismissal.callback_integer(tankman, 1, max_tankmen())]
 
 
 def _logical_renderers(tile, model):
@@ -235,20 +251,20 @@ def _logical_renderers(tile, model):
     provider = tile.dataProvider
     actual = None
     if provider is not None:
-        length = len(provider) if type(provider) is list else dismissal.callback_integer(provider.length, 0, 18)
-        integer(length, 0, 18)
+        length = len(provider) if type(provider) is list else dismissal.callback_integer(provider.length, 0, max_tankmen() + 2)
+        integer(length, 0, max_tankmen() + 2)
         actual = [_renderer_row(provider[index]) for index in range(length)]
     # Native04 observed a stale reflected provider after inventory update while
     # original getData() returned every current row. Preserve that raw snapshot
     # as diagnostic data; never substitute or normalize it into current rows.
-    scroll = dismissal.callback_integer(tile.scrollPosition, 0, 17)
+    scroll = dismissal.callback_integer(tile.scrollPosition, 0, max_tankmen() + 1)
     result, pending, rendered = [], [], []
     for index, row in enumerate(expected):
         # Original TileList.updateSelectedIndex uses this same public pair.
         renderer = tile.getRendererAt(index, scroll)
         if renderer is None:
             continue
-        rendered_index = dismissal.callback_integer(renderer.index, 0, 17)
+        rendered_index = dismissal.callback_integer(renderer.index, 0, max_tankmen() + 1)
         data = renderer.getData()
         rendered_row = _renderer_row(data)
         observation = dict(index=index, rendered_index=rendered_index, method_row=rendered_row,
@@ -278,10 +294,11 @@ class _BarracksGuard(object):
     def _data(self, original):
         guard = self
         def data(page, total, capacity, unassigned, price, action, pack, rows):
-            integer(total, 0, 16); integer(capacity, 16, 16); integer(unassigned, 0, 16)
+            # capacity/unassigned are the original 16 berths; total is the whole roster.
+            integer(total, 0, max_tankmen()); integer(capacity, 16, 16); integer(unassigned, 0, 16)
             if type(rows) is not list or len(rows) > total or any(type(row) is not dict for row in rows):
                 raise ValueError('bounded actual original Barracks rows required')
-            ids = [dismissal.callback_integer(row.get('tankmanID'), 1, 16) for row in rows]
+            ids = [dismissal.callback_integer(row.get('tankmanID'), 1, max_tankmen()) for row in rows]
             if len(set(ids)) != len(ids):
                 raise ValueError('duplicate native Barracks renderer identity')
             # Original TileList replaces/disposes renderers when its data changes.
@@ -454,7 +471,7 @@ def observe_profile(frame, phase):
             return
         if type(ext) is not dict or set(ext) != set(('tmanInvID', 'tmanCompDescr')):
             raise ValueError('exact original303 response extension required')
-        identity, raw = integer(ext['tmanInvID'], 4, 16), ext['tmanCompDescr']
+        identity, raw = integer(ext['tmanInvID'], 4, max_tankmen()), ext['tmanCompDescr']
         if not isinstance(raw, bytes) or len(raw) != 25:
             raise ValueError('source-bound25-byte hire response required')
         from gui.shared import g_itemsCache
@@ -634,6 +651,8 @@ class _Screenshots(recruitment._Screenshots):
 class NativeScenario(transfer.NativeScenario):
     def __init__(self, record, mode, expected, hires=None, settings=None, clock=None):
         global _scenario
+        if crew_vehicles.enabled():
+            raise RuntimeError('P04K evidence scenarios are MS-1/IS-7 only; unavailable with CREW-ANY')
         if not callable(record) or mode not in ('recruit', 'relogin'):
             raise ValueError('explicit bounded Barracks mode required')
         self.expected = checked_expected(expected, ROLE_LEVEL)

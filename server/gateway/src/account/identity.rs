@@ -555,6 +555,9 @@ impl Config {
             Request::Crew(r)=>{pool.recruit(r)?;("/internal/native/crew","recruited",r.layout().to_vec(),None)},
             Request::Transfer(r)=>{pool.transfer(r)?;("/internal/native/crew-transfer","transferred",r.layout().to_vec(),None)},
             Request::Barracks(r)=>{pool.barracks(r)?;("/internal/native/crew-recruit-barracks","recruited",r.layout().to_vec(),Some(r))},
+            // Same writer routes and gates as P04J/P04I; identities bounded by the stored contract.
+            Request::Dismiss(r)=>{if !self.crew_dismissal{return Err(invalid("crew dismissal is not enabled"));}pool.dismiss(r)?;("/internal/native/crew-dismiss","dismissed",r.layout().to_vec(),None)},
+            Request::Skill(r)=>{if !self.crew_progression{return Err(invalid("crew progression is not enabled"));}pool.learn(r)?;("/internal/native/crew-learn","learned",r.layout().to_vec(),None)},
         };
         let body=pool.service_request(key,revision,wire,&layout)?;
         let (http,bytes)=self.post(path,&body,Duration::from_secs(20))?;
@@ -645,7 +648,7 @@ fn barracks_reply_bound(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:
     let descriptor=value.remove("tankman_descriptor_hex").and_then(|v|v.as_str().map(str::to_owned)).ok_or_else(||invalid("barracks response descriptor type"))?;
     let mut reply=service_reply_value(value,profile,key,expected,wire,"recruited")?;
     if reply.serviced {
-        if !(4..=16).contains(&id) || descriptor.len()!=50 || !descriptor.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {return Err(invalid("barracks response descriptor bounds"));}
+        if !(4..=pool.map_or(16,|p|p.capacity() as u64)).contains(&id) || descriptor.len()!=50 || !descriptor.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {return Err(invalid("barracks response descriptor bounds"));}
         let mut raw=[0;25];
         for (index,byte) in raw.iter_mut().enumerate() {*byte=u8::from_str_radix(&descriptor[index*2..index*2+2],16).map_err(|_|invalid("barracks descriptor hex"))?;}
         let member=crate::crew_barracks091::Recruitment{tankman_id:id as u8,descriptor:raw};

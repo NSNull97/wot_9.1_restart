@@ -157,7 +157,7 @@ class NativeCrewDismissalStore(NativeCrewProgressionStore):
     def _extend_crew_projection(self, account_id, value):
         if self._dismissal_schema():
             value['retired_members'] = [dict(row) for row in self.connection.execute('SELECT ' + MEMBER_COLUMNS +
-                ' FROM p04j_retired_member WHERE account_id=? ORDER BY native_id LIMIT 17', (account_id,))]
+                ' FROM p04j_retired_member WHERE account_id=? ORDER BY native_id LIMIT ?', (account_id, self._crew_row_limit()))]
         return value
 
     def _check_crew_identities(self, account_id, value, original):
@@ -229,6 +229,10 @@ class NativeCrewDismissalStore(NativeCrewProgressionStore):
         require(len(encoded) <= 16384, 'PROFILE_TOO_LARGE')
         return encoded.decode('ascii'), sha(encoded)
 
+    def _crew_row_limit(self):
+        # One beyond the frozen lifetime 16; the opt-in pool v2 store widens it.
+        return 17
+
     def _retirement_contract(self, command):
         require(command == DISMISS_COMMAND, 'CORRUPT_STORE')
         return NativeCrewDismissalStore
@@ -239,14 +243,14 @@ class NativeCrewDismissalStore(NativeCrewProgressionStore):
         # Called before a mutation and again after both ledgers have been written.
         # Snapshot serialization between those points deliberately has no ledger
         # dependency, so retirement remains a single transaction.
-        for retired in self.connection.execute('SELECT * FROM p04j_retired_member WHERE account_id=? ORDER BY native_id LIMIT 17', (account_id,)):
+        for retired in self.connection.execute('SELECT * FROM p04j_retired_member WHERE account_id=? ORDER BY native_id LIMIT ?', (account_id, self._crew_row_limit())):
             member = {key: retired[key] for key in MEMBER_FIELDS}
             require(sha(canonical(member)) == retired['member_sha256']
                 and type(retired['dismissed_revision']) is int and 1 <= retired['dismissed_revision'] <= profile['revision'], 'CORRUPT_STORE')
             ledger = self.connection.execute('SELECT * FROM game_command_ledger WHERE account_id=? AND command_id=?', (account_id, retired['command_key'])).fetchone()
             require(ledger is not None, 'CORRUPT_STORE')
             contract = self._retirement_contract(ledger['command_type'])
-            result = _object(ledger['result_json'])
+            result = self._stored_json(ledger['result_json'])
             require(result['destination_revision'] == retired['dismissed_revision']
                 and result['after_crew']['configuration_revision'] == retired['configuration_revision']
                 and next((r for r in result['before_crew']['members'] if r['native_id'] == member['native_id']), None) == member, 'CORRUPT_STORE')
