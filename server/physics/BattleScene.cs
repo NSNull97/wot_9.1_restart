@@ -9,6 +9,9 @@ namespace MapDrive;
 internal static class BattleScene
 {
     sealed record TankContact(int A, int B, int Substep, Vector3 Point, Vector3 Normal, Vector3 Relative);
+    // MAPS-02: first overlap of one hull with one falling atom sensor in a batch.
+    sealed record ColumnContact(uint Object, int Slot, int Substep, Vector3 Point, Vector3 Normal, Vector3 Velocity);
+    const int MaxColumnContactsPerActor = 16;
     public static int Run(string[] args)
     {
         if ((args.Length != 8 && args.Length != 10) || args[0] != "--battle-scene" || args[2] != "--scene-sha256" || args[4] != "--local-root" ||
@@ -38,7 +41,7 @@ internal static class BattleScene
         using var jobs = new InlineJobSystem();
         using var world = new PhysicsSystem(new PhysicsSystemSettings
         {
-            MaxBodies = Math.Max(32, (manifest.Catalog?.Entries.Length ?? 0) + manifest.Actors.Length + 8),
+            MaxBodies = Math.Max(32, (manifest.Catalog?.Entries.Length ?? 0) + (manifest.Catalog?.Columns.Length ?? 0) + manifest.Actors.Length + 8),
             MaxBodyPairs = 8192, MaxContactConstraints = 8192,
             ObjectLayerPairFilter = pairs, BroadPhaseLayerInterface = broad, ObjectVsBroadPhaseLayerFilter = filter
         });
@@ -58,6 +61,8 @@ internal static class BattleScene
         var claimOrder = new List<(uint Object, int Slot, int Substep)>();
         var tanks = new List<BattleTank>(); var tankIds = new Dictionary<uint, BattleTank>();
         var tankContacts = new Dictionary<(int, int), TankContact>();
+        var columnBodies = new Dictionary<uint, BodyID>(); var columnIds = new Dictionary<uint, uint>();
+        var columnSeen = new HashSet<(int, uint)>(); var columnOrder = new List<ColumnContact>(); var columnPerActor = new Dictionary<int, int>();
         var diagnosticContacts = new Dictionary<(int, uint), object>();
         int diagnosticContactsOmitted = 0;
         using var prepass = manifest.Catalog == null ? null : new WholeObjectContactPrepass(world.Settings);
@@ -76,6 +81,16 @@ internal static class BattleScene
                 var id = AddStatic(entry.Value, Vector3.Zero); catalogBodies.Add(entry.Key, id); catalogIds.Add(id.ID, entry.Key);
             }
             entry.Value.Dispose();
+        }
+        // Non-blocking falling atom triggers: static sensors never push a tank.
+        // Committed fallen columns are absent, exactly like removed catalog bodies.
+        foreach (var entry in manifest.Catalog?.Columns ?? [])
+        {
+            if (scene.Ids.Contains(entry.ObjectId)) continue;
+            using var shape = CheckedInput.TriggerShape(manifest.Catalog!.Triggers!, entry);
+            using var creation = new BodyCreationSettings(shape, Vector3.Zero, Quaternion.Identity, MotionType.Static, 0) { IsSensor = true };
+            var body = bodies.CreateBody(creation); bodies.AddBody(body.ID, Activation.DontActivate); statics.Add(body.ID);
+            columnBodies.Add(entry.ObjectId, body.ID); columnIds.Add(body.ID.ID, entry.ObjectId);
         }
         var bounds = c.GetProperty("bounds_xz");
         float minX = bounds[0].GetSingle(), minZ = bounds[1].GetSingle(), maxX = bounds[2].GetSingle(), maxZ = bounds[3].GetSingle();
@@ -107,7 +122,8 @@ internal static class BattleScene
                             float depth = m.PenetrationDepth;
                             if (!float.IsFinite(depth)) throw new InvalidOperationException("nonfinite diagnostic manifold");
                             string otherKind = first && second ? "tank" : otherBody.ID == terrainId ? "terrain" :
-                                otherBody.ID == obstacleId ? "static_obstacles" : catalogIds.ContainsKey(otherBody.ID.ID) ? "catalog_object" : "map_boundary";
+                                otherBody.ID == obstacleId ? "static_obstacles" : catalogIds.ContainsKey(otherBody.ID.ID) ? "catalog_object" :
+                                columnIds.ContainsKey(otherBody.ID.ID) ? "falling_atom_trigger" : "map_boundary";
                             diagnosticContacts.Add(key, new { slot = actor.Source.Slot, other_body_id = otherBody.ID.ID,
                                 other_kind = otherKind, substep, penetration_depth_m = depth,
                                 point = AngularMotionFrame.V(first ? m.GetWorldSpaceContactPointOn1(0) : m.GetWorldSpaceContactPointOn2(0)),
@@ -128,6 +144,20 @@ internal static class BattleScene
                 }
                 if (first == second) return;
                 var tank = first ? a! : b!; var other = first ? body2 : body1;
+                if (columnIds.TryGetValue(other.ID.ID, out uint columnId))
+                {
+                    // Report only; the domain decides. Further overlaps beyond the
+                    // per-actor bound remain sensor callbacks for a later batch.
+                    settings.IsSensor = true;
+                    int slot = tank.Source.Slot;
+                    if (!columnSeen.Contains((slot, columnId)) && columnPerActor.GetValueOrDefault(slot) < MaxColumnContactsPerActor)
+                    {
+                        columnSeen.Add((slot, columnId)); columnPerActor[slot] = columnPerActor.GetValueOrDefault(slot) + 1;
+                        columnOrder.Add(new(columnId, slot, substep, first ? m.GetWorldSpaceContactPointOn1(0) : m.GetWorldSpaceContactPointOn2(0),
+                            Vector3.Normalize(first ? m.WorldSpaceNormal : -m.WorldSpaceNormal), tank.PreVelocity));
+                    }
+                    return;
+                }
                 if (tank.Fracture == null || !catalogIds.TryGetValue(other.ID.ID, out uint objectId)) return;
                 if (claims.TryGetValue(objectId, out _)) { settings.IsSensor = true; return; }
                 var point = first ? m.GetWorldSpaceContactPointOn1(0) : m.GetWorldSpaceContactPointOn2(0);
@@ -183,7 +213,17 @@ internal static class BattleScene
         void Write(string kind)
         {
             var v = AngularMotionFrame.V;
-            var line = JsonSerializer.SerializeToUtf8Bytes(new
+            var line = (manifest.Catalog?.Columns.Length ?? 0) > 0 ? JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                version = 7, @event = kind, generation, manifest_sha256 = manifest.Hash, catalog_sha256 = manifest.Catalog!.Hash,
+                seq = sequence, tick, settle_ticks = 180, map = manifest.Map, scene_version = scene.Version, scene_sha256 = scene.Hash,
+                actors = tanks.Select(t => t.State()).ToArray(),
+                tank_contacts = tankContacts.OrderBy(p => p.Key).Select(p => new { slot_a = p.Value.A, slot_b = p.Value.B, substep = p.Value.Substep,
+                    point = v(p.Value.Point), normal = v(p.Value.Normal), relative_velocity = v(p.Value.Relative) }).ToArray(),
+                fracture_claims = claimOrder.Select((p, i) => new { object_id = p.Object, slot = p.Slot, substep = p.Substep, order = i + 1 }).ToArray(),
+                column_contacts = columnOrder.Select((p, i) => new { object_id = p.Object, slot = p.Slot, substep = p.Substep, order = i + 1,
+                    point = v(p.Point), normal = v(p.Normal), velocity = v(p.Velocity) }).ToArray()
+            }) : JsonSerializer.SerializeToUtf8Bytes(new
             {
                 version = 7, @event = kind, generation, manifest_sha256 = manifest.Hash, catalog_sha256 = manifest.Catalog?.Hash ?? BattleSceneInput.EmptyCatalogHash,
                 seq = sequence, tick, settle_ticks = 180, map = manifest.Map, scene_version = scene.Version, scene_sha256 = scene.Hash,
@@ -210,9 +250,13 @@ internal static class BattleScene
                     var next = BattleSceneInput.Scene(request, manifest, generation, sequence, "sync_removed");
                     if (scene.Ids.Any(id => !next.Ids.Contains(id)) || pending.Any(id => !next.Ids.Contains(id))) throw new InvalidDataException("IPC7 scene omits committed/prepared removal");
                     var delta = next.Ids.Where(id => !scene.Ids.Contains(id)).ToArray();
-                    if (delta.Any(id => !catalogBodies.ContainsKey(id))) throw new InvalidDataException("IPC7 unavailable catalog body");
+                    if (delta.Any(id => !catalogBodies.ContainsKey(id) && !columnBodies.ContainsKey(id))) throw new InvalidDataException("IPC7 unavailable catalog body");
                     foreach (uint id in delta)
                     {
+                        if (columnBodies.Remove(id, out var sensor))
+                        {
+                            bodies.RemoveAndDestroyBody(sensor); statics.Remove(sensor); columnIds.Remove(sensor.ID); continue;
+                        }
                         var body = catalogBodies[id];
                         if (pending.Remove(id)) bodies.DestroyBody(body); else bodies.RemoveAndDestroyBody(body);
                         statics.Remove(body); catalogIds.Remove(body.ID); catalogBodies.Remove(id);
@@ -226,6 +270,7 @@ internal static class BattleScene
                 var controls = BattleSceneInput.Advance(request, manifest, generation, sequence, scene);
                 if (pending.Count > 0) throw new InvalidDataException("IPC7 prepared fracture requires scene commit");
                 callbackCount = 0; callbackFault = 0; tankContacts.Clear(); claims.Clear(); claimOrder.Clear();
+                columnSeen.Clear(); columnOrder.Clear(); columnPerActor.Clear();
                 diagnosticContacts.Clear(); diagnosticContactsOmitted = 0;
                 foreach (var tank in tanks) tank.BeginAdvance();
                 capture = true; Advance(controls, 6); capture = false;

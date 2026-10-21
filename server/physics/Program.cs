@@ -64,6 +64,8 @@ try
             throw new InvalidDataException("positive worker generation required");
         if (removalEnabled) removal = CheckedInput.LoadRemoval(root, args[removalOffset + 1], args[removalOffset + 3], map, c.GetProperty("obstacles"));
         else catalog = CheckedInput.LoadCatalog(root, args[removalOffset + 1], args[removalOffset + 3], map, c.GetProperty("obstacles"));
+        // MAPS-02 falling atom sensors are implemented only by the IPC7 battle scene.
+        if (catalog != null && catalog.Columns.Length > 0) throw new InvalidDataException("falling atom catalog9 requires --battle-scene");
     }
     var configuredSpawn = CheckedInput.Vector(c.GetProperty("spawn_origin"), -1000, 1000);
     var spawn = configuredSpawn;

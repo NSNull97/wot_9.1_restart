@@ -19,6 +19,9 @@ pub(super) const CHUNK_ID: u16 = 31354;
 pub(super) const POSITION: [f32; 3] = [-450., 0., -450.];
 const CLIENT_TYPE: u16 = 3;
 const DESTROYED_FRAGILES: u8 = 0x9f;
+/// MAPS-02: client property index2 (`158 + 2`). INFERRED from the PE-verified
+/// property base and the natively observed neighbours 0x9f/0xa1.
+const FALLEN_COLUMNS: u8 = 0xa0;
 const FALLEN_TREES: u8 = 0xa1;
 /// Prohorovka has 144 destructible chunks.  This is an area-controller
 /// bound, separate from the 64-object fragile catalog bound.
@@ -81,13 +84,21 @@ fn checked_trees(trees:&[u32])->io::Result<()>{
     if trees.len()>MAX_TREES_PER_AREA||trees.windows(2).any(|w|w[0]>=w[1]){return Err(super::model::bad());}
     Ok(())
 }
-fn area_body(area:usize,chunk:u16,fragiles:&[u16],fallen_trees:&[u32])->io::Result<Vec<u8>>{
-    checked_fragiles(fragiles)?;checked_trees(fallen_trees)?;
+/// ARRAY<UINT16> in a short VAR1 property: 4 + 2*125 = 254 bytes.
+pub(super) const MAX_COLUMNS_PER_AREA: usize = 125;
+fn checked_columns(columns:&[u16])->io::Result<()>{
+    // Every UINT16 is a valid encodeFallenColumn value; keep the set exact.
+    if columns.len()>MAX_COLUMNS_PER_AREA||columns.windows(2).any(|w|w[0]>=w[1]){return Err(super::model::bad());}
+    Ok(())
+}
+fn area_body(area:usize,chunk:u16,fragiles:&[u16],columns:&[u16],fallen_trees:&[u32])->io::Result<Vec<u8>>{
+    checked_fragiles(fragiles)?;checked_columns(columns)?;checked_trees(fallen_trees)?;
     let mut body=vec![0];body.extend(area_id(area)?.to_le_bytes());body.extend(CLIENT_TYPE.to_le_bytes());
     for v in [((chunk>>8) as i32-127) as f32*100.+50.,0.,((chunk&255) as i32-127) as f32*100.+50.]{body.extend(v.to_le_bytes());}
     body.extend([0u8;12]);body.push(4);
     for prop in 0..4u8{body.push(prop);match prop {
         1=>{body.extend((fragiles.len() as i32).to_le_bytes());for &value in fragiles{body.extend(value.to_le_bytes());}},
+        2=>{body.extend((columns.len() as i32).to_le_bytes());for &value in columns{body.extend(value.to_le_bytes());}},
         3=>{body.extend((fallen_trees.len() as i32).to_le_bytes());for &value in fallen_trees{body.extend(value.to_le_bytes());}},
         _=>body.extend(0i32.to_le_bytes()),
     }}
@@ -99,7 +110,12 @@ fn area_body(area:usize,chunk:u16,fragiles:&[u16],fallen_trees:&[u32])->io::Resu
 /// entries are already DestructiblesCache.encodeFragile values; tree entries
 /// are the original UINT32 encodeFallenTree values.
 pub(super) fn area_create_state(area:usize,chunk:u16,fragiles:&[u16],fallen_trees:&[u32])->io::Result<Vec<u8>>{
-    let body=area_body(area,chunk,fragiles,fallen_trees)?;
+    area_create_full(area,chunk,fragiles,&[],fallen_trees)
+}
+/// MAPS-02 full initial state including cumulative encodeFallenColumn values.
+/// Original onEnterWorld restores columns without the fall animation.
+pub(super) fn area_create_full(area:usize,chunk:u16,fragiles:&[u16],columns:&[u16],fallen_trees:&[u32])->io::Result<Vec<u8>>{
+    let body=area_body(area,chunk,fragiles,columns,fallen_trees)?;
     let mut out=vec![9];out.extend((body.len() as u16).to_le_bytes());out.extend(body);Ok(out)
 }
 
@@ -118,6 +134,27 @@ pub(super) fn area_update_fragiles(area:usize,fragiles:&[u16])->io::Result<Vec<u
 pub(super) fn area_update_trees(area:usize,fallen_trees:&[u32])->io::Result<Vec<u8>>{
     checked_trees(fallen_trees)?;let mut out=area_update_property(area,FALLEN_TREES,4,fallen_trees.len())?;
     for &value in fallen_trees{out.extend(value.to_le_bytes());}out.push(0x13);Ok(out)
+}
+
+/// Complete cumulative fallenColumns replacement; original set_fallenColumns
+/// animates only the set difference against its previous value.
+pub(super) fn area_update_columns(area:usize,columns:&[u16])->io::Result<Vec<u8>>{
+    checked_columns(columns)?;let mut out=area_update_property(area,FALLEN_COLUMNS,2,columns.len())?;
+    for &value in columns{out.extend(value.to_le_bytes());}out.push(0x13);Ok(out)
+}
+
+/// Match DestructiblesCache.encodeFallenColumn from the pinned Python 2.7
+/// bytecode: `int(fallSpeed)` clamped to 0..3, then
+/// `int(64*(yaw+PI)/PI_2) % 64`, packed `destrIndex<<8 | yaw<<2 | speed`.
+/// The original does not mask destrIndex; u8 keeps it inside UINT16.
+pub(super) fn encode_fallen_column<Y:Into<f64>,S:Into<f64>>(native_index:u8,yaw:Y,speed:S)->io::Result<u16>{
+    let yaw=yaw.into();let speed=speed.into();
+    if !yaw.is_finite()||!speed.is_finite(){return Err(super::model::bad());}
+    let speed=speed.trunc();let speed=if speed<=0. {0} else if speed>=3. {3} else {speed as u16};
+    let scaled=64. * (yaw+std::f64::consts::PI)/(2.*std::f64::consts::PI);
+    if !scaled.is_finite(){return Err(super::model::bad());}
+    let discrete_yaw=scaled.trunc().rem_euclid(64.) as u16;
+    Ok((u16::from(native_index)<<8)|(discrete_yaw<<2)|speed)
 }
 
 pub(super) fn area_create(area:usize,chunk:u16,indices:&[u8])->io::Result<Vec<u8>>{
@@ -282,6 +319,40 @@ mod tests {
         assert!(encode_fallen_tree(1, f64::NAN, 0., 0).is_err());
         assert!(encode_fallen_tree(1, 0., f64::INFINITY, 0).is_err());
         assert!(encode_fallen_tree(1, 0., 0., f64::NEG_INFINITY).is_err());
+    }
+
+    #[test]
+    fn encode_fallen_column_matches_pinned_python_quantization() {
+        // Hand-derived from destructiblescache.pyc encodeFallenColumn bytecode
+        // (tests/test_destructible_wire_columns.py re-derives them independently).
+        assert_eq!(encode_fallen_column(7, 0.0f64, 2).unwrap(), 0x0782);
+        assert_eq!(encode_fallen_column(255, std::f64::consts::PI / 2., 99).unwrap(), 0xffc3);
+        assert_eq!(encode_fallen_column(1, -std::f64::consts::PI, 0).unwrap(), 0x0100);
+        assert_eq!(encode_fallen_column(2, 3.2, -4).unwrap(), 0x0200);
+        assert_eq!(encode_fallen_column(3, -3.2, 2.9).unwrap(), 0x0302);
+        assert_eq!(encode_fallen_column(4, -4.0, 1.5).unwrap(), 0x04e1);
+        assert!(encode_fallen_column(1, f64::NAN, 0).is_err());
+        assert!(encode_fallen_column(1, 0., f64::INFINITY).is_err());
+        assert!(encode_fallen_column(1, f64::MAX, 0).is_err());
+    }
+
+    #[test]
+    fn fallen_columns_use_property_two_and_0xa0_short_envelope() {
+        let columns = [0x0102u16, 0x0782];
+        let update = area_update_columns(1, &columns).unwrap();
+        assert_eq!(&update[..7], &[0x12, 0x08, 0x00, 0x10, 0x09, 0xa0, 8]);
+        assert_eq!(&update[7..], &[2, 0, 0, 0, 0x02, 0x01, 0x82, 0x07, 0x13]);
+        let created = area_create_full(1, CHUNK_ID, &[0x0101], &columns, &[0x0102_0000]).unwrap();
+        assert!(created.windows(9).any(|w| w == [2, 2, 0, 0, 0, 0x02, 0x01, 0x82, 0x07]));
+        assert!(created.windows(7).any(|w| w == [1, 1, 0, 0, 0, 0x01, 0x01]));
+        assert_eq!(area_create_full(0, CHUNK_ID, &[], &[], &[]).unwrap(), area_create_state(0, CHUNK_ID, &[], &[]).unwrap());
+        let full = (0..125u16).collect::<Vec<_>>();
+        assert_eq!(area_update_columns(0, &full).unwrap()[6], 254);
+        let mut over = full.clone(); over.push(125);
+        assert!(area_update_columns(0, &over).is_err());
+        assert!(area_create_full(0, CHUNK_ID, &[], &over, &[]).is_err());
+        assert!(area_update_columns(0, &[2, 1]).is_err());
+        assert!(area_update_columns(0, &[2, 2]).is_err());
     }
 
     #[test]

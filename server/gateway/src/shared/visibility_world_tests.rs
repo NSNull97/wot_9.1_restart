@@ -213,7 +213,7 @@ fn place_box_on_flat(world:&mut World,slot:usize,com_x:f32,roof:bool,yaw:f32){
     let object=|id,instance|fragiles::Object{object_id:id,instance_id:instance,chunk_id:0,native_index:0,
         resource:"synthetic-wall".into(),health:1,material_kind:111,projectile_first_triangle:instance,
         projectile_triangle_count:1,physics_first_triangle:instance,physics_triangle_count:1,
-        object_revision:format!("unit-{id}"),kind:fragiles::ObjectKind::Fragile};
+        object_revision:format!("unit-{id}"),kind:fragiles::ObjectKind::Fragile,falling:None};
     let catalog=Arc::new(fragiles::Catalog{map:MapId::Karelia,sha256:"0".repeat(64),worker_file:"unused.json".into(),
         worker_sha256:"0".repeat(64),contacts:false,objects:vec![object(77,1),object(99,0)],version:1,area_chunks:vec![0]});
     let mut state=fragiles::State::new(catalog);

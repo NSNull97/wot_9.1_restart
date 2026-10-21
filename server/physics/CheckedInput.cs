@@ -27,8 +27,17 @@ internal static class CheckedInput
     public const int MaxLegacyCatalogBytes = 128 * 1024;
     public sealed record CatalogEntry(uint ObjectId, int InstanceId, int FirstTriangle, int TriangleCount,
         string Revision, string Kind, int RamEnergyJ, string? RamResponse = null);
-    public sealed record CatalogSpec(string Hash, string Map, CatalogEntry[] Entries, bool Contacts, int Version)
+    // MAPS-02: a catalog9 file keeps catalog8 semantics (Version == 8) for every
+    // fracture/tree entry and adds non-blocking falling atom sensor entries in
+    // Columns, whose spans index the separate pinned trigger mesh.
+    public sealed record TriggerMesh(Vector3[] Vertices, uint[] Indices) { public int TriangleCount => Indices.Length / 3; }
+    public const int MaxTriggerTriangles = 262_144, MaxTriggerTrianglesPerObject = 256;
+    public const string FallingAtomResponse = "sensor_trigger";
+    public sealed record CatalogSpec(string Hash, string Map, CatalogEntry[] Entries, bool Contacts, int Version,
+        CatalogEntry[]? ColumnEntries = null, TriggerMesh? Triggers = null)
     {
+        public CatalogEntry[] Columns => ColumnEntries ?? [];
+        public bool Known(uint id) => Entries.Any(e => e.ObjectId == id) || Columns.Any(e => e.ObjectId == id);
         public int MaxObjects => Version >= 4 ? MaxExtendedCatalogObjects : Contacts ? MaxContactCatalogObjects : MaxCatalogObjects;
         public int MaxRemoved => Version >= 4 ? MaxExtendedRemovedObjects : Contacts ? MaxContactRemovedObjects : MaxRemovedObjects;
         public bool Fractures => Version is 5 or 6 or 7 or 8;
@@ -88,15 +97,25 @@ internal static class CheckedInput
         // A contact catalog is an explicit worker-side projection of the
         // bounded domain manifest. Explicit catalog-v4 admits 2048 whole
         // objects, while v3 retains 1024; both keep the one MiB file cap.
-        var catalogBytes = FileBytes(Owned(root, path), 1024 * 1024, hash);
+        string catalogPath = Owned(root, path);
+        var catalogBytes = FileBytes(catalogPath, 1024 * 1024, hash);
         using var doc = Json(catalogBytes);
         var d = doc.RootElement;
         var source = CatalogProfile(map);
         int version = d.GetProperty("version").GetInt32();
+        bool falling = version == 9;
+        TriggerMesh? triggers = null;
+        if (falling)
+        {
+            Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "contacts", "objects", "ram_policy", "falling_atom_triggers");
+            triggers = LoadTriggers(Path.GetDirectoryName(catalogPath)!, d.GetProperty("falling_atom_triggers"));
+            version = 8;
+        }
         bool contacts = version is 3 or 4 or 5 or 6 or 7 or 8;
         if (version == 2 && catalogBytes.Length > MaxLegacyCatalogBytes)
             throw new InvalidDataException("legacy catalog exceeds 128 KiB");
-        if (version is 5 or 6 or 7 or 8)
+        if (falling) { }
+        else if (version is 5 or 6 or 7 or 8)
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "contacts", "objects", "ram_policy");
         else if (contacts)
             Fields(d, "version", "profile", "map", "physics_manifest_sha256", "projectile_manifest_sha256", "contacts", "objects");
@@ -118,10 +137,25 @@ internal static class CheckedInput
         if (rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() < 1 || rows.GetArrayLength() > maximum)
             throw new InvalidDataException("catalog count outside bound");
         var entries = new List<CatalogEntry>();
+        var columns = new List<CatalogEntry>();
         var instances = new HashSet<int>();
         uint previous = 0;
         foreach (var row in rows.EnumerateArray())
         {
+            if (falling && row.GetProperty("kind").GetString() == "falling_atom")
+            {
+                Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j", "ram_response");
+                uint cid = row.GetProperty("object_id").GetUInt32();
+                int cinstance = row.GetProperty("instance_id").GetInt32(), cfirst = row.GetProperty("first_triangle").GetInt32();
+                int ccount = row.GetProperty("triangle_count").GetInt32();
+                var crevision = row.GetProperty("object_revision").GetString()!; Sha256(crevision);
+                if (row.GetProperty("ram_energy_j").GetInt32() != 0 || row.GetProperty("ram_response").GetString() != FallingAtomResponse ||
+                    cid <= previous || cinstance < 0 || cinstance >= source.InstanceCount || !instances.Add(cinstance) ||
+                    cfirst < 0 || ccount < 1 || ccount > MaxTriggerTrianglesPerObject || (long)cfirst + ccount > triggers!.TriangleCount)
+                    throw new InvalidDataException("falling atom identity/trigger span bound");
+                previous = cid; columns.Add(new(cid, cinstance, cfirst, ccount, crevision, "falling_atom", 0, FallingAtomResponse));
+                continue;
+            }
             if (version is 7 or 8) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j", "ram_response");
             else if (version is 5 or 6) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind", "ram_energy_j");
             else if (contacts) Fields(row, "object_id", "instance_id", "first_triangle", "triangle_count", "object_revision", "kind");
@@ -155,7 +189,69 @@ internal static class CheckedInput
         for (int i = 1; i < spans.Length; i++)
             if (spans[i].FirstTriangle < spans[i - 1].FirstTriangle + spans[i - 1].TriangleCount)
                 throw new InvalidDataException("overlapping catalog spans");
-        return new(hash, map, entries.ToArray(), contacts, version);
+        var triggerSpans = columns.OrderBy(e => e.FirstTriangle).ToArray();
+        for (int i = 1; i < triggerSpans.Length; i++)
+            if (triggerSpans[i].FirstTriangle < triggerSpans[i - 1].FirstTriangle + triggerSpans[i - 1].TriangleCount)
+                throw new InvalidDataException("overlapping trigger spans");
+        if (falling && columns.Count == 0) throw new InvalidDataException("catalog9 without falling atoms");
+        return new(hash, map, entries.ToArray(), contacts, version, columns.ToArray(), triggers);
+    }
+
+    // MAPS-02 trigger mesh: two hash-pinned buffers beside the catalog, the
+    // same float32/uint32 layout and bounds as LoadMeshCore. Never collision.
+    static TriggerMesh LoadTriggers(string directory, JsonElement reference)
+    {
+        Fields(reference, "vertices", "triangles");
+        byte[] Part(string name, string format, string expectedFile, int maxCount)
+        {
+            var part = reference.GetProperty(name);
+            Fields(part, "file", "format", "stride", "count", "bytes", "sha256");
+            int count = part.GetProperty("count").GetInt32();
+            if (part.GetProperty("file").GetString() != expectedFile || part.GetProperty("format").GetString() != format ||
+                part.GetProperty("stride").GetInt32() != 12 || count < 1 || count > maxCount || part.GetProperty("bytes").GetInt32() != checked(count * 12))
+                throw new InvalidDataException("trigger part shape mismatch");
+            var bytes = FileBytes(Owned(directory, Path.Combine(directory, expectedFile)), checked(maxCount * 12), part.GetProperty("sha256").GetString());
+            if (bytes.Length != count * 12) throw new InvalidDataException("trigger part truncated");
+            return bytes;
+        }
+        var rawVertices = Part("vertices", "float32_xyz", "falling-atom-triggers.vertices.f32", MaxTriggerTriangles * 3);
+        var rawTriangles = Part("triangles", "uint32_abc", "falling-atom-triggers.triangles.u32", MaxTriggerTriangles);
+        var vertices = new Vector3[rawVertices.Length / 12];
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            float Read(int axis) => BinaryPrimitives.ReadSingleLittleEndian(rawVertices.AsSpan(i * 12 + axis * 4, 4));
+            var v = new Vector3(Read(0), Read(1), Read(2));
+            if (!float.IsFinite(v.X) || !float.IsFinite(v.Y) || !float.IsFinite(v.Z) || Math.Abs(v.X) > 2000 || Math.Abs(v.Y) > 2000 || Math.Abs(v.Z) > 2000)
+                throw new InvalidDataException("trigger vertex outside bound");
+            vertices[i] = v;
+        }
+        var indices = new uint[rawTriangles.Length / 4];
+        for (int i = 0; i < indices.Length / 3; i++)
+        {
+            uint Read(int axis) => BinaryPrimitives.ReadUInt32LittleEndian(rawTriangles.AsSpan(i * 12 + axis * 4, 4));
+            uint a = Read(0), b = Read(1), c = Read(2);
+            if (a >= vertices.Length || b >= vertices.Length || c >= vertices.Length || a == b || b == c || a == c)
+                throw new InvalidDataException("trigger triangle index outside bound");
+            var cross = Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]);
+            if (!float.IsFinite(cross.LengthSquared()) || cross.LengthSquared() <= 1e-16f)
+                throw new InvalidDataException("degenerate float32 trigger triangle");
+            indices[i * 3] = a; indices[i * 3 + 1] = b; indices[i * 3 + 2] = c;
+        }
+        return new(vertices, indices);
+    }
+
+    public static MeshShape TriggerShape(TriggerMesh mesh, CatalogEntry entry)
+    {
+        var selectedVertices = new Vector3[entry.TriangleCount * 3];
+        var selectedTriangles = new IndexedTriangle[entry.TriangleCount];
+        for (int i = 0; i < entry.TriangleCount; i++)
+        {
+            for (int axis = 0; axis < 3; axis++)
+                selectedVertices[i * 3 + axis] = mesh.Vertices[mesh.Indices[(entry.FirstTriangle + i) * 3 + axis]];
+            selectedTriangles[i] = new((uint)i * 3, (uint)i * 3 + 1, (uint)i * 3 + 2);
+        }
+        using var settings = new MeshShapeSettings(selectedVertices.AsSpan(), selectedTriangles.AsSpan());
+        return new MeshShape(settings);
     }
 
     public static Scene MakeScene(CatalogSpec catalog, uint[] ids)
@@ -164,7 +260,7 @@ internal static class CheckedInput
         uint previous = 0;
         foreach (uint id in ids)
         {
-            if (id <= previous || !catalog.Entries.Any(e => e.ObjectId == id)) throw new InvalidDataException("unknown or unordered scene ID");
+            if (id <= previous || !catalog.Known(id)) throw new InvalidDataException("unknown or unordered scene ID");
             previous = id;
         }
         using var bytes = new MemoryStream();

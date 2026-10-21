@@ -614,8 +614,11 @@ class Resources:
 
 
 class Mesh:
-    def __init__(self, mask):
+    def __init__(self, mask, keep_excluded=False):
+        # keep_excluded inverts the mask test: only triangles the original
+        # query would ignore are kept (MAPS-02 non-blocking trigger geometry).
         self.mask, self.vertices, self.indices, self.flags = mask, array('f'), array('I'), array('H')
+        self.keep_excluded = keep_excluded
         self.instances, self.omitted = [], []
         self.summary, self.source_flags, self.kept_flags, self.kept_kinds = Counter(), Counter(), Counter(), Counter()
 
@@ -626,7 +629,7 @@ class Mesh:
         for source_triangle, (points, flag) in enumerate(triangles):
             require(type(flag) is int and 0 <= flag <= 65535, 'mapped flag outside uint16')
             self.source_flags[flag] += 1
-            if flag & self.mask:
+            if bool(flag & self.mask) != self.keep_excluded:
                 excluded += 1
                 continue
             points = mesh_points([transformed(points[i:i + 3], matrix, chunk) for i in (0, 3, 6)])
@@ -675,6 +678,46 @@ class Mesh:
         return parts, files
 
 
+def load_geometry(resources, kind, ref):
+    """Original collision triangles of one model/speedtree resource with mapped flags."""
+    if kind == 'model':
+        model = dict(walk(decode(resources.get(ref))))
+        keys = [k for k in ('/nodelessVisual[1]', '/nodefullVisual[1]') if k in model]
+        require(len(keys) == 1, 'one original visual required')
+        visual_name = resource(model[keys[0]])
+        visual = dict(walk(decode(resources.get(visual_name + '.visual'))))
+        # A visual may name another primitives file (VERIFIED: /primitivesName).
+        primitives_name = resource(visual.get('/primitivesName[1]', visual_name)) + '.primitives'
+        raw = resources.get(primitives_name)
+        sections = primitive_sections(raw)
+
+        def section(key):
+            row = sections[key]
+            return raw[row['offset']:row['offset'] + row['bytes']]
+
+        if 'bsp2' not in sections:
+            # No original collision section. Client behaviour for such
+            # a model is UNKNOWN; it contributes no triangles and is
+            # listed, never replaced by a hull or render geometry.
+            mapped = []
+            meta = {'triangles': 0, 'collision_source': 'UNKNOWN_no_bsp2_section',
+                    'visual': visual_name + '.visual', 'primitives': primitives_name,
+                    'sections': sorted(sections)}
+        else:
+            triangles, meta = bsp2(section('bsp2'))
+            flags, materials = material_flags(section('bsp2_materials'), visual)
+            # Native 0xf39ad0 remaps using the unsigned 16-bit index modulo table size.
+            mapped = [(points, flags[flag % len(flags)]) for points, flag in triangles]
+            meta.update({'visual': visual_name + '.visual', 'materials': materials,
+                         'stored_flags_are_material_indices': True})
+            if primitives_name != visual_name + '.primitives':
+                meta['primitives'] = primitives_name
+    else:
+        mapped, meta = bsp2(resources.get(resource(ref[:-4] + '.bsp2')))
+        meta.update({'stored_flags_are_material_indices': False})
+    return mapped, meta
+
+
 def obstacles(original, report):
     """One pass over the original static instances, two original collision masks."""
     resources = Resources(original, report['map'])
@@ -689,42 +732,9 @@ def obstacles(original, report):
             ref = resource(data['resource[1]'] if obj['kind'] == 'model' else data['spt[1]'])
             if ref not in geometries:
                 require(len(geometries) < 2048, 'unique geometry count')
-                if obj['kind'] == 'model':
-                    model = dict(walk(decode(resources.get(ref))))
-                    keys = [k for k in ('/nodelessVisual[1]', '/nodefullVisual[1]') if k in model]
-                    require(len(keys) == 1, 'one original visual required')
-                    visual_name = resource(model[keys[0]])
-                    visual = dict(walk(decode(resources.get(visual_name + '.visual'))))
-                    # A visual may name another primitives file (VERIFIED: /primitivesName).
-                    primitives_name = resource(visual.get('/primitivesName[1]', visual_name)) + '.primitives'
-                    raw = resources.get(primitives_name)
-                    sections = primitive_sections(raw)
-
-                    def section(key):
-                        row = sections[key]
-                        return raw[row['offset']:row['offset'] + row['bytes']]
-
-                    if 'bsp2' not in sections:
-                        # No original collision section. Client behaviour for such
-                        # a model is UNKNOWN; it contributes no triangles and is
-                        # listed, never replaced by a hull or render geometry.
-                        mapped = []
-                        meta = {'triangles': 0, 'collision_source': 'UNKNOWN_no_bsp2_section',
-                                'visual': visual_name + '.visual', 'primitives': primitives_name,
-                                'sections': sorted(sections)}
-                        no_bsp.append(ref)
-                    else:
-                        triangles, meta = bsp2(section('bsp2'))
-                        flags, materials = material_flags(section('bsp2_materials'), visual)
-                        # Native 0xf39ad0 remaps using the unsigned 16-bit index modulo table size.
-                        mapped = [(points, flags[flag % len(flags)]) for points, flag in triangles]
-                        meta.update({'visual': visual_name + '.visual', 'materials': materials,
-                                     'stored_flags_are_material_indices': True})
-                        if primitives_name != visual_name + '.primitives':
-                            meta['primitives'] = primitives_name
-                else:
-                    mapped, meta = bsp2(resources.get(resource(ref[:-4] + '.bsp2')))
-                    meta.update({'stored_flags_are_material_indices': False})
+                mapped, meta = load_geometry(resources, obj['kind'], ref)
+                if meta.get('collision_source') == 'UNKNOWN_no_bsp2_section':
+                    no_bsp.append(ref)
                 geometries[ref] = (mapped, meta)
             triangles, _ = geometries[ref]
             matrix = data['transform[1]']
@@ -785,6 +795,80 @@ def obstacles(original, report):
         'limitations': {'native_projectile_crossvalidation': 'NOT_RUN', 'water_collision': False,
                         'dynamic_destruction': False, 'all_scene_collision_equivalence': 'UNKNOWN'}}
     return physics_manifest, p_files, projectile_manifest, q_files, pins, paths_sha256
+
+
+# ---------------------------------------------------------------- falling atoms (MAPS-02)
+
+TRIGGER_PREFIX = 'falling-atom-triggers'
+MAX_TRIGGER_TRIANGLES = 262_144
+MAX_TRIGGER_TRIANGLES_PER_INSTANCE = 256
+
+
+def instance_scale(matrix):
+    """Client showFall scale: |M * (0, 1, 0)|, the float32 Y basis row length."""
+    y = struct.unpack('<3f', struct.pack('<3f', *matrix[3:6]))
+    return math.sqrt(sum(v * v for v in y))
+
+
+def falling_atom_triggers(original, directory):
+    """Non-blocking trigger triangles of every fallingAtoms instance of one package.
+
+    VERIFIED: the original movement (mask 18) and projectile (mask 128) queries
+    ignore the pole/lamp materials, so packages carry no geometry for them.
+    This export keeps exactly the source BSP triangles that mask 18 excludes,
+    in the same world transform. It never changes a package file.
+    """
+    directory = no_links(Path(directory).absolute())
+    package, digest = verify(directory)
+    name = package['map']
+    files = package['files']
+    physics = json.loads(read_file(directory / 'physics/manifest.json', 64 * 1024 * 1024))
+    inventory = json.loads(read_file(directory / 'destructibles/inventory.json', 64 * 1024 * 1024))
+    rows = [row for row in inventory['instances'] if row['family'] == 'fallingAtoms']
+    resources = Resources(original, name)
+    mesh, geometries, instances = Mesh(PHYSICS_MASK, keep_excluded=True), {}, []
+    try:
+        require(resources.pins['res/packages/' + name + '.pkg']['sha256'] == package['sources']['map_package']['sha256'],
+                'map package changed')
+        for row in rows:
+            phy = physics['instances'][row['instance_id']]
+            require(phy['resource'] == row['resource'] and phy['instance'] == row['instance'] and phy['chunk'] == row['chunk']
+                    and phy['kind'] == row['kind'] == 'model', 'falling atom instance identity')
+            ref = resource(phy['resource'])
+            if ref not in geometries:
+                require(len(geometries) < 512, 'unique falling atom geometry count')
+                geometries[ref] = load_geometry(resources, 'model', ref)
+            triangles, _ = geometries[ref]
+            m = phy['transform']
+            require(type(m) is list and len(m) == 12, 'instance matrix')
+            det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6])
+            require(math.isfinite(det) and abs(det) >= 1e-8, 'singular instance transform')
+            mesh.add({'kind': phy['kind'], 'chunk': phy['chunk'], 'instance': phy['instance']}, ref, triangles, m, det)
+            kept = mesh.instances[-1]
+            require(kept['triangles'] <= MAX_TRIGGER_TRIANGLES_PER_INSTANCE and
+                    len(mesh.indices) // 3 <= MAX_TRIGGER_TRIANGLES, 'trigger triangle bound')
+            instances.append({'instance_id': row['instance_id'], 'chunk': row['chunk'], 'chunk_id': row['chunk_id'],
+                              'instance': row['instance'], 'resource': ref,
+                              'first_triangle': kept['first_triangle'], 'triangles': kept['triangles'],
+                              'degenerate': kept['degenerate'], 'scale': instance_scale(m),
+                              'blocking_physics_triangles': row['physics_triangle_count'],
+                              'blocking_projectile_triangles': row['projectile_triangle_count']})
+        used = list(resources.used.values())
+    finally:
+        resources.close()
+    parts, outputs = mesh.parts(TRIGGER_PREFIX, False)
+    manifest = {
+        'version': 1, 'kind': 'wot091_falling_atom_trigger_mesh', 'map': name,
+        'package_sha256': digest, 'physics_manifest_sha256': files['physics/manifest.json']['sha256'],
+        'inventory_sha256': files['destructibles/inventory.json']['sha256'],
+        'coordinates': {'unit': 'metre', 'up_axis': 'Y', 'order': 'XYZ', 'endianness': 'little', 'space': 'original world'},
+        **parts,
+        'collision_policy': {'kept': 'source BSP triangles of fallingAtoms instances with (flags & 18) != 0',
+                             'meaning': 'non-blocking ram trigger; never movement or projectile collision',
+                             'historical_trigger_equivalence': 'UNKNOWN'},
+        'summary': dict(mesh.summary), 'resources': used, 'instances': instances}
+    outputs[TRIGGER_PREFIX + '.json'] = pretty(manifest)
+    return manifest, outputs
 
 
 # ---------------------------------------------------------------- arena
@@ -1289,6 +1373,9 @@ def main(argv=None):
     entry = sub.add_parser('registry-entry', help='print the server map registry entry of a package')
     entry.add_argument('--package', required=True)
     entry.add_argument('--revision-name', required=True, help='lowercase source revision prefix, e.g. malinovka')
+    trigger = sub.add_parser('triggers', help='MAPS-02 non-blocking falling atom trigger mesh of one package')
+    trigger.add_argument('--package', required=True)
+    trigger.add_argument('--out', required=True, help='fresh directory under local/')
     summary = sub.add_parser('report', help='admission + static catalog report of a batch directory')
     summary.add_argument('--batch', required=True)
     summary.add_argument('--out', required=True)
@@ -1312,6 +1399,14 @@ def main(argv=None):
         save(out / 'report.json', pretty({'version': 1, 'kind': 'wot091_map_batch_report', 'limits': RUNTIME_LIMITS,
                                           'maps': rows}))
         print(json.dumps(dict(Counter(r['verdict'] for r in rows))))
+    elif args.command == 'triggers':
+        manifest, outputs = falling_atom_triggers(original, args.package)
+        out = fresh_directory(args.out, local)
+        for path, raw in outputs.items():
+            save(out / path, raw)
+        print(json.dumps({'map': manifest['map'], 'instances': len(manifest['instances']),
+                          'triangles': manifest['triangles']['count'],
+                          'manifest_sha256': sha(outputs[TRIGGER_PREFIX + '.json'])}))
     elif args.command == 'registry-entry':
         print(json.dumps(registry_entry(args.package, local, args.revision_name), indent=2))
     elif args.command == 'compare-native':

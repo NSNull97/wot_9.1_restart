@@ -9,6 +9,11 @@
 - [FULL_TEST_20261020.md](FULL_TEST_20261020.md) — отрыв башни (#717 SynchronousDetachment), поворот, zero-economy/100 слотов, бой на купленных пуловых танках, звук лампы; gate1685/1
 - [FULL_TEST_20261019.md](FULL_TEST_20261019.md) — физика из чужого checkout, выстрел в упор, паузы gateway; gate1684/1, стенд одного checkout, native NOT_RUN
 
+## Карты
+
+- [MAPS01_MAP_PIPELINE.md](MAPS01_MAP_PIPELINE.md) — конвейер 44 карт, реестр, статический native-индекс разрушаемого
+- [MAPS02_FALLING_ATOMS.md](MAPS02_FALLING_ATOMS.md) — fallingAtoms: клиентский путь fallenColumns, 7 physicParams, предикат тарана, 0xa0 INFERRED, закон сервера UNKNOWN
+
 ## Ночь16–17 октября и ручная приёмка
 
 - [NIGHT_20261017_REPORT.md](NIGHT_20261017_REPORT.md) — exact925/full1619, честные PythonFAIL, отдельные ветки, evidence и ограничения

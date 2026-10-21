@@ -1028,8 +1028,12 @@ impl Trace {
         }
         let mut state=self.fragiles.clone().ok_or_else(||invalid("fragile catalog absent"))?;
         if !state.catalog.contacts { return Err(invalid("vehicle contact profile absent")); }
-        let replayed=state.ram_contact_with_proof(contact.object_id,contact.shooter,contact.tick,
-            contact.substep,contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone(),contact.proof.clone())?
+        // MAPS-02 falling atom sensor contacts replay their own domain rule.
+        let replayed=if contact.fallen_column.is_some(){
+            if contact.proof.is_some(){return Err(invalid("falling atom contact carries a ram proof"));}
+            state.column_contact(contact.object_id,contact.shooter,contact.tick,contact.substep,contact.point,contact.normal,contact.velocity,contact.mass_kg)?
+        }else{state.ram_contact_with_proof(contact.object_id,contact.shooter,contact.tick,
+            contact.substep,contact.point,contact.normal,contact.velocity,contact.mass_kg,contact.kind.clone(),contact.proof.clone())?}
             .ok_or_else(||invalid("vehicle contact was already removed or below threshold"))?;
         if replayed!=*contact || state.scene_version()!=contact.scene_after {
             return Err(invalid("vehicle contact replay mismatch"));
