@@ -8,6 +8,8 @@ use sha2::{Digest,Sha256};
 use crate::battle091::profile13::{Context,FinishReason,Reservation as LegacyReservation};
 use crate::gateway091::shared::{vehicle_profile::VehicleKind,lifecycle_wire::Results};
 use crate::p06t_shells091 as source;
+use crate::gateway091::shared::vehicle_catalog::{self as catalog,Admission};
+use std::sync::atomic::{AtomicBool,Ordering};
 
 pub const POLICY_SHA256:&str="71fddc60e36780a4be2eb4dfcfa1709791e23edf1a69d074940024404b37e0d5";
 pub const TERMINAL_MANIFEST_SHA256:&str="cded466bf3c21243c10c0bcee8a013ab4cffc20f31f7275d4eab1672060b3717";
@@ -64,18 +66,57 @@ impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.co
 fn device_profile(kind:VehicleKind)->Option<crate::p06t_device_caps::Profile>{use crate::p06t_device_caps::Profile as P;
     Some(match kind{VehicleKind::Ms1=>P::Ms1,VehicleKind::Is7=>P::Is7,VehicleKind::T26=>P::T26,VehicleKind::T34=>P::T34,VehicleKind::T3485=>P::T3485,_=>return None})}
 
-pub fn parse_frozen(v:&Value,account:&str,expected_sha:&str)->io::Result<Frozen>{
-    keys(v,&["kind","descriptor_hex","native_inventory_id","vehicle_inventory_id","max_hp","crew_ids","capacity","ammunition","initial_shell_compact_id"])?;
-    let(kind,mount)=match text(v,"kind")?{
+/// CAT-01: admission identity read from the generated single catalog instead of
+/// the closed kind list below. Off by default; the gateway config key `catalog`
+/// (with this build's hash) turns it on once at startup. Rollback = drop the key.
+static CATALOG_V1:AtomicBool=AtomicBool::new(false);
+pub fn enable_catalog_v1()->io::Result<()>{
+    if format!("{:x}",Sha256::digest(catalog::CATALOG_JSON.as_bytes()))!=catalog::CATALOG_SHA256{return Err(bad("embedded catalog hash"));}
+    CATALOG_V1.store(true,Ordering::SeqCst);Ok(())}
+pub fn catalog_v1_enabled()->bool{CATALOG_V1.load(Ordering::SeqCst)}
+
+type Identity=(VehicleKind,source::Mount,String,[&'static str;3]);
+/// Legacy closed list (default until owner acceptance of CAT-01).
+fn legacy_identity(label:&str,native:u64)->io::Result<Identity>{
+    let(kind,mount)=match label{
         "ms1"=>(VehicleKind::Ms1,source::Mount::Ms1Stock),"is7"=>(VehicleKind::Is7,source::Mount::Is7Stock),
         // Purchased P04M pool kinds. The Python writer admits them only under the
         // owner's explicit full-stand zero-economy policy (order 2026-10-19).
         "t26"=>(VehicleKind::T26,source::Mount::T26Stock),"t34"=>(VehicleKind::T34,source::Mount::T34Stock),
         "t3485"=>(VehicleKind::T3485,source::Mount::T3485Stock),_=>return Err(bad("owner acceptance required/unknown kind"))};
-    let native=number(v,"native_inventory_id")?;
     let suffix=match kind{VehicleKind::Ms1 if native==1=>"starter-vehicle-v1".to_string(),VehicleKind::Is7 if native==2=>"test-is7-v1".to_string(),
         VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485 if (3..=i32::MAX as u64).contains(&native)=>format!("p09e-vehicle:{native}"),
         _=>return Err(bad("stock/source/ownership"))};
+    let suffixes=match kind{VehicleKind::Ms1|VehicleKind::T34=>["ap","heat","he"],_=>["ap","apcr","he"]};
+    Ok((kind,mount,suffix,suffixes))
+}
+
+/// Catalog identity: admission is the data field `battle_admission`; the battle
+/// physics/armor profile must still exist and agree with the catalog facts.
+/// The zero-economy policy itself stays enforced by the Python writer.
+fn catalog_identity(label:&str,native:u64)->io::Result<Identity>{catalog_identity_in(catalog::VEHICLES,label,native)}
+pub(crate) fn catalog_identity_in(table:&[catalog::Vehicle],label:&str,native:u64)->io::Result<Identity>{
+    let entry=table.iter().find(|e|e.kind==label).filter(|e|e.battle_admission!=Admission::None)
+        .ok_or_else(||bad("owner acceptance required/unknown kind"))?;
+    let kind=VehicleKind::from_label(label).ok_or_else(||bad("catalog kind without battle profile"))?;
+    let mount=kind.mount();let p=source::profile(mount);
+    let crew=crate::p06t_device_caps::CREW[device_profile(kind).ok_or_else(||bad("device profile"))?.index()].len();
+    let shells:[catalog::Shell;3]=entry.shells.try_into().map_err(|_|bad("catalog three stacks"))?;
+    if entry.descriptor!=kind.descriptor()||i32::from(entry.max_hp)!=i32::from(kind.max_health())||entry.ammo_capacity!=p.capacity
+        ||entry.seats!=crew||entry.native_compact_id!=kind.vehicle_compact_id()
+        ||shells.iter().zip(p.shots.iter()).any(|(s,shot)|s.native_compact_id!=u32::from(shot.compact_descr)||s.family!=shot.family.source_name()){
+        return Err(bad("catalog disagrees with battle profile"));}
+    let suffix=match entry.legacy_inventory{Some((n,s)) if native==u64::from(n)=>s.to_string(),
+        None if (3..=i32::MAX as u64).contains(&native)=>format!("p09e-vehicle:{native}"),_=>return Err(bad("stock/source/ownership"))};
+    Ok((kind,mount,suffix,shells.map(|s|s.suffix)))
+}
+
+pub fn parse_frozen(v:&Value,account:&str,expected_sha:&str)->io::Result<Frozen>{parse_frozen_with(v,account,expected_sha,catalog_v1_enabled())}
+pub(crate) fn legacy_identity_for_tests(label:&str,native:u64)->io::Result<Identity>{legacy_identity(label,native)}
+pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_v1:bool)->io::Result<Frozen>{
+    keys(v,&["kind","descriptor_hex","native_inventory_id","vehicle_inventory_id","max_hp","crew_ids","capacity","ammunition","initial_shell_compact_id"])?;
+    let native=number(v,"native_inventory_id")?;
+    let(kind,mount,suffix,suffixes)=if catalog_v1{catalog_identity(text(v,"kind")?,native)?}else{legacy_identity(text(v,"kind")?,native)?};
     let crew_count=crate::p06t_device_caps::CREW[device_profile(kind).ok_or_else(||bad("device profile"))?.index()].len();
     let p=source::profile(mount);let descriptor=kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>();
     if!uuid(account)||text(v,"vehicle_inventory_id")?!=format!("{account}:{suffix}")
@@ -86,7 +127,7 @@ pub fn parse_frozen(v:&Value,account:&str,expected_sha:&str)->io::Result<Frozen>
         if!id(s)||!s.starts_with(&format!("{account}:"))||s.len()<=account.len()+1||crew_ids.iter().any(|x|x==s){return Err(bad("crew owner/unique"));}crew_ids.push(s.to_owned());}
     if crew_ids.len()!=crew_count{return Err(bad("crew seats"));}
     let a=v["ammunition"].as_array().ok_or_else(||bad("ammo"))?;if a.len()!=3{return Err(bad("three stacks"));}
-    let suffixes=match kind{VehicleKind::Ms1|VehicleKind::T34=>["ap","heat","he"],_=>["ap","apcr","he"]};let mut stacks=Vec::new();
+    let mut stacks=Vec::new();
     for(i,row)in a.iter().enumerate(){keys(row,&["shell_definition_id","shell_compact_id","family","count"])?;let s=p.shots[i];
         let count=u16::try_from(number(row,"count")?).map_err(|_|bad("count bound"))?;
         if number(row,"shell_compact_id")?!=u64::from(s.compact_descr)||text(row,"family")?!=s.family.source_name()

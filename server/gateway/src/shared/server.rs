@@ -1292,6 +1292,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         return Err(model::bad().into());
     }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
+    if config.catalog_v1{crate::profile13_v2091::enable_catalog_v1()?;
+        println!("CATALOG_V1 enabled sha256={}",super::vehicle_catalog::CATALOG_SHA256);}
     let profile13_mode=resources.is_some()&&qualification.is_none();
     config.require_game_network(if profile13_mode{crate::identity091::game_network::Runtime::SharedOwnedProfile13}else{crate::identity091::game_network::Runtime::LoopbackOnly})?;
     if config.profile13_battle!=profile13_mode || config.ammo_service!=profile13_mode { return Err(model::bad().into()); }

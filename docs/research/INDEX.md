@@ -198,3 +198,5 @@
 - [P09E full stand preparation](P09E_FULL_STAND_PREP_20261018.md) — source-bound garage/loadout planner and fail-closed promotion guards.
 
 - [FULL-TEST независимый вход аккаунтов](FULL_TEST_LOGIN_QUEUE_20261020.md) — код 73 без автоповтора, окно native-входа ~17 с, identity/гараж по аккаунтам, один воркер моста на аккаунт; native NOT_RUN.
+
+- [CAT-01 единый каталог](CAT01_SINGLE_CATALOG.md) — один каталог с SHA-256 из пинов клиента и серверных профилей, генерации Rust/Python/JS/Py2.7, допуск `battle_admission` за флагом; native NOT_RUN.

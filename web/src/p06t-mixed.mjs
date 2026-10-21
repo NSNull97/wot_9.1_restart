@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { BATTLE_POLICY_SHA256, validateBattleReply } from './p08b-battle.mjs';
+import { CATALOG_SHA256, CATALOG_VEHICLES } from './catalog-v1.mjs';
 
 export const MIXED_POLICY_SHA256 = '71fddc60e36780a4be2eb4dfcfa1709791e23edf1a69d074940024404b37e0d5';
 export const MIXED_SHELL_SHA256 = '6af1bdc74aff853360b282c3850e0aa3c97c856a7d39835c198c67fdeb342430';
@@ -37,6 +38,24 @@ const TYPES = {
   t3485: { native: null, descriptor: '010a14000100cb0003001100060000', hp: 670, capacity: 68, crew: 5,
     shells: [7946, 8202, 8458], suffixes: ['ap', 'apcr', 'he'], families: ['ARMOR_PIERCING', 'ARMOR_PIERCING_CR', 'HIGH_EXPLOSIVE'], devices: [145, 140, 150, 110, 110, 110, 130, 120, 80] },
 };
+// CAT-01: the same shape derived from the single catalog; admission is its
+// `battle_admission` field. Legacy TYPES stay the default until owner acceptance.
+export const LEGACY_MIXED_TYPES = TYPES;
+export function catalogMixedTypes(vehicles = CATALOG_VEHICLES) {
+  return Object.fromEntries(vehicles.filter(v => v.battle_admission !== 'none').map(v => [v.kind, {
+    native: v.legacy_inventory === null ? null : v.legacy_inventory.native_inventory_id,
+    ...(v.legacy_inventory === null ? {} : { suffix: v.legacy_inventory.suffix }),
+    descriptor: v.descriptor_hex, hp: v.max_hp, capacity: v.ammo_capacity, crew: v.crew.length,
+    shells: v.shells.map(s => s.native_compact_id), suffixes: v.shells.map(s => s.suffix), families: v.shells.map(s => s.family),
+    devices: v.devices.map(d => d.max_health) }]));
+}
+let ACTIVE_TYPES = TYPES;
+/** Switch this bridge process to the catalog; a foreign hash is refused. */
+export function useMixedCatalog(sha256) {
+  requireValue(sha256 === CATALOG_SHA256, 'catalog hash differs from this bridge build');
+  ACTIVE_TYPES = catalogMixedTypes();
+}
+export const mixedTypes = () => ACTIVE_TYPES;
 const sourceVehicle = (p, native) => p.native === null ? (integer(native, 3) ? `p09e-vehicle:${native}` : null)
   : native === p.native ? p.suffix : null;
 
@@ -59,7 +78,7 @@ export function mixedConfiguration(value, poolOwners) {
   const { accounts, ...worker } = value; mixedWorkerConfiguration(worker); return [...accounts];
 }
 function terminal(v, frozen, hp) {
-  const p = TYPES[frozen.kind];
+  const p = ACTIVE_TYPES[frozen.kind];
   requireValue(exact(v, ['policy_revision', 'roster_size', 'crew_active', 'crew', 'devices', 'fire', 'death'])
     && v.policy_revision === 'test_lab.p06t.devices-proxy-fire.v1' && integer(v.roster_size, 0, 6) && typeof v.crew_active === 'boolean'
     && Array.isArray(v.crew) && v.crew.length === frozen.crew_ids.length
@@ -75,8 +94,8 @@ function terminal(v, frozen, hp) {
 }
 function frozen(v, owner, expectedSha) {
   requireValue(exact(v, ['kind', 'descriptor_hex', 'native_inventory_id', 'vehicle_inventory_id', 'max_hp', 'crew_ids', 'capacity', 'ammunition', 'initial_shell_compact_id'])
-    && Object.hasOwn(TYPES, v.kind), 'closed admitted frozen profile');
-  const p = TYPES[v.kind];
+    && Object.hasOwn(ACTIVE_TYPES, v.kind), 'closed admitted frozen profile');
+  const p = ACTIVE_TYPES[v.kind];
   const vehicle = sourceVehicle(p, v.native_inventory_id);
   requireValue(v.descriptor_hex === p.descriptor && vehicle !== null && v.vehicle_inventory_id === `${owner}:${vehicle}`
     && v.max_hp === p.hp && v.capacity === p.capacity && Array.isArray(v.crew_ids) && v.crew_ids.length === p.crew

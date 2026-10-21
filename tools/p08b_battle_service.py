@@ -55,12 +55,18 @@ def main():
     parser.add_argument("--ammo-rack-loss",action="store_true",help="Explicit version4 owned ammo-rack loss accounting")
     parser.add_argument("--shell-catalog")
     parser.add_argument("--terminal-policy")
+    parser.add_argument("--catalog-sha256",help="CAT-01: read admission identity from the single catalog with this exact hash (requires --mixed-ammo)")
     parser.add_argument("operation", choices=("activate", "fixture", "overview", "pool-activate", "pool-overview", "mixed-activate", "mixed-overview", "loss-activate", "hold-activate", "battle", "results", "research", *CREW_OPERATIONS))
     args = parser.parse_args()
     if args.mixed_ammo != bool(args.shell_catalog and args.terminal_policy) or (not args.mixed_ammo and (args.shell_catalog or args.terminal_policy)):
         parser.error("--mixed-ammo requires both trusted source files; source paths require the explicit opt-in")
     if args.ammo_rack_loss and not args.mixed_ammo:parser.error("--ammo-rack-loss requires --mixed-ammo and its trusted sources")
     if args.owner_battle_hold and not args.ammo_rack_loss:parser.error("--owner-battle-hold requires --ammo-rack-loss")
+    if args.catalog_sha256 is not None:
+        if not args.mixed_ammo:parser.error("--catalog-sha256 applies to the owned mixed worker only")
+        import catalog_v1
+        try:catalog_v1.activate(args.catalog_sha256)
+        except catalog_v1.CatalogMismatch as error:parser.error("CAT-01 catalog refused: "+str(error))
     catalog = load_catalog(args.original_root)
     audit(args.original_root)
     if args.mixed_ammo:

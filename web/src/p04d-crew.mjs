@@ -27,7 +27,7 @@ const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null, pool = null, mixed = null, ammoLoss = null, ownerHold = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null, pool = null, mixed = null, ammoLoss = null, ownerHold = null, catalogSha256 = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
@@ -49,6 +49,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
   requireValue(pool === null || (battle !== null && exact(pool, ['version', 'policy_sha256']) && pool.version === 1
     && pool.policy_sha256 === POOL_POLICY_SHA256), 'Explicit curated pool policy required');
   if (mixed !== null) { requireValue(pool !== null && battle !== null, 'Mixed ammunition requires explicit curated pool/battle'); mixedWorkerConfiguration(mixed); }
+  requireValue(catalogSha256 === null || (mixed !== null && typeof catalogSha256 === 'string' && /^[0-9a-f]{64}$/.test(catalogSha256)), 'CAT-01 catalog requires the mixed worker');
   if (ammoLoss !== null) { requireValue(mixed !== null, 'Ammo-rack loss requires explicit mixed ammunition'); lossWorkerConfiguration(ammoLoss); }
   if (ownerHold !== null) { requireValue(ammoLoss !== null, 'Owner hold requires explicit loss4 source'); holdWorkerConfiguration(ownerHold); }
   const profileVersion = research !== null ? 13 : barracksRecruitment !== null ? 12 : dismissal !== null ? 11 : progression !== null ? 10 : rosterRecruitment !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
@@ -76,6 +77,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
           '--database', db, '--bundle', bundle, '--original-root', ammo.original_root,
           '--account-id', ammo.account_id, '--fixture-root', fixtures,
           ...(mixed === null ? [] : ['--mixed-ammo', '--shell-catalog', mixed.shell_catalog, '--terminal-policy', mixed.terminal_policy]),
+          ...(catalogSha256 === null ? [] : ['--catalog-sha256', catalogSha256]),
           ...(ammoLoss === null ? [] : ['--ammo-rack-loss']), ...(ownerHold === null ? [] : ['--owner-battle-hold']), operation],
         { cwd: ROOT, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], ...(lossEnvironment === undefined ? {} : { env: lossEnvironment }) });
         let size = 0, errorSize = 0, exceeded = false; const parts = [];
