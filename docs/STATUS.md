@@ -12,6 +12,12 @@
 Native-бой на Малиновке — NOT_RUN (владелец); `fallingAtoms` — исключены (правило
 падения UNKNOWN).
 
+## MAPS-02 — fallingAtoms (ветка `codex/maps-02-falling-atoms`, только документы)
+
+Статическое исследование готово — [MAPS02](research/MAPS02_FALLING_ATOMS.md); план с
+точным списком файлов — [plans/MAPS02](plans/MAPS02_FALLING_ATOMS.md). **Ждёт одобрения
+владельца (решения D1–D4)**; рантайм не менялся, native NOT_RUN.
+
 ## Ранее: BRIDGE-01 + LOGIN-01 приняты (2026-10-20)
 
 Интеграционная ветка `codex/full-test-integration-20261020` (main `859452d` +
