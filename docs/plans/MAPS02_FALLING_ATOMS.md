@@ -1,6 +1,13 @@
 # MAPS-02 — падающие объекты (fallingAtoms): план карточки
 
-Статус: **ожидает одобрения владельца**. До одобрения меняются только документы.
+Статус: **одобрено владельцем 2026-10-21 (D1–D4 как рекомендовано); реализовано в
+коммите `6c44fa2`**, native-проверка владельца — NOT_RUN. Отклонения от плана ниже:
+триггеры — отдельная команда `map_package.py triggers` (пакеты MAPS-01 и пины реестра
+не меняются); `destructible_catalog.py` не менялся (kDC/tilt читает
+`compound_destructible_catalog.py` из `parse_definitions`); Python-тесты — один файл
+`tests/test_falling_atoms.py`; проба воркера — `tools/falling_atom_scene_probe.py`.
+Поддерживается только IPC7 battle scene (профиль 13); одиночный drive-воркер каталог
+v9 отвергает.
 Ветка `codex/maps-02-falling-atoms` поверх `codex/maps-01-map-pipeline` (`0c144ac`);
 слияние — только после слияния MAPS-01 и native-приёмки владельца.
 Факты и категории: [research/MAPS02_FALLING_ATOMS.md](../research/MAPS02_FALLING_ATOMS.md).
@@ -130,6 +137,17 @@
 - `python -B -X utf8 server/build.py physics --out local/build/server/physics-maps02-01`
 - `python -B -X utf8 server/build.py gateway --test --out local/build/server/gateway-maps02-01`
 - Канонический полный gate на чистом дереве (правило canonical-gate) — FAIL-набор не шире базы.
+
+## Что нужно стенду для native-проверки
+
+- Физика из этой ветки: `python -B -X utf8 server/build.py physics --out local/build/server/<новый>`
+  (в worktree собрана `physics-maps02-01`, DLL `04308d80…`); gateway — из этой же ветки.
+- Каталог профиля 13: `local/evidence/20261021-maps02-impl01/catalogs/05_prohorovka/manifest.json`,
+  SHA256 `61ce7951421091427a122e1c3875481f4053f3a6b9c910cb98195a644daff6d6` (рядом worker v9
+  `efd83118…` и два файла `falling-atom-triggers.*`). Карта `05_prohorovka`, пулы Прохоровки.
+- Только IPC7 battle scene (профиль 13); старый одиночный drive-путь каталог v9 отвергает.
+- Логи: `SHARED_COLUMN_FALL` (решение домена), `P05C_SCENE_COMMIT`, `SHARED_COLUMN_PUBLICATION`.
+- Проверенные цели: столбы 50, 128, 200 (проба `probe02`, спавн — в `receipt.json`).
 
 ## Native-проверка владельца (после одобрения и PASS выше)
 
