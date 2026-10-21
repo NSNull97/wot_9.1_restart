@@ -23,7 +23,7 @@ use crate::gateway091::shared::ram_proof;
 mod profile;
 use crate::gateway091::shared::vehicle_profile::VehicleKind;
 pub use fracture::Receipt as FractureReceipt;
-pub use catalog::{CatalogSpec,CatalogEntry,Scene,CatalogAck,MAX_CATALOG_OBJECTS,MAX_REMOVED_OBJECTS};
+pub use catalog::{CatalogSpec,CatalogEntry,Scene,CatalogAck,FALLING_ATOM_RESPONSE,MAX_CATALOG_OBJECTS,MAX_REMOVED_OBJECTS};
 
 pub const STEP:Duration=Duration::from_millis(100);
 pub const MAX_SEQUENCE:u32=36000;
@@ -416,6 +416,9 @@ impl Worker {
         if pool.shared_only {return Err(io::Error::new(io::ErrorKind::InvalidInput,
             "extended shared-only pool requires IPC7 SceneManifest3"));}
         if let Some(profile)=&pool.vehicle_profile{profile.verify_map(&pool.local_root,&map)?;}
+        // MAPS-02 sensor triggers exist only in the IPC7 battle scene worker.
+        if initial.as_ref().is_some_and(|(s,_)|s.version()==9){return Err(io::Error::new(io::ErrorKind::InvalidInput,
+            "falling atom catalog9 requires the IPC7 battle scene"));}
         let angular_profile=if initial.as_ref().is_some_and(|(s,_)|s.version()==8){Some(pool.angular_profile(&map)?)}else{None};
         if generation==0{return Err(bad());}
         if removal.is_some() && initial.is_some(){return Err(bad());}

@@ -105,6 +105,8 @@ pub(super) struct Client {
     area_scene_sent: u32,
     areas:Vec<(Option<(u32,bool)>,Vec<u8>)>,
     tree_areas:Vec<Vec<u32>>,
+    /// MAPS-02 cumulative fallenColumns already queued per area.
+    column_areas:Vec<Vec<u16>>,
     correction: bool,
     ready_sent: [bool; model::MAX_ACTORS],
     commands: Vec<Command>,
@@ -143,7 +145,7 @@ impl Client {
         Self { slot, phase: Phase::Account, view: None, contained_world: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; model::MAX_ACTORS],
             creation_announcements: [None; model::MAX_ACTORS], spotting_enabled: false, interest: None,
             private_pending: VecDeque::new(), turrets:turret_publication::State::new(), last_pose_tick: None,
-            area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
+            area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:[None;model::MAX_ACTORS],armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
             tracer_stopped: [false; model::MAX_BATTLE_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
@@ -637,6 +639,7 @@ impl Session {
                 let chunks=state.catalog.chunks();
                 c.areas=vec![(None,Vec::new());chunks.len()];
                 c.tree_areas=vec![Vec::new();chunks.len()];
+                c.column_areas=vec![Vec::new();chunks.len()];
                 for i in 0..chunks.len().min(AREA_ANNOUNCEMENT_BATCH) {
                     let record = destructible_wire::area_announcement(i)?;
                     if body.len() + record.len() > 512 {
@@ -676,6 +679,7 @@ impl Session {
             // the reliable eight-body window can carry. Session's outer receive
             // clone makes the whole envelope atomic on malformed input.
             if c.tree_areas.len()!=c.areas.len(){c.tree_areas=vec![Vec::new();c.areas.len()];}
+            if c.column_areas.len()!=c.areas.len(){c.column_areas=vec![Vec::new();c.areas.len()];}
             for raw in requests.chunks_exact(7) {
                 if let Some(area)=destructible_wire::area_request(raw,c.areas.len()) {
                     if area >= c.announced_areas || c.areas[area].0.is_some() || c.pending_area_requests.contains(&area) { return Err(bad()); }
@@ -767,6 +771,7 @@ impl Session {
                     continue;
                 }
                 if c.tree_areas.len()!=c.areas.len(){c.tree_areas=vec![Vec::new();c.areas.len()];}
+            if c.column_areas.len()!=c.areas.len(){c.column_areas=vec![Vec::new();c.areas.len()];}
                 if let Some(area)=destructible_wire::area_request(raw,c.areas.len()) {
                     if area >= c.announced_areas || c.areas[area].0.is_some() || c.pending_area_requests.contains(&area) { return Err(bad()); }
                     if world.fragiles.is_none() { return Err(bad()); }
@@ -913,11 +918,14 @@ impl Session {
                     let indices = state.native_destroyed(chunk);
                     let values = state.native_fragile_values(chunk);
                     let trees = state.native_fallen_trees(chunk);
-                    let sequence = next.tx.enqueue_body_tracked(&destructible_wire::area_create_state(area,chunk,&values,&trees)?)?;
+                    let columns = state.native_fallen_columns(chunk);
+                    let sequence = next.tx.enqueue_body_tracked(&destructible_wire::area_create_full(area,chunk,&values,&columns,&trees)?)?;
                     let c = next.shared.as_mut().ok_or_else(|| bad())?;
                     if c.areas.get(area).is_none_or(|(pending, _)| pending.is_some()) { return Err(bad()); }
                     c.areas[area] = (Some((sequence,false)), indices);
                     c.tree_areas[area] = trees;
+                    if c.column_areas.len()!=c.areas.len(){c.column_areas=vec![Vec::new();c.areas.len()];}
+                    c.column_areas[area] = columns;
                     committed.push(format!("SHARED_CATALOG_AREA_CREATED battle={} session={} entity={} chunk={} scene={} reliable_sequence={sequence}",world.id,next.id,destructible_wire::area_id(area)?,chunk,world.scene_version()));
                 }
             }

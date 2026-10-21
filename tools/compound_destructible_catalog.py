@@ -10,6 +10,7 @@ import argparse
 from collections import Counter
 import copy
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -27,6 +28,7 @@ MAX_TREES_PER_CHUNK = 62
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_WORKER_BYTES = 512 * 1024
 KINDS = ('fragile', 'tree', 'movement_fragile')
+# MAPS-02 kind 'falling_atom' is joined separately (join_falling_atoms), never in inventory['eligible'].
 RAM_POLICY = 'test_lab-fence-energy-v1'
 FENCE_ENERGY_J = 8000
 WHOLE_CONTACT_RAM_POLICY = 'test_lab-whole-object-energy-v1'
@@ -370,6 +372,169 @@ def join_mapping(inventory, mapping, provenance, *, fence_response=False, whole_
     return manifest_raw, worker_raw
 
 
+# ---------------------------------------------------------------- MAPS-02 falling atoms
+
+FALLING_ATOM_POLICY = 'test_lab-falling-atom-client-break-predicate-v1'
+FALLING_ATOM_DOMAIN_RESPONSE = 'client_break_predicate'
+FALLING_ATOM_WORKER_RESPONSE = 'sensor_trigger'
+TRIGGER_PREFIX = 'falling-atom-triggers'
+MAX_TRIGGER_TRIANGLES = 262_144
+MAX_TRIGGER_TRIANGLES_PER_OBJECT = 256
+MAX_COLUMNS_PER_CHUNK = 125
+MAX_TRIGGER_BYTES = MAX_TRIGGER_TRIANGLES * 3 * 12
+
+
+def load_triggers(trigger_dir, package_dir):
+    """Hash-check one tools/map_package.py triggers output against its package."""
+    import map_package
+    package, digest = map_package.verify(dc.no_links(Path(package_dir).absolute()))
+    directory = dc.no_links(Path(trigger_dir).absolute())
+    raw = dc.read(directory / (TRIGGER_PREFIX + '.json'), 16 * 1024 * 1024)
+    manifest = dc.json_value(raw, 16 * 1024 * 1024, 400000, 12)
+    require(manifest.get('version') == 1 and manifest.get('kind') == 'wot091_falling_atom_trigger_mesh' and
+            manifest.get('map') == package['map'] and manifest.get('package_sha256') == digest and
+            manifest.get('inventory_sha256') == package['files']['destructibles/inventory.json']['sha256'],
+            'trigger mesh identity/package binding')
+    files = {}
+    for key, fmt in (('vertices', 'float32_xyz'), ('triangles', 'uint32_abc')):
+        part = manifest[key]
+        require(part['file'] == TRIGGER_PREFIX + ('.vertices.f32' if key == 'vertices' else '.triangles.u32') and
+                part['format'] == fmt and part['stride'] == 12 and part['bytes'] == part['count'] * 12 and
+                0 < part['count'] <= MAX_TRIGGER_TRIANGLES * (3 if key == 'vertices' else 1), 'trigger part shape')
+        files[part['file']] = dc.read(directory / part['file'], MAX_TRIGGER_BYTES, part['sha256'])
+    return manifest, sha(raw), package, digest, files
+
+
+def falling_definitions():
+    original = dc.configured_paths()['original_client_root']
+    raw = dc.read(original / 'res/scripts/destructibles.xml', 512 * 1024, dc.DESTRUCTIBLES_SHA256)
+    _, by_resource, _ = dc.parse_definitions(raw)
+    return {name: row for name, row in by_resource.items() if row['family'] == 'fallingAtoms'}
+
+
+def falling_atom_rows(inventory, package_dir, trigger_dir):
+    """Eligible falling atoms with reasons for every excluded instance.
+
+    Native index: the same static chunk-order rule as the whole catalog
+    (OBSERVED for Prohorovka poles 71/71 against native exports, INFERRED elsewhere).
+    """
+    import map_package
+    manifest, manifest_sha, package, _, files = load_triggers(trigger_dir, package_dir)
+    directory = dc.no_links(Path(package_dir).absolute())
+    index = dc.json_value(dc.read(directory / 'destructibles/static-index.json', 64 * 1024 * 1024,
+                                  package['files']['destructibles/static-index.json']['sha256']),
+                          64 * 1024 * 1024, 2_000_000, 12)
+    physics = dc.json_value(dc.read(directory / 'physics/manifest.json', 64 * 1024 * 1024,
+                                    package['files']['physics/manifest.json']['sha256']), 64 * 1024 * 1024, 4_000_000, 32)
+    pkg_inventory = dc.json_value(dc.read(directory / 'destructibles/inventory.json', 64 * 1024 * 1024,
+                                          package['files']['destructibles/inventory.json']['sha256']),
+                                  64 * 1024 * 1024, 4_000_000, 12)
+    require(index.get('rule') == STATIC_INDEX_RULE, 'static index identity')
+    definitions = falling_definitions()
+    transforms = {(tuple(r['chunk']), r['instance']): r['transform'] for r in physics['instances']}
+    by_instance = {row['instance_id']: row for row in pkg_inventory['instances']}
+    taken = {row['instance_id'] for row in inventory['eligible']}
+    ambiguous = set(index['ambiguous_chunks'])
+    rows, excluded = [], []
+    for trigger in manifest['instances']:
+        source = by_instance[trigger['instance_id']]
+        require(source['family'] == 'fallingAtoms' and source['resource'] == trigger['resource'] and
+                source['instance'] == trigger['instance'] and source['chunk'] == trigger['chunk'], 'trigger/inventory identity')
+        definition = definitions.get(trigger['resource'])
+        require(definition is not None, 'falling atom definition missing')
+        fields = definition['fields']
+        reasons = []
+        if trigger['instance_id'] in taken:
+            reasons.append('instance_already_admitted_as_other_kind')
+        if trigger['blocking_physics_triangles'] or trigger['blocking_projectile_triangles']:
+            reasons.append('falling_atom_blocking_geometry_unknown')
+        if trigger['triangles'] == 0:
+            reasons.append('falling_atom_no_trigger_geometry')
+        if trigger['triangles'] > MAX_TRIGGER_TRIANGLES_PER_OBJECT:
+            reasons.append('falling_atom_trigger_over_bound')
+        if '/preferredTiltDirections[1]' in fields:
+            reasons.append('falling_atom_preferred_tilt_unsupported')
+        health = definition['reference_health']
+        if type(health) is not int or not 1 <= health <= 65535:
+            reasons.append('reference_health_outside_bound')
+        kdc = fields.get('/kineticDamageCorrection[1]', 0.0)
+        if type(kdc) is str:
+            kdc = float(kdc)
+        if type(kdc) not in (int, float) or not math.isfinite(kdc) or not 0 <= kdc <= 8:
+            reasons.append('kinetic_damage_correction_outside_bound')
+        chunk_id = source['chunk_id']
+        native_index = None
+        if chunk_id in ambiguous:
+            reasons.append('ambiguous_static_native_index_rule')
+        else:
+            chunk = index['chunks'].get(str(chunk_id))
+            identity = (trigger['resource'], dc.matrix_bits(transforms[tuple(trigger['chunk']), trigger['instance']]))
+            matches = [item['index'] for item in chunk['items']
+                       if (item['resource'], dc.matrix_bits(transforms[tuple(chunk['chunk']), item['instance']])) == identity]
+            if len(matches) != 1:
+                reasons.append('duplicate_resource_matrix_in_chunk_static_index_ambiguous')
+            elif matches[0] > 255:
+                reasons.append('falling_atom_index_over_255')
+            else:
+                native_index = matches[0]
+        if reasons:
+            excluded.append({'instance_id': trigger['instance_id'], 'resource': trigger['resource'], 'reasons': reasons})
+            continue
+        scaled = int(math.ceil(trigger['scale'] * trigger['scale'] * health))
+        require(1 <= scaled <= 65535, 'scaled health bound')
+        identity = {'schema': 'destructible-object-source.v4-falling-atom', 'map': inventory['map'],
+                    'kind': 'falling_atom', 'destructibles_sha256': dc.DESTRUCTIBLES_SHA256,
+                    'trigger_manifest_sha256': manifest_sha, 'policy': FALLING_ATOM_POLICY,
+                    'instance': {k: trigger[k] for k in ('instance_id', 'chunk', 'chunk_id', 'instance', 'resource',
+                                                          'first_triangle', 'triangles', 'scale')},
+                    'reference_health': health, 'kinetic_damage_correction': float(kdc)}
+        rows.append({'object_id': trigger['instance_id'] + 1, 'instance_id': trigger['instance_id'],
+                     'chunk_id': chunk_id, 'native_index': native_index, 'resource': trigger['resource'],
+                     'health': health, 'material_kind': 0,
+                     'projectile_first_triangle': source['projectile_first_triangle'], 'projectile_triangle_count': 0,
+                     'physics_first_triangle': source['physics_first_triangle'], 'physics_triangle_count': 0,
+                     'object_revision': sha(dc.canonical(identity)), 'kind': 'falling_atom',
+                     'ram_response': FALLING_ATOM_DOMAIN_RESPONSE, 'scaled_health': scaled,
+                     'kinetic_damage_correction': float(kdc),
+                     'trigger_first_triangle': trigger['first_triangle'], 'trigger_triangle_count': trigger['triangles']})
+    per_chunk = Counter(row['chunk_id'] for row in rows)
+    require(max(per_chunk.values(), default=0) <= MAX_COLUMNS_PER_CHUNK, 'fallenColumns per-area budget')
+    return rows, excluded, manifest, manifest_sha, files
+
+
+def join_falling_atoms(inventory, package_dir, trigger_dir, manifest_raw, worker_raw):
+    """Domain v8 / worker v9: the static domain v7 / worker v8 catalog plus falling atoms."""
+    manifest = json.loads(manifest_raw)
+    worker = json.loads(worker_raw)
+    require(manifest['version'] == 7 and 'native_index_source' in manifest and worker['version'] == 8,
+            'falling atoms extend the static-index angular catalog only')
+    rows, excluded, triggers, triggers_sha, files = falling_atom_rows(inventory, package_dir, trigger_dir)
+    require(rows, 'no eligible falling atoms')
+    limit = inventory.get('area_chunk_limit', MAX_CHUNKS)
+    chunks = sorted(set(manifest['area_chunks']) | {row['chunk_id'] for row in rows})
+    require(len(chunks) <= limit, 'area chunk budget with falling atoms')
+    require(len(manifest['objects']) + len(rows) <= MAX_OBJECTS, 'catalog object bound with falling atoms')
+    manifest['objects'] = sorted(manifest['objects'] + rows, key=lambda row: row['object_id'])
+    ids = [row['object_id'] for row in manifest['objects']]
+    require(ids == sorted(set(ids)), 'unique object IDs with falling atoms')
+    manifest.update(version=8, falling_atom_policy=FALLING_ATOM_POLICY, area_chunks=chunks)
+    worker['objects'] = sorted(worker['objects'] + [
+        {'object_id': row['object_id'], 'instance_id': row['instance_id'], 'kind': 'falling_atom',
+         'first_triangle': row['trigger_first_triangle'], 'triangle_count': row['trigger_triangle_count'],
+         'object_revision': row['object_revision'], 'ram_energy_j': 0, 'ram_response': FALLING_ATOM_WORKER_RESPONSE}
+        for row in rows], key=lambda row: row['object_id'])
+    worker.update(version=9, falling_atom_triggers={key: {k: triggers[key][k] for k in ('file', 'format', 'stride', 'count', 'bytes', 'sha256')}
+                                                     for key in ('vertices', 'triangles')})
+    worker_raw = dc.canonical(worker) + b'\n'
+    dc.json_value(worker_raw, MAX_WORKER_BYTES, 64000, 12)
+    manifest['worker'] = {'file': 'physics-removals.json', 'sha256': sha(worker_raw)}
+    manifest_raw = dc.canonical(manifest) + b'\n'
+    dc.json_value(manifest_raw, MAX_MANIFEST_BYTES, 64000, 12)
+    report = {'falling_atoms': len(rows), 'falling_atom_exclusions': dict(Counter(r for e in excluded for r in e['reasons'])),
+              'trigger_manifest_sha256': triggers_sha, 'excluded': excluded}
+    return manifest_raw, worker_raw, files, report
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', required=True, help='fresh output directory under configured local/')
@@ -389,7 +554,11 @@ def main(argv=None):
     parser.add_argument('--static-index', action='store_true',
                         help='join the package static native index (domain v7 / worker v8, INFERRED); '
                         'never mixed with native exports')
+    parser.add_argument('--falling-atoms', metavar='TRIGGER_DIR',
+                        help='MAPS-02: add fallingAtoms from a tools/map_package.py triggers output '
+                        '(domain v8 / worker v9; requires --static-index)')
     args = parser.parse_args(argv)
+    require(not args.falling_atoms or args.static_index, '--falling-atoms requires --static-index')
     require(len(args.native_export) == len(args.native_sha256) <= 2,
             'zero, one or two paired native exports/hashes required')
     require(not args.static_index or (args.package and not args.native_export and not
@@ -414,8 +583,12 @@ def main(argv=None):
     else:
         inventory = build_inventory()
     manifest_raw = worker_raw = None
+    falling = None
     if args.static_index:
         manifest_raw, worker_raw = join_static(inventory, args.package)
+        if args.falling_atoms:
+            manifest_raw, worker_raw, trigger_files, falling = join_falling_atoms(
+                inventory, args.package, args.falling_atoms, manifest_raw, worker_raw)
     elif args.native_export:
         local = dc.configured_paths()['local_artifacts_root']
         exports = []
@@ -440,9 +613,16 @@ def main(argv=None):
     if manifest_raw is not None:
         dc.save(output/'manifest.json', manifest_raw)
         dc.save(output/'physics-removals.json', worker_raw)
+        if falling is not None:
+            for name, raw in sorted(trigger_files.items()):
+                dc.save(output/name, raw)
+            dc.save(output/'falling-atoms.json', dc.canonical(falling) + b'\n')
         result.update(status='SOURCE_AND_STATIC_INDEX_JOIN_PASS_NATIVE_NOT_RUN' if args.static_index
                       else 'SOURCE_AND_NATIVE_JOIN_PASS_VISUALS_NOT_RUN',
                       manifest_sha256=sha(manifest_raw), worker_sha256=sha(worker_raw))
+        if falling is not None:
+            result.update(falling_atoms=falling['falling_atoms'], falling_atom_exclusions=falling['falling_atom_exclusions'],
+                          falling_atom_policy=FALLING_ATOM_POLICY)
     dc.save(output/'receipt.json', dc.canonical(result) + b'\n')
     print(json.dumps(result, sort_keys=True))
     return 0

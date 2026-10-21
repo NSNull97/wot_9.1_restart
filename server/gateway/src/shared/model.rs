@@ -138,6 +138,20 @@ pub struct TerrainContact {
     pub direction: [f32; 3],
 }
 
+/// MAPS-02 overlap of one hull with a non-blocking falling atom trigger, from
+/// the private IPC7 worker. Only the catalog object ID, the manifold geometry,
+/// the pre-step hull velocity and the server-pinned profile mass enter.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColumnContactInput {
+    pub object_id: u32,
+    pub shooter: usize,
+    pub substep: u8,
+    pub point: [f32; 3],
+    pub normal: [f32; 3],
+    pub velocity: [f32; 3],
+    pub mass_kg: f32,
+}
+
 /// A bounded contact candidate imported from one private physics worker. The
 /// worker's body IDs never cross this boundary; only the hash-bound catalog
 /// object ID and validated contact geometry enter the domain state.
@@ -679,7 +693,7 @@ impl World {
         if !state.catalog.contacts { return Err(bad()); }
         let mut trace=self.impact.clone();
         let mut sequences=self.contact_sequences;
-        if state.catalog.version==7 {
+        if matches!(state.catalog.version,7|8) {
             let mut frames:[Option<Arc<ram_proof::ContextFrame>>;MAX_ACTORS]=std::array::from_fn(|_|None);
             let mut indices:[Vec<usize>;MAX_ACTORS]=std::array::from_fn(|_|Vec::new());
             for contact in contacts {
@@ -709,6 +723,26 @@ impl World {
         self.fragiles=Some(state);
         self.impact=trace;
         self.contact_sequences=sequences;
+        Ok(outcomes)
+    }
+    /// Atomic like apply_vehicle_contacts: every contact is decided by the
+    /// domain rule and replayed by the trace on clones before either commits.
+    pub fn apply_column_contacts(&mut self, contacts:&[ColumnContactInput])->io::Result<Vec<fragiles::VehicleContact>> {
+        if contacts.len()>self.expected_actors*16 { return Err(bad()); }
+        if contacts.is_empty() { return Ok(Vec::new()); }
+        let mut state=self.fragiles.as_ref().ok_or_else(|| bad())?.clone();
+        if state.catalog.version!=8 { return Err(bad()); }
+        let mut trace=self.impact.clone();
+        let mut outcomes=Vec::new();
+        for c in contacts {
+            if c.shooter>=self.expected_actors { return Err(bad()); }
+            if let Some(event)=state.column_contact(c.object_id,c.shooter,self.tick,c.substep,c.point,c.normal,c.velocity,c.mass_kg)? {
+                trace.vehicle_contact(self.id,event.tick,&event)?;
+                outcomes.push(event);
+            }
+        }
+        self.fragiles=Some(state);
+        self.impact=trace;
         Ok(outcomes)
     }
     pub fn apply_tank_contacts(&mut self, contacts:&[TankContactInput], sequence:u32, tick:u32)->io::Result<()> {
@@ -1528,6 +1562,28 @@ pub(super) mod tests {
         assert_eq!(events.len(),1);
         assert_eq!(w.fragiles.as_ref().unwrap().removed_ids(),vec![1513]);
         assert_eq!(w.impact.events().iter().filter(|e|matches!(e,impact::Event::VehicleContact{..})).count(),1);
+    }
+    #[test]
+    fn column_contacts_commit_atomically_and_trace_replays_the_same_fall() {
+        let now=Instant::now();let mut w=destructible_world(now);w.destructible=None;
+        let catalog=super::super::fragiles::column_tests::column_catalog();
+        catalog.bind_geometry(w.terrain.as_ref().unwrap()).unwrap();
+        w.impact.bind_fragiles(catalog.clone()).unwrap();w.fragiles=Some(fragiles::State::new(catalog));
+        let before=(w.fragiles.clone(),w.impact.clone());
+        let fall=ColumnContactInput{object_id:1601,shooter:0,substep:2,point:[0.;3],normal:[0.,0.,1.],velocity:[0.,0.,5.],mass_kg:68190.};
+        let bad_row=ColumnContactInput{object_id:1513,..fall.clone()};
+        assert!(w.apply_column_contacts(&[fall.clone(),bad_row]).is_err());
+        assert_eq!((w.fragiles.clone(),w.impact.clone()),before);
+        let slow=ColumnContactInput{velocity:[0.,0.,1.],..fall.clone()};
+        assert!(w.apply_column_contacts(&[slow]).unwrap().is_empty());
+        let events=w.apply_column_contacts(&[fall.clone()]).unwrap();
+        assert_eq!(events.len(),1);assert_eq!(events[0].fallen_column,Some(0x0782));
+        assert_eq!(w.scene_version(),1);
+        assert_eq!(w.impact.events().iter().filter(|e|matches!(e,impact::Event::VehicleContact{..})).count(),1);
+        // A forged trace row (proof on a column, or a different packed value) is refused.
+        let mut forged=events[0].clone();forged.fallen_column=Some(0x0783);
+        let mut trace=before.1.clone();assert!(trace.vehicle_contact(w.id,forged.tick,&forged).is_err());
+        assert!(w.apply_column_contacts(&[fall]).unwrap().is_empty());
     }
     #[test]fn imported_object_partial_health_preserves_geometry_until_death_and_next_shell_passes(){
         let now=Instant::now();let mut w=fragile_world(now,Some(32));

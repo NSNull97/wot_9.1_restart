@@ -40,6 +40,26 @@ const FENCE_TOTAL_RESOURCES:[&str;7]=[
 /// flat-ground policy. Zero locks the tree upright. Terrain/obstacle-specific
 /// limits require tree root/height sampling and are not implemented here.
 pub const TREE_FALL_FLAT_GROUND_PITCH:f64=std::f64::consts::FRAC_PI_2;
+/// MAPS-02 explicit test_lab ram rule for fallingAtoms (poles, lamps, signs).
+/// VERIFIED formula of the original client predicate
+/// Vehicle._isDestructibleMayBeBroken: a column breaks when
+/// ceil(s^2*health) < 0.5*m*v^2*0.00015*(m/unitVehicleMass)^kineticDamageCorrection.
+/// Whether the closed 0.9.1 server used the same law, and which speed the
+/// native caller passes, are UNKNOWN; |v| of the hull is a project choice.
+pub const FALLING_ATOM_POLICY:&str="test_lab-falling-atom-client-break-predicate-v1";
+pub const FALLING_ATOM_RAM_RESPONSE:&str="client_break_predicate";
+/// destructibles.xml unitVehicleMass (VERIFIED, bd39e304...).
+pub const UNIT_VEHICLE_MASS_KG:f64=35000.;
+/// Vehicle._isDestructibleMayBeBroken kinetic factor (VERIFIED bytecode literal).
+pub const KINETIC_DAMAGE_FACTOR:f64=0.00015;
+pub const MAX_TRIGGER_TRIANGLES_PER_OBJECT:u32=256;
+pub const MAX_TRIGGER_TRIANGLES:u32=262_144;
+/// Below this horizontal speed no fall direction exists; the contact is ignored.
+pub const COLUMN_MIN_HORIZONTAL_SPEED_MPS:f64=0.1;
+pub fn column_breaks(scaled_health:u32,kinetic_damage_correction:f64,mass_kg:f64,speed_squared:f64)->bool{
+    let energy=0.5*mass_kg*speed_squared*KINETIC_DAMAGE_FACTOR*(mass_kg/UNIT_VEHICLE_MASS_KG).powf(kinetic_damage_correction);
+    energy.is_finite()&&f64::from(scaled_health)<energy
+}
 pub const DEFINITIONS_SHA:&str="bd39e3047b435fc8917ca2e7c3dc82de4a5a03cc164054af83395af8b479fdd5";
 pub const PHYSICS_SHA:&str="ea6ef22aed0fdd4e4826500c280a616737f8990ce7ab7cd808b9382227ec5ffd";
 
@@ -49,11 +69,15 @@ pub struct Object {
     pub resource:String,pub health:u32,pub material_kind:u8,
     pub projectile_first_triangle:u32,pub projectile_triangle_count:u32,
     pub physics_first_triangle:u32,pub physics_triangle_count:u32,pub object_revision:String,pub kind:ObjectKind,
+    /// MAPS-02: only for ObjectKind::FallingAtom.
+    pub falling:Option<FallingAtom>,
 }
+#[derive(Clone,Debug,PartialEq)]
+pub struct FallingAtom {pub scaled_health:u32,pub kinetic_damage_correction:f64,pub trigger_first_triangle:u32,pub trigger_triangle_count:u32}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum ObjectKind { Fragile, Tree, MovementFragile }
+pub enum ObjectKind { Fragile, Tree, MovementFragile, FallingAtom }
 impl ObjectKind {
-    pub fn worker_kind(self)->&'static str { match self {Self::Tree=>"tree",Self::Fragile|Self::MovementFragile=>"fragile"} }
+    pub fn worker_kind(self)->&'static str { match self {Self::Tree=>"tree",Self::Fragile|Self::MovementFragile=>"fragile",Self::FallingAtom=>"falling_atom"} }
     fn fragile(self)->bool { matches!(self,Self::Fragile|Self::MovementFragile) }
 }
 #[derive(Clone,Debug,PartialEq)]
@@ -81,9 +105,15 @@ impl Catalog {
         // A v7 catalog states its native index source: recorded passive
         // native exports, or the explicit static chunk-order rule of a
         // tools/map_package.py package (INFERRED; never presented as native).
-        let static_index=v["version"].as_u64()==Some(7)&&v.get("native_index_source").is_some();
+        let static_index=matches!(v["version"].as_u64(),Some(7|8))&&v.get("native_index_source").is_some();
+        if v["version"].as_u64()==Some(8)&&!static_index{return Err(bad());}
         if static_index{
+            if v["version"].as_u64()==Some(8){
+                fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_index_source","worker","objects","contacts","area_chunks","ram_policy","falling_atom_policy"])?;
+                if v["falling_atom_policy"]!=FALLING_ATOM_POLICY{return Err(bad());}
+            }else{
             fields(&v,&["version","profile","map","destructibles_sha256","physics_manifest_sha256","projectile_manifest_sha256","native_index_source","worker","objects","contacts","area_chunks","ram_policy"])?;
+            }
             let source=&v["native_index_source"];fields(source,&["rule","static_index_sha256","classification"])?;
             if source["rule"]!=STATIC_INDEX_RULE||source["classification"]!=STATIC_INDEX_CLASSIFICATION{return Err(bad());}
             hash(&source["static_index_sha256"])?;
@@ -97,7 +127,7 @@ impl Catalog {
         let map=MapId::from_asset(v["map"].as_str().ok_or_else(|| bad())?)?;
         let profile=map.spec();
         let version=v["version"].as_u64().ok_or_else(|| bad())?;
-        if !(1..=7).contains(&version)||v["profile"]!="test_lab"||v["destructibles_sha256"]!=DEFINITIONS_SHA
+        if !(1..=8).contains(&version)||v["profile"]!="test_lab"||v["destructibles_sha256"]!=DEFINITIONS_SHA
             ||v["physics_manifest_sha256"]!=profile.physics_manifest_sha256||v["projectile_manifest_sha256"]!=profile.projectile_manifest_sha256{return Err(bad());}
         if version==1 && bytes.len()>131072{return Err(bad());}
         if version<3 { crate::map_drive_worker091::json_catalog(bytes,1024*1024)?; }
@@ -121,17 +151,24 @@ impl Catalog {
         let mut objects=Vec::with_capacity(rows.len());
         for row in rows {
             let object_fields=["object_id","instance_id","chunk_id","native_index","resource","health","material_kind","projectile_first_triangle","projectile_triangle_count","physics_first_triangle","physics_triangle_count","object_revision"];
-            if matches!(version,6|7) {fields(row,&["object_id","instance_id","chunk_id","native_index","resource","health","material_kind","projectile_first_triangle","projectile_triangle_count","physics_first_triangle","physics_triangle_count","object_revision","kind","ram_response"])?;}
+            if version==8&&row.get("kind").and_then(Value::as_str)==Some("falling_atom") {fields(row,&["object_id","instance_id","chunk_id","native_index","resource","health","material_kind","projectile_first_triangle","projectile_triangle_count","physics_first_triangle","physics_triangle_count","object_revision","kind","ram_response","scaled_health","kinetic_damage_correction","trigger_first_triangle","trigger_triangle_count"])?;}
+            else if matches!(version,6|7|8) {fields(row,&["object_id","instance_id","chunk_id","native_index","resource","health","material_kind","projectile_first_triangle","projectile_triangle_count","physics_first_triangle","physics_triangle_count","object_revision","kind","ram_response"])?;}
             else if contacts{fields(row,&["object_id","instance_id","chunk_id","native_index","resource","health","material_kind","projectile_first_triangle","projectile_triangle_count","physics_first_triangle","physics_triangle_count","object_revision","kind"])?;}else{fields(row,&object_fields)?;}
             let kind=match row.get("kind") {
                 None if version==1=>ObjectKind::Fragile,
                 Some(Value::String(value)) if value=="tree"=>ObjectKind::Tree,
                 Some(Value::String(value)) if value=="fragile"=>ObjectKind::Fragile,
                 Some(Value::String(value)) if value=="movement_fragile"&&version>=3=>ObjectKind::MovementFragile,
+                Some(Value::String(value)) if value=="falling_atom"&&version==8=>ObjectKind::FallingAtom,
                 _=>return Err(bad()),
             };
             if contacts && row.get("kind").is_none(){return Err(bad());}
-            if matches!(version,6|7) && row["ram_response"]!=if kind==ObjectKind::MovementFragile{if version==7{ram_proof::FALLBACK}else{"total_linear"}}else{"normal_linear"}{return Err(bad());}
+            if matches!(version,6|7|8) && row["ram_response"]!=if kind==ObjectKind::FallingAtom{FALLING_ATOM_RAM_RESPONSE}else if kind==ObjectKind::MovementFragile{if version>=7{ram_proof::FALLBACK}else{"total_linear"}}else{"normal_linear"}{return Err(bad());}
+            let falling=if kind==ObjectKind::FallingAtom {
+                let kdc=row["kinetic_damage_correction"].as_f64().filter(|k|k.is_finite()&&(0. ..=8.).contains(k)).ok_or_else(|| bad())?;
+                Some(FallingAtom{scaled_health:uint(&row["scaled_health"])?,kinetic_damage_correction:kdc,
+                    trigger_first_triangle:uint(&row["trigger_first_triangle"])?,trigger_triangle_count:uint(&row["trigger_triangle_count"])?})
+            }else{None};
             let object=Object{object_id:uint(&row["object_id"])?,instance_id:uint(&row["instance_id"])?,
                 chunk_id:u16::try_from(uint(&row["chunk_id"])?).map_err(|_|bad())?,native_index:u8::try_from(uint(&row["native_index"])?).map_err(|_|bad())?,
                 resource:text(&row["resource"],240)?,health:{let health=uint(&row["health"])?;
@@ -139,7 +176,7 @@ impl Catalog {
                     health},
                 material_kind:u8::try_from(uint(&row["material_kind"])?).map_err(|_|bad())?,
                 projectile_first_triangle:uint(&row["projectile_first_triangle"])?,projectile_triangle_count:uint(&row["projectile_triangle_count"])?,
-                physics_first_triangle:uint(&row["physics_first_triangle"])?,physics_triangle_count:uint(&row["physics_triangle_count"])?,object_revision:hash(&row["object_revision"])?,kind};
+                physics_first_triangle:uint(&row["physics_first_triangle"])?,physics_triangle_count:uint(&row["physics_triangle_count"])?,object_revision:hash(&row["object_revision"])?,kind,falling};
             objects.push(object);
         }
         let catalog=Self{map,sha256:sha.into(),worker_file,worker_sha256,contacts,objects,version:version as u8,area_chunks};catalog.validate()?;Ok(catalog)
@@ -152,8 +189,25 @@ impl Catalog {
             ||self.area_chunks.windows(2).any(|w|w[0]>=w[1])
             ||self.area_chunks.iter().any(|c|!profile.contains_chunk_id(*c))) {return Err(bad());}
         for (i,o) in self.objects.iter().enumerate(){
-            if matches!(self.version,6|7) && o.kind==ObjectKind::MovementFragile && !FENCE_TOTAL_RESOURCES.contains(&o.resource.as_str()) {return Err(bad());}
+            if matches!(self.version,6|7|8) && o.kind==ObjectKind::MovementFragile && !FENCE_TOTAL_RESOURCES.contains(&o.resource.as_str()) {return Err(bad());}
+            if (o.kind==ObjectKind::FallingAtom)!=o.falling.is_some() {return Err(bad());}
+            if let Some(f)=&o.falling {
+                // Original masks 18/128 ignore these materials: no blocking or
+                // projectile geometry, only the separate non-blocking trigger.
+                if self.version!=8||!(1..=65535).contains(&f.scaled_health)||!(1..=MAX_TRIGGER_TRIANGLES_PER_OBJECT).contains(&f.trigger_triangle_count)
+                    ||f.trigger_first_triangle.checked_add(f.trigger_triangle_count).is_none_or(|end|end>MAX_TRIGGER_TRIANGLES)
+                    ||o.physics_triangle_count!=0||o.projectile_triangle_count!=0||o.material_kind!=0
+                    ||!o.resource.starts_with("content/")||!o.resource.ends_with(".model")||o.resource.contains("..")||o.resource.contains('\\')
+                    ||o.instance_id as usize>=profile.instance_count||o.object_id!=o.instance_id+1||o.health==0
+                    ||!profile.contains_chunk_id(o.chunk_id)||self.area_chunks.binary_search(&o.chunk_id).is_err() {return Err(bad());}
+                for old in &self.objects[..i]{
+                    if (old.chunk_id,old.native_index)==(o.chunk_id,o.native_index)
+                        ||old.falling.as_ref().is_some_and(|g|ranges_overlap(g.trigger_first_triangle,g.trigger_triangle_count,f.trigger_first_triangle,f.trigger_triangle_count)){return Err(bad());}
+                }
+                continue;
+            }
             let (resource_ok,material_ok,projectile_ok)=match o.kind {
+                ObjectKind::FallingAtom=>return Err(bad()),
                 ObjectKind::Fragile=>(o.resource.starts_with("content/")&&o.resource.ends_with(".model"),o.material_kind==73,o.projectile_triangle_count>0),
                 ObjectKind::Tree=>(o.resource.starts_with("speedtree/")&&o.resource.ends_with(".spt"),o.material_kind==71,o.projectile_triangle_count==0),
                 ObjectKind::MovementFragile=>(o.resource.starts_with("content/")&&o.resource.ends_with(".model"),o.material_kind==73,o.projectile_triangle_count==0),
@@ -173,7 +227,8 @@ impl Catalog {
         }
         if self.version>=3 { for chunk in &self.area_chunks {
             if self.objects.iter().filter(|o|o.chunk_id==*chunk&&o.kind.fragile()).count()>125
-                ||self.objects.iter().filter(|o|o.chunk_id==*chunk&&o.kind==ObjectKind::Tree).count()>62 {return Err(bad());}
+                ||self.objects.iter().filter(|o|o.chunk_id==*chunk&&o.kind==ObjectKind::Tree).count()>62
+                ||self.objects.iter().filter(|o|o.chunk_id==*chunk&&o.kind==ObjectKind::FallingAtom).count()>super::destructible_wire::MAX_COLUMNS_PER_AREA {return Err(bad());}
         }}
         Ok(())
     }
@@ -181,7 +236,7 @@ impl Catalog {
     /// New catalogs validate this exact discriminator at parse time. Deriving
     /// it from the retained kind keeps older in-memory fixtures unchanged.
     pub fn ram_response(&self,object:&Object)->Option<&'static str>{
-        (self.version>=6).then_some(if object.kind==ObjectKind::MovementFragile{if self.version==7{ram_proof::FALLBACK}else{"total_linear"}}else{"normal_linear"})
+        (self.version>=6).then_some(if object.kind==ObjectKind::FallingAtom{FALLING_ATOM_RAM_RESPONSE}else if object.kind==ObjectKind::MovementFragile{if self.version>=7{ram_proof::FALLBACK}else{"total_linear"}}else{"normal_linear"})
     }
     pub fn contacts(&self)->bool { self.contacts }
     pub fn chunks(&self)->Vec<u16>{if self.version>=3{return self.area_chunks.clone();}let mut v=self.objects.iter().map(|o|o.chunk_id).collect::<Vec<_>>();v.sort_unstable();v.dedup();v}
@@ -212,16 +267,18 @@ pub struct Damage {pub object_id:u32,pub instance_id:u32,pub object_revision:Str
     pub health_before:u32,pub health_after:u32,pub scene_before:u32,pub scene_after:u32,pub hit:terrain::Hit}
 #[derive(Clone,Debug,PartialEq)]
 pub struct VehicleContact {pub object_id:u32,pub instance_id:u32,pub object_revision:String,pub shooter:usize,pub tick:u32,pub substep:u8,
-    pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3],pub mass_kg:f32,pub kind:String,pub scene_before:u32,pub scene_after:u32,pub fallen_tree:Option<u32>,pub proof:Option<ram_proof::ContactProof>}
+    pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3],pub mass_kg:f32,pub kind:String,pub scene_before:u32,pub scene_after:u32,pub fallen_tree:Option<u32>,pub proof:Option<ram_proof::ContactProof>,
+    /// MAPS-02 encodeFallenColumn value of a falling atom sensor contact.
+    pub fallen_column:Option<u16>}
 #[derive(Clone,Debug,PartialEq)]
-pub struct State {pub catalog:Arc<Catalog>,health:Vec<u32>,fallen:Vec<Option<u32>>,pub events:Vec<Damage>,pub vehicle_events:Vec<VehicleContact>,roster:Option<usize>,ammo_capacity:u16}
+pub struct State {pub catalog:Arc<Catalog>,health:Vec<u32>,fallen:Vec<Option<u32>>,columns:Vec<Option<u16>>,pub events:Vec<Damage>,pub vehicle_events:Vec<VehicleContact>,roster:Option<usize>,ammo_capacity:u16}
 impl State {
     pub fn failure_snapshot(&self)->serde_json::Value{
         serde_json::json!({"catalog_sha256":self.catalog.sha256,"scene_version":self.scene_version(),
             "objects":self.catalog.objects.iter().zip(self.health.iter().zip(&self.fallen))
                 .map(|(o,(health,fallen))|serde_json::json!({"object_id":o.object_id,"health":health,"fallen":fallen})).collect::<Vec<_>>()})
     }
-    pub fn new(catalog:Arc<Catalog>)->Self{Self{health:catalog.objects.iter().map(|o|o.health).collect(),fallen:vec![None;catalog.objects.len()],catalog,events:Vec::new(),vehicle_events:Vec::new(),roster:None,ammo_capacity:96}}
+    pub fn new(catalog:Arc<Catalog>)->Self{Self{health:catalog.objects.iter().map(|o|o.health).collect(),fallen:vec![None;catalog.objects.len()],columns:vec![None;catalog.objects.len()],catalog,events:Vec::new(),vehicle_events:Vec::new(),roster:None,ammo_capacity:96}}
     pub fn configure_roster(&mut self,count:usize)->io::Result<()>{
         if !(2..=super::model::MAX_ACTORS).contains(&count)||!self.events.is_empty()||!self.vehicle_events.is_empty()||self.scene_version()!=0{return Err(bad());}
         self.roster=Some(count);Ok(())
@@ -253,6 +310,8 @@ impl State {
             Some((u16::from(o.native_index)<<8)|u16::from(shot&&!ram))
         }).collect::<Vec<_>>();values.sort_unstable();values
     }
+    pub fn native_fallen_columns(&self,chunk:u16)->Vec<u16>{let mut values=self.catalog.objects.iter().zip(&self.columns)
+        .filter_map(|(o,c)|if o.chunk_id==chunk{*c}else{None}).collect::<Vec<_>>();values.sort_unstable();values}
     pub fn native_fallen_trees(&self,chunk:u16)->Vec<u32>{let mut values=self.catalog.objects.iter().zip(&self.fallen)
         .filter_map(|(o,f)|if o.chunk_id==chunk{*f}else{None}).collect::<Vec<_>>();values.sort_unstable();values}
     /// Reconstruct the exact worker scene at a historical committed boundary.
@@ -273,7 +332,7 @@ impl State {
     }
     pub fn validate_proof(&self,proof:&ram_proof::ContactProof)->io::Result<()> {
         let frame=&proof.frame;let c=&frame.context;c.validate()?;
-        if self.catalog.version!=7||c.catalog_sha256!=self.catalog.worker_sha256||c.domain_sha256!=self.catalog.sha256
+        if !matches!(self.catalog.version,7|8)||c.catalog_sha256!=self.catalog.worker_sha256||c.domain_sha256!=self.catalog.sha256
             ||c.scene_sha256!=self.historical_scene_hash(c.scene_version)? {return Err(bad());}
         frame.proof.validate(|id|self.catalog.objects.iter().find(|o|o.object_id==id).map(|o|
             if o.kind==ObjectKind::MovementFragile{ram_proof::Allowed::Fallback}else{ram_proof::Allowed::Normal}))?;
@@ -296,7 +355,7 @@ impl State {
         self.ram_contact_with_proof(object_id,shooter,tick,substep,point,normal,velocity,mass_kg,kind,None)
     }
     pub fn ram_contact_with_proof(&mut self,object_id:u32,shooter:usize,tick:u32,substep:u8,point:[f32;3],normal:[f32;3],velocity:[f32;3],mass_kg:f32,kind:String,proof:Option<ram_proof::ContactProof>)->io::Result<Option<VehicleContact>>{
-        if self.catalog.version!=7&&proof.is_some(){return Err(bad());}
+        if !matches!(self.catalog.version,7|8)&&proof.is_some(){return Err(bad());}
         if let Some(p)=&proof {
             self.validate_proof(p)?;let r=p.receipt()?;let pre=p.frame.proof.witness(r.substep)?.pre;
             if p.frame.context.slot!=shooter||r.object_id!=object_id||r.substep!=substep||kind!="hull"
@@ -315,7 +374,8 @@ impl State {
             ||self.latest_tick().is_some_and(|last|last>tick){return Err(bad());}
         let index=self.catalog.objects.iter().position(|o|o.object_id==object_id).ok_or_else(|| bad())?;let object=&self.catalog.objects[index];
         if kind=="wheel" { return Ok(None); }
-        if self.catalog.version==7&&proof.is_none(){return Err(bad());}
+        if matches!(self.catalog.version,7|8)&&proof.is_none(){return Err(bad());}
+        if object.kind==ObjectKind::FallingAtom{return Err(bad());}
         let whole_response=self.catalog.version>=5;
         let total_response=matches!(self.catalog.ram_response(object),Some("total_linear")|Some(ram_proof::FALLBACK));
         let angular=proof.as_ref().is_some_and(|p|p.receipt().is_ok_and(|r|r.mode==ram_proof::Mode::Angular));
@@ -340,7 +400,35 @@ impl State {
             Some(super::destructible_wire::encode_fallen_tree(object.native_index,yaw,TREE_FALL_FLAT_GROUND_PITCH,speed)?)
         }else{None};
         self.health[index]=0;self.fallen[index]=fallen_tree;
-        let event=VehicleContact{object_id,instance_id:object.instance_id,object_revision:object.object_revision.clone(),shooter,tick,substep,point,normal,velocity,mass_kg,kind,scene_before:scene,scene_after:scene+1,fallen_tree,proof};self.vehicle_events.push(event.clone());Ok(Some(event))
+        let event=VehicleContact{object_id,instance_id:object.instance_id,object_revision:object.object_revision.clone(),shooter,tick,substep,point,normal,velocity,mass_kg,kind,scene_before:scene,scene_after:scene+1,fallen_tree,proof,fallen_column:None};self.vehicle_events.push(event.clone());Ok(Some(event))
+    }
+    /// MAPS-02 non-blocking sensor contact of a hull with a falling atom.
+    /// The worker reports the overlap only; this domain rule decides. The
+    /// sensor never changes tank motion, so no ram proof is involved.
+    pub fn column_contact(&mut self,object_id:u32,shooter:usize,tick:u32,substep:u8,point:[f32;3],normal:[f32;3],velocity:[f32;3],mass_kg:f32)->io::Result<Option<VehicleContact>>{
+        let speed_squared=velocity.iter().map(|v|f64::from(*v)*f64::from(*v)).sum::<f64>();
+        if self.catalog.version!=8||shooter>=self.actor_limit()||tick==0||!(1..=6).contains(&substep)
+            ||point.iter().chain(normal.iter()).chain(velocity.iter()).any(|v|!v.is_finite())
+            ||point.iter().any(|v|v.abs()>terrain::MAX_QUERY_COORDINATE)||speed_squared>625.
+            ||(normal.iter().map(|v|v*v).sum::<f32>()-1.).abs()>1e-3
+            ||!mass_kg.is_finite()||!(RAMMING_MIN_MASS_KG..=RAMMING_MAX_MASS_KG).contains(&mass_kg)
+            ||self.latest_tick().is_some_and(|last|last>tick){return Err(bad());}
+        let index=self.catalog.objects.iter().position(|o|o.object_id==object_id).ok_or_else(|| bad())?;
+        let object=&self.catalog.objects[index];
+        let falling=object.falling.as_ref().filter(|_|object.kind==ObjectKind::FallingAtom).ok_or_else(|| bad())?;
+        if self.health[index]==0||self.columns[index].is_some(){return Ok(None);}
+        let (vx,vz)=(f64::from(velocity[0]),f64::from(velocity[2]));
+        if (vx*vx+vz*vz).sqrt()<COLUMN_MIN_HORIZONTAL_SPEED_MPS
+            ||!column_breaks(falling.scaled_health,falling.kinetic_damage_correction,f64::from(mass_kg),speed_squared){return Ok(None);}
+        // Fall along the hull motion; client dir=(sin yaw,0,cos yaw) (VERIFIED).
+        // Speed buckets are the P06Q tree test_lab choice.
+        let speed=speed_squared.sqrt();let bucket=if speed>=8.{3.}else if speed>=4.{2.}else if speed>=1.{1.}else{0.};
+        let value=super::destructible_wire::encode_fallen_column(object.native_index,vx.atan2(vz),bucket)?;
+        let scene=self.scene_version();
+        self.health[index]=0;self.columns[index]=Some(value);
+        let event=VehicleContact{object_id,instance_id:object.instance_id,object_revision:object.object_revision.clone(),shooter,tick,substep,point,normal,velocity,mass_kg,
+            kind:"hull".into(),scene_before:scene,scene_after:scene+1,fallen_tree:None,proof:None,fallen_column:Some(value)};
+        self.vehicle_events.push(event.clone());Ok(Some(event))
     }
     pub fn contact(&mut self,shot:u32,shooter:usize,tick:u32,hit:terrain::Hit)->io::Result<Option<Damage>>{
         self.contact_for(VehicleKind::Ms1,shot,shooter,tick,hit)
@@ -372,3 +460,6 @@ impl State {
 #[cfg(test)]
 #[path="fragiles_tests.rs"]
 pub(crate) mod tests;
+#[cfg(test)]
+#[path="fragiles_column_tests.rs"]
+pub(crate) mod column_tests;

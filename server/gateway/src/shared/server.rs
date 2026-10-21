@@ -70,6 +70,9 @@ mod is7_real_tests;
 #[path="server_map_registry_real_tests.rs"]
 mod map_registry_real_tests;
 #[cfg(test)]
+#[path="server_falling_atom_real_tests.rs"]
+mod falling_atom_real_tests;
+#[cfg(test)]
 #[path="server_whole_fracture_real_tests.rs"]
 mod whole_fracture_real_tests;
 
@@ -1207,11 +1210,16 @@ pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_pa
 pub(super) fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::map_drive_worker091::CatalogSpec,map:MapId)->io::Result<()> {
     if catalog.map!=map||worker.map_id()!=map||catalog.worker_sha256!=worker.sha256()||catalog.contacts!=worker.contacts()
         ||worker.version()!=catalog.version+1||worker.entries().len()!=catalog.objects.len()
-        ||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|
+        ||worker.entries().iter().zip(&catalog.objects).any(|(a,b)|if let Some(f)=&b.falling {
+            // MAPS-02: the worker projects the separate trigger span, no energy.
+            a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=f.trigger_first_triangle
+            ||a.triangle_count()!=f.trigger_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=b.kind.worker_kind()
+            ||a.ram_response()!=Some(crate::map_drive_worker091::FALLING_ATOM_RESPONSE)||a.ram_energy_j()!=0
+        }else{
             a.object_id()!=b.object_id||a.instance_id()!=b.instance_id||a.first_triangle()!=b.physics_first_triangle
             ||a.triangle_count()!=b.physics_triangle_count||a.object_revision()!=b.object_revision||a.kind()!=b.kind.worker_kind()
             ||a.ram_response()!=catalog.ram_response(b)
-            ||a.ram_energy_j()!=if catalog.version>=5||catalog.version==4&&matches!(b.kind,super::fragiles::ObjectKind::MovementFragile){super::fragiles::RAMMING_MIN_ENERGY_J as u32}else{0}){return Err(model::bad());}
+            ||a.ram_energy_j()!=if catalog.version>=5||catalog.version==4&&matches!(b.kind,super::fragiles::ObjectKind::MovementFragile){super::fragiles::RAMMING_MIN_ENERGY_J as u32}else{0}}){return Err(model::bad());}
     Ok(())
 }
 
@@ -1938,6 +1946,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         if let Some(state)=&next_world.fragiles{
             let chunks=state.catalog.chunks();
             if c.tree_areas.len()!=chunks.len(){c.tree_areas=vec![Vec::new();chunks.len()];}
+            if c.column_areas.len()!=chunks.len(){c.column_areas=vec![Vec::new();chunks.len()];}
             for (i,chunk) in chunks.into_iter().enumerate(){
                 let indices=state.native_destroyed(chunk);
                 let values=state.native_fragile_values(chunk);
@@ -1951,6 +1960,12 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     if !area_ready||!c.tree_areas[i].iter().all(|id|trees.contains(id)){return Err(model::bad());}
                     next.outbox.push_back(super::destructible_wire::area_update_trees(i,&trees)?);c.tree_areas[i]=trees.clone();
                     println!("SHARED_TREE_PUBLICATION battle={} session={} chunk={} entity={} fallen_trees={:?} scene_version={}",next_world.id,s.id,chunk,super::destructible_wire::area_id(i)?,trees,next_world.scene_version());
+                }
+                let columns=state.native_fallen_columns(chunk);
+                if c.column_areas[i]!=columns {
+                    if !area_ready||!c.column_areas[i].iter().all(|v|columns.contains(v)){return Err(model::bad());}
+                    next.outbox.push_back(super::destructible_wire::area_update_columns(i,&columns)?);c.column_areas[i]=columns.clone();
+                    println!("SHARED_COLUMN_PUBLICATION battle={} session={} chunk={} entity={} fallen_columns={:?} scene_version={}",next_world.id,s.id,chunk,super::destructible_wire::area_id(i)?,columns,next_world.scene_version());
                 }
             }
         }

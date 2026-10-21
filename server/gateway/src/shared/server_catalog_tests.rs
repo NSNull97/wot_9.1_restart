@@ -33,7 +33,7 @@ fn fixture(now:Instant)->(World,Arc<Pool>,CatalogSpec){
             resource:row["resource"].as_str().unwrap().into(),health:row["reference_health"].as_u64().unwrap() as u32,material_kind:73,
             projectile_first_triangle:row["projectile_first_triangle"].as_u64().unwrap() as u32,
             projectile_triangle_count:row["projectile_triangle_count"].as_u64().unwrap() as u32,
-            physics_first_triangle:worker.first_triangle(),physics_triangle_count:worker.triangle_count(),object_revision:worker.object_revision().into(),kind:fragiles::ObjectKind::Fragile}
+            physics_first_triangle:worker.first_triangle(),physics_triangle_count:worker.triangle_count(),object_revision:worker.object_revision().into(),kind:fragiles::ObjectKind::Fragile,falling:None}
     }).collect();
     let catalog=Arc::new(fragiles::Catalog{version:1,area_chunks:Vec::new(),map:crate::map_profile091::MapId::Karelia,sha256:INVENTORY_SHA.into(),worker_file:"physics-removals.json".into(),worker_sha256:WORKER_CATALOG_SHA.into(),contacts:false,objects});
     let mut world=World::new(913,now).unwrap();world.bind_geometry(Arc::new(geometry::tests::bundle())).unwrap();

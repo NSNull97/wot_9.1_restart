@@ -10,6 +10,14 @@ pub const MAX_CONTACT_CATALOG_OBJECTS:usize=1024;
 pub const MAX_CONTACT_REMOVED_OBJECTS:usize=1024;
 pub const MAX_EXTENDED_CATALOG_OBJECTS:usize=2048;
 pub const MAX_EXTENDED_REMOVED_OBJECTS:usize=2048;
+/// MAPS-02 worker catalog9: catalog8 plus non-blocking falling atom triggers.
+pub const FALLING_ATOM_RESPONSE:&str="sensor_trigger";
+pub const MAX_TRIGGER_TRIANGLES:u64=262_144;
+pub const MAX_TRIGGER_TRIANGLES_PER_OBJECT:u64=256;
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub struct TriggerPart {pub file:String,pub sha256:String,pub count:u32}
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub struct TriggerSpec {pub vertices:TriggerPart,pub triangles:TriggerPart}
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct CatalogEntry {object_id:u32,instance_id:u32,first_triangle:u32,triangle_count:u32,object_revision:String,kind:String,ram_energy_j:u32,ram_response:Option<String>}
@@ -24,13 +32,35 @@ impl CatalogEntry {
     pub fn ram_response(&self)->Option<&str>{self.ram_response.as_deref()}
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
-pub struct CatalogSpec {pub(super) path:PathBuf,pub(super) sha256:String,map_id:MapId,entries:Vec<CatalogEntry>,contacts:bool,version:u8}
+pub struct CatalogSpec {pub(super) path:PathBuf,pub(super) sha256:String,map_id:MapId,entries:Vec<CatalogEntry>,contacts:bool,version:u8,triggers:Option<TriggerSpec>}
 impl CatalogSpec {
+    fn trigger_spec(v:&Value)->io::Result<TriggerSpec>{
+        fields(v,&["vertices","triangles"])?;
+        let part=|p:&Value,format:&str,max:u64|->io::Result<TriggerPart>{
+            fields(p,&["file","format","stride","count","bytes","sha256"])?;let file=text(p,"file")?;
+            if file.is_empty()||file.len()>80||!file.bytes().all(|b|b.is_ascii_lowercase()||b.is_ascii_digit()||matches!(b,b'-'|b'_'|b'.'))||file.starts_with('.')
+                ||text(p,"format")?!=format||uint(&p["stride"])?!=12{return Err(bad());}
+            let count=uint(&p["count"])?;if count==0||count>max||uint(&p["bytes"])?!=count*12{return Err(bad());}
+            let sha=text(p,"sha256")?;hash_text(sha)?;Ok(TriggerPart{file:file.into(),sha256:sha.into(),count:count as u32})};
+        let spec=TriggerSpec{vertices:part(&v["vertices"],"float32_xyz",MAX_TRIGGER_TRIANGLES*3)?,triangles:part(&v["triangles"],"uint32_abc",MAX_TRIGGER_TRIANGLES)?};
+        if spec.vertices.file==spec.triangles.file{return Err(bad());}Ok(spec)
+    }
+    /// Hash-check both trigger buffers beside the catalog. The worker parses
+    /// and bounds the geometry itself; the gateway only refuses changed files.
+    fn verify_triggers(&self)->io::Result<()>{
+        let Some(t)=&self.triggers else{return Ok(());};let directory=self.path.parent().ok_or_else(bad)?;
+        for part in [&t.vertices,&t.triangles]{let raw=read(&owned(directory,&directory.join(&part.file))?,part.count as usize*12)?;
+            if raw.len()!=part.count as usize*12||format!("{:x}",Sha256::digest(&raw))!=part.sha256{return Err(bad());}}
+        Ok(())
+    }
+    /// Falling atom sensor entries (worker catalog9 only).
+    pub fn columns(&self)->impl Iterator<Item=&CatalogEntry>{self.entries.iter().filter(|e|e.kind=="falling_atom")}
+    pub(crate) fn angular(&self)->bool{matches!(self.version,8|9)}
     fn parse_manifest(raw:&[u8])->io::Result<Value>{
         let value=json_catalog_extended(raw,1024*1024)?;
         // Reapply the historical parser budgets as well as row bounds. Only
         // explicit v4 catalogs may use the larger array/node envelope.
-        if !matches!(value["version"].as_u64(),Some(4|5|6|7|8)){return json_catalog(raw,1024*1024);}
+        if !matches!(value["version"].as_u64(),Some(4|5|6|7|8|9)){return json_catalog(raw,1024*1024);}
         Ok(value)
     }
     pub fn load(local_root:&Path,path:&Path,sha256:&str)->io::Result<Self>{
@@ -47,12 +77,16 @@ impl CatalogSpec {
         let version=u8::try_from(uint(&value["version"])?).map_err(|_|bad())?;
         let contacts=version>=3;
         let map_id=MapId::from_asset(text(&value,"map")?)?;
-        Ok(Self{path,sha256:sha256.into(),map_id,entries,contacts,version})
+        let triggers=if version==9{Some(Self::trigger_spec(&value["falling_atom_triggers"])?)}else{None};
+        if let Some(t)=&triggers{if entries.iter().filter(|e|e.kind=="falling_atom").any(|e|e.first_triangle as u64+e.triangle_count as u64>t.triangles.count as u64){return Err(bad());}}
+        let spec=Self{path,sha256:sha256.into(),map_id,entries,contacts,version,triggers};spec.verify_triggers()?;Ok(spec)
     }
     pub(super) fn validate(v:&Value)->io::Result<Vec<CatalogEntry>>{
         let version=uint(&v["version"])?;
         if version==2 { fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","objects"])?; }
         else if version==3||version==4 { fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects"])?; if v["contacts"]!=Value::Bool(true){return Err(bad());} }
+        else if version==9 {fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects","ram_policy","falling_atom_triggers"])?;
+            if v["contacts"]!=Value::Bool(true)||text(v,"ram_policy")?!=crate::gateway091::shared::ram_proof::POLICY{return Err(bad());}}
         else if matches!(version,5|6|7|8) {fields(v,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects","ram_policy"])?;
             let policy=match version{8=>crate::gateway091::shared::ram_proof::POLICY,7=>fracture::TOTAL_POLICY,6=>fracture::WHOLE_POLICY,_=>fracture::POLICY};
             if v["contacts"]!=Value::Bool(true)||text(v,"ram_policy")?!=policy{return Err(bad());}}
@@ -62,23 +96,33 @@ impl CatalogSpec {
             || text(v,"physics_manifest_sha256")?!=profile.physics_manifest_sha256
             || text(v,"projectile_manifest_sha256")?!=profile.projectile_manifest_sha256{return Err(bad());}
         let rows=v["objects"].as_array().ok_or_else(bad)?;
-        let limit=match version{4|5|6|7|8=>MAX_EXTENDED_CATALOG_OBJECTS,3=>MAX_CONTACT_CATALOG_OBJECTS,_=>MAX_CATALOG_OBJECTS};
+        let limit=match version{4|5|6|7|8|9=>MAX_EXTENDED_CATALOG_OBJECTS,3=>MAX_CONTACT_CATALOG_OBJECTS,_=>MAX_CATALOG_OBJECTS};
         if rows.is_empty() || rows.len()>limit{return Err(bad());}
         let mut entries=Vec::new();let mut instances=BTreeSet::new();let mut previous=0;
         for row in rows {
-            if matches!(version,7|8) {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision","ram_energy_j","ram_response"])?;}
+            if matches!(version,7|8|9) {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision","ram_energy_j","ram_response"])?;}
             else if version>=5 {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision","ram_energy_j"])?;}
             else if version>=3 {fields(row,&["object_id","instance_id","kind","first_triangle","triangle_count","object_revision"])?;} else {fields(row,&["object_id","instance_id","first_triangle","triangle_count","object_revision"])?;}
             let id=uint(&row["object_id"])?;let instance=uint(&row["instance_id"])?;
             let first=uint(&row["first_triangle"])?;let count=uint(&row["triangle_count"])?;
             let revision=text(row,"object_revision")?;hash_text(revision)?;
             let kind=if version>=3{text(row,"kind")?}else{"fragile"};
+            if kind=="falling_atom" {
+                // Sensor-only trigger: span is in the separate trigger buffer,
+                // never in the physics mesh, and has no fracture energy.
+                if version!=9||uint(&row["ram_energy_j"])?!=0||text(row,"ram_response")?!=FALLING_ATOM_RESPONSE
+                    ||id<=previous||id>u32::MAX as u64||instance>=profile.instance_count as u64||!instances.insert(instance)
+                    ||count==0||count>MAX_TRIGGER_TRIANGLES_PER_OBJECT||first.checked_add(count).is_none_or(|end|end>MAX_TRIGGER_TRIANGLES){return Err(bad());}
+                previous=id;entries.push(CatalogEntry{object_id:id as u32,instance_id:instance as u32,first_triangle:first as u32,
+                    triangle_count:count as u32,object_revision:revision.into(),kind:kind.into(),ram_energy_j:0,ram_response:Some(FALLING_ATOM_RESPONSE.into())});
+                continue;
+            }
             if !matches!(kind,"tree"|"fragile"){return Err(bad());}
             let energy=if version>=5{uint(&row["ram_energy_j"])?}else{0};
-            if if matches!(version,6|7|8){energy!=8_000}else{!matches!(energy,0|8_000)||(energy!=0&&kind!="fragile")}{return Err(bad());}
-            let response=if matches!(version,7|8) {
+            if if matches!(version,6|7|8|9){energy!=8_000}else{!matches!(energy,0|8_000)||(energy!=0&&kind!="fragile")}{return Err(bad());}
+            let response=if matches!(version,7|8|9) {
                 let response=text(row,"ram_response")?;
-                let total=if version==8{crate::gateway091::shared::ram_proof::FALLBACK}else{"total_linear"};
+                let total=if version>=8{crate::gateway091::shared::ram_proof::FALLBACK}else{"total_linear"};
                 if !(response==total||response=="normal_linear") || response==total&&kind!="fragile" {return Err(bad());}
                 Some(response.to_owned())
             }else{None};
@@ -88,7 +132,9 @@ impl CatalogSpec {
             previous=id;entries.push(CatalogEntry{object_id:id as u32,instance_id:instance as u32,first_triangle:first as u32,
                 triangle_count:count as u32,object_revision:revision.into(),kind:kind.into(),ram_energy_j:energy as u32,ram_response:response});
         }
-        let mut spans=entries.iter().collect::<Vec<_>>();spans.sort_by_key(|e|e.first_triangle);
+        let mut spans=entries.iter().filter(|e|e.kind!="falling_atom").collect::<Vec<_>>();spans.sort_by_key(|e|e.first_triangle);
+        let mut triggers=entries.iter().filter(|e|e.kind=="falling_atom").collect::<Vec<_>>();triggers.sort_by_key(|e|e.first_triangle);
+        if triggers.windows(2).any(|p|p[1].first_triangle<p[0].first_triangle+p[0].triangle_count){return Err(bad());}
         if spans.windows(2).any(|p|p[1].first_triangle<p[0].first_triangle+p[0].triangle_count){return Err(bad());}
         Ok(entries)
     }
@@ -120,6 +166,11 @@ impl CatalogSpec {
         if rows.len()!=profile.instance_count{return Err(bad());}
         for entry in &self.entries {
             let row=&rows[entry.instance_id as usize];let resource=text(row,"resource")?;
+            if entry.kind=="falling_atom" {
+                // Masks 18/128 exclude the column material: no blocking span.
+                if text(row,"kind")?!="model"||resource.is_empty()||resource.len()>1024||uint(&row["triangles"])?!=0{return Err(bad());}
+                continue;
+            }
             let source_kind=if entry.kind=="tree"{"speedtree"}else{"model"};
             if text(row,"kind")?!=source_kind || resource.is_empty() || resource.len()>1024
                 || uint(&row["first_triangle"])?!=entry.first_triangle as u64 || uint(&row["triangles"])?!=entry.triangle_count as u64
@@ -131,9 +182,9 @@ impl CatalogSpec {
     pub fn entries(&self)->&[CatalogEntry]{&self.entries}
     pub fn contacts(&self)->bool{self.contacts}
     pub fn version(&self)->u8{self.version}
-    pub(super) fn ipc_version(&self)->u8{if self.version==8{6}else if self.version>=5{5}else if self.contacts{4}else{3}}
-    pub(super) fn line_limit(&self)->usize{if self.version==8{MAX_ANGULAR_IPC_LINE}else{MAX_IPC_LINE}}
-    fn max_removed(&self)->usize{match self.version{4|5|6|7|8=>MAX_EXTENDED_REMOVED_OBJECTS,3=>MAX_CONTACT_REMOVED_OBJECTS,_=>MAX_REMOVED_OBJECTS}}
+    pub(super) fn ipc_version(&self)->u8{if self.angular(){6}else if self.version>=5{5}else if self.contacts{4}else{3}}
+    pub(super) fn line_limit(&self)->usize{if self.angular(){MAX_ANGULAR_IPC_LINE}else{MAX_IPC_LINE}}
+    fn max_removed(&self)->usize{match self.version{4|5|6|7|8|9=>MAX_EXTENDED_REMOVED_OBJECTS,3=>MAX_CONTACT_REMOVED_OBJECTS,_=>MAX_REMOVED_OBJECTS}}
     pub fn map_id(&self)->MapId{self.map_id}
     fn verify_map(&self,map:&MapSpec)->io::Result<()>{
         if map.asset!=self.map_id.asset() || map.arena_type_id!=self.map_id.arena_type_id(){return Err(bad());}Ok(())
@@ -190,7 +241,7 @@ pub(super) fn ack(raw:&[u8],map:&MapSpec,spec:&CatalogSpec,generation:u32,seq:u3
     spec.verify_map(map)?;
     scene.validate(spec)?;
     if !raw.is_ascii() || generation==0 || seq>MAX_SEQUENCE{return Err(bad());}
-    let v=if spec.version==8{json_with_node_limit::<2048>(raw,MAX_ANGULAR_IPC_LINE,4096)?}else if spec.version>=4{json_catalog_extended(raw,MAX_IPC_LINE)?}else{json(raw,MAX_IPC_LINE)?};
+    let v=if spec.angular(){json_with_node_limit::<2048>(raw,MAX_ANGULAR_IPC_LINE,4096)?}else if spec.version>=4{json_catalog_extended(raw,MAX_IPC_LINE)?}else{json(raw,MAX_IPC_LINE)?};
     if spec.contacts {fields(&v,&["version","event","generation","config_sha256","catalog_sha256","advance_seq","tick",
         "scene_version","removed_object_ids","scene_sha256","contacts"])?;} else {fields(&v,&["version","event","generation","config_sha256","catalog_sha256","advance_seq","tick",
         "scene_version","removed_object_ids","scene_sha256"])?;}
@@ -236,7 +287,7 @@ pub(super) fn response_with_profile(raw:&[u8],map:&MapSpec,spec:&CatalogSpec,gen
     if uint(&v["version"])?!=u64::from(spec.ipc_version()) || (spec.contacts && v["contacts"]!=Value::Bool(true)) || uint(&v["generation"])?!=generation as u64 || text(&v,"catalog_sha256")?!=spec.sha256
         || uint(&v["scene_version"])?!=scene.version() as u64 || text(&v,"scene_sha256")?!=scene.hash{return Err(bad());}
     let mut contacts=if spec.contacts {parse_contacts(&v["state"],spec,scene)?} else {Vec::new()};
-    let proof=if spec.version==8{let profile=profile.ok_or_else(bad)?;
+    let proof=if spec.angular(){let profile=profile.ok_or_else(bad)?;
         if profile.mass().to_bits()!=map.mass_kg.to_bits(){return Err(bad());}
         Some(angular::parse(&v["state"],&contacts,spec,profile,seq)?)}else{None};
     let fractures=if spec.version>=5 {
@@ -245,7 +296,7 @@ pub(super) fn response_with_profile(raw:&[u8],map:&MapSpec,spec:&CatalogSpec,gen
         if text(&v,"event")?!=if seq==0{"ready"}else if receipts.is_empty(){"state"}else{"prepared"}{return Err(bad());}
         // An energy-responsive collider must never be destroyed by an ordinary
         // denied/support contact after the worker retained its physical body.
-        if spec.version!=8 {contacts.retain(|contact| spec.entries.iter().find(|entry|entry.object_id==contact.object_id)
+        if !spec.angular() {contacts.retain(|contact| spec.entries.iter().find(|entry|entry.object_id==contact.object_id)
             .is_some_and(|entry|entry.ram_energy_j==0||receipts.iter().any(|receipt|receipt.object_id==contact.object_id)));}
         v["event"]=if seq==0{"ready"}else{"state"}.into();
         receipts
@@ -253,7 +304,7 @@ pub(super) fn response_with_profile(raw:&[u8],map:&MapSpec,spec:&CatalogSpec,gen
     let object=v.as_object_mut().ok_or_else(bad)?;
     for key in ["generation","catalog_sha256","scene_version","scene_sha256"]{object.remove(key);}
     object.remove("contacts");
-    if let Some(state)=object.get_mut("state").and_then(Value::as_object_mut){state.remove("object_contacts");if spec.version>=5{state.remove("fractures");}if spec.version==8{state.remove("body_binding");state.remove("motion_witnesses");}}
+    if let Some(state)=object.get_mut("state").and_then(Value::as_object_mut){state.remove("object_contacts");if spec.version>=5{state.remove("fractures");}if spec.angular(){state.remove("body_binding");state.remove("motion_witnesses");}}
     v["version"]=1.into();
     let mut state=response_at_spawn(&serde_json::to_vec(&v).map_err(|_|bad())?,map,seq,spawn)?;
     if let Some(proof)=&proof{proof.final_motion(state.pose.linear_velocity,state.pose.angular_velocity,state.pose.rspeed)?;}
@@ -268,14 +319,14 @@ pub(super) mod tests {
         "objects":(0..n).map(|i|serde_json::json!({"object_id":i+1,"instance_id":i,"first_triangle":i*42,
             "triangle_count":42,"object_revision":"e".repeat(64)})).collect::<Vec<_>>()})}
     pub(in super::super) fn spec(n:usize)->CatalogSpec{
-        CatalogSpec{path:"unit".into(),sha256:"b".repeat(64),map_id:MapId::Karelia,entries:CatalogSpec::validate(&descriptor(n)).unwrap(),contacts:false,version:2}
+        CatalogSpec{path:"unit".into(),sha256:"b".repeat(64),map_id:MapId::Karelia,entries:CatalogSpec::validate(&descriptor(n)).unwrap(),contacts:false,version:2,triggers:None}
     }
     pub(in super::super) fn fracture_spec(n:usize)->CatalogSpec{
         let mut v=descriptor(n);v["version"]=5.into();v["contacts"]=true.into();v["ram_policy"]=fracture::POLICY.into();
         for row in v["objects"].as_array_mut().unwrap(){row["kind"]="fragile".into();row["ram_energy_j"]=8_000.into();}
         let raw=serde_json::to_vec(&v).unwrap();
         CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id:MapId::Karelia,
-            entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:5}
+            entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:5,triggers:None}
     }
     pub(in super::super) fn whole_spec(n:usize)->CatalogSpec{
         let mut v=descriptor(n);v["version"]=6.into();v["contacts"]=true.into();v["ram_policy"]=fracture::WHOLE_POLICY.into();
@@ -284,14 +335,14 @@ pub(super) mod tests {
         }
         let raw=serde_json::to_vec(&v).unwrap();
         CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id:MapId::Karelia,
-            entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:6}
+            entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:6,triggers:None}
     }
     pub(in super::super) fn angular_spec(n:usize)->CatalogSpec {
         let mut v=response_descriptor(&vec![("fragile",crate::gateway091::shared::ram_proof::FALLBACK);n]);
         v["version"]=8.into();v["ram_policy"]=crate::gateway091::shared::ram_proof::POLICY.into();
         let raw=serde_json::to_vec(&v).unwrap();
         CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id:MapId::Karelia,
-            entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:8}
+            entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:8,triggers:None}
     }
     fn response_descriptor(entries:&[(&str,&str)])->Value {
         let mut v=descriptor(entries.len());v["version"]=7.into();v["contacts"]=true.into();v["ram_policy"]=fracture::TOTAL_POLICY.into();
@@ -302,7 +353,7 @@ pub(super) mod tests {
     pub(in super::super) fn response_spec(entries:&[(&str,&str)])->CatalogSpec {
         let v=response_descriptor(entries);let raw=serde_json::to_vec(&v).unwrap();
         CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id:MapId::Karelia,
-            entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:7}
+            entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:7,triggers:None}
     }
     #[test]fn total_catalog_requires_exact_new_semantics_and_retains_old_field_sets(){
         let rows=[("fragile","total_linear"),("tree","normal_linear"),("fragile","normal_linear")];
@@ -380,7 +431,7 @@ pub(super) mod tests {
     }
     pub(in super::super) fn spec_for(map_id:MapId,n:usize)->CatalogSpec{
         let v=descriptor_for(map_id,n);let raw=serde_json::to_vec(&v).unwrap();
-        CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id,entries:CatalogSpec::validate(&v).unwrap(),contacts:false,version:2}
+        CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id,entries:CatalogSpec::validate(&v).unwrap(),contacts:false,version:2,triggers:None}
     }
     fn descriptor_for(map_id:MapId,n:usize)->Value{
         let mut v=descriptor(n);v["map"]=map_id.asset().into();
@@ -390,7 +441,7 @@ pub(super) mod tests {
     fn contact_spec(n:usize)->CatalogSpec{
         let mut v=descriptor(n);v["version"]=3.into();v["contacts"]=true.into();
         for (i,row) in v["objects"].as_array_mut().unwrap().iter_mut().enumerate(){row["kind"]=if i==0{"tree"}else{"fragile"}.into();}
-        let raw=serde_json::to_vec(&v).unwrap();CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id:MapId::Karelia,entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:3}
+        let raw=serde_json::to_vec(&v).unwrap();CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(raw)),map_id:MapId::Karelia,entries:CatalogSpec::validate(&v).unwrap(),contacts:true,version:3,triggers:None}
     }
     fn source_for(spec:&CatalogSpec)->Value{
         let mut source=serde_json::json!({"version":1,"map":spec.map_id.asset(),"kind":"original_091_static_triangle_mesh",
@@ -406,7 +457,7 @@ pub(super) mod tests {
         let raw=serde_json::to_vec(&extended_manifest(n)).unwrap();
         let value=CatalogSpec::parse_manifest(&raw).unwrap();
         CatalogSpec{path:"unit".into(),sha256:format!("{:x}",Sha256::digest(&raw)),map_id:MapId::Karelia,
-            entries:CatalogSpec::validate(&value).unwrap(),contacts:true,version:4}
+            entries:CatalogSpec::validate(&value).unwrap(),contacts:true,version:4,triggers:None}
     }
     #[test]fn extended_v4_admits_complete_fence_capacity_but_preserves_legacy_bounds(){
         for n in [1038,2048]{

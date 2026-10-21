@@ -113,6 +113,8 @@ impl Kind{
 #[derive(Clone,Debug)]pub struct SceneSpec{
     pub local_root:PathBuf,pub manifest_path:PathBuf,pub manifest_sha256:String,pub map:String,pub actors:Vec<ActorSpec>,
     catalog_sha256:String,catalog_ids:BTreeSet<u32>,pins:Vec<(PathBuf,String,usize)>,
+    /// MAPS-02 falling atom sensor IDs of a worker catalog9 (empty otherwise).
+    column_ids:BTreeSet<u32>,
 }
 impl SceneSpec{
     pub fn load(root:&Path,path:&Path,sha:&str)->io::Result<Self>{let manifest_path=owned(root,path)?;let raw=read(&manifest_path,MAX_INPUT,sha)?;let m=parse(&raw,MAX_INPUT)?;
@@ -152,16 +154,19 @@ impl SceneSpec{
             if b[2]-b[0]<100.||b[3]-b[1]<100.||spawn[0]<b[0]+5.||spawn[0]>b[2]-5.||spawn[2]<b[1]+5.||spawn[2]>b[3]-5.{return Err(bad("spawn/bounds"));}
             pins.push((path,hash.into(),16384));actors.push(ActorSpec{slot:actors.len(),kind,config_sha256:hash.into(),spawn,yaw});
         }
-        let mut catalog_sha256=ZERO.into();let mut catalog_ids=BTreeSet::new();
+        let mut catalog_sha256=ZERO.into();let mut catalog_ids=BTreeSet::new();let mut column_ids=BTreeSet::new();
         if !m["catalog"].is_null(){let r=&m["catalog"];keys(r,&["path","sha256"])?;let p=owned(root,Path::new(string(r,"path")?))?;let h=string(r,"sha256")?;
             let c=parse(&read(&p,1024*1024,h)?,1024*1024)?;
-            keys(&c,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects","ram_policy"])?;
-            if uint(&c["version"])?!=8||string(&c,"profile")?!="test_lab"||string(&c,"map")?!=map||c["contacts"]!=true||string(&c,"ram_policy")?!="test_lab-fence-linear-angular-energy-v1"{return Err(bad("catalog8 policy"));}
+            let catalog_version=uint(&c["version"])?;
+            if catalog_version==9{keys(&c,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects","ram_policy","falling_atom_triggers"])?;}
+            else{keys(&c,&["version","profile","map","physics_manifest_sha256","projectile_manifest_sha256","contacts","objects","ram_policy"])?;}
+            if !matches!(catalog_version,8|9)||string(&c,"profile")?!="test_lab"||string(&c,"map")?!=map||c["contacts"]!=true||string(&c,"ram_policy")?!="test_lab-fence-linear-angular-energy-v1"{return Err(bad("catalog8 policy"));}
             for row in array(&c["objects"],2048)?{let id=u32::try_from(uint(&row["object_id"])?).map_err(|_|bad("object ID"))?;
-                if id==0||catalog_ids.last().is_some_and(|p|*p>=id)||!catalog_ids.insert(id){return Err(bad("ordered catalog IDs"));}}
+                if id==0||catalog_ids.last().is_some_and(|p|*p>=id)||!catalog_ids.insert(id){return Err(bad("ordered catalog IDs"));}
+                if row["kind"]=="falling_atom"{if catalog_version!=9{return Err(bad("falling atom requires catalog9"));}column_ids.insert(id);}}
             if catalog_ids.is_empty(){return Err(bad("empty catalog"));}catalog_sha256=h.into();pins.push((p,h.into(),1024*1024));
         }
-        Ok(Self{local_root:root.canonicalize()?,manifest_path,manifest_sha256:sha.into(),map:map.into(),actors,catalog_sha256,catalog_ids,pins})
+        Ok(Self{local_root:root.canonicalize()?,manifest_path,manifest_sha256:sha.into(),map:map.into(),actors,catalog_sha256,catalog_ids,pins,column_ids})
     }
     pub fn verify(&self)->io::Result<()>{for(p,h,n)in &self.pins{read(&owned(&self.local_root,p)?,*n,h)?;}Ok(())}
     pub fn catalog_sha256(&self)->&str{&self.catalog_sha256}
@@ -194,7 +199,11 @@ fn line(v:&Value)->io::Result<Vec<u8>>{let mut b=serde_json::to_vec(v).map_err(|
 #[derive(Clone,Debug,PartialEq)]pub struct TankContact {
     pub slot_a:usize,pub slot_b:usize,pub substep:u8,pub point:[f32;3],pub normal:[f32;3],pub relative_velocity:[f32;3],
 }
-#[derive(Clone,Debug)]pub struct Frame{pub sequence:u32,pub tick:u32,pub actors:Vec<ActorFrame>,pub tank_contacts:Vec<TankContact>,pub prepared:bool,pub prepared_ids:Vec<u32>,pub raw:Value}
+/// MAPS-02 first overlap of one hull with one non-blocking falling atom
+/// trigger during a batch, with the actual manifold and pre-step velocity.
+#[derive(Clone,Debug,PartialEq)]pub struct ColumnContact{pub slot:usize,pub object_id:u32,pub substep:u8,pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3]}
+pub const MAX_COLUMN_CONTACTS_PER_ACTOR:usize=16;
+#[derive(Clone,Debug)]pub struct Frame{pub sequence:u32,pub tick:u32,pub actors:Vec<ActorFrame>,pub tank_contacts:Vec<TankContact>,pub prepared:bool,pub prepared_ids:Vec<u32>,pub raw:Value,pub column_contacts:Vec<ColumnContact>}
 fn motion(v:&Value)->io::Result<()>{keys(v,&["linear_velocity","angular_velocity"])?;vector::<3>(&v["linear_velocity"],25.001)?;vector::<3>(&v["angular_velocity"],20.)?;Ok(())}
 fn witness(v:&Value)->io::Result<()>{keys(v,&["com","rotation_xyzw","linear_velocity","angular_velocity","inverse_inertia_row_major"])?;
     vector::<3>(&v["com"],2000.)?;let q=vector::<4>(&v["rotation_xyzw"],1.001)?;if(q.iter().map(|x|x*x).sum::<f32>()-1.).abs()>0.002{return Err(bad("quaternion unit"));}
@@ -232,7 +241,9 @@ fn actor_frame(row:&Value,spec:&ActorSpec,catalog:&BTreeSet<u32>)->io::Result<Ac
     Ok(ActorFrame{slot:spec.slot,kind:spec.kind,pose:Pose{position,direction,speed,rspeed,linear_velocity,angular_velocity,contacts:contacts as u8,wheel_contact_masks},proof:v.clone()})
 }
 pub fn response(raw:&[u8],spec:&SceneSpec,generation:u32,scene:&Scene,seq:u32)->io::Result<Frame>{
-    let v=parse(raw,MAX_OUTPUT)?;keys(&v,&["version","event","generation","manifest_sha256","catalog_sha256","seq","tick","settle_ticks","map","scene_version","scene_sha256","actors","tank_contacts","fracture_claims"])?;
+    let v=parse(raw,MAX_OUTPUT)?;
+    if spec.column_ids.is_empty(){keys(&v,&["version","event","generation","manifest_sha256","catalog_sha256","seq","tick","settle_ticks","map","scene_version","scene_sha256","actors","tank_contacts","fracture_claims"])?;}
+    else{keys(&v,&["version","event","generation","manifest_sha256","catalog_sha256","seq","tick","settle_ticks","map","scene_version","scene_sha256","actors","tank_contacts","fracture_claims","column_contacts"])?;}
     check_header(&v,spec,generation)?;
     let event=string(&v,"event")?;if uint(&v["seq"])?!=seq as u64||seq>36000||uint(&v["tick"])?!=180+seq as u64*6||uint(&v["settle_ticks"])?!=180||string(&v,"map")?!=spec.map||
         uint(&v["scene_version"])?!=scene.version()as u64||string(&v,"scene_sha256")?!=scene.sha256||
@@ -251,7 +262,19 @@ pub fn response(raw:&[u8],spec:&SceneSpec,generation:u32,scene:&Scene,seq:u32)->
         if slot>=actors.len()as u64||!spec.catalog_ids.contains(&id)||claims.insert(id,(slot,uint(&c["substep"])?)).is_some()||uint(&c["order"])?!=i as u64+1||!(1..=6).contains(&uint(&c["substep"])?){return Err(bad("global fracture claims"));}}
     let mut actual=BTreeMap::new();for a in &actors{for r in a.proof["fractures"].as_array().unwrap(){let id=uint(&r["object_id"])?as u32;if actual.insert(id,(a.slot as u64,uint(&r["substep"])?)).is_some(){return Err(bad("two actors claimed same object"));}}}
     if claims!=actual||(event=="prepared")!=!claims.is_empty()||seq==0&&(!pairs.is_empty()||!claims.is_empty()){return Err(bad("prepared/receipt/claim agreement"));}
-    Ok(Frame{sequence:seq,tick:180+seq*6,actors,tank_contacts,prepared:event=="prepared",prepared_ids:claims.into_keys().collect(),raw:v})
+    let mut column_contacts=Vec::new();
+    if !spec.column_ids.is_empty(){
+        let mut seen=BTreeSet::new();let mut per=[0usize;MAX_ACTORS];
+        for(i,c)in array(&v["column_contacts"],MAX_ACTORS*MAX_COLUMN_CONTACTS_PER_ACTOR)?.iter().enumerate(){
+            keys(c,&["object_id","slot","substep","order","point","normal","velocity"])?;
+            let id=u32::try_from(uint(&c["object_id"])?).map_err(|_|bad("column ID"))?;let slot=uint(&c["slot"])?;let step=uint(&c["substep"])?;
+            if slot>=actors.len()as u64||!spec.column_ids.contains(&id)||scene.ids.binary_search(&id).is_ok()||!seen.insert((slot,id))
+                ||uint(&c["order"])?!=i as u64+1||!(1..=6).contains(&step)||seq==0{return Err(bad("column contact identity/order"));}
+            per[slot as usize]+=1;if per[slot as usize]>MAX_COLUMN_CONTACTS_PER_ACTOR{return Err(bad("column contacts per actor"));}
+            column_contacts.push(ColumnContact{slot:slot as usize,object_id:id,substep:step as u8,point:vector::<3>(&c["point"],2000.)?,
+                normal:normal(&c["normal"])?,velocity:vector::<3>(&c["velocity"],25.001)?});}
+    }
+    Ok(Frame{sequence:seq,tick:180+seq*6,actors,tank_contacts,prepared:event=="prepared",prepared_ids:claims.into_keys().collect(),raw:v,column_contacts})
 }
 fn check_header(v:&Value,spec:&SceneSpec,generation:u32)->io::Result<()>{if uint(&v["version"])?!=7||uint(&v["generation"])?!=generation as u64||string(v,"manifest_sha256")?!=spec.manifest_sha256||string(v,"catalog_sha256")?!=spec.catalog_sha256{return Err(bad("reply source/generation"));}Ok(())}
 

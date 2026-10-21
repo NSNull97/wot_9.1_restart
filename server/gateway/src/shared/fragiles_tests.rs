@@ -83,6 +83,17 @@ fn contact_manifest() -> Value {
     value
 }
 
+/// MAPS-02 base: v7 static-index form of manifest() (synthetic native indices).
+pub(crate) fn v7_static_manifest_for_columns() -> Value {
+    let mut v=manifest();
+    v["version"]=json!(7);v["contacts"]=json!(true);v["ram_policy"]=json!(ram_proof::POLICY);
+    v.as_object_mut().unwrap().remove("native_exports_sha256");
+    v["native_index_source"]=json!({"rule":STATIC_INDEX_RULE,"static_index_sha256":"5".repeat(64),"classification":"INFERRED_STATIC_RULE_NATIVE_CONFIRMATION_NOT_RUN"});
+    v["area_chunks"]=json!([31354,31355]);
+    for row in v["objects"].as_array_mut().unwrap() { row["kind"]=json!("fragile");row["ram_response"]=json!("normal_linear"); }
+    v
+}
+
 pub(crate) fn contact_catalog() -> Arc<Catalog> {
     Arc::new(parse(&contact_manifest()).unwrap())
 }

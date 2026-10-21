@@ -189,6 +189,17 @@ impl BatchRuntime {
                 let tank_contacts=frame.tank_contacts.iter().map(|c|model::TankContactInput{slot_a:c.slot_a,slot_b:c.slot_b,substep:c.substep,point:c.point,normal:c.normal,relative_velocity:c.relative_velocity}).collect::<Vec<_>>();
                 candidate.apply_tank_contacts(&tank_contacts,frame.sequence,frame.tick)?;
                 candidate.apply_vehicle_contacts(&contacts)?;
+                // MAPS-02: the domain decides each falling atom overlap with the
+                // hash-bound profile mass; the worker only reports the overlap.
+                let spec=self.spec.as_ref().ok_or_else(||model::bad())?;
+                let columns=frame.column_contacts.iter().map(|c|Ok(model::ColumnContactInput{object_id:c.object_id,shooter:c.slot,substep:c.substep,
+                    point:c.point,normal:c.normal,velocity:c.velocity,
+                    mass_kg:Self::profile(spec.actors.get(c.slot).ok_or_else(||model::bad())?.kind,world.extended_lab())?.mass()})).collect::<io::Result<Vec<_>>>()?;
+                for event in candidate.apply_column_contacts(&columns)? {
+                    println!("SHARED_COLUMN_FALL battle={} slot={} object={} fallen_column={:#06x} tick={} speed_mps={:.3} policy={}",
+                        world.id,event.shooter,event.object_id,event.fallen_column.unwrap_or_default(),event.tick,
+                        event.velocity.iter().map(|v|v*v).sum::<f32>().sqrt(),super::super::fragiles::FALLING_ATOM_POLICY);
+                }
             }
             if candidate.scene_version()!=world.scene_version()||frame.prepared {
                 let spec=self.spec.as_ref().ok_or_else(||model::bad())?;let ids=candidate.fragiles.as_ref().ok_or_else(||model::bad())?.removed_ids();
