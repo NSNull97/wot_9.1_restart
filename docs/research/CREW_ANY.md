@@ -1,7 +1,19 @@
 # CREW-ANY: экипаж и БК для любой машины каталога (2026-10-21)
 
 Ветка `codex/crew-any` от main `4b46f7e`. План — [CREW_ANY](../plans/CREW_ANY.md); шаг 4
-[ARCH01_MIGRATION](../plans/ARCH01_MIGRATION.md). Native-приёмка — владелец (NOT_RUN).
+[ARCH01_MIGRATION](../plans/ARCH01_MIGRATION.md). Native-приёмка 2026-10-24 — частичный native PASS, полная приёмка NOT_ACCEPTED.
+
+## Native gate 2026-10-24 (VERIFIED / OBSERVED)
+
+- **VERIFIED:** официальный стенд `local/stands/crew-any-native-20261024-02` подготовлен, аккаунты переведены на v2, gateway загрузил пять профилей CAT-01, Прохоровку, terrain/obstacle pins, каталог, P08C/P06T и привязал `legacy091-profile13`.
+- **VERIFIED:** native-копия клиента запустила CPython 2.7.3 32-bit с `--catalog-v1 --crew-any` и CREW-флагами; trace зафиксировал `crew_any_policy` (`max_tankmen=192`, `server_authoritative=true`), оригинальный `LoginView.onLogin`, `LOGGED_ON`, `native_connected=true` и полностью загруженный hangar.
+- **OBSERVED:** в trace были 8 native crew callbacks и 16 P09D ammo callbacks. Это доказывает прохождение callback/bootstrap пути, но не принятие команд найма, перевода, увольнения или БК сервером.
+- **FAIL:** control-условие `hangar_limits_observed` не появилось; trace содержит `diagnostic_condition_failed`. Это отдельный диагностический fail после успешного login/hangar.
+- **NOT_RUN:** T-26/не-MS-1 native UI, recruitment/transfer/dismissal/barracks commands, ёмкость `>16`, legacy-клиент без флага и настоящий profile13 battle.
+- **P09D limitation:** отдельный native probe завершился до CMD108: он ждал unskilled MS-1, а v2-аккаунт стенда имел `commander_tutor`; gateway команду не получил, БД не менялась.
+- **Arena limitation:** `export_arena_entry` — read-only экспорт ресурсов; он вернул статический `01_karelia` и `compatibility_acceptance=false`, поэтому не является доказательством боя на Прохоровке.
+
+Доказательства: `local/stands/crew-any-native-20261024-02/native-gate-crew-any-20261024-receipt.json`, gateway/bridge logs в том же каталоге, native traces `native-211624-1792827183386.jsonl`, `native-240536-1792826920991.jsonl` и `native-237808-1792827224777.jsonl` в `local/client-runtime-crew-native-a-02`.
 
 ## Что сделано
 
@@ -80,7 +92,7 @@
 
 ## Не сделано / ограничения
 
-- Native — NOT_RUN. Проверка владельца: (1) стенд остановлен →
+- Native — частичный PASS транспорт/login/hangar, полная приёмка NOT_ACCEPTED. Следующий native-прогон должен начинаться на чистом v2-аккаунте с unskilled baseline: (1) стенд остановлен →
   `tools/full_test_stand.py crew-contract --stand <стенд> --version 2`; переустановить клиентов
   с `--catalog-v1 --crew-any`; (2) купить Т-26, нанять полный экипаж из окна экипажа
   (и в казарму), загрузить БК из окна обслуживания, бой; (3) нанять > 16 танкистов на одном

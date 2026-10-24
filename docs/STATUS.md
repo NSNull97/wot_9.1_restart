@@ -1,15 +1,40 @@
 # Состояние проекта
 
-Подробная история прежних записей — `git log -p docs/STATUS.md` (до `aa0dfcc`).
+## Сейчас: CREW-ANY — native gate частично принят, ветка `codex/crew-any`
 
-## Сейчас: CREW-ANY — экипаж и БК для любой машины каталога (ветка `codex/crew-any`, не слита)
+Код CREW-ANY и контракт экипажа v2 уже реализованы: пожизненная ёмкость 192 танкиста,
+казарма 16, обратимая миграция v1↔v2, bridge/gateway v1/v2 и клиентские P04H–P04K/P09D
+для каталога CAT-01 за явными флагами `--catalog-v1 --crew-any`. Автоматические проверки
+и стендовая миграция PASS; native-прогон 2026-10-24 дал частичный PASS.
 
-Контракт экипажа пула v2 (пожизненно 192, казарма 16) с обратимой миграцией по аккаунту
-(`full_test_stand.py crew-contract --version 2|1`); шлюз и bridge принимают v1/v2 по данным;
-клиентские окна P04H–P04K и P09D обслуживают все купленные машины каталога CAT-01 за флагом
-установки `--crew-any` (без флага — прежние MS-1/ИС-7 байт в байт). Сторы, клиент (py3 + 2.7.3),
-JS и стенд-команда на копии БД `-04` — PASS; native — NOT_RUN (владелец). Факты и
-проверки — [CREW_ANY](research/CREW_ANY.md).
+На официально подготовленном стенде `local/stands/crew-any-native-20261024-02` gateway
+прошёл загрузку пяти профилей MS-1/ИС-7/Т-26/Т-34/Т-34-85, terrain/obstacle pins,
+каталога, P08C late results, P06T armament и ammo-rack policy, затем привязал
+`legacy091-profile13` на `127.0.0.1:20340`/`20341`; bridge поднялся на `127.0.0.1:3692`.
+После остановки сервисов стенд оставлен чистым.
+
+Свежий клиентский trace на копии исследовательского клиента подтвердил CPython 2.7.3
+32-bit, `crew_any_policy` (`max_tankmen=192`, `server_authoritative=true`), оригинальный
+`LoginView.onLogin`, `connection_callback=LOGGED_ON`, `native_connected=true` и полностью
+загруженный native hangar (`hangar_space_loaded=true`, четыре видимые модели). В trace
+наблюдались native crew и P09D ammunition callbacks; команды найма/перевода/увольнения
+не выполнялись. Отдельный arena-entry smoke завершился с `compatibility_acceptance=false`
+и картой 01_karelia, поэтому он не считается боевым profile13 acceptance.
+
+Условие `hangar_limits_observed` в диагностическом control не выполнилось:
+зафиксирован `diagnostic_condition_failed`; это отдельный FAIL диагностического сценария,
+а не отказ native login/hangar. Дополнительный P09D сценарий также завершился
+`p09d_scenario_error`: его baseline probe требует unskilled MS-1 crew, а v2-аккаунт стенда
+уже содержит crew descriptor со skill `commander_tutor`; gateway не получил CMD108 и БД
+не мутировалась. Поэтому P09D native command acceptance помечен `NOT_RUN` на этом аккаунте.
+
+Полная приёмка CREW-ANY остаётся `PARTIAL / NOT_ACCEPTED`. Ветка не сливается до ручного
+прогона T-26/другой машины CAT-01, native recruitment, перевода/увольнения, номера экипажа
+>16 и настоящего profile13 боя. Основная квитанция native gate:
+`local/stands/crew-any-native-20261024-02/native-gate-crew-any-20261024-receipt.json`.
+Основной клиентский trace: `D:/WoT_9.1_Server/local/client-runtime-crew-native-a-02/native-211624-1792827183386.jsonl`.
+Серверный лог: `local/stands/crew-any-native-20261024-02/gateway-20261024-123150.stdout.log`.
+Дополнительные native traces: arena export `D:/WoT_9.1_Server/local/client-runtime-crew-native-a-02/native-240536-1792826920991.jsonl` (static Karelia, `compatibility_acceptance=false`) и P09D descriptor guard `D:/WoT_9.1_Server/local/client-runtime-crew-native-a-02/native-237808-1792827224777.jsonl`.
 
 ## Ранее: MAPS-01 + MAPS-02 приняты владельцем (2026-10-21, стенд `-09`, Малиновка)
 
