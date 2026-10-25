@@ -19,6 +19,15 @@ pub const PRIMARY_STATE_SHA256:&str="a2858ec04b42c4974332176faa9faee3dc78e5f23cf
 // Exact native constructor export and authenticated state inventory[1].compDescr[1].
 pub const MS1_DESCRIPTOR:&[u8]=&[0x01,0x0d,0x1a,0x00,0x0e,0x00,0xc9,0x00,0x00,0x00,0x17,0x00,0x17,0x00,0x00];
 pub const LAB_POSITION:[f32;3]=[-58.499908447265625,33.770267486572266,-445.81304931640625];
+pub const PORTABLE_BUNDLE_MANIFEST_SIZE:usize=36184;
+pub const PORTABLE_BUNDLE_MANIFEST_SHA256:&str="d99f2ba765e39d096cf2d0858c9864ed897a36eb9c4ea6972a15385e2355b2db";
+pub const PORTABLE_CHAIN_SIZE:usize=6482;
+pub const PORTABLE_CHAIN_SHA256:&str="9bbd7f825662fa17717fbd6f256596251cc8809e8acbd9e641f9488fca91980a";
+pub const LEGACY_MANIFEST_SHA256:&str="ea967805376908e939fa691bb3bbc51e72253162aff98732bd753762eec35718";
+const PORTABLE_PROFILE_SHA256:&str="2610dbd9ee64a12852986def336da057326f14a3289dda43eaae616286998d2d";
+const PORTABLE_COMPAT_SHA256:&str="825a7e7024993c83b132499fe6f383b233ac288049bb77ca94b5407430f8d4d3";
+const PORTABLE_MODEL_SHA256:&str="1b5dfa8974e17572f9cfbdaf610842835bb03d3b41ad244f2644db8921942f53";
+const PORTABLE_AMMO_SHA256:&str="683daac81143a9d7edfbe671870ba163db088c54f5101fa52e077f596ebbfc74";
 const INVENTORY_ID:&str="c5326cc1-8524-479c-8bba-72e973489c22:starter-vehicle-v1";
 const PINNED_FILES:[(&str,usize,&str);5]=[
     ("profile-input.json",1877,"2610dbd9ee64a12852986def336da057326f14a3289dda43eaae616286998d2d"),
@@ -30,6 +39,52 @@ const PINNED_FILES:[(&str,usize,&str);5]=[
 
 fn invalid()->io::Error {io::Error::new(io::ErrorKind::InvalidData,"unverified own MS-1 arena checkpoint")}
 fn hex(bytes:&[u8])->String {bytes.iter().map(|v|format!("{v:02x}")).collect()}
+fn digest(bytes:&[u8])->String {format!("{:x}",Sha256::digest(bytes))}
+
+/// Read a bounded file below an explicit portable content bundle root.
+pub fn portable_file(root:&Path,relative:&str,size:usize,sha:&str)->io::Result<Vec<u8>> {
+    if !root.is_absolute() || relative.is_empty() || relative.contains("..") || size>64*1024 {return Err(invalid());}
+    let base=root.canonicalize().map_err(|_|invalid())?;if !base.is_dir(){return Err(invalid());}
+    let canonical=base.join(relative).canonicalize().map_err(|_|invalid())?;
+    if !canonical.starts_with(&base)||!canonical.is_file(){return Err(invalid());}
+    let mut file=File::open(canonical).map_err(|_|invalid())?;let meta=file.metadata().map_err(|_|invalid())?;
+    if meta.len()!=size as u64{return Err(invalid());}
+    let mut bytes=Vec::with_capacity(size);file.take(size as u64+1).read_to_end(&mut bytes).map_err(|_|invalid())?;
+    if bytes.len()!=size||digest(&bytes)!=sha{return Err(invalid());}Ok(bytes)
+}
+
+/// Verify the hash-anchored portable profile4 chain. This is separate from
+/// the strict legacy-manifest loader; the bundle intentionally omits absolute
+/// path manifests and we never fabricate one.
+pub fn verify_portable_bundle(root:&Path)->io::Result<()> {
+    let manifest=portable_file(root,"manifest.json",PORTABLE_BUNDLE_MANIFEST_SIZE,PORTABLE_BUNDLE_MANIFEST_SHA256)?;
+    let chain=portable_file(root,"content/metadata/profile-chain.blob",PORTABLE_CHAIN_SIZE,PORTABLE_CHAIN_SHA256)?;
+    let m:Value=serde_json::from_slice(&manifest).map_err(|_|invalid())?;let c:Value=serde_json::from_slice(&chain).map_err(|_|invalid())?;
+    if m["format"].as_str()!=Some("server-content.v1")||m["ruleset"].as_str()!=Some("test_lab")
+        ||c["version"].as_i64()!=Some(1)||c["status"].as_str()!=Some("PASS_LEGACY_HASH_ANCHORS"){return Err(invalid());}
+    let row=c["chain"].as_array().and_then(|a|a.iter().find(|v|v["fixture"]=="profile4")).ok_or_else(invalid)?;
+    if row["profile_content_id"].as_str()!=Some("fixtures/profile4/profile-input.json")
+        ||row["profile_sha256"].as_str()!=Some(PORTABLE_PROFILE_SHA256)
+        ||row["legacy_manifest_sha256"].as_str()!=Some(LEGACY_MANIFEST_SHA256){return Err(invalid());}
+    let profile=portable_file(root,"content/fixtures/profile4/profile-input.json.blob",1877,PORTABLE_PROFILE_SHA256)?;
+    let compat=portable_file(root,"content/fixtures/profile4/compatibility.json.blob",1603,PORTABLE_COMPAT_SHA256)?;
+    let model=portable_file(root,"content/fixtures/profile4/fixture.json.blob",3363,PORTABLE_MODEL_SHA256)?;
+    let state=portable_file(root,"content/fixtures/profile4/state.bin.blob",1329,PRIMARY_STATE_SHA256)?;
+    let p:Value=serde_json::from_slice(&profile).map_err(|_|invalid())?;let cpt:Value=serde_json::from_slice(&compat).map_err(|_|invalid())?;let mdl:Value=serde_json::from_slice(&model).map_err(|_|invalid())?;
+    validate_metadata(&p,&cpt,&mdl)?;if digest(&state)!=PRIMARY_STATE_SHA256{return Err(invalid());}Ok(())
+}
+pub fn portable_bundle_state(root:&Path)->io::Result<[u8;32]> {
+    verify_portable_bundle(root)?;Ok(Sha256::digest(portable_file(root,"content/fixtures/profile4/state.bin.blob",1329,PRIMARY_STATE_SHA256)?).into())
+}
+pub fn load_source_bundle(identity:&crate::identity091::Profile,root:&Path)->io::Result<VehicleSeed> {
+    if identity.account_id!=PRIMARY_ACCOUNT||identity.database_id!=1||identity.name!=PRIMARY_NAME{return Err(invalid());}
+    verify_portable_bundle(root)?;
+    let p:Value=serde_json::from_slice(&portable_file(root,"content/fixtures/profile4/profile-input.json.blob",1877,PORTABLE_PROFILE_SHA256)?).map_err(|_|invalid())?;
+    let c:Value=serde_json::from_slice(&portable_file(root,"content/fixtures/profile4/compatibility.json.blob",1603,PORTABLE_COMPAT_SHA256)?).map_err(|_|invalid())?;
+    let m:Value=serde_json::from_slice(&portable_file(root,"content/fixtures/profile4/fixture.json.blob",3363,PORTABLE_MODEL_SHA256)?).map_err(|_|invalid())?;
+    if p["account_id"].as_str()!=Some(identity.account_id.as_str())||p["username"].as_str()!=Some(identity.name.as_str())||p["native_database_id"].as_i64()!=Some(identity.database_id as i64){return Err(invalid());}
+    validate_metadata(&p,&c,&m)?;Ok(VehicleSeed{name:identity.name.clone(),database_id:identity.database_id,descriptor:MS1_DESCRIPTOR.to_vec(),health:90,state_sha256:portable_bundle_state(root)?})
+}
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct VehicleSeed {
@@ -260,6 +315,15 @@ mod tests {
         assert_eq!(&roster[5..9],&[0x80,2,b']',b'(']);assert_eq!(&roster[roster.len()-3..],b"ta.");
         let at=144+roster.len();assert_eq!(&body[at..],&[vec![0x0a],VEHICLE_ENTITY_ID.to_le_bytes().to_vec(),vec![0]].concat());
         assert_eq!(create_requested_vehicle(&seed).unwrap().len(),97);
+    }
+    #[test] fn portable_source_bundle_uses_hash_anchor_without_legacy_manifest_bytes() {
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/stands/p09e-main-01/source-bundle-05").canonicalize().unwrap();
+        verify_portable_bundle(&root).unwrap();
+        let identity=crate::identity091::Profile{account_id:PRIMARY_ACCOUNT.to_owned(),database_id:1,name:PRIMARY_NAME.to_owned(),fixture_dir:root.clone()};
+        let seed=load_source_bundle(&identity,&root).unwrap();
+        assert_eq!(seed.descriptor,MS1_DESCRIPTOR);assert_eq!(seed.health,90);assert_eq!(hex(&seed.state_sha256),PRIMARY_STATE_SHA256);
+        let foreign=crate::identity091::Profile{account_id:identity.account_id.clone(),database_id:1,name:"foreign".to_owned(),fixture_dir:root.clone()};assert!(load_source_bundle(&foreign,&root).is_err());
+        assert!(verify_portable_bundle(&root.join("content")).is_err());
     }
     #[test] fn update_request_exact_measured_header_entity_and_no_extra_stamps() {
         let good=[0x08,4,0,3,0,0x10,9];assert!(is_own_entity_update_request(&good));

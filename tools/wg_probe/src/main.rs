@@ -128,6 +128,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.len()==7 && args[1]=="legacy091-arena-ready-probe" {
         return gateway091::serve_arena_ready_probe(&args[2],&args[3],&args[4],&args[5],&args[6]);
     }
+    if args.len()==8 && args[1]=="legacy091-arena-ready-bundle-probe" {
+        return gateway091::serve_arena_ready_bundle_probe(&args[2],&args[3],&args[4],&args[5],&args[6],&args[7]);
+    }
     if args.len()==7 && args[1]=="legacy091-arena-movement-probe" {
         return gateway091::serve_arena_movement_probe(&args[2],&args[3],&args[4],&args[5],&args[6]);
     }

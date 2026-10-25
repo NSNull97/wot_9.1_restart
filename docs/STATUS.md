@@ -160,6 +160,36 @@ profile4 feasibility candidate:
 открыть отдельную карточку на source-bundle-aware fail-closed arena loader,
 после чего повторить свежий native Account→Avatar→Space→Vehicle→Ready run.
 
+Отдельная opt-in карточка source-bundle-aware loader выполнена частично в
+worktree `codex/p02-arena-source-bundle`. Strict legacy loader не ослаблялся:
+добавлен отдельный режим `legacy091-arena-ready-bundle-probe`, который принимает
+только hash-anchored portable bundle под `gateway.local_root` и держит profile13
+Account/Avatar отдельно от profile4-derived Vehicle state. Targeted Rust tests
+portable source bundle — 2/2 PASS, capture CLI — 3/3 PASS. Полный старый набор
+vehicle tests оставлен `NOT_RUN_FIXTURE_DEBT`: шесть существующих тестов требуют
+отсутствующие exact legacy fixture-файлы.
+
+Bounded native run
+`local/evidence/native-arena-source-bundle-20261025-01/arena-source-bundle-evidence.json`
+дошёл до настоящих callbacks Account→Avatar→Space→Vehicle: gateway записал
+`ARENA_VEHICLE_ANNOUNCED`, `ARENA_ENTITY_UPDATE_REQUEST` и
+`ARENA_VEHICLE_QUEUED`, клиент выполнил `PlayerAvatar.onSpaceLoaded` и
+`Vehicle.onEnterWorld`. После этого клиент остался в `BattleLoading` с
+`ready=false`, gateway — в `ARENA_READY_WAITING`; `ARENA_READY_ACCEPTED` и
+Prebattle не наблюдались до controlled timeout. Loopback capture сохранён как
+425 packet-файлов / 34 907 wire bytes, payloads в STATUS не печатаются; client
+trace — 524 строки, SHA-256 указан в evidence. Процессы остановлены, install2
+восстановлен.
+
+Приёмка source-bundle карточки: **NOT_ACCEPTED_HASH_ANCHORED_PORTABLE**.
+Exact legacy manifest bytes по-прежнему отсутствуют, поэтому этот прогон доказывает
+только hash-anchored portable Vehicle bridge и native Vehicle callbacks, но не
+совместимость с полным legacy arena-ready и не настоящий бой. Два клиентских
+`deactivateTrigger` исключения отмечены как OBSERVED diagnostics; причинность не
+доказана. Единственный следующий шаг: отдельно исследовать, почему native
+клиент не публикует Ready после `onSpaceLoaded`/`Vehicle.onEnterWorld`, либо
+вернуться к восстановлению exact legacy r3/r4 manifests.
+
 ## История статуса до clean lifetime gate
 
 ## Сейчас: CREW-ANY — T-26/profile13 native slice принят, full card частично открыта
