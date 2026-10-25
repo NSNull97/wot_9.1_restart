@@ -4,7 +4,44 @@
 [CREW_ANY](plans/CREW_ANY.md). Исходная копия клиента
 `C:\WoT_0.9.1_RU_0717_original` не трогалась.
 
-## Что проверено в этом запуске
+## Текущий clean native lifetime результат — 2026-10-25
+
+Полная CREW-ANY lifetime-проверка закрыта двумя чистыми native-прогонами на одном
+изолированном v2 B-аккаунте (`native_database_id=2`, T-26 inventory `4`). Перед
+install13 остановлены client/services, удалены `game.sqlite-wal`/`game.sqlite-shm`,
+восстановлен baseline `game.before-lifetime-controller-20261025.sqlite`, а весь
+каталог `fixtures` стенда пересоздан. Исходная копия клиента
+`C:\WoT_0.9.1_RU_0717_original` не трогалась.
+
+- install13: native hires `#18..#192` — **175/175 PASS**, оригинальный
+  `RecruitWindow.buyTankman`, raw CMD303 `[5,4609,3,0]`, gateway/internal
+  `[3,4609,3,0]`, `result=0`; `DropdownMenu.selectedIndex` — 704 selector
+  observations/actions/readbacks с matching original callbacks; 162 native
+  dismissal cycles через `Barracks.openPersonalCase → PersonalCase.dismissTankman
+  → GUI.handleKeyEvent(KEY_RETURN)`, все `CMD306 result=0`, unassigned=15.
+- install16: native reject-only `#193` от финального состояния — raw request
+  `[5,4609,3,0]`, две proxy-фазы `result=-10`, inventory extension отсутствует,
+  `onCmdResponseExt resultID=-10`, ни `_update`, ни callback success; snapshot
+  остался неизменным, `diagnostic_condition_complete` — PASS.
+- SQLite после обоих прогонов: `next_native_id=193`, `free_left=0`,
+  `configuration_revision=354`, active members=30, retired members=162.
+- Evidence: `local/stands/crew-any-native-t26-lifetime-fix-20261025-01/evidence-native-lifetime-controller-20261025.json`.
+  Trace hashes: install13 `c7fd0e5dd80d5b46252260809b7a2a4aada22e536469d00910f739afea2d0bde`,
+  install16 `b0ca2281448456b939f5d566a4a9325997e60aca6e5f00ad8ae9441d31224e27` (полный SHA — в evidence).
+
+### Матрица текущей приёмки
+
+| Проверка | Статус | Доказательство |
+|---|---|---|
+| Bounded controller через настоящий `DropdownMenu.selectedIndex` | **PASS** | 704 actions/readbacks, original callbacks; policy caps selector=1024, RecruitWindow=256 |
+| Native lifetime hires `#18..#192` | **PASS** | install13: 175 callbacks, raw `[5,4609,3,0]` → internal `[3,4609,3,0]`, 162 CMD306 receipts |
+| Native capacity reject `#193` | **PASS** | install16: raw request, proxy `-10/-10`, `onCmdResponseExt=-10`, no update/inventory/state change |
+| Полная карточка CREW-ANY | **PASS / ACCEPTED** | Combined clean native evidence + final SQLite invariants |
+
+Ниже сохранена история предыдущих попыток и их блокеров; она не меняет текущий
+статус этой карточки.
+
+## История предыдущих запусков
 
 Официальный стенд: `local/stands/crew-any-native-t26-20261024-03`. В нём включены
 `legacy091-profile13`, CAT-01 для T-26, смешанный P06T боекомплект, P08B/P08C,
@@ -93,9 +130,7 @@ native `#18..#192` и отдельный отказ `#193` по-прежнему
 | Native lifetime `#18..#192` и отказ `#193` | **NOT_RUN (UI BLOCKED)** | authenticated native run увидел `total=17/unassigned=2`, но `p04k_barracks_renderers_pending` оставил `ready=false`; `CMD303 #18` и проверка `#193` не отправлялись |
 | Native lifetime retry после tail renderer fix | **NOT_RUN (SELECTOR INPUT BLOCKED)** | `p04k_barracks_window_ready=1`, но только `p04k_native_selector=1`; `buyTankman`, `CMD303 #18` и `#193` не достигнуты, DB unchanged |
 
-Итог текущего шага: **`PASS` для T-26/P04M/profile13 native slice и native
-capacity boundary `#17`; полная CREW-ANY карточка остаётся `PARTIAL /
-NOT_ACCEPTED`** до native lifetime-проверки `#18..#192` и отказа `#193`.
+Исторически (до install13/install16): этот старый запуск был partial; его итог superseded текущей clean native acceptance.
 
 ## Evidence
 
@@ -141,6 +176,10 @@ NOT_ACCEPTED`** до native lifetime-проверки `#18..#192` и отказ�
   `p04d_crew_member.native_id=19`, `p09d_native_command.result_code=0` — PASS.
 - Targeted Rust `cargo test` для `ammo_session` — **NOT_RUN**: `cargo` не установлен
   на этом хосте; mapping revision подтверждён исходником и фактическим commit.
+
+## Historical note
+
+The older matrix and limitation text below records pre-fix attempts. It is superseded by the current clean native lifetime matrix at the top of this file; the active acceptance status is **PASS / ACCEPTED**.
 
 ## Ограничения и единственный следующий шаг
 

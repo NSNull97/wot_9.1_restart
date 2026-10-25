@@ -105,3 +105,27 @@
   `vehicle_catalog.rs` — DOM-01/MM-01).
 - Проверка истории увольнений при каждом чтении профиля остаётся O(уволенных); при 192 это
   ≈ 2,6 с холодной команды. Снять — DOM-01 (долгоживущий воркер, один писатель).
+
+
+## Native lifetime controller gate 2026-10-25 (VERIFIED)
+
+На clean isolated v2 B-аккаунте T-26 настоящий native controller через
+`DropdownMenu.selectedIndex` прошёл hires `#18..#192` (175/175 CMD303, raw
+profile13 layout `[5,4609,3,0]`, internal gateway layout `[3,4609,3,0]`) и 162
+original CMD306 dismissal cycles. После этого отдельная reject-only native-сессия
+прошла `#193`: Account request raw `[5,4609,3,0]`, proxy call/return и
+`onCmdResponseExt` вернули `-10`, inventory extension и `_update` отсутствуют,
+snapshot unchanged.
+
+**VERIFIED:** final SQLite `next_native_id=193`, `free_left=0`,
+`configuration_revision=354`, active members=30, retired=162.
+**VERIFIED:** 704 selector observations/readbacks, original callbacks; final
+source caps input=4096, selector=1024, recruit windows=256, dismissal windows=256,
+deadline=7200s.
+**EVIDENCE:** `local/stands/crew-any-native-t26-lifetime-fix-20261025-01/evidence-native-lifetime-controller-20261025.json`.
+
+Combined acceptance deliberately uses two clean native sessions: the full lifetime
+range and a final-state reject-only session. The reject-only path temporarily
+allows the untouched `FreeTankmanValidator` to reach original `Shop.buyTankman`,
+restores it immediately, and relies on the server’s authoritative `free_left=0`
+for `-10`; no credential or external-operator packet capture is included.

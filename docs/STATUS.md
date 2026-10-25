@@ -1,5 +1,29 @@
 # Состояние проекта
 
+## Текущий статус: CREW-ANY native lifetime gate принят — 2026-10-25
+
+Карточка `codex/crew-any` закрыта на clean native evidence. Изолированный B/v2
+T-26 стенд запускался после удаления WAL/SHM и пересоздания fixtures. install13
+доказал 175 настоящих CMD303 hires `#18..#192` и 162 настоящих original CMD306
+dismissal’а; install16 отдельно доказал отказ `#193` с raw `[5,4609,3,0]`,
+proxy/onCmdResponseExt `-10`, без `_update`, inventory extension или изменения
+snapshot. Финальная SQLite-проверка: `next_native_id=193`, `free_left=0`,
+`configuration_revision=354`, active=30, retired=162.
+
+Evidence: `local/stands/crew-any-native-t26-lifetime-fix-20261025-01/evidence-native-lifetime-controller-20261025.json`.
+Проверки: targeted unittest 49/49 PASS, py_compile PASS, git diff --check PASS.
+Патчи bounded guard’ов конечны: input=4096, selector=1024, recruit windows=256,
+dismissal windows=256, lifetime deadline=7200s. Старые install07–12 FAIL/partial
+сохранены в trace/history и не подменяют clean acceptance.
+
+**Приёмка карточки: PASS / ACCEPTED.**
+
+Единственный следующий шаг: выполнить обычный review/merge карточки по
+`docs/07_CODEX_WORKFLOW.md`, затем открыть следующую карточку для оставшихся
+не native lifetime задач.
+
+## История статуса до clean lifetime gate
+
 ## Сейчас: CREW-ANY — T-26/profile13 native slice принят, full card частично открыта
 
 Карточка живёт в ветке `codex/crew-any`. На стенде
@@ -46,9 +70,8 @@ ledger/SQLite commit. Новый tankman — `native_id=19`, роль `driver`,
 `local/stands/crew-any-native-t26-capacity-20261025-01/evidence-native-capacity-id17-20261025.json`,
 trace и screenshot указаны в [ACTIVE_GATE](ACTIVE_GATE.md).
 
-Статус T-26/profile13 native slice и capacity boundary `#17`: **PASS**.
-Полная CREW-ANY карточка остаётся
-**PARTIAL / NOT_ACCEPTED**: native boundary `#17` PASS, но native lifetime
+Исторически до clean lifetime gate: T-26/profile13 slice и boundary `#17` были PASS,
+а full card оставалась PARTIAL / NOT_ACCEPTED: native boundary `#17` PASS, но native lifetime
 `#18..#192` и отказ `#193` ещё **NOT_RUN**. Automated P04K evidence guard
 по-прежнему намеренно MS-1/ИС-7-only. Подробная матрица и единственный
 следующий шаг — в [ACTIVE_GATE](ACTIVE_GATE.md).
@@ -75,6 +98,10 @@ callback не вызван, `CMD303 #18` не ушёл. Доказательст
 DB не изменилась (`next_native_id=18/free_left=175/configuration_revision=17`),
 поэтому `#18..#192` и отказ `#193` остаются **NOT_RUN**. Статус full card:
 **PARTIAL / NOT_ACCEPTED**; серверный capacity отказ не наблюдался.
+
+## Historical note
+
+The earlier PARTIAL / NOT_ACCEPTED wording below predates the clean install13/install16 native evidence. The active status is the accepted lifetime gate at the top of this file.
 
 ## Ранее: MAPS-01 + MAPS-02 приняты владельцем (2026-10-21, стенд `-09`, Малиновка)
 

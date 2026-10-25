@@ -78,3 +78,20 @@
 
 Клиент: переустановить без `--crew-any`. Сервер: `p04m_crew_v2.py rollback`
 (если номера ≤ 16) или копия БД до миграции; код v1 остаётся по умолчанию.
+
+
+## Результат native lifetime gate 2026-10-25
+
+**Статус: PASS / ACCEPTED.** Clean native доказательство собрано двумя связанными
+прогонами на одном финальном v2 B-аккаунте: install13 закрыл 175 hires `#18..#192`
+и 162 original CMD306 dismissal’а; install16 отдельно закрыл native reject `#193`
+(`raw [5,4609,3,0]`, proxy/onCmdResponseExt `-10`, no update/inventory/state
+change). Контроллер использует настоящий `DropdownMenu.selectedIndex`; caps
+конечны и зафиксированы в evidence.
+
+Факты SQLite: `next_native_id=193`, `free_left=0`,
+`configuration_revision=354`, active=30, retired=162.
+Evidence: `local/stands/crew-any-native-t26-lifetime-fix-20261025-01/evidence-native-lifetime-controller-20261025.json`.
+Проверки: 49/49 targeted unittest, py_compile, diff-check — PASS.
+
+Ограничение: combined acceptance состоит из двух чистых native-сессий — полный диапазон и reject-only — потому что первый reject-only UI путь был подавлен оригинальным zero-quota validator до Account CMD303. Финальная реализация временно разрешает только этот explicit negative path и восстанавливает `FreeTankmanValidator` сразу после native вызова; сервер остаётся authoritative.

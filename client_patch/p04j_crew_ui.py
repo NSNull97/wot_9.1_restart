@@ -37,6 +37,12 @@ _assignments = progression._assignments
 _recruit_guard = _transfer_guard = _personal_guard = _dismiss_guard = None
 _record = _scenario = None
 _input_observation_count = 0
+# The native CREW-ANY lifetime loop can legitimately open one original
+# dismissal dialog per capacity cycle.  Keep a finite process-wide guard, but
+# size it for the accepted 175-hire/162-dismissal bounded run instead of the
+# old single-dialog diagnostic ceiling.
+MAX_NATIVE_INPUT_OBSERVATIONS = 4096
+MAX_NATIVE_DISMISSAL_WINDOWS = 256
 INPUT_OBSERVER_PINS = {
     ('scripts/client/gui/Scaleform/daapi/view/meta/InputCheckerMeta.py', 'as_setFormattedControlNumberS'):
         (50, 'a07a7ee689046d4e29fdf9eec47a9e62036dd61fc57ba9dd88615e7fbac06313'),
@@ -384,7 +390,7 @@ class _PersonalGuard(progression._PersonalGuard):
         if item is None or item.invID != row['inventory_id'] or tuple(item.combinedRoles) != combined_roles(row):
             raise ValueError('original personal case member or combined roles differs')
         if window not in self.windows:
-            if len(self.windows) >= 32:
+            if len(self.windows) >= MAX_NATIVE_DISMISSAL_WINDOWS:
                 raise RuntimeError('personal case instance budget exceeded')
             self.windows.append(window)
         self.models.setdefault(window, {})
@@ -470,7 +476,8 @@ class _DismissGuard(object):
     def _entry(self, original, callback):
         guard = self
         def entered(owner, identity):
-            if not guard.active or guard.current is not None or guard.open_count >= 32:
+            if (not guard.active or guard.current is not None
+                    or guard.open_count >= MAX_NATIVE_DISMISSAL_WINDOWS):
                 raise RuntimeError('dismissal dialog lifecycle or budget differs')
             row = member_row(checked_expected(guard.snapshot(), ROLE_LEVEL), identity)
             guard.open_count += 1
@@ -634,7 +641,7 @@ def observe_input_profile(frame, phase):
         return
     if (code.co_firstlineno, hashlib.sha256(code.co_code).hexdigest()) != pin:
         raise RuntimeError('original input observer source differs')
-    if _input_observation_count >= 128:
+    if _input_observation_count >= MAX_NATIVE_INPUT_OBSERVATIONS:
         raise RuntimeError('native input observation budget exhausted')
     _input_observation_count += 1
     owner, value = values.get('self'), values.get('value')
