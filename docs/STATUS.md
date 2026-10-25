@@ -113,6 +113,23 @@ capture manifest SHA256 `da2ea9cab55efddf32641787eabb51aa662e0f5262b51764e380df1
 `docs/07_CODEX_WORKFLOW.md`, затем открыть следующую карточку для оставшихся
 не native lifetime задач.
 
+После merge `5667317` начат отдельный bounded P02-срез Avatar/Arena-ready на
+ветке `codex/p02-arena-ready-bounded`. Preflight установки клиента прошёл и
+полностью откатился, bridge был поднят и остановлен, но native-клиент намеренно
+не запускался: доступный `local/build/server/gateway-crewany-native01` отверг
+режим `legacy091-arena-ready-probe` на CLI и показал старый набор режимов без
+arena-probe entrypoint. Закреплённый Rust toolchain в этом worktree тоже не
+доступен: `local/toolchains/cargo` указывает на отсутствующую junction-цель,
+`cargo`/`rustc` не найдены. Поэтому Avatar/Arena raw/callback evidence имеет
+статус **NOT_RUN**, а не PASS.
+
+Evidence: `local/evidence/native-arena-ready-20261025-01/arena-ready-preflight-evidence.json`;
+gateway SHA256 `5200ceb429c38abe8911a77d4eff2038d6bb68a8ad65015644d09160da9fccbd`;
+CLI stderr SHA256 `4f5708c22c8745fd5516330bc57c46cea15d88d94ee32dc3388e78f361fdb361`.
+Единственный следующий шаг этой ветки: восстановить/собрать свежий gateway с
+`legacy091-arena-ready-probe`, затем повторить новый one-shot control и native
+run с тем же typed trigger-контрактом.
+
 ## История статуса до clean lifetime gate
 
 ## Сейчас: CREW-ANY — T-26/profile13 native slice принят, full card частично открыта
