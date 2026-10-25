@@ -229,6 +229,7 @@ class _RecruitGuard(dismissal._RecruitGuard):
                 return seated(window, nationID, vehTypeID, role, studyType, slot)
             state = guard._state()
             shop = native_shop()
+            pending = getattr(_scenario, 'pending', None)
             if crew_vehicles.enabled():
                 # Unlocked catalog types the original selector offers, keyed by compact ID.
                 served = dict((cd, (cd, cd >> 8, None, tuple(crew_vehicles.kind_by_type(cd >> 8)['primary_roles'])))
@@ -239,7 +240,8 @@ class _RecruitGuard(dismissal._RecruitGuard):
                             if recruitment._number_equals(vehTypeID, served[identity][1])), None)
             lifetime_reject = (_scenario is not None and
                                getattr(_scenario, 'mode', None) == 'lifetime' and
-                               getattr(_scenario, 'phase', None) == 'reject_wait_result' and
+                               getattr(_scenario, 'phase', None) in ('reject_wait_result', 'wait_result') and
+                               type(pending) is dict and pending.get('expect') == -10 and
                                state['free_quota'] == 0)
             if (window is not guard.window or vehicle is None or role not in served[vehicle][3]
                     or not recruitment._number_equals(nationID, 0)
