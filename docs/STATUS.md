@@ -71,6 +71,22 @@ Identity evidence: `local/evidence/update-gate-bounded-20261025-04/credential-sy
 status `PASS_ALREADY_SYNCED_BRIDGE_ONLY`. Предыдущий audit superseded этим
 evidence: `local/evidence/update-gate-bounded-20261025-04/identity-record-audit.json`.
 
+Один native bounded-прогон с полным email `sr.ascii.f4d1e9@example.test` и той же
+локальной test-парой завершился успешно: оригинальный `LoginView.onLogin` сделал
+submit, trace получил callback `LOGGED_ON`, gateway записал
+`SHARED_LOGIN_STARTED request_id=21802`, `SHARED_SESSION_PENDING ...
+authenticated=true` и `SESSION_ACTIVE id=1`. Raw login success reply —
+`packet-000005-server_to_client.bin`, 28 байт, `packet[11]=1`, без `67`, `73` или
+`74`; gateway `AUTH_REJECT` не записал. Сохранены пять повторных login request’ов
+`21802..21806` и полный loopback native UDP capture до account sync. Внешний
+сниффер не использовался; client/services после прогона остановлены, install
+ledger восстановлен.
+
+Evidence: `local/evidence/update-gate-bounded-20261025-06/update-gate-native-account-evidence.json`;
+raw reply SHA256 `c5669abe58b8f0d72e26c05ca099ea38d5b48511b68c8040e6e67ae9b5240b5b`;
+trace SHA256 `67db58024d9782132dd9736a432ffb8a24292df502b7e2c36bd8fd1a595e20e8`;
+capture manifest SHA256 `d89b1a00fd62dcbcb5b61f48514dea960ddd26f7be296f6030a063c1c733aefb`.
+
 Единственный следующий шаг: выполнить обычный review/merge карточки по
 `docs/07_CODEX_WORKFLOW.md`, затем открыть следующую карточку для оставшихся
 не native lifetime задач.

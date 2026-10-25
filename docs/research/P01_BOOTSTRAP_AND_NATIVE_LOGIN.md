@@ -280,3 +280,20 @@ bridge-only POST на `127.0.0.1:3692/internal/native/login` вернул HTTP `
 Evidence: `local/evidence/update-gate-bounded-20261025-04/credential-sync-bridge-evidence.json`;
 status `PASS_ALREADY_SYNCED_BRIDGE_ONLY`. Предыдущий metadata audit помечен
 superseded в `local/evidence/update-gate-bounded-20261025-04/identity-record-audit.json`.
+
+### Native bounded account-run — 2026-10-25
+
+Один bounded-прогон с полным email `sr.ascii.f4d1e9@example.test` и той же локальной
+test-парой прошёл через оригинальный `LoginView.onLogin`: trace сохранил
+`project_login_submit`, `diagnostic_login_submit` и callback
+`LOGGED_ON`. Gateway зафиксировал `SHARED_LOGIN_STARTED request_id=21802`, четыре
+`AUTH_PENDING_DUPLICATE` для `21803..21806`, затем
+`SHARED_SESSION_PENDING ... authenticated=true` и `SESSION_ACTIVE id=1`.
+Raw login success reply — 28 байт, `packet[11]=1` (`LOGIN_SUCCESS`), без
+`67/73/74`; `AUTH_REJECT` отсутствует. Встроенный loopback Recorder сохранил
+пять login requests и последующий BaseApp/account sync; внешний сниффер не
+использовался. Client, services и install ledger после запуска восстановлены.
+
+Evidence: `local/evidence/update-gate-bounded-20261025-06/update-gate-native-account-evidence.json`;
+raw reply SHA256 `c5669abe58b8f0d72e26c05ca099ea38d5b48511b68c8040e6e67ae9b5240b5b`;
+trace SHA256 `67db58024d9782132dd9736a432ffb8a24292df502b7e2c36bd8fd1a595e20e8`.
