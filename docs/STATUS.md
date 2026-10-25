@@ -130,6 +130,36 @@ CLI stderr SHA256 `4f5708c22c8745fd5516330bc57c46cea15d88d94ee32dc3388e78f361fdb
 `legacy091-arena-ready-probe`, затем повторить новый one-shot control и native
 run с тем же typed trigger-контрактом.
 
+Этот следующий шаг выполнен частично в worktree `codex/p02-arena-ready-bounded`.
+Изолированный Rust toolchain восстановлен (`rustc 1.90.0`, `cargo 1.90.0`),
+LLVM-MinGW архив проверен по SHA; pinned `rustup-init.exe` не подменялся после
+обнаруженного hash drift. Свежий legacy gateway
+`local/build/server/gateway-arena-ready-20261025-11/target/debug/p01-wg-probe.exe`
+принял CLI `legacy091-arena-ready-probe`; `arena_ready091::tests::` — 7/7 PASS.
+Отдельный session regression filter `arena_transition_requires_all` — 1/1 PASS.
+Полный suite оставлен как `FAIL_ENVIRONMENT_FIXTURES` (1217 passed, 494 failed,
+6 ignored; fixture-dependent ENOENT), а не выдан за toolchain PASS.
+
+Bounded run `native-arena-ready-20261025-12` дошёл до настоящего
+`LOGGED_ON`/`SESSION_ACTIVE`, Account sync `221/222/223`, `ACCOUNT_SHOW_GUI` и
+loopback capture (payload bytes не публикуются). После typed trigger gateway
+один раз записал `ARENA_BASE_TRIGGER_REJECT reason=queue_failed`; native
+Avatar/Space/Vehicle/Ready callbacks и `setClientReady` не наблюдались. Входной
+fixture был profile13 `p09d-r21`, тогда как fail-closed
+`arena_vehicle091::load` требует точный pinned profile4 manifest
+15490 bytes/SHA `ea9678…`; это зафиксировано в evidence, а не замаскировано
+повторным heartbeat.
+
+Evidence: `local/evidence/native-arena-ready-20261025-12/arena-ready-evidence.json`;
+rollback: `local/evidence/native-arena-ready-20261025-12/restore.json`;
+profile4 feasibility candidate:
+`local/stands/profile4-arena-ready-source-bundle-20261025-01/candidate-receipt.json`.
+Исходная копия клиента и основная DB не трогались, все процессы стенда остановлены.
+Статус P02 bounded slice: **NOT_RUN_NATIVE_VEHICLE_LOADER / NOT_ACCEPTED**.
+Единственный следующий шаг: восстановить exact legacy r3/r4 manifests либо
+открыть отдельную карточку на source-bundle-aware fail-closed arena loader,
+после чего повторить свежий native Account→Avatar→Space→Vehicle→Ready run.
+
 ## История статуса до clean lifetime gate
 
 ## Сейчас: CREW-ANY — T-26/profile13 native slice принят, full card частично открыта

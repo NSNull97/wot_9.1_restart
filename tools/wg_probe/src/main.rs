@@ -68,6 +68,8 @@ mod crew_dismissal091;
 mod research_service091;
 #[path = "../../../server/gateway/src/drive/scene_worker.rs"]
 mod scene_worker;
+#[path = "../../../server/gateway/src/drive/worker_cadence.rs"]
+mod worker_cadence091;
 #[cfg(test)]
 #[path = "../../../server/gateway/src/shared/server_worker_fixtures.rs"]
 mod worker_fixtures091;

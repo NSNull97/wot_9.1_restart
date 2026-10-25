@@ -316,7 +316,9 @@ impl Session {
             && self.base_peer.is_some() && self.sync_mask==7 && self.outbox.is_empty()
             && self.tx.len()==0 && !self.arena_base && (self.ammo_service.is_none()
                 || self.shared.as_ref().is_some_and(|c|c.profile13_arena_ready())
-                    && self.ammo_service.as_ref().is_some_and(ammo_session::State::idle))
+                    && self.ammo_service.as_ref().is_some_and(ammo_session::State::idle)
+                || self.ammo_service.as_ref().is_some_and(|state|state.research_enabled()
+                    && state.idle()))
     }
     fn queue_arena_base(&mut self)->io::Result<()> {
         if !self.ready_for_arena_base() {return Err(invalid());}
@@ -1714,7 +1716,12 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
     if interactive.as_ref().is_some_and(|config|config.profile13_battle) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput,"profile13 battle requires the explicit shared profile13 mode").into());
     }
-    if interactive.as_ref().is_some_and(|config|config.ammo_service) && (drive_pool.is_some() || arena_control.is_some()) {
+    // The arena-ready probe may use the read-only research fixture loader. It
+    // still never admits ammo commands while an arena control is active; the
+    // old blanket hangar-only guard only needs to remain for map-drive and
+    // other non-research arena modes.
+    if interactive.as_ref().is_some_and(|config|config.ammo_service && !config.research_service)
+        && (drive_pool.is_some() || arena_control.is_some()) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput,"ammunition service is hangar-only; battle integration unavailable").into());
     }
     let private=login::load_key(key_path)?;
