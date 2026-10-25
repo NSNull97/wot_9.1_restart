@@ -69,9 +69,10 @@
 - Клиент: Python 3 тесты модулей при флаге выкл./вкл.; CPython 2.7.3 компиляция.
 - Шлюз изменён → канонический gate (чистое дерево, `--cargo-temp-target`);
   в worktree сравнение множества FAIL с базой `4b46f7e`.
-- Native-приёмка владельца — NOT_RUN: купить Т-26, нанять полный экипаж и
-  загрузить БК из UI, бой; > 16 танкистов на аккаунте; окна MS-1/ИС-7 без флага
-  не изменились.
+- Native-приёмка 2026-10-24: T-26/P04M/profile13 бой PASS на стенде crew-any-native-t26-20261024-03; native UI CMD303 для T-26 PASS. Raw profile13 layout `[5,4609,3,0]` нормализуется gateway в внутренний `[3,4609,3,0]`; evidence: `local/stands/crew-any-native-t26-20261024-03/evidence-native-ui-cmd303-t26-20261024.json`.
+- Native capacity boundary 2026-10-25: на изолированном стенде `crew-any-native-t26-capacity-20261025-01` настоящий native CMD303 принял 17-го T-26 tankman (`result=0`, `inventory_id=17`), `next_native_id 17→18`, `free_left 176→175`, `configuration_revision 16→17`; evidence: `local/stands/crew-any-native-t26-capacity-20261025-01/evidence-native-capacity-id17-20261025.json`. Это PASS только для boundary `#17`; native `#18..#192` и отказ `#193` остаются NOT_RUN.
+- Native lifetime attempt 2026-10-25: login/hangar и Barracks list для B PASS/OBSERVED (`total=17`, `unassigned=2`), но original virtualized renderer pool остался `ready=false` (`p04k_barracks_renderers_pending`), поэтому `CMD303 #18` не отправлялся. Evidence: `local/stands/crew-any-native-t26-lifetime-20261025-01/evidence-native-lifetime-blocked-20261025.json`; `#18..#192` и `#193` остаются NOT_RUN до исправления UI renderer lifecycle.
+- Native lifetime retry 2026-10-25 после tail-only renderer fix: `p04k_barracks_window_ready` PASS/OBSERVED, но selector input остановился после `updateNationDropdown`; `buyTankman`, `CMD303 #18`, lifetime `#18..#192` и отказ `#193` не достигнуты. Evidence: `local/stands/crew-any-native-t26-lifetime-fix-20261025-01/evidence-native-lifetime-fix-blocked-20261025.json`; DB unchanged.
 
 ## Откат
 

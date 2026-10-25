@@ -1,40 +1,80 @@
 # Состояние проекта
 
-## Сейчас: CREW-ANY — native gate частично принят, ветка `codex/crew-any`
+## Сейчас: CREW-ANY — T-26/profile13 native slice принят, full card частично открыта
 
-Код CREW-ANY и контракт экипажа v2 уже реализованы: пожизненная ёмкость 192 танкиста,
-казарма 16, обратимая миграция v1↔v2, bridge/gateway v1/v2 и клиентские P04H–P04K/P09D
-для каталога CAT-01 за явными флагами `--catalog-v1 --crew-any`. Автоматические проверки
-и стендовая миграция PASS; native-прогон 2026-10-24 дал частичный PASS.
+Карточка живёт в ветке `codex/crew-any`. На стенде
+`local/stands/crew-any-native-t26-20261024-03` выполнен запрошенный native-шаг:
+чистый v2 B-аккаунт с T-26 inventory `4`, тремя unskilled 50% членами экипажа,
+пустыми навыками и AP/APCR/HE `96/32/32`; затем P04M recruitment в казарму создал
+unassigned tankman `native_id=16` (revision `137→138`). Доказательство команды —
+`local/stands/crew-any-native-t26-20261024-03/evidence-crew-barracks-t26.json`.
 
-На официально подготовленном стенде `local/stands/crew-any-native-20261024-02` gateway
-прошёл загрузку пяти профилей MS-1/ИС-7/Т-26/Т-34/Т-34-85, terrain/obstacle pins,
-каталога, P08C late results, P06T armament и ammo-rack policy, затем привязал
-`legacy091-profile13` на `127.0.0.1:20340`/`20341`; bridge поднялся на `127.0.0.1:3692`.
-После остановки сервисов стенд оставлен чистым.
+Оба native-клиента вошли в один настоящий profile13 бой на `05_prohorovka`:
+B inventory `4` и A inventory `5`. Gateway записал `P08B_QUEUE_PENDING` Join,
+`P06T_LOSS_RESERVED`, `SHARED_WORLD_STARTED` (`sessions=2`, `actors=2`),
+`P05C_SCENE_READY`, `SHARED_ENTRY`, `SHARED_ANNOUNCED`, native snapshots и
+подтверждённые результаты. Бой `4932769758126515471` завершился с двумя
+`p06t_result.acked=1`; резервации закончены на ревизиях `141` и `198`.
+Оба клиента оставили полноценные native traces с `native_fight_call`,
+`arena_bootstrap`, `shared_native_snapshot`, `native_avatar_call` и
+`onLeaveWorld`. Скриншоты countdown/боя/результата лежат в
+`local/stands/crew-any-native-t26-20261024-03/evidence-profile13-t26-prohorovka-20261024/`.
 
-Свежий клиентский trace на копии исследовательского клиента подтвердил CPython 2.7.3
-32-bit, `crew_any_policy` (`max_tankmen=192`, `server_authoritative=true`), оригинальный
-`LoginView.onLogin`, `connection_callback=LOGGED_ON`, `native_connected=true` и полностью
-загруженный native hangar (`hangar_space_loaded=true`, четыре видимые модели). В trace
-наблюдались native crew и P09D ammunition callbacks; команды найма/перевода/увольнения
-не выполнялись. Отдельный arena-entry smoke завершился с `compatibility_acceptance=false`
-и картой 01_karelia, поэтому он не считается боевым profile13 acceptance.
+Причина сообщения «сервер не готов» на приложенном скриншоте — клиентская
+модалка «Требуется обновление»: она блокирует `sr_interactive.py` до native login.
+После её закрытия и чистого перезапуска сервер принял обе сессии; это не новый
+дефект gateway. Авторизационные изменения стенда делались только с резервными
+копиями `web.before-*.sqlite`; секреты в доказательства не записывались.
 
-Условие `hangar_limits_observed` в диагностическом control не выполнилось:
-зафиксирован `diagnostic_condition_failed`; это отдельный FAIL диагностического сценария,
-а не отказ native login/hangar. Дополнительный P09D сценарий также завершился
-`p09d_scenario_error`: его baseline probe требует unskilled MS-1 crew, а v2-аккаунт стенда
-уже содержит crew descriptor со skill `commander_tutor`; gateway не получил CMD108 и БД
-не мутировалась. Поэтому P09D native command acceptance помечен `NOT_RUN` на этом аккаунте.
+В этом запуске вручную пройден native UI найм T-26. Оригинальный client callback
+зафиксирован как `CMD303` с raw-layout `[5,4609,3,0]`: profile13 native shop
+действительно публикует revision 5. Gateway нормализует его в принятый внутренний
+P04K layout `[3,4609,3,0]`; это подтверждено исходником нормализации и успешным
+ledger/SQLite commit. Новый tankman — `native_id=19`, роль `driver`,
+`result_code=0`, конфигурационная ревизия экипажа `67→68`, бесплатный остаток
+`174→173`. Доказательство —
+`local/stands/crew-any-native-t26-20261024-03/evidence-native-ui-cmd303-t26-20261024.json`.
 
-Полная приёмка CREW-ANY остаётся `PARTIAL / NOT_ACCEPTED`. Ветка не сливается до ручного
-прогона T-26/другой машины CAT-01, native recruitment, перевода/увольнения, номера экипажа
->16 и настоящего profile13 боя. Основная квитанция native gate:
-`local/stands/crew-any-native-20261024-02/native-gate-crew-any-20261024-receipt.json`.
-Основной клиентский trace: `D:/WoT_9.1_Server/local/client-runtime-crew-native-a-02/native-211624-1792827183386.jsonl`.
-Серверный лог: `local/stands/crew-any-native-20261024-02/gateway-20261024-123150.stdout.log`.
-Дополнительные native traces: arena export `D:/WoT_9.1_Server/local/client-runtime-crew-native-a-02/native-240536-1792826920991.jsonl` (static Karelia, `compatibility_acceptance=false`) и P09D descriptor guard `D:/WoT_9.1_Server/local/client-runtime-crew-native-a-02/native-237808-1792827224777.jsonl`.
+Следом выполнена отдельная capacity-проверка в свежей копии стенда
+`local/stands/crew-any-native-t26-capacity-20261025-01` на том же чистом v2 B-аккаунте.
+Настоящий native CMD303 из окна Казармы нанял 17-го tankman для T-26: raw
+`[5,4609,3,0]`, роль `driver`, `result=0`, `inventory_id=17`, ledger revision
+`143→144` и `snapshot_revision=144`. В SQLite `p04d_crew_meta` зафиксировано
+`next_native_id 17→18`,
+`free_left 176→175`, `configuration_revision 16→17`; после операции профиль13
+содержит 17 членов. Evidence —
+`local/stands/crew-any-native-t26-capacity-20261025-01/evidence-native-capacity-id17-20261025.json`,
+trace и screenshot указаны в [ACTIVE_GATE](ACTIVE_GATE.md).
+
+Статус T-26/profile13 native slice и capacity boundary `#17`: **PASS**.
+Полная CREW-ANY карточка остаётся
+**PARTIAL / NOT_ACCEPTED**: native boundary `#17` PASS, но native lifetime
+`#18..#192` и отказ `#193` ещё **NOT_RUN**. Automated P04K evidence guard
+по-прежнему намеренно MS-1/ИС-7-only. Подробная матрица и единственный
+следующий шаг — в [ACTIVE_GATE](ACTIVE_GATE.md).
+
+Попытка lifetime-прогона после этого boundary авторизовалась как B
+(`native_database_id=2`) и прочитала native Казарму (`total=17`,
+`unassigned=2`). После обновления списка client patch зафиксировал повторяющийся
+`p04k_barracks_renderers_pending` с `ready=false`: виртуализированный original
+renderer-пул не довёл `buy` tile до готового состояния. Поэтому native
+RecruitWindow не открылся, `CMD303 #18` не был отправлен, а SQLite осталась на
+`next_native_id=18/free_left=175/configuration_revision=17`; в P09D осталось 28
+старых команд. Proof —
+`local/stands/crew-any-native-t26-lifetime-20261025-01/evidence-native-lifetime-blocked-20261025.json`.
+Это технический UI blocker для следующего шага, а не серверный отказ capacity.
+
+После tail-only renderer fix повторный bounded native-запуск на
+`local/stands/crew-any-native-t26-lifetime-fix-20261025-01` подтвердил
+`p04k_barracks_open` и `p04k_barracks_window_ready` для того же списка
+`total=17/unassigned=2`. Renderer blocker снят, но native selector цепочка
+остановилась после одного `updateNationDropdown`: оригинальный `buyTankman`
+callback не вызван, `CMD303 #18` не ушёл. Доказательство —
+`local/stands/crew-any-native-t26-lifetime-fix-20261025-01/evidence-native-lifetime-fix-blocked-20261025.json`, trace
+`D:/WoT_9.1_Server/local/client-runtime-crew-lifetime-fix-native-20261025-01/native-96800-1792898583101.jsonl`.
+DB не изменилась (`next_native_id=18/free_left=175/configuration_revision=17`),
+поэтому `#18..#192` и отказ `#193` остаются **NOT_RUN**. Статус full card:
+**PARTIAL / NOT_ACCEPTED**; серверный capacity отказ не наблюдался.
 
 ## Ранее: MAPS-01 + MAPS-02 приняты владельцем (2026-10-21, стенд `-09`, Малиновка)
 

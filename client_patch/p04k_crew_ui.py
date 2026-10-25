@@ -24,6 +24,10 @@ VERSION = 1
 POLICY = 'test_lab.ms1_is7.barracks.free50.sparse16.v1'
 ROLE_LEVEL = 50
 SHOP_REVISION = 3
+# The original P09E shop cache is revision 5 on this profile.  The server
+# normalizes that profile13 value to its internal P04K revision (3) at the
+# account-service boundary; the untouched native callback still sends 5.
+NATIVE_CACHE_REVISION = 5
 SHOP_SHA256 = 'b55573c5b14fbbc034fbc2091d9e381645926c67e561ab46917ecd3d6965129a'
 BERTH_NOTICE = u'Покупка мест недоступна'
 NOTICE = u'Найм в казарму: 50%, бесплатно, в пределах серверной квоты. Покупка мест и платное обучение недоступны.'
@@ -39,6 +43,21 @@ _ABSENT = object()
 
 def max_tankmen():
     return crew_vehicles.max_tankmen(16)
+
+
+def _shop_revision(value):
+    """Read the native cache revision without rejecting Python-2 numeric wrappers.
+
+    The #717 client exposes this value as an integral ``float`` on the
+    CREW-ANY account after the catalog overlay is enabled.  Preserve the
+    strict value/range check while normalizing only that native representation;
+    no revision is invented or written back to the client cache.
+    """
+    if type(value) is float and value == int(value):
+        value = int(value)
+    if value not in (SHOP_REVISION, NATIVE_CACHE_REVISION):
+        raise ValueError('unsupported native shop cache revision')
+    return integer(value, SHOP_REVISION, NATIVE_CACHE_REVISION)
 
 
 def checked_hires(rows):
@@ -77,8 +96,7 @@ def native_shop():
     import BigWorld
     from gui.shared import g_itemsCache
     shop = BigWorld.player().shop
-    revision = shop._Shop__getCacheRevision()
-    integer(revision, SHOP_REVISION, SHOP_REVISION)
+    revision = _shop_revision(shop._Shop__getCacheRevision())
     stats = g_itemsCache.items.stats
     berths = integer(stats.tankmenBerthsCount, 16, 16)
     members = g_itemsCache.items.getTankmen().values()
@@ -272,6 +290,15 @@ def _logical_renderers(tile, model):
         rendered.append(observation)
         if rendered_index != index or rendered_row != row:
             pending.append(observation)
+            # The original TileList can expose the source-created buy card at
+            # a retained-pool tail slot after a 17-member refresh. Keep that
+            # card usable when its native getData() still proves it is the
+            # buy row. Only the two tail slots are eligible, so an in-range
+            # stale buy renderer cannot mask a tankman row.
+            buy_tail_start = max(len(expected) - 2, 0)
+            if (rendered_row == ['buy', None]
+                    and buy_tail_start <= rendered_index < len(expected)):
+                result.append((index, renderer, data))
             continue
         result.append((index, renderer, data))
     return result, dict(ready=not pending, logical_count=len(expected), scroll_position=scroll,
