@@ -40,6 +40,17 @@ native_snapshot = dismissal.native_snapshot
 _guard = _record = _scenario = None
 _ABSENT = object()
 
+# CREW-ANY lifetime is deliberately a separate controller from the accepted
+# MS-1/IS-7 two-hire evidence scenario below.  The old scenario keeps its
+# frozen expectations; this controller is the only path allowed to exercise
+# the v2 allocator's 18..192 range.
+LIFETIME_FIRST = 18
+LIFETIME_LAST = 192
+LIFETIME_REJECT = 193
+LIFETIME_SELECTOR_BUDGET = 8
+LIFETIME_SELECTOR_DEADLINE = 25
+LIFETIME_DEADLINE = 3600
+
 
 def max_tankmen():
     return crew_vehicles.max_tankmen(16)
@@ -226,11 +237,16 @@ class _RecruitGuard(dismissal._RecruitGuard):
                 served = VEHICLES
             vehicle = next((identity for identity in sorted(served)
                             if recruitment._number_equals(vehTypeID, served[identity][1])), None)
+            lifetime_reject = (_scenario is not None and
+                               getattr(_scenario, 'mode', None) == 'lifetime' and
+                               getattr(_scenario, 'phase', None) == 'reject_wait_result' and
+                               state['free_quota'] == 0)
             if (window is not guard.window or vehicle is None or role not in served[vehicle][3]
                     or not recruitment._number_equals(nationID, 0)
                     or not recruitment._number_equals(studyType, 0)
                     or not (slot is None or recruitment._number_equals(slot, -1))
-                    or state['free_quota'] <= 0 or shop['free_berths'] <= 0 or guard.submitted):
+                    or (state['free_quota'] <= 0 and not lifetime_reject)
+                    or shop['free_berths'] <= 0 or guard.submitted):
                 return guard._deny('unsupported_barracks_target_tariff_capacity_or_submission')
             guard.submitted = True
             guard._mask(window, state)
@@ -551,9 +567,17 @@ def native_event(fields):
     if _scenario is None:
         return
     try:
-        if fields.get('event') in ('p04j_native_dismissal_request', 'p04k_native_barracks_request'):
-            if fields.get('event') != 'p04k_native_barracks_request' or _scenario.pending is None or _scenario.mode != 'recruit':
-                raise ValueError('native mutation outside explicit two-hire Barracks scenario')
+        event = fields.get('event')
+        if event in ('p04j_native_dismissal_request', 'p04k_native_barracks_request'):
+            if event == 'p04j_native_dismissal_request':
+                if (_scenario.mode != 'lifetime' or _scenario.phase not in
+                        ('dismissal_personal', 'dismissal_dialog', 'dismissal_wait')
+                        or _scenario.pending is None):
+                    raise ValueError('native CMD306 outside bounded CREW-ANY dismissal phase')
+                _scenario.pending['tracker'].observe(fields)
+                return
+            if _scenario.pending is None or _scenario.mode not in ('recruit', 'lifetime'):
+                raise ValueError('native mutation outside explicit Barracks scenario')
         if _scenario.pending is not None:
             _scenario.pending['tracker'].observe(fields)
     except (ValueError, KeyError, TypeError) as error:
@@ -569,7 +593,7 @@ def dropdown_observation(window, name):
         return None
     count = len(provider) if type(provider) in (list, tuple) else dismissal.callback_integer(provider.length, 0, 256)
     integer(count, 0, 256)
-    options = []
+    options, option_indices, source_ids = [], [], []
     for index in range(count):
         item = provider[index]
         identity = _field(item, 'id')
@@ -581,9 +605,174 @@ def dropdown_observation(window, name):
         elif not isinstance(identity, recruitment.string_types) or not 1 <= len(identity) <= 64:
             raise ValueError('bounded original dropdown id required')
         options.append(identity)
+        option_indices.append(index)
+        source_ids.append(identity)
     selected = dismissal.callback_integer(dropdown.selectedIndex, -1, max(count - 1, -1))
-    return dict(name=name, options=options, selected_index=selected,
-                selected_id=options[selected] if selected >= 0 else None)
+    return dict(name=name, options=options, option_indices=option_indices,
+                selected_index=selected,
+                selected_id=source_ids[selected] if selected >= 0 else None)
+
+
+def catalog_selector_target(vehicle_type_id, role):
+    """Return the source-derived selector values for one CAT-01 vehicle.
+
+    The values are read from the generated table, never guessed from an
+    inventory number.  This helper is intentionally small so the lifetime
+    controller can be tested without constructing a full native Hangar.
+    """
+    if not crew_vehicles.enabled():
+        raise RuntimeError('CREW-ANY catalog must be enabled for lifetime selectors')
+    row = crew_vehicles.kind_by_type(vehicle_type_id)
+    if row is None or role not in row['primary_roles']:
+        raise ValueError('catalog vehicle/primary role is unsupported')
+    return (('nationDropdown', 0), ('vehicleClassDropdown', row['vehicle_class']),
+            ('vehicleTypeDropdown', vehicle_type_id), ('roleDropdown', role))
+
+
+class BoundedCatalogSelectorController(object):
+    """Drive original DropdownMenu.selectedIndex with callback readbacks.
+
+    No private Flash handlers or synthetic callback records are used.  The
+    caller invokes :meth:`advance` from its native observation tick.  A
+    selection is considered complete only after the same-window original
+    Python callback has been observed and the public selectedIndex reads back
+    the requested source id.
+    """
+    def __init__(self, record, window, vehicle_type_id, role, clock=None):
+        if not callable(record) or window is None:
+            raise ValueError('bounded original recruitment window required')
+        self.record, self.window = record, window
+        self.clock = clock if clock is not None else time.monotonic if hasattr(time, 'monotonic') else time.clock
+        self.targets = catalog_selector_target(vehicle_type_id, role)
+        self.index, self.pending, self.waits = 0, None, 0
+        self.started = self.last_time = self.clock()
+        if type(self.started) not in (int, float) or math.isnan(self.started) or math.isinf(self.started):
+            raise ValueError('finite selector clock required')
+
+    def _child(self, index, vehicle_type_id):
+        values = (('updateVehicleClassDropdown', [0]),
+                  ('updateVehicleTypeDropdown', [0, self.targets[1][1]]),
+                  ('updateRoleDropdown', [0, self.targets[1][1], vehicle_type_id]),
+                  (None, None))
+        return values[index]
+
+    def _fail_deadline(self, now):
+        if now - self.started > LIFETIME_SELECTOR_DEADLINE:
+            raise RuntimeError('native CREW-ANY selector chain deadline exceeded')
+        if self.waits > LIFETIME_SELECTOR_BUDGET:
+            raise RuntimeError('native CREW-ANY selector provider readiness budget exhausted')
+
+    def advance(self):
+        now = self.clock()
+        if type(now) not in (int, float) or math.isnan(now) or math.isinf(now) or now < self.last_time:
+            raise RuntimeError('native CREW-ANY selector clock moved backwards')
+        self.last_time = now
+        if self.index >= len(self.targets):
+            return True
+        if type(self.window) is not dismissal._recruit_guard.window_class or not _unseated(self.window):
+            raise RuntimeError('exact original unseated recruitment window required')
+        name, target = self.targets[self.index]
+        observed = dropdown_observation(self.window, name)
+        if observed is None or target not in observed['options']:
+            self.waits += 1
+            self._fail_deadline(now)
+            self.record('p04k_lifetime_selector_wait', name=name, target=target,
+                        wait_count=self.waits, provider_ready=observed is not None,
+                        target_available=False, original_surface='DropdownMenu.selectedIndex')
+            return False
+        if self.pending is not None:
+            if now - self.pending['time'] < 1.0:
+                return False
+            if observed['selected_id'] != target:
+                raise RuntimeError('native CREW-ANY selectedIndex readback differs from requested option')
+            child_name, child_args = self._child(self.index, self.targets[2][1])
+            events = dismissal._recruit_guard.selectors[self.pending['cursor']:]
+            matches = [event for event in events
+                       if event['owner_id'] == id(self.window) and event['method'] == child_name
+                       and event['arguments'] == child_args and event['original_callback_returned'] is True]
+            required = self.pending['changed'] and child_name is not None
+            if required and len(matches) != 1:
+                if not matches and now - self.pending['time'] < 3:
+                    return False
+                raise RuntimeError('changed CREW-ANY selector did not produce one original callback')
+            proof = dict(name=name, target=target, changed=self.pending['changed'],
+                         callback_required=required, callback=copy.deepcopy(matches[0]) if required else None)
+            self.record('p04k_lifetime_selector_observed', observation=observed,
+                        owner_id=id(self.window), proof=proof,
+                        original_surface='DropdownMenu.selectedIndex')
+            self.pending = None
+            self.index += 1
+            return self.index == len(self.targets)
+        self.record('p04k_lifetime_selector_action', name=name, target=target,
+                    before=observed, owner_id=id(self.window),
+                    original_surface='DropdownMenu.selectedIndex')
+        self.pending = dict(time=now, changed=observed['selected_id'] != target,
+                            cursor=len(dismissal._recruit_guard.selectors))
+        dropdown = getattr(self.window.flashObject, name)
+        dropdown.selectedIndex = observed['option_indices'][observed['options'].index(target)]
+        return False
+
+
+class CatalogCommandTracker(object):
+    """Bound one native CMD303 request to its typed proxy/update ordering."""
+    def __init__(self, layout, identity, expect_result=0):
+        if (type(layout) is not list or len(layout) != 4 or layout[0] != SHOP_REVISION
+                or layout[3] != 0 or type(identity) is not int or not 4 <= identity <= LIFETIME_REJECT
+                or expect_result not in (0, -10)):
+            raise ValueError('bounded CREW-ANY CMD303 tracker arguments required')
+        self.layout, self.identity, self.expect_result = list(layout), identity, expect_result
+        self.request, self.update, self.success, self.proxy = None, None, None, []
+
+    def observe(self, fields):
+        event = fields.get('event')
+        if event == 'p04k_native_barracks_request':
+            raw = fields.get('layout')
+            if (self.request is not None or fields.get('native_cmd') != 303
+                    or type(raw) is not list or len(raw) != 4
+                    or raw[1:] != self.layout[1:] or raw[0] not in (self.layout[0], 5)):
+                raise ValueError('unexpected or repeated CREW-ANY CMD303 request')
+            # Profile13's native shop publishes revision 5; the gateway
+            # normalizes that one wire revision to the P04K internal 3.
+            self.request = dict(fields, raw_layout=list(raw), layout=list(self.layout)); return
+        if event == 'p09d_native_ammo_call' and fields.get('method') == '_update' and fields.get('phase') == 'return':
+            if self.expect_result != 0 or self.request is None or self.update is not None:
+                raise ValueError('unexpected CREW-ANY update before/after reject')
+            old = integer(fields.get('previous_revision'), 1, 2147483646)
+            if integer(fields.get('revision'), 2, 2147483647) != old + 1:
+                raise ValueError('CREW-ANY update cursor differs')
+            self.update = dict(fields); return
+        if event == 'p04k_native_barracks_proxy':
+            if self.request is None or fields.get('request_id') != self.request.get('request_id'):
+                raise ValueError('CREW-ANY proxy has no matching request')
+            if fields.get('phase') not in ('call', 'return') or len(self.proxy) >= 2:
+                raise ValueError('CREW-ANY proxy phase/order differs')
+            if fields.get('result') != self.expect_result:
+                raise ValueError('CREW-ANY CMD303 result differs')
+            if self.expect_result == 0 and fields.get('inventory_id') != self.identity:
+                raise ValueError('CREW-ANY success identity differs')
+            if self.expect_result != 0 and (fields.get('inventory_id') is not None or fields.get('inventory_matches') is not False):
+                raise ValueError('CREW-ANY reject must carry no inventory extension')
+            self.proxy.append(dict(fields)); return
+        if event == 'p09d_native_ammo_call' and fields.get('method') == 'onCmdResponseExt' and fields.get('phase') == 'return':
+            if self.request is None or fields.get('requestID') != self.request.get('request_id'):
+                return
+            if fields.get('resultID') != self.expect_result or self.success is not None:
+                raise ValueError('CREW-ANY original callback result/order differs')
+            self.success = dict(fields)
+
+    def done(self):
+        if self.request is None or self.success is None or len(self.proxy) != 2:
+            return False
+        if self.expect_result == 0 and self.update is None:
+            return False
+        return True
+
+    def receipt(self):
+        if not self.done():
+            raise RuntimeError('CREW-ANY CMD303 tracker incomplete')
+        return dict(native_cmd=303, layout=list(self.layout), identity=self.identity,
+                    result=self.expect_result, proxy_count=len(self.proxy),
+                    update_before_success=self.expect_result == 0)
 
 
 def recruit_window_evidence(window, snapshot, vehicle, role):
@@ -901,7 +1090,8 @@ class NativeScenario(transfer.NativeScenario):
                       original_surface='DropdownMenu.selectedIndex')
             self.selector_pending = dict(time=self.last_time, changed=observed['selected_id'] != target,
                                          cursor=len(dismissal._recruit_guard.selectors))
-            getattr(window.flashObject, name).selectedIndex = observed['options'].index(target)
+            position = observed['options'].index(target)
+            getattr(window.flashObject, name).selectedIndex = observed.get('option_indices', observed['options'])[position]
             return False
         if self.phase == 'window_capture':
             self._unchanged()
@@ -973,3 +1163,276 @@ class NativeScenario(transfer.NativeScenario):
             self.phase, self.ready_since = 'hangar_open', self.last_time
             return False
         return False
+
+
+class CatalogLifetimeScenario(object):
+    """Bounded native CREW-ANY loop for T-26 identities 18..192 + #193.
+
+    The server remains authoritative.  This state machine only opens the
+    original Barracks window, drives its public DropdownMenu selectedIndex,
+    and waits for the original CMD303 proxy/update ordering.  When the 16
+    original berths fill up it pauses in ``await_dismissal``; a separate
+    original CMD306 path must free one berth before the loop resumes.
+    """
+    def __init__(self, record, expected=None, settings=None, clock=None):
+        global _scenario
+        if not callable(record) or not crew_vehicles.enabled():
+            raise ValueError('CREW-ANY lifetime requires the enabled catalog table')
+        if expected is not None:
+            expected = dismissal.checked_expected(expected, ROLE_LEVEL)
+        self.record, self.mode = record, 'lifetime'
+        self.expected = expected
+        self.clock = clock if clock is not None else time.monotonic if hasattr(time, 'monotonic') else time.clock
+        self.started = self.last_time = self.clock()
+        self.last_time = self.started
+        self.phase, self.advances, self.error = 'wait_hangar', 0, None
+        self.snapshot, self.ammo = None, None
+        self.ready_since, self.selected = None, None
+        self.next_identity, self.successes = LIFETIME_FIRST, 0
+        self.pending, self.selector = None, None
+        self.dismissal_seen, self.dismiss_identity = 0, None
+        self.dismissal_proxy_tracker = None
+        self.dismissal_proxy_previous = None
+        if _scenario is not None and _scenario.phase not in ('complete', 'error'):
+            raise RuntimeError('one native Barracks diagnostic permitted')
+        _scenario = self
+
+    def emit(self, event, **fields):
+        fields.update(version=VERSION, policy=POLICY, mode='lifetime',
+                     next_identity=self.next_identity, successes=self.successes)
+        self.record(event, **fields)
+
+    def _assert_unchanged(self):
+        if self.snapshot is None:
+            return
+        actual = native_snapshot(ROLE_LEVEL)
+        if actual != self.snapshot or cross.native_ammunition() != self.ammo:
+            raise RuntimeError('CREW-ANY persistent state changed outside expected CMD303/CMD306')
+
+    @staticmethod
+    def _window(manager, ViewTypes, POP_UP_CRITERIA, VIEW_ALIAS):
+        return manager.getContainer(ViewTypes.WINDOW).getView(
+            criteria={POP_UP_CRITERIA.VIEW_ALIAS: VIEW_ALIAS.RECRUIT_WINDOW})
+
+    def _catalog_vehicle(self):
+        table = crew_vehicles.vehicles(None, self.snapshot)
+        matches = [identity for identity, row in table.items() if row[1] == 18]
+        if len(matches) != 1:
+            raise RuntimeError('exact owned T-26 vehicle required for CREW-ANY lifetime')
+        return matches[0]
+
+    def _record_baseline(self):
+        self.snapshot = native_snapshot(ROLE_LEVEL)
+        self.ammo = cross.native_ammunition()
+        if self.expected is not None and self.snapshot != self.expected:
+            raise RuntimeError('native CREW-ANY lifetime baseline differs from immutable expectation')
+        identities = [row['inventory_id'] for row in self.snapshot['tankmen']]
+        if (self.snapshot['free_quota'] != 175 or max(identities or [0]) != 17
+                or len(identities) != 17):
+            raise RuntimeError('native CREW-ANY lifetime requires clean v2 baseline #17/175')
+        self.selected = self._catalog_vehicle()
+        self.emit('p04k_lifetime_initial', snapshot=self.snapshot, ammunition=self.ammo,
+                  vehicle_inventory_id=self.selected, target_type_id=18, target_role='driver')
+
+    def _advance(self, ready_hangar):
+        if self.phase == 'wait_hangar' and not ready_hangar:
+            return False
+        from gui.WindowsManager import g_windowsManager
+        from gui.Scaleform.framework import ViewTypes
+        from gui.Scaleform.daapi.settings.views import VIEW_ALIAS
+        from gui.Scaleform.framework.managers.containers import POP_UP_CRITERIA
+        from gui.Scaleform.Waiting import Waiting
+        manager = g_windowsManager.window.containerManager
+        lobby = manager.getContainer(ViewTypes.VIEW).getView()
+        page = manager.getContainer(ViewTypes.LOBBY_SUB).getView()
+        if lobby is None or lobby.flashObject is None or Waiting.isVisible():
+            return False
+        if _guard is None or _guard.error is not None:
+            raise RuntimeError('CREW-ANY Barracks guard unavailable')
+        window = self._window(manager, ViewTypes, POP_UP_CRITERIA, VIEW_ALIAS)
+        personal = manager.getContainer(ViewTypes.WINDOW).getView(
+            criteria={POP_UP_CRITERIA.VIEW_ALIAS: VIEW_ALIAS.PERSONAL_CASE})
+        dialog = dismissal._dismiss_guard.current
+        if self.phase == 'wait_hangar':
+            self._record_baseline()
+            page.tankCarousel.vehicleChange(self.selected)
+            self.phase, self.ready_since = 'hangar_wait', self.last_time
+            return False
+        if self.phase == 'hangar_wait':
+            if not ready_hangar or self.last_time - self.ready_since < 2:
+                return False
+            self._record_baseline()
+            self.emit('p04k_lifetime_navigation', alias='barracks', original_callback='LobbyHeader.menuItemClick')
+            lobby.components['lobbyHeader'].menuItemClick(VIEW_ALIAS.LOBBY_BARRACKS)
+            self.phase = 'barracks_wait'
+            return False
+        if type(page).__name__ != 'Barracks' or page is not _guard.current:
+            return False
+        if self.phase == 'barracks_wait':
+            page.setFilter(*FILTERS[0][1])
+            self.phase, self.ready_since = 'refresh', self.last_time
+            return False
+        if self.phase == 'refresh':
+            if self.last_time - self.ready_since < 2:
+                return False
+            self.snapshot = native_snapshot(ROLE_LEVEL)
+            if self.snapshot['free_quota'] != 193 - self.next_identity:
+                raise RuntimeError('native CREW-ANY quota cursor differs')
+            unassigned = sum(row['vehicle_inventory_id'] == -1 for row in self.snapshot['tankmen'])
+            if unassigned >= 16:
+                candidates = sorted(row['inventory_id'] for row in self.snapshot['tankmen']
+                                    if row['vehicle_inventory_id'] == -1)
+                if not candidates:
+                    raise RuntimeError('native CREW-ANY full berth has no dismissible member')
+                self.dismiss_identity = candidates[0]
+                self.pending = dict(tracker=dismissal.NativeCommandTracker(306, [self.dismiss_identity, 0, 0]),
+                                    identity=self.dismiss_identity, expect=0)
+                self.dismissal_proxy_tracker = dismissal.NativeCommandTracker(306, [self.dismiss_identity, 0, 0])
+                self.dismissal_proxy_previous = dismissal._scenario
+                dismissal._scenario = type('CatalogDismissalProxy', (), {
+                    'mode': 'dismiss', 'preflight_active': False,
+                    'pending': {'tracker': self.dismissal_proxy_tracker}, 'button_events': [], 'engine_input': {'stage': 'simple'},
+                    'error': None})()
+                self.phase = 'dismissal_personal'
+                page.crewPanel.openPersonalCase(self.dismiss_identity, 2)
+                self.emit('p04k_lifetime_need_dismissal', unassigned=unassigned,
+                          berth_capacity=16, native_cmd=306, identity=self.dismiss_identity,
+                          original_callback='Crew.openPersonalCase', original_callback_required=True)
+                return False
+            if self.next_identity <= LIFETIME_LAST:
+                self.phase = 'open'
+            else:
+                self.phase = 'reject_open'
+            return False
+        if self.phase == 'dismissal_personal':
+            if personal is None or personal.flashObject is None:
+                return False
+            if (type(personal) is not dismissal._personal_guard.window_class
+                    or personal.tmanInvID != self.dismiss_identity):
+                raise RuntimeError('exact original PersonalCase required for bounded CMD306')
+            dismissal._personal_guard.mask(personal)
+            if not all(key in dismissal._personal_guard.models[personal] for key in ('common', 'skills', 'dossier')):
+                return False
+            personal.dismissTankman(self.dismiss_identity)
+            self.phase = 'dismissal_dialog'
+            return False
+        if self.phase == 'dismissal_dialog':
+            if dialog is None or dialog.flashObject is None:
+                return False
+            observed = dismissal.confirmation_observation(dialog)
+            if observed is None:
+                return False
+            if (observed['inventory_id'] != self.dismiss_identity or observed['protected']
+                    or observed['input_visible']):
+                raise RuntimeError('simple50 original confirmation differs for bounded CMD306')
+            dismissal.focus_confirmation_submit(dialog, self.record)
+            self.emit('p04k_lifetime_dismissal_action', native_cmd=306,
+                      layout=[self.dismiss_identity, 0, 0], original_callback='GUI.handleKeyEvent',
+                      arguments=['KEY_RETURN', 'down', 'up'], dialog_owner_id=id(dialog))
+            dismissal.send_engine_return(dialog, 'simple', self.record)
+            self.phase = 'dismissal_wait'
+            return False
+        if self.phase == 'dismissal_wait':
+            if (self.pending is None or not self.pending['tracker'].done()
+                    or self.dismissal_proxy_tracker is None or not self.dismissal_proxy_tracker.done()):
+                return False
+            before = self.snapshot
+            actual = native_snapshot(ROLE_LEVEL)
+            if actual == before or self.dismiss_identity in {row['inventory_id'] for row in actual['tankmen']}:
+                raise RuntimeError('CMD306 completed without removing the bounded member')
+            self.snapshot, self.dismissal_seen = actual, self.dismissal_seen + 1
+            unassigned = sum(row['vehicle_inventory_id'] == -1 for row in actual['tankmen'])
+            if unassigned >= 16:
+                raise RuntimeError('CMD306 did not free a bounded original berth')
+            self.emit('p04k_lifetime_dismissal_observed', native_cmd=306,
+                      dismissal_count=self.dismissal_seen, identity=self.dismiss_identity,
+                      receipt=self.pending['tracker'].receipt(),
+                      original_dismissal_receipt=self.dismissal_proxy_tracker.receipt(), unassigned=unassigned)
+            dismissal._scenario = self.dismissal_proxy_previous
+            self.dismissal_proxy_previous = None
+            self.pending, self.dismiss_identity, self.dismissal_proxy_tracker = None, None, None
+            self.phase, self.ready_since = 'refresh', self.last_time
+            return False
+        if self.phase in ('open', 'reject_open'):
+            if window is not None:
+                raise RuntimeError('unexpected RecruitWindow before original Barracks action')
+            self.emit('p04k_lifetime_before', identity=self.next_identity,
+                      target_type_id=18, target_role='driver', shop=native_shop())
+            page.onShowRecruitWindowClick(None, True)
+            self.selector = None
+            self.phase, self.ready_since = ('reject_selectors' if self.phase == 'reject_open' else 'selectors'), self.last_time
+            return False
+        if self.phase in ('selectors', 'reject_selectors'):
+            if window is None or window.flashObject is None:
+                return False
+            if type(window) is not dismissal._recruit_guard.window_class or not _unseated(window):
+                raise RuntimeError('exact original CREW-ANY RecruitWindow required')
+            if self.selector is None:
+                self.selector = BoundedCatalogSelectorController(self.record, window, 18, 'driver', clock=self.clock)
+            if self.selector.advance():
+                self.phase = 'reject_wait_result' if self.phase == 'reject_selectors' else 'submit'
+            return False
+        if self.phase in ('submit', 'reject_wait_result'):
+            if window is None:
+                return False
+            identity = LIFETIME_REJECT if self.phase == 'reject_wait_result' else self.next_identity
+            expect = -10 if identity == LIFETIME_REJECT else 0
+            tracker = CatalogCommandTracker([SHOP_REVISION, 4609, 3, 0], identity, expect_result=expect)
+            self.pending = dict(tracker=tracker, identity=identity, expect=expect)
+            self.phase = 'wait_result'
+            self.emit('p04k_lifetime_action', identity=identity, native_cmd=303,
+                      layout=[SHOP_REVISION, 4609, 3, 0], original_callback='RecruitWindow.buyTankman')
+            # RecruitWindow.buyTankman receives the source type id; original
+            # Shop.buyTankman expands it to compact 4609 in CMD303.
+            window.buyTankman(0, 18, 'driver', 0, None)
+            return False
+        if self.phase == 'wait_result':
+            if self.pending is None or not self.pending['tracker'].done():
+                return False
+            identity, expect = self.pending['identity'], self.pending['expect']
+            actual = native_snapshot(ROLE_LEVEL)
+            if expect == 0:
+                rows = {row['inventory_id']: row for row in actual['tankmen']}
+                row = rows.get(identity)
+                if (row is None or row['vehicle_type_id'] != 18 or row['role'] != 'driver'
+                        or row['vehicle_inventory_id'] != -1 or actual['free_quota'] != 192 - identity):
+                    raise RuntimeError('native CREW-ANY CMD303 success state differs')
+                self.snapshot = actual; self.successes += 1; self.next_identity += 1
+                self.emit('p04k_lifetime_callback', receipt=self.pending['tracker'].receipt(), snapshot=actual)
+                self.pending = None
+                self.phase, self.ready_since = 'refresh', self.last_time
+                return False
+            if actual != self.snapshot:
+                raise RuntimeError('native CREW-ANY #193 rejection changed persistent state')
+            self.emit('p04k_lifetime_reject', receipt=self.pending['tracker'].receipt(),
+                      identity=LIFETIME_REJECT, free_quota=actual['free_quota'])
+            self.phase, self.pending = 'complete', None
+            return True
+        if self.phase == 'complete':
+            return True
+        return False
+
+    def advance(self, ready_hangar):
+        if type(ready_hangar) is not bool:
+            raise ValueError('explicit native Hangar readiness required')
+        if self.phase == 'complete':
+            return True
+        if self.phase == 'error':
+            raise RuntimeError(self.error or 'failed CREW-ANY lifetime scenario')
+        try:
+            now = self.clock()
+            if (type(now) not in (int, float) or math.isnan(now) or math.isinf(now)
+                    or now < self.last_time or now - self.started > LIFETIME_DEADLINE):
+                raise RuntimeError('native CREW-ANY lifetime deadline exceeded')
+            self.last_time, self.advances = now, self.advances + 1
+            if self.advances > 12000:
+                raise RuntimeError('native CREW-ANY lifetime observation budget exhausted')
+            if self.error is not None:
+                raise RuntimeError(self.error)
+            return self._advance(ready_hangar)
+        except Exception:
+            if self.dismissal_proxy_previous is not None:
+                dismissal._scenario = self.dismissal_proxy_previous
+                self.dismissal_proxy_previous = None
+            self.phase = 'error'
+            raise

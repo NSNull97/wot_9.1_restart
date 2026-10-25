@@ -247,6 +247,86 @@ class CatalogAmmoTests(CatalogMode):
         crew_vehicles.enable(catalog_v1_hints)
 
 
+class CatalogSelectorControllerTests(CatalogMode):
+    def test_lifetime_controller_uses_public_selected_index_and_original_callbacks(self):
+        now = [0.0]
+        events, selectors = [], []
+        window_class = type('RecruitWindow', (), {})
+        window = window_class()
+        window._currentVehicleInvId, window._menuEnabled, window._initData = -1, True, None
+        context = self
+        class Dropdown(object):
+            def __init__(self, name, values):
+                self.name = name
+                self.dataProvider = [dict(id=value) for value in [None] + list(values)]
+                self.index = 0
+            @property
+            def selectedIndex(self):
+                return self.index
+            @selectedIndex.setter
+            def selectedIndex(self, value):
+                old = self.index; self.index = value
+                if old == value or self.name == 'roleDropdown':
+                    return
+                flash = window.flashObject
+                child = {'nationDropdown': 'updateVehicleClassDropdown',
+                         'vehicleClassDropdown': 'updateVehicleTypeDropdown',
+                         'vehicleTypeDropdown': 'updateRoleDropdown'}[self.name]
+                args = [0]
+                if self.name != 'nationDropdown':
+                    args.append(flash.vehicleClassDropdown.dataProvider[flash.vehicleClassDropdown.selectedIndex]['id'])
+                if self.name == 'vehicleTypeDropdown':
+                    args.append(flash.vehicleTypeDropdown.dataProvider[value]['id'])
+                selectors.append(dict(owner_id=id(window), method=child, arguments=args,
+                                      original_callback_returned=True))
+        window.flashObject = NS(
+            nationDropdown=Dropdown('nationDropdown', [0]),
+            vehicleClassDropdown=Dropdown('vehicleClassDropdown', ['lightTank', 'heavyTank']),
+            vehicleTypeDropdown=Dropdown('vehicleTypeDropdown', [18]),
+            roleDropdown=Dropdown('roleDropdown', ['commander', 'driver', 'gunner']))
+        guard = NS(window_class=window_class, selectors=selectors)
+        with patch.object(barracks.dismissal, '_recruit_guard', guard):
+            controller = barracks.BoundedCatalogSelectorController(
+                lambda event, **fields: events.append((event, fields)), window, 18, 'driver',
+                clock=lambda: now[0])
+            completed = False
+            for _ in range(20):
+                completed = controller.advance()
+                if completed:
+                    break
+                now[0] += 1.0
+            self.assertTrue(completed)
+        actions = [event for event, _ in events if event == 'p04k_lifetime_selector_action']
+        observations = [event for event, _ in events if event == 'p04k_lifetime_selector_observed']
+        self.assertEqual(len(actions), 4)
+        self.assertEqual(len(observations), 4)
+        self.assertEqual([fields['original_surface'] for event, fields in events if event.endswith('selector_action')],
+                         ['DropdownMenu.selectedIndex'] * 4)
+
+    def test_cmd303_tracker_normalizes_profile13_revision_and_binds_reject(self):
+        layout = [3, 4609, 3, 0]
+        success = barracks.CatalogCommandTracker(layout, 18)
+        success.observe(dict(event='p04k_native_barracks_request', native_cmd=303,
+                             layout=[5, 4609, 3, 0], request_id=7))
+        success.observe(dict(event='p09d_native_ammo_call', method='_update', phase='return',
+                             previous_revision=100, revision=101))
+        for phase in ('call', 'return'):
+            success.observe(dict(event='p04k_native_barracks_proxy', request_id=7, phase=phase,
+                                 result=0, inventory_id=18, inventory_matches=True))
+        success.observe(dict(event='p09d_native_ammo_call', method='onCmdResponseExt', phase='return',
+                             requestID=7, resultID=0))
+        self.assertTrue(success.done())
+        reject = barracks.CatalogCommandTracker(layout, 193, expect_result=-10)
+        reject.observe(dict(event='p04k_native_barracks_request', native_cmd=303,
+                            layout=[5, 4609, 3, 0], request_id=8))
+        for phase in ('call', 'return'):
+            reject.observe(dict(event='p04k_native_barracks_proxy', request_id=8, phase=phase,
+                                result=-10, inventory_id=None, inventory_matches=False))
+        reject.observe(dict(event='p09d_native_ammo_call', method='onCmdResponseExt', phase='return',
+                            requestID=8, resultID=-10))
+        self.assertTrue(reject.done())
+
+
 class InstallFlagTests(unittest.TestCase):
     def test_crew_any_requires_the_catalog_option(self):
         import interactive_client as installer
