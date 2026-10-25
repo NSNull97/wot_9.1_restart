@@ -18,6 +18,97 @@ dismissal windows=256, lifetime deadline=7200s. Старые install07–12 FAIL
 
 **Приёмка карточки: PASS / ACCEPTED.**
 
+Отдельная bounded-диагностика update-gate на 2026-10-25 завершена частично:
+свежая research-copy через loopback `127.0.0.1:20340` дошла до обычного
+`LoginView`, update/modal-событий не было, install rollback и остановка стенда —
+PASS. Login-submit не выполнялся, поэтому raw reply/auth reason — `NOT_RUN`, а
+не PASS. Evidence:
+`local/evidence/update-gate-bounded-20261025-02/update-gate-evidence.json`.
+Старый `tools/wg_probe` остаётся запрещённым backend для новых запусков: его
+toolkit-путь формирует `74` (`UPDATER_NOT_READY`), тогда как актуальный gateway
+для #717 отправляет `73` (`SERVER_NOT_READY`).
+
+Один bounded account-run выполнен 2026-10-25 на той же чистой копии после
+ручного ввода тестовой пары в native LoginView. Raw login reply был пойман в
+loopback capture: `packet[11]=67` (`INVALID_PASSWORD`), 35 байт; callback клиента
+зафиксировал `LOGIN_REJECTED_INVALID_PASSWORD`. Gateway успел записать
+`SHARED_LOGIN_STARTED request_id=86428 identity_jobs=1`; финальная строка
+`AUTH_REJECT` не успела попасть в stdout до controlled stop, поэтому причина
+помечена как `INFERRED_FROM_SOURCE_AND_RAW_REPLY`: ветка `session.rs` с
+`auth_result=Ok(None)` отправляет code 67 и означает отказ identity-проверки.
+Коды `73/74` в этом единственном прогоне не наблюдались. Evidence:
+`local/evidence/update-gate-bounded-20261025-03/update-gate-account-evidence.json`;
+raw reply SHA256 `9df31244c3397a43a79d645b221fce617ac0dc2942edb894960c23dc39d0bce5`;
+trace SHA256 `7d2e1961b31e05dfaa6003c6137354a21224be04b5b5b68626c8ee39eea0ca1e`.
+
+Повтор с явно выбранным локальным account label `sr.ascii.f4d1e9` дал тот же
+результат: raw `packet[11]=67 (INVALID_PASSWORD)`, а callback клиента —
+`LOGIN_REJECTED_INVALID_PASSWORD`. `73 SERVER_NOT_READY` и `74
+UPDATER_NOT_READY` снова не наблюдались. Gateway успел записать только
+`SHARED_LOGIN_STARTED request_id=46912 identity_jobs=1`; финальный `AUTH_REJECT`
+не был flushed до controlled stop. Поэтому причина gateway классифицирована как
+`INFERRED`: ветка `session.rs` сводит `auth_result=Ok(None)` к коду `67`, а
+различить lookup неизвестного аккаунта и несовпадение пароля этим контрактом
+нельзя. Клиент, сервисы и install ledger после прогона восстановлены.
+
+Evidence:
+`local/evidence/update-gate-bounded-20261025-04/update-gate-account-evidence.json`;
+raw reply SHA256 `30bac841b65ac369133798066e193fdc54acbfd9fc21d4ff5ad27765c78ba65e`;
+trace SHA256 `2748bb57415c1b71b9cc01e3d2f0856c6b31b9d2b50dd79390a70407e6fd3cf8`.
+
+Активная worktree identity-запись после повторной read-only сверки уже принимает
+известную локальную test-пару из
+`D:/WoT_9.1_Server/local/client-controls/crew-t26-control-20261024-06.json`;
+перезапись `web.sqlite` не потребовалась. Bridge-only POST на
+`127.0.0.1:3692/internal/native/login` вернул HTTP `200`,
+`native_database_id=1`, `name=sr_ascii_f4d1e9`; клиент и gateway не запускались.
+Следовательно, прежний native `67` нельзя объяснять drift’ом активного hash:
+наиболее вероятен другой вручную введённый email/password byte sequence
+(короткий label вместо полного canonical email или отличие в пароле). Plaintext
+в trace отсутствует по дизайну.
+
+Identity evidence: `local/evidence/update-gate-bounded-20261025-04/credential-sync-bridge-evidence.json`;
+status `PASS_ALREADY_SYNCED_BRIDGE_ONLY`. Предыдущий audit superseded этим
+evidence: `local/evidence/update-gate-bounded-20261025-04/identity-record-audit.json`.
+
+Один native bounded-прогон с полным email `sr.ascii.f4d1e9@example.test` и той же
+локальной test-парой завершился успешно: оригинальный `LoginView.onLogin` сделал
+submit, trace получил callback `LOGGED_ON`, gateway записал
+`SHARED_LOGIN_STARTED request_id=21802`, `SHARED_SESSION_PENDING ...
+authenticated=true` и `SESSION_ACTIVE id=1`. Raw login success reply —
+`packet-000005-server_to_client.bin`, 28 байт, `packet[11]=1`, без `67`, `73` или
+`74`; gateway `AUTH_REJECT` не записал. Сохранены пять повторных login request’ов
+`21802..21806` и полный loopback native UDP capture до account sync. Внешний
+сниффер не использовался; client/services после прогона остановлены, install
+ledger восстановлен.
+
+Evidence: `local/evidence/update-gate-bounded-20261025-06/update-gate-native-account-evidence.json`;
+raw reply SHA256 `c5669abe58b8f0d72e26c05ca099ea38d5b48511b68c8040e6e67ae9b5240b5b`;
+trace SHA256 `67db58024d9782132dd9736a432ffb8a24292df502b7e2c36bd8fd1a595e20e8`;
+capture manifest SHA256 `d89b1a00fd62dcbcb5b61f48514dea960ddd26f7be296f6030a063c1c733aefb`.
+
+Следующий bounded native-шаг BaseApp/Account sync до готового ангара выполнен
+2026-10-25 на свежей установке той же research-copy. После `LOGGED_ON` trace
+зафиксировал настоящий `Account.onBecomePlayer`, ответы `onCmdResponseExt`
+для запросов `221/222/223` с `result=1`, streams `221=2904`, `222=23109`,
+`223=103` байта с совпадающей целостностью, `Account.showGUI` и запрос `224`
+с `result=0`. Gateway записал `SHARED_BASE_BOUND`, `SESSION_ACTIVE`, три
+`ACCOUNT_SYNC_REQUEST` (`command=100/300/600`) и `ACCOUNT_SHOW_GUI_QUEUED`.
+Loopback capture сохранил 311 native-пакетов: 118 client→server BaseApp и 187
+server→client BaseApp; payload’ы не печатаются, в evidence лежат только пути,
+размеры и SHA-256. На `77.20 s` клиент перешёл в `LobbyView` с `Hangar`,
+`hangar_space_inited=true`, `hangar_space_loaded=true`, четырьмя загруженными
+моделями и выбранным MS-1. Запрос приложения `226` получил штатный
+`result=-10` (`APPLICATION_UNAVAILABLE`, `state_changed=false`) и не помешал
+готовности ангара. Бой и действия в ангаре не запускались; внешний сниффер не
+использовался. Клиент, оба сервиса и install ledger после прогона остановлены
+и восстановлены.
+
+Evidence: `local/evidence/update-gate-bounded-20261025-07/baseapp-account-hangar-evidence.json`;
+raw login reply SHA256 `21bd31398613e3fb6e0ca3db13a245c0649b2cd0035494dde64958a6d77067c9`;
+trace SHA256 `790dd66218cac2356c1c0db24a2825429a491417f4436ef66e973f68d3af0172`;
+capture manifest SHA256 `da2ea9cab55efddf32641787eabb51aa662e0f5262b51764e380df1d42151e07`.
+
 Единственный следующий шаг: выполнить обычный review/merge карточки по
 `docs/07_CODEX_WORKFLOW.md`, затем открыть следующую карточку для оставшихся
 не native lifetime задач.
