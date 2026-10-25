@@ -361,7 +361,7 @@ class NativeCrewTransferStore(NativeCrewStore):
         try:
             profile = self.read_profile(account)
             stored_raw = c.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account,)).fetchone()[0]
-            stored = _object(stored_raw)
+            stored = self._stored_json(stored_raw)
             require(stored["native_database_id"] == request["native_database_id"], "FOREIGN_ACCOUNT")
             ledger = c.execute("SELECT * FROM game_command_ledger WHERE account_id=? AND command_id=?", (account, key)).fetchone()
             if ledger is not None:
@@ -409,9 +409,13 @@ class NativeCrewTransferStore(NativeCrewStore):
     def _transfer_replay(self, row, request, profile, *, recruit, contract=None):
         return self._replay_mutation(row, request, profile, operation="recruit" if recruit else "transfer", contract=contract)
 
+    def _stored_json(self, raw):
+        """Writer-owned profile/ledger JSON; the opt-in pool v2 store raises the bound."""
+        return _object(raw)
+
     def _replay_mutation(self, row, request, profile, *, operation, contract=None):
         contract = self._contract() if contract is None else contract
-        result = _object(row["result_json"])
+        result = self._stored_json(row["result_json"])
         require(sha(canonical(result)) == row["p09c_result_sha256"] and set(result) == {"schema", "command",
             "source_revision", "destination_revision", "before_crew", "after_crew", "response"}, "CORRUPT_STORE")
         source, destination = result["source_revision"], result["destination_revision"]

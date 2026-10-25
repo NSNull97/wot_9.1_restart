@@ -32,7 +32,7 @@ MODULES += ('p09e_research_policy',)
 MODULES += ('project_network',)
 MODULES += ('project_sixth_sense_sound',)
 MODULES += ('project_player_kill_marker',)
-MODULES += ('catalog_v1_hints',)
+MODULES += ('catalog_v1_hints', 'crew_vehicles')
 
 
 def digest(payload):
@@ -178,6 +178,9 @@ def prepare(args):
     catalog_v1 = getattr(args, 'catalog_v1', False)
     if type(catalog_v1) is not bool or catalog_v1 and not profile13_battle:
         raise ValueError('CAT-01 catalog requires explicit profile13 battle option')
+    crew_any = getattr(args, 'crew_any', False)
+    if type(crew_any) is not bool or crew_any and not catalog_v1:
+        raise ValueError('CREW-ANY crew/ammunition windows require the CAT-01 catalog option')
     ammo_service = bool(getattr(args, 'enable_p09d_ammo_service', False))
     recruitment = bool(getattr(args, 'enable_crew_recruitment', False))
     transfer = bool(getattr(args, 'enable_crew_transfer', False))
@@ -348,6 +351,8 @@ def prepare(args):
         settings['enable_training_rooms'] = True
     if catalog_v1:
         settings['enable_catalog_v1'] = True
+    if crew_any:
+        settings['enable_crew_any'] = True
     if catalog_spec is not None:
         settings['destructible_catalog_spec'] = catalog_spec
     if sixth_sense is not None:
@@ -561,6 +566,8 @@ def main():
                       help='Explicit P06T source-three-stack entry; requires --enable-profile13-battle and server v2 admission')
     prep.add_argument('--catalog-v1', action='store_true',
                       help='CAT-01: battle-button UI hints from the generated single catalog (server stays authoritative); requires --enable-profile13-battle')
+    prep.add_argument('--crew-any', action='store_true',
+                      help='CREW-ANY: crew and ammunition windows for every owned CAT-01 catalog vehicle (server stays authoritative); requires --catalog-v1')
     prep.add_argument('--enable-training-rooms', action='store_true',
                       help='Explicit P10B native training context; requires isolated profile13 hangar and server rooms')
     prep.add_argument('--sixth-sense-sound', choices=sorted(sixth_sense_policy().CANDIDATES),

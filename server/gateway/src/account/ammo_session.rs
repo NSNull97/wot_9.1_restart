@@ -17,7 +17,10 @@ impl Command {
     fn kind(&self)->&'static str {match self {Self::Ammo(_)=>"AMMO",Self::Crew(_)=>"CREW",Self::Transfer(_)=>"CREW_TRANSFER",Self::Skill(_)=>"CREW_LEARN",Self::Dismiss(_)=>"CREW_DISMISS",Self::Barracks(_)=>"CREW_BARRACKS",Self::Research(_)=>"RESEARCH"}}
     fn validate_supported(&self,profile:transfer_codec::Profile)->io::Result<()> {match self {Self::Ammo(r)=>r.validate_supported(),Self::Crew(r)=>r.validate_for(profile.roster()),Self::Transfer(r)=>r.validate_for(profile),Self::Skill(r)=>if matches!(profile,transfer_codec::Profile::Progression|transfer_codec::Profile::Dismissal|transfer_codec::Profile::Barracks) {r.validate_supported()}else {Err(invalid())},Self::Dismiss(r)=>if matches!(profile,transfer_codec::Profile::Dismissal|transfer_codec::Profile::Barracks) {r.validate_supported()}else {Err(invalid())},Self::Barracks(r)=>if profile==transfer_codec::Profile::Barracks {r.validate_supported()}else {Err(invalid())},Self::Research(r)=>r.validate_supported()}}
     fn validate_bound(&self,profile:transfer_codec::Profile,pool:Option<&crate::p04m_companion091::Binding>)->io::Result<()> {
-        if let Some(p)=pool{match self{Self::Ammo(r)=>p.ammo_layout(r).map(|_|()),Self::Crew(r)=>p.recruit(*r),Self::Transfer(r)=>p.transfer(*r),Self::Barracks(r)=>p.barracks(*r),_=>self.validate_supported(profile)}}
+        if let Some(p)=pool{match self{Self::Ammo(r)=>p.ammo_layout(r).map(|_|()),Self::Crew(r)=>p.recruit(*r),Self::Transfer(r)=>p.transfer(*r),Self::Barracks(r)=>p.barracks(*r),
+            Self::Dismiss(r)=>if matches!(profile,transfer_codec::Profile::Dismissal|transfer_codec::Profile::Barracks){p.dismiss(*r)}else{Err(invalid())},
+            Self::Skill(r)=>if matches!(profile,transfer_codec::Profile::Progression|transfer_codec::Profile::Dismissal|transfer_codec::Profile::Barracks){p.learn(*r)}else{Err(invalid())},
+            _=>self.validate_supported(profile)}}
         else{self.validate_supported(profile)}
     }
 }
@@ -223,8 +226,8 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
                 Command::Crew(r)=>config.service_pool(&profile,pool,&key,revision,wire_revision,P::Crew(r)),
                 Command::Transfer(r)=>config.service_pool(&profile,pool,&key,revision,wire_revision,P::Transfer(r)),
                 Command::Barracks(r)=>config.service_pool(&profile,pool,&key,revision,wire_revision,P::Barracks(r)),
-                Command::Dismiss(r)=>config.dismiss_crew(&profile,&key,revision,wire_revision,r),
-                Command::Skill(r)=>config.learn_crew(&profile,&key,revision,wire_revision,r),
+                Command::Dismiss(r)=>config.service_pool(&profile,pool,&key,revision,wire_revision,P::Dismiss(r)),
+                Command::Skill(r)=>config.service_pool(&profile,pool,&key,revision,wire_revision,P::Skill(r)),
                 Command::Research(r)=>config.research(&profile,&key,revision,wire_revision,&r),
             }
         }else{match dispatched {
@@ -259,7 +262,7 @@ fn apply(session:&mut Session,request_id:i16,reply:identity091::AmmoReply)->io::
             (Some(Command::Barracks(request)),Some(member))=>{
                 if let Some(pool)=state.pool.as_deref(){pool.validate_recruitment(member,*request,state.wire_revision,&reply.update)?;}
                 else{member.validate_delta(*request,state.wire_revision,&reply.update)?;}
-                bodies[1]=member.success_response(request_id)?;
+                bodies[1]=match state.pool.as_deref(){Some(pool)=>member.success_response_within(request_id,pool.capacity())?,None=>member.success_response(request_id)?};
             },
             (Some(Command::Barracks(_)),None)|(_,Some(_))=>return Err(invalid()),
             _=>{},

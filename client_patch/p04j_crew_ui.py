@@ -12,6 +12,7 @@ import os
 import re
 import time
 import traceback
+import crew_vehicles
 import p04d_crew_ui as recruitment
 import p04f_crew_ui as transfer
 import p04g_crew_ui as cross
@@ -36,6 +37,12 @@ _assignments = progression._assignments
 _recruit_guard = _transfer_guard = _personal_guard = _dismiss_guard = None
 _record = _scenario = None
 _input_observation_count = 0
+# The native CREW-ANY lifetime loop can legitimately open one original
+# dismissal dialog per capacity cycle.  Keep a finite process-wide guard, but
+# size it for the accepted 175-hire/162-dismissal bounded run instead of the
+# old single-dialog diagnostic ceiling.
+MAX_NATIVE_INPUT_OBSERVATIONS = 4096
+MAX_NATIVE_DISMISSAL_WINDOWS = 256
 INPUT_OBSERVER_PINS = {
     ('scripts/client/gui/Scaleform/daapi/view/meta/InputCheckerMeta.py', 'as_setFormattedControlNumberS'):
         (50, 'a07a7ee689046d4e29fdf9eec47a9e62036dd61fc57ba9dd88615e7fbac06313'),
@@ -81,6 +88,15 @@ def integer(value, low, high):
     return recruitment._integer(value, low, high)
 
 
+def vehicles(snapshot=None):
+    """Served vehicles: MS-1/IS-7 pins, or (CREW-ANY) the owned catalog vehicles."""
+    return crew_vehicles.vehicles(VEHICLES, snapshot)
+
+
+def max_tankmen():
+    return crew_vehicles.max_tankmen(MAX_TANKMEN)
+
+
 def checked_expected(value, role_level=None):
     """Validate roster structure; a supplied level also binds new H members.
 
@@ -88,27 +104,31 @@ def checked_expected(value, role_level=None):
     hashes remain part of the caller's exact expected snapshot/catalog rather
     than an invented local descriptor generator.
     """
-    if type(value) is not dict or set(value) != SNAPSHOT_FIELDS:
+    if type(value) is not dict or set(value) != crew_vehicles.snapshot_fields(SNAPSHOT_FIELDS):
         raise ValueError('exact native roster snapshot required')
     if role_level is not None:
         integer(role_level, 0, 100)
     integer(value['database_id'], 1, 2147483647)
-    integer(value['selected_inventory_id'], 1, 2)
-    integer(value['free_quota'], 0, MAX_TANKMEN)
+    capacity, served = max_tankmen(), vehicles(value)
+    if crew_vehicles.enabled():
+        # Any garage vehicle may be selected; only served ones accept crew actions.
+        integer(value['selected_inventory_id'], -1, 2147483647)
+    else:
+        integer(value['selected_inventory_id'], 1, 2)
+    integer(value['free_quota'], 0, capacity)
     for field in ('credits', 'gold'):
         integer(value[field], 0, 9223372036854775807)
     members = value['tankmen']
-    if type(members) is not list or not 0 <= len(members) <= MAX_TANKMEN:
+    if type(members) is not list or not 0 <= len(members) <= capacity:
         raise ValueError('bounded native roster membership required')
     seats = {}
-    for vehicle, field in ((1, 'ms1_crew'), (2, 'is7_crew')):
-        crew = value[field]
-        if type(crew) is not list or len(crew) != len(VEHICLES[vehicle][3]):
+    for vehicle, crew in crew_vehicles.crew_items(value):
+        if type(crew) is not list or len(crew) != len(served[vehicle][3]):
             raise ValueError('source-bound native crew shape required')
         for slot, identity in enumerate(crew):
             if identity is None:
                 continue
-            integer(identity, 1, MAX_TANKMEN)
+            integer(identity, 1, capacity)
             if identity in seats:
                 raise ValueError('tankman occupies more than one native seat')
             seats[identity] = (vehicle, slot)
@@ -116,16 +136,17 @@ def checked_expected(value, role_level=None):
     for row in members:
         if type(row) is not dict or set(row) != ROW_FIELDS:
             raise ValueError('exact native roster row required')
-        identity = integer(row['inventory_id'], 1, MAX_TANKMEN)
+        identity = integer(row['inventory_id'], 1, capacity)
         if identities and identity <= identities[-1]:
             raise ValueError('sorted unique sparse native identities required')
         identities.append(identity)
         integer(row['nation_id'], 0, 0)
-        integer(row['vehicle_type_id'], 1, 255)
-        if row['vehicle_type_id'] not in (13, 28):
+        # T-34 is source type 0 (catalog compact ID 1); the legacy pins start at 1.
+        integer(row['vehicle_type_id'], 0 if crew_vehicles.enabled() else 1, 255)
+        if row['vehicle_type_id'] not in crew_vehicles.trained_types((13, 28)):
             raise ValueError('unsupported trained vehicle type')
         integer(row['role_level'], 0, 100)
-        if row['role'] not in ('commander', 'driver', 'gunner', 'loader'):
+        if row['role'] not in crew_vehicles.primary_roles(('commander', 'driver', 'gunner', 'loader')):
             raise ValueError('unsupported primary crew role')
         if (not isinstance(row['sha256'], recruitment.string_types)
                 or re.match(r'\A[0-9a-f]{64}\Z', row['sha256']) is None
@@ -137,12 +158,17 @@ def checked_expected(value, role_level=None):
         integer(row['dossier_bytes'], 6, 6)
         if row['dossier_sha256'] != DOSSIER_SHA256 or row['skills'] and row['role_level'] != 100:
             raise ValueError('preserved empty dossier and qualified skills required')
-        integer(row['vehicle_inventory_id'], -1, 2)
-        integer(row['slot'], -1, 4)
+        if crew_vehicles.enabled():
+            if row['vehicle_inventory_id'] != -1:
+                crew_vehicles.vehicle_id(row['vehicle_inventory_id'], value)
+            integer(row['slot'], -1, 7)
+        else:
+            integer(row['vehicle_inventory_id'], -1, 2)
+            integer(row['slot'], -1, 4)
         actual = (row['vehicle_inventory_id'], row['slot'])
         if actual != seats.get(identity, (-1, -1)):
             raise ValueError('native tankman and vehicle assignments disagree')
-        if actual[0] != -1 and row['role'] != VEHICLES[actual[0]][3][actual[1]]:
+        if actual[0] != -1 and row['role'] != served[actual[0]][3][actual[1]]:
             raise ValueError('native primary role does not match seat')
         if identity <= 3:
             role = 'commander' if identity == 1 else 'driver'
@@ -167,11 +193,11 @@ def native_snapshot(role_level=None):
         raise RuntimeError('native roster requires connected synced Account')
     items = g_itemsCache.items
     tankmen = items.getTankmen()
-    if not isinstance(tankmen, ItemsCollection) or not 0 <= len(tankmen) <= MAX_TANKMEN:
+    if not isinstance(tankmen, ItemsCollection) or not 0 <= len(tankmen) <= max_tankmen():
         raise ValueError('bounded original ItemsCollection required')
     rows = []
     for identity, item in sorted(tankmen.items()):
-        integer(identity, 1, MAX_TANKMEN)
+        integer(identity, 1, max_tankmen())
         compact, desc = item.strCD, item.descriptor
         if (not isinstance(compact, bytes) or not 25 <= len(compact) <= 26
                 or desc.makeCompactDescr() != compact or item.invID != identity):
@@ -187,6 +213,12 @@ def native_snapshot(role_level=None):
                  selected_inventory_id=g_currentVehicle.invID,
                  free_quota=items.stats.freeTankmenLeft, credits=items.stats.credits,
                  gold=items.stats.gold, tankmen=rows)
+    if crew_vehicles.enabled():
+        # Owned catalog vehicles, each checked against the client's own type.
+        table = crew_vehicles.live_vehicles()
+        value['vehicles'] = dict((identity, [entry[0], entry[1], entry[2], list(entry[3])]) for identity, entry in table.items())
+        value['crews'] = crew_vehicles.live_crews(table)
+        return checked_expected(value, role_level)
     for vehicle_id, field in ((1, 'ms1_crew'), (2, 'is7_crew')):
         vehicle = items.getVehicle(vehicle_id)
         if (vehicle is None or vehicle.invID != vehicle_id or vehicle.intCD != VEHICLES[vehicle_id][0]
@@ -204,10 +236,10 @@ def native_readiness(snapshot):
     from gui.shared import g_itemsCache
     snapshot = checked_expected(snapshot)
     result = []
-    for identity, field in ((1, 'ms1_crew'), (2, 'is7_crew')):
+    for identity, crew in crew_vehicles.crew_items(snapshot):
         vehicle = g_itemsCache.items.getVehicle(identity)
         raw = vehicle.isCrewFull
-        full = all(member is not None for member in snapshot[field])
+        full = all(member is not None for member in crew)
         if type(raw) not in recruitment.integer_types + (bool,) or bool(raw) != full:
             raise ValueError('original crew fullness disagrees with native slots')
         result.append(dict(vehicle_inventory_id=identity, is_crew_full=bool(raw),
@@ -238,7 +270,7 @@ def member_map(snapshot):
 
 
 def member_row(snapshot, identity):
-    row = member_map(snapshot).get(callback_integer(identity, 1, MAX_TANKMEN))
+    row = member_map(snapshot).get(callback_integer(identity, 1, max_tankmen()))
     if row is None:
         raise ValueError('active owned native tankman required')
     return row
@@ -247,17 +279,21 @@ def member_row(snapshot, identity):
 def projected_transfer(snapshot, vehicle, slot, identity):
     """Expected evidence only; never writes a GUI object or native cache."""
     value = checked_expected(snapshot, ROLE_LEVEL)
-    vehicle = integer(vehicle, 1, 2)
-    slot = integer(slot, -1, len(VEHICLES[vehicle][3]) - 1)
-    identity = integer(identity, -1, MAX_TANKMEN)
-    crew = value[crew_key(vehicle)]
+    if crew_vehicles.enabled():
+        vehicle = crew_vehicles.vehicle_id(vehicle, value)
+    else:
+        vehicle = integer(vehicle, 1, 2)
+    roles = vehicles(value)[vehicle][3]
+    slot = integer(slot, -1, len(roles) - 1)
+    identity = integer(identity, -1, max_tankmen())
+    crew = crew_vehicles.crew_of(value, vehicle)
     if identity == 0 or slot == -1 and identity != -1:
         raise ValueError('unsupported native transfer selection')
     if identity > 0:
         row = member_row(value, identity)
         if row['vehicle_inventory_id'] != -1:
             raise ValueError('original selectable candidate must be in barracks')
-        if row['role'] != VEHICLES[vehicle][3][slot]:
+        if row['role'] != roles[slot]:
             raise ValueError('primary role does not match target seat')
         crew[slot] = identity
     elif slot == -1:
@@ -304,8 +340,10 @@ class _TransferGuard(transfer._TransferGuard):
                 if name == 'equipTankman':
                     if len(supplied) != 2:
                         raise ValueError('equip callback arity')
-                    identity = callback_integer(supplied[0], 1, MAX_TANKMEN)
-                    slot = callback_integer(supplied[1], 0, len(VEHICLES[vehicle][3]) - 1)
+                    identity = callback_integer(supplied[0], 1, max_tankmen())
+                    if crew_vehicles.enabled():
+                        crew_vehicles.vehicle_id(vehicle, state)
+                    slot = callback_integer(supplied[1], 0, len(vehicles(state)[vehicle][3]) - 1)
                     projected_transfer(state, vehicle, slot, identity)
                 elif name == 'unloadTankman':
                     if len(supplied) != 1:
@@ -313,11 +351,13 @@ class _TransferGuard(transfer._TransferGuard):
                     member = member_row(state, supplied[0])
                     if callback == 'Barracks.unloadTankman':
                         vehicle = member['vehicle_inventory_id']
-                    if vehicle not in VEHICLES or member['vehicle_inventory_id'] != vehicle:
+                    if vehicle not in vehicles(state) or member['vehicle_inventory_id'] != vehicle:
                         raise ValueError('tankman is not seated in the original target')
                     slot, identity = member['slot'], -1
                 else:
-                    if supplied or all(item is None for item in state[crew_key(vehicle)]):
+                    if crew_vehicles.enabled():
+                        crew_vehicles.vehicle_id(vehicle, state)
+                    if supplied or all(item is None for item in crew_vehicles.crew_of(state, vehicle)):
                         raise ValueError('whole crew unload requires occupied seats')
                     slot, identity = -1, -1
             except ValueError:
@@ -350,7 +390,7 @@ class _PersonalGuard(progression._PersonalGuard):
         if item is None or item.invID != row['inventory_id'] or tuple(item.combinedRoles) != combined_roles(row):
             raise ValueError('original personal case member or combined roles differs')
         if window not in self.windows:
-            if len(self.windows) >= 32:
+            if len(self.windows) >= MAX_NATIVE_DISMISSAL_WINDOWS:
                 raise RuntimeError('personal case instance budget exceeded')
             self.windows.append(window)
         self.models.setdefault(window, {})
@@ -436,7 +476,8 @@ class _DismissGuard(object):
     def _entry(self, original, callback):
         guard = self
         def entered(owner, identity):
-            if not guard.active or guard.current is not None or guard.open_count >= 32:
+            if (not guard.active or guard.current is not None
+                    or guard.open_count >= MAX_NATIVE_DISMISSAL_WINDOWS):
                 raise RuntimeError('dismissal dialog lifecycle or budget differs')
             row = member_row(checked_expected(guard.snapshot(), ROLE_LEVEL), identity)
             guard.open_count += 1
@@ -600,7 +641,7 @@ def observe_input_profile(frame, phase):
         return
     if (code.co_firstlineno, hashlib.sha256(code.co_code).hexdigest()) != pin:
         raise RuntimeError('original input observer source differs')
-    if _input_observation_count >= 128:
+    if _input_observation_count >= MAX_NATIVE_INPUT_OBSERVATIONS:
         raise RuntimeError('native input observation budget exhausted')
     _input_observation_count += 1
     owner, value = values.get('self'), values.get('value')
@@ -1013,6 +1054,8 @@ class _Screenshots(recruitment._Screenshots):
 class _PreflightScenario(transfer.NativeScenario):
     def __init__(self, record, mode, expected, hire=None, settings=None, clock=None):
         global _scenario
+        if crew_vehicles.enabled():
+            raise RuntimeError('P04J evidence scenarios are MS-1/IS-7 only; unavailable with CREW-ANY')
         if not callable(record) or mode != 'preflight' or hire is not None:
             raise ValueError('only the explicit confirmation-only preflight is currently enabled')
         self.expected = checked_expected(expected, ROLE_LEVEL)

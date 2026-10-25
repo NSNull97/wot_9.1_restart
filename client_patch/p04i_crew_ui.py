@@ -13,6 +13,7 @@ import re
 import os
 import time
 
+import crew_vehicles
 import p04d_crew_ui as recruitment
 import p04f_crew_ui as transfer
 import p04g_crew_ui as cross
@@ -64,6 +65,8 @@ def checked_expected(value, role_level=None):
     hashes remain part of the caller's exact expected snapshot/catalog rather
     than an invented local descriptor generator.
     """
+    if crew_vehicles.enabled():
+        raise RuntimeError('CREW-ANY serves the P04J/P04K roster only')
     if type(value) is not dict or set(value) != SNAPSHOT_FIELDS:
         raise ValueError('exact native roster snapshot required')
     if role_level is not None:
@@ -132,6 +135,8 @@ def checked_expected(value, role_level=None):
 
 
 def native_snapshot(role_level=None):
+    if crew_vehicles.enabled():
+        raise RuntimeError('CREW-ANY serves the P04J/P04K roster only')
     import BigWorld
     from ConnectionManager import connectionManager
     from CurrentVehicle import g_currentVehicle
@@ -284,12 +289,14 @@ def callback_integer(value, low, high):
         if math.isnan(value) or math.isinf(value) or int(value) != value:
             raise ValueError('finite integral native callback argument required')
         return integer(int(value), low, high)
-    if isinstance(value, recruitment.string_types) and re.match(r'\A[0-9]{1,2}\Z', value):
+    if isinstance(value, recruitment.string_types) and re.match(r'\A[0-9]{1,%d}\Z' % crew_vehicles.digits(), value):
         return integer(int(value), low, high)
     raise ValueError('native callback integer required')
 
 
 def _assignments(value):
+    if crew_vehicles.enabled():
+        return crew_vehicles.assignments(value)
     for row in value['tankmen']:
         row['vehicle_inventory_id'], row['slot'] = -1, -1
         for owner in (1, 2):
@@ -328,7 +335,7 @@ def projected_transfer(snapshot, vehicle, slot, identity):
 
 def combined_roles(row):
     return ((row['role'],) if row['vehicle_inventory_id'] == -1 else
-            COMBINED_ROLES[row['vehicle_inventory_id']][row['slot']])
+            crew_vehicles.combined(COMBINED_ROLES, row['vehicle_inventory_id'], row['slot']))
 
 
 def eligible_names(row):
@@ -534,7 +541,7 @@ class _PersonalGuard(object):
         def learn(window, identity, name):
             row, item = guard._row(window)
             model = guard.models[window]
-            if (roster.callback_integer(identity, 1, MAX_TANKMEN) != row['inventory_id']
+            if (roster.callback_integer(identity, 1, crew_vehicles.max_tankmen(MAX_TANKMEN)) != row['inventory_id']
                     or name not in model.get('catalog', ()) or name not in eligible_names(row)
                     or row['role_level'] != 100 or row['skills'] or not item.hasNewSkill
                     or model.get('submitted') or name in EXCLUDED_SKILLS):

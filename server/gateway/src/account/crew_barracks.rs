@@ -75,8 +75,10 @@ impl Recruitment {
         out.extend(b"J\xff\xff\xff\xffuuuU\x05stats}(U\x0cfreeTMenLeftK");
         out.push(16-self.tankman_id);out.extend(b"uu.");out
     }
-    pub fn success_response(&self,id:i16)->io::Result<Vec<u8>> {
-        if id<=0 || !(4..=16).contains(&self.tankman_id) {return Err(invalid("barracks success request/identity"));}
+    pub fn success_response(&self,id:i16)->io::Result<Vec<u8>> {self.success_response_within(id,16)}
+    /// The P04M binding passes its stored lifetime capacity after validating the delta.
+    pub fn success_response_within(&self,id:i16,capacity:i64)->io::Result<Vec<u8>> {
+        if id<=0 || !(4..=capacity.min(255)).contains(&(self.tankman_id as i64)) {return Err(invalid("barracks success request/identity"));}
         let mut ext=b"\x80\x02}(U\x09tmanInvIDK".to_vec();ext.push(self.tankman_id);
         ext.extend(b"U\x0dtmanCompDescrU\x19");ext.extend(self.descriptor);ext.extend(b"u.");
         let mut payload=id.to_le_bytes().to_vec();payload.extend(0i16.to_le_bytes());

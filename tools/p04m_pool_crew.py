@@ -1,7 +1,11 @@
-"""Versioned source-bound five-type crew contract; no inventory grants.
+"""Versioned source-bound pool crew contracts; no inventory grants.
 
 Old F-K codecs and policies stay frozen. Native inventory IDs are supplied by
 the owner's server-authored vehicle map, never used as source type IDs.
+``CrewContract`` (v1, lifetime 16) stays the default; ``CrewContractV2``
+(lifetime 192) is selected only by an account's stored migration marker.
+Seat roles come from the CAT-01 catalog when a worker activated it, otherwise
+from the equal legacy stock registry.
 """
 from copy import deepcopy
 import struct
@@ -28,11 +32,33 @@ POLICY = {"schema": SCHEMA, "definition_sha256": DEFINITION_SHA256, "capacity": 
     "learning": "retained-legacy-zero-XP-contract-new50-unqualified", "battle_admission": "NEW_TYPES_DISABLED"}
 POLICY_SHA256 = sha(canonical(POLICY))
 MEMBER_FIELDS = {"native_id", "crew_id", "role", "descriptor_hex", "vehicle_native_id", "seat"}
+# Original Barracks capacity (stats.berths of the published native account):
+# at most this many unassigned tankmen, independent of the lifetime allocator.
+BERTHS = 16
+V2_SCHEMA = "p04m-pool-crew.v2"
+# 192 keeps every identity and freeTMenLeft value in one pickle BININT1 byte,
+# so the gateway/bridge byte codecs keep their exact shape.
+V2_CAPACITY = 192
+V2_POLICY = dict(POLICY, schema=V2_SCHEMA, capacity=V2_CAPACITY, berths=BERTHS,
+    allocator="retained-monotonic-lifetime192-no-retirement-refund",
+    passports="source-USSR-normal-modulo-names112-surnames1036-icons30-v1-identical-1-16",
+    seat_roles="catalog-v1-when-active-else-equal-stock-registry")
+V2_POLICY_SHA256 = sha(canonical(V2_POLICY))
+
+
+def pins():
+    """Stock seat/role pins: CAT-01 catalog when this worker activated it."""
+    import catalog_v1
+    if not catalog_v1.active():
+        return PINS
+    value = catalog_v1.stock_pins()
+    require(all(value[kind] == PINS[kind] for kind in set(value) & set(PINS)), "CAT01_CATALOG_DISAGREES")
+    return value
 
 
 def profile_for_type(type_id):
     require(type(type_id) is int and 0 <= type_id <= 255, "RECRUIT_SELECTION_UNSUPPORTED")
-    rows = [(kind, pin) for kind, pin in PINS.items() if pin[1] >> 8 == type_id]
+    rows = [(kind, pin) for kind, pin in pins().items() if pin[1] >> 8 == type_id]
     require(len(rows) == 1, "RECRUIT_SELECTION_UNSUPPORTED")
     return rows[0]
 
@@ -68,21 +94,27 @@ def base_descriptor(decoded):
     return unskilled(**{key: decoded[key] for key in ("vehicle_type_id", "role", "role_level", "first_name_id", "last_name_id", "icon_id")})
 
 
-def passport(identity, type_id, role):
-    require(type(identity) is int and 4 <= identity <= CAPACITY, "FREE_RECRUITMENT_EXHAUSTED")
+def name_ids(identity):
+    """Source name/surname/icon IDs; identical to the v1 passport for 1..16."""
+    return tuple((identity - 1) % CATALOG_BOUNDS[key] + 1 for key in ("first_name_id", "last_name_id", "icon_id"))
+
+
+def passport(identity, type_id, role, capacity=CAPACITY):
+    require(type(identity) is int and type(capacity) is int and 4 <= identity <= capacity, "FREE_RECRUITMENT_EXHAUSTED")
+    first, last, icon = name_ids(identity)
     return unskilled(vehicle_type_id=type_id, role=role, role_level=50,
-        first_name_id=identity, last_name_id=identity, icon_id=identity)
+        first_name_id=first, last_name_id=last, icon_id=icon)
 
 
 def vehicles(value):
-    rows = value["vehicles"]
-    require(type(rows) is list and 2 <= len(rows) <= 5, "CORRUPT_STORE")
+    rows = value["vehicles"]; stock = pins()
+    require(type(rows) is list and 2 <= len(rows) <= len(stock), "CORRUPT_STORE")
     result = {}
     seen = set()
     for row in rows:
         require(type(row) is dict and set(row) == {"native_inventory_id", "vehicle_inventory_id", "kind"}, "CORRUPT_STORE")
         kind, native = row["kind"], row["native_inventory_id"]
-        require(type(kind) is str and kind in PINS and type(native) is int and 1 <= native < 2**31
+        require(type(kind) is str and kind in stock and type(native) is int and 1 <= native < 2**31
             and native not in result and kind not in seen, "CORRUPT_STORE")
         expected = value["account_id"] + (":starter-vehicle-v1" if native == 1 else ":test-is7-v1" if native == 2 else ":p09e-vehicle:" + str(native))
         require(row["vehicle_inventory_id"] == expected and (native not in (1, 2) or kind == ("ms1" if native == 1 else "is7"))
@@ -92,26 +124,28 @@ def vehicles(value):
     return result
 
 
-def native_crew(value):
+def native_crew(value, contract=None):
+    contract = CrewContract if contract is None else contract
+    capacity = contract.CAPACITY
     require(type(value) is dict and set(value) == {"policy_sha256", "account_id", "vehicles", "free_recruitment_left",
         "next_native_id", "configuration_revision", "members", "retired_members"}
-        and value["policy_sha256"] == POLICY_SHA256, "CORRUPT_STORE")
+        and value["policy_sha256"] == contract.POLICY_SHA256, "CORRUPT_STORE")
     from p08b_battle_store import _uuid
     _uuid(value["account_id"])
-    types = vehicles(value)
-    require(type(value["next_native_id"]) is int and 4 <= value["next_native_id"] <= 17
-        and type(value["free_recruitment_left"]) is int and value["free_recruitment_left"] == 17 - value["next_native_id"]
+    types = vehicles(value); stock = pins()
+    require(type(value["next_native_id"]) is int and 4 <= value["next_native_id"] <= capacity + 1
+        and type(value["free_recruitment_left"]) is int and value["free_recruitment_left"] == capacity + 1 - value["next_native_id"]
         and type(value["configuration_revision"]) is int and 2 <= value["configuration_revision"] < 2**31, "CORRUPT_STORE")
-    seats = {native: [None] * len(PINS[kind][6]) for native, kind in types.items()}
+    seats = {native: [None] * len(stock[kind][6]) for native, kind in types.items()}
     descriptors, assigned, used, identities = {}, {}, set(), set()
     for group in ("members", "retired_members"):
         rows = value[group]
-        require(type(rows) is list and len(rows) <= CAPACITY, "CORRUPT_STORE")
+        require(type(rows) is list and len(rows) <= capacity, "CORRUPT_STORE")
         previous = 0
         for row in rows:
             require(type(row) is dict and set(row) == MEMBER_FIELDS, "CORRUPT_STORE")
             identity = row["native_id"]
-            require(type(identity) is int and previous < identity <= CAPACITY and identity not in used
+            require(type(identity) is int and previous < identity <= capacity and identity not in used
                 and type(row["crew_id"]) is str and row["crew_id"] not in identities
                 and row["crew_id"].startswith(value["account_id"] + ":") and len(row["crew_id"]) <= 96, "CORRUPT_STORE")
             encoded = row["descriptor_hex"]
@@ -126,12 +160,12 @@ def native_crew(value):
                 require(row["role"] == ("commander" if identity == 1 else "driver") and sha(base) == DESCRIPTOR_PINS[row["role"]], "CORRUPT_STORE")
             else:
                 require(row["crew_id"] == recruit_identity(value["account_id"], identity)
-                    and base == passport(identity, decoded["vehicle_type_id"], row["role"]), "CORRUPT_STORE")
+                    and base == passport(identity, decoded["vehicle_type_id"], row["role"], capacity), "CORRUPT_STORE")
             vehicle, seat = row["vehicle_native_id"], row["seat"]
             require(type(vehicle) is int and (vehicle == -1 or vehicle in types), "CORRUPT_STORE")
             if vehicle == -1: require(seat is None, "CORRUPT_STORE")
             else:
-                roles = PINS[types[vehicle]][6]
+                roles = stock[types[vehicle]][6]
                 require(type(seat) is int and 0 <= seat < len(roles) and roles[seat][0] == row["role"], "CORRUPT_STORE")
                 if group == "members":
                     require(seats[vehicle][seat] is None, "CORRUPT_STORE"); seats[vehicle][seat] = identity
@@ -141,8 +175,8 @@ def native_crew(value):
     return {"compDescr": descriptors, "vehicle": assigned}, seats
 
 
-def delta(before, after, revision, operation):
-    native_crew(before); inv, seats = native_crew(after)
+def delta(before, after, revision, operation, contract=None):
+    native_crew(before, contract); inv, seats = native_crew(after, contract)
     require(type(revision) is int and 1 <= revision < 2**31 - 1, "INVALID_INPUT")
     old = {row["native_id"]: row for row in before["members"]}; new = {row["native_id"]: row for row in after["members"]}
     removed = set(old) - set(new)
@@ -164,7 +198,15 @@ class CrewContract:
     SOURCE = BarracksRecruitmentProjectionSource
     COMMAND, RECRUIT_COMMAND = "p04m.crew_transfer.v1", "p04m.recruit_assign.v1"
     LEARN_COMMAND, DISMISS_COMMAND, BARRACKS_COMMAND = "p04m.learn_skill.v1", "p04m.dismiss.v1", "p04m.recruit_barracks.v1"
-    native_crew = staticmethod(native_crew)
+    CAPACITY, BERTHS, PROFILE_BOUND = CAPACITY, BERTHS, 16384
+
+    @classmethod
+    def native_crew(cls, value):
+        return native_crew(value, cls)
+
+    @classmethod
+    def commands(cls):
+        return (cls.COMMAND, cls.RECRUIT_COMMAND, cls.LEARN_COMMAND, cls.DISMISS_COMMAND, cls.BARRACKS_COMMAND)
 
     @classmethod
     def operation_command(cls, operation):
@@ -198,35 +240,35 @@ class CrewContract:
 
     @classmethod
     def plan_operation(cls, before, layout, *, operation, account_id):
-        cls.validate_operation_layout(layout, operation); native_crew(before)
+        cls.validate_operation_layout(layout, operation); native_crew(before, cls); stock = pins()
         require(before["account_id"] == account_id, "FOREIGN_ACCOUNT")
         require(before["configuration_revision"] < 2**31 - 1, "REVISION_EXHAUSTED")
         result = deepcopy(before); types = vehicles(result); rows = result["members"]; by_id = {r["native_id"]: r for r in rows}
         if operation in ("recruit", "recruit_barracks"):
             identity = result["next_native_id"]
-            require(identity <= CAPACITY and result["free_recruitment_left"] > 0, "FREE_RECRUITMENT_EXHAUSTED")
-            require(sum(r["vehicle_native_id"] == -1 for r in rows) < CAPACITY, "BARRACKS_FULL")
+            require(identity <= cls.CAPACITY and result["free_recruitment_left"] > 0, "FREE_RECRUITMENT_EXHAUSTED")
+            require(sum(r["vehicle_native_id"] == -1 for r in rows) < cls.BERTHS, "BARRACKS_FULL")
             if operation == "recruit":
                 vehicle, seat = layout[1:3]
-                require(vehicle in types and 0 <= seat < len(PINS[types[vehicle]][6]), "RECRUIT_SELECTION_UNSUPPORTED")
-                kind = types[vehicle]; role = PINS[kind][6][seat][0]
+                require(vehicle in types and 0 <= seat < len(stock[types[vehicle]][6]), "RECRUIT_SELECTION_UNSUPPORTED")
+                kind = types[vehicle]; role = stock[kind][6][seat][0]
                 for row in rows:
                     if row["vehicle_native_id"] == vehicle and row["seat"] == seat: row.update(vehicle_native_id=-1, seat=None)
             else:
-                matches = [k for k, pin in PINS.items() if pin[1] == layout[1]]
+                matches = [k for k, pin in stock.items() if pin[1] == layout[1]]
                 require(len(matches) == 1, "RECRUIT_SELECTION_UNSUPPORTED"); kind = matches[0]
                 role = next((key for key, value in ROLE_IDS.items() if value == layout[2]), None)
-                require(role in {r[0] for r in PINS[kind][6]}, "RECRUIT_SELECTION_UNSUPPORTED")
+                require(role in {r[0] for r in stock[kind][6]}, "RECRUIT_SELECTION_UNSUPPORTED")
                 vehicle, seat = -1, None
-            raw = passport(identity, PINS[kind][1] >> 8, role)
+            raw = passport(identity, stock[kind][1] >> 8, role, cls.CAPACITY)
             rows.append(dict(native_id=identity, crew_id=recruit_identity(account_id, identity), role=role,
                 descriptor_hex=raw.hex(), vehicle_native_id=vehicle, seat=seat))
-            result.update(next_native_id=identity + 1, free_recruitment_left=16 - identity)
+            result.update(next_native_id=identity + 1, free_recruitment_left=cls.CAPACITY - identity)
         elif operation == "transfer":
             vehicle, seat, identity = layout
-            require(vehicle in types and -1 <= seat < len(PINS[types[vehicle]][6]) and (seat != -1 or identity == -1), "TRANSFER_SELECTION_UNSUPPORTED")
+            require(vehicle in types and -1 <= seat < len(stock[types[vehicle]][6]) and (seat != -1 or identity == -1), "TRANSFER_SELECTION_UNSUPPORTED")
             require(identity == -1 or identity in by_id, "UNKNOWN_TANKMAN")
-            if identity != -1: require(by_id[identity]["role"] == PINS[types[vehicle]][6][seat][0], "INCOMPATIBLE_CREW_ROLE")
+            if identity != -1: require(by_id[identity]["role"] == stock[types[vehicle]][6][seat][0], "INCOMPATIBLE_CREW_ROLE")
             for row in rows:
                 if row["native_id"] == identity or (row["vehicle_native_id"] == vehicle and (seat == -1 or row["seat"] == seat)):
                     row.update(vehicle_native_id=-1, seat=None)
@@ -241,20 +283,42 @@ class CrewContract:
                 try:
                     decoded = decode(bytes.fromhex(row["descriptor_hex"]))
                     require(decoded["vehicle_type_id"] in (13, 28), "SKILL_SELECTION_UNSUPPORTED")
-                    roles = (row["role"],) if row["vehicle_native_id"] == -1 else PINS[types[row["vehicle_native_id"]]][6][row["seat"]]
+                    roles = (row["role"],) if row["vehicle_native_id"] == -1 else stock[types[row["vehicle_native_id"]]][6][row["seat"]]
                     allowed = frozenset().union(*(SKILLS_BY_ROLE[role] for role in roles)) & LEARNABLE_SKILLS
                     row["descriptor_hex"] = old_encode(learn_skill(decoded, SKILL_NAMES.get(layout[1]), allowed)).hex()
                 except (ValueError, TypeError, KeyError) as error: raise TransactionError("SKILL_SELECTION_UNSUPPORTED") from error
         require(result != before, "NO_CONFIGURATION_CHANGE")
-        result["configuration_revision"] += 1; native_crew(result); return result
+        result["configuration_revision"] += 1; native_crew(result, cls); return result
 
     @classmethod
     def operation_response(cls, request, revision, crew, *, operation, before_crew):
         value = dict(status={"transfer": "transferred", "recruit": "recruited", "recruit_barracks": "recruited", "learn": "learned", "dismiss": "dismissed"}[operation],
             account_id=request["account_id"], native_database_id=request["native_database_id"], command_key=request["command_key"],
             revision=revision, wire_revision=request["wire_revision"] + 1,
-            update_hex=delta(before_crew, crew, request["wire_revision"], operation).hex(), replayed=False, result_code=0)
+            update_hex=delta(before_crew, crew, request["wire_revision"], operation, cls).hex(), replayed=False, result_code=0)
         if operation == "recruit_barracks":
             row = next(r for r in crew["members"] if r["native_id"] == before_crew["next_native_id"])
             value.update(tankman_inventory_id=row["native_id"], tankman_descriptor_hex=row["descriptor_hex"])
         return value
+
+
+class CrewContractV2(CrewContract):
+    """Lifetime 192 allocator; same seats, roles, passports 1..16 and berths."""
+    SCHEMA, POLICY_SHA256, COMMAND_RESULT_BOUND = V2_SCHEMA, V2_POLICY_SHA256, 262144
+    COMMAND, RECRUIT_COMMAND = "p04m.crew_transfer.v2", "p04m.recruit_assign.v2"
+    LEARN_COMMAND, DISMISS_COMMAND, BARRACKS_COMMAND = "p04m.learn_skill.v2", "p04m.dismiss.v2", "p04m.recruit_barracks.v2"
+    CAPACITY, PROFILE_BOUND = V2_CAPACITY, 65536
+
+
+CONTRACTS = (CrewContract, CrewContractV2)
+
+
+def contract_for_command(command, code="CORRUPT_STORE"):
+    rows = [contract for contract in CONTRACTS if command in contract.commands()]
+    require(len(rows) == 1, code); return rows[0]
+
+
+def contract_for_crew(value):
+    """The contract that owns one stored crew aggregate (by its policy hash)."""
+    rows = [contract for contract in CONTRACTS if type(value) is dict and value.get("policy_sha256") == contract.POLICY_SHA256]
+    require(len(rows) == 1, "CORRUPT_STORE"); return rows[0]

@@ -8,16 +8,18 @@ from copy import deepcopy
 import json
 from pathlib import Path
 
-from game_profile_tx import TransactionError, _bounded_id, _revision
+from game_profile_tx import TransactionError, _bounded_id, _revision, _decode_object
 from p09d_ammo_store import require, sha, REQUEST_FIELDS
 from p09d_ammo_projection import canonical, encode, MAX_UPDATE
 from p09c_ammo_catalog import MOUNTS, SHELLS, Mount, Shell
 from p09e_research_store import _json, MAX_OWNED, ResearchStore
+from p09c_ammo_service import MAX_JSON
 from p08c_battle_results import ResultsStore
 from p04k_crew_store import NativeBarracksRecruitmentStore
 from p04j_crew_store import MEMBER_COLUMNS
 from p04m_stock_registry import StockRegistry, SCHEMA, DEFINITION_SHA256, NEW_KINDS
-from p04m_pool_crew import CrewContract, native_crew, decode, POLICY_SHA256 as CREW_POLICY_SHA256
+from p04m_pool_crew import (CrewContract, CrewContractV2, native_crew, decode, contract_for_command,
+    POLICY_SHA256 as CREW_POLICY_SHA256)
 
 SHELL_ROWS = {
     "t26": (("ap", "_37mm_UBR-160", "ARMOR_PIERCING", 4), ("apcr", "_37mm_UBR-160P", "ARMOR_PIERCING_CR", 5), ("he", "_37mm_UOF-160", "HIGH_EXPLOSIVE", 6)),
@@ -44,6 +46,13 @@ def _shell_rows(registry):
 
 
 LINEAGE = ("p09d_import", "p04f_crew_meta", "p04g_crew_meta", "p04h_crew_meta", "p04i_crew_meta", "p04j_crew_meta", "p04k_crew_meta")
+CREW_V2_COMMAND, CREW_V1_COMMAND = "p04m.crew_contract_v2.v1", "p04m.crew_contract_v1.v1"
+# Exact retained P04H meta DDL (v1) and its widened lifetime-192 form (v2).
+META_COLUMNS = """account_id TEXT PRIMARY KEY REFERENCES game_snapshot(account_id),
+                next_native_id INTEGER NOT NULL CHECK(next_native_id BETWEEN 4 AND %d),
+                free_left INTEGER NOT NULL CHECK(free_left BETWEEN 0 AND %d),
+                configuration_revision INTEGER NOT NULL CHECK(configuration_revision BETWEEN 1 AND 2147483647),
+                source_bundle_sha256 TEXT NOT NULL,source_audit_sha256 TEXT NOT NULL,policy_sha256 TEXT NOT NULL"""
 
 
 class PoolStore(ResultsStore):
@@ -86,7 +95,60 @@ class PoolStore(ResultsStore):
         if row is not None: self._baseline(row)
 
     def _contract(self):
-        return CrewContract if not self._legacy_contract and self.pool_active() else NativeBarracksRecruitmentStore
+        return self._crew_contract() if not self._legacy_contract and self.pool_active() else NativeBarracksRecruitmentStore
+
+    def _crew_contract(self, account=None):
+        """The account's stored pool crew contract: no marker row means v1."""
+        exists = self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='p04m_crew_contract'").fetchone()
+        if not exists: return CrewContract
+        rows = self.connection.execute("SELECT version,policy_sha256 FROM p04m_crew_contract WHERE account_id=?",
+            (self.pool_account if account is None else account,)).fetchall()
+        if not rows: return CrewContract
+        require([tuple(row) for row in rows] == [(CrewContractV2.SCHEMA, CrewContractV2.POLICY_SHA256)], "UNSUPPORTED_POOL_SCHEMA")
+        return CrewContractV2
+
+    def _stored_json(self, raw):
+        # v2 profile/ledger rows legitimately exceed the frozen 16 KiB F-K bound;
+        # every smaller row keeps the frozen reader.
+        # A v2 marker row exists only for an activated pool owner (set_crew_contract).
+        if type(raw) is str and len(raw) > MAX_JSON and self._crew_contract() is CrewContractV2:
+            # The bounded depth scan is pure Python; an identical string that
+            # already passed it in this process is only decoded again.
+            scanned = self.__dict__.setdefault("_scanned_json", set())
+            if raw in scanned: return _decode_object(raw, "P09E")
+            value = _json(raw)
+            if len(scanned) > 4096: scanned.clear()
+            scanned.add(raw); return value
+        return super()._stored_json(raw)
+
+    def _replay_mutation(self, row, request, profile, *, operation, contract=None):
+        """Every read re-verifies each pool receipt against the current profile.
+        The pure part (plan/response of one hash-verified immutable ledger row)
+        is memoized per process: v2 retirements make it quadratic otherwise."""
+        contract = self._contract() if contract is None else contract
+        if contract in (CrewContract, CrewContractV2):
+            contract = self._memo_contract(contract, (contract.SCHEMA, operation, row["p09c_result_sha256"], sha(canonical(request))))
+        return super()._replay_mutation(row, request, profile, operation=operation, contract=contract)
+
+    def _memo_contract(self, contract, key):
+        memo = self.__dict__.setdefault("_replay_memo", {})
+        if len(memo) > 4096: memo.clear()
+        class Memoized(contract):
+            @classmethod
+            def plan_operation(cls, before, layout, *, operation, account_id):
+                k = ("plan",) + key
+                if k not in memo: memo[k] = contract.plan_operation(before, layout, operation=operation, account_id=account_id)
+                return deepcopy(memo[k])
+            @classmethod
+            def operation_response(cls, request, revision, crew, *, operation, before_crew):
+                k = ("response", revision) + key
+                if k not in memo: memo[k] = contract.operation_response(request, revision, crew, operation=operation, before_crew=before_crew)
+                return deepcopy(memo[k])
+        return Memoized
+
+    def _crew_row_limit(self):
+        # No marker row (any non-v2 owner) keeps the retained bound 17.
+        return max(self._crew_contract().CAPACITY + 1, super()._crew_row_limit())
 
     def migrate_research(self, *args, **kwargs):
         # Rechecking the retained predecessor at bridge startup still uses its
@@ -131,11 +193,12 @@ class PoolStore(ResultsStore):
         require(account == self.pool_account, "FOREIGN_ACCOUNT")
         meta = self.connection.execute("SELECT * FROM p04d_crew_meta WHERE account_id=?", (account,)).fetchone()
         require(meta is not None, "CORRUPT_STORE")
-        value = dict(policy_sha256=CREW_POLICY_SHA256, account_id=account, vehicles=self._vehicle_map(account),
+        contract = self._crew_contract(account); limit = contract.CAPACITY + 1
+        value = dict(policy_sha256=contract.POLICY_SHA256, account_id=account, vehicles=self._vehicle_map(account),
             free_recruitment_left=meta["free_left"], next_native_id=meta["next_native_id"], configuration_revision=meta["configuration_revision"],
-            members=[dict(row) for row in self.connection.execute("SELECT " + MEMBER_COLUMNS + " FROM p04d_crew_member WHERE account_id=? ORDER BY native_id LIMIT 17", (account,))],
-            retired_members=[dict(row) for row in self.connection.execute("SELECT " + MEMBER_COLUMNS + " FROM p04j_retired_member WHERE account_id=? ORDER BY native_id LIMIT 17", (account,))])
-        try: native_crew(value)
+            members=[dict(row) for row in self.connection.execute("SELECT " + MEMBER_COLUMNS + " FROM p04d_crew_member WHERE account_id=? ORDER BY native_id LIMIT ?", (account, limit))],
+            retired_members=[dict(row) for row in self.connection.execute("SELECT " + MEMBER_COLUMNS + " FROM p04j_retired_member WHERE account_id=? ORDER BY native_id LIMIT ?", (account, limit))])
+        try: native_crew(value, contract)
         except (TransactionError, ValueError, KeyError, TypeError, IndexError) as error: raise TransactionError("CORRUPT_STORE") from error
         baseline, _ = self._baseline(self._pool_row())
         prior = {r["native_id"]: r for r in baseline["crew_inventory"]["members"] + baseline["crew_inventory"]["retired_members"]}
@@ -173,7 +236,7 @@ class PoolStore(ResultsStore):
         require(all((r["state"] == "available" and r["battle_id"] is None)
             or (r["state"] == "reserved" and type(r["battle_id"]) is str and 1 <= len(r["battle_id"]) <= 96) for r in rows)
             and sum(r["state"] == "reserved" for r in rows) <= 1, "CORRUPT_STORE")
-        value.update(revision=revision, vehicles=rows, research=research, crew_schema=CrewContract.SCHEMA,
+        value.update(revision=revision, vehicles=rows, research=research, crew_schema=self._crew_contract(account).SCHEMA,
             crew_inventory=self._crew_projection(account), pool={"schema": SCHEMA, "registry_sha256": self.registry.sha256, "policy_sha256": POLICY_SHA256})
         value["ammunition"], value["depot"] = self._ammo_projection(account)
         raw = canonical(value); require(len(raw) <= 262144, "PROFILE_TOO_LARGE")
@@ -182,7 +245,8 @@ class PoolStore(ResultsStore):
     def _project_profile(self, account, aggregate):
         if not self.pool_active(): return super()._project_profile(account, aggregate)
         _, value = self._baseline(self._pool_row()); value = deepcopy(value)
-        inv, seats = native_crew(aggregate["crew_inventory"])
+        contract = self._crew_contract(account)
+        inv, seats = native_crew(aggregate["crew_inventory"], contract)
         owned = aggregate["research"]["vehicles"]; by_native = {r["native_id"]: r["vehicle_inventory_id"] for r in owned}
         prior = {r["inventory_id"]: r for r in value["inventory"]}
         ammunition = {r["vehicle_id"]: r for r in aggregate["ammunition"]}
@@ -199,12 +263,12 @@ class PoolStore(ResultsStore):
             "vehicle_inventory_id": by_native.get(r["vehicle_native_id"]), "role": r["role"],
             "role_level": self.member_role_level(r), "skills": self.member_skills(r)}
             for r in aggregate["crew_inventory"]["members"]],
-            crew_service={"schema": CrewContract.SCHEMA, "policy_sha256": CREW_POLICY_SHA256, "battle": False,
+            crew_service={"schema": contract.SCHEMA, "policy_sha256": contract.POLICY_SHA256, "battle": False,
                 "free_recruitment_left": aggregate["crew_inventory"]["free_recruitment_left"], "configuration_revision": aggregate["crew_inventory"]["configuration_revision"]},
             ammunition=[{"vehicle_inventory_id": r["vehicle_id"], "shell_definition_id": key, "count": n} for r in aggregate["ammunition"] for key, n in sorted(r["loaded"].items())],
             ammunition_depot=aggregate["depot"], pool_service=aggregate["pool"])
         value["research"].update(garage_slots=aggregate["research"]["garage_slots"], unlocked_count=len(aggregate["research"]["unlocked"]), depot_types=len(aggregate["research"]["depot"]))
-        require(len(canonical(value)) <= 16384, "PROFILE_TOO_LARGE"); return value
+        require(len(canonical(value)) <= contract.PROFILE_BOUND, "PROFILE_TOO_LARGE"); return value
 
     def _verified_snapshot(self, row, account):
         if not self.pool_active(): return super()._verified_snapshot(row, account)
@@ -283,7 +347,9 @@ class PoolStore(ResultsStore):
             result[native] = layout
         return result
 
-    def _rebuild_crew_tables(self):
+    def _rebuild_crew_tables(self, native_max=16, meta_bounds=None):
+        """Rebuild the shared crew tables with identity bound ``native_max``;
+        ``meta_bounds`` (next_native_id max, free_left max) also rebuilds meta."""
         c = self.connection
         before = {table: [tuple(r) for r in c.execute("SELECT * FROM " + table + " ORDER BY account_id,native_id")]
             for table in ("p04d_crew_member", "p04j_retired_member")}
@@ -293,7 +359,7 @@ class PoolStore(ResultsStore):
             c.execute("ALTER TABLE " + table + " RENAME TO p04m_old_" + table)
             terminal = table == "p04j_retired_member"
             columns = """account_id TEXT NOT NULL REFERENCES game_snapshot(account_id),
-                native_id INTEGER NOT NULL CHECK(native_id BETWEEN 1 AND 16),crew_id TEXT NOT NULL,
+                native_id INTEGER NOT NULL CHECK(native_id BETWEEN 1 AND """ + str(native_max) + """),crew_id TEXT NOT NULL,
                 role TEXT NOT NULL CHECK(role IN ('commander','radioman','driver','gunner','loader')),
                 descriptor_hex TEXT NOT NULL CHECK(length(descriptor_hex) BETWEEN 50 AND 100 AND length(descriptor_hex)%2=0),
                 vehicle_native_id INTEGER NOT NULL CHECK(vehicle_native_id=-1 OR vehicle_native_id BETWEEN 1 AND 2147483647),seat INTEGER"""
@@ -309,7 +375,88 @@ class PoolStore(ResultsStore):
         c.execute("CREATE UNIQUE INDEX p04d_crew_seat ON p04d_crew_member(account_id,vehicle_native_id,seat) WHERE vehicle_native_id>=0")
         for action in ("UPDATE", "DELETE"):
             c.execute("CREATE TRIGGER p04j_retired_no_" + action.lower() + " BEFORE " + action + " ON p04j_retired_member BEGIN SELECT RAISE(ABORT,'terminal crew is immutable'); END")
+        if meta_bounds is not None:
+            meta = [tuple(r) for r in c.execute("SELECT * FROM p04d_crew_meta ORDER BY account_id")]
+            c.execute("ALTER TABLE p04d_crew_meta RENAME TO p04m_old_p04d_crew_meta")
+            c.execute("CREATE TABLE p04d_crew_meta(" + META_COLUMNS % meta_bounds + ")")
+            c.execute("INSERT INTO p04d_crew_meta SELECT * FROM p04m_old_p04d_crew_meta")
+            c.execute("DROP TABLE p04m_old_p04d_crew_meta")
+            require([tuple(r) for r in c.execute("SELECT * FROM p04d_crew_meta ORDER BY account_id")] == meta, "POOL_MIGRATION_CHANGED_CREW")
         self._failpoint("after_pool_crew_schema")
+
+    def _crew_tables_widened(self):
+        sql = self.connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='p04d_crew_member'").fetchone()
+        require(sql is not None, "CORRUPT_STORE")
+        widened = "native_id BETWEEN 1 AND %d)" % CrewContractV2.CAPACITY in sql[0]
+        require(widened or "native_id BETWEEN 1 AND 16)" in sql[0], "UNSUPPORTED_POOL_SCHEMA")
+        return widened
+
+    def set_crew_contract(self, request, *, authenticated_account_id):
+        """Versioned, reversible owner migration v1 <-> v2 (lifetime 16 <-> 192).
+
+        One ledger command and one revision, like pool activation. Members,
+        passports, seats and retirements are unchanged; only bounds, the
+        derived free count and the contract marker move. v2 -> v1 is refused
+        once any identity above 16 was issued.
+        """
+        require(type(request) is dict and set(request) == {"version", "account_id", "native_database_id", "command_key", "expected_revision", "crew_policy_sha256"}
+            and type(request["version"]) is int and request["version"] in (1, 2), "INVALID_INPUT")
+        target = CrewContractV2 if request["version"] == 2 else CrewContract
+        require(request["crew_policy_sha256"] == target.POLICY_SHA256, "P04M_DEFINITION_MISMATCH")
+        account = request["account_id"]
+        require(account == authenticated_account_id == self.pool_account, "FOREIGN_ACCOUNT")
+        _bounded_id(request["command_key"], "command_key"); _revision(request["expected_revision"])
+        command = CREW_V2_COMMAND if target is CrewContractV2 else CREW_V1_COMMAND
+        payload_sha = sha(canonical(request)); c = self.connection
+        c.execute("BEGIN IMMEDIATE")
+        try:
+            self.initialize()
+            require(self.pool_active(), "POOL_ACTIVATION_REQUIRED")
+            ledger = c.execute("SELECT * FROM game_command_ledger WHERE account_id=? AND command_id=?", (account, request["command_key"])).fetchone()
+            if ledger is not None:
+                require(ledger["command_type"] == command and ledger["payload_sha256"] == payload_sha, "DUPLICATE_PAYLOAD_MISMATCH")
+                result = _json(ledger["result_json"]); require(sha(canonical(result)) == ledger["p09c_result_sha256"], "CORRUPT_STORE")
+                self.read_profile(account); c.commit(); return dict(result, replayed=True)
+            aggregate = self.read_profile(account)
+            public = c.execute("SELECT native_id,profile_json FROM game_profiles WHERE account_id=?", (account,)).fetchone()
+            require(type(request["native_database_id"]) is int and request["native_database_id"] == public["native_id"], "FOREIGN_ACCOUNT")
+            revision = aggregate["revision"]
+            require(revision == request["expected_revision"], "STALE_REVISION")
+            require(revision < 2**31 - 1, "REVISION_EXHAUSTED")
+            require(all(r["state"] == "available" for r in aggregate["vehicles"]), "VEHICLE_RESERVED")
+            current = self._crew_contract(account)
+            require(current is not target, "CREW_CONTRACT_UNCHANGED")
+            crew = aggregate["crew_inventory"]
+            free = target.CAPACITY + 1 - crew["next_native_id"]
+            def set_free():
+                require(c.execute("UPDATE p04d_crew_meta SET free_left=? WHERE account_id=? AND next_native_id=? AND free_left=?",
+                    (free, account, crew["next_native_id"], crew["free_recruitment_left"])).rowcount == 1, "STALE_CREW")
+            if target is CrewContractV2:
+                if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='p04m_crew_contract'").fetchone():
+                    c.execute("""CREATE TABLE p04m_crew_contract(account_id TEXT PRIMARY KEY REFERENCES game_snapshot(account_id),
+                        version TEXT NOT NULL,policy_sha256 TEXT NOT NULL,migrated_revision INTEGER NOT NULL CHECK(migrated_revision>0))""")
+                if not self._crew_tables_widened():
+                    self._rebuild_crew_tables(CrewContractV2.CAPACITY, (CrewContractV2.CAPACITY + 1, CrewContractV2.CAPACITY - 3))
+                c.execute("INSERT INTO p04m_crew_contract VALUES (?,?,?,?)", (account, target.SCHEMA, target.POLICY_SHA256, revision + 1))
+                set_free()
+            else:
+                require(crew["next_native_id"] <= CrewContract.CAPACITY + 1, "CREW_V2_ROLLBACK_BLOCKED")
+                require(c.execute("DELETE FROM p04m_crew_contract WHERE account_id=?", (account,)).rowcount == 1, "CORRUPT_STORE")
+                set_free()
+                if c.execute("SELECT COUNT(*) FROM p04m_crew_contract").fetchone()[0] == 0:
+                    # Last v2 account: the narrowed CHECKs refuse any remaining wider row.
+                    c.execute("DROP TABLE p04m_crew_contract")
+                    self._rebuild_crew_tables(CrewContract.CAPACITY, (CrewContract.CAPACITY + 1, CrewContract.CAPACITY - 3))
+            self._failpoint("after_crew_contract_schema")
+            self._save_crew_projection(account, revision + 1, public["profile_json"])
+            result = dict(status="crew_contract_set", account_id=account, revision=revision + 1, crew_schema=target.SCHEMA,
+                crew_policy_sha256=target.POLICY_SHA256, capacity=target.CAPACITY, free_recruitment_left=free,
+                members=len(crew["members"]), retired_members=len(crew["retired_members"]), replayed=False)
+            encoded = canonical(result)
+            c.execute("INSERT INTO game_command_ledger VALUES (?,?,?,?,?,?,?,?)", (account, request["command_key"], command, payload_sha, revision, revision + 1, encoded.decode("ascii"), sha(encoded)))
+            self.read_profile(account); self._failpoint("before_crew_contract_commit"); c.commit(); return result
+        except Exception:
+            c.rollback(); raise
 
     def activate_pool(self, request, *, authenticated_account_id):
         require(type(request) is dict and set(request) == {"version", "account_id", "native_database_id", "command_key", "expected_revision", "definition_sha256", "registry_sha256"}
@@ -362,8 +509,14 @@ class PoolStore(ResultsStore):
 
     def _operation_replay(self, ledger, request, profile, *, operation, command, payload_sha):
         if ledger["command_type"].startswith("p04m."):
-            require(ledger["command_type"] == command and ledger["payload_sha256"] == payload_sha, "DUPLICATE_PAYLOAD_MISMATCH")
-            return self._replay_mutation(ledger, request, profile, operation=operation, contract=CrewContract)
+            # A v1 receipt replays under v1 after a migration; its payload hash
+            # binds that contract's own schema/policy/command.
+            contract = contract_for_command(ledger["command_type"], "DUPLICATE_PAYLOAD_MISMATCH")
+            old_command = contract.operation_command(operation)
+            expected = payload_sha if contract is self._crew_contract() else sha(canonical({"schema": contract.SCHEMA,
+                "policy_sha256": contract.POLICY_SHA256, "command": old_command, "request": request}))
+            require(ledger["command_type"] == old_command and ledger["payload_sha256"] == expected, "DUPLICATE_PAYLOAD_MISMATCH")
+            return self._replay_mutation(ledger, request, profile, operation=operation, contract=contract)
         from p04j_crew_store import NativeCrewDismissalStore
         from p04i_crew_store import NativeCrewProgressionStore
         from p04h_crew_store import NativeRosterRecruitmentStore
@@ -387,10 +540,13 @@ class PoolStore(ResultsStore):
         return rows[0]["vehicle_inventory_id"]
 
     def _retirement_contract(self, command):
-        return CrewContract if command == CrewContract.DISMISS_COMMAND else super()._retirement_contract(command)
+        for contract in (CrewContract, CrewContractV2):
+            if command == contract.DISMISS_COMMAND: return contract
+        return super()._retirement_contract(command)
 
     def _historical_member_matches(self, historical, current):
         if any(historical[key] != current[key] for key in ("native_id", "crew_id", "role")): return False
+        if historical["descriptor_hex"] == current["descriptor_hex"]: return True  # same bytes: nothing learned
         before = decode(bytes.fromhex(historical["descriptor_hex"])); after = decode(bytes.fromhex(current["descriptor_hex"]))
         return (after["skills"][:len(before["skills"])] == before["skills"]
             and (not before["skills"] or after["last_skill_level"] >= before["last_skill_level"])

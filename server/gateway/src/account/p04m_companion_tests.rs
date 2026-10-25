@@ -77,3 +77,38 @@ fn parse(v:&Value)->io::Result<Binding>{Binding::parse(&serde_json::to_vec(v).un
     assert!(p.barracks(crate::crew_barracks091::Request{vehicle_type:4609,role:2,..radio}).is_err());
     for wire in[0,i32::MAX as i64]{assert!(p.service_request("key",14,wire,&[3,1,2,0]).is_err());}
 }
+
+fn v2_value()->Value{let mut v=test_value(ACCOUNT,14);v["crew_policy_sha256"]=CREW_V2_POLICY_SHA256.into();v["crew_capacity"]=192.into();v}
+fn hex(text:&str)->Vec<u8>{(0..text.len()).step_by(2).map(|i|u8::from_str_radix(&text[i..i+2],16).unwrap()).collect()}
+#[test]fn p04m_companion_crew_contract_v2_is_selected_only_by_the_writer_pair(){
+    assert_eq!(parse(&test_value(ACCOUNT,14)).unwrap().capacity(),16);
+    assert_eq!(parse(&v2_value()).unwrap().capacity(),192);
+    for(sha,capacity)in[(CREW_POLICY_SHA256,192),(CREW_V2_POLICY_SHA256,16),(CREW_V2_POLICY_SHA256,193),(CREW_POLICY_SHA256,17)]{
+        let mut v=test_value(ACCOUNT,14);v["crew_policy_sha256"]=sha.into();v["crew_capacity"]=capacity.into();assert!(parse(&v).is_err(),"{sha}/{capacity}");
+    }
+    let(v1,v2)=(parse(&test_value(ACCOUNT,14)).unwrap(),parse(&v2_value()).unwrap());
+    for(id,ok1,ok2)in[(1i64,true,true),(16,true,true),(17,false,true),(192,false,true),(193,false,false),(0,false,false)]{
+        let t=crate::crew_transfer091::Request{id:231,vehicle_inventory_id:3,slot:1,tankman_inventory_id:id as i32};
+        let d=crate::crew_dismissal091::Request{id:231,tankman_inventory_id:id,reserved_a:0,reserved_b:0};
+        let s=crate::crew_progression091::Request{id:231,tankman_inventory_id:id,skill_index:6,reserved:0};
+        assert_eq!((v1.transfer(t).is_ok(),v1.dismiss(d).is_ok(),v1.learn(s).is_ok()),(ok1,ok1,ok1),"v1 {id}");
+        assert_eq!((v2.transfer(t).is_ok(),v2.dismiss(d).is_ok(),v2.learn(s).is_ok()),(ok2,ok2,ok2),"v2 {id}");
+    }
+    assert!(v2.dismiss(crate::crew_dismissal091::Request{id:231,tankman_inventory_id:20,reserved_a:1,reserved_b:0}).is_err());
+    assert!(v2.learn(crate::crew_progression091::Request{id:231,tankman_inventory_id:20,skill_index:18,reserved:0}).is_err());
+}
+#[test]fn p04m_companion_v2_actual_writer_barracks_vector_id32_wrapped_icon(){
+    // tests/test_p04m_pool_crew_v2.py actual isolated SQLite writer vector:
+    // CMD303 IS-7 gunner, identity 32 -> names (32,32,2), freeTMenLeft 160.
+    let descriptor:[u8;25]=hex("081c0432000000200020000200400600000000420000000000").try_into().unwrap();
+    let update=hex("80027d285507707265765265764b0155037265764b025509696e76656e746f72797d284b087d28550776656869636c657d284b204affffffff755509636f6d7044657363727d284b205519081c0432000000200020000200400600000000420000000000757575550573746174737d28550c66726565544d656e4c6566744ba075752e");
+    let member=crate::crew_barracks091::Recruitment{tankman_id:32,descriptor};
+    let request=crate::crew_barracks091::Request{id:230,shop_revision:3,vehicle_type:7169,role:4,cost:0};
+    let v2=parse(&v2_value()).unwrap();v2.validate_recruitment(&member,request,1,&update).unwrap();
+    assert!(parse(&test_value(ACCOUNT,14)).unwrap().validate_recruitment(&member,request,1,&update).is_err());
+    assert!(member.validate_delta(request,1,&update).is_err());
+    assert!(member.success_response(226).is_err());
+    assert_eq!(member.success_response_within(226,192).unwrap()[1],0x4d);
+    let mut forged=member.clone();forged.descriptor[11]=32;assert!(v2.validate_recruitment(&forged,request,1,&update).is_err());
+    let mut stale=update.clone();let n=stale.len();stale[n-5]=176;assert!(v2.validate_recruitment(&member,request,1,&stale).is_err());
+}

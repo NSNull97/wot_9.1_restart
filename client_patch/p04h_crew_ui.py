@@ -12,6 +12,7 @@ import re
 import os
 import time
 
+import crew_vehicles
 import p04d_crew_ui as recruitment
 import p04f_crew_ui as transfer
 import p04g_crew_ui as cross
@@ -48,6 +49,15 @@ def integer(value, low, high):
     return recruitment._integer(value, low, high)
 
 
+def vehicles(snapshot=None):
+    """Served vehicles: the pins above, or (CREW-ANY) the owned catalog vehicles."""
+    return crew_vehicles.vehicles(VEHICLES, snapshot)
+
+
+def max_tankmen():
+    return crew_vehicles.max_tankmen(MAX_TANKMEN)
+
+
 def checked_expected(value, role_level=None):
     """Validate roster structure; a supplied level also binds new H members.
 
@@ -55,6 +65,8 @@ def checked_expected(value, role_level=None):
     hashes remain part of the caller's exact expected snapshot/catalog rather
     than an invented local descriptor generator.
     """
+    if crew_vehicles.enabled():
+        raise RuntimeError('CREW-ANY serves the P04J/P04K roster only')
     if type(value) is not dict or set(value) != SNAPSHOT_FIELDS:
         raise ValueError('exact native roster snapshot required')
     if role_level is not None:
@@ -118,6 +130,8 @@ def checked_expected(value, role_level=None):
 
 
 def native_snapshot(role_level=None):
+    if crew_vehicles.enabled():
+        raise RuntimeError('CREW-ANY serves the P04J/P04K roster only')
     import BigWorld
     from ConnectionManager import connectionManager
     from CurrentVehicle import g_currentVehicle
@@ -267,7 +281,7 @@ def callback_integer(value, low, high):
         if math.isnan(value) or math.isinf(value) or int(value) != value:
             raise ValueError('finite integral native callback argument required')
         return integer(int(value), low, high)
-    if isinstance(value, recruitment.string_types) and re.match(r'\A[0-9]{1,2}\Z', value):
+    if isinstance(value, recruitment.string_types) and re.match(r'\A[0-9]{1,%d}\Z' % crew_vehicles.digits(), value):
         return integer(int(value), low, high)
     raise ValueError('native callback integer required')
 
@@ -343,17 +357,18 @@ def projected_recruit(snapshot, row):
 
 
 def target_data(vehicle, slot):
-    vehicle = integer(vehicle, 1, 2)
-    slot = integer(slot, 0, len(VEHICLES[vehicle][3]) - 1)
-    return dict(nationID=0, tankType=VEHICLES[vehicle][2], typeID=VEHICLES[vehicle][1],
-                roleType=VEHICLES[vehicle][3][slot], slot=slot)
+    vehicle = crew_vehicles.vehicle_id(vehicle)
+    served = vehicles()[vehicle]
+    slot = integer(slot, 0, len(served[3]) - 1)
+    return dict(nationID=0, tankType=served[2], typeID=served[1],
+                roleType=served[3][slot], slot=slot)
 
 
 def target_matches(data, vehicle):
     if type(data) is not dict or len(data) > 64:
         return False
     try:
-        slot = callback_integer(data.get('slot'), 0, len(VEHICLES[vehicle][3]) - 1)
+        slot = callback_integer(data.get('slot'), 0, len(vehicles()[vehicle][3]) - 1)
         expected = target_data(vehicle, slot)
         return all(recruitment._number_equals(data.get(key), item) if type(item) is int
                    else data.get(key) == item for key, item in expected.items())
@@ -405,7 +420,7 @@ class _RosterRecruitGuard(recruitment._RecruitGuard):
 
     def _window_ok(self, window):
         return (type(window._currentVehicleInvId) in recruitment.integer_types
-                and window._currentVehicleInvId in VEHICLES and window._menuEnabled is False
+                and window._currentVehicleInvId in vehicles() and window._menuEnabled is False
                 and target_matches(window._initData, window._currentVehicleInvId))
 
     def _mask(self, window, state):
@@ -419,7 +434,7 @@ class _RosterRecruitGuard(recruitment._RecruitGuard):
         free.type = 'free'
         free.validateNow()
         free.visible, free.selected, free.typeSwitcher.visible = True, True, False
-        free.enabled = state['free_quota'] > 0 and len(state['tankmen']) < MAX_TANKMEN and not self.submitted
+        free.enabled = state['free_quota'] > 0 and len(state['tankmen']) < max_tankmen() and not self.submitted
         free.typeLabel.text = LABEL % state['free_quota']
         flash.btnRecruit.enabled = free.enabled
         for name in ('nationDropdown', 'vehicleClassDropdown', 'vehicleTypeDropdown', 'roleDropdown'):
@@ -454,12 +469,12 @@ class _RosterRecruitGuard(recruitment._RecruitGuard):
             if (not guard._window_ok(window) or window is not guard.window
                     or window._currentVehicleInvId != state['selected_inventory_id']
                     or not recruitment._number_equals(nationID, 0)
-                    or not recruitment._number_equals(vehTypeID, VEHICLES[window._currentVehicleInvId][1])
+                    or not recruitment._number_equals(vehTypeID, vehicles()[window._currentVehicleInvId][1])
                     or not recruitment._number_equals(studyType, 0)
                     or not recruitment._number_equals(slot, window._initData['slot'])
                     or role != window._initData['roleType']):
                 return guard._deny('unsupported_recruit_target_or_tariff')
-            if state['free_quota'] == 0 or len(state['tankmen']) >= MAX_TANKMEN or guard.submitted:
+            if state['free_quota'] == 0 or len(state['tankmen']) >= max_tankmen() or guard.submitted:
                 return guard._deny('quota_capacity_or_dialog_submission_exhausted')
             guard.submitted = True
             guard._mask(window, state)

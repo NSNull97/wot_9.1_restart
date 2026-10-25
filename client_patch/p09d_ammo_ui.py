@@ -5,6 +5,7 @@ Original fillVehicle, inventory, Account and render handlers are not replaced.
 The server owns counts and authorization. No service command is generated here.
 """
 import hashlib
+import crew_vehicles
 
 try:
     _INTEGER = (int, long)
@@ -70,9 +71,10 @@ def flat(value, signed=False):
 def mounted(item):
     """Read the actual selected native descriptor, never authorize a command."""
     identity = _integer(item.intCD, 1, 65535)
-    if identity not in MOUNTS:
+    mounts = crew_vehicles.mounts(MOUNTS)  # CREW-ANY: every CAT-01 stock mount
+    if identity not in mounts:
         return None
-    turret, gun, capacity, shells = MOUNTS[identity]
+    turret, gun, capacity, shells = mounts[identity]
     desc = item.descriptor
     if (desc.type.compactDescr != identity or desc.turret['compactDescr'] != turret
             or desc.gun['compactDescr'] != gun or desc.gun['maxAmmo'] != capacity
@@ -104,12 +106,13 @@ def observe():
         return {'supported': False}
     item = g_currentVehicle.item
     inv = _mapping(g_itemsCache.items.inventory.getCacheValue(1, {}), 32)
-    loaded_raw = _mapping(inv.get('shells', {}), 16).get(item.invID, [])
+    owned = crew_vehicles.owned_bound(16)
+    loaded_raw = _mapping(inv.get('shells', {}), owned).get(item.invID, [])
     loaded = [] if loaded_raw == [] else flat(loaded_raw)
-    layouts = _mapping(_mapping(inv.get('shellsLayout', {}), 16).get(item.invID, {}), 8)
+    layouts = _mapping(_mapping(inv.get('shellsLayout', {}), owned).get(item.invID, {}), 8)
     layout = layouts.get((mount['turret_cd'], mount['gun_cd']))
     layout = None if layout is None else flat(layout, signed=True)
-    depot = _mapping(g_itemsCache.items.inventory.getCacheValue(10, {}), 64)
+    depot = _mapping(g_itemsCache.items.inventory.getCacheValue(10, {}), crew_vehicles.owned_bound(64))
     shell_items = item.shells
     if type(shell_items) not in (tuple, list) or len(shell_items) != 3:
         raise ValueError('native GUI three-shell collection required')

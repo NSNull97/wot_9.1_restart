@@ -266,6 +266,32 @@ class BarracksRendererTests(unittest.TestCase):
             self.assertEqual(layout['pending_renderers'][0]['index'],0)
             self.assertTrue(layout['provider_matches_logical_rows'])
 
+    def test_shifted_source_buy_renderer_remains_maskable_after_lifetime_refresh(self):
+        self.enterContext(patch.object(ui, 'max_tankmen', return_value=192))
+        self.page.as_setTankmenS(17,16,2,'0',None,1,[dict(tankmanID=str(i)) for i in range(1,15)])
+        self.buy.index = 14
+        self.tile.getRendererAt = Mock(side_effect=lambda index,offset: self.buy if index == 15 else None)
+        self.buy.getData = lambda: dict(buy=True)
+        renderers, layout = ui._logical_renderers(self.tile, self.guard.model)
+        self.assertFalse(layout['ready'])
+        self.assertEqual([index for index, renderer, data in renderers if data.get('buy')], [15])
+        self.assertEqual(layout['pending_renderers'][0]['method_row'], ['buy', None])
+
+    def test_total17_unassigned2_tail_buy_survives_retained_pool_offset(self):
+        self.enterContext(patch.object(ui, 'max_tankmen', return_value=192))
+        rows = [dict(tankmanID=str(i)) for i in range(1,18)]
+        self.page.as_setTankmenS(17,16,2,'0',None,1,rows)
+        self.buy.index = 18
+        self.tile.getRendererAt = Mock(side_effect=lambda index,offset: self.buy if index == 14 else None)
+        self.buy.getData = lambda: dict(buy=True)
+        renderers, layout = ui._logical_renderers(self.tile, self.guard.model)
+        self.assertEqual(layout['logical_count'], 19)
+        self.assertFalse(layout['ready'])
+        self.assertEqual([index for index, renderer, data in renderers if data.get('buy')], [14])
+        self.assertEqual(layout['rendered_rows'][0]['rendered_index'], 18)
+        self.assertEqual(self.guard.paint(), 1)
+        self.assertFalse(self.buy.enabled)
+
     def test_scroll_offset_and_renderer_index_must_correspond_to_logical_entry(self):
         self.page.as_setTankmenS(1,16,1,'0',None,1,[dict(tankmanID='1')])
         self.tile.scrollPosition=1.0
@@ -276,6 +302,14 @@ class BarracksRendererTests(unittest.TestCase):
         self.assertEqual(self.guard.paint(),0)
         self.assertTrue(self.buy.enabled)
         self.assertFalse(ui._logical_renderers(self.tile,self.guard.model)[1]['ready'])
+
+    def test_stale_buy_renderer_inside_old_pool_is_not_masked(self):
+        self.page.as_setTankmenS(1,16,1,'0',None,1,[dict(tankmanID='1')])
+        self.buy.index = 0
+        self.tile.getRendererAt = Mock(side_effect=lambda index,offset: self.buy if index == 2 else None)
+        self.assertEqual(self.guard.paint(),0)
+        self.assertTrue(self.buy.enabled)
+        self.assertEqual(self.buy.descrField.text,'original')
 
     def test_stale_provider_diagnostic_does_not_replace_current_native_method_rows(self):
         self.page.as_setTankmenS(1,16,1,'0',None,1,[dict(tankmanID='1')])

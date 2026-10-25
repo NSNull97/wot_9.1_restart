@@ -6,7 +6,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nativePoolOverview, isNativePoolOverview, poolConfiguration, POOL_POLICY_SHA256,
-  validatePoolBarracksRecruitmentResponse, nativePoolRequestTimeout, POOL_WORKER_TIMEOUT_MS, POOL_MUTATION_TIMEOUT_MS, LEGACY_REQUEST_TIMEOUT_MS } from '../src/p04m-pool.mjs';
+  validatePoolBarracksRecruitmentResponse, nativePoolRequestTimeout, POOL_WORKER_TIMEOUT_MS, POOL_MUTATION_TIMEOUT_MS, LEGACY_REQUEST_TIMEOUT_MS,
+  poolCrewContract, POOL_CREW_POLICY_SHA256, POOL_CREW_V2_POLICY_SHA256 } from '../src/p04m-pool.mjs';
 import { nativeResearchOverview, isNativeResearchOverview } from '../src/p09e-research.mjs';
 import { validateBarracksRecruitmentResponse } from '../src/p04k-crew.mjs';
 
@@ -108,4 +109,47 @@ test('P04M actual T34 type-zero/radioman 303 result matches source passport and 
     const bad = structuredClone(response); change(bad); assert.throws(() => validatePoolBarracksRecruitmentResponse(bad, request));
   }
   assert.throws(() => validatePoolBarracksRecruitmentResponse(response, { ...request, layout: [3, 4609, 2, 0] }));
+});
+
+// CREW-ANY: actual v2 writer vectors (tests/test_p04m_pool_crew_v2.py with P04M_TEST_EXPORT).
+const V2 = resolve(process.env.P04M_V2_FIXTURES || join(ROOT, 'local/evidence/crew-any-v2-vectors/v2-barracks-32'));
+const skipV2 = !existsSync(join(V2, 'writer-vectors.json')) ? 'NOT_RUN: actual P04M crew v2 writer vectors required' : false;
+
+test('P04M crew contracts are closed data: v1 16 and v2 192 by stored schema', () => {
+  assert.equal(poolCrewContract({ schema: 'p04m-pool-crew.v1', policy_sha256: POOL_CREW_POLICY_SHA256 }).capacity, 16);
+  assert.equal(poolCrewContract({ schema: 'p04m-pool-crew.v2', policy_sha256: POOL_CREW_V2_POLICY_SHA256 }).capacity, 192);
+  for (const bad of [{ schema: 'p04m-pool-crew.v2', policy_sha256: POOL_CREW_POLICY_SHA256 }, { schema: 'p04m-pool-crew.v3', policy_sha256: POOL_CREW_V2_POLICY_SHA256 },
+    { schema: '__proto__', policy_sha256: POOL_CREW_V2_POLICY_SHA256 }, { schema: 'constructor' }, null, undefined]) assert.throws(() => poolCrewContract(bad));
+  assert.throws(() => validatePoolBarracksRecruitmentResponse({ status: 'recruited' }, { layout: [3, 7169, 4, 0], wire_revision: 1 }, 17));
+});
+
+test('P04M actual v2 profile and identities above 16 with wrapped passport icon', { skip: skipV2 }, () => {
+  const receipt = JSON.parse(readFileSync(join(V2, 'writer-receipt.json')));
+  assert.equal(receipt.classification, 'VERIFIED_ISOLATED_SQLITE_WRITER');
+  for (const file of ['profile-input.json', 'writer-vectors.json']) {
+    const bytes = readFileSync(join(V2, file)), pin = receipt.files.find(p => p.file === file);
+    assert.equal(bytes.length, pin.bytes); assert.equal(digest(bytes), pin.sha256);
+  }
+  const p = JSON.parse(readFileSync(join(V2, 'profile-input.json'))), value = nativePoolOverview(p);
+  assert.equal(p.crew_service.schema, 'p04m-pool-crew.v2');
+  assert.equal(value.crewService.policySha256, POOL_CREW_V2_POLICY_SHA256);
+  assert.ok(p.crew.some(m => /:recruit-crew:3[23]$/.test(m.crew_id)));
+  assert.equal(isNativePoolOverview(value, p.account_id), true);
+  const forged = structuredClone(value); forged.crewService.policySha256 = POOL_CREW_POLICY_SHA256;
+  assert.equal(isNativePoolOverview(forged, p.account_id), false, 'a v1 hash cannot carry more than 16 lifetime tankmen');
+  const companion = JSON.parse(readFileSync(join(V2, 'p04m-pool.json')));
+  assert.deepEqual([companion.crew_capacity, companion.crew_policy_sha256], [192, POOL_CREW_V2_POLICY_SHA256]);
+  const rows = JSON.parse(readFileSync(join(V2, 'writer-vectors.json'))).filter(r => r.operation === 'recruit_barracks');
+  const high = rows.filter(r => r.response.tankman_inventory_id > 16);
+  assert.ok(high.some(r => r.response.tankman_inventory_id === 32));
+  for (const { request, response } of high) {
+    validatePoolBarracksRecruitmentResponse(response, request, 192);
+    assert.throws(() => validatePoolBarracksRecruitmentResponse(response, request));
+    assert.throws(() => validatePoolBarracksRecruitmentResponse(response, request, 16));
+  }
+  const low = rows.filter(r => r.response.tankman_inventory_id <= 16);
+  for (const { request, response } of low) {
+    validatePoolBarracksRecruitmentResponse(response, request, 192);
+    assert.throws(() => validatePoolBarracksRecruitmentResponse(response, request, 16), 'freeTMenLeft follows the stored contract');
+  }
 });

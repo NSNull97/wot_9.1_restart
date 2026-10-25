@@ -10,6 +10,13 @@ pub const DEFINITION_SHA256:&str="90b07e5bf9d7ed416743666174f568b64ed1397b4cc55d
 pub const REGISTRY_SHA256:&str="e2f4ac21fe8970f3c5d29f6a45d845f9d80e4d2759f0e662c9f3bb9ac04c7b34";
 pub const POLICY_SHA256:&str="d1acd5590309c80b65307758bbee6f7f6de117f899668a00b1fad96ae6a13d3f";
 pub const CREW_POLICY_SHA256:&str="6621ad7d3ccb86ebe8cc9db43b135d88155762ed3428e2a12b4002aba431a99b";
+pub const CREW_V2_POLICY_SHA256:&str="7ff51fd896ab4e9f97c1a4dc7b46e75da08876f025a9afe7408f611f8d8caa1d";
+/// The writer's stored crew contract (tools/p04m_pool_crew.py): policy and its
+/// lifetime allocator. v2 exists only after the owner's explicit migration;
+/// 192 keeps identities and freeTMenLeft in one pickle BININT1 byte.
+const CREW_CONTRACTS:[(&str,i64);2]=[(CREW_POLICY_SHA256,16),(CREW_V2_POLICY_SHA256,192)];
+/// Source name/surname/icon catalogue bounds of the free50 passport.
+const NAME_BOUNDS:[u16;3]=[112,1036,30];
 pub const AMMO_CATALOG_SHA256:&str="5e9d023c4d02f377e51a2d6bc07c7a5880f5f8808aaa8028f060ccb7bcf91e33";
 fn bad(reason:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,format!("P04M companion: {reason}"))}
 
@@ -57,8 +64,9 @@ impl Kind{
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct Capability{native:i32,kind:Option<Kind>}
 #[derive(Clone,Debug,PartialEq,Eq)]
-pub struct Binding{account:String,database:i32,pub revision:u64,state_sha:String,capabilities:Vec<Capability>}
-pub enum Request{Ammo(crate::ammo_service091::Request),Crew(crate::crew_service091::Request),Transfer(crate::crew_transfer091::Request),Barracks(crate::crew_barracks091::Request)}
+pub struct Binding{account:String,database:i32,pub revision:u64,state_sha:String,capabilities:Vec<Capability>,capacity:i64}
+pub enum Request{Ammo(crate::ammo_service091::Request),Crew(crate::crew_service091::Request),Transfer(crate::crew_transfer091::Request),Barracks(crate::crew_barracks091::Request),
+    Dismiss(crate::crew_dismissal091::Request),Skill(crate::crew_progression091::Request)}
 impl Binding{
     pub fn parse(raw:&[u8],account:&str,database:i32,revision:u64,state_sha:&str)->io::Result<Self>{
         crate::crew_service091::identity(account,database)?;
@@ -66,9 +74,12 @@ impl Binding{
         let Unique(v)=serde_json::from_slice(raw).map_err(|_|bad("unique bounded JSON"))?;
         keys(&v,&["version","schema","definition_sha256","registry_sha256","policy_sha256","crew_policy_sha256","ammo_catalog_sha256","account_id","native_database_id","revision","state_sha256","crew_capacity","capabilities"])?;
         if v["version"].as_u64()!=Some(1)||string(&v,"schema")?!=SCHEMA||string(&v,"definition_sha256")?!=DEFINITION_SHA256
-            ||string(&v,"registry_sha256")?!=REGISTRY_SHA256||string(&v,"policy_sha256")?!=POLICY_SHA256||string(&v,"crew_policy_sha256")?!=CREW_POLICY_SHA256
+            ||string(&v,"registry_sha256")?!=REGISTRY_SHA256||string(&v,"policy_sha256")?!=POLICY_SHA256
             ||string(&v,"ammo_catalog_sha256")?!=AMMO_CATALOG_SHA256||string(&v,"account_id")?!=account||v["native_database_id"].as_i64()!=Some(database as i64)
-            ||v["revision"].as_u64()!=Some(revision)||string(&v,"state_sha256")?!=state_sha||v["crew_capacity"].as_u64()!=Some(16){return Err(bad("identity/source/policy/state binding"));}
+            ||v["revision"].as_u64()!=Some(revision)||string(&v,"state_sha256")?!=state_sha{return Err(bad("identity/source/policy/state binding"));}
+        let crew=string(&v,"crew_policy_sha256")?;
+        let capacity=CREW_CONTRACTS.iter().find(|(sha,_)|*sha==crew).map(|(_,capacity)|*capacity)
+            .filter(|capacity|v["crew_capacity"].as_i64()==Some(*capacity)).ok_or_else(||bad("crew contract/capacity binding"))?;
         let rows=v["capabilities"].as_array().filter(|r|(2..=256).contains(&r.len())).ok_or_else(||bad("capability count"))?;
         let mut capabilities=Vec::new();let mut kinds=std::collections::BTreeSet::new();
         for r in rows{
@@ -93,7 +104,7 @@ impl Binding{
             capabilities.push(Capability{native,kind});
         }
         if capabilities.get(0).map(|c|c.native)!=Some(1)||capabilities.get(1).map(|c|c.native)!=Some(2){return Err(bad("missing base inventory"));}
-        Ok(Self{account:account.into(),database,revision,state_sha:state_sha.into(),capabilities})
+        Ok(Self{account:account.into(),database,revision,state_sha:state_sha.into(),capabilities,capacity})
     }
     pub fn metadata(directory:&Path,account:&str,database:i32,revision:u64)->io::Result<Self>{
         let read=crate::crew_service091::fixture_file;
@@ -103,6 +114,8 @@ impl Binding{
     }
     pub fn matches(&self,account:&str,database:i32,revision:u64)->bool{self.account==account&&self.database==database&&self.revision==revision}
     pub fn matches_state(&self,state:&[u8])->bool{self.state_sha==format!("{:x}",Sha256::digest(state))}
+    /// Lifetime tankman identities of the stored crew contract (16 or 192).
+    pub fn capacity(&self)->i64{self.capacity}
     fn kind(&self,native:i64)->io::Result<Kind>{self.capabilities.iter().find(|c|c.native as i64==native).and_then(|c|c.kind).ok_or_else(||bad("unsupported owned selection"))}
     pub fn ammo_layout(&self,r:&crate::ammo_service091::Request)->io::Result<[crate::ammo_service091::ShellCount;3]>{
         // This is a bounded source shape, never a whole-assembly admission or
@@ -116,8 +129,16 @@ impl Binding{
     }
     pub fn transfer(&self,r:crate::crew_transfer091::Request)->io::Result<()>{
         let maximum=self.kind(r.vehicle_inventory_id)?.primary_roles().len() as i32-1;
-        if r.id<=0||!(-1..=maximum).contains(&r.slot)||!(r.tankman_inventory_id==-1||(1..=16).contains(&r.tankman_inventory_id))
+        if r.id<=0||!(-1..=maximum).contains(&r.slot)||!(r.tankman_inventory_id==-1||(1..=self.capacity).contains(&(r.tankman_inventory_id as i64)))
             ||r.slot==-1&&r.tankman_inventory_id!=-1{return Err(bad("transfer source seat/layout"));}Ok(())
+    }
+    pub fn dismiss(&self,r:crate::crew_dismissal091::Request)->io::Result<()>{
+        if r.id<=0||!(1..=self.capacity).contains(&r.tankman_inventory_id)||r.reserved_a!=0||r.reserved_b!=0{return Err(bad("dismissal identity/layout"));}Ok(())
+    }
+    pub fn learn(&self,r:crate::crew_progression091::Request)->io::Result<()>{
+        // Same layout as P04I; skill eligibility/qualification stays with the writer.
+        if r.id<=0||!(1..=self.capacity).contains(&r.tankman_inventory_id)||!(1..=255).contains(&r.skill_index)||r.skill_index==18||r.reserved!=0{
+            return Err(bad("skill identity/layout"));}Ok(())
     }
     pub fn barracks(&self,r:crate::crew_barracks091::Request)->io::Result<()>{
         let kind=[Kind::Ms1,Kind::Is7,Kind::T26,Kind::T34,Kind::T3485].into_iter().find(|k|k.type_cd()==r.vehicle_type).ok_or_else(||bad("barracks source type"))?;
@@ -131,15 +152,17 @@ impl Binding{
     }
     pub fn validate_recruitment(&self,member:&crate::crew_barracks091::Recruitment,r:crate::crew_barracks091::Request,wire:i64,delta:&[u8])->io::Result<()>{
         self.barracks(r)?;let id=member.tankman_id;
-        if !(4..=16).contains(&id)||!(1..i32::MAX as i64).contains(&wire){return Err(bad("recruitment identity/cursor"));}
-        let expected=[8,(r.vehicle_type>>8)as u8,r.role as u8,50,0,0,0,id,0,id,0,id,0,0x40,6,0,0,0,0,66,0,0,0,0,0];
+        if !(4..=self.capacity).contains(&(id as i64))||!(1..i32::MAX as i64).contains(&wire){return Err(bad("recruitment identity/cursor"));}
+        // ((id-1) mod bound)+1 per name/surname/icon: equal to id for 1..16.
+        let names=NAME_BOUNDS.map(|bound|((id as u16-1)%bound+1).to_le_bytes());
+        let expected=[8,(r.vehicle_type>>8)as u8,r.role as u8,50,0,0,0,names[0][0],names[0][1],names[1][0],names[1][1],names[2][0],names[2][1],0x40,6,0,0,0,0,66,0,0,0,0,0];
         if member.descriptor!=expected{return Err(bad("recruitment source passport"));}
         let mut out=b"\x80\x02}(U\x07prevRev".to_vec();integer(&mut out,wire as i32);out.extend(b"U\x03rev");integer(&mut out,wire as i32+1);
         // The versioned Pool writer emits vehicle before compDescr. This exact
         // layout is pinned by an actual SQLite CMD303 vector, independently of
         // the retained P04K encoder's different dictionary insertion order.
         out.extend(b"U\x09inventory}(K\x08}(U\x07vehicle}(K");out.push(id);out.extend(b"J\xff\xff\xff\xffuU\x09compDescr}(K");
-        out.push(id);out.extend(b"U\x19");out.extend(expected);out.extend(b"uuuU\x05stats}(U\x0cfreeTMenLeftK");out.push(16-id);out.extend(b"uu.");
+        out.push(id);out.extend(b"U\x19");out.extend(expected);out.extend(b"uuuU\x05stats}(U\x0cfreeTMenLeftK");out.push((self.capacity-id as i64) as u8);out.extend(b"uu.");
         if delta!=out{return Err(bad("recruitment delta/ext binding"));}crate::hangar091::validate_account_delta(delta)
     }
 }
