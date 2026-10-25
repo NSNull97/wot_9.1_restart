@@ -297,3 +297,37 @@ Raw login success reply — 28 байт, `packet[11]=1` (`LOGIN_SUCCESS`), бе�
 Evidence: `local/evidence/update-gate-bounded-20261025-06/update-gate-native-account-evidence.json`;
 raw reply SHA256 `c5669abe58b8f0d72e26c05ca099ea38d5b48511b68c8040e6e67ae9b5240b5b`;
 trace SHA256 `67db58024d9782132dd9736a432ffb8a24292df502b7e2c36bd8fd1a595e20e8`.
+
+### BaseApp/Account sync до готового hangar — 2026-10-25
+
+Отдельный bounded native-прогон продолжил успешный login на свежей установке
+`local/clients/controller-fresh` и остановился после готовности штатного ангара.
+Внешний сниффер не применялся: запись выполнялась встроенным loopback gateway
+recorder на стенде `crew-any-native-t26-lifetime-fix-20261025-01`.
+
+После `ConnectionManager.connectionWatcher` с `status=LOGGED_ON` trace сохранил
+оригинальные Account callbacks: `onBecomePlayer`, `onCmdResponseExt` для
+`requestID=221/222/223` с `resultID=1`, `onStreamComplete` для streams
+`221/222/223` (2904/23109/103 байта, integrity-пары совпали), затем
+`showGUI`; запрос `224` вернулся с `resultID=0`. Gateway независимо записал
+`SHARED_BASE_BOUND`, `ACCOUNT_CREATE_QUEUED`, `SESSION_ACTIVE`,
+`ACCOUNT_SYNC_REQUEST` для команд `100/300/600` и `ACCOUNT_SHOW_GUI_QUEUED`.
+Поздний `request=226 command=1600` получил `result=-10` как неподдерживаемое
+приложение и не изменил состояние.
+
+Встроенный capture содержит 311 native-пакетов: 5 login client→server, 1 login
+server→client, 118 BaseApp client→server и 187 BaseApp server→client. Raw
+файлы оставлены в локальном capture; в отчёт вынесены только безопасные
+метаданные, размеры и SHA-256. На первой готовой observation (`77.20 s`)
+одновременно наблюдались `native_connected=true`, `items_cache_synced=true`,
+`hangar_space_inited=true`, `hangar_space_loaded=true`,
+`hangar_space_loading=false`, `LobbyView/Hangar`, `vehicle_model_loaded=true`
+и четыре видимые vehicle-модели; выбранный объект — штатный MS-1 inventory `1`.
+Это доказывает границу login → BaseApp → Account → готовый hangar, но не бой и
+не интерактивное действие в ангаре.
+
+Evidence: `local/evidence/update-gate-bounded-20261025-07/baseapp-account-hangar-evidence.json`;
+trace `local/client-runtime-update-gate-bounded-20261025-07/native-257272-1792931216771.jsonl`
+(SHA-256 `790dd66218cac2356c1c0db24a2825429a491417f4436ef66e973f68d3af0172`);
+capture manifest SHA-256
+`da2ea9cab55efddf32641787eabb51aa662e0f5262b51764e380df1d42151e07`.

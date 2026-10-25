@@ -87,6 +87,28 @@ raw reply SHA256 `c5669abe58b8f0d72e26c05ca099ea38d5b48511b68c8040e6e67ae9b5240b
 trace SHA256 `67db58024d9782132dd9736a432ffb8a24292df502b7e2c36bd8fd1a595e20e8`;
 capture manifest SHA256 `d89b1a00fd62dcbcb5b61f48514dea960ddd26f7be296f6030a063c1c733aefb`.
 
+Следующий bounded native-шаг BaseApp/Account sync до готового ангара выполнен
+2026-10-25 на свежей установке той же research-copy. После `LOGGED_ON` trace
+зафиксировал настоящий `Account.onBecomePlayer`, ответы `onCmdResponseExt`
+для запросов `221/222/223` с `result=1`, streams `221=2904`, `222=23109`,
+`223=103` байта с совпадающей целостностью, `Account.showGUI` и запрос `224`
+с `result=0`. Gateway записал `SHARED_BASE_BOUND`, `SESSION_ACTIVE`, три
+`ACCOUNT_SYNC_REQUEST` (`command=100/300/600`) и `ACCOUNT_SHOW_GUI_QUEUED`.
+Loopback capture сохранил 311 native-пакетов: 118 client→server BaseApp и 187
+server→client BaseApp; payload’ы не печатаются, в evidence лежат только пути,
+размеры и SHA-256. На `77.20 s` клиент перешёл в `LobbyView` с `Hangar`,
+`hangar_space_inited=true`, `hangar_space_loaded=true`, четырьмя загруженными
+моделями и выбранным MS-1. Запрос приложения `226` получил штатный
+`result=-10` (`APPLICATION_UNAVAILABLE`, `state_changed=false`) и не помешал
+готовности ангара. Бой и действия в ангаре не запускались; внешний сниффер не
+использовался. Клиент, оба сервиса и install ledger после прогона остановлены
+и восстановлены.
+
+Evidence: `local/evidence/update-gate-bounded-20261025-07/baseapp-account-hangar-evidence.json`;
+raw login reply SHA256 `21bd31398613e3fb6e0ca3db13a245c0649b2cd0035494dde64958a6d77067c9`;
+trace SHA256 `790dd66218cac2356c1c0db24a2825429a491417f4436ef66e973f68d3af0172`;
+capture manifest SHA256 `da2ea9cab55efddf32641787eabb51aa662e0f5262b51764e380df1d42151e07`.
+
 Единственный следующий шаг: выполнить обычный review/merge карточки по
 `docs/07_CODEX_WORKFLOW.md`, затем открыть следующую карточку для оставшихся
 не native lifetime задач.
