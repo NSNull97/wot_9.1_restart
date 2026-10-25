@@ -228,3 +228,21 @@ reply/callback; этот шаг здесь намеренно не подмен�
 
 Evidence: `local/evidence/update-gate-bounded-20261025-02/update-gate-evidence.json`;
 trace SHA256 `d2f4997c39b4d97a4ccf00c037059a919e619e73276882429e4c7c167b20d42b`.
+
+### Account-run — 2026-10-25
+
+Один ручной bounded submit на той же чистой копии достиг native login и дал
+полную связку request/reply/callback без внешнего capture. В ответном login
+пакете длиной 35 байт статусный байт `packet[11]` равен `67`
+(`INVALID_PASSWORD`); trace сохранил `project_login_submit` и
+`LOGIN_REJECTED_INVALID_PASSWORD`. Gateway stdout успел записать только
+`SHARED_LOGIN_STARTED request_id=86428 identity_jobs=1`; отсутствие финальной
+строки до controlled stop явно отмечено в evidence. По ветке
+`server/gateway/src/session.rs` это `auth_result=Ok(None)`, то есть identity
+не приняла введённую пару. Ни `73 SERVER_NOT_READY`, ни `74 UPDATER_NOT_READY`
+в этом запуске не наблюдались, поэтому update-gate снова не является причиной
+данного отказа.
+
+Evidence: `local/evidence/update-gate-bounded-20261025-03/update-gate-account-evidence.json`;
+raw reply SHA256 `9df31244c3397a43a79d645b221fce617ac0dc2942edb894960c23dc39d0bce5`;
+trace SHA256 `7d2e1961b31e05dfaa6003c6137354a21224be04b5b5b68626c8ee39eea0ca1e`.

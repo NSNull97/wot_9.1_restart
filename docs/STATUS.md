@@ -28,6 +28,19 @@ PASS. Login-submit не выполнялся, поэтому raw reply/auth reas
 toolkit-путь формирует `74` (`UPDATER_NOT_READY`), тогда как актуальный gateway
 для #717 отправляет `73` (`SERVER_NOT_READY`).
 
+Один bounded account-run выполнен 2026-10-25 на той же чистой копии после
+ручного ввода тестовой пары в native LoginView. Raw login reply был пойман в
+loopback capture: `packet[11]=67` (`INVALID_PASSWORD`), 35 байт; callback клиента
+зафиксировал `LOGIN_REJECTED_INVALID_PASSWORD`. Gateway успел записать
+`SHARED_LOGIN_STARTED request_id=86428 identity_jobs=1`; финальная строка
+`AUTH_REJECT` не успела попасть в stdout до controlled stop, поэтому причина
+помечена как `INFERRED_FROM_SOURCE_AND_RAW_REPLY`: ветка `session.rs` с
+`auth_result=Ok(None)` отправляет code 67 и означает отказ identity-проверки.
+Коды `73/74` в этом единственном прогоне не наблюдались. Evidence:
+`local/evidence/update-gate-bounded-20261025-03/update-gate-account-evidence.json`;
+raw reply SHA256 `9df31244c3397a43a79d645b221fce617ac0dc2942edb894960c23dc39d0bce5`;
+trace SHA256 `7d2e1961b31e05dfaa6003c6137354a21224be04b5b5b68626c8ee39eea0ca1e`.
+
 Единственный следующий шаг: выполнить обычный review/merge карточки по
 `docs/07_CODEX_WORKFLOW.md`, затем открыть следующую карточку для оставшихся
 не native lifetime задач.
