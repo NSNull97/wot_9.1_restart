@@ -56,21 +56,20 @@ Evidence:
 raw reply SHA256 `30bac841b65ac369133798066e193fdc54acbfd9fc21d4ff5ad27765c78ba65e`;
 trace SHA256 `2748bb57415c1b71b9cc01e3d2f0856c6b31b9d2b50dd79390a70407e6fd3cf8`.
 
-Read-only identity audit после этого прогона подтвердил: в `web.sqlite` есть
-единственная каноническая запись `sr.ascii.f4d1e9@example.test`, её scrypt
-record структурно валиден, а game profile привязан к `native_database_id=1`.
-Однако в семи локальных snapshot’ах цепочки обнаружены пять разных fingerprint’ов
-password hash; текущая запись обновлена `2026-10-24 16:00:16` по
-Asia/Yekaterinburg, а `last_login_at` остался от `2026-10-05`. Известный локальный
-control-artifact `D:/WoT_9.1_Server/local/client-controls/crew-t26-control-20261024-06.json`
-тоже не совпадает с текущим digest (кандидат проверен только в памяти, plaintext
-не выводился). Значит, причина `67` теперь локализована до credential drift /
-mismatch с текущим hash; пропавшей identity-записи или неправильной profile-bind
-нет. Парольный plaintext неизвестен без ввода владельца, клиент повторно не
-запускался.
+Активная worktree identity-запись после повторной read-only сверки уже принимает
+известную локальную test-пару из
+`D:/WoT_9.1_Server/local/client-controls/crew-t26-control-20261024-06.json`;
+перезапись `web.sqlite` не потребовалась. Bridge-only POST на
+`127.0.0.1:3692/internal/native/login` вернул HTTP `200`,
+`native_database_id=1`, `name=sr_ascii_f4d1e9`; клиент и gateway не запускались.
+Следовательно, прежний native `67` нельзя объяснять drift’ом активного hash:
+наиболее вероятен другой вручную введённый email/password byte sequence
+(короткий label вместо полного canonical email или отличие в пароле). Plaintext
+в trace отсутствует по дизайну.
 
-Identity evidence: `local/evidence/update-gate-bounded-20261025-04/identity-record-audit.json`;
-status `PASS_RECORD_PRESENT_HASH_FORMAT_VALID_PROFILE_BINDING_VALID_PASSWORD_MATCH_NOT_TESTED`.
+Identity evidence: `local/evidence/update-gate-bounded-20261025-04/credential-sync-bridge-evidence.json`;
+status `PASS_ALREADY_SYNCED_BRIDGE_ONLY`. Предыдущий audit superseded этим
+evidence: `local/evidence/update-gate-bounded-20261025-04/identity-record-audit.json`.
 
 Единственный следующий шаг: выполнить обычный review/merge карточки по
 `docs/07_CODEX_WORKFLOW.md`, затем открыть следующую карточку для оставшихся

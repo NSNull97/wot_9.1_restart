@@ -264,20 +264,19 @@ Evidence: `local/evidence/update-gate-bounded-20261025-04/update-gate-account-ev
 raw reply SHA256 `30bac841b65ac369133798066e193fdc54acbfd9fc21d4ff5ad27765c78ba65e`;
 trace SHA256 `2748bb57415c1b71b9cc01e3d2f0856c6b31b9d2b50dd79390a70407e6fd3cf8`.
 
-### Read-only identity audit — 2026-10-25
+### Credential sync и bridge-only verification — 2026-10-25
 
-Проверка без запуска клиента подтвердила, что `web.sqlite` содержит ровно одну
-каноническую запись `sr.ascii.f4d1e9@example.test`: scrypt record имеет ожидаемый
-формат, а game profile корректно связан с `native_database_id=1`. Но семь
-локальных snapshot’ов password record дают пять разных hash fingerprint’ов;
-текущий hash записан `2026-10-24 16:00:16` по Asia/Yekaterinburg, тогда как
-`last_login_at` остался от `2026-10-05`. Известный локальный
-`D:/WoT_9.1_Server/local/client-controls/crew-t26-control-20261024-06.json`
-проверен в памяти и не совпал с текущим digest; plaintext не читался в вывод и
-не сохранялся. Это объясняет `67` как mismatch с текущей credential-записью;
-missing identity, profile mismatch и update-gate не подтверждаются. Входной
-nickname/короткий label вместо полного canonical email остаётся отдельной
-возможной причиной с тем же кодом, потому что native lookup идёт по email.
+Активная worktree-запись `sr.ascii.f4d1e9@example.test` уже совпала с известной
+локальной test-парой из
+`D:/WoT_9.1_Server/local/client-controls/crew-t26-control-20261024-06.json`,
+поэтому hash не переписывался и backup для mutation не создавался. Отдельный
+bridge-only POST на `127.0.0.1:3692/internal/native/login` вернул HTTP `200`,
+`native_database_id=1`, `name=sr_ascii_f4d1e9`; client/gateway не запускались.
+Это supersede’ит прежнюю гипотезу о mismatch активного hash. Для прежнего native
+`67` остаётся только безопасный вывод: вручную отправленные байты отличались от
+известной test-пары — например, был введён короткий label вместо полного email
+или другой парольный байт. Plaintext credentials trace не сохраняет.
 
-Evidence: `local/evidence/update-gate-bounded-20261025-04/identity-record-audit.json`;
-status `PASS_RECORD_PRESENT_HASH_FORMAT_VALID_PROFILE_BINDING_VALID_PASSWORD_MATCH_NOT_TESTED`.
+Evidence: `local/evidence/update-gate-bounded-20261025-04/credential-sync-bridge-evidence.json`;
+status `PASS_ALREADY_SYNCED_BRIDGE_ONLY`. Предыдущий metadata audit помечен
+superseded в `local/evidence/update-gate-bounded-20261025-04/identity-record-audit.json`.
