@@ -246,3 +246,20 @@ trace SHA256 `d2f4997c39b4d97a4ccf00c037059a919e619e73276882429e4c7c167b20d42b`.
 Evidence: `local/evidence/update-gate-bounded-20261025-03/update-gate-account-evidence.json`;
 raw reply SHA256 `9df31244c3397a43a79d645b221fce617ac0dc2942edb894960c23dc39d0bce5`;
 trace SHA256 `7d2e1961b31e05dfaa6003c6137354a21224be04b5b5b68626c8ee39eea0ca1e`.
+
+### Повтор account-run — 2026-10-25
+
+Повторный ручной bounded submit с явно выбранным локальным account label
+`sr.ascii.f4d1e9` снова достиг native login и дал тот же raw/callback результат:
+`packet[11]=67 (INVALID_PASSWORD)` и
+`LOGIN_REJECTED_INVALID_PASSWORD`. Коды `73 SERVER_NOT_READY` и `74
+UPDATER_NOT_READY` в raw reply отсутствуют. Gateway stdout содержит
+`SHARED_LOGIN_STARTED request_id=46912 identity_jobs=1`, но не содержит финальный
+`AUTH_REJECT`, поскольку controlled stop произошёл до flush. По исходнику
+`server/gateway/src/session.rs` это согласуется с `auth_result=Ok(None)` →
+rejection code `67`; точный split между неизвестной identity и неверным
+паролем контракт не предоставляет.
+
+Evidence: `local/evidence/update-gate-bounded-20261025-04/update-gate-account-evidence.json`;
+raw reply SHA256 `30bac841b65ac369133798066e193fdc54acbfd9fc21d4ff5ad27765c78ba65e`;
+trace SHA256 `2748bb57415c1b71b9cc01e3d2f0856c6b31b9d2b50dd79390a70407e6fd3cf8`.

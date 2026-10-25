@@ -41,6 +41,21 @@ loopback capture: `packet[11]=67` (`INVALID_PASSWORD`), 35 байт; callback к
 raw reply SHA256 `9df31244c3397a43a79d645b221fce617ac0dc2942edb894960c23dc39d0bce5`;
 trace SHA256 `7d2e1961b31e05dfaa6003c6137354a21224be04b5b5b68626c8ee39eea0ca1e`.
 
+Повтор с явно выбранным локальным account label `sr.ascii.f4d1e9` дал тот же
+результат: raw `packet[11]=67 (INVALID_PASSWORD)`, а callback клиента —
+`LOGIN_REJECTED_INVALID_PASSWORD`. `73 SERVER_NOT_READY` и `74
+UPDATER_NOT_READY` снова не наблюдались. Gateway успел записать только
+`SHARED_LOGIN_STARTED request_id=46912 identity_jobs=1`; финальный `AUTH_REJECT`
+не был flushed до controlled stop. Поэтому причина gateway классифицирована как
+`INFERRED`: ветка `session.rs` сводит `auth_result=Ok(None)` к коду `67`, а
+различить lookup неизвестного аккаунта и несовпадение пароля этим контрактом
+нельзя. Клиент, сервисы и install ledger после прогона восстановлены.
+
+Evidence:
+`local/evidence/update-gate-bounded-20261025-04/update-gate-account-evidence.json`;
+raw reply SHA256 `30bac841b65ac369133798066e193fdc54acbfd9fc21d4ff5ad27765c78ba65e`;
+trace SHA256 `2748bb57415c1b71b9cc01e3d2f0856c6b31b9d2b50dd79390a70407e6fd3cf8`.
+
 Единственный следующий шаг: выполнить обычный review/merge карточки по
 `docs/07_CODEX_WORKFLOW.md`, затем открыть следующую карточку для оставшихся
 не native lifetime задач.
