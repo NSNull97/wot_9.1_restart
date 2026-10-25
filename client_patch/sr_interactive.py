@@ -1745,6 +1745,7 @@ def consume_control(view):
             _p04k_scenario = p04k_crew_ui.NativeScenario(record, data['barracks_recruitment_mode'],
                 expected=data.pop('barracks_recruitment_expected'), hires=data.pop('barracks_recruitment_hires', None), settings=_settings)
         if verify_lifetime:
+            import p04k_crew_ui
             _p04k_scenario = p04k_crew_ui.CatalogLifetimeScenario(record,
                 expected=data.pop('crew_any_lifetime_expected', None), settings=_settings)
         source = 'original_LoginView.onLogin' if submit_via == 'python' else 'original_LoginPageMeta.as_doAutoLoginS'
