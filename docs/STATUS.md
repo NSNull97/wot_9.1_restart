@@ -18,6 +18,16 @@ dismissal windows=256, lifetime deadline=7200s. Старые install07–12 FAIL
 
 **Приёмка карточки: PASS / ACCEPTED.**
 
+Отдельная bounded-диагностика update-gate на 2026-10-25 завершена частично:
+свежая research-copy через loopback `127.0.0.1:20340` дошла до обычного
+`LoginView`, update/modal-событий не было, install rollback и остановка стенда —
+PASS. Login-submit не выполнялся, поэтому raw reply/auth reason — `NOT_RUN`, а
+не PASS. Evidence:
+`local/evidence/update-gate-bounded-20261025-02/update-gate-evidence.json`.
+Старый `tools/wg_probe` остаётся запрещённым backend для новых запусков: его
+toolkit-путь формирует `74` (`UPDATER_NOT_READY`), тогда как актуальный gateway
+для #717 отправляет `73` (`SERVER_NOT_READY`).
+
 Единственный следующий шаг: выполнить обычный review/merge карточки по
 `docs/07_CODEX_WORKFLOW.md`, затем открыть следующую карточку для оставшихся
 не native lifetime задач.

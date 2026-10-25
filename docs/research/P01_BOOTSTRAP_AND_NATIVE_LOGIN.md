@@ -203,3 +203,28 @@ BaseApp endpoint → минимальная native session → обязател�
 измерить минимальный LoginSuccess/redirect и получить первый настоящий
 BaseApp request на втором собственном loopback endpoint. Сейчас остановка
 после P01. Команды/откат — [REPRODUCE](REPRODUCE.md).
+
+## Bounded update-gate diagnosis — 2026-10-25
+
+На свежей отдельной research-copy `local/clients/controller-fresh` поднят
+изолированный локальный стенд `crew-any-native-t26-lifetime-fix-20261025-01`:
+bridge `127.0.0.1:3692`, native login `127.0.0.1:20340`, base
+`127.0.0.1:20341`. Внешний сниффер и внешние endpoints не использовались.
+
+Клиент #717 с `sr_interactive` дошёл до обычного `LoginView`; endpoint в trace
+зафиксирован как `127.0.0.1:20340`, update/modal-событий нет, а install ledger
+полностью откатан (`restore=PASS`). Login-submit не выполнялся, поэтому raw
+native reply и gateway auth reason в этом конкретном run имеют статус `NOT_RUN`;
+пакетов в bounded manifest — `0`.
+
+Причина старого окна «Требуется обновление» локализована до двух различимых
+путей: актуальный `server/gateway/src/protocol/login.rs` отправляет исторический
+`SERVER_NOT_READY=73`, тогда как старый `tools/wg_probe` через современный
+toolkit формирует `74`, который клиент #717 трактует как
+`UPDATER_NOT_READY`. Чистая копия на актуальном gateway update-модалку не
+воспроизвела. Для окончательной классификации server-side ветки нужен отдельный
+собственный login-submit с test-учётными данными и одновременной записью raw
+reply/callback; этот шаг здесь намеренно не подменён синтетикой.
+
+Evidence: `local/evidence/update-gate-bounded-20261025-02/update-gate-evidence.json`;
+trace SHA256 `d2f4997c39b4d97a4ccf00c037059a919e619e73276882429e4c7c167b20d42b`.
