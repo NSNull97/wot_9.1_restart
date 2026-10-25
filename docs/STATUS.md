@@ -190,6 +190,27 @@ Exact legacy manifest bytes по-прежнему отсутствуют, поэ
 клиент не публикует Ready после `onSpaceLoaded`/`Vehicle.onEnterWorld`, либо
 вернуться к восстановлению exact legacy r3/r4 manifests.
 
+Повтор source-bundle прогона с исправленным порядком trigger выполнен в
+`local/evidence/native-arena-source-bundle-20261025-02/`: trigger `avatar_ready`
+создан только после `arena_entry_resources`, трёх стадий `arena_bootstrap` и
+`arena_ready_armed` в штатном ангаре. Это сняло прежний timing/bootstrap race.
+Клиент без Python-исключений прошёл настоящий Avatar init до финального
+`__onInitStepCompleted` offset `640`, `Vehicle.startVisual` offset `407`,
+`userSeesWorld`; native trace получил `arena_ready_complete` с двумя PNG и
+родным PREBATTLE countdown. Gateway записал `ARENA_READY_ACCEPTED` для
+33-байтного compound (`sequence=18`, `create_sequence=106`) и
+`ARENA_PREPARATION_QUEUED` (`reliable_sequence=108`, `body_bytes=105`), без
+reject/error. Клиент завершился через `arena_ready_observed` до запуска боя;
+полный battle/movement/fire/result остаются NOT_RUN.
+
+Финальный delayed-trigger evidence: `local/evidence/native-arena-source-bundle-20261025-02/arena-source-bundle-evidence.json`;
+trace — 1 063 строки, capture — 357 packet-файлов / 34 420 wire bytes, rollback
+и cleanup — PASS. Статус обновлён до **OBSERVED_NATIVE_READY_HASH_ANCHORED_PORTABLE**:
+native Ready/Prebattle для portable hash-anchored режима подтверждены, но exact
+legacy manifest bytes отсутствуют, поэтому это всё ещё не full legacy PASS и не
+приёмка настоящего боя. Предыдущий run01 остаётся историей ложного раннего
+trigger, а не причиной gateway.
+
 ## История статуса до clean lifetime gate
 
 ## Сейчас: CREW-ANY — T-26/profile13 native slice принят, full card частично открыта

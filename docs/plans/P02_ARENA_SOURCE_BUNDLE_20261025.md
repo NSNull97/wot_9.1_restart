@@ -60,3 +60,26 @@ Evidence: `local/evidence/native-arena-source-bundle-20261025-01/arena-source-bu
 режим является отдельным локальным hash-anchored экспериментом. Client capture
 и trace сохранены с размерами/SHA-256 без вывода payload или credential данных;
 rollback install2 — PASS.
+
+## Follow-up delayed-trigger native result — 2026-10-25
+
+Первый run01 был диагностически неполным: trigger создался до того, как
+оригинальный клиент успел поднять обычный Hangar и `arena_ready_armed`. В run02
+trigger создан после `arena_entry_resources` и полного `arena_bootstrap`.
+
+Run02 подтвердил native путь до Ready/Prebattle:
+
+- `arena_ready_armed` — 1, `python_exception` — 0;
+- Avatar `onEnterWorld` return `316`, `onSpaceLoaded` return `33`, финальный
+  `__onInitStepCompleted` return `640`;
+- Vehicle `onEnterWorld` return `169`, `startVisual` return `407`;
+- gateway `ARENA_READY_ACCEPTED` для application compound 33B;
+- gateway `ARENA_PREPARATION_QUEUED`, reliable sequence `108`, body `105B`;
+- native `arena_ready_complete`, два countdown PNG, cleanup и rollback — PASS;
+- настоящий бой, движение, выстрел, результаты и возврат в ангар — NOT_RUN.
+
+Evidence: `local/evidence/native-arena-source-bundle-20261025-02/arena-source-bundle-evidence.json`.
+Итоговый статус source-bundle карточки: **OBSERVED_NATIVE_READY_HASH_ANCHORED_PORTABLE**.
+Exact legacy manifest bytes отсутствуют, поэтому результат подтверждает native
+Ready/Prebattle только для opt-in hash-anchored portable bundle и не закрывает
+legacy exact/full-battle acceptance.
