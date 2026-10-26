@@ -6,7 +6,9 @@ gateway supplies primitive Results JSON after its own durable terminal finish.
 from __future__ import annotations
 
 from copy import deepcopy
+from functools import lru_cache
 import json
+from pathlib import Path
 import re
 import unicodedata
 
@@ -17,6 +19,18 @@ from p09d_ammo_projection import canonical
 
 SCHEMA = "p08c-battle-results.v1"
 MAX_RESULT_BYTES = 32768
+MAP_REGISTRY = Path(__file__).resolve().parent.parent / "server" / "contracts" / "map_registry.json"
+
+
+@lru_cache(maxsize=1)
+def registry_arena_types():
+    """Arena types of the server map registry (MAPS-01), the same source as the gateway."""
+    raw = MAP_REGISTRY.read_bytes()
+    require(len(raw) <= 1024 * 1024, "INVALID_INPUT")
+    maps = json.loads(raw)["maps"]
+    types = frozenset(entry["arena_type_id"] for entry in maps)
+    require(len(types) == len(maps) and all(type(t) is int and t > 0 for t in types), "INVALID_INPUT")
+    return types
 MAX_HTTP_BYTES = 65536
 COMMON = {"version", "operation", "account_id", "native_database_id", "command_key", "arena_id"}
 STORE = {"run_id", "battle_id", "native_inventory_id", "reservation_id", "results_json"}
@@ -104,7 +118,7 @@ def results_value(raw):
         raise TransactionError("INVALID_INPUT") from error
     require(type(value) is dict and set(value) in (HEADER, HEADER | {"interaction_details"}), "INVALID_INPUT")
     _integer(value["arena_id"], 1, 2**63 - 1)
-    require(type(value["arena_type_id"]) is int and value["arena_type_id"] in (1, 4), "INVALID_INPUT")
+    require(type(value["arena_type_id"]) is int and value["arena_type_id"] in registry_arena_types(), "INVALID_INPUT")
     _integer(value["created_unix"], 1, 2**32 - 1); _integer(value["winner_team"], 0, 2)
     _integer(value["finish_reason"], 1, 5); _integer(value["duration_seconds"], 0, 3600)
     rows = value["participants"]

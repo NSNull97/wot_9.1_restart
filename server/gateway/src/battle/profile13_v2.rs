@@ -151,7 +151,7 @@ impl Request{pub fn operation(&self)->&'static str{match self{Self::RunOpen=>"ru
 /// positive hull HP. Existing v1 Results::validate is deliberately unchanged.
 fn results_v2(raw:&str)->io::Result<Results>{if raw.is_empty()||raw.len()>32768{return Err(bad("result bytes"));}
     let r:Results=serde_json::from_str(raw).map_err(|_|bad("strict results DTO"))?;
-    if r.arena_id==0||r.arena_id>i64::MAX as u64||![1,4].contains(&r.arena_type_id)||r.created_unix==0||r.winner_team>2
+    if r.arena_id==0||r.arena_id>i64::MAX as u64||crate::map_profile091::MapId::from_arena_type_id(r.arena_type_id).is_err()||r.created_unix==0||r.winner_team>2
         ||!(1..=5).contains(&r.finish_reason)||r.duration_seconds>3600||!(2..=6).contains(&r.participants.len()){return Err(bad("result header"));}
     for(i,p)in r.participants.iter().enumerate(){if p.vehicle_id==0||p.vehicle_id>i32::MAX as u32||p.account_dbid<=0||!(1..=2).contains(&p.team)
         ||p.type_compact_descr==0||p.type_compact_descr>i32::MAX as u32||!(0..=10000).contains(&p.health)||p.shots>192||p.direct_hits>192||p.piercings>192

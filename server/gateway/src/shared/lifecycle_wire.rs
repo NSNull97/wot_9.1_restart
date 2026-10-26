@@ -217,7 +217,7 @@ impl Results {
         result.validate_p06t()?;Ok(result)
     }
     fn validate_inner(&self,mixed:bool)->io::Result<()> {
-        if self.arena_id==0||self.arena_id>i64::MAX as u64||![1,4].contains(&self.arena_type_id)
+        if self.arena_id==0||self.arena_id>i64::MAX as u64||crate::map_profile091::MapId::from_arena_type_id(self.arena_type_id).is_err()
             ||self.created_unix==0||self.winner_team>2||!(1..=5).contains(&self.finish_reason)
             ||self.duration_seconds>3600||!(2..=MAX_PARTICIPANTS).contains(&self.participants.len()) {
             return Err(bad("lifecycle result header bound"));
@@ -398,6 +398,14 @@ mod tests {
                 Participant {vehicle_id:0x09100005,account_dbid:2,name:"Танкист_Ёж".into(),team:2,type_compact_descr:17,
                     health:0,shots:2,damage_received:90,life_time:74,killer_id:0x09100003,death_reason:0,..Default::default()},
             ]}
+    }
+    #[test] fn result_arena_type_follows_the_map_registry() {
+        // Every registry map (Karelia 1, Malinovka 2, Prohorovka 4) can seal a
+        // result; an arena type outside the registry cannot.
+        for id in crate::map_profile091::MapId::all().map(|map|map.arena_type_id()) {
+            let mut r=result();r.arena_type_id=id;assert!(r.validate().is_ok() && r.validate_p06t().is_ok(),"arena type {id}");
+        }
+        for id in [0,3,i32::MAX] {let mut r=result();r.arena_type_id=id;assert!(r.validate().is_err() && r.validate_p06t().is_err());}
     }
     #[test] fn bound_result_owner_and_complete_field_count() {
         let r=result();let raw=compact_results(&r,1).unwrap();
