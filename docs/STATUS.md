@@ -19,18 +19,23 @@ dismissal windows=256, lifetime deadline=7200s. Старые install07–12 FAIL
 **Приёмка карточки: PASS / ACCEPTED.**
 
 Отдельная стыковка source-bundle с уже принятым shared profile13 маршрутом
-проверена на bounded native стенде 2026-10-26. Добавлен явный режим
-`legacy091-profile13-source-bundle`: portable bundle проходит hash-anchored
-проверку под `config.local_root`, а primary db1 получает per-admission
-`SHARED_SOURCE_BUNDLE_VERIFIED` (MS-1/type 3329/native inventory 1/HP 90).
-Сам бой по-прежнему остаётся под authority profile13 reservation/FrozenLoadout.
-Оба native клиента авторизовались, настоящий FightButton дал
-`map_drive_client_click`/`enqueue`, вторичный owner дошёл до P08B queue. Первая
-попытка выявила attach race; узкий guard ожидания reservation собран в свежем
-gateway. Новый source-bundle прогон остановлен bounded после queue: в нём не
-получены `SHARED_WORLD_STARTED`/`P05C_SCENE_READY`, поэтому actual battle здесь
-помечен **NOT_RUN**, без подмены предыдущим accepted CREW-ANY боем.
-Evidence: `local/evidence/p02-source-bundle-profile13-20261026.json`.
+проверена повторным bounded native стендом 2026-10-26. Режим
+`legacy091-profile13-source-bundle` принимает только hash-anchored portable
+bundle под `config.local_root`; primary db1 получил per-admission
+`SHARED_SOURCE_BUNDLE_VERIFIED` (MS-1/type 3329/native inventory 1/HP 90), а
+сам бой остался под authority profile13 reservation/FrozenLoadout.
+Перед кликами оба клиента дошли до `native_hangar waiting_visible=false` с
+`items_cache_synced=true` и `vehicle_model_loaded=true`. FightButton нажат
+последовательно: первый клиент получил `P08B_QUEUE_PENDING` и
+`P06T_LOSS_RESERVED`, затем второй получил свои queue/reservation markers.
+Зафиксирован один настоящий shared-бой `2453074965870033733`: gateway записал
+`SHARED_WORLD_STARTED sessions=2 actors=2`, `P05C_SCENE_READY`, два
+`SHARED_ENTRY` и два `SHARED_ANNOUNCED`, без `SHARED_BATTLE_FAILED`. Оба native
+клиента реально выполнили `PlayerAvatar.onEnterWorld`, `Vehicle.onEnterWorld`,
+`onSpaceLoaded` и `native_shared_impact_call.updateVehicleHealth`. Финальный
+`P06T_LOSS_RESULT_COMMITTED` в этом bounded rerun не дожидались, поэтому полный
+результат боя остаётся NOT_RUN; exact legacy r3/r4 manifest также не заявляется.
+Evidence: `local/evidence/p02-source-bundle-profile13-20261026-rerun-02.json`.
 
 Отдельная bounded-диагностика update-gate на 2026-10-25 завершена частично:
 свежая research-copy через loopback `127.0.0.1:20340` дошла до обычного
