@@ -19,23 +19,27 @@ dismissal windows=256, lifetime deadline=7200s. Старые install07–12 FAIL
 **Приёмка карточки: PASS / ACCEPTED.**
 
 Отдельная стыковка source-bundle с уже принятым shared profile13 маршрутом
-проверена повторным bounded native стендом 2026-10-26. Режим
+закрыта финальным bounded native прогоном 2026-10-26. Режим
 `legacy091-profile13-source-bundle` принимает только hash-anchored portable
 bundle под `config.local_root`; primary db1 получил per-admission
 `SHARED_SOURCE_BUNDLE_VERIFIED` (MS-1/type 3329/native inventory 1/HP 90), а
 сам бой остался под authority profile13 reservation/FrozenLoadout.
 Перед кликами оба клиента дошли до `native_hangar waiting_visible=false` с
-`items_cache_synced=true` и `vehicle_model_loaded=true`. FightButton нажат
-последовательно: первый клиент получил `P08B_QUEUE_PENDING` и
-`P06T_LOSS_RESERVED`, затем второй получил свои queue/reservation markers.
-Зафиксирован один настоящий shared-бой `2453074965870033733`: gateway записал
-`SHARED_WORLD_STARTED sessions=2 actors=2`, `P05C_SCENE_READY`, два
-`SHARED_ENTRY` и два `SHARED_ANNOUNCED`, без `SHARED_BATTLE_FAILED`. Оба native
-клиента реально выполнили `PlayerAvatar.onEnterWorld`, `Vehicle.onEnterWorld`,
-`onSpaceLoaded` и `native_shared_impact_call.updateVehicleHealth`. Финальный
-`P06T_LOSS_RESULT_COMMITTED` в этом bounded rerun не дожидались, поэтому полный
-результат боя остаётся NOT_RUN; exact legacy r3/r4 manifest также не заявляется.
-Evidence: `local/evidence/p02-source-bundle-profile13-20261026-rerun-02.json`.
+`items_cache_synced=true`, `vehicle_model_loaded=true` и `native_connected=true`.
+FightButton нажат последовательно. Зафиксирован один настоящий shared-бой
+`7307814506127825970`: gateway записал `SHARED_WORLD_STARTED`,
+`P05C_SCENE_READY`, два `SHARED_ENTRY` и два `SHARED_ANNOUNCED`, без
+`SHARED_BATTLE_FAILED`; оба native клиента выполнили `onEnterWorld`,
+`updateVehicleHealth` и штатный выход из world. Жизненный цикл дошёл до
+`P08C_LATE_SEAL_FROZEN`/двух `P08C_RESULT_FROZEN`, двух
+`P06T_LOSS_TERMINAL_FROZEN`, двух `P06T_LOSS_RESULT_COMMITTED`,
+`P08C_RESULTS_COMPLETE` с `native_account_delivery=true` и двух
+`SHARED_RETURN reason=natural_result_confirmed`. Оба клиента вернулись в
+стабильный native hangar с `waiting_visible=false`, загруженными моделями и
+синхронизированным cache. В процессе writer потребовался bounded retry после
+обновления post-finish fixture; задержка сохранена в gateway evidence и не
+скрыта. Exact legacy r3/r4 manifest по-прежнему не заявляется.
+Evidence: `local/evidence/p02-source-bundle-profile13-20261026-final-result-03.json`.
 
 Отдельная bounded-диагностика update-gate на 2026-10-25 завершена частично:
 свежая research-copy через loopback `127.0.0.1:20340` дошла до обычного
