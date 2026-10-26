@@ -25,6 +25,13 @@
 - CREW-ANY: `full_test_stand.py crew-contract --stand <stand> --version 2` (остановленный стенд;
   копия БД рядом, пожизненно 192 танкиста), откат `--version 1` пока номера ≤ 16; клиенты —
   `interactive_client.py prepare … --catalog-v1 --crew-any` (окна экипажа/БК для всех машин каталога).
+- DOM-01 Domain (флаг, по умолчанию выключен): на остановленном стенде `python -B -X utf8 tools/full_test_stand.py
+  domain --stand <stand>` — `domain.json` из `bridge.json`, новый `domain.secret`, `domain_service` в gateway.json и
+  bridge.json (копии `*.before-domain.json`), `domain.ps1`. Порядок: `domain.ps1 start` → `services.ps1 start`;
+  остановка обратная; откат — `domain --disable`. Нужен gateway и bridge из этой ветки. `domain.ps1` запускать
+  через Bash `run_in_background` или с выводом в файл: `Start-Process` наследует дескрипторы, и чужой pipe держит
+  вызывающего до остановки Domain. Тренировочные комнаты (`training_rooms`, `room_selection*`) с Domain не включаются.
+  Проверка без клиента: `tools/domain_stand_rehearsal.py --source-stand <стенд> --out local/stands/<новый> --evidence …`.
 - Бой на другой карте реестра (MAPS-01): на остановленном стенде, собранном с физикой из
   checkout с этой картой в `server/contracts/map_registry.json`, — `python -B -X utf8
   tools/full_test_stand.py map --stand <stand> --package local/evidence/20261020-maps01/final01/packages/02_malinovka
