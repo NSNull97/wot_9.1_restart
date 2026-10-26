@@ -15,6 +15,8 @@ pub(crate) mod room_selection;
 pub(crate) mod room_selection_loss;
 #[path="game_network.rs"]
 pub(crate) mod game_network;
+#[path="domain_client.rs"]
+pub(crate) mod domain_client;
 
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
 
@@ -235,6 +237,8 @@ pub struct Config {
     pub p08b_owner_battle_hold:bool,
     /// CAT-01 single catalog for mixed admission identity (default: legacy lists).
     pub catalog_v1:bool,
+    /// DOM-01: hangar/battle writer paths go to the long-lived Domain service (default: bridge HTTP).
+    domain:Option<domain_client::Endpoint>,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -328,6 +332,10 @@ impl Config {
             _=>return Err(invalid("catalog must be {version:1,sha256} of this gateway build")),
         };
         if catalog_v1&&(!profile13_battle||!p06t_mixed_ammo){return Err(invalid("catalog v1 applies to the owned mixed profile13 writer only"));}
+        let domain_value=value.remove("domain_service");
+        if domain_value.is_some()&&(!profile13_battle||p08c_late_results||training_rooms){
+            return Err(invalid("domain_service requires profile13 battle; late results and training rooms keep their bridge writers"));
+        }
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let game_network=game_network::Network::parse(text(&value,"login_bind")?,text(&value,"base_bind")?,network)?;
@@ -343,6 +351,8 @@ impl Config {
         if !token_path.starts_with(&local_root) {return Err(invalid("identity token file escapes local root"));}
         let token=String::from_utf8(bounded_file(&token_path,43)?).map_err(|_|invalid("service token encoding"))?;
         if token.len()!=43 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b==b'_' || b==b'-') {return Err(invalid("service token must be exactly 43 base64url characters"));}
+        let domain=domain_value.map(|v|domain_client::Endpoint::parse(&v,&local_root)).transpose()?;
+        if domain.as_ref().is_some_and(|d|[login_bind,base_bind,identity_endpoint].contains(&d.address())){return Err(invalid("service ports must be distinct"));}
         let seconds=value["session_duration_seconds"].as_u64().ok_or_else(||invalid("session duration integer"))?;
         if !(600..=7200).contains(&seconds) {return Err(invalid("session duration must be 600..7200 seconds"));}
         let battle_run_id=if profile13_battle {
@@ -350,9 +360,10 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
+    pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
     pub(crate) fn require_game_network(&self,runtime:game_network::Runtime)->io::Result<()>{
         self.game_network.require_runtime(runtime,self.login_bind,self.base_bind)?;
         if self.game_network.is_lan()&&(!self.profile13_battle||!self.p04m_pool||!self.p06t_mixed_ammo){return Err(invalid("LAN game network requires the complete mixed profile13 writer"));}Ok(())
@@ -509,6 +520,7 @@ impl Config {
         Ok(reply)
     }
     fn post_with_budget(&self,path:&str,body:&[u8],timeout:Duration,max_body:usize,max_wire:usize)->io::Result<(u16,Vec<u8>)> {
+        if let (Some(domain),Some(op))=(&self.domain,domain_client::operation(path)){return domain.call(op,body,timeout,max_body);}
         let deadline=Instant::now()+timeout;
         let mut stream=TcpStream::connect_timeout(&self.identity_endpoint.into(),Duration::from_millis(500))?;
         stream.set_write_timeout(Some(Duration::from_secs(2)))?;
@@ -1193,3 +1205,7 @@ pub(crate) mod net02_config_tests;
 #[cfg(test)]
 #[path="network_loss_config_tests.rs"]
 mod net02_loss_config_tests;
+
+#[cfg(test)]
+#[path="domain_config_tests.rs"]
+mod domain_config_tests;
