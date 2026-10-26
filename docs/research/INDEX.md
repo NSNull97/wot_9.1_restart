@@ -205,3 +205,5 @@
 - [FULL-TEST независимый вход аккаунтов](FULL_TEST_LOGIN_QUEUE_20261020.md) — код 73 без автоповтора, окно native-входа ~17 с, identity/гараж по аккаунтам, один воркер моста на аккаунт; native NOT_RUN.
 
 - [CAT-01 единый каталог](CAT01_SINGLE_CATALOG.md) — один каталог с SHA-256 из пинов клиента и серверных профилей, генерации Rust/Python/JS/Py2.7, допуск `battle_admission` за флагом; native NOT_RUN.
+
+- [DOM-01 Domain service](DOM01_DOMAIN_SERVICE.md) — один долгоживущий писатель аккаунт-агрегатов (протокол wot091-domain.v1, флаги шлюза/bridge), ответы = байты воркера, замеры до/после, тяжёлый аккаунт 192 — остаток; native NOT_RUN.

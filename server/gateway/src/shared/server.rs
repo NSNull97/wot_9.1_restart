@@ -1343,6 +1343,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
     if config.catalog_v1{crate::profile13_v2091::enable_catalog_v1()?;
         println!("CATALOG_V1 enabled sha256={}",super::vehicle_catalog::CATALOG_SHA256);}
+    if let Some(endpoint)=config.domain_endpoint(){println!("DOMAIN_SERVICE enabled endpoint={endpoint}");}
     let profile13_mode=resources.is_some()&&qualification.is_none();
     if source_bundle.is_some()&&!profile13_mode {return Err(model::bad().into());}
     config.require_game_network(if profile13_mode{crate::identity091::game_network::Runtime::SharedOwnedProfile13}else{crate::identity091::game_network::Runtime::LoopbackOnly})?;

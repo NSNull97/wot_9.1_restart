@@ -1,3 +1,22 @@
+# Текущие ворота: DOM-01 — Domain/Account service (2026-10-26)
+
+Ветка `codex/dom-01-domain-service` на main `e61a385`. План и итог —
+[DOM01_DOMAIN_SERVICE](plans/DOM01_DOMAIN_SERVICE.md), факты — [исследование](research/DOM01_DOMAIN_SERVICE.md).
+
+| Проверка | Статус |
+|---|---|
+| Ответы Domain = байты воркера (сид, стенд -10 A, аккаунт 192) | PASS |
+| bridge без/с Domain — одинаковые ответы (копия стенда) | PASS |
+| FAIL-наборы gateway/web/Python против main в этой среде | без новых |
+| Чтение < 300 мс | PASS (обычные аккаунты), FAIL (192/162) |
+| Канонический gate в `D:/WoT_9.1_Server` | NOT_RUN |
+| Native: ангарный сценарий + бой с Domain на стенде -10 | NOT_RUN (владелец) |
+
+Порядок на стенде: остановить стенд → `full_test_stand.py domain --stand <stand>` → `domain.ps1 start` →
+`services.ps1 start`; откат — остановка и `domain --disable`.
+
+## Предыдущая карточка
+
 # Текущие ворота: CREW-ANY — native T-26/profile13/capacity boundary gate 2026-10-25
 
 Ветка `codex/crew-any`, база карточки — `4b46f7e`. План карточки —

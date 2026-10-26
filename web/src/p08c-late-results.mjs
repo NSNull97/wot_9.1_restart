@@ -125,14 +125,24 @@ function file(path, directory = false) {
     && (directory ? statSync(path).isDirectory() : statSync(path).isFile()), 'trusted existing path'); return resolve(path);
 }
 /** Called only for the authenticated, configured owner; paths never come from JSON. */
-export function createLateResultService({ database, originalRoot, accountId, shellCatalog, terminalPolicy, loss, python, worker, cwd }) {
+export function createLateResultService({ database, originalRoot, accountId, shellCatalog, terminalPolicy, loss, python, worker, cwd, domain = null }) {
   valid(UUID.test(accountId) && typeof loss === 'boolean', 'trusted owner/mode');
   const db = file(database), original = file(originalRoot, true), shells = file(shellCatalog), policy = file(terminalPolicy),
     executable = file(python), script = file(worker), working = file(cwd, true);
   let active = false;
+  // DOM-01: the Domain runs tools/p08c_late_results_service for late owners; same bytes and bounds.
+  const domainOperation = { append: 'late-append', pending: 'late-pending', battle: 'battle', results: 'results' };
   async function run(operation, request, maximum) {
     valid(!active, 'worker busy', 503); active = true;
     try {
+      if (domain !== null) {
+        let reply;
+        try { reply = await domain.call(domainOperation[operation], accountId, canonicalLate(request), request?.command_key ?? null, LATE_WORKER_TIMEOUT_MS); }
+        catch { throw new Error('Late result worker unavailable'); }
+        if (reply.status !== 200 || reply.body.length > maximum) throw new Error('Late result worker unavailable');
+        try { return JSON.parse(reply.body.toString('utf8')); }
+        catch { throw new Error('Late result worker response invalid'); }
+      }
       return await new Promise((done, fail) => {
         const env = { ...process.env }; delete env.PYTHONPATH;
         const child = spawn(executable, ['-B', '-X', 'utf8', script, '--database', db, '--original-root', original,
