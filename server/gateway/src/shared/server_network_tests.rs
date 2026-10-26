@@ -53,7 +53,7 @@ fn net02_shared_unsupported_loaders_and_direct_runtime_fail_before_any_socket(){
     refusal(serve_curated_lab("missing","missing",path,"missing","missing",VehicleKind::Ms1));
     refusal(serve_curated_lab("missing","missing",path,"missing","missing",VehicleKind::Wt128));
     refusal(serve_curated_lab_v2("missing","missing",path,"missing","missing",VehicleKind::Wt128));
-    refusal(serve_with_pool_policy("missing","missing",path,"missing",None,None,false,None,None,None,MapId::Karelia,VehicleKind::Ms1,None,None,false));
+    refusal(serve_with_pool_policy("missing","missing",path,"missing",None,None,false,None,None,None,MapId::Karelia,VehicleKind::Ms1,None,None,false,None));
 }
 
 #[test]

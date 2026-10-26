@@ -133,6 +133,21 @@ pub fn prepare_primary_ms1(seed: &VehicleSeed, identity: &Profile, loaded_state:
     result.validate_for(seed, identity, loaded_state, generation)?; Ok(result)
 }
 
+/// Hash-anchored portable source-bundle variant used only by the explicit
+/// arena-ready bundle probe. It keeps the authenticated Account/profile13
+/// identity separate from the profile4-derived vehicle state and never reads
+/// the unavailable absolute-path legacy manifest.
+pub fn prepare_primary_ms1_source_bundle(seed:&VehicleSeed,identity:&Profile,bundle_root:&Path,generation:u32)->io::Result<BattlePreparation> {
+    if generation==0||generation>MAX_GENERATION{return Err(bad("generation"));}
+    crate::arena_vehicle091::verify_portable_bundle(bundle_root)?;
+    let p=crate::arena_vehicle091::portable_file(bundle_root,"content/fixtures/profile4/profile-input.json.blob",1877,PROFILE_SHA)?;
+    let c=crate::arena_vehicle091::portable_file(bundle_root,"content/fixtures/profile4/compatibility.json.blob",1603,COMPAT_SHA)?;
+    let n=crate::arena_vehicle091::portable_file(bundle_root,"content/inputs/native-ms1-ammo.blob",7683,AMMO_SHA)?;
+    let loadout=project(identity,seed,&parse(&p)?,&parse(&c)?,&parse(&n)?)?;
+    let result=BattlePreparation{seed:seed.clone(),generation,loadout};
+    result.validate_for(seed,identity,seed.state_sha256,generation)?;Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +195,14 @@ mod tests {
         assert!(prepare_primary_ms1(&s,&i,s.state_sha256,1).is_err());i.fixture_dir=original;i.database_id=2;
         assert!(prepare_primary_ms1(&s,&i,s.state_sha256,1).is_err());i.database_id=1;s.descriptor[0]^=1;
         assert!(prepare_primary_ms1(&s,&i,s.state_sha256,1).is_err());
+    }
+    #[test] fn portable_source_bundle_preparation_binds_profile4_blobs_to_authenticated_identity() {
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/stands/p09e-main-01/source-bundle-05").canonicalize().unwrap();
+        let identity=Profile{account_id:crate::arena_vehicle091::PRIMARY_ACCOUNT.into(),database_id:1,name:crate::arena_vehicle091::PRIMARY_NAME.into(),fixture_dir:root.clone()};
+        let seed=crate::arena_vehicle091::load_source_bundle(&identity,&root).unwrap();
+        let preparation=prepare_primary_ms1_source_bundle(&seed,&identity,&root,1).unwrap();
+        assert_eq!((preparation.loadout.turret_compact_descr,preparation.loadout.gun_compact_descr,preparation.loadout.selected_shell_count),(5891,5892,20));
+        let foreign=Profile{account_id:"00000000-0000-0000-0000-000000000001".into(),database_id:1,name:crate::arena_vehicle091::PRIMARY_NAME.into(),fixture_dir:root.clone()};
+        assert!(prepare_primary_ms1_source_bundle(&seed,&foreign,&root,1).is_err());
     }
 }

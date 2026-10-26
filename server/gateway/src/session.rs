@@ -3,7 +3,7 @@
 use std::{collections::VecDeque,fs,io,net::{Ipv4Addr,SocketAddr,UdpSocket},thread,time::{Duration,Instant}};
 use rsa::rand_core::{OsRng,RngCore};
 use sha2::{Digest,Sha256};
-use std::{sync::{Arc,mpsc},path::Path};
+use std::{sync::{Arc,mpsc},path::{Path,PathBuf}};
 use crate::{baseapp091 as base,login091 as login,redirect091,transport091::{self,Frame,Window}};
 use crate::capture091::{Channel,Recorder};
 #[path = "account/ammo_session.rs"]
@@ -199,6 +199,9 @@ struct Session {
     shared:Option<shared::Client>,
     battle_results:shared::results_session::State,
     ammo_service:Option<ammo_session::State>,
+    /// Only the explicit source-bundle arena probe sets this. Authenticated
+    /// Account/Avatar state remains the ordinary profile13 fixture.
+    arena_source_bundle:Option<PathBuf>,
 }
 impl Session {
     fn new(id:u32,key:[u8;16],peer:SocketAddr,now:Instant)->Self {
@@ -209,7 +212,17 @@ impl Session {
             arena_base:false,avatar_unsupported_envelopes:0,arena_space:ArenaSpaceStage::Disabled,
             arena_vehicle:ArenaVehicleStage::Disabled,arena_vehicle_seed:None,arena_vehicle_announcement:None,
             arena_ready:false,arena_vehicle_creation:None,arena_preparation:None,arena_battle_preparation:None,arena_fire:None,
-            arena_movement:false,arena_motion:None,map_drive:false,map_binding:None,drive:None,drive_return_account:None,drive_account_policy:None,shared:None,battle_results:shared::results_session::State::default(),ammo_service:None}
+            arena_movement:false,arena_motion:None,map_drive:false,map_binding:None,drive:None,drive_return_account:None,drive_account_policy:None,shared:None,battle_results:shared::results_session::State::default(),ammo_service:None,arena_source_bundle:None}
+    }
+    fn arena_state(&self)->io::Result<[u8;32]> {
+        if self.arena_source_bundle.is_some() {Ok(self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?.state_sha256)}
+        else {Ok(self.hangar.as_ref().ok_or_else(invalid)?.state_sha256())}
+    }
+    fn arena_prepare(&self,seed:&crate::arena_vehicle091::VehicleSeed,identity:&crate::identity091::Profile,generation:u32)->io::Result<crate::battle091::preparation::BattlePreparation> {
+        match self.arena_source_bundle.as_deref() {
+            Some(root)=>crate::battle091::preparation::prepare_primary_ms1_source_bundle(seed,identity,root,generation),
+            None=>crate::battle091::preparation::prepare_primary_ms1(seed,identity,self.arena_state()?,generation),
+        }
     }
     fn same_login_attempt(&self,candidate:&LoginAttempt)->bool {
         self.login_attempt.is_some_and(|attempt|attempt.same_attempt(candidate))
@@ -316,7 +329,9 @@ impl Session {
             && self.base_peer.is_some() && self.sync_mask==7 && self.outbox.is_empty()
             && self.tx.len()==0 && !self.arena_base && (self.ammo_service.is_none()
                 || self.shared.as_ref().is_some_and(|c|c.profile13_arena_ready())
-                    && self.ammo_service.as_ref().is_some_and(ammo_session::State::idle))
+                    && self.ammo_service.as_ref().is_some_and(ammo_session::State::idle)
+                || self.ammo_service.as_ref().is_some_and(|state|state.research_enabled()
+                    && state.idle()))
     }
     fn queue_arena_base(&mut self)->io::Result<()> {
         if !self.ready_for_arena_base() {return Err(invalid());}
@@ -335,10 +350,12 @@ impl Session {
             if !self.ready_for_arena_base() || self.arena_vehicle!=ArenaVehicleStage::Disabled
                 || self.arena_vehicle_seed.is_some() {return Err(invalid());}
             let identity=self.identity.as_ref().ok_or_else(invalid)?;
-            let state=self.hangar.as_ref().ok_or_else(invalid)?.state_sha256();
             // All identity/profile/descriptor/HP bindings must succeed BEFORE
             // even the reset/base body is queued. No fixture is mutated.
-            let seed=crate::arena_vehicle091::load(identity,state)?;
+            let seed=match self.arena_source_bundle.as_deref() {
+                Some(root)=>crate::arena_vehicle091::load_source_bundle(identity,root)?,
+                None=>crate::arena_vehicle091::load(identity,self.hangar.as_ref().ok_or_else(invalid)?.state_sha256())?,
+            };
             let mut next=self.clone();next.queue_arena_base()?;
             next.arena_vehicle_seed=Some(seed);next.arena_vehicle=ArenaVehicleStage::AwaitingEnable;
             next.arena_ready=matches!(checkpoint,crate::arena_control091::Checkpoint::AvatarReady|crate::arena_control091::Checkpoint::AvatarMovement|crate::arena_control091::Checkpoint::AvatarDrive);
@@ -373,8 +390,7 @@ impl Session {
             || self.arena_space!=ArenaSpaceStage::Disabled || !self.active || !self.account_ready
             || self.base_peer.is_none() || self.sync_mask!=7 || !self.outbox.is_empty() {return Err(invalid());}
         let seed=self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?;
-        seed.validate_session(self.identity.as_ref().ok_or_else(invalid)?,
-            self.hangar.as_ref().ok_or_else(invalid)?.state_sha256())?;
+        seed.validate_session(self.identity.as_ref().ok_or_else(invalid)?,self.arena_state()?)?;
         // Vehicle02 showed cached server entities skip prerequisites at enterAoI.
         // Announce the AoI first; no create command precedes the measured request.
         let body=crate::arena_vehicle091::announce_vehicle(seed)?;
@@ -391,8 +407,7 @@ impl Session {
         // a later heartbeat may still be pending. The flag changes only inside
         // receive's clone/commit and cannot acknowledge an unsent packet.
         let seed=self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?;
-        seed.validate_session(self.identity.as_ref().ok_or_else(invalid)?,
-            self.hangar.as_ref().ok_or_else(invalid)?.state_sha256())?;
+        seed.validate_session(self.identity.as_ref().ok_or_else(invalid)?,self.arena_state()?)?;
         let body=crate::arena_vehicle091::create_requested_vehicle(seed)?;
         let size=body.len();let mut next=self.clone();
         if next.arena_ready {
@@ -409,8 +424,7 @@ impl Session {
             || !self.arena_vehicle_creation.is_some_and(|(_,acked)|acked) {return Err(invalid());}
         let seed=self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?;
         let identity=self.identity.as_ref().ok_or_else(invalid)?;
-        let state=self.hangar.as_ref().ok_or_else(invalid)?.state_sha256();
-        let battle_preparation=crate::battle091::preparation::prepare_primary_ms1(seed,identity,state,1)?;
+        let battle_preparation=self.arena_prepare(seed,identity,1)?;
         let preparation=crate::arena_ready091::Preparation::new(now)?;
         // Keep the measured PREBATTLE clock first, then append the bounded
         // native Avatar ammo panel in the same reliable body. The static
@@ -440,7 +454,7 @@ impl Session {
             || self.arena_preparation.is_some() || now<self.created_at || now<self.last_rx
             || !self.arena_vehicle_creation.is_some_and(|(_,acked)|acked) {return Err(invalid());}
         self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?.validate_session(
-            self.identity.as_ref().ok_or_else(invalid)?,self.hangar.as_ref().ok_or_else(invalid)?.state_sha256())
+            self.identity.as_ref().ok_or_else(invalid)?,self.arena_state()?)
     }
     fn queue_arena_movement(&mut self,now:Instant)->io::Result<(u32,u32)> {
         self.movement_guard(now)?;if self.arena_motion.is_some() || self.map_drive {return Err(invalid());}
@@ -454,11 +468,10 @@ impl Session {
         if !self.map_drive || self.map_binding.is_some() || self.arena_motion.is_some() {return Err(invalid());}
         let seed=self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?;
         let identity=self.identity.as_ref().ok_or_else(invalid)?;
-        let state=self.hangar.as_ref().ok_or_else(invalid)?.state_sha256();
         let generation=self.drive.as_ref().map_or(1,|d|d.generation);
         let preparation=match self.arena_battle_preparation.as_ref() {
-            Some(value)=>{value.validate_for(seed,identity,state,generation)?;value.clone()},
-            None=>crate::battle091::preparation::prepare_primary_ms1(seed,identity,state,generation)?,
+            Some(value)=>{value.validate_for(seed,identity,self.arena_state()?,generation)?;value.clone()},
+            None=>self.arena_prepare(seed,identity,generation)?,
         };
         let mut body=crate::map_drive091::binding_body(crate::arena_vehicle091::VEHICLE_ENTITY_ID)?;
         body.extend(crate::battle091::native_ammo::panel_bodies(
@@ -656,7 +669,7 @@ impl Session {
         if !self.active || self.sync_mask!=7 || drive.queue_info_requests>=32
             || (stale && (drive.phase!=Phase::Enable || !self.arena_base))
             || (!stale && (drive.phase!=Phase::Queued || self.arena_base || self.outbox.len()>=128)){return Err(invalid());}
-        self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?.validate_session(self.identity.as_ref().ok_or_else(invalid)?,self.hangar.as_ref().ok_or_else(invalid)?.state_sha256())?;
+        self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?.validate_session(self.identity.as_ref().ok_or_else(invalid)?,self.arena_state()?)?;
         if !stale{self.outbox.push_back(world::own_queue_info());}
         let drive=self.drive.as_mut().ok_or_else(invalid)?;drive.queue_info_requests+=1;
         events.push(format!("MAP_DRIVE_QUEUE_INFO session={} generation={} request=202 command=502 queue_type=1 requests={} phase={} stale_account_request={} response_queued={} queued_players={} domain_mutated=false",self.id,drive.generation,drive.queue_info_requests,
@@ -741,10 +754,9 @@ impl Session {
             || now<self.created_at || now<self.last_rx {return Err(invalid());}
         let seed=self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?;
         let identity=self.identity.as_ref().ok_or_else(invalid)?;
-        let state=self.hangar.as_ref().ok_or_else(invalid)?.state_sha256();
         let generation=self.drive.as_ref().map_or(1,|d|d.generation);
-        seed.validate_session(identity,state)?;
-        self.arena_battle_preparation.as_ref().ok_or_else(invalid)?.validate_for(seed,identity,state,generation)?;
+        seed.validate_session(identity,self.arena_state()?)?;
+        self.arena_battle_preparation.as_ref().ok_or_else(invalid)?.validate_for(seed,identity,self.arena_state()?,generation)?;
         // The live map-drive service dispatches Avatar traffic by the
         // presence of `drive`; its legacy checkpoint flag is only populated
         // by the older arena-control probe.  Treat both as the same
@@ -826,10 +838,9 @@ impl Session {
             || now<self.created_at || now<self.last_rx {return Err(invalid());}
         let seed=self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?;
         let identity=self.identity.as_ref().ok_or_else(invalid)?;
-        let state=self.hangar.as_ref().ok_or_else(invalid)?.state_sha256();
         let generation=self.drive.as_ref().map_or(1,|d|d.generation);
-        seed.validate_session(identity,state)?;
-        self.arena_battle_preparation.as_ref().ok_or_else(invalid)?.validate_for(seed,identity,state,generation)?;
+        seed.validate_session(identity,self.arena_state()?)?;
+        self.arena_battle_preparation.as_ref().ok_or_else(invalid)?.validate_for(seed,identity,self.arena_state()?,generation)?;
         if self.map_drive || self.drive.is_some() {
             let drive=self.drive.as_ref().ok_or_else(invalid)?;
             if drive.phase!=crate::map_drive_world091::Phase::Driving || self.map_binding.is_none() {return Err(invalid());}
@@ -868,11 +879,11 @@ impl Session {
         use crate::map_drive_world091::{self as world,Phase,Method};
         if !self.active || !self.account_ready || !self.arena_base || self.base_peer.is_none() || self.sync_mask!=7
             || now<self.created_at || now<self.last_rx{return Err(invalid());}
-        self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?.validate_session(self.identity.as_ref().ok_or_else(invalid)?,self.hangar.as_ref().ok_or_else(invalid)?.state_sha256())?;
+        self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?.validate_session(self.identity.as_ref().ok_or_else(invalid)?,self.arena_state()?)?;
         let current=self.drive.as_ref().ok_or_else(invalid)?;let generation=current.generation;
         self.arena_battle_preparation.as_ref().ok_or_else(invalid)?.validate_for(
             self.arena_vehicle_seed.as_ref().ok_or_else(invalid)?,self.identity.as_ref().ok_or_else(invalid)?,
-            self.hangar.as_ref().ok_or_else(invalid)?.state_sha256(),generation)?;
+            self.arena_state()?,generation)?;
         let late=if current.phase==Phase::Enable{world::late_queue_info(payload)?}else{None};
         if let Some(enable)=late{self.drive_queue_info(true,events)?;if !enable{return Ok(());}}
         let current=self.drive.as_ref().ok_or_else(invalid)?;
@@ -1514,6 +1525,18 @@ pub fn serve_arena_ready_probe(key_path:&str,digest_path:&str,config_path:&str,c
     let capture=Recorder::open(capture_path,&config.local_root)?;
     serve_inner(key_path,digest_path,true,true,None,Some(Arc::new(config)),Some(capture),Some(control))
 }
+pub fn serve_arena_ready_bundle_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
+                                     trigger_path:&str,bundle_path:&str)->Result<(),Box<dyn std::error::Error>> {
+    let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;
+    let root=Path::new(bundle_path).canonicalize()?;
+    if !root.starts_with(&config.local_root) {return Err(io::Error::new(io::ErrorKind::InvalidInput,"arena source bundle escapes local root").into());}
+    crate::arena_vehicle091::verify_portable_bundle(&root)?;
+    let control=crate::arena_control091::ArenaControl::for_checkpoint(Path::new(trigger_path),&config.local_root,
+        crate::arena_control091::Checkpoint::AvatarReady)?;
+    let capture=Recorder::open(capture_path,&config.local_root)?;
+    serve_inner_source_bundle(key_path,digest_path,Some(Arc::new(config)),capture,control,root)
+}
 pub fn serve_arena_movement_probe(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
                                  trigger_path:&str)->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
@@ -1672,7 +1695,7 @@ fn poll_drive(s:&mut Session,slot:&mut Option<(u32,crate::map_drive_worker091::W
     let d=s.drive.as_ref().ok_or_else(||drive_poll_error(DrivePollInvariant::ArenaState))?;
     if d.phase==Phase::Queued && d.pose.is_some() && s.ready_for_arena_base(){
         let seed=s.arena_vehicle_seed.as_ref().ok_or_else(||drive_poll_error(DrivePollInvariant::ArenaState))?;
-        seed.validate_session(s.identity.as_ref().ok_or_else(||drive_poll_error(DrivePollInvariant::ArenaState))?,s.hangar.as_ref().ok_or_else(||drive_poll_error(DrivePollInvariant::ArenaState))?.state_sha256())?;
+        seed.validate_session(s.identity.as_ref().ok_or_else(||drive_poll_error(DrivePollInvariant::ArenaState))?,s.arena_state().map_err(|_|drive_poll_error(DrivePollInvariant::ArenaState))?)?;
         let unique=((s.id as u64)<<32)|d.generation as u64;
         let body=world::reset_avatar(seed,d.map.as_ref().ok_or_else(||drive_poll_error(DrivePollInvariant::ArenaState))?,d.generation,unique)?;
         let seq=s.tx.enqueue_body_tracked(&body)?;let d=s.drive.as_mut().ok_or_else(||drive_poll_error(DrivePollInvariant::ArenaState))?;
@@ -1692,7 +1715,12 @@ fn poll_drive(s:&mut Session,slot:&mut Option<(u32,crate::map_drive_worker091::W
 fn serve_inner(key_path:&str,digest_path:&str,account_probe:bool,account_ready:bool,hangar:Option<Arc<crate::hangar091::Fixtures>>,
                interactive:Option<Arc<crate::identity091::Config>>,capture:Option<Recorder>,
                arena_control:Option<crate::arena_control091::ArenaControl>)->Result<(),Box<dyn std::error::Error>> {
-    serve_inner_drive(key_path,digest_path,account_probe,account_ready,hangar,interactive,capture,arena_control,None)
+    serve_inner_drive(key_path,digest_path,account_probe,account_ready,hangar,interactive,capture,arena_control,None,None)
+}
+fn serve_inner_source_bundle(key_path:&str,digest_path:&str,interactive:Option<Arc<crate::identity091::Config>>,
+                             capture:Recorder,arena_control:crate::arena_control091::ArenaControl,
+                             bundle_path:PathBuf)->Result<(),Box<dyn std::error::Error>> {
+    serve_inner_drive(key_path,digest_path,true,true,None,interactive,Some(capture),Some(arena_control),None,Some(bundle_path))
 }
 pub fn serve_map_drive(key_path:&str,digest_path:&str,config_path:&str,pool_path:&str,capture_path:Option<&str>,
                        capture_profile:crate::capture091::Profile)->Result<(),Box<dyn std::error::Error>> {
@@ -1704,18 +1732,32 @@ pub fn serve_map_drive(key_path:&str,digest_path:&str,config_path:&str,pool_path
     // Only the integrated route binds a second kind to every subsystem.
     if pool.vehicle_kind()!=shared::vehicle_profile::VehicleKind::Ms1{return Err(invalid().into());}
     let capture=capture_path.map(|path|Recorder::open_profile(path,&config.local_root,capture_profile)).transpose()?;
-    serve_inner_drive(key_path,digest_path,true,true,None,Some(Arc::new(config)),capture,None,Some(Arc::new(pool)))
+    serve_inner_drive(key_path,digest_path,true,true,None,Some(Arc::new(config)),capture,None,Some(Arc::new(pool)),None)
 }
 fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_ready:bool,hangar:Option<Arc<crate::hangar091::Fixtures>>,
                interactive:Option<Arc<crate::identity091::Config>>,mut capture:Option<Recorder>,
                mut arena_control:Option<crate::arena_control091::ArenaControl>,
-               drive_pool:Option<Arc<crate::map_drive_worker091::Pool>>)->Result<(),Box<dyn std::error::Error>> {
+               drive_pool:Option<Arc<crate::map_drive_worker091::Pool>>,
+               arena_source_bundle:Option<PathBuf>)->Result<(),Box<dyn std::error::Error>> {
     if let Some(config)=&interactive{config.require_game_network(crate::identity091::game_network::Runtime::LoopbackOnly)?;}
     if interactive.as_ref().is_some_and(|config|config.profile13_battle) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput,"profile13 battle requires the explicit shared profile13 mode").into());
     }
-    if interactive.as_ref().is_some_and(|config|config.ammo_service) && (drive_pool.is_some() || arena_control.is_some()) {
+    // The arena-ready probe may use the read-only research fixture loader. It
+    // still never admits ammo commands while an arena control is active; the
+    // old blanket hangar-only guard only needs to remain for map-drive and
+    // other non-research arena modes.
+    if interactive.as_ref().is_some_and(|config|config.ammo_service && !config.research_service)
+        && (drive_pool.is_some() || arena_control.is_some()) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput,"ammunition service is hangar-only; battle integration unavailable").into());
+    }
+    if arena_source_bundle.is_some() && (arena_control.is_none() || drive_pool.is_some()) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput,"portable arena bundle requires the explicit ready probe").into());
+    }
+    if let Some(root)=arena_source_bundle.as_ref() {
+        println!("ARENA_SOURCE_BUNDLE_CONFIGURED policy=HASH_ANCHORED_PORTABLE root_under_local=true bundle_manifest_sha256={} profile4_manifest_anchor_sha256={}",crate::arena_vehicle091::PORTABLE_BUNDLE_MANIFEST_SHA256,crate::arena_vehicle091::LEGACY_MANIFEST_SHA256);
+        crate::arena_vehicle091::verify_portable_bundle(root)?;
+        println!("ARENA_SOURCE_BUNDLE_VERIFIED policy=HASH_ANCHORED_PORTABLE bundle_manifest_sha256={} chain_sha256={} profile_sha256={} state_sha256={}",crate::arena_vehicle091::PORTABLE_BUNDLE_MANIFEST_SHA256,crate::arena_vehicle091::PORTABLE_CHAIN_SHA256,"2610dbd9ee64a12852986def336da057326f14a3289dda43eaae616286998d2d",crate::arena_vehicle091::PRIMARY_STATE_SHA256);
     }
     let private=login::load_key(key_path)?;
     if fs::metadata(digest_path)?.len()!=16 {return Err(invalid().into());}
@@ -1782,6 +1824,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                             println!("SESSION_PENDING id={next_id} account={} native_database_id={} name={} allocated=1 source=website_users fixture_sizes={:?}",
                                 accepted.identity.account_id,accepted.identity.database_id,accepted.identity.name,accepted.fixtures.sizes());
                             created.identity=Some(accepted.identity);created.hangar=Some(accepted.fixtures);
+                            created.arena_source_bundle=arena_source_bundle.clone();
                             created.drive_account_policy=accepted.drive_account_policy;
                             created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
                             if let Some(state)=&mut created.ammo_service {state.replace_pool(created.hangar.as_ref().and_then(|f|f.p04m_binding()).cloned())?;}

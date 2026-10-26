@@ -20,5 +20,5 @@ fn net02_all_eight_old_config_entrypoints_reject_lan_before_resource_capture_key
 #[test]
 fn net02_direct_common_single_runtime_cannot_bypass_the_network_capability_guard(){
     let path=crate::identity091::net02_config_tests::lan_file();let config=crate::identity091::Config::load(path.to_str().unwrap()).unwrap();
-    refusal(serve_inner_drive("missing","missing",true,true,None,Some(Arc::new(config)),None,None,None));
+    refusal(serve_inner_drive("missing","missing",true,true,None,Some(Arc::new(config)),None,None,None,None));
 }

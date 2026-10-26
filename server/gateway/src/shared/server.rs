@@ -5,6 +5,7 @@ use super::super::*;
 use crate::map_profile091::MapId;
 use super::vehicle_profile::VehicleKind;
 use super::ram_proof;
+use std::path::{Path,PathBuf};
 #[path="profile13_dispatch.rs"]
 mod profile13_dispatch;
 #[path="owner_hold_delivery.rs"]
@@ -1046,6 +1047,17 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
         let identity=s.identity.as_ref().ok_or_else(||model::bad())?;
         let who=model::Identity{account:identity.account_id.clone(),database:identity.database_id,name:identity.name.clone()};
         let owned=s.shared.as_ref().and_then(|c|c.profile13.as_ref());
+        // A profile13 client can reach the shared Account phase before its
+        // native Join has completed the durable reservation writer. Keep that
+        // session waiting; attaching it here would turn a normal two-owner
+        // barrier into a process-wide world-step failure at the receipt read.
+        if let Some(p)=owned {
+            let missing=if world.owner_hold_enabled(){p.reservation_hold.is_none()}
+                else if world.ammo_detonation_enabled(){p.reservation_loss.is_none()}
+                else if world.mixed_ammo(){p.reservation_v2.is_none()}
+                else {p.reservation.is_none()};
+            if missing {continue;}
+        }
         let slot=if let Some(p)=owned {
             if world.mixed_ammo(){
                 if world.owner_hold_enabled(){
@@ -1078,7 +1090,7 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
 
 pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str)
     -> Result<(), Box<dyn std::error::Error>> {
-    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia,VehicleKind::Ms1,None,None)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia,VehicleKind::Ms1,None,None,None)
 }
 
 pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,capture_path:&str)
@@ -1090,7 +1102,29 @@ pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_
     if config.p04m_pool&&resources.len()!=5{return Err(model::bad().into());}
     let initial=&resources[0];let map=initial.map;
     serve_with_pool(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
-        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),map,VehicleKind::Ms1,Some(resources),None)
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),map,VehicleKind::Ms1,Some(resources),None,None)
+}
+
+/// Explicit profile13 shared-world mode with a portable source-bundle guard.
+/// The bundle proves the primary owner's source provenance; profile13's
+/// reservation/FrozenLoadout remains authoritative for the actual battle.
+pub fn serve_profile13_source_bundle(key_path:&str,digest_path:&str,config_path:&str,
+    manifest_path:&str,capture_path:&str,bundle_path:&str)
+    ->Result<(),Box<dyn std::error::Error>> {
+    let config=crate::identity091::Config::load(config_path)?;
+    config.require_game_network(crate::identity091::game_network::Runtime::SharedOwnedProfile13)?;
+    if !config.profile13_battle || !config.research_service {return Err(model::bad().into());}
+    let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
+    if config.p04m_pool&&resources.len()!=5{return Err(model::bad().into());}
+    let root=config.local_root.canonicalize()?;
+    let bundle=Path::new(bundle_path).canonicalize()?;
+    if bundle==root || !bundle.starts_with(&root) {return Err(model::bad().into());}
+    crate::arena_vehicle091::verify_portable_bundle(&bundle)?;
+    println!("SHARED_SOURCE_BUNDLE_BOUND root={} policy=HASH_ANCHORED_PORTABLE profile=MS1 state_sha256={}",
+        bundle.display(),crate::arena_vehicle091::PRIMARY_STATE_SHA256);
+    let initial=&resources[0];let map=initial.map;
+    serve_with_pool(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),map,VehicleKind::Ms1,Some(resources),None,Some(bundle))
 }
 
 /// Explicit temporary qualification scene. It uses frozen laboratory account
@@ -1120,7 +1154,7 @@ fn serve_curated_lab_policy(key_path:&str,digest_path:&str,config_path:&str,mani
     if breech_v2{println!("P06T_UNARMORED_BREECH_QUALIFICATION policy=test_lab.p06t.unarmored-gun-breech.v2 historical_server_solver=UNKNOWN");}
     let map=initial.map;
     serve_with_pool_policy(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
-        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),map,VehicleKind::Ms1,Some(resources),Some(kind),breech_v2)
+        true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),map,VehicleKind::Ms1,Some(resources),Some(kind),breech_v2,None)
 }
 
 pub(super) fn selected_pool_map(pool: &crate::map_drive_worker091::Pool, selected: MapId)
@@ -1204,7 +1238,7 @@ pub fn serve_integrated_for_vehicle(key_path: &str, digest_path: &str, config_pa
         validate_catalog_projection(&catalog,&worker,map)?;
         Some((catalog,worker))
     }else{None};
-    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle,None,None)
+    serve_with_pool(key_path, digest_path, config_path, capture_path, Some(Arc::new(pool)), geometry, ap_test_lab, terrain, removal,catalog,map,vehicle,None,None,None)
 }
 
 pub(super) fn validate_catalog_projection(catalog:&super::fragiles::Catalog,worker:&crate::map_drive_worker091::CatalogSpec,map:MapId)->io::Result<()> {
@@ -1285,16 +1319,16 @@ fn contain_results_failure_with_training(manager:&super::results_session::Manage
 
 fn serve_with_pool(key_path: &str, digest_path: &str, config_path: &str, capture_path: &str,
     integrated_pool: Option<Arc<crate::map_drive_worker091::Pool>>, geometry: Option<Arc<super::geometry::Bundle>>, ap_test_lab: bool,
-    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,resources:Option<Vec<super::profile13_templates::Resources>>,qualification:Option<VehicleKind>)
+    terrain: Option<Arc<super::terrain::Terrain>>, removal: Option<crate::map_drive_worker091::RemovalSpec>,catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,resources:Option<Vec<super::profile13_templates::Resources>>,qualification:Option<VehicleKind>,source_bundle:Option<PathBuf>)
     -> Result<(), Box<dyn std::error::Error>> {
     serve_with_pool_policy(key_path,digest_path,config_path,capture_path,integrated_pool,geometry,ap_test_lab,
-        terrain,removal,catalog,map,vehicle,resources,qualification,false)
+        terrain,removal,catalog,map,vehicle,resources,qualification,false,source_bundle)
 }
 fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,capture_path:&str,
     integrated_pool:Option<Arc<crate::map_drive_worker091::Pool>>,geometry:Option<Arc<super::geometry::Bundle>>,ap_test_lab:bool,
     terrain:Option<Arc<super::terrain::Terrain>>,removal:Option<crate::map_drive_worker091::RemovalSpec>,
     catalog:Option<(Arc<super::fragiles::Catalog>,crate::map_drive_worker091::CatalogSpec)>,map:MapId,vehicle:VehicleKind,
-    resources:Option<Vec<super::profile13_templates::Resources>>,qualification:Option<VehicleKind>,breech_v2:bool)
+    resources:Option<Vec<super::profile13_templates::Resources>>,qualification:Option<VehicleKind>,breech_v2:bool,source_bundle:Option<PathBuf>)
     ->Result<(),Box<dyn std::error::Error>> {
     if breech_v2&&!qualification.is_some_and(VehicleKind::is_extended){return Err(model::bad().into());}
     if ap_test_lab && (integrated_pool.is_none() || geometry.is_none()) { return Err(model::bad().into()); }
@@ -1310,6 +1344,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     if config.catalog_v1{crate::profile13_v2091::enable_catalog_v1()?;
         println!("CATALOG_V1 enabled sha256={}",super::vehicle_catalog::CATALOG_SHA256);}
     let profile13_mode=resources.is_some()&&qualification.is_none();
+    if source_bundle.is_some()&&!profile13_mode {return Err(model::bad().into());}
     config.require_game_network(if profile13_mode{crate::identity091::game_network::Runtime::SharedOwnedProfile13}else{crate::identity091::game_network::Runtime::LoopbackOnly})?;
     if config.profile13_battle!=profile13_mode || config.ammo_service!=profile13_mode { return Err(model::bad().into()); }
     let private = login::load_key(key_path)?;
@@ -1429,6 +1464,16 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         if battle_dispatch.owner_busy(&accepted.identity.account_id) || table.sessions.iter().any(|s| s.identity.as_ref().is_some_and(|p| p.account_id == accepted.identity.account_id))
                             || garage.iter().any(|g| g.account_id == accepted.identity.account_id)
                             || result_manager.owner_account() == Some(accepted.identity.account_id.as_str()) { return Err(model::bad()); }
+                        if let Some(root)=source_bundle.as_deref() {
+                            if accepted.identity.account_id==crate::arena_vehicle091::PRIMARY_ACCOUNT {
+                                let seed=crate::arena_vehicle091::load_source_bundle(&accepted.identity,root)?;
+                                if seed.descriptor!=crate::arena_vehicle091::MS1_DESCRIPTOR || seed.health!=90 {
+                                    return Err(model::bad());
+                                }
+                                println!("SHARED_SOURCE_BUNDLE_VERIFIED account={} database={} native_inventory_id=1 type_compact_descr=3329 health=90 state_sha256={} policy=HASH_ANCHORED_PORTABLE",
+                                    accepted.identity.account_id,accepted.identity.database_id,crate::arena_vehicle091::PRIMARY_STATE_SHA256);
+                            }
+                        }
                         let mut s = Session::new(next_id, job.attempt.key, job.attempt.login_peer, now);
                         // Explicitly fail closed on the astronomically unlikely
                         // random capability collision instead of ambiguous routing.

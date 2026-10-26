@@ -18,6 +18,29 @@ dismissal windows=256, lifetime deadline=7200s. Старые install07–12 FAIL
 
 **Приёмка карточки: PASS / ACCEPTED.**
 
+Отдельная стыковка source-bundle с уже принятым shared profile13 маршрутом
+закрыта финальным bounded native прогоном 2026-10-26. Режим
+`legacy091-profile13-source-bundle` принимает только hash-anchored portable
+bundle под `config.local_root`; primary db1 получил per-admission
+`SHARED_SOURCE_BUNDLE_VERIFIED` (MS-1/type 3329/native inventory 1/HP 90), а
+сам бой остался под authority profile13 reservation/FrozenLoadout.
+Перед кликами оба клиента дошли до `native_hangar waiting_visible=false` с
+`items_cache_synced=true`, `vehicle_model_loaded=true` и `native_connected=true`.
+FightButton нажат последовательно. Зафиксирован один настоящий shared-бой
+`7307814506127825970`: gateway записал `SHARED_WORLD_STARTED`,
+`P05C_SCENE_READY`, два `SHARED_ENTRY` и два `SHARED_ANNOUNCED`, без
+`SHARED_BATTLE_FAILED`; оба native клиента выполнили `onEnterWorld`,
+`updateVehicleHealth` и штатный выход из world. Жизненный цикл дошёл до
+`P08C_LATE_SEAL_FROZEN`/двух `P08C_RESULT_FROZEN`, двух
+`P06T_LOSS_TERMINAL_FROZEN`, двух `P06T_LOSS_RESULT_COMMITTED`,
+`P08C_RESULTS_COMPLETE` с `native_account_delivery=true` и двух
+`SHARED_RETURN reason=natural_result_confirmed`. Оба клиента вернулись в
+стабильный native hangar с `waiting_visible=false`, загруженными моделями и
+синхронизированным cache. В процессе writer потребовался bounded retry после
+обновления post-finish fixture; задержка сохранена в gateway evidence и не
+скрыта. Exact legacy r3/r4 manifest по-прежнему не заявляется.
+Evidence: `local/evidence/p02-source-bundle-profile13-20261026-final-result-03.json`.
+
 Отдельная bounded-диагностика update-gate на 2026-10-25 завершена частично:
 свежая research-copy через loopback `127.0.0.1:20340` дошла до обычного
 `LoginView`, update/modal-событий не было, install rollback и остановка стенда —
@@ -112,6 +135,104 @@ capture manifest SHA256 `da2ea9cab55efddf32641787eabb51aa662e0f5262b51764e380df1
 Единственный следующий шаг: выполнить обычный review/merge карточки по
 `docs/07_CODEX_WORKFLOW.md`, затем открыть следующую карточку для оставшихся
 не native lifetime задач.
+
+После merge `5667317` начат отдельный bounded P02-срез Avatar/Arena-ready на
+ветке `codex/p02-arena-ready-bounded`. Preflight установки клиента прошёл и
+полностью откатился, bridge был поднят и остановлен, но native-клиент намеренно
+не запускался: доступный `local/build/server/gateway-crewany-native01` отверг
+режим `legacy091-arena-ready-probe` на CLI и показал старый набор режимов без
+arena-probe entrypoint. Закреплённый Rust toolchain в этом worktree тоже не
+доступен: `local/toolchains/cargo` указывает на отсутствующую junction-цель,
+`cargo`/`rustc` не найдены. Поэтому Avatar/Arena raw/callback evidence имеет
+статус **NOT_RUN**, а не PASS.
+
+Evidence: `local/evidence/native-arena-ready-20261025-01/arena-ready-preflight-evidence.json`;
+gateway SHA256 `5200ceb429c38abe8911a77d4eff2038d6bb68a8ad65015644d09160da9fccbd`;
+CLI stderr SHA256 `4f5708c22c8745fd5516330bc57c46cea15d88d94ee32dc3388e78f361fdb361`.
+Единственный следующий шаг этой ветки: восстановить/собрать свежий gateway с
+`legacy091-arena-ready-probe`, затем повторить новый one-shot control и native
+run с тем же typed trigger-контрактом.
+
+Этот следующий шаг выполнен частично в worktree `codex/p02-arena-ready-bounded`.
+Изолированный Rust toolchain восстановлен (`rustc 1.90.0`, `cargo 1.90.0`),
+LLVM-MinGW архив проверен по SHA; pinned `rustup-init.exe` не подменялся после
+обнаруженного hash drift. Свежий legacy gateway
+`local/build/server/gateway-arena-ready-20261025-11/target/debug/p01-wg-probe.exe`
+принял CLI `legacy091-arena-ready-probe`; `arena_ready091::tests::` — 7/7 PASS.
+Отдельный session regression filter `arena_transition_requires_all` — 1/1 PASS.
+Полный suite оставлен как `FAIL_ENVIRONMENT_FIXTURES` (1217 passed, 494 failed,
+6 ignored; fixture-dependent ENOENT), а не выдан за toolchain PASS.
+
+Bounded run `native-arena-ready-20261025-12` дошёл до настоящего
+`LOGGED_ON`/`SESSION_ACTIVE`, Account sync `221/222/223`, `ACCOUNT_SHOW_GUI` и
+loopback capture (payload bytes не публикуются). После typed trigger gateway
+один раз записал `ARENA_BASE_TRIGGER_REJECT reason=queue_failed`; native
+Avatar/Space/Vehicle/Ready callbacks и `setClientReady` не наблюдались. Входной
+fixture был profile13 `p09d-r21`, тогда как fail-closed
+`arena_vehicle091::load` требует точный pinned profile4 manifest
+15490 bytes/SHA `ea9678…`; это зафиксировано в evidence, а не замаскировано
+повторным heartbeat.
+
+Evidence: `local/evidence/native-arena-ready-20261025-12/arena-ready-evidence.json`;
+rollback: `local/evidence/native-arena-ready-20261025-12/restore.json`;
+profile4 feasibility candidate:
+`local/stands/profile4-arena-ready-source-bundle-20261025-01/candidate-receipt.json`.
+Исходная копия клиента и основная DB не трогались, все процессы стенда остановлены.
+Статус P02 bounded slice: **NOT_RUN_NATIVE_VEHICLE_LOADER / NOT_ACCEPTED**.
+Единственный следующий шаг: восстановить exact legacy r3/r4 manifests либо
+открыть отдельную карточку на source-bundle-aware fail-closed arena loader,
+после чего повторить свежий native Account→Avatar→Space→Vehicle→Ready run.
+
+Отдельная opt-in карточка source-bundle-aware loader выполнена частично в
+worktree `codex/p02-arena-source-bundle`. Strict legacy loader не ослаблялся:
+добавлен отдельный режим `legacy091-arena-ready-bundle-probe`, который принимает
+только hash-anchored portable bundle под `gateway.local_root` и держит profile13
+Account/Avatar отдельно от profile4-derived Vehicle state. Targeted Rust tests
+portable source bundle — 2/2 PASS, capture CLI — 3/3 PASS. Полный старый набор
+vehicle tests оставлен `NOT_RUN_FIXTURE_DEBT`: шесть существующих тестов требуют
+отсутствующие exact legacy fixture-файлы.
+
+Bounded native run
+`local/evidence/native-arena-source-bundle-20261025-01/arena-source-bundle-evidence.json`
+дошёл до настоящих callbacks Account→Avatar→Space→Vehicle: gateway записал
+`ARENA_VEHICLE_ANNOUNCED`, `ARENA_ENTITY_UPDATE_REQUEST` и
+`ARENA_VEHICLE_QUEUED`, клиент выполнил `PlayerAvatar.onSpaceLoaded` и
+`Vehicle.onEnterWorld`. После этого клиент остался в `BattleLoading` с
+`ready=false`, gateway — в `ARENA_READY_WAITING`; `ARENA_READY_ACCEPTED` и
+Prebattle не наблюдались до controlled timeout. Loopback capture сохранён как
+425 packet-файлов / 34 907 wire bytes, payloads в STATUS не печатаются; client
+trace — 524 строки, SHA-256 указан в evidence. Процессы остановлены, install2
+восстановлен.
+
+Приёмка source-bundle карточки: **NOT_ACCEPTED_HASH_ANCHORED_PORTABLE**.
+Exact legacy manifest bytes по-прежнему отсутствуют, поэтому этот прогон доказывает
+только hash-anchored portable Vehicle bridge и native Vehicle callbacks, но не
+совместимость с полным legacy arena-ready и не настоящий бой. Два клиентских
+`deactivateTrigger` исключения отмечены как OBSERVED diagnostics; причинность не
+доказана. Единственный следующий шаг: отдельно исследовать, почему native
+клиент не публикует Ready после `onSpaceLoaded`/`Vehicle.onEnterWorld`, либо
+вернуться к восстановлению exact legacy r3/r4 manifests.
+
+Повтор source-bundle прогона с исправленным порядком trigger выполнен в
+`local/evidence/native-arena-source-bundle-20261025-02/`: trigger `avatar_ready`
+создан только после `arena_entry_resources`, трёх стадий `arena_bootstrap` и
+`arena_ready_armed` в штатном ангаре. Это сняло прежний timing/bootstrap race.
+Клиент без Python-исключений прошёл настоящий Avatar init до финального
+`__onInitStepCompleted` offset `640`, `Vehicle.startVisual` offset `407`,
+`userSeesWorld`; native trace получил `arena_ready_complete` с двумя PNG и
+родным PREBATTLE countdown. Gateway записал `ARENA_READY_ACCEPTED` для
+33-байтного compound (`sequence=18`, `create_sequence=106`) и
+`ARENA_PREPARATION_QUEUED` (`reliable_sequence=108`, `body_bytes=105`), без
+reject/error. Клиент завершился через `arena_ready_observed` до запуска боя;
+полный battle/movement/fire/result остаются NOT_RUN.
+
+Финальный delayed-trigger evidence: `local/evidence/native-arena-source-bundle-20261025-02/arena-source-bundle-evidence.json`;
+trace — 1 063 строки, capture — 357 packet-файлов / 34 420 wire bytes, rollback
+и cleanup — PASS. Статус обновлён до **OBSERVED_NATIVE_READY_HASH_ANCHORED_PORTABLE**:
+native Ready/Prebattle для portable hash-anchored режима подтверждены, но exact
+legacy manifest bytes отсутствуют, поэтому это всё ещё не full legacy PASS и не
+приёмка настоящего боя. Предыдущий run01 остаётся историей ложного раннего
+trigger, а не причиной gateway.
 
 ## История статуса до clean lifetime gate
 

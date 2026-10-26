@@ -68,6 +68,8 @@ mod crew_dismissal091;
 mod research_service091;
 #[path = "../../../server/gateway/src/drive/scene_worker.rs"]
 mod scene_worker;
+#[path = "../../../server/gateway/src/drive/worker_cadence.rs"]
+mod worker_cadence091;
 #[cfg(test)]
 #[path = "../../../server/gateway/src/shared/server_worker_fixtures.rs"]
 mod worker_fixtures091;
@@ -125,6 +127,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.len()==7 && args[1]=="legacy091-arena-ready-probe" {
         return gateway091::serve_arena_ready_probe(&args[2],&args[3],&args[4],&args[5],&args[6]);
+    }
+    if args.len()==8 && args[1]=="legacy091-arena-ready-bundle-probe" {
+        return gateway091::serve_arena_ready_bundle_probe(&args[2],&args[3],&args[4],&args[5],&args[6],&args[7]);
     }
     if args.len()==7 && args[1]=="legacy091-arena-movement-probe" {
         return gateway091::serve_arena_movement_probe(&args[2],&args[3],&args[4],&args[5],&args[6]);

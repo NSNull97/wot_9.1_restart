@@ -192,3 +192,23 @@ original не затрагивается. Для полного возврата
 подготовить **новый** ordinary package прежними исходниками и запустить сервер.
 Не распаковывать архив поверх проекта целиком: сторонняя web-работа сохраняется.
 DB backups для этой карточки не восстанавливаются: игровые данные не менялись.
+
+
+## Bounded повтор после BaseApp/Account sync — 2026-10-25
+
+После принятого BaseApp/Account → hangar среза подготовлен отдельный fresh
+one-shot control для `arena_ready_observed` на ветке
+`codex/p02-arena-ready-bounded`. `interactive_client.py prepare`, install и
+rollback прошли, исходная копия клиента не трогалась. Bridge поднимался только
+для preflight и затем был остановлен.
+
+Нативный клиент не запускался: проверенный в предыдущем CREW-ANY стенде
+`sr-gateway.exe` с SHA-256
+`5200ceb429c38abe8911a77d4eff2038d6bb68a8ad65015644d09160da9fccbd` отвечает
+старым usage и не знает `legacy091-arena-ready-probe`. Попытка сборки на месте
+тоже **NOT_RUN**: `local/toolchains/cargo` — битая junction-ссылка,
+`cargo`/`rustc` отсутствуют. Поэтому это только честный preflight blocker, без
+raw Avatar/Space/Vehicle/Ready callbacks и без утверждения совместимости.
+
+Evidence: `local/evidence/native-arena-ready-20261025-01/arena-ready-preflight-evidence.json`.
+Откат: клиент восстановлен, gateway завершился до bind, bridge остановлен.
