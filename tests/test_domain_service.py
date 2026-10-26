@@ -113,7 +113,7 @@ class DomainServiceTests(unittest.TestCase):
             "original_root": str(self.original), "fixture_root": str(self.temp_root / fixtures),
             "mixed": {"shell_catalog": str(mixed.SHELL_SOURCE), "terminal_policy": str(mixed.TERMINAL_POLICY)},
             "catalog_sha256": None, "workers": 4,
-            "accounts": accounts or [{"account_id": self.account, "mixed": True, "ammo_loss": False, "owner_hold": False}]}
+            "accounts": accounts or [{"account_id": self.account, "mixed": True, "ammo_loss": False, "owner_hold": False, "late": False}]}
         return service.Config(json.dumps(value).encode())
 
     def serve(self, config=None):
@@ -257,8 +257,8 @@ class DomainServiceTests(unittest.TestCase):
         with closing(sqlite3.connect(self.database)) as c, c:
             c.execute("INSERT INTO game_profiles(account_id,profile_json) VALUES (?,?)",
                 (other, json.dumps({"account_id": other, "native_database_id": 4242})))
-        accounts = [{"account_id": self.account, "mixed": True, "ammo_loss": False, "owner_hold": False},
-                    {"account_id": other, "mixed": True, "ammo_loss": False, "owner_hold": False}]
+        accounts = [{"account_id": self.account, "mixed": True, "ammo_loss": False, "owner_hold": False, "late": False},
+                    {"account_id": other, "mixed": True, "ammo_loss": False, "owner_hold": False, "late": False}]
         server = self.serve(self.config(accounts=accounts))
         gate, started, original = threading.Event(), [], worker.execute
         def slow(context, op, read):
@@ -282,6 +282,39 @@ class DomainServiceTests(unittest.TestCase):
         self.assertEqual(started, [self.account, other, self.account])
         self.assertIs(worker.execute, original)
 
+    def test_late_owner_battle_results_and_late_paths_use_the_late_worker(self):
+        from server.domain.service import late_worker
+        other = "6f1c7a8e-2b3d-4c5e-8f90-a1b2c3d4e5f6"
+        with closing(sqlite3.connect(self.database)) as c, c:
+            c.execute("INSERT INTO game_profiles(account_id,profile_json) VALUES (?,?)",
+                (other, json.dumps({"account_id": other, "native_database_id": 4242})))
+        accounts = [{"account_id": self.account, "mixed": True, "ammo_loss": False, "owner_hold": False, "late": True},
+                    {"account_id": other, "mixed": True, "ammo_loss": False, "owner_hold": False, "late": False}]
+        server = self.serve(self.config(accounts=accounts))
+        calls = []
+        def record(kind):
+            def run(context, op, raw): calls.append((kind, context.account_id, op)); return {"via": kind}
+            return run
+        body = lambda **extra: canonical(dict(account_id=self.account, native_database_id=self.native_id, command_key="late:1", **extra))
+        deep = canonical(dict(account_id=self.account, native_database_id=self.native_id, command_key="late:2", nested=[[[[[[1]]]]]]))
+        with mock.patch.object(worker, "execute", record("p08b")), mock.patch.object(late_worker, "execute", record("late")), self.client(server) as client:
+            self.assertEqual(client.call("battle", self.account, body(version=2), "late:1")[0], 200)
+            self.assertEqual(client.call("battle", self.account, body(version=4), "late:1")[0:2], (400, "invalid_request"))
+            for op in ("results", "late-append", "late-pending"): self.assertEqual(client.call(op, self.account, body(), "late:1")[0], 200)
+            self.assertEqual(client.call("late-append", self.account, deep, "late:2")[0], 200, "late decoder owns its depth bound")
+            self.assertEqual(client.call("research", self.account, deep, "late:2")[0:2], (400, "invalid_request"))
+            self.assertEqual(client.call("mixed-overview", self.account)[0], 200)
+            other_body = canonical(dict(account_id=other, native_database_id=4242, command_key="late:3"))
+            self.assertEqual(client.call("late-append", other, other_body, "late:3")[0:2], (403, "forbidden"))
+            self.assertEqual(client.call("results", other, other_body, "late:3")[0], 200)
+            described = json.loads(client.call("describe")[2])["accounts"]
+        self.assertEqual(calls, [("late", self.account, "battle"), ("late", self.account, "results"), ("late", self.account, "append"),
+            ("late", self.account, "pending"), ("late", self.account, "append"), ("p08b", self.account, "mixed-overview"), ("p08b", other, "results")])
+        self.assertEqual([row["late"] for row in described], [True, False])
+        bad = [dict(accounts[0], mixed=False), dict(accounts[0], ammo_loss=True, owner_hold=True)]
+        for row in bad:
+            with self.subTest(row=row), self.assertRaises(service.ConfigError): self.config(accounts=[row])
+
     def test_operation_past_budget_exits_the_process(self):
         server = self.serve()
         exited = threading.Event()
@@ -299,7 +332,7 @@ class DomainServiceTests(unittest.TestCase):
             "fixture_root": str(self.temp_root / "process-fixtures"),
             "mixed": {"shell_catalog": str(mixed.SHELL_SOURCE), "terminal_policy": str(mixed.TERMINAL_POLICY)},
             "catalog_sha256": None, "workers": 2,
-            "accounts": [{"account_id": self.account, "mixed": True, "ammo_loss": False, "owner_hold": False}]}
+            "accounts": [{"account_id": self.account, "mixed": True, "ammo_loss": False, "owner_hold": False, "late": False}]}
         path.write_text(json.dumps(config))
         process = subprocess.Popen([sys.executable, "-B", "-X", "utf8", str(ROOT / "server/domain/service.py"),
             "--config", str(path), "--parent-stdin"], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

@@ -102,7 +102,7 @@ class DomainLatencyBench(unittest.TestCase):
         value = {"version": 1, "endpoint": "127.0.0.1:0", "secret_file": str(self.temp_root / "secret"), "database": str(domain_db),
             "bundle": str(self.source.bundle.root), "original_root": str(self.original), "fixture_root": str(self.temp_root / "domain-fixtures"),
             "mixed": {"shell_catalog": str(mixed.SHELL_SOURCE), "terminal_policy": str(mixed.TERMINAL_POLICY)}, "catalog_sha256": None, "workers": 4,
-            "accounts": [{"account_id": self.account, "mixed": True, "ammo_loss": False, "owner_hold": False}]}
+            "accounts": [{"account_id": self.account, "mixed": True, "ammo_loss": False, "owner_hold": False, "late": False}]}
         config.write_text(json.dumps(value))
         started = time.perf_counter()
         process = subprocess.Popen([sys.executable, "-B", "-X", "utf8", str(ROOT / "server/domain/service.py"), "--config", str(config), "--parent-stdin"],

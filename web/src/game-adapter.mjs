@@ -270,12 +270,12 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   const lateOwners = options.late_result_service === undefined ? [] : lateConfiguration(options.late_result_service, mixedOwners);
   const selectionLossOwners = options.room_selection_loss_service === undefined ? [] : lossSelectionConfiguration(options.room_selection_loss_service, lossOwners);
   const selectionOwners = options.room_selection_service === undefined ? [] : selectionConfiguration(options.room_selection_service, mixedOwners);
-  // DOM-01: hangar/battle commands go to the long-lived Domain process. The
-  // late-result and room-selection workers are separate spawned writers, so
-  // they are refused here to keep the Domain the single aggregate writer.
+  // DOM-01: hangar, battle and late-result commands go to the long-lived Domain
+  // process. Room-selection workers are separate spawned writers, so they are
+  // refused here to keep the Domain the single aggregate writer.
   const domainOption = options.domain_service === undefined ? null : domainConfiguration(options.domain_service);
-  if (domainOption !== null && (options.battle_service === undefined || options.late_result_service !== undefined
-      || options.room_selection_service !== undefined || options.room_selection_loss_service !== undefined)) throw new Error('Domain service requires profile13 battle without spawned late/selection writers');
+  if (domainOption !== null && (options.battle_service === undefined
+      || options.room_selection_service !== undefined || options.room_selection_loss_service !== undefined)) throw new Error('Domain service requires profile13 battle without spawned selection writers');
   const domain = domainOption === null ? null : createDomainClient({ host: domainOption.host, port: domainOption.port, secret: readSecret(domainOption.secretFile) });
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
@@ -338,12 +338,12 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
               ammoLoss: lossOwners.includes(id) ? { version: options.ammo_loss_service.version, contract: options.ammo_loss_service.contract,
                 policy_sha256: options.ammo_loss_service.policy_sha256 } : null,
               ownerHold: holdOwners.includes(id) ? { version: options.owner_hold_service.version, contract: options.owner_hold_service.contract, policy_sha256: options.owner_hold_service.policy_sha256 } : null,
-              domain });
+              domain, lateResults: lateOwners.includes(id) && !holdOwners.includes(id) });
         if (lateOwners.includes(id) && !holdOwners.includes(id)) {
           const late = createLateResultService({ database: localPath(options.game_database), originalRoot: ammo.original_root,
             accountId: id, shellCatalog: options.mixed_service.shell_catalog, terminalPolicy: options.mixed_service.terminal_policy,
             loss: lossOwners.includes(id), python: options.python_executable,
-            worker: resolve(ROOT, 'tools/p08c_late_results_service.py'), cwd: ROOT });
+            worker: resolve(ROOT, 'tools/p08c_late_results_service.py'), cwd: ROOT, domain });
           service.battle = late.battle; service.results = late.results; service.lateResults = late.append; service.latePending = late.pending;
         }
         accountServices.set(id, service);

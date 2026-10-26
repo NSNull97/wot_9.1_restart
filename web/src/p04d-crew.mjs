@@ -27,7 +27,7 @@ const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null, pool = null, mixed = null, ammoLoss = null, ownerHold = null, catalogSha256 = null, domain = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null, pool = null, mixed = null, ammoLoss = null, ownerHold = null, catalogSha256 = null, domain = null, lateResults = false }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
@@ -143,7 +143,7 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     try { value = described?.status === 200 ? JSON.parse(described.body.toString('utf8')) : null; } catch { value = null; }
     const row = Array.isArray(value?.accounts) ? value.accounts.filter(a => a?.account_id === ammo.account_id) : [];
     requireValue(row.length === 1 && row[0].mixed === (mixed !== null) && row[0].ammo_loss === (ammoLoss !== null)
-      && row[0].owner_hold === (ownerHold !== null) && row[0].catalog === (catalogSha256 !== null)
+      && row[0].owner_hold === (ownerHold !== null) && row[0].late === lateResults && row[0].catalog === (catalogSha256 !== null)
       && (catalogSha256 === null || value.catalog_sha256 === catalogSha256), 'Domain service account configuration mismatch');
   }
   const activated = await run('activate');

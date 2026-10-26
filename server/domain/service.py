@@ -31,6 +31,7 @@ sys.path[:0] = [str(ROOT / "tools"), str(ROOT)]
 from server.domain import protocol  # noqa: E402
 from server.domain.protocol import SCHEMA, ProtocolError  # noqa: E402
 import p08b_battle_service as worker  # noqa: E402
+import p08c_late_results_service as late_worker  # noqa: E402
 from p09d_ammo_projection import canonical  # noqa: E402
 from destructible_catalog import json_value, no_links, CatalogError  # noqa: E402
 
@@ -51,6 +52,8 @@ _KEY = re.compile(r"[\x21-\x7e]{1,96}\Z")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 REQUEST_FIELDS = frozenset({"schema", "id", "op", "account_id", "key"})
 SERVICE_OPERATIONS = ("ping", "describe")
+# Late-result owners (bridge createLateResultService): these run tools/p08c_late_results_service.
+LATE_OPERATIONS = {"late-append": "append", "late-pending": "pending", "battle": "battle", "results": "results"}
 
 
 class ConfigError(ValueError):
@@ -78,7 +81,7 @@ def _endpoint(value):
 class Config:
     FIELDS = {"version", "endpoint", "secret_file", "database", "bundle", "original_root", "fixture_root",
               "mixed", "catalog_sha256", "accounts", "workers"}
-    ACCOUNT_FIELDS = {"account_id", "mixed", "ammo_loss", "owner_hold"}
+    ACCOUNT_FIELDS = {"account_id", "mixed", "ammo_loss", "owner_hold", "late"}
 
     def __init__(self, raw):
         try: value = json_value(raw.removeprefix(b"\xef\xbb\xbf"), limit=MAX_CONFIG, nodes=1024, depth=4)
@@ -109,12 +112,14 @@ class Config:
             _require(type(row) is dict and set(row) == self.ACCOUNT_FIELDS, "account fields")
             account = row["account_id"]
             _require(type(account) is str and _UUID.fullmatch(account) and account not in self.accounts, "unique account UUID")
-            flags = {k: row[k] for k in ("mixed", "ammo_loss", "owner_hold")}
+            flags = {k: row[k] for k in ("mixed", "ammo_loss", "owner_hold", "late")}
             _require(all(type(v) is bool for v in flags.values()), "account flags boolean")
             # Same opt-in chain as tools/p08b_battle_service.py main().
             _require(not flags["mixed"] or mixed is not None, "mixed account requires mixed sources")
             _require(not flags["ammo_loss"] or flags["mixed"], "ammo loss requires mixed")
             _require(not flags["owner_hold"] or flags["ammo_loss"], "owner hold requires ammo loss")
+            # web/src/game-adapter.mjs: late workers serve mixed owners without hold5.
+            _require(not flags["late"] or (flags["mixed"] and not flags["owner_hold"]), "late results require mixed without owner hold")
             # catalog_v1 binds the whole process (tools/catalog_v1.py); the bridge
             # passes the hash to mixed workers only, so a mixture cannot be served.
             _require(catalog is None or flags["mixed"], "catalog applies to mixed accounts only")
@@ -234,7 +239,7 @@ class Domain:
         return {"schema": SCHEMA, "version": VERSION, "catalog_sha256": self.config.catalog_sha256,
             "accounts": [{"account_id": a, "native_database_id": self.native_ids[a], **f,
                           "catalog": self.config.catalog_sha256 is not None} for a, f in self.config.accounts.items()],
-            "operations": list(worker.OPERATIONS)}
+            "operations": [*worker.OPERATIONS, "late-append", "late-pending"]}
 
     def handle(self, header, body):
         """-> (status, error, reply bytes). Never raises for request content."""
@@ -246,14 +251,18 @@ class Domain:
         if op in SERVICE_OPERATIONS:
             if account is not None or key is not None or body: return 400, "invalid_request", b""
             return 200, None, canonical({"status": "ok"} if op == "ping" else self.describe())
-        if op not in worker.OPERATIONS: return 404, "not_found", b""
+        if op not in worker.OPERATIONS and op not in LATE_OPERATIONS: return 404, "not_found", b""
         if type(account) is not str or account not in self.contexts: return 403, "forbidden", b""
-        context = self.contexts[account]
+        context, late = self.contexts[account], self.config.accounts[account]["late"]
+        if op in ("late-append", "late-pending") and not late: return 403, "forbidden", b""
+        late = late and op in LATE_OPERATIONS
         if op in worker.BODYLESS_OPERATIONS:
             if body or key is not None: return 400, "invalid_request", b""
         else:
-            nodes = 128 if context.owner_battle_hold and op == "battle" else 64
-            try: request = json_value(body, limit=worker.request_limit(op), nodes=nodes, depth=4)
+            # The late worker's own decoder bounds its requests; this read only binds the envelope.
+            limit, nodes, depth = ((late_worker.MAX_REQUEST, 4096, 16) if late else
+                (worker.request_limit(op), 128 if context.owner_battle_hold and op == "battle" else 64, 4))
+            try: request = json_value(body, limit=limit, nodes=nodes, depth=depth)
             except CatalogError: return 400, "invalid_request", b""
             if type(request) is not dict or request.get("account_id") != account: return 403, "forbidden", b""
             if key != request.get("command_key"): return 400, "invalid_request", b""
@@ -271,7 +280,8 @@ class Domain:
                     token = self.watchdog.begin(op)
                     started = time.perf_counter()
                     try:
-                        result = worker.execute(context, op, lambda limit: body[:limit + 1])
+                        result = (late_worker.execute(context, LATE_OPERATIONS[op], body) if late
+                                  else worker.execute(context, op, lambda limit: body[:limit + 1]))
                         return 200, None, canonical(result)
                     except Exception as error:  # Worker exit 1 today; never a fake success.
                         log("DOMAIN_OPERATION_FAILED", operation=op, error=type(error).__name__ + ": " + str(error)[:200])

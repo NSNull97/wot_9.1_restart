@@ -1,6 +1,6 @@
 //! DOM-01 loopback client of the Domain/Account service (`server/domain/protocol.py`, wot091-domain.v1).
 //! Same request bytes, reply budgets and deadline as the bridge HTTP path it replaces;
-//! only the fixed hangar/battle writer paths below are routed. No fallback to HTTP.
+//! only the fixed hangar/battle/late-result writer paths below are routed. No fallback to HTTP.
 use std::{fs, io::{self,Read,Write}, net::{SocketAddrV4,TcpStream}, path::Path, time::{Duration,Instant}};
 use serde_json::Value;
 use sha2::{Digest,Sha256};
@@ -11,13 +11,14 @@ const MAX_HEADER:usize=1024;
 
 fn invalid(message:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,message)}
 
-/// Bridge paths whose writer is the Domain; login/profile/late/selection stay on the bridge.
+/// Bridge paths whose writer is the Domain; login/profile (identity) and room selection stay on the bridge.
 pub(crate) fn operation(path:&str)->Option<&'static str>{
     Some(match path{
         "/internal/native/ammo"=>"service","/internal/native/crew"=>"recruit","/internal/native/crew-transfer"=>"transfer",
         "/internal/native/crew-recruit-barracks"=>"recruit-barracks","/internal/native/crew-dismiss"=>"dismiss",
         "/internal/native/crew-learn"=>"learn","/internal/native/research"=>"research","/internal/native/battle"=>"battle",
-        "/internal/native/battle-results"=>"results",_=>return None,
+        "/internal/native/battle-results"=>"results","/internal/native/late-result-append"=>"late-append",
+        "/internal/native/late-result-pending"=>"late-pending",_=>return None,
     })
 }
 
@@ -121,7 +122,8 @@ mod tests{
     fn only_domain_writer_paths_are_routed(){
         assert_eq!(operation("/internal/native/battle-results"),Some("results"));
         assert_eq!(operation("/internal/native/crew-recruit-barracks"),Some("recruit-barracks"));
-        for path in["/internal/native/login","/internal/native/profile","/internal/native/late-result-append","/internal/native/room-selection"]{assert_eq!(operation(path),None);}
+        assert_eq!(operation("/internal/native/late-result-pending"),Some("late-pending"));
+        for path in["/internal/native/login","/internal/native/profile","/internal/native/room-selection","/internal/native/room-selection-loss"]{assert_eq!(operation(path),None);}
     }
 
     fn frame(header:&Value,body:&[u8])->Vec<u8>{let raw=serde_json::to_vec(header).unwrap();

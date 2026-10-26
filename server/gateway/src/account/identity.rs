@@ -333,8 +333,8 @@ impl Config {
         };
         if catalog_v1&&(!profile13_battle||!p06t_mixed_ammo){return Err(invalid("catalog v1 applies to the owned mixed profile13 writer only"));}
         let domain_value=value.remove("domain_service");
-        if domain_value.is_some()&&(!profile13_battle||p08c_late_results||training_rooms){
-            return Err(invalid("domain_service requires profile13 battle; late results and training rooms keep their bridge writers"));
+        if domain_value.is_some()&&(!profile13_battle||training_rooms){
+            return Err(invalid("domain_service requires profile13 battle; training-room selection keeps its bridge writer"));
         }
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}

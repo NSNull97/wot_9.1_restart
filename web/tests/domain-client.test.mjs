@@ -14,6 +14,7 @@ import { createNativeCrewService, CREW_POLICY_SHA256, TRANSFER_POLICY_SHA256, CR
 import { BARRACKS_CREW_POLICY_SHA256 } from '../src/p04k-crew.mjs';
 import { BATTLE_POLICY_SHA256 } from '../src/p08b-battle.mjs';
 import { createIdentityBridge } from '../src/game-adapter.mjs';
+import { createLateResultService, canonicalLate, lateHash, LATE_CONTRACT, LATE_POLICY_SHA256 } from '../src/p08c-late-results.mjs';
 import { testDirectory, removeTestDirectory } from './helpers.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -93,7 +94,7 @@ function crewOptions(directory, domain) {
 const ammo = directory => ({ version: 1, bundle_root: directory, original_root: directory, account_id: ACCOUNT, grant: { grant_id: 'p09d-test-depot-v1', quantity_each: 100 } });
 const crew = { version: 1, policy_sha256: CREW_POLICY_SHA256 };
 const described = (row = {}) => JSON.stringify({ schema: DOMAIN_SCHEMA, catalog_sha256: null,
-  accounts: [{ account_id: ACCOUNT, native_database_id: 1, mixed: false, ammo_loss: false, owner_hold: false, catalog: false, ...row }] });
+  accounts: [{ account_id: ACCOUNT, native_database_id: 1, mixed: false, ammo_loss: false, owner_hold: false, late: false, catalog: false, ...row }] });
 
 test('crew service runs every worker operation through the Domain, one per account at a time', async t => {
   const directory = testDirectory(); t.after(() => removeTestDirectory(directory));
@@ -130,10 +131,29 @@ test('a Domain serving the account with other worker flags is refused at start',
   await assert.rejects(createNativeCrewService(ammo(directory), crew, missing), /requires the profile13 battle worker/);
 });
 
+test('late-result service sends canonical late requests to the Domain late operations', async t => {
+  const directory = testDirectory(); t.after(() => removeTestDirectory(directory));
+  writeFileSync(join(directory, 'game.sqlite'), '');
+  const fake = await fakeDomain((header, body) => {
+    const request = JSON.parse(body);
+    return { status: 200, body: JSON.stringify({ ...request, request_sha256: lateHash(request), policy_sha256: LATE_POLICY_SHA256,
+      status: 'pending', replayed: false, code: null, rows: [], next_arena_id: null }) };
+  });
+  t.after(fake.close);
+  const late = createLateResultService({ database: join(directory, 'game.sqlite'), originalRoot: directory, accountId: ACCOUNT,
+    shellCatalog: join(ROOT, 'tests/fixtures/p06t-shell-catalog.json'), terminalPolicy: join(ROOT, 'server/gateway/src/shared/p06t_device_policy.json'),
+    loss: true, python: process.execPath, worker: join(ROOT, 'tools/p08c_late_results_service.py'), cwd: ROOT,
+    domain: createDomainClient({ host: '127.0.0.1', port: fake.port, secret: SECRET }) });
+  const request = { version: 1, contract: LATE_CONTRACT, operation: 'pending', account_id: ACCOUNT, native_database_id: 2, command_key: 'late:pending:1', after_arena_id: null };
+  assert.equal((await late.pending(request)).status, 'pending');
+  assert.deepEqual(fake.seen[0].header, { schema: DOMAIN_SCHEMA, id: 1, op: 'late-pending', account_id: ACCOUNT, key: 'late:pending:1' });
+  assert.equal(fake.seen[0].body, canonicalLate(request).toString());
+});
+
 test('bridge accepts the Domain option only for the profile13 battle writer', async () => {
   const base = { version: 1, port: 0, web_database: 'x', game_database: 'x', fixture_root: 'x', native_descriptors: 'x', python_executable: 'x', token_file: 'x' };
   await assert.rejects(createIdentityBridge({ ...base, domain_service: { version: 1, endpoint: '127.0.0.1:3700', secret_file: 'x' } }),
-    /Domain service requires profile13 battle without spawned late\/selection writers/);
+    /Domain service requires profile13 battle without spawned selection writers/);
   await assert.rejects(createIdentityBridge({ ...base, domain_service: { version: 1, endpoint: '127.0.0.2:3700', secret_file: 'x' } }), /Domain service configuration/);
 });
 
@@ -152,7 +172,7 @@ test('real Python Domain peer: HMAC handshake, describe, authorization', {
   writeFileSync(secret, SECRET); mkdirSync(join(directory, 'fixtures'));
   writeFileSync(config, JSON.stringify({ version: 1, endpoint: '127.0.0.1:0', secret_file: secret, database, bundle: BUNDLE, original_root: original,
     fixture_root: join(directory, 'fixtures'), mixed: null, catalog_sha256: null, workers: 2,
-    accounts: [{ account_id: ACCOUNT, mixed: false, ammo_loss: false, owner_hold: false }] }));
+    accounts: [{ account_id: ACCOUNT, mixed: false, ammo_loss: false, owner_hold: false, late: false }] }));
   const python = spawnSync('python', ['-B', '-c', 'import sys;print(sys.executable)'], { encoding: 'utf8', windowsHide: true }).stdout.trim();
   const child = spawn(python, ['-B', '-X', 'utf8', join(ROOT, 'server/domain/service.py'), '--config', config, '--parent-stdin'], { cwd: ROOT, windowsHide: true });
   t.after(() => { if (child.exitCode === null) child.kill(); });
@@ -164,7 +184,7 @@ test('real Python Domain peer: HMAC handshake, describe, authorization', {
   const client = createDomainClient({ host: '127.0.0.1', port: ready.port, secret: SECRET });
   assert.equal((await client.call('ping', null, '', null, 5000)).status, 200);
   const value = JSON.parse((await client.call('describe', null, '', null, 5000)).body);
-  assert.deepEqual(value.accounts, [{ account_id: ACCOUNT, native_database_id: 7, mixed: false, ammo_loss: false, owner_hold: false, catalog: false }]);
+  assert.deepEqual(value.accounts, [{ account_id: ACCOUNT, native_database_id: 7, mixed: false, ammo_loss: false, owner_hold: false, late: false, catalog: false }]);
   assert.equal((await client.call('fixture', '00000000-0000-4000-8000-000000000000', '', null, 5000)).status, 403);
   const foreign = JSON.stringify({ account_id: ACCOUNT, native_database_id: 8, command_key: 'k' });
   assert.equal((await client.call('battle', ACCOUNT, foreign, 'k', 5000)).status, 403);

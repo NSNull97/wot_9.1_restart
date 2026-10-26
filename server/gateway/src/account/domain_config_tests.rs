@@ -37,7 +37,9 @@ fn domain_flag_is_exact_loopback_bounded_and_refuses_bridge_only_writers(){
     }
     let mut late=value.clone();late["domain_service"]=good.clone();late["p08c_late_results"]=true.into();
     late["p08c_late_results_accounts"]=serde_json::json!(["5b0b6a52-7d4e-4f1a-9c3b-2e1d0f9a8b7c"]);
-    assert!(load(&path,&late).err().unwrap().to_string().contains("domain_service requires profile13"));
+    assert!(load(&path,&late).unwrap().domain_endpoint().is_some(),"late results go to the Domain too");
+    let mut rooms=value.clone();rooms["domain_service"]=good.clone();rooms["training_rooms"]=true.into();
+    assert!(load(&path,&rooms).err().unwrap().to_string().contains("domain_service requires profile13"));
     let mut legacy=value.clone();legacy["domain_service"]=good;for key in["profile13_battle","p04m_pool","p06t_mixed_ammo","visibility_v1","battle_players"]{legacy.as_object_mut().unwrap().remove(key);}
     assert!(load(&path,&legacy).err().unwrap().to_string().contains("domain_service requires profile13"));
 }

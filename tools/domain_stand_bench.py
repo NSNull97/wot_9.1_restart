@@ -38,6 +38,18 @@ def native_id(database, account):
         return json.loads(c.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account,)).fetchone()[0])["native_database_id"]
 
 
+def late_operations(account, native, revision, loss):
+    """Late owner (bridge createLateResultService): read-only pending, inspect and query."""
+    contract = {"contract": "p06t-ammo-rack-loss.v1"} if loss else {}
+    version = 4 if loss else 2
+    return [("late-pending", "late-pending", dict(version=1, contract="p08c-late-result-append.v1", operation="pending", account_id=account,
+                native_database_id=native, command_key="stand-bench-pending", after_arena_id=None)),
+        ("late-battle-inspect", "battle", dict(version=version, **contract, operation="inspect", account_id=account, native_database_id=native,
+            command_key="stand-bench-inspect", expected_revision=revision, run_id="5eed0000-0000-4000-8000-000000000000")),
+        ("late-results-query", "results", dict(version=version, **contract, operation="query", account_id=account, native_database_id=native,
+            command_key="stand-bench-query", arena_id="1"))]
+
+
 def operations(account, native, revision):
     garage = lambda key, layout: dict(account_id=account, native_database_id=native, command_key="stand-bench-" + key,
         expected_revision=revision, wire_revision=1, layout=layout)
@@ -56,6 +68,7 @@ def main():
     for name in ("source-database", "bundle", "original-root", "account-id", "shell-catalog", "terminal-policy", "out"):
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--ammo-rack-loss", action="store_true")
+    parser.add_argument("--late", action="store_true", help="account is a late-result owner (bridge late_result_service)")
     parser.add_argument("--rounds", type=int, default=5)
     args = parser.parse_args()
     out = Path(args.out).resolve()
@@ -68,7 +81,7 @@ def main():
         config = {"version": 1, "endpoint": "127.0.0.1:0", "secret_file": str(temp / "secret"), "database": str(domain_db),
             "bundle": args.bundle, "original_root": args.original_root, "fixture_root": str(temp / "domain-fixtures"),
             "mixed": {"shell_catalog": args.shell_catalog, "terminal_policy": args.terminal_policy}, "catalog_sha256": None, "workers": 4,
-            "accounts": [{"account_id": args.account_id, "mixed": True, "ammo_loss": args.ammo_rack_loss, "owner_hold": False}]}
+            "accounts": [{"account_id": args.account_id, "mixed": True, "ammo_loss": args.ammo_rack_loss, "owner_hold": False, "late": args.late}]}
         (temp / "domain.json").write_text(json.dumps(config))
         started = time.perf_counter()
         process = subprocess.Popen([sys.executable, "-B", "-X", "utf8", str(ROOT / "server/domain/service.py"), "--config", str(temp / "domain.json"),
@@ -77,6 +90,10 @@ def main():
             "--original-root", args.original_root, "--account-id", args.account_id, "--fixture-root", str(temp / "cli-fixtures"),
             "--mixed-ammo", "--shell-catalog", args.shell_catalog, "--terminal-policy", args.terminal_policy,
             *(["--ammo-rack-loss"] if args.ammo_rack_loss else [])]
+        late_cli = [sys.executable, "-B", "-X", "utf8", str(ROOT / "tools/p08c_late_results_service.py"), "--database", str(cli_db),
+            "--original-root", args.original_root, "--account-id", args.account_id, "--shell-catalog", args.shell_catalog,
+            "--terminal-policy", args.terminal_policy, *(["--ammo-rack-loss"] if args.ammo_rack_loss else [])]
+        late_names = {"late-pending": "pending", "battle": "battle", "results": "results"}
         samples = {}
         try:
             ready = json.loads(process.stdout.readline()); startup = (time.perf_counter() - started) * 1000
@@ -85,16 +102,20 @@ def main():
             native, revision = overview["native_database_id"], overview["revision"]
             escaped = lambda p: str(p).encode().replace(b"\\", b"\\\\")
             for _ in range(args.rounds):
-                for name, op, request in operations(args.account_id, native, revision):
+                rows = operations(args.account_id, native, revision) + (late_operations(args.account_id, native, revision, args.ammo_rack_loss) if args.late else [])
+                for name, op, request in rows:
+                    late = name.startswith("late-")
                     body = b"" if request is None else canonical(request)
                     t0 = time.perf_counter()
                     with protocol.Client(("127.0.0.1", ready["port"]), secret, timeout=40) as client:
                         status, error, reply = client.call(op, args.account_id, body, None if request is None else request["command_key"])
                     domain_ms = (time.perf_counter() - t0) * 1000
                     t0 = time.perf_counter()
-                    worker = subprocess.run([*cli, op], input=body, capture_output=True, cwd=ROOT, timeout=60)
+                    worker = subprocess.run([*late_cli, late_names[op]] if late else [*cli, op], input=body, capture_output=True, cwd=ROOT, timeout=60)
                     worker_ms = (time.perf_counter() - t0) * 1000
-                    expected = worker.stdout[:-len(os.linesep)] if worker.returncode == 0 else None
+                    # The late worker writes bytes + "\n"; the profile13 worker print()s os.linesep.
+                    ending = b"\n" if late else os.linesep.encode()
+                    expected = worker.stdout[:-len(ending)] if worker.returncode == 0 and worker.stdout.endswith(ending) else None
                     equal = status == 200 and expected is not None and reply.replace(escaped(temp / "domain-fixtures"), escaped(temp / "cli-fixtures")) == expected
                     row = samples.setdefault(name, {"op": op, "status": json.loads(reply).get("status") if status == 200 else error,
                         "domain_ms": [], "worker_ms": [], "bytes_equal": True})
