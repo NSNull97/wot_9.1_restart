@@ -18,6 +18,20 @@ dismissal windows=256, lifetime deadline=7200s. Старые install07–12 FAIL
 
 **Приёмка карточки: PASS / ACCEPTED.**
 
+Отдельная стыковка source-bundle с уже принятым shared profile13 маршрутом
+проверена на bounded native стенде 2026-10-26. Добавлен явный режим
+`legacy091-profile13-source-bundle`: portable bundle проходит hash-anchored
+проверку под `config.local_root`, а primary db1 получает per-admission
+`SHARED_SOURCE_BUNDLE_VERIFIED` (MS-1/type 3329/native inventory 1/HP 90).
+Сам бой по-прежнему остаётся под authority profile13 reservation/FrozenLoadout.
+Оба native клиента авторизовались, настоящий FightButton дал
+`map_drive_client_click`/`enqueue`, вторичный owner дошёл до P08B queue. Первая
+попытка выявила attach race; узкий guard ожидания reservation собран в свежем
+gateway. Новый source-bundle прогон остановлен bounded после queue: в нём не
+получены `SHARED_WORLD_STARTED`/`P05C_SCENE_READY`, поэтому actual battle здесь
+помечен **NOT_RUN**, без подмены предыдущим accepted CREW-ANY боем.
+Evidence: `local/evidence/p02-source-bundle-profile13-20261026.json`.
+
 Отдельная bounded-диагностика update-gate на 2026-10-25 завершена частично:
 свежая research-copy через loopback `127.0.0.1:20340` дошла до обычного
 `LoginView`, update/modal-событий не было, install rollback и остановка стенда —
