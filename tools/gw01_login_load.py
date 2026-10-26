@@ -10,6 +10,11 @@ source stand pins them. Nothing of the source stand is modified.
 with the site's scrypt format, bridge service lists); passwords are written
 to `gw01-accounts.json` in the copy and never printed.
 
+OBSERVED 2026-10-26: the profile13 bridge starts only when every listed owner
+(at most 6, web/src/p08b-battle.mjs) is a fully provisioned P08B owner; a fresh
+account fails worker activation with OWNER_SOURCE_REQUIRED. `run` therefore
+needs provisioned accounts in `gw01-accounts.json`; `accounts` alone is not enough.
+
 `run` drives real native 0.9.1 LoginRequests (RSA-OAEP with the stand key),
 the BaseApp handshake, the first channel message and the native disconnect
 `[11,0]`. Loopback only. It records reply codes, latencies and the gateway's
@@ -46,7 +51,10 @@ LOOPBACK = '127.0.0.1'
 # e-mail per 15 min; 2 concurrent scrypt checks (web/src/security.mjs).
 LOGINS_PER_MINUTE = 55
 PER_ACCOUNT_LOGINS = 9
+WINDOW_S = 15 * 60 + 30
 SERVICE_LISTS = ('battle_service', 'pool_service', 'mixed_service', 'ammo_loss_service')
+# web/src/p08b-battle.mjs and siblings: every configured owner list holds 1..6 accounts.
+MAX_LISTED_OWNERS = 6
 
 
 def now_utc():
@@ -105,11 +113,12 @@ def prepare(args):
     # Battle resources stay pinned where the source stand pins them (read-only).
     shutil.copy2(source / 'battle-profiles.json', out / 'battle-profiles.json')
     receipt = dict(schema='wot091-gw01-load-stand.v1', created_utc=now_utc(), source_stand=str(source),
-                   gateway=dict(path=str(gateway_exe), sha256=sha(gateway_exe)), checkout=str(ROOT),
+                   gateway=dict(path=str(gateway_exe), sha256=sha(gateway_exe)), checkout=str(ROOT), bridge_checkout=str(local_root.parent),
                    ports=dict(login=login, base=base, identity=identity), connection_capacity=args.capacity,
                    battle_profiles_sha256=sha(out / 'battle-profiles.json'), domain_service=False, native='NOT_RUN')
     (out / 'stand-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
-    services = SERVICES.replace('__ROOT__', str(ROOT)).replace('__STAND__', str(out)) \
+    # The bridge accepts a config only below its own checkout's local/.
+    services = SERVICES.replace('__ROOT__', str(local_root.parent)).replace('__STAND__', str(out)) \
         .replace('__GATEWAY__', str(gateway_exe)).replace('__LOCAL__', str(local_root))
     (out / 'services.ps1').write_text(services, encoding='utf-8')
     print(json.dumps(receipt, indent=2))
@@ -160,6 +169,16 @@ def scrypt_record(password):
     return f'scrypt$v1$131072$8$1${salt}${key.hex()}'
 
 
+def ensure_game_profile(db, account_id, nickname, created_at):
+    """Same row as `game.ensure` (web/src/game-adapter.mjs) on a first login; the
+    bridge requires configured owners to have it before it starts."""
+    native_id = db.execute("INSERT INTO game_profiles(account_id,profile_json) VALUES (?,'{}')", (account_id,)).lastrowid
+    value = dict(profile_version=1, account_id=account_id, username=nickname, native_database_id=native_id,
+                 created_at_ms=created_at, snapshot_revision=1, resources=dict(credits=100000, gold=0, free_xp=0),
+                 statistics=dict(battles=0, wins=0, losses=0, draws=0))
+    db.execute('UPDATE game_profiles SET profile_json=? WHERE account_id=?', (json.dumps(value, separators=(',', ':')), account_id))
+
+
 def stopped(stand):
     return not any((stand / f'{k}-process.json').exists() for k in ('bridge', 'gateway'))
 
@@ -171,6 +190,9 @@ def accounts(args):
     if not stopped(stand) or (stand / 'gw01-accounts.json').exists():
         raise ValueError('stopped stand without accounts required')
     bridge = json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))
+    room = min(MAX_LISTED_OWNERS - len(bridge[n]['accounts']) for n in SERVICE_LISTS if n in bridge)
+    if not 1 <= args.count <= room:
+        raise ValueError(f'the bridge lists at most {MAX_LISTED_OWNERS} owners; room for {room}')
     rows, stamp = [], int(time.time() * 1000)
     db = sqlite3.connect(stand / 'web.sqlite')
     try:
@@ -182,9 +204,16 @@ def accounts(args):
                 account_id = str(uuid.uuid4())
                 db.execute('INSERT INTO users (id, username, display_nickname, email, display_name, password_hash, created_at, updated_at, last_login_at) '
                            'VALUES (?,?,?,?,?,?,?,?,?)', (account_id, nick, nick, email, nick, scrypt_record(password), stamp, stamp, stamp))
-                rows.append(dict(account_id=account_id, email=email, password=password))
+                rows.append(dict(account_id=account_id, nickname=nick, email=email, password=password))
     finally:
         db.close()
+    game = sqlite3.connect(stand / 'game.sqlite')
+    try:
+        with game:
+            for row in rows:
+                ensure_game_profile(game, row['account_id'], row['nickname'], stamp)
+    finally:
+        game.close()
     for name in SERVICE_LISTS:
         if name in bridge:
             bridge[name]['accounts'] = bridge[name]['accounts'] + [r['account_id'] for r in rows]
@@ -395,20 +424,29 @@ def run(args):
     ctx.public_key = private.public_key(); del private
     ctx.digest = (local / 'server/client-digest.bin').read_bytes()
     pool = json.loads((stand / 'gw01-accounts.json').read_text(encoding='utf-8'))['accounts']
-    if len(pool) * PER_ACCOUNT_LOGINS < args.cycles:
-        raise ValueError(f'{args.cycles} cycles need >= {-(-args.cycles // PER_ACCOUNT_LOGINS)} accounts (bridge 10/15 min per e-mail)')
     record = json.loads((stand / 'gateway-process.json').read_text(encoding='utf-8-sig'))
     sampler = ProcessSampler(record['pid'], args.sample_period); before = sampler.sample(); sampler.start()
-    pacer, rows, lock = Pacer(args.per_minute), [], threading.Lock()
-    usage = {a['account_id']: 0 for a in pool}
+    pacer, rows, lock = Pacer(args.per_minute), [], threading.Condition()
+    # Per e-mail: at most PER_ACCOUNT_LOGINS starts in any bridge window, one live session.
+    starts = {a['account_id']: [] for a in pool}; busy = set()
     out = Path(args.evidence).resolve(); out.mkdir(parents=True, exist_ok=False)
     started = time.time()
 
     def take(index):
         with lock:
-            account = min(pool, key=lambda a: usage[a['account_id']])
-            usage[account['account_id']] += 1
-        return Cycle(ctx, account, index)
+            while True:
+                now = time.time()
+                free = [a for a in pool if a['account_id'] not in busy
+                        and sum(now - t < WINDOW_S for t in starts[a['account_id']]) < PER_ACCOUNT_LOGINS]
+                if free:
+                    account = min(free, key=lambda a: len(starts[a['account_id']]))
+                    starts[account['account_id']].append(now); busy.add(account['account_id'])
+                    return Cycle(ctx, account, index)
+                lock.wait(timeout=5.0)
+
+    def release(cycle):
+        with lock:
+            busy.discard(cycle.account['account_id']); lock.notify_all()
 
     def attempt(cycle, hold):
         pacer.wait()
@@ -419,21 +457,20 @@ def run(args):
                     return cycle
                 time.sleep(args.dwell)
                 cycle.disconnect()
+                time.sleep(args.dwell)  # let the gateway retire the session before the account is reused
         except Exception as error:  # recorded as a failed cycle, never as success
             cycle.row.update(error=f'{type(error).__name__}: {error}')
         finally:
             with lock:
                 rows.append(cycle.row)
+            if not hold:
+                release(cycle)
         return None
 
     # Phase 1: hold `concurrent` hangar sessions at once (distinct accounts), then disconnect all.
     held, threads = [], []
     hold_n = min(args.concurrent, len(pool), args.cycles)
-    hold_cycles = []
-    for i in range(hold_n):
-        with lock:
-            account = pool[i]; usage[account['account_id']] += 1
-        hold_cycles.append(Cycle(ctx, account, i))
+    hold_cycles = [take(i) for i in range(hold_n)]
     sem = threading.Semaphore(args.parallel)
 
     def hold_worker(c):
@@ -452,6 +489,9 @@ def run(args):
             c.disconnect()
         except Exception as error:
             c.row.update(error=f'disconnect {type(error).__name__}: {error}')
+    time.sleep(args.dwell)
+    for c in hold_cycles:
+        release(c)
     # Phase 2: churn the remaining cycles, `parallel` at a time.
     index = iter(range(hold_n, args.cycles)); threads = []
 
@@ -500,10 +540,10 @@ def main():
     p.add_argument('--gateway', required=True); p.add_argument('--capacity', type=int)
     p.add_argument('--ports', type=int, nargs=3, default=(20440, 20441, 3792), metavar=('LOGIN', 'BASE', 'IDENTITY'))
     p.set_defaults(func=prepare)
-    p = sub.add_parser('accounts'); p.add_argument('--stand', required=True); p.add_argument('--count', type=int, default=25)
+    p = sub.add_parser('accounts'); p.add_argument('--stand', required=True); p.add_argument('--count', type=int, default=4)
     p.set_defaults(func=accounts)
     p = sub.add_parser('run'); p.add_argument('--stand', required=True); p.add_argument('--evidence', required=True)
-    p.add_argument('--cycles', type=int, default=200); p.add_argument('--concurrent', type=int, default=25)
+    p.add_argument('--cycles', type=int, default=200); p.add_argument('--concurrent', type=int, default=4)
     p.add_argument('--parallel', type=int, default=2); p.add_argument('--per-minute', type=int, default=LOGINS_PER_MINUTE)
     p.add_argument('--hold', type=float, default=10.0); p.add_argument('--dwell', type=float, default=1.0)
     p.add_argument('--reply-timeout', type=float, default=25.0); p.add_argument('--sample-period', type=float, default=1.0)
