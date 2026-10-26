@@ -13,6 +13,7 @@ import { crewOverview, isCrewOverview, validateCrewFixture } from './ms1-crew.mj
 import { ammoOverview, isAmmoOverview, validateAmmoFixture } from './ms1-ammo.mjs';
 import { createNativeAmmoService, nativeAmmoOverview, isNativeAmmoOverview } from './p09d-ammo.mjs';
 import { createNativeCrewService, nativeCrewOverview, isNativeCrewOverview } from './p04d-crew.mjs';
+import { domainConfiguration, createDomainClient } from './domain-client.mjs';
 import { nativeCrewTransferOverview, isNativeCrewTransferOverview } from './p04f-crew.mjs';
 import { nativeCrossVehicleCrewOverview, isNativeCrossVehicleCrewOverview } from './p04g-crew.mjs';
 import { nativeResearchOverview, isNativeResearchOverview } from './p09e-research.mjs';
@@ -241,6 +242,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   if (options?.room_selection_loss_service !== undefined) allowed.push('room_selection_loss_service');
   if (options?.room_selection_service !== undefined) allowed.push('room_selection_service');
   if (options?.catalog !== undefined) allowed.push('catalog');
+  if (options?.domain_service !== undefined) allowed.push('domain_service');
   if (!options || options.version !== 1 || Object.keys(options).some(k => !allowed.includes(k))
       || allowed.some(k => !(k in options)) || !Number.isInteger(options.port) || options.port < 0 || options.port > 65535) throw new Error('Bridge config schema');
   if (options.crew_service !== undefined && options.ammunition_service === undefined) throw new Error('Crew requires the shared ammunition writer');
@@ -268,6 +270,13 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   const lateOwners = options.late_result_service === undefined ? [] : lateConfiguration(options.late_result_service, mixedOwners);
   const selectionLossOwners = options.room_selection_loss_service === undefined ? [] : lossSelectionConfiguration(options.room_selection_loss_service, lossOwners);
   const selectionOwners = options.room_selection_service === undefined ? [] : selectionConfiguration(options.room_selection_service, mixedOwners);
+  // DOM-01: hangar/battle commands go to the long-lived Domain process. The
+  // late-result and room-selection workers are separate spawned writers, so
+  // they are refused here to keep the Domain the single aggregate writer.
+  const domainOption = options.domain_service === undefined ? null : domainConfiguration(options.domain_service);
+  if (domainOption !== null && (options.battle_service === undefined || options.late_result_service !== undefined
+      || options.room_selection_service !== undefined || options.room_selection_loss_service !== undefined)) throw new Error('Domain service requires profile13 battle without spawned late/selection writers');
+  const domain = domainOption === null ? null : createDomainClient({ host: domainOption.host, port: domainOption.port, secret: readSecret(domainOption.secretFile) });
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);
@@ -328,7 +337,8 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
               catalogSha256: mixedOwners.includes(id) ? catalogSha256 : null,
               ammoLoss: lossOwners.includes(id) ? { version: options.ammo_loss_service.version, contract: options.ammo_loss_service.contract,
                 policy_sha256: options.ammo_loss_service.policy_sha256 } : null,
-              ownerHold: holdOwners.includes(id) ? { version: options.owner_hold_service.version, contract: options.owner_hold_service.contract, policy_sha256: options.owner_hold_service.policy_sha256 } : null });
+              ownerHold: holdOwners.includes(id) ? { version: options.owner_hold_service.version, contract: options.owner_hold_service.contract, policy_sha256: options.owner_hold_service.policy_sha256 } : null,
+              domain });
         if (lateOwners.includes(id) && !holdOwners.includes(id)) {
           const late = createLateResultService({ database: localPath(options.game_database), originalRoot: ammo.original_root,
             accountId: id, shellCatalog: options.mixed_service.shell_catalog, terminalPolicy: options.mixed_service.terminal_policy,

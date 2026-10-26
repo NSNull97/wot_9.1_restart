@@ -27,7 +27,7 @@ const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
 const requireValue = (v, message) => { if (!v) throw new Error(message); };
 const integer = (v, low, high = 2147483647) => Number.isSafeInteger(v) && v >= low && v <= high;
 
-export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null, pool = null, mixed = null, ammoLoss = null, ownerHold = null, catalogSha256 = null }) {
+export async function createNativeCrewService(ammo, crew, { database, fixtureRoot, python, localPath, transfer = null, crossVehicle = null, rosterRecruitment = null, progression = null, dismissal = null, barracksRecruitment = null, research = null, battle = null, pool = null, mixed = null, ammoLoss = null, ownerHold = null, catalogSha256 = null, domain = null }) {
   requireValue(exact(crew, ['version', 'policy_sha256']) && crew.version === 1
     && crew.policy_sha256 === CREW_POLICY_SHA256, 'Explicit project crew policy required');
   requireValue(transfer === null || (exact(transfer, ['version', 'policy_sha256']) && transfer.version === 1
@@ -52,6 +52,8 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
   requireValue(catalogSha256 === null || (mixed !== null && typeof catalogSha256 === 'string' && /^[0-9a-f]{64}$/.test(catalogSha256)), 'CAT-01 catalog requires the mixed worker');
   if (ammoLoss !== null) { requireValue(mixed !== null, 'Ammo-rack loss requires explicit mixed ammunition'); lossWorkerConfiguration(ammoLoss); }
   if (ownerHold !== null) { requireValue(ammoLoss !== null, 'Owner hold requires explicit loss4 source'); holdWorkerConfiguration(ownerHold); }
+  // DOM-01: the long-lived Domain process runs the same profile13 worker code.
+  requireValue(domain === null || (battle !== null && typeof domain.call === 'function'), 'Domain service requires the profile13 battle worker');
   const profileVersion = research !== null ? 13 : barracksRecruitment !== null ? 12 : dismissal !== null ? 11 : progression !== null ? 10 : rosterRecruitment !== null ? 9 : crossVehicle !== null ? 8 : transfer === null ? 6 : 7;
   const worker = battle !== null ? 'tools/p08b_battle_service.py' : research !== null ? 'tools/p09e_research_service.py' : barracksRecruitment !== null ? 'tools/p04k_crew_store.py' : dismissal !== null ? 'tools/p04j_crew_store.py' : progression !== null ? 'tools/p04i_crew_store.py' : rosterRecruitment !== null ? 'tools/p04h_crew_store.py' : crossVehicle !== null ? 'tools/p04g_crew_store.py' : transfer === null ? 'tools/p04d_crew_store.py' : 'tools/p04f_crew_store.py';
   requireValue(exact(ammo, ['version', 'bundle_root', 'original_root', 'account_id', 'grant'])
@@ -69,7 +71,17 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
   const db = localPath(database), fixtures = localPath(fixtureRoot);
   // One worker of this account at a time; one more caller may wait.
   const lane = createAccountLane(2, 'Crew worker busy');
+  const workerTimeout = operation => operation === 'activate' ? 15000 : pool === null ? 3500 : POOL_WORKER_TIMEOUT_MS;
+  const replyLimit = research === null ? 32768 : 262144;
   async function run(operation, request) {
+    if (domain !== null) return lane(async () => {
+      let reply;
+      try { reply = await domain.call(operation, ammo.account_id, request ? JSON.stringify(request) : '', request?.command_key ?? null, workerTimeout(operation)); }
+      catch { throw new Error('Crew worker unavailable'); }
+      if (reply.status !== 200 || reply.body.length > replyLimit) throw new Error('Crew worker unavailable');
+      try { return JSON.parse(reply.body.toString('utf8')); }
+      catch { throw new Error('Crew worker response invalid'); }
+    });
     return lane(() => new Promise((done, fail) => {
         const lossEnvironment = ammoLoss === null ? undefined : { ...process.env };
         if (lossEnvironment !== undefined) delete lossEnvironment.PYTHONPATH;
@@ -81,8 +93,8 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
           ...(ammoLoss === null ? [] : ['--ammo-rack-loss']), ...(ownerHold === null ? [] : ['--owner-battle-hold']), operation],
         { cwd: ROOT, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], ...(lossEnvironment === undefined ? {} : { env: lossEnvironment }) });
         let size = 0, errorSize = 0, exceeded = false; const parts = [];
-        const timer = setTimeout(() => { exceeded = true; child.kill(); }, operation === 'activate' ? 15000 : pool === null ? 3500 : POOL_WORKER_TIMEOUT_MS);
-        child.stdout.on('data', part => { size += part.length; if (size > (research === null ? 32768 : 262144)) { exceeded = true; child.kill(); } else parts.push(part); });
+        const timer = setTimeout(() => { exceeded = true; child.kill(); }, workerTimeout(operation));
+        child.stdout.on('data', part => { size += part.length; if (size > replyLimit) { exceeded = true; child.kill(); } else parts.push(part); });
         child.stderr.on('data', part => { errorSize += part.length; if (errorSize > 4096) { exceeded = true; child.kill(); } });
         child.once('error', () => { clearTimeout(timer); fail(new Error('Crew worker failed')); });
         child.once('close', code => {
@@ -123,6 +135,16 @@ export async function createNativeCrewService(ammo, crew, { database, fixtureRoo
     'Native crew response schema');
     if (operation === 'recruit-barracks') (pool === null ? validateBarracksRecruitmentResponse : validatePoolBarracksRecruitmentResponse)(value, request, poolCrewCapacity);
     return value;
+  }
+  if (domain !== null) {
+    // The Domain must serve this account with exactly the worker flags this bridge would spawn.
+    const described = await domain.call('describe', null, '', null, 5000).catch(() => null);
+    let value = null;
+    try { value = described?.status === 200 ? JSON.parse(described.body.toString('utf8')) : null; } catch { value = null; }
+    const row = Array.isArray(value?.accounts) ? value.accounts.filter(a => a?.account_id === ammo.account_id) : [];
+    requireValue(row.length === 1 && row[0].mixed === (mixed !== null) && row[0].ammo_loss === (ammoLoss !== null)
+      && row[0].owner_hold === (ownerHold !== null) && row[0].catalog === (catalogSha256 !== null)
+      && (catalogSha256 === null || value.catalog_sha256 === catalogSha256), 'Domain service account configuration mismatch');
   }
   const activated = await run('activate');
   requireValue(pool === null ? activated.profile?.pool_service === undefined
