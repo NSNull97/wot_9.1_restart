@@ -70,6 +70,7 @@ def main():
     parser.add_argument("--ammo-rack-loss", action="store_true")
     parser.add_argument("--late", action="store_true", help="account is a late-result owner (bridge late_result_service)")
     parser.add_argument("--rounds", type=int, default=5)
+    parser.add_argument("--catalog-sha256", help="CAT-01 catalog the stand's bridge passes to mixed workers")
     args = parser.parse_args()
     out = Path(args.out).resolve()
     if not out.is_relative_to((ROOT / "local").resolve()): parser.error("--out must stay under local/")
@@ -80,7 +81,7 @@ def main():
         secret = secrets.token_urlsafe(32).encode("ascii")[:43]; (temp / "secret").write_bytes(secret)
         config = {"version": 1, "endpoint": "127.0.0.1:0", "secret_file": str(temp / "secret"), "database": str(domain_db),
             "bundle": args.bundle, "original_root": args.original_root, "fixture_root": str(temp / "domain-fixtures"),
-            "mixed": {"shell_catalog": args.shell_catalog, "terminal_policy": args.terminal_policy}, "catalog_sha256": None, "workers": 4,
+            "mixed": {"shell_catalog": args.shell_catalog, "terminal_policy": args.terminal_policy}, "catalog_sha256": args.catalog_sha256, "workers": 4,
             "accounts": [{"account_id": args.account_id, "mixed": True, "ammo_loss": args.ammo_rack_loss, "owner_hold": False, "late": args.late}]}
         (temp / "domain.json").write_text(json.dumps(config))
         started = time.perf_counter()
@@ -89,7 +90,7 @@ def main():
         cli = [sys.executable, "-B", "-X", "utf8", str(ROOT / "tools/p08b_battle_service.py"), "--database", str(cli_db), "--bundle", args.bundle,
             "--original-root", args.original_root, "--account-id", args.account_id, "--fixture-root", str(temp / "cli-fixtures"),
             "--mixed-ammo", "--shell-catalog", args.shell_catalog, "--terminal-policy", args.terminal_policy,
-            *(["--ammo-rack-loss"] if args.ammo_rack_loss else [])]
+            *(["--ammo-rack-loss"] if args.ammo_rack_loss else []), *(["--catalog-sha256", args.catalog_sha256] if args.catalog_sha256 else [])]
         late_cli = [sys.executable, "-B", "-X", "utf8", str(ROOT / "tools/p08c_late_results_service.py"), "--database", str(cli_db),
             "--original-root", args.original_root, "--account-id", args.account_id, "--shell-catalog", args.shell_catalog,
             "--terminal-policy", args.terminal_policy, *(["--ammo-rack-loss"] if args.ammo_rack_loss else [])]
@@ -129,7 +130,7 @@ def main():
             except sqlite3.Error: tankmen = None
     report = {"schema": "dom01-stand-bench.v1", "rounds": args.rounds, "python": sys.version, "platform": platform.platform(),
         "source_database": args.source_database, "source_opened": "read-only backup", "account_native_database_id": native,
-        "revision": revision, "crew_next_native_id": None if tankmen is None else tankmen[0], "domain_startup_ms": round(startup, 1),
+        "revision": revision, "catalog_sha256": args.catalog_sha256, "crew_next_native_id": None if tankmen is None else tankmen[0], "domain_startup_ms": round(startup, 1),
         "operations": {n: dict(r, domain_median_ms=statistics.median(r["domain_ms"]), worker_median_ms=statistics.median(r["worker_ms"]))
                        for n, r in samples.items()}}
     out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
