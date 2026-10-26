@@ -76,9 +76,18 @@ mod falling_atom_real_tests;
 #[cfg(test)]
 #[path="server_whole_fracture_real_tests.rs"]
 mod whole_fracture_real_tests;
+#[cfg(test)]
+#[path="server_capacity_tests.rs"]
+mod capacity_tests;
 
-struct Table { sessions: Vec<Session>, retirement: RetirementWindow,capacity:usize }
-impl Default for Table {fn default()->Self{Self{sessions:Vec::new(),retirement:RetirementWindow::default(),capacity:model::CAPACITY}}}
+/// `capacity` bounds connections. With `arena_split` (GW-01) it is separate
+/// from the arena: a hangar session holds no arena place; places are taken by
+/// Join reservations up to `world.expected_actors()`. Without it, every
+/// session must be in the arena before a battle starts (old path).
+struct Table { sessions: Vec<Session>, retirement: RetirementWindow,capacity:usize,arena_split:bool }
+impl Default for Table {fn default()->Self{Self{sessions:Vec::new(),retirement:RetirementWindow::default(),capacity:model::CAPACITY,arena_split:false}}}
+/// GW-01 per-socket datagram drain per loop tick when `connection_capacity` is set.
+const CAPACITY_DRAIN:usize=64;
 
 /// A consumed worker reply must survive other lanes' pending replies. There
 /// is at most one unconsumed advance per lane, and 32 contacts across all lanes.
@@ -627,11 +636,26 @@ impl Table {
     fn admissible(&mut self, attempt: &LoginAttempt, now: Instant) -> io::Result<()> {
         self.retirement.check_login(attempt, now).map_err(|_| model::bad())?;
         if self.sessions.iter().any(|s| s.same_login_attempt(attempt)) { return Ok(()); }
-        if self.sessions.len() >= self.capacity
-            || self.retirement.retained_count() + self.sessions.len() >= MAX_RETIRED
+        if self.full()
+            || self.retirement.retained_count() + self.sessions.len() >= self.retirement.limit()
             || self.sessions.iter().any(|s| s.key == attempt.key || s.login_peer == attempt.login_peer
                 || s.base_peer == Some(attempt.login_peer)) { return Err(model::bad()); }
         Ok(())
+    }
+    fn full(&self)->bool {self.sessions.len()>=self.capacity}
+    /// GW-01: a Join may reserve an arena place only while fewer sessions
+    /// (live and dispatcher-retained) hold a reservation for this battle than
+    /// it has places. Without `arena_split` the table itself is the arena bound.
+    fn arena_admission_open(&self,retained:&[Session],world:&World)->bool {
+        if !self.arena_split {return true;}
+        let reserved=self.sessions.iter().chain(retained).filter(|s|s.shared.as_ref().and_then(|c|c.profile13.as_ref())
+            .is_some_and(|p|p.reservation_battle()==Some(world.id))).count();
+        reserved<world.expected_actors()
+    }
+    /// GW-01 start barrier: every arena place belongs to a live entry-ready session.
+    fn arena_ready(&self,world:&World,now:Instant)->bool {
+        world.actors.len()==world.expected_actors()&&world.actors.iter().all(|a|a.session
+            .is_some_and(|id|self.sessions.iter().any(|s|s.id==id&&entry_ready(s,now))))
     }
     fn route(&self, peer: SocketAddr, packet: &[u8]) -> io::Result<usize> {
         self.route_inner(peer,packet,None)
@@ -975,11 +999,16 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
     // Stdout is the stand's retained journal. Never continue the failed world.
     println!("SHARED_BATTLE_FAILED {snapshot}");
     let mut retire=Vec::new();
+    let table_split=table.arena_split;
     for s in &mut table.sessions {
         if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
             contained_return_world(s,world)?;continue;
         }
         if s.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
+            // GW-01: a hangar session with no reservation, writer or arena place
+            // is not part of the failed battle; keep its queue and commands.
+            if table_split && !world.actors.iter().any(|a|a.session==Some(s.id)) && s.shared.as_ref()
+                .and_then(|c|c.profile13.as_ref()).is_some_and(|p|!p.has_reservation()&&!p.in_flight&&!p.has_pending_return()) {continue;}
             profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::BattleFailure)?;
             if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
             if let Some(c)=&mut s.shared {c.join_requested=false;c.commands.clear();c.hangar_since=None;}
@@ -1042,8 +1071,10 @@ fn contain_results_failure(manager:&super::results_session::Manager,dispatcher:&
 
 fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::Result<()> {
     if world.started.is_some() {return Ok(());}
+    let split=table.arena_split;
     for s in &mut table.sessions {
         if !entry_ready(s,now) || world.actors.iter().any(|a|a.session==Some(s.id)) {continue;}
+        if split&&world.actors.len()>=world.expected_actors() {break;}
         let identity=s.identity.as_ref().ok_or_else(||model::bad())?;
         let who=model::Identity{account:identity.account_id.clone(),database:identity.database_id,name:identity.name.clone()};
         let owned=s.shared.as_ref().and_then(|c|c.profile13.as_ref());
@@ -1359,6 +1390,14 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     let mut capture = Some(Recorder::open_profile(capture_path, &config.local_root, capture_profile)?);
     if config.battle_players!=2&&resources.as_ref().is_none_or(|rows|rows[0].shared.is_none()){return Err(model::bad().into());}
     let mut table = Table{capacity:if config.training_rooms{crate::training091::domain::MAX_ACCOUNTS}else{config.battle_players},..Table::default()};
+    // GW-01: connections are bounded separately from arena places; the replay
+    // window and datagram budget scale with them. Absent key = old path.
+    let mut datagram_budget=crate::identity091::game_network::DATAGRAMS_PER_SECOND;let mut drain=1usize;
+    if let Some(connections)=config.connection_capacity {
+        if !profile13_mode||connections<config.battle_players {return Err(model::bad().into());}
+        table.capacity=connections;table.arena_split=true;table.retirement=RetirementWindow::with_limit(connections*4);
+        datagram_budget=datagram_budget.max(u32::try_from(connections*4).map_err(|_|model::bad())?);drain=CAPACITY_DRAIN;
+    }
     let mut room_host=if config.training_rooms{Some(p10b_host::Host::for_config(&config)?)}else{None};
     let mut room_closing:Vec<(u32,&'static str)>=Vec::new();
     let mut battle_dispatch=profile13_dispatch::Dispatcher::default();
@@ -1444,6 +1483,10 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         config.login_bind, config.base_bind,
         if profile13_mode {"legacy091-profile13"} else if qualification.is_some(){"legacy091-curated-lab"}else if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
         world.id,world.expected_actors(),world.vehicle_kind().label(), if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
+    if table.arena_split {
+        println!("GATEWAY_CAPACITY connections={} arena_places={} retired_limit={} datagrams_per_second={datagram_budget} drain={drain} policy=gw01-hangar-holds-no-arena-place",
+            table.capacity,world.expected_actors(),table.retirement.limit());
+    }
     loop {
         let now = Instant::now();
         if now.duration_since(started) >= if profile13_mode {PROFILE13_SERVICE_LIFETIME} else {model::LIFETIME} {
@@ -1521,79 +1564,85 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
         }
         for (is_login, socket) in [(true, &login_socket), (false, &base_socket)] {
-            let mut data = [0u8; 65536];
-            let (length, peer) = match socket.recv_from(&mut data) {
-                Ok(value) => value, Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(error) if error.raw_os_error() == Some(10054) => continue,
-                Err(error) => return Err(error.into()),
-            };
-            if !config.game_network().admit_datagram(peer,length,if is_login{login::MAX_INTERACTIVE_DATAGRAM}else{1024},&mut rate_count){continue;}
-            if let Some(recorder) = &mut capture { recorder.observe(if is_login { Channel::Login } else { Channel::Base }, true, peer, &data[..length]); }
-            let packet = &data[..length];
-            if is_login {
-                let assembled = match fragments.push(peer, now, packet) { Ok(Some(value)) => value, Ok(None) => continue,
-                    Err(_) => { println!("SHARED_REJECT reason=login_fragments"); continue; } };
-                let (request, fields) = match login::decode_interactive(&assembled, &private) {
-                    Ok(value) => value, Err(_) => { println!("SHARED_REJECT reason=login_framing"); continue; }
+            // GW-01: drain up to `drain` datagrams per socket per tick (1 = old path).
+            for _ in 0..drain {
+                let mut data = [0u8; 65536];
+                let (length, peer) = match socket.recv_from(&mut data) {
+                    Ok(value) => value, Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                    Err(error) if error.raw_os_error() == Some(10054) => continue,
+                    Err(error) => return Err(error.into()),
                 };
-                if fields.digest != digest { send_wire(socket, peer, &login::rejection(request, 69), Channel::Login, &mut capture)?; continue; }
-                let attempt = LoginAttempt::new(fields.session_key, fields.nonce, peer);
-                if admission.refresh(request,&attempt,&fields) {
-                    println!("AUTH_PENDING_DUPLICATE request_id={request} reply_request_refreshed=true");
-                    continue;
-                }
-                if table.admissible(&attempt, now).is_err() {
-                    send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?; continue;
-                }
-                let account=match crate::identity091::credentials(&fields.username,&fields.password) {
-                    Ok((email,_))=>admission.account(&email),
-                    Err(_)=>{ send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
-                        println!("SHARED_LOGIN_REJECT request_id={request} reason=unsupported_native_credentials code=73"); continue; },
-                };
-                let writers=login_writers(serial_writers,&battle_dispatch,&result_manager,&room_host,&garage,&table);
-                let sessions=table.sessions.iter().chain(battle_dispatch.retired_sessions())
-                    .map(|s|(s.login_account,s.same_login_attempt(&attempt)));
-                match admission.decide(&attempt,&account,sessions,&writers,now) {
-                    Decision::Start => match start_auth(config.clone(), request, peer, &fields, false) {
-                        Ok(job) => { admission.started(job,account,now);
-                            println!("SHARED_LOGIN_STARTED request_id={request} identity_jobs={}",admission.len()); },
-                        Err(_) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
-                            println!("SHARED_LOGIN_REJECT request_id={request} reason=identity_start code=73"); },
-                    },
-                    Decision::Defer(reason) => if admission.defer(attempt,now) {
-                        println!("SHARED_LOGIN_DEFERRED request_id={request} reason={reason} waited_ms={} max_wait_ms={}",
-                            admission.waited(&attempt,now).as_millis(),admission.max_wait().as_millis());
-                    } else {
+                if !config.game_network().admit_datagram_within(peer,length,if is_login{login::MAX_INTERACTIVE_DATAGRAM}else{1024},&mut rate_count,datagram_budget){continue;}
+                if let Some(recorder) = &mut capture { recorder.observe(if is_login { Channel::Login } else { Channel::Base }, true, peer, &data[..length]); }
+                let packet = &data[..length];
+                if is_login {
+                    let assembled = match fragments.push(peer, now, packet) { Ok(Some(value)) => value, Ok(None) => continue,
+                        Err(_) => { println!("SHARED_REJECT reason=login_fragments"); continue; } };
+                    let (request, fields) = match login::decode_interactive(&assembled, &private) {
+                        Ok(value) => value, Err(_) => { println!("SHARED_REJECT reason=login_framing"); continue; }
+                    };
+                    if fields.digest != digest { send_wire(socket, peer, &login::rejection(request, 69), Channel::Login, &mut capture)?; continue; }
+                    let attempt = LoginAttempt::new(fields.session_key, fields.nonce, peer);
+                    if admission.refresh(request,&attempt,&fields) {
+                        println!("AUTH_PENDING_DUPLICATE request_id={request} reply_request_refreshed=true");
+                        continue;
+                    }
+                    if table.admissible(&attempt, now).is_err() {
                         send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
-                        println!("SHARED_LOGIN_REJECT request_id={request} reason={reason}_window code=73");
-                    },
-                    Decision::Reject(reason) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
-                        println!("SHARED_LOGIN_REJECT request_id={request} reason={reason} code=73"); },
-                }
-            } else {
-                let index = match table.route_with_network(peer, packet,config.game_network()) { Ok(i) => i, Err(_) => { println!("SHARED_REJECT reason=base_route"); continue; } };
-                if table.sessions[index].guard_base_peer(&mut table.retirement,peer,now).is_err(){println!("SHARED_REJECT reason=retired_peer");continue;}
-                if length == 21 {
-                    let s=&mut table.sessions[index];
-                    let (request, _) = base::base_request(packet, s.handoff)?;
-                    s.base_peer = Some(peer); send(socket, peer, &base::base_reply(request, s.token), &s.key, &mut capture)?;
-                    println!("SHARED_BASE_BOUND battle={} session={} peer={peer}", world.id, s.id);
-                } else {
-                    let sid=table.sessions[index].id;
-                    let frame=match base::decrypt(packet,&table.sessions[index].key).and_then(|b|transport091::parse_interactive(&b)){
-                        Ok(frame)=>frame,Err(_)=>{println!("SHARED_REJECT session={sid} reason=channel_framing");continue;}
+                        if table.arena_split {println!("GATEWAY_CAPACITY_REJECT request_id={request} sessions={} capacity={} retired={} retired_limit={} code=73",
+                            table.sessions.len(),table.capacity,table.retirement.retained_count(),table.retirement.limit());}
+                        continue;
+                    }
+                    let account=match crate::identity091::credentials(&fields.username,&fields.password) {
+                        Ok((email,_))=>admission.account(&email),
+                        Err(_)=>{ send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
+                            println!("SHARED_LOGIN_REJECT request_id={request} reason=unsupported_native_credentials code=73"); continue; },
                     };
-                    let received=if let Some(host)=&mut room_host{host.receive(&mut table,sid,&frame,&world,now,logical_ms)}else{
-                        let s=&mut table.sessions[index];
-                        receive_battle_session(s,&frame,&world,now)
-                    };
-                    let s=&mut table.sessions[index];
-                    match received {
-                        Ok(close) => {
-                            if frame.flags & 0x10 != 0 { send(socket, peer, &transport091::ack(s.rx), &s.key, &mut capture)?; s.last_keepalive = now; }
-                            if close { closing.push((s.id, "client_disconnect")); }
+                    let writers=login_writers(serial_writers,&battle_dispatch,&result_manager,&room_host,&garage,&table);
+                    let sessions=table.sessions.iter().chain(battle_dispatch.retired_sessions())
+                        .map(|s|(s.login_account,s.same_login_attempt(&attempt)));
+                    match admission.decide(&attempt,&account,sessions,&writers,now) {
+                        Decision::Start => match start_auth(config.clone(), request, peer, &fields, false) {
+                            Ok(job) => { admission.started(job,account,now);
+                                println!("SHARED_LOGIN_STARTED request_id={request} identity_jobs={}",admission.len()); },
+                            Err(_) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
+                                println!("SHARED_LOGIN_REJECT request_id={request} reason=identity_start code=73"); },
                         },
-                        Err(error) => println!("SHARED_REJECT session={} reason=channel_state sequence={:?} bytes={} error={error}", s.id, frame.sequence, frame.body.len()),
+                        Decision::Defer(reason) => if admission.defer(attempt,now) {
+                            println!("SHARED_LOGIN_DEFERRED request_id={request} reason={reason} waited_ms={} max_wait_ms={}",
+                                admission.waited(&attempt,now).as_millis(),admission.max_wait().as_millis());
+                        } else {
+                            send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
+                            println!("SHARED_LOGIN_REJECT request_id={request} reason={reason}_window code=73");
+                        },
+                        Decision::Reject(reason) => { send_wire(socket, peer, &login::rejection(request, 73), Channel::Login, &mut capture)?;
+                            println!("SHARED_LOGIN_REJECT request_id={request} reason={reason} code=73"); },
+                    }
+                } else {
+                    let index = match table.route_with_network(peer, packet,config.game_network()) { Ok(i) => i, Err(_) => { println!("SHARED_REJECT reason=base_route"); continue; } };
+                    if table.sessions[index].guard_base_peer(&mut table.retirement,peer,now).is_err(){println!("SHARED_REJECT reason=retired_peer");continue;}
+                    if length == 21 {
+                        let s=&mut table.sessions[index];
+                        let (request, _) = base::base_request(packet, s.handoff)?;
+                        s.base_peer = Some(peer); send(socket, peer, &base::base_reply(request, s.token), &s.key, &mut capture)?;
+                        println!("SHARED_BASE_BOUND battle={} session={} peer={peer}", world.id, s.id);
+                    } else {
+                        let sid=table.sessions[index].id;
+                        let frame=match base::decrypt(packet,&table.sessions[index].key).and_then(|b|transport091::parse_interactive(&b)){
+                            Ok(frame)=>frame,Err(_)=>{println!("SHARED_REJECT session={sid} reason=channel_framing");continue;}
+                        };
+                        let received=if let Some(host)=&mut room_host{host.receive(&mut table,sid,&frame,&world,now,logical_ms)}else{
+                            let s=&mut table.sessions[index];
+                            receive_battle_session(s,&frame,&world,now)
+                        };
+                        let s=&mut table.sessions[index];
+                        match received {
+                            Ok(close) => {
+                                if frame.flags & 0x10 != 0 { send(socket, peer, &transport091::ack(s.rx), &s.key, &mut capture)?; s.last_keepalive = now; }
+                                if close { closing.push((s.id, "client_disconnect")); }
+                            },
+                            Err(error) => println!("SHARED_REJECT session={} reason=channel_state sequence={:?} bytes={} error={error}", s.id, frame.sequence, frame.body.len()),
+                        }
                     }
                 }
             }
@@ -1773,7 +1822,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     println!("P08C_LATE_ADMISSION_UNSUPPORTED battle={} error={error} normal_owned_battle_unchanged=true",world.id);
                 }
             }
-            let start=if let Some(host)=&room_host{host.can_start(&table,&world,now)?}else{
+            let start=if let Some(host)=&room_host{host.can_start(&table,&world,now)?}
+            else if table.arena_split{world.started.is_none()&&table.arena_ready(&world,now)}else{
                 world.started.is_none() && table.sessions.len()==world.expected_actors()
                     && world.actors.len()==world.expected_actors() && table.sessions.iter().all(|s|entry_ready(s,now)
                         && world.actors.iter().any(|a|a.session==Some(s.id)))

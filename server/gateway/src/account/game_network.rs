@@ -126,9 +126,13 @@ impl Network{
     /// The old aggregate256/s bound remains. Unallowed IPs neither allocate nor
     /// consume this accepted-peer budget; no per-IP throughput promise is made.
     pub(crate) fn admit_datagram(&self,peer:SocketAddr,length:usize,maximum:usize,count:&mut u32)->bool{
+        self.admit_datagram_within(peer,length,maximum,count,DATAGRAMS_PER_SECOND)
+    }
+    /// GW-01: the per-second budget scales with the configured connection count.
+    pub(crate) fn admit_datagram_within(&self,peer:SocketAddr,length:usize,maximum:usize,count:&mut u32,budget:u32)->bool{
         if !self.allows_peer(peer){return false;}
         *count=count.saturating_add(1);
-        *count<=DATAGRAMS_PER_SECOND&&length<=maximum
+        *count<=budget&&length<=maximum
     }
     pub(crate) fn allows_first_base(&self,login:SocketAddr,base:SocketAddr)->bool{
         self.allows_peer(base)&&(!self.lan||login.ip()==base.ip())

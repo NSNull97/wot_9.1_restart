@@ -41,7 +41,7 @@ impl Dispatcher{
             return Ok(());
         }
         if self.hold.capture.is_some(){return Err(model::bad());}
-        let mut next_world=world.clone();let mut next_table=Table{sessions:table.sessions.clone(),retirement:RetirementWindow::default(),capacity:table.capacity};
+        let mut next_world=world.clone();let mut next_table=Table{sessions:table.sessions.clone(),retirement:RetirementWindow::default(),capacity:table.capacity,arena_split:table.arena_split};
         attach_waiting_sessions(&mut next_table,&mut next_world,now)?;
         let mut capture=Capture::new(run.to_owned(),world.id)?;
         for(slot,a)in next_world.actors.iter().enumerate(){let sid=a.session.ok_or_else(||model::bad())?;
