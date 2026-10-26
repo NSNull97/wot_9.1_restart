@@ -330,7 +330,10 @@ impl Session {
             && self.tx.len()==0 && !self.arena_base && (self.ammo_service.is_none()
                 || self.shared.as_ref().is_some_and(|c|c.profile13_arena_ready())
                     && self.ammo_service.as_ref().is_some_and(ammo_session::State::idle)
-                || self.ammo_service.as_ref().is_some_and(|state|state.research_enabled()
+                // Only the explicit source-bundle arena probe may skip the
+                // profile13 Join/reservation gate; every shared path keeps it.
+                || self.arena_source_bundle.is_some()
+                    && self.ammo_service.as_ref().is_some_and(|state|state.research_enabled()
                     && state.idle()))
     }
     fn queue_arena_base(&mut self)->io::Result<()> {

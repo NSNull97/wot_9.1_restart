@@ -3,6 +3,18 @@
 Практика, проверенная на этой машине. Правила — в [AGENTS.md](../AGENTS.md),
 порядок работы — [07_CODEX_WORKFLOW](07_CODEX_WORKFLOW.md).
 
+## Данные `local/` неприкосновенны (после чистки 2026-10-24)
+
+- Никакая уборка диска не трогает `local/evidence`, `local/stands`, `local/night-staging`,
+  `local/server`, `local/nuget-packages` и не удаляет рекурсивно через junction
+  (`local/toolchains`, `local/vendor` — ссылки на `C:/wot091-p06t-module-results/local/*`).
+  Шлюзовые тесты привязаны к точным SHA этих фикстур; пересобранный файл обычно не совпадает.
+- Резервная копия восстановленных фикстур: `E:/WoT_9.1_Server_backup/local-20261026`
+  (README-backup.json). Источник переносных копий — `C:/wot091-night-20261017-01/w/local`
+  с таблицей `C:/Users/NSNull/AppData/Local/Temp/wot091-night-workspace-kcadgetk`.
+- Пакеты карт MAPS-01 `final01` экспортированы `tools/map_package.py` версии `0c144ac` с LF
+  (хеш экспортёра входит в `package.json`); текущая версия даст другие каталоги v8.
+
 ## Общий стенд FULL-TEST (2026-10-20)
 
 - Стенд только из одного checkout: `python -B -X utf8 tools/full_test_stand.py prepare
