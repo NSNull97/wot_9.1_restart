@@ -179,20 +179,162 @@ def ensure_game_profile(db, account_id, nickname, created_at):
     db.execute('UPDATE game_profiles SET profile_json=? WHERE account_id=?', (json.dumps(value, separators=(',', ':')), account_id))
 
 
+OWNER_TABLES = ('game_meta', 'game_profiles', 'game_limits')
+
+
+def worker(checkout, bridge, stand, account_id, operation, request=None, *, mixed=False, loss=False):
+    """One call of the bridge's own worker CLI (web/src/p04d-crew.mjs `run`) against the copy."""
+    import subprocess
+    ammo = bridge['ammunition_service']
+    argv = [bridge['python_executable'], '-B', '-X', 'utf8', str(checkout / 'tools/p08b_battle_service.py'),
+            '--database', str(stand / 'game.sqlite'), '--bundle', ammo['bundle_root'], '--original-root', ammo['original_root'],
+            '--account-id', account_id, '--fixture-root', str(stand / 'fixtures')]
+    if mixed:
+        argv += ['--mixed-ammo', '--shell-catalog', bridge['mixed_service']['shell_catalog'],
+                 '--terminal-policy', bridge['mixed_service']['terminal_policy']]
+        if 'catalog' in bridge:
+            argv += ['--catalog-sha256', bridge['catalog']['sha256']]
+    if loss:
+        argv.append('--ammo-rack-loss')
+    argv.append(operation)
+    done = subprocess.run(argv, cwd=checkout, input=json.dumps(request).encode() if request else b'', capture_output=True, timeout=300)
+    if done.returncode != 0:
+        raise ValueError(f'{operation} {account_id[:8]}: ' + done.stderr.decode(errors='replace').strip().splitlines()[-1])
+    return json.loads(done.stdout)
+
+
+def owners(args):
+    """Synthetic owners through the project's own P08B chain, then the bridge worker
+    activations; the copy's bridge/gateway owner lists then name only them (<= 6).
+
+    `p08b_owner_source.py stage` builds a one-owner P08B DB per account from a
+    one-owner legacy DB (native id k, so ids never collide), and
+    `p08b_owner_onboard.py` imports owners 2..N into a copy of stage 1. Both only
+    accept paths below the bridge checkout's local/evidence/20261015-p08b-01, where
+    this writes one NEW dir. Pool/mixed/loss activations then run on the stand copy."""
+    import shutil as _shutil
+    import subprocess
+    import sys
+    stand = Path(args.stand).resolve(strict=True)
+    if not stopped(stand) or (stand / 'gw01-owners.json').exists():
+        raise ValueError('stopped stand without owners required')
+    bridge = json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))
+    checkout = Path(bridge['game_database']).resolve().parents[3]
+    sys.path[:0] = [str(checkout / 'tools'), str(checkout)]
+    from p08b_owner_source import EVIDENCE
+    from p06t_mixed_store import POLICY_SHA256 as MIXED_SHA, SOURCE_SHA256
+    from p06t_terminal import MANIFEST_SHA256
+    from p06t_ammo_loss_store import CONTRACT as LOSS_CONTRACT, POLICY_SHA256 as LOSS_SHA
+    rows = json.loads((stand / 'gw01-accounts.json').read_text(encoding='utf-8'))['accounts']
+    ammo = bridge['ammunition_service']
+    work = EVIDENCE / f'gw01-{stand.name}'
+    target = work / 'owners' / 'game.sqlite'
+    # Resume only a complete earlier staging of this same stand (all receipts present).
+    resume = work.exists()
+    if resume and not (target.is_file() and all((work / f'stage-{k}' / 'receipt.json').is_file() for k in range(1, len(rows) + 1))
+                       and all((work / f'onboard-{k}.json').is_file() for k in range(2, len(rows) + 1))):
+        raise ValueError(f'{work} exists but is incomplete; only new evidence dirs are written')
+    work.mkdir(parents=True, exist_ok=True)
+
+    def tool(script, *argv):
+        done = subprocess.run([bridge['python_executable'], '-B', '-X', 'utf8', str(checkout / 'tools' / script), *argv],
+                              cwd=checkout, capture_output=True, timeout=600)
+        if done.returncode != 0:
+            raise ValueError(f'{script}: ' + done.stderr.decode(errors='replace').strip().splitlines()[-1])
+        return json.loads(done.stdout)
+
+    src = sqlite3.connect(f'file:{(stand / "game.sqlite").as_posix()}?mode=ro', uri=True)
+    ddl = {n: src.execute("SELECT sql FROM sqlite_master WHERE name=?", (n,)).fetchone()[0] for n in OWNER_TABLES}
+    meta = src.execute('SELECT * FROM game_meta').fetchall()
+    src.close()
+    web = sqlite3.connect(f'file:{(stand / "web.sqlite").as_posix()}?mode=ro', uri=True)
+    stages = []
+    for native_id, row in enumerate(rows, 1):
+        if resume:
+            stages.append(json.loads((work / f'stage-{native_id}' / 'receipt.json').read_text(encoding='ascii')))
+            continue
+        legacy = work / f'legacy-{native_id}.sqlite'
+        with sqlite3.connect(legacy) as db:
+            for name in OWNER_TABLES:
+                db.execute(ddl[name])
+            db.execute('PRAGMA user_version=1')  # as web/src/game-adapter.mjs openGameStore
+            db.executemany(f'INSERT INTO game_meta VALUES ({",".join("?" * len(meta[0]))})', meta)
+            created = web.execute('SELECT created_at FROM users WHERE id=?', (row['account_id'],)).fetchone()[0]
+            value = dict(profile_version=1, account_id=row['account_id'], username=row['nickname'], native_database_id=native_id,
+                         created_at_ms=created, snapshot_revision=1, resources=dict(credits=100000, gold=0, free_xp=0),
+                         statistics=dict(battles=0, wins=0, losses=0, draws=0))
+            db.execute('INSERT INTO game_profiles(native_id,account_id,profile_json) VALUES (?,?,?)',
+                       (native_id, row['account_id'], json.dumps(value, separators=(',', ':'))))
+        db.close()
+        out = work / f'stage-{native_id}'
+        stages.append(tool('p08b_owner_source.py', 'stage', '--database', str(legacy), '--identity-database', str(stand / 'web.sqlite'),
+                           '--account-id', row['account_id'], '--anchor-bundle', ammo['bundle_root'], '--original-root', ammo['original_root'],
+                           '--out', str(out), '--granted-at-ms', str(created + 1000)))
+    web.close()
+    if not resume:
+        target.parent.mkdir()
+        backup(work / 'stage-1' / 'game.sqlite', target)
+    onboarded = [json.loads((work / f'onboard-{k}.json').read_text(encoding='ascii')) for k in range(2, len(rows) + 1)] if resume else [tool('p08b_owner_onboard.py', '--database', str(target), '--stage-database', str(work / f'stage-{k}' / 'game.sqlite'),
+                      '--anchor-bundle', ammo['bundle_root'], '--original-root', ammo['original_root'],
+                      '--account-id', row['account_id'], '--receipt', str(work / f'onboard-{k}.json'))
+                 for k, row in enumerate(rows, 1) if k > 1]
+    # The copy now runs on the synthetic owners only; the source-stand copy stays beside it.
+    (stand / 'game.sqlite').rename(stand / 'game.source-copy.sqlite')
+    for suffix in ('-wal', '-shm'):
+        if (stand / f'game.sqlite{suffix}').exists():
+            (stand / f'game.sqlite{suffix}').rename(stand / f'game.source-copy.sqlite{suffix}')
+    backup(target, stand / 'game.sqlite')
+    owned = [dict(account_id=r['account_id'], native_id=k) for k, r in enumerate(rows, 1)]
+    # Bridge worker activations, step-major in the order its flags require.
+    for o in owned:
+        worker(checkout, bridge, stand, o['account_id'], 'activate')
+    for o in owned:
+        pool = worker(checkout, bridge, stand, o['account_id'], 'pool-overview')
+        revision = worker(checkout, bridge, stand, o['account_id'], 'overview')['revision']
+        worker(checkout, bridge, stand, o['account_id'], 'pool-activate', dict(version=1, account_id=o['account_id'], native_database_id=o['native_id'],
+               command_key='gw01-pool-activate', expected_revision=revision, definition_sha256=pool['definition_sha256'],
+               registry_sha256=pool['registry_sha256']))
+    for o in owned:
+        revision = worker(checkout, bridge, stand, o['account_id'], 'overview')['revision']
+        worker(checkout, bridge, stand, o['account_id'], 'mixed-activate', dict(version=2, account_id=o['account_id'], native_database_id=o['native_id'],
+               expected_revision=revision, policy_sha256=MIXED_SHA, shell_catalog_sha256=SOURCE_SHA256,
+               terminal_policy_sha256=MANIFEST_SHA256), mixed=True)
+    for o in owned:
+        revision = worker(checkout, bridge, stand, o['account_id'], 'mixed-overview', mixed=True)['revision']
+        worker(checkout, bridge, stand, o['account_id'], 'loss-activate', dict(version=4, contract=LOSS_CONTRACT, account_id=o['account_id'],
+               native_database_id=o['native_id'], expected_revision=revision, policy_sha256=LOSS_SHA), mixed=True, loss=True)
+    receipts = [dict(schema='wot091-gw01-owner.v1', account_id=o['account_id'], native_database_id=o['native_id'],
+                     stage=str(work / f"stage-{o['native_id']}"), source_sha256=s['source_sha256'],
+                     onboard=None if o['native_id'] == 1 else onboarded[o['native_id'] - 2]['status'],
+                     activations=['activate', 'pool-activate', 'mixed-activate', 'loss-activate'])
+                for o, s in zip(owned, stages)]
+    ids = [r['account_id'] for r in rows]
+    for name in (*SERVICE_LISTS, 'late_result_service'):
+        if name in bridge:
+            bridge[name]['accounts'] = list(ids)
+    bridge['ammunition_service']['account_id'] = ids[0]
+    (stand / 'bridge.json').write_text(json.dumps(bridge, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    gateway = json.loads((stand / 'gateway.json').read_text(encoding='utf-8'))
+    if gateway.get('p08c_late_results'):
+        gateway['p08c_late_results_accounts'] = list(ids)
+    (stand / 'gateway.json').write_text(json.dumps(gateway, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    (stand / 'gw01-owners.json').write_text(json.dumps(receipts, indent=1) + '\n', encoding='utf-8')
+    print(json.dumps([dict(account=r['account_id'][:8], native_id=r['native_database_id'], onboard=r['onboard']) for r in receipts]))
+
+
 def stopped(stand):
     return not any((stand / f'{k}-process.json').exists() for k in ('bridge', 'gateway'))
 
 
 def accounts(args):
+    """Website rows for N disposable accounts in the copy (game rows come from `owners`)."""
     stand = Path(args.stand).resolve(strict=True)
     if not (stand / 'stand-receipt.json').is_file() or json.loads((stand / 'stand-receipt.json').read_text())['schema'] != 'wot091-gw01-load-stand.v1':
         raise ValueError('only a stand made by this tool')
     if not stopped(stand) or (stand / 'gw01-accounts.json').exists():
         raise ValueError('stopped stand without accounts required')
-    bridge = json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))
-    room = min(MAX_LISTED_OWNERS - len(bridge[n]['accounts']) for n in SERVICE_LISTS if n in bridge)
-    if not 1 <= args.count <= room:
-        raise ValueError(f'the bridge lists at most {MAX_LISTED_OWNERS} owners; room for {room}')
+    if not 1 <= args.count <= MAX_LISTED_OWNERS:
+        raise ValueError(f'the bridge lists at most {MAX_LISTED_OWNERS} owners')
     rows, stamp = [], int(time.time() * 1000)
     db = sqlite3.connect(stand / 'web.sqlite')
     try:
@@ -207,19 +349,8 @@ def accounts(args):
                 rows.append(dict(account_id=account_id, nickname=nick, email=email, password=password))
     finally:
         db.close()
-    game = sqlite3.connect(stand / 'game.sqlite')
-    try:
-        with game:
-            for row in rows:
-                ensure_game_profile(game, row['account_id'], row['nickname'], stamp)
-    finally:
-        game.close()
-    for name in SERVICE_LISTS:
-        if name in bridge:
-            bridge[name]['accounts'] = bridge[name]['accounts'] + [r['account_id'] for r in rows]
-    (stand / 'bridge.json').write_text(json.dumps(bridge, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     (stand / 'gw01-accounts.json').write_text(json.dumps(dict(schema='wot091-gw01-accounts.v1', accounts=rows)) + '\n', encoding='utf-8')
-    print(json.dumps(dict(added=len(rows), lists=[n for n in SERVICE_LISTS if n in bridge])))
+    print(json.dumps(dict(added=len(rows))))
 
 
 # --- native wire -----------------------------------------------------------
@@ -542,6 +673,7 @@ def main():
     p.set_defaults(func=prepare)
     p = sub.add_parser('accounts'); p.add_argument('--stand', required=True); p.add_argument('--count', type=int, default=4)
     p.set_defaults(func=accounts)
+    p = sub.add_parser('owners'); p.add_argument('--stand', required=True); p.set_defaults(func=owners)
     p = sub.add_parser('run'); p.add_argument('--stand', required=True); p.add_argument('--evidence', required=True)
     p.add_argument('--cycles', type=int, default=200); p.add_argument('--concurrent', type=int, default=4)
     p.add_argument('--parallel', type=int, default=2); p.add_argument('--per-minute', type=int, default=LOGINS_PER_MINUTE)
