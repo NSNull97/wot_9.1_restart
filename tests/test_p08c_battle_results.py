@@ -115,6 +115,15 @@ class ResultsTests(unittest.TestCase):
         self.reject("RESULT_MISMATCH", lambda: self.send(dict(request, command_key="results:new-key", results_json=changed)))
         replay = self.send(dict(request, command_key="results:another-key")); self.assertEqual(replay["status"], "stored")
 
+    def test_results_arena_type_follows_the_server_map_registry(self):
+        from p08c_battle_results import TransactionError, registry_arena_types, results_value
+        self.assertEqual(registry_arena_types(), frozenset({1, 2, 4}))
+        for arena_type in (1, 2, 4):
+            self.assertEqual(results_value(canonical(dict(self.result(), arena_type_id=arena_type)).decode("ascii"))["arena_type_id"], arena_type)
+        for arena_type in (0, 3, 65535):
+            with self.assertRaises(TransactionError):
+                results_value(canonical(dict(self.result(), arena_type_id=arena_type)).decode("ascii"))
+
     def test_strict_dto_bounds_duplicate_keys_float_boolean_unknown_and_depth(self):
         receipt = self.finished(); valid = self.results_request(reservation=receipt)
         values = []
