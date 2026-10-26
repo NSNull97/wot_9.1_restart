@@ -4,9 +4,12 @@ Frozen F-K validators remain the default. An explicitly activated owner gets a
 new current-snapshot contract while immutable source/legacy receipts survive.
 New battle types remain denied by the retained P08B admission policy.
 """
+from collections import OrderedDict
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
+import threading
 
 from game_profile_tx import TransactionError, _bounded_id, _revision, _decode_object
 from p09d_ammo_store import require, sha, REQUEST_FIELDS
@@ -31,6 +34,35 @@ POLICY = {"schema": SCHEMA, "definition_sha256": DEFINITION_SHA256, "crew_policy
     "ammo": "existing-owned-depot-only-no-grants-no-purchases", "new_admission": False, "crew_capacity": 16,
     "new_shells": SHELL_ROWS}
 POLICY_SHA256 = sha(canonical(POLICY))
+
+
+class _ProcessMemo:
+    """Per-process, thread-safe, byte-bounded LRU of canonical JSON values.
+
+    Store instances are opened per command; a long-lived writer process (DOM-01
+    Domain) keeps the memo across them. Values are stored as canonical bytes and
+    decoded on every hit, so no caller ever shares a mutable object.
+    """
+    def __init__(self, max_bytes):
+        self.max_bytes, self.size, self.rows, self.lock = max_bytes, 0, OrderedDict(), threading.Lock()
+
+    def get(self, key, compute):
+        with self.lock:
+            raw = self.rows.get(key)
+            if raw is not None: self.rows.move_to_end(key)
+        if raw is None:
+            raw = canonical(compute())
+            with self.lock:
+                if key not in self.rows:
+                    self.rows[key] = raw; self.size += len(raw)
+                    while self.size > self.max_bytes and self.rows: self.size -= len(self.rows.popitem(last=False)[1])
+        return json.loads(raw)
+
+
+# Pure plan/response of one hash-verified immutable ledger row (see _replay_mutation).
+_REPLAY_MEMO = _ProcessMemo(64 * 1024 * 1024)
+# SHA-256 of v2 JSON strings that already passed the bounded depth scan.
+_SCANNED_JSON, _SCANNED_LOCK = OrderedDict(), threading.Lock()
 
 
 def _shell_rows(registry):
@@ -114,11 +146,14 @@ class PoolStore(ResultsStore):
         if type(raw) is str and len(raw) > MAX_JSON and self._crew_contract() is CrewContractV2:
             # The bounded depth scan is pure Python; an identical string that
             # already passed it in this process is only decoded again.
-            scanned = self.__dict__.setdefault("_scanned_json", set())
-            if raw in scanned: return _decode_object(raw, "P09E")
+            digest = hashlib.sha256(raw.encode("utf-8")).digest()
+            with _SCANNED_LOCK: known = digest in _SCANNED_JSON
+            if known: return _decode_object(raw, "P09E")
             value = _json(raw)
-            if len(scanned) > 4096: scanned.clear()
-            scanned.add(raw); return value
+            with _SCANNED_LOCK:
+                _SCANNED_JSON[digest] = True
+                while len(_SCANNED_JSON) > 65536: _SCANNED_JSON.popitem(last=False)
+            return value
         return super()._stored_json(raw)
 
     def _replay_mutation(self, row, request, profile, *, operation, contract=None):
@@ -131,19 +166,17 @@ class PoolStore(ResultsStore):
         return super()._replay_mutation(row, request, profile, operation=operation, contract=contract)
 
     def _memo_contract(self, contract, key):
-        memo = self.__dict__.setdefault("_replay_memo", {})
-        if len(memo) > 4096: memo.clear()
+        # Key: contract schema, operation, verified result SHA and request SHA; the
+        # catalogue binding (catalog_v1) is fixed for the life of the process.
         class Memoized(contract):
             @classmethod
             def plan_operation(cls, before, layout, *, operation, account_id):
-                k = ("plan",) + key
-                if k not in memo: memo[k] = contract.plan_operation(before, layout, operation=operation, account_id=account_id)
-                return deepcopy(memo[k])
+                return _REPLAY_MEMO.get(("plan",) + key,
+                    lambda: contract.plan_operation(before, layout, operation=operation, account_id=account_id))
             @classmethod
             def operation_response(cls, request, revision, crew, *, operation, before_crew):
-                k = ("response", revision) + key
-                if k not in memo: memo[k] = contract.operation_response(request, revision, crew, operation=operation, before_crew=before_crew)
-                return deepcopy(memo[k])
+                return _REPLAY_MEMO.get(("response", revision) + key,
+                    lambda: contract.operation_response(request, revision, crew, operation=operation, before_crew=before_crew))
         return Memoized
 
     def _crew_row_limit(self):

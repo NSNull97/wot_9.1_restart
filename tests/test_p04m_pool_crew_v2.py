@@ -135,6 +135,34 @@ class CrewV2Tests(unittest.TestCase):
         self.assertEqual(seated["status"], "recruited")
         self.reject("CREW_V2_ROLLBACK_BLOCKED", lambda: self.store.set_crew_contract(self.contract_request(1), authenticated_account_id=self.account))
 
+    def test_process_replay_memo_spans_store_instances_and_still_detects_tampering(self):
+        # DOM-01: a long-lived writer opens one store per command; the pure replay
+        # memo is per process. Verification itself still runs on every read.
+        import p04m_pool_store
+        self.migrate()
+        for _ in range(3):
+            members = self.profile()["crew_inventory"]["members"]
+            spare = next(m for m in members if m["vehicle_native_id"] == -1) if any(m["vehicle_native_id"] == -1 for m in members) else None
+            if spare is None: self.crew([3, 7169, 4, 0], "recruit_barracks"); continue
+            self.crew([spare["native_id"], 0, 0], "dismiss")
+        expected = self.profile(); self.store.close()
+        for _ in range(2):
+            self.store = PoolStore(self.database, self.catalog, account_id=self.account)
+            self.assertEqual(self.profile(), expected); self.store.close()
+        self.assertTrue(any(key[0] == "plan" for key in p04m_pool_store._REPLAY_MEMO.rows))
+        with closing(sqlite3.connect(self.database)) as c, c:
+            key = c.execute("SELECT command_key FROM p04j_retired_member WHERE account_id=? ORDER BY native_id LIMIT 1", (self.account,)).fetchone()[0]
+            row = c.execute("SELECT result_json FROM game_command_ledger WHERE account_id=? AND command_id=?", (self.account, key)).fetchone()
+            result = json.loads(row[0]); result["after_crew"]["configuration_revision"] += 1
+            from p09d_ammo_projection import canonical
+            from p09d_ammo_store import sha
+            tampered = canonical(result)
+            c.execute("UPDATE game_command_ledger SET result_json=?,p09c_result_sha256=? WHERE account_id=? AND command_id=?",
+                (tampered.decode("ascii"), sha(tampered), self.account, key))
+        self.store = PoolStore(self.database, self.catalog, account_id=self.account)
+        with self.assertRaises(TransactionError) as caught: self.profile()
+        self.assertEqual(caught.exception.code, "CORRUPT_STORE")
+
     def test_lifetime_192_is_exhausted_exactly_and_barracks_stay_sixteen(self):
         self.migrate()
         while self.profile()["crew_inventory"]["next_native_id"] <= V2_CAPACITY: self.free_hire()
