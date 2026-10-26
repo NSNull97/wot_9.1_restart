@@ -81,3 +81,14 @@ fn gw01_without_split_the_arena_gate_is_the_old_table_bound(){
     let table=Table{capacity:3,sessions,..Table::default()};
     assert!(table.arena_admission_open(&[],&world));
 }
+
+#[test]
+fn gw01_load_tool_channel_cipher_vector_matches_the_gateway_codec(){
+    // Same vector as tests/test_gw01_login_load.py (measured first-message shape).
+    let key:[u8;16]=std::array::from_fn(|i|i as u8);
+    let clear=[0x58,0x04,0x01,0x44,0x33,0x22,0x11,0x09,0,0,0,0,0,0,0,0];
+    let wire=base::encrypt(&clear,&key).unwrap();
+    let hex:String=wire.iter().map(|b|format!("{b:02x}")).collect();
+    assert_eq!(hex,"5cc924ec67b674445cc924ec67b67444608d42f900325a3f");
+    assert_eq!(base::decrypt(&wire,&key).unwrap(),clear);
+}
