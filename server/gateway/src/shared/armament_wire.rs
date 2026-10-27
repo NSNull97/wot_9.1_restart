@@ -41,11 +41,11 @@ pub fn command(record:&[u8])->io::Result<Option<Intent>>{
     }
 }
 
-fn shot(mount:Mount,compact:u16)->io::Result<Shell>{PROFILES[mount.index()].shots.into_iter().find(|s|s.compact_descr==compact).ok_or_else(||bad("P06T shell not mounted"))}
+fn shot(mount:Mount,compact:u16)->io::Result<Shell>{crate::p06t_shells091::profile(mount).shots.into_iter().find(|s|s.compact_descr==compact).ok_or_else(||bad("P06T shell not mounted"))}
 /// quantity includes the clip under the explicitly documented server lab policy.
 /// timeRemaining=0 is intentional: original shell consumer ignores this field.
 pub fn ammo_row(mount:Mount,compact:u16,quantity:u16,in_clip:u8)->io::Result<Vec<u8>>{
-    shot(mount,compact)?;let p=PROFILES[mount.index()];
+    shot(mount,compact)?;let p=*crate::p06t_shells091::profile(mount);
     if quantity>p.capacity||in_clip>p.clip_count||u16::from(in_clip)>quantity||p.clip_count==1&&in_clip!=0{
         return Err(bad("P06T ammo source/capacity/clip boundary"));
     }
@@ -57,7 +57,7 @@ pub fn setting(mount:Mount,which:Setting,compact:u16)->io::Result<Vec<u8>>{
 /// Full owner reconciliation, including zero stacks, current+next and clip.
 /// This does not mutate state. Caller derives all fields from one snapshot.
 pub fn ammo_snapshot(mount:Mount,counts:[u16;3],current:u16,next:u16,clip:u8)->io::Result<Vec<u8>>{
-    let p=PROFILES[mount.index()];shot(mount,current)?;shot(mount,next)?;
+    let p=*crate::p06t_shells091::profile(mount);shot(mount,current)?;shot(mount,next)?;
     let total=counts.iter().try_fold(0u16,|n,c|n.checked_add(*c)).ok_or_else(||bad("P06T ammo total overflow"))?;
     let current_count=counts[p.shots.iter().position(|s|s.compact_descr==current).ok_or_else(||bad("P06T current source"))?];
     if total>p.capacity||clip>p.clip_count||u16::from(clip)>current_count{return Err(bad("P06T ammo total/clip source capacity"));}

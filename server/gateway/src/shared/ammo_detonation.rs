@@ -3,7 +3,7 @@
 //! native IDs or touch inventory. Root stages its event with one HP/death ledger.
 use std::{f32::consts::PI,io};
 use super::vehicle_profile::VehicleKind;
-use crate::p06t_device_caps::{CAPS,Device,Profile};
+use crate::p06t_device_caps::{Device,Profile};
 
 pub const POLICY:&str="test_lab.p06t.ammo-bay-zero-loaded-detonation.v1";
 pub const FLIGHT_POLICY:&str="test_lab.p06t.detached-turret-ballistic-terrain-clamp.v2-persistent-resting";
@@ -42,8 +42,8 @@ impl Input{
     fn validate(self,roster:u8)->io::Result<()>{
         // Frozen loss-v1 has no qualified extended vehicle/device contract.
         // A public pure Input must refuse these kinds, never index ALL5.
-        let profile=Profile::ALL.get(self.kind.index()).copied().ok_or_else(||bad("detonation source profile unsupported"))?;
-        let max=CAPS[profile.index()][Device::AmmoBay as usize].max;
+        let profile=Profile::for_owned(self.kind).ok_or_else(||bad("detonation source profile unsupported"))?;
+        let max=(*profile.caps())[Device::AmmoBay as usize].max;
         let total=self.counts.iter().map(|n|u32::from(*n)).sum::<u32>();
         if self.shot==0||self.shot>MAX_SHOT||self.target>=usize::from(roster)||self.attacker>=usize::from(roster)||self.attacker==self.target
             ||!(1000..=37000).contains(&self.tick)||!(1..=15360).contains(&self.device_sequence)

@@ -80,13 +80,13 @@ impl State {
     pub fn new_v2(profile:Profile)->io::Result<Self> {Self::create(profile,PolicyVersion::V2)}
     fn create(profile:Profile,policy:PolicyVersion)->io::Result<Self> {
         if policy==PolicyVersion::V1&&!profile.is_legacy() {return Err(bad("extended device profile requires explicit v2 policy"));}
-        let index=profile.index();let seats=CREW[index];
-        if seats.is_empty()||seats.len()>MAX_CREW||MAX_HP[index]==0
-            ||CAPS[index].iter().any(|c|c.max==0||c.regen==0||c.regen>c.max)
+        let seats=profile.crew();
+        if seats.is_empty()||seats.len()>MAX_CREW||profile.max_hp()==0
+            ||profile.caps().iter().any(|c|c.max==0||c.regen==0||c.regen>c.max)
             ||seats.iter().any(|seat|seat.roles==0||seat.roles&!31!=0||!(35..=42).contains(&seat.extra)) {
             return Err(bad("device source caps/primary-seat bounds"));
         }
-        Ok(Self {profile,policy,health:CAPS[index].map(|c|c.max),
+        Ok(Self {profile,policy,health:profile.caps().map(|c|c.max),
             crew:std::array::from_fn(|i|i<seats.len()),fire:None,repair_due:[None;9],repair_cause:[None;9],
             observed_ms:None,sequence:0,seen:Vec::new(),frozen:false,fire_ticks:0,proposed_fire_damage:0})
     }
@@ -96,7 +96,7 @@ impl State {
     pub fn source_caps_sha(&self)->&'static str {self.policy.source_caps_sha()}
     pub fn policy_manifest_sha(&self)->&'static str {self.policy.manifest_sha()}
     pub fn health(&self)->[u16;9] {self.health}
-    pub fn crew(&self)->&[bool] {&self.crew[..CREW[self.profile.index()].len()]}
+    pub fn crew(&self)->&[bool] {&self.crew[..self.profile.crew().len()]}
     pub fn crew_active(&self)->bool {self.crew().iter().any(|a|*a)}
     pub fn fire_active(&self)->bool {self.fire.is_some()}
     pub fn frozen(&self)->bool {self.frozen}
@@ -107,14 +107,14 @@ impl State {
     pub fn freeze(&mut self) {self.frozen=true;}
     fn validate_context(&self,now:u64,h:Health)->io::Result<()> {
         if now>MAX_TIME_MS || self.observed_ms.is_some_and(|old|now<old)
-            || h.max_hp!=MAX_HP[self.profile.index()] || h.hp>h.max_hp {return Err(bad("module/fire time or HP context"));} Ok(())
+            || h.max_hp!=self.profile.max_hp() || h.hp>h.max_hp {return Err(bad("module/fire time or HP context"));} Ok(())
     }
     fn emit(&mut self,out:&mut Vec<Transition>,at_ms:u64,cause:Cause,from_fire:bool,change:Change)->io::Result<()> {
         self.sequence=self.sequence.checked_add(1).ok_or_else(||bad("module transition sequence overflow"))?;
         out.push(Transition {sequence:self.sequence,at_ms,cause,from_fire,change});Ok(())
     }
     fn device(&mut self,out:&mut Vec<Transition>,device:Device,amount:u16,at:u64,cause:Cause,from_fire:bool)->io::Result<()> {
-        let index=device as usize;let max=CAPS[self.profile.index()][index].max;let before=self.health[index];let after=before.saturating_sub(amount);
+        let index=device as usize;let max=(*self.profile.caps())[index].max;let before=self.health[index];let after=before.saturating_sub(amount);
         if before!=after {
             self.health[index]=after;
             self.emit(out,at,cause,from_fire,Change::Device {device,extra_index:device.extra(),max_health:max,before,after,
@@ -130,8 +130,8 @@ impl State {
             let index=device as usize;
             if self.health[index]!=0 || self.repair_due[index].is_none_or(|due|due>now) {continue;}
             let cause=self.repair_cause[index].ok_or_else(||bad("module repair cause missing"))?;
-            let max=CAPS[self.profile.index()][index].max;
-            let after=CAPS[self.profile.index()][index].regen;
+            let max=(*self.profile.caps())[index].max;
+            let after=(*self.profile.caps())[index].regen;
             if after==0 || after>max {return Err(bad("module repair health bounds"));}
             self.health[index]=after;self.repair_due[index]=None;self.repair_cause[index]=None;
             self.emit(out,now,cause,true,Change::Device {device,extra_index:device.extra(),max_health:max,
@@ -165,7 +165,7 @@ impl State {
         source_shell(hit.shell)?;
         if hit.cause.shot==0 || hit.cause.shot>960 || hit.cause.attacker_slot>=6 || hit.ordinal>=2
             || !hit.ignition_roll.is_finite() || !(0. ..1.).contains(&hit.ignition_roll)
-            || matches!(hit.target,Target::Seat(s) if usize::from(s)>=CREW[self.profile.index()].len()) {
+            || matches!(hit.target,Target::Seat(s) if usize::from(s)>=self.profile.crew().len()) {
             return Err(bad("module hit source/identity/roll bounds"));
         }
         Ok(())
@@ -196,14 +196,14 @@ impl State {
                 Target::Device(device)=>{
                     next.device(&mut out,device,hit.shell.device_damage,now,hit.cause,false)?;
                     let ignition=(device==Device::Engine&&hit.shell.device_damage>=MIN_FIRE_STARTING_DAMAGE
-                        &&hit.ignition_roll<ENGINE_FIRE_CHANCE[next.profile.index()])
+                        &&hit.ignition_roll<next.profile.engine_fire_chance())
                         || (device==Device::FuelTank&&next.health[device as usize]==0);
                     if ignition {next.start_fire(&mut out,now,hit.cause)?;}
                 },
                 Target::Seat(seat)=>{
                     let index=usize::from(seat);let before=next.crew[index];
                     if before {next.crew[index]=false;next.emit(&mut out,now,hit.cause,false,Change::Crew {
-                        seat,extra_index:CREW[next.profile.index()][index].extra,before_active:true,after_active:false})?;}
+                        seat,extra_index:next.profile.crew()[index].extra,before_active:true,after_active:false})?;}
                 },
             }
         }
@@ -226,7 +226,7 @@ impl State {
             next.proposed_fire_damage=next.proposed_fire_damage.checked_add(u32::from(amount)).ok_or_else(||bad("fire aggregate damage overflow"))?;
             next.emit(&mut out,at,fire.cause,true,Change::VehicleDamage {amount})?;
             for device in [Device::Engine,Device::FuelTank] {
-                let amount=CAPS[next.profile.index()][device as usize].max.div_ceil(20);
+                let amount=(*next.profile.caps())[device as usize].max.div_ceil(20);
                 next.device(&mut out,device,amount,at,fire.cause,true)?;
             }
             if fire.ticks==MAX_FIRE_TICKS || remaining==0 {
@@ -242,8 +242,8 @@ impl State {
     }
     pub fn capabilities(&self)->Capabilities {
         let destroyed=|d:Device|self.health[d as usize]==0;
-        let critical=|d:Device|condition(self.health[d as usize],CAPS[self.profile.index()][d as usize].max)==Condition::Critical;
-        let mut wounded=0u8;for (seat,active) in self.crew().iter().enumerate(){if !active{wounded|=CREW[self.profile.index()][seat].roles;}}
+        let critical=|d:Device|condition(self.health[d as usize],(*self.profile.caps())[d as usize].max)==Condition::Critical;
+        let mut wounded=0u8;for (seat,active) in self.crew().iter().enumerate(){if !active{wounded|=self.profile.crew()[seat].roles;}}
         let crew_active=self.crew_active();let track=destroyed(Device::LeftTrack)||destroyed(Device::RightTrack);
         let live=crew_active&&!self.frozen;
         let mut c=Capabilities {crew_active,can_fire:live&&!destroyed(Device::Gun),

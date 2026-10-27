@@ -15,6 +15,7 @@ pub fn source_revision(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::T3485 => "p04m-t3485-collision-717:25b6c69fd51e26abbda9b16c35572b5f289f2320d0dffe4085dea1b7bdeba1bb",
     VehicleKind::Wt128=>super::p06t_geometry_source::Assembly::Wt128.revision(),
     VehicleKind::Fv183=>super::p06t_geometry_source::Assembly::Fv183.revision(),
+    VehicleKind::Generated(id)=>&super::generated_vehicles::entry(id).geometry_revision,
 } }
 fn bundle_sha256(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::Ms1 => BUNDLE_SHA256, VehicleKind::Is7 => IS7_BUNDLE_SHA256,
@@ -23,6 +24,7 @@ fn bundle_sha256(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::T3485 => "25b6c69fd51e26abbda9b16c35572b5f289f2320d0dffe4085dea1b7bdeba1bb",
     VehicleKind::Wt128=>super::p06t_geometry_source::Assembly::Wt128.sha256(),
     VehicleKind::Fv183=>super::p06t_geometry_source::Assembly::Fv183.sha256(),
+    VehicleKind::Generated(id)=>&super::generated_vehicles::entry(id).geometry_sha256,
 } }
 const MAX_BYTES: u64 = 512 * 1024;
 const NAMES: [&str; 3] = ["Hull", "Turret_01", "Gun_02"];
@@ -192,7 +194,7 @@ impl Bundle {
             "25b6c69fd51e26abbda9b16c35572b5f289f2320d0dffe4085dea1b7bdeba1bb"=>VehicleKind::T3485,
             "0971afa6aed7bbbb0c4ba647560e15002571544cc168005679a9d46a22962aae"=>VehicleKind::Wt128,
             "c14b10be359a86c4c4632cd0943d06c43a47fc9ede2a982880c4f09aed6ecb1d"=>VehicleKind::Fv183,
-            _ => return Err(bad()),
+            digest => return Self::from_generated_source(digest,raw),
         };
         // New schema is decoded by its closed, kind-neutral source importer.
         // Existing five formats and their arithmetic below are unchanged.
@@ -259,6 +261,53 @@ impl Bundle {
             components.push(Component { vertices, triangles });
         }
         Ok(Self { vehicle, components, hull, turret, gun, materials, bounds:if vehicle==VehicleKind::Ms1{NATIVE_BOUNDS}else{IS7_VISUAL_BOUNDS} })
+    }
+    /// BATTLE-ANY bundle: the exact digest must be a registry geometry pin.
+    /// Slots are Hull/Turret_01/Gun_01; source part names are checked, triangle
+    /// IDs kept, exact zero-area triangles listed by the source are dropped.
+    fn from_generated_source(digest:&str,raw:&[u8])->io::Result<Self>{
+        let registry=super::generated_vehicles::registry()?;
+        let vehicle=VehicleKind::Generated(registry.by_geometry(digest).ok_or_else(||bad())?);
+        let e=vehicle.generated().ok_or_else(||bad())?;
+        if raw.len() as u64!=e.geometry_bytes {return Err(bad());}
+        let value:Value=serde_json::from_slice(raw).map_err(|_|bad())?;
+        fields(&value,&["battle_admission","classification","geometry","identity","members","schema","vehicle_id","wheel_source"])?;
+        let descriptor=vehicle.descriptor().iter().map(|byte|format!("{byte:02x}")).collect::<String>();
+        if value["schema"]!="battle-any-source.v1"||value["vehicle_id"]!=e.vehicle_id.as_str()||value["battle_admission"]!=false
+            ||value["classification"]!="VERIFIED_STATIC_ORIGINAL_717"||value["identity"]["descriptor_hex"]!=descriptor.as_str()
+            ||value["identity"]["type_compact_id"]!=vehicle.vehicle_compact_id() {return Err(bad());}
+        let geometry=&value["geometry"];
+        fields(geometry,&["components","gun_position","hull_position","turret_position"])?;
+        let hull=vector(&geometry["hull_position"])?;let turret=vector(&geometry["turret_position"])?;let gun=vector(&geometry["gun_position"])?;
+        if [hull,turret,gun]!=e.pivots {return Err(bad());}
+        let materials=Catalog::from_generated(vehicle,&geometry["components"])?;
+        let rows=geometry["components"].as_array().filter(|rows|rows.len()==3).ok_or_else(||bad())?;
+        let mut components=Vec::with_capacity(3);let mut bounds=[[[0f32;3];2];3];
+        for (i,row) in rows.iter().enumerate() {
+            fields(row,&["excluded_degenerate_triangle_ids","materials","mesh_bounds","name","triangles","vertex_format","vertices","visual_bounds"])?;
+            let part=e.parts[i].as_str();let logical=["Hull","Turret_01","Gun_01"][i];
+            if row["name"]!=part||!matches!(row["vertex_format"].as_str(),Some("xyznuv"|"xyznuvtb")) {return Err(bad());}
+            let visual=row["visual_bounds"].as_array().filter(|r|r.len()==2).ok_or_else(||bad())?;
+            bounds[i]=[vector(&visual[0])?,vector(&visual[1])?];
+            let excluded=row["excluded_degenerate_triangle_ids"].as_array().ok_or_else(||bad())?.iter().map(uint).collect::<io::Result<Vec<_>>>()?;
+            let vr=row["vertices"].as_array().filter(|r|!r.is_empty()&&r.len()<=8192).ok_or_else(||bad())?;
+            let tr=row["triangles"].as_array().filter(|r|!r.is_empty()&&r.len()<=16384).ok_or_else(||bad())?;
+            let vertices=vr.iter().map(vector).collect::<io::Result<Vec<_>>>()?;
+            let mut triangles=Vec::with_capacity(tr.len());
+            for (index,t) in tr.iter().enumerate() {
+                fields(t,&["triangle_id","a","b","c","mesh","group","material"])?;
+                let id=uint(&t["triangle_id"])?;
+                if id!=i as u32*100000+index as u32||t["mesh"]!=part {return Err(bad());}
+                if excluded.contains(&id) {continue;}
+                let triangle=Triangle{triangle_id:id,a:uint(&t["a"])?,b:uint(&t["b"])?,c:uint(&t["c"])?,
+                    mesh:logical.into(),group:text(&t["group"])?,material:text(&t["material"])?};
+                materials.lookup(&triangle.mesh,&triangle.material)?;triangles.push(triangle);
+            }
+            if triangles.len()+excluded.len()!=tr.len() {return Err(bad());}
+            Mesh::new(vertices.clone(),triangles.clone(),source_revision(vehicle),"component-local-v1")?;
+            components.push(Component{vertices,triangles});
+        }
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds})
     }
     fn from_p06t_source(vehicle:VehicleKind,raw:&[u8])->io::Result<Self>{
         use super::p06t_geometry_source::{Assembly,SourceBundle};

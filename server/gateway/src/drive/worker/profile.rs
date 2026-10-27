@@ -102,7 +102,7 @@ pub(super) fn component_profile(profile:ram_proof::Profile)->VehicleProfile {
         ram_proof::Profile::T26=>(include_bytes!("p04m-t26-qualified-profile.json").as_slice(),VehicleKind::T26),
         ram_proof::Profile::T34=>(include_bytes!("p04m-t34-qualified-profile.json").as_slice(),VehicleKind::T34),
         ram_proof::Profile::T3485=>(include_bytes!("p04m-t3485-qualified-profile.json").as_slice(),VehicleKind::T3485),
-        ram_proof::Profile::WtE100128|ram_proof::Profile::Fv215b183=>panic!("physical-only profile has no legacy owned VehicleProfile")};
+        ram_proof::Profile::WtE100128|ram_proof::Profile::Fv215b183|ram_proof::Profile::Generated(_)=>panic!("physical-only profile has no legacy owned VehicleProfile")};
     assert_eq!(format!("{:x}",Sha256::digest(bytes)),profile.sha());let v=json(bytes,16384).unwrap();
     let definition=if kind.index()>=2{&v["definition"]}else{&v};
     VehicleProfile{path:PathBuf::new(),sha256:profile.sha().into(),kind,config_version:3,physics:definition["physics"].clone(),handling:Some(definition["handling"].clone())}
@@ -140,7 +140,7 @@ mod tests {
     fn handling_fixture(kind:VehicleKind)->(PathBuf,PathBuf,Value){
         let(root,path,mut pool)=super::super::tests::fixture_pool();
         let(raw,hash)=match kind{VehicleKind::Ms1=>(MS1_HANDLING,MS1_HANDLING_SHA256),VehicleKind::Is7=>(IS7_HANDLING,IS7_HANDLING_SHA256),
-            VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485|VehicleKind::Wt128|VehicleKind::Fv183=>panic!("legacy profile schema fixture; use curated profile gates")};
+            VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485|VehicleKind::Wt128|VehicleKind::Fv183|VehicleKind::Generated(_)=>panic!("legacy profile schema fixture; use curated profile gates")};
         assert_eq!(format!("{:x}",Sha256::digest(raw)),hash);
         let profile=json(raw,16384).unwrap();let profile_path=root.join("handling-profile.json");
         fs::write(&profile_path,raw).unwrap();pool["version"]=3.into();

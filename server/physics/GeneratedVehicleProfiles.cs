@@ -56,10 +56,9 @@ internal static class GeneratedVehicleProfiles
         using var bytes=new MemoryStream();stream.CopyTo(bytes);
         if(bytes.Length is <1 or >MaxDefinitionBytes)throw new InvalidDataException("generated definition size");
         using var doc=CheckedInput.Json(bytes.ToArray());var r=doc.RootElement;
-        CheckedInput.Fields(r,"version","profile","policy","table_sha256","profiles");
+        CheckedInput.Fields(r,"version","profile","policy","profiles");
         if(r.GetProperty("version").GetInt32()!=1||r.GetProperty("profile").GetString()!="test_lab"
             ||r.GetProperty("policy").GetString()!=Policy)throw new InvalidDataException("generated definitions policy");
-        CheckedInput.Sha256(r.GetProperty("table_sha256").GetString());
         var result=new Dictionary<string,(JsonElement,string)>();
         foreach(var row in r.GetProperty("profiles").EnumerateArray())
         {

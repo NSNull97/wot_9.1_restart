@@ -23,6 +23,7 @@ pub fn wreck_policy_revision_for(kind:VehicleKind)->&'static str { match kind {
     VehicleKind::Ms1=>WRECK_POLICY_REVISION,VehicleKind::Is7=>"test_lab-is7-wreck-block-v1",
     VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485=>"test_lab-curated-stock-wreck-block-v1",
     VehicleKind::Wt128|VehicleKind::Fv183=>"test_lab-p06t-extended-source-wreck-block-v1",
+    VehicleKind::Generated(_)=>"test_lab-battle-any-generated-wreck-block-v1",
 } }
 pub const SPAWN: [f32; 3] = [-58.499908, 33.770267, -445.81305];
 
@@ -212,6 +213,8 @@ pub struct World {
     pub rng_draws:Vec<(u32,usize,u8,u64)>,
     geometry: Option<Arc<geometry::Bundle>>,
     geometries: [Option<Arc<geometry::Bundle>>; 7],
+    /// BATTLE-ANY: bundles of generated kinds bound to this mixed template.
+    generated_geometries: std::collections::BTreeMap<usize,Arc<geometry::Bundle>>,
     pub contacts: Vec<Contact>,
     ap_test_lab: bool,
     pub impacts: Vec<AppliedImpact>,
@@ -446,6 +449,7 @@ impl World {
         self.impact.configure_roster(expected_actors)?;self.expected_actors=expected_actors;self.mixed_profiles=true;Ok(())
     }
     pub fn geometry_for(&self,kind:VehicleKind)->io::Result<&Arc<geometry::Bundle>> {
+        if kind.is_generated() {return self.generated_geometries.get(&kind.index()).ok_or_else(||bad());}
         let index=kind.index();
         self.geometries[index].as_ref().or_else(||self.geometry.as_ref().filter(|g|g.vehicle_kind()==kind)).ok_or_else(||bad())
     }
@@ -457,12 +461,18 @@ impl World {
             extended_lab:false,owner_hold:false,team_base_spawn:false,lab_loadouts:[None;MAX_ACTORS],
             damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
             result_spots:None,result_spot_tick:None,original_spotting:None,
-            geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
+            geometry: None,geometries:std::array::from_fn(|_|None),generated_geometries:std::collections::BTreeMap::new(),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), ram_damage_events:Vec::new(), active_ram_pairs:std::collections::BTreeSet::new(), destructible: None,fragiles:None,
             contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS] })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
         let kind=bundle.vehicle_kind();let index=kind.index();
+        if kind.is_generated() {
+            // Generated kinds join mixed owned templates only, never a homogeneous world.
+            if !self.mixed_profiles || self.started.is_some() || !self.shots.is_empty() || self.geometry.is_none()
+                || self.generated_geometries.insert(index,bundle).is_some() { return Err(bad()); }
+            return Ok(());
+        }
         if !self.mixed_profiles && kind!=self.vehicle_kind || self.started.is_some() || !self.shots.is_empty()
             || self.geometries[index].is_some() || !self.mixed_profiles && self.geometry.is_some() { return Err(bad()); }
         if self.mixed_profiles {self.geometries[index]=Some(bundle.clone());}
@@ -822,7 +832,7 @@ impl World {
     fn attach_owned_v2_inner(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_v2091::Frozen)->io::Result<usize>{
         loadout.validate_owned(&identity.account)?;
         if !self.mixed_ammo||!self.mixed_profiles||self.extended_lab||loadout.kind.is_extended(){return Err(bad());}
-        let profile=crate::p06t_device_caps::Profile::ALL.get(loadout.kind.index()).copied().ok_or_else(bad)?;
+        let profile=crate::p06t_device_caps::Profile::for_owned(loadout.kind).ok_or_else(bad)?;
         let existing=self.actors.iter().position(|actor|actor.identity.account==identity.account);
         if existing.is_some_and(|slot|self.actors[slot].owned_v2.as_ref()!=Some(loadout)){return Err(bad());}
         let mut next=self.clone();let previous=next.vehicle_kind;
@@ -1029,7 +1039,7 @@ impl World {
                             let launch_tick = 1000u32.checked_add(u32::try_from(elapsed_ticks).map_err(|_| bad())?)
                                 .ok_or_else(|| bad())?;
                             if let Some(shell)=shell{
-                                let index=crate::p06t_shells091::PROFILES[next.vehicle_kind().mount().index()].shots.iter().position(|source|*source==shell).ok_or_else(||bad())?;
+                                let index=crate::p06t_shells091::profile(next.vehicle_kind().mount()).shots.iter().position(|source|*source==shell).ok_or_else(||bad())?;
                                 impact_trace.admission_shell(self.id,sequence,launch_tick,slot,counts_before.ok_or_else(||bad())?[index],ammo_remaining,shell)?;
                             }else{impact_trace.admission(self.id, sequence, launch_tick, slot, ammo_before, ammo_remaining)?;}
                             impact_trace.launch(self.id, &projectile, launch_tick)?;

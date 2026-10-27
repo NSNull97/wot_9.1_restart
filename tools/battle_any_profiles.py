@@ -51,6 +51,7 @@ PHYSICS_DEFINITIONS = ROOT / "server" / "physics" / "Profiles" / "generated-defi
 GENERATED_POLICY = "battle-any-generated-v1"
 QUALIFICATION = ROOT / "config" / "catalog" / "battle_qualification.v1.json"
 QUALIFICATION_SCHEMA = "wot091-battle-qualification.v1"
+RUST_PINS = ROOT / "server" / "gateway" / "src" / "shared" / "battle_any_pins.rs"
 CATALOG_SHA256 = "b6baecd204444d1e894253fa6c19c61478993b8ae87c71373633989d3a8ee460"
 # Original res/scripts/common/nations.pyc order (verified in build, as P06T does).
 # The P09E research catalogue enumerates france/uk/china differently; its
@@ -69,7 +70,7 @@ MAX_SOURCE = 1024 * 1024
 MAX_MEMBER = 256 * 1024
 MAX_PACKAGE = 4 * 1024 * 1024 * 1024
 MAX_TABLE = 4 * 1024 * 1024
-MAX_BUNDLE = 2 * 1024 * 1024
+MAX_BUNDLE = 512 * 1024  # gateway geometry::MAX_BYTES
 # Mounted single-shot/drum limit of the accepted P06T armament state machine
 # (`battle/armament.rs`, clip_count 1..=6, no burst). Not a historical rule.
 MAX_CLIP = 6
@@ -86,7 +87,7 @@ MAPPING = {"policy": PHYSICS_POLICY, "classification": "INFERRED_TEST_LAB_ONLY",
            "motion_quality": "Discrete", "collision_steps_per_60hz": 4}
 REFUSALS = ("SPG_INDIRECT_FIRE_OUT_OF_SCOPE", "AUTOMATIC_GUN_UNSUPPORTED", "MOUNTED_SHOT_OVERRIDE_UNSUPPORTED",
             "SHELL_SOURCE_UNSUPPORTED", "PHYSICS_ENVELOPE_EXCEEDED", "SUPPORT_SOURCE_UNRESOLVED",
-            "COLLISION_SOURCE_UNRESOLVED", "COLLISION_SOURCE_UNSUPPORTED")
+            "COLLISION_SOURCE_UNRESOLVED", "COLLISION_SOURCE_UNSUPPORTED", "AIM_ENVELOPE_UNSUPPORTED")
 POLICY = {
     "id": "test_lab.battle-any.v1",
     "classification": "VERIFIED_STATIC_ORIGINAL_717_FACTS_WITH_EXPLICIT_TEST_LAB_PROJECTION",
@@ -127,6 +128,39 @@ def require(condition, message):
 def refuse_if(condition, code, detail):
     if condition:
         raise Refused(code, detail)
+
+
+def _f32(x):
+    return struct.unpack("<f", struct.pack("<f", x))[0]
+
+
+def _rad32(degrees):
+    # Gateway `rad`: (deg * (PI / 180)) in f64, then one cast to f32.
+    return _f32(degrees * (math.pi / 180.0))
+
+
+def aim_envelope_supported(envelope, yaw_limits):
+    """Same bounds as gateway `SourceEnvelope::validate` (f32): limits within
+    +-pi/2 and ordered, transition in (0, pi], sectors in [0, pi] and
+    front + back + 2 * transition <= pi, turret yaw within +-pi. How #717
+    resolves overlapping front/back sectors is UNKNOWN, so it is refused."""
+    half, pi = _f32(math.pi / 2), _f32(math.pi)
+    basic = [_rad32(x) for x in envelope["basic"]]
+    extra = {k: None if envelope[k] is None else [_rad32(x) for x in envelope[k]] for k in ("front", "back")}
+    transition = _f32(0.4) if envelope["transition_degrees"] is None else _rad32(envelope["transition_degrees"])
+    front, back = (extra[k] or basic + [0.0] for k in ("front", "back"))
+    limits = [basic, front[:2], back[:2], [min(basic[0], front[0], back[0]), max(basic[1], front[1], back[1])]]
+    if not all(-half <= lo <= hi <= half for lo, hi in limits) or not 0 < transition <= pi:
+        return False
+    if not all(0 <= x <= pi for x in (front[2], back[2])):
+        return False
+    if _f32(_f32(front[2] + back[2]) + _f32(2 * transition)) > pi:
+        return False
+    if yaw_limits is not None and not (yaw_limits[0] <= -180 and yaw_limits[1] >= 180):
+        lo, hi = _rad32(yaw_limits[0]), _rad32(yaw_limits[1])
+        if not -pi <= lo <= hi <= pi:
+            return False
+    return True
 
 
 def canonical(value):
@@ -442,6 +476,8 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
         refuse_if(kind == "SPG", "SPG_INDIRECT_FIRE_OUT_OF_SCOPE", "SPG")
         refuse_if(row["gun"]["burst"] or not 1 <= clip_count <= MAX_CLIP, "AUTOMATIC_GUN_UNSUPPORTED",
                   "burst" if row["gun"]["burst"] else "clip " + str(clip_count))
+        refuse_if(not aim_envelope_supported(envelope, row["gun"]["turret_yaw_limits"]), "AIM_ENVELOPE_UNSUPPORTED",
+                  "pitch envelope " + json.dumps(envelope, sort_keys=True))
         try:
             row["shots"] = shots(src, nation, names["gun"], gun, vf, gf, comp["shells"], factor, effects)
         except (*SOURCE_ERRORS, KeyError, TypeError) as error:
@@ -494,7 +530,9 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
         row["geometry"] = dict(bundle=bundle_name(row), bytes=len(raw), sha256=sha(raw),
                                components=[dict(name=c["name"], vertex_format=c["vertex_format"],
                                                 vertices=len(c["vertices"]), triangles=len(c["triangles"]),
-                                                excluded_degenerate=len(c["excluded_degenerate_triangle_ids"]))
+                                                excluded_degenerate=len(c["excluded_degenerate_triangle_ids"]),
+                                                armor_ids=[m["kind"] for m in c["materials"] if m["kind"] <= 16],
+                                                material_kinds=[m["kind"] for m in c["materials"]])
                                            for c in bundle_components])
         try:
             row.update(runtime_facts(v, vf, comp, names, chassis, turret, row))
@@ -579,7 +617,7 @@ def physics_definitions(table):
                         brake_force_source=m["brake_force_source"], yaw_rate_degrees_s=m["chassis_rotation_deg_s"],
                         carrying_point=m["carrying_point"], hull_aabb=r["hull_aabb"],
                         hull_position=r["pivots"]["hull_position"], support_rule=r["support_rule"])))
-    return dict(version=1, profile="test_lab", policy=GENERATED_POLICY, table_sha256=sha(canonical(table) + b"\n"), profiles=rows)
+    return dict(version=1, profile="test_lab", policy=GENERATED_POLICY, profiles=rows)
 
 
 def definition_sha256(row):
@@ -646,6 +684,7 @@ def export(original, out, update=False):
     if update or committed is None:
         TABLE.write_bytes(raw)
         BINDING.write_bytes(binding(raw))
+        RUST_PINS.write_bytes(rust_pins())
         PHYSICS_DEFINITIONS.write_bytes(canonical(physics_definitions(json.loads(raw))) + b"\n")
     table = json.loads(raw)
     counts = {}
@@ -691,7 +730,7 @@ def qualification_record(out_dir, table_raw):
                          definition_sha256=entry["definition_sha256"], inverse_mass_bits=n["inverse_mass_bits"],
                          principal_inverse_bits=n["principal_inverse_bits"], inertia_rotation_bits_xyzw=n["inertia_rotation_bits_xyzw"]))
     require(sorted(r["kind"] for r in rows) == sorted(expected), "qualification covers every generated definition")
-    return dict(schema=QUALIFICATION_SCHEMA, table_sha256=sha(table_raw),
+    return dict(schema=QUALIFICATION_SCHEMA,
                 definitions_sha256=sha(canonical(definitions) + b"\n"), policy=GENERATED_POLICY, runtime=manifest["runtime"],
                 classification=manifest["classification"], profiles=sorted(rows, key=lambda r: r["kind"]))
 
@@ -709,8 +748,18 @@ def qualify(worker, out):
     record = qualification_record(out, TABLE.read_bytes())
     raw = canonical(record) + b"\n"
     QUALIFICATION.write_bytes(raw)
+    RUST_PINS.write_bytes(rust_pins())
     return dict(status="PASS_GENERATED_QUALIFIED", profiles=len(record["profiles"]), qualification_sha256=sha(raw),
                 worker_sha256=record["runtime"]["qualified_worker_sha256"], out=str(out))
+
+
+def rust_pins():
+    """Gateway pins of the embedded table and qualification record (exact bytes)."""
+    lines = ("// GENERATED by tools/battle_any_profiles.py; do not edit. Exact-byte pins of the embedded",
+             "// config/catalog/battle_profiles.v1.json and battle_qualification.v1.json.",
+             "pub const TABLE_SHA256:&str=\"%s\";" % sha(TABLE.read_bytes()),
+             "pub const QUALIFICATION_SHA256:&str=\"%s\";" % sha(QUALIFICATION.read_bytes()))
+    return ("\n".join(lines) + "\n").encode("ascii")
 
 
 def check(path=TABLE):
@@ -730,8 +779,14 @@ def check(path=TABLE):
             require({"physics", "handling", "geometry", "shots", "gun"} <= set(row), "generated row incomplete")
     require([r["vehicle_id"] for r in table["vehicles"]] == sorted(seen), "vehicle order")
     require(path != TABLE or BINDING.read_bytes() == binding(raw), "generated binding differs from table")
-    require(path != TABLE or PHYSICS_DEFINITIONS.read_bytes() == canonical(physics_definitions(table)) + b"\n",
-            "generated physics definitions differ from table")
+    if path == TABLE:
+        definitions = canonical(physics_definitions(table)) + b"\n"
+        require(PHYSICS_DEFINITIONS.read_bytes() == definitions, "generated physics definitions differ from table")
+        record = json.loads(QUALIFICATION.read_bytes())
+        require(record["schema"] == QUALIFICATION_SCHEMA and record["definitions_sha256"] == sha(definitions)
+                and [r["kind"] for r in record["profiles"]] == sorted(r["kind"] for r in physics_definitions(table)["profiles"]),
+                "qualification record does not cover the current physics definitions; run qualify")
+        require(RUST_PINS.read_bytes() == rust_pins(), "gateway pins differ from table/qualification")
     return dict(status="PASS", table_sha256=sha(raw), vehicles=len(seen),
                 generated=sum(r["status"] == "generated" for r in table["vehicles"]))
 

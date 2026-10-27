@@ -22,9 +22,9 @@ def generate(catalog):
               "//! Damage/splash/module algorithms and native acceptance remain separate gates.",
               "pub const SOURCE_REVISION:&str=" + quoted(catalog["source_revision"]) + ";",
               "pub const SOURCE_DATA_SHA256:&str=" + quoted(sha(canonical(catalog) + b"\n")) + ";",
-              "#[derive(Clone,Copy,Debug,PartialEq,Eq)]\n#[repr(usize)]\npub enum Mount {" + ",".join(VARIANTS) + "}",
+              "#[derive(Clone,Copy,Debug,PartialEq,Eq)]\npub enum Mount {" + ",".join(VARIANTS) + ",\n/// BATTLE-ANY generated stock gun; its profile lives in the verified registry.\nGenerated(crate::gateway091::shared::generated_vehicles::GeneratedId)}",
               "impl Mount { pub const ALL:[Self;8]=[" + ",".join("Self::" + v for v in VARIANTS) + "];",
-              "pub fn index(self)->usize{self as usize}",
+              "/// Closed rows only; a generated mount has no PROFILES row (use `profile`).\npub fn index(self)->usize{match self{" + ",".join("Self::" + v + "=>" + str(i) for i, v in enumerate(VARIANTS)) + ",Self::Generated(id)=>PROFILES.len()+id.get()}}",
               "pub fn from_label(label:&str)->Option<Self>{match label{" + ",".join(quoted(r["id"]) + "=>Some(Self::" + v + ")" for r, v in zip(catalog["mounts"], VARIANTS)) + ",_=>None}}}",
               "#[derive(Clone,Copy,Debug,PartialEq,Eq)]\npub enum Family {ArmorPiercing,ArmorPiercingCr,HollowCharge,HighExplosive}",
               "impl Family {pub fn source_name(self)->&'static str {match self{" + ",".join("Self::" + variant + "=>" + quoted(name) for name, variant in FAMILIES.items()) + "}}}",
@@ -50,7 +50,7 @@ def generate(catalog):
                           ",premium_gold_flag:" + str(shell["premium_gold_flag"]).lower() + ",effects_resource:" + quoted(shell["effects_resource"]) +
                           ",piercing_power_loss_factor_by_distance:" + optional("piercing_power_loss_factor_by_distance") + "},")
         result.append("]},")
-    result.extend(["];", "pub fn profile(mount:Mount)->&'static GunProfile{&PROFILES[mount.index()]}",
+    result.extend(["];", "pub fn profile(mount:Mount)->&'static GunProfile{match mount{Mount::Generated(id)=>&crate::gateway091::shared::generated_vehicles::entry(id).gun,_=>&PROFILES[mount.index()]}}",
                    "/// Catalogue membership only. Server inventory, selection, reload and actor\n/// ownership must be checked separately by authority before a shot is admitted.",
                    "pub fn shell(mount:Mount,compact:i32)->Option<&'static Shell>{let id=u16::try_from(compact).ok()?;profile(mount).shots.iter().find(|s|s.compact_descr==id)}",
                    "#[cfg(test)]\n#[path=\"p06t_shell_data_tests.rs\"]\nmod tests;", ""])

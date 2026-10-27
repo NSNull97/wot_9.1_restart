@@ -10,7 +10,9 @@ pub fn bits<const N:usize>(a:[f32;N],b:[f32;N])->bool { a.map(f32::to_bits)==b.m
 fn dot(a:[f32;3],b:[f32;3])->f64 { let a=a.map(f64::from);let b=b.map(f64::from);(a[0]*b[0]+a[1]*b[1])+a[2]*b[2] }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Profile { Ms1, Is7, T26, T34, T3485, WtE100128, Fv215b183 }
+pub enum Profile { Ms1, Is7, T26, T34, T3485, WtE100128, Fv215b183,
+    /// BATTLE-ANY: qualified generated profile (SHA, mass, box, getter bits from the registry).
+    Generated(super::generated_vehicles::GeneratedId) }
 impl Profile {
     pub fn for_vehicle(kind:super::vehicle_profile::VehicleKind)->Self {
         use super::vehicle_profile::VehicleKind;match kind {
@@ -21,6 +23,7 @@ impl Profile {
             VehicleKind::T3485=>Self::T3485,
             VehicleKind::Wt128=>Self::WtE100128,
             VehicleKind::Fv183=>Self::Fv215b183,
+            VehicleKind::Generated(id)=>Self::Generated(id),
         }
     }
     pub fn sha(self)->&'static str {match self {
@@ -31,6 +34,7 @@ impl Profile {
         Self::T3485=>"ebe62bae0281f775b45f269a37919e86fbc99789eac789fc9368c42210880a0a",
         Self::Fv215b183=>"0e9eb47ba39b53592e1f7de6a302521ea8252bdb616df0d8f5dc10d2ab28b516",
         Self::WtE100128=>"85c810a944828d23d42ea8691142d16dc1cfb1c73156a6c7b7f11723d4dfd777",
+        Self::Generated(id)=>&super::generated_vehicles::entry(id).qualified_sha256,
     }}
     pub fn mass(self)->f32 {match self {
         Self::Ms1=>4691.0,
@@ -40,8 +44,12 @@ impl Profile {
         Self::T3485=>32370.0,
         Self::Fv215b183=>60000.0,
         Self::WtE100128=>100000.0,
+        Self::Generated(id)=>super::generated_vehicles::entry(id).mass_kg as f32,
     }}
-    pub fn half(self)->[f32;3] {match self {
+    pub fn half(self)->[f32;3] {if let Self::Generated(id)=self{
+        let h=&super::generated_vehicles::entry(id).physics["body_half_extents"];
+        return std::array::from_fn(|i|h[i].as_f64().unwrap_or(f64::NAN) as f32);}
+        match self {
         Self::Ms1=>[1062334726, 1058324871, 1073766889],
         Self::Is7=>[1070765540, 1057701716, 1080490562],
         Self::T26=>[1063348639, 1057918816, 1074313859],
@@ -49,9 +57,11 @@ impl Profile {
         Self::T3485=>[1067741503, 1060176048, 1077678709],
         Self::Fv215b183=>[1071931720, 1059939242, 1080605838],
         Self::WtE100128=>[1070290874, 1060339020, 1082354210],
+        Self::Generated(_)=>unreachable!("returned above"),
     }.map(f32::from_bits)}
     pub fn binding(self)->BodyBinding {
         let (u,p,q)=match self {
+            Self::Generated(id)=>{let e=super::generated_vehicles::entry(id);(e.inverse_mass_bits,e.principal_inverse_bits,e.inertia_rotation_bits)},
             Self::Ms1=>(962561921,[957270281, 957988763, 975566011],[1060439283, 1060439283, 0, 0]),
             Self::Is7=>(930482508,[909880447, 912106386, 930468834],[1060439283, 1060439283, 0, 0]),
             Self::T26=>(954299301,[947738559, 948617937, 966510618],[1060439283, 1060439283, 0, 0]),

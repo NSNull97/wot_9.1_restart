@@ -43,7 +43,7 @@ pub fn select(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;
             device(Device::Radio,[0.6,0.6,0.7],[0.9,0.9,0.9]);
             device(Device::LeftTrack,[0.,0.,0.],[0.15,0.25,1.]);
             device(Device::RightTrack,[0.85,0.,0.],[1.,0.25,1.]);
-            for (seat,c) in CREW[profile.index()].iter().enumerate() {
+            for (seat,c) in profile.crew().iter().enumerate() {
                 if c.primary_driver {boxes.push((Target::Seat(seat as u8),[0.2,0.3,0.7],[0.45,0.6,0.95]));}
                 else if c.primary_radioman {boxes.push((Target::Seat(seat as u8),[0.55,0.3,0.7],[0.8,0.6,0.95]));}
             }
@@ -51,7 +51,7 @@ pub fn select(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;
         Component::Turret=>{
             device(Device::TurretRotator,[0.,0.,0.],[1.,0.2,1.]);
             device(Device::SurveyingDevice,[0.,0.8,0.],[1.,1.,1.]);
-            let seats:Vec<usize>=CREW[profile.index()].iter().enumerate().filter(|(_,c)|!c.primary_driver&&!c.primary_radioman).map(|(i,_)|i).collect();
+            let seats:Vec<usize>=profile.crew().iter().enumerate().filter(|(_,c)|!c.primary_driver&&!c.primary_radioman).map(|(i,_)|i).collect();
             let count=seats.len() as f64;
             for (rank,seat) in seats.into_iter().enumerate() {
                 let low=0.1+0.8*rank as f64/count;let high=0.1+0.8*(rank+1) as f64/count;

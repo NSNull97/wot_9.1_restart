@@ -27,6 +27,7 @@ pub fn profile_revision_for(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::T3485=>"test_lab-t3485-ap-single-plate-v1",
     VehicleKind::Wt128=>"test_lab-p06t-wt128-ap-single-plate-v1",
     VehicleKind::Fv183=>"test_lab-p06t-fv183-ap-single-plate-v1",
+    VehicleKind::Generated(id)=>&super::generated_vehicles::entry(id).ap_policy,
 } }
 pub const HISTORICAL_FIDELITY: &str = "approximate";
 pub const CALIBER: f64 = 37.0;

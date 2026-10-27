@@ -4,10 +4,12 @@
 pub const SOURCE_REVISION:&str="p06t-shells-717:9389d7e348c5f092c94c4841d5e05e3ef2ce4f36631a968ff7b9e963577bf6a6";
 pub const SOURCE_DATA_SHA256:&str="6af1bdc74aff853360b282c3850e0aa3c97c856a7d39835c198c67fdeb342430";
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-#[repr(usize)]
-pub enum Mount {Ms1Stock,Is7Stock,T26Stock,T34Stock,T3485Stock,WtE100128,WtE100150,Fv215b183}
+pub enum Mount {Ms1Stock,Is7Stock,T26Stock,T34Stock,T3485Stock,WtE100128,WtE100150,Fv215b183,
+/// BATTLE-ANY generated stock gun; its profile lives in the verified registry.
+Generated(crate::gateway091::shared::generated_vehicles::GeneratedId)}
 impl Mount { pub const ALL:[Self;8]=[Self::Ms1Stock,Self::Is7Stock,Self::T26Stock,Self::T34Stock,Self::T3485Stock,Self::WtE100128,Self::WtE100150,Self::Fv215b183];
-pub fn index(self)->usize{self as usize}
+/// Closed rows only; a generated mount has no PROFILES row (use `profile`).
+pub fn index(self)->usize{match self{Self::Ms1Stock=>0,Self::Is7Stock=>1,Self::T26Stock=>2,Self::T34Stock=>3,Self::T3485Stock=>4,Self::WtE100128=>5,Self::WtE100150=>6,Self::Fv215b183=>7,Self::Generated(id)=>PROFILES.len()+id.get()}}
 pub fn from_label(label:&str)->Option<Self>{match label{"ms1-stock"=>Some(Self::Ms1Stock),"is7-stock"=>Some(Self::Is7Stock),"t26-stock"=>Some(Self::T26Stock),"t34-stock"=>Some(Self::T34Stock),"t3485-stock"=>Some(Self::T3485Stock),"wt-e100-128"=>Some(Self::WtE100128),"wt-e100-150"=>Some(Self::WtE100150),"fv215b-183"=>Some(Self::Fv215b183),_=>None}}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Family {ArmorPiercing,ArmorPiercingCr,HollowCharge,HighExplosive}
@@ -58,7 +60,7 @@ Shell{resource:"_183mm_HESH",compact_descr:21082,family:Family::HighExplosive,ca
 Shell{resource:"_183mm_HE_Mk1",compact_descr:21338,family:Family::HighExplosive,caliber_mm:182.9,damage_hp:1750,device_damage:244,penetration_mm:[92.0,92.0],explosion_radius_m:Some(5.05),raw_speed_mps:830.0,projectile_speed_factor:0.8,speed_mps:664.0,raw_gravity_mps2:9.81,gravity_mps2:6.278400000000001,max_distance_m:720.0,premium_gold_flag:false,effects_resource:"hugeHighExplosive",piercing_power_loss_factor_by_distance:None},
 ]},
 ];
-pub fn profile(mount:Mount)->&'static GunProfile{&PROFILES[mount.index()]}
+pub fn profile(mount:Mount)->&'static GunProfile{match mount{Mount::Generated(id)=>&crate::gateway091::shared::generated_vehicles::entry(id).gun,_=>&PROFILES[mount.index()]}}
 /// Catalogue membership only. Server inventory, selection, reload and actor
 /// ownership must be checked separately by authority before a shot is admitted.
 pub fn shell(mount:Mount,compact:i32)->Option<&'static Shell>{let id=u16::try_from(compact).ok()?;profile(mount).shots.iter().find(|s|s.compact_descr==id)}
