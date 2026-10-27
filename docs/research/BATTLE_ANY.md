@@ -1,6 +1,6 @@
 # BATTLE-ANY: боевой профиль любой машины каталога (этап 1) — 2026-10-27
 
-Ветка `codex/battle-any` от main `2da4baa`. План — [BATTLE_ANY](../plans/BATTLE_ANY.md).
+Ветка `codex/battle-any`, перенесена на main `75a9437` (после ARENA-01; исходно от `2da4baa`). План — [BATTLE_ANY](../plans/BATTLE_ANY.md).
 Native-приёмка — владелец (NOT_RUN). Метки — как в AGENTS.
 
 ## Что сделано
@@ -85,10 +85,14 @@ Waffenträger в таблице `generated` (тормоз 242 888 Н·м — в�
   `test_p06t_shell_catalog.OriginalShellCatalogTests` setUpClass: нет пинованного
   `local/vendor/cpython-2.7.3/opcode.py` (утрачен при чистке 2026-10-24; копия в
   `toolchains-py27-20261019` имеет другой SHA) — окружение, файл карточкой не тронут.
-- Gateway gate (Rust), physics (C#), web (JS) — **NOT_RUN**: `git diff 2da4baa -- server web client_patch`
-  пуст, рантайм этой карточкой не изменён, исполняемые файлы идентичны базе по построению.
+- Те же четыре соседних набора на чистом worktree базы `75a9437`: 32 run, та же одна ошибка
+  (`test_p06t_shell_catalog` setUpClass) — FAIL-набор ветки равен базе.
+- Gateway gate (Rust), physics (C#), web (JS) — **NOT_RUN**: `git diff 75a9437 -- server web client_patch`
+  пуст, рантайм этой карточкой не изменён; канонический gate main `75a9437` (1737 PASS / 2 FAIL / 8 ignored)
+  относится к ветке без изменений по построению.
 
-Evidence: `local/evidence/20261027-battleany-final01/` (receipt, таблица, 246 бандлов, логи тестов).
+Evidence: `local/evidence/20261027-battleany-final01/` (receipt, таблица, 246 бандлов, логи тестов) и
+`local/evidence/20261027-battleany-rebase75a9437/` (повтор после переноса и база).
 
 ## Не сделано / ограничения
 

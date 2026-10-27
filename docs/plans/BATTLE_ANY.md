@@ -1,6 +1,6 @@
 # BATTLE-ANY — бой на любой машине каталога 0.9.1
 
-Ветка `codex/battle-any` от main `2da4baa`. Основание: [ADR-002](../decisions/ADR_ARCH01_TARGET.md)
+Ветка `codex/battle-any` от main `2da4baa`, перенесена на `75a9437` (ARENA-01). Основание: [ADR-002](../decisions/ADR_ARCH01_TARGET.md)
 (единый источник контрактов), [CAT01](../research/CAT01_SINGLE_CATALOG.md), [CREW_ANY](../research/CREW_ANY.md),
 [P04M_FIVE_PROFILES](../research/P04M_FIVE_PROFILES.md), P06T (урон/снаряды), P05 (ходовая).
 Метки — как в AGENTS. Итог и доказательства — [BATTLE_ANY](../research/BATTLE_ANY.md).
