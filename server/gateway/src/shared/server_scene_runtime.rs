@@ -78,25 +78,27 @@ impl BatchRuntime {
     /// explicitly built with a larger roster (up to model::MAX_ACTORS).
     fn actor_manifest_for_roster(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,lane:usize,roster:usize)->io::Result<serde_json::Value> {
         if lane>=Self::slot_bound(roster) {return Err(model::bad());}
-        let map=resources.maps.get(kind.index()).ok_or_else(||model::bad())?;
+        let map=resources.maps.get(resources.slot(kind).ok_or_else(||model::bad())?).ok_or_else(||model::bad())?;
         Self::actor_manifest_placed(resources,slot,kind,version,roster,Self::lane_origin(map.spawn,lane),map.spawn_yaw)
     }
     /// One actor row at an explicit server-chosen pose (LAB lane or SPAWN-15 spot).
     fn actor_manifest_placed(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,roster:usize,origin:[f32;3],yaw:f32)->io::Result<serde_json::Value> {
         let bound=Self::slot_bound(roster);
         if slot>=bound || !matches!(version,1|2|3) || version==1&&kind.index()>=2
-            ||kind.is_extended()&&version!=3||version==3&&(resources.version!=4||resources.maps.len()!=7) {return Err(model::bad());}
-        let map=resources.maps.get(kind.index()).ok_or_else(||model::bad())?;
+            ||kind.is_extended()&&version!=3||version==3&&(resources.version!=4||resources.maps.len()!=7)
+            ||kind.is_generated()&&(version!=2||resources.version!=5) {return Err(model::bad());}
+        let row_slot=resources.slot(kind).ok_or_else(||model::bad())?;
+        let map=resources.maps.get(row_slot).ok_or_else(||model::bad())?;
         let mut row=serde_json::json!({"slot":slot,"kind":kind.label(),
             "config":{"path":Self::physical_path(&map.config),"sha256":map.config_sha256},
             "spawn_origin":origin,"spawn_yaw":yaw});
         if version>=2 {
             row["source_profile"]=if kind.index()>=2 {
-                let (path,sha256)=resources.source_profiles[kind.index()].as_ref().ok_or_else(||model::bad())?;
+                let (path,sha256)=resources.source_profiles[row_slot].as_ref().ok_or_else(||model::bad())?;
                 if version==3&&sha256!=ram_proof::Profile::for_vehicle(kind).sha(){return Err(model::bad());}
                 serde_json::json!({"path":Self::physical_path(path),"sha256":sha256})
             } else {
-                if resources.source_profiles[kind.index()].is_some() {return Err(model::bad());}serde_json::Value::Null
+                if resources.source_profiles[row_slot].is_some() {return Err(model::bad());}serde_json::Value::Null
             };
         }
         Ok(row)

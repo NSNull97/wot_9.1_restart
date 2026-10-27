@@ -211,7 +211,7 @@ impl Pool {
         let pool_version=uint(&v["version"])?;
         let vehicle_profile=match pool_version {
             1=>{fields(&v,&["version","profile","worker","maps"])?;None},
-            2|3|4=>{fields(&v,&["version","profile","worker","maps","vehicle_profile"])?;
+            2|3|4|5=>{fields(&v,&["version","profile","worker","maps","vehicle_profile"])?;
                 Some(profile::VehicleProfile::load(&root,&v["vehicle_profile"],pool_version)?)},
             _=>return Err(bad()),
         };
@@ -241,7 +241,7 @@ impl Pool {
         let maps=specs.iter().map(|m|MapSpec::load(&root,m,config_version)).collect::<io::Result<Vec<_>>>()?;
         if maps[0].arena_type_id==maps[1].arena_type_id || maps[0].config==maps[1].config{return Err(bad());}
         if let Some(profile)=&vehicle_profile {for map in &maps{profile.verify_map(&root,map)?;}}
-        let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets,vehicle_profile,shared_only:pool_version==4};
+        let out=Self{local_root:root,maps,sha256:format!("{:x}",Sha256::digest(&raw)),executable,runtime,assets,vehicle_profile,shared_only:matches!(pool_version,4|5)};
         out.verify_assets()?;Ok(out)
     }
     fn angular_profile(&self,map:&MapSpec)->io::Result<ram_proof::Profile>{
@@ -256,7 +256,8 @@ impl Pool {
         }
         Ok(selected)
     }
-    /// Version4 is metadata for IPC7 only; it never authorizes the independent worker.
+    /// Version4 (P06T extended) and version5 (BATTLE-ANY generated) are metadata for
+    /// IPC7 only; they never authorize the independent worker.
     pub fn shared_only(&self)->bool{self.shared_only}
     pub fn vehicle_kind(&self)->VehicleKind{self.vehicle_profile.as_ref().map_or(VehicleKind::Ms1,|p|p.kind())}
     pub fn shared_source_profile(&self)->Option<(PathBuf,String)> {self.vehicle_profile.as_ref().and_then(|p|p.shared_source_profile())}

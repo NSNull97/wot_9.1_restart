@@ -36,28 +36,36 @@ fn reference(value:&Value)->io::Result<Reference> {
 fn parse(raw:&[u8])->io::Result<Manifest> {
     let value=profile13::bounded_json(raw,profile13::MAX_REPLY_BYTES)?;
     let version=value["version"].as_u64();
-    if matches!(version,Some(2|3|4)){keys(&value,&["version","map","catalog","profiles","shared_physics"])?;}
+    if matches!(version,Some(2|3|4|5)){keys(&value,&["version","map","catalog","profiles","shared_physics"])?;}
     else{keys(&value,&["version","map","catalog","profiles"])?;}
-    if !matches!(version,Some(1|2|3|4)){return Err(bad("version/map"));}
+    if !matches!(version,Some(1|2|3|4|5)){return Err(bad("version/map"));}
     // Any registry map whose client arena has ctf bases (lifecycle rules).
     let map=MapId::from_asset(text(&value,"map")?).map_err(|_|bad("version/map"))?;
     super::lifecycle::Rules::for_map(map).map_err(|_|bad("map lifecycle rules"))?;
     let rows=value["profiles"].as_array().ok_or_else(||bad("profile list"))?;
-    let count=match version{Some(4)=>7,Some(3)=>5,_=>2};
-    if rows.len()!=count{return Err(bad("exact curated source profile count"));}
-    let mut profiles:Vec<Option<Profile>>=vec![None;count];
+    // Version5 (BATTLE-ANY): the five curated kinds plus 1..=MAX_GENERATED generated kinds.
+    let count=match version{Some(4)=>7,Some(3|5)=>5,_=>2};
+    if version==Some(5){if !(count+1..=count+MAX_GENERATED).contains(&rows.len()){return Err(bad("generated profile count"));}}
+    else if rows.len()!=count{return Err(bad("exact curated source profile count"));}
+    let mut profiles:Vec<Option<Profile>>=vec![None;count];let mut generated:Vec<Profile>=Vec::new();
     for row in rows {
         keys(row,&["kind","pool","geometry"])?;
         let label=text(row,"kind")?;
+        if version==Some(5)&&VehicleKind::from_label(label).is_none(){
+            let kind=VehicleKind::from_owned_label(label).filter(|k|k.is_generated()).ok_or_else(||bad("unknown vehicle profile"))?;
+            if generated.iter().any(|p|p.kind==kind){return Err(bad("duplicate vehicle profile"));}
+            generated.push(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?});continue;
+        }
         let kind=if version==Some(4){VehicleKind::from_extended_label(label)}else{VehicleKind::from_label(label)}
             .ok_or_else(||bad("unknown vehicle profile"))?;
         let index=kind.index();if index>=count{return Err(bad("kind requires version3 curated pool"));}
         if profiles[index].is_some(){return Err(bad("duplicate vehicle profile"));}
         profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?});
     }
+    generated.sort_by(|a,b|a.kind.label().cmp(b.kind.label()));
     Ok(Manifest{version:version.ok_or_else(||bad("version"))? as u8,map,catalog:reference(&value["catalog"])?,
-        profiles:profiles.into_iter().map(|p|p.ok_or_else(||bad("missing curated source profile"))).collect::<io::Result<_>>()?,
-        shared_physics:if matches!(version,Some(2|3|4)){Some(reference(&value["shared_physics"])?)}else{None}})
+        profiles:profiles.into_iter().map(|p|p.ok_or_else(||bad("missing curated source profile"))).chain(generated.into_iter().map(Ok)).collect::<io::Result<_>>()?,
+        shared_physics:if matches!(version,Some(2|3|4|5)){Some(reference(&value["shared_physics"])?)}else{None}})
 }
 fn plain(path:&Path)->io::Result<()> {
     for parent in path.ancestors(){
@@ -101,14 +109,22 @@ pub(super) struct Resources {
 pub(super) struct SharedResources {
     pub version:u8,
     pub root:PathBuf,pub artifacts:crate::scene_worker::Artifacts,
+    /// Row order of the template: curated kinds by index, then generated kinds by label.
+    pub kinds:Vec<VehicleKind>,
     pub maps:Vec<crate::map_drive_worker091::MapSpec>,
-    pub source_profiles:[Option<(PathBuf,String)>;7],
+    pub source_profiles:Vec<Option<(PathBuf,String)>>,
 }
+impl SharedResources {
+    /// Row of a kind in `kinds`/`maps`/`source_profiles`.
+    pub fn slot(&self,kind:VehicleKind)->Option<usize>{self.kinds.iter().position(|k|*k==kind)}
+}
+/// Bound of generated rows in one template (same as the generated registry bound).
+const MAX_GENERATED:usize=super::generated_vehicles::MAX_GENERATED;
 fn shared_source_reference(kind:VehicleKind,version:u8,source:Option<(PathBuf,String)>)->io::Result<Option<Reference>> {
     if kind.index()<2 {
         if source.is_some(){return Err(bad("legacy kind with unexpected stock source profile"));}return Ok(None);
     }
-    if !(version==4||version==3&&!kind.is_extended()){return Err(bad("qualified source requires its explicit resource version"));}
+    if !(version==4||matches!(version,3|5)&&!kind.is_extended()){return Err(bad("qualified source requires its explicit resource version"));}
     let (path,sha256)=source.ok_or_else(||bad("missing qualified stock source profile"))?;
     Ok(Some(reference(&serde_json::json!({"path":path,"sha256":sha256}))?))
 }
@@ -126,8 +142,9 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
         let pool_path=pin(local_root,&profile.pool,16384)?;
         let geometry_path=pin(local_root,&profile.geometry,512*1024)?;
         let pool=Arc::new(Pool::load(local_root,&pool_path)?);
-        if pool.shared_only()!=profile.kind.is_extended()||profile.kind.is_extended()&&manifest.version!=4 {
-            return Err(bad("extended profile requires shared-only pool and resource version4"));
+        let shared_only=profile.kind.is_extended()||profile.kind.is_generated();
+        if pool.shared_only()!=shared_only||profile.kind.is_extended()&&manifest.version!=4||profile.kind.is_generated()&&manifest.version!=5 {
+            return Err(bad("extended/generated profile requires its shared-only pool and resource version"));
         }
         super::server::selected_pool_config(&pool,map)?;
         let geometry=Arc::new(Bundle::load(local_root,&geometry_path)?);
@@ -141,14 +158,15 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
     let mut rows=manifest.profiles.into_iter().map(load_profile).collect::<io::Result<Vec<_>>>()?;
     if let Some(reference)=manifest.shared_physics {
         let path=pin(local_root,&reference,65536)?;
-        let mut source_profiles:[Option<(PathBuf,String)>;7]=std::array::from_fn(|_|None);
-        for row in &rows {
+        let mut source_profiles:Vec<Option<(PathBuf,String)>>=vec![None;rows.len()];
+        for (slot,row) in rows.iter().enumerate() {
             if let Some(reference)=shared_source_reference(row.kind,manifest.version,row.pool.shared_source_profile())? {
                 let path=pin(local_root,&reference,65536)?;
-                source_profiles[row.kind.index()]=Some((path,reference.sha256));
+                source_profiles[slot]=Some((path,reference.sha256));
             }
         }
         let shared=Arc::new(SharedResources{version:manifest.version,root:local_root.canonicalize()?,artifacts:crate::scene_worker::Artifacts::load(&path)?,
+            kinds:rows.iter().map(|row|row.kind).collect(),
             maps:rows.iter().map(|row|super::server::selected_pool_map(&row.pool,map).cloned()).collect::<io::Result<_>>()?,source_profiles});
         for row in &mut rows{row.shared=Some(shared.clone());}
     }
@@ -170,6 +188,23 @@ mod tests {
         serde_json::json!({"version":1,"map":"05_prohorovka","catalog":reference("catalog.json"),
             "profiles":[{"kind":"ms1","pool":reference("ms1-pool.json"),"geometry":reference("ms1-geometry.json")},
                 {"kind":"is7","pool":reference("is7-pool.json"),"geometry":reference("is7-geometry.json")} ]})
+    }
+    /// BATTLE-ANY: version5 = the five curated kinds plus generated registry kinds (sorted by label).
+    /// Resources only: catalog admission stays separate (a registry kind outside the catalog binds, never admits).
+    #[test]fn profile13_templates_version5_carries_generated_kinds_beside_the_curated_five(){
+        let base=value();let reference=|name:&str|{let mut r=base["catalog"].clone();
+            r["path"]=Path::new(r["path"].as_str().unwrap()).with_file_name(name).to_string_lossy().into();r};
+        let row=|kind:&str|serde_json::json!({"kind":kind,"pool":reference(&format!("{kind}-pool.json")),"geometry":reference(&format!("{kind}-geometry.json"))});
+        let mut v=base.clone();v["version"]=5.into();v["shared_physics"]=reference("shared.json");
+        v["profiles"]=serde_json::json!([row("ms1"),row("is7"),row("t26"),row("t34"),row("t3485"),row("usa-M4_Sherman"),row("ussr-KV-3")]);
+        let m=parse(&serde_json::to_vec(&v).unwrap()).unwrap();
+        let labels:Vec<_>=m.profiles.iter().map(|p|p.kind.label()).collect();
+        assert_eq!(labels,["ms1","is7","t26","t34","t3485","usa-M4_Sherman","ussr-KV-3"]);
+        assert!(m.profiles[5..].iter().all(|p|p.kind.is_generated()));
+        for mutation in 0..7{let mut w=v.clone();let rows=w["profiles"].as_array_mut().unwrap();match mutation{
+            0=>{rows.truncate(5);},1=>rows.push(row("ussr-KV-3")),2=>rows.push(row("ussr-Object_261")),3=>rows.push(row("wt-e100-128")),
+            4=>{rows.remove(2);},5=>w["version"]=3.into(),6=>rows.push(row("ms1")),_=>unreachable!()}
+            assert!(parse(&serde_json::to_vec(&w).unwrap()).is_err(),"mutation={mutation}");}
     }
     #[test]fn profile13_templates_require_two_exact_homogeneous_source_profiles(){
         let value=value();let expected=parse(&serde_json::to_vec(&value).unwrap()).unwrap();

@@ -15,6 +15,7 @@ impl VehicleProfile {
     pub(super) fn load(root:&Path,reference:&Value,pool_version:u64)->io::Result<Self>{
         fields(reference,&["path","sha256"])?;
         let hash=text(reference,"sha256")?;
+        if pool_version==5 {return Self::load_generated(root,reference,hash);}
         if let Some(kind)=VehicleKind::SUPPORTED.into_iter().filter(|kind|if pool_version==4 {kind.is_extended()}else{kind.index()>=2&&!kind.is_extended()})
             .find(|kind|ram_proof::Profile::for_vehicle(*kind).sha()==hash) {
             let extended=kind.is_extended();
@@ -66,6 +67,32 @@ impl VehicleProfile {
             Some(v["handling"].clone())
         }else{None};
         Ok(Self{path,sha256:hash.into(),kind,config_version:pool_version,physics:v["physics"].clone(),handling})
+    }
+    /// BATTLE-ANY: the qualified profile is the exact file the embedded registry
+    /// pins (qualification record SHA); native binding bits must equal the registry.
+    fn load_generated(root:&Path,reference:&Value,hash:&str)->io::Result<Self>{
+        use crate::gateway091::shared::generated_vehicles as generated;
+        let entry=generated::registry()?.entries().iter().find(|e|e.qualified_sha256==hash).ok_or_else(bad)?;
+        let kind=VehicleKind::Generated(entry.id);
+        let path=owned(root,Path::new(text(reference,"path")?))?;
+        let raw=read(&path,16384)?;
+        if format!("{:x}",Sha256::digest(&raw))!=hash||raw.len() as u64!=entry.qualified_bytes {return Err(bad());}
+        let v=json(&raw,16384)?;
+        fields(&v,&["version","profile","policy","kind","battle_admission","definition_sha256","definition","native_binding"])?;
+        if uint(&v["version"])?!=1||text(&v,"profile")?!="test_lab"||text(&v,"policy")?!=generated::POLICY||text(&v,"kind")?!=kind.label()
+            ||v["battle_admission"]!=false||text(&v["definition"],"kind")?!=kind.label() {return Err(bad());}
+        let definition=&v["definition"];fields(&definition["physics"],&PHYSICS_FIELDS)?;
+        let handling=&definition["handling"];
+        fields(handling,&["version","policy","max_yaw_rate_rad_s"])?;
+        if uint(&handling["version"])?!=1||text(handling,"policy")?!="p05b-track-yaw-v1" {return Err(bad());}
+        number(&handling["max_yaw_rate_rad_s"],0.1,1.)?;
+        let native=&v["native_binding"];
+        if uint(&native["inverse_mass_bits"])?!=u64::from(entry.inverse_mass_bits) {return Err(bad());}
+        for (field,want) in [("principal_inverse_bits",entry.principal_inverse_bits.to_vec()),("inertia_rotation_bits_xyzw",entry.inertia_rotation_bits.to_vec())] {
+            let rows=native[field].as_array().filter(|rows|rows.len()==want.len()).ok_or_else(bad)?;
+            for (row,want)in rows.iter().zip(want){if uint(row)?!=u64::from(want){return Err(bad());}}
+        }
+        Ok(Self{path,sha256:hash.into(),kind,config_version:3,physics:definition["physics"].clone(),handling:Some(handling.clone())})
     }
     pub(super) fn angular_profile(&self)->io::Result<ram_proof::Profile>{
         let expected=ram_proof::Profile::for_vehicle(self.kind);
