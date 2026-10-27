@@ -52,7 +52,7 @@ internal static class BattleSceneInput
             {
                 if(GeneratedVehicleProfiles.IsGenerated(kind))
                 {
-                    if(version!=3)throw new InvalidDataException("generated kind requires manifest3");
+                    // Owned mixed scenes use manifest2 (generated kinds) or the extended lab manifest3.
                     ExtendedProfileQualification.Runtime();
                     binding=GeneratedVehicleProfiles.Select(root,row.GetProperty("source_profile"),c,kind);
                 }
