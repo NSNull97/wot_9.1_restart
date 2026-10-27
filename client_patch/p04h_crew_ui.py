@@ -360,7 +360,7 @@ def target_data(vehicle, slot):
     vehicle = crew_vehicles.vehicle_id(vehicle)
     served = vehicles()[vehicle]
     slot = integer(slot, 0, len(served[3]) - 1)
-    return dict(nationID=0, tankType=served[2], typeID=served[1],
+    return dict(nationID=crew_vehicles.nation_of(served[0]), tankType=served[2], typeID=served[1],
                 roleType=served[3][slot], slot=slot)
 
 
@@ -468,7 +468,7 @@ class _RosterRecruitGuard(recruitment._RecruitGuard):
             state = guard._state()
             if (not guard._window_ok(window) or window is not guard.window
                     or window._currentVehicleInvId != state['selected_inventory_id']
-                    or not recruitment._number_equals(nationID, 0)
+                    or not recruitment._number_equals(nationID, crew_vehicles.nation_of(vehicles()[window._currentVehicleInvId][0]))
                     or not recruitment._number_equals(vehTypeID, vehicles()[window._currentVehicleInvId][1])
                     or not recruitment._number_equals(studyType, 0)
                     or not recruitment._number_equals(slot, window._initData['slot'])

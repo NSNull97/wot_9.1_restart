@@ -102,14 +102,25 @@ def owned_bound(legacy):
     return legacy if _kinds is None else MAX_OWNED
 
 
-def kind_by_type(type_id):
-    """Catalog row for one trained/recruit vehicle type ID, or None."""
-    rows = [row for row in (_kinds or {}).values() if row['type_id'] == type_id]
+def nation_of(compact_id):
+    """Nation of a vehicle compact descriptor: bits 4..7 (BATTLE-ANY: type IDs repeat across nations)."""
+    return (compact_id >> 4) & 15
+
+
+def kind_by_type(type_id, nation_id=0):
+    """Catalog row for one trained/recruit (nation, vehicle type ID), or None."""
+    rows = [row for row in (_kinds or {}).values()
+            if row['type_id'] == type_id and nation_of(row['native_compact_id']) == nation_id]
     return rows[0] if len(rows) == 1 else None
 
 
 def trained_types(legacy):
     return legacy if _kinds is None else tuple(sorted(row['type_id'] for row in _kinds.values()))
+
+
+def trained_pairs():
+    """(nation, vehicle type ID) of every catalog kind; a tankman is trained for one pair."""
+    return tuple(sorted((nation_of(row['native_compact_id']), row['type_id']) for row in (_kinds or {}).values()))
 
 
 def primary_roles(legacy):

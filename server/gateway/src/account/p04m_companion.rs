@@ -15,8 +15,31 @@ pub const CREW_V2_POLICY_SHA256:&str="7ff51fd896ab4e9f97c1a4dc7b46e75da08876f025
 /// lifetime allocator. v2 exists only after the owner's explicit migration;
 /// 192 keeps identities and freeTMenLeft in one pickle BININT1 byte.
 const CREW_CONTRACTS:[(&str,i64);2]=[(CREW_POLICY_SHA256,16),(CREW_V2_POLICY_SHA256,192)];
-/// Source name/surname/icon catalogue bounds of the free50 passport.
-const NAME_BOUNDS:[u16;3]=[112,1036,30];
+/// BATTLE-ANY: per-nation passport ID sets of the free50 passport, the exact bytes of
+/// `config/catalog/tankman_passports.v1.json` (pinned #717 sources). USSR = 1..112/1..1036/1..30.
+const TANKMAN_PASSPORTS:&[u8]=include_bytes!("../../../../config/catalog/tankman_passports.v1.json");
+const TANKMAN_PASSPORTS_SHA256:&str="7e1900f6244f1e7c7995b99cfe8ba05b68c2ad64990d25ea88f5ed96448198bd";
+type IdSets=[Vec<(u16,u16)>;3];
+static PASSPORTS:std::sync::OnceLock<Result<Vec<(u8,IdSets)>,String>>=std::sync::OnceLock::new();
+fn passport_sets(nation:u8)->io::Result<&'static IdSets>{
+    let table=PASSPORTS.get_or_init(||{
+        if format!("{:x}",Sha256::digest(TANKMAN_PASSPORTS))!=TANKMAN_PASSPORTS_SHA256{return Err("tankman passport table SHA".into());}
+        let v:Value=serde_json::from_slice(TANKMAN_PASSPORTS).map_err(|_|"tankman passport JSON".to_string())?;
+        let rows=v["nations"].as_array().ok_or("nations")?;let mut out=Vec::new();
+        for row in rows{
+            let nation=row["nation_id"].as_u64().and_then(|n|u8::try_from(n).ok()).filter(|n|*n<16).ok_or("nation")?;
+            let set=|key:&str|->Result<Vec<(u16,u16)>,String>{row[key]["ranges"].as_array().ok_or("ranges")?.iter().map(|r|{
+                let a=r[0].as_u64().and_then(|x|u16::try_from(x).ok()).ok_or("range")?;let b=r[1].as_u64().and_then(|x|u16::try_from(x).ok()).ok_or("range")?;
+                if a==0||a>b{return Err("range order".to_string());}Ok((a,b))}).collect()};
+            out.push((nation,[set("first_names")?,set("last_names")?,set("icons")?]));
+        }Ok(out)});
+    table.as_ref().map_err(|_|bad("tankman passport table"))?.iter().find(|(n,_)|*n==nation).map(|(_,s)|s).ok_or_else(||bad("tankman nation"))
+}
+/// (id-1)-th member, modulo the set size (P04H project allocation; USSR = v1 rule).
+fn passport_id(set:&[(u16,u16)],id:u8)->u16{
+    let count:u32=set.iter().map(|(a,b)|u32::from(b-a)+1).sum();let mut k=(u32::from(id).saturating_sub(1))%count.max(1);
+    for (a,b) in set{let size=u32::from(b-a)+1;if k<size{return a+k as u16;}k-=size;}0
+}
 pub const AMMO_CATALOG_SHA256:&str="5e9d023c4d02f377e51a2d6bc07c7a5880f5f8808aaa8028f060ccb7bcf91e33";
 fn bad(reason:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,format!("P04M companion: {reason}"))}
 
@@ -174,8 +197,10 @@ impl Binding{
         self.barracks(r)?;let id=member.tankman_id;
         if !(4..=self.capacity).contains(&(id as i64))||!(1..i32::MAX as i64).contains(&wire){return Err(bad("recruitment identity/cursor"));}
         // ((id-1) mod bound)+1 per name/surname/icon: equal to id for 1..16.
-        let names=NAME_BOUNDS.map(|bound|((id as u16-1)%bound+1).to_le_bytes());
-        let expected=[8,(r.vehicle_type>>8)as u8,r.role as u8,50,0,0,0,names[0][0],names[0][1],names[1][0],names[1][1],names[2][0],names[2][1],0x40,6,0,0,0,0,66,0,0,0,0,0];
+        // Header 8 + (nation << 4) (P04H VERIFIED); the nation is the recruited type's own.
+        let nation=((r.vehicle_type>>4)&15) as u8;let sets=passport_sets(nation)?;
+        let names=[0,1,2].map(|i|passport_id(&sets[i],id).to_le_bytes());
+        let expected=[8+(nation<<4),(r.vehicle_type>>8)as u8,r.role as u8,50,0,0,0,names[0][0],names[0][1],names[1][0],names[1][1],names[2][0],names[2][1],0x40,6,0,0,0,0,66,0,0,0,0,0];
         if member.descriptor!=expected{return Err(bad("recruitment source passport"));}
         let mut out=b"\x80\x02}(U\x07prevRev".to_vec();integer(&mut out,wire as i32);out.extend(b"U\x03rev");integer(&mut out,wire as i32+1);
         // The versioned Pool writer emits vehicle before compDescr. This exact

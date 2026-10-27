@@ -241,19 +241,20 @@ class _RecruitGuard(dismissal._RecruitGuard):
             pending = getattr(_scenario, 'pending', None)
             if crew_vehicles.enabled():
                 # Unlocked catalog types the original selector offers, keyed by compact ID.
-                served = dict((cd, (cd, cd >> 8, None, tuple(crew_vehicles.kind_by_type(cd >> 8)['primary_roles'])))
+                served = dict((cd, (cd, cd >> 8, None, tuple(crew_vehicles.kind_by_type(cd >> 8, crew_vehicles.nation_of(cd))['primary_roles'])))
                               for cd in shop['unlocked_vehicle_types'])
             else:
                 served = VEHICLES
+            # Type IDs repeat across nations: the original window sends both (BATTLE-ANY).
             vehicle = next((identity for identity in sorted(served)
-                            if recruitment._number_equals(vehTypeID, served[identity][1])), None)
+                            if recruitment._number_equals(vehTypeID, served[identity][1])
+                            and recruitment._number_equals(nationID, crew_vehicles.nation_of(served[identity][0]))), None)
             lifetime_reject = (_scenario is not None and
                                getattr(_scenario, 'mode', None) == 'lifetime' and
                                getattr(_scenario, 'phase', None) in ('reject_wait_result', 'wait_result') and
                                type(pending) is dict and pending.get('expect') == -10 and
                                state['free_quota'] == 0)
             if (window is not guard.window or vehicle is None or role not in served[vehicle][3]
-                    or not recruitment._number_equals(nationID, 0)
                     or not recruitment._number_equals(studyType, 0)
                     or not (slot is None or recruitment._number_equals(slot, -1))
                     or (state['free_quota'] <= 0 and not lifetime_reject)
@@ -665,7 +666,7 @@ def dropdown_observation(window, name):
                 selected_id=source_ids[selected] if selected >= 0 else None)
 
 
-def catalog_selector_target(vehicle_type_id, role):
+def catalog_selector_target(vehicle_type_id, role, nation_id=0):
     """Return the source-derived selector values for one CAT-01 vehicle.
 
     The values are read from the generated table, never guessed from an
@@ -674,10 +675,10 @@ def catalog_selector_target(vehicle_type_id, role):
     """
     if not crew_vehicles.enabled():
         raise RuntimeError('CREW-ANY catalog must be enabled for lifetime selectors')
-    row = crew_vehicles.kind_by_type(vehicle_type_id)
+    row = crew_vehicles.kind_by_type(vehicle_type_id, nation_id)
     if row is None or role not in row['primary_roles']:
         raise ValueError('catalog vehicle/primary role is unsupported')
-    return (('nationDropdown', 0), ('vehicleClassDropdown', row['vehicle_class']),
+    return (('nationDropdown', nation_id), ('vehicleClassDropdown', row['vehicle_class']),
             ('vehicleTypeDropdown', vehicle_type_id), ('roleDropdown', role))
 
 

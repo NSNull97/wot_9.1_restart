@@ -8,6 +8,7 @@ Seat roles come from the CAT-01 catalog when a worker activated it, otherwise
 from the equal legacy stock registry.
 """
 from copy import deepcopy
+import json
 import struct
 
 from game_profile_tx import TransactionError
@@ -56,54 +57,81 @@ def pins():
     return value
 
 
-def profile_for_type(type_id):
-    require(type(type_id) is int and 0 <= type_id <= 255, "RECRUIT_SELECTION_UNSUPPORTED")
-    rows = [(kind, pin) for kind, pin in pins().items() if pin[1] >> 8 == type_id]
+def profile_for_type(type_id, nation_id=0):
+    """Stock profile of a trained vehicle type; type IDs repeat across nations."""
+    require(type(type_id) is int and 0 <= type_id <= 255 and type(nation_id) is int, "RECRUIT_SELECTION_UNSUPPORTED")
+    rows = [(kind, pin) for kind, pin in pins().items() if pin[1] >> 8 == type_id and (pin[1] >> 4) & 15 == nation_id]
     require(len(rows) == 1, "RECRUIT_SELECTION_UNSUPPORTED")
     return rows[0]
 
 
-def unskilled(*, vehicle_type_id, role, role_level, first_name_id, last_name_id, icon_id):
-    _, pin = profile_for_type(vehicle_type_id)
+_PASSPORTS = None
+
+
+def nation_passports(nation_id):
+    """BATTLE-ANY: exact sorted ID sets of one nation's normal passport group
+    (`config/catalog/tankman_passports.v1.json`, pinned #717 sources). USSR
+    equals the P04H CATALOG_BOUNDS, so its passports stay byte-identical."""
+    global _PASSPORTS
+    if _PASSPORTS is None:
+        import tankman_passports
+        tankman_passports.check()
+        table = json.loads(tankman_passports.TABLE.read_bytes())
+        _PASSPORTS = {row["nation_id"]: {key: tuple(v for a, b in row[source]["ranges"] for v in range(a, b + 1))
+                                         for key, source in (("first_name_id", "first_names"), ("last_name_id", "last_names"), ("icon_id", "icons"))}
+                      for row in table["nations"]}
+        require(_PASSPORTS[0] == {key: tuple(range(1, bound + 1)) for key, bound in CATALOG_BOUNDS.items()}, "CORRUPT_STORE")
+    require(type(nation_id) is int and nation_id in _PASSPORTS, "RECRUIT_SELECTION_UNSUPPORTED")
+    return _PASSPORTS[nation_id]
+
+
+def unskilled(*, vehicle_type_id, role, role_level, first_name_id, last_name_id, icon_id, nation_id=0):
+    _, pin = profile_for_type(vehicle_type_id, nation_id)
     require(role in {roles[0] for roles in pin[6]}, "RECRUIT_SELECTION_UNSUPPORTED")
     require(type(role_level) is int and 50 <= role_level <= 100, "RECRUIT_SELECTION_UNSUPPORTED")
+    ids = nation_passports(nation_id)
     for key, value in (("first_name_id", first_name_id), ("last_name_id", last_name_id), ("icon_id", icon_id)):
-        require(type(value) is int and 1 <= value <= CATALOG_BOUNDS[key], "INVALID_INPUT")
+        require(type(value) is int and value in ids[key], "INVALID_INPUT")
     rank, remainder = divmod(role_level - 50, 50)
-    return struct.pack(FORMAT, 8, vehicle_type_id, ROLE_IDS[role], role_level, 0, 0, 0,
+    # Header 8 + (nation << 4): P04H VERIFIED descriptor encoding.
+    return struct.pack(FORMAT, 8 + (nation_id << 4), vehicle_type_id, ROLE_IDS[role], role_level, 0, 0, 0,
         first_name_id, last_name_id, icon_id, rank | ((50 - remainder) << 5), 0, 66, 0, 0)
 
 
 def decode(raw):
     require(type(raw) is bytes and 25 <= len(raw) <= 100, "INVALID_INPUT")
-    if raw[1] in (13, 28) and raw[2] != 2:
-        return old_decode(raw)
+    if raw[0] == 8 and raw[1] in (13, 28) and raw[2] != 2:
+        # Retained P04I MS-1/IS-7 descriptors: header 8 is nation 0 by construction.
+        return dict(old_decode(raw), nation_id=0)
     require(len(raw) == 25, "INVALID_INPUT")
     header, trained, role, level, count, last, flags, first, surname, icon, rank, xp, version, one, two = struct.unpack(FORMAT, raw)
-    require(header == 8 and count == last == flags == xp == one == two == 0 and version == 66, "INVALID_INPUT")
+    require(header & 15 == 8 and count == last == flags == xp == one == two == 0 and version == 66, "INVALID_INPUT")
     role = next((key for key, value in ROLE_IDS.items() if value == role), None)
     value = dict(vehicle_type_id=trained, role=role, role_level=level,
-        first_name_id=first, last_name_id=surname, icon_id=icon)
+        first_name_id=first, last_name_id=surname, icon_id=icon, nation_id=header >> 4)
     require(unskilled(**value) == raw, "INVALID_INPUT")
-    return dict(value, nation_id=0, rank_index=rank & 31, rank_id=RANKS[role][rank & 31],
+    return dict(value, rank_index=rank & 31, rank_id=RANKS[role][rank & 31],
         levels_to_next_rank=rank >> 5, free_xp=0, skills=[], last_skill_level=0,
         is_female=False, is_premium=False, dossier_hex=DOSSIER_HEX)
 
 
 def base_descriptor(decoded):
-    return unskilled(**{key: decoded[key] for key in ("vehicle_type_id", "role", "role_level", "first_name_id", "last_name_id", "icon_id")})
+    return unskilled(**{key: decoded[key] for key in ("vehicle_type_id", "role", "role_level", "first_name_id", "last_name_id", "icon_id", "nation_id")})
 
 
-def name_ids(identity):
-    """Source name/surname/icon IDs; identical to the v1 passport for 1..16."""
-    return tuple((identity - 1) % CATALOG_BOUNDS[key] + 1 for key in ("first_name_id", "last_name_id", "icon_id"))
+def name_ids(identity, nation_id=0):
+    """Source name/surname/icon IDs: the (identity-1)-th member (modulo count) of
+    the nation's exact ID set. USSR sets are 1..N, so this equals the v1 passport
+    `(identity-1) % N + 1` byte for byte; other nations index their own sets."""
+    ids = nation_passports(nation_id)
+    return tuple(ids[key][(identity - 1) % len(ids[key])] for key in ("first_name_id", "last_name_id", "icon_id"))
 
 
-def passport(identity, type_id, role, capacity=CAPACITY):
+def passport(identity, type_id, role, capacity=CAPACITY, nation_id=0):
     require(type(identity) is int and type(capacity) is int and 4 <= identity <= capacity, "FREE_RECRUITMENT_EXHAUSTED")
-    first, last, icon = name_ids(identity)
+    first, last, icon = name_ids(identity, nation_id)
     return unskilled(vehicle_type_id=type_id, role=role, role_level=50,
-        first_name_id=first, last_name_id=last, icon_id=icon)
+        first_name_id=first, last_name_id=last, icon_id=icon, nation_id=nation_id)
 
 
 def vehicles(value):
@@ -160,7 +188,7 @@ def native_crew(value, contract=None):
                 require(row["role"] == ("commander" if identity == 1 else "driver") and sha(base) == DESCRIPTOR_PINS[row["role"]], "CORRUPT_STORE")
             else:
                 require(row["crew_id"] == recruit_identity(value["account_id"], identity)
-                    and base == passport(identity, decoded["vehicle_type_id"], row["role"], capacity), "CORRUPT_STORE")
+                    and base == passport(identity, decoded["vehicle_type_id"], row["role"], capacity, decoded["nation_id"]), "CORRUPT_STORE")
             vehicle, seat = row["vehicle_native_id"], row["seat"]
             require(type(vehicle) is int and (vehicle == -1 or vehicle in types), "CORRUPT_STORE")
             if vehicle == -1: require(seat is None, "CORRUPT_STORE")
@@ -260,7 +288,7 @@ class CrewContract:
                 role = next((key for key, value in ROLE_IDS.items() if value == layout[2]), None)
                 require(role in {r[0] for r in stock[kind][6]}, "RECRUIT_SELECTION_UNSUPPORTED")
                 vehicle, seat = -1, None
-            raw = passport(identity, stock[kind][1] >> 8, role, cls.CAPACITY)
+            raw = passport(identity, stock[kind][1] >> 8, role, cls.CAPACITY, (stock[kind][1] >> 4) & 15)
             rows.append(dict(native_id=identity, crew_id=recruit_identity(account_id, identity), role=role,
                 descriptor_hex=raw.hex(), vehicle_native_id=vehicle, seat=seat))
             result.update(next_native_id=identity + 1, free_recruitment_left=cls.CAPACITY - identity)

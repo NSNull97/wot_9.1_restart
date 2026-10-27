@@ -140,10 +140,12 @@ def checked_expected(value, role_level=None):
         if identities and identity <= identities[-1]:
             raise ValueError('sorted unique sparse native identities required')
         identities.append(identity)
-        integer(row['nation_id'], 0, 0)
+        # BATTLE-ANY: catalog tankmen carry their vehicle's nation (header 8 + (nation << 4)).
+        integer(row['nation_id'], 0, 15 if crew_vehicles.enabled() else 0)
         # T-34 is source type 0 (catalog compact ID 1); the legacy pins start at 1.
         integer(row['vehicle_type_id'], 0 if crew_vehicles.enabled() else 1, 255)
-        if row['vehicle_type_id'] not in crew_vehicles.trained_types((13, 28)):
+        if (row['vehicle_type_id'] not in crew_vehicles.trained_types((13, 28)) or crew_vehicles.enabled()
+                and (row['nation_id'], row['vehicle_type_id']) not in crew_vehicles.trained_pairs()):
             raise ValueError('unsupported trained vehicle type')
         integer(row['role_level'], 0, 100)
         if row['role'] not in crew_vehicles.primary_roles(('commander', 'driver', 'gunner', 'loader')):

@@ -137,3 +137,14 @@ fn hex(text:&str)->Vec<u8>{(0..text.len()).step_by(2).map(|i|u8::from_str_radix(
     assert!(p.barracks(ok).is_ok());
     assert!(p.barracks(crate::crew_barracks091::Request{role:0,..ok}).is_err());
 }
+
+/// BATTLE-ANY 3d: the free50 passport follows the recruited type's nation.
+#[test]fn p04m_companion_passport_sets_follow_the_nation_and_keep_ussr_v1(){
+    let ussr=passport_sets(0).unwrap();
+    for id in 4..=192u8{let old=[112u16,1036,30].map(|bound|(u16::from(id)-1)%bound+1);
+        assert_eq!([0,1,2].map(|i|passport_id(&ussr[i],id)),old,"id={id}");}
+    let japan=passport_sets(6).unwrap();assert!(japan[1].len()>1,"japan surnames are not contiguous");
+    for id in [4u8,100,192]{let v=passport_id(&japan[1],id);assert!(japan[1].iter().any(|(a,b)|(*a..=*b).contains(&v)));}
+    assert_eq!(passport_id(&passport_sets(2).unwrap()[2],37),1,"usa icons 1..36 wrap at 37");
+    assert!(passport_sets(9).is_err());
+}
