@@ -71,7 +71,14 @@ impl BatchRuntime {
         Self::actor_manifest_for_lane(resources,slot,kind,version,slot)
     }
     fn actor_manifest_for_lane(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,lane:usize)->io::Result<serde_json::Value> {
-        if slot>=model::MAX_ACTORS || lane>=model::MAX_ACTORS || !matches!(version,1|2|3) || version==1&&kind.index()>=2
+        Self::actor_manifest_for_roster(resources,slot,kind,version,lane,wire::MAX_NATIVE_ACTORS)
+    }
+    fn slot_bound(roster:usize)->usize {roster.clamp(wire::MAX_NATIVE_ACTORS,model::MAX_ACTORS)}
+    /// ARENA-01: slots/lanes stay below the native six unless the World was
+    /// explicitly built with a larger roster (up to model::MAX_ACTORS).
+    fn actor_manifest_for_roster(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,lane:usize,roster:usize)->io::Result<serde_json::Value> {
+        let bound=Self::slot_bound(roster);
+        if slot>=bound || lane>=bound || !matches!(version,1|2|3) || version==1&&kind.index()>=2
             ||kind.is_extended()&&version!=3||version==3&&(resources.version!=4||resources.maps.len()!=7) {return Err(model::bad());}
         let map=resources.maps.get(kind.index()).ok_or_else(||model::bad())?;
         let mut row=serde_json::json!({"slot":slot,"kind":kind.label(),
@@ -102,8 +109,8 @@ impl BatchRuntime {
         }
         let version=if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
         let rows=world.actors.iter().enumerate().map(|(slot,actor)|{
-            if world.team_plan().is_some(){Self::actor_manifest_for_lane(&self.resources,slot,actor.vehicle_kind(),version,world.spawn_lane(slot)?)}
-            else{Self::actor_manifest(&self.resources,slot,actor.vehicle_kind(),version)}
+            let lane=if world.team_plan().is_some(){world.spawn_lane(slot)?}else{slot};
+            Self::actor_manifest_for_roster(&self.resources,slot,actor.vehicle_kind(),version,lane,world.expected_actors())
         })
             .collect::<io::Result<Vec<_>>>()?;
         let manifest=serde_json::json!({"version":version,"profile":"test_lab","policy":scene_worker::POLICY,
