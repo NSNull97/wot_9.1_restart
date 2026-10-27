@@ -95,6 +95,43 @@ P06T vertex01).
    (в `D:/WoT_9.1_Server`: фикстурные тесты привязаны к этому пути).
 4. Native (владелец): купить несколько новых машин, в т.ч. Waffenträger и FV215b, бой на каждой.
 
+## Этап 3 — разбор перед реализацией (2026-10-27)
+
+Строка этапа 3 выше («сторы и bridge берут виды из таблицы») недооценивала объём. Допуск сейчас
+решает **единый каталог CAT-01** (`config/catalog/catalog.v1.json`, 5 машин, поле `battle_admission`
+`always`/`zero_economy_policy`), и от него зависят все слои владения, не только допуск:
+
+| Слой | Что держит закрытый список 5 видов |
+|---|---|
+| Каталог | `catalog.v1.json` + привязки Rust/Python/JS/Py2.7 (`catalog_build.py`, `MAX_PROFILES=64`, ≤ 256 КБ; 232 строки ≈ 530 КБ) |
+| Python | `p04m_stock_registry` (`StockRegistry`: ключ `vehicle:ussr:`+ресурс, `capabilities`, `mixed_admission`), `p04m_pool_store` (установки/снаряды БК), `p06t_mixed_store.freeze_mixed` (P06T shell catalog, 8 установок, SHA источника), `p04m_pool_crew` (места/роли) |
+| JS bridge | `p04m-pool.mjs` `TYPES`/`CATALOG_VEHICLES`, `p06t-mixed.mjs` |
+| Шлюз | `p04m_companion` (`kind.new()` → `OWNER_ACCEPTANCE_REQUIRED`), `profile13_v2::catalog_identity_in` (вшитый каталог), `profile13_templates` (массив по `kind.index()` ≤ 7: пул + геометрия на вид) |
+| Стенд | `full_test_stand.py`: пулы, конфиги физики по карте и виду, шаблоны profile13 |
+| Клиент | `catalog_v1_hints.py`, `map_drive_client.catalog_profile13_vehicles` (кнопка «В бой» по `battle_admission`), `crew_vehicles.py` (окна экипажа/БК по видам каталога) |
+
+**Блокер наций (VERIFIED, этап 1):** у 64 из 227 сгенерированных строк (uk 26, china 20, france 18)
+compact ID research-каталога P09E не равны клиентским — купленная через магазин машина этих наций
+получит в ангаре чужой `compactDescr`. Допускать их до версионированной коррекции каталога нельзя.
+FV215b (183) — uk, поэтому native-проверка FV в этапе 4 тоже ждёт коррекции.
+
+**Решения владельца (2026-10-27):** сгенерированные машины дописываются в `catalog.v1.json`
+(хеш каталога меняется; стенды переводятся на новый хеш, откат — git); допуск `always`;
+uk/china/france не допускаются до коррекции наций; первый проход — пилот:
+`ussr-KV1`, `usa-M4_Sherman`, `germany-Waffentrager_E100`, `japan-Chi_Ri`.
+
+**Последовательность** (без флага каталога — прежний путь; стенды не трогаются до 3d):
+
+- 3a. Каталог: строки пилота в `server_profiles.v1.json` с `device_profile=battle-any`; для них
+  `catalog_build` берёт снаряды, устройства и экипаж из проверенной по SHA `battle_profiles.v1.json`
+  (а не из ussr-пинов P09C и P06T caps), сверяя compact ID/дескриптор/HP/роли/БК с research-каталогом;
+  строки с `catalog_nation_correction_required` отвергаются. Метки видов — метки таблицы.
+- 3b. Python/JS: реестр, пул, БК, экипаж и freeze по каталогу v2 (снаряды и установки — из строки,
+  а не из 8-строчного P06T shell catalog).
+- 3c. Шлюз: компаньон и `catalog_identity` по v2; шаблоны profile13 — не массив по индексу, а набор
+  по виду; стенд генерирует пул/конфиг физики/геометрию на вид и карту.
+- 3d. Клиент: подсказки v2, кнопка «В бой» и окна экипажа/БК для сгенерированных видов.
+
 ## Откат
 
 Этап 1 только добавляет файлы (генератор, пины, таблица, доступ, тесты); рантайм их не читает.
