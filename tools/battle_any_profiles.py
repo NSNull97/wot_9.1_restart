@@ -47,6 +47,10 @@ SCHEMA = "wot091-battle-profiles.v1"
 BUNDLE_SCHEMA = "battle-any-source.v1"
 TABLE = ROOT / "config" / "catalog" / "battle_profiles.v1.json"
 BINDING = TOOLS / "battle_any_data.py"
+PHYSICS_DEFINITIONS = ROOT / "server" / "physics" / "Profiles" / "generated-definitions.json"
+GENERATED_POLICY = "battle-any-generated-v1"
+QUALIFICATION = ROOT / "config" / "catalog" / "battle_qualification.v1.json"
+QUALIFICATION_SCHEMA = "wot091-battle-qualification.v1"
 CATALOG_SHA256 = "b6baecd204444d1e894253fa6c19c61478993b8ae87c71373633989d3a8ee460"
 # Original res/scripts/common/nations.pyc order (verified in build, as P06T does).
 # The P09E research catalogue enumerates france/uk/china differently; its
@@ -553,8 +557,34 @@ def runtime_facts(v, vf, comp, names, chassis, turret, row):
     weights = dict(hull=v["hull_mass_grams"] / 1000, **{k: v["module_mass_grams"][v["defaults"][m]] / 1000 for k, m in
                    (("chassis", "chassis"), ("turret", "turret"), ("gun", "gun"), ("engines", "engine"),
                     ("fueltanks", "fuelTank"), ("radios", "radio"))})
+    total = 0.0
+    for key in sorted(weights):
+        total += weights[key]
+    # The physics worker recomputes the assembly mass from these weights in
+    # sorted-key order; any rounding difference is a source error, not clamped.
+    require(total == row["identity"]["mass_kg"], "weights sum differs from assembly mass")
     return dict(kind=kind, shell_suffixes=suffixes, devices=devices, engine_fire_starting_chance=chance,
                 crew_seats=seats, weights_kg=weights)
+
+
+def physics_definitions(table):
+    """Embedded C# definitions of every generated non-legacy kind (exact canonical rows)."""
+    rows = []
+    for r in table["vehicles"]:
+        if r["status"] != "generated" or r["kind"] in LEGACY_SUFFIXES:
+            continue
+        m = r["movement"]
+        rows.append(dict(kind=r["kind"], vehicle=r["vehicle_id"], physics=r["physics"], handling=r["handling"], mapping=MAPPING,
+            source=dict(weights_kg=r["weights_kg"], speed_limits_kmh=m["speed_limits_kmh"], engine_power_hp=m["engine_power_hp"],
+                        brake_force_source=m["brake_force_source"], yaw_rate_degrees_s=m["chassis_rotation_deg_s"],
+                        carrying_point=m["carrying_point"], hull_aabb=r["hull_aabb"],
+                        hull_position=r["pivots"]["hull_position"], support_rule=r["support_rule"])))
+    return dict(version=1, profile="test_lab", policy=GENERATED_POLICY, table_sha256=sha(canonical(table) + b"\n"), profiles=rows)
+
+
+def definition_sha256(row):
+    """C# hashes the embedded row's raw text + LF; the file is canonical JSON."""
+    return sha(canonical(row) + b"\n")
 
 
 def bundle_name(row):
@@ -616,6 +646,7 @@ def export(original, out, update=False):
     if update or committed is None:
         TABLE.write_bytes(raw)
         BINDING.write_bytes(binding(raw))
+        PHYSICS_DEFINITIONS.write_bytes(canonical(physics_definitions(json.loads(raw))) + b"\n")
     table = json.loads(raw)
     counts = {}
     for row in table["vehicles"]:
@@ -637,6 +668,51 @@ def binding(raw):
     return ("\n".join(lines) + "\n").encode("ascii")
 
 
+def qualification_record(out_dir, table_raw):
+    """Closed record of a worker `--qualify-generated-profiles` run: every embedded
+    definition qualified once, file bytes/SHA and native getter bits."""
+    table = json.loads(table_raw)
+    definitions = physics_definitions(table)
+    expected = {row["kind"]: definition_sha256(row) for row in definitions["profiles"]}
+    manifest = json.loads((out_dir / "qualified-manifest.json").read_bytes())
+    require(manifest["version"] == 1 and manifest["policy"] == GENERATED_POLICY and manifest["battle_admission"] is False,
+            "qualification manifest policy")
+    rows = []
+    for entry in manifest["profiles"]:
+        raw = (out_dir / entry["file"]).read_bytes()
+        require(entry["file"] == entry["kind"] + "-qualified-profile.json" and pin(raw) == dict(bytes=entry["bytes"], sha256=entry["sha256"]),
+                "qualified profile pin")
+        document = json.loads(raw)
+        require(document["kind"] == entry["kind"] and document["definition_sha256"] == expected.get(entry["kind"])
+                and document["native_binding"] == entry["native_binding"] and document["battle_admission"] is False,
+                "qualified profile definition binding")
+        n = entry["native_binding"]
+        rows.append(dict(kind=entry["kind"], file=entry["file"], bytes=entry["bytes"], sha256=entry["sha256"],
+                         definition_sha256=entry["definition_sha256"], inverse_mass_bits=n["inverse_mass_bits"],
+                         principal_inverse_bits=n["principal_inverse_bits"], inertia_rotation_bits_xyzw=n["inertia_rotation_bits_xyzw"]))
+    require(sorted(r["kind"] for r in rows) == sorted(expected), "qualification covers every generated definition")
+    return dict(schema=QUALIFICATION_SCHEMA, table_sha256=sha(table_raw),
+                definitions_sha256=sha(canonical(definitions) + b"\n"), policy=GENERATED_POLICY, runtime=manifest["runtime"],
+                classification=manifest["classification"], profiles=sorted(rows, key=lambda r: r["kind"]))
+
+
+def qualify(worker, out):
+    """Run the built physics worker over the embedded definitions; record the result."""
+    import subprocess
+    local = no_links(ROOT / "local").resolve(strict=True)
+    out = owned(local, Path(out).absolute())
+    require(not out.exists() and out.parent.is_dir(), "fresh output with existing parent required")
+    worker = Path(worker).resolve(strict=True)
+    result = subprocess.run([str(worker), "--qualify-generated-profiles", "--local-root", str(local), "--out", str(out)],
+                            capture_output=True, timeout=600, check=False)
+    require(result.returncode == 0, "worker qualification failed: " + result.stderr.decode("utf-8", "replace")[-400:])
+    record = qualification_record(out, TABLE.read_bytes())
+    raw = canonical(record) + b"\n"
+    QUALIFICATION.write_bytes(raw)
+    return dict(status="PASS_GENERATED_QUALIFIED", profiles=len(record["profiles"]), qualification_sha256=sha(raw),
+                worker_sha256=record["runtime"]["qualified_worker_sha256"], out=str(out))
+
+
 def check(path=TABLE):
     raw = path.read_bytes()
     require(0 < len(raw) <= MAX_TABLE, "table size")
@@ -654,6 +730,8 @@ def check(path=TABLE):
             require({"physics", "handling", "geometry", "shots", "gun"} <= set(row), "generated row incomplete")
     require([r["vehicle_id"] for r in table["vehicles"]] == sorted(seen), "vehicle order")
     require(path != TABLE or BINDING.read_bytes() == binding(raw), "generated binding differs from table")
+    require(path != TABLE or PHYSICS_DEFINITIONS.read_bytes() == canonical(physics_definitions(table)) + b"\n",
+            "generated physics definitions differ from table")
     return dict(status="PASS", table_sha256=sha(raw), vehicles=len(seen),
                 generated=sum(r["status"] == "generated" for r in table["vehicles"]))
 
@@ -665,10 +743,14 @@ def main(argv=None):
     b.add_argument("--original", type=Path, required=True)
     b.add_argument("--out", type=Path, required=True)
     b.add_argument("--update", action="store_true")
+    q = sub.add_parser("qualify")
+    q.add_argument("--worker", type=Path, required=True)
+    q.add_argument("--out", type=Path, required=True)
     sub.add_parser("check")
     args = parser.parse_args(argv)
     try:
-        result = export(args.original, args.out, args.update) if args.command == "build" else check()
+        result = (export(args.original, args.out, args.update) if args.command == "build"
+                  else qualify(args.worker, args.out) if args.command == "qualify" else check())
         print(json.dumps(result, sort_keys=True))
         return 0
     except (OSError, ValueError, KeyError, TypeError) as error:

@@ -50,7 +50,13 @@ internal static class BattleSceneInput
             AngularBodyBinding binding;
             if(version>=2&&row.GetProperty("source_profile").ValueKind!=JsonValueKind.Null)
             {
-                if(kind is "wt-e100-128" or "fv215b-183")
+                if(GeneratedVehicleProfiles.IsGenerated(kind))
+                {
+                    if(version!=3)throw new InvalidDataException("generated kind requires manifest3");
+                    ExtendedProfileQualification.Runtime();
+                    binding=GeneratedVehicleProfiles.Select(root,row.GetProperty("source_profile"),c,kind);
+                }
+                else if(kind is "wt-e100-128" or "fv215b-183")
                 {
                     if(version!=3)throw new InvalidDataException("extended kind requires manifest3");
                     ExtendedProfileQualification.Runtime();
