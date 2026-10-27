@@ -47,7 +47,8 @@ def rust_match(name):
 def rust_block(name):
     source = (ROOT / "server/gateway/src/shared/vehicle_profile.rs").read_text(encoding="utf-8")
     start = source.index("pub fn %s(self)" % name)
-    return source[start:source.index("pub fn ", start + 10)]
+    end = source.find("pub fn ", start + 10)
+    return source[start:end if end > 0 else source.index("#[cfg(test)]", start)]
 
 
 def built():
@@ -183,8 +184,8 @@ class ExistingProfilesReproduced(unittest.TestCase):
             r = table[(m["nation"], m["vehicle_resource"])]
             if r["gun"]["resource"] != m["gun_resource"]:
                 continue
-            strip = lambda s: {k: v for k, v in s.items() if k not in ("shell_source_path", "shot_source_path")}
-            self.assertEqual([strip(s) for s in m["shots"]], r["shots"], m["id"])
+            strip = lambda s: {k: v for k, v in s.items() if k not in ("shell_source_path", "shot_source_path", "effects_index")}
+            self.assertEqual([strip(s) for s in m["shots"]], [strip(s) for s in r["shots"]], m["id"])
             self.assertEqual((m["max_ammo"], m["reload_seconds"], m["clip_count"], m["clip_interval_seconds"]),
                 (r["gun"]["max_ammo"], r["gun"]["reload_seconds"], r["gun"]["clip_count"], r["gun"]["clip_interval_seconds"]))
             self.assertEqual(m["vehicle_type_compact_descr"], r["identity"]["type_compact_id"], m["id"])
@@ -218,6 +219,40 @@ class ExistingProfilesReproduced(unittest.TestCase):
         self.assertEqual(set(descriptors), set(by) - {"ms1"})
         for kind, raw in descriptors.items():
             self.assertEqual(by[kind]["identity"]["descriptor_hex"], raw.hex(), kind)
+
+    def test_device_caps_and_crew_equal_p06t(self):
+        by = existing()
+        src = (ROOT / "server/gateway/src/shared/p06t_device_caps.rs").read_text(encoding="utf-8")
+        order = ["ms1", "is7", "t26", "t34", "t3485", "wt-e100-128", "fv215b-183"]
+        caps = re.search(r"pub const CAPS:\[\[Cap;9\];7\]=\[(.*?)\n\];", src, re.S).group(1).strip().splitlines()
+        crew = re.search(r"pub const CREW:\[&\[Seat\];7\]=\[(.*?)\n\];", src, re.S).group(1).strip().splitlines()
+        fire = [float(x) for x in re.search(r"ENGINE_FIRE_CHANCE:\[f64;7\]=\[([^\]]*)\]", src).group(1).split(",")]
+        for i, kind in enumerate(order):
+            r = by[kind]
+            self.assertEqual([(int(a), int(b)) for a, b in re.findall(r"max:(\d+),regen:(\d+)", caps[i])],
+                             [(d["max_health"], d["max_regen_health"]) for d in r["devices"]], kind)
+            self.assertEqual([(int(a), int(b)) for a, b in re.findall(r"extra:(\d+),roles:(\d+)", crew[i])],
+                             [(x["extra_index"], x["role_bits"]) for x in r["crew_seats"]], kind)
+            self.assertEqual(fire[i], r["engine_fire_starting_chance"], kind)
+
+    def test_aim_and_effects_equal_rust(self):
+        by = existing()
+        block = rust_block("aim")
+        arms = re.split(r"Self::(\w+)\s*=>\s*AimSpec", block)[1:]
+        aims = {RUST_KINDS[arms[i]]: arms[i + 1] for i in range(0, len(arms), 2)}
+        self.assertEqual(set(aims), set(by))
+        for kind, text in aims.items():
+            g = by[kind]["gun"]
+            field = lambda name: float(re.search(name + r":\s*(-?[0-9.]+)", text).group(1))
+            self.assertEqual(field("yaw_rate"), g["turret_rotation_deg_s"], kind)
+            self.assertEqual(field("pitch_rate"), g["gun_rotation_deg_s"], kind)
+            self.assertEqual((field("min_pitch"), field("max_pitch_degrees")), tuple(g["pitch_envelope"]["basic"]), kind)
+            self.assertEqual(field("turret_dispersion"), g["dispersion_turret_rotation"], kind)
+            self.assertEqual(field("hull_dispersion"), g["dispersion_vehicle_rotation"], kind)
+            self.assertEqual(field("aiming_time"), g["aiming_seconds"], kind)
+        effects = {RUST_KINDS[k]: int(v.split(",")[-1]) for k, v in re.findall(r"Self::(\w+)\s*=>\s*\(([^)]*)\)", rust_block("shell"))}
+        for kind, index in effects.items():
+            self.assertEqual(by[kind]["shots"][0]["effects_index"], index, kind)
 
     def test_catalog_v1_five_unchanged(self):
         catalog = json.loads((ROOT / "config/catalog/catalog.v1.json").read_bytes())
