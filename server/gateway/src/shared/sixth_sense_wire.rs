@@ -42,7 +42,7 @@ mod tests {
     use super::*;
     #[test]
     fn p07b_candidate_misc_status_has_the_source_signature_and_bounded_slot() {
-        for slot in 0..model::MAX_ACTORS {
+        for slot in 0..wire::MAX_NATIVE_ACTORS {
             let bytes=body(slot).unwrap();
             assert_eq!(bytes.len(),15);
             assert_eq!(&bytes[..2],&[0x13,METHOD_ID_CANDIDATE]);
@@ -50,6 +50,6 @@ mod tests {
             assert_eq!(bytes[6],OBSERVED_BY_ENEMY);
             assert_eq!(&bytes[7..],&[0;8]);
         }
-        assert!(body(model::MAX_ACTORS).is_err());
+        assert!(body(wire::MAX_NATIVE_ACTORS).is_err());
     }
 }

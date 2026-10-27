@@ -11,7 +11,7 @@ use std::{io, sync::Arc};
 pub const MAX_OBJECTS: usize = 2048;
 pub const MAX_CONTACTS: usize = 16_384;
 pub const MAX_DESTRUCTION_EVENTS: usize = MAX_OBJECTS;
-pub const MAX_ACTORS: usize = 6;
+pub const MAX_ACTORS: usize = super::model::MAX_ACTORS;
 pub const MAX_MAP_ASSET_BYTES: usize = 128;
 pub const MAX_REVISION_BYTES: usize = 128;
 pub const MAX_MASS_KG: f32 = 1_000_000.;

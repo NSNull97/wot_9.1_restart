@@ -5,7 +5,10 @@ use crate::battle091::fire;
 use super::{ram_proof,aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile, vehicle_profile::VehicleKind};
 
 pub const CAPACITY: usize = 2;
-pub const MAX_ACTORS: usize = 6;
+/// ARENA-01: the one type bound for an arena roster (15v15 = 30, client
+/// `arena_defs/_default_.xml` maxPlayersInTeam=15). Native wire stays at
+/// `wire::MAX_NATIVE_ACTORS`; every module refers to this constant.
+pub const MAX_ACTORS: usize = 30;
 pub const LIFETIME: Duration = Duration::from_secs(3600);
 pub const STEP: Duration = Duration::from_millis(100);
 pub const MAX_COMMANDS: usize = 32;

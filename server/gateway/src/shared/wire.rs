@@ -32,8 +32,12 @@ pub fn aim_intent(raw: &[u8], own: usize) -> io::Result<Option<aim::Intent>> {
         else { aim::Intent::Point([value(0),value(1),value(2)]) };
     intent.validate()?; Ok(Some(intent))
 }
+/// ARENA-01: native entity/alias layout below covers six vehicles (aliases
+/// 0/1 and 240..243; detached turrets own 248..253). A larger arena exists
+/// in the domain and Jolt scene only until a native layout is verified.
+pub const MAX_NATIVE_ACTORS: usize = 6;
 pub fn vehicle_id(slot: usize) -> io::Result<u32> {
-    if slot >= model::MAX_ACTORS { return Err(model::bad()); }
+    if slot >= MAX_NATIVE_ACTORS { return Err(model::bad()); }
     // The original pair occupies3/5; AreaDestructibles owns7..150. New
     // actors and their Avatars use another server-owned entity ID range.
     Ok(if slot<2 {vehicle::VEHICLE_ENTITY_ID+2*slot as u32}
@@ -674,7 +678,7 @@ mod tests {
     #[test] fn six_actor_and_full_area_catalog_namespaces_never_overlap() {
         use super::super::destructible_wire as areas;
         let mut ids=std::collections::BTreeSet::new();let mut aliases=std::collections::BTreeSet::new();
-        for slot in 0..model::MAX_ACTORS {
+        for slot in 0..MAX_NATIVE_ACTORS {
             assert!(ids.insert(vehicle_id(slot).unwrap()));assert!(ids.insert(avatar_id(slot).unwrap()));
             assert!(aliases.insert(vehicle_alias(slot).unwrap()));
         }

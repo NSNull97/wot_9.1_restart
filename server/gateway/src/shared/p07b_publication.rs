@@ -26,7 +26,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::io;
 
-pub const MAX_ACTORS: usize = 6;
+pub const MAX_ACTORS: usize = super::model::MAX_ACTORS;
 pub const MAX_PENDING: usize = 64;
 /// Four publication kinds per admitted shot, with room for the full six-seat
 /// laboratory shot ceiling (960).  Keeping the ledger through a battle is

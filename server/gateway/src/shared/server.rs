@@ -2857,7 +2857,7 @@ mod tests {
         let (_,mut rejoin,_)=visible_pair(at);
         rejoin.shared.as_mut().unwrap().impact_cursor=w.impacts.len();
         rejoin.shared.as_mut().unwrap().shot_cursor=w.latest_shot();
-        rejoin.shared.as_mut().unwrap().health_sent=[Some(90),Some(0),None,None,None,None];
+        rejoin.shared.as_mut().unwrap().health_sent=std::array::from_fn(|slot|[Some(90),Some(0)].get(slot).copied().flatten());
         let creation=wire::create_vehicle(&w,1).unwrap();
         assert!(creation.windows(7).any(|r|r==[3,0,0,4,0,0,5]));
         rejoin.shared.as_mut().unwrap().view=Some(w.clone());
@@ -2907,7 +2907,7 @@ mod tests {
         let (_,mut rejoin,_)=visible_pair(at);
         let c=rejoin.shared.as_mut().unwrap();
         c.impact_cursor=w.impacts.len(); c.shot_cursor=w.latest_shot();
-        c.health_sent=[Some(90),Some(0),None,None,None,None]; c.owner_health_sent=Some(0); c.view=Some(w.clone());
+        c.health_sent=std::array::from_fn(|slot|[Some(90),Some(0)].get(slot).copied().flatten()); c.owner_health_sent=Some(0); c.view=Some(w.clone());
         poll(&mut rejoin,&mut w,at).unwrap();
         assert!(queued_bodies(&rejoin,at).is_empty());
         assert_eq!(w.actors[1].health,0);

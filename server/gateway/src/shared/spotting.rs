@@ -8,7 +8,7 @@ use std::io;
 use super::{pose, visibility::MAX_VIEW_RANGE};
 
 pub const POLICY: &str = "p07b-717-source-points-no-camo.v1";
-pub const MAX_ACTORS: usize = 6;
+pub const MAX_ACTORS: usize = super::model::MAX_ACTORS;
 type Point = [f32; 3];
 
 fn bad(message: &'static str) -> io::Error { io::Error::new(io::ErrorKind::InvalidData, message) }

@@ -35,7 +35,7 @@ fn contains(body:&[u8],bytes:&[u8])->bool{body.windows(bytes.len()).any(|part|pa
     let c=s.shared.as_mut().unwrap();publish(c,&mut s.outbox,&world,now).unwrap();
     let old=dt::terminal_health(1,Some(0),0,dt::DeathKind::Detached).unwrap();
     assert!(c.private_pending.iter().any(|p|contains(&p.body,&old)&&p.targets.contains(&(0,0))));
-    c.interest.as_mut().unwrap().set_desired([true,true,false,false,false,false],[false,true,false,false,false,false]).unwrap();
+    c.interest.as_mut().unwrap().set_desired(std::array::from_fn(|slot|slot<2),std::array::from_fn(|slot|slot==1)).unwrap();
     // Drain the public ammo/roster bodies before applying the private visibility
     // fence, exactly as the production outbox/window order requires.
     s.drain_outbox().unwrap();s.flush_shared_private().unwrap();

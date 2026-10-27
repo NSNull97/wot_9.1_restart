@@ -9,7 +9,7 @@ use serde::{Deserialize,Deserializer,de::{self,Visitor,MapAccess,SeqAccess}};
 use serde_json::{Value,Map,Number,json};
 use sha2::{Digest,Sha256};
 use crate::worker_cadence091::{self as cadence, Sink};
-pub const MAX_ACTORS:usize=6;
+pub const MAX_ACTORS:usize=crate::gateway091::shared::model::MAX_ACTORS;
 #[cfg(test)]
 #[path="scene_worker/tests_p04m.rs"]
 mod tests_p04m;

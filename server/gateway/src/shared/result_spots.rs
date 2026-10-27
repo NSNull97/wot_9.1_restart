@@ -6,7 +6,7 @@
 use std::io;
 
 pub(crate) const POLICY: &str = "test_lab.p08c.first-visible-enemy-lowest-slot.v1";
-const MAX_ACTORS:usize=6;
+const MAX_ACTORS:usize=super::MAX_ACTORS;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub(crate) struct SpotRecord {observer:usize,target:usize,tick:u32}
@@ -94,7 +94,7 @@ mod tests {
     }
     #[test]fn p08c_first_spot_reveal_and_repeated_respot_do_not_change_credit(){
         let members=roster(2);
-        let hidden=refresh(&[],None,1000,&members,|slot|{let mut row=[false;6];row[slot]=true;Ok(row)}).unwrap();
+        let hidden=refresh(&[],None,1000,&members,|slot|{let mut row=[false;MAX_ACTORS];row[slot]=true;Ok(row)}).unwrap();
         assert!(hidden.is_empty());
         let revealed=refresh(&hidden,Some(1000),1001,&members,|_|Ok(all(2))).unwrap();
         assert_eq!(revealed.len(),2);
@@ -119,8 +119,8 @@ mod tests {
     }
     #[test]fn p08c_first_spot_invalid_visibility_row_is_not_treated_as_visible(){
         let members=roster(2);
-        assert!(refresh(&[],None,1000,&members,|_|Ok([false;6])).is_err());
-        assert!(refresh(&[],None,1000,&members,|_|Ok([true;6])).is_err());
+        assert!(refresh(&[],None,1000,&members,|_|Ok([false;MAX_ACTORS])).is_err());
+        assert!(refresh(&[],None,1000,&members,|_|Ok([true;MAX_ACTORS])).is_err());
         let mut invalid=members;invalid[1].team=1;
         assert!(refresh(&[],None,1000,&invalid,|_|panic!("team validation")).is_err());
     }

@@ -3,7 +3,7 @@
 use std::io;
 
 pub const POLICY:&str="test_lab.p10b.team-ordered-qualified-lanes.v1";
-pub const MAX_ACTORS:usize=6;
+pub const MAX_ACTORS:usize=super::model::MAX_ACTORS;
 
 fn bad()->io::Error{io::Error::new(io::ErrorKind::InvalidData,"P10B team plan:2..6 members,1..3 per side and a present roster slot required")}
 

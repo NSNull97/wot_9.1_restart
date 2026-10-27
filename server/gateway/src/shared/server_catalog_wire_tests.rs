@@ -153,12 +153,12 @@ fn six_actor_native_requests_commit_atomically_and_ready_remains_bound_to_slot_f
     let before=s.clone();let mut poisoned=requests.clone();poisoned.extend(request(wire::vehicle_id(5).unwrap()));
     assert!(s.receive(&frame(&s,&poisoned),now).is_err());assert_input_rolled_back(&s,&before,now);
     s.receive(&frame(&s,&requests),now).unwrap();let c=s.shared.as_ref().unwrap();
-    assert_eq!(c.pending_entity_requests.len(),0);assert!(c.creations.iter().all(Option::is_some));
+    assert_eq!(c.pending_entity_requests.len(),0);assert!(c.creations[..6].iter().all(Option::is_some));
     assert_eq!(s.tx.len(),6);
     let selective=vec![c.creations[3].unwrap().0,c.creations[5].unwrap().0];
     let ack=Frame{flags:0x408,sequence:None,cumulative:Some(0),selective,body:vec![],piggybacks:vec![]};
     s.shared.as_mut().unwrap().acknowledge(0,&ack).unwrap();
-    assert_eq!(s.shared.as_ref().unwrap().visible(),[false,false,false,true,false,true]);
+    assert_eq!(s.shared.as_ref().unwrap().visible()[..6],[false,false,false,true,false,true]);
     let before=s.clone();assert!(s.receive(&frame(&s,&ready(0)),now).is_err());assert_input_rolled_back(&s,&before,now);
     ack_current_and_flush(&mut s,now);s.receive(&frame(&s,&ready(5)),now).unwrap();
     assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Driving);assert_eq!(s.shared.as_ref().unwrap().slot,5);

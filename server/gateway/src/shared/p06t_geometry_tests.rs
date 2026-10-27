@@ -130,9 +130,9 @@ fn p06t_geometry_inside_and_zero_direction_centers_still_require_actual_surfaces
         let outside=center(&b,&a,0,-1.);
         assert!(b.explosion_contact(&a,outside,0.01,1,0,1000).unwrap().is_none());
         for radius in [0.,-1.,f32::NAN,f32::INFINITY,16.01] {assert!(b.explosion_contact(&a,outside,radius,1,0,1000).is_err());}
-        for shot in [0,961,u32::MAX] {assert!(b.explosion_contact(&a,outside,5.05,shot,0,1000).is_err());}
+        for shot in [0,model::MAX_BATTLE_SHOTS as u32+1,u32::MAX] {assert!(b.explosion_contact(&a,outside,5.05,shot,0,1000).is_err());}
         assert!(b.explosion_contact(&a,[f32::NAN,0.,0.],5.05,1,0,1000).is_err());
-        assert!(b.explosion_contact(&a,outside,5.05,1,6,1000).is_err());
+        assert!(b.explosion_contact(&a,outside,5.05,1,model::MAX_ACTORS,1000).is_err());
         assert!(b.explosion_contact(&a,outside,5.05,1,0,999).is_err());
         let wrong=actor(if kind==VehicleKind::Ms1{VehicleKind::Is7}else{VehicleKind::Ms1});
         assert!(b.explosion_contact(&wrong,outside,5.05,1,0,1000).is_err());

@@ -12,7 +12,7 @@ fn bad(why:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,fo
 #[derive(Clone,Default)]
 enum OwnerState{#[default] Waiting,Stamped(ReleaseStamp),Appended,Rejected(String)}
 #[derive(Clone)]
-struct Entry{capture:Capture,owners:[OwnerState;6],invalid:Option<String>}
+struct Entry{capture:Capture,owners:[OwnerState;super::model::MAX_ACTORS],invalid:Option<String>}
 impl Entry{
     fn new(capture:Capture)->Self{Self{capture,owners:std::array::from_fn(|_|OwnerState::Waiting),invalid:None}}
     fn settled(&self)->bool{self.invalid.is_some()||self.capture.seal().is_some()&&self.capture.links().iter().all(|l|
