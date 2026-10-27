@@ -226,6 +226,9 @@ impl<'de> Deserialize<'de> for ConfigFields{
     }
 }
 
+/// GW-01 target from ADR-002: one gateway process holds at most this many sessions.
+pub const MAX_CONNECTIONS:usize=256;
+
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
     token:String,pub local_root:PathBuf,pub session_duration:Duration,
@@ -239,6 +242,8 @@ pub struct Config {
     pub catalog_v1:bool,
     /// DOM-01: hangar/battle writer paths go to the long-lived Domain service (default: bridge HTTP).
     domain:Option<domain_client::Endpoint>,
+    /// GW-01: connections the gateway holds, separate from arena places (absent: battle_players, old path).
+    pub connection_capacity:Option<usize>,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -324,6 +329,16 @@ impl Config {
         if p08b_owner_battle_hold&&(!profile13_battle||!p04m_pool||!p06t_mixed_ammo||!p06t_ammo_rack_detonation||!visibility_v1||training_rooms||p08c_late_results){
             return Err(invalid("hold5 requires complete owned loss policy; TrainingLoss4 and old late observer are not version5"));
         }
+        let connection_capacity=match value.remove("connection_capacity"){
+            None=>None,
+            Some(Value::Number(n))=>Some(n.as_u64().filter(|n|(battle_players as u64..=MAX_CONNECTIONS as u64).contains(n))
+                .ok_or_else(||invalid("connection_capacity must be battle_players..256"))? as usize),
+            _=>return Err(invalid("connection_capacity must be integer")),
+        };
+        // Training rooms and hold5 start only when every session is in the arena.
+        if connection_capacity.is_some()&&(!profile13_battle||training_rooms||p08b_owner_battle_hold){
+            return Err(invalid("connection_capacity requires profile13 battle without training rooms or hold5"));
+        }
         // CAT-01: exact {"version":1,"sha256":<this build's catalog>}; a foreign hash refuses start.
         let catalog_v1=match value.remove("catalog"){
             None=>false,
@@ -360,7 +375,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -1209,3 +1224,7 @@ mod net02_loss_config_tests;
 #[cfg(test)]
 #[path="domain_config_tests.rs"]
 mod domain_config_tests;
+
+#[cfg(test)]
+#[path="capacity_config_tests.rs"]
+mod capacity_config_tests;

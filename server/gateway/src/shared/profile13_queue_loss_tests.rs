@@ -4,7 +4,7 @@ use super::*;
 use crate::profile13_loss091::{self as codec,Reply,Reservation};
 use sha2::{Digest,Sha256};
 use std::{path::{Path,PathBuf},sync::atomic::{AtomicU64,Ordering}};
-fn writer(index:usize)->(Context,RequestLoss,Reply){
+pub(super) fn writer(index:usize)->(Context,RequestLoss,Reply){
     let raw=include_bytes!("../../../../tests/fixtures/p06t-ammo-loss-queue-vectors.json");
     assert_eq!(format!("{:x}",Sha256::digest(raw)),"9c3d0ca15a66238b3e1f0991562c37a9c096cbd93e2261b67858489a2297d450");
     let data:serde_json::Value=serde_json::from_slice(raw).unwrap();
@@ -29,7 +29,7 @@ fn fixtures()->(PathBuf,Arc<crate::hangar091::Fixtures>){
     fs::write(path.join("dossier.bin"),b"\x80\x02(K\x00]t.").unwrap();
     let loaded=Arc::new(crate::hangar091::Fixtures::load_interactive(&path).unwrap());(path,loaded)
 }
-fn account_context(now:Instant,context:Context)->Session{
+pub(super) fn account_context(now:Instant,context:Context)->Session{
     let(path,fixtures)=fixtures();
     let mut s=Session::new(7,[7;16],"127.0.0.1:41707".parse().unwrap(),now);
     s.identity=Some(Arc::new(crate::identity091::Profile{account_id:context.account_id.clone(),database_id:context.native_database_id,
@@ -43,7 +43,7 @@ fn account_context(now:Instant,context:Context)->Session{
     client.profile13=Some(service::State::new(context.run_id,context.expected_revision).unwrap());s.shared=Some(client);s
 }
 fn account(now:Instant)->Session{account_context(now,writer(1).0)}
-fn native(command:i16,first:i64,mask:i32)->Vec<u8>{
+pub(super) fn native(command:i16,first:i64,mask:i32)->Vec<u8>{
     let mut bytes=vec![0x8e,20,0,202,0];bytes.extend(command.to_le_bytes());bytes.extend(first.to_le_bytes());
     bytes.extend(mask.to_le_bytes());bytes.extend(0i32.to_le_bytes());bytes
 }
@@ -51,7 +51,7 @@ fn frame(s:&Session,sequence:u32,payload:&[u8])->Frame{
     Frame{flags:0x458,sequence:Some(sequence),cumulative:Some(0),selective:vec![],
         body:[vec![1],s.token.to_le_bytes().to_vec(),payload.to_vec()].concat(),piggybacks:vec![]}
 }
-fn receive(s:&mut Session,payload:&[u8],now:Instant){let packet=frame(s,s.rx,payload);assert!(!s.receive(&packet,now).unwrap());}
+pub(super) fn receive(s:&mut Session,payload:&[u8],now:Instant){let packet=frame(s,s.rx,payload);assert!(!s.receive(&packet,now).unwrap());}
 fn due_native(s:&mut Session,now:Instant)->Vec<Vec<u8>>{
     let mut bodies=Vec::new();
     while let Some((_,_,raw))=s.tx.due(now,s.rx).unwrap(){bodies.push(crate::transport091::parse_interactive(&raw).unwrap().body);}
@@ -67,13 +67,13 @@ fn completion(s:&Session,index:usize)->service::CompletionLoss{
     service::CompletionLoss{session:s.id,old_owner:owner.clone(),context,request,reply:reply.clone(),refresh_error:None,
         fresh:Some(service::Fresh{owner,fixtures:s.hangar.clone().unwrap(),binding:crate::ammo_service091::Metadata{revision:reply.revision,wire_revision:1}})}
 }
-fn reserved(now:Instant)->(Session,Reservation){
+pub(super) fn reserved(now:Instant)->(Session,Reservation){
     let mut s=account(now);receive(&mut s,&native(700,1,1),now);state(&mut s).unwrap().in_flight=true;
     let c=completion(&s,1);Dispatcher::deliver_loss(&mut s,c,now).unwrap();
     assert_eq!(s.outbox.pop_front().unwrap(),crate::map_drive_world091::queue_callback(true));assert!(s.outbox.is_empty());
     let row=state(&mut s).unwrap().reservation_loss.clone().unwrap();(s,row)
 }
-fn world(r:&Reservation,now:Instant)->World{
+pub(super) fn world(r:&Reservation,now:Instant)->World{
     let mut w=World::new_for_roster(r.battle,now,crate::map_profile091::MapId::Karelia,2).unwrap();
     w.enable_mixed_ammo().unwrap();
     w.bind_geometry(Arc::new(super::super::super::super::geometry::tests::bundle())).unwrap();

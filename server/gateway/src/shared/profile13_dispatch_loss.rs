@@ -143,12 +143,13 @@ impl Dispatcher{
         if self.task_v2.is_some()||self.job_v2.is_some()||self.task.is_some()||self.job.is_some(){return Err(model::bad());}
         if self.task_loss.is_some()||self.job_loss.is_some(){return Ok(());}
         if !world.mixed_ammo(){return Err(model::bad());}
+        let arena_open=table.arena_admission_open(&self.retired,world);
         for terminal_only in[true,false]{for s in self.retired.iter_mut().chain(table.sessions.iter_mut()){
             let Some(c)=&s.shared else{continue;};let Some(p)=&c.profile13 else{continue;};
             if p.reservation_v2.is_some()||p.pending_return_v2.is_some()||p.in_flight||p.reservation.is_some()||p.pending_return.is_some(){return Err(model::bad());}
             let pending=p.pending_return_loss.is_some();if terminal_only!=pending{continue;}
             if pending&&world.actors.iter().any(|a|a.session==Some(s.id)){continue;}
-            if !pending&&(p.reservation_loss.is_some()||world.started.is_some()||p.selection.is_none()||!s.active||!c.join_requested||!s.ammo_service.as_ref().is_some_and(ammo_session::State::idle)){continue;}
+            if !pending&&(p.reservation_loss.is_some()||world.started.is_some()||p.selection.is_none()||!s.active||!c.join_requested||!s.ammo_service.as_ref().is_some_and(ammo_session::State::idle)||!arena_open){continue;}
             let owner=s.identity.clone().ok_or_else(||model::bad())?;let revision=s.ammo_service.as_ref().ok_or_else(||model::bad())?.revision();let sid=s.id;
             let p=state(s)?;p.revision=revision;let request=if let Some(t)=&p.pending_return_loss{t.request()}else{RequestLoss::Admit{battle:world.id,native_inventory_id:p.selection.ok_or_else(||model::bad())?}};
             let context=p.next_context(&owner,sid)?;let task=TaskLoss{session:sid,owner,context,request};let job=task.start(config.clone())?;p.in_flight=true;
@@ -161,3 +162,7 @@ impl Dispatcher{
 #[cfg(test)]
 #[path="profile13_queue_loss_tests.rs"]
 mod queue_loss_tests;
+
+#[cfg(test)]
+#[path="gw01_capacity_dispatch_tests.rs"]
+mod gw01_capacity_dispatch_tests;

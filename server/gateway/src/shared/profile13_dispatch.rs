@@ -245,6 +245,7 @@ impl Dispatcher {
         if self.task.is_some() || self.job.is_some() {return Ok(());}
         // Terminal receipts always precede new admissions. Retired owners stay
         // fenced until their known/ambiguous writer outcome is resolved.
+        let arena_open=table.arena_admission_open(&self.retired,world);
         for terminal_only in [true,false] {
             for s in self.retired.iter_mut().chain(table.sessions.iter_mut()) {
                 let Some(c)=&s.shared else {continue;};
@@ -257,7 +258,7 @@ impl Dispatcher {
                 // actually detached (or the entire failed world was replaced).
                 if pending && world.actors.iter().any(|a|a.session==Some(s.id)) {continue;}
                 if !pending && (world.started.is_some() || p.selection.is_none() || !s.active || !c.join_requested
-                    || !s.ammo_service.as_ref().is_some_and(ammo_session::State::idle)) {continue;}
+                    || !s.ammo_service.as_ref().is_some_and(ammo_session::State::idle) || !arena_open) {continue;}
                 let owner=s.identity.clone().ok_or_else(||model::bad())?;
                 let revision=s.ammo_service.as_ref().ok_or_else(||model::bad())?.revision();
                 let sid=s.id;let p=state(s)?;p.revision=revision;

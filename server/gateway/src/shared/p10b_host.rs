@@ -100,7 +100,7 @@ impl Host{
                 let s=staged.iter().find(|s|s.id==item.selection.session()).ok_or_else(||bad("P10B launch Session retired"))?;
                 origins.insert(member.account(),launch::LaunchOrigin::capture(s,&controller,item.task.clone(),item.selection.clone())?);
             }
-            let mut shadow=Table{sessions:staged,retirement:RetirementWindow::default(),capacity:table.capacity};
+            let mut shadow=Table{sessions:staged,retirement:RetirementWindow::default(),capacity:table.capacity,arena_split:table.arena_split};
             preparing=Some(prepare::Preparing::begin(task.clone(),room::BattleKey(world.id),origins,&controller,&mut shadow)?);staged=shadow.sessions;
         }
         if result.events.iter().any(|e|matches!(e,room::Event::AbortRequested{..})){if let Some(p)=&mut preparing{p.abort();}}

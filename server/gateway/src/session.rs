@@ -63,13 +63,27 @@ pub(crate) enum Denial {
     ClockRegression,
 }
 
-#[derive(Default)]
 pub(crate) struct RetirementWindow {
     records: VecDeque<RetiredSession>,
     last_time: Option<Instant>,
+    limit: usize,
+}
+
+impl Default for RetirementWindow {
+    fn default() -> Self { Self { records: VecDeque::new(), last_time: None, limit: MAX_RETIRED } }
 }
 
 impl RetirementWindow {
+    /// GW-01: a larger connection table needs a proportionally larger replay
+    /// window; never smaller than the measured single-session bound.
+    pub(crate) fn with_limit(limit: usize) -> Self {
+        Self { limit: limit.max(MAX_RETIRED), ..Self::default() }
+    }
+
+    pub(crate) fn limit(&self) -> usize {
+        self.limit
+    }
+
     fn expire(&mut self, now: Instant) -> Result<(), Denial> {
         if self.last_time.is_some_and(|last| now < last) {
             return Err(Denial::ClockRegression);
@@ -102,7 +116,7 @@ impl RetirementWindow {
                 return Err(Denial::RetiredPeerForKey);
             }
         }
-        if self.retained_count() >= MAX_RETIRED {
+        if self.retained_count() >= self.limit {
             return Err(Denial::CapacityFull);
         }
         Ok(())
@@ -128,7 +142,7 @@ impl RetirementWindow {
     pub(crate) fn retire(&mut self, attempt: LoginAttempt, base_peer: Option<SocketAddr>,
                         now: Instant) -> Result<(), Denial> {
         self.expire(now)?;
-        if self.retained_count() >= MAX_RETIRED {
+        if self.retained_count() >= self.limit {
             return Err(Denial::CapacityFull);
         }
         self.records.push_back(RetiredSession { attempt, base_peer, closed_at: now });
