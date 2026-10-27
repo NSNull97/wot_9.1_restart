@@ -108,14 +108,42 @@ class MixedAmmoStore(PoolStore):
         document = json_value(raw, limit=32768, nodes=6000, depth=12)
         require(document["schema"] == "p06t-shell-catalog.v1" and len(document["mounts"]) == 8, "P06T_SOURCE_MISMATCH")
         self.mixed_mounts = {row["id"]: row for row in document["mounts"] if row["id"] in self.mounts}
-        require(set(self.mixed_mounts) == set(self.mounts), "P06T_SOURCE_MISMATCH")
+        generated = self._generated_mounts()
+        require(set(self.mixed_mounts) | set(generated) == set(self.mounts) and not set(self.mixed_mounts) & set(generated), "P06T_SOURCE_MISMATCH")
+        if generated:
+            self.terminal_policy = self.terminal_policy.with_generated({key[:-len("-stock")]: row for key, row in generated.items()})
         for key, mount in self.mounts.items():
+            if key in generated:
+                continue
             data = self.mixed_mounts[key]
             require(data["max_ammo"] == mount.capacity and data["clip_count"] == data["burst_count"] == 1
                 and data["vehicle_type_compact_descr"] == mount.vehicle_native_compact_id
                 and data["gun_compact_descr"] == mount.gun_native_compact_id
                 and [row["compact_descr"] for row in data["shots"]] == [self.shells[s].native_compact_id for s in mount.shell_ids]
                 and [row["family"] for row in data["shots"]] == [self.shells[s].kind for s in mount.shell_ids], "P06T_SOURCE_MISMATCH")
+
+    def _generated_mounts(self):
+        """{assembly_id: generated table row} of BATTLE-ANY catalog kinds; each must
+        equal its pool mount exactly (capacity, type/gun IDs, ordered shells)."""
+        import catalog_v1
+        if not catalog_v1.active():
+            return {}
+        import battle_any
+        from p04m_stock_registry import PINS
+        result = {}
+        for kind, p in self.registry.profiles.items():
+            if kind in PINS or p.assembly_id not in self.mounts or p.assembly_id in self.mixed_mounts:
+                continue
+            row = battle_any.profile(p.vehicle_id)
+            require(row is not None and row["status"] == "generated" and row["kind"] == kind, "P06T_SOURCE_MISMATCH")
+            mount = self.mounts[p.assembly_id]
+            require(row["gun"]["max_ammo"] == mount.capacity and not row["gun"]["burst"]
+                and row["identity"]["type_compact_id"] == mount.vehicle_native_compact_id
+                and row["identity"]["module_compact_ids"]["gun"] == mount.gun_native_compact_id
+                and [s["compact_descr"] for s in row["shots"]] == [self.shells[s].native_compact_id for s in mount.shell_ids]
+                and [s["family"] for s in row["shots"]] == [self.shells[s].kind for s in mount.shell_ids], "P06T_SOURCE_MISMATCH")
+            result[p.assembly_id] = row
+        return result
 
     def _mixed_tables(self):
         names = {r[0] for r in self.connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'p06t_%'")}

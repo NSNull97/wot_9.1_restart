@@ -39,7 +39,7 @@ def literal(path, name, names=None):
 
 LEGACY_KINDS = ["ms1", "is7", "t26", "t34", "t3485"]
 # BATTLE-ANY stage 3 pilot (owner 2026-10-27): generated rows, admission "always".
-PILOT_KINDS = ["ussr-KV1", "usa-M4_Sherman", "germany-Waffentrager_E100", "japan-Chi_Ri"]
+PILOT_KINDS = ["ussr-KV-3", "usa-M4_Sherman", "germany-Waffentrager_E100", "japan-Chi_Ri"]
 
 
 def document():
@@ -239,6 +239,17 @@ class CatalogFromPinnedClient(unittest.TestCase):
 
     def test_rebuild_from_pinned_client_equals_committed_catalog(self):
         self.assertEqual(catalog_build.catalog_bytes(catalog_build.build_document(ORIGINAL)), CATALOG.read_bytes())
+
+    def test_builder_refuses_a_shell_shared_by_two_rows(self):
+        # KV-1 fires the T-34/T-34-85 shells (7178/8202/7690): one native depot count each.
+        raw = json.loads((ROOT / "config/catalog/server_profiles.v1.json").read_bytes())
+        raw["vehicles"].append({"kind": "ussr-KV1", "vehicle_id": "vehicle:ussr:KV1", "device_profile": "battle-any",
+                                "battle_admission": "always", "legacy_inventory": None, "client_ui": {"crew": False, "ammo": False}})
+        path = ROOT / "local/test-runs/cat01-profiles-shared-shell.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(raw))
+        with self.assertRaisesRegex(catalog_build.CatalogBuildError, "shell compact ID shared"):
+            catalog_build.build_document(ORIGINAL, path)
 
     def test_stock_registry_is_identical_in_both_modes(self):
         from p09e_research_catalog import load_catalog

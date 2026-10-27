@@ -2,7 +2,7 @@
  * Bridge binding; used only when the bridge option `catalog` names this hash. */
 const freeze = v => { if (v && typeof v === 'object') { Object.values(v).forEach(freeze); Object.freeze(v); } return v; };
 export const CATALOG_SCHEMA = "wot091-server-catalog.v1";
-export const CATALOG_SHA256 = "1459bba9eeb6dc0e1bfdc8978c2bda1097daefe494b7b6e89712f925a0770ceb";
+export const CATALOG_SHA256 = "219b2f07021603fea1f58bc78368990ae33632bb9bf70a1443996bec65d1cb8a";
 export const CATALOG_VEHICLES = freeze([
   {
     "ammo_capacity": 96,
@@ -742,7 +742,7 @@ export const CATALOG_VEHICLES = freeze([
     "vehicle_id": "vehicle:ussr:T-34-85"
   },
   {
-    "ammo_capacity": 114,
+    "ammo_capacity": 91,
     "battle_admission": "always",
     "client_ui": {
       "ammo": false,
@@ -778,25 +778,31 @@ export const CATALOG_VEHICLES = freeze([
           "loader"
         ],
         "seat": 4
+      },
+      {
+        "roles": [
+          "loader"
+        ],
+        "seat": 5
       }
     ],
-    "descriptor_hex": "012e6a000600cb00040058001b0000",
-    "descriptor_sha256": "454668c2502d5d9ce669ad9cc91957aabd4f30d91db7c424aa85427d900e1635",
+    "descriptor_hex": "01172e000400cc0004002500390000",
+    "descriptor_sha256": "d7c538edf4f62dde0bc0305b690509580784aacc0c679cac4e836796e5c437b1",
     "devices": [
       {
         "device": "engine",
-        "max_health": 85,
-        "max_regen_health": 42
+        "max_health": 120,
+        "max_regen_health": 60
       },
       {
         "device": "ammoBay",
-        "max_health": 140,
-        "max_regen_health": 90
+        "max_health": 180,
+        "max_regen_health": 120
       },
       {
         "device": "fuelTank",
-        "max_health": 150,
-        "max_regen_health": 60
+        "max_health": 175,
+        "max_regen_health": 70
       },
       {
         "device": "radio",
@@ -805,93 +811,93 @@ export const CATALOG_VEHICLES = freeze([
       },
       {
         "device": "leftTrack",
-        "max_health": 130,
-        "max_regen_health": 100
+        "max_health": 180,
+        "max_regen_health": 140
       },
       {
         "device": "rightTrack",
-        "max_health": 130,
-        "max_regen_health": 100
+        "max_health": 180,
+        "max_regen_health": 140
       },
       {
         "device": "gun",
-        "max_health": 118,
-        "max_regen_health": 59
+        "max_health": 122,
+        "max_regen_health": 61
       },
       {
         "device": "turretRotator",
-        "max_health": 120,
-        "max_regen_health": 60
+        "max_health": 140,
+        "max_regen_health": 70
       },
       {
         "device": "surveyingDevice",
-        "max_health": 70,
-        "max_regen_health": 35
+        "max_health": 90,
+        "max_regen_health": 45
       }
     ],
-    "kind": "ussr-KV1",
+    "kind": "ussr-KV-3",
     "legacy_inventory": null,
-    "max_hp": 590,
+    "max_hp": 1300,
     "modules": {
       "chassis": {
-        "module_id": "module:ussr:chassis:Chassis_KV1",
-        "native_compact_id": 27138
+        "module_id": "module:ussr:chassis:KV-3",
+        "native_compact_id": 11778
       },
       "engine": {
-        "module_id": "module:ussr:engine:M-17T",
-        "native_compact_id": 1541
+        "module_id": "module:ussr:engine:V-5",
+        "native_compact_id": 1029
       },
       "fuelTank": {
-        "module_id": "module:ussr:fuelTank:Average",
-        "native_compact_id": 51974
+        "module_id": "module:ussr:fuelTank:Heavy",
+        "native_compact_id": 52230
       },
       "gun": {
-        "module_id": "module:ussr:gun:_76mm_ZiS-5",
-        "native_compact_id": 6916
+        "module_id": "module:ussr:gun:_85mm_F-30",
+        "native_compact_id": 14596
       },
       "radio": {
         "module_id": "module:ussr:radio:_10R",
         "native_compact_id": 1031
       },
       "turret": {
-        "module_id": "module:ussr:turret:Turret_1_KV1",
-        "native_compact_id": 22531
+        "module_id": "module:ussr:turret:KV-220_mod",
+        "native_compact_id": 9475
       }
     },
     "nation": "ussr",
     "nation_id": 0,
-    "native_compact_id": 11777,
-    "resource_name": "KV1",
+    "native_compact_id": 5889,
+    "resource_name": "KV-3",
     "shells": [
       {
         "family": "ARMOR_PIERCING",
-        "item_id": 28,
-        "native_compact_id": 7178,
-        "resource_name": "_76mm_UBR-354A",
-        "shell_definition_id": "shell:ussr-KV1-stock-ap",
+        "item_id": 36,
+        "native_compact_id": 9226,
+        "resource_name": "_85mm_UBR-365K",
+        "shell_definition_id": "shell:ussr-KV-3-stock-ap",
         "suffix": "ap"
       },
       {
         "family": "ARMOR_PIERCING_CR",
-        "item_id": 32,
-        "native_compact_id": 8202,
-        "resource_name": "_76mm_UBR-354MP",
-        "shell_definition_id": "shell:ussr-KV1-stock-apcr",
+        "item_id": 37,
+        "native_compact_id": 9482,
+        "resource_name": "_85mm_UBR-365P",
+        "shell_definition_id": "shell:ussr-KV-3-stock-apcr",
         "suffix": "apcr"
       },
       {
         "family": "HIGH_EXPLOSIVE",
-        "item_id": 30,
-        "native_compact_id": 7690,
-        "resource_name": "_76mm_UOF-354",
-        "shell_definition_id": "shell:ussr-KV1-stock-he",
+        "item_id": 38,
+        "native_compact_id": 9738,
+        "resource_name": "_85mm_UOF-365K",
+        "shell_definition_id": "shell:ussr-KV-3-stock-he",
         "suffix": "he"
       }
     ],
-    "tier": 5,
-    "type_id": 46,
+    "tier": 7,
+    "type_id": 23,
     "vehicle_class": "heavyTank",
-    "vehicle_id": "vehicle:ussr:KV1"
+    "vehicle_id": "vehicle:ussr:KV-3"
   },
   {
     "ammo_capacity": 90,

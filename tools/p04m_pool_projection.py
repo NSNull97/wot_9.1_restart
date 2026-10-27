@@ -30,6 +30,8 @@ class PoolProjectionSource(BattleProjectionSource):
         crew_inventory, crews = native_crew(aggregate["crew_inventory"], contract_for_crew(aggregate["crew_inventory"]))
         inventory[8] = crew_inventory
         inventory[10] = {self.shells[key].native_compact_id: n for key, n in aggregate["depot"].items()}
+        # One native count per compact ID: two pool rows must never collapse into one.
+        require(len(inventory[10]) == len(aggregate["depot"]), "CORRUPT_STORE")
         for kind in range(2, 8):
             inventory[kind] = {item_cd(self.catalog, key): n for key, n in research["depot"].items()
                 if self.catalog.modules[key]["native_compact_id"] & 15 == kind}

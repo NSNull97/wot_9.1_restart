@@ -6,7 +6,7 @@ map_drive_client reads this table only when installed with --catalog-v1, the
 crew/ammunition windows (crew_vehicles) only when installed with --crew-any.
 """
 SCHEMA = 'wot091-server-catalog.v1'
-CATALOG_SHA256 = '1459bba9eeb6dc0e1bfdc8978c2bda1097daefe494b7b6e89712f925a0770ceb'
+CATALOG_SHA256 = '219b2f07021603fea1f58bc78368990ae33632bb9bf70a1443996bec65d1cb8a'
 VEHICLES = (
     {
         'ammo_capacity': 96,
@@ -133,7 +133,7 @@ VEHICLES = (
         'vehicle_class': 'mediumTank',
     },
     {
-        'ammo_capacity': 114,
+        'ammo_capacity': 91,
         'battle_admission': 'always',
         'client_ui': {
             'ammo': False,
@@ -145,17 +145,18 @@ VEHICLES = (
             ('radioman',),
             ('driver',),
             ('loader',),
+            ('loader',),
         ),
-        'descriptor_sha256': '454668c2502d5d9ce669ad9cc91957aabd4f30d91db7c424aa85427d900e1635',
-        'gun_compact_id': 6916,
-        'kind': 'ussr-KV1',
-        'max_hp': 590,
-        'native_compact_id': 11777,
-        'primary_roles': ('commander', 'gunner', 'radioman', 'driver', 'loader'),
-        'seats': 5,
-        'shell_compact_ids': (7178, 8202, 7690),
-        'turret_compact_id': 22531,
-        'type_id': 46,
+        'descriptor_sha256': 'd7c538edf4f62dde0bc0305b690509580784aacc0c679cac4e836796e5c437b1',
+        'gun_compact_id': 14596,
+        'kind': 'ussr-KV-3',
+        'max_hp': 1300,
+        'native_compact_id': 5889,
+        'primary_roles': ('commander', 'gunner', 'radioman', 'driver', 'loader', 'loader'),
+        'seats': 6,
+        'shell_compact_ids': (9226, 9482, 9738),
+        'turret_compact_id': 9475,
+        'type_id': 23,
         'vehicle_class': 'heavyTank',
     },
     {

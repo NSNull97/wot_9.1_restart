@@ -34,7 +34,7 @@ const ACCOUNT:&str="0f1e2d3c-4b5a-4968-8776-655443322110";
 
 const LEGACY:[&str;5]=["ms1","is7","t26","t34","t3485"];
 /// BATTLE-ANY stage 3 pilot (owner 2026-10-27): generated rows after the legacy five.
-const PILOT:[&str;4]=["ussr-KV1","usa-M4_Sherman","germany-Waffentrager_E100","japan-Chi_Ri"];
+const PILOT:[&str;4]=["ussr-KV-3","usa-M4_Sherman","germany-Waffentrager_E100","japan-Chi_Ri"];
 fn legacy_rows()->impl Iterator<Item=&'static Vehicle>{VEHICLES.iter().filter(|v|LEGACY.contains(&v.kind))}
 
 #[test] fn catalog_equals_retained_closed_rust_lists() {
