@@ -33,6 +33,9 @@ pub(super) struct Dispatcher {
     pub(super) late:Option<super::super::late_results_runtime::Manager>,
     // None preserves every old v1/v2 queue path without receipt collection.
     training_finished:Option<finished_events::FinishedEvents>,
+    /// ARENA-01: sessions still attached to another arena than the one passed
+    /// to `start`; their pending terminal waits for that detach as well.
+    pub(super) attached_elsewhere:Vec<u32>,
 }
 fn state(s:&mut Session)->io::Result<&mut service::State> {
     s.shared.as_mut().and_then(|c|c.profile13.as_mut()).ok_or_else(||model::bad())
@@ -256,7 +259,7 @@ impl Dispatcher {
                 // A scene ACK can postpone membership removal. Persistence may
                 // freeze now, but Account recreation waits until the actor is
                 // actually detached (or the entire failed world was replaced).
-                if pending && world.actors.iter().any(|a|a.session==Some(s.id)) {continue;}
+                if pending && (world.actors.iter().any(|a|a.session==Some(s.id))||self.attached_elsewhere.contains(&s.id)) {continue;}
                 if !pending && (world.started.is_some() || p.selection.is_none() || !s.active || !c.join_requested
                     || !s.ammo_service.as_ref().is_some_and(ammo_session::State::idle) || !arena_open) {continue;}
                 let owner=s.identity.clone().ok_or_else(||model::bad())?;

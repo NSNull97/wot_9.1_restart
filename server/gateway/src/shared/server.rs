@@ -32,6 +32,11 @@ mod p10b_preparing_host;
 mod p10b_host;
 #[path="server_login_admission.rs"]
 mod login_admission;
+#[path="server_arena.rs"]
+mod arena;
+#[cfg(test)]
+#[path="server_arena_bench.rs"]
+mod arena_bench;
 use login_admission::{AccountTag,Admission,Decision,Writers};
 
 #[cfg(test)]
@@ -84,8 +89,10 @@ mod capacity_tests;
 /// from the arena: a hangar session holds no arena place; places are taken by
 /// Join reservations up to `world.expected_actors()`. Without it, every
 /// session must be in the arena before a battle starts (old path).
-struct Table { sessions: Vec<Session>, retirement: RetirementWindow,capacity:usize,arena_split:bool }
-impl Default for Table {fn default()->Self{Self{sessions:Vec::new(),retirement:RetirementWindow::default(),capacity:model::CAPACITY,arena_split:false}}}
+/// ARENA-01 `multi_arena`: more than one arena shares this table; failure
+/// containment then touches only the sessions of the failed battle.
+struct Table { sessions: Vec<Session>, retirement: RetirementWindow,capacity:usize,arena_split:bool,multi_arena:bool }
+impl Default for Table {fn default()->Self{Self{sessions:Vec::new(),retirement:RetirementWindow::default(),capacity:model::CAPACITY,arena_split:false,multi_arena:false}}}
 /// GW-01 per-socket datagram drain per loop tick when `connection_capacity` is set.
 const CAPACITY_DRAIN:usize=64;
 
@@ -714,6 +721,7 @@ fn login_writers(serial:bool,dispatch:&profile13_dispatch::Dispatcher,results:&s
 }
 
 /// Immutable validated resources survive a failed battle; worker handles do not.
+#[derive(Clone)]
 struct BattleTemplate {
     world: World,
     pool: Option<Arc<crate::map_drive_worker091::Pool>>,
@@ -1000,7 +1008,11 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
     println!("SHARED_BATTLE_FAILED {snapshot}");
     let mut retire=Vec::new();
     let table_split=table.arena_split;
+    // ARENA-01: with several arenas only this battle's sessions are touched:
+    // an actor here, its native view of this battle, or its reservation for it.
+    let outsiders:Vec<u32>=if table.multi_arena {table.sessions.iter().filter(|s|!arena_member(s,world)).map(|s|s.id).collect()} else {Vec::new()};
     for s in &mut table.sessions {
+        if outsiders.contains(&s.id) {continue;}
         if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
             contained_return_world(s,world)?;continue;
         }
@@ -1040,6 +1052,7 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
     // cannot wait for asynchronous Finish, unlike the ordinary reset barrier.
     let retained=Arc::new(world.clone());
     for s in &mut table.sessions {
+        if outsiders.contains(&s.id) {continue;}
         if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {continue;}
         if !s.arena_base||s.shared.as_ref().is_none_or(|c|c.profile13.is_none()){continue;}
         let c=s.shared.as_ref().ok_or_else(||model::bad())?;
@@ -1055,6 +1068,12 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
     }
     template.replace(world,runtime,now)?;
     Ok(snapshot)
+}
+
+fn arena_member(s:&Session,world:&World)->bool {
+    world.actors.iter().any(|a|a.session==Some(s.id))||s.shared.as_ref().is_some_and(|c|
+        c.view.as_ref().is_some_and(|v|v.id==world.id)
+        ||c.profile13.as_ref().is_some_and(|p|p.reservation_battle()==Some(world.id)))
 }
 
 fn contain_results_failure(manager:&super::results_session::Manager,dispatcher:&mut profile13_dispatch::Dispatcher,
@@ -1334,6 +1353,20 @@ fn retire_service_failure(host:&mut Option<p10b_host::Host>,dispatcher:&mut prof
     }Ok(())
 }
 
+/// ARENA-01: the arena a live session belongs to (lobby for a hangar session).
+fn session_home(table:&Table,arenas:&[arena::Arena],dispatcher:&profile13_dispatch::Dispatcher,id:u32)->usize {
+    let lobby=arena::lobby(arenas,table,dispatcher.retired_sessions());
+    table.sessions.iter().find(|s|s.id==id).map_or(lobby,|s|arena::home(s,arenas,lobby))
+}
+/// A results fault retires its session inside that session's arena only.
+fn contain_results_failure_in_arenas(manager:&super::results_session::Manager,host:&mut Option<p10b_host::Host>,
+    dispatcher:&mut profile13_dispatch::Dispatcher,table:&mut Table,arenas:&mut [arena::Arena],
+    pending:&mut Vec<(u32,&'static str)>,now:Instant,logical_ms:u64,error:&io::Error)->io::Result<()>{
+    let home=manager.failure_session(&table.sessions).map_or(0,|id|session_home(table,arenas,dispatcher,id));
+    let a=&mut arenas[home];
+    contain_results_failure_with_training(manager,host,dispatcher,table,&mut a.world,&mut a.integrated,&a.template,pending,now,logical_ms,error)
+}
+
 /// Retain the old helper/API for ordinary mode and its existing tests. Explicit
 /// training mode must never remove a room member behind Host's back.
 fn contain_results_failure_with_training(manager:&super::results_session::Manager,host:&mut Option<p10b_host::Host>,
@@ -1410,7 +1443,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     let mut result_manager=super::results_session::Manager::default();
     let started = Instant::now();
     // Native Account.doCmdInt3 carries the result arena key as signed INT64.
-    let mut world = World::new_for_vehicle((OsRng.next_u64() & i64::MAX as u64).max(1), started,map,vehicle)?;
+    // ARENA-01: K > 1 arenas get non-overlapping battle id ranges; one arena keeps the old id.
+    let arena_ids=if config.arenas>1 {Some(arena::arena_ids(config.arenas,OsRng.next_u64())?)} else {None};
+    let mut world = World::new_for_vehicle(arena_ids.as_ref().map_or_else(||(OsRng.next_u64() & i64::MAX as u64).max(1),|ids|ids[0]), started,map,vehicle)?;
     if let Some(bundle) = geometry {
         let geometry_revision=super::geometry::source_revision(vehicle);
         let material_revision=super::materials::profile_revision(vehicle);
@@ -1433,10 +1468,6 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     if removal.is_some() { world.bind_destructible_test_lab()?; }
     if let Some((catalog,_))=&catalog{world.bind_fragiles(catalog.clone())?;
         println!("SHARED_CATALOG_BOUND battle={} sha256={} objects={} chunks={:?} policy={} historical_fidelity=approximate_reference_health",world.id,catalog.sha256,catalog.objects.len(),catalog.chunks(),super::fragiles::policy_for(world.vehicle_kind()));}
-    let mut contact_cursor = 0usize;
-    let mut terrain_cursor = 0usize;
-    let mut impact_cursor = 0usize;
-    let mut fragile_cursor=0usize;
     let mut integrated = integrated_pool.map(|pool|IntegratedRuntime::new_for_map(pool,map));
     if let Some(runtime) = &mut integrated { runtime.removal = removal; }
     if let Some(runtime)=&mut integrated {runtime.catalog=catalog.map(|(_,worker)|worker);}
@@ -1471,6 +1502,14 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         battle_template.world.enable_owner_hold()?;battle_template.select(&mut world,&mut integrated,started)?;
         println!("P08B_HOLD5_BOUND policy={} early_finish=false training_supported=false",crate::profile13_hold091::POLICY_SHA256);
     }
+    // ARENA-01: further arenas are fresh battles of the same validated template,
+    // each with its own scene runtime. Config already refused hold5/training.
+    if config.arenas>1&&(!profile13_mode||battle_template.shared.is_none()||!table.arena_split){return Err(model::bad().into());}
+    table.multi_arena=config.arenas>1;
+    let mut arenas=vec![arena::Arena::new(0,world,integrated,battle_template)];
+    for (index,id) in arena_ids.iter().flatten().enumerate().skip(1) {
+        let next=arena::Arena::from_template(index,&arenas[0].template,*id,started)?;arenas.push(next);
+    }
     let mut next_id = 1u32;
     // Owner hold and training rooms keep one login/garage writer at a time:
     // their writers have no per-account owner to separate accounts by.
@@ -1481,11 +1520,15 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     let mut rate_started = started; let mut rate_count = 0u32;
     println!("BOUND {} base_backend={} profile={} battle={} capacity={} scope=allied_temporary_{} motion={} physics={} map={} arena_type_id={} inventory_changed=false",
         config.login_bind, config.base_bind,
-        if profile13_mode {"legacy091-profile13"} else if qualification.is_some(){"legacy091-curated-lab"}else if integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
-        world.id,world.expected_actors(),world.vehicle_kind().label(), if integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, integrated.is_some(),map.asset(),map.arena_type_id());
+        if profile13_mode {"legacy091-profile13"} else if qualification.is_some(){"legacy091-curated-lab"}else if arenas[0].integrated.is_some() { "legacy091-integrated-lab" } else { "legacy091-shared-lab" },
+        arenas[0].world.id,arenas[0].world.expected_actors(),arenas[0].world.vehicle_kind().label(), if arenas[0].integrated.is_some() { "map_drive_worker" } else { "bounded_kinematic" }, arenas[0].integrated.is_some(),map.asset(),map.arena_type_id());
     if table.arena_split {
         println!("GATEWAY_CAPACITY connections={} arena_places={} retired_limit={} datagrams_per_second={datagram_budget} drain={drain} policy=gw01-hangar-holds-no-arena-place",
-            table.capacity,world.expected_actors(),table.retirement.limit());
+            table.capacity,arenas[0].world.expected_actors(),table.retirement.limit());
+    }
+    if arenas.len()>1 {
+        println!("ARENAS count={} places_per_arena={} battles={:?} step_threads=scoped_per_tick policy=arena01-in-process",
+            arenas.len(),arenas[0].world.expected_actors(),arenas.iter().map(|a|a.world.id).collect::<Vec<_>>());
     }
     loop {
         let now = Instant::now();
@@ -1499,6 +1542,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             let job = pending.job;
             match result {
                 Ok(Some(accepted)) => {
+                    // A hangar session joins no arena; its log names the arena a Join would take.
+                    let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
                     let admitted = (|| -> io::Result<usize> {
                         table.admissible(&job.attempt, now)?;
                         if let Some(index) = table.sessions.iter().position(|s| s.same_login_attempt(&job.attempt)) {
@@ -1522,7 +1567,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         // Explicitly fail closed on the astronomically unlikely
                         // random capability collision instead of ambiguous routing.
                         if s.handoff == 0 || s.token == 0 || table.sessions.iter().any(|old| old.handoff == s.handoff || old.token == s.token) { return Err(model::bad()); }
-                        let mut next_world = world.clone();
+                        let mut next_world = arenas[lobby].world.clone();
                         let slot = if profile13_mode {0} else {
                             let who=model::Identity{account:accepted.identity.account_id.clone(),database:accepted.identity.database_id,name:accepted.identity.name.clone()};
                             if next_world.extended_lab(){
@@ -1544,10 +1589,10 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                             }
                         }
                         if let Some(host)=&mut room_host{host.bind_session(&mut s)?;}
-                        println!("SHARED_SESSION_PENDING battle={} session={next_id} slot={slot} account={} database={} authenticated=true", world.id,
+                        println!("SHARED_SESSION_PENDING battle={} session={next_id} slot={slot} account={} database={} authenticated=true", arenas[lobby].world.id,
                             s.identity.as_ref().ok_or_else(|| model::bad())?.account_id, s.identity.as_ref().ok_or_else(|| model::bad())?.database_id);
                         next_id = next_id.checked_add(1).ok_or_else(|| model::bad())?;
-                        world = next_world; table.sessions.push(s); Ok(table.sessions.len() - 1)
+                        arenas[lobby].world = next_world; table.sessions.push(s); Ok(table.sessions.len() - 1)
                     })();
                     match admitted {
                         Ok(index) => {
@@ -1621,19 +1666,20 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 } else {
                     let index = match table.route_with_network(peer, packet,config.game_network()) { Ok(i) => i, Err(_) => { println!("SHARED_REJECT reason=base_route"); continue; } };
                     if table.sessions[index].guard_base_peer(&mut table.retirement,peer,now).is_err(){println!("SHARED_REJECT reason=retired_peer");continue;}
+                    let h=session_home(&table,&arenas,&battle_dispatch,table.sessions[index].id);
                     if length == 21 {
                         let s=&mut table.sessions[index];
                         let (request, _) = base::base_request(packet, s.handoff)?;
                         s.base_peer = Some(peer); send(socket, peer, &base::base_reply(request, s.token), &s.key, &mut capture)?;
-                        println!("SHARED_BASE_BOUND battle={} session={} peer={peer}", world.id, s.id);
+                        println!("SHARED_BASE_BOUND battle={} session={} peer={peer}", arenas[h].world.id, s.id);
                     } else {
                         let sid=table.sessions[index].id;
                         let frame=match base::decrypt(packet,&table.sessions[index].key).and_then(|b|transport091::parse_interactive(&b)){
                             Ok(frame)=>frame,Err(_)=>{println!("SHARED_REJECT session={sid} reason=channel_framing");continue;}
                         };
-                        let received=if let Some(host)=&mut room_host{host.receive(&mut table,sid,&frame,&world,now,logical_ms)}else{
+                        let received=if let Some(host)=&mut room_host{host.receive(&mut table,sid,&frame,&arenas[h].world,now,logical_ms)}else{
                             let s=&mut table.sessions[index];
-                            receive_battle_session(s,&frame,&world,now)
+                            receive_battle_session(s,&frame,&arenas[h].world,now)
                         };
                         let s=&mut table.sessions[index];
                         match received {
@@ -1650,40 +1696,45 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         // Remove known disconnects before applying any queued intent or tick.
         for(id,reason)in closing.drain(..){
             if !table.sessions.iter().any(|s|s.id==id){continue;}
-            if retire_contained_session(&mut battle_dispatch,&mut table,&world,id,now,reason)?{continue;}
-            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;continue;}
-            match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,&battle_template,id,reason,now,logical_ms){
+            let home=session_home(&table,&arenas,&battle_dispatch,id);let a=&mut arenas[home];
+            if retire_contained_session(&mut battle_dispatch,&mut table,&a.world,id,now,reason)?{continue;}
+            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut a.world,id,now,reason)?;continue;}
+            match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut a.world,&mut a.integrated,&a.template,id,reason,now,logical_ms){
                 Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
                 Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
             }
         }
         if profile13_mode {
             if let Err(error)=result_manager.poll(&mut table.sessions,now) {
-                contain_results_failure_with_training(&result_manager,&mut room_host,&mut battle_dispatch,&mut table,&mut world,
-                    &mut integrated,&battle_template,&mut room_closing,now,logical_ms,&error)?;
+                contain_results_failure_in_arenas(&result_manager,&mut room_host,&mut battle_dispatch,&mut table,&mut arenas,
+                    &mut room_closing,now,logical_ms,&error)?;
             }
+            let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
+            // BATTLE_BUSY only when no arena can take this Join (with one arena: it started).
+            let all_started=arenas[lobby].started();
             for s in &mut table.sessions {
+                let home=arena::home(s,&arenas,lobby);let a=&mut arenas[home];
                 // An explicitly contained old Avatar has no authority in the
                 // replacement World, including the terminal-freeze pass.
                 if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
-                    contained_return_world(s,&world)?;continue;
+                    contained_return_world(s,&a.world)?;continue;
                 }
-                if world.started.is_some() {
+                if all_started {
                     let busy=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
                         p.selection.is_some() && !p.has_reservation() && !p.in_flight);
                     if busy {
                         let c=s.shared.as_mut().ok_or_else(||model::bad())?;
                         c.profile13.as_mut().ok_or_else(||model::bad())?.selection=None;c.join_requested=false;
                         s.outbox.push_back(crate::battle091::profile13::enqueue_failure("BATTLE_BUSY")?);
-                        println!("P08B_ADMISSION_BUSY session={} battle={} peer_battle_unchanged=true",s.id,world.id);
+                        println!("P08B_ADMISSION_BUSY session={} battle={} peer_battle_unchanged=true",s.id,a.world.id);
                     }
                 }
                 let pending=s.shared.as_ref().is_some_and(|c|c.profile13.is_some() &&
                     (c.phase==Phase::Leaving || c.phase==Phase::Account && !c.join_requested
                         && c.profile13.as_ref().is_some_and(|p|p.has_reservation()&&!p.hold_account_only)));
                 if pending {
-                    profile13_dispatch::Dispatcher::terminal(s,&world,crate::battle091::profile13::FinishReason::ManualLeave)?;
-                    if integrated.as_ref().is_none_or(|r|!r.blocked()) && world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+                    profile13_dispatch::Dispatcher::terminal(s,&a.world,crate::battle091::profile13::FinishReason::ManualLeave)?;
+                    if !a.blocked() && a.has_session(s.id) {a.world.detach(s.id)?;}
                 }
             }
             let mut index=0;
@@ -1695,23 +1746,29 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 if let Err(error)=outcome {
                     println!("P08B_GARAGE_FAILED session={id} error={error} reconnect_required=true service_alive=true");
                     if table.sessions.iter().any(|s|s.id==id) {
-                        retire_service_failure(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,
-                            &battle_template,&mut room_closing,id,"garage_writer_ambiguous",now,logical_ms)?;
+                        let home=session_home(&table,&arenas,&battle_dispatch,id);let a=&mut arenas[home];
+                        retire_service_failure(&mut room_host,&mut battle_dispatch,&mut table,&mut a.world,&mut a.integrated,
+                            &a.template,&mut room_closing,id,"garage_writer_ambiguous",now,logical_ms)?;
                     }
                 }
             }
-            battle_dispatch.observe_hold_world(&table,&world)?;
-            if let Some(error)=battle_dispatch.hold_pre_avatar_failure(&table,&world){
-                battle_dispatch.before_hold_reset(&world)?;
-                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"hold5_pre_avatar_departure",&error)?;
-                contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+            // Hold5 is refused with more than one arena (config); it owns arena 0.
+            battle_dispatch.observe_hold_world(&table,&arenas[0].world)?;
+            if let Some(error)=battle_dispatch.hold_pre_avatar_failure(&table,&arenas[0].world){
+                let a=&mut arenas[0];
+                battle_dispatch.before_hold_reset(&a.world)?;
+                contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"hold5_pre_avatar_departure",&error)?;
+                a.cursors.reset();
             }
             if garage.is_empty() && !result_manager.busy() && !battle_dispatch.late_running() && (!config.p08b_owner_battle_hold||admission.is_empty()) {
                 battle_dispatch.poll(&mut table,config.clone(),now)?;
-                if battle_dispatch.finish_empty_queue(&table,&mut world,&mut integrated,&battle_template,now)? {
-                    contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+                for a in &mut arenas {
+                    if battle_dispatch.finish_empty_queue(&table,&mut a.world,&mut a.integrated,&a.template,now)? {
+                        a.cursors.reset();
+                    }
                 }
-                if battle_dispatch.closed_queue(world.id) {
+                let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
+                if battle_dispatch.closed_queue(arenas[lobby].world.id) {
                     for s in &mut table.sessions {
                         let pending=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
                             p.selection.is_some() && !p.has_reservation() && !p.in_flight);
@@ -1722,35 +1779,44 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         }
                     }
                 }
-                if world.started.is_none() && world.actors.iter().all(|a|a.session.is_none()) {
+                let a=&mut arenas[lobby];
+                if a.world.started.is_none() && a.world.actors.iter().all(|x|x.session.is_none()) {
                     let kind=table.sessions.iter().find_map(|s|s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
                         .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && !p.has_pending_return())
-                        .filter(|p|p.reservation_battle()==Some(world.id)).and_then(|p|p.reservation_kind()));
-                    if let Some(kind)=kind.filter(|k|!world.mixed_profiles()&&*k!=world.vehicle_kind()) {
+                        .filter(|p|p.reservation_battle()==Some(a.world.id)).and_then(|p|p.reservation_kind()));
+                    if let Some(kind)=kind.filter(|k|!a.world.mixed_profiles()&&*k!=a.world.vehicle_kind()) {
                         let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
-                        battle_template=BattleTemplate::from_resources(r,world.id,now)?;
+                        a.template=BattleTemplate::from_resources(r,a.world.id,now)?;
                         if config.visibility_v1 {
-                            battle_template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
-                            battle_template.world.enable_result_spots()?;
+                            a.template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
+                            a.template.world.enable_result_spots()?;
                         }
-                        battle_template.select(&mut world,&mut integrated,now)?;
-                        contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+                        a.template.select(&mut a.world,&mut a.integrated,now)?;
+                        a.cursors.reset();
                     }
                 }
                 for s in &mut table.sessions {
+                    // A reservation is valid in the arena of its battle; one for no
+                    // live arena (or of the wrong homogeneous kind) is returned.
                     let mismatch=s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
                         .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && !p.has_pending_return())
-                        .is_some_and(|p|p.reservation_battle().is_some_and(|battle|battle!=world.id)
-                            ||!world.mixed_profiles()&&p.reservation_kind().is_some_and(|kind|kind!=world.vehicle_kind()));
+                        .is_some_and(|p|p.reservation_battle().is_some_and(|battle|match arenas.iter().find(|a|a.world.id==battle) {
+                            None=>true,
+                            Some(a)=>!a.world.mixed_profiles()&&p.reservation_kind().is_some_and(|kind|kind!=a.world.vehicle_kind()),
+                        }));
                     if mismatch {
-                        profile13_dispatch::Dispatcher::terminal(s,&world,crate::battle091::profile13::FinishReason::Cancelled)?;
+                        let a=&arenas[arena::home(s,&arenas,lobby)];
+                        profile13_dispatch::Dispatcher::terminal(s,&a.world,crate::battle091::profile13::FinishReason::Cancelled)?;
                         if let Some(c)=&mut s.shared {c.queue_announced=false;}
                         s.outbox.push_back(crate::battle091::profile13::enqueue_failure("BATTLE_BUSY")?);
-                        println!("P08B_HOMOGENEOUS_DENIAL session={} battle={} reservation_will_be_returned=true",s.id,world.id);
+                        println!("P08B_HOMOGENEOUS_DENIAL session={} battle={} reservation_will_be_returned=true",s.id,a.world.id);
                     }
                 }
                 if room_host.as_ref().is_none_or(|h|!h.preparing()){
-                    battle_dispatch.start(&mut table,&world,config.clone(),now)?;
+                    let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
+                    battle_dispatch.attached_elsewhere=arena::attached_outside(&arenas,lobby);
+                    let dispatched=battle_dispatch.start(&mut table,&arenas[lobby].world,config.clone(),now);
+                    battle_dispatch.attached_elsewhere.clear();dispatched?;
                 }
             }
             if !battle_dispatch.busy() && !result_manager.busy() && room_host.as_ref().is_none_or(|h|!h.busy()) && (!config.p08b_owner_battle_hold||admission.is_empty()){
@@ -1770,42 +1836,48 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 !admission.accounts().any(|t|table.sessions.iter().any(|s|s.login_account.as_ref()==Some(t)))};
             if !battle_dispatch.busy() && garage.is_empty() && results_login_clear && room_host.as_ref().is_none_or(|h|!h.busy()) {
                 if let Err(error)=result_manager.start_if_idle(&mut table.sessions,config.clone(),now) {
-                    contain_results_failure_with_training(&result_manager,&mut room_host,&mut battle_dispatch,&mut table,&mut world,
-                    &mut integrated,&battle_template,&mut room_closing,now,logical_ms,&error)?;
+                    contain_results_failure_in_arenas(&result_manager,&mut room_host,&mut battle_dispatch,&mut table,&mut arenas,
+                        &mut room_closing,now,logical_ms,&error)?;
                 }
             }
         }
         if let Some(host)=&mut room_host{
+            // Training rooms are refused with more than one arena (config).
+            let a=&mut arenas[0];
             let idle=!battle_dispatch.busy()&&garage.is_empty()&&!result_manager.busy()&&admission.is_empty();
-            match host.poll(&mut table,&mut world,&mut integrated,&battle_template,&mut battle_dispatch,config.clone(),now,logical_ms,idle){
-                Ok(true)=>{contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;},Ok(false)=>{},
+            match host.poll(&mut table,&mut a.world,&mut a.integrated,&a.template,&mut battle_dispatch,config.clone(),now,logical_ms,idle){
+                Ok(true)=>{a.cursors.reset();},Ok(false)=>{},
                 Err(error)=>println!("P10B_HOST_RETRY error={error} authority_retained=true service_alive=true"),
             }
-            if let Some(error)=host.prestart_failure(&world,None,now){
-                if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"training_handoff_failure");}
-                        battle_dispatch.before_hold_reset(&world)?;
-                        contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"training_handoff",&error)?;
-                contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+            if let Some(error)=host.prestart_failure(&a.world,None,now){
+                if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"training_handoff_failure");}
+                        battle_dispatch.before_hold_reset(&a.world)?;
+                        contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"training_handoff",&error)?;
+                a.cursors.reset();
             }
         }
         if let Some(late)=&mut battle_dispatch.late{
             late.observe_sessions(table.sessions.iter());
-            if world.started.is_some()&&world.actors.iter().all(|a|a.session.is_none())
-                &&integrated.as_ref().is_none_or(|r|!r.blocked()){
-                if let Err(error)=world.advance_lifecycle(now){late.invalidate_source(&config.battle_run_id,world.id);
-                    println!("P08C_LATE_FINAL_OUTCOME_UNSUPPORTED battle={} error={error}",world.id);}
+            for a in &mut arenas {
+                if a.world.started.is_some()&&a.world.actors.iter().all(|x|x.session.is_none())&&!a.blocked(){
+                    if let Err(error)=a.world.advance_lifecycle(now){late.invalidate_source(&config.battle_run_id,a.world.id);
+                        println!("P08C_LATE_FINAL_OUTCOME_UNSUPPORTED battle={} error={error}",a.world.id);}
+                }
+                late.seal_world(&a.world);
             }
-            late.seal_world(&world);
         }
-        if world.owner_hold_enabled()&&world.started.is_some()&&world.actors.iter().all(|a|a.session.is_none())
-            &&integrated.as_ref().is_none_or(|r|!r.blocked()){
-            world.advance_lifecycle(now)?;battle_dispatch.observe_hold_world(&table,&world)?;
+        for a in &mut arenas {
+            if a.world.owner_hold_enabled()&&a.world.started.is_some()&&a.world.actors.iter().all(|x|x.session.is_none())&&!a.blocked(){
+                a.world.advance_lifecycle(now)?;battle_dispatch.observe_hold_world(&table,&a.world)?;
+            }
         }
-        if parked_battle_reset_ready(&table,&world) {
-            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"normal_all_parked_reset");}
-                battle_dispatch.before_hold_reset(&world)?;
-                battle_template.replace(&mut world,&mut integrated,now)?;
-            contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
+        for a in &mut arenas {
+            if parked_battle_reset_ready(&table,&a.world) {
+                if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"normal_all_parked_reset");}
+                    battle_dispatch.before_hold_reset(&a.world)?;
+                    a.template.replace(&mut a.world,&mut a.integrated,now)?;
+                a.cursors.reset();
+            }
         }
         for s in &mut table.sessions {
             if s.ready_for_arena_base() {
@@ -1813,42 +1885,62 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 if c.hangar_since.is_none() { c.hangar_since = Some(now); }
             }
         }
-        let step=(||->io::Result<()> {
-            if world.owner_hold_enabled(){battle_dispatch.attach_hold_ready_group(&mut table,&mut world,&config.battle_run_id,now)?;}
-            else{attach_waiting_sessions(&mut table,&mut world,now)?;}
-            if let Some(late)=&mut battle_dispatch.late{
-                if let Err(error)=if config.p08b_owner_battle_hold{Ok(())}else{late.register_world(&table.sessions,&world,&config.battle_run_id)}{
-                    late.invalidate_source(&config.battle_run_id,world.id);
-                    println!("P08C_LATE_ADMISSION_UNSUPPORTED battle={} error={error} normal_owned_battle_unchanged=true",world.id);
+        // Membership and the start barrier stay on this thread; the simulation
+        // step of each arena crosses the typed boundary (threads when K > 1).
+        let mut commands=Vec::with_capacity(arenas.len());
+        let mut failures:Vec<(usize,&'static str,io::Error)>=Vec::new();
+        for index in 0..arenas.len() {
+            let a=&mut arenas[index];
+            let pre=(||->io::Result<bool> {
+                if a.world.owner_hold_enabled(){battle_dispatch.attach_hold_ready_group(&mut table,&mut a.world,&config.battle_run_id,now)?;}
+                else{attach_waiting_sessions(&mut table,&mut a.world,now)?;}
+                if let Some(late)=&mut battle_dispatch.late{
+                    if let Err(error)=if config.p08b_owner_battle_hold{Ok(())}else{late.register_world(&table.sessions,&a.world,&config.battle_run_id)}{
+                        late.invalidate_source(&config.battle_run_id,a.world.id);
+                        println!("P08C_LATE_ADMISSION_UNSUPPORTED battle={} error={error} normal_owned_battle_unchanged=true",a.world.id);
+                    }
                 }
+                Ok(if let Some(host)=&room_host{host.can_start(&table,&a.world,now)?}
+                else if table.arena_split{a.world.started.is_none()&&table.arena_ready(&a.world,now)}else{
+                    a.world.started.is_none() && table.sessions.len()==a.world.expected_actors()
+                        && a.world.actors.len()==a.world.expected_actors() && table.sessions.iter().all(|s|entry_ready(s,now)
+                            && a.world.actors.iter().any(|x|x.session==Some(s.id)))
+                })
+            })();
+            match pre {
+                Ok(start)=>commands.push(Some(arena::Command::Step{now,start})),
+                Err(error)=>{commands.push(None);failures.push((index,"world_step",error));},
             }
-            let start=if let Some(host)=&room_host{host.can_start(&table,&world,now)?}
-            else if table.arena_split{world.started.is_none()&&table.arena_ready(&world,now)}else{
-                world.started.is_none() && table.sessions.len()==world.expected_actors()
-                    && world.actors.len()==world.expected_actors() && table.sessions.iter().all(|s|entry_ready(s,now)
-                        && world.actors.iter().any(|a|a.session==Some(s.id)))
-            };
-            advance_battle(&mut world,&mut integrated,now,start)
-        })();
-        if let Err(error)=step {
-            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_world_step");}
-                battle_dispatch.before_hold_reset(&world)?;
-                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"world_step",&error)?;
-            contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
         }
-        if let Some(late)=&mut battle_dispatch.late{late.observe_sessions(table.sessions.iter());late.seal_world(&world);}
-        battle_dispatch.observe_hold_world(&table,&world)?;
-        let sealed=battle_dispatch.hold_results(world.id).or_else(||battle_dispatch.late.as_ref().and_then(|m|m.sealed_results(world.id)));
-        if let Err(error)=stage_lifecycle_results_from(&mut table,&world,sealed) {
-            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_result_snapshot");}
-                battle_dispatch.before_hold_reset(&world)?;
-                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"result_snapshot",&error)?;
-            contact_cursor=0;terrain_cursor=0;impact_cursor=0;fragile_cursor=0;
+        for (index,event) in arena::step_all(&mut arenas,&commands).into_iter().enumerate() {
+            if let Some(arena::Event::Failed{stage,error})=event {failures.push((index,stage,error));}
         }
-        let integrated_native_ready = integrated.as_ref().is_none_or(IntegratedRuntime::ready_for_native);
-        let mut publication_failure=None;
+        failures.sort_by_key(|f|f.0);
+        for (index,stage,error) in failures {
+            let a=&mut arenas[index];
+            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,if stage=="world_step"{"fault_world_step"}else{"fault_world_step_panic"});}
+                battle_dispatch.before_hold_reset(&a.world)?;
+                contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,stage,&error)?;
+            a.cursors.reset();
+        }
+        if let Some(late)=&mut battle_dispatch.late{late.observe_sessions(table.sessions.iter());for a in &arenas{late.seal_world(&a.world);}}
+        for a in &mut arenas {
+            battle_dispatch.observe_hold_world(&table,&a.world)?;
+            let sealed=battle_dispatch.hold_results(a.world.id).or_else(||battle_dispatch.late.as_ref().and_then(|m|m.sealed_results(a.world.id)));
+            if let Err(error)=stage_lifecycle_results_from(&mut table,&a.world,sealed) {
+                if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"fault_result_snapshot");}
+                    battle_dispatch.before_hold_reset(&a.world)?;
+                    contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"result_snapshot",&error)?;
+                a.cursors.reset();
+            }
+        }
+        let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
+        let mut publication_failures:Vec<(usize,io::Error)>=Vec::new();
         for s in &mut table.sessions {
             if !s.active&&room_host.as_ref().is_some_and(|h|h.owns_preparing(s.id)){continue;}
+            let home=arena::home(s,&arenas,lobby);
+            // A failed arena publishes nothing more this tick; others continue.
+            if publication_failures.iter().any(|(failed,_)|*failed==home){continue;}
             let reason = if now.duration_since(s.created_at) >= config.session_duration { Some("session_deadline") }
                 else if now.duration_since(s.last_rx) >= s.tx.idle_limit() { Some("idle_timeout") } else { None };
             if let Some(reason) = reason { closing.push((s.id, reason)); continue; }
@@ -1856,8 +1948,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             // native arena reset until both workers have supplied a settled
             // pose. This avoids the old outer `continue`, which also skipped
             // heartbeats and made a client look disconnected during startup.
-            if let Err(error) = poll_battle_session(s,&mut world,now,integrated_native_ready,
-                integrated.as_ref().is_some_and(IntegratedRuntime::blocked)) {
+            let a=&mut arenas[home];
+            let (native_ready,blocked)=(a.native_ready(),a.blocked());
+            if let Err(error) = poll_battle_session(s,&mut a.world,now,native_ready,blocked) {
                 // A revoked old Avatar cannot fail the replacement battle.
                 // Retire only its authenticated session; its immutable writer
                 // task/durable result remains in the ordinary retired lane.
@@ -1865,7 +1958,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     println!("SHARED_CONTAINED_RETURN_FAILED session={} reason={} durable_result_retained=true replacement_world_unchanged=true",s.id,error);
                     closing.push((s.id,reason));continue;
                 }
-                if error.kind()==io::ErrorKind::TimedOut&&world.ammo_detonation_enabled()
+                if error.kind()==io::ErrorKind::TimedOut&&a.world.ammo_detonation_enabled()
                     &&s.shared.as_ref().is_some_and(|c|c.result_committed&&!c.result_stream_queued){
                     println!("P06T_TURRET_PRESENTATION_TIMEOUT session={} durable_result_retained=true",s.id);
                     closing.push((s.id,"native_turret_unconfirmed"));continue;
@@ -1876,7 +1969,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     closing.push((s.id,"native_results_unconfirmed"));continue;
                 }
                 println!("SHARED_FAILED session={} reason={}", s.id, error);
-                publication_failure=Some(error); break;
+                publication_failures.push((home,error));
+                if arenas.len()==1 {break;} else {continue;}
             }
             if !s.active { continue; }
             if s.tx.len() == 0 && now.duration_since(s.last_heartbeat) >= Duration::from_secs(2) {
@@ -1892,17 +1986,19 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 }
             }
         }
-        if let Some(error)=publication_failure {
-            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&world,"fault_publication");}
-                battle_dispatch.before_hold_reset(&world)?;
-                contain_battle_failure(&mut table,&mut world,&mut integrated,&battle_template,now,"publication",&error)?;
-            contact_cursor=0; terrain_cursor=0; impact_cursor=0; fragile_cursor=0;
+        for (home,error) in publication_failures {
+            let a=&mut arenas[home];
+            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"fault_publication");}
+                battle_dispatch.before_hold_reset(&a.world)?;
+                contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"publication",&error)?;
+            a.cursors.reset();
         }
         for(id,reason)in closing{
             if !table.sessions.iter().any(|s|s.id==id){continue;}
-            if retire_contained_session(&mut battle_dispatch,&mut table,&world,id,now,reason)?{continue;}
-            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut world,id,now,reason)?;continue;}
-            match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut world,&mut integrated,&battle_template,id,reason,now,logical_ms){
+            let home=session_home(&table,&arenas,&battle_dispatch,id);let a=&mut arenas[home];
+            if retire_contained_session(&mut battle_dispatch,&mut table,&a.world,id,now,reason)?{continue;}
+            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut a.world,id,now,reason)?;continue;}
+            match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut a.world,&mut a.integrated,&a.template,id,reason,now,logical_ms){
                 Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
                 Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
             }
@@ -1912,81 +2008,86 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             let utc=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d|u32::try_from(d.as_secs()).ok()).unwrap_or(0);
             late.poll(&mut table.sessions,config.clone(),now,late_idle,utc);
         }
-        for contact in world.contacts.iter().skip(contact_cursor) {
-            println!("SHARED_GEOMETRIC_CONTACT {}", serde_json::json!({
-                "battle":world.id.to_string(), "shot":contact.shot, "target_slot":contact.target_slot,
-                "tick":contact.tick, "segment_start":contact.segment_start, "segment_end":contact.segment_end,
-                "segment_seconds":contact.segment_seconds, "endpoint":contact.endpoint,
-                "target_position":contact.target_position, "target_direction":contact.target_direction,
-                "target_aim":contact.target_aim, "triangle_id":contact.triangle.triangle_id,
-                "mesh":contact.triangle.mesh, "group":contact.triangle.group, "material":contact.triangle.material,
-                "t":contact.triangle.t, "normal":contact.triangle.normal,
-                "geometry_revision":contact.geometry_revision, "transform_revision":contact.transform_revision,
-                "material_facts":contact.material_facts.json(),
-                "terminal":match world.impacts.iter().find(|event| event.shot==contact.shot).map(|e| &e.outcome) {
-                    Some(model::ImpactOutcome::Ap(_)) => "test_lab_impact",
-                    Some(model::ImpactOutcome::Mixed(_)) => "test_lab_mixed_impact",
-                    Some(model::ImpactOutcome::WreckBlocked) => "test_lab_wreck_impact",
-                    None => "unresolved_collision"},
-                "damage_applied":world.impacts.iter().any(|event| event.shot==contact.shot && event.health_after<event.health_before)}));
-        }
-        contact_cursor = world.contacts.len();
-        for contact in world.terrain_contacts.iter().skip(terrain_cursor) {
-            let (surface,instance_id,material_kind)=match contact.hit.surface {
-                super::terrain::Surface::Ground => ("terrain",None,None),
-                super::terrain::Surface::StaticObstacle{instance_id,material_kind} =>
-                    ("static_obstacle",Some(instance_id),Some(material_kind)),
-            };
-            println!("SHARED_TERRAIN_CONTACT {}",serde_json::json!({
-                "battle":world.id.to_string(),"shot":contact.shot,"shooter":contact.shooter,"tick":contact.tick,
-                "triangle_id":contact.hit.triangle_id,"t":contact.hit.t,"endpoint":contact.hit.point,
-                "normal":contact.hit.normal,"direction":contact.direction,
-                "segment_start":contact.segment_start,"segment_end":contact.segment_end,
-                "map":world.map.asset(),"geometry_revision":world.map.spec().world_revision,
-                "geometry_revision_scope":"terrain_and_projectile_obstacles",
-                "surface":surface,"instance_id":instance_id,"material_kind":material_kind,
-                "effect_material_index":contact.hit.effect_material_index(),"material_policy":contact.hit.material_policy(),
-                "damage_applied":false}));
-        }
-        terrain_cursor=world.terrain_contacts.len();
-        for event in world.impacts.iter().skip(impact_cursor) {
-            if let model::ImpactOutcome::WreckBlocked = event.outcome {
-                println!("SHARED_WRECK_IMPACT {}", serde_json::json!({
+        for a in &mut arenas {
+            let world=&a.world;
+            for contact in world.contacts.iter().skip(a.cursors.contact) {
+                println!("SHARED_GEOMETRIC_CONTACT {}", serde_json::json!({
+                    "battle":world.id.to_string(), "shot":contact.shot, "target_slot":contact.target_slot,
+                    "tick":contact.tick, "segment_start":contact.segment_start, "segment_end":contact.segment_end,
+                    "segment_seconds":contact.segment_seconds, "endpoint":contact.endpoint,
+                    "target_position":contact.target_position, "target_direction":contact.target_direction,
+                    "target_aim":contact.target_aim, "triangle_id":contact.triangle.triangle_id,
+                    "mesh":contact.triangle.mesh, "group":contact.triangle.group, "material":contact.triangle.material,
+                    "t":contact.triangle.t, "normal":contact.triangle.normal,
+                    "geometry_revision":contact.geometry_revision, "transform_revision":contact.transform_revision,
+                    "material_facts":contact.material_facts.json(),
+                    "terminal":match world.impacts.iter().find(|event| event.shot==contact.shot).map(|e| &e.outcome) {
+                        Some(model::ImpactOutcome::Ap(_)) => "test_lab_impact",
+                        Some(model::ImpactOutcome::Mixed(_)) => "test_lab_mixed_impact",
+                        Some(model::ImpactOutcome::WreckBlocked) => "test_lab_wreck_impact",
+                        None => "unresolved_collision"},
+                    "damage_applied":world.impacts.iter().any(|event| event.shot==contact.shot && event.health_after<event.health_before)}));
+            }
+            a.cursors.contact = world.contacts.len();
+            for contact in world.terrain_contacts.iter().skip(a.cursors.terrain) {
+                let (surface,instance_id,material_kind)=match contact.hit.surface {
+                    super::terrain::Surface::Ground => ("terrain",None,None),
+                    super::terrain::Surface::StaticObstacle{instance_id,material_kind} =>
+                        ("static_obstacle",Some(instance_id),Some(material_kind)),
+                };
+                println!("SHARED_TERRAIN_CONTACT {}",serde_json::json!({
+                    "battle":world.id.to_string(),"shot":contact.shot,"shooter":contact.shooter,"tick":contact.tick,
+                    "triangle_id":contact.hit.triangle_id,"t":contact.hit.t,"endpoint":contact.hit.point,
+                    "normal":contact.hit.normal,"direction":contact.direction,
+                    "segment_start":contact.segment_start,"segment_end":contact.segment_end,
+                    "map":world.map.asset(),"geometry_revision":world.map.spec().world_revision,
+                    "geometry_revision_scope":"terrain_and_projectile_obstacles",
+                    "surface":surface,"instance_id":instance_id,"material_kind":material_kind,
+                    "effect_material_index":contact.hit.effect_material_index(),"material_policy":contact.hit.material_policy(),
+                    "damage_applied":false}));
+            }
+            a.cursors.terrain=world.terrain_contacts.len();
+            for event in world.impacts.iter().skip(a.cursors.impact) {
+                if let model::ImpactOutcome::WreckBlocked = event.outcome {
+                    println!("SHARED_WRECK_IMPACT {}", serde_json::json!({
+                        "battle":world.id.to_string(),"shot":event.shot,"attacker":event.attacker,"target":event.target,"tick":event.tick,
+                        "policy_revision":model::wreck_policy_revision_for(world.vehicle_kind()),"historical_fidelity":"approximate",
+                        "outcome":"wreck_blocked","health_before":event.health_before,"health_after":event.health_after,
+                        "damage":0,"native_effect_available":event.segment.is_some()}));
+                    continue;
+                }
+                if let model::ImpactOutcome::Mixed(resolution)=&event.outcome{
+                    println!("P06T_DIRECT_IMPACT battle={} shot={} attacker={} target={} tick={} resolution={resolution:?} hp_before={} hp_after={} historical_fidelity=explicit_lab",
+                        world.id,event.shot,event.attacker,event.target,event.tick,event.health_before,event.health_after);
+                    continue;
+                }
+                let model::ImpactOutcome::Ap(resolution) = &event.outcome else { return Err(model::bad().into()); };
+                println!("SHARED_AP_IMPACT {}", serde_json::json!({
                     "battle":world.id.to_string(),"shot":event.shot,"attacker":event.attacker,"target":event.target,"tick":event.tick,
-                    "policy_revision":model::wreck_policy_revision_for(world.vehicle_kind()),"historical_fidelity":"approximate",
-                    "outcome":"wreck_blocked","health_before":event.health_before,"health_after":event.health_after,
-                    "damage":0,"native_effect_available":event.segment.is_some()}));
-                continue;
+                    "profile_revision":resolution.profile_revision,"historical_fidelity":ap::HISTORICAL_FIDELITY,
+                    "outcome":resolution.outcome.label(),"reason":format!("{:?}",resolution.outcome),
+                    "armor":resolution.armor,"incidence_degrees":resolution.incidence_degrees,
+                    "normalization_degrees":resolution.normalization_degrees,
+                    "effective_armor":resolution.effective_armor,"nominal_power":resolution.nominal_power,
+                    "health_before":event.health_before,"health_after":event.health_after,
+                    "damage":event.health_before-event.health_after,"native_effect_available":event.segment.is_some()}));
             }
-            if let model::ImpactOutcome::Mixed(resolution)=&event.outcome{
-                println!("P06T_DIRECT_IMPACT battle={} shot={} attacker={} target={} tick={} resolution={resolution:?} hp_before={} hp_after={} historical_fidelity=explicit_lab",
-                    world.id,event.shot,event.attacker,event.target,event.tick,event.health_before,event.health_after);
-                continue;
+            a.cursors.impact = world.impacts.len();
+            if let Some(state)=&world.fragiles{
+                for damage in state.events.iter().skip(a.cursors.fragile){println!("SHARED_FRAGILE_DAMAGE {}",serde_json::json!({
+                    "battle":world.id.to_string(),"catalog_sha256":state.catalog.sha256,"policy":super::fragiles::policy_for(world.vehicle_kind()),
+                    "object_id":damage.object_id,"instance_id":damage.instance_id,"object_revision":damage.object_revision,
+                    "shot":damage.shot,"shooter":damage.shooter,"tick":damage.tick,"health_before":damage.health_before,"health_after":damage.health_after,
+                    "scene_before":damage.scene_before,"scene_after":damage.scene_after}));}
+                a.cursors.fragile=state.events.len();
             }
-            let model::ImpactOutcome::Ap(resolution) = &event.outcome else { return Err(model::bad().into()); };
-            println!("SHARED_AP_IMPACT {}", serde_json::json!({
-                "battle":world.id.to_string(),"shot":event.shot,"attacker":event.attacker,"target":event.target,"tick":event.tick,
-                "profile_revision":resolution.profile_revision,"historical_fidelity":ap::HISTORICAL_FIDELITY,
-                "outcome":resolution.outcome.label(),"reason":format!("{:?}",resolution.outcome),
-                "armor":resolution.armor,"incidence_degrees":resolution.incidence_degrees,
-                "normalization_degrees":resolution.normalization_degrees,
-                "effective_armor":resolution.effective_armor,"nominal_power":resolution.nominal_power,
-                "health_before":event.health_before,"health_after":event.health_after,
-                "damage":event.health_before-event.health_after,"native_effect_available":event.segment.is_some()}));
-        }
-        impact_cursor = world.impacts.len();
-        if let Some(state)=&world.fragiles{
-            for damage in state.events.iter().skip(fragile_cursor){println!("SHARED_FRAGILE_DAMAGE {}",serde_json::json!({
-                "battle":world.id.to_string(),"catalog_sha256":state.catalog.sha256,"policy":super::fragiles::policy_for(world.vehicle_kind()),
-                "object_id":damage.object_id,"instance_id":damage.instance_id,"object_revision":damage.object_revision,
-                "shot":damage.shot,"shooter":damage.shooter,"tick":damage.tick,"health_before":damage.health_before,"health_after":damage.health_after,
-                "scene_before":damage.scene_before,"scene_after":damage.scene_after}));}
-            fragile_cursor=state.events.len();
         }
         // Both peers receive a snapshot of the same completed server tick.
         for s in &mut table.sessions { if let Some(c) = &mut s.shared {
-            if c.phase!=Phase::Returning && world.actors.get(c.slot).is_some_and(|a|a.session==Some(s.id)) {
-                c.view = Some(world.clone());
+            if c.phase!=Phase::Returning {
+                if let Some(a)=arenas.iter().find(|a|a.world.actors.get(c.slot).is_some_and(|x|x.session==Some(s.id))) {
+                    c.view = Some(a.world.clone());
+                }
             }
         } }
         thread::sleep(Duration::from_millis(5));
@@ -2857,7 +2958,7 @@ mod tests {
         let (_,mut rejoin,_)=visible_pair(at);
         rejoin.shared.as_mut().unwrap().impact_cursor=w.impacts.len();
         rejoin.shared.as_mut().unwrap().shot_cursor=w.latest_shot();
-        rejoin.shared.as_mut().unwrap().health_sent=[Some(90),Some(0),None,None,None,None];
+        rejoin.shared.as_mut().unwrap().health_sent=std::array::from_fn(|slot|[Some(90),Some(0)].get(slot).copied().flatten());
         let creation=wire::create_vehicle(&w,1).unwrap();
         assert!(creation.windows(7).any(|r|r==[3,0,0,4,0,0,5]));
         rejoin.shared.as_mut().unwrap().view=Some(w.clone());
@@ -2907,7 +3008,7 @@ mod tests {
         let (_,mut rejoin,_)=visible_pair(at);
         let c=rejoin.shared.as_mut().unwrap();
         c.impact_cursor=w.impacts.len(); c.shot_cursor=w.latest_shot();
-        c.health_sent=[Some(90),Some(0),None,None,None,None]; c.owner_health_sent=Some(0); c.view=Some(w.clone());
+        c.health_sent=std::array::from_fn(|slot|[Some(90),Some(0)].get(slot).copied().flatten()); c.owner_health_sent=Some(0); c.view=Some(w.clone());
         poll(&mut rejoin,&mut w,at).unwrap();
         assert!(queued_bodies(&rejoin,at).is_empty());
         assert_eq!(w.actors[1].health,0);

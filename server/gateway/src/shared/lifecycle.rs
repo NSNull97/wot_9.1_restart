@@ -3,7 +3,7 @@
 use std::io;
 
 pub const POLICY: &str = "test_lab.ctf-lifecycle-v1";
-pub const MAX_ACTORS: usize = 6;
+pub const MAX_ACTORS: usize = super::model::MAX_ACTORS;
 pub const MAX_STEP_MS: u64 = 1_000;
 const COMPLETE: u64 = 100_000;
 

@@ -291,11 +291,11 @@ mod tests {
         for hp in [-32768, -1, 91, 32767] {
             assert!(health_changed(0, hp, 1).is_err()); assert!(owner_health(hp).is_err());
         }
-        for slot in 0..super::super::model::MAX_ACTORS {
+        for slot in 0..wire::MAX_NATIVE_ACTORS {
             assert!(health_changed(slot, 60, 0).is_ok());
             assert!(show_damage(0, slot, 1, BOX, [0.0; 3], [1.0; 3], ShotOutcome::Pierced).is_ok());
         }
-        let outside=super::super::model::MAX_ACTORS;
+        let outside=wire::MAX_NATIVE_ACTORS;
         for (attacker, target) in [(outside, 0), (0, outside), (usize::MAX, 1)] {
             assert!(health_changed(target, 60, attacker).is_err());
             assert!(show_damage(attacker, target, 1, BOX, [0.0; 3], [1.0; 3], ShotOutcome::Pierced).is_err());

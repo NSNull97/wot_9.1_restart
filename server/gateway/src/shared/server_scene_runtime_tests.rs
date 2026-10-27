@@ -119,3 +119,11 @@ fn spin(runtime:&mut BatchRuntime,world:&mut World,now:Instant,until:impl Fn(&Ba
         assert!(crate::map_drive_worker091::shared_angular_proof(&changed,&contacts,catalog,profile,7).is_err());
     }assert!(checked>0);
 }
+
+#[test]fn arena01_manifest_slot_bound_stays_native_six_unless_the_roster_is_larger(){
+    // Default path (battle_players 2..6, P10B lanes): the old bound 6.
+    for roster in 0..=6 {assert_eq!(BatchRuntime::slot_bound(roster),6);}
+    // Only an explicitly larger World roster raises it, never past MAX_ACTORS.
+    assert_eq!(BatchRuntime::slot_bound(7),7);assert_eq!(BatchRuntime::slot_bound(30),30);
+    assert_eq!(BatchRuntime::slot_bound(31),model::MAX_ACTORS);
+}

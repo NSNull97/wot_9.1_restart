@@ -5,16 +5,16 @@ use super::*;
     let now=Instant::now();let kind=VehicleKind::T26;
     assert_eq!(kind.ammo_limit(),160);
     let mut world=World::new_for_vehicle(404,now,crate::map_profile091::MapId::Prohorovka,kind).unwrap();
-    world.set_expected_actors(MAX_ACTORS).unwrap();
-    for slot in 0..MAX_ACTORS {
+    world.set_expected_actors(6).unwrap();
+    for slot in 0..6 {
         world.attach(Identity{account:format!("explicit-lab-t26-{slot}"),database:slot as i32+1,name:format!("lab-{slot}")},slot as u32+1).unwrap();
         world.actors[slot].fire=fire::State::with_mounted_loadout(160,kind.reload_seconds(),kind.ammo_limit()).unwrap();
     }
-    world.start(now).unwrap();for slot in 0..MAX_ACTORS {world.set_ready(slot,slot as u32+1).unwrap();}
-    assert_eq!(world.shot_limit(),960);assert_eq!(MAX_BATTLE_SHOTS,960);
+    world.start(now).unwrap();for slot in 0..6 {world.set_ready(slot,slot as u32+1).unwrap();}
+    assert_eq!(world.shot_limit(),960);assert_eq!(6*MAX_AMMO_PER_ACTOR,960);
     for round in 0..160 {
         let at=now+Duration::from_secs_f64(round as f64*(kind.reload_seconds() as f64+0.1));
-        for slot in 0..MAX_ACTORS {
+        for slot in 0..6 {
             let outcome=world.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
             assert_eq!(outcome,vec![fire::Outcome::AcceptedShot{ammo_remaining:159-round as u16}]);
         }
@@ -22,7 +22,7 @@ use super::*;
     assert_eq!(world.latest_shot(),960);assert_eq!(world.projectiles.len(),960);
     assert_eq!(world.impact.events().len(),1920);
     let after=now+Duration::from_secs(1000);
-    for slot in 0..MAX_ACTORS {assert_eq!(world.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],after).unwrap(),vec![fire::Outcome::RejectedNoAmmo]);}
+    for slot in 0..6 {assert_eq!(world.apply(slot,slot as u32+1,&[Command::Fire(fire::Command::Shoot)],after).unwrap(),vec![fire::Outcome::RejectedNoAmmo]);}
     assert_eq!(world.latest_shot(),960);
     assert!(Projectile::launch_for_limit(961,5,&world.actors[5],after,world.shot_limit()).is_err());
 }

@@ -228,6 +228,8 @@ impl<'de> Deserialize<'de> for ConfigFields{
 
 /// GW-01 target from ADR-002: one gateway process holds at most this many sessions.
 pub const MAX_CONNECTIONS:usize=256;
+/// ARENA-01: arenas per gateway process (ADR-002: 2 workers x 4 arenas).
+pub const MAX_ARENAS:usize=4;
 
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
@@ -244,6 +246,8 @@ pub struct Config {
     domain:Option<domain_client::Endpoint>,
     /// GW-01: connections the gateway holds, separate from arena places (absent: battle_players, old path).
     pub connection_capacity:Option<usize>,
+    /// ARENA-01: arenas run by this gateway (absent or 1: the one old World).
+    pub arenas:usize,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -339,6 +343,16 @@ impl Config {
         if connection_capacity.is_some()&&(!profile13_battle||training_rooms||p08b_owner_battle_hold){
             return Err(invalid("connection_capacity requires profile13 battle without training rooms or hold5"));
         }
+        // ARENA-01: K arenas share the connection table; each needs its own places.
+        let arenas=match value.remove("arenas"){
+            None=>1,
+            Some(Value::Number(n))=>n.as_u64().filter(|n|(1..=MAX_ARENAS as u64).contains(n))
+                .ok_or_else(||invalid("arenas must be 1..4"))? as usize,
+            _=>return Err(invalid("arenas must be integer")),
+        };
+        if arenas>1&&connection_capacity.is_none_or(|n|n<arenas*battle_players){
+            return Err(invalid("arenas requires connection_capacity of at least arenas*battle_players"));
+        }
         // CAT-01: exact {"version":1,"sha256":<this build's catalog>}; a foreign hash refuses start.
         let catalog_v1=match value.remove("catalog"){
             None=>false,
@@ -375,7 +389,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}

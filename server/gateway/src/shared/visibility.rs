@@ -6,7 +6,7 @@
 //! enters this module. Camouflage, bushes, radio and retention are not modeled.
 use std::io;
 
-pub(crate) const MAX_ACTORS: usize = 6;
+pub(crate) const MAX_ACTORS: usize = super::model::MAX_ACTORS;
 /// Same finite coordinate ceiling as the existing terrain/obstacle query.
 pub(crate) const MAX_COORDINATE: f32 = 10_000.;
 /// Parser/domain safety bound, not a historical maximum effective view range.
@@ -41,7 +41,7 @@ pub(crate) struct SightLine {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct InterestSet(u8);
+pub(crate) struct InterestSet(u32);
 impl InterestSet {
     pub(crate) fn contains(self, slot: usize) -> bool {
         slot < MAX_ACTORS && self.0 & (1 << slot) != 0
@@ -191,11 +191,11 @@ mod tests {
         assert_eq!(strict.slots().collect::<Vec<_>>(),vec![0]);assert!(!strict.contains(usize::MAX));
     }
     #[test] fn six_recipients_six_targets_are_bounded_and_order_independent() {
-        let actors=std::array::from_fn::<_,MAX_ACTORS,_>(|slot|actor(slot,if slot%2==0{1}else{2},slot as f32*5.,400.));
+        let actors=std::array::from_fn::<_,6,_>(|slot|actor(slot,if slot%2==0{1}else{2},slot as f32*5.,400.));
         let mut queries=Vec::new();
         let matrix=desired_sets(&actors,Allies::Always,|line|{queries.push((line.recipient,line.target));Ok(true)}).unwrap();
         assert_eq!(queries.len(),18);assert!(queries.iter().all(|(a,b)|a!=b && a%2!=b%2));
-        for slot in 0..MAX_ACTORS {assert_eq!(matrix.get(slot).unwrap().slots().collect::<Vec<_>>(),(0..6).collect::<Vec<_>>());}
+        for slot in 0..6 {assert_eq!(matrix.get(slot).unwrap().slots().collect::<Vec<_>>(),(0..6).collect::<Vec<_>>());}
         assert!(matrix.get(6).is_none());assert!(matrix.get(usize::MAX).is_none());
         let mut reverse=actors;reverse.reverse();let mut reversed_queries=Vec::new();
         let reversed=desired_sets(&reverse,Allies::Always,|line|{reversed_queries.push((line.recipient,line.target));Ok(true)}).unwrap();
@@ -206,7 +206,7 @@ mod tests {
         for mutation in 0..10 {
             let mut actors=good;
             match mutation {
-                0=>actors[1].slot=0,1=>actors[1].slot=6,2=>actors[1].team=0,3=>actors[1].team=3,
+                0=>actors[1].slot=0,1=>actors[1].slot=MAX_ACTORS,2=>actors[1].team=0,3=>actors[1].team=3,
                 4=>actors[1].sight_point[1]=f32::NAN,5=>actors[1].position[0]=f32::INFINITY,
                 6=>actors[1].sight_point[0]=MAX_COORDINATE+1.,7=>actors[1].view_range=0.,
                 8=>actors[1].view_range=f32::NAN,9=>actors[1].view_range=MAX_VIEW_RANGE+1.,_=>unreachable!(),
@@ -214,7 +214,7 @@ mod tests {
             assert!(desired_sets(&actors,Allies::Always,|_|panic!("validation must precede LOS")).is_err(),"mutation{mutation}");
         }
         assert!(desired_sets(&[],Allies::Always,|_|panic!()).is_err());
-        let too_many=vec![good[0];7];assert!(desired_sets(&too_many,Allies::Always,|_|panic!()).is_err());
+        let too_many=vec![good[0];MAX_ACTORS+1];assert!(desired_sets(&too_many,Allies::Always,|_|panic!()).is_err());
         assert!(desired_set(5,&good,Allies::Always,|_|panic!()).is_err());
     }
     #[test] fn a_late_los_error_returns_no_partial_matrix_and_never_mutates_the_snapshot() {

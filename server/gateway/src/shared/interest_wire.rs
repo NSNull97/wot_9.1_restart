@@ -6,7 +6,7 @@
 //! book and must belong to the current announcement_sequence, not an old cycle.
 use std::io;
 
-pub(crate) const MAX_ENTRIES: usize = 6;
+pub(crate) const MAX_ENTRIES: usize = super::model::MAX_ACTORS;
 pub(crate) const MAX_SELECTIVE_ACKS: usize = 256;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -210,17 +210,17 @@ mod tests {
         for (active,desired) in [(mask(&[0,1]),mask(&[1])),(mask(&[1]),mask(&[0,1])),(mask(&[0]),mask(&[0,1]))] {
             assert!(book.set_desired(active,desired).is_err());assert_eq!(book,before);
         }
-        assert!(!book.request_allowed(usize::MAX));assert!(!book.publish_allowed(6,true));assert_eq!(book.entry(6),None);
+        assert!(!book.request_allowed(usize::MAX));assert!(!book.publish_allowed(MAX_ENTRIES,true));assert_eq!(book.entry(MAX_ENTRIES),None);
         book.set_desired(mask(&[0,1]),mask(&[0])).unwrap();let leave=book.transitions()[0];book.mark_queued(leave,11).unwrap();let before=book.clone();
         assert!(book.acknowledge(11,&[0]).unwrap().is_empty());assert_eq!(book,before);
         assert!(book.acknowledge(12,&vec![11;MAX_SELECTIVE_ACKS+1]).is_err());assert_eq!(book,before);
     }
     #[test] fn six_books_keep_six_slots_bounded_and_preserve_each_owner_through_bulk_reentry() {
-        let all=[true;MAX_ENTRIES];
-        for own in 0..MAX_ENTRIES {
+        let all=mask(&[0,1,2,3,4,5]);
+        for own in 0..6 {
             let mut book=Book::new(own).unwrap();book.set_desired(all,all).unwrap();let enters=book.transitions();assert_eq!(enters.len(),6);
             for action in enters {book.mark_queued(action,20).unwrap();}
-            for slot in 0..MAX_ENTRIES {assert!(book.request_allowed(slot));}
+            for slot in 0..6 {assert!(book.request_allowed(slot));}
             book.set_desired(all,mask(&[own])).unwrap();let leaves=book.transitions();assert_eq!(leaves.len(),5);
             assert!(leaves.iter().all(|a|a.slot!=own));for action in leaves {book.mark_queued(action,21).unwrap();}
             book.set_desired(all,all).unwrap();assert!(book.transitions().is_empty());

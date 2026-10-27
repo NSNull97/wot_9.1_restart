@@ -124,7 +124,7 @@ fn place_box_on_flat(world:&mut World,slot:usize,com_x:f32,roof:bool,yaw:f32){
         world.actors[slot].position=std::array::from_fn(|axis|point[axis]-offset[axis]);
     }
     let before=world.failure_snapshot();
-    let expected=(0..MAX_ACTORS).map(|own|world.desired_visibility(own).unwrap()).collect::<Vec<_>>();
+    let expected=(0..6).map(|own|world.desired_visibility(own).unwrap()).collect::<Vec<_>>();
     assert!(!expected[0][1]);assert!(expected[2][3]);
     // All six mixed recipients are in range, with three enemies each: 18 LOS
     // queries per complete snapshot, 360 across these20 recomputations.
@@ -141,8 +141,8 @@ fn place_box_on_flat(world:&mut World,slot:usize,com_x:f32,roof:bool,yaw:f32){
     let mut world=fixture(&[VehicleKind::Ms1,VehicleKind::Is7]);
     world.actors[1].position=[300.,0.,0.];
     let before=world.failure_snapshot();
-    assert_eq!(world.desired_visibility(0).unwrap(),[true,false,false,false,false,false]);
-    assert_eq!(world.desired_visibility(1).unwrap(),[true,true,false,false,false,false]);
+    assert_eq!(world.desired_visibility(0).unwrap()[..6],[true,false,false,false,false,false]);
+    assert_eq!(world.desired_visibility(1).unwrap()[..6],[true,true,false,false,false,false]);
     assert_eq!(world.failure_snapshot(),before);
     world.actors[1].position=[240.,0.,0.];assert!(world.desired_visibility(0).unwrap()[1]);
     world.actors[1].position=[240.001,0.,0.];assert!(!world.desired_visibility(0).unwrap()[1]);

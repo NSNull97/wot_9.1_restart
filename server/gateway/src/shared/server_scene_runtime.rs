@@ -71,12 +71,19 @@ impl BatchRuntime {
         Self::actor_manifest_for_lane(resources,slot,kind,version,slot)
     }
     fn actor_manifest_for_lane(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,lane:usize)->io::Result<serde_json::Value> {
-        if slot>=model::MAX_ACTORS || lane>=model::MAX_ACTORS || !matches!(version,1|2|3) || version==1&&kind.index()>=2
+        Self::actor_manifest_for_roster(resources,slot,kind,version,lane,wire::MAX_NATIVE_ACTORS)
+    }
+    fn slot_bound(roster:usize)->usize {roster.clamp(wire::MAX_NATIVE_ACTORS,model::MAX_ACTORS)}
+    /// ARENA-01: slots/lanes stay below the native six unless the World was
+    /// explicitly built with a larger roster (up to model::MAX_ACTORS).
+    fn actor_manifest_for_roster(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,lane:usize,roster:usize)->io::Result<serde_json::Value> {
+        let bound=Self::slot_bound(roster);
+        if slot>=bound || lane>=bound || !matches!(version,1|2|3) || version==1&&kind.index()>=2
             ||kind.is_extended()&&version!=3||version==3&&(resources.version!=4||resources.maps.len()!=7) {return Err(model::bad());}
         let map=resources.maps.get(kind.index()).ok_or_else(||model::bad())?;
         let mut row=serde_json::json!({"slot":slot,"kind":kind.label(),
             "config":{"path":Self::physical_path(&map.config),"sha256":map.config_sha256},
-            "spawn_origin":[map.spawn[0]+if lane%2==0{-4.}else{4.},map.spawn[1],map.spawn[2]-12.*(lane/2)as f32],"spawn_yaw":map.spawn_yaw});
+            "spawn_origin":Self::lane_origin(map.spawn,lane),"spawn_yaw":map.spawn_yaw});
         if version>=2 {
             row["source_profile"]=if kind.index()>=2 {
                 let (path,sha256)=resources.source_profiles[kind.index()].as_ref().ok_or_else(||model::bad())?;
@@ -88,6 +95,12 @@ impl BatchRuntime {
         }
         Ok(row)
     }
+    /// LAB lanes, not historical team spawns: lanes 0..5 keep the accepted pairs
+    /// (+-4 m, 12 m apart); ARENA-01 lanes 6..29 repeat that block every 36 m further
+    /// back along the spawn axis (same pairs, same 12 m rows).
+    fn lane_origin(spawn:[f32;3],lane:usize)->[f32;3] {
+        [spawn[0]+if lane%2==0{-4.}else{4.},spawn[1],spawn[2]-12.*((lane%6)/2)as f32-36.*(lane/6)as f32]
+    }
     pub(super) fn start(&mut self,world:&mut World,now:Instant)->io::Result<()> {
         if self.started_at.is_some()||!world.mixed_profiles()||world.actors.len()!=world.expected_actors()
             ||world.started.is_none()||world.map!=self.catalog.map_id(){return Err(model::bad());}
@@ -96,8 +109,8 @@ impl BatchRuntime {
         }
         let version=if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
         let rows=world.actors.iter().enumerate().map(|(slot,actor)|{
-            if world.team_plan().is_some(){Self::actor_manifest_for_lane(&self.resources,slot,actor.vehicle_kind(),version,world.spawn_lane(slot)?)}
-            else{Self::actor_manifest(&self.resources,slot,actor.vehicle_kind(),version)}
+            let lane=if world.team_plan().is_some(){world.spawn_lane(slot)?}else{slot};
+            Self::actor_manifest_for_roster(&self.resources,slot,actor.vehicle_kind(),version,lane,world.expected_actors())
         })
             .collect::<io::Result<Vec<_>>>()?;
         let manifest=serde_json::json!({"version":version,"profile":"test_lab","policy":scene_worker::POLICY,

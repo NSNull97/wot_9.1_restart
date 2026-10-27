@@ -144,7 +144,7 @@ impl Dispatcher{
             let Some(c)=&s.shared else{continue;};let Some(p)=&c.profile13 else{continue;};
             if p.in_flight||p.reservation.is_some()||p.pending_return.is_some(){return Err(model::bad());}
             let pending=p.pending_return_v2.is_some();if terminal_only!=pending{continue;}
-            if pending&&world.actors.iter().any(|a|a.session==Some(s.id)){continue;}
+            if pending&&(world.actors.iter().any(|a|a.session==Some(s.id))||self.attached_elsewhere.contains(&s.id)){continue;}
             if !pending&&(p.reservation_v2.is_some()||world.started.is_some()||p.selection.is_none()||!s.active||!c.join_requested||!s.ammo_service.as_ref().is_some_and(ammo_session::State::idle)||!arena_open){continue;}
             let owner=s.identity.clone().ok_or_else(||model::bad())?;let revision=s.ammo_service.as_ref().ok_or_else(||model::bad())?.revision();let sid=s.id;
             let p=state(s)?;p.revision=revision;let request=if let Some(t)=&p.pending_return_v2{t.request()}else{RequestV2::Admit{battle:world.id,native_inventory_id:p.selection.ok_or_else(||model::bad())?}};

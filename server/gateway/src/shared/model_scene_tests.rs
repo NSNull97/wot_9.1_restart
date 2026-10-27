@@ -6,7 +6,7 @@ fn roster(now:Instant,n:usize)->World{
     w
 }
 #[test]fn mixed_scene_roster_requires_complete_capacity_and_preserves_each_source_budget(){
-    let now=Instant::now();for n in [0,1,7]{assert!(World::new_for_roster(5,now,crate::map_profile091::MapId::Karelia,n).is_err());}
+    let now=Instant::now();for n in [0,1,MAX_ACTORS+1]{assert!(World::new_for_roster(5,now,crate::map_profile091::MapId::Karelia,n).is_err());}
     let mut w=roster(now,6);assert_eq!(w.shot_limit(),576);assert!(w.set_expected_actors(2).is_err());
     w.start(now).unwrap();for slot in 0..6{w.set_ready(slot,slot as u32+1).unwrap();}
     for round in 0..96 {let at=now+Duration::from_secs(round*20);if round>0{w.advance(at).unwrap();}

@@ -33,10 +33,10 @@ pub(super) fn fixture_for(now:Instant,own:usize)->(Session,World){
     let creation=s.tx.enqueue_body_tracked(&[wire::create_vehicle(&world,0).unwrap(),wire::create_vehicle(&world,1).unwrap()].concat()).unwrap();
     for slot in 0..2{c.creations[slot]=Some((creation,false));c.creation_announcements[slot]=Some(enter);}
     s.shared=Some(c);ack_all(&mut s,now);
-    let c=s.shared.as_mut().unwrap();c.health_sent=[Some(90);6];c.crew_sent=[Some(true);6];c.fire_sent=[Some(false);6];
+    let c=s.shared.as_mut().unwrap();c.health_sent=std::array::from_fn(|_|Some(90));c.crew_sent=std::array::from_fn(|_|Some(true));c.fire_sent=std::array::from_fn(|_|Some(false));
     c.owner_health_sent=Some(90);c.devices_snapshot_sent=true;c.view=Some(world.clone());(s,world)
 }
-pub(super) fn mask(enemy:bool)->[bool;6]{[true,enemy,false,false,false,false]}
+pub(super) fn mask(enemy:bool)->[bool;super::model::MAX_ACTORS]{std::array::from_fn(|slot|slot==0||slot==1&&enemy)}
 pub(super) fn detonate(world:&mut World){
     let joint=world.actors[1].position;let hp=world.actors[1].health;let sequence=world.damage_events.len()as u32+1;
     world.install_detonation_publication_fixture(ammo_detonation::Input{shot:sequence,target:1,attacker:0,tick:1000,

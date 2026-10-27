@@ -9,7 +9,7 @@ use serde::{Deserialize,Deserializer,de::{self,Visitor,MapAccess,SeqAccess}};
 use serde_json::{Value,Map,Number,json};
 use sha2::{Digest,Sha256};
 use crate::worker_cadence091::{self as cadence, Sink};
-pub const MAX_ACTORS:usize=6;
+pub const MAX_ACTORS:usize=crate::gateway091::shared::model::MAX_ACTORS;
 #[cfg(test)]
 #[path="scene_worker/tests_p04m.rs"]
 mod tests_p04m;
@@ -251,7 +251,7 @@ pub fn response(raw:&[u8],spec:&SceneSpec,generation:u32,scene:&Scene,seq:u32)->
     let rows=array(&v["actors"],MAX_ACTORS)?;if rows.len()!=spec.actors.len(){return Err(bad("complete actor batch"));}
     let actors=rows.iter().zip(&spec.actors).map(|(a,s)|actor_frame(a,s,&spec.catalog_ids)).collect::<io::Result<Vec<_>>>()?;
     let mut pairs=BTreeSet::new();let mut tank_contacts=Vec::new();let mut previous_pair=None;
-    for c in array(&v["tank_contacts"],15)?{keys(c,&["slot_a","slot_b","substep","point","normal","relative_velocity"])?;
+    for c in array(&v["tank_contacts"],MAX_ACTORS*(MAX_ACTORS-1)/2)?{keys(c,&["slot_a","slot_b","substep","point","normal","relative_velocity"])?;
         let a=uint(&c["slot_a"])?;let b=uint(&c["slot_b"])?;let step=uint(&c["substep"])?;
         if a>=b||b>=actors.len()as u64||!pairs.insert((a,b))||previous_pair.is_some_and(|old|old>=(a,b))||!(1..=6).contains(&step){return Err(bad("tank contact ownership/order"));}
         previous_pair=Some((a,b));

@@ -6,7 +6,7 @@ namespace MapDrive;
 // Separate IPC7 entrypoint. All identities are server-owned private-pipe data.
 internal static class BattleSceneInput
 {
-    public const int MaxActors = 6, MaxInputBytes = 32768, MaxOutputBytes = 512 * 1024;
+    public const int MaxActors = 30, MaxInputBytes = 32768, MaxOutputBytes = 512 * 1024;
     public const string Policy = "p05c-shared-scene-v1";
     public static readonly string EmptyCatalogHash = new('0', 64);
     public static readonly string EmptySceneHash = CheckedInput.Hash("wot091-empty-battle-scene-v1\0"u8.ToArray());

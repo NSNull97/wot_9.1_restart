@@ -9,7 +9,7 @@ fn resources()->Vec<super::super::super::profile13_templates::Resources>{super::
 #[test] fn p06t_extended_scene3_rows_require_explicit_resource4_and_exact_source_profile() {
     let rows=resources();let shared=rows[0].shared.as_ref().unwrap();
     for kind in VehicleKind::SUPPORTED {
-        let row=BatchRuntime::actor_manifest(shared,kind.index()%model::MAX_ACTORS,kind,3).unwrap();
+        let row=BatchRuntime::actor_manifest(shared,kind.index()%wire::MAX_NATIVE_ACTORS,kind,3).unwrap();
         assert_eq!(row.as_object().unwrap().len(),6);assert_eq!(row["kind"],kind.label());
         assert_eq!(row["config"]["sha256"],shared.maps[kind.index()].config_sha256);
         if kind.index()<2 {assert!(row["source_profile"].is_null());}

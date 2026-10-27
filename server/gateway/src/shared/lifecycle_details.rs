@@ -3,7 +3,7 @@
 use std::{collections::{BTreeMap,BTreeSet},io};
 pub const POLICY:&str="test_lab.authoritative-interactions.v1";
 pub const SPOTTING_POLICY:&str="test_lab.p08c.first-visible-enemy-lowest-slot.v1";
-pub const MAX_ACTORS:usize=6;
+pub const MAX_ACTORS:usize=super::model::MAX_ACTORS;
 fn bad()->io::Error{io::Error::new(io::ErrorKind::InvalidData,"authoritative result interactions")}
 #[derive(Clone,Debug,Default,PartialEq,Eq)]
 pub struct Target {

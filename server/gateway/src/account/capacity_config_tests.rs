@@ -38,3 +38,18 @@ fn gw01_capacity_refuses_runtimes_that_start_only_with_every_session_in_the_aren
     assert!(load(&path,&hold).is_err());
     hold["p08b_owner_battle_hold"]=false.into();assert_eq!(load(&path,&hold).unwrap().connection_capacity,Some(64));
 }
+
+#[test]
+fn arena01_arenas_absent_is_one_and_more_need_connections_for_every_arena(){
+    let(path,mut value)=loopback();
+    assert_eq!(load(&path,&value).unwrap().arenas,1);
+    value["arenas"]=1.into();assert_eq!(load(&path,&value).unwrap().arenas,1);
+    value["arenas"]=2.into();assert!(load(&path,&value).err().unwrap().to_string().contains("arenas requires connection_capacity"));
+    value["connection_capacity"]=3.into();assert!(load(&path,&value).is_err(),"two arenas of two places need four connections");
+    value["connection_capacity"]=4.into();assert_eq!(load(&path,&value).unwrap().arenas,2);
+    value["connection_capacity"]=256.into();
+    for n in [2u64,3,4]{value["arenas"]=n.into();assert_eq!(load(&path,&value).unwrap().arenas,n as usize);}
+    for bad in [serde_json::json!(0),serde_json::json!(5),serde_json::json!(-1),serde_json::json!(2.5),serde_json::json!("2"),serde_json::json!(true)]{
+        value["arenas"]=bad.clone();assert!(load(&path,&value).is_err(),"{bad}");
+    }
+}
