@@ -37,6 +37,11 @@ def literal(path, name, names=None):
     raise AssertionError("%s not found in %s" % (name, path))
 
 
+LEGACY_KINDS = ["ms1", "is7", "t26", "t34", "t3485"]
+# BATTLE-ANY stage 3 pilot (owner 2026-10-27): generated rows, admission "always".
+PILOT_KINDS = ["ussr-KV1", "usa-M4_Sherman", "germany-Waffentrager_E100", "japan-Chi_Ri"]
+
+
 def document():
     return json.loads(CATALOG.read_bytes())
 
@@ -49,14 +54,14 @@ class CatalogBindingContract(unittest.TestCase):
         digest, doc = catalog_build.check_bindings()
         self.assertEqual(digest, hashlib.sha256(CATALOG.read_bytes()).hexdigest())
         kinds = [v["kind"] for v in doc["vehicles"]]
-        self.assertEqual(kinds, ["ms1", "is7", "t26", "t34", "t3485"])
+        self.assertEqual(kinds, LEGACY_KINDS + PILOT_KINDS)
         self.assertEqual(catalog_v1_data.CATALOG_SHA256, digest)
         self.assertEqual([v["kind"] for v in catalog_v1_data.VEHICLES], kinds)
         self.assertEqual(catalog_v1_hints.CATALOG_SHA256, digest)
         self.assertEqual([v["kind"] for v in catalog_v1_hints.VEHICLES], kinds)
         rust = (ROOT / "server/gateway/src/shared/vehicle_catalog.rs").read_text(encoding="ascii")
         self.assertEqual(re.findall(r'pub const CATALOG_SHA256:&str="([0-9a-f]{64})";', rust), [digest])
-        self.assertEqual(re.findall(r'Vehicle\{kind:"([a-z0-9-]+)"', rust), kinds)
+        self.assertEqual(re.findall(r'Vehicle\{kind:"([A-Za-z0-9_-]+)"', rust), kinds)
         node = subprocess.run(["node", "--input-type=module", "-e",
             "const m=await import(process.argv[1]);process.stdout.write(JSON.stringify("
             "{sha:m.CATALOG_SHA256,kinds:m.CATALOG_VEHICLES.map(v=>v.kind),vehicles:m.CATALOG_VEHICLES}))",
@@ -105,7 +110,9 @@ class CatalogEqualsRetainedLists(unittest.TestCase):
 
     def test_python_registry_pins_and_pool_shell_rows(self):
         from p04m_pool_store import SHELL_ROWS
-        self.assertEqual(dict(registry.PINS), catalog_v1.stock_pins())
+        pins = catalog_v1.stock_pins()
+        self.assertEqual(dict(registry.PINS), {k: pins[k] for k in LEGACY_KINDS})
+        self.assertEqual(sorted(set(pins) - set(registry.PINS)), sorted(PILOT_KINDS))
         rows = catalog_v1.shell_rows()
         self.assertEqual({k: rows[k] for k in SHELL_ROWS}, SHELL_ROWS)
         self.assertEqual(set(registry.NEW_KINDS), {k for k, v in self.by_kind.items()
@@ -153,7 +160,9 @@ class CatalogEqualsRetainedLists(unittest.TestCase):
         func = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "catalog_profile13_vehicles")
         scope = {}
         exec(compile(ast.Module(body=[func], type_ignores=[]), "map_drive_client.py", "exec"), scope)
-        self.assertEqual(scope["catalog_profile13_vehicles"](catalog_v1_hints), legacy)
+        table = scope["catalog_profile13_vehicles"](catalog_v1_hints)
+        self.assertEqual({k: table[k] for k in legacy}, legacy)
+        self.assertEqual(set(table) - set(legacy), {self.by_kind[k]["native_compact_id"] for k in PILOT_KINDS})
 
     def test_client_crew_and_ammo_ui_tables_are_the_catalog_ui_subset(self):
         crew = {v["legacy_inventory"]["native_inventory_id"]: v for v in self.by_kind.values()
@@ -182,8 +191,11 @@ class AdmissionIsData(unittest.TestCase):
         self.assertEqual({(k, z): registry.mixed_admission(k, lambda z=z: z) for k in kinds[:5] for z in (False, True)}, legacy)
         self.assertEqual({k: registry.legacy_route_admitted(k) for k in kinds[:5]}, legacy_route)
         for k in kinds[5:]:
-            self.assertFalse(registry.mixed_admission(k, lambda: True))
-        self.assertEqual(dict(registry.active_pins()), dict(registry.PINS))
+            # BATTLE-ANY pilot rows are admitted by data (owner 2026-10-27); others are unknown.
+            self.assertEqual(registry.mixed_admission(k, lambda: False), k in PILOT_KINDS, k)
+            self.assertEqual(registry.legacy_route_admitted(k), k in PILOT_KINDS, k)
+        pins = dict(registry.active_pins())
+        self.assertEqual({k: pins[k] for k in LEGACY_KINDS}, dict(registry.PINS))
 
     def test_changing_the_data_field_changes_admission_without_code(self):
         catalog_v1.activate(catalog_v1_data.CATALOG_SHA256)
@@ -234,7 +246,11 @@ class CatalogFromPinnedClient(unittest.TestCase):
         legacy = registry.StockRegistry(research)
         catalog_v1.activate(catalog_v1_data.CATALOG_SHA256)
         current = registry.StockRegistry(research)
-        self.assertEqual(dict(current.profiles), dict(legacy.profiles))
+        self.assertEqual({k: current.profiles[k] for k in LEGACY_KINDS}, dict(legacy.profiles))
+        self.assertEqual(sorted(set(current.profiles) - set(legacy.profiles)), sorted(PILOT_KINDS))
+        for kind in PILOT_KINDS:
+            self.assertEqual(current.profiles[kind].vehicle_id, catalog_v1.by_kind(kind)["vehicle_id"])
+        # The gateway-pinned registry hash covers the legacy kinds only.
         self.assertEqual(current.sha256, legacy.sha256)
 
 

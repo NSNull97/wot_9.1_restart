@@ -254,12 +254,19 @@ class ExistingProfilesReproduced(unittest.TestCase):
         for kind, index in effects.items():
             self.assertEqual(by[kind]["shots"][0]["effects_index"], index, kind)
 
-    def test_catalog_v1_five_unchanged(self):
+    def test_catalog_v1_rows_match_table(self):
+        # Legacy five keep their closed kind; stage 3 pilot rows carry the generated label.
         catalog = json.loads((ROOT / "config/catalog/catalog.v1.json").read_bytes())
         by = {row["vehicle_id"]: row for row in rows().values()}
         for vehicle in catalog["vehicles"]:
             row = by[vehicle["vehicle_id"]]
-            self.assertEqual(row["existing_kind"], vehicle["kind"])
+            if vehicle["kind"] not in ("ms1", "is7", "t26", "t34", "t3485"):
+                # WT keeps existing_kind wt-e100-128 (closed P06T kind); its catalog row
+                # uses the generated label, equal to the closed kind by the gateway test.
+                self.assertEqual((row["status"], row["kind"]), ("generated", vehicle["kind"]))
+                self.assertFalse(row["catalog_nation_correction_required"], vehicle["kind"])
+            else:
+                self.assertEqual(row["existing_kind"], vehicle["kind"])
             self.assertEqual(row["identity"]["descriptor_hex"], vehicle["descriptor_hex"])
             self.assertEqual(row["gun"]["max_ammo"], vehicle["ammo_capacity"])
 

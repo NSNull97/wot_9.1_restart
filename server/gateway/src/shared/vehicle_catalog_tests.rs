@@ -32,11 +32,15 @@ const ACCOUNT:&str="0f1e2d3c-4b5a-4968-8776-655443322110";
     }
 }
 
+const LEGACY:[&str;5]=["ms1","is7","t26","t34","t3485"];
+/// BATTLE-ANY stage 3 pilot (owner 2026-10-27): generated rows after the legacy five.
+const PILOT:[&str;4]=["ussr-KV1","usa-M4_Sherman","germany-Waffentrager_E100","japan-Chi_Ri"];
+fn legacy_rows()->impl Iterator<Item=&'static Vehicle>{VEHICLES.iter().filter(|v|LEGACY.contains(&v.kind))}
+
 #[test] fn catalog_equals_retained_closed_rust_lists() {
     let labels:Vec<&str>=VEHICLES.iter().map(|v|v.kind).collect();
-    // The legacy owned mixed route admits exactly this set today.
-    assert_eq!(labels,["ms1","is7","t26","t34","t3485"]);
-    for v in VEHICLES{
+    assert_eq!(labels,LEGACY.iter().chain(PILOT.iter()).copied().collect::<Vec<_>>());
+    for v in legacy_rows(){
         let kind=VehicleKind::from_label(v.kind).unwrap();
         assert_eq!(kind.descriptor(),v.descriptor,"{}",v.kind);
         assert_eq!(kind.vehicle_compact_id(),v.native_compact_id);
@@ -55,6 +59,23 @@ const ACCOUNT:&str="0f1e2d3c-4b5a-4968-8776-655443322110";
     }
 }
 
+/// Pilot rows come from the research catalogue (catalog_build); the gateway registry
+/// comes from the generated battle table. Both must state the same vehicle.
+#[test] fn pilot_rows_equal_the_verified_generated_registry() {
+    for v in VEHICLES.iter().filter(|v|PILOT.contains(&v.kind)){
+        let kind=VehicleKind::from_owned_label(v.kind).unwrap();
+        let e=kind.generated().unwrap();
+        assert!(VehicleKind::from_label(v.kind).is_none(),"{} must not shadow a closed kind",v.kind);
+        assert_eq!((kind.descriptor(),kind.vehicle_compact_id(),kind.gun_compact_id()),(v.descriptor,v.native_compact_id,v.gun_compact_id),"{}",v.kind);
+        assert_eq!((i32::from(kind.max_health()),kind.ammo_limit(),e.crew.len()),(i32::from(v.max_hp),v.ammo_capacity,v.seats),"{}",v.kind);
+        assert_eq!(e.gun.shots.each_ref().map(|s|(u32::from(s.compact_descr),s.family.source_name())),
+            [0,1,2].map(|i|(v.shells[i].native_compact_id,v.shells[i].family)),"{}",v.kind);
+        assert_eq!(e.suffixes.each_ref().map(|s|s.as_str()),[0,1,2].map(|i|v.shells[i].suffix),"{}",v.kind);
+        assert_eq!(e.caps.map(|c|(c.max,c.regen)).as_slice(),v.devices,"{}",v.kind);
+        assert_eq!(v.battle_admission,Admission::Always,"{}",v.kind);
+    }
+}
+
 fn frozen(v:&Vehicle,native:u64,suffix:&str)->(Value,String){
     let crew:Vec<String>=(0..v.seats).map(|i|format!("{ACCOUNT}:crew-{i}")).collect();
     let ammunition:Vec<Value>=v.shells.iter().enumerate().map(|(i,s)|serde_json::json!({"shell_definition_id":s.shell_definition_id,
@@ -66,7 +87,7 @@ fn frozen(v:&Vehicle,native:u64,suffix:&str)->(Value,String){
 }
 
 #[test] fn catalog_and_legacy_admission_identity_are_identical() {
-    for v in VEHICLES{
+    for v in legacy_rows(){
         let (native,suffix)=match v.legacy_inventory{Some((n,s))=>(u64::from(n),s.to_string()),None=>(7,"p09e-vehicle:7".to_string())};
         let(value,sha)=frozen(v,native,&suffix);
         let legacy=v2::parse_frozen_with(&value,ACCOUNT,&sha,false).unwrap();
@@ -78,6 +99,8 @@ fn frozen(v:&Vehicle,native:u64,suffix:&str)->(Value,String){
     }
     for label in ["wt-e100-128","fv215b-183","kv1",""]{
         assert!(v2::legacy_identity_for_tests(label,7).is_err());assert!(v2::catalog_identity_in(VEHICLES,label,7).is_err());}
+    // Stage 3a only extends the catalog; the gateway admits generated kinds in stage 3c.
+    for label in PILOT{assert!(v2::catalog_identity_in(VEHICLES,label,7).is_err(),"{label}");}
 }
 
 #[test] fn battle_admission_is_a_data_field() {

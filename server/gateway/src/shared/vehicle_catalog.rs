@@ -2,7 +2,7 @@
 //! Gateway binding. Used only when the gateway config carries
 //! `"catalog":{"version":1,"sha256":CATALOG_SHA256}`; legacy lists stay the default.
 pub const CATALOG_SCHEMA:&str="wot091-server-catalog.v1";
-pub const CATALOG_SHA256:&str="a6bd44f4169221e4be301e0de7fb9ce390602383e42abc34deb78dabbd3a8e3b";
+pub const CATALOG_SHA256:&str="1459bba9eeb6dc0e1bfdc8978c2bda1097daefe494b7b6e89712f925a0770ceb";
 pub const CATALOG_JSON:&str=include_str!("../../../../config/catalog/catalog.v1.json");
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Admission{Always,ZeroEconomyPolicy,None}
@@ -28,6 +28,18 @@ pub const VEHICLES:&[Vehicle]=&[
     Vehicle{kind:"t3485",vehicle_id:"vehicle:ussr:T-34-85",native_compact_id:2561,descriptor:&[0x01,0x0a,0x14,0x00,0x01,0x00,0xcb,0x00,0x03,0x00,0x11,0x00,0x06,0x00,0x00],
         max_hp:670,ammo_capacity:68,seats:5,gun_compact_id:1540,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:t3485-stock-ap",family:"ARMOR_PIERCING",native_compact_id:7946},Shell{suffix:"apcr",shell_definition_id:"shell:t3485-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:8202},Shell{suffix:"he",shell_definition_id:"shell:t3485-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:8458}],
         devices:&[(145,72),(140,90),(150,60),(110,55),(110,85),(110,85),(130,65),(120,60),(80,40)],battle_admission:Admission::ZeroEconomyPolicy,legacy_inventory:None},
+    Vehicle{kind:"ussr-KV1",vehicle_id:"vehicle:ussr:KV1",native_compact_id:11777,descriptor:&[0x01,0x2e,0x6a,0x00,0x06,0x00,0xcb,0x00,0x04,0x00,0x58,0x00,0x1b,0x00,0x00],
+        max_hp:590,ammo_capacity:114,seats:5,gun_compact_id:6916,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:ussr-KV1-stock-ap",family:"ARMOR_PIERCING",native_compact_id:7178},Shell{suffix:"apcr",shell_definition_id:"shell:ussr-KV1-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:8202},Shell{suffix:"he",shell_definition_id:"shell:ussr-KV1-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:7690}],
+        devices:&[(85,42),(140,90),(150,60),(140,100),(130,100),(130,100),(118,59),(120,60),(70,35)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"usa-M4_Sherman",vehicle_id:"vehicle:usa:M4_Sherman",native_compact_id:1057,descriptor:&[0x21,0x04,0x08,0x00,0x0c,0x00,0xcb,0x00,0x08,0x00,0x08,0x00,0x00,0x00,0x00],
+        max_hp:400,ammo_capacity:90,seats:5,gun_compact_id:36,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:usa-M4_Sherman-stock-ap",family:"ARMOR_PIERCING",native_compact_id:3626},Shell{suffix:"apcr",shell_definition_id:"shell:usa-M4_Sherman-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:3882},Shell{suffix:"he",shell_definition_id:"shell:usa-M4_Sherman-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:4138}],
+        devices:&[(104,52),(170,120),(150,50),(120,60),(90,70),(90,70),(114,57),(100,50),(70,35)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"germany-Waffentrager_E100",vehicle_id:"vehicle:germany:Waffentrager_E100",native_compact_id:16913,descriptor:&[0x11,0x42,0xa1,0x00,0x2c,0x00,0xcd,0x00,0x0d,0x00,0x86,0x00,0x5a,0x00,0x00],
+        max_hp:2000,ammo_capacity:60,seats:6,gun_compact_id:23060,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:germany-Waffentrager_E100-stock-ap",family:"ARMOR_PIERCING",native_compact_id:13850},Shell{suffix:"apcr",shell_definition_id:"shell:germany-Waffentrager_E100-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:14106},Shell{suffix:"he",shell_definition_id:"shell:germany-Waffentrager_E100-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:14362}],
+        devices:&[(360,170),(280,190),(200,70),(250,75),(300,225),(300,225),(240,120),(100,50),(120,60)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"japan-Chi_Ri",vehicle_id:"vehicle:japan:Chi_Ri",native_compact_id:1121,descriptor:&[0x61,0x04,0x08,0x00,0x0e,0x00,0xcc,0x00,0x04,0x00,0x07,0x00,0x10,0x00,0x00],
+        max_hp:1150,ammo_capacity:97,seats:5,gun_compact_id:4196,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:japan-Chi_Ri-stock-ap",family:"ARMOR_PIERCING",native_compact_id:362},Shell{suffix:"ap2",shell_definition_id:"shell:japan-Chi_Ri-stock-ap2",family:"ARMOR_PIERCING",native_compact_id:618},Shell{suffix:"he",shell_definition_id:"shell:japan-Chi_Ri-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:874}],
+        devices:&[(200,100),(190,130),(175,70),(80,48),(130,100),(130,100),(120,60),(130,65),(90,45)],battle_admission:Admission::Always,legacy_inventory:None},
 ];
 pub fn by_kind(kind:&str)->Option<&'static Vehicle>{VEHICLES.iter().find(|v|v.kind==kind)}
 
