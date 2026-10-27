@@ -76,7 +76,7 @@ impl BatchRuntime {
         let map=resources.maps.get(kind.index()).ok_or_else(||model::bad())?;
         let mut row=serde_json::json!({"slot":slot,"kind":kind.label(),
             "config":{"path":Self::physical_path(&map.config),"sha256":map.config_sha256},
-            "spawn_origin":[map.spawn[0]+if lane%2==0{-4.}else{4.},map.spawn[1],map.spawn[2]-12.*(lane/2)as f32],"spawn_yaw":map.spawn_yaw});
+            "spawn_origin":Self::lane_origin(map.spawn,lane),"spawn_yaw":map.spawn_yaw});
         if version>=2 {
             row["source_profile"]=if kind.index()>=2 {
                 let (path,sha256)=resources.source_profiles[kind.index()].as_ref().ok_or_else(||model::bad())?;
@@ -87,6 +87,12 @@ impl BatchRuntime {
             };
         }
         Ok(row)
+    }
+    /// LAB lanes, not historical team spawns: lanes 0..5 keep the accepted pairs
+    /// (+-4 m, 12 m apart); ARENA-01 lanes 6..29 repeat that block every 36 m further
+    /// back along the spawn axis (same pairs, same 12 m rows).
+    fn lane_origin(spawn:[f32;3],lane:usize)->[f32;3] {
+        [spawn[0]+if lane%2==0{-4.}else{4.},spawn[1],spawn[2]-12.*((lane%6)/2)as f32-36.*(lane/6)as f32]
     }
     pub(super) fn start(&mut self,world:&mut World,now:Instant)->io::Result<()> {
         if self.started_at.is_some()||!world.mixed_profiles()||world.actors.len()!=world.expected_actors()

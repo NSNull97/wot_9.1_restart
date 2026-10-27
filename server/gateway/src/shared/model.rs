@@ -749,7 +749,8 @@ impl World {
         Ok(outcomes)
     }
     pub fn apply_tank_contacts(&mut self, contacts:&[TankContactInput], sequence:u32, tick:u32)->io::Result<()> {
-        if sequence==0||tick==0||contacts.len()>15||contacts.len()>self.expected_actors.saturating_mul(self.expected_actors.saturating_sub(1))/2{return Err(bad());}
+        // ARENA-01: bounded by the roster's pairs (15 for six, 435 for thirty).
+        if sequence==0||tick==0||contacts.len()>self.expected_actors.saturating_mul(self.expected_actors.saturating_sub(1))/2{return Err(bad());}
         let mut pairs=std::collections::BTreeSet::new();let mut resolved=Vec::with_capacity(contacts.len());
         for row in contacts {
             if row.slot_a>=row.slot_b||row.slot_b>=self.actors.len()||!pairs.insert((row.slot_a,row.slot_b)){return Err(bad());}

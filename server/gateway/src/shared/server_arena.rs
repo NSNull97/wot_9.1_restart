@@ -41,7 +41,8 @@ impl Arena {
     }
     /// One more arena from the same validated template, with its own battle id.
     pub(super) fn from_template(index:usize,template:&BattleTemplate,id:u64,now:Instant)->io::Result<Self> {
-        let mut world=template.world.fresh_battle(id,now)?;let mut integrated=None;
+        // select() keeps this id: a clone for the template's own id, else a fresh battle.
+        let mut world=World::new(id,now)?;let mut integrated=None;
         template.select(&mut world,&mut integrated,now)?;
         Ok(Self::new(index,world,integrated,template.clone()))
     }

@@ -34,6 +34,9 @@ mod p10b_host;
 mod login_admission;
 #[path="server_arena.rs"]
 mod arena;
+#[cfg(test)]
+#[path="server_arena_bench.rs"]
+mod arena_bench;
 use login_admission::{AccountTag,Admission,Decision,Writers};
 
 #[cfg(test)]
