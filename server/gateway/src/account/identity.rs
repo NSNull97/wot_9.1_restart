@@ -176,7 +176,8 @@ fn mixed_projection_bytes(raw:&[u8],profile:&Profile,revision:u64,state_sha256:&
         if native<=previous||native>i32::MAX as u64{return Err(invalid("P06T inventory order/bound"));}previous=native;
         let kind=row["kind"].as_str();let admitted=row["admission"].as_bool().ok_or_else(||invalid("P06T admission boolean"))?;
         if (native==1&&kind!=Some("ms1"))||(native==2&&kind!=Some("is7"))
-            ||(native>2&&!row["kind"].is_null()&&!matches!(kind,Some("t26"|"t34"|"t3485"))){return Err(invalid("P06T source kind"));}
+            ||(native>2&&!row["kind"].is_null()&&!kind.is_some_and(|k|matches!(k,"t26"|"t34"|"t3485")||crate::profile13_v2091::catalog_generated_kind(k))){
+            return Err(invalid("P06T source kind"));}
         if admitted{
             // Purchased pool kinds (t26/t34/t3485, checked above) are admitted by
             // the writer only under the owner's explicit full-stand policy.

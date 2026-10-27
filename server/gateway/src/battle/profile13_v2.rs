@@ -64,7 +64,8 @@ impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.co
         if parse_frozen(&v,account,&self.sha256)?!=*self{return Err(bad("changed frozen"));}Ok(())}}
 
 fn device_profile(kind:VehicleKind)->Option<crate::p06t_device_caps::Profile>{use crate::p06t_device_caps::Profile as P;
-    Some(match kind{VehicleKind::Ms1=>P::Ms1,VehicleKind::Is7=>P::Is7,VehicleKind::T26=>P::T26,VehicleKind::T34=>P::T34,VehicleKind::T3485=>P::T3485,_=>return None})}
+    Some(match kind{VehicleKind::Ms1=>P::Ms1,VehicleKind::Is7=>P::Is7,VehicleKind::T26=>P::T26,VehicleKind::T34=>P::T34,VehicleKind::T3485=>P::T3485,
+        VehicleKind::Generated(id)=>P::Generated(id),_=>return None})}
 
 /// CAT-01: admission identity read from the generated single catalog instead of
 /// the closed kind list below. Off by default; the gateway config key `catalog`
@@ -74,6 +75,14 @@ pub fn enable_catalog_v1()->io::Result<()>{
     if format!("{:x}",Sha256::digest(catalog::CATALOG_JSON.as_bytes()))!=catalog::CATALOG_SHA256{return Err(bad("embedded catalog hash"));}
     CATALOG_V1.store(true,Ordering::SeqCst);Ok(())}
 pub fn catalog_v1_enabled()->bool{CATALOG_V1.load(Ordering::SeqCst)}
+/// BATTLE-ANY: an owned kind that only the catalog names (a generated row with a
+/// verified registry profile). Closed legacy labels never take this path.
+pub(crate) fn catalog_generated_kind(label:&str)->bool{catalog_generated_kind_in(catalog_v1_enabled(),label)}
+/// Same rule with the catalog mode given explicitly (tests never flip the process flag).
+pub(crate) fn catalog_generated_kind_in(catalog_mode:bool,label:&str)->bool{
+    catalog_mode&&catalog::by_kind(label).is_some_and(|e|e.battle_admission!=Admission::None&&e.legacy_inventory.is_none())
+        &&VehicleKind::from_label(label).is_none()&&VehicleKind::from_owned_label(label).is_some_and(|k|k.is_generated())
+}
 
 type Identity=(VehicleKind,source::Mount,String,[&'static str;3]);
 /// Legacy closed list (default until owner acceptance of CAT-01).
@@ -98,7 +107,9 @@ fn catalog_identity(label:&str,native:u64)->io::Result<Identity>{catalog_identit
 pub(crate) fn catalog_identity_in(table:&[catalog::Vehicle],label:&str,native:u64)->io::Result<Identity>{
     let entry=table.iter().find(|e|e.kind==label).filter(|e|e.battle_admission!=Admission::None)
         .ok_or_else(||bad("owner acceptance required/unknown kind"))?;
-    let kind=VehicleKind::from_label(label).ok_or_else(||bad("catalog kind without battle profile"))?;
+    // Closed kinds by label; BATTLE-ANY rows through the verified generated registry.
+    let kind=VehicleKind::from_owned_label(label).filter(|k|!k.is_generated()||VehicleKind::from_label(label).is_none())
+        .ok_or_else(||bad("catalog kind without battle profile"))?;
     let mount=kind.mount();let p=source::profile(mount);
     let crew=device_profile(kind).ok_or_else(||bad("device profile"))?.crew().len();
     let shells:[catalog::Shell;3]=entry.shells.try_into().map_err(|_|bad("catalog three stacks"))?;
@@ -121,7 +132,9 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
     let p=source::profile(mount);let descriptor=kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>();
     if!uuid(account)||text(v,"vehicle_inventory_id")?!=format!("{account}:{suffix}")
         ||text(v,"descriptor_hex")?!=descriptor||number(v,"max_hp")?!=kind.max_health()as u64||number(v,"capacity")?!=u64::from(p.capacity)
-        ||p.clip_count!=1||p.additional_vehicle_qualification_required{return Err(bad("stock/source/ownership"));}
+        // Closed kinds are single-shot; a generated drum (WT 128 mm: 6) uses the same typed
+        // armament state machine as the P06T extended WT (clip <= 6 checked there).
+        ||p.clip_count!=1&&!kind.is_generated()||p.additional_vehicle_qualification_required{return Err(bad("stock/source/ownership"));}
     let crew=v["crew_ids"].as_array().ok_or_else(||bad("crew"))?;let mut crew_ids=Vec::new();
     for row in crew{let s=row.as_str().ok_or_else(||bad("crew ID"))?;
         if!id(s)||!s.starts_with(&format!("{account}:"))||s.len()<=account.len()+1||crew_ids.iter().any(|x|x==s){return Err(bad("crew owner/unique"));}crew_ids.push(s.to_owned());}

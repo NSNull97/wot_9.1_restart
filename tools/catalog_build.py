@@ -359,10 +359,11 @@ def render_rust(document, digest):
         legacy = "None" if legacy is None else "Some((%d,%s))" % (legacy["native_inventory_id"], _rust_str(legacy["suffix"]))
         rows.append(
             "    Vehicle{kind:%s,vehicle_id:%s,native_compact_id:%d,descriptor:&[%s],\n"
-            "        max_hp:%d,ammo_capacity:%d,seats:%d,gun_compact_id:%d,shells:&[%s],\n"
+            "        max_hp:%d,ammo_capacity:%d,seats:%d,primary_roles:&[%s],gun_compact_id:%d,shells:&[%s],\n"
             "        devices:&[%s],battle_admission:%s,legacy_inventory:%s},"
             % (_rust_str(v["kind"]), _rust_str(v["vehicle_id"]), v["native_compact_id"], descriptor,
-               v["max_hp"], v["ammo_capacity"], len(v["crew"]), v["modules"]["gun"]["native_compact_id"],
+               v["max_hp"], v["ammo_capacity"], len(v["crew"]), ",".join(_rust_str(c["roles"][0]) for c in v["crew"]),
+               v["modules"]["gun"]["native_compact_id"],
                shells, devices, admission[v["battle_admission"]], legacy))
     return ("//! %s\n"
             "//! Gateway binding. Used only when the gateway config carries\n"
@@ -376,7 +377,7 @@ def render_rust(document, digest):
             "pub struct Shell{pub suffix:&'static str,pub shell_definition_id:&'static str,pub family:&'static str,pub native_compact_id:u32}\n"
             "#[derive(Clone,Copy,Debug,PartialEq,Eq)]\n"
             "pub struct Vehicle{pub kind:&'static str,pub vehicle_id:&'static str,pub native_compact_id:u32,pub descriptor:&'static [u8],\n"
-            "    pub max_hp:u16,pub ammo_capacity:u16,pub seats:usize,pub gun_compact_id:u32,pub shells:&'static [Shell],\n"
+            "    pub max_hp:u16,pub ammo_capacity:u16,pub seats:usize,pub primary_roles:&'static [&'static str],pub gun_compact_id:u32,pub shells:&'static [Shell],\n"
             "    pub devices:&'static [(u16,u16)],pub battle_admission:Admission,pub legacy_inventory:Option<(u32,&'static str)>}\n"
             "pub const VEHICLES:&[Vehicle]=&[\n%s\n];\n"
             "pub fn by_kind(kind:&str)->Option<&'static Vehicle>{VEHICLES.iter().find(|v|v.kind==kind)}\n"

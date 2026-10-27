@@ -112,3 +112,28 @@ fn hex(text:&str)->Vec<u8>{(0..text.len()).step_by(2).map(|i|u8::from_str_radix(
     let mut forged=member.clone();forged.descriptor[11]=32;assert!(v2.validate_recruitment(&forged,request,1,&update).is_err());
     let mut stale=update.clone();let n=stale.len();stale[n-5]=176;assert!(v2.validate_recruitment(&member,request,1,&stale).is_err());
 }
+
+/// BATTLE-ANY stage 3c: a bought generated catalog vehicle (KV-3) on the v1 companion.
+#[test]fn p04m_companion_carries_a_generated_catalog_kind_only_in_catalog_mode(){
+    let mut v=test_value(ACCOUNT,14);
+    v["capabilities"].as_array_mut().unwrap().push(serde_json::json!({"native_inventory_id":8,"vehicle_inventory_id":format!("{ACCOUNT}:p09e-vehicle:8"),
+        "kind":"ussr-KV-3","assembly_id":"ussr-KV-3-stock","readiness_code":"BATTLE_PROFILE_UNSUPPORTED","admission":false}));
+    let raw=|v:&Value|serde_json::to_vec(v).unwrap();let state=format!("{:x}",Sha256::digest(b"\x80\x02}."));
+    let with=|v:&Value,catalog:bool|Binding::parse_with(&raw(v),ACCOUNT,900001,14,&state,catalog);
+    assert!(with(&v,false).is_err(),"legacy mode keeps the closed kind list");
+    let p=with(&v,true).unwrap();let kind=p.kind(8).unwrap();
+    let row=catalog::by_kind("ussr-KV-3").unwrap();
+    assert_eq!((kind.label(),kind.type_cd()),("ussr-KV-3",row.native_compact_id as i32));
+    assert_eq!(kind.ammo(),([0,1,2].map(|i|row.shells[i].native_compact_id as i32),u32::from(row.ammo_capacity)));
+    assert_eq!(kind.primary_roles().len(),row.seats);assert!(kind.primary_roles().iter().all(|r|(1..=5).contains(r)));
+    // The v1 P08B route never admits it and needs the exact v1 refusal.
+    for n in 0..4{let mut w=v.clone();let row=&mut w["capabilities"][5];match n{
+        0=>row["admission"]=true.into(),1=>row["readiness_code"]="OWNER_ACCEPTANCE_REQUIRED".into(),
+        2=>row["assembly_id"]="ussr-KV1-stock".into(),3=>row["kind"]="ussr-KV1".into(),_=>unreachable!()}
+        assert!(with(&w,true).is_err(),"mutation={n}");}
+    // Barracks recruitment for its type is accepted with a source primary role only.
+    let roles=kind.primary_roles();
+    let ok=crate::crew_barracks091::Request{id:1,shop_revision:3,cost:0,vehicle_type:kind.type_cd(),role:roles[0]};
+    assert!(p.barracks(ok).is_ok());
+    assert!(p.barracks(crate::crew_barracks091::Request{role:0,..ok}).is_err());
+}

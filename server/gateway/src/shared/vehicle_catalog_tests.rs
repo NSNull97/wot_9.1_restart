@@ -99,8 +99,18 @@ fn frozen(v:&Vehicle,native:u64,suffix:&str)->(Value,String){
     }
     for label in ["wt-e100-128","fv215b-183","kv1",""]{
         assert!(v2::legacy_identity_for_tests(label,7).is_err());assert!(v2::catalog_identity_in(VEHICLES,label,7).is_err());}
-    // Stage 3a only extends the catalog; the gateway admits generated kinds in stage 3c.
-    for label in PILOT{assert!(v2::catalog_identity_in(VEHICLES,label,7).is_err(),"{label}");}
+    // Stage 3c: catalog mode admits the pilot through the verified registry; legacy mode never does.
+    for v in VEHICLES.iter().filter(|v|PILOT.contains(&v.kind)){
+        assert!(v2::catalog_identity_in(VEHICLES,v.kind,7).is_ok(),"{}",v.kind);
+        assert!(v2::catalog_identity_in(VEHICLES,v.kind,1).is_err(),"{} base inventory",v.kind);
+        let(value,sha)=frozen(v,7,"p09e-vehicle:7");
+        assert!(v2::parse_frozen_with(&value,ACCOUNT,&sha,false).is_err(),"{}",v.kind);
+        let f=v2::parse_frozen_with(&value,ACCOUNT,&sha,true).unwrap();
+        assert_eq!((f.kind,f.kind.is_generated()),(VehicleKind::from_owned_label(v.kind).unwrap(),true));
+        assert!(v2::catalog_generated_kind_in(true,v.kind)&&!v2::catalog_generated_kind_in(false,v.kind));
+    }
+    for label in LEGACY.into_iter().chain(["wt-e100-128","fv215b-183","ussr-KV1","china-Ch04_T34_1",""]){
+        assert!(!v2::catalog_generated_kind_in(true,label),"{label}");}
 }
 
 #[test] fn battle_admission_is_a_data_field() {

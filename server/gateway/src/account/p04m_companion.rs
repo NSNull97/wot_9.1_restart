@@ -52,14 +52,27 @@ fn string<'a>(v:&'a Value,k:&str)->io::Result<&'a str>{v[k].as_str().ok_or_else(
 fn hash(v:&str)->bool{v.len()==64&&v.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))}
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
-pub enum Kind{Ms1,Is7,T26,T34,T3485}
+pub enum Kind{Ms1,Is7,T26,T34,T3485,
+    /// BATTLE-ANY: index of a generated row of the embedded catalog (CAT-01 mode only).
+    Catalog(u16)}
+use crate::gateway091::shared::vehicle_catalog as catalog;
 impl Kind{
-    pub fn parse(v:&str)->Option<Self>{match v{"ms1"=>Some(Self::Ms1),"is7"=>Some(Self::Is7),"t26"=>Some(Self::T26),"t34"=>Some(Self::T34),"t3485"=>Some(Self::T3485),_=>None}}
-    pub fn label(self)->&'static str{match self{Self::Ms1=>"ms1",Self::Is7=>"is7",Self::T26=>"t26",Self::T34=>"t34",Self::T3485=>"t3485"}}
-    pub fn type_cd(self)->i32{match self{Self::Ms1=>3329,Self::Is7=>7169,Self::T26=>4609,Self::T34=>1,Self::T3485=>2561}}
-    fn primary_roles(self)->&'static[i32]{match self{Self::Ms1=>&[1,3],Self::Is7=>&[1,4,3,5,5],Self::T26=>&[1,3,4],Self::T34=>&[1,2,3,5],Self::T3485=>&[1,4,2,3,5]}}
-    fn ammo(self)->([i32;3],u32){match self{Self::Ms1=>([2570,2826,3082],96),Self::Is7=>([14602,14858,15114],30),Self::T26=>([1034,1290,1546],160),Self::T34=>([7178,7434,7690],77),Self::T3485=>([7946,8202,8458],68)}}
+    pub fn parse(v:&str)->Option<Self>{Self::parse_with(v,crate::profile13_v2091::catalog_v1_enabled())}
+    fn parse_with(v:&str,catalog_mode:bool)->Option<Self>{match v{"ms1"=>Some(Self::Ms1),"is7"=>Some(Self::Is7),"t26"=>Some(Self::T26),"t34"=>Some(Self::T34),"t3485"=>Some(Self::T3485),
+        _ if crate::profile13_v2091::catalog_generated_kind_in(catalog_mode,v)=>catalog::VEHICLES.iter().position(|e|e.kind==v).and_then(|i|u16::try_from(i).ok()).map(Self::Catalog),
+        _=>None}}
+    fn row(self)->Option<&'static catalog::Vehicle>{match self{Self::Catalog(i)=>catalog::VEHICLES.get(usize::from(i)),_=>None}}
+    pub fn label(self)->&'static str{match self{Self::Ms1=>"ms1",Self::Is7=>"is7",Self::T26=>"t26",Self::T34=>"t34",Self::T3485=>"t3485",
+        Self::Catalog(_)=>self.row().map_or("",|e|e.kind)}}
+    pub fn type_cd(self)->i32{match self{Self::Ms1=>3329,Self::Is7=>7169,Self::T26=>4609,Self::T34=>1,Self::T3485=>2561,
+        Self::Catalog(_)=>self.row().map_or(-1,|e|e.native_compact_id as i32)}}
+    fn primary_roles(self)->Vec<i32>{match self{Self::Ms1=>vec![1,3],Self::Is7=>vec![1,4,3,5,5],Self::T26=>vec![1,3,4],Self::T34=>vec![1,2,3,5],Self::T3485=>vec![1,4,2,3,5],
+        // Native role IDs (web/src/p04m-pool.mjs ROLE_IDS): commander 1, radioman 2, driver 3, gunner 4, loader 5.
+        Self::Catalog(_)=>self.row().map_or_else(Vec::new,|e|e.primary_roles.iter().map(|r|match *r{"commander"=>1,"radioman"=>2,"driver"=>3,"gunner"=>4,"loader"=>5,_=>0}).collect())}}
+    fn ammo(self)->([i32;3],u32){match self{Self::Ms1=>([2570,2826,3082],96),Self::Is7=>([14602,14858,15114],30),Self::T26=>([1034,1290,1546],160),Self::T34=>([7178,7434,7690],77),Self::T3485=>([7946,8202,8458],68),
+        Self::Catalog(_)=>self.row().filter(|e|e.shells.len()==3).map_or(([0;3],0),|e|([0,1,2].map(|i|e.shells[i].native_compact_id as i32),u32::from(e.ammo_capacity)))}}
     fn new(self)->bool{!matches!(self,Self::Ms1|Self::Is7)}
+    fn generated(self)->bool{matches!(self,Self::Catalog(_))}
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct Capability{native:i32,kind:Option<Kind>}
@@ -69,6 +82,9 @@ pub enum Request{Ammo(crate::ammo_service091::Request),Crew(crate::crew_service0
     Dismiss(crate::crew_dismissal091::Request),Skill(crate::crew_progression091::Request)}
 impl Binding{
     pub fn parse(raw:&[u8],account:&str,database:i32,revision:u64,state_sha:&str)->io::Result<Self>{
+        Self::parse_with(raw,account,database,revision,state_sha,crate::profile13_v2091::catalog_v1_enabled())
+    }
+    pub(crate) fn parse_with(raw:&[u8],account:&str,database:i32,revision:u64,state_sha:&str,catalog_mode:bool)->io::Result<Self>{
         crate::crew_service091::identity(account,database)?;
         if raw.is_empty()||raw.len()>65536||!(13..i32::MAX as u64).contains(&revision)||!hash(state_sha){return Err(bad("size/revision/state"));}
         let Unique(v)=serde_json::from_slice(raw).map_err(|_|bad("unique bounded JSON"))?;
@@ -86,7 +102,7 @@ impl Binding{
             keys(r,&["native_inventory_id","vehicle_inventory_id","kind","assembly_id","readiness_code","admission"])?;
             let native=r["native_inventory_id"].as_i64().and_then(|i|i32::try_from(i).ok()).filter(|i|*i>0).ok_or_else(||bad("native inventory"))?;
             if capabilities.last().is_some_and(|old:&Capability|old.native>=native){return Err(bad("inventory order/duplicate"));}
-            let kind=if r["kind"].is_null(){None}else{Some(Kind::parse(string(r,"kind")?).ok_or_else(||bad("closed source kind"))?)};
+            let kind=if r["kind"].is_null(){None}else{Some(Kind::parse_with(string(r,"kind")?,catalog_mode).ok_or_else(||bad("closed source kind"))?)};
             let suffix=match native{1=>":starter-vehicle-v1".into(),2=>":test-is7-v1".into(),_=>format!(":p09e-vehicle:{native}")};
             if string(r,"vehicle_inventory_id")?!=format!("{account}{suffix}")
                 ||(native==1&&kind.is_some_and(|k|k!=Kind::Ms1))||(native==2&&kind.is_some_and(|k|k!=Kind::Is7))
@@ -97,6 +113,8 @@ impl Binding{
             if let Some(kind)=kind{
                 if !kinds.insert(kind)||stock&&r["assembly_id"].as_str()!=Some(format!("{}-stock",kind.label()).as_str()){return Err(bad("assembly/duplicate kind"));}
                 if !stock{if admission||code!=Some("BATTLE_PROFILE_UNSUPPORTED"){return Err(bad("non-stock capability remains unsupported"));}}
+                // The v1 P08B route is AP-only for the legacy kinds; generated rows travel the mixed route.
+                else if kind.generated(){if admission||code!=Some("BATTLE_PROFILE_UNSUPPORTED"){return Err(bad("generated kind outside the v1 route"));}}
                 else if kind.new(){if admission||code!=Some("OWNER_ACCEPTANCE_REQUIRED"){return Err(bad("new battle admission remains closed"));}}
                 else if admission{if !r["readiness_code"].is_null(){return Err(bad("admitted readiness"));}}
                 else if !matches!(code,Some("BATTLE_PROFILE_UNSUPPORTED"|"INCOMPLETE_CREW"|"AMMUNITION_EMPTY"|"AMMUNITION_UNSUPPORTED"|"VEHICLE_RESERVED")){return Err(bad("readiness rejection"));}
@@ -141,7 +159,9 @@ impl Binding{
             return Err(bad("skill identity/layout"));}Ok(())
     }
     pub fn barracks(&self,r:crate::crew_barracks091::Request)->io::Result<()>{
-        let kind=[Kind::Ms1,Kind::Is7,Kind::T26,Kind::T34,Kind::T3485].into_iter().find(|k|k.type_cd()==r.vehicle_type).ok_or_else(||bad("barracks source type"))?;
+        let kind=[Kind::Ms1,Kind::Is7,Kind::T26,Kind::T34,Kind::T3485].into_iter()
+            .chain(self.capabilities.iter().filter_map(|c|c.kind).filter(|k|k.generated()))
+            .find(|k|k.type_cd()==r.vehicle_type).ok_or_else(||bad("barracks source type"))?;
         if r.id<=0||r.shop_revision!=3||r.cost!=0||!kind.primary_roles().contains(&r.role){return Err(bad("barracks source primary role"));}Ok(())
     }
     pub fn service_request(&self,key:&str,revision:u64,wire:i64,layout:&[i64])->io::Result<Vec<u8>>{
