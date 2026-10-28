@@ -130,3 +130,53 @@ fn spin(runtime:&mut BatchRuntime,world:&mut World,now:Instant,until:impl Fn(&Ba
     assert_eq!(BatchRuntime::slot_bound(7),7);assert_eq!(BatchRuntime::slot_bound(30),30);
     assert_eq!(BatchRuntime::slot_bound(31),model::MAX_ACTORS);
 }
+#[test]fn battle_any_generated_scene_kind_has_its_ram_proof_profile(){
+    // Stand -11 2026-10-28: four pilots failed the scene start because this lookup knew only the five curated labels.
+    let vehicle=VehicleKind::from_owned_label("ussr-KV-3").unwrap();let VehicleKind::Generated(id)=vehicle else{panic!()};
+    let profile=BatchRuntime::profile(scene_worker::Kind::Generated(id),false).unwrap();
+    assert_eq!(profile,ram_proof::Profile::for_vehicle(vehicle));assert!(profile.mass()>40000.);
+    assert_eq!(BatchRuntime::profile(scene_worker::Kind::T26,false).unwrap(),ram_proof::Profile::T26);
+}
+/// BATTLE-ANY stand -11: the stand's own version5 templates (5 curated + 4 pilots), its
+/// physics build and four owned pilot loadouts through the production v2 seating, one IPC7
+/// scene, ready and 60 driven frames. Run explicitly: `--ignored battle_any_stand_four_pilots`
+/// with BATTLE_ANY_STAND=<stand dir>; it switches the process to catalog mode like the
+/// stand gateway does (`catalog: true`), so it must not share a run with legacy-mode tests.
+#[test]#[ignore]fn battle_any_stand_four_pilots_start_one_scene_and_drive(){
+    let root=PathBuf::from(std::env::var("WOT091_ROOT").unwrap_or_else(|_|"D:/WoT_9.1_Server".into())).join("local");
+    let stand=PathBuf::from(std::env::var("BATTLE_ANY_STAND").expect("BATTLE_ANY_STAND"));
+    crate::profile13_v2091::enable_catalog_v1().unwrap();
+    let rows=super::super::super::profile13_templates::load(&root,&stand.join("battle-profiles.json")).unwrap();
+    let pilots:Vec<VehicleKind>=rows.iter().map(|r|r.kind).filter(|k|k.is_generated()).collect();assert_eq!(pilots.len(),4);
+    let now=Instant::now();let template=BattleTemplate::from_shared(&rows,4,7400,now).unwrap();let mut world=template.world.clone();
+    // The stand places actors by SPAWN-15 (`spawn_policy`); Malinovka lab lanes do not settle.
+    world.enable_team_base_spawn().unwrap();world.lifecycle=None;world.enable_mixed_ammo().unwrap();
+    for(slot,kind)in pilots.iter().enumerate(){
+        let account=format!("12345678-1234-4234-8234-12345678900{slot}");let p=crate::p06t_shells091::profile(kind.mount());
+        let crew=crate::p06t_device_caps::Profile::for_owned(*kind).unwrap().crew().len();
+        let suffixes=if kind.label()=="japan-Chi_Ri"{["ap","ap2","he"]}else{["ap","apcr","he"]};
+        let v=serde_json::json!({"kind":kind.label(),"descriptor_hex":kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>(),
+            "native_inventory_id":5,"vehicle_inventory_id":format!("{account}:p09e-vehicle:5"),"max_hp":kind.max_health(),
+            "crew_ids":(0..crew).map(|i|format!("{account}:recruit-crew:{}",20+i)).collect::<Vec<_>>(),"capacity":p.capacity,
+            "ammunition":(0..3).map(|i|serde_json::json!({"shell_definition_id":format!("shell:{}-stock-{}",kind.label(),suffixes[i]),
+                "shell_compact_id":p.shots[i].compact_descr,"family":p.shots[i].family.source_name(),"count":if i==0{10}else{5}})).collect::<Vec<_>>(),
+            "initial_shell_compact_id":p.shots[0].compact_descr});
+        let sha=format!("{:x}",sha2::Sha256::digest(serde_json::to_vec(&v).unwrap()));
+        let frozen=crate::profile13_v2091::parse_frozen(&v,&account,&sha).unwrap();
+        let owner=model::Identity{account,database:slot as i32+1,name:format!("pilot{slot}")};
+        assert_eq!(world.attach_owned_v2(owner,slot as u32+1,&frozen).unwrap(),slot);
+    }
+    world.start(now).unwrap();let mut runtime=BatchRuntime::new(rows[0].shared.clone().unwrap(),rows[0].catalog.1.clone());runtime.start(&mut world,now).unwrap();
+    spin(&mut runtime,&mut world,Instant::now(),|r,_|r.ready_for_native());
+    let origins=world.actors.iter().map(|a|a.position).collect::<Vec<_>>();
+    for slot in 0..4{world.set_ready(slot,slot as u32+1).unwrap();world.actors[slot].input=model::Input{throttle:1,steer:0,speed_percent:100};}
+    let base=Instant::now();
+    for frame in 1..=60u64{
+        let at=base+Duration::from_millis(frame*100);let before=world.tick;let deadline=Instant::now()+Duration::from_secs(120);
+        loop{runtime.step(&mut world,at).unwrap();if world.tick>before&&!runtime.blocked(){break;}
+            assert!(Instant::now()<deadline,"pilot frame deadline");std::thread::sleep(Duration::from_millis(1));}
+    }
+    for(slot,origin)in origins.iter().enumerate(){let p=world.actors[slot].position;
+        let moved=((p[0]-origin[0]).powi(2)+(p[2]-origin[2]).powi(2)).sqrt();
+        println!("BATTLE_ANY_PILOT_DRIVE slot={slot} kind={} moved_m={moved:.1}",pilots[slot].label());assert!(moved>1.,"{} did not move",pilots[slot].label());}
+}

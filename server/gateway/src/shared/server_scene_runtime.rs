@@ -159,7 +159,7 @@ impl BatchRuntime {
         Ok(())
     }
     fn profile(kind:scene_worker::Kind,extended:bool)->io::Result<ram_proof::Profile>{
-        let vehicle=if extended{kind.extended_vehicle()}else{VehicleKind::from_label(kind.label()).ok_or_else(||model::bad())?};
+        let vehicle=if extended{kind.extended_vehicle()}else{VehicleKind::from_owned_label(kind.label()).ok_or_else(||model::bad())?};
         Ok(ram_proof::Profile::for_vehicle(vehicle))
     }
     fn physical_path(path:&Path)->String{let text=path.to_string_lossy();
