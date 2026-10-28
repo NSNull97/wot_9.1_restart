@@ -9,7 +9,7 @@ pub const MAX_TARGETS: usize = 6;
 fn bad(reason: &'static str) -> io::Error { io::Error::new(io::ErrorKind::InvalidData, reason) }
 
 pub fn source_shell(shell: Shell) -> io::Result<()> {
-    if !PROFILES.iter().any(|p| p.shots.contains(&shell)) { return Err(bad("damage shell differs from frozen source catalogue")); }
+    if !crate::p06t_shells091::known_shell(&shell) { return Err(bad("damage shell differs from frozen source catalogue")); }
     Ok(())
 }
 #[derive(Clone,Copy,Debug,PartialEq)]

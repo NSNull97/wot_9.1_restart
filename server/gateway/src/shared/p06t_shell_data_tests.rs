@@ -32,3 +32,10 @@ use super::*;
     assert_eq!(profile(Mount::T26Stock).shots[1].raw_speed_mps,838.);assert_eq!(profile(Mount::T34Stock).shots[1].raw_speed_mps,490.);
     assert_eq!(profile(Mount::Is7Stock).shots[2].explosion_radius_m,Some(2.78));
 }
+#[test] fn battle_any_generated_gun_shells_are_known_and_forged_ones_are_not(){
+    // Stand -11 2026-10-28: an M4 shot closed the battle because only PROFILES was searched.
+    let kind=crate::gateway091::shared::vehicle_profile::VehicleKind::from_owned_label("usa-M4_Sherman").unwrap();
+    let gun=profile(kind.mount());for shot in gun.shots{assert!(known_shell(&shot),"{}",shot.resource);}
+    assert!(known_shell(&PROFILES[0].shots[0]));
+    let mut forged=gun.shots[0];forged.damage_hp+=1;assert!(!known_shell(&forged));
+}

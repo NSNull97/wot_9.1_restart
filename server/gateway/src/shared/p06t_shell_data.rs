@@ -61,6 +61,12 @@ Shell{resource:"_183mm_HE_Mk1",compact_descr:21338,family:Family::HighExplosive,
 ]},
 ];
 pub fn profile(mount:Mount)->&'static GunProfile{match mount{Mount::Generated(id)=>&crate::gateway091::shared::generated_vehicles::entry(id).gun,_=>&PROFILES[mount.index()]}}
+/// Catalogue membership over the curated mounts and the verified BATTLE-ANY generated
+/// registry (a generated gun's shells live in its registry entry, not in PROFILES).
+pub fn known_shell(shell:&Shell)->bool{
+    PROFILES.iter().any(|p|p.shots.contains(shell))
+        ||crate::gateway091::shared::generated_vehicles::registry().is_ok_and(|r|r.entries().iter().any(|e|e.gun.shots.contains(shell)))
+}
 /// Catalogue membership only. Server inventory, selection, reload and actor
 /// ownership must be checked separately by authority before a shot is admitted.
 pub fn shell(mount:Mount,compact:i32)->Option<&'static Shell>{let id=u16::try_from(compact).ok()?;profile(mount).shots.iter().find(|s|s.compact_descr==id)}

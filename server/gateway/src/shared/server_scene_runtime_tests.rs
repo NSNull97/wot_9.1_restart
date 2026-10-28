@@ -176,6 +176,22 @@ fn spin(runtime:&mut BatchRuntime,world:&mut World,now:Instant,until:impl Fn(&Ba
         loop{runtime.step(&mut world,at).unwrap();if world.tick>before&&!runtime.blocked(){break;}
             assert!(Instant::now()<deadline,"pilot frame deadline");std::thread::sleep(Duration::from_millis(1));}
     }
+    // Each pilot aims at the next pilot (lab friendly fire) and fires once (shot effect and,
+    // on a hit, damage use the generated gun's shells); the world keeps stepping for 8 s.
+    let shots_at=base+Duration::from_millis(6100);let mut accepted=0;
+    for slot in 0..4{let me=world.actors[slot].position;let target=world.actors[(slot+1)%4].position;let _=me;
+        world.apply(slot,slot as u32+1,&[model::Command::Aim(crate::gateway091::shared::aim::Intent::Point([target[0],target[1]+1.5,target[2]]))],shots_at).unwrap();}
+    for frame in 62..=140u64{
+        let at=base+Duration::from_millis(frame*100);
+        if frame==82{for slot in 0..4{let out=world.apply(slot,slot as u32+1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],at).unwrap();
+            println!("BATTLE_ANY_PILOT_SHOT slot={slot} kind={} outcome={out:?}",pilots[slot].label());
+            if format!("{out:?}").starts_with("[Typed(Shot "){accepted+=1;}}}
+        let before=world.tick;let deadline=Instant::now()+Duration::from_secs(120);
+        loop{runtime.step(&mut world,at).unwrap();if world.tick>before&&!runtime.blocked(){break;}
+            assert!(Instant::now()<deadline,"pilot shot frame deadline");std::thread::sleep(Duration::from_millis(1));}
+    }
+    println!("BATTLE_ANY_PILOT_SHOTS accepted={accepted} damage_events={} health={:?}",world.damage_events.len(),world.actors.iter().map(|a|a.health).collect::<Vec<_>>());
+    assert_eq!(accepted,4,"every pilot fires its loaded typed gun");
     for(slot,origin)in origins.iter().enumerate(){let p=world.actors[slot].position;
         let moved=((p[0]-origin[0]).powi(2)+(p[2]-origin[2]).powi(2)).sqrt();
         println!("BATTLE_ANY_PILOT_DRIVE slot={slot} kind={} moved_m={moved:.1}",pilots[slot].label());assert!(moved>1.,"{} did not move",pilots[slot].label());}

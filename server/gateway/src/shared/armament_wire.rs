@@ -15,7 +15,7 @@ pub const EFFECT_NAMES:[&str;23]=["autoArmorPiercing","autoAPCR","smallArmorPier
     "largeArmorPiercing","largeHighExplosive","largeHollowCharge","largeAPCR","hugeArmorPiercing","hugeHighExplosive","hugeHollowCharge","hugeAPCR","sportHighExplosive"];
 /// Use the shell frozen at launch, never the shooter's later selected shell.
 pub fn effect_index(shell:Shell)->io::Result<u8>{
-    if !PROFILES.iter().flat_map(|p|p.shots).any(|known|known==shell){return Err(bad("P06T shell must match closed source catalogue"));}
+    if !crate::p06t_shells091::known_shell(&shell){return Err(bad("P06T shell must match closed source catalogue"));}
     EFFECT_NAMES.iter().position(|name|*name==shell.effects_resource).map(|n|n as u8).ok_or_else(||bad("P06T unknown original shell effects"))
 }
 
