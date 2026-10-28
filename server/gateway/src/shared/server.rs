@@ -38,6 +38,9 @@ mod arena;
 #[path="server_arena_bench.rs"]
 mod arena_bench;
 #[cfg(test)]
+#[path="server_bot01_bench.rs"]
+mod bot01_bench;
+#[cfg(test)]
 #[path="server_spawn15_real_tests.rs"]
 mod spawn15_real_tests;
 use login_admission::{AccountTag,Admission,Decision,Writers};
@@ -87,6 +90,9 @@ mod whole_fracture_real_tests;
 #[cfg(test)]
 #[path="server_capacity_tests.rs"]
 mod capacity_tests;
+#[cfg(test)]
+#[path="server_bot01_tests.rs"]
+mod bot01_tests;
 
 /// `capacity` bounds connections. With `arena_split` (GW-01) it is separate
 /// from the arena: a hangar session holds no arena place; places are taken by
@@ -660,11 +666,12 @@ impl Table {
         if !self.arena_split {return true;}
         let reserved=self.sessions.iter().chain(retained).filter(|s|s.shared.as_ref().and_then(|c|c.profile13.as_ref())
             .is_some_and(|p|p.reservation_battle()==Some(world.id))).count();
-        reserved<world.expected_actors()
+        reserved<world.human_places()
     }
     /// GW-01 start barrier: every arena place belongs to a live entry-ready session.
+    /// BOT-01: with bots only the native places; bots fill the rest at start.
     fn arena_ready(&self,world:&World,now:Instant)->bool {
-        world.actors.len()==world.expected_actors()&&world.actors.iter().all(|a|a.session
+        world.actors.len()==world.human_places()&&world.actors.iter().all(|a|a.session
             .is_some_and(|id|self.sessions.iter().any(|s|s.id==id&&entry_ready(s,now))))
     }
     fn route(&self, peer: SocketAddr, packet: &[u8]) -> io::Result<usize> {
@@ -809,6 +816,12 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
         println!("SHARED_WORLD_STARTED battle={} sessions={} actors={} space=1 tick=1000",world.id,world.actors.len(),world.actors.len());
     }
     if world.started.is_some() {
+        // BOT-01: bots decide before the step, as native packets arrive before
+        // it; a prepared scene transaction owns the World until its ACK.
+        if world.bot_plan().is_some() && runtime.as_ref().is_none_or(|r|!r.blocked()) {
+            if runtime.as_ref().is_none_or(IntegratedRuntime::ready_for_native) {world.ready_bots()?;}
+            world.drive_bots(now)?;
+        }
         if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {world.advance(now)?;}
         else if let Some(r)=runtime {
             if !r.started {r.start(world,now)?;}
@@ -865,7 +878,8 @@ fn current_avatar_pending(table:&Table,world:&World)->bool{
             &&c.view.as_ref().is_some_and(|view|view.id==world.id)))
 }
 fn parked_battle_reset_ready(table:&Table,world:&World)->bool{
-    !world.actors.is_empty()&&world.actors.iter().all(|a|a.session.is_none())
+    // BOT-01: bots never park; the battle resets once every native player has.
+    !world.actors.is_empty()&&world.humans_parked()
         &&!current_avatar_pending(table,world)
 }
 fn deliver_lifecycle_result(s:&mut Session,world:&World,now:Instant)->io::Result<bool> {
@@ -1098,7 +1112,7 @@ fn attach_waiting_sessions(table:&mut Table,world:&mut World,now:Instant)->io::R
     let split=table.arena_split;
     for s in &mut table.sessions {
         if !entry_ready(s,now) || world.actors.iter().any(|a|a.session==Some(s.id)) {continue;}
-        if split&&world.actors.len()>=world.expected_actors() {break;}
+        if split&&world.actors.len()>=world.human_places() {break;}
         let identity=s.identity.as_ref().ok_or_else(||model::bad())?;
         let who=model::Identity{account:identity.account_id.clone(),database:identity.database_id,name:identity.name.clone()};
         let owned=s.shared.as_ref().and_then(|c|c.profile13.as_ref());
@@ -1528,6 +1542,15 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         println!("P06T_AMMO_DETONATION_BOUND policy={} flight_policy={} historical_solver=UNKNOWN",
             super::ammo_detonation::POLICY,super::ammo_detonation::FLIGHT_POLICY);
     }
+    if let Some(plan)=&config.bots{
+        // Config already requires profile13, connection capacity, visibility and no hold5/training.
+        if !profile13_mode||qualification.is_some()||battle_template.shared.is_none()||!table.arena_split||!config.visibility_v1{return Err(model::bad().into());}
+        battle_template.world.enable_bots(plan.clone()).map_err(|_|io::Error::other("BOT-01 bots: kinds not bound by the battle profiles or map unsupported"))?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("BOT01_POLICY_BOUND policy={} human_places={} places={} bots={} kinds={:?} seed={} accounts=none",
+            model::bots::POLICY,plan.human_places,config.battle_players,config.battle_players-plan.human_places,
+            plan.kinds.iter().map(|k|k.label()).collect::<Vec<_>>(),plan.seed);
+    }
     if config.p08b_owner_battle_hold{
         battle_template.world.enable_owner_hold()?;battle_template.select(&mut world,&mut integrated,started)?;
         println!("P08B_HOLD5_BOUND policy={} early_finish=false training_supported=false",crate::profile13_hold091::POLICY_SHA256);
@@ -1621,7 +1644,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         if let Some(host)=&mut room_host{host.bind_session(&mut s)?;}
                         println!("SHARED_SESSION_PENDING battle={} session={next_id} slot={slot} account={} database={} authenticated=true", arenas[lobby].world.id,
                             s.identity.as_ref().ok_or_else(|| model::bad())?.account_id, s.identity.as_ref().ok_or_else(|| model::bad())?.database_id);
-                        next_id = next_id.checked_add(1).ok_or_else(|| model::bad())?;
+                        // BOT-01: the bot session band is never handed to a native login.
+                        next_id = next_id.checked_add(1).filter(|id|*id<model::bots::SESSION_BASE).ok_or_else(|| model::bad())?;
                         arenas[lobby].world = next_world; table.sessions.push(s); Ok(table.sessions.len() - 1)
                     })();
                     match admitted {
@@ -1931,7 +1955,11 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     }
                 }
                 Ok(if let Some(host)=&room_host{host.can_start(&table,&a.world,now)?}
-                else if table.arena_split{a.world.started.is_none()&&table.arena_ready(&a.world,now)}else{
+                else if table.arena_split{
+                    let start=a.world.started.is_none()&&table.arena_ready(&a.world,now);
+                    if start {a.world.fill_bots()?;}
+                    start
+                }else{
                     a.world.started.is_none() && table.sessions.len()==a.world.expected_actors()
                         && a.world.actors.len()==a.world.expected_actors() && table.sessions.iter().all(|s|entry_ready(s,now)
                             && a.world.actors.iter().any(|x|x.session==Some(s.id)))
