@@ -157,6 +157,10 @@ impl Binding{
     pub fn matches_state(&self,state:&[u8])->bool{self.state_sha==format!("{:x}",Sha256::digest(state))}
     /// Lifetime tankman identities of the stored crew contract (16 or 192).
     pub fn capacity(&self)->i64{self.capacity}
+    /// MM-01: owned vehicle label of a native inventory row (None: no supported kind).
+    pub fn kind_label(&self,native:u32)->Option<&'static str>{
+        self.capabilities.iter().find(|c|i64::from(c.native)==i64::from(native)).and_then(|c|c.kind).map(Kind::label).filter(|l|!l.is_empty())
+    }
     fn kind(&self,native:i64)->io::Result<Kind>{self.capabilities.iter().find(|c|c.native as i64==native).and_then(|c|c.kind).ok_or_else(||bad("unsupported owned selection"))}
     pub fn ammo_layout(&self,r:&crate::ammo_service091::Request)->io::Result<[crate::ammo_service091::ShellCount;3]>{
         // This is a bounded source shape, never a whole-assembly admission or

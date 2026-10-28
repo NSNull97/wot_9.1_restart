@@ -159,9 +159,14 @@ pub fn queue_callback(entered:bool)->Vec<u8>{vec![0x13,if entered{0x3f}else{0x40
 /// dictionary, classes ARRAY<UINT32>, then companies/historical None.
 /// Queued is one authenticated own MS-1: light/medium/heavy/SPG/AT =1/0/0/0/0.
 /// This must precede resetAvatar; it is never sent to an Avatar entity.
-pub fn own_queue_info()->Vec<u8>{
+pub fn own_queue_info()->Vec<u8>{queue_info(&[1,0,0,0,0])}
+/// MM-01: the same method with the server's queue counts per client vehicle
+/// class (`constants.VEHICLE_CLASSES` order: light, medium, heavy, SPG, AT-SPG).
+/// The 0.9.1 BattleQueue shows `sum(classes)` and one table by class; the
+/// randoms dictionary has no other field (alias.xml RANDOMS_QUEUE_INFO).
+pub fn queue_info(classes:&[u32;5])->Vec<u8>{
     let mut b=vec![0x13,0x55,24,1,5];
-    for count in [1u32,0,0,0,0]{b.extend(count.to_le_bytes());}
+    for count in classes{b.extend(count.to_le_bytes());}
     b.extend([0,0]);b
 }
 

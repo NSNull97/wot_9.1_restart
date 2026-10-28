@@ -144,6 +144,17 @@ impl World {
         Ok(())
     }
     pub fn bot_plan(&self) -> Option<&Plan> { self.bots.as_ref().map(|b| b.plan.as_ref()) }
+    /// MM-01: this battle's native places (1..=all places) and the bot kinds of
+    /// its group, before the start. The template's plan is untouched; a reset
+    /// battle comes back with it.
+    pub fn set_match_roster(&mut self, humans: usize, kinds: Vec<VehicleKind>) -> io::Result<()> {
+        let bots = self.bots.as_mut().ok_or_else(bad)?;
+        if self.started.is_some() || !bots.brains.is_empty() || !(1..=self.expected_actors).contains(&humans)
+            || self.actors.len() > humans || kinds.is_empty() || kinds.iter().any(|k| !bots.plan.kinds.contains(k))
+            || kinds.iter().enumerate().any(|(i, k)| kinds[..i].contains(k)) { return Err(bad()); }
+        bots.plan = Arc::new(Plan { human_places: humans, seed: bots.plan.seed, kinds });
+        Ok(())
+    }
     /// Places taken by native players; the rest of the roster is bots.
     pub fn human_places(&self) -> usize { self.bots.as_ref().map_or(self.expected_actors, |b| b.plan.human_places) }
     pub fn is_bot(&self, slot: usize) -> bool { self.actors.get(slot).is_some_and(|a| a.bot.is_some()) }

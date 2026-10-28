@@ -101,6 +101,30 @@ impl Registry {
     pub fn by_geometry(&self,sha256:&str)->Option<GeneratedId>{self.entries.iter().find(|e|e.geometry_sha256==sha256).map(|e|e.id)}
 }
 
+/// Client `constants.VEHICLE_CLASSES` order (#717 `scripts/common/constants.pyc`):
+/// the index `Account.receiveQueueInfo` `classes` counts use.
+pub const VEHICLE_CLASSES:[&str;5]=["lightTank","mediumTank","heavyTank","SPG","AT-SPG"];
+static TIERS:OnceLock<Result<BTreeMap<String,(u8,u8)>,String>>=OnceLock::new();
+/// MM-01: client `list.xml` `level` of every vehicle row of the embedded table
+/// (generated or refused), keyed by `vehicle:<nation>:<name>`.
+pub fn tier(vehicle_id:&str)->io::Result<Option<u8>> {Ok(profile(vehicle_id)?.map(|p|p.0))}
+/// MM-01: (tier, `VEHICLE_CLASSES` index) from the same table row.
+pub fn profile(vehicle_id:&str)->io::Result<Option<(u8,u8)>> {
+    let tiers=TIERS.get_or_init(||{
+        if digest(TABLE)!=TABLE_SHA256 {return Err("embedded table SHA".into());}
+        let table:Value=serde_json::from_slice(TABLE).map_err(|_|"table JSON".to_owned())?;
+        let mut tiers=BTreeMap::new();
+        for row in table["vehicles"].as_array().ok_or_else(||"vehicle rows".to_owned())? {
+            let id=row["vehicle_id"].as_str().filter(|s|!s.is_empty()&&s.len()<=128).ok_or_else(||"vehicle id".to_owned())?;
+            let level=row["tier"].as_u64().and_then(|t|u8::try_from(t).ok()).filter(|t|(1..=10).contains(t)).ok_or_else(||"tier".to_owned())?;
+            let class=row["vehicle_class"].as_str().and_then(|c|VEHICLE_CLASSES.iter().position(|x|*x==c)).ok_or_else(||"vehicle class".to_owned())?;
+            if tiers.insert(id.to_owned(),(level,class as u8)).is_some() {return Err("duplicate vehicle".into());}
+        }
+        Ok(tiers)
+    }).as_ref().map_err(|e|bad(e))?;
+    Ok(tiers.get(vehicle_id).copied())
+}
+
 fn digest(raw:&[u8])->String{format!("{:x}",Sha256::digest(raw))}
 fn f(v:&Value)->io::Result<f64>{v.as_f64().filter(|x|x.is_finite()).ok_or_else(||bad("number"))}
 fn u(v:&Value)->io::Result<u64>{v.as_u64().ok_or_else(||bad("integer"))}
