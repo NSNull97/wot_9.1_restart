@@ -17,12 +17,15 @@ fn resources()->Vec<super::super::super::profile13_templates::Resources>{
     let old_v2=BatchRuntime::actor_manifest(shared,1,VehicleKind::Is7,2).unwrap();
     assert_eq!(old_v2.as_object().unwrap().len(),6);assert!(old_v2["source_profile"].is_null());
     assert!(BatchRuntime::actor_manifest(shared,2,VehicleKind::T26,2).is_err());
-    let mut fixture=(**shared).clone();fixture.maps=vec![shared.maps[0].clone();5];
+    let mut fixture=(**shared).clone();
     // Row encoding only: this authored placeholder is never loaded/launched as
     // a physical profile. Production Pool/SceneSpec perform exact pin binding.
     for kind in VehicleKind::ALL.into_iter().skip(2){
         assert!(BatchRuntime::actor_manifest(&fixture,kind.index(),kind,2).is_err());
-        fixture.source_profiles[kind.index()]=Some((fixture.root.join(format!("{}-qualified-placeholder.json",kind.label())),"a".repeat(64)));
+        fixture.kinds.push(kind);fixture.maps.push(shared.maps[0].clone());fixture.source_profiles.push(None);
+        assert!(BatchRuntime::actor_manifest(&fixture,kind.index(),kind,2).is_err());
+        let row_slot=fixture.slot(kind).unwrap();
+        fixture.source_profiles[row_slot]=Some((fixture.root.join(format!("{}-qualified-placeholder.json",kind.label())),"a".repeat(64)));
         let row=BatchRuntime::actor_manifest(&fixture,kind.index(),kind,2).unwrap();
         assert_eq!(row.as_object().unwrap().len(),6);assert_eq!(row["source_profile"]["sha256"],"a".repeat(64));
         assert_eq!(row["kind"],kind.label());assert!(BatchRuntime::actor_manifest(&fixture,kind.index(),kind,1).is_err());
