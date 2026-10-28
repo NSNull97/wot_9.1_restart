@@ -8,8 +8,18 @@ use serde::{Deserialize,Serialize};
 use super::lifecycle_details::{self,Details,Row,Target,Summary};
 
 pub const AVATAR_RESULTS_STREAM:i16=100;
+/// Compact native result (zlib stream to the client); unchanged by RES-30.
 pub const MAX_RESULT_BYTES:usize=32768;
-pub const MAX_PARTICIPANTS:usize=6;
+/// RES-30: one battle roster bound (SPAWN-15, client maxPlayersInTeam=15).
+pub const MAX_PARTICIPANTS:usize=super::model::MAX_ACTORS;
+/// Rosters 2..6 keep their original result journal budget byte for byte.
+pub const LEGACY_PARTICIPANTS:usize=6;
+pub const MAX_RESULT_JSON_LEGACY:usize=32768;
+/// RES-30 roster30: 7..30 rows. Structural maximum ≈207KB (test-pinned).
+pub const MAX_RESULT_JSON:usize=262144;
+/// Requests/replies/seals that carry one escaped result journal.
+pub const MAX_RESULT_REQUEST:usize=655360;
+pub fn result_json_budget(rows:usize)->usize{if rows<=LEGACY_PARTICIPANTS{MAX_RESULT_JSON_LEGACY}else{MAX_RESULT_JSON}}
 
 fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,reason)}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -126,10 +136,10 @@ impl<'de> Deserialize<'de> for BoundedParticipants {
         struct ParticipantVisitor;
         impl<'de> serde::de::Visitor<'de> for ParticipantVisitor {
             type Value=BoundedParticipants;
-            fn expecting(&self,f:&mut std::fmt::Formatter)->std::fmt::Result{f.write_str("at most six participants")}
+            fn expecting(&self,f:&mut std::fmt::Formatter)->std::fmt::Result{write!(f,"at most {MAX_PARTICIPANTS} participants")}
             fn visit_seq<S:serde::de::SeqAccess<'de>>(self,mut seq:S)->Result<Self::Value,S::Error> {
                 let mut rows=Vec::new();while let Some(row)=seq.next_element::<Participant>()? {
-                    if rows.len()>=MAX_PARTICIPANTS{return Err(serde::de::Error::custom("participant count exceeds6"));}rows.push(row);
+                    if rows.len()>=MAX_PARTICIPANTS{return Err(serde::de::Error::custom("participant count bound"));}rows.push(row);
                 }Ok(BoundedParticipants(rows))
             }
         }d.deserialize_seq(ParticipantVisitor)
@@ -160,9 +170,9 @@ dto_serde!(Target,fields,{
     vehicle_id:u32,spotted:u8,death_reason:i8,direct_hits:u16,explosion_hits:u16,piercings:u16,
     damage_dealt:u16,damage_assisted_track:u16,damage_assisted_radio:u16,crits:u32,fire:u16,
 });
-dto_serde!(Row,fields,{attacker_vehicle_id:u32,targets:Vec<Target> => fields.next_value::<Bounded<Target,6>>()?.0,});
+dto_serde!(Row,fields,{attacker_vehicle_id:u32,targets:Vec<Target> => fields.next_value::<Bounded<Target,MAX_PARTICIPANTS>>()?.0,});
 dto_serde!(Details,fields,{version:u8,policy:String,spotting_policy:Option<String>,
-    rows:Vec<Row> => fields.next_value::<Bounded<Row,6>>()?.0,});
+    rows:Vec<Row> => fields.next_value::<Bounded<Row,MAX_PARTICIPANTS>>()?.0,});
 impl Serialize for Results{
     fn serialize<S:serde::Serializer>(&self,serializer:S)->Result<S::Ok,S::Error>{
         use serde::ser::SerializeStruct;
@@ -212,9 +222,14 @@ impl Results {
     /// legacy result contract remains strict and cannot accept these rows.
     pub fn validate_p06t(&self)->io::Result<()>{self.validate_inner(true)}
     pub fn from_json_p06t(raw:&str)->io::Result<Self>{
-        if raw.len()>MAX_RESULT_BYTES{return Err(bad("P06T results byte bound"));}
+        if raw.len()>MAX_RESULT_JSON{return Err(bad("P06T results byte bound"));}
         let result:Self=serde_json::from_str(raw).map_err(|_|bad("P06T bounded results schema"))?;
-        result.validate_p06t()?;Ok(result)
+        result.validate_p06t()?;result.validate_json_bytes(raw.len())?;Ok(result)
+    }
+    /// A journal of 2..6 rows keeps its original 32KiB budget; 7..30 rows
+    /// (roster30) get the larger one. Call after the DTO was parsed.
+    pub fn validate_json_bytes(&self,len:usize)->io::Result<()>{
+        if len==0||len>result_json_budget(self.participants.len()){return Err(bad("lifecycle result journal byte budget"));}Ok(())
     }
     fn validate_inner(&self,mixed:bool)->io::Result<()> {
         if self.arena_id==0||self.arena_id>i64::MAX as u64||crate::map_profile091::MapId::from_arena_type_id(self.arena_type_id).is_err()
@@ -226,7 +241,7 @@ impl Results {
             if p.vehicle_id==0||p.vehicle_id>i32::MAX as u32||p.account_dbid<=0||!(1..=2).contains(&p.team)
                 ||p.type_compact_descr==0||p.type_compact_descr>i32::MAX as u32
                 ||!(0..=10000).contains(&p.health)||p.shots>192||p.direct_hits>192||p.piercings>192
-                ||p.damage_dealt>60000||p.damage_received>10000||p.kills>6
+                ||p.damage_dealt>60000||p.damage_received>10000||usize::from(p.kills)>=MAX_PARTICIPANTS
                 ||p.capture_points>600||p.dropped_capture_points>600||p.mileage_metres>200000
                 ||p.life_time>self.duration_seconds||p.killer_id>i32::MAX as u32
                 ||!(-1..=10).contains(&p.death_reason)||p.name.is_empty()||p.name.len()>48
@@ -460,3 +475,5 @@ mod tests {
 
 #[cfg(test)]
 #[path="lifecycle_details_wire_tests.rs"]mod p08c_personal_wire_tests;
+#[cfg(test)]
+#[path="res30_roster30_tests.rs"]mod res30_roster30_tests;

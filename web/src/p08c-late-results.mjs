@@ -7,7 +7,10 @@ import { isAbsolute, resolve } from 'node:path';
 import { realpathSync, statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
+import { MAX_RESULT_REQUEST } from './p08b-battle.mjs';
 export const LATE_CONTRACT = 'p08c-late-result-append.v1';
+// RES-30: a seal of 7..30 actors (tools/p08c_late_results.py MAX_SEAL_ROSTER30).
+const MAX_SEAL_ROSTER30 = 393216;
 export const LATE_POLICY_SHA256 = 'f6ae697fb920b9359a2cb0375aa1fd68538a183fab1c8f136772c703de6abe04';
 export const LATE_WORKER_TIMEOUT_MS = 7000;
 export const LATE_REQUEST_TIMEOUT_MS = 9000;
@@ -72,8 +75,8 @@ export function validateLateRequest(v, owner) {
     && v.battle_id === `${v.run_id}:${v.arena_id}` && ['mixed-v2', 'loss-v1'].includes(v.source_contract)
     && typeof v.frozen_sha256 === 'string' && SHA.test(v.frozen_sha256), 'request binding/schema', 400);
   if (extra.length) valid(typeof v.release_terminal_sha256 === 'string' && SHA.test(v.release_terminal_sha256)
-    && integer(v.finished_revision, 14) && typeof v.seal_json === 'string' && Buffer.byteLength(v.seal_json) <= 32768, 'bounded immutable seal', 400);
-  valid(bytes(v) <= (extra.length ? 65536 : 4096), 'request byte budget', 400); return v;
+    && integer(v.finished_revision, 14) && typeof v.seal_json === 'string' && Buffer.byteLength(v.seal_json) <= MAX_SEAL_ROSTER30, 'bounded immutable seal', 400);
+  valid(bytes(v) <= (extra.length ? MAX_RESULT_REQUEST : 4096), 'request byte budget', 400); return v;
 }
 export function validateLateReply(v, request) {
   valid(exact(v, ['version', 'contract', 'operation', 'account_id', 'native_database_id', 'command_key', 'request_sha256',
@@ -177,7 +180,7 @@ export function createLateResultService({ database, originalRoot, accountId, she
         && request.version === (loss ? 4 : 2) && (!loss || request.contract === 'p06t-ammo-rack-loss.v1') && request.account_id === accountId
         && ['query', 'ack'].includes(request.operation) && bytes(request) <= 2048, 'result reader mode/schema', 400);
       // Existing route keeps the unchanged mixed/loss request+reply validators.
-      return run('results', request, 65536);
+      return run('results', request, MAX_RESULT_REQUEST);
     },
   };
 }

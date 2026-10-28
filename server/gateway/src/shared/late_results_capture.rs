@@ -9,7 +9,12 @@ use crate::battle091::profile13::{Context,FinishReason};
 use super::{model::{self,World},lifecycle_wire::Results,profile13_session as handoff,wire};
 pub(super) const POLICY:&str="test_lab.p08c.late-result-unchanged-release.v1";
 pub(super) const MAX_SEAL:usize=32768;
-pub(super) const MAX_HTTP:usize=65536;
+/// RES-30 roster30: a seal of 7..30 linked actors (one escaped journal ≤256KiB
+/// plus 30 final actors). Rosters 2..6 keep the fixed 32768 budget.
+pub(super) const MAX_SEAL_ROSTER30:usize=393216;
+pub(super) const MAX_HTTP:usize=super::lifecycle_wire::MAX_RESULT_REQUEST;
+pub(super) fn seal_budget(actors:usize)->usize{if actors<=super::lifecycle_wire::LEGACY_PARTICIPANTS{MAX_SEAL}else{MAX_SEAL_ROSTER30}}
+use super::model::MAX_ACTORS;
 fn bad(why:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,format!("late results capture: {why}"))}
 fn digest(raw:&[u8])->String{format!("{:x}",Sha256::digest(raw))}
 pub(super) fn canonical(value:&Value)->io::Result<String>{
@@ -100,7 +105,7 @@ impl Seal{
 /// One battle's immutable links and seal, owned outside Session receive clones.
 /// The loop may clone this SMALL observer transaction, never the whole World.
 #[derive(Clone)]
-pub(super) struct Capture{run:String,battle:u64,links:Vec<Link>,releases:[Option<Release>;6],seal:Option<Arc<Seal>>}
+pub(super) struct Capture{run:String,battle:u64,links:Vec<Link>,releases:[Option<Release>;MAX_ACTORS],seal:Option<Arc<Seal>>}
 impl Capture{
     pub(super) fn new(run:String,battle:u64)->io::Result<Self>{
         if run.len()!=36||!run.bytes().enumerate().all(|(i,b)|if [8,13,18,23].contains(&i){b==b'-'}else{b.is_ascii_digit()||(b'a'..=b'f').contains(&b)})
@@ -117,14 +122,14 @@ impl Capture{
     pub(super) fn links(&self)->&[Link]{&self.links}
     pub(super) fn seal(&self)->Option<&Arc<Seal>>{self.seal.as_ref()}
     pub(super) fn register(&mut self,world:&World,slot:usize,session:u32,owner:Arc<identity091::Profile>,admission:Admission)->io::Result<bool>{
-        if self.seal.is_some()||world.id!=self.battle||slot>=6||session==0||admission.run()!=self.run||admission.battle()!=self.battle||!admission.active(){return Err(bad("register battle/source/phase"));}
+        if self.seal.is_some()||world.id!=self.battle||slot>=MAX_ACTORS||session==0||admission.run()!=self.run||admission.battle()!=self.battle||!admission.active(){return Err(bad("register battle/source/phase"));}
         let link=Link{owner,session,slot,team:world.team(slot)?,admission};link.validate_actor(world)?;
         if world.actors[slot].session!=Some(session){return Err(bad("register after actual attach only"));}
         if let Some(old)=self.links.iter().find(|l|l.slot==slot){if old.same(&link){return Ok(false);}return Err(bad("conflicting linked slot"));}
         // Reservation IDs are scoped by authenticated owner in the store.
         // Owner/native/session uniqueness is authoritative; cross-owner equal
         // reservation strings must not become an invented global SQL rule.
-        if self.links.len()>=6||self.links.iter().any(|l|l.session==session||l.owner.account_id==link.owner.account_id||l.owner.database_id==link.owner.database_id){
+        if self.links.len()>=MAX_ACTORS||self.links.iter().any(|l|l.session==session||l.owner.account_id==link.owner.account_id||l.owner.database_id==link.owner.database_id){
             return Err(bad("duplicate admission owner/native/session"));}
         self.links.push(link);self.links.sort_by_key(|l|l.slot);Ok(true)
     }
@@ -186,7 +191,7 @@ impl Capture{
         // or other presentation fields from that later membership.
         if self.seal.is_some(){return Ok(false);}
         if world.started.is_none()||!world.lifecycle.as_ref().is_some_and(|l|l.outcome().is_some())
-            ||!(2..=6).contains(&world.actors.len())||self.links.len()!=world.actors.len()||self.links.iter().enumerate().any(|(slot,l)|l.slot!=slot){return Err(bad("final outcome/complete linked roster"));}
+            ||!(2..=MAX_ACTORS).contains(&world.actors.len())||self.links.len()!=world.actors.len()||self.links.iter().enumerate().any(|(slot,l)|l.slot!=slot){return Err(bad("final outcome/complete linked roster"));}
         let mut actors=Vec::with_capacity(self.links.len());for link in &self.links{actors.push(FinalActor::capture(world,link)?);}
         let results=super::lifecycle_result::build(world)?;results.validate_p06t()?;
         for(link,actor)in self.links.iter().zip(&actors){let p=results.participants.iter().find(|p|p.account_dbid==link.owner.database_id).ok_or_else(||bad("result owner roster"))?;
@@ -195,7 +200,7 @@ impl Capture{
         let results_json=canonical(&serde_json::to_value(&results).map_err(|_|bad("result canonical value"))?)?;
         let raw=canonical(&json!({"version":1,"policy":POLICY,"run_id":self.run,"battle_id":format!("{}:{}",self.run,self.battle),"arena_id":self.battle.to_string(),
             "results_json":results_json,"actors":self.links.iter().zip(&actors).map(|(link,actor)|link.value(actor)).collect::<Vec<_>>()}))?;
-        if raw.len()>MAX_SEAL{return Err(bad("final seal exceeds fixed32768 budget; retain diagnostic"));}
+        if raw.len()>seal_budget(actors.len()){return Err(bad("final seal exceeds its roster budget; retain diagnostic"));}
         let sha=digest(raw.as_bytes());
         self.seal=Some(Arc::new(Seal{raw,sha,results:Arc::new(results),actors}));Ok(true)
     }

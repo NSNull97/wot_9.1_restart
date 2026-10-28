@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { BATTLE_POLICY_SHA256, validateBattleReply } from './p08b-battle.mjs';
+import { BATTLE_POLICY_SHA256, validateBattleReply, MAX_PARTICIPANTS, MAX_RESULT_BYTES, MAX_RESULT_REQUEST } from './p08b-battle.mjs';
 import { CATALOG_SHA256, CATALOG_VEHICLES } from './catalog-v1.mjs';
 
 export const MIXED_POLICY_SHA256 = '71fddc60e36780a4be2eb4dfcfa1709791e23edf1a69d074940024404b37e0d5';
@@ -80,7 +80,7 @@ export function mixedConfiguration(value, poolOwners) {
 function terminal(v, frozen, hp) {
   const p = ACTIVE_TYPES[frozen.kind];
   requireValue(exact(v, ['policy_revision', 'roster_size', 'crew_active', 'crew', 'devices', 'fire', 'death'])
-    && v.policy_revision === 'test_lab.p06t.devices-proxy-fire.v1' && integer(v.roster_size, 0, 6) && typeof v.crew_active === 'boolean'
+    && v.policy_revision === 'test_lab.p06t.devices-proxy-fire.v1' && integer(v.roster_size, 0, MAX_PARTICIPANTS) && typeof v.crew_active === 'boolean'
     && Array.isArray(v.crew) && v.crew.length === frozen.crew_ids.length
     && v.crew.every((r, i) => exact(r, ['crew_id', 'alive']) && r.crew_id === frozen.crew_ids[i] && typeof r.alive === 'boolean')
     && v.crew_active === v.crew.some(r => r.alive) && Array.isArray(v.devices) && v.devices.length === p.devices.length
@@ -125,8 +125,8 @@ export function validateMixedBattleRequest(v, owner) {
     && Array.isArray(v.remaining_ammunition) && v.remaining_ammunition.length === 3
     && v.remaining_ammunition.every(a => exact(a, ['shell_compact_id', 'count']) && integer(a.shell_compact_id, 1, 65535) && integer(a.count, 0, 160))
     && typeof v.terminal_state_json === 'string' && Buffer.byteLength(v.terminal_state_json) <= 8192, 'finish bounds', 400);
-  if (natural) requireValue(typeof v.results_json === 'string' && v.results_json.length > 0 && Buffer.byteLength(v.results_json) <= 32768, 'full result bound', 400);
-  requireValue(bytes(v) <= (natural ? 65536 : v.operation === 'finish' ? 16384 : 2048), 'request byte budget', 400); return v;
+  if (natural) requireValue(typeof v.results_json === 'string' && v.results_json.length > 0 && Buffer.byteLength(v.results_json) <= MAX_RESULT_BYTES, 'full result bound', 400);
+  requireValue(bytes(v) <= (natural ? MAX_RESULT_REQUEST : v.operation === 'finish' ? 16384 : 2048), 'request byte budget', 400); return v;
 }
 export function validateMixedBattleReply(v, request) {
   requireValue(exact(v, ['version', 'operation', 'status', 'account_id', 'native_database_id', 'command_key', 'run_id', 'source_revision', 'revision', 'replayed',
@@ -191,6 +191,6 @@ export function validateMixedResultsReply(v, request) {
     && (request.operation === 'query' ? ['found', 'missing', 'rejected'].includes(v.status) && !v.replayed : ['acked', 'missing', 'rejected'].includes(v.status))
     && (v.status === 'rejected' ? ['RESULT_MISMATCH', 'DUPLICATE_PAYLOAD_MISMATCH'].includes(v.code) : v.code === null)
     && (['missing', 'rejected'].includes(v.status) ? v.results_json === null && !v.acked && !v.replayed
-      : typeof v.results_json === 'string' && Buffer.byteLength(v.results_json) <= 32768 && (v.status !== 'acked' || v.acked))
-    && bytes(v) <= 65536, 'result reply binding/schema'); return v;
+      : typeof v.results_json === 'string' && Buffer.byteLength(v.results_json) <= MAX_RESULT_BYTES && (v.status !== 'acked' || v.acked))
+    && bytes(v) <= MAX_RESULT_REQUEST, 'result reply binding/schema'); return v;
 }

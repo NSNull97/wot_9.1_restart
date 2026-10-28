@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto';
 import { MIXED_POLICY_SHA256, validateMixedBattleRequest, validateMixedBattleReply,
   validateMixedResultsRequest, validateMixedResultsReply } from './p06t-mixed.mjs';
 
+import { MAX_PARTICIPANTS, MAX_RESULT_REQUEST } from './p08b-battle.mjs';
 export const LOSS_CONTRACT = 'p06t-ammo-rack-loss.v1';
+// RES-30: shots/device journal of a 30-actor battle (gateway MAX_BATTLE_SHOTS, MAX_DAMAGE_EVENTS).
+const MAX_BATTLE_SHOTS = MAX_PARTICIPANTS * 160, MAX_DEVICE_SEQUENCE = MAX_BATTLE_SHOTS * 16;
 export const LOSS_POLICY_SHA256 = 'f6369197bcf83e4915dbbb16c4c173a6fd3b38103ac08bc2e33913a9071fe94e';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const key = v => typeof v === 'string' && /^[A-Za-z0-9_:-]{1,96}$/.test(v);
@@ -24,8 +27,8 @@ const extra = { run_open: [], inspect: [], admit: ['battle_id', 'native_inventor
   finish: ['battle_id', 'native_inventory_id', 'reservation_id', ...arrays, 'loss_event', 'terminal_hp', 'reason', 'terminal_state_json'] };
 function cause(e, status) {
   requireValue(e === null || exact(e, ['shot', 'attacker_slot', 'target_slot', 'tick', 'device_sequence'])
-    && integer(e.shot, 1, 960) && integer(e.attacker_slot, 0, 5) && integer(e.target_slot, 0, 5)
-    && e.attacker_slot !== e.target_slot && integer(e.tick, 1000, 216000) && integer(e.device_sequence, 1, 15360), 'bounded loss event', status);
+    && integer(e.shot, 1, MAX_BATTLE_SHOTS) && integer(e.attacker_slot, 0, MAX_PARTICIPANTS - 1) && integer(e.target_slot, 0, MAX_PARTICIPANTS - 1)
+    && e.attacker_slot !== e.target_slot && integer(e.tick, 1000, 216000) && integer(e.device_sequence, 1, MAX_DEVICE_SEQUENCE), 'bounded loss event', status);
 }
 function stackRows(a, status) {
   requireValue(Array.isArray(a) && a.length === 3 && a.every(r => exact(r, ['shell_compact_id', 'count'])
@@ -51,7 +54,7 @@ export function validateLossBattleRequest(v, owner) {
     && v.version === 4 && v.contract === LOSS_CONTRACT, 'request contract/fields', 400);
   validateMixedBattleRequest(oldRequest(v), owner);
   if (v.operation === 'finish') { for (const name of arrays) stackRows(v[name], 400); cause(v.loss_event, 400); }
-  requireValue(bytes(v) <= (natural ? 65536 : v.operation === 'finish' ? 16384 : 2048), 'request byte budget', 400); return v;
+  requireValue(bytes(v) <= (natural ? MAX_RESULT_REQUEST : v.operation === 'finish' ? 16384 : 2048), 'request byte budget', 400); return v;
 }
 export function validateLossBattleReply(v, request) {
   requireValue(exact(v, ['version', 'contract', 'operation', 'account_id', 'native_database_id', 'command_key', 'run_id', 'source_revision', 'revision', 'replayed',
@@ -110,9 +113,9 @@ export function validateLossResultsReply(v, request) {
   if (v.status === 'rejected') {
     requireValue(['version', 'contract', 'operation', 'account_id', 'native_database_id', 'command_key', 'arena_id'].every(k => v[k] === request[k])
       && ['RESULT_MISMATCH', 'DUPLICATE_PAYLOAD_MISMATCH', 'AMMO_LOSS_POLICY_REQUIRED'].includes(v.code)
-      && v.acked === false && v.replayed === false && v.results_json === null && bytes(v) <= 65536, 'rejected result binding'); return v;
+      && v.acked === false && v.replayed === false && v.results_json === null && bytes(v) <= MAX_RESULT_REQUEST, 'rejected result binding'); return v;
   }
   const { contract, record_contract, ...old } = v, { contract: ignored, ...oldRequestValue } = request;
   validateMixedResultsReply({ ...old, version: 2, policy_sha256: MIXED_POLICY_SHA256 }, { ...oldRequestValue, version: 2 });
-  requireValue(bytes(v) <= 65536, 'result reply budget'); return v;
+  requireValue(bytes(v) <= MAX_RESULT_REQUEST, 'result reply budget'); return v;
 }

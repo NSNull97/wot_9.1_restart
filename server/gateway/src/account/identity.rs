@@ -567,10 +567,12 @@ impl Config {
     /// P08C results alone need the bounded complete result string. Keep every
     /// older service on its original4KiB body/8KiB response admission limits.
     pub(crate) fn results_post(&self,owner:&Profile,body:&[u8])->io::Result<Vec<u8>> {
-        if !self.profile13_battle||owner.database_id<=0||body.is_empty()||body.len()>65536 {
+        // RES-30: one escaped 7..30-row journal; 2..6 rows stay within the old 64KiB.
+        const RESULT:usize=crate::gateway091::shared::lifecycle_wire::MAX_RESULT_REQUEST;
+        if !self.profile13_battle||owner.database_id<=0||body.is_empty()||body.len()>RESULT {
             return Err(invalid("battle result HTTP request bound"));
         }
-        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;
+        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),RESULT,RESULT+4100)?;
         if status!=200{return Err(invalid("battle results writer unavailable; immutable request retained"));}
         Ok(reply)
     }
@@ -578,7 +580,8 @@ impl Config {
         if self.p06t_ammo_rack_detonation||!self.p06t_mixed_ammo||!self.p04m_pool||!self.profile13_battle||owner.database_id<=0||body.is_empty()||body.len()>2048{
             return Err(invalid("P06T results authenticated mode/body bound"));
         }
-        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;
+        const RESULT:usize=crate::gateway091::shared::lifecycle_wire::MAX_RESULT_REQUEST;
+        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),RESULT,RESULT+4100)?;
         if status!=200{return Err(invalid("P06T results writer unavailable; immutable task retained"));}Ok(reply)
     }
     /// New fixed namespace alone. Old body/reply budgets and paths unchanged.
@@ -590,7 +593,7 @@ impl Config {
     }
     fn late_results_http(&self,owner:&Profile,body:&[u8],pending:bool)->io::Result<Vec<u8>>{
         if !self.p08c_late_results||!self.profile13_battle||!self.p06t_mixed_ammo||owner.database_id<=0
-            ||!self.p08c_late_results_accounts.contains(&owner.account_id)||body.is_empty()||body.len()>if pending{2048}else{65536}{
+            ||!self.p08c_late_results_accounts.contains(&owner.account_id)||body.is_empty()||body.len()>if pending{2048}else{crate::gateway091::shared::lifecycle_wire::MAX_RESULT_REQUEST}{
             return Err(invalid("late results configured owner/mode/body boundary"));
         }
         let path=if pending{"/internal/native/late-result-pending"}else{"/internal/native/late-result-append"};

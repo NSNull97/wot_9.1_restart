@@ -126,6 +126,19 @@ mod tests{
         let before=p.clone();let mut conflicting=t;conflicting.remaining_ammunition[1].count-=1;
         assert!(p.retain_terminal_v2(conflicting).is_err());assert_eq!(p,before);
     }
+    #[test]fn res30_terminal_state_accepts_a_thirty_actor_roster(){
+        let r=reservation();let t=TerminalV2::cancelled(&r,1).unwrap();
+        let mut v:serde_json::Value=serde_json::from_str(&t.terminal_state_json).unwrap();
+        for n in [7u64,30]{v["roster_size"]=n.into();
+            assert_eq!(codec::validate_terminal_json(&serde_json::to_string(&v).unwrap(),&r.frozen,90).unwrap().roster_size as u64,n);}
+        v["roster_size"]=31.into();assert!(codec::validate_terminal_json(&serde_json::to_string(&v).unwrap(),&r.frozen,90).is_err());
+        // A killer in slot 29 of a 30-actor roster; slot 30 is outside it.
+        v["roster_size"]=30.into();v["crew_active"]=false.into();
+        for c in v["crew"].as_array_mut().unwrap(){c["alive"]=false.into();}
+        v["death"]=serde_json::json!({"reason":0,"killer_slot":29,"tick":1200});
+        let state=codec::validate_terminal_json(&serde_json::to_string(&v).unwrap(),&r.frozen,0).unwrap();assert_eq!(state.killer_slot,Some(29));
+        v["death"]["killer_slot"]=30.into();assert!(codec::validate_terminal_json(&serde_json::to_string(&v).unwrap(),&r.frozen,0).is_err());
+    }
     #[test]fn p06t_cancelled_queue_refunds_real_three_stacks_and_initial_source_journal_without_actor(){
         let r=reservation();let t=TerminalV2::cancelled(&r,1).unwrap();
         assert_eq!(t.remaining_ammunition.map(|a|a.count),[0,4,11]);assert_eq!(t.terminal_hp,90);

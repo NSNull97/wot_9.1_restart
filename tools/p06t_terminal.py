@@ -13,7 +13,7 @@ from pathlib import Path
 from p09d_ammo_store import require,sha
 from p09d_ammo_projection import canonical
 from p09e_research_store import _json
-from p08b_battle_store import _integer
+from p08b_battle_store import _integer, MAX_PARTICIPANTS
 
 POLICY_SCHEMA="p06t-terminal-policy.v1"
 MANIFEST_SHA256="cded466bf3c21243c10c0bcee8a013ab4cffc20f31f7275d4eab1672060b3717"
@@ -77,7 +77,7 @@ class TerminalPolicy:
             and frozen["kind"] in self.document["profiles"] and type(value["crew_active"])is bool,"INVALID_TERMINAL_STATE")
         profile=self.document["profiles"][frozen["kind"]]
         require(frozen["max_hp"]==profile["max_hp"] and len(frozen["crew_ids"])==profile["crew_count"],"INVALID_TERMINAL_STATE")
-        _integer(terminal_hp,0,frozen["max_hp"],"INVALID_TERMINAL_STATE");_integer(value["roster_size"],0,6,"INVALID_TERMINAL_STATE")
+        _integer(terminal_hp,0,frozen["max_hp"],"INVALID_TERMINAL_STATE");_integer(value["roster_size"],0,MAX_PARTICIPANTS,"INVALID_TERMINAL_STATE")
         crew=value["crew"]
         require(type(crew)is list and len(crew)==len(frozen["crew_ids"]),"INVALID_TERMINAL_STATE")
         for row,identity in zip(crew,frozen["crew_ids"]):
