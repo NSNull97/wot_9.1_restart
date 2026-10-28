@@ -1146,13 +1146,19 @@ pub fn serve(key_path: &str, digest_path: &str, config_path: &str, capture_path:
     serve_with_pool(key_path, digest_path, config_path, capture_path, None, None, false, None, None,None,MapId::Karelia,VehicleKind::Ms1,None,None,None)
 }
 
+/// P04M pool: the five curated kinds in slot order, then only generated kinds
+/// (BATTLE-ANY manifest version5); nothing else reaches the pool writer.
+fn p04m_template_rows(resources:&[super::profile13_templates::Resources])->bool{
+    resources.len()>=5&&resources[..5].iter().map(|r|r.kind).eq(VehicleKind::ALL)&&resources[5..].iter().all(|r|r.kind.is_generated())
+}
+
 pub fn serve_profile13(key_path:&str,digest_path:&str,config_path:&str,manifest_path:&str,capture_path:&str)
     ->Result<(),Box<dyn std::error::Error>> {
     let config=crate::identity091::Config::load(config_path)?;
     config.require_game_network(crate::identity091::game_network::Runtime::SharedOwnedProfile13)?;
     if !config.profile13_battle || !config.research_service {return Err(model::bad().into());}
     let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
-    if config.p04m_pool&&resources.len()!=5{return Err(model::bad().into());}
+    if config.p04m_pool&&!p04m_template_rows(&resources){return Err(model::bad().into());}
     let initial=&resources[0];let map=initial.map;
     serve_with_pool(key_path,digest_path,config_path,capture_path,Some(initial.pool.clone()),Some(initial.geometry.clone()),
         true,Some(initial.terrain.clone()),None,Some(initial.catalog.clone()),map,VehicleKind::Ms1,Some(resources),None,None)
@@ -1168,7 +1174,7 @@ pub fn serve_profile13_source_bundle(key_path:&str,digest_path:&str,config_path:
     config.require_game_network(crate::identity091::game_network::Runtime::SharedOwnedProfile13)?;
     if !config.profile13_battle || !config.research_service {return Err(model::bad().into());}
     let resources=super::profile13_templates::load(&config.local_root,Path::new(manifest_path))?;
-    if config.p04m_pool&&resources.len()!=5{return Err(model::bad().into());}
+    if config.p04m_pool&&!p04m_template_rows(&resources){return Err(model::bad().into());}
     let root=config.local_root.canonicalize()?;
     let bundle=Path::new(bundle_path).canonicalize()?;
     if bundle==root || !bundle.starts_with(&root) {return Err(model::bad().into());}
