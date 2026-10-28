@@ -222,3 +222,4 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /tools/battle_any_profiles.py text eol=lf
 /tools/battle_any.py text eol=lf
 /tools/battle_any_data.py text eol=lf
+/server/gateway/src/shared/battle_any_pins.rs text eol=lf
