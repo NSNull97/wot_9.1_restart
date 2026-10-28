@@ -72,6 +72,8 @@ pub struct Actor {
     pub owned_loss:Option<crate::profile13_loss091::FrozenLoss>,
     pub owned_hold:Option<crate::profile13_hold091::FrozenHold>,
     pub devices:Option<crate::p06t_device_state::State>,
+    /// BOT-01: server bot ordinal; such an actor has no Session and no account.
+    pub bot:Option<u8>,
 }
 
 impl Actor {
@@ -98,6 +100,8 @@ pub(super) mod result_spots;
 pub(super) mod p06t;
 #[path="p06t_extended_world.rs"]
 pub(crate) mod extended;
+#[path="bots.rs"]
+pub(crate) mod bots;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RamDamageRecord { pub sequence:u32,pub tick:u32,pub domain_tick:u32,pub attacker:usize,pub target:usize,pub pair:(usize,usize),pub energy_j:f64,pub closing_speed:f64,pub health_before:i16,pub health_after:i16 }
@@ -226,6 +230,8 @@ pub struct World {
     pub fragiles: Option<fragiles::State>,
     contact_sources:[Option<ram_proof::Source>;MAX_ACTORS],
     contact_sequences:[u32;MAX_ACTORS],
+    /// BOT-01 plan and per-bot decision state (None: no bots, old path).
+    bots:Option<bots::Bots>,
 }
 
 impl World {
@@ -463,7 +469,7 @@ impl World {
             result_spots:None,result_spot_tick:None,original_spotting:None,
             geometry: None,geometries:std::array::from_fn(|_|None),generated_geometries:std::collections::BTreeMap::new(),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
             terrain: None, terrain_contacts: Vec::new(), ram_damage_events:Vec::new(), active_ram_pairs:std::collections::BTreeSet::new(), destructible: None,fragiles:None,
-            contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS] })
+            contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS],bots:None })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
         let kind=bundle.vehicle_kind();let index=kind.index();
@@ -883,7 +889,7 @@ impl World {
         }
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None });
+            fire, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,bot:None });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {

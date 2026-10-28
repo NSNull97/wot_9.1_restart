@@ -167,6 +167,15 @@ fn source_target_angles(kind:VehicleKind,position:[f32;3],direction:[f32;3],poin
     let (yaw,pitch)=target_angles_pose_with_ballistics(kind,position,direction,point,old_yaw,old_pitch,speed,gravity);
     source_target_bounds(kind,yaw,pitch)
 }
+/// BOT-01: the same unconstrained solve `State::advance_pose_for[_selected]`
+/// runs for a point, so a bot can tell whether its gun has converged.
+pub(crate) fn solve_for(kind: VehicleKind, position: [f32; 3], direction: [f32; 3], point: [f32; 3], old_yaw: f32, old_pitch: f32,
+    shell: Option<crate::p06t_shells091::Shell>) -> (f32, f32) {
+    match shell {
+        Some(shell) => target_angles_pose_with_ballistics(kind,position,direction,point,old_yaw,old_pitch,shell.raw_speed_mps,shell.raw_gravity_mps2),
+        None => target_angles_pose_for(kind,position,direction,point,old_yaw,old_pitch),
+    }
+}
 pub fn wrap(angle: f32) -> f32 { (angle + PI).rem_euclid(2. * PI) - PI }
 
 // MS-1's rear sector is35deg/+1; its0.4rad transition matched the original
