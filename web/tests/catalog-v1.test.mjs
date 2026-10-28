@@ -9,7 +9,8 @@ import { LEGACY_POOL_TYPES, catalogPoolTypes, usePoolCatalog, poolTypes } from '
 const plain = v => JSON.parse(JSON.stringify(v));
 const LEGACY = ['ms1', 'is7', 't26', 't34', 't3485'];
 // BATTLE-ANY stage 3 pilot (owner 2026-10-27): generated catalog rows, admission "always".
-const PILOT = ['ussr-KV-3', 'usa-M4_Sherman', 'germany-Waffentrager_E100', 'japan-Chi_Ri'];
+const PILOT = ['ussr-KV-3', 'usa-M4_Sherman', 'germany-Waffentrager_E100', 'japan-Chi_Ri',
+  'uk-GB48_FV215b_183', 'china-Ch22_113', 'france-Bat_Chatillon25t'];
 const legacyMixed = types => Object.fromEntries(LEGACY.map(k => [k, types[k]]));
 
 test('CAT-01 bridge binding hash is the committed catalog bytes', () => {
@@ -41,7 +42,7 @@ test('pilot rows carry the catalog facts (any nation, generated label)', () => {
 test('battle_admission is data: none drops a kind from mixed admission, not from the pool registry', () => {
   const rows = plain(CATALOG_VEHICLES).map(v => v.kind === 't34' ? { ...v, battle_admission: 'none' } : v);
   assert.deepEqual(Object.keys(catalogMixedTypes(rows)), ['ms1', 'is7', 't26', 't3485', ...PILOT]);
-  assert.equal(catalogPoolTypes(rows).length, 9);
+  assert.equal(catalogPoolTypes(rows).length, LEGACY.length + PILOT.length);
 });
 
 test('the flag switches tables only with this build hash', () => {

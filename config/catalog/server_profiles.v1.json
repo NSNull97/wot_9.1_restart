@@ -29,6 +29,15 @@
      "client_ui": {"crew": false, "ammo": false}},
     {"kind": "japan-Chi_Ri", "vehicle_id": "vehicle:japan:Chi_Ri", "device_profile": "battle-any",
      "battle_admission": "always", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}},
+    {"kind": "uk-GB48_FV215b_183", "vehicle_id": "vehicle:uk:GB48_FV215b_183", "device_profile": "battle-any",
+     "battle_admission": "always", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}},
+    {"kind": "china-Ch22_113", "vehicle_id": "vehicle:china:Ch22_113", "device_profile": "battle-any",
+     "battle_admission": "always", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}},
+    {"kind": "france-Bat_Chatillon25t", "vehicle_id": "vehicle:france:Bat_Chatillon25t", "device_profile": "battle-any",
+     "battle_admission": "always", "legacy_inventory": null,
      "client_ui": {"crew": false, "ammo": false}}
   ]
 }

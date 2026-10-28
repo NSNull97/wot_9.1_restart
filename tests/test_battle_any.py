@@ -107,12 +107,11 @@ class TableContract(unittest.TestCase):
                 value = row["handling"][field] if field in row["handling"] else row["physics"][field]
                 self.assertTrue(low <= value <= high, (row["vehicle_id"], field))
 
-    def test_nation_ids_are_original_not_research_catalogue(self):
+    def test_nation_ids_are_original_and_equal_to_research_catalogue(self):
+        # CAT-NATIONS: the research catalogue now uses the client order too.
         fv = rows()["vehicle:uk:GB48_FV215b_183"]
-        self.assertEqual((fv["native_nation_id"], fv["research_catalog_nation_id"]), (5, 4))
-        self.assertTrue(fv["catalog_nation_correction_required"])
-        conflicts = {row["nation"] for row in rows().values() if row["catalog_nation_correction_required"]}
-        self.assertEqual(conflicts, {"china", "france", "uk"})
+        self.assertEqual((fv["native_nation_id"], fv["research_catalog_nation_id"]), (5, 5))
+        self.assertFalse(any(row["catalog_nation_correction_required"] for row in rows().values()))
 
 
 class SpecialCases(unittest.TestCase):
