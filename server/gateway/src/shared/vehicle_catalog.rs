@@ -2,7 +2,7 @@
 //! Gateway binding. Used only when the gateway config carries
 //! `"catalog":{"version":1,"sha256":CATALOG_SHA256}`; legacy lists stay the default.
 pub const CATALOG_SCHEMA:&str="wot091-server-catalog.v1";
-pub const CATALOG_SHA256:&str="219b2f07021603fea1f58bc78368990ae33632bb9bf70a1443996bec65d1cb8a";
+pub const CATALOG_SHA256:&str="062fb8f26d6371eba0ec78cfa233eb4c054c128d5c4779980efa454c48047c0b";
 pub const CATALOG_JSON:&str=include_str!("../../../../config/catalog/catalog.v1.json");
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Admission{Always,ZeroEconomyPolicy,None}

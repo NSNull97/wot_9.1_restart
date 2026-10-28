@@ -12,7 +12,7 @@ from game_profile_tx import TransactionError
 from p09d_ammo_projection import canonical
 from p09d_ammo_store import sha, require
 from p09e_research_projection import descriptor
-from p04m_battle_profiles import SPECS, CATALOG_SHA256
+from p04m_battle_profiles import SPECS, CATALOG_SHA256, SPEC_CATALOG_SHA256
 
 SCHEMA = "p04m-curated-stock-pool.v1"
 ROLES = ("chassis", "engine", "fuelTank", "radio", "turret", "gun")
@@ -28,7 +28,7 @@ for _kind in sorted(NEW_KINDS):
     PINS[_kind] = (_spec["resource"], _spec["type_cd"], _spec["descriptor"],
         _spec["max_hp"], _spec["capacity"], _spec["shell_cd"], _spec["crew"])
 PINS = MappingProxyType(PINS)
-DEFINITION_SHA256 = sha(canonical({"schema": SCHEMA, "catalog_sha256": CATALOG_SHA256,
+DEFINITION_SHA256 = sha(canonical({"schema": SCHEMA, "catalog_sha256": SPEC_CATALOG_SHA256,
     "stock": dict(PINS), "new_source_specs": {kind: SPECS[kind + "-stock"] for kind in sorted(NEW_KINDS)}}))
 POLICY = {"id": "test_lab.p04m-stock-identity-only.v1", "definition_sha256": DEFINITION_SHA256,
     "new_battle_admission": False, "owner_acceptance": "REQUIRED", "crew_ammo_extension": "NOT_ACTIVE",

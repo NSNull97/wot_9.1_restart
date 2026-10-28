@@ -15,7 +15,7 @@ export const LOSS_SELECTION_SCHEMA = 'p10b-owned-selection-loss.v1';
 export const LOSS_SELECTION_WORKER_TIMEOUT_MS = 7000;
 export const LOSS_SELECTION_REQUEST_TIMEOUT_MS = 9000;
 const SHA=/^[0-9a-f]{64}$/, UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const CATALOG='b6baecd204444d1e894253fa6c19c61478993b8ae87c71373633989d3a8ee460';
+const CATALOG='1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80';
 const REGISTRY='e2f4ac21fe8970f3c5d29f6a45d845f9d80e4d2759f0e662c9f3bb9ac04c7b34';
 const STAMP=['native_state_sha256','owner_source_sha256','catalog_sha256','pool_registry_sha256','mixed_policy_sha256','shell_catalog_sha256','terminal_policy_sha256','loss_policy_sha256','loss_companion_sha256'];
 const COMMON=['contract','version','operation','account_id','native_database_id','run_id','expected_revision','native_inventory_id','projection_stamp'];

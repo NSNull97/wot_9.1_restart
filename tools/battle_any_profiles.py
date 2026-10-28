@@ -52,10 +52,10 @@ GENERATED_POLICY = "battle-any-generated-v1"
 QUALIFICATION = ROOT / "config" / "catalog" / "battle_qualification.v1.json"
 QUALIFICATION_SCHEMA = "wot091-battle-qualification.v1"
 RUST_PINS = ROOT / "server" / "gateway" / "src" / "shared" / "battle_any_pins.rs"
-CATALOG_SHA256 = "b6baecd204444d1e894253fa6c19c61478993b8ae87c71373633989d3a8ee460"
+CATALOG_SHA256 = "1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80"
 # Original res/scripts/common/nations.pyc order (verified in build, as P06T does).
-# The P09E research catalogue enumerates france/uk/china differently; its
-# compact IDs for those nations are recorded but not used (see table rows).
+# Since CAT-NATIONS the P09E research catalogue uses the same order; a row whose
+# catalogue nation differs is a build failure (the fields stay as the guard).
 NATIONS = ("ussr", "germany", "usa", "china", "france", "uk", "japan")
 PACKAGE_FOLDERS = {"russian": "vehicles_russian.pkg", "german": "vehicles_german.pkg",
                    "american": "vehicles_american.pkg", "french": "vehicles_french.pkg",
@@ -412,6 +412,7 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
     mounted = lambda field: vf.get(gun + "/" + field + "[1]", gf.get(shared_gun + "/" + field + "[1]"))
     mounted_sub = lambda path: vf.get(gun + "/" + path + "[1]", gf.get(shared_gun + "/" + path + "[1]"))
     nid, cid = NATIONS.index(nation), v["nation_id"]
+    require(nid == cid, vehicle_id + ": research catalogue nation differs from the client")
     fix = lambda compact: (compact >> 8 << 8) | (nid << 4) | (compact & 15)
     require(all(catalog.modules[d[k]]["native_compact_id"] >> 4 & 15 == cid for k in MODULE_KINDS)
             and v["native_compact_id"] >> 4 & 15 == cid, vehicle_id + ": catalogue nation nibble")

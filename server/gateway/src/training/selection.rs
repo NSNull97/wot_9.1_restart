@@ -10,7 +10,7 @@ use crate::battle091::profile13::Context;
 pub const SCHEMA:&str="p10b-owned-selection.v1";
 pub const MAX_REQUEST:usize=2048;
 pub const MAX_REPLY:usize=4096;
-const CATALOG_SHA256:&str="b6baecd204444d1e894253fa6c19c61478993b8ae87c71373633989d3a8ee460";
+const CATALOG_SHA256:&str="1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80";
 fn bad(s:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,format!("P10B selection: {s}"))}
 fn sha(s:&str)->bool{s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))}
 fn uuid(s:&str)->bool{s.len()==36&&s.bytes().enumerate().all(|(i,b)|if[8,13,18,23].contains(&i){b==b'-'}else{

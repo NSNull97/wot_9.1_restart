@@ -174,7 +174,7 @@ export function nativePoolOverview(profile) {
     && grantValid(profile.ammo_grant, ['native_export_sha256']), 'retained identity/resources/grants');
   requireValue(exact(research, ['schema', 'policy', 'catalog_sha256', 'garage_slots', 'unlocked_count', 'depot_types'])
     && research.schema === 'p09e-tank-module-research.v1' && researchPolicy(research.policy)
-    && research.catalog_sha256 === 'b6baecd204444d1e894253fa6c19c61478993b8ae87c71373633989d3a8ee460'
+    && research.catalog_sha256 === '1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80'
     && integer(research.garage_slots, 2, 256) && integer(research.unlocked_count, 1, 8192)
     && integer(research.depot_types, 0, 8192) && inventoryValid(profile.inventory, id, research.garage_slots, false),
   'research inventory bounds');

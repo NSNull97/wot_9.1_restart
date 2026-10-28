@@ -20,7 +20,7 @@ STOCK=(2570,2826,3082,14602,14858,15114)
 # Captured from genuine pre-change projection e5a4cf8247f8a950ddcf004f951976bb8e6e8e505d7a4a2bb28e428d0c0b55c1; no baseline code copy.
 PRE_DISPLAY_SHOP_SHA256='68ae754bf4a61cc457d1568b361aea756a0785b35ad4b0fce3ca0efd68f05f8f'
 PRE_DISPLAY_SHOP_BYTES=23096
-CATALOG_SHA256='b6baecd204444d1e894253fa6c19c61478993b8ae87c71373633989d3a8ee460'
+CATALOG_SHA256='1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80'
 PINS={
  'client/gui/scaleform/daapi/view/lobby/store/__init__.pyc':'2b7ae6505786cdd420cd0f6875db104099df16b571b0f2245ffbb7e7d8360ba4',
  'client/gui/scaleform/daapi/view/lobby/store/inventory.pyc':'584b67eed9573b3adc4ca9cda80c120974aa9703d66b0d4ed8ea16ba39df3c54',
