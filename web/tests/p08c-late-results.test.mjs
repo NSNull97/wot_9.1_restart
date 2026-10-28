@@ -26,7 +26,7 @@ test('closed opt-in config cannot add a non-mixed owner or retag old policies', 
 test('request and response foreign/revision/hash/arena poison is refused', () => {
   const { request, response } = fixture.append_vectors.find(v => v.request.operation === 'append');
   for (const bad of [{ ...request, arena_id: 9007199254740993 }, { ...request, arena_id: '9223372036854775808' }, { ...request, version: 4 },
-    { ...request, seal_json: 'я'.repeat(16385) }, { ...request, finished_revision: true }, { ...request, worker: 'unsafe' }])
+    /* RES-30 roster30 seal budget */ { ...request, seal_json: 'я'.repeat(393216 / 2 + 1) }, { ...request, finished_revision: true }, { ...request, worker: 'unsafe' }])
     assert.throws(() => validateLateRequest(bad, request.account_id));
   for (const bad of [{ ...response, request_sha256: '0'.repeat(64) }, { ...response, seal_sha256: '0'.repeat(64) },
     { ...response, release_stamp: { ...response.release_stamp, finished_revision: response.release_stamp.finished_revision + 1 } },

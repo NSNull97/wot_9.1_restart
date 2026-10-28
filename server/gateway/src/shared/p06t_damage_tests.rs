@@ -99,7 +99,8 @@ fn hit(shot:u32,target:proxy::Target,at:u64,roll:f64)->devices::ModuleHit {
     let next=hit(2,proxy::Target::Device(Device::Gun),0,0.9);
     let bad=devices::ModuleHit{ordinal:1,ignition_roll:f64::NAN,target:proxy::Target::Seat(0),..next};
     assert!(s.apply_hits(&[next,bad],h).is_err());assert_eq!(s,committed);
-    assert!(s.apply_hits(&[hit(961,proxy::Target::Device(Device::Engine),0,0.9)],h).is_err());
+    // RES-30: the shot bound is the 30-actor battle ceiling (was 960).
+    assert!(s.apply_hits(&[hit(crate::gateway091::shared::model::MAX_BATTLE_SHOTS as u32+1,proxy::Target::Device(Device::Engine),0,0.9)],h).is_err());
     assert!(s.apply_hits(&[hit(2,proxy::Target::Seat(2),0,0.9)],h).is_err());
 }
 #[test] fn critical_and_destroyed_devices_change_actual_capability_outputs() {

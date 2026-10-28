@@ -261,7 +261,9 @@ class LateResultTests(unittest.TestCase):
             with self.assertRaises(TransactionError): decode(raw)
         fixture = json.loads((ROOT / "tests/fixtures/p08c-late-loss-two-owner-vectors.json").read_bytes())
         request = next(v["request"] for v in fixture["append_vectors"] if v["request"]["operation"] == "append")
-        with self.assertRaises(TransactionError): validate_request(dict(request, seal_json="я" * 16385), request["account_id"])
+        # RES-30: the seal string bound is the roster30 seal budget (was 32768).
+        from p08c_late_results import MAX_SEAL_ROSTER30
+        with self.assertRaises(TransactionError): validate_request(dict(request, seal_json="я" * (MAX_SEAL_ROSTER30 // 2 + 1)), request["account_id"])
         with self.assertRaises(TransactionError): validate_request(dict(request, arena_id="9223372036854775808"), request["account_id"])
 
     def test_loss_facade_ordinary_ammo_crew_publish_and_old_writer_mode_fences_remain_real(self):
