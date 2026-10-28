@@ -203,6 +203,8 @@ pub struct World {
     turret_visual_ms:Option<u64>,
     extended_lab:bool,
     owner_hold:bool,
+    /// SPAWN-15: place teams on `team_spawn` formations instead of LAB lanes.
+    team_base_spawn:bool,
     lab_loadouts:[Option<extended::LabLoadout>;MAX_ACTORS],
     pub damage_events:Vec<DamageRecord>,
     pub device_events:Vec<(usize,crate::p06t_device_state::Transition)>,
@@ -452,7 +454,7 @@ impl World {
         Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,team_plan:None,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
             mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,
-            extended_lab:false,owner_hold:false,lab_loadouts:[None;MAX_ACTORS],
+            extended_lab:false,owner_hold:false,team_base_spawn:false,lab_loadouts:[None;MAX_ACTORS],
             damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
             result_spots:None,result_spot_tick:None,original_spotting:None,
             geometry: None,geometries:std::array::from_fn(|_|None),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
@@ -466,6 +468,13 @@ impl World {
         if self.mixed_profiles {self.geometries[index]=Some(bundle.clone());}
         if self.geometry.is_none() || kind==self.vehicle_kind {self.geometry=Some(bundle);}Ok(())
     }
+    /// SPAWN-15 explicit project policy (config `spawn_policy`), chosen on the
+    /// pristine template; every map of the registry has a formation.
+    pub fn enable_team_base_spawn(&mut self)->io::Result<()>{
+        if self.team_base_spawn||self.started.is_some()||!self.actors.is_empty()||!self.mixed_profiles{return Err(bad());}
+        self.team_base_spawn=true;Ok(())
+    }
+    pub fn team_base_spawn(&self)->bool{self.team_base_spawn}
     pub fn enable_original_spotting(&mut self, rules: super::spotting::Rules) -> io::Result<()> {
         if self.original_spotting.is_some() || self.started.is_some() || !self.actors.is_empty()
             || self.terrain.is_none() { return Err(bad()); }
@@ -887,6 +896,14 @@ impl World {
             actor.position = position;
             actor.origin = position;
         }
+        Ok(())
+    }
+    /// SPAWN-15: as `rebase_external_spawn_rows`, also facing each actor along
+    /// its formation yaw (Jolt receives the same yaw in the scene manifest).
+    pub fn rebase_external_spawn_poses(&mut self, poses: &[([f32; 3], f32)]) -> io::Result<()> {
+        if poses.iter().any(|(_,yaw)|!(-std::f32::consts::PI..=std::f32::consts::PI).contains(yaw)) { return Err(bad()); }
+        self.rebase_external_spawn_rows(&poses.iter().map(|(p,_)|*p).collect::<Vec<_>>())?;
+        for (actor,(_,yaw)) in self.actors.iter_mut().zip(poses) { actor.direction=[*yaw,0.,0.]; actor.yaw=*yaw; }
         Ok(())
     }
     /// A reconnect gets a fresh worker process. Until that worker is settled,

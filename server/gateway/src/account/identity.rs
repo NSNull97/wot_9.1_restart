@@ -248,6 +248,8 @@ pub struct Config {
     pub connection_capacity:Option<usize>,
     /// ARENA-01: arenas run by this gateway (absent or 1: the one old World).
     pub arenas:usize,
+    /// SPAWN-15: `spawn_policy` = the team-base formation policy (absent: LAB lanes).
+    pub team_base_spawn:bool,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -318,8 +320,18 @@ impl Config {
             },_=>return Err(invalid("late owners bounded explicit array")),
         };
         if p08c_late_results!=!p08c_late_results_accounts.is_empty(){return Err(invalid("late flag requires explicit1..6 owner capability list; disabled requires empty"));}
+        let team_base_spawn=match value.remove("spawn_policy"){
+            None=>false,
+            Some(Value::String(p)) if p==crate::gateway091::shared::team_spawn::POLICY=>true,
+            _=>return Err(invalid("spawn_policy must be the team-base formation policy of this gateway build")),
+        };
+        if team_base_spawn&&!profile13_battle{return Err(invalid("spawn_policy requires profile13 battle"));}
+        // SPAWN-15: more than the native six places only with team-base spawns
+        // (LAB lanes are not a battle layout) and GW-01 connection capacity.
+        let most=if team_base_spawn{crate::gateway091::shared::model::MAX_ACTORS as u64}else{6};
         let battle_players=match value.remove("battle_players") {
-            None=>2,Some(Value::Number(n))=>n.as_u64().filter(|n|(2..=6).contains(n)).ok_or_else(||invalid("battle_players must be2..6"))? as usize,
+            None=>2,Some(Value::Number(n))=>n.as_u64().filter(|n|(2..=most).contains(n))
+                .ok_or_else(||invalid(if team_base_spawn{"battle_players must be2..30"}else{"battle_players must be2..6"}))? as usize,
             _=>return Err(invalid("battle_players must be integer")),
         };
         if battle_players!=2&&!profile13_battle{return Err(invalid("variable roster requires profile13"));}
@@ -343,6 +355,7 @@ impl Config {
         if connection_capacity.is_some()&&(!profile13_battle||training_rooms||p08b_owner_battle_hold){
             return Err(invalid("connection_capacity requires profile13 battle without training rooms or hold5"));
         }
+        if battle_players>6&&connection_capacity.is_none(){return Err(invalid("more than six battle places require connection_capacity"));}
         // ARENA-01: K arenas share the connection table; each needs its own places.
         let arenas=match value.remove("arenas"){
             None=>1,
@@ -389,7 +402,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -1056,6 +1069,17 @@ mod tests {
         for n in 2..=6{value["battle_players"]=n.into();assert_eq!(load(&value).unwrap().battle_players,n as usize);}
         for bad in [serde_json::json!(1),serde_json::json!(7),serde_json::json!(-1),serde_json::json!(2.0),true.into(),"6".into(),Value::Null]{
             value["battle_players"]=bad;assert!(load(&value).is_err());}
+        // SPAWN-15: 7..30 places need the team-base policy and connection capacity.
+        value["battle_players"]=6.into();assert!(!load(&value).unwrap().team_base_spawn);
+        value["spawn_policy"]=crate::gateway091::shared::team_spawn::POLICY.into();assert!(load(&value).unwrap().team_base_spawn);
+        value["battle_players"]=30.into();assert!(load(&value).is_err());
+        value["connection_capacity"]=30.into();assert_eq!(load(&value).unwrap().battle_players,30);
+        for n in [7,15,29]{value["battle_players"]=n.into();assert_eq!(load(&value).unwrap().battle_players,n as usize);}
+        for bad in [serde_json::json!(31),serde_json::json!(1)]{value["battle_players"]=bad;assert!(load(&value).is_err());}
+        value["battle_players"]=30.into();value["connection_capacity"]=29.into();assert!(load(&value).is_err());
+        value["connection_capacity"]=30.into();
+        for wrong in ["spawn15-team-base-formation-v2".into(),"".into(),true.into(),Value::Null]{value["spawn_policy"]=wrong;assert!(load(&value).is_err());}
+        value["spawn_policy"]=crate::gateway091::shared::team_spawn::POLICY.into();value["profile13_battle"]=false.into();assert!(load(&value).is_err());
     }
     #[test] fn cat01_catalog_is_an_explicit_hash_bound_mixed_profile13_option() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();

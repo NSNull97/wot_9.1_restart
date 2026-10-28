@@ -2,6 +2,9 @@
 //! route and its frozen profile checks are not generalized through this module.
 pub(crate) mod model;
 pub(crate) mod p10b_team_plan;
+pub(crate) mod team_spawn;
+#[cfg(test)]
+mod spawn15_wire_tests;
 pub(crate) mod visibility;
 pub(crate) mod spotting;
 pub(crate) mod p07b_publication;
@@ -727,7 +730,7 @@ impl Session {
                 c.damage_cursor=world.damage_events.len();c.ram_cursor=world.ram_damage_events.len();c.device_cursor=world.device_events.len();
                 c.tracer_started = [false; model::MAX_BATTLE_SHOTS];
                 c.tracer_stopped = [false; model::MAX_BATTLE_SHOTS];
-                for slot in 0..world.actors.len() { c.ready_sent[slot] = slot == c.slot || world.actors[slot].ready; }
+                for slot in 0..world.actors.len() { c.ready_sent[slot] = wire::binding_ready(world, c.slot, slot); }
                 events.push(format!("SHARED_READY battle={} session={} own={} reliable_sequence={sequence} tick={}", world.id, self.id, wire::vehicle_id(c.slot)?, world.tick));
             }
             payload = &payload[33..];

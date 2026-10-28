@@ -295,7 +295,7 @@ mod tests {
             assert!(health_changed(slot, 60, 0).is_ok());
             assert!(show_damage(0, slot, 1, BOX, [0.0; 3], [1.0; 3], ShotOutcome::Pierced).is_ok());
         }
-        let outside=wire::MAX_NATIVE_ACTORS;
+        let outside=wire::MAX_WIRE_ACTORS;
         for (attacker, target) in [(outside, 0), (0, outside), (usize::MAX, 1)] {
             assert!(health_changed(target, 60, attacker).is_err());
             assert!(show_damage(attacker, target, 1, BOX, [0.0; 3], [1.0; 3], ShotOutcome::Pierced).is_err());

@@ -281,8 +281,12 @@ def main():
                         help='Canonical gateway only: retain a fresh target in default OS temp on another drive; copy verified exe to --out')
     parser.add_argument('--retain-temp-executable', action='store_true',
                         help='With canonical --cargo-temp-target only: verify and reference the owned temp exe without a duplicate in --out')
+    parser.add_argument('--release', action='store_true',
+                        help='Gateway only: cargo --release executable (SPAWN-15: stands with arenas above ~10 vehicles)')
     parser.add_argument('--out', required=True, help='Fresh directory below project local/build/')
     args = parser.parse_args()
+    if args.release and (args.component != 'gateway' or args.legacy or args.cargo_temp_target):
+        raise ValueError('--release applies to the current gateway with its target in --out only')
     check_temp_selector(args.component, args.legacy, args.cargo_temp_target)
     check_retain_selector(args.component, args.legacy, args.cargo_temp_target, args.retain_temp_executable)
     out = checked_output(ROOT, args.out)
@@ -347,8 +351,12 @@ def main():
                 result['tests_scope'] = args.test_filter or 'full gateway suite'
                 if args.run_ignored:
                     result['tests_execution'] = 'isolated ignored exact test; one test thread'
-            command(out, 'build', [str(cargo), 'build', '--offline', '--locked', '--manifest-path', manifest], env)
-            executable = out / 'target/debug' / ('p01-wg-probe.exe' if args.legacy else 'sr-gateway.exe')
+            profile = 'release' if args.release else 'debug'
+            if args.release:
+                result['cargo_profile'] = profile
+            command(out, 'build', [str(cargo), 'build', '--offline', '--locked', '--manifest-path', manifest]
+                    + (['--release'] if args.release else []), env)
+            executable = out / 'target' / profile / ('p01-wg-probe.exe' if args.legacy else 'sr-gateway.exe')
             if args.retain_temp_executable:
                 retained = retain_verified_executable(target / 'debug/sr-gateway.exe', out, target)
                 save(out, 'cargo-temp-executable.json', retained)

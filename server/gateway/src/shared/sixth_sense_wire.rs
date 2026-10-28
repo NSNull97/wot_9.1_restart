@@ -50,6 +50,6 @@ mod tests {
             assert_eq!(bytes[6],OBSERVED_BY_ENEMY);
             assert_eq!(&bytes[7..],&[0;8]);
         }
-        assert!(body(wire::MAX_NATIVE_ACTORS).is_err());
+        assert!(body(wire::MAX_WIRE_ACTORS).is_err());
     }
 }
