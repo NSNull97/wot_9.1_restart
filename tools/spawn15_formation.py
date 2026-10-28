@@ -16,6 +16,9 @@ real-scene test; this tool proves nothing about native rendering.
     python -B -X utf8 tools/spawn15_formation.py build --packages <final01/packages> \
         --out server/contracts/spawn_formations.json [--receipt <fresh local dir>]
     python -B -X utf8 tools/spawn15_formation.py check --packages <...> --formations server/contracts/spawn_formations.json
+    python -B -X utf8 tools/spawn15_formation.py settle --packages <...> --formations <...> --map 01_karelia \
+        --template ms1=<accepted config> --template is7=<accepted config> --worker <MapDriveWorker.exe> \
+        --local-root <worker local root> --out <fresh dir under it>
 """
 from __future__ import annotations
 
