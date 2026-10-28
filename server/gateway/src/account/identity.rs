@@ -203,6 +203,9 @@ fn late_results_owner_id(owner:&str)->bool{
 }
 /// Config-only streaming visitor. The nested typed decode must happen BEFORE
 /// serde_json::Value could collapse duplicate game_network fields.
+/// Known keys: 6 required + 28 optional = 34 (SPAWN-15); the bound leaves
+/// headroom for later options and still refuses an unbounded object.
+pub(crate) const MAX_CONFIG_FIELDS:usize=48;
 struct ConfigFields{fields:BTreeMap<String,Value>,network:Option<game_network::LanWire>}
 impl<'de> Deserialize<'de> for ConfigFields{
     fn deserialize<D:Deserializer<'de>>(input:D)->Result<Self,D::Error>{
@@ -213,7 +216,8 @@ impl<'de> Deserialize<'de> for ConfigFields{
             fn visit_map<M:MapAccess<'de>>(self,mut input:M)->Result<ConfigFields,M::Error>{
                 let mut fields=BTreeMap::new();let mut network=None;
                 while let Some(key)=input.next_key::<String>()?{
-                    if fields.len()>=29||fields.contains_key(&key){return Err(de::Error::custom("duplicate/too many config fields"));}
+                    if fields.contains_key(&key){return Err(de::Error::custom("duplicate config field"));}
+                    if fields.len()>=MAX_CONFIG_FIELDS{return Err(de::Error::custom("too many config fields"));}
                     if key=="game_network"{
                         network=Some(input.next_value::<game_network::LanWire>()?);
                         fields.insert(key,Value::Null);
@@ -254,7 +258,9 @@ pub struct Config {
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
         let bytes=bounded_file(Path::new(path),4096)?;
-        let ConfigFields{fields:mut value,network}=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid gateway config"))?;
+        // The parser's own message (duplicate/too many fields, syntax) is project text, not input echo.
+        let ConfigFields{fields:mut value,network}=serde_json::from_slice(&bytes)
+            .map_err(|e|io::Error::new(io::ErrorKind::InvalidData,format!("invalid gateway config: {e}")))?;
         value.remove("game_network");
         let ammo_service=match value.remove("ammunition_service") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("ammunition service must be explicit boolean")),
@@ -1080,6 +1086,28 @@ mod tests {
         value["connection_capacity"]=30.into();
         for wrong in ["spawn15-team-base-formation-v2".into(),"".into(),true.into(),Value::Null]{value["spawn_policy"]=wrong;assert!(load(&value).is_err());}
         value["spawn_policy"]=crate::gateway091::shared::team_spawn::POLICY.into();value["profile13_battle"]=false.into();assert!(load(&value).is_err());
+    }
+    #[test] fn spawn15_full_stand_config_fits_the_field_bound_and_overflow_names_it() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("spawn15-fields-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let mut value=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        // 30 keys: the owner stand shape that the old bound (29) refused, defaults spelled out.
+        for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
+            "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle","p04m_pool","p06t_mixed_ammo","visibility_v1"]{value[field]=true.into();}
+        for field in ["training_rooms","p08b_owner_battle_hold","p08c_late_results","p08c_late_notice_experimental","p06t_ammo_rack_detonation"]{value[field]=false.into();}
+        value["p08c_late_results_accounts"]=serde_json::json!([]);value["battle_players"]=2.into();value["connection_capacity"]=256.into();
+        value["arenas"]=2.into();value["spawn_policy"]=crate::gateway091::shared::team_spawn::POLICY.into();
+        value["catalog"]=serde_json::json!({"version":1,"sha256":crate::gateway091::shared::vehicle_catalog::CATALOG_SHA256});
+        assert_eq!(value.as_object().unwrap().len(),30);
+        let loaded=load(&value).unwrap();assert!(loaded.team_base_spawn&&loaded.arenas==2);
+        let mut many=value.clone();for n in 0..MAX_CONFIG_FIELDS-30{many[format!("unknown_{n}")]=true.into();}
+        let error=load(&many).err().unwrap().to_string();assert!(error.contains("gateway config fields"),"{error}");
+        many["one_more"]=true.into();let error=load(&many).err().unwrap().to_string();assert!(error.contains("too many config fields"),"{error}");
+        let mut raw=serde_json::to_string(&value).unwrap();raw.pop();raw.push_str(",\"arenas\":2}");fs::write(&path,raw).unwrap();
+        let error=Config::load(path.to_str().unwrap()).err().unwrap().to_string();assert!(error.contains("duplicate config field"),"{error}");
     }
     #[test] fn cat01_catalog_is_an_explicit_hash_bound_mixed_profile13_option() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();

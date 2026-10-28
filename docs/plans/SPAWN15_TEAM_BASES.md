@@ -74,6 +74,7 @@
 | Оседание 30 в настоящей сцене Jolt, debug и release, MS-1/ИС-7 чередуются и 30 × ИС-7 | Прохоровка, Малиновка — PASS: отклонение XZ ≤ 0,03 м, yaw ≤ 0,003 рад, дрейф за 3 с ≤ 0,02 м, разнос ≥ 8,99 м, старт сцены 2,0–2,6 с (release) |
 | Карелия: каждое из 30 мест отдельно в worker, MS-1 и ИС-7 (60 прогонов) | PASS: оседание с 6 колёсами в контакте, езда ≥ 14 м, торможение (profile13-каталога Карелии нет — сцена на 30 там NOT_RUN) |
 | Набор шлюза (среда worktree, `local/` через junction) | ветка 1663/83/9, база `75a9437` 1656/83/8; FAIL-наборы совпадают построчно (83 — окружение); +1 ignored — тест оседания |
+| Предел полей `gateway.json` (найден на стенде владельца: 29 → отказ полного конфига из 30 ключей) | исправлено: `MAX_CONFIG_FIELDS = 48` (известных ключей 34), ошибки «too many config fields» / «duplicate config field» с текстом парсера; тест на конфиг стенда из 30 ключей; набор 1664/83/9, FAIL-набор равен базе |
 | Python `tests.test_server_build_driver` и `test_build_temp_*` | 31 PASS / 2 ERROR (нет retained-логов `local/build/server/...` в worktree — окружение) |
 | Release-сборка шлюза `server/build.py gateway --release` | PASS_ISOLATED_BUILD, exe sha256 `6f19a5fb…` |
 | Канонический gate в `D:/WoT_9.1_Server` | NOT_RUN |
