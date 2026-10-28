@@ -12,9 +12,10 @@ fn bad(why:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,fo
 #[derive(Clone,Default)]
 enum OwnerState{#[default] Waiting,Stamped(ReleaseStamp),Appended,Rejected(String)}
 #[derive(Clone)]
-struct Entry{capture:Capture,owners:[OwnerState;super::model::MAX_ACTORS],invalid:Option<String>}
+/// RES-30: owner states on the heap, like Capture releases (main-thread stack).
+struct Entry{capture:Capture,owners:Box<[OwnerState]>,invalid:Option<String>}
 impl Entry{
-    fn new(capture:Capture)->Self{Self{capture,owners:std::array::from_fn(|_|OwnerState::Waiting),invalid:None}}
+    fn new(capture:Capture)->Self{Self{capture,owners:(0..super::model::MAX_ACTORS).map(|_|OwnerState::Waiting).collect(),invalid:None}}
     fn settled(&self)->bool{self.invalid.is_some()||self.capture.seal().is_some()&&self.capture.links().iter().all(|l|
         self.capture.release_reason(l.slot()).ok().flatten().is_none()||matches!(self.owners[l.slot()],OwnerState::Appended|OwnerState::Rejected(_)))}
 }

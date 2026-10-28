@@ -49,3 +49,8 @@ fn ready()->(Manager,World,Instant){let(capture,world,now)=capture::saved_sql_co
     m.invalidate_source(&run,world.id);assert!(m.captures[0].invalid.is_some());assert!(m.captures[1].invalid.is_none());assert_eq!(world.actors.iter().map(|a|a.health).collect::<Vec<_>>(),hp);
     assert!(m.select_work().unwrap().is_none());assert_eq!(world.actors.len(),model::CAPACITY);
 }
+/// RES-30: an Entry (Capture + per-owner states) is cloned by value on the gateway main thread.
+#[test]fn res30_late_entry_stays_small_on_the_stack(){
+    assert!(std::mem::size_of::<Entry>()<=1024,"Entry {}",std::mem::size_of::<Entry>());
+    assert!(std::mem::size_of::<Install>()<=1024,"Install {}",std::mem::size_of::<Install>());
+}

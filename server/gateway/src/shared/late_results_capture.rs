@@ -105,13 +105,15 @@ impl Seal{
 /// One battle's immutable links and seal, owned outside Session receive clones.
 /// The loop may clone this SMALL observer transaction, never the whole World.
 #[derive(Clone)]
-pub(super) struct Capture{run:String,battle:u64,links:Vec<Link>,releases:[Option<Release>;MAX_ACTORS],seal:Option<Arc<Seal>>}
+/// RES-30: `releases` is MAX_ACTORS rows on the heap. The Capture is cloned by
+/// value on the gateway main thread (1MB on Windows); an inline [_;30] made it ~21KB.
+pub(super) struct Capture{run:String,battle:u64,links:Vec<Link>,releases:Box<[Option<Release>]>,seal:Option<Arc<Seal>>}
 impl Capture{
     pub(super) fn new(run:String,battle:u64)->io::Result<Self>{
         if run.len()!=36||!run.bytes().enumerate().all(|(i,b)|if [8,13,18,23].contains(&i){b==b'-'}else{b.is_ascii_digit()||(b'a'..=b'f').contains(&b)})
             ||!matches!(run.as_bytes()[14],b'1'..=b'5'){return Err(bad("run UUID"));}
         if battle==0||battle>i64::MAX as u64{return Err(bad("native arena bound"));}
-        Ok(Self{run,battle,links:Vec::new(),releases:std::array::from_fn(|_|None),seal:None})
+        Ok(Self{run,battle,links:Vec::new(),releases:(0..MAX_ACTORS).map(|_|None).collect(),seal:None})
     }
     pub(super) fn run(&self)->&str{&self.run}
     pub(super) fn battle(&self)->u64{self.battle}
