@@ -112,6 +112,12 @@
   `FileNotFoundError`). Python-кода MM-01 не меняет.
 - Канонический gate, release-сборка и native — **NOT_RUN**.
 
+- **Перенос на `integrate/ft15-20261029` = `d3bf20e`** (main + VIS-PERF + STAB-02), ветка `codex/mm-01-matchmaker-on-ft15`:
+  конфликт `server.rs` с STAB-02 — запуск writer'а по аренам групп пропускает закрытую арену (`closed`); подбор и сброс
+  арены распавшейся группы не трогают закрытые арены; ошибка этого сброса закрывает только свою арену
+  (`containment::contain_arena`, stage `mm01_group_reset`). Тесты `mm01 stab02 terrain_anyhit bot01 arena01` — 52 PASS /
+  2 ignored; набор шлюза 1711/94/12 против 1692/94/12 у `d3bf20e`, множества FAIL равны.
+
 Ограничения и неподтверждённое:
 - `onEnqueued` до серверного резерва и `enqueue_failure("BATTLE_BUSY")` после него (lease) — INFERRED для клиента 0.9.1.
 - Lease держит шлюз; в строке Domain срока нет. Падение шлюза оставляет резерв до прежнего восстановления.
