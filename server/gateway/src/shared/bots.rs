@@ -34,6 +34,24 @@ const AIM_TOLERANCE: f32 = 0.3 * PI / 180.;
 /// Aim at the hull, not the ground point under it (project constant).
 const AIM_HEIGHT_M: f32 = 1.2;
 const STATS_TICKS: u32 = 100;
+/// Steering probes (project policy): a hull-wide corridor along candidate
+/// headings, re-cast every PROBE_TICKS; offsets tried from the goal bearing.
+const PROBE_TICKS: u32 = 3;
+const PROBE_M: f32 = 14.;
+const PROBE_HALF_WIDTH_M: f32 = 1.7;
+const PROBE_HEIGHT_M: f32 = 1.0;
+const PROBE_OFFSETS_DEG: [f32; 9] = [0., 25., -25., 50., -50., 75., -75., 105., -105.];
+/// A vehicle standing still blocks a corridor like an obstacle.
+const STANDING_MPS: f32 = 1.;
+/// After a stuck reversal: a side point off the blocked bearing, kept until
+/// reached or expired; the third stuck at one spot drops the waypoint.
+const DETOUR_M: f32 = 30.;
+const DETOUR_DEG: f32 = 80.;
+const DETOUR_TICKS: u32 = 80;
+const DETOUR_REACHED_M: f32 = 8.;
+const STUCK_SPOT_M: f32 = 12.;
+/// Lead: the target's ground velocity (smoothed position delta), bounded.
+const LEAD_MAX_MPS: f32 = 25.;
 /// Distinct bot vehicle kinds in one plan (curated five plus generated ones).
 pub const MAX_KINDS: usize = 16;
 /// The own sight line to the target is re-cast at most every 0.5 s.
@@ -71,12 +89,21 @@ struct Brain {
     sent_input: Input, sent_aim: Option<aim::Intent>,
     /// Own sight line to the target: (enemy, tick cast, clear, blocked since).
     line: Option<(usize, u32, bool, u32)>,
+    /// Steering: preferred avoidance side (+1 left/-1 right of the goal
+    /// bearing), offset chosen at `probe_tick`, side point after a stuck.
+    side: f32, avoid: f32, probe_tick: u32, detour: Option<([f32; 2], u32)>,
+    /// Last stuck place and how many times in a row it was there.
+    stuck_spot: Option<([f32; 2], u8)>,
+    /// Lead: (target, tick, last position, smoothed velocity).
+    track: Option<(usize, u32, [f32; 3], [f32; 3])>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Bots { plan: Arc<Plan>, brains: Vec<Brain>, last_tick: Option<u32>, digest: u64, shots: u32,
     /// Engaged decisions without a shot: [not aimed, aiming time, reload/ammo, terrain line].
     held: [u32; 4],
+    /// Stuck reversals (each starts a side detour).
+    stucks: u32,
     /// Wall time spent in bot decisions (diagnostic only; not in the digest).
     think_ns: u64 }
 
@@ -113,7 +140,7 @@ impl World {
             if kind.is_generated() && !self.mixed_ammo { return Err(bad()); }
             self.geometry_for(*kind)?;
         }
-        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 4], think_ns: 0 });
+        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 4], stucks: 0, think_ns: 0 });
         Ok(())
     }
     pub fn bot_plan(&self) -> Option<&Plan> { self.bots.as_ref().map(|b| b.plan.as_ref()) }
@@ -125,6 +152,7 @@ impl World {
     /// Replay witness: FNV-1a over every bot command batch (tick, slot, commands).
     pub fn bot_digest(&self) -> Option<u64> { self.bots.as_ref().map(|b| b.digest) }
     pub fn bot_shots(&self) -> u32 { self.bots.as_ref().map_or(0, |b| b.shots) }
+    pub fn bot_stucks(&self) -> u32 { self.bots.as_ref().map_or(0, |b| b.stucks) }
     /// Wall time of every bot decision so far (bench diagnostics).
     pub fn bot_think_ns(&self) -> u64 { self.bots.as_ref().map_or(0, |b| b.think_ns) }
 
@@ -168,8 +196,10 @@ impl World {
             let route = vec![point(0.35, lane), point(0.6, lane * 0.5),
                 clamp_box([enemy[0] + jitter[0] * 25., enemy[1] + jitter[1] * 25.], inner)];
             let error = disc(&mut rng);
+            let side = if splitmix(&mut rng) & 1 == 0 { 1. } else { -1. };
             brains.push(Brain { slot, rng, route, waypoint: 0, stuck: 0, unstick: 0, unstick_steer: 0, target: None,
-                settle_tick: 1000, error, turret_yaw: 0., sent_input: Input::STOP, sent_aim: None, line: None });
+                settle_tick: 1000, error, turret_yaw: 0., sent_input: Input::STOP, sent_aim: None, line: None,
+                side, avoid: 0., probe_tick: 0, detour: None, stuck_spot: None, track: None });
         }
         next.bots.as_mut().ok_or_else(bad)?.brains = brains;
         println!("BOT01_FILL battle={} humans={} bots={count} kinds={:?} seed={} policy={POLICY} accounts=none domain_writes=none",
@@ -230,6 +260,7 @@ impl World {
             let actor = self.actors.get(slot).ok_or_else(bad)?;
             if actor.bot.is_none() || !actor.ready || !actor.alive() { continue; }
             let (commands, aimed_for) = self.think(&mut state.brains[index], now, &mut state.held)?;
+            if state.brains[index].unstick == UNSTICK_TICKS { state.stucks = state.stucks.saturating_add(1); }
             if commands.is_empty() { continue; }
             let outcomes = self.apply(slot, SESSION_BASE + slot as u32, &commands, now)?;
             let shot = outcomes.iter().any(|o| matches!(o, fire::Outcome::AcceptedShot { .. }
@@ -249,8 +280,8 @@ impl World {
             let engaged = state.brains.iter().filter(|b| b.target.is_some() && self.actors[b.slot].alive()).count();
             let hits = self.damage_events.iter().filter(|e| self.is_bot(e.attacker)).count()
                 + self.impacts.iter().filter(|e| self.is_bot(e.attacker)).count();
-            println!("BOT01_STATS battle={} tick={} bots={} alive={alive} engaged={engaged} shots={} damage_rows={hits} held_aim={} held_settle={} held_reload={} held_terrain={} think_ms={:.0}",
-                self.id, self.tick, state.brains.len(), state.shots, state.held[0], state.held[1], state.held[2], state.held[3], state.think_ns as f64 / 1e6);
+            println!("BOT01_STATS battle={} tick={} bots={} alive={alive} engaged={engaged} shots={} damage_rows={hits} held_aim={} held_settle={} held_reload={} held_terrain={} stucks={} think_ms={:.0}",
+                self.id, self.tick, state.brains.len(), state.shots, state.held[0], state.held[1], state.held[2], state.held[3], state.stucks, state.think_ns as f64 / 1e6);
         }
         self.bots = Some(state);
         Ok(issued)
@@ -309,17 +340,32 @@ impl World {
             brain.unstick -= 1; Input { throttle: -1, steer: brain.unstick_steer, speed_percent: 100 }
         } else {
             while brain.waypoint + 1 < brain.route.len() && distance(here, brain.route[brain.waypoint]) < WAYPOINT_M { brain.waypoint += 1; }
+            if brain.detour.is_some_and(|(point, until)| self.tick >= until || distance(here, point) < DETOUR_REACHED_M) { brain.detour = None; }
             let outside = !inside(here, inner);
-            let goal = if outside { clamp_box([0.5 * (inner[0] + inner[2]), 0.5 * (inner[1] + inner[3])], inner) } else { brain.route[brain.waypoint] };
-            if !outside && brain.waypoint + 1 == brain.route.len() && distance(here, goal) < HOLD_M {
+            let route_goal = if outside { clamp_box([0.5 * (inner[0] + inner[2]), 0.5 * (inner[1] + inner[3])], inner) } else { brain.route[brain.waypoint] };
+            let goal = brain.detour.map_or(route_goal, |(point, _)| point);
+            if !outside && brain.detour.is_none() && brain.waypoint + 1 == brain.route.len() && distance(here, goal) < HOLD_M {
                 brain.stuck = 0; Input::STOP
             } else {
-                let desired = (goal[0] - here[0]).atan2(goal[1] - here[1]);
+                let bearing = (goal[0] - here[0]).atan2(goal[1] - here[1]);
+                if self.tick >= brain.probe_tick + PROBE_TICKS || self.tick < brain.probe_tick {
+                    brain.probe_tick = self.tick;
+                    let length = (PROBE_M + 1.5 * actor.speed.abs()).min(distance(here, goal).max(4.));
+                    let mut chosen = None;
+                    for offset in PROBE_OFFSETS_DEG {
+                        let offset = offset.to_radians() * brain.side;
+                        if self.bot_corridor_clear(slot, bearing + offset, length)? { chosen = Some(offset); break; }
+                    }
+                    // Boxed in: turn hard away on the preferred side; the stuck rule backs out.
+                    brain.avoid = chosen.unwrap_or(135f32.to_radians() * brain.side);
+                }
+                let desired = bearing + brain.avoid;
                 let error = aim::wrap(desired - actor.yaw);
                 let steer = if error > STEER_DEADBAND { 1 } else if error < -STEER_DEADBAND { -1 } else { 0 };
                 let mut throttle = if error.abs() > TURN_IN_PLACE { 0 } else { 1 };
+                // A moving ally ahead: wait; a standing one is steered around (corridor).
                 let blocked = self.actors.iter().enumerate().any(|(other, ally)| {
-                    if other == slot || !ally.alive() || self.team(other).ok() != Some(team) { return false; }
+                    if other == slot || !ally.alive() || ally.speed.abs() < STANDING_MPS || self.team(other).ok() != Some(team) { return false; }
                     let to = [ally.position[0] - here[0], ally.position[2] - here[1]];
                     let d = to[0].hypot(to[1]);
                     d < SPACING_M && aim::wrap(to[0].atan2(to[1]) - actor.yaw).abs() < SPACING_CONE
@@ -328,7 +374,17 @@ impl World {
                 if throttle == 1 && actor.speed.abs() < STUCK_SPEED { brain.stuck += 1; } else { brain.stuck = 0; }
                 if brain.stuck >= STUCK_TICKS {
                     brain.stuck = 0; brain.unstick = UNSTICK_TICKS;
-                    brain.unstick_steer = if splitmix(&mut brain.rng) & 1 == 0 { 1 } else { -1 };
+                    let repeats = match brain.stuck_spot { Some((spot, n)) if distance(spot, here) < STUCK_SPOT_M => n.saturating_add(1), _ => 1 };
+                    brain.stuck_spot = Some((here, repeats));
+                    // Same spot again: try the other side; the third time give up this waypoint.
+                    if repeats >= 2 { brain.side = -brain.side; }
+                    if repeats >= 3 && brain.waypoint + 1 < brain.route.len() { brain.waypoint += 1; brain.stuck_spot = None; }
+                    let away = (route_goal[0] - here[0]).atan2(route_goal[1] - here[1]) + DETOUR_DEG.to_radians() * brain.side;
+                    brain.detour = Some((clamp_box([here[0] + DETOUR_M * away.sin(), here[1] + DETOUR_M * away.cos()], inner),
+                        self.tick + UNSTICK_TICKS as u32 + DETOUR_TICKS));
+                    // Reverse turning the nose toward the detour side.
+                    brain.unstick_steer = if brain.side > 0. { -1 } else { 1 };
+                    brain.avoid = 0.; brain.probe_tick = self.tick;
                 }
                 Input { throttle, steer, speed_percent: 100 }
             }
@@ -344,13 +400,26 @@ impl World {
             let aim_s = self.tick.saturating_sub(brain.settle_tick) as f32 * 0.1;
             let tau = actor.vehicle_kind().aim().aiming_time;
             let sigma = SIGMA0 * (1. + 3. * (-aim_s / tau).exp()) * metres;
-            let p = self.actors[enemy].position;
+            let observed = self.actors[enemy].position;
+            // Smoothed ground velocity of the target from its positions on consecutive ticks.
+            let velocity = match brain.track {
+                Some((e, tick, last, v)) if e == enemy && tick + 1 == self.tick => {
+                    let raw = [(observed[0] - last[0]) / 0.1, 0., (observed[2] - last[2]) / 0.1];
+                    let next = [0.5 * (v[0] + raw[0]), 0., 0.5 * (v[2] + raw[2])];
+                    if next[0].hypot(next[2]) > LEAD_MAX_MPS { [0.; 3] } else { next }
+                },
+                Some((e, tick, _, v)) if e == enemy && tick == self.tick => v,
+                _ => [0.; 3],
+            };
+            brain.track = Some((enemy, self.tick, observed, velocity));
+            let shell = actor.fire.typed().map(|state| state.current());
+            let flight_mps = shell.map_or(actor.vehicle_kind().shell().speed(), |s| s.speed_mps as f32);
+            let p = lead_point(actor.position, observed, velocity, flight_mps);
             let line = [p[0] - actor.position[0], p[2] - actor.position[2]];
             let length = line[0].hypot(line[1]).max(1.);
             let side = [-line[1] / length, line[0] / length];
             let point = [p[0] + side[0] * brain.error[0] * sigma, p[1] + AIM_HEIGHT_M + brain.error[1] * sigma * 0.5,
                 p[2] + side[1] * brain.error[0] * sigma];
-            let shell = actor.fire.typed().map(|state| state.current());
             let (yaw, pitch) = aim::solve_for(actor.vehicle_kind(), actor.position, actor.direction, point, actor.aim.yaw, actor.aim.pitch, shell);
             let (min, max) = aim::pitch_limits_for(actor.vehicle_kind(), actor.aim.yaw)?;
             let aimed = aim::wrap(yaw - actor.aim.yaw).abs() < AIM_TOLERANCE && (pitch - actor.aim.pitch).abs() < AIM_TOLERANCE
@@ -381,13 +450,47 @@ impl World {
         }
         Ok((commands, aimed_for))
     }
+    /// Steering probe: two hull-edge rays at probe height clear static
+    /// obstacles (ground ignored: slopes are driven), and no standing or dead
+    /// vehicle lies in the corridor.
+    fn bot_corridor_clear(&self, slot: usize, heading: f32, length: f32) -> io::Result<bool> {
+        let terrain = self.terrain.as_ref().ok_or_else(bad)?;
+        let actor = &self.actors[slot];
+        let (forward, left) = ([heading.sin(), heading.cos()], [heading.cos(), -heading.sin()]);
+        let excluded = self.spotting_excluded()?;
+        for edge in [-PROBE_HALF_WIDTH_M, PROBE_HALF_WIDTH_M] {
+            let start = [actor.position[0] + left[0] * edge, actor.position[1] + PROBE_HEIGHT_M, actor.position[2] + left[1] * edge];
+            let end = [start[0] + forward[0] * length, start[1], start[2] + forward[1] * length];
+            if terrain.obstacle_t(start, end, &excluded)?.is_some() { return Ok(false); }
+        }
+        Ok(!self.actors.iter().enumerate().any(|(other, vehicle)| {
+            if other == slot || vehicle.alive() && vehicle.speed.abs() >= STANDING_MPS { return false; }
+            let to = [vehicle.position[0] - actor.position[0], vehicle.position[2] - actor.position[2]];
+            let along = to[0] * forward[0] + to[1] * forward[1];
+            let across = to[0] * left[0] + to[1] * left[1];
+            along > 0. && along < length && across.abs() < 2. * PROBE_HALF_WIDTH_M
+        }))
+    }
     /// The bot does not fire into a hill: the sight line to its aim point must
     /// clear the terrain (same query and exclusions as spotting).
     fn bot_line_clear(&self, actor: &Actor, point: [f32; 3]) -> io::Result<bool> {
         let terrain = self.terrain.as_ref().ok_or_else(bad)?;
         let excluded = self.spotting_excluded()?;
-        Ok(terrain.nearest_excluding_many(Self::visibility_sight_point(actor), point, &excluded)?.is_none())
+        Ok(!terrain.any_hit_excluding_many(Self::visibility_sight_point(actor), point, &excluded)?)
     }
+}
+
+/// Where the target will be when a shell fired now arrives: two fixed-point
+/// refinements of the flight time over the straight distance (project policy).
+fn lead_point(shooter: [f32; 3], target: [f32; 3], velocity: [f32; 3], flight_mps: f32) -> [f32; 3] {
+    if !(flight_mps > 1.) { return target; }
+    let mut point = target;
+    for _ in 0..2 {
+        let d = ((point[0] - shooter[0]).powi(2) + (point[1] - shooter[1]).powi(2) + (point[2] - shooter[2]).powi(2)).sqrt();
+        let t = d / flight_mps;
+        point = [target[0] + velocity[0] * t, target[1] + velocity[1] * t, target[2] + velocity[2] * t];
+    }
+    point
 }
 
 #[cfg(test)]

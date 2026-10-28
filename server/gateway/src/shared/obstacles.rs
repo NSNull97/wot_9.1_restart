@@ -324,7 +324,13 @@ impl Obstacles {
     pub fn nearest_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<Option<Hit>>{
         self.query_excluding_many(start,end,excluded).map(|(hit,_)|hit)
     }
-    fn query_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<(Option<Hit>,usize)>{
+    /// VIS-PERF: exactly `nearest_excluding_many(..)?.is_some()`, same
+    /// validation and errors, returning at the first kept crossing.
+    pub fn any_hit_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<bool>{
+        let (start,direction)=self.validated(start,end,excluded)?;
+        self.any_validated(start,direction,excluded)
+    }
+    pub(super) fn validated(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<([f64;3],[f64;3])>{
         if excluded.len()>super::fragiles::MAX_MOVEMENT_OBJECTS||excluded.windows(2).any(|w|w[0]>=w[1])||excluded.iter().any(|&id|id>=self.mesh.instance_count) {
             return Err(bad("obstacles excluded instance outside source manifest"));
         }
@@ -333,6 +339,36 @@ impl Obstacles {
         }
         let start = start.map(f64::from); let direction = subtract(end.map(f64::from),start);
         if dot(direction,direction) == 0. { return Err(bad("obstacles zero segment")); }
+        Ok((start,direction))
+    }
+    /// The nearest query, before its first hit, visits every node whose box
+    /// the segment enters; any kept crossing there makes its result Some.
+    pub(super) fn any_validated(&self,start:[f64;3],direction:[f64;3],excluded:&[u32])->io::Result<bool>{
+        if self.mesh.nodes[0].bounds.entry(start,direction).is_none() { return Ok(false); }
+        let mut stack = [0_u32; MAX_DEPTH+2]; let (mut len,mut visited) = (1_usize,0_usize);
+        while len > 0 {
+            len -= 1; let id = stack[len];
+            visited += 1;
+            if visited > self.mesh.nodes.len() { return Err(bad("obstacles traversal node bound")); }
+            let node = self.mesh.nodes[id as usize];
+            if node.count > 0 {
+                for &triangle_id in &self.mesh.order[node.first as usize..(node.first+node.count) as usize] {
+                    if excluded.binary_search(&self.mesh.instances[triangle_id as usize]).is_ok() { continue; }
+                    let triangle = points(&self.mesh.vertices,self.mesh.triangles[triangle_id as usize]);
+                    if intersect(start,direction,triangle,triangle_id,self.mesh.instances[triangle_id as usize],
+                        self.mesh.material_kinds[triangle_id as usize]).is_some() { return Ok(true); }
+                }
+            } else {
+                for child in [node.right,node.first] {
+                    if self.mesh.nodes[child as usize].bounds.entry(start,direction).is_some() { stack[len] = child; len += 1; }
+                }
+                if len > MAX_DEPTH+1 { return Err(bad("obstacles traversal stack bound")); }
+            }
+        }
+        Ok(false)
+    }
+    fn query_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<(Option<Hit>,usize)>{
+        let (start,direction)=self.validated(start,end,excluded)?;
         let Some(entry) = self.mesh.nodes[0].bounds.entry(start,direction) else { return Ok((None,0)); };
         let mut stack = Vec::with_capacity(MAX_DEPTH+1); stack.push((0_u32,entry));
         let (mut best,mut tested,mut visited): (Option<Hit>,usize,usize) = (None,0,0);

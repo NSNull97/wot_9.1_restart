@@ -7,6 +7,7 @@ pub(crate) mod team_spawn;
 mod spawn15_wire_tests;
 pub(crate) mod visibility;
 pub(crate) mod spotting;
+pub(crate) mod step_profile;
 pub(crate) mod p07b_publication;
 pub(crate) mod interest_wire;
 pub(crate) mod ammo_detonation;

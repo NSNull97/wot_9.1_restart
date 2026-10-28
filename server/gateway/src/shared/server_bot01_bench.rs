@@ -55,16 +55,23 @@ fn bot01_bench_real_scene(){
     let mut battle_from=None;let mut loops=0u64;let start_tick=a.world.tick;
     let origins=a.world.actors.iter().map(|x|[x.position[0],x.position[2]]).collect::<Vec<_>>();
     let mut max_abs=0f32;
+    // VIS-PERF: per-part wall time of each battle loop (step_profile spans).
+    let names=super::super::step_profile::NAMES;let mut parts:Vec<Vec<f64>>=vec![Vec::new();names.len()];let mut heavy:Vec<[f64;11]>=Vec::new();
     // Countdown plus the measured battle seconds; ends early only at an outcome.
     while measured.elapsed()<Duration::from_secs(30+seconds) {
         loops+=1;
         // Scripted native place: forward with a slow steering pattern (no client).
         for slot in 0..humans {let phase=(loops/400+slot as u64)%4;
             a.world.actors[slot].input=model::Input{throttle:1,steer:match phase{0=>0,1=>1,2=>0,_=>-1},speed_percent:100};}
+        let before=super::super::step_profile::snapshot();
         let t=Instant::now();let event=a.handle(arena::Command::Step{now:t,start:false});
         let ms=t.elapsed().as_secs_f64()*1000.;step_ms.push(ms);
+        let after=super::super::step_profile::snapshot();
         let battle=a.world.lifecycle.as_ref().is_some_and(|l|l.allows_actions());
-        if battle {battle_from.get_or_insert(Instant::now());battle_step_ms.push(ms);}
+        if battle {battle_from.get_or_insert(Instant::now());battle_step_ms.push(ms);
+            let delta:[f64;11]=std::array::from_fn(|i|(after[i]-before[i]) as f64/1e6);
+            for (i,v) in delta.iter().enumerate(){parts[i].push(*v);}
+            heavy.push([ms,delta[1],delta[2],delta[3],delta[5],delta[6],delta[7],delta[8],delta[0],delta[9],delta[10]]);}
         if let arena::Event::Failed{stage,error}=event {failure=Some(serde_json::json!({"stage":stage,"error":error.to_string(),"at_s":measured.elapsed().as_secs_f64()}));break;}
         for x in &a.world.actors {max_abs=max_abs.max(x.position[0].abs()).max(x.position[2].abs());}
         if a.world.lifecycle.as_ref().is_some_and(|l|l.outcome().is_some()) {break;}
@@ -80,6 +87,13 @@ fn bot01_bench_real_scene(){
     let cpu=|p:u32|last_row.1.get(&p).zip(first_row.1.get(&p)).map(|(e,b)|e.0-b.0);
     let steps=interval*10.;
     let w=&a.world;
+    let battle_steps=battle_from.map_or(1.,|t|t.elapsed().as_secs_f64()*10.).max(1.);
+    let step_parts=names.iter().zip(&parts).map(|(n,v)|(n.to_string(),serde_json::json!({"ms_per_domain_step":v.iter().sum::<f64>()/battle_steps,"loop":summary(v.clone())}))).collect::<serde_json::Map<_,_>>();
+    // The slowest 1% of battle loops: mean of each part inside them.
+    heavy.sort_by(|a,b|b[0].total_cmp(&a[0]));let top=&heavy[..heavy.len().div_ceil(100)];
+    let top_mean=|i:usize|top.iter().map(|r|r[i]).sum::<f64>()/top.len().max(1) as f64;
+    let slowest=serde_json::json!({"loops":top.len(),"step":top_mean(0),"scene_step":top_mean(1),"scene_world_clone":top_mean(2),"advance":top_mean(3),
+        "projectiles":top_mean(4),"spotting":top_mean(5),"spotting_actors":top_mean(6),"spotting_rays":top_mean(7),"bots":top_mean(8),"lifecycle":top_mean(9),"turret_flights":top_mean(10)});
     let bots=(humans..w.actors.len()).collect::<Vec<_>>();
     let moved=bots.iter().map(|s|{let p=[w.actors[*s].position[0],w.actors[*s].position[2]];(p[0]-origins[*s][0]).hypot(p[1]-origins[*s][1])}).collect::<Vec<_>>();
     let by_bots=w.damage_events.iter().filter(|e|w.is_bot(e.attacker)).count()+w.impacts.iter().filter(|e|w.is_bot(e.attacker)).count();
@@ -95,8 +109,9 @@ fn bot01_bench_real_scene(){
             "working_set_end":last_row.1.get(&me).map(|v|v.1),"working_set_peak":peak.get(&me)},
         "physics":{"pid":pid,"cpu_s":cpu(pid),"cpu_ms_per_domain_step":cpu(pid).map(|c|c*1000./steps),"cpu_share_of_one_core":cpu(pid).map(|c|c/interval),
             "working_set_end":last_row.1.get(&pid).map(|v|v.1),"working_set_peak":peak.get(&pid)},
+        "step_parts":step_parts,"slowest_1pct_loops_mean_ms":slowest,
         "bot_think_ms_per_domain_step":w.bot_think_ns() as f64/1e6/w.tick.saturating_sub(start_tick).max(1) as f64,
-        "behaviour":{"bot_shots":w.bot_shots(),"shots_total":w.shots.len(),"damage_rows_by_bots":by_bots,"vehicles_dead":dead,
+        "behaviour":{"bot_shots":w.bot_shots(),"bot_stucks":w.bot_stucks(),"shots_total":w.shots.len(),"damage_rows_by_bots":by_bots,"vehicles_dead":dead,
             "bots_moved_over_50m":moved.iter().filter(|m|**m>50.).count(),"bot_moved_m_max":moved.iter().copied().fold(0f32,f32::max),
             "max_abs_xz":max_abs,"digest":w.bot_digest().map(|d|format!("{d:016x}")),
             "outcome":w.lifecycle.as_ref().and_then(|l|l.outcome()).map(|o|format!("{o:?}"))},
