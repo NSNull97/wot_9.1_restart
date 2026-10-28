@@ -66,7 +66,12 @@ source catalogue» (выстрел M4). Причины исправлены в B
 - `stab02_old_helper_still_contains_the_refused_terminal` — на базе `6f3882a` этот случай давал `Err`.
 
 Наборы против базы `6f3882a` (один worktree, target `C:/wot091-stab02-target`, логи
-`local/test-runs/stab02/` этого worktree): RESULTS_PENDING.
+`local/test-runs/stab02/` этого worktree, 2026-10-28):
+  - шлюз: ветка `9b2f919` 1696 PASS / 83 FAIL / 12 ignored, база 1691 / 83 / 12 — множества FAIL равны
+    (+5 новых тестов STAB-02, все PASS);
+  - Python (`unittest discover -s tests`, `local/cache` и `local/tests` — настоящие каталоги): ветка и база
+    2789 тестов, 13 failures + 139 errors, 180 skipped — множества FAIL/ERROR равны (Python-код не менялся).
+  - Канонический gate — NOT_RUN.
 
 Не проверено: native/стенд (NOT_RUN по заданию); паника внутри containment — только кодом
 (`catch_unwind`), без теста с настоящей паникой; закрытая арена при одной арене на стенде —
