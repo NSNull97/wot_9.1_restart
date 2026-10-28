@@ -48,6 +48,35 @@
    раз шлюз и так отвергает (GW-01).
 6. Под `matchmaker` ожидающие не получают `BATTLE_BUSY`, когда все арены заняты: билет ждёт свободную арену.
 
+## Окно очереди в клиенте (дополнение владельца 2026-10-28)
+
+Запрос: две таблицы — по уровням и по классам техники, «как в родном клиенте 0.9.1». Исследование — только чтение
+оригинала `C:/WoT_0.9.1_RU_0717_original/res` (`.def` через `tools/packed_xml.py`, `.pyc` — `dis` CPython 2.7.3, SWF — строки
+после zlib):
+
+| Факт | Метка | Источник |
+|---|---|---|
+| Окно очереди раз в 5 с вызывает `Account.requestQueueInfo(qType)` → `base.doCmdInt3(REQUEST_ID_NO_RESPONSE, CMD_REQ_QUEUE_INFO, qType, 0, 0)`; `qType` случайных боёв = `QUEUE_TYPE.RANDOMS` | VERIFIED | `gui/scaleform/daapi/view/lobby/battlequeue.pyc` `__updateQueueInfo` (`BigWorld.callback(5, …)`), `account.pyc` `requestQueueInfo` |
+| Ответ — client-метод `Account.receiveQueueInfo(RANDOMS_QUEUE_INFO, COMPANIES_QUEUE_INFO, HISTORICAL_QUEUE_INFO)`; клиент передаёт его в `events.onQueueInfoReceived` | VERIFIED | `entity_defs/Account.def`, `account.pyc` `receiveQueueInfo` |
+| `RANDOMS_QUEUE_INFO` = FIXED_DICT `AllowNone`, **одно** поле `classes: ARRAY<UINT32>`; полей уровней нет | VERIFIED | `entity_defs/alias.xml` |
+| Для случайного боя `BattleQueue.onQueueInfoReceived` показывает `sum(classes)` как число игроков и **одну** таблицу `as_setListByType`: строки тяжёлые, средние, лёгкие, ПТ-САУ, САУ; значение — `classes[VEHICLE_CLASS_INDICES[класс]]` | VERIFIED | `battlequeue.pyc` (строки 197–232 исходника), `TYPES_ORDERED` |
+| Порядок индексов `classes`: `VEHICLE_CLASSES = (lightTank, mediumTank, heavyTank, SPG, AT-SPG)` | VERIFIED | `scripts/common/constants.pyc` |
+| У meta-класса окна только `as_setTimer`, `as_setType`, `as_setPlayers`, `as_setListByType`, `as_showStart`, `as_showExit`; в `battleQueue.swf` один табличный компонент `listByType` (строки `LEVELS_1..10` — общие константы локализации) | VERIFIED (meta), INFERRED (SWF по строкам) | `meta/battlequeuemeta.pyc`, `gui.pkg:gui/flash/battleQueue.swf` |
+| Таблица по уровням в окне очереди — из более поздних версий клиента, в 0.9.1 её нет | INFERRED | отсутствие поля в `.def` и вызова в скриптах 0.9.1 |
+| Шлюз уже отвечал на опрос родным методом (индекс 85), но фиксированно «1 лёгкий» (`own_queue_info`); на стенде -11 опрос был один — бой с ботами стартовал сразу | VERIFIED | `drive/world.rs`, `gateway-20261028-175910.stdout.log` |
+| Байтовая раскладка ответа (флаг `AllowNone`=1, длина массива 1 байт, `UINT32` LE, `None`×2) принималась клиентом без ошибок в `python.log`; что таблица заполняется ненулевыми счётами — native NOT_RUN | INFERRED | `python.log` клиентов стенда без ошибок |
+
+Сделано (только сервер, родной путь): в режиме `matchmaker` ответ `receiveQueueInfo` несёт `classes` — число ожидающих
+игроков (в очереди и в подобранных, но не начатых группах) по классам их выбранных машин (класс — `vehicle_class` таблицы
+`battle_profiles.v1.json`, из тегов `list.xml`). Ответ отдаётся сессиям, которые ждут; остальным — прежний. Без ключа —
+прежний ответ побайтно. Счёт по уровням 1..10 считается тем же состоянием и пишется в лог (`MM01_QUEUE_STATS … levels=`),
+но клиенту 0.9.1 его передать нечем.
+
+**Вопрос владельцу (таблица по уровням).** Родной клиент 0.9.1 не имеет ни поля, ни вызова для второй таблицы. Показать её
+можно только клиентским патчем (свой Python-обработчик + изменение `battleQueue.swf` или отдельный виджет) и
+неродным каналом данных. Без решения владельца не делаю. Варианты: (а) оставить одну родную таблицу по классам;
+(б) отдельная карточка клиентского патча.
+
 ## Приёмка
 
 | Проверка | Как |
@@ -57,6 +86,7 @@
 | Lease: частичный старт, полная отмена | unit `matchmaker_tests`, `server_mm01_tests` |
 | Игрок не попадает в два боя (сессия/аккаунт/резерв, writer чужого боя) | unit `matchmaker_tests`, `server_mm01_tests`, `arena01_dispatch_tests` |
 | Наборы шлюза и Python против `6f3882a` в одной среде | множества FAIL равны |
+| Окно очереди: кодирование `receiveQueueInfo`, счёт по классам и уровням из состояния очереди | unit `server_mm01_tests`, `matchmaker_tests` |
 | Native: 4–6 клиентов, несколько боёв подряд | **NOT_RUN** (владелец, стенд) |
 
 Откат: убрать `matchmaker` из `gateway.json`, перезапустить шлюз.
@@ -117,6 +147,8 @@ t3485]}` (уровни 5/7/5/7/6). Клиенты: `p03f/a`, `p03f/b`, `arena/c`
    - **C. Подряд**: после итогов снова «В бой» тем же составом — новая группа, новый `battle` (id растёт), без
      `VEHICLE_RESERVED`; так 2–3 боя.
    - **D. Выход из очереди**: «В бой», затем отмена до 30 с — `MM01_DEQUEUED`, машина свободна, повторный «В бой» работает.
+   - **E. Окно очереди**: пока ждут, таблица «по типам» показывает число ожидающих по классам (T-34 — средние, T-26 — лёгкие),
+     «Игроков в очереди» = сумма; в логе `MM01_QUEUE_STATS`. Таблицы по уровням в 0.9.1 нет (см. вопрос выше).
    - Нигде: игрок в двух боях, `P08B_ADMISSION_REJECTED VEHICLE_RESERVED` на своём же резерве, `SHARED_FAILED`.
    - 5–6 клиентов (если будут): 6 на близких уровнях — полная группа сразу (`formed=full`, ботов 0).
 8. Откат: `gateway.before-mm01.json` и `services.before-mm01.ps1` на место, перезапуск шлюза; при сомнениях в БД —

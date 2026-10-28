@@ -28,8 +28,15 @@ impl Rules {
     }
 }
 
+/// `class`: client `constants.VEHICLE_CLASSES` index (light, medium, heavy, SPG, AT-SPG).
 #[derive(Clone,Debug,PartialEq,Eq)]
-pub struct Ticket {pub session:u32,pub account:String,pub tier:u8,pub since:Instant}
+pub struct Ticket {pub session:u32,pub account:String,pub tier:u8,pub class:u8,pub since:Instant}
+
+/// Players waiting for a battle (queued or matched, not started) by client
+/// vehicle class and by tier 1..10. Only `classes` has a native 0.9.1 carrier
+/// (`Account.receiveQueueInfo`); `levels` is server state (see MM-01 plan).
+#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+pub struct QueueStats {pub classes:[u32;5],pub levels:[u32;10]}
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Formed {Full,Timeout}
@@ -57,9 +64,17 @@ impl Matchmaker {
     pub fn groups(&self)->&[Group] {&self.groups}
     pub fn queued(&self,session:u32)->bool {self.queue.iter().any(|t|t.session==session)}
     pub fn group_of(&self,session:u32)->Option<&Group> {self.groups.iter().find(|g|g.has(session))}
+    pub fn stats(&self)->QueueStats {
+        let mut stats=QueueStats::default();
+        for t in self.queue.iter().chain(self.groups.iter().flat_map(|g|&g.members)) {
+            if let Some(c)=stats.classes.get_mut(usize::from(t.class)) {*c+=1;}
+            if let Some(l)=stats.levels.get_mut(usize::from(t.tier).wrapping_sub(1)) {*l+=1;}
+        }
+        stats
+    }
     /// One ticket per session and per account, across the queue and every group.
     pub fn enqueue(&mut self,ticket:Ticket)->Result<(),Refusal> {
-        if !(self.rules.tiers.0..=self.rules.tiers.1).contains(&ticket.tier) {return Err(Refusal::Tier);}
+        if !(self.rules.tiers.0..=self.rules.tiers.1).contains(&ticket.tier)||ticket.class>=5 {return Err(Refusal::Tier);}
         if self.queue.iter().chain(self.groups.iter().flat_map(|g|&g.members))
             .any(|t|t.session==ticket.session||t.account==ticket.account) {return Err(Refusal::Duplicate);}
         if self.queue.len()>=MAX_QUEUE {return Err(Refusal::Full);}

@@ -58,7 +58,8 @@ impl Session {
                     }
                 },
                 NativeCommand::QueueInfo => {
-                    if c.queue_announced {self.outbox.push_back(drive::own_queue_info());}
+                    let reply=state.queue_info_reply();
+                    if c.queue_announced {self.outbox.push_back(reply);}
                 },
             }
             events.push(format!("P08B_QUEUE_PENDING session={} command={command:?} writer_started=false native_enqueued={}",self.id,c.queue_announced));

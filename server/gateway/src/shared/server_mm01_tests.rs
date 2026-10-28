@@ -179,3 +179,29 @@ fn mm01_a_dissolved_group_never_reuses_its_battle_id(){
     tick(&mut m,&mut t,&mut a,now+Duration::from_secs(3));
     for id in 9..=12 {assert_eq!(gate(session(&t,id)),MatchGate::Matched(spent+1));}
 }
+
+#[test]
+fn mm01_queue_info_reply_carries_the_class_counts_of_waiting_players(){
+    let now=Instant::now();let mut a=arenas(now);let mut m=runtime();
+    // MS-1 (light, tier 1) twice and IS-7 (heavy, tier 10): no group (spread 1, four places).
+    let mut t=table(vec![joined(now,1,1),joined(now,2,1),joined(now,3,2)]);
+    tick(&mut m,&mut t,&mut a,now);
+    let classes=[2,0,1,0,0];
+    assert_eq!(m.mm.stats().levels,[2,0,0,0,0,0,0,0,0,1],"tier table: server state only");
+    for s in &t.sessions {
+        let p=s.shared.as_ref().unwrap().profile13.as_ref().unwrap();
+        assert_eq!(p.queue_classes,Some(classes));assert_eq!(p.queue_info_reply(),crate::map_drive_world091::queue_info(&classes));
+    }
+    // #717 Account.receiveQueueInfo: method 85, 24-byte body; randoms present, ARRAY<UINT32>[5]
+    // in VEHICLE_CLASSES order; companies and historical None.
+    let b=crate::map_drive_world091::queue_info(&classes);
+    assert_eq!(b.len(),27);assert_eq!(&b[..5],&[0x13,0x55,24,1,5]);
+    let counts=(0..5).map(|i|u32::from_le_bytes(b[5+4*i..9+4*i].try_into().unwrap())).collect::<Vec<_>>();
+    assert_eq!(counts,classes);assert_eq!(&b[25..],&[0,0]);
+    assert_eq!(crate::map_drive_world091::queue_info(&[1,0,0,0,0]),crate::map_drive_world091::own_queue_info(),"old reply unchanged");
+    // The IS-7 leaves: its own poll falls back to the old reply, the others' counts shrink.
+    t.sessions[2].shared.as_mut().unwrap().join_requested=false;
+    tick(&mut m,&mut t,&mut a,now+Duration::from_secs(1));
+    assert_eq!(t.sessions[2].shared.as_ref().unwrap().profile13.as_ref().unwrap().queue_classes,None);
+    assert_eq!(t.sessions[0].shared.as_ref().unwrap().profile13.as_ref().unwrap().queue_classes,Some([2,0,0,0,0]));
+}

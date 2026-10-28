@@ -10,17 +10,18 @@ use crate::battle091::profile13::FinishReason;
 
 /// `spent`: battles of dissolved groups. Their id is never matched again; the
 /// arena resets to its next battle once nothing holds a reservation for it.
-pub(super) struct Runtime {pub(super) mm:Matchmaker,bot_tiers:Vec<(VehicleKind,u8)>,spent:Vec<u64>}
+/// `published`: the last queue counts written to sessions and the log.
+pub(super) struct Runtime {pub(super) mm:Matchmaker,bot_tiers:Vec<(VehicleKind,u8)>,spent:Vec<u64>,published:Option<mm::QueueStats>}
 
 fn bad(reason:&str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,format!("MM-01: {reason}"))}
 fn profile(s:&Session)->Option<&super::super::profile13_session::State> {s.shared.as_ref().and_then(|c|c.profile13.as_ref())}
 
-/// Client tier of the selected owned vehicle (p04m inventory row; 1/2 are MS-1/IS-7).
-fn selected_tier(s:&Session)->io::Result<Option<u8>> {
+/// Client tier and vehicle class of the selected owned vehicle (p04m inventory row; 1/2 are MS-1/IS-7).
+fn selected_profile(s:&Session)->io::Result<Option<(u8,u8)>> {
     let Some(native)=profile(s).and_then(|p|p.selection) else {return Ok(None);};
     let label=s.hangar.as_ref().and_then(|f|f.p04m_binding()).and_then(|b|b.kind_label(native))
         .or(match native {1=>Some("ms1"),2=>Some("is7"),_=>None});
-    match label.and_then(VehicleKind::from_owned_label) {Some(kind)=>kind.tier(),None=>Ok(None)}
+    match label.and_then(VehicleKind::from_owned_label) {Some(kind)=>kind.queue_profile(),None=>Ok(None)}
 }
 /// A hangar Join with no reservation, return, writer or arena place.
 fn wants_queue(s:&Session,arenas:&[arena::Arena])->bool {
@@ -51,7 +52,7 @@ impl Runtime {
     pub(super) fn new(rules:mm::Rules,plan:&model::bots::Plan)->io::Result<Self> {
         let bot_tiers=plan.kinds.iter().map(|k|k.tier()?.map(|t|(*k,t)).ok_or_else(||bad("bot kind without a client tier")))
             .collect::<io::Result<Vec<_>>>()?;
-        Ok(Self{mm:Matchmaker::new(rules),bot_tiers,spent:Vec::new()})
+        Ok(Self{mm:Matchmaker::new(rules),bot_tiers,spent:Vec::new(),published:None})
     }
     pub(super) fn bot_tiers(&self)->&[(VehicleKind,u8)] {&self.bot_tiers}
     fn dissolve(&mut self,battle:u64,reason:&str) {
@@ -89,9 +90,19 @@ impl Runtime {
         self.expire(table,arenas,now)?;
         self.form(table,arenas,retired,closed,now)?;
         // Gate the admission writer: matched → that battle only; queued → none.
+        // Waiting players get the queue counts for the native BattleQueue poll.
+        let stats=self.mm.stats();
         for s in &mut table.sessions {
-            let gate=self.mm.group_of(s.id).map_or(MatchGate::Queued,|g|MatchGate::Matched(g.battle));
-            if let Some(p)=s.shared.as_mut().and_then(|c|c.profile13.as_mut()) {p.match_gate=gate;}
+            let group=self.mm.group_of(s.id).map(|g|g.battle);
+            let waiting=group.is_some()||self.mm.queued(s.id);
+            if let Some(p)=s.shared.as_mut().and_then(|c|c.profile13.as_mut()) {
+                p.match_gate=group.map_or(MatchGate::Queued,MatchGate::Matched);
+                p.queue_classes=waiting.then_some(stats.classes);
+            }
+        }
+        if self.published!=Some(stats) {
+            self.published=Some(stats);
+            println!("MM01_QUEUE_STATS classes={:?} class_order=light,medium,heavy,SPG,AT-SPG levels={:?} native=classes_only",stats.classes,stats.levels);
         }
         Ok(())
     }
@@ -138,10 +149,10 @@ impl Runtime {
             }
             if self.mm.queued(s.id)||s.outbox.len()>=125 {continue;}
             let account=s.identity.as_ref().ok_or_else(||bad("queue without identity"))?.account_id.clone();
-            let Some(tier)=selected_tier(s)? else {
+            let Some((tier,class))=selected_profile(s)? else {
                 refuse(s,"BATTLE_PROFILE_UNSUPPORTED")?;println!("MM01_REFUSED session={} reason=tier_unknown",s.id);continue;
             };
-            match self.mm.enqueue(Ticket{session:s.id,account,tier,since:now}) {
+            match self.mm.enqueue(Ticket{session:s.id,account,tier,class,since:now}) {
                 Ok(())=>{
                     let c=s.shared.as_mut().ok_or_else(||bad("queue without client"))?;
                     if !c.queue_announced {s.outbox.push_back(crate::map_drive_world091::queue_callback(true));}

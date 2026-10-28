@@ -5,7 +5,7 @@ use super::*;
 fn rules(team_size:usize,spread:u8,wait:u64)->Rules {
     Rules{team_size,tiers:(1,10),tier_spread:spread,wait:Duration::from_secs(wait),lease:Duration::from_secs(wait*3)}
 }
-fn ticket(session:u32,tier:u8,since:Instant)->Ticket {Ticket{session,account:format!("account-{session}"),tier,since}}
+fn ticket(session:u32,tier:u8,since:Instant)->Ticket {Ticket{session,account:format!("account-{session}"),tier,class:(tier%5),since}}
 fn sessions(g:&Group)->Vec<u32> {g.members.iter().map(|t|t.session).collect()}
 
 #[test]
@@ -134,4 +134,19 @@ fn mm01_client_tiers_of_the_stand_kinds(){
     for (label,expected) in [("ms1",1),("t26",2),("t34",5),("t3485",6),("is7",10),("ussr-KV-3",7),("usa-M4_Sherman",5),
         ("japan-Chi_Ri",7),("germany-Waffentrager_E100",10)] {assert_eq!(tier(label),Some(expected),"{label}");}
     assert_eq!(VehicleKind::Fv183.tier().unwrap(),Some(10));
+}
+
+#[test]
+fn mm01_queue_stats_count_waiting_players_by_class_and_tier(){
+    let now=Instant::now();let mut mm=Matchmaker::new(rules(2,0,30));
+    assert_eq!(mm.stats(),QueueStats::default());
+    let t=|s:u32,tier:u8,class:u8|Ticket{session:s,account:format!("a{s}"),tier,class,since:now};
+    for x in [t(1,5,1),t(2,5,1),t(3,5,2),t(4,5,1),t(5,1,0),t(6,10,4)] {mm.enqueue(x).unwrap();}
+    assert_eq!(mm.enqueue(t(7,5,5)),Err(Refusal::Tier),"no sixth class");
+    let all=mm.stats();
+    assert_eq!(all.classes,[1,3,1,0,1]);assert_eq!(all.levels,[1,0,0,0,4,0,0,0,0,1]);
+    // A matched group still waits for its battle; a started one leaves the counts.
+    mm.form(&[(0,100)],now);assert_eq!(mm.stats(),all);
+    mm.started(100);
+    let left=mm.stats();assert_eq!(left.classes,[1,0,0,0,1]);assert_eq!(left.levels,[1,0,0,0,0,0,0,0,0,1]);
 }
