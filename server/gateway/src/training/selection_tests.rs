@@ -1,7 +1,7 @@
 //! Candidate tests, NOT_RUN until a separately authorized Rust component build.
 use super::*;
 const ACTUAL:&[u8]=include_bytes!("../../../../tests/fixtures/p10b-selection-writer-vectors.json");
-const ACTUAL_SHA:&str="493511296d5c3b09fa1ce5d9906b48d565b02eab345191659d079d1294e7da97";
+const ACTUAL_SHA:&str="b9a5b3a693242b958efd7b0e853b22b028e5b8ac13b9b3315194f13622b7c9cf";
 fn vectors()->Vec<Value>{
     assert_eq!(format!("{:x}",Sha256::digest(ACTUAL)),ACTUAL_SHA);
     let v:Value=serde_json::from_slice(ACTUAL).unwrap();assert_eq!(v["schema"],"p10b-selection-actual-writer-vectors.v1");

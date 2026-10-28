@@ -71,7 +71,7 @@ fn pending_admit(s:&mut Saga,c:&Value)->(Task,Value){let index=s.slots.iter().po
  for c in data["cases"].as_array().unwrap(){for calls in c["calls"].as_object().unwrap().values(){for row in calls.as_array().unwrap(){parsed(row);count+=1;}}}assert_eq!(count,40);
 }
 #[test]fn p10b_saga_production_constructor_actual_four_selection_vectors_and_foreign_owner_channel(){
- assert_eq!(format!("{:x}",Sha256::digest(SELECTION)),"493511296d5c3b09fa1ce5d9906b48d565b02eab345191659d079d1294e7da97");let data:Value=serde_json::from_slice(SELECTION).unwrap();
+ assert_eq!(format!("{:x}",Sha256::digest(SELECTION)),"b9a5b3a693242b958efd7b0e853b22b028e5b8ac13b9b3315194f13622b7c9cf");let data:Value=serde_json::from_slice(SELECTION).unwrap();
  for row in data["vectors"].as_array().unwrap(){let q=&row["request"];let c=Context{account_id:q["account_id"].as_str().unwrap().into(),native_database_id:q["native_database_id"].as_i64().unwrap().try_into().unwrap(),expected_revision:q["expected_revision"].as_u64().unwrap(),run_id:q["run_id"].as_str().unwrap().into(),command_key:"selection-read-only".into()};
   let request=selection::Request::new(&c,q["native_inventory_id"].as_u64().unwrap().try_into().unwrap(),selection::Stamp::parse(&q["projection_stamp"]).unwrap()).unwrap();
   let parsed=selection::parse_reply(&serde_json::to_vec(&row["response"]).unwrap(),&request).unwrap();let owner=profile(&c);

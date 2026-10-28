@@ -6,7 +6,7 @@ use sha2::{Digest,Sha256};
 use serde_json::Value;
 use std::{fs,path::{Path,PathBuf},sync::atomic::{AtomicU64,Ordering}};
 const PROJECT:&[u8]=include_bytes!("../../../../tests/fixtures/p08b-hold-project-projection.json");
-const PROJECT_SHA:&str="204d1e03c8a14d68b8c89442842edb7366f0a608662a0ed1342e55ad4749bf93";
+const PROJECT_SHA:&str="bf8842c1baf9445e64ecd6c239bcb925c4c789eef2ff6777a61aad9feb17e7a3";
 fn data()->Value{assert_eq!(format!("{:x}",Sha256::digest(PROJECT)),PROJECT_SHA);serde_json::from_slice(PROJECT).unwrap()}
 fn context(q:&Value)->hold::Context{hold::Context{account_id:q["account_id"].as_str().unwrap().into(),native_database_id:q["native_database_id"].as_i64().unwrap()as i32,
     command_key:q["command_key"].as_str().unwrap().into(),expected_revision:q["expected_revision"].as_u64().unwrap(),run_id:q["run_id"].as_str().unwrap().into()}}
@@ -25,8 +25,8 @@ fn directory(index:usize)->(Arc<crate::identity091::Profile>,Arc<crate::hangar09
     let binding=crate::ammo_service091::metadata_research(&owner.fixture_dir,&owner.account_id,owner.database_id).unwrap();
     assert_eq!(binding.revision,row["reply"]["revision"].as_u64().unwrap());(owner,fixture,binding)
 }
-fn next_admission()->Value{let raw=include_bytes!("../../../../tests/fixtures/p08b-hold-next-admission.json");assert_eq!(format!("{:x}",Sha256::digest(raw)),"178f0e20ff864e7756dfeb650ed2470050563ce6b04b5d1eef6014b818e05b5d");serde_json::from_slice::<Value>(raw).unwrap()["row"].clone()}
-fn contained_projection()->Value{let raw=include_bytes!("../../../../tests/fixtures/p08b-hold-contained-projection.json");assert_eq!(format!("{:x}",Sha256::digest(raw)),"45fd0a3754d302882aecbcaf72d5e21ace0c9c4d481c3a1663f2ef2a5c0d5a66");serde_json::from_slice::<Value>(raw).unwrap()["row"].clone()}
+fn next_admission()->Value{let raw=include_bytes!("../../../../tests/fixtures/p08b-hold-next-admission.json");assert_eq!(format!("{:x}",Sha256::digest(raw)),"558a6b6f38ccc5a8bbcdb94f388073f4d38fbca054a0889c9a7ae67837a7d209");serde_json::from_slice::<Value>(raw).unwrap()["row"].clone()}
+fn contained_projection()->Value{let raw=include_bytes!("../../../../tests/fixtures/p08b-hold-contained-projection.json");assert_eq!(format!("{:x}",Sha256::digest(raw)),"9e263cb50008678ef35e99a8dcb92cd64009469908e530a2a2085372b1544e2f");serde_json::from_slice::<Value>(raw).unwrap()["row"].clone()}
 fn source()->(hold::Context,hold::Reservation,u64){let d=data();let q=&d["rows"][0]["request"];let c=context(q);
     let r=hold::Request::Admit{battle:q["battle_id"].as_str().unwrap().rsplit(':').next().unwrap().parse().unwrap(),native_inventory_id:1};
     let out=hold::parse_reply(&serde_json::to_vec(&d["rows"][0]["reply"]).unwrap(),&c,&r).unwrap();(c,out.reservation.unwrap(),out.revision)}

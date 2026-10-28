@@ -7,9 +7,9 @@ use sha2::{Digest,Sha256};
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64,Ordering};
 const SAVED:&[u8]=include_bytes!("../../../../tests/fixtures/p10b-selection-writer-vectors.json");
-const SAVED_SHA:&str="493511296d5c3b09fa1ce5d9906b48d565b02eab345191659d079d1294e7da97";
+const SAVED_SHA:&str="b9a5b3a693242b958efd7b0e853b22b028e5b8ac13b9b3315194f13622b7c9cf";
 const PROJECT:&[u8]=include_bytes!("../../../../tests/fixtures/p10b-ready-project-projection.json");
-const PROJECT_SHA:&str="8502c7154a1a18f0a4ba447895860103400181033c39672e3bf0aa107f132d0c";
+const PROJECT_SHA:&str="e5933d82056aee9bb52c6c5f035030594b9e9a01ca301a172c705e40d52a498d";
 fn row(index:usize)->Value{assert_eq!(format!("{:x}",Sha256::digest(SAVED)),SAVED_SHA);serde_json::from_slice::<Value>(SAVED).unwrap()["vectors"][index].clone()}
 fn profile(index:usize)->Arc<crate::identity091::Profile>{
     static SERIAL:AtomicU64=AtomicU64::new(0);assert_eq!(format!("{:x}",Sha256::digest(PROJECT)),PROJECT_SHA);
