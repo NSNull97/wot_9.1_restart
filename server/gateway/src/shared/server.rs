@@ -1888,6 +1888,17 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
             if let Some(m)=&mut matchmaker {
                 m.tick(&mut table,&mut arenas,battle_dispatch.retired_sessions(),|battle|battle_dispatch.closed_queue(battle),now)?;
+                // A dissolved group's battle id is not reused: the same reset as an emptied queue.
+                for index in m.take_resets(&table,&arenas,battle_dispatch.retired_sessions()) {
+                    let a=&mut arenas[index];
+                    if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"mm01_group_dissolved");}
+                    // STAB-02: a failed reset closes only this arena.
+                    let reset=battle_dispatch.before_hold_reset(&a.world).and_then(|()|a.template.replace(&mut a.world,&mut a.integrated,now));
+                    match reset {
+                        Ok(())=>a.cursors.reset(),
+                        Err(error)=>containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"mm01_group_reset",None,&error),
+                    }
+                }
             }
             if garage.is_empty() && !result_manager.busy() && !battle_dispatch.late_running() && (!config.p08b_owner_battle_hold||admission.is_empty()) {
                 battle_dispatch.poll(&mut table,config.clone(),now)?;

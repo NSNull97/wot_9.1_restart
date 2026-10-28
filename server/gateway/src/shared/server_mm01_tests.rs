@@ -158,3 +158,24 @@ fn mm01_unknown_tier_is_refused_and_absent_matchmaker_keeps_the_gate_open(){
     let old=joined(now,2,1);let p=old.shared.as_ref().unwrap().profile13.as_ref().unwrap();
     assert_eq!(p.match_gate,MatchGate::Off);assert!(p.admits_into(a[0].world.id)&&p.admits_into(a[1].world.id));
 }
+
+#[test]
+fn mm01_a_dissolved_group_never_reuses_its_battle_id(){
+    let now=Instant::now();let mut a=arenas(now);let mut m=runtime();
+    let mut t=table((1..=4).map(|id|joined(now,id,1)).collect());
+    tick(&mut m,&mut t,&mut a,now);
+    let spent=a[0].world.id;assert_eq!(gate(&t.sessions[0]),MatchGate::Matched(spent));
+    for s in &mut t.sessions {s.shared.as_mut().unwrap().join_requested=false;}
+    tick(&mut m,&mut t,&mut a,now+Duration::from_secs(1));
+    assert!(m.mm.groups().is_empty(),"everyone cancelled: the group dissolves");
+    // New Joins wait for the other arena, never for the spent battle id.
+    t.sessions.extend((5..=8).map(|id|joined(now,id,1)));
+    tick(&mut m,&mut t,&mut a,now+Duration::from_secs(2));
+    for id in 5..=8 {assert_eq!(gate(session(&t,id)),MatchGate::Matched(a[1].world.id));}
+    assert_eq!(m.take_resets(&t,&a,&[]),[0],"nobody holds the spent battle: reset it");
+    let x=&mut a[0];x.template.replace(&mut x.world,&mut x.integrated,now).unwrap();
+    assert_eq!(a[0].world.id,spent+1);assert!(m.take_resets(&t,&a,&[]).is_empty());
+    t.sessions.extend((9..=12).map(|id|joined(now,id,1)));
+    tick(&mut m,&mut t,&mut a,now+Duration::from_secs(3));
+    for id in 9..=12 {assert_eq!(gate(session(&t,id)),MatchGate::Matched(spent+1));}
+}

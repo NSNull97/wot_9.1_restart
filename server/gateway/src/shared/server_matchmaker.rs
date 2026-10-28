@@ -8,7 +8,9 @@ use super::super::matchmaker::{self as mm,Matchmaker,Refusal,Ticket};
 use super::super::profile13_session::MatchGate;
 use crate::battle091::profile13::FinishReason;
 
-pub(super) struct Runtime {pub(super) mm:Matchmaker,bot_tiers:Vec<(VehicleKind,u8)>}
+/// `spent`: battles of dissolved groups. Their id is never matched again; the
+/// arena resets to its next battle once nothing holds a reservation for it.
+pub(super) struct Runtime {pub(super) mm:Matchmaker,bot_tiers:Vec<(VehicleKind,u8)>,spent:Vec<u64>}
 
 fn bad(reason:&str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,format!("MM-01: {reason}"))}
 fn profile(s:&Session)->Option<&super::super::profile13_session::State> {s.shared.as_ref().and_then(|c|c.profile13.as_ref())}
@@ -49,9 +51,29 @@ impl Runtime {
     pub(super) fn new(rules:mm::Rules,plan:&model::bots::Plan)->io::Result<Self> {
         let bot_tiers=plan.kinds.iter().map(|k|k.tier()?.map(|t|(*k,t)).ok_or_else(||bad("bot kind without a client tier")))
             .collect::<io::Result<Vec<_>>>()?;
-        Ok(Self{mm:Matchmaker::new(rules),bot_tiers})
+        Ok(Self{mm:Matchmaker::new(rules),bot_tiers,spent:Vec::new()})
     }
     pub(super) fn bot_tiers(&self)->&[(VehicleKind,u8)] {&self.bot_tiers}
+    fn dissolve(&mut self,battle:u64,reason:&str) {
+        if self.mm.dissolve(battle).is_some() {self.spent.push(battle);println!("MM01_GROUP_DISSOLVED battle={battle} reason={reason}");}
+    }
+    /// Arenas of dissolved groups that nobody holds a place or reservation in:
+    /// the caller resets them (late/hold hooks, new battle id). Ids of arenas
+    /// already reset elsewhere are forgotten.
+    pub(super) fn take_resets(&mut self,table:&Table,arenas:&[arena::Arena],retired:&[Session])->Vec<usize> {
+        self.spent.retain(|battle|arenas.iter().any(|a|a.world.id==*battle));
+        let mut ready=Vec::new();
+        self.spent.retain(|battle|{
+            let Some(index)=arenas.iter().position(|a|a.world.id==*battle) else {return false;};
+            let a=&arenas[index];
+            // STAB-02: a closed arena is reopened by its own path, not here.
+            let held=a.closed.is_some()||a.started()||!a.world.actors.is_empty()||table.sessions.iter().chain(retired)
+                .any(|s|profile(s).is_some_and(|p|p.reservation_battle()==Some(*battle)));
+            if !held {ready.push(index);}
+            held
+        });
+        ready
+    }
     /// Arenas the admission writer may serve this tick: the lobby (terminals)
     /// and every arena with an unstarted group.
     pub(super) fn admission_arenas(&self,arenas:&[arena::Arena],lobby:usize)->Vec<usize> {
@@ -94,7 +116,7 @@ impl Runtime {
                 if !live {self.mm.leave(t.session);println!("MM01_MEMBER_LEFT battle={} session={}",g.battle,t.session);}
             }
             let left=self.mm.groups().iter().find(|x|x.battle==g.battle).map_or(0,|x|x.members.len());
-            if left==0 {self.mm.dissolve(g.battle);println!("MM01_GROUP_DISSOLVED battle={} reason=no_members",g.battle);continue;}
+            if left==0 {self.dissolve(g.battle,"no_members");continue;}
             let world=&mut arenas[index].world;
             if left!=world.human_places()&&world.actors.len()<=left {
                 let kinds=world.bot_plan().ok_or_else(||bad("arena without bots"))?.kinds.clone();
@@ -140,14 +162,14 @@ impl Runtime {
     fn expire(&mut self,table:&mut Table,arenas:&mut [arena::Arena],now:Instant)->io::Result<()> {
         for battle in self.mm.expired(now) {
             let group=self.mm.groups().iter().find(|g|g.battle==battle).cloned().ok_or_else(||bad("expired group"))?;
-            let Some(index)=arenas.iter().position(|a|a.world.id==battle) else {self.mm.dissolve(battle);continue;};
+            let Some(index)=arenas.iter().position(|a|a.world.id==battle) else {self.dissolve(battle,"arena_reset");continue;};
             let seated=if group.renewed {Vec::new()} else {
                 group.members.iter().map(|t|t.session).filter(|s|arenas[index].has_session(*s)).collect::<Vec<_>>()
             };
             for t in group.members.iter().filter(|t|!seated.contains(&t.session)) {
                 if let Some(s)=table.sessions.iter_mut().find(|s|s.id==t.session) {cancel(s,&arenas[index].world)?;}
             }
-            if seated.is_empty() {self.mm.dissolve(battle);}
+            if seated.is_empty() {self.dissolve(battle,"lease_expired");}
             else {
                 self.mm.renew(battle,&seated,now)?;
                 let world=&mut arenas[index].world;
@@ -163,7 +185,7 @@ impl Runtime {
     /// battle and its queue not closed by a finished admission.
     fn form(&mut self,table:&Table,arenas:&mut [arena::Arena],retired:&[Session],closed:impl Fn(u64)->bool,now:Instant)->io::Result<()> {
         if self.mm.queue().is_empty() {return Ok(());}
-        let free=arenas.iter().enumerate().filter(|(_,a)|a.closed.is_none()&&!a.started()&&a.world.actors.is_empty()&&!closed(a.world.id)
+        let free=arenas.iter().enumerate().filter(|(_,a)|a.closed.is_none()&&!a.started()&&a.world.actors.is_empty()&&!closed(a.world.id)&&!self.spent.contains(&a.world.id)
             &&!table.sessions.iter().chain(retired).any(|s|profile(s).is_some_and(|p|p.reservation_battle()==Some(a.world.id))))
             .map(|(i,a)|(i,a.world.id)).collect::<Vec<_>>();
         for g in self.mm.form(&free,now) {
