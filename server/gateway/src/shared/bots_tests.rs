@@ -326,3 +326,14 @@ fn bot01_generated_kind_bot_seats_typed_and_shoots(){
     assert!(matches!(outcomes[0],fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot{..})),"{outcomes:?}");
     assert_eq!(w.actors[1].fire.typed().unwrap().counts()[0],source.capacity-1);
 }
+
+/// RES-30: a 30-place battle (1 native + 29 bots) and its whole-roster result
+/// fit a 1MB thread even in the debug build (gateway main thread on Windows).
+#[test]
+fn res30_thirty_place_battle_and_result_fit_a_one_megabyte_thread(){
+    std::thread::Builder::new().stack_size(1024*1024).spawn(||{
+        let w=finished_with(1,30,Instant::now());
+        let r=super::super::super::lifecycle_result::build(&w).unwrap();assert_eq!(r.participants.len(),30);
+        super::super::super::lifecycle_wire::avatar_result_stream_p06t(&r,1).unwrap();
+    }).unwrap().join().unwrap();
+}
