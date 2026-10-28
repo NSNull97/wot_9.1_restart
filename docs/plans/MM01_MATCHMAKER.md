@@ -60,3 +60,64 @@
 | Native: 4–6 клиентов, несколько боёв подряд | **NOT_RUN** (владелец, стенд) |
 
 Откат: убрать `matchmaker` из `gateway.json`, перезапустить шлюз.
+
+## Итог (2026-10-28, ветка `codex/mm-01-matchmaker`)
+
+- Коммиты: `b068bf2` (очередь, подбор, lease, gate writer'а, конфиг, тесты), `70b7b24` (id распавшейся группы не
+  переиспользуется: арена сбрасывается тем же путём, что пустая очередь). Не в main, не запушено.
+- Код: `shared/matchmaker.rs` (чистая логика), `shared/server_matchmaker.rs` (связка), `server.rs` (тик, writer по аренам
+  групп, без `BATTLE_BUSY` в режиме очереди), `profile13_session.rs` (`MatchGate`), `profile13_dispatch*.rs` (фильтр
+  `admits_into`; без повторного `onEnqueued`; отказ Domain снимает объявленную очередь), `bots.rs` (`set_match_roster`),
+  `generated_vehicles.rs`/`vehicle_profile.rs` (`tier`), `p04m_companion.rs` (`kind_label`), `identity.rs` (ключ).
+  `contain_battle_failure` не тронут.
+- Тесты MM-01: `bash local/cargo_test.sh mm01` — **17 PASS** (правила/окно уровней/тайм-аут/арены/lease/один билет —
+  `matchmaker_tests`; связка на двух LAB-аренах — `server_mm01_tests`; writer только в свой бой и не второй резерв —
+  `arena01_dispatch_tests`; без повторного `onEnqueued` — `queue_loss_tests`; конфиг — `identity`; уровни машин стенда).
+- Набор шлюза, один worktree и target (`local/test-runs/gw-*.log`): ветка `70b7b24` **1697 / 94 / 12**, база `6f3882a`
+  **1680 / 94 / 12**; множества FAIL **равны** (94 — окружение worktree: нет `local/evidence` и портативных фикстур,
+  `NotFound`). Ветка `b068bf2` — 1696 / 94 / 12, те же FAIL.
+- Python (`python -B -X utf8 -m unittest discover -s tests`, бандл `p09e-main-01/source-bundle-05`): 2786 тестов,
+  ветка 117 FAIL+ERROR, база 120; FAIL ветки ⊂ FAIL базы (лишние 3 у базы — длинный путь вложенного worktree,
+  `FileNotFoundError`). Python-кода MM-01 не меняет.
+- Канонический gate, release-сборка и native — **NOT_RUN**.
+
+Ограничения и неподтверждённое:
+- `onEnqueued` до серверного резерва и `enqueue_failure("BATTLE_BUSY")` после него (lease) — INFERRED для клиента 0.9.1.
+- Lease держит шлюз; в строке Domain срока нет. Падение шлюза оставляет резерв до прежнего восстановления.
+- Команды — прежнее `slot % 2 + 1` (люди поровну, потом боты); балансировки по уровням внутри боя нет.
+- Боты не подбираются по месту в очереди: вид из окна уровней группы, иначе ближайший (`MM01_BOT_TIER_NEAREST`).
+- > 6 мест: итоги — RES-30 (в main нет); подбор проверен до 6 мест (`team_size` 15 принимает конфиг, тест).
+
+## Шаги для стенда -11 (утром, после теста 15×15; выполняет родительская сессия с согласия владельца)
+
+Стенд сейчас (BOT-01): Малиновка, `battle_players 6`, `arenas 2`, `connection_capacity 256`, `spawn_policy`,
+`p06t_mixed_ammo` + `p06t_ammo_rack_detonation`, late results, Domain, `bots {human_places 1, kinds [t34, KV-3, M4, Chi-Ri,
+t3485]}` (уровни 5/7/5/7/6). Клиенты: `p03f/a`, `p03f/b`, `arena/c`, `arena/d` (4). Меняются только `gateway.json` и exe.
+
+1. Если стенд после 15×15 остался на RES-30 (tools/Domain из `D:/WoT_9.1_Server`): шлюз MM-01 без RES-30 пишет ≤ 6 строк
+   итога — совместимость INFERRED; надёжнее вернуть стенд на main `6f3882a` (как для BOT-01) или перебазировать MM-01.
+2. Release-шлюз **из этого worktree**, не из `D:/WoT_9.1_Server`:
+   из корня `D:/WoT_9.1_Server/.claude/worktrees/mm-01-matchmaker-5be088`:
+   `python -B -X utf8 server/build.py gateway --release --out local/build/server/gateway-mm01-release-<sha>`
+   (exe — `<out>/target/release/sr-gateway.exe` в этом worktree; на D: ≈ 21 ГБ свободно). Канонический gate — по желанию,
+   на чистом дереве.
+3. Если клиенты запущены — спросить владельца. `services.ps1 stop`, затем `domain.ps1 stop`.
+4. Копии: `gateway.json` → `gateway.before-mm01.json`, `services.ps1` → `services.before-mm01.ps1`,
+   `game.sqlite` → `game.before-mm01.sqlite` (Domain остановлен).
+5. В `gateway.json` добавить (остальное без изменений; `bots.human_places` в режиме очереди задаёт группа):
+   `"matchmaker": {"policy": "project.mm01.queue-tier-window.v1", "team_size": 3, "tiers": [1, 10], "tier_spread": 2, "wait_seconds": 30, "lease_seconds": 120}`
+6. `services.ps1`: `$gatewayExe` → новый exe. `domain.ps1 start`, `services.ps1 start`. В свежем `gateway-*.stdout.log`:
+   `MM01_POLICY_BOUND … team_size=3 places=6 tiers=1..10 tier_spread=2 wait_s=30 lease_s=120 arenas=2 bot_tiers=["t34:5","ussr-KV-3:7",…]`,
+   `BOT01_POLICY_BOUND`, `SPAWN15_POLICY_BOUND`, `ARENAS count=2`.
+7. Проверки владельца (4 клиента, несколько боёв подряд):
+   - **A. Все четыре на T-34 (ур. 5)**, «В бой» почти одновременно: у каждого сразу окно очереди (`MM01_QUEUED`); через
+     30 с — `MM01_MATCHED … humans=4 bots=2 tiers=5..5 formed=timeout` в одной арене, 2 на 2 + по боту, бой до итогов.
+   - **B. Два на T-34 (5) + два на T-26 (2)**: разница 3 > 2 — две группы по 2 человека в двух аренах
+     (`MM01_MATCHED` ×2; у группы T-26 боты ближайшего уровня — `MM01_BOT_TIER_NEAREST`). Оба боя параллельно.
+   - **C. Подряд**: после итогов снова «В бой» тем же составом — новая группа, новый `battle` (id растёт), без
+     `VEHICLE_RESERVED`; так 2–3 боя.
+   - **D. Выход из очереди**: «В бой», затем отмена до 30 с — `MM01_DEQUEUED`, машина свободна, повторный «В бой» работает.
+   - Нигде: игрок в двух боях, `P08B_ADMISSION_REJECTED VEHICLE_RESERVED` на своём же резерве, `SHARED_FAILED`.
+   - 5–6 клиентов (если будут): 6 на близких уровнях — полная группа сразу (`formed=full`, ботов 0).
+8. Откат: `gateway.before-mm01.json` и `services.before-mm01.ps1` на место, перезапуск шлюза; при сомнениях в БД —
+   `game.before-mm01.sqlite` (Domain остановлен).
