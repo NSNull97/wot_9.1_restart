@@ -50,6 +50,19 @@ impl SourceEnvelope{
     pub fn clamp_pitch(&self,yaw:f32,target:f32)->Result<f32>{if !target.is_finite()||target.abs()>FRAC_PI_2{return Err(Error::Pitch);}
         let limits=self.pitch_limits(yaw)?;Ok(target.clamp(limits.min,limits.max))}
 }
+impl SourceEnvelope{
+    /// BATTLE-ANY: envelope of a generated assembly from its source radians
+    /// (basic min/max; optional front/back min/max/sector; transition; turret yaw).
+    /// Absolute limits are the union of the source limits; validation as above.
+    pub fn from_source(basic:(f32,f32),front:Option<(f32,f32,f32)>,rear:Option<(f32,f32,f32)>,transition:f32,yaw:Option<(f32,f32)>)->Result<Self>{
+        let basic=Limits{min:basic.0,max:basic.1};
+        let extra=|e:Option<(f32,f32,f32)>|e.map_or(Extra{limits:basic,sector:0.},|(min,max,sector)|Extra{limits:Limits{min,max},sector});
+        let (front,rear)=(extra(front),extra(rear));
+        let absolute=Limits{min:basic.min.min(front.limits.min).min(rear.limits.min),max:basic.max.max(front.limits.max).max(rear.limits.max)};
+        let envelope=Self{basic,absolute,front,rear,transition,yaw:yaw.map(|(min,max)|Limits{min,max})};
+        envelope.validate()?;Ok(envelope)
+    }
+}
 impl SourceAim{
     pub fn wt128()->Self{Self{envelope:SourceEnvelope::wt_e100(),yaw_rate:rad(22.),pitch_rate:rad(26.25)}}
     pub fn wt150()->Self{Self{envelope:SourceEnvelope::wt_e100(),yaw_rate:rad(22.),pitch_rate:rad(23.625)}}

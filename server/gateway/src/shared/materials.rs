@@ -12,6 +12,7 @@ pub fn profile_revision(kind: VehicleKind) -> &'static str { match kind {
     VehicleKind::T3485=>"p04m-t3485-materials-717:25b6c69fd51e26abbda9b16c35572b5f289f2320d0dffe4085dea1b7bdeba1bb",
     VehicleKind::Wt128=>"p06t-wt128-materials-717:0971afa6aed7bbbb0c4ba647560e15002571544cc168005679a9d46a22962aae",
     VehicleKind::Fv183=>"p06t-fv183-materials-717:c14b10be359a86c4c4632cd0943d06c43a47fc9ede2a982880c4f09aed6ecb1d",
+    VehicleKind::Generated(id)=>&super::generated_vehicles::entry(id).materials_revision,
 } }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,6 +44,8 @@ pub(super) fn armor_ids(vehicle:VehicleKind,component:Component)->&'static[u16] 
         (VehicleKind::Wt128,Component::Turret01)=>&[1,2,3,4,5,6,7,8],
         (VehicleKind::Fv183,Component::Hull|Component::Turret01)=>&[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],
         (VehicleKind::Fv183,Component::Gun01)=>&[1],
+        (VehicleKind::Generated(id),component)=>{let e=super::generated_vehicles::entry(id);match component{
+            Component::Hull=>&e.armor_ids[0],Component::Turret01=>&e.armor_ids[1],Component::Gun01=>&e.armor_ids[2],Component::Gun02=>&[]}},
         _=>&[],
     }
 }
@@ -169,6 +172,33 @@ impl Catalog {
                     Source::GunBreechVisualUnsupported=>SourceClass::GunBreechVisualMaterial};
                 let effective=m.effective.as_ref().map(|v|EffectiveMaterial::from_value(v,m.kind)).transpose()?;
                 entries.push(MaterialFacts{component,name:m.name.clone(),kind:m.kind,source_class,effective,profile_revision:profile_revision(vehicle).into()});
+            }
+        }
+        Ok(Self{entries})
+    }
+    /// BATTLE-ANY generated bundle (digest bound by the registry). Slots map to
+    /// Hull/Turret_01/Gun_01 whatever the source part names; material kinds and
+    /// their order must equal the registry's table facts.
+    pub(super) fn from_generated(vehicle:VehicleKind,components:&Value)->io::Result<Self> {
+        let e=vehicle.generated().ok_or_else(||bad())?;
+        let rows=components.as_array().filter(|rows|rows.len()==3).ok_or_else(||bad())?;
+        let mut entries=Vec::new();
+        for (index,row) in rows.iter().enumerate() {
+            let component=[Component::Hull,Component::Turret01,Component::Gun01][index];
+            if row["name"].as_str()!=Some(e.parts[index].as_str()) {return Err(bad());}
+            let values=row["materials"].as_array().filter(|v|v.len()==e.material_kinds[index].len()).ok_or_else(||bad())?;
+            for (value,kind) in values.iter().zip(e.material_kinds[index].iter().copied()) {
+                fields(value,&["name","kind","effective"])?;
+                let(name,source_class)=match kind {
+                    25=>("gun".to_owned(),SourceClass::GunVisualMaterial),
+                    28=>("surveyingDevice".to_owned(),SourceClass::SurveyingDeviceVisualMaterial),
+                    31=>("gunBreech".to_owned(),SourceClass::GunBreechVisualMaterial),
+                    1..=16=>(format!("armor_{kind}"),SourceClass::ArmorDescriptor),
+                    _=>return Err(bad()),
+                };
+                if value["kind"].as_u64()!=Some(kind as u64)||value["name"].as_str()!=Some(name.as_str()) {return Err(bad());}
+                let effective=if value["effective"].is_null(){None}else{Some(EffectiveMaterial::from_value(&value["effective"],kind)?)};
+                entries.push(MaterialFacts{component,name,kind,source_class,effective,profile_revision:profile_revision(vehicle).into()});
             }
         }
         Ok(Self{entries})

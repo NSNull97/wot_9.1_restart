@@ -17,6 +17,18 @@
      "client_ui": {"crew": false, "ammo": false}},
     {"kind": "t3485", "vehicle_id": "vehicle:ussr:T-34-85", "device_profile": "t3485-stock",
      "battle_admission": "zero_economy_policy", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}},
+    {"kind": "ussr-KV-3", "vehicle_id": "vehicle:ussr:KV-3", "device_profile": "battle-any",
+     "battle_admission": "always", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}},
+    {"kind": "usa-M4_Sherman", "vehicle_id": "vehicle:usa:M4_Sherman", "device_profile": "battle-any",
+     "battle_admission": "always", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}},
+    {"kind": "germany-Waffentrager_E100", "vehicle_id": "vehicle:germany:Waffentrager_E100", "device_profile": "battle-any",
+     "battle_admission": "always", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}},
+    {"kind": "japan-Chi_Ri", "vehicle_id": "vehicle:japan:Chi_Ri", "device_profile": "battle-any",
+     "battle_admission": "always", "legacy_inventory": null,
      "client_ui": {"crew": false, "ammo": false}}
   ]
 }

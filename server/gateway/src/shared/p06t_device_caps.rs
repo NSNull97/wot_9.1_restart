@@ -2,18 +2,28 @@
 pub const SOURCE_SHA256:&str="3c4219c2adda799677dea310e84765bbfebca6edfa06aa3db450a7ddfb4875b5";
 pub const SOURCE_V2_SHA256:&str="2d74a8e8f272e6305d6779d887cac44ad9794c4ec40807ddf76a5139e3db9da4";
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-#[repr(usize)]
-pub enum Profile {Ms1,Is7,T26,T34,T3485,Wt128,Fv183}
+pub enum Profile {Ms1,Is7,T26,T34,T3485,Wt128,Fv183,
+/// BATTLE-ANY generated assembly: caps/crew from the verified registry.
+Generated(crate::gateway091::shared::generated_vehicles::GeneratedId)}
 impl Profile {
     /// Existing World/v1 policy deliberately retains exactly these five.
     pub const ALL:[Self;5]=[Self::Ms1,Self::Is7,Self::T26,Self::T34,Self::T3485];
     pub const SUPPORTED:[Self;7]=[Self::Ms1,Self::Is7,Self::T26,Self::T34,Self::T3485,Self::Wt128,Self::Fv183];
-    pub fn index(self)->usize{self as usize}
+    pub fn index(self)->usize{match self{Self::Ms1=>0,Self::Is7=>1,Self::T26=>2,Self::T34=>3,Self::T3485=>4,Self::Wt128=>5,Self::Fv183=>6,Self::Generated(id)=>7+id.get()}}
     pub fn is_legacy(self)->bool{self.index()<Self::ALL.len()}
+    fn generated(self)->Option<&'static crate::gateway091::shared::generated_vehicles::Entry>{match self{Self::Generated(id)=>Some(crate::gateway091::shared::generated_vehicles::entry(id)),_=>None}}
+    pub fn caps(self)->&'static [Cap;9]{self.generated().map_or_else(||&CAPS[self.index()],|e|&e.caps)}
+    pub fn crew(self)->&'static [Seat]{self.generated().map_or_else(||CREW[self.index()],|e|&e.crew)}
+    pub fn max_hp(self)->u16{self.generated().map_or_else(||MAX_HP[self.index()],|e|e.max_hp as u16)}
+    pub fn engine_fire_chance(self)->f64{self.generated().map_or_else(||ENGINE_FIRE_CHANCE[self.index()],|e|e.engine_fire_chance)}
+    /// Owned device profile of a battle kind: the five legacy kinds or a generated one.
+    pub fn for_owned(kind:crate::gateway091::shared::vehicle_profile::VehicleKind)->Option<Self>{use crate::gateway091::shared::vehicle_profile::VehicleKind as K;
+        match kind{K::Generated(id)=>Some(Self::Generated(id)),_=>Self::ALL.get(kind.index()).copied()}}
     /// Per-profile source provenance; a v2 State separately binds the complete
     /// seven-profile source manifest even when its selected profile is old.
     pub fn source_sha(self)->&'static str{if self.is_legacy(){SOURCE_SHA256}else{SOURCE_V2_SHA256}}
-    pub fn label(self)->&'static str{match self{Self::Ms1=>"ms1",Self::Is7=>"is7",Self::T26=>"t26",Self::T34=>"t34",Self::T3485=>"t3485",Self::Wt128=>"wt-e100-128",Self::Fv183=>"fv215b-183"}}
+    pub fn label(self)->&'static str{match self{Self::Ms1=>"ms1",Self::Is7=>"is7",Self::T26=>"t26",Self::T34=>"t34",Self::T3485=>"t3485",Self::Wt128=>"wt-e100-128",Self::Fv183=>"fv215b-183",
+        Self::Generated(id)=>&crate::gateway091::shared::generated_vehicles::entry(id).label}}
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 #[repr(usize)]

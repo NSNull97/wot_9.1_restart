@@ -23,12 +23,12 @@ fn owner_snapshot(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World)->io:
     let actor=world.actors.get(c.slot).ok_or_else(||model::bad())?;
     let state=actor.devices.as_ref().ok_or_else(||model::bad())?;
     let mut body=Vec::new();let id=wire::vehicle_id(c.slot)?;
-    for(index,(hp,cap))in state.health().iter().zip(crate::p06t_device_caps::CAPS[state.profile().index()]).enumerate(){
+    for(index,(hp,cap))in state.health().iter().zip(*state.profile().caps()).enumerate(){
         if *hp==0{body.extend(native::damage_info(id,1,26+index as u8,0)?);}
         else if u32::from(*hp)*2<=u32::from(cap.max){body.extend(native::damage_info(id,0,26+index as u8,0)?);}
     }
     for(seat,alive)in state.crew().iter().enumerate(){if !alive{
-        body.extend(native::damage_info(id,2,crate::p06t_device_caps::CREW[state.profile().index()][seat].extra,0)?);
+        body.extend(native::damage_info(id,2,state.profile().crew()[seat].extra,0)?);
     }}
     if state.fire_active(){body.extend(native::damage_info(id,3,4,0)?);}
     // These fixed messages stay bounded (9 devices +5 seats +fire <512 bytes).

@@ -56,7 +56,7 @@ impl Projectile {
         Self::launch_selected(sequence,slot,actor,now,shot_limit,None)
     }
     pub fn launch_shell_for_limit(sequence:u32,slot:usize,actor:&model::Actor,now:Instant,shot_limit:usize,shell:crate::p06t_shells091::Shell)->io::Result<Self>{
-        if !crate::p06t_shells091::PROFILES[actor.vehicle_kind().mount().index()].shots.contains(&shell){return Err(model::bad());}
+        if !crate::p06t_shells091::profile(actor.vehicle_kind().mount()).shots.contains(&shell){return Err(model::bad());}
         Self::launch_selected(sequence,slot,actor,now,shot_limit,Some(shell))
     }
     fn launch_selected(sequence:u32,slot:usize,actor:&model::Actor,now:Instant,shot_limit:usize,selected:Option<crate::p06t_shells091::Shell>)->io::Result<Self>{

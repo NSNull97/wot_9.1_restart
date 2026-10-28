@@ -20,7 +20,7 @@ from p09c_ammo_service import MAX_JSON
 from p08c_battle_results import ResultsStore
 from p04k_crew_store import NativeBarracksRecruitmentStore
 from p04j_crew_store import MEMBER_COLUMNS
-from p04m_stock_registry import StockRegistry, SCHEMA, DEFINITION_SHA256, NEW_KINDS
+from p04m_stock_registry import StockRegistry, SCHEMA, DEFINITION_SHA256, NEW_KINDS, PINS
 from p04m_pool_crew import (CrewContract, CrewContractV2, native_crew, decode, contract_for_command,
     POLICY_SHA256 as CREW_POLICY_SHA256)
 
@@ -77,6 +77,14 @@ def _shell_rows(registry):
     return rows
 
 
+def _catalog_shell_compact_ids(kind):
+    """{suffix: native compact ID} of a catalog kind, or None in legacy mode."""
+    import catalog_v1
+    if not catalog_v1.active():
+        return None
+    return {s["suffix"]: s["native_compact_id"] for s in catalog_v1.by_kind(kind)["shells"]}
+
+
 LINEAGE = ("p09d_import", "p04f_crew_meta", "p04g_crew_meta", "p04h_crew_meta", "p04i_crew_meta", "p04j_crew_meta", "p04k_crew_meta")
 CREW_V2_COMMAND, CREW_V1_COMMAND = "p04m.crew_contract_v2.v1", "p04m.crew_contract_v1.v1"
 # Exact retained P04H meta DDL (v1) and its widened lifetime-192 form (v2).
@@ -98,15 +106,23 @@ class PoolStore(ResultsStore):
         for kind, rows in sorted(_shell_rows(self.registry).items()):
             p = self.registry.profiles[kind]
             shells = []
+            compact = _catalog_shell_compact_ids(kind)
             for suffix, name, shell_kind, item_id in rows:
                 key = "shell:" + p.assembly_id + "-" + suffix
-                self.shells[key] = Shell(key, name, shell_kind, item_id, (item_id << 8) + 10); shells.append(key)
+                # Legacy rows are USSR (nation 0); catalog rows carry their own nation.
+                cd = (item_id << 8) + 10 if compact is None else compact[suffix]
+                self.shells[key] = Shell(key, name, shell_kind, item_id, cd); shells.append(key)
             modules = dict(p.modules)
             self.mounts[p.assembly_id] = Mount(p.assembly_id, p.vehicle_id, p.vehicle_id.split(":")[-1], p.type_compact_id,
                 modules["turret"].split(":")[-1], catalog.modules[modules["turret"]]["native_compact_id"],
                 modules["gun"].split(":")[-1], catalog.modules[modules["gun"]]["native_compact_id"], p.capacity, tuple(shells))
-        self.ammo_catalog_sha256 = sha(canonical({key: vars(value) for key, value in sorted(self.mounts.items())}
-            | {"shells": {key: vars(value) for key, value in sorted(self.shells.items())}}))
+        # The ammo catalog hash pinned by the gateway covers the legacy mounts only;
+        # BATTLE-ANY generated mounts are bound by the activated catalog hash.
+        legacy = {key: value for key, value in self.mounts.items()
+                  if key in MOUNTS or key[:-len("-stock")] in PINS}
+        legacy_shells = {key for mount in legacy.values() for key in mount.shell_ids}
+        self.ammo_catalog_sha256 = sha(canonical({key: vars(value) for key, value in sorted(legacy.items())}
+            | {"shells": {key: vars(value) for key, value in sorted(self.shells.items()) if key in legacy_shells}}))
 
     def _pool_row(self):
         exists = self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='p04m_schema'").fetchone()
@@ -251,7 +267,9 @@ class PoolStore(ResultsStore):
             require(type(loaded) is dict and set(loaded) == set(mount.shell_ids)
                 and all(type(n) is int and 0 <= n <= mount.capacity for n in loaded.values()) and sum(loaded.values()) <= mount.capacity, "CORRUPT_STORE")
             result.append({"vehicle_id": row["vehicle_id"], "mount_id": row["mount_id"], "loaded": loaded})
-        depot_rows = self.connection.execute("SELECT shell_id,quantity FROM p09c_ammo_depot WHERE account_id=? ORDER BY shell_id LIMIT 16", (account,)).fetchall()
+        # Bound by this store's own shell set (+1 detects an extra row); a fixed 16
+        # held only the legacy 15 pool shells (BATTLE-ANY catalog rows add more).
+        depot_rows = self.connection.execute("SELECT shell_id,quantity FROM p09c_ammo_depot WHERE account_id=? ORDER BY shell_id LIMIT ?", (account, len(self.shells) + 1)).fetchall()
         depot = {row[0]: row[1] for row in depot_rows}
         require(len(depot_rows) == len(self.shells) and set(depot) == set(self.shells)
             and all(type(n) is int and 0 <= n <= 1000000 for n in depot.values()), "CORRUPT_STORE")
@@ -341,6 +359,54 @@ class PoolStore(ResultsStore):
                 self.connection.execute("INSERT INTO p09c_ammo_mount VALUES (?,?,?,?)", (account, owned["vehicle_inventory_id"], p.assembly_id, canonical(loaded).decode("ascii")))
                 layout = [n for key in mount.shell_ids for n in (self.shells[key].native_compact_id, 0)]
                 self.connection.execute("INSERT INTO p09d_native_layout VALUES (?,?,?)", (account, owned["native_id"], json.dumps(layout)))
+
+    def extend_catalog_shells(self, *, account_id):
+        """BATTLE-ANY stand migration: depot rows of the shells a newer catalog added.
+
+        A stand switched from the five-kind catalog keeps snapshots without the
+        new shells, so every profile read fails. Only when the stored snapshot
+        equals this store's projection except exactly the missing zero rows, and
+        no owned vehicle mounts a missing shell, the rows are inserted, the
+        zero-economy top-up applied and the profile re-projected at revision+1;
+        the full reader must then verify it (all or nothing). Idempotent."""
+        self.initialize()
+        require(self.pool_active() and account_id == self.pool_account, "POOL_INACTIVE")
+        c = self.connection
+        c.execute("BEGIN IMMEDIATE")
+        try:
+            row = c.execute("SELECT * FROM game_snapshot WHERE account_id=?", (account_id,)).fetchone()
+            require(row is not None, "UNKNOWN_ACCOUNT")
+            present = {r[0] for r in c.execute("SELECT shell_id FROM p09c_ammo_depot WHERE account_id=? LIMIT ?",
+                                                (account_id, len(self.shells) + 1))}
+            require(present <= set(self.shells), "CORRUPT_STORE")
+            missing = sorted(set(self.shells) - present)
+            if not missing:
+                c.commit()
+                return {"status": "unchanged", "revision": row["revision"], "added": []}
+            for owned in self._research(account_id)["vehicles"]:
+                p = self.registry.by_vehicle.get(owned["vehicle_id"])
+                require(p is None or not set(self.mounts[p.assembly_id].shell_ids) & set(missing), "CORRUPT_STORE")
+            for key in missing:
+                c.execute("INSERT INTO p09c_ammo_depot VALUES (?,?,0)", (account_id, key))
+            vehicles = c.execute("SELECT vehicle_id,state,battle_id FROM game_vehicle WHERE account_id=? ORDER BY vehicle_id LIMIT ?",
+                                 (account_id, MAX_OWNED + 1)).fetchall()
+            require(all(r["state"] == "available" for r in vehicles), "VEHICLE_RESERVED")
+            raw, _ = self._snapshot(account_id, row["revision"], [tuple(r) for r in vehicles])
+            value = _json(raw)
+            for key in missing:
+                require(value["depot"].pop(key) == 0, "CORRUPT_STORE")
+            require(canonical(value).decode("ascii") == row["snapshot_json"], "CORRUPT_STORE")
+            before = c.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account_id,)).fetchone()[0]
+            if self.zero_economy(account_id):
+                self._economy_grants(account_id)
+            self._save_crew_projection(account_id, row["revision"] + 1, before)
+            after = self.read_profile(account_id)
+            require(after["revision"] == row["revision"] + 1, "CORRUPT_STORE")
+            c.commit()
+            return {"status": "extended", "revision": after["revision"], "added": missing}
+        except Exception:
+            c.rollback()
+            raise
 
     def _save_crew_projection(self, account, revision, before):
         if self.pool_active(): self._ensure_pool_rows(account)

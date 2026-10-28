@@ -96,7 +96,9 @@ class StockRegistry:
         self.catalog = catalog
         profiles = {}
         for kind, (resource, cd, encoded, hp, capacity, shell, crew) in active_pins().items():
-            key = "vehicle:ussr:" + resource
+            c = _catalog()
+            # Catalog rows carry their own vehicle ID (BATTLE-ANY adds other nations).
+            key = "vehicle:ussr:" + resource if c is None else c.by_kind(kind)["vehicle_id"]
             row = catalog.vehicles.get(key)
             require(row is not None and row["native_compact_id"] == cd, "P04M_DEFINITION_MISMATCH")
             modules = row["defaults"]
@@ -110,8 +112,10 @@ class StockRegistry:
                 tuple((role, modules[role]) for role in ROLES), crew)
         self.profiles = MappingProxyType(profiles)
         self.by_vehicle = MappingProxyType({p.vehicle_id: p for p in profiles.values()})
+        # The registry hash the gateway pins covers the legacy kinds only; generated
+        # (BATTLE-ANY) kinds are bound by the activated catalog hash instead.
         self.sha256 = sha(canonical({"schema": SCHEMA, "definition_sha256": DEFINITION_SHA256,
-            "profiles": [asdict(profiles[kind]) for kind in sorted(profiles)]}))
+            "profiles": [asdict(profiles[kind]) for kind in sorted(profiles) if kind in PINS]}))
 
     @staticmethod
     def inventory_id(account, native, kind):

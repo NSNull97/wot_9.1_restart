@@ -94,7 +94,7 @@ impl State {
     /// mechanics. Legacy wrappers retain their original values and arithmetic.
     pub fn advance_pose_for_selected(&mut self, kind: VehicleKind, position: [f32;3], direction: [f32;3], dt: f32,
         shell: crate::p06t_shells091::Shell, caps: crate::p06t_device_state::Capabilities) -> io::Result<()> {
-        if !crate::p06t_shells091::PROFILES[kind.mount().index()].shots.contains(&shell)
+        if !crate::p06t_shells091::profile(kind.mount()).shots.contains(&shell)
             || !dt.is_finite() || !(0. ..=0.2).contains(&dt)
             || position.iter().chain(direction.iter()).any(|v|!v.is_finite())
             || !self.yaw.is_finite() || !self.pitch.is_finite() {return Err(bad());}

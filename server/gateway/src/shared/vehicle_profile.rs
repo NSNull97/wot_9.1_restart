@@ -4,7 +4,11 @@
 use std::f32::consts::PI;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum VehicleKind { #[default] Ms1, Is7, T26, T34, T3485, Wt128, Fv183 }
+pub enum VehicleKind { #[default] Ms1, Is7, T26, T34, T3485, Wt128, Fv183,
+    /// BATTLE-ANY: a stock assembly generated from #717 sources; data comes
+    /// from the verified registry (`generated_vehicles`), never a fallback arm.
+    Generated(super::generated_vehicles::GeneratedId) }
+use super::generated_vehicles as generated;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ShellSpec {
@@ -35,17 +39,30 @@ impl VehicleKind {
     pub fn from_extended_vehicle_compact_id(value:u32)->Option<Self> {Self::SUPPORTED.into_iter().find(|kind|kind.vehicle_compact_id()==value)}
     pub fn source_aim(self)->Option<super::aim::source_aim::SourceAim> {
         use super::aim::source_aim::SourceAim;
-        match self {Self::Wt128=>Some(SourceAim::wt128()),Self::Fv183=>Some(SourceAim::fv183()),_=>None}
+        match self {Self::Wt128=>Some(SourceAim::wt128()),Self::Fv183=>Some(SourceAim::fv183()),
+            Self::Generated(id)=>Some(generated::entry(id).source_aim),_=>None}
     }
-    pub fn index(self)->usize {match self {Self::Ms1=>0,Self::Is7=>1,Self::T26=>2,Self::T34=>3,Self::T3485=>4,Self::Wt128=>5,Self::Fv183=>6}}
+    /// Legacy kinds 0..=6; generated kinds follow (7 + registry id) and never
+    /// index a closed seven-element array.
+    pub fn index(self)->usize {match self {Self::Ms1=>0,Self::Is7=>1,Self::T26=>2,Self::T34=>3,Self::T3485=>4,Self::Wt128=>5,Self::Fv183=>6,
+        Self::Generated(id)=>7+id.get()}}
+    pub fn is_generated(self)->bool{matches!(self,Self::Generated(_))}
+    pub fn generated(self)->Option<&'static generated::Entry>{match self{Self::Generated(id)=>Some(generated::entry(id)),_=>None}}
     pub fn mount(self)->crate::p06t_shells091::Mount {use crate::p06t_shells091::Mount;
-        match self{Self::Ms1=>Mount::Ms1Stock,Self::Is7=>Mount::Is7Stock,Self::T26=>Mount::T26Stock,Self::T34=>Mount::T34Stock,Self::T3485=>Mount::T3485Stock,Self::Wt128=>Mount::WtE100128,Self::Fv183=>Mount::Fv215b183}}
+        match self{Self::Ms1=>Mount::Ms1Stock,Self::Is7=>Mount::Is7Stock,Self::T26=>Mount::T26Stock,Self::T34=>Mount::T34Stock,Self::T3485=>Mount::T3485Stock,Self::Wt128=>Mount::WtE100128,Self::Fv183=>Mount::Fv215b183,
+            Self::Generated(id)=>Mount::Generated(id)}}
     pub fn from_label(value:&str)->Option<Self> {Self::ALL.into_iter().find(|kind|kind.label()==value)}
+    /// Owned battle labels: the five legacy kinds, then generated kinds.
+    pub fn from_owned_label(value:&str)->Option<Self> {
+        Self::from_label(value).or_else(||generated::registry().ok()?.by_label(value).map(Self::Generated))
+    }
     pub fn from_vehicle_compact_id(value:u32)->Option<Self> {Self::ALL.into_iter().find(|kind|kind.vehicle_compact_id()==value)}
     /// Source/component readiness never grants owner/native admission.
     pub fn battle_admission(self)->bool {matches!(self,Self::Ms1|Self::Is7)}
-    pub fn label(self) -> &'static str { match self { Self::Ms1 => "ms1", Self::Is7 => "is7",Self::T26=>"t26",Self::T34=>"t34",Self::T3485=>"t3485",Self::Wt128=>"wt-e100-128",Self::Fv183=>"fv215b-183" } }
-    pub fn name(self) -> &'static str { match self { Self::Ms1 => "ussr:MS-1", Self::Is7 => "ussr:IS-7",Self::T26=>"ussr:T-26",Self::T34=>"ussr:T-34",Self::T3485=>"ussr:T-34-85",Self::Wt128=>"germany:Waffentrager_E100",Self::Fv183=>"uk:GB48_FV215b_183" } }
+    pub fn label(self) -> &'static str { match self { Self::Ms1 => "ms1", Self::Is7 => "is7",Self::T26=>"t26",Self::T34=>"t34",Self::T3485=>"t3485",Self::Wt128=>"wt-e100-128",Self::Fv183=>"fv215b-183",
+        Self::Generated(id)=>&generated::entry(id).label } }
+    pub fn name(self) -> &'static str { match self { Self::Ms1 => "ussr:MS-1", Self::Is7 => "ussr:IS-7",Self::T26=>"ussr:T-26",Self::T34=>"ussr:T-34",Self::T3485=>"ussr:T-34-85",Self::Wt128=>"germany:Waffentrager_E100",Self::Fv183=>"uk:GB48_FV215b_183",
+        Self::Generated(id)=>generated::entry(id).vehicle_id.trim_start_matches("vehicle:") } }
     pub fn descriptor(self) -> &'static [u8] { match self {
         Self::Ms1 => crate::arena_vehicle091::MS1_DESCRIPTOR,
         Self::Is7 => &[0x01,0x1c,0x3a,0x00,0x24,0x00,0xcd,0x00,0x0b,0x00,0x2f,0x00,0x3a,0x00,0x00],
@@ -54,23 +71,24 @@ impl VehicleKind {
         Self::T3485=>&[0x01,0x0a,0x14,0x00,0x01,0x00,0xcb,0x00,0x03,0x00,0x11,0x00,0x06,0x00,0x00],
         Self::Wt128=>&[0x11,0x42,0xa1,0x00,0x2c,0x00,0xcd,0x00,0x0d,0x00,0x86,0x00,0x5a,0x00,0x00],
         Self::Fv183=>&[0x51,0x24,0x4f,0x00,0x3f,0x00,0xcd,0x00,0x14,0x00,0x45,0x00,0x36,0x00,0x00],
+        Self::Generated(id)=>&generated::entry(id).descriptor,
 
     } }
-    pub fn vehicle_compact_id(self) -> u32 { match self { Self::Ms1 => 3329, Self::Is7 => 7169,Self::T26=>4609,Self::T34=>1,Self::T3485=>2561,Self::Wt128=>16913,Self::Fv183=>9297 } }
-    pub fn gun_compact_id(self) -> u32 { match self { Self::Ms1 => 5892, Self::Is7 => 14852,Self::T26=>4100,Self::T34=>4,Self::T3485=>1540,Self::Wt128=>23060,Self::Fv183=>13908 } }
-    pub fn shell_compact_id(self) -> u32 { match self { Self::Ms1 => 2570, Self::Is7 => 14602,Self::T26=>1034,Self::T34=>7178,Self::T3485=>7946,Self::Wt128=>13850,Self::Fv183=>20826 } }
-    pub fn max_health(self) -> i16 { match self { Self::Ms1 => 90, Self::Is7 => 2150,Self::T26=>150,Self::T34=>400,Self::T3485=>670,Self::Wt128=>2000,Self::Fv183=>2000 } }
-    pub fn mass_kg(self) -> f64 { match self { Self::Ms1 => 4691., Self::Is7 => 68190.,Self::T26=>9302.,Self::T34=>27940.,Self::T3485=>32370.,Self::Wt128=>100000.0,Self::Fv183=>60000.0 } }
+    pub fn vehicle_compact_id(self) -> u32 { match self { Self::Ms1 => 3329, Self::Is7 => 7169,Self::T26=>4609,Self::T34=>1,Self::T3485=>2561,Self::Wt128=>16913,Self::Fv183=>9297,Self::Generated(id)=>generated::entry(id).type_compact_id } }
+    pub fn gun_compact_id(self) -> u32 { match self { Self::Ms1 => 5892, Self::Is7 => 14852,Self::T26=>4100,Self::T34=>4,Self::T3485=>1540,Self::Wt128=>23060,Self::Fv183=>13908,Self::Generated(id)=>generated::entry(id).gun_compact_id } }
+    pub fn shell_compact_id(self) -> u32 { match self { Self::Ms1 => 2570, Self::Is7 => 14602,Self::T26=>1034,Self::T34=>7178,Self::T3485=>7946,Self::Wt128=>13850,Self::Fv183=>20826,Self::Generated(id)=>u32::from(generated::entry(id).gun.shots[0].compact_descr) } }
+    pub fn max_health(self) -> i16 { match self { Self::Ms1 => 90, Self::Is7 => 2150,Self::T26=>150,Self::T34=>400,Self::T3485=>670,Self::Wt128=>2000,Self::Fv183=>2000,Self::Generated(id)=>generated::entry(id).max_hp } }
+    pub fn mass_kg(self) -> f64 { match self { Self::Ms1 => 4691., Self::Is7 => 68190.,Self::T26=>9302.,Self::T34=>27940.,Self::T3485=>32370.,Self::Wt128=>100000.0,Self::Fv183=>60000.0,Self::Generated(id)=>generated::entry(id).mass_kg } }
     /// Selected #717 stock turret circularVisionRadius: T-18_Standart/IS-7.
     /// Source binding: local/evidence/20261016-p07b-01/viewrange-binding02.json.
     /// Effective spotting still uses a separate, explicit test_lab LOS policy.
-    pub fn view_range(self) -> f32 { match self { Self::Ms1 => 240., Self::Is7 => 400.,Self::T26=>280.,Self::T34=>240.,Self::T3485=>350.,Self::Wt128=>420.0,Self::Fv183=>400.0 } }
+    pub fn view_range(self) -> f32 { match self { Self::Ms1 => 240., Self::Is7 => 400.,Self::T26=>280.,Self::T34=>240.,Self::T3485=>350.,Self::Wt128=>420.0,Self::Fv183=>400.0,Self::Generated(id)=>generated::entry(id).view_range } }
     /// Explicit AP-only temporary lab ammunition, not owned inventory.
-    pub fn initial_ammo(self) -> u16 { match self { Self::Ms1 => 20, Self::Is7 => 30,Self::T26|Self::T34|Self::T3485=>20,Self::Wt128|Self::Fv183=>0 } }
+    pub fn initial_ammo(self) -> u16 { match self { Self::Ms1 => 20, Self::Is7 => 30,Self::T26|Self::T34|Self::T3485=>20,Self::Wt128|Self::Fv183|Self::Generated(_)=>0 } }
     /// Mounted native source capacity; the owned route uses its writer receipt.
-    pub fn ammo_limit(self) -> u16 { match self { Self::Ms1 => 96, Self::Is7 => 30,Self::T26=>160,Self::T34=>77,Self::T3485=>68,Self::Wt128=>60,Self::Fv183=>12 } }
+    pub fn ammo_limit(self) -> u16 { match self { Self::Ms1 => 96, Self::Is7 => 30,Self::T26=>160,Self::T34=>77,Self::T3485=>68,Self::Wt128=>60,Self::Fv183=>12,Self::Generated(id)=>generated::entry(id).gun.capacity } }
     pub fn battle_shot_limit(self) -> usize { 2 * self.ammo_limit() as usize }
-    pub fn reload_seconds(self) -> f32 { match self { Self::Ms1 => 2.5, Self::Is7 => 13.7,Self::T26=>2.3,Self::T34=>6.,Self::T3485=>4.1,Self::Wt128=>60.0,Self::Fv183=>30.0 } }
+    pub fn reload_seconds(self) -> f32 { match self { Self::Ms1 => 2.5, Self::Is7 => 13.7,Self::T26=>2.3,Self::T34=>6.,Self::T3485=>4.1,Self::Wt128=>60.0,Self::Fv183=>30.0,Self::Generated(id)=>generated::entry(id).gun.reload_seconds as f32 } }
     pub fn panel_rows(self) -> [(u32, u16); 3] { match self {
         Self::Ms1 => crate::battle091::native_ammo::MS1_PANEL_ROWS,
         Self::Is7 => [(14602, 30), (14858, 0), (15114, 0)],
@@ -81,18 +99,22 @@ impl VehicleKind {
         Self::T3485=>[(7946,0),(8202,0),(8458,0)],
         Self::Wt128=>[(13850,0),(14106,0),(14362,0)],
         Self::Fv183=>[(20826,0),(21082,0),(21338,0)],
+        Self::Generated(id)=>generated::entry(id).gun.shots.map(|s|(u32::from(s.compact_descr),0)),
     } }
     pub fn shell(self) -> ShellSpec {
+        if let Self::Generated(id)=self {return generated::entry(id).shell_spec();}
         let (caliber,damage,power_100,power_500,raw_speed,effects) = match self {
             Self::Ms1 => (37.,30,34.,27.,442.,2), Self::Is7 => (130.,490,250.,240.,900.,14),
             Self::T26=>(37.,36,40.,33.,670.,2),Self::T34=>(76.,110,68.,62.,612.,6),Self::T3485=>(76.,115,125.,115.,816.,6),
             Self::Wt128=>(128.,560,276.,261.,1200.,14),Self::Fv183=>(182.9,1150,310.,300.,830.,18),
+            Self::Generated(_)=>unreachable!("returned above"),
         };
         ShellSpec { caliber,damage,power_100,power_500,raw_speed,effects,
             gravity:9.81,speed_factor:0.8,max_distance:720. }
     }
     pub fn damage(self) -> u16 { self.shell().damage }
     pub fn aim(self) -> AimSpec { match self {
+        Self::Generated(id)=>generated::entry(id).aim,
         Self::Ms1 => AimSpec { yaw_rate:39.*PI/180.,pitch_rate:52.5*PI/180.,
             min_pitch:-25.*PI/180.,max_pitch:8.*PI/180.,max_pitch_degrees:8.,
             rear_sector_degrees:35.,rear_max_degrees:1.,

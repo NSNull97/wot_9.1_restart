@@ -452,3 +452,30 @@ fn p08c_actual_world_fired_journals_project_personal_details_and_native_pack() {
     }
     assert_eq!(personal[43],V::Bytes(packed));
 }
+
+/// BATTLE-ANY stand -11 2026-10-28: a pilot (generated) owned reservation used to
+/// fail the seating (legacy placeholder gun with zero initial ammunition) and the
+/// v1 device route, which took the whole gateway down. Owned admission itself
+/// (`validate_owned` under the process-wide catalog mode) is exercised on the
+/// stand; here the two seating steps of `attach_owned_v2_inner` run directly.
+#[test]
+fn battle_any_generated_seats_with_typed_gun_and_v1_devices() {
+    let root=std::path::PathBuf::from(std::env::var_os("WOT091_ROOT").unwrap_or_else(||"D:/WoT_9.1_Server".into()));
+    let kind=VehicleKind::from_owned_label("ussr-KV-3").unwrap();assert!(kind.is_generated());
+    let p=source::profile(kind.mount());
+    let now=Instant::now();let mut world=base(now,low_ground());
+    world.bind_geometry(Arc::new(geometry::Bundle::load(&root.join("local"),
+        &root.join("local/evidence/20261028-battleany-pilot-sources02/bundles/ussr-KV-3.json")).unwrap())).unwrap();
+    let owner=|n:i32|Identity{account:format!("battle-any-pilot-{n}"),database:n,name:"battle_any_pilot".into()};
+    world.mixed_ammo=false;world.vehicle_kind=kind;
+    // The former placeholder: zero initial ammunition is rejected by the legacy gun.
+    assert!(world.clone().attach_loadout_fire(owner(7),1,None,None).is_err());
+    let typed=fire::State::with_typed(kind.mount(),[10,5,5],p.shots[0].compact_descr).unwrap();
+    let slot=world.attach_loadout_fire(owner(7),1,None,Some(typed)).unwrap();
+    assert_eq!(world.actors[slot].fire.typed().unwrap().mount(),kind.mount());
+    let profile=Profile::for_owned(kind).unwrap();
+    let devices=Devices::new(profile).unwrap();
+    assert_eq!((devices.policy_version(),devices.crew().len()),(device::PolicyVersion::V1,profile.crew().len()));
+    // The curated extended profiles still need the explicit v2 policy.
+    assert!(Devices::new(Profile::Wt128).is_err()&&Devices::new(Profile::Fv183).is_err());
+}

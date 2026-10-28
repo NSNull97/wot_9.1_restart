@@ -226,7 +226,9 @@ class PoolStoreTests(unittest.TestCase):
         self.assertEqual(len(cap), 6); self.assertFalse(cap["admission"])
         state = projected.state(aggregate, self.store.layouts(self.account))
         self.assertEqual(state["inventory"][1]["crew"][3], [4, 5, 6])
-        self.assertEqual(len(state["inventory"][10]), 15)
+        # One native count per pool shell: 15 legacy shells, more in CAT-01 mode (BATTLE-ANY rows).
+        self.assertEqual(len(state["inventory"][10]), len(self.store.shells))
+        self.assertTrue(len(self.store.shells) >= 15)
         self.assertEqual(state["inventory"][1]["lock"], {})
         self.store.battle(self.battle_request("run_open"), authenticated_account_id=self.account)
         admitted = self.store.battle(self.battle_request("admit", native_inventory_id=1,
@@ -240,6 +242,13 @@ class PoolStoreTests(unittest.TestCase):
             "--database", str(self.database), "--bundle", str(self.source.bundle.root), "--original-root", str(self.original),
             "--account-id", self.account, "--fixture-root", str(Path(self.temp.name) / "fixtures"), "fixture"]
         activated = subprocess.run([*cli[:-1], "activate"], capture_output=True, text=True, encoding="utf8", timeout=20)
+        import catalog_v1
+        if catalog_v1.active():
+            # The pool-only worker has no catalog flag (CAT-01 is the mixed worker's);
+            # once BATTLE-ANY rows widen the catalog shell set it must refuse this DB.
+            self.assertNotEqual(activated.returncode, 0)
+            self.assertIn("CORRUPT_STORE", activated.stderr)
+            return
         self.assertEqual(activated.returncode, 0, activated.stderr)
         self.assertEqual(json.loads(activated.stdout)["profile"]["pool_service"]["registry_sha256"], self.store.registry.sha256)
         outputs = []

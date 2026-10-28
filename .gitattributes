@@ -218,3 +218,8 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /client_patch/catalog_v1_hints.py text eol=lf
 /server/gateway/src/shared/vehicle_catalog.rs text eol=lf
 /server/gateway/src/shared/vehicle_catalog_tests.rs text eol=lf
+# BATTLE-ANY: table SHA-256 is over exact bytes; the binding is generated.
+/tools/battle_any_profiles.py text eol=lf
+/tools/battle_any.py text eol=lf
+/tools/battle_any_data.py text eol=lf
+/server/gateway/src/shared/battle_any_pins.rs text eol=lf

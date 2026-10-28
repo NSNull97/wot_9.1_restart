@@ -36,7 +36,7 @@ internal sealed class BattleTank : IDisposable
         var c = source.Config;
         float N(string key, float min, float max) => CheckedInput.Number(c.GetProperty(key), min, max);
         center = CheckedInput.Vector(c.GetProperty("body_center_offset"), -5, 5);
-        float mass = N("mass_kg", 1000, 100000), radius = N("wheel_radius", .05f, 1), brake = N("track_max_brake_torque", 100, source.Kind is "wt-e100-128" or "fv215b-183" ? 300000 : 100000);
+        float mass = N("mass_kg", 1000, 100000), radius = N("wheel_radius", .05f, 1), brake = N("track_max_brake_torque", 100, source.Kind is "wt-e100-128" or "fv215b-183" || GeneratedVehicleProfiles.IsGenerated(source.Kind) ? 300000 : 100000);
         forwardLimit = N("max_forward_mps", 1, 20); reverseLimit = N("max_reverse_mps", .5f, 10);
         var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, source.Yaw);
         shape = new BoxShape(source.Binding.HalfExtents);

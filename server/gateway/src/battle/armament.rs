@@ -24,7 +24,7 @@ pub struct State {
 }
 impl State {
     pub fn new(mount:Mount,counts:[u16;3],initial:u16)->io::Result<Self>{
-        let source=PROFILES[mount.index()];
+        let source=*crate::p06t_shells091::profile(mount);
         let total=counts.iter().try_fold(0u16,|n,c|n.checked_add(*c)).ok_or_else(||bad("armament count overflow"))?;
         let current=source.shots.iter().position(|s|s.compact_descr==initial).ok_or_else(||bad("armament initial shell source"))?;
         if total==0||total>source.capacity||counts[current]==0||source.clip_count==0||source.clip_count>6
@@ -51,15 +51,15 @@ impl State {
         self.until=None;self.magazine_reload=false;Ok(removed)
     }
     pub fn total(&self)->u16{self.counts.iter().sum()}
-    pub fn current(&self)->Shell{PROFILES[self.mount.index()].shots[self.current]}
-    pub fn next(&self)->Shell{PROFILES[self.mount.index()].shots[self.next]}
+    pub fn current(&self)->Shell{crate::p06t_shells091::profile(self.mount).shots[self.current]}
+    pub fn next(&self)->Shell{crate::p06t_shells091::profile(self.mount).shots[self.next]}
     pub fn clip(&self)->u8{self.clip}
     pub fn deadline(&self)->Option<Instant>{self.until}
     pub fn accepted(&self)->u32{self.accepted}
     pub fn rejected(&self)->u32{self.rejected}
     pub fn replenish_requests(&self)->u32{self.replenish}
     pub fn base_reload_seconds(&self)->f32{
-        let source=PROFILES[self.mount.index()];
+        let source=*crate::p06t_shells091::profile(self.mount);
         if self.magazine_reload||source.clip_count==1 {(source.reload_seconds*self.reload_scale)as f32}
         else {source.clip_interval_seconds as f32}
     }
@@ -91,12 +91,12 @@ impl State {
                 if let Some(index)=self.counts.iter().position(|count|*count>0){self.current=index;}
             }
             self.next=self.current;
-            self.clip=self.counts[self.current].min(u16::from(PROFILES[self.mount.index()].clip_count))as u8;
+            self.clip=self.counts[self.current].min(u16::from(crate::p06t_shells091::profile(self.mount).clip_count))as u8;
         }
         self.magazine_reload=false;true
     }
     fn reload(&mut self,now:Instant,magazine:bool)->io::Result<()> {
-        let source=PROFILES[self.mount.index()];
+        let source=*crate::p06t_shells091::profile(self.mount);
         let seconds=if magazine||source.clip_count==1{source.reload_seconds*self.reload_scale}else{source.clip_interval_seconds};
         self.until=Some(now.checked_add(Duration::from_secs_f64(seconds)).ok_or_else(||bad("armament clock overflow"))?);
         self.magazine_reload=magazine;Ok(())
@@ -119,7 +119,7 @@ impl State {
                 Ok(Outcome::Shot{shell,remaining:self.counts[self.current],clip:self.clip})
             },
             Command::Select(mode,compact)=>{
-                let Some(index)=PROFILES[self.mount.index()].shots.iter().position(|s|s.compact_descr==compact)else{return self.refuse(Refusal::UnknownShell)};
+                let Some(index)=crate::p06t_shells091::profile(self.mount).shots.iter().position(|s|s.compact_descr==compact)else{return self.refuse(Refusal::UnknownShell)};
                 if self.counts[index]==0{return self.refuse(Refusal::Empty);}
                 if mode==Selection::Next {self.next=index;return Ok(Outcome::Selected);}
                 if index==self.current{return self.refuse(Refusal::SameShell);}
@@ -127,7 +127,7 @@ impl State {
                 self.reload(now,true)?;Ok(Outcome::ReloadStarted)
             },
             Command::ReloadClip=>{
-                let source=PROFILES[self.mount.index()];
+                let source=*crate::p06t_shells091::profile(self.mount);
                 if source.clip_count==1||self.counts[self.current]==0{return self.refuse(Refusal::Empty);}
                 // An existing full reload is never extended by repeated input.
                 if self.magazine_reload&&self.until.is_some(){return self.refuse(Refusal::Reloading);}
@@ -179,7 +179,7 @@ mod tests {
     }
     #[test]fn wt128_has_six_but_150_has_four_and_reload_is_sixty_vs_fifty(){
         for (mount,count,seconds)in [(Mount::WtE100128,6,60.),(Mount::WtE100150,4,50.)]{
-            let source=PROFILES[mount.index()];let start=Instant::now();
+            let source=*crate::p06t_shells091::profile(mount);let start=Instant::now();
             let mut state=State::new(mount,[20,2,0],source.shots[0].compact_descr).unwrap();
             for index in 0..count {let at=start+Duration::from_secs_f64(index as f64*source.clip_interval_seconds);shot(&mut state,at);}
             assert_eq!(state.accepted(),count);assert_eq!(state.clip(),0);

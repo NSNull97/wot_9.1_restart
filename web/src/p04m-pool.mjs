@@ -1,6 +1,8 @@
 /** Explicit five-type owner projection; legacy P09E readers remain strict. */
 import { nicknameField } from './security.mjs';
 import { CATALOG_SHA256, CATALOG_VEHICLES } from './catalog-v1.mjs';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 export const POOL_WORKER_TIMEOUT_MS = 7000;
 export const POOL_MUTATION_TIMEOUT_MS = 9000;
@@ -29,8 +31,28 @@ export const poolCrewContract = service => {
   return contract;
 };
 const crewContractBySha = sha => Object.values(CREW_CONTRACTS).find(c => c.policySha256 === sha) ?? null;
-// Source name/surname/icon catalogue bounds (p04h_tankman_descriptor.CATALOG_BOUNDS).
-const NAME_BOUNDS = [112, 1036, 30];
+// BATTLE-ANY: per-nation passport ID sets, the exact bytes of the pinned #717 table
+// (tools/tankman_passports.py). USSR = 1..112/1..1036/1..30 (p04h CATALOG_BOUNDS).
+const TANKMAN_PASSPORTS_SHA256 = '7e1900f6244f1e7c7995b99cfe8ba05b68c2ad64990d25ea88f5ed96448198bd';
+const PASSPORTS = (() => {
+  const raw = readFileSync(new URL('../../config/catalog/tankman_passports.v1.json', import.meta.url));
+  if (createHash('sha256').update(raw).digest('hex') !== TANKMAN_PASSPORTS_SHA256) throw new Error('P04M tankman passport table SHA');
+  return new Map(JSON.parse(raw).nations.map(r => [r.nation_id, ['first_names', 'last_names', 'icons'].map(k => r[k].ranges)]));
+})();
+/** Free50 passport of identity `id` for compact type `cd`: the recruited type's nation
+ * (header 8 + (nation << 4)) and that nation's passport sets. */
+export function barracksPassport(cd, role, id) {
+  const nation = (cd >> 4) & 15; const sets = PASSPORTS.get(nation);
+  requireValue(sets, 'barracks tankman nation');
+  const names = sets.flatMap(ranges => { const n = passportId(ranges, id); return [n & 255, n >> 8]; });
+  return Buffer.from([8 + (nation << 4), cd >> 8, role, 50, 0, 0, 0, ...names, 64, 6, 0, 0, 0, 0, 66, 0, 0, 0, 0, 0]);
+}
+// (id-1)-th member of a set, modulo its size (P04H project allocation; USSR equals the v1 rule).
+const passportId = (ranges, id) => {
+  let k = (id - 1) % ranges.reduce((n, [a, b]) => n + b - a + 1, 0);
+  for (const [a, b] of ranges) { if (k <= b - a) return a + k; k -= b - a + 1; }
+  return 0;
+};
 export const POOL_REGISTRY_SHA256 = 'e2f4ac21fe8970f3c5d29f6a45d845f9d80e4d2759f0e662c9f3bb9ac04c7b34';
 const SCHEMA = 'p04m-curated-stock-pool.v1';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -261,9 +283,7 @@ export function validatePoolBarracksRecruitmentResponse(value, request, capacity
   const type = ACTIVE_TYPES.find(t => t.cd === cd);
   requireValue(integer(request.wire_revision, 1, 2147483646) && shop === 3 && cost === 0 && type
     && type.roles.some(r => ROLE_IDS[r] === role) && integer(id, 4, capacity), 'barracks selected type/primary role');
-  // Passport names/surname/icon: ((id-1) mod bound)+1 — equal to id for 1..16.
-  const names = NAME_BOUNDS.flatMap(bound => { const n = (id - 1) % bound + 1; return [n & 255, n >> 8]; });
-  const descriptor = Buffer.from([8, cd >> 8, role, 50, 0, 0, 0, ...names, 64, 6, 0, 0, 0, 0, 66, 0, 0, 0, 0, 0]);
+  const descriptor = barracksPassport(cd, role, id);
   requireValue(descriptor.toString('hex') === value.tankman_descriptor_hex, 'barracks source passport');
   function encodedInt(n) {
     if (n <= 255) return Buffer.from([75, n]);

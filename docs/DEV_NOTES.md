@@ -55,6 +55,10 @@
   `python -B -X utf8 tools/catalog_build.py build --original C:/WoT_0.9.1_RU_0717_original`
   (пересобирает каталог и четыре генерации), затем `tools/catalog_build.py check` и
   `python -B -X utf8 -m unittest tests.test_catalog_v1`. Генерации руками не править.
+- Боевые профили любой машины (BATTLE-ANY): `python -B -X utf8 tools/battle_any_profiles.py build
+  --original C:/WoT_0.9.1_RU_0717_original --out local/evidence/<новый>` (без `--update` не меняет
+  `config/catalog/battle_profiles.v1.json`), затем `tools/battle_any_profiles.py check` и
+  `python -B -X utf8 -m unittest tests.test_battle_any`. `battle_any_data.py` — генерация.
 
 - P10B loss4 runtime689fb93: full1553/5/build/source865, actual Host/HTTP/SQL
   same-run compensation/relaunch/Finished2 PASS; proof20261017-p10b-loss-full01.

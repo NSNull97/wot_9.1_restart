@@ -22,14 +22,16 @@ FIELDS={"policy_revision","roster_size","crew_active","crew","devices","fire","d
 
 
 class TerminalPolicy:
-    def __init__(self,document,*,expected_sha256):
+    def __init__(self,document,*,expected_sha256,generated=frozenset()):
         require(type(document) is dict and set(document)=={"schema","policy_revision","profiles"}
             and document["schema"]==POLICY_SCHEMA and type(expected_sha256)is str
             and re.fullmatch(r"[0-9a-f]{64}",expected_sha256) and sha(canonical(document))==expected_sha256,"P06T_TERMINAL_POLICY_REQUIRED")
         revision=document["policy_revision"]
         require(type(revision)is str and re.fullmatch(r"test_lab\.[A-Za-z0-9_.-]{1,80}\.v[1-9][0-9]{0,2}",revision),"P06T_TERMINAL_POLICY_REQUIRED")
         profiles=document["profiles"]
-        require(type(profiles)is dict and set(profiles) in ({"ms1","is7"},{"ms1","is7","t26","t34","t3485"}),"P06T_TERMINAL_POLICY_REQUIRED")
+        # BATTLE-ANY: extra kinds only as explicitly generated rows beside a pinned legacy set.
+        require(type(profiles)is dict and type(generated)is frozenset and generated<=set(profiles)
+            and set(profiles)-generated in ({"ms1","is7"},{"ms1","is7","t26","t34","t3485"}),"P06T_TERMINAL_POLICY_REQUIRED")
         for kind,profile in profiles.items():
             require(type(profile)is dict and set(profile)=={"max_hp","crew_count","devices"} and type(profile["devices"])is list
                 and 1<=len(profile["devices"])<=16,"P06T_TERMINAL_POLICY_REQUIRED")
@@ -39,8 +41,19 @@ class TerminalPolicy:
                 require(type(row)is dict and set(row)=={"extra_index","max_health"},"P06T_TERMINAL_POLICY_REQUIRED")
                 _integer(row["extra_index"],0,255,"P06T_TERMINAL_POLICY_REQUIRED");_integer(row["max_health"],1,60000,"P06T_TERMINAL_POLICY_REQUIRED")
                 require(row["extra_index"] not in seen,"P06T_TERMINAL_POLICY_REQUIRED");seen.add(row["extra_index"])
-        require(len(canonical(document))<=8192,"P06T_TERMINAL_POLICY_REQUIRED")
-        self.document=deepcopy(document);self.sha256=expected_sha256
+        require(len(canonical(document))<=8192+1024*len(generated),"P06T_TERMINAL_POLICY_REQUIRED")
+        self.document=deepcopy(document);self.sha256=expected_sha256;self.generated=generated
+
+    def with_generated(self,rows):
+        """New policy with BATTLE-ANY kinds from verified generated table rows
+        (vehicle max HP, crew seats, ordered device maxima); legacy rows unchanged."""
+        profiles=dict(self.document["profiles"])
+        for kind,row in rows.items():
+            require(kind not in profiles,"P06T_TERMINAL_POLICY_REQUIRED")
+            profiles[kind]=dict(max_hp=row["identity"]["max_hp"],crew_count=len(row["crew_seats"]),
+                devices=[{"extra_index":d["extra_index"],"max_health":d["max_health"]}for d in row["devices"]])
+        document=dict(self.document,profiles=profiles)
+        return TerminalPolicy(document,expected_sha256=sha(canonical(document)),generated=self.generated|frozenset(rows))
 
     @classmethod
     def from_manifest(cls,path):

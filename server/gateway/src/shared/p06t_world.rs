@@ -17,7 +17,7 @@ impl World {
     }
     pub fn extended_breech_lab(&self)->bool{self.impact.extended_breech_lab()}
     pub fn cancelled_terminal_state(loadout:&crate::profile13_v2091::Frozen)->io::Result<String>{
-        let profile=caps::Profile::ALL.get(loadout.kind.index()).copied().ok_or_else(bad)?;
+        let profile=caps::Profile::for_owned(loadout.kind).ok_or_else(bad)?;
         let state=device::State::new(profile)?;
         terminal_json(loadout,&state,0,None)
     }
@@ -107,7 +107,8 @@ impl World {
         }else if resolution.decision==crate::p06t_damage::Decision::Pierced||exterior_gun {
             let ray=bundle.proxy_ray(contact)?;
             if !ray.is_empty(){
-                let profile=caps::Profile::SUPPORTED[actors[slot].vehicle_kind().index()];
+                let kind=actors[slot].vehicle_kind();
+                let profile=caps::Profile::for_owned(kind).or_else(||caps::Profile::SUPPORTED.get(kind.index()).copied()).ok_or_else(||bad())?;
                 let component=match ray.component{super::super::materials::Component::Hull=>crate::p06t_lab_proxy::Component::Hull,
                     super::super::materials::Component::Turret01=>crate::p06t_lab_proxy::Component::Turret,
                     super::super::materials::Component::Gun01|super::super::materials::Component::Gun02=>crate::p06t_lab_proxy::Component::Gun};
@@ -212,10 +213,10 @@ fn turret_joint(actor:&Actor)->io::Result<rack::JointPose>{
 fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<DeathCause>)->io::Result<String>{
     if frozen.crew_ids.len()!=state.crew().len()||roster>MAX_ACTORS
         ||state.policy_version()!=device::PolicyVersion::V1
-        ||caps::Profile::ALL.get(frozen.kind.index())!=Some(&state.profile()){return Err(bad());}
+        ||caps::Profile::for_owned(frozen.kind)!=Some(state.profile()){return Err(bad());}
     let value=serde_json::json!({"policy_revision":device::POLICY,"roster_size":roster,"crew_active":state.crew_active(),
         "crew":frozen.crew_ids.iter().zip(state.crew()).map(|(id,alive)|serde_json::json!({"crew_id":id,"alive":alive})).collect::<Vec<_>>(),
-        "devices":state.health().iter().zip(caps::CAPS[state.profile().index()]).enumerate().map(|(index,(health,cap))|
+        "devices":state.health().iter().zip(*state.profile().caps()).enumerate().map(|(index,(health,cap))|
             serde_json::json!({"extra_index":26+index,"health":health,"max_health":cap.max})).collect::<Vec<_>>(),
         "fire":{"active":state.fire_active(),"ticks":state.fire_ticks(),"damage":state.proposed_fire_damage()},
         "death":{"reason":death.map_or(-1i16,|event|i16::from(event.reason)),"killer_slot":death.map(|event|event.attacker),

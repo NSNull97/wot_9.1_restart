@@ -12,6 +12,7 @@
     <PackageReference Include="JoltPhysicsSharp" Version="[2.22.0]" />
     <EmbeddedResource Include="Profiles/stock-definitions.json" LogicalName="MapDrive.StockDefinitions" />
     <EmbeddedResource Include="Profiles/extended-definitions.json" LogicalName="MapDrive.ExtendedDefinitions" />
+    <EmbeddedResource Include="Profiles/generated-definitions.json" LogicalName="MapDrive.GeneratedDefinitions" />
     <EmbeddedResource Include="../contracts/map_registry.json" LogicalName="MapDrive.MapRegistry" />
   </ItemGroup>
 </Project>

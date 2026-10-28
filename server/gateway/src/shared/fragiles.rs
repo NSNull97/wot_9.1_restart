@@ -14,6 +14,7 @@ pub fn policy_for(kind:VehicleKind)->&'static str { match kind {
     VehicleKind::Ms1=>POLICY, VehicleKind::Is7=>"test_lab-fragile-reference-hp-ap490-v1",
     VehicleKind::T26|VehicleKind::T34|VehicleKind::T3485=>"test_lab-fragile-reference-hp-curated-stock-ap-v1",
     VehicleKind::Wt128|VehicleKind::Fv183=>"test_lab-fragile-reference-hp-p06t-extended-source-v1",
+    VehicleKind::Generated(_)=>"test_lab-fragile-reference-hp-battle-any-generated-v1",
 } }
 /// Minimal authoritative ramming policy. The worker supplies a hash-bound
 /// vehicle mass from the map descriptor; client claims are never used. A
@@ -437,7 +438,7 @@ impl State {
         self.contact_damage_for(vehicle,vehicle.damage(),shot,shooter,tick,hit)
     }
     pub fn contact_shell_for(&mut self,vehicle:VehicleKind,shell:crate::p06t_shells091::Shell,shot:u32,shooter:usize,tick:u32,hit:terrain::Hit)->io::Result<Option<Damage>>{
-        if !crate::p06t_shells091::PROFILES[vehicle.mount().index()].shots.contains(&shell){return Err(bad());}
+        if !crate::p06t_shells091::profile(vehicle.mount()).shots.contains(&shell){return Err(bad());}
         self.contact_damage_for(vehicle,shell.damage_hp,shot,shooter,tick,hit)
     }
     fn contact_damage_for(&mut self,vehicle:VehicleKind,amount:u16,shot:u32,shooter:usize,tick:u32,hit:terrain::Hit)->io::Result<Option<Damage>>{

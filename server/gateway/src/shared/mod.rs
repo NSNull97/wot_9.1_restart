@@ -63,6 +63,7 @@ pub use server::serve_curated_lab;
 pub use server::serve_curated_lab_v2;
 pub(crate) mod vehicle_profile;
 pub(crate) mod vehicle_catalog;
+pub(crate) mod generated_vehicles;
 pub use server::serve;
 pub use server::serve_integrated;
 use super::{Session, Frame, Instant};
