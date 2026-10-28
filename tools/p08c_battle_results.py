@@ -13,12 +13,12 @@ import re
 import unicodedata
 
 from game_profile_tx import TransactionError, _bounded_id
-from p08b_battle_store import BattleStore, POLICY_SHA256, _integer, _uuid, validate_request as battle_request
+from p08b_battle_store import (BattleStore, POLICY_SHA256, _integer, _uuid, validate_request as battle_request,
+    MAX_PARTICIPANTS, MAX_RESULT_BYTES, MAX_RESULT_REQUEST, result_budget)
 from p09d_ammo_store import require, sha
 from p09d_ammo_projection import canonical
 
 SCHEMA = "p08c-battle-results.v1"
-MAX_RESULT_BYTES = 32768
 MAP_REGISTRY = Path(__file__).resolve().parent.parent / "server" / "contracts" / "map_registry.json"
 
 
@@ -31,7 +31,7 @@ def registry_arena_types():
     types = frozenset(entry["arena_type_id"] for entry in maps)
     require(len(types) == len(maps) and all(type(t) is int and t > 0 for t in types), "INVALID_INPUT")
     return types
-MAX_HTTP_BYTES = 65536
+MAX_HTTP_BYTES = MAX_RESULT_REQUEST
 COMMON = {"version", "operation", "account_id", "native_database_id", "command_key", "arena_id"}
 STORE = {"run_id", "battle_id", "native_inventory_id", "reservation_id", "results_json"}
 HEADER = {"arena_id", "arena_type_id", "created_unix", "winner_team", "finish_reason", "duration_seconds", "participants"}
@@ -122,14 +122,16 @@ def results_value(raw):
     _integer(value["created_unix"], 1, 2**32 - 1); _integer(value["winner_team"], 0, 2)
     _integer(value["finish_reason"], 1, 5); _integer(value["duration_seconds"], 0, 3600)
     rows = value["participants"]
-    require(type(rows) is list and 2 <= len(rows) <= 6, "INVALID_INPUT")
+    require(type(rows) is list and 2 <= len(rows) <= MAX_PARTICIPANTS, "INVALID_INPUT")
+    # 2..6 rows keep the original 32KiB journal; roster30 rows get their own.
+    require(len(raw.encode("utf-8")) <= result_budget(len(rows)), "INVALID_INPUT")
     ids, owners, teams = set(), set(), set()
     for row in rows:
         require(type(row) is dict and set(row) == PARTICIPANT, "INVALID_INPUT")
         for field in ("vehicle_id", "account_dbid", "type_compact_descr"): _integer(row[field], 1)
         _integer(row["team"], 1, 2); _integer(row["health"], 0, 10000)
         for field in ("shots", "direct_hits", "piercings"): _integer(row[field], 0, 192)
-        for field, maximum in (("damage_dealt", 60000), ("damage_received", 10000), ("kills", 6),
+        for field, maximum in (("damage_dealt", 60000), ("damage_received", 10000), ("kills", MAX_PARTICIPANTS - 1),
             ("capture_points", 600), ("dropped_capture_points", 600), ("mileage_metres", 200000),
             ("life_time", value["duration_seconds"]), ("killer_id", 2**31 - 1)):
             _integer(row[field], 0, maximum)
@@ -141,7 +143,7 @@ def results_value(raw):
         ids.add(row["vehicle_id"]); owners.add(row["account_dbid"]); teams.add(row["team"])
     require(teams == {1, 2}, "INVALID_INPUT")
     if "interaction_details" in value: _interaction_details(value)
-    require(len(canonical(value)) <= MAX_RESULT_BYTES, "INVALID_INPUT")
+    require(len(canonical(value)) <= result_budget(len(rows)), "INVALID_INPUT")
     return value
 
 
@@ -175,8 +177,8 @@ class ResultsStore(BattleStore):
         request = battle_request(request, authenticated_account_id)
         if request.get("reason") == "battle_finished":
             # Hash semantic closed DTOs, not irrelevant whitespace/key order.
-            # Six bounded participants also keep the existing <=32KiB ledger
-            # reader valid even when the trusted sender used padded JSON.
+            # The per-roster budget also keeps the ledger reader valid even
+            # when the trusted sender used padded JSON (RES-30).
             request["results_json"] = canonical(results_value(request["results_json"])).decode("ascii")
         return super().battle(request, authenticated_account_id=authenticated_account_id)
 

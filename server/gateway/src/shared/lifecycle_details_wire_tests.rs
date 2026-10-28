@@ -42,7 +42,8 @@ fn result()->Results{
     for outer in [true,false]{let mut bad=good.clone();
         let rows=if outer{bad["interaction_details"]["rows"].as_array_mut().unwrap()}
             else{bad["interaction_details"]["rows"][0]["targets"].as_array_mut().unwrap()};
-        while rows.len()<7{rows.push(rows[0].clone());}
+        // RES-30: the decoding bound follows the 30-actor roster.
+        while rows.len()<=MAX_PARTICIPANTS{rows.push(rows[0].clone());}
         assert!(serde_json::from_value::<Results>(bad).is_err());
     }
     let mut bad=good;bad["interaction_details"]["rows"][0]["targets"][0]["damage_dealt"]=89.into();

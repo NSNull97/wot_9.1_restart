@@ -130,6 +130,37 @@ mod tests {
         assert_eq!(terminal.native_database_id,2);assert_eq!(terminal.terminal_hp,83);
         assert!(matches!(terminal.request(),Request::FinishResults{terminal_hp:83,..}));
     }
+    /// RES-30: one owner (slot 0) + 29 synthetic BOT-01-shaped database ids in
+    /// an actual 30-actor World; the whole other team leaves (forfeit).
+    #[test] fn res30_thirty_actor_world_builds_results_and_owner_terminal() {
+        use crate::battle091::profile13::{Reservation,ReservationStatus,FinishReason,Request,Context,encode_request};
+        use crate::gateway091::shared::{profile13_session::Terminal,vehicle_profile::VehicleKind,lifecycle_wire};
+        let now=Instant::now();let n=super::super::model::MAX_ACTORS;
+        let mut w=World::new_for_roster(123,now,crate::map_profile091::MapId::Prohorovka,n).unwrap();
+        w.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();
+        let mut owner_loadout=None;
+        for slot in 0..n {let(mut identity,loadout)=model::tests::profile13_loadout(VehicleKind::Ms1,slot,14);
+            identity.database=if slot==0{1}else{0x7F00_0000+slot as i32};w.attach_owned(identity,slot as u32+1,&loadout).unwrap();
+            if slot==0{owner_loadout=Some(loadout);}}
+        w.start(now).unwrap();w.lifecycle_created_unix=Some(1792080000);w.advance_lifecycle(now).unwrap();
+        w.actors[0].health=23;let enemy=(0..n).filter(|s|w.team(*s).unwrap()!=w.team(0).unwrap()).collect::<Vec<_>>();
+        assert_eq!(enemy.len(),15);for slot in enemy{w.detach(slot as u32+1).unwrap();}
+        w.advance_lifecycle(now+Duration::from_millis(100)).unwrap();
+        let result=build(&w).unwrap();assert_eq!(result.participants.len(),30);assert_eq!(result.winner_team,w.team(0).unwrap());
+        assert_eq!(result.interaction_details.as_ref().unwrap().rows.len(),30);
+        let raw=serde_json::to_string(&result).unwrap();assert!(raw.len()<=lifecycle_wire::result_json_budget(30));
+        assert!(lifecycle_wire::compact_results(&result,1).unwrap().len()<=lifecycle_wire::MAX_RESULT_BYTES);
+        let frozen=owner_loadout.unwrap();
+        let reservation=Reservation {reservation_id:"p08c:test:A".into(),run_id:"87654321-4321-4321-8321-cba987654321".into(),
+            battle:123,native_inventory_id:1,vehicle_inventory_id:frozen.vehicle_inventory_id.clone(),status:ReservationStatus::Active,
+            frozen,result:None};
+        let terminal=Terminal::from_actor_result(&reservation,&w,0,1,FinishReason::BattleFinished,Some(&result)).unwrap();
+        assert_eq!((terminal.native_database_id,terminal.terminal_hp),(1,23));
+        let request=terminal.request();assert!(matches!(request,Request::FinishResults{terminal_hp:23,..}));
+        let context=Context{account_id:"00000001-1234-4234-8234-123456789abc".into(),native_database_id:1,
+            run_id:reservation.run_id.clone(),command_key:"res30:finish".into(),expected_revision:14};
+        let body=encode_request(&context,&request).unwrap();assert!(body.len()>lifecycle_wire::MAX_RESULT_JSON_LEGACY/8&&body.len()<=lifecycle_wire::MAX_RESULT_REQUEST);
+    }
     #[test] fn frozen_snapshot_uses_actual_hp_ammo_and_explicit_technical_forfeit() {
         let now=Instant::now();let mut w=World::new(123,now).unwrap();
         w.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();

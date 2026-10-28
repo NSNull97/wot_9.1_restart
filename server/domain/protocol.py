@@ -20,7 +20,9 @@ import struct
 import time
 
 SCHEMA = "wot091-domain.v1"
-MAX_FRAME = 73728
+# RES-30: one escaped 7..30-row result journal plus header (was 72KiB);
+# must equal the gateway domain_client MAX_FRAME (MAX_RESULT_REQUEST + 8192).
+MAX_FRAME = 655360 + 8192
 MAX_HEADER = 1024
 MAX_HEADER_FIELDS = 8
 SECRET_LENGTH = 43

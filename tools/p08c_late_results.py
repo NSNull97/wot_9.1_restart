@@ -10,7 +10,15 @@ import re
 
 from game_profile_tx import TransactionError, _bounded_id
 from p09d_ammo_store import require, sha
-from p08b_battle_store import _uuid, _integer
+from p08b_battle_store import _uuid, _integer, MAX_PARTICIPANTS, LEGACY_PARTICIPANTS, MAX_RESULT_REQUEST
+# RES-30 roster30: a seal of 7..30 actors (gateway MAX_SEAL_ROSTER30); 2..6 keep 32768.
+MAX_SEAL = 32768
+MAX_SEAL_ROSTER30 = 393216
+SEAL_NODES = 16384
+
+
+def seal_budget(actors):
+    return MAX_SEAL if actors <= LEGACY_PARTICIPANTS else MAX_SEAL_ROSTER30
 from p08c_battle_results import results_value
 from p06t_mixed_store import MixedAmmoStore, POLICY_SHA256 as MIXED_POLICY
 from p06t_mixed_store import validate_results_request as mixed_results_request
@@ -60,8 +68,8 @@ def _unique(pairs):
     return result
 
 
-def _tree(value, depth=0, budget=None):
-    budget = [4096] if budget is None else budget
+def _tree(value, depth=0, budget=None, nodes=4096):
+    budget = [nodes] if budget is None else budget
     budget[0] -= 1
     require(depth <= 12 and budget[0] >= 0, "INVALID_INPUT")
     if type(value) is dict:
@@ -74,18 +82,19 @@ def _tree(value, depth=0, budget=None):
         for child in value:
             _tree(child, depth + 1, budget)
     elif type(value) is str:
-        require(len(value.encode("utf8")) <= 32768, "INVALID_INPUT")
+        # A seal string carries one escaped roster30 journal (RES-30).
+        require(len(value.encode("utf8")) <= MAX_SEAL_ROSTER30, "INVALID_INPUT")
     else:
         require(value is None or type(value) in (int, bool), "INVALID_INPUT")
 
 
-def decode(raw, maximum=65536):
+def decode(raw, maximum=65536, nodes=4096):
     require(type(raw) in (str, bytes) and 0 < len(raw.encode("utf8") if type(raw) is str else raw) <= maximum, "INVALID_INPUT")
     try:
         value = json.loads(raw, object_pairs_hook=_unique)
     except (ValueError, UnicodeError, RecursionError):
         raise TransactionError("INVALID_INPUT") from None
-    _tree(value)
+    _tree(value, nodes=nodes)
     return value
 
 
@@ -108,13 +117,13 @@ def validate_request(value, account):
     _hash(value["frozen_sha256"])
     if extra:
         _hash(value["release_terminal_sha256"]); _integer(value["finished_revision"], 14)
-        require(type(value["seal_json"]) is str and len(value["seal_json"].encode("utf8")) <= 32768, "INVALID_INPUT")
-    require(len(canonical(value)) <= (4096 if not extra else 65536), "INVALID_INPUT")
+        require(type(value["seal_json"]) is str and len(value["seal_json"].encode("utf8")) <= MAX_SEAL_ROSTER30, "INVALID_INPUT")
+    require(len(canonical(value)) <= (4096 if not extra else MAX_RESULT_REQUEST), "INVALID_INPUT")
     return deepcopy(value)
 
 
 def vehicle_id(slot):
-    _integer(slot, 0, 5)
+    _integer(slot, 0, MAX_PARTICIPANTS - 1)
     return 0x09100003 + 2 * slot if slot < 2 else 0x09110003 + 2 * (slot - 2)
 
 
@@ -231,14 +240,15 @@ class LateResults:
             c.execute("PRAGMA query_only=" + str(prior))
 
     def validate_seal(self, request):
-        raw = request["seal_json"]; seal = decode(raw, 32768)
+        raw = request["seal_json"]; seal = decode(raw, MAX_SEAL_ROSTER30, SEAL_NODES)
         require(type(seal) is dict and set(seal) == {"version", "policy", "run_id", "battle_id", "arena_id", "results_json", "actors"}
             and type(seal["version"]) is int and seal["version"] == 1 and seal["policy"] == POLICY_NAME
             and all(seal[k] == request[k] for k in ("run_id", "battle_id", "arena_id")) and canonical(seal).decode("utf8") == raw, "RESULT_MISMATCH")
         results = results_value(seal["results_json"])
         require(canonical(results).decode("utf8") == seal["results_json"] and results["arena_id"] == int(request["arena_id"]), "RESULT_MISMATCH")
         actors = seal["actors"]
-        require(type(actors) is list and len(actors) == len(results["participants"]) and 2 <= len(actors) <= 6, "RESULT_MISMATCH")
+        require(type(actors) is list and len(actors) == len(results["participants"]) and 2 <= len(actors) <= MAX_PARTICIPANTS
+            and len(raw.encode("utf8")) <= seal_budget(len(actors)), "RESULT_MISMATCH")
         owners = set(); selected = None
         for slot, (actor, participant) in enumerate(zip(actors, results["participants"])):
             require(type(actor) is dict and set(actor) == ACTOR and actor["slot"] == slot
@@ -336,7 +346,7 @@ class LateResults:
         row = rows[0][1]
         common = self.connection.execute("SELECT * FROM p08c_late_seal WHERE arena_id=?", (arena,)).fetchone()
         require(common is not None and sha(common["seal_json"].encode("utf8")) == common["seal_sha256"] == row["seal_sha256"], "RESULT_MISMATCH")
-        seal = decode(common["seal_json"], 32768)
+        seal = decode(common["seal_json"], MAX_SEAL_ROSTER30, SEAL_NODES)
         source_row = self.connection.execute("SELECT * FROM p06t_reservation WHERE account_id=? AND reservation_id=?", (account, row["reservation_id"])).fetchone()
         require(source_row is not None, "RESULT_MISMATCH")
         request = dict(version=VERSION, contract=CONTRACT, operation="append", account_id=account, native_database_id=native,
@@ -378,14 +388,14 @@ class LateResults:
                 old = saved
                 if old is not None:
                     require(old["payload_sha256"] == payload, "DUPLICATE_PAYLOAD_MISMATCH")
-                    previous = decode(old["response_json"], 65536)
+                    previous = decode(old["response_json"], MAX_RESULT_REQUEST)
                     require(sha(canonical(previous)) == old["response_sha256"] and previous == dict(reply, acked=True), "RESULT_MISMATCH")
                     c.commit(); return dict(previous, replayed=True)
                 c.execute("UPDATE p08c_late_result SET acked=1 WHERE account_id=? AND arena_id=?", (authenticated_account_id, request["arena_id"]))
                 reply["acked"] = True; raw = canonical(reply)
                 c.execute("INSERT INTO p08c_late_command VALUES (?,?,?,?,?)", (authenticated_account_id, key, payload, raw.decode("utf8"), sha(raw)))
                 self.store._failpoint("before_late_ack_commit")
-            require(len(canonical(reply)) <= 65536, "INVALID_INPUT"); c.commit(); return reply
+            require(len(canonical(reply)) <= MAX_RESULT_REQUEST, "INVALID_INPUT"); c.commit(); return reply
         except Exception:
             c.rollback(); raise
 
@@ -411,7 +421,7 @@ class LateResults:
             saved = c.execute("SELECT * FROM p06t_command WHERE account_id=? AND command_key=?", (account, request["command_key"])).fetchone()
             if saved is not None:
                 require(saved["payload_sha256"] == payload, "DUPLICATE_PAYLOAD_MISMATCH")
-                previous = decode(saved["response_json"], 65536)
+                previous = decode(saved["response_json"], MAX_RESULT_REQUEST)
                 require(sha(legacy_canonical(previous)) == saved["response_sha256"] and previous == dict(value, acked=True), "RESULT_MISMATCH")
                 return dict(previous, replayed=True)
             if row is not None:
@@ -419,7 +429,7 @@ class LateResults:
                 raw = legacy_canonical(value)
                 c.execute("INSERT INTO p06t_command VALUES (?,?,?,?,?)", (account, request["command_key"], payload, raw.decode("ascii"), sha(raw)))
                 self.store._failpoint("before_ammo_loss_ack_commit" if loss else "before_mixed_ack_commit")
-        require(len(legacy_canonical(value)) <= 65536, "INVALID_INPUT")
+        require(len(legacy_canonical(value)) <= MAX_RESULT_REQUEST, "INVALID_INPUT")
         return value
 
     def pending_page(self, account, native, after=None, limit=8):

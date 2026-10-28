@@ -6,7 +6,8 @@ use serde_json::Value;
 use sha2::{Digest,Sha256};
 
 pub(crate) const SCHEMA:&str="wot091-domain.v1";
-const MAX_FRAME:usize=73728;
+// RES-30: one escaped 7..30-row result journal plus header (was 72KiB).
+const MAX_FRAME:usize=crate::gateway091::shared::lifecycle_wire::MAX_RESULT_REQUEST+8192;
 const MAX_HEADER:usize=1024;
 
 fn invalid(message:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,message)}

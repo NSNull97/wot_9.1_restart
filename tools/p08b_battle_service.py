@@ -7,7 +7,7 @@ import sys
 
 ROOT = next(p for p in Path(__file__).resolve().parents if (p / 'docs/ACTIVE_GATE.md').is_file() and (p / 'tools/packed_xml.py').is_file())
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(ROOT / 'tools'), str(ROOT)]
-from p08b_battle_store import POLICY_SHA256, REJECTIONS, validate_request
+from p08b_battle_store import POLICY_SHA256, REJECTIONS, validate_request, MAX_RESULT_REQUEST
 from p08c_battle_results import ResultsStore as BattleStore, results_service
 from p08b_battle_projection import BattleProjectionSource, capabilities
 from p09e_research_store import POLICY as RESEARCH_POLICY
@@ -65,7 +65,7 @@ BODYLESS_OPERATIONS = frozenset({"activate", "fixture", "overview", "pool-overvi
 
 
 def request_limit(operation):
-    return 65536 if operation in ("results", "battle") else 4096
+    return MAX_RESULT_REQUEST if operation in ("results", "battle") else 4096
 
 
 def execute(args, operation, read_request):

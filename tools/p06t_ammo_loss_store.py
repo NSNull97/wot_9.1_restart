@@ -11,7 +11,10 @@ from game_profile_tx import TransactionError, _bounded_id, _revision
 from p09d_ammo_store import require, sha
 from p09d_ammo_projection import canonical
 from p09e_research_store import _json
-from p08b_battle_store import _uuid, _integer, REASONS
+from p08b_battle_store import _uuid, _integer, REASONS, MAX_PARTICIPANTS, MAX_RESULT_REQUEST
+# RES-30: shots/device journal of a 30-actor battle (gateway MAX_BATTLE_SHOTS, MAX_DAMAGE_EVENTS).
+MAX_BATTLE_SHOTS = MAX_PARTICIPANTS * 160
+MAX_DEVICE_SEQUENCE = MAX_BATTLE_SHOTS * 16
 from p08c_battle_results import results_value
 from p06t_mixed_store import MixedAmmoStore, POLICY_SHA256 as BASE_POLICY_SHA256, SOURCE_SHA256
 from p06t_terminal import MANIFEST_SHA256
@@ -79,8 +82,9 @@ def _rows(value):
 def _event(value):
     if value is None: return
     require(type(value) is dict and set(value) == {"shot", "attacker_slot", "target_slot", "tick", "device_sequence"}, "INVALID_INPUT")
-    _integer(value["shot"], 1, 960); _integer(value["attacker_slot"], 0, 5); _integer(value["target_slot"], 0, 5)
-    _integer(value["tick"], 1000, 216000); _integer(value["device_sequence"], 1, 15360)
+    _integer(value["shot"], 1, MAX_BATTLE_SHOTS)
+    _integer(value["attacker_slot"], 0, MAX_PARTICIPANTS - 1); _integer(value["target_slot"], 0, MAX_PARTICIPANTS - 1)
+    _integer(value["tick"], 1000, 216000); _integer(value["device_sequence"], 1, MAX_DEVICE_SEQUENCE)
     require(value["attacker_slot"] != value["target_slot"], "INVALID_INPUT")
 
 
@@ -107,7 +111,7 @@ def validate_request(value, account):
         value = dict(value, terminal_state_json=canonical(_json(value["terminal_state_json"])).decode("ascii"))
     if natural:
         value = dict(value, results_json=canonical(results_value(value["results_json"])).decode("ascii"))
-    require(len(canonical(value)) <= (65536 if natural else 16384 if value["operation"] == "finish" else 2048), "INVALID_INPUT")
+    require(len(canonical(value)) <= (MAX_RESULT_REQUEST if natural else 16384 if value["operation"] == "finish" else 2048), "INVALID_INPUT")
     return deepcopy(value)
 
 
@@ -325,7 +329,7 @@ class AmmoLossStore(MixedAmmoStore):
                 receipt = self._finish_loss(request, aggregate, row); status = "finished"
             if destination != revision: self._save_crew_projection(account, destination, public)
             response = self._loss_reply(request, destination, status, receipt)
-            raw = canonical(dict(schema=SCHEMA, request=request, response=response)); require(len(raw) <= 65536, "PROFILE_TOO_LARGE")
+            raw = canonical(dict(schema=SCHEMA, request=request, response=response)); require(len(raw) <= MAX_RESULT_REQUEST, "PROFILE_TOO_LARGE")
             c.execute("INSERT INTO game_command_ledger VALUES (?,?,?,?,?,?,?,?)", (account, key, command, payload, revision, destination, raw.decode("ascii"), sha(raw)))
             self._failpoint("after_ammo_loss_ledger"); self.read_profile(account); self._failpoint("before_ammo_loss_commit")
             c.commit(); return response
@@ -346,7 +350,7 @@ class AmmoLossStore(MixedAmmoStore):
             record_contract = None if row is None else "loss-v1" if c.execute("SELECT 1 FROM battle_ammo_loss_reservation WHERE account_id=? AND reservation_id=?", (account, row["reservation_id"])).fetchone() else "mixed-v2"
             value = dict(request, status="missing" if row is None else "found" if request["operation"] == "query" else "acked", acked=bool(row["acked"]) if row else False,
                 results_json=row["results_json"] if row else None, replayed=False, code=None, policy_sha256=POLICY_SHA256, record_contract=record_contract)
-            require(len(canonical(value)) <= 65536, "PROFILE_TOO_LARGE")
+            require(len(canonical(value)) <= MAX_RESULT_REQUEST, "PROFILE_TOO_LARGE")
             if request["operation"] == "ack":
                 payload = sha(canonical(request)); saved = c.execute("SELECT * FROM p06t_command WHERE account_id=? AND command_key=?", (account, request["command_key"])).fetchone()
                 if saved is not None:

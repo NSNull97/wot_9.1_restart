@@ -30,21 +30,32 @@ fn event()->Event{let Outcome::New(event)=Ledger::new(2).unwrap().apply(input())
 }
 #[test]fn p06t_ammo_detonation_bounds_and_source_maxima_reject_without_journal_mutation(){
     let mut l=Ledger::new(2).unwrap();
-    for bad_input in [Input{shot:0,..input()},Input{shot:961,..input()},Input{target:2,..input()},Input{attacker:2,..input()},
+    for bad_input in [Input{shot:0,..input()},Input{shot:super::super::model::MAX_BATTLE_SHOTS as u32+1,..input()},Input{target:2,..input()},Input{attacker:2,..input()},
         Input{tick:999,..input()},Input{tick:37001,..input()},Input{device_sequence:0,..input()},
         Input{device_before:0,..input()},Input{device_before:61,..input()},Input{device_after:1,..input()},
         Input{health_before:0,..input()},Input{health_before:91,..input()},Input{residual_hp:91,..input()},
         Input{counts:[97,0,0],..input()},Input{joint:JointPose{position:[f32::NAN,1.,0.],direction:[0.;3]},..input()}]{
         let before=l.clone();assert!(l.apply(bad_input).is_err());assert_eq!(l,before);
     }
-    for n in [0,1,7,255]{assert!(Ledger::new(n).is_err());}
+    for n in [0,1,31,255]{assert!(Ledger::new(n).is_err());}
+    // RES-30: 7..30 rosters are valid; shot/device journals of a 30-actor battle.
+    for n in [7,30]{assert!(Ledger::new(n).is_ok());}
+    assert!(l.apply(Input{shot:super::super::model::MAX_BATTLE_SHOTS as u32,device_sequence:super::super::model::MAX_DAMAGE_EVENTS as u32,..input()}).is_ok());
 }
 #[test]fn p06t_ammo_detonation_max_six_events_have_stable_target_sequence(){
     let mut l=Ledger::new(6).unwrap();for target in 0..6{
         let Outcome::New(e)=l.apply(Input{target,attacker:(target+1)%6,shot:target as u32+1,..input()}).unwrap()else{panic!()};
         assert_eq!(e.sequence(),target as u32+1);
-    }assert_eq!(l.events().len(),MAX_EVENTS);
+    }assert_eq!(l.events().len(),6);
     let before=l.clone();assert!(l.apply(Input{target:6,..input()}).is_err());assert_eq!(l,before);
+}
+#[test]fn res30_ammo_detonation_thirty_roster_one_event_per_target(){
+    let mut l=Ledger::new(30).unwrap();for target in 0..30{
+        let Outcome::New(e)=l.apply(Input{target,attacker:(target+1)%30,shot:target as u32+1,..input()}).unwrap()else{panic!()};
+        assert_eq!(e.sequence(),target as u32+1);
+    }assert_eq!(l.events().len(),MAX_EVENTS);
+    let before=l.clone();assert!(l.apply(Input{target:30,..input()}).is_err());assert_eq!(l,before);
+    let mut again=l.clone();assert!(matches!(again.apply(Input{target:29,attacker:0,shot:30,..input()}).unwrap(),Outcome::Replay(Some(_))));
 }
 #[test]fn p06t_ammo_detonation_source_kind_caps_and_cause_retained(){
     let mut l=Ledger::new(2).unwrap();let Outcome::New(e)=l.apply(Input{kind:VehicleKind::Is7,

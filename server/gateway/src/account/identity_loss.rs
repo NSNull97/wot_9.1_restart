@@ -38,7 +38,8 @@ impl Config {
     pub(crate) fn results_post_loss(&self,owner:&Profile,body:&[u8])->io::Result<Vec<u8>>{
         if self.p08b_owner_battle_hold||!self.p06t_ammo_rack_detonation||!self.p06t_mixed_ammo||!self.profile13_battle||owner.database_id<=0
             ||body.is_empty()||body.len()>2048{return Err(invalid("ammo-loss result mode/body bound"));}
-        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;
+        const RESULT:usize=crate::gateway091::shared::lifecycle_wire::MAX_RESULT_REQUEST;
+        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),RESULT,RESULT+4100)?;
         if status!=200{return Err(invalid("ammo-loss result writer unavailable; immutable task retained"));}Ok(reply)
     }
 }

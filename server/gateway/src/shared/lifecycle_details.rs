@@ -116,8 +116,10 @@ pub fn project(roster:&[Summary],shots:&[Shot],direct:&[Hit],pierced:&[Hit],
 /// It does not supply a missing shot identity to a contact.
 pub fn project_with_ram(roster:&[Summary],shots:&[Shot],direct:&[Hit],pierced:&[Hit],
     damage:&[TimedDamage],ram:&[RamDamage],splash:&[Splash],spots:Option<&[Spot]>)->io::Result<Details>{
-    if !(2..=MAX_ACTORS).contains(&roster.len())||shots.len()>960||direct.len()>960
-        ||pierced.len()>960||damage.len()>15360||splash.len()>5760
+    // RES-30: committed journals of a 30-actor battle (was 960/15360/5760 for 6).
+    use super::model::{MAX_BATTLE_SHOTS as SHOTS,MAX_DAMAGE_EVENTS};
+    if !(2..=MAX_ACTORS).contains(&roster.len())||shots.len()>SHOTS||direct.len()>SHOTS
+        ||pierced.len()>SHOTS||damage.len()>MAX_DAMAGE_EVENTS||splash.len()>SHOTS*MAX_ACTORS
         ||ram.len()>36000*MAX_ACTORS*(MAX_ACTORS-1)
         ||spots.is_some_and(|s|s.len()>MAX_ACTORS){return Err(bad());}
     let mut shotmap=BTreeMap::new();for s in shots{if s.id==0||s.attacker>=roster.len()

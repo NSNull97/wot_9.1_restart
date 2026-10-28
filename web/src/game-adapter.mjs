@@ -17,7 +17,7 @@ import { domainConfiguration, createDomainClient } from './domain-client.mjs';
 import { nativeCrewTransferOverview, isNativeCrewTransferOverview } from './p04f-crew.mjs';
 import { nativeCrossVehicleCrewOverview, isNativeCrossVehicleCrewOverview } from './p04g-crew.mjs';
 import { nativeResearchOverview, isNativeResearchOverview } from './p09e-research.mjs';
-import { battleConfiguration } from './p08b-battle.mjs';
+import { battleConfiguration, MAX_RESULT_BYTES, MAX_RESULT_REQUEST } from './p08b-battle.mjs';
 import { nativePoolOverview, isNativePoolOverview, poolConfiguration, nativePoolRequestTimeout, LEGACY_REQUEST_TIMEOUT_MS, usePoolCatalog } from './p04m-pool.mjs';
 import { mixedConfiguration, validateMixedResultsRequest, validateMixedResultsReply, useMixedCatalog } from './p06t-mixed.mjs';
 import { CATALOG_SHA256 } from './catalog-v1.mjs';
@@ -602,7 +602,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       if (req.method === 'POST' && ['/internal/native/late-result-append', '/internal/native/late-result-pending'].includes(req.url)) {
         if (options.late_result_service === undefined) return json(res, 404, { error: 'not_found' });
         const pending = req.url === '/internal/native/late-result-pending';
-        const value = await body(req, pending ? 2048 : 65536), service = accountServices.get(value?.account_id);
+        const value = await body(req, pending ? 2048 : MAX_RESULT_REQUEST), service = accountServices.get(value?.account_id);
         if (!service || holdOwners.includes(value.account_id) || !lateOwners.includes(value.account_id) || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.read(value.account_id);
         if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
@@ -613,7 +613,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       }
       if (req.method === 'POST' && req.url === '/internal/native/battle-results') {
         if (options.battle_service === undefined) return json(res, 404, { error: 'not_found' });
-        const value = await body(req, 65536), service = accountServices.get(value?.account_id);
+        const value = await body(req, MAX_RESULT_REQUEST), service = accountServices.get(value?.account_id);
         if (!service || !identity.profile(value.account_id)) return json(res, 403, { error: 'forbidden' });
         const profile = game.read(value.account_id);
         if (!profile || profile.native_database_id !== value.native_database_id) return json(res, 403, { error: 'forbidden' });
@@ -641,7 +641,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
           && value.battle_id === `${value.run_id}:${value.arena_id}`
           && Number.isInteger(value.native_inventory_id) && value.native_inventory_id > 0 && value.native_inventory_id <= 2147483647
           && typeof value.reservation_id === 'string' && /^[A-Za-z0-9_:-]{1,96}$/.test(value.reservation_id)
-          && typeof value.results_json === 'string' && Buffer.byteLength(value.results_json) <= 32768);
+          && typeof value.results_json === 'string' && Buffer.byteLength(value.results_json) <= MAX_RESULT_BYTES);
         poolRequestBudget(value.account_id);
         const result = await service.results(value);
         const replyKeys = [...common, 'status', 'acked', 'replayed', 'results_json', 'code'];
@@ -650,8 +650,8 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
           || !['stored', 'found', 'missing', 'acked', 'rejected'].includes(result.status)
           || (result.status === 'rejected' ? !['RESULT_NOT_READY', 'RESULT_MISMATCH', 'DUPLICATE_PAYLOAD_MISMATCH'].includes(result.code) : result.code !== null)
           || (['missing', 'rejected'].includes(result.status) ? result.results_json !== null || result.acked
-            : typeof result.results_json !== 'string' || Buffer.byteLength(result.results_json) > 32768)
-          || Buffer.byteLength(JSON.stringify(result)) > 65536) throw new Error('Results worker response schema');
+            : typeof result.results_json !== 'string' || Buffer.byteLength(result.results_json) > MAX_RESULT_BYTES)
+          || Buffer.byteLength(JSON.stringify(result)) > MAX_RESULT_REQUEST) throw new Error('Results worker response schema');
         return json(res, 200, result);
       }
       const nativeMethod = new Map([
@@ -662,7 +662,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
       ]).get(req.url);
       if (req.method === 'POST' && nativeMethod) {
         if (!ammunition || typeof ammunition[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
-        const value = await body(req, nativeMethod === 'battle' ? 65536 : 2048), service = accountServices.get(value?.account_id);
+        const value = await body(req, nativeMethod === 'battle' ? MAX_RESULT_REQUEST : 2048), service = accountServices.get(value?.account_id);
         if (!service || !identity.profile(service.accountId)) return json(res, 403, { error: 'forbidden' });
         if (typeof service[nativeMethod] !== 'function') return json(res, 404, { error: 'not_found' });
         if (nativeMethod === 'battle' && options.mixed_service !== undefined

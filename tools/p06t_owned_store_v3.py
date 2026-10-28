@@ -19,13 +19,14 @@ from p04m_pool_crew import (decode as decode_old, passport as passport_old,
 from p04d_crew_projection import DESCRIPTOR_PINS
 from p04h_crew_store import recruit_identity
 from p08c_battle_results import results_value
-from p08b_battle_store import REASONS
+from p08b_battle_store import REASONS, MAX_RESULT_REQUEST
 from p09d_ammo_projection import encode
 
 STORE_SCHEMA = 'p06t-owned-current.v3'
 MAX_CURRENT = 131072
-MAX_REQUEST = 65536
-MAX_REPLY = 65536
+# RES-30: a natural finish/result reply may carry one 7..30-row journal.
+MAX_REQUEST = MAX_RESULT_REQUEST
+MAX_REPLY = MAX_RESULT_REQUEST
 PREFIX = 'p06v3_'
 
 

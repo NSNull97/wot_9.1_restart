@@ -17,7 +17,9 @@ from p06t_mixed_store import results_service_mixed
 
 
 OPERATIONS = ("append", "results", "pending", "battle")
-MAX_REQUEST = 65536
+from p08b_battle_store import MAX_RESULT_REQUEST
+# RES-30: an append request carries one escaped roster30 seal.
+MAX_REQUEST = MAX_RESULT_REQUEST
 
 
 def run(args, operation, request):

@@ -249,14 +249,14 @@ fn bot01_mixed_ammo_bot_has_a_stock_lab_loadout_and_shoots_through_the_typed_led
 }
 
 /// Natural results: bots are ordinary roster rows of the natives' result
-/// (exactly what the client shows). <= 6 places builds; more is the existing
-/// results/Domain roster bound (RES-30), refused rather than truncated.
-fn finished(places:usize,now:Instant)->World{
+/// (exactly what the client shows), up to 30 places (RES-30).
+fn finished(places:usize,now:Instant)->World{finished_with(2,places,now)}
+fn finished_with(humans:usize,places:usize,now:Instant)->World{
     let map=MapId::Prohorovka;
-    let mut w=prepared(map,2,places,4,now);
+    let mut w=prepared(map,humans,places,4,now);
     let mut rules=lifecycle::Rules::for_map(map).unwrap();rules.prebattle_ms=1000;rules.battle_ms=1000;
     w.lifecycle=None;w.enable_lifecycle(rules).unwrap();
-    for slot in 0..2{let(identity,loadout)=super::super::tests::profile13_loadout(VehicleKind::Ms1,slot,7);w.attach_owned(identity,slot as u32+1,&loadout).unwrap();}
+    for slot in 0..humans{let(identity,loadout)=super::super::tests::profile13_loadout(VehicleKind::Ms1,slot,7);w.attach_owned(identity,slot as u32+1,&loadout).unwrap();}
     w.fill_bots().unwrap();
     for slot in 0..places{place(&mut w,slot,[slot as f32*15.-40.,0.,if slot%2==0{-200.}else{200.}],0.);}
     let mut at=begin(&mut w,now);w.lifecycle_created_unix=Some(1_800_000_000);
@@ -273,8 +273,16 @@ fn bot01_results_keep_natives_exact_and_mark_no_bot_as_departed(){
         assert_eq!(u32::from(p.shots),w.actors[slot].fire.accepted_shots());
     }
     assert_eq!(r.participants[0].account_dbid,1);assert!(r.participants[2..].iter().all(|p|p.account_dbid>=DATABASE_BASE&&p.name.starts_with("Bot-")));
-    // 30 places: the results bound of today's writers refuses (RES-30), no partial row set.
-    let big=finished(30,now);assert!(super::super::super::lifecycle_result::build(&big).is_err());
+    // RES-30: 30 places build the whole roster; bots stay account-less rows.
+    for humans in [1,2]{
+        let big=finished_with(humans,30,now);let r=super::super::super::lifecycle_result::build(&big).unwrap();
+        r.validate_p06t().unwrap();assert_eq!(r.participants.len(),30);
+        assert!(r.participants[humans..].iter().all(|p|p.account_dbid>=DATABASE_BASE&&p.name.starts_with("Bot-")&&!p.premature_leave));
+        let raw=serde_json::to_string(&r).unwrap();assert_eq!(super::super::super::lifecycle_wire::Results::from_json_p06t(&raw).unwrap(),r);
+        assert!(super::super::super::lifecycle_wire::compact_results_p06t(&r,1).unwrap().len()<=super::super::super::lifecycle_wire::MAX_RESULT_BYTES);
+        // Only natives have a terminal for writers; a bot slot has none.
+        assert!(big.terminal_state_json(humans).is_err());
+    }
 }
 
 /// BATTLE-ANY: a generated kind of the battle profiles seats a bot as a
@@ -409,4 +417,15 @@ fn bot01_leads_a_crossing_target(){
     let lead=point[0]-target[0];
     let flight=VehicleKind::Ms1.shell().speed();let expected=10.*200.6/flight;
     assert!((lead-expected).abs()<1.5,"aims {lead:.2} m ahead, expected about {expected:.2}");
+}
+
+/// RES-30: a 30-place battle (1 native + 29 bots) and its whole-roster result
+/// fit a 1MB thread even in the debug build (gateway main thread on Windows).
+#[test]
+fn res30_thirty_place_battle_and_result_fit_a_one_megabyte_thread(){
+    std::thread::Builder::new().stack_size(1024*1024).spawn(||{
+        let w=finished_with(1,30,Instant::now());
+        let r=super::super::super::lifecycle_result::build(&w).unwrap();assert_eq!(r.participants.len(),30);
+        super::super::super::lifecycle_wire::avatar_result_stream_p06t(&r,1).unwrap();
+    }).unwrap().join().unwrap();
 }
