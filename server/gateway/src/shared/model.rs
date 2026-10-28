@@ -837,7 +837,10 @@ impl World {
         if existing.is_some_and(|slot|self.actors[slot].owned_v2.as_ref()!=Some(loadout)){return Err(bad());}
         let mut next=self.clone();let previous=next.vehicle_kind;
         next.mixed_ammo=false;next.vehicle_kind=loadout.kind;
-        let slot=next.attach_loadout(identity,session,None)?;
+        // BATTLE-ANY: a generated kind has no legacy single-stack gun (initial ammo 0);
+        // it is seated with its typed armament instead of a placeholder.
+        let initial=if loadout.kind.is_generated(){Some(fire::State::with_typed(loadout.mount,loadout.counts(),loadout.initial_shell_compact_id)?)}else{None};
+        let slot=next.attach_loadout_fire(identity,session,None,initial)?;
         next.vehicle_kind=previous;next.mixed_ammo=true;
         if existing.is_none(){
             next.actors[slot].fire=fire::State::with_typed(loadout.mount,loadout.counts(),loadout.initial_shell_compact_id)?;
@@ -853,7 +856,7 @@ impl World {
     fn attach_loadout_fire(&mut self,identity:Identity,session:u32,
         loadout:Option<crate::battle091::profile13::FrozenLoadout>,initial_fire:Option<fire::State>)->io::Result<usize>{
         if self.mixed_ammo{return Err(bad());}
-        if initial_fire.is_some()&&(!self.extended_lab||loadout.is_some()){return Err(bad());}
+        if initial_fire.is_some()&&(!(self.extended_lab||self.vehicle_kind.is_generated())||loadout.is_some()){return Err(bad());}
         if session == 0 || identity.database <= 0 || identity.account.is_empty()
             || self.actors.iter().any(|a| a.session == Some(session)) { return Err(bad()); }
         if let Some(slot) = self.actors.iter().position(|a| a.identity.account == identity.account) {

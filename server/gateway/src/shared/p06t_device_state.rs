@@ -79,7 +79,9 @@ impl State {
     /// owned loadout or terminal-journal schema to accept additional vehicles.
     pub fn new_v2(profile:Profile)->io::Result<Self> {Self::create(profile,PolicyVersion::V2)}
     fn create(profile:Profile,policy:PolicyVersion)->io::Result<Self> {
-        if policy==PolicyVersion::V1&&!profile.is_legacy() {return Err(bad("extended device profile requires explicit v2 policy"));}
+        // Generated (BATTLE-ANY) profiles carry their own registry caps and use the owned v1 route;
+        // only the curated extended WT/FV profiles need the explicit v2 policy.
+        if policy==PolicyVersion::V1&&!profile.is_legacy()&&!matches!(profile,Profile::Generated(_)) {return Err(bad("extended device profile requires explicit v2 policy"));}
         let seats=profile.crew();
         if seats.is_empty()||seats.len()>MAX_CREW||profile.max_hp()==0
             ||profile.caps().iter().any(|c|c.max==0||c.regen==0||c.regen>c.max)
