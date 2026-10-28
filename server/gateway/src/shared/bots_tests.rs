@@ -276,3 +276,45 @@ fn bot01_results_keep_natives_exact_and_mark_no_bot_as_departed(){
     // 30 places: the results bound of today's writers refuses (RES-30), no partial row set.
     let big=finished(30,now);assert!(super::super::super::lifecycle_result::build(&big).is_err());
 }
+
+/// BATTLE-ANY: a generated kind of the battle profiles seats a bot as a
+/// player's owned generated kind (typed gun, v1 devices) and shoots through
+/// the typed ledger; without mixed ammo generated bot kinds are refused.
+#[test]
+fn bot01_generated_kind_bot_seats_typed_and_shoots(){
+    let root=std::path::PathBuf::from(std::env::var_os("WOT091_ROOT").unwrap_or_else(||"D:/WoT_9.1_Server".into()));
+    let kv3=VehicleKind::from_owned_label("ussr-KV-3").unwrap();assert!(kv3.is_generated());
+    let bundle=Arc::new(geometry::Bundle::load(&root.join("local"),
+        &root.join("local/evidence/20261028-battleany-pilot-sources02/bundles/ussr-KV-3.json")).unwrap());
+    let now=Instant::now();let map=MapId::Prohorovka;
+    let world=|mixed:bool|{
+        let mut w=World::new_for_roster(ID,now,map,3).unwrap();
+        let mut rules=lifecycle::Rules::for_map(map).unwrap();rules.prebattle_ms=1000;w.enable_lifecycle(rules).unwrap();
+        w.bind_geometry(Arc::new(geometry::tests::bundle())).unwrap();w.bind_geometry(bundle.clone()).unwrap();
+        w.terrain=Some(Arc::new(terrain::tests::fixture_for_map(map)));
+        if mixed{w.enable_mixed_ammo().unwrap();}w
+    };
+    let plan=Plan{human_places:1,seed:0,kinds:vec![kv3]};
+    assert!(world(false).enable_bots(plan.clone()).is_err(),"generated bots need the typed (mixed-ammo) battle");
+    let mut w=world(true);w.enable_bots(plan).unwrap();
+    // The native place: seated by the same server path (test stand-in for an owned player).
+    let human=Identity{account:"bot01-native".into(),database:1,name:"native".into()};
+    assert_eq!(w.attach_bot_actor(human,1,VehicleKind::Ms1).unwrap(),0);
+    assert_eq!(w.fill_bots().unwrap(),2);
+    let source=crate::p06t_shells091::profile(kv3.mount());
+    for slot in 1..3{
+        let a=&w.actors[slot];
+        assert_eq!(a.vehicle_kind(),kv3);assert_eq!(a.health,kv3.max_health());
+        let typed=a.fire.typed().expect("typed gun");
+        assert_eq!((typed.mount(),typed.counts()),(kv3.mount(),[source.capacity,0,0]));
+        let devices=a.devices.as_ref().unwrap();
+        assert_eq!((devices.policy_version(),devices.profile()),(crate::p06t_device_state::PolicyVersion::V1,crate::p06t_device_caps::Profile::for_owned(kv3).unwrap()));
+        assert!(a.owned_v2.is_none(),"no owned admission");
+    }
+    place(&mut w,0,[0.,0.,-200.],0.);place(&mut w,1,[0.,0.,200.],std::f32::consts::PI);place(&mut w,2,[60.,0.,200.],std::f32::consts::PI);
+    w.start(now).unwrap();w.actors[0].ready=true;w.ready_bots().unwrap();w.advance_lifecycle(now).unwrap();
+    let at=begin_from(&mut w,now);
+    let outcomes=w.apply(1,SESSION_BASE+1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
+    assert!(matches!(outcomes[0],fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot{..})),"{outcomes:?}");
+    assert_eq!(w.actors[1].fire.typed().unwrap().counts()[0],source.capacity-1);
+}

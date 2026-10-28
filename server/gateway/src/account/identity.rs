@@ -388,10 +388,11 @@ impl Config {
                 let seed=b.get("seed").and_then(Value::as_u64).ok_or_else(||invalid("bots seed must be a non-negative integer"))?;
                 let kinds=match b.get("kinds"){
                     None=>crate::gateway091::shared::vehicle_profile::VehicleKind::ALL.to_vec(),
-                    Some(Value::Array(rows)) if !rows.is_empty()&&rows.len()<=5=>rows.iter().map(|r|r.as_str()
-                        .and_then(crate::gateway091::shared::vehicle_profile::VehicleKind::from_label)
-                        .ok_or_else(||invalid("bots kinds must be profile13 vehicle labels"))).collect::<io::Result<Vec<_>>>()?,
-                    _=>return Err(invalid("bots kinds must be 1..5 profile13 vehicle labels")),
+                    // BATTLE-ANY: curated or generated owned labels; the battle profiles must bind each.
+                    Some(Value::Array(rows)) if !rows.is_empty()&&rows.len()<=crate::gateway091::shared::model::bots::MAX_KINDS=>rows.iter().map(|r|r.as_str()
+                        .and_then(crate::gateway091::shared::vehicle_profile::VehicleKind::from_owned_label)
+                        .ok_or_else(||invalid("bots kinds must be owned battle vehicle labels"))).collect::<io::Result<Vec<_>>>()?,
+                    _=>return Err(invalid("bots kinds must be 1..16 owned battle vehicle labels")),
                 };
                 let plan=crate::gateway091::shared::model::bots::Plan{human_places,seed,kinds};
                 plan.validate(battle_players).map_err(|_|invalid("bots kinds must be distinct profile13 vehicles"))?;
@@ -1110,11 +1111,14 @@ mod tests {
         assert_eq!((plan.human_places,plan.seed,plan.kinds.len()),(2,7,5));
         value["bots"]["kinds"]=serde_json::json!(["t34","is7"]);
         assert_eq!(load(&value).unwrap().bots.unwrap().kinds.iter().map(|k|k.label()).collect::<Vec<_>>(),["t34","is7"]);
+        value["bots"]["kinds"]=serde_json::json!(["t34","ussr-KV-3"]);
+        assert!(load(&value).unwrap().bots.unwrap().kinds[1].is_generated(),"BATTLE-ANY generated label");
         for bad in [serde_json::json!({"policy":"other","human_places":2,"seed":7}),serde_json::json!({"policy":policy,"human_places":0,"seed":7}),
             serde_json::json!({"policy":policy,"human_places":30,"seed":7}),serde_json::json!({"policy":policy,"human_places":2}),
             serde_json::json!({"policy":policy,"human_places":2,"seed":-1}),serde_json::json!({"policy":policy,"human_places":2,"seed":7,"extra":1}),
             serde_json::json!({"policy":policy,"human_places":2,"seed":7,"kinds":[]}),serde_json::json!({"policy":policy,"human_places":2,"seed":7,"kinds":["t34","t34"]}),
-            serde_json::json!({"policy":policy,"human_places":2,"seed":7,"kinds":["wt-e100-128"]}),serde_json::json!(true)]{
+            serde_json::json!({"policy":policy,"human_places":2,"seed":7,"kinds":["wt-e100-128"]}),
+            serde_json::json!({"policy":policy,"human_places":2,"seed":7,"kinds":["ussr-NoSuchTank"]}),serde_json::json!(true)]{
             let mut row=value.clone();row["bots"]=bad;assert!(load(&row).is_err(),"{}",row["bots"]);}
         for (field,off) in [("visibility_v1",Value::from(false)),("profile13_battle",Value::from(false))]{
             let mut row=value.clone();row[field]=off;assert!(load(&row).is_err(),"bots need {field}");}

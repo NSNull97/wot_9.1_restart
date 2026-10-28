@@ -34,6 +34,8 @@ const AIM_TOLERANCE: f32 = 0.3 * PI / 180.;
 /// Aim at the hull, not the ground point under it (project constant).
 const AIM_HEIGHT_M: f32 = 1.2;
 const STATS_TICKS: u32 = 100;
+/// Distinct bot vehicle kinds in one plan (curated five plus generated ones).
+pub const MAX_KINDS: usize = 16;
 /// The own sight line to the target is re-cast at most every 0.5 s.
 const LINE_RECHECK_TICKS: u32 = 5;
 /// A target the team shows but this bot cannot see for 2 s: keep advancing
@@ -55,7 +57,7 @@ pub struct Plan { pub human_places: usize, pub seed: u64, pub kinds: Vec<Vehicle
 impl Plan {
     pub fn validate(&self, places: usize) -> io::Result<()> {
         if !(1..places).contains(&self.human_places) || places > MAX_ACTORS || self.kinds.is_empty()
-            || self.kinds.len() > VehicleKind::ALL.len() || self.kinds.iter().any(|k| k.is_extended())
+            || self.kinds.len() > MAX_KINDS || self.kinds.iter().any(|k| k.is_extended())
             || self.kinds.iter().enumerate().any(|(i, k)| self.kinds[..i].contains(k)) { return Err(bad()); }
         Ok(())
     }
@@ -106,7 +108,11 @@ impl World {
         if self.bots.is_some() || self.started.is_some() || !self.actors.is_empty() || !self.mixed_profiles
             || self.extended_lab || self.owner_hold || self.lifecycle.is_none() || self.terrain.is_none()
             || self.map.spec().ctf_bases.is_none() || playable_bounds(self.map.asset()).is_none() { return Err(bad()); }
-        for kind in &plan.kinds { self.geometry_for(*kind)?; }
+        for kind in &plan.kinds {
+            // BATTLE-ANY generated kinds only ride mixed-ammo battles (typed gun).
+            if kind.is_generated() && !self.mixed_ammo { return Err(bad()); }
+            self.geometry_for(*kind)?;
+        }
         self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 4], think_ns: 0 });
         Ok(())
     }
@@ -174,20 +180,25 @@ impl World {
     /// The player's attach path with a server-chosen stock LAB loadout; no
     /// owned receipt, inventory or reservation is created or implied.
     fn attach_bot_actor(&mut self, identity: Identity, session: u32, kind: VehicleKind) -> io::Result<usize> {
-        if kind.is_extended() || !self.mixed_profiles || self.extended_lab { return Err(bad()); }
+        if kind.is_extended() || !self.mixed_profiles || self.extended_lab || kind.is_generated() && !self.mixed_ammo { return Err(bad()); }
         self.geometry_for(kind)?;
+        // Mixed ammo: the full stock rack of the first shell on the typed gun,
+        // v1 devices, as `attach_owned_v2_inner` seats a player's kind.
+        let typed = if self.mixed_ammo {
+            let source = crate::p06t_shells091::profile(kind.mount());
+            Some(fire::State::with_typed(kind.mount(), [source.capacity, 0, 0], source.shots[0].compact_descr)?)
+        } else { None };
+        let devices = if self.mixed_ammo {
+            Some(crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(kind).ok_or_else(bad)?)?)
+        } else { None };
         let (previous, mixed) = (self.vehicle_kind, self.mixed_ammo);
         self.mixed_ammo = false; self.vehicle_kind = kind;
-        let attached = self.attach_loadout(identity, session, None);
+        // A generated kind has no legacy single-stack gun: seat it typed.
+        let attached = if kind.is_generated() { self.attach_loadout_fire(identity, session, None, typed.clone()) }
+            else { self.attach_loadout(identity, session, None) };
         self.vehicle_kind = previous; self.mixed_ammo = mixed;
         let slot = attached?;
-        if mixed {
-            let source = crate::p06t_shells091::profile(kind.mount());
-            let actor = &mut self.actors[slot];
-            actor.fire = fire::State::with_typed(kind.mount(), [source.capacity, 0, 0], source.shots[0].compact_descr)?;
-            actor.devices = Some(crate::p06t_device_state::State::new(
-                crate::p06t_device_caps::Profile::ALL.get(kind.index()).copied().ok_or_else(bad)?)?);
-        }
+        if let Some(fire) = typed { self.actors[slot].fire = fire; self.actors[slot].devices = devices; }
         Ok(slot)
     }
     /// Bots become ready once the scene has settled (players follow their
