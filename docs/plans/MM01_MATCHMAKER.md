@@ -94,16 +94,17 @@
 ## Итог (2026-10-28, ветка `codex/mm-01-matchmaker`)
 
 - Коммиты: `b068bf2` (очередь, подбор, lease, gate writer'а, конфиг, тесты), `70b7b24` (id распавшейся группы не
-  переиспользуется: арена сбрасывается тем же путём, что пустая очередь). Не в main, не запушено.
+  переиспользуется: арена сбрасывается тем же путём, что пустая очередь), `89fcbf8` (окно очереди: родной
+  `receiveQueueInfo` со счётом по классам). Не в main, не запушено.
 - Код: `shared/matchmaker.rs` (чистая логика), `shared/server_matchmaker.rs` (связка), `server.rs` (тик, writer по аренам
   групп, без `BATTLE_BUSY` в режиме очереди), `profile13_session.rs` (`MatchGate`), `profile13_dispatch*.rs` (фильтр
   `admits_into`; без повторного `onEnqueued`; отказ Domain снимает объявленную очередь), `bots.rs` (`set_match_roster`),
   `generated_vehicles.rs`/`vehicle_profile.rs` (`tier`), `p04m_companion.rs` (`kind_label`), `identity.rs` (ключ).
   `contain_battle_failure` не тронут.
-- Тесты MM-01: `bash local/cargo_test.sh mm01` — **17 PASS** (правила/окно уровней/тайм-аут/арены/lease/один билет —
+- Тесты MM-01: `bash local/cargo_test.sh mm01` — **19 PASS** (+ окно очереди и статистика) (правила/окно уровней/тайм-аут/арены/lease/один билет —
   `matchmaker_tests`; связка на двух LAB-аренах — `server_mm01_tests`; writer только в свой бой и не второй резерв —
   `arena01_dispatch_tests`; без повторного `onEnqueued` — `queue_loss_tests`; конфиг — `identity`; уровни машин стенда).
-- Набор шлюза, один worktree и target (`local/test-runs/gw-*.log`): ветка `70b7b24` **1697 / 94 / 12**, база `6f3882a`
+- Набор шлюза, один worktree и target (`local/test-runs/gw-*.log`): ветка `89fcbf8` **1699 / 94 / 12** (`70b7b24` — 1697), база `6f3882a`
   **1680 / 94 / 12**; множества FAIL **равны** (94 — окружение worktree: нет `local/evidence` и портативных фикстур,
   `NotFound`). Ветка `b068bf2` — 1696 / 94 / 12, те же FAIL.
 - Python (`python -B -X utf8 -m unittest discover -s tests`, бандл `p09e-main-01/source-bundle-05`): 2786 тестов,
