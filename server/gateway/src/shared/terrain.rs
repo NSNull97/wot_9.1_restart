@@ -247,6 +247,15 @@ impl Terrain {
     pub fn validate_empty_instance(&self,id:u32,first:u32)->io::Result<()>{
         self.obstacles.as_ref().ok_or_else(||bad("catalog requires obstacle mesh"))?.validate_empty_instance(id,first)
     }
+    /// BOT-01 steering probe: static obstacle instances only (ground ignored),
+    /// the segment parameter of the nearest one.
+    pub fn obstacle_t(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<Option<f64>> {
+        match &self.obstacles {
+            Some(mesh)=>Ok(mesh.nearest_excluding_many(start,end,excluded)?.map(|hit|hit.t)),
+            None if !excluded.is_empty()=>Err(bad("terrain exclusion requires obstacle bundle")),
+            None=>Ok(None),
+        }
+    }
     pub fn nearest_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<Option<Hit>> {
         let obstacle=match &self.obstacles {
             Some(mesh)=>mesh.nearest_excluding_many(start,end,excluded)?,
