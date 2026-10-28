@@ -6,9 +6,10 @@ writes, into one fresh directory under the stand's local root:
   `config/catalog/battle_qualification.v1.json` (copied, SHA checked);
 - `<kind>-geometry.json`: the exact collision/armour bundle pinned by
   `config/catalog/battle_profiles.v1.json` (copied, SHA checked);
-- `<map>-<kind>-config.json`: per-map physics config = the pinned MS-1 handling
-  config of that map (terrain, obstacles, spawn, bounds) + the profile's
-  physics/handling projection (same rule as tools/p06t_extended_profiles.py);
+- `<map>-<kind>-config.json`: per-map physics config = the source pool's own
+  pinned config of that map (terrain, obstacles, spawn, bounds; accepted or
+  MAPS-01 derived) + the profile's physics/handling projection (same rule as
+  tools/p06t_extended_profiles.py);
 - `pool-<kind>.json`: pool version 5 (shared-only IPC7 metadata) with the worker
   block of a given legacy pool;
 - `battle-profiles-battle-any.json`: the given version3 template manifest as
@@ -31,9 +32,7 @@ sys.path.insert(0, str(TOOLS))
 import battle_any
 import catalog_v1_data
 from battle_any_profiles import QUALIFICATION
-from p06t_extended_profiles import MAP_PINS
 
-MAP_BASE = Path("evidence/20261014-p05b-handling-fixes-01/pools-ms1-c17")
 MAX_JSON = 1024 * 1024
 MAX_KINDS = 64
 
@@ -86,7 +85,6 @@ def generate(local_root, templates, source_pool, qualified_dir, bundles_dir, kin
     require(manifest.get("version") == 3 and len(manifest["profiles"]) == 5, "version3 five-kind template manifest required")
     pool = json.loads(read(inside(local, source_pool), MAX_JSON))
     require(pool.get("version") == 3 and len(pool["maps"]) == 2, "version3 two-map source pool required")
-    require(sorted(m["asset"] for m in pool["maps"]) == sorted(MAP_PINS), "source pool maps must be the pinned base maps")
     objects, rows = {}, []
     for kind in kinds:
         row = catalog.get(kind)
@@ -104,7 +102,9 @@ def generate(local_root, templates, source_pool, qualified_dir, bundles_dir, kin
         objects[kind + "-geometry.json"] = bundle_raw
         maps = []
         for source in pool["maps"]:
-            base = json.loads(read(local / MAP_BASE / (source["asset"] + "-ms1-handling-config.json"), 16384, MAP_PINS[source["asset"]]))
+            # Map identity, meshes, spawn and bounds of the stand's own pinned legacy config
+            # of that map (accepted or MAPS-01 derived); only physics/handling change.
+            base = json.loads(read(inside(local, Path(source["config"])), 16384, source["config_sha256"]))
             config = {k: base[k] for k in ("version", "profile", "map", "terrain", "obstacles", "spawn_origin", "spawn_yaw", "bounds_xz")}
             config.update(profile["definition"]["physics"], handling=profile["definition"]["handling"])
             name = source["asset"] + "-" + kind + "-config.json"

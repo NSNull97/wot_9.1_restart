@@ -7,7 +7,6 @@ use super::*;
 use crate::map_drive_worker091::{self as legacy, CatalogSpec, ObjectContact};
 use std::{fs::OpenOptions, time::{SystemTime, UNIX_EPOCH}};
 
-const CATALOG_SHA:&str="41c0d9ccfd5b608a07e80a4eb68a3b6ed70bacffdd1444bb58c3f2ebb179bea9";
 
 fn vec3(v:&Value)->[f32;3] {std::array::from_fn(|i|v[i].as_f64().unwrap()as f32)}
 fn contacts(state:&Value)->Vec<ObjectContact> {
@@ -34,20 +33,28 @@ fn battle_any_stand_pilots_and_t26_drive_one_ipc7_scene_with_original_scalar_pro
     let artifacts=Artifacts::load(Path::new(templates["shared_physics"]["path"].as_str().unwrap())).unwrap();
     assert_eq!(digest(&fs::read(templates["shared_physics"]["path"].as_str().unwrap()).unwrap()),
         templates["shared_physics"]["sha256"].as_str().unwrap());
-    let catalog=CatalogSpec::load(&root,&root.join("evidence/20261013-p05b-tracked-handling-01/night-angular-export01/catalog/physics-removals.json"),CATALOG_SHA).unwrap();
+    // The stand's own battle map and its catalog manifest's worker catalog.
+    let map=templates["map"].as_str().unwrap().to_owned();
+    let manifest_path=PathBuf::from(templates["catalog"]["path"].as_str().unwrap());
+    let manifest:Value=serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    let catalog_sha=manifest["worker"]["sha256"].as_str().unwrap().to_owned();
+    let catalog=CatalogSpec::load(&root,&manifest_path.parent().unwrap().join(manifest["worker"]["file"].as_str().unwrap()),&catalog_sha).unwrap();
     let listed=std::env::var("BATTLE_ANY_KINDS").unwrap_or_else(|_|"t26,ussr-KV-3,usa-M4_Sherman,germany-Waffentrager_E100,japan-Chi_Ri".into());
     let wanted=listed.split(',').collect::<Vec<_>>();let n=wanted.len();
     let mut rows=Vec::new();
     for (slot,label) in wanted.iter().enumerate() {
         let profile=templates["profiles"].as_array().unwrap().iter().find(|p|p["kind"]==*label).unwrap();
         let pool:Value=serde_json::from_slice(&fs::read(profile["pool"]["path"].as_str().unwrap()).unwrap()).unwrap();
-        let map=pool["maps"].as_array().unwrap().iter().find(|m|m["asset"]=="05_prohorovka").unwrap();
-        rows.push(json!({"slot":slot,"kind":label,"config":{"path":map["config"],"sha256":map["config_sha256"]},
+        let entry=pool["maps"].as_array().unwrap().iter().find(|m|m["asset"]==map.as_str()).unwrap();
+        let config:Value=serde_json::from_slice(&fs::read(entry["config"].as_str().unwrap()).unwrap()).unwrap();
+        // LAB lanes around the config's own spawn (as the shared scene runtime lays them out).
+        let spawn=vec3(&config["spawn_origin"]);
+        rows.push(json!({"slot":slot,"kind":label,"config":{"path":entry["config"],"sha256":entry["config_sha256"]},
             "source_profile":pool["vehicle_profile"],
-            "spawn_origin":[-209.+8.*(slot%2)as f32,6.046776865530075,458.-12.*(slot/2)as f32],"spawn_yaw":0}));
+            "spawn_origin":[spawn[0]+if slot%2==0{-4.}else{4.},spawn[1],spawn[2]-12.*(slot/2)as f32],"spawn_yaw":config["spawn_yaw"]}));
     }
-    let manifest=json!({"version":2,"profile":"test_lab","policy":POLICY,"map":"05_prohorovka",
-        "catalog":{"path":worker_argument(catalog.path()).unwrap(),"sha256":CATALOG_SHA},"actors":rows});
+    let manifest=json!({"version":2,"profile":"test_lab","policy":POLICY,"map":map,
+        "catalog":{"path":worker_argument(catalog.path()).unwrap(),"sha256":catalog_sha},"actors":rows});
     let stamp=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
     let directory=root.join(format!("test-runs/battle-any-scene-{}-{stamp}",std::process::id()));
     fs::create_dir_all(&directory).unwrap();
@@ -55,7 +62,7 @@ fn battle_any_stand_pilots_and_t26_drive_one_ipc7_scene_with_original_scalar_pro
     let mut out=OpenOptions::new().write(true).create_new(true).open(&path).unwrap();out.write_all(&raw).unwrap();out.sync_all().unwrap();drop(out);
     let spec=Arc::new(SceneSpec::load(&root,&path,&digest(&raw)).unwrap());
     let kinds=spec.actors.iter().map(|a|a.kind).collect::<Vec<_>>();
-    assert!(kinds.iter().all(|k|matches!(k,Kind::T26|Kind::Generated(_))));
+    assert!(kinds.iter().all(|k|matches!(k,Kind::T26|Kind::T34|Kind::T3485|Kind::Generated(_))));
     let mut worker=Worker::launch(artifacts,spec.clone(),17,Scene::new(&spec,&[]).unwrap(),Instant::now()).unwrap();
     let ready=wait_frame(&mut worker);assert_eq!(ready.sequence,0);assert_eq!(ready.actors.len(),n);
     let start=ready.actors.iter().map(|a|a.pose.position).collect::<Vec<_>>();
@@ -85,6 +92,6 @@ fn battle_any_stand_pilots_and_t26_drive_one_ipc7_scene_with_original_scalar_pro
         report.push(format!("{}={:.2}m/{:.2}mps",actor.kind.label(),d,actor.pose.speed));
         assert!(d>1.,"{} did not move under full throttle: {d}",actor.kind.label());
     }
-    println!("BATTLE_ANY_SCENE_SMOKE frames=120 actors={n} removed_objects={removed} {} dir={}",report.join(" "),directory.display());
+    println!("BATTLE_ANY_SCENE_SMOKE map={map} frames=120 actors={n} removed_objects={removed} {} dir={}",report.join(" "),directory.display());
     worker.shutdown().unwrap();
 }

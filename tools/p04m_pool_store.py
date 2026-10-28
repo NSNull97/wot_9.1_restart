@@ -360,6 +360,54 @@ class PoolStore(ResultsStore):
                 layout = [n for key in mount.shell_ids for n in (self.shells[key].native_compact_id, 0)]
                 self.connection.execute("INSERT INTO p09d_native_layout VALUES (?,?,?)", (account, owned["native_id"], json.dumps(layout)))
 
+    def extend_catalog_shells(self, *, account_id):
+        """BATTLE-ANY stand migration: depot rows of the shells a newer catalog added.
+
+        A stand switched from the five-kind catalog keeps snapshots without the
+        new shells, so every profile read fails. Only when the stored snapshot
+        equals this store's projection except exactly the missing zero rows, and
+        no owned vehicle mounts a missing shell, the rows are inserted, the
+        zero-economy top-up applied and the profile re-projected at revision+1;
+        the full reader must then verify it (all or nothing). Idempotent."""
+        self.initialize()
+        require(self.pool_active() and account_id == self.pool_account, "POOL_INACTIVE")
+        c = self.connection
+        c.execute("BEGIN IMMEDIATE")
+        try:
+            row = c.execute("SELECT * FROM game_snapshot WHERE account_id=?", (account_id,)).fetchone()
+            require(row is not None, "UNKNOWN_ACCOUNT")
+            present = {r[0] for r in c.execute("SELECT shell_id FROM p09c_ammo_depot WHERE account_id=? LIMIT ?",
+                                                (account_id, len(self.shells) + 1))}
+            require(present <= set(self.shells), "CORRUPT_STORE")
+            missing = sorted(set(self.shells) - present)
+            if not missing:
+                c.commit()
+                return {"status": "unchanged", "revision": row["revision"], "added": []}
+            for owned in self._research(account_id)["vehicles"]:
+                p = self.registry.by_vehicle.get(owned["vehicle_id"])
+                require(p is None or not set(self.mounts[p.assembly_id].shell_ids) & set(missing), "CORRUPT_STORE")
+            for key in missing:
+                c.execute("INSERT INTO p09c_ammo_depot VALUES (?,?,0)", (account_id, key))
+            vehicles = c.execute("SELECT vehicle_id,state,battle_id FROM game_vehicle WHERE account_id=? ORDER BY vehicle_id LIMIT ?",
+                                 (account_id, MAX_OWNED + 1)).fetchall()
+            require(all(r["state"] == "available" for r in vehicles), "VEHICLE_RESERVED")
+            raw, _ = self._snapshot(account_id, row["revision"], [tuple(r) for r in vehicles])
+            value = _json(raw)
+            for key in missing:
+                require(value["depot"].pop(key) == 0, "CORRUPT_STORE")
+            require(canonical(value).decode("ascii") == row["snapshot_json"], "CORRUPT_STORE")
+            before = c.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account_id,)).fetchone()[0]
+            if self.zero_economy(account_id):
+                self._economy_grants(account_id)
+            self._save_crew_projection(account_id, row["revision"] + 1, before)
+            after = self.read_profile(account_id)
+            require(after["revision"] == row["revision"] + 1, "CORRUPT_STORE")
+            c.commit()
+            return {"status": "extended", "revision": after["revision"], "added": missing}
+        except Exception:
+            c.rollback()
+            raise
+
     def _save_crew_projection(self, account, revision, before):
         if self.pool_active(): self._ensure_pool_rows(account)
         return super()._save_crew_projection(account, revision, before)

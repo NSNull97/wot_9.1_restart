@@ -195,6 +195,13 @@ def prepare(args):
     print(json.dumps(receipt, indent=2))
 
 
+def activate_stand_catalog(bridge):
+    """Bind this process to the stand bridge's CAT-01 catalog, as its workers are."""
+    if 'catalog' in bridge:
+        import catalog_v1
+        catalog_v1.activate(bridge['catalog']['sha256'])
+
+
 def economy(args):
     """Owner order 2026-10-19: zero economy and an exact garage capacity.
 
@@ -210,6 +217,7 @@ def economy(args):
     if not stand.is_relative_to(LOCAL / 'stands') or (stand / 'gateway-process.json').exists():
         raise ValueError('stopped stand below this checkout local/stands required')
     bridge = json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))
+    activate_stand_catalog(bridge)
     catalog = load_catalog(Path(bridge['ammunition_service']['original_root']))
     results = {}
     for account in bridge['mixed_service']['accounts']:
@@ -238,11 +246,13 @@ def provision(args):
     sys.path[:0] = [str(ROOT), str(ROOT / 'tools')]
     from p09e_research_catalog import load_catalog
     from p06t_ammo_loss_store import AmmoLossStore
-    from p04m_pool_crew import PINS
+    from p04m_pool_crew import pins
     stand = (ROOT / args.stand).resolve(strict=True)
     if not stand.is_relative_to(LOCAL / 'stands') or (stand / 'gateway-process.json').exists():
         raise ValueError('stopped stand below this checkout local/stands required')
     bridge = json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))
+    activate_stand_catalog(bridge)
+    PINS = pins()
     catalog = load_catalog(Path(bridge['ammunition_service']['original_root']))
     account, vehicle_id = args.account, args.vehicle
     store = AmmoLossStore(bridge['game_database'], catalog, account_id=account,
@@ -263,18 +273,22 @@ def provision(args):
         def native_request(name, layout):
             return dict(account_id=account, native_database_id=store._project_profile(account, profile())['native_database_id'],
                         command_key=key(name), expected_revision=profile()['revision'], wire_revision=1, layout=layout)
-        def unlock(item, depth=0):
+        def unlock(item, path=frozenset()):
+            # Depth-first over every unlock edge of the item; an item already on
+            # the current path is a cycle, not a route (bounded by the catalogue).
             if item in profile()['research']['unlocked']:
-                return
-            edges = [e for e in catalog.unlocks if e['item_id'] == item]
-            if not edges or depth > 40:
-                raise ValueError('no bounded research path to ' + item)
-            for need in [edges[0]['vehicle_id'], *edges[0]['prerequisite_ids']]:
-                unlock(need, depth + 1)
-            if item not in profile()['research']['unlocked']:
-                research('research', {'vehicle_id': edges[0]['vehicle_id'], 'unlock_index': edges[0]['native_index']})
+                return True
+            if item in path or len(path) > len(catalog.unlocks):
+                return False
+            for edge in (e for e in catalog.unlocks if e['item_id'] == item):
+                if all(unlock(need, path | {item}) for need in [edge['vehicle_id'], *edge['prerequisite_ids']]):
+                    if item not in profile()['research']['unlocked']:
+                        research('research', {'vehicle_id': edge['vehicle_id'], 'unlock_index': edge['native_index']})
+                    return True
+            return False
         kind = store.registry.by_vehicle[vehicle_id].kind
-        unlock(vehicle_id)
+        if not unlock(vehicle_id):
+            raise ValueError('no research path to ' + vehicle_id)
         if not any(r['vehicle_id'] == vehicle_id for r in profile()['research']['vehicles']):
             research('buy_vehicle', {'vehicle_id': vehicle_id})
         native = next(r for r in profile()['research']['vehicles'] if r['vehicle_id'] == vehicle_id)['native_id']
@@ -550,6 +564,29 @@ BATTLE_ANY_FILES = ('gateway.json', 'bridge.json', 'domain.json', 'battle-profil
 LEGACY_KINDS = ('ms1', 'is7', 't26', 't34', 't3485')
 
 
+def extend_catalog_shells(stand):
+    """Per mixed owner: depot rows of the shells the stand's (new) catalog added.
+
+    Same top store class and catalog binding as the bridge worker; refuses any
+    account whose stored state is not exactly the old projection (see
+    PoolStore.extend_catalog_shells). Run on a stopped stand only."""
+    from p09e_research_catalog import load_catalog
+    from p06t_ammo_loss_store import AmmoLossStore
+    bridge = json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))
+    activate_stand_catalog(bridge)
+    catalog = load_catalog(Path(bridge['ammunition_service']['original_root']))
+    results = {}
+    for account in bridge['mixed_service']['accounts']:
+        store = AmmoLossStore(bridge['game_database'], catalog, account_id=account,
+                              shell_catalog=bridge['mixed_service']['shell_catalog'],
+                              terminal_policy=bridge['mixed_service']['terminal_policy'])
+        try:
+            results[account] = store.extend_catalog_shells(account_id=account)
+        finally:
+            store.close()
+    return results
+
+
 def battle_any(args):
     """BATTLE-ANY: let a stopped profile-13 stand battle on the generated catalog kinds.
 
@@ -578,6 +615,11 @@ def battle_any(args):
             raise ValueError('battle-any was not enabled by this tool: ' + ', '.join(missing or ['gateway.json']))
         for name in present:
             shutil.copy2(backup(name), stand / name); backup(name).unlink()
+        saved = stand / 'game.before-battle-any.sqlite'
+        if saved.is_file():
+            # The depot migration is one-way (the old catalog refuses the extra rows).
+            copy_database(saved, Path(json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))['game_database']))
+            saved.unlink()
         print(json.dumps(dict(schema='wot091-stand-battle-any.v1', enabled=False, stand=str(stand),
                               kept=str(stand / 'battle-any-resources')), indent=2))
         return
@@ -622,10 +664,13 @@ def battle_any(args):
     if len(lines) != 1:
         raise ValueError('services.ps1 gateway line not found')
     (stand / 'services.ps1').write_text(script.replace(lines[0], "$gatewayExe = '" + str(gateway_exe) + "'"), encoding='utf-8')
+    database = Path(json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))['game_database'])
+    copy_database(database, stand / 'game.before-battle-any.sqlite')
+    migration = extend_catalog_shells(stand)
     receipt = dict(schema='wot091-stand-battle-any.v1', enabled=True, stand=str(stand), kinds=kinds,
                    catalog_sha256=catalog['sha256'], gateway=str(gateway_exe), gateway_sha256=sha(gateway_exe),
                    physics_artifacts=str(physics), physics_artifacts_sha256=sha(physics),
-                   resources=generated['outputs'], native='NOT_RUN',
+                   resources=generated['outputs'], depot_migration=migration, native='NOT_RUN',
                    clients='reinstall with tools/interactive_client.py prepare ... --catalog-v1 --crew-any from this checkout',
                    rollback='tools/full_test_stand.py battle-any --stand <stand> --disable (restores ' + ', '.join(present) + ')')
     (stand / 'battle-any-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
