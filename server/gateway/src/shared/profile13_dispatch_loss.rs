@@ -170,3 +170,7 @@ mod gw01_capacity_dispatch_tests;
 #[cfg(test)]
 #[path="arena01_dispatch_tests.rs"]
 mod arena01_dispatch_tests;
+
+#[cfg(test)]
+#[path="stab02_containment_tests.rs"]
+mod stab02_containment_tests;

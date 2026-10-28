@@ -34,6 +34,8 @@ mod p10b_host;
 mod login_admission;
 #[path="server_arena.rs"]
 mod arena;
+#[path="server_containment.rs"]
+mod containment;
 #[cfg(test)]
 #[path="server_arena_bench.rs"]
 mod arena_bench;
@@ -1014,6 +1016,53 @@ fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_
 
 fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Option<IntegratedRuntime>,
     template:&BattleTemplate, now:Instant, stage:&str, error:&io::Error)->io::Result<serde_json::Value> {
+    let contained=contain_battle_sessions(table,world,runtime,template,now,stage,error)?;
+    // Without the dispatcher (old helper, training rooms) an unreturned session
+    // takes the old transport retirement; the service loop uses containment::contain_arena.
+    for id in contained.unreturned {table.retire(id,world,now,"failed_battle_return")?;}
+    contained.reset?;
+    Ok(contained.snapshot)
+}
+
+/// STAB-02: what a contained failure left for its caller. One session that
+/// cannot take the contained return never aborts the others' return.
+struct Contained {snapshot:serde_json::Value,unreturned:Vec<u32>,reset:io::Result<()>}
+fn unreturned_session(unreturned:&mut Vec<u32>,id:u32,battle:u64,step:&str,error:&io::Error){
+    if !unreturned.contains(&id){unreturned.push(id);}
+    println!("SHARED_CONTAINMENT_SESSION_UNRETURNED session={id} battle={battle} step={step} error={error} transport_retired=true");
+}
+/// The failed World may be unable to produce this actor's terminal result
+/// (stand -11: its device state refused the profile). The reservation is then
+/// cancelled without a battle result; no consumption or damage is invented.
+fn contain_profile13_session(s:&mut Session,world:&mut World)->io::Result<()> {
+    use crate::battle091::profile13::FinishReason;
+    if let Err(error)=profile13_dispatch::Dispatcher::terminal(s,world,FinishReason::BattleFailure) {
+        if !world.actors.iter().any(|a|a.session==Some(s.id)) {return Err(error);}
+        println!("SHARED_CONTAINMENT_TERMINAL_FALLBACK session={} battle={} error={error} actor_result_discarded=true reservation_cancelled=true",s.id,world.id);
+        world.detach(s.id)?;
+        profile13_dispatch::Dispatcher::terminal(s,world,FinishReason::BattleFailure)?;
+    }
+    if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+    if let Some(c)=&mut s.shared {c.join_requested=false;c.commands.clear();c.hangar_since=None;}
+    Ok(())
+}
+/// Checks the old Avatar's retained return before it is bound to `retained`.
+fn retain_contained_return(s:&mut Session,retained:&Arc<World>)->io::Result<()> {
+    let c=s.shared.as_ref().ok_or_else(||model::bad())?;
+    let owner=s.identity.as_ref().ok_or_else(||model::bad())?;
+    let actor=retained.actors.get(c.slot).ok_or_else(||model::bad())?;
+    let p=c.profile13.as_ref().ok_or_else(||model::bad())?;
+    let pending=p.has_pending_return()&&p.reservation_battle()==Some(retained.id);
+    let committed=c.result_committed&&c.natural_result.as_ref().is_some_and(|r|r.arena_id==retained.id);
+    if c.phase!=Phase::Leaving||c.view.as_ref().is_none_or(|view|view.id!=retained.id)
+        ||actor.identity.account!=owner.account_id||actor.identity.database!=owner.database_id
+        ||actor.session.is_some()||!(pending||committed){return Err(model::bad());}
+    s.shared.as_mut().ok_or_else(||model::bad())?.contained_world=Some(retained.clone());
+    Ok(())
+}
+
+fn contain_battle_sessions(table:&mut Table, world:&mut World, runtime:&mut Option<IntegratedRuntime>,
+    template:&BattleTemplate, now:Instant, stage:&str, error:&io::Error)->io::Result<Contained> {
     let snapshot=serde_json::json!({"stage":stage,"reason":error.to_string().chars().take(2048).collect::<String>(),
         "world":world.failure_snapshot(),
         "sessions":table.sessions.iter().map(|s|serde_json::json!({"session":s.id,
@@ -1025,7 +1074,7 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
             "batch":r.batch.as_ref().map(BatchRuntime::failure_snapshot)}))});
     // Stdout is the stand's retained journal. Never continue the failed world.
     println!("SHARED_BATTLE_FAILED {snapshot}");
-    let mut retire=Vec::new();
+    let mut retire=Vec::new();let mut unreturned=Vec::new();
     let table_split=table.arena_split;
     // ARENA-01: with several arenas only this battle's sessions are touched:
     // an actor here, its native view of this battle, or its reservation for it.
@@ -1033,16 +1082,15 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
     for s in &mut table.sessions {
         if outsiders.contains(&s.id) {continue;}
         if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
-            contained_return_world(s,world)?;continue;
+            if let Err(e)=contained_return_world(s,world) {unreturned_session(&mut unreturned,s.id,world.id,"contained_return",&e);}
+            continue;
         }
         if s.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
             // GW-01: a hangar session with no reservation, writer or arena place
             // is not part of the failed battle; keep its queue and commands.
             if table_split && !world.actors.iter().any(|a|a.session==Some(s.id)) && s.shared.as_ref()
                 .and_then(|c|c.profile13.as_ref()).is_some_and(|p|!p.has_reservation()&&!p.in_flight&&!p.has_pending_return()) {continue;}
-            profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::BattleFailure)?;
-            if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
-            if let Some(c)=&mut s.shared {c.join_requested=false;c.commands.clear();c.hangar_since=None;}
+            if let Err(e)=contain_profile13_session(s,world) {unreturned_session(&mut unreturned,s.id,world.id,"terminal",&e);}
             continue;
         }
         if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
@@ -1066,27 +1114,20 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
             }
         }
     }
-    for id in retire {table.retire(id,world,now,"failed_battle_return")?;}
+    for id in retire {
+        if let Err(e)=table.retire(id,world,now,"failed_battle_return") {unreturned_session(&mut unreturned,id,world.id,"transport_retire",&e);}
+    }
     // Snapshot once after every membership was revoked. A forced failure reset
     // cannot wait for asynchronous Finish, unlike the ordinary reset barrier.
     let retained=Arc::new(world.clone());
     for s in &mut table.sessions {
         if outsiders.contains(&s.id) {continue;}
         if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {continue;}
-        if !s.arena_base||s.shared.as_ref().is_none_or(|c|c.profile13.is_none()){continue;}
-        let c=s.shared.as_ref().ok_or_else(||model::bad())?;
-        let owner=s.identity.as_ref().ok_or_else(||model::bad())?;
-        let actor=retained.actors.get(c.slot).ok_or_else(||model::bad())?;
-        let p=c.profile13.as_ref().ok_or_else(||model::bad())?;
-        let pending=p.has_pending_return()&&p.reservation_battle()==Some(retained.id);
-        let committed=c.result_committed&&c.natural_result.as_ref().is_some_and(|r|r.arena_id==retained.id);
-        if c.phase!=Phase::Leaving||c.view.as_ref().is_none_or(|view|view.id!=retained.id)
-            ||actor.identity.account!=owner.account_id||actor.identity.database!=owner.database_id
-            ||actor.session.is_some()||!(pending||committed){return Err(model::bad());}
-        s.shared.as_mut().ok_or_else(||model::bad())?.contained_world=Some(retained.clone());
+        if !s.arena_base||s.shared.as_ref().is_none_or(|c|c.profile13.is_none())||unreturned.contains(&s.id){continue;}
+        if let Err(e)=retain_contained_return(s,&retained) {unreturned_session(&mut unreturned,s.id,world.id,"contained_view",&e);}
     }
-    template.replace(world,runtime,now)?;
-    Ok(snapshot)
+    let reset=template.replace(world,runtime,now);
+    Ok(Contained{snapshot,unreturned,reset})
 }
 
 fn arena_member(s:&Session,world:&World)->bool {
@@ -1751,8 +1792,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         for(id,reason)in closing.drain(..){
             if !table.sessions.iter().any(|s|s.id==id){continue;}
             let home=session_home(&table,&arenas,&battle_dispatch,id);let a=&mut arenas[home];
-            if retire_contained_session(&mut battle_dispatch,&mut table,&a.world,id,now,reason)?{continue;}
-            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut a.world,id,now,reason)?;continue;}
+            if containment::retire_contained_or_drop(&mut table,&mut battle_dispatch,&mut a.world,id,now,reason){continue;}
+            if room_host.is_none(){containment::retire_or_contain(&mut table,&mut battle_dispatch,a,id,now,reason);continue;}
             match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut a.world,&mut a.integrated,&a.template,id,reason,now,logical_ms){
                 Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
                 Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
@@ -1765,13 +1806,18 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
             let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
             // BATTLE_BUSY only when no arena can take this Join (with one arena: it started).
-            let all_started=arenas[lobby].started();
+            let all_started=arenas[lobby].started()||arenas[lobby].closed.is_some();
+            let mut leave_failures:Vec<(usize,io::Error)>=Vec::new();
             for s in &mut table.sessions {
                 let home=arena::home(s,&arenas,lobby);let a=&mut arenas[home];
                 // An explicitly contained old Avatar has no authority in the
                 // replacement World, including the terminal-freeze pass.
                 if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
-                    contained_return_world(s,&a.world)?;continue;
+                    if let Err(error)=contained_return_world(s,&a.world) {
+                        println!("SHARED_CONTAINED_RETURN_FAILED session={} reason={error} replacement_world_unchanged=true",s.id);
+                        closing.push((s.id,"contained_terminal_return_failed"));
+                    }
+                    continue;
                 }
                 if all_started {
                     let busy=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
@@ -1787,9 +1833,15 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     (c.phase==Phase::Leaving || c.phase==Phase::Account && !c.join_requested
                         && c.profile13.as_ref().is_some_and(|p|p.has_reservation()&&!p.hold_account_only)));
                 if pending {
-                    profile13_dispatch::Dispatcher::terminal(s,&a.world,crate::battle091::profile13::FinishReason::ManualLeave)?;
+                    if let Err(error)=profile13_dispatch::Dispatcher::terminal(s,&a.world,crate::battle091::profile13::FinishReason::ManualLeave) {
+                        println!("SHARED_LEAVE_TERMINAL_FAILED session={} battle={} error={error} battle_contained=true",s.id,a.world.id);
+                        leave_failures.push((home,error));continue;
+                    }
                     if !a.blocked() && a.has_session(s.id) {a.world.detach(s.id)?;}
                 }
+            }
+            for (home,error) in leave_failures.drain(..) {
+                containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[home],now,"leave_terminal",Some("fault_leave_terminal"),&error);
             }
             let mut index=0;
             while index<garage.len() {
@@ -1809,16 +1861,14 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             // Hold5 is refused with more than one arena (config); it owns arena 0.
             battle_dispatch.observe_hold_world(&table,&arenas[0].world)?;
             if let Some(error)=battle_dispatch.hold_pre_avatar_failure(&table,&arenas[0].world){
-                let a=&mut arenas[0];
-                battle_dispatch.before_hold_reset(&a.world)?;
-                contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"hold5_pre_avatar_departure",&error)?;
-                a.cursors.reset();
+                containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[0],now,"hold5_pre_avatar_departure",None,&error);
             }
             if garage.is_empty() && !result_manager.busy() && !battle_dispatch.late_running() && (!config.p08b_owner_battle_hold||admission.is_empty()) {
                 battle_dispatch.poll(&mut table,config.clone(),now)?;
-                for a in &mut arenas {
-                    if battle_dispatch.finish_empty_queue(&table,&mut a.world,&mut a.integrated,&a.template,now)? {
-                        a.cursors.reset();
+                for a in arenas.iter_mut().filter(|a|a.closed.is_none()) {
+                    match battle_dispatch.finish_empty_queue(&table,&mut a.world,&mut a.integrated,&a.template,now) {
+                        Ok(true)=>a.cursors.reset(),Ok(false)=>{},
+                        Err(error)=>containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"queue_reset",None,&error),
                     }
                 }
                 let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
@@ -1834,19 +1884,26 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     }
                 }
                 let a=&mut arenas[lobby];
-                if a.world.started.is_none() && a.world.actors.iter().all(|x|x.session.is_none()) {
+                if a.closed.is_none() && a.world.started.is_none() && a.world.actors.iter().all(|x|x.session.is_none()) {
                     let kind=table.sessions.iter().find_map(|s|s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
                         .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && !p.has_pending_return())
                         .filter(|p|p.reservation_battle()==Some(a.world.id)).and_then(|p|p.reservation_kind()));
                     if let Some(kind)=kind.filter(|k|!a.world.mixed_profiles()&&*k!=a.world.vehicle_kind()) {
-                        let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
-                        a.template=BattleTemplate::from_resources(r,a.world.id,now)?;
-                        if config.visibility_v1 {
-                            a.template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
-                            a.template.world.enable_result_spots()?;
+                        // STAB-02: a kind that cannot be seated fails its battle, not the service;
+                        // the old template stays for the reset.
+                        let switched=(||->io::Result<BattleTemplate>{
+                            let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
+                            let mut template=BattleTemplate::from_resources(r,a.world.id,now)?;
+                            if config.visibility_v1 {
+                                template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
+                                template.world.enable_result_spots()?;
+                            }
+                            template.select(&mut a.world,&mut a.integrated,now)?;Ok(template)
+                        })();
+                        match switched {
+                            Ok(template)=>{a.template=template;a.cursors.reset();},
+                            Err(error)=>containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"battle_select",None,&error),
                         }
-                        a.template.select(&mut a.world,&mut a.integrated,now)?;
-                        a.cursors.reset();
                     }
                 }
                 for s in &mut table.sessions {
@@ -1866,8 +1923,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         println!("P08B_HOMOGENEOUS_DENIAL session={} battle={} reservation_will_be_returned=true",s.id,a.world.id);
                     }
                 }
-                if room_host.as_ref().is_none_or(|h|!h.preparing()){
-                    let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
+                let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
+                if room_host.as_ref().is_none_or(|h|!h.preparing()) && arenas[lobby].closed.is_none() {
                     battle_dispatch.attached_elsewhere=arena::attached_outside(&arenas,lobby);
                     let dispatched=battle_dispatch.start(&mut table,&arenas[lobby].world,config.clone(),now);
                     battle_dispatch.attached_elsewhere.clear();dispatched?;
@@ -1904,10 +1961,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 Err(error)=>println!("P10B_HOST_RETRY error={error} authority_retained=true service_alive=true"),
             }
             if let Some(error)=host.prestart_failure(&a.world,None,now){
-                if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"training_handoff_failure");}
-                        battle_dispatch.before_hold_reset(&a.world)?;
-                        contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"training_handoff",&error)?;
-                a.cursors.reset();
+                containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"training_handoff",Some("training_handoff_failure"),&error);
             }
         }
         if let Some(late)=&mut battle_dispatch.late{
@@ -1922,15 +1976,19 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         }
         for a in &mut arenas {
             if a.world.owner_hold_enabled()&&a.world.started.is_some()&&a.world.actors.iter().all(|x|x.session.is_none())&&!a.blocked(){
-                a.world.advance_lifecycle(now)?;battle_dispatch.observe_hold_world(&table,&a.world)?;
+                if let Err(error)=a.world.advance_lifecycle(now) {
+                    containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"lifecycle",Some("fault_lifecycle"),&error);continue;
+                }
+                battle_dispatch.observe_hold_world(&table,&a.world)?;
             }
         }
         for a in &mut arenas {
-            if parked_battle_reset_ready(&table,&a.world) {
+            if a.closed.is_none() && parked_battle_reset_ready(&table,&a.world) {
                 if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"normal_all_parked_reset");}
-                    battle_dispatch.before_hold_reset(&a.world)?;
-                    a.template.replace(&mut a.world,&mut a.integrated,now)?;
-                a.cursors.reset();
+                match battle_dispatch.before_hold_reset(&a.world).and_then(|()|a.template.replace(&mut a.world,&mut a.integrated,now)) {
+                    Ok(())=>a.cursors.reset(),
+                    Err(error)=>containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"battle_reset",None,&error),
+                }
             }
         }
         for s in &mut table.sessions {
@@ -1945,6 +2003,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         let mut failures:Vec<(usize,&'static str,io::Error)>=Vec::new();
         for index in 0..arenas.len() {
             let a=&mut arenas[index];
+            containment::reopen_closed(a,now);
+            if a.closed.is_some() {commands.push(None);continue;}
             let pre=(||->io::Result<bool> {
                 if a.world.owner_hold_enabled(){battle_dispatch.attach_hold_ready_group(&mut table,&mut a.world,&config.battle_run_id,now)?;}
                 else{attach_waiting_sessions(&mut table,&mut a.world,now)?;}
@@ -1975,21 +2035,15 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         }
         failures.sort_by_key(|f|f.0);
         for (index,stage,error) in failures {
-            let a=&mut arenas[index];
-            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,if stage=="world_step"{"fault_world_step"}else{"fault_world_step_panic"});}
-                battle_dispatch.before_hold_reset(&a.world)?;
-                contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,stage,&error)?;
-            a.cursors.reset();
+            let late=if stage=="world_step"{"fault_world_step"}else{"fault_world_step_panic"};
+            containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[index],now,stage,Some(late),&error);
         }
         if let Some(late)=&mut battle_dispatch.late{late.observe_sessions(table.sessions.iter());for a in &arenas{late.seal_world(&a.world);}}
         for a in &mut arenas {
             battle_dispatch.observe_hold_world(&table,&a.world)?;
             let sealed=battle_dispatch.hold_results(a.world.id).or_else(||battle_dispatch.late.as_ref().and_then(|m|m.sealed_results(a.world.id)));
             if let Err(error)=stage_lifecycle_results_from(&mut table,&a.world,sealed) {
-                if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"fault_result_snapshot");}
-                    battle_dispatch.before_hold_reset(&a.world)?;
-                    contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"result_snapshot",&error)?;
-                a.cursors.reset();
+                containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"result_snapshot",Some("fault_result_snapshot"),&error);
             }
         }
         let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
@@ -2045,17 +2099,13 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
         }
         for (home,error) in publication_failures {
-            let a=&mut arenas[home];
-            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"fault_publication");}
-                battle_dispatch.before_hold_reset(&a.world)?;
-                contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"publication",&error)?;
-            a.cursors.reset();
+            containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[home],now,"publication",Some("fault_publication"),&error);
         }
         for(id,reason)in closing{
             if !table.sessions.iter().any(|s|s.id==id){continue;}
             let home=session_home(&table,&arenas,&battle_dispatch,id);let a=&mut arenas[home];
-            if retire_contained_session(&mut battle_dispatch,&mut table,&a.world,id,now,reason)?{continue;}
-            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut a.world,id,now,reason)?;continue;}
+            if containment::retire_contained_or_drop(&mut table,&mut battle_dispatch,&mut a.world,id,now,reason){continue;}
+            if room_host.is_none(){containment::retire_or_contain(&mut table,&mut battle_dispatch,a,id,now,reason);continue;}
             match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut a.world,&mut a.integrated,&a.template,id,reason,now,logical_ms){
                 Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
                 Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
