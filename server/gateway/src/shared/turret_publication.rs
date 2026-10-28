@@ -5,7 +5,10 @@ use detached_turret::{ActionKind,Book,Entry,Pose,MAX_TURRETS};
 use ammo_detonation::FlightPhase;
 pub(super) const PRESENTATION_TIMEOUT_MS:u64=20_000;
 #[derive(Clone)]
-pub(super) struct State{pub(super) book:Book,pub(super) effect_cursor:u32,last_pose:[Option<u64>;MAX_TURRETS],last_colliding:[Option<bool>;MAX_TURRETS]}
+pub(super) struct State{pub(super) book:Book,pub(super) effect_cursor:u32,last_pose:[Option<SentPose>;MAX_TURRETS],last_colliding:[Option<bool>;MAX_TURRETS]}
+/// Last pose queued to this recipient: its native tick and exact sample pose.
+#[derive(Clone,Copy,PartialEq)]
+pub(super) struct SentPose{tick:u32,position:[f32;3],direction:[f32;3]}
 impl State{pub(super) fn new()->Self{Self{book:Book::new(),effect_cursor:0,last_pose:[None;MAX_TURRETS],last_colliding:[None;MAX_TURRETS]}}}
 
 // #717 client property1 BOOL in the established generic entity-property
@@ -105,15 +108,19 @@ impl Session{
         for flight in world.turret_flights(){
             if next.tx.len()>=8{break;}
             let slot=flight.event().target();let sample=flight.sample();let c=next.shared.as_mut().ok_or_else(||bad())?;
-            if !c.turrets.book.pose_allowed(slot)||c.turrets.last_pose[slot]==Some(sample.at_ms){continue;}
+            if !c.turrets.book.pose_allowed(slot){continue;}
             let tick=1000u32.checked_add(u32::try_from(sample.at_ms/100).map_err(|_|bad())?).ok_or_else(||bad())?;
+            // At most one pose per native tick, and none for an unchanged pose:
+            // the sample time follows the loop clock (5 ms) even at rest, and a
+            // per-turn resend held the window full and starved vehicle snapshots.
+            if c.turrets.last_pose[slot].is_some_and(|old|old.tick==tick||old.position==sample.position&&old.direction==sample.direction){continue;}
             // The detached entity carries the gun collider for the whole
             // flight and while it rests. Do not briefly switch it off between
             // the Create packet and the landing sample.
             let collidable=true;let mut body=Vec::new();
             if c.turrets.last_colliding[slot]!=Some(collidable){body.extend(colliding(slot,collidable)?);}
             body.extend(detached_turret::pose(slot,tick,Pose{position:sample.position,direction:sample.direction})?);
-            next.tx.enqueue_body(&body)?;c.turrets.last_pose[slot]=Some(sample.at_ms);c.turrets.last_colliding[slot]=Some(collidable);
+            next.tx.enqueue_body(&body)?;c.turrets.last_pose[slot]=Some(SentPose{tick,position:sample.position,direction:sample.direction});c.turrets.last_colliding[slot]=Some(collidable);
         }
         *self=next;events.extend(committed);Ok(())
     }

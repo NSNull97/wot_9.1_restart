@@ -120,3 +120,28 @@ fn created(s:&mut Session,w:&World,now:Instant){
     let _=send_pending(&mut s,settled);ack_all(&mut s,settled);
     assert!(s.turret_presentation_ready(&w,now+Duration::from_secs(20)).unwrap());
 }
+
+/// Owner stand -11, 2v2 (2026-10-28): after an ammo-bay detonation the resting
+/// turret pose was re-sent on every 5 ms loop turn (its sample time follows the
+/// clock), which held the reliable window at 6-7 and starved every vehicle
+/// snapshot (sent only below 4 pending) for the rest of a continuing battle.
+#[test]fn p06t_resting_turret_pose_is_sent_once_and_flying_poses_at_most_once_per_tick(){
+    let now=Instant::now();let(mut s,mut w)=fixture_for(now,1);detonate(&mut w);created(&mut s,&w,now);ack_all(&mut s,now);
+    // Flight: 5 ms loop turns for 1 s, the client acknowledging every turn.
+    let mut sent=0;
+    for turn in 1..=200u64 {
+        let at=now+Duration::from_millis(5*turn);w.advance_turret_flights(at).unwrap();
+        let before=s.tx.len();s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();sent+=s.tx.len()-before;
+        assert!(sent<=11,"flying poses: {sent} bodies by turn {turn} (more than one per 100 ms tick)");if s.tx.len()>0{ack_all(&mut s,at);}
+    }
+    assert!(sent<=11,"flying poses: {sent} bodies for 1 s");
+    let landed=now+Duration::from_secs(4);w.advance_turret_flights(landed).unwrap();
+    assert_eq!(w.turret_flights()[0].sample().phase,FlightPhase::Resting);
+    s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();assert!(s.tx.len()<=1);if s.tx.len()>0{ack_all(&mut s,landed);}
+    // At rest: 30 s of loop turns, no acknowledgement at all, window stays empty.
+    for turn in 1..=6000u64 {
+        let at=landed+Duration::from_millis(5*turn);w.advance_turret_flights(at).unwrap();
+        s.flush_shared_turrets(&w,&mut Vec::new()).unwrap();
+        assert_eq!(s.tx.len(),0,"resting turret re-sent its unchanged pose at turn {turn}");
+    }
+}
