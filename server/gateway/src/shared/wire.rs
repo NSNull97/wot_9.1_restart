@@ -32,12 +32,19 @@ pub fn aim_intent(raw: &[u8], own: usize) -> io::Result<Option<aim::Intent>> {
         else { aim::Intent::Point([value(0),value(1),value(2)]) };
     intent.validate()?; Ok(Some(intent))
 }
-/// ARENA-01: native entity/alias layout below covers six vehicles (aliases
-/// 0/1 and 240..243; detached turrets own 248..253). A larger arena exists
-/// in the domain and Jolt scene only until a native layout is verified.
+/// The accepted six-vehicle native layout (aliases 0/1 and 240..243; detached
+/// turrets 248..253). Battles of at most six places use only these bytes.
 pub const MAX_NATIVE_ACTORS: usize = 6;
+/// SPAWN-15: slots 6..29 extend the same ID ranges (vehicle 0x09110003+2k,
+/// Avatar ID-1) with aliases 146..169; their turrets take 170..193. Free u8
+/// aliases: areas own 2..145. The #717 enterAoI handler (0xd71270) stores the
+/// ID at `[conn + alias*4 + 0x1bc]` for any u8 alias (VERIFIED, static PE);
+/// native display of more than six vehicles is NOT_RUN. A world larger than
+/// six exists only with config `battle_players` > 6 (spawn policy required).
+pub const MAX_WIRE_ACTORS: usize = model::MAX_ACTORS;
+const SPAWN15_ALIAS_BASE: u8 = 146;
 pub fn vehicle_id(slot: usize) -> io::Result<u32> {
-    if slot >= MAX_NATIVE_ACTORS { return Err(model::bad()); }
+    if slot >= MAX_WIRE_ACTORS { return Err(model::bad()); }
     // The original pair occupies3/5; AreaDestructibles owns7..150. New
     // actors and their Avatars use another server-owned entity ID range.
     Ok(if slot<2 {vehicle::VEHICLE_ENTITY_ID+2*slot as u32}
@@ -47,7 +54,7 @@ pub fn avatar_id(slot: usize) -> io::Result<u32> { Ok(vehicle_id(slot)? - 1) }
 pub fn vehicle_alias(slot:usize)->io::Result<u8> {
     vehicle_id(slot)?;
     // Existing area aliases2..145 retain their accepted native layout.
-    Ok(if slot<2 {slot as u8}else{240+slot as u8-2})
+    Ok(if slot<2 {slot as u8}else if slot<MAX_NATIVE_ACTORS {240+slot as u8-2}else{SPAWN15_ALIAS_BASE+(slot-MAX_NATIVE_ACTORS) as u8})
 }
 pub fn slot_for_vehicle(id: u32) -> io::Result<usize> {
     (0..model::MAX_ACTORS).find(|slot| vehicle_id(*slot).ok() == Some(id)).ok_or_else(|| model::bad())
@@ -318,10 +325,16 @@ pub fn tracer_stop(projectile: &Projectile) -> io::Result<Vec<u8>> {
     if b.len() != 18 { return Err(model::bad()); }
     Ok(b)
 }
+/// Ready updates carried inside the binding body: own, and ready vehicles of
+/// the six-slot layout. SPAWN-15: slots 6..29 (13 bytes each) would push the
+/// body past 512, so their readiness follows as separate updates.
+pub fn binding_ready(w: &World, own: usize, slot: usize) -> bool {
+    slot == own || slot < MAX_NATIVE_ACTORS && w.actors.get(slot).is_some_and(|a| a.ready)
+}
 pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec<u8>> {
     let a = actor(w, own)?;
     let mut b = vec![2, 10, 3]; b.extend(w.tick.to_le_bytes());
-    for slot in 0..w.actors.len() { if slot == own || w.actors[slot].ready { b.extend(ready_update(slot)?); } }
+    for slot in 0..w.actors.len() { if binding_ready(w, own, slot) { b.extend(ready_update(slot)?); } }
     if w.lifecycle.is_some() { b.extend(lifecycle_period(w)?); }
     else {
         let mut period = vec![0x80, 2, b'(', b'K', 3, b'G']; period.extend(3700f64.to_be_bytes());
@@ -355,6 +368,18 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
         b.extend(reload_for(kind,own, left.min(kind.reload_seconds()))?);
     }
     Ok(b)
+}
+/// SPAWN-15: one reliable body is <= 512 bytes; a vehicle costs 38. Visible
+/// vehicles are split between complete records into bodies of <= 500 bytes,
+/// each with its own tick header (as detached-turret poses already do). Up to
+/// 13 visible vehicles stay one body, byte-identical to `publication`.
+pub fn publication_parts<const N:usize>(w: &World, visible: [bool; N]) -> io::Result<Vec<Vec<u8>>> {
+    let whole = publication(w, visible)?;
+    if whole.len() <= 500 { return Ok(vec![whole]); }
+    const RECORD: usize = 38;
+    if (whole.len() - 2) % RECORD != 0 { return Err(model::bad()); }
+    let per = (500 - 2) / RECORD;
+    Ok(whole[2..].chunks(per * RECORD).map(|records| { let mut b = whole[..2].to_vec(); b.extend(records); b }).collect())
 }
 pub fn publication<const N:usize>(w: &World, visible: [bool; N]) -> io::Result<Vec<u8>> {
     if !(1000..=37000).contains(&w.tick) || N<w.actors.len() || N>model::MAX_ACTORS { return Err(model::bad()); }

@@ -35,13 +35,13 @@ fn created()->Book{let mut b=Book::new();visible(&mut b,1,0);b.mark_queued(actio
 }
 #[test]fn p06t_detached_codec_rejects_poison_without_arbitrary_type_parent_or_float_fields(){
     let p=Pose{position:[0.;3],direction:[0.;3]};
-    for slot in [6,usize::MAX]{assert!(entity_id(slot).is_err());assert!(alias(slot).is_err());assert!(enter(slot).is_err());assert!(leave(slot).is_err());
+    for slot in [MAX_TURRETS,usize::MAX]{assert!(entity_id(slot).is_err());assert!(alias(slot).is_err());assert!(enter(slot).is_err());assert!(leave(slot).is_err());
         assert!(create(slot,VehicleKind::Ms1,p,false,false).is_err());assert!(pose(slot,1000,p).is_err());}
     for raw in [&[8][..],&[8,4,0][..],&[8,3,0,1,0,18,9][..],&[8,4,0,1,0,18,9,0][..]]{assert!(request(raw).is_err());}
     for n in [f32::NAN,f32::INFINITY,2000.1]{let mut bad=p;bad.position[0]=n;assert!(create(0,VehicleKind::Ms1,bad,false,false).is_err());}
     for n in [f32::NAN,PI+0.001]{let mut bad=p;bad.direction[0]=n;assert!(pose(0,1000,bad).is_err());}
     for tick in [0,999,37001,u32::MAX]{assert!(pose(0,tick,p).is_err());}
-    assert!(terminal_health(0,Some(6),0,DeathKind::Detached).is_err());assert!(terminal_health(0,None,11,DeathKind::Detached).is_err());
+    assert!(terminal_health(0,Some(super::super::wire::MAX_WIRE_ACTORS),0,DeathKind::Detached).is_err());assert!(terminal_health(0,None,11,DeathKind::Detached).is_err());
     for(v,s)in [(f32::NAN,0.),(-1.,0.),(0.,-1.),(0.,1001.)]{assert!(explosion(0,v,s).is_err());}
 }
 #[test]fn p06t_detached_ids_and_aliases_are_disjoint_from_all_six_vehicles_and144_areas(){
@@ -78,7 +78,7 @@ fn created()->Book{let mut b=Book::new();visible(&mut b,1,0);b.mark_queued(actio
     b.ack(4,&[1,2,3]).unwrap();assert!(!b.pose_allowed(1));b.ack(4,&[4]).unwrap();assert!(b.pose_allowed(1));
 }
 #[test]fn p06t_detached_book_failed_queue_bounds_and_six_targets_remain_atomic(){
-    let mut b=Book::new();let empty=b.clone();assert!(b.set_visibility(6,Some(0),true,true,true).is_err());assert_eq!(b,empty);
+    let mut b=Book::new();let empty=b.clone();assert!(b.set_visibility(MAX_TURRETS,Some(0),true,true,true).is_err());assert_eq!(b,empty);
     assert!(b.set_visibility(0,None,true,true,true).is_err());assert_eq!(b,empty);
     for slot in 0..6{visible(&mut b,slot,0);}let actions=b.transitions();assert_eq!(actions.len(),6);
     let unqueued=b.clone();assert_eq!(b.transitions(),actions);assert_eq!(b,unqueued); // failed enqueue has no book effect
@@ -87,8 +87,8 @@ fn created()->Book{let mut b=Book::new();visible(&mut b,1,0);b.mark_queued(actio
     for a in b.transitions(){b.mark_queued(a,1).unwrap();}b.ack(2,&[]).unwrap();
     for slot in 0..6{assert!(b.pose_allowed(slot));}
     let before=b.clone();assert!(b.ack(3,&vec![1;257]).is_err());assert_eq!(b,before);
-    assert!(b.on_request(6).is_err());assert_eq!(b,before);assert!(!b.pose_allowed(6));
+    assert!(b.on_request(MAX_TURRETS).is_err());assert_eq!(b,before);assert!(!b.pose_allowed(MAX_TURRETS));
     // Outer receive staging: no mutation escapes when a later operation fails.
     let mut staged=b.clone();staged.set_visibility(1,Some(0),true,false,false).unwrap();
-    staged.mark_queued(action(&staged,ActionKind::Leave,1),2).unwrap();assert!(staged.on_request(6).is_err());assert_eq!(b,before);
+    staged.mark_queued(action(&staged,ActionKind::Leave,1),2).unwrap();assert!(staged.on_request(MAX_TURRETS).is_err());assert_eq!(b,before);
 }

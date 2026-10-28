@@ -77,13 +77,19 @@ impl BatchRuntime {
     /// ARENA-01: slots/lanes stay below the native six unless the World was
     /// explicitly built with a larger roster (up to model::MAX_ACTORS).
     fn actor_manifest_for_roster(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,lane:usize,roster:usize)->io::Result<serde_json::Value> {
+        if lane>=Self::slot_bound(roster) {return Err(model::bad());}
+        let map=resources.maps.get(kind.index()).ok_or_else(||model::bad())?;
+        Self::actor_manifest_placed(resources,slot,kind,version,roster,Self::lane_origin(map.spawn,lane),map.spawn_yaw)
+    }
+    /// One actor row at an explicit server-chosen pose (LAB lane or SPAWN-15 spot).
+    fn actor_manifest_placed(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,roster:usize,origin:[f32;3],yaw:f32)->io::Result<serde_json::Value> {
         let bound=Self::slot_bound(roster);
-        if slot>=bound || lane>=bound || !matches!(version,1|2|3) || version==1&&kind.index()>=2
+        if slot>=bound || !matches!(version,1|2|3) || version==1&&kind.index()>=2
             ||kind.is_extended()&&version!=3||version==3&&(resources.version!=4||resources.maps.len()!=7) {return Err(model::bad());}
         let map=resources.maps.get(kind.index()).ok_or_else(||model::bad())?;
         let mut row=serde_json::json!({"slot":slot,"kind":kind.label(),
             "config":{"path":Self::physical_path(&map.config),"sha256":map.config_sha256},
-            "spawn_origin":Self::lane_origin(map.spawn,lane),"spawn_yaw":map.spawn_yaw});
+            "spawn_origin":origin,"spawn_yaw":yaw});
         if version>=2 {
             row["source_profile"]=if kind.index()>=2 {
                 let (path,sha256)=resources.source_profiles[kind.index()].as_ref().ok_or_else(||model::bad())?;
@@ -108,7 +114,15 @@ impl BatchRuntime {
             return Err(model::bad());
         }
         let version=if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
+        // SPAWN-15: each team on its own base formation; otherwise LAB lanes.
+        let spots=if world.team_base_spawn() {
+            let teams=(0..world.actors.len()).map(|slot|world.team(slot)).collect::<io::Result<Vec<_>>>()?;
+            Some(super::super::team_spawn::placement(world.map,&teams)?)
+        } else {None};
         let rows=world.actors.iter().enumerate().map(|(slot,actor)|{
+            if let Some(spot)=spots.as_ref().and_then(|s|s.get(slot)) {
+                return Self::actor_manifest_placed(&self.resources,slot,actor.vehicle_kind(),version,world.expected_actors(),spot.position,spot.yaw);
+            }
             let lane=if world.team_plan().is_some(){world.spawn_lane(slot)?}else{slot};
             Self::actor_manifest_for_roster(&self.resources,slot,actor.vehicle_kind(),version,lane,world.expected_actors())
         })
@@ -121,10 +135,13 @@ impl BatchRuntime {
         let path=directory.join(format!("battle-{}-{}-{}.json",std::process::id(),world.id,self.generation));
         
         let positions=rows.iter().map(|r|std::array::from_fn(|i|r["spawn_origin"][i].as_f64().unwrap()as f32)).collect::<Vec<_>>();
-        world.rebase_external_spawn_rows(&positions)?;
+        match &spots {
+            Some(spots)=>world.rebase_external_spawn_poses(&spots.iter().map(|s|(s.position,s.yaw)).collect::<Vec<_>>())?,
+            None=>world.rebase_external_spawn_rows(&positions)?,
+        }
         self.sessions=world.actors.iter().map(|a|a.session.ok_or_else(||model::bad())).collect::<io::Result<_>>()?;
         let resources=self.resources.clone();let generation=self.generation;
-        let sha=format!("{:x}",sha2::Sha256::digest(&raw));
+        let sha=format!("{:x}",sha2::Sha256::digest(&raw));let sha_log=sha.clone();
         let(tx,rx)=mpsc::sync_channel(1);
         std::thread::Builder::new().name("p05c-scene-start".into()).spawn(move||{
             let result=(||{fs::create_dir_all(&directory)?;use std::io::Write;let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&path)?;file.write_all(&raw)?;file.sync_all()?;let spec=Arc::new(SceneSpec::load(&resources.root,&path,&sha)?);
@@ -134,7 +151,10 @@ impl BatchRuntime {
                 Ok((spec,runtime))})();let _=tx.send(result);
         })?;
         self.startup=Some(rx);self.started_at=Some(now);
-        println!("P05C_SCENE_START battle={} actors={} generation={} one_scene=true",world.id,world.actors.len(),generation);Ok(())
+        println!("P05C_SCENE_START battle={} actors={} generation={} one_scene=true",world.id,world.actors.len(),generation);
+        if spots.is_some() {println!("SPAWN15_PLACEMENT battle={} map={} policy={} actors={} manifest_sha256={sha_log}",
+            world.id,world.map.asset(),super::super::team_spawn::POLICY,world.actors.len());}
+        Ok(())
     }
     fn profile(kind:scene_worker::Kind,extended:bool)->io::Result<ram_proof::Profile>{
         let vehicle=if extended{kind.extended_vehicle()}else{VehicleKind::from_label(kind.label()).ok_or_else(||model::bad())?};

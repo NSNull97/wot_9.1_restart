@@ -5,7 +5,8 @@
 use std::{f32::consts::PI,io};
 use super::vehicle_profile::VehicleKind;
 
-pub(super) const MAX_TURRETS:usize=6;
+/// One per vehicle slot. SPAWN-15: slots 6..29 take aliases 170..193 (wire.rs).
+pub(super) const MAX_TURRETS:usize=super::model::MAX_ACTORS;
 pub(super) const CLIENT_TYPE:u16=8;
 const MAX_SELECTIVE:usize=256;
 const ID_BASE:u32=0x0912_0001;
@@ -27,7 +28,9 @@ impl Pose {
     }
 }
 pub(super) fn entity_id(slot:usize)->io::Result<u32>{slot_ok(slot)?;Ok(ID_BASE+slot as u32)}
-pub(super) fn alias(slot:usize)->io::Result<u8>{slot_ok(slot)?;Ok(ALIAS_BASE+slot as u8)}
+const SPAWN15_ALIAS_BASE:u8=170;
+pub(super) fn alias(slot:usize)->io::Result<u8>{slot_ok(slot)?;
+    Ok(if slot<super::wire::MAX_NATIVE_ACTORS{ALIAS_BASE+slot as u8}else{SPAWN15_ALIAS_BASE+(slot-super::wire::MAX_NATIVE_ACTORS) as u8})}
 pub(super) fn enter(slot:usize)->io::Result<Vec<u8>>{
     let mut b=vec![0x0a];b.extend(entity_id(slot)?.to_le_bytes());b.push(alias(slot)?);Ok(b)
 }

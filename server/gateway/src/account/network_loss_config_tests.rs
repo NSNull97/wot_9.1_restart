@@ -27,8 +27,9 @@ fn net02_loss_full26_nested_duplicate_stays_rejected_before_value_decode(){
 #[test]
 fn net02_loss_config_only29_budget_does_not_expand_request16(){
     let json=|count:usize|serde_json::to_vec(&(0..count).map(|n|(format!("key{n}"),Value::Null)).collect::<BTreeMap<_,_>>()).unwrap();
-    assert!(serde_json::from_slice::<ConfigFields>(&json(29)).is_ok());
-    assert!(serde_json::from_slice::<ConfigFields>(&json(30)).is_err());
+    // SPAWN-15 raised the config bound (34 known keys); requests stay 16.
+    assert!(serde_json::from_slice::<ConfigFields>(&json(MAX_CONFIG_FIELDS)).is_ok());
+    assert!(serde_json::from_slice::<ConfigFields>(&json(MAX_CONFIG_FIELDS+1)).is_err());
     assert!(serde_json::from_slice::<Bounded<REQUEST_FIELDS>>(&json(16)).is_ok());
     assert!(serde_json::from_slice::<Bounded<REQUEST_FIELDS>>(&json(17)).is_err());
 }

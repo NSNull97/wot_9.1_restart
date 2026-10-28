@@ -124,17 +124,26 @@ def temp_environment(env):
     return {key: env[key] for key in keys if key in env}
 
 
-def copy_verified_executable(source, destination, target_root):
+CARGO_PROFILES = ('debug', 'release')
+
+
+def checked_profile(profile):
+    if profile not in CARGO_PROFILES:
+        raise ValueError('Cargo profile must be debug or release')
+    return profile
+
+
+def copy_verified_executable(source, destination, target_root, profile='debug'):
     source, destination, target_root = map(Path, (source, destination, target_root))
-    if source != target_root / 'debug/sr-gateway.exe':
-        raise ValueError('Only canonical Cargo debug gateway executable may be exported')
+    if source != target_root / checked_profile(profile) / 'sr-gateway.exe':
+        raise ValueError('Only canonical Cargo debug/release gateway executable of the selected profile may be exported')
     for path in (target_root, source, destination):
         no_reparse(path)
     info = source.stat()
     if not stat.S_ISREG(info.st_mode) or not 2 <= info.st_size <= MAX_TEMP_EXECUTABLE_BYTES:
         raise ValueError('Temporary executable must be a bounded regular file')
     if destination.exists() or destination.parent.exists():
-        raise ValueError('Fresh final target/debug output required')
+        raise ValueError('Fresh final target/<profile> output required')
     before_sha, before_size = sha(source), info.st_size
     with source.open('rb') as stream:
         if stream.read(2) != b'MZ':
@@ -180,7 +189,7 @@ def temp_record(path):
     return value
 
 
-def retain_verified_executable(source, out, target_root):
+def retain_verified_executable(source, out, target_root, profile='debug'):
     """Explicit reference to this allocation only. Never writes/copies/deletes exe."""
     source, out, target_root = map(Path, (source, out, target_root))
     lexical_parent = Path(tempfile.gettempdir()).absolute()
@@ -194,7 +203,7 @@ def retain_verified_executable(source, out, target_root):
     if (not re.fullmatch(r'[A-Za-z]:', parent.drive) or not parent.is_dir()
             or target_root.parent != parent or not target_root.name.startswith('wot091-cargo-')
             or target_root.drive.lower() == out.drive.lower()
-            or source != target_root / 'debug/sr-gateway.exe'):
+            or source != target_root / checked_profile(profile) / 'sr-gateway.exe'):
         raise ValueError('Only this fresh canonical gateway allocation in default OS temp may be referenced')
     metadata_path = out / 'cargo-temp-target.json'
     origin_path = target_root / 'wot091-build-origin.json'
@@ -249,10 +258,12 @@ def built_executable_for_result(out, result):
     out = no_reparse(Path(out)).resolve(strict=True)
     if result.get('component') != 'gateway' or result.get('legacy') is not False:
         raise ValueError('Executable result selector accepts canonical gateway only')
+    # SPAWN-15: a release build records its profile; absent means debug (older results).
+    profile = checked_profile(result.get('cargo_profile', 'debug'))
     if 'built_executable_mode' not in result:
         if 'built_executable_path' in result:
             raise ValueError('Executable path requires an explicit supported result mode')
-        executable = no_reparse(out / 'target/debug/sr-gateway.exe')
+        executable = no_reparse(out / 'target' / profile / 'sr-gateway.exe')
     else:
         if result['built_executable_mode'] != 'retained-os-temp':
             raise ValueError('Unsupported executable result mode; no fallback')
@@ -262,7 +273,7 @@ def built_executable_for_result(out, result):
             raise ValueError('Retained executable reference receipt hash mismatch')
         executable = Path(result['built_executable_path'])
         target = Path(result['cargo_temp_target']['target'])
-        if retain_verified_executable(executable, out, target) != reference:
+        if retain_verified_executable(executable, out, target, profile) != reference:
             raise ValueError('Retained executable result/reference/allocation mismatch')
     if sha(executable) != result['built_executable_sha256']:
         raise ValueError('Built executable result hash mismatch')
@@ -281,8 +292,12 @@ def main():
                         help='Canonical gateway only: retain a fresh target in default OS temp on another drive; copy verified exe to --out')
     parser.add_argument('--retain-temp-executable', action='store_true',
                         help='With canonical --cargo-temp-target only: verify and reference the owned temp exe without a duplicate in --out')
+    parser.add_argument('--release', action='store_true',
+                        help='Gateway only: cargo --release executable; stands with battle_players > 2 (SPAWN-15)')
     parser.add_argument('--out', required=True, help='Fresh directory below project local/build/')
     args = parser.parse_args()
+    if args.release and (args.component != 'gateway' or args.legacy):
+        raise ValueError('--release applies to the current gateway only')
     check_temp_selector(args.component, args.legacy, args.cargo_temp_target)
     check_retain_selector(args.component, args.legacy, args.cargo_temp_target, args.retain_temp_executable)
     out = checked_output(ROOT, args.out)
@@ -347,10 +362,14 @@ def main():
                 result['tests_scope'] = args.test_filter or 'full gateway suite'
                 if args.run_ignored:
                     result['tests_execution'] = 'isolated ignored exact test; one test thread'
-            command(out, 'build', [str(cargo), 'build', '--offline', '--locked', '--manifest-path', manifest], env)
-            executable = out / 'target/debug' / ('p01-wg-probe.exe' if args.legacy else 'sr-gateway.exe')
+            profile = 'release' if args.release else 'debug'
+            if args.release:
+                result['cargo_profile'] = profile
+            command(out, 'build', [str(cargo), 'build', '--offline', '--locked', '--manifest-path', manifest]
+                    + (['--release'] if args.release else []), env)
+            executable = out / 'target' / profile / ('p01-wg-probe.exe' if args.legacy else 'sr-gateway.exe')
             if args.retain_temp_executable:
-                retained = retain_verified_executable(target / 'debug/sr-gateway.exe', out, target)
+                retained = retain_verified_executable(target / profile / 'sr-gateway.exe', out, target, profile)
                 save(out, 'cargo-temp-executable.json', retained)
                 executable = Path(retained['executable'])
                 result['built_executable_path'] = str(executable)
@@ -358,7 +377,7 @@ def main():
                 result['cargo_temp_target']['executable_reference_receipt_sha256'] = sha(out / 'cargo-temp-executable.json')
                 result['cargo_temp_target']['environment_receipt_sha256'] = sha(out / 'cargo-temp-environment.json')
             elif args.cargo_temp_target:
-                copied = copy_verified_executable(target / 'debug/sr-gateway.exe', executable, target)
+                copied = copy_verified_executable(target / profile / 'sr-gateway.exe', executable, target, profile)
                 save(out, 'cargo-temp-copy.json', copied)
                 result['cargo_temp_target']['copy_receipt_sha256'] = sha(out / 'cargo-temp-copy.json')
                 result['cargo_temp_target']['environment_receipt_sha256'] = sha(out / 'cargo-temp-environment.json')

@@ -66,6 +66,8 @@ fn arena01_bench_real_scenes(){
     let mut template=BattleTemplate::from_shared_policy(&resources,size,ids[0],now,None,false).unwrap();
     template.world.enable_original_spotting(super::super::spotting::Rules::selected().unwrap()).unwrap();
     template.world.enable_result_spots().unwrap();
+    // SPAWN-15: optional team-base formation instead of LAB lanes.
+    if env("ARENA01_BENCH_TEAM_BASES").as_deref()==Some("1"){template.world.enable_team_base_spawn().unwrap();}
     let mut arenas=(0..count).map(|k|bench_arena(k,&template,ids[k],size,now)).collect::<Vec<_>>();
     // Startup: each arena launches its own scene process; wait for its first pose.
     // Start where the service starts a full arena; ready follows the settled
@@ -142,7 +144,7 @@ fn arena01_bench_real_scenes(){
     let report=serde_json::json!({
         "schema":"arena01-bench.v1","label":"SYNTHETIC actors (test loadouts, scripted inputs), real Jolt scene process per arena; not native",
         "build":if cfg!(debug_assertions){"debug"}else{"release"},"manifest":manifest,"arenas":count,"actors_per_arena":size,
-        "spotting":"original_spotting+result_spots","mixed_ammo":false,"seconds":wall,"cpu_interval_s":interval,"samples":rows.len(),"loop_ticks":tick_ms.len(),
+        "spotting":"original_spotting+result_spots","spawn":if template.world.team_base_spawn(){super::super::team_spawn::POLICY}else{"lab-lanes"},"mixed_ammo":false,"seconds":wall,"cpu_interval_s":interval,"samples":rows.len(),"loop_ticks":tick_ms.len(),
         "startup_ms":startup_ms,"domain_steps_per_arena":domain_steps,
         "tick_wall":summary(tick_ms),"arena_step_wall":arena_ms.into_iter().map(summary).collect::<Vec<_>>(),
         "view_clone_per_tick":summary(view_ms),

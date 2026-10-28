@@ -29,6 +29,23 @@ class RebaseTests(unittest.TestCase):
         self.assertEqual([pin['path'] for pin in stand.pinned_files(manifest)], ['a', 'b'])
 
 
+class GatewayProfileTests(unittest.TestCase):
+    """SPAWN-15: stands with more than two battle places run a release gateway."""
+    def test_debug_gateway_is_refused_above_two_places_unless_allowed(self):
+        debug = Path('D:/WoT/local/build/g/target/debug/sr-gateway.exe')
+        release = Path('D:/WoT/local/build/g/target/release/sr-gateway.exe')
+        for places in (None, 2):
+            config = {} if places is None else {'battle_players': places}
+            self.assertEqual(stand.check_gateway_profile(debug, config, False)['profile'], 'debug')
+        with self.assertRaisesRegex(ValueError, 'needs a release gateway'):
+            stand.check_gateway_profile(debug, {'battle_players': 4}, False)
+        with self.assertRaisesRegex(ValueError, 'needs a release gateway'):
+            stand.check_gateway_profile(Path('C:/tmp/sr-gateway.exe'), {'battle_players': 30}, False)
+        self.assertTrue(stand.check_gateway_profile(debug, {'battle_players': 4}, True)['debug_allowed'])
+        self.assertEqual(stand.check_gateway_profile(release, {'battle_players': 30}, False),
+                         {'profile': 'release', 'battle_players': 30, 'debug_allowed': False})
+
+
 class BattleMapTests(unittest.TestCase):
     """MAPS-01 `map` command: switch a stopped stand's battle to a registry map."""
     import json as _json

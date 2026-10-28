@@ -1,12 +1,15 @@
 //! Current-recipient detached-turret publication. No queued pose history and
 //! no new world authority while the terminal Avatar drains native requests.
 use super::*;
-use detached_turret::{ActionKind,Book,Entry,Pose};
+use detached_turret::{ActionKind,Book,Entry,Pose,MAX_TURRETS};
 use ammo_detonation::FlightPhase;
 pub(super) const PRESENTATION_TIMEOUT_MS:u64=20_000;
 #[derive(Clone)]
-pub(super) struct State{pub(super) book:Book,pub(super) effect_cursor:u32,last_pose:[Option<u64>;6],last_colliding:[Option<bool>;6]}
-impl State{pub(super) fn new()->Self{Self{book:Book::new(),effect_cursor:0,last_pose:[None;6],last_colliding:[None;6]}}}
+pub(super) struct State{pub(super) book:Book,pub(super) effect_cursor:u32,last_pose:[Option<SentPose>;MAX_TURRETS],last_colliding:[Option<bool>;MAX_TURRETS]}
+/// Last pose queued to this recipient: its native tick and exact sample pose.
+#[derive(Clone,Copy,PartialEq)]
+pub(super) struct SentPose{tick:u32,position:[f32;3],direction:[f32;3]}
+impl State{pub(super) fn new()->Self{Self{book:Book::new(),effect_cursor:0,last_pose:[None;MAX_TURRETS],last_colliding:[None;MAX_TURRETS]}}}
 
 // #717 client property1 BOOL in the established generic entity-property
 // envelope. Python setter:172 is empty; this sets state, not a fake impact FX.
@@ -25,10 +28,10 @@ pub(super) fn parent_create(world:&World,slot:usize)->io::Result<Vec<u8>>{
 }
 fn refresh(c:&mut Client,world:&World)->io::Result<()>{
     if !world.ammo_detonation_enabled(){return Ok(());}
-    let visible=c.visible();let mut seen=[false;6];let mut book=c.turrets.book.clone();
+    let visible=c.visible();let mut seen=[false;MAX_TURRETS];let mut book=c.turrets.book.clone();
     for flight in world.turret_flights(){
         let event=flight.event();let slot=event.target();
-        if slot>=world.actors.len()||slot>=6||seen[slot]||world.actors[slot].health!=0{return Err(bad());}
+        if slot>=world.actors.len()||slot>=MAX_TURRETS||seen[slot]||world.actors[slot].health!=0{return Err(bad());}
         seen[slot]=true;let sample=flight.sample();
         let epoch=if c.spotting_enabled{c.interest.as_ref().and_then(|b|b.announcement_sequence(slot))}
             else{c.creations[slot].map(|(seq,_)|seq)};
@@ -105,15 +108,19 @@ impl Session{
         for flight in world.turret_flights(){
             if next.tx.len()>=8{break;}
             let slot=flight.event().target();let sample=flight.sample();let c=next.shared.as_mut().ok_or_else(||bad())?;
-            if !c.turrets.book.pose_allowed(slot)||c.turrets.last_pose[slot]==Some(sample.at_ms){continue;}
+            if !c.turrets.book.pose_allowed(slot){continue;}
             let tick=1000u32.checked_add(u32::try_from(sample.at_ms/100).map_err(|_|bad())?).ok_or_else(||bad())?;
+            // At most one pose per native tick, and none for an unchanged pose:
+            // the sample time follows the loop clock (5 ms) even at rest, and a
+            // per-turn resend held the window full and starved vehicle snapshots.
+            if c.turrets.last_pose[slot].is_some_and(|old|old.tick==tick||old.position==sample.position&&old.direction==sample.direction){continue;}
             // The detached entity carries the gun collider for the whole
             // flight and while it rests. Do not briefly switch it off between
             // the Create packet and the landing sample.
             let collidable=true;let mut body=Vec::new();
             if c.turrets.last_colliding[slot]!=Some(collidable){body.extend(colliding(slot,collidable)?);}
             body.extend(detached_turret::pose(slot,tick,Pose{position:sample.position,direction:sample.direction})?);
-            next.tx.enqueue_body(&body)?;c.turrets.last_pose[slot]=Some(sample.at_ms);c.turrets.last_colliding[slot]=Some(collidable);
+            next.tx.enqueue_body(&body)?;c.turrets.last_pose[slot]=Some(SentPose{tick,position:sample.position,direction:sample.direction});c.turrets.last_colliding[slot]=Some(collidable);
         }
         *self=next;events.extend(committed);Ok(())
     }
@@ -121,7 +128,7 @@ impl Session{
         if !world.ammo_detonation_enabled()||world.ammo_detonations().is_empty(){return Ok(true);}
         let c=self.shared.as_ref().ok_or_else(||bad())?;
         let settled=world.turret_flights().iter().all(|f|f.sample().phase==FlightPhase::Resting);
-        let entries_ready=(0..6).all(|slot|matches!(c.turrets.book.entry(slot),
+        let entries_ready=(0..MAX_TURRETS).all(|slot|matches!(c.turrets.book.entry(slot),
             Some(Entry::Hidden)|Some(Entry::Created{acked:true,..})));
         // The detached-turret gate owns only its own reliable request/ACK
         // lifecycle. A normal heartbeat, results envelope, or unrelated

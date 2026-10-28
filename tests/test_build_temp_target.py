@@ -152,6 +152,28 @@ class TempTargetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Only canonical'):
             build.copy_verified_executable(target / 'other.exe', RUN / 'missing/debug/sr-gateway.exe', target)
 
+    def test_release_profile_copies_only_its_own_executable_and_consumer_selects_it(self):
+        # SPAWN-15: --release with --cargo-temp-target or --out; debug stays the default.
+        target = self.fresh('release-source')
+        (target / 'release').mkdir()
+        source = target / 'release/sr-gateway.exe'
+        source.write_bytes(b'MZ' + bytes(range(256)) * 700)
+        out = self.fresh('release-output')
+        destination = out / 'target/release/sr-gateway.exe'
+        with self.assertRaisesRegex(ValueError, 'Only canonical'):
+            build.copy_verified_executable(source, destination, target)
+        with self.assertRaisesRegex(ValueError, 'debug or release'):
+            build.copy_verified_executable(source, destination, target, 'profile')
+        receipt = build.copy_verified_executable(source, destination, target, 'release')
+        self.assertTrue(receipt['verified_equal'])
+        result = {'component': 'gateway', 'legacy': False, 'cargo_profile': 'release',
+                  'built_executable_sha256': build.sha(destination)}
+        self.assertEqual(build.built_executable_for_result(out, result), destination.resolve())
+        with self.assertRaises(FileNotFoundError):
+            build.built_executable_for_result(out, dict(result, cargo_profile='debug'))
+        with self.assertRaisesRegex(ValueError, 'debug or release'):
+            build.built_executable_for_result(out, dict(result, cargo_profile='fast'))
+
     def test_temp_receipt_excludes_ambient_credentials(self):
         env = {'CARGO_TARGET_DIR': 'C:/authored-target', 'CARGO_INCREMENTAL': '0',
                'TOKEN': 'authored-secret', 'PATH': 'authored-private-path', 'USERPROFILE': 'authored-private'}

@@ -37,6 +37,9 @@ mod arena;
 #[cfg(test)]
 #[path="server_arena_bench.rs"]
 mod arena_bench;
+#[cfg(test)]
+#[path="server_spawn15_real_tests.rs"]
+mod spawn15_real_tests;
 use login_admission::{AccountTag,Admission,Decision,Writers};
 
 #[cfg(test)]
@@ -1477,6 +1480,25 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         battle_template=BattleTemplate::from_shared_policy(rows,config.battle_players,world.id,started,qualification,breech_v2)?;
         battle_template.select(&mut world,&mut integrated,started)?;
     }
+    if profile13_mode {
+        // SPAWN-15 / owner stand 2026-10-28: a debug gateway keeps up only with
+        // two battle places (four places: scheduler lag p50 156 ms, fail-closed).
+        let debug=cfg!(debug_assertions);
+        println!("GATEWAY_BUILD profile={} battle_players={} arenas={} supported={}",if debug{"debug"}else{"release"},
+            config.battle_players,config.arenas,!debug||config.battle_players<=2);
+    }
+    if config.team_base_spawn{
+        // SPAWN-15: only the shared Jolt scene places teams; refuse a roster the
+        // map's formation cannot hold before any account is admitted.
+        if !profile13_mode||!battle_template.world.mixed_profiles(){return Err(model::bad().into());}
+        let teams=(0..config.battle_players).map(|slot|(slot%2) as u8+1).collect::<Vec<_>>();
+        super::team_spawn::placement(battle_template.world.map,&teams)?;
+        battle_template.world.enable_team_base_spawn()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("SPAWN15_POLICY_BOUND policy={} map={} places={} per_team_max={} native_layout={} historical_spawns=UNKNOWN",
+            super::team_spawn::POLICY,battle_template.world.map.asset(),config.battle_players,super::team_spawn::PER_TEAM,
+            if config.battle_players>wire::MAX_NATIVE_ACTORS{"spawn15-30"}else{"six"});
+    }
     if config.p06t_mixed_ammo{
         if !profile13_mode||qualification.is_some(){return Err(model::bad().into());}
         battle_template.world.enable_mixed_ammo()?;
@@ -2347,8 +2369,10 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         // exact bytes; the next fresh pose is queued when capacity is available.
         let old_tick = if c.spotting_enabled {c.last_pose_tick.unwrap_or(0)} else {c.view.as_ref().map(|w| w.tick).unwrap_or(0)};
         if c.correction && c.binding.is_some_and(|(_, ack)| ack) && old_tick != next_world.tick && next.tx.len() < 4 {
-            let body = wire::publication(&next_world, c.visible())?;
-            next.tx.enqueue_body(&body)?;c.last_pose_tick=Some(next_world.tick);
+            // SPAWN-15: more than 13 visible vehicles take up to three bodies;
+            // with <= 4 pending the transport bound (8) is never exceeded.
+            for body in wire::publication_parts(&next_world, c.visible())? {next.tx.enqueue_body(&body)?;}
+            c.last_pose_tick=Some(next_world.tick);
             println!("SHARED_SNAPSHOT battle={} session={} tick={} positions={:?} ready={:?} aim_yaw_pitch={:?}", next_world.id, s.id, next_world.tick,
                 next_world.actors.iter().map(|a| a.position).collect::<Vec<_>>(), c.visible(),
                 next_world.actors.iter().map(|a| (a.aim.yaw,a.aim.pitch)).collect::<Vec<_>>());
