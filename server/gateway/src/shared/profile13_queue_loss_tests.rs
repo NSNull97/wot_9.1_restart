@@ -73,6 +73,14 @@ pub(super) fn reserved(now:Instant)->(Session,Reservation){
     assert_eq!(s.outbox.pop_front().unwrap(),crate::map_drive_world091::queue_callback(true));assert!(s.outbox.is_empty());
     let row=state(&mut s).unwrap().reservation_loss.clone().unwrap();(s,row)
 }
+#[test]fn mm01_matched_admission_does_not_repeat_the_queued_announcement(){
+    let now=Instant::now();let mut s=account(now);receive(&mut s,&native(700,1,1),now);
+    {let c=s.shared.as_mut().unwrap();c.queue_announced=true;c.profile13.as_mut().unwrap().match_gate=service::MatchGate::Matched(1);}
+    state(&mut s).unwrap().in_flight=true;
+    let c=completion(&s,1);Dispatcher::deliver_loss(&mut s,c,now).unwrap();
+    assert!(s.outbox.is_empty(),"onEnqueued went out when the Join queued");
+    assert!(s.shared.as_ref().unwrap().queue_announced);assert!(state(&mut s).unwrap().reservation_loss.is_some());
+}
 pub(super) fn world(r:&Reservation,now:Instant)->World{
     let mut w=World::new_for_roster(r.battle,now,crate::map_profile091::MapId::Karelia,2).unwrap();
     w.enable_mixed_ammo().unwrap();

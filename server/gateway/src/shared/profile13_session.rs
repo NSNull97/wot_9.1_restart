@@ -40,8 +40,17 @@ pub(crate) struct State {
     pub(super) in_flight: bool,
     pub(super) command_counter: u32,
     pub(super) stale_envelopes: u8,
+    /// MM-01: which battle a Join may reserve in (Off: any, the old path).
+    pub(super) match_gate: MatchGate,
 }
+/// MM-01 admission gate of one session's Join.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum MatchGate { #[default] Off, Queued, Matched(u64) }
 impl State {
+    /// A Join reserves only in the battle the matchmaker put it in.
+    pub(super) fn admits_into(&self, battle: u64) -> bool {
+        match self.match_gate { MatchGate::Off => true, MatchGate::Queued => false, MatchGate::Matched(b) => b == battle }
+    }
     pub(super) fn reservation_battle(&self)->Option<u64>{self.reservation.as_ref().map(|r|r.battle).or_else(||self.reservation_v2.as_ref().map(|r|r.battle)).or_else(||self.reservation_loss.as_ref().map(|r|r.battle)).or_else(||self.reservation_hold.as_ref().map(|r|r.battle))}
     pub(super) fn reservation_kind(&self)->Option<super::vehicle_profile::VehicleKind>{self.reservation.as_ref().map(|r|r.frozen.kind).or_else(||self.reservation_v2.as_ref().map(|r|r.frozen.kind)).or_else(||self.reservation_loss.as_ref().map(|r|r.frozen.base.kind)).or_else(||self.reservation_hold.as_ref().map(|r|r.frozen.loss().base.kind))}
     pub(super) fn reservation_native_inventory_id(&self)->Option<u32>{self.reservation.as_ref().map(|r|r.native_inventory_id).or_else(||self.reservation_v2.as_ref().map(|r|r.frozen.native_inventory_id)).or_else(||self.reservation_loss.as_ref().map(|r|r.frozen.base.native_inventory_id)).or_else(||self.reservation_hold.as_ref().map(|r|r.frozen.loss().base.native_inventory_id))}
@@ -59,7 +68,7 @@ impl State {
         profile13::encode_request(&context, &Request::RunOpen)?;
         Ok(Self { run_id, revision, selection: None, reservation: None, pending_return: None,reservation_v2:None,pending_return_v2:None,
             reservation_loss:None,pending_return_loss:None,reservation_hold:None,hold_projection:None,hold_return_pending:false,hold_departure_reason:None,hold_account_only:false,
-            in_flight: false, command_counter: 0, stale_envelopes: 0 })
+            in_flight: false, command_counter: 0, stale_envelopes: 0, match_gate: MatchGate::Off })
     }
     /// A retry retains the returned Context. Calling this again creates a new
     /// command and must never replace an ambiguous old writer operation.

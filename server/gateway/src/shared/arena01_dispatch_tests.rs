@@ -48,6 +48,31 @@ fn settle(dispatcher:&mut Dispatcher){
 fn arena01_join_goes_to_the_open_arena_and_a_terminal_waits_for_its_actor_in_any_arena(){
     join_after_a_full_arena_reserves_a_place_in_the_second_arena();
     pending_terminal_waits_while_its_actor_is_attached_in_another_arena();
+    mm01_matched_join_reserves_only_in_its_battle();
+}
+
+/// MM-01 writer gate: a queued Join reserves nowhere; a matched one only in its
+/// battle; a reserved owner never gets a second reservation.
+fn mm01_matched_join_reserves_only_in_its_battle(){
+    let now=Instant::now();let(arenas,first,second)=two_arenas(now);
+    let mut s=waiting(now,3);let root=s.identity.as_ref().unwrap().fixture_dir.clone();
+    state(&mut s).unwrap().match_gate=service::MatchGate::Queued;
+    let mut table=Table{sessions:vec![s],capacity:256,arena_split:true,multi_arena:true,..Table::default()};
+    let mut dispatcher=Dispatcher::default();
+    for a in &arenas {
+        dispatcher.start_loss(&mut table,&a.world,config(&root,"mm01-queued"),now).unwrap();
+        assert!(dispatcher.task_loss.is_none(),"a queued Join reserves nowhere");
+    }
+    state(&mut table.sessions[0]).unwrap().match_gate=service::MatchGate::Matched(second);
+    dispatcher.start_loss(&mut table,&arenas[0].world,config(&root,"mm01-other"),now).unwrap();
+    assert!(dispatcher.task_loss.is_none(),"not into the other arena's battle");
+    dispatcher.start_loss(&mut table,&arenas[1].world,config(&root,"mm01-own"),now).unwrap();
+    assert!(matches!(dispatcher.task_loss.as_ref().unwrap().request,RequestLoss::Admit{battle,..} if battle==second));
+    settle(&mut dispatcher);
+    let mut owner=reserved_in(now,4,first);state(&mut owner).unwrap().match_gate=service::MatchGate::Matched(second);
+    let mut table=Table{sessions:vec![owner],capacity:256,arena_split:true,multi_arena:true,..Table::default()};
+    dispatcher.start_loss(&mut table,&arenas[1].world,config(&root,"mm01-twice"),now).unwrap();
+    assert!(dispatcher.task_loss.is_none(),"reserved in battle {first}: no reservation in battle {second}");
 }
 
 fn join_after_a_full_arena_reserves_a_place_in_the_second_arena(){

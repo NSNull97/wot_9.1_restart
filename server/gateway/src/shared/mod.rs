@@ -3,6 +3,7 @@
 pub(crate) mod model;
 pub(crate) mod p10b_team_plan;
 pub(crate) mod team_spawn;
+pub(crate) mod matchmaker;
 #[cfg(test)]
 mod spawn15_wire_tests;
 pub(crate) mod visibility;

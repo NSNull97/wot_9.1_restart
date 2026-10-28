@@ -95,6 +95,11 @@ mod capacity_tests;
 #[cfg(test)]
 #[path="server_bot01_tests.rs"]
 mod bot01_tests;
+#[path="server_matchmaker.rs"]
+mod matchmaking;
+#[cfg(test)]
+#[path="server_mm01_tests.rs"]
+mod mm01_tests;
 
 /// `capacity` bounds connections. With `arena_split` (GW-01) it is separate
 /// from the arena: a hangar session holds no arena place; places are taken by
@@ -1629,6 +1634,18 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         println!("ARENAS count={} places_per_arena={} battles={:?} step_threads=scoped_per_tick policy=arena01-in-process",
             arenas.len(),arenas[0].world.expected_actors(),arenas.iter().map(|a|a.world.id).collect::<Vec<_>>());
     }
+    // MM-01: a Join queues; groups take free arenas. Config already requires bots and the P04M pool.
+    let mut matchmaker=match (&config.matchmaker,&config.bots) {
+        (None,_)=>None,
+        (Some(rules),Some(plan)) if profile13_mode&&table.arena_split&&arenas[0].world.bot_plan().is_some()=>{
+            let runtime=matchmaking::Runtime::new(rules.clone(),plan)?;
+            println!("MM01_POLICY_BOUND policy={} team_size={} places={} tiers={}..{} tier_spread={} wait_s={} lease_s={} arenas={} bot_tiers={:?} historical_matchmaker=UNKNOWN",
+                super::matchmaker::POLICY,rules.team_size,rules.places(),rules.tiers.0,rules.tiers.1,rules.tier_spread,rules.wait.as_secs(),
+                rules.lease.as_secs(),arenas.len(),runtime.bot_tiers().iter().map(|(k,t)|format!("{}:{t}",k.label())).collect::<Vec<_>>());
+            Some(runtime)
+        },
+        _=>return Err(model::bad().into()),
+    };
     loop {
         let now = Instant::now();
         if now.duration_since(started) >= if profile13_mode {PROFILE13_SERVICE_LIFETIME} else {model::LIFETIME} {
@@ -1824,7 +1841,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     }
                     continue;
                 }
-                if all_started {
+                // MM-01: a queued Join waits for a free arena instead.
+                if all_started&&matchmaker.is_none() {
                     let busy=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
                         p.selection.is_some() && !p.has_reservation() && !p.in_flight);
                     if busy {
@@ -1868,6 +1886,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             if let Some(error)=battle_dispatch.hold_pre_avatar_failure(&table,&arenas[0].world){
                 containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[0],now,"hold5_pre_avatar_departure",None,&error);
             }
+            if let Some(m)=&mut matchmaker {
+                m.tick(&mut table,&mut arenas,battle_dispatch.retired_sessions(),|battle|battle_dispatch.closed_queue(battle),now)?;
+            }
             if garage.is_empty() && !result_manager.busy() && !battle_dispatch.late_running() && (!config.p08b_owner_battle_hold||admission.is_empty()) {
                 battle_dispatch.poll(&mut table,config.clone(),now)?;
                 for a in arenas.iter_mut().filter(|a|a.closed.is_none()) {
@@ -1877,7 +1898,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     }
                 }
                 let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
-                if battle_dispatch.closed_queue(arenas[lobby].world.id) {
+                if matchmaker.is_none()&&battle_dispatch.closed_queue(arenas[lobby].world.id) {
                     for s in &mut table.sessions {
                         let pending=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
                             p.selection.is_some() && !p.has_reservation() && !p.in_flight);
@@ -1928,11 +1949,16 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         println!("P08B_HOMOGENEOUS_DENIAL session={} battle={} reservation_will_be_returned=true",s.id,a.world.id);
                     }
                 }
-                let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
-                if room_host.as_ref().is_none_or(|h|!h.preparing()) && arenas[lobby].closed.is_none() {
-                    battle_dispatch.attached_elsewhere=arena::attached_outside(&arenas,lobby);
-                    let dispatched=battle_dispatch.start(&mut table,&arenas[lobby].world,config.clone(),now);
-                    battle_dispatch.attached_elsewhere.clear();dispatched?;
+                if room_host.as_ref().is_none_or(|h|!h.preparing()){
+                    let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
+                    // MM-01: also every arena of an unstarted group (one writer at a time).
+                    // STAB-02: a closed arena takes no admission.
+                    for target in matchmaker.as_ref().map_or_else(||vec![lobby],|m|m.admission_arenas(&arenas,lobby)) {
+                        if arenas[target].closed.is_some() {continue;}
+                        battle_dispatch.attached_elsewhere=arena::attached_outside(&arenas,target);
+                        let dispatched=battle_dispatch.start(&mut table,&arenas[target].world,config.clone(),now);
+                        battle_dispatch.attached_elsewhere.clear();dispatched?;
+                    }
                 }
             }
             if !battle_dispatch.busy() && !result_manager.busy() && room_host.as_ref().is_none_or(|h|!h.busy()) && (!config.p08b_owner_battle_hold||admission.is_empty()){

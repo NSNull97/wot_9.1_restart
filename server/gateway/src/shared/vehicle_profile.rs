@@ -56,6 +56,8 @@ impl VehicleKind {
     pub fn from_owned_label(value:&str)->Option<Self> {
         Self::from_label(value).or_else(||generated::registry().ok()?.by_label(value).map(Self::Generated))
     }
+    /// MM-01: client tier (`list.xml` level) from the embedded battle-profile table.
+    pub fn tier(self)->std::io::Result<Option<u8>> {generated::tier(&format!("vehicle:{}",self.name()))}
     pub fn from_vehicle_compact_id(value:u32)->Option<Self> {Self::ALL.into_iter().find(|kind|kind.vehicle_compact_id()==value)}
     /// Source/component readiness never grants owner/native admission.
     pub fn battle_admission(self)->bool {matches!(self,Self::Ms1|Self::Is7)}
