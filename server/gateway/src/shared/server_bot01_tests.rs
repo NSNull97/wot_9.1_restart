@@ -60,3 +60,22 @@ fn bot01_absent_plan_keeps_the_full_roster_barrier(){
     assert!(!table.arena_ready(&world,now),"without bots all four places need natives");
     assert_eq!(world.fill_bots().unwrap(),0);
 }
+
+/// Owner's one-client stand check: 1 native place of 6, five bots (3 v 3).
+#[test]
+fn bot01_one_native_place_starts_alone_and_fills_five_bots(){
+    let now=Instant::now();
+    let mut table=Table{capacity:256,arena_split:true,retirement:RetirementWindow::with_limit(1024),..Table::default()};
+    table.sessions=three_entry_ready(now);table.sessions.truncate(1);
+    let mut world=model::bots::tests::prepared(crate::map_profile091::MapId::all().find(|m|m.asset()=="02_malinovka").unwrap(),1,6,1,now);
+    assert_eq!(world.human_places(),1);
+    assert!(!table.arena_ready(&world,now),"no native yet");
+    attach_waiting_sessions(&mut table,&mut world,now).unwrap();
+    assert_eq!(world.actors.len(),1);assert!(table.arena_ready(&world,now),"one entry-ready native starts the battle");
+    assert_eq!(world.fill_bots().unwrap(),5);assert_eq!(world.actors.len(),6);
+    let teams=(0..6).map(|slot|world.team(slot).unwrap()).collect::<Vec<_>>();
+    assert_eq!(teams,[1,2,1,2,1,2],"native in team 1 with two bots, three bots against");
+    advance_battle(&mut world,&mut None,now,true).unwrap();
+    assert!(world.started.is_some()&&world.actors[1..].iter().all(|a|a.ready));
+    world.detach(1).unwrap();assert!(parked_battle_reset_ready(&table,&world),"the one native left: reset");
+}

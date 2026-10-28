@@ -87,12 +87,13 @@
 | Старт H+N, сброс при уходе людей | unit `server.rs` |
 | Бенч release: 1 место игрока + 29 ботов, Прохоровка, настоящий Jolt: шаг p99, CPU, RSS, выстрелы/попадания | `bot01_bench_real_scene` (ignored) → `local/evidence/bot01-*` |
 | FAIL-набор против `66222b4` в той же среде | тот же или меньше |
-| Native: 2 игрока + 4 бота (A), 2 + 28 (B) на стенде -11 | **NOT_RUN** (владелец) |
+| Native: 1 игрок + 5 ботов (A), 1 + 29 (B) на стенде -11 | **NOT_RUN** (владелец) |
 
 ## Итог (2026-10-28, ветка `codex/bot-01-server-bots`)
 
-- Коммиты: `7fdcf0f` (боты в мире), `b1f6fed` (конфиг шлюза, барьер старта, бенч), `4817fa0` (продвижение, когда
-  команда показывает цель вне своей прямой; время решений в бенче) + итог.
+- Коммиты (после переноса на `9ae5862`): `11a0da2` (боты в мире), `7b79724` (конфиг шлюза, барьер старта, бенч),
+  `7d23494` (продвижение, когда команда показывает цель вне своей прямой; время решений в бенче), `8f32155` (итог),
+  `bff554a` (generated-виды BATTLE-ANY). Цифры этого раздела — до переноса, на `4817fa0` (= `7d23494` на `66222b4`).
 - Тесты ботов: `bash local/cargo_test.sh bot01` — **13 PASS / 1 ignored** (бенч).
 - Набор шлюза в этом worktree, одна среда (`local/test-runs/bot01-resume/`): ветка `4817fa0` **1678 / 83 / 10**,
   база `66222b4` **1665 / 83 / 9**; множества FAIL равны (`branch.fails` = `base.fails`; 83 — окружение worktree:
@@ -126,33 +127,56 @@
 «в бою» до RES-30). Поэтому на стенде сначала 6 мест (2 + 4 бота — полный цикл с итогами), 30 мест — только
 как проверка игры, с копией `game.sqlite` до боя. Полноценный 15×15 с итогами — после **RES-30**.
 
-## Шаги для стенда -11 (выполняет родительская сессия с согласия владельца)
+## Перенос на BATTLE-ANY (main `9ae5862`, 2026-10-28)
 
-Сейчас -11 на BATTLE-ANY (каталог `219b2f07…`, склад мигрирован). BOT-01 — от main `66222b4`, без BATTLE-ANY:
-его шлюз не примет каталог/склад BATTLE-ANY. Значит:
+- `git rebase 9ae5862` — без конфликтов (BOT-01 не трогал файлы BATTLE-ANY по смыслу; `session.rs` не менялся).
+- **Какие машины берут боты.** По умолчанию (без `kinds`) — пять курируемых profile13 (МС-1, ИС-7, Т-26, Т-34, Т-34-85).
+  С `kinds` — любые метки владения (`VehicleKind::from_owned_label`): курируемые и generated BATTLE-ANY
+  (`ussr-KV-3`, `usa-M4_Sherman`, `germany-Waffentrager_E100`, `japan-Chi_Ri` на -11), 1..16 видов; каждый вид
+  должен быть связан шаблоном боя (`geometry_for`), иначе шлюз не стартует (`BOT-01 bots: kinds not bound…`).
+  Generated-бот садится как generated-машина игрока (`attach_owned_v2_inner`): typed-орудие с полным стоковым
+  боекомплектом первого снаряда, V1-модули `Profile::for_owned`; без `p06t_mixed_ammo` generated-виды ботам
+  запрещены (у них нет legacy-орудия). Кураторские WT/FV (`wt-e100-128`, `fv215b-183`) ботам запрещены, как и
+  прежде (extended v2). Тест `bot01_generated_kind_bot_seats_typed_and_shoots` (KV-3: посадка, модули, выстрел).
+- Тесты ботов: **15 PASS / 1 ignored** (+ 1 игрок из 6 мест: старт в одиночку и 5 ботов). Набор шлюза, один worktree (`local/test-runs/bot01-resume/rebase-9ae5862/`):
+  ветка `bff554a` **1690 / 83 / 12**, база `9ae5862` **1676 / 83 / 11**, множества FAIL равны.
+- Release-бенч на новой базе (`bff554a`, 1+29, Прохоровка, seed 1, 120 с боя, `1x29-seed1-bff554a.json`): шаг p99
+  **65,5 мс**, max 80,8 мс, CPU шлюза 31,8 мс/шаг, решения ботов 0,30 мс/шаг, 65 выстрелов ботов, 54 строки урона,
+  9 уничтожено, 27/29 проехали > 50 м, за игровую область не выходили, сбоев нет. Часть прогона шла параллельно
+  debug-компиляции тестов — абсолютные мс могут быть завышены; порядок величин тот же, что до переноса.
 
-0. Если BATTLE-ANY принят и влит — `git rebase main` ветки BOT-01, `bash local/cargo_test.sh bot01`, gate.
-   Если нет — вернуть -11 на копии `*.before-battle-any.*` (решение владельца; клиенты переустанавливались).
-1. Release-шлюз: `python -B -X utf8 server/build.py gateway --release --cargo-temp-target --out local/build/server/gateway-bot01-release-<sha>`.
-2. Если запущены клиенты — спросить владельца. `services.ps1 stop`, затем `domain.ps1 stop`.
-3. Копии в папке стенда: `gateway.json` → `gateway.before-bot01.json`, `services.ps1` → `services.before-bot01.ps1`,
-   `battle-profiles.json` → `battle-profiles.before-bot01.json`, `game.sqlite` → `game.before-bot01.sqlite`
-   (Domain остановлен).
-4. Карта — Прохоровка: `battle-profiles.json` из `battle-profiles.before-02_malinovka.json` (`"map": "05_prohorovka"`;
-   при BATTLE-ANY — его генератор для `05_prohorovka`). Малиновка 30 — пики шага шлюза (SPAWN-15), не начинать с неё.
-5. `gateway.json`: `"battle_players": 6` (этап A) и
-   `"bots": {"policy": "project.bot01.route-hold-visible-aim.v1", "human_places": 2, "seed": 1}`;
-   `spawn_policy`, `connection_capacity: 256`, `visibility_v1`, `profile13_battle` уже есть; `arenas: 2` допустимо
-   (нужно `connection_capacity ≥ arenas·battle_players`). `p08c_late_results` можно оставить: late с ботами явно
-   отказывает (`P08C_LATE_ADMISSION_UNSUPPORTED … BOT-01`), бой не меняется.
-6. `services.ps1`: `$gatewayExe` → новый exe. `domain.ps1 start`, `services.ps1 start`. В свежем
-   `gateway-*.stdout.log`: `BOT01_POLICY_BOUND … human_places=2 places=6 bots=4 … accounts=none`, `SPAWN15_POLICY_BOUND`, `ARENAS`.
-7. Владелец: два клиента в бой → `BOT01_FILL battle=… humans=2 bots=4`, `BOT01_READY`, затем `BOT01_STATS`/`BOT01_FIRE`.
-   Проверка A: боты видны в списке/на миникарте под именами `Bot-NN`, едут к базе, стреляют, бой доходит до итогов
-   у обоих игроков; в Domain нет записей ботов.
-8. Этап B (по желанию владельца, без итогов): `"battle_players": 30` (`human_places` 2 → 28 ботов), перезапуск.
-   Ожидаемо: бой играется; на выходе/итоге — отказ Domain (см. выше). После — вернуть `game.before-bot01.sqlite`
-   при «застрявшей» машине.
+## Шаги для стенда -11 (на BATTLE-ANY; выполняет родительская сессия с согласия владельца)
+
+Стенд сейчас: Малиновка, манифест v5 (5 курируемых + KV-3/M4/WT/Chi-Ri), каталог `219b2f07…`, склад мигрирован,
+`battle_players 4`, `arenas 2`, `connection_capacity 256`, `spawn_policy`, `p06t_mixed_ammo`, Domain. Каталог,
+склад, `battle-profiles.json` и клиенты **не меняются** — меняются только `gateway.json` и exe.
+
+1. Release-шлюз с вершины BOT-01 (после канонического gate):
+   `python -B -X utf8 server/build.py gateway --release --cargo-temp-target --out local/build/server/gateway-bot01-release-<sha>`.
+2. Если клиенты запущены — спросить владельца. `services.ps1 stop`, затем `domain.ps1 stop`.
+3. Копии: `gateway.json` → `gateway.before-bot01.json`, `services.ps1` → `services.before-bot01.ps1`,
+   `game.sqlite` → `game.before-bot01.sqlite` (Domain остановлен).
+4. **Этап A — Малиновка (текущий манифест v5), один клиент: 1 игрок + 5 ботов** (6 мест — граница итогов), в `gateway.json`:
+   `"battle_players": 6` и
+   `"bots": {"policy": "project.bot01.route-hold-visible-aim.v1", "human_places": 1, "seed": 1, "kinds": ["t34", "ussr-KV-3", "usa-M4_Sherman", "japan-Chi_Ri", "t3485"]}`
+   (5 ботов — по одному каждого вида; без `kinds` — только пять курируемых). Команды `slot % 2 + 1`: игрок
+   (место 0) и 2 бота — команда 1, 3 бота — команда 2. Бой стартует, как только один игрок entry-ready
+   (тест `bot01_one_native_place_starts_alone_and_fills_five_bots`; конфиг `human_places: 1` — тест identity). `arenas 2` допустимо
+   (`connection_capacity ≥ arenas·battle_players`). `p08c_late_results` можно оставить: late с ботами явно
+   отказывает (`P08C_LATE_ADMISSION_UNSUPPORTED … BOT-01`), бой не меняется. Малиновка выбрана, потому что для
+   неё на -11 уже есть generated-ресурсы; 6 мест на ней — в пределах проверенного SPAWN-15.
+5. `services.ps1`: `$gatewayExe` → новый exe. `domain.ps1 start`, `services.ps1 start`. В свежем
+   `gateway-*.stdout.log`: `BOT01_POLICY_BOUND … human_places=1 places=6 bots=5 … accounts=none`,
+   `SPAWN15_POLICY_BOUND`, `ARENAS`, `P06T_ARMAMENT_BOUND`, 9× `P08B_TEMPLATE_VALIDATED`.
+6. Владелец: один клиент в бой → `BOT01_FILL … humans=1 bots=5 kinds=["ussr-KV-3","usa-M4_Sherman","japan-Chi_Ri","t3485","t34"]`,
+   `BOT01_READY`, затем `BOT01_STATS`/`BOT01_FIRE`. Проверка A: боты видны (`Bot-NN`), едут к базе противника,
+   стреляют и получают урон, бой доходит до итогов у игрока; в Domain нет записей ботов.
+7. **Этап B (30 мест, без итогов — RES-30)** — по желанию владельца: `"battle_players": 30` (`human_places 1` → 29
+   ботов), лучше на Прохоровке: для неё на -11 нужны generated-ресурсы (генератор BATTLE-ANY,
+   `full_test_stand.py battle-any` для `05_prohorovka`) либо `kinds` только из курируемых. Малиновка 30 — известные
+   пики шага шлюза (SPAWN-15). Ожидаемо: бой играется; выход/итог отвергает Domain → вернуть `game.before-bot01.sqlite`.
+
+Откат: `gateway.before-bot01.json` и `services.before-bot01.ps1` на место, перезапуск шлюза.
 
 ## Вне карточки
 

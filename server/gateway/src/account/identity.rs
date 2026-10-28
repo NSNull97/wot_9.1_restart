@@ -1125,6 +1125,8 @@ mod tests {
         let mut row=value.clone();row.as_object_mut().unwrap().remove("connection_capacity");row["battle_players"]=6.into();
         row.as_object_mut().unwrap().remove("spawn_policy");assert!(load(&row).is_err(),"bots need GW-01 places");
         row["connection_capacity"]=6.into();assert_eq!(load(&row).unwrap().bots.unwrap().human_places,2);
+        // Owner's one-client stand: 6 places, 1 native, 5 bots.
+        row["bots"]["human_places"]=1.into();assert_eq!(load(&row).unwrap().bots.unwrap().human_places,1);
     }
     #[test] fn p05c_configuration_roster_is_an_explicit_bounded_profile13_option() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
