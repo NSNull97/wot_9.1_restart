@@ -112,3 +112,33 @@
    не друг в друге; на Малиновке бой на 4 места теперь должен стартовать (прежняя LAB-полоса 2 там не оседала).
    Карелия profile13 на стендах не настроена (нет каталога) — native NOT_RUN.
 Откат: убрать `spawn_policy`, `battle_players` ≤ 6.
+
+### Малиновка 2×2 на стенде -11 (5bf2a72, debug-шлюз): выброс в ангар (2026-10-28)
+
+- Бой 1: `shared scene worker deadline` (ответа worker нет 593 мс; CPU worker не менялся). Бой 2:
+  `integrated drive logical deadline lag … fail closed`. Обе ошибки — на **debug**-шлюзе с 4 местами.
+- Cadence боя 1 (`…-n0.jsonl`): отставание планировщика p50 38 / p90 69 / max 82 мс уже в предбоевом
+  отсчёте (все входы STOP); ответ worker ждал в канале шлюза p50 69, max 150 мс, сам worker отвечал за p50 8 /
+  p99 23 мс. Бой 2 (`…-n1.jsonl`, разбор родительской сессии): отставание p50 156 / p99 470 / max 544 мс. Боёв на
+  2 места с тем же числом клиентов — 0 `SHARED_DRIVE_LAG_RESYNC`. Вывод (INFERRED): debug-шлюз на нагруженной
+  машине (4 клиента, 2 worker) не успевает за 4 машинами; это и есть «рывки как скачки пинга».
+- Признак «CPU worker не менялся» сам по себе ничего не доказывает: счётчик Windows шагает квантом ~15,6 мс,
+  а шаг worker в отсчёте (STOP) короче — CPU стоял и на четырёх предыдущих нормальных ответах. Сбоя/WER worker
+  в журнале Application нет; stderr пуст и вычитывается своим потоком. Что именно задержало 593 мс — запись
+  запроса шлюзом или сам worker — по старым логам не различить (UNKNOWN). Добавлено событие cadence
+  `request_written` (время фактической записи запроса в stdin worker): в следующий раз видно, кто опоздал.
+- Офлайн (debug, без клиентов, 4 синтетические машины, 90 с, бой с ездой): Малиновка p99 5,4 / max 64 мс,
+  Прохоровка p99 37 / max 79 мс, отказов нет — в одиночку debug держит 4 машины; на стенде добавляется нагрузка
+  клиентов. Карта не причина: Прохоровка 2×2 на debug-шлюзе подвержена тому же риску.
+- **Правило стенда:** debug-шлюз — только для проверок на ≤ 2 места; при `battle_players` > 2 —
+  `server/build.py gateway --release` (с `--out` или `--cargo-temp-target`). `tools/full_test_stand.py prepare`
+  отказывает debug-шлюзу при > 2 местах (явный `--allow-debug-gateway` пишется в квитанцию); шлюз пишет при
+  старте `GATEWAY_BUILD profile=… battle_players=… supported=…`.
+- `--release` теперь совместим с `--cargo-temp-target`/`--retain-temp-executable`: профиль передаётся в
+  копирование/ссылку exe, `result.json` содержит `cargo_profile`, потребитель `built_executable_for_result` берёт
+  `target/<profile>`; по умолчанию — debug, как раньше (AST-пин копирования обновлён осознанно).
+- Тесты: шлюз 1665/83/9, FAIL-набор равен базе; Python `test_build_temp_*`, `test_server_build_driver` 32 PASS /
+  2 ERROR (нет retained-логов в worktree — окружение), `test_full_test_stand` 5 PASS / 1 skipped.
+  Evidence: `D:/WoT_9.1_Server/local/evidence/spawn15-malinovka-stall-20261028/`.
+- Прохоровку 2×2 проверять можно, но тоже на release-шлюзе (стенд -11 уже на release `058e1b4e` из 5bf2a72).
+

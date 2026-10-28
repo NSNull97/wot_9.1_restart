@@ -323,7 +323,11 @@ impl Worker{
         let child_pid=child.id();
         let stdin=child.stdin.take().ok_or_else(||bad("stdin pipe"))?;let stdout=child.stdout.take().ok_or_else(||bad("stdout pipe"))?;let stderr_pipe=child.stderr.take().ok_or_else(||bad("stderr pipe"))?;
         let(send,requests)=mpsc::sync_channel::<Vec<u8>>(1);let(events,receive)=mpsc::sync_channel::<Event>(2);
-        let ev=events.clone();let writer=thread::spawn(move||{let mut stream=stdin;while let Ok(raw)=requests.recv(){if let Err(e)=stream.write_all(&raw).and_then(|_|stream.flush()){let _=ev.send(Event::Failed(e));break;}}});
+        // SPAWN-15 diagnosis: when the request actually reached the worker's
+        // stdin, so a missed deadline tells a late write from a stalled worker.
+        let write_diag=diagnostics.clone();
+        let ev=events.clone();let writer=thread::spawn(move||{let mut stream=stdin;while let Ok(raw)=requests.recv(){if let Err(e)=stream.write_all(&raw).and_then(|_|stream.flush()){let _=ev.send(Event::Failed(e));break;}
+            if let Some(sink)=&write_diag{let now=Instant::now();sink.record(json!({"event":"request_written","at_us":sink.elapsed_us(now),"bytes":raw.len()}));}}});
         let reader=thread::spawn(move||{let mut stream=BufReader::new(stdout);let mut total=0usize;let run=||->io::Result<()>{loop{let mut line=Vec::new();loop{
             let available=stream.fill_buf()?;if available.is_empty(){return Err(io::Error::new(io::ErrorKind::UnexpectedEof,"IPC7 producer EOF"));}
             let n=available.iter().position(|b|*b==10).map_or(available.len(),|i|i+1);let piece=&available[..n];

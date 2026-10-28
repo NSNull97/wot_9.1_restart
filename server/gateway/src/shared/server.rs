@@ -1480,6 +1480,13 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         battle_template=BattleTemplate::from_shared_policy(rows,config.battle_players,world.id,started,qualification,breech_v2)?;
         battle_template.select(&mut world,&mut integrated,started)?;
     }
+    if profile13_mode {
+        // SPAWN-15 / owner stand 2026-10-28: a debug gateway keeps up only with
+        // two battle places (four places: scheduler lag p50 156 ms, fail-closed).
+        let debug=cfg!(debug_assertions);
+        println!("GATEWAY_BUILD profile={} battle_players={} arenas={} supported={}",if debug{"debug"}else{"release"},
+            config.battle_players,config.arenas,!debug||config.battle_players<=2);
+    }
     if config.team_base_spawn{
         // SPAWN-15: only the shared Jolt scene places teams; refuse a roster the
         // map's formation cannot hold before any account is admitted.

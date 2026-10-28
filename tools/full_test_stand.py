@@ -127,6 +127,24 @@ foreach ($kind in $order) {
 '''
 
 
+def gateway_profile(gateway):
+    """Cargo profile of a recorded gateway build: server/build.py places the
+    executable at target/<profile>/sr-gateway.exe (also for --cargo-temp-target)."""
+    return gateway.parent.name if gateway.parent.name in ('debug', 'release') else 'unknown'
+
+
+def check_gateway_profile(gateway, gateway_config, allow_debug):
+    """SPAWN-15 / owner stand 2026-10-28: a debug gateway falls behind with four
+    actors (scheduler lag p50 156 ms, drive deadline fail-closed); stands with
+    more than two battle places run a release gateway unless explicitly allowed."""
+    places = int(gateway_config.get('battle_players', 2))
+    profile = gateway_profile(gateway)
+    if places > 2 and profile != 'release' and not allow_debug:
+        raise ValueError(f'battle_players={places} needs a release gateway (server/build.py gateway --release); '
+                         f'got {profile}; pass --allow-debug-gateway only for a deliberate debug check')
+    return dict(profile=profile, battle_players=places, debug_allowed=bool(allow_debug and profile != 'release'))
+
+
 def prepare(args):
     source = Path(args.source_stand).resolve(strict=True)
     out = (ROOT / args.out).resolve()
@@ -136,6 +154,7 @@ def prepare(args):
     if not gateway.is_relative_to(LOCAL / 'build') and not gateway.is_relative_to(Path(args.allow_gateway_root).resolve() if args.allow_gateway_root else gateway.parent / '__none__'):
         raise ValueError('gateway executable must come from a recorded build of this checkout')
     configs = {name: json.loads((source / name).read_text(encoding='utf-8')) for name in ('bridge.json', 'gateway.json', 'battle-profiles.json')}
+    build_profile = check_gateway_profile(gateway, configs['gateway.json'], args.allow_debug_gateway)
     source_local = Path(configs['gateway.json']['local_root'])
     mapping = [(source, out), (source_local, LOCAL)]
     out.mkdir(parents=True)
@@ -167,7 +186,7 @@ def prepare(args):
         (out / name).write_text(text + '\n', encoding='utf-8')
     services = SERVICES.replace('__ROOT__', str(ROOT)).replace('__STAND__', str(out)).replace('__GATEWAY__', str(gateway))
     (out / 'services.ps1').write_text(services, encoding='utf-8')
-    receipt.update(gateway=dict(path=str(gateway), sha256=sha(gateway)),
+    receipt.update(gateway=dict(path=str(gateway), sha256=sha(gateway), **build_profile),
                    physics=dict(manifest=str(manifest), sha256=sha(manifest),
                                 dll_sha256=sha(manifest.parent / 'bin/MapDriveWorker.dll')),
                    ports=dict(login=rebased['gateway.json']['login_bind'], base=rebased['gateway.json']['base_bind'],
@@ -538,6 +557,8 @@ def main():
     parser.add_argument('--physics', help='physics build dir below local/build')
     parser.add_argument('--gateway', help='sr-gateway.exe from a recorded build')
     parser.add_argument('--allow-gateway-root', help='additional recorded build root (build.py --cargo-temp-target)')
+    parser.add_argument('--allow-debug-gateway', action='store_true',
+                        help='prepare: accept a debug gateway for battle_players > 2 (recorded in the receipt)')
     parser.add_argument('--out', help='fresh stand dir below local/stands')
     parser.add_argument('--stand', help='economy: stopped stand dir below local/stands')
     parser.add_argument('--slots', type=int, default=100, help='economy: garage slots per account')

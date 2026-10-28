@@ -13,7 +13,8 @@ DEFAULT_AST_SHA={
     'check_temp_selector':'7e63cfeed7594f319333806d8043dcbb2e8e4496e71e59834d395529d369e90a',
     'checked_output':'c78c50f0c7c61bd07fdf17ce94c70c415237a16ca33619aa1ea1815335f9728e',
     'command':'ffb7c7337faa95b8573d477da361c91b710bad3b9725f0459fc34cfbf9132dd6',
-    'copy_verified_executable':'771c59d331dfe7067b350da08bd1044e77c71c822388b16b6eb066b7dd9d4103',
+    # SPAWN-15: explicit cargo profile parameter (default debug, same checks); release tested in test_build_temp_target.
+    'copy_verified_executable':'6090f9cd0714043b59666b4d4ccd5b8dd3128a6743120b6c8a9cef907c795de1',
     'no_reparse':'50bce4cd5494427d09ca301d799fe646c1c3fdb78acd6ef1e7e02292089859cb',
     'temp_environment':'ceb043347dd0dc3de33dc6e16011d03ef62cb70859ae9c38826ddcfb9700748c',
     'test_counts':'6bbcd09b5392f59abfc41387a02c1a9a57d88f4762685ea97b196ae89d7d5617'}
