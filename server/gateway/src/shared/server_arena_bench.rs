@@ -8,26 +8,26 @@ use super::*;
 use std::process::Command as Process;
 use std::collections::BTreeMap;
 
-fn env(key:&str)->Option<String>{std::env::var(key).ok().filter(|v|!v.is_empty())}
+pub(super) fn env(key:&str)->Option<String>{std::env::var(key).ok().filter(|v|!v.is_empty())}
 fn percentile(sorted:&[f64],p:f64)->f64{
     if sorted.is_empty(){return 0.;}
     sorted[((sorted.len() as f64-1.)*p).round() as usize]
 }
-fn summary(mut values:Vec<f64>)->serde_json::Value{
+pub(super) fn summary(mut values:Vec<f64>)->serde_json::Value{
     values.sort_by(|a,b|a.partial_cmp(b).unwrap());
     let mean=if values.is_empty(){0.}else{values.iter().sum::<f64>()/values.len() as f64};
     serde_json::json!({"n":values.len(),"mean_ms":mean,"p50_ms":percentile(&values,0.5),"p95_ms":percentile(&values,0.95),
         "p99_ms":percentile(&values,0.99),"max_ms":values.last().copied().unwrap_or(0.)})
 }
 /// CPU seconds and working set of the given processes, read by PowerShell.
-fn sample(pids:&[u32])->BTreeMap<u32,(f64,u64)>{
+pub(super) fn sample(pids:&[u32])->BTreeMap<u32,(f64,u64)>{
     let list=pids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
     let script=format!("Get-Process -Id {list} -ErrorAction SilentlyContinue | ForEach-Object {{ \"$($_.Id) $($_.TotalProcessorTime.TotalSeconds) $($_.WorkingSet64)\" }}");
     let out=Process::new("powershell").args(["-NoProfile","-Command",&script]).output().expect("powershell sample");
     String::from_utf8_lossy(&out.stdout).lines().filter_map(|l|{let mut p=l.split_whitespace();
         Some((p.next()?.parse().ok()?,(p.next()?.replace(',',".").parse().ok()?,p.next()?.parse().ok()?)))}).collect()
 }
-fn physics_pid(a:&arena::Arena)->Option<u32>{
+pub(super) fn physics_pid(a:&arena::Arena)->Option<u32>{
     a.integrated.as_ref()?.batch.as_ref()?.failure_snapshot()["process_id"].as_u64().map(|p|p as u32)
 }
 fn bench_arena(index:usize,template:&BattleTemplate,id:u64,size:usize,now:Instant)->arena::Arena{

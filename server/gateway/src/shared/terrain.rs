@@ -387,6 +387,9 @@ pub(crate) mod tests {
         Terrain { map: MapId::Karelia, heights:heights.into(),width,origin:f64::from(origin),spacing:f64::from(spacing),obstacles:None }
     }
 
+    /// BOT-01: a flat low plane bound to another registry map.
+    pub(crate) fn fixture_for_map(map: MapId) -> Terrain { Terrain { map, ..fixture(-1000.,2000.,2,vec![-100.;4]) } }
+
     fn synthetic(width: usize, height: impl Fn(usize,usize)->f32) -> Terrain {
         let mut heights=Vec::new();
         for z in 0..width { for x in 0..width { heights.push(height(x,z)); }}

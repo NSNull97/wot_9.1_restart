@@ -88,6 +88,8 @@ impl Manager{
     }
     fn register_world_inner(&mut self,sessions:&[Session],world:&World,run:&str)->io::Result<()>{
         if !world.mixed_ammo(){return Err(bad("legacy AP unsupported; no invented source links"));}
+        // BOT-01: a bot has no Session, writer or admission to link.
+        if world.bot_plan().is_some(){return Err(bad("BOT-01 server bots: late results capture unsupported"));}
         let old=self.captures.iter().position(|e|e.capture.battle()==world.id);
         if old.is_some_and(|i|self.captures[i].invalid.is_some()){return Ok(());}
         let mut capture=if let Some(i)=old{self.captures[i].capture.clone()}else{Capture::new(run.into(),world.id)?};

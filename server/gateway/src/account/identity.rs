@@ -255,6 +255,8 @@ pub struct Config {
     pub arenas:usize,
     /// SPAWN-15: `spawn_policy` = the team-base formation policy (absent: LAB lanes).
     pub team_base_spawn:bool,
+    /// BOT-01: server bots fill each arena after `human_places` native places (absent: none).
+    pub bots:Option<crate::gateway091::shared::model::bots::Plan>,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -373,6 +375,34 @@ impl Config {
         if arenas>1&&connection_capacity.is_none_or(|n|n<arenas*battle_players){
             return Err(invalid("arenas requires connection_capacity of at least arenas*battle_players"));
         }
+        // BOT-01: {"policy":<this build's>,"human_places":H,"seed":S[,"kinds":[labels]]}.
+        let bots=match value.remove("bots"){
+            None=>None,
+            Some(Value::Object(b))=>{
+                if b.keys().any(|k|!["policy","human_places","seed","kinds"].contains(&k.as_str()))
+                    ||b.get("policy").and_then(Value::as_str)!=Some(crate::gateway091::shared::model::bots::POLICY){
+                    return Err(invalid("bots must name this build's bot policy with human_places, seed and optional kinds"));
+                }
+                let human_places=b.get("human_places").and_then(Value::as_u64).filter(|h|(1..battle_players as u64).contains(h))
+                    .ok_or_else(||invalid("bots human_places must be 1..battle_players-1"))? as usize;
+                let seed=b.get("seed").and_then(Value::as_u64).ok_or_else(||invalid("bots seed must be a non-negative integer"))?;
+                let kinds=match b.get("kinds"){
+                    None=>crate::gateway091::shared::vehicle_profile::VehicleKind::ALL.to_vec(),
+                    // BATTLE-ANY: curated or generated owned labels; the battle profiles must bind each.
+                    Some(Value::Array(rows)) if !rows.is_empty()&&rows.len()<=crate::gateway091::shared::model::bots::MAX_KINDS=>rows.iter().map(|r|r.as_str()
+                        .and_then(crate::gateway091::shared::vehicle_profile::VehicleKind::from_owned_label)
+                        .ok_or_else(||invalid("bots kinds must be owned battle vehicle labels"))).collect::<io::Result<Vec<_>>>()?,
+                    _=>return Err(invalid("bots kinds must be 1..16 owned battle vehicle labels")),
+                };
+                let plan=crate::gateway091::shared::model::bots::Plan{human_places,seed,kinds};
+                plan.validate(battle_players).map_err(|_|invalid("bots kinds must be distinct profile13 vehicles"))?;
+                Some(plan)
+            },
+            _=>return Err(invalid("bots must be an object")),
+        };
+        if bots.is_some()&&(!profile13_battle||connection_capacity.is_none()||!visibility_v1||training_rooms||p08b_owner_battle_hold){
+            return Err(invalid("bots require profile13 battle, connection_capacity and visibility_v1, without training rooms or hold5"));
+        }
         // CAT-01: exact {"version":1,"sha256":<this build's catalog>}; a foreign hash refuses start.
         let catalog_v1=match value.remove("catalog"){
             None=>false,
@@ -409,7 +439,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -1062,6 +1092,41 @@ mod tests {
         fs::write(&path,duplicate).unwrap();assert!(Config::load(path.to_str().unwrap()).is_err());
         // Configuration has its own budget; public request DTO guards stay16.
         assert_eq!(REQUEST_FIELDS,16);
+    }
+    #[test] fn bot01_configuration_is_explicit_bounded_and_absent_by_default() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("bot01-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let mut value=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
+            "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle","visibility_v1"]{value[field]=true.into();}
+        value["battle_players"]=30.into();value["connection_capacity"]=32.into();
+        value["spawn_policy"]=crate::gateway091::shared::team_spawn::POLICY.into();
+        assert!(load(&value).unwrap().bots.is_none(),"absent key: no bots");
+        let policy=crate::gateway091::shared::model::bots::POLICY;
+        value["bots"]=serde_json::json!({"policy":policy,"human_places":2,"seed":7});
+        let plan=load(&value).unwrap().bots.unwrap();
+        assert_eq!((plan.human_places,plan.seed,plan.kinds.len()),(2,7,5));
+        value["bots"]["kinds"]=serde_json::json!(["t34","is7"]);
+        assert_eq!(load(&value).unwrap().bots.unwrap().kinds.iter().map(|k|k.label()).collect::<Vec<_>>(),["t34","is7"]);
+        value["bots"]["kinds"]=serde_json::json!(["t34","ussr-KV-3"]);
+        assert!(load(&value).unwrap().bots.unwrap().kinds[1].is_generated(),"BATTLE-ANY generated label");
+        for bad in [serde_json::json!({"policy":"other","human_places":2,"seed":7}),serde_json::json!({"policy":policy,"human_places":0,"seed":7}),
+            serde_json::json!({"policy":policy,"human_places":30,"seed":7}),serde_json::json!({"policy":policy,"human_places":2}),
+            serde_json::json!({"policy":policy,"human_places":2,"seed":-1}),serde_json::json!({"policy":policy,"human_places":2,"seed":7,"extra":1}),
+            serde_json::json!({"policy":policy,"human_places":2,"seed":7,"kinds":[]}),serde_json::json!({"policy":policy,"human_places":2,"seed":7,"kinds":["t34","t34"]}),
+            serde_json::json!({"policy":policy,"human_places":2,"seed":7,"kinds":["wt-e100-128"]}),
+            serde_json::json!({"policy":policy,"human_places":2,"seed":7,"kinds":["ussr-NoSuchTank"]}),serde_json::json!(true)]{
+            let mut row=value.clone();row["bots"]=bad;assert!(load(&row).is_err(),"{}",row["bots"]);}
+        for (field,off) in [("visibility_v1",Value::from(false)),("profile13_battle",Value::from(false))]{
+            let mut row=value.clone();row[field]=off;assert!(load(&row).is_err(),"bots need {field}");}
+        let mut row=value.clone();row.as_object_mut().unwrap().remove("connection_capacity");row["battle_players"]=6.into();
+        row.as_object_mut().unwrap().remove("spawn_policy");assert!(load(&row).is_err(),"bots need GW-01 places");
+        row["connection_capacity"]=6.into();assert_eq!(load(&row).unwrap().bots.unwrap().human_places,2);
+        // Owner's one-client stand: 6 places, 1 native, 5 bots.
+        row["bots"]["human_places"]=1.into();assert_eq!(load(&row).unwrap().bots.unwrap().human_places,1);
     }
     #[test] fn p05c_configuration_roster_is_an_explicit_bounded_profile13_option() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
