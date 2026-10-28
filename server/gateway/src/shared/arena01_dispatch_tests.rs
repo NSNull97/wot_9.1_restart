@@ -4,7 +4,7 @@
 use super::*;
 use super::queue_loss_tests::{account_context,native,receive,reserved,world,writer};
 
-fn distinct(mut s:Session,id:u32)->Session{
+pub(super) fn distinct(mut s:Session,id:u32)->Session{
     s.id=id;s.key=[id as u8;16];s.login_peer=format!("127.0.0.1:{}",43700+id).parse().unwrap();
     s.base_peer=Some(format!("127.0.0.1:{}",44700+id).parse().unwrap());s.login_attempt=Some(LoginAttempt::new(s.key,id,s.login_peer));s
 }
@@ -20,12 +20,12 @@ fn config(root:&std::path::Path,tag:&str)->Arc<crate::identity091::Config>{
     // The writer job binds the fixture run; it is started but never reaches a bridge here.
     config.battle_run_id=writer(1).0.run_id;Arc::new(config)
 }
-fn waiting(now:Instant,id:u32)->Session{
+pub(super) fn waiting(now:Instant,id:u32)->Session{
     let mut s=distinct(account_context(now,writer(1).0),id);receive(&mut s,&native(700,1,1),now);
     assert!(s.shared.as_ref().unwrap().join_requested);assert!(state(&mut s).unwrap().reservation_loss.is_none());s
 }
 /// Same owner fixture, its reservation moved to another arena's battle.
-fn reserved_in(now:Instant,id:u32,battle:u64)->Session{
+pub(super) fn reserved_in(now:Instant,id:u32,battle:u64)->Session{
     let mut s=distinct(reserved(now).0,id);state(&mut s).unwrap().reservation_loss.as_mut().unwrap().battle=battle;s
 }
 fn two_arenas(now:Instant)->(Vec<arena::Arena>,u64,u64){
