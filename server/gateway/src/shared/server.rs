@@ -744,8 +744,10 @@ impl BattleTemplate {
         qualification:Option<VehicleKind>,breech_v2:bool)->io::Result<Self>{
         let extended=qualification.is_some_and(VehicleKind::is_extended);
         if breech_v2&&!extended{return Err(model::bad());}
-        if !matches!(rows.len(),2|5|7)||(rows.len()==7)!=extended
-            ||rows.iter().enumerate().any(|(index,row)|row.kind.index()!=index) {return Err(model::bad());}
+        // BATTLE-ANY version5: generated kinds follow the five curated rows (owned mixed battles only).
+        let generated=rows.len()>5&&!extended&&qualification.is_none()&&p04m_template_rows(rows);
+        if !(matches!(rows.len(),2|5|7)||generated)||(rows.len()==7&&!generated)!=extended
+            ||rows.iter().enumerate().any(|(index,row)|row.kind.index()!=index&&!(generated&&index>=5)) {return Err(model::bad());}
         if qualification.is_some_and(|kind|rows.len()!=(if extended{7}else{5})||!rows.iter().any(|row|row.kind==kind)){return Err(model::bad());}
         let shared=rows[0].shared.clone().ok_or_else(||model::bad())?;
         let map=rows[0].map;if rows.iter().any(|row|row.map!=map){return Err(model::bad());}
