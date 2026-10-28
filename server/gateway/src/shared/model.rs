@@ -536,9 +536,12 @@ impl World {
         if self.actors.is_empty() { return Ok(()); }
         let start=self.started.ok_or_else(bad)?;
         let ms=u64::try_from(now.checked_duration_since(start).ok_or_else(bad)?.as_millis()).map_err(|_|bad())?;
+        let actors_span=super::step_profile::span(super::step_profile::Part::SpotActors);
         let actors=self.spotting_actors()?; let excluded=self.spotting_excluded()?; let terrain=self.terrain.as_ref().ok_or_else(bad)?;
+        drop(actors_span);
         let mut next=state.clone();
-        next.refresh(ms,&actors,|_,_,start,end|Ok(terrain.nearest_excluding_many(start,end,&excluded)?.is_none()))?;
+        let _span=super::step_profile::span(super::step_profile::Part::SpotRays);
+        next.refresh(ms,&actors,|_,_,start,end|Ok(!terrain.any_hit_excluding_many(start,end,&excluded)?))?;
         self.original_spotting=Some(next); Ok(())
     }
     pub fn sixth_sense_generation(&self, slot: usize) -> io::Result<u32> {
@@ -618,7 +621,7 @@ impl World {
         }
         let desired=super::visibility::desired_set(own,&actors,super::visibility::Allies::Always,|line|{
             if line.start==line.end{return Ok(true);}
-            Ok(terrain.nearest_excluding_many(line.start,line.end,&excluded)?.is_none())
+            Ok(!terrain.any_hit_excluding_many(line.start,line.end,&excluded)?)
         })?;
         let mut result=[false;MAX_ACTORS];for slot in desired.slots(){result[slot]=true;}Ok(result)
     }
@@ -1080,8 +1083,10 @@ impl World {
     /// the projectile/trace state.
     pub fn advance_with_external(&mut self, now: Instant,
         external: Option<&[(usize, [f32; 3], [f32; 3], f32)]>) -> io::Result<bool> {
+        let _span=super::step_profile::span(super::step_profile::Part::Advance);
         if self.mixed_ammo {
-            let mut next=self.clone();let changed=next.advance_inner(now,external)?;*self=next;Ok(changed)
+            let clone_span=super::step_profile::span(super::step_profile::Part::AdvanceClone);
+            let mut next=self.clone();drop(clone_span);let changed=next.advance_inner(now,external)?;*self=next;Ok(changed)
         }else{self.advance_inner(now,external)}
     }
     fn advance_inner(&mut self, now:Instant,external:Option<&[(usize,[f32;3],[f32;3],f32)]>)->io::Result<bool>{
@@ -1167,6 +1172,7 @@ impl World {
         let mut next_destructible = self.destructible.clone();
         let mut next_fragiles=self.fragiles.clone();
         if tick_changed {
+            let _span=super::step_profile::span(super::step_profile::Part::Projectiles);
             'projectile_loop: for projectile in &mut next_projectiles {
                 if !projectile.stopped {
                     let shot_tick = self.shots.iter()

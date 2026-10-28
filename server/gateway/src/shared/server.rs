@@ -819,24 +819,29 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
         // BOT-01: bots decide before the step, as native packets arrive before
         // it; a prepared scene transaction owns the World until its ACK.
         if world.bot_plan().is_some() && runtime.as_ref().is_none_or(|r|!r.blocked()) {
+            let _span=super::step_profile::span(super::step_profile::Part::Bots);
             if runtime.as_ref().is_none_or(IntegratedRuntime::ready_for_native) {world.ready_bots()?;}
             world.drive_bots(now)?;
         }
         if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {world.advance(now)?;}
         else if let Some(r)=runtime {
             if !r.started {r.start(world,now)?;}
+            let _span=super::step_profile::span(super::step_profile::Part::Scene);
             r.step(world,now)?;
         } else {world.advance(now)?;}
-        if runtime.as_ref().is_none_or(|r|!r.blocked()) { world.refresh_original_spotting(now)?; }
+        if runtime.as_ref().is_none_or(|r|!r.blocked()) { let _span=super::step_profile::span(super::step_profile::Part::Spotting); world.refresh_original_spotting(now)?; }
         // A candidate scene owns an atomic World clone. Do not advance the
         // lifecycle outside it and then overwrite a frozen outcome on ACK.
+        let lifecycle_span=super::step_profile::span(super::step_profile::Part::Lifecycle);
         if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.advance_lifecycle(now)? {
             println!("P08C_LIFECYCLE battle={} view={:?} policy={}",world.id,
                 world.lifecycle.as_ref().map(|l|l.view()),super::lifecycle::POLICY);
         }
+        drop(lifecycle_span);
         // A separate bounded visual clock survives the authoritative outcome.
         // Do not mutate a World while a prepared scene clone owns its commit.
         if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.ammo_detonation_enabled(){
+            let _span=super::step_profile::span(super::step_profile::Part::Turrets);
             world.advance_turret_flights(now)?;
         }
     }

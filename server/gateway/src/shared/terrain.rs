@@ -18,7 +18,7 @@
 //! measured 1024-byte heightAt window SHA256
 //! ab07c185b4918b835f0f1a3cc8f4aaaab72e1e8172fbcb4599d127dae82fb139.
 
-use std::{collections::BTreeSet, fs, io::{self, Read}, path::{Component, Path}, sync::Arc};
+use std::{fs, io::{self, Read}, path::{Component, Path}, sync::Arc};
 use serde_json::Value;
 use crate::map_profile091::MapId;
 use sha2::{Digest, Sha256};
@@ -275,13 +275,61 @@ impl Terrain {
         Ok(ground)
     }
 
-    pub(super) fn nearest_ground(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<Option<Hit>> {
+    /// VIS-PERF: exactly `nearest_excluding_many(..)?.is_some()`, same
+    /// validation order and errors, without selecting the nearest crossing.
+    pub fn any_hit_excluding_many(&self,start:[f32;3],end:[f32;3],excluded:&[u32])->io::Result<bool> {
+        let obstacle=match &self.obstacles {
+            Some(mesh)=>Some((mesh,mesh.validated(start,end,excluded)?)),
+            None if !excluded.is_empty()=>return Err(bad("terrain exclusion requires obstacle bundle")),
+            None=>None,
+        };
+        if self.any_ground(start,end)? { return Ok(true); }
+        match obstacle { Some((mesh,(start,direction)))=>mesh.any_validated(start,direction,excluded), None=>Ok(false) }
+    }
+
+    fn ground_segment(start: [f32; 3], end: [f32; 3]) -> io::Result<([f64; 3], [f64; 3])> {
         if start.into_iter().chain(end).any(|v| !v.is_finite() || v.abs() > MAX_QUERY_COORDINATE) {
             return Err(bad("terrain segment finite/coordinate bound"));
         }
         let start = start.map(f64::from); let end = end.map(f64::from);
         let direction = subtract(end, start);
         if length(direction) == 0. { return Err(bad("terrain zero segment")); }
+        Ok((start, direction))
+    }
+
+    /// Same crossings and supercover cells as `nearest_ground`, walked from the
+    /// start and stopped at the first crossing triangle. The full walk can
+    /// emit at most four cells per parameter; when that cannot exceed the
+    /// visited-cell bound the nearest query cannot fail on it either, else the
+    /// exact query decides (and fails) instead.
+    fn any_ground(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<bool> {
+        let (start_f64, direction) = Self::ground_segment(start, end)?;
+        let crossings = self.segment_crossings(start_f64, direction)?;
+        if crossings.is_empty() { return Ok(false); }
+        if 4 * (2 * crossings.len() - 1) > max_query_cells(self.width) { return Ok(self.nearest_ground(start, end)?.is_some()); }
+        // Consecutive parameters share cells; a short memory skips most repeats.
+        let mut recent = [usize::MAX; 8]; let mut next = 0;
+        let mut test = |t: f64| -> bool {
+            let (cells, count) = self.cells_at(start_f64, direction, t);
+            for &cell in &cells[..count] {
+                if recent.contains(&cell) { continue; }
+                recent[next] = cell; next = (next + 1) % recent.len();
+                for local in 0..2 {
+                    let id = cell * 2 + local;
+                    if intersect(start_f64, direction, self.triangle(id), id as u32).is_some() { return true; }
+                }
+            }
+            false
+        };
+        for (index, &t) in crossings.iter().enumerate() {
+            if test(t) { return Ok(true); }
+            if let Some(&after) = crossings.get(index + 1) { if test(t + (after - t) * 0.5) { return Ok(true); } }
+        }
+        Ok(false)
+    }
+
+    pub(super) fn nearest_ground(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<Option<Hit>> {
+        let (start, direction) = Self::ground_segment(start, end)?;
         let cells = self.segment_cells(start, direction)?;
         let mut nearest: Option<Hit> = None;
         for cell in cells {
@@ -298,19 +346,36 @@ impl Terrain {
         Ok(nearest)
     }
 
-    fn segment_cells(&self, start: [f64; 3], direction: [f64; 3]) -> io::Result<BTreeSet<usize>> {
+    /// Unique supercover cells in ascending order (the former BTreeSet
+    /// contents); the nearest selection does not depend on visiting order.
+    fn segment_cells(&self, start: [f64; 3], direction: [f64; 3]) -> io::Result<Vec<usize>> {
+        let crossings = self.segment_crossings(start, direction)?;
+        let mut cells = Vec::with_capacity(4 * crossings.len());
+        for &t in &crossings { self.add_cells_at(start, direction, t, &mut cells); }
+        for window in crossings.windows(2) {
+            self.add_cells_at(start, direction, window[0] + (window[1] - window[0]) * 0.5, &mut cells);
+        }
+        cells.sort_unstable();
+        cells.dedup();
+        if cells.len() > max_query_cells(self.width) { return Err(bad("terrain visited-cell bound")); }
+        Ok(cells)
+    }
+
+    /// Sorted unique segment parameters of the clipped grid walk; empty when
+    /// the segment misses the exported square.
+    fn segment_crossings(&self, start: [f64; 3], direction: [f64; 3]) -> io::Result<Vec<f64>> {
         let count = self.width - 1;
         let maximum = self.origin + count as f64 * self.spacing;
         let (mut enter, mut leave) = (0.0_f64, 1.0_f64);
         // Clip before traversing, even when both endpoints are far outside.
         for axis in [0, 2] {
             if direction[axis] == 0. {
-                if start[axis] < self.origin || start[axis] > maximum { return Ok(BTreeSet::new()); }
+                if start[axis] < self.origin || start[axis] > maximum { return Ok(Vec::new()); }
             } else {
                 let a = (self.origin - start[axis]) / direction[axis];
                 let b = (maximum - start[axis]) / direction[axis];
                 enter = enter.max(a.min(b)); leave = leave.min(a.max(b));
-                if enter > leave { return Ok(BTreeSet::new()); }
+                if enter > leave { return Ok(Vec::new()); }
             }
         }
         // Crossings are generated only for the grid lines crossed by this
@@ -332,15 +397,16 @@ impl Terrain {
         if crossings.len() > max_query_crossings(self.width) { return Err(bad("terrain crossing bound")); }
         crossings.sort_by(f64::total_cmp);
         crossings.dedup();
-        let mut cells = BTreeSet::new();
-        for &t in &crossings { self.add_cells_at(start, direction, t, &mut cells)?; }
-        for window in crossings.windows(2) {
-            self.add_cells_at(start, direction, window[0] + (window[1] - window[0]) * 0.5, &mut cells)?;
-        }
-        Ok(cells)
+        Ok(crossings)
     }
 
-    fn add_cells_at(&self, start: [f64; 3], direction: [f64; 3], t: f64, cells: &mut BTreeSet<usize>) -> io::Result<()> {
+    fn add_cells_at(&self, start: [f64; 3], direction: [f64; 3], t: f64, cells: &mut Vec<usize>) {
+        let (found, count) = self.cells_at(start, direction, t);
+        cells.extend_from_slice(&found[..count]);
+    }
+
+    /// Up to four grid cells at one segment parameter (closed boundaries).
+    fn cells_at(&self, start: [f64; 3], direction: [f64; 3], t: f64) -> ([usize; 4], usize) {
         let count = self.width - 1;
         let neighbors = |axis: usize| {
             let grid = (start[axis] + direction[axis] * t - self.origin) / self.spacing;
@@ -350,13 +416,13 @@ impl Terrain {
                 [rounded as isize - 1, rounded as isize]
             } else { [base, base] }
         };
+        let (mut cells, mut found) = ([0; 4], 0);
         for x in neighbors(0) { for z in neighbors(2) {
             if x >= 0 && z >= 0 && x < count as isize && z < count as isize {
-                cells.insert(z as usize * count + x as usize);
-                if cells.len() > max_query_cells(self.width) { return Err(bad("terrain visited-cell bound")); }
+                cells[found] = z as usize * count + x as usize; found += 1;
             }
         }}
-        Ok(())
+        (cells, found)
     }
 }
 
@@ -385,6 +451,10 @@ fn intersect(start: [f64; 3], direction: [f64; 3], triangle: [[f64; 3]; 3], tria
 }
 
 #[cfg(test)]
+#[path = "terrain_anyhit_tests.rs"]
+mod anyhit_tests;
+
+#[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use std::sync::OnceLock;
@@ -404,7 +474,7 @@ pub(crate) mod tests {
         for z in 0..width { for x in 0..width { heights.push(height(x,z)); }}
         Terrain { map: MapId::Karelia, heights:heights.into(),width,origin:0.,spacing:1.,obstacles:None }
     }
-    fn actual() -> &'static Terrain {
+    pub(crate) fn actual() -> &'static Terrain {
         static TERRAIN: OnceLock<Terrain> = OnceLock::new();
         TERRAIN.get_or_init(|| {
             let root=std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());

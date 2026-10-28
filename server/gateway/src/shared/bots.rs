@@ -476,7 +476,7 @@ impl World {
     fn bot_line_clear(&self, actor: &Actor, point: [f32; 3]) -> io::Result<bool> {
         let terrain = self.terrain.as_ref().ok_or_else(bad)?;
         let excluded = self.spotting_excluded()?;
-        Ok(terrain.nearest_excluding_many(Self::visibility_sight_point(actor), point, &excluded)?.is_none())
+        Ok(!terrain.any_hit_excluding_many(Self::visibility_sight_point(actor), point, &excluded)?)
     }
 }
 
