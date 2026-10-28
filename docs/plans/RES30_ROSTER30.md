@@ -122,6 +122,23 @@ seal late results 7..30 — 393 216. Разбор JSON итога в loss-пут
 `9ae5862` — `local/test-runs/res30-compare-9ae5862/` (gateway 1686/83/11 против 1676/83/11, web равны).
 83 FAIL шлюза, web-FAIL и Python-ERROR (105 из них `reparse path forbidden` — junction-ссылки `local/` worktree) — окружение worktree (нет exe/стенда, нет `express`, удалённый Codex worktree), одинаковы на базе.
 
+### Стек (найдено каноническим gate общей сборки `e78764b`)
+
+`p10b_loss_composition09_actual_http_host` переполнял стек потока теста: `late_results_capture::Capture.releases`
+и `Entry.owners` стали встроенными массивами `[_;30]` (`Capture` 4,2 → 20,9 КБ), а late-наблюдатель клонирует их по
+значению на главном потоке шлюза (Windows: 1 МБ). Кадры debug по машинному коду (`__chkstk`), gate-exe → `7ddf07f`:
+`register_world_inner` 267 096 → 6 472, `stage_finished_v2/_loss` 218 248 → 1 544, `deliver_training_finished_loss`
+165 832 → 3 304, `poll_mixed` 90 392 → 9 128, `stage_install` 75 880 → 840. Исправлено: строки на куче
+(`Box<[_]>`), без увеличения стека потока. Тесты: размеры `Capture` ≤ 512 / `Entry`, `Install` ≤ 1024;
+late-путь (install/register/select) в потоке 256 КиБ (старый код переполнил бы); бой 30 мест (1 игрок + 29 ботов)
+с итогом — в потоке 1 МБ (debug). Release `96743bb` против release `f1de7ba` (без RES-30): ни один кадр
+итога/терминала/late не вырос (выросли лишь `World::enable_original_spotting` 2→34 КБ и `baseapp::encrypt`
+0→12,5 КБ — инлайнинг, вне пути итога). Самые большие кадры главного цикла — прежние и одинаковые
+(`serve_with_pool_policy` 343 КБ, `Host::poll` 159 → 141 КБ, `poll_with_native_start` 103 КБ); их сумма
+по цепочке — существующий запас главного потока, отдельной карточкой. Composition09 в worktree не запускается
+(контроллер отвергает junction-пути и сид из `D:/…/local`) — проверка только каноническим gate в D:.
+Шлюз на `96743bb`: 1705 / 83 / 12 ign, множество FAIL равно базе `6f3882a`.
+
 ### Не проверено
 
 - Native: окно итогов клиента с 30 строками, выход из боя 15×15 на стенде — NOT_RUN (владелец).
