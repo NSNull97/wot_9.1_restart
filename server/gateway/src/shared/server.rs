@@ -45,6 +45,9 @@ mod bot01_bench;
 #[cfg(test)]
 #[path="server_spawn15_real_tests.rs"]
 mod spawn15_real_tests;
+#[cfg(test)]
+#[path="server_turret01_real_tests.rs"]
+mod turret01_real_tests;
 use login_admission::{AccountTag,Admission,Decision,Writers};
 
 #[cfg(test)]
@@ -839,7 +842,11 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
             if runtime.as_ref().is_none_or(IntegratedRuntime::ready_for_native) {world.ready_bots()?;}
             world.drive_bots(now)?;
         }
-        if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {world.advance(now)?;}
+        if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {
+            world.advance(now)?;
+            // TURRET-01: a detonation that ended the battle still gets its body.
+            if let Some(batch)=runtime.as_mut().and_then(|r|r.batch.as_mut()) {batch.turrets_after_outcome(world,now)?;}
+        }
         else if let Some(r)=runtime {
             if !r.started {r.start(world,now)?;}
             let _span=super::step_profile::span(super::step_profile::Part::Scene);
@@ -856,7 +863,10 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
         drop(lifecycle_span);
         // A separate bounded visual clock survives the authoritative outcome.
         // Do not mutate a World while a prepared scene clone owns its commit.
-        if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.ammo_detonation_enabled(){
+        // After the outcome no runtime stages or commits a World, so a worker
+        // fracture left prepared then cannot freeze the turret timeline.
+        let frozen=world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some());
+        if (frozen||runtime.as_ref().is_none_or(|r|!r.blocked())) && world.ammo_detonation_enabled(){
             let _span=super::step_profile::span(super::step_profile::Part::Turrets);
             world.advance_turret_flights(now)?;
         }
@@ -1599,8 +1609,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         if !profile13_mode||!config.p06t_mixed_ammo||!config.visibility_v1||qualification.is_some(){return Err(model::bad().into());}
         battle_template.world.enable_ammo_detonation()?;
         battle_template.select(&mut world,&mut integrated,started)?;
-        println!("P06T_AMMO_DETONATION_BOUND policy={} flight_policy={} historical_solver=UNKNOWN",
-            super::ammo_detonation::POLICY,super::ammo_detonation::FLIGHT_POLICY);
+        println!("P06T_AMMO_DETONATION_BOUND policy={} flight_policy={} jolt_launch_policy={} jolt_body_policy={} historical_solver=UNKNOWN",
+            super::ammo_detonation::POLICY,super::ammo_detonation::FLIGHT_POLICY,super::ammo_detonation::JOLT_POLICY,crate::scene_worker::TURRET_POLICY);
     }
     if let Some(plan)=&config.bots{
         // Config already requires profile13, connection capacity, visibility and no hold5/training.

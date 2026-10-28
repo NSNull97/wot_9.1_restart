@@ -64,15 +64,37 @@ impl World {
         }
         Ok(())
     }
+    /// Explicit LAB SplitMix64 step of the one battle RNG; callers journal it.
+    fn splitmix_next(&mut self)->u64{
+        self.rng_state=self.rng_state.wrapping_add(0x9e3779b97f4a7c15);
+        let mut value=self.rng_state;value=(value^(value>>30)).wrapping_mul(0xbf58476d1ce4e5b9);
+        value=(value^(value>>27)).wrapping_mul(0x94d049bb133111eb);value^value>>31
+    }
     fn ignition_roll(&mut self,shot:u32,target:usize,ordinal:u8)->io::Result<f64>{
         if self.rng_draws.len()>=MAX_BATTLE_SHOTS*MAX_ACTORS*2{return Err(bad());}
         // Explicit LAB SplitMix64. Seed/draw order are server owned and retained;
         // this does not claim the historical server's random distribution.
-        self.rng_state=self.rng_state.wrapping_add(0x9e3779b97f4a7c15);
-        let mut value=self.rng_state;value=(value^(value>>30)).wrapping_mul(0xbf58476d1ce4e5b9);
-        value=(value^(value>>27)).wrapping_mul(0x94d049bb133111eb);value^=value>>31;
+        let value=self.splitmix_next();
         self.rng_draws.push((shot,target,ordinal,value));
         Ok((value>>11)as f64/(1u64<<53)as f64)
+    }
+    /// TURRET-01: six battle-RNG draws, journalled as (shot,target,0xe0+i) in
+    /// this order, then the PROJECT launch policy over the actual event: the
+    /// attacker→target heading at the detonation and the lost share of the rack.
+    pub(super) fn turret_launch(&mut self,actors:&[Actor],event:&rack::Event)->io::Result<rack::Launch>{
+        let(target,attacker)=(actors.get(event.target()).ok_or_else(||bad())?,actors.get(event.attacker()).ok_or_else(||bad())?);
+        let dx=target.position[0]-attacker.position[0];let dz=target.position[2]-attacker.position[2];
+        // Coincident positions: the attacker's own heading stands in.
+        let heading=if dx.hypot(dz)>1e-3{dx.atan2(dz)}else{attacker.direction[0]};
+        let lost=event.lost().iter().map(|n|f32::from(*n)).sum::<f32>();
+        let fill=(lost/f32::from(event.kind().ammo_limit().max(1))).min(1.);
+        if self.rng_draws.len()+rack::LAUNCH_DRAWS>MAX_BATTLE_SHOTS*MAX_ACTORS*2{return Err(bad());}
+        let mut draws=[0u64;rack::LAUNCH_DRAWS];
+        for(i,draw)in draws.iter_mut().enumerate(){
+            let value=self.splitmix_next();
+            self.rng_draws.push((event.shot(),event.target(),rack::LAUNCH_ORDINAL+i as u8,value));*draw=value;
+        }
+        rack::Launch::derive(heading,fill,draws)
     }
     pub(super) fn direct_mixed(&mut self,actors:&mut[Actor],trace:&mut impact::Trace,projectile:&Projectile,
         contact:&Contact,bundle:&geometry::Bundle)->io::Result<crate::p06t_damage::Resolution>{
@@ -155,7 +177,9 @@ impl World {
                 if self.turret_flights.len()>=MAX_ACTORS{return Err(bad());}
                 let mut fire=actors[slot].fire.clone();
                 if fire.lose_loaded_for_detonation()?!=event.lost(){return Err(bad());}
-                actors[slot].fire=fire;self.turret_flights.push(rack::Flight::new(event));
+                actors[slot].fire=fire;
+                let flight=if self.turret_jolt{rack::Flight::jolt(event,self.turret_launch(actors,&event)?)?}else{rack::Flight::new(event)};
+                self.turret_flights.push(flight);
                 self.ammo_detonation=Some(ledger);Ok(event.additional_damage())
             },
             rack::Outcome::Empty=>{self.ammo_detonation=Some(ledger);Ok(0)},
@@ -189,6 +213,30 @@ impl World {
             self.record_damage(actors,slot,projectile.slot,projectile.sequence,tick,0,result.damage_hp,crew_before,false,false)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl World{
+    /// TURRET-01 SYNTHETIC test/bench hook: the lethal rack event of `target`
+    /// by `attacker` without a projectile (no plate Trace). It uses the real
+    /// ledger, joint, death bookkeeping and launch derivation.
+    pub(crate) fn force_detonation_for_test(&mut self,target:usize,attacker:usize,shot:u32)->io::Result<rack::Event>{
+        let mut actors=std::mem::take(&mut self.actors);
+        let result=(||{
+            let actor=actors.get(target).ok_or_else(||bad())?;
+            let input=rack::Input{shot,target,attacker,tick:self.tick,device_sequence:1,device_before:1,device_after:0,
+                health_before:actor.health as u16,residual_hp:actor.health as u16,counts:actor.fire.typed().ok_or_else(||bad())?.counts(),
+                kind:actor.vehicle_kind(),joint:turret_joint(actor)?,from_fire:false};
+            let mut ledger=self.ammo_detonation.clone().ok_or_else(||bad())?;
+            let rack::Outcome::New(event)=ledger.apply(input)?else{return Err(bad());};
+            let mut fire=actors[target].fire.clone();fire.lose_loaded_for_detonation()?;actors[target].fire=fire;
+            let crew=actors[target].alive();
+            self.record_damage(&mut actors,target,attacker,shot,self.tick,0,input.health_before,crew,true,true)?;
+            let flight=if self.turret_jolt{rack::Flight::jolt(event,self.turret_launch(&actors,&event)?)?}else{rack::Flight::new(event)};
+            self.turret_flights.push(flight);self.ammo_detonation=Some(ledger);Ok(event)
+        })();
+        self.actors=actors;result
     }
 }
 

@@ -50,6 +50,14 @@ impl Input {
     }
 }
 
+/// TURRET-01 worker request for one detached turret body. Points are in the
+/// born joint frame (turret pivot, turret yaw, gun at its neutral pitch).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TurretLaunchRequest {
+    pub slot: usize, pub joint: super::ammo_detonation::JointPose, pub launch: super::ammo_detonation::Launch,
+    pub turret_points: Vec<[f32; 3]>, pub gun_points: Vec<[f32; 3]>, pub wreck_slots: Vec<usize>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Actor {
     pub identity: Identity,
@@ -206,6 +214,8 @@ pub struct World {
     ammo_detonation:Option<super::ammo_detonation::Ledger>,
     turret_flights:Vec<super::ammo_detonation::Flight>,
     turret_visual_ms:Option<u64>,
+    /// TURRET-01: a battle-scene worker simulates detached turrets in Jolt.
+    turret_jolt:bool,
     extended_lab:bool,
     owner_hold:bool,
     /// SPAWN-15: place teams on `team_spawn` formations instead of LAB lanes.
@@ -299,7 +309,7 @@ impl World {
             "damage_event_count":self.damage_events.len(),"device_event_count":self.device_events.len(),
             "ammo_detonation_policy":self.ammo_detonation.as_ref().map(|_|super::ammo_detonation::POLICY),
             "ammo_detonations":self.ammo_detonations().iter().map(|event|format!("{event:?}")).collect::<Vec<_>>(),
-            "turret_visual_ms":self.turret_visual_ms,"turret_flights":self.turret_flights.iter().map(|flight|format!("{flight:?}")).collect::<Vec<_>>(),
+            "turret_visual_ms":self.turret_visual_ms,"turret_jolt":self.turret_jolt,"turret_flights":self.turret_flights.iter().map(|flight|format!("{flight:?}")).collect::<Vec<_>>(),
             "damage_tail":self.damage_events.iter().rev().take(64).map(|event|format!("{event:?}")).collect::<Vec<_>>(),
             "device_tail":self.device_events.iter().rev().take(64).map(|event|format!("{event:?}")).collect::<Vec<_>>(),
             "rng_policy":"test_lab.splitmix64.v1","rng_initial_seed":self.id.to_string(),"rng_state":self.rng_state.to_string(),
@@ -395,6 +405,49 @@ impl World {
         self.ammo_detonation.as_ref().map_or(&[],super::ammo_detonation::Ledger::events)
     }
     pub fn turret_flights(&self)->&[super::ammo_detonation::Flight]{&self.turret_flights}
+    /// TURRET-01: set by the battle-scene runtime before any detonation, so
+    /// every later rack event launches a Jolt body instead of the legacy point.
+    pub fn enable_turret_jolt(&mut self)->io::Result<()>{
+        if !self.turret_flights.is_empty(){return Err(bad());}self.turret_jolt=true;Ok(())
+    }
+    pub fn turret_jolt(&self)->bool{self.turret_jolt}
+    /// Jolt flights still waiting for their worker trajectory, by target slot.
+    pub fn pending_turret_launches(&self)->Vec<usize>{
+        self.turret_flights.iter().filter(|f|f.awaiting_trajectory()).map(|f|f.event().target()).collect()
+    }
+    /// Body request for one Jolt flight: born joint pose, launch motion,
+    /// turret+gun support points in the joint frame and the wreck slots the
+    /// worker adds as static boxes. Live vehicles are not obstacles (TURRET-01 plan).
+    pub fn turret_launch_request(&self,slot:usize)->io::Result<TurretLaunchRequest>{
+        let flight=self.turret_flights.iter().find(|f|f.event().target()==slot&&f.launch().is_some()).ok_or_else(||bad())?;
+        let event=flight.event();let launch=flight.launch().ok_or_else(||bad())?;
+        let kind=event.kind();let bundle=self.geometry_for(kind)?;
+        let(turret,gun)=bundle.detached_support_points(kind.aim().pivot)?;
+        let wrecks=self.actors.iter().enumerate().filter(|(_,a)|a.health==0).map(|(s,_)|s).collect();
+        Ok(TurretLaunchRequest{slot,joint:event.joint(),launch,turret_points:turret,gun_points:gun,wreck_slots:wrecks})
+    }
+    /// TURRET-01 test evidence: lowest clearance above the terrain mesh of
+    /// the body's support points, at rest and over every worker sample.
+    #[cfg(test)]
+    pub(crate) fn turret_clearance_for_test(&self,slot:usize)->io::Result<(f32,f32)>{
+        let request=self.turret_launch_request(slot)?;
+        let flight=self.turret_flights.iter().find(|f|f.event().target()==slot).ok_or_else(||bad())?;
+        let trajectory=flight.trajectory().ok_or_else(||bad())?;let terrain=self.terrain.as_ref().ok_or_else(||bad())?;
+        let max=terrain::MAX_QUERY_COORDINATE;let(mut rest,mut all)=(f32::MAX,f32::MAX);
+        for(index,pose)in trajectory.samples.iter().enumerate(){
+            for local in request.turret_points.iter().chain(&request.gun_points){
+                let r=super::pose::rotate(*local,pose.direction);let p:[f32;3]=std::array::from_fn(|i|pose.position[i]+r[i]);
+                let ground=terrain.nearest_ground([p[0],max,p[2]],[p[0],-max,p[2]])?.ok_or_else(||bad())?.point[1];
+                all=all.min(p[1]-ground);if index+1==trajectory.samples.len(){rest=rest.min(p[1]-ground);}
+            }
+        }
+        Ok((rest,all))
+    }
+    pub fn install_turret_trajectory(&mut self,slot:usize,trajectory:super::ammo_detonation::Trajectory)->io::Result<()>{
+        let mut next=self.turret_flights.clone();
+        next.iter_mut().find(|f|f.event().target()==slot).ok_or_else(||bad())?.install_trajectory(trajectory)?;
+        self.turret_flights=next;Ok(())
+    }
     /// AUTHORED publication fixture only. It does not prove exterior collision,
     /// DeviceState source authority or inventory admission. Production only
     /// creates these events through direct_mixed's actual module transition.
@@ -463,7 +516,7 @@ impl World {
         if id == 0 { return Err(bad()); }
         Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,team_plan:None,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new().into(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
-            mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,
+            mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,turret_jolt:false,
             extended_lab:false,owner_hold:false,team_base_spawn:false,lab_loadouts:[None;MAX_ACTORS],
             damage_events:Vec::new().into(),device_events:Vec::new().into(),rng_state:id,rng_draws:Vec::new().into(),
             result_spots:None,result_spot_tick:None,original_spotting:None,

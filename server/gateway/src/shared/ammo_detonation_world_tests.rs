@@ -2,6 +2,7 @@
 //! are explicitly authored LAB fixtures; only the target FrozenLoss below is
 //! parsed from an actual isolated SQLite writer response. No inventory grant.
 use super::*;
+use super::super::super::ammo_detonation::{LAUNCH_DRAWS,LAUNCH_ORDINAL};
 use crate::{p06t_armament091 as arm,p06t_shells091 as source,p06t_lab_proxy::Target,
     profile13_loss091 as loss};
 use sha2::{Digest,Sha256};
@@ -197,3 +198,31 @@ fn second(w:&mut World,now:Instant){
 
 #[path="owner_hold_world_tests.rs"]
 mod owner_hold_world_tests;
+
+#[test]fn turret01_actual_rack_event_launches_jolt_body_from_journalled_battle_rng(){
+    let now=Instant::now();
+    let base=||{let(owner,reservation)=actual_reservation();let mut w=template(now,reservation.battle,true);
+        lab_attach(&mut w,0,[0,4,4]);assert_eq!(w.attach_owned_loss(owner,2,&reservation.frozen).unwrap(),1);start(&mut w,now);
+        let(mut w,_)=first_rack_hit(&w,now);w.enable_turret_jolt().unwrap();w};
+    let mut w=base();let mut other_seed=w.clone();other_seed.rng_state^=0x5eed;let draws_before=w.rng_draws.len();
+    second(&mut w,now);second(&mut other_seed,now);
+    let flight=&w.turret_flights()[0];assert!(flight.awaiting_trajectory());let launch=flight.launch().unwrap();
+    // Six draws after the hit's own rolls, journalled in order under the rack event's shot/target.
+    let journal=&w.rng_draws[w.rng_draws.len()-LAUNCH_DRAWS..];assert!(w.rng_draws.len()>=draws_before+LAUNCH_DRAWS);
+    assert_eq!(journal.iter().map(|(shot,target,ordinal,_)|(*shot,*target,*ordinal)).collect::<Vec<_>>(),
+        (0..LAUNCH_DRAWS as u8).map(|i|(2,1,LAUNCH_ORDINAL+i)).collect::<Vec<_>>());
+    assert_eq!(journal.iter().map(|r|r.3).collect::<Vec<_>>(),launch.draws.to_vec());
+    // The attacker stands at -Z of the target: the sideways push keeps within 60 degrees of +Z.
+    assert!(launch.linear_velocity[2]>0.&&launch.linear_velocity[2]>=launch.linear_velocity[0].abs()*0.5);
+    // The same battle replayed: the same journal and launch. Another seed: another launch.
+    let mut rerun=base();second(&mut rerun,now);
+    assert_eq!(rerun.turret_flights()[0].launch(),Some(launch));assert_eq!(rerun.rng_draws,w.rng_draws);
+    assert_ne!(other_seed.turret_flights()[0].launch().unwrap().linear_velocity,launch.linear_velocity);
+    // Worker request: joint pose, turret+gun support points, the dead target as a wreck.
+    let event=w.ammo_detonations()[0];
+    let request=w.turret_launch_request(1).unwrap();assert_eq!(request.joint,event.joint());assert_eq!(request.wreck_slots,vec![1]);
+    assert!((4..=98).contains(&request.turret_points.len())&&(4..=98).contains(&request.gun_points.len()));
+    let gun_far=request.gun_points.iter().map(|p|p[2]).fold(f32::MIN,f32::max);
+    let turret_far=request.turret_points.iter().map(|p|p[2]).fold(f32::MIN,f32::max);assert!(gun_far>turret_far,"the barrel reaches beyond the turret");
+    assert!(w.turret_launch_request(0).is_err());
+}

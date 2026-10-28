@@ -112,15 +112,88 @@ impl Ledger{
     }
 }
 
+/// TURRET-01 PROJECT launch policy (no 0.9.1 client data exists for it): the
+/// detached turret+gun is a dynamic Jolt body in the battle-scene worker.
+pub const JOLT_POLICY:&str="project.turret01.detached-turret-jolt-launch.v1";
+/// One battle-RNG draw per launch parameter, journalled in this order.
+pub const LAUNCH_DRAWS:usize=6;
+/// RNG journal ordinals of the launch draws (ignition rolls use 0..=15).
+pub const LAUNCH_ORDINAL:u8=0xe0;
+/// Worker samples: one per 100 ms native tick from the detonation, at most 10 s.
+pub const MAX_TRAJECTORY_SAMPLES:usize=101;
+const MAX_LAUNCH_SPEED:f32=20.;
+const MAX_LAUNCH_SPIN:f32=10.;
+
+/// Initial body motion derived by Root from the actual detonation event and the
+/// battle RNG. Velocities, not impulses: the resting place does not depend on a
+/// turret mass that the client data does not carry.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Launch{pub linear_velocity:[f32;3],pub angular_velocity:[f32;3],pub draws:[u64;LAUNCH_DRAWS]}
+impl Launch{
+    /// PROJECT policy `JOLT_POLICY`: up 5..10 m/s (more with fuller rack),
+    /// 1..4 m/s sideways along the attacker→target heading +-60 degrees,
+    /// spin up to 3/2/3 rad/s about yaw-free X/Y/Z. `heading` is the shot's
+    /// horizontal direction (radians, client yaw convention), `fill` the lost
+    /// share of the rack 0..=1. `draws` are raw SplitMix64 outputs in order.
+    pub fn derive(heading:f32,fill:f32,draws:[u64;LAUNCH_DRAWS])->io::Result<Self>{
+        if !heading.is_finite()||!(0. ..=1.).contains(&fill){return Err(bad("turret launch source bounds"));}
+        let u=draws.map(|v|((v>>11)as f64/(1u64<<53)as f64)as f32);
+        let up=5.+3.*fill+2.*u[0];
+        let azimuth=heading+(u[1]-0.5)*2.*PI/3.;let side=1.+3.*u[2];
+        let launch=Self{linear_velocity:[side*azimuth.sin(),up,side*azimuth.cos()],
+            angular_velocity:[(u[3]-0.5)*6.,(u[4]-0.5)*4.,(u[5]-0.5)*6.],draws};
+        launch.validate()?;Ok(launch)
+    }
+    pub fn validate(self)->io::Result<()>{
+        let speed=self.linear_velocity.iter().map(|v|v*v).sum::<f32>().sqrt();
+        let spin=self.angular_velocity.iter().map(|v|v*v).sum::<f32>().sqrt();
+        if !speed.is_finite()||speed>MAX_LAUNCH_SPEED||!spin.is_finite()||spin>MAX_LAUNCH_SPIN{return Err(bad("turret launch motion bounds"));}Ok(())
+    }
+}
+/// Poses of the actual Jolt body at born_ms + 100 ms * index. The last pose is
+/// where the body came to rest (or the bounded end of the simulation).
+#[derive(Clone,Debug,PartialEq)]
+pub struct Trajectory{pub samples:Vec<JointPose>,pub slept:bool}
+impl Trajectory{
+    pub fn validate(&self)->io::Result<()>{
+        if self.samples.is_empty()||self.samples.len()>MAX_TRAJECTORY_SAMPLES{return Err(bad("turret trajectory sample count"));}
+        for sample in &self.samples{sample.validate()?;}Ok(())
+    }
+}
+#[derive(Clone,Debug,PartialEq)]
+struct Jolt{launch:Launch,trajectory:Option<Trajectory>}
+
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum FlightPhase{Flying,Resting,Expired}
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct FlightSample{pub position:[f32;3],pub direction:[f32;3],pub phase:FlightPhase,pub at_ms:u64}
 #[derive(Clone,Debug,PartialEq)]
-pub struct Flight{event:Event,last_ms:Option<u64>,sample:FlightSample,landing:Option<JointPose>}
+pub struct Flight{event:Event,last_ms:Option<u64>,sample:FlightSample,landing:Option<JointPose>,jolt:Option<Jolt>}
 impl Flight{
+    /// Legacy PROJECT point trajectory (`FLIGHT_POLICY`) for a World without a
+    /// battle-scene worker. A scene battle uses `Flight::jolt`.
     pub fn new(event:Event)->Self{let joint=event.joint();Self{event,last_ms:None,
-        sample:FlightSample{position:joint.position,direction:joint.direction,phase:FlightPhase::Flying,at_ms:event.born_ms()},landing:None}}
+        sample:FlightSample{position:joint.position,direction:joint.direction,phase:FlightPhase::Flying,at_ms:event.born_ms()},landing:None,jolt:None}}
+    /// TURRET-01: the pose holds at the joint until the scene worker returns
+    /// the body's trajectory; then it plays that trajectory by the clock.
+    pub fn jolt(event:Event,launch:Launch)->io::Result<Self>{
+        launch.validate()?;let mut flight=Self::new(event);flight.jolt=Some(Jolt{launch,trajectory:None});Ok(flight)
+    }
+    pub fn launch(&self)->Option<Launch>{self.jolt.as_ref().map(|j|j.launch)}
+    /// A Jolt flight whose worker trajectory has not arrived yet.
+    pub fn awaiting_trajectory(&self)->bool{self.jolt.as_ref().is_some_and(|j|j.trajectory.is_none())}
+    pub fn trajectory(&self)->Option<&Trajectory>{self.jolt.as_ref().and_then(|j|j.trajectory.as_ref())}
+    /// Exactly once per Jolt flight. The first sample is the detonation joint
+    /// pose the request carried; anything else is not this body.
+    pub fn install_trajectory(&mut self,trajectory:Trajectory)->io::Result<()>{
+        trajectory.validate()?;
+        let born=self.event.joint();
+        let jolt=self.jolt.as_mut().ok_or_else(||bad("legacy turret flight has no Jolt body"))?;
+        if jolt.trajectory.is_some(){return Err(bad("turret trajectory already installed"));}
+        let first=trajectory.samples[0];
+        if first.position.iter().zip(born.position).any(|(a,b)|(a-b).abs()>0.01){return Err(bad("turret trajectory start differs from joint"));}
+        jolt.trajectory=Some(trajectory);Ok(())
+    }
     pub fn event(&self)->Event{self.event}
     pub fn sample(&self)->FlightSample{self.sample}
     /// Root calls this independently of the frozen outcome/HP clock. The
@@ -137,7 +210,18 @@ impl Flight{
         if self.last_ms==Some(now_ms){return Ok(self.sample);}
         let mut next=self.clone();
         if next.sample.phase==FlightPhase::Expired{next.last_ms=Some(now_ms);next.sample.at_ms=now_ms;*self=next;return Ok(self.sample);}
-        let elapsed=now_ms-self.event.born_ms();let t=elapsed.min(FLIGHT_LIFETIME_MS)as f64/1000.;
+        let elapsed=now_ms-self.event.born_ms();
+        if let Some(jolt)=&self.jolt{
+            // Whole 100 ms worker samples only: the native pose stream carries
+            // one pose per tick and the client filter interpolates between them.
+            let(joint,phase)=match &jolt.trajectory{
+                None=>(self.event.joint(),FlightPhase::Flying),
+                Some(t)=>{let index=usize::try_from(elapsed/100).map_err(|_|bad("turret trajectory index"))?.min(t.samples.len()-1);
+                    (t.samples[index],if index+1==t.samples.len(){FlightPhase::Resting}else{FlightPhase::Flying})},
+            };
+            next.sample=FlightSample{position:joint.position,direction:joint.direction,phase,at_ms:now_ms};
+            next.last_ms=Some(now_ms);*self=next;return Ok(self.sample);
+        }let t=elapsed.min(FLIGHT_LIFETIME_MS)as f64/1000.;
         let joint=if let Some(landing)=next.landing{landing}else{
             let born=self.event.joint();let(s,c)=f64::from(born.direction[0]).sin_cos();
             let velocity=[LOCAL_VELOCITY[0]*c+LOCAL_VELOCITY[2]*s,LOCAL_VELOCITY[1],-LOCAL_VELOCITY[0]*s+LOCAL_VELOCITY[2]*c];

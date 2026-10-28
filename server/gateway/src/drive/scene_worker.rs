@@ -196,6 +196,37 @@ pub fn advance_request(spec:&SceneSpec,generation:u32,scene:&Scene,seq:u32,input
     if generation==0||!(1..=36000).contains(&seq)||inputs.len()!=spec.actors.len()||inputs.iter().any(|i|!i.valid()){return Err(bad("batch inputs/sequence"));}
     let mut v=header(spec,generation);v["op"]="advance".into();v["seq"]=seq.into();v["ticks"]=6.into();v["scene_version"]=scene.version().into();v["scene_sha256"]=scene.sha256.clone().into();
     v["inputs"]=json!(inputs.iter().enumerate().map(|(slot,i)|json!({"slot":slot,"throttle":i.throttle,"steer":i.steer,"brake":i.brake,"speed_percent":i.speed_percent})).collect::<Vec<_>>());line(&v)}
+/// TURRET-01 detached turret body: born joint pose (yaw/pitch/roll), launch
+/// velocities, support points in the joint frame, dead vehicles as obstacles.
+#[derive(Clone,Debug,PartialEq)]pub struct TurretBody{pub slot:usize,pub position:[f32;3],pub direction:[f32;3],pub linear_velocity:[f32;3],
+    pub angular_velocity:[f32;3],pub turret_points:Vec<[f32;3]>,pub gun_points:Vec<[f32;3]>,pub wreck_slots:Vec<usize>}
+pub const MAX_TURRET_POINTS:usize=98;
+pub const MAX_TURRET_SAMPLES:usize=101;
+pub const TURRET_POLICY:&str="project.turret01.detached-turret-jolt-body.v1";
+/// Worker poses of one body, one per 100 ms from the request (sample 0 = born pose).
+#[derive(Clone,Debug,PartialEq)]pub struct TurretTrajectory{pub slot:usize,pub samples:Vec<([f32;3],[f32;3])>,pub slept:bool,pub substeps:u32}
+pub fn turret_request(spec:&SceneSpec,generation:u32,scene:&Scene,seq:u32,body:&TurretBody)->io::Result<Vec<u8>>{
+    let finite=|v:&[f32;3],limit:f32|v.iter().all(|x|x.is_finite()&&x.abs()<=limit);
+    let points=|p:&Vec<[f32;3]>|(4..=MAX_TURRET_POINTS).contains(&p.len())&&p.iter().all(|v|finite(v,20.));
+    if generation==0||seq>36000||body.slot>=spec.actors.len()||!finite(&body.position,2000.)||!finite(&body.direction,std::f32::consts::PI+0.001)
+        ||!finite(&body.linear_velocity,20.)||!finite(&body.angular_velocity,10.)||!points(&body.turret_points)||!points(&body.gun_points)
+        ||body.wreck_slots.len()>spec.actors.len()||body.wreck_slots.windows(2).any(|w|w[0]>=w[1])||body.wreck_slots.iter().any(|s|*s>=spec.actors.len()){return Err(bad("turret body request bounds"));}
+    let mut v=scene_request(spec,generation,scene,seq,"turret_flight");
+    v["flight"]=json!({"slot":body.slot,"position":body.position,"direction":body.direction,"linear_velocity":body.linear_velocity,
+        "angular_velocity":body.angular_velocity,"turret_points":body.turret_points,"gun_points":body.gun_points,"wreck_slots":body.wreck_slots});
+    line(&v)
+}
+fn turret_reply(raw:&[u8],spec:&SceneSpec,generation:u32,seq:u32,slot:usize)->io::Result<TurretTrajectory>{
+    let v=parse(raw,MAX_OUTPUT)?;keys(&v,&["version","event","generation","manifest_sha256","catalog_sha256","advance_seq","tick","policy","slot","substeps","slept","samples"])?;
+    check_header(&v,spec,generation)?;
+    let substeps=uint(&v["substeps"])?;let rows=array(&v["samples"],MAX_TURRET_SAMPLES)?;
+    if string(&v,"event")?!="turret_flight"||uint(&v["advance_seq"])?!=seq as u64||uint(&v["tick"])?!=180+seq as u64*6||string(&v,"policy")?!=TURRET_POLICY
+        ||uint(&v["slot"])?!=slot as u64||rows.is_empty()||substeps!=(rows.len()as u64-1)*6{return Err(bad("turret flight reply identity"));}
+    let slept=v["slept"].as_bool().ok_or_else(||bad("turret slept flag"))?;
+    let samples=rows.iter().map(|r|{keys(r,&["position","direction"])?;Ok((vector::<3>(&r["position"],2000.)?,vector::<3>(&r["direction"],std::f32::consts::PI+0.001)?))})
+        .collect::<io::Result<Vec<_>>>()?;
+    Ok(TurretTrajectory{slot,samples,slept,substeps:substeps as u32})
+}
 fn line(v:&Value)->io::Result<Vec<u8>>{let mut b=serde_json::to_vec(v).map_err(|_|bad("JSON encoding"))?;if b.len()>MAX_INPUT{return Err(bad("input size"));}b.push(b'\n');Ok(b)}
 
 #[derive(Clone,Debug,PartialEq)]pub struct Pose{pub position:[f32;3],pub direction:[f32;3],pub speed:f32,pub rspeed:f32,pub linear_velocity:[f32;3],pub angular_velocity:[f32;3],pub contacts:u8,pub wheel_contact_masks:[u8;6]}
@@ -308,14 +339,14 @@ impl Artifacts{
 }
 
 enum Event{Line(Instant,Vec<u8>),Failed(io::Error)}
-enum Pending{Ready(Instant),Advance(u32,Instant),Scene(Scene,Instant)}
+enum Pending{Ready(Instant),Advance(u32,Instant),Scene(Scene,Instant),Turret(usize,Instant)}
 impl Pending{
-    fn started(&self)->Instant{match self{Self::Ready(at)|Self::Advance(_,at)|Self::Scene(_,at)=>*at}}
-    fn kind(&self)->&'static str{match self{Self::Ready(_)=>"ready",Self::Advance(_,_)=>"advance",Self::Scene(_,_)=>"scene"}}
+    fn started(&self)->Instant{match self{Self::Ready(at)|Self::Advance(_,at)|Self::Scene(_,at)|Self::Turret(_,at)=>*at}}
+    fn kind(&self)->&'static str{match self{Self::Ready(_)=>"ready",Self::Advance(_,_)=>"advance",Self::Scene(_,_)=>"scene",Self::Turret(..)=>"turret"}}
 }
 pub struct Worker{spec:Arc<SceneSpec>,generation:u32,child:Child,send:Option<mpsc::SyncSender<Vec<u8>>>,receive:Option<mpsc::Receiver<Event>>,
     threads:Vec<thread::JoinHandle<()>>,pending:Option<Pending>,scene:Scene,seq:u32,ready:bool,prepared:Vec<u32>,ack:bool,failed:bool,stderr:Arc<Mutex<Vec<u8>>>,
-    diagnostics:Option<Arc<Sink>>}
+    diagnostics:Option<Arc<Sink>>,turret:Option<TurretTrajectory>}
 impl Worker{
     pub fn launch(artifacts:Artifacts,spec:Arc<SceneSpec>,generation:u32,scene:Scene,now:Instant)->io::Result<Self>{
         if generation==0||scene!=Scene::new(&spec,&scene.ids)?{return Err(bad("launch generation/scene"));}artifacts.verify()?;spec.verify()?;
@@ -350,7 +381,7 @@ impl Worker{
             if let Ok(mut out)=target.lock(){*out=raw;}
         });
         if let Some(sink)=&diagnostics{sink.record_process("worker_spawned",now,child_pid,cadence::process_cpu_100ns(child_pid));}
-        let mut worker=Self{spec,generation,child,send:Some(send),receive:Some(receive),threads:vec![writer,reader,errors],pending:Some(Pending::Ready(now)),scene,seq:0,ready:false,prepared:Vec::new(),ack:false,failed:false,stderr,diagnostics};
+        let mut worker=Self{spec,generation,child,send:Some(send),receive:Some(receive),threads:vec![writer,reader,errors],pending:Some(Pending::Ready(now)),scene,seq:0,ready:false,prepared:Vec::new(),ack:false,failed:false,stderr,diagnostics,turret:None};
         worker.send_value(&scene_request(&worker.spec,generation,&worker.scene,0,"restore_scene"))?;Ok(worker)
     }
     fn send_value(&mut self,value:&Value)->io::Result<()>{self.send_bytes(line(value)?)}
@@ -389,11 +420,20 @@ impl Worker{
         self.scene.ids.iter().chain(&self.prepared).any(|id|scene.ids.binary_search(id).is_err()){return Err(bad("scene commit barrier/set"));}
         self.send_value(&scene_request(&self.spec,self.generation,&scene,self.seq,"sync_removed"))?;self.pending=Some(Pending::Scene(scene,now));Ok(())}
     pub fn take_scene_ack(&mut self)->bool{let ack=self.ack;self.ack=false;ack}
+    /// TURRET-01: one body simulation in the worker's own debris world. It
+    /// never steps the battle world, so it is allowed between advances and
+    /// while a fracture/scene commit is outstanding (no other request pending).
+    pub fn launch_turret(&mut self,body:&TurretBody,now:Instant)->io::Result<()>{
+        if !self.ready()||self.pending()||self.turret.is_some(){return Err(bad("turret flight barrier"));}
+        let raw=turret_request(&self.spec,self.generation,&self.scene,self.seq,body)?;
+        self.send_bytes(raw)?;self.pending=Some(Pending::Turret(body.slot,now));Ok(())
+    }
+    pub fn take_turret(&mut self)->Option<TurretTrajectory>{self.turret.take()}
     pub fn poll(&mut self,now:Instant)->io::Result<Option<Frame>>{if self.failed{return Err(bad("worker failed"));}let result=self.poll_inner(now);if result.is_err(){self.failed=true;}result}
     /// Outstanding request deadline at `now`; a reply already received is
     /// judged at its earlier reader-thread receipt time instead.
     fn check_deadline(&self,now:Instant,received:Option<Instant>)->io::Result<()>{
-        if let Some(pending)=&self.pending{let(start,limit)=match pending{Pending::Ready(t)=>(*t,START_TIMEOUT),Pending::Advance(_,t)|Pending::Scene(_,t)=>(*t,REPLY_TIMEOUT)};
+        if let Some(pending)=&self.pending{let(start,limit)=match pending{Pending::Ready(t)=>(*t,START_TIMEOUT),Pending::Advance(_,t)|Pending::Scene(_,t)|Pending::Turret(_,t)=>(*t,REPLY_TIMEOUT)};
             let elapsed=now.checked_duration_since(start).ok_or_else(||{self.diag_process("deadline_clock_regression",now);bad("clock regression")})?;
             let elapsed=received.map_or(elapsed,|received|received.min(now).saturating_duration_since(start));
             if elapsed>limit{if let Some(sink)=&self.diagnostics{sink.record(json!({"event":"worker_deadline","at_us":sink.elapsed_us(now),"elapsed_us":elapsed.as_micros().min(u128::from(u64::MAX)),"limit_us":limit.as_micros(),"status":"FAIL_CLOSED"}));}self.diag_process("worker_deadline_sample",now);return Err(io::Error::new(io::ErrorKind::TimedOut,"shared scene worker deadline"));}}
@@ -418,7 +458,8 @@ impl Worker{
                 uint(&v["scene_version"])?!=scene.version()as u64||string(&v,"scene_sha256")?!=scene.sha256||v["removed_object_ids"]!=json!(scene.ids){return Err(bad("exact scene ACK"));}
             self.scene=scene.clone();self.prepared.clear();self.pending=None;self.ack=true;return Ok(None);
         }
-        let seq=match pending{Pending::Ready(_)=>0,Pending::Advance(seq,_)=>*seq,Pending::Scene(..)=>unreachable!()};
+        if let Pending::Turret(slot,_)=pending{self.turret=Some(turret_reply(&raw,&self.spec,self.generation,self.seq,*slot)?);self.pending=None;return Ok(None);}
+        let seq=match pending{Pending::Ready(_)=>0,Pending::Advance(seq,_)=>*seq,Pending::Scene(..)|Pending::Turret(..)=>unreachable!()};
         let frame=response(&raw,&self.spec,self.generation,&self.scene,seq)?;
         self.ready=true;self.seq=seq;self.prepared=frame.prepared_ids.clone();self.pending=None;Ok(Some(frame))
     }
