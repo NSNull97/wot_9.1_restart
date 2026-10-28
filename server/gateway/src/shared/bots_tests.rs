@@ -150,6 +150,24 @@ fn bot01_targets_only_what_its_team_is_shown(){
 }
 
 #[test]
+fn bot01_team_shown_target_behind_a_wall_does_not_park_the_bot(){
+    // Bot 1 (team 2) is behind a wall; its ally bot 3 sees the native from the side.
+    let now=Instant::now();let mut w=fixture_on(MapId::Karelia,1,4,9,now);w.fill_bots().unwrap();
+    w.terrain=Some(wall_at(75.));
+    place(&mut w,0,[0.,0.,150.],0.);place(&mut w,1,[0.,0.,0.],0.);
+    place(&mut w,2,[-400.,0.,-400.],0.);place(&mut w,3,[80.,0.,150.],0.);
+    let at=begin(&mut w,now);
+    for k in 1..=5{tick(&mut w,at+STEP*k);}
+    assert!(w.desired_visibility(1).unwrap()[0],"the team shows the native");
+    assert!(matches!(w.actors[1].aim.intent,aim::Intent::Point(_)),"turret on the shown target");
+    assert_eq!(w.actors[1].input,Input::STOP,"first waits for a line");
+    for k in 6..=30{tick(&mut w,at+STEP*k);}
+    assert_ne!(w.actors[1].input,Input::STOP,"no own line for 2 s: advances along its route");
+    assert!(matches!(w.actors[1].aim.intent,aim::Intent::Point(_)));
+    assert!(w.shots.iter().all(|s|s.slot!=1),"never fires into the wall");
+}
+
+#[test]
 fn bot01_fires_only_after_aim_time_and_reload(){
     let now=Instant::now();let mut w=duel(now,false);let at=begin(&mut w,now);
     let tau=VehicleKind::Ms1.aim().aiming_time;

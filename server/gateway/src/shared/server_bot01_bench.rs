@@ -95,6 +95,7 @@ fn bot01_bench_real_scene(){
             "working_set_end":last_row.1.get(&me).map(|v|v.1),"working_set_peak":peak.get(&me)},
         "physics":{"pid":pid,"cpu_s":cpu(pid),"cpu_ms_per_domain_step":cpu(pid).map(|c|c*1000./steps),"cpu_share_of_one_core":cpu(pid).map(|c|c/interval),
             "working_set_end":last_row.1.get(&pid).map(|v|v.1),"working_set_peak":peak.get(&pid)},
+        "bot_think_ms_per_domain_step":w.bot_think_ns() as f64/1e6/w.tick.saturating_sub(start_tick).max(1) as f64,
         "behaviour":{"bot_shots":w.bot_shots(),"shots_total":w.shots.len(),"damage_rows_by_bots":by_bots,"vehicles_dead":dead,
             "bots_moved_over_50m":moved.iter().filter(|m|**m>50.).count(),"bot_moved_m_max":moved.iter().copied().fold(0f32,f32::max),
             "max_abs_xz":max_abs,"digest":w.bot_digest().map(|d|format!("{d:016x}")),

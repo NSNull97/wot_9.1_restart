@@ -34,6 +34,11 @@ const AIM_TOLERANCE: f32 = 0.3 * PI / 180.;
 /// Aim at the hull, not the ground point under it (project constant).
 const AIM_HEIGHT_M: f32 = 1.2;
 const STATS_TICKS: u32 = 100;
+/// The own sight line to the target is re-cast at most every 0.5 s.
+const LINE_RECHECK_TICKS: u32 = 5;
+/// A target the team shows but this bot cannot see for 2 s: keep advancing
+/// along the route (turret on the target) instead of waiting behind a hill.
+const BLOCKED_ADVANCE_TICKS: u32 = 20;
 
 /// Client `arena_defs` playable bounds (min x, min z, max x, max z) carried by
 /// the MAPS-01 packages' `arena.json` `playable_bounds_xz` (see BOT01 plan).
@@ -62,12 +67,16 @@ struct Brain {
     stuck: u16, unstick: u16, unstick_steer: i8,
     target: Option<usize>, settle_tick: u32, error: [f32; 2], turret_yaw: f32,
     sent_input: Input, sent_aim: Option<aim::Intent>,
+    /// Own sight line to the target: (enemy, tick cast, clear, blocked since).
+    line: Option<(usize, u32, bool, u32)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Bots { plan: Arc<Plan>, brains: Vec<Brain>, last_tick: Option<u32>, digest: u64, shots: u32,
     /// Engaged decisions without a shot: [not aimed, aiming time, reload/ammo, terrain line].
-    held: [u32; 4] }
+    held: [u32; 4],
+    /// Wall time spent in bot decisions (diagnostic only; not in the digest).
+    think_ns: u64 }
 
 fn splitmix(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -98,7 +107,7 @@ impl World {
             || self.extended_lab || self.owner_hold || self.lifecycle.is_none() || self.terrain.is_none()
             || self.map.spec().ctf_bases.is_none() || playable_bounds(self.map.asset()).is_none() { return Err(bad()); }
         for kind in &plan.kinds { self.geometry_for(*kind)?; }
-        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 4] });
+        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 4], think_ns: 0 });
         Ok(())
     }
     pub fn bot_plan(&self) -> Option<&Plan> { self.bots.as_ref().map(|b| b.plan.as_ref()) }
@@ -110,6 +119,8 @@ impl World {
     /// Replay witness: FNV-1a over every bot command batch (tick, slot, commands).
     pub fn bot_digest(&self) -> Option<u64> { self.bots.as_ref().map(|b| b.digest) }
     pub fn bot_shots(&self) -> u32 { self.bots.as_ref().map_or(0, |b| b.shots) }
+    /// Wall time of every bot decision so far (bench diagnostics).
+    pub fn bot_think_ns(&self) -> u64 { self.bots.as_ref().map_or(0, |b| b.think_ns) }
 
     /// Fill the roster after the native players' places, in the start turn
     /// before `start`. Atomic: on any error the World is unchanged.
@@ -152,7 +163,7 @@ impl World {
                 clamp_box([enemy[0] + jitter[0] * 25., enemy[1] + jitter[1] * 25.], inner)];
             let error = disc(&mut rng);
             brains.push(Brain { slot, rng, route, waypoint: 0, stuck: 0, unstick: 0, unstick_steer: 0, target: None,
-                settle_tick: 1000, error, turret_yaw: 0., sent_input: Input::STOP, sent_aim: None });
+                settle_tick: 1000, error, turret_yaw: 0., sent_input: Input::STOP, sent_aim: None, line: None });
         }
         next.bots.as_mut().ok_or_else(bad)?.brains = brains;
         println!("BOT01_FILL battle={} humans={} bots={count} kinds={:?} seed={} policy={POLICY} accounts=none domain_writes=none",
@@ -202,6 +213,7 @@ impl World {
         state.last_tick = Some(self.tick);
         if self.lifecycle.as_ref().is_some_and(|l| !l.allows_actions()) { self.bots = Some(state); return Ok(0); }
         let mut issued = 0;
+        let clock = std::time::Instant::now();
         for index in 0..state.brains.len() {
             let slot = state.brains[index].slot;
             let actor = self.actors.get(slot).ok_or_else(bad)?;
@@ -220,13 +232,14 @@ impl World {
             state.digest = fnv(state.digest, format!("{}:{slot}:{commands:?}:{outcomes:?};", self.tick).as_bytes());
             issued += 1;
         }
+        state.think_ns = state.think_ns.saturating_add(u64::try_from(clock.elapsed().as_nanos()).unwrap_or(u64::MAX));
         if self.tick % STATS_TICKS == 0 {
             let alive = state.brains.iter().filter(|b| self.actors[b.slot].alive()).count();
             let engaged = state.brains.iter().filter(|b| b.target.is_some() && self.actors[b.slot].alive()).count();
             let hits = self.damage_events.iter().filter(|e| self.is_bot(e.attacker)).count()
                 + self.impacts.iter().filter(|e| self.is_bot(e.attacker)).count();
-            println!("BOT01_STATS battle={} tick={} bots={} alive={alive} engaged={engaged} shots={} damage_rows={hits} held_aim={} held_settle={} held_reload={} held_terrain={}",
-                self.id, self.tick, state.brains.len(), state.shots, state.held[0], state.held[1], state.held[2], state.held[3]);
+            println!("BOT01_STATS battle={} tick={} bots={} alive={alive} engaged={engaged} shots={} damage_rows={hits} held_aim={} held_settle={} held_reload={} held_terrain={} think_ms={:.0}",
+                self.id, self.tick, state.brains.len(), state.shots, state.held[0], state.held[1], state.held[2], state.held[3], state.think_ns as f64 / 1e6);
         }
         self.bots = Some(state);
         Ok(issued)
@@ -260,7 +273,26 @@ impl World {
         }
         let bounds = playable_bounds(self.map.asset()).ok_or_else(bad)?;
         let inner = [bounds[0] + BOUNDS_INSET_M, bounds[1] + BOUNDS_INSET_M, bounds[2] - BOUNDS_INSET_M, bounds[3] - BOUNDS_INSET_M];
-        let input = if target.is_some() {
+        // Own line to the target's hull (cached): the team may show a target
+        // this bot cannot hit from where it stands.
+        let hold = match target {
+            None => { brain.line = None; false },
+            Some((enemy, _)) => {
+                let fresh = brain.line.filter(|(e, at, _, _)| *e == enemy && self.tick.saturating_sub(*at) < LINE_RECHECK_TICKS);
+                let (clear, since) = match fresh {
+                    Some((_, _, clear, since)) => (clear, since),
+                    None => {
+                        let p = self.actors[enemy].position;
+                        let clear = self.bot_line_clear(actor, [p[0], p[1] + AIM_HEIGHT_M, p[2]])?;
+                        let since = match brain.line { Some((e, _, false, since)) if e == enemy && !clear => since, _ => self.tick };
+                        brain.line = Some((enemy, self.tick, clear, since));
+                        (clear, since)
+                    },
+                };
+                clear || self.tick.saturating_sub(since) < BLOCKED_ADVANCE_TICKS
+            },
+        };
+        let input = if target.is_some() && hold {
             brain.stuck = 0; brain.unstick = 0; Input::STOP
         } else if brain.unstick > 0 {
             brain.unstick -= 1; Input { throttle: -1, steer: brain.unstick_steer, speed_percent: 100 }
@@ -314,7 +346,8 @@ impl World {
                 && (min..=max).contains(&pitch);
             let reloaded = actor.fire.reload_until().is_none_or(|until| until <= now) && actor.fire.ammo() > 0
                 && actor.devices.as_ref().is_none_or(|d| d.capabilities().can_fire);
-            let clear = aimed && reloaded && aim_s >= tau && self.bot_line_clear(actor, point)?;
+            let sighted = brain.line.is_some_and(|(e, _, clear, _)| e == enemy && clear);
+            let clear = aimed && reloaded && aim_s >= tau && sighted;
             if !clear { held[if !aimed { 0 } else if aim_s < tau { 1 } else if !reloaded { 2 } else { 3 }] += 1; }
             if clear {
                 commands.push(Command::Fire(fire::Command::Shoot));
