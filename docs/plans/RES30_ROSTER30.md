@@ -1,6 +1,6 @@
 # RES-30 — итоги, терминал, потери и late results для боёв до 30 машин
 
-Ветка `codex/res-30-roster-30` на main `9ae5862`. Карточка разрешена владельцем 2026-10-28 (после SPAWN-15/BOT-01).
+Ветка `codex/res-30-roster-30` (worktree-ветка `claude/res-30-roster-30-a64a3e`) на main `6f3882a` (с BOT-01). Карточка разрешена владельцем 2026-10-28 (после SPAWN-15/BOT-01).
 
 ## Цель
 
@@ -84,4 +84,67 @@ Web (бридж без Domain, путь отката): `p06t-mixed.mjs` `roster_
 
 ## Итог
 
-(заполняется после реализации)
+Ветка перенесена на main `6f3882a` (BOT-01 влит) — rebase без конфликтов. Коммиты: `781761e` (код и тесты), `2eb4de4` (старые тесты границы 6 → 30, тест World 30), `f7dcf11` (бои BOT-01 на 30 мест).
+
+Реализовано по плану: все пределы итога/терминала/потерь/late results идут от `MAX_ACTORS = 30`; бюджет байт JSON
+итога зависит от числа строк (2..6 — 32 768 как прежде, 7..30 — 262 144); носители одного журнала — 655 360
+(HTTP шлюза и бриджа, кадр Domain `MAX_FRAME = 655360 + 8192` с обеих сторон, ledger'ы и ответы Domain);
+seal late results 7..30 — 393 216. Разбор JSON итога в loss-пути — отдельный `bounded_result_json` (16 384 узла).
+
+Старые тесты, закреплявшие прежнюю границу, переведены на новую (не скрыты): `p08c_personal_nested_bounds…` (31
+строка), `p10b_loss_roster_N2_to6…` (+7, 30; отказ 31), `module_replays_are_idempotent…` (выстрел 4801),
+`p06t_ammo_detonation_bounds…` (ростер 31), `test_canonical_utf8_duplicate_keys…` и web `request and response … poison`
+(seal > 393 216), BOT-01 `bot01_results_keep_natives_exact…` (30 мест теперь строят полный итог).
+
+### Тесты карточки
+
+- Rust (`cargo test res30 bot01 …`): 32 PASS / 1 ignored — итог 1+29 и все ростеры 2..30, kills ≤ 29, 30 строк деталей,
+  компактный итог 30 машин в 32 КиБ потока клиента (имена 48 байт), бюджеты по структурному максимуму, журнал
+  подрыва 30 событий, проекция 4800 выстрелов, терминал `roster_size` 30 / killer 29, loss-событие слот 29 / выстрел 4800,
+  **настоящий World на 30 машин** → итог + терминал владельца + запрос писателя (`res30_thirty_actor_world_…`),
+  **бои BOT-01 на 30 мест (1 и 2 игрока + боты)** строят полный итог, боты — строки без аккаунта.
+- Python (`tests/test_res30_roster30.py`): 7 PASS — 1 владелец + 29 строк в настоящем SQLite-хранилище: финиш,
+  store, replay, **повторное открытие хранилища, query, ack, повтор ack без ошибок**, запись только по владельцу
+  (`p08c_result` = 1 строка, `game_snapshot` без новых аккаунтов); ростеры 2..30, отказ 31; бюджеты 32/256 КиБ;
+  структурный максимум 30×30 (≈207 КБ) в бюджете; терминал 30; loss-событие; vehicle_id/seal late results.
+- Web (`web/tests/res30-roster30.test.mjs`): 2 PASS — loss-бридж: натуральный финиш 30 машин, слот подрыва 29,
+  `roster_size` 30; бюджеты журнала/запроса.
+
+### Сравнение наборов (один worktree, один `local/`, один cargo target `C:/wot091-res30-target`)
+
+| Набор | Ветка | База `6f3882a` | FAIL-множества |
+|---|---|---|---|
+| gateway (`cargo test --no-fail-fast`) | 1701 / 83 / 12 ign | 1691 / 83 / 12 ign | равны |
+| web (`node --test`) | 76 pass / 49 fail / 10 skip | 74 / 49 / 10 | равны |
+| python (`unittest discover`) | 3274 тестов: 14 F / 184 E / 99 skip | 3267: 14 F / 184 E / 99 skip | равны (198 = 198) |
+
+Логи: `local/test-runs/res30-compare-6f3882a/` (worktree `res-30-roster-30-a64a3e`); предыдущее сравнение против
+`9ae5862` — `local/test-runs/res30-compare-9ae5862/` (gateway 1686/83/11 против 1676/83/11, web равны).
+83 FAIL шлюза, web-FAIL и Python-ERROR (105 из них `reparse path forbidden` — junction-ссылки `local/` worktree) — окружение worktree (нет exe/стенда, нет `express`, удалённый Codex worktree), одинаковы на базе.
+
+### Не проверено
+
+- Native: окно итогов клиента с 30 строками, выход из боя 15×15 на стенде — NOT_RUN (владелец).
+- Late results для боя с ботами — неподдержаны (guard BOT-01, бой не ломается); 7..30 связанных людей — только
+  тестами границ (полного сценария с 30 настоящими резервами нет).
+- Owner-hold (`profile13_hold*`, 4 владельца ms1/is7) оставлен ≤ 6.
+- Канонический gate в `D:/WoT_9.1_Server` — NOT_RUN (родительская сессия).
+
+## Шаги для стенда -11 (родительская сессия, с согласия владельца)
+
+Миграция БД **не нужна** (схемы `p08c_schema`/`p06t_*` не меняются, `results_json TEXT` без ограничения длины).
+Но шлюз, Domain и (если используется) бридж должны быть новыми **вместе**: кадр Domain вырос с 72 КиБ — старый
+Domain отвергнет итог > 6 машин, итоги ≤ 6 работают при любой комбинации.
+
+1. Канонический gate на вершине RES-30 в `D:/WoT_9.1_Server` (D: detached на SHA — Domain и бридж берут Python/JS отсюда),
+   затем release: `python -B -X utf8 server/build.py gateway --release --cargo-temp-target --out local/build/server/gateway-res30-release-<sha>`.
+2. Если клиенты запущены — спросить владельца. `services.ps1 stop`, затем `domain.ps1 stop`.
+3. Копии: `game.sqlite` → `game.before-res30.sqlite` (Domain остановлен), `gateway.json` → `gateway.before-res30.json`,
+   `services.ps1` → `services.before-res30.ps1`.
+4. В `services.ps1` — новый exe. Для 15×15 в `gateway.json`: `"battle_players": 30`, `bots.human_places` = число
+   клиентов (остальное как этап BOT-01); карта — Прохоровка (Малиновка 30: пики шага ≈ 90 мс, SPAWN-15).
+5. Старт Domain, затем services. Проверка: бой 1 игрок + 29 ботов до конца → окно итогов (30 строк), выход в ангар,
+   машина не «в бою», повторный вход; второй бой — выход в середине боя (терминал manual_leave) и подрыв БК.
+   В логах нет `contain_battle_failure`/`P06T terminal rejected`.
+6. Откат: старый exe/`services.before-res30.ps1`/`gateway.before-res30.json`, `game.before-res30.sqlite` на место,
+   D: на прежний SHA. Записи итогов 7..30 строк, сделанные новым кодом, старый код читать не будет — поэтому копия БД.
