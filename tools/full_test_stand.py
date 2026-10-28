@@ -546,9 +546,95 @@ def domain(args):
     print(json.dumps(receipt, indent=2))
 
 
+BATTLE_ANY_FILES = ('gateway.json', 'bridge.json', 'domain.json', 'battle-profiles.json', 'services.ps1')
+LEGACY_KINDS = ('ms1', 'is7', 't26', 't34', 't3485')
+
+
+def battle_any(args):
+    """BATTLE-ANY: let a stopped profile-13 stand battle on the generated catalog kinds.
+
+    Writes the pilot resources (qualified physics profiles, geometry bundles,
+    per-map configs, pools v5) into a fresh `battle-any-resources/` dir, turns
+    battle-profiles.json into the version5 template manifest whose shared physics
+    is the given build (it must embed generated-definitions.json), sets the CAT-01
+    catalog hash of this checkout in gateway.json/bridge.json/domain.json and the
+    given gateway in services.ps1. Copies are kept as *.before-battle-any.*;
+    --disable restores them. Accounts, databases and fixtures are not touched."""
+    import sys
+    sys.path[:0] = [str(ROOT), str(ROOT / 'tools')]
+    import catalog_v1_data
+    import battle_any_stand
+    stand = (ROOT / args.stand).resolve(strict=True)
+    if not stand.is_relative_to((LOCAL / 'stands').resolve()):
+        raise ValueError('stopped stand below this checkout local/stands required')
+    stand_stopped(stand)
+    if (stand / 'domain-process.json').exists():
+        raise ValueError('domain has a live receipt; stop it first')
+    backup = lambda name: stand / name.replace('.', '.before-battle-any.', 1)
+    present = [n for n in BATTLE_ANY_FILES if (stand / n).is_file()]
+    if args.disable:
+        missing = [n for n in present if not backup(n).is_file()]
+        if missing or not backup('gateway.json').is_file():
+            raise ValueError('battle-any was not enabled by this tool: ' + ', '.join(missing or ['gateway.json']))
+        for name in present:
+            shutil.copy2(backup(name), stand / name); backup(name).unlink()
+        print(json.dumps(dict(schema='wot091-stand-battle-any.v1', enabled=False, stand=str(stand),
+                              kept=str(stand / 'battle-any-resources')), indent=2))
+        return
+    if any(backup(n).exists() for n in BATTLE_ANY_FILES) or (stand / 'battle-any-resources').exists():
+        raise ValueError('battle-any already enabled (backups or resources exist); use --disable first')
+    gateway_exe = Path(args.gateway).resolve(strict=True)
+    if not gateway_exe.is_relative_to((LOCAL / 'build').resolve()) or gateway_exe.name != 'sr-gateway.exe':
+        raise ValueError('gateway must be sr-gateway.exe below this checkout local/build')
+    physics = physics_manifest(args.physics)
+    if b'MapDrive.GeneratedDefinitions' not in (Path(physics).parent / 'bin/MapDriveWorker.dll').read_bytes():
+        raise ValueError('physics build does not embed generated-definitions.json (build it from this checkout)')
+    sources = (LOCAL / args.pilot_sources).resolve(strict=True) if not Path(args.pilot_sources).is_absolute() else Path(args.pilot_sources).resolve(strict=True)
+    if not sources.is_relative_to(LOCAL.resolve()):
+        raise ValueError('pilot sources below this checkout local required')
+    templates = json.loads((stand / 'battle-profiles.json').read_text(encoding='utf-8'))
+    if templates.get('version') != 3:
+        raise ValueError('stand battle-profiles.json must be the version3 five-kind manifest')
+    t26 = next(p for p in templates['profiles'] if p['kind'] == 't26')
+    kinds = [v['kind'] for v in catalog_v1_data.VEHICLES if v['kind'] not in LEGACY_KINDS and v['battle_admission'] != 'none']
+    if not kinds:
+        raise ValueError('catalog of this checkout admits no generated kind')
+    out = stand / 'battle-any-resources'
+    generated = battle_any_stand.generate(LOCAL, stand / 'battle-profiles.json', Path(t26['pool']['path']),
+                                          sources / 'qualified', sources / 'bundles', kinds, out)
+    manifest = json.loads((out / 'battle-profiles-battle-any.json').read_text(encoding='ascii'))
+    manifest['shared_physics'] = dict(path=str(physics), sha256=sha(physics))
+    for name in present:
+        shutil.copy2(stand / name, backup(name))
+    write = lambda name, value: (stand / name).write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    write('battle-profiles.json', manifest)
+    catalog = dict(version=1, sha256=catalog_v1_data.CATALOG_SHA256)
+    for name in ('gateway.json', 'bridge.json'):
+        value = json.loads((stand / name).read_text(encoding='utf-8'))
+        value['catalog'] = catalog
+        write(name, value)
+    if 'domain.json' in present:
+        value = json.loads((stand / 'domain.json').read_text(encoding='utf-8'))
+        value['catalog_sha256'] = catalog['sha256']
+        write('domain.json', value)
+    script = (stand / 'services.ps1').read_text(encoding='utf-8')
+    lines = [l for l in script.splitlines() if l.startswith('$gatewayExe = ')]
+    if len(lines) != 1:
+        raise ValueError('services.ps1 gateway line not found')
+    (stand / 'services.ps1').write_text(script.replace(lines[0], "$gatewayExe = '" + str(gateway_exe) + "'"), encoding='utf-8')
+    receipt = dict(schema='wot091-stand-battle-any.v1', enabled=True, stand=str(stand), kinds=kinds,
+                   catalog_sha256=catalog['sha256'], gateway=str(gateway_exe), gateway_sha256=sha(gateway_exe),
+                   physics_artifacts=str(physics), physics_artifacts_sha256=sha(physics),
+                   resources=generated['outputs'], native='NOT_RUN',
+                   clients='reinstall with tools/interactive_client.py prepare ... --catalog-v1 --crew-any from this checkout',
+                   rollback='tools/full_test_stand.py battle-any --stand <stand> --disable (restores ' + ', '.join(present) + ')')
+    (stand / 'battle-any-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
+    print(json.dumps({k: receipt[k] for k in ('kinds', 'catalog_sha256', 'gateway_sha256', 'physics_artifacts_sha256', 'rollback')}, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('prepare', 'economy', 'provision', 'map', 'crew-contract', 'domain'))
+    parser.add_argument('command', choices=('prepare', 'economy', 'provision', 'map', 'crew-contract', 'domain', 'battle-any'))
     parser.add_argument('--version', type=int, choices=(1, 2), help='crew-contract: target pool crew contract (2 = lifetime 192)')
     parser.add_argument('--package', help='map: tools/map_package.py package directory of the new battle map')
     parser.add_argument('--catalog', help='map: v7 destructible catalog manifest of that map')
@@ -563,7 +649,8 @@ def main():
     parser.add_argument('--stand', help='economy: stopped stand dir below local/stands')
     parser.add_argument('--slots', type=int, default=100, help='economy: garage slots per account')
     parser.add_argument('--account', help='provision: account id')
-    parser.add_argument('--disable', action='store_true', help='domain: restore the configs saved when the Domain was enabled')
+    parser.add_argument('--disable', action='store_true', help='domain/battle-any: restore the configs saved when it was enabled')
+    parser.add_argument('--pilot-sources', help='battle-any: dir with qualified/ and bundles/ of the generated catalog kinds')
     parser.add_argument('--vehicle', help='provision: catalogue vehicle id of a P04M pool type, e.g. vehicle:ussr:T-34')
     args = parser.parse_args()
     if args.command == 'prepare':
@@ -582,6 +669,10 @@ def main():
         if not args.stand:
             parser.error('domain requires --stand')
         domain(args)
+    elif args.command == 'battle-any':
+        if not args.stand or not args.disable and not (args.physics and args.gateway and args.pilot_sources):
+            parser.error('battle-any requires --stand and (--disable or --physics, --gateway, --pilot-sources)')
+        battle_any(args)
     elif args.command == 'economy':
         if not args.stand:
             parser.error('economy requires --stand')

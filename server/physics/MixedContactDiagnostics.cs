@@ -28,7 +28,7 @@ internal sealed class MixedContactDiagnostics : IDisposable
         VehicleConstraint constraint, TrackedVehicleController controller, BattleSceneInput.Control input)
     {
         CheckedInput.Sha256(configSha256);
-        if (slot is < 0 or > 5 || kind is not ("ms1" or "is7" or "t26" or "t34" or "t3485" or "wt-e100-128" or "fv215b-183")
+        if (slot is < 0 or > 5 || kind is not ("ms1" or "is7" or "t26" or "t34" or "t3485" or "wt-e100-128" or "fv215b-183")&&!GeneratedVehicleProfiles.IsGenerated(kind)
             || constraint.WheelsCount != 6)
             throw new InvalidDataException("mixed diagnostic actor identity");
         var rotation = body.Rotation;

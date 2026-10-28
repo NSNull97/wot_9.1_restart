@@ -48,7 +48,7 @@ internal static class BattleScene
         // Resolve dynamic hull pairs at the same four collision steps already
         // used by stock/extended profiles. Keep the single-body MS-1/IS-7
         // route at its accepted P05B step policy.
-        int collisionSteps=manifest.Actors.Length > 1 || manifest.Actors.Any(a=>a.Kind is "t26" or "t34" or "t3485" or "wt-e100-128" or "fv215b-183")?TrackedBodySettings.StockCollisionSteps:1;
+        int collisionSteps=manifest.Actors.Length > 1 || manifest.Actors.Any(a=>a.Kind is "t26" or "t34" or "t3485" or "wt-e100-128" or "fv215b-183"||GeneratedVehicleProfiles.IsGenerated(a.Kind))?TrackedBodySettings.StockCollisionSteps:1;
         var bodies = world.BodyInterface;
         var c = manifest.Actors[0].Config;
         using var terrain = CheckedInput.LoadMesh(root, c.GetProperty("terrain"), manifest.Map);

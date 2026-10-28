@@ -428,3 +428,4 @@ impl Drop for Worker{fn drop(&mut self){self.send.take();self.receive.take();let
 #[cfg(test)]#[path="scene_worker/tests.rs"]mod tests;
 
 #[cfg(test)]#[path="scene_worker/tests_p06t_extended.rs"]mod tests_p06t_extended;
+#[cfg(test)]#[path="scene_worker/tests_battle_any.rs"]mod tests_battle_any;
