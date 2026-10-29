@@ -68,6 +68,10 @@ impl Histogram {
         self.sum_ms+=ms;self.max_ms=self.max_ms.max(ms);
     }
     pub fn count(&self)->u32 {self.count}
+    pub fn merge(&mut self,other:&Self) {
+        for (a,b) in self.buckets.iter_mut().zip(other.buckets) {*a=a.saturating_add(b);}
+        self.count=self.count.saturating_add(other.count);self.sum_ms+=other.sum_ms;self.max_ms=self.max_ms.max(other.max_ms);
+    }
     pub fn max_ms(&self)->f64 {self.max_ms}
     /// Upper bound of the bucket holding quantile `q`, never above the exact max.
     pub fn quantile_ms(&self,q:f64)->f64 {
@@ -79,7 +83,7 @@ impl Histogram {
         self.max_ms
     }
     pub fn summary(&self)->String {
-        format!("n={} mean={:.1} p50<={} p95<={} p99<={} max={:.1}",self.count,
+        format!("n={} mean={:.1} p50<={:.1} p95<={:.1} p99<={:.1} max={:.1}",self.count,
             if self.count==0 {0.} else {self.sum_ms/self.count as f64},
             self.quantile_ms(0.5),self.quantile_ms(0.95),self.quantile_ms(0.99),self.max_ms)
     }
@@ -276,8 +280,8 @@ mod tests {
         w.acknowledge(&feedback(2,None)).unwrap();assert_eq!(w.stats.ack_wait.count(),2);
         let mut h=Histogram::default();for ms in [0.5,3.,40.,40.,900.] {h.record_ms(ms);}
         assert_eq!((h.quantile_ms(0.2),h.quantile_ms(0.5),h.quantile_ms(0.8),h.quantile_ms(1.)),(1.,50.,50.,900.));
-        assert_eq!(h.summary(),"n=5 mean=196.7 p50<=50 p95<=900 p99<=900 max=900.0");
-        assert_eq!(Histogram::default().summary(),"n=0 mean=0.0 p50<=0 p95<=0 p99<=0 max=0.0");
+        assert_eq!(h.summary(),"n=5 mean=196.7 p50<=50.0 p95<=900.0 p99<=900.0 max=900.0");
+        assert_eq!(Histogram::default().summary(),"n=0 mean=0.0 p50<=0.0 p95<=0.0 p99<=0.0 max=0.0");
     }
     #[test] fn tracked_sequence_limit_fails_closed_without_reusing_or_wrapping() {
         let now=Instant::now();let mut w=Window::new();

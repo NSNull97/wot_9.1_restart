@@ -104,7 +104,7 @@ mod tests {
         assert!(l.take_report(t0+Duration::from_secs(5)).is_none());
         let line=l.take_report(t0+Duration::from_secs(11)).unwrap();
         assert!(line.starts_with("NET01_STEP_STATS window_s=11.0 loops=101 "),"{line}");
-        assert!(line.contains("tick_interval_ms=[n=100 mean=100.0 p50<=100 p95<=100 p99<=100 max=100.0]"),"{line}");
+        assert!(line.contains("tick_interval_ms=[n=100 mean=100.0 p50<=100.0 p95<=100.0 p99<=100.0 max=100.0]"),"{line}");
         assert!(l.take_report(t0+Duration::from_secs(30)).is_none());
         // The last tick survives the reset: the next interval is measured from it.
         l.record(t0+Duration::from_secs(30),Duration::ZERO,Duration::ZERO,&[Some(1101)],t0+Duration::from_millis(30_040));

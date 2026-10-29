@@ -53,6 +53,9 @@ mod visibility_tests;
 #[cfg(test)]
 #[path="server_net01_tests.rs"]
 mod net01_tests;
+#[cfg(test)]
+#[path="server_net01_bench.rs"]
+mod net01_bench;
 
 #[cfg(test)]
 #[path="server_catalog_tests.rs"]
