@@ -1,5 +1,14 @@
 # Состояние проекта
 
+## POSTMORTEM-01 наблюдатель после смерти и маркер убитого союзника — в ветке `codex/postmortem-01-observer`, не в main — 2026-10-29
+
+- Находки владельца 29.10 (-11, MM-01): `bindToVehicle` на союзника (камера наблюдателя, VERIFIED по #717
+  `PostMortemControlMode.__switchToVehicle`) отвергался и стопорил надёжный канал → `idle_timeout`; союзник, убитый
+  невидимым противником, получал только свойство `health` без `onHealthChanged` → живой маркер «0%».
+- Исправлено: камера на свою/союзника/0 принимается без изменения власти и интереса, противник/неизвестный ID — отказ
+  без отравления канала; `onHealthChanged` всегда, скрытый атакующий = ID 0. Набор шлюза FAIL = `c76fd62` (94 = 94).
+  Канонический gate, release, native — NOT_RUN. План/итог — [POSTMORTEM01](plans/POSTMORTEM01.md).
+
 ## MM-01 очередь и подбор — в ветке `codex/mm-01-matchmaker`, не в main — 2026-10-28
 
 - Ключ `matchmaker` (`team_size`, `tiers`, `tier_spread`, `wait_seconds`, `lease_seconds`): «В бой» — билет очереди;

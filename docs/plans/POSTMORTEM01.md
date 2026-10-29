@@ -67,7 +67,14 @@ INFERRED:
 
 ## Итог
 
-(заполняется после прогонов)
+- Целевые: `postmortem` 4/4, `p06t_publication` 14/14, `detonation` 29/29 — PASS.
+- Полный набор шлюза (cargo test, worktree, temp target `local/target-pm01`): ветка `465c9af` 1727 PASS / 94 FAIL / 12 ign,
+  база `c76fd62` 1725 / 94 / 12; списки FAIL совпадают (94 — среда worktree без канонического exe/фикстур, как у MM-01).
+  Логи: `local/evidence-pm01/{branch,base}.log`, `.fail`.
+- Канонический gate в `D:/WoT_9.1_Server`, release, native (бой владельца с наблюдателем) — NOT_RUN.
+- Проверка владельцем на стенде: убитый игрок переключает камеру по союзникам (Пробел/мышь) — в логе
+  `SHARED_POSTMORTEM_OBSERVE`, нет `SHARED_REJECT … channel_state`, сессия доживает до итогов; союзник, убитый
+  невидимым противником, получает серый «мёртвый» маркер.
 
 ## Откат
 
