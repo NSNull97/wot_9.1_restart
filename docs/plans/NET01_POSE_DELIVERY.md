@@ -131,3 +131,19 @@ INFERRED: на стенде 29.10 пробелы 10–30 тиков — тот �
 
 A/B на стенде (одна переменная за раз): 1) без ключа на той же машине, что 11:07; 2) `reliable-burst-v1` на утренней
 машине; 3) `reliable-burst-v2`; 4) `latest-unreliable-v1` — последним.
+
+## A/B-1 (без ключа, Waffenträger, лог `gateway-20261029-115848`) и главный кандидат — дубли tickSync
+
+Владелец: «как утром — сначала лагает, потом нормально с подвисаниями». Начало боя — позы каждый тик (2 части), лаг;
+позже позы редеют (40–60 из 100) — «нормально».
+
+- VERIFIED (`vehicle.def`): клиенту уходят только volatile position/yaw/roll/pitch; `speeds` — CELL_PUBLIC.
+- VERIFIED (`Vehicle.pyc` startVisual:573–583, __startWGPhysics:715): WGVehicleFilter + WGVehiclePhysics у каждой машины;
+  своя отличается только `allowStrafeCompensation=False`. Алгоритм фильтра (C++) — UNKNOWN.
+- VERIFIED (`avatar.def`, `Avatar.pyc`:1445): `updateOwnVehiclePosition(VECTOR3,VECTOR3,FLOAT32,FLOAT32)` — статическая
+  матрица своей машины с возвратом к фильтру; шлём только при привязке.
+- VERIFIED (P02_MAP_DRIVE, Build08+): одиночная поездка слала позу каждый тик с одним tickSync (31 Б) — работала.
+- INFERRED: каждая часть позы начинается своим tickSync того же тика; если клиент считает каждый tickSync шагом
+  серверных часов, при k частях часы идут ×k и показ замедлен в k раз: отставание растёт на 1−1/k с за секунду
+  (k=3 → 0,67; измерено 0,7–0,8 в бою 11:07). `reliable-burst-v2` оставляет один tickSync на тик.
+  Проверка — наклон `server_time`/`native_time` в `native_pose_sample` (трасса 10 Гц): ≈k без v2, ≈1 с v2.
