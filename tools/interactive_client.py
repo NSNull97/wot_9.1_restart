@@ -32,6 +32,7 @@ MODULES += ('p09e_research_policy',)
 MODULES += ('project_network',)
 MODULES += ('project_sixth_sense_sound',)
 MODULES += ('project_player_kill_marker',)
+MODULES += ('project_pose_trace',)
 MODULES += ('catalog_v1_hints', 'crew_vehicles')
 
 
@@ -363,6 +364,11 @@ def prepare(args):
         if not profile13_battle:
             raise ValueError('--player-kill-marker requires --enable-profile13-battle')
         settings['player_kill_marker'] = True
+    if getattr(args, 'trace_pose_10hz', False):
+        # NET-01 diagnostic: read-only 10 Hz positions/time of native vehicles.
+        if not profile13_battle:
+            raise ValueError('--trace-pose-10hz requires --enable-profile13-battle')
+        settings['trace_pose_10hz'] = True
     sample = getattr(args, 'sixth_sense_sample', None)
     if sample is not None:
         # Owner order 2026-10-20: the gun_intuition bank carries the owner's lamp
@@ -573,6 +579,9 @@ def main():
     prep.add_argument('--sixth-sense-sound', choices=sorted(sixth_sense_policy().CANDIDATES),
                       help='Project policy, not original 0.9.1: one existing GUI FX cue when '
                            'the Sixth Sense lamp lights; requires a battle mode; off by default')
+    prep.add_argument('--trace-pose-10hz', action='store_true',
+                      help='NET-01 diagnostic: record native vehicle positions, BigWorld.time and serverTime '
+                           'every 0.1 s in battle (read-only); requires profile13 battle')
     prep.add_argument('--player-kill-marker', action='store_true',
                       help='Project policy, not original 0.9.1: a kill by the player keeps the player-coloured '
                            'marker colour (its crew-inactive refresh keeps the player as source); requires profile13 battle')
