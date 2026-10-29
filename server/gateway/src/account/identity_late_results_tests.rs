@@ -26,3 +26,21 @@ fn load(root:&Path,v:&Value)->io::Result<Config>{let path=root.join("gateway.jso
     let path=root.join("gateway.json");let mut raw=serde_json::to_string(&v).unwrap();raw.pop();raw.push_str(",\"p08c_late_results\":false}");fs::write(&path,raw).unwrap();assert!(Config::load(path.to_str().unwrap()).is_err());
     assert_eq!(REQUEST_FIELDS,16);
 }
+#[test]fn late_bots_policy_is_default_off_explicit_and_requires_both_capabilities(){
+    let(root,mut v)=setup();v["visibility_v1"]=true.into();v["battle_players"]=6.into();v["connection_capacity"]=6.into();
+    v["p08c_late_results"]=true.into();v["p08c_late_results_accounts"]=serde_json::json!(["12345678-1234-4234-8234-123456789abc"]);
+    v["bots"]=serde_json::json!({"policy":crate::gateway091::shared::model::bots::POLICY,"human_places":1,"seed":1});
+    assert!(!load(&root,&v).unwrap().late_bots,"absent key preserves BOT-01 behavior");
+    v["late_bots"]=serde_json::json!({"policy":LATE_BOTS_POLICY});
+    assert!(load(&root,&v).unwrap().late_bots);
+    for bad in [serde_json::json!(false),serde_json::json!(true),Value::Null,serde_json::json!({}),
+        serde_json::json!({"policy":"other"}),serde_json::json!({"policy":LATE_BOTS_POLICY,"extra":true})] {
+        let mut row=v.clone();row["late_bots"]=bad;assert!(load(&root,&row).is_err(),"late_bots={}",row["late_bots"]);
+    }
+    let mut no_bots=v.clone();no_bots.as_object_mut().unwrap().remove("bots");assert!(load(&root,&no_bots).is_err());
+    let mut no_late=v.clone();no_late["p08c_late_results"]=false.into();no_late["p08c_late_results_accounts"]=serde_json::json!([]);
+    assert!(load(&root,&no_late).is_err());
+    let path=root.join("gateway.json");let raw=serde_json::to_string(&v).unwrap().replace(
+        &format!("\"policy\":\"{LATE_BOTS_POLICY}\""),&format!("\"policy\":\"{LATE_BOTS_POLICY}\",\"policy\":\"{LATE_BOTS_POLICY}\""));
+    fs::write(&path,raw).unwrap();assert!(Config::load(path.to_str().unwrap()).is_err(),"nested duplicate policies must not collapse");
+}
