@@ -157,6 +157,9 @@ pub fn return_account(name:&str)->io::Result<Vec<u8>>{let mut b=vec![4,0];b.exte
 pub fn queue_callback(entered:bool)->Vec<u8>{vec![0x13,if entered{0x3f}else{0x40},1]}
 /// #717 Account.receiveQueueInfo (method85, variable8): nullable randoms
 /// dictionary, classes ARRAY<UINT32>, then companies/historical None.
+/// ARRAY carries a UINT32 element count, as the native client's own
+/// doCmdIntArray and the accepted Vehicle creation ARRAY properties do; a
+/// one-byte count left the stream short and the client dropped the call.
 /// Queued is one authenticated own MS-1: light/medium/heavy/SPG/AT =1/0/0/0/0.
 /// This must precede resetAvatar; it is never sent to an Avatar entity.
 pub fn own_queue_info()->Vec<u8>{queue_info(&[1,0,0,0,0])}
@@ -165,7 +168,7 @@ pub fn own_queue_info()->Vec<u8>{queue_info(&[1,0,0,0,0])}
 /// The 0.9.1 BattleQueue shows `sum(classes)` and one table by class; the
 /// randoms dictionary has no other field (alias.xml RANDOMS_QUEUE_INFO).
 pub fn queue_info(classes:&[u32;5])->Vec<u8>{
-    let mut b=vec![0x13,0x55,24,1,5];
+    let mut b=vec![0x13,0x55,27,1];b.extend((classes.len() as u32).to_le_bytes());
     for count in classes{b.extend(count.to_le_bytes());}
     b.extend([0,0]);b
 }
@@ -296,10 +299,10 @@ impl Arena {
         let mut other=QUEUE_INFO;other[7]=2;assert!(account_command(&other).is_err());
     }
     #[test]fn queue_info_original_nullable_classes_layout_is_one_real_light_tank(){
-        let b=own_queue_info();assert_eq!(b.len(),27);assert_eq!(&b[..5],&[0x13,0x55,24,1,5]);
+        let b=own_queue_info();assert_eq!(b.len(),30);assert_eq!(&b[..8],&[0x13,0x55,27,1,5,0,0,0]);
         assert_eq!(b[2] as usize,b.len()-3);
-        let classes:Vec<u32>=b[5..25].chunks_exact(4).map(|x|u32::from_le_bytes(x.try_into().unwrap())).collect();
-        assert_eq!(classes,vec![1,0,0,0,0]);assert_eq!(&b[25..],&[0,0]);
+        let classes:Vec<u32>=b[8..28].chunks_exact(4).map(|x|u32::from_le_bytes(x.try_into().unwrap())).collect();
+        assert_eq!(classes,vec![1,0,0,0,0]);assert_eq!(&b[28..],&[0,0]);
     }
     #[test]fn late_queue_info_accepts_only_one_poll_and_optional_native_enable(){
         assert_eq!(late_queue_info(&QUEUE_INFO).unwrap(),Some(false));

@@ -105,7 +105,9 @@ pub(crate) struct Bots { plan: Arc<Plan>, brains: Vec<Brain>, last_tick: Option<
     /// Stuck reversals (each starts a side detour).
     stucks: u32,
     /// Wall time spent in bot decisions (diagnostic only; not in the digest).
-    think_ns: u64 }
+    think_ns: u64,
+    /// MM-01: the matched group's tiers; facing places get one tier.
+    pairing: Option<(u8, u8)> }
 
 fn splitmix(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -140,20 +142,35 @@ impl World {
             if kind.is_generated() && !self.mixed_ammo { return Err(bad()); }
             self.geometry_for(*kind)?;
         }
-        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 4], stucks: 0, think_ns: 0 });
+        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 4], stucks: 0, think_ns: 0, pairing: None });
         Ok(())
     }
     pub fn bot_plan(&self) -> Option<&Plan> { self.bots.as_ref().map(|b| b.plan.as_ref()) }
     /// MM-01: this battle's native places (1..=all places) and the bot kinds of
-    /// its group, before the start. The template's plan is untouched; a reset
-    /// battle comes back with it.
-    pub fn set_match_roster(&mut self, humans: usize, kinds: Vec<VehicleKind>) -> io::Result<()> {
+    /// its group of tiers `group`, before the start. The template's plan is
+    /// untouched; a reset battle comes back with it.
+    pub fn set_match_roster(&mut self, humans: usize, kinds: Vec<VehicleKind>, group: (u8, u8)) -> io::Result<()> {
         let bots = self.bots.as_mut().ok_or_else(bad)?;
         if self.started.is_some() || !bots.brains.is_empty() || !(1..=self.expected_actors).contains(&humans)
             || self.actors.len() > humans || kinds.is_empty() || kinds.iter().any(|k| !bots.plan.kinds.contains(k))
             || kinds.iter().enumerate().any(|(i, k)| kinds[..i].contains(k)) { return Err(bad()); }
         bots.plan = Arc::new(Plan { human_places: humans, seed: bots.plan.seed, kinds });
+        bots.pairing = Some(group);
         Ok(())
+    }
+    pub fn match_tiers(&self) -> Option<(u8, u8)> { self.bots.as_ref().and_then(|b| b.pairing) }
+    /// The team of a roster place before its actor attaches (as `team`).
+    fn place_team(&self, slot: usize) -> io::Result<u8> {
+        if slot >= self.expected_actors { return Err(bad()); }
+        if let Some(plan) = &self.team_plan { return plan.team(slot); }
+        Ok(if self.lifecycle.is_some() { (slot % 2) as u8 + 1 } else { 1 })
+    }
+    /// MM-01: each bot place's kind, the facing places of both teams on one tier.
+    fn paired_bot_kinds(&self, plan: &Plan, group: (u8, u8)) -> io::Result<Vec<VehicleKind>> {
+        let teams = (0..self.expected_actors).map(|s| self.place_team(s)).collect::<io::Result<Vec<_>>>()?;
+        let natives = self.actors.iter().map(|a| a.vehicle_kind().tier()).collect::<io::Result<Vec<_>>>()?;
+        let kinds = plan.kinds.iter().map(|k| Ok((*k, k.tier()?.ok_or_else(bad)?))).collect::<io::Result<Vec<_>>>()?;
+        super::super::matchmaker::paired_kinds(&teams, &natives, group, plan.seed, &kinds).ok_or_else(bad)
     }
     /// Places taken by native players; the rest of the roster is bots.
     pub fn human_places(&self) -> usize { self.bots.as_ref().map_or(self.expected_actors, |b| b.plan.human_places) }
@@ -176,9 +193,11 @@ impl World {
             || self.actors.iter().any(|a| a.bot.is_some() || a.session.is_some_and(|s| s >= SESSION_BASE)) { return Err(bad()); }
         let mut next = self.clone();
         let count = self.expected_actors - plan.human_places;
+        let paired = bots.pairing.map(|group| self.paired_bot_kinds(&plan, group)).transpose()?;
         for ordinal in 0..count {
             let slot = next.actors.len();
-            let kind = plan.kinds[(ordinal + (plan.seed % plan.kinds.len() as u64) as usize) % plan.kinds.len()];
+            let kind = match &paired { Some(kinds) => *kinds.get(ordinal).ok_or_else(bad)?,
+                None => plan.kinds[(ordinal + (plan.seed % plan.kinds.len() as u64) as usize) % plan.kinds.len()] };
             let mut database = DATABASE_BASE.checked_add(ordinal as i32).ok_or_else(bad)?;
             while next.actors.iter().any(|a| a.identity.database == database) { database = database.checked_add(1).ok_or_else(bad)?; }
             let identity = Identity { account: format!("bot01:{ordinal}"), database, name: format!("Bot-{:02}", ordinal + 1) };

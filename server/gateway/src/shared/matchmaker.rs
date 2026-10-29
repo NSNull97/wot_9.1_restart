@@ -142,6 +142,35 @@ pub fn bot_kinds<K:Copy>(group:(u8,u8),spread:u8,kinds:&[(K,u8)])->(Vec<K>,bool)
     (kinds.iter().filter(|(_,t)|distance(*t)==near).map(|(k,_)|*k).collect(),near>0)
 }
 
+/// Bot kind of every bot place. `teams`: the team of every place, natives first;
+/// `natives`: the seated natives' tiers (`None`: unknown). A place faces the
+/// same place (team ordinal) of the other team, and owner policy 2026-10-29
+/// gives facing places one tier: a native there gives the allowed tier nearest
+/// to its own, a bot there the same tier, else the allowed tier nearest the
+/// group's middle; the lower one on ties. The kind within a tier rotates.
+pub fn paired_kinds<K:Copy>(teams:&[u8],natives:&[Option<u8>],group:(u8,u8),seed:u64,kinds:&[(K,u8)])->Option<Vec<K>> {
+    if kinds.is_empty()||natives.len()>teams.len() {return None;}
+    let nearest=|twice:u16|kinds.iter().map(|(_,t)|*t).min_by_key(|t|((u16::from(*t)*2).abs_diff(twice),*t)).unwrap_or(0);
+    let middle=u16::from(group.0)+u16::from(group.1);
+    let ordinal=|slot:usize|teams[..slot].iter().filter(|t|**t==teams[slot]).count();
+    let mut tiers=Vec::with_capacity(teams.len());
+    let mut placed=Vec::with_capacity(teams.len()-natives.len());
+    for slot in 0..teams.len() {
+        let order=ordinal(slot);
+        let facing=(0..slot).find(|s|teams[*s]!=teams[slot]&&ordinal(*s)==order);
+        if let Some(native)=natives.get(slot) {tiers.push(*native);continue;}
+        let tier=match facing.map(|s|(s<natives.len(),tiers[s])) {
+            Some((true,Some(native)))=>nearest(2*u16::from(native)),
+            Some((false,Some(bot)))=>bot,
+            _=>nearest(middle),
+        };
+        let of_tier=kinds.iter().filter(|(_,t)|*t==tier).map(|(k,_)|*k).collect::<Vec<_>>();
+        placed.push(of_tier[(seed.wrapping_add(order as u64)%of_tier.len() as u64) as usize]);
+        tiers.push(Some(tier));
+    }
+    Some(placed)
+}
+
 #[cfg(test)]
 #[path="matchmaker_tests.rs"]
 mod tests;

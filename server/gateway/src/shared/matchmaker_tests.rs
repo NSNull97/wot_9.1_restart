@@ -127,6 +127,42 @@ fn mm01_bot_kinds_follow_the_group_window(){
     assert_eq!(bot_kinds((1,1),9,&kinds),(vec!['a','b','c','d','e'],false));
 }
 
+/// Owner test 2026-10-29: four T-34 (tier 5) got KV-3 (7) on one side and M4
+/// (5) on the other. Facing places now take one tier, the group's own first.
+#[test]
+fn mm01_facing_bot_places_share_one_tier(){
+    let stand=[("ms1",1),("t26",2),("t34",5),("t3485",6),("kv3",7),("m4",5)];
+    let (window,_)=bot_kinds((5,5),2,&stand);
+    let kinds=stand.iter().filter(|(k,_)|window.contains(k)).copied().collect::<Vec<_>>();
+    let tier=|k:&str|stand.iter().find(|(x,_)|*x==k).unwrap().1;
+    let alternate=|places:usize|(0..places).map(|s|(s%2) as u8+1).collect::<Vec<_>>();
+    for seed in 0..8 {
+        let bots=paired_kinds(&alternate(6),&[Some(5);4],(5,5),seed,&kinds).unwrap();
+        assert_eq!(bots.len(),2);assert_eq!((tier(bots[0]),tier(bots[1])),(5,5),"seed {seed}: {bots:?}");
+        // One native: every bot place faces a bot or that native; pairs are equal.
+        let bots=paired_kinds(&alternate(6),&[Some(5)],(5,5),seed,&kinds).unwrap();
+        let tiers=std::iter::once(5).chain(bots.iter().map(|k|tier(k))).collect::<Vec<_>>();
+        for pair in tiers.chunks(2) {assert_eq!(pair[0],pair[1],"seed {seed}: {tiers:?}");}
+        assert_eq!(tiers,[5;6]);
+    }
+    // A native of another tier: the bot facing it takes the nearest allowed tier.
+    let bots=paired_kinds(&alternate(4),&[Some(5),Some(5),Some(7)],(5,7),0,&kinds).unwrap();
+    assert_eq!(bots.iter().map(|k|tier(k)).collect::<Vec<_>>(),[7]);
+    // Bot pairs: the allowed tier nearest the group's middle, the lower on ties.
+    let wide=[('a',4),('b',6),('c',8)];
+    assert_eq!(paired_kinds(&alternate(4),&[],(5,7),0,&wide),Some(vec!['b';4]));
+    assert_eq!(paired_kinds(&alternate(4),&[],(5,5),0,&wide),Some(vec!['a';4]));
+    // Within a tier the kind rotates; facing places may differ in kind, not tier.
+    let same=[('x',5),('y',5)];
+    let bots=paired_kinds(&alternate(4),&[],(5,5),0,&same).unwrap();
+    assert_eq!(bots,['x','x','y','y']);
+    // An explicit team plan (1,1,2,2): place 0 faces 2, place 1 faces 3.
+    let bots=paired_kinds(&[1,1,2,2],&[Some(4)],(4,8),0,&wide).unwrap();
+    assert_eq!(bots,['b','a','b'],"place 2 faces the native (4), 3 faces the bot at 1");
+    assert_eq!(paired_kinds::<char>(&alternate(4),&[],(5,5),0,&[]),None);
+    assert_eq!(paired_kinds(&alternate(2),&[None;3],(5,5),0,&wide),None);
+}
+
 #[test]
 fn mm01_client_tiers_of_the_stand_kinds(){
     use super::super::vehicle_profile::VehicleKind;
