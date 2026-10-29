@@ -191,7 +191,7 @@ fn mm01_queue_info_reply_carries_the_class_counts_of_waiting_players(){
     assert_eq!(m.mm.stats().levels,[2,0,0,0,0,0,0,0,0,1],"tier table: server state only");
     for s in &t.sessions {
         let p=s.shared.as_ref().unwrap().profile13.as_ref().unwrap();
-        assert_eq!(p.queue_classes,Some(classes));assert_eq!(p.queue_info_reply(),crate::map_drive_world091::queue_info(&classes));
+        assert_eq!(p.queue_classes,Some(classes));assert_eq!(p.queue_info_reply(Some(4)),crate::map_drive_world091::queue_info(&classes));
     }
     // #717 Account.receiveQueueInfo: method 85, 27-byte body; randoms present, ARRAY<UINT32>
     // with a UINT32 count 5, in VEHICLE_CLASSES order; companies and historical None.
@@ -205,4 +205,22 @@ fn mm01_queue_info_reply_carries_the_class_counts_of_waiting_players(){
     tick(&mut m,&mut t,&mut a,now+Duration::from_secs(1));
     assert_eq!(t.sessions[2].shared.as_ref().unwrap().profile13.as_ref().unwrap().queue_classes,None);
     assert_eq!(t.sessions[0].shared.as_ref().unwrap().profile13.as_ref().unwrap().queue_classes,Some([2,0,0,0,0]));
+}
+
+/// Without `matchmaker` the BattleQueue poll shows this player alone, in the
+/// class of the vehicle it queues with (was a fixed "1 light" for every kind).
+#[test]
+fn mm01_keyless_queue_info_counts_the_player_in_its_vehicle_class(){
+    const POLL:[u8;23]=[0x8e,20,0,202,0,246,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let now=Instant::now();
+    for (native,class) in [(1u32,0usize),(2,2)] {
+        let mut s=joined(now,native,native);s.account_ready=true;s.shared.as_mut().unwrap().queue_announced=true;
+        let mut events=Vec::new();s.profile13_account_payload(&POLL,&mut events).unwrap();
+        let mut classes=[0;5];classes[class]=1;
+        assert_eq!(s.outbox.back(),Some(&crate::map_drive_world091::queue_info(&classes)),"native {native}");
+        assert_eq!(s.queue_vehicle_kind().unwrap().label(),if native==1 {"ms1"} else {"is7"});
+    }
+    let p=joined(now,3,9).shared.unwrap().profile13.unwrap();
+    assert_eq!(p.queue_info_reply(None),crate::map_drive_world091::own_queue_info(),"unknown vehicle keeps the old reply");
+    assert_eq!(p.queue_info_reply(Some(4)),crate::map_drive_world091::queue_info(&[0,0,0,0,1]),"AT-SPG");
 }
