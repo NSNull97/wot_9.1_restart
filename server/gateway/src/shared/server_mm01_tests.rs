@@ -82,6 +82,7 @@ fn mm01_timeout_starts_a_short_roster_filled_by_bots(){
     tick(&mut m,&mut t,&mut a,now+Duration::from_secs(20));
     let battle=a[0].world.id;assert_eq!(gate(&t.sessions[0]),MatchGate::Matched(battle));
     assert_eq!(a[0].world.human_places(),1);
+    assert_eq!(a[0].world.match_tiers(),Some((1,1)),"the group's tiers pair the bot places");
     // Seat the matched native (writer receipt elided: LAB attach), then the GW-01 barrier.
     let at=now+Duration::from_secs(21);
     let who=model::Identity{account:"mm01-owner-1".into(),database:1,name:"player_1".into()};

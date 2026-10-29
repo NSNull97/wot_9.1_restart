@@ -131,7 +131,8 @@ impl Runtime {
             let world=&mut arenas[index].world;
             if left!=world.human_places()&&world.actors.len()<=left {
                 let kinds=world.bot_plan().ok_or_else(||bad("arena without bots"))?.kinds.clone();
-                world.set_match_roster(left,kinds)?;
+                let group=world.match_tiers().ok_or_else(||bad("matched arena without tiers"))?;
+                world.set_match_roster(left,kinds,group)?;
             }
         }
         Ok(())
@@ -185,7 +186,8 @@ impl Runtime {
                 self.mm.renew(battle,&seated,now)?;
                 let world=&mut arenas[index].world;
                 let kinds=world.bot_plan().ok_or_else(||bad("arena without bots"))?.kinds.clone();
-                world.set_match_roster(seated.len(),kinds)?;
+                let group=world.match_tiers().ok_or_else(||bad("matched arena without tiers"))?;
+                world.set_match_roster(seated.len(),kinds,group)?;
             }
             println!("MM01_LEASE_EXPIRED battle={battle} members={} kept={} returned={} renewed={}",group.members.len(),seated.len(),
                 group.members.len()-seated.len(),!seated.is_empty());
@@ -202,7 +204,7 @@ impl Runtime {
         for g in self.mm.form(&free,now) {
             let (kinds,nearest)=mm::bot_kinds(g.tiers(),self.mm.rules().tier_spread,&self.bot_tiers);
             let world=&mut arenas[g.arena].world;
-            world.set_match_roster(g.members.len(),kinds.clone())?;
+            world.set_match_roster(g.members.len(),kinds.clone(),g.tiers())?;
             let (lo,hi)=g.tiers();
             println!("MM01_MATCHED battle={} arena={} humans={} bots={} tiers={lo}..{hi} formed={} waited_ms={} sessions={:?} bot_kinds={:?} lease_s={}",
                 g.battle,g.arena,g.members.len(),world.expected_actors()-g.members.len(),g.formed.label(),
