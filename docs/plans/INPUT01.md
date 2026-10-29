@@ -67,7 +67,7 @@ UNKNOWN: точное содержимое 78-байтного пакета (б�
 
 ## Итог
 
-- Полный набор шлюза (worktree, temp target): ветка `74a87f6` 1751 PASS / 94 FAIL / 13 ign, база `d0a9b9e`
+- Полный набор шлюза (worktree, temp target): ветка `65cd494` 1752 PASS / 94 FAIL / 13 ign, база `d0a9b9e`
   1750 / 94 / 13; списки FAIL совпадают. Логи `local/evidence-input01/` в worktree.
 - Канонический gate, release, native (смена настроек в бою на стенде) — NOT_RUN.
 - Проверка владельцем: в бою менять настройки (в т.ч. «серверный прицел»), в логе `SHARED_UNSUPPORTED
