@@ -249,14 +249,14 @@ fn bot01_mixed_ammo_bot_has_a_stock_lab_loadout_and_shoots_through_the_typed_led
 }
 
 /// Natural results: bots are ordinary roster rows of the natives' result
-/// (exactly what the client shows). <= 6 places builds; more is the existing
-/// results/Domain roster bound (RES-30), refused rather than truncated.
-fn finished(places:usize,now:Instant)->World{
+/// (exactly what the client shows), up to 30 places (RES-30).
+fn finished(places:usize,now:Instant)->World{finished_with(2,places,now)}
+fn finished_with(humans:usize,places:usize,now:Instant)->World{
     let map=MapId::Prohorovka;
-    let mut w=prepared(map,2,places,4,now);
+    let mut w=prepared(map,humans,places,4,now);
     let mut rules=lifecycle::Rules::for_map(map).unwrap();rules.prebattle_ms=1000;rules.battle_ms=1000;
     w.lifecycle=None;w.enable_lifecycle(rules).unwrap();
-    for slot in 0..2{let(identity,loadout)=super::super::tests::profile13_loadout(VehicleKind::Ms1,slot,7);w.attach_owned(identity,slot as u32+1,&loadout).unwrap();}
+    for slot in 0..humans{let(identity,loadout)=super::super::tests::profile13_loadout(VehicleKind::Ms1,slot,7);w.attach_owned(identity,slot as u32+1,&loadout).unwrap();}
     w.fill_bots().unwrap();
     for slot in 0..places{place(&mut w,slot,[slot as f32*15.-40.,0.,if slot%2==0{-200.}else{200.}],0.);}
     let mut at=begin(&mut w,now);w.lifecycle_created_unix=Some(1_800_000_000);
@@ -273,8 +273,16 @@ fn bot01_results_keep_natives_exact_and_mark_no_bot_as_departed(){
         assert_eq!(u32::from(p.shots),w.actors[slot].fire.accepted_shots());
     }
     assert_eq!(r.participants[0].account_dbid,1);assert!(r.participants[2..].iter().all(|p|p.account_dbid>=DATABASE_BASE&&p.name.starts_with("Bot-")));
-    // 30 places: the results bound of today's writers refuses (RES-30), no partial row set.
-    let big=finished(30,now);assert!(super::super::super::lifecycle_result::build(&big).is_err());
+    // RES-30: 30 places build the whole roster; bots stay account-less rows.
+    for humans in [1,2]{
+        let big=finished_with(humans,30,now);let r=super::super::super::lifecycle_result::build(&big).unwrap();
+        r.validate_p06t().unwrap();assert_eq!(r.participants.len(),30);
+        assert!(r.participants[humans..].iter().all(|p|p.account_dbid>=DATABASE_BASE&&p.name.starts_with("Bot-")&&!p.premature_leave));
+        let raw=serde_json::to_string(&r).unwrap();assert_eq!(super::super::super::lifecycle_wire::Results::from_json_p06t(&raw).unwrap(),r);
+        assert!(super::super::super::lifecycle_wire::compact_results_p06t(&r,1).unwrap().len()<=super::super::super::lifecycle_wire::MAX_RESULT_BYTES);
+        // Only natives have a terminal for writers; a bot slot has none.
+        assert!(big.terminal_state_json(humans).is_err());
+    }
 }
 
 /// BATTLE-ANY: a generated kind of the battle profiles seats a bot as a
@@ -317,4 +325,107 @@ fn bot01_generated_kind_bot_seats_typed_and_shoots(){
     let outcomes=w.apply(1,SESSION_BASE+1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
     assert!(matches!(outcomes[0],fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot{..})),"{outcomes:?}");
     assert_eq!(w.actors[1].fire.typed().unwrap().counts()[0],source.capacity-1);
+}
+
+fn wall_box(half:f32,z:f32)->Arc<terrain::Terrain>{
+    let a=[[-half,-150.,z],[half,-150.,z],[half,150.,z]];let b=[[-half,-150.,z],[half,150.,z],[-half,150.,z]];
+    Arc::new(terrain::tests::fixture_for_map(MapId::Karelia).with_obstacles(Arc::new(obstacles::tests::fixture(vec![a,b]))).unwrap())
+}
+/// Test motion for one vehicle (the LAB kinematics keep a body within 2 m of
+/// its origin): 8 m/s forward/back, 0.8 rad/s turn; `free=false` holds it in place.
+fn sim(w:&mut World,slot:usize,free:bool){
+    let a=&mut w.actors[slot];let dt=0.1;
+    a.yaw=aim::wrap(a.yaw+a.input.steer as f32*0.8*dt);a.direction=[a.yaw,0.,0.];
+    if free{let v=8.*a.input.throttle as f32;a.position[0]+=a.yaw.sin()*v*dt;a.position[2]+=a.yaw.cos()*v*dt;a.speed=v;}else{a.speed=0.;}
+    a.origin=a.position;
+}
+/// One native far away (never visible), one bot driving to a single waypoint.
+fn driver(now:Instant,goal:[f32;2])->World{
+    let mut w=fixture_on(MapId::Karelia,1,2,9,now);w.fill_bots().unwrap();
+    place(&mut w,0,[-400.,0.,-400.],0.);place(&mut w,1,[0.,0.,0.],0.);
+    let brain=&mut w.bots.as_mut().unwrap().brains[0];brain.route=vec![goal];brain.waypoint=0;w
+}
+/// Drive up to `ticks`; returns the x where the bot crossed z=line, if it did.
+fn drive(w:&mut World,at:Instant,ticks:u32,line:f32)->Option<f32>{
+    let mut crossed=None;
+    for k in 1..=ticks{
+        let last=w.actors[1].position;tick(w,at+STEP*k);sim(w,1,true);let p=w.actors[1].position;
+        if (last[2]-line)*(p[2]-line)<=0.&&last[2]!=p[2]{crossed=Some(0.5*(last[0]+p[0]));}
+    }
+    crossed
+}
+
+#[test]
+fn bot01_steers_around_an_obstacle_instead_of_into_it(){
+    let now=Instant::now();
+    // Control: no obstacle, the bot drives straight across x=0.
+    let mut open=driver(now,[0.,120.]);let at=begin(&mut open,now);
+    let x=drive(&mut open,at,300,30.).expect("crosses z=30");
+    assert!(x.abs()<2.,"straight without obstacles: x={x}");
+    assert!(open.actors[1].position[2]>95.,"reaches the goal: {:?}",open.actors[1].position);
+    // A 30 m wall across the path at z=30 (the test motion would drive through it).
+    let mut w=driver(now,[0.,120.]);w.terrain=Some(wall_box(15.,30.));let at=begin(&mut w,now);
+    let x=drive(&mut w,at,400,30.).expect("passes the wall line");
+    assert!(x.abs()>15.+PROBE_HALF_WIDTH_M,"goes around the wall, not through it: x={x}");
+    assert!(w.actors[1].position[2]>95.,"and still reaches its goal: {:?}",w.actors[1].position);
+}
+
+#[test]
+fn bot01_stuck_reverses_to_a_side_detour_and_gives_up_the_spot_on_the_third_time(){
+    let now=Instant::now();let mut w=driver(now,[0.,300.]);
+    w.bots.as_mut().unwrap().brains[0].route=vec![[0.,300.],[200.,300.]];
+    let at=begin(&mut w,now);
+    // Held in place by something the probes cannot see: it only turns.
+    let mut events=Vec::new();let mut seen=None;
+    for _ in 0..3000{
+        w.tick+=1;w.drive_bots(at).unwrap();sim(&mut w,1,false);
+        let b=w.bots.as_ref().unwrap().brains[0].clone();
+        let key=b.stuck_spot.map(|(_,n)|n);
+        if b.unstick==UNSTICK_TICKS-1&&key!=seen{seen=key;events.push((key,b.side,b.detour,b.waypoint,w.actors[1].input));}
+        if b.waypoint==1{events.push((None,b.side,b.detour,1,w.actors[1].input));break;}
+    }
+    assert!(events.len()>=3,"{events:?}");
+    let (n,side,detour,_,input)=events[0];
+    assert_eq!(n,Some(1));assert!(input.throttle<0,"backs out");
+    let (point,_)=detour.expect("a side point after the reversal");
+    assert!((distance(point,[0.,0.])-DETOUR_M).abs()<0.5&&point[0].abs()>20.,"off the blocked bearing: {point:?}");
+    assert_eq!((events[1].0,events[1].1),(Some(2),-side),"second time at the spot: the other side");
+    assert_eq!(events.last().unwrap().3,1,"third time: this waypoint is given up");
+}
+
+#[test]
+fn bot01_lead_point_follows_flight_time(){
+    let p=lead_point([0.;3],[0.,0.,200.],[10.,0.,0.],353.6);
+    let t=(200f32.powi(2)+p[0].powi(2)).sqrt()/353.6;
+    assert!((p[0]-10.*t).abs()<0.01&&(p[0]-5.66).abs()<0.05&&p[2]==200.,"{p:?}");
+    assert_eq!(lead_point([0.;3],[0.,0.,200.],[0.;3],353.6),[0.,0.,200.],"standing target: no lead");
+    assert_eq!(lead_point([0.;3],[0.,0.,200.],[10.,0.,0.],0.),[0.,0.,200.],"no flight speed: no lead");
+}
+
+#[test]
+fn bot01_leads_a_crossing_target(){
+    // The native crosses 200 m in front of the bot at 10 m/s; the bot aims ahead of it.
+    let now=Instant::now();let mut w=fixture_on(MapId::Karelia,1,2,9,now);w.fill_bots().unwrap();
+    place(&mut w,0,[-50.,0.,200.],0.);place(&mut w,1,[0.,0.,0.],0.);
+    let at=begin(&mut w,now);
+    for k in 1..=100u32{let a=&mut w.actors[0];a.position[0]+=1.;a.origin=a.position;tick(&mut w,at+STEP*k);}
+    let brain=&w.bots.as_ref().unwrap().brains[0];
+    let (_,_,_,v)=brain.track.expect("tracks the target");
+    assert!((v[0]-10.).abs()<0.5&&v[2].abs()<0.5,"velocity estimate {v:?}");
+    let aim::Intent::Point(point)=w.actors[1].aim.intent else{panic!("aims")};
+    let target=w.actors[0].position;
+    let lead=point[0]-target[0];
+    let flight=VehicleKind::Ms1.shell().speed();let expected=10.*200.6/flight;
+    assert!((lead-expected).abs()<1.5,"aims {lead:.2} m ahead, expected about {expected:.2}");
+}
+
+/// RES-30: a 30-place battle (1 native + 29 bots) and its whole-roster result
+/// fit a 1MB thread even in the debug build (gateway main thread on Windows).
+#[test]
+fn res30_thirty_place_battle_and_result_fit_a_one_megabyte_thread(){
+    std::thread::Builder::new().stack_size(1024*1024).spawn(||{
+        let w=finished_with(1,30,Instant::now());
+        let r=super::super::super::lifecycle_result::build(&w).unwrap();assert_eq!(r.participants.len(),30);
+        super::super::super::lifecycle_wire::avatar_result_stream_p06t(&r,1).unwrap();
+    }).unwrap().join().unwrap();
 }

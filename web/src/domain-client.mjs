@@ -3,7 +3,8 @@ import { connect } from 'node:net';
 import { createHmac } from 'node:crypto';
 
 export const DOMAIN_SCHEMA = 'wot091-domain.v1';
-const MAX_FRAME = 73728, MAX_HEADER = 1024;
+// RES-30: one escaped 7..30-row result journal plus header (server/domain/protocol.py).
+const MAX_FRAME = 655360 + 8192, MAX_HEADER = 1024;
 const SECRET = /^[A-Za-z0-9_-]{43}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 

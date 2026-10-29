@@ -198,10 +198,10 @@ fn append_wreck_splash(trace:&mut Trace,center:[f32;3],contact:&Contact,result:&
     let error=append_wreck_splash(&mut overflow,center,&contact,&result,&actor).unwrap_err();
     assert!(error.to_string().contains("capacity"));assert_eq!(overflow,before);
     let mut filler=base.events[0].clone();if let Event::Selected{shot_id,..}=&mut filler{*shot_id=2;}
-    let mut full=base.clone();full.events.resize(full.event_limit()-1,filler.clone());
+    let mut full=base.clone();let limit=full.event_limit()-1;full.events.resize(limit,filler.clone());
     let before=full.clone();let error=append_wreck_splash(&mut full,center,&contact,&result,&actor).unwrap_err();
     assert!(error.to_string().contains("capacity"));assert_eq!(full,before);drop(before);drop(full);
-    let mut exact=base;exact.events.resize(exact.event_limit()-2,filler);
+    let mut exact=base;let limit=exact.event_limit()-2;exact.events.resize(limit,filler);
     append_wreck_splash(&mut exact,center,&contact,&result,&actor).unwrap();
     exact.terminal(123,1,1001,TerminalReason::TestLabWreckImpact).unwrap();assert_eq!(exact.events.len(),exact.event_limit());
 }

@@ -257,6 +257,10 @@ pub struct Config {
     pub team_base_spawn:bool,
     /// BOT-01: server bots fill each arena after `human_places` native places (absent: none).
     pub bots:Option<crate::gateway091::shared::model::bots::Plan>,
+    /// MM-01: "В бой" queues; rules match players into arenas (absent: fixed roster, old path).
+    pub matchmaker:Option<crate::gateway091::shared::matchmaker::Rules>,
+    /// NET-01: `pose_delivery` (absent: reliable poses, one reliable body per loop — the old path).
+    pub pose_delivery:crate::gateway091::shared::net01::PoseDelivery,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -403,6 +407,38 @@ impl Config {
         if bots.is_some()&&(!profile13_battle||connection_capacity.is_none()||!visibility_v1||training_rooms||p08b_owner_battle_hold){
             return Err(invalid("bots require profile13 battle, connection_capacity and visibility_v1, without training rooms or hold5"));
         }
+        // MM-01: {"policy":<this build's>,"team_size":T,"tiers":[lo,hi],"tier_spread":D,"wait_seconds":W,"lease_seconds":L}.
+        let matchmaker=match value.remove("matchmaker"){
+            None=>None,
+            Some(Value::Object(m)) if m.len()==6&&m.get("policy").and_then(Value::as_str)==Some(crate::gateway091::shared::matchmaker::POLICY)=>{
+                let number=|key:&str|m.get(key).and_then(Value::as_u64).ok_or_else(||invalid("matchmaker team_size, tier_spread, wait_seconds and lease_seconds must be non-negative integers"));
+                let tiers=match m.get("tiers"){
+                    Some(Value::Array(t)) if t.len()==2=>(t[0].as_u64(),t[1].as_u64()),
+                    _=>return Err(invalid("matchmaker tiers must be [lo,hi]")),
+                };
+                let tier=|t:Option<u64>|t.and_then(|t|u8::try_from(t).ok()).ok_or_else(||invalid("matchmaker tiers must be 1..10"));
+                let rules=crate::gateway091::shared::matchmaker::Rules{
+                    team_size:usize::try_from(number("team_size")?).map_err(|_|invalid("matchmaker team_size"))?,
+                    tiers:(tier(tiers.0)?,tier(tiers.1)?),
+                    tier_spread:u8::try_from(number("tier_spread")?).map_err(|_|invalid("matchmaker tier_spread must be 0..9"))?,
+                    wait:Duration::from_secs(number("wait_seconds")?),lease:Duration::from_secs(number("lease_seconds")?)};
+                rules.validate(battle_players).map_err(|_|invalid("matchmaker: 2*team_size=battle_players, tiers 1..10, tier_spread 0..9, wait 1..600 s, lease wait..900 s"))?;
+                Some(rules)
+            },
+            _=>return Err(invalid("matchmaker must name this build's policy with team_size, tiers, tier_spread, wait_seconds and lease_seconds")),
+        };
+        if matchmaker.is_some()&&(bots.is_none()||!p04m_pool){
+            return Err(invalid("matchmaker requires bots (timeout fill) and the P04M pool (vehicle tiers)"));
+        }
+        let pose_delivery=match value.remove("pose_delivery"){
+            None=>crate::gateway091::shared::net01::PoseDelivery::Reliable,
+            Some(Value::String(mode))=>crate::gateway091::shared::net01::PoseDelivery::parse(Some(&mode))
+                .ok_or_else(||invalid("pose_delivery must be reliable-burst-v1, reliable-burst-v2 or latest-unreliable-v1"))?,
+            _=>return Err(invalid("pose_delivery must be a string")),
+        };
+        if pose_delivery==crate::gateway091::shared::net01::PoseDelivery::LatestUnreliable&&!visibility_v1{
+            return Err(invalid("latest-unreliable poses require visibility_v1"));
+        }
         // CAT-01: exact {"version":1,"sha256":<this build's catalog>}; a foreign hash refuses start.
         let catalog_v1=match value.remove("catalog"){
             None=>false,
@@ -439,7 +475,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -567,10 +603,12 @@ impl Config {
     /// P08C results alone need the bounded complete result string. Keep every
     /// older service on its original4KiB body/8KiB response admission limits.
     pub(crate) fn results_post(&self,owner:&Profile,body:&[u8])->io::Result<Vec<u8>> {
-        if !self.profile13_battle||owner.database_id<=0||body.is_empty()||body.len()>65536 {
+        // RES-30: one escaped 7..30-row journal; 2..6 rows stay within the old 64KiB.
+        const RESULT:usize=crate::gateway091::shared::lifecycle_wire::MAX_RESULT_REQUEST;
+        if !self.profile13_battle||owner.database_id<=0||body.is_empty()||body.len()>RESULT {
             return Err(invalid("battle result HTTP request bound"));
         }
-        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;
+        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),RESULT,RESULT+4100)?;
         if status!=200{return Err(invalid("battle results writer unavailable; immutable request retained"));}
         Ok(reply)
     }
@@ -578,7 +616,8 @@ impl Config {
         if self.p06t_ammo_rack_detonation||!self.p06t_mixed_ammo||!self.p04m_pool||!self.profile13_battle||owner.database_id<=0||body.is_empty()||body.len()>2048{
             return Err(invalid("P06T results authenticated mode/body bound"));
         }
-        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),65536,65536+4100)?;
+        const RESULT:usize=crate::gateway091::shared::lifecycle_wire::MAX_RESULT_REQUEST;
+        let(status,reply)=self.post_with_budget("/internal/native/battle-results",body,Duration::from_secs(20),RESULT,RESULT+4100)?;
         if status!=200{return Err(invalid("P06T results writer unavailable; immutable task retained"));}Ok(reply)
     }
     /// New fixed namespace alone. Old body/reply budgets and paths unchanged.
@@ -590,7 +629,7 @@ impl Config {
     }
     fn late_results_http(&self,owner:&Profile,body:&[u8],pending:bool)->io::Result<Vec<u8>>{
         if !self.p08c_late_results||!self.profile13_battle||!self.p06t_mixed_ammo||owner.database_id<=0
-            ||!self.p08c_late_results_accounts.contains(&owner.account_id)||body.is_empty()||body.len()>if pending{2048}else{65536}{
+            ||!self.p08c_late_results_accounts.contains(&owner.account_id)||body.is_empty()||body.len()>if pending{2048}else{crate::gateway091::shared::lifecycle_wire::MAX_RESULT_REQUEST}{
             return Err(invalid("late results configured owner/mode/body boundary"));
         }
         let path=if pending{"/internal/native/late-result-pending"}else{"/internal/native/late-result-append"};
@@ -1068,6 +1107,29 @@ mod tests {
         assert!(service_reply(&serde_json::to_vec(&rejected).unwrap(),&profile,"p04d_test_226",6,1,"recruited").is_err());
     }
 
+    #[test] fn net01_pose_delivery_key_is_exact_and_unreliable_needs_visibility() {
+        use crate::gateway091::shared::net01::PoseDelivery;
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("net01-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let base=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        assert_eq!(load(&base).unwrap().pose_delivery,PoseDelivery::Reliable);
+        let mut burst=base.clone();burst["pose_delivery"]="reliable-burst-v1".into();
+        assert_eq!(load(&burst).unwrap().pose_delivery,PoseDelivery::ReliableBurst);
+        burst["pose_delivery"]="reliable-burst-v2".into();assert_eq!(load(&burst).unwrap().pose_delivery,PoseDelivery::ReliableBurstV2);
+        for bad in [Value::from("reliable"),Value::from("latest-unreliable-v2"),Value::from(true),Value::Null] {
+            let mut wrong=base.clone();wrong["pose_delivery"]=bad.clone();assert!(load(&wrong).is_err(),"{bad}");
+        }
+        let mut latest=base.clone();latest["pose_delivery"]="latest-unreliable-v1".into();assert!(load(&latest).is_err());
+        for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
+            "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle","visibility_v1"]{latest[field]=true.into();}
+        latest["battle_players"]=6.into();
+        assert_eq!(load(&latest).unwrap().pose_delivery,PoseDelivery::LatestUnreliable);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
     #[test] fn p07b_configuration_visibility_requires_an_explicit_boolean_and_profile13() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("p07b-config-{stamp}"));
@@ -1127,6 +1189,36 @@ mod tests {
         row["connection_capacity"]=6.into();assert_eq!(load(&row).unwrap().bots.unwrap().human_places,2);
         // Owner's one-client stand: 6 places, 1 native, 5 bots.
         row["bots"]["human_places"]=1.into();assert_eq!(load(&row).unwrap().bots.unwrap().human_places,1);
+    }
+    #[test] fn mm01_configuration_is_explicit_bounded_and_absent_by_default() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("mm01-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let mut value=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
+            "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle","visibility_v1","p04m_pool"]{value[field]=true.into();}
+        value["battle_players"]=6.into();value["connection_capacity"]=256.into();value["arenas"]=2.into();
+        value["bots"]=serde_json::json!({"policy":crate::gateway091::shared::model::bots::POLICY,"human_places":1,"seed":1});
+        assert!(load(&value).unwrap().matchmaker.is_none(),"absent key: fixed roster");
+        let policy=crate::gateway091::shared::matchmaker::POLICY;
+        value["matchmaker"]=serde_json::json!({"policy":policy,"team_size":3,"tiers":[1,10],"tier_spread":2,"wait_seconds":30,"lease_seconds":90});
+        let rules=load(&value).unwrap().matchmaker.unwrap();
+        assert_eq!((rules.team_size,rules.tiers,rules.tier_spread,rules.wait.as_secs(),rules.lease.as_secs()),(3,(1,10),2,30,90));
+        let good=value["matchmaker"].clone();
+        let with=|key:&str,v:Value|{let mut m=good.clone();m[key]=v;m};
+        for bad in [with("policy","other".into()),with("team_size",2.into()),with("team_size",0.into()),with("team_size",(-3).into()),
+            with("tiers",serde_json::json!([0,10])),with("tiers",serde_json::json!([6,5])),with("tiers",serde_json::json!([1,11])),
+            with("tiers",serde_json::json!([1])),with("tiers",serde_json::json!([1,256])),with("tier_spread",10.into()),with("tier_spread",300.into()),
+            with("wait_seconds",0.into()),with("wait_seconds",601.into()),with("wait_seconds",1.5.into()),with("lease_seconds",29.into()),
+            with("lease_seconds",901.into()),with("extra",1.into()),serde_json::json!({"policy":policy,"team_size":3}),serde_json::json!(true)]{
+            let mut row=value.clone();row["matchmaker"]=bad;assert!(load(&row).is_err(),"{}",row["matchmaker"]);}
+        let mut row=value.clone();row.as_object_mut().unwrap().remove("bots");assert!(load(&row).is_err(),"matchmaker needs bots for the timeout");
+        let mut row=value.clone();row["p04m_pool"]=false.into();assert!(load(&row).is_err(),"matchmaker needs vehicle tiers");
+        // No hard place limit: 15 per team with the SPAWN-15 roster.
+        let mut row=value.clone();row["battle_players"]=30.into();row["spawn_policy"]=crate::gateway091::shared::team_spawn::POLICY.into();
+        row["arenas"]=1.into();row["matchmaker"]["team_size"]=15.into();assert_eq!(load(&row).unwrap().matchmaker.unwrap().places(),30);
     }
     #[test] fn p05c_configuration_roster_is_an_explicit_bounded_profile13_option() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();

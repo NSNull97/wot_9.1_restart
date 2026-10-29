@@ -34,6 +34,8 @@ mod p10b_host;
 mod login_admission;
 #[path="server_arena.rs"]
 mod arena;
+#[path="server_containment.rs"]
+mod containment;
 #[cfg(test)]
 #[path="server_arena_bench.rs"]
 mod arena_bench;
@@ -48,6 +50,15 @@ use login_admission::{AccountTag,Admission,Decision,Writers};
 #[cfg(test)]
 #[path="server_visibility_tests.rs"]
 mod visibility_tests;
+#[cfg(test)]
+#[path="server_net01_tests.rs"]
+mod net01_tests;
+#[cfg(test)]
+#[path="server_av01_tests.rs"]
+mod av01_tests;
+#[cfg(test)]
+#[path="server_net01_bench.rs"]
+mod net01_bench;
 
 #[cfg(test)]
 #[path="server_catalog_tests.rs"]
@@ -93,6 +104,11 @@ mod capacity_tests;
 #[cfg(test)]
 #[path="server_bot01_tests.rs"]
 mod bot01_tests;
+#[path="server_matchmaker.rs"]
+mod matchmaking;
+#[cfg(test)]
+#[path="server_mm01_tests.rs"]
+mod mm01_tests;
 
 /// `capacity` bounds connections. With `arena_split` (GW-01) it is separate
 /// from the arena: a hangar session holds no arena place; places are taken by
@@ -819,24 +835,29 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
         // BOT-01: bots decide before the step, as native packets arrive before
         // it; a prepared scene transaction owns the World until its ACK.
         if world.bot_plan().is_some() && runtime.as_ref().is_none_or(|r|!r.blocked()) {
+            let _span=super::step_profile::span(super::step_profile::Part::Bots);
             if runtime.as_ref().is_none_or(IntegratedRuntime::ready_for_native) {world.ready_bots()?;}
             world.drive_bots(now)?;
         }
         if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {world.advance(now)?;}
         else if let Some(r)=runtime {
             if !r.started {r.start(world,now)?;}
+            let _span=super::step_profile::span(super::step_profile::Part::Scene);
             r.step(world,now)?;
         } else {world.advance(now)?;}
-        if runtime.as_ref().is_none_or(|r|!r.blocked()) { world.refresh_original_spotting(now)?; }
+        if runtime.as_ref().is_none_or(|r|!r.blocked()) { let _span=super::step_profile::span(super::step_profile::Part::Spotting); world.refresh_original_spotting(now)?; }
         // A candidate scene owns an atomic World clone. Do not advance the
         // lifecycle outside it and then overwrite a frozen outcome on ACK.
+        let lifecycle_span=super::step_profile::span(super::step_profile::Part::Lifecycle);
         if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.advance_lifecycle(now)? {
             println!("P08C_LIFECYCLE battle={} view={:?} policy={}",world.id,
                 world.lifecycle.as_ref().map(|l|l.view()),super::lifecycle::POLICY);
         }
+        drop(lifecycle_span);
         // A separate bounded visual clock survives the authoritative outcome.
         // Do not mutate a World while a prepared scene clone owns its commit.
         if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.ammo_detonation_enabled(){
+            let _span=super::step_profile::span(super::step_profile::Part::Turrets);
             world.advance_turret_flights(now)?;
         }
     }
@@ -1014,6 +1035,53 @@ fn poll_battle_session(s:&mut Session,world:&mut World,now:Instant,allow_native_
 
 fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Option<IntegratedRuntime>,
     template:&BattleTemplate, now:Instant, stage:&str, error:&io::Error)->io::Result<serde_json::Value> {
+    let contained=contain_battle_sessions(table,world,runtime,template,now,stage,error)?;
+    // Without the dispatcher (old helper, training rooms) an unreturned session
+    // takes the old transport retirement; the service loop uses containment::contain_arena.
+    for id in contained.unreturned {table.retire(id,world,now,"failed_battle_return")?;}
+    contained.reset?;
+    Ok(contained.snapshot)
+}
+
+/// STAB-02: what a contained failure left for its caller. One session that
+/// cannot take the contained return never aborts the others' return.
+struct Contained {snapshot:serde_json::Value,unreturned:Vec<u32>,reset:io::Result<()>}
+fn unreturned_session(unreturned:&mut Vec<u32>,id:u32,battle:u64,step:&str,error:&io::Error){
+    if !unreturned.contains(&id){unreturned.push(id);}
+    println!("SHARED_CONTAINMENT_SESSION_UNRETURNED session={id} battle={battle} step={step} error={error} transport_retired=true");
+}
+/// The failed World may be unable to produce this actor's terminal result
+/// (stand -11: its device state refused the profile). The reservation is then
+/// cancelled without a battle result; no consumption or damage is invented.
+fn contain_profile13_session(s:&mut Session,world:&mut World)->io::Result<()> {
+    use crate::battle091::profile13::FinishReason;
+    if let Err(error)=profile13_dispatch::Dispatcher::terminal(s,world,FinishReason::BattleFailure) {
+        if !world.actors.iter().any(|a|a.session==Some(s.id)) {return Err(error);}
+        println!("SHARED_CONTAINMENT_TERMINAL_FALLBACK session={} battle={} error={error} actor_result_discarded=true reservation_cancelled=true",s.id,world.id);
+        world.detach(s.id)?;
+        profile13_dispatch::Dispatcher::terminal(s,world,FinishReason::BattleFailure)?;
+    }
+    if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
+    if let Some(c)=&mut s.shared {c.join_requested=false;c.commands.clear();c.hangar_since=None;}
+    Ok(())
+}
+/// Checks the old Avatar's retained return before it is bound to `retained`.
+fn retain_contained_return(s:&mut Session,retained:&Arc<World>)->io::Result<()> {
+    let c=s.shared.as_ref().ok_or_else(||model::bad())?;
+    let owner=s.identity.as_ref().ok_or_else(||model::bad())?;
+    let actor=retained.actors.get(c.slot).ok_or_else(||model::bad())?;
+    let p=c.profile13.as_ref().ok_or_else(||model::bad())?;
+    let pending=p.has_pending_return()&&p.reservation_battle()==Some(retained.id);
+    let committed=c.result_committed&&c.natural_result.as_ref().is_some_and(|r|r.arena_id==retained.id);
+    if c.phase!=Phase::Leaving||c.view.as_ref().is_none_or(|view|view.id!=retained.id)
+        ||actor.identity.account!=owner.account_id||actor.identity.database!=owner.database_id
+        ||actor.session.is_some()||!(pending||committed){return Err(model::bad());}
+    s.shared.as_mut().ok_or_else(||model::bad())?.contained_world=Some(retained.clone());
+    Ok(())
+}
+
+fn contain_battle_sessions(table:&mut Table, world:&mut World, runtime:&mut Option<IntegratedRuntime>,
+    template:&BattleTemplate, now:Instant, stage:&str, error:&io::Error)->io::Result<Contained> {
     let snapshot=serde_json::json!({"stage":stage,"reason":error.to_string().chars().take(2048).collect::<String>(),
         "world":world.failure_snapshot(),
         "sessions":table.sessions.iter().map(|s|serde_json::json!({"session":s.id,
@@ -1025,7 +1093,7 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
             "batch":r.batch.as_ref().map(BatchRuntime::failure_snapshot)}))});
     // Stdout is the stand's retained journal. Never continue the failed world.
     println!("SHARED_BATTLE_FAILED {snapshot}");
-    let mut retire=Vec::new();
+    let mut retire=Vec::new();let mut unreturned=Vec::new();
     let table_split=table.arena_split;
     // ARENA-01: with several arenas only this battle's sessions are touched:
     // an actor here, its native view of this battle, or its reservation for it.
@@ -1033,16 +1101,15 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
     for s in &mut table.sessions {
         if outsiders.contains(&s.id) {continue;}
         if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
-            contained_return_world(s,world)?;continue;
+            if let Err(e)=contained_return_world(s,world) {unreturned_session(&mut unreturned,s.id,world.id,"contained_return",&e);}
+            continue;
         }
         if s.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
             // GW-01: a hangar session with no reservation, writer or arena place
             // is not part of the failed battle; keep its queue and commands.
             if table_split && !world.actors.iter().any(|a|a.session==Some(s.id)) && s.shared.as_ref()
                 .and_then(|c|c.profile13.as_ref()).is_some_and(|p|!p.has_reservation()&&!p.in_flight&&!p.has_pending_return()) {continue;}
-            profile13_dispatch::Dispatcher::terminal(s,world,crate::battle091::profile13::FinishReason::BattleFailure)?;
-            if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
-            if let Some(c)=&mut s.shared {c.join_requested=false;c.commands.clear();c.hangar_since=None;}
+            if let Err(e)=contain_profile13_session(s,world) {unreturned_session(&mut unreturned,s.id,world.id,"terminal",&e);}
             continue;
         }
         if world.actors.iter().any(|a|a.session==Some(s.id)) {world.detach(s.id)?;}
@@ -1066,27 +1133,20 @@ fn contain_battle_failure(table:&mut Table, world:&mut World, runtime:&mut Optio
             }
         }
     }
-    for id in retire {table.retire(id,world,now,"failed_battle_return")?;}
+    for id in retire {
+        if let Err(e)=table.retire(id,world,now,"failed_battle_return") {unreturned_session(&mut unreturned,id,world.id,"transport_retire",&e);}
+    }
     // Snapshot once after every membership was revoked. A forced failure reset
     // cannot wait for asynchronous Finish, unlike the ordinary reset barrier.
     let retained=Arc::new(world.clone());
     for s in &mut table.sessions {
         if outsiders.contains(&s.id) {continue;}
         if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {continue;}
-        if !s.arena_base||s.shared.as_ref().is_none_or(|c|c.profile13.is_none()){continue;}
-        let c=s.shared.as_ref().ok_or_else(||model::bad())?;
-        let owner=s.identity.as_ref().ok_or_else(||model::bad())?;
-        let actor=retained.actors.get(c.slot).ok_or_else(||model::bad())?;
-        let p=c.profile13.as_ref().ok_or_else(||model::bad())?;
-        let pending=p.has_pending_return()&&p.reservation_battle()==Some(retained.id);
-        let committed=c.result_committed&&c.natural_result.as_ref().is_some_and(|r|r.arena_id==retained.id);
-        if c.phase!=Phase::Leaving||c.view.as_ref().is_none_or(|view|view.id!=retained.id)
-            ||actor.identity.account!=owner.account_id||actor.identity.database!=owner.database_id
-            ||actor.session.is_some()||!(pending||committed){return Err(model::bad());}
-        s.shared.as_mut().ok_or_else(||model::bad())?.contained_world=Some(retained.clone());
+        if !s.arena_base||s.shared.as_ref().is_none_or(|c|c.profile13.is_none())||unreturned.contains(&s.id){continue;}
+        if let Err(e)=retain_contained_return(s,&retained) {unreturned_session(&mut unreturned,s.id,world.id,"contained_view",&e);}
     }
-    template.replace(world,runtime,now)?;
-    Ok(snapshot)
+    let reset=template.replace(world,runtime,now);
+    Ok(Contained{snapshot,unreturned,reset})
 }
 
 fn arena_member(s:&Session,world:&World)->bool {
@@ -1583,6 +1643,20 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         println!("ARENAS count={} places_per_arena={} battles={:?} step_threads=scoped_per_tick policy=arena01-in-process",
             arenas.len(),arenas[0].world.expected_actors(),arenas.iter().map(|a|a.world.id).collect::<Vec<_>>());
     }
+    // MM-01: a Join queues; groups take free arenas. Config already requires bots and the P04M pool.
+    let mut matchmaker=match (&config.matchmaker,&config.bots) {
+        (None,_)=>None,
+        (Some(rules),Some(plan)) if profile13_mode&&table.arena_split&&arenas[0].world.bot_plan().is_some()=>{
+            let runtime=matchmaking::Runtime::new(rules.clone(),plan)?;
+            println!("MM01_POLICY_BOUND policy={} team_size={} places={} tiers={}..{} tier_spread={} wait_s={} lease_s={} arenas={} bot_tiers={:?} historical_matchmaker=UNKNOWN",
+                super::matchmaker::POLICY,rules.team_size,rules.places(),rules.tiers.0,rules.tiers.1,rules.tier_spread,rules.wait.as_secs(),
+                rules.lease.as_secs(),arenas.len(),runtime.bot_tiers().iter().map(|(k,t)|format!("{}:{t}",k.label())).collect::<Vec<_>>());
+            Some(runtime)
+        },
+        _=>return Err(model::bad().into()),
+    };
+    let mut net_stats=super::net01::LoopStats::default();
+    println!("NET01_POSE_DELIVERY mode={} report_s={}",config.pose_delivery.label(),super::net01::REPORT.as_secs());
     loop {
         let now = Instant::now();
         if now.duration_since(started) >= if profile13_mode {PROFILE13_SERVICE_LIFETIME} else {model::LIFETIME} {
@@ -1631,6 +1705,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         s.login_attempt = Some(job.attempt); s.login_account = Some(pending.account); s.identity = Some(accepted.identity);
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
                         if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
+                        s.shared.as_mut().ok_or_else(||model::bad())?.set_pose_delivery(config.pose_delivery)?;
                         if profile13_mode {
                             let binding=accepted.ammo_service.ok_or_else(||model::bad())?;
                             s.ammo_service=Some(ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
@@ -1751,8 +1826,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         for(id,reason)in closing.drain(..){
             if !table.sessions.iter().any(|s|s.id==id){continue;}
             let home=session_home(&table,&arenas,&battle_dispatch,id);let a=&mut arenas[home];
-            if retire_contained_session(&mut battle_dispatch,&mut table,&a.world,id,now,reason)?{continue;}
-            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut a.world,id,now,reason)?;continue;}
+            if containment::retire_contained_or_drop(&mut table,&mut battle_dispatch,&mut a.world,id,now,reason){continue;}
+            if room_host.is_none(){containment::retire_or_contain(&mut table,&mut battle_dispatch,a,id,now,reason);continue;}
             match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut a.world,&mut a.integrated,&a.template,id,reason,now,logical_ms){
                 Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
                 Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
@@ -1765,15 +1840,21 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
             let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
             // BATTLE_BUSY only when no arena can take this Join (with one arena: it started).
-            let all_started=arenas[lobby].started();
+            let all_started=arenas[lobby].started()||arenas[lobby].closed.is_some();
+            let mut leave_failures:Vec<(usize,io::Error)>=Vec::new();
             for s in &mut table.sessions {
                 let home=arena::home(s,&arenas,lobby);let a=&mut arenas[home];
                 // An explicitly contained old Avatar has no authority in the
                 // replacement World, including the terminal-freeze pass.
                 if s.shared.as_ref().is_some_and(|c|c.contained_world.is_some()) {
-                    contained_return_world(s,&a.world)?;continue;
+                    if let Err(error)=contained_return_world(s,&a.world) {
+                        println!("SHARED_CONTAINED_RETURN_FAILED session={} reason={error} replacement_world_unchanged=true",s.id);
+                        closing.push((s.id,"contained_terminal_return_failed"));
+                    }
+                    continue;
                 }
-                if all_started {
+                // MM-01: a queued Join waits for a free arena instead.
+                if all_started&&matchmaker.is_none() {
                     let busy=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
                         p.selection.is_some() && !p.has_reservation() && !p.in_flight);
                     if busy {
@@ -1787,9 +1868,15 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     (c.phase==Phase::Leaving || c.phase==Phase::Account && !c.join_requested
                         && c.profile13.as_ref().is_some_and(|p|p.has_reservation()&&!p.hold_account_only)));
                 if pending {
-                    profile13_dispatch::Dispatcher::terminal(s,&a.world,crate::battle091::profile13::FinishReason::ManualLeave)?;
+                    if let Err(error)=profile13_dispatch::Dispatcher::terminal(s,&a.world,crate::battle091::profile13::FinishReason::ManualLeave) {
+                        println!("SHARED_LEAVE_TERMINAL_FAILED session={} battle={} error={error} battle_contained=true",s.id,a.world.id);
+                        leave_failures.push((home,error));continue;
+                    }
                     if !a.blocked() && a.has_session(s.id) {a.world.detach(s.id)?;}
                 }
+            }
+            for (home,error) in leave_failures.drain(..) {
+                containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[home],now,"leave_terminal",Some("fault_leave_terminal"),&error);
             }
             let mut index=0;
             while index<garage.len() {
@@ -1809,20 +1896,32 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             // Hold5 is refused with more than one arena (config); it owns arena 0.
             battle_dispatch.observe_hold_world(&table,&arenas[0].world)?;
             if let Some(error)=battle_dispatch.hold_pre_avatar_failure(&table,&arenas[0].world){
-                let a=&mut arenas[0];
-                battle_dispatch.before_hold_reset(&a.world)?;
-                contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"hold5_pre_avatar_departure",&error)?;
-                a.cursors.reset();
+                containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[0],now,"hold5_pre_avatar_departure",None,&error);
+            }
+            if let Some(m)=&mut matchmaker {
+                m.tick(&mut table,&mut arenas,battle_dispatch.retired_sessions(),|battle|battle_dispatch.closed_queue(battle),now)?;
+                // A dissolved group's battle id is not reused: the same reset as an emptied queue.
+                for index in m.take_resets(&table,&arenas,battle_dispatch.retired_sessions()) {
+                    let a=&mut arenas[index];
+                    if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"mm01_group_dissolved");}
+                    // STAB-02: a failed reset closes only this arena.
+                    let reset=battle_dispatch.before_hold_reset(&a.world).and_then(|()|a.template.replace(&mut a.world,&mut a.integrated,now));
+                    match reset {
+                        Ok(())=>a.cursors.reset(),
+                        Err(error)=>containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"mm01_group_reset",None,&error),
+                    }
+                }
             }
             if garage.is_empty() && !result_manager.busy() && !battle_dispatch.late_running() && (!config.p08b_owner_battle_hold||admission.is_empty()) {
                 battle_dispatch.poll(&mut table,config.clone(),now)?;
-                for a in &mut arenas {
-                    if battle_dispatch.finish_empty_queue(&table,&mut a.world,&mut a.integrated,&a.template,now)? {
-                        a.cursors.reset();
+                for a in arenas.iter_mut().filter(|a|a.closed.is_none()) {
+                    match battle_dispatch.finish_empty_queue(&table,&mut a.world,&mut a.integrated,&a.template,now) {
+                        Ok(true)=>a.cursors.reset(),Ok(false)=>{},
+                        Err(error)=>containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"queue_reset",None,&error),
                     }
                 }
                 let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
-                if battle_dispatch.closed_queue(arenas[lobby].world.id) {
+                if matchmaker.is_none()&&battle_dispatch.closed_queue(arenas[lobby].world.id) {
                     for s in &mut table.sessions {
                         let pending=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).is_some_and(|p|
                             p.selection.is_some() && !p.has_reservation() && !p.in_flight);
@@ -1834,19 +1933,26 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     }
                 }
                 let a=&mut arenas[lobby];
-                if a.world.started.is_none() && a.world.actors.iter().all(|x|x.session.is_none()) {
+                if a.closed.is_none() && a.world.started.is_none() && a.world.actors.iter().all(|x|x.session.is_none()) {
                     let kind=table.sessions.iter().find_map(|s|s.shared.as_ref().filter(|c|c.phase==Phase::Account && c.join_requested)
                         .and_then(|c|c.profile13.as_ref()).filter(|p|!p.in_flight && !p.has_pending_return())
                         .filter(|p|p.reservation_battle()==Some(a.world.id)).and_then(|p|p.reservation_kind()));
                     if let Some(kind)=kind.filter(|k|!a.world.mixed_profiles()&&*k!=a.world.vehicle_kind()) {
-                        let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
-                        a.template=BattleTemplate::from_resources(r,a.world.id,now)?;
-                        if config.visibility_v1 {
-                            a.template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
-                            a.template.world.enable_result_spots()?;
+                        // STAB-02: a kind that cannot be seated fails its battle, not the service;
+                        // the old template stays for the reset.
+                        let switched=(||->io::Result<BattleTemplate>{
+                            let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
+                            let mut template=BattleTemplate::from_resources(r,a.world.id,now)?;
+                            if config.visibility_v1 {
+                                template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
+                                template.world.enable_result_spots()?;
+                            }
+                            template.select(&mut a.world,&mut a.integrated,now)?;Ok(template)
+                        })();
+                        match switched {
+                            Ok(template)=>{a.template=template;a.cursors.reset();},
+                            Err(error)=>containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"battle_select",None,&error),
                         }
-                        a.template.select(&mut a.world,&mut a.integrated,now)?;
-                        a.cursors.reset();
                     }
                 }
                 for s in &mut table.sessions {
@@ -1868,9 +1974,14 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 }
                 if room_host.as_ref().is_none_or(|h|!h.preparing()){
                     let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
-                    battle_dispatch.attached_elsewhere=arena::attached_outside(&arenas,lobby);
-                    let dispatched=battle_dispatch.start(&mut table,&arenas[lobby].world,config.clone(),now);
-                    battle_dispatch.attached_elsewhere.clear();dispatched?;
+                    // MM-01: also every arena of an unstarted group (one writer at a time).
+                    // STAB-02: a closed arena takes no admission.
+                    for target in matchmaker.as_ref().map_or_else(||vec![lobby],|m|m.admission_arenas(&arenas,lobby)) {
+                        if arenas[target].closed.is_some() {continue;}
+                        battle_dispatch.attached_elsewhere=arena::attached_outside(&arenas,target);
+                        let dispatched=battle_dispatch.start(&mut table,&arenas[target].world,config.clone(),now);
+                        battle_dispatch.attached_elsewhere.clear();dispatched?;
+                    }
                 }
             }
             if !battle_dispatch.busy() && !result_manager.busy() && room_host.as_ref().is_none_or(|h|!h.busy()) && (!config.p08b_owner_battle_hold||admission.is_empty()){
@@ -1904,10 +2015,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 Err(error)=>println!("P10B_HOST_RETRY error={error} authority_retained=true service_alive=true"),
             }
             if let Some(error)=host.prestart_failure(&a.world,None,now){
-                if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"training_handoff_failure");}
-                        battle_dispatch.before_hold_reset(&a.world)?;
-                        contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"training_handoff",&error)?;
-                a.cursors.reset();
+                containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"training_handoff",Some("training_handoff_failure"),&error);
             }
         }
         if let Some(late)=&mut battle_dispatch.late{
@@ -1922,15 +2030,19 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         }
         for a in &mut arenas {
             if a.world.owner_hold_enabled()&&a.world.started.is_some()&&a.world.actors.iter().all(|x|x.session.is_none())&&!a.blocked(){
-                a.world.advance_lifecycle(now)?;battle_dispatch.observe_hold_world(&table,&a.world)?;
+                if let Err(error)=a.world.advance_lifecycle(now) {
+                    containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"lifecycle",Some("fault_lifecycle"),&error);continue;
+                }
+                battle_dispatch.observe_hold_world(&table,&a.world)?;
             }
         }
         for a in &mut arenas {
-            if parked_battle_reset_ready(&table,&a.world) {
+            if a.closed.is_none() && parked_battle_reset_ready(&table,&a.world) {
                 if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"normal_all_parked_reset");}
-                    battle_dispatch.before_hold_reset(&a.world)?;
-                    a.template.replace(&mut a.world,&mut a.integrated,now)?;
-                a.cursors.reset();
+                match battle_dispatch.before_hold_reset(&a.world).and_then(|()|a.template.replace(&mut a.world,&mut a.integrated,now)) {
+                    Ok(())=>a.cursors.reset(),
+                    Err(error)=>containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"battle_reset",None,&error),
+                }
             }
         }
         for s in &mut table.sessions {
@@ -1945,6 +2057,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         let mut failures:Vec<(usize,&'static str,io::Error)>=Vec::new();
         for index in 0..arenas.len() {
             let a=&mut arenas[index];
+            containment::reopen_closed(a,now);
+            if a.closed.is_some() {commands.push(None);continue;}
             let pre=(||->io::Result<bool> {
                 if a.world.owner_hold_enabled(){battle_dispatch.attach_hold_ready_group(&mut table,&mut a.world,&config.battle_run_id,now)?;}
                 else{attach_waiting_sessions(&mut table,&mut a.world,now)?;}
@@ -1970,29 +2084,26 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 Err(error)=>{commands.push(None);failures.push((index,"world_step",error));},
             }
         }
+        let step_started=Instant::now();
         for (index,event) in arena::step_all(&mut arenas,&commands).into_iter().enumerate() {
             if let Some(arena::Event::Failed{stage,error})=event {failures.push((index,stage,error));}
         }
+        let step_wall=step_started.elapsed();
         failures.sort_by_key(|f|f.0);
         for (index,stage,error) in failures {
-            let a=&mut arenas[index];
-            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,if stage=="world_step"{"fault_world_step"}else{"fault_world_step_panic"});}
-                battle_dispatch.before_hold_reset(&a.world)?;
-                contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,stage,&error)?;
-            a.cursors.reset();
+            let late=if stage=="world_step"{"fault_world_step"}else{"fault_world_step_panic"};
+            containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[index],now,stage,Some(late),&error);
         }
         if let Some(late)=&mut battle_dispatch.late{late.observe_sessions(table.sessions.iter());for a in &arenas{late.seal_world(&a.world);}}
         for a in &mut arenas {
             battle_dispatch.observe_hold_world(&table,&a.world)?;
             let sealed=battle_dispatch.hold_results(a.world.id).or_else(||battle_dispatch.late.as_ref().and_then(|m|m.sealed_results(a.world.id)));
             if let Err(error)=stage_lifecycle_results_from(&mut table,&a.world,sealed) {
-                if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"fault_result_snapshot");}
-                    battle_dispatch.before_hold_reset(&a.world)?;
-                    contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"result_snapshot",&error)?;
-                a.cursors.reset();
+                containment::contain_arena(&mut table,&mut battle_dispatch,a,now,"result_snapshot",Some("fault_result_snapshot"),&error);
             }
         }
         let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
+        let publish_started=Instant::now();
         let mut publication_failures:Vec<(usize,io::Error)>=Vec::new();
         for s in &mut table.sessions {
             if !s.active&&room_host.as_ref().is_some_and(|h|h.owns_preparing(s.id)){continue;}
@@ -2035,27 +2146,22 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 if s.tx.enqueue().is_err() { closing.push((s.id, "sequence_budget")); continue; } s.last_heartbeat = now;
             }
             if let Some(peer) = s.base_peer {
-                match s.tx.due(now, s.rx) {
-                    Ok(Some((_, _, body))) => send(&base_socket, peer, &body, &s.key, &mut capture)?,
-                    Ok(None) => {}, Err(_) => { closing.push((s.id, "retry_exhausted")); continue; },
-                }
+                let Some(frames) = transmit(s, now)? else { closing.push((s.id, "retry_exhausted")); continue; };
+                for clear in frames { send(&base_socket, peer, &clear, &s.key, &mut capture)?; }
                 if now.duration_since(s.last_keepalive) >= Duration::from_secs(1) {
                     send(&base_socket, peer, &transport091::ack(s.rx), &s.key, &mut capture)?; s.last_keepalive = now;
                 }
             }
         }
+        let publish_wall=publish_started.elapsed();
         for (home,error) in publication_failures {
-            let a=&mut arenas[home];
-            if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"fault_publication");}
-                battle_dispatch.before_hold_reset(&a.world)?;
-                contain_battle_failure(&mut table,&mut a.world,&mut a.integrated,&a.template,now,"publication",&error)?;
-            a.cursors.reset();
+            containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[home],now,"publication",Some("fault_publication"),&error);
         }
         for(id,reason)in closing{
             if !table.sessions.iter().any(|s|s.id==id){continue;}
             let home=session_home(&table,&arenas,&battle_dispatch,id);let a=&mut arenas[home];
-            if retire_contained_session(&mut battle_dispatch,&mut table,&a.world,id,now,reason)?{continue;}
-            if room_host.is_none(){battle_dispatch.retire(&mut table,&mut a.world,id,now,reason)?;continue;}
+            if containment::retire_contained_or_drop(&mut table,&mut battle_dispatch,&mut a.world,id,now,reason){continue;}
+            if room_host.is_none(){containment::retire_or_contain(&mut table,&mut battle_dispatch,a,id,now,reason);continue;}
             match retire_training_session(&mut room_host,&mut battle_dispatch,&mut table,&mut a.world,&mut a.integrated,&a.template,id,reason,now,logical_ms){
                 Ok(true)=>{},Ok(false)=>hold_training_close(&mut room_closing,id,reason),
                 Err(error)=>{println!("P10B_CLOSE_RETRY session={id} error={error} service_alive=true");hold_training_close(&mut room_closing,id,reason);}
@@ -2148,6 +2254,23 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 }
             }
         } }
+        // NET-01: wall time of this loop and of each running arena's domain tick.
+        let ticks=arenas.iter().map(|a|a.world.started.map(|_|a.world.tick)).collect::<Vec<_>>();
+        let loop_end=Instant::now();
+        net_stats.record(now,step_wall,publish_wall,&ticks,loop_end);
+        if let Some(line)=net_stats.take_report(loop_end) {
+            println!("{line}");
+            for s in &mut table.sessions {
+                // Every window restarts, so a battle report never carries hangar traffic.
+                let w=std::mem::take(&mut s.tx.stats);
+                let Some(c)=s.shared.as_mut() else {continue;};
+                let pose=c.take_pose_stats();
+                if !c.in_battle() {continue;}
+                println!("NET01_SESSION_STATS session={} mode={} pending_now={} pending_max={} outbox_max={} resends={} ack_wait_ms=[{}] queue_wait_ms=[{}] poses={} pose_gap_max_ticks={} pose_gaps_over_1={} pose_replaced_unsent={} pose_packets={} pose_bytes={}",
+                    s.id,c.pose_delivery().label(),s.tx.len(),w.pending_max,pose.outbox_max,w.resends,w.ack_wait.summary(),w.queue_wait.summary(),
+                    pose.published,pose.gap_max,pose.gaps_over_one,pose.replaced_unsent,pose.packets,pose.bytes);
+            }
+        }
         thread::sleep(Duration::from_millis(5));
     }
     Ok(())
@@ -2197,6 +2320,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let mut shot_publications = Vec::new();
     let mut tracer_starts = Vec::new();
     let mut tracer_stops = Vec::new();
+    let mut anonymous_tracers = Vec::new();
+    let mut impact_from = usize::MAX;
     let mut impact_publications = Vec::new();
     let prior_projectile_count = world.projectiles.len();
     if c.phase == Phase::Driving {
@@ -2248,6 +2373,20 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     c.tracer_started[index] = true;
                     tracer_starts.push((shot.sequence, shot.slot));
                 }
+            } else if c.spotting_enabled && c.correction && c.binding.is_some_and(|(_, ack)| ack) && shot.slot != c.slot {
+                // AV-01: #717 showTracer draws a tracer without a shooter
+                // entity. Anonymous form: shooter 0, start advanced along the
+                // flight; no muzzle cue (Vehicle.showShooting needs the entity).
+                let index = shot.sequence.checked_sub(1).ok_or_else(|| model::bad())? as usize;
+                let projectile = next_world.projectiles.iter().find(|p| p.sequence == shot.sequence)
+                    .ok_or_else(|| model::bad())?;
+                if !c.tracer_started[index] {
+                    if let Some(body) = super::av01_feedback::anonymous_tracer(projectile, projectile_effects(projectile)?)? {
+                        next.outbox.push_back(body);
+                        c.tracer_started[index] = true;
+                        anonymous_tracers.push((shot.sequence, shot.slot));
+                    }
+                }
             }
             // Even a skipped event is consumed: becoming visible later must
             // not replay stale gunfire. The cursor commits with the queue.
@@ -2266,10 +2405,14 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     // A vehicle collision can reveal a hidden target even while
                     // its shooter remains visible. Native range flight is bounded;
                     // suppress the private terminal rather than invent a hit point.
-                    if c.spotting_enabled && (!c.visible()[projectile.slot] || target.is_some_and(|slot|!c.visible()[slot])) {
+                    // AV-01: a hidden shooter no longer suppresses the end of
+                    // its (anonymous) tracer; stop bodies carry no shooter ID.
+                    if c.spotting_enabled && target.is_some_and(|slot|!c.visible()[slot]) {
                         c.tracer_stopped[index]=true;continue;
                     }
-                    let mut targets=vec![projectile.slot];if let Some(slot)=target {targets.push(slot);}
+                    let mut targets=Vec::new();
+                    if !c.spotting_enabled || c.visible()[projectile.slot] {targets.push(projectile.slot);}
+                    if let Some(slot)=target {targets.push(slot);}
                     if let Some(contact)=next_world.terrain_contacts.iter().find(|c|c.shot==projectile.sequence) {
                         // Original explodeProjectile terminates its own mover.
                         // A subsequent stopTracer would hide/cancel ground FX.
@@ -2277,14 +2420,16 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                             contact.hit.point,contact.direction,contact.hit.effect_material_index(),next_world.shot_limit())?}
                             else{super::terrain_wire::explode_material_for_limit(projectile.vehicle_kind,projectile.sequence,
                             contact.hit.point,contact.direction,contact.hit.effect_material_index(),next_world.shot_limit())?};
-                        c.queue_private(&mut next.outbox,effect,&targets)?;
+                        if targets.is_empty() {next.outbox.push_back(effect);} else {c.queue_private(&mut next.outbox,effect,&targets)?;}
                     } else {
-                        c.queue_private(&mut next.outbox,wire::tracer_stop(projectile)?,&targets)?;
+                        let stop=wire::tracer_stop(projectile)?;
+                        if targets.is_empty() {next.outbox.push_back(stop);} else {c.queue_private(&mut next.outbox,stop,&targets)?;}
                     }
                     c.tracer_stopped[index] = true;
                     tracer_stops.push((projectile.sequence, projectile.slot));
                 }
             }
+            impact_from = c.impact_cursor;
             for event in next_world.impacts.iter().skip(c.impact_cursor) {
                 let shot_index = event.shot.checked_sub(1).ok_or_else(|| model::bad())? as usize;
                 let visible = c.visible()[event.target] && c.visible()[event.attacker];
@@ -2297,34 +2442,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     // without authorizing fabricated penetration or hull damage.
                     if let Some(shell)=he{body.extend(crate::armament_wire091::explosion(wire::vehicle_id(event.target)?,
                         wire::vehicle_id(event.attacker)?,projectile.terminal,shell)?);}
-                    if let Some(segment) = &event.segment {
-                        let outcome = match &event.outcome {
-                            // Explicit laboratory policy: a wreck blocks the shell.
-                            // The native resisted FX also works on HP0 entities;
-                            // this is not an armor calculation or a new death.
-                            model::ImpactOutcome::WreckBlocked => impact_wire::ShotOutcome::NotPierced,
-                            model::ImpactOutcome::Ap(resolution) => match resolution.outcome {
-                                ap::Outcome::Ricochet => impact_wire::ShotOutcome::Ricochet,
-                                ap::Outcome::NotPierced => impact_wire::ShotOutcome::NotPierced,
-                                ap::Outcome::Pierced => impact_wire::ShotOutcome::Pierced,
-                                ap::Outcome::Unsupported(_) => return Err(model::bad()),
-                            },
-                            model::ImpactOutcome::Mixed(resolution)=>match resolution.decision{
-                                crate::p06t_damage::Decision::Ricochet=>impact_wire::ShotOutcome::Ricochet,
-                                crate::p06t_damage::Decision::NotPierced=>impact_wire::ShotOutcome::NotPierced,
-                                crate::p06t_damage::Decision::Pierced=>impact_wire::ShotOutcome::Pierced,
-                                // Native visual category only. The authoritative LAB
-                                // decision and damage ledger keep UnarmoredDevice /
-                                // pierced=false; no ordinary armor claim is made.
-                                crate::p06t_damage::Decision::UnarmoredDevice=>impact_wire::ShotOutcome::Pierced,
-                                _=>return Err(model::bad()),
-                            },
-                        };
-                        let component = match segment.component {
-                            super::materials::Component::Hull => 1,
-                            super::materials::Component::Turret01 => 2,
-                            super::materials::Component::Gun02 | super::materials::Component::Gun01 => 3,
-                        };
+                    if let Some((segment,outcome,component)) = impact_visual(event)? {
                         if let Some(shell)=projectile.shell{
                             if he.is_none(){body.extend(impact_wire::show_damage_shell(shell,event.attacker,event.target,component,segment.bounds,segment.start,segment.end,outcome)?);}
                         }else{body.extend(impact_wire::show_damage_for(next_world.actors[event.attacker].vehicle_kind(),event.attacker,event.target,component,
@@ -2344,6 +2462,35 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                                 body.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
                             }
                         }
+                    }
+                } else if c.spotting_enabled && event.target == c.slot && c.visible()[c.slot] {
+                    // AV-01: an own-vehicle hit from a hidden shooter keeps the
+                    // native hit FX/sound with attacker 0; no shooter data.
+                    let projectile=next_world.projectiles.iter().find(|projectile|projectile.sequence==event.shot).ok_or_else(||model::bad())?;
+                    let he=projectile.shell.filter(|shell|shell.family==crate::p06t_shells091::Family::HighExplosive);
+                    let mut own=Vec::new();
+                    if let Some(shell)=he{own.extend(crate::armament_wire091::explosion(wire::vehicle_id(event.target)?,0,projectile.terminal,shell)?);}
+                    else if let Some((segment,outcome,component)) = impact_visual(event)? {
+                        own.extend(impact_wire::show_damage_from(projectile_effects(projectile)?,0,event.target,component,
+                            segment.bounds,segment.start,segment.end,outcome)?);
+                    }
+                    if !own.is_empty() {c.queue_private(&mut next.outbox,own,&[event.target])?;}
+                }
+                // AV-01: the owner's hit indicator (any shooter visibility; the
+                // yaw comes from the shell flight) and the shooter's result
+                // voice (vehicle ID and flags only, also for blind fire).
+                if c.spotting_enabled && event.health_before > 0 && (event.target == c.slot || event.attacker == c.slot) {
+                    let projectile=next_world.projectiles.iter().find(|projectile|projectile.sequence==event.shot).ok_or_else(||model::bad())?;
+                    if event.target == c.slot && c.visible()[c.slot] {
+                        next.outbox.push_back(super::av01_feedback::hit_direction(projectile.velocity,event.health_after<event.health_before)?);
+                    }
+                    if event.attacker == c.slot {
+                        let he=projectile.shell.is_some_and(|shell|shell.family==crate::p06t_shells091::Family::HighExplosive);
+                        // No native visual category (e.g. a LAB decision the FX
+                        // path refuses) falls back to the HP change alone.
+                        let outcome=impact_visual(event).ok().flatten().map(|(_,outcome,_)|outcome);
+                        let flags=super::av01_feedback::shot_result_flags(outcome,he,event.health_before,event.health_after);
+                        next.outbox.push_back(super::av01_feedback::shot_results(&[(event.target,flags)])?);
                     }
                 }
                 let queued = !body.is_empty();
@@ -2380,6 +2527,11 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 if !body.is_empty() { c.queue_private(&mut next.outbox,body,&[target])?; }
             }}
         }
+        // AV-01 runs with recipient visibility (visibility_v1, as on the owner
+        // stands); legacy all-visible laboratory publications stay byte-exact.
+        if c.spotting_enabled && c.correction && c.binding.is_some_and(|(_, ack)| ack) {
+            publish_av01(c,&mut next.outbox,&next_world,impact_from)?;
+        }
         if let Some(state) = &next_world.lifecycle {
             let view = state.view();
             // Native AFTERBATTLE clears the base panel. Final capture/death
@@ -2404,10 +2556,24 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         // No queue of stale poses for a slow peer. Reliable retries retain their
         // exact bytes; the next fresh pose is queued when capacity is available.
         let old_tick = if c.spotting_enabled {c.last_pose_tick.unwrap_or(0)} else {c.view.as_ref().map(|w| w.tick).unwrap_or(0)};
-        if c.correction && c.binding.is_some_and(|(_, ack)| ack) && old_tick != next_world.tick && next.tx.len() < 4 {
-            // SPAWN-15: more than 13 visible vehicles take up to three bodies;
-            // with <= 4 pending the transport bound (8) is never exceeded.
-            for body in wire::publication_parts(&next_world, c.visible())? {next.tx.enqueue_body(&body)?;}
+        let latest = c.pose_delivery == super::net01::PoseDelivery::LatestUnreliable;
+        let paced = c.pose_delivery == super::net01::PoseDelivery::ReliableBurstV2;
+        // NET-01: a held-aside pose never waits for window capacity here.
+        if c.correction && c.binding.is_some_and(|(_, ack)| ack) && old_tick != next_world.tick && (latest || paced || next.tx.len() < 4) {
+            let mut parts = wire::publication_parts(&next_world, c.visible())?;
+            if paced {
+                // One tickSync per tick: later parts drop their 2-byte prefix.
+                for part in parts.iter_mut().skip(1) {if part.len()<=2 || part[0]!=0x0d {return Err(model::bad());} part.drain(..2);}
+            }
+            if latest || paced {
+                if !c.poses_out.is_empty() {c.pose_stats.replaced_unsent += 1;}
+                c.poses_out = parts;
+            } else {
+                // SPAWN-15: more than 13 visible vehicles take up to three bodies;
+                // with <= 4 pending the transport bound (8) is never exceeded.
+                for body in parts {next.tx.enqueue_body(&body)?;}
+            }
+            c.pose_stats.published(c.last_pose_tick, next_world.tick);
             c.last_pose_tick=Some(next_world.tick);
             println!("SHARED_SNAPSHOT battle={} session={} tick={} positions={:?} ready={:?} aim_yaw_pitch={:?}", next_world.id, s.id, next_world.tick,
                 next_world.actors.iter().map(|a| a.position).collect::<Vec<_>>(), c.visible(),
@@ -2417,6 +2583,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     // At most40 MS-1 or60 IS-7 shots: start cue+tracer+stop+one compound impact, plus
     // bounded reload/readiness/health catch-up. Slow peers cannot grow forever.
     if next.outbox.len()+next.shared.as_ref().ok_or_else(||model::bad())?.pending_private_len() > next_world.shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;next.flush_shared_private()?;
+    {let backlog=next.outbox.len();let c=next.shared.as_mut().ok_or_else(||model::bad())?;c.pose_stats.outbox_max=c.pose_stats.outbox_max.max(backlog);}
     let mut turret_events=Vec::new();next.flush_shared_turrets(&next_world,&mut turret_events)?;
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
@@ -2436,6 +2603,9 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     for (sequence, shooter_slot) in tracer_starts {
         println!("SHARED_TRACER_START battle={} session={} shot={} shooter_slot={} native_method=Avatar.showTracer queued=true", world.id, s.id, sequence, shooter_slot);
     }
+    for (sequence, shooter_slot) in anonymous_tracers {
+        println!("AV01_TRACER_ANONYMOUS battle={} session={} shot={} shooter_slot={} native_method=Avatar.showTracer shooter_id=0 offset_m={}", world.id, s.id, sequence, shooter_slot, super::av01_feedback::HIDDEN_TRACER_OFFSET_M);
+    }
     for (sequence, shooter_slot) in tracer_stops {
         if next_world.terrain_contacts.iter().any(|c|c.shot==sequence) {
             println!("SHARED_TERRAIN_PUBLICATION battle={} session={} shot={} shooter_slot={} native_method=Avatar.explodeProjectile queued=true",world.id,s.id,sequence,shooter_slot);
@@ -2450,6 +2620,136 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     *world = next_world; *s = next;
     for event in turret_events{println!("{event}");}
     Ok(())
+}
+
+/// Native visual category and component of one vehicle impact; None without
+/// a native segment. Presentation only, never the damage decision.
+fn impact_visual(event:&model::AppliedImpact)->io::Result<Option<(&super::geometry::ImpactSegment,impact_wire::ShotOutcome,u8)>> {
+    let Some(segment) = &event.segment else { return Ok(None); };
+    let outcome = match &event.outcome {
+        // Explicit laboratory policy: a wreck blocks the shell.
+        // The native resisted FX also works on HP0 entities;
+        // this is not an armor calculation or a new death.
+        model::ImpactOutcome::WreckBlocked => impact_wire::ShotOutcome::NotPierced,
+        model::ImpactOutcome::Ap(resolution) => match resolution.outcome {
+            ap::Outcome::Ricochet => impact_wire::ShotOutcome::Ricochet,
+            ap::Outcome::NotPierced => impact_wire::ShotOutcome::NotPierced,
+            ap::Outcome::Pierced => impact_wire::ShotOutcome::Pierced,
+            ap::Outcome::Unsupported(_) => return Err(model::bad()),
+        },
+        model::ImpactOutcome::Mixed(resolution)=>match resolution.decision{
+            crate::p06t_damage::Decision::Ricochet=>impact_wire::ShotOutcome::Ricochet,
+            crate::p06t_damage::Decision::NotPierced=>impact_wire::ShotOutcome::NotPierced,
+            crate::p06t_damage::Decision::Pierced=>impact_wire::ShotOutcome::Pierced,
+            // Native visual category only. The authoritative LAB
+            // decision and damage ledger keep UnarmoredDevice /
+            // pierced=false; no ordinary armor claim is made.
+            crate::p06t_damage::Decision::UnarmoredDevice=>impact_wire::ShotOutcome::Pierced,
+            _=>return Err(model::bad()),
+        },
+    };
+    let component = match segment.component {
+        super::materials::Component::Hull => 1,
+        super::materials::Component::Turret01 => 2,
+        super::materials::Component::Gun02 | super::materials::Component::Gun01 => 3,
+    };
+    Ok(Some((segment,outcome,component)))
+}
+/// Original effects index frozen at launch.
+fn projectile_effects(projectile:&super::projectile::Projectile)->io::Result<u8> {
+    match projectile.shell { Some(shell)=>crate::armament_wire091::effect_index(shell), None=>Ok(projectile.vehicle_kind.shell().effects) }
+}
+
+/// AV-01 per-recipient state publication for created (visible) vehicles:
+/// one private body per vehicle (a hide invalidates only that vehicle), at
+/// most six engineMode and two damageStickers bodies per call (bounded queue
+/// growth; the rest follows on later calls), and the spotter's first spots.
+fn publish_av01(c:&mut Client,outbox:&mut std::collections::VecDeque<Vec<u8>>,world:&World,impact_from:usize)->io::Result<()> {
+    use super::av01_feedback as av;
+    let visible=c.visible();
+    let mut sent=0;
+    for slot in 0..world.actors.len() {
+        if sent==6 {break;}
+        if !visible[slot] {continue;}
+        let actor=&world.actors[slot];
+        let running=actor.alive()&&actor.devices.as_ref().is_none_or(|d|d.health()[crate::p06t_device_caps::Device::Engine as usize]>0);
+        let mode=av::engine_mode(running,actor.input);
+        if c.engine_sent[slot]!=Some(mode) {c.queue_private(outbox,av::engine_mode_update(slot,mode)?,&[slot])?;c.engine_sent[slot]=Some(mode);sent+=1;}
+    }
+    let fresh=world.impacts.get(impact_from..).unwrap_or(&[]);
+    let mut sent=0;
+    for slot in 0..world.actors.len() {
+        if sent==2 {break;}
+        if !visible[slot] || c.stickers_sent[slot].is_some() && !fresh.iter().any(|e|e.target==slot) {continue;}
+        let codes=sticker_codes(world,slot)?;
+        if c.stickers_sent[slot].as_ref()!=Some(&codes) {
+            c.queue_private(outbox,av::damage_stickers_update(slot,&codes)?,&[slot])?;sent+=1;
+        }
+        c.stickers_sent[slot]=Some(codes);
+    }
+    if let Some(spots)=world.result_spots() {
+        for record in spots.iter().skip(c.scout_cursor) {
+            if record.observer()==c.slot {outbox.push_back(av::scout_spotted(record.target())?);}
+        }
+        c.scout_cursor=spots.len();
+    }
+    Ok(())
+}
+/// Current damage stickers of one vehicle: its newest distinct impact codes.
+/// A decal is optional presentation: an impact without a native visual
+/// category or a quantizable segment gets none instead of failing the battle.
+fn sticker_codes(world:&World,target:usize)->io::Result<Vec<u64>> {
+    let mut codes:Vec<u64>=Vec::new();
+    for event in world.impacts.iter().rev().filter(|e|e.target==target) {
+        if codes.len()==super::av01_feedback::MAX_STICKERS {break;}
+        let Some((segment,outcome,component))=impact_visual(event).ok().flatten() else {continue;};
+        let projectile=world.projectiles.iter().find(|p|p.sequence==event.shot).ok_or_else(||model::bad())?;
+        let Ok(point)=impact_wire::packed_segment(component,segment.bounds,segment.start,segment.end,outcome) else {continue;};
+        let code=super::av01_feedback::sticker_code(projectile_effects(projectile)?,outcome,point)?;
+        if !codes.contains(&code) {codes.push(code);}
+    }
+    codes.reverse();Ok(codes)
+}
+
+/// Clear frames for one session this loop, in send order: due reliable bodies
+/// (one, or all with a NET-01 burst mode), then the newest unreliable pose.
+/// `None`: the reliable window exhausted its retries.
+fn transmit(s: &mut Session, now: Instant) -> io::Result<Option<Vec<Vec<u8>>>> {
+    let burst = s.shared.as_ref().is_some_and(|c| c.pose_delivery().burst());
+    let mut frames = Vec::new();
+    loop {
+        match s.tx.due(now, s.rx) {
+            Ok(Some((_, _, clear))) => { frames.push(clear); if !burst { break; } },
+            Ok(None) => break,
+            Err(_) => return Ok(None),
+        }
+    }
+    if s.shared.as_ref().is_some_and(|c| c.pose_delivery() == super::net01::PoseDelivery::ReliableBurstV2) {
+        let c = s.shared.as_mut().ok_or_else(|| model::bad())?;
+        if !c.in_battle() { c.take_poses(); }
+        // One reliable pose part per loop, after the bodies already queued.
+        else if !c.poses_out.is_empty() && s.tx.len() < 8 {
+            let part = c.poses_out.remove(0);
+            s.tx.enqueue_body(&part)?;
+            match s.tx.due(now, s.rx) {
+                Ok(Some((_, _, clear))) => { frames.push(clear); },
+                Ok(None) => return Err(model::bad()),
+                Err(_) => return Ok(None),
+            }
+        }
+        return Ok(Some(frames));
+    }
+    if let Some(c) = s.shared.as_mut() {
+        // A pose left over from a battle that ended is dropped, never sent.
+        let poses = c.take_poses();
+        if c.in_battle() {
+            for body in poses {
+                let clear = transport091::unreliable(s.rx, &body)?;
+                c.record_pose_packet(clear.len()); frames.push(clear);
+            }
+        }
+    }
+    Ok(Some(frames))
 }
 
 fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
@@ -3085,11 +3385,52 @@ mod tests {
         b.receive(&frame(&b,&raw),now).unwrap(); assert_eq!(b.rx,before+1);
         b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
         assert!(b.shared.as_ref().unwrap().commands.is_empty());
-        for offset in [1,3,7] {
+        for offset in [1,3] {
             let mut bad=raw; bad[offset]^=1;
             let before=b.rx; assert!(b.receive(&frame(&b,&bad),now).is_err()); assert_eq!(b.rx,before);
         }
+        // POSTMORTEM-01: a well-formed request for a non-vehicle ID is refused
+        // as a camera request but consumed, so later keepalives still arrive.
+        let mut unknown=raw; unknown[7]^=1;
+        let before=b.rx; b.receive(&frame(&b,&unknown),now).unwrap(); assert_eq!(b.rx,before+1);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+        assert!(b.shared.as_ref().unwrap().commands.is_empty());
         assert_eq!(w.actors[1].health,0); assert_eq!(b.shared.as_ref().unwrap().slot,1);
+    }
+    fn bind(target:u32)->Vec<u8> {let mut b=vec![0x0d,8,0,0,0,0,0];b.extend(target.to_le_bytes());b}
+    /// Owner 2026-10-29 (-11, battle ...827, session 4): the dead player's
+    /// observer camera bound an ally; rejection stalled reliable17381 and every
+    /// later 5-byte token-only keepalive failed `n>rx` until idle_timeout.
+    #[test] fn postmortem01_observer_camera_switch_to_ally_unbind_and_enemy_keeps_channel_live() {
+        let now=Instant::now(); let (_,mut b,mut w)=visible_pair(now);
+        // Alive owner: an observer bind is still outside the measured contract.
+        let before=b.rx; assert!(b.receive(&frame(&b,&bind(wire::vehicle_id(0).unwrap())),now).is_err()); assert_eq!(b.rx,before);
+        w.actors[1].health=0; b.shared.as_mut().unwrap().view=Some(w.clone());
+        assert_eq!(w.team(0).unwrap(),w.team(1).unwrap());
+        let unchanged=(w.actors.clone(),b.shared.as_ref().unwrap().visible());
+        for target in [wire::vehicle_id(0).unwrap(),wire::vehicle_id(1).unwrap(),0,wire::vehicle_id(0).unwrap(),wire::vehicle_id(5).unwrap()] {
+            let before=b.rx; b.receive(&frame(&b,&bind(target)),now).unwrap(); assert_eq!(b.rx,before+1);
+            b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+        }
+        let c=b.shared.as_ref().unwrap();
+        assert!(c.commands.is_empty()); assert_eq!(c.slot,1); assert_eq!((w.actors.clone(),c.visible()),unchanged);
+        // An enemy target is refused without authority or interest change.
+        let mut enemy=World::new_for_roster(124,now,crate::map_profile091::MapId::Karelia,3).unwrap();
+        enemy.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();
+        for i in 0..3 {enemy.attach(model::Identity{account:format!("owned-{i}"),database:i+1,name:format!("player_{i}")},i as u32+1).unwrap();}
+        assert_ne!(enemy.team(0).unwrap(),enemy.team(1).unwrap());
+        assert_eq!(wire::postmortem_camera(&enemy,1,wire::vehicle_id(0).unwrap()).unwrap(),wire::PostmortemCamera::Refused);
+        assert_eq!(wire::postmortem_camera(&enemy,0,wire::vehicle_id(2).unwrap()).unwrap(),wire::PostmortemCamera::Ally(2));
+        assert_eq!(wire::postmortem_camera(&enemy,0,wire::vehicle_id(0).unwrap()).unwrap(),wire::PostmortemCamera::Own);
+        assert_eq!(wire::postmortem_camera(&enemy,0,0).unwrap(),wire::PostmortemCamera::Unbind);
+        assert_eq!(wire::postmortem_camera(&enemy,0,wire::vehicle_id(3).unwrap()).unwrap(),wire::PostmortemCamera::Refused);
+        enemy.actors[1].health=0; b.shared.as_mut().unwrap().view=Some(enemy.clone());
+        let before=b.rx; b.receive(&frame(&b,&bind(wire::vehicle_id(0).unwrap())),now).unwrap(); assert_eq!(b.rx,before+1);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+        assert!(b.shared.as_ref().unwrap().commands.is_empty());
+        // Malformed mailbox/length still fails closed.
+        let mut bad=bind(wire::vehicle_id(0).unwrap()); bad[4]=1;
+        let before=b.rx; assert!(b.receive(&frame(&b,&bad),now).is_err()); assert_eq!(b.rx,before);
     }
     #[test] fn integrated_native_gate_keeps_account_session_alive_until_worker_ready() {
         let now = Instant::now();

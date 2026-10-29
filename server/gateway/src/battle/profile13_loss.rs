@@ -6,7 +6,7 @@ use sha2::{Digest,Sha256};
 pub use crate::battle091::profile13::{Context,FinishReason};
 pub use crate::profile13_v2091::{Remaining,ReservationStatus,TerminalState};
 use crate::profile13_v2091::{self as base,Frozen};
-use crate::gateway091::shared::lifecycle_wire::Results;
+use crate::gateway091::shared::lifecycle_wire::{Results,MAX_RESULT_REQUEST};
 
 pub const VERSION:u64=4;
 pub const CONTRACT:&str="p06t-ammo-rack-loss.v1";
@@ -35,8 +35,10 @@ fn rows(v:&Value)->io::Result<[Remaining;3]>{let a=v.as_array().ok_or_else(||bad
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct LossEvent{pub shot:u32,pub attacker_slot:u8,pub target_slot:u8,pub tick:u32,pub device_sequence:u32}
 impl LossEvent{
-    fn validate(self)->io::Result<()>{if !(1..=960).contains(&self.shot)||self.attacker_slot>=6||self.target_slot>=6||self.attacker_slot==self.target_slot
-        ||!(1000..=216000).contains(&self.tick)||!(1..=15360).contains(&self.device_sequence){return Err(bad("loss cause bounds"));}Ok(())}
+    // RES-30: slots/shots/device journal of a 30-actor battle (was 6/960/15360).
+    fn validate(self)->io::Result<()>{use crate::gateway091::shared::model::{MAX_ACTORS,MAX_BATTLE_SHOTS,MAX_DAMAGE_EVENTS};
+        if !(1..=MAX_BATTLE_SHOTS as u32).contains(&self.shot)||usize::from(self.attacker_slot)>=MAX_ACTORS||usize::from(self.target_slot)>=MAX_ACTORS||self.attacker_slot==self.target_slot
+        ||!(1000..=216000).contains(&self.tick)||!(1..=MAX_DAMAGE_EVENTS as u32).contains(&self.device_sequence){return Err(bad("loss cause bounds"));}Ok(())}
     fn value(self)->Value{serde_json::json!({"shot":self.shot,"attacker_slot":self.attacker_slot,"target_slot":self.target_slot,"tick":self.tick,"device_sequence":self.device_sequence})}
 }
 fn event(v:&Value)->io::Result<Option<LossEvent>>{if v.is_null(){return Ok(None);}keys(v,&["shot","attacker_slot","target_slot","tick","device_sequence"])?;
@@ -82,10 +84,10 @@ pub fn encode_request(c:&Context,r:&Request)->io::Result<Vec<u8>>{context(c)?;
         v["terminal_hp"]=(*terminal_hp).into();v["terminal_state_json"]=serde_json::to_string(&state).map_err(|_|bad("terminal serialization"))?.into();v["reason"]=reason.name().into();
         if (*reason==FinishReason::BattleFinished)!=results_json.is_some(){return Err(bad("natural full result required"));}
         if let Some(raw)=results_json{let result=Results::from_json_p06t(raw)?;if result.participants.iter().find(|p|p.account_dbid==c.native_database_id).is_none(){return Err(bad("result owner"));}
-            v["results_json"]=serde_json::to_string(&base::bounded_json(raw.as_bytes(),32768)?).map_err(|_|bad("result serialization"))?.into();}
+            v["results_json"]=serde_json::to_string(&base::bounded_result_json(raw.as_bytes())?).map_err(|_|bad("result serialization"))?.into();}
     }
     let raw=serde_json::to_vec(&v).map_err(|_|bad("request serialization"))?;
-    if raw.len()>if matches!(r,Request::Finish{results_json:Some(_),..}){65536}else if matches!(r,Request::Finish{..}){16384}else{2048}{return Err(bad("request bound"));}Ok(raw)
+    if raw.len()>if matches!(r,Request::Finish{results_json:Some(_),..}){MAX_RESULT_REQUEST}else if matches!(r,Request::Finish{..}){16384}else{2048}{return Err(bad("request bound"));}Ok(raw)
 }
 
 #[derive(Clone,Debug,PartialEq,Eq)]
@@ -178,7 +180,7 @@ pub fn encode_results_request(c:&Context,r:ResultsRequest)->io::Result<Vec<u8>>{
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]pub enum RecordContract{MixedV2,LossV1}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]pub enum ResultsStatus{Found,Missing,Acked,Rejected}
 #[derive(Clone,Debug,PartialEq)]pub struct ResultsReply{pub status:ResultsStatus,pub acked:bool,pub replayed:bool,pub code:Option<String>,pub results:Option<Results>,pub results_json:Option<String>,pub record_contract:Option<RecordContract>}
-pub fn parse_results_reply(raw:&[u8],c:&Context,r:ResultsRequest)->io::Result<ResultsReply>{encode_results_request(c,r)?;let v=base::bounded_json(raw,65536)?;
+pub fn parse_results_reply(raw:&[u8],c:&Context,r:ResultsRequest)->io::Result<ResultsReply>{encode_results_request(c,r)?;let v=base::bounded_json(raw,MAX_RESULT_REQUEST)?;
     keys(&v,&["version","contract","operation","account_id","native_database_id","command_key","arena_id","status","acked","results_json","replayed","code","policy_sha256","record_contract"])?;
     if number(&v,"version")?!=VERSION||text(&v,"contract")?!=CONTRACT||text(&v,"operation")?!=r.operation()||text(&v,"account_id")?!=c.account_id
         ||number(&v,"native_database_id")?!=c.native_database_id as u64||text(&v,"command_key")?!=c.command_key||text(&v,"arena_id")?!=r.arena().to_string()||text(&v,"policy_sha256")?!=POLICY_SHA256{return Err(bad("result reply binding"));}
@@ -225,6 +227,14 @@ mod tests{
                 let reply=parse_reply(&raw,&c,&r).unwrap();if let Some(s)=reply.reservation{s.frozen.validate_owned(&c.account_id).unwrap();}}
             seen+=1;
         }assert_eq!(seen,9);
+    }
+    #[test]fn res30_loss_event_slots_and_shots_of_a_thirty_actor_battle(){
+        use crate::gateway091::shared::model::{MAX_BATTLE_SHOTS,MAX_DAMAGE_EVENTS};
+        let good=LossEvent{shot:MAX_BATTLE_SHOTS as u32,attacker_slot:29,target_slot:0,tick:1200,device_sequence:MAX_DAMAGE_EVENTS as u32};
+        good.validate().unwrap();assert_eq!(event(&good.value()).unwrap(),Some(good));
+        LossEvent{attacker_slot:6,target_slot:7,shot:961,device_sequence:15361,..good}.validate().unwrap();
+        for bad in [LossEvent{attacker_slot:30,..good},LossEvent{target_slot:30,..good},LossEvent{target_slot:29,..good},
+            LossEvent{shot:MAX_BATTLE_SHOTS as u32+1,..good},LossEvent{device_sequence:MAX_DAMAGE_EVENTS as u32+1,..good}]{assert!(bad.validate().is_err(),"{bad:?}");}
     }
     #[test]fn p06t_loss_removed_ammunition_never_substitutes_for_actual_shots(){
         let v=finish_vector();let mut poisoned=v["request"].clone();let mut stats:Value=serde_json::from_str(text(&poisoned,"results_json").unwrap()).unwrap();

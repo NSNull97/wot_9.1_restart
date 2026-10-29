@@ -17,6 +17,10 @@ pub(super) struct Arena {
     pub(super) integrated:Option<IntegratedRuntime>,
     pub(super) template:BattleTemplate,
     pub(super) cursors:Cursors,
+    /// STAB-02: a failed battle that could not be rebuilt from its template.
+    /// The arena holds an inert empty World, takes no Join and is not stepped;
+    /// the reset is retried at this instant.
+    pub(super) closed:Option<Instant>,
 }
 
 /// Gateway -> arena. BW-01 carries the same messages over a local socket.
@@ -37,7 +41,7 @@ pub(super) fn arena_ids(count:usize,random:u64)->io::Result<Vec<u64>> {
 
 impl Arena {
     pub(super) fn new(index:usize,world:World,integrated:Option<IntegratedRuntime>,template:BattleTemplate)->Self {
-        Self{index,world,integrated,template,cursors:Cursors::default()}
+        Self{index,world,integrated,template,cursors:Cursors::default(),closed:None}
     }
     /// One more arena from the same validated template, with its own battle id.
     pub(super) fn from_template(index:usize,template:&BattleTemplate,id:u64,now:Instant)->io::Result<Self> {
@@ -92,12 +96,13 @@ pub(super) fn arena_of(s:&Session,arenas:&[Arena])->Option<usize> {
 }
 pub(super) fn home(s:&Session,arenas:&[Arena],lobby:usize)->usize {arena_of(s,arenas).unwrap_or(lobby)}
 
-/// Arena that takes the next Join reservation: first unstarted arena with a
-/// free place, else first unstarted, else 0 (then every arena is running).
+/// Arena that takes the next Join reservation: first unstarted open arena with
+/// a free place, else first unstarted open one, else 0 (then every arena is
+/// running or closed; the caller refuses a closed lobby).
 pub(super) fn lobby(arenas:&[Arena],table:&Table,retained:&[Session])->usize {
     if arenas.len()==1 {return 0;}
-    arenas.iter().position(|a|!a.started()&&table.arena_admission_open(retained,&a.world))
-        .or_else(||arenas.iter().position(|a|!a.started())).unwrap_or(0)
+    arenas.iter().position(|a|a.closed.is_none()&&!a.started()&&table.arena_admission_open(retained,&a.world))
+        .or_else(||arenas.iter().position(|a|a.closed.is_none()&&!a.started())).unwrap_or(0)
 }
 /// Sessions attached to an arena other than `except`.
 pub(super) fn attached_outside(arenas:&[Arena],except:usize)->Vec<u32> {

@@ -14,7 +14,7 @@ from p09d_ammo_projection import canonical
 from p09e_research_store import _json
 from p04m_pool_store import PoolStore
 from p04m_stock_registry import mixed_admission
-from p08b_battle_store import _uuid, _integer, REASONS
+from p08b_battle_store import _uuid, _integer, REASONS, MAX_RESULT_BYTES, MAX_RESULT_REQUEST
 from p08c_battle_results import results_value
 from destructible_catalog import json_value, no_links
 from p06t_terminal import TerminalPolicy, MANIFEST_SHA256
@@ -65,9 +65,9 @@ def validate_request(value, account):
             require(type(row) is dict and set(row) == {"shell_compact_id", "count"}, "INVALID_INPUT")
             _integer(row["shell_compact_id"], 1); _integer(row["count"], 0, 160)
     if natural:
-        require(type(value["results_json"]) is str and len(value["results_json"].encode("utf8")) <= 32768, "INVALID_INPUT")
+        require(type(value["results_json"]) is str and len(value["results_json"].encode("utf8")) <= MAX_RESULT_BYTES, "INVALID_INPUT")
         value = dict(value, results_json=canonical(results_value(value["results_json"])).decode("ascii"))
-    require(len(canonical(value)) <= (65536 if natural else 16384 if value["operation"]=="finish" else 2048), "INVALID_INPUT")
+    require(len(canonical(value)) <= (MAX_RESULT_REQUEST if natural else 16384 if value["operation"]=="finish" else 2048), "INVALID_INPUT")
     return deepcopy(value)
 
 
@@ -417,7 +417,7 @@ class MixedAmmoStore(PoolStore):
             if destination != revision: self._save_crew_projection(account,destination,public)
             response = self._mixed_reply(request,destination,status,reservation,legacy)
             raw = canonical(dict(schema=SCHEMA,request=request,response=response))
-            require(len(raw) <= 65536, "PROFILE_TOO_LARGE")
+            require(len(raw) <= MAX_RESULT_REQUEST, "PROFILE_TOO_LARGE")
             c.execute("INSERT INTO game_command_ledger VALUES (?,?,?,?,?,?,?,?)", (account,key,command,payload,revision,destination,raw.decode("ascii"),sha(raw)))
             self._failpoint("after_mixed_ledger"); self.read_profile(account); self._failpoint("before_mixed_commit")
             c.commit(); return response
@@ -426,7 +426,7 @@ class MixedAmmoStore(PoolStore):
     def _read_mixed_result(self, account, native, arena):
         row = self.connection.execute("SELECT * FROM p06t_result WHERE account_id=? AND arena_id=?", (account,arena)).fetchone()
         require(row is not None, "RESULT_NOT_READY")
-        require(type(row["results_json"]) is str and len(row["results_json"].encode("utf8")) <= 32768
+        require(type(row["results_json"]) is str and len(row["results_json"].encode("utf8")) <= MAX_RESULT_BYTES
             and sha(row["results_json"].encode("ascii")) == row["results_sha256"], "CORRUPT_STORE")
         value = results_value(row["results_json"])
         reservation = self._mixed_reservation(self.connection.execute("SELECT * FROM p06t_reservation WHERE account_id=? AND reservation_id=?", (account,row["reservation_id"])).fetchone())
@@ -468,7 +468,7 @@ class MixedAmmoStore(PoolStore):
         value={key:request[key]for key in("version","operation","account_id","native_database_id","command_key","arena_id")}
         value.update(status=status,acked=bool(row["acked"])if row else False,results_json=row["results_json"]if row else None,
             replayed=replayed,code=code,policy_sha256=POLICY_SHA256)
-        require(len(canonical(value))<=65536,"PROFILE_TOO_LARGE");return value
+        require(len(canonical(value))<=MAX_RESULT_REQUEST,"PROFILE_TOO_LARGE");return value
 
 
 def results_service_mixed(store,request,*,authenticated_account_id):

@@ -28,6 +28,18 @@ POLICY = {"id": "test_lab.profile13-stock-ap-free-repair.v1", "version": 1,
     "credits": 0, "xp": 0, "per_shot_durability": False}
 POLICY_SHA256 = sha(canonical(POLICY))
 MAX_REPLY = 8192
+# RES-30 roster30: battles of 7..30 actors. A result journal of 2..6 rows keeps
+# its original 32KiB budget; 7..30 rows (structural maximum ~207KB) get 256KiB.
+# Requests, replies and ledgers carrying one escaped journal: 640KiB.
+MAX_PARTICIPANTS = 30
+LEGACY_PARTICIPANTS = 6
+MAX_RESULT_BYTES_LEGACY = 32768
+MAX_RESULT_BYTES = 262144
+MAX_RESULT_REQUEST = 655360
+
+
+def result_budget(rows):
+    return MAX_RESULT_BYTES_LEGACY if rows <= LEGACY_PARTICIPANTS else MAX_RESULT_BYTES
 COMMON = {"version", "operation", "account_id", "native_database_id", "command_key", "expected_revision", "run_id"}
 EXTRA = {"run_open": set(), "inspect": set(), "admit": {"battle_id", "native_inventory_id"},
     "finish": {"battle_id", "native_inventory_id", "reservation_id", "remaining_ap", "terminal_hp", "reason"}}
@@ -71,8 +83,8 @@ def validate_request(value, authenticated_account_id):
         _integer(value["remaining_ap"], 0, 96); _integer(value["terminal_hp"], 0, 100000)
         require(type(value["reason"]) is str and value["reason"] in REASONS, "INVALID_INPUT")
     if natural:
-        require(type(value["results_json"]) is str and len(value["results_json"].encode("utf-8")) <= 32768, "INVALID_INPUT")
-    require(len(canonical(value)) <= (65536 if natural else 2048), "INVALID_INPUT")
+        require(type(value["results_json"]) is str and len(value["results_json"].encode("utf-8")) <= MAX_RESULT_BYTES, "INVALID_INPUT")
+    require(len(canonical(value)) <= (MAX_RESULT_REQUEST if natural else 2048), "INVALID_INPUT")
     return deepcopy(value)
 
 
@@ -372,7 +384,7 @@ class BattleStore(ResearchStore):
             if destination != revision: self._save_crew_projection(account, destination, public_before)
             response = self._reply(request, destination, status, reservation)
             journal = canonical({"schema": SCHEMA, "request": request, "response": response}).decode("ascii")
-            require(len(journal) <= (65536 if request.get("reason") == "battle_finished" else MAX_REPLY), "PROFILE_TOO_LARGE")
+            require(len(journal) <= (MAX_RESULT_REQUEST if request.get("reason") == "battle_finished" else MAX_REPLY), "PROFILE_TOO_LARGE")
             c.execute("INSERT INTO game_command_ledger VALUES (?,?,?,?,?,?,?,?)", (account, key, command, payload_sha, revision, destination, journal, sha(journal.encode("ascii"))))
             self._failpoint("after_battle_ledger"); self.read_profile(account); self._failpoint("before_battle_commit")
             c.commit(); return response

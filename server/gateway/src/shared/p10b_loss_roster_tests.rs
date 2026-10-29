@@ -15,7 +15,8 @@ fn input(target:usize,empty:bool)->rack::Input{rack::Input{shot:1,target,attacke
 #[test]
 fn p10b_loss_roster_N2_to6_same_or_new_id_rebinds_empty_ledger_without_source_mutation(){
     let now=Instant::now();let original=source(951,now);
-    for n in 2..=6{for id in [951,952]{
+    // RES-30: rosters 7..30 select the same pristine loss template.
+    for n in [2,3,4,5,6,7,30]{for id in [951,952]{
         let mut selected=original.fresh_loss_roster(id,n,now+Duration::from_secs(2)).unwrap();
         assert_eq!(selected.id,id);assert_eq!(selected.last,now+Duration::from_secs(2));assert_eq!(selected.rng_state,id);assert_eq!(selected.tick,1000);
         assert_eq!(selected.expected_actors(),n);assert!(selected.team_plan().is_none());assert!(selected.actors.is_empty()&&selected.started.is_none());
@@ -28,7 +29,7 @@ fn p10b_loss_roster_N2_to6_same_or_new_id_rebinds_empty_ledger_without_source_mu
         assert!(matches!(ledger.apply(input(n-1,false)).unwrap(),rack::Outcome::New(_)));
         assert_eq!(ledger.events()[0].target(),n-1);assert_eq!(original.expected_actors(),6);assert!(original.ammo_detonation.as_ref().unwrap().is_pristine());
     }}
-    for n in [0,1,7]{assert!(original.fresh_loss_roster(952,n,now).is_err());}
+    for n in [0,1,31]{assert!(original.fresh_loss_roster(952,n,now).is_err());}
     assert!(original.fresh_loss_roster(0,2,now).is_err());assert!(original.fresh_loss_roster(i64::MAX as u64+1,2,now).is_err());
     assert!(original.fresh_battle(original.id,now).is_err());
     let mut legacy_setter=original.clone();assert!(legacy_setter.set_expected_actors(2).is_err());assert!(legacy_setter.set_expected_actors(6).is_err());

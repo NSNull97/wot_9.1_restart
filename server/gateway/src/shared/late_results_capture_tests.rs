@@ -91,3 +91,9 @@ pub(super) fn final_outcome(f:&mut Fixture){f.world.detach(1).unwrap();f.world.a
     f.world.detach(2).unwrap();assert!(!f.capture.capture_final(&f.world).unwrap());assert_eq!(f.capture.seal().unwrap().raw(),old.raw());
     assert!(!f.capture.seal().unwrap().results().participants[1].premature_leave);
 }
+/// RES-30: these observers are cloned by value on the gateway main thread
+/// (Windows: 1MB). Rows for 30 actors live on the heap, not in the struct.
+#[test]fn res30_late_capture_stays_small_on_the_stack(){
+    assert!(std::mem::size_of::<Capture>()<=512,"Capture {}",std::mem::size_of::<Capture>());
+    let c=Capture::new("87654321-4321-4321-8321-cba987654321".into(),7).unwrap();assert_eq!(c.releases.len(),MAX_ACTORS);
+}

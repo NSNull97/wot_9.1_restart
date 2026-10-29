@@ -33,7 +33,7 @@ impl<'de>Deserialize<'de>for Unique{fn deserialize<D:Deserializer<'de>>(d:D)->Re
         fn visit_i64<E:de::Error>(self,v:i64)->Result<Unique,E>{Ok(Unique(v.into()))}
         fn visit_u64<E:de::Error>(self,v:u64)->Result<Unique,E>{Ok(Unique(v.into()))}
         fn visit_unit<E:de::Error>(self)->Result<Unique,E>{Ok(Unique(Value::Null))}
-        fn visit_str<E:de::Error>(self,v:&str)->Result<Unique,E>{if v.len()>32768{return Err(E::custom("string"));}Ok(Unique(v.into()))}
+        fn visit_str<E:de::Error>(self,v:&str)->Result<Unique,E>{if v.len()>RESULT_JSON{return Err(E::custom("string"));}Ok(Unique(v.into()))}
         fn visit_string<E:de::Error>(self,v:String)->Result<Unique,E>{self.visit_str(&v)}
         fn visit_seq<S:SeqAccess<'de>>(self,mut s:S)->Result<Unique,S::Error>{let mut rows=Vec::new();while let Some(Unique(v))=s.next_element()?{
             if rows.len()>=256{return Err(de::Error::custom("array"));}rows.push(v);}Ok(Unique(Value::Array(rows)))}
@@ -41,11 +41,16 @@ impl<'de>Deserialize<'de>for Unique{fn deserialize<D:Deserializer<'de>>(d:D)->Re
             if k.is_empty()||k.len()>64||rows.len()>=32||rows.insert(k,v).is_some(){return Err(de::Error::custom("duplicate/object"));}}
             Ok(Unique(Value::Object(rows.into_iter().collect())))}
     }d.deserialize_any(V)}}
-fn walk(v:&Value,d:usize,n:&mut usize)->io::Result<()>{*n+=1;if d>12||*n>2048{return Err(bad("depth/nodes"));}
-    match v{Value::Object(m)=>for v in m.values(){walk(v,d+1,n)?},Value::Array(a)=>for v in a{walk(v,d+1,n)?},_=>{}}Ok(())}
-pub fn bounded_json(raw:&[u8],maximum:usize)->io::Result<Value>{if raw.is_empty()||raw.len()>maximum||maximum>65536{return Err(bad("size"));}
-    let Unique(v)=serde_json::from_slice(raw).map_err(|_|bad("unique integer JSON"))?;walk(&v,0,&mut 0)?;
+use crate::gateway091::shared::{lifecycle_wire::{MAX_RESULT_JSON as RESULT_JSON,MAX_RESULT_REQUEST as RESULT_REQUEST},model::MAX_ACTORS};
+fn walk(v:&Value,d:usize,n:&mut usize,nodes:usize)->io::Result<()>{*n+=1;if d>12||*n>nodes{return Err(bad("depth/nodes"));}
+    match v{Value::Object(m)=>for v in m.values(){walk(v,d+1,n,nodes)?},Value::Array(a)=>for v in a{walk(v,d+1,n,nodes)?},_=>{}}Ok(())}
+fn bounded_nodes(raw:&[u8],maximum:usize,nodes:usize)->io::Result<Value>{if raw.is_empty()||raw.len()>maximum||maximum>RESULT_REQUEST{return Err(bad("size"));}
+    let Unique(v)=serde_json::from_slice(raw).map_err(|_|bad("unique integer JSON"))?;walk(&v,0,&mut 0,nodes)?;
     if!v.is_object(){return Err(bad("root"));}Ok(v)}
+pub fn bounded_json(raw:&[u8],maximum:usize)->io::Result<Value>{bounded_nodes(raw,maximum,2048)}
+/// RES-30: one result journal (30 rows, 30 targets each, ≈11.6K nodes). A
+/// journal of 2..6 rows stays far below the general 2048-node bound.
+pub fn bounded_result_json(raw:&[u8])->io::Result<Value>{bounded_nodes(raw,RESULT_JSON,16384)}
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Remaining{pub shell_compact_id:u16,pub count:u16}
@@ -162,13 +167,14 @@ impl Request{pub fn operation(&self)->&'static str{match self{Self::RunOpen=>"ru
 
 /// Independent health/death status is explicit for v2: a dead crew can leave
 /// positive hull HP. Existing v1 Results::validate is deliberately unchanged.
-fn results_v2(raw:&str)->io::Result<Results>{if raw.is_empty()||raw.len()>32768{return Err(bad("result bytes"));}
+fn results_v2(raw:&str)->io::Result<Results>{if raw.is_empty()||raw.len()>RESULT_JSON{return Err(bad("result bytes"));}
     let r:Results=serde_json::from_str(raw).map_err(|_|bad("strict results DTO"))?;
     if r.arena_id==0||r.arena_id>i64::MAX as u64||crate::map_profile091::MapId::from_arena_type_id(r.arena_type_id).is_err()||r.created_unix==0||r.winner_team>2
-        ||!(1..=5).contains(&r.finish_reason)||r.duration_seconds>3600||!(2..=6).contains(&r.participants.len()){return Err(bad("result header"));}
+        ||!(1..=5).contains(&r.finish_reason)||r.duration_seconds>3600||!(2..=MAX_ACTORS).contains(&r.participants.len()){return Err(bad("result header"));}
+    r.validate_json_bytes(raw.len())?;
     for(i,p)in r.participants.iter().enumerate(){if p.vehicle_id==0||p.vehicle_id>i32::MAX as u32||p.account_dbid<=0||!(1..=2).contains(&p.team)
         ||p.type_compact_descr==0||p.type_compact_descr>i32::MAX as u32||!(0..=10000).contains(&p.health)||p.shots>192||p.direct_hits>192||p.piercings>192
-        ||p.damage_dealt>60000||p.damage_received>10000||p.kills>6||p.capture_points>600||p.dropped_capture_points>600||p.mileage_metres>200000
+        ||p.damage_dealt>60000||p.damage_received>10000||usize::from(p.kills)>=MAX_ACTORS||p.capture_points>600||p.dropped_capture_points>600||p.mileage_metres>200000
         ||p.life_time>r.duration_seconds||p.killer_id>i32::MAX as u32||!(-1..=10).contains(&p.death_reason)||p.name.is_empty()||p.name.len()>48
         ||p.name.chars().any(|c|c.is_control())||p.health==0&&p.death_reason<0
         ||p.killer_id!=0&&!r.participants.iter().any(|q|q.vehicle_id==p.killer_id)
@@ -193,7 +199,7 @@ pub fn encode_request(c:&Context,r:&Request)->io::Result<Vec<u8>>{
         v["remaining_ammunition"]=remaining_ammunition.iter().map(|a|serde_json::json!({"shell_compact_id":a.shell_compact_id,"count":a.count})).collect::<Vec<_>>().into();
         if let Some(raw)=results_json{let result=results_v2(raw)?;let own=result.participants.iter().find(|p|p.account_dbid==c.native_database_id).ok_or_else(||bad("result owner"))?;
             if result.arena_id!=*battle||own.health!=*terminal_hp{return Err(bad("result battle/HP"));}v["results_json"]=raw.as_str().into();}}
-    let raw=serde_json::to_vec(&v).map_err(|_|bad("encode"))?;bounded_json(&raw,match r{Request::Finish{results_json:Some(_),..}=>65536,Request::Finish{..}=>16384,_=>2048})?;Ok(raw)
+    let raw=serde_json::to_vec(&v).map_err(|_|bad("encode"))?;bounded_json(&raw,match r{Request::Finish{results_json:Some(_),..}=>RESULT_REQUEST,Request::Finish{..}=>16384,_=>2048})?;Ok(raw)
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]pub enum ReservationStatus{Active,Finished,AbortedRestart}
@@ -208,7 +214,7 @@ fn parse_remaining(v:&Value,f:&Frozen)->io::Result<[Remaining;3]>{let rows=v.as_
 fn terminal_state(v:&Value,f:&Frozen,hp:i16)->io::Result<TerminalState>{
     keys(v,&["policy_revision","roster_size","crew_active","crew","devices","fire","death"])?;
     if serde_json::to_vec(v).map_err(|_|bad("terminal JSON"))?.len()>8192||text(v,"policy_revision")?!="test_lab.p06t.devices-proxy-fire.v1"{return Err(bad("terminal pinned policy"));}
-    let roster_size=u8::try_from(number(v,"roster_size")?).map_err(|_|bad("roster bound"))?;if roster_size>6{return Err(bad("roster bound"));}
+    let roster_size=u8::try_from(number(v,"roster_size")?).map_err(|_|bad("roster bound"))?;if usize::from(roster_size)>MAX_ACTORS{return Err(bad("roster bound"));}
     let crew_active=flag(v,"crew_active")?;let crew=v["crew"].as_array().ok_or_else(||bad("crew state"))?;
     if crew.len()!=f.crew_ids.len(){return Err(bad("frozen crew count"));}let mut any=false;
     for(row,id)in crew.iter().zip(&f.crew_ids){keys(row,&["crew_id","alive"])?;if text(row,"crew_id")?!=id{return Err(bad("frozen crew identity/order"));}any|=flag(row,"alive")?;}

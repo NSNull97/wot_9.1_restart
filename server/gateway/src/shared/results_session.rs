@@ -10,7 +10,8 @@ use super::{super::Session,lifecycle_wire::{self,Results}};
 const MAX_PENDING:usize=8;
 const MAX_QUERIES:usize=128;
 const MAX_COMMANDS:u32=512;
-const MAX_HTTP:usize=65536;
+// RES-30: a reply may carry one 7..30-row journal (was 64KiB).
+const MAX_HTTP:usize=lifecycle_wire::MAX_RESULT_REQUEST;
 const RETRY:Duration=Duration::from_millis(500);
 fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,format!("battle results: {reason}"))}
 
@@ -215,9 +216,9 @@ fn reply(raw:&[u8],task:&Task)->io::Result<Reply> {
         if !fields["results_json"].is_null()||acked||replayed{return Err(bad("HTTP missing result shape"));}None
     }else{
         let raw=fields["results_json"].as_str().ok_or_else(||bad("HTTP result string"))?;
-        if raw.len()>lifecycle_wire::MAX_RESULT_BYTES{return Err(bad("HTTP result string size"));}
+        if raw.len()>lifecycle_wire::MAX_RESULT_JSON{return Err(bad("HTTP result string size"));}
         let parsed:Results=serde_json::from_str(raw).map_err(|_|bad("HTTP typed result fields"))?;
-        if task.mixed{parsed.validate_p06t()?;}else{parsed.validate()?;}
+        if task.mixed{parsed.validate_p06t()?;}else{parsed.validate()?;}parsed.validate_json_bytes(raw.len())?;
         if parsed.arena_id!=task.request.arena||!parsed.participants.iter().any(|p|p.account_dbid==task.owner.database_id)
             ||status=="acked"&&!acked{return Err(bad("HTTP result owner/arena/ack binding"));}
         Some(Arc::new(parsed))

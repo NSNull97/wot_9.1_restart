@@ -209,7 +209,9 @@ impl BatchRuntime {
         if let Some(frame)=frame{
             let contacts=self.checked_contacts(world,&frame)?;
             let rows=frame.actors.iter().map(|a|(a.slot,a.pose.position,a.pose.direction,a.pose.speed)).collect::<Vec<_>>();
+            let clone_span=super::super::step_profile::span(super::super::step_profile::Part::SceneClone);
             let mut candidate=world.clone();
+            drop(clone_span);
             if frame.sequence==0 {
                 candidate.import_external_poses(&rows)?;
                 let spec=self.spec.as_ref().ok_or_else(||model::bad())?;

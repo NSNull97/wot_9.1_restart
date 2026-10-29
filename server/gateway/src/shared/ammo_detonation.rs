@@ -7,10 +7,11 @@ use crate::p06t_device_caps::{Device,Profile};
 
 pub const POLICY:&str="test_lab.p06t.ammo-bay-zero-loaded-detonation.v1";
 pub const FLIGHT_POLICY:&str="test_lab.p06t.detached-turret-ballistic-terrain-clamp.v2-persistent-resting";
-pub const MAX_EVENTS:usize=6;
+/// RES-30: at most one rack event per actor of a 30-actor roster (was 6).
+pub const MAX_EVENTS:usize=super::model::MAX_ACTORS;
 pub const MAX_TIME_MS:u64=3_600_000;
 pub const FLIGHT_LIFETIME_MS:u64=5_000;
-const MAX_SHOT:u32=960;
+const MAX_SHOT:u32=super::model::MAX_BATTLE_SHOTS as u32;
 const MAX_POSITION:f32=100_000.;
 // PROJECT visual trajectory, not historical impulse/Jolt simulation. A point
 // samples authoritative static terrain at each publication and clamps on land.
@@ -46,7 +47,7 @@ impl Input{
         let max=(*profile.caps())[Device::AmmoBay as usize].max;
         let total=self.counts.iter().map(|n|u32::from(*n)).sum::<u32>();
         if self.shot==0||self.shot>MAX_SHOT||self.target>=usize::from(roster)||self.attacker>=usize::from(roster)||self.attacker==self.target
-            ||!(1000..=37000).contains(&self.tick)||!(1..=15360).contains(&self.device_sequence)
+            ||!(1000..=37000).contains(&self.tick)||!(1..=super::model::MAX_DAMAGE_EVENTS as u32).contains(&self.device_sequence)
             ||self.device_before==0||self.device_before>max||self.device_after!=0
             ||self.health_before==0||self.health_before>self.kind.max_health()as u16||self.residual_hp>self.health_before
             ||total>u32::from(self.kind.ammo_limit()){return Err(bad("detonation source transition or counts bounds"));}

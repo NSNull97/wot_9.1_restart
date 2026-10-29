@@ -148,6 +148,7 @@ impl Dispatcher {
                 return Err(io::Error::new(io::ErrorKind::InvalidData,format!("P08B terminal rejected {:?}",reply.code)));
             }
             s.shared.as_mut().ok_or_else(||model::bad())?.join_requested=false;
+            Self::withdraw_matched_queue(s);
             if s.active {s.outbox.push_back(crate::battle091::profile13::enqueue_failure(reply.code.as_deref().unwrap_or("UNAVAILABLE"))?);}
             println!("P08B_ADMISSION_REJECTED session={sid} code={:?} reserved=false",reply.code);
             return Ok(());
@@ -170,7 +171,8 @@ impl Dispatcher {
                 let c=s.shared.as_mut().ok_or_else(||model::bad())?;
                 if s.active && c.join_requested {
                     if s.outbox.len()>=128 {return Err(model::bad());}
-                    s.outbox.push_back(crate::map_drive_world091::queue_callback(true));c.queue_announced=true;
+                    if !Self::matched_queue_announced(c) {s.outbox.push_back(crate::map_drive_world091::queue_callback(true));}
+                    c.queue_announced=true;
                 } else {
                     let terminal=Terminal::cancelled(c.profile13.as_ref().and_then(|p|p.reservation.as_ref()).ok_or_else(||model::bad())?)?;
                     c.profile13.as_mut().ok_or_else(||model::bad())?.retain_terminal(terminal)?;
@@ -200,6 +202,17 @@ impl Dispatcher {
             _=>return Err(model::bad()),
         }
         Ok(())
+    }
+    /// MM-01: a matched Join was announced (`onEnqueued`) when it queued.
+    fn matched_queue_announced(c:&Client)->bool {
+        c.queue_announced&&c.profile13.as_ref().is_some_and(|p|p.match_gate!=service::MatchGate::Off)
+    }
+    /// MM-01: a refused matched admission leaves the announced native queue.
+    fn withdraw_matched_queue(s:&mut Session) {
+        let Some(c)=s.shared.as_mut() else {return;};
+        if !Self::matched_queue_announced(c) {return;}
+        c.queue_announced=false;
+        if s.active {s.outbox.push_back(crate::map_drive_world091::queue_callback(false));}
     }
     pub(super) fn poll(&mut self,table:&mut Table,config:Arc<crate::identity091::Config>,now:Instant)->io::Result<()> {
         if let Some(late)=&mut self.late{late.observe_sessions(table.sessions.iter().chain(self.retired.iter()));}
@@ -261,7 +274,7 @@ impl Dispatcher {
                 // actually detached (or the entire failed world was replaced).
                 if pending && (world.actors.iter().any(|a|a.session==Some(s.id))||self.attached_elsewhere.contains(&s.id)) {continue;}
                 if !pending && (world.started.is_some() || p.selection.is_none() || !s.active || !c.join_requested
-                    || !s.ammo_service.as_ref().is_some_and(ammo_session::State::idle) || !arena_open) {continue;}
+                    || !s.ammo_service.as_ref().is_some_and(ammo_session::State::idle) || !arena_open || !p.admits_into(world.id)) {continue;}
                 let owner=s.identity.clone().ok_or_else(||model::bad())?;
                 let revision=s.ammo_service.as_ref().ok_or_else(||model::bad())?.revision();
                 let sid=s.id;let p=state(s)?;p.revision=revision;

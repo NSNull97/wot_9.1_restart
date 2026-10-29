@@ -49,3 +49,21 @@ fn ready()->(Manager,World,Instant){let(capture,world,now)=capture::saved_sql_co
     m.invalidate_source(&run,world.id);assert!(m.captures[0].invalid.is_some());assert!(m.captures[1].invalid.is_none());assert_eq!(world.actors.iter().map(|a|a.health).collect::<Vec<_>>(),hp);
     assert!(m.select_work().unwrap().is_none());assert_eq!(world.actors.len(),model::CAPACITY);
 }
+/// RES-30: an Entry (Capture + per-owner states) is cloned by value on the gateway main thread.
+#[test]fn res30_late_entry_stays_small_on_the_stack(){
+    assert!(std::mem::size_of::<Entry>()<=1024,"Entry {}",std::mem::size_of::<Entry>());
+    assert!(std::mem::size_of::<Install>()<=1024,"Install {}",std::mem::size_of::<Install>());
+}
+/// RES-30: the late observer runs on the gateway main thread (Windows: 1MB).
+/// Even the debug build's install/register/select path fits 256KiB now
+/// (before the heap rows, register_world_inner alone took a 267KB debug frame).
+/// Fixture World construction (pre-existing ~107KB frames) stays outside.
+#[test]fn res30_late_manager_path_fits_a_quarter_megabyte_thread(){
+    let(capture,world,_)=capture::saved_sql_component_fixture();let world=Box::new(world);let capture=Box::new(capture);
+    thread::Builder::new().stack_size(256*1024).spawn(move||{
+        let owners=capture.links().iter().map(|l|l.owner().account_id.clone()).collect();let mut m=Box::new(Manager::new(owners,false).unwrap());
+        let install=m.stage_install(*capture).unwrap();m.commit_install(install);
+        let sessions:[super::super::super::Session;0]=[];let _=m.register_world(&sessions,&world,"87654321-4321-4321-8321-cba987654321");
+        assert!(m.select_work().unwrap().is_some());
+    }).unwrap().join().unwrap();
+}

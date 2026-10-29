@@ -3,10 +3,14 @@
 pub(crate) mod model;
 pub(crate) mod p10b_team_plan;
 pub(crate) mod team_spawn;
+pub(crate) mod matchmaker;
 #[cfg(test)]
 mod spawn15_wire_tests;
 pub(crate) mod visibility;
 pub(crate) mod spotting;
+pub(crate) mod step_profile;
+pub(crate) mod net01;
+pub(crate) mod journal;
 pub(crate) mod p07b_publication;
 pub(crate) mod interest_wire;
 pub(crate) mod ammo_detonation;
@@ -33,6 +37,7 @@ pub(crate) mod client_marker;
 pub(crate) mod ap;
 mod account_policy;
 mod impact_wire;
+mod av01_feedback;
 pub(crate) mod terrain;
 pub(crate) mod obstacles;
 mod terrain_wire;
@@ -103,6 +108,11 @@ pub(super) struct Client {
     private_pending: VecDeque<PrivatePending>,
     turrets: turret_publication::State,
     last_pose_tick: Option<u32>,
+    /// NET-01: gateway.json `pose_delivery` (kept across battles, like spotting).
+    pose_delivery: net01::PoseDelivery,
+    /// NET-01 latest-unreliable: bodies of the newest tick's pose not sent yet.
+    poses_out: Vec<Vec<u8>>,
+    pose_stats: net01::PoseStats,
     binding: Option<(u32, bool)>,
     area_creation: Option<(u32, bool)>,
     pending_area_scene: bool,
@@ -132,6 +142,12 @@ pub(super) struct Client {
     owner_health_sent: Option<i16>,
     tracer_started: [bool; model::MAX_BATTLE_SHOTS],
     tracer_stopped: [bool; model::MAX_BATTLE_SHOTS],
+    /// AV-01: last engineMode / damageStickers queued per created vehicle
+    /// (None: unknown to the client, publish the current value), and the
+    /// scout-event cursor.
+    engine_sent: [Option<[u8; 2]>; model::MAX_ACTORS],
+    stickers_sent: [Option<Vec<u64>>; model::MAX_ACTORS],
+    scout_cursor: usize,
     return_generation: u32,
     return_mask: u8,
     join_requested: bool,
@@ -151,9 +167,10 @@ impl Client {
         Self { slot, phase: Phase::Account, view: None, contained_world: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; model::MAX_ACTORS],
             creation_announcements: [None; model::MAX_ACTORS], spotting_enabled: false, interest: None,
             private_pending: VecDeque::new(), turrets:turret_publication::State::new(), last_pose_tick: None,
+            pose_delivery: net01::PoseDelivery::Reliable, poses_out: Vec::new(), pose_stats: net01::PoseStats::default(),
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:[None;model::MAX_ACTORS],armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
-            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
+            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -163,7 +180,9 @@ impl Client {
         let profile13 = self.profile13.take();
         let return_source_revision = self.return_source_revision;
         let spotting_enabled = self.spotting_enabled;
+        let pose_delivery = self.pose_delivery;
         *self = Self::new(slot);
+        self.pose_delivery = pose_delivery;
         self.return_generation = generation;
         self.queue_announced = queue_announced;
         self.profile13 = profile13;
@@ -224,6 +243,17 @@ impl Client {
                 && self.creation_announcements[slot] == book.announcement_sequence(slot))
         })
     }
+    pub(super) fn set_pose_delivery(&mut self, mode: net01::PoseDelivery) -> io::Result<()> {
+        // Like spotting: chosen before a battle; unreliable poses need the AoI book.
+        if self.phase!=Phase::Account || mode==net01::PoseDelivery::LatestUnreliable && !self.spotting_enabled { return Err(bad()); }
+        self.pose_delivery=mode;Ok(())
+    }
+    pub(super) fn pose_delivery(&self) -> net01::PoseDelivery { self.pose_delivery }
+    /// Bodies of the newest unsent pose; empty unless latest-unreliable.
+    pub(super) fn take_poses(&mut self) -> Vec<Vec<u8>> { std::mem::take(&mut self.poses_out) }
+    pub(super) fn take_pose_stats(&mut self) -> net01::PoseStats { std::mem::take(&mut self.pose_stats) }
+    pub(super) fn record_pose_packet(&mut self, bytes: usize) { self.pose_stats.packets+=1; self.pose_stats.bytes+=bytes as u64; }
+    pub(super) fn in_battle(&self) -> bool { matches!(self.phase, Phase::Driving | Phase::Leaving) }
     pub(super) fn enable_spotting(&mut self) -> io::Result<()> {
         // Enable only before a battle; replacing a live book would unpair AoI.
         if self.phase!=Phase::Account || self.creations.iter().any(Option::is_some) { return Err(bad()); }
@@ -232,7 +262,7 @@ impl Client {
     }
     fn clear_creation(&mut self, slot:usize) {
         self.creations[slot]=None;self.creation_announcements[slot]=None;self.health_sent[slot]=None;self.ready_sent[slot]=false;
-        self.crew_sent[slot]=None;self.fire_sent[slot]=None;
+        self.crew_sent[slot]=None;self.fire_sent[slot]=None;self.engine_sent[slot]=None;self.stickers_sent[slot]=None;
         self.pending_entity_requests.retain(|pending|*pending!=slot);
         let pending=std::mem::take(&mut self.private_pending);
         for p in pending {
@@ -246,7 +276,7 @@ impl Client {
         // a quick LOS flap may preserve the same native announcement epoch.
         for &(slot,_) in &pending.targets {
             self.health_sent[slot]=None;
-            self.crew_sent[slot]=None;self.fire_sent[slot]=None;
+            self.crew_sent[slot]=None;self.fire_sent[slot]=None;self.engine_sent[slot]=None;self.stickers_sent[slot]=None;
             if slot==self.slot {self.owner_health_sent=None;self.devices_snapshot_sent=false;}
         }
     }
@@ -814,8 +844,15 @@ impl Session {
             } else if id == 0x0d {
                 if world.actors.get(c.slot).is_none_or(|actor| actor.alive())
                     || !c.correction || !c.binding.is_some_and(|(_,ack)| ack) { return Err(bad()); }
-                wire::postmortem_rebind(raw,c.slot)?;
-                events.push(format!("SHARED_POSTMORTEM_REBIND session={} slot={} target={} authority_changed=false",self.id,c.slot,wire::vehicle_id(c.slot)?));
+                // Observer camera requests are consumed in every well-formed
+                // case: a refused one must not stall the reliable sequence.
+                let target=wire::postmortem_bind_target(raw)?;
+                match wire::postmortem_camera(world,c.slot,target)? {
+                    wire::PostmortemCamera::Own=>events.push(format!("SHARED_POSTMORTEM_REBIND session={} slot={} target={target} authority_changed=false",self.id,c.slot)),
+                    wire::PostmortemCamera::Ally(slot)=>events.push(format!("SHARED_POSTMORTEM_OBSERVE session={} slot={} target_slot={slot} target={target} authority_changed=false interest_changed=false",self.id,c.slot)),
+                    wire::PostmortemCamera::Unbind=>events.push(format!("SHARED_POSTMORTEM_UNBIND session={} slot={} authority_changed=false",self.id,c.slot)),
+                    wire::PostmortemCamera::Refused=>events.push(format!("SHARED_UNSUPPORTED session={} method=bindToVehicle target={target} refused=true domain_applied=false",self.id)),
+                }
             } else if let Some(commands) = fire::parse(raw)? {
                 if !c.correction { return Err(bad()); }
                 c.commands.extend(commands.into_iter().map(Command::Fire));
@@ -1557,7 +1594,12 @@ mod shared_return_tests {
         let mut postmortem = vec![0x0d, 8, 0, 0, 0, 0, 0]; postmortem.extend(wire::vehicle_id(1).unwrap().to_le_bytes());
         s.receive(&frame(&s, &postmortem, 0), now).unwrap();
         assert!(s.shared.as_ref().unwrap().commands.is_empty()); assert_eq!(s.tx.len(), 1);
-        let before = s.clone(); postmortem[7..].copy_from_slice(&wire::vehicle_id(0).unwrap().to_le_bytes());
+        // POSTMORTEM-01: an ally camera bind is a drained camera call too.
+        postmortem[7..].copy_from_slice(&wire::vehicle_id(0).unwrap().to_le_bytes());
+        s.receive(&frame(&s, &postmortem, 0), now).unwrap();
+        assert!(s.shared.as_ref().unwrap().commands.is_empty()); assert_eq!(s.tx.len(), 1);
+        assert_eq!(s.drive_return_account.as_ref().unwrap().stale_avatar_envelopes, 2);
+        let before = s.clone(); postmortem[3] = 1;
         assert!(s.receive(&frame(&s, &postmortem, 0), now).is_err()); same(&s, &before);
     }
 

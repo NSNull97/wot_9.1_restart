@@ -1,5 +1,10 @@
 /** Private P08B DTO boundary. Native input never selects another owner or paths. */
 export const BATTLE_POLICY_SHA256 = 'cddd7d8cfabe8a4df5543fdcef14dd5518c36bc8bce431cfb502a5c72903ccda';
+// RES-30 roster30 (tools/p08b_battle_store.py): 7..30 actors; a result journal
+// of 2..6 rows keeps 32KiB, 7..30 rows 256KiB; carriers of one journal 640KiB.
+export const MAX_PARTICIPANTS = 30;
+export const MAX_RESULT_BYTES = 262144;
+export const MAX_RESULT_REQUEST = 655360;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v)
   && Object.keys(v).sort().join(',') === [...keys].sort().join(',');
@@ -36,8 +41,8 @@ export function validateBattleRequest(request, owner) {
     && integer(request.remaining_ap, 0, 96) && integer(request.terminal_hp, 0, 2150)
     && ['manual_leave', 'battle_failure', 'disconnect', 'cancelled', 'battle_finished'].includes(request.reason), 'result bounds');
   if (natural) requireValue(typeof request.results_json === 'string' && request.results_json.length > 0
-    && Buffer.byteLength(request.results_json) <= 32768, 'natural result size');
-  requireValue(Buffer.byteLength(JSON.stringify(request)) <= (natural ? 65536 : 4096), 'request size');
+    && Buffer.byteLength(request.results_json) <= MAX_RESULT_BYTES, 'natural result size');
+  requireValue(Buffer.byteLength(JSON.stringify(request)) <= (natural ? MAX_RESULT_REQUEST : 4096), 'request size');
   return request;
 }
 

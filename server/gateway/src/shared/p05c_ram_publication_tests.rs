@@ -11,9 +11,9 @@ fn contact(world:&mut World,speed:f32,sequence:u32){
 }
 fn shot_damage(world:&mut World,target:usize,after:i16){
     let before=world.actors[target].health;world.actors[target].health=after;
-    world.damage_events.push(model::DamageRecord{sequence:world.damage_events.len()as u32+1,tick:1001,
+    {let next_sequence=world.damage_events.len() as u32+1;world.damage_events.push(model::DamageRecord{sequence:next_sequence,tick:1001,
         attacker:1-target,target,shot:1,reason:0,health_before:before,health_after:after,
-        crew_before:true,crew_after:after>0,direct:true,pierced:true});
+        crew_before:true,crew_after:after>0,direct:true,pierced:true});}
 }
 fn assert_current_health(s:&Session,world:&World,target:usize,attacker:Option<usize>,reason:u8){
     let expected=health(world,target,attacker,reason).unwrap();

@@ -121,7 +121,7 @@ fn p06t_breech_world_explicit_source31_has_one_nominal_hp_and_direct_gun_ledger(
 #[test]
 fn p06t_breech_world_late_device_capacity_failure_rolls_back_hp_trace_modules_and_rng(){
     let(mut finished,now)=launch31();finished.advance(now+Duration::from_millis(2300)).unwrap();
-    let event=finished.device_events[0];let(mut w,now)=launch31();w.device_events=vec![event;MAX_DAMAGE_EVENTS];
+    let event=finished.device_events[0];let(mut w,now)=launch31();w.device_events=vec![event;MAX_DAMAGE_EVENTS].into();
     let snapshot=w.failure_snapshot();let actors=w.actors.clone();let trace=w.impact.clone();let projectiles=w.projectiles.clone();
     assert!(w.advance(now+Duration::from_millis(2300)).is_err());
     assert_eq!(w.failure_snapshot(),snapshot);assert_eq!(w.actors,actors);assert_eq!(w.impact,trace);assert_eq!(w.projectiles,projectiles);

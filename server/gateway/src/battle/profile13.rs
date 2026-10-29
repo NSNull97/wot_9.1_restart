@@ -207,16 +207,17 @@ fn battle_id(run: &str, battle: u64) -> io::Result<String> {
 
 pub fn encode_request(context: &Context, request: &Request) -> io::Result<Vec<u8>> {
     if let Request::FinishResults {battle,terminal_hp,results_json,..} = request {
-        if results_json.is_empty() || results_json.len() > 32768 {return Err(bad("natural result size"));}
-        let results: crate::gateway091::shared::lifecycle_wire::Results = serde_json::from_str(results_json).map_err(|_|bad("natural result DTO"))?;
-        results.validate()?;
+        use crate::gateway091::shared::lifecycle_wire::{self as wire,Results};
+        if results_json.is_empty() || results_json.len() > wire::MAX_RESULT_JSON {return Err(bad("natural result size"));}
+        let results: Results = serde_json::from_str(results_json).map_err(|_|bad("natural result DTO"))?;
+        results.validate()?;results.validate_json_bytes(results_json.len())?;
         let own=results.participants.iter().find(|p|p.account_dbid==context.native_database_id).ok_or_else(||bad("natural result owner"))?;
         if results.arena_id!=*battle || own.health!=*terminal_hp {return Err(bad("natural result battle/health"));}
         let legacy=request.finish_without_results().ok_or_else(||bad("natural finish arguments"))?;
         let mut value: Value=serde_json::from_slice(&encode_request(context,&legacy)?).map_err(|_|bad("own finish JSON"))?;
         value["results_json"]=results_json.as_str().into();
         let raw=serde_json::to_vec(&value).map_err(|_|bad("natural finish encoding"))?;
-        if raw.len()>65536{return Err(bad("natural finish size"));}return Ok(raw);
+        if raw.len()>wire::MAX_RESULT_REQUEST{return Err(bad("natural finish size"));}return Ok(raw);
     }
     validate_context(context)?;
     if !matches!(request, Request::Inspect) && context.expected_revision < 13 { return Err(bad("mutation source revision")); }

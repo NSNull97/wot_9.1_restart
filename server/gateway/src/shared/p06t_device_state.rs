@@ -165,7 +165,9 @@ impl State {
     }
     fn validate_hit(&self,hit:ModuleHit)->io::Result<()> {
         source_shell(hit.shell)?;
-        if hit.cause.shot==0 || hit.cause.shot>960 || hit.cause.attacker_slot>=6 || hit.ordinal>=2
+        // RES-30: any attacker/shot of a 30-actor battle (was slot<6, shot<=960).
+        use crate::gateway091::shared::model::{MAX_ACTORS,MAX_BATTLE_SHOTS};
+        if hit.cause.shot==0 || hit.cause.shot as usize>MAX_BATTLE_SHOTS || usize::from(hit.cause.attacker_slot)>=MAX_ACTORS || hit.ordinal>=2
             || !hit.ignition_roll.is_finite() || !(0. ..1.).contains(&hit.ignition_roll)
             || matches!(hit.target,Target::Seat(s) if usize::from(s)>=self.profile.crew().len()) {
             return Err(bad("module hit source/identity/roll bounds"));

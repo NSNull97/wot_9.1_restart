@@ -63,7 +63,7 @@ impl Dispatcher{
         if reply.status==Status::Rejected{
             let p=state(s)?;p.in_flight=false;p.selection=None;
             if completion.request.finished_battle().is_some(){return Err(io::Error::new(io::ErrorKind::InvalidData,format!("P06T terminal rejected {:?}",reply.code)));}
-            s.shared.as_mut().ok_or_else(||model::bad())?.join_requested=false;
+            s.shared.as_mut().ok_or_else(||model::bad())?.join_requested=false;Self::withdraw_matched_queue(s);
             if s.active{s.outbox.push_back(crate::battle091::profile13::enqueue_failure(reply.code.as_deref().unwrap_or("UNAVAILABLE"))?);}
             println!("P06T_ADMISSION_REJECTED session={sid} code={:?} reserved=false",reply.code);return Ok(());
         }
@@ -84,7 +84,8 @@ impl Dispatcher{
                 p.reservation_v2=Some(reply.reservation.ok_or_else(||model::bad())?);p.selection=None;
                 let c=s.shared.as_mut().ok_or_else(||model::bad())?;
                 if s.active&&c.join_requested{
-                    if s.outbox.len()>=128{return Err(model::bad());}s.outbox.push_back(crate::map_drive_world091::queue_callback(true));c.queue_announced=true;
+                    if s.outbox.len()>=128{return Err(model::bad());}
+                    if !Self::matched_queue_announced(c){s.outbox.push_back(crate::map_drive_world091::queue_callback(true));}c.queue_announced=true;
                 }else{
                     let terminal=service::TerminalV2::cancelled(c.profile13.as_ref().and_then(|p|p.reservation_v2.as_ref()).ok_or_else(||model::bad())?,database)?;
                     c.profile13.as_mut().ok_or_else(||model::bad())?.retain_terminal_v2(terminal)?;
@@ -145,7 +146,7 @@ impl Dispatcher{
             if p.in_flight||p.reservation.is_some()||p.pending_return.is_some(){return Err(model::bad());}
             let pending=p.pending_return_v2.is_some();if terminal_only!=pending{continue;}
             if pending&&(world.actors.iter().any(|a|a.session==Some(s.id))||self.attached_elsewhere.contains(&s.id)){continue;}
-            if !pending&&(p.reservation_v2.is_some()||world.started.is_some()||p.selection.is_none()||!s.active||!c.join_requested||!s.ammo_service.as_ref().is_some_and(ammo_session::State::idle)||!arena_open){continue;}
+            if !pending&&(p.reservation_v2.is_some()||world.started.is_some()||p.selection.is_none()||!s.active||!c.join_requested||!s.ammo_service.as_ref().is_some_and(ammo_session::State::idle)||!arena_open||!p.admits_into(world.id)){continue;}
             let owner=s.identity.clone().ok_or_else(||model::bad())?;let revision=s.ammo_service.as_ref().ok_or_else(||model::bad())?.revision();let sid=s.id;
             let p=state(s)?;p.revision=revision;let request=if let Some(t)=&p.pending_return_v2{t.request()}else{RequestV2::Admit{battle:world.id,native_inventory_id:p.selection.ok_or_else(||model::bad())?}};
             let context=p.next_context(&owner,sid)?;let task=TaskV2{session:sid,owner,context,request};let job=task.start(config.clone())?;p.in_flight=true;
