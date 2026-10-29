@@ -165,3 +165,41 @@ A/B на стенде (одна переменная за раз): 1) без к�
 
 Итог карточки: рекомендуемый режим стенда — `"pose_delivery": "reliable-burst-v2"`. `latest-unreliable-v1` (пакет
 `0x0408` с телом) не проверялся в бою и остаётся UNKNOWN; `reliable-burst-v1` в бою 1+29 — FAIL (11:07).
+
+## Рост цикла шлюза за бой и падение боя 12:24 — журналы copy-on-write
+
+Бой 12:24 (`reliable-burst-v2`) закончился `SHARED_BATTLE_FAILED` «logical deadline lag exceeds 500 ms repeatedly».
+Перед ним шли 4 `SHARED_DRIVE_LAG_RESYNC` по 503–532 мс.
+- VERIFIED (лог, `NET01_STEP_STATS`): за бой `publish_ms` росла с 1,0 до 39 мс за итерацию при одной сессии,
+  итерация — до 86 мс (max 155), шаг арены — около 20 мс.
+- VERIFIED (код): `drive_deadline` сдвигает дедлайн на один шаг за итерацию. При итерации, стабильно близкой к
+  тику, отставание копится до 500 мс → resync; 3 в окне 30 с → fail closed. Это не одиночные пики.
+- VERIFIED (код): публикация и приём на каждом шаге клонируют `Session` (в ней `Client.view` — целый `World`) и
+  `World` (staged-транзакции): `poll_battle_session`, `poll_with_native_start`, `shared_refresh_world`,
+  `flush_shared_*`, `receive_battle_session`, `shared_payload`. Журналы `World` (трасса попаданий, выстрелы,
+  контакты, события урона…) только растут, и каждый клон копировал их целиком.
+- VERIFIED (бенч, конец боя): клон `World` — 1,33 мс, `Session` — 1,35 мс; в трассе попаданий 7439 событий.
+
+Исправление (`26f7387`): `shared::journal::Journal<T>` — `Arc<Vec<T>>` с `Arc::make_mut` при записи. Клон делит
+буфер, а первая запись в общий буфер копирует его, так что отброшенный staged-клон не меняет принятый мир.
+Журналы: `shots`, `impacts`, `contacts`, `terrain_contacts`, `damage_events`, `device_events`, `ram_damage_events`,
+`rng_draws`, события `impact::Trace`. Решения, порядок и fail-closed не менялись. Unit `net01_journal_*` PASS.
+Набор шлюза на `26f7387`: **1738 / 94 / 13**, FAIL равны базе `c76fd62`.
+
+Release-бенч 1+29: полный бой до исхода, mixed-ammo + детонация (как на стенде), приём через
+`receive_battle_session`, клиент — модель, `reliable-burst-v2`. «До» — worktree `680aba2` (тот же бенч без
+исправления). `full-before-mixed` — первый прогон «до», частично наложился на компиляцию; для сравнения он не нужен.
+
+| run | ticks | shots/dead | publish mean: first→last 10 s, ms | loop mean / p99 / max (last 10 s), ms | loop max over battle, ms | tick interval max, ms | world clone at end, ms | LAG_RESYNC |
+|---|---|---|---|---|---|---|---|---|
+| full-before-clean | 9323 | 370/23 | 0.5 → 13.0 | 32.8 / 60.3 / 60.3 | 76.8 | 207.0 | 1.285 | 0 |
+| full-before-seed2 | 2042 | 201/18 | 0.5 → 6.1 | 12.2 / 36.8 / 36.8 | 44.2 | 148.7 | 0.839 | 0 |
+| full-before-mixed | 3091 | 436/22 | 0.6 → 14.4 | 31.8 / 57.8 / 57.8 | 65.1 | 155.9 | 1.331 | 0 |
+| full-journal-mixed | 2094 | 332/22 | 0.5 → 0.6 | 1.8 / 20.0 / 25.0 | 60.2 | 124.1 | 0.028 | 0 |
+| full-journal-seed2 | 2153 | 214/19 | 0.5 → 0.6 | 1.8 / 20.0 / 23.6 | 36.3 | 125.7 | 0.026 | 0 |
+
+Итог: публикация больше не растёт за бой (0,5 → 0,6 мс против 0,5 → 13–14 мс). Итерация в конце боя — 1,8 мс в
+среднем, p99 20–25 мс против 32 / 60 мс; клон в конце боя дешевле в 46–50 раз.
+В бенче LAG_RESYNC не было ни до, ни после: на стенде итерация длиннее (шаг ~20 мс против 5, вывод лога).
+Ограничения: «ни одного LAG_RESYNC в бою 1+29» на стенде — NOT_RUN (нужен бой владельца). Шаг арены на стенде
+(~20 мс, растёт `think_ms` ботов) не исследован; политика fail-closed не менялась.
