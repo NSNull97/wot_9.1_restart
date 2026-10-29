@@ -867,6 +867,18 @@ impl World {
         if !self.mixed_profiles && loadout.kind != self.vehicle_kind { return Err(bad()); }
         self.attach_loadout(identity, session, Some(loadout.clone()))
     }
+    /// TURRET-01 SYNTHETIC bench seat in a mixed-ammo/detonation World: the
+    /// legacy owned seat, then a typed full stock rack and v1 devices as a bot
+    /// gets (no writer reservation; never a production path).
+    #[cfg(test)]
+    pub(crate) fn attach_lab_owned_for_test(&mut self,identity:Identity,session:u32,loadout:&crate::battle091::profile13::FrozenLoadout)->io::Result<usize>{
+        let(mixed,detonation)=(self.mixed_ammo,self.ammo_detonation.take());self.mixed_ammo=false;
+        let result=self.attach_owned(identity,session,loadout);self.mixed_ammo=mixed;self.ammo_detonation=detonation;
+        let slot=result?;let kind=self.actors[slot].vehicle_kind();let source=crate::p06t_shells091::profile(kind.mount());
+        self.actors[slot].fire=fire::State::with_typed(kind.mount(),[source.capacity,0,0],source.shots[0].compact_descr)?;
+        self.actors[slot].devices=Some(crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(kind).ok_or_else(||bad())?)?);
+        Ok(slot)
+    }
     pub fn attach_owned_v2(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_v2091::Frozen)->io::Result<usize>{
         if self.ammo_detonation.is_some(){return Err(bad());}
         self.attach_owned_v2_inner(identity,session,loadout)

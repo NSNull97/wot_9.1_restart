@@ -12,7 +12,7 @@ fn template(resources:&[super::super::profile13_templates::Resources],size:usize
     template.world.enable_mixed_ammo().unwrap();
     template.world.enable_original_spotting(super::super::spotting::Rules::selected().unwrap()).unwrap();
     template.world.enable_ammo_detonation().unwrap();
-    if size>wire::MAX_NATIVE_ACTORS{template.world.enable_team_base_spawn().unwrap();}
+    if size>wire::MAX_NATIVE_ACTORS||env("TURRET01_TEAM_BASES").as_deref()==Some("1"){template.world.enable_team_base_spawn().unwrap();}
     template
 }
 fn step(a:&mut arena::Arena,what:&str){
@@ -20,15 +20,6 @@ fn step(a:&mut arena::Arena,what:&str){
         arena::Event::Stepped=>{},
         arena::Event::Failed{stage,error}=>panic!("TURRET01 {what} failed stage={stage} error={error}"),
     }
-}
-fn settle(a:&mut arena::Arena,humans:usize){
-    let startup=Instant::now();let mut first=true;
-    while !a.native_ready() {
-        assert!(startup.elapsed()<Duration::from_secs(150),"scene startup bound");
-        let event=a.handle(arena::Command::Step{now:Instant::now(),start:first});first=false;
-        assert!(matches!(event,arena::Event::Stepped),"{event:?}");thread::sleep(Duration::from_millis(5));
-    }
-    for slot in 0..humans {a.world.set_ready(slot,slot as u32+1).unwrap();}
 }
 fn resting(a:&arena::Arena)->bool{
     a.world.turret_flights().iter().all(|f|f.trajectory().is_some()&&f.sample().phase==super::super::ammo_detonation::FlightPhase::Resting)
@@ -53,14 +44,20 @@ fn turret01_detached_bodies_in_real_jolt_scene(){
     let out=PathBuf::from(env("TURRET01_OUT").expect("TURRET01_OUT"));
     let resources=super::super::profile13_templates::load(&root,&manifest).unwrap();
     let now=Instant::now();let id=env("TURRET01_SEED").map_or(0x7e57_7e01_0001,|v|v.parse().unwrap());let size=6;
-    let template=template(&resources,size,id,now);
+    let mut template=template(&resources,size,id,now);
+    // Slot 0 a SYNTHETIC native seat, slots 1..5 server bots (typed racks).
+    template.world.enable_bots(model::bots::Plan{human_places:1,seed:1,kinds:resources.iter().map(|r|r.kind).collect()}).unwrap();
     let mut a=arena::Arena::from_template(0,&template,id,now).unwrap();
-    for slot in 0..size {
-        let kind=if slot%2==0{VehicleKind::Ms1}else{VehicleKind::Is7};
-        let(mut owner,loadout)=model::tests::profile13_loadout(kind,slot,kind.ammo_limit());
-        owner.name=format!("turret01-synthetic-{slot}");a.world.attach_owned(owner,slot as u32+1,&loadout).unwrap();
+    let(mut owner,loadout)=model::tests::profile13_loadout(VehicleKind::Ms1,0,VehicleKind::Ms1.ammo_limit());
+    owner.name="turret01-synthetic-0".into();a.world.attach_lab_owned_for_test(owner,1,&loadout).unwrap();
+    assert_eq!(a.world.fill_bots().unwrap(),size-1);
+    let startup=Instant::now();let mut first=true;
+    while !a.native_ready() {
+        assert!(startup.elapsed()<Duration::from_secs(150),"scene startup bound");
+        let event=a.handle(arena::Command::Step{now:Instant::now(),start:first});first=false;
+        assert!(matches!(event,arena::Event::Stepped),"{event:?}");thread::sleep(Duration::from_millis(5));
     }
-    a.world.start(Instant::now()).unwrap();settle(&mut a,size);
+    a.world.set_ready(0,1).unwrap();
     assert!(a.world.turret_jolt(),"the scene runtime selects Jolt turrets");
     for _ in 0..20 {step(&mut a,"warm");thread::sleep(Duration::from_millis(5));}
     // Two detonations in one tick, a third one second later.
@@ -75,8 +72,9 @@ fn turret01_detached_bodies_in_real_jolt_scene(){
     // Same body request, same worker: the identical trajectory.
     let batch=a.integrated.as_mut().unwrap().batch.as_mut().unwrap();
     let mut repeats=Vec::new();
-    for slot in slots {
-        let again=batch.relaunch_turret_for_test(&a.world,slot).unwrap();
+    // Wrecks as at each original request: 1 and 4 died together, 5 later.
+    for(slot,wrecks)in [(1,vec![1,4]),(4,vec![1,4]),(5,vec![1,4,5])] {
+        let again=batch.relaunch_turret_for_test(&a.world,slot,&wrecks).unwrap();
         let installed=a.world.turret_flights().iter().find(|f|f.event().target()==slot).unwrap().trajectory().unwrap().clone();
         let same=again.samples.len()==installed.samples.len()&&again.samples.iter().zip(&installed.samples).all(|((p,d),j)|
             p.iter().zip(j.position).chain(d.iter().zip(j.direction)).all(|(x,y)|x.to_bits()==y.to_bits()));
@@ -116,7 +114,7 @@ fn turret01_bench_thirty_places_with_detonations(){
     template.world.enable_bots(model::bots::Plan{human_places:1,seed:1,kinds}).unwrap();
     let mut a=arena::Arena::from_template(0,&template,id,now).unwrap();
     let(mut owner,loadout)=model::tests::profile13_loadout(VehicleKind::Ms1,0,VehicleKind::Ms1.ammo_limit());
-    owner.name="turret01-bench-native".into();a.world.attach_owned(owner,1,&loadout).unwrap();
+    owner.name="turret01-bench-native".into();a.world.attach_lab_owned_for_test(owner,1,&loadout).unwrap();
     assert_eq!(a.world.fill_bots().unwrap(),size-1);
     let startup=Instant::now();let mut first=true;
     while !a.native_ready() {

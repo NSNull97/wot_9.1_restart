@@ -85,10 +85,11 @@ impl BatchRuntime {
         Ok(true)
     }
     /// TURRET-01 test evidence: the same worker simulates the body request of
-    /// an already installed flight again; blocks until its reply.
+    /// an already installed flight again with the wrecks of its original
+    /// request; blocks until its reply.
     #[cfg(test)]
-    pub(super) fn relaunch_turret_for_test(&mut self,world:&World,slot:usize)->io::Result<scene_worker::TurretTrajectory>{
-        let r=world.turret_launch_request(slot)?;
+    pub(super) fn relaunch_turret_for_test(&mut self,world:&World,slot:usize,wrecks:&[usize])->io::Result<scene_worker::TurretTrajectory>{
+        let mut r=world.turret_launch_request(slot)?;r.wreck_slots=wrecks.to_vec();
         let body=TurretBody{slot,position:r.joint.position,direction:r.joint.direction,linear_velocity:r.launch.linear_velocity,
             angular_velocity:r.launch.angular_velocity,turret_points:r.turret_points,gun_points:r.gun_points,wreck_slots:r.wreck_slots};
         let runtime=self.runtime.as_mut().ok_or_else(||model::bad())?;
