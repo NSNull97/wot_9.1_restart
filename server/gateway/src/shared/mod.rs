@@ -792,9 +792,27 @@ impl Session {
                     if payload.len() - at < 3 { return Err(bad()); }
                     3 + u16::from_le_bytes([payload[at+1], payload[at+2]]) as usize
                 },
-                _ => return Err(bad()),
+                id if wire::unimplemented_exposed(id).is_some() && payload.len() - at >= 3 => {
+                    3 + u16::from_le_bytes([payload[at+1], payload[at+2]]) as usize
+                },
+                _ => {
+                    // INPUT-01: an ID outside the #717 Avatar table cannot be
+                    // framed, so nothing after it is interpreted. Records
+                    // before it stay applied; the authenticated reliable
+                    // sequence is consumed instead of stalling the channel.
+                    events.push(format!("SHARED_UNSUPPORTED_TAIL session={} sequence={sequence} id={id:#04x} offset={at} dropped_bytes={} domain_applied=false",
+                        self.id,payload.len()-at));
+                    break;
+                },
             };
             let raw = payload.get(at..at+size).ok_or_else(|| bad())?; at += size;
+            if let Some(method)=wire::unimplemented_exposed(id) {
+                // Exposed but not implemented here: skip exactly this record.
+                // No reply is invented (Avatar onCmdResponse is unmeasured).
+                events.push(format!("SHARED_UNSUPPORTED session={} method={method} id={id:#04x} bytes={} {} domain_applied=false",
+                    self.id,raw.len(),wire::unimplemented_detail(raw)));
+                continue;
+            }
             if id==0x87 {
                 if !self.battle_results.confirm_avatar(raw)? {return Err(bad());}
                 continue;

@@ -254,6 +254,41 @@ pub fn retired_postmortem_rebind(payload: &[u8], own: usize) -> io::Result<()> {
         || payload[7..]!=vehicle_id(own)?.to_le_bytes() { return Err(model::bad()); }
     Ok(())
 }
+/// INPUT-01: exposed Avatar methods the shared battle does not implement.
+/// Order from #717 avatar.def/vehicle.def (Implements first; fixed stream
+/// sizes ascending, ties and variable-size methods in .def order). Anchored by
+/// every observed ID: Base 0x87..0x8f, 0x99; Cell 0x0c, 0x0d, 0x0f (INFERRED
+/// for the rest). All use the VAR2 length the parser already reads, so a
+/// record can be skipped exactly. Cell 0x0e/0x10 carry their own routing ID.
+pub fn unimplemented_exposed(id: u8) -> Option<&'static str> {
+    Some(match id {
+        0x0e=>"monitorVehicleDamagedDevices|vehicle.stopTrackingWithGun", 0x10=>"vehicle.sendVisibilityDevelopmentInfo",
+        0x86=>"setClientReady", 0x8b=>"vehicle_useHorn", 0x8c=>"requestToken",
+        0x90=>"makeDenunciation", 0x91=>"vehicle_teleport", 0x92=>"logStreamCorruption",
+        0x93=>"doCmdInt3", 0x94=>"doCmdInt4", 0x95=>"ackCommand", 0x96=>"receiveFakeShot",
+        0x97=>"chatCommandFromClient", 0x98=>"inviteCommand", 0x9a=>"doCmdStr", 0x9b=>"doCmdInt2Str",
+        0x9c=>"doCmdIntArr", 0x9d=>"doCmdIntArrStrArr", 0x9e=>"banUnbanUser", 0x9f=>"sendAccountStats",
+        0xa0=>"setClientCtx", 0xa1=>"setDevelopmentFeature", 0xa2=>"addBotToArena",
+        _=>return None,
+    })
+}
+/// Bounded, non-authoritative description of a skipped record for the log:
+/// doCmd* request/command IDs (1600 = CMD_ADD_INT_USER_SETTINGS from
+/// IntUserSettings.addIntSettings) and setDevelopmentFeature's name
+/// ('server_marker' = VehicleGunRotator.showServerMarker -> enableServerAim).
+pub fn unimplemented_detail(raw: &[u8]) -> String {
+    let args = raw.get(3..).unwrap_or(&[]);
+    match raw.first() {
+        Some(0x93|0x94|0x9a|0x9b|0x9c|0x9d) if args.len()>=4 =>
+            format!("request={} command={}",i16::from_le_bytes([args[0],args[1]]),i16::from_le_bytes([args[2],args[3]])),
+        Some(0xa1) if args.first().is_some_and(|n| usize::from(*n)<=32 && args.len()>usize::from(*n)) => {
+            let name=&args[1..1+usize::from(args[0])];
+            if name.iter().all(|b| b.is_ascii_alphanumeric()||*b==b'_') {format!("feature={}",String::from_utf8_lossy(name))}
+            else {"feature=non_ascii".into()}
+        },
+        _ => String::from("detail=none"),
+    }
+}
 /// OBSERVED native autoAim: Cell method12, zero current-Avatar mailbox, one
 /// OBJECT_ID argument. A target ID is only an untrusted request, never authority
 /// to read a hidden actor. Only this measured mailbox layout is accepted.

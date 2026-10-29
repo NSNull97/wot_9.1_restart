@@ -3397,6 +3397,33 @@ mod tests {
         assert!(b.shared.as_ref().unwrap().commands.is_empty());
         assert_eq!(w.actors[1].health,0); assert_eq!(b.shared.as_ref().unwrap().slot,1);
     }
+    fn var2(id:u8,args:&[u8])->Vec<u8> {let mut b=vec![id];b.extend((args.len() as u16).to_le_bytes());b.extend(args);b}
+    /// Owner 2026-10-29 (-11, BW-01): changing settings in battle sent an
+    /// Avatar method outside the gateway table (mod.rs:796 `_ => Err`), the
+    /// rejected reliable3031 stalled rx and the player was dropped by idle_timeout.
+    /// #717: IntUserSettings.addIntSettings -> Avatar Base doCmdIntArr(1600),
+    /// VehicleGunRotator.showServerMarker -> setDevelopmentFeature('server_marker').
+    #[test] fn input01_unimplemented_avatar_methods_are_skipped_and_unknown_tail_keeps_channel_live() {
+        let now=Instant::now(); let (_,mut b,_)=visible_pair(now);
+        let mut settings=Vec::new(); for v in [227i16,1600] {settings.extend(v.to_le_bytes());}
+        settings.extend(4u32.to_le_bytes()); for v in [61i32,1,62,0] {settings.extend(v.to_le_bytes());}
+        let mut feature=vec![13]; feature.extend(b"server_marker"); feature.extend(1i32.to_le_bytes());
+        let aim=point(1,[100.,100.,100.]);
+        let envelope=[var2(0x9c,&settings),var2(0xa1,&feature),var2(0x0e,&wire::vehicle_id(0).unwrap().to_le_bytes()),aim.clone()].concat();
+        let before=b.rx; b.receive(&frame(&b,&envelope),now).unwrap(); assert_eq!(b.rx,before+1);
+        assert_eq!(b.shared.as_ref().unwrap().commands.len(),1,"records after skipped methods still apply");
+        assert_eq!(wire::unimplemented_detail(&var2(0x9c,&settings)),"request=227 command=1600");
+        assert_eq!(wire::unimplemented_detail(&var2(0xa1,&feature)),"feature=server_marker");
+        // An ID outside the table: earlier records apply, the rest is dropped,
+        // the sequence is consumed and later keepalives are accepted.
+        let unknown=[aim.clone(),vec![0x7f,1,2,3],aim.clone()].concat();
+        let before=b.rx; b.receive(&frame(&b,&unknown),now).unwrap(); assert_eq!(b.rx,before+1);
+        assert_eq!(b.shared.as_ref().unwrap().commands.len(),2);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+        // A truncated framed record is still malformed and fails closed.
+        let mut short=var2(0x9c,&settings); short.truncate(short.len()-1);
+        let before=b.rx; assert!(b.receive(&frame(&b,&short),now).is_err()); assert_eq!(b.rx,before);
+    }
     fn bind(target:u32)->Vec<u8> {let mut b=vec![0x0d,8,0,0,0,0,0];b.extend(target.to_le_bytes());b}
     /// Owner 2026-10-29 (-11, battle ...827, session 4): the dead player's
     /// observer camera bound an ally; rejection stalled reliable17381 and every
