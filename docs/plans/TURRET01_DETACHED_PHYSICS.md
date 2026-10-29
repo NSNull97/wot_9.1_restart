@@ -28,18 +28,30 @@
   (`turrets_after_outcome`). Без сцены — прежняя точечная модель (legacy).
 - Ограничения: живые машины не препятствие для башни; разрушение объекта под лежащей башней не учитывается.
 
-## Проверки
-| Проверка | Статус |
-|---|---|
-| unit `turret01_launch_*`, `turret01_jolt_flight_*`, мировой `turret01_actual_rack_event_*` | PASS (3) |
-| C# сборка `server/build.py physics` (`local/build/physics-turret01-02`) | PASS_ISOLATED_BUILD |
-| ignored `turret01_detached_bodies_in_real_jolt_scene` (разные траектории, бит-в-бит повтор, клиренс над террейном) | NOT_RUN |
-| ignored `turret01_bench_thirty_places_with_detonations` (release) | NOT_RUN |
-| Набор шлюза ветки против `c76fd62` | база 1725/94/12 (`local/evidence/suite-base-c76fd62.log` в worktree); ветка NOT_RUN |
-| Native | NOT_RUN |
+## Проверки (2026-10-29)
+Evidence: `D:/WoT_9.1_Server/local/evidence/turret01-20261029/` (json + логи). Все прогоны — SYNTHETIC
+нативное место + боты, подрывы через тестовый хук `force_detonation_for_test` (настоящие ledger, гибель,
+RNG-запуск и тело воркера, без снаряда); настоящий воркер Jolt этой ветки (стенд-каталог `turret01-bench-01`).
 
-Запуск реальных тестов: стенд-каталог `D:/WoT_9.1_Server/local/stands/turret01-bench-01` (физика этой ветки):
-`TURRET01_MANIFEST=D:/WoT_9.1_Server/local/stands/turret01-bench-01/battle-profiles-05_prohorovka.json TURRET01_OUT=<json> bash local/cargo_test.sh turret01_ -- --ignored --nocapture`
-(бенч 30 — с `--release`).
+| Проверка | Итог |
+|---|---|
+| unit `turret01_launch_*`, `turret01_jolt_flight_*`, мировой `turret01_actual_rack_event_*` (настоящий подрыв через World/Trace: 6 вытяжек в журнале, повтор боя = тот же запуск, другой seed = другой) | PASS |
+| `turret01_detached_bodies_in_real_jolt_scene`, Прохоровка (debug): 3 подрыва (два в одном тике, третий через 1 с) | PASS: смещения различны; все тела уснули (29–39 выборок); повтор того же запроса — траектория бит в бит; мин. клиренс опорных точек башни и ствола над террейном в покое −0,028 м, за полёт −0,044 м (допуск −0,05/−0,15: зазор столкновений Jolt) |
+| то же, Малиновка (`TURRET01_TEAM_BASES=1`) | PASS: покой −0,014 м, полёт −0,039 м. С лабораторными полосами сцена Малиновки на 6 мест не стартует (воркер EOF при оседании, до любого подрыва) — известная проблема полос, не этой карточки |
+| Бенч release 30 мест (1 + 29 ботов), Прохоровка, 4 волны × 2 подрыва + настоящие подрывы БК от стрельбы ботов | PASS (финальный прогон `-c`: 8 + 2 настоящих подрыва, без сбоев, все тела в покое; доля `turret_flights` p99 0,009 мс, шаг p99 13,8 мс). Прогон `-b`: p99 шага после первой волны 12,3 мс против 25,8 мс в контрольном прогоне без волн (`TURRET01_WAVES=0`) за то же время — рост шага в бою даёт видимость (`spotting_rays` p99 11,8 / 25,6 мс), не башни |
+| Набор шлюза (debug, worktree) | ветка 1728/94/14, база `c76fd62` 1725/94/12; FAIL-множества совпадают построчно (94 — окружение) |
+| C# сборка `server/build.py physics` | PASS_ISOLATED_BUILD |
+| Канонический gate, native | NOT_RUN |
+
+Найдено по ходу: первая версия бенча сравнивала первые 10 с боя с остальным боем и «находила» рост шага —
+окна различались самим боем (боты вступают позже); критерий заменён на долю башен + контрольный прогон.
+Наблюдение (OBSERVED): башня может упасть обратно на бокс собственного корпуса (клиренс +1,65 м у T-34-85) —
+бокс корпуса Jolt грубее модели, клиент может показать башню чуть над корпусом.
+
+Не подтверждено: вид в клиенте 0.9.1 (интерполяция, эффекты удара `onStaticCollision` не шлются), реальные
+подрывы в нативном бою, Карелия и другие карты.
+
+Запуск: `TURRET01_MANIFEST=D:/WoT_9.1_Server/local/stands/turret01-bench-01/battle-profiles-05_prohorovka.json TURRET01_OUT=<json> bash local/cargo_test.sh [--release] turret01_<detached_bodies|bench> -- --ignored --nocapture`;
+`TURRET01_TEAM_BASES=1` для Малиновки; `TURRET01_WAVES=0 TURRET01_SECONDS=105` — контроль бенча.
 
 Откат: не сливать ветку; стенды не менялись.
