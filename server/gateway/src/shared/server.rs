@@ -3241,11 +3241,52 @@ mod tests {
         b.receive(&frame(&b,&raw),now).unwrap(); assert_eq!(b.rx,before+1);
         b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
         assert!(b.shared.as_ref().unwrap().commands.is_empty());
-        for offset in [1,3,7] {
+        for offset in [1,3] {
             let mut bad=raw; bad[offset]^=1;
             let before=b.rx; assert!(b.receive(&frame(&b,&bad),now).is_err()); assert_eq!(b.rx,before);
         }
+        // POSTMORTEM-01: a well-formed request for a non-vehicle ID is refused
+        // as a camera request but consumed, so later keepalives still arrive.
+        let mut unknown=raw; unknown[7]^=1;
+        let before=b.rx; b.receive(&frame(&b,&unknown),now).unwrap(); assert_eq!(b.rx,before+1);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+        assert!(b.shared.as_ref().unwrap().commands.is_empty());
         assert_eq!(w.actors[1].health,0); assert_eq!(b.shared.as_ref().unwrap().slot,1);
+    }
+    fn bind(target:u32)->Vec<u8> {let mut b=vec![0x0d,8,0,0,0,0,0];b.extend(target.to_le_bytes());b}
+    /// Owner 2026-10-29 (-11, battle ...827, session 4): the dead player's
+    /// observer camera bound an ally; rejection stalled reliable17381 and every
+    /// later 5-byte token-only keepalive failed `n>rx` until idle_timeout.
+    #[test] fn postmortem01_observer_camera_switch_to_ally_unbind_and_enemy_keeps_channel_live() {
+        let now=Instant::now(); let (_,mut b,mut w)=visible_pair(now);
+        // Alive owner: an observer bind is still outside the measured contract.
+        let before=b.rx; assert!(b.receive(&frame(&b,&bind(wire::vehicle_id(0).unwrap())),now).is_err()); assert_eq!(b.rx,before);
+        w.actors[1].health=0; b.shared.as_mut().unwrap().view=Some(w.clone());
+        assert_eq!(w.team(0).unwrap(),w.team(1).unwrap());
+        let unchanged=(w.actors.clone(),b.shared.as_ref().unwrap().visible());
+        for target in [wire::vehicle_id(0).unwrap(),wire::vehicle_id(1).unwrap(),0,wire::vehicle_id(0).unwrap(),wire::vehicle_id(5).unwrap()] {
+            let before=b.rx; b.receive(&frame(&b,&bind(target)),now).unwrap(); assert_eq!(b.rx,before+1);
+            b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+        }
+        let c=b.shared.as_ref().unwrap();
+        assert!(c.commands.is_empty()); assert_eq!(c.slot,1); assert_eq!((w.actors.clone(),c.visible()),unchanged);
+        // An enemy target is refused without authority or interest change.
+        let mut enemy=World::new_for_roster(124,now,crate::map_profile091::MapId::Karelia,3).unwrap();
+        enemy.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();
+        for i in 0..3 {enemy.attach(model::Identity{account:format!("owned-{i}"),database:i+1,name:format!("player_{i}")},i as u32+1).unwrap();}
+        assert_ne!(enemy.team(0).unwrap(),enemy.team(1).unwrap());
+        assert_eq!(wire::postmortem_camera(&enemy,1,wire::vehicle_id(0).unwrap()).unwrap(),wire::PostmortemCamera::Refused);
+        assert_eq!(wire::postmortem_camera(&enemy,0,wire::vehicle_id(2).unwrap()).unwrap(),wire::PostmortemCamera::Ally(2));
+        assert_eq!(wire::postmortem_camera(&enemy,0,wire::vehicle_id(0).unwrap()).unwrap(),wire::PostmortemCamera::Own);
+        assert_eq!(wire::postmortem_camera(&enemy,0,0).unwrap(),wire::PostmortemCamera::Unbind);
+        assert_eq!(wire::postmortem_camera(&enemy,0,wire::vehicle_id(3).unwrap()).unwrap(),wire::PostmortemCamera::Refused);
+        enemy.actors[1].health=0; b.shared.as_mut().unwrap().view=Some(enemy.clone());
+        let before=b.rx; b.receive(&frame(&b,&bind(wire::vehicle_id(0).unwrap())),now).unwrap(); assert_eq!(b.rx,before+1);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+        assert!(b.shared.as_ref().unwrap().commands.is_empty());
+        // Malformed mailbox/length still fails closed.
+        let mut bad=bind(wire::vehicle_id(0).unwrap()); bad[4]=1;
+        let before=b.rx; assert!(b.receive(&frame(&b,&bad),now).is_err()); assert_eq!(b.rx,before);
     }
     #[test] fn integrated_native_gate_keeps_account_session_alive_until_worker_ready() {
         let now = Instant::now();

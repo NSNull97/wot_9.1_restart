@@ -836,8 +836,15 @@ impl Session {
             } else if id == 0x0d {
                 if world.actors.get(c.slot).is_none_or(|actor| actor.alive())
                     || !c.correction || !c.binding.is_some_and(|(_,ack)| ack) { return Err(bad()); }
-                wire::postmortem_rebind(raw,c.slot)?;
-                events.push(format!("SHARED_POSTMORTEM_REBIND session={} slot={} target={} authority_changed=false",self.id,c.slot,wire::vehicle_id(c.slot)?));
+                // Observer camera requests are consumed in every well-formed
+                // case: a refused one must not stall the reliable sequence.
+                let target=wire::postmortem_bind_target(raw)?;
+                match wire::postmortem_camera(world,c.slot,target)? {
+                    wire::PostmortemCamera::Own=>events.push(format!("SHARED_POSTMORTEM_REBIND session={} slot={} target={target} authority_changed=false",self.id,c.slot)),
+                    wire::PostmortemCamera::Ally(slot)=>events.push(format!("SHARED_POSTMORTEM_OBSERVE session={} slot={} target_slot={slot} target={target} authority_changed=false interest_changed=false",self.id,c.slot)),
+                    wire::PostmortemCamera::Unbind=>events.push(format!("SHARED_POSTMORTEM_UNBIND session={} slot={} authority_changed=false",self.id,c.slot)),
+                    wire::PostmortemCamera::Refused=>events.push(format!("SHARED_UNSUPPORTED session={} method=bindToVehicle target={target} refused=true domain_applied=false",self.id)),
+                }
             } else if let Some(commands) = fire::parse(raw)? {
                 if !c.correction { return Err(bad()); }
                 c.commands.extend(commands.into_iter().map(Command::Fire));
@@ -1579,7 +1586,12 @@ mod shared_return_tests {
         let mut postmortem = vec![0x0d, 8, 0, 0, 0, 0, 0]; postmortem.extend(wire::vehicle_id(1).unwrap().to_le_bytes());
         s.receive(&frame(&s, &postmortem, 0), now).unwrap();
         assert!(s.shared.as_ref().unwrap().commands.is_empty()); assert_eq!(s.tx.len(), 1);
-        let before = s.clone(); postmortem[7..].copy_from_slice(&wire::vehicle_id(0).unwrap().to_le_bytes());
+        // POSTMORTEM-01: an ally camera bind is a drained camera call too.
+        postmortem[7..].copy_from_slice(&wire::vehicle_id(0).unwrap().to_le_bytes());
+        s.receive(&frame(&s, &postmortem, 0), now).unwrap();
+        assert!(s.shared.as_ref().unwrap().commands.is_empty()); assert_eq!(s.tx.len(), 1);
+        assert_eq!(s.drive_return_account.as_ref().unwrap().stale_avatar_envelopes, 2);
+        let before = s.clone(); postmortem[3] = 1;
         assert!(s.receive(&frame(&s, &postmortem, 0), now).is_err()); same(&s, &before);
     }
 
