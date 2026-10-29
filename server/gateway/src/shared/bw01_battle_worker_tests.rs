@@ -136,3 +136,38 @@ fn bw01_idle_arena_ships_nothing_after_its_first_exchange(){
     for _ in 0..10 {assert!(matches!(step(&mut far,&idle)[0],Some(arena::Event::Stepped)));}
     assert_eq!(far[0].worker.as_ref().unwrap().steps,1,"an unstarted World without a start is a no-op in any process");
 }
+
+#[test]
+fn bw01_turret01_jolt_flight_to_rest_is_the_same_in_process_and_in_the_worker(){
+    // An actual rack detonation in a Jolt-turret World: the flight first awaits
+    // its trajectory, then plays it to rest. No scene runtime here, so the test
+    // installs one SYNTHETIC worker trajectory into both copies at the same step;
+    // the real Jolt body through a worker is `turret01_detached_bodies_in_real_jolt_scene`
+    // with TURRET01_WORKER=1. After every step both Worlds are byte-equal.
+    use super::super::super::super::ammo_detonation::{FlightPhase,JointPose,Trajectory};
+    let now=Instant::now();
+    let(w,start)=World::turret01_jolt_detonation_for_test(now);let anchor=now;let born=w.turret_flights()[0].event().joint();
+    let launch=w.turret_flights()[0].launch().unwrap();
+    let t=BattleTemplate::new(&w,&None);
+    let mut local=arena::Arena::new(0,w.clone(),None,t.clone());
+    let mut far=[remote(arena::Arena::new(0,w,None,t))];
+    let samples:Vec<JointPose>=(0..12).map(|i|{let k=(i.min(9)) as f32;
+        JointPose{position:[born.position[0]+0.3*k,born.position[1]+1.2*k-0.15*k*k,born.position[2]+0.2*k],direction:[0.1*k,0.05*k,0.]}}).collect();
+    let trajectory=Trajectory{samples,slept:true};
+    for k in 1..=40u32 {
+        if k==5 {
+            assert!(local.world.turret_flights()[0].awaiting_trajectory()&&far[0].world.turret_flights()[0].awaiting_trajectory());
+            local.world.install_turret_trajectory(1,trajectory.clone()).unwrap();far[0].world.install_turret_trajectory(1,trajectory.clone()).unwrap();
+        }
+        let command=arena::Command::Step{now:start+Duration::from_millis(100*u64::from(k)),start:false};
+        let e=local.handle(command);assert!(matches!(e,arena::Event::Stepped),"step {k}: {e:?}");
+        let events=step(&mut far,&[Some(command)]);
+        assert!(matches!(events[0],Some(arena::Event::Stepped)),"{:?}",events[0]);
+        assert_eq!(bytes(&local.world,anchor),bytes(&far[0].world,anchor),"step {k}: worker World differs from in-process World");
+    }
+    let f=&far[0].world.turret_flights()[0];
+    assert_eq!(f.launch(),Some(launch));assert_eq!(f.trajectory(),Some(&trajectory));
+    assert_eq!(f.sample().phase,FlightPhase::Resting,"the body came to rest");
+    assert_eq!(f.sample().position,trajectory.samples.last().unwrap().position);
+    assert_eq!(far[0].worker.as_ref().unwrap().steps,40);
+}

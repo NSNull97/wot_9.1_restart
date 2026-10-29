@@ -10,6 +10,13 @@
   CPU 16,7 против 11,6 мс/шаг, p99 цикла +2 мс, кадр в конце боя ≈ 162 КБ. Native, канонический gate — NOT_RUN.
   План/итог/шаги стенда — [BW01_BATTLE_WORKER](plans/BW01_BATTLE_WORKER.md).
 
+## TURRET-01 на BW-01 — в ветке `codex/turret-01-on-bw` (от `a5fb3ea` = main + BW-01 + INPUT-01), не в main — 2026-10-29
+
+- Оторванная башня — тело Jolt в worker'е сцены (TURRET-01), кодеки BW-01 перегенерированы для `Flight`/`Launch`/
+  `Trajectory`/`Jolt`/`World`. Полёт до покоя одинаков с `battle_worker` и без (побайтно без сцены; на настоящем Jolt —
+  те же выборки и клиренсы). Набор шлюза — FAIL-множество как у базы. Native, канонический gate — NOT_RUN.
+  [TURRET01_DETACHED_PHYSICS](plans/TURRET01_DETACHED_PHYSICS.md).
+
 ## INPUT-01 неподдержанные методы Avatar не выбрасывают из боя — в ветке `codex/input-01-settings-methods`, не в main — 2026-10-29
 
 - Находка владельца (-11, BW-01): смена настроек в бою — Base `doCmdIntArr(CMD_ADD_INT_USER_SETTINGS=1600)` и

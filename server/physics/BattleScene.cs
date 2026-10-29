@@ -80,8 +80,8 @@ internal static class BattleScene
             {
                 var id = AddStatic(entry.Value, Vector3.Zero); catalogBodies.Add(entry.Key, id); catalogIds.Add(id.ID, entry.Key);
             }
-            entry.Value.Dispose();
         }
+        // TURRET-01 keeps present catalog shapes for debris worlds; disposed at the end.
         // Non-blocking falling atom triggers: static sensors never push a tank.
         // Committed fallen columns are absent, exactly like removed catalog bodies.
         foreach (var entry in manifest.Catalog?.Columns ?? [])
@@ -98,6 +98,9 @@ internal static class BattleScene
         using var zWall = new BoxShape(new Vector3((maxX - minX) / 2 + 1, 500, .5f));
         AddStatic(xWall, new(minX - .5f, 0, (maxZ + minZ) / 2)); AddStatic(xWall, new(maxX + .5f, 0, (maxZ + minZ) / 2));
         AddStatic(zWall, new((maxX + minX) / 2, 0, minZ - .5f)); AddStatic(zWall, new((maxX + minX) / 2, 0, maxZ + .5f));
+        var fixedStatics = new List<TurretFlight.Static> { new(terrain, Vector3.Zero, Quaternion.Identity), new(obstacles, Vector3.Zero, Quaternion.Identity),
+            new(xWall, new(minX - .5f, 0, (maxZ + minZ) / 2), Quaternion.Identity), new(xWall, new(maxX + .5f, 0, (maxZ + minZ) / 2), Quaternion.Identity),
+            new(zWall, new((maxX + minX) / 2, 0, minZ - .5f), Quaternion.Identity), new(zWall, new((maxX + minX) / 2, 0, maxZ + .5f), Quaternion.Identity) };
         void Contact(in Body body1, in Body body2, in ContactManifold m, ref ContactSettings settings)
         {
             if (!capture || callbackFault != 0) return;
@@ -245,6 +248,24 @@ internal static class BattleScene
             for (byte[]? raw; (raw = BattleSceneInput.ReadLine(input)) != null;)
             {
                 using var document = CheckedInput.Json(raw); var request = document.RootElement;
+                if (request.GetProperty("op").GetString() == "turret_flight")
+                {
+                    // Allowed while a fracture is prepared: the debris world sees
+                    // only bodies still present in the battle world.
+                    var flight = TurretFlight.Parse(request, manifest, generation, sequence, scene);
+                    var present = catalogBodies.Keys.Where(id => !pending.Contains(id)).Order()
+                        .Select(id => new TurretFlight.Static(catalogShapes[id], Vector3.Zero, Quaternion.Identity));
+                    var wrecks = flight.Wrecks.Select(s => tanks[s]).Select(t => new TurretFlight.Wreck(t.Source.Slot, t.Source.Binding.HalfExtents,
+                        t.Body.Position, t.Body.Rotation)).ToList();
+                    var result = TurretFlight.Simulate(flight, fixedStatics.Concat(present).ToList(), wrecks);
+                    var v = AngularMotionFrame.V;
+                    var reply = JsonSerializer.SerializeToUtf8Bytes(new { version = 7, @event = "turret_flight", generation,
+                        manifest_sha256 = manifest.Hash, catalog_sha256 = manifest.Catalog?.Hash ?? BattleSceneInput.EmptyCatalogHash,
+                        advance_seq = sequence, tick, policy = TurretFlight.Policy, slot = flight.Slot, substeps = result.Substeps, slept = result.Slept,
+                        samples = result.Samples.Select(s => new { position = v(s.Position), direction = v(s.Direction) }).ToArray() });
+                    if (reply.Length > BattleSceneInput.MaxOutputBytes) throw new InvalidDataException("IPC7 output size bound");
+                    output.Write(reply); output.WriteByte(10); output.Flush(); continue;
+                }
                 if (request.GetProperty("op").GetString() == "sync_removed")
                 {
                     var next = BattleSceneInput.Scene(request, manifest, generation, sequence, "sync_removed");
@@ -288,6 +309,7 @@ internal static class BattleScene
         {
             capture = false;
             foreach (var tank in tanks.AsEnumerable().Reverse()) tank.Dispose();
+            foreach (var shape in catalogShapes.Values) shape.Dispose();
             foreach (var id in statics)
                 if (catalogIds.TryGetValue(id.ID, out uint objectId) && pending.Contains(objectId)) bodies.DestroyBody(id);
                 else bodies.RemoveAndDestroyBody(id);

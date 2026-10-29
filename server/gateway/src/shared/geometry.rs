@@ -403,6 +403,32 @@ impl Bundle {
     pub fn bundle_sha256(&self) -> &'static str { bundle_sha256(self.vehicle) }
     fn component_bounds(&self) -> [[[f32; 3]; 2]; 3] {self.bounds}
     pub fn materials(&self) -> &Catalog { &self.materials }
+    /// TURRET-01: source collision vertices of Turret and Gun that are extreme
+    /// along 98 fixed directions, in the detached body frame (origin `pivot`
+    /// in the vehicle frame, turret yaw applied, gun at neutral pitch as the
+    /// client's DetachedTurret attaches its gun). Their convex hull is inscribed
+    /// in the component hull; Jolt builds the shape from them.
+    pub fn detached_support_points(&self, pivot: [f32; 3]) -> io::Result<(Vec<[f32; 3]>, Vec<[f32; 3]>)> {
+        let mut directions = Vec::new();
+        for i in -2i8..=2 { for j in -2i8..=2 { for k in -2i8..=2 {
+            if i.abs().max(j.abs()).max(k.abs()) == 2 { directions.push([f32::from(i), f32::from(j), f32::from(k)]); }
+        }}}
+        let origin = |extra: [f32; 3]| -> [f32; 3] { std::array::from_fn(|a| self.hull[a] + self.turret[a] + extra[a] - pivot[a]) };
+        let support = |component: &Component, offset: [f32; 3]| -> io::Result<Vec<[f32; 3]>> {
+            let mut chosen: Vec<usize> = Vec::new();
+            for d in &directions {
+                let dot = |v: &[f32; 3]| v[0] * d[0] + v[1] * d[1] + v[2] * d[2];
+                let best = (0..component.vertices.len()).max_by(|a, b| dot(&component.vertices[*a]).total_cmp(&dot(&component.vertices[*b])).then(b.cmp(a)))
+                    .ok_or_else(|| bad())?;
+                if !chosen.contains(&best) { chosen.push(best); }
+            }
+            let points = chosen.into_iter().map(|i| std::array::from_fn(|a| component.vertices[i][a] + offset[a])).collect::<Vec<[f32; 3]>>();
+            let extent = (0..3).map(|a| points.iter().map(|p| p[a]).fold(f32::MIN, f32::max) - points.iter().map(|p| p[a]).fold(f32::MAX, f32::min)).fold(f32::MAX, f32::min);
+            if points.len() < 4 || !(0.01..=20.).contains(&extent) || points.iter().flatten().any(|v| !v.is_finite() || v.abs() > 20.) { return Err(bad()); }
+            Ok(points)
+        };
+        Ok((support(&self.components[1], origin([0.; 3]))?, support(&self.components[2], origin(self.gun))?))
+    }
     /// Recover a local segment from the authoritative contact's exact target
     /// pose. Attached hull/turret/gun on a live or ordinary HP0 vehicle only:
     /// #717 DamageFromShotDecoder reuses descriptor hitTester/bbox after death.
