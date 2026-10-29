@@ -1,5 +1,14 @@
 # Состояние проекта
 
+## NET-01 доставка поз и измерение шага — в ветке `codex/net-01-pose-delivery`, не в main — 2026-10-29
+
+- Ключ `pose_delivery`: `reliable-burst-v1` — все готовые надёжные тела за итерацию цикла (было одно);
+  `latest-unreliable-v1` — вдобавок поза последнего тика вне надёжного окна пакетом `0x0408`, без повторов.
+  Без ключа — прежний путь. Позы в `vehicle.def` объявлены Volatile (VERIFIED); приём клиентом `0x0408` с телом — UNKNOWN.
+- Release-бенч 1+29: прежний режим теряет 38 из 1200 тиков поз (114 при 10 кадр/с, 122 с подвисаниями), надёжные
+  тела ждут в окне до 230 мс; оба новых режима — 0 потерь, ожидание ≤ 1–36 мс. Лог: `NET01_STEP_STATS`/`NET01_SESSION_STATS`.
+- Native — NOT_RUN (бой владельца). План/итог/шаги — [NET01_POSE_DELIVERY](plans/NET01_POSE_DELIVERY.md).
+
 ## MM-01 очередь и подбор — в ветке `codex/mm-01-matchmaker`, не в main — 2026-10-28
 
 - Ключ `matchmaker` (`team_size`, `tiers`, `tier_spread`, `wait_seconds`, `lease_seconds`): «В бой» — билет очереди;
