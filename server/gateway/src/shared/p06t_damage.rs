@@ -21,12 +21,24 @@ pub struct Plate {
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Decision { Pierced, NotPierced, Ricochet, Unsupported, OutOfRange, UnarmoredDevice }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Decision
+impl crate::bw_wire::Wire for Decision {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Pierced=>bw_o.tag(0),Self::NotPierced=>bw_o.tag(1),Self::Ricochet=>bw_o.tag(2),Self::Unsupported=>bw_o.tag(3),Self::OutOfRange=>bw_o.tag(4),Self::UnarmoredDevice=>bw_o.tag(5),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Pierced),1=>Ok(Self::NotPierced),2=>Ok(Self::Ricochet),3=>Ok(Self::Unsupported),4=>Ok(Self::OutOfRange),5=>Ok(Self::UnarmoredDevice),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Resolution {
     pub policy: &'static str, pub decision: Decision, pub damage_hp: u16,
     pub incidence_degrees: f64, pub effective_armor_mm: Option<f64>,
     pub nominal_power_mm: f64, pub normalization_degrees: f64,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Resolution
+impl crate::bw_wire::Wire for Resolution {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{policy,decision,damage_hp,incidence_degrees,effective_armor_mm,nominal_power_mm,normalization_degrees}=self;W::put(policy,bw_o);W::put(decision,bw_o);W::put(damage_hp,bw_o);W::put(incidence_degrees,bw_o);W::put(effective_armor_mm,bw_o);W::put(nominal_power_mm,bw_o);W::put(normalization_degrees,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{policy:W::get(bw_i)?,decision:W::get(bw_i)?,damage_hp:W::get(bw_i)?,incidence_degrees:W::get(bw_i)?,effective_armor_mm:W::get(bw_i)?,nominal_power_mm:W::get(bw_i)?,normalization_degrees:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug)]
 pub struct DirectInput {
     pub shell: Shell, pub plate: Plate,
@@ -105,6 +117,12 @@ pub fn resolve_unarmored_device(i: DirectInput) -> io::Result<Resolution> {
 pub struct SplashTarget {pub slot:u8,pub distance_m:f64,pub armor_mm:f64,pub los_clear:bool}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct SplashDamage {pub slot:u8,pub damage_hp:u16}
+// BW-01 wire codec (tools/bw01_wire_gen.py): SplashDamage
+impl crate::bw_wire::Wire for SplashDamage {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{slot,damage_hp}=self;W::put(slot,bw_o);W::put(damage_hp,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{slot:W::get(bw_i)?,damage_hp:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 /// World owns the actual center-to-surface distance, LOS query and target
 /// identity. Bounded typed facts do not prove that geometry query by themselves.
 pub fn resolve_splash(shell:Shell,targets:&[SplashTarget])->io::Result<Vec<SplashDamage>> {

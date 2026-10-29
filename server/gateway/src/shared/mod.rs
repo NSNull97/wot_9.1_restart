@@ -4,6 +4,40 @@ pub(crate) mod model;
 pub(crate) mod p10b_team_plan;
 pub(crate) mod team_spawn;
 pub(crate) mod matchmaker;
+
+/// One Driving record length, or None for an ID outside the #717 table.
+fn record_size(payload: &[u8], at: usize) -> io::Result<Option<usize>> {
+    let id = *payload.get(at).ok_or_else(|| bad())?;
+    Ok(Some(match id {
+        // Native clients may piggyback area requests with their first
+        // aim/movement envelope after READY.  A request is the one
+        // fixed seven-byte VAR2 record; it has no length field.
+        8 => 7,
+        6 => 1, 2 => 17, 3 => 22,
+        0x87 | 0x88 | 0x89 | 0x8a | 0x8d | 0x8e | 0x8f | 0x0c | 0x0d | 0x0f | 0x99 => var2_size(payload, at)?,
+        id if wire::unimplemented_exposed(id).is_some() => var2_size(payload, at)?,
+        _ => return Ok(None),
+    }))
+}
+fn var2_size(payload: &[u8], at: usize) -> io::Result<usize> {
+    if payload.len() - at < 3 { return Err(bad()); }
+    Ok(3 + u16::from_le_bytes([payload[at+1], payload[at+2]]) as usize)
+}
+/// First unframed record of a Driving envelope, mirroring the loop below:
+/// an optional READY33 prefix, a READY33 suffix, at most 16 records.
+fn unframed_record(payload: &[u8], own: usize) -> io::Result<Option<(usize, u8)>> {
+    let mut at = if payload.get(..33).is_some_and(|prefix| wire::ready(prefix, own).is_ok()) {33} else {0};
+    let mut count = 0;
+    while at < payload.len() {
+        count += 1; if count > 16 { return Ok(None); }
+        if payload.len() - at == 33 && wire::ready(&payload[at..], own).is_ok() { return Ok(None); }
+        match record_size(payload, at)? {
+            Some(size) => at = at.checked_add(size).ok_or_else(|| bad())?,
+            None => return Ok(Some((at, payload[at]))),
+        }
+    }
+    Ok(None)
+}
 #[cfg(test)]
 mod spawn15_wire_tests;
 pub(crate) mod visibility;
@@ -63,6 +97,7 @@ mod p10b_selection_job;
 mod profile13_queue;
 mod profile13_templates;
 pub use server::serve_profile13;
+pub use server::run_battle_worker;
 pub use server::serve_profile13_source_bundle;
 pub use server::serve_curated_lab;
 pub use server::serve_curated_lab_v2;
@@ -746,6 +781,17 @@ impl Session {
             // including ACKs and the final request flush, atomically.
             payload = tail;
         }
+        // INPUT-01: frame the whole envelope before any record is applied. An ID
+        // outside the #717 Avatar table cannot be framed: the complete envelope
+        // is discarded unapplied (atomic, as a reject was) while the caller still
+        // consumes its authenticated reliable sequence, so the channel stays live.
+        // Only in Driving: before the first READY the strict reject remains, so
+        // a damaged handshake is never silently consumed.
+        if c.phase == Phase::Driving && let Some((offset, id)) = unframed_record(payload, c.slot)? {
+            events.push(format!("SHARED_UNSUPPORTED_ENVELOPE session={} sequence={sequence} id={id:#04x} offset={offset} bytes={} domain_applied=false",
+                self.id, payload.len()));
+            return Ok(());
+        }
         // Native fix06 B204 reverses the first-battle batching order: READY33
         // precedes six area requests. Validate only the exact owned compound,
         // then validate its entire tail in the same receive transaction.
@@ -782,19 +828,16 @@ impl Session {
                 continue;
             }
             let id = payload[at];
-            let size = match id {
-                // Native clients may piggyback area requests with their first
-                // aim/movement envelope after READY.  A request is the one
-                // fixed seven-byte VAR2 record; it has no length field.
-                8 => 7,
-                6 => 1, 2 => 17, 3 => 22,
-                0x87 | 0x88 | 0x89 | 0x8a | 0x8d | 0x8e | 0x8f | 0x0c | 0x0d | 0x0f | 0x99 => {
-                    if payload.len() - at < 3 { return Err(bad()); }
-                    3 + u16::from_le_bytes([payload[at+1], payload[at+2]]) as usize
-                },
-                _ => return Err(bad()),
-            };
+            // INPUT-01: unframed IDs were already refused by the pre-scan.
+            let size = record_size(payload, at)?.ok_or_else(|| bad())?;
             let raw = payload.get(at..at+size).ok_or_else(|| bad())?; at += size;
+            if let Some(method)=wire::unimplemented_exposed(id) {
+                // Exposed but not implemented here: skip exactly this record.
+                // No reply is invented (Avatar onCmdResponse is unmeasured).
+                events.push(format!("SHARED_UNSUPPORTED session={} method={method} id={id:#04x} bytes={} {} domain_applied=false",
+                    self.id,raw.len(),wire::unimplemented_detail(raw)));
+                continue;
+            }
             if id==0x87 {
                 if !self.battle_results.confirm_avatar(raw)? {return Err(bad());}
                 continue;
@@ -1193,16 +1236,33 @@ mod shared_return_tests {
             let mut raw=P08C_AUTOAIM_CAPTURED.to_vec();raw[3..7].copy_from_slice(&route.to_le_bytes());invalid.push(raw);
         }
         let aim=vec![0x8e,8,0,0,0,0,0,0,0,0,0];let movement=vec![0x8a,1,0,1];
-        let mut late_bad=P08C_AUTOAIM_CAPTURED.to_vec();late_bad.extend(&aim);late_bad.extend(&movement);late_bad.push(0);invalid.push(late_bad);
+        // INPUT-01: an unframed late ID drops the whole envelope, sequence consumed.
+        let mut late_bad=P08C_AUTOAIM_CAPTURED.to_vec();late_bad.extend(&aim);late_bad.extend(&movement);late_bad.push(0);
+        let mut s=ready.clone();s.receive(&frame(&s,&late_bad,1),now).unwrap();assert_eq!(s.rx,ready.rx+1);
+        // The authentic frame's transport ACK is still applied; nothing else.
+        assert_eq!(s.tx.cumulative,1);
+        let mut unapplied=s.clone();unapplied.rx=ready.rx;unapplied.received=ready.received.clone();unapplied.last_rx=ready.last_rx;
+        unapplied.tx=ready.tx.clone();same(&unapplied,&ready);p08c_autoaim_no_domain(&ready,&s);
         let mut bad_route=P08C_AUTOAIM_CAPTURED.to_vec();bad_route[3]=1;
         invalid.push([aim.clone(),movement.clone(),bad_route].concat());
+        let mut rejected=0;
         for payload in invalid {
-            let mut s=ready.clone();assert!(s.receive(&frame(&s,&payload,1),now).is_err());same(&s,&ready);
+            let mut s=ready.clone();
+            // INPUT-01: a lying VAR2 length can leave an unframed ID behind; that
+            // envelope is dropped unapplied with its sequence consumed instead.
+            if s.receive(&frame(&s,&payload,1),now).is_err() {same(&s,&ready);rejected+=1;}
+            else {
+                assert_eq!(s.rx,ready.rx+1);
+                let mut unapplied=s.clone();unapplied.rx=ready.rx;unapplied.received=ready.received.clone();
+                unapplied.last_rx=ready.last_rx;unapplied.tx=ready.tx.clone();same(&unapplied,&ready);
+            }
             p08c_autoaim_no_domain(&ready,&s);
         }
+        assert!(rejected>=12,"truncations and wrong routes still fail closed: {rejected}");
         // A valid autoAim + Aim + Move child cannot escape a bad later outer frame.
         let child_payload=[P08C_AUTOAIM_CAPTURED.to_vec(),aim,movement].concat();
-        let child=frame(&ready,&child_payload,1);let mut parent=frame(&ready,&[0],1);
+        // INPUT-01: a truncated record is still malformed (an unframed ID is dropped).
+        let child=frame(&ready,&child_payload,1);let mut parent=frame(&ready,&[0x88,1,0],1);
         parent.sequence=Some(ready.rx+1);parent.piggybacks.push(child);
         let mut s=ready.clone();assert!(s.receive(&parent,now).is_err());same(&s,&ready);p08c_autoaim_no_domain(&ready,&s);
         assert_eq!(s.tx.cumulative,0);assert_eq!(s.tx.len(),1);

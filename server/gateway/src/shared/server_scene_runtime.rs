@@ -1,7 +1,8 @@
 //! One owned IPC7 process per profile13 battle. The accepted IPC6 scalar parser
 //! verifies every actor before a candidate World may cross the single scene ACK.
 use super::*;
-use crate::scene_worker::{self,Scene,SceneSpec,Input};
+use crate::scene_worker::{self,Scene,SceneSpec,Input,TurretBody};
+use super::super::ammo_detonation as rack;
 use super::super::{scene_runtime::Runtime,profile13_templates::SharedResources};
 use sha2::Digest;
 
@@ -47,8 +48,71 @@ impl BatchRuntime {
         Self{resources,catalog,spec:None,runtime:None,startup:None,sessions:Vec::new(),started_at:None,
             dispatched:None,settled:false,staged:None,generation:1,held:None,lag_resync:LagResync::default()}
     }
+    pub(super) fn resources(&self)->&Arc<SharedResources>{&self.resources}
     pub(super) fn blocked(&self)->bool{self.staged.is_some()||self.runtime.as_ref().is_some_and(|r|!r.prepared_ids().is_empty())}
     pub(super) fn ready_for_native(&self)->bool{self.settled&&!self.blocked()&&self.runtime.as_ref().is_some_and(|r|r.ready())}
+    /// TURRET-01: install a worker trajectory into the World (and into a staged
+    /// candidate that also owns that flight). A reply for no awaiting flight
+    /// is a protocol fault, never dropped.
+    fn install_turret(&mut self,world:&mut World)->io::Result<()>{
+        let Some(t)=self.runtime.as_mut().and_then(|r|r.take_turret())else{return Ok(());};
+        let trajectory=rack::Trajectory{samples:t.samples.iter().map(|(p,d)|rack::JointPose{position:*p,direction:*d}).collect(),slept:t.slept};
+        let mut installed=false;
+        if world.pending_turret_launches().contains(&t.slot){world.install_turret_trajectory(t.slot,trajectory.clone())?;installed=true;}
+        if let Some(staged)=&mut self.staged{
+            if staged.pending_turret_launches().contains(&t.slot){staged.install_turret_trajectory(t.slot,trajectory.clone())?;installed=true;}
+        }
+        if !installed{return Err(model::bad());}
+        let rest=trajectory.samples.last().ok_or_else(||model::bad())?;
+        println!("TURRET01_FLIGHT battle={} slot={} samples={} slept={} substeps={} rest_position={:?} rest_direction={:?} policy={}",
+            world.id,t.slot,t.samples.len(),t.slept,t.substeps,rest.position,rest.direction,scene_worker::TURRET_POLICY);
+        Ok(())
+    }
+    /// One body request when the worker is idle. Returns true if sent; the
+    /// next advance then waits for its reply (the debris world never steps
+    /// the battle world).
+    fn launch_turret(&mut self,world:&World,now:Instant)->io::Result<bool>{
+        let Some(runtime)=self.runtime.as_mut()else{return Ok(false);};
+        if runtime.pending()||!runtime.ready(){return Ok(false);}
+        let Some(slot)=world.pending_turret_launches().first().copied()else{return Ok(false);};
+        let r=world.turret_launch_request(slot)?;
+        let body=TurretBody{slot,position:r.joint.position,direction:r.joint.direction,linear_velocity:r.launch.linear_velocity,
+            angular_velocity:r.launch.angular_velocity,turret_points:r.turret_points,gun_points:r.gun_points,wreck_slots:r.wreck_slots};
+        runtime.launch_turret(&body,now)?;
+        let event=world.turret_flights().iter().find(|f|f.event().target()==slot).ok_or_else(||model::bad())?.event();
+        println!("TURRET01_LAUNCH battle={} slot={} shot={} attacker={} tick={} joint={:?} linear={:?} angular={:?} rng_draws={:?} turret_points={} gun_points={} wrecks={:?} policy={}",
+            world.id,slot,event.shot(),event.attacker(),event.tick(),r.joint,r.launch.linear_velocity,r.launch.angular_velocity,r.launch.draws,
+            body.turret_points.len(),body.gun_points.len(),body.wreck_slots,rack::JOLT_POLICY);
+        Ok(true)
+    }
+    /// TURRET-01 test evidence: the same worker simulates the body request of
+    /// an already installed flight again with the wrecks of its original
+    /// request; blocks until its reply.
+    #[cfg(test)]
+    pub(super) fn relaunch_turret_for_test(&mut self,world:&World,slot:usize,wrecks:&[usize])->io::Result<scene_worker::TurretTrajectory>{
+        let mut r=world.turret_launch_request(slot)?;r.wreck_slots=wrecks.to_vec();
+        let body=TurretBody{slot,position:r.joint.position,direction:r.joint.direction,linear_velocity:r.launch.linear_velocity,
+            angular_velocity:r.launch.angular_velocity,turret_points:r.turret_points,gun_points:r.gun_points,wreck_slots:r.wreck_slots};
+        let runtime=self.runtime.as_mut().ok_or_else(||model::bad())?;
+        let deadline=Instant::now()+Duration::from_secs(5);
+        // End-of-test evidence only: a battle frame still in flight is dropped.
+        while runtime.pending(){let _=runtime.poll(Instant::now())?;
+            if Instant::now()>deadline{return Err(model::bad());}std::thread::sleep(Duration::from_millis(1));}
+        runtime.launch_turret(&body,Instant::now())?;
+        loop{runtime.poll(Instant::now())?;if let Some(t)=runtime.take_turret(){return Ok(t);}
+            if Instant::now()>deadline{return Err(model::bad());}std::thread::sleep(Duration::from_millis(1));}
+    }
+    /// After the frozen outcome the battle world is no longer advanced, but a
+    /// detonation that ended the battle still needs its body. A pending battle
+    /// advance reply is consumed and discarded here (the outcome is frozen).
+    pub(super) fn turrets_after_outcome(&mut self,world:&mut World,now:Instant)->io::Result<()>{
+        let Some(runtime)=self.runtime.as_mut()else{return Ok(());};
+        if world.pending_turret_launches().is_empty(){return Ok(());}
+        if runtime.pending()&&runtime.poll(now)?.is_some(){
+            println!("TURRET01_OUTCOME_FRAME_DISCARDED battle={} reason=outcome_frozen",world.id);
+        }
+        self.install_turret(world)?;self.launch_turret(world,now)?;Ok(())
+    }
     pub(super) fn failure_snapshot(&self)->serde_json::Value{serde_json::json!({
         "process_id":self.runtime.as_ref().map(|r|r.process_id()),"startup":self.startup.is_some(),"settled":self.settled,
         "generation":self.generation,"physical_sessions":self.sessions,
@@ -116,6 +180,8 @@ impl BatchRuntime {
             return Err(model::bad());
         }
         let version=if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
+        // TURRET-01: this battle has a scene worker, so detached turrets are Jolt bodies.
+        world.enable_turret_jolt()?;
         // SPAWN-15: each team on its own base formation; otherwise LAB lanes.
         let spots=if world.team_base_spawn() {
             let teams=(0..world.actors.len()).map(|slot|world.team(slot)).collect::<io::Result<Vec<_>>>()?;
@@ -198,9 +264,10 @@ impl BatchRuntime {
         }
         let Some(runtime)=&mut self.runtime else{return Err(model::bad());};
         let frame=if self.held.is_some(){self.held.take()}else{runtime.poll(now)?};
+        self.install_turret(world)?;
         if self.staged.is_some(){
             if frame.is_some(){return Err(model::bad());}
-            if runtime.take_scene_ack(){let mut staged=self.staged.take().ok_or_else(||model::bad())?;
+            if self.runtime.as_mut().ok_or_else(||model::bad())?.take_scene_ack(){let mut staged=self.staged.take().ok_or_else(||model::bad())?;
                 Self::reconcile_departures(&mut staged,world)?;
                 *world=staged;self.dispatched=Some(drive_grid(world.started.ok_or_else(||model::bad())?,now)?);
                 println!("P05C_SCENE_COMMIT battle={} version={} one_worker_ack=true",world.id,world.scene_version());}
@@ -246,6 +313,7 @@ impl BatchRuntime {
             *world=candidate;
         }
         if !self.settled||world.tick==1000&&world.actors.iter().any(|a|a.session.is_some()&&!a.ready){return Ok(());}
+        if self.launch_turret(world,now)?{return Ok(());}
         let runtime=self.runtime.as_mut().ok_or_else(||model::bad())?;
         if runtime.pending(){return Ok(());}
         let started=world.started.ok_or_else(||model::bad())?;

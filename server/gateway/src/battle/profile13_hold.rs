@@ -26,6 +26,12 @@ pub struct FrozenHold {
     value: Value,
     sha256: String,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): FrozenHold
+impl crate::bw_wire::Wire for FrozenHold {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{loss,value,sha256}=self;W::put(loss,bw_o);W::put(value,bw_o);W::put(sha256,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{loss:W::get(bw_i)?,value:W::get(bw_i)?,sha256:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl FrozenHold {
     pub fn loss(&self) -> &loss::FrozenLoss { &self.loss }
     pub fn sha256(&self) -> &str { &self.sha256 }

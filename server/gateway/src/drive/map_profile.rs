@@ -18,6 +18,12 @@ const MAX_MAPS: usize = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct MapId(u8);
+// BW-01 wire codec (tools/bw01_wire_gen.py): MapId
+impl crate::bw_wire::Wire for MapId {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self(f0)=self;W::put(f0,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self(W::get(bw_i)?))}
+}
+// end BW-01 wire codec
 
 impl Default for MapId {
     fn default() -> Self { Self::Karelia }

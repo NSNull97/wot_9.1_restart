@@ -5,6 +5,12 @@ pub const SOURCE_V2_SHA256:&str="2d74a8e8f272e6305d6779d887cac44ad9794c4ec40807d
 pub enum Profile {Ms1,Is7,T26,T34,T3485,Wt128,Fv183,
 /// BATTLE-ANY generated assembly: caps/crew from the verified registry.
 Generated(crate::gateway091::shared::generated_vehicles::GeneratedId)}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Profile
+impl crate::bw_wire::Wire for Profile {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ms1=>bw_o.tag(0),Self::Is7=>bw_o.tag(1),Self::T26=>bw_o.tag(2),Self::T34=>bw_o.tag(3),Self::T3485=>bw_o.tag(4),Self::Wt128=>bw_o.tag(5),Self::Fv183=>bw_o.tag(6),Self::Generated(f0)=>{bw_o.tag(7);W::put(f0,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ms1),1=>Ok(Self::Is7),2=>Ok(Self::T26),3=>Ok(Self::T34),4=>Ok(Self::T3485),5=>Ok(Self::Wt128),6=>Ok(Self::Fv183),7=>Ok(Self::Generated(W::get(bw_i)?)),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl Profile {
     /// Existing World/v1 policy deliberately retains exactly these five.
     pub const ALL:[Self;5]=[Self::Ms1,Self::Is7,Self::T26,Self::T34,Self::T3485];
@@ -28,6 +34,12 @@ impl Profile {
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 #[repr(usize)]
 pub enum Device {Engine,AmmoBay,FuelTank,Radio,LeftTrack,RightTrack,Gun,TurretRotator,SurveyingDevice}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Device
+impl crate::bw_wire::Wire for Device {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Engine=>bw_o.tag(0),Self::AmmoBay=>bw_o.tag(1),Self::FuelTank=>bw_o.tag(2),Self::Radio=>bw_o.tag(3),Self::LeftTrack=>bw_o.tag(4),Self::RightTrack=>bw_o.tag(5),Self::Gun=>bw_o.tag(6),Self::TurretRotator=>bw_o.tag(7),Self::SurveyingDevice=>bw_o.tag(8),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Engine),1=>Ok(Self::AmmoBay),2=>Ok(Self::FuelTank),3=>Ok(Self::Radio),4=>Ok(Self::LeftTrack),5=>Ok(Self::RightTrack),6=>Ok(Self::Gun),7=>Ok(Self::TurretRotator),8=>Ok(Self::SurveyingDevice),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl Device {pub const ALL:[Self;9]=[Self::Engine,Self::AmmoBay,Self::FuelTank,Self::Radio,Self::LeftTrack,Self::RightTrack,Self::Gun,Self::TurretRotator,Self::SurveyingDevice];pub fn extra(self)->u8{26+self as u8}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Cap {pub max:u16,pub regen:u16}

@@ -47,6 +47,12 @@ pub struct Hit {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Bounds { min: [f32; 3], max: [f32; 3] }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Bounds
+impl crate::bw_wire::Wire for Bounds {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{min,max}=self;W::put(min,bw_o);W::put(max,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{min:W::get(bw_i)?,max:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 impl Bounds {
     fn triangle(points: [[f32; 3]; 3]) -> Self {
@@ -83,6 +89,12 @@ struct Node {
     count: u32,
     right: u32,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Node
+impl crate::bw_wire::Wire for Node {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{bounds,first,count,right}=self;W::put(bounds,bw_o);W::put(first,bw_o);W::put(count,bw_o);W::put(right,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{bounds:W::get(bw_i)?,first:W::get(bw_i)?,count:W::get(bw_i)?,right:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 #[derive(Debug)]
 struct Mesh {
@@ -94,9 +106,21 @@ struct Mesh {
     order: Box<[u32]>,
     nodes: Box<[Node]>,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Mesh
+impl crate::bw_wire::Wire for Mesh {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{instance_count,vertices,triangles,instances,material_kinds,order,nodes}=self;W::put(instance_count,bw_o);W::put(vertices,bw_o);W::put(triangles,bw_o);W::put(instances,bw_o);W::put(material_kinds,bw_o);W::put(order,bw_o);W::put(nodes,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{instance_count:W::get(bw_i)?,vertices:W::get(bw_i)?,triangles:W::get(bw_i)?,instances:W::get(bw_i)?,material_kinds:W::get(bw_i)?,order:W::get(bw_i)?,nodes:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 #[derive(Clone, Debug)]
 pub struct Obstacles { map: MapId, mesh: Arc<Mesh> }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Obstacles
+impl crate::bw_wire::Wire for Obstacles {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{map,mesh}=self;W::put(map,bw_o);W::put(mesh,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{map:W::get(bw_i)?,mesh:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 fn bad(reason: &'static str) -> io::Error { io::Error::new(io::ErrorKind::InvalidData, reason) }
 

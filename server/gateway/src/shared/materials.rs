@@ -17,6 +17,12 @@ pub fn profile_revision(kind: VehicleKind) -> &'static str { match kind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Component { Hull, Turret01, Gun02, Gun01 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Component
+impl crate::bw_wire::Wire for Component {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Hull=>bw_o.tag(0),Self::Turret01=>bw_o.tag(1),Self::Gun02=>bw_o.tag(2),Self::Gun01=>bw_o.tag(3),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Hull),1=>Ok(Self::Turret01),2=>Ok(Self::Gun02),3=>Ok(Self::Gun01),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl Component {
     pub fn name(self) -> &'static str { match self { Self::Hull => "Hull", Self::Turret01 => "Turret_01", Self::Gun02 => "Gun_02", Self::Gun01 => "Gun_01" } }
     fn parse(s: &str) -> io::Result<Self> { match s {
@@ -54,6 +60,12 @@ pub(super) fn gun_component(vehicle:VehicleKind)->Component {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceClass { ArmorDescriptor, GunVisualMaterial, SurveyingDeviceVisualMaterial, GunBreechVisualMaterial }
+// BW-01 wire codec (tools/bw01_wire_gen.py): SourceClass
+impl crate::bw_wire::Wire for SourceClass {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::ArmorDescriptor=>bw_o.tag(0),Self::GunVisualMaterial=>bw_o.tag(1),Self::SurveyingDeviceVisualMaterial=>bw_o.tag(2),Self::GunBreechVisualMaterial=>bw_o.tag(3),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::ArmorDescriptor),1=>Ok(Self::GunVisualMaterial),2=>Ok(Self::SurveyingDeviceVisualMaterial),3=>Ok(Self::GunBreechVisualMaterial),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl SourceClass {
     fn name(self) -> &'static str { match self {
         Self::ArmorDescriptor => "armor_descriptor", Self::GunVisualMaterial => "gun_visual_material",
@@ -69,6 +81,12 @@ pub struct EffectiveMaterial {
     pub chance_to_hit_by_projectile: f32, pub chance_to_hit_by_explosion: f32,
     pub continue_trace_if_no_hit: bool,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): EffectiveMaterial
+impl crate::bw_wire::Wire for EffectiveMaterial {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{kind,armor,extra_is_none,vehicle_damage_factor,use_armor_homogenization,use_hit_angle,use_antifragmentation_lining,may_ricochet,collide_once_only,damage_kind,chance_to_hit_by_projectile,chance_to_hit_by_explosion,continue_trace_if_no_hit}=self;W::put(kind,bw_o);W::put(armor,bw_o);W::put(extra_is_none,bw_o);W::put(vehicle_damage_factor,bw_o);W::put(use_armor_homogenization,bw_o);W::put(use_hit_angle,bw_o);W::put(use_antifragmentation_lining,bw_o);W::put(may_ricochet,bw_o);W::put(collide_once_only,bw_o);W::put(damage_kind,bw_o);W::put(chance_to_hit_by_projectile,bw_o);W::put(chance_to_hit_by_explosion,bw_o);W::put(continue_trace_if_no_hit,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{kind:W::get(bw_i)?,armor:W::get(bw_i)?,extra_is_none:W::get(bw_i)?,vehicle_damage_factor:W::get(bw_i)?,use_armor_homogenization:W::get(bw_i)?,use_hit_angle:W::get(bw_i)?,use_antifragmentation_lining:W::get(bw_i)?,may_ricochet:W::get(bw_i)?,collide_once_only:W::get(bw_i)?,damage_kind:W::get(bw_i)?,chance_to_hit_by_projectile:W::get(bw_i)?,chance_to_hit_by_explosion:W::get(bw_i)?,continue_trace_if_no_hit:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl EffectiveMaterial {
     fn from_value(v: &Value, kind: u16) -> io::Result<Self> {
         fields(v, &["kind", "armor", "extra_is_none", "vehicleDamageFactor", "useArmorHomogenization",
@@ -100,6 +118,12 @@ pub struct MaterialFacts {
     /// None means the native component table has no record. It is not armor=0.
     pub effective: Option<EffectiveMaterial>, pub profile_revision: String,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): MaterialFacts
+impl crate::bw_wire::Wire for MaterialFacts {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{component,name,kind,source_class,effective,profile_revision}=self;W::put(component,bw_o);W::put(name,bw_o);W::put(kind,bw_o);W::put(source_class,bw_o);W::put(effective,bw_o);W::put(profile_revision,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{component:W::get(bw_i)?,name:W::get(bw_i)?,kind:W::get(bw_i)?,source_class:W::get(bw_i)?,effective:W::get(bw_i)?,profile_revision:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl MaterialFacts {
     pub fn json(&self) -> Value { json!({"component": self.component.name(), "name": self.name,
         "kind": self.kind, "source_class": self.source_class.name(), "effective": self.effective.as_ref().map(EffectiveMaterial::json),
@@ -108,6 +132,12 @@ impl MaterialFacts {
 }
 #[derive(Clone, Debug)]
 pub struct Catalog { entries: Vec<MaterialFacts> }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Catalog
+impl crate::bw_wire::Wire for Catalog {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{entries}=self;W::put(entries,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{entries:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 fn fields(v: &Value, keys: &[&str]) -> io::Result<()> { crate::map_drive_worker091::fields(v, keys).map(|_| ()) }
 fn flag(v: &Value) -> io::Result<bool> { v.as_bool().ok_or_else(|| bad()) }
 fn scalar(v: &Value, max: f64) -> io::Result<f32> {

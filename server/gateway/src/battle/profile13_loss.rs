@@ -49,6 +49,12 @@ fn event_value(e:Option<LossEvent>)->Value{e.map_or(Value::Null,LossEvent::value
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct FrozenLoss{pub base:Frozen,pub policy_sha256:String,pub sha256:String}
+// BW-01 wire codec (tools/bw01_wire_gen.py): FrozenLoss
+impl crate::bw_wire::Wire for FrozenLoss {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{base,policy_sha256,sha256}=self;W::put(base,bw_o);W::put(policy_sha256,bw_o);W::put(sha256,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{base:W::get(bw_i)?,policy_sha256:W::get(bw_i)?,sha256:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 fn base_value(f:&Frozen)->Value{serde_json::json!({"kind":f.kind.label(),"descriptor_hex":f.descriptor.iter().map(|b|format!("{b:02x}")).collect::<String>(),
     "native_inventory_id":f.native_inventory_id,"vehicle_inventory_id":f.vehicle_inventory_id,"max_hp":f.max_hp,"crew_ids":f.crew_ids,"capacity":f.capacity,
     "initial_shell_compact_id":f.initial_shell_compact_id,"ammunition":f.ammunition.iter().map(|r|serde_json::json!({"shell_definition_id":r.shell_definition_id,

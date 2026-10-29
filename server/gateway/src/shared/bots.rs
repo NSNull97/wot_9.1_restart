@@ -72,6 +72,12 @@ fn playable_bounds(asset: &str) -> Option<[f32; 4]> {
 /// Explicit gateway configuration of the bots of every arena.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Plan { pub human_places: usize, pub seed: u64, pub kinds: Vec<VehicleKind> }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Plan
+impl crate::bw_wire::Wire for Plan {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{human_places,seed,kinds}=self;W::put(human_places,bw_o);W::put(seed,bw_o);W::put(kinds,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{human_places:W::get(bw_i)?,seed:W::get(bw_i)?,kinds:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Plan {
     pub fn validate(&self, places: usize) -> io::Result<()> {
         if !(1..places).contains(&self.human_places) || places > MAX_ACTORS || self.kinds.is_empty()
@@ -97,6 +103,12 @@ struct Brain {
     /// Lead: (target, tick, last position, smoothed velocity).
     track: Option<(usize, u32, [f32; 3], [f32; 3])>,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Brain
+impl crate::bw_wire::Wire for Brain {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{slot,rng,route,waypoint,stuck,unstick,unstick_steer,target,settle_tick,error,turret_yaw,sent_input,sent_aim,line,side,avoid,probe_tick,detour,stuck_spot,track}=self;W::put(slot,bw_o);W::put(rng,bw_o);W::put(route,bw_o);W::put(waypoint,bw_o);W::put(stuck,bw_o);W::put(unstick,bw_o);W::put(unstick_steer,bw_o);W::put(target,bw_o);W::put(settle_tick,bw_o);W::put(error,bw_o);W::put(turret_yaw,bw_o);W::put(sent_input,bw_o);W::put(sent_aim,bw_o);W::put(line,bw_o);W::put(side,bw_o);W::put(avoid,bw_o);W::put(probe_tick,bw_o);W::put(detour,bw_o);W::put(stuck_spot,bw_o);W::put(track,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{slot:W::get(bw_i)?,rng:W::get(bw_i)?,route:W::get(bw_i)?,waypoint:W::get(bw_i)?,stuck:W::get(bw_i)?,unstick:W::get(bw_i)?,unstick_steer:W::get(bw_i)?,target:W::get(bw_i)?,settle_tick:W::get(bw_i)?,error:W::get(bw_i)?,turret_yaw:W::get(bw_i)?,sent_input:W::get(bw_i)?,sent_aim:W::get(bw_i)?,line:W::get(bw_i)?,side:W::get(bw_i)?,avoid:W::get(bw_i)?,probe_tick:W::get(bw_i)?,detour:W::get(bw_i)?,stuck_spot:W::get(bw_i)?,track:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Bots { plan: Arc<Plan>, brains: Vec<Brain>, last_tick: Option<u32>, digest: u64, shots: u32,
@@ -108,6 +120,12 @@ pub(crate) struct Bots { plan: Arc<Plan>, brains: Vec<Brain>, last_tick: Option<
     think_ns: u64,
     /// MM-01: the matched group's tiers; facing places get one tier.
     pairing: Option<(u8, u8)> }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Bots
+impl crate::bw_wire::Wire for Bots {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{plan,brains,last_tick,digest,shots,held,stucks,think_ns,pairing}=self;W::put(plan,bw_o);W::put(brains,bw_o);W::put(last_tick,bw_o);W::put(digest,bw_o);W::put(shots,bw_o);W::put(held,bw_o);W::put(stucks,bw_o);W::put(think_ns,bw_o);W::put(pairing,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{plan:W::get(bw_i)?,brains:W::get(bw_i)?,last_tick:W::get(bw_i)?,digest:W::get(bw_i)?,shots:W::get(bw_i)?,held:W::get(bw_i)?,stucks:W::get(bw_i)?,think_ns:W::get(bw_i)?,pairing:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 fn splitmix(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);

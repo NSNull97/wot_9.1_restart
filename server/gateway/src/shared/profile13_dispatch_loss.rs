@@ -175,3 +175,7 @@ mod arena01_dispatch_tests;
 #[cfg(test)]
 #[path="stab02_containment_tests.rs"]
 mod stab02_containment_tests;
+
+#[cfg(test)]
+#[path="bw01_battle_worker_tests.rs"]
+mod bw01_battle_worker_tests;

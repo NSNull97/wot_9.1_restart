@@ -94,3 +94,36 @@ fn event()->Event{let Outcome::New(event)=Ledger::new(2).unwrap().apply(input())
     assert_eq!(s.phase,FlightPhase::Resting);assert_eq!(s.position[1],-1000.);
     let late=f.advance(MAX_TIME_MS,|_,_|panic!("resting flight queried terrain")).unwrap();assert_eq!(late.position,s.position);
 }
+
+fn draws(seed:u64)->[u64;LAUNCH_DRAWS]{let mut state=seed;std::array::from_fn(|_|{state=state.wrapping_add(0x9e3779b97f4a7c15);
+    let mut v=state;v=(v^(v>>30)).wrapping_mul(0xbf58476d1ce4e5b9);v=(v^(v>>27)).wrapping_mul(0x94d049bb133111eb);v^(v>>31)})}
+#[test]fn turret01_launch_same_draws_same_motion_different_events_differ(){
+    let a=Launch::derive(0.3,0.5,draws(7)).unwrap();assert_eq!(a,Launch::derive(0.3,0.5,draws(7)).unwrap());
+    // Another heading, rack fill or battle seed is another launch.
+    for other in [Launch::derive(1.3,0.5,draws(7)).unwrap(),Launch::derive(0.3,1.,draws(7)).unwrap(),Launch::derive(0.3,0.5,draws(8)).unwrap()]{
+        assert_ne!(a.linear_velocity,other.linear_velocity);
+    }
+    for seed in 0..500{let l=Launch::derive(seed as f32*0.1,(seed%11)as f32/10.,draws(seed)).unwrap();
+        assert!((5. ..=10.).contains(&l.linear_velocity[1]));let side=l.linear_velocity[0].hypot(l.linear_velocity[2]);assert!((1. ..=4.0001).contains(&side));
+        assert!(l.angular_velocity[0].abs()<=3.&&l.angular_velocity[1].abs()<=2.&&l.angular_velocity[2].abs()<=3.);}
+    // Sideways motion keeps within 60 degrees of the shot heading.
+    let l=Launch::derive(0.,0.,[0,u64::MAX,u64::MAX,0,0,0]).unwrap();assert!(l.linear_velocity[0]>0.&&l.linear_velocity[2]>0.);
+    assert!(Launch::derive(f32::NAN,0.5,draws(1)).is_err());assert!(Launch::derive(0.,1.5,draws(1)).is_err());
+}
+#[test]fn turret01_jolt_flight_holds_joint_then_plays_worker_trajectory_by_clock(){
+    let e=event();let launch=Launch::derive(0.,0.5,draws(3)).unwrap();let mut f=Flight::jolt(e,launch).unwrap();
+    assert!(f.awaiting_trajectory());assert_eq!(f.launch(),Some(launch));
+    let s=f.advance(e.born_ms()+250,|_,_|panic!("Jolt flight never samples terrain")).unwrap();
+    assert_eq!((s.position,s.phase),(e.joint().position,FlightPhase::Flying));
+    let pose=|y:f32|JointPose{position:[0.,y,0.],direction:[0.,0.,y/10.]};
+    let bad_start=Trajectory{samples:vec![pose(5.)],slept:true};assert!(f.clone().install_trajectory(bad_start).is_err());
+    assert!(f.clone().install_trajectory(Trajectory{samples:vec![],slept:true}).is_err());
+    assert!(f.clone().install_trajectory(Trajectory{samples:vec![pose(1.);MAX_TRAJECTORY_SAMPLES+1],slept:true}).is_err());
+    f.install_trajectory(Trajectory{samples:vec![pose(1.),pose(3.),pose(2.),pose(0.5)],slept:true}).unwrap();
+    assert!(!f.awaiting_trajectory());assert!(f.clone().install_trajectory(Trajectory{samples:vec![pose(1.)],slept:true}).is_err());
+    let s=f.advance(e.born_ms()+299,|_,_|panic!()).unwrap();assert_eq!((s.position[1],s.phase),(2.,FlightPhase::Flying));
+    let s=f.advance(e.born_ms()+300,|_,_|panic!()).unwrap();assert_eq!((s.position[1],s.direction[2],s.phase),(0.5,0.05,FlightPhase::Resting));
+    let s=f.advance(MAX_TIME_MS,|_,_|panic!()).unwrap();assert_eq!((s.position[1],s.phase),(0.5,FlightPhase::Resting));
+    // A legacy point flight has no Jolt body to install.
+    assert!(Flight::new(e).install_trajectory(Trajectory{samples:vec![pose(1.)],slept:true}).is_err());
+}

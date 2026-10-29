@@ -36,6 +36,9 @@ mod login_admission;
 mod arena;
 #[path="server_containment.rs"]
 mod containment;
+#[path="server_battle_worker.rs"]
+mod battle_worker;
+pub use battle_worker::run as run_battle_worker;
 #[cfg(test)]
 #[path="server_arena_bench.rs"]
 mod arena_bench;
@@ -45,6 +48,9 @@ mod bot01_bench;
 #[cfg(test)]
 #[path="server_spawn15_real_tests.rs"]
 mod spawn15_real_tests;
+#[cfg(test)]
+#[path="server_turret01_real_tests.rs"]
+mod turret01_real_tests;
 use login_admission::{AccountTag,Admission,Decision,Writers};
 
 #[cfg(test)]
@@ -159,6 +165,8 @@ struct IntegratedRuntime {
     contact_sequences: [u32; model::CAPACITY],
     contact_batches: [Option<ContactBatch>; model::CAPACITY],
     lag_resync: [LagResync; model::CAPACITY],
+    /// BW-01: identity of this runtime object; a battle worker rebuilds its own on change.
+    generation: u64,
 }
 
 /// A worker frame may be compared with a client frame in focused tests, but an
@@ -242,7 +250,8 @@ impl IntegratedRuntime {
             anchored: [false; model::CAPACITY],
             dispatched: [None; model::CAPACITY], started: false, removal: None,catalog:None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY],
             worker_sessions: [None; model::CAPACITY], contact_sequences: [0; model::CAPACITY],
-            contact_batches: std::array::from_fn(|_| None), lag_resync: [LagResync::default(); model::CAPACITY] }
+            contact_batches: std::array::from_fn(|_| None), lag_resync: [LagResync::default(); model::CAPACITY],
+            generation: { static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1); NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) } }
     }
 
     fn map(&self) -> io::Result<crate::map_drive_worker091::MapSpec> {
@@ -839,7 +848,11 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
             if runtime.as_ref().is_none_or(IntegratedRuntime::ready_for_native) {world.ready_bots()?;}
             world.drive_bots(now)?;
         }
-        if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {world.advance(now)?;}
+        if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {
+            world.advance(now)?;
+            // TURRET-01: a detonation that ended the battle still gets its body.
+            if let Some(batch)=runtime.as_mut().and_then(|r|r.batch.as_mut()) {batch.turrets_after_outcome(world,now)?;}
+        }
         else if let Some(r)=runtime {
             if !r.started {r.start(world,now)?;}
             let _span=super::step_profile::span(super::step_profile::Part::Scene);
@@ -856,7 +869,10 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
         drop(lifecycle_span);
         // A separate bounded visual clock survives the authoritative outcome.
         // Do not mutate a World while a prepared scene clone owns its commit.
-        if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.ammo_detonation_enabled(){
+        // After the outcome no runtime stages or commits a World, so a worker
+        // fracture left prepared then cannot freeze the turret timeline.
+        let frozen=world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some());
+        if (frozen||runtime.as_ref().is_none_or(|r|!r.blocked())) && world.ammo_detonation_enabled(){
             let _span=super::step_profile::span(super::step_profile::Part::Turrets);
             world.advance_turret_flights(now)?;
         }
@@ -1599,8 +1615,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         if !profile13_mode||!config.p06t_mixed_ammo||!config.visibility_v1||qualification.is_some(){return Err(model::bad().into());}
         battle_template.world.enable_ammo_detonation()?;
         battle_template.select(&mut world,&mut integrated,started)?;
-        println!("P06T_AMMO_DETONATION_BOUND policy={} flight_policy={} historical_solver=UNKNOWN",
-            super::ammo_detonation::POLICY,super::ammo_detonation::FLIGHT_POLICY);
+        println!("P06T_AMMO_DETONATION_BOUND policy={} flight_policy={} jolt_launch_policy={} jolt_body_policy={} historical_solver=UNKNOWN",
+            super::ammo_detonation::POLICY,super::ammo_detonation::FLIGHT_POLICY,super::ammo_detonation::JOLT_POLICY,crate::scene_worker::TURRET_POLICY);
     }
     if let Some(plan)=&config.bots{
         // Config already requires profile13, connection capacity, visibility and no hold5/training.
@@ -1638,6 +1654,12 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     if table.arena_split {
         println!("GATEWAY_CAPACITY connections={} arena_places={} retired_limit={} datagrams_per_second={datagram_budget} drain={drain} policy=gw01-hangar-holds-no-arena-place",
             table.capacity,arenas[0].world.expected_actors(),table.retirement.limit());
+    }
+    if let Some(worker)=&config.battle_worker {
+        let settings=battle_worker::Settings::from_config(worker,config.catalog_v1);
+        for a in &mut arenas {a.worker=Some(Box::new(battle_worker::Remote::new(settings)));}
+        println!("BW01_BATTLE_WORKER arenas={} step_timeout_ms={} startup_timeout_ms={} policy={} publication=gateway",
+            arenas.len(),settings.step_timeout.as_millis(),settings.startup_timeout.as_millis(),battle_worker::POLICY);
     }
     if arenas.len()>1 {
         println!("ARENAS count={} places_per_arena={} battles={:?} step_threads=scoped_per_tick policy=arena01-in-process",
@@ -2085,13 +2107,14 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
         }
         let step_started=Instant::now();
-        for (index,event) in arena::step_all(&mut arenas,&commands).into_iter().enumerate() {
+        let events=if arenas[0].worker.is_some() {battle_worker::step_all(&mut arenas,&commands)} else {arena::step_all(&mut arenas,&commands)};
+        for (index,event) in events.into_iter().enumerate() {
             if let Some(arena::Event::Failed{stage,error})=event {failures.push((index,stage,error));}
         }
         let step_wall=step_started.elapsed();
         failures.sort_by_key(|f|f.0);
         for (index,stage,error) in failures {
-            let late=if stage=="world_step"{"fault_world_step"}else{"fault_world_step_panic"};
+            let late=match stage {"world_step"=>"fault_world_step","world_step_panic"=>"fault_world_step_panic",_=>"fault_battle_worker"};
             containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[index],now,stage,Some(late),&error);
         }
         if let Some(late)=&mut battle_dispatch.late{late.observe_sessions(table.sessions.iter());for a in &arenas{late.seal_world(&a.world);}}
@@ -3397,6 +3420,48 @@ mod tests {
         assert!(b.shared.as_ref().unwrap().commands.is_empty());
         assert_eq!(w.actors[1].health,0); assert_eq!(b.shared.as_ref().unwrap().slot,1);
     }
+    fn var2(id:u8,args:&[u8])->Vec<u8> {let mut b=vec![id];b.extend((args.len() as u16).to_le_bytes());b.extend(args);b}
+    /// Owner 2026-10-29 (-11, BW-01): changing settings in battle sent an
+    /// Avatar method outside the gateway table (mod.rs:796 `_ => Err`), the
+    /// rejected reliable3031 stalled rx and the player was dropped by idle_timeout.
+    /// #717: IntUserSettings.addIntSettings -> Avatar Base doCmdIntArr(1600),
+    /// VehicleGunRotator.showServerMarker -> setDevelopmentFeature('server_marker').
+    #[test] fn input01_unimplemented_avatar_methods_are_skipped_and_unknown_tail_keeps_channel_live() {
+        let now=Instant::now(); let (_,mut b,_)=visible_pair(now);
+        let mut settings=Vec::new(); for v in [227i16,1600] {settings.extend(v.to_le_bytes());}
+        settings.extend(4u32.to_le_bytes()); for v in [61i32,1,62,0] {settings.extend(v.to_le_bytes());}
+        let mut feature=vec![13]; feature.extend(b"server_marker"); feature.extend(1i32.to_le_bytes());
+        let aim=point(1,[100.,100.,100.]);
+        let envelope=[var2(0x9c,&settings),var2(0xa1,&feature),var2(0x0e,&wire::vehicle_id(0).unwrap().to_le_bytes()),aim.clone()].concat();
+        let before=b.rx; b.receive(&frame(&b,&envelope),now).unwrap(); assert_eq!(b.rx,before+1);
+        assert_eq!(b.shared.as_ref().unwrap().commands.len(),1,"records after skipped methods still apply");
+        assert_eq!(wire::unimplemented_detail(&var2(0x9c,&settings)),"request=227 command=1600");
+        assert_eq!(wire::unimplemented_detail(&var2(0xa1,&feature)),"feature=server_marker");
+        // An ID outside the table: the whole envelope is dropped unapplied, the
+        // sequence is consumed and later keepalives are accepted.
+        let unknown=[aim.clone(),vec![0x7f,1,2,3],aim.clone()].concat();
+        let before=b.rx; b.receive(&frame(&b,&unknown),now).unwrap(); assert_eq!(b.rx,before+1);
+        assert_eq!(b.shared.as_ref().unwrap().commands.len(),1);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+        // A truncated framed record is still malformed and fails closed.
+        let mut short=var2(0x9c,&settings); short.truncate(short.len()-1);
+        let before=b.rx; assert!(b.receive(&frame(&b,&short),now).is_err()); assert_eq!(b.rx,before);
+    }
+    /// Owner detail: the "Aim" settings tab in battle. #717 setAimSettings ->
+    /// g_settingsCache -> PlayerAvatar.intUserSettings.addIntSettings sends one
+    /// doCmdIntArr(1600) of changed AIM_<SECTION>_<n> pairs and setVersion
+    /// another. With a trackPointWithGun this is one 73-byte application
+    /// envelope = the 78-byte rejected frame (exact bytes were not logged).
+    #[test] fn input01_aim_settings_envelope_of_the_rejected_size_is_consumed() {
+        let now=Instant::now(); let (_,mut b,_)=visible_pair(now);
+        let settings=|request:i16,pairs:&[(i32,i32)]|{let mut a=Vec::new();for v in [request,1600] {a.extend(v.to_le_bytes());}
+            a.extend((2*pairs.len() as u32).to_le_bytes());for (k,v) in pairs {a.extend(k.to_le_bytes());a.extend(v.to_le_bytes());}var2(0x9c,&a)};
+        let envelope=[settings(31,&[(5,0x0102),(6,0x0304),(7,0)]),settings(32,&[(0,11)]),point(1,[100.,100.,100.])].concat();
+        assert_eq!(envelope.len(),73); assert_eq!(frame(&b,&envelope).body.len(),78);
+        let before=b.rx; b.receive(&frame(&b,&envelope),now).unwrap(); assert_eq!(b.rx,before+1);
+        assert_eq!(b.shared.as_ref().unwrap().commands.len(),1);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+    }
     fn bind(target:u32)->Vec<u8> {let mut b=vec![0x0d,8,0,0,0,0,0];b.extend(target.to_le_bytes());b}
     /// Owner 2026-10-29 (-11, battle ...827, session 4): the dead player's
     /// observer camera bound an ally; rejection stalled reliable17381 and every
@@ -3608,9 +3673,13 @@ mod tests {
         assert!(s.shared.as_ref().unwrap().commands.is_empty()); assert!(s.received.is_empty());
         let mut f = frame(&s,&[0x88,0,0]); f.body[1]^=1;
         assert!(s.receive(&f,now).is_err()); assert_eq!(s.rx,1);
-        let mut parent = frame(&s,&[0xff]); parent.sequence=Some(2);
+        let mut parent = frame(&s,&[0x88,1,0]); parent.sequence=Some(2);
         parent.piggybacks.push(frame(&s,&[0x88,0,0]));
         assert!(s.receive(&parent,now).is_err()); assert_eq!(s.rx,1);
+        assert!(s.shared.as_ref().unwrap().commands.is_empty());
+        // INPUT-01: an unframed ID is not a reject: the envelope is dropped
+        // unapplied and its sequence consumed.
+        s.receive(&frame(&s,&[0x88,0,0,0xff]),now).unwrap(); assert_eq!(s.rx,2);
         assert!(s.shared.as_ref().unwrap().commands.is_empty());
     }
     #[test] fn reliable_shot_duplicate_consumes_once_and_cannot_move_the_other_actor() {

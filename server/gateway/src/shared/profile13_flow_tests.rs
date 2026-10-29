@@ -159,8 +159,11 @@ fn lifecycle_fixture(now:Instant)->(Session,World) {
     assert!(s.battle_results.avatar_pending());assert!(s.drive_return_account.is_none());
     let before=s.battle_results.clone();let rx=s.rx;
     let poisoned=frame_at(s,rx,&[0x99,1,0,0,0x87,0,0,0xff]);
-    assert!(s.receive(&poisoned,now+Duration::from_secs(3)).is_err());
-    assert_eq!(s.battle_results,before);assert_eq!(s.rx,rx);
+    // INPUT-01: the unframed 0xff drops the whole envelope unapplied (no
+    // confirmation) and consumes its sequence instead of stalling the channel.
+    s.receive(&poisoned,now+Duration::from_secs(3)).unwrap();
+    assert_eq!(s.battle_results,before);assert_eq!(s.rx,rx+1);
+    assert!(s.battle_results.avatar_pending());
     receive(s,&[0x99,1,0,0,0x87,0,0],now+Duration::from_secs(3));assert!(s.battle_results.avatar_confirmed());
     assert!(deliver_lifecycle_result(s,&world,now+Duration::from_secs(3)).unwrap());
     assert!(!s.arena_base);assert_eq!(s.shared.as_ref().unwrap().phase,Phase::Returning);

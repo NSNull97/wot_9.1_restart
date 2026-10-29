@@ -21,6 +21,8 @@ pub(super) struct Arena {
     /// The arena holds an inert empty World, takes no Join and is not stepped;
     /// the reset is retried at this instant.
     pub(super) closed:Option<Instant>,
+    /// BW-01: the step runs in this arena's worker process (None: in this process).
+    pub(super) worker:Option<Box<super::battle_worker::Remote>>,
 }
 
 /// Gateway -> arena. BW-01 carries the same messages over a local socket.
@@ -41,7 +43,7 @@ pub(super) fn arena_ids(count:usize,random:u64)->io::Result<Vec<u64>> {
 
 impl Arena {
     pub(super) fn new(index:usize,world:World,integrated:Option<IntegratedRuntime>,template:BattleTemplate)->Self {
-        Self{index,world,integrated,template,cursors:Cursors::default(),closed:None}
+        Self{index,world,integrated,template,cursors:Cursors::default(),closed:None,worker:None}
     }
     /// One more arena from the same validated template, with its own battle id.
     pub(super) fn from_template(index:usize,template:&BattleTemplate,id:u64,now:Instant)->io::Result<Self> {
@@ -51,8 +53,14 @@ impl Arena {
         Ok(Self::new(index,world,integrated,template.clone()))
     }
     pub(super) fn started(&self)->bool {self.world.started.is_some()}
-    pub(super) fn native_ready(&self)->bool {self.integrated.as_ref().is_none_or(IntegratedRuntime::ready_for_native)}
-    pub(super) fn blocked(&self)->bool {self.integrated.as_ref().is_some_and(IntegratedRuntime::blocked)}
+    /// With a battle worker its runtime answers; a runtime it has not built yet
+    /// is unstarted on both sides, so the gateway's own object answers the same.
+    pub(super) fn native_ready(&self)->bool {
+        match (&self.worker,&self.integrated) {(Some(w),Some(r))=>w.reports(r).map_or_else(||r.ready_for_native(),|s|s.0),(_,r)=>r.as_ref().is_none_or(IntegratedRuntime::ready_for_native)}
+    }
+    pub(super) fn blocked(&self)->bool {
+        match (&self.worker,&self.integrated) {(Some(w),Some(r))=>w.reports(r).map_or_else(||r.blocked(),|s|s.1),(_,r)=>r.as_ref().is_some_and(IntegratedRuntime::blocked)}
+    }
     pub(super) fn has_session(&self,id:u32)->bool {self.world.actors.iter().any(|a|a.session==Some(id))}
     pub(super) fn handle(&mut self,command:Command)->Event {
         let Command::Step{now,start}=command;

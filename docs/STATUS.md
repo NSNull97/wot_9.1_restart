@@ -1,5 +1,31 @@
 # Состояние проекта
 
+## BW-01 Battle Worker отдельным процессом — в ветке `codex/bw-01-on-main` (от main `d0a9b9e`), не в main — 2026-10-29
+
+- Ключ `battle_worker` (`{"version":1}`, тайм-ауты): шаг каждой арены (`advance_battle` + Jolt-сцена) — в своём процессе
+  (тот же exe, loopback, токен через stdin, кадры с пределами); мир между шагами в шлюзе, журналы NET-01 идут
+  приращениями. Потеря worker'а → `battle_worker_lost` → STAB-02 `contain_arena`; следующий бой — новый worker.
+  Без ключа — прежний путь.
+- Тесты `bw01` 9 PASS. Release-бенч NET-01 1+29, полный бой, `reliable-burst-v2`: оба режима без сбоев; worker —
+  CPU 16,7 против 11,6 мс/шаг, p99 цикла +2 мс, кадр в конце боя ≈ 162 КБ. Native, канонический gate — NOT_RUN.
+  План/итог/шаги стенда — [BW01_BATTLE_WORKER](plans/BW01_BATTLE_WORKER.md).
+
+## TURRET-01 на BW-01 — в ветке `codex/turret-01-on-bw` (от `a5fb3ea` = main + BW-01 + INPUT-01), не в main — 2026-10-29
+
+- Оторванная башня — тело Jolt в worker'е сцены (TURRET-01), кодеки BW-01 перегенерированы для `Flight`/`Launch`/
+  `Trajectory`/`Jolt`/`World`. Полёт до покоя одинаков с `battle_worker` и без (побайтно без сцены; на настоящем Jolt —
+  те же выборки и клиренсы). Набор шлюза — FAIL-множество как у базы. Native, канонический gate — NOT_RUN.
+  [TURRET01_DETACHED_PHYSICS](plans/TURRET01_DETACHED_PHYSICS.md).
+
+## INPUT-01 неподдержанные методы Avatar не выбрасывают из боя — в ветке `codex/input-01-settings-methods`, не в main — 2026-10-29
+
+- Находка владельца (-11, BW-01): смена настроек в бою — Base `doCmdIntArr(CMD_ADD_INT_USER_SETTINGS=1600)` и
+  `setDevelopmentFeature('server_marker')` (VERIFIED по #717) — ID вне таблицы шлюза → отказ → канал встал → `idle_timeout`.
+- Таблица exposed-методов Avatar/Vehicle (INFERRED по .def, совпадает со всеми наблюдаемыми ID): нереализованные
+  записи пропускаются по длине с логом; неразбираемый ID в Driving отбрасывает конверт целиком без применения,
+  номер потребляется. Набор шлюза FAIL = `d0a9b9e` (94 = 94). Gate, release, native — NOT_RUN.
+  План/итог — [INPUT01](plans/INPUT01.md).
+
 ## 15x15-интеграция — принята владельцем, в main — 2026-10-29
 
 - В main одним слиянием `1bd0dce` (стенд -11): VIS-PERF, STAB-02, RES-30, MM-01 (с уровнями ботов по командам,

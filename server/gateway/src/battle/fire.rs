@@ -121,6 +121,12 @@ pub struct State {
     replenish_requests: u32,
     typed:Option<crate::p06t_armament091::State>,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): State
+impl crate::bw_wire::Wire for State {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{ammo,reload_duration,reload_until,accepted_shots,rejected_shots,replenish_requests,typed}=self;W::put(ammo,bw_o);W::put(reload_duration,bw_o);W::put(reload_until,bw_o);W::put(accepted_shots,bw_o);W::put(rejected_shots,bw_o);W::put(replenish_requests,bw_o);W::put(typed,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{ammo:W::get(bw_i)?,reload_duration:W::get(bw_i)?,reload_until:W::get(bw_i)?,accepted_shots:W::get(bw_i)?,rejected_shots:W::get(bw_i)?,replenish_requests:W::get(bw_i)?,typed:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 impl State {
     pub fn new() -> Self {

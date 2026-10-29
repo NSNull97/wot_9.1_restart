@@ -22,6 +22,12 @@ fn bad(reason:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData
 
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct JointPose{pub position:[f32;3],pub direction:[f32;3]}
+// BW-01 wire codec (tools/bw01_wire_gen.py): JointPose
+impl crate::bw_wire::Wire for JointPose {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{position,direction}=self;W::put(position,bw_o);W::put(direction,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{position:W::get(bw_i)?,direction:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl JointPose{
     fn validate(self)->io::Result<()>{
         if self.position.iter().any(|v|!v.is_finite()||v.abs()>MAX_POSITION)
@@ -39,6 +45,12 @@ pub struct Input{
     pub health_before:u16,pub residual_hp:u16,pub counts:[u16;3],
     pub kind:VehicleKind,pub joint:JointPose,pub from_fire:bool,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Input
+impl crate::bw_wire::Wire for Input {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{shot,target,attacker,tick,device_sequence,device_before,device_after,health_before,residual_hp,counts,kind,joint,from_fire}=self;W::put(shot,bw_o);W::put(target,bw_o);W::put(attacker,bw_o);W::put(tick,bw_o);W::put(device_sequence,bw_o);W::put(device_before,bw_o);W::put(device_after,bw_o);W::put(health_before,bw_o);W::put(residual_hp,bw_o);W::put(counts,bw_o);W::put(kind,bw_o);W::put(joint,bw_o);W::put(from_fire,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{shot:W::get(bw_i)?,target:W::get(bw_i)?,attacker:W::get(bw_i)?,tick:W::get(bw_i)?,device_sequence:W::get(bw_i)?,device_before:W::get(bw_i)?,device_after:W::get(bw_i)?,health_before:W::get(bw_i)?,residual_hp:W::get(bw_i)?,counts:W::get(bw_i)?,kind:W::get(bw_i)?,joint:W::get(bw_i)?,from_fire:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Input{
     fn validate(self,roster:u8)->io::Result<()>{
         // Frozen loss-v1 has no qualified extended vehicle/device contract.
@@ -64,6 +76,12 @@ impl Input{
 /// through a struct literal. It still needs Root's actual World/Trace causality.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Event{sequence:u32,input:Input}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Event
+impl crate::bw_wire::Wire for Event {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,input}=self;W::put(sequence,bw_o);W::put(input,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,input:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Event{
     pub fn sequence(self)->u32{self.sequence}
     pub fn policy(self)->&'static str{POLICY}
@@ -87,8 +105,20 @@ impl Event{
 pub enum Outcome{New(Event),Empty,Replay(Option<Event>)}
 #[derive(Clone,Copy,Debug,PartialEq)]
 struct Seen{input:Input,event:Option<usize>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Seen
+impl crate::bw_wire::Wire for Seen {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{input,event}=self;W::put(input,bw_o);W::put(event,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{input:W::get(bw_i)?,event:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
 pub struct Ledger{roster:u8,seen:Vec<Seen>,events:Vec<Event>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Ledger
+impl crate::bw_wire::Wire for Ledger {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{roster,seen,events}=self;W::put(roster,bw_o);W::put(seen,bw_o);W::put(events,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{roster:W::get(bw_i)?,seen:W::get(bw_i)?,events:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Ledger{
     pub fn new(roster:u8)->io::Result<Self>{
         if !(2..=MAX_EVENTS as u8).contains(&roster){return Err(bad("detonation roster bounds"));}
@@ -112,15 +142,124 @@ impl Ledger{
     }
 }
 
+/// TURRET-01 PROJECT launch policy (no 0.9.1 client data exists for it): the
+/// detached turret+gun is a dynamic Jolt body in the battle-scene worker.
+pub const JOLT_POLICY:&str="project.turret01.detached-turret-jolt-launch.v1";
+/// One battle-RNG draw per launch parameter, journalled in this order.
+pub const LAUNCH_DRAWS:usize=6;
+/// RNG journal ordinals of the launch draws (ignition rolls use 0..=15).
+pub const LAUNCH_ORDINAL:u8=0xe0;
+/// Worker samples: one per 100 ms native tick from the detonation, at most 10 s.
+pub const MAX_TRAJECTORY_SAMPLES:usize=101;
+const MAX_LAUNCH_SPEED:f32=20.;
+const MAX_LAUNCH_SPIN:f32=10.;
+
+/// Initial body motion derived by Root from the actual detonation event and the
+/// battle RNG. Velocities, not impulses: the resting place does not depend on a
+/// turret mass that the client data does not carry.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Launch{pub linear_velocity:[f32;3],pub angular_velocity:[f32;3],pub draws:[u64;LAUNCH_DRAWS]}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Launch
+impl crate::bw_wire::Wire for Launch {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{linear_velocity,angular_velocity,draws}=self;W::put(linear_velocity,bw_o);W::put(angular_velocity,bw_o);W::put(draws,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{linear_velocity:W::get(bw_i)?,angular_velocity:W::get(bw_i)?,draws:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
+impl Launch{
+    /// PROJECT policy `JOLT_POLICY`: up 5..10 m/s (more with fuller rack),
+    /// 1..4 m/s sideways along the attacker→target heading +-60 degrees,
+    /// spin up to 3/2/3 rad/s about yaw-free X/Y/Z. `heading` is the shot's
+    /// horizontal direction (radians, client yaw convention), `fill` the lost
+    /// share of the rack 0..=1. `draws` are raw SplitMix64 outputs in order.
+    pub fn derive(heading:f32,fill:f32,draws:[u64;LAUNCH_DRAWS])->io::Result<Self>{
+        if !heading.is_finite()||!(0. ..=1.).contains(&fill){return Err(bad("turret launch source bounds"));}
+        let u=draws.map(|v|((v>>11)as f64/(1u64<<53)as f64)as f32);
+        let up=5.+3.*fill+2.*u[0];
+        let azimuth=heading+(u[1]-0.5)*2.*PI/3.;let side=1.+3.*u[2];
+        let launch=Self{linear_velocity:[side*azimuth.sin(),up,side*azimuth.cos()],
+            angular_velocity:[(u[3]-0.5)*6.,(u[4]-0.5)*4.,(u[5]-0.5)*6.],draws};
+        launch.validate()?;Ok(launch)
+    }
+    pub fn validate(self)->io::Result<()>{
+        let speed=self.linear_velocity.iter().map(|v|v*v).sum::<f32>().sqrt();
+        let spin=self.angular_velocity.iter().map(|v|v*v).sum::<f32>().sqrt();
+        if !speed.is_finite()||speed>MAX_LAUNCH_SPEED||!spin.is_finite()||spin>MAX_LAUNCH_SPIN{return Err(bad("turret launch motion bounds"));}Ok(())
+    }
+}
+/// Poses of the actual Jolt body at born_ms + 100 ms * index. The last pose is
+/// where the body came to rest (or the bounded end of the simulation).
+#[derive(Clone,Debug,PartialEq)]
+pub struct Trajectory{pub samples:Vec<JointPose>,pub slept:bool}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Trajectory
+impl crate::bw_wire::Wire for Trajectory {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{samples,slept}=self;W::put(samples,bw_o);W::put(slept,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{samples:W::get(bw_i)?,slept:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
+impl Trajectory{
+    pub fn validate(&self)->io::Result<()>{
+        if self.samples.is_empty()||self.samples.len()>MAX_TRAJECTORY_SAMPLES{return Err(bad("turret trajectory sample count"));}
+        for sample in &self.samples{sample.validate()?;}Ok(())
+    }
+}
+#[derive(Clone,Debug,PartialEq)]
+struct Jolt{launch:Launch,trajectory:Option<Trajectory>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Jolt
+impl crate::bw_wire::Wire for Jolt {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{launch,trajectory}=self;W::put(launch,bw_o);W::put(trajectory,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{launch:W::get(bw_i)?,trajectory:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
+
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum FlightPhase{Flying,Resting,Expired}
+// BW-01 wire codec (tools/bw01_wire_gen.py): FlightPhase
+impl crate::bw_wire::Wire for FlightPhase {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Flying=>bw_o.tag(0),Self::Resting=>bw_o.tag(1),Self::Expired=>bw_o.tag(2),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Flying),1=>Ok(Self::Resting),2=>Ok(Self::Expired),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct FlightSample{pub position:[f32;3],pub direction:[f32;3],pub phase:FlightPhase,pub at_ms:u64}
+// BW-01 wire codec (tools/bw01_wire_gen.py): FlightSample
+impl crate::bw_wire::Wire for FlightSample {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{position,direction,phase,at_ms}=self;W::put(position,bw_o);W::put(direction,bw_o);W::put(phase,bw_o);W::put(at_ms,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{position:W::get(bw_i)?,direction:W::get(bw_i)?,phase:W::get(bw_i)?,at_ms:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
-pub struct Flight{event:Event,last_ms:Option<u64>,sample:FlightSample,landing:Option<JointPose>}
+pub struct Flight{event:Event,last_ms:Option<u64>,sample:FlightSample,landing:Option<JointPose>,jolt:Option<Jolt>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Flight
+impl crate::bw_wire::Wire for Flight {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{event,last_ms,sample,landing,jolt}=self;W::put(event,bw_o);W::put(last_ms,bw_o);W::put(sample,bw_o);W::put(landing,bw_o);W::put(jolt,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{event:W::get(bw_i)?,last_ms:W::get(bw_i)?,sample:W::get(bw_i)?,landing:W::get(bw_i)?,jolt:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Flight{
+    /// Legacy PROJECT point trajectory (`FLIGHT_POLICY`) for a World without a
+    /// battle-scene worker. A scene battle uses `Flight::jolt`.
     pub fn new(event:Event)->Self{let joint=event.joint();Self{event,last_ms:None,
-        sample:FlightSample{position:joint.position,direction:joint.direction,phase:FlightPhase::Flying,at_ms:event.born_ms()},landing:None}}
+        sample:FlightSample{position:joint.position,direction:joint.direction,phase:FlightPhase::Flying,at_ms:event.born_ms()},landing:None,jolt:None}}
+    /// TURRET-01: the pose holds at the joint until the scene worker returns
+    /// the body's trajectory; then it plays that trajectory by the clock.
+    pub fn jolt(event:Event,launch:Launch)->io::Result<Self>{
+        launch.validate()?;let mut flight=Self::new(event);flight.jolt=Some(Jolt{launch,trajectory:None});Ok(flight)
+    }
+    pub fn launch(&self)->Option<Launch>{self.jolt.as_ref().map(|j|j.launch)}
+    /// A Jolt flight whose worker trajectory has not arrived yet.
+    pub fn awaiting_trajectory(&self)->bool{self.jolt.as_ref().is_some_and(|j|j.trajectory.is_none())}
+    pub fn trajectory(&self)->Option<&Trajectory>{self.jolt.as_ref().and_then(|j|j.trajectory.as_ref())}
+    /// Exactly once per Jolt flight. The first sample is the detonation joint
+    /// pose the request carried; anything else is not this body.
+    pub fn install_trajectory(&mut self,trajectory:Trajectory)->io::Result<()>{
+        trajectory.validate()?;
+        let born=self.event.joint();
+        let jolt=self.jolt.as_mut().ok_or_else(||bad("legacy turret flight has no Jolt body"))?;
+        if jolt.trajectory.is_some(){return Err(bad("turret trajectory already installed"));}
+        let first=trajectory.samples[0];
+        if first.position.iter().zip(born.position).any(|(a,b)|(a-b).abs()>0.01){return Err(bad("turret trajectory start differs from joint"));}
+        jolt.trajectory=Some(trajectory);Ok(())
+    }
     pub fn event(&self)->Event{self.event}
     pub fn sample(&self)->FlightSample{self.sample}
     /// Root calls this independently of the frozen outcome/HP clock. The
@@ -137,7 +276,18 @@ impl Flight{
         if self.last_ms==Some(now_ms){return Ok(self.sample);}
         let mut next=self.clone();
         if next.sample.phase==FlightPhase::Expired{next.last_ms=Some(now_ms);next.sample.at_ms=now_ms;*self=next;return Ok(self.sample);}
-        let elapsed=now_ms-self.event.born_ms();let t=elapsed.min(FLIGHT_LIFETIME_MS)as f64/1000.;
+        let elapsed=now_ms-self.event.born_ms();
+        if let Some(jolt)=&self.jolt{
+            // Whole 100 ms worker samples only: the native pose stream carries
+            // one pose per tick and the client filter interpolates between them.
+            let(joint,phase)=match &jolt.trajectory{
+                None=>(self.event.joint(),FlightPhase::Flying),
+                Some(t)=>{let index=usize::try_from(elapsed/100).map_err(|_|bad("turret trajectory index"))?.min(t.samples.len()-1);
+                    (t.samples[index],if index+1==t.samples.len(){FlightPhase::Resting}else{FlightPhase::Flying})},
+            };
+            next.sample=FlightSample{position:joint.position,direction:joint.direction,phase,at_ms:now_ms};
+            next.last_ms=Some(now_ms);*self=next;return Ok(self.sample);
+        }let t=elapsed.min(FLIGHT_LIFETIME_MS)as f64/1000.;
         let joint=if let Some(landing)=next.landing{landing}else{
             let born=self.event.joint();let(s,c)=f64::from(born.direction[0]).sin_cos();
             let velocity=[LOCAL_VELOCITY[0]*c+LOCAL_VELOCITY[2]*s,LOCAL_VELOCITY[1],-LOCAL_VELOCITY[0]*s+LOCAL_VELOCITY[2]*c];
