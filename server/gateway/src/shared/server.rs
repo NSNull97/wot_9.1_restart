@@ -50,6 +50,12 @@ use login_admission::{AccountTag,Admission,Decision,Writers};
 #[cfg(test)]
 #[path="server_visibility_tests.rs"]
 mod visibility_tests;
+#[cfg(test)]
+#[path="server_net01_tests.rs"]
+mod net01_tests;
+#[cfg(test)]
+#[path="server_net01_bench.rs"]
+mod net01_bench;
 
 #[cfg(test)]
 #[path="server_catalog_tests.rs"]
@@ -1646,6 +1652,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         },
         _=>return Err(model::bad().into()),
     };
+    let mut net_stats=super::net01::LoopStats::default();
+    println!("NET01_POSE_DELIVERY mode={} report_s={}",config.pose_delivery.label(),super::net01::REPORT.as_secs());
     loop {
         let now = Instant::now();
         if now.duration_since(started) >= if profile13_mode {PROFILE13_SERVICE_LIFETIME} else {model::LIFETIME} {
@@ -1694,6 +1702,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         s.login_attempt = Some(job.attempt); s.login_account = Some(pending.account); s.identity = Some(accepted.identity);
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
                         if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
+                        s.shared.as_mut().ok_or_else(||model::bad())?.set_pose_delivery(config.pose_delivery)?;
                         if profile13_mode {
                             let binding=accepted.ammo_service.ok_or_else(||model::bad())?;
                             s.ammo_service=Some(ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
@@ -2072,9 +2081,11 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 Err(error)=>{commands.push(None);failures.push((index,"world_step",error));},
             }
         }
+        let step_started=Instant::now();
         for (index,event) in arena::step_all(&mut arenas,&commands).into_iter().enumerate() {
             if let Some(arena::Event::Failed{stage,error})=event {failures.push((index,stage,error));}
         }
+        let step_wall=step_started.elapsed();
         failures.sort_by_key(|f|f.0);
         for (index,stage,error) in failures {
             let late=if stage=="world_step"{"fault_world_step"}else{"fault_world_step_panic"};
@@ -2089,6 +2100,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
         }
         let lobby=arena::lobby(&arenas,&table,battle_dispatch.retired_sessions());
+        let publish_started=Instant::now();
         let mut publication_failures:Vec<(usize,io::Error)>=Vec::new();
         for s in &mut table.sessions {
             if !s.active&&room_host.as_ref().is_some_and(|h|h.owns_preparing(s.id)){continue;}
@@ -2131,15 +2143,14 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 if s.tx.enqueue().is_err() { closing.push((s.id, "sequence_budget")); continue; } s.last_heartbeat = now;
             }
             if let Some(peer) = s.base_peer {
-                match s.tx.due(now, s.rx) {
-                    Ok(Some((_, _, body))) => send(&base_socket, peer, &body, &s.key, &mut capture)?,
-                    Ok(None) => {}, Err(_) => { closing.push((s.id, "retry_exhausted")); continue; },
-                }
+                let Some(frames) = transmit(s, now)? else { closing.push((s.id, "retry_exhausted")); continue; };
+                for clear in frames { send(&base_socket, peer, &clear, &s.key, &mut capture)?; }
                 if now.duration_since(s.last_keepalive) >= Duration::from_secs(1) {
                     send(&base_socket, peer, &transport091::ack(s.rx), &s.key, &mut capture)?; s.last_keepalive = now;
                 }
             }
         }
+        let publish_wall=publish_started.elapsed();
         for (home,error) in publication_failures {
             containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[home],now,"publication",Some("fault_publication"),&error);
         }
@@ -2240,6 +2251,23 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                 }
             }
         } }
+        // NET-01: wall time of this loop and of each running arena's domain tick.
+        let ticks=arenas.iter().map(|a|a.world.started.map(|_|a.world.tick)).collect::<Vec<_>>();
+        let loop_end=Instant::now();
+        net_stats.record(now,step_wall,publish_wall,&ticks,loop_end);
+        if let Some(line)=net_stats.take_report(loop_end) {
+            println!("{line}");
+            for s in &mut table.sessions {
+                // Every window restarts, so a battle report never carries hangar traffic.
+                let w=std::mem::take(&mut s.tx.stats);
+                let Some(c)=s.shared.as_mut() else {continue;};
+                let pose=c.take_pose_stats();
+                if !c.in_battle() {continue;}
+                println!("NET01_SESSION_STATS session={} mode={} pending_now={} pending_max={} outbox_max={} resends={} ack_wait_ms=[{}] queue_wait_ms=[{}] poses={} pose_gap_max_ticks={} pose_gaps_over_1={} pose_replaced_unsent={} pose_packets={} pose_bytes={}",
+                    s.id,c.pose_delivery().label(),s.tx.len(),w.pending_max,pose.outbox_max,w.resends,w.ack_wait.summary(),w.queue_wait.summary(),
+                    pose.published,pose.gap_max,pose.gaps_over_one,pose.replaced_unsent,pose.packets,pose.bytes);
+            }
+        }
         thread::sleep(Duration::from_millis(5));
     }
     Ok(())
@@ -2496,10 +2524,19 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         // No queue of stale poses for a slow peer. Reliable retries retain their
         // exact bytes; the next fresh pose is queued when capacity is available.
         let old_tick = if c.spotting_enabled {c.last_pose_tick.unwrap_or(0)} else {c.view.as_ref().map(|w| w.tick).unwrap_or(0)};
-        if c.correction && c.binding.is_some_and(|(_, ack)| ack) && old_tick != next_world.tick && next.tx.len() < 4 {
-            // SPAWN-15: more than 13 visible vehicles take up to three bodies;
-            // with <= 4 pending the transport bound (8) is never exceeded.
-            for body in wire::publication_parts(&next_world, c.visible())? {next.tx.enqueue_body(&body)?;}
+        let latest = c.pose_delivery == super::net01::PoseDelivery::LatestUnreliable;
+        // NET-01: the unreliable pose never waits for window capacity.
+        if c.correction && c.binding.is_some_and(|(_, ack)| ack) && old_tick != next_world.tick && (latest || next.tx.len() < 4) {
+            let parts = wire::publication_parts(&next_world, c.visible())?;
+            if latest {
+                if !c.poses_out.is_empty() {c.pose_stats.replaced_unsent += 1;}
+                c.poses_out = parts;
+            } else {
+                // SPAWN-15: more than 13 visible vehicles take up to three bodies;
+                // with <= 4 pending the transport bound (8) is never exceeded.
+                for body in parts {next.tx.enqueue_body(&body)?;}
+            }
+            c.pose_stats.published(c.last_pose_tick, next_world.tick);
             c.last_pose_tick=Some(next_world.tick);
             println!("SHARED_SNAPSHOT battle={} session={} tick={} positions={:?} ready={:?} aim_yaw_pitch={:?}", next_world.id, s.id, next_world.tick,
                 next_world.actors.iter().map(|a| a.position).collect::<Vec<_>>(), c.visible(),
@@ -2509,6 +2546,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     // At most40 MS-1 or60 IS-7 shots: start cue+tracer+stop+one compound impact, plus
     // bounded reload/readiness/health catch-up. Slow peers cannot grow forever.
     if next.outbox.len()+next.shared.as_ref().ok_or_else(||model::bad())?.pending_private_len() > next_world.shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;next.flush_shared_private()?;
+    {let backlog=next.outbox.len();let c=next.shared.as_mut().ok_or_else(||model::bad())?;c.pose_stats.outbox_max=c.pose_stats.outbox_max.max(backlog);}
     let mut turret_events=Vec::new();next.flush_shared_turrets(&next_world,&mut turret_events)?;
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
@@ -2542,6 +2580,32 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     *world = next_world; *s = next;
     for event in turret_events{println!("{event}");}
     Ok(())
+}
+
+/// Clear frames for one session this loop, in send order: due reliable bodies
+/// (one, or all with a NET-01 burst mode), then the newest unreliable pose.
+/// `None`: the reliable window exhausted its retries.
+fn transmit(s: &mut Session, now: Instant) -> io::Result<Option<Vec<Vec<u8>>>> {
+    let burst = s.shared.as_ref().is_some_and(|c| c.pose_delivery().burst());
+    let mut frames = Vec::new();
+    loop {
+        match s.tx.due(now, s.rx) {
+            Ok(Some((_, _, clear))) => { frames.push(clear); if !burst { break; } },
+            Ok(None) => break,
+            Err(_) => return Ok(None),
+        }
+    }
+    if let Some(c) = s.shared.as_mut() {
+        // A pose left over from a battle that ended is dropped, never sent.
+        let poses = c.take_poses();
+        if c.in_battle() {
+            for body in poses {
+                let clear = transport091::unreliable(s.rx, &body)?;
+                c.record_pose_packet(clear.len()); frames.push(clear);
+            }
+        }
+    }
+    Ok(Some(frames))
 }
 
 fn poll(s: &mut Session, world: &mut World, now: Instant) -> io::Result<()> {
