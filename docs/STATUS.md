@@ -622,3 +622,7 @@ ram publication (213 коммитов над main). Каждая карточк�
   на компонент — воркер ~3× быстрее (≈3,1 → ≈1,05 с), ответы побайтно равны base;
   [план](plans/FULL_TEST_BRIDGE_LATENCY.md). Долгоживущие воркеры — после очереди входа.
 - D: освобождено 44 ГБ удалением старых `local/build/*/target` (решение владельца 19.10).
+
+## CAT-NATIONS — независимая проверка (29.10.2026)
+
+Ветка codex/cat-nations-independent-review от a54b6aa; перенос существующей работы c37a61c и проверка мигратора начаты. Gate, native и миграция стенда -11: NOT_RUN. План: docs/plans/CAT_NATIONS_INDEPENDENT_REVIEW.md.
