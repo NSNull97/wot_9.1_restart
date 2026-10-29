@@ -22,16 +22,23 @@ Commands (``--db`` is a developer path; the tool never guesses a stand):
   apply    --db DB --backup-dir B [--fixture-root F]   backup, then old -> new
   rollback --db DB --backup-dir B [--fixture-root F]   backup, then new -> old
   verify   --db DB --expect new|old                    integrity + markers
-Every write first takes an SQLite online backup into a fresh file under
-``--backup-dir`` and records a receipt next to it. Services must be stopped:
-the rewrite runs under ``BEGIN EXCLUSIVE`` and fails if the file is busy.
+Every write first takes an SQLite online backup and records and flushes a PENDING
+receipt with a complete fixture move plan. Services must be stopped: the backup
+and database/file changes are not one atomic operation and the exclusive lock
+cannot prove services were stopped. Fixture moves happen before SQLite commit;
+ordinary failures attempt rollback of both. A crash or failure while writing the
+final PASS receipt leaves PENDING: stop services, inspect the database and every
+fixture path, restore the backup and original fixture paths without overwriting,
+and retain the receipt. Do not retry blindly. Concurrent changes are unsupported.
 """
 from __future__ import annotations
 
 import argparse
 import datetime
+import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -76,22 +83,18 @@ def _db(path):
     return path.resolve()
 
 
-def _replace(value, source, target, depth=0):
-    """Replace exact ``catalog_sha256`` fields equal to ``source``; return (value, count)."""
-    require(depth <= 32, "JSON depth bound")
-    if isinstance(value, dict):
-        count, out = 0, {}
-        for key, item in value.items():
-            if key == "catalog_sha256" and item == source:
-                out[key], count = target, count + 1
-            else:
-                out[key], n = _replace(item, source, target, depth + 1)
-                count += n
-        return out, count
-    if isinstance(value, list):
-        rows = [_replace(item, source, target, depth + 1) for item in value]
-        return [r[0] for r in rows], sum(r[1] for r in rows)
-    return value, 0
+def _replace(value, source, target, table):
+    """Rewrite the research catalogue only; ammo catalogues have distinct hashes."""
+    require(type(value) is dict, table + ": JSON object required")
+    out = copy.deepcopy(value)
+    research = out if table == "p09e_research" else out.get("research")
+    require(type(research) is dict, table + ": missing research object")
+    item = research.get("catalog_sha256")
+    require(item in (source, target), table + ": unknown catalogue in research JSON: " + repr(item))
+    if item == source:
+        research["catalog_sha256"] = target
+        return out, 1
+    return out, 0
 
 
 def _tables(connection):
@@ -101,27 +104,25 @@ def _tables(connection):
 def survey(connection, source, target):
     """Read-only: every change the rewrite would make, or a refusal."""
     tables = _tables(connection)
+    required = set(MARKER_TABLES) | {table for table, _, _, _ in JSON_ROWS}
+    require(required <= tables, "missing required tables: " + ", ".join(sorted(required - tables)))
     markers, rows = [], []
     for table in MARKER_TABLES:
-        if table not in tables:
-            continue
         values = [r[0] for r in connection.execute("SELECT catalog_sha256 FROM " + table)]
         require(len(values) == 1, table + ": one schema marker row expected")
         require(values[0] in (source, target), table + ": unknown catalogue " + values[0])
         markers.append(dict(table=table, current=values[0], change=values[0] == source))
     for table, key, column, digest in JSON_ROWS:
-        if table not in tables:
-            continue
         select = "SELECT %s,%s%s FROM %s" % (key, column, "," + digest if digest else "", table)
         found = connection.execute(select).fetchall()
-        require(len(found) <= MAX_ROWS, table + ": row bound")
+        require(0 < len(found) <= MAX_ROWS, table + ": empty table or row bound")
         for record in found:
             text = record[1]
             require(type(text) is str and len(text) <= MAX_JSON_BYTES, table + ": JSON bound")
             require(digest is None or sha(text.encode("ascii")) == record[2], table + ": stored SHA differs before migration")
             value = json.loads(text)
             require(canonical(value) == text, table + ": stored JSON is not canonical; refusing to rewrite")
-            new_value, count = _replace(value, source, target)
+            new_value, count = _replace(value, source, target, table)
             if count:
                 new_text = canonical(new_value)
                 rows.append(dict(table=table, key=record[0], fields=count, column=column, digest=digest,
@@ -184,57 +185,94 @@ def backup(db, backup_dir, label):
     return target
 
 
+def _write_receipt(path, receipt, *, create=False):
+    # Flush the PENDING receipt before mutation; it describes recovery after interruption.
+    with path.open("x" if create else "w", encoding="ascii") as stream:
+        stream.write(canonical(receipt) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
 def migrate(db, backup_dir, source, target, fixture_root=None, label="apply"):
     before = plan(db, source, target, fixture_root)
-    require(before["changes"] > 0 or before["fixture_dirs"], "nothing to migrate (already at target?)")
-    saved = backup(db, backup_dir, label)
-    connection = sqlite3.connect(str(_db(db)), isolation_level=None, timeout=1)
+    # For rollback, plan() sees ordinary caches, but recovery uses the moved caches.
+    ro = sqlite3.connect("file:%s?mode=ro" % _db(db).as_posix(), uri=True)
     try:
-        connection.execute("BEGIN EXCLUSIVE")
-        try:
-            markers, rows = survey(connection, source, target)
-            for marker in markers:
-                if marker["change"]:
-                    done = connection.execute("UPDATE %s SET catalog_sha256=? WHERE catalog_sha256=?" % marker["table"],
-                                              (target, source)).rowcount
-                    require(done == 1, marker["table"] + ": marker update")
-            for row in rows:
-                sets = "%s=?" % row["column"] + (",%s=?" % row["digest"] if row["digest"] else "")
-                args = [row["new_text"]] + ([row["new_sha256"]] if row["digest"] else [])
-                done = connection.execute("UPDATE %s SET %s WHERE account_id=?" % (row["table"], sets),
-                                          args + [row["key"]]).rowcount
-                require(done == 1, row["table"] + ": row update")
-            check = verify_connection(connection, target)
-            connection.execute("COMMIT")
-        except BaseException:
-            connection.execute("ROLLBACK")
-            raise
+        paths = fixture_dirs(fixture_root, ro, source, moved=(label == "rollback"))
     finally:
-        connection.close()
+        ro.close()
+    moves = []
+    for path in paths:
+        name = path.name[:-len(MOVED_SUFFIX)] if label == "rollback" else path.name + MOVED_SUFFIX
+        destination = path.with_name(name)
+        require(not destination.exists(), "fixture destination exists: " + str(destination))
+        moves.append((path, destination))
+    require(before["changes"] > 0 or moves, "nothing to migrate (already at target?)")
+    saved = backup(db, backup_dir, label)
+    receipt_path = saved.with_suffix(".receipt.json")
+    receipt = dict(schema=SCHEMA, command=label, status="PENDING", database=str(_db(db)),
+                   source=source, target=target, backup=str(saved), backup_sha256=sha(saved.read_bytes()),
+                   plan=before, fixture_moves=[])
+    receipt["fixture_moves"] = [[str(a), str(b)] for a, b in moves]
+    receipt["recovery"] = ("Stop services. Check database and every fixture source/destination; "
+                           "restore the backup via SQLite with services stopped, and restore fixture "
+                           "paths from fixture_moves without overwriting. Keep this receipt for audit.")
+    _write_receipt(receipt_path, receipt, create=True)
+    connection = None
     moved = []
-    if fixture_root is not None:
-        ro = sqlite3.connect("file:%s?mode=ro" % _db(db).as_posix(), uri=True)
-        try:
-            if label == "apply":
-                for path in fixture_dirs(fixture_root, ro, source):
-                    destination = path.with_name(path.name + MOVED_SUFFIX)
-                    require(not destination.exists(), "moved fixture name taken: " + str(destination))
-                    path.rename(destination)
-                    moved.append([str(path), str(destination)])
-            else:
-                for path in fixture_dirs(fixture_root, ro, source, moved=True):
-                    destination = path.with_name(path.name[:-len(MOVED_SUFFIX)])
-                    require(not destination.exists(), "fixture dir exists, will not overwrite: " + str(destination))
-                    path.rename(destination)
-                    moved.append([str(path), str(destination)])
-        finally:
-            ro.close()
-    receipt = dict(schema=SCHEMA, command=label, status="PASS", database=str(_db(db)), source=source, target=target,
-                   backup=str(saved), backup_sha256=sha(saved.read_bytes()), plan=before, verify=check, fixtures_moved=moved)
-    path = saved.with_suffix(".receipt.json")
-    with path.open("x", encoding="ascii") as stream:
-        stream.write(canonical(receipt) + "\n")
-    return dict(receipt, receipt=str(path))
+    committed = False
+    try:
+        connection = sqlite3.connect(str(_db(db)), isolation_level=None, timeout=1)
+        connection.execute("BEGIN EXCLUSIVE")
+        markers, rows = survey(connection, source, target)
+        for marker in markers:
+            if marker["change"]:
+                done = connection.execute("UPDATE %s SET catalog_sha256=? WHERE catalog_sha256=?" % marker["table"],
+                                          (target, source)).rowcount
+                require(done == 1, marker["table"] + ": marker update")
+        for row in rows:
+            sets = "%s=?" % row["column"] + (",%s=?" % row["digest"] if row["digest"] else "")
+            args = [row["new_text"]] + ([row["new_sha256"]] if row["digest"] else [])
+            done = connection.execute("UPDATE %s SET %s WHERE account_id=?" % (row["table"], sets),
+                                      args + [row["key"]]).rowcount
+            require(done == 1, row["table"] + ": row update")
+        check = verify_connection(connection, target)
+        require(fixture_dirs(fixture_root, connection, source, moved=(label == "rollback")) == paths,
+                "fixture set changed since plan")
+        for path, destination in moves:
+            require(path.is_dir() and not destination.exists(), "fixture paths changed since plan")
+            path.rename(destination)
+            moved.append((path, destination))
+        connection.execute("COMMIT")
+        committed = True
+    except BaseException as error:
+        recovery_errors = []
+        if connection is not None and connection.in_transaction:
+            try:
+                connection.execute("ROLLBACK")
+            except Exception as rollback_error:
+                recovery_errors.append(str(rollback_error))
+        for path, destination in reversed(moved):
+            try:
+                require(not path.exists() and destination.is_dir(), "fixture rollback paths changed")
+                destination.rename(path)
+            except Exception as rollback_error:
+                recovery_errors.append(str(rollback_error))
+        raise MigrationError("migration failed; inspect PENDING receipt %s (committed=%s; recovery errors=%s): %s"
+                             % (receipt_path, committed, recovery_errors, error)) from error
+    finally:
+        if connection is not None:
+            connection.close()
+    receipt.update(status="PASS", verify=check, fixtures_moved=[[str(a), str(b)] for a, b in moved])
+    # Write a new file and replace the pending receipt atomically: any failure leaves
+    # the original PENDING recovery instructions intact.
+    final_path = receipt_path.with_suffix(".complete.tmp")
+    try:
+        _write_receipt(final_path, receipt, create=True)
+        os.replace(final_path, receipt_path)
+    except OSError as error:
+        raise MigrationError("database committed; inspect PENDING receipt %s: %s" % (receipt_path, error)) from error
+    return dict(receipt, receipt=str(receipt_path))
 
 
 def verify_connection(connection, expected):
@@ -248,7 +286,7 @@ def verify_connection(connection, expected):
     for table, _, column, _ in JSON_ROWS:
         if table in tables:
             counts[table] = sum(1 for r in connection.execute("SELECT %s FROM %s" % (column, table))
-                                if _replace(json.loads(r[0]), expected, expected)[1])
+                                if _replace(json.loads(r[0]), expected, expected, table)[1])
     return dict(expected=expected, markers=[m["table"] for m in markers], rows_naming_expected=counts)
 
 

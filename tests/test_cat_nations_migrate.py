@@ -10,6 +10,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -119,6 +120,98 @@ class Migration(unittest.TestCase):
         m.migrate(self.db, self.backups, m.NEW, m.OLD, self.dir / "fixtures", label="rollback")
         self.assertTrue(current.is_dir())
         self.assertFalse((cache / ("p09d-r3" + m.MOVED_SUFFIX)).exists())
+
+    def test_rejects_missing_tables_and_unknown_catalogue_in_json(self):
+        c = sqlite3.connect(str(self.db))
+        c.execute("CREATE TABLE unrelated(id INTEGER)")
+        c.close()
+        with self.assertRaisesRegex(m.MigrationError, "missing required tables"):
+            m.verify(self.db, m.OLD)
+        self.db.unlink()
+        make(self.db)
+        c = sqlite3.connect(str(self.db))
+        bad = canonical({"research": {"catalog_sha256": "f" * 64}})
+        c.execute("UPDATE game_profiles SET profile_json=?", (bad,))
+        c.commit()
+        c.close()
+        before = rows(self.db)
+        for action in (lambda: m.plan(self.db, m.OLD, m.NEW),
+                       lambda: m.verify(self.db, m.OLD),
+                       lambda: m.migrate(self.db, self.backups, m.OLD, m.NEW)):
+            with self.assertRaisesRegex(m.MigrationError, "unknown catalogue in research JSON"):
+                action()
+        self.assertEqual(rows(self.db), before)
+
+    def test_distinct_ammunition_catalogue_is_not_rewritten(self):
+        make(self.db)
+        ammo_sha = "f" * 64
+        c = sqlite3.connect(str(self.db))
+        profile = canonical({"research": {"catalog_sha256": m.OLD},
+                             "ammunition_service": {"catalog_sha256": ammo_sha}})
+        snapshot = canonical({"research": {"catalog_sha256": m.OLD}, "catalog_sha256": ammo_sha})
+        c.execute("UPDATE game_profiles SET profile_json=?", (profile,))
+        c.execute("UPDATE game_snapshot SET snapshot_json=?,snapshot_sha256=?", (snapshot, sha(snapshot)))
+        c.commit()
+        c.close()
+        m.migrate(self.db, self.backups, m.OLD, m.NEW)
+        c = sqlite3.connect(str(self.db))
+        profile = json.loads(c.execute("SELECT profile_json FROM game_profiles").fetchone()[0])
+        snapshot = json.loads(c.execute("SELECT snapshot_json FROM game_snapshot").fetchone()[0])
+        c.close()
+        self.assertEqual(profile["ammunition_service"]["catalog_sha256"], ammo_sha)
+        self.assertEqual(snapshot["catalog_sha256"], ammo_sha)
+        self.assertEqual(profile["research"]["catalog_sha256"], m.NEW)
+        self.assertEqual(snapshot["research"]["catalog_sha256"], m.NEW)
+        self.assertEqual(m.verify(self.db, m.NEW)["status"], "PASS")
+
+    def test_rejects_empty_required_table(self):
+        make(self.db)
+        c = sqlite3.connect(str(self.db))
+        c.execute("DELETE FROM p09e_research")
+        c.commit()
+        c.close()
+        with self.assertRaisesRegex(m.MigrationError, "empty table"):
+            m.verify(self.db, m.OLD)
+
+    def test_failed_second_fixture_move_rolls_back_transaction_and_first_move(self):
+        make(self.db)
+        original = rows(self.db)
+        root = self.dir / "fixtures"
+        paths = [root / part / ACCOUNT / "p09d-r3" for part in ("a", "b")]
+        for path in paths:
+            path.mkdir(parents=True)
+            (path / "manifest.json").write_text(m.OLD, encoding="ascii")
+        real_rename = Path.rename
+        def fail_second(path, target):
+            if path == paths[1]:
+                raise OSError("injected move failure")
+            return real_rename(path, target)
+        with mock.patch.object(Path, "rename", fail_second):
+            with self.assertRaisesRegex(m.MigrationError, "PENDING receipt"):
+                m.migrate(self.db, self.backups, m.OLD, m.NEW, root)
+        self.assertEqual(rows(self.db), original)
+        self.assertTrue(all(path.is_dir() for path in paths))
+        pending = list(self.backups.glob("*.receipt.json"))
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(json.loads(pending[0].read_text())["status"], "PENDING")
+
+    def test_receipt_finalization_failure_leaves_recoverable_pending_record(self):
+        make(self.db)
+        root = self.dir / "fixtures"
+        cache = root / ACCOUNT / "p09d-r3"
+        cache.mkdir(parents=True)
+        (cache / "manifest.json").write_text(m.OLD, encoding="ascii")
+        with mock.patch.object(m.os, "replace", side_effect=OSError("injected receipt failure")):
+            with self.assertRaisesRegex(m.MigrationError, "database committed.*PENDING receipt"):
+                m.migrate(self.db, self.backups, m.OLD, m.NEW, root)
+        self.assertEqual(m.verify(self.db, m.NEW)["status"], "PASS")
+        receipt_path = next(self.backups.glob("*.receipt.json"))
+        receipt = json.loads(receipt_path.read_text())
+        self.assertEqual(receipt["status"], "PENDING")
+        self.assertEqual(receipt["fixture_moves"], [[str(cache), str(cache.with_name(cache.name + m.MOVED_SUFFIX))]])
+        self.assertEqual(m.verify(receipt["backup"], m.OLD)["status"], "PASS")
+        self.assertFalse(cache.exists())
+        self.assertTrue(cache.with_name(cache.name + m.MOVED_SUFFIX).is_dir())
 
     def test_busy_database_is_refused_and_unchanged(self):
         make(self.db)
