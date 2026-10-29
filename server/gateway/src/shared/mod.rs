@@ -36,6 +36,7 @@ pub(crate) mod client_marker;
 pub(crate) mod ap;
 mod account_policy;
 mod impact_wire;
+mod av01_feedback;
 pub(crate) mod terrain;
 pub(crate) mod obstacles;
 mod terrain_wire;
@@ -140,6 +141,12 @@ pub(super) struct Client {
     owner_health_sent: Option<i16>,
     tracer_started: [bool; model::MAX_BATTLE_SHOTS],
     tracer_stopped: [bool; model::MAX_BATTLE_SHOTS],
+    /// AV-01: last engineMode / damageStickers queued per created vehicle
+    /// (None: unknown to the client, publish the current value), and the
+    /// scout-event cursor.
+    engine_sent: [Option<[u8; 2]>; model::MAX_ACTORS],
+    stickers_sent: [Option<Vec<u64>>; model::MAX_ACTORS],
+    scout_cursor: usize,
     return_generation: u32,
     return_mask: u8,
     join_requested: bool,
@@ -162,7 +169,7 @@ impl Client {
             pose_delivery: net01::PoseDelivery::Reliable, poses_out: Vec::new(), pose_stats: net01::PoseStats::default(),
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:[None;model::MAX_ACTORS],armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
-            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
+            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -254,7 +261,7 @@ impl Client {
     }
     fn clear_creation(&mut self, slot:usize) {
         self.creations[slot]=None;self.creation_announcements[slot]=None;self.health_sent[slot]=None;self.ready_sent[slot]=false;
-        self.crew_sent[slot]=None;self.fire_sent[slot]=None;
+        self.crew_sent[slot]=None;self.fire_sent[slot]=None;self.engine_sent[slot]=None;self.stickers_sent[slot]=None;
         self.pending_entity_requests.retain(|pending|*pending!=slot);
         let pending=std::mem::take(&mut self.private_pending);
         for p in pending {
@@ -268,7 +275,7 @@ impl Client {
         // a quick LOS flap may preserve the same native announcement epoch.
         for &(slot,_) in &pending.targets {
             self.health_sent[slot]=None;
-            self.crew_sent[slot]=None;self.fire_sent[slot]=None;
+            self.crew_sent[slot]=None;self.fire_sent[slot]=None;self.engine_sent[slot]=None;self.stickers_sent[slot]=None;
             if slot==self.slot {self.owner_health_sent=None;self.devices_snapshot_sent=false;}
         }
     }
