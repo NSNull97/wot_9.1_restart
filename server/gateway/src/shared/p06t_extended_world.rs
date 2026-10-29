@@ -10,6 +10,12 @@ pub(crate) struct LabLoadout {
     pub counts:[u16;3],
     pub initial:u16,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): LabLoadout
+impl crate::bw_wire::Wire for LabLoadout {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{kind,counts,initial}=self;W::put(kind,bw_o);W::put(counts,bw_o);W::put(initial,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{kind:W::get(bw_i)?,counts:W::get(bw_i)?,initial:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 #[cfg(test)]
 #[path="p06t_extended_world_tests.rs"]

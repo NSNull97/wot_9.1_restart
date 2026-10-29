@@ -38,10 +38,22 @@ pub fn bad() -> io::Error {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Identity { pub account: String, pub database: i32, pub name: String }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Identity
+impl crate::bw_wire::Wire for Identity {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{account,database,name}=self;W::put(account,bw_o);W::put(database,bw_o);W::put(name,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{account:W::get(bw_i)?,database:W::get(bw_i)?,name:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 /// `speed_percent` carries the native partial cruise stage (100, 50 or 25).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Input { pub throttle: i8, pub steer: i8, pub speed_percent: u8 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Input
+impl crate::bw_wire::Wire for Input {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{throttle,steer,speed_percent}=self;W::put(throttle,bw_o);W::put(steer,bw_o);W::put(speed_percent,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{throttle:W::get(bw_i)?,steer:W::get(bw_i)?,speed_percent:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Input {
     pub const STOP: Self = Self { throttle: 0, steer: 0, speed_percent: 100 };
     fn valid(&self) -> bool {
@@ -75,6 +87,12 @@ pub struct Actor {
     /// BOT-01: server bot ordinal; such an actor has no Session and no account.
     pub bot:Option<u8>,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Actor
+impl crate::bw_wire::Wire for Actor {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,bot}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(bot,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,bot:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 impl Actor {
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
@@ -92,6 +110,12 @@ pub struct DamageRecord {
     pub health_before:i16,pub health_after:i16,pub crew_before:bool,pub crew_after:bool,
     pub direct:bool,pub pierced:bool,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): DamageRecord
+impl crate::bw_wire::Wire for DamageRecord {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,tick,attacker,target,shot,reason,health_before,health_after,crew_before,crew_after,direct,pierced}=self;W::put(sequence,bw_o);W::put(tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(shot,bw_o);W::put(reason,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);W::put(crew_before,bw_o);W::put(crew_after,bw_o);W::put(direct,bw_o);W::put(pierced,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,shot:W::get(bw_i)?,reason:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?,crew_before:W::get(bw_i)?,crew_after:W::get(bw_i)?,direct:W::get(bw_i)?,pierced:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl DamageRecord {pub fn lethal(&self)->bool{self.crew_before&&(!self.crew_after||self.health_after==0)}}
 pub const MAX_DAMAGE_EVENTS:usize=MAX_BATTLE_SHOTS*16;
 #[path="result_spots.rs"]
@@ -105,6 +129,12 @@ pub(crate) mod bots;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RamDamageRecord { pub sequence:u32,pub tick:u32,pub domain_tick:u32,pub attacker:usize,pub target:usize,pub pair:(usize,usize),pub energy_j:f64,pub closing_speed:f64,pub health_before:i16,pub health_after:i16 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): RamDamageRecord
+impl crate::bw_wire::Wire for RamDamageRecord {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,tick,domain_tick,attacker,target,pair,energy_j,closing_speed,health_before,health_after}=self;W::put(sequence,bw_o);W::put(tick,bw_o);W::put(domain_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(pair,bw_o);W::put(energy_j,bw_o);W::put(closing_speed,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,tick:W::get(bw_i)?,domain_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,pair:W::get(bw_i)?,energy_j:W::get(bw_i)?,closing_speed:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 /// Terminal cause shared by HP publication, writer state and Results8. The tick
 /// is always the domain clock; a worker's fixed-step counter is not that clock.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -114,6 +144,12 @@ pub struct DeathCause { pub attacker:usize,pub reason:u8,pub tick:u32 }
 /// laboratory never replenishes ammo, so its complete event history is bounded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Shot { pub sequence: u32, pub slot: usize, pub tick: u32 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Shot
+impl crate::bw_wire::Wire for Shot {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,slot,tick}=self;W::put(sequence,bw_o);W::put(slot,bw_o);W::put(tick,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,slot:W::get(bw_i)?,tick:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Contact {
@@ -124,10 +160,22 @@ pub struct Contact {
     pub geometry_revision: String, pub transform_revision: String,
     pub material_facts: MaterialFacts,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Contact
+impl crate::bw_wire::Wire for Contact {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{shot,target_slot,tick,segment_start,segment_end,segment_seconds,endpoint,target_position,target_direction,target_aim,triangle,geometry_revision,transform_revision,material_facts}=self;W::put(shot,bw_o);W::put(target_slot,bw_o);W::put(tick,bw_o);W::put(segment_start,bw_o);W::put(segment_end,bw_o);W::put(segment_seconds,bw_o);W::put(endpoint,bw_o);W::put(target_position,bw_o);W::put(target_direction,bw_o);W::put(target_aim,bw_o);W::put(triangle,bw_o);W::put(geometry_revision,bw_o);W::put(transform_revision,bw_o);W::put(material_facts,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{shot:W::get(bw_i)?,target_slot:W::get(bw_i)?,tick:W::get(bw_i)?,segment_start:W::get(bw_i)?,segment_end:W::get(bw_i)?,segment_seconds:W::get(bw_i)?,endpoint:W::get(bw_i)?,target_position:W::get(bw_i)?,target_direction:W::get(bw_i)?,target_aim:W::get(bw_i)?,triangle:W::get(bw_i)?,geometry_revision:W::get(bw_i)?,transform_revision:W::get(bw_i)?,material_facts:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 /// Committed authoritative outcome. No native IDs or client damage claims.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ImpactOutcome { Ap(ap::Resolution), Mixed(crate::p06t_damage::Resolution), WreckBlocked }
+// BW-01 wire codec (tools/bw01_wire_gen.py): ImpactOutcome
+impl crate::bw_wire::Wire for ImpactOutcome {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ap(f0)=>{bw_o.tag(0);W::put(f0,bw_o);}Self::Mixed(f0)=>{bw_o.tag(1);W::put(f0,bw_o);}Self::WreckBlocked=>bw_o.tag(2),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ap(W::get(bw_i)?)),1=>Ok(Self::Mixed(W::get(bw_i)?)),2=>Ok(Self::WreckBlocked),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppliedImpact {
@@ -136,6 +184,12 @@ pub struct AppliedImpact {
     pub health_before: i16, pub health_after: i16,
     pub segment: Option<geometry::ImpactSegment>,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): AppliedImpact
+impl crate::bw_wire::Wire for AppliedImpact {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{shot,attacker,target,tick,outcome,health_before,health_after,segment}=self;W::put(shot,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(tick,bw_o);W::put(outcome,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);W::put(segment,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{shot:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,tick:W::get(bw_i)?,outcome:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?,segment:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 /// A surface-only terminal result; never an armor/HP outcome.
 #[derive(Clone, Debug, PartialEq)]
@@ -145,6 +199,12 @@ pub struct TerrainContact {
     pub segment_start: [f32; 3], pub segment_end: [f32; 3],
     pub direction: [f32; 3],
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): TerrainContact
+impl crate::bw_wire::Wire for TerrainContact {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{shot,shooter,tick,hit,segment_start,segment_end,direction}=self;W::put(shot,bw_o);W::put(shooter,bw_o);W::put(tick,bw_o);W::put(hit,bw_o);W::put(segment_start,bw_o);W::put(segment_end,bw_o);W::put(direction,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{shot:W::get(bw_i)?,shooter:W::get(bw_i)?,tick:W::get(bw_i)?,hit:W::get(bw_i)?,segment_start:W::get(bw_i)?,segment_end:W::get(bw_i)?,direction:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 /// MAPS-02 overlap of one hull with a non-blocking falling atom trigger, from
 /// the private IPC7 worker. Only the catalog object ID, the manifold geometry,
@@ -233,6 +293,12 @@ pub struct World {
     /// BOT-01 plan and per-bot decision state (None: no bots, old path).
     bots:Option<bots::Bots>,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): World
+impl crate::bw_wire::Wire for World {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{id,vehicle_kind,expected_actors,team_plan,mixed_profiles,map,actors,started,last,tick,shots,projectiles,impact,lifecycle,lifecycle_created_unix,result_spots,result_spot_tick,original_spotting,mixed_ammo,ammo_detonation,turret_flights,turret_visual_ms,extended_lab,owner_hold,team_base_spawn,lab_loadouts,damage_events,device_events,rng_state,rng_draws,geometry,geometries,generated_geometries,contacts,ap_test_lab,impacts,terrain,terrain_contacts,ram_damage_events,active_ram_pairs,destructible,fragiles,contact_sources,contact_sequences,bots}=self;W::put(id,bw_o);W::put(vehicle_kind,bw_o);W::put(expected_actors,bw_o);W::put(team_plan,bw_o);W::put(mixed_profiles,bw_o);W::put(map,bw_o);W::put(actors,bw_o);W::put(started,bw_o);W::put(last,bw_o);W::put(tick,bw_o);W::put(shots,bw_o);W::put(projectiles,bw_o);W::put(impact,bw_o);W::put(lifecycle,bw_o);W::put(lifecycle_created_unix,bw_o);W::put(result_spots,bw_o);W::put(result_spot_tick,bw_o);W::put(original_spotting,bw_o);W::put(mixed_ammo,bw_o);W::put(ammo_detonation,bw_o);W::put(turret_flights,bw_o);W::put(turret_visual_ms,bw_o);W::put(extended_lab,bw_o);W::put(owner_hold,bw_o);W::put(team_base_spawn,bw_o);W::put(lab_loadouts,bw_o);W::put(damage_events,bw_o);W::put(device_events,bw_o);W::put(rng_state,bw_o);W::put(rng_draws,bw_o);W::put(geometry,bw_o);W::put(geometries,bw_o);W::put(generated_geometries,bw_o);W::put(contacts,bw_o);W::put(ap_test_lab,bw_o);W::put(impacts,bw_o);W::put(terrain,bw_o);W::put(terrain_contacts,bw_o);W::put(ram_damage_events,bw_o);W::put(active_ram_pairs,bw_o);W::put(destructible,bw_o);W::put(fragiles,bw_o);W::put(contact_sources,bw_o);W::put(contact_sequences,bw_o);W::put(bots,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{id:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,expected_actors:W::get(bw_i)?,team_plan:W::get(bw_i)?,mixed_profiles:W::get(bw_i)?,map:W::get(bw_i)?,actors:W::get(bw_i)?,started:W::get(bw_i)?,last:W::get(bw_i)?,tick:W::get(bw_i)?,shots:W::get(bw_i)?,projectiles:W::get(bw_i)?,impact:W::get(bw_i)?,lifecycle:W::get(bw_i)?,lifecycle_created_unix:W::get(bw_i)?,result_spots:W::get(bw_i)?,result_spot_tick:W::get(bw_i)?,original_spotting:W::get(bw_i)?,mixed_ammo:W::get(bw_i)?,ammo_detonation:W::get(bw_i)?,turret_flights:W::get(bw_i)?,turret_visual_ms:W::get(bw_i)?,extended_lab:W::get(bw_i)?,owner_hold:W::get(bw_i)?,team_base_spawn:W::get(bw_i)?,lab_loadouts:W::get(bw_i)?,damage_events:W::get(bw_i)?,device_events:W::get(bw_i)?,rng_state:W::get(bw_i)?,rng_draws:W::get(bw_i)?,geometry:W::get(bw_i)?,geometries:W::get(bw_i)?,generated_geometries:W::get(bw_i)?,contacts:W::get(bw_i)?,ap_test_lab:W::get(bw_i)?,impacts:W::get(bw_i)?,terrain:W::get(bw_i)?,terrain_contacts:W::get(bw_i)?,ram_damage_events:W::get(bw_i)?,active_ram_pairs:W::get(bw_i)?,destructible:W::get(bw_i)?,fragiles:W::get(bw_i)?,contact_sources:W::get(bw_i)?,contact_sequences:W::get(bw_i)?,bots:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 impl World {
     pub(super) fn death_cause(&self,target:usize)->io::Result<Option<DeathCause>> {

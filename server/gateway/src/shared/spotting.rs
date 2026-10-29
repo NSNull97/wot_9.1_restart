@@ -80,6 +80,12 @@ pub struct Rules {
     pub share_with_team: bool,
     pub rollover_world_up_fallback: bool,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Rules
+impl crate::bw_wire::Wire for Rules {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{max_detection_m,proximity_m,scan_period_ms,retention_ms,sixth_sense_delay_ms,share_with_team,rollover_world_up_fallback}=self;W::put(max_detection_m,bw_o);W::put(proximity_m,bw_o);W::put(scan_period_ms,bw_o);W::put(retention_ms,bw_o);W::put(sixth_sense_delay_ms,bw_o);W::put(share_with_team,bw_o);W::put(rollover_world_up_fallback,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{max_detection_m:W::get(bw_i)?,proximity_m:W::get(bw_i)?,scan_period_ms:W::get(bw_i)?,retention_ms:W::get(bw_i)?,sixth_sense_delay_ms:W::get(bw_i)?,share_with_team:W::get(bw_i)?,rollover_world_up_fallback:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Rules {
     pub fn validate(self) -> io::Result<()> {
         if !self.max_detection_m.is_finite() || !(1. ..=MAX_VIEW_RANGE).contains(&self.max_detection_m)
@@ -133,6 +139,12 @@ pub struct State {
     pending: [Option<u64>; MAX_ACTORS],
     sixth_generation: [u32; MAX_ACTORS],
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): State
+impl crate::bw_wire::Wire for State {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{rules,last_ms,last_scan_ms,direct,last_seen,desired,observed,pending,sixth_generation}=self;W::put(rules,bw_o);W::put(last_ms,bw_o);W::put(last_scan_ms,bw_o);W::put(direct,bw_o);W::put(last_seen,bw_o);W::put(desired,bw_o);W::put(observed,bw_o);W::put(pending,bw_o);W::put(sixth_generation,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{rules:W::get(bw_i)?,last_ms:W::get(bw_i)?,last_scan_ms:W::get(bw_i)?,direct:W::get(bw_i)?,last_seen:W::get(bw_i)?,desired:W::get(bw_i)?,observed:W::get(bw_i)?,pending:W::get(bw_i)?,sixth_generation:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl State {
     pub fn new(rules: Rules) -> io::Result<Self> { rules.validate()?; Ok(Self { rules, last_ms: None, last_scan_ms: None, direct: [[false; MAX_ACTORS]; MAX_ACTORS], last_seen: [[None; MAX_ACTORS]; MAX_ACTORS], desired: [[false; MAX_ACTORS]; MAX_ACTORS], observed: [false; MAX_ACTORS], pending: [None; MAX_ACTORS], sixth_generation: [0; MAX_ACTORS] }) }
     pub fn initialized(&self) -> bool { self.last_ms.is_some() }

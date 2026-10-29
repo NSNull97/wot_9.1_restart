@@ -13,12 +13,24 @@ fn bad(reason: &'static str) -> io::Error {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Base { pub owner: u8, pub xz: [f32; 2], pub radius: f32 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Base
+impl crate::bw_wire::Wire for Base {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{owner,xz,radius}=self;W::put(owner,bw_o);W::put(xz,bw_o);W::put(radius,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{owner:W::get(bw_i)?,xz:W::get(bw_i)?,radius:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rules {
     pub prebattle_ms: u64, pub battle_ms: u64, pub afterbattle_ms: u64,
     pub bases: [Base; 2],
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Rules
+impl crate::bw_wire::Wire for Rules {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{prebattle_ms,battle_ms,afterbattle_ms,bases}=self;W::put(prebattle_ms,bw_o);W::put(battle_ms,bw_o);W::put(afterbattle_ms,bw_o);W::put(bases,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{prebattle_ms:W::get(bw_i)?,battle_ms:W::get(bw_i)?,afterbattle_ms:W::get(bw_i)?,bases:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Rules {
     /// Rules of one registry map: the client's ctf bases and round length
     /// (arena_defs), the accepted 30 s / 8 s periods and the accepted 50 m
@@ -49,10 +61,28 @@ impl Rules {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase { Waiting, Prebattle, Battle, Afterbattle }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Phase
+impl crate::bw_wire::Wire for Phase {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Waiting=>bw_o.tag(0),Self::Prebattle=>bw_o.tag(1),Self::Battle=>bw_o.tag(2),Self::Afterbattle=>bw_o.tag(3),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Waiting),1=>Ok(Self::Prebattle),2=>Ok(Self::Battle),3=>Ok(Self::Afterbattle),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reason { Elimination, Capture, Timeout, NoContest, Forfeit }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Reason
+impl crate::bw_wire::Wire for Reason {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Elimination=>bw_o.tag(0),Self::Capture=>bw_o.tag(1),Self::Timeout=>bw_o.tag(2),Self::NoContest=>bw_o.tag(3),Self::Forfeit=>bw_o.tag(4),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Elimination),1=>Ok(Self::Capture),2=>Ok(Self::Timeout),3=>Ok(Self::NoContest),4=>Ok(Self::Forfeit),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Outcome { pub winner: u8, pub reason: Reason, pub ended_ms: u64 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Outcome
+impl crate::bw_wire::Wire for Outcome {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{winner,reason,ended_ms}=self;W::put(winner,bw_o);W::put(reason,bw_o);W::put(ended_ms,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{winner:W::get(bw_i)?,reason:W::get(bw_i)?,ended_ms:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Member {
     pub team: u8, pub present: bool, pub ready: bool, pub alive: bool,
@@ -71,6 +101,12 @@ pub struct State {
     outcome: Option<Outcome>, progress: [u64; 2], stopped: [bool; 2],
     damage_epochs: Vec<u32>, capture_earned: Vec<u64>, capture_dropped: Vec<u32>, revision: u64,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): State
+impl crate::bw_wire::Wire for State {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{rules,phase,last_ms,entered_ms,battle_start_ms,outcome,progress,stopped,damage_epochs,capture_earned,capture_dropped,revision}=self;W::put(rules,bw_o);W::put(phase,bw_o);W::put(last_ms,bw_o);W::put(entered_ms,bw_o);W::put(battle_start_ms,bw_o);W::put(outcome,bw_o);W::put(progress,bw_o);W::put(stopped,bw_o);W::put(damage_epochs,bw_o);W::put(capture_earned,bw_o);W::put(capture_dropped,bw_o);W::put(revision,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{rules:W::get(bw_i)?,phase:W::get(bw_i)?,last_ms:W::get(bw_i)?,entered_ms:W::get(bw_i)?,battle_start_ms:W::get(bw_i)?,outcome:W::get(bw_i)?,progress:W::get(bw_i)?,stopped:W::get(bw_i)?,damage_epochs:W::get(bw_i)?,capture_earned:W::get(bw_i)?,capture_dropped:W::get(bw_i)?,revision:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl State {
     pub fn new(rules: Rules) -> io::Result<Self> {
         rules.validate()?;

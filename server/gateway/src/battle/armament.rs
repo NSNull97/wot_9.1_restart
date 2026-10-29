@@ -22,6 +22,12 @@ pub struct State {
     accepted:u32,rejected:u32,replenish:u32,reload_scale:f64,
     initial:[u16;3],fired:[u16;3],lost:[u16;3],
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): State
+impl crate::bw_wire::Wire for State {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{mount,counts,current,next,clip,until,magazine_reload,observed,accepted,rejected,replenish,reload_scale,initial,fired,lost}=self;W::put(mount,bw_o);W::put(counts,bw_o);W::put(current,bw_o);W::put(next,bw_o);W::put(clip,bw_o);W::put(until,bw_o);W::put(magazine_reload,bw_o);W::put(observed,bw_o);W::put(accepted,bw_o);W::put(rejected,bw_o);W::put(replenish,bw_o);W::put(reload_scale,bw_o);W::put(initial,bw_o);W::put(fired,bw_o);W::put(lost,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{mount:W::get(bw_i)?,counts:W::get(bw_i)?,current:W::get(bw_i)?,next:W::get(bw_i)?,clip:W::get(bw_i)?,until:W::get(bw_i)?,magazine_reload:W::get(bw_i)?,observed:W::get(bw_i)?,accepted:W::get(bw_i)?,rejected:W::get(bw_i)?,replenish:W::get(bw_i)?,reload_scale:W::get(bw_i)?,initial:W::get(bw_i)?,fired:W::get(bw_i)?,lost:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl State {
     pub fn new(mount:Mount,counts:[u16;3],initial:u16)->io::Result<Self>{
         let source=*crate::p06t_shells091::profile(mount);

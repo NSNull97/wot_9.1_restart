@@ -280,6 +280,12 @@ pub struct FrozenLoadout {
     pub crew_ids: Vec<String>,
     pub sha256: String,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): FrozenLoadout
+impl crate::bw_wire::Wire for FrozenLoadout {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{kind,descriptor,native_inventory_id,vehicle_inventory_id,ap_count,shell_definition_id,shell_compact_id,max_hp,crew_ids,sha256}=self;W::put(kind,bw_o);W::put(descriptor,bw_o);W::put(native_inventory_id,bw_o);W::put(vehicle_inventory_id,bw_o);W::put(ap_count,bw_o);W::put(shell_definition_id,bw_o);W::put(shell_compact_id,bw_o);W::put(max_hp,bw_o);W::put(crew_ids,bw_o);W::put(sha256,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{kind:W::get(bw_i)?,descriptor:W::get(bw_i)?,native_inventory_id:W::get(bw_i)?,vehicle_inventory_id:W::get(bw_i)?,ap_count:W::get(bw_i)?,shell_definition_id:W::get(bw_i)?,shell_compact_id:W::get(bw_i)?,max_hp:W::get(bw_i)?,crew_ids:W::get(bw_i)?,sha256:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 fn frozen(value: &Value, account: &str, expected_sha: &str) -> io::Result<FrozenLoadout> {
     keys(value, &["kind", "descriptor_hex", "native_inventory_id", "vehicle_inventory_id", "ap_count",

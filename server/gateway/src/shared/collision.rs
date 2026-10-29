@@ -54,6 +54,12 @@ pub struct Triangle {
     pub group: String,
     pub material: String,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Triangle
+impl crate::bw_wire::Wire for Triangle {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{triangle_id,a,b,c,mesh,group,material}=self;W::put(triangle_id,bw_o);W::put(a,bw_o);W::put(b,bw_o);W::put(c,bw_o);W::put(mesh,bw_o);W::put(group,bw_o);W::put(material,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{triangle_id:W::get(bw_i)?,a:W::get(bw_i)?,b:W::get(bw_i)?,c:W::get(bw_i)?,mesh:W::get(bw_i)?,group:W::get(bw_i)?,material:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mesh {
@@ -114,6 +120,12 @@ pub struct Candidate {
     pub normal: [f32; 3],
     pub t: f32,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Candidate
+impl crate::bw_wire::Wire for Candidate {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{candidate_index,triangle_id,mesh,group,material,normal,t}=self;W::put(candidate_index,bw_o);W::put(triangle_id,bw_o);W::put(mesh,bw_o);W::put(group,bw_o);W::put(material,bw_o);W::put(normal,bw_o);W::put(t,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{candidate_index:W::get(bw_i)?,triangle_id:W::get(bw_i)?,mesh:W::get(bw_i)?,group:W::get(bw_i)?,material:W::get(bw_i)?,normal:W::get(bw_i)?,t:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 /// Query a finite closed segment against supplied world-space triangles from
 /// either face. Sort by f64 segment parameter, then unique source triangle ID

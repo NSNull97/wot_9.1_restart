@@ -9,7 +9,8 @@
 //! Not a native battle.
 use super::*;
 use super::super::net01::PoseDelivery;
-use super::arena_bench::{env,summary};
+use super::arena_bench::{env,summary,sample,physics_pid};
+use super::bot01_bench::{step,children};
 
 struct ClientModel {
     frame:Duration,stall_every:Option<Duration>,stall:Duration,next_frame:Instant,stall_until:Option<Instant>,last_stall:Instant,
@@ -88,6 +89,9 @@ fn net01_bench_pose_delivery(){
     if mixed {template.world.enable_mixed_ammo().unwrap();template.world.enable_ammo_detonation().unwrap();}
     template.world.enable_bots(model::bots::Plan{human_places:humans,seed,kinds:kinds.clone()}).unwrap();
     let mut a=arena::Arena::from_template(0,&template,id,now).unwrap();
+    // BW-01: NET01_BENCH_WORKER=1 steps the arena in its battle worker process.
+    let worker=env("NET01_BENCH_WORKER").as_deref()==Some("1");
+    if worker {a.worker=Some(Box::new(super::battle_worker::Remote::new(super::battle_worker::tests::settings())));}
     let kind=VehicleKind::Ms1;
     let(mut owner,loadout)=model::tests::profile13_loadout(kind,0,kind.ammo_limit());owner.name="bench-native-0".into();
     if mixed {assert_eq!(a.world.attach_native_stand_in(owner,1,kind).unwrap(),0);}
@@ -96,10 +100,13 @@ fn net01_bench_pose_delivery(){
     let mut first=true;
     while !a.native_ready() {
         assert!(startup.elapsed()<Duration::from_secs(150),"scene startup bound");
-        let event=a.handle(arena::Command::Step{now:Instant::now(),start:first});first=false;
+        let event=step(&mut a,arena::Command::Step{now:Instant::now(),start:first});first=false;
         assert!(matches!(event,arena::Event::Stepped),"{event:?}");thread::sleep(Duration::from_millis(5));
     }
     a.world.set_ready(0,1).unwrap();
+    let me=std::process::id();let worker_pid=a.worker.as_ref().and_then(|w|w.pid());
+    let scene=match worker_pid {Some(w)=>children(w).first().copied(),None=>physics_pid(&a)};
+    let pids=[Some(me),worker_pid,scene].into_iter().flatten().collect::<Vec<_>>();let cpu0=sample(&pids);
     // The native place's Session: Driving, all creations acknowledged.
     let (mut s,_)=super::tests::driving(Instant::now());
     {let c=s.shared.as_mut().unwrap();c.creations=[Some((0,true));model::MAX_ACTORS];c.ready_sent=[true;model::MAX_ACTORS];
@@ -116,7 +123,7 @@ fn net01_bench_pose_delivery(){
     while measured.elapsed()<Duration::from_secs(30+seconds) {
         loops+=1;let loop_start=Instant::now();
         let phase=(loops/400)%4;a.world.actors[0].input=model::Input{throttle:1,steer:match phase{0=>0,1=>1,2=>0,_=>-1},speed_percent:100};
-        let st=Instant::now();let event=a.handle(arena::Command::Step{now:st,start:false});let step=st.elapsed();
+        let st=Instant::now();let event=step(&mut a,arena::Command::Step{now:st,start:false});let step_wall=st.elapsed();
         if let arena::Event::Failed{stage,error}=event {failure=Some(format!("{stage}: {error}"));break;}
         let battle=a.world.lifecycle.as_ref().is_some_and(|l|l.allows_actions());
         if battle {battle_from_tick.get_or_insert(a.world.tick);}
@@ -139,7 +146,7 @@ fn net01_bench_pose_delivery(){
         let publish=pt.elapsed();
         if let Some(c)=s.shared.as_mut() {c.view=Some(a.world.clone());}
         if let Err(error)=client.frame(&mut s,&a.world,Instant::now(),a.world.tick) {failure=Some(format!("client ack: {error}"));break;}
-        let end=Instant::now();stats.record(loop_start,step,publish,&[Some(a.world.tick)],end);
+        let end=Instant::now();stats.record(loop_start,step_wall,publish,&[Some(a.world.tick)],end);
         if let Some(line)=stats.take_report(end) {
             let w=std::mem::take(&mut s.tx.stats);let p=s.shared.as_mut().unwrap().take_pose_stats();
             reports.push(serde_json::json!({"loop":line,"ack_wait":w.ack_wait.summary(),"queue_wait":w.queue_wait.summary(),
@@ -149,6 +156,10 @@ fn net01_bench_pose_delivery(){
         if a.world.lifecycle.as_ref().is_some_and(|l|l.outcome().is_some()) {break;}
         thread::sleep(Duration::from_millis(5));
     }
+    let cpu1=sample(&pids);let steps=f64::from(a.world.tick.saturating_sub(start_tick)).max(1.);
+    let cpu=|pid:Option<u32>|pid.and_then(|p|Some((cpu1.get(&p)?.0-cpu0.get(&p)?.0)*1000./steps));
+    let processes=serde_json::json!({"cpu_ms_per_domain_step":{"gateway":cpu(Some(me)),"worker":cpu(worker_pid),"scene":cpu(scene)},
+        "working_set_end":{"gateway":cpu1.get(&me).map(|v|v.1),"worker":worker_pid.and_then(|p|cpu1.get(&p)).map(|v|v.1),"scene":scene.and_then(|p|cpu1.get(&p)).map(|v|v.1)}});
     {let w=std::mem::take(&mut s.tx.stats);merge(&mut window,&w);let p=s.shared.as_mut().unwrap().take_pose_stats();add(&mut pose_totals,&p);}
     // What one clone costs at the end of the battle, and what makes it big.
     let clone_ms=|f:&dyn Fn()|{let t=Instant::now();for _ in 0..50 {f();}t.elapsed().as_secs_f64()*1000./50.};
@@ -164,7 +175,9 @@ fn net01_bench_pose_delivery(){
     let span=ticks.last().zip(ticks.first()).map_or(0,|(l,f)|l-f+1);
     let report=serde_json::json!({
         "schema":"net01-bench.v1","label":"SYNTHETIC native place + 29 server bots, real Jolt scene, real publication/transmit, modelled loopback client; not native",
-        "build":if cfg!(debug_assertions){"debug"}else{"release"},"mode":mode.label(),"manifest":manifest,"map":a.world.map.asset(),"seed":seed,
+        "build":if cfg!(debug_assertions){"debug"}else{"release"},"mode":mode.label(),
+        "step_mode":if worker{"battle_worker"}else{"in_process"},"processes":processes,
+        "worker":a.worker.as_ref().map(|r|serde_json::json!({"steps":r.steps,"last_frame_bytes":r.frame_bytes,"last_step_ns_in_worker":r.step_ns})),"manifest":manifest,"map":a.world.map.asset(),"seed":seed,
         "client":{"frame_ms":client_frame.as_millis() as u64,"stall_every_s":stall_every.map(|d|d.as_secs()),"stall_ms":stall.as_millis() as u64,"frames":client.frames},
         "loops":loops,"domain_ticks":a.world.tick.saturating_sub(start_tick),"battle_from_tick":battle_from_tick,
         "client_pose":{"distinct_ticks_seen":ticks.len(),"tick_span":span,"missed_ticks":span.saturating_sub(ticks.len() as u32),

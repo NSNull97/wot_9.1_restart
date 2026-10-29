@@ -36,6 +36,9 @@ mod login_admission;
 mod arena;
 #[path="server_containment.rs"]
 mod containment;
+#[path="server_battle_worker.rs"]
+mod battle_worker;
+pub use battle_worker::run as run_battle_worker;
 #[cfg(test)]
 #[path="server_arena_bench.rs"]
 mod arena_bench;
@@ -159,6 +162,8 @@ struct IntegratedRuntime {
     contact_sequences: [u32; model::CAPACITY],
     contact_batches: [Option<ContactBatch>; model::CAPACITY],
     lag_resync: [LagResync; model::CAPACITY],
+    /// BW-01: identity of this runtime object; a battle worker rebuilds its own on change.
+    generation: u64,
 }
 
 /// A worker frame may be compared with a client frame in focused tests, but an
@@ -242,7 +247,8 @@ impl IntegratedRuntime {
             anchored: [false; model::CAPACITY],
             dispatched: [None; model::CAPACITY], started: false, removal: None,catalog:None, staged: None, synchronizing: [false; model::CAPACITY], generations: [0; model::CAPACITY],
             worker_sessions: [None; model::CAPACITY], contact_sequences: [0; model::CAPACITY],
-            contact_batches: std::array::from_fn(|_| None), lag_resync: [LagResync::default(); model::CAPACITY] }
+            contact_batches: std::array::from_fn(|_| None), lag_resync: [LagResync::default(); model::CAPACITY],
+            generation: { static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1); NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) } }
     }
 
     fn map(&self) -> io::Result<crate::map_drive_worker091::MapSpec> {
@@ -1639,6 +1645,12 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         println!("GATEWAY_CAPACITY connections={} arena_places={} retired_limit={} datagrams_per_second={datagram_budget} drain={drain} policy=gw01-hangar-holds-no-arena-place",
             table.capacity,arenas[0].world.expected_actors(),table.retirement.limit());
     }
+    if let Some(worker)=&config.battle_worker {
+        let settings=battle_worker::Settings::from_config(worker,config.catalog_v1);
+        for a in &mut arenas {a.worker=Some(Box::new(battle_worker::Remote::new(settings)));}
+        println!("BW01_BATTLE_WORKER arenas={} step_timeout_ms={} startup_timeout_ms={} policy={} publication=gateway",
+            arenas.len(),settings.step_timeout.as_millis(),settings.startup_timeout.as_millis(),battle_worker::POLICY);
+    }
     if arenas.len()>1 {
         println!("ARENAS count={} places_per_arena={} battles={:?} step_threads=scoped_per_tick policy=arena01-in-process",
             arenas.len(),arenas[0].world.expected_actors(),arenas.iter().map(|a|a.world.id).collect::<Vec<_>>());
@@ -2085,13 +2097,14 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
         }
         let step_started=Instant::now();
-        for (index,event) in arena::step_all(&mut arenas,&commands).into_iter().enumerate() {
+        let events=if arenas[0].worker.is_some() {battle_worker::step_all(&mut arenas,&commands)} else {arena::step_all(&mut arenas,&commands)};
+        for (index,event) in events.into_iter().enumerate() {
             if let Some(arena::Event::Failed{stage,error})=event {failures.push((index,stage,error));}
         }
         let step_wall=step_started.elapsed();
         failures.sort_by_key(|f|f.0);
         for (index,stage,error) in failures {
-            let late=if stage=="world_step"{"fault_world_step"}else{"fault_world_step_panic"};
+            let late=match stage {"world_step"=>"fault_world_step","world_step_panic"=>"fault_world_step_panic",_=>"fault_battle_worker"};
             containment::contain_arena(&mut table,&mut battle_dispatch,&mut arenas[index],now,stage,Some(late),&error);
         }
         if let Some(late)=&mut battle_dispatch.late{late.observe_sessions(table.sessions.iter());for a in &arenas{late.seal_world(&a.world);}}

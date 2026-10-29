@@ -10,6 +10,12 @@ const MAX_ACTORS:usize=super::MAX_ACTORS;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub(crate) struct SpotRecord {observer:usize,target:usize,tick:u32}
+// BW-01 wire codec (tools/bw01_wire_gen.py): SpotRecord
+impl crate::bw_wire::Wire for SpotRecord {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{observer,target,tick}=self;W::put(observer,bw_o);W::put(target,bw_o);W::put(tick,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{observer:W::get(bw_i)?,target:W::get(bw_i)?,tick:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl SpotRecord {
     pub(crate) fn observer(&self)->usize{self.observer}
     pub(crate) fn target(&self)->usize{self.target}

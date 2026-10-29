@@ -10,6 +10,12 @@ pub const POLICY_V2_SHA256:&str="a19115167b83e73ae80e83d578490ddbcbf81cbe759c626
 pub const MAX_CREW:usize=6;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum PolicyVersion {V1,V2}
+// BW-01 wire codec (tools/bw01_wire_gen.py): PolicyVersion
+impl crate::bw_wire::Wire for PolicyVersion {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::V1=>bw_o.tag(0),Self::V2=>bw_o.tag(1),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::V1),1=>Ok(Self::V2),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl PolicyVersion {
     pub fn revision(self)->&'static str{match self{Self::V1=>POLICY,Self::V2=>POLICY_V2}}
     pub fn source_caps_sha(self)->&'static str{match self{Self::V1=>SOURCE_SHA256,Self::V2=>SOURCE_V2_SHA256}}
@@ -26,9 +32,21 @@ pub const MODULE_REPAIR_DELAY_MS:u64=1000;
 fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,reason)}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Condition {Normal,Critical,Destroyed}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Condition
+impl crate::bw_wire::Wire for Condition {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Normal=>bw_o.tag(0),Self::Critical=>bw_o.tag(1),Self::Destroyed=>bw_o.tag(2),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Normal),1=>Ok(Self::Critical),2=>Ok(Self::Destroyed),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 fn condition(hp:u16,max:u16)->Condition {if hp==0{Condition::Destroyed}else if u32::from(hp)*2<=u32::from(max){Condition::Critical}else{Condition::Normal}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Cause {pub shot:u32,pub attacker_slot:u8}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Cause
+impl crate::bw_wire::Wire for Cause {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{shot,attacker_slot}=self;W::put(shot,bw_o);W::put(attacker_slot,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{shot:W::get(bw_i)?,attacker_slot:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct ModuleHit {
     pub cause:Cause,pub ordinal:u8,pub at_ms:u64,pub target:Target,pub shell:Shell,
@@ -37,6 +55,12 @@ pub struct ModuleHit {
     /// unused0 without consuming RNG. Replay must preserve that chosen input.
     pub ignition_roll:f64,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): ModuleHit
+impl crate::bw_wire::Wire for ModuleHit {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{cause,ordinal,at_ms,target,shell,ignition_roll}=self;W::put(cause,bw_o);W::put(ordinal,bw_o);W::put(at_ms,bw_o);W::put(target,bw_o);W::put(shell,bw_o);W::put(ignition_roll,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{cause:W::get(bw_i)?,ordinal:W::get(bw_i)?,at_ms:W::get(bw_i)?,target:W::get(bw_i)?,shell:W::get(bw_i)?,ignition_roll:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Change {
     Device {device:Device,extra_index:u8,max_health:u16,before:u16,after:u16,before_condition:Condition,after_condition:Condition,repair:bool},
@@ -45,8 +69,20 @@ pub enum Change {
     /// Requested delta; caller must apply through its one HP/death ledger.
     VehicleDamage {amount:u16},
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Change
+impl crate::bw_wire::Wire for Change {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Device{device,extra_index,max_health,before,after,before_condition,after_condition,repair}=>{bw_o.tag(0);W::put(device,bw_o);W::put(extra_index,bw_o);W::put(max_health,bw_o);W::put(before,bw_o);W::put(after,bw_o);W::put(before_condition,bw_o);W::put(after_condition,bw_o);W::put(repair,bw_o);}Self::Crew{seat,extra_index,before_active,after_active}=>{bw_o.tag(1);W::put(seat,bw_o);W::put(extra_index,bw_o);W::put(before_active,bw_o);W::put(after_active,bw_o);}Self::Fire{before_active,after_active}=>{bw_o.tag(2);W::put(before_active,bw_o);W::put(after_active,bw_o);}Self::VehicleDamage{amount}=>{bw_o.tag(3);W::put(amount,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Device{device:W::get(bw_i)?,extra_index:W::get(bw_i)?,max_health:W::get(bw_i)?,before:W::get(bw_i)?,after:W::get(bw_i)?,before_condition:W::get(bw_i)?,after_condition:W::get(bw_i)?,repair:W::get(bw_i)?}),1=>Ok(Self::Crew{seat:W::get(bw_i)?,extra_index:W::get(bw_i)?,before_active:W::get(bw_i)?,after_active:W::get(bw_i)?}),2=>Ok(Self::Fire{before_active:W::get(bw_i)?,after_active:W::get(bw_i)?}),3=>Ok(Self::VehicleDamage{amount:W::get(bw_i)?}),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Transition {pub sequence:u32,pub at_ms:u64,pub cause:Cause,pub from_fire:bool,pub change:Change}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Transition
+impl crate::bw_wire::Wire for Transition {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,at_ms,cause,from_fire,change}=self;W::put(sequence,bw_o);W::put(at_ms,bw_o);W::put(cause,bw_o);W::put(from_fire,bw_o);W::put(change,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,at_ms:W::get(bw_i)?,cause:W::get(bw_i)?,from_fire:W::get(bw_i)?,change:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Health {pub hp:u16,pub max_hp:u16,pub terminal:bool}
 #[derive(Clone,Copy,Debug,PartialEq)]
@@ -65,6 +101,12 @@ impl Capabilities {
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 struct Fire {cause:Cause,next_tick_ms:u64,ticks:u8}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Fire
+impl crate::bw_wire::Wire for Fire {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{cause,next_tick_ms,ticks}=self;W::put(cause,bw_o);W::put(next_tick_ms,bw_o);W::put(ticks,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{cause:W::get(bw_i)?,next_tick_ms:W::get(bw_i)?,ticks:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
 pub struct State {
     profile:Profile,policy:PolicyVersion,health:[u16;9],crew:[bool;MAX_CREW],fire:Option<Fire>,
@@ -72,6 +114,12 @@ pub struct State {
     observed_ms:Option<u64>,sequence:u32,seen:Vec<ModuleHit>,frozen:bool,
     fire_ticks:u32,proposed_fire_damage:u32,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): State
+impl crate::bw_wire::Wire for State {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{profile,policy,health,crew,fire,repair_due,repair_cause,observed_ms,sequence,seen,frozen,fire_ticks,proposed_fire_damage}=self;W::put(profile,bw_o);W::put(policy,bw_o);W::put(health,bw_o);W::put(crew,bw_o);W::put(fire,bw_o);W::put(repair_due,bw_o);W::put(repair_cause,bw_o);W::put(observed_ms,bw_o);W::put(sequence,bw_o);W::put(seen,bw_o);W::put(frozen,bw_o);W::put(fire_ticks,bw_o);W::put(proposed_fire_damage,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{profile:W::get(bw_i)?,policy:W::get(bw_i)?,health:W::get(bw_i)?,crew:W::get(bw_i)?,fire:W::get(bw_i)?,repair_due:W::get(bw_i)?,repair_cause:W::get(bw_i)?,observed_ms:W::get(bw_i)?,sequence:W::get(bw_i)?,seen:W::get(bw_i)?,frozen:W::get(bw_i)?,fire_ticks:W::get(bw_i)?,proposed_fire_damage:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl State {
     /// The existing five-profile route never silently upgrades its policy.
     pub fn new(profile:Profile)->io::Result<Self> {Self::create(profile,PolicyVersion::V1)}

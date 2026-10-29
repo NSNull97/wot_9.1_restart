@@ -56,10 +56,22 @@ pub fn bounded_result_json(raw:&[u8])->io::Result<Value>{bounded_nodes(raw,RESUL
 pub struct Remaining{pub shell_compact_id:u16,pub count:u16}
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Stack{pub shell_definition_id:String,pub shell_compact_id:u16,pub family:source::Family,pub count:u16}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Stack
+impl crate::bw_wire::Wire for Stack {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{shell_definition_id,shell_compact_id,family,count}=self;W::put(shell_definition_id,bw_o);W::put(shell_compact_id,bw_o);W::put(family,bw_o);W::put(count,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{shell_definition_id:W::get(bw_i)?,shell_compact_id:W::get(bw_i)?,family:W::get(bw_i)?,count:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Frozen{pub kind:VehicleKind,pub mount:source::Mount,pub descriptor:Vec<u8>,pub native_inventory_id:u32,
     pub vehicle_inventory_id:String,pub max_hp:i16,pub crew_ids:Vec<String>,pub capacity:u16,pub ammunition:[Stack;3],
     pub initial_shell_compact_id:u16,pub sha256:String}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Frozen
+impl crate::bw_wire::Wire for Frozen {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{kind,mount,descriptor,native_inventory_id,vehicle_inventory_id,max_hp,crew_ids,capacity,ammunition,initial_shell_compact_id,sha256}=self;W::put(kind,bw_o);W::put(mount,bw_o);W::put(descriptor,bw_o);W::put(native_inventory_id,bw_o);W::put(vehicle_inventory_id,bw_o);W::put(max_hp,bw_o);W::put(crew_ids,bw_o);W::put(capacity,bw_o);W::put(ammunition,bw_o);W::put(initial_shell_compact_id,bw_o);W::put(sha256,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{kind:W::get(bw_i)?,mount:W::get(bw_i)?,descriptor:W::get(bw_i)?,native_inventory_id:W::get(bw_i)?,vehicle_inventory_id:W::get(bw_i)?,max_hp:W::get(bw_i)?,crew_ids:W::get(bw_i)?,capacity:W::get(bw_i)?,ammunition:W::get(bw_i)?,initial_shell_compact_id:W::get(bw_i)?,sha256:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.count)}
     pub fn validate_owned(&self,account:&str)->io::Result<()>{let v=serde_json::json!({"kind":self.kind.label(),
         "descriptor_hex":self.descriptor.iter().map(|b|format!("{b:02x}")).collect::<String>(),"native_inventory_id":self.native_inventory_id,

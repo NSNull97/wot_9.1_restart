@@ -291,6 +291,12 @@ fn artifact_tree(path:&Path,set:&mut BTreeSet<PathBuf>,depth:usize,nodes:&mut us
     Ok(())
 }
 #[derive(Clone,Debug)]pub struct Artifacts{pub executable:PathBuf,root:PathBuf,pins:Vec<(PathBuf,String,usize)>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Artifacts
+impl crate::bw_wire::Wire for Artifacts {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{executable,root,pins}=self;W::put(executable,bw_o);W::put(root,bw_o);W::put(pins,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{executable:W::get(bw_i)?,root:W::get(bw_i)?,pins:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Artifacts{
     pub fn load(path:&Path)->io::Result<Self>{plain(path)?;let path=path.canonicalize()?;let root=path.parent().ok_or_else(||bad("artifact parent"))?;
         let mut raw=Vec::new();fs::File::open(&path)?.take(65537).read_to_end(&mut raw)?;let v=parse(&raw,65536)?;keys(&v,&["version","executable","files"])?;if uint(&v["version"])?!=1{return Err(bad("artifact version"));}

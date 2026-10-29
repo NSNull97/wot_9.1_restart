@@ -114,6 +114,12 @@ pub(super) struct SharedResources {
     pub maps:Vec<crate::map_drive_worker091::MapSpec>,
     pub source_profiles:Vec<Option<(PathBuf,String)>>,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): SharedResources
+impl crate::bw_wire::Wire for SharedResources {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{version,root,artifacts,kinds,maps,source_profiles}=self;W::put(version,bw_o);W::put(root,bw_o);W::put(artifacts,bw_o);W::put(kinds,bw_o);W::put(maps,bw_o);W::put(source_profiles,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{version:W::get(bw_i)?,root:W::get(bw_i)?,artifacts:W::get(bw_i)?,kinds:W::get(bw_i)?,maps:W::get(bw_i)?,source_profiles:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl SharedResources {
     /// Row of a kind in `kinds`/`maps`/`source_profiles`.
     pub fn slot(&self,kind:VehicleKind)->Option<usize>{self.kinds.iter().position(|k|*k==kind)}

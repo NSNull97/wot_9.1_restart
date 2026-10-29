@@ -13,6 +13,12 @@ fn dot(a:[f32;3],b:[f32;3])->f64 { let a=a.map(f64::from);let b=b.map(f64::from)
 pub enum Profile { Ms1, Is7, T26, T34, T3485, WtE100128, Fv215b183,
     /// BATTLE-ANY: qualified generated profile (SHA, mass, box, getter bits from the registry).
     Generated(super::generated_vehicles::GeneratedId) }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Profile
+impl crate::bw_wire::Wire for Profile {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ms1=>bw_o.tag(0),Self::Is7=>bw_o.tag(1),Self::T26=>bw_o.tag(2),Self::T34=>bw_o.tag(3),Self::T3485=>bw_o.tag(4),Self::WtE100128=>bw_o.tag(5),Self::Fv215b183=>bw_o.tag(6),Self::Generated(f0)=>{bw_o.tag(7);W::put(f0,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ms1),1=>Ok(Self::Is7),2=>Ok(Self::T26),3=>Ok(Self::T34),4=>Ok(Self::T3485),5=>Ok(Self::WtE100128),6=>Ok(Self::Fv215b183),7=>Ok(Self::Generated(W::get(bw_i)?)),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl Profile {
     pub fn for_vehicle(kind:super::vehicle_profile::VehicleKind)->Self {
         use super::vehicle_profile::VehicleKind;match kind {
@@ -79,15 +85,33 @@ impl Profile {
 }
 #[derive(Clone,Copy,Debug)]
 pub struct BodyBinding {pub inverse_mass:f32,pub principal:[f32;3],pub inertia_rotation:[f32;4]}
+// BW-01 wire codec (tools/bw01_wire_gen.py): BodyBinding
+impl crate::bw_wire::Wire for BodyBinding {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{inverse_mass,principal,inertia_rotation}=self;W::put(inverse_mass,bw_o);W::put(principal,bw_o);W::put(inertia_rotation,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{inverse_mass:W::get(bw_i)?,principal:W::get(bw_i)?,inertia_rotation:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl PartialEq for BodyBinding {fn eq(&self,b:&Self)->bool {self.inverse_mass.to_bits()==b.inverse_mass.to_bits()
     &&bits(self.principal,b.principal)&&bits(self.inertia_rotation,b.inertia_rotation)}}
 #[derive(Clone,Copy,Debug)]
 pub struct After {pub v:[f32;3],pub w:[f32;3]}
+// BW-01 wire codec (tools/bw01_wire_gen.py): After
+impl crate::bw_wire::Wire for After {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{v,w}=self;W::put(v,bw_o);W::put(w,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{v:W::get(bw_i)?,w:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl PartialEq for After {fn eq(&self,b:&Self)->bool{bits(self.v,b.v)&&bits(self.w,b.w)}}
 impl After {fn valid(self)->bool {self.v.iter().chain(&self.w).all(|v|v.is_finite())
     &&dot(self.v,self.v)<=625.&&self.w.iter().all(|v|v.abs()<=20.)}}
 #[derive(Clone,Copy,Debug)]
 pub struct FullMotion {pub com:[f32;3],pub rotation:[f32;4],pub motion:After,pub inertia:[f32;9]}
+// BW-01 wire codec (tools/bw01_wire_gen.py): FullMotion
+impl crate::bw_wire::Wire for FullMotion {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{com,rotation,motion,inertia}=self;W::put(com,bw_o);W::put(rotation,bw_o);W::put(motion,bw_o);W::put(inertia,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{com:W::get(bw_i)?,rotation:W::get(bw_i)?,motion:W::get(bw_i)?,inertia:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl PartialEq for FullMotion {fn eq(&self,b:&Self)->bool{bits(self.com,b.com)&&bits(self.rotation,b.rotation)
     &&self.motion==b.motion&&bits(self.inertia,b.inertia)}}
 impl FullMotion {
@@ -101,12 +125,36 @@ impl FullMotion {
 }
 #[derive(Clone,Debug,PartialEq)]
 pub struct Witness {pub substep:u8,pub pre:FullMotion,pub post:FullMotion}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Witness
+impl crate::bw_wire::Wire for Witness {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{substep,pre,post}=self;W::put(substep,bw_o);W::put(pre,bw_o);W::put(post,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{substep:W::get(bw_i)?,pre:W::get(bw_i)?,post:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Mode {Normal,Total,Angular}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Mode
+impl crate::bw_wire::Wire for Mode {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Normal=>bw_o.tag(0),Self::Total=>bw_o.tag(1),Self::Angular=>bw_o.tag(2),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Normal),1=>Ok(Self::Total),2=>Ok(Self::Angular),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum SolverBranch {Applied,Nonclosing,Quantized}
+// BW-01 wire codec (tools/bw01_wire_gen.py): SolverBranch
+impl crate::bw_wire::Wire for SolverBranch {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Applied=>bw_o.tag(0),Self::Nonclosing=>bw_o.tag(1),Self::Quantized=>bw_o.tag(2),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Applied),1=>Ok(Self::Nonclosing),2=>Ok(Self::Quantized),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug)]
 pub struct Geometry {pub point:[f32;3],pub normal:[f32;3]}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Geometry
+impl crate::bw_wire::Wire for Geometry {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{point,normal}=self;W::put(point,bw_o);W::put(normal,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{point:W::get(bw_i)?,normal:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl PartialEq for Geometry {fn eq(&self,b:&Self)->bool{bits(self.point,b.point)&&bits(self.normal,b.normal)}}
 impl Geometry {pub fn scalar(self)->Contact{Contact{point:self.point,normal:self.normal}}
     fn valid(self)->bool {self.point.iter().chain(&self.normal).all(|v|v.is_finite())
@@ -116,8 +164,20 @@ impl Geometry {pub fn scalar(self)->Contact{Contact{point:self.point,normal:self
 pub struct Receipt {pub object_id:u32,pub substep:u8,pub order:u8,pub geometry:Geometry,pub mode:Mode,
     pub budget_after:After,pub solver_after:After,pub energy_j:u32,
     pub legacy:Option<Geometry>,pub solver_branch:Option<SolverBranch>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Receipt
+impl crate::bw_wire::Wire for Receipt {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{object_id,substep,order,geometry,mode,budget_after,solver_after,energy_j,legacy,solver_branch}=self;W::put(object_id,bw_o);W::put(substep,bw_o);W::put(order,bw_o);W::put(geometry,bw_o);W::put(mode,bw_o);W::put(budget_after,bw_o);W::put(solver_after,bw_o);W::put(energy_j,bw_o);W::put(legacy,bw_o);W::put(solver_branch,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{object_id:W::get(bw_i)?,substep:W::get(bw_i)?,order:W::get(bw_i)?,geometry:W::get(bw_i)?,mode:W::get(bw_i)?,budget_after:W::get(bw_i)?,solver_after:W::get(bw_i)?,energy_j:W::get(bw_i)?,legacy:W::get(bw_i)?,solver_branch:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
 pub struct FrameProof {pub profile:Profile,pub binding:BodyBinding,pub witnesses:Vec<Witness>,pub receipts:Vec<Receipt>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): FrameProof
+impl crate::bw_wire::Wire for FrameProof {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{profile,binding,witnesses,receipts}=self;W::put(profile,bw_o);W::put(binding,bw_o);W::put(witnesses,bw_o);W::put(receipts,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{profile:W::get(bw_i)?,binding:W::get(bw_i)?,witnesses:W::get(bw_i)?,receipts:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Allowed {Normal,Fallback}
 
@@ -193,6 +253,12 @@ impl FrameProof {
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Context {pub battle:u64,pub slot:usize,pub session:u32,pub generation:u32,pub seq:u32,pub tick:u32,
     pub config_sha256:String,pub catalog_sha256:String,pub domain_sha256:String,pub scene_version:u32,pub scene_sha256:String}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Context
+impl crate::bw_wire::Wire for Context {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{battle,slot,session,generation,seq,tick,config_sha256,catalog_sha256,domain_sha256,scene_version,scene_sha256}=self;W::put(battle,bw_o);W::put(slot,bw_o);W::put(session,bw_o);W::put(generation,bw_o);W::put(seq,bw_o);W::put(tick,bw_o);W::put(config_sha256,bw_o);W::put(catalog_sha256,bw_o);W::put(domain_sha256,bw_o);W::put(scene_version,bw_o);W::put(scene_sha256,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{battle:W::get(bw_i)?,slot:W::get(bw_i)?,session:W::get(bw_i)?,generation:W::get(bw_i)?,seq:W::get(bw_i)?,tick:W::get(bw_i)?,config_sha256:W::get(bw_i)?,catalog_sha256:W::get(bw_i)?,domain_sha256:W::get(bw_i)?,scene_version:W::get(bw_i)?,scene_sha256:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Context {pub fn validate(&self)->io::Result<()> {
     let hash=|s:&str|s.len()==64&&s.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
     if self.battle==0||self.slot>=super::model::MAX_ACTORS||self.session==0||self.generation==0||!(1..=36000).contains(&self.seq)
@@ -201,13 +267,31 @@ impl Context {pub fn validate(&self)->io::Result<()> {
 }}
 #[derive(Clone,Debug,PartialEq)]
 pub struct ContextFrame {pub context:Context,pub proof:Arc<FrameProof>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): ContextFrame
+impl crate::bw_wire::Wire for ContextFrame {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{context,proof}=self;W::put(context,bw_o);W::put(proof,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{context:W::get(bw_i)?,proof:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
 pub struct ContactProof {pub frame:Arc<ContextFrame>,pub index:usize}
+// BW-01 wire codec (tools/bw01_wire_gen.py): ContactProof
+impl crate::bw_wire::Wire for ContactProof {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{frame,index}=self;W::put(frame,bw_o);W::put(index,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{frame:W::get(bw_i)?,index:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl ContactProof {pub fn receipt(&self)->io::Result<&Receipt>{self.frame.proof.receipts.get(self.index).ok_or_else(bad)}}
 
 /// Registered by the coordinator from its verified worker, never from a frame.
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Source {pub session:u32,pub generation:u32,pub config_sha256:String,pub profile:Profile}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Source
+impl crate::bw_wire::Wire for Source {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{session,generation,config_sha256,profile}=self;W::put(session,bw_o);W::put(generation,bw_o);W::put(config_sha256,bw_o);W::put(profile,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{session:W::get(bw_i)?,generation:W::get(bw_i)?,config_sha256:W::get(bw_i)?,profile:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Source {
     pub fn follows(&self,old:Option<&Self>)->bool {self.session!=0&&self.generation!=0
         &&self.config_sha256.len()==64&&self.config_sha256.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b))

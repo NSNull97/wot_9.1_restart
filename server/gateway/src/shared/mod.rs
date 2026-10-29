@@ -63,6 +63,7 @@ mod p10b_selection_job;
 mod profile13_queue;
 mod profile13_templates;
 pub use server::serve_profile13;
+pub use server::run_battle_worker;
 pub use server::serve_profile13_source_bundle;
 pub use server::serve_curated_lab;
 pub use server::serve_curated_lab_v2;

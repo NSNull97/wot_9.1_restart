@@ -8,6 +8,12 @@ pub enum VehicleKind { #[default] Ms1, Is7, T26, T34, T3485, Wt128, Fv183,
     /// BATTLE-ANY: a stock assembly generated from #717 sources; data comes
     /// from the verified registry (`generated_vehicles`), never a fallback arm.
     Generated(super::generated_vehicles::GeneratedId) }
+// BW-01 wire codec (tools/bw01_wire_gen.py): VehicleKind
+impl crate::bw_wire::Wire for VehicleKind {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ms1=>bw_o.tag(0),Self::Is7=>bw_o.tag(1),Self::T26=>bw_o.tag(2),Self::T34=>bw_o.tag(3),Self::T3485=>bw_o.tag(4),Self::Wt128=>bw_o.tag(5),Self::Fv183=>bw_o.tag(6),Self::Generated(f0)=>{bw_o.tag(7);W::put(f0,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ms1),1=>Ok(Self::Is7),2=>Ok(Self::T26),3=>Ok(Self::T34),4=>Ok(Self::T3485),5=>Ok(Self::Wt128),6=>Ok(Self::Fv183),7=>Ok(Self::Generated(W::get(bw_i)?)),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 use super::generated_vehicles as generated;
 
 #[derive(Clone, Copy, Debug)]

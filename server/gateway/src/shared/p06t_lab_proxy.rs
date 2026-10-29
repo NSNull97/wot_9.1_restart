@@ -7,6 +7,12 @@ pub const POLICY:&str="test_lab.p06t.aabb-proxy-nearest-two.v1";
 pub enum Component {Hull,Turret,Gun}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Target {Device(Device),Seat(u8)}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Target
+impl crate::bw_wire::Wire for Target {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Device(f0)=>{bw_o.tag(0);W::put(f0,bw_o);}Self::Seat(f0)=>{bw_o.tag(1);W::put(f0,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Device(W::get(bw_i)?)),1=>Ok(Self::Seat(W::get(bw_i)?)),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl Target {pub fn key(self)->usize {match self {Self::Device(d)=>d as usize,Self::Seat(s)=>9+usize::from(s)}}}
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Hit {pub target:Target,pub entry_fraction:f64}

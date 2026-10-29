@@ -9,6 +9,12 @@ fn bad()->io::Error{io::Error::new(io::ErrorKind::InvalidData,"P10B team plan:2.
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct TeamPlan {teams:[u8;MAX_ACTORS],len:u8}
+// BW-01 wire codec (tools/bw01_wire_gen.py): TeamPlan
+impl crate::bw_wire::Wire for TeamPlan {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{teams,len}=self;W::put(teams,bw_o);W::put(len,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{teams:W::get(bw_i)?,len:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 impl TeamPlan {
     pub fn new(members:&[u8])->io::Result<Self>{
