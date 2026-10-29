@@ -222,9 +222,28 @@ pub fn ready(payload: &[u8], own: usize) -> io::Result<()> {
 /// Cell Avatar.bindToVehicle, mailbox0 + own OBJECT_ID. This acknowledges a
 /// redundant camera binding only; caller must require the owned actor dead.
 pub fn postmortem_rebind(payload: &[u8], own: usize) -> io::Result<()> {
-    if payload.len()!=11 || payload[..7]!=[0x0d,8,0,0,0,0,0]
-        || payload[7..]!=vehicle_id(own)?.to_le_bytes() { return Err(model::bad()); }
+    if postmortem_bind_target(payload)?!=vehicle_id(own)? { return Err(model::bad()); }
     Ok(())
+}
+/// The same zero-mailbox Cell Avatar.bindToVehicle with any OBJECT_ID. #717
+/// PostMortemControlMode.__switchToVehicle1606 binds to the selected live ally
+/// (`__vIDs`: same team, isAlive, own vehicle), and onControlModeChanged binds
+/// 0 for an isManualBind mode. The ID is an untrusted camera request only.
+pub fn postmortem_bind_target(payload: &[u8]) -> io::Result<u32> {
+    if payload.len()!=11 || payload[..7]!=[0x0d,8,0,0,0,0,0] { return Err(model::bad()); }
+    Ok(u32::from_le_bytes(payload[7..11].try_into().map_err(|_|model::bad())?))
+}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum PostmortemCamera {Own,Ally(usize),Unbind,Refused}
+/// Classify a dead owner's camera request against public roster teams only.
+/// An enemy or unknown ID is refused without reading any hidden actor state;
+/// no outcome changes authority, interest or simulation.
+pub fn postmortem_camera(w: &World, own: usize, target: u32) -> io::Result<PostmortemCamera> {
+    if target==0 { return Ok(PostmortemCamera::Unbind); }
+    if target==vehicle_id(own)? { return Ok(PostmortemCamera::Own); }
+    let Some(slot)=(0..w.actors.len()).find(|slot| vehicle_id(*slot).ok()==Some(target))
+        else { return Ok(PostmortemCamera::Refused); };
+    Ok(if w.team(slot)?==w.team(own)? {PostmortemCamera::Ally(slot)} else {PostmortemCamera::Refused})
 }
 /// Measured natural-return suffix: an explicit old Avatar mailbox followed by
 /// its own Vehicle. The caller must keep this in the dead, retired epoch; this

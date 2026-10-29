@@ -174,3 +174,33 @@ fn p06t_private_he_center_tracks_the_primary_vehicle_epoch_until_flush() {
     s.flush_shared_private().unwrap();assert!(!contains(&fresh_bodies(&s,now),&explosion));
     assert!(s.shared.as_ref().unwrap().private_pending.iter().all(|packet|!contains(&packet.body,&explosion)));
 }
+
+/// POSTMORTEM-01 (owner 2026-10-29, -11 battle ...827): arena_c was killed by
+/// a vehicle outside arena_e's AoI. Only the health property was sent, and
+/// #717 Vehicle.set_health never reaches __onVehicleDeath, so the ally kept a
+/// live "0%" marker. The terminal now always calls onHealthChanged; a hidden
+/// attacker is FROM_UNKNOWN (ID 0) and its entity epoch is not a target.
+#[test]
+fn postmortem01_visible_ally_killed_by_hidden_attacker_gets_native_death_callback() {
+    let now=Instant::now();let(mut s,mut world)=fixture(now);
+    let mut killer=world.actors[1].clone();killer.identity.account="hidden-killer".into();
+    killer.identity.database=103;killer.identity.name="hidden".into();world.actors.push(killer);
+    world.actors[1].health=0;
+    world.damage_events.push(model::DamageRecord{sequence:1,tick:1001,attacker:2,target:1,shot:1,reason:0,
+        health_before:90,health_after:0,crew_before:true,crew_after:false,direct:true,pierced:true});
+    let c=s.shared.as_mut().unwrap();
+    assert!(c.visible()[0]&&c.visible()[1]&&!c.visible()[2]);
+    publish(c,&mut s.outbox,&world,now).unwrap();
+    let mut callback=vec![0x3c];callback.extend(0i16.to_le_bytes());callback.extend(0u32.to_le_bytes());callback.push(0);
+    let packet=c.private_pending.iter().find(|packet|contains(&packet.body,&callback)).unwrap();
+    assert!(contains(&packet.body,&[0x12].into_iter().chain(wire::vehicle_id(1).unwrap().to_le_bytes()).collect::<Vec<_>>()));
+    assert_eq!(packet.targets,vec![(1,0)]);
+    assert!(!contains(&packet.body,&wire::vehicle_id(2).unwrap().to_le_bytes()));
+    // isCrewActive=False must follow the callback, or #717 skips the death.
+    let at=|part:&[u8]|packet.body.windows(part.len()).position(|bytes|bytes==part).unwrap();
+    assert!(at(&callback)<at(&native::public_crew_active(wire::vehicle_id(1).unwrap(),false).unwrap()));
+    assert_eq!(c.health_sent[1],Some(0));assert_eq!(c.crew_sent[1],Some(false));
+    // A visible attacker keeps its own ID, as before.
+    assert!(contains(&health(&world,1,Some(0),0).unwrap(),&[0x3c].into_iter().chain(0i16.to_le_bytes())
+        .chain(wire::vehicle_id(0).unwrap().to_le_bytes()).collect::<Vec<_>>()));
+}

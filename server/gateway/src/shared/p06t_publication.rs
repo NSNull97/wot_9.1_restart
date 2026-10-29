@@ -11,11 +11,13 @@ fn health(world:&World,target:usize,attacker:Option<usize>,reason:u8)->io::Resul
         return super::super::detached_turret::terminal_health(target,attacker,reason,
             super::super::detached_turret::DeathKind::Detached);
     }
+    // #717 Vehicle.set_health only refuses resurrection; the marker and the
+    // dead state (__onVehicleDeath) follow onHealthChanged alone. A hidden
+    // attacker is ID 0 = VehicleMarkersManager FROM_UNKNOWN, as for detonation.
     let mut body=vec![0x12];body.extend(wire::vehicle_id(target)?.to_le_bytes());
     body.push(0xa1);body.extend(actor.health.to_le_bytes());
-    if let Some(attacker)=attacker{
-        body.push(0x3c);body.extend(actor.health.to_le_bytes());body.extend(wire::vehicle_id(attacker)?.to_le_bytes());body.push(reason);
-    }
+    body.push(0x3c);body.extend(actor.health.to_le_bytes());
+    body.extend(attacker.map(wire::vehicle_id).transpose()?.unwrap_or(0).to_le_bytes());body.push(reason);
     body.push(0x13);Ok(body)
 }
 fn owner_snapshot(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World)->io::Result<()> {
