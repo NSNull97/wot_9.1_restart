@@ -16,6 +16,11 @@ VERIFIED (байткод `res/scripts/client` клиента `local/clients/aren
 - Смена настроек: `ServerSettingsManager.setSettings` → `g_settingsCache` → `IntUserSettings.addIntSettings`
   → `proxy._doCmdIntArr(CMD_ADD_INT_USER_SETTINGS=1600, [k,v,…])`; в бою прокси — `PlayerAvatar.__doCmd`
   → Base `doCmdIntArr(INT16 requestID, INT16 cmd, ARRAY<INT32>)`.
+- Вкладка «Прицел» (уточнение владельца): `ServerSettingsManager.setAimSettings` → `_buildAimSettings`
+  (только изменённые секции `AIM_<ARCADE|SNIPER>_<1..3>`) → `g_settingsCache.setSettings` →
+  `PlayerAvatar.intUserSettings` (свой прокси Avatar, `Avatar._doCmdIntArr` 3483) → тот же
+  `doCmdIntArr(1600, [k,v,…])`; `setVersion` — отдельный вызов. ARRAY: счётчик u32 (как у Account 0x97).
+  INFERRED: 73 байта = например 3 пары (35) + версия 1 пара (19) + `trackPointWithGun` (19); тест на этот размер.
 - «Серверный прицел»: `VehicleGunRotator.showServerMarker` → `Avatar.enableServerAim` →
   Base `setDevelopmentFeature('server_marker', enable)`.
 - Exposed методы Avatar: Cell — autoAim, moveTo, bindToVehicle, monitorVehicleDamagedDevices (targetFocus/Blur);

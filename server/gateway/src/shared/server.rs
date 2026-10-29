@@ -3424,6 +3424,21 @@ mod tests {
         let mut short=var2(0x9c,&settings); short.truncate(short.len()-1);
         let before=b.rx; assert!(b.receive(&frame(&b,&short),now).is_err()); assert_eq!(b.rx,before);
     }
+    /// Owner detail: the "Aim" settings tab in battle. #717 setAimSettings ->
+    /// g_settingsCache -> PlayerAvatar.intUserSettings.addIntSettings sends one
+    /// doCmdIntArr(1600) of changed AIM_<SECTION>_<n> pairs and setVersion
+    /// another. With a trackPointWithGun this is one 73-byte application
+    /// envelope = the 78-byte rejected frame (exact bytes were not logged).
+    #[test] fn input01_aim_settings_envelope_of_the_rejected_size_is_consumed() {
+        let now=Instant::now(); let (_,mut b,_)=visible_pair(now);
+        let settings=|request:i16,pairs:&[(i32,i32)]|{let mut a=Vec::new();for v in [request,1600] {a.extend(v.to_le_bytes());}
+            a.extend((2*pairs.len() as u32).to_le_bytes());for (k,v) in pairs {a.extend(k.to_le_bytes());a.extend(v.to_le_bytes());}var2(0x9c,&a)};
+        let envelope=[settings(31,&[(5,0x0102),(6,0x0304),(7,0)]),settings(32,&[(0,11)]),point(1,[100.,100.,100.])].concat();
+        assert_eq!(envelope.len(),73); assert_eq!(frame(&b,&envelope).body.len(),78);
+        let before=b.rx; b.receive(&frame(&b,&envelope),now).unwrap(); assert_eq!(b.rx,before+1);
+        assert_eq!(b.shared.as_ref().unwrap().commands.len(),1);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+    }
     fn bind(target:u32)->Vec<u8> {let mut b=vec![0x0d,8,0,0,0,0,0];b.extend(target.to_le_bytes());b}
     /// Owner 2026-10-29 (-11, battle ...827, session 4): the dead player's
     /// observer camera bound an ally; rejection stalled reliable17381 and every
