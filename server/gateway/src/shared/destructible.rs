@@ -21,6 +21,12 @@ pub struct Transition {
     pub shot:u32,pub shooter:usize,pub tick:u32,pub hit:terrain::Hit,
     pub health_before:i16,pub health_after:i16,pub damage:u16,pub policy_revision:&'static str,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Transition
+impl crate::bw_wire::Wire for Transition {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{object_id,instance_id,scene_before,scene_after,shot,shooter,tick,hit,health_before,health_after,damage,policy_revision}=self;W::put(object_id,bw_o);W::put(instance_id,bw_o);W::put(scene_before,bw_o);W::put(scene_after,bw_o);W::put(shot,bw_o);W::put(shooter,bw_o);W::put(tick,bw_o);W::put(hit,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);W::put(damage,bw_o);W::put(policy_revision,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{object_id:W::get(bw_i)?,instance_id:W::get(bw_i)?,scene_before:W::get(bw_i)?,scene_after:W::get(bw_i)?,shot:W::get(bw_i)?,shooter:W::get(bw_i)?,tick:W::get(bw_i)?,hit:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?,damage:W::get(bw_i)?,policy_revision:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Transition {
     pub(crate) fn validate(&self)->io::Result<()>{
         if self.object_id!=OBJECT_ID || self.instance_id!=INSTANCE_ID || self.scene_before!=0 || self.scene_after!=1
@@ -39,6 +45,12 @@ pub(crate) fn selected(hit:&terrain::Hit)->bool{
 
 #[derive(Clone,Debug,Default,PartialEq)]
 pub(crate) struct State {transition:Option<Transition>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): State
+impl crate::bw_wire::Wire for State {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{transition}=self;W::put(transition,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{transition:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl State {
     pub(crate) fn scene_version(&self)->u32{u32::from(self.transition.is_some())}
     pub(crate) fn excluded_instance(&self)->Option<u32>{self.transition.as_ref().map(|_|INSTANCE_ID)}

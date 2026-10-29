@@ -77,6 +77,12 @@ pub struct ImpactSegment {
     pub start: [f32; 3],
     pub end: [f32; 3],
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): ImpactSegment
+impl crate::bw_wire::Wire for ImpactSegment {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{component,bounds,start,end}=self;W::put(component,bw_o);W::put(bounds,bw_o);W::put(start,bw_o);W::put(end,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{component:W::get(bw_i)?,bounds:W::get(bw_i)?,start:W::get(bw_i)?,end:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 /// New LAB proxy input after an actual revalidated source surface contact.
 /// This is distinct from the native wire segment, whose AABB entry may be in
@@ -141,6 +147,12 @@ fn clipped_line(point: [f32; 3], direction: [f32; 3], bounds: [[f32; 3]; 2], min
 
 #[derive(Clone, Debug)]
 struct Component { vertices: Vec<[f32; 3]>, triangles: Vec<Triangle> }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Component
+impl crate::bw_wire::Wire for Component {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vertices,triangles}=self;W::put(vertices,bw_o);W::put(triangles,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vertices:W::get(bw_i)?,triangles:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone, Debug)]
 pub struct Bundle {
     vehicle: VehicleKind,
@@ -149,6 +161,12 @@ pub struct Bundle {
     materials: Catalog,
     bounds:[[[f32;3];2];3],
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Bundle
+impl crate::bw_wire::Wire for Bundle {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle,components,hull,turret,gun,materials,bounds}=self;W::put(vehicle,bw_o);W::put(components,bw_o);W::put(hull,bw_o);W::put(turret,bw_o);W::put(gun,bw_o);W::put(materials,bw_o);W::put(bounds,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle:W::get(bw_i)?,components:W::get(bw_i)?,hull:W::get(bw_i)?,turret:W::get(bw_i)?,gun:W::get(bw_i)?,materials:W::get(bw_i)?,bounds:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 fn fields(value: &Value, keys: &[&str]) -> io::Result<()> {
     crate::map_drive_worker091::fields(value, keys).map(|_| ())
 }

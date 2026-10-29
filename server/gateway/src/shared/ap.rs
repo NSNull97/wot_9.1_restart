@@ -50,6 +50,12 @@ pub enum Reason {
     ProjectileChance,
     MaterialFlags,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Reason
+impl crate::bw_wire::Wire for Reason {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::MaterialRevision=>bw_o.tag(0),Self::Component=>bw_o.tag(1),Self::MaterialClass=>bw_o.tag(2),Self::MissingMaterial=>bw_o.tag(3),Self::MissingArmor=>bw_o.tag(4),Self::ZeroArmor=>bw_o.tag(5),Self::VehicleDamageFactor=>bw_o.tag(6),Self::ProjectileChance=>bw_o.tag(7),Self::MaterialFlags=>bw_o.tag(8),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::MaterialRevision),1=>Ok(Self::Component),2=>Ok(Self::MaterialClass),3=>Ok(Self::MissingMaterial),4=>Ok(Self::MissingArmor),5=>Ok(Self::ZeroArmor),6=>Ok(Self::VehicleDamageFactor),7=>Ok(Self::ProjectileChance),8=>Ok(Self::MaterialFlags),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl Reason {
     pub fn label(self) -> &'static str { match self {
         Self::MaterialRevision => "material_revision",
@@ -66,6 +72,12 @@ impl Reason {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome { Ricochet, NotPierced, Pierced, Unsupported(Reason) }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Outcome
+impl crate::bw_wire::Wire for Outcome {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ricochet=>bw_o.tag(0),Self::NotPierced=>bw_o.tag(1),Self::Pierced=>bw_o.tag(2),Self::Unsupported(f0)=>{bw_o.tag(3);W::put(f0,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ricochet),1=>Ok(Self::NotPierced),2=>Ok(Self::Pierced),3=>Ok(Self::Unsupported(W::get(bw_i)?)),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl Outcome {
     pub fn label(self) -> &'static str { match self {
         Self::Ricochet => "ricochet", Self::NotPierced => "not_pierced",
@@ -96,6 +108,12 @@ pub struct Resolution {
     pub damage: u16,
     pub profile_revision: &'static str,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Resolution
+impl crate::bw_wire::Wire for Resolution {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{outcome,armor,incidence_degrees,effective_armor,nominal_power,normalization_degrees,damage,profile_revision}=self;W::put(outcome,bw_o);W::put(armor,bw_o);W::put(incidence_degrees,bw_o);W::put(effective_armor,bw_o);W::put(nominal_power,bw_o);W::put(normalization_degrees,bw_o);W::put(damage,bw_o);W::put(profile_revision,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{outcome:W::get(bw_i)?,armor:W::get(bw_i)?,incidence_degrees:W::get(bw_i)?,effective_armor:W::get(bw_i)?,nominal_power:W::get(bw_i)?,normalization_degrees:W::get(bw_i)?,damage:W::get(bw_i)?,profile_revision:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 fn bad() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, "invalid test_lab AP input")

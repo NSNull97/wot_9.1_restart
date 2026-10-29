@@ -48,6 +48,12 @@ pub(crate) fn shot_geometry_pose_for(kind: VehicleKind,
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Intent { Point([f32; 3]), Hold { yaw: f32, pitch: f32 } }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Intent
+impl crate::bw_wire::Wire for Intent {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Point(f0)=>{bw_o.tag(0);W::put(f0,bw_o);}Self::Hold{yaw,pitch}=>{bw_o.tag(1);W::put(yaw,bw_o);W::put(pitch,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Point(W::get(bw_i)?)),1=>Ok(Self::Hold{yaw:W::get(bw_i)?,pitch:W::get(bw_i)?}),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl Intent {
     pub fn validate(self) -> io::Result<()> {
         let valid = match self {
@@ -61,6 +67,12 @@ impl Intent {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct State { pub yaw: f32, pub pitch: f32, pub intent: Intent }
+// BW-01 wire codec (tools/bw01_wire_gen.py): State
+impl crate::bw_wire::Wire for State {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{yaw,pitch,intent}=self;W::put(yaw,bw_o);W::put(pitch,bw_o);W::put(intent,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{yaw:W::get(bw_i)?,pitch:W::get(bw_i)?,intent:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl State {
     pub fn new() -> Self { Self { yaw: 0., pitch: 0., intent: Intent::Hold { yaw: 0., pitch: 0. } } }
     pub fn park(&mut self) { self.intent = Intent::Hold { yaw: self.yaw, pitch: self.pitch }; }

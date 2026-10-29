@@ -16,11 +16,29 @@ pub const MAX_TRIGGER_TRIANGLES:u64=262_144;
 pub const MAX_TRIGGER_TRIANGLES_PER_OBJECT:u64=256;
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct TriggerPart {pub file:String,pub sha256:String,pub count:u32}
+// BW-01 wire codec (tools/bw01_wire_gen.py): TriggerPart
+impl crate::bw_wire::Wire for TriggerPart {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{file,sha256,count}=self;W::put(file,bw_o);W::put(sha256,bw_o);W::put(count,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{file:W::get(bw_i)?,sha256:W::get(bw_i)?,count:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct TriggerSpec {pub vertices:TriggerPart,pub triangles:TriggerPart}
+// BW-01 wire codec (tools/bw01_wire_gen.py): TriggerSpec
+impl crate::bw_wire::Wire for TriggerSpec {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vertices,triangles}=self;W::put(vertices,bw_o);W::put(triangles,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vertices:W::get(bw_i)?,triangles:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct CatalogEntry {object_id:u32,instance_id:u32,first_triangle:u32,triangle_count:u32,object_revision:String,kind:String,ram_energy_j:u32,ram_response:Option<String>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): CatalogEntry
+impl crate::bw_wire::Wire for CatalogEntry {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{object_id,instance_id,first_triangle,triangle_count,object_revision,kind,ram_energy_j,ram_response}=self;W::put(object_id,bw_o);W::put(instance_id,bw_o);W::put(first_triangle,bw_o);W::put(triangle_count,bw_o);W::put(object_revision,bw_o);W::put(kind,bw_o);W::put(ram_energy_j,bw_o);W::put(ram_response,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{object_id:W::get(bw_i)?,instance_id:W::get(bw_i)?,first_triangle:W::get(bw_i)?,triangle_count:W::get(bw_i)?,object_revision:W::get(bw_i)?,kind:W::get(bw_i)?,ram_energy_j:W::get(bw_i)?,ram_response:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl CatalogEntry {
     pub fn object_id(&self)->u32{self.object_id}
     pub fn instance_id(&self)->u32{self.instance_id}
@@ -33,6 +51,12 @@ impl CatalogEntry {
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct CatalogSpec {pub(super) path:PathBuf,pub(super) sha256:String,map_id:MapId,entries:Vec<CatalogEntry>,contacts:bool,version:u8,triggers:Option<TriggerSpec>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): CatalogSpec
+impl crate::bw_wire::Wire for CatalogSpec {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{path,sha256,map_id,entries,contacts,version,triggers}=self;W::put(path,bw_o);W::put(sha256,bw_o);W::put(map_id,bw_o);W::put(entries,bw_o);W::put(contacts,bw_o);W::put(version,bw_o);W::put(triggers,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{path:W::get(bw_i)?,sha256:W::get(bw_i)?,map_id:W::get(bw_i)?,entries:W::get(bw_i)?,contacts:W::get(bw_i)?,version:W::get(bw_i)?,triggers:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl CatalogSpec {
     fn trigger_spec(v:&Value)->io::Result<TriggerSpec>{
         fields(v,&["vertices","triangles"])?;

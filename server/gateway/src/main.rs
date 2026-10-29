@@ -3,6 +3,7 @@ use std::{env, io};
 use map_profile091::MapId;
 use gateway091::shared::vehicle_profile::VehicleKind;
 
+mod bw_wire;
 #[path = "protocol/login.rs"]
 mod login091;
 #[cfg(test)]
@@ -183,6 +184,12 @@ fn command(args: &[String]) -> io::Result<Command<'_>> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
+    // BW-01: the battle worker child of a gateway (token on stdin, loopback only).
+    if args.get(1).map(String::as_str) == Some("bw01-battle-worker") {
+        let port = args.get(2).filter(|_| args.len() == 3).and_then(|p| p.parse::<u16>().ok()).filter(|p| *p > 0)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "usage: sr-gateway bw01-battle-worker PORT"))?;
+        return Ok(gateway091::shared::run_battle_worker(port)?);
+    }
     match command(&args)? {
         Command::CuratedLabV2{key,digest,gateway,templates,capture,vehicle}=>gateway091::shared::serve_curated_lab_v2(key,digest,gateway,templates,capture,vehicle),
         Command::CuratedLab{key,digest,gateway,templates,capture,vehicle}=>gateway091::shared::serve_curated_lab(key,digest,gateway,templates,capture,vehicle),

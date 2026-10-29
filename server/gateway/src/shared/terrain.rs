@@ -45,6 +45,12 @@ pub enum Surface {
     Ground,
     StaticObstacle { instance_id: u32, material_kind: u8 },
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Surface
+impl crate::bw_wire::Wire for Surface {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ground=>bw_o.tag(0),Self::StaticObstacle{instance_id,material_kind}=>{bw_o.tag(1);W::put(instance_id,bw_o);W::put(material_kind,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ground),1=>Ok(Self::StaticObstacle{instance_id:W::get(bw_i)?,material_kind:W::get(bw_i)?}),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Hit {
@@ -58,6 +64,12 @@ pub struct Hit {
     /// static obstacle winding follows its original transformed mesh.
     pub normal: [f32; 3],
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Hit
+impl crate::bw_wire::Wire for Hit {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{surface,triangle_id,t,point,normal}=self;W::put(surface,bw_o);W::put(triangle_id,bw_o);W::put(t,bw_o);W::put(point,bw_o);W::put(normal,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{surface:W::get(bw_i)?,triangle_id:W::get(bw_i)?,t:W::get(bw_i)?,point:W::get(bw_i)?,normal:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 impl Hit {
     pub fn effect_material_index(&self) -> u8 {
@@ -98,6 +110,12 @@ pub struct Terrain {
     spacing: f64,
     obstacles: Option<Arc<super::obstacles::Obstacles>>,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Terrain
+impl crate::bw_wire::Wire for Terrain {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{map,heights,width,origin,spacing,obstacles}=self;W::put(map,bw_o);W::put(heights,bw_o);W::put(width,bw_o);W::put(origin,bw_o);W::put(spacing,bw_o);W::put(obstacles,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{map:W::get(bw_i)?,heights:W::get(bw_i)?,width:W::get(bw_i)?,origin:W::get(bw_i)?,spacing:W::get(bw_i)?,obstacles:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 fn bad(reason: &'static str) -> io::Error { io::Error::new(io::ErrorKind::InvalidData, reason) }
 

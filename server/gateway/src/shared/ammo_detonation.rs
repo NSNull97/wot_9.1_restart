@@ -22,6 +22,12 @@ fn bad(reason:&'static str)->io::Error{io::Error::new(io::ErrorKind::InvalidData
 
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct JointPose{pub position:[f32;3],pub direction:[f32;3]}
+// BW-01 wire codec (tools/bw01_wire_gen.py): JointPose
+impl crate::bw_wire::Wire for JointPose {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{position,direction}=self;W::put(position,bw_o);W::put(direction,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{position:W::get(bw_i)?,direction:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl JointPose{
     fn validate(self)->io::Result<()>{
         if self.position.iter().any(|v|!v.is_finite()||v.abs()>MAX_POSITION)
@@ -39,6 +45,12 @@ pub struct Input{
     pub health_before:u16,pub residual_hp:u16,pub counts:[u16;3],
     pub kind:VehicleKind,pub joint:JointPose,pub from_fire:bool,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Input
+impl crate::bw_wire::Wire for Input {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{shot,target,attacker,tick,device_sequence,device_before,device_after,health_before,residual_hp,counts,kind,joint,from_fire}=self;W::put(shot,bw_o);W::put(target,bw_o);W::put(attacker,bw_o);W::put(tick,bw_o);W::put(device_sequence,bw_o);W::put(device_before,bw_o);W::put(device_after,bw_o);W::put(health_before,bw_o);W::put(residual_hp,bw_o);W::put(counts,bw_o);W::put(kind,bw_o);W::put(joint,bw_o);W::put(from_fire,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{shot:W::get(bw_i)?,target:W::get(bw_i)?,attacker:W::get(bw_i)?,tick:W::get(bw_i)?,device_sequence:W::get(bw_i)?,device_before:W::get(bw_i)?,device_after:W::get(bw_i)?,health_before:W::get(bw_i)?,residual_hp:W::get(bw_i)?,counts:W::get(bw_i)?,kind:W::get(bw_i)?,joint:W::get(bw_i)?,from_fire:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Input{
     fn validate(self,roster:u8)->io::Result<()>{
         // Frozen loss-v1 has no qualified extended vehicle/device contract.
@@ -64,6 +76,12 @@ impl Input{
 /// through a struct literal. It still needs Root's actual World/Trace causality.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Event{sequence:u32,input:Input}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Event
+impl crate::bw_wire::Wire for Event {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,input}=self;W::put(sequence,bw_o);W::put(input,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,input:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Event{
     pub fn sequence(self)->u32{self.sequence}
     pub fn policy(self)->&'static str{POLICY}
@@ -87,8 +105,20 @@ impl Event{
 pub enum Outcome{New(Event),Empty,Replay(Option<Event>)}
 #[derive(Clone,Copy,Debug,PartialEq)]
 struct Seen{input:Input,event:Option<usize>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Seen
+impl crate::bw_wire::Wire for Seen {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{input,event}=self;W::put(input,bw_o);W::put(event,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{input:W::get(bw_i)?,event:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
 pub struct Ledger{roster:u8,seen:Vec<Seen>,events:Vec<Event>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Ledger
+impl crate::bw_wire::Wire for Ledger {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{roster,seen,events}=self;W::put(roster,bw_o);W::put(seen,bw_o);W::put(events,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{roster:W::get(bw_i)?,seen:W::get(bw_i)?,events:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Ledger{
     pub fn new(roster:u8)->io::Result<Self>{
         if !(2..=MAX_EVENTS as u8).contains(&roster){return Err(bad("detonation roster bounds"));}
@@ -114,10 +144,28 @@ impl Ledger{
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum FlightPhase{Flying,Resting,Expired}
+// BW-01 wire codec (tools/bw01_wire_gen.py): FlightPhase
+impl crate::bw_wire::Wire for FlightPhase {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Flying=>bw_o.tag(0),Self::Resting=>bw_o.tag(1),Self::Expired=>bw_o.tag(2),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Flying),1=>Ok(Self::Resting),2=>Ok(Self::Expired),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct FlightSample{pub position:[f32;3],pub direction:[f32;3],pub phase:FlightPhase,pub at_ms:u64}
+// BW-01 wire codec (tools/bw01_wire_gen.py): FlightSample
+impl crate::bw_wire::Wire for FlightSample {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{position,direction,phase,at_ms}=self;W::put(position,bw_o);W::put(direction,bw_o);W::put(phase,bw_o);W::put(at_ms,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{position:W::get(bw_i)?,direction:W::get(bw_i)?,phase:W::get(bw_i)?,at_ms:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
 pub struct Flight{event:Event,last_ms:Option<u64>,sample:FlightSample,landing:Option<JointPose>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Flight
+impl crate::bw_wire::Wire for Flight {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{event,last_ms,sample,landing}=self;W::put(event,bw_o);W::put(last_ms,bw_o);W::put(sample,bw_o);W::put(landing,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{event:W::get(bw_i)?,last_ms:W::get(bw_i)?,sample:W::get(bw_i)?,landing:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Flight{
     pub fn new(event:Event)->Self{let joint=event.joint();Self{event,last_ms:None,
         sample:FlightSample{position:joint.position,direction:joint.direction,phase:FlightPhase::Flying,at_ms:event.born_ms()},landing:None}}

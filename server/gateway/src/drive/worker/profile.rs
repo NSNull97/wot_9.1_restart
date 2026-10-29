@@ -11,6 +11,12 @@ const PHYSICS_FIELDS:[&str;14]=["body_half_extents","body_center_offset","wheel_
 
 #[derive(Clone,Debug)]
 pub(super) struct VehicleProfile {path:PathBuf,sha256:String,kind:VehicleKind,config_version:u64,physics:Value,handling:Option<Value>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): VehicleProfile
+impl crate::bw_wire::Wire for VehicleProfile {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{path,sha256,kind,config_version,physics,handling}=self;W::put(path,bw_o);W::put(sha256,bw_o);W::put(kind,bw_o);W::put(config_version,bw_o);W::put(physics,bw_o);W::put(handling,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{path:W::get(bw_i)?,sha256:W::get(bw_i)?,kind:W::get(bw_i)?,config_version:W::get(bw_i)?,physics:W::get(bw_i)?,handling:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl VehicleProfile {
     pub(super) fn load(root:&Path,reference:&Value,pool_version:u64)->io::Result<Self>{
         fields(reference,&["path","sha256"])?;

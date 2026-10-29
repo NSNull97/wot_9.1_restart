@@ -47,6 +47,7 @@ impl BatchRuntime {
         Self{resources,catalog,spec:None,runtime:None,startup:None,sessions:Vec::new(),started_at:None,
             dispatched:None,settled:false,staged:None,generation:1,held:None,lag_resync:LagResync::default()}
     }
+    pub(super) fn resources(&self)->&Arc<SharedResources>{&self.resources}
     pub(super) fn blocked(&self)->bool{self.staged.is_some()||self.runtime.as_ref().is_some_and(|r|!r.prepared_ids().is_empty())}
     pub(super) fn ready_for_native(&self)->bool{self.settled&&!self.blocked()&&self.runtime.as_ref().is_some_and(|r|r.ready())}
     pub(super) fn failure_snapshot(&self)->serde_json::Value{serde_json::json!({

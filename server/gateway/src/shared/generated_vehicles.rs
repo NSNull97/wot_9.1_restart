@@ -24,6 +24,14 @@ fn bad(reason:&str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,format!
 /// Copy handle of one registry entry; only issued by this module.
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord,Hash)]
 pub struct GeneratedId(u16);
+/// BW-01: an id from the gateway is accepted only if this process's registry issues it.
+impl crate::bw_wire::Wire for GeneratedId {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){crate::bw_wire::Wire::put(&self.0,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{
+        let id=<u16 as crate::bw_wire::Wire>::get(bw_i)?;
+        if usize::from(id)<registry()?.entries.len(){Ok(Self(id))}else{Err(crate::bw_wire::bad("generated vehicle id"))}
+    }
+}
 impl GeneratedId { pub fn get(self)->usize{usize::from(self.0)} }
 
 #[derive(Debug)]

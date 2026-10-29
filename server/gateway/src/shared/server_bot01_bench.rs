@@ -7,6 +7,19 @@ use super::*;
 use super::arena_bench::{env,summary,sample,physics_pid};
 use std::collections::BTreeMap;
 
+/// BW-01: the same step through the arena's worker process when it has one.
+pub(super) fn step(a:&mut arena::Arena,command:arena::Command)->arena::Event {
+    if a.worker.is_none() {return a.handle(command);}
+    super::battle_worker::step_all(std::slice::from_mut(a),&[Some(command)]).pop().flatten().expect("one event")
+}
+/// Child processes of `pid` (the worker's Jolt scene process).
+pub(super) fn children(pid:u32)->Vec<u32> {
+    let script=format!("Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}' | ForEach-Object {{ $_.ProcessId }}");
+    let out=std::process::Command::new("powershell").args(["-NoProfile","-Command",&script]).output().expect("powershell children");
+    String::from_utf8_lossy(&out.stdout).lines().filter_map(|l|l.trim().parse().ok()).collect()
+}
+fn alive(pid:u32)->bool {sample(&[pid]).contains_key(&pid)}
+
 #[test]
 #[ignore]
 fn bot01_bench_real_scene(){
@@ -27,6 +40,12 @@ fn bot01_bench_real_scene(){
     if size>wire::MAX_NATIVE_ACTORS||env("BOT01_BENCH_TEAM_BASES").as_deref()==Some("1"){template.world.enable_team_base_spawn().unwrap();}
     template.world.enable_bots(model::bots::Plan{human_places:humans,seed,kinds:kinds.clone()}).unwrap();
     let mut a=arena::Arena::from_template(0,&template,id,now).unwrap();
+    // BW-01: BOT01_BENCH_WORKER=1 steps the arena in its worker process;
+    // BOT01_BENCH_KILL_S kills that worker at the given measured second.
+    let worker=env("BOT01_BENCH_WORKER").as_deref()==Some("1");
+    let kill_at:Option<f64>=env("BOT01_BENCH_KILL_S").map(|v|v.parse().unwrap());
+    assert!(kill_at.is_none()||worker,"BOT01_BENCH_KILL_S needs BOT01_BENCH_WORKER=1");
+    if worker {a.worker=Some(Box::new(super::battle_worker::Remote::new(super::battle_worker::tests::settings())));}
     for slot in 0..humans {
         let kind=VehicleKind::Ms1;
         let(mut owner,loadout)=model::tests::profile13_loadout(kind,slot,kind.ammo_limit());
@@ -39,13 +58,17 @@ fn bot01_bench_real_scene(){
     let mut first=true;
     while !a.native_ready() {
         assert!(startup.elapsed()<Duration::from_secs(150),"scene startup bound");
-        let event=a.handle(arena::Command::Step{now:Instant::now(),start:first});first=false;
+        let event=step(&mut a,arena::Command::Step{now:Instant::now(),start:first});first=false;
         assert!(matches!(event,arena::Event::Stepped),"{event:?}");
         thread::sleep(Duration::from_millis(5));
     }
     let startup_ms=startup.elapsed().as_secs_f64()*1000.;
     for slot in 0..humans {a.world.set_ready(slot,slot as u32+1).unwrap();}
-    let pid=physics_pid(&a).unwrap();let me=std::process::id();let all=vec![me,pid];
+    let me=std::process::id();
+    let worker_pid=a.worker.as_ref().and_then(|w|w.pid());
+    let pid=match worker_pid {Some(w)=>{let c=children(w);assert_eq!(c.len(),1,"one scene process under the worker: {c:?}");c[0]},None=>physics_pid(&a).unwrap()};
+    let all=[Some(me),worker_pid,Some(pid)].into_iter().flatten().collect::<Vec<_>>();
+    let mut killed:Option<(u32,f64)>=None;
     let stop=Arc::new(std::sync::atomic::AtomicBool::new(false));
     let sampler={let stop=stop.clone();let all=all.clone();thread::spawn(move||{
         let mut rows=Vec::new();
@@ -64,7 +87,9 @@ fn bot01_bench_real_scene(){
         for slot in 0..humans {let phase=(loops/400+slot as u64)%4;
             a.world.actors[slot].input=model::Input{throttle:1,steer:match phase{0=>0,1=>1,2=>0,_=>-1},speed_percent:100};}
         let before=super::super::step_profile::snapshot();
-        let t=Instant::now();let event=a.handle(arena::Command::Step{now:t,start:false});
+        if let (Some(at),None)=(kill_at,killed) {if measured.elapsed().as_secs_f64()>=30.+at {
+            killed=Some((super::battle_worker::tests::kill(&a),measured.elapsed().as_secs_f64()));}}
+        let t=Instant::now();let event=step(&mut a,arena::Command::Step{now:t,start:false});
         let ms=t.elapsed().as_secs_f64()*1000.;step_ms.push(ms);
         let after=super::super::step_profile::snapshot();
         let battle=a.world.lifecycle.as_ref().is_some_and(|l|l.allows_actions());
@@ -80,6 +105,8 @@ fn bot01_bench_real_scene(){
         thread::sleep(Duration::from_millis(5));
     }
     let wall=measured.elapsed().as_secs_f64();
+    // A killed worker must not leave its scene process behind.
+    let jolt_after_kill=killed.map(|_|{thread::sleep(Duration::from_secs(5));alive(pid)});
     stop.store(true,std::sync::atomic::Ordering::Release);let rows=sampler.join().unwrap();
     let (first_row,last_row)=(rows.first().unwrap(),rows.last().unwrap());let interval=last_row.0.duration_since(first_row.0).as_secs_f64();
     let mut peak:BTreeMap<u32,u64>=BTreeMap::new();
@@ -107,6 +134,11 @@ fn bot01_bench_real_scene(){
         "domain_steps":w.tick.saturating_sub(start_tick),"step_wall_all":summary(step_ms),"step_wall_battle":summary(battle_step_ms),
         "gateway":{"pid":me,"cpu_s":cpu(me),"cpu_ms_per_domain_step":cpu(me).map(|c|c*1000./steps),"cpu_share_of_one_core":cpu(me).map(|c|c/interval),
             "working_set_end":last_row.1.get(&me).map(|v|v.1),"working_set_peak":peak.get(&me)},
+        "mode":if worker{"battle_worker"}else{"in_process"},
+        "worker":worker_pid.map(|w|serde_json::json!({"pid":w,"cpu_s":cpu(w),"cpu_ms_per_domain_step":cpu(w).map(|c|c*1000./steps),
+            "cpu_share_of_one_core":cpu(w).map(|c|c/interval),"working_set_end":last_row.1.get(&w).map(|v|v.1),"working_set_peak":peak.get(&w),
+            "steps":a.worker.as_ref().map(|r|r.steps),"last_frame_bytes":a.worker.as_ref().map(|r|r.frame_bytes),
+            "killed_at_s":killed.map(|k|k.1),"scene_process_alive_5s_after_kill":jolt_after_kill})),
         "physics":{"pid":pid,"cpu_s":cpu(pid),"cpu_ms_per_domain_step":cpu(pid).map(|c|c*1000./steps),"cpu_share_of_one_core":cpu(pid).map(|c|c/interval),
             "working_set_end":last_row.1.get(&pid).map(|v|v.1),"working_set_peak":peak.get(&pid)},
         "step_parts":step_parts,"slowest_1pct_loops_mean_ms":slowest,
@@ -120,6 +152,9 @@ fn bot01_bench_real_scene(){
     if let Some(parent)=out.parent(){fs::create_dir_all(parent).unwrap();}
     fs::write(&out,serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     println!("BOT01_BENCH {}",serde_json::to_string(&report).unwrap());
-    assert!(report["failure"].is_null(),"{}",report["failure"]);
+    if killed.is_some() {
+        assert_eq!(report["failure"]["stage"],"battle_worker_lost","{}",report["failure"]);
+        assert_eq!(jolt_after_kill,Some(false),"scene process outlived its killed worker");
+    } else {assert!(report["failure"].is_null(),"{}",report["failure"]);}
     assert!(max_abs<=500.,"never leaves the playable area: {max_abs}");
 }

@@ -7,15 +7,33 @@ pub const SOURCE_DATA_SHA256:&str="6af1bdc74aff853360b282c3850e0aa3c97c856a7d398
 pub enum Mount {Ms1Stock,Is7Stock,T26Stock,T34Stock,T3485Stock,WtE100128,WtE100150,Fv215b183,
 /// BATTLE-ANY generated stock gun; its profile lives in the verified registry.
 Generated(crate::gateway091::shared::generated_vehicles::GeneratedId)}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Mount
+impl crate::bw_wire::Wire for Mount {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ms1Stock=>bw_o.tag(0),Self::Is7Stock=>bw_o.tag(1),Self::T26Stock=>bw_o.tag(2),Self::T34Stock=>bw_o.tag(3),Self::T3485Stock=>bw_o.tag(4),Self::WtE100128=>bw_o.tag(5),Self::WtE100150=>bw_o.tag(6),Self::Fv215b183=>bw_o.tag(7),Self::Generated(f0)=>{bw_o.tag(8);W::put(f0,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ms1Stock),1=>Ok(Self::Is7Stock),2=>Ok(Self::T26Stock),3=>Ok(Self::T34Stock),4=>Ok(Self::T3485Stock),5=>Ok(Self::WtE100128),6=>Ok(Self::WtE100150),7=>Ok(Self::Fv215b183),8=>Ok(Self::Generated(W::get(bw_i)?)),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl Mount { pub const ALL:[Self;8]=[Self::Ms1Stock,Self::Is7Stock,Self::T26Stock,Self::T34Stock,Self::T3485Stock,Self::WtE100128,Self::WtE100150,Self::Fv215b183];
 /// Closed rows only; a generated mount has no PROFILES row (use `profile`).
 pub fn index(self)->usize{match self{Self::Ms1Stock=>0,Self::Is7Stock=>1,Self::T26Stock=>2,Self::T34Stock=>3,Self::T3485Stock=>4,Self::WtE100128=>5,Self::WtE100150=>6,Self::Fv215b183=>7,Self::Generated(id)=>PROFILES.len()+id.get()}}
 pub fn from_label(label:&str)->Option<Self>{match label{"ms1-stock"=>Some(Self::Ms1Stock),"is7-stock"=>Some(Self::Is7Stock),"t26-stock"=>Some(Self::T26Stock),"t34-stock"=>Some(Self::T34Stock),"t3485-stock"=>Some(Self::T3485Stock),"wt-e100-128"=>Some(Self::WtE100128),"wt-e100-150"=>Some(Self::WtE100150),"fv215b-183"=>Some(Self::Fv215b183),_=>None}}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Family {ArmorPiercing,ArmorPiercingCr,HollowCharge,HighExplosive}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Family
+impl crate::bw_wire::Wire for Family {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::ArmorPiercing=>bw_o.tag(0),Self::ArmorPiercingCr=>bw_o.tag(1),Self::HollowCharge=>bw_o.tag(2),Self::HighExplosive=>bw_o.tag(3),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::ArmorPiercing),1=>Ok(Self::ArmorPiercingCr),2=>Ok(Self::HollowCharge),3=>Ok(Self::HighExplosive),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl Family {pub fn source_name(self)->&'static str {match self{Self::ArmorPiercing=>"ARMOR_PIERCING",Self::ArmorPiercingCr=>"ARMOR_PIERCING_CR",Self::HollowCharge=>"HOLLOW_CHARGE",Self::HighExplosive=>"HIGH_EXPLOSIVE"}}}
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Shell {pub resource:&'static str,pub compact_descr:u16,pub family:Family,pub caliber_mm:f64,pub damage_hp:u16,pub device_damage:u16,pub penetration_mm:[f64;2],pub explosion_radius_m:Option<f64>,pub raw_speed_mps:f64,pub projectile_speed_factor:f64,pub speed_mps:f64,pub raw_gravity_mps2:f64,pub gravity_mps2:f64,pub max_distance_m:f64,pub premium_gold_flag:bool,pub effects_resource:&'static str,pub piercing_power_loss_factor_by_distance:Option<f64>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Shell
+impl crate::bw_wire::Wire for Shell {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{resource,compact_descr,family,caliber_mm,damage_hp,device_damage,penetration_mm,explosion_radius_m,raw_speed_mps,projectile_speed_factor,speed_mps,raw_gravity_mps2,gravity_mps2,max_distance_m,premium_gold_flag,effects_resource,piercing_power_loss_factor_by_distance}=self;W::put(resource,bw_o);W::put(compact_descr,bw_o);W::put(family,bw_o);W::put(caliber_mm,bw_o);W::put(damage_hp,bw_o);W::put(device_damage,bw_o);W::put(penetration_mm,bw_o);W::put(explosion_radius_m,bw_o);W::put(raw_speed_mps,bw_o);W::put(projectile_speed_factor,bw_o);W::put(speed_mps,bw_o);W::put(raw_gravity_mps2,bw_o);W::put(gravity_mps2,bw_o);W::put(max_distance_m,bw_o);W::put(premium_gold_flag,bw_o);W::put(effects_resource,bw_o);W::put(piercing_power_loss_factor_by_distance,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{resource:W::get(bw_i)?,compact_descr:W::get(bw_i)?,family:W::get(bw_i)?,caliber_mm:W::get(bw_i)?,damage_hp:W::get(bw_i)?,device_damage:W::get(bw_i)?,penetration_mm:W::get(bw_i)?,explosion_radius_m:W::get(bw_i)?,raw_speed_mps:W::get(bw_i)?,projectile_speed_factor:W::get(bw_i)?,speed_mps:W::get(bw_i)?,raw_gravity_mps2:W::get(bw_i)?,gravity_mps2:W::get(bw_i)?,max_distance_m:W::get(bw_i)?,premium_gold_flag:W::get(bw_i)?,effects_resource:W::get(bw_i)?,piercing_power_loss_factor_by_distance:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct GunProfile {pub mount:Mount,pub native_nation_id:u8,pub vehicle_type_compact_descr:u16,pub gun_compact_descr:u16,pub capacity:u16,pub reload_seconds:f64,pub clip_count:u8,pub clip_interval_seconds:f64,pub clip_from_mounted_source:bool,pub burst_count:u8,pub burst_interval_seconds:f64,pub additional_vehicle_qualification_required:bool,pub shots:[Shell;3]}
 pub const PROFILES:[GunProfile;8]=[

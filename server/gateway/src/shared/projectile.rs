@@ -45,6 +45,12 @@ pub struct Projectile {
     pub terminal: [f32; 3],
     pub stopped: bool,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Projectile
+impl crate::bw_wire::Wire for Projectile {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle_kind,shell,sequence,slot,origin,velocity,gravity,max_distance,launched,flight_time,terminal,stopped}=self;W::put(vehicle_kind,bw_o);W::put(shell,bw_o);W::put(sequence,bw_o);W::put(slot,bw_o);W::put(origin,bw_o);W::put(velocity,bw_o);W::put(gravity,bw_o);W::put(max_distance,bw_o);W::put(launched,bw_o);W::put(flight_time,bw_o);W::put(terminal,bw_o);W::put(stopped,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle_kind:W::get(bw_i)?,shell:W::get(bw_i)?,sequence:W::get(bw_i)?,slot:W::get(bw_i)?,origin:W::get(bw_i)?,velocity:W::get(bw_i)?,gravity:W::get(bw_i)?,max_distance:W::get(bw_i)?,launched:W::get(bw_i)?,flight_time:W::get(bw_i)?,terminal:W::get(bw_i)?,stopped:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 impl Projectile {
     pub fn launch(sequence: u32, slot: usize, actor: &model::Actor, now: Instant) -> io::Result<Self> {

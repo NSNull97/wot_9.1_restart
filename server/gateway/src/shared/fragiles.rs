@@ -73,16 +73,40 @@ pub struct Object {
     /// MAPS-02: only for ObjectKind::FallingAtom.
     pub falling:Option<FallingAtom>,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): Object
+impl crate::bw_wire::Wire for Object {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{object_id,instance_id,chunk_id,native_index,resource,health,material_kind,projectile_first_triangle,projectile_triangle_count,physics_first_triangle,physics_triangle_count,object_revision,kind,falling}=self;W::put(object_id,bw_o);W::put(instance_id,bw_o);W::put(chunk_id,bw_o);W::put(native_index,bw_o);W::put(resource,bw_o);W::put(health,bw_o);W::put(material_kind,bw_o);W::put(projectile_first_triangle,bw_o);W::put(projectile_triangle_count,bw_o);W::put(physics_first_triangle,bw_o);W::put(physics_triangle_count,bw_o);W::put(object_revision,bw_o);W::put(kind,bw_o);W::put(falling,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{object_id:W::get(bw_i)?,instance_id:W::get(bw_i)?,chunk_id:W::get(bw_i)?,native_index:W::get(bw_i)?,resource:W::get(bw_i)?,health:W::get(bw_i)?,material_kind:W::get(bw_i)?,projectile_first_triangle:W::get(bw_i)?,projectile_triangle_count:W::get(bw_i)?,physics_first_triangle:W::get(bw_i)?,physics_triangle_count:W::get(bw_i)?,object_revision:W::get(bw_i)?,kind:W::get(bw_i)?,falling:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
 pub struct FallingAtom {pub scaled_health:u32,pub kinetic_damage_correction:f64,pub trigger_first_triangle:u32,pub trigger_triangle_count:u32}
+// BW-01 wire codec (tools/bw01_wire_gen.py): FallingAtom
+impl crate::bw_wire::Wire for FallingAtom {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{scaled_health,kinetic_damage_correction,trigger_first_triangle,trigger_triangle_count}=self;W::put(scaled_health,bw_o);W::put(kinetic_damage_correction,bw_o);W::put(trigger_first_triangle,bw_o);W::put(trigger_triangle_count,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{scaled_health:W::get(bw_i)?,kinetic_damage_correction:W::get(bw_i)?,trigger_first_triangle:W::get(bw_i)?,trigger_triangle_count:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum ObjectKind { Fragile, Tree, MovementFragile, FallingAtom }
+// BW-01 wire codec (tools/bw01_wire_gen.py): ObjectKind
+impl crate::bw_wire::Wire for ObjectKind {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Fragile=>bw_o.tag(0),Self::Tree=>bw_o.tag(1),Self::MovementFragile=>bw_o.tag(2),Self::FallingAtom=>bw_o.tag(3),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Fragile),1=>Ok(Self::Tree),2=>Ok(Self::MovementFragile),3=>Ok(Self::FallingAtom),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 impl ObjectKind {
     pub fn worker_kind(self)->&'static str { match self {Self::Tree=>"tree",Self::Fragile|Self::MovementFragile=>"fragile",Self::FallingAtom=>"falling_atom"} }
     fn fragile(self)->bool { matches!(self,Self::Fragile|Self::MovementFragile) }
 }
 #[derive(Clone,Debug,PartialEq)]
 pub struct Catalog {pub map:MapId,pub sha256:String,pub worker_file:String,pub worker_sha256:String,pub contacts:bool,pub objects:Vec<Object>,pub version:u8,pub area_chunks:Vec<u16>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Catalog
+impl crate::bw_wire::Wire for Catalog {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{map,sha256,worker_file,worker_sha256,contacts,objects,version,area_chunks}=self;W::put(map,bw_o);W::put(sha256,bw_o);W::put(worker_file,bw_o);W::put(worker_sha256,bw_o);W::put(contacts,bw_o);W::put(objects,bw_o);W::put(version,bw_o);W::put(area_chunks,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{map:W::get(bw_i)?,sha256:W::get(bw_i)?,worker_file:W::get(bw_i)?,worker_sha256:W::get(bw_i)?,contacts:W::get(bw_i)?,objects:W::get(bw_i)?,version:W::get(bw_i)?,area_chunks:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 fn fields(v:&Value,k:&[&str])->io::Result<()> {crate::map_drive_worker091::fields(v,k).map(|_|())}
 fn uint(v:&Value)->io::Result<u32>{u32::try_from(v.as_u64().ok_or_else(|| bad())?).map_err(|_|bad())}
 fn text(v:&Value,max:usize)->io::Result<String>{v.as_str().filter(|s|!s.is_empty()&&s.len()<=max&&!s.chars().any(char::is_control)).map(str::to_owned).ok_or_else(|| bad())}
@@ -266,13 +290,31 @@ fn max_area_chunks(map:MapId)->usize{
 #[derive(Clone,Debug,PartialEq)]
 pub struct Damage {pub object_id:u32,pub instance_id:u32,pub object_revision:String,pub shot:u32,pub shooter:usize,pub tick:u32,
     pub health_before:u32,pub health_after:u32,pub scene_before:u32,pub scene_after:u32,pub hit:terrain::Hit}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Damage
+impl crate::bw_wire::Wire for Damage {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{object_id,instance_id,object_revision,shot,shooter,tick,health_before,health_after,scene_before,scene_after,hit}=self;W::put(object_id,bw_o);W::put(instance_id,bw_o);W::put(object_revision,bw_o);W::put(shot,bw_o);W::put(shooter,bw_o);W::put(tick,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);W::put(scene_before,bw_o);W::put(scene_after,bw_o);W::put(hit,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{object_id:W::get(bw_i)?,instance_id:W::get(bw_i)?,object_revision:W::get(bw_i)?,shot:W::get(bw_i)?,shooter:W::get(bw_i)?,tick:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?,scene_before:W::get(bw_i)?,scene_after:W::get(bw_i)?,hit:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
 pub struct VehicleContact {pub object_id:u32,pub instance_id:u32,pub object_revision:String,pub shooter:usize,pub tick:u32,pub substep:u8,
     pub point:[f32;3],pub normal:[f32;3],pub velocity:[f32;3],pub mass_kg:f32,pub kind:String,pub scene_before:u32,pub scene_after:u32,pub fallen_tree:Option<u32>,pub proof:Option<ram_proof::ContactProof>,
     /// MAPS-02 encodeFallenColumn value of a falling atom sensor contact.
     pub fallen_column:Option<u16>}
+// BW-01 wire codec (tools/bw01_wire_gen.py): VehicleContact
+impl crate::bw_wire::Wire for VehicleContact {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{object_id,instance_id,object_revision,shooter,tick,substep,point,normal,velocity,mass_kg,kind,scene_before,scene_after,fallen_tree,proof,fallen_column}=self;W::put(object_id,bw_o);W::put(instance_id,bw_o);W::put(object_revision,bw_o);W::put(shooter,bw_o);W::put(tick,bw_o);W::put(substep,bw_o);W::put(point,bw_o);W::put(normal,bw_o);W::put(velocity,bw_o);W::put(mass_kg,bw_o);W::put(kind,bw_o);W::put(scene_before,bw_o);W::put(scene_after,bw_o);W::put(fallen_tree,bw_o);W::put(proof,bw_o);W::put(fallen_column,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{object_id:W::get(bw_i)?,instance_id:W::get(bw_i)?,object_revision:W::get(bw_i)?,shooter:W::get(bw_i)?,tick:W::get(bw_i)?,substep:W::get(bw_i)?,point:W::get(bw_i)?,normal:W::get(bw_i)?,velocity:W::get(bw_i)?,mass_kg:W::get(bw_i)?,kind:W::get(bw_i)?,scene_before:W::get(bw_i)?,scene_after:W::get(bw_i)?,fallen_tree:W::get(bw_i)?,proof:W::get(bw_i)?,fallen_column:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
 pub struct State {pub catalog:Arc<Catalog>,health:Vec<u32>,fallen:Vec<Option<u32>>,columns:Vec<Option<u16>>,pub events:Vec<Damage>,pub vehicle_events:Vec<VehicleContact>,roster:Option<usize>,ammo_capacity:u16}
+// BW-01 wire codec (tools/bw01_wire_gen.py): State
+impl crate::bw_wire::Wire for State {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{catalog,health,fallen,columns,events,vehicle_events,roster,ammo_capacity}=self;W::put(catalog,bw_o);W::put(health,bw_o);W::put(fallen,bw_o);W::put(columns,bw_o);W::put(events,bw_o);W::put(vehicle_events,bw_o);W::put(roster,bw_o);W::put(ammo_capacity,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{catalog:W::get(bw_i)?,health:W::get(bw_i)?,fallen:W::get(bw_i)?,columns:W::get(bw_i)?,events:W::get(bw_i)?,vehicle_events:W::get(bw_i)?,roster:W::get(bw_i)?,ammo_capacity:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl State {
     pub fn failure_snapshot(&self)->serde_json::Value{
         serde_json::json!({"catalog_sha256":self.catalog.sha256,"scene_version":self.scene_version(),

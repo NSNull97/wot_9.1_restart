@@ -1,5 +1,15 @@
 # Состояние проекта
 
+## BW-01 Battle Worker отдельным процессом — в ветке `codex/bw-01-on-main` (от main `d0a9b9e`), не в main — 2026-10-29
+
+- Ключ `battle_worker` (`{"version":1}`, тайм-ауты): шаг каждой арены (`advance_battle` + Jolt-сцена) — в своём процессе
+  (тот же exe, loopback, токен через stdin, кадры с пределами); мир между шагами в шлюзе, журналы NET-01 идут
+  приращениями. Потеря worker'а → `battle_worker_lost` → STAB-02 `contain_arena`; следующий бой — новый worker.
+  Без ключа — прежний путь.
+- Тесты `bw01` 9 PASS. Release-бенч NET-01 1+29, полный бой, `reliable-burst-v2`: оба режима без сбоев; worker —
+  CPU 16,7 против 11,6 мс/шаг, p99 цикла +2 мс, кадр в конце боя ≈ 162 КБ. Native, канонический gate — NOT_RUN.
+  План/итог/шаги стенда — [BW01_BATTLE_WORKER](plans/BW01_BATTLE_WORKER.md).
+
 ## 15x15-интеграция — принята владельцем, в main — 2026-10-29
 
 - В main одним слиянием `1bd0dce` (стенд -11): VIS-PERF, STAB-02, RES-30, MM-01 (с уровнями ботов по командам,

@@ -144,6 +144,12 @@ fn file_hash(path:&Path,size:u64)->io::Result<String>{
 #[derive(Clone,Debug,PartialEq)]
 pub struct MapSpec {pub asset:String,pub arena_type_id:i32,pub config:PathBuf,pub config_sha256:String,
     pub bounds:[f32;4],pub spawn:[f32;3],pub spawn_yaw:f32,pub mass_kg:f32}
+// BW-01 wire codec (tools/bw01_wire_gen.py): MapSpec
+impl crate::bw_wire::Wire for MapSpec {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{asset,arena_type_id,config,config_sha256,bounds,spawn,spawn_yaw,mass_kg}=self;W::put(asset,bw_o);W::put(arena_type_id,bw_o);W::put(config,bw_o);W::put(config_sha256,bw_o);W::put(bounds,bw_o);W::put(spawn,bw_o);W::put(spawn_yaw,bw_o);W::put(mass_kg,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{asset:W::get(bw_i)?,arena_type_id:W::get(bw_i)?,config:W::get(bw_i)?,config_sha256:W::get(bw_i)?,bounds:W::get(bw_i)?,spawn:W::get(bw_i)?,spawn_yaw:W::get(bw_i)?,mass_kg:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl MapSpec {
     fn load(root:&Path,v:&Value,config_version:u64)->io::Result<Self>{
         fields(v,&["asset","arena_type_id","config","config_sha256"])?;
@@ -173,6 +179,12 @@ impl MapSpec {
 /// constructing a different identity after the source descriptor is checked.
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct RemovalSpec {path:PathBuf,sha256:String}
+// BW-01 wire codec (tools/bw01_wire_gen.py): RemovalSpec
+impl crate::bw_wire::Wire for RemovalSpec {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{path,sha256}=self;W::put(path,bw_o);W::put(sha256,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{path:W::get(bw_i)?,sha256:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl RemovalSpec {
     pub fn load(local_root:&Path,path:&Path,sha256:&str)->io::Result<Self>{
         non_reparse(local_root)?;let root=local_root.canonicalize()?;hash_text(sha256)?;
@@ -201,9 +213,21 @@ impl RemovalSpec {
 }
 #[derive(Clone,Debug)]
 struct Asset {path:PathBuf,bytes:u64,sha256:String}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Asset
+impl crate::bw_wire::Wire for Asset {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{path,bytes,sha256}=self;W::put(path,bw_o);W::put(bytes,bw_o);W::put(sha256,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{path:W::get(bw_i)?,bytes:W::get(bw_i)?,sha256:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 #[derive(Clone,Debug)]
 pub struct Pool {pub local_root:PathBuf,pub maps:Vec<MapSpec>,pub sha256:String,executable:PathBuf,
     runtime:PathBuf,assets:Vec<Asset>,vehicle_profile:Option<profile::VehicleProfile>,shared_only:bool}
+// BW-01 wire codec (tools/bw01_wire_gen.py): Pool
+impl crate::bw_wire::Wire for Pool {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{local_root,maps,sha256,executable,runtime,assets,vehicle_profile,shared_only}=self;W::put(local_root,bw_o);W::put(maps,bw_o);W::put(sha256,bw_o);W::put(executable,bw_o);W::put(runtime,bw_o);W::put(assets,bw_o);W::put(vehicle_profile,bw_o);W::put(shared_only,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{local_root:W::get(bw_i)?,maps:W::get(bw_i)?,sha256:W::get(bw_i)?,executable:W::get(bw_i)?,runtime:W::get(bw_i)?,assets:W::get(bw_i)?,vehicle_profile:W::get(bw_i)?,shared_only:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 impl Pool {
     pub fn load(local_root:&Path,path:&Path)->io::Result<Self>{
         non_reparse(local_root)?;let root=local_root.canonicalize()?;let raw=read(&owned(&root,path)?,16384)?;

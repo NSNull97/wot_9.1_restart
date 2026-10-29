@@ -261,6 +261,28 @@ pub struct Config {
     pub matchmaker:Option<crate::gateway091::shared::matchmaker::Rules>,
     /// NET-01: `pose_delivery` (absent: reliable poses, one reliable body per loop — the old path).
     pub pose_delivery:crate::gateway091::shared::net01::PoseDelivery,
+    /// BW-01: each arena steps in its own worker process (absent: arenas in this process, old path).
+    pub battle_worker:Option<BattleWorker>,
+}
+/// BW-01 `battle_worker` = {"version":1[,"step_timeout_ms":100..60000][,"startup_timeout_ms":1000..300000]}.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct BattleWorker {pub step_timeout:Duration,pub startup_timeout:Duration}
+impl BattleWorker {
+    pub const DEFAULT_STEP_MS:u64=2000;
+    pub const DEFAULT_STARTUP_MS:u64=30000;
+    fn parse(v:&Value)->io::Result<Self> {
+        let Some(m)=v.as_object().filter(|m|m.get("version")==Some(&Value::from(1u64))
+            &&m.keys().all(|k|["version","step_timeout_ms","startup_timeout_ms"].contains(&k.as_str()))) else {
+            return Err(invalid("battle_worker must be {version:1} with optional step_timeout_ms and startup_timeout_ms"));
+        };
+        let ms=|key:&str,default:u64,range:std::ops::RangeInclusive<u64>|match m.get(key){
+            None=>Ok(Duration::from_millis(default)),
+            Some(v)=>v.as_u64().filter(|n|range.contains(n)).map(Duration::from_millis)
+                .ok_or_else(||invalid("battle_worker step_timeout_ms must be 100..60000 and startup_timeout_ms 1000..300000")),
+        };
+        Ok(Self{step_timeout:ms("step_timeout_ms",Self::DEFAULT_STEP_MS,100..=60000)?,
+            startup_timeout:ms("startup_timeout_ms",Self::DEFAULT_STARTUP_MS,1000..=300000)?})
+    }
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -439,6 +461,11 @@ impl Config {
         if pose_delivery==crate::gateway091::shared::net01::PoseDelivery::LatestUnreliable&&!visibility_v1{
             return Err(invalid("latest-unreliable poses require visibility_v1"));
         }
+        // BW-01: the training/hold5 hosts keep the scene runtime on the gateway thread.
+        let battle_worker=value.remove("battle_worker").map(|v|BattleWorker::parse(&v)).transpose()?;
+        if battle_worker.is_some()&&(!profile13_battle||training_rooms||p08b_owner_battle_hold){
+            return Err(invalid("battle_worker requires profile13 battle without training rooms or hold5"));
+        }
         // CAT-01: exact {"version":1,"sha256":<this build's catalog>}; a foreign hash refuses start.
         let catalog_v1=match value.remove("catalog"){
             None=>false,
@@ -475,7 +502,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_worker})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -1189,6 +1216,29 @@ mod tests {
         row["connection_capacity"]=6.into();assert_eq!(load(&row).unwrap().bots.unwrap().human_places,2);
         // Owner's one-client stand: 6 places, 1 native, 5 bots.
         row["bots"]["human_places"]=1.into();assert_eq!(load(&row).unwrap().bots.unwrap().human_places,1);
+    }
+    #[test] fn bw01_battle_worker_configuration_is_explicit_bounded_and_absent_by_default() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("bw01-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let mut value=serde_json::json!({"login_bind":"127.0.0.1:23024","base_bind":"127.0.0.1:23025","identity_endpoint":"127.0.0.1:3396",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
+            "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle"]{value[field]=true.into();}
+        assert!(load(&value).unwrap().battle_worker.is_none(),"absent key: arenas in this process");
+        value["battle_worker"]=serde_json::json!({"version":1});
+        assert_eq!(load(&value).unwrap().battle_worker,Some(BattleWorker{step_timeout:Duration::from_millis(2000),startup_timeout:Duration::from_millis(30000)}));
+        value["battle_worker"]=serde_json::json!({"version":1,"step_timeout_ms":500,"startup_timeout_ms":60000});
+        assert_eq!(load(&value).unwrap().battle_worker.unwrap().step_timeout,Duration::from_millis(500));
+        for bad in [serde_json::json!(true),serde_json::json!({}),serde_json::json!({"version":2}),serde_json::json!({"version":1,"step_timeout_ms":99}),
+            serde_json::json!({"version":1,"startup_timeout_ms":300001}),serde_json::json!({"version":1,"other":1})] {
+            value["battle_worker"]=bad.clone();assert!(load(&value).is_err(),"{bad}");
+        }
+        value["battle_worker"]=serde_json::json!({"version":1});value["profile13_battle"]=false.into();
+        assert!(load(&value).is_err(),"needs the profile13 battle");
+        value["profile13_battle"]=true.into();value["p08b_owner_battle_hold"]=true.into();
+        assert!(load(&value).is_err(),"hold5 keeps its runtime on the gateway thread");
     }
     #[test] fn mm01_configuration_is_explicit_bounded_and_absent_by_default() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
