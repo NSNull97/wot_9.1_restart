@@ -54,6 +54,9 @@ mod visibility_tests;
 #[path="server_net01_tests.rs"]
 mod net01_tests;
 #[cfg(test)]
+#[path="server_av01_tests.rs"]
+mod av01_tests;
+#[cfg(test)]
 #[path="server_net01_bench.rs"]
 mod net01_bench;
 
@@ -2317,6 +2320,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let mut shot_publications = Vec::new();
     let mut tracer_starts = Vec::new();
     let mut tracer_stops = Vec::new();
+    let mut anonymous_tracers = Vec::new();
+    let mut impact_from = usize::MAX;
     let mut impact_publications = Vec::new();
     let prior_projectile_count = world.projectiles.len();
     if c.phase == Phase::Driving {
@@ -2368,6 +2373,20 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     c.tracer_started[index] = true;
                     tracer_starts.push((shot.sequence, shot.slot));
                 }
+            } else if c.spotting_enabled && c.correction && c.binding.is_some_and(|(_, ack)| ack) && shot.slot != c.slot {
+                // AV-01: #717 showTracer draws a tracer without a shooter
+                // entity. Anonymous form: shooter 0, start advanced along the
+                // flight; no muzzle cue (Vehicle.showShooting needs the entity).
+                let index = shot.sequence.checked_sub(1).ok_or_else(|| model::bad())? as usize;
+                let projectile = next_world.projectiles.iter().find(|p| p.sequence == shot.sequence)
+                    .ok_or_else(|| model::bad())?;
+                if !c.tracer_started[index] {
+                    if let Some(body) = super::av01_feedback::anonymous_tracer(projectile, projectile_effects(projectile)?)? {
+                        next.outbox.push_back(body);
+                        c.tracer_started[index] = true;
+                        anonymous_tracers.push((shot.sequence, shot.slot));
+                    }
+                }
             }
             // Even a skipped event is consumed: becoming visible later must
             // not replay stale gunfire. The cursor commits with the queue.
@@ -2386,10 +2405,14 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     // A vehicle collision can reveal a hidden target even while
                     // its shooter remains visible. Native range flight is bounded;
                     // suppress the private terminal rather than invent a hit point.
-                    if c.spotting_enabled && (!c.visible()[projectile.slot] || target.is_some_and(|slot|!c.visible()[slot])) {
+                    // AV-01: a hidden shooter no longer suppresses the end of
+                    // its (anonymous) tracer; stop bodies carry no shooter ID.
+                    if c.spotting_enabled && target.is_some_and(|slot|!c.visible()[slot]) {
                         c.tracer_stopped[index]=true;continue;
                     }
-                    let mut targets=vec![projectile.slot];if let Some(slot)=target {targets.push(slot);}
+                    let mut targets=Vec::new();
+                    if !c.spotting_enabled || c.visible()[projectile.slot] {targets.push(projectile.slot);}
+                    if let Some(slot)=target {targets.push(slot);}
                     if let Some(contact)=next_world.terrain_contacts.iter().find(|c|c.shot==projectile.sequence) {
                         // Original explodeProjectile terminates its own mover.
                         // A subsequent stopTracer would hide/cancel ground FX.
@@ -2397,14 +2420,16 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                             contact.hit.point,contact.direction,contact.hit.effect_material_index(),next_world.shot_limit())?}
                             else{super::terrain_wire::explode_material_for_limit(projectile.vehicle_kind,projectile.sequence,
                             contact.hit.point,contact.direction,contact.hit.effect_material_index(),next_world.shot_limit())?};
-                        c.queue_private(&mut next.outbox,effect,&targets)?;
+                        if targets.is_empty() {next.outbox.push_back(effect);} else {c.queue_private(&mut next.outbox,effect,&targets)?;}
                     } else {
-                        c.queue_private(&mut next.outbox,wire::tracer_stop(projectile)?,&targets)?;
+                        let stop=wire::tracer_stop(projectile)?;
+                        if targets.is_empty() {next.outbox.push_back(stop);} else {c.queue_private(&mut next.outbox,stop,&targets)?;}
                     }
                     c.tracer_stopped[index] = true;
                     tracer_stops.push((projectile.sequence, projectile.slot));
                 }
             }
+            impact_from = c.impact_cursor;
             for event in next_world.impacts.iter().skip(c.impact_cursor) {
                 let shot_index = event.shot.checked_sub(1).ok_or_else(|| model::bad())? as usize;
                 let visible = c.visible()[event.target] && c.visible()[event.attacker];
@@ -2417,34 +2442,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     // without authorizing fabricated penetration or hull damage.
                     if let Some(shell)=he{body.extend(crate::armament_wire091::explosion(wire::vehicle_id(event.target)?,
                         wire::vehicle_id(event.attacker)?,projectile.terminal,shell)?);}
-                    if let Some(segment) = &event.segment {
-                        let outcome = match &event.outcome {
-                            // Explicit laboratory policy: a wreck blocks the shell.
-                            // The native resisted FX also works on HP0 entities;
-                            // this is not an armor calculation or a new death.
-                            model::ImpactOutcome::WreckBlocked => impact_wire::ShotOutcome::NotPierced,
-                            model::ImpactOutcome::Ap(resolution) => match resolution.outcome {
-                                ap::Outcome::Ricochet => impact_wire::ShotOutcome::Ricochet,
-                                ap::Outcome::NotPierced => impact_wire::ShotOutcome::NotPierced,
-                                ap::Outcome::Pierced => impact_wire::ShotOutcome::Pierced,
-                                ap::Outcome::Unsupported(_) => return Err(model::bad()),
-                            },
-                            model::ImpactOutcome::Mixed(resolution)=>match resolution.decision{
-                                crate::p06t_damage::Decision::Ricochet=>impact_wire::ShotOutcome::Ricochet,
-                                crate::p06t_damage::Decision::NotPierced=>impact_wire::ShotOutcome::NotPierced,
-                                crate::p06t_damage::Decision::Pierced=>impact_wire::ShotOutcome::Pierced,
-                                // Native visual category only. The authoritative LAB
-                                // decision and damage ledger keep UnarmoredDevice /
-                                // pierced=false; no ordinary armor claim is made.
-                                crate::p06t_damage::Decision::UnarmoredDevice=>impact_wire::ShotOutcome::Pierced,
-                                _=>return Err(model::bad()),
-                            },
-                        };
-                        let component = match segment.component {
-                            super::materials::Component::Hull => 1,
-                            super::materials::Component::Turret01 => 2,
-                            super::materials::Component::Gun02 | super::materials::Component::Gun01 => 3,
-                        };
+                    if let Some((segment,outcome,component)) = impact_visual(event)? {
                         if let Some(shell)=projectile.shell{
                             if he.is_none(){body.extend(impact_wire::show_damage_shell(shell,event.attacker,event.target,component,segment.bounds,segment.start,segment.end,outcome)?);}
                         }else{body.extend(impact_wire::show_damage_for(next_world.actors[event.attacker].vehicle_kind(),event.attacker,event.target,component,
@@ -2464,6 +2462,35 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                                 body.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
                             }
                         }
+                    }
+                } else if c.spotting_enabled && event.target == c.slot && c.visible()[c.slot] {
+                    // AV-01: an own-vehicle hit from a hidden shooter keeps the
+                    // native hit FX/sound with attacker 0; no shooter data.
+                    let projectile=next_world.projectiles.iter().find(|projectile|projectile.sequence==event.shot).ok_or_else(||model::bad())?;
+                    let he=projectile.shell.filter(|shell|shell.family==crate::p06t_shells091::Family::HighExplosive);
+                    let mut own=Vec::new();
+                    if let Some(shell)=he{own.extend(crate::armament_wire091::explosion(wire::vehicle_id(event.target)?,0,projectile.terminal,shell)?);}
+                    else if let Some((segment,outcome,component)) = impact_visual(event)? {
+                        own.extend(impact_wire::show_damage_from(projectile_effects(projectile)?,0,event.target,component,
+                            segment.bounds,segment.start,segment.end,outcome)?);
+                    }
+                    if !own.is_empty() {c.queue_private(&mut next.outbox,own,&[event.target])?;}
+                }
+                // AV-01: the owner's hit indicator (any shooter visibility; the
+                // yaw comes from the shell flight) and the shooter's result
+                // voice (vehicle ID and flags only, also for blind fire).
+                if c.spotting_enabled && event.health_before > 0 && (event.target == c.slot || event.attacker == c.slot) {
+                    let projectile=next_world.projectiles.iter().find(|projectile|projectile.sequence==event.shot).ok_or_else(||model::bad())?;
+                    if event.target == c.slot && c.visible()[c.slot] {
+                        next.outbox.push_back(super::av01_feedback::hit_direction(projectile.velocity,event.health_after<event.health_before)?);
+                    }
+                    if event.attacker == c.slot {
+                        let he=projectile.shell.is_some_and(|shell|shell.family==crate::p06t_shells091::Family::HighExplosive);
+                        // No native visual category (e.g. a LAB decision the FX
+                        // path refuses) falls back to the HP change alone.
+                        let outcome=impact_visual(event).ok().flatten().map(|(_,outcome,_)|outcome);
+                        let flags=super::av01_feedback::shot_result_flags(outcome,he,event.health_before,event.health_after);
+                        next.outbox.push_back(super::av01_feedback::shot_results(&[(event.target,flags)])?);
                     }
                 }
                 let queued = !body.is_empty();
@@ -2499,6 +2526,11 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 }
                 if !body.is_empty() { c.queue_private(&mut next.outbox,body,&[target])?; }
             }}
+        }
+        // AV-01 runs with recipient visibility (visibility_v1, as on the owner
+        // stands); legacy all-visible laboratory publications stay byte-exact.
+        if c.spotting_enabled && c.correction && c.binding.is_some_and(|(_, ack)| ack) {
+            publish_av01(c,&mut next.outbox,&next_world,impact_from)?;
         }
         if let Some(state) = &next_world.lifecycle {
             let view = state.view();
@@ -2566,6 +2598,9 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     for (sequence, shooter_slot) in tracer_starts {
         println!("SHARED_TRACER_START battle={} session={} shot={} shooter_slot={} native_method=Avatar.showTracer queued=true", world.id, s.id, sequence, shooter_slot);
     }
+    for (sequence, shooter_slot) in anonymous_tracers {
+        println!("AV01_TRACER_ANONYMOUS battle={} session={} shot={} shooter_slot={} native_method=Avatar.showTracer shooter_id=0 offset_m={}", world.id, s.id, sequence, shooter_slot, super::av01_feedback::HIDDEN_TRACER_OFFSET_M);
+    }
     for (sequence, shooter_slot) in tracer_stops {
         if next_world.terrain_contacts.iter().any(|c|c.shot==sequence) {
             println!("SHARED_TERRAIN_PUBLICATION battle={} session={} shot={} shooter_slot={} native_method=Avatar.explodeProjectile queued=true",world.id,s.id,sequence,shooter_slot);
@@ -2580,6 +2615,95 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     *world = next_world; *s = next;
     for event in turret_events{println!("{event}");}
     Ok(())
+}
+
+/// Native visual category and component of one vehicle impact; None without
+/// a native segment. Presentation only, never the damage decision.
+fn impact_visual(event:&model::AppliedImpact)->io::Result<Option<(&super::geometry::ImpactSegment,impact_wire::ShotOutcome,u8)>> {
+    let Some(segment) = &event.segment else { return Ok(None); };
+    let outcome = match &event.outcome {
+        // Explicit laboratory policy: a wreck blocks the shell.
+        // The native resisted FX also works on HP0 entities;
+        // this is not an armor calculation or a new death.
+        model::ImpactOutcome::WreckBlocked => impact_wire::ShotOutcome::NotPierced,
+        model::ImpactOutcome::Ap(resolution) => match resolution.outcome {
+            ap::Outcome::Ricochet => impact_wire::ShotOutcome::Ricochet,
+            ap::Outcome::NotPierced => impact_wire::ShotOutcome::NotPierced,
+            ap::Outcome::Pierced => impact_wire::ShotOutcome::Pierced,
+            ap::Outcome::Unsupported(_) => return Err(model::bad()),
+        },
+        model::ImpactOutcome::Mixed(resolution)=>match resolution.decision{
+            crate::p06t_damage::Decision::Ricochet=>impact_wire::ShotOutcome::Ricochet,
+            crate::p06t_damage::Decision::NotPierced=>impact_wire::ShotOutcome::NotPierced,
+            crate::p06t_damage::Decision::Pierced=>impact_wire::ShotOutcome::Pierced,
+            // Native visual category only. The authoritative LAB
+            // decision and damage ledger keep UnarmoredDevice /
+            // pierced=false; no ordinary armor claim is made.
+            crate::p06t_damage::Decision::UnarmoredDevice=>impact_wire::ShotOutcome::Pierced,
+            _=>return Err(model::bad()),
+        },
+    };
+    let component = match segment.component {
+        super::materials::Component::Hull => 1,
+        super::materials::Component::Turret01 => 2,
+        super::materials::Component::Gun02 | super::materials::Component::Gun01 => 3,
+    };
+    Ok(Some((segment,outcome,component)))
+}
+/// Original effects index frozen at launch.
+fn projectile_effects(projectile:&super::projectile::Projectile)->io::Result<u8> {
+    match projectile.shell { Some(shell)=>crate::armament_wire091::effect_index(shell), None=>Ok(projectile.vehicle_kind.shell().effects) }
+}
+
+/// AV-01 per-recipient state publication for created (visible) vehicles:
+/// one private body per vehicle (a hide invalidates only that vehicle), at
+/// most six engineMode and two damageStickers bodies per call (bounded queue
+/// growth; the rest follows on later calls), and the spotter's first spots.
+fn publish_av01(c:&mut Client,outbox:&mut std::collections::VecDeque<Vec<u8>>,world:&World,impact_from:usize)->io::Result<()> {
+    use super::av01_feedback as av;
+    let visible=c.visible();
+    let mut sent=0;
+    for slot in 0..world.actors.len() {
+        if sent==6 {break;}
+        if !visible[slot] {continue;}
+        let actor=&world.actors[slot];
+        let running=actor.alive()&&actor.devices.as_ref().is_none_or(|d|d.health()[crate::p06t_device_caps::Device::Engine as usize]>0);
+        let mode=av::engine_mode(running,actor.input);
+        if c.engine_sent[slot]!=Some(mode) {c.queue_private(outbox,av::engine_mode_update(slot,mode)?,&[slot])?;c.engine_sent[slot]=Some(mode);sent+=1;}
+    }
+    let fresh=world.impacts.get(impact_from..).unwrap_or(&[]);
+    let mut sent=0;
+    for slot in 0..world.actors.len() {
+        if sent==2 {break;}
+        if !visible[slot] || c.stickers_sent[slot].is_some() && !fresh.iter().any(|e|e.target==slot) {continue;}
+        let codes=sticker_codes(world,slot)?;
+        if c.stickers_sent[slot].as_ref()!=Some(&codes) {
+            c.queue_private(outbox,av::damage_stickers_update(slot,&codes)?,&[slot])?;sent+=1;
+        }
+        c.stickers_sent[slot]=Some(codes);
+    }
+    if let Some(spots)=world.result_spots() {
+        for record in spots.iter().skip(c.scout_cursor) {
+            if record.observer()==c.slot {outbox.push_back(av::scout_spotted(record.target())?);}
+        }
+        c.scout_cursor=spots.len();
+    }
+    Ok(())
+}
+/// Current damage stickers of one vehicle: its newest distinct impact codes.
+/// A decal is optional presentation: an impact without a native visual
+/// category or a quantizable segment gets none instead of failing the battle.
+fn sticker_codes(world:&World,target:usize)->io::Result<Vec<u64>> {
+    let mut codes:Vec<u64>=Vec::new();
+    for event in world.impacts.iter().rev().filter(|e|e.target==target) {
+        if codes.len()==super::av01_feedback::MAX_STICKERS {break;}
+        let Some((segment,outcome,component))=impact_visual(event).ok().flatten() else {continue;};
+        let projectile=world.projectiles.iter().find(|p|p.sequence==event.shot).ok_or_else(||model::bad())?;
+        let Ok(point)=impact_wire::packed_segment(component,segment.bounds,segment.start,segment.end,outcome) else {continue;};
+        let code=super::av01_feedback::sticker_code(projectile_effects(projectile)?,outcome,point)?;
+        if !codes.contains(&code) {codes.push(code);}
+    }
+    codes.reverse();Ok(codes)
 }
 
 /// Clear frames for one session this loop, in send order: due reliable bodies

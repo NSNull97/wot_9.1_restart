@@ -82,7 +82,7 @@ fn bounded(point: [f32; 3]) -> bool {
     point.iter().all(|v| v.is_finite() && v.abs() <= MAX_LOCAL_COORDINATE)
 }
 
-fn packed_segment(component: u8, bbox: [[f32; 3]; 2], start: [f32; 3], end: [f32; 3],
+pub(super) fn packed_segment(component: u8, bbox: [[f32; 3]; 2], start: [f32; 3], end: [f32; 3],
     outcome: ShotOutcome) -> io::Result<[u8; 8]> {
     if component > 3 || !bounded(bbox[0]) || !bounded(bbox[1]) || !bounded(start) || !bounded(end)
         || (0..3).any(|i| bbox[0][i] >= bbox[1][i]) || start == end {
@@ -150,7 +150,14 @@ pub fn show_damage_shell(shell:crate::p06t_shells091::Shell,attacker_slot:usize,
 
 fn show_damage_with_effects(effects:u8,attacker_slot:usize,target_slot:usize,component:u8,
     bbox:[[f32;3];2],local_start:[f32;3],local_end:[f32;3],outcome:ShotOutcome)->io::Result<Vec<u8>>{
-    let attacker = wire::vehicle_id(attacker_slot)?;
+    show_damage_from(effects,wire::vehicle_id(attacker_slot)?,target_slot,component,bbox,local_start,local_end,outcome)
+}
+
+/// AV-01: the same presentation with an explicit attacker entity ID. #717
+/// showDamageFromShot (vehicle.pyc line186) compares attackerID only with
+/// playerVehicleID, so an own-vehicle hit from a hidden shooter carries 0.
+pub(super) fn show_damage_from(effects:u8,attacker:u32,target_slot:usize,component:u8,
+    bbox:[[f32;3];2],local_start:[f32;3],local_end:[f32;3],outcome:ShotOutcome)->io::Result<Vec<u8>>{
     let target = wire::vehicle_id(target_slot)?;
     let packed = packed_segment(component, bbox, local_start, local_end, outcome)?;
     let mut body = Vec::with_capacity(25);
