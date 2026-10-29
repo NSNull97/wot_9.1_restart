@@ -1,5 +1,14 @@
 # Состояние проекта
 
+## INPUT-01 неподдержанные методы Avatar не выбрасывают из боя — в ветке `codex/input-01-settings-methods`, не в main — 2026-10-29
+
+- Находка владельца (-11, BW-01): смена настроек в бою — Base `doCmdIntArr(CMD_ADD_INT_USER_SETTINGS=1600)` и
+  `setDevelopmentFeature('server_marker')` (VERIFIED по #717) — ID вне таблицы шлюза → отказ → канал встал → `idle_timeout`.
+- Таблица exposed-методов Avatar/Vehicle (INFERRED по .def, совпадает со всеми наблюдаемыми ID): нереализованные
+  записи пропускаются по длине с логом; неразбираемый ID в Driving отбрасывает конверт целиком без применения,
+  номер потребляется. Набор шлюза FAIL = `d0a9b9e` (94 = 94). Gate, release, native — NOT_RUN.
+  План/итог — [INPUT01](plans/INPUT01.md).
+
 ## 15x15-интеграция — принята владельцем, в main — 2026-10-29
 
 - В main одним слиянием `1bd0dce` (стенд -11): VIS-PERF, STAB-02, RES-30, MM-01 (с уровнями ботов по командам,
