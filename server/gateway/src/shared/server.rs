@@ -3410,6 +3410,48 @@ mod tests {
         assert!(b.shared.as_ref().unwrap().commands.is_empty());
         assert_eq!(w.actors[1].health,0); assert_eq!(b.shared.as_ref().unwrap().slot,1);
     }
+    fn var2(id:u8,args:&[u8])->Vec<u8> {let mut b=vec![id];b.extend((args.len() as u16).to_le_bytes());b.extend(args);b}
+    /// Owner 2026-10-29 (-11, BW-01): changing settings in battle sent an
+    /// Avatar method outside the gateway table (mod.rs:796 `_ => Err`), the
+    /// rejected reliable3031 stalled rx and the player was dropped by idle_timeout.
+    /// #717: IntUserSettings.addIntSettings -> Avatar Base doCmdIntArr(1600),
+    /// VehicleGunRotator.showServerMarker -> setDevelopmentFeature('server_marker').
+    #[test] fn input01_unimplemented_avatar_methods_are_skipped_and_unknown_tail_keeps_channel_live() {
+        let now=Instant::now(); let (_,mut b,_)=visible_pair(now);
+        let mut settings=Vec::new(); for v in [227i16,1600] {settings.extend(v.to_le_bytes());}
+        settings.extend(4u32.to_le_bytes()); for v in [61i32,1,62,0] {settings.extend(v.to_le_bytes());}
+        let mut feature=vec![13]; feature.extend(b"server_marker"); feature.extend(1i32.to_le_bytes());
+        let aim=point(1,[100.,100.,100.]);
+        let envelope=[var2(0x9c,&settings),var2(0xa1,&feature),var2(0x0e,&wire::vehicle_id(0).unwrap().to_le_bytes()),aim.clone()].concat();
+        let before=b.rx; b.receive(&frame(&b,&envelope),now).unwrap(); assert_eq!(b.rx,before+1);
+        assert_eq!(b.shared.as_ref().unwrap().commands.len(),1,"records after skipped methods still apply");
+        assert_eq!(wire::unimplemented_detail(&var2(0x9c,&settings)),"request=227 command=1600");
+        assert_eq!(wire::unimplemented_detail(&var2(0xa1,&feature)),"feature=server_marker");
+        // An ID outside the table: the whole envelope is dropped unapplied, the
+        // sequence is consumed and later keepalives are accepted.
+        let unknown=[aim.clone(),vec![0x7f,1,2,3],aim.clone()].concat();
+        let before=b.rx; b.receive(&frame(&b,&unknown),now).unwrap(); assert_eq!(b.rx,before+1);
+        assert_eq!(b.shared.as_ref().unwrap().commands.len(),1);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+        // A truncated framed record is still malformed and fails closed.
+        let mut short=var2(0x9c,&settings); short.truncate(short.len()-1);
+        let before=b.rx; assert!(b.receive(&frame(&b,&short),now).is_err()); assert_eq!(b.rx,before);
+    }
+    /// Owner detail: the "Aim" settings tab in battle. #717 setAimSettings ->
+    /// g_settingsCache -> PlayerAvatar.intUserSettings.addIntSettings sends one
+    /// doCmdIntArr(1600) of changed AIM_<SECTION>_<n> pairs and setVersion
+    /// another. With a trackPointWithGun this is one 73-byte application
+    /// envelope = the 78-byte rejected frame (exact bytes were not logged).
+    #[test] fn input01_aim_settings_envelope_of_the_rejected_size_is_consumed() {
+        let now=Instant::now(); let (_,mut b,_)=visible_pair(now);
+        let settings=|request:i16,pairs:&[(i32,i32)]|{let mut a=Vec::new();for v in [request,1600] {a.extend(v.to_le_bytes());}
+            a.extend((2*pairs.len() as u32).to_le_bytes());for (k,v) in pairs {a.extend(k.to_le_bytes());a.extend(v.to_le_bytes());}var2(0x9c,&a)};
+        let envelope=[settings(31,&[(5,0x0102),(6,0x0304),(7,0)]),settings(32,&[(0,11)]),point(1,[100.,100.,100.])].concat();
+        assert_eq!(envelope.len(),73); assert_eq!(frame(&b,&envelope).body.len(),78);
+        let before=b.rx; b.receive(&frame(&b,&envelope),now).unwrap(); assert_eq!(b.rx,before+1);
+        assert_eq!(b.shared.as_ref().unwrap().commands.len(),1);
+        b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
+    }
     fn bind(target:u32)->Vec<u8> {let mut b=vec![0x0d,8,0,0,0,0,0];b.extend(target.to_le_bytes());b}
     /// Owner 2026-10-29 (-11, battle ...827, session 4): the dead player's
     /// observer camera bound an ally; rejection stalled reliable17381 and every
@@ -3621,9 +3663,13 @@ mod tests {
         assert!(s.shared.as_ref().unwrap().commands.is_empty()); assert!(s.received.is_empty());
         let mut f = frame(&s,&[0x88,0,0]); f.body[1]^=1;
         assert!(s.receive(&f,now).is_err()); assert_eq!(s.rx,1);
-        let mut parent = frame(&s,&[0xff]); parent.sequence=Some(2);
+        let mut parent = frame(&s,&[0x88,1,0]); parent.sequence=Some(2);
         parent.piggybacks.push(frame(&s,&[0x88,0,0]));
         assert!(s.receive(&parent,now).is_err()); assert_eq!(s.rx,1);
+        assert!(s.shared.as_ref().unwrap().commands.is_empty());
+        // INPUT-01: an unframed ID is not a reject: the envelope is dropped
+        // unapplied and its sequence consumed.
+        s.receive(&frame(&s,&[0x88,0,0,0xff]),now).unwrap(); assert_eq!(s.rx,2);
         assert!(s.shared.as_ref().unwrap().commands.is_empty());
     }
     #[test] fn reliable_shot_duplicate_consumes_once_and_cannot_move_the_other_actor() {
