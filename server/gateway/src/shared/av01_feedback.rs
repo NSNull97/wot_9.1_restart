@@ -46,14 +46,18 @@ pub fn anonymous_tracer(p: &Projectile, effects: u8) -> io::Result<Option<Vec<u8
 }
 
 /// Avatar.showOwnVehicleHitDirection (fixed exposed6, 0x41): FLOAT32 yaw, BOOL.
-/// The yaw points back along the shell's horizontal flight (BigWorld yaw =
-/// atan2(x, z)); gravity is vertical, so launch velocity gives the impact
-/// heading without any shooter coordinate. Flash meaning of the yaw: INFERRED.
+/// #717 passes hitDirYaw unchanged to Aim.showHit → _DamageIndicator.setup →
+/// component.wg_globalYaw (VERIFIED avatar.pyc 1498, aims.pyc 372/853/935): a
+/// world (global) yaw, the hull/camera rotation is applied by the native
+/// component. The yaw is the shell's horizontal flight heading (BigWorld yaw =
+/// atan2(x, z)), i.e. the hit vector. Owner native 2026-10-29: the reverse
+/// heading drew the indicator on the opposite side. Gravity is vertical, so the
+/// launch velocity gives the impact heading without any shooter coordinate.
 pub fn hit_direction(velocity: [f32; 3], is_damage: bool) -> io::Result<Vec<u8>> {
     if !velocity.iter().all(|v| v.is_finite()) || velocity[0] == 0.0 && velocity[2] == 0.0 {
         return Err(bad("AV-01 hit direction"));
     }
-    let yaw = (-velocity[0]).atan2(-velocity[2]);
+    let yaw = velocity[0].atan2(velocity[2]);
     let mut b = vec![0x13, 0x41];
     b.extend(yaw.to_le_bytes()); b.push(u8::from(is_damage));
     Ok(b)
@@ -169,11 +173,23 @@ mod tests {
         assert_eq!(f(23), 0.0); assert!(f(27) < 0.0 && f(31) == 400.0); assert!((f(39) - 680.0).abs() < 1e-3);
         assert!(anonymous_tracer(&shot([10.0, 5.0, 50.0]), 2).unwrap().is_none());
     }
-    #[test] fn av01_hit_direction_points_back_along_flight() {
-        let b = hit_direction([0.0, -1.0, 400.0], true).unwrap();
-        assert_eq!(&b[..2], &[0x13, 0x41]); assert_eq!(b.len(), 7); assert_eq!(b[6], 1);
-        let yaw = f32::from_le_bytes(b[2..6].try_into().unwrap());
-        assert!((yaw.abs() - std::f32::consts::PI).abs() < 1e-5);
+    #[test] fn av01_hit_direction_is_shell_heading_for_each_side() {
+        use std::f32::consts::{FRAC_PI_2, PI};
+        let yaw = |v: [f32; 3]| { let b = hit_direction(v, true).unwrap();
+            assert_eq!(&b[..2], &[0x13, 0x41]); assert_eq!(b.len(), 7); assert_eq!(b[6], 1);
+            f32::from_le_bytes(b[2..6].try_into().unwrap()) };
+        // Target hull faces +z (yaw 0); the shooter stands on the named side.
+        // Front: shell flies -z → heading π (not 0, the reversed heading that
+        // the owner saw drawn behind the tank).
+        assert!((yaw([0.0, -1.0, -400.0]).abs() - PI).abs() < 1e-5);
+        // Rear: shell flies +z → heading 0.
+        assert!(yaw([0.0, -1.0, 400.0]).abs() < 1e-5);
+        // Right side (+x): shell flies -x → -π/2; left side (-x): +π/2.
+        assert!((yaw([-400.0, -1.0, 0.0]) + FRAC_PI_2).abs() < 1e-5);
+        assert!((yaw([400.0, -1.0, 0.0]) - FRAC_PI_2).abs() < 1e-5);
+        // Hull rotation does not enter: the yaw is global.
+        assert!((yaw([1.0, 0.0, 1.0]) - PI / 4.0).abs() < 1e-5);
+        assert_eq!(hit_direction([0.0, -1.0, 400.0], false).unwrap()[6], 0);
         assert!(hit_direction([0.0, -5.0, 0.0], false).is_err());
     }
     #[test] fn av01_shot_result_flags_select_original_voice_branches() {
