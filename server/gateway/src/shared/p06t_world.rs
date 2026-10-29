@@ -36,8 +36,8 @@ impl World {
         let after=i32::from(before).saturating_sub(i32::from(amount)).max(0)as i16;
         actor.health=after;let crew_after=actor.alive();
         if before!=after||crew_before!=crew_after {
-            self.damage_events.push(DamageRecord{sequence:self.damage_events.len()as u32+1,tick,attacker,target,shot,reason,
-                health_before:before,health_after:after,crew_before,crew_after,direct,pierced});
+            {let next_sequence=self.damage_events.len() as u32+1;self.damage_events.push(DamageRecord{sequence:next_sequence,tick,attacker,target,shot,reason,
+                health_before:before,health_after:after,crew_before,crew_after,direct,pierced});}
         }
         if !crew_after {actor.input=Input::STOP;actor.speed=0.;actor.aim.park();
             if let Some(state)=&mut actor.devices{state.freeze();}}

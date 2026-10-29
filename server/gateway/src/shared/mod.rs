@@ -10,6 +10,7 @@ pub(crate) mod visibility;
 pub(crate) mod spotting;
 pub(crate) mod step_profile;
 pub(crate) mod net01;
+pub(crate) mod journal;
 pub(crate) mod p07b_publication;
 pub(crate) mod interest_wire;
 pub(crate) mod ammo_detonation;

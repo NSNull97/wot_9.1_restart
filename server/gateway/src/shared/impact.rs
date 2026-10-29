@@ -359,7 +359,7 @@ pub struct Trace {
     vehicle: VehicleKind,
     roster: Option<usize>,
     actor_kinds: [Option<VehicleKind>;super::model::MAX_ACTORS],
-    events: Vec<Event>,
+    events: super::journal::Journal<Event>,
     terminal_shots: Vec<u32>,
     next_order: u32,
     last_tick: u32,
@@ -1693,7 +1693,7 @@ mod tests {
                 7=>changed.damage=15,
                 8=>{if let Event::TerrainContact{terrain_query_order,..}=trace.events.last_mut().unwrap(){*terrain_query_order+=1;}},
                 9=>{if let Some(Event::TerrainQuery{scene_version,..})=trace.events.iter_mut().find(|e|matches!(e,Event::TerrainQuery{..})){*scene_version=1;}},
-                10=>{let contact=trace.events.pop().unwrap();trace.events.resize(MAX_EVENTS-2,trace.events[0].clone());trace.events.push(contact);},
+                10=>{let contact=trace.events.pop().unwrap();{let filler=trace.events[0].clone();trace.events.resize(MAX_EVENTS-2,filler)};trace.events.push(contact);},
                 11=>trace.next_order=u32::MAX-1,_=>unreachable!(),
             }
             let before=trace.clone();assert!(trace.destructible_transition(123,1,1001,&changed).is_err(),"mode{mode}");assert_eq!(trace,before);
@@ -1831,7 +1831,7 @@ mod tests {
         for which in 0..3 {
             let mut trace=base.clone();
             let selected=if which==0 { tagged_plate("Hull","unknown",&ap_tag(1,1001)) } else { mesh.clone() };
-            if which==1 {let segment=trace.events.pop().unwrap(); trace.events.resize(MAX_EVENTS-6,trace.events[0].clone());trace.events.push(segment);}
+            if which==1 {let segment=trace.events.pop().unwrap(); {let filler=trace.events[0].clone();trace.events.resize(MAX_EVENTS-6,filler)};trace.events.push(segment);}
             if which==2 {trace.next_order=u32::MAX-5;}
             let before=trace.clone();
             assert!(trace.collision_query_world(123,1,1001,&selected,bundle.materials(),&ground).is_err()); assert_eq!(trace,before);
@@ -1840,7 +1840,7 @@ mod tests {
         for overflow in [false,true] {
             let mut trace=original.clone();
             if overflow {trace.next_order=u32::MAX-1;} else {
-                let material=trace.events.pop().unwrap(); trace.events.resize(MAX_EVENTS-2,trace.events[0].clone());trace.events.push(material);
+                let material=trace.events.pop().unwrap(); {let filler=trace.events[0].clone();trace.events.resize(MAX_EVENTS-2,filler)};trace.events.push(material);
             }
             let before=trace.clone(); assert!(trace.terrain_contact(123,1,1001).is_err()); assert_eq!(trace,before);
         }
@@ -1933,7 +1933,7 @@ mod tests {
     #[test] fn wreck_append_reserves_terminal_and_order_before_mutation() {
         let original=wreck_contact("Hull","armor_1",&ap_tag(1,1001));
         let mut trace=original.clone(); let material=trace.events.pop().unwrap();
-        trace.events.resize(MAX_EVENTS-2,trace.events[0].clone()); trace.events.push(material);
+        {let filler=trace.events[0].clone();trace.events.resize(MAX_EVENTS-2,filler)}; trace.events.push(material);
         let before=trace.clone();
         assert!(trace.wreck_impact(123,1,1001,0,1,0,0).is_err()); assert_eq!(trace,before);
         let mut trace=original; trace.next_order=u32::MAX-1; let before=trace.clone();
@@ -2040,7 +2040,7 @@ mod tests {
     #[test] fn ap_append_reserves_terminal_and_order_before_mutation() {
         let (original,resolution)=ap_contact("Hull","armor_1",&ap_tag(1,1001));
         let mut trace=original.clone(); let material=trace.events.pop().unwrap();
-        trace.events.resize(MAX_EVENTS-2,trace.events[0].clone());trace.events.push(material);
+        {let filler=trace.events[0].clone();trace.events.resize(MAX_EVENTS-2,filler)};trace.events.push(material);
         let before=trace.clone();
         assert!(trace.ap_resolution(123,1,1001,0,1,&resolution,90,60).is_err());assert_eq!(trace,before);
         let mut trace=original;trace.next_order=u32::MAX-1;let before=trace.clone();
@@ -2183,7 +2183,7 @@ mod tests {
         original.segment(123, 1, 1001, 1000, [-1.0, 0.0, 0.0], [3.0, 0.0, 0.0]).unwrap();
         let mut trace = original.clone();
         let segment = trace.events.pop().unwrap();
-        trace.events.resize(MAX_EVENTS - 6, trace.events[0].clone());
+        {let filler=trace.events[0].clone();trace.events.resize(MAX_EVENTS - 6,filler)};
         trace.events.push(segment); // Five free rows: batch+terminal fit, AP outcome would not.
         let before = trace.clone();
         assert!(trace.collision_query_classified(123, 1, 1001, &mesh, bundle.materials()).is_err());
@@ -2310,7 +2310,7 @@ mod tests {
         // Public admission/segment limits prevent a valid trace exceeding the
         // full-ammo budget tested separately below.
         let segment = trace.events.pop().unwrap();
-        trace.events.resize(MAX_EVENTS - 3, trace.events[0].clone());
+        {let filler=trace.events[0].clone();trace.events.resize(MAX_EVENTS - 3,filler)};
         trace.events.push(segment);
         let before = trace.clone();
         assert!(trace.collision_query(123, 1, 1001, &mesh).is_err());

@@ -192,7 +192,7 @@ pub struct World {
     pub started: Option<Instant>,
     last: Instant,
     pub tick: u32,
-    pub shots: Vec<Shot>,
+    pub shots: super::journal::Journal<Shot>,
     pub projectiles: Vec<Projectile>,
     pub impact: impact::Trace,
     /// Enabled only by the profile13 battle service; legacy laboratory tests
@@ -211,20 +211,20 @@ pub struct World {
     /// SPAWN-15: place teams on `team_spawn` formations instead of LAB lanes.
     team_base_spawn:bool,
     lab_loadouts:[Option<extended::LabLoadout>;MAX_ACTORS],
-    pub damage_events:Vec<DamageRecord>,
-    pub device_events:Vec<(usize,crate::p06t_device_state::Transition)>,
+    pub damage_events:super::journal::Journal<DamageRecord>,
+    pub device_events:super::journal::Journal<(usize,crate::p06t_device_state::Transition)>,
     rng_state:u64,
-    pub rng_draws:Vec<(u32,usize,u8,u64)>,
+    pub rng_draws:super::journal::Journal<(u32,usize,u8,u64)>,
     geometry: Option<Arc<geometry::Bundle>>,
     geometries: [Option<Arc<geometry::Bundle>>; 7],
     /// BATTLE-ANY: bundles of generated kinds bound to this mixed template.
     generated_geometries: std::collections::BTreeMap<usize,Arc<geometry::Bundle>>,
-    pub contacts: Vec<Contact>,
+    pub contacts: super::journal::Journal<Contact>,
     ap_test_lab: bool,
-    pub impacts: Vec<AppliedImpact>,
+    pub impacts: super::journal::Journal<AppliedImpact>,
     terrain: Option<Arc<terrain::Terrain>>,
-    pub terrain_contacts: Vec<TerrainContact>,
-    pub ram_damage_events: Vec<RamDamageRecord>,
+    pub terrain_contacts: super::journal::Journal<TerrainContact>,
+    pub ram_damage_events: super::journal::Journal<RamDamageRecord>,
     active_ram_pairs: std::collections::BTreeSet<(usize,usize)>,
     destructible: Option<destructible::State>,
     pub fragiles: Option<fragiles::State>,
@@ -462,13 +462,13 @@ impl World {
     pub fn new_for_vehicle(id: u64, now: Instant, map: crate::map_profile091::MapId, kind: VehicleKind) -> io::Result<Self> {
         if id == 0 { return Err(bad()); }
         Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,team_plan:None,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
-            shots: Vec::new(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
+            shots: Vec::new().into(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
             mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,
             extended_lab:false,owner_hold:false,team_base_spawn:false,lab_loadouts:[None;MAX_ACTORS],
-            damage_events:Vec::new(),device_events:Vec::new(),rng_state:id,rng_draws:Vec::new(),
+            damage_events:Vec::new().into(),device_events:Vec::new().into(),rng_state:id,rng_draws:Vec::new().into(),
             result_spots:None,result_spot_tick:None,original_spotting:None,
-            geometry: None,geometries:std::array::from_fn(|_|None),generated_geometries:std::collections::BTreeMap::new(),contacts: Vec::new(), ap_test_lab: false, impacts: Vec::new(),
-            terrain: None, terrain_contacts: Vec::new(), ram_damage_events:Vec::new(), active_ram_pairs:std::collections::BTreeSet::new(), destructible: None,fragiles:None,
+            geometry: None,geometries:std::array::from_fn(|_|None),generated_geometries:std::collections::BTreeMap::new(),contacts: Vec::new().into(), ap_test_lab: false, impacts: Vec::new().into(),
+            terrain: None, terrain_contacts: Vec::new().into(), ram_damage_events:Vec::new().into(), active_ram_pairs:std::collections::BTreeSet::new(), destructible: None,fragiles:None,
             contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS],bots:None })
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
@@ -1777,7 +1777,7 @@ pub(super) mod tests {
         assert!((w.projectiles[0].terminal[2]-p.terminal[2]).abs()<1.);
         assert_eq!(w.actors[1].health,90);
         let mut fail=terrain_world(now,3.);
-        fail.terrain_contacts=vec![w.terrain_contacts[0].clone();MAX_SHOTS];
+        fail.terrain_contacts=vec![w.terrain_contacts[0].clone();MAX_SHOTS].into();
         fail.apply(0,1,&[Command::Fire(fire::Command::Shoot)],now).unwrap();
         let before=(fail.actors.clone(),fail.projectiles.clone(),fail.impact.clone(),fail.tick,fail.last,fail.terrain_contacts.clone());
         assert!(fail.advance(now+STEP).is_err());
@@ -1853,7 +1853,7 @@ pub(super) mod tests {
             if invalid_material {
                 invalid.geometry = Some(Arc::new(super::super::geometry::tests::invalid_material_bundle()));
             } else {
-                invalid.impacts.resize(MAX_SHOTS,invalid.impacts[0].clone());
+                {let filler=invalid.impacts[0].clone();invalid.impacts.resize(MAX_SHOTS,filler)};
             }
             let before = invalid.clone(); assert!(invalid.advance(at+STEP).is_err());
             assert_eq!(invalid.actors,before.actors); assert_eq!(invalid.impacts,before.impacts);
@@ -2035,7 +2035,7 @@ pub(super) mod tests {
         w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap();
         assert_eq!(w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap(), vec![fire::Outcome::RejectedReload]);
         assert_eq!(w.apply(1, 2, &[Command::Fire(fire::Command::Shoot)], now).unwrap(), vec![fire::Outcome::AcceptedShot { ammo_remaining: 19 }]);
-        assert_eq!(w.shots, vec![Shot { sequence:1,slot:0,tick:1000 }, Shot { sequence:2,slot:1,tick:1000 }]);
+        assert_eq!(w.shots, vec![Shot { sequence:1,slot:0,tick:1000 }, Shot { sequence:2,slot:1,tick:1000 }].into());
     }
     #[test] fn same_tick_and_staggered_two_actor_launches_keep_trace_order() {
         let now = Instant::now(); let mut w = world(now);

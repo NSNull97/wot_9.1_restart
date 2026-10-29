@@ -237,6 +237,12 @@ impl World {
         *self = next;
         Ok(count)
     }
+    /// NET-01 bench stand-in for an owned native place in a mixed-ammo battle
+    /// (the same seat as the bots_tests native place); test builds only.
+    #[cfg(test)]
+    pub(crate) fn attach_native_stand_in(&mut self, identity: Identity, session: u32, kind: VehicleKind) -> io::Result<usize> {
+        self.attach_bot_actor(identity, session, kind)
+    }
     /// The player's attach path with a server-chosen stock LAB loadout; no
     /// owned receipt, inventory or reservation is created or implied.
     fn attach_bot_actor(&mut self, identity: Identity, session: u32, kind: VehicleKind) -> io::Result<usize> {

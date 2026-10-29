@@ -19,7 +19,7 @@ struct ClientModel {
 impl ClientModel {
     /// Low tick byte of tickSync relative to the server tick at send (wraps every 256).
     fn unwrap_tick(low:u8,server:u32)->u32 {let base=server&!0xff;let t=base|u32::from(low);if t>server {t-256} else {t}}
-    fn frame(&mut self,s:&mut Session,now:Instant,server_tick:u32)->io::Result<()> {
+    fn frame(&mut self,s:&mut Session,world:&World,now:Instant,server_tick:u32)->io::Result<()> {
         if let Some(until)=self.stall_until {if now<until {return Ok(());} self.stall_until=None;}
         if let Some(every)=self.stall_every {
             if now.duration_since(self.last_stall)>=every {self.last_stall=now;self.stall_until=Some(now+self.stall);return Ok(());}
@@ -57,7 +57,8 @@ impl ClientModel {
         // The client ACKs on its own unreliable channel packet (0x0448, P02).
         let ack=transport091::Frame{flags:0x448,sequence:Some(self.unreliable_seq),cumulative:Some(self.expected),
             selective:vec![],body:vec![],piggybacks:vec![]};
-        self.unreliable_seq+=1;s.receive(&ack,now)?;Ok(())
+        // Through the gateway's receive path (staged Session clone + refresh).
+        self.unreliable_seq+=1;receive_battle_session(s,&ack,world,now)?;Ok(())
     }
 }
 
@@ -71,6 +72,8 @@ fn net01_bench_pose_delivery(){
         Some(m)=>PoseDelivery::parse(Some(m)).expect("NET01_BENCH_MODE")};
     let seconds:u64=env("BOT01_BENCH_SECONDS").map_or(90,|v|v.parse().unwrap());
     let seed:u64=env("BOT01_BENCH_SEED").map_or(1,|v|v.parse().unwrap());
+    // As on stand -11: p06t mixed ammunition and ammo-rack detonation.
+    let mixed=env("NET01_BENCH_MIXED").as_deref()==Some("1");
     let client_frame=Duration::from_millis(env("NET01_BENCH_CLIENT_FRAME_MS").map_or(33,|v|v.parse().unwrap()));
     let stall_every=env("NET01_BENCH_STALL_EVERY_S").map(|v|Duration::from_secs(v.parse().unwrap()));
     let stall=Duration::from_millis(env("NET01_BENCH_STALL_MS").map_or(0,|v|v.parse().unwrap()));
@@ -82,11 +85,13 @@ fn net01_bench_pose_delivery(){
     let mut template=BattleTemplate::from_shared_policy(&resources,size,id,now,None,false).unwrap();
     template.world.enable_original_spotting(super::super::spotting::Rules::selected().unwrap()).unwrap();
     template.world.enable_result_spots().unwrap();template.world.enable_team_base_spawn().unwrap();
+    if mixed {template.world.enable_mixed_ammo().unwrap();template.world.enable_ammo_detonation().unwrap();}
     template.world.enable_bots(model::bots::Plan{human_places:humans,seed,kinds:kinds.clone()}).unwrap();
     let mut a=arena::Arena::from_template(0,&template,id,now).unwrap();
     let kind=VehicleKind::Ms1;
     let(mut owner,loadout)=model::tests::profile13_loadout(kind,0,kind.ammo_limit());owner.name="bench-native-0".into();
-    assert_eq!(a.world.attach_owned(owner,1,&loadout).unwrap(),0);
+    if mixed {assert_eq!(a.world.attach_native_stand_in(owner,1,kind).unwrap(),0);}
+    else {assert_eq!(a.world.attach_owned(owner,1,&loadout).unwrap(),0);}
     let startup=Instant::now();assert_eq!(a.world.fill_bots().unwrap(),size-humans);
     let mut first=true;
     while !a.native_ready() {
@@ -115,10 +120,9 @@ fn net01_bench_pose_delivery(){
         if let arena::Event::Failed{stage,error}=event {failure=Some(format!("{stage}: {error}"));break;}
         let battle=a.world.lifecycle.as_ref().is_some_and(|l|l.allows_actions());
         if battle {battle_from_tick.get_or_insert(a.world.tick);}
-        // The bench world is not mixed-ammo (the stand is): its legacy HP path
-        // needs an AP impact per HP change and rams lack one, so HP bodies are
-        // left out here. Poses, shots, tracers and impacts are published.
-        {let c=s.shared.as_mut().unwrap();for (i,x) in a.world.actors.iter().enumerate(){c.health_sent[i]=Some(x.health);}c.owner_health_sent=Some(a.world.actors[0].health);}
+        // Without mixed ammo the legacy HP path needs an AP impact per HP change
+        // and rams lack one, so HP bodies are left out there. Mixed: published.
+        if !mixed {let c=s.shared.as_mut().unwrap();for (i,x) in a.world.actors.iter().enumerate(){c.health_sent[i]=Some(x.health);}c.owner_health_sent=Some(a.world.actors[0].health);}
         let pt=Instant::now();
         let (native_ready,blocked)=(a.native_ready(),a.blocked());
         if let Err(error)=poll_battle_session(&mut s,&mut a.world,pt,native_ready,blocked) {failure=Some(format!("poll: {error}"));break;}
@@ -134,7 +138,7 @@ fn net01_bench_pose_delivery(){
         }
         let publish=pt.elapsed();
         if let Some(c)=s.shared.as_mut() {c.view=Some(a.world.clone());}
-        if let Err(error)=client.frame(&mut s,Instant::now(),a.world.tick) {failure=Some(format!("client ack: {error}"));break;}
+        if let Err(error)=client.frame(&mut s,&a.world,Instant::now(),a.world.tick) {failure=Some(format!("client ack: {error}"));break;}
         let end=Instant::now();stats.record(loop_start,step,publish,&[Some(a.world.tick)],end);
         if let Some(line)=stats.take_report(end) {
             let w=std::mem::take(&mut s.tx.stats);let p=s.shared.as_mut().unwrap().take_pose_stats();
@@ -146,6 +150,14 @@ fn net01_bench_pose_delivery(){
         thread::sleep(Duration::from_millis(5));
     }
     {let w=std::mem::take(&mut s.tx.stats);merge(&mut window,&w);let p=s.shared.as_mut().unwrap().take_pose_stats();add(&mut pose_totals,&p);}
+    // What one clone costs at the end of the battle, and what makes it big.
+    let clone_ms=|f:&dyn Fn()|{let t=Instant::now();for _ in 0..50 {f();}t.elapsed().as_secs_f64()*1000./50.};
+    let world_clone_ms=clone_ms(&||{std::hint::black_box(a.world.clone());});
+    let session_clone_ms=clone_ms(&||{std::hint::black_box(s.clone());});
+    let w=&a.world;
+    let sizes=serde_json::json!({"shots":w.shots.len(),"projectiles":w.projectiles.len(),"impacts":w.impacts.len(),"contacts":w.contacts.len(),
+        "terrain_contacts":w.terrain_contacts.len(),"damage_events":w.damage_events.len(),"device_events":w.device_events.len(),
+        "rng_draws":w.rng_draws.len(),"ram_damage_events":w.ram_damage_events.len(),"impact_trace":w.impact.events().len()});
     let from=battle_from_tick.unwrap_or(start_tick);
     let ticks:Vec<u32>=client.pose_ticks.iter().copied().filter(|t|*t>=from).collect();
     let gaps:Vec<f64>=ticks.windows(2).map(|w|f64::from(w[1]-w[0])).collect();
@@ -162,7 +174,8 @@ fn net01_bench_pose_delivery(){
         "server":{"ack_wait":window.ack_wait.summary(),"queue_wait":window.queue_wait.summary(),"pending_max":window.pending_max,"resends":window.resends,
             "pose_publications":pose_totals.published,"pose_gap_max_ticks":pose_totals.gap_max,"pose_gaps_over_1":pose_totals.gaps_over_one,
             "pose_replaced_unsent":pose_totals.replaced_unsent,"frames_reliable":frames_sent.0,"frames_unreliable":frames_sent.1,"bytes":frames_sent.2},
-        "reports":reports,"failure":failure,
+        "reports":reports,"failure":failure,"mixed_ammo":mixed,
+        "end_of_battle":{"world_clone_ms":world_clone_ms,"session_clone_ms":session_clone_ms,"journal_lengths":sizes},
         "behaviour":{"bot_shots":a.world.bot_shots(),"shots_total":a.world.shots.len(),"vehicles_dead":a.world.actors.iter().filter(|x|!x.alive()).count()},
     });
     if let Some(parent)=out.parent(){fs::create_dir_all(parent).unwrap();}
