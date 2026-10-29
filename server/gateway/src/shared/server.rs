@@ -3414,11 +3414,11 @@ mod tests {
         assert_eq!(b.shared.as_ref().unwrap().commands.len(),1,"records after skipped methods still apply");
         assert_eq!(wire::unimplemented_detail(&var2(0x9c,&settings)),"request=227 command=1600");
         assert_eq!(wire::unimplemented_detail(&var2(0xa1,&feature)),"feature=server_marker");
-        // An ID outside the table: earlier records apply, the rest is dropped,
-        // the sequence is consumed and later keepalives are accepted.
+        // An ID outside the table: the whole envelope is dropped unapplied, the
+        // sequence is consumed and later keepalives are accepted.
         let unknown=[aim.clone(),vec![0x7f,1,2,3],aim.clone()].concat();
         let before=b.rx; b.receive(&frame(&b,&unknown),now).unwrap(); assert_eq!(b.rx,before+1);
-        assert_eq!(b.shared.as_ref().unwrap().commands.len(),2);
+        assert_eq!(b.shared.as_ref().unwrap().commands.len(),1);
         b.receive(&frame(&b,&[]),now).unwrap(); assert_eq!(b.rx,before+2);
         // A truncated framed record is still malformed and fails closed.
         let mut short=var2(0x9c,&settings); short.truncate(short.len()-1);
@@ -3635,9 +3635,13 @@ mod tests {
         assert!(s.shared.as_ref().unwrap().commands.is_empty()); assert!(s.received.is_empty());
         let mut f = frame(&s,&[0x88,0,0]); f.body[1]^=1;
         assert!(s.receive(&f,now).is_err()); assert_eq!(s.rx,1);
-        let mut parent = frame(&s,&[0xff]); parent.sequence=Some(2);
+        let mut parent = frame(&s,&[0x88,1,0]); parent.sequence=Some(2);
         parent.piggybacks.push(frame(&s,&[0x88,0,0]));
         assert!(s.receive(&parent,now).is_err()); assert_eq!(s.rx,1);
+        assert!(s.shared.as_ref().unwrap().commands.is_empty());
+        // INPUT-01: an unframed ID is not a reject: the envelope is dropped
+        // unapplied and its sequence consumed.
+        s.receive(&frame(&s,&[0x88,0,0,0xff]),now).unwrap(); assert_eq!(s.rx,2);
         assert!(s.shared.as_ref().unwrap().commands.is_empty());
     }
     #[test] fn reliable_shot_duplicate_consumes_once_and_cannot_move_the_other_actor() {
