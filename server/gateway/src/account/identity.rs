@@ -259,6 +259,8 @@ pub struct Config {
     pub bots:Option<crate::gateway091::shared::model::bots::Plan>,
     /// MM-01: "В бой" queues; rules match players into arenas (absent: fixed roster, old path).
     pub matchmaker:Option<crate::gateway091::shared::matchmaker::Rules>,
+    /// NET-01: `pose_delivery` (absent: reliable poses, one reliable body per loop — the old path).
+    pub pose_delivery:crate::gateway091::shared::net01::PoseDelivery,
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
@@ -428,6 +430,15 @@ impl Config {
         if matchmaker.is_some()&&(bots.is_none()||!p04m_pool){
             return Err(invalid("matchmaker requires bots (timeout fill) and the P04M pool (vehicle tiers)"));
         }
+        let pose_delivery=match value.remove("pose_delivery"){
+            None=>crate::gateway091::shared::net01::PoseDelivery::Reliable,
+            Some(Value::String(mode))=>crate::gateway091::shared::net01::PoseDelivery::parse(Some(&mode))
+                .ok_or_else(||invalid("pose_delivery must be reliable-burst-v1 or latest-unreliable-v1"))?,
+            _=>return Err(invalid("pose_delivery must be a string")),
+        };
+        if pose_delivery==crate::gateway091::shared::net01::PoseDelivery::LatestUnreliable&&!visibility_v1{
+            return Err(invalid("latest-unreliable poses require visibility_v1"));
+        }
         // CAT-01: exact {"version":1,"sha256":<this build's catalog>}; a foreign hash refuses start.
         let catalog_v1=match value.remove("catalog"){
             None=>false,
@@ -464,7 +475,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -1094,6 +1105,28 @@ mod tests {
         assert!(!service_reply(&serde_json::to_vec(&rejected).unwrap(),&profile,"p04d_test_226",6,1,"recruited").unwrap().serviced);
         rejected["replayed"]=true.into();
         assert!(service_reply(&serde_json::to_vec(&rejected).unwrap(),&profile,"p04d_test_226",6,1,"recruited").is_err());
+    }
+
+    #[test] fn net01_pose_delivery_key_is_exact_and_unreliable_needs_visibility() {
+        use crate::gateway091::shared::net01::PoseDelivery;
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("net01-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let base=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        assert_eq!(load(&base).unwrap().pose_delivery,PoseDelivery::Reliable);
+        let mut burst=base.clone();burst["pose_delivery"]="reliable-burst-v1".into();
+        assert_eq!(load(&burst).unwrap().pose_delivery,PoseDelivery::ReliableBurst);
+        for bad in [Value::from("reliable"),Value::from("latest-unreliable-v2"),Value::from(true),Value::Null] {
+            let mut wrong=base.clone();wrong["pose_delivery"]=bad.clone();assert!(load(&wrong).is_err(),"{bad}");
+        }
+        let mut latest=base.clone();latest["pose_delivery"]="latest-unreliable-v1".into();assert!(load(&latest).is_err());
+        for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
+            "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle","visibility_v1"]{latest[field]=true.into();}
+        latest["battle_players"]=6.into();
+        assert_eq!(load(&latest).unwrap().pose_delivery,PoseDelivery::LatestUnreliable);
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test] fn p07b_configuration_visibility_requires_an_explicit_boolean_and_profile13() {

@@ -47,22 +47,63 @@ fn parse_inner(clear:&[u8],depth:usize,budget:&mut usize,rx_limit:u32,tx_limit:u
     Ok(Frame {flags,sequence,cumulative,selective,body:clear[2..end].to_vec(),piggybacks})
 }
 pub fn ack(next:u32)->Vec<u8> {let mut b=vec![8,4];b.extend(next.to_le_bytes());b}
+/// NET-01: channel packet without the reliable bit and without a sequence
+/// number, the same 0x0408 form as `ack` (accepted by #717 for hours), with
+/// application messages in the body. Volatile poses only: a lost one is never
+/// resent; the next tick carries a fresh pose.
+pub fn unreliable(next:u32,body:&[u8])->io::Result<Vec<u8>> {
+    if body.is_empty() || body.len()>512 {return Err(invalid());}
+    let mut b=vec![8,4];b.extend_from_slice(body);b.extend(next.to_le_bytes());Ok(b)
+}
+
+/// NET-01 diagnostics: fixed log-scale buckets (ms upper bounds), exact max.
+#[derive(Clone,Copy,Debug,Default,PartialEq)]
+pub struct Histogram {buckets:[u32;15],count:u32,sum_ms:f64,max_ms:f64}
+const BOUNDS_MS:[f64;14]=[1.,2.,5.,10.,20.,50.,100.,200.,500.,1000.,2000.,5000.,10000.,30000.];
+impl Histogram {
+    pub fn record(&mut self,value:Duration) {self.record_ms(value.as_secs_f64()*1000.);}
+    pub fn record_ms(&mut self,ms:f64) {
+        let i=BOUNDS_MS.iter().position(|b|ms<=*b).unwrap_or(BOUNDS_MS.len());
+        self.buckets[i]=self.buckets[i].saturating_add(1);self.count=self.count.saturating_add(1);
+        self.sum_ms+=ms;self.max_ms=self.max_ms.max(ms);
+    }
+    pub fn count(&self)->u32 {self.count}
+    pub fn max_ms(&self)->f64 {self.max_ms}
+    /// Upper bound of the bucket holding quantile `q`, never above the exact max.
+    pub fn quantile_ms(&self,q:f64)->f64 {
+        if self.count==0 {return 0.;}
+        let rank=((self.count as f64)*q).ceil().max(1.) as u32;let mut seen=0;
+        for (i,n) in self.buckets.iter().enumerate() {
+            seen+=n;if seen>=rank {return BOUNDS_MS.get(i).copied().unwrap_or(self.max_ms).min(self.max_ms);}
+        }
+        self.max_ms
+    }
+    pub fn summary(&self)->String {
+        format!("n={} mean={:.1} p50<={} p95<={} p99<={} max={:.1}",self.count,
+            if self.count==0 {0.} else {self.sum_ms/self.count as f64},
+            self.quantile_ms(0.5),self.quantile_ms(0.95),self.quantile_ms(0.99),self.max_ms)
+    }
+}
+/// NET-01: what the reliable window waited on since the last report.
+#[derive(Clone,Copy,Debug,Default,PartialEq)]
+pub struct WindowStats {pub ack_wait:Histogram,pub queue_wait:Histogram,pub pending_max:usize,pub resends:u32}
 pub fn reliable(sequence:u32,next:u32)->Vec<u8> {let mut b=vec![0x58,4];b.extend(sequence.to_le_bytes());b.extend(next.to_le_bytes());b}
 
 #[derive(Clone)]
-struct Pending {sequence:u32,first:Option<Instant>,last:Option<Instant>,attempts:u8,body:Vec<u8>}
+struct Pending {sequence:u32,queued:Instant,sent_wall:Option<Instant>,first:Option<Instant>,last:Option<Instant>,attempts:u8,body:Vec<u8>}
 #[derive(Clone)]
-pub struct Window {pending:VecDeque<Pending>,next:u32,sent_prefix:u32,limit:u32,unacked:Option<Duration>,pub cumulative:u32}
+pub struct Window {pending:VecDeque<Pending>,next:u32,sent_prefix:u32,limit:u32,unacked:Option<Duration>,pub cumulative:u32,pub stats:WindowStats}
 impl Window {
     pub fn new()->Self {Self::bounded(MAX_SEQUENCE)}
     pub fn interactive()->Self {Self {unacked:Some(INTERACTIVE_LIVENESS),..Self::bounded(INTERACTIVE_MAX_SEQUENCE)}}
-    fn bounded(limit:u32)->Self {Self {pending:VecDeque::new(),next:0,sent_prefix:0,limit,unacked:None,cumulative:0}}
+    fn bounded(limit:u32)->Self {Self {pending:VecDeque::new(),next:0,sent_prefix:0,limit,unacked:None,cumulative:0,stats:WindowStats::default()}}
     pub fn enqueue(&mut self)->io::Result<()> {
         self.enqueue_body(&[])
     }
     pub fn enqueue_body(&mut self,body:&[u8])->io::Result<()> {
         if body.len()>512 || self.pending.len()>=8 || self.next>=self.limit {return Err(invalid());}
-        self.pending.push_back(Pending {sequence:self.next,first:None,last:None,attempts:0,body:body.to_vec()});self.next+=1;Ok(())
+        self.pending.push_back(Pending {sequence:self.next,queued:Instant::now(),sent_wall:None,first:None,last:None,attempts:0,body:body.to_vec()});self.next+=1;
+        self.stats.pending_max=self.stats.pending_max.max(self.pending.len());Ok(())
     }
     // Return the sequence only after the existing atomic enqueue succeeds.
     // This adds no ACK policy, wraparound or alternative queue implementation.
@@ -82,7 +123,13 @@ impl Window {
     pub fn acknowledge(&mut self,frame:&Frame)->io::Result<()> {
         self.validate_ack(frame)?;
         if let Some(c)=frame.cumulative {self.cumulative=self.cumulative.max(c);}
-        self.pending.retain(|p|p.sequence>=self.cumulative && !frame.selective.contains(&p.sequence));Ok(())
+        // Diagnostics read the wall clock; protocol decisions never do.
+        let wall=Instant::now();let stats=&mut self.stats;let cumulative=self.cumulative;
+        self.pending.retain(|p|{
+            let keep=p.sequence>=cumulative && !frame.selective.contains(&p.sequence);
+            if !keep {if let Some(sent)=p.sent_wall {stats.ack_wait.record(wall.saturating_duration_since(sent));}}
+            keep
+        });Ok(())
     }
     pub fn due(&mut self,now:Instant,next_rx:u32)->io::Result<Option<(u32,u8,Vec<u8>)>> {
         if let Some(p)=self.pending.iter_mut().find(|p|p.last.is_none_or(|t|now.duration_since(t)>=RETRY)) {
@@ -98,7 +145,9 @@ impl Window {
             if p.last.is_none() {
                 if p.sequence!=self.sent_prefix {return Err(invalid());}
                 self.sent_prefix+=1;p.first=Some(now);
-            }
+                let wall=Instant::now();p.sent_wall=Some(wall);
+                self.stats.queue_wait.record(wall.saturating_duration_since(p.queued));
+            } else {self.stats.resends=self.stats.resends.saturating_add(1);}
             p.attempts=p.attempts.saturating_add(1);p.last=Some(now);
             let mut clear=reliable(p.sequence,next_rx);clear.splice(2..2,p.body.iter().copied());
             return Ok(Some((p.sequence,p.attempts,clear)));
@@ -210,6 +259,25 @@ mod tests {
         assert_eq!(w.enqueue_body_tracked(&[42]).unwrap(),8);
         assert!(w.acknowledge(&feedback(9,None)).is_err()); // queued is not sent
         let sent=w.due(now,1).unwrap().unwrap();assert_eq!(sent.0,8);assert_eq!(parse(&sent.2).unwrap().body,vec![42]);
+    }
+    #[test] fn net01_unreliable_frame_is_0408_with_body_and_ack_but_no_sequence() {
+        let clear=unreliable(7,&[0x0d,0xe9,0x15]).unwrap();assert_eq!(clear,vec![8,4,0x0d,0xe9,0x15,7,0,0,0]);
+        let f=parse_interactive(&clear).unwrap();
+        assert_eq!((f.flags,f.sequence,f.cumulative,f.body.as_slice()),(0x408,None,Some(7),&[0x0d,0xe9,0x15][..]));
+        assert!(unreliable(7,&[]).is_err());assert!(unreliable(7,&vec![0;513]).is_err());
+        assert_eq!(unreliable(7,&vec![1;512]).unwrap().len(),518);
+    }
+    #[test] fn net01_window_stats_measure_queue_ack_resend_and_pending() {
+        let now=Instant::now();let mut w=Window::interactive();
+        for _ in 0..3 {w.enqueue().unwrap();}assert_eq!(w.stats.pending_max,3);
+        while w.due(now,1).unwrap().is_some() {}
+        assert_eq!(w.stats.queue_wait.count(),3);assert_eq!(w.stats.resends,0);
+        assert!(w.due(now+RETRY,1).unwrap().is_some());assert_eq!(w.stats.resends,1);
+        w.acknowledge(&feedback(2,None)).unwrap();assert_eq!(w.stats.ack_wait.count(),2);
+        let mut h=Histogram::default();for ms in [0.5,3.,40.,40.,900.] {h.record_ms(ms);}
+        assert_eq!((h.quantile_ms(0.2),h.quantile_ms(0.5),h.quantile_ms(0.8),h.quantile_ms(1.)),(1.,50.,50.,900.));
+        assert_eq!(h.summary(),"n=5 mean=196.7 p50<=50 p95<=900 p99<=900 max=900.0");
+        assert_eq!(Histogram::default().summary(),"n=0 mean=0.0 p50<=0 p95<=0 p99<=0 max=0.0");
     }
     #[test] fn tracked_sequence_limit_fails_closed_without_reusing_or_wrapping() {
         let now=Instant::now();let mut w=Window::new();

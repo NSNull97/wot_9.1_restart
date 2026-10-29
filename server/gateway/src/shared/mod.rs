@@ -9,6 +9,7 @@ mod spawn15_wire_tests;
 pub(crate) mod visibility;
 pub(crate) mod spotting;
 pub(crate) mod step_profile;
+pub(crate) mod net01;
 pub(crate) mod p07b_publication;
 pub(crate) mod interest_wire;
 pub(crate) mod ammo_detonation;
@@ -105,6 +106,11 @@ pub(super) struct Client {
     private_pending: VecDeque<PrivatePending>,
     turrets: turret_publication::State,
     last_pose_tick: Option<u32>,
+    /// NET-01: gateway.json `pose_delivery` (kept across battles, like spotting).
+    pose_delivery: net01::PoseDelivery,
+    /// NET-01 latest-unreliable: bodies of the newest tick's pose not sent yet.
+    poses_out: Vec<Vec<u8>>,
+    pose_stats: net01::PoseStats,
     binding: Option<(u32, bool)>,
     area_creation: Option<(u32, bool)>,
     pending_area_scene: bool,
@@ -153,6 +159,7 @@ impl Client {
         Self { slot, phase: Phase::Account, view: None, contained_world: None, announcement: None, announcement_parts: Vec::new(), announced_areas: 0, creations: [None; model::MAX_ACTORS],
             creation_announcements: [None; model::MAX_ACTORS], spotting_enabled: false, interest: None,
             private_pending: VecDeque::new(), turrets:turret_publication::State::new(), last_pose_tick: None,
+            pose_delivery: net01::PoseDelivery::Reliable, poses_out: Vec::new(), pose_stats: net01::PoseStats::default(),
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:[None;model::MAX_ACTORS],armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
             tracer_stopped: [false; model::MAX_BATTLE_SHOTS], return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
@@ -165,7 +172,9 @@ impl Client {
         let profile13 = self.profile13.take();
         let return_source_revision = self.return_source_revision;
         let spotting_enabled = self.spotting_enabled;
+        let pose_delivery = self.pose_delivery;
         *self = Self::new(slot);
+        self.pose_delivery = pose_delivery;
         self.return_generation = generation;
         self.queue_announced = queue_announced;
         self.profile13 = profile13;
@@ -226,6 +235,17 @@ impl Client {
                 && self.creation_announcements[slot] == book.announcement_sequence(slot))
         })
     }
+    pub(super) fn set_pose_delivery(&mut self, mode: net01::PoseDelivery) -> io::Result<()> {
+        // Like spotting: chosen before a battle; unreliable poses need the AoI book.
+        if self.phase!=Phase::Account || mode==net01::PoseDelivery::LatestUnreliable && !self.spotting_enabled { return Err(bad()); }
+        self.pose_delivery=mode;Ok(())
+    }
+    pub(super) fn pose_delivery(&self) -> net01::PoseDelivery { self.pose_delivery }
+    /// Bodies of the newest unsent pose; empty unless latest-unreliable.
+    pub(super) fn take_poses(&mut self) -> Vec<Vec<u8>> { std::mem::take(&mut self.poses_out) }
+    pub(super) fn take_pose_stats(&mut self) -> net01::PoseStats { std::mem::take(&mut self.pose_stats) }
+    pub(super) fn record_pose_packet(&mut self, bytes: usize) { self.pose_stats.packets+=1; self.pose_stats.bytes+=bytes as u64; }
+    pub(super) fn in_battle(&self) -> bool { matches!(self.phase, Phase::Driving | Phase::Leaving) }
     pub(super) fn enable_spotting(&mut self) -> io::Result<()> {
         // Enable only before a battle; replacing a live book would unpair AoI.
         if self.phase!=Phase::Account || self.creations.iter().any(Option::is_some) { return Err(bad()); }
