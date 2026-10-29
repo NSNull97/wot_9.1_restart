@@ -104,3 +104,30 @@ fn pose_frames(frames:&[Vec<u8>])->Vec<transport091::Frame> {
     plain.set_pose_delivery(PoseDelivery::ReliableBurst).unwrap();
     plain.phase=Phase::Driving;assert!(plain.set_pose_delivery(PoseDelivery::Reliable).is_err());
 }
+
+#[test] fn net01_burst_v2_holds_the_pose_aside_and_paces_one_reliable_part_per_loop() {
+    let now=Instant::now();let mut w=world(now);let mut s=spotted(now,&w,PoseDelivery::ReliableBurstV2);
+    settle(&mut s,&mut w,now);
+    s.shared.as_mut().unwrap().take_pose_stats();
+    for _ in 0..2 {s.tx.enqueue_body(&[0x13,1]).unwrap();}
+    w.tick+=1;poll(&mut s,&mut w,now).unwrap();
+    let pose=wire::publication(&w,[true,true]).unwrap();
+    assert_eq!((s.tx.len(),s.shared.as_ref().unwrap().poses_out.clone()),(2,vec![pose.clone()]));
+    let frames=transmit(&mut s,now).unwrap().unwrap();assert_eq!(frames.len(),3,"both queued bodies, then the pose part");
+    let sent=transport091::parse_interactive(&frames[2]).unwrap();assert!(sent.flags&0x10!=0);assert_eq!(sent.body,pose);
+    // Three parts of one tick: one per loop; a newer tick replaces the unsent rest.
+    let parts=vec![pose.clone(),vec![0x15,1],vec![0x15,2]];s.shared.as_mut().unwrap().poses_out=parts.clone();
+    for part in &parts[..2] {
+        let frames=transmit(&mut s,now).unwrap().unwrap();assert_eq!(frames.len(),1);
+        assert_eq!(&transport091::parse_interactive(&frames[0]).unwrap().body,part);
+    }
+    w.tick+=1;poll(&mut s,&mut w,now).unwrap();
+    let newest=wire::publication(&w,[true,true]).unwrap();
+    assert_eq!(s.shared.as_ref().unwrap().poses_out,vec![newest]);
+    assert_eq!(s.shared.as_ref().unwrap().pose_stats.replaced_unsent,1);
+    // A full window waits; the part stays aside instead of failing.
+    while s.tx.len()<8 {s.tx.enqueue_body(&[0x13,1]).unwrap();}
+    let frames=transmit(&mut s,now+transport091::RETRY).unwrap().unwrap();
+    assert!(frames.iter().all(|f|transport091::parse_interactive(f).unwrap().body!=wire::publication(&w,[true,true]).unwrap()));
+    assert_eq!(s.shared.as_ref().unwrap().poses_out.len(),1);
+}

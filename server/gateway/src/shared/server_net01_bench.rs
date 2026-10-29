@@ -50,7 +50,8 @@ impl ClientModel {
             if body.first()==Some(&0x0d) {
                 let tick=Self::unwrap_tick(body[1],server_tick);self.pose_delay_ms.push(delay);
                 if self.newest_pose.is_none_or(|n|tick>n) {self.newest_pose=Some(tick);self.pose_ticks.push(tick);}
-            } else if !body.is_empty() {self.reliable_delay_ms.push(delay);}
+            // A reliable-burst-v2 later part (no tickSync) is pose data too.
+            } else if !body.is_empty() && body[0]!=0x15 {self.reliable_delay_ms.push(delay);}
         }
         if let Some(newest)=self.newest_pose {self.pose_age_ticks.push(f64::from(server_tick.saturating_sub(newest)));}
         // The client ACKs on its own unreliable channel packet (0x0448, P02).

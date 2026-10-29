@@ -2525,10 +2525,15 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
         // exact bytes; the next fresh pose is queued when capacity is available.
         let old_tick = if c.spotting_enabled {c.last_pose_tick.unwrap_or(0)} else {c.view.as_ref().map(|w| w.tick).unwrap_or(0)};
         let latest = c.pose_delivery == super::net01::PoseDelivery::LatestUnreliable;
-        // NET-01: the unreliable pose never waits for window capacity.
-        if c.correction && c.binding.is_some_and(|(_, ack)| ack) && old_tick != next_world.tick && (latest || next.tx.len() < 4) {
-            let parts = wire::publication_parts(&next_world, c.visible())?;
-            if latest {
+        let paced = c.pose_delivery == super::net01::PoseDelivery::ReliableBurstV2;
+        // NET-01: a held-aside pose never waits for window capacity here.
+        if c.correction && c.binding.is_some_and(|(_, ack)| ack) && old_tick != next_world.tick && (latest || paced || next.tx.len() < 4) {
+            let mut parts = wire::publication_parts(&next_world, c.visible())?;
+            if paced {
+                // One tickSync per tick: later parts drop their 2-byte prefix.
+                for part in parts.iter_mut().skip(1) {if part.len()<=2 || part[0]!=0x0d {return Err(model::bad());} part.drain(..2);}
+            }
+            if latest || paced {
                 if !c.poses_out.is_empty() {c.pose_stats.replaced_unsent += 1;}
                 c.poses_out = parts;
             } else {
@@ -2594,6 +2599,21 @@ fn transmit(s: &mut Session, now: Instant) -> io::Result<Option<Vec<Vec<u8>>>> {
             Ok(None) => break,
             Err(_) => return Ok(None),
         }
+    }
+    if s.shared.as_ref().is_some_and(|c| c.pose_delivery() == super::net01::PoseDelivery::ReliableBurstV2) {
+        let c = s.shared.as_mut().ok_or_else(|| model::bad())?;
+        if !c.in_battle() { c.take_poses(); }
+        // One reliable pose part per loop, after the bodies already queued.
+        else if !c.poses_out.is_empty() && s.tx.len() < 8 {
+            let part = c.poses_out.remove(0);
+            s.tx.enqueue_body(&part)?;
+            match s.tx.due(now, s.rx) {
+                Ok(Some((_, _, clear))) => { frames.push(clear); },
+                Ok(None) => return Err(model::bad()),
+                Err(_) => return Ok(None),
+            }
+        }
+        return Ok(Some(frames));
     }
     if let Some(c) = s.shared.as_mut() {
         // A pose left over from a battle that ended is dropped, never sent.

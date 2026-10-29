@@ -5,6 +5,7 @@ use std::time::{Duration,Instant};
 use crate::transport091::Histogram;
 
 pub(crate) const RELIABLE_BURST:&str="reliable-burst-v1";
+pub(crate) const RELIABLE_BURST_V2:&str="reliable-burst-v2";
 pub(crate) const LATEST_UNRELIABLE:&str="latest-unreliable-v1";
 
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
@@ -14,18 +15,23 @@ pub(crate) enum PoseDelivery {
     #[default] Reliable,
     /// Poses unchanged; the loop sends every due reliable body each iteration.
     ReliableBurst,
+    /// Burst for other bodies; the reliable pose of the newest tick is kept
+    /// aside and enters the window one part per loop. Only the first part
+    /// carries tickSync (one per tick, INFERRED as the native bundle had);
+    /// unsent parts of an older tick are replaced, never queued behind.
+    ReliableBurstV2,
     /// Burst, and the pose of the newest tick goes outside the window
     /// unreliably; an unsent older pose is replaced, never resent.
     LatestUnreliable,
 }
 impl PoseDelivery {
     pub(crate) fn parse(value:Option<&str>)->Option<Self> {
-        match value {None=>Some(Self::Reliable),Some(RELIABLE_BURST)=>Some(Self::ReliableBurst),
+        match value {None=>Some(Self::Reliable),Some(RELIABLE_BURST)=>Some(Self::ReliableBurst),Some(RELIABLE_BURST_V2)=>Some(Self::ReliableBurstV2),
             Some(LATEST_UNRELIABLE)=>Some(Self::LatestUnreliable),Some(_)=>None}
     }
     pub(crate) fn burst(self)->bool {self!=Self::Reliable}
     pub(crate) fn label(self)->&'static str {
-        match self {Self::Reliable=>"reliable",Self::ReliableBurst=>RELIABLE_BURST,Self::LatestUnreliable=>LATEST_UNRELIABLE}
+        match self {Self::Reliable=>"reliable",Self::ReliableBurst=>RELIABLE_BURST,Self::ReliableBurstV2=>RELIABLE_BURST_V2,Self::LatestUnreliable=>LATEST_UNRELIABLE}
     }
 }
 
@@ -87,6 +93,7 @@ mod tests {
         assert_eq!(PoseDelivery::parse(None),Some(PoseDelivery::Reliable));
         assert_eq!(PoseDelivery::parse(Some(RELIABLE_BURST)),Some(PoseDelivery::ReliableBurst));
         assert_eq!(PoseDelivery::parse(Some(LATEST_UNRELIABLE)),Some(PoseDelivery::LatestUnreliable));
+        assert_eq!(PoseDelivery::parse(Some(RELIABLE_BURST_V2)),Some(PoseDelivery::ReliableBurstV2));assert!(PoseDelivery::ReliableBurstV2.burst());
         for bad in ["","reliable","latest-unreliable-v2","LATEST-UNRELIABLE-V1"] {assert_eq!(PoseDelivery::parse(Some(bad)),None);}
         assert!(!PoseDelivery::Reliable.burst());assert!(PoseDelivery::ReliableBurst.burst());assert!(PoseDelivery::LatestUnreliable.burst());
     }

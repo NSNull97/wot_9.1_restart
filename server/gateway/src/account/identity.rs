@@ -433,7 +433,7 @@ impl Config {
         let pose_delivery=match value.remove("pose_delivery"){
             None=>crate::gateway091::shared::net01::PoseDelivery::Reliable,
             Some(Value::String(mode))=>crate::gateway091::shared::net01::PoseDelivery::parse(Some(&mode))
-                .ok_or_else(||invalid("pose_delivery must be reliable-burst-v1 or latest-unreliable-v1"))?,
+                .ok_or_else(||invalid("pose_delivery must be reliable-burst-v1, reliable-burst-v2 or latest-unreliable-v1"))?,
             _=>return Err(invalid("pose_delivery must be a string")),
         };
         if pose_delivery==crate::gateway091::shared::net01::PoseDelivery::LatestUnreliable&&!visibility_v1{
@@ -1118,6 +1118,7 @@ mod tests {
         assert_eq!(load(&base).unwrap().pose_delivery,PoseDelivery::Reliable);
         let mut burst=base.clone();burst["pose_delivery"]="reliable-burst-v1".into();
         assert_eq!(load(&burst).unwrap().pose_delivery,PoseDelivery::ReliableBurst);
+        burst["pose_delivery"]="reliable-burst-v2".into();assert_eq!(load(&burst).unwrap().pose_delivery,PoseDelivery::ReliableBurstV2);
         for bad in [Value::from("reliable"),Value::from("latest-unreliable-v2"),Value::from(true),Value::Null] {
             let mut wrong=base.clone();wrong["pose_delivery"]=bad.clone();assert!(load(&wrong).is_err(),"{bad}");
         }
