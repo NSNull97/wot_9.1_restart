@@ -18,10 +18,7 @@ fn profile(s:&Session)->Option<&super::super::profile13_session::State> {s.share
 
 /// Client tier and vehicle class of the selected owned vehicle (p04m inventory row; 1/2 are MS-1/IS-7).
 fn selected_profile(s:&Session)->io::Result<Option<(u8,u8)>> {
-    let Some(native)=profile(s).and_then(|p|p.selection) else {return Ok(None);};
-    let label=s.hangar.as_ref().and_then(|f|f.p04m_binding()).and_then(|b|b.kind_label(native))
-        .or(match native {1=>Some("ms1"),2=>Some("is7"),_=>None});
-    match label.and_then(VehicleKind::from_owned_label) {Some(kind)=>kind.queue_profile(),None=>Ok(None)}
+    match s.queue_vehicle_kind() {Some(kind)=>kind.queue_profile(),None=>Ok(None)}
 }
 /// A hangar Join with no reservation, return, writer or arena place.
 fn wants_queue(s:&Session,arenas:&[arena::Arena])->bool {

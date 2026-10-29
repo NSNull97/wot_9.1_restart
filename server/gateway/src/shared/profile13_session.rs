@@ -53,9 +53,18 @@ impl State {
     pub(super) fn admits_into(&self, battle: u64) -> bool {
         match self.match_gate { MatchGate::Off => true, MatchGate::Queued => false, MatchGate::Matched(b) => b == battle }
     }
-    /// Native `Account.receiveQueueInfo` reply to the BattleQueue poll.
-    pub(super) fn queue_info_reply(&self) -> Vec<u8> {
-        self.queue_classes.map_or_else(crate::map_drive_world091::own_queue_info, |c| crate::map_drive_world091::queue_info(&c))
+    /// Native `Account.receiveQueueInfo` reply to the BattleQueue poll: the
+    /// matchmaker's counts, else this player alone in the class `own` of the
+    /// vehicle it queues with; an unknown class keeps the old one-light reply.
+    pub(super) fn queue_info_reply(&self, own: Option<u8>) -> Vec<u8> {
+        match (self.queue_classes, own) {
+            (Some(classes), _) => crate::map_drive_world091::queue_info(&classes),
+            (None, Some(class)) if class < 5 => {
+                let mut classes = [0; 5]; classes[usize::from(class)] = 1;
+                crate::map_drive_world091::queue_info(&classes)
+            }
+            _ => crate::map_drive_world091::own_queue_info(),
+        }
     }
     pub(super) fn reservation_battle(&self)->Option<u64>{self.reservation.as_ref().map(|r|r.battle).or_else(||self.reservation_v2.as_ref().map(|r|r.battle)).or_else(||self.reservation_loss.as_ref().map(|r|r.battle)).or_else(||self.reservation_hold.as_ref().map(|r|r.battle))}
     pub(super) fn reservation_kind(&self)->Option<super::vehicle_profile::VehicleKind>{self.reservation.as_ref().map(|r|r.frozen.kind).or_else(||self.reservation_v2.as_ref().map(|r|r.frozen.kind)).or_else(||self.reservation_loss.as_ref().map(|r|r.frozen.base.kind)).or_else(||self.reservation_hold.as_ref().map(|r|r.frozen.loss().base.kind))}

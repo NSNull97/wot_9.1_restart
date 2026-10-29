@@ -27,6 +27,7 @@ impl Session {
             };
             if !self.active || !self.account_ready || self.arena_base || self.sync_mask!=7
                 || self.outbox.len()>125 {return Err(bad());}
+            let own=if matches!(command,NativeCommand::QueueInfo) {self.queue_vehicle_class()?} else {None};
             let c=self.shared.as_mut().ok_or_else(||bad())?;
             if c.phase!=Phase::Account {return Err(bad());}
             let state=c.profile13.as_mut().ok_or_else(||bad())?;
@@ -58,12 +59,26 @@ impl Session {
                     }
                 },
                 NativeCommand::QueueInfo => {
-                    let reply=state.queue_info_reply();
+                    let reply=state.queue_info_reply(own);
                     if c.queue_announced {self.outbox.push_back(reply);}
                 },
             }
             events.push(format!("P08B_QUEUE_PENDING session={} command={command:?} writer_started=false native_enqueued={}",self.id,c.queue_announced));
         }
         Ok(())
+    }
+    /// The vehicle this player queues with: the reserved kind, else the selected
+    /// native row (p04m pool label, or the built-in MS-1 / IS-7 rows).
+    pub(super) fn queue_vehicle_kind(&self)->Option<super::vehicle_profile::VehicleKind> {
+        let state=self.shared.as_ref()?.profile13.as_ref()?;
+        if let Some(kind)=state.reservation_kind() {return Some(kind);}
+        let native=state.selection?;
+        self.hangar.as_ref().and_then(|f|f.p04m_binding()).and_then(|b|b.kind_label(native))
+            .or(match native {1=>Some("ms1"),2=>Some("is7"),_=>None})
+            .and_then(super::vehicle_profile::VehicleKind::from_owned_label)
+    }
+    /// Client `VEHICLE_CLASSES` index of that vehicle (`battle_profiles.v1.json`).
+    fn queue_vehicle_class(&self)->io::Result<Option<u8>> {
+        Ok(match self.queue_vehicle_kind() {Some(kind)=>kind.queue_profile()?.map(|(_,class)|class),None=>None})
     }
 }
