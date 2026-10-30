@@ -343,7 +343,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
           const late = createLateResultService({ database: localPath(options.game_database), originalRoot: ammo.original_root,
             accountId: id, shellCatalog: options.mixed_service.shell_catalog, terminalPolicy: options.mixed_service.terminal_policy,
             loss: lossOwners.includes(id), python: options.python_executable,
-            worker: resolve(ROOT, 'tools/p08c_late_results_service.py'), cwd: ROOT, domain });
+            worker: resolve(ROOT, 'tools/p08c_late_results_service.py'), cwd: ROOT, catalogSha256, domain });
           service.battle = late.battle; service.results = late.results; service.lateResults = late.append; service.latePending = late.pending;
         }
         accountServices.set(id, service);
