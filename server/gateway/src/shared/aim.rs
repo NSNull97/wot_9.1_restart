@@ -84,7 +84,7 @@ impl State {
         self.advance_pose_for(VehicleKind::Ms1,position,direction,dt)
     }
     pub fn advance_pose_for(&mut self, kind: VehicleKind, position: [f32; 3], direction: [f32; 3], dt: f32) -> io::Result<()> {
-        if kind.is_extended() {
+        if source_controller_supported(kind)? {
             return self.advance_source_pose(kind,position,direction,dt,kind.shell().raw_speed as f64,9.81,1.,1.);
         }
         let spec=kind.aim();
@@ -111,7 +111,7 @@ impl State {
             || position.iter().chain(direction.iter()).any(|v|!v.is_finite())
             || !self.yaw.is_finite() || !self.pitch.is_finite() {return Err(bad());}
         caps.validate()?;self.intent.validate()?;
-        if kind.is_extended() {
+        if source_controller_supported(kind)? {
             return self.advance_source_pose(kind,position,direction,dt,shell.raw_speed_mps,shell.raw_gravity_mps2,
                 caps.turret_scale,caps.aim_speed_scale);
         }
@@ -161,6 +161,17 @@ impl State {
         let next_pitch=envelope.clamp_pitch(next_yaw,moved).map_err(|_|bad())?;
         self.yaw=next_yaw;self.pitch=next_pitch;Ok(())
     }
+}
+/// Generated source pitch must fit the existing wire basic range. Do not
+/// silently clip source motion or reinterpret the native pitch quantizer.
+/// Reject these profiles explicitly until their wire contract is resolved.
+pub(crate) fn source_controller_supported(kind:VehicleKind)->io::Result<bool>{
+    let Some(source)=kind.source_aim() else{return Ok(false)};
+    if kind.is_generated(){
+        let range=source.envelope.absolute();let wire=kind.aim();
+        if range.min<wire.min_pitch||range.max>wire.max_pitch{return Err(bad());}
+    }
+    Ok(true)
 }
 /// Fallible authoritative bounds for the explicit extended route. Callers must
 /// use both values; old `pitch_max_for` remains a legacy upper-bound wrapper.
@@ -467,3 +478,7 @@ mod tests {
 #[cfg(test)]
 #[path="p06t_extended_aim_tests.rs"]
 mod extended_tests;
+
+#[cfg(test)]
+#[path="generated_aim_regression_tests.rs"]
+mod generated_aim_regression_tests;

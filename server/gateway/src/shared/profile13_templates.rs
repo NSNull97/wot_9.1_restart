@@ -63,8 +63,10 @@ fn parse(raw:&[u8])->io::Result<Manifest> {
         profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?});
     }
     generated.sort_by(|a,b|a.kind.label().cmp(b.kind.label()));
+    let profiles:Vec<Profile>=profiles.into_iter().map(|p|p.ok_or_else(||bad("missing curated source profile"))).chain(generated.into_iter().map(Ok)).collect::<io::Result<_>>()?;
+    for profile in &profiles{require_source_wire_support(profile.kind)?;}
     Ok(Manifest{version:version.ok_or_else(||bad("version"))? as u8,map,catalog:reference(&value["catalog"])?,
-        profiles:profiles.into_iter().map(|p|p.ok_or_else(||bad("missing curated source profile"))).chain(generated.into_iter().map(Ok)).collect::<io::Result<_>>()?,
+        profiles,
         shared_physics:if matches!(version,Some(2|3|4|5)){Some(reference(&value["shared_physics"])?)}else{None}})
 }
 fn plain(path:&Path)->io::Result<()> {
@@ -133,6 +135,13 @@ fn shared_source_reference(kind:VehicleKind,version:u8,source:Option<(PathBuf,St
     if !(version==4||matches!(version,3|5)&&!kind.is_extended()){return Err(bad("qualified source requires its explicit resource version"));}
     let (path,sha256)=source.ok_or_else(||bad("missing qualified stock source profile"))?;
     Ok(Some(reference(&serde_json::json!({"path":path,"sha256":sha256}))?))
+}
+
+/// Refuse an unrepresentable generated source envelope before a battle can
+/// start or reserve an owner. The existing wire quantizer is not widened.
+pub(super) fn require_source_wire_support(kind:VehicleKind)->io::Result<()> {
+    super::aim::source_controller_supported(kind).map(|_|())
+        .map_err(|_|bad("generated source pitch exceeds the supported wire range"))
 }
 
 pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resources>> {
@@ -271,6 +280,19 @@ mod tests {
     fn five()->Value {
         let mut v=value();let base=v["catalog"].clone();v["version"]=3.into();v["shared_physics"]=base.clone();
         v["profiles"]=serde_json::json!(VehicleKind::ALL.map(|kind|serde_json::json!({"kind":kind.label(),"pool":base.clone(),"geometry":base.clone()})));v
+    }
+    #[test]fn generated_wide_source_manifest_fails_before_catalog_or_pool_access(){
+        let mut v=five();v["version"]=5.into();
+        let mut row=v["profiles"][0].clone();row["kind"]="germany-Pz_IV_AusfH".into();
+        v["profiles"].as_array_mut().unwrap().push(row);
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir=root.join("test-runs").join(format!("generated-wide-manifest-{}-{stamp}",std::process::id()));fs::create_dir_all(&dir).unwrap();
+        let manifest=dir.join("manifest.json");fs::write(&manifest,serde_json::to_vec(&v).unwrap()).unwrap();
+        // The source catalog and pools in `five()` do not exist: an error from
+        // the real load path must identify the unsupported envelope first.
+        let error=match load(&root,&manifest){Ok(_)=>panic!("unsupported manifest loaded"),Err(error)=>error};
+        assert!(error.to_string().contains("generated source pitch exceeds the supported wire range"),"{error}");
     }
     #[test]fn p04m_manifest3_requires_all_five_curated_kinds_in_canonical_resource_order() {
         let v=five();let parsed=parse(&serde_json::to_vec(&v).unwrap()).unwrap();
