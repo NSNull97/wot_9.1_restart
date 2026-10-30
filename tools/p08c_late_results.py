@@ -8,7 +8,7 @@ from copy import deepcopy
 import json
 import re
 
-from game_profile_tx import TransactionError, _bounded_id
+from game_profile_tx import TransactionError, _bounded_id, MAX_SNAPSHOT_BYTES
 from p09d_ammo_store import require, sha
 from p08b_battle_store import _uuid, _integer, MAX_PARTICIPANTS, LEGACY_PARTICIPANTS, MAX_RESULT_REQUEST
 # RES-30 roster30: a seal of 7..30 actors (gateway MAX_SEAL_ROSTER30); 2..6 keep 32768.
@@ -103,6 +103,52 @@ def decode(raw, maximum=65536, nodes=4096):
     return value
 
 
+def decode_stored_profile(raw, store):
+    """Bounded profile13 DB decoding; never used for incoming network data.
+
+    The selected writer owns the 16KiB legacy / 64KiB crew-v2 profile policy,
+    ASCII, duplicate-key, non-finite and nesting checks. Profile13 may contain
+    one depot entry per configured shell and up to three ammo rows per owned
+    vehicle, so the much smaller fixed request-tree limits do not apply here.
+    """
+    from p09e_research_store import MAX_OWNED
+    from p09c_ammo_service import MAX_DEPOT
+    bound = store._crew_contract().PROFILE_BOUND
+    require(type(bound) is int and 0 < bound <= MAX_SNAPSHOT_BYTES and type(raw) is str, "INVALID_INPUT")
+    # Shell definitions belong to the entire activated catalog, not one
+    # owner's vehicle limit. An entry cannot fit without at least one byte.
+    require(type(store.shells) is dict and 0 < len(store.shells) <= bound, "INVALID_INPUT")
+    try:
+        encoded = raw.encode("ascii")
+    except UnicodeEncodeError:
+        raise TransactionError("INVALID_INPUT") from None
+    require(len(encoded) <= bound, "INVALID_INPUT")
+    profile = store._stored_json(raw)
+    require(type(profile) is dict, "INVALID_INPUT")
+    budget = bound
+    stack = [(profile, 0, False)]
+    while stack:
+        value, depth, depot = stack.pop()
+        budget -= 1
+        require(depth <= 12 and budget >= 0, "INVALID_INPUT")
+        if type(value) is dict:
+            require(len(value) <= (max(32, len(store.shells)) if depot else 32), "INVALID_INPUT")
+            for key, child in value.items():
+                require(type(key) is str and len(key) <= 96, "INVALID_INPUT")
+                stack.append((child, depth + 1, depth == 0 and key == "ammunition_depot"))
+        elif type(value) is list:
+            require(len(value) <= MAX_OWNED * 3, "INVALID_INPUT")
+            stack.extend((child, depth + 1, False) for child in value)
+        elif type(value) is str:
+            require(len(value.encode("utf8")) <= bound, "INVALID_INPUT")
+        else:
+            require(value is None or type(value) in (int, bool), "INVALID_INPUT")
+    depot = profile.get("ammunition_depot")
+    require(type(depot) is dict and set(depot) == set(store.shells)
+        and all(type(n) is int and 0 <= n <= MAX_DEPOT for n in depot.values()), "INVALID_INPUT")
+    return profile
+
+
 def validate_request(value, account):
     require(type(value) is dict and value.get("operation") in ("release_stamp", "append"), "INVALID_INPUT")
     extra = set() if value["operation"] == "release_stamp" else {"release_terminal_sha256", "finished_revision", "seal_json"}
@@ -179,7 +225,7 @@ class LateResults:
         require_hold_compatible(self.connection,account,contract=getattr(self.store,"OWNER_HOLD_CONTRACT",None))
         row = self.connection.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account,)).fetchone()
         require(row is not None, "FOREIGN_ACCOUNT")
-        profile = decode(row[0], 131072)
+        profile = decode_stored_profile(row[0], self.store)
         require(profile["account_id"] == account and profile["native_database_id"] == native and profile["profile_version"] == 13, "FOREIGN_ACCOUNT")
 
     def source(self, link):
