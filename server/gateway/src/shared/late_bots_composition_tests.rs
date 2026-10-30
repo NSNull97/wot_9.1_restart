@@ -81,14 +81,16 @@ fn late_bots_real_http_sqlite_release(){
     for(path,compiled) in [
         ("server/gateway/src/shared/late_bots_composition_tests.rs",include_bytes!("late_bots_composition_tests.rs").as_slice()),
         ("server/gateway/src/shared/server.rs",include_bytes!("server.rs").as_slice()),
+        ("server/gateway/src/shared/p08c_late_composition_tests.rs",include_bytes!("p08c_late_composition_tests.rs").as_slice()),
         ("server/gateway/src/shared/late_results_capture.rs",include_bytes!("late_results_capture.rs").as_slice()),
         ("server/gateway/src/shared/late_results_runtime.rs",include_bytes!("late_results_runtime.rs").as_slice()),
         ("server/gateway/src/account/identity.rs",include_bytes!("../account/identity.rs").as_slice()),
         ("web/tests/helpers/late-bots-composition.mjs",include_bytes!("../../../../web/tests/helpers/late-bots-composition.mjs").as_slice()),
+        ("web/tests/helpers/p08c-late-result-composition.mjs",include_bytes!("../../../../web/tests/helpers/p08c-late-result-composition.mjs").as_slice()),
         ("tests/helpers/late_bots_composition_seed.py",include_bytes!("../../../../tests/helpers/late_bots_composition_seed.py").as_slice())]{
         assert_eq!(Sha256::digest(fs::read(root.join(path)).unwrap()),Sha256::digest(compiled),"compiled source differs: {path}");
     }
-    let out=Command::new("git").args(["status","--porcelain","--untracked-files=all","--","server","tools","tests","web/src","web/tests"]).current_dir(&root).output().unwrap();assert!(out.status.success()&&out.stdout.is_empty(),"commit source before proof");
+    let out=Command::new("git").args(["status","--porcelain","--untracked-files=all","--","server","tools","client_patch","tests","web/src","web/tests"]).current_dir(&root).output().unwrap();assert!(out.status.success()&&out.stdout.is_empty(),"commit source before proof");
     let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();let base=root.join("local/test-runs/late-bots-composition");fs::create_dir_all(&base).unwrap();
     let output=base.join(format!("run-{}-{stamp}",std::process::id()));fs::create_dir(&output).unwrap();
     let stdout=fs::File::create(output.join("controller.stdout.log")).unwrap();let stderr=fs::File::create(output.join("controller.stderr.log")).unwrap();

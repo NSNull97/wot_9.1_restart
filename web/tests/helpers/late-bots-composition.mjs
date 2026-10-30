@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, openSync, closeSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, lstatSync, openSync, closeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { plain, sha, write, database } from './p08c-late-result-composition.mjs';
@@ -18,11 +18,21 @@ const exe=plain(exeArg),output=plain(outArg),base=plain(join(ROOT,'local/test-ru
 assert.equal(dirname(output),base);assert.match(output,/[\\/]run-\d+-\d+$/);assert.match(exe,/[\\/]release[\\/]deps[\\/]sr_gateway-[0-9a-f]+\.exe$/);
 assert.equal(dirname(exe),plain(join(process.env.CARGO_TARGET_DIR,'release/deps')));
 const git=args=>execFileSync('git',args,{cwd:ROOT,encoding:'utf8',windowsHide:true,maxBuffer:4*1024*1024});
-const scopes=['server','tools','tests','web/src','web/tests'];const verify=()=>assert.equal(git(['status','--porcelain','--untracked-files=all','--',...scopes]),'');
+const scopes=['server','tools','client_patch','tests','web/src','web/tests'];const verify=()=>assert.equal(git(['status','--porcelain','--untracked-files=all','--',...scopes]),'');
 verify();const head=git(['rev-parse','HEAD']).trim(),exeSHA=sha(readFileSync(exe)),seedSHA=sha(readFileSync(seedPath)),seedInput=json(seedPath);
 assert.equal(exeSHA,expectedExeSHA);
 const sourceDB=plain(seedInput.database),bundle=plain(seedInput.bundle),original=plain(seedInput.original),dbSHA=sha(readFileSync(sourceDB));
 assert.equal(sourceDB,plain(join(dirname(seedPath),'game.sqlite')));assert.equal(seedInput.source_stand_writes,false);
+function sourceFileState(path,maximum){
+  let before;try{before=lstatSync(path,{bigint:true});}catch(error){if(error.code==='ENOENT')return null;throw error;}
+  assert.ok(before.isFile()&&!before.isSymbolicLink(),'source must be a plain regular file');assert.ok(before.size<=BigInt(maximum),'source size bound');
+  assert.equal(plain(path),path);const digest=sha(readFileSync(path)),after=lstatSync(path,{bigint:true});
+  assert.equal(after.size,before.size);assert.equal(after.mtimeNs,before.mtimeNs);
+  return {bytes:Number(after.size),mtime_ns:String(after.mtimeNs),sha256:digest};
+}
+function sourceState(){return {seed:sourceFileState(seedPath,65536),database:sourceFileState(sourceDB,64*1024*1024),
+  wal:sourceFileState(`${sourceDB}-wal`,0),shm:sourceFileState(`${sourceDB}-shm`,16*1024*1024)};}
+const initialSourceState=sourceState();assert.ok(initialSourceState.seed&&initialSourceState.database,'required source missing');
 const modules=['game-adapter','security','p04d-crew','p04k-crew','p09e-research','p08b-battle','p04m-pool','p06t-mixed','p06t-ammo-loss','p08c-late-results'];
 const [{createIdentityBridge},security,crew,barracks,research,battle,pool,mixed,loss,late]=await Promise.all(modules.map(name=>import(pathToFileURL(join(ROOT,`web/src/${name}.mjs`)))));
 const pythonRun=spawnSync('python',['-B','-c','import sys;print(sys.executable)'],{encoding:'utf8',windowsHide:true});assert.equal(pythonRun.status,0);
@@ -80,8 +90,10 @@ try{
   write(ib,{schema:'late-bots-composition.v1',phase:'reopen',config:cb,users,barrier:output,arena_id:a.arena_id,expected_results_json:a.results_json});
   const b=await runPhase('phase-b',ib,join(output,'after-reopen-auth.ready.json'),join(output,'after-reopen-auth.go'));assert.notEqual(a.run,b.run);assert.equal(b.query_1500,true);assert.equal(b.ack_1501,true);
   assert.equal(read(d=>d.prepare('SELECT acked FROM p08c_late_result WHERE account_id=? AND arena_id=?').get(accounts[0],a.arena_id).acked),1);
-  assert.equal(sha(readFileSync(seedPath)),seedSHA);assert.equal(sha(readFileSync(sourceDB)),dbSHA);assert.equal(sha(readFileSync(exe)),exeSHA);verify();
+  assert.deepEqual(sourceState(),initialSourceState,'source seed/database/WAL/SHM changed');assert.equal(sha(readFileSync(exe)),exeSHA);verify();
+  assert.equal(git(['rev-parse','HEAD']).trim(),head,'HEAD changed during composition');
   write(join(output,'result.json'),{status:'PASS_ACTUAL_HTTP_SQLITE_SYNTHETIC_BOT_COMPOSITION',head,executable_sha256:exeSHA,source_database_sha256:dbSHA,source_seed_sha256:seedSHA,
+    source_sidecars:{wal:initialSourceState.wal,shm:initialSourceState.shm},
     actual_admit_finish:true,actual_final_outcome:true,actual_late_append:true,old_table_equality_barriers:2,bot_accounts_written:0,actual_query1500_ack1501:true,
     synthetic:'Session/ACK; flat terrain; authored shortened lifecycle; no bot movement simulated',native:'NOT_RUN',udp:'NOT_RUN',jolt:'NOT_RUN',experimental_notice:'INFERRED_STATIC_ONLY'});
-}finally{if(bridge)await bridge.close();assert.equal(sha(readFileSync(seedPath)),seedSHA);assert.equal(sha(readFileSync(sourceDB)),dbSHA);}
+}finally{if(bridge)await bridge.close();assert.deepEqual(sourceState(),initialSourceState,'source seed/database/WAL/SHM changed');}
