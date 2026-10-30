@@ -26,6 +26,28 @@ use super::*;
     e.front=Extra{limits:Limits{min:rad(-10.),max:rad(2.)},sector:rad(10.)};
     let mid=e.pitch_limits(rad(12.5)).unwrap();assert!((mid.min-rad(-12.5)).abs()<1e-6);assert!((mid.max-rad(3.5)).abs()<1e-6);
 }
+#[test]fn source_blends_stay_inside_their_endpoints_across_transitions(){
+    // Bounded convex interpolation must hold even when f32 multiply/add rounds
+    // one ULP outside an endpoint. Exercise equal and unequal endpoints, both
+    // transition sectors and both signs without relaxing the public yaw guard.
+    let mut e=SourceEnvelope::wt_e100();
+    for equal in [false,true] {
+        e.front=if equal {Extra{limits:e.basic,sector:rad(10.)}} else {Extra{limits:Limits{min:rad(-10.),max:rad(2.)},sector:rad(10.)}};
+        e.rear=if equal {Extra{limits:e.basic,sector:rad(37.)}} else {Extra{limits:Limits{min:rad(-7.),max:rad(1.)},sector:rad(37.)}};
+        for index in 0..=1000 {
+            let fraction=index as f32/1000.;
+            for extra in [e.front,e.rear] {
+                let delta=extra.sector+fraction*e.transition;
+                let yaw=if extra==e.front {delta} else {PI-delta};
+                for signed in [yaw,-yaw] {
+                    let got=e.pitch_limits(signed).unwrap();
+                    assert!(got.min>=e.basic.min.min(extra.limits.min)&&got.min<=e.basic.min.max(extra.limits.min));
+                    assert!(got.max>=e.basic.max.min(extra.limits.max)&&got.max<=e.basic.max.max(extra.limits.max));
+                }
+            }
+        }
+    }
+}
 #[test]fn invalid_finite_bounds_yaw_pitch_and_poisoned_source_parameters_fail_closed(){
     let e=SourceEnvelope::wt_e100();for x in[f32::NAN,f32::INFINITY,-f32::INFINITY,PI+0.01]{assert!(e.pitch_limits(x).is_err());assert!(e.clamp_yaw(x).is_err());}
     for p in[f32::NAN,f32::INFINITY,FRAC_PI_2+0.01]{assert_eq!(e.clamp_pitch(0.,p).unwrap_err(),Error::Pitch);}

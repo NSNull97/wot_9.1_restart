@@ -93,3 +93,27 @@ fn generated_fv_invalid_yaw_and_nan_fail_atomically_and_wire_refuses_invalid_yaw
     }
     assert!(crate::gateway091::shared::wire::packed_angles_for(kind,&State::new()).is_ok());
 }
+
+#[test]
+fn kv3_blend_boundary_controller_stays_representable_on_native_fault_yaw(){
+    let registry=crate::gateway091::shared::generated_vehicles::registry().unwrap();
+    let id=registry.by_label("ussr-KV-3").unwrap();let kind=VehicleKind::Generated(id);
+    let yaw=0.16458893_f32;let wire=kind.aim();let envelope=kind.source_aim().unwrap().envelope;
+    // Actual saved native fault: the old source blend overshot basic maximum by one f32 ULP.
+    let blended=envelope.pitch_limits(yaw).unwrap();
+    assert_eq!(wire.max_pitch.to_bits(),0x3dfa35dd);
+    assert_eq!(blended.max.to_bits(),wire.max_pitch.to_bits());
+    let caps=Devices::new(Profile::Generated(id)).unwrap().capabilities();let shell=shells::profile(kind.mount()).shots[0];
+    for selected in [false,true]{
+        let mut aim=State::new();aim.yaw=yaw;aim.set(Intent::Hold{yaw,pitch:1.0}).unwrap();
+        for _ in 0..80 {
+            if selected {aim.advance_pose_for_selected(kind,[0.;3],[0.;3],0.1,shell,caps).unwrap();}
+            else {aim.advance_pose_for(kind,[0.;3],[0.;3],0.1).unwrap();}
+            assert!(aim.pitch<=wire.max_pitch,"selected={selected} pitch={:?}, wire={:?}",aim.pitch,wire.max_pitch);
+            assert!(crate::gateway091::shared::wire::packed_angles_for(kind,&aim).is_ok());
+        }
+        assert_eq!(aim.pitch.to_bits(),wire.max_pitch.to_bits());
+    }
+    let invalid=State{yaw,pitch:f32::from_bits(wire.max_pitch.to_bits()+1),intent:Intent::Hold{yaw,pitch:0.}};
+    assert!(crate::gateway091::shared::wire::packed_angles_for(kind,&invalid).is_err());
+}
