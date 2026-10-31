@@ -43,3 +43,35 @@ WAL, сохранять. Использовать тестовые копии к
 изменять. Следить за свободной памятью и местом на C. Никакого push; устаревшее
 сначала показать владельцу и не удалять без отдельного решения. Локальное
 слияние — только для фактически принятых карточек с учётом результатов проверки.
+
+## Результат проверки — 31.10.2026, вечер (Claude)
+
+База сравнения — main `a54b6aa` (код равен `d03969e`): канонический gate
+1857 PASS / 2 FAIL (`scene_worker::tests_p04m`, отсутствующая фикстура) / 16 ignored.
+Все gate запускались в `D:/WoT_9.1_Server` (detached на проверяемом SHA, target на E:,
+затем D: возвращён на `a54b6aa`); в другом каталоге тесты фикстур отказывают
+(«fixture must belong to current source workspace», 313 FAIL — не результат кода).
+
+- **CAT-NATIONS `3d213f9`:** `catalog_build.py check` и `battle_any_profiles.py check`
+  PASS (232 generated / 374); фокусные CAT/catalog/battle-any 82 теста OK (7 skip).
+  Полный Python против базы: одинаковые множества FAIL/ERROR (12+105 на обеих
+  сторонах, diff пуст). **Gate FAIL: 1849 PASS / 10 FAIL** — 8 новых против базы:
+  `p04m_garage_fresh39{,_hold5}`, `p08b_owner_hold10`, `p08b_owner_hold17_four`,
+  `p08c_late_result_runtime05`, `p10b_loss_composition09`,
+  `identity091::p04m_actual_sqlite_cmd309…`, `p04m_companion_loads_three…`.
+  Причина VERIFIED по логам: закреплённые seed-БД/фикстуры несут старый
+  research/catalog SHA → `UNSUPPORTED_POOL_SCHEMA` в `p04m_pool_store` и
+  `research metadata identity/policy/hash/revision`. Критерий «равные FAIL» не
+  выполнен; не вливать до миграции/перештамповки этих фикстур в рамках карточки.
+- **Интеграция PERF-02 + LATE-BOTS + CAT (`f859451` + merge `3d213f9` = `ea1d9c8`,
+  ветка `codex/verify-integrated-20261031`):** gate 1898 PASS / 10 FAIL / 24 ignored —
+  те же 8 регрессий CAT плюс 2 базовых; других новых FAIL нет. Native deadline FAIL
+  PERF-02 и отсутствие уведомлений LATE-BOTS (сообщение владельца) остаются.
+- **LATE-BOTS отдельная ветка `5bc4b38`:** код поглощён интеграцией (её тестовые
+  helpers новее); отдельно не прогонялась.
+
+Слито: ничего из кода. Push не выполнялся. Логи: `D:/WoT_9.1_Server/local/build/server/
+gateway-{cat-gate-3d213f9,integrated-gate-ea1d9c8}/`, Python —
+`E:/WoT091_Verify_20261031/py-{cat,base}.log`. Следующий шаг: в CAT-NATIONS
+перевести закреплённые seed-фикстуры восьми тестов на новый SHA каталога
+(через мигратор, с новыми pin) и повторить gate.
