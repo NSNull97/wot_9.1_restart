@@ -21,6 +21,8 @@ def main():
  destination=parent/'game.sqlite';source=plain(seed['database']);source_sha=digest(source.read_bytes())
  with closing(sqlite3.connect(source.as_uri()+'?mode=ro',uri=True,timeout=3))as old,closing(sqlite3.connect(destination))as new:
   old.execute('PRAGMA query_only=ON');old.backup(new)
+ from cat_nations_test_restamp import restamp_copy
+ restamp_copy(destination)
  accounts=[p['account_id']for p in seed['profiles']]
  if accounts!=['80ad3bc2-476e-4fbd-899d-a4679ea167d2','633ad84f-f33f-4aab-bacd-421f31a93bae']:raise ValueError('exact source C/D owner order')
  def profiles():

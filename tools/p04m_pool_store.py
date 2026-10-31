@@ -318,7 +318,8 @@ class PoolStore(ResultsStore):
                 "free_recruitment_left": aggregate["crew_inventory"]["free_recruitment_left"], "configuration_revision": aggregate["crew_inventory"]["configuration_revision"]},
             ammunition=[{"vehicle_inventory_id": r["vehicle_id"], "shell_definition_id": key, "count": n} for r in aggregate["ammunition"] for key, n in sorted(r["loaded"].items())],
             ammunition_depot=aggregate["depot"], pool_service=aggregate["pool"])
-        value["research"].update(garage_slots=aggregate["research"]["garage_slots"], unlocked_count=len(aggregate["research"]["unlocked"]), depot_types=len(aggregate["research"]["depot"]))
+        # The baseline is frozen at activation; the catalogue is the one _pool_row() verified (CAT-NATIONS).
+        value["research"].update(catalog_sha256=self.catalog.sha256, garage_slots=aggregate["research"]["garage_slots"], unlocked_count=len(aggregate["research"]["unlocked"]), depot_types=len(aggregate["research"]["depot"]))
         require(len(canonical(value)) <= contract.PROFILE_BOUND, "PROFILE_TOO_LARGE"); return value
 
     def _verified_snapshot(self, row, account):

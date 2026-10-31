@@ -48,6 +48,8 @@ def main():
     accounts=[p['account_id'] for p in seed['profiles']]
     if accounts!=['80ad3bc2-476e-4fbd-899d-a4679ea167d2','633ad84f-f33f-4aab-bacd-421f31a93bae']:raise ValueError('exact existing C/D order required')
     with closing(sqlite3.connect(source.as_uri()+'?mode=ro',uri=True))as old,closing(sqlite3.connect(destination))as new:old.backup(new)
+    sys.path.append(str(ROOT/'tests/helpers'));from cat_nations_test_restamp import restamp_copy
+    restamp_copy(destination)
     def public(db,a):return json.loads(db.execute('SELECT profile_json FROM game_profiles WHERE account_id=?',(a,)).fetchone()[0])
     with closing(sqlite3.connect(destination.as_uri()+'?mode=ro',uri=True))as db:
         before=[public(db,a) for a in accounts]

@@ -3,7 +3,7 @@ const ACCOUNT:&str="00000000-0000-0000-0000-000000000001";
 fn parse(v:&Value)->io::Result<Binding>{Binding::parse(&serde_json::to_vec(v).unwrap(),ACCOUNT,900001,14,&format!("{:x}",Sha256::digest(b"\x80\x02}.")))}
 #[test]fn p04m_companion_loads_three_actual_sqlite_writer_fixtures_and_rejects_legacy_optin(){
     let root=std::env::var_os("WOT091_ROOT").map(std::path::PathBuf::from).unwrap_or_else(||std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
-    let base=root.join("local/evidence/20261016-p04m-writer01/native-fixtures03");
+    let base=root.join("local/evidence/20261031-cat-nations-restamp/p04m-native-fixtures03");
     let owner="c5326cc1-8524-479c-8bba-72e973489c22";
     for(name,kind,revision,state_sha,companion_sha)in[
         ("t26-ap160",Kind::T26,23,"1f9e917a57145d67fe50f479bc3ce0d437997ca15ba827fea600ab8e02022f20","80923e925c94126bfbab6cffca2fd28bdcb3833654b7c6f0b877ab7925236fe8"),
