@@ -68,6 +68,97 @@ _=>return None,
 // Allows f32 pose/mesh rounding at the native AABB boundary, not hitbox growth.
 const CONTACT_TOLERANCE: f64 = 0.0002;
 
+fn same_surface(a:&super::collision::Candidate,b:&super::collision::Candidate)->bool {
+    a.triangle_id==b.triangle_id && a.mesh==b.mesh && a.group==b.group && a.material==b.material
+}
+
+// Public candidates retain f32 t even though collision ordering uses f64.
+// Treat equal reported t as ambiguous instead of inventing a tie policy.
+fn first_surface_unambiguous(hits:&[super::collision::Candidate],expected:&super::collision::Candidate)->bool {
+    match hits.first() {
+        Some(first) if same_surface(first,expected) => !hits.get(1).is_some_and(|next|next.t.to_bits()==first.t.to_bits()),
+        _=>false,
+    }
+}
+
+/// Outward-rounded binary64 intervals for the fallback's world-space
+/// barycentric proof. Inputs are exact promotions of already-fixed f32 facts;
+/// this certifies arithmetic over those facts, not pose/native uncertainty.
+#[derive(Clone,Copy,Debug)]
+struct ImpactInterval {lo:f64,hi:f64}
+impl ImpactInterval {
+    fn exact(value:f64)->Option<Self> {value.is_finite().then_some(Self{lo:value,hi:value})}
+    fn rounded(lo:f64,hi:f64)->Option<Self> {
+        let (lo,hi)=(lo.next_down(),hi.next_up());
+        (lo.is_finite()&&hi.is_finite()&&lo<=hi).then_some(Self{lo,hi})
+    }
+    fn add(self,other:Self)->Option<Self> {Self::rounded(self.lo+other.lo,self.hi+other.hi)}
+    fn sub(self,other:Self)->Option<Self> {Self::rounded(self.lo-other.hi,self.hi-other.lo)}
+    fn mul(self,other:Self)->Option<Self> {
+        let p=[self.lo*other.lo,self.lo*other.hi,self.hi*other.lo,self.hi*other.hi];
+        if p.iter().any(|x|!x.is_finite()){return None;}
+        Self::rounded(p.into_iter().fold(f64::INFINITY,f64::min),p.into_iter().fold(f64::NEG_INFINITY,f64::max))
+    }
+    fn div(self,other:Self)->Option<Self> {
+        if other.lo<=0. && other.hi>=0. {return None;}
+        let reciprocal=Self::rounded(1./other.hi,1./other.lo)?;
+        self.mul(reciprocal)
+    }
+}
+
+/// Requires the exact world-f32 segment/triangle intersection to lie strictly
+/// inside the triangle and segment, with enough separation to prove that fact
+/// despite every rounded f64 operation. A denominator interval containing zero
+/// (including an insufficiently resolved near-parallel ray) is always refused.
+fn impact_interior_certified(vertices:[[f64;3];3],start:[f64;3],end:[f64;3])->Option<(ImpactInterval,ImpactInterval)> {
+    fn sub(a:[ImpactInterval;3],b:[ImpactInterval;3])->Option<[ImpactInterval;3]> {
+        Some([a[0].sub(b[0])?,a[1].sub(b[1])?,a[2].sub(b[2])?])
+    }
+    fn cross(a:[ImpactInterval;3],b:[ImpactInterval;3])->Option<[ImpactInterval;3]> {
+        Some([a[1].mul(b[2])?.sub(a[2].mul(b[1])?)?,a[2].mul(b[0])?.sub(a[0].mul(b[2])?)?,
+            a[0].mul(b[1])?.sub(a[1].mul(b[0])?)?])
+    }
+    fn dot(a:[ImpactInterval;3],b:[ImpactInterval;3])->Option<ImpactInterval> {
+        a[0].mul(b[0])?.add(a[1].mul(b[1])?)?.add(a[2].mul(b[2])?)
+    }
+    fn vec(v:[f64;3])->Option<[ImpactInterval;3]> {
+        Some([ImpactInterval::exact(v[0])?,ImpactInterval::exact(v[1])?,ImpactInterval::exact(v[2])?])
+    }
+    (||->Option<(ImpactInterval,ImpactInterval)>{
+        let a=vec(vertices[0])?;let b=vec(vertices[1])?;let c=vec(vertices[2])?;
+        let s0=vec(start)?;let e=vec(end)?;let edge1=sub(b,a)?;let edge2=sub(c,a)?;
+        let d=sub(e,s0)?;let h=cross(d,edge2)?;let det=dot(edge1,h)?;
+        let s=sub(s0,a)?;let u=dot(s,h)?.div(det)?;let q=cross(s,edge1)?;
+        let v=dot(d,q)?.div(det)?;let t=dot(edge2,q)?.div(det)?;
+        let one=ImpactInterval::exact(1.)?;let w=one.sub(u)?.sub(v)?;
+        if u.lo>0. && v.lo>0. && w.lo>0. && t.lo>0. && t.hi<1. { Some((u,v)) } else { None }
+    })()
+}
+
+/// Enclose the exact source-local barycentric point and every f32 rounding of
+/// that enclosure. Refuse unless the entire enclosure fits the existing
+/// per-coordinate contact tolerance, including the selected f32 anchor.
+fn impact_anchor_certified(local:[[f32;3];3],point:[f32;3],u:ImpactInterval,v:ImpactInterval,
+    anchor:[f32;3])->bool {
+    let proof=(||->Option<bool>{
+        for i in 0..3 {
+            let a=ImpactInterval::exact(f64::from(local[0][i]))?;
+            let b=ImpactInterval::exact(f64::from(local[1][i]))?;
+            let c=ImpactInterval::exact(f64::from(local[2][i]))?;
+            let exact=a.add(u.mul(b.sub(a)?)?)?.add(v.mul(c.sub(a)?)?)?;
+            let rounded_lo=f64::from(exact.lo as f32);
+            let rounded_hi=f64::from(exact.hi as f32);
+            if !rounded_lo.is_finite() || !rounded_hi.is_finite() || !anchor[i].is_finite() || !point[i].is_finite() {return None;}
+            let lo=exact.lo.min(rounded_lo);let hi=exact.hi.max(rounded_hi);
+            let chosen=f64::from(anchor[i]);let origin=f64::from(point[i]);
+            if chosen<lo || chosen>hi || (lo-origin).abs().next_up()>CONTACT_TOLERANCE
+                || (hi-origin).abs().next_up()>CONTACT_TOLERANCE {return Some(false);}
+        }
+        Some(true)
+    })();
+    proof==Some(true)
+}
+
 /// Component-local line through a measured contact, before native quantization.
 /// This has no outcome, health or native method/component number semantics.
 #[derive(Clone, Debug, PartialEq)]
@@ -83,6 +174,145 @@ impl crate::bw_wire::Wire for ImpactSegment {
     fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{component:W::get(bw_i)?,bounds:W::get(bw_i)?,start:W::get(bw_i)?,end:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
+
+/// Test-only, bounded evidence for an impact-segment refusal. Float values are
+/// recorded as IEEE bits so a replay does not depend on decimal formatting.
+#[cfg(test)]
+thread_local! {
+    // Test-local replay witness, never serialized into the production World.
+    static LAST_IMPACT_DIAGNOSTIC_BRANCH:std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
+}
+#[cfg(test)]
+struct ImpactDiagnostic<'a> {
+    bundle: &'a Bundle, contact: &'a Contact, branch: &'static str,
+    point: [f32;3], direction: [f32;3], bounds: [[f32;3];2], start: [f32;3], end: [f32;3],
+    hits: &'a [super::collision::Candidate], at_contact: &'a [bool],
+    contact_index: Option<usize>, interval: Option<(f64,f64)>, shifted_start: Option<[f32;3]>,
+    shifted_hits: &'a [super::collision::Candidate], shifted_at_contact: &'a [bool],
+}
+#[cfg(test)]
+impl ImpactDiagnostic<'_> {
+    fn json(&self)->Value {
+        let c=self.contact;
+        let candidate=|h:&super::collision::Candidate| serde_json::json!({
+            "candidate_index":h.candidate_index,"triangle_id":h.triangle_id,"mesh":h.mesh,
+            "group":h.group,"material":h.material,"normal_bits":h.normal.map(f32::to_bits),"t_bits":h.t.to_bits()});
+        // Collision itself limits candidates; truncate defensively in case a
+        // test constructs this diagnostic directly with a larger slice.
+        let local=|hits:&[super::collision::Candidate],at:&[bool]| serde_json::json!({
+            "count":hits.len(),"truncated":hits.len()>super::collision::MAX_CANDIDATES,
+            "rows":hits.iter().take(super::collision::MAX_CANDIDATES).enumerate().map(|(i,h)|
+                serde_json::json!({"triangle_id":h.triangle_id,"t_bits":h.t.to_bits(),"at_contact":at.get(i).copied()})).collect::<Vec<_>>()});
+        let effective_bits=c.material_facts.effective.as_ref().map(|m|serde_json::json!({
+            "armor_bits":m.armor.map(f32::to_bits),"vehicle_damage_factor_bits":m.vehicle_damage_factor.to_bits(),
+            "chance_to_hit_by_projectile_bits":m.chance_to_hit_by_projectile.to_bits(),
+            "chance_to_hit_by_explosion_bits":m.chance_to_hit_by_explosion.to_bits()}));
+        serde_json::json!({"schema":"perf02-impact-diagnostic.v1","branch":self.branch,
+            "vehicle":self.bundle.vehicle_kind().label(),"bundle_sha256":self.bundle.bundle_sha256(),
+            "contact":{"shot":c.shot,"target_slot":c.target_slot,"tick":c.tick,
+                "segment_start_bits":c.segment_start.map(f32::to_bits),"segment_end_bits":c.segment_end.map(f32::to_bits),
+                "segment_seconds_bits":c.segment_seconds.to_bits(),"endpoint_bits":c.endpoint.map(f32::to_bits),
+                "target_position_bits":c.target_position.map(f32::to_bits),"target_direction_bits":c.target_direction.map(f32::to_bits),
+                "target_aim_bits":c.target_aim.map(f32::to_bits),"triangle":candidate(&c.triangle),
+                "geometry_revision":c.geometry_revision,"transform_revision":c.transform_revision,
+                "material_facts":c.material_facts.json(),"material_float_bits":effective_bits},
+            "local":{"point_bits":self.point.map(f32::to_bits),"direction_bits":self.direction.map(f32::to_bits),
+                "bounds_bits":self.bounds.map(|p|p.map(f32::to_bits)),"start_bits":self.start.map(f32::to_bits),
+                "end_bits":self.end.map(f32::to_bits),"hits":local(self.hits,self.at_contact),
+                "contact_index":self.contact_index,"interval_f64_bits":self.interval.map(|(a,b)|[a.to_bits(),b.to_bits()]),
+                "shifted_start_bits":self.shifted_start.map(|p|p.map(f32::to_bits)),
+                "shifted_hits":local(self.shifted_hits,self.shifted_at_contact)}})
+    }
+    fn emit(&self)->io::Result<()> {
+        LAST_IMPACT_DIAGNOSTIC_BRANCH.with(|branch|branch.set(Some(self.branch)));
+        if std::env::var("PERF02_CAPTURE_IMPACT").as_deref()==Ok("1") {
+            write_impact_diagnostic(&mut io::stderr().lock(),&self.json())?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+const IMPACT_DIAGNOSTIC_MAX_BYTES:usize=65536;
+/// Buffer before touching stderr: oversize/serialization failures never leave
+/// a partial receipt. An I/O failure may leave a partial line and is reported.
+/// Both serialization and the newline count toward the cap.
+#[cfg(test)]
+fn write_impact_diagnostic<W:io::Write>(writer:&mut W,value:&Value)->io::Result<()> {
+    struct Bounded(Vec<u8>);
+    impl io::Write for Bounded {
+        fn write(&mut self,bytes:&[u8])->io::Result<usize> {
+            if bytes.len()>IMPACT_DIAGNOSTIC_MAX_BYTES.saturating_sub(self.0.len()) {
+                return Err(io::Error::new(io::ErrorKind::InvalidData,"impact diagnostic size limit"));
+            }
+            self.0.extend_from_slice(bytes);Ok(bytes.len())
+        }
+        fn flush(&mut self)->io::Result<()> {Ok(())}
+    }
+    let mut buffer=Bounded(Vec::new());
+    serde_json::to_writer(&mut buffer,value).map_err(|e|io::Error::new(io::ErrorKind::InvalidData,format!("impact diagnostic serialization/size: {e}")))?;
+    io::Write::write_all(&mut buffer,b"\n").map_err(|e|io::Error::new(e.kind(),format!("impact diagnostic newline/size: {e}")))?;
+    writer.write_all(&buffer.0).map_err(|e|io::Error::new(e.kind(),format!("impact diagnostic stderr write: {e}")))
+}
+
+/// Decode only the bounded diagnostic schema and revalidate its source facts
+/// against the caller's pinned Bundle. No arbitrary object deserialization.
+#[cfg(test)]
+fn decode_impact_diagnostic(raw:&[u8],bundle:&Bundle)->io::Result<Contact> {
+    fn invalid()->io::Error {io::Error::new(io::ErrorKind::InvalidData,"impact diagnostic receipt")}
+    fn text<'a>(v:&'a Value,key:&str)->io::Result<&'a str> {
+        v.get(key).and_then(Value::as_str).filter(|s|s.len()<=128).ok_or_else(invalid)
+    }
+    fn u32_value(v:&Value,key:&str)->io::Result<u32> {
+        v.get(key).and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or_else(invalid)
+    }
+    fn bits<const N:usize>(v:&Value,key:&str)->io::Result<[f32;N]> {
+        let a=v.get(key).and_then(Value::as_array).filter(|a|a.len()==N).ok_or_else(invalid)?;
+        let mut values=[0.;N];
+        for (i,item) in a.iter().enumerate() {
+            let n=item.as_u64().and_then(|n|u32::try_from(n).ok()).ok_or_else(invalid)?;
+            values[i]=f32::from_bits(n);
+            if !values[i].is_finite(){return Err(invalid());}
+        }
+        Ok(values)
+    }
+    if raw.len()>IMPACT_DIAGNOSTIC_MAX_BYTES {return Err(invalid());}
+    let root:Value=serde_json::from_slice(raw).map_err(|_|invalid())?;
+    if text(&root,"schema")?!="perf02-impact-diagnostic.v1" || text(&root,"vehicle")?!=bundle.vehicle_kind().label()
+        || text(&root,"bundle_sha256")?!=bundle.bundle_sha256() {return Err(invalid());}
+    let c=root.get("contact").ok_or_else(invalid)?;let h=c.get("triangle").ok_or_else(invalid)?;
+    let t=f32::from_bits(u32_value(h,"t_bits")?);if !t.is_finite(){return Err(invalid());}
+    let triangle=super::collision::Candidate{candidate_index:usize::try_from(h.get("candidate_index").and_then(Value::as_u64).ok_or_else(invalid)?).map_err(|_|invalid())?,
+        triangle_id:u32_value(h,"triangle_id")?,mesh:text(h,"mesh")?.to_owned(),group:text(h,"group")?.to_owned(),
+        material:text(h,"material")?.to_owned(),normal:bits(h,"normal_bits")?,t};
+    let facts=bundle.materials.lookup(&triangle.mesh,&triangle.material)?;
+    let effective_bits=facts.effective.as_ref().map(|m|serde_json::json!({
+        "armor_bits":m.armor.map(f32::to_bits),"vehicle_damage_factor_bits":m.vehicle_damage_factor.to_bits(),
+        "chance_to_hit_by_projectile_bits":m.chance_to_hit_by_projectile.to_bits(),
+        "chance_to_hit_by_explosion_bits":m.chance_to_hit_by_explosion.to_bits()}));
+    if c.get("material_facts")!=Some(&facts.json()) || c.get("material_float_bits")!=Some(&serde_json::json!(effective_bits)) {return Err(invalid());}
+    let target_slot=usize::try_from(c.get("target_slot").and_then(Value::as_u64).ok_or_else(invalid)?).map_err(|_|invalid())?;
+    let tick=u32_value(c,"tick")?;
+    if target_slot>=super::model::MAX_ACTORS || tick<1000 {return Err(invalid());}
+    let position=bits(c,"target_position_bits")?;
+    let direction=bits(c,"target_direction_bits")?;let aim=bits(c,"target_aim_bits")?;
+    let geometry_revision=text(c,"geometry_revision")?.to_owned();let transform_revision=text(c,"transform_revision")?.to_owned();
+    if geometry_revision!=bundle.geometry_revision() || transform_revision!=super::geometry::transform_revision(position,direction,aim,target_slot,tick) {return Err(invalid());}
+    let seconds=f32::from_bits(u32_value(c,"segment_seconds_bits")?);if !seconds.is_finite(){return Err(invalid());}
+    let contact=Contact{shot:u32_value(c,"shot")?,target_slot,tick,segment_start:bits(c,"segment_start_bits")?,
+        segment_end:bits(c,"segment_end_bits")?,segment_seconds:seconds,endpoint:bits(c,"endpoint_bits")?,
+        target_position:position,target_direction:direction,target_aim:aim,triangle,geometry_revision,transform_revision,material_facts:facts};
+    // A receipt cannot substitute a different source triangle for this pose.
+    let mesh=bundle.mesh_for_pose(position,direction,aim,target_slot,tick)?;
+    if !super::collision::query(&mesh,contact.segment_start,contact.segment_end)?.iter().any(|candidate|
+        candidate==&contact.triangle && candidate.t.to_bits()==contact.triangle.t.to_bits()
+        && candidate.normal.map(f32::to_bits)==contact.triangle.normal.map(f32::to_bits)) {return Err(invalid());}
+    for i in 0..3 {
+        let expected=contact.segment_start[i]+contact.triangle.t*(contact.segment_end[i]-contact.segment_start[i]);
+        if expected.to_bits()!=contact.endpoint[i].to_bits(){return Err(invalid());}
+    }
+    Ok(contact)
+}
 
 /// New LAB proxy input after an actual revalidated source surface contact.
 /// This is distinct from the native wire segment, whose AABB entry may be in
@@ -489,18 +719,121 @@ impl Bundle {
         // so the extension stays between it and the contact, then re-verify.
         // Contact, armor decision and HP are unchanged.
         let differs = || io::Error::new(io::ErrorKind::InvalidData, "impact segment first surface differs from contact");
-        let contact = at_contact.iter().position(|&hit| hit).ok_or_else(differs)?;
+        let contact_index = match at_contact.iter().position(|&hit| hit) {
+            Some(index)=>index,
+            None=>{
+                // The authoritative first hit can be exactly on its source
+                // face while the inverse-transformed f32 endpoint misses that
+                // face by a few ulps. For a grazing ray that tiny normal error
+                // moves the local intersection far along the surface. Only a
+                // fully revalidated world-first hit may try a bounded reanchor.
+                if let Some(anchor) = self.impact_source_anchor(contact,index,point)? {
+                    let (reanchored_start,reanchored_end)=clipped_line(anchor,direction,bounds,Some(minimum))?;
+                    let (reanchored_hits,reanchored_at_contact)=native_hits(reanchored_start,reanchored_end)?;
+                    if reanchored_at_contact.first()==Some(&true)
+                        && first_surface_unambiguous(&reanchored_hits,&contact.triangle)
+                        && self.impact_packed_first_matches(component,bounds,reanchored_start,reanchored_end,&mesh,&contact.triangle)? {
+                        return Ok(ImpactSegment{component,bounds,start:reanchored_start,end:reanchored_end});
+                    }
+                }
+                #[cfg(test)] ImpactDiagnostic{bundle:self,contact,branch:"contact_not_in_local_hits",point,direction,bounds,start,end,
+                    hits:&hits,at_contact:&at_contact,contact_index:None,interval:None,shifted_start:None,shifted_hits:&[],shifted_at_contact:&[]}.emit()?;
+                return Err(differs());
+            },
+        };
         // Extended query parameter t maps to segment fraction 1.02t - 0.01; a
         // start at fraction s is extended by the native decoder to s - 0.01(1 - s).
         let fraction = |t: f32| f64::from(t) * 1.02 - 0.01;
-        let lowest = (fraction(hits[contact - 1].t) + 0.01) / 1.01;
-        let highest = fraction(hits[contact].t);
-        if !(lowest < highest) { return Err(differs()); }
+        let lowest = (fraction(hits[contact_index - 1].t) + 0.01) / 1.01;
+        let highest = fraction(hits[contact_index].t);
+        if !(lowest < highest) {
+            #[cfg(test)] ImpactDiagnostic{bundle:self,contact,branch:"no_separating_interval",point,direction,bounds,start,end,
+                hits:&hits,at_contact:&at_contact,contact_index:Some(contact_index),interval:Some((lowest,highest)),shifted_start:None,shifted_hits:&[],shifted_at_contact:&[]}.emit()?;
+            return Err(differs());
+        }
         let shifted = 0.5 * (lowest + highest);
-        let start: [f32; 3] = std::array::from_fn(|i| (f64::from(start[i]) + shifted * (f64::from(end[i]) - f64::from(start[i]))) as f32);
-        let (_, at_contact) = native_hits(start, end)?;
-        if at_contact.first() != Some(&true) { return Err(differs()); }
-        Ok(ImpactSegment { component, bounds, start, end })
+        let shifted_start: [f32; 3] = std::array::from_fn(|i| (f64::from(start[i]) + shifted * (f64::from(end[i]) - f64::from(start[i]))) as f32);
+        let (shifted_hits, shifted_at_contact) = native_hits(shifted_start, end)?;
+        if shifted_at_contact.first() != Some(&true) {
+            #[cfg(test)] ImpactDiagnostic{bundle:self,contact,branch:"shifted_first_mismatch",point,direction,bounds,start,end,
+                hits:&hits,at_contact:&at_contact,contact_index:Some(contact_index),interval:Some((lowest,highest)),shifted_start:Some(shifted_start),shifted_hits:&shifted_hits,shifted_at_contact:&shifted_at_contact}.emit()?;
+            return Err(differs());
+        }
+        #[cfg(not(test))] let _=shifted_hits;
+        Ok(ImpactSegment { component, bounds, start:shifted_start, end })
+    }
+    /// Reconstruct a source-local point from the first authoritative world
+    /// triangle, never from an unverified ID alone. The admissible correction
+    /// is the existing CONTACT_TOLERANCE per coordinate, not a wider limit.
+    /// Ambiguous triangle edges are refused; this is a conservative fallback.
+    fn impact_source_anchor(&self,contact:&Contact,index:usize,point:[f32;3])->io::Result<Option<[f32;3]>> {
+        let world=self.mesh_for_pose(contact.target_position,contact.target_direction,contact.target_aim,contact.target_slot,contact.tick)?;
+        let hits=super::collision::query(&world,contact.segment_start,contact.segment_end)?;
+        let expected=match hits.first() {Some(hit)=>hit,None=>return Ok(None)};
+        if !first_surface_unambiguous(&hits,expected) {return Ok(None);}
+        if expected!=&contact.triangle || expected.t.to_bits()!=contact.triangle.t.to_bits()
+            || expected.normal.map(f32::to_bits)!=contact.triangle.normal.map(f32::to_bits) {return Ok(None);}
+        let endpoint:[f32;3]=std::array::from_fn(|i|contact.segment_start[i]
+            + expected.t*(contact.segment_end[i]-contact.segment_start[i]));
+        if endpoint.map(f32::to_bits)!=contact.endpoint.map(f32::to_bits){return Ok(None);}
+        let part=&self.components[index];
+        let triangle=match part.triangles.iter().find(|t|t.triangle_id==expected.triangle_id){Some(t)=>t,None=>return Ok(None)};
+        if triangle.mesh!=expected.mesh || triangle.group!=expected.group || triangle.material!=expected.material{return Ok(None);}
+        let mut local=[[0_f32;3];3];let mut vertices=[[0_f64;3];3];
+        for (i,vertex_index) in [triangle.a,triangle.b,triangle.c].into_iter().enumerate() {
+            local[i]=*part.vertices.get(vertex_index as usize).ok_or_else(||bad())?;
+            let mounted=self.component_point(index,local[i],contact.target_aim[0],contact.target_aim[1]);
+            let rotated=pose::rotate(mounted,contact.target_direction);
+            vertices[i]=std::array::from_fn(|axis|f64::from(contact.target_position[axis]+rotated[axis]));
+        }
+        let sub=|a:[f64;3],b:[f64;3]|std::array::from_fn::<_,3,_>(|i|a[i]-b[i]);
+        let cross=|a:[f64;3],b:[f64;3]|[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+        let dot=|a:[f64;3],b:[f64;3]|a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+        let a=vertices[0];let edge1=sub(vertices[1],a);let edge2=sub(vertices[2],a);
+        let start=contact.segment_start.map(f64::from);
+        let (u_interval,v_interval)=match impact_interior_certified(vertices,start,contact.segment_end.map(f64::from)) {
+            Some(intervals)=>intervals,None=>return Ok(None),
+        };
+        let direction=sub(contact.segment_end.map(f64::from),start);
+        let h=cross(direction,edge2);let determinant=dot(edge1,h);
+        if !determinant.is_finite() || determinant==0. {return Ok(None);}
+        let inverse=1./determinant;let s=sub(start,a);let u=inverse*dot(s,h);
+        let q=cross(s,edge1);let v=inverse*dot(direction,q);let t=inverse*dot(edge2,q);
+        // Strict interior and segment bounds deliberately refuse edge/tie
+        // ambiguity and the tolerance-only hits admitted by collision::query.
+        if !u.is_finite() || !v.is_finite() || !t.is_finite() || u<=0. || v<=0. || u+v>=1.
+            || !(0. ..=1.).contains(&t) || (t as f32).to_bits()!=expected.t.to_bits() {return Ok(None);}
+        let anchor:[f32;3]=std::array::from_fn(|i|(f64::from(local[0][i])
+            + u*(f64::from(local[1][i])-f64::from(local[0][i]))
+            + v*(f64::from(local[2][i])-f64::from(local[0][i]))) as f32);
+        if !impact_anchor_certified(local,point,u_interval,v_interval,anchor) {return Ok(None);}
+        Ok(Some(anchor))
+    }
+    /// Conservative models of the documented byte decoder. Actual #717
+    /// hitTester bounds, arithmetic and BSP tie order remain native gates.
+    fn impact_packed_first_matches(&self,component:materials::Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3],
+        mesh:&Mesh,expected:&super::collision::Candidate)->io::Result<bool> {
+        use super::impact_wire::{packed_segment,ShotOutcome};
+        let category=match component {materials::Component::Hull=>1,materials::Component::Turret01=>2,
+            materials::Component::Gun02|materials::Component::Gun01=>3};
+        // Outcome is irrelevant to coordinates. The actual resolved outcome
+        // is still supplied by the normal publication path.
+        let bytes=packed_segment(category,bounds,start,end,ShotOutcome::Pierced)?;
+        for wide in [false,true] {
+            let decode=|offset:usize|std::array::from_fn::<_,3,_>(|i|if wide {
+                (f64::from(bounds[0][i])+(f64::from(bounds[1][i])-f64::from(bounds[0][i]))
+                    *f64::from(bytes[offset+i])/255.0) as f32
+            } else {bounds[0][i]+(bounds[1][i]-bounds[0][i])*f32::from(bytes[offset+i])/255.0});
+            let s=decode(2);let e=decode(5);
+            let extension=|axis:usize,at_end:bool|if wide {
+                let (s,e)=(f64::from(s[axis]),f64::from(e[axis]));
+                (if at_end {e+0.01*(e-s)} else {s-0.01*(e-s)}) as f32
+            }else if at_end {e[axis]+0.01_f32*(e[axis]-s[axis])}
+                else {s[axis]-0.01_f32*(e[axis]-s[axis])};
+            let qs=std::array::from_fn(|i|extension(i,false));let qe=std::array::from_fn(|i|extension(i,true));
+            if !first_surface_unambiguous(&super::collision::query(mesh,qs,qe)?,expected){return Ok(false);}
+        }
+        Ok(true)
     }
     /// Requery the exact authoritative source mesh and contact pose. A source
     /// triangle ID/label alone does not validate the normal, fraction, nearest
@@ -685,6 +1018,187 @@ pub(super) mod tests {
             endpoint, target_position: actor.position, target_direction: direction, target_aim: aim,
             triangle, geometry_revision: b.geometry_revision().into(), transform_revision: mesh.transform_revision().into(), material_facts }
     }
+    #[test] fn perf02_impact_diagnostic_has_exact_bits_and_bounded_hit_rows() {
+        let b=bundle();
+        let c=contact_for(&b,0,[-4.,0.,0.],[4.,0.,0.],[0.;3],[0.;2]);
+        let hits=vec![c.triangle.clone();super::super::collision::MAX_CANDIDATES+3];
+        let at=vec![false;hits.len()];
+        let diagnostic=ImpactDiagnostic{bundle:&b,contact:&c,branch:"contact_not_in_local_hits",
+            point:[1.,-0.,3.],direction:[4.,5.,6.],bounds:[[-1.;3],[1.;3]],start:[0.;3],end:[1.;3],
+            hits:&hits,at_contact:&at,contact_index:None,interval:None,shifted_start:None,shifted_hits:&[],shifted_at_contact:&[]};
+        let value=diagnostic.json();
+        assert_eq!(value["schema"],"perf02-impact-diagnostic.v1");
+        assert_eq!(value["branch"],"contact_not_in_local_hits");
+        assert_eq!(value["bundle_sha256"],b.bundle_sha256());
+        assert_eq!(value["contact"]["segment_start_bits"][0],c.segment_start[0].to_bits());
+        assert_eq!(value["contact"]["triangle"]["t_bits"],c.triangle.t.to_bits());
+        assert_eq!(value["local"]["point_bits"][1],(-0.0f32).to_bits());
+        assert_eq!(value["local"]["hits"]["truncated"],true);
+        assert_eq!(value["local"]["hits"]["rows"].as_array().unwrap().len(),super::super::collision::MAX_CANDIDATES);
+        assert!(serde_json::to_vec(&value).unwrap().len()<65536);
+        let mut receipt=Vec::new();write_impact_diagnostic(&mut receipt,&value).unwrap();
+        assert_eq!(receipt.last(),Some(&b'\n'));
+        let restored=decode_impact_diagnostic(&receipt,&b).unwrap();
+        assert_eq!(restored,c);
+        let rebuilt=ImpactDiagnostic{bundle:&b,contact:&restored,branch:"contact_not_in_local_hits",
+            point:[1.,-0.,3.],direction:[4.,5.,6.],bounds:[[-1.;3],[1.;3]],start:[0.;3],end:[1.;3],
+            hits:&hits,at_contact:&at,contact_index:None,interval:None,shifted_start:None,shifted_hits:&[],shifted_at_contact:&[]}.json();
+        // Compare every serialized input field, including signed zero bits.
+        assert_eq!(rebuilt["contact"],value["contact"]);
+        let mut foreign=value.clone();foreign["bundle_sha256"]=serde_json::json!("not-the-pinned-bundle");
+        assert!(decode_impact_diagnostic(&serde_json::to_vec(&foreign).unwrap(),&b).is_err());
+    }
+    #[test] fn perf02_impact_diagnostic_writer_rejects_broken_and_oversized() {
+        struct Broken;
+        impl io::Write for Broken {
+            fn write(&mut self,_:&[u8])->io::Result<usize>{Err(io::Error::new(io::ErrorKind::BrokenPipe,"closed"))}
+            fn flush(&mut self)->io::Result<()> {Ok(())}
+        }
+        let error=write_impact_diagnostic(&mut Broken,&serde_json::json!({"a":1})).unwrap_err();
+        assert_eq!(error.kind(),io::ErrorKind::BrokenPipe);
+        assert!(error.to_string().contains("impact diagnostic stderr write"));
+        let mut out=Vec::new();let huge=serde_json::json!({"oversized":"x".repeat(IMPACT_DIAGNOSTIC_MAX_BYTES)});
+        let error=write_impact_diagnostic(&mut out,&huge).unwrap_err();
+        assert_eq!(error.kind(),io::ErrorKind::InvalidData);assert!(out.is_empty());
+        assert!(error.to_string().contains("impact diagnostic serialization/size"));
+    }
+    /// Explicit opt-in replay of one locally retained diagnostic JSON line.
+    /// The caller supplies a pinned geometry bundle and its permitted local root.
+    #[test]
+    #[ignore]
+    fn perf02_impact_receipt_reanchors_first_surface() {
+        let receipt=std::env::var("PERF02_IMPACT_RECEIPT").expect("PERF02_IMPACT_RECEIPT");
+        let root=std::env::var("PERF02_IMPACT_LOCAL_ROOT").expect("PERF02_IMPACT_LOCAL_ROOT");
+        let path=std::env::var("PERF02_IMPACT_BUNDLE").expect("PERF02_IMPACT_BUNDLE");
+        let receipt=Path::new(&receipt);
+        assert!(receipt.is_absolute(),"receipt must be a local absolute path");
+        #[cfg(windows)] {
+            use std::path::{Component,Prefix};
+            assert!(matches!(receipt.components().next(),Some(Component::Prefix(p))
+                if matches!(p.kind(),Prefix::Disk(_)|Prefix::VerbatimDisk(_))),"receipt must be on a local drive");
+        }
+        non_reparse(receipt).expect("receipt must have no reparse or symlink path");
+        let file=fs::File::open(receipt).unwrap();assert!(file.metadata().unwrap().is_file(),"receipt must be a file");
+        let mut raw=Vec::new();
+        file.take((IMPACT_DIAGNOSTIC_MAX_BYTES+1) as u64).read_to_end(&mut raw).unwrap();
+        assert!(raw.len()<=IMPACT_DIAGNOSTIC_MAX_BYTES,"receipt exceeds bound");
+        let b=Bundle::load(Path::new(&root),Path::new(&path)).unwrap();
+        let contact=decode_impact_diagnostic(&raw,&b).unwrap();
+        let value:Value=serde_json::from_slice(&raw).unwrap();
+        let branch=value["branch"].as_str().expect("receipt branch");
+        assert!(matches!(branch,"contact_not_in_local_hits"|"no_separating_interval"|"shifted_first_mismatch"),"unknown branch");
+        LAST_IMPACT_DIAGNOSTIC_BRANCH.with(|state|state.set(None));
+        assert_eq!(branch,"contact_not_in_local_hits");
+        let segment=b.impact_segment(&contact).expect("bounded reanchor of the retained world-first contact");
+        assert!(same_surface(&native_decoder_first(&b,&segment),&contact.triangle));
+        assert_eq!(LAST_IMPACT_DIAGNOSTIC_BRANCH.with(|state|state.get()),None);
+        let part=&b.components[0];
+        let mesh=Mesh::new(part.vertices.clone(),part.triangles.clone(),b.geometry_revision(),"perf02-reanchor-replay").unwrap();
+        assert!(b.impact_packed_first_matches(segment.component,segment.bounds,segment.start,segment.end,&mesh,&contact.triangle).unwrap());
+        // Exercise rejection through the actual fallback, not just its helper.
+        // Neither forged field affects the legacy pre-fallback local query.
+        let mut forged_index=contact.clone();
+        forged_index.triangle.candidate_index=forged_index.triangle.candidate_index.checked_add(1).unwrap();
+        LAST_IMPACT_DIAGNOSTIC_BRANCH.with(|state|state.set(None));
+        assert_eq!(b.impact_segment(&forged_index).unwrap_err().to_string(),"impact segment first surface differs from contact");
+        assert_eq!(LAST_IMPACT_DIAGNOSTIC_BRANCH.with(|state|state.get()),Some("contact_not_in_local_hits"));
+        let mut forged_normal=contact.clone();
+        let axis=(0..3).max_by(|&a,&b|forged_normal.triangle.normal[a].abs().total_cmp(&forged_normal.triangle.normal[b].abs())).unwrap();
+        assert_ne!(forged_normal.triangle.normal[axis],0.);
+        forged_normal.triangle.normal[axis]=-forged_normal.triangle.normal[axis];
+        LAST_IMPACT_DIAGNOSTIC_BRANCH.with(|state|state.set(None));
+        assert_eq!(b.impact_segment(&forged_normal).unwrap_err().to_string(),"impact segment first surface differs from contact");
+        assert_eq!(LAST_IMPACT_DIAGNOSTIC_BRANCH.with(|state|state.get()),Some("contact_not_in_local_hits"));
+        println!("PERF02_IMPACT_REPLAY vehicle={} bundle_sha256={} shot={} target={} tick={} original_branch={} bounded_reanchor=true",
+            b.vehicle_kind().label(),b.bundle_sha256(),contact.shot,contact.target_slot,contact.tick,branch);
+    }
+    /// Reconstructs one retained refusal and compares its packed visual ray
+    /// under two explicit arithmetic models. This is an offline model, not a
+    /// native client or a claim of exact decoder arithmetic/appearance.
+    #[test]
+    #[ignore]
+    fn perf02_impact_receipt_packed_wire_models() {
+        use super::super::impact_wire::{packed_segment, ShotOutcome};
+        let receipt = std::env::var("PERF02_IMPACT_RECEIPT").expect("PERF02_IMPACT_RECEIPT");
+        let root = std::env::var("PERF02_IMPACT_LOCAL_ROOT").expect("PERF02_IMPACT_LOCAL_ROOT");
+        let path = std::env::var("PERF02_IMPACT_BUNDLE").expect("PERF02_IMPACT_BUNDLE");
+        let receipt = Path::new(&receipt);
+        assert!(receipt.is_absolute());
+        non_reparse(receipt).expect("no reparse or symlink path");
+        let file = fs::File::open(receipt).unwrap();
+        assert!(file.metadata().unwrap().is_file());
+        let mut raw = Vec::new();
+        file.take((IMPACT_DIAGNOSTIC_MAX_BYTES + 1) as u64).read_to_end(&mut raw).unwrap();
+        assert!(raw.len() <= IMPACT_DIAGNOSTIC_MAX_BYTES);
+        assert_eq!(format!("{:x}", Sha256::digest(&raw)), "973bddd51c407ed10d99350b5753e2fef746c93ee87d1c6a809ae8ecb6ab7763");
+        let b = Bundle::load(Path::new(&root), Path::new(&path)).unwrap();
+        assert_eq!(b.bundle_sha256(), "25b6c69fd51e26abbda9b16c35572b5f289f2320d0dffe4085dea1b7bdeba1bb");
+        let contact = decode_impact_diagnostic(&raw, &b).unwrap();
+        let value: Value = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(value["branch"], "contact_not_in_local_hits");
+        assert_eq!(contact.triangle.triangle_id, 93);
+        LAST_IMPACT_DIAGNOSTIC_BRANCH.with(|state|state.set(None));
+        assert!(b.impact_segment(&contact).is_ok(),"retained receipt must take the bounded fallback");
+        assert_eq!(LAST_IMPACT_DIAGNOSTIC_BRANCH.with(|state|state.get()),None);
+        let vec3 = |value: &Value| -> [f32;3] {
+            let a = value.as_array().unwrap(); assert_eq!(a.len(),3);
+            std::array::from_fn(|i| f32::from_bits(u32::try_from(a[i].as_u64().unwrap()).unwrap()))
+        };
+        let local = &value["local"];
+        let bounds = [vec3(&local["bounds_bits"][0]), vec3(&local["bounds_bits"][1])];
+        let start = vec3(&local["start_bits"]); let end = vec3(&local["end_bits"]);
+        let point = vec3(&local["point_bits"]);
+        assert_eq!(bounds, b.component_bounds()[0]);
+        let part = &b.components[0];
+        let mesh = Mesh::new(part.vertices.clone(),part.triangles.clone(),b.geometry_revision(),"perf02-offline-wire-model").unwrap();
+        let raw_start = std::array::from_fn(|i| start[i] - 0.01_f32 * (end[i] - start[i]));
+        let raw_end = std::array::from_fn(|i| end[i] + 0.01_f32 * (end[i] - start[i]));
+        let raw_hits = super::super::collision::query(&mesh,raw_start,raw_end).unwrap();
+        assert_eq!(raw_hits.first().map(|hit|hit.triangle_id),Some(93));
+        assert_eq!(local["hits"]["rows"][0]["triangle_id"],93);
+        // Outcome is an arbitrary presentation label: the saved event has no
+        // resolved damage. It does not imply penetration or publish damage.
+        let packed = packed_segment(1,bounds,start,end,ShotOutcome::Pierced).unwrap();
+        assert_eq!(packed,[3,1,31,127,255,45,116,0]);
+        println!("PERF02_WIRE_MODEL packed={packed:?} outcome_label=arbitrary_pierced authoritative_triangle=93");
+        for model in ["f32", "f64_then_f32"] {
+            // Model formula: lo + (hi - lo) * byte / 255. The query API
+            // accepts f32 facts; f64_then_f32 narrows decoded coords before
+            // extension and narrows extension results before querying.
+            let decoded = |offset:usize| -> [f32;3] {
+                std::array::from_fn(|i| if model == "f32" {
+                    bounds[0][i] + (bounds[1][i]-bounds[0][i]) * f32::from(packed[offset+i]) / 255.0_f32
+                } else {
+                    (f64::from(bounds[0][i]) + (f64::from(bounds[1][i])-f64::from(bounds[0][i]))
+                        * f64::from(packed[offset+i]) / 255.0_f64) as f32
+                })
+            };
+            let ds = decoded(2); let de = decoded(5);
+            let ext = |axis:usize,at_end:bool| -> f32 {
+                if model == "f32" {
+                    if at_end { de[axis] + 0.01_f32*(de[axis]-ds[axis]) }
+                    else { ds[axis] - 0.01_f32*(de[axis]-ds[axis]) }
+                } else {
+                    let (s,e)=(f64::from(ds[axis]),f64::from(de[axis]));
+                    (if at_end {e+0.01_f64*(e-s)} else {s-0.01_f64*(e-s)}) as f32
+                }
+            };
+            let qs = std::array::from_fn(|i|ext(i,false));
+            let qe = std::array::from_fn(|i|ext(i,true));
+            let hits = super::super::collision::query(&mesh,qs,qe).unwrap();
+            let first = hits.first();
+            let hit_point = first.map(|h| std::array::from_fn::<_,3,_>(|i|qs[i]+h.t*(qe[i]-qs[i])));
+            let displacement = hit_point.map(|p|std::array::from_fn::<_,3,_>(|i|f64::from(p[i])-f64::from(point[i])));
+            let first = first.expect("model ray must intersect the retained component");
+            assert_eq!((first.triangle_id,&first.mesh,&first.group,&first.material),
+                (contact.triangle.triangle_id,&contact.triangle.mesh,&contact.triangle.group,&contact.triangle.material));
+            let drift = displacement.expect("model hit must have a point");
+            assert!((0.07..0.09).contains(&drift[2].abs()), "observed z drift in {model}: {drift:?}");
+            println!("PERF02_WIRE_MODEL arithmetic={model} decode=lo+(hi-lo)*byte/255 extension=1pct decoded_start={ds:?} decoded_end={de:?} first={:?} identity_matches={} displacement_xyz_m={displacement:?}",
+                Some((&first.triangle_id,&first.mesh,&first.group,&first.material)),
+                (first.triangle_id,&first.mesh,&first.group,&first.material) == (contact.triangle.triangle_id,&contact.triangle.mesh,&contact.triangle.group,&contact.triangle.material));
+        }
+    }
     #[test] fn impact_bounds_equal_original_native_records_not_vertex_extrema() {
         let root = std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
         let file = fs::File::open(Path::new(&root).join(
@@ -755,6 +1269,164 @@ pub(super) mod tests {
         assert!(clipped_line([0.; 3], [1., 0., 0.], [[1.; 3], [-1.; 3]], None).is_err());
         assert!(clipped_line([2., 2., 0.], [1., -1., 0.], bounds, None).is_err());
         assert!(clipped_line([0.; 3], [1., 0., 0.], bounds, Some(f64::NAN)).is_err());
+    }
+    // Synthetic only: reuse the pinned material catalogue, not its shape.
+    // Other components are moved far away so the complete posed world mesh
+    // cannot accidentally supply an earlier hit to these small segments.
+    fn perf02_surface_fixture(vertices: Vec<[f32; 3]>, triangles: Vec<Triangle>) -> Bundle {
+        let mut b = bundle();
+        b.hull = [0.; 3]; b.turret = [0.; 3]; b.gun = [0.; 3];
+        for component in &mut b.components[1..] {
+            for vertex in &mut component.vertices { vertex[0] += 20.; }
+        }
+        b.components[0] = Component { vertices, triangles };
+        b.bounds[0] = [[-1.; 3], [1.; 3]];
+        b
+    }
+    fn perf02_surface_triangle(id: u32, a: u32, b: u32, c: u32, material: &str) -> Triangle {
+        Triangle { triangle_id:id, a, b, c, mesh:"Hull".into(),
+            group:format!("synthetic-group-{id}"), material:material.into() }
+    }
+    fn perf02_surface_contacts(b: &Bundle) -> Vec<Contact> {
+        let start = [-0.5, 0., 0.]; let end = [0.5, 0., 0.];
+        let position = [0.; 3]; let direction = [0.; 3]; let aim = [0.; 2];
+        let mesh = b.mesh_for_pose(position, direction, aim, 1, 1000).unwrap();
+        super::super::collision::query(&mesh, start, end).unwrap().into_iter().map(|triangle| {
+            let endpoint = std::array::from_fn(|i| start[i] + triangle.t * (end[i] - start[i]));
+            let material_facts = b.materials.lookup(&triangle.mesh, &triangle.material).unwrap();
+            Contact { shot:1, target_slot:1, tick:1000, segment_start:start, segment_end:end,
+                segment_seconds:0.1, endpoint, target_position:position, target_direction:direction,
+                target_aim:aim, triangle, geometry_revision:b.geometry_revision().into(),
+                transform_revision:mesh.transform_revision().into(), material_facts }
+        }).collect()
+    }
+    fn perf02_identity(hit: &super::super::collision::Candidate) -> (u32, &str, &str, &str) {
+        (hit.triangle_id, &hit.mesh, &hit.group, &hit.material)
+    }
+    #[test] fn perf02_reanchor_rejects_unverified_world_first_and_large_shift() {
+        let b=perf02_surface_fixture(vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,0.,0.5],
+            [0.0001,-0.5,-0.5],[0.0001,0.5,-0.5],[0.0001,0.,0.5]],
+            vec![perf02_surface_triangle(0,0,1,2,"armor_4"),perf02_surface_triangle(1,3,4,5,"armor_7")]);
+        let contacts=perf02_surface_contacts(&b);assert_eq!(contacts.len(),2);
+        let first=&contacts[0];let second=&contacts[1];
+        let point=b.inverse_component_point(0,pose::inverse_rotate(subtract(first.endpoint,first.target_position),first.target_direction),first.target_aim);
+        assert!(b.impact_source_anchor(first,0,point).unwrap().is_some());
+        assert!(b.impact_source_anchor(second,0,second.endpoint).unwrap().is_none());
+        let mut forged=first.clone();forged.triangle.normal[0]=-forged.triangle.normal[0];
+        assert!(b.impact_source_anchor(&forged,0,point).unwrap().is_none());
+        let mut forged=first.clone();forged.endpoint[0]+=0.00001;
+        assert!(b.impact_source_anchor(&forged,0,point).unwrap().is_none());
+        let mut forged=first.clone();forged.triangle.t=0.75;forged.endpoint=[0.25,0.,0.];
+        assert!(b.impact_source_anchor(&forged,0,point).unwrap().is_none());
+        let mut too_far=point;too_far[0]+=0.001;
+        assert!(b.impact_source_anchor(first,0,too_far).unwrap().is_none());
+    }
+    #[test] fn perf02_reanchor_rejects_shared_edge_and_packed_equal_t() {
+        let b=perf02_surface_fixture(vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,-0.5,0.5],[0.,0.5,0.5]],
+            vec![perf02_surface_triangle(0,0,1,2,"armor_4"),perf02_surface_triangle(1,1,3,2,"armor_7")]);
+        let contacts=perf02_surface_contacts(&b);assert_eq!(contacts.len(),2);
+        assert!(b.impact_source_anchor(&contacts[0],0,contacts[0].endpoint).unwrap().is_none(),"edge barycentrics are ambiguous");
+        let b=perf02_surface_fixture(vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,0.,0.5]],
+            vec![perf02_surface_triangle(0,0,1,2,"armor_4"),perf02_surface_triangle(1,0,1,2,"armor_7")]);
+        let part=&b.components[0];let mesh=Mesh::new(part.vertices.clone(),part.triangles.clone(),b.geometry_revision(),"perf02-packed-tie").unwrap();
+        let contacts=perf02_surface_contacts(&b);assert_eq!(contacts.len(),2);
+        assert_eq!(contacts[0].triangle.t.to_bits(),contacts[1].triangle.t.to_bits());
+        assert!(!b.impact_packed_first_matches(materials::Component::Hull,b.component_bounds()[0],[-1.,0.,0.],[1.,0.,0.],&mesh,&contacts[0].triangle).unwrap(),
+            "packed equal-t surfaces are ambiguous and must be refused");
+    }
+    #[test] fn perf02_reanchor_rejects_packed_different_first_with_distinct_t() {
+        use super::super::impact_wire::{packed_segment,ShotOutcome};
+        let b=perf02_surface_fixture(vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,0.,0.5],
+            [0.0001,-0.5,-0.5],[0.0001,0.5,-0.5],[0.0001,0.,0.5]],
+            vec![perf02_surface_triangle(0,0,1,2,"armor_4"),perf02_surface_triangle(1,3,4,5,"armor_7")]);
+        let part=&b.components[0];let mesh=Mesh::new(part.vertices.clone(),part.triangles.clone(),b.geometry_revision(),"perf02-packed-distinct").unwrap();
+        let contacts=perf02_surface_contacts(&b);assert_eq!(contacts.len(),2);
+        let bounds=b.component_bounds()[0];let (start,end)=([-1.,0.,0.],[1.,0.,0.]);
+        let bytes=packed_segment(1,bounds,start,end,ShotOutcome::Pierced).unwrap();
+        let decode=|offset:usize|std::array::from_fn::<_,3,_>(|i|bounds[0][i]
+            +(bounds[1][i]-bounds[0][i])*f32::from(bytes[offset+i])/255.0_f32);
+        let s=decode(2);let e=decode(5);
+        let qs=std::array::from_fn(|i|s[i]-0.01_f32*(e[i]-s[i]));
+        let qe=std::array::from_fn(|i|e[i]+0.01_f32*(e[i]-s[i]));
+        let hits=super::super::collision::query(&mesh,qs,qe).unwrap();
+        assert_eq!(hits.len(),2);assert_eq!(hits[0].triangle_id,0);assert_eq!(hits[1].triangle_id,1);
+        assert_ne!(hits[0].t.to_bits(),hits[1].t.to_bits(),"distinct surfaces must not rely on tie rejection");
+        assert!(!b.impact_packed_first_matches(materials::Component::Hull,bounds,start,end,&mesh,&contacts[1].triangle).unwrap(),
+            "a different packed first surface must be refused even when t differs");
+    }
+    #[test] fn perf02_reanchor_interval_refuses_uncertified_edges_and_parallel_lines() {
+        let triangle=[[0.,0.,0.],[0.,1.,0.],[0.,0.,1.]];
+        assert!(impact_interior_certified(triangle,[-1.,0.25,0.25],[1.,0.25,0.25]).is_some());
+        assert!(impact_interior_certified(triangle,[-1.,0.,0.25],[1.,0.,0.25]).is_none(),"shared edge is not strictly interior");
+        assert!(impact_interior_certified(triangle,[0.,0.25,0.25],[0.,0.5,0.25]).is_none(),"parallel determinant is ambiguous");
+        assert!(impact_interior_certified(triangle,[-1.,f64::NAN,0.25],[1.,0.25,0.25]).is_none());
+        let b=perf02_surface_fixture(vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,0.,0.5]],
+            vec![perf02_surface_triangle(0,0,1,2,"armor_4")]);
+        let mut near_parallel=perf02_surface_contacts(&b).remove(0);
+        near_parallel.segment_start=[-1e-20,0.,-0.25];near_parallel.segment_end=[1e-20,0.,0.25];
+        // The authoritative world query enforces collision's existing
+        // relative angular threshold before any interval proof is trusted.
+        assert!(b.impact_source_anchor(&near_parallel,0,[0.;3]).unwrap().is_none());
+    }
+    #[test] fn perf02_reanchor_interval_bounds_the_entire_local_anchor() {
+        let local=[[0.,0.,0.],[0.,1.,0.],[0.,0.,1.]];
+        let u=ImpactInterval{lo:0.24999,hi:0.25001};let v=ImpactInterval{lo:0.25,hi:0.25};
+        assert!(impact_anchor_certified(local,[0.,0.25,0.25],u,v,[0.,0.25,0.25]));
+        let too_wide=ImpactInterval{lo:0.249,hi:0.251};
+        assert!(!impact_anchor_certified(local,[0.,0.25,0.25],too_wide,v,[0.,0.25,0.25]),
+            "a central anchor in range cannot hide an uncertified endpoint");
+        assert!(!impact_anchor_certified(local,[0.,0.25,0.25],u,v,[0.,0.2501,0.25]),
+            "the selected anchor must also belong to the enclosure");
+        assert!(!impact_anchor_certified(local,[0.,f32::NAN,0.25],u,v,[0.,0.25,0.25]));
+    }
+    #[test] fn perf02_impact_synthetic_nonfirst_near_surface_currently_accepted() {
+        // The second plane is 0.1 mm behind the first. It has a different ID,
+        // group and armor. Its contact is well-formed but is NOT the world
+        // query's first hit. This test records an existing unsafe success; it
+        // is evidence of the defect, not a security acceptance test.
+        let b = perf02_surface_fixture(vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,0.,0.5],
+            [0.0001,-0.5,-0.5],[0.0001,0.5,-0.5],[0.0001,0.,0.5]],
+            vec![perf02_surface_triangle(0,0,1,2,"armor_4"),
+                 perf02_surface_triangle(1,3,4,5,"armor_7")]);
+        let contacts = perf02_surface_contacts(&b);
+        assert_eq!(contacts.len(),2);
+        assert_eq!((contacts[0].triangle.triangle_id,contacts[1].triangle.triangle_id),(0,1));
+        assert_ne!(contacts[0].triangle.material, contacts[1].triangle.material);
+        let original = b.impact_segment(&contacts[0]).unwrap();
+        assert_eq!(perf02_identity(&native_decoder_first(&b,&original)), perf02_identity(&contacts[0].triangle));
+        assert!(b.proxy_ray(&contacts[1]).is_err(),"world query rejects non-first contact");
+        let false_success = b.impact_segment(&contacts[1]).expect("documented current defect: neighboring surface is accepted");
+        let actual_first = native_decoder_first(&b,&false_success);
+        assert_eq!(perf02_identity(&actual_first),perf02_identity(&contacts[0].triangle));
+        assert_ne!(perf02_identity(&actual_first),perf02_identity(&contacts[1].triangle));
+    }
+    #[test] fn perf02_impact_synthetic_nonfirst_equal_t_currently_accepted() {
+        // Both triangles meet at the same point; equal-t ordering in this
+        // server query is deterministic, but native-client tie order is not
+        // established. A matching point alone cannot prove surface identity.
+        let b = perf02_surface_fixture(vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],
+            [0.,-0.5,0.5],[0.,0.5,0.5]],
+            vec![perf02_surface_triangle(0,0,1,2,"armor_4"),
+                 perf02_surface_triangle(1,1,3,2,"armor_7")]);
+        let contacts = perf02_surface_contacts(&b);
+        assert_eq!(contacts.len(),2);
+        assert_eq!((contacts[0].triangle.triangle_id,contacts[1].triangle.triangle_id),(0,1));
+        assert_eq!(contacts[0].triangle.t.to_bits(), contacts[1].triangle.t.to_bits());
+        assert_eq!(contacts[0].endpoint,contacts[1].endpoint);
+        let segment = b.impact_segment(&contacts[0]).unwrap();
+        assert_eq!(perf02_identity(&native_decoder_first(&b,&segment)),perf02_identity(&contacts[0].triangle));
+        assert!(b.proxy_ray(&contacts[1]).is_err());
+        let false_success = b.impact_segment(&contacts[1]).expect("documented current defect: edge neighbor is accepted");
+        assert_ne!(perf02_identity(&native_decoder_first(&b,&false_success)),perf02_identity(&contacts[1].triangle));
+    }
+    #[test] fn perf02_impact_rejects_distant_forged_t_and_endpoint() {
+        let b = perf02_surface_fixture(vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,0.,0.5]],
+            vec![perf02_surface_triangle(0,0,1,2,"armor_4")]);
+        let mut contact = perf02_surface_contacts(&b).remove(0);
+        assert!(b.impact_segment(&contact).is_ok());
+        contact.triangle.t = 0.75;
+        contact.endpoint = [0.25,0.,0.]; // matches the forged t but misses the plane
+        assert!(b.impact_segment(&contact).is_err());
     }
     #[test] fn impact_invalid_or_mismatched_contact_fails_without_output() {
         let b = bundle(); let base = contact_for(&b, 0, [-4., -0.25, 0.15], [4., -0.25, 0.15], [0.; 3], [0.; 2]);
@@ -1009,6 +1681,189 @@ pub(super) mod tests {
                 assert!((native-vertex[i]).abs()<3e-7);
             }
         }
+    }
+    /// Conservative test-only experiment: never adds successes to the existing
+    /// impact path. The world query uses the original authoritative segment;
+    /// the local query models the existing unquantized 1% extension. Neither
+    /// the native decoder's tie order nor the packed-byte ray is verified here.
+    fn perf02_strict_impact_model(b:&Bundle,c:&Contact)->io::Result<ImpactSegment> {
+        let world=b.mesh_for_pose(c.target_position,c.target_direction,c.target_aim,c.target_slot,c.tick)?;
+        let expected=super::super::collision::query(&world,c.segment_start,c.segment_end)?
+            .into_iter().next().ok_or_else(||bad())?;
+        let expected_endpoint: [f32;3]=std::array::from_fn(|i|c.segment_start[i]
+            + expected.t * (c.segment_end[i]-c.segment_start[i]));
+        if expected!=c.triangle || expected.t.to_bits()!=c.triangle.t.to_bits()
+            || expected.normal.map(f32::to_bits)!=c.triangle.normal.map(f32::to_bits)
+            || expected_endpoint.map(f32::to_bits)!=c.endpoint.map(f32::to_bits) {return Err(bad());}
+        let segment=b.impact_segment(c)?;
+        let index=match segment.component { materials::Component::Hull=>0,
+            materials::Component::Turret01=>1,materials::Component::Gun02|materials::Component::Gun01=>2 };
+        let local_point=b.inverse_component_point(index,
+            pose::inverse_rotate(subtract(c.endpoint,c.target_position),c.target_direction),c.target_aim);
+        let s=segment.start;let e=segment.end;
+        let qs=std::array::from_fn(|i|s[i]-0.01_f32*(e[i]-s[i]));
+        let qe=std::array::from_fn(|i|e[i]+0.01_f32*(e[i]-s[i]));
+        let part=&b.components[index];
+        let mesh=Mesh::new(part.vertices.clone(),part.triangles.clone(),b.geometry_revision(),"perf02-strict-impact-model")?;
+        let hit=super::super::collision::query(&mesh,qs,qe)?.into_iter().next().ok_or_else(||bad())?;
+        if perf02_identity(&hit)!=perf02_identity(&c.triangle)
+            || (0..3).any(|i|(f64::from(qs[i]+hit.t*(qe[i]-qs[i]))-f64::from(local_point[i])).abs()>CONTACT_TOLERANCE) {
+            return Err(bad());
+        }
+        Ok(segment)
+    }
+    fn perf02_world_first_for_ray(b:&Bundle,start:[f32;3],end:[f32;3])->Contact {
+        let pos=[0.;3];let dir=[0.;3];let aim=[0.;2];
+        let mesh=b.mesh_for_pose(pos,dir,aim,1,1000).unwrap();
+        let triangle=super::super::collision::query(&mesh,start,end).unwrap().remove(0);
+        let endpoint=std::array::from_fn(|i|start[i]+triangle.t*(end[i]-start[i]));
+        let material_facts=b.materials.lookup(&triangle.mesh,&triangle.material).unwrap();
+        Contact {shot:1,target_slot:1,tick:1000,segment_start:start,segment_end:end,segment_seconds:0.1,
+            endpoint,target_position:pos,target_direction:dir,target_aim:aim,triangle,
+            geometry_revision:b.geometry_revision().into(),transform_revision:mesh.transform_revision().into(),material_facts}
+    }
+    #[test] fn perf02_strict_model_rejects_nonfirst_neighbors_and_equal_t() {
+        let cases=[
+            (vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,0.,0.5],
+                [0.0001,-0.5,-0.5],[0.0001,0.5,-0.5],[0.0001,0.,0.5]],
+             vec![perf02_surface_triangle(0,0,1,2,"armor_4"),perf02_surface_triangle(1,3,4,5,"armor_7")]),
+            (vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,-0.5,0.5],[0.,0.5,0.5]],
+             vec![perf02_surface_triangle(0,0,1,2,"armor_4"),perf02_surface_triangle(1,1,3,2,"armor_7")])];
+        for (vertices,triangles) in cases {
+            let b=perf02_surface_fixture(vertices,triangles);let contacts=perf02_surface_contacts(&b);
+            assert_eq!(contacts.len(),2);
+            assert!(perf02_strict_impact_model(&b,&contacts[0]).is_ok());
+            assert!(b.impact_segment(&contacts[1]).is_ok(),"current behavior must remain unchanged");
+            assert!(perf02_strict_impact_model(&b,&contacts[1]).is_err(),"non-first world candidate must fail");
+            let mut tampered=contacts[0].clone();tampered.triangle.normal[0]=-tampered.triangle.normal[0];
+            assert!(perf02_strict_impact_model(&b,&tampered).is_err());
+            let mut tampered=contacts[0].clone();tampered.endpoint[0]+=0.00001;
+            assert!(perf02_strict_impact_model(&b,&tampered).is_err());
+        }
+    }
+    #[test] fn perf02_strict_model_preserves_point_blank_shift_in_fixture() {
+        let b=perf02_surface_fixture(vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,0.,0.5],
+            [0.02,-0.5,-0.5],[0.02,0.5,-0.5],[0.02,0.,0.5]],
+            vec![perf02_surface_triangle(0,0,1,2,"armor_4"),perf02_surface_triangle(1,3,4,5,"armor_7")]);
+        let contact=perf02_world_first_for_ray(&b,[0.005,0.,0.],[0.8,0.,0.]);
+        assert_eq!(contact.triangle.triangle_id,1);
+        let delta=subtract(contact.segment_end,contact.segment_start);
+        let len=delta.iter().map(|&v|f64::from(v).powi(2)).sum::<f64>().sqrt();
+        let (initial_start,initial_end)=clipped_line(contact.endpoint,delta,b.bounds[0],
+            Some(-f64::from(contact.triangle.t)*len)).unwrap();
+        let before=ImpactSegment{component:materials::Component::Hull,bounds:b.bounds[0],start:initial_start,end:initial_end};
+        assert_eq!(native_decoder_first(&b,&before).triangle_id,0,"initial extended model sees the earlier surface");
+        let segment=perf02_strict_impact_model(&b,&contact).unwrap();
+        assert!(segment.start[0]>contact.segment_start[0],"the model must really exercise the forward shift");
+        assert_eq!(perf02_identity(&native_decoder_first(&b,&segment)),perf02_identity(&contact.triangle));
+    }
+    /// Fixed grid, not a random sample of battles: every accepted Contact is
+    /// the first candidate of a world query, including edge/boundary rays.
+    /// The counters quantify this corpus only, not all valid input or native
+    /// tie ordering. Strict is a filter, so it cannot accept a current failure.
+    #[test] fn perf02_strict_model_differential_pinned_world_first_grid() {
+        let poses=[([0.;3],[0.;3],[0.;2]),([37.,21.,-105.],[0.7,-0.3,0.2],[1.1,-0.09]),
+            ([175.,21.,-395.],[-2.1,0.25,-0.15],[-0.9,0.24])];
+        let mut global_pass=0usize;let mut global_model_pass=0usize;
+        for b in [bundle(),is7_bundle()] {
+            let mut rays=0usize;let mut no_hit=0usize;let mut query_error=0usize;
+            let mut current_fail=0usize;let mut both_pass=0usize;let mut rejected=0usize;
+            let mut reported=0usize;
+            for (position,direction,aim) in poses {
+                let mesh=b.mesh_for_pose(position,direction,aim,1,1000).expect("fixed pose world mesh");
+                for component_index in 0..3 {for axis in [0usize,2] {
+                    let other=if axis==0 {[1usize,2]} else {[0usize,1]};
+                    let bounds=b.component_bounds()[component_index];
+                    for u in [0.0_f32,0.5,1.0] {for v in [0.0_f32,0.5,1.0] {for reverse in [false,true] {
+                        let mut a=[0_f32;3];let mut z=[0_f32;3];
+                        for (i,fraction) in [(other[0],u),(other[1],v)] {
+                            a[i]=bounds[0][i]+fraction*(bounds[1][i]-bounds[0][i]);z[i]=a[i];
+                        }
+                        a[axis]=bounds[0][axis]-0.5;z[axis]=bounds[1][axis]+0.5;
+                        if reverse {std::mem::swap(&mut a,&mut z);}
+                        let to_world=|p|{
+                            let local=b.component_point(component_index,p,aim[0],aim[1]);
+                            let rotated=pose::rotate(local,direction);
+                            std::array::from_fn(|i|position[i]+rotated[i])
+                        };
+                        let start=to_world(a);let end=to_world(z);rays+=1;
+                        let first=match super::super::collision::query(&mesh,start,end) {
+                            Ok(hits)=>match hits.into_iter().next() {Some(hit)=>hit,None=>{no_hit+=1;continue}},
+                            Err(error)=>{query_error+=1;println!("PERF02_STRICT_GRID_QUERY_ERROR vehicle={} error={error}",b.vehicle_kind().label());continue}
+                        };
+                        let endpoint=std::array::from_fn(|i|start[i]+first.t*(end[i]-start[i]));
+                        let material_facts=b.materials.lookup(&first.mesh,&first.material).unwrap();
+                        let c=Contact {shot:1,target_slot:1,tick:1000,segment_start:start,segment_end:end,
+                            segment_seconds:0.1,endpoint,target_position:position,target_direction:direction,
+                            target_aim:aim,triangle:first,geometry_revision:b.geometry_revision().into(),
+                            transform_revision:mesh.transform_revision().into(),material_facts};
+                        let old=b.impact_segment(&c);let strict=perf02_strict_impact_model(&b,&c);
+                        match (old,strict) {
+                            (Ok(_),Ok(_))=>both_pass+=1,
+                            (Err(_),Err(_))=>current_fail+=1,
+                            (Ok(segment),Err(error))=>{
+                                rejected+=1;
+                                if reported<8 {
+                                    println!("PERF02_STRICT_GRID_REJECT vehicle={} component={component_index} axis={axis} grid=({u},{v}) reverse={reverse} position={position:?} direction={direction:?} aim={aim:?} triangle={} material={} error={error}",
+                                        b.vehicle_kind().label(),c.triangle.triangle_id,c.triangle.material);
+                                    let index=match segment.component { materials::Component::Hull=>0,
+                                        materials::Component::Turret01=>1, materials::Component::Gun02|materials::Component::Gun01=>2 };
+                                    let local_point=b.inverse_component_point(index,
+                                        pose::inverse_rotate(subtract(c.endpoint,c.target_position),c.target_direction),c.target_aim);
+                                    let s=segment.start;let e=segment.end;
+                                    let qs=std::array::from_fn(|i|s[i]-0.01_f32*(e[i]-s[i]));
+                                    let qe=std::array::from_fn(|i|e[i]+0.01_f32*(e[i]-s[i]));
+                                    let part=&b.components[index];
+                                    let local_mesh=Mesh::new(part.vertices.clone(),part.triangles.clone(),b.geometry_revision(),"perf02-strict-grid-diagnostic").unwrap();
+                                    let local_hits=super::super::collision::query(&local_mesh,qs,qe).unwrap();
+                                    let world_hits=super::super::collision::query(&mesh,start,end).unwrap();
+                                    let target_index=local_hits.iter().position(|hit|perf02_identity(hit)==perf02_identity(&c.triangle));
+                                    println!("PERF02_STRICT_GRID_DETAILS local_point={local_point:?} local_qs={qs:?} local_qe={qe:?} local_hits={} expected_identity={:?} expected_t_f32={} local_expected_index={target_index:?} world_hits={} candidate_t_is_f32_not_ordering_f64",
+                                        local_hits.len(),perf02_identity(&c.triangle),c.triangle.t,world_hits.len());
+                                    for (which,hits) in [("world",&world_hits),("local",&local_hits)] {
+                                        for (candidate_index,hit) in hits.iter().take(8).enumerate() {
+                                            let displacement=if which=="local" {Some(std::array::from_fn::<_,3,_>(|i|
+                                                f64::from(qs[i]+hit.t*(qe[i]-qs[i]))-f64::from(local_point[i])))} else {None};
+                                            let same_f32_t_as_first=hit.t.to_bits()==hits[0].t.to_bits();
+                                            println!("PERF02_STRICT_GRID_HIT space={which} index={candidate_index} identity={:?} t_f32={} t_bits={} same_f32_t_as_first={same_f32_t_as_first} displacement_xyz_m={displacement:?}",
+                                                perf02_identity(hit),hit.t,hit.t.to_bits());
+                                        }
+                                    }
+                                    if let Some(i)=target_index.filter(|&i|i>=8) {
+                                        let hit=&local_hits[i];
+                                        let displacement=std::array::from_fn::<_,3,_>(|axis|
+                                            f64::from(qs[axis]+hit.t*(qe[axis]-qs[axis]))-f64::from(local_point[axis]));
+                                        println!("PERF02_STRICT_GRID_TARGET index={i} identity={:?} t_f32={} t_bits={} displacement_xyz_m={displacement:?}",perf02_identity(hit),hit.t,hit.t.to_bits());
+                                    }
+                                    reported+=1;
+                                }
+                            },
+                            (Err(error),Ok(_))=>panic!("strict model accepted an existing failure: {error}"),
+                        }
+                    }}}
+                }}
+            }
+            assert_eq!(rays,324);assert!(both_pass+rejected>10,"insufficient current successes for {}",b.vehicle_kind().label());
+            assert!(both_pass>0,"no strict successes for {}",b.vehicle_kind().label());
+            println!("PERF02_STRICT_GRID vehicle={} rays={rays} no_hit={no_hit} query_error={query_error} current_fail={current_fail} both_pass={both_pass} current_pass_strict_reject={rejected} sample_cap=8",b.vehicle_kind().label());
+            assert_eq!(rays,no_hit+query_error+current_fail+both_pass+rejected);
+            global_pass+=both_pass+rejected;global_model_pass+=both_pass;
+        }
+        assert!(global_pass>20 && global_model_pass>0);
+    }
+    #[test] #[ignore] fn perf02_strict_model_retained_receipt_reanchors() {
+        let receipt=std::env::var("PERF02_IMPACT_RECEIPT").expect("PERF02_IMPACT_RECEIPT");
+        let root=std::env::var("PERF02_IMPACT_LOCAL_ROOT").expect("PERF02_IMPACT_LOCAL_ROOT");
+        let path=std::env::var("PERF02_IMPACT_BUNDLE").expect("PERF02_IMPACT_BUNDLE");
+        let receipt=Path::new(&receipt);assert!(receipt.is_absolute());non_reparse(receipt).unwrap();
+        let mut raw=Vec::new();fs::File::open(receipt).unwrap().take((IMPACT_DIAGNOSTIC_MAX_BYTES+1)as u64).read_to_end(&mut raw).unwrap();
+        assert!(raw.len()<=IMPACT_DIAGNOSTIC_MAX_BYTES);
+        assert_eq!(format!("{:x}",Sha256::digest(&raw)),"973bddd51c407ed10d99350b5753e2fef746c93ee87d1c6a809ae8ecb6ab7763");
+        let b=Bundle::load(Path::new(&root),Path::new(&path)).unwrap();
+        assert_eq!(b.bundle_sha256(),"25b6c69fd51e26abbda9b16c35572b5f289f2320d0dffe4085dea1b7bdeba1bb");
+        let c=decode_impact_diagnostic(&raw,&b).unwrap();
+        let segment=perf02_strict_impact_model(&b,&c).expect("retained first surface must survive bounded reanchor");
+        assert!(same_surface(&native_decoder_first(&b,&segment),&c.triangle));
     }
     #[test] fn malformed_bundle_hash_path_and_bounds_fail_closed() {
         assert!(Bundle::from_bytes(b"{}").is_err());
