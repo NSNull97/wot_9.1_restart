@@ -39,7 +39,8 @@ def literal(path, name, names=None):
 
 LEGACY_KINDS = ["ms1", "is7", "t26", "t34", "t3485"]
 # BATTLE-ANY stage 3 pilot (owner 2026-10-27): generated rows, admission "always".
-PILOT_KINDS = ["ussr-KV-3", "usa-M4_Sherman", "germany-Waffentrager_E100", "japan-Chi_Ri"]
+PILOT_KINDS = ["ussr-KV-3", "usa-M4_Sherman", "germany-Waffentrager_E100", "japan-Chi_Ri",
+               "uk-GB48_FV215b_183", "china-Ch22_113", "france-Bat_Chatillon25t"]
 
 
 def document():

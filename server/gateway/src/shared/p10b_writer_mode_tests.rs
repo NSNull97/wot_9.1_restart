@@ -59,7 +59,7 @@ fn ready_pair()->Vec<ReadySelection>{
     // AUTHORED selection4 stamp/reply; only the old selection and both Frozen
     // source payloads are actual saved project DTOs. No real HTTP ready claim.
     let raw=include_bytes!("../../../../tests/fixtures/p10b-selection-writer-vectors.json");
-    assert_eq!(format!("{:x}",Sha256::digest(raw)),"493511296d5c3b09fa1ce5d9906b48d565b02eab345191659d079d1294e7da97");
+    assert_eq!(format!("{:x}",Sha256::digest(raw)),"b9a5b3a693242b958efd7b0e853b22b028e5b8ac13b9b3315194f13622b7c9cf");
     let v:Value=serde_json::from_slice(raw).unwrap();let row=&v["vectors"][0];let q=&row["request"];
     let c=Context{account_id:q["account_id"].as_str().unwrap().into(),native_database_id:q["native_database_id"].as_i64().unwrap()as i32,run_id:q["run_id"].as_str().unwrap().into(),
         expected_revision:q["expected_revision"].as_u64().unwrap(),command_key:"authored:read-only".into()};

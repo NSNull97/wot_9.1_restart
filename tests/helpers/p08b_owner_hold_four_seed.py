@@ -92,6 +92,8 @@ def seed(destination,metadata_path):
     if imported['new_game_accounts']or imported['new_grants']:raise ValueError('importer authority boundary')
     with destination.open('xb'):pass
     with closing(sqlite3.connect(source.as_uri()+'?mode=ro&immutable=1',uri=True))as old,closing(sqlite3.connect(destination))as out:old.backup(out)
+    from cat_nations_test_restamp import restamp_copy
+    restamp_copy(destination)
     profiles,activated,before,after=activate_all(destination,metadata['original'])
     if sha(source)!=source_sha:raise ValueError('four-owner imported predecessor changed')
     source_databases=[];source_seeds=[]

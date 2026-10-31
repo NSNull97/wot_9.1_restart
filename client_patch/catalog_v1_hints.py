@@ -6,7 +6,7 @@ map_drive_client reads this table only when installed with --catalog-v1, the
 crew/ammunition windows (crew_vehicles) only when installed with --crew-any.
 """
 SCHEMA = 'wot091-server-catalog.v1'
-CATALOG_SHA256 = '219b2f07021603fea1f58bc78368990ae33632bb9bf70a1443996bec65d1cb8a'
+CATALOG_SHA256 = '76afa3dcb003ffcc7a17c1b3a7c37aee39ccd4dbe05b1356bb64a3eb7686aefe'
 VEHICLES = (
     {
         'ammo_capacity': 96,
@@ -236,6 +236,81 @@ VEHICLES = (
         'shell_compact_ids': (362, 618, 874),
         'turret_compact_id': 1891,
         'type_id': 4,
+        'vehicle_class': 'mediumTank',
+    },
+    {
+        'ammo_capacity': 12,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew_roles': (
+            ('commander', 'radioman'),
+            ('gunner',),
+            ('driver',),
+            ('loader',),
+            ('loader',),
+        ),
+        'descriptor_sha256': '3d7a4fe804dfc31c53502dba155dae53e05981327f08ccd3d431d35fee710542',
+        'gun_compact_id': 13908,
+        'kind': 'uk-GB48_FV215b_183',
+        'max_hp': 2000,
+        'native_compact_id': 9297,
+        'primary_roles': ('commander', 'gunner', 'driver', 'loader', 'loader'),
+        'seats': 5,
+        'shell_compact_ids': (20826, 21082, 21338),
+        'turret_compact_id': 17747,
+        'type_id': 36,
+        'vehicle_class': 'AT-SPG',
+    },
+    {
+        'ammo_capacity': 34,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew_roles': (
+            ('commander',),
+            ('gunner',),
+            ('driver',),
+            ('loader', 'radioman'),
+        ),
+        'descriptor_sha256': 'd249e5f88b9974c2f9900a190b4fe6116fd74e990b7af56e5080d1221d24bac4',
+        'gun_compact_id': 3636,
+        'kind': 'china-Ch22_113',
+        'max_hp': 2300,
+        'native_compact_id': 5425,
+        'primary_roles': ('commander', 'gunner', 'driver', 'loader'),
+        'seats': 4,
+        'shell_compact_ids': (15674, 15930, 16186),
+        'turret_compact_id': 9523,
+        'type_id': 21,
+        'vehicle_class': 'heavyTank',
+    },
+    {
+        'ammo_capacity': 36,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew_roles': (
+            ('commander', 'radioman', 'loader'),
+            ('gunner', 'loader'),
+            ('driver',),
+        ),
+        'descriptor_sha256': '35c638c0b3ded3938adb9c7689eb16aece5e359d3a62eb3046470e7bfab2b232',
+        'gun_compact_id': 4164,
+        'kind': 'france-Bat_Chatillon25t',
+        'max_hp': 1800,
+        'native_compact_id': 3649,
+        'primary_roles': ('commander', 'gunner', 'driver'),
+        'seats': 3,
+        'shell_compact_ids': (8778, 9034, 9290),
+        'turret_compact_id': 5443,
+        'type_id': 14,
         'vehicle_class': 'mediumTank',
     },
 )

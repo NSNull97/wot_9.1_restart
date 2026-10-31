@@ -948,7 +948,7 @@ mod tests {
     fn p04m_vector_fixture(name:&str,sha:&str)->(Profile,crate::p04m_companion091::Binding,Value){
         use sha2::{Digest,Sha256};
         let root=std::env::var_os("WOT091_ROOT").map(PathBuf::from).unwrap_or_else(||Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
-        let directory=root.join("local/evidence/20261016-p04m-writer01/native-fixtures03").join(name);
+        let directory=root.join("local/evidence/20261031-cat-nations-restamp/p04m-native-fixtures03").join(name);
         let bytes=bounded_file(&directory.join("writer-vectors.json"),16384).expect("actual writer vectors required");
         assert_eq!(format!("{:x}",Sha256::digest(&bytes)),sha);
         let v:Value=serde_json::from_slice(&bytes).unwrap();let meta:Value=serde_json::from_slice(&bounded_file(&directory.join("p04m-pool.json"),65536).unwrap()).unwrap();

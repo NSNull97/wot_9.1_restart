@@ -5,7 +5,7 @@ const ACTUAL:&[u8]=include_bytes!("../../../../tests/fixtures/p06t-ammo-loss-wri
 const OLD:&[u8]=include_bytes!("../../../../tests/fixtures/p10b-selection-writer-vectors.json");
 fn fixture()->(Request,Value){
     assert_eq!(format!("{:x}",Sha256::digest(ACTUAL)),"251c60f587d14d916e5381567d8af2982b26f0f98335af8464b75bbf1cc1f154");
-    assert_eq!(format!("{:x}",Sha256::digest(OLD)),"493511296d5c3b09fa1ce5d9906b48d565b02eab345191659d079d1294e7da97");
+    assert_eq!(format!("{:x}",Sha256::digest(OLD)),"b9a5b3a693242b958efd7b0e853b22b028e5b8ac13b9b3315194f13622b7c9cf");
     let actual:Value=serde_json::from_slice(ACTUAL).unwrap();let old:Value=serde_json::from_slice(OLD).unwrap();
     let a=actual["vectors"].as_array().unwrap().iter().find(|r|r["request"]["operation"]=="admit").unwrap();let q=&a["request"];
     let c=Context{account_id:q["account_id"].as_str().unwrap().into(),native_database_id:q["native_database_id"].as_i64().unwrap()as i32,

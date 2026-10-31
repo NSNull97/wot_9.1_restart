@@ -20,11 +20,15 @@ import tempfile
 
 from tools.destructible_catalog import CatalogError, no_links, read, json_value
 from tools.packed_xml import decode
+from tools.py27_static import parse_pyc
 
 TARGET = "v.0.9.1 #717 RU"
 SCHEMA = "p09e-research-catalog.v1"
 PIN_PATH = Path(__file__).with_name("p09e_source_pins.json")
-NATIONS = ("ussr", "germany", "usa", "france", "uk", "china", "japan")
+# Original res/scripts/common/nations.pyc order, checked on every build.
+# CAT-NATIONS: the catalogue before 2026-10-28 (b6baecd2...) enumerated
+# france/uk/china as 3/4/5; the client says china=3, france=4, uk=5.
+NATIONS = ("ussr", "germany", "usa", "china", "france", "uk", "japan")
 KINDS = {"chassis": (2, "chassis"), "turret": (3, "turrets"),
          "gun": (4, "guns"), "engine": (5, "engines"),
          "fuelTank": (6, "fuelTanks"), "radio": (7, "radios")}
@@ -36,7 +40,7 @@ CACHE_SCHEMA = "p09e-research-catalog-cache.v1"
 CACHE_DIR = Path(__file__).resolve().parents[1] / "local" / "cache" / "p09e-research-catalog"
 MAX_CACHE_BYTES = 8 * 1024 * 1024
 # Code that turns pinned source bytes into the document; any edit is a new cache key.
-DERIVATION_CODE = ("p09e_research_catalog.py", "packed_xml.py", "destructible_catalog.py")
+DERIVATION_CODE = ("p09e_research_catalog.py", "packed_xml.py", "destructible_catalog.py", "py27_static.py")
 _DEFAULT = object()
 
 
@@ -200,6 +204,9 @@ def _build_catalog(root, source_pins):
     # Pin the algorithms and category/nation ordering used by this independent adapter.
     for relative in ("res/scripts/common/items/vehicles.pyc", "res/scripts/common/items/__init__.pyc", "res/scripts/common/nations.pyc"):
         source(relative)
+    nations = parse_pyc(source("res/scripts/common/nations.pyc"))
+    require([n.encode() for n in NATIONS] in nations["consts"] and b"NAMES" in nations["names"],
+            "client nation order differs from NATIONS")
     vehicles, modules, unlocks = {}, {}, []
     for nation_id, nation in enumerate(NATIONS):
         prefix = "res/scripts/item_defs/vehicles/" + nation + "/"

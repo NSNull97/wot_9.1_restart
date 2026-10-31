@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { lossSelectionConfiguration,validateLossSelectionRequest,validateLossSelectionReply,LOSS_SELECTION_SCHEMA } from '../src/p10b-selection-loss.mjs';
 import { LOSS_CONTRACT,LOSS_POLICY_SHA256 } from '../src/p06t-ammo-loss.mjs';
 const raw=readFileSync(new URL('../../tests/fixtures/p10b-loss-selection-vectors.json',import.meta.url));
-assert.equal(createHash('sha256').update(raw).digest('hex'),'0bf115524468a159b7a991a9efc7ecfb886ea145b0741b2a785b505f9c12f426');
+assert.equal(createHash('sha256').update(raw).digest('hex'),'d9f22734afbc6a7501eff76bcd0d0f4762a7bb0da36a6fbeb0f2047e977218a5');
 const fixture=JSON.parse(raw);
 test('real two-owner SQL selection vectors preserve mode4 AP0 and both actual byte stamps',()=>{
   assert.equal(fixture.vectors.length,2);

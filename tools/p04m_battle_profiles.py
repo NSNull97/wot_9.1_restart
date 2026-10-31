@@ -33,7 +33,13 @@ ROOT = TOOLS.parent
 SCHEMA = "p04m-battle-source.v1"
 MAX_SOURCE = 256 * 1024
 MAX_PROFILE = 1024 * 1024
-CATALOG_SHA256 = "b6baecd204444d1e894253fa6c19c61478993b8ae87c71373633989d3a8ee460"
+CATALOG_SHA256 = "1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80"
+# CAT-NATIONS: the five P04M specs were derived from the research catalogue before
+# its nation fix. They are USSR rows (nation 0), identical in both catalogues, so
+# their provenance stays frozen: the source revision, the P04M definition/registry
+# and the pool/crew policy hashes pinned by the gateway, web and stands do not move.
+# Builds and runtime still check the current catalogue (CATALOG_SHA256).
+SPEC_CATALOG_SHA256 = "b6baecd204444d1e894253fa6c19c61478993b8ae87c71373633989d3a8ee460"
 PREFIX = "res/scripts/item_defs/vehicles/ussr/"
 PACKAGE = "res/packages/vehicles_russian.pkg"
 PACKAGE_PINS = {
@@ -136,7 +142,7 @@ def sha(raw):
 
 
 def source_spec():
-    return copy.deepcopy(dict(schema="p04m-source-spec.v1", catalog_sha256=CATALOG_SHA256,
+    return copy.deepcopy(dict(schema="p04m-source-spec.v1", catalog_sha256=SPEC_CATALOG_SHA256,
         assemblies=SPECS, files=FILE_PINS, packages=PACKAGE_PINS, members=MEMBER_PINS))
 
 
