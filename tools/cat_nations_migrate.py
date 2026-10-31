@@ -9,11 +9,17 @@ items by semantic ID (``vehicle:uk:...``), never by compact ID.
 Rewritten (one transaction, exact ``catalog_sha256`` fields only):
 - ``catalog_sha256`` of p09e_schema, p08b_schema, p04m_schema, p06t_schema,
   battle_ammo_loss_schema;
+- ``p08c_late_schema.catalog_sha256`` only when its pinned namespace and all
+  related reservation tables are present and entirely empty;
 - ``p09e_research.state_json`` (+ ``state_sha256``),
   ``game_profiles.profile_json`` (``research.catalog_sha256``),
   ``game_snapshot.snapshot_json`` (+ ``snapshot_sha256``).
 Kept as history: ``game_command_ledger`` results and payload hashes, the
 immutable ``p04m_owner`` activation baseline (trigger-protected).
+Existing late-result or reservation history is not migrated: such databases
+are refused before a backup or rewrite, even if the lazy late namespace does
+not yet exist. Historical research commands are also refused because their
+replay payload and journal are bound to the source catalog.
 Fixture caches of the current revision that name the old hash are moved aside
 (``<dir>.before-cat-nations``) so workers rebuild them; ``rollback`` moves them back.
 
@@ -21,7 +27,10 @@ Commands (``--db`` is a developer path; the tool never guesses a stand):
   plan     --db DB [--fixture-root F] [--to new|old]   dry run, read-only
   apply    --db DB --backup-dir B [--fixture-root F]   backup, then old -> new
   rollback --db DB --backup-dir B [--fixture-root F]   backup, then new -> old
-  verify   --db DB --expect new|old                    integrity + markers
+  verify   --db DB --expect new|old                    migration-specific checks
+The verify command checks this tool's migration preconditions and expected
+markers; it is not a health check or a proof of live-store compatibility. It
+intentionally refuses databases containing unsupported historical records.
 Every write first takes an SQLite online backup and records and flushes a PENDING
 receipt with a complete fixture move plan. Services must be stopped: the backup
 and database/file changes are not one atomic operation and the exclusive lock
@@ -48,6 +57,22 @@ NEW = "1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80"
 HASHES = {"old": OLD, "new": NEW}
 SCHEMA = "cat-nations-db-migration.v1"
 MARKER_TABLES = ("p09e_schema", "p08b_schema", "p04m_schema", "p06t_schema", "battle_ammo_loss_schema")
+LATE_SCHEMA = "p08c-late-results.v1"
+LATE_POLICY = "f6ae697fb920b9359a2cb0375aa1fd68538a183fab1c8f136772c703de6abe04"
+# SHA-256 of the ordered sqlite_master objects created by the pinned
+# LateResults.namespace() implementation, serialized with canonical().
+LATE_OBJECTS_SHA256 = "5995ab535a48b50a8a16b7a26fdf8bc2c19f03fcbb09b0ffa711a348d5f4e0dd"
+# Real owner table + P09C ALTER, and independently initialized P09D table.
+# Pin every table/index object so extra triggers or indexes are not trusted.
+LEDGER_OBJECTS_SHA256 = frozenset((
+    "2f2082880eb8b68a2e3ee245eb2f9926296a321a9da4ace2c318d22e626427dc",
+    "74cabe1c849cc40c6c915452b155a33568db6a65cd1d327d237f71940621e60c",
+))
+RESERVATION_DDL_SHA256 = {
+    "p08b_reservation": "deab4b73d42c2f3bbeab692736aa1d3ca15d1f06b7ba3e63f9e1aa4a107c1b7b",
+    "p06t_reservation": "c333dfcaf8f5bb4b92051b52f7a96b99bcd311d621bd28e311d7367dadbb2a91",
+    "battle_ammo_loss_reservation": "33655b466b3adc0c38752ce3bb36fddcfc5678f1724cc380536eda2a32b735b3",
+}
 # (table, key column, JSON column, SHA column of exact JSON text or None)
 JSON_ROWS = (("p09e_research", "account_id", "state_json", "state_sha256"),
              ("game_profiles", "account_id", "profile_json", None),
@@ -106,12 +131,52 @@ def survey(connection, source, target):
     tables = _tables(connection)
     required = set(MARKER_TABLES) | {table for table, _, _, _ in JSON_ROWS}
     require(required <= tables, "missing required tables: " + ", ".join(sorted(required - tables)))
+    # Match the namespace's SQL LIKE lookup (including wildcard underscores),
+    # and also reject unexpected indexes, triggers, and views on its tables.
+    objects = connection.execute("SELECT type,name,tbl_name,sql FROM sqlite_master "
+        "WHERE name LIKE 'p08c_late_%' OR tbl_name LIKE 'p08c_late_%' ORDER BY type,name").fetchall()
+    late_marker = None
+    if objects:
+        require(sha(canonical(objects).encode("ascii")) == LATE_OBJECTS_SHA256,
+                "late-results namespace requires a separately validated migration: unknown schema objects")
+        marker = connection.execute("SELECT version,policy_sha256,catalog_sha256 FROM p08c_late_schema").fetchall()
+        require(len(marker) == 1 and marker[0][0:2] == (LATE_SCHEMA, LATE_POLICY)
+                and marker[0][2] in (source, target),
+                "late-results namespace requires a separately validated migration: unknown marker")
+        for table in ("p08c_late_seal", "p08c_late_result", "p08c_late_command"):
+            require(connection.execute("SELECT 1 FROM " + table + " LIMIT 1").fetchone() is None,
+                    "late-results namespace requires a separately validated migration: history present")
+        late_marker = dict(table="p08c_late_schema", current=marker[0][2], change=marker[0][2] == source)
+    # The late namespace is lazy: a finished early-release reservation can
+    # still await its first late seal even when no namespace has been created.
+    # Until history compatibility is established, require all related
+    # reservation tables to exist with their pinned schema and no rows.
+    for table, digest in RESERVATION_DDL_SHA256.items():
+        ddl = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+        require(ddl is not None and type(ddl[0]) is str and sha(ddl[0].encode("utf8")) == digest,
+                "late-results namespace requires a separately validated migration: unknown reservation schema " + table)
+        require(connection.execute("SELECT 1 FROM " + table + " LIMIT 1").fetchone() is None,
+                "late-results namespace requires a separately validated migration: reservation history " + table)
+    # P09E binds the catalogue SHA into each command's payload hash and replays
+    # its journal through the catalogue. Repointing the current marker without
+    # a versioned historical replay contract breaks legitimate retries.
+    ledger_objects = connection.execute("SELECT type,name,tbl_name,sql FROM sqlite_master "
+        "WHERE name='game_command_ledger' OR tbl_name='game_command_ledger' ORDER BY type,name").fetchall()
+    require(sha(canonical(ledger_objects).encode("ascii")) in LEDGER_OBJECTS_SHA256,
+            "unknown command ledger schema")
+    require(connection.execute("SELECT 1 FROM game_command_ledger WHERE typeof(command_type) != 'text' LIMIT 1").fetchone() is None,
+            "unknown command ledger command type")
+    require(connection.execute("SELECT 1 FROM game_command_ledger WHERE command_type LIKE ? LIMIT 1",
+                               ("p09e-tank-module-research.v1:%",)).fetchone() is None,
+            "research command history requires a separately validated migration")
     markers, rows = [], []
     for table in MARKER_TABLES:
         values = [r[0] for r in connection.execute("SELECT catalog_sha256 FROM " + table)]
         require(len(values) == 1, table + ": one schema marker row expected")
         require(values[0] in (source, target), table + ": unknown catalogue " + values[0])
         markers.append(dict(table=table, current=values[0], change=values[0] == source))
+    if late_marker is not None:
+        markers.append(late_marker)
     for table, key, column, digest in JSON_ROWS:
         select = "SELECT %s,%s%s FROM %s" % (key, column, "," + digest if digest else "", table)
         found = connection.execute(select).fetchall()
@@ -174,14 +239,31 @@ def backup(db, backup_dir, label):
     require(backup_dir.is_dir() and not backup_dir.is_symlink(), "backup dir must exist")
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     target = backup_dir / ("%s.before-cat-nations-%s-%s.sqlite" % (Path(db).stem, label, stamp))
-    require(not target.exists(), "backup name taken: " + str(target))
-    source = sqlite3.connect(str(_db(db)))
-    copy = sqlite3.connect(str(target))
+    database = _db(db)
     try:
-        source.backup(copy)
-    finally:
-        copy.close()
-        source.close()
+        # CREATE_NEW claims this name atomically; never open a pre-existing backup.
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+    except FileExistsError as error:
+        raise MigrationError("backup name taken: " + str(target)) from error
+    except OSError as error:
+        raise MigrationError("cannot reserve backup name: " + str(target)) from error
+    try:
+        os.close(fd)
+    except OSError as error:
+        raise MigrationError("cannot close reserved backup; inspect path: " + str(target)) from error
+    try:
+        source = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)
+        try:
+            # Do not recreate a missing reserved path; retain partial backups on failure.
+            copy = sqlite3.connect(target.absolute().as_uri() + "?mode=rw", uri=True)
+            try:
+                source.backup(copy)
+            finally:
+                copy.close()
+        finally:
+            source.close()
+    except (OSError, sqlite3.Error) as error:
+        raise MigrationError("backup failed; inspect reserved backup path: " + str(target)) from error
     return target
 
 
@@ -276,6 +358,7 @@ def migrate(db, backup_dir, source, target, fixture_root=None, label="apply"):
 
 
 def verify_connection(connection, expected):
+    """Check this migrator's preconditions and markers, not live-store health."""
     other = OLD if expected == NEW else NEW
     require(connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok", "integrity_check")
     markers, rows = survey(connection, other, expected)
@@ -287,7 +370,8 @@ def verify_connection(connection, expected):
         if table in tables:
             counts[table] = sum(1 for r in connection.execute("SELECT %s FROM %s" % (column, table))
                                 if _replace(json.loads(r[0]), expected, expected, table)[1])
-    return dict(expected=expected, markers=[m["table"] for m in markers], rows_naming_expected=counts)
+    return dict(expected=expected, scope="migration-preconditions-and-markers-not-store-health",
+                markers=[m["table"] for m in markers], rows_naming_expected=counts)
 
 
 def verify(db, expected):
