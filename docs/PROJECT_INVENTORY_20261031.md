@@ -15,6 +15,12 @@
 | PERF-02 + LATE-BOTS + CAT-NATIONS | Кандидат `29dde6c79d6181ffe9e74ed44f3883f0b486ff73`, `codex/perf02-ground-slow-integrated-20261031`; исходники `E:/WoT091_Perf02_GroundSlow_20261031/WoT_9.1_Server`, 24 коммита поверх main. НЕ ПРИНЯТ целиком. | Build и synthetic hybrid test-08 PASS с ограничениями; прежний native deadline FAIL, причина UNKNOWN, полный боевой A/B NOT_RUN. Ручная матрица начата, целиком не принята. |
 | PG-01 | Эксперимент `07759e97b0766775a2cd3233c76980495d044efb`, `codex/pg-01-dual-store`, `E:/WoT091_PG01_20261031`; НЕ ПРИНЯТ. | Synthetic ledger/roundtrip PASS. Игровая схема/миграция, production backup/restore и native NOT_RUN. `29dde6c` — предок PG; merge PG также внесёт непринятый PERF. |
 
+Для доступа к этим двум точным снимкам на D созданы отдельные detached worktree:
+`D:/WoT091_Source_Candidate_29dde6c` и `D:/WoT091_Source_PG_07759e9`.
+Это Git-исходники без локальных доказательств, клиентских ресурсов, баз или
+сборок; они не являются работающими стендами и не заменяют исходные ветки E.
+Будущие изменения веток E в эти закреплённые снимки автоматически не попадут.
+
 Synthetic receipt: `E:/WoT091_Perf02_GroundSlow_Hybrid_20261031/WoT_9.1_Server/local/hybrid-external-01/runs/test-08/summary-01.json`.
 Он фиксирует production build, но сам production EXE в этом прогоне не запускался;
 тестовый binary synthetic, без native/UDP, с сокращённым сценарием. Наличие
@@ -57,7 +63,8 @@ OBSERVED отдельно в основном чате: владелец про�
 решением нужны свежие status, проверка использования и повторный инвентарь.
 Удаление worktree не должно автоматически означать удаление ветки или evidence.
 
-Есть 83 зарегистрированных worktree, 335 локальных веток и одна prunable Git
+До создания worktree этой сверки наблюдалось 83 зарегистрированных worktree,
+335 локальных веток и одна prunable Git
 запись `D:/WoT_9.1_Server/.claude/worktrees/arena-01-multi-arena-15e0d4/local/base-2da4baa`
 с отсутствующим gitdir. Это только наблюдение, не рекомендация prune. Размеры,
 зависимости, ignored-данные и применимость остальных объектов не исследованы;
