@@ -63,5 +63,42 @@ class PreferencesSafetyTests(unittest.TestCase):
                 os.remove(path)
 
 
+class BattleResultsCacheDirTests(unittest.TestCase):
+    # Measured 31.10 (local/clients/p03f/a/python.log): #717 native getter value.
+    OWNED = u'D:\\WoT_9.1_Server\\local\\profile-a\\sr_preferences.xml'.encode('utf8')
+    NATIVE = b'Wargaming.net/WorldOfTanks/D:/WoT_9.1_Server/local/profile-a/sr_preferences.xml'
+
+    class Module(object):
+        pass
+
+    def module(self, preferences_path):
+        module = self.Module()
+        module.CACHE_DIR = prefs.results_cache_dir(preferences_path)
+        return module
+
+    def test_native_import_time_dir_is_the_measured_invalid_path(self):
+        self.assertTrue(prefs.results_cache_dir(self.NATIVE).startswith(u'Wargaming.net/WorldOfTanks/D:'))
+
+    def test_import_time_native_dir_redirected_to_owned_profile(self):
+        module = self.module(self.NATIVE)
+        previous, owned = prefs.redirect_battle_results_cache(module, self.NATIVE, self.OWNED)
+        self.assertEqual(previous, prefs.results_cache_dir(self.NATIVE))
+        self.assertEqual(module.CACHE_DIR, os.path.join(u'D:\\WoT_9.1_Server\\local\\profile-a', u'battle_results'))
+        self.assertIsInstance(module.CACHE_DIR, prefs.text_type)
+        self.assertNotIn(u'Wargaming.net', module.CACHE_DIR)
+
+    def test_module_imported_after_getter_patch_keeps_owned_dir(self):
+        module = self.module(self.OWNED)
+        prefs.redirect_battle_results_cache(module, self.NATIVE, self.OWNED)
+        self.assertEqual(module.CACHE_DIR, prefs.results_cache_dir(self.OWNED))
+
+    def test_unmeasured_cache_dir_refused(self):
+        module = self.Module()
+        module.CACHE_DIR = u'C:\\elsewhere\\battle_results'
+        with self.assertRaises(ValueError):
+            prefs.redirect_battle_results_cache(module, self.NATIVE, self.OWNED)
+        self.assertEqual(module.CACHE_DIR, u'C:\\elsewhere\\battle_results')
+
+
 if __name__ == '__main__':
     unittest.main()

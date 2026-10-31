@@ -80,6 +80,27 @@ def guarded_write(path, payload):
         os.remove(previous)
 
 
+def results_cache_dir(preferences_path):
+    # Same expression #717 BattleResultsCache evaluates once at import time.
+    return os.path.join(os.path.dirname(text_type(preferences_path, 'utf-8', errors='ignore')),
+                        u'battle_results')
+
+
+def redirect_battle_results_cache(module, native_path, path_bytes):
+    """#717 binds CACHE_DIR at import, before the getter is replaced.
+
+    Measured 31.10: every save raised WindowsError 123 on
+    'Wargaming.net/WorldOfTanks/D:', so battle results never reached the
+    local cache. Only the measured native value or the owned value is accepted.
+    """
+    owned_dir = results_cache_dir(path_bytes)
+    current = getattr(module, 'CACHE_DIR', None)
+    if current not in (results_cache_dir(native_path), owned_dir):
+        raise ValueError('unmeasured BattleResultsCache.CACHE_DIR; refusing redirect')
+    module.CACHE_DIR = owned_dir
+    return current, owned_dir
+
+
 def install(args, settings, record):
     import BigWorld
     import ResMgr
@@ -115,6 +136,9 @@ def install(args, settings, record):
     if section is None:
         raise ValueError('native ResMgr could not load owned preferences XML')
     BigWorld.wg_getPreferencesFilePath = lambda: path_bytes
+    from account_helpers import BattleResultsCache
+    previous, results_dir = redirect_battle_results_cache(BattleResultsCache, actual, path_bytes)
+    record('battle_results_cache_dir', previous=previous, path=results_dir)
 
     class LocalSettings(Settings.Settings):
         def save(self):
