@@ -68,6 +68,8 @@ def main():
     before=state[1][2]
     try:
         with closing(sqlite3.connect(source.as_uri()+'?mode=ro&immutable=1',uri=True)) as old,closing(sqlite3.connect(destination)) as fresh:old.backup(fresh)
+        sys.path.append(str(ROOT/'tests/helpers'));from cat_nations_test_restamp import restamp_copy
+        restamp_copy(destination)
         catalog=load_catalog(seed['original']);accounts=[p['account_id'] for p in seed['profiles']]
         if len(accounts)!=2 or len(set(accounts))!=2:raise ValueError('actual two distinct source owners required')
         with closing(sqlite3.connect(destination.as_uri()+'?mode=ro',uri=True)) as db:
