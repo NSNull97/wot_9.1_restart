@@ -137,6 +137,16 @@ fn publish(s:&mut Session,w:&World,now:Instant,lines:&mut Vec<String>)->Vec<Vec<
     finish(&mut w);
     assert_eq!(totals_of(&publish(&mut s,&w,now,&mut Vec::new())),vec![[hp,0,0,0,0]],"the sum tells no single shot any more");
 }
+/// The whole server pass, not the publication alone: a finished battle still
+/// reaches the channel before the client leaves the arena.
+#[test] fn ui04_the_server_pass_of_a_finished_battle_sends_the_totals() {
+    let (mut w,now)=hit_world(Instant::now(),0,1);
+    let hp=u32::from((w.impacts[0].health_before-w.impacts[0].health_after) as u16);
+    let mut s=spotted(now,&w,0);open(&mut s);
+    finish(&mut w);
+    poll(&mut s,&mut w,now).unwrap();
+    assert_eq!(totals_of(&channel_frames(&all_bodies(&mut s,now))),vec![[hp,0,0,0,0]]);
+}
 /// The enemy of the recipient learns nothing from the recipient's channel: the
 /// frame is built per session, and its own sums are its own.
 #[test] fn ui04_each_recipient_gets_only_its_own_sums() {
