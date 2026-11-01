@@ -919,6 +919,9 @@ fn parked_battle_reset_ready(table:&Table,world:&World)->bool{
     !world.actors.is_empty()&&world.humans_parked()
         &&!current_avatar_pending(table,world)
 }
+fn parked_battle_reset_ready_with_hold(table:&Table,world:&World,late_bot_hold:bool)->bool{
+    parked_battle_reset_ready(table,world)&&!late_bot_hold
+}
 fn deliver_lifecycle_result(s:&mut Session,world:&World,now:Instant)->io::Result<bool> {
     let Some(c)=s.shared.as_ref() else{return Ok(false);};
     if !c.result_committed || c.natural_result.is_none() || !s.arena_base {return Ok(false);}
@@ -1536,7 +1539,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     let mut room_closing:Vec<(u32,&'static str)>=Vec::new();
     let mut battle_dispatch=profile13_dispatch::Dispatcher::default();
     if config.p08c_late_results{
-        battle_dispatch.late=Some(super::late_results_runtime::Manager::new(config.p08c_late_results_accounts.clone(),config.p08c_late_notice_experimental)?);
+        let mut late=super::late_results_runtime::Manager::new(config.p08c_late_results_accounts.clone(),config.p08c_late_notice_experimental)?;
+        if config.late_bots {late.enable_bots();println!("LATE_BOTS_POLICY_BOUND policy={} normal_rate=true",crate::identity091::LATE_BOTS_POLICY);}
+        battle_dispatch.late=Some(late);
         println!("P08C_LATE_RESULTS_BOUND policy={} configured_owners={} native_notice_experimental={} native_method=INFERRED",super::late_results_capture::POLICY,config.p08c_late_results_accounts.len(),config.p08c_late_notice_experimental);
     }
     if room_host.is_some(){battle_dispatch.enable_training_finished();}
@@ -2059,7 +2064,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             }
         }
         for a in &mut arenas {
-            if a.closed.is_none() && parked_battle_reset_ready(&table,&a.world) {
+            let late_bot_hold=battle_dispatch.late.as_ref().is_some_and(|late|late.holds_bot_battle(&a.world));
+            if a.closed.is_none() && parked_battle_reset_ready_with_hold(&table,&a.world,late_bot_hold) {
                 if let Some(late)=&mut battle_dispatch.late{late.before_reset(&a.world,"normal_all_parked_reset");}
                 match battle_dispatch.before_hold_reset(&a.world).and_then(|()|a.template.replace(&mut a.world,&mut a.integrated,now)) {
                     Ok(())=>a.cursors.reset(),
@@ -3756,6 +3762,10 @@ mod p08b_restart_cas_tests;
 #[cfg(test)]
 #[path="p08c_late_composition_tests.rs"]
 mod p08c_late_composition_tests;
+
+#[cfg(test)]
+#[path="late_bots_composition_tests.rs"]
+mod late_bots_composition_tests;
 
 #[cfg(test)]
 #[path="server_network_tests.rs"]

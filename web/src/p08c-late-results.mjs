@@ -8,6 +8,7 @@ import { realpathSync, statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import { MAX_RESULT_REQUEST } from './p08b-battle.mjs';
+import { CATALOG_SHA256 } from './catalog-v1.mjs';
 export const LATE_CONTRACT = 'p08c-late-result-append.v1';
 // RES-30: a seal of 7..30 actors (tools/p08c_late_results.py MAX_SEAL_ROSTER30).
 const MAX_SEAL_ROSTER30 = 393216;
@@ -128,8 +129,9 @@ function file(path, directory = false) {
     && (directory ? statSync(path).isDirectory() : statSync(path).isFile()), 'trusted existing path'); return resolve(path);
 }
 /** Called only for the authenticated, configured owner; paths never come from JSON. */
-export function createLateResultService({ database, originalRoot, accountId, shellCatalog, terminalPolicy, loss, python, worker, cwd, domain = null }) {
+export function createLateResultService({ database, originalRoot, accountId, shellCatalog, terminalPolicy, loss, python, worker, cwd, catalogSha256 = null, domain = null }) {
   valid(UUID.test(accountId) && typeof loss === 'boolean', 'trusted owner/mode');
+  valid(catalogSha256 === null || catalogSha256 === CATALOG_SHA256, 'trusted catalog pin');
   const db = file(database), original = file(originalRoot, true), shells = file(shellCatalog), policy = file(terminalPolicy),
     executable = file(python), script = file(worker), working = file(cwd, true);
   let active = false;
@@ -150,7 +152,8 @@ export function createLateResultService({ database, originalRoot, accountId, she
         const env = { ...process.env }; delete env.PYTHONPATH;
         const child = spawn(executable, ['-B', '-X', 'utf8', script, '--database', db, '--original-root', original,
           '--account-id', accountId, '--shell-catalog', shells, '--terminal-policy', policy,
-          ...(loss ? ['--ammo-rack-loss'] : []), operation], { cwd: working, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+          ...(loss ? ['--ammo-rack-loss'] : []), ...(catalogSha256 === null ? [] : ['--catalog-sha256', catalogSha256]),
+          operation], { cwd: working, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
         let size = 0, errorSize = 0, exceeded = false; const parts = [];
         const timer = setTimeout(() => { exceeded = true; child.kill(); }, LATE_WORKER_TIMEOUT_MS);
         child.stdout.on('data', part => { size += part.length; if (size > maximum) { exceeded = true; child.kill(); } else parts.push(part); });

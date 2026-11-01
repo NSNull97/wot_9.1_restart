@@ -41,11 +41,21 @@ pub(super) struct Manager{
     captures:Vec<Entry>,accounts:BTreeSet<String>,work:Option<Work>,job:Option<Job>,retry:Option<Instant>,
     experimental_notice:bool,discovery:Discovery,
     registration_refused:VecDeque<u64>,
+    bot_results:bool,
 }
 impl Manager{
     pub(super) fn new(accounts:Vec<String>,experimental_notice:bool)->io::Result<Self>{
         if accounts.is_empty()||accounts.len()>6||accounts.iter().collect::<BTreeSet<_>>().len()!=accounts.len(){return Err(bad("explicit1..6 unique configured owners required"));}
-        Ok(Self{captures:Vec::new(),accounts:accounts.into_iter().collect(),work:None,job:None,retry:None,experimental_notice,discovery:Discovery::default(),registration_refused:VecDeque::new()})
+        Ok(Self{captures:Vec::new(),accounts:accounts.into_iter().collect(),work:None,job:None,retry:None,experimental_notice,discovery:Discovery::default(),registration_refused:VecDeque::new(),bot_results:false})
+    }
+    /// Opt in only for the explicitly configured project policy.
+    pub(super) fn enable_bots(&mut self){self.bot_results=true;}
+    /// A source-linked started bot battle remains alive until a real outcome.
+    /// Failure of the optional capture falls back to the existing reset path.
+    pub(super) fn holds_bot_battle(&self,world:&World)->bool{
+        self.bot_results&&world.bot_plan().is_some()&&world.started.is_some()
+            &&!world.lifecycle.as_ref().is_some_and(|l|l.outcome().is_some())
+            &&self.captures.iter().any(|e|e.capture.battle()==world.id&&e.invalid.is_none()&&e.capture.seal().is_none())
     }
     /// Only a RUNNING job blocks another SQLite/HTTP worker. An immutable task
     /// waiting2s never starves the actual Finish dispatcher or garage writes.
@@ -90,13 +100,13 @@ impl Manager{
     fn register_world_inner(&mut self,sessions:&[Session],world:&World,run:&str)->io::Result<()>{
         if !world.mixed_ammo(){return Err(bad("legacy AP unsupported; no invented source links"));}
         // BOT-01: a bot has no Session, writer or admission to link.
-        if world.bot_plan().is_some(){return Err(bad("BOT-01 server bots: late results capture unsupported"));}
+        if world.bot_plan().is_some()&&!self.bot_results{return Err(bad("BOT-01 server bots: late results capture unsupported"));}
         let old=self.captures.iter().position(|e|e.capture.battle()==world.id);
         if old.is_some_and(|i|self.captures[i].invalid.is_some()){return Ok(());}
-        let mut capture=if let Some(i)=old{self.captures[i].capture.clone()}else{Capture::new(run.into(),world.id)?};
+        let mut capture=if let Some(i)=old{self.captures[i].capture.clone()}else{let mut capture=Capture::new(run.into(),world.id)?;if self.bot_results&&world.bot_plan().is_some(){capture.enable_bots();}capture};
         for(slot,a)in world.actors.iter().enumerate(){
             // Existing parked links remain source-bound without live Session.
-            if capture.links().iter().any(|l|l.slot()==slot){continue;}
+            if a.bot.is_some()||capture.links().iter().any(|l|l.slot()==slot){continue;}
             let sid=a.session.ok_or_else(||bad("unregistered parked actor"))?;
             let s=sessions.iter().find(|s|s.id==sid).ok_or_else(||bad("missing actual attached Session"))?;
             let p=s.shared.as_ref().and_then(|c|c.profile13.as_ref()).ok_or_else(||bad("attached actor lacks owned writer"))?;

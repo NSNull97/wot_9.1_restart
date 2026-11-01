@@ -44,6 +44,8 @@ fn bot01_start_barrier_counts_native_places_and_reset_waits_for_natives_only(){
     assert!(!parked_battle_reset_ready(&table,&world));
     world.detach(1).unwrap();assert!(!parked_battle_reset_ready(&table,&world),"one native still plays");
     world.detach(2).unwrap();assert!(parked_battle_reset_ready(&table,&world),"bots alone do not hold the battle");
+    assert!(parked_battle_reset_ready_with_hold(&table,&world,false),"disabled policy preserves the old reset");
+    assert!(!parked_battle_reset_ready_with_hold(&table,&world,true),"an unfinished retained bot battle must keep stepping");
 }
 
 #[test]
@@ -78,4 +80,6 @@ fn bot01_one_native_place_starts_alone_and_fills_five_bots(){
     advance_battle(&mut world,&mut None,now,true).unwrap();
     assert!(world.started.is_some()&&world.actors[1..].iter().all(|a|a.ready));
     world.detach(1).unwrap();assert!(parked_battle_reset_ready(&table,&world),"the one native left: reset");
+    assert!(parked_battle_reset_ready_with_hold(&table,&world,false));
+    assert!(!parked_battle_reset_ready_with_hold(&table,&world,true));
 }

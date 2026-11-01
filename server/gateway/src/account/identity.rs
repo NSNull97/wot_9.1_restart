@@ -207,6 +207,30 @@ fn late_results_owner_id(owner:&str)->bool{
 /// Known keys: 6 required + 28 optional = 34 (SPAWN-15); the bound leaves
 /// headroom for later options and still refuses an unbounded object.
 pub(crate) const MAX_CONFIG_FIELDS:usize=48;
+struct LateBotsWire{policy:String}
+impl<'de> Deserialize<'de> for LateBotsWire{
+    fn deserialize<D:Deserializer<'de>>(input:D)->Result<Self,D::Error>{
+        struct Fields;
+        impl<'de> Visitor<'de> for Fields{
+            type Value=LateBotsWire;
+            fn expecting(&self,f:&mut fmt::Formatter)->fmt::Result{f.write_str("late_bots object with one policy field")}
+            fn visit_map<M:MapAccess<'de>>(self,mut input:M)->Result<LateBotsWire,M::Error>{
+                let mut policy=None;
+                while let Some(key)=input.next_key::<String>()?{
+                    match key.as_str(){
+                        "policy"=>{
+                            if policy.is_some(){return Err(de::Error::duplicate_field("policy"));}
+                            policy=Some(input.next_value::<String>()?);
+                        }
+                        _=>return Err(de::Error::unknown_field(&key,&["policy"])),
+                    }
+                }
+                Ok(LateBotsWire{policy:policy.ok_or_else(||de::Error::missing_field("policy"))?})
+            }
+        }
+        input.deserialize_map(Fields)
+    }
+}
 struct ConfigFields{fields:BTreeMap<String,Value>,network:Option<game_network::LanWire>}
 impl<'de> Deserialize<'de> for ConfigFields{
     fn deserialize<D:Deserializer<'de>>(input:D)->Result<Self,D::Error>{
@@ -222,6 +246,9 @@ impl<'de> Deserialize<'de> for ConfigFields{
                     if key=="game_network"{
                         network=Some(input.next_value::<game_network::LanWire>()?);
                         fields.insert(key,Value::Null);
+                    }else if key=="late_bots"{
+                        let late=input.next_value::<LateBotsWire>()?;
+                        fields.insert(key,serde_json::json!({"policy":late.policy}));
                     }else{fields.insert(key,input.next_value::<Value>()?);}
                 }
                 Ok(ConfigFields{fields,network})
@@ -235,6 +262,9 @@ impl<'de> Deserialize<'de> for ConfigFields{
 pub const MAX_CONNECTIONS:usize=256;
 /// ARENA-01: arenas per gateway process (ADR-002: 2 workers x 4 arenas).
 pub const MAX_ARENAS:usize=4;
+/// Project policy: a bot battle continues at the normal simulation rate until
+/// its actual lifecycle Outcome, even after the last native player leaves.
+pub const LATE_BOTS_POLICY:&str="project.late-bots.continue-until-outcome.v1";
 
 pub struct Config {
     pub login_bind:SocketAddrV4,pub base_bind:SocketAddrV4,identity_endpoint:SocketAddrV4,
@@ -243,6 +273,7 @@ pub struct Config {
     pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
     pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,pub p04m_pool:bool,pub p06t_mixed_ammo:bool,pub p06t_ammo_rack_detonation:bool,
     pub p08c_late_results:bool,pub p08c_late_results_accounts:Vec<String>,pub p08c_late_notice_experimental:bool,
+    pub late_bots:bool,
     pub training_rooms:bool,
     pub p08b_owner_battle_hold:bool,
     /// CAT-01 single catalog for mixed admission identity (default: legacy lists).
@@ -429,6 +460,14 @@ impl Config {
         if bots.is_some()&&(!profile13_battle||connection_capacity.is_none()||!visibility_v1||training_rooms||p08b_owner_battle_hold){
             return Err(invalid("bots require profile13 battle, connection_capacity and visibility_v1, without training rooms or hold5"));
         }
+        let late_bots=match value.remove("late_bots") {
+            None=>false,
+            Some(Value::Object(v)) if v.len()==1&&v.get("policy").and_then(Value::as_str)==Some(LATE_BOTS_POLICY)=>true,
+            _=>return Err(invalid("late_bots must name this build's project policy")),
+        };
+        if late_bots&&(!p08c_late_results||bots.is_none()){
+            return Err(invalid("late_bots requires bots and P08C late results"));
+        }
         // MM-01: {"policy":<this build's>,"team_size":T,"tiers":[lo,hi],"tier_spread":D,"wait_seconds":W,"lease_seconds":L}.
         let matchmaker=match value.remove("matchmaker"){
             None=>None,
@@ -502,7 +541,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_worker})
+        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_worker})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}

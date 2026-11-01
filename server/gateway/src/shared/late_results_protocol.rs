@@ -59,7 +59,9 @@ impl Task{
         if raw.len()>if operation==Operation::Append{capture::MAX_HTTP}else{4096}{return Err(bad("encoded HTTP fixed body budget"));}
         // Validate the new outgoing JSON against the established bounded scalar
         // reader; nested strings remain canonical own artifacts, no pickle.
-        crate::profile13_v2091::bounded_json(&raw,if operation==Operation::Append{capture::MAX_HTTP}else{4096})?;
+        if operation==Operation::Append{
+            crate::profile13_v2091::bounded_late_append_json(&raw,capture::MAX_HTTP,capture::MAX_SEAL_ROSTER30)?;
+        }else{crate::profile13_v2091::bounded_json(&raw,4096)?;}
         let sha256=digest(&raw);Ok(Self{owner:link.owner().clone(),operation,body:Arc::new(raw),request,sha256,
             expected_finished_revision,expected_reason,expected_seal})
     }

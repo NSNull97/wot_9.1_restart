@@ -67,3 +67,21 @@ fn ready()->(Manager,World,Instant){let(capture,world,now)=capture::saved_sql_co
         assert!(m.select_work().unwrap().is_some());
     }).unwrap().join().unwrap();
 }
+
+#[test]fn late_bots_runtime_holds_only_enabled_unfinished_valid_capture(){
+    // Registry-only capture: this test checks scheduling, not admission/HTTP.
+    let now=Instant::now();let map=crate::map_profile091::MapId::Prohorovka;
+    let mut world=model::bots::tests::prepared(map,1,4,1,now);
+    let (identity,loadout)=model::tests::profile13_loadout(super::super::vehicle_profile::VehicleKind::Ms1,0,7);
+    world.attach_owned(identity,1,&loadout).unwrap();world.fill_bots().unwrap();world.start(now).unwrap();
+    world.set_ready(0,1).unwrap();world.ready_bots().unwrap();world.advance_lifecycle(now).unwrap();
+    world.advance_lifecycle(now+Duration::from_millis(1000)).unwrap();world.detach(1).unwrap();
+    let run="12345678-1234-4234-8234-123456789abc";
+    let mut m=Manager::new(vec![run.into()],false).unwrap();
+    let install=m.stage_install(Capture::new(run.into(),world.id).unwrap()).unwrap();m.commit_install(install);
+    assert!(!m.holds_bot_battle(&world));m.enable_bots();assert!(m.holds_bot_battle(&world));
+    m.invalidate_source(run,world.id);assert!(!m.holds_bot_battle(&world));m.captures[0].invalid=None;
+    for slot in 0..world.actors.len(){if world.team(slot).unwrap()==2{world.actors[slot].health=0;}}
+    world.advance_lifecycle(now+Duration::from_millis(1100)).unwrap();assert!(world.lifecycle.as_ref().unwrap().outcome().is_some());
+    assert!(!m.holds_bot_battle(&world),"outcome releases the arena for its normal sealed reset");
+}

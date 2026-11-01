@@ -97,3 +97,69 @@ pub(super) fn final_outcome(f:&mut Fixture){f.world.detach(1).unwrap();f.world.a
     assert!(std::mem::size_of::<Capture>()<=512,"Capture {}",std::mem::size_of::<Capture>());
     let c=Capture::new("87654321-4321-4321-8321-cba987654321".into(),7).unwrap();assert_eq!(c.releases.len(),MAX_ACTORS);
 }
+
+/// Actual saved admissions, synthetic bot roster and synthetic finish receipt.
+/// This exercises capture only; it does not claim native delivery or SQL append.
+struct BotFixture{capture:Capture,world:World,now:Instant}
+fn bot_fixture(places:usize, humans:usize)->BotFixture{
+    let all=vectors();let rows=all["battle_vectors"].as_array().unwrap();let admitted=rows.iter().filter(|r|r["request"]["operation"]=="admit").collect::<Vec<_>>();
+    let a=admission(admitted[0]);let now=Instant::now();
+    let mut world=World::new_for_roster(a.battle,now,MapId::Karelia,places).unwrap();
+    world.bind_geometry(Arc::new(geometry::tests::bundle())).unwrap();world.bind_geometry(Arc::new(geometry::tests::is7_bundle())).unwrap();world.enable_ap_test_lab().unwrap();
+    world.bind_terrain(Arc::new(terrain::tests::fixture(-1000.,2000.,2,vec![-100.;4]))).unwrap();world.enable_mixed_ammo().unwrap();
+    world.enable_lifecycle(lifecycle::Rules{prebattle_ms:1000,battle_ms:1000,afterbattle_ms:1000,..lifecycle::Rules::prohorovka()}).unwrap();world.enable_ammo_detonation().unwrap();
+    world.enable_bots(model::bots::Plan{human_places:humans,seed:1,kinds:vec![super::super::vehicle_profile::VehicleKind::Ms1]}).unwrap();
+    let saved:Value=serde_json::from_str(all["append_vectors"][1]["request"]["seal_json"].as_str().unwrap()).unwrap();
+    let result=Results::from_json_p06t(saved["results_json"].as_str().unwrap()).unwrap();
+    let mut capture=Capture::new(a.run_id.clone(),a.battle).unwrap();capture.enable_bots();
+    for slot in 0..humans{let reservation=admission(admitted[slot]);let c=context(admitted[slot]);let p=&result.participants[slot];
+        let owner=Arc::new(identity091::Profile{account_id:c.account_id,database_id:c.native_database_id,name:p.name.clone(),fixture_dir:PathBuf::new()});
+        world.attach_owned_loss(model::Identity{account:owner.account_id.clone(),database:owner.database_id,name:owner.name.clone()},slot as u32+1,&reservation.frozen).unwrap();
+        capture.register(&world,slot,slot as u32+1,owner,Admission::Loss(reservation)).unwrap();
+    }
+    assert_eq!(world.fill_bots().unwrap(),places-humans);world.lifecycle_created_unix=Some(1792080000);world.start(now).unwrap();
+    for slot in 0..humans{world.set_ready(slot,slot as u32+1).unwrap();}world.ready_bots().unwrap();
+    world.advance_lifecycle(now).unwrap();world.advance_lifecycle(now+Duration::from_millis(1000)).unwrap();
+    let Admission::Loss(r)=&capture.links[0].admission else{unreachable!()};
+    let terminal=handoff::TerminalLoss::from_actor_result(r,&world,0,1,FinishReason::ManualLeave,None).unwrap();
+    capture.observe_terminal_loss(0,&terminal).unwrap();
+    // Synthetic state transition. Actual Finished completion and SQL must be
+    // proven by the composition tests, not by this fixture.
+    capture.finished(0,14,"test:synthetic-finish").unwrap();world.detach(1).unwrap();
+    BotFixture{capture,world,now}
+}
+fn bot_outcome(f:&mut BotFixture){f.world.advance_lifecycle(f.now+Duration::from_millis(1500)).unwrap();f.world.advance_lifecycle(f.now+Duration::from_millis(2100)).unwrap();assert!(f.world.lifecycle.as_ref().unwrap().outcome().is_some());}
+#[test]fn late_bots_1plus29_seals_full_roster_and_uses_roster_budget(){
+    let mut f=bot_fixture(30,1);bot_outcome(&mut f);f.capture.capture_final(&f.world).unwrap();
+    let seal=f.capture.seal().unwrap();let v=mixed::bounded_json(seal.raw().as_bytes(),MAX_SEAL_ROSTER30).unwrap();
+    assert_eq!(v["version"],2);assert_eq!(v["policy"],BOT_POLICY);assert_eq!(v["actors"].as_array().unwrap().len(),1);
+    assert_eq!(v["bots"].as_array().unwrap().len(),29);assert_eq!(seal.results().participants.len(),30);
+    for (row,slot) in v["bots"].as_array().unwrap().iter().zip(1..30){
+        assert_eq!(row.as_object().unwrap().len(),4);assert_eq!(row["slot"],slot);assert_eq!(row["vehicle_id"],wire::vehicle_id(slot).unwrap());
+        assert_eq!(row["team"],f.world.team(slot).unwrap());assert_eq!(row["native_database_id"],f.world.actors[slot].identity.database);
+        assert!(row.get("account_id").is_none());
+    }
+    assert_eq!(f.capture.eligible(0).unwrap(),Some(14));
+}
+#[test]fn late_bots_changed_parked_hp_keeps_saved_release_and_reports_true_final(){
+    let mut f=bot_fixture(4,2);let before=f.capture.releases[0].clone();f.world.actors[0].health-=1;bot_outcome(&mut f);
+    f.capture.capture_final(&f.world).unwrap();assert_eq!(f.capture.eligible(0).unwrap(),Some(14));assert_eq!(f.capture.releases[0],before);
+    assert_eq!(f.capture.seal().unwrap().results().participants[0].health,f.world.actors[0].health);
+}
+#[test]fn late_bots_poison_missing_source_or_disabled_flag_fails_closed(){
+    let mut f=bot_fixture(4,2);bot_outcome(&mut f);f.capture.links.pop();assert!(f.capture.capture_final(&f.world).is_err());assert!(f.capture.seal().is_none());
+    let mut g=bot_fixture(4,2);bot_outcome(&mut g);g.capture.bots_enabled=false;assert!(g.capture.capture_final(&g.world).is_err());assert!(g.capture.seal().is_none());
+}
+#[test]fn late_bots_fired_ammunition_after_release_is_refused(){
+    let mut f=bot_fixture(4,2);bot_outcome(&mut f);f.capture.capture_final(&f.world).unwrap();
+    let seal=Arc::make_mut(f.capture.seal.as_mut().unwrap());seal.actors[0].fired[0].count+=1;
+    assert!(f.capture.eligible(0).unwrap_err().to_string().contains("LATE_ACTOR_STATE_CHANGED"));
+}
+#[test]fn late_bots_pending_finish_is_not_eligible(){
+    let mut f=bot_fixture(4,2);f.capture.releases[0].as_mut().unwrap().finished=None;bot_outcome(&mut f);
+    f.capture.capture_final(&f.world).unwrap();assert_eq!(f.capture.eligible(0).unwrap(),None);
+}
+#[test]fn late_bots_noncontiguous_human_slot_uses_link_index(){
+    let mut f=bot_fixture(4,2);bot_outcome(&mut f);f.world.actors.swap(0,2);f.capture.links[0].slot=2;f.capture.links.sort_by_key(|link|link.slot);
+    f.capture.releases.swap(0,2);f.capture.capture_final(&f.world).unwrap();assert_eq!(f.capture.eligible(2).unwrap(),Some(14));
+}

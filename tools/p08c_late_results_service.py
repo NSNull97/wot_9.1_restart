@@ -53,8 +53,13 @@ def main():
     for name in ("database", "original-root", "account-id", "shell-catalog", "terminal-policy"):
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--ammo-rack-loss", action="store_true")
+    parser.add_argument("--catalog-sha256", help="CAT-01 pinned catalog for this mixed worker")
     parser.add_argument("operation", choices=OPERATIONS)
     args = parser.parse_args()
+    if args.catalog_sha256 is not None:
+        import catalog_v1
+        try: catalog_v1.activate(args.catalog_sha256)
+        except catalog_v1.CatalogMismatch as error: parser.error("CAT-01 catalog refused: " + str(error))
     raw = sys.stdin.buffer.read(MAX_REQUEST + 1)
     request = decode(raw, MAX_REQUEST)
     args.catalog = load_catalog(args.original_root); audit(args.original_root)
