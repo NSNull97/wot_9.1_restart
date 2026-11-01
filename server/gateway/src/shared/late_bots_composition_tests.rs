@@ -42,7 +42,7 @@ fn phase(v:&serde_json::Value)->serde_json::Value{
     let mut join=common::sync(202,700,1);join[15..19].copy_from_slice(&1i32.to_le_bytes());receive(&mut table.sessions[0],&join);
     settle(&mut dispatch,&mut table,&world,config.clone());assert!(table.sessions[0].shared.as_ref().unwrap().profile13.as_ref().unwrap().reservation_loss.is_some());
     assert!(common::drain(&mut table.sessions[0]).contains(&crate::map_drive_world091::queue_callback(true)));
-    attach_waiting_sessions(&mut table,&mut world,now).unwrap();dispatch.late.as_mut().unwrap().register_world(&table.sessions,&world,&config.battle_run_id).unwrap();
+    attach_waiting_sessions(&mut table,&mut world,Instant::now()).unwrap();assert_eq!(world.actors.len(),1);dispatch.late.as_mut().unwrap().register_world(&table.sessions,&world,&config.battle_run_id).unwrap();
     assert_eq!(world.fill_bots().unwrap(),3);let s=&mut table.sessions[0];s.arena_base=true;let c=s.shared.as_mut().unwrap();c.phase=Phase::Driving;c.correction=true;c.binding=Some((0,true));c.return_generation=1;c.view=Some(world.clone());
     world.lifecycle_created_unix=Some(utc());world.start(now).unwrap();world.set_ready(0,7).unwrap();assert_eq!(world.ready_bots().unwrap(),3);
     world.advance_lifecycle(now).unwrap();world.advance_lifecycle(now+Duration::from_millis(1000)).unwrap();
