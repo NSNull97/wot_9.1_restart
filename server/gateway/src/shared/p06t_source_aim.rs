@@ -45,7 +45,12 @@ impl SourceEnvelope{
     fn blend(&self,delta:f32,extra:Extra)->Limits{
         // Keep independent f32 multiply/add steps in original observed order.
         let alpha=(delta-extra.sector)/self.transition;let rest=1.-alpha;
-        Limits{min:self.basic.min*alpha+extra.limits.min*rest,max:self.basic.max*alpha+extra.limits.max*rest}
+        // A convex blend cannot mathematically leave its two source endpoints.
+        // f32 rounding can nevertheless overshoot by one ULP (observed on KV-3),
+        // so constrain each independently without widening the wire envelope.
+        let bound=|v:f32,a:f32,b:f32|v.clamp(a.min(b),a.max(b));
+        Limits{min:bound(self.basic.min*alpha+extra.limits.min*rest,self.basic.min,extra.limits.min),
+            max:bound(self.basic.max*alpha+extra.limits.max*rest,self.basic.max,extra.limits.max)}
     }
     pub fn clamp_pitch(&self,yaw:f32,target:f32)->Result<f32>{if !target.is_finite()||target.abs()>FRAC_PI_2{return Err(Error::Pitch);}
         let limits=self.pitch_limits(yaw)?;Ok(target.clamp(limits.min,limits.max))}

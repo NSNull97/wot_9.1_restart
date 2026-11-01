@@ -4,7 +4,7 @@
 //! resources. The numeric maximum, proximity shortcut, cadence, retention and
 //! radio sharing values are explicit project policy because the 0.9.1 server
 //! implementation is not present in the permitted client copy.
-use std::io;
+use std::{io, sync::atomic::{AtomicUsize, Ordering}};
 use super::{pose, visibility::MAX_VIEW_RANGE};
 
 pub const POLICY: &str = "p07b-717-source-points-no-camo.v1";
@@ -145,6 +145,23 @@ impl crate::bw_wire::Wire for State {
     fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{rules:W::get(bw_i)?,last_ms:W::get(bw_i)?,last_scan_ms:W::get(bw_i)?,direct:W::get(bw_i)?,last_seen:W::get(bw_i)?,desired:W::get(bw_i)?,observed:W::get(bw_i)?,pending:W::get(bw_i)?,sixth_generation:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
+/// One observer's direct sightings of this scan.
+fn scan_observer<F>(rules: Rules, observer: &Actor, actors: &[Actor], clear: &mut F) -> io::Result<[bool; MAX_ACTORS]>
+where F: FnMut(usize, usize, Point, Point) -> io::Result<bool> {
+    let mut row = [false; MAX_ACTORS];
+    for target in actors.iter().filter(|a| a.team != observer.team) {
+        let distance = distance2(observer.position, target.position);
+        if distance <= f64::from(rules.proximity_m).powi(2) { row[target.slot] = true; continue; }
+        if distance > f64::from(observer.view_range.min(rules.max_detection_m)).powi(2) { continue; }
+        'ray: for (observer_point, start) in observer.points.observers.into_iter().enumerate() {
+            for (target_point, end) in target.points.checks.into_iter().enumerate() {
+                if start == end || clear(observer_point, target_point, start, end)? { row[target.slot] = true; break 'ray; }
+            }
+        }
+    }
+    Ok(row)
+}
+
 impl State {
     pub fn new(rules: Rules) -> io::Result<Self> { rules.validate()?; Ok(Self { rules, last_ms: None, last_scan_ms: None, direct: [[false; MAX_ACTORS]; MAX_ACTORS], last_seen: [[None; MAX_ACTORS]; MAX_ACTORS], desired: [[false; MAX_ACTORS]; MAX_ACTORS], observed: [false; MAX_ACTORS], pending: [None; MAX_ACTORS], sixth_generation: [0; MAX_ACTORS] }) }
     pub fn initialized(&self) -> bool { self.last_ms.is_some() }
@@ -152,24 +169,48 @@ impl State {
     pub fn sixth_generation(&self, slot: usize) -> io::Result<u32> { self.sixth_generation.get(slot).copied().ok_or_else(|| bad("spotting sixth slot")) }
     pub fn refresh<F>(&mut self, ms: u64, actors: &[Actor], mut clear: F) -> io::Result<()>
     where F: FnMut(usize, usize, Point, Point) -> io::Result<bool> {
+        self.refresh_with(ms, actors, |rules, observers| {
+            let mut rows = Vec::with_capacity(observers.len());
+            for observer in observers { rows.push(scan_observer(rules, observer, actors, &mut clear)?); }
+            Ok(rows)
+        })
+    }
+    /// `refresh` over a pure `clear`, the rays spread on up to `threads`
+    /// threads. Each observer's row depends only on its own rays, so the
+    /// matrix is the one the serial scan builds; the first failing observer
+    /// in slot order decides the error.
+    pub fn refresh_parallel<F>(&mut self, ms: u64, actors: &[Actor], threads: usize, clear: F) -> io::Result<()>
+    where F: Fn(usize, usize, Point, Point) -> io::Result<bool> + Sync {
+        self.refresh_with(ms, actors, |rules, observers| {
+            let (next, clear) = (AtomicUsize::new(0), &clear);
+            let work = || {
+                let mut done = Vec::new();
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(observer) = observers.get(index) else { return done; };
+                    done.push((index, scan_observer(rules, observer, actors, &mut |a, b, c, d| clear(a, b, c, d))));
+                }
+            };
+            let mut done = std::thread::scope(|scope| {
+                let helpers = (1..threads.min(observers.len())).map(|_| scope.spawn(work)).collect::<Vec<_>>();
+                let mut done = work();
+                for helper in helpers { done.extend(helper.join().map_err(|_| bad("spotting scan thread"))?); }
+                Ok::<_, io::Error>(done)
+            })?;
+            done.sort_by_key(|row| row.0);
+            done.into_iter().map(|row| row.1).collect()
+        })
+    }
+    fn refresh_with<S>(&mut self, ms: u64, actors: &[Actor], scan_rows: S) -> io::Result<()>
+    where S: FnOnce(Rules, &[Actor]) -> io::Result<Vec<[bool; MAX_ACTORS]>> {
         validate_actors(actors)?; self.rules.validate()?;
         if ms > 3_600_000 || self.last_ms.is_some_and(|old| ms < old) { return Err(bad("spotting clock")); }
         let mut next = self.clone();
         let scan = next.last_scan_ms.is_none_or(|old| ms.saturating_sub(old) >= next.rules.scan_period_ms);
         if scan {
             next.direct = [[false; MAX_ACTORS]; MAX_ACTORS];
-            for observer in actors.iter().filter(|a| a.observer_active) {
-                for target in actors.iter().filter(|a| a.team != observer.team) {
-                    let distance = distance2(observer.position, target.position);
-                    if distance <= f64::from(next.rules.proximity_m).powi(2) { next.direct[observer.slot][target.slot] = true; continue; }
-                    if distance > f64::from(observer.view_range.min(next.rules.max_detection_m)).powi(2) { continue; }
-                    'ray: for (observer_point, start) in observer.points.observers.into_iter().enumerate() {
-                        for (target_point, end) in target.points.checks.into_iter().enumerate() {
-                            if start == end || clear(observer_point, target_point, start, end)? { next.direct[observer.slot][target.slot] = true; break 'ray; }
-                        }
-                    }
-                }
-            }
+            let observers = actors.iter().filter(|a| a.observer_active).copied().collect::<Vec<_>>();
+            for (observer, row) in observers.iter().zip(scan_rows(next.rules, &observers)?) { next.direct[observer.slot] = row; }
             next.last_scan_ms = Some(ms);
             for observer in actors { for target in actors { if next.direct[observer.slot][target.slot] { next.last_seen[observer.slot][target.slot] = Some(ms); } } }
         }
@@ -210,6 +251,20 @@ mod tests {
     #[test] fn direct_rays_are_bounded_and_state_is_atomic_on_late_error() {
         let actors=[actor(0,1,0.),actor(1,2,100.)]; let mut state=State::new(Rules::selected().unwrap()).unwrap(); state.refresh(0,&actors,|_,_,_,_|Ok(false)).unwrap(); let old=state.clone(); let mut calls=0; assert!(state.refresh(100,&actors,|_,_,_,_|{calls+=1;if calls==2{Err(io::Error::other("late LOS"))}else{Ok(true)}}).is_err()); assert_eq!(state,old);
         state.refresh(100,&actors,|_,_,_,_|Ok(true)).unwrap(); assert!(state.desired(0).unwrap()[1]);
+    }
+    #[test] fn parallel_scan_builds_the_serial_matrix_and_fails_like_it() {
+        let actors=(0..30).map(|slot|{let x=slot as f32*17.;let mut a=actor(slot,1+(slot%2) as u8,x);a.observer_active=slot%7!=3;a.commander_active=a.observer_active;a}).collect::<Vec<_>>();
+        let clear=|o:usize,t:usize,s:Point,e:Point|Ok((o*3+t+((s[0]+e[0]) as usize))%5==0);
+        let mut serial=State::new(Rules::selected().unwrap()).unwrap();let mut parallel=serial.clone();
+        for ms in [0,100,200,5400,5500] {
+            serial.refresh(ms,&actors,clear).unwrap();
+            for threads in [1,4,64] {let mut copy=parallel.clone();copy.refresh_parallel(ms,&actors,threads,clear).unwrap();assert_eq!(copy,serial,"{ms} {threads}");}
+            parallel=serial.clone();
+        }
+        let old=serial.clone();
+        let failing=|_:usize,_:usize,s:Point,_:Point|if s[0]>=170.{Err(bad("late LOS"))}else{Ok(false)};
+        let error=serial.refresh_parallel(5600,&actors,4,failing).unwrap_err();
+        assert_eq!(error.to_string(),"late LOS");assert_eq!(serial,old);
     }
     #[test] fn sixth_sense_is_delayed_and_requires_functioning_commander() {
         let mut actors=[actor(0,1,0.),actor(1,2,100.)]; let mut state=State::new(Rules::selected().unwrap()).unwrap(); state.refresh(0,&actors,|_,_,_,_|Ok(true)).unwrap(); state.refresh(2999,&actors,|_,_,_,_|Ok(true)).unwrap(); assert_eq!(state.sixth_generation(0).unwrap(),0); state.refresh(3000,&actors,|_,_,_,_|Ok(true)).unwrap(); assert_eq!(state.sixth_generation(0).unwrap(),1); actors[0].commander_active=false; state.refresh(3100,&actors,|_,_,_,_|Ok(true)).unwrap(); state.refresh(6200,&actors,|_,_,_,_|Ok(true)).unwrap(); assert_eq!(state.sixth_generation(0).unwrap(),1);

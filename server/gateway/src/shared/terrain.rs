@@ -39,6 +39,11 @@ const TOLERANCE: f64 = 1e-12;
 // Broadphase only: include both neighbors of a rounded grid boundary. This
 // does not inflate triangles or change the narrowphase contact parameter.
 const GRID_BOUNDARY_TOLERANCE: f64 = 1e-9;
+// Side of one coarse height tile in grid cells (`Terrain::tile_tops`).
+const TILE_CELLS: usize = 16;
+// Clearance over a tile top before its cells are skipped. Far above the
+// narrowphase TOLERANCE in metres, so a skipped cell has no hit at any rounding.
+const TILE_CLEARANCE_M: f64 = 0.01;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Surface {
@@ -105,6 +110,9 @@ pub struct Terrain {
     // triangle indices are reconstructed only after validating every original
     // vertex coordinate and every original index, including both parities.
     heights: Arc<[f32]>,
+    // Highest vertex of each TILE_CELLS square tile and its one-cell ring
+    // (derived from `heights`): lets any-hit skip what runs above the ground.
+    tile_tops: Arc<[f32]>,
     width: usize,
     origin: f64,
     spacing: f64,
@@ -112,8 +120,8 @@ pub struct Terrain {
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Terrain
 impl crate::bw_wire::Wire for Terrain {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{map,heights,width,origin,spacing,obstacles}=self;W::put(map,bw_o);W::put(heights,bw_o);W::put(width,bw_o);W::put(origin,bw_o);W::put(spacing,bw_o);W::put(obstacles,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{map:W::get(bw_i)?,heights:W::get(bw_i)?,width:W::get(bw_i)?,origin:W::get(bw_i)?,spacing:W::get(bw_i)?,obstacles:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{map,heights,tile_tops,width,origin,spacing,obstacles}=self;W::put(map,bw_o);W::put(heights,bw_o);W::put(tile_tops,bw_o);W::put(width,bw_o);W::put(origin,bw_o);W::put(spacing,bw_o);W::put(obstacles,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{map:W::get(bw_i)?,heights:W::get(bw_i)?,tile_tops:W::get(bw_i)?,width:W::get(bw_i)?,origin:W::get(bw_i)?,spacing:W::get(bw_i)?,obstacles:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -157,6 +165,20 @@ fn grid_bytes(map: MapId) -> io::Result<(usize, usize, usize)> {
     let width = map.spec().grid_width;
     if !(3..=MAX_GRID_WIDTH).contains(&width) { return Err(bad("terrain registry grid width")); }
     Ok((width, width * width * 12, (width - 1) * (width - 1) * 24))
+}
+
+fn tiles_per_side(width: usize) -> usize { (width - 1).div_ceil(TILE_CELLS) }
+
+fn tile_tops(heights: &[f32], width: usize) -> Arc<[f32]> {
+    let side = tiles_per_side(width);
+    let mut tops = Vec::with_capacity(side * side);
+    for tile_z in 0..side { for tile_x in 0..side {
+        let span = |tile: usize| (tile * TILE_CELLS).saturating_sub(1)..=((tile + 1) * TILE_CELLS + 1).min(width - 1);
+        let mut top = f32::NEG_INFINITY;
+        for z in span(tile_z) { for x in span(tile_x) { top = top.max(heights[z * width + x]); } }
+        tops.push(top);
+    }}
+    tops.into()
 }
 
 fn indices(width: usize, x: usize, z: usize) -> [[usize; 3]; 2] {
@@ -232,7 +254,7 @@ impl Terrain {
                 }
             }
         }
-        Ok(Self { map, heights: heights.into(), width, origin, spacing, obstacles: None })
+        Ok(Self { map, tile_tops: tile_tops(&heights, width), heights: heights.into(), width, origin, spacing, obstacles: None })
     }
 
     fn vertex(&self, index: usize) -> [f64; 3] {
@@ -339,11 +361,44 @@ impl Terrain {
             }
             false
         };
-        for (index, &t) in crossings.iter().enumerate() {
+        let mut index = 0;
+        while let Some(&t) = crossings.get(index) {
+            if let Some(leave) = self.cleared_tile_end(start_f64, direction, t) {
+                // Resume on the last parameter inside the tile: its midpoint may lie beyond.
+                let resume = (index + crossings[index..].partition_point(|&c| c < leave)).saturating_sub(1);
+                if resume > index { index = resume; continue; }
+            }
             if test(t) { return Ok(true); }
             if let Some(&after) = crossings.get(index + 1) { if test(t + (after - t) * 0.5) { return Ok(true); } }
+            index += 1;
         }
         Ok(false)
+    }
+
+    /// When the segment at `t` is in a height tile and stays above that tile's
+    /// top for its whole way through the tile grown by two cells, the parameter
+    /// at which it leaves the tile. Every cell visited inside the tile lies
+    /// within the top's one-cell ring and the segment is over such a cell only
+    /// inside the second ring, so none of their triangles can be crossed.
+    fn cleared_tile_end(&self, start: [f64; 3], direction: [f64; 3], t: f64) -> Option<f64> {
+        let side = tiles_per_side(self.width); let size = TILE_CELLS as f64 * self.spacing;
+        let tile = |axis: usize| {
+            let at = ((start[axis] + direction[axis] * t - self.origin) / size).floor();
+            (at >= 0. && at < side as f64).then_some(at)
+        };
+        let (x, z) = (tile(0)?, tile(2)?);
+        let top = f64::from(self.tile_tops[z as usize * side + x as usize]);
+        let (mut enter, mut leave, mut inner) = (0.0_f64, 1.0_f64, 1.0_f64);
+        for (axis, at) in [(0, x), (2, z)] {
+            let low = self.origin + at * size; let high = low + size;
+            if direction[axis] == 0. { continue; }
+            let slab = |a: f64, b: f64| { let (a, b) = ((a - start[axis]) / direction[axis], (b - start[axis]) / direction[axis]); (a.min(b), a.max(b)) };
+            let (near, far) = slab(low - 2. * self.spacing, high + 2. * self.spacing);
+            enter = enter.max(near); leave = leave.min(far);
+            inner = inner.min(slab(low, high).1);
+        }
+        let height = |at: f64| start[1] + direction[1] * at;
+        (height(enter).min(height(leave)) > top + TILE_CLEARANCE_M).then_some(inner)
     }
 
     pub(super) fn nearest_ground(&self, start: [f32; 3], end: [f32; 3]) -> io::Result<Option<Hit>> {
@@ -481,7 +536,7 @@ pub(crate) mod tests {
         assert!((2..=769).contains(&width) && heights.len()==width*width);
         assert!(origin.is_finite() && spacing.is_finite() && spacing>0.);
         assert!(heights.iter().all(|height| height.is_finite() && height.abs()<=MAX_QUERY_COORDINATE));
-        Terrain { map: MapId::Karelia, heights:heights.into(),width,origin:f64::from(origin),spacing:f64::from(spacing),obstacles:None }
+        Terrain { map: MapId::Karelia, tile_tops:tile_tops(&heights,width),heights:heights.into(),width,origin:f64::from(origin),spacing:f64::from(spacing),obstacles:None }
     }
 
     /// BOT-01: a flat low plane bound to another registry map.
@@ -490,7 +545,7 @@ pub(crate) mod tests {
     fn synthetic(width: usize, height: impl Fn(usize,usize)->f32) -> Terrain {
         let mut heights=Vec::new();
         for z in 0..width { for x in 0..width { heights.push(height(x,z)); }}
-        Terrain { map: MapId::Karelia, heights:heights.into(),width,origin:0.,spacing:1.,obstacles:None }
+        Terrain { map: MapId::Karelia, tile_tops:tile_tops(&heights,width),heights:heights.into(),width,origin:0.,spacing:1.,obstacles:None }
     }
     pub(crate) fn actual() -> &'static Terrain {
         static TERRAIN: OnceLock<Terrain> = OnceLock::new();

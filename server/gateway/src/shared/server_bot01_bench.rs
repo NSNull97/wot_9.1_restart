@@ -31,13 +31,20 @@ fn bot01_bench_real_scene(){
     let seconds:u64=env("BOT01_BENCH_SECONDS").map_or(180,|v|v.parse().unwrap());
     let seed:u64=env("BOT01_BENCH_SEED").map_or(1,|v|v.parse().unwrap());
     let resources=super::super::profile13_templates::load(&root,&manifest).unwrap();
-    let kinds=resources.iter().map(|r|r.kind).collect::<Vec<_>>();
+    // BOT01_BENCH_KINDS: ordered bot roster by label (default: every kind of the manifest).
+    let kinds=match env("BOT01_BENCH_KINDS") {
+        Some(list)=>list.split(',').map(|want|resources.iter().map(|r|r.kind).find(|k|k.label()==want).unwrap_or_else(||panic!("kind {want}"))).collect::<Vec<_>>(),
+        None=>resources.iter().map(|r|r.kind).collect::<Vec<_>>(),
+    };
     let now=Instant::now();
     let id=arena::arena_ids(1,0x5eed_b071_0001).unwrap()[0];
     let mut template=BattleTemplate::from_shared_policy(&resources,size,id,now,None,false).unwrap();
     template.world.enable_original_spotting(super::super::spotting::Rules::selected().unwrap()).unwrap();
     template.world.enable_result_spots().unwrap();
     if size>wire::MAX_NATIVE_ACTORS||env("BOT01_BENCH_TEAM_BASES").as_deref()==Some("1"){template.world.enable_team_base_spawn().unwrap();}
+    // As on the stands; generated bot kinds ride mixed-ammo battles only.
+    let mixed=env("BOT01_BENCH_MIXED").as_deref()==Some("1");
+    if mixed {template.world.enable_mixed_ammo().unwrap();template.world.enable_ammo_detonation().unwrap();}
     template.world.enable_bots(model::bots::Plan{human_places:humans,seed,kinds:kinds.clone()}).unwrap();
     let mut a=arena::Arena::from_template(0,&template,id,now).unwrap();
     // BW-01: BOT01_BENCH_WORKER=1 steps the arena in its worker process;
@@ -50,7 +57,8 @@ fn bot01_bench_real_scene(){
         let kind=VehicleKind::Ms1;
         let(mut owner,loadout)=model::tests::profile13_loadout(kind,slot,kind.ammo_limit());
         owner.name=format!("bench-native-{slot}");
-        assert_eq!(a.world.attach_owned(owner,slot as u32+1,&loadout).unwrap(),slot);
+        if mixed {assert_eq!(a.world.attach_native_stand_in(owner,slot as u32+1,kind).unwrap(),slot);}
+        else {assert_eq!(a.world.attach_owned(owner,slot as u32+1,&loadout).unwrap(),slot);}
     }
     // The service start turn: fill, then the arena step with start=true.
     let startup=Instant::now();
