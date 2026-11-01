@@ -15,6 +15,15 @@
 > кандидаты — [опись](PROJECT_INVENTORY_20261031.md). Остальной текст сохранён
 > для проверки, даты в исторических разделах не означают текущий статус.
 
+## UI-04 история событий боя и родные поля итогов — в ветке `codex/ui-04-battle-history`, не в main — 2026-11-02
+
+- Ключ `"results_ledger": true`: журнал итогов получает необязательный блок `ledger` (Results9), из него родные
+  `damageBlockedByArmor`, `potentialDamageReceived`, `damageAssistedRadio`, `damageAssistedTrack` и ассист по целям в
+  `details`. Старые бои в БД валидны и не меняются, схема БД та же; расхождение блока с `details` — явный отказ.
+  Ключ `"battle_events": {"version":1,"feed":true,"history":true}` и флаг клиента `--battle-history bottom|top` (нужен
+  `--hit-indicator`): виджет истории на записях UI-02/03 и одна запись итогов в конце боя. Native **NOT_RUN**.
+  План — [UI04](plans/UI04_BATTLE_HISTORY.md).
+
 ## UI-03 ленты событий боя и учёт блока, ассиста, поджога — в ветке `codex/ui-03-battle-feeds`, не в main — 2026-11-02
 
 - Ключ `"battle_events": {"version":1,"feed":true}` и флаг клиента `--battle-feed labels|icons` (нужен `--hit-indicator`).
