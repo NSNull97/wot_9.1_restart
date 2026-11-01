@@ -28,8 +28,9 @@ pub(super) fn table(world:&World)->io::Result<[Score;model::MAX_ACTORS]> {
     let team=|slot:usize|teams.get(slot).copied().ok_or_else(||model::bad());
     let mut rows=[Score::default();model::MAX_ACTORS];
     for(killer,victim)in kills(world) {
+        let same=team(killer)?==team(victim)?;
         let row=&mut rows[killer];
-        if team(killer)?==team(victim)? {
+        if same {
             row.frags-=1;row.team_kills=row.team_kills.checked_add(1).ok_or_else(||model::bad())?;row.team_killer=true;
         } else {row.frags+=1;}
     }
