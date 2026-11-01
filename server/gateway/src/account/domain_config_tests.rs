@@ -43,3 +43,14 @@ fn domain_flag_is_exact_loopback_bounded_and_refuses_bridge_only_writers(){
     let mut legacy=value.clone();legacy["domain_service"]=good;for key in["profile13_battle","p04m_pool","p06t_mixed_ammo","visibility_v1","battle_players"]{legacy.as_object_mut().unwrap().remove(key);}
     assert!(load(&path,&legacy).err().unwrap().to_string().contains("domain_service requires profile13"));
 }
+
+#[test]
+fn int_user_settings_are_opt_in_and_need_the_domain_writer(){
+    let(path,mut value,root)=loopback();
+    assert!(!load(&path,&value).unwrap().int_user_settings);
+    value["int_user_settings"]=true.into();
+    assert!(load(&path,&value).is_err(),"no writer without domain_service");
+    value["domain_service"]=serde_json::json!({"version":1,"endpoint":"127.0.0.1:3700","secret_file":root.join("domain.secret")});
+    assert!(load(&path,&value).unwrap().int_user_settings);
+    value["int_user_settings"]="yes".into();assert!(load(&path,&value).is_err());
+}

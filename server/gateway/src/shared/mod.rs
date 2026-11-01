@@ -373,6 +373,14 @@ impl Client {
     pub(super) fn needs_flush(&self) -> bool { matches!(self.phase, Phase::Entities | Phase::Driving) }
 }
 
+/// UI-01: doCmdIntArr 1600/1601 from the Avatar has no callback. The map feeds
+/// the Account state of the return; the store follows from there.
+fn keep_battle_settings(session:u32,map:&mut Option<crate::int_settings091::Map>,unsaved:&mut Option<crate::int_settings091::Change>,raw:&[u8],events:&mut Vec<String>) {
+    let (Some(map),Some(change))=(map.as_mut(),raw.get(3..).and_then(crate::int_settings091::Change::from_avatar)) else {return};
+    change.apply(map);
+    match unsaved.as_mut() {Some(old)=>old.merge(&change),None=>*unsaved=Some(change)}
+    events.push(format!("INT_SETTINGS_BATTLE session={session} applied=session store=after_return"));
+}
 impl Session {
     /// Refresh from the committed authoritative world, independently of any
     /// inbound packet. No native queue or ACK changes escape this clone.
@@ -424,7 +432,11 @@ impl Session {
         if self.shared.is_none() || request.command!=100 {return Err(bad());}
         if self.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
             events.push(format!("P08B_ACCOUNT_FULL session={} request={} source=confirmed_owner_projection",self.id,request.id));
-            return crate::hangar091::response(request,self.hangar.as_ref().ok_or_else(||bad())?);
+            let fixtures=self.hangar.as_ref().ok_or_else(||bad())?;
+            return match &self.int_settings {
+                Some(map)=>crate::hangar091::response_with_settings(request,fixtures,map),
+                None=>crate::hangar091::response(request,fixtures),
+            };
         }
         let (bodies,event)=account_policy::response(self.identity.as_ref().ok_or_else(||bad())?,
             self.hangar.as_ref().ok_or_else(||bad())?,request,self.id)?;
@@ -836,6 +848,7 @@ impl Session {
                 // No reply is invented (Avatar onCmdResponse is unmeasured).
                 events.push(format!("SHARED_UNSUPPORTED session={} method={method} id={id:#04x} bytes={} {} domain_applied=false",
                     self.id,raw.len(),wire::unimplemented_detail(raw)));
+                if id==0x9c {keep_battle_settings(self.id,&mut self.int_settings,&mut self.int_settings_unsaved,raw,events);}
                 continue;
             }
             if id==0x87 {

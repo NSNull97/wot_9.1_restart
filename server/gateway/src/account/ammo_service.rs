@@ -173,11 +173,16 @@ impl Request {
 /// Queue update before success so the original UI observes committed state.
 pub fn response(id:i16,delta:&[u8])->io::Result<Vec<Vec<u8>>> {
     if id<=0 || delta.len()>MAX_DELTA_BYTES {return Err(invalid("ammo response ID/delta bound"));}
+    Ok(vec![update_body(delta)?,success_response(id)?])
+}
+
+/// The Account.update of one validated diff.
+pub fn update_body(delta:&[u8])->io::Result<Vec<u8>> {
+    if delta.len()>MAX_DELTA_BYTES {return Err(invalid("ammo response ID/delta bound"));}
     crate::hangar091::validate_account_delta(delta)?;
     let mut update=vec![delta.len() as u8];
     update.extend(delta);
-    let update=crate::hangar091::method(0x57,&update)?;
-    Ok(vec![update,success_response(id)?])
+    crate::hangar091::method(0x57,&update)
 }
 
 pub fn success_response(id:i16)->io::Result<Vec<u8>> {

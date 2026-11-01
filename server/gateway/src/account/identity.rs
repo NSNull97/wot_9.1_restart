@@ -280,6 +280,7 @@ pub struct Config {
     pub catalog_v1:bool,
     /// DOM-01: hangar/battle writer paths go to the long-lived Domain service (default: bridge HTTP).
     domain:Option<domain_client::Endpoint>,
+    pub int_user_settings:bool,
     /// GW-01: connections the gateway holds, separate from arena places (absent: battle_players, old path).
     pub connection_capacity:Option<usize>,
     /// ARENA-01: arenas run by this gateway (absent or 1: the one old World).
@@ -513,7 +514,9 @@ impl Config {
             _=>return Err(invalid("catalog must be {version:1,sha256} of this gateway build")),
         };
         if catalog_v1&&(!profile13_battle||!p06t_mixed_ammo){return Err(invalid("catalog v1 applies to the owned mixed profile13 writer only"));}
+        let int_user_settings=match value.remove("int_user_settings") {None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("int user settings must be explicit boolean"))};
         let domain_value=value.remove("domain_service");
+        if int_user_settings&&domain_value.is_none(){return Err(invalid("int user settings require domain_service"));}
         if domain_value.is_some()&&(!profile13_battle||training_rooms){
             return Err(invalid("domain_service requires profile13 battle; training-room selection keeps its bridge writer"));
         }
@@ -541,7 +544,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_worker})
+        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_worker})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -780,6 +783,15 @@ impl Config {
         barracks_reply(&bytes,profile,key,revision,wire,request)
     }
 
+    /// Apply one change (an empty one reads) and return the stored map.
+    pub fn int_settings(&self,profile:&Profile,change:&crate::int_settings091::Change)->io::Result<crate::int_settings091::Map> {
+        if !self.int_user_settings {return Err(invalid("int user settings are not enabled"));}
+        let body=change.service_request(&profile.account_id,profile.database_id)?;
+        let (status,bytes)=self.post("/internal/native/int-settings",&body,Duration::from_secs(5))?;
+        if status!=200 {return Err(invalid("int settings service failure"));}
+        crate::int_settings091::parse_reply(&bytes,&profile.account_id)
+    }
+
     pub fn dismiss_crew(&self,profile:&Profile,key:&str,revision:u64,wire:i64,request:crate::crew_dismissal091::Request)->io::Result<AmmoReply> {
         if !self.crew_dismissal {return Err(invalid("crew dismissal is not enabled"));}
         let body=crate::crew_dismissal091::service_request(&profile.account_id,profile.database_id,key,revision,wire,request)?;
@@ -818,7 +830,8 @@ impl Config {
 
 pub struct AmmoReply {pub serviced:bool,pub revision:u64,pub wire_revision:i64,
     pub update:Vec<u8>,pub recruitment:Option<crate::crew_barracks091::Recruitment>,pub replayed:bool,pub result_code:i32,
-    pub(crate) pool:Option<std::sync::Arc<crate::p04m_companion091::Binding>>}
+    pub(crate) pool:Option<std::sync::Arc<crate::p04m_companion091::Binding>>,
+    pub(crate) settings:Option<crate::int_settings091::Map>}
 
 fn valid_command_key(key:&str)->bool {
     (1..=96).contains(&key.len()) && key.bytes().all(|b|b.is_ascii_alphanumeric() || b"-_:".contains(&b))
@@ -882,7 +895,7 @@ fn service_reply_value(value:BTreeMap<String,Value>,profile:&Profile,key:&str,ex
     }
     if serviced {crate::ammo_service091::response(1,&update)?;}
     else if !update.is_empty() || replayed {return Err(invalid("rejected ammo reply changed state"));}
-    Ok(AmmoReply{serviced,revision,wire_revision,update,recruitment:None,replayed,result_code:result_code as i32,pool:None})
+    Ok(AmmoReply{settings:None,serviced,revision,wire_revision,update,recruitment:None,replayed,result_code:result_code as i32,pool:None})
 }
 
 /// Native ConnectionManager.connect115, checked RU basic branch only. Other
