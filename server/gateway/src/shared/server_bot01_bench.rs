@@ -155,7 +155,7 @@ fn bot01_bench_real_scene(){
         "bot_think_ms_per_domain_step":w.bot_think_ns() as f64/1e6/w.tick.saturating_sub(start_tick).max(1) as f64,
         "behaviour":{"bot_shots":w.bot_shots(),"bot_stucks":w.bot_stucks(),"shots_total":w.shots.len(),"damage_rows_by_bots":by_bots,"vehicles_dead":dead,
             "bots_moved_over_50m":moved.iter().filter(|m|**m>50.).count(),"bot_moved_m_max":moved.iter().copied().fold(0f32,f32::max),
-            "max_abs_xz":max_abs,"digest":w.bot_digest().map(|d|format!("{d:016x}")),
+            "max_abs_xz":max_abs,"destructibles_removed":w.fragiles.as_ref().map(|f|f.scene_version()),"digest":w.bot_digest().map(|d|format!("{d:016x}")),
             "outcome":w.lifecycle.as_ref().and_then(|l|l.outcome()).map(|o|format!("{o:?}"))},
         "failure":failure,
     });
