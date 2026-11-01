@@ -86,6 +86,8 @@ import project_player_kill_marker
 project_player_kill_marker.validate_settings(_settings)
 import project_pose_trace
 project_pose_trace.validate_settings(_settings)
+import project_hit_indicator
+project_hit_indicator.validate_settings(_settings)
 _runtime = owned(_settings['trace_dir'], _settings['local_root'])
 if not os.path.isdir(_runtime):
     raise ValueError('prepared local runtime directory missing')
@@ -1071,6 +1073,9 @@ def init(*args):
         if _settings.get(project_pose_trace.SETTING) is True:
             # NET-01 diagnostic, read-only: see the module docstring.
             project_pose_trace.install(record)
+        if _settings.get(project_hit_indicator.SETTING) is not None:
+            # Project policy, not original #717 behaviour: see the module docstring.
+            project_hit_indicator.install(record, _settings[project_hit_indicator.SETTING])
         from ConnectionManager import connectionManager
         connectionManager.connectionStatusCallbacks += connection_status
         _ready = True
@@ -2320,6 +2325,8 @@ def fini():
             sys.modules['project_player_kill_marker'].restore(record)
         if 'project_pose_trace' in sys.modules:
             sys.modules['project_pose_trace'].restore(record)
+        if 'project_hit_indicator' in sys.modules:
+            sys.modules['project_hit_indicator'].restore(record)
         if 'Account' in sys.modules:
             sys.modules['Account']._delAccountRepository()
             record('account_repository_closed')

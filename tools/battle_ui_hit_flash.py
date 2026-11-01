@@ -16,7 +16,7 @@ import zlib
 
 MEMBER = 'gui/scaleform/DamageIndicator.swf'
 TARGET = 'res_mods/0.9.1/gui/scaleform/ProjectHitIndicator.swf'
-SOURCE_SHA256 = '8e0f9f7ea4cf2a0f7fd0bb1cc2fe2a3cdfd8b8ee8f1a1a79dbdb3b7c5e1f0a11'
+SOURCE_SHA256 = 'd7484cb3fc58cfb23fda59a42b2f52278e3aa65a34d4d2ae786e3979ab217ff1'
 MAX_BYTES = 4 * 1024 * 1024
 CALLBACK = 'ProjectHit.show'
 FONT_CHARACTER = 100
@@ -29,8 +29,6 @@ NAME_AT, NOTE_AT = 280, 160
 
 class As2:
     """A tiny expression compiler: bytes this module emits, the tests execute."""
-    NUMBER, TEXT, NULL = 'number', 'text', 'null'
-
     @staticmethod
     def push(*values):
         data = bytearray()
@@ -45,11 +43,6 @@ class As2:
             elif isinstance(value, int) and -2**31 <= value < 2**31:
                 data.append(7)
                 data += struct.pack('<i', value)
-            elif isinstance(value, float):
-                data.append(6)
-                # AS2 doubles keep the two 32-bit words swapped.
-                raw = struct.pack('<d', value)
-                data += raw[4:] + raw[:4]
             else:
                 raise ValueError('unsupported AS2 constant')
         return As2.record(0x96, bytes(data))
@@ -133,8 +126,8 @@ def polygon(mc, points):
 
 def disc_points():
     import math
-    return [(round(DISC_RADIUS * math.sin(2 * math.pi * i / 24), 2),
-             round(-DISC_AT - DISC_RADIUS * math.cos(2 * math.pi * i / 24), 2)) for i in range(24)]
+    return [(round(DISC_RADIUS * math.sin(2 * math.pi * i / 24)),
+             round(-DISC_AT - DISC_RADIUS * math.cos(2 * math.pi * i / 24))) for i in range(24)]
 
 
 def label_source():
@@ -163,7 +156,7 @@ def label(owner, name, depth, y, size, colour, text):
 
 def show_source():
     mc, width = var('m'), ('*', 9, var('scale'))
-    far = ('*', 2.6, width)
+    far = ('/', ('*', 13, width), 5)
     near = ('neg', width)
     body = [('local', 'm', ('call', var('damageMC'), 'createEmptyMovieClip', ['projectHit', 100])),
             method(mc, 'clear'),
@@ -190,7 +183,7 @@ def frame_body():
     me, age, turn = var('this'), var('age'), ('neg', ('get', var('damageMC'), '_rotation'))
     return [('local', 'age', ('-', ('time',), ('get', me, 'startedAt'))),
             ('local', 'alpha', 100),
-            ('if', ('get', me, 'animate'), [('if', ('<', age, 250), [('assign', 'alpha', ('/', age, 2.5))])]),
+            ('if', ('get', me, 'animate'), [('if', ('<', age, 250), [('assign', 'alpha', ('/', ('*', age, 2), 5))])]),
             ('if', ('<', 2750, age), [('assign', 'alpha', ('/', ('-', 3750, age), 10))]),
             ('set', me, '_alpha', var('alpha')),
             ('set', ('get', me, 'numberMC'), '_rotation', turn),

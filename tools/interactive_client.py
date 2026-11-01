@@ -33,6 +33,7 @@ MODULES += ('project_network',)
 MODULES += ('project_sixth_sense_sound',)
 MODULES += ('project_player_kill_marker',)
 MODULES += ('project_pose_trace',)
+MODULES += ('project_hit_indicator',)
 MODULES += ('catalog_v1_hints', 'crew_vehicles')
 
 
@@ -119,6 +120,14 @@ def network_options(args, profile13, mixed_ammo):
     spec.loader.exec_module(policy)
     return policy.prepare_options(args.endpoint, getattr(args, 'network_policy', None),
                                   args.registration_url, profile13, mixed_ammo)
+
+
+def hit_indicator_policy():
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_hit_indicator.py'
+    spec = importlib.util.spec_from_file_location('_project_hit_indicator_prepare', path)
+    policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy)
+    return policy
 
 
 def sixth_sense_policy():
@@ -364,6 +373,16 @@ def prepare(args):
         if not profile13_battle:
             raise ValueError('--player-kill-marker requires --enable-profile13-battle')
         settings['player_kill_marker'] = True
+    hit_view = getattr(args, 'hit_indicator', None)
+    if hit_view is not None:
+        # UI-02 owner order 2026-11-01: needs the gateway key `battle_events`;
+        # without it the client keeps the native arc.
+        if not profile13_battle:
+            raise ValueError('--hit-indicator requires --enable-profile13-battle')
+        settings['hit_indicator'] = hit_indicator_policy().prepare_settings(hit_view)
+        import battle_ui_hit_flash
+        movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(original)
+        payloads[battle_ui_hit_flash.TARGET] = movie
     if getattr(args, 'trace_pose_10hz', False):
         # NET-01 diagnostic: read-only 10 Hz positions/time of native vehicles.
         if not profile13_battle:
@@ -585,6 +604,9 @@ def main():
     prep.add_argument('--player-kill-marker', action='store_true',
                       help='Project policy, not original 0.9.1: a kill by the player keeps the player-coloured '
                            'marker colour (its crew-inactive refresh keeps the player as source); requires profile13 battle')
+    prep.add_argument('--hit-indicator', choices=('standard', 'extended'),
+                      help='Project policy, not original 0.9.1: UI-02 hit indicator facts from the battle events '
+                           'channel (gateway key battle_events); requires profile13 battle; off by default')
     prep.add_argument('--sixth-sense-sample',
                       help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
                            'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')
