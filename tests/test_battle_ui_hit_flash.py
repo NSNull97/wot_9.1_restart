@@ -116,7 +116,7 @@ class Machine:
                 stack.append(self.clock)
             elif op in (0x47, 0x0b, 0x0c, 0x0d, 0x48, 0x49):
                 b, a = stack.pop(), stack.pop()
-                stack.append({0x47: lambda: a + b, 0x0b: lambda: a - b, 0x0c: lambda: a * b, 0x0d: lambda: a / b,
+                stack.append({0x47: lambda: str(a) + str(b) if str in (type(a), type(b)) else a + b, 0x0b: lambda: a - b, 0x0c: lambda: a * b, 0x0d: lambda: a / b,
                               0x48: lambda: a < b, 0x49: lambda: a == b}[op]())
             elif op == 0x12:
                 stack.append(not stack.pop())

@@ -34,6 +34,7 @@ MODULES += ('project_sixth_sense_sound',)
 MODULES += ('project_player_kill_marker',)
 MODULES += ('project_pose_trace',)
 MODULES += ('project_hit_indicator',)
+MODULES += ('project_battle_feed',)
 MODULES += ('catalog_v1_hints', 'crew_vehicles')
 
 
@@ -125,6 +126,14 @@ def network_options(args, profile13, mixed_ammo):
 def hit_indicator_policy():
     path = Path(__file__).resolve().parents[1] / 'client_patch/project_hit_indicator.py'
     spec = importlib.util.spec_from_file_location('_project_hit_indicator_prepare', path)
+    policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy)
+    return policy
+
+
+def battle_feed_policy():
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_battle_feed.py'
+    spec = importlib.util.spec_from_file_location('_project_battle_feed_prepare', path)
     policy = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(policy)
     return policy
@@ -383,6 +392,16 @@ def prepare(args):
         import battle_ui_hit_flash
         movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(original)
         payloads[battle_ui_hit_flash.TARGET] = movie
+    feed_view = getattr(args, 'battle_feed', None)
+    if feed_view is not None:
+        # UI-03 owner order 2026-11-01: needs gateway `battle_events.feed` and
+        # the hit indicator's channel; without the key no row ever appears.
+        if hit_view is None:
+            raise ValueError('--battle-feed requires --hit-indicator: it uses the same channel')
+        settings['battle_feed'] = battle_feed_policy().prepare_settings(feed_view)
+        import battle_ui_feed_flash
+        movie, resource_evidence['project_battle_feed_movie'] = battle_ui_feed_flash.payload(original)
+        payloads[battle_ui_feed_flash.TARGET] = movie
     if getattr(args, 'trace_pose_10hz', False):
         # NET-01 diagnostic: read-only 10 Hz positions/time of native vehicles.
         if not profile13_battle:
@@ -607,6 +626,10 @@ def main():
     prep.add_argument('--hit-indicator', choices=('standard', 'extended'),
                       help='Project policy, not original 0.9.1: UI-02 hit indicator facts from the battle events '
                            'channel (gateway key battle_events); requires profile13 battle; off by default')
+    prep.add_argument('--battle-feed', choices=('labels', 'icons'),
+                      help='Project policy, not original 0.9.1: UI-03 event feed, the last three battle events, '
+                           'with or without their names (gateway key battle_events.feed); requires --hit-indicator; '
+                           'off by default')
     prep.add_argument('--sixth-sense-sample',
                       help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
                            'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')

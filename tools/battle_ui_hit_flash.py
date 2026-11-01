@@ -235,7 +235,8 @@ def expanded(raw):
     return body
 
 
-def build(raw):
+def build(raw, added=None):
+    """The movie with one added DoAction: the indicator, or UI-03's `added`."""
     body = expanded(raw)
     start = ((5 + 4 * (body[0] >> 3) + 7) // 8) + 4
     rows = tags(body, start)
@@ -250,7 +251,7 @@ def build(raw):
         if code == 9:
             out += font
         elif code == 12:
-            out += tag(12, actions())
+            out += tag(12, actions() if added is None else added)
     return raw[:4] + struct.pack('<I', len(out) + 8) + zlib.compress(bytes(out), 9)
 
 

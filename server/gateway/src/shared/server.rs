@@ -68,6 +68,9 @@ mod av01_tests;
 #[path="server_ui02_tests.rs"]
 mod ui02_tests;
 #[cfg(test)]
+#[path="server_ui03_tests.rs"]
+mod ui03_tests;
+#[cfg(test)]
 #[path="server_net01_bench.rs"]
 mod net01_bench;
 
@@ -1738,7 +1741,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
                         if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
                         s.shared.as_mut().ok_or_else(||model::bad())?.set_pose_delivery(config.pose_delivery)?;
-                        if config.battle_events {s.shared.as_mut().ok_or_else(||model::bad())?.enable_battle_events()?;}
+                        if config.battle_events {s.shared.as_mut().ok_or_else(||model::bad())?.enable_battle_events(config.battle_feed)?;}
                         if profile13_mode {
                             let binding=accepted.ammo_service.ok_or_else(||model::bad())?;
                             s.ammo_service=Some(ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));

@@ -15,7 +15,7 @@ fn send_and_ack(s:&mut Session,now:Instant)->Vec<Vec<u8>> {
     }
     let mut f=frame(s,&[]);f.cumulative=Some(cumulative);s.receive(&f,now).unwrap();bodies
 }
-fn spotted(now:Instant,w:&World,slot:usize)->Session {
+pub(super) fn spotted(now:Instant,w:&World,slot:usize)->Session {
     let(a,b,_)=visible_pair(now);let mut s=if slot==0 {a} else {b};
     let c=s.shared.as_mut().unwrap();c.creations=[None;model::MAX_ACTORS];
     c.phase=Phase::Account;c.enable_spotting().unwrap();c.phase=Phase::Driving;
@@ -26,19 +26,19 @@ fn spotted(now:Instant,w:&World,slot:usize)->Session {
     assert!(s.shared.as_ref().unwrap().visible()[slot]);s
 }
 fn lifecycle(w:&mut World){w.lifecycle=Some(super::super::lifecycle::State::new(super::super::lifecycle::Rules::prohorovka()).unwrap());}
-fn hello_record(version:i32)->Vec<u8> {
+pub(super) fn hello_record(version:i32)->Vec<u8> {
     let mut args=vec![HELLO_FEATURE.len() as u8];args.extend(HELLO_FEATURE);args.extend(version.to_le_bytes());
     let mut raw=vec![0xa1];raw.extend((args.len() as u16).to_le_bytes());raw.extend(args);raw
 }
-fn hello(s:&mut Session,now:Instant) {s.receive(&frame(s,&hello_record(i32::from(VERSION))),now).unwrap();}
-fn enable(s:&mut Session) {s.shared.as_mut().unwrap().battle_events_enabled=true;}
-fn all_bodies(s:&mut Session,now:Instant)->Vec<Vec<u8>> {
+pub(super) fn hello(s:&mut Session,now:Instant) {s.receive(&frame(s,&hello_record(i32::from(VERSION))),now).unwrap();}
+pub(super) fn enable(s:&mut Session) {s.shared.as_mut().unwrap().battle_events_enabled=true;}
+pub(super) fn all_bodies(s:&mut Session,now:Instant)->Vec<Vec<u8>> {
     let mut bodies=Vec::new();
     for _ in 0..4 {bodies.extend(send_and_ack(s,now));s.flush_shared_private().unwrap();}
     bodies.extend(queued_bodies(s,now));bodies
 }
 /// Frames of the channel, as the literal of each updateArena(200, ...).
-fn channel_frames(bodies:&[Vec<u8>])->Vec<Vec<u8>> {
+pub(super) fn channel_frames(bodies:&[Vec<u8>])->Vec<Vec<u8>> {
     let mut rows=Vec::new();
     for raw in bodies {
         let mut at=0;
@@ -51,15 +51,15 @@ fn channel_frames(bodies:&[Vec<u8>])->Vec<Vec<u8>> {
     rows
 }
 fn event_frames(bodies:&[Vec<u8>])->Vec<Vec<u8>> {channel_frames(bodies).into_iter().filter(|f|f[6]==1).collect()}
-fn contains(raw:&[u8],part:&[u8])->bool {raw.windows(part.len()).any(|v|v==part)}
-fn hit_world(now:Instant,attacker:usize,target:usize)->(World,Instant) {
+pub(super) fn contains(raw:&[u8],part:&[u8])->bool {raw.windows(part.len()).any(|v|v==part)}
+pub(super) fn hit_world(now:Instant,attacker:usize,target:usize)->(World,Instant) {
     let mut w=model::tests::terrain_world(now,1000.);
     w.apply(attacker,attacker as u32+1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],now).unwrap();
     w.advance(now+model::STEP).unwrap();assert_eq!(w.impacts.len(),1);assert_eq!(w.impacts[0].target,target);
     lifecycle(&mut w);(w,now+model::STEP)
 }
 /// Takes the session past READY at the hit, as a live battle would be.
-fn before_hit(s:&mut Session) {s.shared.as_mut().unwrap().impact_cursor=0;}
+pub(super) fn before_hit(s:&mut Session) {s.shared.as_mut().unwrap().impact_cursor=0;}
 
 #[test] fn ui02_hidden_shooter_frame_has_only_recipient_facts() {
     let (mut w,now)=hit_world(Instant::now(),1,0);

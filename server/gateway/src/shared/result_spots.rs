@@ -20,6 +20,8 @@ impl SpotRecord {
     pub(crate) fn observer(&self)->usize{self.observer}
     pub(crate) fn target(&self)->usize{self.target}
     pub(crate) fn tick(&self)->u32{self.tick}
+    #[cfg(test)]
+    pub(crate) fn for_test(observer:usize,target:usize,tick:u32)->Self{Self{observer,target,tick}}
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]

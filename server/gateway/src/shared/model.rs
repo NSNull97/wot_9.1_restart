@@ -688,6 +688,10 @@ impl World {
         self.result_spots=Some(Vec::new());Ok(())
     }
     pub(super) fn result_spots(&self)->Option<&[result_spots::SpotRecord]>{self.result_spots.as_deref()}
+    #[cfg(test)]
+    pub(super) fn push_test_spot(&mut self,observer:usize,target:usize,tick:u32){
+        self.result_spots.get_or_insert_with(Vec::new).push(result_spots::SpotRecord::for_test(observer,target,tick));
+    }
     /// Explicit frozen roster teams are set once, before actor identities or
     /// any simulation/Trace events exist. Caller must bind the frozen roster's
     /// identity order before transport attachment; arrival order is not a plan.

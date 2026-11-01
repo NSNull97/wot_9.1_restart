@@ -31,7 +31,8 @@ MAX_FRAME_BYTES = 240
 MAX_EVENTS = 8
 MAX_CRITICALS = 4
 NO_VALUE = 0xffff
-KIND_HELLO, KIND_HIT_RECEIVED = 0, 1
+MAX_FEED_KIND = 13
+KIND_HELLO, KIND_HIT_RECEIVED, KIND_FEED = 0, 1, 2
 VERDICTS = ('unknown', 'pierced', 'not_pierced', 'ricochet', 'splash')
 EXTENDED_MOVIE = 'ProjectHitIndicator.swf'
 CALLBACK = 'ProjectHit.show'
@@ -119,6 +120,16 @@ def _hit(payload):
             'friendly': bool(flags & 1), 'fatal': bool(flags & 2), 'source': source, 'criticals': criticals}
 
 
+def _feed(payload):
+    """UI-03 record; None for a feed kind newer than this client."""
+    if len(payload) != 7:
+        raise ValueError('feed event outside its bounds')
+    feed, value, vehicle = struct.unpack('<BHI', payload)
+    if not 1 <= feed <= MAX_FEED_KIND:
+        return None
+    return {'kind': 'feed', 'feed': feed, 'value': None if value == NO_VALUE else value, 'vehicle': vehicle}
+
+
 def parse_frame(data):
     """(sequence, events) of one frame; ValueError for anything else. Unknown
     event kinds are skipped by their length: later cards add kinds."""
@@ -140,9 +151,18 @@ def parse_frame(data):
             events.append({'kind': 'hello'})
         elif kind == KIND_HIT_RECEIVED:
             events.append(_hit(payload))
+        elif kind == KIND_FEED:
+            event = _feed(payload)
+            if event is not None:
+                events.append(event)
     if at != len(data):
         raise ValueError('bytes after the last event')
     return sequence, events
+
+
+def _newer(sequence, last):
+    """Frames arrive in order over the reliable channel; a repeat is not news."""
+    return last is None or 0 < (sequence - last) & 0xffff < 0x8000
 
 
 def _key(yaw):
@@ -157,6 +177,9 @@ class Policy(object):
             raise TypeError('hit indicator requires callable seams')
         self.options, self.record, self.clock = checked_options(options), record, clock
         self.facts, self.acknowledged, self.failed, self.bad_frames = {}, False, False, 0
+        # UI-03/04 widgets subscribe here and add their own hello.
+        self.listeners, self.features = [], []
+        self.last_sequence, self.repeated_frames = None, 0
         # The gateway sends no native hit callback for HE splash; a prepared
         # client draws the same native indicator from the event.
         self.show_splash = None
@@ -164,6 +187,15 @@ class Policy(object):
     def reset(self):
         self.facts.clear()
         self.acknowledged = False
+        self.last_sequence = None
+
+    def subscribe(self, listener):
+        if not callable(listener):
+            raise TypeError('battle events listener must be callable')
+        self.listeners.append(listener)
+
+    def unsubscribe(self, listener):
+        self.listeners.remove(listener)
 
     def apply_options(self, value):
         merged = dict(self.options)
@@ -178,12 +210,32 @@ class Policy(object):
             self.bad_frames += 1
             self.record(EVENT + '_bad_frame', version=VERSION, bytes=len(data), total=self.bad_frames)
             return
+        # A hello reply starts the numbering of this client's channel: the
+        # server restarts it after a scene load. Anything else must be newer.
+        if any(event['kind'] == 'hello' for event in events):
+            self.last_sequence = None
+        if not _newer(sequence, self.last_sequence):
+            self.repeated_frames += 1
+            self.record(EVENT + '_repeated_frame', version=VERSION, sequence=sequence, total=self.repeated_frames)
+            return
+        self.last_sequence = sequence
         for event in events:
             if event['kind'] == 'hello':
                 self.acknowledged = True
                 self.record(EVENT + '_channel', version=VERSION, sequence=sequence)
-            else:
+                continue
+            if event['kind'] == 'hit_received':
                 self.remember(event)
+            self.notify(event)
+
+    def notify(self, event):
+        """A widget's failure never reaches the native arena callback."""
+        for listener in list(self.listeners):
+            try:
+                listener(event)
+            except Exception:
+                self.listeners.remove(listener)
+                self.record(EVENT + '_listener_failed', version=VERSION, traceback=traceback.format_exc()[-2000:])
 
     def remember(self, event):
         now = self.clock()
@@ -340,6 +392,8 @@ def install(record, options):
             return
         state['attempts'] += 1
         player.base.setDevelopmentFeature(FEATURE, VERSION)
+        for feature in rules.features:
+            player.base.setDevelopmentFeature(feature, VERSION)
         record(EVENT + '_hello', version=VERSION, attempt=state['attempts'])
         state['callback'] = BigWorld.callback(HELLO_PERIOD, hello)
 
