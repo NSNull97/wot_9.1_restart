@@ -390,13 +390,27 @@ pub struct Bundle {
     hull: [f32; 3], turret: [f32; 3], gun: [f32; 3],
     materials: Catalog,
     bounds:[[[f32;3];2];3],
+    // Farthest any collision vertex can get from the actor's position, in any pose.
+    reach_m:f32,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Bundle
 impl crate::bw_wire::Wire for Bundle {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle,components,hull,turret,gun,materials,bounds}=self;W::put(vehicle,bw_o);W::put(components,bw_o);W::put(hull,bw_o);W::put(turret,bw_o);W::put(gun,bw_o);W::put(materials,bw_o);W::put(bounds,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle:W::get(bw_i)?,components:W::get(bw_i)?,hull:W::get(bw_i)?,turret:W::get(bw_i)?,gun:W::get(bw_i)?,materials:W::get(bw_i)?,bounds:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m}=self;W::put(vehicle,bw_o);W::put(components,bw_o);W::put(hull,bw_o);W::put(turret,bw_o);W::put(gun,bw_o);W::put(materials,bw_o);W::put(bounds,bw_o);W::put(reach_m,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle:W::get(bw_i)?,components:W::get(bw_i)?,hull:W::get(bw_i)?,turret:W::get(bw_i)?,gun:W::get(bw_i)?,materials:W::get(bw_i)?,bounds:W::get(bw_i)?,reach_m:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
+/// Rotations keep lengths, so each component's pivot chain plus its farthest
+/// vertex bounds every pose. The slack outweighs f32 rounding of the transforms.
+fn reach_of(components: &[Component], pivots: [[f32; 3]; 3]) -> f32 {
+    const SLACK_M: f64 = 0.05;
+    let norm = |v: [f32; 3]| v.into_iter().map(|x| f64::from(x).powi(2)).sum::<f64>().sqrt();
+    let mut arm = 0.; let mut reach = 0_f64;
+    for (component, pivot) in components.iter().zip(pivots) {
+        arm += norm(pivot);
+        reach = reach.max(arm + component.vertices.iter().map(|&v| norm(v)).fold(0., f64::max));
+    }
+    (reach + SLACK_M) as f32
+}
 fn fields(value: &Value, keys: &[&str]) -> io::Result<()> {
     crate::map_drive_worker091::fields(value, keys).map(|_| ())
 }
@@ -508,7 +522,8 @@ impl Bundle {
             Mesh::new(vertices.clone(), triangles.clone(), source_revision(vehicle), "component-local-v1")?;
             components.push(Component { vertices, triangles });
         }
-        Ok(Self { vehicle, components, hull, turret, gun, materials, bounds:if vehicle==VehicleKind::Ms1{NATIVE_BOUNDS}else{IS7_VISUAL_BOUNDS} })
+        let reach_m=reach_of(&components,[hull,turret,gun]);
+        Ok(Self { vehicle, components, hull, turret, gun, materials, bounds:if vehicle==VehicleKind::Ms1{NATIVE_BOUNDS}else{IS7_VISUAL_BOUNDS}, reach_m })
     }
     /// BATTLE-ANY bundle: the exact digest must be a registry geometry pin.
     /// Slots are Hull/Turret_01/Gun_01; source part names are checked, triangle
@@ -555,7 +570,8 @@ impl Bundle {
             Mesh::new(vertices.clone(),triangles.clone(),source_revision(vehicle),"component-local-v1")?;
             components.push(Component{vertices,triangles});
         }
-        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds})
+        let reach_m=reach_of(&components,[hull,turret,gun]);
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m})
     }
     fn from_p06t_source(vehicle:VehicleKind,raw:&[u8])->io::Result<Self>{
         use super::p06t_geometry_source::{Assembly,SourceBundle};
@@ -570,7 +586,8 @@ impl Bundle {
             Mesh::new(component.vertices.clone(),component.triangles.clone(),source_revision(vehicle),"component-local-v1")?;
             components.push(Component{vertices:component.vertices,triangles:component.triangles});
         }
-        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds})
+        let reach_m=reach_of(&components,[hull,turret,gun]);
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m})
     }
     /// Separate closed P04M source export format; the enclosing raw digest was
     /// approved before JSON parsing. Visual bounds stay source facts, not a
@@ -621,7 +638,8 @@ impl Bundle {
             Mesh::new(vertices.clone(),triangles.clone(),source_revision(vehicle),"component-local-v1")?;
             components.push(Component{vertices,triangles});
         }
-        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds:spec.visual_bounds})
+        let reach_m=reach_of(&components,[hull,turret,gun]);
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds:spec.visual_bounds,reach_m})
     }
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle }
     pub fn geometry_revision(&self) -> &'static str { source_revision(self.vehicle) }
@@ -943,11 +961,28 @@ impl Bundle {
         if index == 1 { return vector; }
         pose::inverse_rotate(vector, [0., aim[1], 0.])
     }
+    /// True when `start..end` stays out of reach of this actor in any pose, so
+    /// its mesh has no hit there. The pose is checked as `world_mesh` checks it.
+    pub fn segment_misses(&self, actor: &Actor, slot: usize, tick: u32, start: [f32; 3], end: [f32; 3]) -> io::Result<bool> {
+        self.check_pose(actor,slot,tick)?;
+        let wide = |p: [f32; 3]| p.map(f64::from);
+        let (start, end, center) = (wide(start), wide(end), wide(actor.position));
+        let direction: [f64; 3] = std::array::from_fn(|i| end[i] - start[i]);
+        let dot = |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| a[i] * b[i]).sum::<f64>();
+        let to_center: [f64; 3] = std::array::from_fn(|i| center[i] - start[i]);
+        let along = (dot(to_center, direction) / dot(direction, direction).max(f64::MIN_POSITIVE)).clamp(0., 1.);
+        let gap: [f64; 3] = std::array::from_fn(|i| to_center[i] - direction[i] * along);
+        Ok(dot(gap, gap) > f64::from(self.reach_m).powi(2))
+    }
     pub fn world_mesh(&self, actor: &Actor, slot: usize, tick: u32) -> io::Result<Mesh> {
+        self.check_pose(actor,slot,tick)?;
+        self.mesh_for_pose(actor.position,actor.direction,[actor.aim.yaw,actor.aim.pitch],slot,tick)
+    }
+    fn check_pose(&self, actor: &Actor, slot: usize, tick: u32) -> io::Result<()> {
         if actor.vehicle_kind() != self.vehicle || slot >= super::model::MAX_ACTORS || tick < 1000 || actor.position.iter().any(|x| !x.is_finite() || x.abs() > 2000.)
             || actor.direction.iter().any(|x| !x.is_finite() || x.abs() > std::f32::consts::PI)
             || !actor.aim.yaw.is_finite() || !actor.aim.pitch.is_finite() { return Err(bad()); }
-        self.mesh_for_pose(actor.position,actor.direction,[actor.aim.yaw,actor.aim.pitch],slot,tick)
+        Ok(())
     }
     fn mesh_for_pose(&self, position: [f32;3], direction: [f32;3], aim: [f32;2], slot: usize, tick: u32) -> io::Result<Mesh> {
         let mut vertices = Vec::new(); let mut triangles = Vec::new();
@@ -1517,6 +1552,27 @@ pub(super) mod tests {
         let root = std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
         Bundle::load(&Path::new(&root).join("local"), &Path::new(&root)
             .join("local/evidence/20261013-p03m-is7-01/geometry-surface01/is7-contact.json")).unwrap()
+    }
+    #[test] fn segment_misses_only_what_the_mesh_query_misses() {
+        for b in [is7_bundle(), bundle()] {
+            let mut actor = actor_for(b.vehicle_kind()); actor.position = [37., 21., -105.];
+            let mut state = 0x2545_f491_u32;
+            let mut unit = || { state ^= state << 13; state ^= state >> 17; state ^= state << 5; (state >> 8) as f32 / (1u32 << 24) as f32 };
+            let (mut skipped, mut hit) = (0, 0);
+            for index in 0..6000 {
+                actor.direction = [unit() * 6.2 - 3.1, unit() * 1.2 - 0.6, unit() * 1.2 - 0.6];
+                actor.aim.yaw = unit() * 6.2 - 3.1; actor.aim.pitch = unit() * 0.8 - 0.4;
+                let spread: f32 = [8., 12., 30.][index % 3]; let reach: f32 = [0.5, 8., 80.][index / 3 % 3];
+                let mut point = |extent: f32| std::array::from_fn(|i| actor.position[i] + (unit() * 2. - 1.) * extent);
+                let (start, end): ([f32; 3], [f32; 3]) = (point(spread), point(reach.min(spread)));
+                let mesh = b.world_mesh(&actor, 1, 1000).unwrap();
+                let hits = super::super::collision::query(&mesh, start, end).unwrap();
+                if b.segment_misses(&actor, 1, 1000, start, end).unwrap() { skipped += 1; assert!(hits.is_empty(), "{start:?} {end:?}"); }
+                if !hits.is_empty() { hit += 1; }
+            }
+            assert!(skipped > 200 && hit > 200, "skipped {skipped} hit {hit}");
+            actor.position[0] = 3000.; assert!(b.segment_misses(&actor, 1, 1000, [0.; 3], [1.; 3]).is_err());
+        }
     }
     #[test] fn is7_pinned_bundle_preserves_component_coverage_and_vehicle_identity() {
         let b = is7_bundle(); assert_eq!(b.vehicle_kind(), VehicleKind::Is7);
