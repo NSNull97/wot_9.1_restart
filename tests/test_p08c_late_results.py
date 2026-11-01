@@ -17,6 +17,8 @@ from p08c_late_results import (LateResults, LateResultsStore, LossLateResultsSto
 from p09e_research_catalog import load_catalog
 from p04m_stock_registry import DEFINITION_SHA256
 from game_profile_tx import TransactionError
+sys.path.insert(0, str(ROOT / "tests/helpers"))
+from cat_nations_test_restamp import restamp_copy  # noqa: E402
 
 SEED = ROOT / "local/evidence/20261016-p06t-owned01/seed01/seed.json"
 RUN = "a7b84ae0-cc3d-4f5d-8df7-3e36e607ed2a"
@@ -31,6 +33,8 @@ class Scenario:
         self.seed = json.loads(SEED.read_bytes()); self.catalog = catalog; self.loss = loss; self.serial = 0; self.vectors = []; self.battle_vectors = []; self.arena = ARENA
         with closing(sqlite3.connect(Path(self.seed["database"]).resolve().as_uri() + "?mode=ro", uri=True)) as old, closing(sqlite3.connect(self.database)) as new:
             old.backup(new)
+        # CAT-NATIONS: the pinned seed predates the client nation order; re-stamp this copy only.
+        restamp_copy(self.database, owned_dir=self.temp.name)
         self.stores = [self.factory(account) for account in ACCOUNTS]
         for account, store in zip(ACCOUNTS, self.stores):
             if not store.pool_active():

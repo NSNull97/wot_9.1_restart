@@ -30,11 +30,13 @@ SCHEMA = "cat-nations-test-restamp.v1"
 PRESEED_MARKERS = tuple(t for t in MARKER_TABLES if t != "battle_ammo_loss_schema")
 
 
-def restamp_copy(database):
+def restamp_copy(database, *, owned_dir=None):
+    """``owned_dir``: the caller's own fresh temporary directory holding the copy."""
     database = Path(database)
+    in_test_runs = database.parent.name.startswith("run-") and "test-runs" in database.parts
+    in_owned = owned_dir is not None and database.parent == Path(owned_dir)
     require(database.is_file() and not database.is_symlink() and database.name == "game.sqlite"
-            and database.parent.name.startswith("run-") and "test-runs" in database.parts,
-            "fresh test-runs copy required")
+            and (in_test_runs or in_owned), "fresh test-runs copy required (or the caller-owned directory)")
     with closing(sqlite3.connect(str(database), isolation_level=None, timeout=1)) as db:
         db.execute("BEGIN EXCLUSIVE")
         try:
