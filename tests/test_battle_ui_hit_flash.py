@@ -122,7 +122,8 @@ class Machine:
                 stack.append(not stack.pop())
             elif op == 0x44:
                 value = stack.pop()
-                stack.append('function' if isinstance(value, (Fn, Native)) else 'object')
+                stack.append('function' if isinstance(value, (Fn, Native)) else 'boolean' if isinstance(value, bool)
+                             else 'number' if isinstance(value, (int, float)) else 'object')
             elif op == 0x9d:
                 if stack.pop():
                     at += struct.unpack('<h', data)[0]

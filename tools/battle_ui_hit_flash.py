@@ -39,7 +39,7 @@ class As2:
                 data += bytes((5, int(value)))
             elif isinstance(value, str):
                 data.append(0)
-                data += value.encode('ascii') + b'\0'
+                data += value.encode('utf-8') + b'\0'
             elif isinstance(value, int) and -2**31 <= value < 2**31:
                 data.append(7)
                 data += struct.pack('<i', value)
@@ -94,7 +94,7 @@ def stmt(node):
     if kind == 'assign':
         return As2.push(node[1]) + expr(node[2]) + As2.record(0x1d)
     if kind == 'set':
-        return expr(node[1]) + As2.push(node[2]) + expr(node[3]) + As2.record(0x4f)
+        return expr(node[1]) + expr(node[2]) + expr(node[3]) + As2.record(0x4f)
     if kind == 'do':
         return expr(node[1]) + As2.record(0x17)
     if kind == 'if':

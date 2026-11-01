@@ -36,6 +36,7 @@ MODULES += ('project_pose_trace',)
 MODULES += ('project_hit_indicator',)
 MODULES += ('project_battle_feed',)
 MODULES += ('project_battle_history',)
+MODULES += ('project_battle_settings',)
 MODULES += ('catalog_v1_hints', 'crew_vehicles')
 
 
@@ -138,6 +139,14 @@ def battle_feed_policy():
     policy = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(policy)
     return policy
+
+
+def battle_settings_policy():
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_battle_settings.py'
+    spec = importlib.util.spec_from_file_location('_project_battle_settings_prepare', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def battle_history_policy():
@@ -421,6 +430,15 @@ def prepare(args):
         import battle_ui_history_flash
         movie, resource_evidence['project_battle_history_movie'] = battle_ui_history_flash.payload(original)
         payloads[battle_ui_history_flash.TARGET] = movie
+    if getattr(args, 'battle_settings', False):
+        # UI-05 owner order 2026-11-01: the tab of the native settings windows.
+        # The two movies below are the only thing this flag changes in the window.
+        if hit_view is None or feed_view is None or history_view is None:
+            raise ValueError('--battle-settings requires --hit-indicator, --battle-feed and --battle-history')
+        settings['battle_settings'] = battle_settings_policy().prepare_settings()
+        import battle_ui_settings_flash
+        movies, resource_evidence['project_battle_settings_movies'] = battle_ui_settings_flash.payloads(original)
+        payloads.update(movies)
     if getattr(args, 'trace_pose_10hz', False):
         # NET-01 diagnostic: read-only 10 Hz positions/time of native vehicles.
         if not profile13_battle:
@@ -653,6 +671,10 @@ def main():
                       help='Project policy, not original 0.9.1: UI-04 battle history, the sums of the battle and '
                            'the rows by vehicle, received damage below or at the top of the screen (gateway key '
                            'battle_events.history); requires --hit-indicator; off by default')
+    prep.add_argument('--battle-settings', action='store_true',
+                      help='Project policy, not original 0.9.1: UI-05 tab of the native settings windows for the '
+                           'three widgets, stored in the local profile; requires --hit-indicator, --battle-feed and '
+                           '--battle-history; off by default, without it both windows stay byte for byte native')
     prep.add_argument('--sixth-sense-sample',
                       help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
                            'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')

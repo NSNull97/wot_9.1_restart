@@ -62,7 +62,8 @@ TOTALS_TABLE = (('total_dealt', GREEN, CROSS), ('total_blocked', WHITE, SHIELD),
                 ('total_assist', GREEN, EYE), ('total_burned', ORANGE, FLAME))
 
 # Values for UI-05: key, allowed values, default; the switches of the owner's
-# target settings. Applied by apply_options at once. Storage belongs to UI-05.
+# target settings. Applied by apply_options at once; storage is
+# project_battle_settings.
 OPTION_SCHEMA = (('enabled', (True, False), True),
                  ('layout', ('bottom', 'top'), 'bottom'),
                  ('events', ('all', 'efficiency', 'received'), 'all'),

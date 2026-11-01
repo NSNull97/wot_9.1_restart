@@ -54,8 +54,8 @@ FEED_ROWS = {1: 'shot', 2: 'ram', 3: 'kill', 4: 'spotted', 5: 'capture', 6: 'def
              14: 'assist_spot', 15: 'assist_track'}
 
 # Values for UI-05: key, allowed values, default; one switch per row, as in the
-# owner's target settings, plus the two text switches. Applied by apply_options
-# from the next row. Storage belongs to UI-05.
+# owner's target settings, plus the two text switches. Runtime.apply_options
+# changes the screen at once; storage is project_battle_settings.
 OPTION_SCHEMA = (('enabled', (True, False), True),
                  ('show_label', (True, False), True),
                  ('show_vehicle', (True, False), True)) + tuple(
@@ -213,6 +213,12 @@ class Feed(object):
             del self.rows[ROWS:]
         return changed
 
+    def drop_hidden(self):
+        """Rows the options no longer allow leave the screen."""
+        if not self.options['enabled']:
+            del self.rows[:]
+        self.rows[:] = [row for row in self.rows if self.options[row['key']]]
+
     def expire(self):
         now = self.clock()
         alive = [row for row in self.rows if row['expires'] > now]
@@ -298,6 +304,17 @@ class Runtime(object):
         except Exception:
             self.fail('event')
 
+    def apply_options(self, value):
+        """UI-05: changes the screen at once."""
+        self.feed.apply_options(value)
+        self.feed.drop_hidden()
+        if self.failed or self.widget is None:
+            return
+        try:
+            self.widget.call(CALLBACK, self.feed.render_args())
+        except Exception:
+            self.fail('options')
+
     def push(self):
         if self.widget is None:
             self.widget = self.make_widget()
@@ -379,7 +396,7 @@ def install(record, options, channel):
 
 def policy():
     """The running feed for UI-05, None when the module is not installed."""
-    return None if _installed is None else _installed['runtime'].feed
+    return None if _installed is None else _installed['runtime']
 
 
 def restore(record):

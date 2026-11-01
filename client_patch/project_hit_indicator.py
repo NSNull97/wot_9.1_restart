@@ -46,7 +46,7 @@ RED, ORANGE, GREY, WHITE, GREEN = 0xc8181e, 0xe06a1b, 0x6e6e6e, 0xffffff, 0x7fd1
 
 # Values for UI-05: key, allowed values, default. Standard shows the native arc,
 # so the last four keys act in the extended view only. `apply_options` takes
-# effect from the next indicator.
+# effect from the next indicator; storage is project_battle_settings.
 OPTION_SCHEMA = (('view', ('standard', 'extended'), 'standard'),
                  ('show_critical', (True, False), True),
                  ('show_friendly', (True, False), True),
@@ -78,7 +78,8 @@ def checked_options(value):
     known = dict((key, allowed) for key, allowed, _ in OPTION_SCHEMA)
     options = default_options()
     for key, item in value.items():
-        if key not in known or not any(item is choice or (item == choice and type(item) is type(choice))
+        # The client reads its settings with Python 2 json: text arrives as unicode.
+        if key not in known or not any(item is choice or (isinstance(choice, str) and item == choice)
                                        for choice in known[key]):
             raise ValueError('hit indicator option outside its values: ' + str(key))
         options[key] = item
