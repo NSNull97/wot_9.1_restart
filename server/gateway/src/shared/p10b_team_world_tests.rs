@@ -49,7 +49,7 @@ fn begin(world:&mut World,now:Instant){
         for slot in 0..4{
             assert_eq!(world.team(slot).unwrap(),teams[slot]);let view=world.desired_visibility(slot).unwrap();
             for target in 0..4{assert_eq!(view[target],slot==target||teams[slot]==teams[target]);}
-            let packet=wire::roster_updates(&world,slot).unwrap();assert_eq!(packet[3],11);
+            let packet=wire::roster_updates(&world,slot,0).unwrap();assert_eq!(packet[3],11);
             let name=world.actors[slot].identity.name.as_bytes();let at=packet.windows(name.len()).position(|w|w==name).unwrap()+name.len();
             assert_eq!(&packet[at..at+2],&[b'K',teams[slot]]);
             let parts=wire::announcement_parts(&world,slot).unwrap();assert_eq!(parts[0][39],teams[slot]);

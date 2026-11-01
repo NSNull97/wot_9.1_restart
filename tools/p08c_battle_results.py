@@ -57,6 +57,10 @@ DETAIL_TARGET = {"vehicle_id", "spotted", "death_reason", "direct_hits", "explos
 LEDGER_POLICY = "project.ui04.battle-ledger.v1"
 LEDGER = {"version", "policy", "rows"}
 LEDGER_ROW = {"vehicle_id", "blocked", "potential_received", "assist_spot", "assist_track", "burned"}
+# UI-06 Results10: project policy, optional; a journal stored before it stays valid.
+TEAM_SCORE_POLICY = "project.ui06.team-score.v1"
+TEAM_SCORE = {"version", "policy", "rows"}
+TEAM_SCORE_ROW = {"vehicle_id", "frags", "team_kills", "team_damage", "team_hits", "team_killer"}
 
 
 def _interaction_details(value):
@@ -131,6 +135,27 @@ def _ledger(value):
             and row["assist_track"] == sum(t["damage_assisted_track"] for t in targets), "INVALID_INPUT")
 
 
+def _team_score(value):
+    """One row per participant in roster order; the kills are the deaths the
+    participant rows name, so the ears and the native table cannot differ."""
+    score = value["team_score"]
+    require(type(score) is dict and set(score) == TEAM_SCORE, "INVALID_INPUT")
+    require(type(score["version"]) is int and score["version"] == 1 and score["policy"] == TEAM_SCORE_POLICY, "INVALID_INPUT")
+    rows, participants = score["rows"], value["participants"]
+    require(type(rows) is list and len(rows) == len(participants), "INVALID_INPUT")
+    for row, own in zip(rows, participants):
+        require(type(row) is dict and set(row) == TEAM_SCORE_ROW and row["vehicle_id"] == own["vehicle_id"], "INVALID_INPUT")
+        require(type(row["frags"]) is int and -MAX_PARTICIPANTS < row["frags"] < MAX_PARTICIPANTS, "INVALID_INPUT")
+        _integer(row["team_kills"], 0, MAX_PARTICIPANTS - 1); _integer(row["team_hits"], 0, 192)
+        _integer(row["team_damage"], 0, 2**32 - 1)
+        require(type(row["team_killer"]) is bool, "INVALID_INPUT")
+        victims = [q for q in participants if q["killer_id"] == own["vehicle_id"] and q["vehicle_id"] != own["vehicle_id"]]
+        allies = sum(1 for q in victims if q["team"] == own["team"])
+        require(row["team_kills"] == allies and row["frags"] == len(victims) - 2 * allies
+            and row["team_kills"] <= own["kills"] and row["team_damage"] <= own["damage_dealt"]
+            and row["team_hits"] <= own["direct_hits"] and (allies == 0 or row["team_killer"]), "INVALID_INPUT")
+
+
 def results_value(raw):
     require(type(raw) is str and len(raw.encode("utf-8")) <= MAX_RESULT_BYTES, "INVALID_INPUT")
     try:
@@ -139,7 +164,7 @@ def results_value(raw):
             parse_constant=lambda _: (_ for _ in ()).throw(TransactionError("INVALID_INPUT")))
     except (ValueError, RecursionError, UnicodeError) as error:
         raise TransactionError("INVALID_INPUT") from error
-    require(type(value) is dict and set(value) in (HEADER, HEADER | {"interaction_details"},
+    require(type(value) is dict and set(value) - {"team_score"} in (HEADER, HEADER | {"interaction_details"},
         HEADER | {"interaction_details", "ledger"}), "INVALID_INPUT")
     _integer(value["arena_id"], 1, 2**63 - 1)
     require(type(value["arena_type_id"]) is int and value["arena_type_id"] in registry_arena_types(), "INVALID_INPUT")
@@ -168,6 +193,7 @@ def results_value(raw):
     require(teams == {1, 2}, "INVALID_INPUT")
     if "interaction_details" in value: _interaction_details(value)
     if "ledger" in value: _ledger(value)
+    if "team_score" in value: _team_score(value)
     require(len(canonical(value)) <= result_budget(len(rows)), "INVALID_INPUT")
     return value
 

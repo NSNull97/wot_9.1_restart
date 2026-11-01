@@ -301,6 +301,8 @@ pub struct Config {
     pub battle_history:bool,
     /// UI-04: `results_ledger` (absent: results keep the zero native fields).
     pub results_ledger:bool,
+    /// UI-06: `team_score` (absent: no frags, no team killer flag, zero results).
+    pub team_score:bool,
     /// BW-01: each arena steps in its own worker process (absent: arenas in this process, old path).
     pub battle_worker:Option<BattleWorker>,
 }
@@ -534,6 +536,12 @@ impl Config {
             _=>return Err(invalid("results_ledger must be a boolean")),
         };
         if results_ledger&&!profile13_battle{return Err(invalid("results_ledger requires profile13 battle"));}
+        let team_score=match value.remove("team_score"){
+            None=>false,
+            Some(Value::Bool(enabled))=>enabled,
+            _=>return Err(invalid("team_score must be a boolean")),
+        };
+        if team_score&&(!profile13_battle||!visibility_v1){return Err(invalid("team_score requires profile13 battle and visibility_v1"));}
         // BW-01: the training/hold5 hosts keep the scene runtime on the gateway thread.
         let battle_worker=value.remove("battle_worker").map(|v|BattleWorker::parse(&v)).transpose()?;
         if battle_worker.is_some()&&(!profile13_battle||training_rooms||p08b_owner_battle_hold){
@@ -577,7 +585,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_events,battle_feed,battle_history,results_ledger,battle_worker})
+        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_events,battle_feed,battle_history,results_ledger,team_score,battle_worker})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -1244,6 +1252,11 @@ mod tests {
         let mut events=latest.clone();events.as_object_mut().unwrap().remove("pose_delivery");
         events["battle_events"]=serde_json::json!({"version":1});assert!(load(&events).unwrap().battle_events);
         assert!(!load(&events).unwrap().battle_feed,"UI-02 key alone: the channel has no feed");
+        assert!(!load(&events).unwrap().team_score,"UI-06: absent, the old path");
+        let mut score=events.clone();score["team_score"]=true.into();assert!(load(&score).unwrap().team_score);
+        score["team_score"]=false.into();assert!(!load(&score).unwrap().team_score);
+        score["team_score"]=1.into();assert!(load(&score).err().unwrap().to_string().contains("team_score must be a boolean"));
+        let mut blind=base.clone();blind["team_score"]=true.into();assert!(load(&blind).is_err(),"requires profile13 and visibility");
         let mut feed=events.clone();feed["battle_events"]=serde_json::json!({"version":1,"feed":true});assert!(load(&feed).unwrap().battle_feed);
         feed["battle_events"]=serde_json::json!({"version":1,"feed":false});assert!(!load(&feed).unwrap().battle_feed);
         feed["battle_events"]=serde_json::json!({"version":1,"feed":1});assert!(load(&feed).is_err());

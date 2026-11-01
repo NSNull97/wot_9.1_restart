@@ -19,6 +19,8 @@ mod p06t_publication;
 mod battle_events_publication;
 #[path="battle_ledger.rs"]
 pub(super) mod battle_ledger;
+#[path="team_score_publication.rs"]
+mod team_score_publication;
 #[path="sixth_sense_wire.rs"]
 mod sixth_sense_wire;
 #[cfg(test)]
@@ -75,6 +77,9 @@ mod ui03_tests;
 #[cfg(test)]
 #[path="server_ui04_tests.rs"]
 mod ui04_tests;
+#[cfg(test)]
+#[path="server_ui06_tests.rs"]
+mod ui06_tests;
 #[cfg(test)]
 #[path="server_net01_bench.rs"]
 mod net01_bench;
@@ -1635,6 +1640,12 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         battle_template.select(&mut world,&mut integrated,started)?;
         println!("UI04_RESULT_LEDGER_BOUND policy={}",super::lifecycle_wire::LEDGER_POLICY);
     }
+    if config.team_score{
+        if !profile13_mode||!config.visibility_v1{return Err(model::bad().into());}
+        battle_template.world.enable_team_score()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("UI06_TEAM_SCORE_BOUND policy={}",super::lifecycle_wire::TEAM_SCORE_POLICY);
+    }
     if config.p06t_ammo_rack_detonation{
         if !profile13_mode||!config.p06t_mixed_ammo||!config.visibility_v1||qualification.is_some(){return Err(model::bad().into());}
         battle_template.world.enable_ammo_detonation()?;
@@ -1995,6 +2006,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                                 template.world.enable_result_spots()?;
                             }
                             if config.results_ledger {template.world.enable_result_ledger()?;}
+                            if config.team_score {template.world.enable_team_score()?;}
                             template.select(&mut a.world,&mut a.integrated,now)?;Ok(template)
                         })();
                         match switched {
@@ -2509,7 +2521,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                             c.owner_health_sent = Some(event.health_after);
                         }
                         if event.health_after == 0 {
-                            if !c.spotting_enabled {body.extend(wire::roster_updates(&next_world,event.target)?);}
+                            if !c.spotting_enabled {body.extend(wire::roster_updates(&next_world,event.target,c.slot)?);}
                             if next_world.lifecycle.is_some() && !c.spotting_enabled {
                                 body.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
                             }
@@ -2551,7 +2563,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 // still produce the original kill event without private HP,
                 // shot geometry, entity creation or shooter coordinates.
                 if !next_world.mixed_ammo()&&c.spotting_enabled && event.health_before>0 && event.health_after==0 && next_world.lifecycle.is_some() {
-                    let mut public=wire::roster_updates(&next_world,event.target)?;
+                    let mut public=wire::roster_updates(&next_world,event.target,c.slot)?;
                     public.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
                     next.outbox.push_back(public);
                 }
@@ -2569,7 +2581,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                         let attacker = next_world.impacts.iter().rev().find(|e| e.target == target)
                             .map(|e| e.attacker).ok_or_else(|| model::bad())?;
                         body.extend(impact_wire::health_changed_for(next_world.actors[target].vehicle_kind(),target,hp,attacker)?);
-                        if hp == 0 { body.extend(wire::roster_updates(&next_world,target)?); }
+                        if hp == 0 { body.extend(wire::roster_updates(&next_world,target,c.slot)?); }
                     }
                     c.health_sent[target] = Some(hp);
                 }
@@ -2579,6 +2591,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 if !body.is_empty() { c.queue_private(&mut next.outbox,body,&[target])?; }
             }}
         }
+        // UI-06: after this pass's kill records, ahead of AFTERBATTLE below.
+        team_score_publication::publish(c,&mut next.outbox,&next_world)?;
         // AV-01 runs with recipient visibility (visibility_v1, as on the owner
         // stands); legacy all-visible laboratory publications stay byte-exact.
         if c.spotting_enabled && c.correction && c.binding.is_some_and(|(_, ack)| ack) {

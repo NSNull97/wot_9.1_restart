@@ -54,6 +54,7 @@ mod turret_publication;
 mod turret_publication_test_fixture;
 pub(crate) mod lifecycle;
 pub(crate) mod lifecycle_wire;
+mod team_score;
 mod lifecycle_result;
 mod late_results_capture;
 mod late_results_protocol;
@@ -192,6 +193,10 @@ pub(super) struct Client {
     battle_feed_enabled: bool,
     /// UI-04: gateway.json `battle_events.history`.
     battle_history_enabled: bool,
+    /// UI-06: what this recipient's ClientArena already holds, per slot: frags
+    /// and the team killer flag, and the journal lengths it was computed at.
+    team_score_sent: [(i16,bool); model::MAX_ACTORS],
+    team_score_journals: Option<(usize,usize,usize)>,
     return_generation: u32,
     return_mask: u8,
     join_requested: bool,
@@ -214,7 +219,7 @@ impl Client {
             pose_delivery: net01::PoseDelivery::Reliable, poses_out: Vec::new(), pose_stats: net01::PoseStats::default(),
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:[None;model::MAX_ACTORS],armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
-            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, battle_feed_enabled: false, battle_history_enabled: false, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
+            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, battle_feed_enabled: false, battle_history_enabled: false, team_score_sent: [(0,false); model::MAX_ACTORS], team_score_journals: None, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -842,6 +847,9 @@ impl Session {
                 // UI-03: a scene load is a new channel. The client says hello
                 // again, nothing of the time it was away is replayed.
                 c.battle_events = None;
+                // UI-06: the arena of a loaded scene is new and empty; unlike
+                // the feed, standing facts are sent again in full.
+                c.team_score_sent = [(0,false); model::MAX_ACTORS]; c.team_score_journals = None;
                 for slot in 0..world.actors.len() { c.ready_sent[slot] = wire::binding_ready(world, c.slot, slot); }
                 events.push(format!("SHARED_READY battle={} session={} own={} reliable_sequence={sequence} tick={}", world.id, self.id, wire::vehicle_id(c.slot)?, world.tick));
             }

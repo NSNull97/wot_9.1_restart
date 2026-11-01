@@ -20,8 +20,8 @@ pub(super) fn armor_stopped(event:&model::AppliedImpact)->bool {
 }
 /// HP one shot or fire took from a vehicle, whichever journal owns the mode.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub(super) struct Harm {pub tick:u32,pub attacker:usize,pub target:usize,pub amount:u16}
-pub(super) fn harms(world:&World,damage_from:usize,impacts_from:usize)->io::Result<Vec<Harm>> {
+pub(in super::super) struct Harm {pub tick:u32,pub attacker:usize,pub target:usize,pub amount:u16}
+pub(in super::super) fn harms(world:&World,damage_from:usize,impacts_from:usize)->io::Result<Vec<Harm>> {
     let lost=|before:i16,after:i16|u16::try_from((i32::from(before)-i32::from(after)).max(0)).map_err(|_|model::bad());
     let mut rows=Vec::new();
     if world.mixed_ammo() {

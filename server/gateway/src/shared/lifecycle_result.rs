@@ -1,6 +1,6 @@
 //! Projection of a committed world into the pinned native results DTO.
 use std::io;
-use super::{model::{self,World,ImpactOutcome},ap,lifecycle_wire::{Ledger,LedgerRow,LEDGER_POLICY,Results,Participant},server::battle_ledger,wire};
+use super::{model::{self,World,ImpactOutcome},ap,lifecycle_wire::{Ledger,LedgerRow,LEDGER_POLICY,Results,Participant},server::battle_ledger,team_score,wire};
 
 pub(super) fn build(world:&World)->io::Result<Results> {
     if world.mixed_ammo(){return p06t::build(world);}
@@ -37,7 +37,8 @@ pub(super) fn build(world:&World)->io::Result<Results> {
     let(details,ledger)=project_interactions(world,&participants)?;
     let result=Results {arena_id:world.id,arena_type_id:world.map.arena_type_id() as i32,
         created_unix:world.lifecycle_created_unix.ok_or_else(||model::bad())?,winner_team:outcome.winner,
-        finish_reason:wire::finish_reason(outcome.reason),duration_seconds,interaction_details:Some(details),ledger,participants};
+        finish_reason:wire::finish_reason(outcome.reason),duration_seconds,interaction_details:Some(details),ledger,
+        team_score:team_score::results(world,&participants)?,participants};
     result.validate()?;Ok(result)
 }
 /// Contact HP is independent of accepted shots and direct-hit statistics.

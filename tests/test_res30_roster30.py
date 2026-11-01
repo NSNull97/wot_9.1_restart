@@ -126,6 +126,8 @@ class Roster30ResultsTests(unittest.TestCase):
         value["ledger"] = dict(version=1, policy="project.ui04.battle-ledger.v1", rows=[dict(vehicle_id=vehicle_id(s),
             blocked=2**31 - 1, potential_received=2**31 - 1, assist_spot=2**32 - 1, assist_track=2**32 - 1,
             burned=2**32 - 1) for s in range(30)])
+        value["team_score"] = dict(version=1, policy="project.ui06.team-score.v1", rows=[dict(vehicle_id=vehicle_id(s),
+            frags=-29, team_kills=29, team_damage=2**32 - 1, team_hits=192, team_killer=False) for s in range(30)])
         self.assertLessEqual(len(canonical(value)), MAX_RESULT_BYTES)
         six = dict(value, participants=rows[:6], interaction_details=dict(details, rows=[dict(r, targets=r["targets"][:6]) for r in details["rows"][:6]]))
         self.assertLessEqual(len(canonical(six)), MAX_RESULT_BYTES_LEGACY)

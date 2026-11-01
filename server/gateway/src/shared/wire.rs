@@ -83,28 +83,31 @@ pub fn reset(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     b.extend(arena::reset_to_avatar_base_for_map(&arena::AvatarBaseSeed { entity_id: avatar_id(slot)?,
         name: &a.identity.name, arena_unique_id: w.id }, w.map)?); Ok(b)
 }
-pub fn roster(w: &World) -> io::Result<Vec<u8>> {
+pub fn roster(w: &World,viewer:usize) -> io::Result<Vec<u8>> {
     if w.actors.len() != model::CAPACITY { return Err(model::bad()); }
-    roster_list(w,0..model::CAPACITY)
+    roster_list(w,0..model::CAPACITY,viewer)
 }
-fn roster_row(w:&World,slot:usize)->io::Result<Vec<u8>> {
+fn roster_row(w:&World,slot:usize,viewer:usize)->io::Result<Vec<u8>> {
     let a=actor(w,slot)?;let mut d=vec![b'(',b'J'];d.extend(vehicle_id(slot)?.to_le_bytes());
     d.push(b'U');string(&mut d,a.vehicle_kind().descriptor())?;
     d.push(b'U');string(&mut d,a.identity.name.as_bytes())?;
-    d.extend([b'K',w.team(slot)?,if a.alive(){0x88}else{0x89},if a.ready{0x88}else{0x89},0x89,b'J']);
+    // UI-06: a later VEHICLE_LIST rebuilds the native info objects from these
+    // rows, so the flag of TEAM_KILLER has to stay here for its own team.
+    d.extend([b'K',w.team(slot)?,if a.alive(){0x88}else{0x89},if a.ready{0x88}else{0x89},
+        if super::team_score::shown_to(w,slot,viewer)?{0x88}else{0x89},b'J']);
     d.extend(a.identity.database.to_le_bytes());d.extend([b'U',0,b'K',0,b'K',0,0x89,b'}',b'K',0,b't']);Ok(d)
 }
-fn roster_list(w:&World,slots:std::ops::Range<usize>)->io::Result<Vec<u8>> {
+fn roster_list(w:&World,slots:std::ops::Range<usize>,viewer:usize)->io::Result<Vec<u8>> {
     // Own bounded literal protocol2 data; never an input object decoder.
     let mut d = vec![0x80, 2, b']'];
-    for slot in slots {d.extend(roster_row(w,slot)?);d.push(b'a');}
+    for slot in slots {d.extend(roster_row(w,slot,viewer)?);d.push(b'a');}
     d.push(b'.'); update(1, &d)
 }
 /// Original ClientArena updates2/11 each consume one vehicle tuple; the
 /// initial list is kept small enough for the measured UINT8 stream length.
-pub fn roster_updates(w:&World,slot:usize)->io::Result<Vec<u8>> {
-    if w.actors.len()==model::CAPACITY{return roster(w);}
-    let mut d=vec![0x80,2];d.extend(roster_row(w,slot)?);d.push(b'.');update(11,&d)
+pub fn roster_updates(w:&World,slot:usize,viewer:usize)->io::Result<Vec<u8>> {
+    if w.actors.len()==model::CAPACITY{return roster(w,viewer);}
+    let mut d=vec![0x80,2];d.extend(roster_row(w,slot,viewer)?);d.push(b'.');update(11,&d)
 }
 fn update(kind: u8, d: &[u8]) -> io::Result<Vec<u8>> {
     if d.len() > 252 { return Err(model::bad()); }
@@ -122,7 +125,7 @@ pub fn announcement(w: &World, own: usize) -> io::Result<Vec<u8>> {
         b[27 + i * 4..31 + i * 4].copy_from_slice(&value.to_le_bytes());
     }
     b.extend(arena::space_data_for_map(SPACE, (SPACE as u64).to_le_bytes(), w.map)?);
-    b.extend(roster(w)?);
+    b.extend(roster(w,own)?);
     for slot in 0..model::CAPACITY {
         b.push(0x0a); b.extend(vehicle_id(slot)?.to_le_bytes()); b.push(vehicle_alias(slot)?);
     }
@@ -139,10 +142,10 @@ pub fn announcement_parts(w:&World,own:usize)->io::Result<Vec<Vec<u8>>> {
     for(i,value)in[a.direction[2],a.direction[1],a.direction[0]].into_iter().enumerate(){first[27+i*4..31+i*4].copy_from_slice(&value.to_le_bytes());}
     first.extend(arena::space_data_for_map(SPACE,(SPACE as u64).to_le_bytes(),w.map)?);
     // Maximum-length owned names can make even two rows exceed252 bytes.
-    first.extend(roster_list(w,0..1)?);
+    first.extend(roster_list(w,0..1,own)?);
     let mut parts=Vec::new();let mut body=first;
     for slot in 1..w.actors.len(){
-        let mut d=vec![0x80,2];d.extend(roster_row(w,slot)?);d.push(b'.');let record=update(2,&d)?;
+        let mut d=vec![0x80,2];d.extend(roster_row(w,slot,own)?);d.push(b'.');let record=update(2,&d)?;
         if body.len()+record.len()>500{parts.push(body);body=Vec::new();}body.extend(record);
     }
     for slot in 0..w.actors.len(){
@@ -172,10 +175,10 @@ pub(super) fn announcement_parts_for(w:&World,own:usize,desired:[bool;model::MAX
     body[39]=w.team(own)?;
     for(i,value)in[a.direction[2],a.direction[1],a.direction[0]].into_iter().enumerate(){body[27+i*4..31+i*4].copy_from_slice(&value.to_le_bytes());}
     body.extend(arena::space_data_for_map(SPACE,(SPACE as u64).to_le_bytes(),w.map)?);
-    body.extend(roster_list(w,0..1)?);
+    body.extend(roster_list(w,0..1,own)?);
     let mut parts=Vec::new();let mut enters=Vec::new();
     for slot in 1..w.actors.len() {
-        let mut d=vec![0x80,2];d.extend(roster_row(w,slot)?);d.push(b'.');let record=update(2,&d)?;
+        let mut d=vec![0x80,2];d.extend(roster_row(w,slot,own)?);d.push(b'.');let record=update(2,&d)?;
         if body.len()+record.len()>500 {parts.push(AnnouncementPart{body,enters});body=Vec::new();enters=Vec::new();}
         body.extend(record);
     }
@@ -570,7 +573,7 @@ mod tests {
             assert_eq!(w.attach_owned(owner, 700 + slot as u32, &frozen).unwrap(), slot);
         }
         w.start(now).unwrap();
-        let roster = marker_decode_roster(&roster_updates(&w, 0).unwrap());
+        let roster = marker_decode_roster(&roster_updates(&w,0,0).unwrap());
         assert_eq!(roster.iter().map(|r| r.team).collect::<Vec<_>>(), [1, 2]);
         for own in 0..2 {
             let parts = announcement_parts(&w, own).unwrap();
@@ -611,7 +614,7 @@ mod tests {
                 let public = marker_decode_public_info(&create_vehicle(&w, slot).unwrap());
                 assert_eq!(public.entity, MARKER_NATIVE_IDS[slot]); assert_eq!(public.team, teams[slot]);
                 assert_eq!(public.name, names[slot]); assert_eq!(public.descriptor, kinds[slot].descriptor());
-                let roster = marker_decode_roster(&roster_updates(&w, slot).unwrap());
+                let roster = marker_decode_roster(&roster_updates(&w,slot,0).unwrap());
                 assert_eq!(roster, [public]);
             }
         }
@@ -620,7 +623,7 @@ mod tests {
         let recreated = create_vehicle(&w, 3).unwrap();
         assert_eq!(recreated, before);
         assert_eq!(marker_decode_public_info(&recreated).team, 2);
-        assert_eq!(marker_decode_roster(&roster_updates(&w, 3).unwrap())[0].team, 2);
+        assert_eq!(marker_decode_roster(&roster_updates(&w,3,0).unwrap())[0].team, 2);
     }
 
     #[test]
@@ -652,7 +655,7 @@ mod tests {
             assert_eq!(marker_decode_public_info(&actual).team, 1);
             assert_eq!(marker_decode_own_avatar(&announcement_parts(&w, slot).unwrap()[0]).1, 1);
         }
-        assert_eq!(marker_decode_roster(&roster_updates(&w, 0).unwrap()).iter().map(|r| r.team).collect::<Vec<_>>(), [1, 1]);
+        assert_eq!(marker_decode_roster(&roster_updates(&w,0,0).unwrap()).iter().map(|r| r.team).collect::<Vec<_>>(), [1, 1]);
     }
     #[test]fn p06t_native_binding_reconciles_ap_zero_current_next_and_full_source_counts(){
         use crate::p06t_armament091::{Command,Selection};
@@ -734,7 +737,7 @@ mod tests {
         }
         assert_eq!(parts[0][39],2); // slot5's own native team, not slot0's.
         assert!(announcement(&w,5).is_err());
-        let changed=roster_updates(&w,4).unwrap();assert_eq!(&changed[..2],&[19,88]);assert_eq!(changed[3],11);
+        let changed=roster_updates(&w,4,0).unwrap();assert_eq!(&changed[..2],&[19,88]);assert_eq!(changed[3],11);
         assert_eq!(&changed[5..9],&[128,2,b'(',b'J']);
         assert_eq!(&changed[9..13],&vehicle_id(4).unwrap().to_le_bytes());
         let visible=publication(&w,[true;model::MAX_ACTORS]).unwrap();
@@ -881,7 +884,7 @@ mod tests {
         assert_eq!(&first[..10], &[9, 87, 0, 0, 3, 0, 16, 9, 2, 0]);
         assert_eq!(&second[4..8], &0x09100005u32.to_le_bytes());
         assert_eq!(&second[10..14], &w.actors[1].position[0].to_le_bytes());
-        assert!(roster(&w).unwrap().len() < 255);
+        assert!(roster(&w,0).unwrap().len() < 255);
         assert!(announcement(&w, 0).unwrap().len() < 500);
         let b = binding(&w, 1, now).unwrap();
         assert!(b.windows(13).any(|s| s == [vec![0x14],0x09100004u32.to_le_bytes().to_vec(),1u32.to_le_bytes().to_vec(),0x09100005u32.to_le_bytes().to_vec()].concat()));

@@ -51,7 +51,7 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
     for event in world.damage_events.iter().skip(c.damage_cursor){
         let primary=world.impacts.iter().find(|impact|impact.shot==event.shot).map(|impact|impact.target);
         if event.lethal()&&world.lifecycle.is_some(){
-            let mut public=wire::roster_updates(world,event.target)?;
+            let mut public=wire::roster_updates(world,event.target,c.slot)?;
             public.extend(super::super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,event.reason)?);
             outbox.push_back(public);
         }
@@ -72,7 +72,7 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
     }
     for event in world.ram_damage_events.iter().skip(c.ram_cursor){
         if event.health_before>0&&event.health_after==0&&world.lifecycle.is_some(){
-            let mut public=wire::roster_updates(world,event.target)?;
+            let mut public=wire::roster_updates(world,event.target,c.slot)?;
             // Source #717 ATTACK_REASONS[2] = ramming, independently of the
             // damageInfo device-notification namespace. Kill attribution is
             // public roster metadata, as for projectile kills above; no pose
