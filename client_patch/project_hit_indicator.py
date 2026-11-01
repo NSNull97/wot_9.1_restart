@@ -157,6 +157,9 @@ class Policy(object):
             raise TypeError('hit indicator requires callable seams')
         self.options, self.record, self.clock = checked_options(options), record, clock
         self.facts, self.acknowledged, self.failed, self.bad_frames = {}, False, False, 0
+        # The gateway sends no native hit callback for HE splash; a prepared
+        # client draws the same native indicator from the event.
+        self.show_splash = None
 
     def reset(self):
         self.facts.clear()
@@ -192,6 +195,8 @@ class Policy(object):
         self.record(EVENT + '_hit', version=VERSION, shot=event['shot'], damage=event['damage'],
                     verdict=event['verdict'], friendly=event['friendly'],
                     source_known=event['source'] != 0, criticals=len(event['criticals']))
+        if event['verdict'] == 'splash' and self.show_splash is not None:
+            self.show_splash(event['yaw'])
 
     def facts_for(self, yaw):
         row = self.facts.get(_key(yaw))
@@ -356,6 +361,12 @@ def install(record, options):
             return None
         return show_hit(self, gYaw, isDamage)
 
+    def show_splash(yaw):
+        aim = BigWorld.player().inputHandler.aim
+        if aim is not None:
+            aim.showHit(yaw, True)
+
+    rules.show_splash = show_splash
     indicator = indicator_class(native, rules, facts_args, record)
     ClientArena.ClientArena.update = update
     aims.Aim.showHit = showHit

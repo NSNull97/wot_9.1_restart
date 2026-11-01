@@ -115,6 +115,13 @@ class PolicyTests(unittest.TestCase):
         self.assertFalse(self.policy.suppressed(2.0))
         self.assertFalse(self.policy.suppressed(3.0))
 
+    def test_splash_alone_asks_for_the_native_indicator(self):
+        shown = []
+        self.policy.show_splash = shown.append
+        self.event(yaw=1.0, verdict=4)
+        self.event(yaw=2.0, verdict=1)
+        self.assertEqual(shown, [1.0])
+
     def test_bad_frames_are_counted_not_raised(self):
         self.policy.on_frame(b'garbage')
         self.assertEqual(self.policy.bad_frames, 1)
@@ -231,6 +238,7 @@ class SettingsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 m.validate_settings(bad)
 
+    @unittest.skipUnless(sys.version_info[0] == 3, 'prepare is a Python 3 tool')
     def test_prepare_lists_the_flag(self):
         env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, 'tools'))
         result = subprocess.run([sys.executable, '-B', os.path.join(ROOT, 'tools/interactive_client.py'),
