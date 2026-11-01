@@ -1210,12 +1210,6 @@ mod tests {
         let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
         assert_eq!(load(&base).unwrap().pose_delivery,PoseDelivery::Reliable);
         assert!(!load(&base).unwrap().battle_events);
-        let mut events=base.clone();events["battle_events"]=serde_json::json!({"version":1});
-        assert!(load(&events).is_err(),"needs visibility_v1");
-        events["visibility_v1"]=true.into();assert!(load(&events).unwrap().battle_events);
-        for bad in [serde_json::json!({"version":2}),serde_json::json!({}),serde_json::json!({"version":1,"x":1}),serde_json::json!(true)]{
-            let mut wrong=events.clone();wrong["battle_events"]=bad.clone();assert!(load(&wrong).is_err(),"{bad}");
-        }
         let mut burst=base.clone();burst["pose_delivery"]="reliable-burst-v1".into();
         assert_eq!(load(&burst).unwrap().pose_delivery,PoseDelivery::ReliableBurst);
         burst["pose_delivery"]="reliable-burst-v2".into();assert_eq!(load(&burst).unwrap().pose_delivery,PoseDelivery::ReliableBurstV2);
@@ -1227,6 +1221,15 @@ mod tests {
             "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle","visibility_v1"]{latest[field]=true.into();}
         latest["battle_players"]=6.into();
         assert_eq!(load(&latest).unwrap().pose_delivery,PoseDelivery::LatestUnreliable);
+        assert!(!load(&latest).unwrap().battle_events);
+        let mut events=latest.clone();events.as_object_mut().unwrap().remove("pose_delivery");
+        events["battle_events"]=serde_json::json!({"version":1});assert!(load(&events).unwrap().battle_events);
+        for bad in [serde_json::json!({"version":2}),serde_json::json!({}),serde_json::json!({"version":1,"x":1}),serde_json::json!(true)]{
+            let mut wrong=events.clone();wrong["battle_events"]=bad.clone();
+            assert!(load(&wrong).err().unwrap().to_string().contains("battle_events"),"{bad}");
+        }
+        let mut hidden=events.clone();hidden["visibility_v1"]=false.into();
+        assert!(load(&hidden).err().unwrap().to_string().contains("battle_events require visibility_v1"));
         fs::remove_dir_all(&root).unwrap();
     }
 
