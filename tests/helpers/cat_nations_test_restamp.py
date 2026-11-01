@@ -36,7 +36,7 @@ def restamp_copy(database, *, owned_dir=None):
     in_test_runs = database.parent.name.startswith("run-") and "test-runs" in database.parts
     in_owned = owned_dir is not None and database.parent == Path(owned_dir)
     require(database.is_file() and not database.is_symlink() and database.name == "game.sqlite"
-            and (in_test_runs or in_owned), "fresh test-runs or caller-owned copy required")
+            and (in_test_runs or in_owned), "fresh test-runs copy required (or the caller-owned directory)")
     with closing(sqlite3.connect(str(database), isolation_level=None, timeout=1)) as db:
         db.execute("BEGIN EXCLUSIVE")
         try:
