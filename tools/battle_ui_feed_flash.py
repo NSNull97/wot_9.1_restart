@@ -56,16 +56,17 @@ def text_source():
     ])
 
 
-def glyph_source():
+def glyph_source(name='_projectFeedGlyph', fill=0xffffff):
+    # UI-04 passes the colour of the row as an argument of the same function.
     mc = var('mc')
     body = [('local', 'mc', var('holder'))]
     for number in sorted(GLYPHS):
-        rows = [method(mc, 'beginFill', 0xffffff, 100)]
+        rows = [method(mc, 'beginFill', fill, 100)]
         for points in GLYPHS[number]:
             rows += polygon(mc, points)
         rows.append(method(mc, 'endFill'))
         body.append(('if', ('==', var('glyph'), number), rows))
-    return function('_projectFeedGlyph', ['holder', 'glyph'], body)
+    return function(name, ['holder', 'glyph'] + ([] if fill == 0xffffff else ['colour']), body)
 
 
 def fade_body():

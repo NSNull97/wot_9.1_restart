@@ -32,7 +32,7 @@ MAX_EVENTS = 8
 MAX_CRITICALS = 4
 NO_VALUE = 0xffff
 MAX_FEED_KIND = 15
-KIND_HELLO, KIND_HIT_RECEIVED, KIND_FEED = 0, 1, 2
+KIND_HELLO, KIND_HIT_RECEIVED, KIND_FEED, KIND_TOTALS = 0, 1, 2, 3
 VERDICTS = ('unknown', 'pierced', 'not_pierced', 'ricochet', 'splash')
 EXTENDED_MOVIE = 'ProjectHitIndicator.swf'
 CALLBACK = 'ProjectHit.show'
@@ -130,6 +130,15 @@ def _feed(payload):
     return {'kind': 'feed', 'feed': feed, 'value': None if value == NO_VALUE else value, 'vehicle': vehicle}
 
 
+def _totals(payload):
+    """UI-04 record: the recipient's exact sums at the end of the battle."""
+    if len(payload) != 20:
+        raise ValueError('totals event outside its bounds')
+    dealt, blocked, spot, track, burned = struct.unpack('<IIIII', payload)
+    return {'kind': 'totals', 'dealt': dealt, 'blocked': blocked, 'assist_spot': spot, 'assist_track': track,
+            'burned': burned}
+
+
 def parse_frame(data):
     """(sequence, events) of one frame; ValueError for anything else. Unknown
     event kinds are skipped by their length: later cards add kinds."""
@@ -155,6 +164,8 @@ def parse_frame(data):
             event = _feed(payload)
             if event is not None:
                 events.append(event)
+        elif kind == KIND_TOTALS:
+            events.append(_totals(payload))
     if at != len(data):
         raise ValueError('bytes after the last event')
     return sequence, events

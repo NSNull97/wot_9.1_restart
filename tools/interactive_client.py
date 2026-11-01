@@ -35,6 +35,7 @@ MODULES += ('project_player_kill_marker',)
 MODULES += ('project_pose_trace',)
 MODULES += ('project_hit_indicator',)
 MODULES += ('project_battle_feed',)
+MODULES += ('project_battle_history',)
 MODULES += ('catalog_v1_hints', 'crew_vehicles')
 
 
@@ -134,6 +135,14 @@ def hit_indicator_policy():
 def battle_feed_policy():
     path = Path(__file__).resolve().parents[1] / 'client_patch/project_battle_feed.py'
     spec = importlib.util.spec_from_file_location('_project_battle_feed_prepare', path)
+    policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy)
+    return policy
+
+
+def battle_history_policy():
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_battle_history.py'
+    spec = importlib.util.spec_from_file_location('_project_battle_history_prepare', path)
     policy = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(policy)
     return policy
@@ -402,6 +411,16 @@ def prepare(args):
         import battle_ui_feed_flash
         movie, resource_evidence['project_battle_feed_movie'] = battle_ui_feed_flash.payload(original)
         payloads[battle_ui_feed_flash.TARGET] = movie
+    history_view = getattr(args, 'battle_history', None)
+    if history_view is not None:
+        # UI-04 owner order 2026-11-01: needs gateway `battle_events.history` and
+        # the hit indicator's channel; without the key the widget stays empty.
+        if hit_view is None:
+            raise ValueError('--battle-history requires --hit-indicator: it uses the same channel')
+        settings['battle_history'] = battle_history_policy().prepare_settings(history_view)
+        import battle_ui_history_flash
+        movie, resource_evidence['project_battle_history_movie'] = battle_ui_history_flash.payload(original)
+        payloads[battle_ui_history_flash.TARGET] = movie
     if getattr(args, 'trace_pose_10hz', False):
         # NET-01 diagnostic: read-only 10 Hz positions/time of native vehicles.
         if not profile13_battle:
@@ -630,6 +649,10 @@ def main():
                       help='Project policy, not original 0.9.1: UI-03 event feed, the last three battle events, '
                            'with or without their names (gateway key battle_events.feed); requires --hit-indicator; '
                            'off by default')
+    prep.add_argument('--battle-history', choices=('bottom', 'top'),
+                      help='Project policy, not original 0.9.1: UI-04 battle history, the sums of the battle and '
+                           'the rows by vehicle, received damage below or at the top of the screen (gateway key '
+                           'battle_events.history); requires --hit-indicator; off by default')
     prep.add_argument('--sixth-sense-sample',
                       help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
                            'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')

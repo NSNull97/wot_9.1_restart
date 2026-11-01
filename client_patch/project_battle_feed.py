@@ -75,6 +75,47 @@ SHOW_ALL_CONTRACT = ('scripts/client/gui/Scaleform/Battle.py', 'showAll', 160, (
 _installed = None
 
 
+class ShowAll(object):
+    """One wrapper over Battle.showAll for every project widget: a second one
+    would fail the bytecode contract of the first. Bound at the first battle, as
+    Battle is loaded then; a mismatch switches off only the widget that asked."""
+
+    def __init__(self):
+        self.listeners, self.bound = [], None
+
+    def add(self, listener):
+        self.listeners.append(listener)
+
+    def bind(self):
+        if self.bound is not None:
+            return
+        from gui.Scaleform.Battle import Battle
+        native = Battle.__dict__.get('showAll')
+        _check(native, *SHOW_ALL_CONTRACT)
+        listeners = self.listeners
+
+        def showAll(self, isShow):
+            native(self, isShow)
+            for listener in list(listeners):
+                listener(isShow)
+
+        Battle.showAll = showAll
+        self.bound = (Battle, native, showAll)
+
+    def remove(self, listener):
+        self.listeners.remove(listener)
+        if self.listeners or self.bound is None:
+            return
+        battle, native, wrapper = self.bound
+        self.bound = None
+        if battle.__dict__.get('showAll') is not wrapper:
+            raise RuntimeError('battle feed wrapper was replaced; original not restored')
+        battle.showAll = native
+
+
+SHOW_ALL = ShowAll()
+
+
 def default_options():
     return dict((key, default) for key, _, default in OPTION_SCHEMA)
 
@@ -202,6 +243,11 @@ def _check(function, filename, name, line, args, digest):
         raise RuntimeError('original #717 feed host differs: ' + name)
 
 
+def check_flash(flash):
+    for name, line, args, digest in FLASH_CONTRACTS:
+        _check(flash.__dict__.get(name), FLASH_FILE, name, line, args, digest)
+
+
 def widget_class(base, depth):
     """Placed and sized as the native _DamageIndicator; no input of its own."""
 
@@ -299,8 +345,7 @@ def install(record, options, channel):
     from AvatarInputHandler import aims
     from gui.Scaleform.Flash import Flash
     from PlayerEvents import g_playerEvents
-    for name, line, args, digest in FLASH_CONTRACTS:
-        _check(Flash.__dict__.get(name), FLASH_FILE, name, line, args, digest)
+    check_flash(Flash)
 
     def name_of(vehicle):
         row = BigWorld.player().arena.vehicles.get(vehicle)
@@ -309,27 +354,12 @@ def install(record, options, channel):
     feed = Feed(options, BigWorld.time, name_of)
     widget = widget_class(Flash, aims.DEPTH_OF_Aim)
     runtime = Runtime(feed, widget, BigWorld.callback, BigWorld.cancelCallback, record)
-    state = {'battle': None}
-
-    def bind_show_all():
-        # Battle is loaded once a battle starts; importing it at bootstrap is
-        # not needed, and a mismatch here must only switch the feed off.
-        from gui.Scaleform.Battle import Battle
-        native = Battle.__dict__.get('showAll')
-        _check(native, *SHOW_ALL_CONTRACT)
-
-        def showAll(self, isShow):
-            native(self, isShow)
-            runtime.show_all(isShow)
-
-        Battle.showAll = showAll
-        state['battle'] = (Battle, native, showAll)
 
     def on_avatar_ready():
         runtime.ready()
-        if state['battle'] is None and not runtime.failed:
+        if not runtime.failed:
             try:
-                bind_show_all()
+                SHOW_ALL.bind()
             except Exception:
                 runtime.fail('show_all')
 
@@ -338,9 +368,10 @@ def install(record, options, channel):
 
     channel.subscribe(runtime.on_event)
     channel.features.append(FEATURE)
+    SHOW_ALL.add(runtime.show_all)
     g_playerEvents.onAvatarReady += on_avatar_ready
     g_playerEvents.onAvatarBecomeNonPlayer += on_become_non_player
-    _installed = dict(runtime=runtime, channel=channel, state=state, events=g_playerEvents,
+    _installed = dict(runtime=runtime, channel=channel, events=g_playerEvents,
                       ready=on_avatar_ready, leave=on_become_non_player)
     record(EVENT + '_installed', version=VERSION, policy=POLICY, options=feed.options)
     return feed
@@ -362,10 +393,6 @@ def restore(record):
     installed['runtime'].close()
     installed['channel'].features.remove(FEATURE)
     installed['channel'].unsubscribe(installed['runtime'].on_event)
-    if installed['state']['battle'] is not None:
-        battle, native, wrapper = installed['state']['battle']
-        if battle.__dict__.get('showAll') is not wrapper:
-            raise RuntimeError('battle feed wrapper was replaced; original not restored')
-        battle.showAll = native
+    SHOW_ALL.remove(installed['runtime'].show_all)
     record(EVENT + '_restored', version=VERSION)
     return True
