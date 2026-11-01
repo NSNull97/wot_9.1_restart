@@ -50,3 +50,25 @@ fn saved(index:usize)->(Task,Value){
     let raw=String::from_utf8(raw).unwrap();let duplicate=raw.replacen("\"version\":1","\"version\":1,\"version\":1",1);assert_ne!(duplicate,raw);assert!(t.parse_reply(duplicate.as_bytes()).is_err());
     assert!(t.parse_reply(&vec![b' ';4097]).is_err());
 }
+
+#[test]fn p08c_late_append_parser_accepts_roster30_seal_only_within_all_bounds(){
+    use crate::profile13_v2091::{bounded_json,bounded_late_append_json};
+    let encode=|n:usize|serde_json::to_vec(&json!({"seal_json":"a".repeat(n),"account_id":"owner"})).unwrap();
+    let limit=capture::MAX_SEAL_ROSTER30;
+    let legacy=262144;
+    let raw=encode(legacy+1);
+    assert!(bounded_json(&raw,capture::MAX_HTTP).is_err(),"general reader remains unchanged");
+    assert!(bounded_late_append_json(&raw,capture::MAX_HTTP,limit).is_ok());
+    assert!(bounded_late_append_json(&encode(limit),capture::MAX_HTTP,limit).is_ok());
+    assert!(bounded_late_append_json(&encode(limit+1),capture::MAX_HTTP,limit).is_err());
+    let other=serde_json::to_vec(&json!({"seal_json":"small","account_id":"a".repeat(legacy+1)})).unwrap();
+    assert!(bounded_late_append_json(&other,capture::MAX_HTTP,limit).is_err(),"only seal gets expanded limit");
+    assert!(bounded_late_append_json(br#"{"seal_json":"a","seal_json":"b"}"#,capture::MAX_HTTP,limit).is_err());
+    assert!(bounded_late_append_json(br#"{"seal_json":"a","nested":{"x":1,"x":2}}"#,capture::MAX_HTTP,limit).is_err());
+    let deep=format!("{{\"seal_json\":\"a\",\"nested\":{}0{}}}","[".repeat(13),"]".repeat(13));
+    assert!(bounded_late_append_json(deep.as_bytes(),capture::MAX_HTTP,limit).is_err());
+    let nodes=serde_json::to_vec(&json!({"seal_json":"a","nested":vec![vec![1;256];9]})).unwrap();
+    assert!(bounded_late_append_json(&nodes,capture::MAX_HTTP,limit).is_err());
+    assert!(bounded_late_append_json(&raw,raw.len()-1,limit).is_err());
+    assert!(bounded_late_append_json(&raw,capture::MAX_HTTP,limit-1).is_err());
+}

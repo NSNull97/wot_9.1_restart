@@ -30,6 +30,9 @@ VERSION = 1
 CONTRACT = "p08c-late-result-append.v1"
 SCHEMA = "p08c-late-results.v1"
 POLICY_NAME = "test_lab.p08c.late-result-unchanged-release.v1"
+# Version 2 is an explicitly different project policy, not a change to v1.
+BOT_POLICY_NAME = "project.late-bots.final-world-after-release.v1"
+BOT_DATABASE_BASE = 0x7F000000
 POLICY = dict(id=POLICY_NAME, version=1, mixed_policy_sha256=MIXED_POLICY,
     loss_policy_sha256=LOSS_POLICY, release_reasons=["manual_leave", "disconnect"],
     final_actor="unchanged-hp-crew-device-fire-ammunition-loss-at-release",
@@ -51,6 +54,8 @@ STAMP = {"source_contract", "run_id", "battle_id", "arena_id", "reservation_id",
 ACTOR = {"account_id", "native_database_id", "slot", "vehicle_id", "team", "reservation_id",
     "native_inventory_id", "source_contract", "frozen_sha256", "final_actor"}
 FINAL = {"terminal_hp", "terminal_state", "remaining_ammunition", "fired_ammunition", "lost_ammunition", "loss_event"}
+SEAL_V1 = {"version", "policy", "run_id", "battle_id", "arena_id", "results_json", "actors"}
+BOT = {"slot", "vehicle_id", "team", "native_database_id"}
 PENDING = {"version", "contract", "operation", "account_id", "native_database_id", "command_key", "after_arena_id"}
 REJECTIONS = {"RELEASE_NOT_READY", "RESULT_MISMATCH", "LATE_ACTOR_STATE_CHANGED", "RUN_FENCED", "FOREIGN_ACCOUNT",
     "DUPLICATE_PAYLOAD_MISMATCH", "UNSUPPORTED_LATE_RESULTS_SCHEMA", "INVALID_INPUT"}
@@ -241,16 +246,38 @@ class LateResults:
 
     def validate_seal(self, request):
         raw = request["seal_json"]; seal = decode(raw, MAX_SEAL_ROSTER30, SEAL_NODES)
-        require(type(seal) is dict and set(seal) == {"version", "policy", "run_id", "battle_id", "arena_id", "results_json", "actors"}
-            and type(seal["version"]) is int and seal["version"] == 1 and seal["policy"] == POLICY_NAME
+        require(type(seal) is dict and type(seal.get("version")) is int
+            and ((seal["version"] == 1 and set(seal) == SEAL_V1 and seal["policy"] == POLICY_NAME)
+                or (seal["version"] == 2 and set(seal) == SEAL_V1 | {"bots"} and seal["policy"] == BOT_POLICY_NAME))
             and all(seal[k] == request[k] for k in ("run_id", "battle_id", "arena_id")) and canonical(seal).decode("utf8") == raw, "RESULT_MISMATCH")
         results = results_value(seal["results_json"])
         require(canonical(results).decode("utf8") == seal["results_json"] and results["arena_id"] == int(request["arena_id"]), "RESULT_MISMATCH")
-        actors = seal["actors"]
-        require(type(actors) is list and len(actors) == len(results["participants"]) and 2 <= len(actors) <= MAX_PARTICIPANTS
-            and len(raw.encode("utf8")) <= seal_budget(len(actors)), "RESULT_MISMATCH")
+        actors, bots = seal["actors"], seal.get("bots", [])
+        participants = results["participants"]
+        require(type(actors) is list and type(bots) is list and len(actors) + len(bots) == len(participants)
+            and 2 <= len(participants) <= MAX_PARTICIPANTS and len(raw.encode("utf8")) <= seal_budget(len(participants))
+            and actors and (seal["version"] == 1) == (not bots), "RESULT_MISMATCH")
+        # BOT-01 fills consecutive bot slots *after* the humans, resolving each
+        # database ID collision against every preceding identity. Human IDs are
+        # not assumed to fall outside the bot band.
+        if bots:
+            require(all(type(a) is dict and type(a.get("native_database_id")) is int for a in actors), "RESULT_MISMATCH")
+            used = {a["native_database_id"] for a in actors}
+            for ordinal, bot in enumerate(bots):
+                slot = len(actors) + ordinal
+                require(type(bot) is dict and set(bot) == BOT and all(type(bot[k]) is int for k in BOT)
+                    and bot["slot"] == slot, "RESULT_MISMATCH")
+                database = BOT_DATABASE_BASE + ordinal
+                while database in used:
+                    database += 1
+                participant = participants[slot]
+                require(bot["native_database_id"] == database == participant["account_dbid"]
+                    and bot["vehicle_id"] == participant["vehicle_id"] == vehicle_id(slot)
+                    and bot["team"] == participant["team"], "RESULT_MISMATCH")
+                used.add(database)
         owners = set(); selected = None
-        for slot, (actor, participant) in enumerate(zip(actors, results["participants"])):
+        for slot, actor in enumerate(actors):
+            participant = participants[slot]
             require(type(actor) is dict and set(actor) == ACTOR and actor["slot"] == slot
                 and type(actor["slot"]) is int and actor["vehicle_id"] == participant["vehicle_id"] == vehicle_id(slot)
                 and type(actor["vehicle_id"]) is int and type(actor["team"]) is int
@@ -281,7 +308,20 @@ class LateResults:
         require(selected is not None, "RESULT_MISMATCH")
         row, computed, released = selected
         require(released is not None and released["reason"] in ("manual_leave", "disconnect", "battle_finished"), "RELEASE_NOT_READY")
-        require(all(computed[k] == v for k, v in released.items() if k != "reason"), "LATE_ACTOR_STATE_CHANGED")
+        if seal["version"] == 1 or released["reason"] == "battle_finished":
+            require(all(computed[k] == v for k, v in released.items() if k != "reason"), "LATE_ACTOR_STATE_CHANGED")
+        else:
+            # Inventory was settled at departure and is never touched here. The
+            # parked vehicle may sustain damage, but cannot fire more shells or
+            # gain HP/ammunition; loss-v1 permits a later actual ammo-rack loss.
+            require(released["reason"] in ("manual_leave", "disconnect")
+                and computed["terminal_hp"] <= released["terminal_hp"]
+                and all(a["count"] <= b["count"] for a, b in zip(computed["remaining_ammunition"], released["remaining_ammunition"])), "LATE_ACTOR_STATE_CHANGED")
+            if "fired_ammunition" in computed:
+                require(computed["fired_ammunition"] == released["fired_ammunition"]
+                    and all(a["count"] >= b["count"] for a, b in zip(computed["lost_ammunition"], released["lost_ammunition"])), "LATE_ACTOR_STATE_CHANGED")
+            else:
+                require(computed["consumed_ammunition"] == released["consumed_ammunition"], "LATE_ACTOR_STATE_CHANGED")
         return seal, results, row
 
     def cache_rows(self, account, arena):

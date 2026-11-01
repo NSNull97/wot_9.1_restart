@@ -8,6 +8,9 @@ use crate::{identity091,profile13_v2091 as mixed,profile13_loss091 as loss};
 use crate::battle091::profile13::{Context,FinishReason};
 use super::{model::{self,World},lifecycle_wire::Results,profile13_session as handoff,wire};
 pub(super) const POLICY:&str="test_lab.p08c.late-result-unchanged-release.v1";
+/// Project policy: the release settles inventory; the later result records
+/// the actual combat state of an abandoned actor. This is not WG behaviour.
+pub(super) const BOT_POLICY:&str="project.late-bots.final-world-after-release.v1";
 pub(super) const MAX_SEAL:usize=32768;
 /// RES-30 roster30: a seal of 7..30 linked actors (one escaped journal ≤256KiB
 /// plus 30 final actors). Rosters 2..6 keep the fixed 32768 budget.
@@ -107,14 +110,16 @@ impl Seal{
 #[derive(Clone)]
 /// RES-30: `releases` is MAX_ACTORS rows on the heap. The Capture is cloned by
 /// value on the gateway main thread (1MB on Windows); an inline [_;30] made it ~21KB.
-pub(super) struct Capture{run:String,battle:u64,links:Vec<Link>,releases:Box<[Option<Release>]>,seal:Option<Arc<Seal>>}
+pub(super) struct Capture{run:String,battle:u64,links:Vec<Link>,releases:Box<[Option<Release>]>,seal:Option<Arc<Seal>>,bots_enabled:bool}
 impl Capture{
     pub(super) fn new(run:String,battle:u64)->io::Result<Self>{
         if run.len()!=36||!run.bytes().enumerate().all(|(i,b)|if [8,13,18,23].contains(&i){b==b'-'}else{b.is_ascii_digit()||(b'a'..=b'f').contains(&b)})
             ||!matches!(run.as_bytes()[14],b'1'..=b'5'){return Err(bad("run UUID"));}
         if battle==0||battle>i64::MAX as u64{return Err(bad("native arena bound"));}
-        Ok(Self{run,battle,links:Vec::new(),releases:(0..MAX_ACTORS).map(|_|None).collect(),seal:None})
+        Ok(Self{run,battle,links:Vec::new(),releases:(0..MAX_ACTORS).map(|_|None).collect(),seal:None,bots_enabled:false})
     }
+    /// Opt in only for the separately configured bot-battle policy.
+    pub(super) fn enable_bots(&mut self){self.bots_enabled=true;}
     pub(super) fn run(&self)->&str{&self.run}
     pub(super) fn battle(&self)->u64{self.battle}
     pub(super) fn release_reason(&self,slot:usize)->io::Result<Option<&'static str>>{
@@ -192,17 +197,30 @@ impl Capture{
         // legitimately detaches surviving Sessions. Never rebuild premature_leave
         // or other presentation fields from that later membership.
         if self.seal.is_some(){return Ok(false);}
+        let natives=(0..world.actors.len()).filter(|slot|!world.is_bot(*slot)).collect::<Vec<_>>();
+        let has_bots=natives.len()!=world.actors.len();
         if world.started.is_none()||!world.lifecycle.as_ref().is_some_and(|l|l.outcome().is_some())
-            ||!(2..=MAX_ACTORS).contains(&world.actors.len())||self.links.len()!=world.actors.len()||self.links.iter().enumerate().any(|(slot,l)|l.slot!=slot){return Err(bad("final outcome/complete linked roster"));}
+            ||!(2..=MAX_ACTORS).contains(&world.actors.len())||natives.is_empty()||(has_bots&&!self.bots_enabled)
+            ||self.links.len()!=natives.len()||self.links.iter().zip(&natives).any(|(link,slot)|link.slot!=*slot){return Err(bad("final outcome/complete linked roster"));}
         let mut actors=Vec::with_capacity(self.links.len());for link in &self.links{actors.push(FinalActor::capture(world,link)?);}
         let results=super::lifecycle_result::build(world)?;results.validate_p06t()?;
         for(link,actor)in self.links.iter().zip(&actors){let p=results.participants.iter().find(|p|p.account_dbid==link.owner.database_id).ok_or_else(||bad("result owner roster"))?;
             if p.vehicle_id!=wire::vehicle_id(link.slot)?||p.team!=link.team||p.health!=actor.hp||u32::from(p.shots)!=actor.fired.iter().map(|a|u32::from(a.count)).sum::<u32>(){
                 return Err(bad("result versus final source actor"));}}
         let results_json=canonical(&serde_json::to_value(&results).map_err(|_|bad("result canonical value"))?)?;
-        let raw=canonical(&json!({"version":1,"policy":POLICY,"run_id":self.run,"battle_id":format!("{}:{}",self.run,self.battle),"arena_id":self.battle.to_string(),
-            "results_json":results_json,"actors":self.links.iter().zip(&actors).map(|(link,actor)|link.value(actor)).collect::<Vec<_>>()}))?;
-        if raw.len()>seal_budget(actors.len()){return Err(bad("final seal exceeds its roster budget; retain diagnostic"));}
+        let mut seal=json!({"version":1,"policy":POLICY,"run_id":self.run,"battle_id":format!("{}:{}",self.run,self.battle),"arena_id":self.battle.to_string(),
+            "results_json":results_json,"actors":self.links.iter().zip(&actors).map(|(link,actor)|link.value(actor)).collect::<Vec<_>>()});
+        if has_bots{
+            let mut bots=Vec::new();
+            for slot in (0..world.actors.len()).filter(|slot|world.is_bot(*slot)){
+                let p=results.participants.get(slot).ok_or_else(||bad("result bot roster"))?;
+                if p.vehicle_id!=wire::vehicle_id(slot)?||p.team!=world.team(slot)?||p.account_dbid!=world.actors[slot].identity.database{return Err(bad("result versus bot place"));}
+                bots.push(json!({"slot":slot,"vehicle_id":p.vehicle_id,"team":p.team,"native_database_id":p.account_dbid}));
+            }
+            seal["version"]=2.into();seal["policy"]=BOT_POLICY.into();seal["bots"]=bots.into();
+        }
+        let raw=canonical(&seal)?;
+        if raw.len()>seal_budget(world.actors.len()){return Err(bad("final seal exceeds its roster budget; retain diagnostic"));}
         let sha=digest(raw.as_bytes());
         self.seal=Some(Arc::new(Seal{raw,sha,results:Arc::new(results),actors}));Ok(true)
     }
@@ -211,7 +229,23 @@ impl Capture{
     pub(super) fn eligible(&self,slot:usize)->io::Result<Option<u64>>{
         self.link(slot)?;let Some(seal)=&self.seal else{return Ok(None);};
         let Some(release)=&self.releases[slot]else{return Ok(None);};let Some((revision,_))=&release.finished else{return Ok(None);};
-        if seal.actors.get(slot)!=Some(&release.actor){return Err(bad("LATE_ACTOR_STATE_CHANGED"));}Ok(Some(*revision))
+        let index=self.links.iter().position(|link|link.slot==slot).ok_or_else(||bad("unknown source-linked slot"))?;
+        let final_actor=seal.actors.get(index).ok_or_else(||bad("missing sealed source actor"))?;
+        // Releases retained by this observer are manual leave/disconnect only;
+        // v1 still requires byte-equivalent final state. The opted-in bot seal
+        // retains the real later state without rewriting the Finished receipt.
+        let departed=match &release.terminal{
+            FrozenTerminal::Mixed(t)=>matches!(t.reason,FinishReason::ManualLeave|FinishReason::Disconnect),
+            FrozenTerminal::Loss(t)=>matches!(t.reason,FinishReason::ManualLeave|FinishReason::Disconnect),
+        };
+        if final_actor!=&release.actor{
+            if !self.bots_enabled||seal.results.participants.len()<=self.links.len()||!departed
+                ||final_actor.hp>release.actor.hp||final_actor.fired!=release.actor.fired
+                ||(0..3).any(|i| final_actor.remaining[i].count>release.actor.remaining[i].count
+                    ||final_actor.lost[i].count<release.actor.lost[i].count)
+                ||release.actor.loss_event.is_some()&&final_actor.loss_event!=release.actor.loss_event
+            {return Err(bad("LATE_ACTOR_STATE_CHANGED"));}
+        }Ok(Some(*revision))
     }
 }
 

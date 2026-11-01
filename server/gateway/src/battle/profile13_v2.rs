@@ -48,6 +48,43 @@ fn bounded_nodes(raw:&[u8],maximum:usize,nodes:usize)->io::Result<Value>{if raw.
     let Unique(v)=serde_json::from_slice(raw).map_err(|_|bad("unique integer JSON"))?;walk(&v,0,&mut 0,nodes)?;
     if!v.is_object(){return Err(bad("root"));}Ok(v)}
 pub fn bounded_json(raw:&[u8],maximum:usize)->io::Result<Value>{bounded_nodes(raw,maximum,2048)}
+/// The outer late-append DTO contains a JSON-encoded 30-seat seal. Its
+/// `seal_json` string may be larger than a single result journal due to escaping.
+/// This decoder is reserved for the locally generated late append only; other
+/// DTOs continue using the existing 262144-byte per-string limit.
+const LATE_SEAL_STRING_LIMIT:usize=393216;
+struct UniqueLate(Value);
+impl<'de>Deserialize<'de> for UniqueLate{fn deserialize<D:Deserializer<'de>>(d:D)->Result<Self,D::Error>{struct V;
+    impl<'de>Visitor<'de> for V{type Value=UniqueLate;
+        fn expecting(&self,f:&mut fmt::Formatter<'_>)->fmt::Result{f.write_str("bounded unique late-task JSON")}
+        fn visit_bool<E:de::Error>(self,v:bool)->Result<UniqueLate,E>{Ok(UniqueLate(v.into()))}
+        fn visit_i64<E:de::Error>(self,v:i64)->Result<UniqueLate,E>{Ok(UniqueLate(v.into()))}
+        fn visit_u64<E:de::Error>(self,v:u64)->Result<UniqueLate,E>{Ok(UniqueLate(v.into()))}
+        fn visit_unit<E:de::Error>(self)->Result<UniqueLate,E>{Ok(UniqueLate(Value::Null))}
+        fn visit_str<E:de::Error>(self,v:&str)->Result<UniqueLate,E>{if v.len()>LATE_SEAL_STRING_LIMIT{return Err(E::custom("string"));}Ok(UniqueLate(v.into()))}
+        fn visit_string<E:de::Error>(self,v:String)->Result<UniqueLate,E>{self.visit_str(&v)}
+        fn visit_seq<S:SeqAccess<'de>>(self,mut s:S)->Result<UniqueLate,S::Error>{let mut rows=Vec::new();while let Some(UniqueLate(v))=s.next_element()?{
+            if rows.len()>=256{return Err(de::Error::custom("array"));}rows.push(v);}Ok(UniqueLate(Value::Array(rows)))}
+        fn visit_map<M:MapAccess<'de>>(self,mut m:M)->Result<UniqueLate,M::Error>{let mut rows=BTreeMap::new();while let Some((k,UniqueLate(v)))=m.next_entry::<String,UniqueLate>()?{
+            if k.is_empty()||k.len()>64||rows.len()>=32||rows.insert(k,v).is_some(){return Err(de::Error::custom("duplicate/object"));}}
+            Ok(UniqueLate(Value::Object(rows.into_iter().collect())))}
+    }d.deserialize_any(V)}}
+fn late_small_strings(v:&Value)->io::Result<()>{match v{
+    Value::String(s) if s.len()>RESULT_JSON=>return Err(bad("non-seal string")),
+    Value::Object(m)=>for child in m.values(){late_small_strings(child)?},
+    Value::Array(a)=>for child in a{late_small_strings(child)?},_=>{}}
+    Ok(())
+}
+pub(crate) fn bounded_late_append_json(raw:&[u8],maximum:usize,seal_limit:usize)->io::Result<Value>{
+    if raw.is_empty()||raw.len()>maximum||maximum>RESULT_REQUEST||seal_limit!=LATE_SEAL_STRING_LIMIT{return Err(bad("late append size"));}
+    let UniqueLate(v)=serde_json::from_slice(raw).map_err(|_|bad("unique integer late JSON"))?;
+    walk(&v,0,&mut 0,2048)?;
+    let map=v.as_object().ok_or_else(||bad("root"))?;
+    let seal=map.get("seal_json").and_then(Value::as_str).ok_or_else(||bad("late seal string"))?;
+    if seal.len()>seal_limit{return Err(bad("late seal size"));}
+    for (key,value) in map{if key!="seal_json"{late_small_strings(value)?;}}
+    Ok(v)
+}
 /// RES-30: one result journal (30 rows, 30 targets each, ≈11.6K nodes). A
 /// journal of 2..6 rows stays far below the general 2048-node bound.
 pub fn bounded_result_json(raw:&[u8])->io::Result<Value>{bounded_nodes(raw,RESULT_JSON,16384)}
