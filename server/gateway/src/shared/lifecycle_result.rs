@@ -1,6 +1,6 @@
 //! Projection of a committed world into the pinned native results DTO.
 use std::io;
-use super::{model::{self,World,ImpactOutcome},ap,lifecycle_wire::{Results,Participant},wire};
+use super::{model::{self,World,ImpactOutcome},ap,lifecycle_wire::{Ledger,LedgerRow,LEDGER_POLICY,Results,Participant},server::battle_ledger,wire};
 
 pub(super) fn build(world:&World)->io::Result<Results> {
     if world.mixed_ammo(){return p06t::build(world);}
@@ -34,9 +34,10 @@ pub(super) fn build(world:&World)->io::Result<Results> {
         };
         participants.push(result);
     }
+    let(details,ledger)=project_interactions(world,&participants)?;
     let result=Results {arena_id:world.id,arena_type_id:world.map.arena_type_id() as i32,
         created_unix:world.lifecycle_created_unix.ok_or_else(||model::bad())?,winner_team:outcome.winner,
-        finish_reason:wire::finish_reason(outcome.reason),duration_seconds,interaction_details:Some(project_details(world,&participants)?),participants};
+        finish_reason:wire::finish_reason(outcome.reason),duration_seconds,interaction_details:Some(details),ledger,participants};
     result.validate()?;Ok(result)
 }
 /// Contact HP is independent of accepted shots and direct-hit statistics.
@@ -74,6 +75,31 @@ pub(crate) fn project_module_facts(world:&World)->io::Result<Vec<super::lifecycl
         if critical||fire {facts.push(d::Module{attacker:usize::from(event.cause.attacker_slot),target:*target,extra_index,critical,fire});}
     }
     Ok(facts)
+}
+/// UI-04: the details and, with the gateway key, the ledger that fills the
+/// native fields. Totals and per-target numbers come from one list of credits.
+fn project_interactions(world:&World,participants:&[Participant])->io::Result<(super::lifecycle_details::Details,Option<Ledger>)>{
+    use super::lifecycle_details as d;
+    let mut details=project_details(world,participants)?;
+    if !world.result_ledger(){return Ok((details,None));}
+    let credits=battle_ledger::credits(world)?;
+    let mut assists:Vec<d::Assisted>=Vec::new();
+    for credit in &credits {
+        let index=match assists.iter().position(|a|a.recipient==credit.recipient&&a.target==credit.target) {
+            Some(index)=>index,
+            None=>{assists.push(d::Assisted{recipient:credit.recipient,target:credit.target,track:0,radio:0});assists.len()-1},
+        };
+        let sum=match credit.kind {battle_ledger::Assist::Track=>&mut assists[index].track,battle_ledger::Assist::Spot=>&mut assists[index].radio};
+        *sum=sum.checked_add(credit.amount).ok_or_else(||model::bad())?;
+    }
+    d::apply_assists(&mut details,&super::lifecycle_wire::summaries(participants),&assists)?;
+    let mut rows=Vec::with_capacity(participants.len());
+    for(slot,p)in participants.iter().enumerate(){
+        let sum=battle_ledger::totals_from(world,slot,&credits)?;
+        rows.push(LedgerRow{vehicle_id:p.vehicle_id,blocked:sum.blocked,potential_received:sum.potential_received,
+            assist_spot:sum.assist_spot,assist_track:sum.assist_track,burned:sum.burned});
+    }
+    Ok((details,Some(Ledger{version:1,policy:LEDGER_POLICY.into(),rows})))
 }
 fn project_details(world:&World,participants:&[Participant])->io::Result<super::lifecycle_details::Details>{
     use super::lifecycle_details as d;

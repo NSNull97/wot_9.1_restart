@@ -53,6 +53,10 @@ DETAILS_POLICY = "test_lab.authoritative-interactions.v1"
 SPOTTING_POLICY = "test_lab.p08c.first-visible-enemy-lowest-slot.v1"
 DETAIL_TARGET = {"vehicle_id", "spotted", "death_reason", "direct_hits", "explosion_hits", "piercings",
     "damage_dealt", "damage_assisted_track", "damage_assisted_radio", "crits", "fire"}
+# UI-04 Results9: project policy, optional; a journal stored before it stays valid.
+LEDGER_POLICY = "project.ui04.battle-ledger.v1"
+LEDGER = {"version", "policy", "rows"}
+LEDGER_ROW = {"vehicle_id", "blocked", "potential_received", "assist_spot", "assist_track", "burned"}
 
 
 def _interaction_details(value):
@@ -88,12 +92,12 @@ def _interaction_details(value):
             # terminal result into a writer INVALID_INPUT and strands the
             # dead client in its postmortem camera.
             _integer(target["crits"], 0, 192)
+            assisted = target["damage_assisted_track"] or target["damage_assisted_radio"]
             require(target["piercings"] <= target["direct_hits"]
-                and target["damage_assisted_track"] == 0
-                and target["damage_assisted_radio"] == 0
+                and (not assisted or "ledger" in value and roster[tid]["team"] != own["team"])
                 and (target["spotted"] or target["death_reason"] != -1 or target["direct_hits"]
                     or target["explosion_hits"] or target["piercings"] or target["damage_dealt"]
-                    or target["crits"] or target["fire"]), "INVALID_INPUT")
+                    or target["crits"] or target["fire"] or assisted), "INVALID_INPUT")
             victim = roster[tid]
             if target["spotted"]:
                 require(details["spotting_policy"] == SPOTTING_POLICY and victim["team"] != own["team"]
@@ -108,6 +112,25 @@ def _interaction_details(value):
         for tid, p in roster.items()), "INVALID_INPUT")
 
 
+def _ledger(value):
+    """One row per participant in roster order; assist equals the details the
+    native efficiency tab reads. It needs the details it agrees with."""
+    ledger = value["ledger"]
+    require(type(ledger) is dict and set(ledger) == LEDGER and "interaction_details" in value, "INVALID_INPUT")
+    require(type(ledger["version"]) is int and ledger["version"] == 1 and ledger["policy"] == LEDGER_POLICY, "INVALID_INPUT")
+    rows, participants = ledger["rows"], value["participants"]
+    require(type(rows) is list and len(rows) == len(participants), "INVALID_INPUT")
+    details = {row["attacker_vehicle_id"]: row["targets"] for row in value["interaction_details"]["rows"]}
+    for row, own in zip(rows, participants):
+        require(type(row) is dict and set(row) == LEDGER_ROW and row["vehicle_id"] == own["vehicle_id"], "INVALID_INPUT")
+        for name in ("blocked", "potential_received"): _integer(row[name], 0, 2**31 - 1)
+        for name in ("assist_spot", "assist_track", "burned"): _integer(row[name], 0, 2**32 - 1)
+        targets = details[own["vehicle_id"]]
+        require(row["blocked"] <= row["potential_received"] and row["burned"] <= own["damage_dealt"]
+            and row["assist_spot"] == sum(t["damage_assisted_radio"] for t in targets)
+            and row["assist_track"] == sum(t["damage_assisted_track"] for t in targets), "INVALID_INPUT")
+
+
 def results_value(raw):
     require(type(raw) is str and len(raw.encode("utf-8")) <= MAX_RESULT_BYTES, "INVALID_INPUT")
     try:
@@ -116,7 +139,8 @@ def results_value(raw):
             parse_constant=lambda _: (_ for _ in ()).throw(TransactionError("INVALID_INPUT")))
     except (ValueError, RecursionError, UnicodeError) as error:
         raise TransactionError("INVALID_INPUT") from error
-    require(type(value) is dict and set(value) in (HEADER, HEADER | {"interaction_details"}), "INVALID_INPUT")
+    require(type(value) is dict and set(value) in (HEADER, HEADER | {"interaction_details"},
+        HEADER | {"interaction_details", "ledger"}), "INVALID_INPUT")
     _integer(value["arena_id"], 1, 2**63 - 1)
     require(type(value["arena_type_id"]) is int and value["arena_type_id"] in registry_arena_types(), "INVALID_INPUT")
     _integer(value["created_unix"], 1, 2**32 - 1); _integer(value["winner_team"], 0, 2)
@@ -143,6 +167,7 @@ def results_value(raw):
         ids.add(row["vehicle_id"]); owners.add(row["account_dbid"]); teams.add(row["team"])
     require(teams == {1, 2}, "INVALID_INPUT")
     if "interaction_details" in value: _interaction_details(value)
+    if "ledger" in value: _ledger(value)
     require(len(canonical(value)) <= result_budget(len(rows)), "INVALID_INPUT")
     return value
 

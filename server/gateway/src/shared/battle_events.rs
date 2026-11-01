@@ -17,6 +17,9 @@ pub const HELLO_FEATURE:&[u8]=b"sr_battle_events";
 /// UI-03: a client with the feed widget asks for feed records on top of the
 /// channel. Without this hello the channel carries no feed byte.
 pub const FEED_FEATURE:&[u8]=b"sr_battle_feed";
+/// UI-04: a client with the history widget. It reads the feed records, so this
+/// hello opens them too, and adds the last record with the battle's sums.
+pub const HISTORY_FEATURE:&[u8]=b"sr_battle_history";
 const MAGIC:[u8;2]=*b"BE";
 /// One frame stays in one VAR1 argument of updateArena.
 pub const MAX_FRAME_BYTES:usize=240;
@@ -66,14 +69,19 @@ pub enum FeedKind {ShotDamage=1,RamDamage=2,Kill=3,Spotted=4,CapturePoints=5,Def
 /// `value` and `vehicle` None: this recipient may not know that fact.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct FeedEvent {pub kind:FeedKind,pub value:Option<u16>,pub vehicle:Option<usize>}
+/// UI-04: the recipient's exact sums, sent once when the outcome is fixed: the
+/// sums the channel withheld during the battle tell no single shot any more.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct BattleTotals {pub dealt:u32,pub blocked:u32,pub assist_spot:u32,pub assist_track:u32,pub burned:u32}
 #[derive(Clone,Debug,PartialEq)]
-pub enum Event {HitReceived(HitReceived),Feed(FeedEvent)}
+pub enum Event {HitReceived(HitReceived),Feed(FeedEvent),Totals(BattleTotals)}
 
 /// Event kinds of the wire. A client skips an unknown kind by its length, so
 /// UI-03/04 add kinds without a new version; a layout change bumps VERSION.
 const KIND_HELLO:u8=0;
 const KIND_HIT_RECEIVED:u8=1;
 const KIND_FEED:u8=2;
+const KIND_TOTALS:u8=3;
 
 fn hit_payload(hit:&HitReceived)->io::Result<Vec<u8>> {
     if !hit.yaw.is_finite()||hit.criticals.len()>MAX_CRITICALS||hit.blocked==Some(NO_VALUE)||hit.damage==NO_VALUE {
@@ -104,6 +112,9 @@ fn feed_payload(event:&FeedEvent)->io::Result<Vec<u8>> {
     b.extend(event.vehicle.map(wire::vehicle_id).transpose()?.unwrap_or(0).to_le_bytes());
     Ok(b)
 }
+fn totals_payload(sums:&BattleTotals)->Vec<u8> {
+    [sums.dealt,sums.blocked,sums.assist_spot,sums.assist_track,sums.burned].iter().flat_map(|sum|sum.to_le_bytes()).collect()
+}
 fn with_header(sequence:u16,count:usize,body:&[u8])->io::Result<Vec<u8>> {
     if count>MAX_EVENTS_PER_FRAME {return Err(bad("battle event count"));}
     let mut literal=MAGIC.to_vec();
@@ -126,6 +137,7 @@ pub fn frame(sequence:u16,events:&[Event])->io::Result<Vec<u8>> {
         match event {
             Event::HitReceived(hit)=>record(KIND_HIT_RECEIVED,&hit_payload(hit)?,&mut body)?,
             Event::Feed(feed)=>record(KIND_FEED,&feed_payload(feed)?,&mut body)?,
+            Event::Totals(sums)=>record(KIND_TOTALS,&totals_payload(sums),&mut body)?,
         }
     }
     with_header(sequence,events.len(),&body)
@@ -136,6 +148,8 @@ pub fn frame(sequence:u16,events:&[Event])->io::Result<Vec<u8>> {
 pub fn hello(raw:&[u8])->Option<i32> {feature(raw,HELLO_FEATURE)}
 /// The same record with the UI-03 name.
 pub fn feed_hello(raw:&[u8])->Option<i32> {feature(raw,FEED_FEATURE)}
+/// The same record with the UI-04 name.
+pub fn history_hello(raw:&[u8])->Option<i32> {feature(raw,HISTORY_FEATURE)}
 fn feature(raw:&[u8],wanted:&[u8])->Option<i32> {
     let args=raw.get(3..)?;
     let name=args.get(1..1+usize::from(*args.first()?))?;
@@ -157,16 +171,21 @@ pub struct Channel {
     sequence:u16,hello_due:bool,hellos:u8,
     window:Option<Instant>,frames:u8,
     feed:bool,pub cursors:Option<FeedCursors>,
+    history:bool,totals_sent:bool,
     /// Events not delivered by the limits; reported, never hidden.
     pub dropped:u32,
 }
 impl Channel {
-    pub fn new()->Self {Self{sequence:0,hello_due:false,hellos:0,window:None,frames:0,feed:false,cursors:None,dropped:0}}
+    pub fn new()->Self {Self{sequence:0,hello_due:false,hellos:0,window:None,frames:0,feed:false,cursors:None,history:false,totals_sent:false,dropped:0}}
     /// A repeated hello is answered again up to the bound.
     pub fn hello(&mut self) {if self.hellos<MAX_HELLOS {self.hellos+=1;self.hello_due=true;}}
     /// Asked by a client with the widget; repeats change nothing.
     pub fn open_feed(&mut self) {self.feed=true;}
     pub fn feed(&self)->bool {self.feed}
+    pub fn open_history(&mut self) {self.feed=true;self.history=true;}
+    /// True until the one totals record of this channel left.
+    pub fn totals_due(&self)->bool {self.history&&!self.totals_sent}
+    pub fn totals_sent(&mut self) {self.totals_sent=true;}
     pub fn take_hello(&mut self)->Option<u16> {
         if !std::mem::take(&mut self.hello_due) {return None;}
         Some(self.next_sequence())

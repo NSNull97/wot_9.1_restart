@@ -36,7 +36,7 @@ pub(super) fn harms(world:&World,damage_from:usize,impacts_from:usize)->io::Resu
     rows.retain(|row|row.amount>0);Ok(rows)
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub(super) enum Assist {Track,Spot}
+pub(in super::super) enum Assist {Track,Spot}
 /// Whose track on `target` is down at `tick`: (left, right) authors.
 fn track_authors(world:&World,target:usize,tick:u32)->io::Result<[Option<usize>;2]> {
     let mut authors=[None;2];
@@ -62,24 +62,55 @@ pub(super) fn assist(world:&World,recipient:usize,harm:Harm)->io::Result<Option<
         &&harm.tick>=spot.tick()&&harm.tick-spot.tick()<=SPOT_ASSIST_TICKS);
     Ok(spotted.then_some(Assist::Spot))
 }
+/// One assist earned in the battle. The native details keep them per target.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(in super::super) struct Credit {pub recipient:usize,pub target:usize,pub kind:Assist,pub amount:u16}
+/// Every credit of the journals: only the authors of a downed track and the
+/// holder of the spot credit can earn one, so the battle-end pass stays linear.
+pub(in super::super) fn credits(world:&World)->io::Result<Vec<Credit>> {
+    let mut rows=Vec::new();
+    for harm in harms(world,0,0)? {
+        let authors=track_authors(world,harm.target,harm.tick)?;
+        let spots=world.result_spots().unwrap_or(&[]).iter().filter(|spot|spot.target()==harm.target).map(|spot|spot.observer());
+        let mut seen=Vec::with_capacity(3);
+        for recipient in authors.into_iter().flatten().chain(spots) {
+            if seen.contains(&recipient) {continue;}
+            seen.push(recipient);
+            if let Some(kind)=assist(world,recipient,harm)? {rows.push(Credit{recipient,target:harm.target,kind,amount:harm.amount});}
+        }
+    }
+    Ok(rows)
+}
+/// HP the vehicle took from enemies by shell, fire and ram: the sum of its
+/// dealt feed records with the hidden targets included.
+pub(super) fn dealt(world:&World,slot:usize)->io::Result<u32> {
+    let team=world.team(slot)?;
+    let mut sum=0u32;
+    for harm in harms(world,0,0)? {
+        if harm.attacker==slot&&world.team(harm.target)?!=team {sum+=u32::from(harm.amount);}
+    }
+    for event in world.ram_damage_events.iter().filter(|e|e.attacker==slot&&e.health_after<e.health_before) {
+        if world.team(event.target)?!=team {sum+=u32::try_from(i32::from(event.health_before)-i32::from(event.health_after)).map_err(|_|model::bad())?;}
+    }
+    Ok(sum)
+}
 /// Full battle totals of one vehicle, hidden sources included: a sum at the end
-/// of a battle tells no single shot. UI-04 fills the native result fields and
-/// its history from here.
+/// of a battle tells no single shot. The native result fields of UI-04 and the
+/// last history record come from here.
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
-pub(super) struct Totals {pub blocked:u32,pub potential_received:u32,pub assist_spot:u32,pub assist_track:u32,pub burned:u32}
-#[cfg_attr(not(test),allow(dead_code))]
-pub(super) fn totals(world:&World,slot:usize)->io::Result<Totals> {
+pub(in super::super) struct Totals {pub blocked:u32,pub potential_received:u32,pub assist_spot:u32,pub assist_track:u32,pub burned:u32}
+pub(super) fn totals(world:&World,slot:usize)->io::Result<Totals> {totals_from(world,slot,&credits(world)?)}
+pub(in super::super) fn totals_from(world:&World,slot:usize,credits:&[Credit])->io::Result<Totals> {
     let mut sum=Totals::default();
     for event in world.impacts.iter().filter(|e|e.target==slot&&e.health_before>0) {
         let Some(hp)=nominal(world,event.shot).map(u32::from) else {continue;};
         sum.potential_received+=hp;
         if armor_stopped(event) {sum.blocked+=hp;}
     }
-    for harm in harms(world,0,0)? {
-        match assist(world,slot,harm)? {
-            Some(Assist::Track)=>sum.assist_track+=u32::from(harm.amount),
-            Some(Assist::Spot)=>sum.assist_spot+=u32::from(harm.amount),
-            None=>{},
+    for credit in credits.iter().filter(|credit|credit.recipient==slot) {
+        match credit.kind {
+            Assist::Track=>sum.assist_track+=u32::from(credit.amount),
+            Assist::Spot=>sum.assist_spot+=u32::from(credit.amount),
         }
     }
     for event in world.damage_events.iter().filter(|e|e.reason==1&&e.attacker==slot&&e.target!=slot) {

@@ -145,6 +145,8 @@ impl State {
             bases: std::array::from_fn(|i| Progress { owner: i as u8 + 1,
                 points: (self.progress[i] / 1_000) as u8, stopped: self.stopped[i] }), outcome: self.outcome }
     }
+    #[cfg(test)]
+    pub(super) fn finish_for_test(&mut self, winner: u8, reason: Reason) { self.finish(winner, reason, 0); }
     fn finish(&mut self, winner: u8, reason: Reason, now_ms: u64) {
         self.outcome = Some(Outcome { winner, reason, ended_ms: now_ms });
         self.phase = Phase::Afterbattle;

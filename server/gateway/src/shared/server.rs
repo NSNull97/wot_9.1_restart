@@ -18,7 +18,7 @@ mod p06t_publication;
 #[path="battle_events_publication.rs"]
 mod battle_events_publication;
 #[path="battle_ledger.rs"]
-mod battle_ledger;
+pub(super) mod battle_ledger;
 #[path="sixth_sense_wire.rs"]
 mod sixth_sense_wire;
 #[cfg(test)]
@@ -72,6 +72,9 @@ mod ui02_tests;
 #[cfg(test)]
 #[path="server_ui03_tests.rs"]
 mod ui03_tests;
+#[cfg(test)]
+#[path="server_ui04_tests.rs"]
+mod ui04_tests;
 #[cfg(test)]
 #[path="server_net01_bench.rs"]
 mod net01_bench;
@@ -1626,6 +1629,12 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         battle_template.select(&mut world,&mut integrated,started)?;
         println!("P08C_FIRST_SPOT_BOUND policy={}", model::result_spots::POLICY);
     }
+    if config.results_ledger{
+        if !profile13_mode{return Err(model::bad().into());}
+        battle_template.world.enable_result_ledger()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("UI04_RESULT_LEDGER_BOUND policy={}",super::lifecycle_wire::LEDGER_POLICY);
+    }
     if config.p06t_ammo_rack_detonation{
         if !profile13_mode||!config.p06t_mixed_ammo||!config.visibility_v1||qualification.is_some(){return Err(model::bad().into());}
         battle_template.world.enable_ammo_detonation()?;
@@ -1743,7 +1752,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
                         if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
                         s.shared.as_mut().ok_or_else(||model::bad())?.set_pose_delivery(config.pose_delivery)?;
-                        if config.battle_events {s.shared.as_mut().ok_or_else(||model::bad())?.enable_battle_events(config.battle_feed)?;}
+                        if config.battle_events {s.shared.as_mut().ok_or_else(||model::bad())?.enable_battle_events(config.battle_feed,config.battle_history)?;}
                         if profile13_mode {
                             let binding=accepted.ammo_service.ok_or_else(||model::bad())?;
                             s.ammo_service=Some(ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
@@ -1985,6 +1994,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                                 template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
                                 template.world.enable_result_spots()?;
                             }
+                            if config.results_ledger {template.world.enable_result_ledger()?;}
                             template.select(&mut a.world,&mut a.integrated,now)?;Ok(template)
                         })();
                         match switched {

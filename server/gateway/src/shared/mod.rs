@@ -190,6 +190,8 @@ pub(super) struct Client {
     battle_events: Option<battle_events::Channel>,
     /// UI-03: gateway.json `battle_events.feed`.
     battle_feed_enabled: bool,
+    /// UI-04: gateway.json `battle_events.history`.
+    battle_history_enabled: bool,
     return_generation: u32,
     return_mask: u8,
     join_requested: bool,
@@ -212,7 +214,7 @@ impl Client {
             pose_delivery: net01::PoseDelivery::Reliable, poses_out: Vec::new(), pose_stats: net01::PoseStats::default(),
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:[None;model::MAX_ACTORS],armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
-            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, battle_feed_enabled: false, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
+            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, battle_feed_enabled: false, battle_history_enabled: false, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -225,10 +227,12 @@ impl Client {
         let pose_delivery = self.pose_delivery;
         let battle_events_enabled = self.battle_events_enabled;
         let battle_feed_enabled = self.battle_feed_enabled;
+        let battle_history_enabled = self.battle_history_enabled;
         *self = Self::new(slot);
         self.pose_delivery = pose_delivery;
         self.battle_events_enabled = battle_events_enabled;
         self.battle_feed_enabled = battle_feed_enabled;
+        self.battle_history_enabled = battle_history_enabled;
         self.return_generation = generation;
         self.queue_announced = queue_announced;
         self.profile13 = profile13;
@@ -296,9 +300,9 @@ impl Client {
     }
     pub(super) fn pose_delivery(&self) -> net01::PoseDelivery { self.pose_delivery }
     /// UI-02: needs recipient visibility; chosen before a battle.
-    pub(super) fn enable_battle_events(&mut self,feed:bool) -> io::Result<()> {
+    pub(super) fn enable_battle_events(&mut self,feed:bool,history:bool) -> io::Result<()> {
         if self.phase!=Phase::Account || !self.spotting_enabled { return Err(bad()); }
-        self.battle_events_enabled=true;self.battle_feed_enabled=feed;Ok(())
+        self.battle_events_enabled=true;self.battle_feed_enabled=feed;self.battle_history_enabled=history;Ok(())
     }
     /// Bodies of the newest unsent pose; empty unless latest-unreliable.
     pub(super) fn take_poses(&mut self) -> Vec<Vec<u8>> { std::mem::take(&mut self.poses_out) }
@@ -874,6 +878,12 @@ impl Session {
                 let accepted=version==i32::from(battle_events::VERSION);
                 if accepted {c.battle_events.get_or_insert_with(battle_events::Channel::new).open_feed();}
                 events.push(format!("BATTLE_FEED_HELLO session={} version={version} accepted={accepted}",self.id));
+                continue;
+            }
+            if let Some(version)=(id==0xa1&&c.battle_history_enabled).then(||battle_events::history_hello(raw)).flatten() {
+                let accepted=version==i32::from(battle_events::VERSION);
+                if accepted {c.battle_events.get_or_insert_with(battle_events::Channel::new).open_history();}
+                events.push(format!("BATTLE_HISTORY_HELLO session={} version={version} accepted={accepted}",self.id));
                 continue;
             }
             if let Some(method)=wire::unimplemented_exposed(id) {

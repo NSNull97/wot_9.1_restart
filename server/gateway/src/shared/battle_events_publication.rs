@@ -225,5 +225,16 @@ fn publish_on(channel:&mut Channel,c:&Client,outbox:&mut VecDeque<Vec<u8>>,world
             None=>log.push(format!("BATTLE_EVENTS_DROPPED battle={} slot={} events={} total_dropped={}",world.id,c.slot,batch.len(),channel.dropped)),
         }
     }
+    // UI-04: a frame the limits refused is due again at the next pass.
+    if channel.totals_due()&&world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {
+        if let Some(sequence)=channel.admit(now,outbox.len(),1) {
+            let sum=battle_ledger::totals(world,c.slot)?;
+            let dealt=battle_ledger::dealt(world,c.slot)?;
+            outbox.push_back(battle_events::frame(sequence,&[Event::Totals(battle_events::BattleTotals{dealt,blocked:sum.blocked,
+                assist_spot:sum.assist_spot,assist_track:sum.assist_track,burned:sum.burned})])?);
+            channel.totals_sent();
+            log.push(format!("BATTLE_HISTORY_TOTALS battle={} slot={} sequence={sequence} recipient_only=true",world.id,c.slot));
+        }
+    }
     Ok(())
 }

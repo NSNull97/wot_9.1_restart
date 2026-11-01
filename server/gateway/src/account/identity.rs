@@ -297,6 +297,10 @@ pub struct Config {
     pub battle_events:bool,
     /// UI-03: `battle_events.feed` (absent: the channel carries no feed record).
     pub battle_feed:bool,
+    /// UI-04: `battle_events.history` (absent: no history hello, no totals record).
+    pub battle_history:bool,
+    /// UI-04: `results_ledger` (absent: results keep the zero native fields).
+    pub results_ledger:bool,
     /// BW-01: each arena steps in its own worker process (absent: arenas in this process, old path).
     pub battle_worker:Option<BattleWorker>,
 }
@@ -505,23 +509,31 @@ impl Config {
         if pose_delivery==crate::gateway091::shared::net01::PoseDelivery::LatestUnreliable&&!visibility_v1{
             return Err(invalid("latest-unreliable poses require visibility_v1"));
         }
-        let (battle_events,battle_feed)=match value.remove("battle_events"){
-            None=>(false,false),
+        let (battle_events,battle_feed,battle_history)=match value.remove("battle_events"){
+            None=>(false,false,false),
             Some(Value::Object(mut fields))=>{
                 let version=fields.remove("version").and_then(|v|v.as_u64());
-                let feed=match fields.remove("feed"){
+                let mut flag=|name:&str|match fields.remove(name){
                     None=>Some(false),
-                    Some(Value::Bool(feed))=>Some(feed),
+                    Some(Value::Bool(flag))=>Some(flag),
                     Some(_)=>None,
                 };
-                if version!=Some(u64::from(crate::gateway091::shared::battle_events::VERSION))||!fields.is_empty()||feed.is_none(){
-                    return Err(invalid("battle_events must be {\"version\":1} with an optional boolean feed"));
+                let(feed,history)=(flag("feed"),flag("history"));
+                if version!=Some(u64::from(crate::gateway091::shared::battle_events::VERSION))||!fields.is_empty()||feed.is_none()||history.is_none(){
+                    return Err(invalid("battle_events must be {\"version\":1} with optional boolean feed and history"));
                 }
                 if !visibility_v1{return Err(invalid("battle_events require visibility_v1"));}
-                (true,feed==Some(true))
+                if history==Some(true)&&feed!=Some(true){return Err(invalid("battle_events.history requires feed: it reads the feed records"));}
+                (true,feed==Some(true),history==Some(true))
             },
             _=>return Err(invalid("battle_events must be an object")),
         };
+        let results_ledger=match value.remove("results_ledger"){
+            None=>false,
+            Some(Value::Bool(enabled))=>enabled,
+            _=>return Err(invalid("results_ledger must be a boolean")),
+        };
+        if results_ledger&&!profile13_battle{return Err(invalid("results_ledger requires profile13 battle"));}
         // BW-01: the training/hold5 hosts keep the scene runtime on the gateway thread.
         let battle_worker=value.remove("battle_worker").map(|v|BattleWorker::parse(&v)).transpose()?;
         if battle_worker.is_some()&&(!profile13_battle||training_rooms||p08b_owner_battle_hold){
@@ -565,7 +577,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_events,battle_feed,battle_worker})
+        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_events,battle_feed,battle_history,results_ledger,battle_worker})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -1235,6 +1247,10 @@ mod tests {
         let mut feed=events.clone();feed["battle_events"]=serde_json::json!({"version":1,"feed":true});assert!(load(&feed).unwrap().battle_feed);
         feed["battle_events"]=serde_json::json!({"version":1,"feed":false});assert!(!load(&feed).unwrap().battle_feed);
         feed["battle_events"]=serde_json::json!({"version":1,"feed":1});assert!(load(&feed).is_err());
+        feed["battle_events"]=serde_json::json!({"version":1,"feed":true,"history":true});assert!(load(&feed).unwrap().battle_history);
+        feed["battle_events"]=serde_json::json!({"version":1,"history":true});
+        assert!(load(&feed).err().unwrap().to_string().contains("history requires feed"));
+        feed["battle_events"]=serde_json::json!({"version":1,"feed":true,"history":1});assert!(load(&feed).is_err());
         for bad in [serde_json::json!({"version":2}),serde_json::json!({}),serde_json::json!({"version":1,"x":1}),serde_json::json!(true)]{
             let mut wrong=events.clone();wrong["battle_events"]=bad.clone();
             assert!(load(&wrong).err().unwrap().to_string().contains("battle_events"),"{bad}");

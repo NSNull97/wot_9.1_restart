@@ -15,7 +15,7 @@ impl Target {
     fn empty(vehicle_id:u32)->Self{Self{vehicle_id,death_reason:-1,..Self::default()}}
     fn has_facts(&self)->bool{self.spotted!=0||self.death_reason!=-1||self.direct_hits!=0
         ||self.explosion_hits!=0||self.piercings!=0||self.damage_dealt!=0
-        ||self.crits!=0||self.fire!=0}
+        ||self.crits!=0||self.fire!=0||self.damage_assisted_track!=0||self.damage_assisted_radio!=0}
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Row{pub attacker_vehicle_id:u32,pub targets:Vec<Target>}
@@ -47,9 +47,18 @@ pub struct Spot{pub observer:usize,pub target:usize,pub tick:u32}
 /// This is presentation only; the authoritative device journal remains in World.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Module{pub attacker:usize,pub target:usize,pub extra_index:u8,pub critical:bool,pub fire:bool}
+/// UI-04: HP an ally took from one enemy with the help of `recipient`.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct Assisted{pub recipient:usize,pub target:usize,pub track:u16,pub radio:u16}
 fn add(v:&mut u16,n:u16)->io::Result<()>{*v=v.checked_add(n).ok_or_else(bad)?;Ok(())}
 impl Details {
+    /// A journal without the ledger holds no assist number.
     pub fn validate(&self,roster:&[Summary])->io::Result<()>{
+        if self.rows.iter().flat_map(|row|&row.targets).any(|t|t.damage_assisted_track!=0||t.damage_assisted_radio!=0){return Err(bad());}
+        self.validate_assisted(roster)
+    }
+    /// Only ledger results reach this: assist goes to an enemy of the row's owner.
+    pub fn validate_assisted(&self,roster:&[Summary])->io::Result<()>{
         if !(2..=MAX_ACTORS).contains(&roster.len())||self.version!=1||self.policy!=POLICY
             ||self.spotting_policy.as_deref().is_some_and(|p|p!=SPOTTING_POLICY)
             ||self.rows.len()!=roster.len(){return Err(bad());}
@@ -65,7 +74,7 @@ impl Details {
             for t in &row.targets{
                 let target=roster.iter().find(|s|s.vehicle_id==t.vehicle_id).ok_or_else(bad)?;
                 if t.vehicle_id<=previous||t.spotted>1||!(-1..=10).contains(&t.death_reason)
-                    ||t.piercings>t.direct_hits||t.damage_assisted_track!=0||t.damage_assisted_radio!=0
+                    ||t.piercings>t.direct_hits||(t.damage_assisted_track!=0||t.damage_assisted_radio!=0)&&own.team==target.team
                     ||t.crits>192||t.fire>10||!t.has_facts(){return Err(bad());}
                 previous=t.vehicle_id;
                 if t.spotted!=0&&(self.spotting_policy.is_none()||own.team==target.team
@@ -204,6 +213,27 @@ pub fn apply_module_facts(details:&mut Details,roster:&[Summary],modules:&[Modul
         }
     }
     next.validate(roster)?;
+    *details=next;
+    Ok(())
+}
+/// Add the ledger's assist numbers to a validated snapshot. One target's HP
+/// bounds them well inside the native u16.
+pub fn apply_assists(details:&mut Details,roster:&[Summary],assists:&[Assisted])->io::Result<()> {
+    if assists.len()>MAX_ACTORS*MAX_ACTORS{return Err(bad());}
+    let mut next=details.clone();
+    for assisted in assists {
+        if assisted.recipient>=roster.len()||assisted.target>=roster.len(){return Err(bad());}
+        let target_id=roster[assisted.target].vehicle_id;
+        let row=next.rows.iter_mut().find(|row|row.attacker_vehicle_id==roster[assisted.recipient].vehicle_id).ok_or_else(bad)?;
+        if !row.targets.iter().any(|target|target.vehicle_id==target_id) {
+            row.targets.push(Target::empty(target_id));
+            row.targets.sort_by_key(|target|target.vehicle_id);
+        }
+        let target=row.targets.iter_mut().find(|target|target.vehicle_id==target_id).ok_or_else(bad)?;
+        add(&mut target.damage_assisted_track,assisted.track)?;
+        add(&mut target.damage_assisted_radio,assisted.radio)?;
+    }
+    next.validate_assisted(roster)?;
     *details=next;
     Ok(())
 }
