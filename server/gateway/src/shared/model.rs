@@ -1336,9 +1336,12 @@ impl World {
                             if self.mixed_profiles {
                                 let mut selected:Option<(f32,usize)>=None;
                                 for (slot,actor) in next_actors.iter().enumerate().filter(|(slot,_)|*slot!=projectile.slot) {
-                                    let mesh=self.geometry_for(actor.vehicle_kind())?.world_mesh(actor,slot,tick)?;
-                                    let hits=super::collision::query(&mesh,start_point,end_point)?;
-                                    let t=hits.first().map_or(f32::INFINITY,|hit|hit.t);
+                                    // Building and querying all 29 meshes per segment made the battle's step peaks (PERF-02).
+                                    let geometry=self.geometry_for(actor.vehicle_kind())?;
+                                    let t=if geometry.segment_misses(actor,slot,tick,start_point,end_point)? {f32::INFINITY} else {
+                                        let mesh=geometry.world_mesh(actor,slot,tick)?;
+                                        super::collision::query(&mesh,start_point,end_point)?.first().map_or(f32::INFINITY,|hit|hit.t)
+                                    };
                                     if selected.is_none_or(|(old_t,old_slot)|t<old_t||(t==old_t&&slot<old_slot)){selected=Some((t,slot));}
                                 }
                                 target_slot=selected.ok_or_else(||bad())?.1;

@@ -126,6 +126,8 @@ fn bot01_bench_real_scene(){
     let step_parts=names.iter().zip(&parts).map(|(n,v)|(n.to_string(),serde_json::json!({"ms_per_domain_step":v.iter().sum::<f64>()/battle_steps,"loop":summary(v.clone())}))).collect::<serde_json::Map<_,_>>();
     // The slowest 1% of battle loops: mean of each part inside them.
     heavy.sort_by(|a,b|b[0].total_cmp(&a[0]));let top=&heavy[..heavy.len().div_ceil(100)];
+    // The five slowest loops one by one: a mean of 1% hides what a peak is made of.
+    let peaks=heavy.iter().take(5).map(|r|serde_json::json!({"step":r[0],"scene_step":r[1],"advance":r[3],"projectiles":r[4],"spotting":r[5],"bots":r[8],"lifecycle":r[9],"turret_flights":r[10]})).collect::<Vec<_>>();
     let top_mean=|i:usize|top.iter().map(|r|r[i]).sum::<f64>()/top.len().max(1) as f64;
     let slowest=serde_json::json!({"loops":top.len(),"step":top_mean(0),"scene_step":top_mean(1),"scene_world_clone":top_mean(2),"advance":top_mean(3),
         "projectiles":top_mean(4),"spotting":top_mean(5),"spotting_actors":top_mean(6),"spotting_rays":top_mean(7),"bots":top_mean(8),"lifecycle":top_mean(9),"turret_flights":top_mean(10)});
@@ -149,11 +151,11 @@ fn bot01_bench_real_scene(){
             "killed_at_s":killed.map(|k|k.1),"scene_process_alive_5s_after_kill":jolt_after_kill})),
         "physics":{"pid":pid,"cpu_s":cpu(pid),"cpu_ms_per_domain_step":cpu(pid).map(|c|c*1000./steps),"cpu_share_of_one_core":cpu(pid).map(|c|c/interval),
             "working_set_end":last_row.1.get(&pid).map(|v|v.1),"working_set_peak":peak.get(&pid)},
-        "step_parts":step_parts,"slowest_1pct_loops_mean_ms":slowest,
+        "step_parts":step_parts,"slowest_1pct_loops_mean_ms":slowest,"slowest_loops_ms":peaks,
         "bot_think_ms_per_domain_step":w.bot_think_ns() as f64/1e6/w.tick.saturating_sub(start_tick).max(1) as f64,
         "behaviour":{"bot_shots":w.bot_shots(),"bot_stucks":w.bot_stucks(),"shots_total":w.shots.len(),"damage_rows_by_bots":by_bots,"vehicles_dead":dead,
             "bots_moved_over_50m":moved.iter().filter(|m|**m>50.).count(),"bot_moved_m_max":moved.iter().copied().fold(0f32,f32::max),
-            "max_abs_xz":max_abs,"digest":w.bot_digest().map(|d|format!("{d:016x}")),
+            "max_abs_xz":max_abs,"destructibles_removed":w.fragiles.as_ref().map(|f|f.scene_version()),"digest":w.bot_digest().map(|d|format!("{d:016x}")),
             "outcome":w.lifecycle.as_ref().and_then(|l|l.outcome()).map(|o|format!("{o:?}"))},
         "failure":failure,
     });
