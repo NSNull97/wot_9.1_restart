@@ -72,6 +72,7 @@ pub(crate) mod ap;
 mod account_policy;
 mod impact_wire;
 mod av01_feedback;
+pub(crate) mod battle_events;
 pub(crate) mod terrain;
 pub(crate) mod obstacles;
 mod terrain_wire;
@@ -183,6 +184,10 @@ pub(super) struct Client {
     engine_sent: [Option<[u8; 2]>; model::MAX_ACTORS],
     stickers_sent: [Option<Vec<u64>>; model::MAX_ACTORS],
     scout_cursor: usize,
+    /// UI-02: gateway.json `battle_events` (kept across battles, like spotting)
+    /// and the channel a prepared client opened in this battle.
+    battle_events_enabled: bool,
+    battle_events: Option<battle_events::Channel>,
     return_generation: u32,
     return_mask: u8,
     join_requested: bool,
@@ -205,7 +210,7 @@ impl Client {
             pose_delivery: net01::PoseDelivery::Reliable, poses_out: Vec::new(), pose_stats: net01::PoseStats::default(),
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:[None;model::MAX_ACTORS],armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
-            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
+            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -216,8 +221,10 @@ impl Client {
         let return_source_revision = self.return_source_revision;
         let spotting_enabled = self.spotting_enabled;
         let pose_delivery = self.pose_delivery;
+        let battle_events_enabled = self.battle_events_enabled;
         *self = Self::new(slot);
         self.pose_delivery = pose_delivery;
+        self.battle_events_enabled = battle_events_enabled;
         self.return_generation = generation;
         self.queue_announced = queue_announced;
         self.profile13 = profile13;
@@ -284,6 +291,11 @@ impl Client {
         self.pose_delivery=mode;Ok(())
     }
     pub(super) fn pose_delivery(&self) -> net01::PoseDelivery { self.pose_delivery }
+    /// UI-02: needs recipient visibility; chosen before a battle.
+    pub(super) fn enable_battle_events(&mut self) -> io::Result<()> {
+        if self.phase!=Phase::Account || !self.spotting_enabled { return Err(bad()); }
+        self.battle_events_enabled=true;Ok(())
+    }
     /// Bodies of the newest unsent pose; empty unless latest-unreliable.
     pub(super) fn take_poses(&mut self) -> Vec<Vec<u8>> { std::mem::take(&mut self.poses_out) }
     pub(super) fn take_pose_stats(&mut self) -> net01::PoseStats { std::mem::take(&mut self.pose_stats) }
@@ -843,6 +855,14 @@ impl Session {
             // INPUT-01: unframed IDs were already refused by the pre-scan.
             let size = record_size(payload, at)?.ok_or_else(|| bad())?;
             let raw = payload.get(at..at+size).ok_or_else(|| bad())?; at += size;
+            if let Some(version)=(id==0xa1&&c.battle_events_enabled).then(||battle_events::hello(raw)).flatten() {
+                // UI-02: only this name from a prepared client opens the channel;
+                // without the gateway key the record stays an unsupported one.
+                let accepted=version==i32::from(battle_events::VERSION);
+                if accepted {c.battle_events.get_or_insert_with(battle_events::Channel::new).hello();}
+                events.push(format!("BATTLE_EVENTS_HELLO session={} version={version} accepted={accepted}",self.id));
+                continue;
+            }
             if let Some(method)=wire::unimplemented_exposed(id) {
                 // Exposed but not implemented here: skip exactly this record.
                 // No reply is invented (Avatar onCmdResponse is unmeasured).

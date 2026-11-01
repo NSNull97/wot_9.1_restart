@@ -207,3 +207,8 @@
 - [CAT-01 единый каталог](CAT01_SINGLE_CATALOG.md) — один каталог с SHA-256 из пинов клиента и серверных профилей, генерации Rust/Python/JS/Py2.7, допуск `battle_admission` за флагом; native NOT_RUN.
 
 - [DOM-01 Domain service](DOM01_DOMAIN_SERVICE.md) — один долгоживущий писатель аккаунт-агрегатов (протокол wot091-domain.v1, флаги шлюза/bridge), ответы = байты воркера, замеры до/после, тяжёлый аккаунт 192 — остаток; native NOT_RUN.
+
+# BATTLE-UI
+
+- [BATTLE_UI.md](BATTLE_UI.md) — статическое исследование боевого интерфейса,
+  настройки и границы доказательств; native и полнота поиска NOT_RUN/UNKNOWN.

@@ -293,6 +293,8 @@ pub struct Config {
     pub matchmaker:Option<crate::gateway091::shared::matchmaker::Rules>,
     /// NET-01: `pose_delivery` (absent: reliable poses, one reliable body per loop — the old path).
     pub pose_delivery:crate::gateway091::shared::net01::PoseDelivery,
+    /// UI-02: `battle_events` (absent: no project channel, the old path).
+    pub battle_events:bool,
     /// BW-01: each arena steps in its own worker process (absent: arenas in this process, old path).
     pub battle_worker:Option<BattleWorker>,
 }
@@ -501,6 +503,18 @@ impl Config {
         if pose_delivery==crate::gateway091::shared::net01::PoseDelivery::LatestUnreliable&&!visibility_v1{
             return Err(invalid("latest-unreliable poses require visibility_v1"));
         }
+        let battle_events=match value.remove("battle_events"){
+            None=>false,
+            Some(Value::Object(mut fields))=>{
+                let version=fields.remove("version").and_then(|v|v.as_u64());
+                if version!=Some(u64::from(crate::gateway091::shared::battle_events::VERSION))||!fields.is_empty(){
+                    return Err(invalid("battle_events must be {\"version\":1}"));
+                }
+                if !visibility_v1{return Err(invalid("battle_events require visibility_v1"));}
+                true
+            },
+            _=>return Err(invalid("battle_events must be an object")),
+        };
         // BW-01: the training/hold5 hosts keep the scene runtime on the gateway thread.
         let battle_worker=value.remove("battle_worker").map(|v|BattleWorker::parse(&v)).transpose()?;
         if battle_worker.is_some()&&(!profile13_battle||training_rooms||p08b_owner_battle_hold){
@@ -544,7 +558,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_worker})
+        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_events,battle_worker})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -1195,6 +1209,13 @@ mod tests {
             "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
         let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
         assert_eq!(load(&base).unwrap().pose_delivery,PoseDelivery::Reliable);
+        assert!(!load(&base).unwrap().battle_events);
+        let mut events=base.clone();events["battle_events"]=serde_json::json!({"version":1});
+        assert!(load(&events).is_err(),"needs visibility_v1");
+        events["visibility_v1"]=true.into();assert!(load(&events).unwrap().battle_events);
+        for bad in [serde_json::json!({"version":2}),serde_json::json!({}),serde_json::json!({"version":1,"x":1}),serde_json::json!(true)]{
+            let mut wrong=events.clone();wrong["battle_events"]=bad.clone();assert!(load(&wrong).is_err(),"{bad}");
+        }
         let mut burst=base.clone();burst["pose_delivery"]="reliable-burst-v1".into();
         assert_eq!(load(&burst).unwrap().pose_delivery,PoseDelivery::ReliableBurst);
         burst["pose_delivery"]="reliable-burst-v2".into();assert_eq!(load(&burst).unwrap().pose_delivery,PoseDelivery::ReliableBurstV2);

@@ -15,6 +15,8 @@ mod batch_scene;
 use batch_scene::BatchRuntime;
 #[path="p06t_publication.rs"]
 mod p06t_publication;
+#[path="battle_events_publication.rs"]
+mod battle_events_publication;
 #[path="sixth_sense_wire.rs"]
 mod sixth_sense_wire;
 #[cfg(test)]
@@ -62,6 +64,9 @@ mod net01_tests;
 #[cfg(test)]
 #[path="server_av01_tests.rs"]
 mod av01_tests;
+#[cfg(test)]
+#[path="server_ui02_tests.rs"]
+mod ui02_tests;
 #[cfg(test)]
 #[path="server_net01_bench.rs"]
 mod net01_bench;
@@ -1733,6 +1738,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
                         if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
                         s.shared.as_mut().ok_or_else(||model::bad())?.set_pose_delivery(config.pose_delivery)?;
+                        if config.battle_events {s.shared.as_mut().ok_or_else(||model::bad())?.enable_battle_events()?;}
                         if profile13_mode {
                             let binding=accepted.ammo_service.ok_or_else(||model::bad())?;
                             s.ammo_service=Some(ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
@@ -2352,6 +2358,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let mut anonymous_tracers = Vec::new();
     let mut impact_from = usize::MAX;
     let mut impact_publications = Vec::new();
+    let mut battle_event_lines = Vec::new();
     let prior_projectile_count = world.projectiles.len();
     if c.phase == Phase::Driving {
         if let Some(state)=&next_world.fragiles{
@@ -2458,6 +2465,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     tracer_stops.push((projectile.sequence, projectile.slot));
                 }
             }
+            if c.spotting_enabled {battle_events_publication::publish(c,&mut next.outbox,&next_world,now,&mut battle_event_lines)?;}
             impact_from = c.impact_cursor;
             for event in next_world.impacts.iter().skip(c.impact_cursor) {
                 let shot_index = event.shot.checked_sub(1).ok_or_else(|| model::bad())? as usize;
@@ -2648,6 +2656,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     }
     *world = next_world; *s = next;
     for event in turret_events{println!("{event}");}
+    for line in battle_event_lines{println!("{line}");}
     Ok(())
 }
 

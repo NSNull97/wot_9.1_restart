@@ -25,7 +25,7 @@ fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidDat
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Period {Waiting=1,Prebattle=2,Battle=3,Afterbattle=4}
 
-fn update(kind:u8,literal:Vec<u8>)->io::Result<Vec<u8>> {
+pub(super) fn update(kind:u8,literal:Vec<u8>)->io::Result<Vec<u8>> {
     if literal.is_empty()||literal.len()>252{return Err(bad("lifecycle arena update size"));}
     let mut out=vec![0x13,0x58,(literal.len()+2) as u8,kind,literal.len() as u8];
     out.extend(literal);Ok(out)
