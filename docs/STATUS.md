@@ -661,3 +661,15 @@ ram publication (213 коммитов над main). Каждая карточк�
   закрылся без исключения и дампа после пяти боёв в одном запуске, сервер ошибок не записал — причина
   UNKNOWN (INFERRED: память 32-битного клиента), не повторилось. CAT-NATIONS native: FV215b, 113, Bat — PASS.
 - Откат: `git revert -m 1 <merge>`.
+
+## LATE-NOTICE-01 — кэш итогов боя клиента — принят владельцем, в main — 2026-11-01
+
+- #717 `BattleResultsCache` вычисляет `CACHE_DIR` при импорте из нативного пути настроек
+  (`Wargaming.net/WorldOfTanks/D:/…`), до подмены getter патчем профиля, и каждое `save()` падало
+  `WindowsError 123`. `client_patch/project_preferences.py` переносит `CACHE_DIR` в
+  `<profile>/battle_results`, принимая только измеренное нативное или собственное значение.
+- Тесты `tests.test_project_preferences`: Python 3 и 2.7 — 9 OK (1 skip).
+- Native (владелец, стенд -12, клиент a `install-a-18`): трасса записала перенаправление; после полного
+  боя `63535897693681792` в кэше создан `.dat`, исключений `BattleResultsCache` нет — PASS.
+- Уведомления о боях этим не включаются: сервер шлёт их только с LATE-BOTS и
+  `p08c_late_notice_experimental` (сейчас false). Откат: `git revert -m 1 <merge>` и переустановка патча.
