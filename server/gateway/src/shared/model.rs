@@ -688,6 +688,11 @@ impl World {
         self.result_spots=Some(Vec::new());Ok(())
     }
     pub(super) fn result_spots(&self)->Option<&[result_spots::SpotRecord]>{self.result_spots.as_deref()}
+    /// Slots 0 and 2 against slot 1, whatever the roster template said.
+    #[cfg(test)]
+    pub(super) fn push_test_team_plan(&mut self){
+        self.team_plan=Some(super::p10b_team_plan::TeamPlan::new(&[1,2,1]).unwrap());
+    }
     #[cfg(test)]
     pub(super) fn push_test_spot(&mut self,observer:usize,target:usize,tick:u32){
         self.result_spots.get_or_insert_with(Vec::new).push(result_spots::SpotRecord::for_test(observer,target,tick));

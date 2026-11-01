@@ -45,10 +45,13 @@ ROWS_TABLE = {'received': (RED, CROSS, 'Получен урон', False),
               'track': (GREEN, TRACK, 'Сбитие гусеницы', False),
               'critical': (GREEN, GEAR, 'Критический урон', False),
               'shot': (GREEN, CROSS, 'Урон выстрелом', True),
-              'ignition': (GREEN, FLAME, 'Поджог', False)}
+              'ignition': (GREEN, FLAME, 'Поджог', False),
+              'assist_spot': (GREEN, EYE, 'Урон по разведанным', True),
+              'assist_track': (GREEN, TRACK, 'Урон по обездвиженным', True)}
 # Wire numbers of battle_events::FeedKind.
 FEED_ROWS = {1: 'shot', 2: 'ram', 3: 'kill', 4: 'spotted', 5: 'capture', 6: 'defence', 7: 'ignition',
-             8: 'ignition', 9: 'critical', 10: 'track', 11: 'received', 12: 'received', 13: 'received_critical'}
+             8: 'ignition', 9: 'critical', 10: 'track', 11: 'received', 12: 'received', 13: 'received_critical',
+             14: 'assist_spot', 15: 'assist_track'}
 
 # Values for UI-05: key, allowed values, default; one switch per row, as in the
 # owner's target settings, plus the two text switches. Applied by apply_options

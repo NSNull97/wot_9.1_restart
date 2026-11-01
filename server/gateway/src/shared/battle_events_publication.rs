@@ -53,7 +53,7 @@ fn hit_events(c:&Client,world:&World)->io::Result<Vec<(u32,Event)>> {
         // shooter the recipient sees. A hidden shooter's shell would tell its
         // gun, and the old MS-1 laboratory shots have no catalog shell: absent.
         let blocked=(damage==0&&matches!(verdict,Verdict::NotPierced|Verdict::Ricochet)&&source!=Source::Hidden)
-            .then(||world.projectiles.iter().find(|p|p.sequence==event.shot).and_then(|p|p.shell).map(|shell|shell.damage_hp)).flatten();
+            .then(||battle_ledger::nominal(world,event.shot)).flatten();
         rows.push((event.tick,Event::HitReceived(HitReceived{shot:event.shot,yaw,damage,blocked,verdict,
             friendly:friendly(world,c.slot,event.attacker)?,fatal:event.health_after<=0,source,criticals:criticals(c,world,event.shot)})));
     }
@@ -133,6 +133,20 @@ impl Feed<'_> {
         }
         Ok(())
     }
+    /// An ally's damage this recipient helped with: a hidden target gives the
+    /// event only, the sum stays in the end-of-battle totals.
+    fn assists(&mut self,cursors:&FeedCursors)->io::Result<()> {
+        let(c,world)=(self.c,self.world);
+        for harm in battle_ledger::harms(world,cursors.damage,cursors.impacts)? {
+            let kind=match battle_ledger::assist(world,c.slot,harm)? {
+                Some(battle_ledger::Assist::Track)=>FeedKind::AssistTrack,
+                Some(battle_ledger::Assist::Spot)=>FeedKind::AssistSpot,
+                None=>continue,
+            };
+            self.dealt(harm.tick,kind,harm.target,harm.amount)?;
+        }
+        Ok(())
+    }
     /// Modules of another vehicle are facts about it: a hidden one gives none.
     /// Shell-caused own modules travel inside HitReceived, fire-caused do here.
     fn devices(&mut self,cursors:&FeedCursors)->io::Result<()> {
@@ -183,7 +197,7 @@ fn current_cursors(c:&Client,world:&World)->FeedCursors {
 fn feed_events(channel:&mut Channel,c:&Client,world:&World,rows:&mut Vec<(u32,Event)>)->io::Result<()> {
     let Some(cursors)=channel.cursors.replace(current_cursors(c,world)) else {return Ok(());};
     let mut feed=Feed{c,world,rows:std::mem::take(rows)};
-    feed.shells(&cursors)?;feed.rams(&cursors)?;feed.devices(&cursors)?;feed.ledgers(&cursors);
+    feed.shells(&cursors)?;feed.rams(&cursors)?;feed.devices(&cursors)?;feed.assists(&cursors)?;feed.ledgers(&cursors);
     *rows=feed.rows;Ok(())
 }
 /// Runs before the native callbacks of this pass: a prepared client knows the

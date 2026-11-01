@@ -61,7 +61,8 @@ pub struct HitReceived {
 /// lists what the server does not model and therefore has no kind here.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum FeedKind {ShotDamage=1,RamDamage=2,Kill=3,Spotted=4,CapturePoints=5,DefencePoints=6,
-    Ignition=7,FireDamage=8,Critical=9,TrackDown=10,RamReceived=11,FireReceived=12,FireCritical=13}
+    Ignition=7,FireDamage=8,Critical=9,TrackDown=10,RamReceived=11,FireReceived=12,FireCritical=13,
+    AssistSpot=14,AssistTrack=15}
 /// `value` and `vehicle` None: this recipient may not know that fact.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct FeedEvent {pub kind:FeedKind,pub value:Option<u16>,pub vehicle:Option<usize>}

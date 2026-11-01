@@ -17,6 +17,8 @@ use batch_scene::BatchRuntime;
 mod p06t_publication;
 #[path="battle_events_publication.rs"]
 mod battle_events_publication;
+#[path="battle_ledger.rs"]
+mod battle_ledger;
 #[path="sixth_sense_wire.rs"]
 mod sixth_sense_wire;
 #[cfg(test)]

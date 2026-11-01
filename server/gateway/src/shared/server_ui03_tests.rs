@@ -315,6 +315,97 @@ fn battle_members(position:[f32;3])->[super::super::lifecycle::Member;2] {
     assert_eq!(feed(&mut s,&mut w,now+Duration::from_secs(1)),vec![],"the loss is the server's count, the stream goes on");
 }
 
+/// Two enemies of slot 2: slots 0 and 2 are one team in this roster.
+fn assist_world(now:Instant)->World {
+    let mut w=mixed(now);
+    let extra=w.actors[1].clone();w.actors.push(extra);w.push_test_team_plan();w
+}
+fn track(attacker:usize,after:device::Condition,repair:bool,at_ms:u64)->device::Transition {
+    let mut row=transition(1,attacker,false,module(Device::LeftTrack,after));row.at_ms=at_ms;
+    if let device::Change::Device{repair:flag,..}=&mut row.change {*flag=repair;}row
+}
+fn ally_shot(tick:u32,before:i16,after:i16)->model::DamageRecord {let mut row=damage(0,2,1,before,after);row.tick=tick;row}
+#[test] fn ui03_assist_track_lasts_until_the_repair_and_only_for_its_author() {
+    let now=Instant::now();let (terrain,now)=hit_world(now,0,1);
+    let mut s=spotted(now,&terrain,0);open(&mut s);
+    let mut w=assist_world(now);
+    w.device_events.push((1,track(0,device::Condition::Destroyed,false,100)));
+    w.damage_events.push(ally_shot(1001,500,400));
+    w.device_events.push((1,track(0,device::Condition::Critical,true,300)));
+    w.damage_events.push(ally_shot(1003,400,350));
+    let rows=publish(&mut s,&w,now);
+    assert_eq!(rows,vec![Row{kind:FeedKind::TrackDown as u8,value:None,vehicle:id(1)},
+        Row{kind:FeedKind::AssistTrack as u8,value:Some(100),vehicle:id(1)}]);
+    let totals=battle_ledger::totals(&w,0).unwrap();
+    assert_eq!((totals.assist_track,totals.assist_spot),(100,0));
+    assert_eq!(battle_ledger::totals(&w,2).unwrap().assist_track,0,"own damage earns no assist");
+}
+#[test] fn ui03_assist_spot_has_a_window_and_a_track_takes_priority() {
+    let now=Instant::now();let (terrain,now)=hit_world(now,0,1);
+    let mut w=assist_world(now);w.push_test_spot(0,1,1000);
+    w.damage_events.push(ally_shot(1000+battle_ledger::SPOT_ASSIST_TICKS,500,400));
+    w.damage_events.push(ally_shot(1001+battle_ledger::SPOT_ASSIST_TICKS,400,300));
+    assert_eq!(battle_ledger::totals(&w,0).unwrap().assist_spot,100,"the window ends");
+    w.device_events.push((1,track(0,device::Condition::Destroyed,false,0)));
+    let totals=battle_ledger::totals(&w,0).unwrap();
+    assert_eq!((totals.assist_spot,totals.assist_track),(0,200),"one harm, one assist");
+    let mut s=spotted(now,&terrain,0);open(&mut s);
+    let kinds=publish(&mut s,&w,now).iter().map(|row|row.kind).collect::<Vec<_>>();
+    assert!(!kinds.contains(&(FeedKind::AssistSpot as u8)));
+}
+#[test] fn ui03_assist_on_a_hidden_target_keeps_the_sum_for_the_totals_only() {
+    let now=Instant::now();let (mut terrain,now)=hit_world(now,0,1);terrain.actors[1].position[0]=500.;
+    let mut s=spotted(now,&terrain,0);open(&mut s);
+    let mut w=assist_world(now);w.push_test_spot(0,1,1000);w.damage_events.push(ally_shot(1001,500,400));
+    let rows=publish(&mut s,&w,now);
+    assert_eq!(rows[rows.len()-1],Row{kind:FeedKind::AssistSpot as u8,value:None,vehicle:0});
+    assert_eq!(battle_ledger::totals(&w,0).unwrap().assist_spot,100);
+}
+#[test] fn ui03_burned_hp_belongs_to_the_author_of_the_fire() {
+    let now=Instant::now();let (_,now)=hit_world(now,0,1);
+    let mut w=assist_world(now);
+    w.damage_events.push(damage(1,0,1,500,470));w.damage_events.push(damage(1,0,1,470,440));
+    w.damage_events.push(damage(0,0,1,440,400));
+    assert_eq!(battle_ledger::totals(&w,0).unwrap().burned,60);
+    assert_eq!(battle_ledger::totals(&w,1).unwrap().burned,0);
+}
+/// Hit of slot 1 on slot 0 with a catalog shell the armor stopped.
+fn stopped_world(now:Instant,outcome:ap::Outcome)->(World,Instant) {
+    let (mut w,now)=hit_world(now,1,0);
+    w.projectiles[0].shell=Some(crate::p06t_shells091::PROFILES[0].shots[1]);
+    let before=w.impacts[0].health_before;w.impacts[0].health_after=before;
+    if let model::ImpactOutcome::Ap(resolution)=&mut w.impacts[0].outcome {resolution.outcome=outcome;}
+    (w,now)
+}
+#[test] fn ui03_blocked_counts_the_nominal_of_stopped_shells_and_a_hidden_shooter_only_in_the_totals() {
+    let (mut w,now)=stopped_world(Instant::now(),ap::Outcome::NotPierced);
+    let hp=u32::from(battle_ledger::nominal(&w,w.impacts[0].shot).unwrap());
+    let totals=battle_ledger::totals(&w,0).unwrap();
+    assert_eq!((totals.blocked,totals.potential_received),(hp,hp));
+    let mut s=spotted(now,&w,0);before_hit(&mut s);open(&mut s);
+    poll(&mut s,&mut w,now).unwrap();
+    let frames=channel_frames(&all_bodies(&mut s,now));
+    assert_eq!(&frames[0][8+10..8+12],&(hp as u16).to_le_bytes(),"a visible shooter: the number travels");
+    let (mut w,now)=stopped_world(now,ap::Outcome::Ricochet);w.actors[1].position[0]=500.;
+    let mut s=spotted(now,&w,0);before_hit(&mut s);open(&mut s);
+    assert_eq!(battle_ledger::totals(&w,0).unwrap().blocked,hp);
+    poll(&mut s,&mut w,now).unwrap();
+    let frames=channel_frames(&all_bodies(&mut s,now));
+    assert_eq!(&frames[0][8+10..8+12],&[0xff,0xff],"a hidden shooter: the sum waits for the end of the battle");
+}
+#[test] fn ui03_a_pierced_shell_is_potential_not_blocked() {
+    let (mut w,_)=hit_world(Instant::now(),1,0);
+    w.projectiles[0].shell=Some(crate::p06t_shells091::PROFILES[0].shots[1]);
+    let totals=battle_ledger::totals(&w,0).unwrap();
+    assert_eq!(totals.blocked,0);assert!(totals.potential_received>0);
+}
+#[test] fn ui03_laboratory_shots_have_no_nominal_so_blocked_stays_absent_not_estimated() {
+    let (w,_)=hit_world(Instant::now(),1,0);
+    assert_eq!(battle_ledger::nominal(&w,w.impacts[0].shot),None);
+    let totals=battle_ledger::totals(&w,0).unwrap();
+    assert_eq!((totals.blocked,totals.potential_received),(0,0));
+}
+
 #[test] fn ui03_the_hello_version_is_exact() {
     let (_,now)=hit_world(Instant::now(),0,1);
     let (w,_)=hit_world(now,0,1);
