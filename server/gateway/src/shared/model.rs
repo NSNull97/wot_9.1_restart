@@ -310,6 +310,8 @@ impl crate::bw_wire::Wire for World {
 }
 // end BW-01 wire codec
 
+/// A scan at full range can pass the 100 ms step on one core (PERF-02, tier X).
+const SPOTTING_THREADS: usize = 4;
 impl World {
     pub(super) fn death_cause(&self,target:usize)->io::Result<Option<DeathCause>> {
         let actor=self.actors.get(target).ok_or_else(bad)?;
@@ -660,7 +662,7 @@ impl World {
         drop(actors_span);
         let mut next=state.clone();
         let _span=super::step_profile::span(super::step_profile::Part::SpotRays);
-        next.refresh(ms,&actors,|_,_,start,end|Ok(!terrain.any_hit_excluding_many(start,end,&excluded)?))?;
+        next.refresh_parallel(ms,&actors,SPOTTING_THREADS,|_,_,start,end|Ok(!terrain.any_hit_excluding_many(start,end,&excluded)?))?;
         self.original_spotting=Some(next); Ok(())
     }
     pub fn sixth_sense_generation(&self, slot: usize) -> io::Result<u32> {

@@ -191,3 +191,67 @@ fn any_hit_equals_nearest_on_synthetic_meshes_with_exhaustive_reference() {
     }
     assert!(tally.blocked > 500 && tally.clear > 500, "{tally:?}");
 }
+
+/// PERF-02: height tiles skip only what cannot be hit. Rays hug a rough grid
+/// with lone spikes on and next to tile edges, where a wrong ring would miss.
+#[test]
+fn tile_skip_keeps_any_hit_on_rays_hugging_spiked_terrain() {
+    let width = 129_usize; let side = 8 * 3;
+    let spike = |x: usize, z: usize| (x % 8 <= 1 || x % 8 == 7) && (z % 8 <= 1 || z % 8 == 7) && (x * 5 + z * 3) % 13 == 0;
+    let height = |x: usize, z: usize| if spike(x, z) { 6. } else { ((x * 31 + z * 17) % 7) as f32 * 0.05 };
+    let terrain = super::tests::fixture(-60., 1.5, width, (0..width * width).map(|i| height(i % width, i / width)).collect());
+    let mut rng = Lcg(11); let mut tally = Tally::default();
+    for _ in 0..20_000 {
+        let [a, b] = [(); 2].map(|_| [rng.range(-62., 136.), rng.range(0.2, 7.), rng.range(-62., 136.)]);
+        check(&terrain, a, b, &[], &mut tally);
+    }
+    for line in 0..side { let at = -60. + line as f32 * 1.5; for y in [0.1, 0.36, 2., 6.2] {
+        for (a, b) in [([at, y, -60.], [at, y, 132.]), ([-60., y, at], [132., y, at]), ([at + 0.1, y, -60.], [at - 0.1, y + 0.01, 132.])] { check(&terrain, a, b, &[], &mut tally); }
+    }}
+    assert!(tally.blocked > 2000 && tally.clear > 2000, "{tally:?}");
+}
+
+#[test]
+fn tile_skip_keeps_any_hit_on_pinned_near_ground_rays() {
+    for world in [super::tests::actual(), super::tests::actual_prohorovka()] {
+        let mut rng = Lcg(23); let mut tally = Tally::default();
+        let bare = Terrain { obstacles: None, ..world.clone() };
+        let ground = |x: f32, z: f32| bare.nearest([x, 900., z], [x, -900., z]).unwrap().map_or(0., |hit| hit.point[1]);
+        for _ in 0..4000 {
+            let (x, z) = (rng.range(-480., 480.), rng.range(-480., 480.));
+            let (angle, range) = (rng.range(0., std::f32::consts::TAU), rng.range(20., 445.));
+            let (u, v) = ((x + angle.cos() * range).clamp(-590., 590.), (z + angle.sin() * range).clamp(-590., 590.));
+            let start = [x, ground(x, z) + rng.range(0.3, 3.), z]; let end = [u, ground(u, v) + rng.range(0.3, 3.), v];
+            same(bare.any_ground(start, end), bare.nearest_ground(start, end).map(|hit| hit.is_some()), "near-ground ray");
+            tally.rays += 1;
+        }
+        assert_eq!(tally.rays, 4000);
+    }
+}
+
+/// PERF-02 (ignored; release): time of near-ground LOS-like rays on Malinovka.
+/// Rays are fixed by the seed, so two builds compare on the same corpus.
+#[test]
+#[ignore]
+fn perf02_near_ground_rays_malinovka_benchmark() {
+    let root = std::env::var("WOT091_ROOT").unwrap_or_else(|_| "D:/WoT_9.1_Server".into());
+    let local = Path::new(&root).join("local");
+    let map = MapId::from_asset("02_malinovka").unwrap();
+    let world = Terrain::load_for(map, &local, &local.join("evidence/20261020-maps01/final01/packages/02_malinovka/terrain/manifest.json")).unwrap();
+    let mut rng = Lcg(31); let mut rays = Vec::new();
+    let ground = |x: f32, z: f32| world.nearest([x, 900., z], [x, -900., z]).unwrap().map_or(0., |hit| hit.point[1]);
+    while rays.len() < 4000 {
+        let (x, z) = (rng.range(-400., 400.), rng.range(-400., 400.));
+        let (angle, range) = (rng.range(0., std::f32::consts::TAU), rng.range(100., 445.));
+        let (u, v) = (x + angle.cos() * range, z + angle.sin() * range);
+        if u.abs() > 480. || v.abs() > 480. { continue; }
+        rays.push(([x, ground(x, z) + 2.5, z], [u, ground(u, v) + 1.2, v]));
+    }
+    let (mut best, mut hits) = (f64::MAX, 0);
+    for _ in 0..12 {
+        let clock = std::time::Instant::now(); hits = 0;
+        for &(start, end) in &rays { if world.any_ground(start, end).unwrap() { hits += 1; } }
+        best = best.min(clock.elapsed().as_secs_f64());
+    }
+    println!("PERF02_RAYS rays={} hits={hits} best_us_per_ray={:.3}", rays.len(), best * 1e6 / rays.len() as f64);
+}
