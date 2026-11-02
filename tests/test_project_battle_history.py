@@ -60,7 +60,7 @@ class WidgetSizeTests(unittest.TestCase):
             def __init__(self, movie):
                 self.component, self.movie = Holder(), Holder()
                 self.component.position = Holder()
-        size = m.widget_class(Base, 0.5)().flashSize
+        size = m.widget_class(Base, 0.5)(0, 0).flashSize
         self.assertIs(type(size), tuple)
         self.assertEqual([type(value) for value in size], [float, float])
 
