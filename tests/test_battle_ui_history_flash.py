@@ -97,6 +97,14 @@ class Tests(unittest.TestCase):
                            'damageLog_damage_enemy_16x16', ''), art=True)
         self.assertNotIn('classMC', holder.members['row4'].members)
 
+    def test_columns_of_the_live_screenshots(self):
+        left = client.BOTTOM_X
+        self.assertEqual((left + history.TOTAL_GLYPH_X, left + history.TOTAL_TEXT_X + 2), (243, 255))
+        self.assertEqual(left + history.DETAIL_NUMBER_X + history.DETAIL_NUMBER_WIDTH - 2, 270)
+        self.assertEqual((left + history.DETAIL_GLYPH_X, left + history.DETAIL_CLASS_X), (286, 306))
+        self.assertEqual(left + history.DETAIL_TEXT_X + 2, 318)
+        self.assertEqual(client.BLOCK_WIDTH, history.DETAIL_TEXT_X + history.DETAIL_TEXT_WIDTH + 2)
+
     def test_the_columns_read_number_icon_class_name(self):
         self.assertLess(history.DETAIL_NUMBER_X + history.DETAIL_NUMBER_WIDTH, history.DETAIL_GLYPH_X - 8)
         self.assertLess(history.DETAIL_GLYPH_X + 8, history.DETAIL_CLASS_X - 8)

@@ -112,7 +112,8 @@ class Tests(unittest.TestCase):
     def test_rows_stack_and_an_empty_row_draws_nothing(self):
         machine, holder, damage = render((client.RED, '90', client.CROSS, 'a', '', 5000, '', ''),
                                          (client.GREEN, '1', client.EYE, 'b', '', 5000, '', ''))
-        self.assertEqual(holder.members['row1'].members['_y'], feed.ROW_HEIGHT)
+        self.assertEqual(holder.members['row0'].members['_y'], 0)
+        self.assertEqual(holder.members['row1'].members['_y'], -feed.ROW_HEIGHT, 'older rows stand above')
         self.assertEqual(holder.members['row2'].calls, [])
         self.assertEqual(holder.calls[2][1:], ('row2', 12))
 
@@ -165,7 +166,19 @@ class Tests(unittest.TestCase):
         row = self.row(client.RED)
         self.assertEqual(row.members['labelField'].calls[0][1].args[2], 0xffb4a6)
         self.assertEqual(row.members['labelFieldShadow'].calls[0][1].args[2], 0)
-        self.assertEqual(row.members['nameField'].calls[0][1].args[2], 0xffffff)
+        self.assertEqual(row.members['nameField'].calls[0][1].args[2], feed.NAME_COLOUR)
+
+    def test_only_the_number_is_bold(self):
+        row = self.row(client.GREEN)
+        self.assertIs(row.members['numberField'].calls[0][1].args[3], True)
+        self.assertIs(row.members['labelField'].calls[0][1].args[3], False)
+        self.assertIs(row.members['nameField'].calls[0][1].args[3], False)
+
+    def test_columns_of_the_live_screenshots(self):
+        centre = 960
+        self.assertEqual(centre + feed.NUMBER_X + feed.NUMBER_WIDTH - 2, 896)
+        self.assertEqual(centre + feed.GLYPH_X, 917)
+        self.assertEqual(centre + feed.TEXT_X + 2, 939)
 
     def test_render_keeps_the_arc_hidden(self):
         machine, holder, damage = render()

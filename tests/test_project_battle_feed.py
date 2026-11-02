@@ -237,9 +237,9 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(m.class_icon(frozenset(['mediumTank'])), 'whiteIconMediumTank16x16')
         self.assertEqual(m.class_icon(frozenset(['observer'])), '')
 
-    def test_origin_keeps_the_rows_under_the_centre_and_above_the_history(self):
-        self.assertEqual(m.origin((1920, 1080)), (960, 710))
-        self.assertEqual(m.origin((1024, 768)), (512, 427))
+    def test_origin_by_the_centre_and_the_bottom_of_the_screen(self):
+        self.assertEqual(m.origin((1920, 1080)), (960, 786))
+        self.assertEqual(m.origin((1024, 768)), (512, 474))
 
     def test_arguments_always_cover_three_rows(self):
         self.assertEqual(self.feed.render_args(), list(m.EMPTY_ROW) * 3)
@@ -291,7 +291,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.made, [])
         self.runtime.on_event(event(1, 1, 1))
         self.assertEqual(self.made[0].states, [True])
-        self.assertEqual(self.made[0].calls[0], (m.PLACE_CALLBACK, [960, 710]))
+        self.assertEqual(self.made[0].calls[0], (m.PLACE_CALLBACK, [960, 786]))
         self.assertEqual(self.made[0].calls[1][0], m.CALLBACK)
         self.assertEqual(len(self.made[0].calls[1][1]), 24)
 
@@ -301,7 +301,7 @@ class RuntimeTests(unittest.TestCase):
         self.screen = (1280, 720)
         self.runtime.resize()
         self.assertEqual(self.made[0].fits, 1)
-        self.assertEqual(self.made[0].calls[-1], (m.PLACE_CALLBACK, [640, 379]))
+        self.assertEqual(self.made[0].calls[-1], (m.PLACE_CALLBACK, [640, 426]))
 
     def test_a_failing_resize_switches_the_feed_off(self):
         self.runtime.on_event(event(1, 1, 1))

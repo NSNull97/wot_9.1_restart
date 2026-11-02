@@ -30,9 +30,9 @@ PLACE_CALLBACK = 'ProjectFeed.place'
 ROWS = 3
 LIFETIME = 5.0
 TICK_PERIOD = 0.25
-# The rows start this far under the screen centre, but always stay above the
-# bottom block of project_battle_history: 94 px of rows, 8 px of air, its 239 px.
-BELOW_CENTRE, BOTTOM_RESERVE = 170, 341
+# The top edge of the newest row, above the bottom of the screen, as on the
+# owner's live Lesta screenshots: 1920 x 1080 puts its middle on y 801.
+ABOVE_BOTTOM = 294
 EMPTY_ROW = (-1, '', 0, '', '', 0, '', '')
 RED, ORANGE, GREY, GREEN = 0xc8181e, 0xe06a1b, 0x6e6e6e, 0x3f8f24
 # Glyph numbers of tools/battle_ui_feed_flash.py.
@@ -184,8 +184,9 @@ def class_icon(tags):
 
 
 def origin(screen):
-    """Screen pixel of the centre of the first row's top edge."""
-    return int(screen[0] / 2.0), int(min(screen[1] / 2.0 + BELOW_CENTRE, screen[1] - BOTTOM_RESERVE))
+    """Screen pixel of the centre of the newest row's top edge; older rows stand
+    above it."""
+    return int(screen[0] / 2.0), int(screen[1]) - ABOVE_BOTTOM
 
 
 def number(key, value, count):

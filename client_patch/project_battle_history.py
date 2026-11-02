@@ -29,18 +29,22 @@ MOVIE = 'ProjectBattleHistory.swf'
 CALLBACK = 'ProjectHistory.row'
 PLACE_CALLBACK = 'ProjectHistory.place'
 # Rows on screen: all in one list, or each group in its own place.
-BOTTOM_ROWS, TOP_ROWS = 4, 4
+BOTTOM_ROWS, TOP_ROWS = 7, 5
 KEPT_ROWS = 16
 TOTALS_ROWS = 4
 ALT_PERIOD = 0.1
-# Block coordinates, chosen by the owner's screenshots 07 and 08 and the native
-# battle.swf: consumablesPanel lies 56 px above the bottom of the 768 stage and
-# damagePanel takes the left 230 px.
-ROW_HEIGHT, TOTAL_HEIGHT, TOTALS_GAP = 20, 22, 7
+# Block coordinates of the owner's live Lesta screenshots at 1920 x 1080: the
+# bottom block stands right of the 230 px native damage panel, the sums end on one
+# line and the rows start on another whichever sums are shown. The top block stands
+# by the team list.
+ROW_HEIGHT, TOTAL_HEIGHT, TOTALS_GAP = 20, 22, 9
 TOTALS_Y = 0
 DETAIL_Y = TOTALS_ROWS * TOTAL_HEIGHT + TOTALS_GAP
-BOTTOM_HEIGHT = DETAIL_Y + BOTTOM_ROWS * ROW_HEIGHT
-BOTTOM_LEFT, TOP_LEFT, BOTTOM_MARGIN, TOP_Y, DAMAGE_PANEL = 279, 232, 64, 72, 238
+BOTTOM_X, BOTTOM_ABOVE, TOP_X, TOP_Y = 235, 249, 247, 66
+# Native battle.swf: consumablesPanel lies 56 px above the bottom of the stage. Its
+# half width is an estimate. A screen too narrow to keep the rows left of it shows
+# only those above its top edge.
+BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 213, 230, 4
 KIND_EMPTY, KIND_TOTAL, KIND_DETAIL = 0, 1, 2
 RED, ORANGE, GREY, GREEN, WHITE = 0xc8181e, 0xe06a1b, 0x9a9a9a, 0x5fc23a, 0xffffff
 # Glyph numbers of tools/battle_ui_feed_flash.py.
@@ -135,7 +139,7 @@ def rows_of(event):
 def number(row):
     """The value, a '+' while part of it is withheld, a count without any value."""
     if row['value'] is None:
-        return 'x%d' % row['count'] if row['count'] > 1 else '- -'
+        return 'x%d' % row['count'] if row['count'] > 1 or row['key'] == 'received_critical' else '- -'
     return '%d%s' % (row['value'], '+' if row['withheld'] else '')
 
 
@@ -203,7 +207,7 @@ class History(object):
         rows = []
         for (option, colour, glyph, icon), name in zip(TOTALS_TABLE, ('dealt', 'blocked', 'assist', 'burned')):
             if self.options[option]:
-                text = '%d%s' % (self.sums[name], '+' if name in self.partial else '')
+                text = '%s%s' % ('{:,}'.format(self.sums[name]).replace(',', ' '), '+' if name in self.partial else '')
                 rows.append((KIND_TOTAL, colour, text, glyph, '', icon, ''))
         return rows
 
@@ -221,15 +225,16 @@ class History(object):
                          self.class_of(row['vehicle']) if shown else ''))
         return rows
 
-    def view(self):
+    def view(self, rows=BOTTOM_ROWS):
         """Per place the flat arguments of every movie row: (id, y, kind, colour,
         number, glyph, name, icon, class icon). A row that shows nothing has
-        KIND_EMPTY."""
+        KIND_EMPTY. `rows` limits the detail rows of the bottom block."""
         if not self.options['enabled']:
             return {'bottom': bottom_rows([], []), 'top': top_rows([])}
         if self.options['layout'] == 'top':
-            return {'bottom': bottom_rows(self._totals(), self._details(EFFECT)), 'top': top_rows(self._details(RECEIVED))}
-        return {'bottom': bottom_rows(self._totals(), self._details()), 'top': top_rows([])}
+            return {'bottom': bottom_rows(self._totals(), self._details(EFFECT)[:rows]),
+                    'top': top_rows(self._details(RECEIVED))}
+        return {'bottom': bottom_rows(self._totals(), self._details()[:rows]), 'top': top_rows([])}
 
 
 def _row(index, y, content):
@@ -241,7 +246,9 @@ def _pad(rows, size):
 
 
 def bottom_rows(totals, details):
-    rows = [_row(index, TOTALS_Y + index * TOTAL_HEIGHT, content) for index, content in enumerate(_pad(totals, TOTALS_ROWS))]
+    hidden = TOTALS_ROWS - len(totals)
+    rows = [_row(index, TOTALS_Y + (hidden + index) * TOTAL_HEIGHT, content)
+            for index, content in enumerate(_pad(totals, TOTALS_ROWS))]
     return rows + [_row(TOTALS_ROWS + index, DETAIL_Y + index * ROW_HEIGHT, content)
                    for index, content in enumerate(_pad(details, BOTTOM_ROWS))]
 
@@ -251,12 +258,15 @@ def top_rows(details):
 
 
 def origin(place, screen):
-    """Screen pixel of the top left of a block, by the screen centre as the native
-    ammo panel. A narrow screen moves the bottom block off the damage panel."""
-    centre = int(screen[0] / 2.0)
+    """Screen pixel of the top left of a block: by the left edge and the bottom of
+    the screen, as the native damage panel."""
     if place == 'top':
-        return centre - TOP_LEFT, TOP_Y
-    return max(centre - BOTTOM_LEFT, DAMAGE_PANEL), int(screen[1]) - BOTTOM_MARGIN - BOTTOM_HEIGHT
+        return TOP_X, TOP_Y
+    return BOTTOM_X, int(screen[1]) - BOTTOM_ABOVE
+
+
+def visible_rows(screen):
+    return BOTTOM_ROWS if BOTTOM_X + BLOCK_WIDTH <= screen[0] / 2.0 - AMMO_HALF else NARROW_ROWS
 
 
 def widget_class(base, depth, screen):
@@ -326,7 +336,7 @@ class Runtime(object):
             self.fail('options')
 
     def push(self):
-        for place, rows in sorted(self.history.view().items()):
+        for place, rows in sorted(self.history.view(visible_rows(self.screen())).items()):
             filled = [row for row in rows if row[2] != KIND_EMPTY]
             if place not in self.widgets:
                 if not filled:
@@ -364,6 +374,8 @@ class Runtime(object):
             for place, widget in self.widgets.items():
                 widget.fit()
                 widget.call(PLACE_CALLBACK, list(origin(place, self.screen())))
+            if self.shown:
+                self.push()
         except Exception:
             self.fail('resize')
 

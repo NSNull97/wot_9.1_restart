@@ -27,13 +27,15 @@ TARGET = 'res_mods/0.9.1/gui/scaleform/ProjectBattleFeed.swf'
 CALLBACK = 'ProjectFeed.render'
 PLACE_CALLBACK = 'ProjectFeed.place'
 ROW_HEIGHT, ROWS = 30, 3
-# Pixels from the centre of the screen, measured on the owner's screenshots 04-06.
-BAND_LEFT = -192
-NUMBER_X, NUMBER_WIDTH, GLYPH_X, TEXT_X = -208, 100, -87, -64
-NUMBER_Y, TEXT_Y, NUMBER_SIZE, TEXT_SIZE = 2, 6, 17, 13
-TEXT_WIDTH, LABEL_GAP, CLASS_X, CLASS_WIDTH = 240, 8, 8, 22
+# Pixels from the centre of the screen, measured on the owner's live Lesta
+# screenshots at 1920 x 1080; a text field has a gutter of 2 px.
+BAND_LEFT = -148
+NUMBER_X, NUMBER_WIDTH, GLYPH_X, TEXT_X = -162, 100, -43, -23
+NUMBER_Y, TEXT_Y, NUMBER_SIZE, TEXT_SIZE = 3, 6, 16, 13
+TEXT_WIDTH, LABEL_GAP, CLASS_X, CLASS_WIDTH = 240, 6, 8, 18
+NAME_COLOUR = 0xe6e6e6
 # The first Lesta band that holds the text: name, width, right end of the text.
-BAND_SIZES = (('Small', 230, -2), ('Medium', 270, 38), ('Large', 400, None))
+BAND_SIZES = (('Small', 230, 42), ('Medium', 270, 82), ('Large', 400, None))
 DRAWN_BAND_PAD, DRAWN_BAND_ALPHA = 44, 30
 FADE_MS = 500
 ROW_ARGS = ('colour', 'number', 'glyph', 'label', 'vehicle', 'left', 'icon', 'vehicleClass')
@@ -69,21 +71,21 @@ def not_empty(node):
 def text_source():
     """A field with a dark copy under it: the given depth and the next one."""
     parent, name = var('parent'), var('id')
-    params = ['parent', 'id', 'depth', 'x', 'y', 'w', 'size', 'colour', 'align', 'text']
+    params = ['parent', 'id', 'depth', 'x', 'y', 'w', 'size', 'colour', 'align', 'text', 'bold']
     field = function('_projectFeedField', params, [
         method(parent, 'createTextField', name, var('depth'), var('x'), var('y'), var('w'), 24),
         ('local', 't', ('get', parent, name)),
         ('set', var('t'), 'embedFonts', True),
         ('set', var('t'), 'selectable', False),
-        ('local', 'f', ('new', 'TextFormat', [flash.FONT, var('size'), var('colour'), True, False, False,
+        ('local', 'f', ('new', 'TextFormat', [flash.FONT, var('size'), var('colour'), var('bold'), False, False,
                                               None, None, var('align')])),
         method(var('t'), 'setNewTextFormat', var('f')),
         ('set', var('t'), 'text', var('text')),
     ])
     shadow = [parent, ('+', name, 'Shadow'), var('depth'), ('+', var('x'), 1), ('+', var('y'), 1), var('w'),
-              var('size'), 0, var('align'), var('text')]
+              var('size'), 0, var('align'), var('text'), var('bold')]
     main = [parent, name, ('+', var('depth'), 1), var('x'), var('y'), var('w'), var('size'), var('colour'),
-            var('align'), var('text')]
+            var('align'), var('text'), var('bold')]
     return field + function('_projectFeedText', params, [('do', ('fn', '_projectFeedField', shadow)),
                                                          ('do', ('fn', '_projectFeedField', main))])
 
@@ -144,16 +146,17 @@ def band_rows(mc, art):
 
 
 def row_source(art=False):
-    """Number, icon, then label, class icon and name in a line, the band last."""
+    """Number, icon, then label, class icon and name in a line, the band last.
+    The newest row is on the line Python places, the older ones stand above it."""
     mc = var('m')
     draw = palette() + [
         ('do', ('fn', '_projectFeedText', [mc, 'numberField', 3, NUMBER_X, NUMBER_Y, NUMBER_WIDTH, NUMBER_SIZE,
-                                           var('numberColour'), 'right', var('number')]))]
+                                           var('numberColour'), 'right', var('number'), True]))]
     draw += glyph_rows(mc, art)
     draw += [('local', 'end', TEXT_X),
              ('if', not_empty(var('label')),
               [('do', ('fn', '_projectFeedText', [mc, 'labelField', 5, TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_SIZE,
-                                                  var('labelColour'), 'left', var('label')])),
+                                                  var('labelColour'), 'left', var('label'), False])),
                ('assign', 'end', ('+', ('+', TEXT_X, ('get', ('get', mc, 'labelField'), 'textWidth')), LABEL_GAP))])]
     if art:
         draw.append(('if', not_empty(var('vehicleClass')),
@@ -161,13 +164,13 @@ def row_source(art=False):
                      + [('assign', 'end', ('+', var('end'), CLASS_WIDTH))]))
     draw += [('if', not_empty(var('vehicle')),
               [('do', ('fn', '_projectFeedText', [mc, 'nameField', 8, var('end'), TEXT_Y, TEXT_WIDTH, TEXT_SIZE,
-                                                  0xffffff, 'left', var('vehicle')])),
+                                                  NAME_COLOUR, 'left', var('vehicle'), False])),
                ('assign', 'end', ('+', var('end'), ('get', ('get', mc, 'nameField'), 'textWidth')))])]
     draw += band_rows(mc, art)
     draw += [('set', mc, 'startedAt', ('time',)), ('set', mc, 'left', var('left')),
              ('set', mc, 'onEnterFrame', ('func', [], fade_body()))]
     body = [('local', 'm', ('call', var('feedMC'), 'createEmptyMovieClip', [('+', 'row', var('index')), ('+', 10, var('index'))])),
-            ('set', mc, '_y', ('*', var('index'), ROW_HEIGHT)),
+            ('set', mc, '_y', ('*', ('neg', var('index')), ROW_HEIGHT)),
             ('if', ('<', -1, var('colour')), draw)]
     return function('_projectFeedRow', ['index'] + list(ROW_ARGS), body)
 

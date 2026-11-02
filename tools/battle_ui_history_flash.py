@@ -25,16 +25,17 @@ TARGET = 'res_mods/0.9.1/gui/scaleform/ProjectBattleHistory.swf'
 CALLBACK = 'ProjectHistory.row'
 PLACE_CALLBACK = 'ProjectHistory.place'
 KIND_TOTAL, KIND_DETAIL = 1, 2
-# Pixels from the left edge of a block, measured on the owner's screenshots 07 and 08.
-TOTAL_GLYPH_X, TOTAL_TEXT_X, TOTAL_GLYPH_Y, TOTAL_WIDTH, TOTAL_SIZE = 8, 21, 11, 120, 15
-DETAIL_NUMBER_X, DETAIL_NUMBER_WIDTH, DETAIL_GLYPH_X, DETAIL_GLYPH_Y = -64, 100, 53, 10
-DETAIL_CLASS_X, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH, DETAIL_SIZE = 72, 85, 200, 13
+# Pixels from the left edge of a block, measured on the owner's live Lesta
+# screenshots at 1920 x 1080; a text field has a gutter of 2 px.
+TOTAL_GLYPH_X, TOTAL_TEXT_X, TOTAL_GLYPH_Y, TOTAL_WIDTH, TOTAL_SIZE = 8, 18, 11, 120, 15
+DETAIL_NUMBER_X, DETAIL_NUMBER_WIDTH, DETAIL_GLYPH_X, DETAIL_GLYPH_Y = -63, 100, 51, 10
+DETAIL_CLASS_X, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH, DETAIL_SIZE = 71, 81, 130, 13
 DRAWN_GLYPH_SCALE = 70
 ROW_ARGS = ('id', 'y', 'kind', 'colour', 'number', 'glyph', 'name', 'icon', 'vehicleClass')
 
 
-def text(mc, name, depth, x, width, size, align, value):
-    return ('do', ('fn', '_projectFeedText', [mc, name, depth, x, 0, width, size, 0xffffff, align, value]))
+def text(mc, name, depth, x, width, size, colour, align, value, bold):
+    return ('do', ('fn', '_projectFeedText', [mc, name, depth, x, 0, width, size, colour, align, value, bold]))
 
 
 def glyph(mc, x, y, art):
@@ -51,10 +52,10 @@ def glyph(mc, x, y, art):
 def row_source(art=False):
     mc = var('m')
     total = glyph(mc, TOTAL_GLYPH_X, TOTAL_GLYPH_Y, art) + [
-        text(mc, 'numberField', 3, TOTAL_TEXT_X, TOTAL_WIDTH, TOTAL_SIZE, 'left', var('number'))]
+        text(mc, 'numberField', 3, TOTAL_TEXT_X, TOTAL_WIDTH, TOTAL_SIZE, 0xffffff, 'left', var('number'), True)]
     detail = glyph(mc, DETAIL_GLYPH_X, DETAIL_GLYPH_Y, art) + [
-        text(mc, 'numberField', 3, DETAIL_NUMBER_X, DETAIL_NUMBER_WIDTH, DETAIL_SIZE, 'right', var('number')),
-        text(mc, 'nameField', 5, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH, DETAIL_SIZE, 'left', var('name'))]
+        text(mc, 'numberField', 3, DETAIL_NUMBER_X, DETAIL_NUMBER_WIDTH, DETAIL_SIZE, 0xffffff, 'right', var('number'), True),
+        text(mc, 'nameField', 5, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH, DETAIL_SIZE, feed.NAME_COLOUR, 'left', var('name'), False)]
     if art:
         detail.append(('if', feed.not_empty(var('vehicleClass')),
                        feed.attach(mc, var('vehicleClass'), 'classMC', 7, DETAIL_CLASS_X, DETAIL_GLYPH_Y)))
