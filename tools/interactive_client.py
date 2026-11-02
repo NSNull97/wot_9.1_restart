@@ -141,16 +141,21 @@ def battle_feed_policy():
     return policy
 
 
-def team_killer_marker(args, profile13_battle, original, evidence):
-    """UI-06b owner order 2026-11-02: the whole team killer marker blue, its
-    health bar included. Team killers come from the gateway key `team_score`;
-    without the flag the marker movie stays byte for byte native."""
-    if not getattr(args, 'team_killer_marker', False):
-        return {}
-    if not profile13_battle:
+def vehicle_markers(args, profile13_battle, original, evidence):
+    """UI-06c owner order 2026-11-02: the project look of the vehicle markers
+    replaces the native one in our client build, so it is on by default;
+    --native-vehicle-markers keeps the #717 movie for rollback and checks.
+    UI-06b --team-killer-marker paints the native bar of a team killer blue;
+    the project bar is blue for a team killer on its own."""
+    native = getattr(args, 'native_vehicle_markers', False)
+    team_killer = getattr(args, 'team_killer_marker', False)
+    if team_killer and not profile13_battle:
         raise ValueError('--team-killer-marker requires --enable-profile13-battle')
+    if native and not team_killer:
+        return {}
     import battle_ui_marker_flash
-    movie, evidence['project_team_killer_marker_movie'] = battle_ui_marker_flash.payload(original)
+    movie, evidence['project_vehicle_markers_movie'] = battle_ui_marker_flash.payload(
+        original, look=not native, team_killer=team_killer)
     return {battle_ui_marker_flash.TARGET: movie}
 
 
@@ -413,7 +418,7 @@ def prepare(args):
         if not profile13_battle:
             raise ValueError('--player-kill-marker requires --enable-profile13-battle')
         settings['player_kill_marker'] = True
-    payloads.update(team_killer_marker(args, profile13_battle, original, resource_evidence))
+    payloads.update(vehicle_markers(args, profile13_battle, original, resource_evidence))
     hit_view = getattr(args, 'hit_indicator', None)
     if getattr(args, 'hit_indicator_art', None) is not None and hit_view is None:
         raise ValueError('--hit-indicator-art requires --hit-indicator')
@@ -682,10 +687,14 @@ def main():
     prep.add_argument('--player-kill-marker', action='store_true',
                       help='Project policy, not original 0.9.1: a kill by the player keeps the player-coloured '
                            'marker colour (its crew-inactive refresh keeps the player as source); requires profile13 battle')
+    prep.add_argument('--native-vehicle-markers', action='store_true',
+                      help='Rollback and checks: keep the #717 vehicle markers. Without it the project look of '
+                           'UI-06c replaces them (white damage number with a coloured halo, thin health bar with '
+                           'the HP under it)')
     prep.add_argument('--team-killer-marker', action='store_true',
-                      help='Project policy, not original 0.9.1: UI-06b the health bar of a team killer marker '
-                           'blue like its icon and name (team killers come from gateway key team_score); requires '
-                           'profile13 battle; off by default, without it the marker movie stays byte for byte native')
+                      help='Project policy, not original 0.9.1: UI-06b the native health bar of a team killer '
+                           'marker blue like its icon and name (team killers come from gateway key team_score); '
+                           'requires profile13 battle. The UI-06c bar is blue for a team killer without it')
     prep.add_argument('--hit-indicator', choices=('standard', 'extended'),
                       help='Project policy, not original 0.9.1: UI-02 hit indicator facts from the battle events '
                            'channel (gateway key battle_events); requires profile13 battle; off by default')
