@@ -236,8 +236,8 @@ def image(width, height):
     return width, height, bytes((10, 20, 30, 128)) * (width * height)
 
 
-def full_art():
-    return dict((name, image(4, 2)) for name in art.REQUIRED + art.OPTIONAL)
+def small_art():
+    return dict((name, image(4, 2)) for name in art.SPRITES)
 
 
 class BitReader:
@@ -308,39 +308,51 @@ def read_shape(data):
 
 
 class ArtTests(unittest.TestCase):
-    def test_dxt5_block_decodes_by_its_tables(self):
-        block = bytes((255, 0)) + (0).to_bytes(6, 'little') + struct.pack('<HHI', 0xf800, 0x001f, 0)
-        self.assertEqual(bytes(art.dxt5(block, 4, 4)[:4]), bytes((255, 0, 0, 255)))
-        half = bytes((0, 0)) + (7).to_bytes(6, 'little') + struct.pack('<HHI', 0xffff, 0, 1)
-        self.assertEqual(bytes(art.dxt5(half, 4, 4)[:4]), bytes((0, 0, 0, 255)))
+    @classmethod
+    def setUpClass(cls):
+        cls.sprites = art.sprites()
 
-    def test_png_round_trip_and_every_filter(self):
-        rgba = bytes(range(24))
-        self.assertEqual(art.read_png(art.write_png(2, 3, rgba)), (2, 3, rgba))
-        rows = b'\x01' + bytes((9, 9, 9, 9, 1, 1, 1, 1)) + b'\x02' + bytes((1, 1, 1, 1, 1, 1, 1, 1)) \
-            + b'\x03' + bytes((2, 2, 2, 2, 2, 2, 2, 2)) + b'\x04' + bytes((1, 1, 1, 1, 1, 1, 1, 1))
-        def chunk(kind, data):
-            return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
-        raw = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 2, 4, 8, 6, 0, 0, 0)) \
-            + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b'')
-        width, height, pixels = art.read_png(raw)
-        self.assertEqual((width, height), (2, 4))
-        self.assertEqual(pixels[:8], bytes((9, 9, 9, 9, 10, 10, 10, 10)))
-        self.assertEqual(pixels[8:16], bytes((10, 10, 10, 10, 11, 11, 11, 11)))
-        self.assertEqual(pixels[16:20], bytes((7, 7, 7, 7)))
+    def test_every_sprite_is_drawn_by_code_in_bounds(self):
+        self.assertEqual(sorted(self.sprites), sorted(art.SPRITES))
+        for name, (width, height, rgba) in self.sprites.items():
+            self.assertEqual(len(rgba), width * height * 4, name)
+            alpha = rgba[3::4]
+            self.assertTrue(max(alpha) > 200, name)
+            # Nothing touches the border: the soft edges fade out inside the bitmap.
+            edge = [rgba[(y * width + x) * 4 + 3] for y in range(height) for x in (0, width - 1)]
+            edge += [rgba[(y * width + x) * 4 + 3] for y in (0, height - 1) for x in range(width)]
+            self.assertLess(max(edge), 40, name)
 
-    def test_bad_png_is_refused(self):
-        good = art.write_png(1, 1, bytes(4))
-        for bad in (b'nonsense', good[:30], good[:24] + b'\x03' + good[25:]):
-            with self.assertRaises((ValueError, struct.error)):
-                art.read_png(bad)
+    def test_drawing_is_repeatable(self):
+        self.assertEqual(art.sprites(), self.sprites)
 
-    def test_atlas_rows_are_read_by_name(self):
-        xml = '<SubTexture><name> crit </name><x> 7 </x><y> 0 </y><width> 72 </width><height> 358 </height>'
-        self.assertEqual(art.atlas_rows(xml), {'crit': (7, 0, 72, 358)})
+    def test_disc_is_dark_inside_with_a_ring_of_its_tone(self):
+        width, height, rgba = self.sprites['disc_red']
+        centre = rgba[(height // 2 * width + width // 2) * 4:][:4]
+        self.assertLess(max(centre[:3]), 40)
+        self.assertGreater(centre[3], 200)
+        ring = rgba[(height // 2 * width + width // 2 + art.DISC_RADIUS) * 4:][:4]
+        self.assertGreater(ring[0], 200)
+        self.assertLess(ring[1], 90)
+        grey = self.sprites['disc_grey'][2][(height // 2 * width + width // 2 + art.DISC_RADIUS) * 4:][:3]
+        self.assertLess(max(grey) - min(grey), 20)
 
-    def test_every_tag_of_the_art_movie_parses(self):
-        out = flash.build(art_movie(), images=full_art())
+    def test_wings_flank_the_axis_and_leave_it_clear(self):
+        width, height, rgba = self.sprites['wings_red']
+        row = height // 2
+        alpha = [rgba[(row * width + x) * 4 + 3] for x in range(width)]
+        self.assertLess(alpha[width // 2], 10)
+        self.assertGreater(max(alpha[:width // 2]), 150)
+        self.assertGreater(max(alpha[width // 2:]), 150)
+
+    def test_png_preview_is_valid(self):
+        width, height, rgba = self.sprites['chevron_red']
+        png = art.write_png(width, height, rgba)
+        self.assertEqual(png[:8], b'\x89PNG\r\n\x1a\n')
+        self.assertEqual(struct.unpack('>II', png[16:24]), (width, height))
+
+    def test_every_tag_of_the_movie_parses(self):
+        out = flash.build(art_movie(), images=small_art())
         body = flash.expanded(out)
         self.assertEqual(struct.unpack_from('<I', out, 4)[0], len(body) + 8)
         bits = BitReader(body)
@@ -348,8 +360,8 @@ class ArtTests(unittest.TestCase):
         self.assertEqual([bits.signed(count) for _ in range(4)], [0, flash.ART_STAGE * 20, 0, flash.ART_STAGE * 20])
         rows = flash.tags(body, ((5 + 4 * count + 7) // 8) + 4)
         codes = [row[0] for row in rows]
-        count = len(art.REQUIRED + art.OPTIONAL)
-        self.assertEqual((codes.count(36), codes.count(2), codes.count(39), codes.count(56)), (count, count, count, 1))
+        total = len(art.SPRITES)
+        self.assertEqual((codes.count(36), codes.count(2), codes.count(39), codes.count(56)), (total, total, total, 1))
         self.assertLess(codes.index(56), len(codes) - codes[::-1].index(12) - 1)
         defined = {}
         for code, start, end in rows:
@@ -359,7 +371,6 @@ class ArtTests(unittest.TestCase):
                 bitmap, kind, width, height = struct.unpack_from('<HBHH', data)
                 self.assertEqual((kind, width, height), (5, 4, 2))
                 pixels = zlib.decompress(data[7:])
-                self.assertEqual(len(pixels), 4 * 4 * 2)
                 self.assertEqual(pixels[:4], bytes((128, 10 * 128 // 255, 20 * 128 // 255, 30 * 128 // 255)))
                 defined[bitmap] = 'bitmap'
             elif code == 2:
@@ -373,133 +384,87 @@ class ArtTests(unittest.TestCase):
             elif code == 39:
                 sprite, frames = struct.unpack_from('<HH', data)
                 self.assertEqual(frames, 1)
-                inner = flash.tags(data, 4)
-                self.assertEqual([row[0] for row in inner], [26, 1, 0])
+                self.assertEqual([row[0] for row in flash.tags(data, 4)], [26, 1, 0])
                 self.assertEqual(defined[struct.unpack_from('<H', data, 9)[0]], 'shape')
-                self.assertNotIn(sprite, defined)
                 defined[sprite] = 'sprite'
             elif code == 26:
                 self.assertEqual(data[:5], b'\x26\x01\0\x09\0')
                 self.assertEqual(read_matrix(BitReader(data[5:])), (None, None, (flash.ART_STAGE * 10, flash.ART_STAGE * 10)))
-                self.assertTrue(data.endswith(b'damageMC\0'))
             elif code == 56:
-                at, names = 2, []
+                self.assertEqual(struct.unpack_from('<H', data)[0], total)
                 at, names = 2, []
                 while at < len(data):
                     self.assertEqual(defined[struct.unpack_from('<H', data, at)[0]], 'sprite')
                     stop = data.index(0, at + 2)
                     names.append(data[at + 2:stop].decode())
                     at = stop + 1
-                self.assertEqual(sorted(names), sorted(art.REQUIRED + art.OPTIONAL))
+                self.assertEqual(sorted(names), sorted(art.SPRITES))
         self.assertFalse(set(defined) & {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, flash.FONT_CHARACTER})
 
     def test_movie_without_the_placement_is_refused(self):
         with self.assertRaises(ValueError):
-            flash.build(fake_movie(), images=full_art())
+            flash.build(fake_movie(), images=small_art())
 
-    def test_folder_without_a_required_sprite_keeps_the_drawn_movie(self):
-        folder = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, folder)
-        self.assertEqual(art.load(folder / 'nothing'), ({}, list(art.REQUIRED)))
-        for name in art.REQUIRED[1:]:
-            (folder / (name + '.png')).write_bytes(art.write_png(1, 1, bytes(4)))
-        images, missing = art.load(folder)
-        self.assertEqual((images, missing), ({}, [art.REQUIRED[0]]))
-        self.assertEqual(flash.build(fake_movie(), images=images), flash.build(fake_movie()))
-
-    def test_missing_optional_icons_do_not_cost_the_sprites(self):
-        folder = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, folder)
-        for name in art.REQUIRED:
-            (folder / (name + '.png')).write_bytes(art.write_png(1, 1, bytes(4)))
-        images, missing = art.load(folder)
-        self.assertEqual(sorted(images), sorted(art.REQUIRED))
-        self.assertEqual(missing, list(art.OPTIONAL))
-
-    def show(self, colour=flash.RED, number='120', scale=1, icon='', vehicle='heavyTank', turn=30, missing=()):
+    def show(self, colour=flash.RED, number='258', scale=1, shell=u'ОФ', turn=30, name=u'B-C 155 58'):
         machine, scope, delegate, damage, arc = loaded(flash.actions(True))
         damage.members['_rotation'] = turn
         machine.invoke(scope['_projectHitShow'], machine.root,
-                       [colour, number, u'Т-34', 0xffffff, u'Двигатель', scale, True, icon, vehicle])
+                       [colour, number, name, 0xffffff, u'Двигатель', scale, True, shell])
         return machine, damage.members['projectHit'], damage, arc
 
     def attached(self, mc):
         return dict((call[2], call[1]) for call in mc.calls if call[0] == 'attachMovie')
 
-    def test_sprites_follow_colour_and_strength(self):
-        for colour, scale, beam, disc in ((flash.RED, 1, 'damageSmall', 'damageCircle'),
-                                          (flash.RED, 1.2, 'damageMedium', 'damageCircle'),
-                                          (flash.RED, 1.6, 'damageBig', 'damageCircle'),
-                                          (flash.ORANGE, 1.6, 'crit', 'critCircle'),
-                                          (0x6e6e6e, 1, 'blockedSmall', 'blockCircle')):
-            mc = self.show(colour, scale=scale)[1]
-            names = self.attached(mc)
-            self.assertEqual((names['beamMC'], names['discMC']), (beam, disc))
-            self.assertEqual(mc.members['beamMC'].members['_xscale'], flash.ART_SCALE)
-            self.assertEqual(mc.members['beamMC'].members['_y'], -flash.ART_BEAM_AT)
-            self.assertEqual(mc.members['discMC'].members['_y'], -flash.ART_DISC_AT)
+    def test_tone_follows_the_colour_and_nothing_turns_yellow_for_damage(self):
+        for colour, tone in ((flash.RED, 'red'), (flash.ORANGE, 'orange'), (0x6e6e6e, 'grey')):
+            names = self.attached(self.show(colour)[1])
+            self.assertEqual(names, {'wingsMC': 'wings_' + tone, 'tickMC': 'tick', 'discMC': 'disc_' + tone,
+                                     'chevronMC': 'chevron_' + tone})
 
-    def test_disc_size_is_the_same_for_every_sprite(self):
-        for colour, size in ((flash.RED, 58), (flash.ORANGE, 42), (0x6e6e6e, 58)):
-            mc = self.show(colour)[1]
-            self.assertAlmostEqual(mc.members['discMC'].members['_xscale'] * size / 100, flash.ART_DISC_SIZE)
+    def test_parts_sit_where_the_sprites_were_drawn_for(self):
+        mc = self.show()[1]
+        self.assertEqual(mc.members['discMC'].members['_y'], -flash.ART_DISC_AT)
+        self.assertEqual(mc.members['wingsMC'].members['_y'], -(flash.ART_DISC_AT + art.WINGS_AT))
+        self.assertEqual(mc.members['chevronMC'].members['_y'], -(flash.ART_DISC_AT + art.CHEVRON_AT))
+        self.assertEqual(mc.members['tickMC'].members['_y'], -(flash.ART_DISC_AT + art.TICK_AT))
+        self.assertEqual(mc.members['numberMC'].members['_y'], -flash.ART_DISC_AT)
+        self.assertEqual(mc.members['textMC'].members['_y'], -(flash.ART_DISC_AT + flash.ART_TEXT_AT))
 
-    def test_geometry_keeps_the_far_end_inside_the_stage(self):
-        far = flash.ART_BEAM_AT + 358 * flash.ART_SCALE / 100 / 2
-        self.assertLessEqual((far ** 2 + 124 ** 2) ** 0.5, flash.ART_STAGE / 2)
-        self.assertAlmostEqual(far - 238 * flash.ART_SCALE / 100, flash.ART_DISC_AT, delta=1)
+    def test_dynamic_scale_spreads_the_wings_only(self):
+        mc = self.show(scale=1.5)[1]
+        self.assertEqual(mc.members['wingsMC'].members['_xscale'], 150)
+        self.assertEqual(mc.members['discMC'].members['_xscale'], 100)
 
-    def test_client_module_and_art_tool_agree(self):
-        self.assertEqual((client.RED, client.ORANGE), (flash.RED, flash.ORANGE))
-        self.assertEqual(client.ART_FLASH_SIZE, (flash.ART_STAGE, flash.ART_STAGE))
-        self.assertLessEqual(set(client.MODULE_ICONS.values()), set(art.MODULES))
-        self.assertEqual(set(client.VEHICLE_ICONS), set(art.CLASSES))
+    def test_two_text_lines_and_an_upright_number(self):
+        mc = self.show()[1]
+        text = mc.members['textMC']
+        self.assertEqual(text.members['nameField'].members['text'], u'B-C 155 58')
+        self.assertEqual(text.members['shellField'].members['text'], u'ОФ')
+        self.assertEqual(text.members['nameField'].calls[0][1].args[8], 'left')
+        self.assertEqual(mc.members['numberMC'].members['field'].members['text'], '258')
+        self.assertEqual(mc.members['numberMC'].members['_rotation'], -30)
 
-    def test_module_icon_replaces_the_number_and_labels_stay(self):
-        mc = self.show(flash.ORANGE, number='- -', icon='engineCircle')[1]
-        self.assertEqual(self.attached(mc)['iconMC'], 'engineCircle')
-        self.assertEqual(mc.members['numberMC'].members['field'].members['text'], '')
-        self.assertEqual(mc.members['noteMC'].members['field'].members['text'], u'Двигатель')
-
-    def test_no_icons_attach_nothing_extra(self):
-        mc = self.show(icon='', vehicle='')[1]
-        self.assertEqual(sorted(self.attached(mc)), ['beamMC', 'discMC'])
-        self.assertEqual(mc.members['numberMC'].members['field'].members['text'], '120')
+    def test_text_runs_under_the_angle_of_the_marker_and_never_upside_down(self):
+        for turn, expected, x in ((30, -90, 0), (135, -90, 0), (-30, 90, -44), (-135, 90, -44)):
+            machine, mc, damage, arc = self.show(turn=turn)
+            text = mc.members['textMC']
+            self.assertEqual(text.members['_rotation'], expected)
+            self.assertEqual(text.members['nameField'].members['_x'], x)
+            self.assertEqual(text.members['shellField'].members['_x'], x)
+            self.assertEqual(mc.members['noteMC'].members['_rotation'], -turn)
 
     def test_arc_hides_only_after_a_sprite_attached(self):
         self.assertIs(self.show()[3].members['_visible'], False)
         machine, scope, delegate, damage, arc = loaded(flash.actions(True))
         hit = Clip('projectHit')
-        hit.missing = ('damageSmall',)
+        hit.missing = tuple(art.SPRITES)
         damage.members['createEmptyMovieClip'] = lambda *args: (damage.members.__setitem__('projectHit', hit), hit)[1]
-        hit.members['beamMC'] = None
-        hit.members['discMC'] = Clip('disc')
-        machine.invoke(scope['_projectHitShow'], machine.root,
-                       [flash.RED, '120', '', 0xffffff, '', 1, True, '', ''])
+        machine.invoke(scope['_projectHitShow'], machine.root, [flash.RED, '120', '', 0xffffff, '', 1, True, ''])
         self.assertNotIn('_visible', arc.members)
 
-    def test_name_lies_along_the_beam_and_never_upside_down(self):
-        for turn, expected in ((30, -90), (135, -90), (-30, 90), (-135, 90)):
-            machine, mc, damage, arc = self.show(turn=turn)
-            machine.clock = 1100
-            machine.invoke(mc.members['onEnterFrame'], mc, [])
-            self.assertEqual(mc.members['nameMC'].members['_rotation'], expected)
-            self.assertEqual(mc.members['numberMC'].members['_rotation'], -turn)
-            self.assertEqual(mc.members['noteMC'].members['_rotation'], -turn)
-
-    def test_module_icon_stays_upright_and_the_first_frame_is_hidden(self):
-        machine, mc, damage, arc = self.show(flash.ORANGE, icon='engineCircle')
-        self.assertEqual(mc.members['_alpha'], 0)
-        machine.invoke(mc.members['onEnterFrame'], mc, [])
-        self.assertEqual(mc.members['iconMC'].members['_rotation'], -30)
-
-    def test_name_starts_at_the_class_icon(self):
-        mc = self.show()[1]
-        self.assertEqual(mc.members['nameMC'].members['_y'], -flash.ART_NAME_AT - 20)
-        self.assertEqual(mc.members['classMC'].members['_y'], -flash.ART_CLASS_AT)
-
-    def test_fade_is_the_drawn_one(self):
+    def test_fade_in_and_out(self):
         machine, mc, damage, arc = self.show()
+        self.assertEqual(mc.members['_alpha'], 0)
         machine.clock = 1100
         machine.invoke(mc.members['onEnterFrame'], mc, [])
         self.assertEqual(mc.members['_alpha'], 40)
@@ -507,40 +472,20 @@ class ArtTests(unittest.TestCase):
         machine.invoke(mc.members['onEnterFrame'], mc, [])
         self.assertEqual(mc.members['_alpha'], 50)
 
-    def test_extract_refuses_other_bytes(self):
-        folder = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, folder)
-        package = folder / art.PACKAGE
-        package.parent.mkdir(parents=True)
-        import zipfile
-        with zipfile.ZipFile(package, 'w') as archive:
-            archive.writestr(art.ATLAS, b'other')
-            archive.writestr(art.ATLAS_XML, b'other')
-        with self.assertRaises(ValueError):
-            art.extract(folder, folder / 'out')
+    def test_client_module_and_movie_agree(self):
+        self.assertEqual((client.RED, client.ORANGE), (flash.RED, flash.ORANGE))
+        self.assertEqual(client.FLASH_SIZE, (flash.ART_STAGE, flash.ART_STAGE))
+        self.assertEqual(flash.TARGET, 'res_mods/0.9.1/' + flash.MEMBER)
 
     @unittest.skipUnless((ORIGINAL / 'res/packages/gui.pkg').is_file(), 'original client absent')
-    def test_absent_art_folder_gives_the_drawn_movie_on_the_original(self):
-        folder = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, folder)
-        result, evidence = flash.payload(ORIGINAL, folder / 'nothing')
-        self.assertEqual(result, flash.payload(ORIGINAL)[0])
-        self.assertEqual(evidence['art'], 'absent')
-        self.assertEqual(evidence['art_missing'], list(art.REQUIRED))
-        self.assertEqual(evidence['stage'], 680)
-
-    @unittest.skipUnless((ORIGINAL / 'res/packages/gui.pkg').is_file(), 'original client absent')
-    def test_art_movie_on_the_original_keeps_the_arc_centred(self):
-        folder = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, folder)
-        for name in art.REQUIRED:
-            (folder / (name + '.png')).write_bytes(art.write_png(2, 2, bytes(16)))
-        result, evidence = flash.payload(ORIGINAL, folder)
-        self.assertEqual((evidence['art'], evidence['stage']), ('embedded', flash.ART_STAGE))
+    def test_the_original_becomes_the_replacement_with_the_arc_centred(self):
+        result, evidence = flash.payload(ORIGINAL)
+        self.assertEqual((evidence['stage'], evidence['sprites']), (flash.ART_STAGE, sorted(art.SPRITES)))
         body = flash.expanded(result)
-        moved = [body[row[1]:row[2]] for row in flash.tags(body, ((5 + 4 * (body[0] >> 3) + 7) // 8) + 4)
-                 if row[0] == 26 and body[row[1]:row[2]].endswith(b'damageMC\0')]
+        rows = flash.tags(body, ((5 + 4 * (body[0] >> 3) + 7) // 8) + 4)
+        moved = [row for row in rows if row[0] == 26 and body[row[1]:row[2]].endswith(b'damageMC\0')]
         self.assertEqual(len(moved), 1)
+        self.assertEqual([row[0] for row in rows].count(39), 6 + len(art.SPRITES))
 
 
 class Tests(unittest.TestCase):

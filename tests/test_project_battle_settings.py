@@ -330,7 +330,7 @@ class ControllerTests(unittest.TestCase):
         controller = m.Controller(options(), m.Preferences(root, lambda: None), targets, record)
         controller.load()
         controller.commit({'srHitView': 1, 'srFeedEnabled': False, 'srHistLayout': 1, 'srHistEvents': 2})
-        self.assertEqual(policy.movie(), hit_module.EXTENDED_MOVIE)
+        self.assertTrue(policy.extended())
         self.assertIs(feed.options['enabled'], False)
         self.assertEqual((history.options['layout'], history.options['events']), ('top', 'received'))
 

@@ -32,13 +32,14 @@
   машин не уходят ни до, ни после leaveAoI. Тесты на пакетах `crash01_*` + NET-01: 16 PASS; без правки два теста порядка
   падают. Полный gate и native — NOT_RUN. План/итог — [CRASH01](plans/CRASH01_LEAVE_AOI_POSE.md).
 
-## UI-02b вид расширенного индикатора обстрела на графике Lesta — в ветке `codex/ui-02b-lesta-indicator`, не в main — 2026-11-02
+## UI-02b индикатор обстрела своего вида вместо родного — в ветке `codex/ui-02b-lesta-indicator`, не в main — 2026-11-02
 
-- Замечание владельца: индикатор не похож на родной. Разрешение владельца: чего нет в #717, временно брать из локальной копии Lesta.
-  `tools/battle_ui_hit_art.py` режет спрайты атласа `damageIndicator` в `local/ui-borrowed/hit-indicator/` (в Git только инструмент),
-  `prepare --hit-indicator-art <папка>` встраивает их в `ProjectHitIndicator.swf` родным способом #717 (`DefineBitsLossless2`,
-  `DefineShape`). Папки или обязательного файла нет — прежний рисованный индикатор. Канал и факты те же. Native **NOT_RUN**.
-  План — [UI02](plans/UI02_HIT_INDICATOR.md#ui-02b-вид-на-графике-lesta).
+- Решения владельца 02.11: вид по эталону `ref2/hit-indicator.png`, графика своя (Lesta не копируем), замена родной реализации, а не
+  мод рядом. `tools/battle_ui_hit_art.py` рисует 10 спрайтов кодом, `prepare` пишет `res_mods/.../DamageIndicator.swf` под родным именем:
+  родной фильм с дугой, свои спрайты, сцена 1020 px. Включено по умолчанию в клиенте profile13; `--hit-indicator standard|off` —
+  проверка и откат. Текст (машина, тип снаряда) под углом маркера, крит с уроном не желтеет. Native **NOT_RUN**.
+  План — [UI02](plans/UI02_HIT_INDICATOR.md#ui-02b-свой-вид-вместо-родного).
+
 ## UI-03b вид ленты и истории как в живом бою Lesta — в ветке `codex/ui-03b-feed-history-look`, не в main — 2026-11-02
 
 - Только клиент. Причина крупного вида: хост `DamageIndicator.swf` не задаёт `noScale`, а все родные панели #717 задают; фильм 680×680
