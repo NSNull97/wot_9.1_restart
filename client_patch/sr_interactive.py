@@ -1081,7 +1081,8 @@ def init(*args):
             project_pose_trace.install(record)
         if _settings.get(project_hit_indicator.SETTING) is not None:
             # Project policy, not original #717 behaviour: see the module docstring.
-            project_hit_indicator.install(record, _settings[project_hit_indicator.SETTING])
+            project_hit_indicator.install(record, _settings[project_hit_indicator.SETTING],
+                                          _settings.get(project_hit_indicator.ART_SETTING, False))
         if _settings.get(project_battle_feed.SETTING) is not None:
             # Project policy, not original #717 behaviour: see the module docstring.
             project_battle_feed.install(record, _settings[project_battle_feed.SETTING], project_hit_indicator.policy())

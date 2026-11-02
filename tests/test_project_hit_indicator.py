@@ -88,7 +88,7 @@ class PolicyTests(unittest.TestCase):
         event = self.event(criticals=((1, 3),))
         self.policy.apply_options({'show_critical': False, 'show_vehicle': False, 'show_damage': False,
                                    'dynamic': False, 'animate': False})
-        self.assertEqual(self.policy.show_args(event, 'T34', 'note', 1000), [m.RED, '', '', m.WHITE, '', 1.0, False])
+        self.assertEqual(self.policy.show_args(event, 'T34', 'note', 1000), [m.RED, '', '', m.WHITE, '', 1.0, False, '', ''])
 
     def test_dynamic_scale_grows_with_damage_and_is_bounded(self):
         small = self.policy.show_args(self.event(damage=10), '', '', 1000)[5]
@@ -223,6 +223,76 @@ class NoteTests(unittest.TestCase):
         self.assertEqual(self.note(2, 1), '#ingame_gui:damage_panel/devices/track/destroyed')
         self.assertTrue(self.note(3, 2).startswith('#ingame_gui:damage_panel/crew/driver/destroyed'))
         self.assertTrue(self.note(4, 0).startswith('#ingame_gui:player_messages/tank_in_fire'))
+
+
+class ArtStageTests(unittest.TestCase):
+    class Native(object):
+        def __init__(self):
+            self.sizes = getattr(self, '_DamageIndicator__FLASH_SIZE', (680, 680))
+
+        def setup(self, gYaw, offset):
+            pass
+
+        def call(self, methodName, args=None):
+            pass
+
+    def indicator(self, art=False):
+        rules = m.Policy(dict(m.default_options(), view='extended'), lambda *a, **k: None, lambda: 0.0, art)
+        return m.indicator_class(self.Native, rules, lambda event: [], lambda *a, **k: None)()
+
+    def test_only_a_movie_with_art_gets_the_large_component(self):
+        self.assertEqual(self.indicator().sizes, (680, 680))
+        self.assertEqual(self.indicator(art=True).sizes, m.ART_FLASH_SIZE)
+
+    def test_art_setting_is_a_true_beside_the_indicator(self):
+        good = {'hit_indicator': m.prepare_settings('extended'), 'enable_profile13_battle': True}
+        self.assertTrue(m.validate_settings(dict(good, hit_indicator_art=True)))
+        for bad in (dict(good, hit_indicator_art=False), {'hit_indicator_art': True}):
+            self.assertRaises(ValueError, m.validate_settings, bad)
+
+
+class IconTests(unittest.TestCase):
+    def setUp(self):
+        self.policy = m.Policy(dict(m.default_options(), view='extended'), lambda *a, **k: None, lambda: 0.0)
+
+    def icon(self, name, kind=2):
+        descriptor = NoteTests.Descriptor()
+        descriptor.extras = [NoteTests.Extra(name)]
+        return m._module_icon({'criticals': [(kind, 0)]}, descriptor)
+
+    def test_modules_and_crew_name_their_sprite(self):
+        for name, sprite in (('engineHealth', 'engineCircle'), ('leftTrackHealth', 'tracksCircle'),
+                             ('rightTrackHealth', 'tracksCircle'), ('surveyingDeviceHealth', 'triplexCircle'),
+                             ('turretRotatorHealth', 'turretCircle'), ('gunner1Health', 'gunnerCircle'),
+                             ('loader2Health', 'reloaderCircle'), ('radioman1Health', 'radiomanCircle')):
+            self.assertEqual(self.icon(name), sprite)
+
+    def test_fire_and_unknown_extra_have_no_sprite(self):
+        self.assertEqual(self.icon('engineHealth', 4), '')
+        self.assertEqual(self.icon('fire'), '')
+
+    def test_vehicle_class_and_ally_variant(self):
+        self.assertEqual(m._vehicle_icon(frozenset(('heavyTank', 'premium')), False), 'heavyTank')
+        self.assertEqual(m._vehicle_icon(frozenset(('AT-SPG',)), True), 'ally_AT-SPG')
+        self.assertEqual(m._vehicle_icon(frozenset(('premium',)), True), '')
+
+    def test_icon_stands_in_only_without_damage(self):
+        event = {'shot': 1, 'yaw': 0.5, 'damage': 0, 'blocked': None, 'verdict': 'not_pierced', 'friendly': False,
+                 'fatal': False, 'source': 7, 'criticals': [(1, 0)]}
+        self.assertEqual(self.policy.show_args(event, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[7:],
+                         ['engineCircle', 'heavyTank'])
+        event['damage'] = 100
+        self.assertEqual(self.policy.show_args(event, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[7], '')
+        self.policy.apply_options({'show_critical': False})
+        event['damage'] = 0
+        self.assertEqual(self.policy.show_args(event, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[7], '')
+
+    def test_class_icon_follows_the_name(self):
+        event = {'shot': 1, 'yaw': 0.5, 'damage': 10, 'blocked': None, 'verdict': 'pierced', 'friendly': False,
+                 'fatal': False, 'source': 0, 'criticals': []}
+        self.assertEqual(self.policy.show_args(event, '', '', 1000, '', 'heavyTank')[8], '')
+        self.policy.apply_options({'show_vehicle': False})
+        self.assertEqual(self.policy.show_args(event, 'T34', '', 1000, '', 'heavyTank')[8], '')
 
 
 class SettingsTests(unittest.TestCase):

@@ -3,13 +3,18 @@
 The original movie stays untouched in gui.pkg; prepare writes a res_mods copy
 under a new name, so nothing in Git carries client resources. All original tags
 are kept. Two tags are added: the font import every native text movie has and
-one AS2 DoAction with the project callback. It draws with the player's drawing
-API and text fields only, so no modern-client graphics enter the movie.
+one AS2 DoAction with the project callback. Without an art folder it draws with
+the player's drawing API and text fields only.
+
+UI-02b: `art` is a local folder of tools/battle_ui_hit_art.py. Then its sprites
+are added as exported movie clips and the callback attaches them instead of
+drawing. No art folder or a required file missing: the drawn indicator, as before.
 """
 from __future__ import annotations
 
 from pathlib import Path
 import hashlib
+import sys
 import struct
 import zipfile
 import zlib
@@ -25,6 +30,18 @@ FONT = '$FieldFont'
 # and a shell from straight ahead points up.
 BEAM_NEAR, BEAM_FAR, DISC_AT, DISC_RADIUS = 235, 335, 205, 30
 NAME_AT, NOTE_AT = 280, 160
+# Colours of project_hit_indicator.show_args that pick a sprite.
+RED, ORANGE = 0xc8181e, 0xe06a1b
+# Measured on the owner's Lesta battle shot at 1920x1080: the 358 px sprite at
+# 1:1 with its centre 315 px out (the constant of the Lesta movie), the disc 44 px
+# wide 256 px out, row 238 of the sprite. That is 494 px to the far end, so a
+# movie with art has a larger stage; project_hit_indicator gives its component
+# the same size. The native arc keeps its absolute size, damageMC stays centred.
+ART_STAGE = 1020
+ART_SCALE, ART_DISC_SIZE, ART_ICON_SCALE = 100, 44, 70
+ART_BEAM_AT, ART_DISC_AT, ART_CLASS_AT, ART_NAME_AT, ART_NOTE_AT = 315, 256, 290, 302, 216
+# Percent of the `scale` argument from which the beam widens.
+ART_MEDIUM_FROM, ART_BIG_FROM = 115, 140
 
 
 class As2:
@@ -65,6 +82,8 @@ def expr(node):
         return expr(node[1]) + expr(node[2]) + As2.record(0x4e)
     if kind == 'time':
         return As2.record(0x34)
+    if kind == 'not':
+        return expr(node[1]) + As2.record(0x12)
     if kind in ('+', '-', '*', '/', '<'):
         return expr(node[1]) + expr(node[2]) + As2.record(
             {'+': 0x47, '-': 0x0b, '*': 0x0c, '/': 0x0d, '<': 0x48}[kind])
@@ -191,10 +210,66 @@ def frame_body():
             ('set', ('get', me, 'noteMC'), '_rotation', turn)]
 
 
-def actions():
+def attach(mc, linkage, name, depth, scale, y):
+    clip = ('get', mc, name)
+    return [method(mc, 'attachMovie', linkage, name, depth), ('set', clip, '_xscale', scale),
+            ('set', clip, '_yscale', scale), ('set', clip, '_y', y)]
+
+
+def art_show_source():
+    """The same arguments as show_source plus two sprite names, both may be empty.
+    Sprite by colour and strength, so the facts stay decided in the client module."""
+    mc, turn = var('m'), ('neg', ('get', var('damageMC'), '_rotation'))
+    percent = ('*', var('scale'), 100)
+    disc_scale = ('/', ART_DISC_SIZE * 100, var('discSize'))
+    body = [('local', 'm', ('call', var('damageMC'), 'createEmptyMovieClip', ['projectHit', 100])),
+            ('local', 'beam', 'blockedSmall'), ('local', 'disc', 'blockCircle'), ('local', 'discSize', 58),
+            ('if', ('==', var('colour'), RED),
+             [('assign', 'beam', 'damageSmall'), ('assign', 'disc', 'damageCircle'),
+              ('if', ('<', ART_MEDIUM_FROM, percent), [('assign', 'beam', 'damageMedium')]),
+              ('if', ('<', ART_BIG_FROM, percent), [('assign', 'beam', 'damageBig')])]),
+            ('if', ('==', var('colour'), ORANGE),
+             [('assign', 'beam', 'crit'), ('assign', 'disc', 'critCircle'), ('assign', 'discSize', 42)])]
+    body += attach(mc, var('beam'), 'beamMC', 1, ART_SCALE, -ART_BEAM_AT)
+    body += attach(mc, var('disc'), 'discMC', 2, disc_scale, -ART_DISC_AT)
+    for name, depth, y in (('numberMC', 3, -ART_DISC_AT), ('nameMC', 4, -ART_NAME_AT), ('noteMC', 5, -ART_NOTE_AT)):
+        body += holder(mc, name, depth, y)
+    # A named module replaces the number; the fact keeps its note under the disc.
+    body += [('if', ('not', ('==', var('icon'), '')),
+              attach(mc, var('icon'), 'iconMC', 6, ART_ICON_SCALE, -ART_DISC_AT) + [('assign', 'number', '')]),
+             ('if', ('not', ('==', var('vehicle'), '')),
+              attach(mc, var('vehicle'), 'classMC', 7, 100, -ART_CLASS_AT)),
+             label(('get', mc, 'numberMC'), 'field', 1, -13, 17, 0xffffff, var('number')),
+             label(('get', mc, 'nameMC'), 'field', 1, -12, 15, var('nameColour'), var('name')),
+             label(('get', mc, 'noteMC'), 'field', 1, -11, 14, var('colour'), var('note')),
+             # The name starts past the class icon whichever way it reads.
+             ('set', ('get', mc, 'nameMC'), '_y',
+              ('-', -ART_NAME_AT, ('/', ('get', ('get', ('get', mc, 'nameMC'), 'field'), 'textWidth'), 2))),
+             ('set', mc, 'startedAt', ('time',)), ('set', mc, 'animate', var('animate')),
+             ('set', mc, 'onEnterFrame', ('func', [], art_frame_body())),
+             ('if', var('animate'), [('set', mc, '_alpha', 0)]),
+             # The native arc goes only after a sprite really attached.
+             ('if', ('==', ('typeof', ('get', mc, 'beamMC')), 'movieclip'),
+              [('set', ('get', var('damageMC'), 'animation'), '_visible', False)])]
+    return function('_projectHitShow', ['colour', 'number', 'name', 'nameColour', 'note', 'scale', 'animate',
+                                        'icon', 'vehicle'], body)
+
+
+def art_frame_body():
+    """The number and the note stay upright; the name lies along the beam and
+    never reads upside down, as in the native extended view."""
+    me, turn = var('this'), ('get', var('damageMC'), '_rotation')
+    rows = [row for row in frame_body() if row[1] != ('get', me, 'nameMC')]
+    return rows + [('set', ('get', me, 'iconMC'), '_rotation', ('neg', turn)),
+                   ('set', ('get', me, 'nameMC'), '_rotation', -90),
+                   ('if', ('<', turn, 0), [('set', ('get', me, 'nameMC'), '_rotation', 90)])]
+
+
+def actions(art=False):
     register = ('call', ('get', ('get', var('gfx'), 'io'), 'GameDelegate'), 'addCallBack',
                 [CALLBACK, var('this'), '_projectHitShow'])
-    return label_source() + show_source() + stmt(('do', register)) + b'\0'
+    show = art_show_source() if art else show_source()
+    return label_source() + show + stmt(('do', register)) + b'\0'
 
 
 def tag(code, data):
@@ -235,8 +310,30 @@ def expanded(raw):
     return body
 
 
-def build(raw, added=None):
-    """The movie with one added DoAction: the indicator, or UI-03's `added`."""
+def staged(body, start, rows):
+    """(header, new PlaceObject2 of damageMC, its old bounds) for the art stage."""
+    art = art_module()
+    bounds = art.Bits()
+    bounds.rect(0, ART_STAGE * 20, 0, ART_STAGE * 20)
+    name = b'damageMC\0'
+    for code, begin, end in rows:
+        head = 6 if struct.unpack_from('<H', body, begin)[0] & 63 == 63 else 2
+        data = body[begin + head:end]
+        if code == 26 and data[0] == 0x26 and data.endswith(name):
+            move = art.Bits()
+            move.put(2, 0)
+            centre = ART_STAGE * 10
+            count = move.signed_width(centre)
+            move.put(5, count)
+            move.put(count, centre)
+            move.put(count, centre)
+            return bounds.bytes() + body[start - 4:start], tag(26, data[:5] + move.bytes() + name), (begin, end)
+    raise ValueError('original movie has no damageMC placement')
+
+
+def build(raw, added=None, images=None):
+    """The movie with one added DoAction: the indicator, or UI-03's `added`.
+    `images` are the UI-02b sprites, defined and exported before the DoAction."""
     body = expanded(raw)
     start = ((5 + 4 * (body[0] >> 3) + 7) // 8) + 4
     rows = tags(body, start)
@@ -245,17 +342,30 @@ def build(raw, added=None):
     if len(used) != 1 or len(backgrounds) != 1:
         raise ValueError('original movie layout differs')
     font = tag(71, b'gfxfontlib.swf\0\x01\0\x01\0' + struct.pack('<H', FONT_CHARACTER) + FONT.encode() + b'\0')
-    out = bytearray(body[:start])
+    art_tags, placed, header = b'', None, body[:start]
+    if images:
+        definitions, exported = art_module().tags(images, tag)
+        art_tags = definitions + exported
+        header, placed, place_row = staged(body, start, rows)
+    out = bytearray(header)
     for code, begin, end in rows:
-        out += body[begin:end]
+        out += placed if placed is not None and (begin, end) == place_row else body[begin:end]
         if code == 9:
             out += font
         elif code == 12:
-            out += tag(12, actions() if added is None else added)
+            out += art_tags + tag(12, actions(bool(images)) if added is None else added)
     return raw[:4] + struct.pack('<I', len(out) + 8) + zlib.compress(bytes(out), 9)
 
 
-def payload(original):
+def art_module():
+    tools = str(Path(__file__).resolve().parent)
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import battle_ui_hit_art
+    return battle_ui_hit_art
+
+
+def payload(original, art=None):
     with zipfile.ZipFile(Path(original) / 'res/packages/gui.pkg') as package:
         info = package.getinfo(MEMBER)
         if info.file_size > MAX_BYTES:
@@ -264,8 +374,13 @@ def payload(original):
     source = hashlib.sha256(raw).hexdigest()
     if source != SOURCE_SHA256:
         raise ValueError('original indicator movie differs from the pinned #717 bytes')
-    result = build(raw)
+    images, missing = art_module().load(art) if art is not None else ({}, [])
+    result = build(raw, images=images)
+    if len(result) > MAX_BYTES:
+        raise ValueError('indicator movie with art is oversized')
     return result, {'source_member': MEMBER, 'source_sha256': source, 'target': TARGET,
                     'target_sha256': hashlib.sha256(result).hexdigest(), 'callback': CALLBACK,
                     'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-                    'native_render_check': 'NOT_RUN'}
+                    'art': 'embedded' if images else 'absent' if art is not None else 'not_requested',
+                    'art_sprites': sorted(images), 'art_missing': missing,
+                    'stage': ART_STAGE if images else 680, 'native_render_check': 'NOT_RUN'}
