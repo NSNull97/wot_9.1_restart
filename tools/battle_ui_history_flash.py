@@ -1,126 +1,137 @@
-"""UI-04: build the battle history movie on the exact #717 DamageIndicator.swf.
+"""UI-04 / UI-03b: the battle history and the sums inside the native battle movie.
 
-The same host and the same small AS2 compiler as the UI-03 feed: prepare writes a
-res_mods copy under a new name, nothing in Git carries client resources, and the
-added code draws rows with the project glyphs of the feed. Python decides every
-row and its place; this movie draws one row per call and keeps no state.
+The same native host as the feed (tools/battle_ui_native_flash.py): two holders
+on the root of the res_mods copy of gui/scaleform/battle.swf, the bottom block
+(sums and the dealt rows) and the top block (received rows). Python decides every
+row and its place; this code draws one row per call and keeps no state.
 
-UI-03b: the same full screen noScale movie as the feed, and the same `art` folder:
-its sprites replace the glyphs, the drawn ones stay when it is absent.
+Look of the owner's references ref2/history-*.png: rows on dark rounded panels,
+a panel for the sums and one for the rows; a received row has a word, the shell
+plaque and the class mark. Every shape is drawn here; no image of another client.
 """
 from __future__ import annotations
 
-from pathlib import Path
-import hashlib
-import sys
-import zipfile
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import battle_ui_art as art_tool
 import battle_ui_feed_flash as feed
-import battle_ui_hit_flash as flash
-from battle_ui_hit_flash import MAX_BYTES, MEMBER, SOURCE_SHA256, function, method, polygon, stmt, var
+from battle_ui_hit_flash import function, method, var
 
-TARGET = 'res_mods/0.9.1/gui/scaleform/ProjectBattleHistory.swf'
 CALLBACK = 'ProjectHistory.row'
 PLACE_CALLBACK = 'ProjectHistory.place'
+PLACES = ('bottom', 'top')
 KIND_TOTAL, KIND_DETAIL = 1, 2
-# Pixels from the left edge of a block, measured on the owner's live Lesta
-# screenshots at 1920 x 1080; a text field has a gutter of 2 px.
-TOTAL_GLYPH_X, TOTAL_TEXT_X, TOTAL_GLYPH_Y, TOTAL_WIDTH, TOTAL_SIZE = 8, 18, 11, 120, 15
-DETAIL_NUMBER_X, DETAIL_NUMBER_WIDTH, DETAIL_GLYPH_X, DETAIL_GLYPH_Y = -63, 100, 51, 10
-DETAIL_CLASS_X, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH, DETAIL_SIZE = 71, 81, 130, 13
-# The shell column of a block with received hits (live screenshot 5): its
-# plaque, then the class icon and the name move right by SHELL_SHIFT.
-SHELL_X, SHELL_WIDTH, SHELL_HEIGHT, SHELL_SIZE, SHELL_SHIFT = 69, 30, 13, 10, 43
-# Plaque style of client_patch/project_battle_history.py: fill, line, text; -1 none.
-SHELL_STYLES = ((-1, -1, 0x8c8c8c), (0xb4b4b4, -1, 0x1e1e1e), (0xf0a830, -1, 0x1e1e1e), (0x262626, 0xe8b040, 0xe8b040))
-DRAWN_GLYPH_SCALE = 70
-ROW_ARGS = ('id', 'y', 'kind', 'colour', 'number', 'glyph', 'name', 'icon', 'vehicleClass', 'shell', 'shellStyle')
+# Panel of a run of rows: corner radius, padding above the first and below the
+# last row, fill.
+RADIUS, PAD, PANEL_FILL, PANEL_ALPHA = 5, 5, 0x0d1216, 66
+# Columns of ref2: a sum (step 19), a dealt row (step 18), a received row.
+TOTAL_WIDTH, TOTAL_GLYPH_X, TOTAL_WORD_X, TOTAL_NUMBER_X, TOTAL_NUMBER_WIDTH = 172, 15, 29, 104, 62
+DEALT_WIDTH, DEALT_NUMBER_X, DEALT_GLYPH_X, DEALT_CLASS_X, DEALT_WORD_X, DEALT_NAME_X = 184, -24, 37, 54, 64, 125
+RECEIVED_WIDTH, RECEIVED_NUMBER_X, RECEIVED_GLYPH_X, RECEIVED_WORD_X = 254, -14, 56, 70
+SHELL_X, SHELL_WIDTH, SHELL_HEIGHT, SHELL_SIZE, RECEIVED_CLASS_X, RECEIVED_NAME_X = 125, 26, 13, 10, 171, 182
+NUMBER_WIDTH, NAME_WIDTH, TEXT_SIZE, TOTAL_SIZE, TOTAL_WORD_SIZE = 50, 70, 12, 15, 13
+WORD_COLOUR, NAME_COLOUR, NUMBER_COLOUR, CRITICAL_COLOUR, DASH_COLOUR = 0xdcdcdc, 0xf0f0f0, 0xffffff, 0xf0a040, 0x8c8c8c
+ORANGE = 0xe06a1b
+# Shell plaque of client_patch/project_battle_history.py: style, fill, text; -1
+# keeps the received columns without a plaque, 0 is a dash without a box.
+SHELL_STYLES = ((0, -1, DASH_COLOUR), (1, 0xd8dde2, 0x1e1e1e), (2, 0xf2c25a, 0x1e1e1e), (3, 0xd84a2a, 0xffffff),
+                (4, 0x8fc7d8, 0x1e1e1e))
+ROW_ARGS = ('place', 'id', 'y', 'kind', 'colour', 'number', 'glyph', 'word', 'name', 'vehicleClass', 'shell', 'shellStyle',
+            'step', 'edge')
 
 
-def text(mc, name, depth, x, width, size, colour, align, value, bold, y=0):
-    return ('do', ('fn', '_projectFeedText', [mc, name, depth, x, y, width, size, colour, align, value, bold]))
+def text(mc, name, depth, x, width, size, colour, align, value, y=None):
+    top = ('-', ('/', var('step'), 2), 10) if y is None else y
+    return ('do', ('fn', '_projectFeedText', [mc, name, depth, x, top, width, size, colour, align, value, True]))
+
+
+def corner(edge_values, radius):
+    return [('if', ('==', var('edge'), value), [('assign', radius, RADIUS)]) for value in edge_values]
+
+
+def slab(mc, width):
+    """This row's part of its panel: rounded at the top of the first row and at
+    the bottom of the last one, padded there; rows in between join seamlessly."""
+    top, bottom, rt, rb = var('top'), var('bottom'), var('rt'), var('rb')
+    outline = [method(mc, 'moveTo', rt, top), method(mc, 'lineTo', ('-', width, rt), top),
+               method(mc, 'curveTo', width, top, width, ('+', top, rt)), method(mc, 'lineTo', width, ('-', bottom, rb)),
+               method(mc, 'curveTo', width, bottom, ('-', width, rb), bottom), method(mc, 'lineTo', rb, bottom),
+               method(mc, 'curveTo', 0, bottom, 0, ('-', bottom, rb)), method(mc, 'lineTo', 0, ('+', top, rt)),
+               method(mc, 'curveTo', 0, top, rt, top)]
+    return ([('local', 'rt', 0), ('local', 'rb', 0), ('local', 'top', 0), ('local', 'bottom', var('step'))]
+            + corner((1, 3), 'rt') + corner((2, 3), 'rb')
+            + [('if', ('<', 0, var('rt')), [('assign', 'top', -PAD)]),
+               ('if', ('<', 0, var('rb')), [('assign', 'bottom', ('+', var('step'), PAD))])]
+            + feed.filled(mc, outline, PANEL_FILL, PANEL_ALPHA))
+
+
+def mark(mc, x, number):
+    return feed.glyph(mc, 'classMC', 4, x, ('/', var('step'), 2), number, NAME_COLOUR, 70)
+
+
+def total_rows(mc):
+    middle = ('/', var('step'), 2)
+    return (slab(mc, TOTAL_WIDTH) + feed.glyph(mc, 'glyphMC', 2, TOTAL_GLYPH_X, middle, var('glyph'), var('colour'), 70)
+            + [text(mc, 'wordField', 10, TOTAL_WORD_X, 80, TOTAL_WORD_SIZE, WORD_COLOUR, 'left', var('word')),
+               text(mc, 'numberField', 20, TOTAL_NUMBER_X, TOTAL_NUMBER_WIDTH, TOTAL_SIZE, NUMBER_COLOUR, 'right', var('number'),
+                    ('-', middle, 11))])
 
 
 def plaque(mc):
-    """The shell column: a dash for none, else a small filled or outlined box."""
-    top, right, bottom = DETAIL_GLYPH_Y - SHELL_HEIGHT // 2, SHELL_X + SHELL_WIDTH, DETAIL_GLYPH_Y + SHELL_HEIGHT - SHELL_HEIGHT // 2
-    box = [(SHELL_X, top), (right, top), (right, bottom), (SHELL_X, bottom)]
-    rows = [('local', 'fill', -1), ('local', 'line', -1), ('local', 'ink', SHELL_STYLES[0][2])]
-    for style, (fill, line, ink) in enumerate(SHELL_STYLES):
-        rows.append(('if', ('==', var('shellStyle'), style),
-                     [('assign', 'fill', fill), ('assign', 'line', line), ('assign', 'ink', ink)]))
-    rows += [('if', ('<', -1, var('line')), [method(mc, 'lineStyle', 1, var('line'), 100)]),
-             ('if', ('<', -1, var('fill')), [method(mc, 'beginFill', var('fill'), 100)] + polygon(mc, box) + [method(mc, 'endFill')]),
-             text(mc, 'shellField', 9, SHELL_X, SHELL_WIDTH, SHELL_SIZE, var('ink'), 'center', var('shell'), True, 3),
-             ('assign', 'classX', DETAIL_CLASS_X + SHELL_SHIFT), ('assign', 'nameX', DETAIL_TEXT_X + SHELL_SHIFT)]
-    return rows
+    middle = ('/', var('step'), 2)
+    top, bottom = ('-', middle, SHELL_HEIGHT // 2), ('+', middle, SHELL_HEIGHT - SHELL_HEIGHT // 2)
+    box = [method(mc, 'moveTo', SHELL_X, top), method(mc, 'lineTo', SHELL_X + SHELL_WIDTH, top),
+           method(mc, 'lineTo', SHELL_X + SHELL_WIDTH, bottom), method(mc, 'lineTo', SHELL_X, bottom),
+           method(mc, 'lineTo', SHELL_X, top)]
+    rows = [('local', 'fill', -1), ('local', 'ink', DASH_COLOUR)]
+    for style, fill, ink in SHELL_STYLES:
+        rows.append(('if', ('==', var('shellStyle'), style), [('assign', 'fill', fill), ('assign', 'ink', ink)]))
+    return rows + [('if', ('<', -1, var('fill')), feed.filled(mc, box, var('fill'), 100)),
+                   text(mc, 'shellField', 30, SHELL_X, SHELL_WIDTH, SHELL_SIZE, var('ink'), 'center', var('shell'),
+                        ('-', middle, 8))]
 
 
-def glyph(mc, x, y, art):
-    if art:
-        return feed.attach(mc, var('icon'), 'glyphMC', 2, x, y)
-    return [('do', ('call', mc, 'createEmptyMovieClip', ['glyphMC', 2])),
-            ('set', ('get', mc, 'glyphMC'), '_x', x),
-            ('set', ('get', mc, 'glyphMC'), '_y', y),
-            ('set', ('get', mc, 'glyphMC'), '_xscale', DRAWN_GLYPH_SCALE),
-            ('set', ('get', mc, 'glyphMC'), '_yscale', DRAWN_GLYPH_SCALE),
-            ('do', ('fn', '_projectHistoryGlyph', [('get', mc, 'glyphMC'), var('glyph'), var('colour')]))]
+def detail_rows(mc):
+    """A dealt row; with a shell column the wider received row."""
+    middle = ('/', var('step'), 2)
+    received = (slab(mc, RECEIVED_WIDTH)
+                + feed.glyph(mc, 'glyphMC', 2, RECEIVED_GLYPH_X, middle, var('glyph'), var('colour'), 65)
+                + [text(mc, 'numberField', 10, RECEIVED_NUMBER_X, NUMBER_WIDTH, TEXT_SIZE, NUMBER_COLOUR, 'right', var('number')),
+                   ('local', 'wordColour', WORD_COLOUR),
+                   ('if', ('==', var('colour'), ORANGE), [('assign', 'wordColour', CRITICAL_COLOUR)]),
+                   text(mc, 'wordField', 20, RECEIVED_WORD_X, 52, TEXT_SIZE, var('wordColour'), 'left', var('word')),
+                   ('if', ('<', -1, var('shellStyle')), plaque(mc)),
+                   ('if', feed.not_empty(var('vehicleClass')), mark(mc, RECEIVED_CLASS_X, 12)),
+                   text(mc, 'nameField', 40, RECEIVED_NAME_X, NAME_WIDTH, TEXT_SIZE, NAME_COLOUR, 'left', var('name'))])
+    dealt = (slab(mc, DEALT_WIDTH)
+             + feed.glyph(mc, 'glyphMC', 2, DEALT_GLYPH_X, middle, var('glyph'), var('colour'), 65)
+             + [text(mc, 'numberField', 10, DEALT_NUMBER_X, NUMBER_WIDTH, TEXT_SIZE, NUMBER_COLOUR, 'right', var('number')),
+                ('if', feed.not_empty(var('vehicleClass')), mark(mc, DEALT_CLASS_X, 11)),
+                text(mc, 'wordField', 20, DEALT_WORD_X, 60, TEXT_SIZE, WORD_COLOUR, 'left', var('word')),
+                text(mc, 'nameField', 40, DEALT_NAME_X, 58, TEXT_SIZE, NAME_COLOUR, 'left', var('name'))])
+    return [('if', feed.not_empty(var('shell')), received), ('if', ('==', var('shell'), ''), dealt)]
 
 
-def row_source(art=False):
+def row_source():
     mc = var('m')
-    total = glyph(mc, TOTAL_GLYPH_X, TOTAL_GLYPH_Y, art) + [
-        text(mc, 'numberField', 3, TOTAL_TEXT_X, TOTAL_WIDTH, TOTAL_SIZE, 0xffffff, 'left', var('number'), True)]
-    detail = glyph(mc, DETAIL_GLYPH_X, DETAIL_GLYPH_Y, art) + [
-        ('local', 'classX', DETAIL_CLASS_X), ('local', 'nameX', DETAIL_TEXT_X),
-        ('if', feed.not_empty(var('shell')), plaque(mc)),
-        text(mc, 'numberField', 3, DETAIL_NUMBER_X, DETAIL_NUMBER_WIDTH, DETAIL_SIZE, 0xffffff, 'right', var('number'), True),
-        text(mc, 'nameField', 5, var('nameX'), DETAIL_TEXT_WIDTH, DETAIL_SIZE, feed.NAME_COLOUR, 'left', var('name'), True)]
-    if art:
-        detail.append(('if', feed.not_empty(var('vehicleClass')),
-                       feed.attach(mc, var('vehicleClass'), 'classMC', 7, var('classX'), DETAIL_GLYPH_Y)))
-    body = [('set', var('damageMC'), '_visible', False),
-            ('local', 'm', ('call', var('historyMC'), 'createEmptyMovieClip',
-                            [('+', 'row', var('id')), ('+', 10, var('id'))])),
+    holder = ('get', var('this'), ('+', 'projectHistory_', var('place')))
+    body = [('local', 'm', ('call', holder, 'createEmptyMovieClip', [('+', 'row', var('id')), ('+', 10, var('id'))])),
             ('set', mc, '_y', var('y')),
-            ('if', ('==', var('kind'), KIND_TOTAL), total),
-            ('if', ('==', var('kind'), KIND_DETAIL), detail)]
+            ('if', ('==', var('kind'), KIND_TOTAL), total_rows(mc)),
+            ('if', ('==', var('kind'), KIND_DETAIL), detail_rows(mc))]
     return function('_projectHistoryRow', list(ROW_ARGS), body)
 
 
 def place_source():
-    return function('_projectHistoryPlace', ['x', 'y'], [('set', var('historyMC'), '_x', var('x')),
-                                                         ('set', var('historyMC'), '_y', var('y'))])
+    holder = ('get', var('this'), ('+', 'projectHistory_', var('place')))
+    return function('_projectHistoryPlace', ['place', 'x', 'y', 'shown'],
+                    [('set', holder, '_x', var('x')), ('set', holder, '_y', var('y')), ('set', holder, '_visible', var('shown'))])
 
 
-def actions(art=False):
-    delegate = ('get', ('get', var('gfx'), 'io'), 'GameDelegate')
-    setup = feed.stage_setup() + [
-        ('assign', 'historyMC', ('call', var('this'), 'createEmptyMovieClip', ['projectHistory', 300])),
-        ('set', var('damageMC'), '_visible', False),
-        ('do', ('call', delegate, 'addCallBack', [CALLBACK, var('this'), '_projectHistoryRow'])),
-        ('do', ('call', delegate, 'addCallBack', [PLACE_CALLBACK, var('this'), '_projectHistoryPlace']))]
-    return (feed.text_source() + feed.glyph_source('_projectHistoryGlyph', var('colour')) + row_source(art)
-            + place_source() + b''.join(stmt(row) for row in setup) + b'\0')
+def sources():
+    return row_source() + place_source()
 
 
-def payload(original, art=None):
-    with zipfile.ZipFile(Path(original) / 'res/packages/gui.pkg') as package:
-        info = package.getinfo(MEMBER)
-        if info.file_size > MAX_BYTES:
-            raise ValueError('original indicator movie is oversized')
-        raw = package.read(info)
-    source = hashlib.sha256(raw).hexdigest()
-    if source != SOURCE_SHA256:
-        raise ValueError('original indicator movie differs from the pinned #717 bytes')
-    images, missing = art_tool.load(art, art_tool.HISTORY_SPRITES) if art is not None else ({}, [])
-    result = art_tool.embed(flash.build(raw, actions(bool(images))), images)
-    if len(result) > MAX_BYTES:
-        raise ValueError('history movie with art is oversized')
-    return result, {'source_member': MEMBER, 'source_sha256': source, 'target': TARGET,
-                    'target_sha256': hashlib.sha256(result).hexdigest(), 'callback': CALLBACK,
-                    'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-                    'art': 'embedded' if images else 'absent' if art is not None else 'not_requested',
-                    'art_sprites': sorted(images), 'art_missing': missing, 'native_render_check': 'NOT_RUN'}
+def setup(delegate, depth):
+    """Two holders on the root of the battle movie, named by their place."""
+    rows = [('do', ('call', var('this'), 'createEmptyMovieClip', ['projectHistory_' + place, ('+', depth, index)]))
+            for index, place in enumerate(PLACES)]
+    return rows + [('do', ('call', delegate, 'addCallBack', [CALLBACK, var('this'), '_projectHistoryRow'])),
+                   ('do', ('call', delegate, 'addCallBack', [PLACE_CALLBACK, var('this'), '_projectHistoryPlace']))]

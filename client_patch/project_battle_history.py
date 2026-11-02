@@ -9,9 +9,12 @@ sums of the battle and the rows by vehicle and never estimates: an amount the
 server withheld stays absent, and a sum that lacks one carries a '+' until the
 last record of the battle replaces it with the exact number.
 
-Up to two native GUI.Flash components over ProjectBattleHistory.swf fill the screen
-as the native Aim does, the movie is in noScale, so the place of a block comes in
-screen pixels and follows the resolution. They are activated on the first fact.
+UI-03b, owner order 02.11: a part of the native battle interface, not a mod
+beside it. Two blocks drawn by code added to the native battle.swf
+(tools/battle_ui_native_flash.py): the sums and the dealt rows at the bottom, the
+received rows at the top when the player asks so. This module reaches them
+through the native battle window's own `call`, bound by the native
+g_windowsManager events; the sums are on screen from the start of the battle.
 Any failure switches the history off for the session; the battle and the native
 HUD go on.
 
@@ -25,7 +28,6 @@ SETTING = 'battle_history'
 POLICY = 'project_override_not_original_091'
 EVENT = 'project_battle_history'
 FEATURE = 'sr_battle_history'
-MOVIE = 'ProjectBattleHistory.swf'
 CALLBACK = 'ProjectHistory.row'
 PLACE_CALLBACK = 'ProjectHistory.place'
 # Rows on screen: all in one list, or each group in its own place.
@@ -33,53 +35,58 @@ BOTTOM_ROWS, TOP_ROWS = 7, 5
 KEPT_ROWS = 16
 TOTALS_ROWS = 3
 ALT_PERIOD = 0.1
-# Block coordinates of the owner's live Lesta screenshots at 1920 x 1080: the
-# bottom block stands right of the 230 px native damage panel, the sums end on one
-# line and the rows start on another whichever sums are shown. The top block stands
-# by the team list.
-ROW_HEIGHT, TOTAL_HEIGHT, TOTALS_GAP = 20, 22, 9
-TOTALS_Y = 0
-DETAIL_Y = TOTALS_ROWS * TOTAL_HEIGHT + TOTALS_GAP
-BOTTOM_X, BOTTOM_ABOVE, TOP_X, TOP_Y = 235, 227, 247, 66
+# Block coordinates in screen pixels. The bottom block stands right of the 230 px
+# native damage panel: a panel of sums, then a panel of rows (steps of the
+# owner's references ref2). The top block stands by the team list.
+PAD, TOTAL_STEP, DEALT_STEP, RECEIVED_STEP, PANEL_GAP = 5, 19, 18, 21, 5
+DETAIL_TOP = 2 * PAD + TOTALS_ROWS * TOTAL_STEP + PANEL_GAP
+DETAIL_Y = DETAIL_TOP + PAD
+BOTTOM_HEIGHT = DETAIL_Y + BOTTOM_ROWS * DEALT_STEP + PAD
+BOTTOM_X, BOTTOM_ABOVE, TOP_X, TOP_Y = 235, BOTTOM_HEIGHT + 12, 247, 66
 # Native battle.swf: consumablesPanel lies 56 px above the bottom of the stage. Its
-# half width is an estimate. The block is as wide as a row with the shell column. A screen too narrow to keep the rows left of it shows
-# only those above its top edge.
-BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 256, 230, 4
+# half width is an estimate. The block is as wide as a received row. A screen too
+# narrow to keep the rows left of it shows only those above its top edge.
+BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 254, 230, 4
 KIND_EMPTY, KIND_TOTAL, KIND_DETAIL = 0, 1, 2
+# Panel edges of a row: the first rounds the top, the last the bottom.
+EDGE_TOP, EDGE_BOTTOM = 1, 2
 RED, ORANGE, GREY, GREEN, WHITE = 0xc8181e, 0xe06a1b, 0x9a9a9a, 0x5fc23a, 0xffffff
 # Glyph numbers of tools/battle_ui_feed_flash.py.
 CROSS, SHIELD, FLAG, EYE, CHEVRONS, KILL, TRACK, GEAR, FLAME = range(1, 10)
+RADIO = 10
 
-# Row key: group, colour, glyph, sprite.
+# Row key: group, colour, glyph, word (ref2).
 RECEIVED, EFFECT = 'received', 'efficiency'
-ROWS_TABLE = {'received': (RECEIVED, RED, CROSS, 'damageLog_damage_enemy_16x16'),
-              'received_fire': (RECEIVED, RED, FLAME, 'damageLog_fire_enemy_16x16'),
-              'received_ram': (RECEIVED, RED, CHEVRONS, 'damageLog_ram_enemy_16x16'),
-              'blocked': (RECEIVED, GREY, SHIELD, 'damageLog_reflect_16x16'),
-              'received_critical': (RECEIVED, ORANGE, GEAR, 'damageLog_critical_enemy_16x16'),
-              'shot': (EFFECT, GREEN, CROSS, 'damageLog_damage_16x16'),
-              'ram': (EFFECT, GREEN, CHEVRONS, 'damageLog_ram_16x16'),
-              'burned': (EFFECT, ORANGE, FLAME, 'damageLog_fire_16x16'),
-              'assist_spot': (EFFECT, GREEN, EYE, 'damageLog_coordinate_16x16'),
-              'assist_track': (EFFECT, GREEN, TRACK, 'damageLog_immobilized_16x16')}
-# Wire numbers of battle_events::FeedKind this widget reads. Ignition (7) has no
-# amount: the row of a fire appears with its first burned HP.
-FEED_ROWS = {1: 'shot', 2: 'ram', 7: 'burned', 8: 'burned', 11: 'received_ram', 12: 'received_fire', 14: 'assist_spot',
-             15: 'assist_track'}
-IGNITION = 7
+ROWS_TABLE = {'received': (RECEIVED, RED, CROSS, 'Пробитие'),
+              'received_fire': (RECEIVED, RED, FLAME, 'Пожар'),
+              'received_ram': (RECEIVED, RED, CHEVRONS, 'Таран'),
+              'blocked': (RECEIVED, WHITE, SHIELD, 'Блок'),
+              'received_critical': (RECEIVED, ORANGE, GEAR, 'Крит'),
+              'shot': (EFFECT, GREEN, CROSS, 'Урон'),
+              'ram': (EFFECT, GREEN, CHEVRONS, 'Таран'),
+              'burned': (EFFECT, ORANGE, FLAME, 'Поджог'),
+              'critical': (EFFECT, GREEN, GEAR, 'Крит'),
+              'assist_spot': (EFFECT, GREEN, RADIO, 'Помощь'),
+              'assist_track': (EFFECT, GREEN, TRACK, 'Помощь')}
+KILLED = (KILL, 'Уничтожен')
+# Wire numbers of battle_events::FeedKind this widget reads. Ignition (7) opens the
+# row of a fire; a module hit without HP (9, 10) is its own "Крит" row (owner
+# 02.11); a kill (3) marks the row of the shot or ram that made it.
+FEED_ROWS = {1: 'shot', 2: 'ram', 7: 'burned', 8: 'burned', 9: 'critical', 10: 'critical', 11: 'received_ram',
+             12: 'received_fire', 14: 'assist_spot', 15: 'assist_track'}
+IGNITION, KILL_FEED = 7, 3
 # Owner 02.11: every hit has its own row. A fire is one row: its ticks add up.
 MERGED = ('burned', 'received_fire')
-# Shell plaque of a received hit, Lesta labels (ingame_gui damageLog/shellType):
-# family: text. Style: 0 a dash for no shell, 1 grey, 2 gold for a gold shell,
-# 3 outlined for high explosive.
+# Shell plaque of a received hit (common Russian short names) and its style:
+# -1 no plaque, 0 a dash, 1 grey, 2 yellow, 3 red, 4 blue (tools/battle_ui_history_flash.py).
 SHELL_LABELS = {'armor_piercing': 'ББ', 'armor_piercing_cr': 'БП', 'hollow_charge': 'КС', 'high_explosive': 'ОФ'}
-NO_SHELL, SHELL_GREY, SHELL_GOLD, SHELL_OUTLINE = 0, 1, 2, 3
-# Summary row: option key, colour, glyph, sprite. No row for disorientation: the
-# owner does not carry that mechanic over, and none for burned HP (owner 02.11):
-# it counts in the dealt sum and has its row among the hits.
-TOTALS_TABLE = (('total_dealt', GREEN, CROSS, 'damageLog_damage_16x16'),
-                ('total_blocked', WHITE, SHIELD, 'damageLog_reflect_16x16'),
-                ('total_assist', GREEN, EYE, 'damageLog_assist_16x16'))
+NO_PLAQUE, NO_SHELL = -1, 0
+SHELL_STYLES = {'armor_piercing': 1, 'armor_piercing_cr': 2, 'high_explosive': 3, 'hollow_charge': 4}
+# Summary row: option key, colour, glyph, word. No row for disorientation and
+# none for burned HP (owner 02.11): it counts in the dealt sum.
+TOTALS_TABLE = (('total_dealt', GREEN, CROSS, 'Урон'),
+                ('total_blocked', WHITE, SHIELD, 'Блок'),
+                ('total_assist', GREEN, RADIO, 'Помощь'))
 
 # Values for UI-05: key, allowed values, default; the switches of the owner's
 # target settings. Applied by apply_options at once; storage is
@@ -149,7 +156,8 @@ def rows_of(event):
 def number(row):
     """The value, a '+' while part of it is withheld, a count without any value."""
     if row['value'] is None:
-        return 'x%d' % row['count'] if row['count'] > 1 or row['key'] in ('received_critical', 'burned') else '- -'
+        counted = row['key'] in ('received_critical', 'burned', 'critical')
+        return 'x%d' % row['count'] if row['count'] > 1 or counted else '- -'
     return '%d%s' % (row['value'], '+' if row['withheld'] else '')
 
 
@@ -188,10 +196,19 @@ class History(object):
             row['shell'] = (event['family'], event['premium'])
         return bool(rows)
 
+    def killed(self, vehicle):
+        """The newest shot or ram row of the vehicle becomes "Уничтожен"."""
+        rows = [row for row in self.rows if vehicle and row['vehicle'] == vehicle and row['key'] in ('shot', 'ram')]
+        if rows:
+            rows[0]['killed'] = True
+        return bool(rows)
+
     def add(self, event):
         """True when a fact changed the history. Newest row first."""
         if event['kind'] == 'shell':
             return self.shell(event)
+        if event['kind'] == 'feed' and event['feed'] == KILL_FEED:
+            return self.killed(event['vehicle'])
         if event['kind'] == 'totals':
             self.sums = {'dealt': event['dealt'], 'blocked': event['blocked'],
                          'assist': event['assist_spot'] + event['assist_track'], 'burned': event['burned']}
@@ -232,10 +249,10 @@ class History(object):
 
     def _totals(self):
         rows = []
-        for (option, colour, glyph, icon), name in zip(TOTALS_TABLE, ('dealt', 'blocked', 'assist')):
+        for (option, colour, glyph, word), name in zip(TOTALS_TABLE, ('dealt', 'blocked', 'assist')):
             if self.options[option]:
                 text = '%s%s' % ('{:,}'.format(self.sums[name]).replace(',', ' '), '+' if name in self.partial else '')
-                rows.append((KIND_TOTAL, colour, text, glyph, '', icon, '', '', NO_SHELL))
+                rows.append((KIND_TOTAL, colour, text, glyph, word, '', '', '', NO_PLAQUE))
         return rows
 
     def _details(self, group=None, plaques=False):
@@ -244,21 +261,24 @@ class History(object):
         wanted = self.options['events']
         rows = []
         for row in self.rows:
-            own, colour, glyph, icon = ROWS_TABLE[row['key']]
+            own, colour, glyph, word = ROWS_TABLE[row['key']]
             if (wanted != 'all' and own != wanted) or (group is not None and own != group):
                 continue
+            if row.get('killed'):
+                glyph, word = KILLED
             shown = row['vehicle'] and self.options['show_vehicle']
-            rows.append((KIND_DETAIL, colour, number(row), glyph, self.name_of(row['vehicle']) if shown else '', icon,
-                         self.class_of(row['vehicle']) if shown else '') + (plaque(row) if plaques else ('', NO_SHELL)))
+            rows.append((KIND_DETAIL, colour, number(row), glyph, word, self.name_of(row['vehicle']) if shown else '',
+                         self.class_of(row['vehicle']) if shown else '') + (plaque(row) if plaques else ('', NO_PLAQUE)))
         return rows
 
     def view(self, rows=BOTTOM_ROWS):
         """Per place the flat arguments of every movie row: (id, y, kind, colour,
-        number, glyph, name, icon, class icon). A row that shows nothing has
-        KIND_EMPTY. `rows` limits the detail rows of the bottom block."""
+        number, glyph, word, name, class, shell, shell style, step, edge). A row
+        that shows nothing has KIND_EMPTY. `rows` limits the detail rows of the
+        bottom block."""
         if not self.options['enabled']:
             return {'bottom': bottom_rows([], []), 'top': top_rows([])}
-        # A block that holds received hits has the plaque column, as in Lesta.
+        # A block that holds received hits has the shell column (ref2).
         if self.options['layout'] == 'top':
             return {'bottom': bottom_rows(self._totals(), self._details(EFFECT)[:rows]),
                     'top': top_rows(self._details(RECEIVED, True))}
@@ -266,33 +286,49 @@ class History(object):
         return {'bottom': bottom_rows(self._totals(), self._details(None, plaques)[:rows]), 'top': top_rows([])}
 
 
-def _row(index, y, content):
-    return (index, y) + (content or (KIND_EMPTY, -1, '', 0, '', '', '', '', NO_SHELL))
+EMPTY = (KIND_EMPTY, -1, '', 0, '', '', '', '', NO_PLAQUE)
 
 
 def plaque(row):
-    """(text, style) of the shell column; a row without a known shell has a dash."""
+    """(text, style) of the shell column: a received row shows its shell or a
+    dash when it is unknown; a dealt row in that block keeps the column empty."""
+    if ROWS_TABLE[row['key']][0] != RECEIVED:
+        return ' ', NO_PLAQUE
     shell = row.get('shell')
     if shell is None:
         return '—', NO_SHELL
-    family, premium = shell
-    return SHELL_LABELS[family], SHELL_GOLD if premium else SHELL_OUTLINE if family == 'high_explosive' else SHELL_GREY
+    return SHELL_LABELS[shell[0]], SHELL_STYLES[shell[0]]
 
 
 def _pad(rows, size):
     return [rows[index] if index < len(rows) else None for index in range(size)]
 
 
+def _panel(slots, steps, ys):
+    """(id, y) + content + (step, edge) of a run of rows on one panel."""
+    filled = [index for index, content in enumerate(slots) if content is not None]
+    rows = []
+    for index, content in enumerate(slots):
+        edge = 0
+        if filled and index == filled[0]:
+            edge |= EDGE_TOP
+        if filled and index == filled[-1]:
+            edge |= EDGE_BOTTOM
+        rows.append((ys[index], content or EMPTY, steps, edge if content else 0))
+    return rows
+
+
 def bottom_rows(totals, details):
     hidden = TOTALS_ROWS - len(totals)
-    rows = [_row(index, TOTALS_Y + (hidden + index) * TOTAL_HEIGHT, content)
-            for index, content in enumerate(_pad(totals, TOTALS_ROWS))]
-    return rows + [_row(TOTALS_ROWS + index, DETAIL_Y + index * ROW_HEIGHT, content)
-                   for index, content in enumerate(_pad(details, BOTTOM_ROWS))]
+    sums = _panel(_pad(totals, TOTALS_ROWS), TOTAL_STEP,
+                  [PAD + (hidden + index) * TOTAL_STEP for index in range(TOTALS_ROWS)])
+    lines = _panel(_pad(details, BOTTOM_ROWS), DEALT_STEP, [DETAIL_Y + index * DEALT_STEP for index in range(BOTTOM_ROWS)])
+    return [(index, y) + content + (step, edge) for index, (y, content, step, edge) in enumerate(sums + lines)]
 
 
 def top_rows(details):
-    return [_row(index, index * ROW_HEIGHT, content) for index, content in enumerate(_pad(details, TOP_ROWS))]
+    lines = _panel(_pad(details, TOP_ROWS), RECEIVED_STEP, [PAD + index * RECEIVED_STEP for index in range(TOP_ROWS)])
+    return [(index, y) + content + (step, edge) for index, (y, content, step, edge) in enumerate(lines)]
 
 
 def origin(place, screen):
@@ -307,48 +343,61 @@ def visible_rows(screen):
     return BOTTOM_ROWS if BOTTOM_X + BLOCK_WIDTH <= screen[0] / 2.0 - AMMO_HALF else NARROW_ROWS
 
 
-def widget_class(base, depth, screen):
-    """Fills the screen as the native Aim, in pixels; no input of its own."""
-
-    class ProjectHistoryWidget(base):
-
-        def __init__(self):
-            base.__init__(self, MOVIE)
-            self.component.wg_inputKeyMode = 2
-            self.component.position.z = depth
-            self.movie.backgroundAlpha = 0.0
-            self.component.focus = False
-            self.component.moveFocus = False
-            self.component.heightMode = 'PIXEL'
-            self.component.widthMode = 'PIXEL'
-            # GUI.Flash.size takes a tuple of floats, as GUI.screenResolution() in Aim.
-            self.flashSize = (float(screen()[0]), float(screen()[1]))
-
-        def fit(self):
-            self.flashSize = (float(screen()[0]), float(screen()[1]))
-            self.component.size = self.flashSize
-
-    return ProjectHistoryWidget
-
-
 class Runtime(object):
-    """Up to two widgets per battle; the engine calls come in as plain callables."""
+    """The history of the native battle window; the engine calls come in as plain
+    callables, the window as an object with the native `call`."""
 
-    def __init__(self, history, make_widget, screen, key_down, schedule, cancel, record):
-        self.history, self.make_widget, self.screen = history, make_widget, screen
+    def __init__(self, history, screen, key_down, schedule, cancel, record):
+        self.history, self.screen = history, screen
         self.key_down, self.schedule, self.cancel, self.record = key_down, schedule, cancel, record
-        self.widgets, self.sent, self.timer, self.failed, self.visible = {}, {}, None, False, True
+        self.battle, self.sent, self.timer, self.failed, self.visible = None, {}, None, False, True
         self.shown = 0
 
+    def attach(self, battle):
+        """The native window is active: place both blocks and draw, the sums with
+        zeros from the start (owner 02.11)."""
+        self.battle, self.sent = battle, {}
+        if self.failed:
+            return
+        try:
+            self.place()
+            self.push()
+        except Exception:
+            self.fail('attach')
+
+    def detach(self):
+        if self.timer is not None:
+            self.cancel(self.timer)
+            self.timer = None
+        if self.battle is not None:
+            self.battle, self.sent = None, {}
+            self.record(EVENT + '_closed', version=VERSION, shown=self.shown, sums=dict(self.history.sums))
+
     def ready(self):
-        self.close()
         self.history.reset()
         self.visible, self.shown = True, 0
+        if self.battle is not None and not self.failed:
+            try:
+                self.place()
+                self.push()
+            except Exception:
+                self.fail('ready')
 
     def fail(self, stage):
         self.failed = True
         self.record(EVENT + '_failed', version=VERSION, stage=stage, traceback=traceback.format_exc()[-2000:])
-        self.close()
+        battle = self.battle
+        self.detach()
+        if battle is not None:
+            try:
+                for place in ('bottom', 'top'):
+                    battle.call(PLACE_CALLBACK, [place, 0, 0, False])
+            except Exception:
+                self.record(EVENT + '_hide_failed', version=VERSION, traceback=traceback.format_exc()[-2000:])
+
+    def place(self):
+        for place in ('bottom', 'top'):
+            self.battle.call(PLACE_CALLBACK, [place] + list(origin(place, self.screen())) + [self.visible])
 
     def on_event(self, event):
         if self.failed:
@@ -366,7 +415,7 @@ class Runtime(object):
     def apply_options(self, value):
         """UI-05: changes the screen at once."""
         self.history.apply_options(value)
-        if self.failed or not self.shown:
+        if self.failed or self.battle is None:
             return
         try:
             self.push()
@@ -374,26 +423,21 @@ class Runtime(object):
             self.fail('options')
 
     def push(self):
+        """Only rows that changed are sent."""
+        if self.battle is None:
+            return
         for place, rows in sorted(self.history.view(visible_rows(self.screen())).items()):
-            filled = [row for row in rows if row[2] != KIND_EMPTY]
-            if place not in self.widgets:
-                if not filled:
-                    continue
-                widget = self.make_widget()
-                widget.active(True)
-                widget.component.visible = self.visible
-                widget.call(PLACE_CALLBACK, list(origin(place, self.screen())))
-                self.widgets[place], self.sent[place] = widget, {}
+            sent = self.sent.setdefault(place, {})
             for row in rows:
-                if self.sent[place].get(row[0]) != row:
-                    self.widgets[place].call(CALLBACK, list(row))
-                    self.sent[place][row[0]] = row
+                if sent.get(row[0]) != row:
+                    self.battle.call(CALLBACK, [place] + list(row))
+                    sent[row[0]] = row
         if self.history.options['detail'] == 'alt' and self.timer is None:
             self.timer = self.schedule(ALT_PERIOD, self.poll_alt)
 
     def poll_alt(self):
         self.timer = None
-        if self.failed or not self.widgets:
+        if self.failed or self.battle is None:
             return
         try:
             alt = bool(self.key_down())
@@ -406,31 +450,22 @@ class Runtime(object):
             self.fail('alt')
 
     def resize(self):
-        if self.failed:
+        if self.failed or self.battle is None:
             return
         try:
-            for place, widget in self.widgets.items():
-                widget.fit()
-                widget.call(PLACE_CALLBACK, list(origin(place, self.screen())))
-            if self.shown:
-                self.push()
+            self.place()
+            self.push()
         except Exception:
             self.fail('resize')
 
     def show_all(self, isShow):
         self.visible = bool(isShow)
-        for widget in self.widgets.values():
-            widget.component.visible = self.visible
-
-    def close(self):
-        if self.timer is not None:
-            self.cancel(self.timer)
-            self.timer = None
-        widgets, self.widgets, self.sent = self.widgets, {}, {}
-        for _, widget in sorted(widgets.items()):
-            widget.close()
-        if widgets:
-            self.record(EVENT + '_closed', version=VERSION, shown=self.shown, sums=dict(self.history.sums))
+        if self.failed or self.battle is None:
+            return
+        try:
+            self.place()
+        except Exception:
+            self.fail('show_all')
 
 
 def install(record, options, channel):
@@ -443,9 +478,9 @@ def install(record, options, channel):
     import BigWorld
     import GUI
     import Keys
-    from AvatarInputHandler import aims
     from gui import g_guiResetters
     from gui.Scaleform.Flash import Flash
+    from gui.WindowsManager import g_windowsManager
     from PlayerEvents import g_playerEvents
     import project_battle_feed
     project_battle_feed.check_flash(Flash)
@@ -462,8 +497,7 @@ def install(record, options, channel):
         return BigWorld.isKeyDown(Keys.KEY_LALT) or BigWorld.isKeyDown(Keys.KEY_RALT)
 
     history = History(options, name_of, class_of)
-    runtime = Runtime(history, widget_class(Flash, aims.DEPTH_OF_Aim, GUI.screenResolution), GUI.screenResolution,
-                      alt_down, BigWorld.callback, BigWorld.cancelCallback, record)
+    runtime = Runtime(history, GUI.screenResolution, alt_down, BigWorld.callback, BigWorld.cancelCallback, record)
 
     def on_avatar_ready():
         runtime.ready()
@@ -479,11 +513,12 @@ def install(record, options, channel):
     channel.subscribe(runtime.on_event)
     channel.features.append(FEATURE)
     project_battle_feed.SHOW_ALL.add(runtime.show_all)
+    project_battle_feed.BATTLE.add(runtime.attach, runtime.detach, g_windowsManager)
     g_guiResetters.add(runtime.resize)
     g_playerEvents.onAvatarReady += on_avatar_ready
     g_playerEvents.onAvatarBecomeNonPlayer += on_become_non_player
     _installed = dict(runtime=runtime, channel=channel, events=g_playerEvents, resetters=g_guiResetters,
-                      show_all=project_battle_feed.SHOW_ALL, ready=on_avatar_ready, leave=on_become_non_player)
+                      host=project_battle_feed, ready=on_avatar_ready, leave=on_become_non_player)
     record(EVENT + '_installed', version=VERSION, policy=POLICY, options=history.options)
     return history
 
@@ -502,9 +537,9 @@ def restore(record):
     events.onAvatarReady -= installed['ready']
     events.onAvatarBecomeNonPlayer -= installed['leave']
     installed['resetters'].discard(installed['runtime'].resize)
-    installed['runtime'].close()
+    installed['host'].BATTLE.remove(installed['runtime'].attach, installed['runtime'].detach)
     installed['channel'].features.remove(FEATURE)
     installed['channel'].unsubscribe(installed['runtime'].on_event)
-    installed['show_all'].remove(installed['runtime'].show_all)
+    installed['host'].SHOW_ALL.remove(installed['runtime'].show_all)
     record(EVENT + '_restored', version=VERSION)
     return True

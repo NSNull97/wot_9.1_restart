@@ -431,34 +431,35 @@ def prepare(args):
         movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(original)
         payloads[battle_ui_hit_flash.TARGET] = movie
         settings['hit_indicator'] = hit_indicator_policy().prepare_settings(hit_view)
-    feed_view = getattr(args, 'battle_feed', None)
-    history_view = getattr(args, 'battle_history', None)
-    feed_art = getattr(args, 'battle_feed_art', None)
-    if feed_art is not None and feed_view is None and history_view is None:
-        raise ValueError('--battle-feed-art requires --battle-feed or --battle-history')
+    # UI-03b owner order 2026-11-02: the feed, the history and the sums are a part
+    # of the native battle interface, on by default wherever the battle events
+    # channel is; --no-battle-feed / --no-battle-history only roll them back.
+    feed_view = getattr(args, 'battle_feed', None) or (None if hit_view is None or getattr(args, 'no_battle_feed', False)
+                                                       else 'labels')
+    history_view = getattr(args, 'battle_history', None) or (
+        None if hit_view is None or getattr(args, 'no_battle_history', False) else 'bottom')
+    for name, view, off in (('feed', feed_view, 'no_battle_feed'), ('history', history_view, 'no_battle_history')):
+        if view is not None and getattr(args, off, False):
+            raise ValueError('--battle-%s and --no-battle-%s contradict each other' % (name, name))
+        if view is not None and hit_view is None:
+            # Needs gateway `battle_events.feed` / `.history` and the hit indicator's channel.
+            raise ValueError('--battle-%s requires --hit-indicator: it uses the same channel' % name)
     if feed_view is not None:
-        # UI-03 owner order 2026-11-01: needs gateway `battle_events.feed` and
-        # the hit indicator's channel; without the key no row ever appears.
-        if hit_view is None:
-            raise ValueError('--battle-feed requires --hit-indicator: it uses the same channel')
         settings['battle_feed'] = battle_feed_policy().prepare_settings(feed_view)
-        import battle_ui_feed_flash
-        movie, resource_evidence['project_battle_feed_movie'] = battle_ui_feed_flash.payload(original, feed_art)
-        payloads[battle_ui_feed_flash.TARGET] = movie
     if history_view is not None:
-        # UI-04 owner order 2026-11-01: needs gateway `battle_events.history` and
-        # the hit indicator's channel; without the key the widget stays empty.
-        if hit_view is None:
-            raise ValueError('--battle-history requires --hit-indicator: it uses the same channel')
         settings['battle_history'] = battle_history_policy().prepare_settings(history_view)
-        import battle_ui_history_flash
-        movie, resource_evidence['project_battle_history_movie'] = battle_ui_history_flash.payload(original, feed_art)
-        payloads[battle_ui_history_flash.TARGET] = movie
+    if feed_view is not None or history_view is not None:
+        # One res_mods copy of the native battle movie, pinned to the #717 bytes:
+        # a source that differs refuses the whole prepare.
+        import battle_ui_native_flash
+        movie, resource_evidence['project_battle_native_movie'] = battle_ui_native_flash.payload(
+            original, feed_view is not None, history_view is not None)
+        payloads[battle_ui_native_flash.TARGET] = movie
     if getattr(args, 'battle_settings', False):
         # UI-05 owner order 2026-11-01: the tab of the native settings windows.
         # The two movies below are the only thing this flag changes in the window.
         if hit_view is None or feed_view is None or history_view is None:
-            raise ValueError('--battle-settings requires --hit-indicator, --battle-feed and --battle-history')
+            raise ValueError('--battle-settings requires --hit-indicator with the feed and the history')
         settings['battle_settings'] = battle_settings_policy().prepare_settings()
         import battle_ui_settings_flash
         movies, resource_evidence['project_battle_settings_movies'] = battle_ui_settings_flash.payloads(original)
@@ -693,20 +694,21 @@ def main():
                            'profile13 battle client by default as `extended` (facts from the gateway key '
                            'battle_events); `standard` keeps only the native arc, `off` the native indicator')
     prep.add_argument('--battle-feed', choices=('labels', 'icons'),
-                      help='Project policy, not original 0.9.1: UI-03 event feed, the last three battle events, '
-                           'with or without their names (gateway key battle_events.feed); requires --hit-indicator; '
-                           'off by default')
+                      help='Project policy, not original 0.9.1: UI-03 event feed inside the native battle movie, the '
+                           'last three battle events with or without their names (gateway key battle_events.feed); '
+                           'on with --hit-indicator, default labels')
     prep.add_argument('--battle-history', choices=('bottom', 'top'),
-                      help='Project policy, not original 0.9.1: UI-04 battle history, the sums of the battle and '
-                           'the rows by vehicle, received damage below or at the top of the screen (gateway key '
-                           'battle_events.history); requires --hit-indicator; off by default')
-    prep.add_argument('--battle-feed-art', type=Path,
-                      help='Project policy, not original 0.9.1: UI-03b local folder of feed and history sprites from '
-                           'tools/battle_ui_art.py; a folder without them keeps the drawn graphics')
+                      help='Project policy, not original 0.9.1: UI-04 battle history and sums inside the native battle '
+                           'movie, received damage below or at the top of the screen (gateway key '
+                           'battle_events.history); on with --hit-indicator, default bottom')
+    prep.add_argument('--no-battle-feed', action='store_true',
+                      help='Roll back or check without the UI-03 feed: the native battle movie gets no feed')
+    prep.add_argument('--no-battle-history', action='store_true',
+                      help='Roll back or check without the UI-04 history and sums')
     prep.add_argument('--battle-settings', action='store_true',
                       help='Project policy, not original 0.9.1: UI-05 tab of the native settings windows for the '
-                           'three widgets, stored in the local profile; requires --hit-indicator, --battle-feed and '
-                           '--battle-history; off by default, without it both windows stay byte for byte native')
+                           'three widgets, stored in the local profile; requires --hit-indicator with the feed and the '
+                           'history; off by default, without it both windows stay byte for byte native')
     prep.add_argument('--sixth-sense-sample',
                       help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
                            'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')

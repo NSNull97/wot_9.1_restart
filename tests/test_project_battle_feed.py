@@ -42,33 +42,6 @@ def hit(**fields):
 
 
 
-class WidgetSizeTests(unittest.TestCase):
-    def test_flash_size_is_the_tuple_of_floats_gui_flash_takes(self):
-        class Holder(object):
-            pass
-        class Base(object):
-            def __init__(self, movie):
-                self.component, self.movie = Holder(), Holder()
-                self.component.position = Holder()
-        size = m.widget_class(Base, 0.5, lambda: (1920, 1080))().flashSize
-        self.assertIs(type(size), tuple)
-        self.assertEqual([type(value) for value in size], [float, float])
-        self.assertEqual(size, (1920.0, 1080.0))
-
-    def test_a_new_resolution_resizes_the_component_like_native_aim(self):
-        class Holder(object):
-            pass
-        class Base(object):
-            def __init__(self, movie):
-                self.component, self.movie = Holder(), Holder()
-                self.component.position = Holder()
-        screen = [(1920, 1080)]
-        widget = m.widget_class(Base, 0.5, lambda: screen[0])()
-        screen[0] = (1280, 720)
-        widget.fit()
-        self.assertEqual(widget.component.size, (1280.0, 720.0))
-
-
 class ChannelTests(unittest.TestCase):
     def setUp(self):
         self.rows, self.seen = [], []
@@ -145,10 +118,10 @@ class Clock:
 class FeedTests(unittest.TestCase):
     def setUp(self):
         self.clock = Clock()
-        self.feed = m.Feed({}, self.clock, {523: 'T-34'}.get, {523: 'whiteIconMediumTank16x16'}.get)
+        self.feed = m.Feed({}, self.clock, {523: 'T-34'}.get, {523: 'mediumTank'}.get)
 
     def row(self, index=0):
-        return self.feed.render_args()[index * 8:index * 8 + 8]
+        return self.feed.render_args()[index * 7:index * 7 + 7]
 
     def test_every_wire_kind_has_a_row_and_a_label(self):
         for kind, key in m.FEED_ROWS.items():
@@ -157,8 +130,7 @@ class FeedTests(unittest.TestCase):
 
     def test_dealt_damage_with_name(self):
         self.assertTrue(self.feed.add(event(1, 320, 523)))
-        self.assertEqual(self.row(), [m.GREEN, '320', m.CROSS, 'Урон выстрелом', 'T-34', 5000,
-                                      'ribbonsDamage', 'whiteIconMediumTank16x16'])
+        self.assertEqual(self.row(), [m.GREEN, '320', m.CROSS, 'Урон выстрелом', 'T-34', 5000, m.LEAF])
 
     def test_a_withheld_amount_stays_visibly_absent(self):
         self.feed.add(event(1))
@@ -167,7 +139,8 @@ class FeedTests(unittest.TestCase):
     def test_received_blocked_and_critical_rows_of_a_hit(self):
         self.feed.add(hit(damage=90, source=523, criticals=((1, 3), (4, 0))))
         self.assertEqual(self.row(0)[:5], [m.ORANGE, 'x2', m.GEAR, 'Критическое повреждение', 'T-34'])
-        self.assertEqual(self.row(1)[:5], [m.RED, '90', m.CROSS, 'Получен урон', 'T-34'])
+        self.assertEqual(self.row(1)[:5], [m.RED, '90', m.SHELL_HIT, 'Получен урон', 'T-34'])
+        self.assertEqual((self.row(0)[6], self.row(1)[6]), (m.GEAR, m.RING))
 
     def test_blocked_shows_the_nominal_or_a_dash_for_a_hidden_shooter(self):
         self.feed.add(hit(damage=0, blocked=400, verdict=2, source=523))
@@ -211,7 +184,7 @@ class FeedTests(unittest.TestCase):
         self.assertTrue(self.feed.expire())
         self.assertEqual(len(self.feed.rows), 1)
         self.assertFalse(self.feed.expire())
-        self.assertEqual(self.feed.render_args()[8:], list(m.EMPTY_ROW) * 2)
+        self.assertEqual(self.feed.render_args()[7:], list(m.EMPTY_ROW) * 2)
 
     def test_a_merge_refreshes_the_life_of_the_row(self):
         self.feed.add(event(1, 1, 1))
@@ -224,7 +197,6 @@ class FeedTests(unittest.TestCase):
         self.feed.apply_options({'show_label': False, 'show_vehicle': False})
         self.feed.add(event(1, 1, 523))
         self.assertEqual(self.row()[3:5], ['', ''])
-        self.assertEqual(self.row()[7], '', 'the class icon goes with the name')
         self.feed.apply_options({'shot': False})
         self.assertFalse(self.feed.add(event(1, 1, 523)))
         self.feed.apply_options({'shot': True, 'enabled': False})
@@ -236,14 +208,14 @@ class FeedTests(unittest.TestCase):
         self.feed.add(event(1, 440, 523))
         self.feed.add(event(3, NO_VALUE, 523))
         self.assertEqual(len(self.feed.rows), 1)
-        self.assertEqual(self.row()[:5], [m.GREEN, '440', m.KILL, 'Уничтожил', 'T-34'])
-        self.assertEqual(self.row()[6], 'ribbonsKill')
+        self.assertEqual(self.row()[:5], [m.RED, '440', m.CROSS, 'Уничтожен', 'T-34'])
+        self.assertEqual(self.row()[6], m.BURST)
 
     def test_damage_after_the_kill_adds_to_the_kill_row(self):
         self.feed.add(event(3, NO_VALUE, 523))
         self.feed.add(event(1, 440, 523))
         self.assertEqual(len(self.feed.rows), 1)
-        self.assertEqual(self.row()[:3], [m.GREEN, '440', m.KILL])
+        self.assertEqual(self.row()[:4], [m.RED, '440', m.CROSS, 'Уничтожен'])
 
     def test_a_kill_keeps_rows_of_other_vehicles_and_a_ram(self):
         self.feed.add(event(1, 100, 600))
@@ -258,127 +230,172 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(self.row()[:3], [m.GREEN, '440', m.CROSS])
 
     def test_class_icon_by_the_native_tags(self):
-        self.assertEqual(m.class_icon(frozenset(['ussr', 'AT-SPG'])), 'whiteIconAt-SPG16x16')
-        self.assertEqual(m.class_icon(frozenset(['mediumTank'])), 'whiteIconMediumTank16x16')
+        self.assertEqual(m.class_icon(frozenset(['ussr', 'AT-SPG'])), 'AT-SPG')
+        self.assertEqual(m.class_icon(frozenset(['mediumTank'])), 'mediumTank')
         self.assertEqual(m.class_icon(frozenset(['observer'])), '')
 
     def test_origin_by_the_centre_and_the_bottom_of_the_screen(self):
         self.assertEqual(m.origin((1920, 1080)), (960, 786))
         self.assertEqual(m.origin((1024, 768)), (512, 474))
 
+    def test_a_module_hit_reads_as_the_module_of_the_own_vehicle(self):
+        names = {(1, 7): 'leftTrack', (2, 3): 'engine', (3, 1): 'gunner2', (1, 9): 'unknownThing'}
+        feed = m.Feed({}, self.clock, {523: 'T-34'}.get, {}.get,
+                      lambda critical: m.module_phrase(critical, names.get(tuple(critical), '')))
+        feed.add(hit(damage=0, verdict=1, source=523, criticals=((1, 7),)))
+        self.assertEqual(feed.render_args()[:7], [m.ORANGE, '', m.GEAR, 'Повреждена левая гусеница', 'T-34', 5000,
+                                                  m.MODULE_TRACK])
+        feed.apply_options({'show_label': False})
+        self.assertEqual(feed.render_args()[3], 'Повреждена левая гусеница', 'a module row is its text')
+        self.assertEqual(m.module_phrase((2, 3), 'engineHealth'), ('Уничтожен двигатель', m.GEAR))
+        self.assertEqual(m.module_phrase((3, 1), 'gunner2'), ('Контужен наводчик', m.GEAR))
+        self.assertEqual(m.module_phrase((4, 0), ''), ('Пожар', m.FLAME))
+        self.assertIsNone(m.module_phrase((1, 9), 'unknownThing'))
+
+    def test_without_the_module_seam_the_row_keeps_its_label(self):
+        self.feed.add(hit(damage=0, verdict=1, source=523, criticals=((1, 7),)))
+        self.assertEqual(self.row()[3], 'Критическое повреждение')
+
     def test_arguments_always_cover_three_rows(self):
         self.assertEqual(self.feed.render_args(), list(m.EMPTY_ROW) * 3)
 
 
-class Component:
-    class Position:
-        z = 0
+class Battle:
+    """The native battle window: only its `call` matters."""
 
     def __init__(self):
-        self.position, self.visible = self.Position(), None
-
-
-class Widget:
-    def __init__(self):
-        self.component, self.calls, self.states, self.closed = Component(), [], [], 0
-
-    def active(self, state):
-        self.states.append(state)
+        self.calls = []
 
     def call(self, name, args):
         self.calls.append((name, args))
 
-    def fit(self):
-        self.fits = getattr(self, 'fits', 0) + 1
+    def rows(self):
+        return [args for name, args in self.calls if name == m.CALLBACK]
 
-    def close(self):
-        self.closed += 1
+    def places(self):
+        return [args for name, args in self.calls if name == m.PLACE_CALLBACK]
 
 
 class RuntimeTests(unittest.TestCase):
     def setUp(self):
-        self.clock, self.made, self.records, self.timers, self.cancelled = Clock(), [], [], [], []
+        self.clock, self.records, self.timers, self.cancelled = Clock(), [], [], []
         self.screen = (1920, 1080)
-        self.runtime = m.Runtime(m.Feed({}, self.clock, lambda vehicle: '', lambda vehicle: ''), self.make,
-                                 lambda: self.screen, self.schedule, self.cancelled.append,
-                                 lambda name, **fields: self.records.append(name))
-
-    def make(self):
-        self.made.append(Widget())
-        return self.made[-1]
+        self.runtime = m.Runtime(m.Feed({}, self.clock, lambda vehicle: '', lambda vehicle: ''), lambda: self.screen,
+                                 self.schedule, self.cancelled.append, lambda name, **fields: self.records.append(name))
+        self.battle = Battle()
 
     def schedule(self, delay, callback):
         self.timers.append(callback)
         return len(self.timers)
 
-    def test_the_widget_appears_on_the_first_row_only(self):
-        self.runtime.ready()
-        self.assertEqual(self.made, [])
-        self.runtime.on_event(event(1, 1, 1))
-        self.assertEqual(self.made[0].states, [True])
-        self.assertEqual(self.made[0].calls[0], (m.PLACE_CALLBACK, [960, 786]))
-        self.assertEqual(self.made[0].calls[1][0], m.CALLBACK)
-        self.assertEqual(len(self.made[0].calls[1][1]), 24)
+    def test_the_native_window_is_placed_and_drawn_when_it_comes(self):
+        self.runtime.attach(self.battle)
+        self.assertEqual(self.battle.places(), [[960, 786, True]])
+        self.assertEqual(self.battle.rows(), [list(m.EMPTY_ROW) * 3])
 
-    def test_a_new_resolution_moves_a_live_widget(self):
-        self.runtime.resize()
+    def test_rows_before_the_window_wait_for_it(self):
         self.runtime.on_event(event(1, 1, 1))
-        self.screen = (1280, 720)
-        self.runtime.resize()
-        self.assertEqual(self.made[0].fits, 1)
-        self.assertEqual(self.made[0].calls[-1], (m.PLACE_CALLBACK, [640, 426]))
+        self.runtime.attach(self.battle)
+        self.assertEqual(self.battle.rows()[0][:2], [m.GREEN, '1'])
 
-    def test_a_failing_resize_switches_the_feed_off(self):
+    def test_a_row_is_drawn_at_once_and_ticks_until_it_expires(self):
+        self.runtime.attach(self.battle)
         self.runtime.on_event(event(1, 1, 1))
-        self.made[0].fit = None
-        self.runtime.resize()
-        self.assertTrue(self.runtime.failed)
-        self.assertEqual(self.made[0].closed, 1)
-
-    def test_an_invisible_row_does_not_create_the_widget(self):
-        self.runtime.feed.apply_options({'enabled': False})
-        self.runtime.on_event(event(1, 1, 1))
-        self.assertEqual(self.made, [])
-
-    def test_expiry_redraws_and_the_timer_stops_with_the_last_row(self):
-        self.runtime.on_event(event(1, 1, 1))
+        self.assertEqual(len(self.battle.rows()), 2)
         self.clock.now += m.LIFETIME
         self.timers.pop()()
-        self.assertEqual(self.made[0].calls[-1][1], list(m.EMPTY_ROW) * 3)
+        self.assertEqual(self.battle.rows()[-1], list(m.EMPTY_ROW) * 3)
         self.assertEqual(self.timers, [])
-        self.assertIsNone(self.runtime.timer)
 
-    def test_a_new_battle_closes_the_old_widget_and_clears_the_rows(self):
+    def test_an_invisible_row_draws_nothing(self):
+        self.runtime.attach(self.battle)
+        self.runtime.feed.apply_options({'enabled': False})
+        self.runtime.on_event(event(1, 1, 1))
+        self.assertEqual(len(self.battle.rows()), 1)
+
+    def test_a_new_battle_clears_the_rows_on_the_same_window(self):
+        self.runtime.attach(self.battle)
         self.runtime.on_event(event(1, 1, 1))
         self.runtime.ready()
-        self.assertEqual(self.made[0].closed, 1)
         self.assertEqual(self.runtime.feed.rows, [])
+        self.assertEqual(self.battle.rows()[-1], list(m.EMPTY_ROW) * 3)
+
+    def test_the_closed_window_gets_no_call_and_its_timer_stops(self):
+        self.runtime.attach(self.battle)
+        self.runtime.on_event(event(1, 1, 1))
+        self.runtime.detach()
         self.assertEqual(self.cancelled, [1])
+        count = len(self.battle.calls)
+        self.runtime.on_event(event(1, 2, 2))
+        self.runtime.resize()
+        self.assertEqual(len(self.battle.calls), count)
+        self.assertIn(m.EVENT + '_closed', self.records)
 
-    def test_show_all_hides_a_live_and_a_later_widget(self):
+    def test_show_all_and_a_new_resolution_move_the_holder(self):
+        self.runtime.attach(self.battle)
         self.runtime.show_all(False)
-        self.runtime.on_event(event(1, 1, 1))
-        self.assertIs(self.made[0].component.visible, False)
-        self.runtime.show_all(True)
-        self.assertIs(self.made[0].component.visible, True)
+        self.screen = (1280, 720)
+        self.runtime.resize()
+        self.assertEqual(self.battle.places()[-2:], [[960, 786, False], [640, 426, False]])
 
-    def test_a_movie_that_does_not_load_switches_the_feed_off_quietly(self):
-        def failing():
-            raise RuntimeError('no movie')
-        self.runtime.make_widget = failing
-        self.runtime.on_event(event(1, 1, 1))
-        self.runtime.on_event(event(1, 1, 1))
-        self.assertEqual(self.records.count(m.EVENT + '_failed'), 1)
-
-    def test_a_failing_call_closes_the_widget(self):
-        self.runtime.on_event(event(1, 1, 1))
+    def test_a_failing_call_switches_the_feed_off_and_hides_it(self):
+        self.runtime.attach(self.battle)
+        real = self.battle.call
 
         def failing(name, args):
-            raise RuntimeError('movie gone')
-        self.made[0].call = failing
+            if name == m.CALLBACK:
+                raise RuntimeError('movie gone')
+            real(name, args)
+        self.battle.call = failing
         self.runtime.on_event(event(1, 2, 2))
-        self.assertEqual(self.made[0].closed, 1)
-        self.assertIsNone(self.runtime.widget)
+        self.assertTrue(self.runtime.failed)
+        self.assertEqual(self.battle.places()[-1], [0, 0, False])
+        self.assertIsNone(self.runtime.battle)
+        self.assertEqual(self.records.count(m.EVENT + '_failed'), 1)
+
+
+class HostTests(unittest.TestCase):
+    """The native g_windowsManager events bind every panel to the battle window."""
+
+    class Event(object):
+        def __init__(self):
+            self.handlers = []
+
+        def __iadd__(self, handler):
+            self.handlers.append(handler)
+            return self
+
+        def __isub__(self, handler):
+            self.handlers.remove(handler)
+            return self
+
+        def __call__(self):
+            for handler in list(self.handlers):
+                handler()
+
+    def manager(self):
+        manager = type('Manager', (), {})()
+        manager.onInitBattleGUI, manager.onDestroyBattleGUI, manager.battleWindow = self.Event(), self.Event(), None
+        return manager
+
+    def test_the_window_comes_and_goes_with_the_native_events(self):
+        manager, host, seen = self.manager(), m.BattleHost(), []
+        host.add(seen.append, lambda: seen.append('gone'), manager)
+        self.assertEqual(seen, [])
+        manager.battleWindow = 'battle'
+        manager.onInitBattleGUI()
+        manager.onDestroyBattleGUI()
+        self.assertEqual(seen, ['battle', 'gone'])
+
+    def test_a_window_already_open_is_attached_at_once_and_the_last_listener_unbinds(self):
+        manager, host, seen = self.manager(), m.BattleHost(), []
+        manager.battleWindow = 'battle'
+        attach, detach = seen.append, lambda: seen.append('gone')
+        host.add(attach, detach, manager)
+        self.assertEqual(seen, ['battle'])
+        host.remove(attach, detach)
+        self.assertEqual(seen, ['battle', 'gone'])
+        self.assertEqual((manager.onInitBattleGUI.handlers, manager.onDestroyBattleGUI.handlers), ([], []))
 
 
 class SettingsTests(unittest.TestCase):
