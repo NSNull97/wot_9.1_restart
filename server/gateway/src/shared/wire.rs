@@ -433,10 +433,30 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
 pub fn publication_parts<const N:usize>(w: &World, visible: [bool; N]) -> io::Result<Vec<Vec<u8>>> {
     let whole = publication(w, visible)?;
     if whole.len() <= 500 { return Ok(vec![whole]); }
-    const RECORD: usize = 38;
-    if (whole.len() - 2) % RECORD != 0 { return Err(model::bad()); }
-    let per = (500 - 2) / RECORD;
-    Ok(whole[2..].chunks(per * RECORD).map(|records| { let mut b = whole[..2].to_vec(); b.extend(records); b }).collect())
+    if (whole.len() - 2) % PUBLICATION_RECORD != 0 { return Err(model::bad()); }
+    let per = (500 - 2) / PUBLICATION_RECORD;
+    Ok(whole[2..].chunks(per * PUBLICATION_RECORD).map(|records| { let mut b = whole[..2].to_vec(); b.extend(records); b }).collect())
+}
+/// One vehicle of `publication`: 0x15 pose (29 bytes), then 0x12 select,
+/// 0xa0 gun angles and 0x13 back to the Avatar (9 bytes).
+const PUBLICATION_RECORD: usize = 38;
+/// CRASH-01: a pose part held aside (reliable-burst-v2, latest-unreliable) was
+/// built for the visibility of its tick. A vehicle hidden since then has its
+/// leaveAoI queued ahead of this part, and the #717 client then gets a pose of
+/// an entity it no longer has. Keep only records of vehicles still published;
+/// None when nothing is left (a part without its tickSync prefix).
+pub fn retain_publication_records<const N:usize>(part: &[u8], visible: [bool; N]) -> io::Result<Option<Vec<u8>>> {
+    let head = if part.first() == Some(&0x0d) { 2 } else { 0 };
+    if part.len() < head || (part.len() - head) % PUBLICATION_RECORD != 0 { return Err(model::bad()); }
+    let mut kept = part[..head].to_vec();
+    for record in part[head..].chunks(PUBLICATION_RECORD) {
+        if record[0] != 0x15 || record[29] != 0x12 || record[1..5] != record[30..34] || record[34] != 0xa0 || record[37] != 0x13 {
+            return Err(model::bad());
+        }
+        let slot = slot_for_vehicle(u32::from_le_bytes(record[1..5].try_into().expect("checked record length")))?;
+        if visible.get(slot) == Some(&true) { kept.extend(record); }
+    }
+    Ok(if kept.is_empty() { None } else { Some(kept) })
 }
 pub fn publication<const N:usize>(w: &World, visible: [bool; N]) -> io::Result<Vec<u8>> {
     if !(1000..=37000).contains(&w.tick) || N<w.actors.len() || N>model::MAX_ACTORS { return Err(model::bad()); }
