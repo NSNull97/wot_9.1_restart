@@ -388,10 +388,10 @@ class Binder(object):
 
 
 def _import(name):
-    module = __import__(name)
-    for part in name.split('.')[1:]:
-        module = getattr(module, part)
-    return module
+    # Walking attributes fails: the settings package binds the SettingsWindow
+    # class over its submodule of that name.
+    __import__(name)
+    return sys.modules[name]
 
 
 def install(record, targets, options):

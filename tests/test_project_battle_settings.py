@@ -79,6 +79,24 @@ class Harness(object):
         return [name for name, _ in self.events]
 
 
+class ImportTests(unittest.TestCase):
+    def test_a_class_bound_over_its_submodule_does_not_hide_the_module(self):
+        # Native gui...settings/__init__ binds the class over the submodule.
+        names = ('ui05pkg', 'ui05pkg.SettingsWindow')
+        package, module = types.ModuleType(names[0]), types.ModuleType(names[1])
+        package.__path__ = []
+        class SettingsWindow(object):
+            pass
+        package.SettingsWindow, module.SettingsWindow = SettingsWindow, SettingsWindow
+        sys.modules[names[0]], sys.modules[names[1]] = package, module
+        try:
+            self.assertIs(m._import(names[1]), module)
+            self.assertIs(getattr(m._import(names[1]), 'SettingsWindow'), SettingsWindow)
+        finally:
+            for name in names:
+                del sys.modules[name]
+
+
 class SchemaTests(unittest.TestCase):
     def test_every_option_of_every_widget_has_exactly_one_control(self):
         for widget, module in MODULES.items():
