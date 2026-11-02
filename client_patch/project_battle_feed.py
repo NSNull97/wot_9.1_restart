@@ -7,11 +7,13 @@ project_hit_indicator policy and says one extra hello, so a client without it
 receives no feed record. It shows the last three rows, merges a repeat of the
 same row and never estimates a value: what the server withheld stays '- -'.
 
-The widget is a second native GUI.Flash component over ProjectBattleFeed.swf. It
-fills the screen as the native Aim does, the movie is in noScale, so the place of
-the rows comes in screen pixels and follows the resolution. It is activated on its
-first row. Any failure switches the feed off for the session; the battle and the
-native HUD go on.
+UI-03b, owner order 02.11: a part of the native battle interface, not a mod
+beside it. The rows are drawn by code added to the native battle.swf
+(tools/battle_ui_native_flash.py); this module reaches it through the native
+battle window's own `call`, bound by the native g_windowsManager events
+onInitBattleGUI and onDestroyBattleGUI. The movie is in noScale, so the place of
+the rows comes in screen pixels and follows the resolution. Any failure switches
+the feed off for the session; the battle and the native HUD go on.
 
 Pure Python 2.7 at import time: prepare (Python 3) and tests load this module;
 engine modules are imported only by install() inside the client.
@@ -24,7 +26,6 @@ SETTING = 'battle_feed'
 POLICY = 'project_override_not_original_091'
 EVENT = 'project_battle_feed'
 FEATURE = 'sr_battle_feed'
-MOVIE = 'ProjectBattleFeed.swf'
 CALLBACK = 'ProjectFeed.render'
 PLACE_CALLBACK = 'ProjectFeed.place'
 ROWS = 3
@@ -33,32 +34,46 @@ TICK_PERIOD = 0.25
 # The top edge of the newest row, above the bottom of the screen, as on the
 # owner's live Lesta screenshots: 1920 x 1080 puts its middle on y 801.
 ABOVE_BOTTOM = 294
-EMPTY_ROW = (-1, '', 0, '', '', 0, '', '')
+EMPTY_ROW = (-1, '', 0, '', '', 0, 0)
 RED, ORANGE, GREY, GREEN = 0xc8181e, 0xe06a1b, 0x6e6e6e, 0x3f8f24
 # Glyph numbers of tools/battle_ui_feed_flash.py.
 CROSS, SHIELD, FLAG, EYE, CHEVRONS, KILL, TRACK, GEAR, FLAME = range(1, 10)
+RADIO, DIAMOND, DIAMOND_OUTLINE, LEAF, RING, BURST, SHELL_HIT, MODULE_TRACK = range(10, 18)
 
-# option key: colour, glyph, label, whether a missing number is a withheld fact, sprite.
-ROWS_TABLE = {'received': (RED, CROSS, 'Получен урон', False, 'ribbonsDamageEnemy'),
-              'received_critical': (ORANGE, GEAR, 'Критическое повреждение', False, 'ribbonsCritsEnemy'),
-              'blocked': (GREY, SHIELD, 'Удар сдержан', True, 'ribbonsArmor'),
-              'defence': (GREEN, FLAG, 'Очки защиты', False, 'ribbonsDefence'),
-              'capture': (GREEN, FLAG, 'Очки захвата', False, 'ribbonsCapture'),
-              'spotted': (GREEN, EYE, 'Обнаружил', False, 'ribbonsSpotted'),
-              'ram': (GREEN, CHEVRONS, 'Таран', True, 'ribbonsRam'),
-              'kill': (GREEN, KILL, 'Уничтожил', False, 'ribbonsKill'),
-              'track': (GREEN, TRACK, 'Сбитие гусеницы', False, 'ribbonsAssistTrack'),
-              'critical': (GREEN, GEAR, 'Критический урон', False, 'ribbonsCrits'),
-              'shot': (GREEN, CROSS, 'Урон выстрелом', True, 'ribbonsDamage'),
-              'ignition': (GREEN, FLAME, 'Поджог', False, 'ribbonsBurn'),
-              'assist_spot': (GREEN, EYE, 'Урон по разведанным', True, 'ribbonsAssistSpot'),
-              'assist_track': (GREEN, TRACK, 'Урон по обездвиженным', True, 'ribbonsAssistTrack')}
+# option key: colour, glyph, label, whether a missing number is a withheld fact,
+# badge (ref2: a leaf for effectiveness, a ring for damage taken, a burst for a
+# kill; an orange row is a module of the own vehicle: its glyph, no badge).
+ROWS_TABLE = {'received': (RED, SHELL_HIT, 'Получен урон', False, RING),
+              'received_critical': (ORANGE, GEAR, 'Критическое повреждение', False, GEAR),
+              'blocked': (GREY, SHIELD, 'Удар сдержан', True, SHIELD),
+              'defence': (GREEN, FLAG, 'Очки защиты', False, LEAF),
+              'capture': (GREEN, FLAG, 'Очки захвата', False, LEAF),
+              'spotted': (GREEN, EYE, 'Обнаружил', False, LEAF),
+              'ram': (GREEN, CHEVRONS, 'Таран', True, LEAF),
+              'kill': (RED, CROSS, 'Уничтожен', False, BURST),
+              'track': (GREEN, TRACK, 'Сбитие гусеницы', False, LEAF),
+              'critical': (GREEN, GEAR, 'Критический урон', False, LEAF),
+              'shot': (GREEN, CROSS, 'Урон выстрелом', True, LEAF),
+              'ignition': (GREEN, FLAME, 'Поджог', False, LEAF),
+              'assist_spot': (GREEN, RADIO, 'Урон по разведанным', True, LEAF),
+              'assist_track': (GREEN, TRACK, 'Урон по обездвиженным', True, LEAF)}
+# A module of the own vehicle by its native extra name: (damaged, destroyed).
+MODULE_PHRASES = {'engine': ('Повреждён двигатель', 'Уничтожен двигатель'),
+                  'gun': ('Повреждено орудие', 'Уничтожено орудие'),
+                  'turretRotator': ('Повреждён поворотный механизм', 'Уничтожен поворотный механизм'),
+                  'surveyingDevice': ('Повреждены приборы наблюдения', 'Уничтожены приборы наблюдения'),
+                  'radio': ('Повреждена радиостанция', 'Уничтожена радиостанция'),
+                  'fuelTank': ('Повреждены топливные баки', 'Уничтожены топливные баки'),
+                  'ammoBay': ('Повреждена боеукладка', 'Уничтожена боеукладка'),
+                  'leftTrack': ('Повреждена левая гусеница', 'Сбита левая гусеница'),
+                  'rightTrack': ('Повреждена правая гусеница', 'Сбита правая гусеница')}
+CREW_PHRASES = {'commander': 'Контужен командир', 'driver': 'Контужен механик-водитель', 'radioman': 'Контужен радист',
+                'gunner': 'Контужен наводчик', 'loader': 'Контужен заряжающий'}
+FIRE_PHRASE = 'Пожар'
 # Damage rows a kill of the same vehicle takes in.
 KILL_DAMAGE = ('shot', 'ram')
-# Class tag of #717 vehicles: sprite next to the vehicle name.
-CLASS_ICONS = (('lightTank', 'whiteIconLightTank16x16'), ('mediumTank', 'whiteIconMediumTank16x16'),
-               ('heavyTank', 'whiteIconHeavyTank16x16'), ('SPG', 'whiteIconSPG16x16'),
-               ('AT-SPG', 'whiteIconAt-SPG16x16'))
+# Class tags of #717 vehicles: the class mark of a row needs one of them.
+CLASS_TAGS = ('lightTank', 'mediumTank', 'heavyTank', 'SPG', 'AT-SPG')
 # Wire numbers of battle_events::FeedKind.
 FEED_ROWS = {1: 'shot', 2: 'ram', 3: 'kill', 4: 'spotted', 5: 'capture', 6: 'defence', 7: 'ignition',
              8: 'ignition', 9: 'critical', 10: 'track', 11: 'received', 12: 'received', 13: 'received_critical',
@@ -127,6 +142,47 @@ class ShowAll(object):
 SHOW_ALL = ShowAll()
 
 
+class BattleHost(object):
+    """The native battle window for every project panel: bound by the native
+    g_windowsManager events, which give the window after it is active and tell
+    when it closes. Listeners are (attach(window), detach())."""
+
+    def __init__(self):
+        self.listeners, self.manager, self.window = [], None, None
+
+    def add(self, attach, detach, manager):
+        if self.manager is None:
+            manager.onInitBattleGUI += self.created
+            manager.onDestroyBattleGUI += self.destroyed
+            self.manager = manager
+        self.listeners.append((attach, detach))
+        if self.manager.battleWindow is not None:
+            self.window = self.manager.battleWindow
+            attach(self.window)
+
+    def created(self):
+        self.window = self.manager.battleWindow
+        for attach, _ in list(self.listeners):
+            attach(self.window)
+
+    def destroyed(self):
+        self.window = None
+        for _, detach in list(self.listeners):
+            detach()
+
+    def remove(self, attach, detach):
+        self.listeners.remove((attach, detach))
+        detach()
+        if self.listeners or self.manager is None:
+            return
+        self.manager.onInitBattleGUI -= self.created
+        self.manager.onDestroyBattleGUI -= self.destroyed
+        self.manager, self.window = None, None
+
+
+BATTLE = BattleHost()
+
+
 def default_options():
     return dict((key, default) for key, _, default in OPTION_SCHEMA)
 
@@ -179,10 +235,26 @@ def rows_of(event):
 
 
 def class_icon(tags):
-    for tag, icon in CLASS_ICONS:
+    """The class tag of a vehicle, '' when none is known."""
+    for tag in CLASS_TAGS:
         if tag in tags:
-            return icon
+            return tag
     return ''
+
+
+def module_phrase(critical, extra_name):
+    """(text, glyph) of the first critical of a hit on the own vehicle; None when
+    the native extra is not one this table names."""
+    kind = critical[0]
+    if kind == 4:
+        return FIRE_PHRASE, FLAME
+    name = extra_name[:-6] if extra_name.endswith('Health') else extra_name
+    name = name.rstrip('0123456789')
+    if kind == 3:
+        return (CREW_PHRASES[name], GEAR) if name in CREW_PHRASES else None
+    if name not in MODULE_PHRASES:
+        return None
+    return MODULE_PHRASES[name][kind == 2], MODULE_TRACK if name.endswith('Track') else GEAR
 
 
 def origin(screen):
@@ -202,10 +274,13 @@ def number(key, value, count):
 class Feed(object):
     """Everything that decides; the clock and the name lookup are seams."""
 
-    def __init__(self, options, clock, name_of, class_of):
+    def __init__(self, options, clock, name_of, class_of, module_of=None):
         if not (callable(clock) and callable(name_of) and callable(class_of)):
             raise TypeError('battle feed requires callable seams')
         self.options, self.clock, self.name_of, self.class_of = checked_options(options), clock, name_of, class_of
+        # (kind, extra) of the own vehicle -> (text, glyph) or None; without the
+        # seam a module row keeps its general label.
+        self.module_of = module_of
         self.rows = []
 
     def reset(self):
@@ -246,6 +321,8 @@ class Feed(object):
                 row['expires'] = expires
             else:
                 row = {'key': key, 'value': value, 'count': count, 'vehicle': vehicle, 'expires': expires}
+                if key == 'received_critical':
+                    row['critical'] = event['criticals'][0]
             self.rows.insert(0, row)
             del self.rows[ROWS:]
         return changed
@@ -267,11 +344,14 @@ class Feed(object):
         """Flat arguments of ProjectFeed.render: always ROWS rows."""
         args, now = [], self.clock()
         for row in self.rows:
-            colour, glyph, label, _, icon = ROWS_TABLE[row['key']]
+            colour, glyph, label, _, badge = ROWS_TABLE[row['key']]
+            module = self.module_of(row['critical']) if 'critical' in row and self.module_of is not None else None
+            if module is not None:
+                label, badge = module
             shown = row['vehicle'] and self.options['show_vehicle']
             args += [colour, number(row['key'], row['value'], row['count']), glyph,
-                     label if self.options['show_label'] else '', self.name_of(row['vehicle']) if shown else '',
-                     int(max(0.0, row['expires'] - now) * 1000), icon, self.class_of(row['vehicle']) if shown else '']
+                     label if self.options['show_label'] or module is not None else '',
+                     self.name_of(row['vehicle']) if shown else '', int(max(0.0, row['expires'] - now) * 1000), badge]
         for _ in range(ROWS - len(self.rows)):
             args += list(EMPTY_ROW)
         return args
@@ -291,47 +371,58 @@ def check_flash(flash):
         _check(flash.__dict__.get(name), FLASH_FILE, name, line, args, digest)
 
 
-def widget_class(base, depth, screen):
-    """Fills the screen as the native Aim, in pixels; no input of its own."""
-
-    class ProjectFeedWidget(base):
-
-        def __init__(self):
-            base.__init__(self, MOVIE)
-            self.component.wg_inputKeyMode = 2
-            self.component.position.z = depth
-            self.movie.backgroundAlpha = 0.0
-            self.component.focus = False
-            self.component.moveFocus = False
-            self.component.heightMode = 'PIXEL'
-            self.component.widthMode = 'PIXEL'
-            # GUI.Flash.size takes a tuple of floats, as GUI.screenResolution() in Aim.
-            self.flashSize = (float(screen()[0]), float(screen()[1]))
-
-        def fit(self):
-            self.flashSize = (float(screen()[0]), float(screen()[1]))
-            self.component.size = self.flashSize
-
-    return ProjectFeedWidget
-
-
 class Runtime(object):
-    """One widget per battle; the engine calls come in as plain callables."""
+    """The feed of the native battle window; the engine calls come in as plain
+    callables, the window as an object with the native `call`."""
 
-    def __init__(self, feed, make_widget, screen, schedule, cancel, record):
-        self.feed, self.make_widget, self.screen = feed, make_widget, screen
-        self.schedule, self.cancel, self.record = schedule, cancel, record
-        self.widget, self.timer, self.failed, self.visible, self.shown = None, None, False, True, 0
+    def __init__(self, feed, screen, schedule, cancel, record):
+        self.feed, self.screen, self.schedule, self.cancel, self.record = feed, screen, schedule, cancel, record
+        self.battle, self.timer, self.failed, self.visible, self.shown = None, None, False, True, 0
+
+    def attach(self, battle):
+        """The native window is active: place and draw what the feed holds."""
+        self.battle = battle
+        if self.failed:
+            return
+        try:
+            self.draw()
+        except Exception:
+            self.fail('attach')
+
+    def detach(self):
+        if self.timer is not None:
+            self.cancel(self.timer)
+            self.timer = None
+        if self.battle is not None:
+            self.battle = None
+            self.record(EVENT + '_closed', version=VERSION, shown=self.shown)
 
     def ready(self):
-        self.close()
         self.feed.reset()
         self.visible, self.shown = True, 0
+        if self.battle is not None and not self.failed:
+            try:
+                self.draw()
+            except Exception:
+                self.fail('ready')
 
     def fail(self, stage):
         self.failed = True
         self.record(EVENT + '_failed', version=VERSION, stage=stage, traceback=traceback.format_exc()[-2000:])
-        self.close()
+        battle = self.battle
+        self.detach()
+        if battle is not None:
+            try:
+                battle.call(PLACE_CALLBACK, [0, 0, False])
+            except Exception:
+                self.record(EVENT + '_hide_failed', version=VERSION, traceback=traceback.format_exc()[-2000:])
+
+    def place(self):
+        self.battle.call(PLACE_CALLBACK, list(origin(self.screen())) + [self.visible])
+
+    def draw(self):
+        self.place()
+        self.battle.call(CALLBACK, self.feed.render_args())
 
     def on_event(self, event):
         if self.failed:
@@ -351,57 +442,48 @@ class Runtime(object):
         """UI-05: changes the screen at once."""
         self.feed.apply_options(value)
         self.feed.drop_hidden()
-        if self.failed or self.widget is None:
+        if self.failed or self.battle is None:
             return
         try:
-            self.widget.call(CALLBACK, self.feed.render_args())
+            self.battle.call(CALLBACK, self.feed.render_args())
         except Exception:
             self.fail('options')
 
     def push(self):
-        if self.widget is None:
-            self.widget = self.make_widget()
-            self.widget.active(True)
-            self.widget.component.visible = self.visible
-            self.widget.call(PLACE_CALLBACK, list(origin(self.screen())))
-        self.widget.call(CALLBACK, self.feed.render_args())
+        if self.battle is None:
+            return
+        self.battle.call(CALLBACK, self.feed.render_args())
         if self.timer is None:
             self.timer = self.schedule(TICK_PERIOD, self.tick)
 
     def tick(self):
         self.timer = None
-        if self.failed or self.widget is None:
+        if self.failed or self.battle is None:
             return
         try:
             if self.feed.expire():
-                self.widget.call(CALLBACK, self.feed.render_args())
+                self.battle.call(CALLBACK, self.feed.render_args())
             if self.feed.rows:
                 self.timer = self.schedule(TICK_PERIOD, self.tick)
         except Exception:
             self.fail('tick')
 
     def resize(self):
-        if self.failed or self.widget is None:
+        if self.failed or self.battle is None:
             return
         try:
-            self.widget.fit()
-            self.widget.call(PLACE_CALLBACK, list(origin(self.screen())))
+            self.place()
         except Exception:
             self.fail('resize')
 
     def show_all(self, isShow):
         self.visible = bool(isShow)
-        if self.widget is not None:
-            self.widget.component.visible = self.visible
-
-    def close(self):
-        if self.timer is not None:
-            self.cancel(self.timer)
-            self.timer = None
-        widget, self.widget = self.widget, None
-        if widget is not None:
-            widget.close()
-            self.record(EVENT + '_closed', version=VERSION, shown=self.shown)
+        if self.failed or self.battle is None:
+            return
+        try:
+            self.place()
+        except Exception:
+            self.fail('show_all')
 
 
 def install(record, options, channel):
@@ -413,9 +495,9 @@ def install(record, options, channel):
         raise RuntimeError('battle feed needs the installed hit indicator channel')
     import BigWorld
     import GUI
-    from AvatarInputHandler import aims
     from gui import g_guiResetters
     from gui.Scaleform.Flash import Flash
+    from gui.WindowsManager import g_windowsManager
     from PlayerEvents import g_playerEvents
     check_flash(Flash)
 
@@ -427,9 +509,12 @@ def install(record, options, channel):
         row = BigWorld.player().arena.vehicles.get(vehicle)
         return '' if row is None else class_icon(row['vehicleType'].type.tags)
 
-    feed = Feed(options, BigWorld.time, name_of, class_of)
-    widget = widget_class(Flash, aims.DEPTH_OF_Aim, GUI.screenResolution)
-    runtime = Runtime(feed, widget, GUI.screenResolution, BigWorld.callback, BigWorld.cancelCallback, record)
+    def module_of(critical):
+        descriptor = BigWorld.player().vehicleTypeDescriptor
+        return module_phrase(critical, '' if critical[0] == 4 else descriptor.extras[critical[1]].name)
+
+    feed = Feed(options, BigWorld.time, name_of, class_of, module_of)
+    runtime = Runtime(feed, GUI.screenResolution, BigWorld.callback, BigWorld.cancelCallback, record)
 
     def on_avatar_ready():
         runtime.ready()
@@ -445,6 +530,7 @@ def install(record, options, channel):
     channel.subscribe(runtime.on_event)
     channel.features.append(FEATURE)
     SHOW_ALL.add(runtime.show_all)
+    BATTLE.add(runtime.attach, runtime.detach, g_windowsManager)
     g_guiResetters.add(runtime.resize)
     g_playerEvents.onAvatarReady += on_avatar_ready
     g_playerEvents.onAvatarBecomeNonPlayer += on_become_non_player
@@ -468,7 +554,7 @@ def restore(record):
     events.onAvatarReady -= installed['ready']
     events.onAvatarBecomeNonPlayer -= installed['leave']
     installed['resetters'].discard(installed['runtime'].resize)
-    installed['runtime'].close()
+    BATTLE.remove(installed['runtime'].attach, installed['runtime'].detach)
     installed['channel'].features.remove(FEATURE)
     installed['channel'].unsubscribe(installed['runtime'].on_event)
     SHOW_ALL.remove(installed['runtime'].show_all)
