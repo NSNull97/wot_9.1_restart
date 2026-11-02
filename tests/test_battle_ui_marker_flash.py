@@ -221,7 +221,7 @@ def loaded(proto=None):
 class MovieTests(unittest.TestCase):
     def test_every_native_tag_keeps_its_bytes_and_one_action_is_added(self):
         raw = fake_movie()
-        built = marker.build(raw)
+        built = marker.build(raw, look=False, team_killer=True)
         old, new = expanded(raw), expanded(built)
         start = ((5 + 4 * (old[0] >> 3) + 7) // 8) + 4
         before = [old[b:e] for _, b, e in tags(old, start)]
@@ -232,9 +232,11 @@ class MovieTests(unittest.TestCase):
 
     def test_other_layouts_and_bytes_are_refused(self):
         with self.assertRaises(ValueError):
-            marker.build(fake_movie(frames=2))
+            marker.build(fake_movie(frames=2), look=False, team_killer=True)
         with self.assertRaises(ValueError):
-            marker.build(b'FWS' + fake_movie()[3:])
+            marker.build(b'FWS' + fake_movie()[3:], look=False, team_killer=True)
+        with self.assertRaises(ValueError):
+            marker.build(fake_movie(), look=False, team_killer=False)
 
     def test_matrix_turns_green_into_blue_and_keeps_greys(self):
         self.assertEqual(marker.paint((123, 236, 55)), (0, 234, 255))
@@ -299,38 +301,43 @@ class ActionTests(unittest.TestCase):
 class PrepareTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        spec = importlib.util.spec_from_file_location('_ui06b_interactive', ROOT / 'tools/interactive_client.py')
+        spec = importlib.util.spec_from_file_location('_ui06c_interactive', ROOT / 'tools/interactive_client.py')
         cls.client = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.client)
 
-    def test_flag_is_off_by_default_and_needs_the_battle_mode(self):
+    def markers(self, battle=True, **flags):
         evidence = {}
-        self.assertEqual(self.client.team_killer_marker(SimpleNamespace(), True, ORIGINAL, evidence), {})
-        self.assertEqual(evidence, {})
-        with self.assertRaises(ValueError):
-            self.client.team_killer_marker(SimpleNamespace(team_killer_marker=True), False, ORIGINAL, evidence)
+        return self.client.vehicle_markers(SimpleNamespace(**flags), battle, ORIGINAL, evidence), evidence
 
-    def test_parser_offers_the_flag(self):
+    def test_native_flag_keeps_the_native_movie_and_team_killer_needs_the_battle_mode(self):
+        self.assertEqual(self.markers(native_vehicle_markers=True), ({}, {}))
+        with self.assertRaises(ValueError):
+            self.markers(False, team_killer_marker=True)
+
+    def test_parser_offers_the_flags(self):
         env = dict(os.environ, PYTHONPATH=str(ROOT / 'tools'))
         result = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/interactive_client.py'), 'prepare', '--help'],
                                 env=env, capture_output=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertIn(b'--team-killer-marker', result.stdout)
+        self.assertIn(b'--native-vehicle-markers', result.stdout)
 
     @unittest.skipUnless(PACKAGE.is_file(), 'original client absent')
-    def test_original_movie_is_built_under_its_native_name(self):
-        evidence = {}
-        payloads = self.client.team_killer_marker(SimpleNamespace(team_killer_marker=True), True, ORIGINAL, evidence)
-        movie = payloads[marker.TARGET]
-        row = evidence['project_team_killer_marker_movie']
-        self.assertEqual(row['target_sha256'], hashlib.sha256(movie).hexdigest())
-        self.assertEqual(row['source_sha256'], marker.SOURCE_SHA256)
-        self.assertEqual(row['native_render_check'], 'NOT_RUN')
-        with zipfile.ZipFile(PACKAGE) as package:
-            raw = package.read(marker.MEMBER)
-        old, new = expanded(raw), expanded(movie)
-        start = ((5 + 4 * (old[0] >> 3) + 7) // 8) + 4
-        self.assertEqual(len(tags(new, start)), len(tags(old, start)) + 1)
+    def test_the_look_is_on_by_default_without_the_battle_mode(self):
+        for flags, look, team_killer in (({}, True, False), ({'team_killer_marker': True}, True, True),
+                                         ({'native_vehicle_markers': True, 'team_killer_marker': True}, False, True)):
+            payloads, evidence = self.markers(**flags) if team_killer else self.markers(False, **flags)
+            movie = payloads[marker.TARGET]
+            row = evidence['project_vehicle_markers_movie']
+            self.assertEqual((row['look'], row['team_killer']), (look, team_killer))
+            self.assertEqual(row['target_sha256'], hashlib.sha256(movie).hexdigest())
+            self.assertEqual(row['source_sha256'], marker.SOURCE_SHA256)
+            self.assertEqual(row['native_render_check'], 'NOT_RUN')
+            with zipfile.ZipFile(PACKAGE) as package:
+                raw = package.read(marker.MEMBER)
+            old, new = expanded(raw), expanded(movie)
+            start = ((5 + 4 * (old[0] >> 3) + 7) // 8) + 4
+            self.assertEqual(len(tags(new, start)), len(tags(old, start)) + look + team_killer)
 
 
 def sprite_frames(body, start, wanted):

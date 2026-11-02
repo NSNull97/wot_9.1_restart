@@ -1,4 +1,7 @@
-"""UI-06b: the team killer's health bar in the exact #717 VehicleMarkersManager.swf.
+"""UI-06b/UI-06c: the vehicle marker movie built from the exact #717 VehicleMarkersManager.swf.
+
+UI-06c (on by default in prepare): the project look of tools/battle_ui_marker_look.py.
+UI-06b (--team-killer-marker): the native bar of a team killer turned blue, below.
 
 #717 paints a team killer's marker through its colour scheme: `vm_teamKiller` in
 gui/gui_colors.xml has the alias colour `blue`, the marker goes to its `blue`
@@ -29,6 +32,7 @@ import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from battle_ui_hit_flash import As2, expanded, expr, function, stmt, tag, tags, var
+import battle_ui_marker_look
 
 MEMBER = 'gui/scaleform/VehicleMarkersManager.swf'
 TARGET = 'res_mods/0.9.1/gui/scaleform/VehicleMarkersManager.swf'
@@ -102,23 +106,29 @@ def actions():
     return code + b'\0'
 
 
-def build(raw):
-    """The movie with one DoAction added before the only ShowFrame."""
+def build(raw, look=True, team_killer=False):
+    """The movie with the UI-06c look (data edits of the damage label and one
+    DoAction) and/or the UI-06b DoAction, both before the only ShowFrame."""
+    if not look and not team_killer:
+        raise ValueError('nothing to change in the marker movie')
     body = expanded(raw)
     start = ((5 + 4 * (body[0] >> 3) + 7) // 8) + 4
     rows = tags(body, start)
     frames = [row for row in rows if row[0] == 1]
     if len(frames) != 1 or rows[-2] != frames[0] or rows[-1][0] != 0:
         raise ValueError('original marker movie layout differs')
+    if look:
+        body = battle_ui_marker_look.recoloured(body, start)
+    added = (battle_ui_marker_look.frame_action() if look else b'') + (tag(12, actions()) if team_killer else b'')
     out = bytearray(body[:start])
     for code, begin, end in rows:
         if code == 1:
-            out += tag(12, actions())
+            out += added
         out += body[begin:end]
     return raw[:4] + struct.pack('<I', len(out) + 8) + zlib.compress(bytes(out), 9)
 
 
-def payload(original):
+def payload(original, look=True, team_killer=False):
     """(movie, evidence) from the pinned original in gui.pkg."""
     with zipfile.ZipFile(Path(original) / 'res/packages/gui.pkg') as package:
         info = package.getinfo(MEMBER)
@@ -127,8 +137,10 @@ def payload(original):
         raw = package.read(info)
     if hashlib.sha256(raw).hexdigest() != SOURCE_SHA256:
         raise ValueError('original marker movie differs from the pinned #717 bytes')
-    movie = build(raw)
+    movie = build(raw, look, team_killer)
+    tools = Path(__file__).resolve().parent
     return movie, {'source_member': MEMBER, 'source_sha256': SOURCE_SHA256, 'target': TARGET,
-                   'target_sha256': hashlib.sha256(movie).hexdigest(),
+                   'target_sha256': hashlib.sha256(movie).hexdigest(), 'look': look, 'team_killer': team_killer,
                    'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                   'look_tool_sha256': hashlib.sha256((tools / 'battle_ui_marker_look.py').read_bytes()).hexdigest(),
                    'native_render_check': 'NOT_RUN'}
