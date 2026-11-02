@@ -24,10 +24,16 @@ ROW_STEP, PANEL_LEFT, PANEL_WIDTH, PANEL_HEIGHT, RADIUS = 33, -146, 293, 28, 5
 BADGE_X, BADGE_RADIUS, NUMBER_X, NUMBER_WIDTH, GLYPH_X, TEXT_X, TEXT_WIDTH = 16, 9, 30, 52, 75, 92, 200
 MODULE_GLYPH_X, MODULE_TEXT_X = 24, 52
 NUMBER_Y, TEXT_Y, NUMBER_SIZE, TEXT_SIZE = 2, 5, 17, 13
-PANEL_FILL, PANEL_ALPHA, TINT_ALPHA, GLOW_WIDTH, GLOW_ALPHA, EDGE_ALPHA = 0x0d1216, 72, 14, 48, 12, 45
+# Owner round 3: a denser panel with a gradient strongest at its left edge. The
+# gradient is GRADIENT_STEPS bands of the row's tint, from GRADIENT_FROM percent of
+# alpha at the left to GRADIENT_TO at the right, over a dark base.
+PANEL_FILL, PANEL_ALPHA, EDGE_ALPHA = 0x0d1216, 62, 40
+GRADIENT_STEPS, GRADIENT_FROM, GRADIENT_TO = 8, 62, 6
+# A Lesta icon (ribbons*, 48 px) at this scale fills the glyph column.
+ICON_SCALE = 55
 SEPARATOR = u' • '
 FADE_MS = 500
-ROW_ARGS = ('colour', 'number', 'glyph', 'label', 'vehicle', 'left', 'badge')
+ROW_ARGS = ('colour', 'number', 'glyph', 'label', 'vehicle', 'left', 'badge', 'icon')
 # Colours of client_patch/project_battle_feed.py: tint, light accent, text.
 RED, ORANGE, GREY, GREEN = 0xc8181e, 0xe06a1b, 0x6e6e6e, 0x3f8f24
 PALETTE = ((RED, 0xff5a4a, 0xdcdcdc), (ORANGE, 0xf0b030, 0xf0b030), (GREY, 0xd0d0d0, 0xdcdcdc), (GREEN, 0x9be04a, 0xdcdcdc))
@@ -136,13 +142,34 @@ def glyph(mc, clip, depth, x, y, number, colour, scale, function_name='_projectF
             ('do', ('fn', function_name, [holder, number, colour]))]
 
 
-def round_rect(mc, x, y, w, h, r):
-    """The outline of a rounded box; the caller begins and ends the fill."""
-    return [method(mc, 'moveTo', x + r, y), method(mc, 'lineTo', x + w - r, y),
-            method(mc, 'curveTo', x + w, y, x + w, y + r), method(mc, 'lineTo', x + w, y + h - r),
-            method(mc, 'curveTo', x + w, y + h, x + w - r, y + h), method(mc, 'lineTo', x + r, y + h),
-            method(mc, 'curveTo', x, y + h, x, y + h - r), method(mc, 'lineTo', x, y + r),
-            method(mc, 'curveTo', x, y, x + r, y)]
+def round_rect(mc, x, y, w, h, r, left=True, right=True):
+    """The outline of a box, its left and right corners rounded by `r` or not; the
+    caller begins and ends the fill."""
+    rl, rr = (r if left else 0), (r if right else 0)
+    right_x, bottom = add(x, w), add(y, h)
+    return [method(mc, 'moveTo', add(x, rl), y), method(mc, 'lineTo', add(right_x, -rr), y),
+            method(mc, 'curveTo', right_x, y, right_x, add(y, rr)), method(mc, 'lineTo', right_x, add(bottom, -rr)),
+            method(mc, 'curveTo', right_x, bottom, add(right_x, -rr), bottom), method(mc, 'lineTo', add(x, rl), bottom),
+            method(mc, 'curveTo', x, bottom, x, add(bottom, -rl)), method(mc, 'lineTo', x, add(y, rl)),
+            method(mc, 'curveTo', x, y, add(x, rl), y)]
+
+
+def add(a, b):
+    """a + b, folded when both are numbers, an AS2 expression otherwise."""
+    if isinstance(a, tuple) or isinstance(b, tuple):
+        return ('+', a, b) if not isinstance(b, int) or b >= 0 else ('-', a, -b)
+    return a + b
+
+
+def gradient(mc, width, height, colour, radius, start, stop, steps=GRADIENT_STEPS, top=0):
+    """A horizontal gradient as `steps` bands from alpha `start` to `stop`; the
+    first and the last band keep the rounded corners of the box."""
+    rows = []
+    for index in range(steps):
+        x0, x1 = width * index // steps, width * (index + 1) // steps
+        alpha = start + (stop - start) * index // (steps - 1)
+        rows += filled(mc, round_rect(mc, x0, top, x1 - x0, height, radius, index == 0, index == steps - 1), colour, alpha)
+    return rows
 
 
 def filled(mc, outline, colour, alpha):
@@ -175,12 +202,24 @@ def palette():
 
 
 def panel(mc):
-    """Dark rounded panel, the tint of the row, a glow at its left and a fine edge."""
+    """A dark rounded panel, the row's tint as a gradient strongest at the left,
+    and a fine edge."""
     box = round_rect(mc, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, RADIUS)
-    return (filled(mc, box, PANEL_FILL, PANEL_ALPHA) + filled(mc, box, var('colour'), TINT_ALPHA)
-            + filled(mc, round_rect(mc, 0, 0, GLOW_WIDTH, PANEL_HEIGHT, RADIUS), var('colour'), GLOW_ALPHA)
-            + filled(mc, round_rect(mc, 0, 0, GLOW_WIDTH // 2, PANEL_HEIGHT, RADIUS), var('colour'), GLOW_ALPHA)
+    return (filled(mc, box, PANEL_FILL, PANEL_ALPHA)
+            + gradient(mc, PANEL_WIDTH, PANEL_HEIGHT, var('colour'), RADIUS, GRADIENT_FROM, GRADIENT_TO)
             + [method(mc, 'lineStyle', 1, var('accent'), EDGE_ALPHA)] + box + [method(mc, 'lineStyle')])
+
+
+def icon(mc, clip, depth, x, y, number, colour, scale, art, function_name='_projectFeedGlyph'):
+    """The Lesta icon named by `icon` when the movie carries the icons and the row
+    names one, the project glyph otherwise."""
+    if not art:
+        return glyph(mc, clip, depth, x, y, number, colour, scale, function_name)
+    holder = ('get', mc, clip)
+    attached = [method(mc, 'attachMovie', var('icon'), clip, depth), ('set', holder, '_x', x), ('set', holder, '_y', y),
+                ('set', holder, '_xscale', ICON_SCALE), ('set', holder, '_yscale', ICON_SCALE)]
+    return [('if', not_empty(var('icon')), attached),
+            ('if', ('==', var('icon'), ''), glyph(mc, clip, depth, x, y, number, colour, scale, function_name))]
 
 
 def text_of(label, vehicle):
@@ -191,13 +230,13 @@ def text_of(label, vehicle):
             ('if', not_empty(label), [('if', not_empty(vehicle), [('assign', 'line', both)])])]
 
 
-def row_source():
+def row_source(art=False):
     """A panel row; the newest row is on the line Python places, the older ones
-    stand above it. An orange row is a module of the own vehicle: its glyph and
+    stand above it. An orange row is a module of the own vehicle: its icon and
     its text, no badge."""
     mc = var('m')
     middle = PANEL_HEIGHT // 2
-    module = (glyph(mc, 'glyphMC', 2, MODULE_GLYPH_X, middle, var('badge'), var('accent'), 100)
+    module = (icon(mc, 'glyphMC', 2, MODULE_GLYPH_X, middle, var('badge'), var('accent'), 100, art)
               + [('if', not_empty(var('number')), [('assign', 'line', ('+', ('+', var('line'), ' '), var('number')))]),
                  ('do', ('fn', '_projectFeedText', [mc, 'textField', 30, MODULE_TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_SIZE,
                                                     var('ink'), 'left', var('line'), True]))])
@@ -206,7 +245,7 @@ def row_source():
              + glyph(mc, 'badgeMC', 2, BADGE_X, middle, var('badge'), var('accent'), 55)
              + [('do', ('fn', '_projectFeedText', [mc, 'numberField', 10, NUMBER_X, NUMBER_Y, NUMBER_WIDTH, NUMBER_SIZE,
                                                    NUMBER_COLOUR, 'left', var('number'), True]))]
-             + glyph(mc, 'glyphMC', 3, GLYPH_X, middle, var('glyph'), ICON_COLOUR, 70)
+             + icon(mc, 'glyphMC', 3, GLYPH_X, middle, var('glyph'), ICON_COLOUR, 70, art)
              + [('do', ('fn', '_projectFeedText', [mc, 'textField', 30, TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_SIZE,
                                                    var('ink'), 'left', var('line'), True]))])
     draw = palette() + panel(mc) + text_of(var('label'), var('vehicle')) + [
@@ -234,10 +273,10 @@ def place_source():
                                                                ('set', holder, '_visible', var('shown'))])
 
 
-def sources():
+def sources(art=False):
     """Functions of the feed; the shared text and glyph functions come once from
-    the native builder."""
-    return row_source() + render_source() + place_source()
+    the native builder. `art`: the movie carries the Lesta icons."""
+    return row_source(art) + render_source() + place_source()
 
 
 def setup(delegate, depth):

@@ -8,6 +8,10 @@ the only ShowFrame: the drawing functions, the holders on the root above the
 native panels and the GameDelegate callbacks Python reaches through the native
 Battle window's `call`.
 
+Owner round 3: the icons are the Lesta ones when prepare is given a local folder of
+tools/battle_ui_art.py; they enter the copy as exported clips before the added
+action. Without the folder the widgets draw their own glyphs.
+
 The copy replaces the whole battle interface, so the source is pinned to the exact
 #717 bytes and its tag layout is checked; anything else is refused, never built.
 """
@@ -21,6 +25,7 @@ import zipfile
 import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import battle_ui_art as art_tool
 import battle_ui_feed_flash as feed
 import battle_ui_history_flash as history
 from battle_ui_hit_flash import stmt, tag, tags, var
@@ -56,7 +61,7 @@ def layout(body):
     return rows
 
 
-def actions(with_feed=True, with_history=True):
+def actions(with_feed=True, with_history=True, art=False):
     """One frame action: the shared text and glyph functions, the widgets' own."""
     if not (with_feed or with_history):
         raise ValueError('nothing to add to the battle movie')
@@ -65,10 +70,10 @@ def actions(with_feed=True, with_history=True):
     code = feed.text_source() + feed.glyph_source()
     setup = [('assign', 'projectDepth', ('call', var('this'), 'getNextHighestDepth', []))]
     if with_feed:
-        code += feed.sources()
+        code += feed.sources(art)
         setup += feed.setup(delegate, depth)
     if with_history:
-        code += history.sources()
+        code += history.sources(art)
         setup += history.setup(delegate, ('+', depth, 1))
     return code + b''.join(stmt(row) for row in setup) + b'\0'
 
@@ -81,7 +86,11 @@ def build(raw, added):
     return raw[:4] + struct.pack('<I', len(out) + 8) + zlib.compress(out, 9)
 
 
-def payload(original, with_feed=True, with_history=True):
+def sprites(with_feed, with_history):
+    return (art_tool.FEED_SPRITES if with_feed else ()) + (art_tool.HISTORY_SPRITES if with_history else ())
+
+
+def payload(original, with_feed=True, with_history=True, icons=None):
     with zipfile.ZipFile(Path(original) / 'res/packages/gui.pkg') as package:
         info = package.getinfo(MEMBER)
         if info.file_size > MAX_BYTES:
@@ -90,7 +99,8 @@ def payload(original, with_feed=True, with_history=True):
     source = hashlib.sha256(raw).hexdigest()
     if source != SOURCE_SHA256:
         raise ValueError('native battle movie differs from the pinned #717 bytes')
-    result = build(raw, actions(with_feed, with_history))
+    images, missing = art_tool.load(icons, sprites(with_feed, with_history)) if icons is not None else ({}, [])
+    result = art_tool.embed(build(raw, actions(with_feed, with_history, bool(images))), images, SOURCE_ACTIONS + 1)
     if len(result) > MAX_BYTES:
         raise ValueError('battle movie with the project panels is oversized')
     layout_after = [row[0] for row in tags(expanded(result), ((5 + 4 * (expanded(result)[0] >> 3) + 7) // 8) + 4)]
@@ -101,4 +111,5 @@ def payload(original, with_feed=True, with_history=True):
                     'callbacks': ([feed.CALLBACK, feed.PLACE_CALLBACK] if with_feed else [])
                     + ([history.CALLBACK, history.PLACE_CALLBACK] if with_history else []),
                     'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-                    'native_render_check': 'NOT_RUN'}
+                    'icons': 'embedded' if images else 'absent' if icons is not None else 'not_requested',
+                    'icon_sprites': sorted(images), 'icons_missing': missing, 'native_render_check': 'NOT_RUN'}
