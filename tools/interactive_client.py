@@ -141,6 +141,19 @@ def battle_feed_policy():
     return policy
 
 
+def team_killer_marker(args, profile13_battle, original, evidence):
+    """UI-06b owner order 2026-11-02: the whole team killer marker blue, its
+    health bar included. Team killers come from the gateway key `team_score`;
+    without the flag the marker movie stays byte for byte native."""
+    if not getattr(args, 'team_killer_marker', False):
+        return {}
+    if not profile13_battle:
+        raise ValueError('--team-killer-marker requires --enable-profile13-battle')
+    import battle_ui_marker_flash
+    movie, evidence['project_team_killer_marker_movie'] = battle_ui_marker_flash.payload(original)
+    return {battle_ui_marker_flash.TARGET: movie}
+
+
 def battle_settings_policy():
     path = Path(__file__).resolve().parents[1] / 'client_patch/project_battle_settings.py'
     spec = importlib.util.spec_from_file_location('_project_battle_settings_prepare', path)
@@ -400,6 +413,7 @@ def prepare(args):
         if not profile13_battle:
             raise ValueError('--player-kill-marker requires --enable-profile13-battle')
         settings['player_kill_marker'] = True
+    payloads.update(team_killer_marker(args, profile13_battle, original, resource_evidence))
     hit_view = getattr(args, 'hit_indicator', None)
     if getattr(args, 'hit_indicator_art', None) is not None and hit_view is None:
         raise ValueError('--hit-indicator-art requires --hit-indicator')
@@ -668,6 +682,10 @@ def main():
     prep.add_argument('--player-kill-marker', action='store_true',
                       help='Project policy, not original 0.9.1: a kill by the player keeps the player-coloured '
                            'marker colour (its crew-inactive refresh keeps the player as source); requires profile13 battle')
+    prep.add_argument('--team-killer-marker', action='store_true',
+                      help='Project policy, not original 0.9.1: UI-06b the health bar of a team killer marker '
+                           'blue like its icon and name (team killers come from gateway key team_score); requires '
+                           'profile13 battle; off by default, without it the marker movie stays byte for byte native')
     prep.add_argument('--hit-indicator', choices=('standard', 'extended'),
                       help='Project policy, not original 0.9.1: UI-02 hit indicator facts from the battle events '
                            'channel (gateway key battle_events); requires profile13 battle; off by default')
