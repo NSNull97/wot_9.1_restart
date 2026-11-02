@@ -450,6 +450,8 @@ def prepare(args):
                                                        else 'labels')
     history_view = getattr(args, 'battle_history', None) or (
         None if hit_view is None or getattr(args, 'no_battle_history', False) else 'bottom')
+    if getattr(args, 'battle_icons', None) is not None and feed_view is None and history_view is None:
+        raise ValueError('--battle-icons needs the feed or the history')
     for name, view, off in (('feed', feed_view, 'no_battle_feed'), ('history', history_view, 'no_battle_history')):
         if view is not None and getattr(args, off, False):
             raise ValueError('--battle-%s and --no-battle-%s contradict each other' % (name, name))
@@ -465,7 +467,7 @@ def prepare(args):
         # a source that differs refuses the whole prepare.
         import battle_ui_native_flash
         movie, resource_evidence['project_battle_native_movie'] = battle_ui_native_flash.payload(
-            original, feed_view is not None, history_view is not None)
+            original, feed_view is not None, history_view is not None, getattr(args, 'battle_icons', None))
         payloads[battle_ui_native_flash.TARGET] = movie
     if getattr(args, 'battle_settings', False):
         # UI-05 owner order 2026-11-01: the tab of the native settings windows.
@@ -720,6 +722,9 @@ def main():
                       help='Project policy, not original 0.9.1: UI-04 battle history and sums inside the native battle '
                            'movie, received damage below or at the top of the screen (gateway key '
                            'battle_events.history); on with --hit-indicator, default bottom')
+    prep.add_argument('--battle-icons', type=Path,
+                      help='Project policy, not original 0.9.1: UI-03b local folder of feed and history icons from '
+                           'tools/battle_ui_art.py (owner order: the Lesta icons); without it the drawn icons')
     prep.add_argument('--no-battle-feed', action='store_true',
                       help='Roll back or check without the UI-03 feed: the native battle movie gets no feed')
     prep.add_argument('--no-battle-history', action='store_true',
