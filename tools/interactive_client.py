@@ -433,7 +433,14 @@ def prepare(args):
         if not profile13_battle:
             raise ValueError('--hit-indicator requires --enable-profile13-battle')
         import battle_ui_hit_flash
-        movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(original)
+        # Owner round 3: Lesta icons from local/ui-borrowed when that folder is
+        # there (tools/battle_ui_hit_icons.py); without it the project's own art.
+        icons = getattr(args, 'hit_indicator_icons', None)
+        if icons is None:
+            icons = paths['local_artifacts_root'] / 'ui-borrowed/hit-indicator'
+        elif str(icons) == 'none':
+            icons = None
+        movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(original, icons)
         payloads[battle_ui_hit_flash.TARGET] = movie
         settings['hit_indicator'] = hit_indicator_policy().prepare_settings(hit_view)
     # UI-03b owner order 2026-11-02: the feed, the history and the sums are a part
@@ -702,6 +709,9 @@ def main():
                       help='Project policy, not original 0.9.1: the hit indicator replaces the native one in a '
                            'profile13 battle client by default as `extended` (facts from the gateway key '
                            'battle_events); `standard` keeps only the native arc, `off` the native indicator')
+    prep.add_argument('--hit-indicator-icons',
+                      help='UI-02b: folder of the Lesta icons of the hit indicator (tools/battle_ui_hit_icons.py); '
+                           'default local/ui-borrowed/hit-indicator when present, `none` for the own art only')
     prep.add_argument('--battle-feed', choices=('labels', 'icons'),
                       help='Project policy, not original 0.9.1: UI-03 event feed inside the native battle movie, the '
                            'last three battle events with or without their names (gateway key battle_events.feed); '

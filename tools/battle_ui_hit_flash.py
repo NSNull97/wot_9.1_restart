@@ -38,7 +38,13 @@ RED, ORANGE = 0xc8181e, 0xe06a1b
 # 430 px out, so the movie has a 1020 px stage and project_hit_indicator gives
 # the component the same size. The native arc keeps its absolute size.
 ART_STAGE = 1020
-ART_DISC_AT, ART_TEXT_AT, ART_NOTE_AT = 256, 48, 216
+ART_DISC_AT, ART_TEXT_AT = 256, 48
+# Owner round 3: a black halo at the text, as at the numbers of the feed.
+HALO = ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1))
+HALO_ALPHA = 70
+# Text lines along the marker: vehicle (with the class icon), shell, critical note.
+LINES = (('nameLine', -30, 15), ('shellLine', -10, 14), ('noteLine', 10, 14))
+CLASS_ICON_WIDTH, MODULE_ICON_SCALE = 18, 70
 
 
 class As2:
@@ -214,15 +220,38 @@ def attach(mc, linkage, name, depth, scale, y):
             ('set', clip, '_yscale', scale), ('set', clip, '_y', y)]
 
 
+def halo_source():
+    """A text line in its own clip: HALO black copies, then the field. The clip
+    keeps its width in `w`, so a flipped line can end at the marker."""
+    line, name = var('line'), 'field'
+    body = [('local', 'f', ('new', 'TextFormat', [FONT, var('size'), 0, True, False, False, None, None, 'left']))]
+    for index, (dx, dy) in enumerate(HALO):
+        body += [method(line, 'createTextField', 'halo%d' % index, index + 1, ('+', var('x'), dx), dy, 300,
+                        ('+', var('size'), 10)),
+                 ('local', 't', ('get', line, 'halo%d' % index)),
+                 ('set', var('t'), 'embedFonts', True), ('set', var('t'), 'selectable', False),
+                 method(var('t'), 'setNewTextFormat', var('f')), ('set', var('t'), 'text', var('text')),
+                 ('set', var('t'), '_alpha', HALO_ALPHA)]
+    body += [method(line, 'createTextField', name, len(HALO) + 1, var('x'), 0, 300, ('+', var('size'), 10)),
+             ('local', 't', ('get', line, name)),
+             ('set', var('t'), 'embedFonts', True), ('set', var('t'), 'selectable', False),
+             ('set', var('f'), 'color', var('colour')),
+             method(var('t'), 'setNewTextFormat', var('f')), ('set', var('t'), 'text', var('text')),
+             ('set', line, 'w', ('+', var('x'), ('+', ('get', var('t'), 'textWidth'), 4)))]
+    return function('_projectHaloLine', ['line', 'x', 'size', 'colour', 'text'], body)
+
+
 def art_show_source():
     """Owner reference 2026-11-02: a dark disc with the number, wings towards the
-    shooter, a chevron on the axis, a tick towards the reticle and two text lines,
-    the vehicle and its shell, under the angle of the marker. The tone follows
-    the colour show_args decided; `scale` (dynamic indicators) spreads the wings."""
-    mc, turn = var('m'), ('neg', ('get', var('damageMC'), '_rotation'))
+    shooter, a chevron on the axis, a tick towards the reticle and the text under
+    the angle of the marker: the vehicle with its class icon, the shell, the
+    critical note, all with a black halo. Lesta icons attach only when the movie
+    has them. `spread` turns this marker off a neighbour from the same side."""
+    mc = var('m')
     art = art_module()
     text = ('get', mc, 'textMC')
     body = [('local', 'm', ('call', var('damageMC'), 'createEmptyMovieClip', ['projectHit', 100])),
+            ('set', mc, '_rotation', var('spread')),
             ('local', 'tone', '_grey'),
             ('if', ('==', var('colour'), RED), [('assign', 'tone', '_red')]),
             ('if', ('==', var('colour'), ORANGE), [('assign', 'tone', '_orange')])]
@@ -231,36 +260,52 @@ def art_show_source():
     body += attach(mc, 'tick', 'tickMC', 2, 100, -(ART_DISC_AT + art.TICK_AT))
     body += attach(mc, ('+', 'disc', var('tone')), 'discMC', 3, 100, -ART_DISC_AT)
     body += attach(mc, ('+', 'chevron', var('tone')), 'chevronMC', 4, 100, -(ART_DISC_AT + art.CHEVRON_AT))
-    for name, depth, y in (('numberMC', 5, -ART_DISC_AT), ('textMC', 6, -(ART_DISC_AT + ART_TEXT_AT)),
-                           ('noteMC', 7, -ART_NOTE_AT)):
+    # A module icon stands in for the number only when the movie has it.
+    body += [('if', ('not', ('==', var('icon'), '')),
+              attach(mc, var('icon'), 'iconMC', 5, MODULE_ICON_SCALE, -ART_DISC_AT)
+              + [('if', ('==', ('typeof', ('get', mc, 'iconMC')), 'movieclip'), [('assign', 'number', '')])])]
+    for name, depth, y in (('numberMC', 6, -ART_DISC_AT), ('textMC', 7, -(ART_DISC_AT + ART_TEXT_AT))):
         body += holder(mc, name, depth, y)
-    body += [label(('get', mc, 'numberMC'), 'field', 1, -13, 17, 0xffffff, var('number')),
-             label(text, 'nameField', 1, -21, 15, var('nameColour'), var('name'), 0, 'left'),
-             label(text, 'shellField', 2, 0, 14, var('colour'), var('shell'), 0, 'left'),
-             label(('get', mc, 'noteMC'), 'field', 1, -11, 14, var('colour'), var('note')),
+    body.append(label(('get', mc, 'numberMC'), 'field', 1, -13, 17, 0xffffff, var('number')))
+    for depth, (line, y, size) in enumerate(LINES, 1):
+        body += [('do', ('call', text, 'createEmptyMovieClip', [line, depth])), ('set', ('get', text, line), '_y', y)]
+    name_line = ('get', text, 'nameLine')
+    body += [('local', 'x', 0),
+             ('if', ('not', ('==', var('vehicle'), '')),
+              attach(name_line, var('vehicle'), 'classMC', 20, 100, 11)
+              + [('set', ('get', name_line, 'classMC'), '_x', 8),
+                 ('if', ('==', ('typeof', ('get', name_line, 'classMC')), 'movieclip'),
+                  [('assign', 'x', CLASS_ICON_WIDTH)])]),
+             ('do', ('fn', '_projectHaloLine', [name_line, var('x'), 15, var('nameColour'), var('name')])),
+             ('do', ('fn', '_projectHaloLine', [('get', text, 'shellLine'), 0, 14, var('colour'), var('shell')])),
+             ('do', ('fn', '_projectHaloLine', [('get', text, 'noteLine'), 0, 14, var('colour'), var('note')])),
              ('set', mc, 'startedAt', ('time',)), ('set', mc, 'animate', var('animate')),
              ('set', mc, 'onEnterFrame', ('func', [], art_frame_body())),
              ('do', ('call', mc, 'onEnterFrame', [])),
              # The native arc goes only after a sprite really attached.
              ('if', ('==', ('typeof', ('get', mc, 'discMC')), 'movieclip'),
               [('set', ('get', var('damageMC'), 'animation'), '_visible', False)])]
-    return function('_projectHitShow', ['colour', 'number', 'name', 'nameColour', 'note', 'scale', 'animate',
-                                        'shell'], body)
+    return halo_source() + function('_projectHitShow', ['colour', 'number', 'name', 'nameColour', 'note', 'scale',
+                                                        'animate', 'shell', 'icon', 'vehicle', 'spread'], body)
 
 
 def art_frame_body():
     """Owner order 2026-11-02: the text runs under the angle of the marker and
-    never reads upside down; the number and the note stay upright."""
-    me, turn = var('this'), ('get', var('damageMC'), '_rotation')
-    text = ('get', me, 'textMC')
-    rows = [row for row in frame_body() if row[1] != ('get', me, 'nameMC')]
-    flipped = []
-    for field in ('nameField', 'shellField'):
-        rows.append(('set', ('get', text, field), '_x', 0))
-        flipped.append(('set', ('get', text, field), '_x',
-                        ('neg', ('+', ('get', ('get', text, field), 'textWidth'), 4))))
-    return rows + [('set', text, '_rotation', -90),
-                   ('if', ('<', turn, 0), [('set', text, '_rotation', 90)] + flipped)]
+    never reads upside down; the number and the module icon stay upright."""
+    me, text = var('this'), ('get', var('this'), 'textMC')
+    turn = var('turn')
+    rows = [row for row in frame_body() if row[0] != 'set' or row[2] != '_rotation']
+    rows += [('local', 'turn', ('+', ('get', var('damageMC'), '_rotation'), ('get', me, '_rotation'))),
+             ('if', ('<', 180, turn), [('assign', 'turn', ('-', turn, 360))]),
+             ('if', ('<', turn, -180), [('assign', 'turn', ('+', turn, 360))]),
+             ('set', ('get', me, 'numberMC'), '_rotation', ('neg', turn)),
+             ('set', ('get', me, 'iconMC'), '_rotation', ('neg', turn)),
+             ('set', text, '_rotation', -90)]
+    flipped = [('set', text, '_rotation', 90)]
+    for line, _, _ in LINES:
+        rows.append(('set', ('get', text, line), '_x', 0))
+        flipped.append(('set', ('get', text, line), '_x', ('neg', ('get', ('get', text, line), 'w'))))
+    return rows + [('if', ('<', turn, 0), flipped)]
 
 
 def actions(art=False):
@@ -363,7 +408,15 @@ def art_module():
     return battle_ui_hit_art
 
 
-def payload(original):
+def icons_module():
+    art_module()
+    import battle_ui_hit_icons
+    return battle_ui_hit_icons
+
+
+def payload(original, icons=None):
+    """`icons`: the local folder of tools/battle_ui_hit_icons.py; None or a
+    folder without them gives the indicator without the Lesta icons."""
     with zipfile.ZipFile(Path(original) / 'res/packages/gui.pkg') as package:
         info = package.getinfo(MEMBER)
         if info.file_size > MAX_BYTES:
@@ -373,12 +426,16 @@ def payload(original):
     if source != SOURCE_SHA256:
         raise ValueError('original indicator movie differs from the pinned #717 bytes')
     images = art_module().sprites()
+    borrowed, missing = icons_module().load(icons)
+    images.update(borrowed)
     result = build(raw, images=images)
     if len(result) > MAX_BYTES:
         raise ValueError('indicator movie is oversized')
     return result, {'source_member': MEMBER, 'source_sha256': source, 'target': TARGET,
                     'target_sha256': hashlib.sha256(result).hexdigest(), 'callback': CALLBACK,
                     'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-                    'sprites': sorted(images), 'sprites_sha256': hashlib.sha256(b''.join(
-                        images[name][2] for name in sorted(images))).hexdigest(),
+                    'sprites': sorted(art_module().SPRITES), 'sprites_sha256': hashlib.sha256(b''.join(
+                        images[name][2] for name in sorted(art_module().SPRITES))).hexdigest(),
+                    'icons_folder': None if icons is None else str(icons).replace('\\', '/'),
+                    'icons': sorted(borrowed), 'icons_missing': missing,
                     'stage': ART_STAGE, 'native_render_check': 'NOT_RUN'}
