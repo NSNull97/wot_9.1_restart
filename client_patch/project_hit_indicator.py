@@ -34,7 +34,10 @@ MAX_EVENTS = 8
 MAX_CRITICALS = 4
 NO_VALUE = 0xffff
 MAX_FEED_KIND = 15
-KIND_HELLO, KIND_HIT_RECEIVED, KIND_FEED, KIND_TOTALS = 0, 1, 2, 3
+KIND_HELLO, KIND_HIT_RECEIVED, KIND_FEED, KIND_TOTALS, KIND_SHELL = 0, 1, 2, 3, 4
+# UI-03b shell byte: family in the low bits, 0x10 for a shell bought for gold.
+SHELL_FAMILIES = {1: 'armor_piercing', 2: 'armor_piercing_cr', 3: 'hollow_charge', 4: 'high_explosive'}
+SHELL_PREMIUM = 0x10
 VERDICTS = ('unknown', 'pierced', 'not_pierced', 'ricochet', 'splash')
 EXTENDED_MOVIE = 'ProjectHitIndicator.swf'
 # tools/battle_ui_hit_flash.py ART_STAGE: a movie with sprites has this stage.
@@ -153,6 +156,17 @@ def _totals(payload):
             'burned': burned}
 
 
+def _shell(payload):
+    """UI-03b record: the shell of the hit before it; None for a family newer
+    than this client."""
+    if len(payload) != 5:
+        raise ValueError('shell event outside its bounds')
+    shot, code = struct.unpack('<IB', payload)
+    if code & ~(SHELL_PREMIUM | 0x0f) or (code & 0x0f) not in SHELL_FAMILIES:
+        return None
+    return {'kind': 'shell', 'shot': shot, 'family': SHELL_FAMILIES[code & 0x0f], 'premium': bool(code & SHELL_PREMIUM)}
+
+
 def parse_frame(data):
     """(sequence, events) of one frame; ValueError for anything else. Unknown
     event kinds are skipped by their length: later cards add kinds."""
@@ -180,6 +194,10 @@ def parse_frame(data):
                 events.append(event)
         elif kind == KIND_TOTALS:
             events.append(_totals(payload))
+        elif kind == KIND_SHELL:
+            event = _shell(payload)
+            if event is not None:
+                events.append(event)
     if at != len(data):
         raise ValueError('bytes after the last event')
     return sequence, events

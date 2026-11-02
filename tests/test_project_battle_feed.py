@@ -232,6 +232,31 @@ class FeedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.feed.apply_options({'unknown': True})
 
+    def test_a_kill_takes_the_damage_row_of_its_vehicle(self):
+        self.feed.add(event(1, 440, 523))
+        self.feed.add(event(3, NO_VALUE, 523))
+        self.assertEqual(len(self.feed.rows), 1)
+        self.assertEqual(self.row()[:5], [m.GREEN, '440', m.KILL, 'Уничтожил', 'T-34'])
+        self.assertEqual(self.row()[6], 'ribbonsKill')
+
+    def test_damage_after_the_kill_adds_to_the_kill_row(self):
+        self.feed.add(event(3, NO_VALUE, 523))
+        self.feed.add(event(1, 440, 523))
+        self.assertEqual(len(self.feed.rows), 1)
+        self.assertEqual(self.row()[:3], [m.GREEN, '440', m.KILL])
+
+    def test_a_kill_keeps_rows_of_other_vehicles_and_a_ram(self):
+        self.feed.add(event(1, 100, 600))
+        self.feed.add(event(2, 57, 523))
+        self.feed.add(event(3, NO_VALUE, 523))
+        self.assertEqual([(row['key'], row['value']) for row in self.feed.rows], [('kill', 57), ('shot', 100)])
+
+    def test_with_kills_switched_off_the_damage_row_stays(self):
+        self.feed.apply_options({'kill': False})
+        self.feed.add(event(1, 440, 523))
+        self.assertFalse(self.feed.add(event(3, NO_VALUE, 523)))
+        self.assertEqual(self.row()[:3], [m.GREEN, '440', m.CROSS])
+
     def test_class_icon_by_the_native_tags(self):
         self.assertEqual(m.class_icon(frozenset(['ussr', 'AT-SPG'])), 'whiteIconAt-SPG16x16')
         self.assertEqual(m.class_icon(frozenset(['mediumTank'])), 'whiteIconMediumTank16x16')

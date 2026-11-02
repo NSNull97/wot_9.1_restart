@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import battle_ui_art as art_tool
 import battle_ui_feed_flash as feed
 import battle_ui_hit_flash as flash
-from battle_ui_hit_flash import MAX_BYTES, MEMBER, SOURCE_SHA256, function, stmt, var
+from battle_ui_hit_flash import MAX_BYTES, MEMBER, SOURCE_SHA256, function, method, polygon, stmt, var
 
 TARGET = 'res_mods/0.9.1/gui/scaleform/ProjectBattleHistory.swf'
 CALLBACK = 'ProjectHistory.row'
@@ -30,12 +30,32 @@ KIND_TOTAL, KIND_DETAIL = 1, 2
 TOTAL_GLYPH_X, TOTAL_TEXT_X, TOTAL_GLYPH_Y, TOTAL_WIDTH, TOTAL_SIZE = 8, 18, 11, 120, 15
 DETAIL_NUMBER_X, DETAIL_NUMBER_WIDTH, DETAIL_GLYPH_X, DETAIL_GLYPH_Y = -63, 100, 51, 10
 DETAIL_CLASS_X, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH, DETAIL_SIZE = 71, 81, 130, 13
+# The shell column of a block with received hits (live screenshot 5): its
+# plaque, then the class icon and the name move right by SHELL_SHIFT.
+SHELL_X, SHELL_WIDTH, SHELL_HEIGHT, SHELL_SIZE, SHELL_SHIFT = 69, 30, 13, 10, 43
+# Plaque style of client_patch/project_battle_history.py: fill, line, text; -1 none.
+SHELL_STYLES = ((-1, -1, 0x8c8c8c), (0xb4b4b4, -1, 0x1e1e1e), (0xf0a830, -1, 0x1e1e1e), (0x262626, 0xe8b040, 0xe8b040))
 DRAWN_GLYPH_SCALE = 70
-ROW_ARGS = ('id', 'y', 'kind', 'colour', 'number', 'glyph', 'name', 'icon', 'vehicleClass')
+ROW_ARGS = ('id', 'y', 'kind', 'colour', 'number', 'glyph', 'name', 'icon', 'vehicleClass', 'shell', 'shellStyle')
 
 
-def text(mc, name, depth, x, width, size, colour, align, value, bold):
-    return ('do', ('fn', '_projectFeedText', [mc, name, depth, x, 0, width, size, colour, align, value, bold]))
+def text(mc, name, depth, x, width, size, colour, align, value, bold, y=0):
+    return ('do', ('fn', '_projectFeedText', [mc, name, depth, x, y, width, size, colour, align, value, bold]))
+
+
+def plaque(mc):
+    """The shell column: a dash for none, else a small filled or outlined box."""
+    top, right, bottom = DETAIL_GLYPH_Y - SHELL_HEIGHT // 2, SHELL_X + SHELL_WIDTH, DETAIL_GLYPH_Y + SHELL_HEIGHT - SHELL_HEIGHT // 2
+    box = [(SHELL_X, top), (right, top), (right, bottom), (SHELL_X, bottom)]
+    rows = [('local', 'fill', -1), ('local', 'line', -1), ('local', 'ink', SHELL_STYLES[0][2])]
+    for style, (fill, line, ink) in enumerate(SHELL_STYLES):
+        rows.append(('if', ('==', var('shellStyle'), style),
+                     [('assign', 'fill', fill), ('assign', 'line', line), ('assign', 'ink', ink)]))
+    rows += [('if', ('<', -1, var('line')), [method(mc, 'lineStyle', 1, var('line'), 100)]),
+             ('if', ('<', -1, var('fill')), [method(mc, 'beginFill', var('fill'), 100)] + polygon(mc, box) + [method(mc, 'endFill')]),
+             text(mc, 'shellField', 9, SHELL_X, SHELL_WIDTH, SHELL_SIZE, var('ink'), 'center', var('shell'), True, 3),
+             ('assign', 'classX', DETAIL_CLASS_X + SHELL_SHIFT), ('assign', 'nameX', DETAIL_TEXT_X + SHELL_SHIFT)]
+    return rows
 
 
 def glyph(mc, x, y, art):
@@ -54,11 +74,13 @@ def row_source(art=False):
     total = glyph(mc, TOTAL_GLYPH_X, TOTAL_GLYPH_Y, art) + [
         text(mc, 'numberField', 3, TOTAL_TEXT_X, TOTAL_WIDTH, TOTAL_SIZE, 0xffffff, 'left', var('number'), True)]
     detail = glyph(mc, DETAIL_GLYPH_X, DETAIL_GLYPH_Y, art) + [
+        ('local', 'classX', DETAIL_CLASS_X), ('local', 'nameX', DETAIL_TEXT_X),
+        ('if', feed.not_empty(var('shell')), plaque(mc)),
         text(mc, 'numberField', 3, DETAIL_NUMBER_X, DETAIL_NUMBER_WIDTH, DETAIL_SIZE, 0xffffff, 'right', var('number'), True),
-        text(mc, 'nameField', 5, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH, DETAIL_SIZE, feed.NAME_COLOUR, 'left', var('name'), False)]
+        text(mc, 'nameField', 5, var('nameX'), DETAIL_TEXT_WIDTH, DETAIL_SIZE, feed.NAME_COLOUR, 'left', var('name'), True)]
     if art:
         detail.append(('if', feed.not_empty(var('vehicleClass')),
-                       feed.attach(mc, var('vehicleClass'), 'classMC', 7, DETAIL_CLASS_X, DETAIL_GLYPH_Y)))
+                       feed.attach(mc, var('vehicleClass'), 'classMC', 7, var('classX'), DETAIL_GLYPH_Y)))
     body = [('set', var('damageMC'), '_visible', False),
             ('local', 'm', ('call', var('historyMC'), 'createEmptyMovieClip',
                             [('+', 'row', var('id')), ('+', 10, var('id'))])),

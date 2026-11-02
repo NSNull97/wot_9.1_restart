@@ -54,7 +54,6 @@ HISTORY = (
     ('srHistDealt', 'battle_history', 'total_dealt', 'Нанесённый урон', None),
     ('srHistBlocked', 'battle_history', 'total_blocked', 'Заблокированный бронёй', None),
     ('srHistAssist', 'battle_history', 'total_assist', 'Урон с вашей помощью', None),
-    ('srHistBurned', 'battle_history', 'total_burned', 'Выжженный урон', None),
     ('srHistVehicle', 'battle_history', 'show_vehicle', 'Информация о машине', None))
 FEED = (
     ('srFeedEnabled', 'battle_feed', 'enabled', 'Отображать в бою', None),

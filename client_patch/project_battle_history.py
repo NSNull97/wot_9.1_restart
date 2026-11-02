@@ -31,7 +31,7 @@ PLACE_CALLBACK = 'ProjectHistory.place'
 # Rows on screen: all in one list, or each group in its own place.
 BOTTOM_ROWS, TOP_ROWS = 7, 5
 KEPT_ROWS = 16
-TOTALS_ROWS = 4
+TOTALS_ROWS = 3
 ALT_PERIOD = 0.1
 # Block coordinates of the owner's live Lesta screenshots at 1920 x 1080: the
 # bottom block stands right of the 230 px native damage panel, the sums end on one
@@ -40,11 +40,11 @@ ALT_PERIOD = 0.1
 ROW_HEIGHT, TOTAL_HEIGHT, TOTALS_GAP = 20, 22, 9
 TOTALS_Y = 0
 DETAIL_Y = TOTALS_ROWS * TOTAL_HEIGHT + TOTALS_GAP
-BOTTOM_X, BOTTOM_ABOVE, TOP_X, TOP_Y = 235, 249, 247, 66
+BOTTOM_X, BOTTOM_ABOVE, TOP_X, TOP_Y = 235, 227, 247, 66
 # Native battle.swf: consumablesPanel lies 56 px above the bottom of the stage. Its
-# half width is an estimate. A screen too narrow to keep the rows left of it shows
+# half width is an estimate. The block is as wide as a row with the shell column. A screen too narrow to keep the rows left of it shows
 # only those above its top edge.
-BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 213, 230, 4
+BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 256, 230, 4
 KIND_EMPTY, KIND_TOTAL, KIND_DETAIL = 0, 1, 2
 RED, ORANGE, GREY, GREEN, WHITE = 0xc8181e, 0xe06a1b, 0x9a9a9a, 0x5fc23a, 0xffffff
 # Glyph numbers of tools/battle_ui_feed_flash.py.
@@ -53,6 +53,8 @@ CROSS, SHIELD, FLAG, EYE, CHEVRONS, KILL, TRACK, GEAR, FLAME = range(1, 10)
 # Row key: group, colour, glyph, sprite.
 RECEIVED, EFFECT = 'received', 'efficiency'
 ROWS_TABLE = {'received': (RECEIVED, RED, CROSS, 'damageLog_damage_enemy_16x16'),
+              'received_fire': (RECEIVED, RED, FLAME, 'damageLog_fire_enemy_16x16'),
+              'received_ram': (RECEIVED, RED, CHEVRONS, 'damageLog_ram_enemy_16x16'),
               'blocked': (RECEIVED, GREY, SHIELD, 'damageLog_reflect_16x16'),
               'received_critical': (RECEIVED, ORANGE, GEAR, 'damageLog_critical_enemy_16x16'),
               'shot': (EFFECT, GREEN, CROSS, 'damageLog_damage_16x16'),
@@ -62,13 +64,22 @@ ROWS_TABLE = {'received': (RECEIVED, RED, CROSS, 'damageLog_damage_enemy_16x16')
               'assist_track': (EFFECT, GREEN, TRACK, 'damageLog_immobilized_16x16')}
 # Wire numbers of battle_events::FeedKind this widget reads. Ignition (7) has no
 # amount: the row of a fire appears with its first burned HP.
-FEED_ROWS = {1: 'shot', 2: 'ram', 8: 'burned', 11: 'received', 12: 'received', 14: 'assist_spot', 15: 'assist_track'}
+FEED_ROWS = {1: 'shot', 2: 'ram', 7: 'burned', 8: 'burned', 11: 'received_ram', 12: 'received_fire', 14: 'assist_spot',
+             15: 'assist_track'}
+IGNITION = 7
+# Owner 02.11: every hit has its own row. A fire is one row: its ticks add up.
+MERGED = ('burned', 'received_fire')
+# Shell plaque of a received hit, Lesta labels (ingame_gui damageLog/shellType):
+# family: text. Style: 0 a dash for no shell, 1 grey, 2 gold for a gold shell,
+# 3 outlined for high explosive.
+SHELL_LABELS = {'armor_piercing': 'ББ', 'armor_piercing_cr': 'БП', 'hollow_charge': 'КС', 'high_explosive': 'ОФ'}
+NO_SHELL, SHELL_GREY, SHELL_GOLD, SHELL_OUTLINE = 0, 1, 2, 3
 # Summary row: option key, colour, glyph, sprite. No row for disorientation: the
-# owner does not carry that mechanic over.
+# owner does not carry that mechanic over, and none for burned HP (owner 02.11):
+# it counts in the dealt sum and has its row among the hits.
 TOTALS_TABLE = (('total_dealt', GREEN, CROSS, 'damageLog_damage_16x16'),
                 ('total_blocked', WHITE, SHIELD, 'damageLog_reflect_16x16'),
-                ('total_assist', GREEN, EYE, 'damageLog_assist_16x16'),
-                ('total_burned', ORANGE, FLAME, 'damageLog_fire_16x16'))
+                ('total_assist', GREEN, EYE, 'damageLog_assist_16x16'))
 
 # Values for UI-05: key, allowed values, default; the switches of the owner's
 # target settings. Applied by apply_options at once; storage is
@@ -80,7 +91,6 @@ OPTION_SCHEMA = (('enabled', (True, False), True),
                  ('total_dealt', (True, False), True),
                  ('total_blocked', (True, False), True),
                  ('total_assist', (True, False), True),
-                 ('total_burned', (True, False), True),
                  ('show_vehicle', (True, False), True))
 _installed = None
 
@@ -139,7 +149,7 @@ def rows_of(event):
 def number(row):
     """The value, a '+' while part of it is withheld, a count without any value."""
     if row['value'] is None:
-        return 'x%d' % row['count'] if row['count'] > 1 or row['key'] == 'received_critical' else '- -'
+        return 'x%d' % row['count'] if row['count'] > 1 or row['key'] in ('received_critical', 'burned') else '- -'
     return '%d%s' % (row['value'], '+' if row['withheld'] else '')
 
 
@@ -170,48 +180,65 @@ class History(object):
         else:
             self.sums[name] += value
 
+    def shell(self, event):
+        """UI-03b: the plaque of the received hit this shell belongs to."""
+        rows = [row for row in self.rows if row.get('shot') == event['shot']
+                and ROWS_TABLE[row['key']][0] == RECEIVED]
+        for row in rows:
+            row['shell'] = (event['family'], event['premium'])
+        return bool(rows)
+
     def add(self, event):
         """True when a fact changed the history. Newest row first."""
+        if event['kind'] == 'shell':
+            return self.shell(event)
         if event['kind'] == 'totals':
             self.sums = {'dealt': event['dealt'], 'blocked': event['blocked'],
                          'assist': event['assist_spot'] + event['assist_track'], 'burned': event['burned']}
             self.partial.clear()
             return True
         changed = False
+        ignition = event['kind'] == 'feed' and event['feed'] == IGNITION
         for key, value, count, vehicle in rows_of(event):
             changed = True
-            if key in ('shot', 'ram', 'burned'):
+            # An ignition has no amount by nature: it is no withheld fact.
+            if ignition:
+                pass
+            elif key in ('shot', 'ram', 'burned'):
                 self._count('dealt', value)
-            if key == 'burned':
-                self._count('burned', value)
+                if key == 'burned':
+                    self._count('burned', value)
             elif key == 'blocked':
                 self._count('blocked', value)
             elif key in ('assist_spot', 'assist_track'):
                 self._count('assist', value)
-            same = [row for row in self.rows if row['key'] == key and row['vehicle'] == vehicle]
+            same = [row for row in self.rows if row['key'] == key and row['vehicle'] == vehicle] if key in MERGED else []
             if same:
                 row = same[0]
                 self.rows.remove(row)
-                row['count'] += count
+                row['count'] += 0 if ignition and row['value'] is not None else count
                 if value is None:
-                    row['withheld'] = True
+                    row['withheld'] = row['withheld'] or not ignition
                 else:
                     row['value'] = (row['value'] or 0) + value
             else:
-                row = {'key': key, 'value': value, 'count': count, 'vehicle': vehicle, 'withheld': value is None}
+                row = {'key': key, 'value': value, 'count': count, 'vehicle': vehicle,
+                       'withheld': value is None and not ignition}
+                if event['kind'] == 'hit_received':
+                    row['shot'] = event['shot']
             self.rows.insert(0, row)
             del self.rows[KEPT_ROWS:]
         return changed
 
     def _totals(self):
         rows = []
-        for (option, colour, glyph, icon), name in zip(TOTALS_TABLE, ('dealt', 'blocked', 'assist', 'burned')):
+        for (option, colour, glyph, icon), name in zip(TOTALS_TABLE, ('dealt', 'blocked', 'assist')):
             if self.options[option]:
                 text = '%s%s' % ('{:,}'.format(self.sums[name]).replace(',', ' '), '+' if name in self.partial else '')
-                rows.append((KIND_TOTAL, colour, text, glyph, '', icon, ''))
+                rows.append((KIND_TOTAL, colour, text, glyph, '', icon, '', '', NO_SHELL))
         return rows
 
-    def _details(self, group=None):
+    def _details(self, group=None, plaques=False):
         if self.options['detail'] == 'hidden' or (self.options['detail'] == 'alt' and not self.alt):
             return []
         wanted = self.options['events']
@@ -222,7 +249,7 @@ class History(object):
                 continue
             shown = row['vehicle'] and self.options['show_vehicle']
             rows.append((KIND_DETAIL, colour, number(row), glyph, self.name_of(row['vehicle']) if shown else '', icon,
-                         self.class_of(row['vehicle']) if shown else ''))
+                         self.class_of(row['vehicle']) if shown else '') + (plaque(row) if plaques else ('', NO_SHELL)))
         return rows
 
     def view(self, rows=BOTTOM_ROWS):
@@ -231,14 +258,25 @@ class History(object):
         KIND_EMPTY. `rows` limits the detail rows of the bottom block."""
         if not self.options['enabled']:
             return {'bottom': bottom_rows([], []), 'top': top_rows([])}
+        # A block that holds received hits has the plaque column, as in Lesta.
         if self.options['layout'] == 'top':
             return {'bottom': bottom_rows(self._totals(), self._details(EFFECT)[:rows]),
-                    'top': top_rows(self._details(RECEIVED))}
-        return {'bottom': bottom_rows(self._totals(), self._details()[:rows]), 'top': top_rows([])}
+                    'top': top_rows(self._details(RECEIVED, True))}
+        plaques = self.options['events'] != 'efficiency'
+        return {'bottom': bottom_rows(self._totals(), self._details(None, plaques)[:rows]), 'top': top_rows([])}
 
 
 def _row(index, y, content):
-    return (index, y) + (content or (KIND_EMPTY, -1, '', 0, '', '', ''))
+    return (index, y) + (content or (KIND_EMPTY, -1, '', 0, '', '', '', '', NO_SHELL))
+
+
+def plaque(row):
+    """(text, style) of the shell column; a row without a known shell has a dash."""
+    shell = row.get('shell')
+    if shell is None:
+        return '—', NO_SHELL
+    family, premium = shell
+    return SHELL_LABELS[family], SHELL_GOLD if premium else SHELL_OUTLINE if family == 'high_explosive' else SHELL_GREY
 
 
 def _pad(rows, size):

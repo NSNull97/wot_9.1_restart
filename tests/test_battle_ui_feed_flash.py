@@ -168,11 +168,10 @@ class Tests(unittest.TestCase):
         self.assertEqual(row.members['labelFieldShadow'].calls[0][1].args[2], 0)
         self.assertEqual(row.members['nameField'].calls[0][1].args[2], feed.NAME_COLOUR)
 
-    def test_only_the_number_is_bold(self):
+    def test_every_text_is_bold(self):
         row = self.row(client.GREEN)
-        self.assertIs(row.members['numberField'].calls[0][1].args[3], True)
-        self.assertIs(row.members['labelField'].calls[0][1].args[3], False)
-        self.assertIs(row.members['nameField'].calls[0][1].args[3], False)
+        for name in ('numberField', 'labelField', 'nameField', 'labelFieldShadow'):
+            self.assertIs(row.members[name].calls[0][1].args[3], True, name)
 
     def test_columns_of_the_live_screenshots(self):
         centre = 960

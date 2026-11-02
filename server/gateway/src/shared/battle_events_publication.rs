@@ -7,7 +7,8 @@
 //! at the channel's own cursors. Policy: docs/plans/UI03_BATTLE_FEEDS.md.
 use super::*;
 use crate::p06t_device_state::{Change,Condition};
-use super::super::battle_events::{self,Channel,Critical,Event,FeedCursors,FeedEvent,FeedKind,HitReceived,Source,Verdict};
+use super::super::battle_events::{self,Channel,Critical,Event,FeedCursors,FeedEvent,FeedKind,HitReceived,HitShell,ShellFamily,Source,Verdict};
+use crate::p06t_shells091::Family;
 
 fn heading(world:&World,shot:u32)->Option<f32> {
     let velocity=world.projectiles.iter().find(|projectile|projectile.sequence==shot)?.velocity;
@@ -39,6 +40,15 @@ fn verdict(event:&model::AppliedImpact)->Verdict {
         None=>Verdict::Unknown,
     }
 }
+/// UI-03b: the shell of a hit from a shooter this recipient sees; the same rule
+/// as the nominal of "Удар сдержан". Laboratory shots have no catalog shell.
+fn shell(world:&World,shot:u32,source:Source)->Option<Event> {
+    if source==Source::Hidden {return None;}
+    let shell=world.projectiles.iter().find(|projectile|projectile.sequence==shot)?.shell?;
+    let family=match shell.family {Family::ArmorPiercing=>ShellFamily::ArmorPiercing,Family::ArmorPiercingCr=>ShellFamily::ArmorPiercingCr,
+        Family::HollowCharge=>ShellFamily::HollowCharge,Family::HighExplosive=>ShellFamily::HighExplosive};
+    Some(Event::Shell(HitShell{shot,family,premium:shell.premium_gold_flag}))
+}
 fn source(c:&Client,attacker:usize)->Source {if c.visible()[attacker]{Source::Visible(attacker)}else{Source::Hidden}}
 fn friendly(world:&World,own:usize,attacker:usize)->io::Result<bool> {Ok(world.team(own)?==world.team(attacker)?)}
 fn hit_events(c:&Client,world:&World)->io::Result<Vec<(u32,Event)>> {
@@ -56,6 +66,7 @@ fn hit_events(c:&Client,world:&World)->io::Result<Vec<(u32,Event)>> {
             .then(||battle_ledger::nominal(world,event.shot)).flatten();
         rows.push((event.tick,Event::HitReceived(HitReceived{shot:event.shot,yaw,damage,blocked,verdict,
             friendly:friendly(world,c.slot,event.attacker)?,fatal:event.health_after<=0,source,criticals:criticals(c,world,event.shot)})));
+        if let Some(row)=shell(world,event.shot,source) {rows.push((event.tick,row));}
     }
     // An HE terminal that hurt this vehicle without being its direct impact.
     for event in world.damage_events.iter().skip(c.damage_cursor){
@@ -63,8 +74,10 @@ fn hit_events(c:&Client,world:&World)->io::Result<Vec<(u32,Event)>> {
             ||world.impacts.iter().any(|impact|impact.shot==event.shot&&impact.target==c.slot){continue;}
         let Some(yaw)=heading(world,event.shot) else {continue;};
         let damage=u16::try_from(event.health_before-event.health_after).map_err(|_|model::bad())?;
+        let source=source(c,event.attacker);
         rows.push((event.tick,Event::HitReceived(HitReceived{shot:event.shot,yaw,damage,blocked:None,verdict:Verdict::Splash,
-            friendly:friendly(world,c.slot,event.attacker)?,fatal:event.health_after<=0,source:source(c,event.attacker),criticals:criticals(c,world,event.shot)})));
+            friendly:friendly(world,c.slot,event.attacker)?,fatal:event.health_after<=0,source,criticals:criticals(c,world,event.shot)})));
+        if let Some(row)=shell(world,event.shot,source) {rows.push((event.tick,row));}
     }
     Ok(rows)
 }

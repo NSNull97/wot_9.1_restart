@@ -69,7 +69,8 @@ def not_empty(node):
 
 
 def text_source():
-    """A field with a dark copy under it: the given depth and the next one."""
+    """A field with a dark copy under it: the given depth and the next one. Owner
+    02.11: the thin face read too light, so every caller passes bold."""
     parent, name = var('parent'), var('id')
     params = ['parent', 'id', 'depth', 'x', 'y', 'w', 'size', 'colour', 'align', 'text', 'bold']
     field = function('_projectFeedField', params, [
@@ -156,7 +157,7 @@ def row_source(art=False):
     draw += [('local', 'end', TEXT_X),
              ('if', not_empty(var('label')),
               [('do', ('fn', '_projectFeedText', [mc, 'labelField', 5, TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_SIZE,
-                                                  var('labelColour'), 'left', var('label'), False])),
+                                                  var('labelColour'), 'left', var('label'), True])),
                ('assign', 'end', ('+', ('+', TEXT_X, ('get', ('get', mc, 'labelField'), 'textWidth')), LABEL_GAP))])]
     if art:
         draw.append(('if', not_empty(var('vehicleClass')),
@@ -164,7 +165,7 @@ def row_source(art=False):
                      + [('assign', 'end', ('+', var('end'), CLASS_WIDTH))]))
     draw += [('if', not_empty(var('vehicle')),
               [('do', ('fn', '_projectFeedText', [mc, 'nameField', 8, var('end'), TEXT_Y, TEXT_WIDTH, TEXT_SIZE,
-                                                  NAME_COLOUR, 'left', var('vehicle'), False])),
+                                                  NAME_COLOUR, 'left', var('vehicle'), True])),
                ('assign', 'end', ('+', var('end'), ('get', ('get', mc, 'nameField'), 'textWidth')))])]
     draw += band_rows(mc, art)
     draw += [('set', mc, 'startedAt', ('time',)), ('set', mc, 'left', var('left')),

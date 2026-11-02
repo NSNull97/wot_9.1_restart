@@ -308,6 +308,16 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(len(current), len(m.CONTROLS))
         self.assertEqual(current[[row[0] for row in m.CONTROLS].index('srHistEvents')], 2)
 
+    def test_a_stored_burned_sum_of_an_older_build_is_a_reported_stray_key(self):
+        values, problems = m.decode({m.VERSION_KEY: '1', 'srHistBurned': 'true'}, self.base_for_burned())
+        self.assertEqual(problems, ['srHistBurned'])
+        self.assertNotIn('srHistBurned', values)
+        self.assertNotIn('srHistBurned', m.BY_NAME)
+
+    @staticmethod
+    def base_for_burned():
+        return dict((name, False if row[4] is None else row[4][0][0]) for name, row in m.BY_NAME.items())
+
     def test_the_running_widgets_accept_what_the_controller_sends(self):
         clock = [10.0]
         policy = hit_module.Policy(hit_module.default_options(), lambda *a, **k: None, lambda: clock[0])

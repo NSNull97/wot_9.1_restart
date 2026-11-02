@@ -73,8 +73,15 @@ pub struct FeedEvent {pub kind:FeedKind,pub value:Option<u16>,pub vehicle:Option
 /// sums the channel withheld during the battle tell no single shot any more.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct BattleTotals {pub dealt:u32,pub blocked:u32,pub assist_spot:u32,pub assist_track:u32,pub burned:u32}
+/// UI-03b: the shell of a received hit, a catalog fact of a shooter the
+/// recipient sees, as the nominal of "Удар сдержан". Its own record after the
+/// hit: a client that does not know the kind skips it by its length.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum ShellFamily {ArmorPiercing=1,ArmorPiercingCr=2,HollowCharge=3,HighExplosive=4}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct HitShell {pub shot:u32,pub family:ShellFamily,pub premium:bool}
 #[derive(Clone,Debug,PartialEq)]
-pub enum Event {HitReceived(HitReceived),Feed(FeedEvent),Totals(BattleTotals)}
+pub enum Event {HitReceived(HitReceived),Feed(FeedEvent),Totals(BattleTotals),Shell(HitShell)}
 
 /// Event kinds of the wire. A client skips an unknown kind by its length, so
 /// UI-03/04 add kinds without a new version; a layout change bumps VERSION.
@@ -82,6 +89,9 @@ const KIND_HELLO:u8=0;
 const KIND_HIT_RECEIVED:u8=1;
 const KIND_FEED:u8=2;
 const KIND_TOTALS:u8=3;
+const KIND_SHELL:u8=4;
+/// Flag bit of the shell byte: a shell bought for gold.
+const SHELL_PREMIUM:u8=0x10;
 
 fn hit_payload(hit:&HitReceived)->io::Result<Vec<u8>> {
     if !hit.yaw.is_finite()||hit.criticals.len()>MAX_CRITICALS||hit.blocked==Some(NO_VALUE)||hit.damage==NO_VALUE {
@@ -112,6 +122,10 @@ fn feed_payload(event:&FeedEvent)->io::Result<Vec<u8>> {
     b.extend(event.vehicle.map(wire::vehicle_id).transpose()?.unwrap_or(0).to_le_bytes());
     Ok(b)
 }
+fn shell_payload(shell:&HitShell)->Vec<u8> {
+    let mut b=shell.shot.to_le_bytes().to_vec();
+    b.push(shell.family as u8|if shell.premium {SHELL_PREMIUM} else {0});b
+}
 fn totals_payload(sums:&BattleTotals)->Vec<u8> {
     [sums.dealt,sums.blocked,sums.assist_spot,sums.assist_track,sums.burned].iter().flat_map(|sum|sum.to_le_bytes()).collect()
 }
@@ -138,6 +152,7 @@ pub fn frame(sequence:u16,events:&[Event])->io::Result<Vec<u8>> {
             Event::HitReceived(hit)=>record(KIND_HIT_RECEIVED,&hit_payload(hit)?,&mut body)?,
             Event::Feed(feed)=>record(KIND_FEED,&feed_payload(feed)?,&mut body)?,
             Event::Totals(sums)=>record(KIND_TOTALS,&totals_payload(sums),&mut body)?,
+            Event::Shell(shell)=>record(KIND_SHELL,&shell_payload(shell),&mut body)?,
         }
     }
     with_header(sequence,events.len(),&body)
@@ -270,6 +285,22 @@ mod tests {
         assert_eq!(c.admit(now,0,2),None);assert_eq!(c.dropped,2);
         assert_eq!(c.admit(now+Duration::from_secs(1),MAX_OUTBOX_BACKLOG,3),None);assert_eq!(c.dropped,5);
         assert_eq!(c.admit(now+Duration::from_secs(1),0,1),Some(u16::from(MAX_FRAMES_PER_SECOND)));
+    }
+    #[test] fn ui03b_shell_record_follows_its_hit_in_five_bytes() {
+        let raw=frame(2,&[hit(Source::Visible(1),Vec::new()),
+            Event::Shell(HitShell{shot:7,family:ShellFamily::HollowCharge,premium:true}),
+            Event::Shell(HitShell{shot:8,family:ShellFamily::HighExplosive,premium:false})]).unwrap();
+        let b=literal(&raw);
+        assert_eq!(b[5],3);
+        let at=6+2+19;
+        assert_eq!(&b[at..at+7],&[KIND_SHELL,5,7,0,0,0,3|SHELL_PREMIUM]);
+        assert_eq!(&b[at+7..],&[KIND_SHELL,5,8,0,0,0,4]);
+    }
+    #[test] fn ui03b_a_full_frame_of_hits_and_shells_fits_one_argument() {
+        let big=hit(Source::Visible(1),vec![Critical::Fire;MAX_CRITICALS]);
+        let shell=Event::Shell(HitShell{shot:7,family:ShellFamily::ArmorPiercing,premium:false});
+        let rows=[big.clone(),shell.clone(),big.clone(),shell.clone(),big.clone(),shell.clone(),big,shell];
+        assert!(frame(0,&rows).unwrap().len()<=MAX_FRAME_BYTES+5);
     }
     #[test] fn ui02_hello_replies_are_bounded() {
         let mut c=Channel::new();assert_eq!(c.take_hello(),None);

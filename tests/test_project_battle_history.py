@@ -24,9 +24,17 @@ def feed(kind, value=None, vehicle=0):
     return {'kind': 'feed', 'feed': kind, 'value': value, 'vehicle': vehicle}
 
 
-def hit(damage=0, blocked=None, verdict='pierced', source=0, criticals=()):
-    return {'kind': 'hit_received', 'damage': damage, 'blocked': blocked, 'verdict': verdict, 'source': source,
-            'criticals': list(criticals)}
+def hit(damage=0, blocked=None, verdict='pierced', source=0, criticals=(), shot=1):
+    return {'kind': 'hit_received', 'shot': shot, 'damage': damage, 'blocked': blocked, 'verdict': verdict,
+            'source': source, 'criticals': list(criticals)}
+
+
+def shell(shot, family='armor_piercing', premium=False):
+    return {'kind': 'shell', 'shot': shot, 'family': family, 'premium': premium}
+
+
+def plaques(rows):
+    return [row[9:] for row in filled(rows) if row[2] == m.KIND_DETAIL]
 
 
 def totals(**fields):
@@ -84,13 +92,15 @@ class HistoryTests(unittest.TestCase):
         h = history()
         self.assertTrue(h.add(feed(1, 320, 7)))
         self.assertEqual(details(h.view()['bottom']), [('320', m.CROSS, 'tank7')])
-        self.assertEqual(sums(h), ['320', '0', '0', '0'])
+        self.assertEqual(sums(h), ['320', '0', '0'])
 
-    def test_rows_of_one_vehicle_merge_and_move_up(self):
+    def test_every_hit_has_its_own_row(self):
         h = history()
-        for row in (feed(1, 100, 7), feed(1, 50, 8), feed(1, 20, 7)):
+        for row in (feed(1, 100, 7), feed(1, 50, 8), feed(1, 20, 7), feed(2, 9, 7)):
             h.add(row)
-        self.assertEqual(details(h.view()['bottom']), [('120', m.CROSS, 'tank7'), ('50', m.CROSS, 'tank8')])
+        self.assertEqual(details(h.view()['bottom']), [('9', m.CHEVRONS, 'tank7'), ('20', m.CROSS, 'tank7'),
+                                                       ('50', m.CROSS, 'tank8'), ('100', m.CROSS, 'tank7')])
+        self.assertEqual(sums(h)[0], '179')
 
     def test_a_withheld_amount_is_absent_and_the_sum_says_so(self):
         h = history()
@@ -98,15 +108,15 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(details(h.view()['bottom']), [('- -', m.CROSS, '')])
         self.assertEqual(sums(h)[0], '0+')
         h.add(feed(1, None, 0))
-        self.assertEqual(details(h.view()['bottom'])[0][0], 'x2')
+        self.assertEqual([row[0] for row in details(h.view()['bottom'])], ['- -', '- -'])
         h.add(feed(1, 300, 9))
         self.assertEqual(sums(h)[0], '300+')
 
-    def test_a_row_with_a_known_and_a_withheld_amount_keeps_the_known_part(self):
+    def test_blocked_hits_have_their_own_rows_and_the_sum_marks_the_withheld(self):
         h = history()
         h.add(hit(blocked=400, verdict='ricochet', source=5))
         h.add(hit(blocked=None, verdict='not_pierced', source=5))
-        self.assertEqual(details(h.view()['bottom']), [('400+', m.SHIELD, 'tank5')])
+        self.assertEqual(details(h.view()['bottom']), [('- -', m.SHIELD, 'tank5'), ('400', m.SHIELD, 'tank5')])
         self.assertEqual(sums(h)[1], '400+')
 
     def test_assist_of_both_kinds_has_its_own_row_and_one_sum(self):
@@ -116,27 +126,49 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(details(h.view()['bottom']), [('867', m.TRACK, 'tank3'), ('151', m.EYE, 'tank3')])
         self.assertEqual(sums(h)[2], '1 018')
 
-    def test_burned_hp_has_a_row_and_counts_as_dealt_too(self):
+    def test_a_fire_is_one_row_from_its_ignition_and_counts_as_dealt(self):
         h = history()
         h.add(feed(7, None, 4))
-        self.assertEqual(h.rows, [], 'ignition itself has no amount')
+        self.assertEqual(details(h.view()['bottom']), [('x1', m.FLAME, 'tank4')])
+        self.assertEqual(sums(h)[0], '0', 'an ignition is no withheld amount')
+        h.add(feed(1, 300, 4))
         h.add(feed(8, 30, 4))
         h.add(feed(8, 12, 4))
-        self.assertEqual(details(h.view()['bottom']), [('42', m.FLAME, 'tank4')])
-        self.assertEqual(sums(h), ['42', '0', '0', '42'])
+        self.assertEqual(details(h.view()['bottom']), [('42', m.FLAME, 'tank4'), ('300', m.CROSS, 'tank4')])
+        self.assertEqual(sums(h), ['342', '0', '0'])
 
     def test_received_rows_of_a_shell_ram_and_fire(self):
         h = history()
         h.add(hit(damage=490, source=2, criticals=[(1, 26)]))
         h.add(feed(11, 20, 6))
         h.add(feed(12, 15, 0))
-        self.assertEqual(details(h.view()['bottom']), [('15', m.CROSS, ''), ('20', m.CROSS, 'tank6'),
+        h.add(feed(12, 5, 0))
+        self.assertEqual(details(h.view()['bottom']), [('20', m.FLAME, ''), ('20', m.CHEVRONS, 'tank6'),
                                                        ('x1', m.GEAR, 'tank2'), ('490', m.CROSS, 'tank2')])
         self.assertEqual(sums(h)[0], '0', 'received damage is not dealt')
 
+    def test_a_shell_record_gives_its_hit_a_plaque(self):
+        h = history(layout='top')
+        h.add(hit(damage=490, source=2, shot=11, criticals=[(1, 26)]))
+        h.add(hit(damage=300, source=3, shot=12))
+        self.assertTrue(h.add(shell(11, 'high_explosive')))
+        self.assertTrue(h.add(shell(12, 'armor_piercing_cr', True)))
+        self.assertFalse(h.add(shell(99)))
+        self.assertEqual(plaques(h.view()['top']), [('БП', m.SHELL_GOLD), ('ОФ', m.SHELL_OUTLINE), ('ОФ', m.SHELL_OUTLINE)])
+        h.add(hit(damage=50, source=0, shot=13))
+        self.assertEqual(plaques(h.view()['top'])[0], ('—', m.NO_SHELL))
+
+    def test_shell_labels_are_the_lesta_ones(self):
+        self.assertEqual(m.SHELL_LABELS, {'armor_piercing': 'ББ', 'armor_piercing_cr': 'БП', 'hollow_charge': 'КС',
+                                          'high_explosive': 'ОФ'})
+        h = history(layout='top')
+        h.add(hit(damage=1, source=2, shot=5))
+        h.add(shell(5, 'hollow_charge'))
+        self.assertEqual(plaques(h.view()['top']), [('КС', m.SHELL_GREY)])
+
     def test_feed_rows_outside_the_history_change_nothing(self):
         h = history()
-        for kind in (3, 4, 5, 6, 7, 9, 10, 13):
+        for kind in (3, 4, 5, 6, 9, 10, 13):
             self.assertFalse(h.add(feed(kind, 1, 1)))
         self.assertFalse(h.add(hit(verdict='unknown')))
         self.assertFalse(h.add({'kind': 'other'}))
@@ -151,14 +183,14 @@ class HistoryTests(unittest.TestCase):
         h.add(feed(1, None, 0))
         h.add(feed(8, 30, 4))
         h.add(totals(dealt=500, blocked=70, assist_spot=20, assist_track=30, burned=90))
-        self.assertEqual(sums(h), ['500', '70', '50', '90'])
+        self.assertEqual(sums(h), ['500', '70', '50'])
 
     def test_a_reset_forgets_the_battle(self):
         h = history()
         h.add(feed(1, None, 0))
         h.reset()
         self.assertEqual(h.rows, [])
-        self.assertEqual(sums(h), ['0', '0', '0', '0'])
+        self.assertEqual(sums(h), ['0', '0', '0'])
 
     def test_overflow_keeps_the_newest_rows_on_screen(self):
         h = history()
@@ -203,8 +235,9 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(details(h.view()['bottom'])), 2)
 
     def test_each_sum_has_its_switch(self):
-        h = self.fill(total_blocked=False, total_burned=False)
+        h = self.fill(total_blocked=False)
         self.assertEqual(sums(h), ['320', '0'])
+        self.assertNotIn('total_burned', m.default_options(), 'owner 02.11: no burned sum')
 
     def test_the_vehicle_name_has_a_switch(self):
         self.assertEqual(details(self.fill(show_vehicle=False).view()['bottom'])[0][2], '')
@@ -217,13 +250,13 @@ class LayoutTests(unittest.TestCase):
         view = self.fill(layout='top').view()
         self.assertEqual([row[0] for row in view['bottom']], list(range(m.TOTALS_ROWS + m.BOTTOM_ROWS)))
         self.assertEqual([row[0] for row in view['top']], list(range(m.TOP_ROWS)))
-        self.assertEqual([row[1] for row in view['bottom']], [0, 22, 44, 66, 97, 117, 137, 157, 177, 197, 217])
+        self.assertEqual([row[1] for row in view['bottom']], [0, 22, 44, 75, 95, 115, 135, 155, 175, 195])
         self.assertEqual([row[1] for row in view['top']], [0, 20, 40, 60, 80])
 
     def test_sums_end_on_one_line_whichever_are_shown(self):
-        rows = filled(self.fill(total_burned=False).view()['bottom'])
-        self.assertEqual([row[1] for row in rows if row[2] == m.KIND_TOTAL], [22, 44, 66])
-        self.assertEqual([row[1] for row in rows if row[2] == m.KIND_DETAIL], [97, 117])
+        rows = filled(self.fill(total_blocked=False).view()['bottom'])
+        self.assertEqual([row[1] for row in rows if row[2] == m.KIND_TOTAL], [22, 44])
+        self.assertEqual([row[1] for row in rows if row[2] == m.KIND_DETAIL], [75, 95])
 
     def test_a_row_limit_applies_to_the_bottom_details_only(self):
         h = history()
@@ -233,20 +266,30 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(details(h.view()['bottom'])), 6)
 
     def test_a_detail_row_carries_its_sprites(self):
-        row = filled(self.fill().view()['bottom'])[4]
-        self.assertEqual(row[2:], (m.KIND_DETAIL, m.RED, '490', m.CROSS, 'tank2', 'damageLog_damage_enemy_16x16', 'class2'))
-        self.assertEqual(filled(self.fill(show_vehicle=False).view()['bottom'])[4][6:], ('', 'damageLog_damage_enemy_16x16', ''))
+        row = filled(self.fill().view()['bottom'])[3]
+        self.assertEqual(row[2:], (m.KIND_DETAIL, m.RED, '490', m.CROSS, 'tank2', 'damageLog_damage_enemy_16x16', 'class2',
+                                   '—', m.NO_SHELL))
+        self.assertEqual(filled(self.fill(show_vehicle=False).view()['bottom'])[3][6:9], ('', 'damageLog_damage_enemy_16x16', ''))
+
+    def test_only_a_block_with_received_hits_has_the_shell_column(self):
+        self.assertEqual(plaques(self.fill().view()['bottom']), [('—', m.NO_SHELL)] * 2)
+        self.assertEqual(plaques(self.fill(events='efficiency').view()['bottom']), [('', m.NO_SHELL)])
+        view = self.fill(layout='top').view()
+        self.assertEqual(plaques(view['bottom']), [('', m.NO_SHELL)])
+        self.assertEqual(plaques(view['top']), [('—', m.NO_SHELL)])
 
     def test_origin_as_on_the_live_screenshots(self):
-        self.assertEqual(m.origin('bottom', (1920, 1080)), (235, 831))
+        self.assertEqual(m.origin('bottom', (1920, 1080)), (235, 853))
         self.assertEqual(m.origin('top', (1920, 1080)), (247, 66))
-        self.assertEqual(m.origin('bottom', (2560, 1440)), (235, 1191))
-        self.assertEqual(831 + m.DETAIL_Y + m.ROW_HEIGHT // 2, 938)
-        self.assertEqual(831 + m.DETAIL_Y - m.TOTALS_GAP - m.TOTAL_HEIGHT // 2, 908)
+        self.assertEqual(m.origin('bottom', (2560, 1440)), (235, 1213))
+        self.assertEqual(853 + m.TOTAL_HEIGHT // 2, 864)
+        self.assertEqual(853 + m.DETAIL_Y + m.ROW_HEIGHT // 2, 938)
+        self.assertEqual(853 + m.DETAIL_Y - m.TOTALS_GAP - m.TOTAL_HEIGHT // 2, 908)
 
     def test_a_narrow_screen_shows_only_the_rows_above_the_ammo_panel(self):
         self.assertEqual(m.visible_rows((1920, 1080)), m.BOTTOM_ROWS)
-        self.assertEqual(m.visible_rows((1366, 768)), m.BOTTOM_ROWS)
+        self.assertEqual(m.visible_rows((1600, 900)), m.BOTTOM_ROWS)
+        self.assertEqual(m.visible_rows((1366, 768)), m.NARROW_ROWS)
         self.assertEqual(m.visible_rows((1280, 720)), m.NARROW_ROWS)
 
 
@@ -363,7 +406,7 @@ class RuntimeTests(unittest.TestCase):
         first = len(self.widgets[0].rows())
         self.assertEqual(first, m.TOTALS_ROWS + m.BOTTOM_ROWS)
         self.runtime.on_event(feed(1, 10, 7))
-        self.assertEqual(len(self.widgets[0].rows()), first + 2, 'the sum and the row')
+        self.assertEqual(len(self.widgets[0].rows()), first + 3, 'the sum, the new row and the one it moved down')
 
     def test_the_top_layout_opens_a_second_widget_only_with_a_received_row(self):
         self.history.apply_options({'layout': 'top'})
@@ -556,7 +599,7 @@ class ContractTests(unittest.TestCase):
         kinds = dict((name, int(number)) for name, number in re.findall(r'(\w+)=(\d+)', text[text.index('pub enum FeedKind'):
                                                                                              text.index('pub struct FeedEvent')]))
         for number, name in (('ShotDamage', 'shot'), ('RamDamage', 'ram'), ('FireDamage', 'burned'),
-                             ('RamReceived', 'received'), ('FireReceived', 'received'),
+                             ('RamReceived', 'received_ram'), ('FireReceived', 'received_fire'), ('Ignition', 'burned'),
                              ('AssistSpot', 'assist_spot'), ('AssistTrack', 'assist_track')):
             self.assertEqual(m.FEED_ROWS[kinds[number]], name)
         self.assertIn('const KIND_TOTALS:u8=%d;' % channel.KIND_TOTALS, text)
