@@ -64,6 +64,12 @@ class BuilderTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 native.build(movie, native.actions())
 
+    def test_the_widest_row_is_the_block_width_and_columns_do_not_touch(self):
+        self.assertEqual(history.RECEIVED_WIDTH, history_client.BLOCK_WIDTH)
+        self.assertLess(history.RECEIVED_WORD_X + 54, history.SHELL_X)
+        self.assertLess(history.SHELL_X + history.SHELL_WIDTH, history.RECEIVED_CLASS_X - 6)
+        self.assertLess(history.DEALT_WORD_X + 54, history.DEALT_NAME_X)
+
     def test_icons_go_before_the_added_action_and_a_missing_file_means_none(self):
         import tempfile
         import battle_ui_art as art
