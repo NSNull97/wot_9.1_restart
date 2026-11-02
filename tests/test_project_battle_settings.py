@@ -311,8 +311,8 @@ class ControllerTests(unittest.TestCase):
     def test_the_running_widgets_accept_what_the_controller_sends(self):
         clock = [10.0]
         policy = hit_module.Policy(hit_module.default_options(), lambda *a, **k: None, lambda: clock[0])
-        feed = feed_module.Feed(feed_module.default_options(), lambda: clock[0], lambda vehicle: 'tank')
-        history = history_module.History(history_module.default_options(), lambda vehicle: 'tank')
+        feed = feed_module.Feed(feed_module.default_options(), lambda: clock[0], lambda vehicle: 'tank', lambda vehicle: '')
+        history = history_module.History(history_module.default_options(), lambda vehicle: 'tank', lambda vehicle: '')
         record = lambda *a, **k: None
         targets = {'hit_indicator': policy.apply_options, 'battle_feed': feed.apply_options,
                    'battle_history': history.apply_options}
@@ -341,9 +341,9 @@ class RunningFeedTests(unittest.TestCase):
     def running(self):
         self.widget = self.Widget()
         self.widget.component = types.SimpleNamespace(visible=True) if hasattr(types, 'SimpleNamespace') else self.widget
-        self.feed = feed_module.Feed(feed_module.default_options(), lambda: 10.0, lambda vehicle: 'tank')
-        runtime = feed_module.Runtime(self.feed, lambda: self.widget, lambda delay, fn: 1, lambda timer: None,
-                                      lambda *a, **k: None)
+        self.feed = feed_module.Feed(feed_module.default_options(), lambda: 10.0, lambda vehicle: 'tank', lambda vehicle: '')
+        runtime = feed_module.Runtime(self.feed, lambda: self.widget, lambda: (1920, 1080), lambda delay, fn: 1,
+                                      lambda timer: None, lambda *a, **k: None)
         runtime.on_event({'kind': 'feed', 'feed': 1, 'value': 320, 'vehicle': 7})
         runtime.on_event({'kind': 'feed', 'feed': 3, 'value': None, 'vehicle': 7})
         return runtime
@@ -353,7 +353,7 @@ class RunningFeedTests(unittest.TestCase):
         runtime.apply_options({'shot': False})
         self.assertEqual([row['key'] for row in self.feed.rows], ['kill'])
         self.assertEqual(self.widget.calls[-1][2], feed_module.ROWS_TABLE['kill'][1])
-        self.assertEqual(self.widget.calls[-1][6], -1)
+        self.assertEqual(self.widget.calls[-1][len(feed_module.EMPTY_ROW)], -1)
 
     def test_switching_the_feed_off_empties_it(self):
         runtime = self.running()
@@ -367,8 +367,8 @@ class RunningFeedTests(unittest.TestCase):
         self.assertEqual(self.widget.calls[-1][3], '')
 
     def test_without_a_widget_only_the_options_change(self):
-        feed = feed_module.Feed(feed_module.default_options(), lambda: 10.0, lambda vehicle: 'tank')
-        runtime = feed_module.Runtime(feed, lambda: 1 / 0, None, None, lambda *a, **k: None)
+        feed = feed_module.Feed(feed_module.default_options(), lambda: 10.0, lambda vehicle: 'tank', lambda vehicle: '')
+        runtime = feed_module.Runtime(feed, lambda: 1 / 0, None, None, None, lambda *a, **k: None)
         runtime.apply_options({'kill': False})
         self.assertIs(feed.options['kill'], False)
 

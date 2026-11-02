@@ -50,9 +50,23 @@ class WidgetSizeTests(unittest.TestCase):
             def __init__(self, movie):
                 self.component, self.movie = Holder(), Holder()
                 self.component.position = Holder()
-        size = m.widget_class(Base, 0.5)().flashSize
+        size = m.widget_class(Base, 0.5, lambda: (1920, 1080))().flashSize
         self.assertIs(type(size), tuple)
         self.assertEqual([type(value) for value in size], [float, float])
+        self.assertEqual(size, (1920.0, 1080.0))
+
+    def test_a_new_resolution_resizes_the_component_like_native_aim(self):
+        class Holder(object):
+            pass
+        class Base(object):
+            def __init__(self, movie):
+                self.component, self.movie = Holder(), Holder()
+                self.component.position = Holder()
+        screen = [(1920, 1080)]
+        widget = m.widget_class(Base, 0.5, lambda: screen[0])()
+        screen[0] = (1280, 720)
+        widget.fit()
+        self.assertEqual(widget.component.size, (1280.0, 720.0))
 
 
 class ChannelTests(unittest.TestCase):
@@ -131,10 +145,10 @@ class Clock:
 class FeedTests(unittest.TestCase):
     def setUp(self):
         self.clock = Clock()
-        self.feed = m.Feed({}, self.clock, {523: 'T-34'}.get)
+        self.feed = m.Feed({}, self.clock, {523: 'T-34'}.get, {523: 'whiteIconMediumTank16x16'}.get)
 
     def row(self, index=0):
-        return self.feed.render_args()[index * 6:index * 6 + 6]
+        return self.feed.render_args()[index * 8:index * 8 + 8]
 
     def test_every_wire_kind_has_a_row_and_a_label(self):
         for kind, key in m.FEED_ROWS.items():
@@ -143,7 +157,8 @@ class FeedTests(unittest.TestCase):
 
     def test_dealt_damage_with_name(self):
         self.assertTrue(self.feed.add(event(1, 320, 523)))
-        self.assertEqual(self.row(), [m.GREEN, '320', m.CROSS, 'Урон выстрелом', 'T-34', 5000])
+        self.assertEqual(self.row(), [m.GREEN, '320', m.CROSS, 'Урон выстрелом', 'T-34', 5000,
+                                      'ribbonsDamage', 'whiteIconMediumTank16x16'])
 
     def test_a_withheld_amount_stays_visibly_absent(self):
         self.feed.add(event(1))
@@ -196,7 +211,7 @@ class FeedTests(unittest.TestCase):
         self.assertTrue(self.feed.expire())
         self.assertEqual(len(self.feed.rows), 1)
         self.assertFalse(self.feed.expire())
-        self.assertEqual(self.feed.render_args()[6:], list(m.EMPTY_ROW) * 2)
+        self.assertEqual(self.feed.render_args()[8:], list(m.EMPTY_ROW) * 2)
 
     def test_a_merge_refreshes_the_life_of_the_row(self):
         self.feed.add(event(1, 1, 1))
@@ -209,12 +224,22 @@ class FeedTests(unittest.TestCase):
         self.feed.apply_options({'show_label': False, 'show_vehicle': False})
         self.feed.add(event(1, 1, 523))
         self.assertEqual(self.row()[3:5], ['', ''])
+        self.assertEqual(self.row()[7], '', 'the class icon goes with the name')
         self.feed.apply_options({'shot': False})
         self.assertFalse(self.feed.add(event(1, 1, 523)))
         self.feed.apply_options({'shot': True, 'enabled': False})
         self.assertFalse(self.feed.add(event(1, 1, 523)))
         with self.assertRaises(ValueError):
             self.feed.apply_options({'unknown': True})
+
+    def test_class_icon_by_the_native_tags(self):
+        self.assertEqual(m.class_icon(frozenset(['ussr', 'AT-SPG'])), 'whiteIconAt-SPG16x16')
+        self.assertEqual(m.class_icon(frozenset(['mediumTank'])), 'whiteIconMediumTank16x16')
+        self.assertEqual(m.class_icon(frozenset(['observer'])), '')
+
+    def test_origin_by_the_centre_and_the_bottom_of_the_screen(self):
+        self.assertEqual(m.origin((1920, 1080)), (960, 786))
+        self.assertEqual(m.origin((1024, 768)), (512, 474))
 
     def test_arguments_always_cover_three_rows(self):
         self.assertEqual(self.feed.render_args(), list(m.EMPTY_ROW) * 3)
@@ -238,6 +263,9 @@ class Widget:
     def call(self, name, args):
         self.calls.append((name, args))
 
+    def fit(self):
+        self.fits = getattr(self, 'fits', 0) + 1
+
     def close(self):
         self.closed += 1
 
@@ -245,8 +273,10 @@ class Widget:
 class RuntimeTests(unittest.TestCase):
     def setUp(self):
         self.clock, self.made, self.records, self.timers, self.cancelled = Clock(), [], [], [], []
-        self.runtime = m.Runtime(m.Feed({}, self.clock, lambda vehicle: ''), self.make, self.schedule,
-                                 self.cancelled.append, lambda name, **fields: self.records.append(name))
+        self.screen = (1920, 1080)
+        self.runtime = m.Runtime(m.Feed({}, self.clock, lambda vehicle: '', lambda vehicle: ''), self.make,
+                                 lambda: self.screen, self.schedule, self.cancelled.append,
+                                 lambda name, **fields: self.records.append(name))
 
     def make(self):
         self.made.append(Widget())
@@ -261,8 +291,24 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.made, [])
         self.runtime.on_event(event(1, 1, 1))
         self.assertEqual(self.made[0].states, [True])
-        self.assertEqual(self.made[0].calls[0][0], m.CALLBACK)
-        self.assertEqual(len(self.made[0].calls[0][1]), 18)
+        self.assertEqual(self.made[0].calls[0], (m.PLACE_CALLBACK, [960, 786]))
+        self.assertEqual(self.made[0].calls[1][0], m.CALLBACK)
+        self.assertEqual(len(self.made[0].calls[1][1]), 24)
+
+    def test_a_new_resolution_moves_a_live_widget(self):
+        self.runtime.resize()
+        self.runtime.on_event(event(1, 1, 1))
+        self.screen = (1280, 720)
+        self.runtime.resize()
+        self.assertEqual(self.made[0].fits, 1)
+        self.assertEqual(self.made[0].calls[-1], (m.PLACE_CALLBACK, [640, 426]))
+
+    def test_a_failing_resize_switches_the_feed_off(self):
+        self.runtime.on_event(event(1, 1, 1))
+        self.made[0].fit = None
+        self.runtime.resize()
+        self.assertTrue(self.runtime.failed)
+        self.assertEqual(self.made[0].closed, 1)
 
     def test_an_invisible_row_does_not_create_the_widget(self):
         self.runtime.feed.apply_options({'enabled': False})

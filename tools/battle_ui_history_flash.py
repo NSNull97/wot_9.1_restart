@@ -4,6 +4,9 @@ The same host and the same small AS2 compiler as the UI-03 feed: prepare writes 
 res_mods copy under a new name, nothing in Git carries client resources, and the
 added code draws rows with the project glyphs of the feed. Python decides every
 row and its place; this movie draws one row per call and keeps no state.
+
+UI-03b: the same full screen noScale movie as the feed, and the same `art` folder:
+its sprites replace the glyphs, the drawn ones stay when it is absent.
 """
 from __future__ import annotations
 
@@ -13,50 +16,49 @@ import sys
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import battle_ui_art as art_tool
 import battle_ui_feed_flash as feed
 import battle_ui_hit_flash as flash
-from battle_ui_hit_flash import MAX_BYTES, MEMBER, SOURCE_SHA256, function, method, polygon, stmt, var
+from battle_ui_hit_flash import MAX_BYTES, MEMBER, SOURCE_SHA256, function, stmt, var
 
 TARGET = 'res_mods/0.9.1/gui/scaleform/ProjectBattleHistory.swf'
 CALLBACK = 'ProjectHistory.row'
+PLACE_CALLBACK = 'ProjectHistory.place'
 KIND_TOTAL, KIND_DETAIL = 1, 2
-# Movie coordinates: the rows start left of the centre of the screen, as on the
-# owner's screenshots 07 and 08, and stay inside the 680 x 680 movie.
-GLYPH_SCALE_Y = 11
-TOTAL_LEFT, TOTAL_GLYPH_X, TOTAL_TEXT_X, TOTAL_WIDTH = 56, 68, 84, 120
-DETAIL_LEFT, DETAIL_RIGHT, DETAIL_NUMBER_WIDTH = 80, 340, 86
-DETAIL_GLYPH_X, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH = 180, 196, 144
-TEXT_SIZE = 14
-TOTAL_SIZE = 16
-BAND_ALPHA = 30
-ROW_ARGS = ('id', 'y', 'kind', 'colour', 'number', 'glyph', 'name')
+# Pixels from the left edge of a block, measured on the owner's live Lesta
+# screenshots at 1920 x 1080; a text field has a gutter of 2 px.
+TOTAL_GLYPH_X, TOTAL_TEXT_X, TOTAL_GLYPH_Y, TOTAL_WIDTH, TOTAL_SIZE = 8, 18, 11, 120, 15
+DETAIL_NUMBER_X, DETAIL_NUMBER_WIDTH, DETAIL_GLYPH_X, DETAIL_GLYPH_Y = -63, 100, 51, 10
+DETAIL_CLASS_X, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH, DETAIL_SIZE = 71, 81, 130, 13
+DRAWN_GLYPH_SCALE = 70
+ROW_ARGS = ('id', 'y', 'kind', 'colour', 'number', 'glyph', 'name', 'icon', 'vehicleClass')
 
 
-def band(mc, left, right):
-    corners = [(left, 0), (right, 0), (right, 20), (left, 20)]
-    return [method(mc, 'beginFill', 0, BAND_ALPHA)] + polygon(mc, corners) + [method(mc, 'endFill')]
+def text(mc, name, depth, x, width, size, colour, align, value, bold):
+    return ('do', ('fn', '_projectFeedText', [mc, name, depth, x, 0, width, size, colour, align, value, bold]))
 
 
-def text(mc, name, depth, x, width, size, align, value):
-    return ('do', ('fn', '_projectFeedText', [mc, name, depth, x, 1, width, size, 0xffffff, align, value]))
-
-
-def glyph(mc, x):
+def glyph(mc, x, y, art):
+    if art:
+        return feed.attach(mc, var('icon'), 'glyphMC', 2, x, y)
     return [('do', ('call', mc, 'createEmptyMovieClip', ['glyphMC', 2])),
             ('set', ('get', mc, 'glyphMC'), '_x', x),
-            ('set', ('get', mc, 'glyphMC'), '_y', GLYPH_SCALE_Y),
-            ('set', ('get', mc, 'glyphMC'), '_xscale', 70),
-            ('set', ('get', mc, 'glyphMC'), '_yscale', 70),
+            ('set', ('get', mc, 'glyphMC'), '_y', y),
+            ('set', ('get', mc, 'glyphMC'), '_xscale', DRAWN_GLYPH_SCALE),
+            ('set', ('get', mc, 'glyphMC'), '_yscale', DRAWN_GLYPH_SCALE),
             ('do', ('fn', '_projectHistoryGlyph', [('get', mc, 'glyphMC'), var('glyph'), var('colour')]))]
 
 
-def row_source():
+def row_source(art=False):
     mc = var('m')
-    total = (band(mc, TOTAL_LEFT, TOTAL_TEXT_X + TOTAL_WIDTH) + glyph(mc, TOTAL_GLYPH_X)
-             + [text(mc, 'numberField', 1, TOTAL_TEXT_X, TOTAL_WIDTH, TOTAL_SIZE, 'left', var('number'))])
-    detail = (band(mc, DETAIL_LEFT, DETAIL_RIGHT) + glyph(mc, DETAIL_GLYPH_X)
-              + [text(mc, 'numberField', 1, DETAIL_LEFT, DETAIL_NUMBER_WIDTH, TEXT_SIZE, 'right', var('number')),
-                 text(mc, 'textField', 3, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH, TEXT_SIZE, 'left', var('name'))])
+    total = glyph(mc, TOTAL_GLYPH_X, TOTAL_GLYPH_Y, art) + [
+        text(mc, 'numberField', 3, TOTAL_TEXT_X, TOTAL_WIDTH, TOTAL_SIZE, 0xffffff, 'left', var('number'), True)]
+    detail = glyph(mc, DETAIL_GLYPH_X, DETAIL_GLYPH_Y, art) + [
+        text(mc, 'numberField', 3, DETAIL_NUMBER_X, DETAIL_NUMBER_WIDTH, DETAIL_SIZE, 0xffffff, 'right', var('number'), True),
+        text(mc, 'nameField', 5, DETAIL_TEXT_X, DETAIL_TEXT_WIDTH, DETAIL_SIZE, feed.NAME_COLOUR, 'left', var('name'), False)]
+    if art:
+        detail.append(('if', feed.not_empty(var('vehicleClass')),
+                       feed.attach(mc, var('vehicleClass'), 'classMC', 7, DETAIL_CLASS_X, DETAIL_GLYPH_Y)))
     body = [('set', var('damageMC'), '_visible', False),
             ('local', 'm', ('call', var('historyMC'), 'createEmptyMovieClip',
                             [('+', 'row', var('id')), ('+', 10, var('id'))])),
@@ -66,16 +68,23 @@ def row_source():
     return function('_projectHistoryRow', list(ROW_ARGS), body)
 
 
-def actions():
-    register = ('call', ('get', ('get', var('gfx'), 'io'), 'GameDelegate'), 'addCallBack',
-                [CALLBACK, var('this'), '_projectHistoryRow'])
-    setup = [('assign', 'historyMC', ('call', var('this'), 'createEmptyMovieClip', ['projectHistory', 300])),
-             ('set', var('damageMC'), '_visible', False), ('do', register)]
-    return (feed.text_source() + feed.glyph_source('_projectHistoryGlyph', var('colour')) + row_source()
-            + b''.join(stmt(row) for row in setup) + b'\0')
+def place_source():
+    return function('_projectHistoryPlace', ['x', 'y'], [('set', var('historyMC'), '_x', var('x')),
+                                                         ('set', var('historyMC'), '_y', var('y'))])
 
 
-def payload(original):
+def actions(art=False):
+    delegate = ('get', ('get', var('gfx'), 'io'), 'GameDelegate')
+    setup = feed.stage_setup() + [
+        ('assign', 'historyMC', ('call', var('this'), 'createEmptyMovieClip', ['projectHistory', 300])),
+        ('set', var('damageMC'), '_visible', False),
+        ('do', ('call', delegate, 'addCallBack', [CALLBACK, var('this'), '_projectHistoryRow'])),
+        ('do', ('call', delegate, 'addCallBack', [PLACE_CALLBACK, var('this'), '_projectHistoryPlace']))]
+    return (feed.text_source() + feed.glyph_source('_projectHistoryGlyph', var('colour')) + row_source(art)
+            + place_source() + b''.join(stmt(row) for row in setup) + b'\0')
+
+
+def payload(original, art=None):
     with zipfile.ZipFile(Path(original) / 'res/packages/gui.pkg') as package:
         info = package.getinfo(MEMBER)
         if info.file_size > MAX_BYTES:
@@ -84,8 +93,12 @@ def payload(original):
     source = hashlib.sha256(raw).hexdigest()
     if source != SOURCE_SHA256:
         raise ValueError('original indicator movie differs from the pinned #717 bytes')
-    result = flash.build(raw, actions())
+    images, missing = art_tool.load(art, art_tool.HISTORY_SPRITES) if art is not None else ({}, [])
+    result = art_tool.embed(flash.build(raw, actions(bool(images))), images)
+    if len(result) > MAX_BYTES:
+        raise ValueError('history movie with art is oversized')
     return result, {'source_member': MEMBER, 'source_sha256': source, 'target': TARGET,
                     'target_sha256': hashlib.sha256(result).hexdigest(), 'callback': CALLBACK,
                     'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-                    'native_render_check': 'NOT_RUN'}
+                    'art': 'embedded' if images else 'absent' if art is not None else 'not_requested',
+                    'art_sprites': sorted(images), 'art_missing': missing, 'native_render_check': 'NOT_RUN'}

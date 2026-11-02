@@ -7,9 +7,11 @@ project_hit_indicator policy and says one extra hello, so a client without it
 receives no feed record. It shows the last three rows, merges a repeat of the
 same row and never estimates a value: what the server withheld stays '- -'.
 
-The widget is a second native GUI.Flash component over ProjectBattleFeed.swf,
-placed like the native hit indicator and activated on its first row. Any failure
-switches the feed off for the session; the battle and the native HUD go on.
+The widget is a second native GUI.Flash component over ProjectBattleFeed.swf. It
+fills the screen as the native Aim does, the movie is in noScale, so the place of
+the rows comes in screen pixels and follows the resolution. It is activated on its
+first row. Any failure switches the feed off for the session; the battle and the
+native HUD go on.
 
 Pure Python 2.7 at import time: prepare (Python 3) and tests load this module;
 engine modules are imported only by install() inside the client.
@@ -24,30 +26,37 @@ EVENT = 'project_battle_feed'
 FEATURE = 'sr_battle_feed'
 MOVIE = 'ProjectBattleFeed.swf'
 CALLBACK = 'ProjectFeed.render'
+PLACE_CALLBACK = 'ProjectFeed.place'
 ROWS = 3
 LIFETIME = 5.0
 TICK_PERIOD = 0.25
-MOVIE_SIZE = [680, 680]
-EMPTY_ROW = (-1, '', 0, '', '', 0)
+# The top edge of the newest row, above the bottom of the screen, as on the
+# owner's live Lesta screenshots: 1920 x 1080 puts its middle on y 801.
+ABOVE_BOTTOM = 294
+EMPTY_ROW = (-1, '', 0, '', '', 0, '', '')
 RED, ORANGE, GREY, GREEN = 0xc8181e, 0xe06a1b, 0x6e6e6e, 0x3f8f24
 # Glyph numbers of tools/battle_ui_feed_flash.py.
 CROSS, SHIELD, FLAG, EYE, CHEVRONS, KILL, TRACK, GEAR, FLAME = range(1, 10)
 
-# option key: colour, glyph, label, whether a missing number is a withheld fact.
-ROWS_TABLE = {'received': (RED, CROSS, 'Получен урон', False),
-              'received_critical': (ORANGE, GEAR, 'Критическое повреждение', False),
-              'blocked': (GREY, SHIELD, 'Удар сдержан', True),
-              'defence': (GREEN, FLAG, 'Очки защиты', False),
-              'capture': (GREEN, FLAG, 'Очки захвата', False),
-              'spotted': (GREEN, EYE, 'Обнаружил', False),
-              'ram': (GREEN, CHEVRONS, 'Таран', True),
-              'kill': (GREEN, KILL, 'Уничтожил', False),
-              'track': (GREEN, TRACK, 'Сбитие гусеницы', False),
-              'critical': (GREEN, GEAR, 'Критический урон', False),
-              'shot': (GREEN, CROSS, 'Урон выстрелом', True),
-              'ignition': (GREEN, FLAME, 'Поджог', False),
-              'assist_spot': (GREEN, EYE, 'Урон по разведанным', True),
-              'assist_track': (GREEN, TRACK, 'Урон по обездвиженным', True)}
+# option key: colour, glyph, label, whether a missing number is a withheld fact, sprite.
+ROWS_TABLE = {'received': (RED, CROSS, 'Получен урон', False, 'ribbonsDamageEnemy'),
+              'received_critical': (ORANGE, GEAR, 'Критическое повреждение', False, 'ribbonsCritsEnemy'),
+              'blocked': (GREY, SHIELD, 'Удар сдержан', True, 'ribbonsArmor'),
+              'defence': (GREEN, FLAG, 'Очки защиты', False, 'ribbonsDefence'),
+              'capture': (GREEN, FLAG, 'Очки захвата', False, 'ribbonsCapture'),
+              'spotted': (GREEN, EYE, 'Обнаружил', False, 'ribbonsSpotted'),
+              'ram': (GREEN, CHEVRONS, 'Таран', True, 'ribbonsRam'),
+              'kill': (GREEN, KILL, 'Уничтожил', False, 'ribbonsKill'),
+              'track': (GREEN, TRACK, 'Сбитие гусеницы', False, 'ribbonsAssistTrack'),
+              'critical': (GREEN, GEAR, 'Критический урон', False, 'ribbonsCrits'),
+              'shot': (GREEN, CROSS, 'Урон выстрелом', True, 'ribbonsDamage'),
+              'ignition': (GREEN, FLAME, 'Поджог', False, 'ribbonsBurn'),
+              'assist_spot': (GREEN, EYE, 'Урон по разведанным', True, 'ribbonsAssistSpot'),
+              'assist_track': (GREEN, TRACK, 'Урон по обездвиженным', True, 'ribbonsAssistTrack')}
+# Class tag of #717 vehicles: sprite next to the vehicle name.
+CLASS_ICONS = (('lightTank', 'whiteIconLightTank16x16'), ('mediumTank', 'whiteIconMediumTank16x16'),
+               ('heavyTank', 'whiteIconHeavyTank16x16'), ('SPG', 'whiteIconSPG16x16'),
+               ('AT-SPG', 'whiteIconAt-SPG16x16'))
 # Wire numbers of battle_events::FeedKind.
 FEED_ROWS = {1: 'shot', 2: 'ram', 3: 'kill', 4: 'spotted', 5: 'capture', 6: 'defence', 7: 'ignition',
              8: 'ignition', 9: 'critical', 10: 'track', 11: 'received', 12: 'received', 13: 'received_critical',
@@ -167,6 +176,19 @@ def rows_of(event):
     return rows
 
 
+def class_icon(tags):
+    for tag, icon in CLASS_ICONS:
+        if tag in tags:
+            return icon
+    return ''
+
+
+def origin(screen):
+    """Screen pixel of the centre of the newest row's top edge; older rows stand
+    above it."""
+    return int(screen[0] / 2.0), int(screen[1]) - ABOVE_BOTTOM
+
+
 def number(key, value, count):
     if count > 1 and value is None:
         return 'x%d' % count
@@ -178,10 +200,10 @@ def number(key, value, count):
 class Feed(object):
     """Everything that decides; the clock and the name lookup are seams."""
 
-    def __init__(self, options, clock, name_of):
-        if not (callable(clock) and callable(name_of)):
+    def __init__(self, options, clock, name_of, class_of):
+        if not (callable(clock) and callable(name_of) and callable(class_of)):
             raise TypeError('battle feed requires callable seams')
-        self.options, self.clock, self.name_of = checked_options(options), clock, name_of
+        self.options, self.clock, self.name_of, self.class_of = checked_options(options), clock, name_of, class_of
         self.rows = []
 
     def reset(self):
@@ -230,11 +252,11 @@ class Feed(object):
         """Flat arguments of ProjectFeed.render: always ROWS rows."""
         args, now = [], self.clock()
         for row in self.rows:
-            colour, glyph, label, _ = ROWS_TABLE[row['key']]
-            name = self.name_of(row['vehicle']) if row['vehicle'] and self.options['show_vehicle'] else ''
+            colour, glyph, label, _, icon = ROWS_TABLE[row['key']]
+            shown = row['vehicle'] and self.options['show_vehicle']
             args += [colour, number(row['key'], row['value'], row['count']), glyph,
-                     label if self.options['show_label'] else '', name,
-                     int(max(0.0, row['expires'] - now) * 1000)]
+                     label if self.options['show_label'] else '', self.name_of(row['vehicle']) if shown else '',
+                     int(max(0.0, row['expires'] - now) * 1000), icon, self.class_of(row['vehicle']) if shown else '']
         for _ in range(ROWS - len(self.rows)):
             args += list(EMPTY_ROW)
         return args
@@ -254,8 +276,8 @@ def check_flash(flash):
         _check(flash.__dict__.get(name), FLASH_FILE, name, line, args, digest)
 
 
-def widget_class(base, depth):
-    """Placed and sized as the native _DamageIndicator; no input of its own."""
+def widget_class(base, depth, screen):
+    """Fills the screen as the native Aim, in pixels; no input of its own."""
 
     class ProjectFeedWidget(base):
 
@@ -269,7 +291,11 @@ def widget_class(base, depth):
             self.component.heightMode = 'PIXEL'
             self.component.widthMode = 'PIXEL'
             # GUI.Flash.size takes a tuple of floats, as GUI.screenResolution() in Aim.
-            self.flashSize = (float(MOVIE_SIZE[0]), float(MOVIE_SIZE[1]))
+            self.flashSize = (float(screen()[0]), float(screen()[1]))
+
+        def fit(self):
+            self.flashSize = (float(screen()[0]), float(screen()[1]))
+            self.component.size = self.flashSize
 
     return ProjectFeedWidget
 
@@ -277,8 +303,9 @@ def widget_class(base, depth):
 class Runtime(object):
     """One widget per battle; the engine calls come in as plain callables."""
 
-    def __init__(self, feed, make_widget, schedule, cancel, record):
-        self.feed, self.make_widget, self.schedule, self.cancel, self.record = feed, make_widget, schedule, cancel, record
+    def __init__(self, feed, make_widget, screen, schedule, cancel, record):
+        self.feed, self.make_widget, self.screen = feed, make_widget, screen
+        self.schedule, self.cancel, self.record = schedule, cancel, record
         self.widget, self.timer, self.failed, self.visible, self.shown = None, None, False, True, 0
 
     def ready(self):
@@ -321,6 +348,7 @@ class Runtime(object):
             self.widget = self.make_widget()
             self.widget.active(True)
             self.widget.component.visible = self.visible
+            self.widget.call(PLACE_CALLBACK, list(origin(self.screen())))
         self.widget.call(CALLBACK, self.feed.render_args())
         if self.timer is None:
             self.timer = self.schedule(TICK_PERIOD, self.tick)
@@ -336,6 +364,15 @@ class Runtime(object):
                 self.timer = self.schedule(TICK_PERIOD, self.tick)
         except Exception:
             self.fail('tick')
+
+    def resize(self):
+        if self.failed or self.widget is None:
+            return
+        try:
+            self.widget.fit()
+            self.widget.call(PLACE_CALLBACK, list(origin(self.screen())))
+        except Exception:
+            self.fail('resize')
 
     def show_all(self, isShow):
         self.visible = bool(isShow)
@@ -360,7 +397,9 @@ def install(record, options, channel):
     if channel is None:
         raise RuntimeError('battle feed needs the installed hit indicator channel')
     import BigWorld
+    import GUI
     from AvatarInputHandler import aims
+    from gui import g_guiResetters
     from gui.Scaleform.Flash import Flash
     from PlayerEvents import g_playerEvents
     check_flash(Flash)
@@ -369,9 +408,13 @@ def install(record, options, channel):
         row = BigWorld.player().arena.vehicles.get(vehicle)
         return '' if row is None else row['vehicleType'].type.shortUserString
 
-    feed = Feed(options, BigWorld.time, name_of)
-    widget = widget_class(Flash, aims.DEPTH_OF_Aim)
-    runtime = Runtime(feed, widget, BigWorld.callback, BigWorld.cancelCallback, record)
+    def class_of(vehicle):
+        row = BigWorld.player().arena.vehicles.get(vehicle)
+        return '' if row is None else class_icon(row['vehicleType'].type.tags)
+
+    feed = Feed(options, BigWorld.time, name_of, class_of)
+    widget = widget_class(Flash, aims.DEPTH_OF_Aim, GUI.screenResolution)
+    runtime = Runtime(feed, widget, GUI.screenResolution, BigWorld.callback, BigWorld.cancelCallback, record)
 
     def on_avatar_ready():
         runtime.ready()
@@ -387,9 +430,10 @@ def install(record, options, channel):
     channel.subscribe(runtime.on_event)
     channel.features.append(FEATURE)
     SHOW_ALL.add(runtime.show_all)
+    g_guiResetters.add(runtime.resize)
     g_playerEvents.onAvatarReady += on_avatar_ready
     g_playerEvents.onAvatarBecomeNonPlayer += on_become_non_player
-    _installed = dict(runtime=runtime, channel=channel, events=g_playerEvents,
+    _installed = dict(runtime=runtime, channel=channel, events=g_playerEvents, resetters=g_guiResetters,
                       ready=on_avatar_ready, leave=on_become_non_player)
     record(EVENT + '_installed', version=VERSION, policy=POLICY, options=feed.options)
     return feed
@@ -408,6 +452,7 @@ def restore(record):
     events = installed['events']
     events.onAvatarReady -= installed['ready']
     events.onAvatarBecomeNonPlayer -= installed['leave']
+    installed['resetters'].discard(installed['runtime'].resize)
     installed['runtime'].close()
     installed['channel'].features.remove(FEATURE)
     installed['channel'].unsubscribe(installed['runtime'].on_event)
