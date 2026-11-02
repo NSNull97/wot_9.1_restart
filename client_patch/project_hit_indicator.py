@@ -8,10 +8,13 @@ said hello; the hello is a setDevelopmentFeature call made after setClientReady,
 because the gateway refuses every record before READY. Frames are parsed here
 by exact binary fields: no pickle, no eval, a bounded size and count.
 
-"Standard" keeps the native arc. "Extended" swaps the native _DamageIndicator
-for a subclass that loads ProjectHitIndicator.swf, the native movie plus one
-callback, so the native controller still owns life time, the on-screen limit,
-sniper/arcade changes and screen resizes. Any failure leaves the native arc.
+Owner order 2026-11-02: a replacement of the native implementation, not a mod
+beside it. The client patch installs DamageIndicator.swf in res_mods: the native
+movie, its arc untouched, plus the project's own sprites and one callback, on a
+1020 px stage. The native _DamageIndicator gives way to a subclass that sizes
+its component for that stage, so the native controller still owns life time,
+the on-screen limit, sniper/arcade changes and screen resizes. "Standard" shows
+the native arc only; "extended" adds the project marker over facts of the hit.
 
 Pure Python 2.7 at import time: prepare (Python 3) and tests load this module;
 engine modules are imported only by install() inside the client.
@@ -22,8 +25,6 @@ import traceback
 
 VERSION = 1
 SETTING = 'hit_indicator'
-# Set by prepare only when it embedded the sprites; no choice of the player.
-ART_SETTING = 'hit_indicator_art'
 POLICY = 'project_override_not_original_091'
 EVENT = 'project_hit_indicator'
 FEATURE = 'sr_battle_events'
@@ -39,9 +40,8 @@ KIND_HELLO, KIND_HIT_RECEIVED, KIND_FEED, KIND_TOTALS, KIND_SHELL = 0, 1, 2, 3, 
 SHELL_FAMILIES = {1: 'armor_piercing', 2: 'armor_piercing_cr', 3: 'hollow_charge', 4: 'high_explosive'}
 SHELL_PREMIUM = 0x10
 VERDICTS = ('unknown', 'pierced', 'not_pierced', 'ricochet', 'splash')
-EXTENDED_MOVIE = 'ProjectHitIndicator.swf'
-# tools/battle_ui_hit_flash.py ART_STAGE: a movie with sprites has this stage.
-ART_FLASH_SIZE = (1020, 1020)
+# tools/battle_ui_hit_flash.py ART_STAGE: the replaced movie has this stage.
+FLASH_SIZE = (1020, 1020)
 CALLBACK = 'ProjectHit.show'
 NATIVE_CALLBACK = 'DamageIndicator.setDamageFlagAndAnimFrame'
 HELLO_DELAY, HELLO_PERIOD, HELLO_ATTEMPTS = 1.0, 2.0, 5
@@ -50,13 +50,9 @@ HELLO_DELAY, HELLO_PERIOD, HELLO_ATTEMPTS = 1.0, 2.0, 5
 FACTS_LIFETIME = 5.0
 MAX_FACTS = 16
 RED, ORANGE, GREY, WHITE, GREEN = 0xc8181e, 0xe06a1b, 0x6e6e6e, 0xffffff, 0x7fd13b
-# Sprite names of tools/battle_ui_hit_art.py. The drawn indicator ignores them.
-MODULE_ICONS = {'engine': 'engineCircle', 'gun': 'gunCircle', 'turretRotator': 'turretCircle',
-                'surveyingDevice': 'triplexCircle', 'radio': 'radioCircle', 'fuelTank': 'tanksCircle',
-                'ammoBay': 'ammoCircle', 'leftTrack': 'tracksCircle', 'rightTrack': 'tracksCircle',
-                'commander': 'commanderCircle', 'driver': 'driverCircle', 'radioman': 'radiomanCircle',
-                'gunner': 'gunnerCircle', 'loader': 'reloaderCircle'}
-VEHICLE_ICONS = ('lightTank', 'mediumTank', 'heavyTank', 'SPG', 'AT-SPG')
+# The second line of the marker: the shell family, as the history plaques.
+SHELL_LABELS = {'armor_piercing': u'\u0411\u0411', 'armor_piercing_cr': u'\u0411\u041f',
+                'hollow_charge': u'\u041a\u0421', 'high_explosive': u'\u041e\u0424'}
 
 # Values for UI-05: key, allowed values, default. Standard shows the native arc,
 # so the last four keys act in the extended view only. `apply_options` takes
@@ -102,8 +98,6 @@ def checked_options(value):
 
 def validate_settings(settings):
     value = settings.get(SETTING)
-    if ART_SETTING in settings and (settings[ART_SETTING] is not True or value is None):
-        raise ValueError('hit indicator art is an explicit true beside the indicator')
     if value is None:
         if SETTING in settings:
             raise ValueError('hit indicator setting must be omitted when disabled')
@@ -215,11 +209,10 @@ def _key(yaw):
 class Policy(object):
     """Everything that decides; the engine seams are plain callables."""
 
-    def __init__(self, options, record, clock, art=False):
+    def __init__(self, options, record, clock):
         if not (callable(record) and callable(clock)):
             raise TypeError('hit indicator requires callable seams')
         self.options, self.record, self.clock = checked_options(options), record, clock
-        self.art = art
         self.facts, self.acknowledged, self.failed, self.bad_frames = {}, False, False, 0
         # UI-03/04 widgets subscribe here and add their own hello.
         self.listeners, self.features = [], []
@@ -270,6 +263,8 @@ class Policy(object):
                 continue
             if event['kind'] == 'hit_received':
                 self.remember(event)
+            elif event['kind'] == 'shell':
+                self.remember_shell(event)
             self.notify(event)
 
     def notify(self, event):
@@ -294,6 +289,12 @@ class Policy(object):
         if event['verdict'] == 'splash' and self.show_splash is not None:
             self.show_splash(event['yaw'])
 
+    def remember_shell(self, event):
+        """The server sends it after its hit, only for a shooter the recipient sees."""
+        for _, row in self.facts.values():
+            if row['shot'] == event['shot']:
+                row['shell'] = event['family']
+
     def facts_for(self, yaw):
         row = self.facts.get(_key(yaw))
         if row is None or row[0] <= self.clock():
@@ -305,16 +306,13 @@ class Policy(object):
         event = self.facts_for(yaw)
         return event is not None and event['friendly'] and not self.options['show_friendly']
 
-    def movie(self):
-        return EXTENDED_MOVIE if self.options['view'] == 'extended' and not self.failed else None
+    def extended(self):
+        return self.options['view'] == 'extended' and not self.failed
 
-    def movie_size(self):
-        """The component size of the movie, None for the native one."""
-        return ART_FLASH_SIZE if self.art else None
-
-    def show_args(self, event, name, note, max_health, icon='', vehicle=''):
+    def show_args(self, event, name, note, max_health):
         """Arguments of ProjectHit.show. What is unknown stays visibly absent.
-        The module icon stands in for the number only when no damage was dealt."""
+        Owner order 2026-11-02: a critical hit with damage keeps the damage
+        colour; orange marks only a critical hit that dealt none."""
         options, damage = self.options, event['damage']
         if damage > 0:
             number, colour = str(damage) if options['show_damage'] else '', RED
@@ -323,14 +321,14 @@ class Policy(object):
         else:
             number, colour = '- -', GREY
         critical = options['show_critical'] and event['criticals']
-        if critical:
+        if critical and damage == 0:
             colour = ORANGE
         scale = 1.0
         if options['dynamic'] and damage > 0 and max_health > 0:
             scale += 0.6 * min(1.0, 2.0 * damage / float(max_health))
-        shown = name if options['show_vehicle'] else ''
-        return [colour, number, shown, GREEN if event['friendly'] else WHITE, note if critical else '', scale,
-                options['animate'], icon if critical and damage == 0 else '', vehicle if shown else '']
+        shell = SHELL_LABELS.get(event.get('shell'), '') if options['show_vehicle'] else ''
+        return [colour, number, name if options['show_vehicle'] else '', GREEN if event['friendly'] else WHITE,
+                note if critical else '', scale, options['animate'], shell]
 
 
 def _contract(function, expected):
@@ -345,31 +343,22 @@ def _contract(function, expected):
 
 def indicator_class(base, policy, facts_args, record):
     """The subclass the native controller builds. No fact or no extended view:
-    it is the native indicator, byte for byte the same calls."""
+    the native calls, byte for byte, on the larger component."""
 
     class ProjectHitIndicator(base):
 
         def __init__(self):
             self.project_yaw = None
-            self.project_extended = False
-            movie = policy.movie()
-            if movie is None:
-                base.__init__(self)
-                return
-            self._DamageIndicator__SWF_FILE_NAME = movie
-            size = policy.movie_size()
-            if size is not None:
-                self._DamageIndicator__FLASH_SIZE = size
+            # The movie in res_mods replaces the native one for every view: its
+            # stage is larger, so the component always takes its size.
+            self._DamageIndicator__FLASH_SIZE = FLASH_SIZE
             try:
                 base.__init__(self)
-                self.project_extended = True
             except Exception:
                 policy.failed = True
                 record(EVENT + '_movie_failed', version=VERSION, traceback=traceback.format_exc()[-2000:])
-                del self._DamageIndicator__SWF_FILE_NAME
-                if size is not None:
-                    del self._DamageIndicator__FLASH_SIZE
-                base.__init__(self)
+                raise
+            self.project_extended = policy.extended()
 
         def setup(self, gYaw, offset):
             base.setup(self, gYaw, offset)
@@ -391,23 +380,6 @@ def indicator_class(base, policy, facts_args, record):
     return ProjectHitIndicator
 
 
-def _module_icon(event, descriptor):
-    """The sprite of the first critical; nothing for a fire, it has none."""
-    kind, extra = event['criticals'][0]
-    if kind == 4:
-        return ''
-    name = descriptor.extras[extra].name
-    name = name[:-6] if name.endswith('Health') else name
-    return MODULE_ICONS.get(name.rstrip('0123456789'), '')
-
-
-def _vehicle_icon(tags, friendly):
-    for name in VEHICLE_ICONS:
-        if name in tags:
-            return 'ally_' + name if friendly else name
-    return ''
-
-
 def _note(event, descriptor, make_string):
     """A short native phrase for the first critical; nothing when unknown."""
     kind, extra = event['criticals'][0]
@@ -423,7 +395,7 @@ def _note(event, descriptor, make_string):
     return make_string('#ingame_gui:damage_panel/devices/%s/%s' % (name, state)).split('.')[0]
 
 
-def install(record, options, art=False):
+def install(record, options):
     """Client-only. Wrap exact #717 callables; fail closed on any mismatch."""
     global _installed
     if _installed is not None:
@@ -443,21 +415,19 @@ def install(record, options, art=False):
     _contract(aims._DamageIndicatorCtrl.__dict__.get('add'), ADD_CONTRACT)
     _contract(native.__dict__.get('__init__'), INIT_CONTRACT)
     _contract(native.__dict__.get('setup'), SETUP_CONTRACT)
-    rules = Policy(options, record, BigWorld.time, art)
+    rules = Policy(options, record, BigWorld.time)
     state = {'callback': None, 'attempts': 0}
 
     def facts_args(event):
         player = BigWorld.player()
         descriptor = player.vehicleTypeDescriptor
-        name, note, icon, vehicle = '', '', '', ''
+        name, note = '', ''
         row = player.arena.vehicles.get(event['source']) if event['source'] else None
         if row is not None:
             name = row['vehicleType'].type.shortUserString
-            vehicle = _vehicle_icon(row['vehicleType'].type.tags, event['friendly'])
         if event['criticals']:
             note = _note(event, descriptor, i18n.makeString)
-            icon = _module_icon(event, descriptor)
-        return rules.show_args(event, name, note, getattr(descriptor, 'maxHealth', 0), icon, vehicle)
+        return rules.show_args(event, name, note, getattr(descriptor, 'maxHealth', 0))
 
     def hello():
         state['callback'] = None

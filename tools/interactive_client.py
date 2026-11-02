@@ -414,21 +414,23 @@ def prepare(args):
             raise ValueError('--player-kill-marker requires --enable-profile13-battle')
         settings['player_kill_marker'] = True
     payloads.update(team_killer_marker(args, profile13_battle, original, resource_evidence))
+    # UI-02b owner order 2026-11-02: the hit indicator replaces the native one
+    # in the project's battle client by default; the flag is for a check or a
+    # rollback, `off` leaves the native indicator untouched.
     hit_view = getattr(args, 'hit_indicator', None)
-    if getattr(args, 'hit_indicator_art', None) is not None and hit_view is None:
-        raise ValueError('--hit-indicator-art requires --hit-indicator')
+    if hit_view is None and profile13_battle:
+        hit_view = 'extended'
+    if hit_view == 'off':
+        hit_view = None
     if hit_view is not None:
         # UI-02 owner order 2026-11-01: needs the gateway key `battle_events`;
         # without it the client keeps the native arc.
         if not profile13_battle:
             raise ValueError('--hit-indicator requires --enable-profile13-battle')
         import battle_ui_hit_flash
-        movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(
-            original, getattr(args, 'hit_indicator_art', None))
+        movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(original)
         payloads[battle_ui_hit_flash.TARGET] = movie
         settings['hit_indicator'] = hit_indicator_policy().prepare_settings(hit_view)
-        if resource_evidence['project_hit_indicator_movie']['art'] == 'embedded':
-            settings[hit_indicator_policy().ART_SETTING] = True
     feed_view = getattr(args, 'battle_feed', None)
     history_view = getattr(args, 'battle_history', None)
     feed_art = getattr(args, 'battle_feed_art', None)
@@ -686,12 +688,10 @@ def main():
                       help='Project policy, not original 0.9.1: UI-06b the health bar of a team killer marker '
                            'blue like its icon and name (team killers come from gateway key team_score); requires '
                            'profile13 battle; off by default, without it the marker movie stays byte for byte native')
-    prep.add_argument('--hit-indicator', choices=('standard', 'extended'),
-                      help='Project policy, not original 0.9.1: UI-02 hit indicator facts from the battle events '
-                           'channel (gateway key battle_events); requires profile13 battle; off by default')
-    prep.add_argument('--hit-indicator-art', type=Path,
-                      help='Project policy, not original 0.9.1: UI-02b local folder of indicator sprites from '
-                           'tools/battle_ui_hit_art.py; a folder without them keeps the drawn indicator')
+    prep.add_argument('--hit-indicator', choices=('standard', 'extended', 'off'),
+                      help='Project policy, not original 0.9.1: the hit indicator replaces the native one in a '
+                           'profile13 battle client by default as `extended` (facts from the gateway key '
+                           'battle_events); `standard` keeps only the native arc, `off` the native indicator')
     prep.add_argument('--battle-feed', choices=('labels', 'icons'),
                       help='Project policy, not original 0.9.1: UI-03 event feed, the last three battle events, '
                            'with or without their names (gateway key battle_events.feed); requires --hit-indicator; '

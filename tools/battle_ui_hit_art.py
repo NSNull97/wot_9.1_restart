@@ -108,8 +108,9 @@ def tick():
     """A thin line towards the reticle, fading as it gets there."""
     def paint(x, y):
         along = -y
-        fade = 0.85 * _smooth(-14, -6, along) * (1 - _smooth(6, 14, along))
-        return (((255, 225, 225), fade * max(0.0, 1 - abs(x) / 1.1)), ((255, 60, 60), fade * 0.35 * math.exp(-abs(x) / 1.6)))
+        fade = _smooth(-14, -6, along) * (1 - _smooth(4, 13, along))
+        return (((255, 225, 225), fade * max(0.0, 1 - max(0.0, abs(x) - 0.5) / 0.9)),
+                ((255, 60, 60), fade * 0.35 * math.exp(-abs(x) / 1.6)))
     return _image(8, 28, paint)
 
 

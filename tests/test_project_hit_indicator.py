@@ -79,7 +79,10 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(self.policy.show_args(self.event(), u'Т-34', '', 1000)[:4], [m.RED, '120', u'Т-34', m.WHITE])
         self.assertEqual(self.policy.show_args(self.event(damage=0, blocked=400, verdict=2), 'M103', '', 1000)[:2],
                          [m.GREY, '400'])
+        # Owner order 2026-11-02: a critical hit with damage keeps the damage colour.
         args = self.policy.show_args(self.event(criticals=((1, 3),)), 'T57', u'Двигатель', 1000)
+        self.assertEqual((args[0], args[1], args[4]), (m.RED, '120', u'Двигатель'))
+        args = self.policy.show_args(self.event(damage=0, verdict=2, criticals=((1, 3),)), 'T57', u'Двигатель', 1000)
         self.assertEqual((args[0], args[4]), (m.ORANGE, u'Двигатель'))
         self.assertEqual(self.policy.show_args(self.event(damage=0, verdict=2, flags=1), 'T110E5', '', 1000)[:4],
                          [m.GREY, '- -', 'T110E5', m.GREEN])
@@ -88,7 +91,18 @@ class PolicyTests(unittest.TestCase):
         event = self.event(criticals=((1, 3),))
         self.policy.apply_options({'show_critical': False, 'show_vehicle': False, 'show_damage': False,
                                    'dynamic': False, 'animate': False})
-        self.assertEqual(self.policy.show_args(event, 'T34', 'note', 1000), [m.RED, '', '', m.WHITE, '', 1.0, False, '', ''])
+        event['shell'] = 'high_explosive'
+        self.assertEqual(self.policy.show_args(event, 'T34', 'note', 1000), [m.RED, '', '', m.WHITE, '', 1.0, False, ''])
+
+    def test_the_shell_line_comes_from_its_record_and_only_for_a_seen_shooter(self):
+        self.policy.on_frame(frame((1, hit(shot=7, yaw=1.0, source=5)), (4, struct.pack('<IB', 7, 4))))
+        self.policy.on_frame(struct.pack('<2sBHB', b'BE', m.VERSION, 4, 1) + struct.pack('<BB', 1, 19)
+                             + hit(shot=8, yaw=2.0))
+        seen, hidden = self.policy.facts_for(1.0), self.policy.facts_for(2.0)
+        self.assertEqual(self.policy.show_args(seen, 'B-C 155 58', '', 1000)[7], u'\u041e\u0424')
+        self.assertEqual(self.policy.show_args(hidden, '', '', 1000)[7], '')
+        self.policy.apply_options({'show_vehicle': False})
+        self.assertEqual(self.policy.show_args(seen, 'B-C 155 58', '', 1000)[7], '')
 
     def test_dynamic_scale_grows_with_damage_and_is_bounded(self):
         small = self.policy.show_args(self.event(damage=10), '', '', 1000)[5]
@@ -130,23 +144,25 @@ class PolicyTests(unittest.TestCase):
         self.policy.reset()
         self.assertFalse(self.policy.acknowledged)
 
-    def test_movie_follows_the_view_and_a_failure(self):
-        self.assertEqual(self.policy.movie(), m.EXTENDED_MOVIE)
+    def test_extended_follows_the_view_and_a_failure(self):
+        self.assertTrue(self.policy.extended())
         self.policy.failed = True
-        self.assertIsNone(self.policy.movie())
+        self.assertFalse(self.policy.extended())
         self.policy.failed = False
         self.policy.apply_options({'view': 'standard'})
-        self.assertIsNone(self.policy.movie())
+        self.assertFalse(self.policy.extended())
 
 
 class Native(object):
     """The shape of #717 _DamageIndicator as the subclass uses it."""
     _DamageIndicator__SWF_FILE_NAME = 'DamageIndicator.swf'
-    refuse = None
+    _DamageIndicator__FLASH_SIZE = (680, 680)
+    refuse = False
 
     def __init__(self):
         self.calls, self.movie = [], self._DamageIndicator__SWF_FILE_NAME
-        if self.movie == Native.refuse:
+        self.size = self._DamageIndicator__FLASH_SIZE
+        if Native.refuse:
             raise RuntimeError('movie not loaded')
 
     def setup(self, gYaw, offset):
@@ -158,7 +174,7 @@ class Native(object):
 
 class IndicatorTests(unittest.TestCase):
     def setUp(self):
-        Native.refuse = None
+        Native.refuse = False
         self.rows = []
         self.policy = m.Policy({'view': 'extended'}, lambda name, **fields: self.rows.append(name), lambda: 1.0)
         self.cls = m.indicator_class(Native, self.policy, lambda event: ['facts'], self.policy.record)
@@ -172,7 +188,7 @@ class IndicatorTests(unittest.TestCase):
     def test_extended_with_facts_calls_the_project_callback_after_the_native_one(self):
         self.policy.on_frame(frame((1, hit())))
         indicator = self.native_flow()
-        self.assertEqual(indicator.movie, m.EXTENDED_MOVIE)
+        self.assertEqual((indicator.movie, indicator.size), ('DamageIndicator.swf', m.FLASH_SIZE))
         self.assertEqual(indicator.calls[-2:], [(m.NATIVE_CALLBACK, [True, 0]), (m.CALLBACK, ['facts'])])
 
     def test_without_facts_or_in_standard_the_calls_are_native(self):
@@ -181,15 +197,14 @@ class IndicatorTests(unittest.TestCase):
         self.policy.on_frame(frame((1, hit())))
         self.policy.apply_options({'view': 'standard'})
         indicator = self.native_flow()
-        self.assertEqual(indicator.movie, 'DamageIndicator.swf')
+        # The replaced movie serves the standard view too: same name, larger stage.
+        self.assertEqual((indicator.movie, indicator.size), ('DamageIndicator.swf', m.FLASH_SIZE))
         self.assertEqual(indicator.calls, [('setup', 1.5, (1, 2)), (m.NATIVE_CALLBACK, [True, 0])])
 
-    def test_a_movie_that_does_not_load_leaves_the_native_arc(self):
-        Native.refuse = m.EXTENDED_MOVIE
-        self.policy.on_frame(frame((1, hit())))
-        indicator = self.native_flow()
-        self.assertEqual(indicator.movie, 'DamageIndicator.swf')
-        self.assertEqual(indicator.calls[-1], (m.NATIVE_CALLBACK, [True, 0]))
+    def test_a_movie_that_does_not_load_is_recorded_and_not_hidden(self):
+        Native.refuse = True
+        with self.assertRaises(RuntimeError):
+            self.cls()
         self.assertTrue(self.policy.failed)
         self.assertIn(m.EVENT + '_movie_failed', self.rows)
 
@@ -223,76 +238,6 @@ class NoteTests(unittest.TestCase):
         self.assertEqual(self.note(2, 1), '#ingame_gui:damage_panel/devices/track/destroyed')
         self.assertTrue(self.note(3, 2).startswith('#ingame_gui:damage_panel/crew/driver/destroyed'))
         self.assertTrue(self.note(4, 0).startswith('#ingame_gui:player_messages/tank_in_fire'))
-
-
-class ArtStageTests(unittest.TestCase):
-    class Native(object):
-        def __init__(self):
-            self.sizes = getattr(self, '_DamageIndicator__FLASH_SIZE', (680, 680))
-
-        def setup(self, gYaw, offset):
-            pass
-
-        def call(self, methodName, args=None):
-            pass
-
-    def indicator(self, art=False):
-        rules = m.Policy(dict(m.default_options(), view='extended'), lambda *a, **k: None, lambda: 0.0, art)
-        return m.indicator_class(self.Native, rules, lambda event: [], lambda *a, **k: None)()
-
-    def test_only_a_movie_with_art_gets_the_large_component(self):
-        self.assertEqual(self.indicator().sizes, (680, 680))
-        self.assertEqual(self.indicator(art=True).sizes, m.ART_FLASH_SIZE)
-
-    def test_art_setting_is_a_true_beside_the_indicator(self):
-        good = {'hit_indicator': m.prepare_settings('extended'), 'enable_profile13_battle': True}
-        self.assertTrue(m.validate_settings(dict(good, hit_indicator_art=True)))
-        for bad in (dict(good, hit_indicator_art=False), {'hit_indicator_art': True}):
-            self.assertRaises(ValueError, m.validate_settings, bad)
-
-
-class IconTests(unittest.TestCase):
-    def setUp(self):
-        self.policy = m.Policy(dict(m.default_options(), view='extended'), lambda *a, **k: None, lambda: 0.0)
-
-    def icon(self, name, kind=2):
-        descriptor = NoteTests.Descriptor()
-        descriptor.extras = [NoteTests.Extra(name)]
-        return m._module_icon({'criticals': [(kind, 0)]}, descriptor)
-
-    def test_modules_and_crew_name_their_sprite(self):
-        for name, sprite in (('engineHealth', 'engineCircle'), ('leftTrackHealth', 'tracksCircle'),
-                             ('rightTrackHealth', 'tracksCircle'), ('surveyingDeviceHealth', 'triplexCircle'),
-                             ('turretRotatorHealth', 'turretCircle'), ('gunner1Health', 'gunnerCircle'),
-                             ('loader2Health', 'reloaderCircle'), ('radioman1Health', 'radiomanCircle')):
-            self.assertEqual(self.icon(name), sprite)
-
-    def test_fire_and_unknown_extra_have_no_sprite(self):
-        self.assertEqual(self.icon('engineHealth', 4), '')
-        self.assertEqual(self.icon('fire'), '')
-
-    def test_vehicle_class_and_ally_variant(self):
-        self.assertEqual(m._vehicle_icon(frozenset(('heavyTank', 'premium')), False), 'heavyTank')
-        self.assertEqual(m._vehicle_icon(frozenset(('AT-SPG',)), True), 'ally_AT-SPG')
-        self.assertEqual(m._vehicle_icon(frozenset(('premium',)), True), '')
-
-    def test_icon_stands_in_only_without_damage(self):
-        event = {'shot': 1, 'yaw': 0.5, 'damage': 0, 'blocked': None, 'verdict': 'not_pierced', 'friendly': False,
-                 'fatal': False, 'source': 7, 'criticals': [(1, 0)]}
-        self.assertEqual(self.policy.show_args(event, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[7:],
-                         ['engineCircle', 'heavyTank'])
-        event['damage'] = 100
-        self.assertEqual(self.policy.show_args(event, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[7], '')
-        self.policy.apply_options({'show_critical': False})
-        event['damage'] = 0
-        self.assertEqual(self.policy.show_args(event, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[7], '')
-
-    def test_class_icon_follows_the_name(self):
-        event = {'shot': 1, 'yaw': 0.5, 'damage': 10, 'blocked': None, 'verdict': 'pierced', 'friendly': False,
-                 'fatal': False, 'source': 0, 'criticals': []}
-        self.assertEqual(self.policy.show_args(event, '', '', 1000, '', 'heavyTank')[8], '')
-        self.policy.apply_options({'show_vehicle': False})
-        self.assertEqual(self.policy.show_args(event, 'T34', '', 1000, '', 'heavyTank')[8], '')
 
 
 class SettingsTests(unittest.TestCase):

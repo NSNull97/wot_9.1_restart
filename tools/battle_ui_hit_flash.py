@@ -1,14 +1,15 @@
-"""UI-02: build the extended hit indicator from the exact #717 DamageIndicator.swf.
+"""UI-02: build the hit indicator from the exact #717 DamageIndicator.swf.
 
-The original movie stays untouched in gui.pkg; prepare writes a res_mods copy
-under a new name, so nothing in Git carries client resources. All original tags
-are kept. Two tags are added: the font import every native text movie has and
-one AS2 DoAction with the project callback. Without an art folder it draws with
-the player's drawing API and text fields only.
+The original movie stays untouched in gui.pkg; prepare writes the replacement
+under the native name in res_mods (owner order 2026-11-02: a replacement of the
+native implementation, not a mod beside it), so nothing in Git carries client
+resources. All original tags are kept, the native arc too. Added: the font
+import every native text movie has, the project's own sprites drawn by
+tools/battle_ui_hit_art.py, a 1020 px stage with damageMC still centred, and
+one AS2 DoAction with the project callback.
 
-UI-02b: `art` is a local folder of tools/battle_ui_hit_art.py. Then its sprites
-are added as exported movie clips and the callback attaches them instead of
-drawing. No art folder or a required file missing: the drawn indicator, as before.
+`build` without sprites keeps the earlier drawn marker for the tests of the
+compiler; prepare always embeds the sprites.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ import zipfile
 import zlib
 
 MEMBER = 'gui/scaleform/DamageIndicator.swf'
-TARGET = 'res_mods/0.9.1/gui/scaleform/ProjectHitIndicator.swf'
+TARGET = 'res_mods/0.9.1/gui/scaleform/DamageIndicator.swf'
 SOURCE_SHA256 = 'd7484cb3fc58cfb23fda59a42b2f52278e3aa65a34d4d2ae786e3979ab217ff1'
 MAX_BYTES = 4 * 1024 * 1024
 CALLBACK = 'ProjectHit.show'
@@ -30,18 +31,14 @@ FONT = '$FieldFont'
 # and a shell from straight ahead points up.
 BEAM_NEAR, BEAM_FAR, DISC_AT, DISC_RADIUS = 235, 335, 205, 30
 NAME_AT, NOTE_AT = 280, 160
-# Colours of project_hit_indicator.show_args that pick a sprite.
+# Colours of project_hit_indicator.show_args that pick the sprite tone.
 RED, ORANGE = 0xc8181e, 0xe06a1b
-# Measured on the owner's Lesta battle shot at 1920x1080: the 358 px sprite at
-# 1:1 with its centre 315 px out (the constant of the Lesta movie), the disc 44 px
-# wide 256 px out, row 238 of the sprite. That is 494 px to the far end, so a
-# movie with art has a larger stage; project_hit_indicator gives its component
-# the same size. The native arc keeps its absolute size, damageMC stays centred.
+# The marker sits 256 px out at 1920x1080 (measured on the live battle shot of
+# 2026-11-02); its two text lines start past the chevron and run up to about
+# 430 px out, so the movie has a 1020 px stage and project_hit_indicator gives
+# the component the same size. The native arc keeps its absolute size.
 ART_STAGE = 1020
-ART_SCALE, ART_DISC_SIZE, ART_ICON_SCALE = 100, 44, 70
-ART_BEAM_AT, ART_DISC_AT, ART_CLASS_AT, ART_NAME_AT, ART_NOTE_AT = 315, 256, 290, 302, 216
-# Percent of the `scale` argument from which the beam widens.
-ART_MEDIUM_FROM, ART_BIG_FROM = 115, 140
+ART_DISC_AT, ART_TEXT_AT, ART_NOTE_AT = 256, 48, 216
 
 
 class As2:
@@ -152,13 +149,14 @@ def disc_points():
 def label_source():
     parent, name, depth = var('parent'), var('id'), var('depth')
     field = ('get', parent, name)
-    return function('_projectLabel', ['parent', 'id', 'depth', 'x', 'y', 'w', 'h', 'size', 'colour', 'text'], [
+    return function('_projectLabel', ['parent', 'id', 'depth', 'x', 'y', 'w', 'h', 'size', 'colour', 'text',
+                                      'align'], [
         method(parent, 'createTextField', name, depth, var('x'), var('y'), var('w'), var('h')),
         ('local', 't', field),
         ('set', var('t'), 'embedFonts', True),
         ('set', var('t'), 'selectable', False),
         ('local', 'f', ('new', 'TextFormat', [FONT, var('size'), var('colour'), True, False, False,
-                                              None, None, 'center'])),
+                                              None, None, var('align')])),
         method(var('t'), 'setNewTextFormat', var('f')),
         ('set', var('t'), 'text', var('text')),
     ])
@@ -169,8 +167,8 @@ def holder(mc, name, depth, y):
             ('set', ('get', mc, name), '_y', y)]
 
 
-def label(owner, name, depth, y, size, colour, text):
-    return ('do', ('fn', '_projectLabel', [owner, name, depth, -110, y, 220, size + 10, size, colour, text]))
+def label(owner, name, depth, y, size, colour, text, x=-110, align='center'):
+    return ('do', ('fn', '_projectLabel', [owner, name, depth, x, y, 220, size + 10, size, colour, text, align]))
 
 
 def show_source():
@@ -217,52 +215,52 @@ def attach(mc, linkage, name, depth, scale, y):
 
 
 def art_show_source():
-    """The same arguments as show_source plus two sprite names, both may be empty.
-    Sprite by colour and strength, so the facts stay decided in the client module."""
+    """Owner reference 2026-11-02: a dark disc with the number, wings towards the
+    shooter, a chevron on the axis, a tick towards the reticle and two text lines,
+    the vehicle and its shell, under the angle of the marker. The tone follows
+    the colour show_args decided; `scale` (dynamic indicators) spreads the wings."""
     mc, turn = var('m'), ('neg', ('get', var('damageMC'), '_rotation'))
-    percent = ('*', var('scale'), 100)
-    disc_scale = ('/', ART_DISC_SIZE * 100, var('discSize'))
+    art = art_module()
+    text = ('get', mc, 'textMC')
     body = [('local', 'm', ('call', var('damageMC'), 'createEmptyMovieClip', ['projectHit', 100])),
-            ('local', 'beam', 'blockedSmall'), ('local', 'disc', 'blockCircle'), ('local', 'discSize', 58),
-            ('if', ('==', var('colour'), RED),
-             [('assign', 'beam', 'damageSmall'), ('assign', 'disc', 'damageCircle'),
-              ('if', ('<', ART_MEDIUM_FROM, percent), [('assign', 'beam', 'damageMedium')]),
-              ('if', ('<', ART_BIG_FROM, percent), [('assign', 'beam', 'damageBig')])]),
-            ('if', ('==', var('colour'), ORANGE),
-             [('assign', 'beam', 'crit'), ('assign', 'disc', 'critCircle'), ('assign', 'discSize', 42)])]
-    body += attach(mc, var('beam'), 'beamMC', 1, ART_SCALE, -ART_BEAM_AT)
-    body += attach(mc, var('disc'), 'discMC', 2, disc_scale, -ART_DISC_AT)
-    for name, depth, y in (('numberMC', 3, -ART_DISC_AT), ('nameMC', 4, -ART_NAME_AT), ('noteMC', 5, -ART_NOTE_AT)):
+            ('local', 'tone', '_grey'),
+            ('if', ('==', var('colour'), RED), [('assign', 'tone', '_red')]),
+            ('if', ('==', var('colour'), ORANGE), [('assign', 'tone', '_orange')])]
+    body += attach(mc, ('+', 'wings', var('tone')), 'wingsMC', 1, 100, -(ART_DISC_AT + art.WINGS_AT))
+    body += [('set', ('get', mc, 'wingsMC'), '_xscale', ('*', var('scale'), 100))]
+    body += attach(mc, 'tick', 'tickMC', 2, 100, -(ART_DISC_AT + art.TICK_AT))
+    body += attach(mc, ('+', 'disc', var('tone')), 'discMC', 3, 100, -ART_DISC_AT)
+    body += attach(mc, ('+', 'chevron', var('tone')), 'chevronMC', 4, 100, -(ART_DISC_AT + art.CHEVRON_AT))
+    for name, depth, y in (('numberMC', 5, -ART_DISC_AT), ('textMC', 6, -(ART_DISC_AT + ART_TEXT_AT)),
+                           ('noteMC', 7, -ART_NOTE_AT)):
         body += holder(mc, name, depth, y)
-    # A named module replaces the number; the fact keeps its note under the disc.
-    body += [('if', ('not', ('==', var('icon'), '')),
-              attach(mc, var('icon'), 'iconMC', 6, ART_ICON_SCALE, -ART_DISC_AT) + [('assign', 'number', '')]),
-             ('if', ('not', ('==', var('vehicle'), '')),
-              attach(mc, var('vehicle'), 'classMC', 7, 100, -ART_CLASS_AT)),
-             label(('get', mc, 'numberMC'), 'field', 1, -13, 17, 0xffffff, var('number')),
-             label(('get', mc, 'nameMC'), 'field', 1, -12, 15, var('nameColour'), var('name')),
+    body += [label(('get', mc, 'numberMC'), 'field', 1, -13, 17, 0xffffff, var('number')),
+             label(text, 'nameField', 1, -21, 15, var('nameColour'), var('name'), 0, 'left'),
+             label(text, 'shellField', 2, 0, 14, var('colour'), var('shell'), 0, 'left'),
              label(('get', mc, 'noteMC'), 'field', 1, -11, 14, var('colour'), var('note')),
-             # The name starts past the class icon whichever way it reads.
-             ('set', ('get', mc, 'nameMC'), '_y',
-              ('-', -ART_NAME_AT, ('/', ('get', ('get', ('get', mc, 'nameMC'), 'field'), 'textWidth'), 2))),
              ('set', mc, 'startedAt', ('time',)), ('set', mc, 'animate', var('animate')),
              ('set', mc, 'onEnterFrame', ('func', [], art_frame_body())),
-             ('if', var('animate'), [('set', mc, '_alpha', 0)]),
+             ('do', ('call', mc, 'onEnterFrame', [])),
              # The native arc goes only after a sprite really attached.
-             ('if', ('==', ('typeof', ('get', mc, 'beamMC')), 'movieclip'),
+             ('if', ('==', ('typeof', ('get', mc, 'discMC')), 'movieclip'),
               [('set', ('get', var('damageMC'), 'animation'), '_visible', False)])]
     return function('_projectHitShow', ['colour', 'number', 'name', 'nameColour', 'note', 'scale', 'animate',
-                                        'icon', 'vehicle'], body)
+                                        'shell'], body)
 
 
 def art_frame_body():
-    """The number and the note stay upright; the name lies along the beam and
-    never reads upside down, as in the native extended view."""
+    """Owner order 2026-11-02: the text runs under the angle of the marker and
+    never reads upside down; the number and the note stay upright."""
     me, turn = var('this'), ('get', var('damageMC'), '_rotation')
+    text = ('get', me, 'textMC')
     rows = [row for row in frame_body() if row[1] != ('get', me, 'nameMC')]
-    return rows + [('set', ('get', me, 'iconMC'), '_rotation', ('neg', turn)),
-                   ('set', ('get', me, 'nameMC'), '_rotation', -90),
-                   ('if', ('<', turn, 0), [('set', ('get', me, 'nameMC'), '_rotation', 90)])]
+    flipped = []
+    for field in ('nameField', 'shellField'):
+        rows.append(('set', ('get', text, field), '_x', 0))
+        flipped.append(('set', ('get', text, field), '_x',
+                        ('neg', ('+', ('get', ('get', text, field), 'textWidth'), 4))))
+    return rows + [('set', text, '_rotation', -90),
+                   ('if', ('<', turn, 0), [('set', text, '_rotation', 90)] + flipped)]
 
 
 def actions(art=False):
@@ -365,7 +363,7 @@ def art_module():
     return battle_ui_hit_art
 
 
-def payload(original, art=None):
+def payload(original):
     with zipfile.ZipFile(Path(original) / 'res/packages/gui.pkg') as package:
         info = package.getinfo(MEMBER)
         if info.file_size > MAX_BYTES:
@@ -374,13 +372,13 @@ def payload(original, art=None):
     source = hashlib.sha256(raw).hexdigest()
     if source != SOURCE_SHA256:
         raise ValueError('original indicator movie differs from the pinned #717 bytes')
-    images, missing = art_module().load(art) if art is not None else ({}, [])
+    images = art_module().sprites()
     result = build(raw, images=images)
     if len(result) > MAX_BYTES:
-        raise ValueError('indicator movie with art is oversized')
+        raise ValueError('indicator movie is oversized')
     return result, {'source_member': MEMBER, 'source_sha256': source, 'target': TARGET,
                     'target_sha256': hashlib.sha256(result).hexdigest(), 'callback': CALLBACK,
                     'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-                    'art': 'embedded' if images else 'absent' if art is not None else 'not_requested',
-                    'art_sprites': sorted(images), 'art_missing': missing,
-                    'stage': ART_STAGE if images else 680, 'native_render_check': 'NOT_RUN'}
+                    'sprites': sorted(images), 'sprites_sha256': hashlib.sha256(b''.join(
+                        images[name][2] for name in sorted(images))).hexdigest(),
+                    'stage': ART_STAGE, 'native_render_check': 'NOT_RUN'}
