@@ -17,7 +17,9 @@ import battle_ui_history_flash as history
 import battle_ui_hit_flash as flash
 from test_battle_ui_hit_flash import ORIGINAL, fake_movie
 
-BORROWED = ROOT.parents[2] / 'local/ui-borrowed/battle-feed'
+# local/ is not in a worktree: look in the checkout that holds it.
+BORROWED = next((base / 'local/ui-borrowed/battle-feed' for base in (ROOT, *ROOT.parents)
+                 if (base / 'local/ui-borrowed/battle-feed').is_dir()), ROOT / 'local/ui-borrowed/battle-feed')
 PIXEL = bytes((10, 20, 30, 128))
 
 
