@@ -120,7 +120,7 @@ class OriginalTests(unittest.TestCase):
         exported = [row for row in rows if row[0] == 56 and sprites[0].encode() in body[row[1]:row[2]]]
         self.assertEqual(len(exported), 1)
         self.assertLess(exported[0][1], [row for row in rows if row[0] == 12][-1][1])
-        bitmaps = [body[row[1] + 6:row[2]] for row in rows if row[0] == 36]
+        bitmaps = [body[row[1] + (6 if body[row[1]] & 63 == 63 else 2):row[2]] for row in rows if row[0] == 36]
         own = [data for data in bitmaps if struct.unpack_from('<H', data)[0] >= art.FIRST_CHARACTER]
         self.assertEqual(len(own), len(sprites))
         for data in own:
