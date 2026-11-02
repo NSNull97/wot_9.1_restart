@@ -92,7 +92,31 @@ class PolicyTests(unittest.TestCase):
         self.policy.apply_options({'show_critical': False, 'show_vehicle': False, 'show_damage': False,
                                    'dynamic': False, 'animate': False})
         event['shell'] = 'high_explosive'
-        self.assertEqual(self.policy.show_args(event, 'T34', 'note', 1000), [m.RED, '', '', m.WHITE, '', 1.0, False, ''])
+        self.assertEqual(self.policy.show_args(event, 'T34', 'note', 1000, 'engineCircle', 'heavyTank'),
+                         [m.RED, '', '', m.WHITE, '', 1.0, False, '', '', '', 0])
+
+    def test_icons_follow_the_facts_and_the_options(self):
+        crit = self.event(shot=20, yaw=0.5, damage=0, verdict=2, criticals=((1, 0),))
+        self.assertEqual(self.policy.show_args(crit, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[8:10],
+                         ['engineCircle', 'heavyTank'])
+        damaged = self.event(shot=21, yaw=2.5, criticals=((1, 0),))
+        self.assertEqual(self.policy.show_args(damaged, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[8], '')
+        self.assertEqual(self.policy.show_args(damaged, '', 'n', 1000, 'engineCircle', 'heavyTank')[9], '')
+
+    def test_markers_of_one_side_turn_apart_and_keep_their_turn(self):
+        first = self.event(shot=30, yaw=1.0)
+        second = self.event(shot=31, yaw=1.05)
+        far = self.event(shot=32, yaw=-2.0)
+        self.assertEqual(self.policy.spread_for(first), 0)
+        self.assertEqual(self.policy.spread_for(second), 14)
+        self.assertEqual(self.policy.spread_for(far), 0)
+        self.assertEqual(self.policy.spread_for(second), 14)
+        third = self.event(shot=33, yaw=1.0)
+        self.assertEqual(self.policy.spread_for(third), -14)
+        self.now += m.SPREAD_LIFETIME
+        self.assertEqual(self.policy.spread_for(self.event(shot=34, yaw=1.0)), 0)
+        self.policy.reset()
+        self.assertEqual(self.policy.spreads, {})
 
     def test_the_shell_line_comes_from_its_record_and_only_for_a_seen_shooter(self):
         self.policy.on_frame(frame((1, hit(shot=7, yaw=1.0, source=5)), (4, struct.pack('<IB', 7, 4))))

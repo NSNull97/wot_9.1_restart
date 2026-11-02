@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'client_patch'))
 import battle_ui_hit_art as art
+import battle_ui_hit_icons as icons
 import battle_ui_hit_flash as flash
 import project_hit_indicator as client
 
@@ -41,7 +42,16 @@ class Clip:
 
 class TextFormat:
     def __init__(self, *args):
-        self.args = args
+        self.args, self.members = args, {}
+
+    def state(self):
+        """What setNewTextFormat copies at the time of the call."""
+        return dict(self.members, font=self.args[0], size=self.args[1], color=self.members.get('color', self.args[2]),
+                    bold=self.args[3], align=self.args[8])
+
+
+# Linkages the movie under test does not export: attachMovie gives undefined.
+ABSENT = set()
 
 
 class Machine:
@@ -189,13 +199,16 @@ class Native:
             child = Clip(args[0])
             self.owner.members[args[0]] = child
             return child
+        if self.name == 'setNewTextFormat':
+            self.owner.format = args[0].state()
         if self.name == 'createTextField':
             field = Clip(args[0])
             field.members['textWidth'] = 40
+            field.members['_x'], field.members['_y'] = args[2], args[3]
             self.owner.members[args[0]] = field
             return field
         if self.name == 'attachMovie':
-            if args[0] in self.owner.__dict__.get('missing', ()):
+            if args[0] in self.owner.__dict__.get('missing', ()) or args[0] in ABSENT:
                 return None
             child = Clip(args[0])
             self.owner.members[args[1]] = child
@@ -405,19 +418,26 @@ class ArtTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             flash.build(fake_movie(), images=small_art())
 
-    def show(self, colour=flash.RED, number='258', scale=1, shell=u'ОФ', turn=30, name=u'B-C 155 58'):
+    def tearDown(self):
+        ABSENT.clear()
+
+    def show(self, colour=flash.RED, number='258', scale=1, shell=u'ОФ', turn=30, name=u'B-C 155 58',
+             note=u'Двигатель', icon='', vehicle='heavyTank', spread=0):
         machine, scope, delegate, damage, arc = loaded(flash.actions(True))
         damage.members['_rotation'] = turn
         machine.invoke(scope['_projectHitShow'], machine.root,
-                       [colour, number, name, 0xffffff, u'Двигатель', scale, True, shell])
+                       [colour, number, name, 0xffffff, note, scale, True, shell, icon, vehicle, spread])
         return machine, damage.members['projectHit'], damage, arc
 
     def attached(self, mc):
         return dict((call[2], call[1]) for call in mc.calls if call[0] == 'attachMovie')
 
+    def line(self, mc, name):
+        return mc.members['textMC'].members[name]
+
     def test_tone_follows_the_colour_and_nothing_turns_yellow_for_damage(self):
         for colour, tone in ((flash.RED, 'red'), (flash.ORANGE, 'orange'), (0x6e6e6e, 'grey')):
-            names = self.attached(self.show(colour)[1])
+            names = self.attached(self.show(colour, vehicle='')[1])
             self.assertEqual(names, {'wingsMC': 'wings_' + tone, 'tickMC': 'tick', 'discMC': 'disc_' + tone,
                                      'chevronMC': 'chevron_' + tone})
 
@@ -429,29 +449,64 @@ class ArtTests(unittest.TestCase):
         self.assertEqual(mc.members['tickMC'].members['_y'], -(flash.ART_DISC_AT + art.TICK_AT))
         self.assertEqual(mc.members['numberMC'].members['_y'], -flash.ART_DISC_AT)
         self.assertEqual(mc.members['textMC'].members['_y'], -(flash.ART_DISC_AT + flash.ART_TEXT_AT))
+        self.assertEqual([self.line(mc, line).members['_y'] for line, _, _ in flash.LINES], [-30, -10, 10])
 
     def test_dynamic_scale_spreads_the_wings_only(self):
         mc = self.show(scale=1.5)[1]
         self.assertEqual(mc.members['wingsMC'].members['_xscale'], 150)
         self.assertEqual(mc.members['discMC'].members['_xscale'], 100)
 
-    def test_two_text_lines_and_an_upright_number(self):
+    def test_three_lines_with_a_black_halo_and_an_upright_number(self):
         mc = self.show()[1]
-        text = mc.members['textMC']
-        self.assertEqual(text.members['nameField'].members['text'], u'B-C 155 58')
-        self.assertEqual(text.members['shellField'].members['text'], u'ОФ')
-        self.assertEqual(text.members['nameField'].calls[0][1].args[8], 'left')
+        for line, text, colour in (('nameLine', u'B-C 155 58', 0xffffff), ('shellLine', u'ОФ', flash.RED),
+                                   ('noteLine', u'Двигатель', flash.RED)):
+            clip = self.line(mc, line)
+            self.assertEqual(clip.members['field'].members['text'], text)
+            self.assertEqual(clip.members['field'].format['color'], colour)
+            self.assertEqual(clip.members['field'].format['align'], 'left')
+            for index, (dx, dy) in enumerate(flash.HALO):
+                halo = clip.members['halo%d' % index]
+                self.assertEqual(halo.members['text'], text)
+                self.assertEqual(halo.format['color'], 0)
+                self.assertEqual(halo.members['_alpha'], flash.HALO_ALPHA)
+                self.assertEqual((halo.members['_x'] - clip.members['field'].members['_x'], halo.members['_y']), (dx, dy))
         self.assertEqual(mc.members['numberMC'].members['field'].members['text'], '258')
         self.assertEqual(mc.members['numberMC'].members['_rotation'], -30)
 
+    def test_the_class_icon_leads_the_name_and_stays_out_without_the_icons(self):
+        mc = self.show(vehicle='heavyTank')[1]
+        name = self.line(mc, 'nameLine')
+        self.assertEqual(name.members['classMC'].name, 'heavyTank')
+        self.assertEqual(name.members['field'].members['_x'], flash.CLASS_ICON_WIDTH)
+        self.assertEqual(name.members['w'], flash.CLASS_ICON_WIDTH + 44)
+        ABSENT.add('heavyTank')
+        name = self.line(self.show(vehicle='heavyTank')[1], 'nameLine')
+        self.assertEqual((name.members['field'].members['_x'], name.members['w']), (0, 44))
+
+    def test_a_module_icon_stands_in_for_the_number_only_when_the_movie_has_it(self):
+        mc = self.show(flash.ORANGE, number='- -', icon='engineCircle')[1]
+        self.assertEqual(mc.members['iconMC'].members['_xscale'], flash.MODULE_ICON_SCALE)
+        self.assertEqual(mc.members['numberMC'].members['field'].members['text'], '')
+        ABSENT.add('engineCircle')
+        mc = self.show(flash.ORANGE, number='- -', icon='engineCircle')[1]
+        self.assertEqual(mc.members['numberMC'].members['field'].members['text'], '- -')
+
     def test_text_runs_under_the_angle_of_the_marker_and_never_upside_down(self):
-        for turn, expected, x in ((30, -90, 0), (135, -90, 0), (-30, 90, -44), (-135, 90, -44)):
+        for turn, expected, flipped in ((30, -90, False), (135, -90, False), (-30, 90, True), (-135, 90, True)):
             machine, mc, damage, arc = self.show(turn=turn)
-            text = mc.members['textMC']
-            self.assertEqual(text.members['_rotation'], expected)
-            self.assertEqual(text.members['nameField'].members['_x'], x)
-            self.assertEqual(text.members['shellField'].members['_x'], x)
-            self.assertEqual(mc.members['noteMC'].members['_rotation'], -turn)
+            self.assertEqual(mc.members['textMC'].members['_rotation'], expected)
+            for line, _, _ in flash.LINES:
+                clip = self.line(mc, line)
+                self.assertEqual(clip.members['_x'], -clip.members['w'] if flipped else 0)
+            self.assertEqual(mc.members['numberMC'].members['_rotation'], -turn)
+
+    def test_a_spread_marker_turns_and_keeps_its_text_readable(self):
+        for turn, spread, expected in ((170, 14, 90), (-10, 14, -90), (30, -14, -90)):
+            machine, mc, damage, arc = self.show(turn=turn, spread=spread)
+            self.assertEqual(mc.members['_rotation'], spread)
+            self.assertEqual(mc.members['textMC'].members['_rotation'], expected)
+            total = (turn + spread + 180) % 360 - 180
+            self.assertEqual(mc.members['numberMC'].members['_rotation'], -total)
 
     def test_arc_hides_only_after_a_sprite_attached(self):
         self.assertIs(self.show()[3].members['_visible'], False)
@@ -459,7 +514,8 @@ class ArtTests(unittest.TestCase):
         hit = Clip('projectHit')
         hit.missing = tuple(art.SPRITES)
         damage.members['createEmptyMovieClip'] = lambda *args: (damage.members.__setitem__('projectHit', hit), hit)[1]
-        machine.invoke(scope['_projectHitShow'], machine.root, [flash.RED, '120', '', 0xffffff, '', 1, True, ''])
+        machine.invoke(scope['_projectHitShow'], machine.root,
+                       [flash.RED, '120', '', 0xffffff, '', 1, True, '', '', '', 0])
         self.assertNotIn('_visible', arc.members)
 
     def test_fade_in_and_out(self):
@@ -472,9 +528,41 @@ class ArtTests(unittest.TestCase):
         machine.invoke(mc.members['onEnterFrame'], mc, [])
         self.assertEqual(mc.members['_alpha'], 50)
 
+    def test_icon_folder_loads_what_is_there_and_names_what_is_not(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        (folder / 'heavyTank.png').write_bytes(icons.write_png(2, 2, bytes(16)))
+        images, missing = icons.load(folder)
+        self.assertEqual(sorted(images), ['heavyTank'])
+        self.assertEqual(len(missing), len(icons.ICONS) - 1)
+        self.assertEqual(icons.load(None), ({}, list(icons.ICONS)))
+        (folder / 'gunCircle.png').write_bytes(b'not a png')
+        with self.assertRaises(ValueError):
+            icons.load(folder)
+
+    def test_icon_png_round_trip_and_bounds(self):
+        rgba = bytes(range(64))
+        self.assertEqual(icons.read_png(icons.write_png(4, 4, rgba)), (4, 4, rgba))
+        with self.assertRaises(ValueError):
+            icons.read_png(icons.write_png(65, 1, bytes(65 * 4)))
+
+    def test_extract_refuses_other_bytes(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        package = folder / icons.PACKAGE
+        package.parent.mkdir(parents=True)
+        import zipfile
+        with zipfile.ZipFile(package, 'w') as archive:
+            archive.writestr(icons.ATLAS, b'other')
+            archive.writestr(icons.ATLAS_XML, b'other')
+        with self.assertRaises(ValueError):
+            icons.extract(folder, folder / 'out')
+
     def test_client_module_and_movie_agree(self):
         self.assertEqual((client.RED, client.ORANGE), (flash.RED, flash.ORANGE))
         self.assertEqual(client.FLASH_SIZE, (flash.ART_STAGE, flash.ART_STAGE))
+        self.assertLessEqual(set(client.MODULE_ICONS.values()), set(icons.MODULES))
+        self.assertEqual(set(client.VEHICLE_ICONS), set(icons.CLASSES))
         self.assertEqual(flash.TARGET, 'res_mods/0.9.1/' + flash.MEMBER)
 
     @unittest.skipUnless((ORIGINAL / 'res/packages/gui.pkg').is_file(), 'original client absent')
@@ -486,6 +574,19 @@ class ArtTests(unittest.TestCase):
         moved = [row for row in rows if row[0] == 26 and body[row[1]:row[2]].endswith(b'damageMC\0')]
         self.assertEqual(len(moved), 1)
         self.assertEqual([row[0] for row in rows].count(39), 6 + len(art.SPRITES))
+        self.assertEqual((evidence['icons'], evidence['icons_folder']), ([], None))
+
+    @unittest.skipUnless((ORIGINAL / 'res/packages/gui.pkg').is_file(), 'original client absent')
+    def test_icons_from_a_folder_join_the_movie(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        for name in ('heavyTank', 'engineCircle'):
+            (folder / (name + '.png')).write_bytes(icons.write_png(2, 2, bytes(16)))
+        result, evidence = flash.payload(ORIGINAL, folder)
+        self.assertEqual(evidence['icons'], ['engineCircle', 'heavyTank'])
+        body = flash.expanded(result)
+        rows = flash.tags(body, ((5 + 4 * (body[0] >> 3) + 7) // 8) + 4)
+        self.assertEqual([row[0] for row in rows].count(39), 6 + len(art.SPRITES) + 2)
 
 
 class Tests(unittest.TestCase):

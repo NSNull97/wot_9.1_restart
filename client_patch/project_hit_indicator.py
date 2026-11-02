@@ -50,6 +50,19 @@ HELLO_DELAY, HELLO_PERIOD, HELLO_ATTEMPTS = 1.0, 2.0, 5
 FACTS_LIFETIME = 5.0
 MAX_FACTS = 16
 RED, ORANGE, GREY, WHITE, GREEN = 0xc8181e, 0xe06a1b, 0x6e6e6e, 0xffffff, 0x7fd13b
+# Owner round 3: Lesta icons, from tools/battle_ui_hit_icons.py when the movie
+# has them; an icon the movie lacks leaves its place empty.
+MODULE_ICONS = {'engine': 'engineCircle', 'gun': 'gunCircle', 'turretRotator': 'turretCircle',
+                'surveyingDevice': 'triplexCircle', 'radio': 'radioCircle', 'fuelTank': 'tanksCircle',
+                'ammoBay': 'ammoCircle', 'leftTrack': 'tracksCircle', 'rightTrack': 'tracksCircle',
+                'commander': 'commanderCircle', 'driver': 'driverCircle', 'radioman': 'radiomanCircle',
+                'gunner': 'gunnerCircle', 'loader': 'reloaderCircle'}
+VEHICLE_ICONS = ('lightTank', 'mediumTank', 'heavyTank', 'SPG', 'AT-SPG')
+# Two hits from about the same side turn apart by this much, in degrees, so the
+# markers and their text stay readable (owner round 3). A marker keeps its turn
+# while it lives, also across a sniper/arcade rebuild.
+SPREADS = (0, 14, -14, 28, -28)
+SPREAD_APART, SPREAD_LIFETIME = 13.0, 3.75
 # The second line of the marker: the shell family, as the history plaques.
 SHELL_LABELS = {'armor_piercing': u'\u0411\u0411', 'armor_piercing_cr': u'\u0411\u041f',
                 'hollow_charge': u'\u041a\u0421', 'high_explosive': u'\u041e\u0424'}
@@ -216,6 +229,7 @@ class Policy(object):
         self.facts, self.acknowledged, self.failed, self.bad_frames = {}, False, False, 0
         # UI-03/04 widgets subscribe here and add their own hello.
         self.listeners, self.features = [], []
+        self.spreads = {}
         self.last_sequence, self.repeated_frames = None, 0
         # The gateway sends no native hit callback for HE splash; a prepared
         # client draws the same native indicator from the event.
@@ -223,6 +237,7 @@ class Policy(object):
 
     def reset(self):
         self.facts.clear()
+        self.spreads.clear()
         self.acknowledged = False
         self.last_sequence = None
 
@@ -306,13 +321,33 @@ class Policy(object):
         event = self.facts_for(yaw)
         return event is not None and event['friendly'] and not self.options['show_friendly']
 
+    def spread_for(self, event):
+        """The turn of this hit's marker away from live markers of the same side."""
+        import math
+        now = self.clock()
+        for shot in [shot for shot, row in self.spreads.items() if row[0] <= now]:
+            del self.spreads[shot]
+        if event['shot'] in self.spreads:
+            return self.spreads[event['shot']][2]
+        here = math.degrees(event['yaw'])
+        def apart(turn):
+            for _, yaw, other in self.spreads.values():
+                gap = (here + turn - yaw - other + 180.0) % 360.0 - 180.0
+                if abs(gap) < SPREAD_APART:
+                    return False
+            return True
+        turn = next((turn for turn in SPREADS if apart(turn)), 0)
+        self.spreads[event['shot']] = (now + SPREAD_LIFETIME, here, turn)
+        return turn
+
     def extended(self):
         return self.options['view'] == 'extended' and not self.failed
 
-    def show_args(self, event, name, note, max_health):
+    def show_args(self, event, name, note, max_health, icon='', vehicle=''):
         """Arguments of ProjectHit.show. What is unknown stays visibly absent.
         Owner order 2026-11-02: a critical hit with damage keeps the damage
-        colour; orange marks only a critical hit that dealt none."""
+        colour; orange marks only a critical hit that dealt none, and only then
+        the module icon stands in for the number."""
         options, damage = self.options, event['damage']
         if damage > 0:
             number, colour = str(damage) if options['show_damage'] else '', RED
@@ -326,9 +361,11 @@ class Policy(object):
         scale = 1.0
         if options['dynamic'] and damage > 0 and max_health > 0:
             scale += 0.6 * min(1.0, 2.0 * damage / float(max_health))
+        shown = name if options['show_vehicle'] else ''
         shell = SHELL_LABELS.get(event.get('shell'), '') if options['show_vehicle'] else ''
-        return [colour, number, name if options['show_vehicle'] else '', GREEN if event['friendly'] else WHITE,
-                note if critical else '', scale, options['animate'], shell]
+        return [colour, number, shown, GREEN if event['friendly'] else WHITE, note if critical else '', scale,
+                options['animate'], shell, icon if critical and damage == 0 else '', vehicle if shown else '',
+                self.spread_for(event)]
 
 
 def _contract(function, expected):
@@ -380,6 +417,23 @@ def indicator_class(base, policy, facts_args, record):
     return ProjectHitIndicator
 
 
+def _module_icon(event, descriptor):
+    """The icon of the first critical; nothing for a fire, it has none."""
+    kind, extra = event['criticals'][0]
+    if kind == 4:
+        return ''
+    name = descriptor.extras[extra].name
+    name = name[:-6] if name.endswith('Health') else name
+    return MODULE_ICONS.get(name.rstrip('0123456789'), '')
+
+
+def _vehicle_icon(tags, friendly):
+    for name in VEHICLE_ICONS:
+        if name in tags:
+            return 'ally_' + name if friendly else name
+    return ''
+
+
 def _note(event, descriptor, make_string):
     """A short native phrase for the first critical; nothing when unknown."""
     kind, extra = event['criticals'][0]
@@ -421,13 +475,15 @@ def install(record, options):
     def facts_args(event):
         player = BigWorld.player()
         descriptor = player.vehicleTypeDescriptor
-        name, note = '', ''
+        name, note, icon, vehicle = '', '', '', ''
         row = player.arena.vehicles.get(event['source']) if event['source'] else None
         if row is not None:
             name = row['vehicleType'].type.shortUserString
+            vehicle = _vehicle_icon(row['vehicleType'].type.tags, event['friendly'])
         if event['criticals']:
             note = _note(event, descriptor, i18n.makeString)
-        return rules.show_args(event, name, note, getattr(descriptor, 'maxHealth', 0))
+            icon = _module_icon(event, descriptor)
+        return rules.show_args(event, name, note, getattr(descriptor, 'maxHealth', 0), icon, vehicle)
 
     def hello():
         state['callback'] = None
