@@ -1,4 +1,7 @@
-"""UI-06b: the team killer's health bar in the exact #717 VehicleMarkersManager.swf.
+"""UI-06b/UI-06c: the vehicle marker movie built from the exact #717 VehicleMarkersManager.swf.
+
+UI-06c (on by default in prepare): the project look of tools/battle_ui_marker_look.py.
+UI-06b (--team-killer-marker): the native bar of a team killer turned blue, below.
 
 #717 paints a team killer's marker through its colour scheme: `vm_teamKiller` in
 gui/gui_colors.xml has the alias colour `blue`, the marker goes to its `blue`
