@@ -338,22 +338,22 @@ class ControllerTests(unittest.TestCase):
 class RunningFeedTests(unittest.TestCase):
     """An open window in battle changes the feed on screen at once."""
 
-    class Widget(object):
+    class Battle(object):
+        """The native battle window: the rows it is asked to draw."""
+
         def __init__(self):
             self.calls = []
 
         def call(self, name, args):
-            self.calls.append(args)
-
-        def active(self, state):
-            pass
+            if name == feed_module.CALLBACK:
+                self.calls.append(args)
 
     def running(self):
-        self.widget = self.Widget()
-        self.widget.component = types.SimpleNamespace(visible=True) if hasattr(types, 'SimpleNamespace') else self.widget
+        self.widget = self.Battle()
         self.feed = feed_module.Feed(feed_module.default_options(), lambda: 10.0, lambda vehicle: 'tank', lambda vehicle: '')
-        runtime = feed_module.Runtime(self.feed, lambda: self.widget, lambda: (1920, 1080), lambda delay, fn: 1,
-                                      lambda timer: None, lambda *a, **k: None)
+        runtime = feed_module.Runtime(self.feed, lambda: (1920, 1080), lambda delay, fn: 1, lambda timer: None,
+                                      lambda *a, **k: None)
+        runtime.attach(self.widget)
         runtime.on_event({'kind': 'feed', 'feed': 1, 'value': 320, 'vehicle': 7})
         runtime.on_event({'kind': 'feed', 'feed': 3, 'value': None, 'vehicle': 7})
         return runtime
@@ -378,14 +378,13 @@ class RunningFeedTests(unittest.TestCase):
 
     def test_without_a_widget_only_the_options_change(self):
         feed = feed_module.Feed(feed_module.default_options(), lambda: 10.0, lambda vehicle: 'tank', lambda vehicle: '')
-        runtime = feed_module.Runtime(feed, lambda: 1 / 0, None, None, None, lambda *a, **k: None)
+        runtime = feed_module.Runtime(feed, lambda: 1 / 0, None, None, lambda *a, **k: None)
         runtime.apply_options({'kill': False})
         self.assertIs(feed.options['kill'], False)
 
     def test_a_widget_failure_switches_the_feed_off(self):
         runtime = self.running()
         self.widget.call = lambda name, args: 1 / 0
-        self.widget.close = lambda: None
         runtime.apply_options({'kill': False})
         self.assertTrue(runtime.failed)
 
