@@ -116,7 +116,7 @@ fn pose_frames(frames:&[Vec<u8>])->Vec<transport091::Frame> {
     let frames=transmit(&mut s,now).unwrap().unwrap();assert_eq!(frames.len(),3,"both queued bodies, then the pose part");
     let sent=transport091::parse_interactive(&frames[2]).unwrap();assert!(sent.flags&0x10!=0);assert_eq!(sent.body,pose);
     // Three parts of one tick: one per loop; a newer tick replaces the unsent rest.
-    let parts=vec![pose.clone(),vec![0x15,1],vec![0x15,2]];s.shared.as_mut().unwrap().poses_out=parts.clone();
+    let parts=vec![pose.clone(),pose[2..40].to_vec(),pose[40..].to_vec()];s.shared.as_mut().unwrap().poses_out=parts.clone();
     for part in &parts[..2] {
         let frames=transmit(&mut s,now).unwrap().unwrap();assert_eq!(frames.len(),1);
         assert_eq!(&transport091::parse_interactive(&frames[0]).unwrap().body,part);
@@ -130,4 +130,61 @@ fn pose_frames(frames:&[Vec<u8>])->Vec<transport091::Frame> {
     let frames=transmit(&mut s,now+transport091::RETRY).unwrap().unwrap();
     assert!(frames.iter().all(|f|transport091::parse_interactive(f).unwrap().body!=wire::publication(&w,[true,true]).unwrap()));
     assert_eq!(s.shared.as_ref().unwrap().poses_out.len(),1);
+}
+
+/// CRASH-01: owner battles 01.11 and 02.11 (captures of stand -12): a part of
+/// the tick's pose split, held aside, went out after the leaveAoI of a vehicle
+/// it still carried; the #717 client exited silently right there.
+fn hide(s:&mut Session,slot:usize) {
+    let c=s.shared.as_mut().unwrap();
+    let desired=std::array::from_fn(|i|c.visible()[i]&&i!=slot);
+    let active=std::array::from_fn(|i|i<2);
+    c.interest.as_mut().unwrap().set_desired(active,desired).unwrap();
+    assert!(!c.visible()[slot]);
+}
+fn carries(body:&[u8],slot:usize)->bool {
+    let id=wire::vehicle_id(slot).unwrap().to_le_bytes();
+    body.windows(5).any(|w|(w[0]==0x15||w[0]==0x12)&&w[1..]==id)
+}
+#[test] fn crash01_pose_part_held_aside_never_follows_the_leave_of_its_vehicle() {
+    let now=Instant::now();let mut w=world(now);let mut s=spotted(now,&w,PoseDelivery::ReliableBurstV2);
+    settle(&mut s,&mut w,now);
+    w.tick+=1;poll(&mut s,&mut w,now).unwrap();
+    // The 02.11 order: tickSync with the own vehicle, then a later part with the other one.
+    let pose=s.shared.as_ref().unwrap().poses_out[0].clone();assert!(carries(&pose,1));
+    s.shared.as_mut().unwrap().poses_out=vec![pose[..40].to_vec(),pose[40..].to_vec()];
+    let first=transmit(&mut s,now).unwrap().unwrap();
+    assert_eq!(transport091::parse_interactive(&first[0]).unwrap().body,pose[..40].to_vec());
+    hide(&mut s,1);s.flush_shared_interest(&mut Vec::new()).unwrap();
+    let mut sent=Vec::new();
+    for _ in 0..4 {for f in transmit(&mut s,now).unwrap().unwrap() {sent.push(transport091::parse_interactive(&f).unwrap());}}
+    let leave=sent.iter().position(|f|f.body==wire::leave_vehicle(1).unwrap()).expect("leaveAoI sent");
+    assert!(sent[leave+1..].iter().all(|f|!carries(&f.body,1)),"no record of the left vehicle after its leaveAoI");
+    assert!(sent.iter().all(|f|!carries(&f.body,1)),"the stale part is dropped, not sent before either");
+    assert!(s.shared.as_ref().unwrap().poses_out.is_empty());
+    // The next tick publishes only what is still visible.
+    w.tick+=1;poll(&mut s,&mut w,now).unwrap();
+    let parts=s.shared.as_ref().unwrap().poses_out.clone();assert!(parts.iter().all(|p|!carries(p,1)&&carries(p,0)));
+}
+#[test] fn crash01_latest_unreliable_pose_drops_a_vehicle_hidden_since_its_tick() {
+    let now=Instant::now();let mut w=world(now);let mut s=spotted(now,&w,PoseDelivery::LatestUnreliable);
+    settle(&mut s,&mut w,now);
+    w.tick+=1;poll(&mut s,&mut w,now).unwrap();
+    let pose=s.shared.as_ref().unwrap().poses_out[0].clone();assert!(carries(&pose,1));
+    hide(&mut s,1);s.flush_shared_interest(&mut Vec::new()).unwrap();
+    let frames=transmit(&mut s,now).unwrap().unwrap();
+    let bodies:Vec<_>=frames.iter().map(|f|transport091::parse_interactive(f).unwrap()).collect();
+    assert!(bodies.iter().any(|f|f.body==wire::leave_vehicle(1).unwrap()));
+    let unreliable:Vec<_>=bodies.iter().filter(|f|f.flags&0x10==0).collect();
+    assert_eq!(unreliable.len(),1);assert_eq!(unreliable[0].body,[&pose[..2],&pose[2..40]].concat());
+}
+#[test] fn crash01_record_filter_keeps_visible_bytes_and_refuses_foreign_layouts() {
+    let now=Instant::now();let w=world(now);let pose=wire::publication(&w,[true,true]).unwrap();
+    assert_eq!(wire::retain_publication_records(&pose,[true,true]).unwrap(),Some(pose.clone()));
+    assert_eq!(wire::retain_publication_records(&pose,[true,false]).unwrap(),Some(pose[..40].to_vec()));
+    assert_eq!(wire::retain_publication_records(&pose[40..],[true,false]).unwrap(),None);
+    assert_eq!(wire::retain_publication_records(&pose[..2],[false,false]).unwrap(),Some(pose[..2].to_vec()));
+    assert!(wire::retain_publication_records(&pose[..39],[true,true]).is_err());
+    let mut wrong=pose.clone();wrong[2+30]^=1;assert!(wire::retain_publication_records(&wrong,[true,true]).is_err());
+    assert!(wire::retain_publication_records(&[0x15,1],[true,true]).is_err());
 }

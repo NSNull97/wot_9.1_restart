@@ -2795,13 +2795,18 @@ fn transmit(s: &mut Session, now: Instant) -> io::Result<Option<Vec<Vec<u8>>>> {
         let c = s.shared.as_mut().ok_or_else(|| model::bad())?;
         if !c.in_battle() { c.take_poses(); }
         // One reliable pose part per loop, after the bodies already queued.
-        else if !c.poses_out.is_empty() && s.tx.len() < 8 {
-            let part = c.poses_out.remove(0);
-            s.tx.enqueue_body(&part)?;
-            match s.tx.due(now, s.rx) {
-                Ok(Some((_, _, clear))) => { frames.push(clear); },
-                Ok(None) => return Err(model::bad()),
-                Err(_) => return Ok(None),
+        // CRASH-01: filtered by the visibility of now, not of its tick.
+        else if s.tx.len() < 8 {
+            let visible = c.visible();
+            while !c.poses_out.is_empty() {
+                let Some(part) = wire::retain_publication_records(&c.poses_out.remove(0), visible)? else { continue; };
+                s.tx.enqueue_body(&part)?;
+                match s.tx.due(now, s.rx) {
+                    Ok(Some((_, _, clear))) => { frames.push(clear); },
+                    Ok(None) => return Err(model::bad()),
+                    Err(_) => return Ok(None),
+                }
+                break;
             }
         }
         return Ok(Some(frames));
@@ -2810,7 +2815,9 @@ fn transmit(s: &mut Session, now: Instant) -> io::Result<Option<Vec<Vec<u8>>>> {
         // A pose left over from a battle that ended is dropped, never sent.
         let poses = c.take_poses();
         if c.in_battle() {
+            let visible = c.visible();
             for body in poses {
+                let Some(body) = wire::retain_publication_records(&body, visible)? else { continue; };
                 let clear = transport091::unreliable(s.rx, &body)?;
                 c.record_pose_packet(clear.len()); frames.push(clear);
             }
