@@ -43,6 +43,13 @@ HELLO_DELAY, HELLO_PERIOD, HELLO_ATTEMPTS = 1.0, 2.0, 5
 FACTS_LIFETIME = 5.0
 MAX_FACTS = 16
 RED, ORANGE, GREY, WHITE, GREEN = 0xc8181e, 0xe06a1b, 0x6e6e6e, 0xffffff, 0x7fd13b
+# Sprite names of tools/battle_ui_hit_art.py. The drawn indicator ignores them.
+MODULE_ICONS = {'engine': 'engineCircle', 'gun': 'gunCircle', 'turretRotator': 'turretCircle',
+                'surveyingDevice': 'triplexCircle', 'radio': 'radioCircle', 'fuelTank': 'tanksCircle',
+                'ammoBay': 'ammoCircle', 'leftTrack': 'tracksCircle', 'rightTrack': 'tracksCircle',
+                'commander': 'commanderCircle', 'driver': 'driverCircle', 'radioman': 'radiomanCircle',
+                'gunner': 'gunnerCircle', 'loader': 'reloaderCircle'}
+VEHICLE_ICONS = ('lightTank', 'mediumTank', 'heavyTank', 'SPG', 'AT-SPG')
 
 # Values for UI-05: key, allowed values, default. Standard shows the native arc,
 # so the last four keys act in the extended view only. `apply_options` takes
@@ -276,8 +283,9 @@ class Policy(object):
     def movie(self):
         return EXTENDED_MOVIE if self.options['view'] == 'extended' and not self.failed else None
 
-    def show_args(self, event, name, note, max_health):
-        """Arguments of ProjectHit.show. What is unknown stays visibly absent."""
+    def show_args(self, event, name, note, max_health, icon='', vehicle=''):
+        """Arguments of ProjectHit.show. What is unknown stays visibly absent.
+        The module icon stands in for the number only when no damage was dealt."""
         options, damage = self.options, event['damage']
         if damage > 0:
             number, colour = str(damage) if options['show_damage'] else '', RED
@@ -291,8 +299,9 @@ class Policy(object):
         scale = 1.0
         if options['dynamic'] and damage > 0 and max_health > 0:
             scale += 0.6 * min(1.0, 2.0 * damage / float(max_health))
-        return [colour, number, name if options['show_vehicle'] else '', GREEN if event['friendly'] else WHITE,
-                note if critical else '', scale, options['animate']]
+        shown = name if options['show_vehicle'] else ''
+        return [colour, number, shown, GREEN if event['friendly'] else WHITE, note if critical else '', scale,
+                options['animate'], icon if critical and damage == 0 else '', vehicle if shown else '']
 
 
 def _contract(function, expected):
@@ -348,6 +357,23 @@ def indicator_class(base, policy, facts_args, record):
     return ProjectHitIndicator
 
 
+def _module_icon(event, descriptor):
+    """The sprite of the first critical; nothing for a fire, it has none."""
+    kind, extra = event['criticals'][0]
+    if kind == 4:
+        return ''
+    name = descriptor.extras[extra].name
+    name = name[:-6] if name.endswith('Health') else name
+    return MODULE_ICONS.get(name.rstrip('0123456789'), '')
+
+
+def _vehicle_icon(tags, friendly):
+    for name in VEHICLE_ICONS:
+        if name in tags:
+            return 'ally_' + name if friendly else name
+    return ''
+
+
 def _note(event, descriptor, make_string):
     """A short native phrase for the first critical; nothing when unknown."""
     kind, extra = event['criticals'][0]
@@ -389,13 +415,15 @@ def install(record, options):
     def facts_args(event):
         player = BigWorld.player()
         descriptor = player.vehicleTypeDescriptor
-        name, note = '', ''
+        name, note, icon, vehicle = '', '', '', ''
         row = player.arena.vehicles.get(event['source']) if event['source'] else None
         if row is not None:
             name = row['vehicleType'].type.shortUserString
+            vehicle = _vehicle_icon(row['vehicleType'].type.tags, event['friendly'])
         if event['criticals']:
             note = _note(event, descriptor, i18n.makeString)
-        return rules.show_args(event, name, note, getattr(descriptor, 'maxHealth', 0))
+            icon = _module_icon(event, descriptor)
+        return rules.show_args(event, name, note, getattr(descriptor, 'maxHealth', 0), icon, vehicle)
 
     def hello():
         state['callback'] = None

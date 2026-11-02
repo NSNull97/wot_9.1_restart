@@ -401,6 +401,8 @@ def prepare(args):
             raise ValueError('--player-kill-marker requires --enable-profile13-battle')
         settings['player_kill_marker'] = True
     hit_view = getattr(args, 'hit_indicator', None)
+    if getattr(args, 'hit_indicator_art', None) is not None and hit_view is None:
+        raise ValueError('--hit-indicator-art requires --hit-indicator')
     if hit_view is not None:
         # UI-02 owner order 2026-11-01: needs the gateway key `battle_events`;
         # without it the client keeps the native arc.
@@ -408,7 +410,8 @@ def prepare(args):
             raise ValueError('--hit-indicator requires --enable-profile13-battle')
         settings['hit_indicator'] = hit_indicator_policy().prepare_settings(hit_view)
         import battle_ui_hit_flash
-        movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(original)
+        movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(
+            original, getattr(args, 'hit_indicator_art', None))
         payloads[battle_ui_hit_flash.TARGET] = movie
     feed_view = getattr(args, 'battle_feed', None)
     if feed_view is not None:
@@ -663,6 +666,9 @@ def main():
     prep.add_argument('--hit-indicator', choices=('standard', 'extended'),
                       help='Project policy, not original 0.9.1: UI-02 hit indicator facts from the battle events '
                            'channel (gateway key battle_events); requires profile13 battle; off by default')
+    prep.add_argument('--hit-indicator-art', type=Path,
+                      help='Project policy, not original 0.9.1: UI-02b local folder of indicator sprites from '
+                           'tools/battle_ui_hit_art.py; a folder without them keeps the drawn indicator')
     prep.add_argument('--battle-feed', choices=('labels', 'icons'),
                       help='Project policy, not original 0.9.1: UI-03 event feed, the last three battle events, '
                            'with or without their names (gateway key battle_events.feed); requires --hit-indicator; '
