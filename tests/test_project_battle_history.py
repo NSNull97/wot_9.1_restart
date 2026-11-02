@@ -51,6 +51,20 @@ def sums(h):
     return [row[4] for row in filled(h.view()['bottom']) if row[2] == m.KIND_TOTAL]
 
 
+
+class WidgetSizeTests(unittest.TestCase):
+    def test_flash_size_is_the_tuple_of_floats_gui_flash_takes(self):
+        class Holder(object):
+            pass
+        class Base(object):
+            def __init__(self, movie):
+                self.component, self.movie = Holder(), Holder()
+                self.component.position = Holder()
+        size = m.widget_class(Base, 0.5)().flashSize
+        self.assertIs(type(size), tuple)
+        self.assertEqual([type(value) for value in size], [float, float])
+
+
 class WireTests(unittest.TestCase):
     def test_totals_record_matches_the_server_layout(self):
         raw = struct.pack('<IIIII', 1240, 700, 200, 1000, 103)

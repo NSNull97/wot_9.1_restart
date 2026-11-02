@@ -1760,7 +1760,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         };
                         s.account_probe = true; s.account_ready = true; s.tx = Window::interactive();
                         s.login_attempt = Some(job.attempt); s.login_account = Some(pending.account); s.identity = Some(accepted.identity);
-                        s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
+                        s.hangar = Some(accepted.fixtures); s.int_settings = accepted.int_settings; s.shared = Some(Client::new(slot));
                         if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
                         s.shared.as_mut().ok_or_else(||model::bad())?.set_pose_delivery(config.pose_delivery)?;
                         if config.battle_events {s.shared.as_mut().ok_or_else(||model::bad())?.enable_battle_events(config.battle_feed,config.battle_history)?;}

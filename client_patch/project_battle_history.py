@@ -266,7 +266,8 @@ def widget_class(base, depth):
             self.component.moveFocus = False
             self.component.heightMode = 'PIXEL'
             self.component.widthMode = 'PIXEL'
-            self.flashSize = list(MOVIE_SIZE)
+            # GUI.Flash.size takes a tuple of floats, as GUI.screenResolution() in Aim.
+            self.flashSize = (float(MOVIE_SIZE[0]), float(MOVIE_SIZE[1]))
             self.place(x, y)
 
         def place(self, x, y):
