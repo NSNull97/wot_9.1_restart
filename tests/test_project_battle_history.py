@@ -258,23 +258,35 @@ class LayoutTests(unittest.TestCase):
         view = self.fill(layout='top').view()
         self.assertEqual([row[0] for row in view['bottom']], list(range(m.TOTALS_ROWS + m.BOTTOM_ROWS)))
         self.assertEqual([row[0] for row in view['top']], list(range(m.TOP_ROWS)))
-        self.assertEqual([row[1] for row in view['bottom']], [5, 24, 43] + [77 + 18 * index for index in range(m.BOTTOM_ROWS)])
-        self.assertEqual([row[1] for row in view['top']], [5, 26, 47, 68, 89])
+        self.assertEqual([row[1] for row in view['bottom']], [0, 18, 36] + [60 + 18 * index for index in range(m.BOTTOM_ROWS)])
+        self.assertEqual([row[1] for row in view['top']], [0, 20, 40, 60, 80])
         self.assertEqual([row[11] for row in view['bottom']], [m.TOTAL_STEP] * 3 + [m.DEALT_STEP] * m.BOTTOM_ROWS)
 
-    def test_each_panel_rounds_its_first_and_last_row(self):
+    def test_every_row_carries_its_lesta_icon(self):
         h = self.fill()
-        h.add(feed(1, 5, 8))
-        bottom = h.view()['bottom']
-        self.assertEqual([row[12] for row in bottom[:3]], [m.EDGE_TOP, 0, m.EDGE_BOTTOM])
-        self.assertEqual([row[12] for row in bottom[3:7]], [m.EDGE_TOP, 0, m.EDGE_BOTTOM, 0])
-        one = self.fill(total_blocked=False, total_assist=False).view()['bottom']
-        self.assertEqual((one[0][12], one[0][1]), (m.EDGE_TOP | m.EDGE_BOTTOM, m.PAD + 2 * m.TOTAL_STEP))
+        h.add(feed(1, 300, 2))
+        h.add(feed(3, None, 2))
+        bottom = filled(h.view()['bottom'])
+        self.assertEqual([row[12] for row in bottom], ['damageLog_damage_16x16', 'damageLog_reflect_16x16',
+                                                      'damageLog_assist_16x16', 'damageLog_kill_16x16',
+                                                      'damageLog_damage_enemy_16x16', 'damageLog_damage_16x16'])
+
+    def test_owner_colours_dealt_green_crit_taken_gold_damage_taken_red(self):
+        h = history()
+        h.add(feed(9, None, 4))
+        h.add(feed(1, 300, 4))
+        h.add(feed(3, None, 4))
+        h.add(feed(8, 20, 4))
+        h.add(hit(damage=0, verdict='pierced', source=2, criticals=[(1, 7)]))
+        h.add(hit(damage=90, source=2))
+        colours = [(row[6], row[3]) for row in filled(h.view()['bottom']) if row[2] == m.KIND_DETAIL]
+        self.assertEqual(colours, [('Пробитие', m.RED), ('Крит', m.GOLD), ('Поджог', m.GREEN), ('Уничтожен', m.GREEN),
+                                   ('Крит', m.GREEN)])
 
     def test_sums_end_on_one_line_whichever_are_shown(self):
         rows = filled(self.fill(total_blocked=False).view()['bottom'])
-        self.assertEqual([row[1] for row in rows if row[2] == m.KIND_TOTAL], [24, 43])
-        self.assertEqual([row[1] for row in rows if row[2] == m.KIND_DETAIL], [77, 95])
+        self.assertEqual([row[1] for row in rows if row[2] == m.KIND_TOTAL], [18, 36])
+        self.assertEqual([row[1] for row in rows if row[2] == m.KIND_DETAIL], [60, 78])
 
     def test_the_sums_are_there_with_zeros_before_any_fact(self):
         sums_only = filled(history().view()['bottom'])
@@ -300,15 +312,16 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(plaques(view['top']), [('—', m.NO_SHELL)])
 
     def test_origin_by_the_damage_panel_and_the_bottom(self):
-        self.assertEqual(m.origin('bottom', (1920, 1080)), (235, 860))
+        self.assertEqual(m.origin('bottom', (1920, 1080)), (235, 882))
         self.assertEqual(m.origin('top', (1920, 1080)), (247, 66))
-        self.assertEqual(m.origin('bottom', (2560, 1440)), (235, 1220))
-        self.assertEqual(860 + m.BOTTOM_HEIGHT, 1080 - 12)
+        self.assertEqual(m.origin('bottom', (2560, 1440)), (235, 1242))
+        self.assertEqual(882 + m.BOTTOM_HEIGHT, 1080 - 12)
 
     def test_a_narrow_screen_shows_only_the_rows_above_the_ammo_panel(self):
         self.assertEqual(m.visible_rows((1920, 1080)), m.BOTTOM_ROWS)
         self.assertEqual(m.visible_rows((1600, 900)), m.BOTTOM_ROWS)
-        self.assertEqual(m.visible_rows((1366, 768)), m.NARROW_ROWS)
+        self.assertEqual(m.visible_rows((1366, 768)), m.BOTTOM_ROWS)
+        self.assertEqual(m.visible_rows((1280, 1024)), m.NARROW_ROWS)
         self.assertEqual(m.visible_rows((1280, 720)), m.NARROW_ROWS)
 
 
@@ -326,8 +339,8 @@ def feed_box(screen):
 def block_box(place, screen):
     x, y = m.origin(place, screen)
     if place == 'bottom':
-        return x, y, x + m.BLOCK_WIDTH, y + m.DETAIL_Y + m.visible_rows(screen) * m.DEALT_STEP + m.PAD
-    return x, y, x + m.BLOCK_WIDTH, y + m.TOP_ROWS * m.RECEIVED_STEP + 2 * m.PAD
+        return x, y, x + m.BLOCK_WIDTH, y + m.DETAIL_Y + m.visible_rows(screen) * m.DEALT_STEP
+    return x, y, x + m.BLOCK_WIDTH, y + m.TOP_ROWS * m.RECEIVED_STEP
 
 
 def ammo_box(screen):
@@ -391,7 +404,7 @@ class RuntimeTests(unittest.TestCase):
 
     def test_the_window_shows_both_blocks_and_the_sums_with_zeros_at_once(self):
         self.runtime.attach(self.battle)
-        self.assertEqual(self.battle.places(), [['bottom', 235, 860, True], ['top', 247, 66, True]])
+        self.assertEqual(self.battle.places(), [['bottom', 235, 882, True], ['top', 247, 66, True]])
         sums = [args for args in self.battle.rows('bottom') if args[3] == m.KIND_TOTAL]
         self.assertEqual([args[5] for args in sums], ['0', '0', '0'])
         self.assertEqual(len(self.battle.rows()), m.TOTALS_ROWS + m.BOTTOM_ROWS + m.TOP_ROWS)
@@ -442,7 +455,7 @@ class RuntimeTests(unittest.TestCase):
             self.runtime.on_event(feed(1, vehicle, vehicle))
         self.screen = (1280, 720)
         self.runtime.resize()
-        self.assertEqual(self.battle.places()[-2:], [['bottom', 235, 500, True], ['top', 247, 66, True]])
+        self.assertEqual(self.battle.places()[-2:], [['bottom', 235, 522, True], ['top', 247, 66, True]])
         sent = dict((args[1], args) for args in self.battle.rows('bottom'))
         self.assertEqual(sent[m.TOTALS_ROWS + m.NARROW_ROWS][3], m.KIND_EMPTY)
         self.assertEqual(sent[m.TOTALS_ROWS + m.NARROW_ROWS - 1][3], m.KIND_DETAIL)

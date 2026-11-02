@@ -36,39 +36,38 @@ KEPT_ROWS = 16
 TOTALS_ROWS = 3
 ALT_PERIOD = 0.1
 # Block coordinates in screen pixels. The bottom block stands right of the 230 px
-# native damage panel: a panel of sums, then a panel of rows (steps of the
-# owner's references ref2). The top block stands by the team list.
-PAD, TOTAL_STEP, DEALT_STEP, RECEIVED_STEP, PANEL_GAP = 5, 19, 18, 21, 5
-DETAIL_TOP = 2 * PAD + TOTALS_ROWS * TOTAL_STEP + PANEL_GAP
-DETAIL_Y = DETAIL_TOP + PAD
-BOTTOM_HEIGHT = DETAIL_Y + BOTTOM_ROWS * DEALT_STEP + PAD
+# native damage panel: the sums, then the rows, every row on its own plaque (owner
+# round 3: tight steps). The top block stands by the team list.
+TOTAL_STEP, DEALT_STEP, RECEIVED_STEP, PANEL_GAP = 18, 18, 20, 6
+DETAIL_Y = TOTALS_ROWS * TOTAL_STEP + PANEL_GAP
+BOTTOM_HEIGHT = DETAIL_Y + BOTTOM_ROWS * DEALT_STEP
 BOTTOM_X, BOTTOM_ABOVE, TOP_X, TOP_Y = 235, BOTTOM_HEIGHT + 12, 247, 66
 # Native battle.swf: consumablesPanel lies 56 px above the bottom of the stage. Its
 # half width is an estimate. The block is as wide as a received row. A screen too
 # narrow to keep the rows left of it shows only those above its top edge.
-BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 254, 230, 4
+BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 208, 230, 4
 KIND_EMPTY, KIND_TOTAL, KIND_DETAIL = 0, 1, 2
-# Panel edges of a row: the first rounds the top, the last the bottom.
-EDGE_TOP, EDGE_BOTTOM = 1, 2
-RED, ORANGE, GREY, GREEN, WHITE = 0xc8181e, 0xe06a1b, 0x9a9a9a, 0x5fc23a, 0xffffff
+# Owner 02.11: what the player dealt is green (crit, damage, kill), a crit taken
+# gold, damage taken red; the player's own destruction has no row.
+RED, GOLD, GREY, GREEN, WHITE = 0xc8181e, 0xd8a020, 0x9a9a9a, 0x5fc23a, 0xffffff
 # Glyph numbers of tools/battle_ui_feed_flash.py.
 CROSS, SHIELD, FLAG, EYE, CHEVRONS, KILL, TRACK, GEAR, FLAME = range(1, 10)
 RADIO = 10
 
-# Row key: group, colour, glyph, word (ref2).
+# Row key: group, colour, glyph, word (ref2), Lesta icon (owner round 3).
 RECEIVED, EFFECT = 'received', 'efficiency'
-ROWS_TABLE = {'received': (RECEIVED, RED, CROSS, 'Пробитие'),
-              'received_fire': (RECEIVED, RED, FLAME, 'Пожар'),
-              'received_ram': (RECEIVED, RED, CHEVRONS, 'Таран'),
-              'blocked': (RECEIVED, WHITE, SHIELD, 'Блок'),
-              'received_critical': (RECEIVED, ORANGE, GEAR, 'Крит'),
-              'shot': (EFFECT, GREEN, CROSS, 'Урон'),
-              'ram': (EFFECT, GREEN, CHEVRONS, 'Таран'),
-              'burned': (EFFECT, ORANGE, FLAME, 'Поджог'),
-              'critical': (EFFECT, GREEN, GEAR, 'Крит'),
-              'assist_spot': (EFFECT, GREEN, RADIO, 'Помощь'),
-              'assist_track': (EFFECT, GREEN, TRACK, 'Помощь')}
-KILLED = (KILL, 'Уничтожен')
+ROWS_TABLE = {'received': (RECEIVED, RED, CROSS, 'Пробитие', 'damageLog_damage_enemy_16x16'),
+              'received_fire': (RECEIVED, RED, FLAME, 'Пожар', 'damageLog_fire_enemy_16x16'),
+              'received_ram': (RECEIVED, RED, CHEVRONS, 'Таран', 'damageLog_ram_enemy_16x16'),
+              'blocked': (RECEIVED, WHITE, SHIELD, 'Блок', 'damageLog_reflect_16x16'),
+              'received_critical': (RECEIVED, GOLD, GEAR, 'Крит', 'damageLog_critical_enemy_16x16'),
+              'shot': (EFFECT, GREEN, CROSS, 'Урон', 'damageLog_damage_16x16'),
+              'ram': (EFFECT, GREEN, CHEVRONS, 'Таран', 'damageLog_ram_16x16'),
+              'burned': (EFFECT, GREEN, FLAME, 'Поджог', 'damageLog_fire_16x16'),
+              'critical': (EFFECT, GREEN, GEAR, 'Крит', 'damageLog_critical_16x16'),
+              'assist_spot': (EFFECT, GREEN, RADIO, 'Помощь', 'damageLog_coordinate_16x16'),
+              'assist_track': (EFFECT, GREEN, TRACK, 'Помощь', 'damageLog_immobilized_16x16')}
+KILLED = (KILL, 'Уничтожен', 'damageLog_kill_16x16')
 # Wire numbers of battle_events::FeedKind this widget reads. Ignition (7) opens the
 # row of a fire; a module hit without HP (9, 10) is its own "Крит" row (owner
 # 02.11); a kill (3) marks the row of the shot or ram that made it.
@@ -82,11 +81,11 @@ MERGED = ('burned', 'received_fire')
 SHELL_LABELS = {'armor_piercing': 'ББ', 'armor_piercing_cr': 'БП', 'hollow_charge': 'КС', 'high_explosive': 'ОФ'}
 NO_PLAQUE, NO_SHELL = -1, 0
 SHELL_STYLES = {'armor_piercing': 1, 'armor_piercing_cr': 2, 'high_explosive': 3, 'hollow_charge': 4}
-# Summary row: option key, colour, glyph, word. No row for disorientation and
-# none for burned HP (owner 02.11): it counts in the dealt sum.
-TOTALS_TABLE = (('total_dealt', GREEN, CROSS, 'Урон'),
-                ('total_blocked', WHITE, SHIELD, 'Блок'),
-                ('total_assist', GREEN, RADIO, 'Помощь'))
+# Summary row: option key, colour, glyph, word, Lesta icon. No row for
+# disorientation and none for burned HP (owner 02.11): it counts in the dealt sum.
+TOTALS_TABLE = (('total_dealt', GREEN, CROSS, 'Урон', 'damageLog_damage_16x16'),
+                ('total_blocked', WHITE, SHIELD, 'Блок', 'damageLog_reflect_16x16'),
+                ('total_assist', GREEN, RADIO, 'Помощь', 'damageLog_assist_16x16'))
 
 # Values for UI-05: key, allowed values, default; the switches of the owner's
 # target settings. Applied by apply_options at once; storage is
@@ -249,10 +248,10 @@ class History(object):
 
     def _totals(self):
         rows = []
-        for (option, colour, glyph, word), name in zip(TOTALS_TABLE, ('dealt', 'blocked', 'assist')):
+        for (option, colour, glyph, word, icon), name in zip(TOTALS_TABLE, ('dealt', 'blocked', 'assist')):
             if self.options[option]:
                 text = '%s%s' % ('{:,}'.format(self.sums[name]).replace(',', ' '), '+' if name in self.partial else '')
-                rows.append((KIND_TOTAL, colour, text, glyph, word, '', '', '', NO_PLAQUE))
+                rows.append((KIND_TOTAL, colour, text, glyph, word, '', '', '', NO_PLAQUE, icon))
         return rows
 
     def _details(self, group=None, plaques=False):
@@ -261,19 +260,20 @@ class History(object):
         wanted = self.options['events']
         rows = []
         for row in self.rows:
-            own, colour, glyph, word = ROWS_TABLE[row['key']]
+            own, colour, glyph, word, icon = ROWS_TABLE[row['key']]
             if (wanted != 'all' and own != wanted) or (group is not None and own != group):
                 continue
             if row.get('killed'):
-                glyph, word = KILLED
+                glyph, word, icon = KILLED
             shown = row['vehicle'] and self.options['show_vehicle']
             rows.append((KIND_DETAIL, colour, number(row), glyph, word, self.name_of(row['vehicle']) if shown else '',
-                         self.class_of(row['vehicle']) if shown else '') + (plaque(row) if plaques else ('', NO_PLAQUE)))
+                         self.class_of(row['vehicle']) if shown else '') + (plaque(row) if plaques else ('', NO_PLAQUE))
+                        + (icon,))
         return rows
 
     def view(self, rows=BOTTOM_ROWS):
         """Per place the flat arguments of every movie row: (id, y, kind, colour,
-        number, glyph, word, name, class, shell, shell style, step, edge). A row
+        number, glyph, word, name, class, shell, shell style, step, icon). A row
         that shows nothing has KIND_EMPTY. `rows` limits the detail rows of the
         bottom block."""
         if not self.options['enabled']:
@@ -286,7 +286,7 @@ class History(object):
         return {'bottom': bottom_rows(self._totals(), self._details(None, plaques)[:rows]), 'top': top_rows([])}
 
 
-EMPTY = (KIND_EMPTY, -1, '', 0, '', '', '', '', NO_PLAQUE)
+EMPTY = (KIND_EMPTY, -1, '', 0, '', '', '', '', NO_PLAQUE, '')
 
 
 def plaque(row):
@@ -304,31 +304,24 @@ def _pad(rows, size):
     return [rows[index] if index < len(rows) else None for index in range(size)]
 
 
-def _panel(slots, steps, ys):
-    """(id, y) + content + (step, edge) of a run of rows on one panel."""
-    filled = [index for index, content in enumerate(slots) if content is not None]
+def _rows(slots, step, ys, first=0):
+    """(id, y) + content + (step, icon): the order of ProjectHistory.row."""
     rows = []
     for index, content in enumerate(slots):
-        edge = 0
-        if filled and index == filled[0]:
-            edge |= EDGE_TOP
-        if filled and index == filled[-1]:
-            edge |= EDGE_BOTTOM
-        rows.append((ys[index], content or EMPTY, steps, edge if content else 0))
+        content = content or EMPTY
+        rows.append((first + index, ys[index]) + content[:-1] + (step, content[-1]))
     return rows
 
 
 def bottom_rows(totals, details):
     hidden = TOTALS_ROWS - len(totals)
-    sums = _panel(_pad(totals, TOTALS_ROWS), TOTAL_STEP,
-                  [PAD + (hidden + index) * TOTAL_STEP for index in range(TOTALS_ROWS)])
-    lines = _panel(_pad(details, BOTTOM_ROWS), DEALT_STEP, [DETAIL_Y + index * DEALT_STEP for index in range(BOTTOM_ROWS)])
-    return [(index, y) + content + (step, edge) for index, (y, content, step, edge) in enumerate(sums + lines)]
+    return (_rows(_pad(totals, TOTALS_ROWS), TOTAL_STEP, [(hidden + index) * TOTAL_STEP for index in range(TOTALS_ROWS)])
+            + _rows(_pad(details, BOTTOM_ROWS), DEALT_STEP, [DETAIL_Y + index * DEALT_STEP for index in range(BOTTOM_ROWS)],
+                    TOTALS_ROWS))
 
 
 def top_rows(details):
-    lines = _panel(_pad(details, TOP_ROWS), RECEIVED_STEP, [PAD + index * RECEIVED_STEP for index in range(TOP_ROWS)])
-    return [(index, y) + content + (step, edge) for index, (y, content, step, edge) in enumerate(lines)]
+    return _rows(_pad(details, TOP_ROWS), RECEIVED_STEP, [index * RECEIVED_STEP for index in range(TOP_ROWS)])
 
 
 def origin(place, screen):

@@ -121,7 +121,7 @@ class FeedTests(unittest.TestCase):
         self.feed = m.Feed({}, self.clock, {523: 'T-34'}.get, {523: 'mediumTank'}.get)
 
     def row(self, index=0):
-        return self.feed.render_args()[index * 7:index * 7 + 7]
+        return self.feed.render_args()[index * 8:index * 8 + 8]
 
     def test_every_wire_kind_has_a_row_and_a_label(self):
         for kind, key in m.FEED_ROWS.items():
@@ -130,7 +130,7 @@ class FeedTests(unittest.TestCase):
 
     def test_dealt_damage_with_name(self):
         self.assertTrue(self.feed.add(event(1, 320, 523)))
-        self.assertEqual(self.row(), [m.GREEN, '320', m.CROSS, 'Урон выстрелом', 'T-34', 5000, m.LEAF])
+        self.assertEqual(self.row(), [m.GREEN, '320', m.CROSS, 'Урон выстрелом', 'T-34', 5000, m.LEAF, 'ribbonsDamage'])
 
     def test_a_withheld_amount_stays_visibly_absent(self):
         self.feed.add(event(1))
@@ -138,7 +138,7 @@ class FeedTests(unittest.TestCase):
 
     def test_received_blocked_and_critical_rows_of_a_hit(self):
         self.feed.add(hit(damage=90, source=523, criticals=((1, 3), (4, 0))))
-        self.assertEqual(self.row(0)[:5], [m.ORANGE, 'x2', m.GEAR, 'Критическое повреждение', 'T-34'])
+        self.assertEqual(self.row(0)[:5], [m.GOLD, 'x2', m.GEAR, 'Критическое повреждение', 'T-34'])
         self.assertEqual(self.row(1)[:5], [m.RED, '90', m.SHELL_HIT, 'Получен урон', 'T-34'])
         self.assertEqual((self.row(0)[6], self.row(1)[6]), (m.GEAR, m.RING))
 
@@ -184,7 +184,7 @@ class FeedTests(unittest.TestCase):
         self.assertTrue(self.feed.expire())
         self.assertEqual(len(self.feed.rows), 1)
         self.assertFalse(self.feed.expire())
-        self.assertEqual(self.feed.render_args()[7:], list(m.EMPTY_ROW) * 2)
+        self.assertEqual(self.feed.render_args()[8:], list(m.EMPTY_ROW) * 2)
 
     def test_a_merge_refreshes_the_life_of_the_row(self):
         self.feed.add(event(1, 1, 1))
@@ -208,14 +208,14 @@ class FeedTests(unittest.TestCase):
         self.feed.add(event(1, 440, 523))
         self.feed.add(event(3, NO_VALUE, 523))
         self.assertEqual(len(self.feed.rows), 1)
-        self.assertEqual(self.row()[:5], [m.RED, '440', m.CROSS, 'Уничтожен', 'T-34'])
+        self.assertEqual(self.row()[:5], [m.GREEN, '440', m.CROSS, 'Уничтожен', 'T-34'], 'owner 02.11: a kill is green')
         self.assertEqual(self.row()[6], m.BURST)
 
     def test_damage_after_the_kill_adds_to_the_kill_row(self):
         self.feed.add(event(3, NO_VALUE, 523))
         self.feed.add(event(1, 440, 523))
         self.assertEqual(len(self.feed.rows), 1)
-        self.assertEqual(self.row()[:4], [m.RED, '440', m.CROSS, 'Уничтожен'])
+        self.assertEqual(self.row()[:4], [m.GREEN, '440', m.CROSS, 'Уничтожен'])
 
     def test_a_kill_keeps_rows_of_other_vehicles_and_a_ram(self):
         self.feed.add(event(1, 100, 600))
@@ -230,21 +230,21 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(self.row()[:3], [m.GREEN, '440', m.CROSS])
 
     def test_class_icon_by_the_native_tags(self):
-        self.assertEqual(m.class_icon(frozenset(['ussr', 'AT-SPG'])), 'AT-SPG')
-        self.assertEqual(m.class_icon(frozenset(['mediumTank'])), 'mediumTank')
+        self.assertEqual(m.class_icon(frozenset(['ussr', 'AT-SPG'])), 'whiteIconAt-SPG16x16')
+        self.assertEqual(m.class_icon(frozenset(['mediumTank'])), 'whiteIconMediumTank16x16')
         self.assertEqual(m.class_icon(frozenset(['observer'])), '')
 
     def test_origin_by_the_centre_and_the_bottom_of_the_screen(self):
-        self.assertEqual(m.origin((1920, 1080)), (960, 786))
-        self.assertEqual(m.origin((1024, 768)), (512, 474))
+        self.assertEqual(m.origin((1920, 1080)), (960, 850))
+        self.assertEqual(m.origin((1024, 768)), (512, 538))
 
     def test_a_module_hit_reads_as_the_module_of_the_own_vehicle(self):
         names = {(1, 7): 'leftTrack', (2, 3): 'engine', (3, 1): 'gunner2', (1, 9): 'unknownThing'}
         feed = m.Feed({}, self.clock, {523: 'T-34'}.get, {}.get,
                       lambda critical: m.module_phrase(critical, names.get(tuple(critical), '')))
         feed.add(hit(damage=0, verdict=1, source=523, criticals=((1, 7),)))
-        self.assertEqual(feed.render_args()[:7], [m.ORANGE, '', m.GEAR, 'Повреждена левая гусеница', 'T-34', 5000,
-                                                  m.MODULE_TRACK])
+        self.assertEqual(feed.render_args()[:8], [m.GOLD, '', m.GEAR, 'Повреждена левая гусеница', 'T-34', 5000,
+                                                  m.MODULE_TRACK, m.MODULE_ICON])
         feed.apply_options({'show_label': False})
         self.assertEqual(feed.render_args()[3], 'Повреждена левая гусеница', 'a module row is its text')
         self.assertEqual(m.module_phrase((2, 3), 'engineHealth'), ('Уничтожен двигатель', m.GEAR))
@@ -290,7 +290,7 @@ class RuntimeTests(unittest.TestCase):
 
     def test_the_native_window_is_placed_and_drawn_when_it_comes(self):
         self.runtime.attach(self.battle)
-        self.assertEqual(self.battle.places(), [[960, 786, True]])
+        self.assertEqual(self.battle.places(), [[960, 850, True]])
         self.assertEqual(self.battle.rows(), [list(m.EMPTY_ROW) * 3])
 
     def test_rows_before_the_window_wait_for_it(self):
@@ -336,7 +336,7 @@ class RuntimeTests(unittest.TestCase):
         self.runtime.show_all(False)
         self.screen = (1280, 720)
         self.runtime.resize()
-        self.assertEqual(self.battle.places()[-2:], [[960, 786, False], [640, 426, False]])
+        self.assertEqual(self.battle.places()[-2:], [[960, 850, False], [640, 490, False]])
 
     def test_a_failing_call_switches_the_feed_off_and_hides_it(self):
         self.runtime.attach(self.battle)

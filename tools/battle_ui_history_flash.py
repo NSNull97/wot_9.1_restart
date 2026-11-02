@@ -29,8 +29,9 @@ DEALT_WIDTH, DEALT_NUMBER_X, DEALT_GLYPH_X, DEALT_CLASS_X, DEALT_WORD_X, DEALT_N
 RECEIVED_WIDTH, RECEIVED_NUMBER_X, RECEIVED_GLYPH_X, RECEIVED_WORD_X = 208, -22, 38, 48
 SHELL_X, SHELL_WIDTH, SHELL_HEIGHT, SHELL_SIZE, RECEIVED_CLASS_X, RECEIVED_NAME_X = 98, 22, 12, 10, 128, 136
 NUMBER_WIDTH, NAME_WIDTH, TEXT_SIZE, TOTAL_SIZE, TOTAL_WORD_SIZE = 50, 70, 12, 14, 12
-WORD_COLOUR, NAME_COLOUR, NUMBER_COLOUR, CRITICAL_COLOUR, DASH_COLOUR = 0xdcdcdc, 0xf0f0f0, 0xffffff, 0xf0a040, 0x8c8c8c
-ORANGE = 0xe06a1b
+WORD_COLOUR, NAME_COLOUR, NUMBER_COLOUR, CRITICAL_COLOUR, DASH_COLOUR = 0xdcdcdc, 0xf0f0f0, 0xffffff, 0xf0c040, 0x8c8c8c
+# A crit taken (client_patch/project_battle_history.py GOLD) has a gold word.
+GOLD = 0xd8a020
 # A Lesta icon of the history (damageLog_*, 16 px) is drawn at its own size.
 ICON_SCALE = 100
 # Shell plaque of client_patch/project_battle_history.py: style, fill, text; -1
@@ -100,7 +101,7 @@ def detail_rows(mc, art):
                 + [text(mc, 'numberField', 10, RECEIVED_NUMBER_X, NUMBER_WIDTH, TEXT_SIZE, NUMBER_COLOUR, 'right', var('number'),
                         ('-', middle, 10)),
                    ('local', 'wordColour', WORD_COLOUR),
-                   ('if', ('==', var('colour'), ORANGE), [('assign', 'wordColour', CRITICAL_COLOUR)]),
+                   ('if', ('==', var('colour'), GOLD), [('assign', 'wordColour', CRITICAL_COLOUR)]),
                    text(mc, 'wordField', 20, RECEIVED_WORD_X, 50, TEXT_SIZE, var('wordColour'), 'left', var('word'),
                         ('-', middle, 10)),
                    ('if', ('<', -1, var('shellStyle')), plaque(mc)),

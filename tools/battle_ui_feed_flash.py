@@ -35,8 +35,9 @@ SEPARATOR = u' • '
 FADE_MS = 500
 ROW_ARGS = ('colour', 'number', 'glyph', 'label', 'vehicle', 'left', 'badge', 'icon')
 # Colours of client_patch/project_battle_feed.py: tint, light accent, text.
-RED, ORANGE, GREY, GREEN = 0xc8181e, 0xe06a1b, 0x6e6e6e, 0x3f8f24
-PALETTE = ((RED, 0xff5a4a, 0xdcdcdc), (ORANGE, 0xf0b030, 0xf0b030), (GREY, 0xd0d0d0, 0xdcdcdc), (GREEN, 0x9be04a, 0xdcdcdc))
+# Owner 02.11: effectiveness green, damage taken red, a crit taken gold.
+RED, GOLD, GREY, GREEN = 0xc8181e, 0xd8a020, 0x6e6e6e, 0x3f8f24
+PALETTE = ((RED, 0xff5a4a, 0xdcdcdc), (GOLD, 0xf0c040, 0xf0c040), (GREY, 0xd0d0d0, 0xdcdcdc), (GREEN, 0x9be04a, 0xdcdcdc))
 TEXT_COLOUR, NUMBER_COLOUR, ICON_COLOUR = 0xdcdcdc, 0xffffff, 0xe6e6e6
 # Halo: four soft dark copies around a field instead of one hard shadow.
 HALO = ((-1, -1), (1, -1), (-1, 1), (1, 1))
@@ -232,7 +233,7 @@ def text_of(label, vehicle):
 
 def row_source(art=False):
     """A panel row; the newest row is on the line Python places, the older ones
-    stand above it. An orange row is a module of the own vehicle: its icon and
+    stand above it. A gold row is a module of the own vehicle: its icon and
     its text, no badge."""
     mc = var('m')
     middle = PANEL_HEIGHT // 2
@@ -249,8 +250,8 @@ def row_source(art=False):
              + [('do', ('fn', '_projectFeedText', [mc, 'textField', 30, TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_SIZE,
                                                    var('ink'), 'left', var('line'), True]))])
     draw = palette() + panel(mc) + text_of(var('label'), var('vehicle')) + [
-        ('if', ('==', var('colour'), ORANGE), module),
-        ('if', ('==', ('==', var('colour'), ORANGE), False), event),
+        ('if', ('==', var('colour'), GOLD), module),
+        ('if', ('==', ('==', var('colour'), GOLD), False), event),
         ('set', mc, 'startedAt', ('time',)), ('set', mc, 'left', var('left')),
         ('set', mc, 'onEnterFrame', ('func', [], fade_body()))]
     body = [('local', 'm', ('call', var('feedMC'), 'createEmptyMovieClip', [('+', 'row', var('index')), ('+', 10, var('index'))])),
