@@ -326,6 +326,9 @@ class PrepareTests(unittest.TestCase):
     def test_the_look_is_on_by_default_without_the_battle_mode(self):
         for flags, look, team_killer in (({}, True, False), ({'team_killer_marker': True}, True, True),
                                          ({'native_vehicle_markers': True, 'team_killer_marker': True}, False, True)):
+            if look:
+                # Count the native icons: a checkout with borrowed icons adds their tags.
+                flags = dict(flags, vehicle_marker_art=ROOT / 'local/no-ui-art-for-this-test')
             payloads, evidence = self.markers(**flags) if team_killer else self.markers(False, **flags)
             movie = payloads[marker.TARGET]
             row = evidence['project_vehicle_markers_movie']
