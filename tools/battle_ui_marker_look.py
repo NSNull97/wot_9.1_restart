@@ -1,33 +1,46 @@
 """UI-06c: the project look of the vehicle markers inside the #717 movie.
 
 The owner's references (local/codex-tasks/BATTLE-UI-screens/ref2, not in Git) are
-the target look; nothing is taken from another client. The native logic stays:
-which parts are shown (marker settings, Alt), the order of the parts, the colour
-of a damage number (VehicleMarkerFlags.DAMAGE_COLOR by the source of the damage
-and the marker label) and every Python call of Battle.VehicleMarkersManager.
+the target look. The native logic stays: which parts are shown (marker settings,
+Alt), the order of the parts, the colour of a damage number and of the lost-HP
+splash (VehicleMarkerFlags.DAMAGE_COLOR by the source of the damage and the
+marker label) and every Python call of Battle.VehicleMarkersManager.
 
 Damage number. Each colour frame of the native label sprite holds its own text
 field, coloured, under a dark GlowFilter of the frame's PlaceObject3. The swap is
 data only, the tags keep their length: the text turns white and the glow takes
-the frame's former text colour. So the number is white with a red, gold or green
-halo exactly where #717 drew it red, gold or green.
+the frame's former text colour.
 
-Health. One DoAction wraps three native methods:
+HP number. The native soft background (bgShadow) is hidden; the HP field of
+both frames of hp_mc gets a black halo a little thicker than the native one of
+its frame `withoutBar`. Data only: the PlaceObject2 of the frame `withBar` becomes
+a PlaceObject3 with one DropShadowFilter of distance 0, the filter of the frame
+`withoutBar` is replaced by the same. The names keep their native halos.
+
+Health. One DoAction wraps native methods:
 - HealthBar.updateHealthBar and setLabel draw a thin bar of their own on a dark
-  plate, 70 px like the native bar, coloured by the frame label (blue for a team
-  killer); the native bar clip is hidden and keeps working underneath;
-- VehicleMarker.layoutParts, after the native layout: with the bar and the HP
-  number both shown, the number goes under the bar and the parts above the bar
-  move up by the height it needs. Hidden parts keep the native offsets;
-- VehicleMarker.getHelthText groups thousands in the `cur / max` format.
+  plate, 70 px like the native bar, in the native colour of the frame label (the
+  colour of the native lost-HP splash of that label; blue for a team killer); the
+  native bar clip is hidden; the native splash is squeezed to the new bar's
+  height and keeps its native colours and animation;
+- VehicleMarker.layoutParts, after the native layout: bgShadow hidden; with the
+  bar and the HP number both shown, the number goes under the bar and the parts
+  above the bar move up by the height it needs;
+- VehicleMarker.getHelthText groups thousands in the `cur / max` format;
+- VehicleMarker.setVehicleClass, with the borrowed icons of
+  tools/battle_ui_marker_art.py embedded: the class icon of the label and class
+  replaces the native one on the native 39 x 50 canvas; no such icon, a hunted
+  or speaking vehicle: the native icon.
 """
 from __future__ import annotations
 
 import struct
+import zlib
 
 from battle_ui_hit_flash import As2, expr, stmt, tag, tags, var
 
 HIT_LABEL_EXPORT = 'HitLbl'
+HEALTH_BAR_EXPORT = 'HealthBar'
 WHITE = b'\xff\xff\xff\xff'
 FILTER_GLOW = 2
 BAR_WIDTH = 70          # HealthBar.HEALTH_BAR_WIDTH of #717
@@ -37,16 +50,25 @@ PLATE, PLATE_ALPHA = 0x0e1216, 70
 # bar's top; the native number sat 3 px above the native 12 px bar.
 RISE, NUMBER_AT = 6, 4
 DEPTH = 2               # between the native bar clip (1) and hitSplash (3)
-# Bar colours by frame label: the gui_colors.xml palette of #717 where it has
-# one (greenColor, vm_squadman, blueColor, yellowColor, purpleColor), a softer red.
-COLOURS = {'green': 0x7bec37, 'red': 0xe83a32, 'gold': 0xffb964, 'blue': 0x00eaff,
-           'yellow': 0xffff00, 'purple': 0x8379fe}
+LABELS = ('green', 'red', 'gold', 'blue', 'yellow', 'purple')
+# The native splash band is 12 px tall from its origin, like the native bar.
+SPLASH_SCALE = BAR_HEIGHT * 100 / 12
+# DropShadowFilter, distance 0: colour, blur, strength. The native HP halo of the
+# frame `withoutBar` is 000c0d, 8 px, 3.7; the owner asked for one a little thicker.
+HP_HALO = (b'\0\0\0\xff', 10, 5.0)
+HALO_ANGLE = 0x0001921f   # the native angle of that filter, pi/2 in 16.16
+HALO_FIELDS = {'hpField': HP_HALO}
+# Centre of the native class icon canvas (-10..29, 0..50) in its clip.
+ICON_CX, ICON_CY = 9.5, 25
+ICON_DEPTH = 100
+FIRST_CHARACTER = 1000  # above every character of the #717 movie
 NATIVE_UPDATE, NATIVE_LABEL = 'projectLookNativeUpdate', 'projectLookNativeLabel'
 NATIVE_LAYOUT, NATIVE_TEXT = 'projectLookNativeLayout', 'projectLookNativeText'
+NATIVE_CLASS = 'projectLookNativeClass'
 ABOVE_BAR = ('vNameField', 'pNameField', 'levelIcon', 'iconLoader', 'actionMarker')
 
 
-# ---------------------------------------------------------------- damage number
+# ---------------------------------------------------------------- SWF reading
 
 def _head(body, begin):
     return 6 if struct.unpack_from('<H', body, begin)[0] & 63 == 63 else 2
@@ -74,6 +96,64 @@ def _matrix_bytes(data, at):
     return (bit + 7) // 8 - at
 
 
+def _cxform_bytes(data, at):
+    has_add, has_mult = data[at] >> 7 & 1, data[at] >> 6 & 1
+    count = data[at] >> 2 & 15
+    return (6 + count * 4 * (has_add + has_mult) + 7) // 8
+
+
+def _sprites(body, start):
+    return {struct.unpack_from('<H', body, begin + _head(body, begin))[0]: (begin, end)
+            for code, begin, end in tags(body, start) if code == 39}
+
+
+def _inner(body, begin, end):
+    sprite_at = begin + _head(body, begin)
+    return [(code, body[b + _head(body, b):e]) for code, b, e in tags(body, sprite_at + 4)]
+
+
+def _export(body, start, name):
+    for code, begin, end in tags(body, start):
+        if code != 56:
+            continue
+        data, at = body[begin + _head(body, begin):end], 2
+        for _ in range(struct.unpack_from('<H', data, 0)[0]):
+            character, stop = struct.unpack_from('<H', data, at)[0], data.index(0, at + 2)
+            if data[at + 2:stop] == name.encode():
+                return character
+            at = stop + 1
+    raise ValueError('export absent: ' + name)
+
+
+def _place2(data, clips=False):
+    """(name, offset after the name) of a named PlaceObject2, or None; one with clip
+    depth or clip actions only when `clips` (the name still comes before them)."""
+    flags = data[0]
+    if flags & 0xc0 and not clips or not flags & 0x20:
+        return None
+    at = 3 + (2 if flags & 2 else 0)
+    if flags & 4:
+        at += _matrix_bytes(data, at)
+    if flags & 8:
+        at += _cxform_bytes(data, at)
+    if flags & 0x10:
+        at += 2
+    stop = data.index(0, at)
+    return data[at:stop].decode('latin-1'), stop + 1
+
+
+def _child(body, start, sprite, name):
+    begin, end = _sprites(body, start)[sprite]
+    for code, data in _inner(body, begin, end):
+        if code == 26 and data[0] & 2:
+            place = _place2(data, clips=True)
+            if place and place[0] == name:
+                return struct.unpack_from('<H', data, 3)[0]
+    raise ValueError('child absent: ' + name)
+
+
+# ---------------------------------------------------------------- damage number
+
 def _place3(data):
     """(character, offset of the first glow colour) of a label PlaceObject3:
     character, matrix, optional ratio, name, then one glow and nothing else."""
@@ -91,24 +171,6 @@ def _place3(data):
     return character, at + 2
 
 
-def _sprites(body, start):
-    return {struct.unpack_from('<H', body, begin + _head(body, begin))[0]: (begin, end)
-            for code, begin, end in tags(body, start) if code == 39}
-
-
-def _export(body, start, name):
-    for code, begin, end in tags(body, start):
-        if code != 56:
-            continue
-        data, at = body[begin + _head(body, begin):end], 2
-        for _ in range(struct.unpack_from('<H', data, 0)[0]):
-            character, stop = struct.unpack_from('<H', data, at)[0], data.index(0, at + 2)
-            if data[at + 2:stop] == name.encode():
-                return character
-            at = stop + 1
-    raise ValueError('export absent: ' + name)
-
-
 def damage_edits(body, start):
     """{absolute offset: new 4 bytes}: every label text white, its glow the old text colour."""
     sprites = _sprites(body, start)
@@ -117,9 +179,8 @@ def damage_edits(body, start):
     for code, begin, end in tags(body, holder[0] + _head(body, holder[0]) + 4):
         if code in (26, 70):
             data = body[begin + _head(body, begin):end]
-            flags = data[0]
             at = 4 if code == 70 else 3
-            if flags & 2:
+            if data[0] & 2:
                 inner = struct.unpack_from('<H', data, at)[0]
             break
     if inner not in sprites:
@@ -157,6 +218,148 @@ def recoloured(body, start):
     return bytes(out)
 
 
+# ---------------------------------------------------------------- halos
+
+def halo(spec):
+    """A filter list of one DropShadowFilter of distance 0, three passes."""
+    colour, blur, strength = spec
+    return (b'\x01\x00' + colour + struct.pack('<IIiiH', blur << 16, blur << 16, HALO_ANGLE, 0, round(strength * 256))
+            + b'\x23')
+
+
+def _shadow_place3(data):
+    """(name, offset of the filter list) of a named PlaceObject3 with one drop shadow, or None."""
+    flags, flags2 = data[0], data[1]
+    if flags & 0xc8 or flags2 != 1 or not flags & 0x20:
+        return None
+    at = 4 + (2 if flags & 2 else 0)
+    if flags & 4:
+        at += _matrix_bytes(data, at)
+    if flags & 0x10:
+        at += 2
+    stop = data.index(0, at)
+    if data[stop + 1:stop + 3] != b'\x01\x00' or len(data) != stop + 1 + 25:
+        return None
+    return data[at:stop].decode('latin-1'), stop + 1
+
+
+def _haloed(inner):
+    """Inner tags of a sprite with the halo fields rewritten; None if none is there."""
+    out, changed = bytearray(), 0
+    for code, data in inner:
+        if code == 26:
+            place = _place2(data)
+            if place and place[0] in HALO_FIELDS:
+                data = data[:1] + b'\x01' + data[1:] + halo(HALO_FIELDS[place[0]])
+                code, changed = 70, changed + 1
+        elif code == 70:
+            place = _shadow_place3(data)
+            if place and place[0] == 'hpField':
+                data = data[:place[1]] + halo(HP_HALO)
+                changed += 1
+        out += tag(code, data)
+    return bytes(out) if changed else None
+
+
+def transform(body, start):
+    """The movie body with the damage label recoloured and the halo fields rewritten."""
+    body = recoloured(body, start)
+    out, changed = bytearray(body[:start]), 0
+    for code, begin, end in tags(body, start):
+        if code == 39:
+            inner = _haloed(_inner(body, begin, end))
+            if inner is not None:
+                sprite_at = begin + _head(body, begin)
+                out += tag(39, body[sprite_at:sprite_at + 4] + inner)
+                changed += 1
+                continue
+        out += body[begin:end]
+    if changed != 1:
+        raise ValueError('marker movie differs from the one hp_mc sprite of #717')
+    return bytes(out)
+
+
+# ---------------------------------------------------------------- native colours
+
+def _bitmap_colour(body, start, shape):
+    """Opaque colour of the band of a native splash shape (its bitmap fill)."""
+    shapes, bitmaps = {}, {}
+    for code, begin, end in tags(body, start):
+        at = begin + _head(body, begin)
+        if code == 2:
+            shapes[struct.unpack_from('<H', body, at)[0]] = body[at:end]
+        elif code == 36:
+            bitmaps[struct.unpack_from('<H', body, at)[0]] = body[at:end]
+    data = shapes[shape]
+    at = 2 + _rect_bytes(data, 2)
+    count, at, bitmap = data[at], at + 1, None
+    for _ in range(count):
+        if not 0x40 <= data[at] <= 0x43:
+            raise ValueError('splash fill differs from bitmaps')
+        found = struct.unpack_from('<H', data, at + 1)[0]
+        if found != 0xffff:
+            bitmap = found
+        at += 3 + _matrix_bytes(data, at + 3)
+    raw = bitmaps[bitmap]
+    if raw[2] != 5:
+        raise ValueError('splash bitmap differs from ARGB')
+    width, height = struct.unpack_from('<HH', raw, 3)
+    pixels = zlib.decompressobj().decompress(raw[7:], width * height * 4)
+    for y in range(height):
+        alpha, red, green, blue = pixels[y * width * 4:y * width * 4 + 4]
+        if alpha == 255:
+            return red << 16 | green << 8 | blue
+    raise ValueError('splash bitmap has no opaque band')
+
+
+def native_colours(body, start):
+    """{label: rgb} of the native lost-HP splash; blue, drawn green in #717, takes
+    the UI-06b team killer matrix of that green."""
+    splash = _child(body, start, _export(body, start, HEALTH_BAR_EXPORT), 'hitSplash')
+    begin, end = _sprites(body, start)[splash]
+    inner = next(struct.unpack_from('<H', data, 3)[0] for code, data in _inner(body, begin, end)
+                 if code == 26 and data[0] & 2)
+    begin, end = _sprites(body, start)[inner]
+    colours, label = {}, None
+    for code, data in _inner(body, begin, end):
+        if code == 43:
+            label = data[:data.index(0)].decode('ascii')
+        elif code == 26 and data[0] & 2 and label:
+            colours[label] = _bitmap_colour(body, start, struct.unpack_from('<H', data, 3)[0])
+    if set(colours) != set(LABELS):
+        raise ValueError('splash frames differ from the six labels')
+    import battle_ui_marker_flash
+    green = colours['green']
+    red, grn, blue = battle_ui_marker_flash.paint((green >> 16 & 255, green >> 8 & 255, green & 255))
+    colours['blue'] = red << 16 | grn << 8 | blue
+    return colours
+
+
+# ---------------------------------------------------------------- borrowed icons
+
+def art_tags(images):
+    """(definition tags, ExportAssets tag) of the icons as centred bitmaps."""
+    import battle_ui_hit_art as art
+    out, exported, character = bytearray(), [], FIRST_CHARACTER
+    for name in sorted(images):
+        width, height, rgba = images[name]
+        bitmap, drawn, sprite = character, character + 1, character + 2
+        character += 3
+        out += tag(36, struct.pack('<HBHH', bitmap, 5, width, height) + zlib.compress(art._rgba_to_swf(rgba), 9))
+        out += tag(2, art.shape(drawn, bitmap, width, height))
+        out += art.sprite_tags(tag, sprite, drawn)
+        exported.append(struct.pack('<H', sprite) + name.encode('ascii') + b'\0')
+    export = tag(56, struct.pack('<H', len(exported)) + b''.join(exported)) if exported else b''
+    return bytes(out), export
+
+
+def max_character(body, start):
+    """The largest character id the movie defines (first field of a definition tag)."""
+    defining = {2, 6, 7, 10, 11, 13, 14, 20, 21, 22, 32, 33, 34, 35, 36, 37, 39, 46, 48, 60, 75, 83, 84, 87, 88, 90, 91}
+    return max(struct.unpack_from('<H', body, begin + _head(body, begin))[0]
+               for code, begin, end in tags(body, start) if code in defining)
+
+
 # ---------------------------------------------------------------- AS2 helpers
 
 def _if(cond, body):
@@ -190,19 +393,24 @@ def _wrap(proto, name, native, params, body):
     return _if(('not', ('get', proto, native)), keep)
 
 
+def _native_call(native):
+    """this[native].apply(this, arguments): the native with every argument."""
+    return stmt(('do', ('call', ('get', var('this'), native), 'apply', [var('this'), var('arguments')])))
+
+
 def _rect(mc, x, y, w, h):
     return b''.join(stmt(('do', ('call', mc, op, args))) for op, args in (
         ('moveTo', [x, y]), ('lineTo', [('+', x, w), y]), ('lineTo', [('+', x, w), ('+', y, h)]),
         ('lineTo', [x, ('+', y, h)]), ('lineTo', [x, y])))
 
 
-# ---------------------------------------------------------------- the bar
+# ---------------------------------------------------------------- the wrappers
 
-def _draw():
+def _draw(fallback):
     """Body of the bar drawing, `this` being a HealthBar."""
     this = var('this')
     colours = ('get', ('get', var('_global'), 'projectMarkerLook'), 'colours')
-    mc = var('mc')
+    mc, splash = var('mc'), var('sp')
     fill = (
         stmt(('local', 'w', ('call', var('Math'), 'round',
                              [('/', ('*', BAR_WIDTH, ('get', this, '_curHealth')), ('get', this, '_maxHealth'))])))
@@ -213,14 +421,16 @@ def _draw():
     return (
         stmt(('local', 'native', ('get', this, 'healthBar')))
         + _if(var('native'), stmt(('set', var('native'), '_visible', False)))
+        + stmt(('local', 'sp', ('get', this, 'hitSplash')))
+        + _if(splash, stmt(('set', splash, '_yscale', ('/', round(SPLASH_SCALE * 1000), 1000))))
         + stmt(('local', 'mc', ('get', this, 'projectBar')))
-        + _if(('not', var('mc')), stmt(('assign', 'mc', ('call', this, 'createEmptyMovieClip', ['projectBar', DEPTH]))))
+        + _if(('not', mc), stmt(('assign', 'mc', ('call', this, 'createEmptyMovieClip', ['projectBar', DEPTH]))))
         + stmt(('do', ('call', mc, 'clear', [])))
         + stmt(('do', ('call', mc, 'beginFill', [PLATE, PLATE_ALPHA])))
         + _rect(mc, -1, -1, BAR_WIDTH + 2, BAR_HEIGHT + 2)
         + stmt(('do', ('call', mc, 'endFill', [])))
         + stmt(('local', 'c', ('get', colours, ('get', this, '_frameLabel'))))
-        + _if(('==', ('typeof', var('c')), 'undefined'), stmt(('assign', 'c', COLOURS['green'])))
+        + _if(('==', ('typeof', var('c')), 'undefined'), stmt(('assign', 'c', fallback)))
         + _if(('<', 0, ('get', this, '_maxHealth')), _if(('<', 0, ('get', this, '_curHealth')), fill))
     )
 
@@ -228,8 +438,9 @@ def _draw():
 def _layout():
     """Body of the layoutParts wrapper, `this` being a VehicleMarker."""
     this = var('this')
-    native = ('get', this, NATIVE_LAYOUT)
-    body = stmt(('do', ('call', native, 'apply', [this, var('arguments')])))
+    body = _native_call(NATIVE_LAYOUT)
+    shadow = ('get', this, 'bgShadow')
+    body += _if(shadow, stmt(('set', shadow, '_visible', False)))
     bar, number = ('get', this, 'healthBar'), ('get', this, 'hp_mc')
     move = stmt(('set', bar, '_y', ('-', ('get', bar, '_y'), RISE)))
     move += stmt(('set', number, '_y', ('+', ('get', bar, '_y'), NUMBER_AT)))
@@ -262,30 +473,55 @@ def _text():
             + _return(var('t')))
 
 
-def actions():
+def _icon():
+    """Body of the setVehicleClass wrapper, `this` being a VehicleMarker."""
+    this = var('this')
+    host = ('get', ('get', this, 'marker'), 'marker')
+    icon, old, mc = ('get', var('h'), 'icon'), ('get', var('h'), 'projectIcon'), var('mc')
+    name = ('+', ('+', ('+', 'ProjectMarkerIcon_', ('get', this, 'm_markerLabel')), '_'),
+            ('call', this, '_getVehicleClassName', []))
+    place = (stmt(('set', icon, '_visible', False))
+             + stmt(('set', mc, '_x', ('+', ('get', icon, '_x'), ('/', round(ICON_CX * 10), 10))))
+             + stmt(('set', mc, '_y', ('+', ('get', icon, '_y'), ICON_CY)))
+             + stmt(('set', mc, '_xscale', ('get', icon, '_xscale')))
+             + stmt(('set', mc, '_yscale', ('get', icon, '_yscale'))))
+    attach = (stmt(('local', 'mc', ('call', var('h'), 'attachMovie', [name, 'projectIcon', ICON_DEPTH])))
+              + _if(mc, place))
+    found = (_if(old, stmt(('do', ('call', old, 'removeMovieClip', []))))
+             + _if(('not', ('get', this, 'm_hunt')), _if(icon, attach)))
+    return _native_call(NATIVE_CLASS) + stmt(('local', 'h', host)) + _if(var('h'), found)
+
+
+def actions(colours, icons=False):
+    """The DoAction. `colours` is {label: rgb}; `icons`: borrowed icons are embedded."""
     ingame = ('get', ('get', ('get', var('_global'), 'net'), 'wargaming'), 'ingame')
     look = ('get', var('_global'), 'projectMarkerLook')
     table = stmt(('set', var('_global'), 'projectMarkerLook', ('new', 'Object', [])))
     table += stmt(('set', look, 'colours', ('new', 'Object', [])))
-    for label, colour in COLOURS.items():
-        table += stmt(('set', ('get', look, 'colours'), label, colour))
+    for label in LABELS:
+        table += stmt(('set', ('get', look, 'colours'), label, colours[label]))
     table += _method(look, 'group', ['n'], _group())
     bar_proto = ('get', ('get', ingame, 'HealthBar'), 'prototype')
     marker_proto = ('get', ('get', ingame, 'VehicleMarker'), 'prototype')
-    draw = _draw()
-    label = stmt(('do', ('call', var('this'), NATIVE_LABEL, []))) + draw
-    update = stmt(('do', ('call', var('this'), NATIVE_UPDATE, []))) + draw
+    draw = _draw(colours['green'])
     bar = (stmt(('local', 'bp', bar_proto))
-           + _wrap(var('bp'), 'updateHealthBar', NATIVE_UPDATE, [], update)
-           + _wrap(var('bp'), 'setLabel', NATIVE_LABEL, [], label))
+           + _wrap(var('bp'), 'updateHealthBar', NATIVE_UPDATE, [], _native_call(NATIVE_UPDATE) + draw)
+           + _wrap(var('bp'), 'setLabel', NATIVE_LABEL, [], _native_call(NATIVE_LABEL) + draw))
     marker = (stmt(('local', 'mp', marker_proto))
               + _wrap(var('mp'), 'layoutParts', NATIVE_LAYOUT, [], _layout())
               + _wrap(var('mp'), 'getHelthText', NATIVE_TEXT, [], _text()))
+    if icons:
+        marker += _wrap(var('mp'), 'setVehicleClass', NATIVE_CLASS, [], _icon())
     code = (_if(('not', look), table)
             + _if(('get', ingame, 'HealthBar'), bar)
             + _if(('get', ingame, 'VehicleMarker'), marker))
     return code + b'\0'
 
 
-def frame_action():
-    return tag(12, actions())
+def frame_tags(body, start, images=None):
+    """Tags added before the only ShowFrame: borrowed icons, their export, the DoAction."""
+    images = images or {}
+    if images and max_character(body, start) >= FIRST_CHARACTER:
+        raise ValueError('marker movie characters reach the icon range')
+    definitions, export = art_tags(images)
+    return definitions + export + tag(12, actions(native_colours(body, start), bool(images)))

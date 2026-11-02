@@ -146,16 +146,24 @@ def vehicle_markers(args, profile13_battle, original, evidence):
     replaces the native one in our client build, so it is on by default;
     --native-vehicle-markers keeps the #717 movie for rollback and checks.
     UI-06b --team-killer-marker paints the native bar of a team killer blue;
-    the project bar is blue for a team killer on its own."""
+    the project bar is blue for a team killer on its own.
+    Class icons (owner 2026-11-03: the Lesta ones) come from
+    --vehicle-marker-art, by default local/ui-borrowed/vehicle-markers of this
+    checkout; no folder or no file: the native icon."""
     native = getattr(args, 'native_vehicle_markers', False)
     team_killer = getattr(args, 'team_killer_marker', False)
+    art = getattr(args, 'vehicle_marker_art', None)
     if team_killer and not profile13_battle:
         raise ValueError('--team-killer-marker requires --enable-profile13-battle')
+    if native and art is not None:
+        raise ValueError('--vehicle-marker-art belongs to the project markers, not --native-vehicle-markers')
     if native and not team_killer:
         return {}
+    if art is None:
+        art = Path(__file__).resolve().parents[1] / 'local/ui-borrowed/vehicle-markers'
     import battle_ui_marker_flash
     movie, evidence['project_vehicle_markers_movie'] = battle_ui_marker_flash.payload(
-        original, look=not native, team_killer=team_killer)
+        original, look=not native, team_killer=team_killer, art=art)
     return {battle_ui_marker_flash.TARGET: movie}
 
 
@@ -703,6 +711,10 @@ def main():
                       help='Rollback and checks: keep the #717 vehicle markers. Without it the project look of '
                            'UI-06c replaces them (white damage number with a coloured halo, thin health bar with '
                            'the HP under it)')
+    prep.add_argument('--vehicle-marker-art', type=Path,
+                      help='UI-06c folder of class icons from tools/battle_ui_marker_art.py (borrowed, never in Git); '
+                           'default local/ui-borrowed/vehicle-markers of this checkout; a missing folder or file '
+                           'keeps the native icon')
     prep.add_argument('--team-killer-marker', action='store_true',
                       help='Project policy, not original 0.9.1: UI-06b the native health bar of a team killer '
                            'marker blue like its icon and name (team killers come from gateway key team_score); '

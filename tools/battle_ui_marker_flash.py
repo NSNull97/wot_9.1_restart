@@ -106,20 +106,27 @@ def actions():
     return code + b'\0'
 
 
-def build(raw, look=True, team_killer=False):
-    """The movie with the UI-06c look (data edits of the damage label and one
-    DoAction) and/or the UI-06b DoAction, both before the only ShowFrame."""
+def build(raw, look=True, team_killer=False, images=None):
+    """The movie with the UI-06c look (data edits, borrowed icons `images` of
+    tools/battle_ui_marker_art.py, one DoAction) and/or the UI-06b DoAction,
+    all added before the only ShowFrame."""
     if not look and not team_killer:
         raise ValueError('nothing to change in the marker movie')
+    if images and not look:
+        raise ValueError('borrowed icons belong to the UI-06c look')
     body = expanded(raw)
     start = ((5 + 4 * (body[0] >> 3) + 7) // 8) + 4
     rows = tags(body, start)
     frames = [row for row in rows if row[0] == 1]
     if len(frames) != 1 or rows[-2] != frames[0] or rows[-1][0] != 0:
         raise ValueError('original marker movie layout differs')
+    added = b''
     if look:
-        body = battle_ui_marker_look.recoloured(body, start)
-    added = (battle_ui_marker_look.frame_action() if look else b'') + (tag(12, actions()) if team_killer else b'')
+        added = battle_ui_marker_look.frame_tags(body, start, images)
+        body = battle_ui_marker_look.transform(body, start)
+        rows = tags(body, start)
+    if team_killer:
+        added += tag(12, actions())
     out = bytearray(body[:start])
     for code, begin, end in rows:
         if code == 1:
@@ -128,8 +135,9 @@ def build(raw, look=True, team_killer=False):
     return raw[:4] + struct.pack('<I', len(out) + 8) + zlib.compress(bytes(out), 9)
 
 
-def payload(original, look=True, team_killer=False):
-    """(movie, evidence) from the pinned original in gui.pkg."""
+def payload(original, look=True, team_killer=False, art=None):
+    """(movie, evidence) from the pinned original in gui.pkg; `art` is a folder of
+    borrowed class icons, absent or empty: the native icons."""
     with zipfile.ZipFile(Path(original) / 'res/packages/gui.pkg') as package:
         info = package.getinfo(MEMBER)
         if info.file_size > MAX_BYTES:
@@ -137,10 +145,14 @@ def payload(original, look=True, team_killer=False):
         raw = package.read(info)
     if hashlib.sha256(raw).hexdigest() != SOURCE_SHA256:
         raise ValueError('original marker movie differs from the pinned #717 bytes')
-    movie = build(raw, look, team_killer)
+    import battle_ui_marker_art
+    images = battle_ui_marker_art.load(art) if look else {}
+    movie = build(raw, look, team_killer, images)
     tools = Path(__file__).resolve().parent
     return movie, {'source_member': MEMBER, 'source_sha256': SOURCE_SHA256, 'target': TARGET,
                    'target_sha256': hashlib.sha256(movie).hexdigest(), 'look': look, 'team_killer': team_killer,
+                   'icons': len(images), 'icon_folder': None if art is None else Path(art).as_posix(),
                    'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                    'look_tool_sha256': hashlib.sha256((tools / 'battle_ui_marker_look.py').read_bytes()).hexdigest(),
+                   'art_tool_sha256': hashlib.sha256((tools / 'battle_ui_marker_art.py').read_bytes()).hexdigest(),
                    'native_render_check': 'NOT_RUN'}

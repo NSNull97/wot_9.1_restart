@@ -228,23 +228,36 @@ class Clip(Obj):
         return child
 
 
-def world():
+COLOURS = {'green': 0x94ff00, 'red': 0xff361b, 'gold': 0xffb11b, 'blue': 0x00fcff, 'yellow': 0xffec14,
+           'purple': 0x887eff}
+ICONS = {'ProjectMarkerIcon_green_heavyTank', 'ProjectMarkerIcon_red_AT-SPG'}
+
+
+def world(icons=False):
     """The two native classes with recording methods, before the DoAction runs."""
     bar_proto = Obj(updateHealthBar=Native('updateHealthBar'), setLabel=Native('setLabel'))
-    marker_proto = Obj(getHelthText=Native('getHelthText', lambda this: this.get('nativeText')))
+    marker_proto = Obj(getHelthText=Native('getHelthText', lambda this: this.get('nativeText')),
+                       _getVehicleClassName=Native('_getVehicleClassName', lambda this: this.get('m_vehicleClass')))
 
     def native_layout(this, *args):
         this.get('layoutArgs').append(args)
         for name, y in NATIVE_Y.items():
             if this.get(name) is not UNDEFINED:
                 this.get(name).set('_y', y)
+        if this.get('bgShadow') is not UNDEFINED:
+            this.get('bgShadow').set('_visible', True)
+
+    def native_class(this, *args):
+        icon = this.get('marker').get('marker').get('icon')
+        icon.set('_visible', not this.get('m_hunt'))
     marker_proto.set('layoutParts', Native('layoutParts', native_layout))
+    marker_proto.set('setVehicleClass', Native('setVehicleClass', native_class))
     ingame = {'HealthBar': {'prototype': bar_proto}, 'VehicleMarker': {'prototype': marker_proto}}
     scope = {'_global': {'net': {'wargaming': {'ingame': ingame}}}, 'Object': lambda: Obj(),
              'Math': {'round': Native('round', lambda this, v: math.floor(v + 0.5))},
              'String': Native('String', lambda this, v: text(v))}
     vm = Vm()
-    vm.run(look.actions(), [scope])
+    vm.run(look.actions(COLOURS, icons), [scope])
     return vm, scope, bar_proto, marker_proto
 
 
@@ -254,7 +267,8 @@ NATIVE_Y = {'actionMarker': -93, 'iconLoader': -86, 'levelIcon': -74, 'vNameFiel
 
 
 def _bar(proto, label, cur, top):
-    clip = Clip('HealthBar', _frameLabel=label, _curHealth=cur, _maxHealth=top, healthBar=Clip('healthBar', _visible=True))
+    clip = Clip('HealthBar', _frameLabel=label, _curHealth=cur, _maxHealth=top, healthBar=Clip('healthBar', _visible=True),
+                hitSplash=Clip('hitSplash', _yscale=100))
     clip.proto = proto
     return clip
 
@@ -282,26 +296,36 @@ class BarTests(unittest.TestCase):
         self.assertFalse(clip.get('healthBar').get('_visible'))
         self.assertEqual(clip.get('projectBar').get('_depth'), look.DEPTH)
         fills, rows = self.fill(clip)
-        self.assertEqual(fills, [('beginFill', look.PLATE, look.PLATE_ALPHA), ('beginFill', look.COLOURS['green'], 100)])
+        self.assertEqual(fills, [('beginFill', look.PLATE, look.PLATE_ALPHA), ('beginFill', COLOURS['green'], 100)])
         width = math.floor(look.BAR_WIDTH * 746 / 1950 + 0.5)
         self.assertIn(('lineTo', width, look.BAR_HEIGHT), rows)
         self.assertIn(('lineTo', look.BAR_WIDTH + 1, look.BAR_HEIGHT + 1), rows)
+
+    def test_the_native_splash_is_squeezed_to_the_bar_and_keeps_its_colours(self):
+        clip = _bar(self.bar_proto, 'red', 500, 1000)
+        self.update(clip)
+        splash = clip.get('hitSplash')
+        self.assertAlmostEqual(splash.get('_yscale') * 12 / 100, look.BAR_HEIGHT, places=2)
+        self.assertEqual(splash.calls, [])
+        self.assertNotIn('filters', splash.members)
+        self.update(clip)
+        self.assertAlmostEqual(splash.get('_yscale') * 12 / 100, look.BAR_HEIGHT, places=2)
 
     def test_label_change_repaints_and_team_killer_is_blue(self):
         clip = _bar(self.bar_proto, 'blue', 500, 1000)
         self.update(clip, 'setLabel')
         self.assertEqual(clip.calls[0][0], 'setLabel')
         fills, _ = self.fill(clip)
-        self.assertEqual(fills[-1], ('beginFill', look.COLOURS['blue'], 100))
+        self.assertEqual(fills[-1], ('beginFill', COLOURS['blue'], 100))
         for label in ('red', 'gold', 'yellow', 'purple'):
             clip = _bar(self.bar_proto, label, 500, 1000)
             self.update(clip)
-            self.assertEqual(self.fill(clip)[0][-1], ('beginFill', look.COLOURS[label], 100))
+            self.assertEqual(self.fill(clip)[0][-1], ('beginFill', COLOURS[label], 100))
 
     def test_unknown_label_falls_back_to_green_and_empty_health_draws_only_the_plate(self):
         clip = _bar(self.bar_proto, 'unknown', 500, 1000)
         self.update(clip)
-        self.assertEqual(self.fill(clip)[0][-1], ('beginFill', look.COLOURS['green'], 100))
+        self.assertEqual(self.fill(clip)[0][-1], ('beginFill', COLOURS['green'], 100))
         for cur, top in ((0, 1000), (500, math.nan), (500, 0)):
             clip = _bar(self.bar_proto, 'red', cur, top)
             self.update(clip)
@@ -325,8 +349,7 @@ class LayoutTests(unittest.TestCase):
         parts = {name: Clip(name, _visible=True, _y=0) for name in NATIVE_Y}
         parts['hp_mc'].set('_visible', hp)
         parts['healthBar'].set('_visible', bar)
-        clip = Obj(self.marker_proto, layoutArgs=[], **parts)
-        return clip
+        return Obj(self.marker_proto, layoutArgs=[], bgShadow=Clip('bgShadow', _visible=True), **parts)
 
     def layout(self, clip, args=('visible',)):
         self.vm.invoke(self.marker_proto.get('layoutParts'), clip, list(args))
@@ -342,6 +365,12 @@ class LayoutTests(unittest.TestCase):
             self.assertEqual(ys[name], NATIVE_Y[name] - look.RISE)
         self.assertLessEqual(ys['hp_mc'] + 3 + 11, NATIVE_Y['healthBar'] + 12, 'number ends inside the native bar box')
 
+    def test_the_soft_background_is_hidden_after_every_layout(self):
+        for hp, bar in ((True, True), (False, True), (True, False)):
+            clip = self.marker(hp, bar)
+            self.layout(clip)
+            self.assertFalse(clip.get('bgShadow').get('_visible'))
+
     def test_repeated_layout_does_not_drift_and_hidden_parts_keep_the_native_layout(self):
         clip = self.marker()
         self.assertEqual(self.layout(clip), self.layout(clip))
@@ -350,8 +379,8 @@ class LayoutTests(unittest.TestCase):
 
     def test_missing_parts_are_skipped(self):
         clip = self.marker()
-        del clip.members['levelIcon']
         clip.members['levelIcon'] = UNDEFINED
+        clip.members['bgShadow'] = UNDEFINED
         self.vm.invoke(self.marker_proto.get('layoutParts'), clip, [])
 
 
@@ -375,12 +404,71 @@ class TextTests(unittest.TestCase):
 
     def test_install_is_idempotent(self):
         before = dict(self.marker_proto.members), dict(self.bar_proto.members)
-        self.vm.run(look.actions(), [self.scope])
+        self.vm.run(look.actions(COLOURS), [self.scope])
         self.assertEqual((dict(self.marker_proto.members), dict(self.bar_proto.members)), before)
 
 
+class Host(Clip):
+    """The native `marker.marker` clip: attachMovie knows only the exported icons."""
+
+    def __init__(self):
+        Clip.__init__(self, 'marker', icon=Clip('icon', _x=-9, _y=-7, _xscale=100, _yscale=100, _visible=True))
+        self.set('attachMovie', Native('attachMovie', self._attach))
+
+    def _attach(self, this, linkage, name, depth):
+        if linkage not in ICONS:
+            return UNDEFINED
+        child = Clip(linkage, _depth=depth)
+        child.set('removeMovieClip', Native('removeMovieClip', lambda this: self.members.pop(name, None)))
+        self.set(name, child)
+        return child
+
+
+class IconTests(unittest.TestCase):
+    def setUp(self):
+        self.vm, self.scope, self.bar_proto, self.marker_proto = world(icons=True)
+
+    def marker(self, label='green', cls='heavyTank', hunt=False):
+        host = Host()
+        return Obj(self.marker_proto, marker=Clip('outer', marker=host), m_markerLabel=label, m_vehicleClass=cls,
+                   m_hunt=hunt), host
+
+    def set_class(self, clip):
+        self.vm.invoke(self.marker_proto.get('setVehicleClass'), clip, [])
+
+    def test_the_borrowed_icon_replaces_the_native_one_on_its_canvas(self):
+        clip, host = self.marker()
+        self.set_class(clip)
+        icon, mine = host.get('icon'), host.get('projectIcon')
+        self.assertEqual(mine.name, 'ProjectMarkerIcon_green_heavyTank')
+        self.assertFalse(icon.get('_visible'))
+        self.assertEqual((mine.get('_x'), mine.get('_y')), (-9 + look.ICON_CX, -7 + look.ICON_CY))
+        self.assertEqual(mine.get('_depth'), look.ICON_DEPTH)
+
+    def test_a_label_change_swaps_the_icon_and_a_missing_one_keeps_the_native(self):
+        clip, host = self.marker()
+        self.set_class(clip)
+        clip.set('m_markerLabel', 'gold')
+        self.set_class(clip)
+        self.assertIs(host.get('projectIcon'), UNDEFINED)
+        self.assertTrue(host.get('icon').get('_visible'))
+
+    def test_hunted_and_speaking_vehicles_keep_the_native_icon(self):
+        clip, host = self.marker(hunt=True)
+        self.set_class(clip)
+        self.assertIs(host.get('projectIcon'), UNDEFINED)
+        clip, host = self.marker(cls='dynamic')
+        self.set_class(clip)
+        self.assertIs(host.get('projectIcon'), UNDEFINED)
+        self.assertTrue(host.get('icon').get('_visible'))
+
+    def test_without_icons_the_class_method_stays_native(self):
+        _, _, _, proto = world(icons=False)
+        self.assertEqual(proto.get('setVehicleClass').name, 'setVehicleClass')
+
+
 @unittest.skipUnless(PACKAGE.is_file(), 'original client absent')
-class DamageNumberTests(unittest.TestCase):
+class MovieTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         with zipfile.ZipFile(PACKAGE) as package:
@@ -408,16 +496,6 @@ class DamageNumberTests(unittest.TestCase):
         self.assertTrue(set(changed) <= allowed)
         self.assertEqual(len(new), len(self.body))
 
-    def test_the_built_movie_adds_one_action_to_the_recoloured_movie(self):
-        movie = expanded(flash.build(self.raw))
-        rows_old, rows_new = tags(self.body, self.start), tags(movie, self.start)
-        self.assertEqual(len(rows_new), len(rows_old) + 1)
-        recoloured = look.recoloured(self.body, self.start)
-        old = [recoloured[b:e] for _, b, e in rows_old]
-        new = [movie[b:e] for _, b, e in rows_new]
-        self.assertEqual(new[:-3] + new[-2:], old)
-        self.assertEqual(new[-3], look.frame_action())
-
     def test_a_label_without_its_single_glow_is_refused(self):
         edits = look.damage_edits(self.body, self.start)
         glow = next(at for at, value in edits.items() if value != look.WHITE)
@@ -425,6 +503,55 @@ class DamageNumberTests(unittest.TestCase):
         damaged[glow - 1] = 3   # a bevel instead of the glow
         with self.assertRaises(ValueError):
             look.damage_edits(bytes(damaged), self.start)
+
+    def hp_sprite(self, body):
+        begin, end = look._sprites(body, self.start)[330]
+        return look._inner(body, begin, end)
+
+    def test_both_hp_frames_get_the_same_black_halo_and_nothing_else_changes(self):
+        new = look.transform(self.body, self.start)
+        old_rows, new_rows = tags(self.body, self.start), tags(new, self.start)
+        self.assertEqual(len(old_rows), len(new_rows))
+        recoloured = look.recoloured(self.body, self.start)
+        differ = [code for (code, b0, e0), (_, b1, e1) in zip(old_rows, new_rows) if recoloured[b0:e0] != new[b1:e1]]
+        self.assertEqual(differ, [39])
+        places = [data for code, data in self.hp_sprite(new) if code in (26, 70)]
+        self.assertEqual([data[1] for data in places], [1, 1])
+        for data in places:
+            self.assertTrue(data.endswith(look.halo(look.HP_HALO)))
+            self.assertIn(b'hpField\0', data)
+        old = [data for code, data in self.hp_sprite(self.body) if code in (26, 70)]
+        self.assertEqual(places[0][0], old[0][0])
+        self.assertEqual(places[0][2:places[0].index(b'hpField')], old[0][1:old[0].index(b'hpField')])
+        self.assertEqual(places[1][:places[1].index(b'\0', 6) + 1], old[1][:old[1].index(b'\0', 6) + 1])
+
+    def test_halo_is_black_and_a_little_thicker_than_the_native(self):
+        native = [data for code, data in self.hp_sprite(self.body) if code == 70][0]
+        filters = native[native.index(b'hpField\0') + 8:]
+        blur = struct.unpack_from('<I', filters, 6)[0] / 65536
+        strength = struct.unpack_from('<H', filters, 22)[0] / 256
+        mine = look.halo(look.HP_HALO)
+        self.assertEqual(mine[2:6], b'\0\0\0\xff')
+        self.assertGreater(struct.unpack_from('<I', mine, 6)[0] / 65536, blur)
+        self.assertGreater(struct.unpack_from('<H', mine, 22)[0] / 256, strength)
+        self.assertEqual(mine[14:18], filters[14:18], 'native angle')
+        self.assertEqual(struct.unpack_from('<i', mine, 18)[0], 0, 'distance 0: a halo')
+
+    def test_native_colours_are_the_splash_colours_and_blue_is_the_team_killer_green(self):
+        colours = look.native_colours(self.body, self.start)
+        self.assertEqual(colours, COLOURS)
+
+    def test_the_built_movie_adds_icons_their_export_and_one_action(self):
+        images = {'ProjectMarkerIcon_green_heavyTank': (39, 50, bytes(39 * 50 * 4))}
+        movie = expanded(flash.build(self.raw, images=images))
+        rows_old, rows_new = tags(self.body, self.start), tags(movie, self.start)
+        self.assertEqual(len(rows_new), len(rows_old) + 3 + 1 + 1)
+        self.assertEqual([code for code, _, _ in rows_new[-7:]], [36, 2, 39, 56, 12, 1, 0])
+        self.assertEqual(movie[rows_new[-3][1]:rows_new[-3][2]],
+                         flash.tag(12, look.actions(look.native_colours(self.body, self.start), True)))
+
+    def test_icons_never_collide_with_native_characters(self):
+        self.assertLess(look.max_character(self.body, self.start), look.FIRST_CHARACTER)
 
 
 def as2_structure(code):
@@ -457,11 +584,8 @@ def as2_structure(code):
 
 class StructureTests(unittest.TestCase):
     def test_every_branch_lands_on_an_instruction(self):
-        as2_structure(look.actions()[:-1])
-
-    def test_colours_are_the_palette(self):
-        self.assertEqual(set(look.COLOURS), {'green', 'red', 'gold', 'blue', 'yellow', 'purple'})
-        self.assertEqual(look.COLOURS['blue'], 0x00eaff)
+        for icons in (False, True):
+            as2_structure(look.actions(COLOURS, icons)[:-1])
 
 
 if __name__ == '__main__':
