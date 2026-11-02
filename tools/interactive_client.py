@@ -411,6 +411,10 @@ def prepare(args):
         movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(original)
         payloads[battle_ui_hit_flash.TARGET] = movie
     feed_view = getattr(args, 'battle_feed', None)
+    history_view = getattr(args, 'battle_history', None)
+    feed_art = getattr(args, 'battle_feed_art', None)
+    if feed_art is not None and feed_view is None and history_view is None:
+        raise ValueError('--battle-feed-art requires --battle-feed or --battle-history')
     if feed_view is not None:
         # UI-03 owner order 2026-11-01: needs gateway `battle_events.feed` and
         # the hit indicator's channel; without the key no row ever appears.
@@ -418,9 +422,8 @@ def prepare(args):
             raise ValueError('--battle-feed requires --hit-indicator: it uses the same channel')
         settings['battle_feed'] = battle_feed_policy().prepare_settings(feed_view)
         import battle_ui_feed_flash
-        movie, resource_evidence['project_battle_feed_movie'] = battle_ui_feed_flash.payload(original)
+        movie, resource_evidence['project_battle_feed_movie'] = battle_ui_feed_flash.payload(original, feed_art)
         payloads[battle_ui_feed_flash.TARGET] = movie
-    history_view = getattr(args, 'battle_history', None)
     if history_view is not None:
         # UI-04 owner order 2026-11-01: needs gateway `battle_events.history` and
         # the hit indicator's channel; without the key the widget stays empty.
@@ -428,7 +431,7 @@ def prepare(args):
             raise ValueError('--battle-history requires --hit-indicator: it uses the same channel')
         settings['battle_history'] = battle_history_policy().prepare_settings(history_view)
         import battle_ui_history_flash
-        movie, resource_evidence['project_battle_history_movie'] = battle_ui_history_flash.payload(original)
+        movie, resource_evidence['project_battle_history_movie'] = battle_ui_history_flash.payload(original, feed_art)
         payloads[battle_ui_history_flash.TARGET] = movie
     if getattr(args, 'battle_settings', False):
         # UI-05 owner order 2026-11-01: the tab of the native settings windows.
@@ -671,6 +674,9 @@ def main():
                       help='Project policy, not original 0.9.1: UI-04 battle history, the sums of the battle and '
                            'the rows by vehicle, received damage below or at the top of the screen (gateway key '
                            'battle_events.history); requires --hit-indicator; off by default')
+    prep.add_argument('--battle-feed-art', type=Path,
+                      help='Project policy, not original 0.9.1: UI-03b local folder of feed and history sprites from '
+                           'tools/battle_ui_art.py; a folder without them keeps the drawn graphics')
     prep.add_argument('--battle-settings', action='store_true',
                       help='Project policy, not original 0.9.1: UI-05 tab of the native settings windows for the '
                            'three widgets, stored in the local profile; requires --hit-indicator, --battle-feed and '

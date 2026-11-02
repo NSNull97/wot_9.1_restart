@@ -103,6 +103,8 @@ v1 и v2, а строки ботов считаются как остальны�
 (`all`/`efficiency`/`received`), `detail` (`always`/`alt`/`hidden`), `total_dealt`, `total_blocked`, `total_assist`,
 `total_burned`, `show_vehicle`. `policy().apply_options(...)` меняет экран сразу. Хранение — за UI-05.
 
+Вид, места на экране и графика заменены карточкой UI-03b: [раздел «Вид»](UI03_BATTLE_FEEDS.md#вид-ui-03b). Абзацы выше о сдвиге компонента, размере фильма и 6 строках устарели.
+
 ## Итог
 
 Новые: `client_patch/project_battle_history.py`, `tools/battle_ui_history_flash.py`,

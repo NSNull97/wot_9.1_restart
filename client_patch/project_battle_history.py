@@ -9,10 +9,11 @@ sums of the battle and the rows by vehicle and never estimates: an amount the
 server withheld stays absent, and a sum that lacks one carries a '+' until the
 last record of the battle replaces it with the exact number.
 
-Up to two native GUI.Flash components over ProjectBattleHistory.swf, placed like
-the native hit indicator by a clip offset, are activated on the first fact. Any
-failure switches the history off for the session; the battle and the native HUD
-go on.
+Up to two native GUI.Flash components over ProjectBattleHistory.swf fill the screen
+as the native Aim does, the movie is in noScale, so the place of a block comes in
+screen pixels and follows the resolution. They are activated on the first fact.
+Any failure switches the history off for the session; the battle and the native
+HUD go on.
 
 Pure Python 2.7 at import time: prepare (Python 3) and tests load this module;
 engine modules and project_battle_feed are imported only by install().
@@ -26,40 +27,44 @@ EVENT = 'project_battle_history'
 FEATURE = 'sr_battle_history'
 MOVIE = 'ProjectBattleHistory.swf'
 CALLBACK = 'ProjectHistory.row'
-MOVIE_SIZE = [680, 680]
+PLACE_CALLBACK = 'ProjectHistory.place'
 # Rows on screen: all in one list, or each group in its own place.
-BOTTOM_ROWS, TOP_ROWS = 6, 5
+BOTTOM_ROWS, TOP_ROWS = 4, 4
 KEPT_ROWS = 16
 TOTALS_ROWS = 4
 ALT_PERIOD = 0.1
-# Pixels between the movie and the screen edge; chosen by screenshots 07 and 08.
-BOTTOM_MARGIN, TOP_MARGIN = 118, 24
-# Movie coordinates of tools/battle_ui_history_flash.py.
-ROW_HEIGHT, TOTAL_HEIGHT, TOTALS_GAP = 22, 24, 8
-DETAIL_Y = MOVIE_SIZE[1] - BOTTOM_ROWS * ROW_HEIGHT
-TOTALS_Y = DETAIL_Y - TOTALS_GAP - TOTALS_ROWS * TOTAL_HEIGHT
+# Block coordinates, chosen by the owner's screenshots 07 and 08 and the native
+# battle.swf: consumablesPanel lies 56 px above the bottom of the 768 stage and
+# damagePanel takes the left 230 px.
+ROW_HEIGHT, TOTAL_HEIGHT, TOTALS_GAP = 20, 22, 7
+TOTALS_Y = 0
+DETAIL_Y = TOTALS_ROWS * TOTAL_HEIGHT + TOTALS_GAP
+BOTTOM_HEIGHT = DETAIL_Y + BOTTOM_ROWS * ROW_HEIGHT
+BOTTOM_LEFT, TOP_LEFT, BOTTOM_MARGIN, TOP_Y, DAMAGE_PANEL = 279, 232, 64, 72, 238
 KIND_EMPTY, KIND_TOTAL, KIND_DETAIL = 0, 1, 2
 RED, ORANGE, GREY, GREEN, WHITE = 0xc8181e, 0xe06a1b, 0x9a9a9a, 0x5fc23a, 0xffffff
 # Glyph numbers of tools/battle_ui_feed_flash.py.
 CROSS, SHIELD, FLAG, EYE, CHEVRONS, KILL, TRACK, GEAR, FLAME = range(1, 10)
 
-# Row key: group, colour, glyph.
+# Row key: group, colour, glyph, sprite.
 RECEIVED, EFFECT = 'received', 'efficiency'
-ROWS_TABLE = {'received': (RECEIVED, RED, CROSS),
-              'blocked': (RECEIVED, GREY, SHIELD),
-              'received_critical': (RECEIVED, ORANGE, GEAR),
-              'shot': (EFFECT, GREEN, CROSS),
-              'ram': (EFFECT, GREEN, CHEVRONS),
-              'burned': (EFFECT, ORANGE, FLAME),
-              'assist_spot': (EFFECT, GREEN, EYE),
-              'assist_track': (EFFECT, GREEN, TRACK)}
+ROWS_TABLE = {'received': (RECEIVED, RED, CROSS, 'damageLog_damage_enemy_16x16'),
+              'blocked': (RECEIVED, GREY, SHIELD, 'damageLog_reflect_16x16'),
+              'received_critical': (RECEIVED, ORANGE, GEAR, 'damageLog_critical_enemy_16x16'),
+              'shot': (EFFECT, GREEN, CROSS, 'damageLog_damage_16x16'),
+              'ram': (EFFECT, GREEN, CHEVRONS, 'damageLog_ram_16x16'),
+              'burned': (EFFECT, ORANGE, FLAME, 'damageLog_fire_16x16'),
+              'assist_spot': (EFFECT, GREEN, EYE, 'damageLog_coordinate_16x16'),
+              'assist_track': (EFFECT, GREEN, TRACK, 'damageLog_immobilized_16x16')}
 # Wire numbers of battle_events::FeedKind this widget reads. Ignition (7) has no
 # amount: the row of a fire appears with its first burned HP.
 FEED_ROWS = {1: 'shot', 2: 'ram', 8: 'burned', 11: 'received', 12: 'received', 14: 'assist_spot', 15: 'assist_track'}
-# Summary row: option key, colour, glyph. No row for disorientation: the owner
-# does not carry that mechanic over.
-TOTALS_TABLE = (('total_dealt', GREEN, CROSS), ('total_blocked', WHITE, SHIELD),
-                ('total_assist', GREEN, EYE), ('total_burned', ORANGE, FLAME))
+# Summary row: option key, colour, glyph, sprite. No row for disorientation: the
+# owner does not carry that mechanic over.
+TOTALS_TABLE = (('total_dealt', GREEN, CROSS, 'damageLog_damage_16x16'),
+                ('total_blocked', WHITE, SHIELD, 'damageLog_reflect_16x16'),
+                ('total_assist', GREEN, EYE, 'damageLog_assist_16x16'),
+                ('total_burned', ORANGE, FLAME, 'damageLog_fire_16x16'))
 
 # Values for UI-05: key, allowed values, default; the switches of the owner's
 # target settings. Applied by apply_options at once; storage is
@@ -137,10 +142,10 @@ def number(row):
 class History(object):
     """Everything that decides; the name lookup is a seam."""
 
-    def __init__(self, options, name_of):
-        if not callable(name_of):
-            raise TypeError('battle history requires a callable seam')
-        self.options, self.name_of = checked_options(options), name_of
+    def __init__(self, options, name_of, class_of):
+        if not (callable(name_of) and callable(class_of)):
+            raise TypeError('battle history requires callable seams')
+        self.options, self.name_of, self.class_of = checked_options(options), name_of, class_of
         self.rows = []
         self.reset()
 
@@ -196,10 +201,10 @@ class History(object):
 
     def _totals(self):
         rows = []
-        for (option, colour, glyph), name in zip(TOTALS_TABLE, ('dealt', 'blocked', 'assist', 'burned')):
+        for (option, colour, glyph, icon), name in zip(TOTALS_TABLE, ('dealt', 'blocked', 'assist', 'burned')):
             if self.options[option]:
                 text = '%d%s' % (self.sums[name], '+' if name in self.partial else '')
-                rows.append((KIND_TOTAL, colour, text, glyph, ''))
+                rows.append((KIND_TOTAL, colour, text, glyph, '', icon, ''))
         return rows
 
     def _details(self, group=None):
@@ -208,17 +213,18 @@ class History(object):
         wanted = self.options['events']
         rows = []
         for row in self.rows:
-            own = ROWS_TABLE[row['key']][0]
+            own, colour, glyph, icon = ROWS_TABLE[row['key']]
             if (wanted != 'all' and own != wanted) or (group is not None and own != group):
                 continue
-            _, colour, glyph = ROWS_TABLE[row['key']]
-            name = self.name_of(row['vehicle']) if row['vehicle'] and self.options['show_vehicle'] else ''
-            rows.append((KIND_DETAIL, colour, number(row), glyph, name))
+            shown = row['vehicle'] and self.options['show_vehicle']
+            rows.append((KIND_DETAIL, colour, number(row), glyph, self.name_of(row['vehicle']) if shown else '', icon,
+                         self.class_of(row['vehicle']) if shown else ''))
         return rows
 
     def view(self):
         """Per place the flat arguments of every movie row: (id, y, kind, colour,
-        number, glyph, name). A row that shows nothing has KIND_EMPTY."""
+        number, glyph, name, icon, class icon). A row that shows nothing has
+        KIND_EMPTY."""
         if not self.options['enabled']:
             return {'bottom': bottom_rows([], []), 'top': top_rows([])}
         if self.options['layout'] == 'top':
@@ -227,7 +233,7 @@ class History(object):
 
 
 def _row(index, y, content):
-    return (index, y) + (content or (KIND_EMPTY, -1, '', 0, ''))
+    return (index, y) + (content or (KIND_EMPTY, -1, '', 0, '', '', ''))
 
 
 def _pad(rows, size):
@@ -244,20 +250,21 @@ def top_rows(details):
     return [_row(index, index * ROW_HEIGHT, content) for index, content in enumerate(_pad(details, TOP_ROWS))]
 
 
-def clip_position(place, screen):
-    """Clip offset of a centred movie: native _DamageIndicator.setup moves its
-    component the same way. Only the height of the screen changes it."""
-    height = float(screen[1])
-    pixel = TOP_MARGIN + MOVIE_SIZE[1] / 2.0 if place == 'top' else height - BOTTOM_MARGIN - MOVIE_SIZE[1] / 2.0
-    return 0.0, 1.0 - 2.0 * pixel / height
+def origin(place, screen):
+    """Screen pixel of the top left of a block, by the screen centre as the native
+    ammo panel. A narrow screen moves the bottom block off the damage panel."""
+    centre = int(screen[0] / 2.0)
+    if place == 'top':
+        return centre - TOP_LEFT, TOP_Y
+    return max(centre - BOTTOM_LEFT, DAMAGE_PANEL), int(screen[1]) - BOTTOM_MARGIN - BOTTOM_HEIGHT
 
 
-def widget_class(base, depth):
-    """Sized as the native _DamageIndicator; no input of its own."""
+def widget_class(base, depth, screen):
+    """Fills the screen as the native Aim, in pixels; no input of its own."""
 
     class ProjectHistoryWidget(base):
 
-        def __init__(self, x, y):
+        def __init__(self):
             base.__init__(self, MOVIE)
             self.component.wg_inputKeyMode = 2
             self.component.position.z = depth
@@ -267,12 +274,11 @@ def widget_class(base, depth):
             self.component.heightMode = 'PIXEL'
             self.component.widthMode = 'PIXEL'
             # GUI.Flash.size takes a tuple of floats, as GUI.screenResolution() in Aim.
-            self.flashSize = (float(MOVIE_SIZE[0]), float(MOVIE_SIZE[1]))
-            self.place(x, y)
+            self.flashSize = (float(screen()[0]), float(screen()[1]))
 
-        def place(self, x, y):
-            self.component.position.x = x
-            self.component.position.y = y
+        def fit(self):
+            self.flashSize = (float(screen()[0]), float(screen()[1]))
+            self.component.size = self.flashSize
 
     return ProjectHistoryWidget
 
@@ -325,10 +331,10 @@ class Runtime(object):
             if place not in self.widgets:
                 if not filled:
                     continue
-                x, y = clip_position(place, self.screen())
-                widget = self.make_widget(x, y)
+                widget = self.make_widget()
                 widget.active(True)
                 widget.component.visible = self.visible
+                widget.call(PLACE_CALLBACK, list(origin(place, self.screen())))
                 self.widgets[place], self.sent[place] = widget, {}
             for row in rows:
                 if self.sent[place].get(row[0]) != row:
@@ -356,7 +362,8 @@ class Runtime(object):
             return
         try:
             for place, widget in self.widgets.items():
-                widget.place(*clip_position(place, self.screen()))
+                widget.fit()
+                widget.call(PLACE_CALLBACK, list(origin(place, self.screen())))
         except Exception:
             self.fail('resize')
 
@@ -397,12 +404,16 @@ def install(record, options, channel):
         row = BigWorld.player().arena.vehicles.get(vehicle)
         return '' if row is None else row['vehicleType'].type.shortUserString
 
+    def class_of(vehicle):
+        row = BigWorld.player().arena.vehicles.get(vehicle)
+        return '' if row is None else project_battle_feed.class_icon(row['vehicleType'].type.tags)
+
     def alt_down():
         return BigWorld.isKeyDown(Keys.KEY_LALT) or BigWorld.isKeyDown(Keys.KEY_RALT)
 
-    history = History(options, name_of)
-    runtime = Runtime(history, widget_class(Flash, aims.DEPTH_OF_Aim), GUI.screenResolution, alt_down,
-                      BigWorld.callback, BigWorld.cancelCallback, record)
+    history = History(options, name_of, class_of)
+    runtime = Runtime(history, widget_class(Flash, aims.DEPTH_OF_Aim, GUI.screenResolution), GUI.screenResolution,
+                      alt_down, BigWorld.callback, BigWorld.cancelCallback, record)
 
     def on_avatar_ready():
         runtime.ready()

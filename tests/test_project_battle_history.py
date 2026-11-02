@@ -36,7 +36,7 @@ def totals(**fields):
 
 
 def history(**options):
-    return m.History(options, lambda vehicle: 'tank%d' % vehicle)
+    return m.History(options, lambda vehicle: 'tank%d' % vehicle, lambda vehicle: 'class%d' % vehicle)
 
 
 def filled(rows):
@@ -60,9 +60,10 @@ class WidgetSizeTests(unittest.TestCase):
             def __init__(self, movie):
                 self.component, self.movie = Holder(), Holder()
                 self.component.position = Holder()
-        size = m.widget_class(Base, 0.5)(0, 0).flashSize
+        size = m.widget_class(Base, 0.5, lambda: (1920, 1080))().flashSize
         self.assertIs(type(size), tuple)
         self.assertEqual([type(value) for value in size], [float, float])
+        self.assertEqual(size, (1920.0, 1080.0))
 
 
 class WireTests(unittest.TestCase):
@@ -207,19 +208,63 @@ class LayoutTests(unittest.TestCase):
         view = self.fill(enabled=False).view()
         self.assertEqual(filled(view['bottom']) + filled(view['top']), [])
 
-    def test_ids_are_stable_and_inside_the_movie(self):
+    def test_ids_are_stable_and_rows_keep_their_step(self):
         view = self.fill(layout='top').view()
         self.assertEqual([row[0] for row in view['bottom']], list(range(m.TOTALS_ROWS + m.BOTTOM_ROWS)))
         self.assertEqual([row[0] for row in view['top']], list(range(m.TOP_ROWS)))
-        for rows in view.values():
-            self.assertTrue(all(0 <= row[1] <= m.MOVIE_SIZE[1] - m.ROW_HEIGHT for row in rows))
+        self.assertEqual([row[1] for row in view['bottom']], [0, 22, 44, 66, 95, 115, 135, 155])
+        self.assertEqual([row[1] for row in view['top']], [0, 20, 40, 60])
 
-    def test_clip_position_follows_the_screen_height(self):
-        self.assertEqual(m.clip_position('bottom', (1920, 1080))[0], 0.0)
-        top, bottom = m.clip_position('top', (1920, 1080))[1], m.clip_position('bottom', (1920, 1080))[1]
-        self.assertAlmostEqual(top, 1 - 2 * (24 + 340) / 1080.0)
-        self.assertAlmostEqual(bottom, 1 - 2 * (1080 - 118 - 340) / 1080.0)
-        self.assertGreater(top, bottom)
+    def test_a_detail_row_carries_its_sprites(self):
+        row = filled(self.fill().view()['bottom'])[4]
+        self.assertEqual(row[2:], (m.KIND_DETAIL, m.RED, '490', m.CROSS, 'tank2', 'damageLog_damage_enemy_16x16', 'class2'))
+        self.assertEqual(filled(self.fill(show_vehicle=False).view()['bottom'])[4][6:], ('', 'damageLog_damage_enemy_16x16', ''))
+
+    def test_origin_by_the_centre_and_the_bottom_of_the_screen(self):
+        self.assertEqual(m.origin('bottom', (1920, 1080)), (681, 841))
+        self.assertEqual(m.origin('top', (1920, 1080)), (728, 72))
+        self.assertEqual(m.origin('bottom', (2560, 1440)), (1001, 1201))
+
+    def test_a_narrow_screen_keeps_the_block_off_the_damage_panel(self):
+        self.assertEqual(m.origin('bottom', (800, 600))[0], m.DAMAGE_PANEL)
+
+
+# Screens from the lowest the client offers to 4K, 4:3, 16:10, 16:9 and ultrawide.
+SCREENS = ((800, 600), (1024, 768), (1152, 864), (1280, 720), (1280, 800), (1280, 1024), (1366, 768), (1440, 900),
+           (1600, 900), (1680, 1050), (1920, 1080), (1920, 1200), (2560, 1080), (2560, 1440), (3440, 1440), (3840, 2160))
+
+
+def feed_box(screen):
+    x, y = feed_module.origin(screen)
+    return x - 192, y - 4, x + 208, y + 3 * 30 + 4
+
+
+def block_box(place, screen):
+    x, y = m.origin(place, screen)
+    height = m.BOTTOM_HEIGHT if place == 'bottom' else m.TOP_ROWS * m.ROW_HEIGHT
+    return x, y, x + 85 + 200, y + height
+
+
+def apart(one, two):
+    return one[2] <= two[0] or two[2] <= one[0] or one[3] <= two[1] or two[3] <= one[1]
+
+
+class ScreenTests(unittest.TestCase):
+    def test_no_block_crosses_another_on_any_screen_in_either_layout(self):
+        for screen in SCREENS:
+            feed_rows, bottom, top = feed_box(screen), block_box('bottom', screen), block_box('top', screen)
+            self.assertTrue(apart(feed_rows, bottom), screen)
+            self.assertTrue(apart(feed_rows, top), screen)
+            self.assertTrue(apart(bottom, top), screen)
+
+    def test_every_block_stays_on_the_screen_clear_of_the_ammo_panel(self):
+        for screen in SCREENS:
+            for box in (feed_box(screen), block_box('bottom', screen), block_box('top', screen)):
+                self.assertTrue(box[0] >= 0 and box[1] >= 0 and box[2] <= screen[0], screen)
+                self.assertTrue(box[3] <= screen[1] - 56 - 8, screen)
+
+    def test_the_reserve_of_the_feed_is_the_real_height_of_the_block(self):
+        self.assertEqual(feed_module.BOTTOM_RESERVE, 94 + 8 + m.BOTTOM_MARGIN + m.BOTTOM_HEIGHT)
 
 
 class Component:
@@ -228,8 +273,8 @@ class Component:
 
 
 class Widget:
-    def __init__(self, x, y):
-        self.at, self.calls, self.closed, self.active_state = (x, y), [], False, None
+    def __init__(self):
+        self.calls, self.closed, self.active_state = [], False, None
         self.component = Component()
 
     def active(self, state):
@@ -238,8 +283,14 @@ class Widget:
     def call(self, name, args):
         self.calls.append((name, args))
 
-    def place(self, x, y):
-        self.at = (x, y)
+    def fit(self):
+        self.fits = getattr(self, 'fits', 0) + 1
+
+    def at(self):
+        return [row[1] for row in self.calls if row[0] == m.PLACE_CALLBACK][-1]
+
+    def rows(self):
+        return [row for row in self.calls if row[0] == m.CALLBACK]
 
     def close(self):
         self.closed = True
@@ -255,10 +306,10 @@ class RuntimeTests(unittest.TestCase):
         self.runtime = m.Runtime(self.history, self.widget, lambda: (1920, 1080), lambda: self.alt, self.schedule,
                                  self.timers.remove, lambda *a, **k: self.records.append((a, k)))
 
-    def widget(self, x, y):
+    def widget(self):
         if getattr(self, 'broken', False):
             raise IOError('movie')
-        row = Widget(x, y)
+        row = Widget()
         self.widgets.append(row)
         return row
 
@@ -277,14 +328,14 @@ class RuntimeTests(unittest.TestCase):
         self.runtime.on_event(feed(1, 320, 7))
         self.assertEqual(len(self.widgets), 1)
         self.assertIs(self.widgets[0].active_state, True)
-        self.assertEqual(self.widgets[0].at, m.clip_position('bottom', (1920, 1080)))
+        self.assertEqual(self.widgets[0].at(), list(m.origin('bottom', (1920, 1080))))
 
     def test_only_changed_rows_are_sent(self):
         self.runtime.on_event(feed(1, 320, 7))
-        first = len(self.widgets[0].calls)
+        first = len(self.widgets[0].rows())
         self.assertEqual(first, m.TOTALS_ROWS + m.BOTTOM_ROWS)
         self.runtime.on_event(feed(1, 10, 7))
-        self.assertEqual(len(self.widgets[0].calls), first + 2, 'the sum and the row')
+        self.assertEqual(len(self.widgets[0].rows()), first + 2, 'the sum and the row')
 
     def test_the_top_layout_opens_a_second_widget_only_with_a_received_row(self):
         self.history.apply_options({'layout': 'top'})
@@ -292,7 +343,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(len(self.widgets), 1)
         self.runtime.on_event(hit(damage=90, source=2))
         self.assertEqual(len(self.widgets), 2)
-        self.assertEqual(self.widgets[1].at, m.clip_position('top', (1920, 1080)))
+        self.assertEqual(self.widgets[1].at(), list(m.origin('top', (1920, 1080))))
 
     def test_options_apply_at_once(self):
         self.runtime.on_event(hit(damage=90, source=2))
@@ -328,7 +379,8 @@ class RuntimeTests(unittest.TestCase):
         self.runtime.on_event(feed(1, 320, 7))
         self.runtime.screen = lambda: (1280, 720)
         self.runtime.resize()
-        self.assertEqual(self.widgets[0].at, m.clip_position('bottom', (1280, 720)))
+        self.assertEqual(self.widgets[0].at(), list(m.origin('bottom', (1280, 720))))
+        self.assertEqual(self.widgets[0].fits, 1)
 
     def test_show_all_hides_a_live_and_a_later_widget(self):
         self.runtime.on_event(feed(1, 320, 7))
@@ -457,6 +509,7 @@ class ContractTests(unittest.TestCase):
                                  'prepare', '--help'], env=env, capture_output=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertIn(b'--battle-history', result.stdout)
+        self.assertIn(b'--battle-feed-art', result.stdout)
 
     def test_server_constants_match(self):
         path = os.path.join(ROOT, 'server/gateway/src/shared/battle_events.rs')
