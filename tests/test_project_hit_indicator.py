@@ -225,6 +225,32 @@ class NoteTests(unittest.TestCase):
         self.assertTrue(self.note(4, 0).startswith('#ingame_gui:player_messages/tank_in_fire'))
 
 
+class ArtStageTests(unittest.TestCase):
+    class Native(object):
+        def __init__(self):
+            self.sizes = getattr(self, '_DamageIndicator__FLASH_SIZE', (680, 680))
+
+        def setup(self, gYaw, offset):
+            pass
+
+        def call(self, methodName, args=None):
+            pass
+
+    def indicator(self, art=False):
+        rules = m.Policy(dict(m.default_options(), view='extended'), lambda *a, **k: None, lambda: 0.0, art)
+        return m.indicator_class(self.Native, rules, lambda event: [], lambda *a, **k: None)()
+
+    def test_only_a_movie_with_art_gets_the_large_component(self):
+        self.assertEqual(self.indicator().sizes, (680, 680))
+        self.assertEqual(self.indicator(art=True).sizes, m.ART_FLASH_SIZE)
+
+    def test_art_setting_is_a_true_beside_the_indicator(self):
+        good = {'hit_indicator': m.prepare_settings('extended'), 'enable_profile13_battle': True}
+        self.assertTrue(m.validate_settings(dict(good, hit_indicator_art=True)))
+        for bad in (dict(good, hit_indicator_art=False), {'hit_indicator_art': True}):
+            self.assertRaises(ValueError, m.validate_settings, bad)
+
+
 class IconTests(unittest.TestCase):
     def setUp(self):
         self.policy = m.Policy(dict(m.default_options(), view='extended'), lambda *a, **k: None, lambda: 0.0)

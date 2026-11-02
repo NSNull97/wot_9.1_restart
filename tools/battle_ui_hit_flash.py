@@ -32,11 +32,14 @@ BEAM_NEAR, BEAM_FAR, DISC_AT, DISC_RADIUS = 235, 335, 205, 30
 NAME_AT, NOTE_AT = 280, 160
 # Colours of project_hit_indicator.show_args that pick a sprite.
 RED, ORANGE = 0xc8181e, 0xe06a1b
-# The sprites are 358 px tall; the movie reaches 340 px from its centre, so they
-# go in at 66 %: the far end stays inside the stage and the near tick clear of
-# the reticle. Sprite row 240 is the centre of the disc.
-ART_SCALE, ART_DISC_SIZE, ART_ICON_SCALE = 66, 38, 70
-ART_BEAM_AT, ART_DISC_AT, ART_CLASS_AT, ART_NAME_AT, ART_NOTE_AT = 220, 180, 212, 224, 130
+# Measured on the owner's Lesta battle shot at 1920x1080: the 358 px sprite at
+# 1:1 with its centre 315 px out (the constant of the Lesta movie), the disc 44 px
+# wide 256 px out, row 238 of the sprite. That is 494 px to the far end, so a
+# movie with art has a larger stage; project_hit_indicator gives its component
+# the same size. The native arc keeps its absolute size, damageMC stays centred.
+ART_STAGE = 1020
+ART_SCALE, ART_DISC_SIZE, ART_ICON_SCALE = 100, 44, 70
+ART_BEAM_AT, ART_DISC_AT, ART_CLASS_AT, ART_NAME_AT, ART_NOTE_AT = 315, 256, 290, 302, 216
 # Percent of the `scale` argument from which the beam widens.
 ART_MEDIUM_FROM, ART_BIG_FROM = 115, 140
 
@@ -236,10 +239,10 @@ def art_show_source():
               attach(mc, var('icon'), 'iconMC', 6, ART_ICON_SCALE, -ART_DISC_AT) + [('assign', 'number', '')]),
              ('if', ('not', ('==', var('vehicle'), '')),
               attach(mc, var('vehicle'), 'classMC', 7, 100, -ART_CLASS_AT)),
-             label(('get', mc, 'numberMC'), 'field', 1, -12, 16, 0xffffff, var('number')),
-             label(('get', mc, 'nameMC'), 'field', 1, -11, 14, var('nameColour'), var('name')),
+             label(('get', mc, 'numberMC'), 'field', 1, -13, 17, 0xffffff, var('number')),
+             label(('get', mc, 'nameMC'), 'field', 1, -12, 15, var('nameColour'), var('name')),
              label(('get', mc, 'noteMC'), 'field', 1, -11, 14, var('colour'), var('note')),
-             # The name starts at the class icon whichever way it reads.
+             # The name starts past the class icon whichever way it reads.
              ('set', ('get', mc, 'nameMC'), '_y',
               ('-', -ART_NAME_AT, ('/', ('get', ('get', ('get', mc, 'nameMC'), 'field'), 'textWidth'), 2))),
              ('set', mc, 'startedAt', ('time',)), ('set', mc, 'animate', var('animate')),
@@ -307,6 +310,27 @@ def expanded(raw):
     return body
 
 
+def staged(body, start, rows):
+    """(header, new PlaceObject2 of damageMC, its old bounds) for the art stage."""
+    art = art_module()
+    bounds = art.Bits()
+    bounds.rect(0, ART_STAGE * 20, 0, ART_STAGE * 20)
+    name = b'damageMC\0'
+    for code, begin, end in rows:
+        head = 6 if struct.unpack_from('<H', body, begin)[0] & 63 == 63 else 2
+        data = body[begin + head:end]
+        if code == 26 and data[0] == 0x26 and data.endswith(name):
+            move = art.Bits()
+            move.put(2, 0)
+            centre = ART_STAGE * 10
+            count = move.signed_width(centre)
+            move.put(5, count)
+            move.put(count, centre)
+            move.put(count, centre)
+            return bounds.bytes() + body[start - 4:start], tag(26, data[:5] + move.bytes() + name), (begin, end)
+    raise ValueError('original movie has no damageMC placement')
+
+
 def build(raw, added=None, images=None):
     """The movie with one added DoAction: the indicator, or UI-03's `added`.
     `images` are the UI-02b sprites, defined and exported before the DoAction."""
@@ -318,13 +342,14 @@ def build(raw, added=None, images=None):
     if len(used) != 1 or len(backgrounds) != 1:
         raise ValueError('original movie layout differs')
     font = tag(71, b'gfxfontlib.swf\0\x01\0\x01\0' + struct.pack('<H', FONT_CHARACTER) + FONT.encode() + b'\0')
-    art_tags = b''
+    art_tags, placed, header = b'', None, body[:start]
     if images:
         definitions, exported = art_module().tags(images, tag)
         art_tags = definitions + exported
-    out = bytearray(body[:start])
+        header, placed, place_row = staged(body, start, rows)
+    out = bytearray(header)
     for code, begin, end in rows:
-        out += body[begin:end]
+        out += placed if placed is not None and (begin, end) == place_row else body[begin:end]
         if code == 9:
             out += font
         elif code == 12:
@@ -357,4 +382,5 @@ def payload(original, art=None):
                     'target_sha256': hashlib.sha256(result).hexdigest(), 'callback': CALLBACK,
                     'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                     'art': 'embedded' if images else 'absent' if art is not None else 'not_requested',
-                    'art_sprites': sorted(images), 'art_missing': missing, 'native_render_check': 'NOT_RUN'}
+                    'art_sprites': sorted(images), 'art_missing': missing,
+                    'stage': ART_STAGE if images else 680, 'native_render_check': 'NOT_RUN'}

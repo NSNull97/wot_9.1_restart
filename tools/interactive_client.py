@@ -408,11 +408,13 @@ def prepare(args):
         # without it the client keeps the native arc.
         if not profile13_battle:
             raise ValueError('--hit-indicator requires --enable-profile13-battle')
-        settings['hit_indicator'] = hit_indicator_policy().prepare_settings(hit_view)
         import battle_ui_hit_flash
         movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(
             original, getattr(args, 'hit_indicator_art', None))
         payloads[battle_ui_hit_flash.TARGET] = movie
+        settings['hit_indicator'] = hit_indicator_policy().prepare_settings(hit_view)
+        if resource_evidence['project_hit_indicator_movie']['art'] == 'embedded':
+            settings[hit_indicator_policy().ART_SETTING] = True
     feed_view = getattr(args, 'battle_feed', None)
     if feed_view is not None:
         # UI-03 owner order 2026-11-01: needs gateway `battle_events.feed` and

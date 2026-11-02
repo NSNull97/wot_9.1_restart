@@ -225,6 +225,13 @@ def loaded(actions=None):
     return machine, scope, delegate, damage, arc
 
 
+def art_movie():
+    place = b'\x26\x01\0\x09\0' + b'\x00' + b'damageMC\0'
+    body = b'\x00\x00\x18\x01\x00' + flash.tag(9, b'\0\0\0') + flash.tag(12, b'\x07\0') + flash.tag(26, place) \
+        + flash.tag(1, b'') + flash.tag(0, b'')
+    return b'CWS\x08' + struct.pack('<I', len(body) + 8) + zlib.compress(body)
+
+
 def image(width, height):
     return width, height, bytes((10, 20, 30, 128)) * (width * height)
 
@@ -333,10 +340,13 @@ class ArtTests(unittest.TestCase):
         self.assertEqual(art.atlas_rows(xml), {'crit': (7, 0, 72, 358)})
 
     def test_every_tag_of_the_art_movie_parses(self):
-        out = flash.build(fake_movie(), images=full_art())
+        out = flash.build(art_movie(), images=full_art())
         body = flash.expanded(out)
         self.assertEqual(struct.unpack_from('<I', out, 4)[0], len(body) + 8)
-        rows = flash.tags(body, 5)
+        bits = BitReader(body)
+        count = bits.unsigned(5)
+        self.assertEqual([bits.signed(count) for _ in range(4)], [0, flash.ART_STAGE * 20, 0, flash.ART_STAGE * 20])
+        rows = flash.tags(body, ((5 + 4 * count + 7) // 8) + 4)
         codes = [row[0] for row in rows]
         count = len(art.REQUIRED + art.OPTIONAL)
         self.assertEqual((codes.count(36), codes.count(2), codes.count(39), codes.count(56)), (count, count, count, 1))
@@ -368,8 +378,12 @@ class ArtTests(unittest.TestCase):
                 self.assertEqual(defined[struct.unpack_from('<H', data, 9)[0]], 'shape')
                 self.assertNotIn(sprite, defined)
                 defined[sprite] = 'sprite'
+            elif code == 26:
+                self.assertEqual(data[:5], b'\x26\x01\0\x09\0')
+                self.assertEqual(read_matrix(BitReader(data[5:])), (None, None, (flash.ART_STAGE * 10, flash.ART_STAGE * 10)))
+                self.assertTrue(data.endswith(b'damageMC\0'))
             elif code == 56:
-                self.assertEqual(struct.unpack_from('<H', data)[0], count)
+                at, names = 2, []
                 at, names = 2, []
                 while at < len(data):
                     self.assertEqual(defined[struct.unpack_from('<H', data, at)[0]], 'sprite')
@@ -378,6 +392,10 @@ class ArtTests(unittest.TestCase):
                     at = stop + 1
                 self.assertEqual(sorted(names), sorted(art.REQUIRED + art.OPTIONAL))
         self.assertFalse(set(defined) & {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, flash.FONT_CHARACTER})
+
+    def test_movie_without_the_placement_is_refused(self):
+        with self.assertRaises(ValueError):
+            flash.build(fake_movie(), images=full_art())
 
     def test_folder_without_a_required_sprite_keeps_the_drawn_movie(self):
         folder = Path(tempfile.mkdtemp())
@@ -428,11 +446,12 @@ class ArtTests(unittest.TestCase):
 
     def test_geometry_keeps_the_far_end_inside_the_stage(self):
         far = flash.ART_BEAM_AT + 358 * flash.ART_SCALE / 100 / 2
-        self.assertLessEqual(far, 340)
-        self.assertAlmostEqual(far - 240 * flash.ART_SCALE / 100, flash.ART_DISC_AT, delta=1)
+        self.assertLessEqual((far ** 2 + 124 ** 2) ** 0.5, flash.ART_STAGE / 2)
+        self.assertAlmostEqual(far - 238 * flash.ART_SCALE / 100, flash.ART_DISC_AT, delta=1)
 
     def test_client_module_and_art_tool_agree(self):
         self.assertEqual((client.RED, client.ORANGE), (flash.RED, flash.ORANGE))
+        self.assertEqual(client.ART_FLASH_SIZE, (flash.ART_STAGE, flash.ART_STAGE))
         self.assertLessEqual(set(client.MODULE_ICONS.values()), set(art.MODULES))
         self.assertEqual(set(client.VEHICLE_ICONS), set(art.CLASSES))
 
@@ -508,6 +527,20 @@ class ArtTests(unittest.TestCase):
         self.assertEqual(result, flash.payload(ORIGINAL)[0])
         self.assertEqual(evidence['art'], 'absent')
         self.assertEqual(evidence['art_missing'], list(art.REQUIRED))
+        self.assertEqual(evidence['stage'], 680)
+
+    @unittest.skipUnless((ORIGINAL / 'res/packages/gui.pkg').is_file(), 'original client absent')
+    def test_art_movie_on_the_original_keeps_the_arc_centred(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        for name in art.REQUIRED:
+            (folder / (name + '.png')).write_bytes(art.write_png(2, 2, bytes(16)))
+        result, evidence = flash.payload(ORIGINAL, folder)
+        self.assertEqual((evidence['art'], evidence['stage']), ('embedded', flash.ART_STAGE))
+        body = flash.expanded(result)
+        moved = [body[row[1]:row[2]] for row in flash.tags(body, ((5 + 4 * (body[0] >> 3) + 7) // 8) + 4)
+                 if row[0] == 26 and body[row[1]:row[2]].endswith(b'damageMC\0')]
+        self.assertEqual(len(moved), 1)
 
 
 class Tests(unittest.TestCase):

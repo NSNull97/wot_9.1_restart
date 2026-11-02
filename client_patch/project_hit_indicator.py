@@ -22,6 +22,8 @@ import traceback
 
 VERSION = 1
 SETTING = 'hit_indicator'
+# Set by prepare only when it embedded the sprites; no choice of the player.
+ART_SETTING = 'hit_indicator_art'
 POLICY = 'project_override_not_original_091'
 EVENT = 'project_hit_indicator'
 FEATURE = 'sr_battle_events'
@@ -35,6 +37,8 @@ MAX_FEED_KIND = 15
 KIND_HELLO, KIND_HIT_RECEIVED, KIND_FEED, KIND_TOTALS = 0, 1, 2, 3
 VERDICTS = ('unknown', 'pierced', 'not_pierced', 'ricochet', 'splash')
 EXTENDED_MOVIE = 'ProjectHitIndicator.swf'
+# tools/battle_ui_hit_flash.py ART_STAGE: a movie with sprites has this stage.
+ART_FLASH_SIZE = (1020, 1020)
 CALLBACK = 'ProjectHit.show'
 NATIVE_CALLBACK = 'DamageIndicator.setDamageFlagAndAnimFrame'
 HELLO_DELAY, HELLO_PERIOD, HELLO_ATTEMPTS = 1.0, 2.0, 5
@@ -95,6 +99,8 @@ def checked_options(value):
 
 def validate_settings(settings):
     value = settings.get(SETTING)
+    if ART_SETTING in settings and (settings[ART_SETTING] is not True or value is None):
+        raise ValueError('hit indicator art is an explicit true beside the indicator')
     if value is None:
         if SETTING in settings:
             raise ValueError('hit indicator setting must be omitted when disabled')
@@ -191,10 +197,11 @@ def _key(yaw):
 class Policy(object):
     """Everything that decides; the engine seams are plain callables."""
 
-    def __init__(self, options, record, clock):
+    def __init__(self, options, record, clock, art=False):
         if not (callable(record) and callable(clock)):
             raise TypeError('hit indicator requires callable seams')
         self.options, self.record, self.clock = checked_options(options), record, clock
+        self.art = art
         self.facts, self.acknowledged, self.failed, self.bad_frames = {}, False, False, 0
         # UI-03/04 widgets subscribe here and add their own hello.
         self.listeners, self.features = [], []
@@ -283,6 +290,10 @@ class Policy(object):
     def movie(self):
         return EXTENDED_MOVIE if self.options['view'] == 'extended' and not self.failed else None
 
+    def movie_size(self):
+        """The component size of the movie, None for the native one."""
+        return ART_FLASH_SIZE if self.art else None
+
     def show_args(self, event, name, note, max_health, icon='', vehicle=''):
         """Arguments of ProjectHit.show. What is unknown stays visibly absent.
         The module icon stands in for the number only when no damage was dealt."""
@@ -328,6 +339,9 @@ def indicator_class(base, policy, facts_args, record):
                 base.__init__(self)
                 return
             self._DamageIndicator__SWF_FILE_NAME = movie
+            size = policy.movie_size()
+            if size is not None:
+                self._DamageIndicator__FLASH_SIZE = size
             try:
                 base.__init__(self)
                 self.project_extended = True
@@ -335,6 +349,8 @@ def indicator_class(base, policy, facts_args, record):
                 policy.failed = True
                 record(EVENT + '_movie_failed', version=VERSION, traceback=traceback.format_exc()[-2000:])
                 del self._DamageIndicator__SWF_FILE_NAME
+                if size is not None:
+                    del self._DamageIndicator__FLASH_SIZE
                 base.__init__(self)
 
         def setup(self, gYaw, offset):
@@ -389,7 +405,7 @@ def _note(event, descriptor, make_string):
     return make_string('#ingame_gui:damage_panel/devices/%s/%s' % (name, state)).split('.')[0]
 
 
-def install(record, options):
+def install(record, options, art=False):
     """Client-only. Wrap exact #717 callables; fail closed on any mismatch."""
     global _installed
     if _installed is not None:
@@ -409,7 +425,7 @@ def install(record, options):
     _contract(aims._DamageIndicatorCtrl.__dict__.get('add'), ADD_CONTRACT)
     _contract(native.__dict__.get('__init__'), INIT_CONTRACT)
     _contract(native.__dict__.get('setup'), SETUP_CONTRACT)
-    rules = Policy(options, record, BigWorld.time)
+    rules = Policy(options, record, BigWorld.time, art)
     state = {'callback': None, 'attempts': 0}
 
     def facts_args(event):
