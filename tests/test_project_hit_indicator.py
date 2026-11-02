@@ -352,5 +352,36 @@ class ContractTests(unittest.TestCase):
             self.assertIn(fragment, text)
 
 
+
+class ShellRecordTests(unittest.TestCase):
+    """UI-03b: the server's battle_events::KIND_SHELL record after a hit."""
+
+    @staticmethod
+    def frame(*records):
+        body = b''.join(struct.pack('<BB', kind, len(data)) + data for kind, data in records)
+        return b'BE' + struct.pack('<BHB', m.VERSION, 1, len(records)) + body
+
+    def test_the_shell_of_a_hit_with_its_family_and_gold_flag(self):
+        events = m.parse_frame(self.frame((m.KIND_SHELL, struct.pack('<IB', 7, 0x13)),
+                                          (m.KIND_SHELL, struct.pack('<IB', 8, 4))))[1]
+        self.assertEqual(events, [{'kind': 'shell', 'shot': 7, 'family': 'hollow_charge', 'premium': True},
+                                  {'kind': 'shell', 'shot': 8, 'family': 'high_explosive', 'premium': False}])
+
+    def test_a_family_of_a_later_server_is_skipped_a_broken_record_refused(self):
+        self.assertEqual(m.parse_frame(self.frame((m.KIND_SHELL, struct.pack('<IB', 7, 9))))[1], [])
+        self.assertEqual(m.parse_frame(self.frame((m.KIND_SHELL, struct.pack('<IB', 7, 0x41))))[1], [])
+        with self.assertRaises(ValueError):
+            m.parse_frame(self.frame((m.KIND_SHELL, b'\x01\x00\x00\x00')))
+
+    @unittest.skipUnless(sys.version_info[0] == 3, 'static checks run on Python 3')
+    def test_server_constants_match(self):
+        path = os.path.join(ROOT, 'server/gateway/src/shared/battle_events.rs')
+        with open(path, encoding='utf-8') as source:
+            text = source.read()
+        self.assertIn('const KIND_SHELL:u8=%d;' % m.KIND_SHELL, text)
+        self.assertIn('const SHELL_PREMIUM:u8=0x%x;' % m.SHELL_PREMIUM, text)
+        self.assertIn('ArmorPiercing=1,ArmorPiercingCr=2,HollowCharge=3,HighExplosive=4', text)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -37,7 +37,8 @@ BANDS = tuple('ribbonsBg%s%s' % (colour, size) for colour in ('Green', 'Red', 'G
               for size in ('Small', 'Medium', 'Large'))
 CLASSES = tuple('whiteIcon%s16x16' % name for name in ('LightTank', 'MediumTank', 'HeavyTank', 'SPG', 'At-SPG'))
 DAMAGE_LOG = tuple('damageLog_%s_16x16' % name for name in (
-    'damage', 'damage_enemy', 'critical_enemy', 'reflect', 'ram', 'fire', 'coordinate', 'immobilized', 'assist'))
+    'damage', 'damage_enemy', 'critical_enemy', 'reflect', 'ram', 'ram_enemy', 'fire', 'fire_enemy', 'coordinate', 'immobilized',
+    'assist'))
 FEED_SPRITES = RIBBONS + BANDS + CLASSES
 HISTORY_SPRITES = DAMAGE_LOG + CLASSES
 ALL_SPRITES = RIBBONS + BANDS + DAMAGE_LOG + CLASSES

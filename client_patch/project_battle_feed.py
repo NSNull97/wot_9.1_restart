@@ -53,6 +53,8 @@ ROWS_TABLE = {'received': (RED, CROSS, 'Получен урон', False, 'ribbon
               'ignition': (GREEN, FLAME, 'Поджог', False, 'ribbonsBurn'),
               'assist_spot': (GREEN, EYE, 'Урон по разведанным', True, 'ribbonsAssistSpot'),
               'assist_track': (GREEN, TRACK, 'Урон по обездвиженным', True, 'ribbonsAssistTrack')}
+# Damage rows a kill of the same vehicle takes in.
+KILL_DAMAGE = ('shot', 'ram')
 # Class tag of #717 vehicles: sprite next to the vehicle name.
 CLASS_ICONS = (('lightTank', 'whiteIconLightTank16x16'), ('mediumTank', 'whiteIconMediumTank16x16'),
                ('heavyTank', 'whiteIconHeavyTank16x16'), ('SPG', 'whiteIconSPG16x16'),
@@ -215,19 +217,32 @@ class Feed(object):
         self.options = checked_options(merged)
 
     def add(self, event):
-        """True when the rows on screen changed. Newest first."""
+        """True when the rows on screen changed. Newest first. A kill takes the
+        damage row of its vehicle, and damage after it adds to the kill row:
+        one row "440 Уничтожил name", as the owner asked."""
         changed = False
         for key, value, count, vehicle in rows_of(event):
             if not (self.options['enabled'] and self.options[key]):
                 continue
             changed = True
             expires = self.clock() + LIFETIME
+            kill = self.options['kill'] and vehicle and key in KILL_DAMAGE
+            if kill and any(row['key'] == 'kill' and row['vehicle'] == vehicle for row in self.rows):
+                key, count = 'kill', 0
+            elif key == 'kill' and vehicle:
+                damage = [row for row in self.rows if row['key'] in KILL_DAMAGE and row['vehicle'] == vehicle]
+                if damage:
+                    self.rows.remove(damage[0])
+                    value = damage[0]['value']
             same = [row for row in self.rows if row['key'] == key and row['vehicle'] == vehicle]
             if same:
                 row = same[0]
                 self.rows.remove(row)
                 row['count'] += count
-                row['value'] = None if value is None or row['value'] is None else row['value'] + value
+                if key == 'kill':
+                    row['value'] = value if row['value'] is None else row['value'] + (value or 0)
+                else:
+                    row['value'] = None if value is None or row['value'] is None else row['value'] + value
                 row['expires'] = expires
             else:
                 row = {'key': key, 'value': value, 'count': count, 'vehicle': vehicle, 'expires': expires}
