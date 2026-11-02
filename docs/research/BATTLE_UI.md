@@ -138,6 +138,10 @@ B записал собственный устаревший снимок. Ко�
 Вывод — `.../result.txt`. Это доказывает риск алгоритма, а не последовательность
 действий конкретного клиента: native-сценарий двух процессов — NOT_RUN.
 
+**UI-05, VERIFIED статически (2026-11-02):** окон два. Ангар — Python `SettingsWindow`, AS3 `gui/flash/settingsWindow.swf`
+(`dbd8a56a…`). Бой — Python `SettingsInterface`, AS2 `gui/scaleform/SettingsDialog.swf` (`071a8846…`). Вкладки в обоих —
+`SettingsConfig.tabsDataProvider`. Новый раздел в этих окнах и решение по хранению — [план UI-05](../plans/UI05_NATIVE_SETTINGS.md).
+
 ## Проверки и вопросы
 
 `python -B -X utf8 tools/battle_ui_pyc_inventory.py C:/WoT_0.9.1_RU_0717_original/res/scripts/client/avatar.pyc --contains showOwnVehicleHitDirection`;

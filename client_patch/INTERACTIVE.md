@@ -66,6 +66,10 @@ beforeSHA/backup: исходный i18n разрешает папку `text` ц�
 однофайловая папка `res_mods/text` скрывает прочие каталоги gettext (Auth05 FAIL).
 Папки локализации и все остальные домены остаются по исходным путям.
 
+`--battle-settings` (UI-05) добавляет вкладку «Информирование в бою» в оба родных окна настроек. Нужны `--hit-indicator`,
+`--battle-feed` и `--battle-history`. Пишет `res_mods/0.9.1/gui/flash/settingsWindow.swf`,
+`res_mods/0.9.1/gui/scaleform/SettingsDialog.swf` и секцию `projectBattleUi` в локальном профиле. Без флага этих файлов нет.
+
 ## Управляемая native-проверка
 
 Только при явном `prepare --test-control local/.../control.json` профиль ищет
