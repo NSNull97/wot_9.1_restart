@@ -12,8 +12,10 @@ pub const DELETE:i16=1601;
 pub const MAX_ARGUMENTS:usize=128;
 const MAX_KEY:i32=56;
 const MAX_CHANGES:usize=64;
-/// Client migration version key, ServerSettingsManager.__version == 11.
-const VERSION:(i32,i32)=(0,11);
+/// Client migration version key. Never written for the client: with no
+/// version #717 ServerSettingsManager._updateToVersion runs
+/// _initializeDefaultSettings and stores the defaults and version 11 itself.
+const VERSION:i32=0;
 /// Tail of every published Account state, tools/hangar_state.py `{0: 11}`.
 const STATE_TAIL:&[u8]=b"U\x0fintUserSettings}(K\x00K\x0buu.";
 const FIELD:&[u8]=b"U\x0fintUserSettings}(";
@@ -42,7 +44,7 @@ impl Change {
             _=>return None,
         };
         if change.is_empty() || change.len()>MAX_CHANGES || !change.set.iter().all(|pair|known(pair.0))
-            || !change.delete.iter().all(|key|known(*key)&&*key!=VERSION.0) {return None;}
+            || !change.delete.iter().all(|key|known(*key)&&*key!=VERSION) {return None;}
         let mut keys=change.keys();keys.sort_unstable();keys.dedup();
         (keys.len()==change.len()).then_some(change)
     }
@@ -92,11 +94,13 @@ pub fn parse_reply(bytes:&[u8],account_id:&str)->io::Result<Map> {
 
 fn int(out:&mut Vec<u8>,value:i32) {out.push(b'J');out.extend(value.to_le_bytes());}
 
-/// The published state with this account's settings in place of the default.
+/// The published state with exactly this account's stored settings in place
+/// of the fixture default `{0: 11}`. An account with nothing stored gets `{}`:
+/// version 11 without sections made the client skip its defaults, and the
+/// first saved item of a section zeroed every other item of it.
 pub fn state_with(state:&[u8],map:&Map)->io::Result<Vec<u8>> {
     let head=state.strip_suffix(STATE_TAIL).ok_or_else(||invalid("Account state without the published settings tail"))?;
     let mut out=head.to_vec();out.extend(FIELD);
-    if !map.contains_key(&VERSION.0) {int(&mut out,VERSION.0);int(&mut out,VERSION.1);}
     for (&key,&value) in map {int(&mut out,key);int(&mut out,value);}
     out.extend(b"uu.");Ok(out)
 }
@@ -142,12 +146,14 @@ mod tests {
         let mut map=Map::from([(1,9),(3,9),(4,9)]);first.apply(&mut map);
         assert_eq!(map,Map::from([(2,2),(3,3),(4,9)]));
     }
-    #[test] fn state_keeps_every_other_byte_and_the_version_default() {
+    #[test] fn state_keeps_every_other_byte_and_publishes_only_what_is_stored() {
         let raw=state();crate::hangar091::validate_account_delta(&raw).unwrap();
         let merged=state_with(&raw,&Map::from([(43,-5)])).unwrap();
         crate::hangar091::validate_account_delta(&merged).unwrap();
         assert!(merged.starts_with(&raw[..raw.len()-STATE_TAIL.len()]));
-        assert!(merged.ends_with(b"}(J\0\0\0\0J\x0b\0\0\0J+\0\0\0J\xfb\xff\xff\xffuu."));
+        assert!(merged.ends_with(b"intUserSettings}(J+\0\0\0J\xfb\xff\xff\xffuu."));
+        let fresh=state_with(&raw,&Map::new()).unwrap();crate::hangar091::validate_account_delta(&fresh).unwrap();
+        assert!(fresh.ends_with(b"intUserSettings}(uu."),"no version: the client initializes its defaults");
         let own=state_with(&raw,&Map::from([(0,10)])).unwrap();assert!(own.ends_with(b"}(J\0\0\0\0J\x0a\0\0\0uu."));
         assert!(state_with(b"\x80\x02}.",&Map::new()).is_err());
     }
