@@ -20,6 +20,7 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tools'))
+import battle_ui_contour_icons as contour
 import battle_ui_marker_flash as marker
 from battle_ui_hit_flash import expanded, tag, tags
 from tests.test_battle_ui_hit_flash import Clip, Machine
@@ -331,6 +332,11 @@ class PrepareTests(unittest.TestCase):
                 flags = dict(flags, vehicle_marker_art=ROOT / 'local/no-ui-art-for-this-test')
             payloads, evidence = self.markers(**flags) if team_killer else self.markers(False, **flags)
             movie = payloads[marker.TARGET]
+            contours = [path for path in payloads if path.startswith(contour.TARGET)]
+            self.assertEqual(bool(contours), look, 'the restyled contour icons go with the project look')
+            if look:
+                self.assertEqual(evidence['project_contour_icons']['contour_icons'], len(contours))
+                self.assertGreater(len(contours), 300)
             row = evidence['project_vehicle_markers_movie']
             self.assertEqual((row['look'], row['team_killer']), (look, team_killer))
             self.assertEqual(row['target_sha256'], hashlib.sha256(movie).hexdigest())

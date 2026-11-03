@@ -426,22 +426,40 @@ class RoundSevenTests(unittest.TestCase):
     def setUp(self):
         self.vm, self.scope, self.bar_proto, self.marker_proto = world()
 
-    def marker(self, label='red', destroyed=False):
+    def marker(self, label='red', destroyed=False, vehicle_class='AT-SPG'):
         clip = Clip('VehicleMarker', m_markerLabel=label, iconLoader=Clip('iconLoader'))
         clip.set('__get__vehicleDestroyed', Native('destroyed', lambda this: destroyed))
+        clip.set('_getVehicleClassName', Native('class', lambda this: vehicle_class))
         clip.proto = self.marker_proto
         return clip
 
     def test_the_contour_icon_takes_the_colour_of_the_bar_after_every_native_repaint(self):
         red = COLOURS['red']
-        expected = tuple(round(v * 1000 * 9 / 5 / 255) / 1000 for v in (red >> 16 & 255, red >> 8 & 255, red & 255))
+        import battle_ui_contour_icons as contour
+        expected = tuple(round(v * 1000 / base) / 1000 for v, base in
+                         zip((red >> 16 & 255, red >> 8 & 255, red & 255), contour.COLOURS['td']))
         for method in ('updateMarkerLabel', 'setMarkerState', 'setupIconLoader'):
             clip = self.marker('red')
             self.vm.invoke(self.marker_proto.get(method), clip, ['alive'])
             self.assertEqual(clip.calls[0][0], method, 'the native first')
             made = clip.get('iconLoader').get('transforms')
             self.assertEqual(len(made), 1, method)
-            self.assertEqual(made[0].get('colorTransform').get('args'), expected + (1.5, 0, 0, 0, 0))
+            self.assertEqual(made[0].get('colorTransform').get('args'), expected + (1, 0, 0, 0, 0))
+
+    def test_the_bar_colour_over_the_class_colour_gives_the_bar_colour(self):
+        import battle_ui_contour_icons as contour
+        for name, kind in look.ICON_CLASSES.items():
+            clip = self.marker('green', vehicle_class=name)
+            self.vm.invoke(self.marker_proto.get('setMarkerState'), clip, ['alive'])
+            args = clip.get('iconLoader').get('transforms')[0].get('colorTransform').get('args')
+            body = tuple(round(c * m) for c, m in zip(contour.COLOURS[kind], args[:3]))
+            green = COLOURS['green']
+            self.assertEqual(body, (green >> 16 & 255, green >> 8 & 255, green & 255), name)
+
+    def test_a_vehicle_without_a_known_class_keeps_the_native_transform(self):
+        clip = self.marker('red', vehicle_class='')
+        self.vm.invoke(self.marker_proto.get('setMarkerState'), clip, ['alive'])
+        self.assertIs(clip.get('iconLoader').get('transforms'), UNDEFINED)
 
     def test_a_destroyed_vehicle_keeps_the_native_dead_colour(self):
         clip = self.marker('red', destroyed=True)

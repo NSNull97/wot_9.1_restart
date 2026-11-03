@@ -83,14 +83,11 @@ EXPLOSION_EXPORT = 'HitExplosion'
 # bitmaps and the thin icon still read as a blot. Round 10 (owner: least change from
 # the native look) fills them with the native pictures redrawn white by
 # tools/battle_ui_marker_icons.py; only the glow is a filter.
-# Owner round 8 (a trial): the contour icon without its transparency. Its pixels
-# hold alpha about 170 of 255 (median of IS-7 and WZ-111), so 3/2 makes the body opaque
-# and keeps the antialiased edge soft.
-ICON_ALPHA_GAIN = (3, 2)
-# Owner round 9: the contour went dark. Its body is grey, not white (brightness
-# about 100..160 of 255 on IS-7, a black outline), so multipliers of the bar colour
-# alone gave half that colour. 9/5 brings a grey of about 140 to the bar colour.
-ICON_BRIGHTNESS = (9, 5)
+# Owner round 11: the contour icons are restyled by tools/battle_ui_contour_icons.py
+# (flat with details, opaque, in the colour of the vehicle class). A marker shows
+# its bar colour with the same details: the multipliers are bar / class colour.
+# Native class names of VehicleMarker._getVehicleClassName.
+ICON_CLASSES = {'lightTank': 'tank', 'mediumTank': 'tank', 'heavyTank': 'tank', 'AT-SPG': 'td', 'SPG': 'spg'}
 # Owner round 9: the glow of damage to allies (the green frames) a little darker
 # than the native 95ff00; the fire and ammo icons of those frames take it too.
 GLOW_COLOURS = {'green': b'\x70\xc0\x00'}
@@ -700,15 +697,18 @@ def _icon():
 def _paint_icon():
     """function(m): the contour icon of a living vehicle in the colour of its bar.
     The native colours it by the scheme transform (ally mult 0.76 1 0.2, offset
-    +25 green), not the bar colour; the icon is white and grey, so multipliers of
-    the bar colour make its white the bar's colour and keep its shading; the alpha
-    gain takes away its transparency."""
+    +25 green), not the bar colour. The restyled icon is its class colour times a
+    shade, so multipliers of bar / class colour give the bar colour with the same
+    shade; a vehicle without a known class keeps the native transform."""
     m, tint = var('m'), var('t')
     look = ('get', var('_global'), 'projectMarkerLook')
-    paint = (stmt(('local', 't', ('get', ('get', look, 'tints'), ('get', m, 'm_markerLabel')))))
+    row = ('get', ('get', look, 'tints'), ('get', m, 'm_markerLabel'))
+    paint = (stmt(('local', 't', row))
+             + _if(('not', ('==', ('typeof', tint), 'undefined')),
+                   stmt(('assign', 't', ('get', tint, ('call', m, '_getVehicleClassName', []))))))
     make = (As2.push('ct') + b''.join(expr(arg) for arg in reversed(
                 [('/', ('get', tint, 'r'), 1000), ('/', ('get', tint, 'g'), 1000), ('/', ('get', tint, 'b'), 1000),
-                 ('/', ICON_ALPHA_GAIN[0], ICON_ALPHA_GAIN[1]), 0, 0, 0, 0])) + As2.push(8) + expr(('get', var('flash'), 'geom')) + As2.push('ColorTransform')
+                 1, 0, 0, 0, 0])) + As2.push(8) + expr(('get', var('flash'), 'geom')) + As2.push('ColorTransform')
             + As2.record(0x53) + As2.record(0x3c)
             + As2.push('tr') + expr(var('il')) + As2.push(1) + expr(('get', var('flash'), 'geom')) + As2.push('Transform')
             + As2.record(0x53) + As2.record(0x3c)
@@ -759,12 +759,16 @@ def actions(colours, icons=False):
     for label in LABELS:
         table += stmt(('set', ('get', look, 'colours'), label, colours[label]))
     table += stmt(('set', look, 'tints', ('new', 'Object', [])))
+    import battle_ui_contour_icons as contour
     for label in LABELS:
         rgb = colours[label]
-        tint = ('get', ('get', look, 'tints'), label)
+        row = ('get', ('get', look, 'tints'), label)
         table += stmt(('set', ('get', look, 'tints'), label, ('new', 'Object', [])))
-        for channel, value in zip('rgb', (rgb >> 16 & 255, rgb >> 8 & 255, rgb & 255)):
-            table += stmt(('set', tint, channel, round(value * 1000 * ICON_BRIGHTNESS[0] / ICON_BRIGHTNESS[1] / 255)))
+        for name, kind in ICON_CLASSES.items():
+            tint = ('get', row, name)
+            table += stmt(('set', row, name, ('new', 'Object', [])))
+            for channel, value, base in zip('rgb', (rgb >> 16 & 255, rgb >> 8 & 255, rgb & 255), contour.COLOURS[kind]):
+                table += stmt(('set', tint, channel, round(value * 1000 / base)))
     table += _method(look, 'group', ['n'], _group())
     table += _method(look, 'paintIcon', ['m'], _paint_icon())
     table += _method(look, 'raise', ['m'], _raise())

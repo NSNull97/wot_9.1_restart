@@ -147,6 +147,7 @@ def vehicle_markers(args, profile13_battle, original, evidence):
     --native-vehicle-markers keeps the #717 movie for rollback and checks.
     UI-06b --team-killer-marker paints the native bar of a team killer blue;
     the project bar is blue for a team killer on its own.
+    The contour icons of the vehicles are restyled with them (round 11).
     Class icons (owner 2026-11-03: the Lesta ones) come from
     --vehicle-marker-art, by default local/ui-borrowed/vehicle-markers of this
     checkout; no folder or no file: the native icon."""
@@ -164,7 +165,14 @@ def vehicle_markers(args, profile13_battle, original, evidence):
     import battle_ui_marker_flash
     movie, evidence['project_vehicle_markers_movie'] = battle_ui_marker_flash.payload(
         original, look=not native, team_killer=team_killer, art=art)
-    return {battle_ui_marker_flash.TARGET: movie}
+    payloads = {battle_ui_marker_flash.TARGET: movie}
+    if not native:
+        # Owner round 11: the contour icons (markers and ears) in the flat project
+        # style by class; the project markers colour them by bar / class colour.
+        import battle_ui_contour_icons
+        icons, evidence['project_contour_icons'] = battle_ui_contour_icons.payloads(original)
+        payloads.update(icons)
+    return payloads
 
 
 def battle_settings_policy():
