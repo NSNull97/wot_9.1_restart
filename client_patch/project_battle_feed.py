@@ -33,8 +33,9 @@ LIFETIME = 5.0
 TICK_PERIOD = 0.25
 # The top edge of the newest row, above the bottom of the screen: low under the
 # crosshair (owner round 3), above the history block of project_battle_history
-# (198 px) with 4 px of air; 1920 x 1080 puts its middle on y 864.
-ABOVE_BOTTOM = 230
+# (its top 230 px above the bottom) with 4 px of air; 1920 x 1080 puts its middle
+# on y 832.
+ABOVE_BOTTOM = 262
 EMPTY_ROW = (-1, '', 0, '', '', 0, 0, '')
 # Owner 02.11: effectiveness green, damage taken red, a crit taken gold.
 RED, GOLD, GREY, GREEN = 0xc8181e, 0xd8a020, 0x6e6e6e, 0x3f8f24
