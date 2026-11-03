@@ -2,7 +2,7 @@
 //! from committed journals, so a live panel and the final results agree and a
 //! reconnect needs no extra state. Nothing here decides a hit or changes the
 //! world. The rules are PROJECT POLICY, not WG behaviour: the threshold of the
-//! original server is unknown, docs/plans/UI06_EARS_TEAMKILL.md.
+//! original server is unknown, docs/plans/UI06_EARS_TEAMKILL.md (git 30a6185).
 use std::io;
 use super::lifecycle_wire::{Participant,TeamScore,TeamScoreRow,TEAM_SCORE_POLICY};
 use super::model::{self,World};

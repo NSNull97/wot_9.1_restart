@@ -203,7 +203,7 @@ python -B -X utf8 web/scripts/extract-catalog-media.py --evidence local/web/cata
 `data/catalog-class-icons.v1.json`. Доказательства: `../local/web/class-icons/run-01/sources.json`.
 Кэш: `../local/web/catalog-assets/v1/classes/`. Сервер отдаёт только пять точных
 путей из allowlist. Значки доступны локально, без обращения сайта к чужому CDN.
-Проверка HTTP, оформление и ограничения — в [CLASS_ICONS_REPORT.md](CLASS_ICONS_REPORT.md).
+Проверка HTTP, оформление и ограничения — в CLASS_ICONS_REPORT.md (`web/CLASS_ICONS_REPORT.md` в git на `8bda1b9`).
 
 ## WEB-08 · статусы техники
 
@@ -227,4 +227,4 @@ SVG-графика сайта, окружающая оригинальный з�
 с танком, а не отдельную рамку вокруг значка класса.
 
 Доказательства и все 374 классификации: `../local/web/vehicle-status/run-01/`.
-Полный отчёт: [VEHICLE_STATUS_REPORT.md](VEHICLE_STATUS_REPORT.md).
+Полный отчёт: VEHICLE_STATUS_REPORT.md (`web/VEHICLE_STATUS_REPORT.md` в git на `8bda1b9`).

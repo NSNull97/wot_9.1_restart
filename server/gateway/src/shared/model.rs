@@ -622,7 +622,7 @@ impl World {
     pub fn result_ledger(&self)->bool{self.result_ledger}
     #[cfg(test)]
     pub(super) fn force_result_ledger_for_test(&mut self){self.result_ledger=true;}
-    /// UI-06: frags and the team killer flag of docs/plans/UI06_EARS_TEAMKILL.md.
+    /// UI-06: frags and the team killer flag of docs/plans/UI06_EARS_TEAMKILL.md (git 30a6185).
     pub fn enable_team_score(&mut self)->io::Result<()>{
         if self.team_score||self.started.is_some()||!self.actors.is_empty(){return Err(bad());}
         self.team_score=true;Ok(())

@@ -116,7 +116,7 @@ Evidence: `local/evidence/20261016-p08c-natural-results-fix01`,
 на повторное уничтожение отправлен. Native повторная приёмка ещё NOT_RUN;
 предыдущий естественный возврат остаётся FAIL до неё.
 
-План — [P08C_NATURAL_RESULTS_RETURN](../plans/P08C_NATURAL_RESULTS_RETURN.md).
+План — P08C_NATURAL_RESULTS_RETURN (`docs/plans/P08C_NATURAL_RESULTS_RETURN.md` в git на `8bda1b9`).
 Marker
 gate остаётся принятым; late manual-leaver append/spawn — отдельные открытые
 пункты. Main и ночные ветки не меняются.

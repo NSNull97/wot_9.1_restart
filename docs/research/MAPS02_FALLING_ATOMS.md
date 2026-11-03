@@ -4,7 +4,7 @@
 (`0c144ac`). Только чтение оригинального клиента `C:/WoT_0.9.1_RU_0717_original`;
 байткод — `marshal` + `dis` проектного CPython 2.7.3, код клиента **не исполнялся**.
 Рантайм, стенды и клиенты не менялись. Native-проверка — **NOT_RUN**.
-План реализации: [plans/MAPS02_FALLING_ATOMS.md](../plans/MAPS02_FALLING_ATOMS.md).
+План реализации: plans/MAPS02_FALLING_ATOMS.md (`docs/plans/MAPS02_FALLING_ATOMS.md` в git на `8bda1b9`).
 
 Доказательства (игнорируемые): `local/evidence/20261021-maps02-research01/`
 - `sources.json` — размеры/SHA-256 источников и выходов;

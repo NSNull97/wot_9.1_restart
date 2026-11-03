@@ -1,6 +1,6 @@
 # BATTLE-ANY: боевой профиль любой машины каталога (этапы 1–2) — 2026-10-27
 
-Ветка `codex/battle-any`, перенесена на main `75a9437` (после ARENA-01; исходно от `2da4baa`). План — [BATTLE_ANY](../plans/BATTLE_ANY.md).
+Ветка `codex/battle-any`, перенесена на main `75a9437` (после ARENA-01; исходно от `2da4baa`). План — BATTLE_ANY (`docs/plans/BATTLE_ANY.md` в git на `8bda1b9`).
 Native-приёмка — владелец (NOT_RUN). Метки — как в AGENTS.
 
 ## Что сделано

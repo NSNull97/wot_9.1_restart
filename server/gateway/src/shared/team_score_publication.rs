@@ -1,6 +1,6 @@
 //! UI-06 publication: the native updates 5 and 10 by difference with what this
 //! recipient's ClientArena already holds. No position, HP or module of any
-//! vehicle goes here. Policy: docs/plans/UI06_EARS_TEAMKILL.md.
+//! vehicle goes here. Policy: docs/plans/UI06_EARS_TEAMKILL.md (git 30a6185).
 use super::*;
 use super::super::{lifecycle_wire,team_score};
 

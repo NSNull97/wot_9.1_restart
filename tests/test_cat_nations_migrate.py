@@ -1,7 +1,7 @@
 """CAT-NATIONS stand database migration: dry run, backup, apply, rollback, refusals.
 
 Synthetic database with the real table shapes; the stand copy run is recorded in
-docs/plans/CAT_NATIONS_FIX.md (stands themselves are never touched by tests).
+docs/plans/CAT_NATIONS_FIX.md, in git at 8bda1b9 (stands themselves are never touched by tests).
 """
 import ast
 import hashlib

@@ -2,7 +2,9 @@
 
 Факты с метками VERIFIED/OBSERVED/INFERRED/UNKNOWN. Читать только нужный файл.
 Ссылки внутри исследований на `docs/plans/` и `docs/evidence-index/` ведут в историю:
-`git show 1eaff5e:<путь>` (удалены 2026-10-15 при сокращении документации).
+`git show 1eaff5e:<путь>` (удалены 2026-10-15 при сокращении документации). Планы карточек, принятых позже,
+отчёты-снимки (`NIGHT_REPORT_*`, `TEST_HANDOFF_*`, `PROJECT_INVENTORY_*`) и `web/*_PLAN|REPORT.md` удалены
+2026-11-03 (REFACTOR-01 R2): `git show 8bda1b9:<путь>`.
 
 ## Общий тест 19 октября
 

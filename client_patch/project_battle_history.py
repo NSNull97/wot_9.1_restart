@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """PROJECT POLICY, not original 0.9.1: the UI-04 battle history.
-docs/plans/UI04_BATTLE_HISTORY.md.
+docs/plans/UI04_BATTLE_HISTORY.md (git 30a6185).
 
 Facts arrive over the UI-02 channel: this module subscribes to the running
 project_hit_indicator policy and says one extra hello. Its own hello opens the

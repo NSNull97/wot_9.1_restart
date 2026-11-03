@@ -1,5 +1,5 @@
 //! UI-02: the recipient-only project channel of battle events. Research, the
-//! transport decision and the disclosure policy: docs/plans/UI02_HIT_INDICATOR.md.
+//! transport decision and the disclosure policy: docs/plans/UI02_HIT_INDICATOR.md (git 30a6185).
 //!
 //! Domain events name server slots and facts; `frame` is the only place where
 //! a slot becomes a network ID. Nothing here decides a hit, damage or
@@ -60,7 +60,7 @@ pub struct HitReceived {
     pub criticals:Vec<Critical>,
 }
 /// UI-03: facts of the recipient's own battle. A number is the wire value of
-/// the record, so it never changes meaning. docs/plans/UI03_BATTLE_FEEDS.md
+/// the record, so it never changes meaning. docs/plans/UI03_BATTLE_FEEDS.md (git 30a6185)
 /// lists what the server does not model and therefore has no kind here.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum FeedKind {ShotDamage=1,RamDamage=2,Kill=3,Spotted=4,CapturePoints=5,DefencePoints=6,

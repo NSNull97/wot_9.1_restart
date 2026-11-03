@@ -1,7 +1,8 @@
 //! AV-01: #717 battle feedback that the gateway did not publish before —
 //! anonymous tracers of hidden shooters, the own-vehicle hit indicator, the
 //! shooter's shot-result voice, the spotter's scout event, engine mode and
-//! damage stickers. Research and statuses: docs/plans/AV01_BATTLE_FEEDBACK.md.
+//! damage stickers. Research and statuses: docs/plans/AV01_BATTLE_FEEDBACK.md
+//! (removed after the merge; in git at 8bda1b9).
 //!
 //! Codecs and presentation policies only: nothing here decides a hit, damage,
 //! visibility or credit. Callers own recipient visibility and queue order.

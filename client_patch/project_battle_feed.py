@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """PROJECT POLICY, not original 0.9.1: the UI-03 event feed under the crosshair.
-docs/plans/UI03_BATTLE_FEEDS.md.
+docs/plans/UI03_BATTLE_FEEDS.md (git 30a6185).
 
 Facts arrive over the UI-02 channel: this module only subscribes to the running
 project_hit_indicator policy and says one extra hello, so a client without it

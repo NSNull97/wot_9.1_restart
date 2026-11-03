@@ -1,6 +1,6 @@
 # CAT-01: единый каталог машин/снарядов/экипажа/допуска (2026-10-20)
 
-Ветка `codex/cat-01-single-catalog` от main `2b835b7`. План — [CAT01_SINGLE_CATALOG](../plans/CAT01_SINGLE_CATALOG.md),
+Ветка `codex/cat-01-single-catalog` от main `2b835b7`. План — CAT01_SINGLE_CATALOG (`docs/plans/CAT01_SINGLE_CATALOG.md` в git на `8bda1b9`),
 решение — ADR-002 «Единый источник контрактов». Native-приёмка — владелец (NOT_RUN).
 
 ## Что сделано

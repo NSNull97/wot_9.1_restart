@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """PROJECT POLICY, not original 0.9.1: the UI-05 tab of the native settings window.
-docs/plans/UI05_NATIVE_SETTINGS.md.
+docs/plans/UI05_NATIVE_SETTINGS.md (git 30a6185).
 
 One table below drives everything: tools/battle_ui_settings_flash.py builds the
 tab of both native windows from it (lobby AS3, battle AS2) and this module keeps

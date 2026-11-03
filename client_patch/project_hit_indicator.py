@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """PROJECT POLICY, not original 0.9.1: the UI-02 hit indicator and the client
-end of the battle events channel. docs/plans/UI02_HIT_INDICATOR.md.
+end of the battle events channel. docs/plans/UI02_HIT_INDICATOR.md (git 30a6185).
 
 The server sends a frame through the native Avatar.updateArena with a project
 type (#717 ClientArena.update ignores unknown types) only after this module

@@ -1,6 +1,6 @@
 # DOM-01 — долгоживущий Domain/Account service: факты и замеры
 
-Ветка `codex/dom-01-domain-service` от main `e4296af`; план — [DOM01_DOMAIN_SERVICE](../plans/DOM01_DOMAIN_SERVICE.md),
+Ветка `codex/dom-01-domain-service` от main `e4296af`; план — DOM01_DOMAIN_SERVICE (`docs/plans/DOM01_DOMAIN_SERVICE.md` в git на `8bda1b9`),
 решение — [ADR-002](../decisions/ADR_ARCH01_TARGET.md). Метки — как в AGENTS. Это архитектура нашего
 сервера, а не сведения о WG/«Орионе». Native-приёмка — **NOT_RUN** (владелец).
 

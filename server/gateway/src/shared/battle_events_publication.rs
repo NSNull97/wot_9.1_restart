@@ -1,10 +1,10 @@
 //! UI-02 publication: what this recipient learns about the shells that reached
 //! its own vehicle. It reads the committed journals at the same cursors as the
 //! native callbacks, so a reconnect replays nothing, and it moves no cursor.
-//! Policy: docs/plans/UI02_HIT_INDICATOR.md.
+//! Policy: docs/plans/UI02_HIT_INDICATOR.md (git 30a6185).
 //!
 //! UI-03 feed records of a channel that asked for them read the same journals
-//! at the channel's own cursors. Policy: docs/plans/UI03_BATTLE_FEEDS.md.
+//! at the channel's own cursors. Policy: docs/plans/UI03_BATTLE_FEEDS.md (git 30a6185).
 use super::*;
 use crate::p06t_device_state::{Change,Condition};
 use super::super::battle_events::{self,Channel,Critical,Event,FeedCursors,FeedEvent,FeedKind,HitReceived,HitShell,ShellFamily,Source,Verdict};
