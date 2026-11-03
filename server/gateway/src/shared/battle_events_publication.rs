@@ -115,7 +115,8 @@ impl Feed<'_> {
         if world.mixed_ammo() {
             for event in world.damage_events.iter().skip(cursors.damage) {
                 let damage=hp_lost(event.health_before,event.health_after)?;
-                if event.reason==1&&event.target==c.slot {self.received(event.tick,FeedKind::FireReceived,event.attacker,damage);}
+                // Owner round 15: the recipient's own fire is no row per tick either;
+                // devices() gives one FireReceived row with the burned sum when it ends.
                 if event.attacker!=c.slot {continue;}
                 // Owner round 9: a fire's damage is no row per tick; devices() gives one
                 // Ignition row with the burned sum when that fire ends.
@@ -164,6 +165,11 @@ impl Feed<'_> {
         for(target,event)in world.device_events.iter().skip(cursors.devices){
             let tick=device_tick(event.at_ms)?;
             if *target==c.slot {
+                if let Change::Fire{before_active:true,after_active:false}=event.change {
+                    let burned=burned(world,c.slot,event.cause.shot,event.cause.attacker_slot);
+                    self.received(tick,FeedKind::FireReceived,usize::from(event.cause.attacker_slot),burned);
+                    continue;
+                }
                 if event.from_fire&&matches!(event.change,Change::Device{before_condition,after_condition,repair:false,..}
                     if before_condition!=after_condition&&after_condition!=Condition::Normal) {
                     self.push(tick,FeedKind::FireCritical,None,None);
