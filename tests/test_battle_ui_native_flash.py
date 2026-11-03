@@ -284,7 +284,7 @@ class FeedTests(unittest.TestCase):
 
     def test_a_gold_row_is_a_module_with_its_icon(self):
         row = self.row(number='', label=u'Повреждена левая гусеница', colour=feed.GOLD)
-        self.assertEqual(fmt(row, 'labelField')[2], 0xf0c040)
+        self.assertEqual(fmt(row, 'labelField')[2], feed.GOLD, 'a module label in the module colour')
         self.assertNotIn('numberField', row.members)
 
     def test_with_the_icons_the_row_attaches_the_event_and_class_icons(self):

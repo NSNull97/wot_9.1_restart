@@ -49,7 +49,9 @@ HELLO_DELAY, HELLO_PERIOD, HELLO_ATTEMPTS = 1.0, 2.0, 5
 # rebuilds a live indicator still finds its facts.
 FACTS_LIFETIME = 5.0
 MAX_FACTS = 16
-RED, ORANGE, GREY, WHITE, GREEN = 0xc8181e, 0xe06a1b, 0x6e6e6e, 0xffffff, 0x7fd13b
+# RED and ORANGE pick the tone of the indicator art (tools/battle_ui_hit_flash.py).
+# Owner palette, round 13: a blocked hit #B7C9D6, an ally's name #A8D177, other text #F1F2ED.
+RED, ORANGE, GREY, WHITE, GREEN = 0xc8181e, 0xe06a1b, 0xb7c9d6, 0xf1f2ed, 0xa8d177
 # Owner round 3: Lesta icons, from tools/battle_ui_hit_icons.py when the movie
 # has them; an icon the movie lacks leaves its place empty.
 MODULE_ICONS = {'engine': 'engineCircle', 'gun': 'gunCircle', 'turretRotator': 'turretCircle',

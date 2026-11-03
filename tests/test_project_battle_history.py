@@ -124,6 +124,13 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(details(h.view()['bottom']), [('42', m.FLAME, 'tank4'), ('300', m.CROSS, 'tank4')])
         self.assertEqual(sums(h), ['342', '0', '0'])
 
+    def test_an_ignition_with_the_burned_sum_counts_it_as_dealt(self):
+        h = history()
+        h.add(feed(1, 300, 4))
+        h.add(feed(7, 140, 4))
+        self.assertEqual(details(h.view()['bottom']), [('140', m.FLAME, 'tank4'), ('300', m.CROSS, 'tank4')])
+        self.assertEqual(sums(h), ['440', '0', '0'], 'round 9: the gateway sends the sum on the Ignition at the end')
+
     def test_received_rows_of_a_shell_ram_and_fire(self):
         h = history()
         h.add(hit(damage=490, source=2, criticals=[(1, 26)]))

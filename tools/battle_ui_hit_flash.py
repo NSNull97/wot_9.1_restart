@@ -108,6 +108,10 @@ def expr(node):
         return b''.join(expr(arg) for arg in reversed(node[2])) + As2.push(len(node[2]), node[1]) + As2.record(0x3d)
     if kind == 'new':
         return b''.join(expr(arg) for arg in reversed(node[2])) + As2.push(len(node[2]), node[1]) + As2.record(0x40)
+    if kind == 'newm':
+        # new owner[name](args): ActionNewMethod, e.g. flash.geom.ColorTransform.
+        return (b''.join(expr(arg) for arg in reversed(node[3])) + As2.push(len(node[3])) + expr(node[1])
+                + As2.push(node[2]) + As2.record(0x53))
     if kind == 'func':
         return function('', node[1], node[2])
     raise ValueError('unsupported AS2 expression')
@@ -127,6 +131,8 @@ def stmt(node):
     if kind == 'if':
         body = b''.join(stmt(row) for row in node[2])
         return expr(node[1]) + As2.record(0x12) + As2.record(0x9d, struct.pack('<h', len(body))) + body
+    if kind == 'return':
+        return expr(node[1]) + As2.record(0x3e)
     raise ValueError('unsupported AS2 statement')
 
 

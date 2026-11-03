@@ -142,7 +142,8 @@ class Machine:
                 value = stack.pop()
                 stack.append('function' if isinstance(value, (Fn, Native)) else 'movieclip' if isinstance(value, Clip)
                              else 'undefined' if value is None else 'boolean' if isinstance(value, bool)
-                             else 'number' if isinstance(value, (int, float)) else 'object')
+                             else 'number' if isinstance(value, (int, float)) else 'string' if isinstance(value, str)
+                             else 'object')
             elif op == 0x9d:
                 if stack.pop():
                     at += struct.unpack('<h', data)[0]
@@ -162,6 +163,12 @@ class Machine:
                     scopes[-1][name] = fn
                 else:
                     stack.append(fn)
+            elif op == 0x3e:
+                return stack.pop()
+            elif op == 0x53:
+                name, owner, count = stack.pop(), stack.pop(), stack.pop()
+                args = [stack.pop() for _ in range(count)]
+                stack.append(self.member(owner, name)(*args))
             else:
                 raise AssertionError('action outside the emitted set: %#x' % op)
         raise AssertionError('action stream has no end')

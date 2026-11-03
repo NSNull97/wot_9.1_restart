@@ -159,7 +159,7 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(self.row(1)[1], '50')
         self.feed.add(event(4))
         self.feed.add(event(4))
-        self.assertEqual(self.row(0)[:3], [m.GREEN, 'x2', m.EYE])
+        self.assertEqual(self.row(0)[:3], [m.DETECT, 'x2', m.EYE])
 
     def test_points_add_up_and_a_fire_row_joins_ignition_and_damage(self):
         self.feed.add(event(5, 1))

@@ -37,8 +37,12 @@ TICK_PERIOD = 0.25
 # on y 832.
 ABOVE_BOTTOM = 262
 EMPTY_ROW = (-1, '', 0, '', '', 0, '', '')
-# Owner 02.11: effectiveness green, damage taken red, a crit taken gold.
-RED, GOLD, GREY, GREEN = 0xc8181e, 0xd8a020, 0x6e6e6e, 0x3f8f24
+# Owner palette, round 13 (2026-11-03): damage taken #F07870, a module of the own
+# vehicle #E8B866, a blocked hit #B7C9D6, the player's own damage and effect #E2A53D
+# (#E8B866 a little darker), assist #C2AFE4, spotting #DFCA91, capture and defence the
+# ally colour #A8D177. The names stay those of the rows they colour.
+RED, GOLD, GREY, GREEN = 0xf07870, 0xe8b866, 0xb7c9d6, 0xe2a53d
+ASSIST, DETECT, ALLY = 0xc2afe4, 0xdfca91, 0xa8d177
 # Glyph numbers of tools/battle_ui_feed_flash.py.
 CROSS, SHIELD, FLAG, EYE, CHEVRONS, KILL, TRACK, GEAR, FLAME = range(1, 10)
 RADIO, DIAMOND, DIAMOND_OUTLINE, LEAF, RING, BURST, SHELL_HIT, MODULE_TRACK = range(10, 18)
@@ -50,17 +54,17 @@ RADIO, DIAMOND, DIAMOND_OUTLINE, LEAF, RING, BURST, SHELL_HIT, MODULE_TRACK = ra
 ROWS_TABLE = {'received': (RED, SHELL_HIT, 'Получен урон', False, RING, 'ribbonsDamageEnemy'),
               'received_critical': (GOLD, GEAR, 'Критическое повреждение', False, GEAR, 'ribbonsCritsEnemy'),
               'blocked': (GREY, SHIELD, 'Удар сдержан', True, SHIELD, 'ribbonsArmor'),
-              'defence': (GREEN, FLAG, 'Очки защиты', False, LEAF, 'ribbonsDefence'),
-              'capture': (GREEN, FLAG, 'Очки захвата', False, LEAF, 'ribbonsCapture'),
-              'spotted': (GREEN, EYE, 'Обнаружил', False, LEAF, 'ribbonsSpotted'),
+              'defence': (ALLY, FLAG, 'Очки защиты', False, LEAF, 'ribbonsDefence'),
+              'capture': (ALLY, FLAG, 'Очки захвата', False, LEAF, 'ribbonsCapture'),
+              'spotted': (DETECT, EYE, 'Обнаружил', False, LEAF, 'ribbonsSpotted'),
               'ram': (GREEN, CHEVRONS, 'Таран', True, LEAF, 'ribbonsRam'),
               'kill': (GREEN, CROSS, 'Уничтожен', False, BURST, 'ribbonsKill'),
               'track': (GREEN, TRACK, 'Сбитие гусеницы', False, LEAF, 'ribbonsAssistTrack'),
               'critical': (GREEN, GEAR, 'Критический урон', False, LEAF, 'ribbonsCrits'),
               'shot': (GREEN, CROSS, 'Урон выстрелом', True, LEAF, 'ribbonsDamage'),
               'ignition': (GREEN, FLAME, 'Поджог', False, LEAF, 'ribbonsBurn'),
-              'assist_spot': (GREEN, RADIO, 'Урон по разведанным', True, LEAF, 'ribbonsAssistSpot'),
-              'assist_track': (GREEN, TRACK, 'Урон по обездвиженным', True, LEAF, 'ribbonsAssistTrack')}
+              'assist_spot': (ASSIST, RADIO, 'Урон по разведанным', True, LEAF, 'ribbonsAssistSpot'),
+              'assist_track': (ASSIST, TRACK, 'Урон по обездвиженным', True, LEAF, 'ribbonsAssistTrack')}
 # Lesta icon of a module row: a fire, any other module.
 FIRE_ICON, MODULE_ICON = 'ribbonsBurnEnemy', 'ribbonsCritsEnemy'
 # A module of the own vehicle by its native extra name: (damaged, destroyed).

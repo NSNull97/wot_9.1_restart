@@ -49,9 +49,12 @@ BOTTOM_X, BOTTOM_ABOVE, TOP_X, TOP_Y = 235, DAMAGE_PANEL_TOP, 247, 66
 # narrow to keep the rows left of it shows only those above its top edge.
 BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 192, 230, 4
 KIND_EMPTY, KIND_TOTAL, KIND_DETAIL = 0, 1, 2
-# Owner 02.11: what the player dealt is green (crit, damage, kill), a crit taken
-# gold, damage taken red; the player's own destruction has no row.
-RED, GOLD, GREY, GREEN, WHITE = 0xc8181e, 0xd8a020, 0x9a9a9a, 0x5fc23a, 0xffffff
+# Owner palette, round 13 (2026-11-03): damage taken #F07870, a module of the own
+# vehicle #E8B866, a blocked hit #B7C9D6, the player's own damage and effect #E2A53D
+# (#E8B866 a little darker), assist #C2AFE4, spotting #DFCA91, capture and defence the
+# ally colour #A8D177. The names stay those of the rows they colour.
+# The player's own destruction has no row.
+RED, GOLD, GREY, GREEN, ASSIST = 0xf07870, 0xe8b866, 0xb7c9d6, 0xe2a53d, 0xc2afe4
 # Glyph numbers of tools/battle_ui_feed_flash.py.
 CROSS, SHIELD, FLAG, EYE, CHEVRONS, KILL, TRACK, GEAR, FLAME = range(1, 10)
 RADIO = 10
@@ -61,14 +64,14 @@ RECEIVED, EFFECT = 'received', 'efficiency'
 ROWS_TABLE = {'received': (RECEIVED, RED, CROSS, 'Пробитие', 'damageLog_damage_enemy_16x16'),
               'received_fire': (RECEIVED, RED, FLAME, 'Пожар', 'damageLog_fire_enemy_16x16'),
               'received_ram': (RECEIVED, RED, CHEVRONS, 'Таран', 'damageLog_ram_enemy_16x16'),
-              'blocked': (RECEIVED, WHITE, SHIELD, 'Блок', 'damageLog_reflect_16x16'),
+              'blocked': (RECEIVED, GREY, SHIELD, 'Блок', 'damageLog_reflect_16x16'),
               'received_critical': (RECEIVED, GOLD, GEAR, 'Крит', 'damageLog_critical_enemy_16x16'),
               'shot': (EFFECT, GREEN, CROSS, 'Урон', 'damageLog_damage_16x16'),
               'ram': (EFFECT, GREEN, CHEVRONS, 'Таран', 'damageLog_ram_16x16'),
               'burned': (EFFECT, GREEN, FLAME, 'Поджог', 'damageLog_fire_16x16'),
               'critical': (EFFECT, GREEN, GEAR, 'Крит', 'damageLog_critical_16x16'),
-              'assist_spot': (EFFECT, GREEN, RADIO, 'Помощь', 'damageLog_coordinate_16x16'),
-              'assist_track': (EFFECT, GREEN, TRACK, 'Помощь', 'damageLog_immobilized_16x16')}
+              'assist_spot': (EFFECT, ASSIST, RADIO, 'Помощь', 'damageLog_coordinate_16x16'),
+              'assist_track': (EFFECT, ASSIST, TRACK, 'Помощь', 'damageLog_immobilized_16x16')}
 KILLED = (KILL, 'Уничтожен', 'damageLog_kill_16x16')
 # Wire numbers of battle_events::FeedKind this widget reads. Ignition (7) opens the
 # row of a fire; a module hit without HP (9, 10) is its own "Крит" row (owner
@@ -86,8 +89,8 @@ SHELL_STYLES = {'armor_piercing': 1, 'armor_piercing_cr': 2, 'high_explosive': 3
 # Summary row: option key, colour, glyph, word, Lesta icon. No row for
 # disorientation and none for burned HP (owner 02.11): it counts in the dealt sum.
 TOTALS_TABLE = (('total_dealt', GREEN, CROSS, 'Урон', 'damageLog_damage_16x16'),
-                ('total_blocked', WHITE, SHIELD, 'Блок', 'damageLog_reflect_16x16'),
-                ('total_assist', GREEN, RADIO, 'Помощь', 'damageLog_assist_16x16'))
+                ('total_blocked', GREY, SHIELD, 'Блок', 'damageLog_reflect_16x16'),
+                ('total_assist', ASSIST, RADIO, 'Помощь', 'damageLog_assist_16x16'))
 
 # Values for UI-05: key, allowed values, default; the switches of the owner's
 # target settings. Applied by apply_options at once; storage is
@@ -219,8 +222,9 @@ class History(object):
         ignition = event['kind'] == 'feed' and event['feed'] == IGNITION
         for key, value, count, vehicle in rows_of(event):
             changed = True
-            # An ignition has no amount by nature: it is no withheld fact.
-            if ignition:
+            # An ignition without an amount is no withheld fact. Since round 9 the
+            # gateway sends one Ignition with the burned sum when the fire ends.
+            if ignition and value is None:
                 pass
             elif key in ('shot', 'ram', 'burned'):
                 self._count('dealt', value)

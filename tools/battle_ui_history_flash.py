@@ -24,7 +24,8 @@ EARS_GAP, EARS_MIN_X = 6, 8
 KIND_TOTAL, KIND_DETAIL = 1, 2
 # A row's plaque: radius, the gap to the next row, the gradient of the dark fill
 # from the left to the right edge.
-RADIUS, GAP, PANEL_FILL, GRADIENT_FROM, GRADIENT_TO, GRADIENT_STEPS = 3, 2, 0x0d1216, 58, 22, 6
+# Round 13: lighter bands for the light tints of the owner's palette.
+RADIUS, GAP, PANEL_FILL, GRADIENT_FROM, GRADIENT_TO, GRADIENT_STEPS = 3, 2, 0x0d1216, 34, 12, 6
 # Columns of round 4, no words: a sum (icon, number), a dealt row (number, icon,
 # class, name), a received row (number, icon, shell plaque, class, name). Owner:
 # the same gap between neighbours. ELEMENT_GAP runs from the edge of one element
@@ -52,9 +53,9 @@ RECEIVED_NAME_X = RECEIVED_CLASS_X + ICON // 2 + ELEMENT_GAP - FIELD_GUTTER
 RECEIVED_WIDTH = RECEIVED_NAME_X + 82
 SHELL_HEIGHT, SHELL_SIZE, SHELL_RADIUS = 12, 10, 3
 NAME_WIDTH, TEXT_SIZE, TOTAL_SIZE = 80, 14, 16
-NAME_COLOUR, NUMBER_COLOUR, DASH_COLOUR = 0xf0f0f0, 0xffffff, 0x8c8c8c
+NAME_COLOUR, NUMBER_COLOUR, DASH_COLOUR = 0xf1f2ed, 0xf1f2ed, 0x8c8c8c
 # A crit taken: client_patch/project_battle_history.py GOLD.
-GOLD = 0xd8a020
+GOLD = 0xe8b866
 # A Lesta icon of the history (damageLog_*, 16 px) is drawn at its own size.
 ICON_SCALE = 100
 # Shell plaque of client_patch/project_battle_history.py: style, fill, text; -1
