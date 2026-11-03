@@ -525,18 +525,8 @@ def native_colours(body, start):
 
 def art_tags(images):
     """(definition tags, ExportAssets tag) of the icons as centred bitmaps."""
-    import battle_ui_hit_art as art
-    out, exported, character = bytearray(), [], FIRST_CHARACTER
-    for name in sorted(images):
-        width, height, rgba = images[name]
-        bitmap, drawn, sprite = character, character + 1, character + 2
-        character += 3
-        out += tag(36, struct.pack('<HBHH', bitmap, 5, width, height) + zlib.compress(art._rgba_to_swf(rgba), 9))
-        out += tag(2, art.shape(drawn, bitmap, width, height))
-        out += art.sprite_tags(tag, sprite, drawn)
-        exported.append(struct.pack('<H', sprite) + name.encode('ascii') + b'\0')
-    export = tag(56, struct.pack('<H', len(exported)) + b''.join(exported)) if exported else b''
-    return bytes(out), export
+    import swf_bitmap
+    return swf_bitmap.tags(images, tag, FIRST_CHARACTER, export_empty=False)
 
 
 def max_character(body, start):

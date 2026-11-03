@@ -382,12 +382,8 @@ class Feed(object):
 
 
 def _check(function, filename, name, line, args, digest):
-    code = getattr(function, 'func_code', getattr(function, '__code__', None))
-    if (code is None or code.co_filename.replace('\\', '/') != filename or code.co_name != name
-            or code.co_firstlineno != line or code.co_argcount != len(args)
-            or tuple(code.co_varnames[:len(args)]) != args or code.co_flags & 12
-            or hashlib.sha256(code.co_code).hexdigest() != digest):
-        raise RuntimeError('original #717 feed host differs: ' + name)
+    from native_contract import check
+    check(function, filename, name, line, args, digest, 'feed host')
 
 
 def check_flash(flash):

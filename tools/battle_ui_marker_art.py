@@ -23,6 +23,9 @@ import sys
 import zipfile
 import zlib
 
+from gui_atlas import atlas_rows, rgb565 as _rgb565, sha as _sha, write_png
+import gui_atlas
+
 PACKAGE = 'res/packages/gui-part1.pkg'
 ATLAS = 'gui/flash/atlases/vehicleMarkerAtlas.dds'
 ATLAS_XML = 'gui/flash/atlases/vehicleMarkerAtlas.xml'
@@ -41,16 +44,17 @@ MAX_PNG_BYTES = 256 * 1024
 MAX_PACKAGE_MEMBER = 32 * 1024 * 1024
 
 
+def read_png(raw):
+    """(width, height, rgba) of an 8-bit RGBA PNG within the icon canvas; anything else is refused."""
+    return gui_atlas.read_png(raw, MAX_PNG_BYTES, MAX_WIDTH, MAX_HEIGHT, 'the icon canvas')
+
+
 def names():
     return tuple('%s_%s' % (label, cls) for label in LABELS for cls in CLASSES)
 
 
 def linkage(name):
     return 'ProjectMarkerIcon_' + name
-
-
-def _rgb565(value):
-    return (value >> 11) * 255 // 31, ((value >> 5) & 63) * 255 // 63, (value & 31) * 255 // 31
 
 
 def dxt5_box(raw, width, box):
@@ -80,74 +84,6 @@ def dxt5_box(raw, width, box):
                         out[at_pixel:at_pixel + 3] = bytes(colours[(picks >> (2 * (4 * y + x))) & 3])
                         out[at_pixel + 3] = alpha[(bits >> (3 * (4 * y + x))) & 7]
     return bytes(out)
-
-
-def atlas_rows(xml):
-    """{name: (x, y, width, height)}; the text is a flat list, no XML parser."""
-    pattern = (r'<name>\s*(\S+)\s*</name>\s*<x>\s*(\d+)\s*</x>\s*<y>\s*(\d+)\s*</y>'
-               r'\s*<width>\s*(\d+)\s*</width>\s*<height>\s*(\d+)\s*</height>')
-    return {m.group(1): tuple(int(v) for v in m.groups()[1:]) for m in re.finditer(pattern, xml)}
-
-
-def write_png(width, height, rgba):
-    def chunk(kind, data):
-        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
-    rows = b''.join(b'\0' + rgba[y * width * 4:(y + 1) * width * 4] for y in range(height))
-    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0))
-            + chunk(b'IDAT', zlib.compress(rows, 9)) + chunk(b'IEND', b''))
-
-
-def _paeth(left, up, corner):
-    guess = left + up - corner
-    a, b, c = abs(guess - left), abs(guess - up), abs(guess - corner)
-    return left if a <= b and a <= c else up if b <= c else corner
-
-
-def read_png(raw):
-    """(width, height, rgba) of an 8-bit RGBA PNG within the icon canvas; anything else is refused."""
-    if len(raw) > MAX_PNG_BYTES or raw[:8] != b'\x89PNG\r\n\x1a\n':
-        raise ValueError('bounded PNG required')
-    at, head, idat = 8, None, bytearray()
-    while at + 8 <= len(raw):
-        size, kind = struct.unpack_from('>I4s', raw, at)
-        data = raw[at + 8:at + 8 + size]
-        if len(data) != size:
-            raise ValueError('truncated PNG chunk')
-        at += 12 + size
-        if kind == b'IHDR':
-            head = struct.unpack('>IIBBBBB', data)
-        elif kind == b'IDAT':
-            idat += data
-        elif kind == b'IEND':
-            break
-    if head is None or head[2:4] != (8, 6) or head[6] != 0 or not (
-            0 < head[0] <= MAX_WIDTH and 0 < head[1] <= MAX_HEIGHT):
-        raise ValueError('8-bit RGBA PNG within the icon canvas required')
-    width, height = head[:2]
-    stride = width * 4
-    expected = (stride + 1) * height
-    stream = zlib.decompressobj()
-    rows = stream.decompress(bytes(idat), expected)
-    if len(rows) != expected:
-        raise ValueError('PNG pixels differ from its header')
-    pixels, above = bytearray(), bytearray(stride)
-    for y in range(height):
-        at = y * (stride + 1)
-        kind, row = rows[at], bytearray(rows[at + 1:at + 1 + stride])
-        if kind > 4:
-            raise ValueError('unknown PNG filter')
-        for i in range(stride):
-            left = row[i - 4] if i >= 4 else 0
-            up = above[i]
-            corner = above[i - 4] if i >= 4 else 0
-            row[i] = (row[i] + (0, left, up, (left + up) // 2, _paeth(left, up, corner))[kind]) & 255
-        pixels += row
-        above = row
-    return width, height, bytes(pixels)
-
-
-def _sha(data):
-    return hashlib.sha256(data).hexdigest()
 
 
 def extract(lesta, out):
