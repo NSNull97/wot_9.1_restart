@@ -94,7 +94,9 @@ ICON_CLASSES = {'lightTank': 'tank', 'mediumTank': 'tank', 'heavyTank': 'tank', 
 GLOW_COLOURS = {'green': bytes.fromhex('91cd4a'), 'red': bytes.fromhex('f84033'), 'gold': bytes.fromhex('e29512'),
                 'blue': bytes.fromhex('26a4b4')}
 # The bar, the names and the contour of a marker: allies, enemies, a team killer.
-MARKER_PALETTE = {'green': 0x91cd4a, 'red': 0xf84033, 'blue': 0x26a4b4}
+# Owner round 15: the markers still too light; one more step, every channel x0.86
+# (#91CD4A, #F84033, #26A4B4 of round 14 times 0.86). The damage glows stay.
+MARKER_PALETTE = {'green': 0x7db040, 'red': 0xd5372c, 'blue': 0x218d9b}
 # Owner round 14: the ammo icon covered the damage number; it goes under the number
 # and this far further right of where the native puts it.
 EXPLOSION_SHIFT = 8
