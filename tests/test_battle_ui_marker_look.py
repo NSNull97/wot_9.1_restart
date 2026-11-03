@@ -548,10 +548,103 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(len(rows_new), len(rows_old) + 3 + 1 + 1)
         self.assertEqual([code for code, _, _ in rows_new[-7:]], [36, 2, 39, 56, 12, 1, 0])
         self.assertEqual(movie[rows_new[-3][1]:rows_new[-3][2]],
-                         flash.tag(12, look.actions(look.native_colours(self.body, self.start), True)))
+                         flash.tag(12, look.actions(look.marker_colours(self.body, self.start, images), True)))
+
+    def test_without_borrowed_icons_bar_and_names_take_the_native_icon_colour(self):
+        icons = look.native_icon_colours(self.body, self.start)
+        self.assertEqual(set(icons), {'green', 'blue', 'red', 'purple'})
+        colours = look.marker_colours(self.body, self.start)
+        for label in icons:
+            self.assertEqual(colours[label], icons[label])
+            self.assertNotEqual(colours[label], COLOURS[label], 'the splash colour is not the icon colour')
+        self.assertEqual((colours['gold'], colours['yellow']), (COLOURS['gold'], COLOURS['yellow']))
+        green = icons['green']
+        self.assertLess(abs((green >> 8 & 255) - 0xbc), 16, 'native green icon is about 67bc00')
+
+    def test_borrowed_icons_set_the_colour_of_their_label(self):
+        art = __import__('battle_ui_marker_art')
+        image = bytes((0x70, 0xc1, 0x07, 255)) * (39 * 50)
+        colours = look.marker_colours(self.body, self.start, {art.linkage('green_heavyTank'): (39, 50, image)})
+        self.assertEqual(colours['green'], 0x70c107)
+        self.assertEqual(colours['red'], look.native_icon_colours(self.body, self.start)['red'])
+
+    def test_names_of_every_label_frame_take_the_colour_and_only_those_bytes_change(self):
+        colours = look.marker_colours(self.body, self.start)
+        edits = look.name_edits(self.body, self.start, colours)
+        self.assertEqual(len(edits), 12)
+        self.assertEqual(sorted({self.body[at:at + 4].hex() for at in edits}),
+                         sorted(['ff0000ff', '7e73ffff', '94ff00ff', 'ffb964ff', '01c3d6ff', 'ffff00ff']))
+        self.assertEqual(sorted({value.hex() for value in edits.values()}),
+                         sorted('%06xff' % colours[label] for label in look.LABELS))
+        plain, named = look.transform(self.body, self.start), look.transform(self.body, self.start, colours)
+        self.assertEqual(len(plain), len(named))
+        changed = [at for at in range(len(plain)) if plain[at] != named[at]]
+        self.assertTrue(0 < len(changed) <= 12 * 3, 'only rgb bytes of the twelve name colours')
 
     def test_icons_never_collide_with_native_characters(self):
         self.assertLess(look.max_character(self.body, self.start), look.FIRST_CHARACTER)
+
+
+SCRIPTS = Path('C:/WoT_0.9.1_RU_0717_original/res/scripts')
+OPCODES = Path('D:/WoT_9.1_Server/local/toolchains-py27-20261019/cpython-2.7.3-x86/Lib/opcode.py')
+MARKER_BITS = {'markerBaseIcon': 0, 'markerBaseLevel': 1, 'markerBaseHpIndicator': 2, 'markerBaseDamage': 3,
+               'markerBaseVehicleName': 4, 'markerBasePlayerName': 5, 'markerAltIcon': 16, 'markerAltLevel': 17,
+               'markerAltHpIndicator': 18, 'markerAltDamage': 19, 'markerAltVehicleName': 20, 'markerAltPlayerName': 21}
+
+
+def marker_settings(value):
+    """Native MARKERS section int -> {option: value} (masks and offsets of #717)."""
+    options = {name: bool(value >> bit & 1) for name, bit in MARKER_BITS.items()}
+    options.update(markerBaseHp=value >> 8 & 255, markerAltHp=value >> 24 & 255)
+    return options
+
+
+@unittest.skipUnless(SCRIPTS.is_dir() and OPCODES.is_file(), 'original #717 copy absent')
+class MarkerSettingsContract(unittest.TestCase):
+    """Why the owner saw no damage number: read from the original bytecode as data."""
+
+    @staticmethod
+    def code(path, name):
+        sys.path.insert(0, str(ROOT / 'tools'))
+        from py27_static import parse_pyc, records
+        root = parse_pyc((SCRIPTS / path).read_bytes())
+        return next(code for qualified, code in records(root) if qualified.endswith(name))
+
+    def rows(self, path, name):
+        from py27_static import disassemble, opcode_table, text
+        code = self.code(path, name)
+        return code, [(row['opname'], text(code['consts'][row['arg']]) if row['opname'] == 'LOAD_CONST' else row.get('value'))
+                      for row in disassemble(code, opcode_table(OPCODES.read_text(encoding='latin-1')))]
+
+    def test_marker_masks_are_the_ones_decoded(self):
+        _, rows = self.rows('client/account_helpers/serversettingsmanager.pyc', 'ServerSettingsManager')
+        pairs = {b: a for (op_a, a), (op_b, b) in zip(rows, rows[1:]) if op_a == 'LOAD_CONST' and op_b == 'LOAD_CONST'
+                 and isinstance(a, int) and isinstance(b, str) and b.startswith('marker')}
+        self.assertEqual({name: pairs[name] for name in MARKER_BITS}, MARKER_BITS)
+
+    def test_client_default_has_damage_on_and_the_stored_value_has_it_off(self):
+        _, rows = self.rows('client/account_helpers/accountsettings.pyc', '<module>')
+        defaults = {}
+        for (op_a, a), (op_b, b) in zip(rows, rows[1:]):
+            if op_b == 'LOAD_CONST' and isinstance(b, str) and b.startswith('marker'):
+                # Python 2.7: True and False are names, the HP modes integer constants.
+                if op_a == 'LOAD_NAME' and a in ('True', 'False'):
+                    defaults.setdefault(b, a == 'True')
+                elif op_a == 'LOAD_CONST' and isinstance(a, int):
+                    defaults.setdefault(b, a)
+        self.assertTrue(defaults['markerBaseDamage'] and defaults['markerAltDamage'])
+        default = sum(1 << bit for name, bit in MARKER_BITS.items() if defaults[name])
+        default |= defaults['markerBaseHp'] << 8 | defaults['markerAltHp'] << 24
+        self.assertEqual(default, 0x011f0028)
+        stored = marker_settings(2097431)   # MARKERS_ENEMY = MARKERS_ALLY on stand -12, 03.11
+        self.assertFalse(stored['markerBaseDamage'] or stored['markerAltDamage'])
+        self.assertNotEqual(2097431, default)
+
+    def test_marks_on_gun_section_key_is_500_above_the_gateway_range(self):
+        _, rows = self.rows('common/constants.pyc', '.USER_SERVER_SETTINGS')
+        self.assertIn(('LOAD_CONST', 500), rows)
+        source = (ROOT / 'server/gateway/src/account/int_settings.rs').read_text(encoding='utf-8')
+        self.assertIn('const MAX_KEY:i32=56;', source)
 
 
 def as2_structure(code):
