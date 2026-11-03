@@ -340,6 +340,10 @@ standard|extended --battle-feed labels|icons`. Откат: убрать `feed`, 
   библиотека, обёртка ставится из `battle.swf` и ждёт класс по кадрам.
 - **Фон панели танка и рамки миникарты** `#192126` (`tools/battle_ui_panels_flash.py`): `damagePanel.bg`, `minimap.foreground`,
   `foregroundHR` — картинки из `DamagePanel.swf`/`Minimap.swf`; `ColorTransform` множители 0, сдвиг цвета, альфа родная; ждёт клипы.
+- **Значки миникарты** (`tools/battle_ui_minimap_look.py`): союзник `#A8D177`, противник `#F07870`, голубой `#38B8C8`. Треть картинок
+  значков — JPEG с альфой, поэтому перекраска во время боя: после родного `MinimapEntry.updateIfEntryIsPlayer` к родному фильтру
+  `adjust` добавляется `ColorMatrixFilter`, кладущий ярчайший канал значка (родные средние: зелёный G 189, красный R 217, голубой G 204)
+  на цвет палитры; без сдвига альфы. Взвод и цветовая слепота — родные.
 - Всё это — флаг `palette` сборки `battle.swf`, `prepare` включает его вместе с проектными маркерами.
 - UNKNOWN до native: выполнение ожидания в импортированных клипах, `getBounds`/`ColorTransform` Scaleform для этих клипов.
 

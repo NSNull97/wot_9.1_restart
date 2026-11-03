@@ -27,6 +27,7 @@ import zlib
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import battle_ui_art as art_tool
 import battle_ui_ears_flash as ears_tool
+import battle_ui_minimap_look as minimap_tool
 import battle_ui_panels_flash as panels_tool
 import battle_ui_feed_flash as feed
 import battle_ui_history_flash as history
@@ -66,7 +67,8 @@ def layout(body):
 def actions(with_feed=True, with_history=True, art=False, palette=False):
     """One frame action: the shared text and glyph functions, the widgets' own;
     `palette` (owner round 13): the ears' icons from the project sets
-    (battle_ui_ears_flash) and the panel backgrounds (battle_ui_panels_flash)."""
+    (battle_ui_ears_flash), the panel backgrounds (battle_ui_panels_flash) and the
+    minimap icons (battle_ui_minimap_look)."""
     if not (with_feed or with_history):
         raise ValueError('nothing to add to the battle movie')
     delegate = ('get', ('get', var('gfx'), 'io'), 'GameDelegate')
@@ -80,8 +82,9 @@ def actions(with_feed=True, with_history=True, art=False, palette=False):
         code += history.sources(art)
         setup += history.setup(delegate, ('+', depth, 1))
     if palette:
-        code += ears_tool.sources() + panels_tool.sources()
-        setup += ears_tool.setup(('+', depth, 2)) + panels_tool.setup(('+', depth, 3))
+        code += ears_tool.sources() + panels_tool.sources() + minimap_tool.sources()
+        setup += (ears_tool.setup(('+', depth, 2)) + panels_tool.setup(('+', depth, 3))
+                  + minimap_tool.setup(('+', depth, 4)))
     return code + b''.join(stmt(row) for row in setup) + b'\0'
 
 

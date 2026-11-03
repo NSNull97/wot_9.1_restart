@@ -43,6 +43,8 @@ class StringMachine(Machine):
             return {'indexOf': lambda text, start=0: owner.find(text, start),
                     'substr': lambda start, size=None: owner[start:] if size is None else owner[start:start + size],
                     'length': len(owner)}[name]
+        if isinstance(owner, list) and name == 'push':
+            return lambda value: owner.append(value) or len(owner)
         if callable(owner) and name == 'apply':
             return lambda this, args: owner(this, *args)
         return Machine.member(self, owner, name)
