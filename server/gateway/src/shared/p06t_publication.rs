@@ -3,6 +3,15 @@
 use super::*;
 use crate::{armament_wire091 as native,p06t_device_state::{Change,Condition}};
 
+/// Extra of the engine or fuel tank the igniting shot damaged on `target`; the
+/// engine's (#717 extra 26, engineHealth) when the shot left no such record.
+fn ignition_extra(world:&World,target:usize,cause:crate::p06t_device_state::Cause)->u8 {
+    world.device_events.iter().find_map(|(t,e)|match e.change {
+        Change::Device{device:crate::p06t_device_caps::Device::Engine|crate::p06t_device_caps::Device::FuelTank,extra_index,..}
+            if *t==target&&e.cause.shot==cause.shot&&e.cause.attacker_slot==cause.attacker_slot=>Some(extra_index),
+        _=>None}).unwrap_or(26)
+}
+
 fn health(world:&World,target:usize,attacker:Option<usize>,reason:u8)->io::Result<Vec<u8>>{
     let actor=world.actors.get(target).ok_or_else(||model::bad())?;
     if !(0..=actor.vehicle_kind().max_health()).contains(&actor.health)||reason>10{return Err(model::bad());}
@@ -95,7 +104,10 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
                 // Owner round 15: no "fire" voice. #717 FIRE (3) is a generic state code
                 // of __damageInfoNoNotification; DEVICE_STARTED_FIRE_AT_SHOT (8) is the one
                 // that plays the fire extra's voice. A fire here starts only from a shot.
-                Change::Fire{after_active,..}=>Some((if after_active{8}else{35},4)),
+                // Its extra is the device that caught fire (native pairing), the voice
+                // comes from the fire extra either way.
+                Change::Fire{after_active:true,..}=>Some((8,ignition_extra(world,*target,event.cause))),
+                Change::Fire{after_active:false,..}=>Some((35,4)),
                 _=>None,
             };
             if let Some((code,extra))=notification{
