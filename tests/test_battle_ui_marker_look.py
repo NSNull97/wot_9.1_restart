@@ -12,6 +12,7 @@ import struct
 import sys
 import unittest
 import zipfile
+import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -433,7 +434,7 @@ class RoundSevenTests(unittest.TestCase):
 
     def test_the_contour_icon_takes_the_colour_of_the_bar_after_every_native_repaint(self):
         red = COLOURS['red']
-        expected = tuple(round(v * 1000 / 255) / 1000 for v in (red >> 16 & 255, red >> 8 & 255, red & 255))
+        expected = tuple(round(v * 1000 * 9 / 5 / 255) / 1000 for v in (red >> 16 & 255, red >> 8 & 255, red & 255))
         for method in ('updateMarkerLabel', 'setMarkerState', 'setupIconLoader'):
             clip = self.marker('red')
             self.vm.invoke(self.marker_proto.get(method), clip, ['alive'])
@@ -548,7 +549,8 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(sorted(self.body[at:at + 4].hex() for at in whites),
                          sorted(['95ff00ff', 'ff371cff', 'ffb21cff', '00eaffff', 'ffff00ff', '9086ffff']))
         self.assertEqual(sorted(value[:4].hex() for value in glows.values()),
-                         sorted(self.body[at:at + 4].hex() for at in whites))
+                         sorted('70c000ff' if self.body[at:at + 4].hex() == '95ff00ff' else self.body[at:at + 4].hex()
+                                for at in whites), 'the old text colour; green a little darker (owner round 9)')
         self.assertEqual(sorted(self.body[at:at + 4].hex() for at in glows),
                          sorted(['144200ff', '500000ff', '631700ff', '003c40ff', '633600ff', '1e004fff']))
 
@@ -591,7 +593,7 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(len(old_rows), len(new_rows))
         recoloured = look.recoloured(self.body, self.start)
         differ = [code for (code, b0, e0), (_, b1, e1) in zip(old_rows, new_rows) if recoloured[b0:e0] != new[b1:e1]]
-        self.assertEqual(differ, [39, 39], 'the hp sprite and the fire/ammo icon sprite')
+        self.assertEqual(differ, [36] * 12 + [39, 39], 'twelve fire/ammo bitmaps, the hp sprite and the icon sprite')
         places = [data for code, data in self.hp_sprite(new) if code in (26, 70)]
         self.assertEqual([data[1] for data in places], [1, 1])
         for data in places:
@@ -625,12 +627,32 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(len(seen), 12)
         self.assertIn('blue_fire', seen)
         halo = look.white_halo(colours['red'])
-        self.assertEqual(halo[:2], bytes((2, look.FILTER_COLOR_MATRIX)))
-        matrix = struct.unpack_from('<20f', halo, 2)
-        self.assertEqual(matrix[:15], (0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255))
-        alpha = lambda a: max(0, min(255, matrix[18] * a + matrix[19]))
-        self.assertEqual((alpha(170), alpha(191), alpha(255)), (0, 0, 255), 'the haze goes, the icon stays')
-        self.assertEqual(halo[83:87], colours['red'] + bytes((255,)), 'the glow of the red damage number')
+        self.assertEqual(halo[:6], bytes((1, look.FILTER_GLOW)) + colours['red'] + bytes((255,)),
+                         'only the glow of the red damage number: Scaleform drew the colour matrix as a black square')
+        self.assertEqual(colours['green'], look.GLOW_COLOURS['green'], 'the darker glow of damage to allies')
+
+    def test_fire_and_ammo_bitmaps_are_white_and_keep_only_the_dense_icon(self):
+        whites = look.explosion_bitmaps(self.body, self.start)
+        self.assertEqual(len(whites), 12)
+        for bitmap, data in whites.items():
+            width, height = struct.unpack_from('<HH', data, 3)
+            pixels = zlib.decompress(data[7:])
+            self.assertEqual(len(pixels), width * height * 4)
+            for at in range(0, len(pixels), 4):
+                self.assertEqual(len(set(pixels[at:at + 4])), 1, 'white, premultiplied')
+        native = {}
+        for code, begin, end in tags(self.body, self.start):
+            at = begin + look._head(self.body, begin)
+            if code == 36 and struct.unpack_from('<H', self.body, at)[0] in whites:
+                native[struct.unpack_from('<H', self.body, at)[0]] = zlib.decompress(self.body[at + 7:end])
+        for bitmap, pixels in native.items():
+            new = zlib.decompress(whites[bitmap][7:])
+            for at in range(0, len(pixels), 4):
+                expected = max(0, min(255, 4 * pixels[at] - 765))
+                self.assertEqual(new[at], expected)
+        new = look.transform(self.body, self.start)
+        self.assertEqual(sum(1 for code, b, e in tags(new, self.start) if code == 36),
+                         sum(1 for code, b, e in tags(self.body, self.start) if code == 36), 'replaced, not added')
 
     def test_halo_is_black_and_a_little_thicker_than_the_native(self):
         native = [data for code, data in self.hp_sprite(self.body) if code == 70][0]

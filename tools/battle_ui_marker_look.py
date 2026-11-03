@@ -78,15 +78,23 @@ NATIVE_ICON_LOADER, NATIVE_HEALTH = 'projectLookNativeIconLoader', 'projectLookN
 # damage to a team killer (label blue) to the green frames, the owner wants blue.
 DAMAGE_FLAGS = ('FROM_PLAYER', 'FROM_SQUAD', 'FROM_ENEMY', 'FROM_ALLY', 'FROM_UNKNOWN')
 EXPLOSION_EXPORT = 'HitExplosion'
-FILTER_COLOR_MATRIX = 6
 # Owner round 8: the native fire and ammo bitmaps (86 x 86) are a soft haze with the
-# icon as its densest part; white over all of it was a blot. The matrix keeps only
-# alpha above ALPHA_CUT of 255: alpha' = ALPHA_GAIN * alpha - (ALPHA_GAIN - 1) * 255.
+# icon as its densest part; white over all of it was a blot. Only alpha above 191 of
+# 255 stays: alpha' = GAIN * alpha - (GAIN - 1) * 255. Round 8 did it with a
+# ColorMatrixFilter and Scaleform drew a black square; round 9 bakes it into the
+# bitmaps, white and premultiplied, and keeps only the glow as a filter.
 EXPLOSION_ALPHA_GAIN = 4
 # Owner round 8 (a trial): the contour icon without its transparency. Its pixels
 # hold alpha about 170 of 255 (median of IS-7 and WZ-111), so 3/2 makes the body opaque
 # and keeps the antialiased edge soft.
 ICON_ALPHA_GAIN = (3, 2)
+# Owner round 9: the contour went dark. Its body is grey, not white (brightness
+# about 100..160 of 255 on IS-7, a black outline), so multipliers of the bar colour
+# alone gave half that colour. 9/5 brings a grey of about 140 to the bar colour.
+ICON_BRIGHTNESS = (9, 5)
+# Owner round 9: the glow of damage to allies (the green frames) a little darker
+# than the native 95ff00; the fire and ammo icons of those frames take it too.
+GLOW_COLOURS = {'green': b'\x70\xc0\x00'}
 
 
 # ---------------------------------------------------------------- SWF reading
@@ -211,12 +219,14 @@ def damage_edits(body, start):
         if code == 37:
             data_at = begin + _head(body, begin)
             texts[struct.unpack_from('<H', body, data_at)[0]] = data_at
-    edits = {}
+    edits, label = {}, None
     sprite_at = sprites[inner][0] + _head(body, sprites[inner][0])
     for code, begin, end in tags(body, sprite_at + 4):
+        data_at = begin + _head(body, begin)
+        if code == 43:
+            label = body[data_at:body.index(0, data_at)].decode('ascii')
         if code != 70:
             continue
-        data_at = begin + _head(body, begin)
         character, glow = _place3(body[data_at:end])
         text_at = texts[character]
         rect = _rect_bytes(body, text_at + 2)
@@ -226,7 +236,7 @@ def damage_edits(body, start):
             raise ValueError('label text has no font or colour')
         colour_at = text_at + 2 + rect + 2 + 4
         # Glow: colour, blurX, blurY (16.16), strength (8.8); the flags byte stays.
-        edits[data_at + glow] = (body[colour_at:colour_at + 3] + b'\xff'
+        edits[data_at + glow] = (GLOW_COLOURS.get(label, body[colour_at:colour_at + 3]) + b'\xff'
                                  + struct.pack('<IIH', DAMAGE_GLOW_BLUR << 16, DAMAGE_GLOW_BLUR << 16,
                                                round(DAMAGE_GLOW_STRENGTH * 256)))
         edits[colour_at] = WHITE
@@ -236,7 +246,8 @@ def damage_edits(body, start):
 
 
 def damage_colours(body, start):
-    """{label: rgb bytes} of the native damage number of each colour frame."""
+    """{label: rgb bytes} of the glow of the damage number of each colour frame:
+    the native text colour, GLOW_COLOURS where the owner changed it."""
     sprites = _sprites(body, start)
     holder = sprites[_export(body, start, HIT_LABEL_EXPORT)]
     inner = next(struct.unpack_from('<H', data, 3)[0] for code, data in _inner(body, *holder)
@@ -253,22 +264,70 @@ def damage_colours(body, start):
         elif code == 70 and label:
             text_at = texts[_place3(data)[0]]
             colour_at = text_at + 2 + _rect_bytes(body, text_at + 2) + 2 + 4
-            colours[label] = body[colour_at:colour_at + 3]
+            colours[label] = GLOW_COLOURS.get(label, body[colour_at:colour_at + 3])
     if set(colours) != set(LABELS):
         raise ValueError('label sprite differs from six colour frames')
     return colours
 
 
 def white_halo(colour):
-    """Filter list: a ColorMatrixFilter that turns the icon white and keeps only its
-    densest alpha (EXPLOSION_ALPHA_GAIN), then the damage number's glow in `colour`
-    (owner round 7: the fire and ammo icons in the style of the flying damage)."""
-    gain = EXPLOSION_ALPHA_GAIN
-    matrix = (0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, gain, -(gain - 1) * 255)
-    return (bytes((2, FILTER_COLOR_MATRIX)) + struct.pack('<20f', *matrix)
-            + bytes((FILTER_GLOW,)) + colour + bytes((255,))
+    """Filter list: the damage number's glow in `colour` (owner round 7: the fire and
+    ammo icons in the style of the flying damage); the white is in the bitmap."""
+    return (bytes((1, FILTER_GLOW)) + colour + bytes((255,))
             + struct.pack('<IIH', DAMAGE_GLOW_BLUR << 16, DAMAGE_GLOW_BLUR << 16, round(DAMAGE_GLOW_STRENGTH * 256))
             + DAMAGE_GLOW_FLAGS)
+
+
+def white_bitmap(data):
+    """DefineBitsLossless2 data (id, format 5, size, zlib ARGB premultiplied) made
+    white with only its dense alpha kept (EXPLOSION_ALPHA_GAIN)."""
+    character, form, width, height = struct.unpack_from('<HBHH', data, 0)
+    if form != 5:
+        raise ValueError('explosion bitmap is not 32-bit ARGB')
+    pixels = zlib.decompressobj().decompress(data[7:], width * height * 4 + 1)
+    if len(pixels) != width * height * 4:
+        raise ValueError('explosion bitmap size differs')
+    gain, out = EXPLOSION_ALPHA_GAIN, bytearray(len(pixels))
+    for at in range(0, len(pixels), 4):
+        alpha = max(0, min(255, gain * pixels[at] - (gain - 1) * 255))
+        out[at:at + 4] = bytes((alpha, alpha, alpha, alpha))
+    return data[:7] + zlib.compress(bytes(out), 9)
+
+
+def explosion_bitmaps(body, start):
+    """{bitmap id: new tag data} of the bitmaps the fire and ammo icons fill with."""
+    sprites = _sprites(body, start)
+    holder = sprites[_export(body, start, EXPLOSION_EXPORT)]
+    inner = next(struct.unpack_from('<H', data, 3)[0] for code, data in _inner(body, *holder)
+                 if code == 26 and data[0] & 2)
+    placed = {struct.unpack_from('<H', data, 3)[0] for code, data in _inner(body, *sprites[inner])
+              if code == 26 and data[0] & 2}
+    shapes, bitmaps = {}, {}
+    for code, begin, end in tags(body, start):
+        at = begin + _head(body, begin)
+        if code == 2:
+            shapes[struct.unpack_from('<H', body, at)[0]] = body[at:end]
+        elif code == 36:
+            bitmaps[struct.unpack_from('<H', body, at)[0]] = body[at:end]
+    found = {}
+    for shape in placed:
+        data = shapes[shape]
+        at = 2 + _rect_bytes(data, 2)
+        count, at = data[at], at + 1
+        for _ in range(count):
+            kind = data[at]
+            if 0x40 <= kind <= 0x43:
+                bitmap = struct.unpack_from('<H', data, at + 1)[0]
+                if bitmap in bitmaps:
+                    found[bitmap] = white_bitmap(bitmaps[bitmap])
+                at += 3 + _matrix_bytes(data, at + 3)
+            elif kind == 0:
+                at += 4
+            else:
+                raise ValueError('explosion shape fill differs from the #717 layout')
+    if len(found) != 12:
+        raise ValueError('explosion icons differ from twelve bitmaps')
+    return found
 
 
 def explosion_inner(body, start):
@@ -397,8 +456,12 @@ def transform(body, start, names=None):
             out[at:at + 4] = value
         body = bytes(out)
     explosion, explosion_tags = explosion_inner(body, start)
+    whites = explosion_bitmaps(body, start)
     out, changed = bytearray(body[:start]), 0
     for code, begin, end in tags(body, start):
+        if code == 36 and struct.unpack_from('<H', body, begin + _head(body, begin))[0] in whites:
+            out += tag(36, whites[struct.unpack_from('<H', body, begin + _head(body, begin))[0]])
+            continue
         if code == 39 and struct.unpack_from('<H', body, begin + _head(body, begin))[0] == explosion:
             sprite_at = begin + _head(body, begin)
             out += tag(39, body[sprite_at:sprite_at + 4] + explosion_tags)
@@ -696,7 +759,7 @@ def actions(colours, icons=False):
         tint = ('get', ('get', look, 'tints'), label)
         table += stmt(('set', ('get', look, 'tints'), label, ('new', 'Object', [])))
         for channel, value in zip('rgb', (rgb >> 16 & 255, rgb >> 8 & 255, rgb & 255)):
-            table += stmt(('set', tint, channel, round(value * 1000 / 255)))
+            table += stmt(('set', tint, channel, round(value * 1000 * ICON_BRIGHTNESS[0] / ICON_BRIGHTNESS[1] / 255)))
     table += _method(look, 'group', ['n'], _group())
     table += _method(look, 'paintIcon', ['m'], _paint_icon())
     table += _method(look, 'raise', ['m'], _raise())
